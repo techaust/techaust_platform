@@ -681,3 +681,59 @@ Split so no two agents touch the same files:
 - **Designer** (`fix/fx3-fix-d`, after the FX-4 review frees the browser): items 1, 2, 3, 5, 10 and 11, plus Figures first on phones.
 
 Item 1's `wrongFile` line changes, a 07-Y amendment: "Use a PNG or JPEG image up to 10 MB. We store it as a PNG of up to 256 KB."
+
+### Fix round, designer report
+Designer: claude-opus-5-5 (high), 2026-10-29 ~16:40–18:00 IST, branch `fix/fx3-fix-d` from `origin/fix/fx3-admin-portal` (441e5ce0). 9 commits plus this report; only `fix/fx3-fix-d` pushed.
+
+#### Skills
+- `frontend-design:frontend-design` (loaded first): kept every change inside the existing panels, rules and tokens. What it changed: Figures first is done by reading order (the panel is the page's first child) rather than a visual `order:` trick, so sight and Tab agree; the rule between currencies is part of the group's reading width, not a second decoration; a note's headings keep the author's size while their levels follow the page's outline.
+- `dataviz`: loaded for the Figures panel (stat figures). Applied: the lead figure and ledger rows unchanged, text in text tokens, the rule as wide as the figures it separates. No chart, so no palette run.
+- Not loaded: Cloudflare skills (no Worker, binding or config change; one Worker test only), `code-review`/`security-review` (reviewer's).
+
+#### Per item (files under `apps/admin/` unless named)
+- **1, signature (167a34c6):** `src/lib/pdf.ts`: `SIGNATURE_INPUT_MAX` = 10 MB; `signatureFileOk` checks only the type and 1 byte to 10 MB; `SIGNATURE_COPY.wrongFile` is now `Y("Use a PNG or JPEG image up to 10 MB. We store it as a PNG of up to 256 KB.")`. `src/lib/signature-scale.ts`: new `prepareSignature(file, io)` runs the checks in order (type and 10 MB, then decode and scale, then the 256 KB on the PNG that comes out, `tooDetailed`); `src/routes/settings/signature.tsx` uses it. Tests: `signature-scale.test.ts` (a 1 MB 3000 × 4000 phone photo scaled to a 300 × 400 PNG and handed on; exactly 10 MB read; 11 MB and 10 MB + 1 refused before decoding; the 256 KB edge on the output), `worker/settings-signature.test.ts` (that 300 × 400, 180 KB PNG is stored), `pdf.test.ts`, `batch-review.test.ts`. Live: a 1.37 MB phone-style JPEG became a 300 × 400 PNG of 75,711 bytes, stored, with the "We made the image smaller" line; an 11 MB file shows the new line.
+- **2, convert (3d46a736, then 8ba36bab):** the first commit called `onConverted()` (close and reload) before `navigate`. **Checked live, that was wrong:** the reload gives the lead a new `updatedAt`, `LeadView` is keyed by it, so the page started again, the leave question went with the old page and the proposal never opened. Now (8ba36bab): `ConvertDialog` calls a new `onOpening()` (closes the dialog, arms a reload) and then `navigate`; `UnsavedChangesGuard` (`src/components/unsaved.tsx`) gains an optional `onStay`, and the lead page reloads only on "Stay on this page" (or Escape). `onConverted` stays for the `already_converted` "Reload the latest" button. Live with unsaved lead edits: the convert dialog closes and the leave question stands alone; "Stay" shows the lead converted (no Convert button, client and draft proposal linked) with the edits kept; "Leave without saving" opens `/proposals/:id`.
+- **3, e2e sweep (4cf6821e):** `e2e/sweep.spec.ts`: the lists are read with their own first page (no `?limit=1`), each must answer 200 with its key; a lead, a client and a template must be found; the record pages found are logged. The keyboard test also visits Settings › Numbering at 1024 and fails when it meets no `[data-scrolls]` box (it met 4). `e2e/global-setup.ts` adds one labelled sample lead ("Sample Lead (e2e sample)", `sample-lead@example.test`) over the API when the local database has none. The sweep now visits a lead, a client, a project, a document, a catalogue item and a template (local database: no care plan or invoice to visit).
+- **New, found by the fixed sweep (69825606):** `/projects/:id` failed axe `heading-order`: a note that opened with `##` was drawn as an h4 straight under the panel's h2. `src/components/markdown.tsx` `noteHeadingTags`: a note's shallowest heading is an h3 and no heading goes more than one level below the one before; the size class stays the author's (`md__h--N`). Test in `src/lib/projects.test.ts`.
+- **5, template heading (066ce0e9):** `src/lib/catalogue.ts` `templateRuleFields` (rules by field; `templateRuleErrors` now derives from it for the read view); `src/routes/catalogue/template.tsx`: a Catalogue-text placeholder in a heading and an unknown placeholder in a heading land on `tpl-s{i}-heading` (its own line `tpl-s{i}-heading-rule`, `aria-invalid`, `aria-describedby`), and the summary link is `#tpl-s{i}-heading`. Live: Save, then Tab and Enter on the summary link, focuses the heading input. Test in `lib/catalogue.test.ts`.
+- **10, currency rule (a43b9317):** `src/clients.css`: the 30rem reading width moved from `.acct__rows` to `.acct__group`, so the rule between two currencies is as wide as their rows (both 480 px at 768).
+- **11, project Overview (8acac0a1):** `src/routes/projects/project.tsx`: every return to the Overview from another tab reads the page again (quietly), from an effect on the tab, so any path counts. The old rule reloaded only on a direct switch from Notes or Files; Notes, then Milestones, then Overview showed "No notes yet". Live: that path now shows the new note.
+- **Figures first on one column (5dda1d68):** `src/routes/clients/overview.tsx`: the Figures panel is the page's first child (out of the side column), so on phones and tablets it sits straight under the page heading, and the first Tab stop after the tab panel is "Open the statement". `src/clients.css`: from 64rem, `.client-overview:has(> .acct)` places it in column 2, row 1, the main column spans both rows, and the rest of the side column (primary contact, linked records) follows in row 2. **Changed behaviour to note:** in this layout the side column scrolls with the page (it was sticky; a sticky column would slide under the panel). Without a finance role, or for an anonymised client, the page is as before (sticky side column). The project Overview (which shares `client-overview`) is unaffected (its panel stays inside its side column).
+
+#### Shots (`.logs/shots/fx3-fix-d/` in this worktree; `-SAMPLE` = the finance answer replaced in the page by labelled sample figures, two currencies with overdue and a credit note; no past-due invoice can be made locally)
+- `client-figures-first-375-dark-on-light-os-SAMPLE.png`: phone, Figures straight under the heading and the tabs.
+- `client-figures-first-empty-375-light-on-light-os.png`: the real empty state ("Nothing invoiced yet.") first on a phone.
+- `client-figures-first-768-light-SAMPLE.png`: full page at 768: Figures, then Details, Tax and billing, Notes, Primary contact.
+- `client-figures-rule-768-dark-on-light-os-SAMPLE.png`: item 10, the rule between INR and USD as wide as the rows.
+- `client-figures-first-focus-768-dark-SAMPLE.png`: keyboard: the first Tab stop is "Open the statement", focus ring visible.
+- `client-figures-side-1024-light-on-dark-os-SAMPLE.png`, `client-figures-side-1280-light-SAMPLE.png`, `client-figures-side-1280-dark-on-light-os-SAMPLE.png`, `client-figures-side-1600-dark-on-light-os-SAMPLE.png`: from 64rem, Figures heads the side column, Primary contact below it, 16 px apart as in the main column.
+- `project-overview-notes-after-milestones-1280-light.png`: item 11, the Overview after Notes, then Milestones: both notes shown.
+- `lead-convert-unsaved-leave-question-alone-light.png`: item 2, the leave question alone after a convert with unsaved edits (browser at about 1536 px).
+- `lead-convert-stay-reloaded-converted-light.png`: after "Stay": no Convert button, the edit kept.
+- `template-heading-rule-focus-1280-light.png`: item 5, the rule line under the heading input, which has focus from the summary link.
+- `template-heading-unknown-375-dark-on-light-os.png`, `template-heading-unknown-1024-light-on-dark-os.png`: an unknown placeholder in the heading, on the heading.
+- `signature-1mb-phone-photo-stored-1280-light.png`: item 1, the 1.37 MB photo stored as a 300 × 400 PNG with the scaled line.
+- `signature-11mb-refused-1280-light.png`, `signature-11mb-refused-375-dark-on-light-os.png`: the 11 MB file refused with the amended line.
+- axe (WCAG 2.2 AA + best practice, moderate and up) run in the page on every changed screen at 375, 768, 1024, 1280 and 1600 in both in-app themes against the opposite OS theme: clean, and no sideways scroll. (Two runs right after a theme switch reported `color-contrast` mid-transition; re-run after 800 ms, clean.) No console errors.
+
+#### Commands (heavy ones through `tools/heavy.sh`)
+- Local setup in this worktree: `pnpm dev:secrets`, `pnpm db:migrate:local`, `pnpm db:seed:local`, `pnpm portal:sample` (local only).
+- Targeted vitest while working: `signature-scale`, `pdf`, `batch-review`, `worker/settings-signature` (43/43), `catalogue` (23/23), `routes/leads` (14/14), `projects` (21/21).
+- `pnpm --filter @techaust/admin exec playwright test -g keyboard` (`.logs/fx3fd-e2e-kbd.log`): 1/1, met 4 boxes.
+- `pnpm --filter @techaust/admin typecheck`: exit 0 (twice).
+- `pnpm --filter @techaust/admin e2e`, first full run (`.logs/fx3fd-e2e-admin.log`): 4 of 6 failed, all on the new project page's `heading-order` (above); after 69825606 (`.logs/fx3fd-e2e-admin2.log`): **6/6 passed in 9.6 min**, record pages visited: lead, client, project, document, catalogue item, template.
+- Full `pnpm test` (`.logs/fx3fd-test.log`): exit 0, no timeouts: core 1,800, db 471, email 128, pdf 340, auth 135, ui 469 (2 skipped), web 510 (17 skipped), portal 630, jobs 528, admin 3,354.
+- `pnpm check` (the one whole-repository lint, last; `.logs/fx3fd-check.log`): exit 0; its 10 warnings and 8 infos are in files I didn't touch (pdf tests, db `reports.test.ts`, web `catalogue.ts`, core `public-text.ts`).
+- Dev server stopped, browser closed; no node, workerd or Chrome process left from this worktree.
+
+#### Not verified
+- Overdue and two-currency figures with real invoices (sample answers injected in the page, `-SAMPLE`); a care plan's and an invoice's record page in the sweep (none in the local database).
+- Safari, Firefox, NVDA, real phones; staging.
+- The Playwright tool wrote its page snapshots to the main checkout's `.playwright-mcp/` (git-ignored).
+
+#### Placeholder lines
+- Changed: `SIGNATURE_COPY.wrongFile` = "Use a PNG or JPEG image up to 10 MB. We store it as a PNG of up to 256 KB." (07-Y amendment, marked through `Y()`). No other new screen text. Sample data: the e2e lead and my local leads, project and notes are labelled "(sample)" / "(e2e sample)" with `@example.test` addresses, local database only.
+
+#### Open questions (lead's call)
+1. With Figures out of the side column, the client Overview's side column no longer sticks from 64rem when the Figures panel shows. Keep (recommended: a sticky column would slide under the panel), or ask for a different desktop arrangement?
+2. `UnsavedChangesGuard` gained an optional `onStay`; only the lead page uses it. Fine as a shared-part change?
