@@ -795,3 +795,47 @@ The "Or (shorter)" alternative now reads "New proposals take their Deliverables 
 
 #### Open questions
 None.
+
+## Re-check of round 3 (reviewer claude-opus-5-5/high, live browser, 2026-10-29 ~05:30–06:20 IST, on 16f967eb): SEND BACK
+- **Verdicts on round 2's re-check findings:** 1–5, 7 and 8 FIXED; 6 PARTLY.
+- **Tests:** admin 3,235 pass, pdf passes, jobs 519 (2 load timeouts while FX-1 ran; they pass when re-run alone), `pnpm check` exit 0.
+- **Live walk:**
+  - the hidden section and its note;
+  - the Send panel's list in words;
+  - Use Catalogue text;
+  - a service added later, with its text appended;
+  - removing a service;
+  - send (the draft's contact pre-ticked);
+  - the PDF stub;
+  - a new version;
+  - the estimates empty state;
+  - the dark load with no flash (dev);
+  - the 44 px skip link;
+  - the chevron at 375.
+
+  axe clean at 1280.
+
+  Shots: `.logs/shots/m5-r3/` (main checkout).
+- **New findings:**
+  - **H1. High (app-wide, older than this task; WCAG 2.4.11):** the sticky top bar (64 px) hides focused controls as you Shift+Tab, because `html` has `scroll-padding-top: auto`. Fix: `scroll-padding-top` = the bar height + a gap, in `app.css`.
+  - **M1. Medium:** "Use Catalogue text" adds a second `**Name**` heading for a service already in the section (`service-fill.ts:283`, `textToFill`, with `appendServices` `:123`). Fix: insert the part into that service's block, assumptions before exclusions.
+  - **M2. Medium (reproduced):** text appended by the server is lost if the person types in that section while the save is in flight (`lib/documents.ts:1040`). Fix: when the server's body starts with the body that was sent, add the server's suffix to the typed text and leave the section dirty.
+  - **M3. Medium:** an append that pushes a section over 6,000 characters fails every later save with 400 (`document-save.ts:270`). Creation can also exceed the limit (`document-draft.ts:181-190`). Fix: skip an append that would pass the limit, name it as a gap, and apply the same rule at creation.
+  - **M4. Medium (visible):** the section note stacks identical "Add the text in Catalogue" links. Use the side panel's layout: each link after its own sentence.
+  - **M5. Medium (visible):** line columns misalign at ≥ 1408 px because the quantity cell sizes to its unit. Fix: one fixed unit width for the whole list.
+  - **L1. Low:** text the person edited is offered again as new (`service-fill.ts:206-209`). Lead: document the limit (no migration).
+  - **L2. Low:** skip `appendServices` when the draft had no services before.
+  - **L3. Low:** compare whole trimmed texts in `appendServices` (`:122`), not a 60-character prefix.
+  - **L4. Low:** a section the person hid and emptied comes back when a service is added. Lead: accept it, and say so in the note's behaviour (document it).
+  - **L5. Low (one-line):** `while (inflight.current) await inflight.current.catch(() => null);` (`editor.tsx:91`).
+  - **L6. Low:** the extra catalogue read still runs on every sections save (`document-save.ts:143`). Compare the gap sections with the stored ones before reading.
+  - **L7. Low (owner's copy, older than this task):** the send email says the proposal "covers scope, timeline…" even when Timeline is hidden. Goes on the 07-Y page.
+- **Not verified:** a production build's first paint; the real PDF and jobs; the portal; NVDA; a full Tab pass; dark at 375 and light at 768; creation over the limit (read, not run); staging CPU.
+
+## Fix round 4 (lead's brief; builder claude-opus-5-5/high)
+- Fix H1, M1–M5, L2, L3, L5 and L6 as described above.
+- Document L1 and L4 in a code comment and in the run file.
+- L7 goes on the 07-Y page (not code).
+- H1 is a one-line CSS change in `apps/admin/src/app.css`; test it with a Shift+Tab pass in the browser at 768.
+- M4 and M5: check them in the browser at 375 and 1408 in both themes, with axe.
+- **Done means:** `pnpm check` and the full `pnpm test` pass, with tests for M1, M2, M3, L2, L3 and L5. Append "### Fix round 4 report".
