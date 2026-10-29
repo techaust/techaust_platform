@@ -1,26 +1,20 @@
 // No new bare "VERIFY WITH CA/LEGAL" tag (FX-3, A4 lead's addition; owner rule 8 of 2026-10-28): a tax or legal note in code says
 // `Researched <date>, <source> (08-C <ID>)` when the register settles it, or `OPEN (08-C <ID>): <question>` when it does not. This test scans
-// apps/, packages/ and scripts/ (applied migrations are never edited, so `migrations/` is left out) and fails on a bare tag in a file that is not
-// below, or on more tags than the file is allowed. The list is the tags whose question has no 08-C row yet (FX-3 builder report): each is retagged
+// apps/, packages/, scripts/, tools/ and .github/ (code, styles, JSON, Markdown, SQL, YAML and shell or PowerShell scripts; applied migrations are
+// never edited, so `packages/db/migrations/` is left out; FX-3 fix round, item 9) and fails on a bare tag in a file that is not below, or on more
+// tags than the file is allowed. The list is the tags whose question has no 08-C row yet (FX-3 builder report): each is retagged
 // once the register has a row, and a stale count fails too, so the list only shrinks.
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const REPO = join(import.meta.dirname, "..", "..", "..");
-const SCANNED = ["apps", "packages", "scripts"];
-const SKIP_DIRS = new Set([
-  "node_modules",
-  "dist",
-  ".wrangler",
-  ".astro",
-  "coverage",
-  "migrations",
-  "generated",
-  "fonts",
-  "brand",
-]);
-const EXTENSIONS = /\.(ts|tsx|mts|mjs|cjs|js|astro|css|json|md)$/;
+const SCANNED = ["apps", "packages", "scripts", "tools", ".github"];
+/** Installed packages, build output and generated files, skipped wherever they sit; below the tops, every folder whose name starts with "." too. */
+const SKIP_DIRS = new Set(["node_modules", "dist", "coverage", "generated", "fonts", "brand"]);
+/** The applied migrations (never edited): skipped by their path only, so a `.sql` file anywhere else is scanned. */
+const SKIP_PATHS = new Set(["packages/db/migrations"]);
+const EXTENSIONS = /\.(ts|tsx|mts|mjs|cjs|js|astro|css|json|md|sql|ya?ml|sh|ps1)$/;
 /** "VERIFY WITH CA", "VERIFY WITH CA/LEGAL", "VERIFY WITH LEGAL", also when a comment breaks the line between the words. */
 const BARE = /VERIFY\s+WITH(?:\s|\/\/|\*)+(?:CA|LEGAL)\b/g;
 const SELF = "packages/core/test/verify-tags.test.ts";
@@ -70,23 +64,32 @@ const NO_ROW_YET: Record<string, { count: number; why: string }> = {
   },
 };
 
+const relOf = (path: string): string => relative(REPO, path).replaceAll("\\", "/");
+
+/** Whether the walk goes into a folder (`rel` its path from the repo root, `name` its own name). */
+const entersDir = (rel: string, name: string): boolean =>
+  !SKIP_DIRS.has(name) && !name.startsWith(".") && !SKIP_PATHS.has(rel);
+
+/** The scanned files below `dir`, relative to the repo root. */
 function* files(dir: string): Generator<string> {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (!SKIP_DIRS.has(entry.name) && !entry.name.startsWith(".")) yield* files(join(dir, entry.name));
-    } else if (EXTENSIONS.test(entry.name)) yield join(dir, entry.name);
+      if (entersDir(relOf(path), entry.name)) yield* files(path);
+    } else if (EXTENSIONS.test(entry.name)) yield relOf(path);
   }
 }
 
+/** Every scanned file, relative to the repo root with forward slashes. */
+const scanned = (): string[] => SCANNED.flatMap((top) => [...files(join(REPO, top))]);
+
 const found = (): Record<string, number> => {
   const out: Record<string, number> = {};
-  for (const top of SCANNED)
-    for (const file of files(join(REPO, top))) {
-      const rel = relative(REPO, file).replaceAll("\\", "/");
-      if (rel === SELF) continue;
-      const n = readFileSync(file, "utf8").match(BARE)?.length ?? 0;
-      if (n > 0) out[rel] = n;
-    }
+  for (const rel of scanned()) {
+    if (rel === SELF) continue;
+    const n = readFileSync(join(REPO, rel), "utf8").match(BARE)?.length ?? 0;
+    if (n > 0) out[rel] = n;
+  }
   return out;
 };
 
@@ -100,6 +103,22 @@ describe("bare VERIFY tags (FX-3)", () => {
     expect(n('expect(part).not.toContain("VERIFY WITH");')).toBe(0);
     expect(n("SITEVERIFY_URL")).toBe(0);
     expect(n("// Researched 2026-10-28, s.12 IGST (08-C RA-12)")).toBe(0);
+  });
+
+  it("FX-3 fix round (item 9): the scan reaches tools/, .github/, SQL, YAML and shell files, and skips only the applied migrations", () => {
+    const all = scanned();
+    for (const want of ["tools/heavy.sh", ".github/workflows/ci.yml", "packages/db/src/triggers.ts"])
+      expect(all, want).toContain(want);
+    expect(all.some((f) => f.startsWith("packages/db/migrations/"))).toBe(false);
+    // the folder rule: the migrations are skipped at their own path only; installed packages and dot folders below the tops never entered
+    expect(entersDir("packages/db/migrations", "migrations")).toBe(false);
+    expect(entersDir("packages/db/src/migrations", "migrations")).toBe(true);
+    expect(entersDir("apps/web/node_modules", "node_modules")).toBe(false);
+    expect(entersDir("apps/web/.wrangler", ".wrangler")).toBe(false);
+    for (const name of ["x.sql", "x.yml", "x.yaml", "x.sh", "x.ps1", "x.ts", "x.md"])
+      expect(EXTENSIONS.test(name), name).toBe(true);
+    for (const name of ["x.png", "x.woff2", "x.pdf", "x.lock"])
+      expect(EXTENSIONS.test(name), name).toBe(false);
   });
 
   it("no file holds a bare tag beyond the list of questions 08-C has no row for yet, and the list is not stale", () => {
