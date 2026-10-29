@@ -382,3 +382,21 @@ Builder: claude-opus-5-5 (high), 2026-10-29 ~11:45–12:30 IST, branch `fix/fx3-
 2. **More than 3 custom sections (existing before this task):** `sectionsFromTemplate` joins custom sections beyond the third into the last one. Several 2,000-character template sections can then make a body over 6,000 at creation. Recommended: the template save refuses a body whose merge would pass the limit.
 3. **Text tokens outside their own sections:** a staff template that puts `{{service.deliverables}}` into Scope, or into a heading, now has that text left out when there is no room, but it is not named (the gaps read only the two service sections). Recommended: a template-save rule that allows the three text tokens only in their own section kinds, once each, and never in a heading. That needs a core change and a template copy line.
 4. **Website leads' answers:** I kept them fixed (409). If the owner wants staff to correct a visitor's answers too, drop the source check: one line in `leads.ts` and its test.
+
+## Lead's answers after round 2 (2026-10-29 ~12:30 IST)
+- **Q1, long titles:** fix it in round 3. When filling a value (`client.name`, `service.name`, …) would take a section title past 120 characters, the token stays unfilled. The send check then names it, and the person writes a shorter title. Every later save keeps working, and nothing is refused at creation.
+- **Q2, merged custom sections:** fix it in round 3. Saving a template refuses one whose sections beyond the third would be joined past 6,000 characters. It answers 400 naming the template sections, with a 07-Y line.
+- **Q3, text tokens outside their own sections:** accepted. Saving a template allows `{{service.deliverables}}` only in a Deliverables section, and `{{service.assumptions}}` and `{{service.exclusions}}` only in Assumptions and exclusions. Anything else is a 400 with a 07-Y line. First check that the seeded templates and every template in local seed data comply.
+- **Q4, website leads:** a visitor's answers stay fixed (they are a record of what the visitor said); staff write corrections in a note. Recorded in docs/13.
+
+## Builder round 3 (lead's brief; builder claude-opus-5-5/high)
+Work on `fix/fx3-b3` from `origin/fix/fx3-admin-portal`, one commit per item:
+1. Q1 above, with tests.
+2. Q2 above, with tests.
+3. Q3 above, with tests.
+4. **Follow-ups the FX-2 reviewer's code-review helper found on `main`** (the M5 owner fixes). Verify each one. Fix it, or write it down as a known limit with the reason if a fix isn't worth it:
+   - `apps/admin/worker/document-draft.ts:~195`: a hidden Scope section stays hidden after the lead's message is appended to it at conversion, so the client never sees the scope;
+   - `apps/jobs/src/browser.ts:~168`: a render refused as `damaged` never adds its browser time to the pacing budget;
+   - `packages/pdf/src/integrity.ts:~359`: streams that aren't Flate get no byte-level check beyond `/Length` → `endstream`. Judge whether out-of-order chunks inside a large non-Flate stream (images) can pass the xref and `/Length` checks; if they can, say so in the run file with the reason, and decide fix or limit.
+
+Then run the full `pnpm test` and `pnpm check` through the queue, and report under "### Builder round 3 report".
