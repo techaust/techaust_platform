@@ -248,3 +248,55 @@ In one commit per item, on `fix/fx4-fix1` from `origin/fix/fx4-invoicing`:
 - **L9:** the test.
 
 Then the full `pnpm test` and `pnpm check` through the queue, and a report here under "Fix round 1 report". The screen items (M1, L2's per-rate table, L3, L8's check) go to the designer with the brief's designer part.
+
+### Fix round 1 report (builder, Opus 5.5 high, 2026-10-29)
+Branch `fix/fx4-fix1` from `origin/fix/fx4-invoicing` (e9b8ef1e). One commit per item: 3869e93f (M2), 6294009a (L1), a1b66fcf (L2), f5e6ddf2 (L4), 069dac71 (L9), plus this report.
+
+**Skills loaded:**
+- `cloudflare:workers-best-practices`: no change came from it. The one Worker change is a read-only field (`issuedAt`) added to the notes view.
+- `cloudflare:wrangler`: nothing to change. No binding, var or config edit.
+- Not loaded: `cloudflare:workers-profiling` (no CPU work; one field on one view), `frontend-design` and `dataviz` (no screens).
+
+**Items:**
+- **M2: audit labels outside ROUTES** (`apps/admin/src/lib/audit.ts`, `audit-labels.test.ts`).
+  - `lead.purge` and `document.expire` take their approved 07-Q words (DASH7, DASH14), unmarked.
+  - `document.view`, `document.accept`, `document.decline` and `offer_link.use` (portal, actor "A client contact") are 07-Y lines, marked.
+  - The test scans every source that can write an audit row through `import.meta.glob(…?raw)`: admin worker, portal worker, jobs, `packages/db/src` and `scripts/*.mjs`, without tests or test helpers. It collects:
+    - `action:` literals and ternaries of literals;
+    - the first dotted literal after each hand-written `INSERT INTO audit_log (…)`.
+  - A non-literal `action:` value must be listed in `DYNAMIC` with every code it can take: `AlertKind`, `retryAction`, the generic settings route, and the two Turnstile actions. A new one fails as "unknown", and a listed one that no longer exists fails as "stale".
+  - Found 90+ codes. Every one has a label.
+- **L1: the Offline Tool claim** (`packages/core/src/gst/sections.ts`, `types.ts`, `apps/admin/src/lib/reports.ts`, 08-C RA-32).
+  - The claim "the Offline Tool would take its tax as nil" is now `OPEN (08-C RA-23)` (untested). The researched part stays researched: 3B Table 3 is auto-filled from GSTR-1.
+  - The warning and the RA-32 row now say its tax "may not come through on import".
+- **L2: words by kind** (`reports.ts` `taxOnlyNoteText`).
+  - A credit note "is a credit note that reduces tax only"; a debit note "is a debit note that adds tax only".
+  - Beyond the brief, my call: a note reported in the **b2cs** file now ends "Ask your CA how to report it." with no table. Our own files put it in B2CS, not 9B, so naming "Table 9B" there would contradict them. cdnr and cdnur keep "… in Table 9B" (the RA-32 question).
+  - The per-rate table is still the designer's.
+- **L4: ledger order** (`apps/admin/worker/note-view.ts`, `src/lib/notes-api.ts`, `src/lib/notes.ts`).
+  - Each ledger row from the API now carries `issuedAt` (`frozen_at`, UTC ms).
+  - `noteLedgerRows` sorts by issue date, then `issuedAt` (missing last), then the number's series (text) and its trailing integer (`/10` after `/9`), then id.
+  - Series first keeps one-day CN and DN rows stable when an older API sends no instant.
+- **L9:** `worker/default-sac.test.ts`. Through `PUT /settings/groups/tax`, `12a456`, five digits, seven digits and a leading space are each 400 `invalid` with `fields` naming `defaultSac`, and the row and its version are unchanged. Six digits save and read back; "" clears.
+
+**Tests:** new or changed tests are in `audit-labels.test.ts` (2 new), `reports.test.ts` (1 new, 2 updated), `notes.test.ts` (1 new), `invoice-notes.test.ts` (`issuedAt` asserted) and `default-sac.test.ts` (1 new).
+
+**Commands and results** (heavy ones through `tools/heavy.sh`):
+- Per-file runs while working: `fx4f1-labels` (6), `fx4f1-reports` (35), `fx4f1-notes` (64), `fx4f1-sac` (6). All green.
+- `fx4f1-test` (`pnpm test`): all green. auth 135, ui 469 (+2 skipped), core 1776, email 128, db 478, pdf 340, web 428 (+16 skipped), portal 621, jobs 526, admin 3268 (was 3263).
+- `fx4f1-check` (`pnpm check`, the one whole-repository lint): exit 0. The typecheck passes in every package. The migration guard counts 53 migrations, none rebuilds. The 10 lint warnings are the same ones as before; none is in a file this round touched.
+
+**Placeholder lines (07-Y, marked until `APPROVED_07Y`)** (they replace or add to the builder report's list):
+1. Audit actions:
+   - `document.view`: "viewed a proposal or estimate"
+   - `document.accept`: "accepted a proposal or estimate"
+   - `document.decline`: "declined a proposal or estimate"
+   - `offer_link.use`: "opened a proposal or estimate from an email link"
+2. The GST warning (replaces line 2 of the earlier list): "{number} (GSTIN {gstin} | unregistered client) is a debit note that adds tax only | is a credit note that reduces tax only. The files show it with a taxable value of 0.00 and no tax column, so its tax may not come through on import. Enter by hand: IGST ₹…, CGST ₹…, SGST ₹…. Ask your CA how to report it in Table 9B." For a B2CS note the last sentence is "Ask your CA how to report it."; the fallback without facts is unchanged.
+
+**Not verified:**
+- Any screen. The designer still has M1, L3, the per-rate table, L8, and switching the ledger to `noteLedgerRows`.
+- Whether a b2cs tax-only note belongs in Table 7 or 9B. That is RA-32's question for the CA. The line no longer names a table for it.
+- The scanner finds codes only in the forms listed above. An action passed through a helper other than `action:`, `auditFirstRow`'s spec or a literal `INSERT INTO audit_log` would not be seen. None exists today.
+
+**Open questions:** none new. The audit filter groups have no "Leads", "Care plans", "Time" or offer-link group yet. That is the designer's audit filter item.
