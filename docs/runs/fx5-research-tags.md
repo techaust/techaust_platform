@@ -231,3 +231,25 @@ Builder claude-opus-5-5/high, 2026-10-30 ~01:55–03:45 IST, branch `fix/fx5-r1`
 5. **Jobs bundle headroom:** 22,710 bytes left of 1,000,000. The next jobs feature likely needs the planned split or a smaller font set.
 6. **Found, not fixed:** the certificate's `.mono` fingerprints ask for IBM Plex Mono, which the PDF fonts don't embed, so they print in the machine's monospace font (Cascadia Mono locally). Recorded in the new gate's comment; a follow-up for the lead.
 7. Terms v2 is added as the next version whatever the owner saved before (only if the due days are 7); if the owner saved their own text on staging, v2 now follows it.
+
+## Early check, void after a portal view (analyst, Opus 5.5 high, 2026-10-30, on 4e428165): CHANGE (copied by the lead)
+Core, the void statement (`viewed_at IS NULL` in the guarded `mutate` statement; refusal writes nothing; 409 `viewed_by_client`) and trigger 0053 (new trigger only, registered in `TRIGGER_SETS`, snapshot and journal correct, no other branch has a 0053) are **GO**. Other writers of `viewed_at`: only the portal invoice GET, `doc-token` and the offers SQL (proposal/estimate only); no bot prefetch can set it; staff only by signing in to the portal as a contact. Credit notes ignore `viewed_at`; registers and statements never read it.
+
+1. **high** `apps/portal/worker/invoices.ts:69-75`, `index.ts:73-99`: the signed-in view is written after the response, in `waitUntil`, in one batch with the session touch and access row, failures only logged. (A) A void landing between the 200 and the background write passes, then `viewed_at` lands on a void document. (B) If that batch fails, the view is never recorded. Fix: the guarded `UPDATE documents SET viewed_at = ?3 WHERE client_id = ?1 AND id = ?2 AND viewed_at IS NULL AND frozen_at IS NOT NULL AND voided_at IS NULL AND status IN (…) AND type IN (…)` as the first statement of the read batch (before `ONE_SQL`, `LINES_SQL`); drop the `c.set("after", …)` for it. Access row and session touch stay in the background.
+2. **medium** `invoices.ts:78-92` (`GET /:id/pdf`): records no view. Fix: the same guarded UPDATE batched before its `ONE_SQL` read. The emailed-link PDF (`doc-token.ts` `/document/pdf`) optional, for parity.
+3. **low** `doc-token.ts:98-113`: the emailed-link view UPDATE has no `voided_at IS NULL` (unreachable today: an emailed document can't be voided). Fix: add it.
+4. **low, tests:** portal (a) `viewed_at` set when the 200 resolves, and a direct void UPDATE then fails with `documents_viewed_no_void`; (b) voided first → GET 404, `viewed_at` stays NULL; (c) the view lands even when the access-row write fails; (d) `GET /:id/pdf` sets `viewed_at`. db `void-view.test.ts`: a viewed proforma refused. Admin: viewed proforma 409 with the proforma line; viewed plus a closed month: `return_period_closed` with both codes in `reasons`.
+5. **low, wording:** RA-10 and the decision row say a credit note corrects it; a proforma has none. Keep the rule (matches "emailed proforma can't be voided"); reword RA-10: "a credit note corrects an invoice; a delivered proforma stays until converted". Start the RA-10 cell with both states: "Our rule: settled by owner decision 2026-10-30 · Source question: OPEN (CA)". The builder's reading of RA-10 (the Table 13 question stays OPEN for the CA) is right.
+
+**Not verified:** no tests run by the analyst (read-only); D1 batch atomicity from the docs and the project's existing race design; whether the portal test runtime waits for `waitUntil`.
+
+## Lead's triage after the early check (2026-10-30)
+All five are fixed in this task (fix round 1, builder): 1, 2 (signed-in PDF and the emailed-link PDF for parity), 3, 4, 5. Docs/13: a lead row clarifying that a viewed proforma stays until converted (the owner's row stays as it is). "Withdraw a delivered proforma" goes to the owner as a question in the morning.
+
+## Fix round 1 brief (lead, 2026-10-30)
+Builder, Opus 5.5 high, Tier A. Branch `fix/fx5-r2` from `origin/fix/fx5-research-tags` (this commit or later); push only that branch.
+- Do the early check's 1–5 as written above, each with the tests in 4. For 1, prove the order in a test: when `exports.default.fetch` resolves, `viewed_at` is already set (don't rely on `waitUntil`).
+- The portal's CPU and rows stay as before apart from one primary-key UPDATE per GET (0 rows after the first view).
+- Docs: RA-10 in 08-C as in 5; one docs/13 row at the end, who: Lead: "A proforma the client has viewed can't be voided either (as for an emailed one); it stays until converted, since a proforma has no credit note. Applies the owner's 2026-10-30 void decision | Lead | 08-C RA-10, `@techaust/core/invoices`".
+- Then the designer step follows (not yours): leave the two Settings screen lines from your report alone.
+- Checks: touched packages' tests (portal, admin void tests, db, core) through the queue, `bash tools/heavy.sh --log fx5r2-check pnpm check`, whole-repository `pnpm lint` last. Append "## Builder report, fix round 1".
