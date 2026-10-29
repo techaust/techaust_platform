@@ -6,7 +6,7 @@ import type { SendInput, SendResult, Transport } from "@techaust/email";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CLAIM_TIMEOUT_MS, emailLogId, processDeadLetter, processEmail } from "../src/email.ts";
 import { processLead } from "../src/leads.ts";
-import { dlqRetryDelay, handleQueue } from "../src/queue.ts";
+import { dlqRetryDelay, emailRetryDelay, handleQueue } from "../src/queue.ts";
 
 const T0 = 1_760_000_000_000;
 const HASH = "a".repeat(64);
@@ -687,6 +687,61 @@ describe("dead-letter queues [FRM-07]", () => {
     );
     expect(thrown.ack).not.toHaveBeenCalled();
     expect(thrown.retry).toHaveBeenCalledWith({ delaySeconds: dlqRetryDelay(2) });
+    vi.restoreAllMocks();
+    quiet.mockRestore();
+  });
+
+  it("FX-1 (A6 4): an SES retry answer and a throw on the email queue come back after 60 s, doubling to 1 hour", async () => {
+    expect([1, 2, 3, 4, 5, 6, 7, 10].map(emailRetryDelay)).toEqual([
+      60, 120, 240, 480, 960, 1_920, 3_600, 3_600,
+    ]);
+    const msg = (to: string, id: string): EmailMessage => ({
+      template: "lead.acknowledgement",
+      to,
+      data: { first_name: "Asha", service_name: "Discovery Sprint", ref: id },
+      entity: { type: "lead", id },
+    });
+    const quiet = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response("down", { status: 503 }));
+    const env = makeEnv({
+      EMAIL_TRANSPORT: "ses",
+      SES_ACCESS_KEY_ID: "AKIATEST",
+      SES_SECRET_ACCESS_KEY: "secret",
+      SES_REGION: "ap-south-1",
+      SES_CONFIGURATION_SET: "set",
+    });
+    for (const attempts of [1, 4, 9]) {
+      const m = msg(`retry${attempts}@example.com`, `L-RET${attempts}`);
+      const delivery = { id: "1", timestamp: new Date(), body: m, attempts, ack: vi.fn(), retry: vi.fn() };
+      await handleQueue(
+        { queue: "techaust-local-email", messages: [delivery] } as unknown as MessageBatch<unknown>,
+        env,
+      );
+      expect(delivery.ack).not.toHaveBeenCalled();
+      expect(delivery.retry).toHaveBeenCalledWith({ delaySeconds: emailRetryDelay(attempts) });
+    }
+    // the catch-all of the email queue uses the same backoff
+    const broken = {
+      ...env,
+      DB: {
+        prepare: () => {
+          throw new Error("d1 down");
+        },
+      },
+    } as unknown as Env;
+    const thrown = {
+      id: "2",
+      timestamp: new Date(),
+      body: msg("t@example.com", "L-THROW"),
+      attempts: 3,
+      ack: vi.fn(),
+      retry: vi.fn(),
+    };
+    await handleQueue(
+      { queue: "techaust-local-email", messages: [thrown] } as unknown as MessageBatch<unknown>,
+      broken,
+    );
+    expect(thrown.retry).toHaveBeenCalledWith({ delaySeconds: emailRetryDelay(3) });
     vi.restoreAllMocks();
     quiet.mockRestore();
   });

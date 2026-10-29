@@ -1,6 +1,6 @@
 // The queue entry point: routes a batch to its consumer by queue name (`techaust-<env>-leads`, `-leads-dlq`, `-email`,
 // `-email-dlq`). Each message is acknowledged on success and retried when its consumer throws or asks for a retry;
-// after 5 tries the queue moves it to the dead-letter queue (wrangler.jsonc).
+// after its queue's `max_retries` (5; the email queue 10, FX-1) the queue moves it to the dead-letter queue (wrangler.jsonc).
 import {
   isBillingKind,
   isInvoiceExpansionKind,
@@ -40,6 +40,16 @@ const isStaffAlert = (body: unknown) =>
  */
 export const dlqRetryDelay = (attempts: number): number =>
   Math.min(4 * 3_600, 300 * 2 ** Math.max(0, attempts - 1));
+
+/**
+ * FX-1 (A6 4): an email that SES answered with a retry (throttling, a 5xx, a network error or the 8 s timeout), or whose consumer threw, comes back after 60 s,
+ * doubling each try up to 1 hour. With the email queue's `max_retries` of 10 (wrangler.jsonc) that rides out about 4 h 45 min of SES trouble before the dead
+ * letter; a fixed 30 s with 5 tries gave up after about 2 minutes.
+ */
+export const EMAIL_RETRY_FIRST_S = 60;
+export const EMAIL_RETRY_MAX_S = 3_600;
+export const emailRetryDelay = (attempts: number): number =>
+  Math.min(EMAIL_RETRY_MAX_S, EMAIL_RETRY_FIRST_S * 2 ** Math.max(0, attempts - 1));
 
 export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promise<void> {
   noteInvocation();
@@ -159,7 +169,7 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         }
       } else if (queue.endsWith("-email")) {
         const result = await processEmail(env, message.body, undefined, undefined, message.attempts);
-        if (result === "retry") message.retry({ delaySeconds: 30 });
+        if (result === "retry") message.retry({ delaySeconds: emailRetryDelay(message.attempts) });
         // Another claim holds the email: come back once that claim would have gone stale (it counts as a try, so a claim
         // that never clears still ends in the dead-letter queue and its alert).
         else if (result === "busy") message.retry({ delaySeconds: CLAIM_TIMEOUT_MS / 1_000 + 30 });
@@ -175,8 +185,13 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         attempts: message.attempts,
         error: e instanceof Error ? e.name : "unknown",
       });
+      // The email queue uses the email backoff here too (FX-1, A6 4); the other queues keep their short one.
       message.retry({
-        delaySeconds: isDlq ? dlqRetryDelay(message.attempts) : Math.min(300, 10 * 2 ** message.attempts),
+        delaySeconds: isDlq
+          ? dlqRetryDelay(message.attempts)
+          : queue.endsWith("-email")
+            ? emailRetryDelay(message.attempts)
+            : Math.min(300, 10 * 2 ** message.attempts),
       });
     }
   }

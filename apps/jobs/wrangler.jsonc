@@ -61,7 +61,7 @@
   // The sent documents' envelopes and PDFs (M4.4): fixed keys docs/<type>/<fy>/<number>-v<version>.{json,pdf}, written once and never
   // overwritten (If-None-Match). The admin Worker binds the same bucket to stream a PDF to staff. Production has no bucket until Phase 7.
   "r2_buckets": [{ "binding": "DOCS", "bucket_name": "techaust-local-docs" }],
-  // Queues (docs/05 §11): one unit of work per message, 5 tries, then the dead-letter queue. max_batch_size is 1 (the
+  // Queues (docs/05 §11): one unit of work per message, 5 tries (the email queue 10, with a 60 s to 1 h backoff in src/queue.ts: FX-1, A6 4), then the dead-letter queue. max_batch_size is 1 (the
   // brief said 5): the Free plan's 10 ms CPU limit applies per invocation, so a batch of five messages could pass it. The web Worker produces to
   // the leads queue; this Worker consumes it and produces to the email queue. The dead-letter consumers have no further
   // queue behind them, so a failed alert is retried with long delays (src/queue.ts) and max_retries is the queue maximum
@@ -96,7 +96,7 @@
         "queue": "techaust-local-email",
         "max_batch_size": 1,
         "max_concurrency": 2,
-        "max_retries": 5,
+        "max_retries": 10,
         "dead_letter_queue": "techaust-local-email-dlq"
       },
       { "queue": "techaust-local-email-dlq", "max_batch_size": 1, "max_retries": 100 }
@@ -173,7 +173,7 @@
             "queue": "techaust-staging-email",
             "max_batch_size": 1,
             "max_concurrency": 2,
-            "max_retries": 5,
+            "max_retries": 10,
             "dead_letter_queue": "techaust-staging-email-dlq"
           },
           { "queue": "techaust-staging-email-dlq", "max_batch_size": 1, "max_retries": 100 }
