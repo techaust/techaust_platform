@@ -11,7 +11,8 @@ export function portOffset(env?: Record<string, string | undefined>): number;
 export function devPort(name: DevServer, offset?: number): number;
 export function localOrigin(name: DevServer, offset?: number): string;
 export function inspectorPort(name: InspectedServer, offset?: number): number;
-export function isPortFree(port: number, host?: string): Promise<boolean>;
+export const PORT_HOSTS: readonly string[];
+export function isPortFree(port: number, hosts?: string | readonly string[]): Promise<boolean>;
 export function freeInspectorPort(
   name: InspectedServer,
   offset?: number,

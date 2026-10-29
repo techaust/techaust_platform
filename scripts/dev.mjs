@@ -2,7 +2,8 @@
 // the admin, portal and web browser-test configs run it:
 //   node ../../scripts/dev.mjs <web | webWorker | webE2e | admin | portal | jobs> [extra arguments…]
 // It runs the package's own binary with this Node (no shell, so it behaves the same on Windows and Linux), in the app's folder,
-// passes Ctrl-C and kill signals on, and exits with the server's exit code. At offset 0 the ports are the ones the scripts used
+// passes kill signals on (Ctrl-C only when it didn't come from a terminal; see forwardedSignals), and exits with the server's exit
+// code. At offset 0 the ports are the ones the scripts used
 // before; a wrangler Worker also gets its own inspector port when that port is free (the Vite apps set theirs in vite.config.ts).
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -19,6 +20,15 @@ export function binFile(appDir, pkg, name) {
   const rel = typeof bin === "string" ? bin : bin?.[name];
   if (!rel) throw new Error(`dev: ${pkg} has no "${name}" binary`);
   return join(dir, rel);
+}
+
+/**
+ * The signals the launcher passes on to the server. SIGTERM and SIGHUP always. SIGINT only without a terminal: Ctrl-C in a terminal
+ * already reaches the server (same process group), and passing it on as well would be a second Ctrl-C, which can make wrangler and
+ * Vite skip stopping workerd cleanly (CLOUD-1 review, finding 11). The launcher still catches SIGINT, so it waits for the server.
+ */
+export function forwardedSignals(fromTerminal) {
+  return fromTerminal ? ["SIGTERM", "SIGHUP"] : ["SIGINT", "SIGTERM", "SIGHUP"];
 }
 
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, "/").split("/").pop())) {
@@ -46,9 +56,10 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, "
     stdio: "inherit",
     env: { ...process.env, ...cmd.env },
   });
+  const forward = forwardedSignals(Boolean(process.stdin.isTTY));
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     process.on(signal, () => {
-      if (child.exitCode === null) child.kill(signal);
+      if (forward.includes(signal) && child.exitCode === null) child.kill(signal);
     });
   }
   child.on("exit", (code, signal) => process.exit(code ?? (signal ? 1 : 0)));

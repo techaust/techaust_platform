@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs without types
-import { binFile } from "../../../scripts/dev.mjs";
+import { binFile, forwardedSignals } from "../../../scripts/dev.mjs";
 import {
   ALLOWED_OFFSETS,
   BASE_PORTS,
@@ -16,6 +16,7 @@ import {
   inspectorPort,
   isPortFree,
   localOrigin,
+  PORT_HOSTS,
   parseOffset,
   portOffset,
   portsOf,
@@ -167,6 +168,41 @@ describe("a taken inspector port falls back to the old automatic choice", () => 
     expect(await isPortFree(port)).toBe(false);
     await new Promise<void>((resolve) => server.close(() => resolve()));
     expect(await isPortFree(port)).toBe(true);
+  });
+  // CLOUD-1 review, finding 10: a port held on IPv6 loopback or on every address is taken too.
+  it("isPortFree checks IPv4 loopback, IPv6 loopback and every address", async () => {
+    expect(PORT_HOSTS).toEqual(["127.0.0.1", "::1", "0.0.0.0"]);
+    for (const host of ["::1", "0.0.0.0"]) {
+      const server = createServer();
+      const listening = await new Promise<boolean>((resolve) => {
+        server.once("error", () => resolve(false));
+        server.listen({ port: 0, host }, () => resolve(true));
+      });
+      if (!listening) continue; // no IPv6 on this machine: nothing can hold a port there
+      const { port } = server.address() as AddressInfo;
+      expect(await isPortFree(port), host).toBe(false);
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      expect(await isPortFree(port), host).toBe(true);
+    }
+  });
+  it("an address this machine doesn't have counts as free there", async () => {
+    // 192.0.2.1 (TEST-NET-1, RFC 5737) is never a local address: listening on it fails with EADDRNOTAVAIL.
+    const server = createServer();
+    await new Promise<void>((resolve) => server.listen({ port: 0, host: "127.0.0.1" }, resolve));
+    const { port } = server.address() as AddressInfo;
+    expect(await isPortFree(port, ["192.0.2.1"])).toBe(true);
+    expect(await isPortFree(port, ["192.0.2.1", "127.0.0.1"])).toBe(false);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+});
+
+// CLOUD-1 review, finding 11: Ctrl-C in a terminal already reaches the server; a second SIGINT can skip workerd's clean-up.
+describe("the launcher passes signals on once", () => {
+  it("from a terminal: SIGTERM and SIGHUP only", () => {
+    expect(forwardedSignals(true)).toEqual(["SIGTERM", "SIGHUP"]);
+  });
+  it("without a terminal (a browser-test web server): SIGINT too", () => {
+    expect(forwardedSignals(false)).toEqual(["SIGINT", "SIGTERM", "SIGHUP"]);
   });
 });
 

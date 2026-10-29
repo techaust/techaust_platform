@@ -72,13 +72,32 @@ export function inspectorPort(name, offset = 0) {
   return INSPECTOR_BASE + INSPECTOR_SLOT[name] + n;
 }
 
-/** Whether nothing listens on a local port yet (tries to listen on it for a moment). */
-export function isPortFree(port, host = "127.0.0.1") {
+/**
+ * The addresses a port must be free on: a program can hold it on IPv4 loopback, IPv6 loopback or every address, and a check on
+ * 127.0.0.1 alone misses the other two (CLOUD-1 review, finding 10).
+ */
+export const PORT_HOSTS = Object.freeze(["127.0.0.1", "::1", "0.0.0.0"]);
+
+/** Errors that mean the address doesn't exist on this machine (no IPv6), so nothing can hold the port there. */
+const NO_SUCH_ADDRESS = new Set(["EADDRNOTAVAIL", "EAFNOSUPPORT"]);
+
+/** Whether nothing listens on a port at one address (tries to listen on it for a moment). */
+function isFreeOn(port, host) {
   return new Promise((resolve) => {
     const server = createServer();
-    server.once("error", () => resolve(false));
+    server.once("error", (e) => resolve(NO_SUCH_ADDRESS.has(/** @type {any} */ (e).code)));
     server.listen({ port, host, exclusive: true }, () => server.close(() => resolve(true)));
   });
+}
+
+/**
+ * Whether nothing listens on a local port yet: free only when it is free on every address of `hosts` (by default IPv4 loopback,
+ * IPv6 loopback and every address), tried one after another.
+ */
+export async function isPortFree(port, hosts = PORT_HOSTS) {
+  for (const host of typeof hosts === "string" ? [hosts] : hosts)
+    if (!(await isFreeOn(port, host))) return false;
+  return true;
 }
 
 /**
