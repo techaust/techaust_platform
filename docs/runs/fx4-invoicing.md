@@ -1,6 +1,6 @@
-Status: open
+Status: PR opened (re-check APPROVE)
 Tier: A
-Usage: builder claude-opus-5-5/high, 5-h 17 → 31 % (skills: cloudflare:workers-best-practices, cloudflare:wrangler); analyst claude-opus-5-5/high, 5-h 31 → 36 % (skills: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:workers-profiling)
+Usage: builder claude-opus-5-5/high, 5-h 17 → 31 % (skills: cloudflare:workers-best-practices, cloudflare:wrangler); analyst claude-opus-5-5/high, 5-h 31 → 36 % (skills: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:workers-profiling); review fix-round designer claude-opus-5-5/high (skills: frontend-design:frontend-design); re-check reviewer claude-opus-5-5/high, 5-h 44 → 52 % (skills: code-review, cloudflare:workers-best-practices, frontend-design:frontend-design); every other FX-4 run is in `node tools/model-audit.mjs 2026-10-29`, all Opus 5.5 high
 
 # FX-4: invoicing fixes from the full audit
 
@@ -690,3 +690,27 @@ Branch `fix/fx4-r1-d` from `origin/fix/fx4-invoicing` (acd6df8a). One commit per
 **Placeholder text:** nothing new. "(estimate)" uses the PDF's word, unmarked like the PDF (docs/13, L4). The `Y()` marks are unchanged. One 07-Y line left the code: the live-client supplier-copy line ("The supplier copy is made after the client's PDF…") can no longer show, so drop it from 07-Y when FX-5 approves the page.
 
 **Open questions:** none.
+
+## Re-check (reviewer claude-opus-5-5/high, live browser, 2026-10-29 ~23:20 to 2026-10-30 ~00:00 IST, on 8ff46dea): APPROVE
+_(Copied by the lead: the reviewer's rules forbid it to commit. Shots: `.logs/shots/fx4-recheck/`, logs `.logs/fx4rc/` in the main checkout.)_
+All 10 findings fixed; no new critical, high or medium finding.
+- **H1, live:** a new custom invoice line prefilled `998313`, cleared and autosaved, reads `sac: null` with `line_sac_missing` line 1; the screen says "Line 1 needs a 6-digit SAC code." and Issue is disabled; `POST /issue` after step-up answers 409 `issue_blocked` with `number: null`; after typing the SAC back the issue gives `TH/INV/2627/0001` (no number used by the refusal). Proposal: the cleared SAC stays null through later autosaves (a tax-engine warning there, as before; the invoice made from it is blocked).
+- **H2, live:** with focus on `#pdf-h` and the PDF made ready in the local D1, after the poll focus stays, the live region and section are the same nodes, one mutation batch ("PDF ready / Fingerprint …"), Tab reaches "Download PDF" with a visible outline.
+- **M1:** "(estimate)" heads on marked proformas (draft and issued, CGST/SGST and IGST) in admin and portal; plain heads when the marker is absent, and on a tax invoice.
+- **M2:** labels added, no `document_send`; the scan finds every written type labelled.
+- **M3:** the LUT list at 1024 is 449/449 px with whole-word breaks; one line at 768 and 1600, a card at 375, both themes.
+- **L1, live in both editors:** "Line discounts" while typing, "Discounts (lines and document)" after the autosave.
+- **L2–L5:** fixed as described; L5 checked live on the client statement at 768.
+- **New, low (informational):** `apps/admin/src/routes/reports/parts.tsx:136` `watchTable` never unobserves a replaced first child; a detached `.dtable` stays watched until the effect cleans up. **Lead keeps it:** one detached node per new read, released on unmount, nothing visible; not worth a round.
+- **Side note (outside FX-4):** the `code-review` helper ran before the checkout and reviewed #111: non-numeric `--usage`/`--running` slip through `tools/agent-slots.mjs`, and the cloud browser limit is 2 where docs/14 says 1. Both went to the CLOUD-1 fix round (lead, 2026-10-30).
+- **Commands:** `pnpm check` exit 0 (53 migrations); `pnpm test` exit 0, no timeouts (admin 3,420, core 1,821, portal 635, jobs 531, web 518, db 478, ui 469, pdf 348, auth 135, email 128); admin and portal builds exit 0: admin front 99,271, admin API 612,169 (38 KB under the 650,000 third-Worker trigger), portal 97,458 bytes.
+- **Sweep:** six screens at 375, 768, 1024 and 1600, both themes and the in-app theme against the OS theme; axe 0 violations; no sideways overflow; reduced motion respected; console errors only from the reviewer's own deliberate calls.
+- **Not verified:** a real PDF render ("ready" simulated in the local D1); a real proforma sealed before FX-4 (simulated by removing the marker in the browser); NVDA; the anonymised client's supplier-copy 409 line live (unit tests only).
+
+## Integration (lead, 2026-10-30)
+- `fix/fx4-r1-b` and `fix/fx4-r1-d` merged; `main` merged twice (FX-3 #110 at acd6df8a, #111 at 8ff46dea, both clean after the per-file resolution recorded above).
+- The re-check's `pnpm check` and `pnpm test` on 8ff46dea are the integration run (the branch hasn't moved since).
+- PR opened with auto-merge.
+
+## Handover
+FX-4 is approved and its PR merges itself once CI passes, then deploys to staging. Next in the audit: **FX-5** (research tags, place of supply and due days, the new terms version, the approval switches and the 07-Y lines, sharp, Noto fonts, the wider VERIFY scan; `docs/runs/fx5-research-tags.md`). FX-5 merges `main` first, after FX-4 lands, and drops the unused 07-Y live-client supplier-copy line (designer's note). Follow-ups kept from FX-4: M6, a tax-only debit note can total paise against the instalment split; the admin API is at 612 KB (third Worker at 650 KB).
