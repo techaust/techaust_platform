@@ -49,7 +49,7 @@ The first session in this environment takes a few minutes longer: the setup scri
 
 ## Part 3. Check it (once, then whenever something looks wrong)
 1. On **https://claude.ai/code**, pick the repository **techaust/techaust_platform**, the branch **main**, and the environment **TecHaust**.
-2. Check the model shown is **Opus 5.5** (the project's settings ask for it).
+2. In the model menu under the message box, choose **Opus 5.5** before sending (the project can't choose it for you). Do this every time you start a session. If you forget, the session's first note says "MODEL IS …, NOT Opus 5.5": stop and tell the lead.
 3. Type: **check cloud setup** and send it.
 4. Claude runs `bash scripts/cloud-check.sh` and answers with a short list. A good result ends with **"cloud check: all passed"**, and shows:
    - `ok - cloud session (CLAUDE_CODE_REMOTE=true)`
@@ -68,7 +68,7 @@ The first session in this environment takes a few minutes longer: the setup scri
 | Piece | Where | What it does |
 |---|---|---|
 | `scripts/cloud-setup.sh` | the environment's setup script, before Claude starts (cloud only, cached) | Node 24.22.2 (checksum pinned) first on PATH, pnpm 12.9.1, Chromium for `@playwright/test` 1.64.1 and for `@playwright/mcp` 0.0.83 in `/opt/ms-playwright`; logs in `/var/log/techaust-setup/` |
-| `scripts/cloud-session-start.sh` | SessionStart hook in `.claude/settings.json` (on startup and resume) | exits at once unless `CLAUDE_CODE_REMOTE=true`; then Node 24 and `PLAYWRIGHT_BROWSERS_PATH` for every Bash command, `pnpm install --frozen-lockfile` (skipped while the lockfile, package files and the script are unchanged), dev secrets, local migrations and seed; log `.logs/cloud-session-start.log` |
+| `scripts/cloud-session-start.sh` | SessionStart hook in `.claude/settings.json` (on startup and resume) | exits at once unless `CLAUDE_CODE_REMOTE=true`; then flags a model other than Opus 5.5 (first in its summary line), Node 24 and `PLAYWRIGHT_BROWSERS_PATH` for every Bash command, `pnpm install --frozen-lockfile` (skipped while the lockfile, package files and the script are unchanged), dev secrets, local migrations and seed; log `.logs/cloud-session-start.log` |
 | `.mcp.json` | loaded by every session in this folder | the `playwright` browser server (headless Chromium, in-memory profile) |
 | `tools/mcp-local-off.mjs` | this PC, once per checkout | keeps that server off here (`disabledMcpjsonServers` in the git-ignored `.claude/settings.local.json`; `--user` writes `~/.claude/settings.json` instead, which covers every worktree); `--check` reports |
 | `scripts/cloud-check.sh` | "check cloud setup" | the report in Part 3 |

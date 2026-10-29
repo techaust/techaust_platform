@@ -118,7 +118,7 @@ The full plan is `docs/14-models-and-usage.md` (owner, 2026-10-29, replacing 202
 - **Never deploy** or touch staging, production, hosted services or secrets; the network doesn't reach Cloudflare anyway.
 - **Before starting any agent**, read [runs/usage-reading.md](docs/runs/usage-reading.md) and run `node tools/agent-slots.mjs` (docs/14 §5).
 - **PRs:** `gh pr …` fails there (GraphQL is blocked), so open the PR with `bash tools/cloud-pr.sh --title … --body-file …`; the local lead turns on auto-merge and Auto-fix.
-- **Model:** Opus 5.5 at high, set by `.claude/settings.json` and the guard hook only (owner, 2026-10-29: no admin lock).
+- **Model:** Opus 5.5 at high (owner, 2026-10-29: no admin lock). The owner picks Opus 5.5 in the menu when starting the session; the project settings hold the effort, the `/model` choices and the agents to it; the SessionStart hook flags any other model ("MODEL IS …, NOT Opus 5.5": stop and tell the owner).
 - **Browser agents use port offsets:** the first `TECHAUST_PORT_OFFSET=0`, the second `TECHAUST_PORT_OFFSET=100` (`scripts/dev-ports.mjs`, docs/14 §4).
 
 ## Stack (pinned exactly; see `docs/05-architecture.md` §2)

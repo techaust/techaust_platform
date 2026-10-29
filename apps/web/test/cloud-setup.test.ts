@@ -131,6 +131,56 @@ describe("the SessionStart hook", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+  // M1: the model check. The cloud path runs here in an empty folder, where every project step fails at once (named in the
+  // summary), so only the model line, the env file and the exit code are read.
+  it.skipIf(!hasBash)(
+    "in a cloud session, a model other than Opus 5.5 leads the summary; Opus 5.5, no model or no input does not",
+    { timeout: 120_000 },
+    () => {
+      const run = (input: string | null) => {
+        const dir = mkdtempSync(join(tmpdir(), "cloud-model-"));
+        try {
+          const envFile = join(dir, "env");
+          writeFileSync(envFile, "");
+          const r = spawnSync(BASH, ["scripts/cloud-session-start.sh"], {
+            cwd: ROOT,
+            env: {
+              ...process.env,
+              CLAUDE_CODE_REMOTE: "true",
+              CLAUDE_ENV_FILE: envFile,
+              CLAUDE_PROJECT_DIR: dir,
+            },
+            input: input ?? undefined,
+            stdio: [input === null ? "ignore" : "pipe", "pipe", "pipe"],
+            encoding: "utf8",
+            timeout: 60_000,
+          });
+          return { ...r, env: readFileSync(envFile, "utf8") };
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      };
+      const start = (model?: string) =>
+        JSON.stringify({ hook_event_name: "SessionStart", source: "startup", ...(model ? { model } : {}) });
+      const other = run(start("claude-sonnet-5-5"));
+      expect(other.status).toBe(0);
+      expect(other.stdout).toMatch(
+        /^MODEL IS claude-sonnet-5-5, NOT Opus 5\.5: stop and tell the owner; cloud session start/,
+      );
+      for (const input of [
+        start("claude-opus-5-5"),
+        start("claude-opus-5-5[1m]"),
+        start(),
+        "",
+        "not json",
+        null,
+      ]) {
+        const r = run(input);
+        expect(r.status, String(input)).toBe(0);
+        expect(r.stdout, String(input)).toMatch(/^cloud session start \(/);
+      }
+    },
+  );
 });
 
 describe("tools/cloud-pr.sh", () => {

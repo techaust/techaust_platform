@@ -3,6 +3,9 @@
 # Claude Code sets CLAUDE_CODE_REMOTE=true there and never on this PC, so here it exits at once and changes nothing.
 #
 # In a cloud session (after scripts/cloud-setup.sh provisioned the VM) it prepares the project, then prints one summary line:
+#   - the model check: the hook's input (stdin JSON) may carry the session's `model`; if it does and it isn't Opus 5.5
+#     (claude-opus-5-5…), the summary line starts with "MODEL IS <x>, NOT Opus 5.5: stop and tell the owner" (SessionStart stdout
+#     reaches Claude as context). No `model` field, empty input or a terminal: no check, never a wait.
 #   - Node 24 (/opt/node24) first on PATH, and PLAYWRIGHT_BROWSERS_PATH, for this script and for every later Bash command
 #     (written to CLAUDE_ENV_FILE)
 #   - `pnpm install --frozen-lockfile`, skipped while a sha256 of pnpm-lock.yaml, every package.json and this script is unchanged
@@ -14,6 +17,9 @@
 
 set -u
 START=$(date +%s)
+# The hook's input, read at once (at most 2 s) and never from a terminal.
+HOOK_INPUT=""
+[ -t 0 ] || HOOK_INPUT="$(timeout 2 cat 2>/dev/null || true)"
 ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$ROOT" || {
   echo "cloud session start: project folder $ROOT not found"
@@ -35,6 +41,14 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
     echo "export COREPACK_ENABLE_DOWNLOAD_PROMPT=0"
   } >>"$CLAUDE_ENV_FILE"
 fi
+
+# The session's model, if the hook was told it (Opus 5.5 only, docs/14). Node reads the JSON; anything unreadable means no check.
+MODEL="$(printf '%s' "$HOOK_INPUT" | node -e 'let s="";process.stdin.on("data",(d)=>{s+=d}).on("end",()=>{try{const m=JSON.parse(s).model;if(typeof m==="string")process.stdout.write(m)}catch{}})' 2>/dev/null || true)"
+MODEL_WARNING=""
+case "$MODEL" in
+  "" | claude-opus-5-5*) ;;
+  *) MODEL_WARNING="MODEL IS $MODEL, NOT Opus 5.5: stop and tell the owner; " ;;
+esac
 
 DONE=()
 FAILED=()
@@ -71,7 +85,7 @@ join() { # items… → "a, b, c"
   for item in "$@"; do out="${out:+$out, }$item"; done
   echo "${out:-none}"
 }
-line="cloud session start ($(($(date +%s) - START)) s): node $(node -v 2>/dev/null || echo missing), pnpm $(pnpm -v 2>/dev/null || echo missing); done: $(join "${DONE[@]}")"
+line="${MODEL_WARNING}cloud session start ($(($(date +%s) - START)) s): node $(node -v 2>/dev/null || echo missing), pnpm $(pnpm -v 2>/dev/null || echo missing); done: $(join "${DONE[@]}")"
 [ "${#FAILED[@]}" -gt 0 ] && line="$line; FAILED: $(join "${FAILED[@]}") (see $LOG)"
 echo "$line"
 exit 0
