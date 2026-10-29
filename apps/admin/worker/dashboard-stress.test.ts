@@ -5,7 +5,7 @@
 import { env } from "cloudflare:workers";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { longSession, mkLog, today } from "./test-care.ts";
-import { call, withDb } from "./test-helpers.ts";
+import { call, pinClock, withDb } from "./test-helpers.ts";
 
 /**
  * One pinned clock for the fixture and the dashboard. The rows read grow with the day of the month (each care plan's current period
@@ -17,7 +17,8 @@ import { call, withDb } from "./test-helpers.ts";
  */
 const PINNED_MS = Date.parse("2025-09-01T06:30:00Z"); // 12:00 IST
 const NOW = String(PINNED_MS);
-const SQL_NOW = `'${new Date(PINNED_MS).toISOString().slice(0, 19).replace("T", " ")}'`;
+/** The same instant as SQL text (UTC), for the fixture's `date(…)` calls. */
+const SQL_NOW = "'2025-09-01 06:30:00'";
 const ROWS_READ_LIMIT = 6_300;
 const WORST_CASE_LIMIT = 8_000;
 /** Set to true to print the per-statement numbers (the test then fails on purpose, which is the only way vitest shows them). */
@@ -107,8 +108,7 @@ function recording(): { db: D1Database; seen: Seen[]; rowsRead: () => number } {
 
 describe("GET /dashboard on the stress fixture", () => {
   beforeAll(() => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(PINNED_MS);
+    pinClock(PINNED_MS);
   });
   afterAll(() => vi.useRealTimers());
 
