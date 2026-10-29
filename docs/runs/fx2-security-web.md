@@ -118,4 +118,64 @@ The API's own message (in `catalogue.ts`) is "The catalogue cannot be published:
 - Phase 7: `deploy-prod.yml` must build the admin and the portal before `check-prod-readiness.mjs` (owner's yes for the workflow change).
 
 ## Designer report
-_(pending)_
+Designer: claude-opus-5-5, high (owner's audit instruction), 2026-10-29 09:55–11:15 IST, branch `fix/fx2-designer` from `origin/fix/fx2-security-web` (b4ffc5af), 6 commits, pushed as `fix/fx2-designer`.
+
+**Skills loaded:**
+- `frontend-design:frontend-design`: loaded first. It set the bar for the small calls in this task: the footer fix keeps the existing ink layout and only fixes the rhythm (no new decoration); the security.txt box reads as a file (hanging indent under each field) instead of a scrolling code block; the publish refusal is a short sentence and a list of what to open, in the admin's plain voice.
+- `cloudflare:web-perf`: for A2 10. Measured requests and bytes from the built pages before and after (below); no Lighthouse or DevTools trace in this run (no Chrome DevTools MCP).
+- Not loaded: `dataviz` (no chart or tile), `cloudflare:workers-best-practices`/`wrangler` (no Worker code or config changed; wrangler only served the build locally).
+
+### Per item
+1. **A2 1, /security `<pre>`.** The security.txt box wraps instead of scrolling (`white-space: pre-wrap; overflow-wrap: anywhere`); each line is a block with a 2ch hanging indent, so a wrapped value sits under its field name. A copy of the box (`innerText`) equals `/.well-known/security.txt` (checked in the browser). Legal `pre` blocks (`LegalBlocks.astro`, unused today) wrap the same way. At 375 px nothing in the box or page scrolls sideways.
+2. **A2 5, landmark names.** Axe found three causes: the table scroll boxes (`role="region"` named like their section, and "Changes" twice), and /pricing's price-list section labelled by the page title like the hero. The scroll boxes are now `role="group"` (still named and focusable for the keyboard, not landmarks; `LegalBlocks.astro`, `ChangeLog.astro`); the price-list section has no label (`pricing.astro`). The builder's stricter axe e2e (moderate, 375 and 1280, both themes) failed 32 tests before and passes now.
+3. **A2 6, apostrophes.** Curly ’ and ‘ ’ in the quote hints, /thanks (h1, meta title, reply, urgent line) and the 404 h1 (`content/forms.ts`, `content/shell.ts`, the test in `forms-m24.test.ts`); docs/07 lines unchanged otherwise. New build check `checkApostrophes` (`scripts/web-dist-checks.mjs`, test in `dist-checks.test.ts`): a straight `'` in visible text, titles or read-out attributes fails the web build (code and `pre` keep theirs). It found exactly the reviewer's 9 hits before the fix and 0 after.
+4. **A2 7, notes at body size.** `Notice.astro` at `--text-body` (16 px) with the 20 px icon centred on the first line.
+5. **A2 10, one stylesheet.** `vite.build.cssCodeSplit: false` plus `build.inlineStylesheets: "never"` (`astro.config.mjs`; the CSP's `style-src 'self'` allows no inline style, and none is emitted).
+   - Before: 37 pages, 31 distinct CSS files (113,924 B raw, 27,569 B gzip in total); per page 2 to 13 render-blocking CSS requests (average 9.6), 6.8 to 14.2 KB gzip per page.
+   - After: 1 file for every page, 117,584 B raw, 16,994 B gzip; 1 request per page, cached for the rest of the visit. First page costs up to about 10 KB gzip more (the 404's 6.8 KB becomes 17 KB), every later page 0. Cloudflare's Brotli will be smaller.
+   - Proof of no cascade change: 148 full-page screenshots (37 pages, 375 and 1280, both themes) were byte-identical before and after the switch (a repeat run of the baseline was identical too, so the method is deterministic). The e2e CSP test (no violation on any page) passes.
+6. **A2 13, founder photo.** `about.astro` takes the headshot through `astro:assets` `<Picture>`: AVIF and WebP at 352/704/1056 px (`sizes="min(22rem, 100vw)"`), width and height from the file, lazy. `site.founderPhoto` is now a file name in `apps/web/src/assets/founder/`; a name with no file fails the build. Checked with a clearly labelled SAMPLE image (grey shapes, "SAMPLE IMAGE, not a real photo") through Astro's no-op image service: markup, 4:5 frame, corner cut and cover crop are right; the sample, the config change and the no-op service were removed before committing. **Blocker for the real photo:** with sharp, the build fails `MissingSharp`: Astro's prerender chunk imports `sharp` from `apps/web`, which doesn't depend on it (it resolves only from `packages/ui` and astro's own folder). See open questions. Today's build is unaffected (no photo, so no image is processed).
+7. **A2 14, footer rows.** Every footer link's first line now sits at the same depth in its 44 px row (`display: block`, padding = (44 px − line) / 2), so one-line and two-line names line up across columns and keep one rhythm. Measured first-link text tops per column: identical at 768, 1280 and 1600 in both themes (before: about 6 px apart at 1280). At 375 the columns pair up and each pair matches.
+8. **Admin Publish: `public_text_refused`.** `apps/admin/src/lib/publish-text.ts` (new) reads the 400's `fields` (checked at runtime; `api.ts` unchanged) and groups them by what to open: each service (code and name, linked to its page, or to a search when the on-site list lacks it), then Settings › Payment terms, then any unknown path (no link). One line per field and rule, in the entry form's words. `routes/catalogue/publish.tsx` shows it in the existing error notice (focus moves to it; Tab reaches the first link); `catalogue.css` adds `.pub-fix__lines`. The refused text itself is never shown (the API never sends it). Tests: `src/lib/publish-text.test.ts` (4). Checked in the running admin with a local sample owner and local-only sample edits ("&" in S5 and S8 names, "best-in-class" in S8, a typed amount in an S11 line, "Guaranteed" in a build-schedule label): axe 0 violations on the panel in light and dark; keyboard path works.
+
+### Placeholder lines for the owner's page 07-Y
+Every line below shows "[Placeholder] " on screen until the owner approves 07-Y; then `APPROVED_07Y_PUBLISH` in `apps/admin/src/lib/publish-text.ts` turns true (the 07-X pattern). Recommended wording:
+1. Above the list: "The prices can't be published: some text the website would show breaks its content rules. Fix the fields listed below."
+2. "{field}: uses "&". Write "and"."
+3. "{field}: uses "{phrase}", which the website never says." ({phrase} is the banned phrase's id from 07 §1.3, such as "guarantee" or "best-in-class".)
+4. "{field}: types an amount of money. The website takes prices only from the price fields."
+5. Field names: "Name", "Unit", "Payment schedule, step {n}", "Line {n} description", "Line {n} unit"; for the payment terms "Build schedule, instalment {n}"; for a path the screen doesn't know "Field {path}", and for a rule it doesn't know "breaks a content rule."
+The group headings reuse approved words (the service's code and name; "Settings › Payment terms").
+
+### Files
+- Website: `apps/web/astro.config.mjs`, `src/pages/{security,pricing,about}.astro`, `src/components/{Notice,SiteFooter}.astro`, `src/components/legal/{LegalBlocks,ChangeLog}.astro`, `src/content/{forms,shell}.ts`, `src/config/site.ts` (headshot comment), `test/{dist-checks,forms-m24}.test.ts`, `scripts/web-dist-checks.mjs`.
+- Admin: `apps/admin/src/lib/publish-text.ts` (new), `src/lib/publish-text.test.ts` (new), `src/routes/catalogue/publish.tsx`, `src/catalogue.css`.
+
+### Screenshots (`.logs/shots/fx2-designer/`, worktree)
+- `css-base/`, `css-one/`: 148 full pages each, before and after the single stylesheet (byte-identical); `after/`: the same 148 after all fixes (footer, notices, apostrophes, /security differ as intended).
+- `final/`: the changed parts at 375, 768, 1280 and 1600, light and dark: `footer-*` (rows aligned), `security-txt-*` and `security-top-*` (wrapped file, hanging lines), `notice-*`, `notice-how-*` (16 px notes), `quote-step1-*` (curly hint), `thanks-*`, `404-*`, `pricing-list-*`, `privacy-table-*` (unchanged look, now a group); `security-txt-375-light-viewport.png` (the box in its page at 375).
+- `before-footer-1280-light.png`: the misaligned rows before the fix.
+- `about-headshot-SAMPLE-1280-light.png`: the headshot frame with the labelled SAMPLE image (not committed).
+- `admin-publish-refused-{375,1280}-light.png`, `admin-publish-refused-{375,1600}-dark.png`, `admin-publish-refused-768-light-focus.png` (focus on the first link).
+
+### Commands and results
+- `pnpm install --frozen-lockfile --offline`, `pnpm dev:secrets`: ok.
+- `bash tools/heavy.sh --log fx2d-web-build-* pnpm --filter @techaust/web build` (5 builds): exit 0 each (the sample-headshot build failed on `MissingSharp` as described, then reverted).
+- `bash tools/heavy.sh --log fx2d-axe-before pnpm --filter @techaust/web exec playwright test e2e/axe.spec.ts`: before the fixes 32 failed (landmark-unique ×30, scrollable-region-focusable ×2), 117 passed.
+- `bash tools/heavy.sh --log fx2d-e2e pnpm --filter @techaust/web e2e`: **175 passed** (axe moderate+ at 1280 and 375 both themes, keyboard, CLS < 0.01, no CSP violation, forms); after the last /security change `-g security`: 9 passed.
+- axe (moderate and above) at 768 and 1600, both themes, every page (a local Playwright script on the built site): 148 runs, 0 problems, no page scrolls sideways.
+- `bash tools/heavy.sh --log fx2d-test pnpm test` (after a fresh web build): two runs each hit one 5 s timeout in a file this task didn't touch (`packages/db/test/billing-sql.test.ts` grid test, then `apps/web/test/model-guard.test.ts`, which spawns a process per case), each passing on the next run. Final green counts: auth 135, ui 469 (+2 skipped), core 1,777, email 128, db 452, pdf 340 (full run 2); web 515, portal 628, jobs 519, admin 3,259 (package runs).
+- `bash tools/heavy.sh --log fx2d-check pnpm check` (the one whole-repository lint): exit 0 (10 lint warnings, all in files this task didn't change).
+- `pnpm exec biome check` on every changed file: clean.
+
+### Not verified
+- Lighthouse and a DevTools performance trace (no tool here); the stylesheet change is measured by requests and bytes only.
+- The real headshot through sharp (blocked, see below); AVIF/WebP output not seen.
+- Safari, Firefox, NVDA; staging.
+- The admin screen's in-app theme against the OS theme: the dark shots are a dark app on a light OS (correct); a light app on a dark OS was not shot.
+- Email copy: `packages/email` still writes "We'll reply…" with a straight apostrophe (plain text and HTML acknowledgement); not a website page, left alone.
+
+### Open questions
+1. **sharp for the headshot (owner's yes, no download):** add `"sharp": "0.35.5"` (already in the lockfile, used by `packages/ui` and astro's optional dependency) to `apps/web` devDependencies, so the build can convert the photo when it arrives. Until then a set `site.founderPhoto` fails the build with `MissingSharp`. Recommended before the owner supplies the photo.
+2. The admin publish lines above go on 07-Y.
+3. The two flaky timeouts (db care grid test, web model-guard test) run near 5 s on this machine under load; the lead may want a longer timeout on them (not this task's files).
