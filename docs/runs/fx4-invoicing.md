@@ -398,3 +398,24 @@ Words used that were already approved: "SAC" (the details dialog's label), "Rate
    - Then a short designer round.
 2. **A5 3 as two rows?** I named the one row by its source (the finding's own alternative). Two rows ("Line discounts", "Document discount") need the views' totals to carry `lineDiscountMinor` and `documentDiscountMinor`; the computed document already has them per line, and the sum is server work. Keep the label (recommended for this task), or a builder round?
 3. **The DataTable at 1024 in narrow columns.** The `.dtable` scroll region is FX-3's (A3 1). I only made the LUT list fit; other narrow-column tables may still run into the page padding.
+
+## Lead's answers after the designer (2026-10-29 ~14:10 IST)
+1. **A5 5:** go with the sealed marker.
+   - The proforma issue path writes `proforma.gstEstimate: true` into the sealed header (`header_extras`) of every proforma issued from now on.
+   - The PDF, the admin view and the portal view label the tax heads "(estimate)" only where the marker is present.
+   - Frozen proformas print exactly as before.
+2. **A5 3:** keep the named single row ("Document discount" / "Line discounts" / "Discounts (lines and document)"). It is accurate, and splitting the figure needs no tax-engine change worth making now.
+3. **Narrow tables at 1024:** FX-3's `.dtable` scroll regions cover the general case. The final sweep checks them.
+
+## Builder round 2 (lead's brief; builder claude-opus-5-5/high)
+On `fix/fx4-b2` from `origin/fix/fx4-invoicing`:
+- **A5 5, the data side.** The marker goes into the proforma issue batch (`packages/db/src/issue.ts`, wherever the proforma `header_extras` are frozen and sealed). It is part of the seal, so a tampered marker fails the seal check like any other sealed field.
+  - Expose it on the invoice view (`invoice-view.ts`) and the portal's invoice view (`apps/portal/worker/invoice-summary.ts` / `invoices.ts`).
+  - Pass it into the PDF envelope (`packages/pdf` proforma layout input), so the label can be drawn. Jobs refuses a tampered envelope as it does today.
+  - Draw the words in the PDF layout as "(estimate)" after each tax head label, marked as 07-Y copy (unmarked in the PDF, like every PDF line).
+  - Tests:
+    - a new proforma carries the marker;
+    - an old one doesn't;
+    - the seal covers it;
+    - the PDF HTML shows "(estimate)" only with the marker.
+- Run the full `pnpm test` and `pnpm check`. Report under "### Builder round 2 report". The admin and portal screen labels then go to a short designer round (or the final sweep's fix task).
