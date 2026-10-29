@@ -234,12 +234,36 @@ function LeadView({
   // Where the focus goes once a save or a cancel has taken away the control that had it (fix round 2, D): the control that opened
   // the form, or the panel's heading. Taken as soon as that element is on the page (after the reload for one that only the new copy
   // shows, such as Linked records after a convert).
-  const focusAfter = useRef<(() => HTMLElement | null) | null>(null);
+  // A waiting target lapses once the person has moved the focus somewhere themselves (fix round 3, 5): a key or a pointer pressed
+  // since it was set, and the focus now on an element other than the page itself. A focus the code moves meanwhile (a dialog handing
+  // it back to its opener as it closes) doesn't count, so Linked records still takes it after a convert.
+  const focusAfter = useRef<{ target: () => HTMLElement | null; acted: boolean } | null>(null);
   function focusLater(target: string | (() => HTMLElement | null)) {
-    focusAfter.current = typeof target === "string" ? () => document.getElementById(target) : target;
+    focusAfter.current = {
+      target: typeof target === "string" ? () => document.getElementById(target) : target,
+      acted: false,
+    };
   }
   useEffect(() => {
-    const el = focusAfter.current?.();
+    const acted = () => {
+      if (focusAfter.current) focusAfter.current.acted = true;
+    };
+    document.addEventListener("keydown", acted, true);
+    document.addEventListener("pointerdown", acted, true);
+    return () => {
+      document.removeEventListener("keydown", acted, true);
+      document.removeEventListener("pointerdown", acted, true);
+    };
+  }, []);
+  useEffect(() => {
+    const waiting = focusAfter.current;
+    if (!waiting) return;
+    const active = document.activeElement;
+    if (waiting.acted && active && active !== document.body) {
+      focusAfter.current = null;
+      return;
+    }
+    const el = waiting.target();
     if (!el) return;
     focusAfter.current = null;
     el.focus();
