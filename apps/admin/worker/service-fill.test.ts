@@ -9,6 +9,7 @@ import {
   emptyServiceTokens,
   filledBody,
   fillServiceTokens,
+  fitFirstService,
   fits,
   gapInputsChanged,
   type ServiceFacts,
@@ -610,5 +611,123 @@ describe("round 4, M3: an addition that would pass a length limit is left out an
     expect(body.length).toBeLessThanOrEqual(SECTION_BODY_MAX);
     expect(body).toContain("**Beta**");
     expect(body).not.toContain("**Gamma**");
+  });
+});
+
+describe("FX-3 round 2: the first service's own template fill keeps to the limits, leaves out and names [ADM-PROP-02]", () => {
+  const long = (n: number, c = "x") => c.repeat(n);
+  // A staff-edited template: about 2,000 characters of its own words around both tokens; both Catalogue texts at their 2,500 limit.
+  const words = long(1950, "t");
+  const aexTemplate = `${words}\n\n{{service.assumptions}}\n\n{{service.exclusions}}\n\nEnd.`;
+  const first = svc({
+    deliverables_md: "A delivers",
+    assumptions_md: long(2500, "a"),
+    exclusions_md: long(2500, "e"),
+  });
+
+  it("the section with no room keeps the template's words without the texts; the other section is filled; both parts are named noRoom", () => {
+    const sections = [
+      sec("deliverables", "{{service.deliverables}}"),
+      sec("assumptions_exclusions", aexTemplate),
+    ];
+    const out = fillServiceTokens(sections, [first], null);
+    expect(out[0]?.bodyMd).toBe("A delivers");
+    expect(out[1]?.bodyMd).toBe(`${words}\n\nEnd.`);
+    expect(out[1]?.hidden).toBe(false);
+    for (const s of out) expect((s.bodyMd ?? "").length).toBeLessThanOrEqual(SECTION_BODY_MAX);
+    const gaps = catalogueGaps(out, [first], CREATED);
+    expect(gaps.map((g) => [g.field, g.noRoom, g.catalogueHasTextNow])).toEqual([
+      ["assumptions", true, false],
+      ["exclusions", true, false],
+    ]);
+    // "Use Catalogue text" has nothing it may add
+    expect(filledBody(out[1] as ReturnType<typeof sec>, [first], CREATED, textLength(out))).toBeNull();
+  });
+
+  it("a text that fits is put in as the template says (as before)", () => {
+    const small = svc({ assumptions_md: "A assumes", exclusions_md: "A excludes" });
+    const out = fillServiceTokens([sec("assumptions_exclusions", aexTemplate)], [small], null);
+    expect(out[0]?.bodyMd).toBe(`${words}\n\nA assumes\n\nA excludes\n\nEnd.`);
+    expect(catalogueGaps(out, [small], CREATED)).toEqual([]);
+  });
+
+  it("a repeated token that would pass 6,000 puts the text in once, by the block rule; nothing is named", () => {
+    const d = svc({ deliverables_md: long(2500, "d") });
+    const tpl = "{{service.deliverables}}\n\n{{service.deliverables}}\n\n{{service.deliverables}}";
+    const out = fillServiceTokens([sec("deliverables", tpl)], [d], null);
+    expect(out[0]?.bodyMd).toBe(long(2500, "d"));
+    expect(catalogueGaps(out, [d], CREATED)).toEqual([]);
+  });
+
+  it("only the parts whose tokens the template held go in by the block rule", () => {
+    // the template holds the assumptions token twice and never the exclusions one
+    const s = svc({ assumptions_md: long(2500, "a"), exclusions_md: "Never here" });
+    const tpl = `${long(1000, "t")}\n{{service.assumptions}}\n{{service.assumptions}}`;
+    const out = fillServiceTokens([sec("assumptions_exclusions", tpl)], [s], null);
+    expect(out[0]?.bodyMd).toBe(`${long(1000, "t")}\n${long(2500, "a")}`);
+  });
+
+  it("the document's 30,000 characters: a section left with no text is hidden and named", () => {
+    const filler = Array.from({ length: 5 }, (_, n) =>
+      sec(`custom${n}`, long(SECTION_BODY_MAX - 10), false, `c${n}`),
+    );
+    const d = svc({ deliverables_md: long(100, "d") });
+    const out = fillServiceTokens([...filler, sec("deliverables", "{{service.deliverables}}")], [d], null);
+    expect(out[5]?.bodyMd).toBeNull();
+    expect(out[5]?.hidden).toBe(true);
+    expect(textLength(out)).toBeLessThanOrEqual(SECTIONS_TOTAL_MAX);
+    expect(catalogueGaps(out, [d], CREATED).map((g) => [g.field, g.noRoom])).toEqual([
+      ["deliverables", true],
+    ]);
+  });
+
+  it("the first service comes before the later ones; a later service that fits still gets its block", () => {
+    const b = svc({ id: "i2", code: "S2", name: "Beta", exclusions_md: "B excludes" });
+    const out = fillServiceTokens([sec("assumptions_exclusions", aexTemplate)], [first, b], null);
+    expect(out[0]?.bodyMd).toBe(`${words}\n\nEnd.\n\n**Beta**\nB excludes`);
+    const gaps = catalogueGaps(out, [first, b], CREATED);
+    expect(gaps.filter((g) => g.noRoom).map((g) => [g.serviceCode, g.field])).toEqual([
+      ["S1", "assumptions"],
+      ["S1", "exclusions"],
+    ]);
+  });
+
+  it("a section title that would pass 120 characters takes the title without the text", () => {
+    const d = svc({ deliverables_md: long(200, "d") });
+    const out = fillServiceTokens(
+      [{ ...sec("deliverables", "{{service.deliverables}}"), title: "What {{service.deliverables}}" }],
+      [d],
+      null,
+    );
+    expect(out[0]?.title).toBe("What");
+    expect(out[0]?.bodyMd).toBe(long(200, "d"));
+  });
+
+  it("a section of another kind is kept within the limit too (left out, not named: the gaps read only the two service sections)", () => {
+    const d = svc({ deliverables_md: long(2500, "d") });
+    const tpl = `${long(1900, "s")}\n{{service.deliverables}}\n{{service.deliverables}}`;
+    const out = fillServiceTokens([sec("scope", tpl)], [d], null);
+    expect(out[0]?.bodyMd).toBe(long(1900, "s"));
+    expect(catalogueGaps(out, [d], CREATED)).toEqual([]);
+  });
+
+  it("fitFirstService: no service gives the full render; a row with no text token is passed through", () => {
+    const row = {
+      kind: "scope",
+      raw: "x",
+      full: { title: "t", bodyMd: "x" },
+      bare: { title: "t", bodyMd: "x" },
+    };
+    expect(fitFirstService([row], [])).toEqual([{ title: "t", bodyMd: "x", leftOut: false }]);
+    expect(fitFirstService([row], [first])).toEqual([{ title: "t", bodyMd: "x", leftOut: false }]);
+  });
+
+  it("the person's edit is still not named (L1): a block that holds one of the parts, or none while they would fit", () => {
+    const s = svc({ assumptions_md: long(2500, "a"), exclusions_md: long(2500, "e") });
+    // the first service's opening holds its exclusions, not its assumptions, and the section has no room for them: the person's edit
+    const holdsOne = [sec("assumptions_exclusions", `${long(3000, "p")}\n${long(2500, "e")}`)];
+    expect(catalogueGaps(holdsOne, [s], CREATED)).toEqual([]);
+    // the opening holds none of them, and they would fit: the person took them out
+    expect(catalogueGaps([sec("assumptions_exclusions", "Our own words")], [s], CREATED)).toEqual([]);
   });
 });

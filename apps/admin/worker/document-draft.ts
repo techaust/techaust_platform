@@ -34,7 +34,14 @@ import {
   TOO_MANY_LINES,
   taxContext,
 } from "./quote-model.ts";
-import { appendServices, autoHides, emptyServiceTokens, serviceData } from "./service-fill.ts";
+import {
+  appendServices,
+  autoHides,
+  emptyServiceTokens,
+  fitFirstService,
+  serviceData,
+  withoutTexts,
+} from "./service-fill.ts";
 
 /** What a draft needs to know of its client: for the lead convert the client does not exist yet, so this is not a database row. */
 export type ClientFacts = {
@@ -163,13 +170,38 @@ export async function buildNewDraft(i: NewDraftInput): Promise<NewDraft> {
   // A service with no text for a token makes it EMPTY (taken out, section hidden); no service at all leaves it UNKNOWN (kept, filled by the
   // save that adds the first service line). See service-fill.ts.
   const empty = emptyServiceTokens(first ?? null);
-  const rendered = tpl ? renderTemplateBody(tpl, data, { empty }).sections : [];
+  const full = sectionsFromTemplate(tpl ? renderTemplateBody(tpl, data, { empty }).sections : []);
   const emptiedKeys = new Set(
     (tpl?.sections ?? [])
       .filter((s) => placeholdersOf(`${s.heading}\n${s.body}`).some((n) => empty.has(n)))
       .map((s) => s.key),
   );
-  const drafts = sectionsFromTemplate(rendered);
+  // The first service's own fill keeps to the limits too (FX-3 round 2): a section with no room for its Catalogue text keeps the
+  // template's text without it, and the gaps name what was left out (`fitFirstService`). The three renders give the same sections in the
+  // same order (`sectionsFromTemplate` places them by key alone); `raw` tells which text tokens a section's template held.
+  const bare = withoutTexts(data, empty);
+  const bareDrafts = sectionsFromTemplate(
+    tpl ? renderTemplateBody(tpl, bare.data, { empty: bare.empty }).sections : [],
+  );
+  const raw = sectionsFromTemplate(
+    (tpl?.sections ?? []).map((s) => ({ key: s.key, heading: s.heading, text: s.body })),
+  );
+  const fitted = first
+    ? fitFirstService(
+        full.map((f, n) => ({
+          kind: f.kind,
+          raw: raw[n]?.bodyMd ?? null,
+          full: f,
+          bare: bareDrafts[n] ?? f,
+        })),
+        i.services.map((s) => s.item),
+      )
+    : full.map((f) => ({ ...f, leftOut: false }));
+  const drafts = full.map((f, n) => {
+    const x = fitted[n] ?? { ...f, leftOut: false };
+    return { kind: f.kind, title: x.title, bodyMd: x.bodyMd, hidden: f.hidden };
+  });
+  const leftOut = new Set(fitted.flatMap((x, n) => (x.leftOut ? [n] : [])));
   // The other services' texts go in under their names by the one rule of a later save (`appendServices`, the block rule): a text the
   // service's own block already holds is not repeated (the same line in another service's block never counts: round 5), and one that would
   // pass a section's length limit or the document's is left out of that section and named as a gap (round 4, M3: never a draft every later
@@ -189,10 +221,13 @@ export async function buildNewDraft(i: NewDraftInput): Promise<NewDraft> {
     const at = sections.find((s) => s.kind === kind);
     if (at) at.bodyMd = at.bodyMd ? `${at.bodyMd}\n\n${text}` : text;
   };
-  // A section whose template text was only empty tokens and that no service filled is created hidden.
+  // A section whose template text was only empty tokens and that no service filled is created hidden, and so is one left with no text
+  // when the first service's Catalogue text had no room in it (FX-3 round 2; the gaps name it).
   // Never a required section (estimate, terms, acceptance): it stays shown, and the send check asks for its text (lead, 2026-10-29).
-  for (const s of sections)
-    if (s.bodyMd === null && emptiedKeys.has(s.kind) && autoHides(s.kind)) s.hidden = true;
+  sections.forEach((s, n) => {
+    if (s.bodyMd === null && (emptiedKeys.has(s.kind) || leftOut.has(n)) && autoHides(s.kind))
+      s.hidden = true;
+  });
   if (i.leadMessage) {
     if (sections.some((s) => s.kind === "scope")) append("scope", i.leadMessage);
     // No scope section in the template (or no template): what the lead wrote is the scope, under the service's name (the M3.2 behaviour).

@@ -19,8 +19,13 @@
 //   - a section the person hid AND emptied reads the same as one hidden for having no text: a service added later shows it with its text;
 //   - the unheaded opening goes with the FIRST service in line order: once the lines are reordered so that another service with no heading
 //     of its own comes first, the opening is that service's, and the service whose text it holds has no block there;
-//   - a part left out for room (M3) is named only while its service has no block in the section (services are left out whole); a part
-//     missing from a block the service has is the person's edit, named only once the Catalogue row changes (L1);
+//   - a part left out for room (M3) is named while its service has no block in the section, or, for the draft's first service, while its
+//     unheaded opening holds none of the section's parts (services are left out whole; the first service, left out of its own template
+//     fill, keeps the template's words as its opening: FX-3 round 2). Any other part missing from a block is the person's edit, named only
+//     once the Catalogue row changes (L1). The first service's parts deleted by the person from its opening, in a section with no room for
+//     them, read as left out and are named too;
+//   - the first service's Catalogue text left out of a section of another kind (a staff template that puts `{{service.deliverables}}` into
+//     Scope, say) or out of a section title is not named: the gaps read only the Deliverables and Assumptions and exclusions sections;
 //   - the reads (gaps, "Use Catalogue text") know only the services on the lines: the block of a service taken off the lines runs on as
 //     part of the block above it until its text is removed;
 //   - a save puts the services the draft had before the ones it adds, while the reads take line order (round 5 re-check, L3): a service
@@ -32,13 +37,19 @@
 //     added) puts nothing in: the text there is taken as the person's own, by the round 4 L2 rule.
 // Pure: no I/O. The Worker budget forbids `import()`; everything here is static.
 import { placeholdersOf, renderTemplate } from "@techaust/core/catalogue";
-import { REQUIRED_SECTIONS, SECTION_BODY_MAX, SECTIONS_TOTAL_MAX } from "@techaust/core/documents";
+import {
+  REQUIRED_SECTIONS,
+  SECTION_BODY_MAX,
+  SECTION_TITLE_MAX,
+  SECTIONS_TOTAL_MAX,
+} from "@techaust/core/documents";
 import { type ItemRow, lineName } from "./quote-model.ts";
 import {
   type BlockService,
   hasBlock,
   holdsText,
   insertParts,
+  ownsOpening,
   type ParsedBlocks,
   parseBlocks,
 } from "./service-blocks.ts";
@@ -133,6 +144,73 @@ const putIn = (
     others,
   );
 
+/** The `service.*` tokens that carry a service's Catalogue text: the ones whose value can be long (up to 2,500 characters each). */
+export const TEXT_TOKENS = ["service.deliverables", "service.assumptions", "service.exclusions"] as const;
+const TOKEN_FIELD: Record<(typeof TEXT_TOKENS)[number], GapField> = {
+  "service.deliverables": "deliverables",
+  "service.assumptions": "assumptions",
+  "service.exclusions": "exclusions",
+};
+
+/** Template data without the Catalogue texts, and the empty set with them: the render that leaves the first service's texts out. */
+export function withoutTexts<V>(
+  data: Readonly<Record<string, V>>,
+  empty: ReadonlySet<string>,
+): { data: Record<string, V>; empty: Set<string> } {
+  const out: Record<string, V> = { ...data };
+  for (const t of TEXT_TOKENS) delete out[t];
+  return { data: out, empty: new Set([...empty, ...TEXT_TOKENS]) };
+}
+
+type Rendered = { title: string | null; bodyMd: string | null };
+
+/**
+ * One section of the first service's own template fill: its kind, its text before the fill (`raw`, for the tokens it holds), and the
+ * section rendered twice: `full` with the service's Catalogue texts, `bare` with them taken out (their lines too, as for an empty text).
+ */
+export type FirstFill = { kind: string; raw: string | null; full: Rendered; bare: Rendered };
+
+/**
+ * The first service's own template fill, by the leave-out-and-name rule the services added after it get (round 4, M3; FX-3 round 2):
+ *   - in section order, a section takes `full` while its text stays within SECTION_BODY_MAX and the document within SECTIONS_TOTAL_MAX,
+ *     counted with every section `bare` (so the order decides, as it does for the services added after it);
+ *   - a section with no room for it takes `bare`. A Deliverables or Assumptions and exclusions section then gets the service's parts its
+ *     template held put in once, by the block rule, when that fits (a repeated token, or the token's own line, can make `full` the longer
+ *     text). The gaps count the room the same way, so whatever is left out of such a section is named (`noRoom`);
+ *   - a title that would pass SECTION_TITLE_MAX takes its `bare` title.
+ * Never a refusal. `leftOut`: the section's Catalogue text was left out, whole (a section left with no text is hidden like an empty one).
+ */
+export function fitFirstService(
+  rows: readonly FirstFill[],
+  services: readonly ServiceFacts[],
+): (Rendered & { leftOut: boolean })[] {
+  const first = services[0];
+  if (!first) return rows.map((r) => ({ ...r.full, leftOut: false }));
+  const all = asBlocks(services);
+  let total = textLength(rows.map((r) => r.bare));
+  return rows.map((r) => {
+    const title =
+      r.full.title !== null && r.full.title.length > SECTION_TITLE_MAX ? r.bare.title : r.full.title;
+    const before = r.bare.bodyMd;
+    const take = (bodyMd: string | null, leftOut: boolean) => {
+      total += (bodyMd?.length ?? 0) - (before?.length ?? 0);
+      return { title, bodyMd, leftOut };
+    };
+    if (r.full.bodyMd === before) return take(before, false);
+    if (fits(before, r.full.bodyMd ?? "", total)) return take(r.full.bodyMd, false);
+    if (isGapKind(r.kind)) {
+      const held = new Set(r.raw === null ? [] : placeholdersOf(r.raw));
+      const fields = new Set(TEXT_TOKENS.filter((t) => held.has(t)).map((t) => TOKEN_FIELD[t]));
+      const parts = partsOf(r.kind, first).filter((p) => fields.has(p.field));
+      if (parts.length > 0) {
+        const next = putIn(before, all, first, parts, []);
+        if (fits(before, next, total)) return take(next, false);
+      }
+    }
+    return take(before, true);
+  });
+}
+
 /**
  * Adds each service that has no block in one section yet as a new block, by the block rule, in order; an addition that would pass a length
  * limit is left out (round 4, M3: the gaps name it as `noRoom`). A service that already has a block there (taken out and put back, or a
@@ -165,7 +243,7 @@ function addServices(
 /**
  * Fills every remaining `service.*` token of a draft's sections from its services (in line order, distinct): the first service by the
  * template rules, the others added by the block rule, only to a section that held a token, and only while the text stays within its
- * limits (round 4, M3). A section left with no text is hidden; a section that already shows text keeps its visibility. A draft with no
+ * limits (round 4, M3; the first service's own fill too, FX-3 round 2: `fitFirstService`). A section left with no text is hidden; a section that already shows text keeps its visibility. A draft with no
  * service is returned as it is.
  */
 export function fillServiceTokens<S extends Fillable>(
@@ -177,17 +255,33 @@ export function fillServiceTokens<S extends Fillable>(
   if (!first) return [...sections];
   const data: Record<string, string | null> = { ...serviceData(first), "service.schedule": scheduleSentence };
   const empty = emptyServiceTokens(first);
+  const bare = withoutTexts(data, empty);
   const all = asBlocks(services);
   const held = sections.map((s) => hasServiceToken(s.title) || hasServiceToken(s.bodyMd));
-  const rendered = sections.map((s, n) =>
-    held[n]
-      ? {
-          ...s,
-          title: s.title === null ? null : renderTemplate(s.title, data, { empty }).text,
-          bodyMd: s.bodyMd === null ? null : renderTemplate(s.bodyMd, data, { empty }).text,
-        }
-      : s,
+  const render = (text: string | null, d: Record<string, string | null>, e: ReadonlySet<string>) =>
+    text === null ? null : renderTemplate(text, d, { empty: e }).text;
+  // The first service's own fill keeps to the limits too (FX-3 round 2): a section with no room for its Catalogue text keeps the
+  // template's text without it, and the gaps name what was left out.
+  const fitted = fitFirstService(
+    sections.map((s, n) =>
+      held[n]
+        ? {
+            kind: s.kind,
+            raw: s.bodyMd,
+            full: { title: render(s.title, data, empty), bodyMd: render(s.bodyMd, data, empty) },
+            bare: {
+              title: render(s.title, bare.data, bare.empty),
+              bodyMd: render(s.bodyMd, bare.data, bare.empty),
+            },
+          }
+        : { kind: s.kind, raw: null, full: s, bare: s },
+    ),
+    services,
   );
+  const rendered = sections.map((s, n) => {
+    const f = fitted[n] as Rendered;
+    return held[n] ? { ...s, title: f.title, bodyMd: f.bodyMd } : s;
+  });
   let total = textLength(rendered);
   return rendered.map((s, n) => {
     if (!held[n]) return s;
@@ -354,9 +448,11 @@ function roomFor(
  *   - Catalogue has text the service's block lacks:
  *       - when it may be offered (`offered`): a gap with `catalogueHasTextNow`, or with `noRoom` when the parts that would be put in (only
  *         the offered ones: round 5, finding 3) would not fit;
- *       - when it is not offered and the service has no block in the section at all (it was left out whole): a gap with `noRoom` when its
- *         parts would not fit now (round 4, M3: left out for the limit); otherwise the person took it out, and nothing is named;
- *       - when it is not offered and the service has a block: the person's edit; nothing is named;
+ *       - when it is not offered and the service has no block in the section, or is the first service whose unheaded opening holds none
+ *         of the section's parts (left out whole: a later service, or the first service's own template fill, FX-3 round 2): a gap with
+ *         `noRoom` when its parts would not fit now (round 4, M3: left out for the limit); otherwise the person took it out, and nothing
+ *         is named;
+ *       - when it is not offered and the service has any other block: the person's edit; nothing is named (round 5, finding 3);
  *   - Catalogue has no text for a service (owner Q3, lead's reading 2026-10-29: every such service is named): a gap when the section is
  *     hidden or empty, when that service has the sibling field (the partial Assumptions and exclusions case), or when the section shows
  *     another service's Catalogue text (in that service's block). A section that shows only the person's own writing raises none for it.
@@ -392,11 +488,18 @@ export function catalogueGaps(
         if (offered(section, blocks, svc, text, createdAt)) {
           noRoom = !roomFor(section, all, svc, offeredParts(section, blocks, svc, createdAt), total);
           now = !noRoom;
-        } else if (!hasBlock(blocks, svc.id)) {
-          const missing = partsOf(g.kind, svc).filter((p) => !holdsText(blocks, svc.id, p.text));
+        } else {
+          // Left out whole: no block, or the first service's unheaded opening holding none of the section's parts (the template's own
+          // words, when its own template fill had no room: FX-3 round 2). Any other block without them is the person's edit (L1; round 5,
+          // finding 3).
+          const own = partsOf(g.kind, svc);
+          const missing = own.filter((p) => !holdsText(blocks, svc.id, p.text));
+          const wholeOut =
+            !hasBlock(blocks, svc.id) || (ownsOpening(blocks, svc.id) && missing.length === own.length);
+          if (!wholeOut) continue;
           noRoom = !roomFor(section, all, svc, missing, total);
           if (!noRoom) continue;
-        } else continue;
+        }
       } else {
         const closed = section.hidden || isBlank(section.bodyMd);
         const siblingHas = GAP_FIELDS.some(
