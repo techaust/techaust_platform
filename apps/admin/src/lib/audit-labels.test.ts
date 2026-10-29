@@ -150,10 +150,7 @@ function writtenEntityTypes(): { types: Map<string, string>; unknown: string[]; 
  * Labels with no writer today, each with its reason (a label kept for a type nothing writes would offer a filter that always comes back empty;
  * the list makes that a decision, not an accident).
  */
-const LABELLED_NOT_WRITTEN: Record<string, string> = {
-  // FX-4 review M2 asked for it; today only `email_log` uses the type (the send emails), never `audit_log` (sends are audited on the document).
-  document_send: "email_log only (FX-4 review M2)",
-};
+const LABELLED_NOT_WRITTEN: Record<string, string> = {};
 
 describe("audit labels outside ROUTES [FX-4 early check M2, ADM-AUD-02]", () => {
   it("every action any Worker, job or script writes has a label", () => {
@@ -298,15 +295,14 @@ describe("record labels [FX-4 review M2, ADM-AUD-02]", () => {
     );
   });
 
-  it("leads, care plans, time and reports read as the sidebar does; document sends is a new 07-Y line, marked", () => {
+  it("leads, care plans, time and reports read as the sidebar does; no type nothing writes (document sends are audited on the document)", () => {
     expect([
       ENTITY_LABELS.lead,
       ENTITY_LABELS.care_plan,
       ENTITY_LABELS.time_log,
       ENTITY_LABELS.report,
     ]).toEqual(["Leads", "Care plans", "Time", "Reports"]);
-    const mark = APPROVED_07Y ? "" : `${PLACEHOLDER_MARK} `;
-    expect(ENTITY_LABELS.document_send).toBe(`${mark}Document sends`);
+    expect(Object.hasOwn(ENTITY_LABELS, "document_send")).toBe(false);
   });
 
   it("the record filter offers every labelled type, each once", () => {
@@ -314,7 +310,7 @@ describe("record labels [FX-4 review M2, ADM-AUD-02]", () => {
     expect(auditRouteSource).toMatch(/id="au-entity"[\s\S]{0,400}Object\.entries\(ENTITY_LABELS\)\.map/);
     const words = Object.values(ENTITY_LABELS);
     expect(new Set(words).size).toBe(words.length);
-    for (const t of ["lead", "care_plan", "time_log", "document_send", "report"])
+    for (const t of ["lead", "care_plan", "time_log", "report"])
       expect(Object.hasOwn(ENTITY_LABELS, t), t).toBe(true);
   });
 });

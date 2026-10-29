@@ -607,3 +607,5 @@ Branch `fix/fx4-r1-b` from `origin/fix/fx4-invoicing` (e31a6099). One commit per
 1. The audit record type `document_send`: "Document sends". "Leads", "Care plans", "Time" and "Reports" are the sidebar's approved words, so they are unmarked.
 
 **Open question for the lead:** `document_send` is never written to `audit_log`. Sends are audited on the `document` record; the type appears only in `email_log`. The label was added as the brief asked, so the record filter now offers "Document sends", which always returns nothing. The test records this in `LABELLED_NOT_WRITTEN`. Recommendation: drop the label and its filter option, or keep it only if a send-level audit row is planned. One line either way.
+
+**Lead, after the builder (2026-10-29):** the builder's open question is answered. Dropped the `document_send` record label, because nothing writes that type to `audit_log` (sends are audited on their document), so its filter would always be empty. The test now proves the label is absent. `audit-labels.test.ts` passes.

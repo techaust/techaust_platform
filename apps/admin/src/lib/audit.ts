@@ -179,7 +179,8 @@ export const actionsInGroup = (g: { prefixes: readonly string[] }, actions: read
 
 /**
  * Record types the API writes (`entity_type`), for the record filter (`routes/audit.tsx` offers every entry, in this order). FX-4 review M2: leads,
- * care plans, time and reports take the sidebar's words (approved); "Document sends" is a new 07-Y line, marked. `audit-labels.test.ts` scans every
+ * care plans, time and reports take the sidebar's words (approved); no "Document sends" type, since sends are audited on their document (lead, after
+ * the FX-4 fix round). `audit-labels.test.ts` scans every
  * writer for the types it can put in `audit_log` and fails on one without a label here.
  */
 export const ENTITY_LABELS: Record<string, string> = {
@@ -204,7 +205,6 @@ export const ENTITY_LABELS: Record<string, string> = {
   care_plan: "Care plans",
   time_log: "Time",
   document: "Documents",
-  document_send: Y("Document sends"),
   approval: "Approvals",
   report: "Reports",
   audit_log: "Audit log",
