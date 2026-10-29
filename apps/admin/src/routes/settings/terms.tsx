@@ -176,7 +176,11 @@ function Editor(props: {
       props.onSaved();
     } catch (err) {
       if (err instanceof RequestError && err.code === "version_clash") setStale(true);
-      else if (err instanceof RequestError && err.code === "terms_due_days_mismatch" && err.extra.termsDueDays) {
+      else if (
+        err instanceof RequestError &&
+        err.code === "terms_due_days_mismatch" &&
+        err.extra.termsDueDays
+      ) {
         // FX-5 (full audit C4): the terms state other days to pay than Settings › Payment terms; 07-Z §2 line 3 names both numbers.
         const { stated, dueDays } = err.extra.termsDueDays;
         setError(TERMS_DUE_DAYS_COPY.refused(stated, dueDays));

@@ -48,6 +48,7 @@ import {
   taxHeadEstimate,
   typeLabel,
   voidBlockedText,
+  voidErrorText,
   voidTitle,
 } from "./invoices.ts";
 import { canDownloadSupplierCopy, fetchSupplierCopy, type InvoiceView } from "./invoices-api.ts";
@@ -327,6 +328,16 @@ describe("errors", () => {
     );
     // the dialog's sentence for the route's 409 (a view that landed while the dialog was open)
     expect(invErrorText(new RequestError(409, "viewed_by_client", "x"))).toBe(`${mark}${invoiceLine}`);
+    // the void dialog names the document's own type; other failures keep invErrorText's sentence
+    const viewed = new RequestError(409, "viewed_by_client", "x");
+    expect(voidErrorText(viewed, "proforma")).toBe(
+      `${mark}The client has opened this proforma in the portal, so it can't be voided.`,
+    );
+    expect(voidErrorText(viewed, "proforma")).not.toContain("credit note");
+    expect(voidErrorText(viewed, "tax_invoice")).toBe(`${mark}${invoiceLine}`);
+    expect(voidErrorText(viewed)).toBe(`${mark}${invoiceLine}`);
+    const closed = new RequestError(409, "return_period_closed", "x");
+    expect(voidErrorText(closed, "proforma")).toBe(invErrorText(closed));
   });
 
   it("a proforma has its own title, locked banner and void line (07-S §8), never the credit-note advice", () => {

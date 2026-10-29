@@ -450,6 +450,7 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
         <VoidDialog
           open={voiding}
           number={v.number}
+          type={v.type}
           onClose={() => setVoiding(false)}
           onVoid={async (reason) => {
             const r = await invoicesApi.void(v.id, v.updatedAt, reason);

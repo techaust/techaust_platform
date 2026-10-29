@@ -52,7 +52,11 @@ export function intIn(input: string, min: number, max = Number.MAX_SAFE_INTEGER)
  * payment due days on screen: the number being typed while it is a valid one (0 to 90), else the saved one. Empty: they agree, or the terms
  * state no days.
  */
-export function termsDueDaysClash(stated: readonly number[] | undefined, typed: string, saved: number): number[] {
+export function termsDueDaysClash(
+  stated: readonly number[] | undefined,
+  typed: string,
+  saved: number,
+): number[] {
   if (!stated || stated.length === 0) return [];
   const due = intIn(typed, 0, 90) ?? saved;
   return stated.some((n) => n !== due) ? [...stated] : [];

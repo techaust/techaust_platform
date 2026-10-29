@@ -25,6 +25,7 @@ import {
   seriesPreview,
   shownBlockers,
   splitAtPlace,
+  voidErrorText,
   voidTitle,
 } from "../../lib/invoices.ts";
 import type { InvoiceBlocker, InvoiceView } from "../../lib/invoices-api.ts";
@@ -336,6 +337,8 @@ export function RequestIssueDialog(props: {
 export function VoidDialog(props: {
   open: boolean;
   number: string;
+  /** The document's type: a refusal names it (a proforma never gets the invoice's credit-note advice, FX-5). */
+  type?: string | undefined;
   onClose: () => void;
   onVoid: (reason: string) => Promise<void>;
 }) {
@@ -373,7 +376,7 @@ export function VoidDialog(props: {
       setReason("");
       setCode("");
     } catch (e) {
-      setError(invErrorText(e));
+      setError(voidErrorText(e, props.type));
     } finally {
       setBusy(false);
     }
