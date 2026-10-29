@@ -79,3 +79,166 @@ Read each finding in full in the audit run file: sections A3, A4 and A6 (1c), an
 - what wasn't verified;
 - the placeholder lines;
 - any open questions.
+
+## Builder report
+Builder: claude-opus-5-5 (high), 2026-10-29 09:10–10:10 IST, branch `fix/fx3-builder` from `origin/fix/fx3-admin-portal` (0ac65643). 11 commits, pushed.
+
+### Skills
+- `cloudflare:workers-best-practices`: Worker code, Hono routes and D1. Applied: one batch per read, every statement through an index (EXPLAIN-tested), no buffering of large bodies, no module-level request state.
+- `cloudflare:wrangler`: no config or binding changed, so nothing to do with it beyond the existing typecheck (`wrangler types`).
+- Not loaded: `cloudflare:workers-profiling`, which profiles deployed Workers (hosted, off-limits). Rows read were measured in local tests instead. `cloudflare:cloudflare` was not loaded because no platform feature changed.
+
+### Per item
+1. **Client Overview figures (A3 4, ADM-CLI-03): done.** `GET /clients/:id/finance` (new `apps/admin/worker/figures.ts`) answers `{available: true, asOf, currencies: [{currency, billedMinor, creditedMinor, balanceMinor, overdueMinor, overdueCount}]}`.
+   - It is one batch: the client row and `CLIENT_FIGURES_SQL` (`packages/db/src/reports.ts`, a seek on `documents_client_issued`, EXPLAIN-tested).
+   - It uses the statement's rules:
+     - billed is the debit column over all time (tax invoices, export invoices and debit notes, tax included);
+     - credited is the credit notes;
+     - the balance is Σ of the open debit documents' balances, which is what a statement made today closes at;
+     - overdue counts documents due strictly before today (IST);
+     - proformas and voided documents never count.
+   - "Collected" is left out of the answer entirely. An anonymised client gets `{available: false, reason: "anonymised"}`. Sales gets 403, as before.
+   - Twin test (`figures.test.ts`): billed equals the statement's `range.debitMinor` and the balance equals `range.closingMinor`, for INR (every kind of line), for USD, and for a client with 200 documents.
+   - **Rows read for a client with 200 documents: 400.** D1 counts each document twice (the index entry, then the row). Another client's 50 documents are never read.
+   - Builder decision: "billed" is gross (the statement's debit column) and the credit notes are a separate figure, so the screen can show both. Netting them is the designer's or owner's choice.
+2. **Project Figures (A3 5, ADM-PRJ-05): done.**
+   - `GET /projects/:id` `figures.billed` is `{available: true, currencies: [{currency, billedMinor, creditedMinor}]}`, from the project's issued, not voided invoice-family documents with the same rules (`PROJECT_BILLED_SQL`, on `documents_project`).
+   - Sales gets no `billed` key, and its statement never runs.
+   - An anonymised client's project gets `{available: false, reason: "anonymised"}`.
+   - "Paid" is left out. `billedVsPaid` is gone (no screen used it).
+3. **Note headings (A3 7, ADM-PRJ-03): done.**
+   - Core `parseNoteMarkdown` reads `#`, `##` and `###` (`####`, `#tag` and a bare `#` stay text). `parseMarkdown` is unchanged, so proposal and estimate sections (the PDF, the portal) still read `#` as text and frozen documents look as before.
+   - The admin `Markdown` takes a `headings` prop, which both note views turn on. It draws the headings as h3, h4 and h5 with classes `md__h md__h--N` for the designer to style. No HTML is set.
+   - Core coverage gate passed (`pnpm test` runs it).
+4. **Manual lead fields (A3 8, ADM-LEAD-01): API done; the form is the designer's.**
+   - `POST /leads` takes `currency`, `budgetBand` and `timeline`. A band needs its currency and must be one of that currency's bands. Validation uses the new core `isBudgetBand` and `isTimeline` (`form-labels.ts`, no zod load).
+   - Anything else is a 400 and writes nothing.
+   - The lead page already returns the three fields. `NewLead` in `api.ts` has them; `LeadPatch` leaves them out (see question 2).
+5. **Dashboard (A3 10): done.**
+   - The Projects tile answers `{planned, active, onHold}`, and the tile shows a "Planned" line (the existing status label).
+   - Date-only next action: core `istDayEnd`, `isIstDayEnd` and `formatIstMoment`. The shared `When`, `when()` and `relative()` print a date-only moment as the day ("25 Oct 2026", "yesterday", "in 3 days") with an ISO-day `dateTime`. `dateToMs` now uses `istDayEnd`.
+   - Every place that prints a next action was checked:
+     - the dashboard tile: fixed;
+     - the list, board, lead page and timeline: they already print `formatDate`.
+   - The stress test's rows-read ceiling went from 6,000 to 6,100: the owner reads 6,014 rows because the fixture's 50 Planned projects now count.
+6. **"has approved" (A4 5): done.** The decision is lower case mid-sentence; the subject keeps "Approved:". The test covers approved and rejected.
+7. **Accept on a superseded version (A4 9): API done; the message is the designer's.**
+   - `REREAD_SQL` also reads the newest frozen version's PDF hash.
+   - While that version is unrendered, an accept or decline on an older version answers **409 `newer_version_pending`** (API message "A newer version is being prepared"), with no `latestId`.
+   - Once it is rendered, the answer is `superseded` with its id, as before.
+   - Tested: v2 unrendered; v2 rendered; v3 frozen after v2 rendered (an accept on v1 or v2 is then pending).
+8. **Signature size (A6 1c): done.**
+   - Core `SIGNATURE_MAX_WIDTH` = 800 and `SIGNATURE_MAX_HEIGHT` = 400.
+   - SPA: the new `lib/signature-scale.ts` (`signatureFit`, and `scaleSignature` with an injectable `ImageIo`, so it is tested without a browser) draws a larger image on a canvas (high-quality smoothing, aspect kept, PNG out). An image that already fits is sent unchanged. An unreadable image, or a result over 256 KB, shows the wrong-file line. `signature.tsx` calls it before the upload.
+   - Worker: `settings-signature.ts` refuses a PNG over the bound from its IHDR (no decoding).
+   - Builder decision: the same 800 × 400 bound applies to a JPEG (from its frame header). The SPA never sends a larger JPEG, and one rule is simpler.
+   - Stored signatures are untouched.
+9. **Bare VERIFY tags: done where 08-C has a row. The rest are listed below and guarded.**
+   - Retagged:
+     - `Researched … (08-C RA-12)`: state code, db test and leads test;
+     - `RB-31`: billing contact flag;
+     - `RB-19`: `document-pdf.ts`;
+     - `RA-25` and `RB-11`: `data-tools.tsx`;
+     - `RA-23`: `sales-register.tsx`;
+     - `RA-12, RA-05`: core `clients.ts`;
+     - `OPEN (08-C RB-23)`: the ₹10,000 liability cap, in core settings (2) and its test.
+   - The settings API's `meta.verify` values were bare tags. They now point to the 08-C §5 list: `"08-C §5: CA"` and `"08-C §5: CA and lawyer"`. The SPA's `/legal|lawyer/` test still reads them.
+   - Guard: `packages/core/test/verify-tags.test.ts` scans `apps/`, `packages/` and `scripts/` (not `migrations/`). It catches a tag even when a comment breaks the line, and fails on any tag beyond the list below, or on a stale count.
+   - **No 08-C row yet (left bare, listed in the guard with the reason):**
+     - `apps/admin/worker/clients.ts` ×5: what a data-subject export holds (offer links, invoice links, decisions, file contents), and the erase of never-sent drafts (O-Q4);
+     - `apps/admin/worker/documents-convert.test.ts`: a sent offer as evidence against erasing the person it names;
+     - `apps/admin/src/lib/clients.ts` ×2: data-subject items;
+     - `apps/admin/src/lib/projects.ts`: notes and files deleted with the last contact;
+     - `apps/admin/src/routes/settings/payment-terms.tsx`: due days, validity, the small-job threshold and the part-payment floor (the cap within it is RB-23);
+     - `apps/admin/src/routes/settings/terms.tsx`: the document terms text (the export declaration within it is RA-18);
+     - `apps/jobs/src/expire.ts` and `apps/jobs/test/expire.test.ts`: what an expired offer means;
+     - `packages/core/src/documents.ts` ×2 and `packages/core/test/documents.test.ts`: a sent proposal as evidence, and the validity rule;
+     - `packages/core/src/gstin.ts` and `packages/core/test/gstin.test.ts`: the state-code list and legacy codes;
+     - `packages/core/src/schemas/settings.ts` ×3: the GSTIN check ×2 and the ₹10,000 part-payment floor;
+     - `packages/core/src/pdf-jobs.ts`: the place-of-supply wording on a proposal;
+     - `packages/db/src/contact-access.ts`: when portal access ends;
+     - `packages/db/src/schema/crm.ts`: the lead's consent receipt (FRM-05; RB-28 covers marketing consent only);
+     - `packages/db/src/seed/terms.ts`: the terms text and "Ownership" (its "GST at 18 %" part is RA-16).
+   - **Applied migration left as it is:** `packages/db/migrations/0016_leads_duplicate_proposal_retention.sql:16`.
+10. **Care's next billing day (FX-1 follow-up): done.**
+    - Core `CARE_SCAN_REPEAT_HOURS` (2) and `CARE_SCAN_LAST_HOUR_IST` (8). Jobs `REPEAT_HOURS` now is that same constant.
+    - `nextBillingDayOf` says today until 08:00 IST has begun, and tomorrow from then on, matching the 06:00, 07:00 and 08:00 scans.
+    - No wording change: the page shows the date.
+11. **(last, own commit fd576356) `series_full` on proposals and estimates: done.** `DOC_ERRORS.series_full` carries the invoice line's meaning as a new 07-Y line.
+12. **(last) The first service's fill past 6,000 characters: NOT DONE, blocked.**
+    - The `noRoom` leave-out-and-name rule doesn't exist on this base. It was added in M5 owner-fix rounds 4 and 5 (bcdbd376, b48122fe, 0cd745dc), which are on `origin/fix/m5-owner-findings` (18 commits not in `origin/fix/fx3-admin-portal`).
+    - Here, `service-fill.ts` has no length rule for any service. Building one now would fork that work.
+    - The brief says the base holds the M5 owner fixes; it holds them only up to round 3.
+    - Redo item 12, and check item 11 against round 4's `documents.ts`, once `fix/m5-owner-findings` is merged.
+
+### Tests added or changed
+- admin worker:
+  - `figures.test.ts` (new, 8 tests);
+  - `leads-api.test.ts`: lead fields;
+  - `dashboard.test.ts`: planned;
+  - `dashboard-stress.test.ts`: 6,100 ceiling;
+  - `settings-signature.test.ts`: 800 × 400 bound;
+  - `care-billing.test.ts`: 08:00 boundary;
+  - `settings.test.ts`, `projects.test.ts`, `clients.test.ts`: new shapes.
+- admin SPA:
+  - `signature-scale.test.ts` (new);
+  - `projects.test.ts`: h3 to h5;
+  - `leads.test.ts`: day-only `when` and `relative`;
+  - `documents.test.ts`: `series_full`;
+  - `pdf.test.ts`, `batch-review.test.ts`: the wrong-file line.
+- portal: `offer-routes.test.ts` (`newer_version_pending`).
+- core:
+  - `markdown.test.ts`: headings, with a property test;
+  - `dates.test.ts`: day end, with a property test;
+  - `form-labels.test.ts`;
+  - `care-billing.test.ts`;
+  - `verify-tags.test.ts` (new).
+- db: `reports.test.ts` (EXPLAIN of the two new statements).
+- email: `m45.test.ts`.
+
+### Commands (all heavy ones through `tools/heavy.sh`)
+- Per-package runs while working, all green at the end.
+- `pnpm typecheck`: exit 0.
+- `pnpm test`: exit 0. Results by package:
+
+  | Package | Tests passed |
+  |---|---|
+  | core (coverage gate passed) | 1,768 |
+  | db | 471 |
+  | email | 128 |
+  | pdf | 340 |
+  | auth | 135 |
+  | ui | 469 (2 skipped) |
+  | web | 428 (16 skipped) |
+  | jobs | 525 |
+  | portal | 621 |
+  | admin | 3,247 |
+
+- `pnpm --filter @techaust/admin build`: exit 0.
+  - front bundle 99,131 bytes, startup 18.4 ms;
+  - API bundle 599,273 bytes, startup 56.4 ms.
+- `pnpm --filter @techaust/portal build`: exit 0. Bundle 97,011 bytes, startup 9.3 ms.
+- `pnpm check` (the one whole-repository lint): exit 0. Its 10 warnings and 8 infos are all in files I didn't touch (pdf tests, `reports.test.ts`, web `catalogue.ts`, `web-content-lint.mjs`).
+
+### Not verified
+- The canvas scaling in a real browser: only the rules are tested, with a fake `ImageIo`. The designer should upload a large PNG and a JPEG on Settings › Company.
+- The rows-read figure on staging: 400 is the local D1 count.
+- The `newer_version_pending` screen path: the SPA has no mapping yet, so it falls back to the generic server line until the designer adds it. It also belongs in `offer.tsx`'s `FINAL` set.
+- No screens were looked at. No dev server was started.
+
+### Placeholder lines (for 07-Y)
+1. `apps/admin/src/lib/pdf.ts` `SIGNATURE_COPY.wrongFile`: "Use a PNG or JPEG image up to 256 KB." It replaces "…and 2400 by 1200 pixels.", now that the browser scales the image down.
+2. `SIGNATURE_COPY.scaled` (defined, not yet shown; for the designer): "We made the image smaller to fit 800 by 400 pixels."
+3. `apps/admin/src/lib/documents.ts` `DOC_ERRORS.series_full`: "This series has run out of numbers for the year. Change the numbering format in Settings › Numbering."
+4. Not in code yet (the designer adds it to the portal copy): the `newer_version_pending` line. Suggested: "A new version is being prepared. Try again in a few minutes."
+
+The marks come from the new `apps/admin/src/lib/copy-y.ts` (`APPROVED_07Y = false`, `Y()`), on the 07-X pattern.
+
+API sentences changed (not screen copy):
+- `image_too_big` now says "800 by 400 pixels";
+- `newer_version_pending` says "A newer version is being prepared".
+
+### Open questions
+1. **Item 12 is blocked:** it needs `fix/m5-owner-findings` (rounds 4–5) in this task's base first. The lead decides the order.
+2. Should a manual lead's budget band, timeline and currency also be editable after creation (`PATCH /leads/:id`)? Only creation takes them now. Editing needs timeline labels for the three fields, which is the designer's part.
+3. The 08-C register needs rows for the questions listed under item 9. Each tag can be retagged once its row exists, and the guard's list then shrinks.
