@@ -965,3 +965,49 @@ Local D1 in this worktree; Playwright scripts in the scratchpad; screenshots in 
    - The seeded templates are far below this.
    - Recommended: a follow-up that applies the same rule to the template fill (leave the service's text out and name it), or a Catalogue or template limit that makes the case impossible. Lead's call.
 3. **07-Y doesn't exist on this branch.** The L7 line above is for it.
+
+## Re-check of round 4 (reviewer claude-opus-5-5/high, live browser, 2026-10-29 ~07:00–07:40 IST, on c4e1a5b6): SEND BACK
+- **Verdicts:**
+  - FIXED: H1 (104 controls in reverse order, 0 under the bar), M2 (the text, though see 2 below), M3, M4, M5, L2, L3, L5, L6;
+  - PARTLY: M1;
+  - DOCUMENTED: L1, L4;
+  - known: L7 and round 4's question 2.
+- **Tests:** admin 3,251 (one load timeout; passes alone); `pnpm check` exit 0.
+- **axe:** clean at rest at 375 and 1280.
+
+Shots: `.logs/shots/m5-r4/` (main checkout).
+- **New findings:**
+  1. **High:** `insertParts` (`service-fill.ts:126-139`) looks for the sibling text anywhere in the section, so a part lands in another service's block, or splits another service's sentence. Reproduced live: S5 and S6 share "Third-party fees are billed separately." Contractual scope wording changes silently.
+  2. **Medium (reproduced):** when the server's edit is merged into the textarea the person is typing in, the caret jumps to the end (`lib/documents.ts:1100-1107`, `sections.tsx`).
+  3. **Low:** `roomFor` (`:389-396`, `:354-357`) checks room for parts that aren't offered, and calls a deliberately deleted part "no room".
+  4. **Low:** `holds` (whole text) and `included` (60 characters) disagree. A service re-added after its text was edited gets its text repeated; two texts that share their first 60 characters can hide a gap.
+  5. **Low (one-line):** the discard confirm should use `waitForInflight` (`editor.tsx:614`).
+  6. **Low:** `headingAt` ends a block at the first `\n\n`, which cuts a two-paragraph Catalogue text (fold into the fix for 1).
+  7. **Low:** the `document-save.ts:~299-301` comment says the gaps name what is missing, but a first service whose tokens the person wrote over gets no gap.
+  8. **Low:** move `--topbar-h` to `:root` and use it in `app.css:18`; the quantity column becomes `minmax(12rem, max-content)` (`documents.css:178`), for WCAG 1.4.12.
+
+## Fix round 5 (lead's brief; builder claude-opus-5-5/high)
+**Lead's design decision (finding 1, recorded in docs/13):** a section's text for services is a list of **blocks**.
+- **What a block is:** each block starts with that service's `**Name**` heading line and ends just before the next line that is exactly another service's `**Name**` heading, or at the end of the text. Its paragraphs may contain blank lines.
+- **The first service's unheaded opening:** the text before the first heading belongs to the draft's first service only when that service has no heading of its own.
+- **Inserting a part (assumptions or exclusions) for service X:**
+  - work only inside X's block: assumptions before X's exclusions if they are there, else at the end of the block;
+  - if X has no block, append a new `**X**` block at the end;
+  - match whole lines only, never a substring;
+  - never search other blocks.
+- **The same block rule decides:**
+  - whether X already holds a part (`holds`, `included` and the part filter use X's block, with whole-text comparison, which also resolves finding 4);
+  - what "Use Catalogue text" offers;
+  - what `roomFor` checks: only the parts being offered or appended (finding 3). "No room" is said only for those.
+- **Tests:**
+  - shared exclusions between two services;
+  - "None." inside another service's sentence;
+  - a two-paragraph Catalogue text;
+  - re-adding a service whose block was edited;
+  - creation with shared texts.
+
+**Also fix:**
+- finding 2: keep the caret; restore the selection, shifted by any text inserted before it;
+- finding 5, finding 7 (correct the comment) and finding 8.
+
+**Done means:** `pnpm check` and the full `pnpm test` pass, and a live check of the shared-text case in the browser. Append "### Fix round 5 report".
