@@ -143,3 +143,12 @@ After FX-3 and FX-4 merge:
 - **Who builds:** only the owner so far, so RB-38(b) is closed for now. Future contractors must assign in writing.
 
 The code step adds both terms changes as a new seeded terms version, plus a migration if the seed's terms rows need it (insert-only; never edit an applied one). 07 records the two lines as owner-approved.
+
+## Added to this task: owner-approved packages (2026-10-29 ~15:20 IST)
+- **`sharp` 0.35.5** as a devDependency of `apps/web`. It's already in the lockfile, so only the importer changes, and nothing is downloaded. Then prove that a sample founder photo builds through `<Picture>` (AVIF and WebP), and remove the sample.
+- **Noto Sans Bengali and Noto Sans Devanagari** (OFL) for the PDFs (full audit A4 3):
+  - add the `@fontsource` packages, exact pins, respecting `minimumReleaseAge`;
+  - subset them as fallbacks in `packages/pdf` (`src/generated/assets.ts`, the way the Latin fonts are built);
+  - add a layout-gate test that renders a certificate with a Bengali and a Devanagari name;
+  - check the jobs bundle budget (1,000,000 bytes) and the PDF size;
+  - **the owner approved this install.**
