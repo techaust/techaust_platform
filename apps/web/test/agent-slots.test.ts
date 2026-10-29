@@ -110,3 +110,40 @@ describe("finding a cloud session (CLOUD-1)", () => {
     expect(runCli({ CLAUDE_CODE_REMOTE: "false" }, "--running", "5")).toContain("the local limit is 2");
   });
 });
+
+// A non-numeric, negative or missing value used to become NaN and pass every check in `decide` (review side note on #111).
+describe("the command refuses a bad value", () => {
+  const SCRIPT = fileURLToPath(new URL("../../../tools/agent-slots.mjs", import.meta.url));
+  const run = (...args: string[]) => {
+    const { CLAUDE_CODE_REMOTE: _, ...env } = process.env;
+    return spawnSync(process.execPath, [SCRIPT, ...args], { env, encoding: "utf8" });
+  };
+  it.each([
+    [["--usage", "abc"], 'bad value for --usage: "abc"'],
+    [["--usage", "-5"], 'bad value for --usage: "-5"'],
+    [["--usage", ""], 'bad value for --usage: ""'],
+    [["--usage", "0x10"], 'bad value for --usage: "0x10"'],
+    [["--running", "1", "--usage"], "bad value for --usage: none given"],
+    [["--usage", "--running", "1"], 'bad value for --usage: "--running"'],
+    [["--usage", "40", "--running", "x"], 'bad value for --running: "x"'],
+    [["--usage", "40", "--running", "-1"], 'bad value for --running: "-1"'],
+    [["--usage", "40", "--running", "1.5"], 'bad value for --running: "1.5"'],
+    [["--usage", "40", "--browsers", "NaN"], 'bad value for --browsers: "NaN"'],
+    [["--usage", "40", "--browsers"], "bad value for --browsers: none given"],
+    [
+      ["--cloud", "--reading", "abc", "--reading-at", "2026-10-29T10:00:00Z"],
+      'bad value for --reading: "abc"',
+    ],
+    [["--cloud", "--reading", "40", "--reading-at", "yesterday"], 'bad value for --reading-at: "yesterday"'],
+    [["--cloud", "--reading", "40", "--reading-at"], "bad value for --reading-at: none given"],
+  ])("%j", (args, why) => {
+    const r = run(...args);
+    expect(r.stdout.trim()).toBe(`start: no (${why})`);
+    expect(r.status).toBe(1);
+  });
+  it("good values still decide", () => {
+    const r = run("--usage", "40.5", "--running", "0", "--browsers", "0");
+    expect(r.stdout).not.toContain("bad value");
+    expect(r.stdout).toMatch(/^start: (yes|no) \(/);
+  });
+});

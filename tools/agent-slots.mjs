@@ -10,7 +10,9 @@
 // - the budget gate: new agents start while the 5-hour bar is at or under 95 %. A cloud session that can't read the bar uses the
 //   reading posted in docs/runs/usage-reading.md: none for today (IST) means nothing new starts, one over 2 hours old means one agent
 //   at a time.
-// Prints one line ("start: yes|no …") and exits 0 when an agent may start, 1 when not. `decide` is pure, for the test.
+// Prints one line ("start: yes|no …") and exits 0 when an agent may start, 1 when not. `decide` is pure, for the test. A value that
+// isn't a plain non-negative number (whole for --running and --browsers), a flag given without its value, or a --reading-at that
+// isn't a date is refused before deciding: "start: no (bad value for --usage: "abc")", exit 1.
 import { cpus, freemem, loadavg } from "node:os";
 
 export const LIMITS = {
@@ -81,19 +83,37 @@ if (isMain) {
     const i = args.indexOf(name);
     return i >= 0 ? args[i + 1] : undefined;
   };
-  const num = (name) => (val(name) === undefined ? undefined : Number(val(name)));
+  // A flag's value: undefined when the flag is absent; a refusal when it is present without a usable value (NaN would slip
+  // through every comparison in `decide`).
+  const refuse = (name, raw) => {
+    console.log(
+      `start: no (bad value for ${name}: ${raw === undefined ? "none given" : JSON.stringify(raw)})`,
+    );
+    process.exit(1);
+  };
+  const num = (name, whole = false) => {
+    if (!args.includes(name)) return undefined;
+    const raw = val(name);
+    if (raw === undefined || !(whole ? /^\d+$/ : /^\d+(\.\d+)?$/).test(raw)) refuse(name, raw);
+    return Number(raw);
+  };
   const cloud = args.includes("--cloud") || isCloudSession(process.env);
+  const running = num("--running", true);
+  const browsers = num("--browsers", true);
+  const usage = num("--usage");
   const readingPct = num("--reading");
   const readingAt = val("--reading-at");
+  if (args.includes("--reading-at") && (readingAt === undefined || Number.isNaN(Date.parse(readingAt))))
+    refuse("--reading-at", readingAt);
   const r = decide({
     place: cloud ? "cloud" : "local",
-    running: num("--running") ?? 0,
-    browsers: num("--browsers") ?? 0,
+    running: running ?? 0,
+    browsers: browsers ?? 0,
     wantsBrowser: args.includes("--browser"),
     freeBytes: freemem(),
     cores: cpus().length,
     load1: loadavg()[0],
-    usagePct: num("--usage") ?? null,
+    usagePct: usage ?? null,
     reading: readingPct !== undefined && readingAt ? { pct: readingPct, atMs: Date.parse(readingAt) } : null,
     nowMs: Date.now(),
   });
