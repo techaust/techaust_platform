@@ -100,7 +100,7 @@ export const APPROVAL_DECIDED: ApiError = {
 
 /** What a refused issue batch looks like when it comes back as an error: the guard, the post-condition, or a unique key. */
 const ISSUE_REFUSED =
-  /issue did not freeze|not an issuable draft|UNIQUE constraint failed: documents\.|documents_(invoice|parent|void|note|credit_note|ims|ledger)/;
+  /issue did not freeze|not an issuable draft|UNIQUE constraint failed: documents\.|documents_(invoice|parent|void|note|credit_note|ims|ledger|discount_after_sale)/;
 
 /** The document's word in a bell (M5.3: the same sentences, the word bound per type; the notes' wording is 07-T §8, pending the owner's approval). */
 const docWord = (type: string) =>
