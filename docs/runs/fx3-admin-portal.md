@@ -812,3 +812,38 @@ Designer: claude-opus-5-5 (high), 2026-10-29 ~16:40–18:00 IST, branch `fix/fx3
 2. `UnsavedChangesGuard` gains the optional `onStay`.
 
 The item-2 deviation from the brief is the right fix: reloading the lead would restart the page, so the lead reloads only when the person answers "Stay". Next: a re-check of the fix-round diff (reviewer, Opus high, live), then the PR.
+
+## Re-check of the fix round (reviewer claude-opus-5-5/high, live, 2026-10-29 ~18:15–19:00 IST, on d08f26ee): SEND BACK
+_(Summary by the lead; the full text is in the conversation record. Shots: `.logs/shots/fx3-recheck/` in the main checkout.)_
+
+**Every earlier finding is fixed** (1–7, 9, 10 and 11, plus Figures first on phones), checked live:
+- a 4 MB, 12 MP phone JPEG was stored as a 125 KB PNG; an 11 MB file is refused with the amended line;
+- convert with and without unsaved edits works;
+- the e2e sweep visits the lead, client, catalogue-item and template pages and meets 4 scroll boxes;
+- the heading rule focuses the heading;
+- the currency rule is 480 px at 768;
+- the Overview refetches;
+- Figures sit first at 375 and head the side column at 1280.
+
+**Results:**
+- `pnpm check`: exit 0.
+- `pnpm test`: exit 0, no timeouts. Admin 3,356, core 1,801, portal 631, jobs 528.
+- Admin e2e: 6 passed.
+
+**New findings:**
+- **A (high, WCAG 1.3.1):** `components/markdown.tsx:23` `noteHeadingTags` limits each heading to one below the previous *tag*. So `# Plan / ### Risks / ### Owners` gives h3, h4, **h5**: siblings announced as nested. Also `## A / ## B / # C` gives h3, h4, h3.
+  - Fix: a stack of open author levels, tag = depth − 1, capped at h5, plus tests.
+- **B (medium):** "Stay" after convert reloads the lead, which remounts `LeadView` (keyed by `updatedAt`). An unsaved quote-answers edit is lost, although the dialog promised staying keeps it (`lead.tsx:116,171,292-297`).
+- **C (medium, one line):** the error summary's `key={e.id}` collides when a heading breaks two rules (`form.tsx:78`). Use `${e.id}-${i}`.
+- **D (medium, from before FX-3):** every lead reload drops keyboard focus to `<body>` (`lead.tsx:116`).
+- **E (low):** the lead PATCH still judges the whole answer set when only the timeline or currency changes (`leads.ts:699-709`).
+- **F (low, information only):** at 64rem and wider, Tab reaches the Figures panel's link after the left column. That follows the accepted reading order; kept by the lead.
+- **G (low, one line):** the VERIFY scan leaves out `.jsonc`.
+- **H (low):** `createImageBitmap(file)` decodes at full resolution before scaling (`signature-scale.ts:98`). Use `resizeWidth`/`resizeHeight`.
+
+## Fix round 2 (lead's triage)
+All but F are fixed in this task.
+- **Builder** (`fix/fx3-fix2-b`): E and G.
+- **Designer** (`fix/fx3-fix2-d`): A, B, C, D and H. For B and D, either keep the lead view mounted across reloads (don't key it by `updatedAt`, and sync from props), or hold the answers edit in the drafts above the reload and restore focus to the control or panel heading that was used. Prefer the first if it's clean.
+
+Then a re-check (live: the heading cases, convert then Stay with an answers edit, focus after a lead save).
