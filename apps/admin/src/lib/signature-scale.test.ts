@@ -6,6 +6,7 @@ import { SIGNATURE_INPUT_MAX, SIGNATURE_MAX } from "./pdf.ts";
 import {
   type DecodedImage,
   decodeFitted,
+  fittedDecodeMatches,
   fittedDecodeOptions,
   type ImageIo,
   imageHeaderSize,
@@ -242,27 +243,31 @@ describe("decoding straight at the fitted size (FX-3 fix round 2, H)", () => {
     };
     return b;
   };
-  /** A fake `createImageBitmap`: `mode` says what the browser does with the resize options. */
-  const browser = (
-    natural: [number, number],
-    mode: "honours" | "rejects" | "ignores" | "swaps" | "broken",
-  ) => {
+  /**
+   * A fake `createImageBitmap`. `shown` is the image as the browser shows it, turned by its orientation; `mode` says what the browser does
+   * with the resize options. Honoured, a width alone gives the height the HTML standard does: the shown proportion, rounded up.
+   */
+  const browser = (shown: [number, number], mode: "honours" | "rejects" | "ignores" | "broken") => {
     const calls: { options: ImageBitmapOptions | undefined }[] = [];
     const made: Made[] = [];
     const create = async (_file: Blob, options?: ImageBitmapOptions) => {
       calls.push({ options });
       if (mode === "broken") throw new DOMException("cannot decode", "InvalidStateError");
-      let b = bitmap(...natural);
-      if (options?.resizeWidth !== undefined && options.resizeHeight !== undefined) {
+      let b = bitmap(...shown);
+      if (options?.resizeWidth !== undefined) {
         if (mode === "rejects") throw new TypeError("resize options not supported");
-        if (mode === "honours") b = bitmap(options.resizeWidth, options.resizeHeight);
-        if (mode === "swaps") b = bitmap(options.resizeHeight, options.resizeWidth);
+        if (mode === "honours")
+          b = bitmap(
+            options.resizeWidth,
+            options.resizeHeight ?? Math.ceil((options.resizeWidth * shown[1]) / shown[0]),
+          );
       }
       made.push(b);
       return b;
     };
     return { create, calls, made };
   };
+  const FULL = { options: { imageOrientation: "from-image" } };
   const run = (bytes: Uint8Array<ArrayBuffer>, type: string, b: ReturnType<typeof browser>) => {
     const drawn: [number, number][] = [];
     const io: ImageIo<ImageBitmap> = {
@@ -275,49 +280,96 @@ describe("decoding straight at the fitted size (FX-3 fix round 2, H)", () => {
     return { drawn, result: scaleSignature(new Blob([bytes], { type }), io) };
   };
 
-  it("asks the browser for the box-fitted size with high-quality resampling", () => {
-    expect(fittedDecodeOptions({ width: 300, height: 400 })).toEqual({
-      resizeWidth: 300,
-      resizeHeight: 400,
-      resizeQuality: "high",
-    });
+  it("asks the browser for the fitted width only (it keeps the turned image's proportions), turned as shown, with high-quality resampling", () => {
+    const options = fittedDecodeOptions({ width: 300, height: 400 });
+    expect(options).toEqual({ resizeWidth: 300, resizeQuality: "high", imageOrientation: "from-image" });
+    expect(options).not.toHaveProperty("resizeHeight");
+  });
+
+  it("a match is the fitted width exactly and the fitted height or the one pixel more the browser's rounding up can give", () => {
+    const size = { width: 800, height: 300 };
+    expect(fittedDecodeMatches({ width: 800, height: 300 }, size)).toBe(true);
+    expect(fittedDecodeMatches({ width: 800, height: 301 }, size)).toBe(true);
+    for (const [width, height] of [
+      [800, 299],
+      [800, 302],
+      [799, 300],
+      [801, 300],
+      [300, 800],
+      [2400, 900],
+    ] as const)
+      expect(fittedDecodeMatches({ width, height }, size)).toBe(false);
   });
 
   it("a 3000 by 4000 photo is decoded once, at 300 by 400 (the options above), and drawn at that size", async () => {
     const b = browser([3000, 4000], "honours");
     const r = run(png(3000, 4000), "image/png", b);
     expect(await r.result).toMatchObject({ ok: true, scaled: true, width: 300, height: 400 });
-    expect(b.calls).toEqual([{ options: { resizeWidth: 300, resizeHeight: 400, resizeQuality: "high" } }]);
+    expect(b.calls).toEqual([
+      { options: { resizeWidth: 300, resizeQuality: "high", imageOrientation: "from-image" } },
+    ]);
     expect(r.drawn).toEqual([[300, 400]]);
     expect(b.made.map((m) => m.closed)).toEqual([true]);
   });
 
-  it("an upright phone JPEG (stored 4000 by 3000, Exif 6) is asked for 300 by 400, its shown shape", async () => {
+  it("the browser's rounding up of the height (one pixel over the fit) still takes the fitted decode, drawn at the fitted size", async () => {
+    // 2400 by 901 fits to 800 by 300 (300.33 rounded); the browser makes it 800 by 301 (rounded up)
+    const b = browser([2400, 901], "honours");
+    const r = run(png(2400, 901), "image/png", b);
+    expect(await r.result).toMatchObject({ ok: true, scaled: true, width: 800, height: 300 });
+    expect(b.calls).toHaveLength(1);
+    expect(b.made.map((m) => [m.width, m.height])).toEqual([[800, 301]]);
+    expect(r.drawn).toEqual([[800, 300]]);
+  });
+
+  it("an upright phone JPEG (stored 4000 by 3000, Exif 6) is asked for 300 wide, its shown shape, and decoded once", async () => {
     const b = browser([3000, 4000], "honours");
     const r = run(jpeg(4000, 3000, 6), "image/jpeg", b);
     expect(await r.result).toMatchObject({ ok: true, scaled: true, width: 300, height: 400 });
-    expect(b.calls[0]?.options).toMatchObject({ resizeWidth: 300, resizeHeight: 400 });
+    expect(b.calls).toHaveLength(1);
+    expect(b.calls[0]?.options).toMatchObject({ resizeWidth: 300, imageOrientation: "from-image" });
+    expect(r.drawn).toEqual([[300, 400]]);
   });
 
-  it("falls back to a full-size decode, drawn smaller, when the browser rejects, ignores or misapplies the options", async () => {
-    for (const mode of ["rejects", "ignores", "swaps"] as const) {
+  it("a PNG whose orientation chunk turns it the other way from its header falls back to the full-size decode, never stretched", async () => {
+    // FX-3 fix round 3 (1): the header says 4000 by 3000 (fitted 533 by 400), but its eXIf chunk (orientation 6) makes the browser show
+    // it 3000 by 4000. Asked for 533 wide, it comes back 533 by 711, its own proportions: a mismatch, so the full-size decode (3000 by 4000,
+    // turned) is drawn at 300 by 400, upright and unstretched.
+    const b = browser([3000, 4000], "honours");
+    const r = run(png(4000, 3000), "image/png", b);
+    expect(await r.result).toMatchObject({ ok: true, scaled: true, width: 300, height: 400 });
+    expect(b.calls).toEqual([
+      { options: { resizeWidth: 533, resizeQuality: "high", imageOrientation: "from-image" } },
+      FULL,
+    ]);
+    expect(b.made.map((m) => [m.width, m.height])).toEqual([
+      [533, 711],
+      [3000, 4000],
+    ]);
+    expect(r.drawn).toEqual([[300, 400]]);
+    // the wrong-shaped bitmap is freed at once, the full-size one after drawing
+    expect(b.made.every((m) => m.closed)).toBe(true);
+  });
+
+  it("falls back to a full-size decode, drawn smaller, when the browser rejects or ignores the options", async () => {
+    for (const mode of ["rejects", "ignores"] as const) {
       const b = browser([2400, 900], mode);
       const r = run(png(2400, 900), "image/png", b);
       expect(await r.result).toMatchObject({ ok: true, scaled: true, width: 800, height: 300 });
       expect(b.calls).toHaveLength(2);
-      expect(b.calls[1]).toEqual({ options: undefined });
+      expect(b.calls[1]).toEqual(FULL);
       expect(r.drawn).toEqual([[800, 300]]);
       // every bitmap made is freed: a wrong-sized one at once, the full-size one after drawing
       expect(b.made.every((m) => m.closed)).toBe(true);
     }
   });
 
-  it("an image that fits, or whose header can't be read, is decoded without options; a broken one is still refused", async () => {
+  it("an image that fits, or whose header can't be read, is decoded without resizing; a broken one is still refused", async () => {
     for (const bytes of [png(600, 200), new Uint8Array(5)]) {
       const b = browser([600, 200], "honours");
       const r = run(bytes, "image/png", b);
       expect(await r.result).toMatchObject({ ok: true, scaled: false, width: 600, height: 200 });
-      expect(b.calls).toEqual([{ options: undefined }]);
+      expect(b.calls).toEqual([FULL]);
     }
     const broken = browser([3000, 4000], "broken");
     expect(await run(png(3000, 4000), "image/png", broken).result).toEqual({

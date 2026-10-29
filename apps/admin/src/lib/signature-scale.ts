@@ -147,11 +147,10 @@ export async function scaleSignature<I extends DecodedImage>(
   }
   try {
     if (!(image.width > 0 && image.height > 0)) return { ok: false, reason: "unreadable" };
-    const fit = signatureFit(image.width, image.height);
-    // decoded at the fitted size already: it was scaled, though the bitmap now fits the box
-    const scaled =
-      fit.scaled ||
-      (target?.scaled === true && image.width === target.width && image.height === target.height);
+    // decoded at the fitted size already (within the browser's one pixel of rounding): drawn at exactly that size, and it was scaled
+    const fitted = target?.scaled === true && fittedDecodeMatches(image, target);
+    const fit = fitted && target ? target : signatureFit(image.width, image.height);
+    const scaled = fitted || fit.scaled;
     const png = await io.toPng(image, fit.width, fit.height);
     return { ok: true, file: png, scaled, width: fit.width, height: fit.height };
   } catch {
@@ -182,17 +181,38 @@ export async function prepareSignature<I extends DecodedImage>(
   return { ok: true, file: ready.file, scaled: ready.scaled };
 }
 
-/** The options that make the browser decode straight at `size` (FX-3 fix round 2, H), with its best resampling. */
+/**
+ * The options that make the browser decode straight at `size` (FX-3 fix round 2, H), with its best resampling. Only the width is given
+ * (fix round 3, 1): the browser turns the image by its orientation (a JPEG's Exif, a PNG's eXIf chunk) and then works out the height
+ * from the turned image's own proportions, so a turn the header didn't show can never stretch it; the image only comes back at another
+ * height, which `fittedDecodeMatches` sends to the full-size path.
+ */
 export function fittedDecodeOptions(size: { width: number; height: number }): ImageBitmapOptions {
-  return { resizeWidth: size.width, resizeHeight: size.height, resizeQuality: "high" };
+  return { resizeWidth: size.width, resizeQuality: "high", imageOrientation: "from-image" };
+}
+
+/** The full-size decode, turned by the image's orientation as the browser shows it. */
+export const FULL_DECODE_OPTIONS: ImageBitmapOptions = { imageOrientation: "from-image" };
+
+/**
+ * Whether a bitmap decoded with `fittedDecodeOptions(size)` is the fitted image. Both sides are checked: the width exactly, the height
+ * allowing only the one pixel by which the browser's rounding (up, in the HTML standard) can differ from `signatureFit`'s (to the
+ * nearest). Anything else (the options ignored, or the image turned the other way from its header) is a mismatch.
+ */
+export function fittedDecodeMatches(
+  bitmap: { width: number; height: number },
+  size: { width: number; height: number },
+): boolean {
+  return bitmap.width === size.width && (bitmap.height === size.height || bitmap.height === size.height + 1);
 }
 
 type CreateBitmap = (image: Blob, options?: ImageBitmapOptions) => Promise<ImageBitmap>;
 
 /**
  * Decodes at `size` when one is given. A browser that rejects the options, ignores them (the bitmap comes back at another size) or
- * applies them before turning a photo by its Exif orientation (the sides come back swapped) gets the old path: a full-size decode,
- * drawn smaller on the canvas. An image no browser can read still fails, in the full-size decode.
+ * finds the image turned the other way from its header (a PNG's eXIf chunk, which the header reader doesn't follow: the height comes
+ * back far from the fitted one) gets the old path: a full-size decode, drawn smaller on the canvas. An image no browser can read still
+ * fails, in the full-size decode.
  */
 export async function decodeFitted(
   file: Blob,
@@ -202,13 +222,13 @@ export async function decodeFitted(
   if (size) {
     try {
       const bitmap = await create(file, fittedDecodeOptions(size));
-      if (bitmap.width === size.width && bitmap.height === size.height) return bitmap;
+      if (fittedDecodeMatches(bitmap, size)) return bitmap;
       bitmap.close();
     } catch {
       // the options were refused: the old path below
     }
   }
-  return create(file);
+  return create(file, FULL_DECODE_OPTIONS);
 }
 
 /** The browser's `ImageIo`: `createImageBitmap` to decode, a canvas with high-quality smoothing to draw, `toBlob` for the PNG. */
