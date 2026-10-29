@@ -2291,6 +2291,11 @@ input[readonly] {
   margin: var(--space-2) 0 0;
 }
 
+/* The page's name stays on one line ("Settings › Terms"). */
+.setting__warning a {
+  white-space: nowrap;
+}
+
 .settings-sub {
   margin: var(--space-8) 0 var(--space-2);
 }
