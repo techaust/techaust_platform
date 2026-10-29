@@ -419,3 +419,81 @@ On `fix/fx4-b2` from `origin/fix/fx4-invoicing`:
     - the seal covers it;
     - the PDF HTML shows "(estimate)" only with the marker.
 - Run the full `pnpm test` and `pnpm check`. Report under "### Builder round 2 report". The admin and portal screen labels then go to a short designer round (or the final sweep's fix task).
+
+### Builder round 2 report (builder, Opus 5.5 high, 2026-10-29)
+Branch `fix/fx4-b2` from `origin/fix/fx4-invoicing` (1a6e7441). Code commit 3ea3cf5c, plus this report.
+
+**Skills loaded:**
+- `cloudflare:workers-best-practices`: the portal summary keeps reading the frozen D1 row, not the R2 envelope. The marker parse is a pure function with no per-request state, and there is no `import()`. I checked the bundle cost (portal +301 bytes).
+- `cloudflare:wrangler`: no config, binding or var changed, so there was no `wrangler types` regeneration and no deploy.
+- Not loaded: `cloudflare:workers-profiling` (no CPU-sensitive path changed; the startup figures are below), `frontend-design` (no screen), `security-review`/`code-review` (reviewer skills).
+
+**A5 5, the sealed `proforma.gstEstimate` marker (Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28)):**
+- **Core** (`packages/core/src/invoices.ts`, `export-invoice.ts`):
+  - `InvoiceSnapshotInput.proforma` is now `{ notice; gstEstimate?: true }`. It is absent on proformas sealed before FX-4, so their hashes don't change.
+  - `isGstEstimate(proforma)` counts only the literal `true`.
+  - `gstEstimateOfHeaderExtras(text)` reads the marker from the stored `header_extras` text, for the portal.
+- **Issue path** (`apps/admin/worker/invoice-model.ts` `headerExtrasOf`): every proforma is sealed and frozen with `{ notice: PROFORMA_NOTICE, gstEstimate: true }`. It is part of the canonical header, so `snapshot_sha256` covers it. The frozen-update trigger already blocks any change to `header_extras` after issue. `headerExtrasOfRow` passes the object through unchanged, so a changed marker fails the seal check.
+- **Admin view** (`apps/admin/worker/invoice-view.ts`): `proforma.gstEstimate` is the sealed value on a frozen proforma. On a draft it is `true`, because the draft will be issued with the marker.
+- **Portal** (`apps/portal/worker/invoice-summary.ts`): `SUMMARY_COLS` adds `d.header_extras`. `summaryOf` returns `gstEstimate`, which is true only for a proforma with the marker. This covers both the signed-in `/invoices/:id` and the emailed `/t/document`.
+- **PDF** (`packages/pdf`):
+  - `parseInvoiceEnvelope` refuses a `proforma.gstEstimate` that is anything but `true`.
+  - `InvoiceView.proforma.gstEstimate` is true only when `type === "proforma"` and the sealed marker is present.
+  - The layout (`layout/invoice.ts` `headLabel`) labels the CGST, SGST and IGST rows of the totals, and the tax summary's column-group heads, with `PROFORMA_PDF_COPY.estimate(head)` = "CGST (estimate)". The summary heads are now escaped too.
+  - Older proformas print exactly as before.
+- **Jobs:** no source change. The snapshot step builds the envelope from the rows (`invoiceSealPartsOfBundle`), so the marker travels with it, and the render step refuses an envelope whose seal no longer matches.
+
+**Migration:** none. The marker lives in the existing sealed `header_extras` JSON.
+
+**Tests (new or changed):**
+- core `invoice-types.test.ts`: the marker changes the snapshot hash; `isGstEstimate` and `gstEstimateOfHeaderExtras` accept only `true` and treat malformed text as no marker. 1778 passed.
+- db `invoice-types.test.ts`: the marker is sealed, changes the hash, and survives `headerExtrasJson`/`headerExtrasOfRow`.
+- pdf, new `test/proforma-estimate.test.ts` (8 tests):
+  - a new proforma carries the marker, verifies, and survives the D1 round trip byte for byte;
+  - an older proforma has no marker and still verifies;
+  - adding or removing the marker fails `snapshot_hash`, both in the envelope and through the rows;
+  - a marker that isn't the literal `true` makes the envelope unparseable;
+  - the HTML shows "(estimate)" on the CGST and SGST rows and summary heads only with the marker, and on IGST for an inter-state supply;
+  - the total and the taxable value are never labelled;
+  - a tax invoice is never labelled;
+  - the notice check still passes.
+  - The fixture gained an optional `{ gstEstimate }`. pdf: 348 passed.
+- admin `invoice-types.test.ts`:
+  - the two existing proforma seal tests now expect the marker;
+  - new: the draft view says `gstEstimate: true`, the frozen `header_extras` holds the marker, the seal without it fails, and an `UPDATE` of the frozen `header_extras` is refused;
+  - new: an older proforma (a copy of an issued row with the notice-only header) shows `gstEstimate: false`.
+  - admin: 3279 passed (was 3277).
+- portal `invoices.test.ts` (new) and `doc-token.test.ts` (key list and value): true only for a marked proforma; false for a notice-only or extras-less proforma and for a tax invoice carrying a stray marker. portal: 622 passed.
+- jobs `pdf-invoice-types.test.ts` (2 new; seed option `gstEstimate`):
+  - a marked proforma renders through the real layout with "(estimate)", and an older one without it;
+  - a stored envelope with the marker removed is refused before Browser Run.
+
+**Commands and results (all heavy ones through `tools/heavy.sh`):**
+- `pnpm install --frozen-lockfile --offline`: ok.
+- `pnpm exec biome check --write` on every file I changed: clean.
+- Single-file runs: core, pdf (3 files), `fx4b2-admin-types` (52), `fx4b2-db-types` (36), `fx4b2-portal-inv`, `fx4b2-jobs-pdf`: green after two fixes to my own tests (the portal key list; the jobs test's key order in the stored JSON).
+- `fx4b2-test` (`pnpm test`): exit 1.
+  - auth 135, ui 469 (+2 skipped), core 1778, email 128, db 478, pdf 348, web 428 (+16 skipped) and portal 622 all passed.
+  - jobs: 526 passed, 2 failed, both "Test timed out in 5000ms": `pdf.test.ts` "JOB-PDF-01 burst: 20 sends" and `offers.test.ts` "the email consumer sends each once". Neither touches a proforma, and the machine was loaded (portal took 230 s).
+  - admin was stopped when jobs failed.
+- `fx4b2-jobs-rerun` (those two files): 84 passed.
+- `fx4b2-admin-test` (`pnpm --filter @techaust/admin test`): 109 files, 3279 passed.
+- `fx4b2-check` (`pnpm check`, the one whole-repository lint): exit 0.
+  - 10 warnings, all in files I didn't touch.
+  - Typecheck, bindings, content, Worker config and migration guards ok (53 migrations).
+- `fx4b2-build` (admin, portal, jobs): green.
+  - admin front 99,131 bytes;
+  - admin API 600,091 bytes (+72);
+  - portal 97,312 bytes (+301);
+  - jobs 869,130 bytes (+1,175);
+  - every startup under 200 ms.
+
+**Not verified:**
+- A real Browser Run render of a marked proforma, or how the longer head ("CGST (estimate)") wraps in the summary's narrow column group on paper. The HTML is tested; the print look is the designer's sweep.
+- A clean single `pnpm test` pass: jobs and admin were confirmed in separate reruns after the two load timeouts.
+- The admin and portal screens don't show the label yet. The data is exposed (`proforma.gstEstimate` on the admin view, `gstEstimate` on the portal summary); the labels are the designer's short round.
+
+**Placeholder lines (07-Y; printed unmarked in the PDF like every PDF line, pending approval):**
+1. A tax head on a proforma sealed with the marker: "<head> (estimate)", i.e. "CGST (estimate)", "SGST (estimate)", "IGST (estimate)" (`PROFORMA_PDF_COPY.estimate`, exported through `@techaust/pdf/copy` so the screens can reuse it).
+
+**Open questions:** none.
