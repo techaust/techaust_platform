@@ -10,6 +10,7 @@
 // multiplies or rounds money. The due date and the number are the server's; the screen never works them out.
 import { milestoneBillableRule } from "@techaust/core/invoices";
 import { SERIES, type Series } from "@techaust/core/numbering";
+import { PROFORMA_PDF_COPY } from "@techaust/pdf/copy";
 import type { Currency } from "../api.ts";
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
@@ -69,6 +70,18 @@ export const SUPPLIER_COPY_LABEL = "Download supplier copy";
 export const SUPPLIER_COPY_NONE = Y(
   "No supplier copy was made before this client was anonymised, and none can be made now.",
 );
+
+/**
+ * FX-4 review M1 (A5 5): a proforma's tax head as an estimate, "CGST (estimate)", in the PDF's own words (`PROFORMA_PDF_COPY.estimate`, 07-Y, pending;
+ * unmarked like the PDF, docs/13), so the screen and the PDF never differ. Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28).
+ */
+export const taxHeadEstimate: (head: string) => string = PROFORMA_PDF_COPY.estimate;
+
+/** Whether the view's tax heads read as estimates: only a proforma with the marker (sealed with it, or a draft that will be); never an older seal. */
+export const showsGstEstimate = (v: {
+  type: string;
+  proforma?: { gstEstimate?: boolean | undefined } | null | undefined;
+}): boolean => v.type === "proforma" && v.proforma?.gstEstimate === true;
 
 /** The line that stays under the supplier copy's button after an answer: only an anonymised client's 409 has one. */
 export const supplierCopyLine = (state: string, anonymised: boolean): string | null =>

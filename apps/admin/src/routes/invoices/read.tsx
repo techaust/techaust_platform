@@ -24,6 +24,7 @@ import {
   milestoneBackLine,
   moneyText,
   SUPPLIER_COPY_LABEL,
+  showsGstEstimate,
   supplierCopyLine,
   typeLabel,
   UNKNOWN,
@@ -414,6 +415,7 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
                   currency={v.currency}
                   frozen={v.frozen}
                   discounts={discountSources(v)}
+                  estimate={showsGstEstimate(v)}
                 />
               </>
             )}

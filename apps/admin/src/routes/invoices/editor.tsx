@@ -51,6 +51,7 @@ import {
   issuedToast,
   issueLabelFor,
   requestLine,
+  showsGstEstimate,
   typeLabel,
   UNKNOWN,
 } from "../../lib/invoices.ts";
@@ -538,6 +539,7 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
                 currency={s.currency}
                 busy={s.saving}
                 discounts={draftDiscountSources(s.lines, s.fields, s.currency)}
+                estimate={showsGstEstimate(v)}
               />
             </div>
           </section>

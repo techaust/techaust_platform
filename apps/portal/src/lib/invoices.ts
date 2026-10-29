@@ -3,6 +3,7 @@
 // server's status, balance and due date, never computed from amounts.
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { formatMoney, money, negate } from "@techaust/core/money";
+import type { InvoiceSummary } from "../api.ts";
 import { INV } from "../copy-invoices.ts";
 
 /** An amount of the document's currency, as core formats it (₹23,600.00, $1,200.00). */
@@ -39,6 +40,31 @@ export function clientStatus(
 }
 
 export const statusLabel = (s: Exclude<ClientInvoiceStatus, null>) => INV.status[s];
+
+/**
+ * The totals under the lines, as the PDF lists them (only the heads that apply; Total last and strong). Every amount is the server's, formatted here.
+ * FX-4 review M1 (A5 5): a proforma sealed with the estimate marker (`gstEstimate`) names its tax heads "CGST (estimate)" as its PDF does; one sealed
+ * before FX-4 (no marker, or an older API without the field) keeps the plain heads.
+ */
+export function totalsRows(d: Pick<InvoiceSummary, "type" | "currency" | "totals" | "gstEstimate">) {
+  const t = d.totals;
+  const m = (n: number) => moneyText(n, d.currency);
+  const head = (h: string) => (d.type === "proforma" && d.gstEstimate === true ? INV.pdf.estimateHead(h) : h);
+  const rows: { label: string; value: string; strong?: boolean }[] = [];
+  if (t.discountMinor !== 0) {
+    rows.push({ label: INV.pdf.totals.subtotal, value: m(t.subtotalMinor) });
+    rows.push({ label: INV.pdf.totals.discount, value: minusMoneyText(t.discountMinor, d.currency) });
+  }
+  rows.push({ label: INV.pdf.totals.taxable, value: m(t.taxableMinor) });
+  if (t.cgstMinor !== 0 || t.sgstMinor !== 0) {
+    rows.push({ label: head(INV.pdf.totals.cgst), value: m(t.cgstMinor) });
+    rows.push({ label: head(INV.pdf.totals.sgst), value: m(t.sgstMinor) });
+  }
+  if (t.igstMinor !== 0) rows.push({ label: head(INV.pdf.totals.igst), value: m(t.igstMinor) });
+  if (t.roundOffMinor !== 0) rows.push({ label: INV.pdf.totals.roundOff, value: m(t.roundOffMinor) });
+  rows.push({ label: INV.pdf.totals.total, value: m(t.totalMinor), strong: true });
+  return rows;
+}
 export const typeLabel = (type: string) => INV.types[type] ?? INV.types.tax_invoice ?? type;
 
 // ---- The invoice link (POR-06) ---------------------------------------------------------------------------------------------------------------

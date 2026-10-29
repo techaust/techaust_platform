@@ -3,8 +3,12 @@
 // status, a type or a due date) and how its answer lands (the server's ids by position; typing kept).
 import { ISSUE_BLOCKER_CODES } from "@techaust/core/invoices";
 import { decide, ROLES } from "@techaust/core/permissions";
+import { PROFORMA_PDF_COPY } from "@techaust/pdf/copy";
 import { describe, expect, it, vi } from "vitest";
 import { RequestError } from "../api.ts";
+import moneySource from "../routes/documents/money.tsx?raw";
+import editorSource from "../routes/invoices/editor.tsx?raw";
+import readSource from "../routes/invoices/read.tsx?raw";
 import { APPROVED_07Y, PLACEHOLDER_MARK } from "./copy-y.ts";
 import {
   applyInvoiceSave,
@@ -35,9 +39,11 @@ import {
   SUPPLIER_COPY_LABEL,
   SUPPLIER_COPY_NONE,
   seriesPreview,
+  showsGstEstimate,
   splitAtPlace,
   splitSentences,
   supplierCopyLine,
+  taxHeadEstimate,
   typeLabel,
   voidBlockedText,
   voidTitle,
@@ -516,5 +522,25 @@ describe("M5.2 re-check: proforma wording and the advance rate date (07-S §8)",
     expect(voidBlockedText(["emailed"], "proforma")).toBe(
       "This proforma has been emailed to the client, so it can't be voided.",
     );
+  });
+});
+
+describe("FX-4 review M1 (A5 5): a marked proforma's tax heads read as estimates, in the PDF's words", () => {
+  it("the head is the PDF's own wording, so the screen and the PDF never differ", () => {
+    expect(taxHeadEstimate("CGST")).toBe("CGST (estimate)");
+    for (const h of ["CGST", "SGST", "IGST"]) expect(taxHeadEstimate(h)).toBe(PROFORMA_PDF_COPY.estimate(h));
+  });
+  it("only a proforma with the marker; one sealed before FX-4, or any other type, keeps the plain heads", () => {
+    expect(showsGstEstimate({ type: "proforma", proforma: { gstEstimate: true } })).toBe(true);
+    expect(showsGstEstimate({ type: "proforma", proforma: { gstEstimate: false } })).toBe(false);
+    expect(showsGstEstimate({ type: "proforma", proforma: {} })).toBe(false);
+    expect(showsGstEstimate({ type: "proforma", proforma: null })).toBe(false);
+    expect(showsGstEstimate({ type: "proforma" })).toBe(false);
+    for (const type of ["tax_invoice", "export_invoice", "credit_note", "debit_note"])
+      expect(showsGstEstimate({ type, proforma: { gstEstimate: true } })).toBe(false);
+  });
+  it("the invoice editor and the invoice page pass the marker to TaxPreview, which names the heads by it", () => {
+    for (const src of [editorSource, readSource]) expect(src).toMatch(/estimate=\{showsGstEstimate\(v\)\}/);
+    expect(moneySource).toMatch(/props\.estimate \? taxHeadEstimate\(DOC_COPY\[k\]\) : DOC_COPY\[k\]/);
   });
 });

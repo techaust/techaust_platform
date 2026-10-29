@@ -18,6 +18,7 @@ import {
   taxLinesOf,
 } from "../../lib/documents.ts";
 import type { LineFigures, Supply, Totals, ViewLine, ViewStep } from "../../lib/documents-api.ts";
+import { taxHeadEstimate } from "../../lib/invoices.ts";
 import { bpToPercent } from "../../lib/settings-form.ts";
 
 /** The totals block: what the document comes to, and why. */
@@ -30,10 +31,16 @@ export function TaxPreview(props: {
   busy?: boolean;
   /** FX-4 (A5 3): where the discount comes from (`discountSources`, `draftDiscountSources`), so the row is named for it. */
   discounts?: { lines: boolean; document: boolean } | undefined;
+  /**
+   * FX-4 review M1 (A5 5): a proforma carrying the sealed estimate marker (`proforma.gstEstimate`; a draft proforma is issued with it) names each tax
+   * head "CGST (estimate)", in the PDF's own words; a proforma sealed before FX-4, and every other type, keeps the plain heads.
+   */
+  estimate?: boolean | undefined;
 }) {
   const { totals: t, supply, currency } = props;
   if (!t) return null;
   const kinds = taxLinesOf(supply);
+  const head = (k: (typeof kinds)[number]) => (props.estimate ? taxHeadEstimate(DOC_COPY[k]) : DOC_COPY[k]);
   return (
     <div className="tax-preview" aria-busy={props.busy || undefined}>
       {supply && (
@@ -52,7 +59,7 @@ export function TaxPreview(props: {
         </div>
         {kinds.map((k) => (
           <div className="totals__row" key={k}>
-            <dt>{DOC_COPY[k]}</dt>
+            <dt>{head(k)}</dt>
             <dd className="tnum">
               {moneyText(k === "cgst" ? t.cgstMinor : k === "sgst" ? t.sgstMinor : t.igstMinor, currency)}
             </dd>

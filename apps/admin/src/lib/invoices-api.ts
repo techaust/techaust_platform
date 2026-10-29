@@ -263,6 +263,11 @@ export type InvoiceView = {
   lutStatus?: LutStatus;
   proforma?: {
     notice: string | null;
+    /**
+     * FX-4 (A5 5): the tax heads are estimates. A frozen proforma says what it was sealed with (one issued before FX-4 has no marker); a draft is
+     * issued with it. Absent from an older API: no "(estimate)".
+     */
+    gstEstimate?: boolean;
     validUntil: string | null;
     paidMinor: number;
     balanceMinor: number;
