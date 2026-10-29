@@ -40,6 +40,7 @@ import {
   titleOf,
   unresolvedItems,
   validFor,
+  waitForInflight,
 } from "../../lib/documents.ts";
 import { type DocumentView, documentsApi } from "../../lib/documents-api.ts";
 import { OFFER_COPY } from "../../lib/offers.ts";
@@ -88,7 +89,8 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
   const canWrite = allowed(user.role, "proposals.draft");
   const canSendRole = allowed(user.role, "proposals.send");
   const save = useCallback(async (): Promise<boolean> => {
-    if (inflight.current) await inflight.current.catch(() => null);
+    // Every request in flight, not only the first one seen (round 4, L5).
+    await waitForInflight(inflight);
     const cur = ref.current;
     if (cur.status === "stale" || cur.status === "frozen") return false;
     const b = buildPatch(cur);
@@ -122,7 +124,7 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
 
   /** Everything typed is saved; resolves with the `updatedAt` a send or a request must carry, or null when it could not save. */
   const flush = useCallback(async (): Promise<number | null> => {
-    if (inflight.current) await inflight.current.catch(() => null);
+    await waitForInflight(inflight);
     for (let i = 0; i < 3 && isDirty(ref.current); i++) if (!(await save())) return null;
     const cur = ref.current;
     return cur.status === "stale" || cur.status === "frozen" || isDirty(cur) ? null : cur.updatedAt;

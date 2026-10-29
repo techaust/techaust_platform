@@ -44,6 +44,11 @@ export type CatalogueGap = {
   catalogueItemId: string;
   /** Catalogue has the text now (filled in since the draft was made): "Use Catalogue text" can add it. */
   catalogueHasTextNow: boolean;
+  /**
+   * Catalogue has the text, but it would make the section (6,000 characters) or the document (30,000) too long, so it was left out
+   * (round 4, M3; never a refused save). Never also `catalogueHasTextNow`.
+   */
+  noRoom: boolean;
 };
 
 /** What a sent version was addressed to, as frozen at send (review fix 1; the db's `RecipientSnapshot`). */

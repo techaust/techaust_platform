@@ -200,6 +200,8 @@ export const GAP_COPY = {
   chooseContact: X("Choose a contact"),
   /** §3.4: the link to the service in Catalogue. */
   addInCatalogue: X("Add the text in Catalogue"),
+  /** §3.10 (round 4, M3): the link to a service whose text was left out for the length limit. */
+  openInCatalogue: X("Open it in Catalogue"),
   /** §3.5: unhide a hidden section and put the cursor in its text. */
   writeHere: X("Write it here"),
   /** The brief's own words (B2's action). */
@@ -224,6 +226,14 @@ export const gapNowLine = (
   service: string,
   fields: readonly ("deliverables" | "assumptions" | "exclusions")[],
 ) => X(`Catalogue now has the ${fieldList(fields)} for ${service}.`);
+/** §3.9 (round 4, M3): Catalogue has the text, but it would make the section or the proposal too long, so it was left out. */
+export const gapNoRoomLine = (
+  service: string,
+  fields: readonly ("deliverables" | "assumptions" | "exclusions")[],
+) =>
+  X(
+    `The ${fieldList(fields)} for ${service} were left out: this section has no room for them. To add them, shorten the section and copy them from Catalogue.`,
+  );
 /** §3.3: why a section is hidden. */
 export const GAP_HIDDEN = X("This section is hidden until it has text.");
 /** §4.1: the list's empty state when it shows one type (sweep finding 8; 07-O's line names both). */
@@ -964,6 +974,53 @@ const sameFigures = (a: LineFigures | undefined, b: LineFigures) =>
   a.lineTotalMinor === b.lineTotalMinor;
 
 /**
+ * Waits until no save or fill is in flight (round 4, L5): a request started while the one awaited ran (a fill after a save, say) is
+ * waited for too, so a save never builds its request on a version that is about to change. Each promise is awaited once: one that stays
+ * in the slot after it settled ends the wait instead of spinning.
+ */
+export async function waitForInflight(slot: { current: Promise<unknown> | null }): Promise<void> {
+  let seen: Promise<unknown> | null = null;
+  while (slot.current !== null && slot.current !== seen) {
+    seen = slot.current;
+    await seen.catch(() => null);
+  }
+}
+
+/**
+ * A server's change to a text, put into what the person typed while the save was in flight (round 4, M2): `sent` is the text the save
+ * carried, `server` the text the server stored, `typed` what is on screen now. The server's change is one span (a common start and end
+ * around it): text added at the end (Catalogue text under a service's name) is added at the end of what was typed; a span changed inside
+ * (a part put into a service's block, the contact's name) is changed where it still stands, found from the start or from the end. Null when
+ * it can't be placed (the person changed that very span).
+ */
+export function mergeServerEdit(sent: string, server: string, typed: string): string | null {
+  if (server === sent) return typed;
+  if (typed === sent) return server;
+  // the server emptied it (a text that was only a value with nothing to fill it): what was typed since is the person's, kept whole
+  if (server.trim() === "") return null;
+  // a section that was empty: the server's whole text is a block of its own after what was typed
+  if (sent.trim() === "") return typed.trim() === "" ? server : `${typed.trimEnd()}\n\n${server.trimStart()}`;
+  if (server.startsWith(sent)) return `${typed}${server.slice(sent.length)}`;
+  let pre = 0;
+  const max = Math.min(sent.length, server.length);
+  while (pre < max && sent[pre] === server[pre]) pre++;
+  let suf = 0;
+  while (suf < max - pre && sent[sent.length - 1 - suf] === server[server.length - 1 - suf]) suf++;
+  const removed = sent.slice(pre, sent.length - suf);
+  const inserted = server.slice(pre, server.length - suf);
+  const head = sent.slice(0, pre);
+  const tail = sent.slice(sent.length - suf);
+  // the person typed after the changed span: it still stands right after the same start
+  if (typed.startsWith(head + removed)) return `${head}${inserted}${typed.slice(pre + removed.length)}`;
+  // the person typed before it: it still stands right before the same end
+  if (typed.endsWith(removed + tail)) {
+    const at = typed.length - tail.length - removed.length;
+    return `${typed.slice(0, at)}${inserted}${typed.slice(at + removed.length)}`;
+  }
+  return null;
+}
+
+/**
  * The answer of a save onto the screen: the new `updatedAt`, the server's ids for the rows it made (by position in what was sent) and
  * every figure. What the person typed meanwhile stays; a part edited again while the save was in flight stays dirty. A line whose
  * figures did not change keeps the same object, so its row does not draw again.
@@ -1036,9 +1093,18 @@ export function applySave(s: EditorState, a: SaveAnswer, sent: Sent): EditorStat
     sections: s.sections.map((x) => {
       const id = sectionIds.get(x.uid) ?? x.id;
       const r = id === null ? undefined : rewritten.get(id);
+      const at = sent.sectionsAt?.[x.uid];
       // untouched since the save was sent: the very object the save was built from
-      if (r && id !== null && sent.sectionsAt?.[x.uid] === x)
+      if (r && id !== null && at === x)
         return { ...x, id, title: r.title ?? "", bodyMd: r.bodyMd ?? "", hidden: r.hidden };
+      // Typed into while the save was in flight (round 4, M2): the server's own change (Catalogue text it added, the contact's name) goes
+      // into what was typed, and the section stays dirty, so the next save keeps both. Text the merge can't place is left as typed.
+      if (r && id !== null && at) {
+        const bodyMd = mergeServerEdit(at.bodyMd, r.bodyMd ?? "", x.bodyMd) ?? x.bodyMd;
+        const title = mergeServerEdit(at.title, r.title ?? "", x.title) ?? x.title;
+        const hidden = r.hidden !== at.hidden && x.hidden === at.hidden ? r.hidden : x.hidden;
+        return { ...x, id, bodyMd, title, hidden };
+      }
       return id !== null && id !== x.id ? { ...x, id } : x;
     }),
     schedule: s.schedule.map((x) =>
@@ -1326,7 +1392,8 @@ export type GapGroup = {
   sectionId: string | null;
   name: string;
   hidden: boolean;
-  services: { id: string; name: string; missing: GapField[]; now: GapField[] }[];
+  /** Per service: no text in Catalogue (`missing`), text added there since (`now`), text left out for the length limit (`noRoom`). */
+  services: { id: string; name: string; missing: GapField[]; now: GapField[]; noRoom: GapField[] }[];
   /** Catalogue has some of the text now: "Use Catalogue text" can add it (to a section the draft holds). */
   canFill: boolean;
 };
@@ -1361,18 +1428,19 @@ export function gapGroups(
     }
     let svc = group.services.find((x) => x.id === g.catalogueItemId);
     if (!svc) {
-      svc = { id: g.catalogueItemId, name: g.serviceName, missing: [], now: [] };
+      svc = { id: g.catalogueItemId, name: g.serviceName, missing: [], now: [], noRoom: [] };
       group.services.push(svc);
     }
-    const list = g.catalogueHasTextNow ? svc.now : svc.missing;
+    const list = g.noRoom ? svc.noRoom : g.catalogueHasTextNow ? svc.now : svc.missing;
     if (!list.includes(g.field)) list.push(g.field);
-    if (g.catalogueHasTextNow && sec?.id) group.canFill = true;
+    if (g.catalogueHasTextNow && !g.noRoom && sec?.id) group.canFill = true;
   }
   const order = (a: GapField, b: GapField) => FIELD_ORDER.indexOf(a) - FIELD_ORDER.indexOf(b);
   for (const group of groups.values())
     for (const s of group.services) {
       s.missing.sort(order);
       s.now.sort(order);
+      s.noRoom.sort(order);
     }
   return [...groups.values()];
 }

@@ -10,7 +10,6 @@ import {
   SECTION_TITLE_MAX,
 } from "@techaust/core/documents";
 import { type Dispatch, memo, useCallback, useEffect, useState } from "react";
-import { Link } from "react-router";
 import {
   AlertTriangle,
   ArrowDown,
@@ -32,6 +31,7 @@ import {
   GAP_HIDDEN,
   type GapGroup,
   gapLine,
+  gapNoRoomLine,
   gapNowLine,
   isEmptyOptional,
   isRequiredSection,
@@ -45,6 +45,7 @@ import {
   uid,
 } from "../../lib/documents.ts";
 import { COPY as PROJECT_COPY } from "../../lib/projects.ts";
+import { CatalogueLink } from "./parts.tsx";
 
 /** The names of the placeholders still in a text, without their braces (for the words of 07-X §2). */
 const holeNames = (text: string) => placeholdersIn(text).map((n) => n.slice(2, -2));
@@ -364,47 +365,49 @@ function GapNote(props: {
       <Info size={16} />
       <div className="gap-note__body">
         {gap.hidden && <p className="gap-note__hidden">{GAP_HIDDEN}</p>}
+        {/* Each service's sentence carries its own link (round 4, M4: the send panel's layout), never a stack of links that read the same. */}
         {gap.services.map((s) => (
           <p key={s.id}>
-            {s.missing.length > 0 && <span>{gapLine(s.name, s.missing)} </span>}
-            {s.now.length > 0 && <span>{gapNowLine(s.name, s.now)}</span>}
+            {s.missing.length > 0 && (
+              <>
+                {gapLine(s.name, s.missing)}{" "}
+                <CatalogueLink id={s.id} name={s.name} words={GAP_COPY.addInCatalogue} />{" "}
+              </>
+            )}
+            {s.now.length > 0 && <>{gapNowLine(s.name, s.now)} </>}
+            {s.noRoom.length > 0 && (
+              <>
+                {gapNoRoomLine(s.name, s.noRoom)}{" "}
+                <CatalogueLink id={s.id} name={s.name} words={GAP_COPY.openInCatalogue} />
+              </>
+            )}
           </p>
         ))}
-        <div className="gap-note__acts">
-          {gap.services
-            .filter((s) => s.missing.length > 0)
-            .map((s) => (
-              <Link
-                key={s.id}
-                to={`/catalogue/${encodeURIComponent(s.id)}`}
+        {((gap.hidden && uidOf) || (gap.canFill && sectionId)) && (
+          <div className="gap-note__acts">
+            {gap.hidden && uidOf && (
+              <button
+                type="button"
                 className="btn btn--text gap-note__act"
-                aria-label={`${GAP_COPY.addInCatalogue}: ${s.name}`}
+                onClick={() => props.onWriteHere(uidOf)}
+                disabled={props.filling !== null}
               >
-                {GAP_COPY.addInCatalogue}
-              </Link>
-            ))}
-          {gap.hidden && uidOf && (
-            <button
-              type="button"
-              className="btn btn--text gap-note__act"
-              onClick={() => props.onWriteHere(uidOf)}
-              disabled={props.filling !== null}
-            >
-              {GAP_COPY.writeHere}
-            </button>
-          )}
-          {gap.canFill && sectionId && (
-            <button
-              type="button"
-              className="btn btn--secondary gap-note__fill"
-              onClick={() => props.onFill(sectionId)}
-              disabled={props.filling !== null}
-              aria-busy={props.filling === sectionId || undefined}
-            >
-              {GAP_COPY.useCatalogue}
-            </button>
-          )}
-        </div>
+                {GAP_COPY.writeHere}
+              </button>
+            )}
+            {gap.canFill && sectionId && (
+              <button
+                type="button"
+                className="btn btn--secondary gap-note__fill"
+                onClick={() => props.onFill(sectionId)}
+                disabled={props.filling !== null}
+                aria-busy={props.filling === sectionId || undefined}
+              >
+                {GAP_COPY.useCatalogue}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

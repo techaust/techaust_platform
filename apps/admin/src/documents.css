@@ -174,6 +174,8 @@
 }
 
 .qledger {
+  /* The quantity box (4.5 rem) and the longest unit beside it, "Per milestone" (round 4, M5). */
+  --qledger-qty: 12rem;
   margin: 0 0 var(--space-4);
   padding: 0;
   list-style: none;
@@ -241,8 +243,9 @@
 .qledger__work {
   grid-area: work;
   display: grid;
-  /* Sweep finding 5: the quantity cell takes the room its unit needs ("Per milestone"), never a fixed 8 rem that clips it. */
-  grid-template-columns: minmax(8rem, max-content) minmax(8rem, 11rem) minmax(10rem, 13rem);
+  /* Sweep finding 5 and round 4, M5: one quantity width for the whole list, wide enough for the longest unit ("Per milestone"), so
+     every row's rate and discount start on the same line (a width per row, from its own unit, left them out of line). */
+  grid-template-columns: var(--qledger-qty) minmax(8rem, 11rem) minmax(10rem, 13rem);
   gap: var(--space-2) var(--space-3);
   align-items: end;
 }
@@ -482,8 +485,8 @@
 
 @media (min-width: 64rem) and (max-width: 87.99rem) {
   .qledger__work {
-    /* The quantity cell first takes what its unit needs (finding 5), the rate and the discount share the rest. */
-    grid-template-columns: minmax(min-content, max-content) minmax(7rem, 1fr) minmax(min-content, 1fr);
+    /* The quantity cell keeps the list's one width (finding 5, round 4 M5), the rate and the discount share the rest. */
+    grid-template-columns: var(--qledger-qty) minmax(7rem, 1fr) minmax(min-content, 1fr);
   }
 
   .qledger__work--step {

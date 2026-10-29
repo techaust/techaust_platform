@@ -18,6 +18,7 @@ import {
   GAP_HIDDEN,
   type GapGroup,
   gapLine,
+  gapNoRoomLine,
   gapNowLine,
   guardLine,
   type SaveStatus,
@@ -31,7 +32,7 @@ import {
 import type { ApprovalInfo, Blocker, Guard, QuoteType, VersionRow } from "../../lib/documents-api.ts";
 import { PDF_COPY } from "../../lib/pdf.ts";
 import { bpToPercent } from "../../lib/settings-form.ts";
-import { docHref } from "./parts.tsx";
+import { CatalogueLink, docHref } from "./parts.tsx";
 
 const OWNER_MARK_BP = 1000;
 
@@ -319,13 +320,14 @@ function GapNotes(props: {
                   {s.missing.length > 0 && <span>{gapLine(s.name, s.missing)} </span>}
                   {s.now.length > 0 && <span>{gapNowLine(s.name, s.now)} </span>}
                   {s.missing.length > 0 && (
-                    <Link
-                      to={`/catalogue/${encodeURIComponent(s.id)}`}
-                      className="blockers__link"
-                      aria-label={`${GAP_COPY.addInCatalogue}: ${s.name}`}
-                    >
-                      {GAP_COPY.addInCatalogue}
-                    </Link>
+                    <CatalogueLink id={s.id} name={s.name} words={GAP_COPY.addInCatalogue} />
+                  )}
+                  {s.noRoom.length > 0 && (
+                    <>
+                      {s.missing.length > 0 && " "}
+                      <span>{gapNoRoomLine(s.name, s.noRoom)} </span>
+                      <CatalogueLink id={s.id} name={s.name} words={GAP_COPY.openInCatalogue} />
+                    </>
                   )}
                 </p>
               ))}
