@@ -4,7 +4,8 @@
 //     `scrollable-region-focusable`: a box that scrolls sideways is a keyboard stop (components/scroll-region.ts).
 //   - A box that does scroll sideways takes focus from the keyboard and moves with the arrow keys.
 // The record pages are found from the lists (the first client, project, lead, care plan, document, invoice, catalogue item and
-// template the local database holds); a list that is empty in this database is checked as its empty state.
+// template the local database holds); a list that is empty in this database is checked as its empty state. A lead, a client and a
+// template must be found (global-setup adds a sample lead when there is none), and the keyboard test must meet a scroll box.
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
 
@@ -51,26 +52,33 @@ const LISTS = [
   "/settings/flags",
 ];
 
-/** The first record of each list, by its API (null when the local database has none). */
-async function records(page: Page): Promise<string[]> {
-  const first = async (path: string, key: string, to: (id: string) => string) => {
+/** The record pages the sweep must reach in any prepared database (the seed's templates, the sample clients, global-setup's lead). */
+const REQUIRED = ["lead", "client", "template"] as const;
+
+/**
+ * The first record of each list, by its API's own first page (no `limit`: the lists take only their default page size, and any other
+ * value is a 400, which once left every record page out of the sweep: FX-3 review 3). A list that answers anything but 200 fails here.
+ */
+async function records(page: Page): Promise<Record<string, string>> {
+  const first = async (kind: string, path: string, key: string, to: (id: string) => string) => {
     const res = await page.request.get(`/api/v1${path}`);
-    if (!res.ok()) return null;
+    expect(res.status(), `GET /api/v1${path}`).toBe(200);
     const body = (await res.json()) as Record<string, { id: string }[] | undefined>;
+    expect(Array.isArray(body[key]), `GET /api/v1${path} has "${key}"`).toBe(true);
     const id = body[key]?.[0]?.id;
-    return id ? to(encodeURIComponent(id)) : null;
+    return [kind, id ? to(encodeURIComponent(id)) : null] as const;
   };
   const found = await Promise.all([
-    first("/leads?limit=1", "leads", (id) => `/leads/${id}`),
-    first("/clients?limit=1", "clients", (id) => `/clients/${id}`),
-    first("/projects?limit=1", "projects", (id) => `/projects/${id}`),
-    first("/care-plans?limit=1", "carePlans", (id) => `/care-plans/${id}`),
-    first("/documents?limit=1", "documents", (id) => `/documents/${id}`),
-    first("/invoices?limit=1", "invoices", (id) => `/invoices/${id}`),
-    first("/catalogue?limit=1", "items", (id) => `/catalogue/${id}`),
-    first("/templates?limit=1", "templates", (id) => `/catalogue/templates/${id}`),
+    first("lead", "/leads", "leads", (id) => `/leads/${id}`),
+    first("client", "/clients", "clients", (id) => `/clients/${id}`),
+    first("project", "/projects", "projects", (id) => `/projects/${id}`),
+    first("care plan", "/care-plans", "carePlans", (id) => `/care-plans/${id}`),
+    first("document", "/documents", "documents", (id) => `/documents/${id}`),
+    first("invoice", "/invoices", "invoices", (id) => `/invoices/${id}`),
+    first("catalogue item", "/catalogue", "items", (id) => `/catalogue/${id}`),
+    first("template", "/templates", "templates", (id) => `/catalogue/templates/${id}`),
   ]);
-  return found.filter((p): p is string => p !== null);
+  return Object.fromEntries(found.filter((f): f is readonly [string, string] => f[1] !== null));
 }
 
 /** Waits until the route has drawn its content: no skeleton and nothing busy (the lists load after the shell). */
@@ -87,7 +95,14 @@ test.describe("admin sweep", () => {
   test.beforeAll(async ({ browser }) => {
     const page = await browser.newPage();
     await page.goto("/");
-    routes = [...LISTS, ...(await records(page))];
+    const found = await records(page);
+    for (const kind of REQUIRED) expect(found[kind], `the sweep finds a ${kind} to visit`).toBeTruthy();
+    console.log(
+      `record pages swept: ${Object.entries(found)
+        .map(([k, p]) => `${k} ${p}`)
+        .join(", ")}`,
+    );
+    routes = [...LISTS, ...Object.values(found)];
     await page.close();
   });
 
@@ -149,26 +164,35 @@ test.describe("admin sweep", () => {
   });
 
   test("a table wider than its box is a keyboard stop that the arrow keys scroll", async ({ page }) => {
-    await page.setViewportSize({ width: 768, height: 900 });
-    for (const route of routes) {
+    // Every route at 768, and Settings › Numbering at 1024, where its table sits beside the settings menu and is known to scroll in its
+    // own box: the test must meet at least one such box, so it can't pass on none (FX-3 review 3).
+    const visits = [
+      ...routes.map((route) => ({ route, width: 768 })),
+      { route: "/settings/numbering", width: 1024 },
+    ];
+    let met = 0;
+    for (const { route, width } of visits) {
+      await page.setViewportSize({ width, height: 900 });
       await page.goto(route);
       await settled(page);
+      const at = `${route} at ${width}`;
       const regions = page.locator("[data-scrolls]");
       const n = await regions.count();
       for (let i = 0; i < n; i++) {
         const r = regions.nth(i);
         if (!(await r.isVisible())) continue;
-        await expect(r, route).toHaveAttribute("tabindex", "0");
-        await expect(r, route).toHaveAttribute("role", "region");
-        expect(await r.getAttribute("aria-label"), route).toBeTruthy();
+        met++;
+        await expect(r, at).toHaveAttribute("tabindex", "0");
+        await expect(r, at).toHaveAttribute("role", "region");
+        expect(await r.getAttribute("aria-label"), at).toBeTruthy();
         await r.focus();
         const before = await r.evaluate((el) => el.scrollLeft);
         await page.keyboard.press("ArrowRight");
         await page.keyboard.press("ArrowRight");
-        await expect
-          .poll(() => r.evaluate((el) => el.scrollLeft), { message: route })
-          .toBeGreaterThan(before);
+        await expect.poll(() => r.evaluate((el) => el.scrollLeft), { message: at }).toBeGreaterThan(before);
       }
     }
+    console.log(`scroll boxes met by the keyboard: ${met}`);
+    expect(met, "the keyboard test meets at least one box that scrolls sideways").toBeGreaterThan(0);
   });
 });

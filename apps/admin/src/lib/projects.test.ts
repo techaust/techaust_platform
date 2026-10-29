@@ -362,4 +362,22 @@ describe("notes are React elements, never HTML [ADM-PRJ-03]", () => {
     expect(seen.text.join("")).toBe("<b>x</b> l");
     expect(tags(markdownElements("# One"))).toEqual(["p"]);
   });
+
+  it("FX-3 fix round: a note's headings keep its outline and never skip a level under the panel's h2 (axe heading-order)", () => {
+    const tags = (nodes: ReactNode[]) => nodes.map((n) => (isValidElement(n) ? n.type : typeof n));
+    // a note that opens with `##` (found by the record-page sweep on the project Overview) starts at h3
+    expect(tags(markdownElements("## Second\nText.", true))).toEqual(["h3", "p"]);
+    expect(tags(markdownElements("### Only small", true))).toEqual(["h3"]);
+    // a jump of two levels is drawn one level deeper only; going back up is free
+    expect(tags(markdownElements("# Top\n### Deep\n## Mid\n# Top again", true))).toEqual([
+      "h3",
+      "h4",
+      "h4",
+      "h3",
+    ]);
+    expect(tags(markdownElements("## A\n### B\n## C", true))).toEqual(["h3", "h4", "h3"]);
+    // the size stays the author's
+    const [first] = markdownElements("## Second", true);
+    expect(isValidElement(first) && (first.props as { className: string }).className).toBe("md__h md__h--2");
+  });
 });

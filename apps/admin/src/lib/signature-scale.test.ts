@@ -2,7 +2,14 @@
 // again as a PNG at its own size (PNG only, docs/13 2026-10-29); an unreadable one is refused. The browser's canvas is replaced by a fake `ImageIo`, so the rules run here.
 import { SIGNATURE_MAX_HEIGHT, SIGNATURE_MAX_WIDTH } from "@techaust/core/settings";
 import { describe, expect, it } from "vitest";
-import { type DecodedImage, type ImageIo, scaleSignature, signatureFit } from "./signature-scale.ts";
+import { SIGNATURE_INPUT_MAX, SIGNATURE_MAX } from "./pdf.ts";
+import {
+  type DecodedImage,
+  type ImageIo,
+  prepareSignature,
+  scaleSignature,
+  signatureFit,
+} from "./signature-scale.ts";
 
 describe("signatureFit", () => {
   it("is 800 by 400 at most, never larger than the image, and keeps the aspect", () => {
@@ -45,7 +52,7 @@ describe("signatureFit", () => {
 });
 
 type Fake = DecodedImage & { closed: boolean };
-const io = (width: number, height: number, fail?: "decode" | "draw") => {
+const io = (width: number, height: number, fail?: "decode" | "draw", pngBytes = 10) => {
   const drawn: [number, number][] = [];
   let made: Fake | null = null;
   const fake: ImageIo<Fake> = {
@@ -64,7 +71,7 @@ const io = (width: number, height: number, fail?: "decode" | "draw") => {
     toPng: async (_image, w, h) => {
       if (fail === "draw") throw new Error("no canvas");
       drawn.push([w, h]);
-      return new Blob([new Uint8Array(10)], { type: "image/png" });
+      return new Blob([new Uint8Array(pngBytes)], { type: "image/png" });
     },
   };
   return { fake, drawn, image: () => made };
@@ -103,5 +110,55 @@ describe("scaleSignature", () => {
     expect(await scaleSignature(blob, t.fake)).toEqual({ ok: false, reason: "unreadable" });
     expect(t.image()?.closed).toBe(true);
     expect(await scaleSignature(blob, io(0, 10).fake)).toEqual({ ok: false, reason: "unreadable" });
+  });
+});
+
+describe("prepareSignature (fix round, lead 2026-10-29: 10 MB in, a PNG of up to 256 KB stored)", () => {
+  const MB = 1024 * 1024;
+  const file = (size: number, type = "image/jpeg") => new Blob([new Uint8Array(size)], { type });
+
+  it("a 1 MB phone photo of a signature is scaled and handed on for storing as a PNG within 256 KB", async () => {
+    // a 3000 by 4000 phone photo (1 MB, over the old 256 KB input cap) draws as a 300 by 400 PNG of 180 KB; the API stores exactly that
+    // (worker/settings-signature.test.ts, "a phone photo after the browser's scaling")
+    const t = io(3000, 4000, undefined, 180 * 1024);
+    const r = await prepareSignature(file(MB), t.fake);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.scaled).toBe(true);
+    expect(r.file.type).toBe("image/png");
+    expect(r.file.size).toBeLessThanOrEqual(SIGNATURE_MAX);
+    expect(t.drawn).toEqual([[300, 400]]);
+    // the largest input read: exactly 10 MB
+    expect((await prepareSignature(file(SIGNATURE_INPUT_MAX), io(3000, 4000).fake)).ok).toBe(true);
+  });
+
+  it("an 11 MB file is refused with the wrong-file line before the browser decodes it", async () => {
+    const t = io(3000, 4000);
+    expect(await prepareSignature(file(11 * MB), t.fake)).toEqual({ ok: false, line: "wrongFile" });
+    expect(await prepareSignature(file(SIGNATURE_INPUT_MAX + 1), t.fake)).toEqual({
+      ok: false,
+      line: "wrongFile",
+    });
+    expect(t.image()).toBeNull();
+  });
+
+  it("refuses another type or an empty file before decoding, and an unreadable image after", async () => {
+    const t = io(300, 100);
+    expect(await prepareSignature(file(500, "image/webp"), t.fake)).toEqual({ ok: false, line: "wrongFile" });
+    expect(await prepareSignature(file(0, "image/png"), t.fake)).toEqual({ ok: false, line: "wrongFile" });
+    expect(t.image()).toBeNull();
+    expect(await prepareSignature(file(500), io(10, 10, "decode").fake)).toEqual({
+      ok: false,
+      line: "wrongFile",
+    });
+  });
+
+  it("applies the 256 KB to the PNG that comes out: one byte over is too detailed, exactly 256 KB goes on", async () => {
+    expect(await prepareSignature(file(2 * MB), io(800, 400, undefined, SIGNATURE_MAX + 1).fake)).toEqual({
+      ok: false,
+      line: "tooDetailed",
+    });
+    const r = await prepareSignature(file(2 * MB), io(800, 400, undefined, SIGNATURE_MAX).fake);
+    expect(r).toMatchObject({ ok: true, scaled: false });
   });
 });

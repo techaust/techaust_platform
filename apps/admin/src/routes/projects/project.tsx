@@ -3,7 +3,7 @@
 // URL as `?tab=`: Overview (the dashboard: details, the milestones timeline, figures, recent notes and files), Milestones,
 // Notes and Files. Owner and staff change things; Sales reads and downloads. The details draft lives above every reload (the
 // M3.2 drafts pattern), so a status move or a milestone save never wipes a half-made edit.
-import { type ReactNode, useReducer, useState } from "react";
+import { type ReactNode, useEffect, useReducer, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { api, type ProjectPage, type ProjectStatus, RequestError } from "../../api.ts";
 import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
@@ -98,9 +98,16 @@ function ProjectView(props: {
   const [params, setParams] = useSearchParams();
   const asked = params.get("tab");
   const tab: TabKey = TABS.some((t) => t.key === asked) ? (asked as TabKey) : "overview";
+  // Notes and files are changed in their own tabs, which keep their own lists: every return to the Overview from another tab reads the
+  // page again (quietly), so its recent notes and files are current whatever way led back (batch review M6; FX-3 review 11: Notes, then
+  // Milestones, then Overview once showed "No notes yet" until a reload). One read per return, after the URL has changed.
+  const shown = useRef(tab);
+  const { reload } = props;
+  useEffect(() => {
+    if (tab === "overview" && shown.current !== "overview") reload();
+    shown.current = tab;
+  }, [tab, reload]);
   const select = (k: TabKey) => {
-    // Notes and files are changed in their own tabs: back on the Overview, its "recent" lists are read again (batch review M6).
-    if (k === "overview" && (tab === "notes" || tab === "files")) props.reload();
     setParams(
       (p) => {
         const n = new URLSearchParams(p);

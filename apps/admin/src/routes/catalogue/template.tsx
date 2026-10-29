@@ -28,6 +28,7 @@ import {
   TEMPLATE_RULES,
   TOASTS,
   templateRuleErrors,
+  templateRuleFields,
   templateTitle,
   unknownIn,
 } from "../../lib/catalogue.ts";
@@ -193,8 +194,8 @@ function TemplateEditor(props: {
   const [failure, setFailure] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   // The template rules, live (they span sections: a joined section depends on the ones before it). Shown under each section; the error
-  // summary lists them once a save was tried.
-  const rules = templateRuleErrors(props.meta.kind, props.sections);
+  // summary lists them once a save was tried. Each line sits on its field: a placeholder in a heading on the heading input.
+  const rules = templateRuleFields(props.meta.kind, props.sections);
   const [ruleTried, setRuleTried] = useState(false);
   // The body the chips write into: the last one that had focus (the first section until then).
   const target = useRef<{ index: number; start: number; end: number }>({ index: 0, start: 0, end: 0 });
@@ -207,8 +208,12 @@ function TemplateEditor(props: {
     const out = { ...errs };
     delete out[`tpl-s${i}-heading`];
     delete out[`tpl-s${i}-body`];
+    // An unknown placeholder is reported on the field that holds it (FX-3 review 5): the heading's on the heading input.
+    const badHead = unknownIn(s.heading);
     if (!s.heading.trim()) out[`tpl-s${i}-heading`] = PENDING.emptySections;
-    const bad = unknownIn(`${s.heading}\n${s.body}`);
+    else if (badHead.length)
+      out[`tpl-s${i}-heading`] = badHead.map((p) => ERRORS.unknown_placeholder(p)).join(" ");
+    const bad = unknownIn(s.body);
     if (bad.length) out[`tpl-s${i}-body`] = bad.map((p) => ERRORS.unknown_placeholder(p)).join(" ");
     // The server's cap for one section (the field also stops typing at it; a paste is cut by the browser).
     else if (s.body.length > TEMPLATE_SECTION_MAX) out[`tpl-s${i}-body`] = COPY.tooLong;
@@ -290,10 +295,14 @@ function TemplateEditor(props: {
   const summary = [
     ...Object.entries(errors).map(([id, text]) => ({ id, text })),
     ...(ruleTried
-      ? Object.entries(rules).map(([i, line]) => ({
-          id: `tpl-s${i}-body`,
-          text: TEMPLATE_RULES.section(Number(i) + 1, line),
-        }))
+      ? Object.entries(rules).flatMap(([i, r]) =>
+          (["heading", "body"] as const).flatMap((part) => {
+            const line = r[part];
+            return line
+              ? [{ id: `tpl-s${i}-${part}`, text: TEMPLATE_RULES.section(Number(i) + 1, line) }]
+              : [];
+          }),
+        )
       : []),
   ];
   const next = props.meta.version + 1;
@@ -337,11 +346,15 @@ function TemplateEditor(props: {
             const bid = `tpl-s${i}-body`;
             const bodyError = errors[bid];
             const headError = errors[hid];
-            const rule = rules[i];
+            const rule = rules[i]?.body;
+            const headRule = rules[i]?.heading;
             const described = [bodyError ? `${bid}-error` : "tpl-ph-hint", rule ? `${bid}-rule` : null]
               .filter(Boolean)
               .join(" ");
-            const unknown = unknownIn(`${s.heading}\n${s.body}`);
+            const headDescribed = [headError ? `${hid}-error` : null, headRule ? `${hid}-rule` : null]
+              .filter(Boolean)
+              .join(" ");
+            const unknown = unknownIn(s.body);
             return (
               <li key={s.key} className="tpl-section">
                 <div className="field">
@@ -351,12 +364,13 @@ function TemplateEditor(props: {
                     autoComplete="off"
                     maxLength={120}
                     value={s.heading}
-                    aria-invalid={headError ? true : undefined}
-                    aria-describedby={headError ? `${hid}-error` : undefined}
+                    aria-invalid={headError || headRule ? true : undefined}
+                    aria-describedby={headDescribed || undefined}
                     onChange={(e) => edit(i, { heading: e.target.value })}
                     onBlur={() => setErrors((x) => check(i, s, x))}
                   />
                   {headError && <FieldError id={`${hid}-error`}>{headError}</FieldError>}
+                  {headRule && <FieldError id={`${hid}-rule`}>{headRule}</FieldError>}
                 </div>
                 <div className="field">
                   <label htmlFor={bid}>Section {i + 1}, text</label>

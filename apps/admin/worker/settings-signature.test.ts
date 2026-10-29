@@ -132,6 +132,16 @@ describe("PUT /settings/signature", () => {
     expect(new Uint8Array(await img.arrayBuffer())).toEqual(bytes);
   });
 
+  it("a phone photo after the browser's scaling (a 300 by 400 PNG of 180 KB; fix round, lead 2026-10-29) is stored", async () => {
+    const s = await owner();
+    const bytes = png(300, 400, 180 * 1024 - 33);
+    const res = await put(s, bytes);
+    expect(res.status).toBe(200);
+    const ref = (await json(res)).signature;
+    expect(ref).toMatchObject({ mime: "image/png", size: 180 * 1024, width: 300, height: 400 });
+    expect((await env.DOCS.head(ref.key))?.size).toBe(180 * 1024);
+  });
+
   it("a replacement gets a new key, keeps the old object and says replaced", async () => {
     const s = await owner();
     const first = (await json(await put(s, png(300, 100, 10)))).signature;

@@ -25,6 +25,7 @@ import {
   splitPlaceholders,
   TEMPLATE_RULES,
   templateRuleErrors,
+  templateRuleFields,
   templateTitle,
   unknownIn,
 } from "./catalogue.ts";
@@ -351,6 +352,32 @@ describe("FX-3 round 3: the template rules the editor shows before it sends [ADM
     );
     expect(TEMPLATE_RULES.textElsewhere("{{service.exclusions}}", "Assumptions and exclusions")).toBe(
       `${PLACEHOLDER_TAG} {{service.exclusions}} can only go in the text of the Assumptions and exclusions section.`,
+    );
+  });
+
+  it("by field: a placeholder in a heading is the heading's, the rest the text's (FX-3 review 5)", () => {
+    const sections = [
+      s("scope", "{{service.deliverables}} {{service.exclusions}}", "About {{service.assumptions}}"),
+      s("deliverables", "{{service.deliverables}}"),
+      s("terms", "Plain text.", "Terms for {{service.exclusions}}"),
+    ];
+    expect(templateRuleFields("care_block", sections)).toEqual({
+      0: {
+        heading: TEMPLATE_RULES.textInHeading("{{service.assumptions}}"),
+        body: [
+          TEMPLATE_RULES.textElsewhere("{{service.deliverables}}", "Deliverables"),
+          TEMPLATE_RULES.textElsewhere("{{service.exclusions}}", "Assumptions and exclusions"),
+        ].join(" "),
+      },
+      2: { heading: TEMPLATE_RULES.textInHeading("{{service.exclusions}}") },
+    });
+    // the joined-length rule is the text's
+    expect(templateRuleFields("proposal", [s("cover", ""), ...extra(5, 2_000)])[3]).toEqual({
+      body: TEMPLATE_RULES.joinedTooLong,
+    });
+    // the section view keeps one line per section, the heading's first
+    expect(templateRuleErrors("care_block", sections)[2]).toBe(
+      TEMPLATE_RULES.textInHeading("{{service.exclusions}}"),
     );
   });
 

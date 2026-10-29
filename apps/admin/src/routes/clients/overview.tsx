@@ -2,9 +2,9 @@
 // through PATCH /clients/:id by roles with clients.write) and the tax and billing panel (the tax identity every role
 // reads; the money settings only for roles with clients.finance.read; edited through PATCH /clients/:id/billing by roles
 // with clients.finance.write). Each edit sends only the fields the person changed and the `updatedAt` it was loaded
-// with; a 409 `stale_version` or a reload that clashes with a draft shows the shared notice (M3.2 pattern). The side
-// column: the figures (FX-3, ADM-CLI-03: outstanding, overdue, billed to date and credit notes from GET /clients/:id/finance, for the finance
-// roles; ./figures.tsx), the primary contact and the source lead.
+// with; a 409 `stale_version` or a reload that clashes with a draft shows the shared notice (M3.2 pattern). The figures (FX-3,
+// ADM-CLI-03: outstanding, overdue, billed to date and credit notes from GET /clients/:id/finance, for the finance roles; ./figures.tsx)
+// come first in the page (first on one column, heading the side column from 64rem); the side column: the primary contact and the source lead.
 // GST treatment: Researched 2026-10-28, s.12 IGST and Rule 46 CGST (08-C RA-12, RA-05).
 import { countryName } from "@techaust/core/form-labels";
 import { type Dispatch, type FormEvent, type ReactNode, useState } from "react";
@@ -73,6 +73,11 @@ export function Overview(props: {
   const primary = props.data.contacts.find((c) => c.isPrimary && c.anonymisedAt === null) ?? null;
   return (
     <div className="lead-page client-overview">
+      {/* Figures first (lead's decision, FX-3 fix round): on one column (phones, tablets) the panel comes straight below the page
+          heading, and the reading and Tab order follow it; from 64rem it heads the side column (clients.css). */}
+      {canFinance && !props.data.anonymised && (
+        <ClientFiguresPanel clientId={client.id} onStatement={props.onStatement} />
+      )}
       <div className="lead-page__main">
         <Details {...props} canWrite={canWrite} />
         <Billing {...props} canFinance={canFinance} canBilling={canBilling} />
@@ -85,9 +90,6 @@ export function Overview(props: {
         )}
       </div>
       <aside className="lead-page__side" aria-label="Summary">
-        {canFinance && !props.data.anonymised && (
-          <ClientFiguresPanel clientId={client.id} onStatement={props.onStatement} />
-        )}
         <section className="lead-panel" aria-labelledby="primary-h">
           <h2 id="primary-h" className="lead-panel__title">
             Primary contact

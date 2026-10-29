@@ -4,6 +4,7 @@
 // (worker/settings-signature.ts), so the PDF's integrity check never inflates megabytes of pixels and always meets Flate data. The drawing goes
 // through `ImageIo`, so the rules are tested without a browser.
 import { SIGNATURE_MAX_HEIGHT, SIGNATURE_MAX_WIDTH } from "@techaust/core/settings";
+import { SIGNATURE_MAX, signatureFileOk } from "./pdf.ts";
 
 /** The size an image of `width` by `height` takes inside the box: never larger than it was, aspect kept, at least 1 pixel each way. */
 export function signatureFit(
@@ -69,6 +70,27 @@ export async function scaleSignature<I extends DecodedImage>(
   } finally {
     image.close();
   }
+}
+
+/** What the control does with a chosen file: upload this PNG, or show one of `SIGNATURE_COPY`'s two lines. */
+export type SignatureUpload =
+  | { ok: true; file: Blob; scaled: boolean }
+  | { ok: false; line: "wrongFile" | "tooDetailed" };
+
+/**
+ * The checks around the scaling, in order (fix round, lead 2026-10-29): the original only for its type and 10 MB (`signatureFileOk`), so a
+ * phone photo of a signature gets through; then the PNG drawn from it for the stored limit of 256 KB (`SIGNATURE_MAX`; a photo-like scan
+ * that stays too large as a PNG is `tooDetailed`). An image the browser can't read is `wrongFile`.
+ */
+export async function prepareSignature<I extends DecodedImage>(
+  file: Blob,
+  io: ImageIo<I>,
+): Promise<SignatureUpload> {
+  if (!signatureFileOk(file)) return { ok: false, line: "wrongFile" };
+  const ready = await scaleSignature(file, io);
+  if (!ready.ok) return { ok: false, line: "wrongFile" };
+  if (ready.file.size > SIGNATURE_MAX) return { ok: false, line: "tooDetailed" };
+  return { ok: true, file: ready.file, scaled: ready.scaled };
 }
 
 /** The browser's `ImageIo`: `createImageBitmap` to decode, a canvas with high-quality smoothing to draw, `toBlob` for the PNG. */
