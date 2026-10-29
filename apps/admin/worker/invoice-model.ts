@@ -91,6 +91,14 @@ export const RETURN_PERIOD_CLOSED = e(
   "return_period_closed",
   "This invoice's GST return period has ended, so it can't be voided. Use a credit note instead.",
 );
+/**
+ * FX-5 (owner decision 2026-10-30, docs/13; 08-C RA-10): the client opened the document in the portal (`viewed_at` set), so a credit note is the
+ * correction, never a void. The SPA shows its own line (07-Z, pending the owner); these are the API's words.
+ */
+export const VIEWED_BY_CLIENT = e(
+  "viewed_by_client",
+  "The client has opened this invoice in the portal, so it can't be voided. Use a credit note instead.",
+);
 export const INVOICE_APPROVAL_EXPIRED = e(
   "approval_expired",
   "The invoice changed after the request, so the request expired",

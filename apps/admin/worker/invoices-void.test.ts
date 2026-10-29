@@ -25,6 +25,7 @@ import {
   putCompany,
   voidInvoice,
 } from "./test-invoices.ts";
+import { beforeBatchHolding } from "./test-quotes.ts";
 
 const owner = () => sessionFor("owner", { stepUp: true });
 
@@ -396,5 +397,70 @@ describe("what was issued, for GSTR-1 Table 13 [08-A §4]", () => {
     expect(list.invoices[0]).toMatchObject({ status: "void", number: b.number });
     expect(await countOf("documents", "client_id = ? AND status = 'void'", c.clientId)).toBe(1);
     expect(await invoiceCounter()).toBeGreaterThan(Math.max(...nums));
+  });
+});
+
+describe("a document the client opened in the portal is never voided [FX-5, A0 3; owner decision 2026-10-30; 08-C RA-10]", () => {
+  const view = (id: string, at = Date.now()) =>
+    env.DB.prepare("UPDATE documents SET viewed_at = ?2 WHERE id = ?1 AND viewed_at IS NULL")
+      .bind(id, at)
+      .run();
+
+  it("viewed: 409 viewed_by_client with the reason, nothing written; the view says so before anyone tries", async () => {
+    const o = await owner();
+    const inv = await issued(o);
+    await view(inv.id);
+    const before = await invoiceRow(inv.id);
+    const res = await voidInvoice(o, inv.id);
+    expect(res.status).toBe(409);
+    const body = await json(res);
+    expect(body.error.code).toBe("viewed_by_client");
+    expect(body.reasons).toEqual(["viewed_by_client"]);
+    expect(await invoiceRow(inv.id)).toEqual(before);
+    expect(await auditCount("invoice.void", inv.id)).toBe(0);
+    const v = await getInvoice(o, inv.id);
+    expect(v.void).toMatchObject({ canVoid: false, blockers: ["viewed_by_client"] });
+  });
+
+  it("not viewed: still voidable (the other rules unchanged)", async () => {
+    const o = await owner();
+    const inv = await issued(o);
+    const v = await getInvoice(o, inv.id);
+    expect(v.void).toMatchObject({ canVoid: true, blockers: [] });
+    const res = await voidInvoice(o, inv.id);
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await invoiceRow(inv.id)).toMatchObject({ status: "void" });
+  });
+
+  it("a view landing between the check and the write refuses it in SQL: 409 viewed_by_client, nothing written, no audit row", async () => {
+    const o = await owner();
+    const inv = await issued(o);
+    const before = await invoiceRow(inv.id);
+    const row = await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?", inv.id);
+    const res = await call(
+      `/invoices/${inv.id}/void`,
+      { cookie: o.cookie, body: { expectedUpdatedAt: row?.updated_at, reason: "Issued in error" } },
+      beforeBatchHolding("SET status = 'void'", async () => {
+        await view(inv.id);
+      }),
+    );
+    expect(res.status, await res.clone().text()).toBe(409);
+    const body = await json(res);
+    expect(body.error.code).toBe("viewed_by_client");
+    expect(body.reasons).toEqual(["viewed_by_client"]);
+    // the view is the only change, and `invoiceRow` does not read `viewed_at` (a view never moves `updated_at`)
+    expect(await invoiceRow(inv.id)).toEqual(before);
+    expect(await auditCount("invoice.void", inv.id)).toBe(0);
+  });
+
+  it("the database refuses it too, whatever writes the void (trigger documents_viewed_no_void, 0053)", async () => {
+    const o = await owner();
+    const inv = await issued(o);
+    await view(inv.id);
+    await expect(
+      env.DB.prepare("UPDATE documents SET status = 'void', voided_at = 1, void_reason = 'x' WHERE id = ?")
+        .bind(inv.id)
+        .run(),
+    ).rejects.toThrow(/documents_viewed_no_void/);
   });
 });

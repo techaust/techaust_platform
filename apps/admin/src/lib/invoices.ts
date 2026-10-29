@@ -16,6 +16,7 @@ import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
 import { milliToQty } from "./catalogue.ts";
 import { Y } from "./copy-y.ts";
+import { VOID_VIEWED_COPY } from "./copy-z.ts";
 import {
   dayText,
   docErrorText,
@@ -501,6 +502,8 @@ export const INV_ERRORS = {
   // OPEN (08-C RA-10).
   return_period_closed:
     "This invoice's GST return period has ended, so it can't be voided. Use a credit note instead.",
+  // FX-5 (owner decision 2026-10-30, 08-C RA-10): 07-Z §1, pending the owner.
+  viewed_by_client: VOID_VIEWED_COPY.invoice,
   contact_changed: "The contact's details changed a moment ago. Try again.",
   contact_anonymised:
     "This draft's contact has been anonymised. Choose another contact, then save the draft.",
@@ -559,11 +562,21 @@ export function voidBlockedText(codes: readonly string[], type?: string): string
   if (codes.includes("already_void")) return INV_ERRORS.already_void;
   // A proforma has no credit note and no return period (LD28): what stops its void is a payment recorded against it, or (from M5.4) that it was
   // emailed (07-S §8).
+  // FX-5 (owner decision 2026-10-30, 08-C RA-10): a document the client opened in the portal says so, unless a payment, a credit or an issued child
+  // is the stronger reason (07-Z §1).
+  const viewedOnly =
+    codes.includes("viewed_by_client") &&
+    !codes.includes("has_payment") &&
+    !codes.includes("has_credit") &&
+    !codes.includes("has_child_document");
   if (type === "proforma")
     return codes.includes("has_payment") || codes.includes("has_child_document")
       ? INVT_COPY.proformaVoidBlocked
-      : "This proforma has been emailed to the client, so it can't be voided.";
+      : viewedOnly
+        ? VOID_VIEWED_COPY.proforma
+        : "This proforma has been emailed to the client, so it can't be voided.";
   if (codes.includes("return_period_closed")) return INV_ERRORS.return_period_closed;
+  if (viewedOnly) return VOID_VIEWED_COPY.invoice;
   return INV_ERRORS.void_not_allowed;
 }
 

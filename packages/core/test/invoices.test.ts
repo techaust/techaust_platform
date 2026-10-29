@@ -289,6 +289,7 @@ describe("void [Q1, LD7]", () => {
     creditedMinor: 0,
     hasIssuedChild: false,
     emailed: false,
+    viewed: false,
     issueDate: "2026-10-05",
     today: "2026-10-31",
   };
@@ -302,6 +303,12 @@ describe("void [Q1, LD7]", () => {
     expect(voidBlockers({ ...base, creditedMinor: 5 })).toEqual(["has_credit"]);
     expect(voidBlockers({ ...base, hasIssuedChild: true })).toEqual(["has_child_document"]);
     expect(voidBlockers({ ...base, emailed: true })).toEqual(["already_emailed"]);
+    // FX-5 (owner decision 2026-10-30, 08-C RA-10): the client opened it in the portal
+    expect(voidBlockers({ ...base, viewed: true })).toEqual(["viewed_by_client"]);
+    expect(voidBlockers({ ...base, emailed: true, viewed: true })).toEqual([
+      "already_emailed",
+      "viewed_by_client",
+    ]);
     // A5 10: a live issued status (part paid, paid, part credited, credited) is issued; its own blocker says why it cannot be voided.
     expect(voidBlockers({ ...base, status: "paid", paidMinor: 5 })).toEqual(["has_payment"]);
     expect(voidBlockers({ ...base, status: "partially_paid", paidMinor: 5 })).toEqual(["has_payment"]);
@@ -328,6 +335,43 @@ describe("void [Q1, LD7]", () => {
     expect(voidBlockers({ ...base, issueDate: null })).toEqual([]);
     // a void invoice is only ever "already_void"
     expect(voidBlockers({ ...base, status: "void", today: "2027-01-01" })).toEqual(["already_void"]);
+  });
+  it("FX-5 (owner decision 2026-10-30, 08-C RA-10): a view always blocks the void, whatever else holds; without it the other rules decide alone", () => {
+    const facts = fc.record({
+      status: fc.constantFrom(
+        "draft",
+        "issued",
+        "partially_paid",
+        "paid",
+        "partially_credited",
+        "credited",
+        "converted",
+        "void",
+      ),
+      paidMinor: fc.nat(1_000),
+      creditedMinor: fc.nat(1_000),
+      hasIssuedChild: fc.boolean(),
+      emailed: fc.boolean(),
+      viewed: fc.boolean(),
+      issueDate: fc.option(fc.constantFrom("2026-09-30", "2026-10-01", "2026-10-31"), { nil: null }),
+      today: fc.constantFrom("2026-10-15", "2026-11-01"),
+      type: fc.constantFrom("tax_invoice", "export_invoice", "proforma"),
+    });
+    fc.assert(
+      fc.property(facts, (f) => {
+        const viewed = voidBlockers({ ...f, viewed: true });
+        const unviewed = voidBlockers({ ...f, viewed: false });
+        if (f.status === "void") {
+          expect(viewed).toEqual(["already_void"]);
+          expect(unviewed).toEqual(["already_void"]);
+          return;
+        }
+        // a viewed document is never voidable, and the view adds exactly its own code to what the other rules say
+        expect(viewed).toContain("viewed_by_client");
+        expect(viewed.filter((c) => c !== "viewed_by_client")).toEqual(unviewed);
+        expect(unviewed).not.toContain("viewed_by_client");
+      }),
+    );
   });
 });
 

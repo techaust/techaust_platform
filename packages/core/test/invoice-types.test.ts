@@ -868,6 +868,7 @@ describe("void: a proforma has no return period [LD28]", () => {
     creditedMinor: 0,
     hasIssuedChild: false,
     emailed: false,
+    viewed: false,
     issueDate: "2026-10-05",
     today: "2027-01-31",
   };
@@ -877,6 +878,8 @@ describe("void: a proforma has no return period [LD28]", () => {
     expect(voidBlockers({ ...base, type: "proforma" })).toEqual([]);
     expect(voidBlockers({ ...base, type: "proforma", status: "converted" })).toEqual(["not_issued"]);
     expect(voidBlockers({ ...base, type: "proforma", hasIssuedChild: true })).toEqual(["has_child_document"]);
+    // FX-5 (owner decision 2026-10-30, 08-C RA-10): a proforma the client opened in the portal is not voided either
+    expect(voidBlockers({ ...base, type: "proforma", viewed: true })).toEqual(["viewed_by_client"]);
   });
 });
 

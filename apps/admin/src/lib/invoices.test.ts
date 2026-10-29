@@ -10,6 +10,8 @@ import moneySource from "../routes/documents/money.tsx?raw";
 import editorSource from "../routes/invoices/editor.tsx?raw";
 import readSource from "../routes/invoices/read.tsx?raw";
 import { APPROVED_07Y, PLACEHOLDER_MARK } from "./copy-y.ts";
+import { APPROVED_07Z } from "./copy-z.ts";
+import { INVT_COPY } from "./invoice-types.ts";
 import {
   applyInvoiceSave,
   BADGE_LABELS,
@@ -305,6 +307,26 @@ describe("errors", () => {
       INV_ERRORS.return_period_closed,
     );
     expect(voidBlockedText(["has_payment"])).toBe(INV_ERRORS.void_not_allowed);
+  });
+
+  it("FX-5 (owner decision 2026-10-30, 08-C RA-10): a document the client opened says so (07-Z §1, marked until approved); a payment or a credit still wins", () => {
+    const invoiceLine =
+      "The client has opened this invoice in the portal, so it can't be voided. Use a credit note instead.";
+    const mark = APPROVED_07Z ? "" : "[Placeholder] ";
+    expect(voidBlockedText(["viewed_by_client"])).toBe(`${mark}${invoiceLine}`);
+    expect(voidBlockedText(["already_emailed", "viewed_by_client"])).toBe(`${mark}${invoiceLine}`);
+    expect(voidBlockedText(["has_payment", "viewed_by_client"])).toBe(INV_ERRORS.void_not_allowed);
+    expect(voidBlockedText(["viewed_by_client", "return_period_closed"])).toBe(
+      INV_ERRORS.return_period_closed,
+    );
+    expect(voidBlockedText(["viewed_by_client"], "proforma")).toBe(
+      `${mark}The client has opened this proforma in the portal, so it can't be voided.`,
+    );
+    expect(voidBlockedText(["has_payment", "viewed_by_client"], "proforma")).toBe(
+      INVT_COPY.proformaVoidBlocked,
+    );
+    // the dialog's sentence for the route's 409 (a view that landed while the dialog was open)
+    expect(invErrorText(new RequestError(409, "viewed_by_client", "x"))).toBe(`${mark}${invoiceLine}`);
   });
 
   it("a proforma has its own title, locked banner and void line (07-S §8), never the credit-note advice", () => {

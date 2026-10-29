@@ -21,6 +21,7 @@ import {
   milestoneBillableRule,
   noteKindOf,
   parseFxRate,
+  type VoidBlockerCode,
   voidBlockers,
 } from "@techaust/core/invoices";
 import { bundleOf, LOAD_STATEMENTS, loadStatements, type TermsRef } from "@techaust/db/documents";
@@ -74,6 +75,7 @@ import {
   SERVICE_DATE_NOT_APPLICABLE,
   taxContext,
   todayOf,
+  VIEWED_BY_CLIENT,
   VOID_NOT_ALLOWED,
   withoutReference,
 } from "./invoice-model.ts";
@@ -142,6 +144,21 @@ import {
 } from "./quote-model.ts";
 
 const idText = z.string().check(z.minLength(1), z.maxLength(64));
+
+/**
+ * A refused void (409), with the exact reasons (codes) riding along. 07-R: `already_void` for a void one, `return_period_closed` for a closed
+ * month, FX-5 (owner decision 2026-10-30, 08-C RA-10): `viewed_by_client` once the client opened it in the portal; `void_not_allowed` for the rest.
+ */
+function voidRefused(c: Ctx, reasons: readonly VoidBlockerCode[]) {
+  const error = reasons.includes("already_void")
+    ? ALREADY_VOID
+    : reasons.includes("return_period_closed")
+      ? RETURN_PERIOD_CLOSED
+      : reasons.includes("viewed_by_client")
+        ? VIEWED_BY_CLIENT
+        : VOID_NOT_ALLOWED;
+  return c.json({ error: { code: error.code, message: error.message }, reasons, request_id: c.var.rid }, 409);
+}
 
 // ---- the list ------------------------------------------------------------------------------------------------------------------------------
 
@@ -1122,7 +1139,7 @@ export const invoices = new Hono<AppEnv>()
     return err(c, STALE_VERSION, 409);
   })
 
-  // ---- void (Q1, Q2, Q23, LD7; OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?): the owner, with a fresh code, before it was emailed, within the month of issue, and with no payment or credit; the number stays ----
+  // ---- void (Q1, Q2, Q23, LD7; OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?): the owner, with a fresh code, before it was emailed or opened in the portal (FX-5, owner decision 2026-10-30), within the month of issue, and with no payment or credit; the number stays ----
   .post("/:id/void", param(idParam), body(voidBody), async (c) => {
     const { id } = c.req.valid("param");
     const f = c.req.valid("json");
@@ -1141,28 +1158,18 @@ export const invoices = new Hono<AppEnv>()
       creditedMinor: d.credited_minor,
       hasIssuedChild: ctx.hasIssuedChild,
       emailed: ctx.emailed,
+      viewed: d.viewed_at !== null,
       issueDate: d.issue_date,
       today,
       type: d.type,
     });
-    if (reasons.length > 0)
-      return c.json(
-        {
-          // 07-R: `already_void` for a void one, `void_not_allowed` for the rest; the exact reasons (codes) ride along.
-          error: reasons.includes("already_void")
-            ? { code: ALREADY_VOID.code, message: ALREADY_VOID.message }
-            : reasons.includes("return_period_closed")
-              ? { code: RETURN_PERIOD_CLOSED.code, message: RETURN_PERIOD_CLOSED.message }
-              : { code: VOID_NOT_ALLOWED.code, message: VOID_NOT_ALLOWED.message },
-          reasons,
-          request_id: c.var.rid,
-        },
-        409,
-      );
+    if (reasons.length > 0) return voidRefused(c, reasons);
     if (d.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
     // An anonymised client takes nothing new (the standing rule): a void is a write on its document.
     if (ctx.client.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
-    // Every rule is in the statement: issued, nothing paid or credited, no issued child, never emailed, still inside the IST month of issue (Q23), and the owner's session with a live step-up.
+    // Every rule is in the statement: issued, nothing paid or credited, no issued child, never emailed, never opened by the client in the portal (FX-5, owner
+    // decision 2026-10-30, 08-C RA-10: a view landing between the read and this write refuses it), still inside the IST month of issue (Q23), and the
+    // owner's session with a live step-up.
     const done = await mutate(c, {
       main: db
         .prepare(
@@ -1171,6 +1178,7 @@ export const invoices = new Hono<AppEnv>()
              AND paid_minor = 0 AND credited_minor = 0 AND NOT ${clientGoneSql("client_id")}
              AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = documents.id AND x.frozen_at IS NOT NULL)
              AND NOT EXISTS (SELECT 1 FROM document_sends s WHERE s.document_id = documents.id)
+             AND viewed_at IS NULL
              AND (type = 'proforma' OR substr(issue_date, 1, 7) = ?6)
              AND EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users o ON o.id = s.user_id WHERE s.id = ?5 AND s.revoked_at IS NULL AND s.idle_expires_at > ?3 AND s.abs_expires_at > ?3 AND s.step_up_until > ?3 AND o.role = 'owner' AND o.status = 'active')`,
         )
@@ -1215,12 +1223,13 @@ export const invoices = new Hono<AppEnv>()
     if (!done) {
       const again = await db
         .prepare(
-          `SELECT status, updated_at, ${clientGoneSql("client_id")} AS gone, (SELECT step_up_until FROM staff_sessions WHERE id = ?2 AND revoked_at IS NULL) AS step_up, (SELECT idle_expires_at > ?3 AND abs_expires_at > ?3 FROM staff_sessions WHERE id = ?2 AND revoked_at IS NULL) AS session_live FROM documents WHERE id = ?1`,
+          `SELECT status, updated_at, viewed_at, ${clientGoneSql("client_id")} AS gone, (SELECT step_up_until FROM staff_sessions WHERE id = ?2 AND revoked_at IS NULL) AS step_up, (SELECT idle_expires_at > ?3 AND abs_expires_at > ?3 FROM staff_sessions WHERE id = ?2 AND revoked_at IS NULL) AS session_live FROM documents WHERE id = ?1`,
         )
         .bind(id, u.sessionId, t)
         .first<{
           status: string;
           updated_at: number;
+          viewed_at: number | null;
           gone: number;
           step_up: number | null;
           session_live: number | null;
@@ -1236,14 +1245,8 @@ export const invoices = new Hono<AppEnv>()
           { code: "step_up_required", message: "Confirm with a fresh code from your authenticator first" },
           403,
         );
-      return c.json(
-        {
-          error: { code: VOID_NOT_ALLOWED.code, message: VOID_NOT_ALLOWED.message },
-          reasons: [],
-          request_id: c.var.rid,
-        },
-        409,
-      );
+      // FX-5: the client opened it in the portal between the read and the write (a view never moves `updated_at`), so it says why.
+      return voidRefused(c, again.viewed_at !== null ? ["viewed_by_client"] : []);
     }
     // The milestone's new status for the toast ("back to Pending" or "back to Ready to bill"): read after the write, by the id the invoice was made
     // from (the void cleared the link). Null when the invoice had no milestone.

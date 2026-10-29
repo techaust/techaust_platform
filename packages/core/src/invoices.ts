@@ -464,6 +464,7 @@ export const VOID_BLOCKER_CODES = [
   "has_credit",
   "has_child_document",
   "already_emailed",
+  "viewed_by_client",
   "return_period_closed",
 ] as const;
 export type VoidBlockerCode = (typeof VOID_BLOCKER_CODES)[number];
@@ -475,6 +476,11 @@ export type VoidFacts = {
   readonly hasIssuedChild: boolean;
   /** The invoice was emailed to the client (a `document_sends` row exists; M5.4 writes them). */
   readonly emailed: boolean;
+  /**
+   * FX-5 (owner decision 2026-10-30, docs/13; 08-C RA-10): the client opened the document in the portal (`documents.viewed_at` set). Then it was
+   * delivered, so a credit note is the correction, never a void. Required, so no caller can forget it.
+   */
+  readonly viewed: boolean;
   /** The invoice's issue date (IST day) and today's IST day: Q23 lets a void happen only inside the calendar month of issue. */
   readonly issueDate: string | null;
   readonly today: string;
@@ -485,7 +491,8 @@ export type VoidFacts = {
 /**
  * Q1 (OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?, 08-A §4): an issued invoice can be voided only while it has not been emailed to the client and has no payment and no
  * credit or debit note; after that, a credit note is the correction. Q23: and only within the IST calendar month of issue (the GST return period of
- * an invoice is the month of its date), after which a credit note is the correction too; a proforma has no return period (LD28). The number stays and
+ * an invoice is the month of its date), after which a credit note is the correction too; a proforma has no return period (LD28). FX-5 (owner decision
+ * 2026-10-30, docs/13; 08-C RA-10): and only while the client has not opened it in the portal (`viewed_by_client`), a proforma included. The number stays and
  * the record stays (Rule 56(8)). Codes only. OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note? (the batch page offers both forms of the Q23 rule).
  */
 export function voidBlockers(f: VoidFacts): VoidBlockerCode[] {
@@ -498,6 +505,7 @@ export function voidBlockers(f: VoidFacts): VoidBlockerCode[] {
   if (f.creditedMinor > 0) out.push("has_credit");
   if (f.hasIssuedChild) out.push("has_child_document");
   if (f.emailed) out.push("already_emailed");
+  if (f.viewed) out.push("viewed_by_client");
   if (f.type !== "proforma" && f.issueDate !== null && f.issueDate.slice(0, 7) !== f.today.slice(0, 7))
     out.push("return_period_closed");
   return out;

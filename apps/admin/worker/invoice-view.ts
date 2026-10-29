@@ -219,6 +219,7 @@ export function invoiceView(i: InvoiceViewInput) {
     creditedMinor: d.credited_minor,
     hasIssuedChild: i.hasIssuedChild,
     emailed: i.emailed,
+    viewed: d.viewed_at !== null,
     issueDate: d.issue_date,
     today: todayIso,
     type: d.type,
