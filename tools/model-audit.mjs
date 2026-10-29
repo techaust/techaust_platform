@@ -1,6 +1,6 @@
 // Lists every Claude Code run in this project since a date, with the model and effort its own log
-// recorded, and flags anything outside docs/14-models-and-usage.md: a model other than Opus, Sonnet
-// or Haiku 5.5, effort xhigh/max, or the lead on an effort other than medium. It also lists the skills each run
+// recorded, and flags anything outside docs/14-models-and-usage.md: a model other than Opus 5.5, or an effort other
+// than high, for the lead or any agent (owner, 2026-10-29; runs before that day followed the old plan and may be flagged). It also lists the skills each run
 // loaded and flags a builder, designer, analyst or reviewer run that loaded none (skills are mandatory: docs/14 §9).
 // Usage: node tools/model-audit.mjs [YYYY-MM-DD]   (default: today). Exit code 1 if anything is flagged.
 // Reads only the local logs in ~/.claude/projects/<this repo>/; prints no message content.
@@ -9,8 +9,8 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const MODELS = new Set(["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]);
-const EFFORTS = new Set(["low", "medium", "high"]);
+const MODELS = new Set(["claude-opus-5-5"]);
+const EFFORTS = new Set(["high"]);
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const root = join(homedir(), ".claude", "projects", repo.replace(/[^A-Za-z0-9]/g, "-"));
@@ -71,7 +71,7 @@ for (const file of files) {
   const problems = [];
   for (const m of models) if (!MODELS.has(m)) problems.push(`model ${m} not allowed`);
   for (const e of efforts) if (!EFFORTS.has(e)) problems.push(`effort ${e} not allowed`);
-  if (!isAgent && [...efforts].some((e) => e !== "medium")) problems.push("lead not on medium");
+  if (!isAgent && [...efforts].some((e) => e !== "high")) problems.push("lead not on high");
   if (["builder", "designer", "analyst", "reviewer"].includes(agent) && !skills.size)
     problems.push("no skill loaded");
   const id = basename(file, ".jsonl");

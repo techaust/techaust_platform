@@ -57,6 +57,11 @@ describe("model-guard: Agent calls [docs/14 section 6]", { timeout: 30_000 }, ()
     expect((await hook({ subagent_type: "builder", model: "best" })).decision).toBe("deny");
     expect((await hook({ subagent_type: "builder", effort: "xhigh" })).decision).toBe("deny");
     expect((await hook({ subagent_type: "builder", effort: "max" })).decision).toBe("deny");
+    // owner, 2026-10-29: Opus 5.5 at high for every task
+    for (const model of ["sonnet", "haiku", "claude-sonnet-5-5", "claude-haiku-5-5"])
+      expect((await hook({ subagent_type: "builder", model })).decision, model).toBe("deny");
+    for (const effort of ["low", "medium"])
+      expect((await hook({ subagent_type: "builder", effort })).decision, effort).toBe("deny");
   });
 
   it("lets a project agent through, with or without a model and effort from the plan", async () => {
@@ -70,9 +75,9 @@ describe("model-guard: Agent calls [docs/14 section 6]", { timeout: 30_000 }, ()
       "doc-clerk",
     ])
       expect((await hook({ subagent_type: type })).decision, type).toBeNull();
-    expect((await hook({ subagent_type: "builder", model: "sonnet", effort: "high" })).decision).toBeNull();
+    expect((await hook({ subagent_type: "builder", model: "opus", effort: "high" })).decision).toBeNull();
     expect(
-      (await hook({ subagent_type: "reviewer", model: "claude-opus-5-5", effort: "medium" })).decision,
+      (await hook({ subagent_type: "reviewer", model: "claude-opus-5-5", effort: "high" })).decision,
     ).toBeNull();
   });
 
