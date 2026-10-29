@@ -28,6 +28,8 @@
     "@cantoo/pdf-lib": "2.11.1",
     "@fontsource-variable/archivo": "5.3.0",
     "@fontsource/ibm-plex-mono": "5.3.0",
+    "@fontsource/noto-sans-bengali": "5.3.0",
+    "@fontsource/noto-sans-devanagari": "5.3.0",
     "@techaust/config": "workspace:*",
     "@types/node": "24.19.1",
     "fontkitten": "1.0.3",

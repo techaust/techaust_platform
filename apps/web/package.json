@@ -29,6 +29,7 @@
     "@playwright/test": "1.64.1",
     "@techaust/config": "workspace:*",
     "astro": "7.3.5",
+    "sharp": "0.35.5",
     "typescript": "6.0.3",
     "vitest": "4.1.11",
     "wrangler": "4.147.0"
