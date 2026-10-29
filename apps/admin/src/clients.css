@@ -522,6 +522,30 @@
    label left and amount right in tabular figures; a note under an amount is muted. Overdue money carries the warning icon and its
    count in words. With two currencies each has its own group under its code. */
 
+/* Figures first (lead's decision, FX-3 fix round): the panel is the page's first child, so on one column it sits straight below the
+   heading in reading and Tab order alike. From 64rem it heads the side column: row 1 beside the main column, which spans both rows; the
+   rest of the side column follows in row 2. The side column then scrolls with the page (a sticky column would slide under the panel). */
+@media (min-width: 64rem) {
+  .client-overview:has(> .acct) {
+    grid-template-rows: auto 1fr;
+    row-gap: var(--space-4);
+  }
+
+  .client-overview > .acct {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .client-overview:has(> .acct) > .lead-page__main {
+    grid-row: 1 / span 2;
+  }
+
+  .client-overview:has(> .acct) > .lead-page__side {
+    grid-row: 2;
+    position: static;
+  }
+}
+
 /* On a tablet the panel runs the page's width: each currency's group keeps a reading width, so a label stays near its amount and the
    rule between two currencies is as wide as their rows (FX-3 review 10). */
 .acct__group {
