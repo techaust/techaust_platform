@@ -9,10 +9,10 @@
 // - Bash and Monitor commands in a Claude Code cloud session only (CLAUDE_CODE_REMOTE === "true", which Claude Code sets there
 //   and never on this PC; CLOUD-1): refuses merging, deploying, force-pushing or deleting branches, pushing to main, and changing
 //   GitHub or Cloudflare settings (gh other than its reads, gh api other than GET or opening or commenting on a PR, git push
-//   --force/--delete/":" refspecs/main, or of the current branch while it is main, wrangler deploy|secret|versions|create|… and
-//   --remote/-r, the deploy:* scripts). The patterns live in tools/cloud-guard.mjs, loaded only then; only then it reads the
-//   current branch (git rev-parse) for a push. Best effort: a script can get round a pattern; CLAUDE.md "In a cloud session"
-//   stays the rule.
+//   --force/--delete/":" refspecs/main, or of the current branch while it is main, wrangler other than its local commands and a
+//   dry-run deploy, the deploy:* scripts). The patterns live in tools/cloud-guard.mjs, loaded only then; only then it reads the
+//   current branch (git rev-parse) for a push. If the check itself fails, the command is refused (fails closed). Best effort: a
+//   script can get round a pattern; CLAUDE.md "In a cloud session" stays the rule.
 // Prints nothing when there is nothing to say. On this PC it never blocks Bash or Monitor and starts nothing new.
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -50,11 +50,16 @@ if (input.tool_name === "Agent") {
 } else if (input.tool_name === "Bash" || input.tool_name === "Monitor") {
   let refused = "";
   if (process.env.CLAUDE_CODE_REMOTE === "true") {
-    const { cloudRefusal } = await import("./cloud-guard.mjs");
-    // Both tools hold their shell command in tool_input.command (Monitor: { command, description, timeout_ms }).
-    refused = cloudRefusal(String(input.tool_input?.command ?? ""), {
-      currentBranch: (dir) => currentBranch(dir, input.cwd),
-    });
+    try {
+      const { cloudRefusal } = await import("./cloud-guard.mjs");
+      // Both tools hold their shell command in tool_input.command (Monitor: { command, description, timeout_ms }).
+      refused = cloudRefusal(String(input.tool_input?.command ?? ""), {
+        currentBranch: (dir) => currentBranch(dir, input.cwd),
+      });
+    } catch (e) {
+      // a hook that crashes lets the command through, so a failed check refuses (CLOUD-1 re-check, finding 7)
+      refused = `the cloud command check failed (${e instanceof Error ? e.message : String(e)})`;
+    }
     if (refused)
       out({
         permissionDecision: "deny",
