@@ -3,13 +3,13 @@
 //                              [--reading <pct> --reading-at <ISO time>]
 // - this PC: at most 2 agents (every agent counts, the helpers too), at most 1 using a browser, and none starts while free
 //   memory is under 300 MB;
-// - a cloud session (--cloud, or a Linux machine with CLAUDE_CODE_REMOTE set): another agent starts while the virtual machine has at
-//   least 3 GB of free memory and its 1-minute load average is under 80 % of its processors, up to 5 agents, at most 2 using a browser;
+// - a cloud session (--cloud, or CLAUDE_CODE_REMOTE=true, which Claude Code sets only there, on any OS): another agent starts while
+//   the virtual machine has at least 3 GB of free memory and its 1-minute load average is under 80 % of its processors, up to 5 agents, at most 2 using a browser;
 // - the budget gate: new agents start while the 5-hour bar is at or under 95 %. A cloud session that can't read the bar uses the
 //   reading posted in docs/runs/usage-reading.md: none for today (IST) means nothing new starts, one over 2 hours old means one agent
 //   at a time.
 // Prints one line ("start: yes|no …") and exits 0 when an agent may start, 1 when not. `decide` is pure, for the test.
-import { cpus, freemem, loadavg, platform } from "node:os";
+import { cpus, freemem, loadavg } from "node:os";
 
 export const LIMITS = {
   local: { agents: 2, browsers: 1, minFreeBytes: 300 * 1024 ** 2 },
@@ -17,6 +17,13 @@ export const LIMITS = {
   gatePct: 95,
   staleReadingMs: 2 * 60 * 60 * 1000,
 };
+
+/**
+ * Whether this process runs in a Claude Code cloud session: Claude Code sets CLAUDE_CODE_REMOTE to "true" there and never on this
+ * PC (code.claude.com/docs env-vars, read 2026-10-29). The value is compared exactly, whatever the OS.
+ * @param {Record<string, string | undefined>} env
+ */
+export const isCloudSession = (env) => env.CLAUDE_CODE_REMOTE === "true";
 
 /** The IST calendar day of a UTC instant, as YYYY-MM-DD. */
 const istDay = (ms) => new Date(ms + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -73,8 +80,7 @@ if (isMain) {
     return i >= 0 ? args[i + 1] : undefined;
   };
   const num = (name) => (val(name) === undefined ? undefined : Number(val(name)));
-  const cloud =
-    args.includes("--cloud") || (platform() === "linux" && Boolean(process.env.CLAUDE_CODE_REMOTE));
+  const cloud = args.includes("--cloud") || isCloudSession(process.env);
   const readingPct = num("--reading");
   const readingAt = val("--reading-at");
   const r = decide({

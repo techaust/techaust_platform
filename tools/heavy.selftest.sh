@@ -99,5 +99,23 @@ check "a live lock survives a waiter (and a held reaper is not broken early)" "[
 kill "$BG" 2>/dev/null; wait "$BG" 2>/dev/null; BG=""
 rm -rf "$HEAVY_LOCK" "$HEAVY_LOCK.reaper"
 
+# 12. Linux (a cloud session, CLOUD-1): free memory comes from MemAvailable in /proc/meminfo (here a stand-in file). Low memory
+#     makes the command wait; enough lets it run.
+printf 'MemTotal:       16384000 kB\nMemFree:          90000 kB\nMemAvailable:     102400 kB\n' > "$WORK/meminfo-low"
+printf 'MemTotal:       16384000 kB\nMemFree:        1000000 kB\nMemAvailable:    2097152 kB\n' > "$WORK/meminfo-ok"
+HEAVY_MEMINFO="$WORK/meminfo-low" HEAVY_MIN_FREE_MB=512 timeout 4 bash "$HEAVY" echo should-not-run > "$WORK/mem.out" 2>&1; rc=$?
+check "Linux: under the floor it waits (MemAvailable 100 MB)" "[ $rc -eq 124 ] && grep -q 'low memory (100 MB free)' '$WORK/mem.out' && ! grep -q should-not-run '$WORK/mem.out'"
+out="$(HEAVY_MEMINFO="$WORK/meminfo-ok" HEAVY_MIN_FREE_MB=512 timeout 20 bash "$HEAVY" echo ran-mem 2>&1)"
+check "Linux: with 2048 MB available it runs" "[[ \"$out\" == *ran-mem* && \"$out\" != *'low memory'* ]]"
+rm -rf "$HEAVY_LOCK"
+
+# 13. On a real Linux machine (a cloud session), the real /proc/meminfo gives a number.
+if [ -r /proc/meminfo ] && ! command -v powershell.exe >/dev/null 2>&1; then
+  mb="$(awk '/^MemAvailable:/ { print int($2 / 1024); exit }' /proc/meminfo)"
+  check "Linux: /proc/meminfo has MemAvailable (${mb:-none} MB)" "[ -n '$mb' ] && [ '$mb' -gt 0 ]"
+else
+  echo "skip - not Linux: the real /proc/meminfo check runs in a cloud session"
+fi
+
 echo
 if [ "$fails" -eq 0 ]; then echo "heavy.sh self-test: all passed"; else echo "heavy.sh self-test: $fails failed"; exit 1; fi
