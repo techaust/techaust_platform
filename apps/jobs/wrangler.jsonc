@@ -1,7 +1,7 @@
 {
   // hooks.techaust.com: webhooks, queue consumers and cron (docs/05-architecture.md §4).
   // D1 is bound from M1.3; the leads and email queues (consumers, dead-letter queues and the email producer) from M2.4.
-  // R2, Browser Run and crons follow with their milestones. Custom domains only in Phase 7.
+  // R2 (DOCS), Browser Run (staging only), the crons and the ADMIN_JOBS service binding are set below. Custom domains only in Phase 7.
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "techaust-platform-jobs",
   "main": "src/index.ts",
@@ -37,7 +37,9 @@
   },
   // Daily 22:00 UTC (03:30 IST): enqueues the leads due for deletion (JOB-CRON-01) and one message per nightly statistic for the IST day that
   // just ended (M3.5, stats_daily); it enqueues and reads nothing else. Hourly at :30 UTC (= every IST hour, M5.4, LD61): ONE `sendBatch`, no D1 read;
-  // 06:00 IST the care-plan scan, 09:00 IST the owners' alerts, every hour the reminder scan (the consumer applies the settings window). Not inherited.
+  // 06:00 IST the care-plan scan, 09:00 IST the owners' alerts, every hour the reminder scan (the consumer applies the settings window).
+  // `triggers` IS inherited by an environment that does not set its own (wrangler `EnvironmentInheritable`), so every environment states its crons: staging
+  // the same two, production an empty list until Phase 7 (scripts/check-worker-config.mjs requires exactly that; A6 3).
   "triggers": { "crons": ["0 22 * * *", "30 * * * *"] },
   // The admin API's named entrypoint `BillingJobs` (M5.4, LD57): the care-plan drafting and the automatic issue run THERE (they need the admin code), and this Worker calls them
   // over RPC. Deploy order: the admin API Worker first (a jobs deploy whose entrypoint does not exist yet fails), so the entrypoint exists before the first call; until it does a
@@ -189,6 +191,8 @@
         "redact_query_string": true,
         "logs": { "enabled": true, "invocation_logs": false }
       },
+      // No crons in production until Phase 7: an empty list, because `triggers` would otherwise be inherited from the top level (A6 3).
+      "triggers": { "crons": [] },
       // No D1, queues or SES secrets in production until Phase 7 (owner approval).
       "vars": {
         "ENVIRONMENT": "production",
