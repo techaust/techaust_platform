@@ -2,8 +2,8 @@
 // the admin, portal and web browser-test configs run it:
 //   node ../../scripts/dev.mjs <web | webWorker | webE2e | admin | portal | jobs> [extra arguments…]
 // It runs the package's own binary with this Node (no shell, so it behaves the same on Windows and Linux), in the app's folder,
-// passes kill signals on (Ctrl-C only when it didn't come from a terminal, or when the server is still running 2 s after it; see
-// forwardedSignals and signalHandler), and exits with the server's exit
+// passes kill signals on (Ctrl-C only when it didn't come from a terminal; a server still running 10 s after a terminal's Ctrl-C
+// gets SIGTERM; see forwardedSignals and signalHandler), and exits with the server's exit
 // code. At offset 0 the ports are the ones the scripts used
 // before; a wrangler Worker also gets its own inspector port when that port is free (the Vite apps set theirs in vite.config.ts).
 import { spawn } from "node:child_process";
@@ -32,13 +32,18 @@ export function forwardedSignals(fromTerminal) {
   return fromTerminal ? ["SIGTERM", "SIGHUP"] : ["SIGINT", "SIGTERM", "SIGHUP"];
 }
 
-/** How long the server gets to stop on its own Ctrl-C before the launcher passes a SIGINT on (CLOUD-1 re-check, finding 8). */
-export const SIGINT_GRACE_MS = 2000;
+/**
+ * How long the server gets to stop on its own Ctrl-C before the launcher steps in (CLOUD-1 re-check, finding 8; second re-check,
+ * finding 4: 10 s, long enough for a slow wrangler or Vite shutdown, which a second SIGINT could cut short).
+ */
+export const SIGINT_GRACE_MS = 10_000;
 
 /**
  * The launcher's handler for one signal. A forwarded signal goes to the server at once. A SIGINT that isn't forwarded (from a
  * terminal) is normally Ctrl-C, which the server received too; but a SIGINT sent to the launcher alone (`kill -INT <pid>`) would
- * be swallowed, so if the server is still running SIGINT_GRACE_MS later, the launcher passes it on then (once per wait).
+ * be swallowed, so if the server is still running SIGINT_GRACE_MS later, the launcher sends it SIGTERM then (once per wait).
+ * SIGTERM, not a second SIGINT: a second Ctrl-C makes wrangler and Vite skip their clean-up, and on Windows `kill("SIGINT")`
+ * ends the process outright (CLOUD-1 second re-check, finding 4).
  * @param {NodeJS.Signals} signal
  * @param {readonly string[]} forward
  * @param {{ exitCode: number | null, signalCode?: string | null, kill: (signal: NodeJS.Signals) => unknown }} child
@@ -58,7 +63,7 @@ export function signalHandler(signal, forward, child, timing = {}) {
     waiting = true;
     setTimer(() => {
       waiting = false;
-      if (running()) child.kill(signal);
+      if (running()) child.kill("SIGTERM");
     }, graceMs);
   };
 }

@@ -238,7 +238,8 @@ describe("the launcher's signal handler", () => {
     expect(t.pending).toHaveLength(0);
   });
 
-  it("on a terminal, passes SIGINT on only if the server is still running after the grace period", () => {
+  // second re-check, finding 4: 10 s, then SIGTERM (a second SIGINT cuts a slow clean-up short; on Windows it ends the process)
+  it("on a terminal, sends SIGTERM only if the server is still running 10 s after the SIGINT", () => {
     const c = child();
     const t = timers();
     const onInt = signalHandler("SIGINT", forwardedSignals(true), c, t);
@@ -246,9 +247,11 @@ describe("the launcher's signal handler", () => {
     onInt(); // a second Ctrl-C while waiting doesn't start a second wait
     expect(c.kills).toEqual([]);
     expect(t.pending).toHaveLength(1);
+    expect(SIGINT_GRACE_MS).toBe(10_000);
     expect(t.pending[0]?.ms).toBe(SIGINT_GRACE_MS);
-    t.pending[0]?.fn(); // the server ignored it: the launcher passes it on
-    expect(c.kills).toEqual(["SIGINT"]);
+    t.pending[0]?.fn(); // the server is still running: the launcher asks it to stop with SIGTERM
+    expect(c.kills).toEqual(["SIGTERM"]);
+    expect(c.kills).not.toContain("SIGINT");
   });
 
   it("on a terminal, sends nothing when the server stopped on its own Ctrl-C", () => {
