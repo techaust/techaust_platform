@@ -847,3 +847,63 @@ All but F are fixed in this task.
 - **Designer** (`fix/fx3-fix2-d`): A, B, C, D and H. For B and D, either keep the lead view mounted across reloads (don't key it by `updatedAt`, and sync from props), or hold the answers edit in the drafts above the reload and restore focus to the control or panel heading that was used. Prefer the first if it's clean.
 
 Then a re-check (live: the heading cases, convert then Stay with an answers edit, focus after a lead save).
+
+### Fix round 2, builder report
+_(builder claude-opus-5-5/high, branch `fix/fx3-fix2-b` from `origin/fix/fx3-admin-portal` 7dc4a611, 2026-10-29.)_
+
+#### Skills
+- `cloudflare:workers-best-practices`: loaded. The change stays inside one Hono handler: no new round trip, no binding, typed against the generated `Env`. It changed no code.
+- `cloudflare:wrangler`: loaded because item G is about the `wrangler.jsonc` files. No config or command changed; it shaped nothing.
+- Not loaded:
+  - `cloudflare:workers-profiling`: no CPU or cold-start work.
+  - `frontend-design` / `dataviz`: no screens.
+  - `code-review` / `security-review`: those are the reviewer's.
+
+#### Per item (one commit each)
+- **E, `3f8ab558`** `fix(leads)` [ADM-LEAD-03] (`apps/admin/worker/leads.ts`, `leads-api.test.ts`)
+  - The source rule still comes first: on a website lead, any change to currency, band or timeline is 409 `lead_answers_fixed`.
+  - On a manual lead, each pair is now judged only when it changes:
+    - the band against its currency, when the currency or the band changes;
+    - the timeline, when the timeline changes. Only the new value is judged.
+  - So a stored band the form no longer offers can't make a timeline-only change fail, and a stored retired timeline can't make a band or currency change fail.
+  - **The decision (currency change with a stored band), by "a band needs its own currency":**
+    - A stored band is in the stored currency's amounts. A new currency keeps it only when that currency has the same band, which today means only "Not sure".
+    - A band the form no longer offers belongs to no currency, so it can't move to another one either. A currency-only change that keeps it is a 400.
+    - To change the currency, the request has to change or clear the band in the same save. The SPA's `withCurrency` / `answersPatch` already do that: a changed currency always sends the band it ends with, and drops one the new currency lacks.
+    - Clearing the currency while a band stays (even "Not sure") is a 400, as it was.
+  - New test, "FX-3 fix round 2 (ADM-LEAD-03)". Each case runs on a fresh manual lead.
+    - These save:
+      - a timeline change, or clearing the timeline, with a retired band;
+      - a band change, or a currency change with "Not sure", while the lead holds a retired timeline;
+      - a currency change with no band.
+    - A timeline that isn't the form's is still a 400.
+    - These are 400 and write nothing:
+      - a rupee band, or a retired band, with the currency changed to USD;
+      - a retired band, or "Not sure", with the currency cleared;
+      - a retired band sent unchanged next to the new currency;
+      - a valid timeline change sent together with a bad currency change.
+    - A currency change saves when the band changes with it, or when both are cleared.
+    - A website lead with a retired band is 409 `lead_answers_fixed` for a timeline-only change.
+  - The two earlier PATCH answer tests pass unchanged.
+- **G, `0fe6c9ca`** `test(compliance)` [ADM-SET-09] (`packages/core/test/verify-tags.test.ts`)
+  - `EXTENSIONS` now matches `jsonc?`.
+  - The scope test checks that the scan reaches all six wrangler configs: admin, admin API, jobs, portal, web and db. It also checks that `x.json` and `x.jsonc` match.
+  - **Confirmed:** no `.jsonc` file holds a bare tag. A grep of the six files for `VERIFY`, `OPEN (08-C` and `Researched` finds nothing, and the count test passes with `NO_ROW_YET` unchanged.
+
+#### Commands (heavy ones through `tools/heavy.sh`)
+- `pnpm install --frozen-lockfile --offline` (the worktree had no workspace links): no version changed.
+- `pnpm exec biome check` on the three changed files: clean (one format fix applied to the test file).
+- admin `leads-api.test.ts`: 33/33 (`.logs/fx3f2-leads.log`).
+- core `verify-tags.test.ts`: 3/3 (`.logs/fx3f2-verify.log`).
+- **`pnpm test`**: exit 0 with no timeouts (`.logs/fx3f2-test.log`):
+  - core 1,801, db 471, email 128, pdf 340, auth 135;
+  - ui 469 (2 skipped), web 510 (17 skipped), portal 631, jobs 528, admin 3,357.
+- **`pnpm check`**: exit 0 (`.logs/fx3f2-check.log`). This was the one full lint, plus typecheck in every package, the web binding guard, the content lint, the Worker config guard, the SPA headers and the migration guard (52 migrations).
+
+#### Not verified
+- No build, so the admin API byte budget isn't measured. The change is a few lines of handler logic.
+- No live or staging check. The SPA was not exercised against the new rule; per the code, `answersPatch` already sends the band with a changed currency.
+
+#### Open questions
+- None blocking.
+- For the lead: tracked text files of other types still sit outside the VERIFY scan: `index.html` (admin, portal), `.dev.vars.example`, `packages/ui/scripts/measure-cmyk.py`, and the email, CSV and `.snap` snapshots. None holds a tag today (grep). I didn't widen the scan, because the brief named `.jsonc` only.
