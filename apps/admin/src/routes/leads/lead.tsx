@@ -175,14 +175,6 @@ function LeadView({
   const canConvert = allowed(user.role, "clients.write") && allowed(user.role, "proposals.draft");
   const [saveStale, setStale] = useState(false);
   const [error, setError] = useState<{ where: Where; text: string } | null>(null);
-  // A new copy of the lead: a refused save's 409 and a failed save's line belonged to the old copy (the drafts were carried onto
-  // the new one), as when the page used to start again.
-  const [version, setVersion] = useState(lead.updatedAt);
-  if (version !== lead.updatedAt) {
-    setVersion(lead.updatedAt);
-    setStale(false);
-    setError(null);
-  }
   const stale = saveStale || hasConflict(drafts);
   const follow = drafts.follow?.value ?? followOf(lead);
   const followBase = drafts.follow?.base ?? followOf(lead);
@@ -201,11 +193,33 @@ function LeadView({
   const [emailError, setEmailError] = useState<string | null>(null);
   const [nextDateError, setNextDateError] = useState<string | null>(null);
   const dates = useUnreadDates<"date">();
-  // A stale reload sets the edits aside (the answers too: `reloaded-latest`), so unreadable date text and its error line go with them.
-  // The notice and its button go too: the focus moves to the page's heading, the top of the latest copy.
+
+  // The email and the follow date as the person last saw them, so a new copy can tell whether the reload replaced them (fix round 3, 2).
+  const shown = useRef({ email: contact.email, date: follow.date });
+  useEffect(() => {
+    shown.current = { email: contact.email, date: follow.date };
+  });
+  // A new copy of the lead: a refused save's 409 and a failed save's line belonged to the old copy (the drafts were carried onto
+  // the new one), as when the page used to start again. A field line goes only with the text it was about: when the reload put
+  // another value in the email or the follow date (someone else changed it, and the person's edit was set aside), its line goes,
+  // and the date's unread text with it (fix round 3, 2); a line under the person's own kept text stays.
+  const [version, setVersion] = useState(lead.updatedAt);
+  if (version !== lead.updatedAt) {
+    setVersion(lead.updatedAt);
+    setStale(false);
+    setError(null);
+    if (contact.email !== shown.current.email) setEmailError(null);
+    if (follow.date !== shown.current.date) {
+      setNextDateError(null);
+      dates.reset();
+    }
+  }
+  // A stale reload sets the edits aside (the answers too: `reloaded-latest`), so unreadable date text and every field line go with
+  // them. The notice and its button go too: the focus moves to the page's heading, the top of the latest copy.
   const reloadStale = () => {
     dates.reset();
     setNextDateError(null);
+    setEmailError(null);
     focusLater(() => document.querySelector<HTMLElement>("#main h1"));
     reload("stale");
   };
