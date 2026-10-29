@@ -8,7 +8,8 @@
 #     reaches Claude as context). No `model` field, empty input or a terminal: no check, never a wait.
 #   - Node 24 (/opt/node24) first on PATH, PLAYWRIGHT_BROWSERS_PATH and WRANGLER_SEND_METRICS=false (no wrangler telemetry), for
 #     this script and for every later Bash command (written to CLAUDE_ENV_FILE)
-#   - `pnpm install --frozen-lockfile`, skipped while a sha256 of pnpm-lock.yaml, every package.json and this script is unchanged
+#   - `pnpm install --frozen-lockfile`, skipped while a sha256 of pnpm-lock.yaml, pnpm-workspace.yaml (allowBuilds, overrides…),
+#     every package.json and this script is unchanged
 #   - `pnpm dev:secrets` (local random values only; an existing .dev.vars keeps its values), `pnpm db:migrate:local`,
 #     `pnpm db:seed:local` (both safe to repeat)
 # `wrangler types` is not run: every package's `typecheck` runs it first. Full output: .logs/cloud-session-start.log. A failed step
@@ -69,7 +70,7 @@ step() { # name, command…  (status: the command's)
 # The install is skipped while nothing it depends on changed (the hash is kept inside node_modules, so a fresh clone installs).
 STAMP=node_modules/.techaust-cloud-install.sha256
 hash_inputs() {
-  { git ls-files -z -- pnpm-lock.yaml 'package.json' '*/package.json' | xargs -0 sha256sum; sha256sum scripts/cloud-session-start.sh; } |
+  { git ls-files -z -- pnpm-lock.yaml pnpm-workspace.yaml 'package.json' '*/package.json' | xargs -0 sha256sum; sha256sum scripts/cloud-session-start.sh; } |
     sha256sum | cut -d' ' -f1
 }
 WANT="$(hash_inputs)"

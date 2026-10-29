@@ -111,6 +111,11 @@ describe("the SessionStart hook", () => {
     // biome-ignore lint/suspicious/noTemplateCurlyInString: a line of bash, not a template
     expect(code[0]).toBe('[ "${CLAUDE_CODE_REMOTE:-}" = "true" ] || exit 0');
   });
+  it("reinstalls when the lockfile, the workspace file or a package.json changes (L1)", () => {
+    expect(read("scripts/cloud-session-start.sh")).toContain(
+      "git ls-files -z -- pnpm-lock.yaml pnpm-workspace.yaml 'package.json' '*/package.json'",
+    );
+  });
   it.skipIf(!hasBash)("does nothing outside a cloud session: exit 0, no output, nothing written", () => {
     const dir = mkdtempSync(join(tmpdir(), "cloud-hook-"));
     try {
