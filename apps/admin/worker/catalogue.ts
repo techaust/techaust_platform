@@ -23,6 +23,7 @@ import {
   unknownPlaceholders,
 } from "@techaust/core/catalogue";
 import { uuidv7 } from "@techaust/core/ids";
+import { snapshotTextIssues } from "@techaust/core/public-text";
 import { type SiteGap, siteGaps } from "@techaust/core/site-references";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
@@ -64,6 +65,11 @@ const VERSION_RACE: ApiError = {
 const SNAPSHOT_INVALID: ApiError = {
   code: "snapshot_invalid",
   message: "The catalogue cannot be published yet. Fix the items listed",
+};
+const PUBLIC_TEXT: ApiError = {
+  code: "public_text_refused",
+  message:
+    "The catalogue cannot be published: some website text breaks the content rules. Fix the fields listed",
 };
 
 /** A gap as the API names it: the service code and what is missing, never a value. */
@@ -287,6 +293,20 @@ export const catalogue = new Hono<AppEnv>()
           request_id: c.var.rid,
         },
         422,
+      );
+    // The website's public-text rules (audit A2 finding 2; docs/07 section 1.3, WEB-G-07, WEB-G-14), from the same source as its
+    // content lint (@techaust/core/public-text): no "&", no banned phrase, no typed money amount in any text the site can print.
+    // Refused here, before anything is stored, so a staging deploy never builds from such text. The answer names each field and
+    // the rule (and a banned phrase by its id), never the text.
+    const textIssues = snapshotTextIssues(parsed.data);
+    if (textIssues.length)
+      return c.json(
+        {
+          error: { code: PUBLIC_TEXT.code, message: PUBLIC_TEXT.message },
+          fields: textIssues.slice(0, 20).map((f) => ({ path: f.path, issues: f.issues })),
+          request_id: c.var.rid,
+        },
+        400,
       );
     // The website's build throws on a price it prints that is missing, and so would every later staging deploy. So a snapshot
     // that lacks something the pages use (core's SITE_REFERENCES) is refused here, not stored (review finding 2). The paths are

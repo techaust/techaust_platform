@@ -4,6 +4,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { hasTypedAmount } from "../packages/core/src/public-text.ts";
 import { parseCsp, parseHeaders } from "./headers-shared.mjs";
 import { lintBuiltPage, lintSource, readAllowList, visibleText } from "./web-content-lint.mjs";
 import { checkLinks } from "./web-link-check.mjs";
@@ -186,8 +187,8 @@ export function checkAmountLiterals(name, source) {
     const t = line.trim();
     if (code && (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*") || t.startsWith("<!--")))
       return;
-    const rupee = "(?:₹|&#8377;|&#x20b9;|&inr;|\\bRs\\.?|\\bINR|\\bUSD|US\\$|\\$)";
-    if (new RegExp(`${rupee}\\s*\\d|\\d\\s*(?:₹|&#8377;|&#x20b9;|\\bINR\\b|\\bUSD\\b)`, "i").test(t))
+    // The rule is shared with the admin's catalogue publish (@techaust/core public-text.ts, audit A2 finding 2).
+    if (hasTypedAmount(t))
       problems.push(
         `${name}:${i + 1}: a price amount typed into a template (use {{price:Sx}} / formatMoney)`,
       );
