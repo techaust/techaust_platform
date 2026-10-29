@@ -669,6 +669,12 @@ export const TEMPLATE_RULES = {
   joinedTooLong: Y(
     "A proposal or estimate has room for 3 sections of your own. This one and the ones after the third are joined into one, which would pass 6,000 characters. Shorten them or remove some.",
   ),
+  /** FX-3 (designer): the newest version, saved before these rules, breaks one; shown above its sections when the page opens. */
+  storedBreaks: Y(
+    "This version was saved before the template rules below. Drafts made from it may not save. Edit it and save a new version.",
+  ),
+  /** The line under a section in the read view and in the summary: "Section 4: …". */
+  section: (n: number, line: string) => `Section ${n}: ${line}`,
 } as const;
 
 /** The section each Catalogue-text placeholder belongs in, by the heading the seeded templates give it. */

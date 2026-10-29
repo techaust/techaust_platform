@@ -353,4 +353,13 @@ describe("FX-3 round 3: the template rules the editor shows before it sends [ADM
       `${PLACEHOLDER_TAG} {{service.exclusions}} can only go in the text of the Assumptions and exclusions section.`,
     );
   });
+
+  it("the page's own lines: a stored version that breaks a rule, and a summary line naming its section (FX-3 designer)", () => {
+    expect(TEMPLATE_RULES.storedBreaks).toBe(
+      `${PLACEHOLDER_TAG} This version was saved before the template rules below. Drafts made from it may not save. Edit it and save a new version.`,
+    );
+    expect(TEMPLATE_RULES.section(4, TEMPLATE_RULES.joinedTooLong)).toBe(
+      `Section 4: ${TEMPLATE_RULES.joinedTooLong}`,
+    );
+  });
 });
