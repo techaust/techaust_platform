@@ -299,3 +299,67 @@ Designer, Opus 5.5 high. Branch `fix/fx5-d1` from `origin/fix/fx5-research-tags`
 - 07-Z lines stay `[Placeholder]` until the owner approves them; reuse the existing approval-switch pattern.
 - Check every changed screen at 375, 768, 1280 px, both themes and the in-app theme against the OS theme, keyboard and axe; screenshots into the run file's report. Stop every dev server you start.
 - Checks: admin tests for touched files through the queue, `pnpm check`, whole-repository `pnpm lint` last. Append "## Designer report".
+
+## Designer report
+Designer claude-opus-5-5/high, 2026-10-30 ~04:20–04:45 IST, branch `fix/fx5-d1` from `origin/fix/fx5-research-tags` (597122f7), pushed. Admin screens only; no API, SQL or migration change.
+
+**Skills loaded:** `frontend-design:frontend-design`, loaded first. It kept the three additions inside the existing admin patterns, with no new pattern: the refusal is the field's own error; the payment-terms line reuses the `.field-warning` line with the warning triangle; and the page name in that line is a real link, so the line says where to go and takes you there. Nothing decorative was added. Not loaded: `dataviz` (no chart, tile or dashboard).
+
+### Per item (change, commit)
+1. **Settings › Terms, the refused save (`7a9bd8d1`).**
+   - The SPA client now reads the top-level `details {stated, dueDays}` of 400 `terms_due_days_mismatch` into `RequestError.extra.termsDueDays` (`apps/admin/src/api.ts`), for that code only, because the route sends `details` outside `error`.
+   - The terms editor shows 07-Z §2 line 3, with both numbers, as the field's error: `aria-invalid` set, the error in `aria-describedby`, focus moved to the text.
+   - The line clears as soon as the text states only the setting's days (core `termsDueDaysMismatch`), so it never stays after the fix.
+   - Other blocks and other failures are unchanged.
+2. **Settings › Payment terms, the warning (`7a9bd8d1`, `81e860b5`, `1eb7a91a`).**
+   - New pure helper `termsDueDaysClash(stated, typed, saved)` in `lib/settings-form.ts`. It returns the days the newest proposal terms state (`meta.termsDueDays.stated`) when any of them differs from the due days on screen: the number being typed while it is valid (0–90), else the saved one.
+   - Under "Payment due" the screen shows 07-Z §2 line 4 in a `.field-warning` with the triangle. Its "Settings › Terms" is a link to `/settings/terms`; the words are the line's own, split around the page name, and the page name stays on one line.
+   - The line sits in a live region that stays on the page, so typing a clashing number is announced. While the line shows, the input's `aria-describedby` includes it.
+   - CSS: `.field-warning.setting__warning` in `shell.css` (tokens only).
+3. **The void dialog (`81e860b5`).**
+   - New `voidErrorText(e, type)` in `lib/invoices.ts`. A 409 `viewed_by_client` gets `voidBlockedText([code], type)`, so a proforma shows 07-Z §1 line 2 and never the invoice's "Use a credit note instead.". Every other failure keeps `invErrorText`.
+   - `VoidDialog` takes the document's `type` (`read.tsx` passes `v.type`).
+- The 07-Z lines stay `[Placeholder]` through the existing `Z()` / `APPROVED_07Z` switch (`lib/copy-z.ts`). No new copy was written.
+
+### Screenshots
+All in `.logs/shots/fx5-d1/`. The sample data is in this worktree's own local D1 and is labelled as sample throughout: Sample Client A, a sample company, GSTIN and bank account.
+- `payment-terms-saved-1280-light.png`: "Payment due" saved as 14 while the terms state 7; the warning sits under the field, with its link underlined.
+- `payment-terms-saved-1280-appdark-oslight.png`: the same screen, in-app Dark against an OS light theme. The logo and every surface follow `data-theme`.
+- `payment-terms-saved-768-light.png`, `payment-terms-saved-768-dark.png`: the two-column setting row at tablet width; the line wraps beside the field.
+- `payment-terms-saved-375-dark.png`: the stacked row on a phone.
+- `payment-terms-saved-375-applight-osdark.png`: in-app Light against an OS dark theme.
+- `payment-terms-link-focus-375-light.png`: the "Settings › Terms" link with its focus ring, after Tab from the field.
+- `terms-refused-1280-dark.png`, `terms-refused-768-light.png`, `terms-refused-375-dark.png`, `terms-refused-375-applight-osdark.png`: the proposal terms editor after the refused save, with the red field outline and the 07-Z §2 line 3 error ("…due within 7 days, but Settings › Payment terms says 14 days…").
+- `void-dialog-proforma-viewed-1280-light.png`, `void-dialog-proforma-viewed-768-dark.png`, `void-dialog-proforma-viewed-375-dark.png`: a sample proforma (TH/PI/2627/0001). Its `viewed_at` was set in the local DB while the void dialog was open; Void then answers 409 `viewed_by_client`, and the dialog shows the proforma's line.
+- `proforma-viewed-page-1280-light.png`: the same proforma after a reload. The page banner gives the proforma line, and the More menu no longer offers Void.
+
+### Checks
+- **Keyboard:**
+  - Payment terms: from the field, Tab reaches the "Settings › Terms" link (visible focus ring), and Enter opens Document terms.
+  - Document terms: on a refusal, focus moves to the text.
+  - Void dialog: Escape closes it and focus returns to "More".
+  - No keyboard traps.
+- **axe-core 4.14** (WCAG 2.0, 2.1 and 2.2, A and AA), run in the page:
+  - Payment terms with the warning, light and dark: 0 violations.
+  - Document terms with the refusal, dark: 0 violations.
+- **Console:** only the expected failed requests: 401 `auth/me` before sign-in, the 400 of the refused terms save, and the 409 of the refused void. No script errors.
+- **Tests** (through `tools/heavy.sh`):
+  - `api.test.ts`, `lib/invoices.test.ts`, `lib/screens.test.ts`, `lib/copy-z.test.ts`: 69 pass. New tests cover the client reading the terms refusal's details and nothing else, the `termsDueDaysClash` cases, and `voidErrorText` for a proforma, an invoice, no type and another code.
+  - The whole admin SPA set (`vitest run src`): 26 files, 472 pass.
+- `pnpm --filter @techaust/admin typecheck`: ok.
+- `bash tools/heavy.sh --log fx5d1-check pnpm check`: ok (migration guard: 54 migrations).
+- `pnpm lint` (whole repository, last): ok, with 10 warnings and 8 infos, none in files this step touched.
+- The dev server (`pnpm --filter @techaust/admin dev`) is stopped and the browser is closed.
+
+### Not verified
+- axe was not run on the open void dialog. Its markup is unchanged; only its sentence changed.
+- The worker tests were not rerun (no worker file was touched).
+- The real race (a portal view landing while the dialog is open) was simulated by setting `viewed_at` directly in the local D1, not through the portal.
+- Staging was not opened, and no hosted service was touched.
+
+### Placeholder text
+- 07-Z §1 line 2 and §2 lines 3 and 4 show `[Placeholder]` until the owner approves 07-Z (`APPROVED_07Z`).
+
+### Open questions and notes for the lead
+1. **Existing approved copy, not changed:** for a proforma too, the void dialog's title says "Void invoice" and its body ends "…after that, use a credit note" (07-R §4 `voidTitle`, `voidBody`). With the new proforma line under it, the credit-note advice reads oddly for a proforma. A proforma version of that text would be new copy for the owner.
+2. **Stale Void action after a refusal:** after a 409 `viewed_by_client`, the page behind the dialog still offers Void until it is reloaded. Reloading on that refusal would remount the page (the skeleton) and drop the dialog's line, so I left it as it is. Tell me if you want a quiet refetch there.
