@@ -286,3 +286,16 @@ Builder claude-opus-5-5/high, 2026-10-30 ~03:50–04:20 IST, branch `fix/fx5-r2`
 1. **SPA line during a race (designer, not changed):** `invErrorText` maps a 409 `viewed_by_client` to the invoice's line (`INV_ERRORS.viewed_by_client`) whatever the type. A proforma whose view lands while the void dialog is open would show the invoice's "Use a credit note instead." line, though the API's message is now the proforma's. The dialog could use `voidBlockedText([code], type)`. Left for the designer step.
 2. **A `pdf_pending` 409 counts as a view** on both PDF routes. The early check didn't say either way. Say if only a delivered PDF should count (`AND pdf_r2_key IS NOT NULL` on the PDF routes only).
 3. 0053's abort message still ends "a credit note corrects it" (a developer message, never shown to a person). Changing it means regenerating 0053 (not applied anywhere yet, but the brief said no migration change), so it is left as is.
+
+### Lead, after fix round 1 (2026-10-30)
+- Merged `fix/fx5-r2` (13ad2573).
+- The builder's questions, lead's decisions: (1) the void dialog's line for a proforma in a race goes to the designer step (`invErrorText` → `voidBlockedText([code], type)`); (2) only a delivered PDF counts as a view: `VIEW_PDF_SQL` (= `VIEW_SQL AND pdf_r2_key IS NOT NULL`) on the signed-in and emailed-link PDF routes, done by the lead with the tests updated (portal `invoices.test.ts` and `doc-token.test.ts`: 40 passed); (3) the 0053 trigger's developer message stays (nobody sees it).
+
+## Designer brief (lead, 2026-10-30)
+Designer, Opus 5.5 high. Branch `fix/fx5-d1` from `origin/fix/fx5-research-tags` (this commit or later); push only that branch. Admin screens only; no API, SQL or migration change.
+1. Settings › Terms: when a save answers 400 `terms_due_days_mismatch`, show 07-Z §2 line 3 using the response's `details` (the numbers it names).
+2. Settings › Payment terms: show 07-Z §2 line 4 when the page data's `meta.termsDueDays` differs from the payment terms being edited.
+3. The invoice void dialog: a 409 `viewed_by_client` shows the line for the document's own type (`voidBlockedText([code], type)`), so a proforma never shows the invoice's "use a credit note" line.
+- 07-Z lines stay `[Placeholder]` until the owner approves them; reuse the existing approval-switch pattern.
+- Check every changed screen at 375, 768, 1280 px, both themes and the in-app theme against the OS theme, keyboard and axe; screenshots into the run file's report. Stop every dev server you start.
+- Checks: admin tests for touched files through the queue, `pnpm check`, whole-repository `pnpm lint` last. Append "## Designer report".

@@ -172,6 +172,10 @@ describe("one invoice and its PDF [POR-06]", () => {
     const pending = await call(`/invoices/${none}/pdf`, { cookie: s.cookie });
     expect(pending.status).toBe(409);
     expect(((await bodyOf(pending)).error as { code: string }).code).toBe("pdf_pending");
+    // a PDF not delivered yet is not a view (lead, FX-5 fix round 1, question 2)
+    expect(
+      (await one<{ v: number | null }>("SELECT viewed_at AS v FROM documents WHERE id = ?", none))?.v ?? null,
+    ).toBeNull();
     const key = `docs/tax_invoice/2026-27/${8000 + ++seq}-v1.pdf`;
     await env.DOCS.put(key, "%PDF-1.4 signed in");
     const withPdf = await mk(f.a.id, { pdfKey: key });
@@ -252,7 +256,7 @@ describe("the first view is written before the answer [FX-5, ADM-INV-07, 08-C RA
     }
   });
 
-  it("(d) opening the PDF records the first view too (also while it is still being prepared), once", async () => {
+  it("(d) opening the PDF records the first view too, once; a PDF still being prepared is no view (lead, fix round 1 question 2)", async () => {
     const f = await fixtures();
     const s = await sessionFor(f.a.finance);
     const key = `docs/tax_invoice/2026-27/${8000 + ++seq}-v1.pdf`;
@@ -270,7 +274,7 @@ describe("the first view is written before the answer [FX-5, ADM-INV-07, 08-C RA
     expect(await viewedAt(doc)).toBe(first);
     const pending = await mk(f.a.id);
     expect((await call(`/invoices/${pending}/pdf`, { cookie: s.cookie })).status).toBe(409);
-    expect(await viewedAt(pending)).not.toBeNull();
+    expect(await viewedAt(pending)).toBeNull();
     // another organisation's PDF is a 404 and writes nothing on their document
     const theirs = await mk(f.b.id, { pdfKey: key });
     expect((await call(`/invoices/${theirs}/pdf`, { cookie: s.cookie })).status).toBe(404);

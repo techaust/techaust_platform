@@ -12,6 +12,7 @@ import {
   type SummaryRow,
   summaryOf,
   TYPES_SQL,
+  VIEW_PDF_SQL,
   VIEW_SQL,
 } from "./invoice-summary.ts";
 import { bound, streamPdf } from "./offer-core.ts";
@@ -77,9 +78,9 @@ export const invoices = new Hono<AppEnv>()
     const s = scope(c);
     const id = idOf(c);
     if (!id) return err(c, NOT_FOUND, 404);
-    // FX-5 (08-C RA-10): opening the PDF is a view too, written in the same batch as the read (as above).
+    // FX-5 (08-C RA-10): opening the PDF is a view too, written in the same batch as the read (as above), once the PDF exists.
     const [, doc] = await c.env.DB.batch([
-      bound(c.env.DB, VIEW_SQL, [s.clientId, id, Date.now()]),
+      bound(c.env.DB, VIEW_PDF_SQL, [s.clientId, id, Date.now()]),
       bound(c.env.DB, ONE_SQL, [s.clientId, id]),
     ]);
     const row = doc?.results[0] as SummaryRow | undefined;

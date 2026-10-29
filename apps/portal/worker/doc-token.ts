@@ -40,6 +40,7 @@ import {
   type SummaryRow,
   summaryOf,
   TYPES_SQL,
+  VIEW_PDF_SQL,
   VIEW_SQL,
 } from "./invoice-summary.ts";
 import { streamPdf } from "./offer-core.ts";
@@ -124,7 +125,7 @@ export const docToken = new Hono<AppEnv>()
     const db = c.env.DB;
     c.set("accessDone", true);
     await db.batch([
-      db.prepare(VIEW_SQL).bind(doc.link_client_id, doc.id, Date.now()),
+      db.prepare(VIEW_PDF_SQL).bind(doc.link_client_id, doc.id, Date.now()),
       accessStmt(db, accessEntry(c, doc.pdf_r2_key ? 200 : 409, doc.link_contact_id)),
     ]);
     if (!doc.pdf_r2_key)

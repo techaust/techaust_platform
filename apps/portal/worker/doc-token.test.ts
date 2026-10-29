@@ -604,6 +604,10 @@ describe("the PDF behind the link [POR-06, M4.5 headers]", () => {
     const pending = await usePdf(await link(f.a.finance, none));
     expect(pending.status).toBe(409);
     expect(((await bodyOf(pending)).error as { code: string }).code).toBe("pdf_pending");
+    // a PDF not delivered yet is not a view (lead, FX-5 fix round 1, question 2)
+    expect(
+      (await one<{ v: number | null }>("SELECT viewed_at AS v FROM documents WHERE id = ?", none))?.v ?? null,
+    ).toBeNull();
     const key = `docs/tax_invoice/2026-27/${9000 + ++seq}-v1.pdf`;
     await env.DOCS.put(key, "%PDF-1.4 test");
     const doc = await frozenDoc(f.a.id, "tax_invoice", { pdfKey: key });
