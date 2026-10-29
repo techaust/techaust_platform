@@ -326,7 +326,7 @@
 
 /* At most three columns (a rate and one or two heads): it fits a phone, so it never scrolls. */
 .manual-entry__figures {
-  max-width: 100%;
+  width: 100%;
 }
 
 .manual-entry__open {
@@ -451,7 +451,7 @@
   content: "";
   position: absolute;
   inset-block: 0;
-  width: var(--space-6);
+  width: var(--space-8);
   pointer-events: none;
   opacity: 0;
   transition: opacity 160ms ease-out;
@@ -459,12 +459,12 @@
 
 .scroll-cue::before {
   inset-inline-start: 0;
-  background: linear-gradient(to right, color-mix(in srgb, var(--color-text) 16%, transparent), transparent);
+  background: linear-gradient(to right, color-mix(in srgb, var(--color-text) 26%, transparent), transparent);
 }
 
 .scroll-cue::after {
   inset-inline-end: 0;
-  background: linear-gradient(to left, color-mix(in srgb, var(--color-text) 16%, transparent), transparent);
+  background: linear-gradient(to left, color-mix(in srgb, var(--color-text) 26%, transparent), transparent);
 }
 
 .scroll-cue[data-more-start]::before,
