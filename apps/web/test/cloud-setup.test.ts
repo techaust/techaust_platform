@@ -69,6 +69,12 @@ describe("the setup script's pins are the repository's", () => {
     expect(setup.trimEnd().endsWith("exit 0")).toBe(true);
     expect(setup).toContain("PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright");
   });
+  it("installs xz-utils, if xz is missing, before unpacking Node's .tar.xz (L3)", () => {
+    const xz = setup.indexOf("command -v xz");
+    expect(xz).toBeGreaterThan(0);
+    expect(setup).toContain("apt-get install -y -qq xz-utils");
+    expect(xz).toBeLessThan(setup.indexOf("tar -xJf"));
+  });
 });
 
 describe("the Playwright MCP server (.mcp.json)", () => {
