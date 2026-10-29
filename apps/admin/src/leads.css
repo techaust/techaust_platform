@@ -572,6 +572,13 @@ a.lead-card__name:hover {
   margin: 0;
 }
 
+/* FX-3 (A3 8): a manual lead's answers being edited sit above the read-only facts, on their own hairline. */
+.lead-answers {
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+}
+
 .lead-links {
   display: grid;
   gap: var(--space-3);
