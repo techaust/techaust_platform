@@ -9,13 +9,13 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 import { buildSecurityTxt } from "../lib/machine-files";
 
 const doc = legalPages.security;
-// One span per line, each keeping its line break, so the text (and a copy of it) is the file's text.
+// One block per line: a copy of the box (the browser's innerText) is the file's text, line for line.
 const lines = buildSecurityTxt(site.securityTxtExpires).trimEnd().split("\n");
 ---
 
 <BaseLayout title={doc.meta.title} description={doc.meta.description}>
   <LegalPage doc={doc}>
-    <pre class="sectxt"><code>{lines.map((line, i) => <span class="sectxt__line">{i < lines.length - 1 ? `${line}\n` : line}</span>)}</code></pre>
+    <pre class="sectxt"><code>{lines.map((line) => <span class="sectxt__line">{line}</span>)}</code></pre>
   </LegalPage>
 </BaseLayout>
 
