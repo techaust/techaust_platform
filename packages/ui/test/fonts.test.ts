@@ -2,7 +2,15 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { codePoints, FACES, fontFileName, MAIN_RANGES, RUPEE_RANGES } from "../src/fonts/config.ts";
+import {
+  codePoints,
+  FACES,
+  fontFileName,
+  MAIN_RANGES,
+  PDF_FALLBACK_FONTS,
+  pdfFallbackFileName,
+  RUPEE_RANGES,
+} from "../src/fonts/config.ts";
 import { parseFont } from "../src/fonts/metrics.ts";
 import { tokens } from "../src/tokens/model.ts";
 
@@ -59,6 +67,29 @@ describe("fonts.css", () => {
   it("ships the OFL licence text with the fonts", () => {
     const licences = readFileSync(join(fontsDir, "LICENSES.md"), "utf8");
     expect(licences).toContain("SIL Open Font License, Version 1.1");
-    expect(licences.match(/^## @fontsource/gm)?.length).toBe(FACES.length);
+    expect(licences.match(/^## @fontsource/gm)?.length).toBe(FACES.length + PDF_FALLBACK_FONTS.length);
   });
+});
+
+describe("the PDF-only fallbacks (FX-5, full audit A4 3)", () => {
+  // A name in each script: Bengali with a conjunct (ক্ষ) and a vowel sign, Devanagari with a conjunct (क्ष) and a matra.
+  const SAMPLES: Record<string, string> = { Bengali: "রুপক সরকার ক্ষমা", Devanagari: "रूपक सरकार क्षमा" };
+
+  it.each(PDF_FALLBACK_FONTS.map((f) => [f.script, f] as const))(
+    "%s: covers its block, a sample name and the joiners, within 45 KB",
+    (_s, f) => {
+      const name = pdfFallbackFileName(f);
+      const buf = readFileSync(join(fontsDir, name));
+      expect(statSync(join(fontsDir, name)).size).toBeLessThanOrEqual(MAX_BYTES);
+      const font = parseFont(buf);
+      const sample = [...(SAMPLES[f.script] ?? "")]
+        .map((c) => c.codePointAt(0) as number)
+        .filter((cp) => cp !== 0x20);
+      expect(sample.filter((cp) => !font.hasGlyphForCodePoint(cp)).map(hex)).toEqual([]);
+      for (const cp of [0x200c, 0x200d, 0x25cc]) expect(font.hasGlyphForCodePoint(cp), hex(cp)).toBe(true);
+      // never in the web pages' fonts.css
+      const css = readFileSync(join(import.meta.dirname, "..", "generated", "fonts.css"), "utf8");
+      expect(css).not.toContain(name);
+    },
+  );
 });

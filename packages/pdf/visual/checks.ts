@@ -32,10 +32,15 @@ export function describeDocument(name: string, open: OpenFixture, minPages: numb
       const faces = (await page.evaluate(
         "[...document.fonts].map((f) => ({ family: f.family, status: f.status, range: f.unicodeRange }))",
       )) as { family: string; status: string; range: string }[];
-      expect(faces).toHaveLength(2);
+      // Archivo (latin, rupee) and, since FX-5, the Bengali and Devanagari fallbacks under the same family
+      expect(faces).toHaveLength(4);
       expect(faces.every((f) => f.family.replaceAll('"', "") === "Archivo")).toBe(true);
       expect(faces.map((f) => f.status)).not.toContain("error");
-      expect(faces.map((f) => f.status)).not.toContain("unloaded");
+      // a fallback loads only when the page has a character of its script, so only the Archivo faces must be loaded
+      // (Chromium writes the ranges without leading zeros: "U+980-9FE")
+      const archivo = faces.filter((f) => !/U\+0?980|U\+0?900/.test(f.range));
+      expect(archivo).toHaveLength(2);
+      expect(archivo.map((f) => f.status)).not.toContain("unloaded");
     });
 
     test("the rupee sign is set in Archivo, not a fallback font", async ({ page }) => {
