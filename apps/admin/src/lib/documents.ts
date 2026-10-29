@@ -19,6 +19,7 @@ import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
 import { milliToQty, qtyToMilli } from "./catalogue.ts";
 import { X } from "./copy-x.ts";
+import { Y } from "./copy-y.ts";
 import type {
   ApprovalInfo,
   ApprovalState,
@@ -528,6 +529,11 @@ export const DOC_ERRORS = {
   approval_rejected: "The owner rejected this version. Change it before asking again.",
   // 07-X §3.7 (B2's fill route)
   nothing_to_fill: GAP_COPY.nothingToFill,
+  // FX-3 (FX-1 follow-up): a send refused because the proposal or estimate series has no number left this FY; the meaning of the invoice line
+  // (lib/invoices.ts `series_full`). 07-Y, pending the owner.
+  series_full: Y(
+    "This series has run out of numbers for the year. Change the numbering format in Settings › Numbering.",
+  ),
 } as const;
 const errorFor = (code: string): string | undefined =>
   Object.hasOwn(DOC_ERRORS, code) ? (DOC_ERRORS as Record<string, string>)[code] : undefined;

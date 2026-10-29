@@ -330,6 +330,12 @@ describe("errors by API code (07-O §6)", () => {
     const m = mappedError(e("frozen")) as RequestError;
     expect([m.code, m.message]).toEqual(["frozen", DOC_ERRORS.frozen]);
   });
+  it("FX-3: a send refused with 409 series_full reads the invoice line's meaning (07-Y, marked until the owner approves it)", () => {
+    expect(docErrorText(e("series_full", "This numbering series has no numbers left this year"))).toBe(
+      "[Placeholder] This series has run out of numbers for the year. Change the numbering format in Settings › Numbering.",
+    );
+    expect((mappedError(e("series_full")) as RequestError).message).toBe(DOC_ERRORS.series_full);
+  });
   it("blockers read as 07-O's short sentences", () => {
     expect(blockerText({ code: "title_required" })).toBe("Add a title.");
     expect(blockerText({ code: "unresolved_placeholders", names: ["client.name"] })).toBe(
