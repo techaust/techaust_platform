@@ -14,7 +14,11 @@ The plan is **Claude Team** (from 2026-10-26, owner): a 5-hour window, and a wee
   - the built-in Explore, Plan, general-purpose and catch-all (`claude`) agents.
 
 ## 2. Tiers
-The lead sets the tier when it writes the brief; the run file's `Tier:` line records it. A milestone's tier comes from its riskiest part. The tier decides **which steps a task goes through** (the analyst's early check for Tier A, a designer step when there are screens), not the model or the effort, which are the same for every tier.
+The lead sets the tier when it writes the brief; the run file's `Tier:` line records it. A milestone's tier comes from its riskiest part. The tier decides **only which checks a task gets** (owner, 2026-10-29), never the model or the effort, which are the same for every tier:
+- **Tiers A and B:** the analyst's early check of the build, before the designer starts.
+- **Every tier:** a second review (the re-check) after any critical or high finding.
+
+A designer step comes in whenever there are screens.
 
 | Tier | What puts a task in it | Milestones ([09](09-roadmap.md)) |
 |---|---|---|
@@ -29,7 +33,7 @@ Every role below runs **Opus 5.5 at high**. The agent files name the model and e
 | Role | Job |
 |---|---|
 | **Lead** (the main conversation) | Starting and ending the day, briefs, integration, merges, PRs, checking staging, talking to the owner. The owner picks **Opus 5.5, high** once in the app's picker; the project's `effortLevel` is `high`. A hook tells the lead its effort level on its first command (§6). If it isn't high, or the model isn't Opus 5.5, the lead says so in one line and does no other work until it is fixed. |
-| `analyst` (read-only) | Tier A briefs, the early check of a Tier A build, merges whose migrations change a table, trigger, constraint or foreign key, failures nobody can explain, phase plans, legal and tax research drafts |
+| `analyst` (read-only) | Tier A briefs, the early check of a Tier A or B build, merges whose migrations change a table, trigger, constraint or foreign key, failures nobody can explain, phase plans, legal and tax research drafts |
 | `builder` | Data, schema, logic, API routes, jobs, and their fixes |
 | `designer` | Designs and builds every screen, page, component, PDF layout, email template and social image, checks its own screenshots, and fixes screen findings |
 | `reviewer` (changes no code) | Every review and every re-check: the code, plus a live visual review whenever there are screens |
@@ -52,28 +56,44 @@ A subagent can't start another subagent, so only the lead starts agents.
 - **Design previews before the build** of the four surfaces everything else copies: the website shell (M2.1), the home page (M2.2), the admin shell (M3.1) and the client portal (M4.5; the full portal in M7.1 follows it). The designer builds them in Preview mode with labelled sample data on the local dev server and takes screenshots; the lead sends the screenshots to the owner, and the build starts only after the owner approves. Each approval is a [13-decisions.md](13-decisions.md) row.
 - **The order inside a task:**
   1. `builder`: schema, migrations, logic, API routes, with tests
-  2. Tier A: `analyst` checks that diff (**GO** or **CHANGE**); on CHANGE the lead resumes the builder
+  2. Tiers A and B: `analyst` checks that diff (**GO** or **CHANGE**); on CHANGE the lead resumes the builder
   3. `designer`: the screens on top, with its own visual check
   4. `reviewer`: the code and the visual review
   5. fixes: logic findings to the builder, screen findings to the designer; then the re-check
 
   A task with only screens (most of Tier C) skips steps 1 and 2. A task with no screens skips step 3.
 - **Handing a branch from the builder to the designer:** git won't check out one branch in two worktrees. Once the builder has finished, remove its worktree (`git worktree remove`; the branch and its commits stay), then start the designer (`isolation: "worktree"`), which checks out the task branch. Restarting a stopped agent works the same way, or resume it with SendMessage if it is still reachable.
-- **One browser user at a time:** the designer and the reviewer share the Playwright browser and the dev-server ports, so the lead never runs two of them at once.
+- **Browser agents:** the designer and the reviewer use the Playwright browser and the dev-server ports. On this PC, only one runs at a time. A cloud session may run two (§5), but only once each one gets its own dev-server ports and browser profile. Until that change is built, cloud sessions also keep to one.
 - **Commits as it goes:** at least every 20 minutes and at each finished layer or screen, so a stopped agent loses nothing.
 - **Severity triage:** critical and high findings are fixed before the merge. Medium and low findings are fixed in the same task too (lead practice since M2.2), unless they belong to a later milestone (then a listed follow-up in [12-status.md](12-status.md)) or the lead keeps one with a reason in the run file.
 - **`main` taken early:** if `main` has moved since the task branched, the lead merges it into the task before the review, not after. If the task's migrations change a table, trigger, constraint or foreign key, the analyst plans that merge first. **Analyst gate for migrations:** the analyst also confirms that no migration rebuilds (drops, or copies through `__new_…`) a table other tables reference; `scripts/check-migrations.mjs` fails CI for any such migration after 0006, and the only way past it is the analyst's written check plus an entry (with the reason) in `scripts/migration-rebuild-allowlist.json`.
 
-## 5. The budget gate
-Before starting any agent, the lead reads the usage (the `get_usage` session tool: "5-hour limit"). On the Team plan only the 5-hour window gates the work (owner, 2026-10-26); there is no weekly pace. If a weekly limit for the models we use ever appears in the reading, the lead tells the owner before relying on this table.
+## 5. The budget gate and how many agents run
+Before starting **any** agent, the lead runs `node tools/agent-slots.mjs --running <n> --browsers <n> [--browser] --usage <pct>` (owner, 2026-10-29). It prints "start: yes" or "start: no" with the reason, and a test pins its rules (`apps/web/test/agent-slots.test.ts`). **Every agent counts**, the helpers (`code-finder`, `test-runner`, `doc-clerk`) too.
 
-| Reading | What runs |
+### The budget gate (on the Team plan, only the 5-hour window counts; there is no weekly pace)
+| Reading | What happens |
 |---|---|
-| The 5-hour window under 95 % | Up to two agents at once (the 8 GB RAM limit), never two browser users |
-| The 5-hour window at 95 % or more | No new agent of any kind starts until it resets; running agents may finish (owner, 2026-10-29; was 80 % from 2026-10-26) |
-| The usage can't be read | One agent at a time, and say so |
+| The 5-hour bar **at or under 95 %** | New agents may start, within the limits below |
+| **Over 95 %** | Nothing new starts until the window resets. Running agents keep going and save their work as they go (commits at least every 20 minutes) |
+| **This PC can't read the bar** | One agent at a time, and the lead says so |
 
-The gate changes **how much runs at once, never the model or the effort.** Above 95 % the agents already running may use up the rest of the window. The lead starts no new work then, and waits for the reset.
+**A cloud session** reads the bar itself when it can. When it can't, it uses the reading posted in [runs/usage-reading.md](runs/usage-reading.md) on its branch:
+- **No reading posted for today (IST):** nothing new starts.
+- **A reading over 2 hours old:** one agent at a time.
+- **A reading over 95 %:** nothing new starts.
+
+The local lead (or the owner) posts the reading: the percentage and the time, as the file shows.
+
+### How many agents at once
+| Where | Agents at once | Browser agents | Before each start |
+|---|---|---|---|
+| **This PC** (8 GB, 4 processors) | at most **2** | at most **1** | free memory at least **300 MB** |
+| **A cloud session** (its virtual machine) | at most **5** | at most **2** (§4: each with its own ports) | at least **3 GB** free memory, and the 1-minute load average under **80 %** of its processors |
+
+**Heavy commands** (the full lint, typecheck, builds, the database and end-to-end suites) still take turns, one at a time per machine, through `tools/heavy.sh`, both here and in a cloud session.
+
+The gate and the limits change **how much runs at once, never the model or the effort.** If a weekly limit for Opus ever appears in the reading, the lead tells the owner before relying on this section.
 
 **The day runs in up to three 5-hour windows**, with the expensive work at a window's start:
 1. starting the day, the brief or the review triage, and the builder or designer
