@@ -136,4 +136,106 @@ Request from the builder (claude-opus-5-5, high), 2026-10-29, branch `fix/fx1-bu
   0049 and 0050 will apply cleanly.
 
 ## Builder report
-_(pending)_
+Builder claude-opus-5-5, high, 2026-10-29. Branch `fix/fx1-builder` (from `origin/fix/fx1-data-jobs`; the analyst's early check merged in at acb3ee08), 15 commits from 44d6ea1c to 85991c77, pushed. All 14 items are done. Items 1–6 and 8 are described under "Early check request (builder)" above; below are the two early-check changes and items 7 and 9–14.
+
+**Skills loaded:**
+- `cloudflare:workers-best-practices`: queue retries and delays kept in the consumer; no new binding; the cron only enqueues.
+- `cloudflare:wrangler`: checked in the pinned wrangler `config-schema.json` that `triggers` is `EnvironmentInheritable` while `services` and `secrets` are not. This decided the item 10 comments and the guard.
+- `cloudflare:cloudflare`: Queues and Browser Run for items 9, 11 and 12. Retry delays stay at most 1 h, well under the queue maximum; 10 tries fit the message retention.
+- `aws-messaging-and-streaming`: SES is the email channel; this only routes, there was no SES API change.
+- `aws-iam`: the rotation keeps the existing send-only policy, uses a second access key (an IAM user holds two), and deactivates before deleting.
+
+**Early check changes (analyst, CHANGE 1 and 2):**
+1. `packages/pdf/test/fixtures/notes.ts:331`: the "Discount after sale" note fixture is dated 2026-11-02; every other fixture stays at 2026-10-28, and the reason is kept. Packages/pdf: 340 tests pass. Jobs `pdf-notes`: 18 pass.
+2. `apps/admin/worker/care-billing.ts`: the care auto-issue's refusal regex now matches `UNIQUE constraint failed: documents\.` and logs an ids-only integrity line (`care invoice issue refused by a unique key`, document id, series, FY). The answer is `freeze_refused`, never a thrown, retried RPC.
+   - New test in `care-billing.test.ts`: a proforma pre-printing the invoice series' next number (FY 3435, so no other test meets it) makes the auto-issue refuse. The log line is checked, the counter does not move, and the draft stays a draft.
+
+**Item 7 (A0 10):** docs/04 §9 has three new rows, `invoices.ims` (Owner), `invoices.send` (Owner and Staff, send) and `clients.careAutoIssue` (Owner, step-up; turning it off is `clients.finance.write`), matching `permissions.ts`.
+
+**Item 9 (A6 2, JOB-PDF-01):**
+- Migration `0051_pdf_failures.sql` (drizzle-kit, CREATE TABLE only; FK to `documents` with cascade; CHECK `nights >= 0`, qualified with its own table name, not `__new_`).
+- Row counting:
+  - the sweep records `last_attempt_at` for every document it picks, in one batch, after the `sendBatch`;
+  - a PDF dead letter (snapshot or render) counts one failed night per IST day (`last_failed_day`, so a snapshot and a render dead letter on one day count once).
+- At 3 nights (`SWEEP_MAX_FAILED_NIGHTS`) the owners get one `pdf.refused` bell (`INSERT OR IGNORE`, unique per owner, kind and document). The sweep leaves the document out both by `nights < 3` and by the existing refused-bell test.
+- `SWEEP_SQL` orders by `coalesce(last_attempt_at, 0)`, then `frozen_at`, then id. It still reads `documents_pdf_pending` and finds failures by primary key; the order is a sort of the pending set, and the old "no TEMP B-TREE" assertion was replaced on purpose.
+- Tests: least-recently-tried first across two nights; nights counted once per day; at the third night the bell (title and link) and leaving the sweep; a fourth night rings nothing new.
+- New bell line for 07-Y: "The PDF of {number} couldn't be made on 3 nights, so the nightly retry has stopped. A developer needs to look at it."
+
+**Item 10 (A6 3):**
+- `apps/jobs/wrangler.jsonc` `env.production` gets `"triggers": { "crons": [] }`.
+- `jobsConfigProblems` now requires a present, empty list in production: a missing `triggers` is its own problem ("…inherits the top level's") and a non-empty list is "no cron triggers until Phase 7".
+- Comments: the wrong "Not inherited" on `triggers` is corrected; the ones on `services`, `secrets` and `browser` were right and stay. The header comment is brought up to date.
+- Guard tests are in `apps/web/test/worker-config.test.ts`. **That file is under `apps/web`, FX-2's area**: two assertions changed and one test added. Merge with care if FX-2 touches it.
+
+**Item 11 (A6 4, JOB-Q-01):**
+- `emailRetryDelay(attempts)` = min(3,600, 60 × 2^(attempts − 1)), used for an SES `retry` answer and in the catch-all, for the email queue only; the other queues keep their delays.
+- Email consumer `max_retries` 5 → 10, top level and staging (production has no queue). That rides out about 4 h 45 min of SES trouble before the dead letter.
+- `apps/jobs/src/email.ts` records that the 8 s transport timeout can send twice, and that at-least-once delivery is accepted.
+- Tests: the delay table; an SES 503 through `handleQueue` at attempts 1, 4 and 9; a throwing consumer at attempt 3.
+
+**Item 12 (A6 6, JOB-CRON-01):**
+- The daily cron no longer calls `enqueueDue`. One `lead.purge.scan` with no cursor (`purgeScanMessage`) rides the statistics `sendBatch`, and the existing consumer does the page.
+- Tests:
+  - the cron sends the scan and no `lead.purge`;
+  - the scan, consumed, queues the due lead;
+  - the whole daily cron runs with a D1 trap.
+- `stats.test.ts` changed on purpose: 2 queue calls, not 3, and the stats batch has `STATS_METRICS.length + 2` bodies; its "one half failing" test now fails the statement-purge call.
+
+**Item 13 (A6 7):**
+- The care scan is queued at 06:00, 07:00 and 08:00 IST, and `alerts.daily` at 09:00, 10:00 and 11:00 (`REPEAT_HOURS` 2). The realisation scan and the EDF reminder stay at 09:00 only.
+- Tests:
+  - the hour table (billing-routing, reports-b; changed on purpose);
+  - a care scan at 07:00 and 08:00 after the 06:00 bill drafted the period queues nothing;
+  - alerts at 10:00 and 11:00 after 09:00 queue no email and no new bell.
+
+**Item 14 (A6 10):**
+- `docs/runbooks/environments.md`: queue producers and consumers, both private R2 buckets with their bindings, Browser Run (staging jobs only, the daily allowance and pacing), both crons and what each queues (repeats included), the `ADMIN_JOBS` → `BillingJobs` binding and the deploy order, five Workers, and production's empty cron list.
+  - Taken from the committed configs and the record, not from the dashboard.
+- `ses-and-turnstile.md` Part 8: step-by-step key rotation, next due about **2027-01-21** (key made 2026-10-23). It reuses the existing hidden-input script `.logs/owner/m2.4-ses-keys.ps1`; I read its `RESULT:` lines to word the steps.
+  - Steps: make a second key → store it → test → deactivate → delete the next day.
+  - It warns that the two `wrangler secret put` calls go live one after the other: an email in that gap gets a permanent 403 and fails, so I check the email log.
+  - It warns that a failure on the second put leaves email broken until the script is rerun.
+
+**Files changed (items 7 and 9–14, plus the early-check changes):**
+- `apps/admin/worker/care-billing.ts`, `care-billing.test.ts`
+- `packages/pdf/test/fixtures/notes.ts`
+- `docs/04-prd.md`
+- `packages/db/src/schema/documents.ts`, `migrations/0051_pdf_failures.sql`, `meta/0051_snapshot.json`, `_journal.json`; `test/migrations.test.ts` (52 tables, 0051 listed)
+- `apps/jobs/src/{pdf,queue,email,purge,index,billing}.ts`, `apps/jobs/wrangler.jsonc`
+- `apps/jobs/test/{pdf,pipeline,purge,stats,billing-routing,care-jobs,alerts,reports-b}.test.ts`
+- `scripts/check-worker-config.mjs`, `apps/web/test/worker-config.test.ts`
+- `docs/runbooks/environments.md`, `docs/runbooks/ses-and-turnstile.md`
+- 0049/0050 drizzle snapshots formatted by biome (the first `pnpm check` failed on their format).
+
+**Commands and results (heavy ones through `tools/heavy.sh`; logs in the worktree's `.logs/`):**
+- `pnpm check` (whole-repo lint, typecheck, binding, content, worker-config and migration guards):
+  - first run: exit 1 on the three drizzle snapshot formats;
+  - after formatting: exit 0 (52 migrations, none rebuilds a referenced table).
+- `pnpm test` (full), packages:
+  - auth 135, ui 469 (+2 skipped), core 1,760, email 128, db 470, pdf 340: all pass;
+  - web 428 (+16 skipped), portal 620, jobs 525: all pass;
+  - admin 3,226 of 3,230: 4 timed out at 5 s under the full parallel run (`documents-send` V8, `invoice-notes` discard, `reports` statement PDF, `turnstile` 100 requests);
+  - admin alone right after: **3,230 pass**.
+- `pnpm --filter @techaust/jobs build`: bundle 865,635 bytes (limit 1,000,000), startup 81.2 ms.
+- Earlier, `pnpm --filter @techaust/admin build`: API Worker 596,477 bytes, startup 59.8 ms.
+- No dev server was started.
+
+**Not verified:**
+- Anything on staging: migrations 0049–0051, the crons, the email backoff against real SES, Browser Run.
+- The production D1's SQLite for `UPDATE … FROM` (passes in workerd).
+- That pnpm's workspace order really puts admin before jobs (A6 8, owner's yes).
+- The runbook facts that rest on the record rather than the dashboard (bucket creation, the Browser Run allowance).
+
+**Follow-ups:**
+- `LEDGER_IDENTITY_TYPES_0050` widens to the receipt and voucher types in M6, in a new migration (analyst; RA-17 OPEN).
+- An INSERT twin of `documents_ledger_identity` comes with the first writer that inserts non-draft rows (analyst).
+- The care page's next billing day (core `nextBillingDayOf`) still says "tomorrow" from 06:00 IST, though the repeats at 07:00 and 08:00 can now draft the same day. A small core and copy change, left for the lead.
+- `pdf_failures` rows stay after a PDF is finally made (harmless: the sweep reads only documents without a PDF). Clean-up can go with M7.4's retention work.
+- New lines for page 07-Y:
+  - the numbering clash message (Settings › Numbering);
+  - the "nightly retry has stopped" bell.
+  - The documents screen has no `series_full` line in `apps/admin/src/lib/documents.ts` (designer or FX-3).
+- `apps/web/test/worker-config.test.ts` is touched by this task (item 10 guard tests): watch for an FX-2 overlap at merge.
+
+**Open questions:** none for the owner.
