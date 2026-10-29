@@ -122,7 +122,10 @@ export function ConvertDialog(props: {
         displayName: f.displayName.trim(),
       });
       toast("success", `Converted to client ${r.clientCode}.`);
-      // ADM-LEAD-04: the next step is the proposal, so it opens straight away (the lead links to it as before).
+      // ADM-LEAD-04: the next step is the proposal, so it opens straight away (the lead links to it as before). The dialog closes and the
+      // lead reloads first (FX-3 review 2): with unsaved lead edits the leave question then stands alone, and a "Stay" shows the converted
+      // lead, never the old form under it.
+      props.onConverted();
       navigate(`/proposals/${encodeURIComponent(r.proposalId)}`);
     } catch (err) {
       if (err instanceof RequestError && err.code === "country_mismatch") {
