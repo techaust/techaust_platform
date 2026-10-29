@@ -114,6 +114,34 @@ export const patchBody = z.strictObject({
 
 const TOKEN = "{{client.contact}}";
 
+const FORCE = "force" as const;
+/**
+ * The sent Deliverables and Assumptions and exclusions sections as `ITEMS_OF_SAVE` compares them with the stored ones (`?4`), each as
+ * `resolveSections` will store it (round 4, L6): null when the save sends no sections; FORCE (read the rows whatever is stored) when one
+ * has no id or two share one, since `resolveSections` then gives it a new id the stored rows can't match.
+ */
+export function gapSectionsOf(
+  sections:
+    | readonly {
+        id?: string | undefined;
+        kind: string;
+        bodyMd?: string | null | undefined;
+        hidden?: boolean | undefined;
+      }[]
+    | undefined,
+): { id: string; kind: string; hidden: 0 | 1; body: string | null }[] | typeof FORCE | null {
+  if (sections === undefined) return null;
+  const gap = sections.filter((x) => isGapKind(x.kind));
+  const ids = new Set(gap.map((x) => x.id));
+  if (gap.some((x) => x.id === undefined) || ids.size !== gap.length) return FORCE;
+  return gap.map((x) => ({
+    id: x.id as string,
+    kind: x.kind,
+    hidden: x.hidden === true ? 1 : 0,
+    body: x.bodyMd ?? null,
+  }));
+}
+
 /** The Acceptance text with the old contact's name (or the placeholder, spaced or not) replaced by the new name (or the placeholder). */
 export function renameContact<S extends { kind: string; bodyMd: string | null }>(
   sections: S[],
@@ -137,13 +165,22 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
     ),
   ];
   const contactId = f.fields?.contactId;
-  // A save that sends lines, or a Deliverables or Assumptions and exclusions section, may change the draft's Catalogue gaps (review round 2,
-  // finding 4): it also reads the rows of the services already on the draft. Whether the answer carries the gaps is decided once the save is
-  // built (`gapInputsChanged`, round 3 finding 6). Any other save reads only the services it adds (none).
-  const mayChangeGaps = f.lines !== undefined || (f.sections ?? []).some((x) => isGapKind(x.kind));
+  // A save that sends lines, or sections whose Deliverables or Assumptions and exclusions differ from the stored ones, may change the
+  // draft's Catalogue gaps (review round 2, finding 4): it also reads the rows of the services already on the draft. The sections are
+  // compared in the read itself (round 4, L6: `gapSectionsOf`), so an autosave of the other sections reads no catalogue row. Whether the
+  // answer carries the gaps is decided once the save is built (`gapInputsChanged`, round 3 finding 6).
+  const gapSections = gapSectionsOf(f.sections);
+  const mayChangeGaps = f.lines !== undefined || gapSections === FORCE;
   // One read batch: the document, its client, contact, terms and the settings, plus the services this save adds and the contact it sets.
   const ctx = await readContext(c, id, [
-    db.prepare(ITEMS_OF_SAVE).bind(id, JSON.stringify(newItems), mayChangeGaps ? 1 : 0),
+    db
+      .prepare(ITEMS_OF_SAVE)
+      .bind(
+        id,
+        JSON.stringify(newItems),
+        mayChangeGaps ? 1 : 0,
+        gapSections === FORCE || gapSections === null ? null : JSON.stringify(gapSections),
+      ),
     contactId
       ? db
           .prepare("SELECT id, client_id, name, email, anonymised_at FROM contacts WHERE id = ?1")
@@ -259,14 +296,18 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
     sections.some((x) => hasServiceToken(x.title) || hasServiceToken(x.bodyMd))
   )
     sections = fillServiceTokens(sections, servicesOf(state.lines, items), scheduleSentence(state.schedule));
-  // Every added service's text not yet in its sections goes in under its name; a section the token fill just wrote already holds it.
-  sections = appendServices(sections, added);
+  // A service added to a draft that already had services gets its text not yet in its sections, under its name. Only then (round 4, L2):
+  // the save that adds the first service has filled the template's tokens above, and a draft whose tokens the person wrote over keeps
+  // their words (the gaps name what is missing).
+  if (storedServices.length > 0) sections = appendServices(sections, added);
   const refilled = sections.some((x, n) => x !== state.sections[n]);
   if (refilled) {
     sections.forEach((x, n) => {
       if (x !== state.sections[n]) serverChanged.add(x.id);
     });
-    // The same limits as a typed text: a save whose added Catalogue text would pass them is a 400 (like the contact's name above).
+    // Catalogue text a service ADDS that would pass a section's limit, or the document's, was left out of that section (round 4, M3) and
+    // is named as a gap (`noRoom`): it never makes the save, or any later one, a 400. What stays checked here is the first service's own
+    // template fill (a template text of up to 2,000 characters around both of its 2,500-character texts), as before.
     const issues = checkSections(sections);
     if (issues.length > 0)
       return c.json(
@@ -280,8 +321,9 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
     state = { ...state, sections };
   }
   // The answer carries the gaps only when what they are worked out from changed (round 3, finding 6): not on every sections autosave.
+  // When the sections were sent, the read compared them in SQL; `gapInputsChanged` can only say "changed" when that read found them changed.
   const gapsChange =
-    mayChangeGaps &&
+    (mayChangeGaps || gapSections !== null) &&
     gapInputsChanged(
       { services: storedServices, sections: stored.sections },
       { services: serviceIdsOf(state.lines), sections: state.sections },
