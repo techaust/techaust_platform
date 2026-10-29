@@ -116,7 +116,7 @@ Each lock covers the others' gaps. The locks were first tested on 2026-10-12 on 
 | `node tools/model-audit.mjs [date]` | Lists every run since the date with the model and effort from its own log, and flags anything but Opus 5.5 at high (runs before 2026-10-29 followed the older plan). The end-of-day routine runs it | Flagged the 2026-10-08 Haiku 4.5 test runs |
 
 - **Claude Code 2.1.293 or later** is required. The app runs 2.1.295 or later.
-- **`CLAUDE_CODE_EFFORT_LEVEL` stays unset:** the agent files and `effortLevel` already give high everywhere.
+- **`CLAUDE_CODE_EFFORT_LEVEL` stays unset on this PC:** the agent files and `effortLevel` already give high everywhere. **Cloud exception:** the claude.ai environment sets `CLAUDE_CODE_EFFORT_LEVEL=high` ([runbooks/cloud-sessions.md](runbooks/cloud-sessions.md) Part 2), the same level, as a second hold there besides the project's `effortLevel`.
 - **A new model from Anthropic** is a question for the owner; nothing changes until the owner approves it and a [13-decisions.md](13-decisions.md) row records it.
 
 ## 7. Habits that save usage without touching quality
