@@ -390,6 +390,7 @@ body:has(.savebar) .toasts {
    alone). The row scrolls sideways inside its own box on narrow screens, so the page itself never does. */
 
 .tabs__scroll {
+  position: relative;
   margin-bottom: var(--space-6);
   overflow-x: auto;
   border-bottom: 1px solid var(--color-border);

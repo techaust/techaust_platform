@@ -1474,7 +1474,10 @@ body:has(.shell) {
   min-height: var(--target-min);
 }
 
+/* Positioned, so a visually hidden child (absolutely placed) is clipped with the box and never widens the page (FX-3, A3 2). When the
+   table is wider than its box, the box is a keyboard stop (components/scroll-region.ts) and shows the focus ring like any control. */
 .dtable {
+  position: relative;
   margin-top: var(--space-4);
 }
 

@@ -4,9 +4,12 @@
 // country, `gstin_invalid` and `gstin_in_use` on the GSTIN; `already_converted` says so and offers the latest.
 // M3.3 carry-ins: the state (required for registered and unregistered Indian clients; it follows a valid GSTIN, a
 // different one shows the 07-J warning) and the billing-contact flag for the new contact.
+// FX-3 (A3 9, A3 12): a lead that gave no country gets no India default: the country starts unchosen and is required,
+// and the GST status and state appear once it is chosen. After converting, the draft proposal opens.
 // Researched 2026-10-28, s.12 IGST (08-C RA-12): GST status and place of supply are confirmed at proposal and invoice time (M4).
 import { selectableStates, validateGstin } from "@techaust/core/gstin";
 import { type FormEvent, useState } from "react";
+import { useNavigate } from "react-router";
 import { api, type ConvertInput, errorText, type LeadDetail, RequestError } from "../../api.ts";
 import { Modal } from "../../components/dialog.tsx";
 import { StatusPill } from "../../components/display.tsx";
@@ -15,20 +18,27 @@ import { AlertTriangle } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { stateWarning, withGstin } from "../../lib/clients.ts";
+import { Y } from "../../lib/copy-y.ts";
 import { countryOptions } from "../../lib/leads.ts";
+
+/** 07-Y (FX-3, A3 12): the country is chosen, never assumed. */
+export const CONVERT_COPY = {
+  chooseCountry: Y("Choose a country"),
+  countryRequired: Y("Choose the client's country."),
+} as const;
 
 type Form = Required<Omit<ConvertInput, "gstin" | "stateCode">> & { gstin: string; stateCode: string };
 
 function initial(lead: LeadDetail): Form {
-  const country = lead.country ?? "IN";
+  const country = lead.country ?? "";
   return {
     type: lead.company ? "business" : "individual",
     country,
-    gstStatus: country === "IN" ? "unregistered" : "overseas",
+    gstStatus: country === "" || country === "IN" ? "unregistered" : "overseas",
     gstin: "",
     stateCode: "",
     billingContact: false,
-    currency: lead.currency ?? (country === "IN" ? "INR" : "USD"),
+    currency: lead.currency ?? (country === "" || country === "IN" ? "INR" : "USD"),
     legalName: lead.company ?? lead.name,
     displayName: lead.company ?? lead.name,
   };
@@ -51,6 +61,7 @@ export function ConvertDialog(props: {
   onConverted: () => void;
 }) {
   const toast = useToast();
+  const navigate = useNavigate();
   const [f, setF] = useState<Form>(() => initial(props.lead));
   const [errors, setErrors] = useState<Errors>({});
   const [failure, setFailure] = useState<string | null>(null);
@@ -80,14 +91,16 @@ export function ConvertDialog(props: {
   async function submit(e: FormEvent) {
     e.preventDefault();
     const errs: Errors = {};
+    const placed = f.country !== "";
     if (!f.legalName.trim()) errs.legalName = "Enter the legal name.";
     if (!f.displayName.trim()) errs.displayName = "Enter the display name.";
-    if (registered) {
+    if (!placed) errs.country = CONVERT_COPY.countryRequired;
+    if (placed && registered) {
       const g = validateGstin(f.gstin);
       if (!f.gstin.trim()) errs.gstin = "Enter the GSTIN.";
       else if (!g.ok) errs.gstin = `${g.error}.`;
     }
-    if (f.gstStatus !== "overseas" && !f.stateCode) errs.stateCode = "Choose the client's state.";
+    if (placed && f.gstStatus !== "overseas" && !f.stateCode) errs.stateCode = "Choose the client's state.";
     setErrors(errs);
     const first = Object.keys(errs)[0];
     if (first) {
@@ -109,7 +122,8 @@ export function ConvertDialog(props: {
         displayName: f.displayName.trim(),
       });
       toast("success", `Converted to client ${r.clientCode}.`);
-      props.onConverted();
+      // ADM-LEAD-04: the next step is the proposal, so it opens straight away (the lead links to it as before).
+      navigate(`/proposals/${encodeURIComponent(r.proposalId)}`);
     } catch (err) {
       if (err instanceof RequestError && err.code === "country_mismatch") {
         setErrors({ country: `${err.message}.` });
@@ -198,6 +212,7 @@ export function ConvertDialog(props: {
               {(a) => (
                 <select
                   {...a}
+                  required
                   value={f.country}
                   onChange={(e) => {
                     const country = e.target.value;
@@ -216,6 +231,7 @@ export function ConvertDialog(props: {
                     setErrors((x) => ({ ...x, country: undefined }));
                   }}
                 >
+                  {f.country === "" && <option value="">{CONVERT_COPY.chooseCountry}</option>}
                   {countryOptions().map((c) => (
                     <option key={c.value} value={c.value}>
                       {c.label}
@@ -224,98 +240,102 @@ export function ConvertDialog(props: {
                 </select>
               )}
             </FormField>
-            <fieldset className="radios">
-              <legend>GST status</legend>
-              <div className="segmented">
-                {GST_STATUS.map((s) => (
-                  <label key={s.value} className="segmented__opt">
-                    <input
-                      type="radio"
-                      name="cv-gst"
-                      value={s.value}
-                      checked={f.gstStatus === s.value}
-                      onChange={() => {
-                        set({ gstStatus: s.value, ...(s.value === "overseas" ? { stateCode: "" } : {}) });
-                        setErrors((x) => ({ ...x, country: undefined, gstin: undefined }));
-                      }}
-                    />
-                    {s.label}
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-            <VerifyNote>The GST treatment is confirmed on the proposal and the invoice.</VerifyNote>
-            {registered && (
-              <FormField
-                id="cv-gstin"
-                label="GSTIN"
-                className="field--gstin"
-                hint="15 characters, checked when you finish typing."
-                error={errors.gstin ?? liveError}
-                status={
-                  gst?.ok ? (
-                    <>
-                      <StatusPill tone="success" icon="check">
-                        Valid
-                      </StatusPill>
-                      <span>
-                        Registered in {gst.state} ({gst.stateCode})
-                      </span>
-                    </>
-                  ) : undefined
-                }
-              >
-                {(a) => (
-                  <input
-                    {...a}
-                    autoComplete="off"
-                    spellCheck={false}
-                    autoCapitalize="characters"
-                    maxLength={18}
-                    value={f.gstin}
-                    onChange={(e) => {
-                      const v = e.target.value.toUpperCase();
-                      set(withGstin(f, v));
-                      setErrors((x) => ({ ...x, gstin: undefined }));
-                      setChecked(v.replace(/\s/g, "").length >= 15);
-                    }}
-                    onBlur={() => setChecked(true)}
-                  />
-                )}
-              </FormField>
-            )}
-            {f.gstStatus !== "overseas" && (
-              <FormField
-                id="cv-stateCode"
-                label="State and code"
-                error={errors.stateCode}
-                status={
-                  gst?.ok && f.stateCode && f.stateCode !== gst.stateCode ? (
-                    <span className="field-warning">
-                      <AlertTriangle size={16} />
-                      {stateWarning(gst.state)}
-                    </span>
-                  ) : undefined
-                }
-              >
-                {(a) => (
-                  <select
-                    {...a}
-                    value={f.stateCode}
-                    onChange={(e) => {
-                      set({ stateCode: e.target.value });
-                      setErrors((x) => ({ ...x, stateCode: undefined }));
-                    }}
-                  >
-                    <option value="">Choose a state</option>
-                    {selectableStates().map((s) => (
-                      <option key={s.code} value={s.code}>
-                        {s.name} ({s.code})
-                      </option>
+            {f.country !== "" && (
+              <>
+                <fieldset className="radios">
+                  <legend>GST status</legend>
+                  <div className="segmented">
+                    {GST_STATUS.map((s) => (
+                      <label key={s.value} className="segmented__opt">
+                        <input
+                          type="radio"
+                          name="cv-gst"
+                          value={s.value}
+                          checked={f.gstStatus === s.value}
+                          onChange={() => {
+                            set({ gstStatus: s.value, ...(s.value === "overseas" ? { stateCode: "" } : {}) });
+                            setErrors((x) => ({ ...x, country: undefined, gstin: undefined }));
+                          }}
+                        />
+                        {s.label}
+                      </label>
                     ))}
-                  </select>
+                  </div>
+                </fieldset>
+                <VerifyNote>The GST treatment is confirmed on the proposal and the invoice.</VerifyNote>
+                {registered && (
+                  <FormField
+                    id="cv-gstin"
+                    label="GSTIN"
+                    className="field--gstin"
+                    hint="15 characters, checked when you finish typing."
+                    error={errors.gstin ?? liveError}
+                    status={
+                      gst?.ok ? (
+                        <>
+                          <StatusPill tone="success" icon="check">
+                            Valid
+                          </StatusPill>
+                          <span>
+                            Registered in {gst.state} ({gst.stateCode})
+                          </span>
+                        </>
+                      ) : undefined
+                    }
+                  >
+                    {(a) => (
+                      <input
+                        {...a}
+                        autoComplete="off"
+                        spellCheck={false}
+                        autoCapitalize="characters"
+                        maxLength={18}
+                        value={f.gstin}
+                        onChange={(e) => {
+                          const v = e.target.value.toUpperCase();
+                          set(withGstin(f, v));
+                          setErrors((x) => ({ ...x, gstin: undefined }));
+                          setChecked(v.replace(/\s/g, "").length >= 15);
+                        }}
+                        onBlur={() => setChecked(true)}
+                      />
+                    )}
+                  </FormField>
                 )}
-              </FormField>
+                {f.gstStatus !== "overseas" && (
+                  <FormField
+                    id="cv-stateCode"
+                    label="State and code"
+                    error={errors.stateCode}
+                    status={
+                      gst?.ok && f.stateCode && f.stateCode !== gst.stateCode ? (
+                        <span className="field-warning">
+                          <AlertTriangle size={16} />
+                          {stateWarning(gst.state)}
+                        </span>
+                      ) : undefined
+                    }
+                  >
+                    {(a) => (
+                      <select
+                        {...a}
+                        value={f.stateCode}
+                        onChange={(e) => {
+                          set({ stateCode: e.target.value });
+                          setErrors((x) => ({ ...x, stateCode: undefined }));
+                        }}
+                      >
+                        <option value="">Choose a state</option>
+                        {selectableStates().map((s) => (
+                          <option key={s.code} value={s.code}>
+                            {s.name} ({s.code})
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </FormField>
+                )}
+              </>
             )}
             <fieldset className="radios">
               <legend>Currency</legend>

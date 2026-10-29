@@ -35,7 +35,7 @@ export function SignIn() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ text: string; locked: boolean } | null>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
-  const [ms, setMs] = useState<number | null>(null);
+  const [show, setShow] = useState(false);
   // Focus goes to the one field of each step (its label and hint are read out); after "Start again", to the email.
   const [restarted, setRestarted] = useState(false);
   // The Turnstile check: off until the server asks for it, then on for the rest of this page. `nudge` re-announces
@@ -43,9 +43,7 @@ export function SignIn() {
   const [check, setCheck] = useState(false);
   const [nudge, setNudge] = useState(0);
   const widget = useRef<TurnstileWidget | null>(null);
-  const [signIn] = useState(() =>
-    passwordSignIn({ salt: api.salt, hash: hashPassword, login: api.login, onHashed: setMs }),
-  );
+  const [signIn] = useState(() => passwordSignIn({ salt: api.salt, hash: hashPassword, login: api.login }));
 
   const fail = (err: unknown) =>
     setError({ text: errorText(err), locked: err instanceof RequestError && err.code === "locked" });
@@ -85,6 +83,7 @@ export function SignIn() {
       if (r.kind === "challenge") {
         setChallenge(r.challenge);
         setPassword("");
+        setShow(false);
         go("code");
         return;
       }
@@ -171,13 +170,27 @@ export function SignIn() {
           <Field
             id="password"
             label="Password"
-            type="password"
+            type={show ? "text" : "password"}
             value={password}
             onChange={(v) => {
               signIn.forget();
               setPassword(v);
             }}
             autoComplete="current-password"
+            spellCheck={false}
+            autoCapitalize="none"
+            className="field--password"
+            addon={
+              <button
+                type="button"
+                className="reveal"
+                aria-controls="password"
+                onClick={() => setShow((v) => !v)}
+              >
+                {show ? "Hide" : "Show"}
+                <span className="visually-hidden"> password</span>
+              </button>
+            }
           />
           {check && (
             <div className="bot-check">
@@ -267,12 +280,6 @@ export function SignIn() {
             </button>
           </div>
         </form>
-      )}
-
-      {ms !== null && (
-        <p className="hint hint--foot">
-          Password hashing took {ms.toLocaleString("en-IN")} ms on this device.
-        </p>
       )}
     </Card>
   );
