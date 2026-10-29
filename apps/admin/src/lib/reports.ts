@@ -247,8 +247,15 @@ export function taxOnlyNoteText(w: GstWarning): string {
     m.sgstMinor > 0 ? `SGST ${inr(m.sgstMinor)}` : null,
   ].filter((h): h is string => h !== null);
   const who = m.gstin === null ? "unregistered client" : `GSTIN ${m.gstin}`;
+  // By kind (early check L2): a debit note adds tax, a credit note takes it away. A b2cs note sits in the B2CS file, not a note file, so its line names no table.
+  const what =
+    m.kind === "credit_note"
+      ? "is a credit note that reduces tax only"
+      : "is a debit note that adds tax only";
+  const ask =
+    m.section === "b2cs" ? "Ask your CA how to report it." : "Ask your CA how to report it in Table 9B.";
   return Y(
-    `${m.number} (${who}) adds tax only. The files show it with a taxable value of 0.00 and no tax column, so its tax may not come through on import. Enter by hand: ${heads.join(", ")}. Ask your CA how to report it in Table 9B.`,
+    `${m.number} (${who}) ${what}. The files show it with a taxable value of 0.00 and no tax column, so its tax may not come through on import. Enter by hand: ${heads.join(", ")}. ${ask}`,
   );
 }
 

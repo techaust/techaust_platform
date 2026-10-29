@@ -589,7 +589,7 @@ describe("files from register rows (core does every sum)", () => {
       igstMinor: 0,
     });
     expect(first?.text).toBe(
-      `${Y_MARK}TH/DN/2627/0001 (GSTIN 19ABCDE1234F1ZX) adds tax only. The files show it with a taxable value of 0.00 and no tax column, so its tax may not come through on import. Enter by hand: CGST ₹9.01, SGST ₹9.01. Ask your CA how to report it in Table 9B.`,
+      `${Y_MARK}TH/DN/2627/0001 (GSTIN 19ABCDE1234F1ZX) is a debit note that adds tax only. The files show it with a taxable value of 0.00 and no tax column, so its tax may not come through on import. Enter by hand: CGST ₹9.01, SGST ₹9.01. Ask your CA how to report it in Table 9B.`,
     );
     expect(GST_COPY.doneManual(2, 1)).toBe(
       `${Y_MARK}2 documents checked. 1 note needs its tax entered by hand before you file.`,
@@ -624,8 +624,48 @@ describe("files from register rows (core does every sum)", () => {
         sgstMinor: 0,
       },
     });
-    expect(text).toContain("TH/DN/2627/0002 (unregistered client) adds tax only.");
+    expect(text).toContain("TH/DN/2627/0002 (unregistered client) is a debit note that adds tax only.");
     expect(text).toContain("Enter by hand: IGST ₹10.01.");
+    // a B2CS note is in the B2CS file, so the line names no table
+    expect(text.endsWith("Ask your CA how to report it.")).toBe(true);
+  });
+
+  it("FX-4 early check L2: the words follow the note's kind; a note in a note file names Table 9B", () => {
+    const manual = {
+      docId: "c",
+      kind: "credit_note",
+      number: "TH/CN/2627/0003",
+      date: { year: 2026, month: 8, day: 4 },
+      section: "cdnur",
+      gstin: null,
+      receiverName: "x",
+      posCode: "96",
+      parentNumber: "TH/INV/2627/0003",
+      byRate: [{ rateBp: 1800, igstMinor: 5_00, cgstMinor: 0, sgstMinor: 0 }],
+      igstMinor: 5_00,
+      cgstMinor: 0,
+      sgstMinor: 0,
+    } as const;
+    const credit = taxOnlyNoteText({ code: "tax_only_note_manual", path: ["c"], blocking: true, manual });
+    expect(credit).toBe(
+      `${Y_MARK}TH/CN/2627/0003 (unregistered client) is a credit note that reduces tax only. The files show it with a taxable value of 0.00 and no tax column, so its tax may not come through on import. Enter by hand: IGST ₹5.00. Ask your CA how to report it in Table 9B.`,
+    );
+    expect(credit).not.toContain("adds tax");
+    const debit = taxOnlyNoteText({
+      code: "tax_only_note_manual",
+      path: ["d"],
+      blocking: true,
+      manual: {
+        ...manual,
+        kind: "debit_note",
+        number: "TH/DN/2627/0004",
+        section: "cdnr",
+        gstin: "19ABCDE1234F1ZX",
+      },
+    });
+    expect(debit).toContain("TH/DN/2627/0004 (GSTIN 19ABCDE1234F1ZX) is a debit note that adds tax only.");
+    expect(debit).not.toContain("reduces");
+    expect(debit.endsWith("Ask your CA how to report it in Table 9B.")).toBe(true);
   });
 
   it("a bad document stops every file and names the document", () => {
