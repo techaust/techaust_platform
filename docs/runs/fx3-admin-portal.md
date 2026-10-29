@@ -1,4 +1,4 @@
-Status: open
+Status: PR opened (2026-10-29)
 Tier: B
 Usage: builder claude-opus-5-5/high, 5-h 0 → 9 % (skills: cloudflare:workers-best-practices, cloudflare:wrangler)
 
@@ -1108,3 +1108,12 @@ _(Summary by the lead. Shots: `.logs/shots/fx3-recheck3/`.)_ All seven items are
 - **L5:** the window rule's two-row spans reached the one-column Enquiry form. **Fixed by the lead:** `grid-row: auto` in the one-column rule.
 
 Signature tests 19/19 after the lead's fixes; the test now expects no options on the full-size decode.
+
+## Integration (lead, 2026-10-29 ~22:00 IST)
+After merging `main` (#109, the model plan):
+- `pnpm check`: exit 0.
+- `pnpm test`: exit 0, 8,385 passed:
+  - admin 3,372, core 1,801, portal 631, jobs 528, web 510;
+  - db 471, ui 469, pdf 340, auth 135, email 128.
+
+PR opened with auto-merge.
