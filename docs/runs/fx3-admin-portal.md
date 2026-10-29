@@ -519,3 +519,17 @@ API sentences (not screen copy):
 3. **Limits left in place, both pre-existing and theoretical; recommended to keep:**
    - the lead's message is not held to Scope's 6,000;
    - `renameContact` could take an Acceptance text past 6,000 only with dozens of occurrences of a long contact name.
+
+## Lead's notes after round 3 (2026-10-29 ~13:40 IST)
+- Merged `fix/fx3-b3`, then `main` (FX-2 #108). The only conflict was docs/13, where both sets of rows were kept.
+- **The two jobs tests that timed out** under a full parallel run ("the email consumer sends each once", "JOB-PDF-01 burst: 20 sends") now have 30 s timeouts, with the reason in a comment.
+- **Open questions answered:**
+  1. Stored templates that break the new rules: the designer runs `templateRuleErrors` when the template page loads and shows the problem, so staff save a new version.
+  2. **JPEG signatures (the integrity limit):** the SPA re-encodes **every** uploaded signature to PNG, not only the larger ones. The API then accepts only PNG for new uploads. PNG's data is Flate-compressed, so the integrity check covers it. Older stored JPEGs keep working until replaced. This goes to the designer (signature screen and `lib/signature-scale.ts`) with the matching one-line API change and tests. No staging test is needed.
+  3. The two theoretical limits stay, as written in the code.
+- **Next:** the FX-3 designer, once the FX-4 designer frees the browser. Its extra items:
+  - template rule errors on load and on save;
+  - the two new template error codes;
+  - signatures always PNG;
+  - the lead timeline labels (`budgetBandLabel`, `TIMELINE_LABELS`);
+  - the `lead_answers_fixed` line.

@@ -778,7 +778,8 @@ describe("the queues", () => {
 });
 
 // ---------------------------------------------------------------------------------------------------------------------
-describe("JOB-PDF-01 burst: 20 sends", () => {
+// 30 s: twenty renders through the queue; at 5 s it timed out when every package ran at once (FX-3 round 3).
+describe("JOB-PDF-01 burst: 20 sends", { timeout: 30_000 }, () => {
   it("never calls Browser Run more than once in 10 s, and dead-letters nothing", async () => {
     const f = fakeClock();
     const queue = fakeQueue();
