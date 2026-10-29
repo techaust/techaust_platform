@@ -50,7 +50,7 @@ test.describe("flagged-off pages (WEB-G-17)", () => {
   });
 });
 
-test.describe("currency swap does not shift the layout (CLS <= 0.05)", () => {
+test.describe("currency swap does not shift the layout (CLS < 0.01, WEB-G-06)", () => {
   for (const viewport of [
     { width: 1280, height: 900 },
     { width: 375, height: 800 },
@@ -79,7 +79,7 @@ test.describe("currency swap does not shift the layout (CLS <= 0.05)", () => {
         expect(asked).toBe(true);
         await page.waitForTimeout(1500);
         const cls = await page.evaluate(() => (window as unknown as { __cls: number }).__cls);
-        expect(cls).toBeLessThanOrEqual(0.05);
+        expect(cls).toBeLessThan(0.01);
         await context.close();
       });
     }

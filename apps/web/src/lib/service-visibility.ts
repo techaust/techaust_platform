@@ -1,20 +1,18 @@
-// Which services are on the site (WEB-G-17), in a module with no build-time file reads, so the form endpoint in the web
-// Worker can use the same rule as the pages.
-import { CATALOGUE } from "@techaust/db/catalogue";
-import { flags } from "../config/site";
+// The quote form's service check (FRM-QUOTE, audit A2 finding 3), in the web Worker. The list of services a request may name is
+// written at BUILD time from the same catalogue snapshot and the same rule as the pages (lib/quotable-build.ts, called by
+// astro.config.mjs on every astro command and by vitest.config.ts), so a service the admin took off the site and published is
+// refused by the form from the same deploy that takes its page down. The file is git-ignored, like worker-configuration.d.ts.
+import QUOTABLE from "../generated/quotable-services.json";
+import { isVisible, type QuotableFile } from "./visibility";
 
-/** Whether a service is shown on the site: the catalogue's flag, and for S3 also the S3_DPDP_PAGE flag (both must allow). */
-export function isVisible(item: { code: string; showOnSite: boolean }, s3Flag: boolean): boolean {
-  return item.showOnSite && (item.code !== "S3" || s3Flag);
-}
+export { isVisible };
+
+const CODES: ReadonlySet<string> = new Set((QUOTABLE as QuotableFile).codes);
 
 /**
- * A service code a quote request may carry (FRM-QUOTE): `not-sure`, or a service that is on the site according to the
- * seed catalogue. A hidden or unknown code is refused, so the lead and the alert never name a service the site
- * doesn't offer.
+ * A service code a quote request may carry: `not-sure`, or a service this build of the site shows (the pages' isServiceOnSite). A
+ * hidden or unknown code is refused, so the lead and the alert never name a service the site doesn't offer.
  */
 export function isQuotableService(code: string): boolean {
-  if (code === "not-sure") return true;
-  const item = CATALOGUE.find((c) => c.code === code);
-  return item !== undefined && isVisible(item, flags.S3_DPDP_PAGE);
+  return code === "not-sure" || CODES.has(code);
 }

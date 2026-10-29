@@ -1,5 +1,14 @@
+import { fileURLToPath } from "node:url";
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
+import { writeQuotable } from "./src/lib/quotable-build.ts";
+
+// The quote form's build-time list of services (src/lib/quotable-build.ts) from the SEED, as every test reads the seed: the Worker
+// tests bundle it. (A later `astro build` writes it again from the real snapshot.)
+writeQuotable({
+  snapshotPath: fileURLToPath(new URL("./test/.no-such-snapshot.json", import.meta.url)),
+  out: fileURLToPath(new URL("./src/generated/quotable-services.json", import.meta.url)),
+});
 
 // Two projects: the Worker (src/worker.ts) runs in workerd; the build checks read files, so they run in Node.
 export default defineConfig({

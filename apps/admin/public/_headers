@@ -7,6 +7,8 @@
 #  - connect-src: our API and the Have I Been Pwned range check made while a password is chosen (k-anonymity: only the first
 #    five characters of a hash leave the browser).
 #  - zod would probe `new Function` once; src/lib/zod-jitless.ts turns that probe off, so no CSP violation is reported.
+# Cross-Origin-Resource-Policy same-site (audit A1 finding 2): the admin's files load only on its own site. The build fails when
+# dist/client/_headers lacks any of these (scripts/check-spa-headers.mjs).
 # X-Robots-Tag keeps staging out of search; the admin is never meant to be indexed, so it stays in production too.
 /*
   Strict-Transport-Security: max-age=31536000; includeSubDomains
@@ -14,6 +16,7 @@
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
   Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-site
   Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://api.pwnedpasswords.com; frame-src https://challenges.cloudflare.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'
   X-Robots-Tag: noindex, nofollow
 

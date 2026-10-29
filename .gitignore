@@ -34,3 +34,5 @@ apps/web/catalogue-snapshot.json
 packages/pdf/visual/__snapshots__/win32/
 packages/pdf/visual/__snapshots__/darwin/
 packages/pdf/visual/test-results/
+# the quote form's list of services, written at build time from the catalogue snapshot (apps/web/src/lib/quotable-build.ts)
+apps/web/src/generated/

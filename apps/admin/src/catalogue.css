@@ -825,9 +825,30 @@
   font-weight: 600;
 }
 
+/* Each link is the standalone label of its list item, so it gets the 44 px target (docs/06 §5.1; FX-2 review, finding 2), in both
+   answers (missing site fields and the content-rule refusal). A long name still wraps inside it. */
+.pub-fix > li > a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--target-min);
+}
+
 .pub-fix__fields {
   display: block;
   font-size: var(--text-sm);
+}
+
+/* The content-rule refusal: under each service (or the payment terms), one line per field and what it breaks. */
+.pub-fix__lines {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-1) 0 0;
+  padding-inline-start: var(--space-4);
+  list-style: disc;
+}
+
+.pub-fix__lines li {
+  text-wrap: pretty;
 }
 
 .pub-list {

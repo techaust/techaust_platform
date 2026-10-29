@@ -1,7 +1,8 @@
 ---
 // The blocks of a legal page (content/legal-pages.ts): paragraphs, lists, 07-A's numbered items, a quoted note and
 // tables. Every string goes through CopyText (bold, links, inline code, the postal-address gap). Each table sits in
-// its own scroll box, named for assistive technology and focusable so a keyboard can scroll it on a phone.
+// its own scroll box, named for assistive technology and focusable so a keyboard can scroll it on a phone. The box is a
+// group, not a region: a region is a landmark, and it would repeat the name of the section around it (audit A2 finding 5).
 import type { LegalBlock } from "../../content/legal-pages";
 import CopyText from "../CopyText.astro";
 
@@ -48,7 +49,7 @@ const { blocks, label } = Astro.props;
         <CopyText text={b.quote} />
       </blockquote>
     ) : "table" in b ? (
-      <div class="prose-table" role="region" tabindex="0" aria-label={label}>
+      <div class="prose-table" role="group" tabindex="0" aria-label={label}>
         <table class={`cols-${b.table.head.length}`}>
           <thead>
             <tr>
@@ -96,6 +97,12 @@ const { blocks, label } = Astro.props;
 
   .legal-ol li > ul {
     margin-block-start: var(--space-3);
+  }
+
+  /* A preformatted block wraps instead of scrolling sideways, as /security's file does (audit A2 finding 1). */
+  pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
 
   .legal-ol > li::marker {

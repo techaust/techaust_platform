@@ -41,7 +41,14 @@ export function createApp(deps: Deps = {}) {
   const viewer = deps.viewer ?? defaultViewer;
   const routeFor = tableOf([...ROUTES, ...(deps.testRoutes ?? []).map((t) => t.def)]);
   const app = new Hono<AppEnv>().basePath("/api");
-  app.use(secureHeaders());
+  // docs/08 section 3.1 on every API answer (audit A1 finding 4): Hono's defaults, plus HSTS for one year with subdomains (its
+  // default is 180 days) and the same Permissions-Policy as the static files (public/_headers).
+  app.use(
+    secureHeaders({
+      strictTransportSecurity: "max-age=31536000; includeSubDomains",
+      permissionsPolicy: { camera: [], microphone: [], geolocation: [], payment: [], usb: [] },
+    }),
+  );
 
   // The outermost middleware: request ID and facts, the route's table row, the exit log line, and the access-log
   // row of a SIGNED-IN request (owner's Q1 = A) unless the handler already wrote it inside its own batch. Anonymous
