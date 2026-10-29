@@ -2,7 +2,7 @@
 // (@techaust/core/public-text: no "&", no banned phrase, no typed amount of money) refused some text the published prices
 // carry. The API names each field by path ("items.S7.name", "items.S11.defaultLines.0.description",
 // "paymentTerms.buildSchedule.1.label") and each rule, a banned phrase by its id, never the text. This turns them into one
-// group per thing to fix (a service, or Settings › Payment terms), each with a line per field in the entry form's words.
+// group per thing to fix (a service, or Settings › Payment terms), each with a line per field and rule in the entry form's words.
 //
 // The words are new (07-Y, PENDING the owner): every line shows the "[Placeholder] " mark until the owner approves the page,
 // then `APPROVED_07Y_PUBLISH` turns true and the marks go (the 07-X pattern, lib/copy-x.ts).
@@ -91,9 +91,9 @@ function ruleText(issue: { rule: string; phrase?: string }): string {
   return W.otherRule;
 }
 
-/** One line per field: "Line 2 description: uses "&". Write "and"." (each rule its own sentence), marked until 07-Y is approved. */
-const lineOf = (field: string, issues: readonly { rule: string; phrase?: string }[]) =>
-  Y(`${field}: ${issues.map(ruleText).join(" ")}`);
+/** One line per field and rule ("Line 2 description: uses "&". Write "and"."), each marked until 07-Y is approved. */
+const linesOf = (field: string, issues: readonly { rule: string; phrase?: string }[]) =>
+  issues.map((i) => Y(`${field}: ${ruleText(i)}`));
 
 /**
  * The refused fields grouped by what to open: each service in the order the API named it (code order), then the payment terms,
@@ -112,11 +112,11 @@ export function publicTextProblems(
     const parts = f.path.split(".");
     if (parts[0] === "items" && parts[1] && /^S\d+$/.test(parts[1])) {
       const lines = services.get(parts[1]) ?? [];
-      lines.push(lineOf(fieldName(parts.slice(2), f.path), f.issues));
+      lines.push(...linesOf(fieldName(parts.slice(2), f.path), f.issues));
       services.set(parts[1], lines);
     } else if (parts[0] === "paymentTerms" && parts[1] === "buildSchedule" && /^\d+$/.test(parts[2] ?? "")) {
-      terms.push(lineOf(PUBLIC_TEXT_WORDS.termsInstalment(Number(parts[2]) + 1), f.issues));
-    } else other.push(lineOf(PUBLIC_TEXT_WORDS.otherField(f.path), f.issues));
+      terms.push(...linesOf(PUBLIC_TEXT_WORDS.termsInstalment(Number(parts[2]) + 1), f.issues));
+    } else other.push(...linesOf(PUBLIC_TEXT_WORDS.otherField(f.path), f.issues));
   }
   const out: PublicTextGroup[] = [...services].map(([code, lines]) => ({
     kind: "service",

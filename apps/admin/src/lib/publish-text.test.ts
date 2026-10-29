@@ -43,7 +43,8 @@ describe("public_text_refused on the Publish tab", () => {
         item: ON_SITE[0],
         lines: [
           `${MARK}Payment schedule, step 1: ${W.typedAmount}`,
-          `${MARK}Line 1 unit: ${W.ampersand} ${W.typedAmount}`,
+          `${MARK}Line 1 unit: ${W.ampersand}`,
+          `${MARK}Line 1 unit: ${W.typedAmount}`,
         ],
       },
       { kind: "terms", lines: [`${MARK}Build schedule, instalment 3: ${W.ampersand}`] },

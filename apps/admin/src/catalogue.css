@@ -835,7 +835,7 @@
   display: grid;
   gap: var(--space-1);
   margin: var(--space-1) 0 0;
-  padding-inline-start: var(--space-5);
+  padding-inline-start: var(--space-4);
   list-style: disc;
 }
 
