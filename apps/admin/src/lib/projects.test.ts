@@ -345,4 +345,18 @@ describe("notes are React elements, never HTML [ADM-PRJ-03]", () => {
     expect(hrefs).toEqual(["https://example.test/"]);
     for (const p of seen.props.filter((x) => x.href)) expect(p.rel).toBe("noopener noreferrer");
   });
+
+  it("FX-3: a note's `#` to `###` are h3 to h5 (never an h1 or h2 on the page); other Markdown keeps `#` as text", () => {
+    const tags = (nodes: ReactNode[]) => nodes.map((n) => (isValidElement(n) ? n.type : typeof n));
+    expect(tags(markdownElements("# One\n## Two\n### Three\n#### Four", true))).toEqual([
+      "h3",
+      "h4",
+      "h5",
+      "p",
+    ]);
+    const seen = walk(markdownElements("# <b>x</b> [l](javascript:x)", true), { props: [], text: [] });
+    expect(seen.props.some((p) => "dangerouslySetInnerHTML" in p)).toBe(false);
+    expect(seen.text.join("")).toBe("<b>x</b> l");
+    expect(tags(markdownElements("# One"))).toEqual(["p"]);
+  });
 });

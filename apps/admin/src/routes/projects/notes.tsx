@@ -415,7 +415,7 @@ function NoteItem(props: {
           </ConfirmDialog>
         </form>
       ) : (
-        <Markdown source={n.bodyMd} className="note__body" />
+        <Markdown source={n.bodyMd} className="note__body" headings />
       )}
     </li>
   );

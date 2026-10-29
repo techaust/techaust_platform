@@ -402,7 +402,7 @@ function RecentNotes({ data, onOpen }: { data: ProjectPage; onOpen: () => void }
                 <When ms={n.createdAt} inline />
                 <VisibilityPill shared={n.visibility === "shared"} />
               </p>
-              <Markdown source={n.bodyMd} className="note__body" />
+              <Markdown source={n.bodyMd} className="note__body" headings />
             </li>
           ))}
         </ul>
