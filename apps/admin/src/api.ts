@@ -843,7 +843,8 @@ export type DashboardTiles = {
   pipelineValue?: { asOf: string; byCurrency: { currency: Currency; count: number; taxableMinor: number }[] };
   /** M5.5b (LD80): the finance tiles (Owner, Accountant). Before M5.5b the API sent `{available: false}`. */
   finance?: FinanceTile | { available: false; arrivesWith?: unknown };
-  projects?: { active: number; onHold: number };
+  /** FX-3 (A3 10): Planned projects count too. */
+  projects?: { planned: number; active: number; onHold: number };
   milestones?: {
     windowDays: number;
     count: number;

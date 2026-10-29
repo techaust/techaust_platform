@@ -3,6 +3,7 @@ import { formatIstDateTime } from "@techaust/core/dates";
 import { LOST_REASONS as CORE_REASONS, LEAD_STAGES } from "@techaust/core/lead-lifecycle";
 import { hasUnfilledGap, REPLY_TEMPLATES } from "@techaust/core/reply-templates";
 import { describe, expect, it } from "vitest";
+import { relative, when } from "./format.ts";
 import {
   countryOptions,
   dateToMs,
@@ -49,6 +50,19 @@ describe("the next-action day (stored as the last moment of the IST day)", () =>
     expect(formatIstDateTime(ms as number)).toContain("23:59");
     expect(dateToMs("2026-02-30")).toBeNull();
     expect(msToDate(null)).toBe("");
+  });
+
+  it("FX-3 (A3 10): prints as the day alone, never '23:59 IST', with a relative day; a real time keeps its clock", () => {
+    const ms = dateToMs("2026-10-25") as number;
+    expect(when(ms)).toBe("25 Oct 2026");
+    const noonIst = Date.parse("2026-10-26T12:00:00+05:30");
+    expect(relative(ms, noonIst)).toBe("yesterday");
+    expect(relative(ms, Date.parse("2026-10-25T09:00:00+05:30"))).toBe("today");
+    expect(relative(ms, Date.parse("2026-10-22T23:00:00+05:30"))).toBe("in 3 days");
+    expect(relative(ms, Date.parse("2026-11-25T12:00:00+05:30"))).toBe("last month");
+    const real = Date.parse("2026-10-25T14:05:00+05:30");
+    expect(when(real)).toBe("25 Oct 2026, 14:05 IST");
+    expect(relative(real, real + 12 * 60_000)).toBe("12 minutes ago");
   });
 
   it("days until a moment round up", () => {

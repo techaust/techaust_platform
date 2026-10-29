@@ -1,7 +1,7 @@
 // What the Leads screens show for the API's codes (M3.2, ADM-LEAD-01..06). Stage and lost-reason words are the PRD's
 // (docs/04 ADM-LEAD-02); the enquiry field names are the internal lead alert's (packages/email leadAlert). Pure: no I/O,
 // so the helpers are tested in lib/leads.test.ts.
-import { fromIst, istDate, parseIsoDate, toIsoDate } from "@techaust/core/dates";
+import { istDate, istDayEnd, parseIsoDate, toIsoDate } from "@techaust/core/dates";
 import { COUNTRY_CODES, countryName } from "@techaust/core/form-labels";
 import { LEAD_STAGES } from "@techaust/core/lead-lifecycle";
 import { REPLY_GAPS } from "@techaust/core/reply-templates";
@@ -75,7 +75,7 @@ export function countryOptions(): { value: string; label: string }[] {
 
 export function dateToMs(iso: string): number | null {
   const d = parseIsoDate(iso);
-  return d ? fromIst(d, 23, 59, 59) + 999 : null;
+  return d ? istDayEnd(d) : null; // core `isIstDayEnd` tells this moment apart, so it prints as a day (FX-3)
 }
 
 export const msToDate = (ms: number | null): string => (ms === null ? "" : toIsoDate(istDate(ms)));
