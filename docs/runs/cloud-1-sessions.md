@@ -467,3 +467,8 @@ Builder, Opus 5.5 high, Tier B. Branch `fix/cloud-1-r4` from `origin/chore/cloud
 1. Plain variables in a `git push` (`"$B"`, `${BRANCH}`) are refused (see 5); revert to `$( … )`/brace/`$'…'` only if you prefer.
 2. `ksh` (and `mksh`, `fish`) could join `SHELLS` in one word, which would check `echo … | ksh` like `| bash`; left as a named accepted class because the triage didn't list it.
 3. Accepted false positives of the new rules: `x=$(case …)` / `"$(case …)"` with harmless text, any `printf … | sh`, `eval "$(ssh-agent -s)"`-style setup, and `$(…)`-built command names such as `$(npm bin)/tool`.
+
+### Lead, after fix round 4 (2026-10-30)
+- Merged `fix/cloud-1-r4` (8a20bb7a) into `chore/cloud-sessions`.
+- The builder's open points, lead's decisions: (1) plain variables in a `git push` stay refused in the cloud (a pushed branch must be readable in the command; `tools/cloud-pr.sh` is unaffected because the guard sees only `bash tools/cloud-pr.sh …`); (2) `ksh`, `mksh`, `fish` stay a named accepted class (not used here); (3) the known false positives (`$(case …)`, `printf … | sh`, `eval "$(ssh-agent -s)"`, `$(npm bin)/tool`) are accepted: a cloud session gets a clear reason and writes it another way.
+- Next: a narrow re-check of round 4, then the PR.
