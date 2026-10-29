@@ -36,8 +36,9 @@ if [ -n "$DRY" ]; then
   exit 0
 fi
 
-# The branch must be on GitHub, at the commit checked out here when it is the current branch.
-remote="$(git ls-remote --heads origin "$HEAD" 2>/dev/null | cut -f1)"
+# The branch must be on GitHub, at the commit checked out here when it is the current branch. The exact ref: a bare name would
+# also match other branches ending in it (fix/x matches feature/fix/x).
+remote="$(git ls-remote origin "refs/heads/$HEAD" 2>/dev/null | cut -f1)"
 [ -n "$remote" ] || { echo "cloud-pr: origin has no branch '$HEAD'; push it first (git push -u origin $HEAD)" >&2; exit 1; }
 if [ "$HEAD" = "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" ] && [ "$remote" != "$(git rev-parse HEAD)" ]; then
   echo "cloud-pr: origin/$HEAD is not at your last commit; push first" >&2

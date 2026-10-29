@@ -241,6 +241,10 @@ describe("tools/cloud-pr.sh", () => {
     expect(code.join("\n")).not.toMatch(/gh pr |merge|--auto|auto_merge|enablePullRequestAutoMerge/);
     expect(script).toContain('REPO="techaust/techaust_platform"');
   });
+  it("checks the pushed branch by its exact ref (L2)", () => {
+    expect(code.join("\n")).toContain('git ls-remote origin "refs/heads/$HEAD"');
+    expect(code.join("\n")).not.toContain("ls-remote --heads");
+  });
   it.skipIf(!hasBash)("--dry-run names the request and touches nothing; main is refused", () => {
     const dir = mkdtempSync(join(tmpdir(), "cloud-pr-"));
     try {
