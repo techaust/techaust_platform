@@ -171,3 +171,6 @@ The code step adds both terms changes as a new seeded terms version, plus a migr
   - 24: the numbering clash message;
   - 26: the bell says "on 3 days".
 - **Copy the approved lines into docs/07** where the convention asks for it, and update the tests that pin the old words.
+
+## Added to this task (lead, 2026-10-29)
+- **Widen the VERIFY scan** (`packages/core/test/verify-tags.test.ts`) to the remaining tracked text types: `.html`, `.py` and `.example` files (`index.html`, `packages/ui/scripts/measure-cmyk.py`, `.dev.vars.example`). Snapshots (`.snap`, email and CSV fixtures) stay out: they are generated. None holds a tag today. This was the FX-3 fix round 2 builder's question.
