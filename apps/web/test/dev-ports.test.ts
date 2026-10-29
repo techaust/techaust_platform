@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs without types
-import { binFile, forwardedSignals } from "../../../scripts/dev.mjs";
+import { binFile, forwardedSignals, SIGINT_GRACE_MS, signalHandler } from "../../../scripts/dev.mjs";
 import {
   ALLOWED_OFFSETS,
   BASE_PORTS,
@@ -203,6 +203,73 @@ describe("the launcher passes signals on once", () => {
   });
   it("without a terminal (a browser-test web server): SIGINT too", () => {
     expect(forwardedSignals(false)).toEqual(["SIGINT", "SIGTERM", "SIGHUP"]);
+  });
+});
+
+// CLOUD-1 re-check, finding 8: on a terminal, a SIGINT sent to the launcher alone must not be swallowed.
+describe("the launcher's signal handler", () => {
+  type Child = {
+    exitCode: number | null;
+    signalCode: string | null;
+    kills: string[];
+    kill: (s: string) => void;
+  };
+  const child = (): Child => {
+    const c: Child = {
+      exitCode: null,
+      signalCode: null,
+      kills: [],
+      kill: (s) => {
+        c.kills.push(s);
+      },
+    };
+    return c;
+  };
+  const timers = () => {
+    const pending: { fn: () => void; ms: number }[] = [];
+    return { pending, setTimer: (fn: () => void, ms: number) => pending.push({ fn, ms }) };
+  };
+
+  it("passes a forwarded signal on at once", () => {
+    const c = child();
+    const t = timers();
+    signalHandler("SIGTERM", forwardedSignals(true), c, t)();
+    expect(c.kills).toEqual(["SIGTERM"]);
+    expect(t.pending).toHaveLength(0);
+  });
+
+  it("on a terminal, passes SIGINT on only if the server is still running after the grace period", () => {
+    const c = child();
+    const t = timers();
+    const onInt = signalHandler("SIGINT", forwardedSignals(true), c, t);
+    onInt();
+    onInt(); // a second Ctrl-C while waiting doesn't start a second wait
+    expect(c.kills).toEqual([]);
+    expect(t.pending).toHaveLength(1);
+    expect(t.pending[0]?.ms).toBe(SIGINT_GRACE_MS);
+    t.pending[0]?.fn(); // the server ignored it: the launcher passes it on
+    expect(c.kills).toEqual(["SIGINT"]);
+  });
+
+  it("on a terminal, sends nothing when the server stopped on its own Ctrl-C", () => {
+    const c = child();
+    const t = timers();
+    signalHandler("SIGINT", forwardedSignals(true), c, t)();
+    c.exitCode = 0;
+    t.pending[0]?.fn();
+    expect(c.kills).toEqual([]);
+    const killed = child();
+    killed.signalCode = "SIGINT";
+    signalHandler("SIGINT", forwardedSignals(true), killed, t)();
+    expect(killed.kills).toEqual([]);
+  });
+
+  it("without a terminal, SIGINT goes on at once", () => {
+    const c = child();
+    const t = timers();
+    signalHandler("SIGINT", forwardedSignals(false), c, t)();
+    expect(c.kills).toEqual(["SIGINT"]);
+    expect(t.pending).toHaveLength(0);
   });
 });
 

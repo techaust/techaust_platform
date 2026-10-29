@@ -2,7 +2,8 @@
 // the admin, portal and web browser-test configs run it:
 //   node ../../scripts/dev.mjs <web | webWorker | webE2e | admin | portal | jobs> [extra arguments…]
 // It runs the package's own binary with this Node (no shell, so it behaves the same on Windows and Linux), in the app's folder,
-// passes kill signals on (Ctrl-C only when it didn't come from a terminal; see forwardedSignals), and exits with the server's exit
+// passes kill signals on (Ctrl-C only when it didn't come from a terminal, or when the server is still running 2 s after it; see
+// forwardedSignals and signalHandler), and exits with the server's exit
 // code. At offset 0 the ports are the ones the scripts used
 // before; a wrangler Worker also gets its own inspector port when that port is free (the Vite apps set theirs in vite.config.ts).
 import { spawn } from "node:child_process";
@@ -29,6 +30,37 @@ export function binFile(appDir, pkg, name) {
  */
 export function forwardedSignals(fromTerminal) {
   return fromTerminal ? ["SIGTERM", "SIGHUP"] : ["SIGINT", "SIGTERM", "SIGHUP"];
+}
+
+/** How long the server gets to stop on its own Ctrl-C before the launcher passes a SIGINT on (CLOUD-1 re-check, finding 8). */
+export const SIGINT_GRACE_MS = 2000;
+
+/**
+ * The launcher's handler for one signal. A forwarded signal goes to the server at once. A SIGINT that isn't forwarded (from a
+ * terminal) is normally Ctrl-C, which the server received too; but a SIGINT sent to the launcher alone (`kill -INT <pid>`) would
+ * be swallowed, so if the server is still running SIGINT_GRACE_MS later, the launcher passes it on then (once per wait).
+ * @param {NodeJS.Signals} signal
+ * @param {readonly string[]} forward
+ * @param {{ exitCode: number | null, signalCode?: string | null, kill: (signal: NodeJS.Signals) => unknown }} child
+ * @param {{ graceMs?: number, setTimer?: (fn: () => void, ms: number) => unknown }} [timing]
+ */
+export function signalHandler(signal, forward, child, timing = {}) {
+  const { graceMs = SIGINT_GRACE_MS, setTimer = setTimeout } = timing;
+  const running = () => child.exitCode === null && (child.signalCode ?? null) === null;
+  let waiting = false;
+  return () => {
+    if (!running()) return;
+    if (forward.includes(signal)) {
+      child.kill(signal);
+      return;
+    }
+    if (waiting) return;
+    waiting = true;
+    setTimer(() => {
+      waiting = false;
+      if (running()) child.kill(signal);
+    }, graceMs);
+  };
 }
 
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, "/").split("/").pop())) {
@@ -58,9 +90,11 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, "
   });
   const forward = forwardedSignals(Boolean(process.stdin.isTTY));
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
-    process.on(signal, () => {
-      if (forward.includes(signal) && child.exitCode === null) child.kill(signal);
-    });
+    // the timer must not keep the launcher alive after the server has exited
+    process.on(
+      signal,
+      signalHandler(signal, forward, child, { setTimer: (fn, ms) => setTimeout(fn, ms).unref() }),
+    );
   }
   child.on("exit", (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
 }
