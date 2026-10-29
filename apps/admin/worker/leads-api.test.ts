@@ -138,6 +138,48 @@ describe("POST /leads: a lead entered by hand [ADM-LEAD-01]", () => {
     for (const b of bad) expect((await send("/leads", "POST", b, s.cookie)).status).toBe(400);
   });
 
+  it("FX-3 (A3 8): carries a budget band, a timeline and a currency from the quote form's lists", async () => {
+    const s = await sessionFor("sales");
+    const made = async (extra: Record<string, unknown>) => {
+      const res = await send(
+        "/leads",
+        "POST",
+        { name: "Band Lead", email: `band-${crypto.randomUUID()}@example.com`, ...extra },
+        s.cookie,
+      );
+      return { status: res.status, body: res.status === 201 ? await json(res) : null };
+    };
+    const inr = await made({ currency: "INR", budgetBand: "3l-7l", timeline: "1-3-months" });
+    expect(inr.status).toBe(201);
+    expect(await one("SELECT currency, budget_band, timeline FROM leads WHERE id = ?", inr.body?.id)).toEqual(
+      { currency: "INR", budget_band: "3l-7l", timeline: "1-3-months" },
+    );
+    // the lead page shows them (with core's labels in the SPA)
+    const page = await json(await call(`/leads/${inr.body?.id}`, { cookie: s.cookie }));
+    expect(page.lead).toMatchObject({ currency: "INR", budgetBand: "3l-7l", timeline: "1-3-months" });
+    const usd = await made({ currency: "USD", budgetBand: "not-sure", timeline: "exploring" });
+    expect(usd.status).toBe(201);
+    // each one alone, and none at all, is fine
+    for (const extra of [
+      { currency: "USD" },
+      { timeline: "asap" },
+      {},
+      { currency: null, budgetBand: null, timeline: null },
+    ])
+      expect((await made(extra)).status, JSON.stringify(extra)).toBe(201);
+    const before = await countOf("leads");
+    for (const extra of [
+      { budgetBand: "3l-7l" }, // a band without its currency
+      { currency: "USD", budgetBand: "3l-7l" }, // a rupee band in dollars
+      { currency: "INR", budgetBand: "toString" },
+      { currency: "EUR" },
+      { timeline: "next-year" },
+      { timeline: "__proto__" },
+    ])
+      expect((await made(extra)).status, JSON.stringify(extra)).toBe(400);
+    expect(await countOf("leads")).toBe(before);
+  });
+
   it("refuses a retired service code and writes nothing; once it is active again the lead is made (review finding 6)", async () => {
     const s = await sessionFor("owner");
     const retired = await mkItem({ active: 0 });

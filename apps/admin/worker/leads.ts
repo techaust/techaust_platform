@@ -7,7 +7,7 @@
 // which is deleted with the lead by the retention clean-up.
 import { emailAddress } from "@techaust/auth";
 import { clientTaxCheck } from "@techaust/core/clients";
-import { isCountryCode } from "@techaust/core/form-labels";
+import { isBudgetBand, isCountryCode, isTimeline } from "@techaust/core/form-labels";
 import { uuidv7 } from "@techaust/core/ids";
 import {
   deleteAfterSql,
@@ -383,6 +383,11 @@ const createRequest = z.object({
   ownerId: z.optional(z.nullable(z.string().check(z.maxLength(64)))),
   nextActionAt: z.optional(z.nullable(z.int().check(z.gte(0)))),
   nextActionNote: z.optional(optText(500)),
+  // FX-3 (A3 8): the quote form's answers, given by hand. A budget band needs the currency it is a band of (core `isBudgetBand`); the
+  // timeline is one of the form's (core `isTimeline`). The SPA shows them with core's labels (`budgetBandLabel`, `TIMELINE_LABELS`).
+  currency: z.optional(z.nullable(z.enum(["INR", "USD"]))),
+  budgetBand: z.optional(z.nullable(z.string().check(z.maxLength(20)))),
+  timeline: z.optional(z.nullable(z.string().check(z.maxLength(20)))),
 });
 
 const patchRequest = z.object({
@@ -466,6 +471,12 @@ export const leads = new Hono<AppEnv>()
     const f = c.req.valid("json");
     const db = c.env.DB;
     if (f.country && !isCountryCode(f.country)) return err(c, BAD_REQUEST, 400);
+    const currency = f.currency ?? null;
+    const band = f.budgetBand ?? null;
+    const timeline = f.timeline ?? null;
+    if (band !== null && (currency === null || !isBudgetBand(currency, band)))
+      return err(c, BAD_REQUEST, 400);
+    if (timeline !== null && !isTimeline(timeline)) return err(c, BAD_REQUEST, 400);
     const service = f.serviceCode ?? null;
     let serviceName: string | null = null;
     if (service !== null && service !== NOT_SURE) {
@@ -497,10 +508,10 @@ export const leads = new Hono<AppEnv>()
           main: db
             .prepare(
               `INSERT INTO leads (id, ref, source, service_code, message, contact_name, contact_email, contact_phone, contact_company,
-                 contact_country, owner_id, next_action_at, next_action_note, duplicate_of, last_activity_at, delete_after)
+                 contact_country, owner_id, next_action_at, next_action_note, duplicate_of, last_activity_at, delete_after, currency, budget_band, timeline)
                SELECT ?1, ?2, 'manual', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
                  (SELECT id FROM leads WHERE contact_email = ?6 AND created_at >= ?14 AND created_at <= ?13 ORDER BY created_at DESC LIMIT 1),
-                 ?13, ${deleteAfterSql("?13")}
+                 ?13, ${deleteAfterSql("?13")}, ?16, ?17, ?18
                WHERE ?3 IS NULL OR ?3 = ?15 OR EXISTS (SELECT 1 FROM catalogue_items WHERE code = ?3 AND active = 1)`,
             )
             .bind(
@@ -519,6 +530,9 @@ export const leads = new Hono<AppEnv>()
               t,
               t - LEAD_DUPLICATE_WINDOW_MS,
               NOT_SURE,
+              currency,
+              band,
+              timeline,
             ),
           action: "lead.create",
           entityType: "lead",

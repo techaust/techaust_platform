@@ -304,8 +304,20 @@ export type NewLead = {
   ownerId?: string | null;
   nextActionAt?: number | null;
   nextActionNote?: string | null;
+  /**
+   * FX-3 (ADM-LEAD-01): the quote form's answers, given by hand. A band needs its currency and must be one of `budgetBandOptions(currency)`; the timeline
+   * one of `TIMELINE_LABELS` (core `form-labels`). Anything else is a 400.
+   */
+  currency?: Currency | null;
+  budgetBand?: string | null;
+  timeline?: string | null;
 };
-export type LeadPatch = Omit<Partial<NewLead>, "serviceCode" | "message"> & { expectedUpdatedAt: number };
+export type LeadPatch = Omit<
+  Partial<NewLead>,
+  "serviceCode" | "message" | "currency" | "budgetBand" | "timeline"
+> & {
+  expectedUpdatedAt: number;
+};
 export type ReplyTemplateFilled = { id: string; label: string; subject: string; body: string };
 export type ConvertInput = {
   type: "business" | "individual";
