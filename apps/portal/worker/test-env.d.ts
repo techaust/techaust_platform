@@ -9,3 +9,9 @@ declare namespace Cloudflare {
 interface ImportMeta {
   glob(pattern: string, options: { query: "?raw"; import: "default"; eager: true }): Record<string, string>;
 }
+
+// Files read as text by tests (Vite's `?raw`): the static headers, index.html and the Turnstile loader (headers.test.ts).
+declare module "*?raw" {
+  const text: string;
+  export default text;
+}
