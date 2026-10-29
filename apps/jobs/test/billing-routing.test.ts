@@ -33,13 +33,14 @@ describe("the hourly cron `30 * * * *` [LD61]", () => {
     expect(ALERTS_HOUR_IST).toBe(9);
   });
 
-  it("all 24 IST hours: the reminder scan every hour, the care scan only at 06:00, the owners' alerts only at 09:00", () => {
+  it("all 24 IST hours: the reminder scan every hour, the care scan at 06:00, 07:00 and 08:00, the owners' alerts at 09:00, 10:00 and 11:00 (FX-1, A6 7)", () => {
     for (let h = 0; h < 24; h++) {
       const kinds = hourlyMessages(istTick("2026-11-10", h)).map((m) => m.kind);
       const expected = [
-        ...(h === 6 ? ["care.scan"] : []),
-        // M5.5b (LD76, changed on purpose): the realisation scan rides the 09:00 IST tick (the EDF reminder only on days 5 to 7: reports-b.test.ts)
-        ...(h === 9 ? ["alerts.daily", "realisation.scan"] : []),
+        ...(h >= 6 && h <= 8 ? ["care.scan"] : []),
+        // FX-1 (changed on purpose): the alerts repeat at the next two hours; M5.5b (LD76): the realisation scan rides the 09:00 IST tick only (the EDF reminder only on days 5 to 7: reports-b.test.ts)
+        ...(h >= 9 && h <= 11 ? ["alerts.daily"] : []),
+        ...(h === 9 ? ["realisation.scan"] : []),
         "reminder.scan",
       ];
       expect(kinds, `hour ${h}`).toEqual(expected);

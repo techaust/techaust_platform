@@ -37,7 +37,7 @@
   },
   // Daily 22:00 UTC (03:30 IST): enqueues the leads due for deletion (JOB-CRON-01) and one message per nightly statistic for the IST day that
   // just ended (M3.5, stats_daily); it enqueues and reads nothing else. Hourly at :30 UTC (= every IST hour, M5.4, LD61): ONE `sendBatch`, no D1 read;
-  // 06:00 IST the care-plan scan, 09:00 IST the owners' alerts, every hour the reminder scan (the consumer applies the settings window).
+  // 06:00 IST the care-plan scan and 09:00 IST the owners' alerts (each again at the next two hours, FX-1), every hour the reminder scan (the consumer applies the settings window).
   // `triggers` IS inherited by an environment that does not set its own (wrangler `EnvironmentInheritable`), so every environment states its crons: staging
   // the same two, production an empty list until Phase 7 (scripts/check-worker-config.mjs requires exactly that; A6 3).
   "triggers": { "crons": ["0 22 * * *", "30 * * * *"] },

@@ -60,8 +60,10 @@ describe("the 09:00 IST dispatch [LD76]", () => {
       for (let h = 0; h < 24; h++) {
         const kinds = kindsAt(`2026-11-${String(day).padStart(2, "0")}`, h);
         const expected = [
-          ...(h === 6 ? ["care.scan"] : []),
-          ...(h === ALERTS_HOUR_IST ? ["alerts.daily", "realisation.scan"] : []),
+          // FX-1 (A6 7, changed on purpose): the care scan and the alerts repeat at the next two hours; the realisation scan and the EDF reminder do not
+          ...(h >= 6 && h <= 8 ? ["care.scan"] : []),
+          ...(h >= ALERTS_HOUR_IST && h <= ALERTS_HOUR_IST + 2 ? ["alerts.daily"] : []),
+          ...(h === ALERTS_HOUR_IST ? ["realisation.scan"] : []),
           ...(h === ALERTS_HOUR_IST && day >= 5 && day <= 7 ? ["edf.reminder"] : []),
           "reminder.scan",
         ];

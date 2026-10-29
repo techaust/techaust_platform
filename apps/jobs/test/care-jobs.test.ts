@@ -70,6 +70,22 @@ describe("care.scan [ADM-CARE-02]", () => {
     expect(fakes.leads.every((s) => s.via === "sendBatch")).toBe(true);
   });
 
+  it("FX-1 (A6 7): the repeats at 07:00 and 08:00 IST do nothing once the 06:00 scan's bill has drafted the period", async () => {
+    await run("DELETE FROM care_plans");
+    const id = await plan();
+    await processCareScan(makeEnv(), { after: null }, NOW);
+    expect(fakes.leads.map((s) => (s.body as { planId: string }).planId)).toEqual([id]);
+    // the bill drafted the period (draftCarePlan moves last_billed_period in its batch)
+    await run("UPDATE care_plans SET last_billed_period = '2026-11-05' WHERE id = ?1", id);
+    fakes.leads.length = 0;
+    for (const hour of [7, 8])
+      expect(await processCareScan(makeEnv(), { after: null }, at("2026-11-06", hour))).toEqual({
+        plans: 0,
+        continued: false,
+      });
+    expect(fakes.leads).toEqual([]);
+  });
+
   it("a full page of 50 also queues the next scan with the last row's (created_at, id); the next page continues from it; no plan is billed twice by the scan", async () => {
     await run("DELETE FROM care_plans");
     const ids: string[] = [];
