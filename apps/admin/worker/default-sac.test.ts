@@ -1,10 +1,18 @@
-// FX-4 (full audit A5 12; ADM-SET-03, ADM-INV-04, ADM-PROP-02): Settings › Tax "default SAC" for custom lines. A NEW custom line sent without a SAC takes the setting
-// when one is set; an existing line keeps its own (a cleared SAC stays cleared); nothing changes while the setting is empty (the issue is still blocked by
+// FX-4 (full audit A5 12; ADM-SET-03, ADM-INV-04, ADM-PROP-02): Settings › Tax "default SAC" for custom lines. A NEW custom line sent without a `sac` key takes the
+// setting when one is set; a new line sent with `sac: null` (the person cleared the prefilled field) stays null and the issue is blocked (FX-4 review H1); an existing line keeps its own (a cleared SAC stays cleared); nothing changes while the setting is empty (the issue is still blocked by
 // `line_sac_missing`). The views tell a draft's screen the SAC to start a new custom line with (`newLineSac`).
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { call, sessionFor } from "./test-helpers.ts";
 import { putTax } from "./test-invoice-types.ts";
-import { getInvoice, json, mkInvoice, patchInvoice, putBank, putCompany } from "./test-invoices.ts";
+import {
+  getInvoice,
+  issueInvoice,
+  json,
+  mkInvoice,
+  patchInvoice,
+  putBank,
+  putCompany,
+} from "./test-invoices.ts";
 import { getDoc, mkDraft, patchDoc } from "./test-quotes.ts";
 
 const owner = () => sessionFor("owner", { stepUp: true });
@@ -32,7 +40,7 @@ describe("the default SAC of a custom line [A5 12]", () => {
     expect(after.lines.map((l: { sac: string | null }) => l.sac)).toEqual(["998313"]);
   });
 
-  it("a SAC sent with the line wins; null is the same as none (the screen sends null for an empty field)", async () => {
+  it("a SAC sent with the line wins; null is not the same as none: a cleared SAC is never refilled from the setting [review H1]", async () => {
     await putTax({ defaultSac: "998313" });
     const o = await owner();
     const made = await mkInvoice(o);
@@ -42,11 +50,65 @@ describe("the default SAC of a custom line [A5 12]", () => {
       lines: [
         { ...custom, sac: "998316" },
         { ...custom, description: "More work", sac: null },
+        { ...custom, description: "Other work" },
       ],
     });
     expect(res.status, await res.clone().text()).toBe(200);
+    expect((await json(res)).blockers).toEqual([{ code: "line_sac_missing", line: 2 }]);
     const after = await getInvoice(o, made.id);
-    expect(after.lines.map((l: { sac: string | null }) => l.sac)).toEqual(["998316", "998313"]);
+    expect(after.lines.map((l: { sac: string | null }) => l.sac)).toEqual(["998316", null, "998313"]);
+  });
+
+  it("a new custom line sent with `sac: null` stays null and the issue is blocked [review H1]", async () => {
+    await putTax({ defaultSac: "998313" });
+    const o = await owner();
+    const made = await mkInvoice(o);
+    const doc = await getInvoice(o, made.id);
+    expect(doc.newLineSac).toBe("998313");
+    const res = await patchInvoice(o, made.id, {
+      expectedUpdatedAt: doc.updatedAt,
+      lines: [{ ...custom, sac: null }],
+    });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect((await json(res)).blockers).toEqual([{ code: "line_sac_missing", line: 1 }]);
+    const after = await getInvoice(o, made.id);
+    expect(after.lines.map((l: { sac: string | null }) => l.sac)).toEqual([null]);
+    const issue = await issueInvoice(o, made.id);
+    expect(issue.status, await issue.clone().text()).toBe(409);
+    const body = await json(issue);
+    expect(body.error.code).toBe("issue_blocked");
+    expect(body.blockers).toContainEqual({ code: "line_sac_missing", line: 1 });
+    expect((await getInvoice(o, made.id)).number ?? null).toBeNull();
+  });
+
+  it("a new custom line sent without `sac` takes the default [review H1]", async () => {
+    await putTax({ defaultSac: "998313" });
+    const o = await owner();
+    const made = await mkInvoice(o);
+    const doc = await getInvoice(o, made.id);
+    const res = await patchInvoice(o, made.id, { expectedUpdatedAt: doc.updatedAt, lines: [custom] });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect("sac" in custom).toBe(false);
+    expect((await json(res)).blockers).toEqual([]);
+    const after = await getInvoice(o, made.id);
+    expect(after.lines.map((l: { sac: string | null }) => l.sac)).toEqual(["998313"]);
+  });
+
+  it("a proposal draft keeps a cleared SAC too: `sac: null` on a new custom line stays null [review H1]", async () => {
+    await putTax({ defaultSac: "998314" });
+    const o = await owner();
+    const made = await mkDraft(o);
+    const doc = await getDoc(o, made.id);
+    const res = await patchDoc(o, made.id, {
+      expectedUpdatedAt: doc.updatedAt,
+      lines: [
+        { ...custom, sac: null },
+        { ...custom, description: "More work" },
+      ],
+    });
+    expect(res.status, await res.clone().text()).toBe(200);
+    const after = await getDoc(o, made.id);
+    expect(after.lines.map((l: { sac: string | null }) => l.sac)).toEqual([null, "998314"]);
   });
 
   it("an existing custom line keeps what it was given: clearing its SAC is not refilled from the setting", async () => {

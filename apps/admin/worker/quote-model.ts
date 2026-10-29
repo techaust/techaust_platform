@@ -428,8 +428,10 @@ export function itemLines(
 /**
  * Applies a request's lines to the stored ones. The request is the whole list. An existing line (by id) keeps its catalogue service,
  * its catalogue rate and, for a catalogue line, its SAC and GST rate: asking to change them is a 400. A new catalogue line takes all
- * of those from the catalogue (an inactive service is a 409). `catalogueRateMinor` is never taken from a request. A NEW custom line sent without a SAC (absent or
- * null) takes `defaultSac` (Settings › Tax "default SAC", FX-4, full audit A5 12) when one is set; an existing line keeps what it has or what is sent.
+ * of those from the catalogue (an inactive service is a 409). `catalogueRateMinor` is never taken from a request. A NEW custom line sent WITHOUT a `sac`
+ * key (absent) takes `defaultSac` (Settings › Tax "default SAC", FX-4, full audit A5 12) when one is set. An explicit `null` is a SAC the person cleared (the
+ * screen prefills a new line from `newLineSac` and sends null for an emptied field), so it stays null and `line_sac_missing` blocks the issue (FX-4 review H1).
+ * An existing line keeps what it has or what is sent.
  */
 export function resolveLines(
   input: readonly LineIn[],
@@ -514,7 +516,7 @@ export function resolveLines(
       catalogueLine: null,
       description: l.description,
       detail: l.detail ?? null,
-      sac: l.sac ?? newCustomSac,
+      sac: l.sac === undefined ? newCustomSac : l.sac,
       qtyMilli: l.qtyMilli,
       unit: l.unit,
       rateMinor: l.rateMinor,
