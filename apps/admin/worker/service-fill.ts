@@ -164,6 +164,28 @@ export function withoutTexts<V>(
 
 type Rendered = { title: string | null; bodyMd: string | null };
 
+const TEXT_SET: ReadonlySet<string> = new Set(TEXT_TOKENS);
+
+/**
+ * A draft section's title and text with the template's values filled (at creation, and by the save that adds the first service). A
+ * value that would take the title past SECTION_TITLE_MAX stays unfilled, as written (FX-3 round 3, lead's answer to round 2 Q1,
+ * docs/13 2026-10-29): the send check names it and the person writes a shorter title, so the draft is never stored with a title every
+ * later save refuses. The Catalogue texts are never held back here (`unbounded`): their room is `fitFirstService`'s rule. A text
+ * left with nothing in it is null.
+ */
+export function renderSection(
+  s: Rendered,
+  data: Readonly<Record<string, string | number | null | undefined>>,
+  empty: ReadonlySet<string>,
+): Rendered {
+  const title =
+    s.title === null
+      ? null
+      : renderTemplate(s.title, data, { empty, max: SECTION_TITLE_MAX, unbounded: TEXT_SET }).text;
+  const body = s.bodyMd === null ? null : renderTemplate(s.bodyMd, data, { empty }).text;
+  return { title, bodyMd: body === null || body.trim() === "" ? null : body };
+}
+
 /**
  * One section of the first service's own template fill: its kind, its text before the fill (`raw`, for the tokens it holds), and the
  * section rendered twice: `full` with the service's Catalogue texts, `bare` with them taken out (their lines too, as for an empty text).
@@ -258,21 +280,16 @@ export function fillServiceTokens<S extends Fillable>(
   const bare = withoutTexts(data, empty);
   const all = asBlocks(services);
   const held = sections.map((s) => hasServiceToken(s.title) || hasServiceToken(s.bodyMd));
-  const render = (text: string | null, d: Record<string, string | null>, e: ReadonlySet<string>) =>
-    text === null ? null : renderTemplate(text, d, { empty: e }).text;
   // The first service's own fill keeps to the limits too (FX-3 round 2): a section with no room for its Catalogue text keeps the
-  // template's text without it, and the gaps name what was left out.
+  // template's text without it, and the gaps name what was left out. A value that would pass the title's limit stays unfilled (round 3).
   const fitted = fitFirstService(
     sections.map((s, n) =>
       held[n]
         ? {
             kind: s.kind,
             raw: s.bodyMd,
-            full: { title: render(s.title, data, empty), bodyMd: render(s.bodyMd, data, empty) },
-            bare: {
-              title: render(s.title, bare.data, bare.empty),
-              bodyMd: render(s.bodyMd, bare.data, bare.empty),
-            },
+            full: renderSection(s, data, empty),
+            bare: renderSection(s, bare.data, bare.empty),
           }
         : { kind: s.kind, raw: null, full: s, bare: s },
     ),

@@ -1,6 +1,6 @@
 // The pure rules of service-fill.ts [ADM-PROP-02]: unknown vs empty tokens, every service counted, the gaps, the text "Use Catalogue text" adds.
 
-import { SECTION_BODY_MAX, SECTIONS_TOTAL_MAX } from "@techaust/core/documents";
+import { SECTION_BODY_MAX, SECTION_TITLE_MAX, SECTIONS_TOTAL_MAX } from "@techaust/core/documents";
 import { describe, expect, it } from "vitest";
 import {
   appendServices,
@@ -12,6 +12,7 @@ import {
   fitFirstService,
   fits,
   gapInputsChanged,
+  renderSection,
   type ServiceFacts,
   serviceIdsOf,
   servicesOf,
@@ -729,5 +730,49 @@ describe("FX-3 round 2: the first service's own template fill keeps to the limit
     expect(catalogueGaps(holdsOne, [s], CREATED)).toEqual([]);
     // the opening holds none of them, and they would fit: the person took them out
     expect(catalogueGaps([sec("assumptions_exclusions", "Our own words")], [s], CREATED)).toEqual([]);
+  });
+});
+
+describe("FX-3 round 3, Q1: a value that would take a section title past 120 characters stays unfilled [ADM-PROP-02]", () => {
+  it("renderSection: the title keeps the token, the text is filled, the title stays within the limit", () => {
+    const name = "N".repeat(110);
+    const r = renderSection(
+      { title: "Proposal for {{client.name}}", bodyMd: "Dear {{client.name}}" },
+      { "client.name": name },
+      new Set(),
+    );
+    expect(r.title).toBe("Proposal for {{client.name}}");
+    expect(r.bodyMd).toBe(`Dear ${name}`);
+    // a name that fits is filled as before
+    const ok = renderSection(
+      { title: "For {{client.name}}", bodyMd: null },
+      { "client.name": "Acme" },
+      new Set(),
+    );
+    expect(ok).toEqual({ title: "For Acme", bodyMd: null });
+    // a text left with nothing in it is null
+    const none = renderSection(
+      { title: "T", bodyMd: "{{service.short}}" },
+      { "service.short": null },
+      new Set(["service.short"]),
+    );
+    expect(none.bodyMd).toBeNull();
+  });
+
+  it("the save that adds the first service: a long service name stays unfilled in the title, a short one fills", () => {
+    const titled = () => ({
+      ...sec("deliverables", "{{service.deliverables}}"),
+      title: "Deliverables of {{service.name}}",
+    });
+    const out = fillServiceTokens(
+      [titled()],
+      [svc({ name: "S".repeat(118), deliverables_md: "Ships" })],
+      null,
+    );
+    expect(out[0]?.title).toBe("Deliverables of {{service.name}}");
+    expect((out[0]?.title ?? "").length).toBeLessThanOrEqual(SECTION_TITLE_MAX);
+    expect(out[0]?.bodyMd).toBe("Ships");
+    const short = fillServiceTokens([titled()], [svc({ name: "Audit", deliverables_md: "Ships" })], null);
+    expect(short[0]?.title).toBe("Deliverables of Audit");
   });
 });

@@ -2,7 +2,7 @@
 // a sent version's rows, and the lead convert (M3.2), so a draft always has its group, its template sections, server-built lines, its
 // schedule and the newest terms. The statements it returns go into the caller's own batch.
 
-import { placeholdersOf, renderTemplateBody, type TemplateBody } from "@techaust/core/catalogue";
+import { placeholdersOf, type TemplateBody } from "@techaust/core/catalogue";
 import type { TaxInput } from "@techaust/core/clients";
 import type { CalendarDate } from "@techaust/core/dates";
 import { sectionsFromTemplate } from "@techaust/core/documents";
@@ -39,6 +39,7 @@ import {
   autoHides,
   emptyServiceTokens,
   fitFirstService,
+  renderSection,
   serviceData,
   withoutTexts,
 } from "./service-fill.ts";
@@ -170,22 +171,22 @@ export async function buildNewDraft(i: NewDraftInput): Promise<NewDraft> {
   // A service with no text for a token makes it EMPTY (taken out, section hidden); no service at all leaves it UNKNOWN (kept, filled by the
   // save that adds the first service line). See service-fill.ts.
   const empty = emptyServiceTokens(first ?? null);
-  const full = sectionsFromTemplate(tpl ? renderTemplateBody(tpl, data, { empty }).sections : []);
+  // The template's sections as the draft will have them (custom sections past the cap joined into the last one), then filled: the values
+  // go into the draft's sections, so a value that would take a title past its limit stays unfilled (FX-3 round 3; `renderSection`).
+  // `raw` also tells which text tokens a section's template held.
+  const raw = sectionsFromTemplate(
+    (tpl?.sections ?? []).map((s) => ({ key: s.key, heading: s.heading, text: s.body })),
+  );
+  const full = raw.map((s) => ({ ...s, ...renderSection(s, data, empty) }));
   const emptiedKeys = new Set(
     (tpl?.sections ?? [])
       .filter((s) => placeholdersOf(`${s.heading}\n${s.body}`).some((n) => empty.has(n)))
       .map((s) => s.key),
   );
   // The first service's own fill keeps to the limits too (FX-3 round 2): a section with no room for its Catalogue text keeps the
-  // template's text without it, and the gaps name what was left out (`fitFirstService`). The three renders give the same sections in the
-  // same order (`sectionsFromTemplate` places them by key alone); `raw` tells which text tokens a section's template held.
+  // template's text without it, and the gaps name what was left out (`fitFirstService`).
   const bare = withoutTexts(data, empty);
-  const bareDrafts = sectionsFromTemplate(
-    tpl ? renderTemplateBody(tpl, bare.data, { empty: bare.empty }).sections : [],
-  );
-  const raw = sectionsFromTemplate(
-    (tpl?.sections ?? []).map((s) => ({ key: s.key, heading: s.heading, text: s.body })),
-  );
+  const bareDrafts = raw.map((s) => renderSection(s, bare.data, bare.empty));
   const fitted = first
     ? fitFirstService(
         full.map((f, n) => ({
