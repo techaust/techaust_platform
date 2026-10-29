@@ -25,7 +25,8 @@
 //     once the Catalogue row changes (L1). The first service's parts deleted by the person from its opening, in a section with no room for
 //     them, read as left out and are named too;
 //   - the first service's Catalogue text left out of a section of another kind (a staff template that puts `{{service.deliverables}}` into
-//     Scope, say) or out of a section title is not named: the gaps read only the Deliverables and Assumptions and exclusions sections;
+//     Scope, say) or out of a section title is not named: the gaps read only the Deliverables and Assumptions and exclusions sections.
+//     Since FX-3 round 3 (Q3) a template can't be saved that way (`misplacedTextTokens`), so only a version saved before it can do this;
 //   - the reads (gaps, "Use Catalogue text") know only the services on the lines: the block of a service taken off the lines runs on as
 //     part of the block above it until its text is removed;
 //   - a save puts the services the draft had before the ones it adds, while the reads take line order (round 5 re-check, L3): a service

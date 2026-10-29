@@ -168,6 +168,39 @@ export function joinedPastLimit(sections: readonly TemplateSection[]): number[] 
   return (last?.bodyMd?.length ?? 0) > SECTION_BODY_MAX ? customs.slice(MAX_CUSTOM_SECTIONS - 1) : [];
 }
 
+/** The placeholders that carry a service's Catalogue text, and the one section kind each may sit in (Q3). */
+export const TEXT_TOKEN_KINDS: Readonly<Record<string, string>> = {
+  "service.deliverables": "deliverables",
+  "service.assumptions": "assumptions_exclusions",
+  "service.exclusions": "assumptions_exclusions",
+};
+
+export type MisplacedToken = {
+  readonly index: number;
+  readonly name: string;
+  readonly part: "heading" | "body";
+};
+
+/**
+ * Q3: the Catalogue-text placeholders a template puts outside their own section: `{{service.deliverables}}` belongs only in the text of
+ * the Deliverables section, `{{service.assumptions}}` and `{{service.exclusions}}` only in the text of Assumptions and exclusions, and
+ * none in a heading (a heading holds 120 characters; the texts run to 2,500). The section is the one a draft makes of it
+ * (`templateKinds`): a second Deliverables section is a custom one. One entry per section, part and name, in order. Only there are the
+ * texts' room and gaps worked out (service-fill.ts), so a text anywhere else could be left out without being named.
+ */
+export function misplacedTextTokens(sections: readonly TemplateSection[]): MisplacedToken[] {
+  const kinds = templateKinds(sections);
+  const out: MisplacedToken[] = [];
+  sections.forEach((s, index) => {
+    for (const name of unresolvedIn([s.heading]))
+      if (Object.hasOwn(TEXT_TOKEN_KINDS, name)) out.push({ index, name, part: "heading" });
+    for (const name of unresolvedIn([s.body]))
+      if (Object.hasOwn(TEXT_TOKEN_KINDS, name) && TEXT_TOKEN_KINDS[name] !== kinds[index])
+        out.push({ index, name, part: "body" });
+  });
+  return out;
+}
+
 // ---- the status flow (twin of the `documents_status_flow` trigger) -----------------------------------------------------------
 
 /**

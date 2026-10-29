@@ -18,7 +18,7 @@ import {
   placeholdersOf,
   TEMPLATE_PLACEHOLDERS,
 } from "@techaust/core/catalogue";
-import { joinedPastLimit } from "@techaust/core/documents";
+import { joinedPastLimit, misplacedTextTokens, TEXT_TOKEN_KINDS } from "@techaust/core/documents";
 import type {
   CatalogueCategory,
   CatalogueEntry,
@@ -656,27 +656,51 @@ const KNOWN = new Set<string>(TEMPLATE_PLACEHOLDERS);
 export const unknownIn = (text: string) => placeholdersOf(text).filter((p) => !KNOWN.has(p));
 
 /**
- * 07-Y lines (FX-3 round 3, pending the owner) for the template rules the API also holds (`template_joined_too_long`): shown under each
- * section the rule names.
+ * 07-Y lines (FX-3 round 3, pending the owner) for the template rules the API also holds (`template_text_token_place`,
+ * `template_joined_too_long`): shown under each section the rule names.
  */
 export const TEMPLATE_RULES = {
+  /** Q3: a Catalogue-text placeholder in a heading. */
+  textInHeading: (placeholder: string) =>
+    Y(`${placeholder} can't go in a heading. Put it in the text of its own section.`),
+  /** Q3: a Catalogue-text placeholder in the text of another section; `section` is where it belongs. */
+  textElsewhere: (placeholder: string, section: string) =>
+    Y(`${placeholder} can only go in the text of the ${section} section.`),
   joinedTooLong: Y(
     "A proposal or estimate has room for 3 sections of your own. This one and the ones after the third are joined into one, which would pass 6,000 characters. Shorten them or remove some.",
   ),
 } as const;
 
+/** The section each Catalogue-text placeholder belongs in, by the heading the seeded templates give it. */
+const TEXT_HOME: Record<string, string> = {
+  deliverables: "Deliverables",
+  assumptions_exclusions: "Assumptions and exclusions",
+};
+
 /**
- * The template rules a save is refused for, by section (0-based), with the 07-Y line for each, so the editor shows them before it
- * sends (the API answers the same sections). Proposal and estimate templates only: the care plan and terms blocks are never joined.
+ * The template rules a save is refused for, by section (0-based), with the 07-Y lines for each (joined by a space), so the editor shows
+ * them before it sends (the API answers the same sections): Catalogue-text placeholders outside their own section's text (every kind),
+ * and custom sections joined past 6,000 characters (proposal and estimate templates only: the care plan and terms blocks are never
+ * joined).
  */
 export function templateRuleErrors(
   kind: TemplateKind,
   sections: readonly { key: string; heading: string; body: string }[],
 ): Record<number, string> {
-  const out: Record<number, string> = {};
+  const lines = new Map<number, string[]>();
+  const add = (n: number, line: string) => lines.set(n, [...(lines.get(n) ?? []), line]);
+  for (const m of misplacedTextTokens(sections)) {
+    const placeholder = `{{${m.name}}}`;
+    add(
+      m.index,
+      m.part === "heading"
+        ? TEMPLATE_RULES.textInHeading(placeholder)
+        : TEMPLATE_RULES.textElsewhere(placeholder, TEXT_HOME[TEXT_TOKEN_KINDS[m.name] ?? ""] ?? ""),
+    );
+  }
   if (kind === "proposal" || kind === "estimate")
-    for (const n of joinedPastLimit(sections)) out[n] = TEMPLATE_RULES.joinedTooLong;
-  return out;
+    for (const n of joinedPastLimit(sections)) add(n, TEMPLATE_RULES.joinedTooLong);
+  return Object.fromEntries([...lines].map(([n, l]) => [n, l.join(" ")]));
 }
 
 /** "Build proposal", "Care plan block". */

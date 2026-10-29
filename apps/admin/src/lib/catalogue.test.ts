@@ -333,4 +333,24 @@ describe("FX-3 round 3: the template rules the editor shows before it sends [ADM
     expect(templateRuleErrors("proposal", extra(5, 1_000))).toEqual({});
     expect(templateRuleErrors("care_block", extra(5, 2_000))).toEqual({});
   });
+
+  it("Q3: names a Catalogue-text placeholder in a heading or in another section's text, both lines in one section", () => {
+    const errs = templateRuleErrors("care_block", [
+      s("scope", "{{service.deliverables}} {{service.exclusions}}", "About {{service.assumptions}}"),
+      s("deliverables", "{{service.deliverables}}"),
+    ]);
+    expect(errs).toEqual({
+      0: [
+        TEMPLATE_RULES.textInHeading("{{service.assumptions}}"),
+        TEMPLATE_RULES.textElsewhere("{{service.deliverables}}", "Deliverables"),
+        TEMPLATE_RULES.textElsewhere("{{service.exclusions}}", "Assumptions and exclusions"),
+      ].join(" "),
+    });
+    expect(TEMPLATE_RULES.textInHeading("{{service.assumptions}}")).toBe(
+      `${PLACEHOLDER_TAG} {{service.assumptions}} can't go in a heading. Put it in the text of its own section.`,
+    );
+    expect(TEMPLATE_RULES.textElsewhere("{{service.exclusions}}", "Assumptions and exclusions")).toBe(
+      `${PLACEHOLDER_TAG} {{service.exclusions}} can only go in the text of the Assumptions and exclusions section.`,
+    );
+  });
 });

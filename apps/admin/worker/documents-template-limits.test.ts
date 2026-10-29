@@ -4,6 +4,7 @@
 //     the placeholder until the person writes a shorter title.
 //   - Q2: saving a template whose custom sections past the third would be joined past 6,000 characters is refused, naming them; and a
 //     short value never takes a draft's text past 6,000 at creation (it stays unfilled, as in a title).
+//   - Q3: saving a template with a Catalogue-text placeholder outside its own section's text is refused, naming each.
 // Its own database: it adds templates.
 import { beforeAll, describe, expect, it } from "vitest";
 import { putPaymentTerms } from "./test-catalogue.ts";
@@ -197,5 +198,52 @@ describe("FX-3 round 3, Q2: a template whose joined custom sections pass 6,000 c
     expect(section(doc, "scope").bodyMd).toContain("{{client.name}}");
     const saved = await patchDoc(o, doc.id, { expectedUpdatedAt: doc.updatedAt, sections: sectionsOf(doc) });
     expect(saved.status, await saved.clone().text()).toBe(200);
+  });
+});
+
+describe("FX-3 round 3, Q3: Catalogue-text placeholders only in their own sections' text [ADM-CAT-03]", () => {
+  const save = async (kind: string, category: string | null, sections: unknown[]) => {
+    const o = await owner();
+    return call("/templates", { cookie: o.cookie, body: { kind, category, body: { sections } } });
+  };
+
+  it("refused in another section, a custom one, or a heading, naming each; nothing is stored", async () => {
+    const before = await countOf("templates");
+    const res = await save("proposal", "run", [
+      { key: "scope", heading: "Scope", body: "{{service.short}}\n{{service.deliverables}}" },
+      {
+        key: "deliverables",
+        heading: "Deliverables of {{service.deliverables}}",
+        body: "{{service.deliverables}}",
+      },
+      { key: "notes", heading: "Notes", body: "{{service.exclusions}}" },
+    ]);
+    expect(res.status).toBe(400);
+    const b = await bodyOf(res);
+    expect((b.error as J).code).toBe("template_text_token_place");
+    expect(b.sections).toEqual([
+      { index: 0, name: "service.deliverables", part: "body" },
+      { index: 1, name: "service.deliverables", part: "heading" },
+      { index: 2, name: "service.exclusions", part: "body" },
+    ]);
+    // a block too
+    const block = await save("terms_block", null, [
+      { key: "terms", heading: "Terms", body: "{{service.assumptions}}" },
+    ]);
+    expect(((await bodyOf(block)).error as J).code).toBe("template_text_token_place");
+    expect(await countOf("templates")).toBe(before);
+  });
+
+  it("saved in their own sections, as the seeded templates have them", async () => {
+    const res = await save("proposal", "automate", [
+      { key: "scope", heading: "Scope", body: "{{service.short}}" },
+      { key: "deliverables", heading: "Deliverables", body: "{{service.deliverables}}" },
+      {
+        key: "assumptions_exclusions",
+        heading: "Assumptions and exclusions",
+        body: "{{service.assumptions}}\n{{service.exclusions}}",
+      },
+    ]);
+    expect(res.status, await res.clone().text()).toBe(201);
   });
 });

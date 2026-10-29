@@ -19,6 +19,7 @@ import {
   isQuoteType,
   joinedPastLimit,
   MAX_SECTIONS,
+  misplacedTextTokens,
   REQUIRED_SECTIONS,
   SECTION_BODY_MAX,
   SECTIONS_TOTAL_MAX,
@@ -26,6 +27,7 @@ import {
   sectionsFromTemplate,
   snapshotHeader,
   snapshotSha256,
+  TEXT_TOKEN_KINDS,
   templateKinds,
   UNRESOLVED_RE,
   unresolvedIn,
@@ -393,6 +395,44 @@ describe("sectionsFromTemplate", () => {
   it("a surplus section with no text adds only its heading", () => {
     const out = sectionsFromTemplate([r("a"), r("b"), r("c"), r("d", "D", "")]);
     expect(out.filter((s) => s.kind === "custom").at(-1)?.bodyMd).toBe("t\n\n**D**");
+  });
+});
+
+describe("FX-3 round 3, Q3: the Catalogue-text placeholders only in their own sections' text [ADM-CAT-03]", () => {
+  const t = (key: string, body: string, heading = key) => ({ key, heading, body });
+
+  it("allowed in their own sections' text, with any other placeholder anywhere", () => {
+    expect(
+      misplacedTextTokens([
+        t("cover", "{{client.name}} {{service.name}}", "For {{client.name}}"),
+        t("deliverables", "Intro\n{{service.deliverables}}"),
+        t("assumptions_exclusions", "{{service.assumptions}}\n{{ service.exclusions }}"),
+      ]),
+    ).toEqual([]);
+    expect(TEXT_TOKEN_KINDS).toEqual({
+      "service.deliverables": "deliverables",
+      "service.assumptions": "assumptions_exclusions",
+      "service.exclusions": "assumptions_exclusions",
+    });
+  });
+
+  it("named in another section's text, in a custom or repeated section, and in any heading", () => {
+    expect(
+      misplacedTextTokens([
+        t("scope", "{{service.deliverables}} and {{service.exclusions}}"),
+        t("deliverables", "{{service.assumptions}}"),
+        t("deliverables", "{{service.deliverables}}"),
+        t("extra", "{{service.exclusions}}"),
+        t("assumptions_exclusions", "", "Notes on {{service.assumptions}}"),
+      ]),
+    ).toEqual([
+      { index: 0, name: "service.deliverables", part: "body" },
+      { index: 0, name: "service.exclusions", part: "body" },
+      { index: 1, name: "service.assumptions", part: "body" },
+      { index: 2, name: "service.deliverables", part: "body" },
+      { index: 3, name: "service.exclusions", part: "body" },
+      { index: 4, name: "service.assumptions", part: "heading" },
+    ]);
   });
 });
 
