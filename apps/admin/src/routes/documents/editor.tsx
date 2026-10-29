@@ -611,7 +611,8 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
         open={dialog === "discard"}
         onClose={() => setDialog(null)}
         onConfirm={async () => {
-          if (inflight.current) await inflight.current.catch(() => null);
+          // Every request in flight, including one started while waiting (round 4 re-check, finding 5).
+          await waitForInflight(inflight);
           await documentsApi.discard(view.id, ref.current.updatedAt);
           // Nothing is left to save: leaving must not ask about unsaved changes.
           ref.current = { ...ref.current, savedRev: { ...ref.current.rev } };

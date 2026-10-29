@@ -5,6 +5,11 @@
 
 /* ---------- The frame ---------- */
 
+/* The top bar's height, on :root so the page's scroll padding (app.css) reads the same value as the bar (round 4 re-check, finding 8). */
+:root {
+  --topbar-h: 4rem;
+}
+
 body:has(.shell) {
   display: block;
   place-items: normal;
@@ -18,7 +23,6 @@ body:has(.shell) {
   --rail-line: color-mix(in srgb, var(--color-mist) 12%, transparent);
   --rail-hover: color-mix(in srgb, var(--color-mist) 8%, transparent);
   --rail-current: var(--color-ink-600);
-  --topbar-h: 4rem;
   display: grid;
   grid-template-columns: var(--app-sidenav) minmax(0, 1fr);
   min-height: 100dvh;
