@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
 import { ACTION_LABELS } from "./audit.ts";
 import { reportBellHref } from "./bell-links.ts";
+import { APPROVED_07Y, PLACEHOLDER_MARK } from "./copy-y.ts";
 import {
   byUrgency,
   FINANCE_COPY,
@@ -38,6 +39,7 @@ import {
   statementKindText,
   stateText,
   TAX_FIELDS_COPY,
+  taxOnlyNoteText,
 } from "./reports.ts";
 import { dispositionName } from "./reports-api.ts";
 import {
@@ -55,6 +57,8 @@ import { buildTax, REALISATION_ERRORS, taxToForm } from "./tax-settings.ts";
 /** 07-V and 07-W were approved on 2026-10-28 (research and wording): no line carries a mark (`M` and `G` are empty). */
 const M = "";
 const G = "";
+/** 07-Y (FX-4's new lines) is PENDING the owner: each line carries the mark until `APPROVED_07Y`. */
+const Y_MARK = APPROVED_07Y ? "" : `${PLACEHOLDER_MARK} `;
 
 describe("07-V is approved word for word", () => {
   it("no 07-V or 07-W line carries the mark", () => {
@@ -498,6 +502,81 @@ describe("files from register rows (core does every sum)", () => {
     expect(r.table13).toHaveLength(1);
     const zip = zipOf(r.files);
     expect([zip[0], zip[1], zip[2], zip[3]]).toEqual([0x50, 0x4b, 0x03, 0x04]);
+  });
+
+  it("FX-4 (A5 1; OPEN 08-C RA-32): a tax-only debit note is a blocking warning first in the list; the panel is not complete and never says No errors", () => {
+    const inv = row({ id: "d1", number: "TH/INV/2627/0001", issueDate: { year: 2026, month: 7, day: 5 } });
+    const note = row({
+      id: "n1",
+      number: "TH/DN/2627/0001",
+      kind: "debit_note",
+      series: "debitNote",
+      issueDate: { year: 2026, month: 8, day: 3 },
+      totalMinor: 18_02,
+      totalInrMinor: 18_02,
+      outstandingMinor: 18_02,
+      rates: [
+        { sac: "998314", rateBp: 1800, taxableMinor: 0, igstMinor: 0, cgstMinor: 9_01, sgstMinor: 9_01 },
+      ],
+      noteOf: {
+        number: "TH/INV/2627/0001",
+        issueDate: { year: 2026, month: 7, day: 5 },
+        supplyType: "intra",
+        recipientStatus: "registered",
+        placeOfSupplyCode: "19",
+        totalInrMinor: 11_800_00,
+      },
+    });
+    const r = buildGstExport([inv, note], meta, q2);
+    if (!r.ok) throw new Error(JSON.stringify(r.problems));
+    expect([r.complete, r.blocking]).toEqual([false, 1]);
+    const first = r.warnings[0];
+    expect(first?.blocking).toBe(true);
+    expect(first?.doc?.number).toBe("TH/DN/2627/0001");
+    expect(first?.manual).toMatchObject({
+      gstin: "19ABCDE1234F1ZX",
+      cgstMinor: 9_01,
+      sgstMinor: 9_01,
+      igstMinor: 0,
+    });
+    expect(first?.text).toBe(
+      `${Y_MARK}TH/DN/2627/0001 (GSTIN 19ABCDE1234F1ZX) adds tax only. The files show it with a taxable value of 0.00 and no tax, so the offline tool would take its tax as nil. Enter by hand: CGST ₹9.01, SGST ₹9.01. Ask your CA how to report it in Table 9B.`,
+    );
+    expect(GST_COPY.doneManual(2, 1)).toBe(
+      `${Y_MARK}2 documents checked. 1 note needs its tax entered by hand before you file.`,
+    );
+    expect(GST_COPY.doneManual(1, 2)).toBe(
+      `${Y_MARK}1 document checked. 2 notes need their tax entered by hand before you file.`,
+    );
+    expect(GST_COPY.doneManual(2, 1)).not.toContain("No errors");
+    // a clean period stays complete
+    const clean = buildGstExport([inv], meta, q2);
+    expect(clean.ok && [clean.complete, clean.blocking]).toEqual([true, 0]);
+  });
+
+  it("an unregistered client's tax-only note says so in place of a GSTIN; IGST is named when it is the head", () => {
+    const text = taxOnlyNoteText({
+      code: "tax_only_note_manual",
+      path: ["n"],
+      blocking: true,
+      manual: {
+        docId: "n",
+        kind: "debit_note",
+        number: "TH/DN/2627/0002",
+        date: { year: 2026, month: 8, day: 3 },
+        section: "b2cs",
+        gstin: null,
+        receiverName: "x",
+        posCode: "27",
+        parentNumber: "TH/INV/2627/0002",
+        byRate: [{ rateBp: 1800, igstMinor: 10_01, cgstMinor: 0, sgstMinor: 0 }],
+        igstMinor: 10_01,
+        cgstMinor: 0,
+        sgstMinor: 0,
+      },
+    });
+    expect(text).toContain("TH/DN/2627/0002 (unregistered client) adds tax only.");
+    expect(text).toContain("Enter by hand: IGST ₹10.01.");
   });
 
   it("a bad document stops every file and names the document", () => {

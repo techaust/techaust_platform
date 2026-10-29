@@ -22,6 +22,7 @@ import {
   isIntBetween,
   isNonNegInt,
   issue,
+  type ManualTaxEntry,
   num,
   ok,
   type RecipientStatus,
@@ -402,6 +403,13 @@ export function gstr1Sections(
 
     items.sort(byDateThenNumber);
     const warnings: GstWarning[] = [];
+    // FX-4 (full audit A5 1): a tax-only note first, as a BLOCKING warning per note (the files leave its tax out).
+    for (const item of items) {
+      const manual = manualEntryOf(item);
+      if (manual !== null) {
+        warnings.push({ code: "tax_only_note_manual", path: [item.row.id], blocking: true, manual });
+      }
+    }
     const out = buildTables(items, params, warnings);
     return ok(
       {
@@ -414,6 +422,45 @@ export function gstr1Sections(
       warnings,
     );
   });
+}
+
+/**
+ * A note whose rate rows carry tax on a taxable value of nil (a "Tax charged too low" debit note, Researched 2026-10-28, s.34(3) CGST Act (08-C RA-22)): the cdnr, cdnur
+ * and b2cs files give a taxable value and a rate and no tax column, so the Offline Tool would work its tax out as nil and GSTR-3B Table 3, filled from GSTR-1, would
+ * under-report it (Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23)). The rows stay in the files; this names what they leave out, so a person enters it
+ * by hand. OPEN (08-C RA-32): how is a tax-only debit note (taxable value nil, tax only) reported in GSTR-1 Table 9B through the Offline Tool, and how does it flow to
+ * 3B Table 3? Null for any other document. Only the rate rows with a nil taxable value and some tax are listed.
+ */
+function manualEntryOf(item: Item): ManualTaxEntry | null {
+  const { row, section } = item;
+  if ((row.kind !== "credit_note" && row.kind !== "debit_note") || row.noteOf === null) return null;
+  if (section !== "cdnr" && section !== "cdnur" && section !== "b2cs") return null;
+  const byRate = item.byRate
+    .filter((r) => r.taxableMinor === 0 && r.igstMinor + r.cgstMinor + r.sgstMinor > 0)
+    .map((r) => ({
+      rateBp: r.rateBp,
+      igstMinor: r.igstMinor,
+      cgstMinor: r.cgstMinor,
+      sgstMinor: r.sgstMinor,
+    }));
+  if (byRate.length === 0) return null;
+  const sum = zero();
+  for (const r of byRate) accumulate(sum, { taxableMinor: 0, ...r }, 1n);
+  return {
+    docId: row.id,
+    kind: row.kind,
+    number: row.number,
+    date: row.issueDate,
+    section,
+    gstin: row.recipient.gstin,
+    receiverName: row.recipient.name,
+    posCode: row.placeOfSupplyCode,
+    parentNumber: row.noteOf.number,
+    byRate,
+    igstMinor: num(sum.igst),
+    cgstMinor: num(sum.cgst),
+    sgstMinor: num(sum.sgst),
+  };
 }
 
 type Tables = Pick<Gstr1Sections, "b2b" | "b2cl" | "b2cs" | "exp" | "cdnr" | "cdnur" | "hsnB2b" | "hsnB2c">;

@@ -142,11 +142,52 @@ export type GstErrorCode =
   | "layout_unknown"
   | "internal_error";
 
-export type GstWarningCode = "b2cs_negative_net" | "hsn_description_missing" | "before_fema_2026";
+export type GstWarningCode =
+  | "b2cs_negative_net"
+  | "hsn_description_missing"
+  | "before_fema_2026"
+  | "tax_only_note_manual";
+
+/**
+ * What a person must enter by hand for one tax-only note (FX-4, full audit A5 1): the note, the recipient's GSTIN (null for an unregistered one), the section its row
+ * is in, and each tax head with its amount, per rate and in total (INR minor units). OPEN (08-C RA-32): how is a tax-only debit note (taxable value nil, tax only)
+ * reported in GSTR-1 Table 9B through the Offline Tool, and how does it flow to 3B Table 3? Our files carry a taxable value and a rate, no tax column, so the tax would
+ * import as nil; nothing here says how to file it, only what the files leave out.
+ */
+export type ManualTaxEntry = {
+  readonly docId: string;
+  readonly kind: "credit_note" | "debit_note";
+  readonly number: string;
+  readonly date: CalendarDate;
+  readonly section: "cdnr" | "cdnur" | "b2cs";
+  readonly gstin: string | null;
+  readonly receiverName: string;
+  readonly posCode: StateCode | "96";
+  /** The parent invoice's number (the note's `noteOf`). */
+  readonly parentNumber: string;
+  readonly byRate: readonly {
+    readonly rateBp: number;
+    readonly igstMinor: number;
+    readonly cgstMinor: number;
+    readonly sgstMinor: number;
+  }[];
+  readonly igstMinor: number;
+  readonly cgstMinor: number;
+  readonly sgstMinor: number;
+};
 
 export type Path = readonly (string | number)[];
 export type GstIssue = { readonly code: GstErrorCode; readonly path: Path };
-export type GstWarning = { readonly code: GstWarningCode; readonly path: Path };
+/**
+ * A finding that does not stop the files. `blocking` (only `tax_only_note_manual`): the files are made, but they are NOT complete for filing until the person has done
+ * what the warning says; a screen never reports "No errors" while one is present. `manual` carries what to enter by hand.
+ */
+export type GstWarning = {
+  readonly code: GstWarningCode;
+  readonly path: Path;
+  readonly blocking?: true;
+  readonly manual?: ManualTaxEntry;
+};
 
 export type GstResult<T> =
   | { readonly ok: true; readonly value: T; readonly warnings: GstWarning[] }

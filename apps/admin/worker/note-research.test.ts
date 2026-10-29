@@ -154,6 +154,32 @@ describe("the debit note 'Tax charged too low' [Q35, RA-22]", () => {
     expect(parts && (await invoiceSealOf(parts)).snapshotSha256).toBe(bundle.document.snapshot_sha256);
   });
 
+  it("FX-4 (A5 11; OPEN 08-C RA-33): Rs 18.02 of tax is never rounded: the preview, the issued row and the computed document carry 18.02 with no round-off", async () => {
+    const o = await farSession("owner");
+    const inv = await mkIssuedInvoice(o, { prices: [100_000] });
+    const b = await json(await draftDebit(o, inv.id, taxOnly(1_802)));
+    expect(b.preview.totals).toMatchObject({
+      taxableMinor: 0,
+      cgstMinor: 901,
+      sgstMinor: 901,
+      totalMinor: 1_802,
+    });
+    const issued = await issueInvoice(o, b.id);
+    expect(issued.status, await issued.clone().text()).toBe(200);
+    const row = await env.DB.prepare(
+      "SELECT status, round_off_minor, total_minor, balance_minor, json_extract(computed, '$.roundOffMinor') AS computed_round_off FROM documents WHERE id = ?",
+    )
+      .bind(b.id)
+      .first();
+    expect(row).toEqual({
+      status: "issued",
+      round_off_minor: 0,
+      total_minor: 1_802,
+      balance_minor: 1_802,
+      computed_round_off: 0,
+    });
+  });
+
   it("a bad shape is 400 debit_tax_only_invalid and writes nothing: lines with it, no amount, zero, negative, an odd amount on an intra-state invoice", async () => {
     const o = await farSession("owner");
     const inv = await mkIssuedInvoice(o, { prices: [100_000] });

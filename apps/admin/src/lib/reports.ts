@@ -14,6 +14,8 @@ import { STATE_CODES } from "@techaust/core/gstin";
 import type { StatementKind } from "@techaust/core/statement";
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
+import { Y } from "./copy-y.ts";
+import { moneyText } from "./projects.ts";
 
 /** "1 document" / "3 documents": the count words 07-V's lines use ({count} documents). */
 const docs = (n: number) => `${n} ${n === 1 ? "document" : "documents"}`;
@@ -50,6 +52,14 @@ export const GST_COPY = {
   checking: (n: number) => `Checking ${n} documents`,
   /** 07-V has the plural; one document is said in its singular (the plural line's own words). */
   done: (n: number) => (n === 1 ? "1 document checked. No errors." : `${n} documents checked. No errors.`),
+  /**
+   * FX-4 (full audit A5 1; 07-Y, PENDING): said instead of `done` while a blocking warning is present (a tax-only note whose tax the files leave out), so the panel never
+   * says "No errors" then. OPEN (08-C RA-32): how such a note is reported in Table 9B.
+   */
+  doneManual: (n: number, k: number) =>
+    Y(
+      `${docs(n)} checked. ${k === 1 ? "1 note needs its" : `${k} notes need their`} tax entered by hand before you file.`,
+    ),
   errorsHeading: (n: number) =>
     n === 1
       ? "1 problem to fix before these files can be made"
@@ -214,7 +224,28 @@ export function gstWarningText(
     case "before_fema_2026":
       // OPEN (08-C RB-02): which period applies to an invoice raised before 1 October 2026.
       return "Issued before 1 October 2026: a different realisation period may apply. Ask your bank or CA.";
+    case "tax_only_note_manual":
+      return taxOnlyNoteText(w);
   }
+}
+
+/**
+ * FX-4 (full audit A5 1; 07-Y, PENDING): a tax-only note's blocking warning, naming the note, the recipient's GSTIN and each tax head with its amount to enter by hand.
+ * OPEN (08-C RA-32): how is a tax-only debit note (taxable value nil, tax only) reported in GSTR-1 Table 9B through the Offline Tool, and how does it flow to 3B Table 3?
+ * The line names what the files leave out and sends the question to the CA; it never says how to file it.
+ */
+export function taxOnlyNoteText(w: GstWarning): string {
+  const m = w.manual;
+  if (!m) return Y("A tax-only note's tax is not in the files. Ask your CA how to report it.");
+  const heads = [
+    m.igstMinor > 0 ? `IGST ${moneyText(m.igstMinor, "INR")}` : null,
+    m.cgstMinor > 0 ? `CGST ${moneyText(m.cgstMinor, "INR")}` : null,
+    m.sgstMinor > 0 ? `SGST ${moneyText(m.sgstMinor, "INR")}` : null,
+  ].filter((h): h is string => h !== null);
+  const who = m.gstin === null ? "unregistered client" : `GSTIN ${m.gstin}`;
+  return Y(
+    `${m.number} (${who}) adds tax only. The files show it with a taxable value of 0.00 and no tax, so the offline tool would take its tax as nil. Enter by hand: ${heads.join(", ")}. Ask your CA how to report it in Table 9B.`,
+  );
 }
 
 // ---- periods (07-V §2: the last complete quarter by default; QRMP quarters of the financial year) ----------------------------------------------------
