@@ -1,4 +1,4 @@
-// The signature image of the authorised signatory (M4.4; ADM-SET-01). A small PNG or JPEG, up to 256 KB, uploaded by the owner. The bytes are
+// The signature image of the authorised signatory (M4.4; ADM-SET-01). A small PNG (FX-3: PNG only), up to 256 KB, uploaded by the owner. The bytes are
 // stored in the `DOCS` bucket under a key made from their SHA-256 (`settings/signature-<16 hex>.<ext>`), so a replacement never changes a
 // file an earlier document used; the reference lives in the company settings (`company.signature`; a row from before M4.4 reads as null).
 // Objects are never deleted here: replacing or removing the signature only changes the reference, so a document that already used the image
@@ -6,8 +6,9 @@
 // It is printed only on invoices (from M5.2). Researched 2026-10-28, Rule 46(q) proviso CGST Rules (08-C RA-06): a signature is not required on an invoice issued electronically; the image is optional.
 // Nothing here executes or renders the image: the type is decided by the first bytes (no SVG, no scripts), and the download is an
 // attachment with a sandbox CSP.
-// FX-3 (A6 1c): at most 800 by 400 pixels (core SIGNATURE_MAX_WIDTH and _HEIGHT), read from the header (a PNG's IHDR, a JPEG's frame header), so the
-// check costs no decoding. The admin scales a bigger image down before it uploads (lib/signature-scale.ts); a stored signature is left as it is.
+// FX-3 (A6 1c): at most 800 by 400 pixels (core SIGNATURE_MAX_WIDTH and _HEIGHT), read from the PNG's IHDR, so the check costs no decoding.
+// PNG only for a new upload (lead, docs/13 2026-10-29): the admin re-encodes every image, JPEG included, to a PNG within that box before it
+// uploads (lib/signature-scale.ts), so the PDF integrity check follows the image's Flate stream. A stored signature (a JPEG too) is left as it is.
 import {
   resolveSetting,
   SIGNATURE_MAX_BYTES,
@@ -21,7 +22,7 @@ import { loadRow, upsert } from "./settings.ts";
 
 const LENGTH_REQUIRED: ApiError = { code: "length_required", message: "Send the image with its length" };
 const TOO_LARGE: ApiError = { code: "file_too_large", message: "The image is larger than 256 KB" };
-const NOT_AN_IMAGE: ApiError = { code: "type_not_allowed", message: "Use a PNG or a JPEG image" };
+const NOT_AN_IMAGE: ApiError = { code: "type_not_allowed", message: "Send the signature as a PNG image" };
 const TOO_BIG_PIXELS: ApiError = {
   code: "image_too_big",
   message: `The image is larger than ${SIGNATURE_MAX_WIDTH} by ${SIGNATURE_MAX_HEIGHT} pixels`,
@@ -37,8 +38,8 @@ const MAX_HEIGHT = SIGNATURE_MAX_HEIGHT;
 type Sniffed =
   | {
       ok: true;
-      mime: "image/png" | "image/jpeg";
-      ext: "png" | "jpg";
+      mime: "image/png";
+      ext: "png";
       width: number | null;
       height: number | null;
     }
@@ -59,43 +60,9 @@ export function sniffSignature(b: Uint8Array): Sniffed {
       return { ok: false, reason: "pixels" };
     return { ok: true, mime: "image/png", ext: "png", width, height };
   }
-  if (b.length >= 4 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) {
-    const size = jpegSize(b);
-    if (size === null) return { ok: false, reason: "type" };
-    if (size.width < 1 || size.height < 1 || size.width > MAX_WIDTH || size.height > MAX_HEIGHT)
-      return { ok: false, reason: "pixels" };
-    return { ok: true, mime: "image/jpeg", ext: "jpg", width: size.width, height: size.height };
-  }
+  // A JPEG (or anything else) is refused for a new upload: the admin re-encodes every signature to PNG first (docs/13, 2026-10-29), so the
+  // PDF's integrity check covers its Flate data byte by byte. A JPEG stored before this rule keeps working (GET serves it with its own type).
   return { ok: false, reason: "type" };
-}
-
-/** A JPEG's size from its first start-of-frame marker (SOF0 to SOF15, except DHT, JPG and DAC); null if none is found in the bytes. */
-function jpegSize(b: Uint8Array): { width: number; height: number } | null {
-  let i = 2;
-  while (i + 3 < b.length) {
-    if (b[i] !== 0xff) return null;
-    const marker = b[i + 1] as number;
-    if (marker === 0xff) {
-      i += 1; // fill byte
-      continue;
-    }
-    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd8)) {
-      i += 2; // markers without a length
-      continue;
-    }
-    if (marker === 0xd9 || marker === 0xda) return null; // end of image, or the scan starts with no frame header
-    const length = ((b[i + 2] as number) << 8) | (b[i + 3] as number);
-    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
-      if (length < 8 || i + 8 >= b.length) return null;
-      return {
-        height: ((b[i + 5] as number) << 8) | (b[i + 6] as number),
-        width: ((b[i + 7] as number) << 8) | (b[i + 8] as number),
-      };
-    }
-    if (length < 2) return null;
-    i += 2 + length;
-  }
-  return null;
 }
 
 const hex = (buf: ArrayBuffer) =>

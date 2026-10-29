@@ -529,3 +529,12 @@ body:has(.savebar) .toasts {
 .signature__alert .field-error {
   margin-top: var(--space-3);
 }
+
+/* FX-3: "We made the image smaller…" after an upload the browser scaled; the live region stays in place, empty, between uploads. */
+.signature__scaled {
+  margin: var(--space-3) 0 0;
+}
+
+.signature__scaled:empty {
+  margin: 0;
+}

@@ -32,6 +32,10 @@ export const SIGNATURE_COPY = {
   wrongFile: Y("Use a PNG or JPEG image up to 256 KB."),
   /** FX-3 (07-Y, pending): after an upload the browser scaled down; the designer places it. */
   scaled: Y("We made the image smaller to fit 800 by 400 pixels."),
+  /** FX-3 (07-Y, pending): the image read fine, but as a PNG it passes 256 KB (a photo-like scan); docs/13 2026-10-29, PNG only. */
+  tooDetailed: Y(
+    "This image is too detailed to keep as a signature. Use a scan on a plain white background.",
+  ),
 } as const;
 
 /** After this long without a PDF the screen says so and offers "Try again" (07-P §3: "after 5 minutes"). */
