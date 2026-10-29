@@ -24,7 +24,7 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     command: `pnpm exec vite --port ${PORT} --strictPort`,
-    url: `${ORIGIN}/api/v1/healthz`,
+    url: `${ORIGIN}/api/v1/health`,
     reuseExistingServer: true,
     timeout: 180_000,
     stdout: "ignore",

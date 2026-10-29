@@ -81,6 +81,8 @@ async function settled(page: Page) {
 }
 
 test.describe("admin sweep", () => {
+  // Each test visits every route (about 45), with axe on each: minutes, not seconds.
+  test.describe.configure({ timeout: 15 * 60_000 });
   let routes: string[] = [];
   test.beforeAll(async ({ browser }) => {
     const page = await browser.newPage();
@@ -127,6 +129,24 @@ test.describe("admin sweep", () => {
       });
     }
   }
+
+  // The other widths of the audit's set (a phone, a laptop, a wide screen): no sideways page scroll, in the light theme.
+  test("every route at 375, 1280 and 1600 px: no sideways page scroll", async ({ page }) => {
+    const problems: string[] = [];
+    for (const width of [375, 1280, 1600]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const route of routes) {
+        await page.goto(route);
+        await settled(page);
+        const d = await page.evaluate(() => [
+          document.documentElement.scrollWidth,
+          document.documentElement.clientWidth,
+        ]);
+        if ((d[0] ?? 0) > (d[1] ?? 0)) problems.push(`${route} at ${width}: ${d[0]} > ${d[1]}`);
+      }
+    }
+    expect(problems, problems.join("\n")).toEqual([]);
+  });
 
   test("a table wider than its box is a keyboard stop that the arrow keys scroll", async ({ page }) => {
     await page.setViewportSize({ width: 768, height: 900 });
