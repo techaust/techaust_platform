@@ -474,6 +474,9 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | Issue a tax invoice for a payment received against a proforma (M5.2; Researched 2026-10-28, 08-C RA-17, RA-19) | ✅ (step-up) | — | — | — |
 | Void an invoice (M5.1; same IST month, not emailed, no payment or note; OPEN, 08-C RA-10) | ✅ (step-up) | — | — | — |
 | Download the stored DUPLICATE FOR SUPPLIER copy (`invoices.supplierCopy`; Rule 48(2), 08-C RA-07) | ✅ | — | — | 👁 |
+| Record the client's IMS answer to a credit note (`invoices.ims`; M5.3, s.34(2) proviso, 08-C RA-04) | ✅ | — | — | — |
+| Send an issued invoice or note, send again, revoke its links, pause its reminders (`invoices.send`; M5.4) | 📤 | 📤 | — | — |
+| Turn on the automatic issue of a client's monthly care invoice (`clients.careAutoIssue`; M5.4, LD58; turning it off is `clients.finance.write`) | ✅ (step-up) | — | — | — |
 | Record manual payment | ✅ (confirmed) | ✏️ → ⏳ pending verification | — | 👁 |
 | Refunds | ✅ (step-up) | — | — | 👁 |
 | Reports | ✅ | Projects, time, care plans | Pipeline only | ✅ finance + exports |

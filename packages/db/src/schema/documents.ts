@@ -388,6 +388,26 @@ export const pdfAsks = sqliteTable("pdf_asks", {
 });
 
 /**
+ * FX-1 (full audit A6 2, JOB-PDF-01): the nightly PDF sweep's memory of each document it could not make. One row per document, written by the jobs Worker only:
+ * `last_attempt_at` when the sweep last picked it (the sweep takes the least recently tried first, so a document that keeps failing never holds the front of
+ * the 20 slots), `nights` the IST days on which its PDF message ran out of tries (`last_failed_day` keeps a second dead letter of the same day from counting
+ * twice). After 3 nights the sweep leaves it alone and the owners get one `pdf.refused` bell; a person's own "try again" still goes straight to the queue.
+ * A new table (`documents` is referenced, never rebuilt); no triggers: a work list, not a record, and nothing personal in it.
+ */
+export const pdfFailures = sqliteTable(
+  "pdf_failures",
+  {
+    documentId: text("document_id")
+      .primaryKey()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    nights: integer("nights").notNull().default(0),
+    lastFailedDay: text("last_failed_day"),
+    lastAttemptAt: integer("last_attempt_at"),
+  },
+  (t) => [check("pdf_failures_nights", sql`${t.nights} >= 0`)],
+);
+
+/**
  * The PDF of one client's statement of account for one currency and range (M5.5b, LD79, JOB-PDF-01, Q19, Q57): a CACHE, not a record. A row is made by
  * the admin API (`POST /clients/:id/statement/pdf`), rendered by the jobs Worker (`pdf.statement`), and deleted with its R2 object after 30 days or when the
  * client is anonymised. No triggers on purpose: nothing here is a document or a ledger. The R2 key is `statements/<client id>/<view_sha256>.pdf`, so identical
