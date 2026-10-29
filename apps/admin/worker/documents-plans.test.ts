@@ -89,6 +89,7 @@ describe("EXPLAIN: no table scan on the lists, the queue, the search and the sen
         fy: "2627",
         pattern: "TH/PRP/%s/%04d",
         argOrder: ["fy", "n"],
+        maxNumber: 9999,
         isFirstVersion,
         groupId: "g",
         version: isFirstVersion ? 1 : 2,

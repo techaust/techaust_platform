@@ -892,7 +892,12 @@ describe("approval.notify for an issue request [ADM-APR-01, ADM-MAIL-01; 07-R §
         event: "requested",
       }),
     ).toBe("none");
-    const done = await issueRequest(w, { status: "approved", invoiceStatus: "issued" });
+    // (its own number: two invoices never print the same one, the index of 0049)
+    const done = await issueRequest(w, {
+      status: "approved",
+      invoiceStatus: "issued",
+      number: "TH/INV/2627/0008",
+    });
     expect(
       await processApprovalNotify(makeEnv(), {
         kind: "approval.notify",

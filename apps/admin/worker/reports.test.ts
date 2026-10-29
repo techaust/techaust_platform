@@ -482,7 +482,8 @@ describe("a client's statement", () => {
   });
 });
 
-describe("the statement PDF", () => {
+// 30 s: statement and PDF work per test; the 5 s default times out under a whole-repo parallel run (FX-1 review).
+describe("the statement PDF", { timeout: 30_000 }, () => {
   const queue = (fail = false) => {
     const sent: unknown[] = [];
     return {

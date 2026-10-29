@@ -263,6 +263,38 @@ describe("numbering [ADM-SET-04]", () => {
     expect((await bad("TH/inv/{FY}/{N}")).status).toBe(400);
   });
 
+  it("two series that could print the same number are refused on both fields; a stored clash never blocks a save of another series (A0 2, 08-C RA-09)", async () => {
+    await clear("numbering");
+    const o = await owner();
+    // The proforma series made to print the tax invoice's numbers.
+    const clash = { ...SETTINGS_DEFAULTS.numbering, proforma: { template: "TH/INV/{FY}/{N}", padding: 4 } };
+    const res = await put(GROUP("numbering"), o.cookie, { version: 0, value: clash });
+    expect(res.status, await res.clone().text()).toBe(400);
+    const body = await json(res);
+    const fields = body.fields as { path: string; message: string }[];
+    expect(fields.map((i) => i.path)).toEqual(["invoice", "proforma"]);
+    expect(fields[1]?.message).toBe(
+      "Numbers in this series could be the same as in the Tax invoice series. Give each series its own letters.",
+    );
+    // The same shape with other digits counts too: "TH/{FY}/0{N}" and "TH/{FY}/{N}" with five digits both print TH/2627/00001.
+    const shape = {
+      ...SETTINGS_DEFAULTS.numbering,
+      receipt: { template: "TH/{FY}/0{N}", padding: 4 },
+      receiptVoucher: { template: "TH/{FY}/{N}", padding: 5 },
+    };
+    expect((await put(GROUP("numbering"), o.cookie, { version: 0, value: shape })).status).toBe(400);
+    // A clash already stored (saved before this rule) does not block a save that changes another series.
+    await env.DB.prepare(
+      "INSERT INTO settings (key, value, version) VALUES ('numbering', ?1, 1) ON CONFLICT (key) DO UPDATE SET value = excluded.value, version = 1",
+    )
+      .bind(JSON.stringify(clash))
+      .run();
+    const other = { ...clash, estimate: { template: "TH/ES/{FY}/{N}", padding: 4 } };
+    const ok = await put(GROUP("numbering"), o.cookie, { version: 1, value: other });
+    expect(ok.status, await ok.clone().text()).toBe(200);
+    await clear("numbering");
+  });
+
   it("an unused series changes its format; the next number can be raised, and only raised", async () => {
     await clear("numbering");
     const o = await owner();

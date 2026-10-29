@@ -153,6 +153,50 @@ export function sqlPrintfPattern(format: NumberingFormat): {
     : { pattern: `${parts.before}${n}${parts.middle}%s${parts.after}`, argOrder: ["n", "fy"] };
 }
 
+/**
+ * Whether two formats could ever print the same number (ADM-SET-04; Researched 2026-10-28, Rules 46(b), 50(b), 51(b) and 53(1A) CGST Rules (08-C RA-09):
+ * a number is unique for the financial year, whichever series it is in). Two tests, either of which refuses the pair:
+ *   1. the brief's rule: the literal text (the template with {FY} and {N} removed) is the same ("TH/{FY}/{N}" and "TH/{N}/{FY}" share "TH//" and both can print "TH/2627/2627");
+ *   2. the shape: written out, each format is a run of literal characters and digit positions (four for {FY}, `padding` for {N}); two formats of the same
+ *      length clash when every position could hold the same character ("TH/{FY}/{N}" with padding 5 and "TH/{FY}/0{N}" with padding 4 both print
+ *      "TH/2627/00001", although their literal text differs). The FY digits are treated as any digit, so the test only ever refuses more, never less.
+ * Unreadable formats never clash here (`validateStoredFormat` refuses them on its own).
+ */
+export function formatsCanClash(a: NumberingFormat, b: NumberingFormat): boolean {
+  const pa = split(a.template);
+  const pb = split(b.template);
+  if (!pa || !pb) return false;
+  if (pa.before + pa.middle + pa.after === pb.before + pb.middle + pb.after) return true;
+  const sa = shapeOf(pa, a.padding);
+  const sb = shapeOf(pb, b.padding);
+  if (sa.length !== sb.length) return false;
+  return sa.every((x, i) => {
+    const y = sb[i] as string;
+    if (x === "#" || y === "#") return /[#0-9]/.test(x) && /[#0-9]/.test(y);
+    return x === y;
+  });
+}
+
+/** A format written out: each literal character as itself, each digit of {FY} or {N} as "#" (any digit). */
+function shapeOf(p: Parts, padding: number): string[] {
+  const fy = "#".repeat(4);
+  const n = "#".repeat(padding);
+  return [...`${p.before}${p.fyFirst ? fy : n}${p.middle}${p.fyFirst ? n : fy}${p.after}`];
+}
+
+/** Every pair of series whose formats could print the same number (`formatsCanClash`), each pair once, in `SERIES` order. */
+export function numberingClashes(
+  formats: Readonly<Partial<Record<Series, NumberingFormat>>>,
+): [Series, Series][] {
+  const keys = (Object.keys(SERIES) as Series[]).filter((s) => formats[s] !== undefined);
+  const out: [Series, Series][] = [];
+  keys.forEach((s, i) => {
+    for (const t of keys.slice(i + 1))
+      if (formatsCanClash(formats[s] as NumberingFormat, formats[t] as NumberingFormat)) out.push([s, t]);
+  });
+  return out;
+}
+
 /** Settings rule: the next number can be raised but never lowered (no reuse) [ADM-SET-04]. */
 export const canSetNextNumber = (current: number, proposed: number): boolean =>
   Number.isSafeInteger(proposed) && proposed >= current;

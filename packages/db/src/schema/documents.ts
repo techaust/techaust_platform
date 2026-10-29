@@ -257,6 +257,14 @@ export const documents = sqliteTable(
     uniqueIndex("documents_number_display")
       .on(t.numberDisplay, t.series, t.version)
       .where(sql`${t.numberDisplay} is not null`),
+    // FX-1 (A0 2; Researched 2026-10-28, Rules 46(b), 50(b), 51(b), 53(1A) CGST Rules (08-C RA-09): a number is unique for the FY, whichever series): no two
+    // invoice-family documents print the same number, even from two series. The backstop of core `numberingClashes` (the Settings save). The type list is
+    // core `INVOICE_FAMILY` written out (the schema imports types only); `test/number-display-index.test.ts` compares the two.
+    uniqueIndex("documents_invoice_number_display")
+      .on(t.numberDisplay)
+      .where(
+        sql`${t.numberDisplay} is not null and ${t.type} in ('proforma', 'tax_invoice', 'export_invoice', 'credit_note', 'debit_note', 'receipt', 'receipt_voucher', 'refund_voucher')`,
+      ),
     uniqueIndex("documents_version")
       .on(t.versionGroupId, t.version)
       .where(sql`${t.versionGroupId} is not null`),
@@ -378,6 +386,26 @@ export const pdfAsks = sqliteTable("pdf_asks", {
   key: text("key").primaryKey(),
   askedAt: integer("asked_at").notNull(),
 });
+
+/**
+ * FX-1 (full audit A6 2, JOB-PDF-01): the nightly PDF sweep's memory of each document it could not make. One row per document, written by the jobs Worker only:
+ * `last_attempt_at` when the sweep last picked it (the sweep takes the least recently tried first, so a document that keeps failing never holds the front of
+ * the 20 slots), `nights` the IST days on which its PDF message ran out of tries (`last_failed_day` keeps a second dead letter of the same day from counting
+ * twice). After 3 nights the sweep leaves it alone and the owners get one `pdf.refused` bell; a person's own "try again" still goes straight to the queue.
+ * A new table (`documents` is referenced, never rebuilt); no triggers: a work list, not a record, and nothing personal in it.
+ */
+export const pdfFailures = sqliteTable(
+  "pdf_failures",
+  {
+    documentId: text("document_id")
+      .primaryKey()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    nights: integer("nights").notNull().default(0),
+    lastFailedDay: text("last_failed_day"),
+    lastAttemptAt: integer("last_attempt_at"),
+  },
+  (t) => [check("pdf_failures_nights", sql`${t.nights} >= 0`)],
+);
 
 /**
  * The PDF of one client's statement of account for one currency and range (M5.5b, LD79, JOB-PDF-01, Q19, Q57): a CACHE, not a record. A row is made by

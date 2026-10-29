@@ -147,21 +147,49 @@ describe("enqueueDue: the cron only enqueues [JOB-CRON-01]", () => {
       makeEnv(),
       {} as ExecutionContext,
     );
-    // M3.5: the same run also sends the nightly statistics, one message per metric (apps/jobs/test/stats.test.ts), M4.3 adds one expiry message (expire.test.ts) and
-    // M5.2 one LUT check (lut-check.test.ts); the purge part is unchanged
+    // M3.5: the same run also sends the nightly statistics, one message per metric (apps/jobs/test/stats.test.ts), M4.3 adds one expiry message (expire.test.ts).
+    // FX-1 (A6 6, changed on purpose): the cron no longer scans; it sends ONE `lead.purge.scan` with no cursor, and the leads-queue consumer does the page.
     const kinds = sent.map((s) => (s as { kind: string }).kind);
-    expect(kinds.filter((k) => k === "lead.purge")).toHaveLength(1);
+    expect(kinds.filter((k) => k === "lead.purge")).toHaveLength(0);
+    expect(sent.filter((s) => (s as { kind: string }).kind === "lead.purge.scan")).toEqual([
+      { kind: "lead.purge.scan", asOf: NOW },
+    ]);
     expect(
       kinds.filter(
         (k) =>
-          k !== "lead.purge" &&
+          k !== "lead.purge.scan" &&
           k !== "stats.metric" &&
           k !== "documents.expire" &&
-          k !== "lut.check" &&
           k !== "statement.purge", // M5.5b: the statement PDF cache clean-up rides the same daily tick (changed on purpose)
       ),
     ).toHaveLength(0);
+    // The scan message, consumed, queues the due lead.
+    const scan = sent.find((s) => (s as { kind: string }).kind === "lead.purge.scan");
+    sent = [];
+    const delivery = {
+      id: "1",
+      timestamp: new Date(),
+      body: scan,
+      attempts: 1,
+      ack: () => {},
+      retry: () => {},
+    };
+    await handleQueue(
+      { queue: "techaust-local-leads", messages: [delivery] } as unknown as MessageBatch<unknown>,
+      makeEnv(),
+    );
+    expect(sent.map((s) => (s as { kind: string }).kind)).toEqual(["lead.purge"]);
     expect(await count("leads")).toBe(1);
+  });
+
+  it("the daily cron reads no D1 (FX-1, A6 6): every part only enqueues", async () => {
+    const dead = new Proxy({}, { get: () => () => Promise.reject(new Error("D1 must not be read")) });
+    await worker.scheduled?.(
+      { cron: PURGE_CRON, scheduledTime: NOW } as ScheduledController,
+      { ...makeEnv(), DB: dead } as unknown as Env,
+      {} as ExecutionContext,
+    );
+    expect(sent.some((s) => (s as { kind: string }).kind === "lead.purge.scan")).toBe(true);
   });
 });
 

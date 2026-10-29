@@ -5,7 +5,8 @@
 //   render    -> reads the envelope from R2 (never from the live rows), verifies every hash, renders the HTML, calls Browser Run (paced:
 //                one call every 10 s), writes the PDF (once), sets `pdf_r2_key` and `pdf_sha256` (set-once after the freeze), counts it.
 //   sweep     -> the daily cron enqueues ONE `pdf.sweep`; it picks at most 20 sent documents without a PDF (`documents_pdf_pending`) and
-//                enqueues a `pdf.snapshot` for each. The cron itself reads nothing.
+//                enqueues a `pdf.snapshot` for each, least recently tried first (`pdf_failures`, FX-1); a document whose PDF failed on 3 IST
+//                days is left out and the owners get one `pdf.refused` bell. The cron itself reads nothing.
 // M4.5 adds to this queue: `pdf.certificate` (the acceptance certificate: the same paced render, the same error table, the same put-once
 // helper; then `offer.accepted` follows) and `offer.sweep` (the waiting offer emails and the missing certificates). After a document's PDF is
 // stored, or found already stored, `onRendered` queues the offer emails that were waiting for it (offers.ts).
@@ -95,6 +96,9 @@ export const BELL_COPY = {
   /** An invoice whose frozen signature image can't be used (missing, other bytes, oversized): 07-R §3. The fix is in Settings, not a developer. */
   invoiceSignature: (label: string) =>
     `The signature image couldn't be used for the PDF of ${label}, so the PDF wasn't made. Check the signature in Settings › Company.`,
+  /** FX-1 (A6 2): a document whose PDF failed on `SWEEP_MAX_FAILED_NIGHTS` nights; the nightly retry stops (kind `pdf.refused`). New wording, for the owner's copy page 07-Y. */
+  stoppedNightly: (label: string) =>
+    `The PDF of ${label} couldn't be made on 3 nights, so the nightly retry has stopped. A developer needs to look at it.`,
   half: "Half of today's PDF allowance is used.",
   quota: "Today's PDF allowance is used up. Waiting PDFs are made tomorrow.",
 } as const;
@@ -700,14 +704,29 @@ export async function processCertificate(
 
 // ---- sweep -----------------------------------------------------------------------------------------------------------------------------
 
-/** The sweep's pick (`?1` the newest `frozen_at` it may take). Exported so a test can EXPLAIN it: it must use `documents_pdf_pending`. */
-export const SWEEP_SQL = `SELECT id FROM documents INDEXED BY documents_pdf_pending
-  WHERE frozen_at IS NOT NULL AND pdf_sha256 IS NULL AND type IN ('proposal', 'estimate', 'tax_invoice', 'export_invoice', 'proforma', 'credit_note', 'debit_note') AND frozen_at <= ?1
+/** After this many IST days on which a document's PDF message ran out of tries, the nightly sweep stops trying it (FX-1, A6 2) and the owners get one `pdf.refused` bell. */
+export const SWEEP_MAX_FAILED_NIGHTS = 3;
+
+/**
+ * The sweep's pick (`?1` the newest `frozen_at` it may take). Exported so a test can EXPLAIN it: it must use `documents_pdf_pending` (the pending set is small; the
+ * order is then a sort of that set). FX-1 (A6 2): the least recently tried first (`pdf_failures.last_attempt_at`, never tried counts as 0), then the oldest; a
+ * document with `SWEEP_MAX_FAILED_NIGHTS` failed nights is left out, as is one with a refusal bell.
+ */
+export const SWEEP_SQL = `SELECT documents.id FROM documents INDEXED BY documents_pdf_pending LEFT JOIN pdf_failures f ON f.document_id = documents.id
+  WHERE documents.frozen_at IS NOT NULL AND documents.pdf_sha256 IS NULL AND documents.type IN ('proposal', 'estimate', 'tax_invoice', 'export_invoice', 'proforma', 'credit_note', 'debit_note') AND documents.frozen_at <= ?1
+    AND coalesce(f.nights, 0) < ${SWEEP_MAX_FAILED_NIGHTS}
     AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL)
     AND NOT EXISTS (SELECT 1 FROM notifications r WHERE r.entity_type = 'document' AND r.entity_id = documents.id AND r.kind = 'pdf.refused')
-  ORDER BY frozen_at LIMIT ${SWEEP_LIMIT}`;
+  ORDER BY coalesce(f.last_attempt_at, 0), documents.frozen_at, documents.id LIMIT ${SWEEP_LIMIT}`;
 
-/** Handles one `pdf.sweep` message: enqueues a snapshot for each sent document that still has no PDF (at most 20 per run). */
+/** The sweep's note that it tried a document (`?1` the document, `?2` the sweep's time). One row per document; the failed nights are left as they are. */
+const SWEEP_ATTEMPT_SQL = `INSERT INTO pdf_failures (document_id, nights, last_attempt_at) VALUES (?1, 0, ?2)
+  ON CONFLICT (document_id) DO UPDATE SET last_attempt_at = excluded.last_attempt_at`;
+
+/**
+ * Handles one `pdf.sweep` message: enqueues a snapshot for each sent document that still has no PDF (at most 20 per run), then records the attempt on each (one
+ * batch), so tomorrow's sweep starts with the ones it tried least recently. The messages go first: a lost attempt row only changes the order, never loses a PDF.
+ */
 export async function processSweep(env: Env, msg: PdfSweepMessage): Promise<number> {
   const { results } = await env.DB.prepare(SWEEP_SQL)
     .bind(msg.asOf - SWEEP_GRACE_MS)
@@ -718,10 +737,24 @@ export async function processSweep(env: Env, msg: PdfSweepMessage): Promise<numb
         body: { v: 1, kind: "pdf.snapshot", documentId: r.id, reason: "sweep" } satisfies PdfSnapshotMessage,
       })),
     );
+    await env.DB.batch(results.map((r) => env.DB.prepare(SWEEP_ATTEMPT_SQL).bind(r.id, msg.asOf)));
   }
   logEvent("pdf.sweep", { picked: results.length });
   return results.length;
 }
+
+/**
+ * A night on which the document's PDF message ran out of tries (`?1` the document, `?2` the IST day, `?3` the time): counted once per IST day (a second dead letter
+ * of the same day, a snapshot and then a render, adds nothing).
+ */
+const FAILED_NIGHT_SQL = `INSERT INTO pdf_failures (document_id, nights, last_failed_day, last_attempt_at) VALUES (?1, 1, ?2, ?3)
+  ON CONFLICT (document_id) DO UPDATE SET nights = nights + CASE WHEN last_failed_day IS excluded.last_failed_day THEN 0 ELSE 1 END,
+    last_failed_day = excluded.last_failed_day, last_attempt_at = max(coalesce(last_attempt_at, 0), excluded.last_attempt_at)`;
+
+/** The owners' one `pdf.refused` bell once a document reaches `SWEEP_MAX_FAILED_NIGHTS` (`?1` the document, `?2` the title, `?3` the link): unique per owner, kind and document. */
+const STOPPED_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
+  SELECT 'n_' || lower(hex(randomblob(16))), u.id, 'pdf.refused', 'document', ?1, ?2, ?3 FROM staff_users u
+  WHERE u.status = 'active' AND u.role = 'owner' AND (SELECT nights FROM pdf_failures WHERE document_id = ?1) >= ${SWEEP_MAX_FAILED_NIGHTS}`;
 
 /** The cron's one job for PDFs: enqueue ONE sweep message. No D1 read. */
 export async function enqueueSweep(env: Env, scheduledTime: number): Promise<void> {
@@ -789,6 +822,7 @@ export async function processPdfDeadLetter(env: Env, body: unknown, now = Date.n
     }
     // An invoice has one version and its own page: no "v1", and the link is the invoice's.
     const invoice = row !== null && isInvoiceFlowType(row.type);
+    const link = invoice ? `/invoices/${body.documentId}` : `/proposals/${body.documentId}`;
     await env.DB.batch([
       bell(
         env,
@@ -798,8 +832,19 @@ export async function processPdfDeadLetter(env: Env, body: unknown, now = Date.n
         invoice
           ? BELL_COPY.failedInvoice(row.number_display ?? "this invoice")
           : BELL_COPY.failed(row?.number_display ?? "this document", row?.version ?? 1),
-        invoice ? `/invoices/${body.documentId}` : `/proposals/${body.documentId}`,
+        link,
       ),
+      // FX-1 (A6 2): the failed night is counted, and at the third the sweep stops and the owners are told once.
+      ...(row
+        ? [
+            env.DB.prepare(FAILED_NIGHT_SQL).bind(body.documentId, todayIst(now), now),
+            env.DB.prepare(STOPPED_BELL_SQL).bind(
+              body.documentId,
+              BELL_COPY.stoppedNightly(documentLabel(row.number_display)),
+              link,
+            ),
+          ]
+        : []),
     ]);
   }
   // A supplier copy that ran out of tries rings no bell (decided, 07-W §5.7, and nothing is lost: the original is made, and the Owner's or Accountant's download asks for the copy

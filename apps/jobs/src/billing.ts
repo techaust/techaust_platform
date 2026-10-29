@@ -27,8 +27,17 @@ export const ALERTS_HOUR_IST = 9;
 export const EDF_REMINDER_DAYS_IST = [5, 6, 7] as const;
 
 /**
- * What the hourly cron queues for a tick: the reminder scan every hour, the care scan at 06:00 IST, and at 09:00 IST the owners' alerts, the export realisation scan (M5.5b, LD76) and, on IST days 5 to 7, the
- * EDF reminder for the PREVIOUS month (January's tick names December of the year before). Pure: no D1 read, nothing but the scheduled time.
+ * FX-1 (A6 7): the care scan and the owners' alerts are queued again at the next two IST hours (07:00 and 08:00, 10:00 and 11:00), so one lost tick or one failed
+ * message is caught the same morning. Both are idempotent: the care scan lists only plans whose current period is not billed yet (and `draftCarePlan` makes one
+ * document per plan and period), and every alert is written once (the email log's entity and the bells' unique key).
+ */
+export const REPEAT_HOURS = 2;
+const inWindow = (hour: number, first: number) => hour >= first && hour <= first + REPEAT_HOURS;
+
+/**
+ * What the hourly cron queues for a tick: the reminder scan every hour, the care scan at 06:00 IST (again at 07:00 and 08:00), the owners' alerts at 09:00 IST (again
+ * at 10:00 and 11:00), and at 09:00 IST only the export realisation scan (M5.5b, LD76) and, on IST days 5 to 7, the EDF reminder for the PREVIOUS month (January's tick
+ * names December of the year before). Pure: no D1 read, nothing but the scheduled time.
  */
 export function hourlyMessages(scheduledTime: number): (BillingMessage | ReportMessage)[] {
   const hour = istHourOf(scheduledTime);
@@ -45,8 +54,10 @@ export function hourlyMessages(scheduledTime: number): (BillingMessage | ReportM
         ]
       : [];
   return [
-    ...(hour === CARE_SCAN_HOUR_IST ? [{ kind: "care.scan", after: null } satisfies BillingMessage] : []),
-    ...(hour === ALERTS_HOUR_IST
+    ...(inWindow(hour, CARE_SCAN_HOUR_IST)
+      ? [{ kind: "care.scan", after: null } satisfies BillingMessage]
+      : []),
+    ...(inWindow(hour, ALERTS_HOUR_IST)
       ? [
           {
             kind: "alerts.daily",

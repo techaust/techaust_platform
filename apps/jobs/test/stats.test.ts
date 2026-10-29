@@ -220,16 +220,20 @@ describe("the date and the cron [item 6]", () => {
       makeEnv(),
       {} as ExecutionContext,
     );
-    // the purge page, the stats batch and (M5.5b, changed on purpose) the statement cache clean-up message (any may finish first)
-    expect(calls).toHaveLength(3);
+    // the stats batch (since FX-1, A6 6, it also carries the clean-up's first scan: the cron reads no D1) and (M5.5b) the statement cache clean-up message
+    expect(calls).toHaveLength(2);
     expect(
       calls.filter((c) => c.bodies.some((b) => (b as { kind?: string }).kind === "statement.purge")),
     ).toHaveLength(1);
-    const purge = calls.find((c) => c.bodies.some((b) => (b as { kind?: string }).kind === "lead.purge"));
     const stats = calls.find((c) => c.bodies.some((b) => (b as { kind?: string }).kind === "stats.metric"));
-    expect(purge?.bodies).toEqual([{ kind: "lead.purge", leadId: "due-1" }]);
-    // one message per metric plus the daily expiry message (M4.3), in the one batch (the LUT check moved to the 09:00 IST alerts in M5.4, LD61)
-    expect(stats?.bodies).toHaveLength(STATS_METRICS.length + 1);
+    // one message per metric, the daily expiry message (M4.3) and the clean-up scan (FX-1), in the one batch (the LUT check moved to the 09:00 IST alerts in M5.4, LD61)
+    expect(stats?.bodies).toHaveLength(STATS_METRICS.length + 2);
+    expect(stats?.bodies.filter((b) => (b as { kind?: string }).kind === "lead.purge.scan")).toEqual([
+      { kind: "lead.purge.scan", asOf: NOW },
+    ]);
+    expect(calls.flatMap((c) => c.bodies).some((b) => (b as { kind?: string }).kind === "lead.purge")).toBe(
+      false,
+    );
     expect(stats?.bodies.filter((b) => (b as { kind?: string }).kind === "documents.expire")).toHaveLength(1);
     expect(stats?.bodies.filter((b) => (b as { kind?: string }).kind === "lut.check")).toHaveLength(0);
     expect(await one<{ n: number }>("SELECT count(*) AS n FROM stats_daily")).toEqual({ n: 0 }); // the cron wrote nothing
@@ -240,7 +244,7 @@ describe("the date and the cron [item 6]", () => {
       LEADS_QUEUE: {
         sendBatch: async (items: { body: unknown }[]) => {
           calls.push({ queue: "leads", bodies: items.map((i) => i.body) });
-          if (items.some((i) => (i.body as { kind?: string }).kind === "lead.purge"))
+          if (items.some((i) => (i.body as { kind?: string }).kind === "statement.purge"))
             throw new Error("queue down");
         },
       },

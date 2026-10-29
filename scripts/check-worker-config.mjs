@@ -109,7 +109,8 @@ export const JOBS_CRONS = ["0 22 * * *", "30 * * * *"];
 /**
  * The jobs Worker's M5.4 wiring (LD57, LD61): in the top level and in `env.staging` both crons and the ADMIN_JOBS service binding to the admin API Worker's `BillingJobs` entrypoint
  * (the API config's Worker name for that scope); in `env.production` NEITHER (production has no D1, queues or admin API until Phase 7, and a production binding to a Worker that
- * does not exist would fail the deploy). Empty = passes.
+ * does not exist would fail the deploy). Empty = passes. FX-1 (A6 3): `triggers` IS inherited by an environment that omits it (wrangler's `EnvironmentInheritable`),
+ * so production must state `"triggers": { "crons": [] }`, present and empty; with no `triggers` there it would run the top level's crons.
  */
 export function jobsConfigProblems(jobs, api) {
   const problems = [];
@@ -121,7 +122,11 @@ export function jobsConfigProblems(jobs, api) {
     const crons = JSON.stringify(c.triggers?.crons ?? []);
     const bound = (c.services ?? []).find((x) => x.binding === "ADMIN_JOBS");
     if (scope === "env.production") {
-      if (c.triggers !== undefined) problems.push(`${scope}: no cron triggers until Phase 7`);
+      if (!Array.isArray(c.triggers?.crons))
+        problems.push(
+          `${scope}: needs "triggers": { "crons": [] } (an environment without its own triggers inherits the top level's)`,
+        );
+      else if (c.triggers.crons.length > 0) problems.push(`${scope}: no cron triggers until Phase 7`);
       if (bound) problems.push(`${scope}: no ADMIN_JOBS service binding until Phase 7`);
       continue;
     }

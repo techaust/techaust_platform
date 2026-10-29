@@ -243,17 +243,19 @@ describe("reminder.send: every stop rule is in the claim, and a final reason is 
     [
       "fully credited by a credit note",
       (w) =>
-        run("UPDATE documents SET status = 'credited', balance_minor = 0 WHERE id = ?1", w.doc.id).then(
-          () => undefined,
-        ),
+        run(
+          "UPDATE documents SET status = 'credited', credited_minor = total_minor, balance_minor = 0 WHERE id = ?1",
+          w.doc.id,
+        ).then(() => undefined),
       "credited",
     ],
     [
       "paid (a payment, M6, simulated by SQL)",
       (w) =>
-        run("UPDATE documents SET status = 'paid', balance_minor = 0 WHERE id = ?1", w.doc.id).then(
-          () => undefined,
-        ),
+        run(
+          "UPDATE documents SET status = 'paid', paid_minor = total_minor, balance_minor = 0 WHERE id = ?1",
+          w.doc.id,
+        ).then(() => undefined),
       "paid",
     ],
     [

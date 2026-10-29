@@ -491,7 +491,9 @@ export type VoidFacts = {
 export function voidBlockers(f: VoidFacts): VoidBlockerCode[] {
   if (f.status === "void") return ["already_void"];
   const out: VoidBlockerCode[] = [];
-  if (f.status !== "issued") out.push("not_issued");
+  // A5 10: "not issued" means not in the live, issued ledger states (a draft, or a converted proforma); a part-paid or part-credited invoice is issued,
+  // and its own blockers (`has_payment`, `has_credit`) say why it cannot be voided.
+  if (!(LEDGER_STATUSES as readonly string[]).includes(f.status)) out.push("not_issued");
   if (f.paidMinor > 0) out.push("has_payment");
   if (f.creditedMinor > 0) out.push("has_credit");
   if (f.hasIssuedChild) out.push("has_child_document");

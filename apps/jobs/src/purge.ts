@@ -1,5 +1,6 @@
 // Lead retention clean-up (M3.2, ADM-LEAD-05, JOB-CRON-01). Researched 2026-10-28, DPDP Act s.8(7), Rule 8 (08-C RB-10) (DPDP retention).
-//   cron (daily 22:00 UTC = 03:30 IST) -> `enqueueDue`: ONLY enqueues. One page of at most LEAD_PURGE_PAGE due leads, one
+//   cron (daily 22:00 UTC = 03:30 IST) -> ONE `lead.purge.scan` message with no cursor (`purgeScanMessage`, in the statistics batch: FX-1, A6 6), so the cron
+//     reads no D1. The consumer of that message -> `enqueueDue`: one page of at most LEAD_PURGE_PAGE due leads, one
 //     `lead.purge` message each on the existing leads queue; if more are due, one `lead.purge.scan` message carries the
 //     keyset cursor on to the next page (consumer-driven, so no invocation does more than one page).
 //   consumer -> `purgeLead`: one lead per message. It re-checks the conditions in SQL (not converted, no legal hold,
@@ -27,6 +28,9 @@ const DUE = `delete_after IS NOT NULL AND delete_after <= ?2 AND ${LEAD_DELETABL
 export const SCAN_SQL = `SELECT id, ref, delete_after AS at FROM leads INDEXED BY leads_delete_due WHERE delete_after <= ?1 AND ${LEAD_DELETABLE_SQL} AND (delete_after, id) > (?2, ?3) ORDER BY delete_after, id LIMIT ${LEAD_PURGE_PAGE + 1}`;
 
 type Cursor = { at: number; id: string };
+
+/** The daily cron's clean-up message: the first page's scan (no cursor), done by the leads-queue consumer (`enqueueDue`). Reads nothing. */
+export const purgeScanMessage = (asOf: number): LeadPurgeScanMessage => ({ kind: "lead.purge.scan", asOf });
 
 /** Enqueues the leads due at `asOf` after `cursor`: at most one page, plus a scan message when more are due. Returns the counts. */
 export async function enqueueDue(

@@ -19,7 +19,10 @@ import type {
   IssuerSnapshot,
   RecipientSnapshot,
 } from "./schema/documents.ts";
+import { DISCOUNT_AFTER_SALE_FROM_SQL, LUT_FOR_FY_SQL } from "./sql-rules.ts";
 
+/** The pure SQL of the rules the triggers share (`sql-rules.ts`, no D1 types, so the Node-only trigger script can read it). */
+export { DISCOUNT_AFTER_SALE_FROM_SQL, fyTokenOfDateSql, LUT_FOR_FY_SQL } from "./sql-rules.ts";
 /** The two frozen blocks of a sent document, for a caller that builds them (type only: nothing of the schema reaches a Worker bundle). */
 export type { InvoiceBankBlock, InvoiceIssuerSnapshot, InvoiceSwiftBlock, IssuerSnapshot, RecipientSnapshot };
 
@@ -32,6 +35,12 @@ export type SendArgs = {
   /** `sqlPrintfPattern(format)` of the settings' numbering format for the series. */
   pattern: string;
   argOrder: readonly ["fy", "n"] | readonly ["n", "fy"];
+  /**
+   * FX-1 (A0 6): `maxNumber(format)` of the series. A first version whose number would pass it refuses the send (the caller answers 409 `series_full`), and
+   * the counter does not move: the same guard as the invoice freeze's. Written into the statement as an integer literal (it is not input: a whole number
+   * from the format's padding), so the placeholders of the stored statement keep their numbers. A later version takes no number and ignores it.
+   */
+  maxNumber: number;
   /** Version 1 (or any non-versioned document) takes the next number; a later version copies its first version's. */
   isFirstVersion: boolean;
   groupId: string;
@@ -112,6 +121,9 @@ export function sendStatements(db: D1Database, a: SendArgs): SendStatements {
   const approval = a.expected.approvalNeeded
     ? " AND EXISTS (SELECT 1 FROM approvals ap WHERE ap.document_id = documents.id AND ap.kind = 'discount' AND ap.status = 'approved' AND ap.content_sha256 = documents.content_sha256)"
     : "";
+  if (!Number.isSafeInteger(a.maxNumber) || a.maxNumber < 1)
+    throw new RangeError(`maxNumber must be a whole number of at least 1, not ${a.maxNumber}`);
+  const seriesRoom = a.isFirstVersion ? `\n         AND ${nextNo} <= ${a.maxNumber}` : "";
   // ?1 id, ?2 series, ?3 fy, ?4 group, ?5 pattern, ?6 now, ?7 issue date, ?8 valid until, ?9 recipient, ?10 issuer, ?11 computed,
   // ?12 snapshot sha, ?13 issued by, ?14 expected updated_at, ?15 expected content sha, ?16 numbering version, and with recipients (M4.5)
   // ?17 the recipients as JSON and ?18 their count. Exactly as many values as the highest placeholder are bound, whichever branch is built
@@ -124,7 +136,7 @@ export function sendStatements(db: D1Database, a: SendArgs): SendStatements {
        WHERE id = ?1 AND status = 'draft' AND frozen_at IS NULL AND updated_at = ?14 AND content_sha256 = ?15
          AND (SELECT version FROM settings WHERE key = 'numbering') IS ?16
          AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.version_group_id = ?4 AND x.status IN ('accepted', 'converted'))
-         AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL)${approval}${recipientGuard}
+         AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL)${seriesRoom}${approval}${recipientGuard}
        RETURNING number_display, valid_until`,
     )
     .bind(
@@ -291,9 +303,6 @@ export type NoteIssueArgs = {
 /** At most this many issued notes of a kind per invoice (core `NOTES_MAX`: a test compares the two; core is not imported here to keep the Worker bundle small). */
 export const NOTES_MAX_SQL = 20;
 
-/** The first IST day a credit note for "Discount after sale" may be dated (core `DISCOUNT_AFTER_SALE_FROM`: a test compares the two; Researched 2026-10-28, 08-C RA-02). */
-export const DISCOUNT_AFTER_SALE_FROM_SQL = "2026-11-01";
-
 /** The parent statuses a note can be issued against: not void, not fully credited (core `ledgerStatusOf`'s other values). */
 const NOTE_PARENT_LIVE = `(${NOTE_PARENT_LIVE_STATUSES.map((s) => `'${s}'`).join(", ")})`;
 
@@ -321,14 +330,6 @@ export const NOTE_COUNTS_SQL = `SELECT c.type, count(*) AS count FROM documents 
 /** The issue instant's freeze test, for the statements that follow it: this very batch froze the document. */
 const FROZEN_BY_THIS_BATCH =
   "EXISTS (SELECT 1 FROM documents n WHERE n.id = ?1 AND n.status = 'issued' AND n.frozen_at = ?2)";
-
-/**
- * Q37: a letter of undertaking with an ARN is saved in the `tax` setting for the FY token `?FY` (the pure twin is core `lutFor`: the `luts` list, and the one
- * legacy `lut {arn, fy}` of M3). Used inside a freeze WHERE, so a LUT removed between the read and the freeze refuses the batch.
- */
-export const LUT_FOR_FY_SQL = `EXISTS (SELECT 1 FROM settings ts WHERE ts.key = 'tax' AND (
-           EXISTS (SELECT 1 FROM json_each(ts.value, '$.luts') l WHERE json_extract(l.value, '$.fy') = ?FY AND trim(coalesce(json_extract(l.value, '$.arn'), '')) <> '')
-           OR (json_extract(ts.value, '$.lut.fy') = ?FY AND trim(coalesce(json_extract(ts.value, '$.lut.arn'), '')) <> '')))`;
 
 /** What every invoice freeze needs, whoever the authority is (the owner, an approval, or the owner's advance action). */
 type FreezeBase = Omit<InvoiceIssueArgs, "authority" | "bell">;
@@ -534,19 +535,17 @@ export function invoiceIssueStatements(db: D1Database, a: InvoiceIssueArgs): Sen
       // RECOMPUTED from the issued, not void credit notes (never incremented: a replay or a concurrent note cannot double count), then the balance and the status
       // follow from it (core `ledgerStatusOf` is the twin of the CASE; a refund due is derived, M6). The invoice's `updated_at` always MOVES (`max(now, old + 1)`): two
       // notes in one millisecond must not leave the stamp a stale draft read. A debit note moves nothing on its invoice (LD42).
+      // FX-1 (A0 4): ONE statement writes the credited total, the balance and the status together, from the same recomputed sum (`s.credited`), so the row is never
+      // seen half written: the trigger `documents_ledger_identity` (0050) checks balance = max(0, total - paid - credited) on every write of the ledger.
       ...(a.note && a.note.kind === "credit"
         ? [
             db
               .prepare(
-                `UPDATE documents SET credited_minor = (SELECT coalesce(sum(c.total_minor), 0) FROM documents c WHERE c.parent_id = ?3 AND c.type = 'credit_note' AND c.frozen_at IS NOT NULL AND c.status <> 'void'), updated_at = max(?2, updated_at + 1)
-                 WHERE id = ?3 AND ${FROZEN_BY_THIS_BATCH}`,
-              )
-              .bind(a.documentId, a.now, a.note.parentId),
-            db
-              .prepare(
-                `UPDATE documents SET balance_minor = max(0, total_minor - paid_minor - credited_minor),
-                   status = CASE WHEN credited_minor >= total_minor THEN 'credited' WHEN paid_minor > 0 AND total_minor - paid_minor - credited_minor <= 0 THEN 'paid' WHEN paid_minor > 0 THEN 'partially_paid' WHEN credited_minor > 0 THEN 'partially_credited' ELSE 'issued' END
-                 WHERE id = ?3 AND ${FROZEN_BY_THIS_BATCH}`,
+                `UPDATE documents SET credited_minor = s.credited, balance_minor = max(0, total_minor - paid_minor - s.credited),
+                   status = CASE WHEN s.credited >= total_minor THEN 'credited' WHEN paid_minor > 0 AND total_minor - paid_minor - s.credited <= 0 THEN 'paid' WHEN paid_minor > 0 THEN 'partially_paid' WHEN s.credited > 0 THEN 'partially_credited' ELSE 'issued' END,
+                   updated_at = max(?2, updated_at + 1)
+                 FROM (SELECT coalesce(sum(c.total_minor), 0) AS credited FROM documents c WHERE c.parent_id = ?3 AND c.type = 'credit_note' AND c.frozen_at IS NOT NULL AND c.status <> 'void') AS s
+                 WHERE documents.id = ?3 AND ${FROZEN_BY_THIS_BATCH}`,
               )
               .bind(a.documentId, a.now, a.note.parentId),
           ]

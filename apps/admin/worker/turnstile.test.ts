@@ -330,7 +330,10 @@ describe("/login and the Turnstile step [ADM-AUTH-06]", () => {
     expect([b.status, await bodyOf(b)]).toEqual([a.status, await bodyOf(a)]);
   });
 
-  it("100 token-less requests never move the counter (a script cannot lock someone else's account)", async () => {
+  // 30 s: 100 sequential requests; the 5 s default times out under a whole-repo parallel run (FX-1 review).
+  it("100 token-less requests never move the counter (a script cannot lock someone else's account)", {
+    timeout: 30_000,
+  }, async () => {
     const e = await enrol("gate-script@example.com");
     const k = await accountKey(e.email);
     for (let i = 0; i < 3; i++) await login(e.email, hash());

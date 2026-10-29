@@ -28,7 +28,9 @@ useFakes();
 // Tests of one file share a database and an issued document is frozen (it cannot be deleted), so every test starts with every earlier export realised (a zero balance is a mutable column)
 // and with only its own owners active (the database refuses to leave no active owner, so the new ones are made first).
 beforeEach(async () => {
-  await run("UPDATE documents SET balance_minor = 0 WHERE type = 'export_invoice'");
+  await run(
+    "UPDATE documents SET paid_minor = total_minor, balance_minor = 0 WHERE type = 'export_invoice' AND balance_minor > 0",
+  );
 });
 
 /** `n` new active owners, and nobody else active as an owner. */
@@ -58,8 +60,10 @@ describe("the 09:00 IST dispatch [LD76]", () => {
       for (let h = 0; h < 24; h++) {
         const kinds = kindsAt(`2026-11-${String(day).padStart(2, "0")}`, h);
         const expected = [
-          ...(h === 6 ? ["care.scan"] : []),
-          ...(h === ALERTS_HOUR_IST ? ["alerts.daily", "realisation.scan"] : []),
+          // FX-1 (A6 7, changed on purpose): the care scan and the alerts repeat at the next two hours; the realisation scan and the EDF reminder do not
+          ...(h >= 6 && h <= 8 ? ["care.scan"] : []),
+          ...(h >= ALERTS_HOUR_IST && h <= ALERTS_HOUR_IST + 2 ? ["alerts.daily"] : []),
+          ...(h === ALERTS_HOUR_IST ? ["realisation.scan"] : []),
           ...(h === ALERTS_HOUR_IST && day >= 5 && day <= 7 ? ["edf.reminder"] : []),
           "reminder.scan",
         ];
@@ -308,7 +312,7 @@ describe("realisation.scan: each stage rings once", () => {
     await owners();
     const ex = await mkExport("2026-11-03");
     await scan(tick("2027-07-10"));
-    await run("UPDATE documents SET balance_minor = 0 WHERE id = ?1", ex.id);
+    await run("UPDATE documents SET credited_minor = total_minor, balance_minor = 0 WHERE id = ?1", ex.id);
     fakes.email.length = 0;
     await scan(tick("2027-08-10")); // would be fema_overdue
     expect(alertEmails()).toEqual([]);

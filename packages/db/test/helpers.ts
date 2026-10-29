@@ -63,7 +63,7 @@ export async function insertDraftInvoice(clientId: string): Promise<string> {
 
 /**
  * The issue batch from docs/05 §5.4, with the number formatted in SQL by core's printf pattern: guard, counter,
- * freeze, post-condition. `issuable` is the same constant the guard trigger is generated from; a test can pass a
+ * freeze, post-condition. The freeze starts the balance at the total, as the real one does (`documents_ledger_identity`, 0050). `issuable` is the same constant the guard trigger is generated from; a test can pass a
  * different list to prove the post-condition catches an UPDATE that matches no row.
  */
 export function issueBatch(
@@ -89,7 +89,7 @@ export function issueBatch(
           SET series = ?1, fy = ?2,
               number = (SELECT next_no - 1 FROM doc_counters WHERE series = ?1 AND fy = ?2),
               number_display = printf(?3, ?2, (SELECT next_no - 1 FROM doc_counters WHERE series = ?1 AND fy = ?2)),
-              status = 'issued', frozen_at = ?4, issue_date = '2026-10-06'
+              status = 'issued', frozen_at = ?4, issue_date = '2026-10-06', balance_minor = total_minor
         WHERE id = ?5 AND status IN (${statuses}) AND frozen_at IS NULL
         RETURNING id`,
     ).bind(series, fy, pattern, now, documentId),

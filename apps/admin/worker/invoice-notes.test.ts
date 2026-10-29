@@ -298,7 +298,7 @@ describe("the creditable amount cannot be exceeded [docs/09 :106, LD40]", () => 
     const aId = (await json(a)).id as string;
     // another credit note takes 60 % by SQL (a second one issued elsewhere): the parent moved
     await env.DB.prepare(
-      "UPDATE documents SET credited_minor = 70800, updated_at = updated_at + 1 WHERE id = ?",
+      "UPDATE documents SET credited_minor = 70800, balance_minor = balance_minor - 70800, updated_at = updated_at + 1 WHERE id = ?",
     )
       .bind(inv.id)
       .run();
@@ -324,7 +324,7 @@ describe("the creditable amount cannot be exceeded [docs/09 :106, LD40]", () => 
       beforeBatchHolding("issue_guard", async () => {
         // a credit note issued by SQL meanwhile: the invoice's ledger moved
         await env.DB.prepare(
-          "UPDATE documents SET credited_minor = 5, updated_at = updated_at + 1 WHERE id = ?",
+          "UPDATE documents SET credited_minor = 5, balance_minor = balance_minor - 5, updated_at = updated_at + 1 WHERE id = ?",
         )
           .bind(inv.id)
           .run();
@@ -1216,7 +1216,10 @@ describe("the seal and the content hash of a note [LD25, LD39]", () => {
     ).toBeGreaterThanOrEqual(400);
   });
 
-  it("discarding a note draft is the invoice DELETE; an issued note cannot be discarded", async () => {
+  // 30 s: issues an invoice and a note first; the 5 s default times out under a whole-repo parallel run (FX-1 review).
+  it("discarding a note draft is the invoice DELETE; an issued note cannot be discarded", {
+    timeout: 30_000,
+  }, async () => {
     const o = await owner();
     const inv = await mkIssuedInvoice(o, { prices: [100_000] });
     const a = await json(await draftCredit(o, inv.id, { mode: "full" }));

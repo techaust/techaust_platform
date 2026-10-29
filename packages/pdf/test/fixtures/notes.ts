@@ -327,7 +327,8 @@ export async function buildNoteFixture(
       type,
       clientId: opts.clientId ?? "cli_sample_1",
       currency: usd ? "USD" : "INR",
-      issueDate: "2026-10-28",
+      // "Discount after sale" is in force for notes dated from 2026-11-01 (08-C RA-02; trigger documents_discount_after_sale_from, 0050).
+      issueDate: spec.reason.code === "discount_after_sale" ? "2026-11-02" : "2026-10-28",
       dueDate: spec.kind === "credit" ? null : "2026-11-04",
       contentSha256: contentSha,
       termsRef: null,

@@ -204,8 +204,17 @@ describe("jobs Worker config guard (M5.4, LD57, LD61)", () => {
   it("the real config passes: both crons and the BillingJobs binding at the top level and in staging, neither in production", () => {
     expect(guard.JOBS_CRONS).toEqual(["0 22 * * *", "30 * * * *"]);
     expect(guard.jobsConfigProblems(jobs, api)).toEqual([]);
-    expect(jobs.env.production.triggers).toBeUndefined();
+    // FX-1 (A6 3): triggers are inherited, so production states an empty list.
+    expect(jobs.env.production.triggers).toEqual({ crons: [] });
     expect(jobs.env.production.services).toBeUndefined();
+  });
+
+  it("production without its own triggers would inherit the crons: refused (FX-1, A6 3)", () => {
+    const d = structuredClone(jobs);
+    d.env.production.triggers = undefined;
+    expect(guard.jobsConfigProblems(d, api)).toEqual([
+      'env.production: needs "triggers": { "crons": [] } (an environment without its own triggers inherits the top level\'s)',
+    ]);
   });
 
   it("fails a missing hourly cron, a missing or mispointed binding or entrypoint, and anything in production", () => {

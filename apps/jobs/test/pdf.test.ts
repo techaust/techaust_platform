@@ -523,13 +523,86 @@ describe("the sweep", () => {
     expect(queue.sent.map((x) => (x.body as { documentId?: string }).documentId)).not.toContain(s.id);
   });
 
-  it("is a single index range scan on documents_pdf_pending", async () => {
+  it("reads only the pending documents (documents_pdf_pending) and finds each one's failures by key", async () => {
     const plan = (await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${SWEEP_SQL.replace("?1", "1")}`)).map(
       (r) => r.detail,
     );
     expect(plan.join("\n")).toContain("documents_pdf_pending");
     expect(plan.join("\n")).not.toMatch(/SCAN documents(?! USING)/);
-    expect(plan.join("\n")).not.toContain("TEMP B-TREE");
+    expect(plan.join("\n")).not.toMatch(/SCAN f\b|SCAN pdf_failures/);
+    // FX-1 (A6 2): the order by last attempt is a sort of the pending set (documents without a PDF: a small set), not of the table.
+  });
+
+  it("FX-1 (A6 2): the least recently tried go first, so a document that keeps failing never holds the front of the 20 slots", async () => {
+    const base = Date.now() - 7_200_000;
+    const ids: string[] = [];
+    for (let i = 0; i < 22; i++) ids.push((await seedSent({ now: base + i * 1000 })).id);
+    const asOf = base + 3_600_000;
+    const sweep = async (at: number) => {
+      const queue = fakeQueue();
+      const { env } = makeEnv({}, queue);
+      await processSweep(env, { v: 1, kind: "pdf.sweep", asOf: at });
+      return queue.sent
+        .map((x) => (x.body as { documentId: string }).documentId)
+        .filter((id) => ids.includes(id));
+    };
+    // (older pending rows of this file's other tests may come first; only this test's documents are compared)
+    const first = await sweep(asOf);
+    expect(first.length).toBeGreaterThan(0);
+    // Every picked document records the attempt; the next night the ones not tried yet come before them.
+    const attempts = await all<{ document_id: string; last_attempt_at: number; nights: number }>(
+      `SELECT document_id, last_attempt_at, nights FROM pdf_failures WHERE document_id IN (${first.map(() => "?").join(", ")})`,
+      ...first,
+    );
+    expect(attempts.every((a) => a.last_attempt_at === asOf && a.nights === 0)).toBe(true);
+    const untried = ids.filter((id) => !first.includes(id));
+    const second = await sweep(asOf + 86_400_000);
+    expect(second.slice(0, untried.length)).toEqual(untried);
+  });
+
+  it("FX-1 (A6 2): failed nights are counted once per IST day; after 3 the sweep leaves the document alone and the owners get one pdf.refused bell", async () => {
+    const s = await seedSent({ now: Date.now() - 7_200_000 });
+    const queue = fakeQueue();
+    const { env } = makeEnv({}, queue);
+    const day = 86_400_000;
+    const dead = (at: number) =>
+      processPdfDeadLetter(env, { v: 1, kind: "pdf.render", documentId: s.id, hop: 1 }, at);
+    await dead(T0);
+    await processPdfDeadLetter(
+      env,
+      { v: 1, kind: "pdf.snapshot", documentId: s.id, reason: "sweep" },
+      T0 + 60_000,
+    );
+    const nights = async () =>
+      (await all<{ nights: number }>("SELECT nights FROM pdf_failures WHERE document_id = ?", s.id))[0]
+        ?.nights;
+    expect(await nights()).toBe(1);
+    await dead(T0 + day);
+    expect(await nights()).toBe(2);
+    const refused = () =>
+      all<{ title: string; link: string }>(
+        "SELECT title, link FROM notifications WHERE kind = 'pdf.refused' AND entity_id = ?",
+        s.id,
+      );
+    expect(await refused()).toEqual([]);
+    const picked = async () => {
+      queue.sent.length = 0;
+      await processSweep(env, { v: 1, kind: "pdf.sweep", asOf: Date.now() });
+      return queue.sent.map((x) => (x.body as { documentId: string }).documentId);
+    };
+    expect(await picked()).toContain(s.id);
+    await dead(T0 + 2 * day);
+    expect(await nights()).toBe(3);
+    const bells = await refused();
+    expect(bells.length).toBeGreaterThan(0);
+    expect(bells[0]).toEqual({
+      title: BELL_COPY.stoppedNightly(documentLabel(s.numberDisplay)),
+      link: `/proposals/${s.id}`,
+    });
+    expect(await picked()).not.toContain(s.id);
+    // a fourth night rings nothing new
+    await dead(T0 + 3 * day);
+    expect((await refused()).length).toBe(bells.length);
   });
 });
 

@@ -5,9 +5,11 @@ import {
   canSetNextNumber,
   defaultFormat,
   formatDocumentNumber,
+  formatsCanClash,
   MAX_NUMBER_LENGTH,
   maxNumber,
   type NumberingFormat,
+  numberingClashes,
   parseDocumentNumber,
   SERIES,
   type Series,
@@ -225,5 +227,81 @@ describe("a stored format reads under the pre-M5.1 rules; the first-character ru
       expect(() => sqlPrintfPattern(f)).not.toThrow();
     }
     expect(formatDocumentNumber({ template: "{N}/{FY}", padding: 4 }, fy2627, 7)).toBe("0007/2627");
+  });
+});
+
+describe("no two series can print the same number [ADM-SET-04, A0 2]", () => {
+  const f = (template: string, padding = 4): NumberingFormat => ({ template, padding });
+
+  it("the default formats never clash", () => {
+    const all = Object.fromEntries((Object.keys(SERIES) as Series[]).map((s) => [s, defaultFormat(s)]));
+    expect(numberingClashes(all)).toEqual([]);
+  });
+
+  it("the same literal text clashes (the brief's rule), and so does the same shape", () => {
+    expect(formatsCanClash(f("TH/INV/{FY}/{N}"), f("TH/INV/{FY}/{N}"))).toBe(true);
+    expect(formatsCanClash(f("TH/INV/{FY}/{N}"), f("TH/INV{FY}//{N}"))).toBe(true);
+    // Different literal text, same printed number: "TH/2627/00001" both ways.
+    expect(formatDocumentNumber(f("TH/{FY}/{N}", 5), fy2627, 1)).toBe(
+      formatDocumentNumber(f("TH/{FY}/0{N}", 4), fy2627, 1),
+    );
+    expect(formatsCanClash(f("TH/{FY}/{N}", 5), f("TH/{FY}/0{N}", 4))).toBe(true);
+    // Different letters, lengths or separators never clash.
+    expect(formatsCanClash(f("TH/INV/{FY}/{N}"), f("TH/EXP/{FY}/{N}"))).toBe(false);
+    // The brief's rule refuses the same text with another padding too (the numbers differ in length, but a reader could not tell the series apart).
+    expect(formatsCanClash(f("TH/{FY}/{N}", 4), f("TH/{FY}/{N}", 5))).toBe(true);
+    expect(formatsCanClash(f("TH/A/{FY}/{N}", 4), f("TH/{FY}/A/{N}", 4))).toBe(false);
+    expect(formatsCanClash(f("TH/{FY}/{N}"), f("TH-{FY}/{N}"))).toBe(false);
+    expect(formatsCanClash(f("TH/1/{FY}/{N}"), f("TH/2/{FY}/{N}"))).toBe(false);
+    // A format that cannot be read never clashes here (validateStoredFormat refuses it).
+    expect(formatsCanClash(f("TH/{N}"), f("TH/{N}"))).toBe(false);
+  });
+
+  it("lists every clashing pair once, in SERIES order", () => {
+    expect(
+      numberingClashes({
+        invoice: f("TH/A/{FY}/{N}"),
+        export: f("TH/B/{FY}/{N}"),
+        proforma: f("TH/A/{FY}/{N}"),
+        proposal: f("TH/A/{FY}/{N}"),
+      }),
+    ).toEqual([
+      ["invoice", "proforma"],
+      ["invoice", "proposal"],
+      ["proforma", "proposal"],
+    ]);
+  });
+
+  it("is sound: whenever one format's number reads as another's, the pair is a clash (property)", () => {
+    const part = fc.string({ unit: fc.constantFrom("A", "0", "1", "/"), maxLength: 3 });
+    const format = fc
+      .record({
+        before: part,
+        middle: part,
+        after: part,
+        fyFirst: fc.boolean(),
+        padding: fc.integer({ min: 1, max: 4 }),
+      })
+      .map(
+        (p): NumberingFormat => ({
+          template: `${p.before}${p.fyFirst ? "{FY}" : "{N}"}${p.middle || "/"}${p.fyFirst ? "{N}" : "{FY}"}${p.after}`,
+          padding: p.padding,
+        }),
+      )
+      .filter((x) => validateStoredFormat(x).ok);
+    fc.assert(
+      fc.property(
+        format,
+        format,
+        fc.integer({ min: 2000, max: 2098 }),
+        fc.integer({ min: 1, max: 9999 }),
+        (a, b, year, raw) => {
+          const text = formatDocumentNumber(a, financialYear(year), (raw % maxNumber(a)) + 1);
+          if (parseDocumentNumber(b, text) !== null) expect(formatsCanClash(a, b)).toBe(true);
+          expect(formatsCanClash(a, b)).toBe(formatsCanClash(b, a));
+        },
+      ),
+      { numRuns: 3000 },
+    );
   });
 });

@@ -374,7 +374,10 @@ describe("numbering and versions [ADM-PROP-05, ADM-INV-03; V5, V6, V7, V8, V9]",
     expect(sent.number).toMatch(new RegExp(`^TH/EST/${fyToken()}/\\d{4}$`));
   });
 
-  it("V8: 20 drafts sent in parallel get 20 consecutive numbers; two sends of one draft: one wins", async () => {
+  // 30 s: 20 parallel send batches; the 5 s default times out under a whole-repo parallel run (FX-1 review).
+  it("V8: 20 drafts sent in parallel get 20 consecutive numbers; two sends of one draft: one wins", {
+    timeout: 30_000,
+  }, async () => {
     const o = await owner();
     const drafts = [];
     for (let i = 0; i < 20; i++) drafts.push(await mkDraft(o));
