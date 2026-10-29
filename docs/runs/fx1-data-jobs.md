@@ -170,7 +170,7 @@ Builder claude-opus-5-5, high, 2026-10-29. Branch `fix/fx1-builder` (from `origi
 
 **Item 11 (A6 4, JOB-Q-01):**
 - `emailRetryDelay(attempts)` = min(3,600, 60 × 2^(attempts − 1)), used for an SES `retry` answer and in the catch-all, for the email queue only; the other queues keep their delays.
-- Email consumer `max_retries` 5 → 10, top level and staging (production has no queue). That rides out about 4 h 45 min of SES trouble before the dead letter.
+- Email consumer `max_retries` 5 → 10, top level and staging (production has no queue). That rides out about 4 to 5 hours of SES trouble (review low 5) before the dead letter.
 - `apps/jobs/src/email.ts` records that the 8 s transport timeout can send twice, and that at-least-once delivery is accepted.
 - Tests: the delay table; an SES 503 through `handleQueue` at attempts 1, 4 and 9; a throwing consumer at attempt 3.
 
@@ -239,3 +239,22 @@ Builder claude-opus-5-5, high, 2026-10-29. Branch `fix/fx1-builder` (from `origi
 - `apps/web/test/worker-config.test.ts` is touched by this task (item 10 guard tests): watch for an FX-2 overlap at merge.
 
 **Open questions:** none for the owner.
+
+## Review (reviewer claude-opus-5-5/high, 2026-10-29, on 9e78de83): APPROVE
+- **Findings:** no critical, high or medium. No migration change needed.
+- **Confirmed:** all 14 items and both early-check changes match their findings, including:
+  - the ledger identity against every write path;
+  - the 3-night PDF stop with one bell;
+  - the email backoff;
+  - the cron reading no D1;
+  - repeat-idempotency of the care scan and alerts proved in SQL, also across a mid-day deploy.
+- **Tests:** db 470, core (98.98 % statements), jobs 525, admin 3,230 (alone), worker-config 39; `pnpm check` exit 0.
+- **Low findings:**
+  1. The SES rotation's two `wrangler secret put` calls leave a gap of a few seconds. Store both in one Worker version (`wrangler secret bulk` from stdin, or `wrangler versions secret put` twice and then one deploy, checked against the pinned wrangler's `--help`). **Follow-up before the next rotation (due by 2027-01-21).**
+  2. A "night" counts any IST day with a dead letter, not only sweep nights. Harmless: it stops earlier, never later. **The 07-Y bell wording says "on 3 days".**
+  3. Every swept document gets a `pdf_failures` row, and stopped documents stay in the pending index (negligible today). **Follow-up for M7.4:** delete the row once `pdf_sha256` is set.
+  4. Wrong example in the `numbering.ts` comment. **Fixed by the lead.**
+  5. "4 h 45 min" should be "about 4 to 5 hours". **Fixed by the lead** (`queue.ts`, this file).
+  6. `environments.md` stated the deploy order as a fact. **Fixed by the lead** ("currently … not guaranteed until A6 8").
+  7. The care repeat test sets `last_billed_period` by hand. No change: admin's tests prove `already_billed`.
+- **The four slow admin tests:** each now has a 30 s timeout with its reason (`documents-send` V8, `invoice-notes` discard, the `reports` statement PDF block, `turnstile` 100 requests). The four files pass (147 tests); numbering passes (28).

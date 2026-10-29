@@ -1216,7 +1216,10 @@ describe("the seal and the content hash of a note [LD25, LD39]", () => {
     ).toBeGreaterThanOrEqual(400);
   });
 
-  it("discarding a note draft is the invoice DELETE; an issued note cannot be discarded", async () => {
+  // 30 s: issues an invoice and a note first; the 5 s default times out under a whole-repo parallel run (FX-1 review).
+  it("discarding a note draft is the invoice DELETE; an issued note cannot be discarded", {
+    timeout: 30_000,
+  }, async () => {
     const o = await owner();
     const inv = await mkIssuedInvoice(o, { prices: [100_000] });
     const a = await json(await draftCredit(o, inv.id, { mode: "full" }));

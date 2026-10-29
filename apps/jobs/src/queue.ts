@@ -43,7 +43,7 @@ export const dlqRetryDelay = (attempts: number): number =>
 
 /**
  * FX-1 (A6 4): an email that SES answered with a retry (throttling, a 5xx, a network error or the 8 s timeout), or whose consumer threw, comes back after 60 s,
- * doubling each try up to 1 hour. With the email queue's `max_retries` of 10 (wrangler.jsonc) that rides out about 4 h 45 min of SES trouble before the dead
+ * doubling each try up to 1 hour. With the email queue's `max_retries` of 10 (wrangler.jsonc) that rides out about 4 to 5 hours of SES trouble before the dead
  * letter; a fixed 30 s with 5 tries gave up after about 2 minutes.
  */
 export const EMAIL_RETRY_FIRST_S = 60;
