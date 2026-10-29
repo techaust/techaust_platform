@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs without types
@@ -164,8 +164,8 @@ describe("the SessionStart hook", () => {
       expect(r.stdout + r.stderr).toBe("");
     },
   );
-  // M1: the model check. The cloud path runs here in an empty folder, where every project step fails at once (named in the
-  // summary), so only the model line, the env file and the exit code are read.
+  // M1: the model check. The cloud path runs here in an empty folder with a stand-in `pnpm` that fails at once, so every project
+  // step fails quickly (named in the summary) and only the model line, the env file and the exit code are read.
   it.skipIf(!hasBash)(
     "in a cloud session, a model other than Opus 5.5 leads the summary; Opus 5.5, no model or no input does not",
     { timeout: 120_000 },
@@ -175,10 +175,15 @@ describe("the SessionStart hook", () => {
         try {
           const envFile = join(dir, "env");
           writeFileSync(envFile, "");
+          mkdirSync(join(dir, "bin"));
+          writeFileSync(join(dir, "bin", "pnpm"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+          const { CLAUDE_CODE_REMOTE: _r, CLAUDE_ENV_FILE: _e, ...base } = process.env;
+          const pathKey = Object.keys(base).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
           const r = spawnSync(BASH, ["scripts/cloud-session-start.sh"], {
             cwd: ROOT,
             env: {
-              ...process.env,
+              ...base,
+              [pathKey]: `${join(dir, "bin")}${delimiter}${base[pathKey] ?? ""}`,
               CLAUDE_CODE_REMOTE: "true",
               CLAUDE_ENV_FILE: envFile,
               CLAUDE_PROJECT_DIR: dir,
