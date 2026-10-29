@@ -71,6 +71,17 @@ describe("public_text_refused on the Publish tab", () => {
     ]);
   });
 
+  it("FX-2 review, finding 1: the straight-apostrophe and unrendered rules have their own words", () => {
+    const groups = publicTextProblems(
+      [{ path: "items.S1.name", issues: [{ rule: "straight_apostrophe" }, { rule: "unrendered" }] }],
+      ON_SITE,
+    );
+    expect(groups[0]?.lines).toEqual([
+      `${MARK}Name: ${W.straightApostrophe}`,
+      `${MARK}Name: ${W.unrendered}`,
+    ]);
+  });
+
   it("reads only well-formed fields from the answer", () => {
     expect(
       publicTextFields([

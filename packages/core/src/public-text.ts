@@ -77,7 +77,34 @@ export const hasTypedAmount = (text: string): boolean => TYPED_AMOUNT.test(text)
 /** The site writes "and", never "&" (docs/07; WEB-G-14 house style). */
 export const hasAmpersand = (text: string): boolean => text.includes("&");
 
-export type PublicTextRule = "ampersand" | "banned_phrase" | "typed_amount";
+/**
+ * Content the website's renderer should have consumed, which must never reach a visitor: `{{`/`}}` tokens, `**` bold marks and the
+ * arrows → and ↔ (not in the fonts). Global: shared with the build check `checkLeftovers` (scripts/web-dist-checks.mjs).
+ */
+export const UNRENDERED = /\{\{|\}\}|\*\*|→|↔/g;
+/** The straight apostrophe the website never shows (docs/07 writes ’ and ‘ ’); global, shared with `checkApostrophes`. */
+export const STRAIGHT_APOSTROPHE = /'/g;
+const has = (re: RegExp, text: string): boolean => {
+  re.lastIndex = 0;
+  const hit = re.test(text);
+  re.lastIndex = 0;
+  return hit;
+};
+/** Whether `text` holds content the renderer should have consumed (see UNRENDERED). */
+export const hasUnrendered = (text: string): boolean => has(UNRENDERED, text);
+/** Whether `text` holds a straight apostrophe (see STRAIGHT_APOSTROPHE). */
+export const hasStraightApostrophe = (text: string): boolean => has(STRAIGHT_APOSTROPHE, text);
+
+/**
+ * The rules a catalogue publish checks: every rule the website's build checks (scripts/web-dist-checks.mjs) apply to the visible text
+ * a snapshot field can become, so a publish the admin accepts never fails the staging deploy (FX-2 review, finding 1).
+ */
+export type PublicTextRule =
+  | "ampersand"
+  | "banned_phrase"
+  | "typed_amount"
+  | "straight_apostrophe"
+  | "unrendered";
 export type PublicTextIssue = { rule: PublicTextRule; phrase?: string };
 
 /** Every rule `text` breaks, in rule order; a banned phrase is named by its id (never the surrounding text). */
@@ -87,6 +114,8 @@ export function publicTextIssues(text: string): PublicTextIssue[] {
   for (const id of new Set(findBannedPhrases(text).map((f) => f.id)))
     issues.push({ rule: "banned_phrase", phrase: id });
   if (hasTypedAmount(text)) issues.push({ rule: "typed_amount" });
+  if (hasStraightApostrophe(text)) issues.push({ rule: "straight_apostrophe" });
+  if (hasUnrendered(text)) issues.push({ rule: "unrendered" });
   return issues;
 }
 

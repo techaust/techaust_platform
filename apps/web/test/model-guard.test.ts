@@ -21,7 +21,9 @@ function hook(toolInput: Record<string, unknown>, toolName = "Agent") {
   });
 }
 
-describe("model-guard: Agent calls [docs/14 section 6]", () => {
+// Each test starts the hook as a node process, up to 10 one after another: 30 s, not the default 5 s, so a loaded machine does not
+// fail it (FX-2 review, finding 3).
+describe("model-guard: Agent calls [docs/14 section 6]", { timeout: 30_000 }, () => {
   it("refuses an Agent call with no subagent_type (it would start general-purpose)", async () => {
     for (const input of [
       { prompt: "x" },

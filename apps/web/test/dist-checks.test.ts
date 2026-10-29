@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { describe, expect, it } from "vitest";
+import { publicTextIssues } from "../../../packages/core/src/public-text.ts";
 // @ts-expect-error plain .mjs without types
 import * as c from "../../../scripts/web-dist-checks.mjs";
 
@@ -322,5 +323,31 @@ describe("links off techaust.com open in a new tab and say so (owner, 2026-10-23
   it("keeps the note in step with the shell copy", async () => {
     const { shell } = await import("../src/content/shell");
     expect(shell.newTab).toBe(c.NEW_TAB_TEXT);
+  });
+});
+
+// FX-2 review, finding 1: every rule the build applies to the visible text a catalogue snapshot field can become has a twin in the
+// admin's publish check (@techaust/core public-text.ts), so a publish the admin accepts never fails the staging deploy's dist check.
+describe("the catalogue publish refuses whatever the visible-text build checks would", () => {
+  const page = (t: string) =>
+    `<!doctype html><html><head><title>T</title></head><body><p>${t}</p></body></html>`;
+  const samples = [
+    "Founder's care plan",
+    "On **start** {{x}}",
+    "Final → delivery",
+    "Tally ↔ Zoho",
+    "half }}",
+    "Web and app builds",
+    "Founder’s care plan",
+    "Guaranteed results",
+    "Fees from ₹5,000",
+  ];
+  it.each(samples)("%s", (t) => {
+    const built =
+      [...c.checkLeftovers("a.html", page(t)), ...c.checkApostrophes("a.html", page(t))].length > 0;
+    const refused = publicTextIssues(t).some(
+      (i) => i.rule === "unrendered" || i.rule === "straight_apostrophe",
+    );
+    expect(refused).toBe(built);
   });
 });

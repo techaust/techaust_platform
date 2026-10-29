@@ -31,11 +31,48 @@ export const FORBIDDEN_SOURCES = {
   portal: ["'wasm-unsafe-eval'", "https://api.pwnedpasswords.com"],
 };
 
+/** The headers the `/*` block must set; no other block may set or detach them (FX-2 review, finding 4). */
+const REQUIRED_HEADERS = [
+  "strict-transport-security",
+  "x-content-type-options",
+  "referrer-policy",
+  "permissions-policy",
+  "cross-origin-opener-policy",
+  "cross-origin-resource-policy",
+  "x-robots-tag",
+  "content-security-policy",
+];
+
+/**
+ * A required header set or detached (`! Name`) anywhere but the `/*` block: Cloudflare applies every matching block, so a narrower
+ * path with a weaker value, or a `! Content-Security-Policy` on `/index.html`, would serve the SPA without the policy the guard checked.
+ */
+function outsideRootBlock(text) {
+  const out = [];
+  let block = null;
+  for (const raw of text.split(/\r?\n/)) {
+    if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
+    if (!/^\s/.test(raw)) {
+      block = raw.trim();
+      continue;
+    }
+    const line = raw.trim();
+    const detached = line.startsWith("!");
+    const name = (detached ? line.slice(1) : (line.split(":")[0] ?? "")).trim().toLowerCase();
+    if (!REQUIRED_HEADERS.includes(name)) continue;
+    if (detached) out.push(`${block ?? "(no path)"} detaches ${name}`);
+    else if (block !== "/*") out.push(`${block ?? "(no path)"} sets ${name} outside the /* block`);
+  }
+  return out;
+}
+
 /** Problems with the `/*` block of one SPA's `_headers` text (empty = the docs/08 section 3.1 set is there). */
 export function checkSpaHeaders(app, text) {
   const p = (m) => `${app} _headers: ${m}`;
   const h = parseHeaders(text);
-  const problems = [];
+  const problems = outsideRootBlock(text).map((m) =>
+    p(`${m}: the security headers are set once, on /*, for every path`),
+  );
 
   const hsts = h["strict-transport-security"] ?? "";
   const maxAge = Number(/max-age=(\d+)/i.exec(hsts)?.[1] ?? 0);
@@ -75,12 +112,13 @@ export function checkSpaHeaders(app, text) {
   if (!is("base-uri", "'none'") && !is("base-uri", "'self'"))
     problems.push(p("CSP base-uri must be 'none' or 'self'"));
   if (!csp["form-action"]) problems.push(p("CSP has no form-action"));
-  // Turnstile: its script host and its frame go together (developers.cloudflare.com/turnstile/reference/content-security-policy).
+  // Turnstile: its script host and its frame, both required (developers.cloudflare.com/turnstile/reference/content-security-policy).
+  // Both SPAs show the widget at sign-in (the portal always, the admin after 3 failures; M2.4b), so a policy without it would block
+  // sign-in while the build stayed green (FX-2 review, finding 5).
   const turnstile = "https://challenges.cloudflare.com";
-  if ((csp["script-src"] ?? []).includes(turnstile) !== (csp["frame-src"] ?? []).includes(turnstile))
-    problems.push(
-      p(`CSP must list ${turnstile} in both script-src and frame-src (the Turnstile widget), or in neither`),
-    );
+  for (const dir of ["script-src", "frame-src"])
+    if (!(csp[dir] ?? []).includes(turnstile))
+      problems.push(p(`CSP ${dir} must list ${turnstile} (the Turnstile widget at sign-in)`));
   const all = Object.values(csp).flat();
   for (const bad of FORBIDDEN_SOURCES[app] ?? [])
     if (all.includes(bad)) problems.push(p(`CSP must not allow ${bad} (${app} does not need it)`));

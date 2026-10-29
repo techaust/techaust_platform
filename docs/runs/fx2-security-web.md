@@ -1,4 +1,4 @@
-Status: open
+Status: PR opened (2026-10-29)
 Tier: B
 Usage:
 
@@ -179,3 +179,71 @@ The group headings reuse approved words (the service's code and name; "Settings 
 1. **sharp for the headshot (owner's yes, no download):** add `"sharp": "0.35.5"` (already in the lockfile, used by `packages/ui` and astro's optional dependency) to `apps/web` devDependencies, so the build can convert the photo when it arrives. Until then a set `site.founderPhoto` fails the build with `MissingSharp`. Recommended before the owner supplies the photo.
 2. The admin publish lines above go on 07-Y.
 3. The two flaky timeouts (db care grid test, web model-guard test) run near 5 s on this machine under load; the lead may want a longer timeout on them (not this task's files).
+
+## Review (reviewer claude-opus-5-5/high, 2026-10-29 ~11:00–11:55 IST, on 4b75a4fe): APPROVE
+_(Summary by the lead; the reviewer's full text is in the conversation record. Shots: `.logs/shots/fx2-review/` in the main checkout.)_
+
+**Every brief item is done**, checked against file and line:
+- **Portal headers:**
+  - served live, with Turnstile working under the CSP;
+  - the rupee fonts load as files.
+- **CORP:**
+  - the `/brand/*` detach answers 200 without CORP for the email logo.
+- **API headers:** served.
+- **Prod readiness:** checked.
+- **Publish guard:** it covers every snapshot text field.
+- **Quote list:** built from the snapshot, with parity tests.
+- **Website pages:** all 37 pages × 4 widths × 2 themes:
+  - no CSP violation;
+  - one stylesheet;
+  - no straight apostrophe;
+  - no sideways scroll;
+  - 148 axe runs, 0 problems.
+- **/security, footer, landmarks:** verified.
+- **Admin publish refusal:** verified live in both themes, and axe found 0.
+- **Tests:**
+  - full `pnpm test`: 8,254 passed;
+  - e2e: 175 passed;
+  - `pnpm check`: exit 0.
+- **Admin API:** 602,523 bytes.
+
+**Model guard and the owner's exception (2026-10-22): not broken.** The `code-review` helper is started by the Skill tool itself (a forked run), not by an Agent call. The 18 `general-purpose` runs in the logs all have a parent with a `Skill` call and no Agent call. The new guard allows `{"tool_name":"Skill",…}` (and the hook's `Agent|Bash` matcher never sends it), while it denies an untyped Agent call and `general-purpose`.
+
+**`sharp`:** confirmed in the lockfile (0.35.5, `packages/ui` devDependency and astro's optional dependency). Adding it to `apps/web` devDependencies changes only that importer block: no download and no `allowBuilds` entry. **Needs the owner's yes (rule 11).**
+
+**Findings:**
+1. **Medium:** the publish guard was narrower than the dist checks `deploy:staging` now runs. An apostrophe in a service name would pass publish, then fail every 30-minute publish workflow.
+2. **Medium:** the refusal's links were 18–69 px tall, against the 44 px project rule (WCAG 2.5.8 is met through its spacing exception).
+3. **Low:** the model-guard tests have a 5 s timeout (flaky under load).
+4. **Low:** the SPA header guard read only the `/*` block, so a narrower path, or a `! Content-Security-Policy`, could slip through.
+5. **Low:** the guard accepted Turnstile in neither CSP directive.
+
+**Also from the reviewer's code-review helper (on `main`'s M5 code, not FX-2):** a hidden Scope after conversion, damaged-render browser time, and non-Flate streams in the integrity check. These were handed to FX-3 round 3.
+
+## Fixes (lead, 2026-10-29 ~12:00–12:40 IST)
+1. **Publish rules:** `publicTextIssues` gains `straight_apostrophe` and `unrendered` (`{{`, `}}`, `**`, `→`, `↔`).
+   - `scripts/web-dist-checks.mjs` imports the same patterns (`STRAIGHT_APOSTROPHE`, `UNRENDERED`) from `@techaust/core` `public-text.ts`.
+   - A twin test in `apps/web/test/dist-checks.test.ts` proves that publish refuses exactly what `checkLeftovers` and `checkApostrophes` would.
+   - The admin refusal has words for both rules, as 07-Y placeholders: "uses a straight apostrophe ('). Type a curly one (’) instead." and "uses "{{", "}}", "**" or an arrow, which the website can’t show. Remove them."
+2. **Link targets:** `.pub-fix > li > a` is `inline-flex` with `min-block-size: var(--target-min)` (`catalogue.css`). This covers both answers on the Publish tab.
+3. **Model-guard tests:** their describe block has a 30 s timeout, with the reason.
+4. **Header blocks:** `check-spa-headers.mjs` fails when a required header is set outside `/*`, or detached anywhere. There are tests for both cases, and both real files still pass.
+5. **Turnstile:** `https://challenges.cloudflare.com` is required in both `script-src` and `frame-src`, for admin and portal. Test added.
+
+**Merged `main` (FX-1 #107) first:** no conflicts.
+
+**Results:**
+- `pnpm check`: exit 0.
+- Web build: exit 0.
+- `pnpm test`: exit 0, 8,301 passed:
+  - admin 3,296;
+  - core 1,783;
+  - portal 628;
+  - web 527;
+  - jobs 525;
+  - db 470;
+  - ui 469;
+  - pdf 340;
+  - auth 135;
+  - email 128.
+- The fix diff was not re-reviewed: the five changes are small, each has a test, and CI runs everything again.

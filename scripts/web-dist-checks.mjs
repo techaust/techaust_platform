@@ -4,7 +4,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { hasTypedAmount } from "../packages/core/src/public-text.ts";
+import { hasTypedAmount, STRAIGHT_APOSTROPHE, UNRENDERED } from "../packages/core/src/public-text.ts";
 import { parseCsp, parseHeaders } from "./headers-shared.mjs";
 import { lintBuiltPage, lintSource, readAllowList, visibleText } from "./web-content-lint.mjs";
 import { checkLinks } from "./web-link-check.mjs";
@@ -167,7 +167,8 @@ const ARROW_ENTITY = /&(?:rarr|harr|#8594|#8596|#x2192|#x2194);/gi;
 export function checkLeftovers(name, html) {
   const text = visibleText(html.replace(HIDDEN_ARROW, "").replace(ARROW_ENTITY, "→"));
   const problems = [];
-  for (const hit of text.matchAll(/\{\{|\}\}|\*\*|→|↔/g)) {
+  // the pattern is shared with the catalogue publish (@techaust/core public-text.ts, FX-2 review finding 1)
+  for (const hit of text.matchAll(UNRENDERED)) {
     const around = text
       .slice(Math.max(0, hit.index - 30), hit.index + 30)
       .replace(/\s+/g, " ")
@@ -185,7 +186,8 @@ export function checkLeftovers(name, html) {
 export function checkApostrophes(name, html) {
   const text = visibleText(html.replace(/<(code|pre)\b[\s\S]*?<\/\1>/gi, " "));
   const problems = [];
-  for (const hit of text.matchAll(/'/g)) {
+  // the pattern is shared with the catalogue publish (@techaust/core public-text.ts, FX-2 review finding 1)
+  for (const hit of text.matchAll(STRAIGHT_APOSTROPHE)) {
     const around = text
       .slice(Math.max(0, hit.index - 30), hit.index + 30)
       .replace(/\s+/g, " ")

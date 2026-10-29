@@ -1,5 +1,5 @@
 // The Publish tab's answer to 400 `public_text_refused` (audit A2 finding 2, WEB-G-07, WEB-G-14): the website's content rules
-// (@techaust/core/public-text: no "&", no banned phrase, no typed amount of money) refused some text the published prices
+// (@techaust/core/public-text: no "&", no banned phrase, no typed amount of money, no straight apostrophe, nothing unrendered) refused some text the published prices
 // carry. The API names each field by path ("items.S7.name", "items.S11.defaultLines.0.description",
 // "paymentTerms.buildSchedule.1.label") and each rule, a banned phrase by its id, never the text. This turns them into one
 // group per thing to fix (a service, or Settings › Payment terms), each with a line per field and rule in the entry form's words.
@@ -22,6 +22,9 @@ export const PUBLIC_TEXT_WORDS = {
   ampersand: 'uses "&". Write "and".',
   bannedPhrase: (phrase: string) => `uses "${phrase}", which the website never says.`,
   typedAmount: "types an amount of money. The website takes prices only from the price fields.",
+  /** 07-Y 2b (FX-2 review, finding 1): the two build-check rules the publish now applies too. */
+  straightApostrophe: "uses a straight apostrophe ('). Type a curly one (’) instead.",
+  unrendered: 'uses "{{", "}}", "**" or an arrow, which the website can’t show. Remove them.',
   /** 07-Y 5: the field names, in the entry form's and Settings' words. */
   name: "Name",
   unit: "Unit",
@@ -88,6 +91,8 @@ function ruleText(issue: { rule: string; phrase?: string }): string {
   if (issue.rule === "ampersand") return W.ampersand;
   if (issue.rule === "banned_phrase" && issue.phrase) return W.bannedPhrase(issue.phrase);
   if (issue.rule === "typed_amount") return W.typedAmount;
+  if (issue.rule === "straight_apostrophe") return W.straightApostrophe;
+  if (issue.rule === "unrendered") return W.unrendered;
   return W.otherRule;
 }
 

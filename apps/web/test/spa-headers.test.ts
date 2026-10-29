@@ -105,6 +105,30 @@ describe("each weakened header fails", () => {
     expect(g.checkSpaHeaders("portal", moved).join("\n")).toContain("Cross-Origin-Resource-Policy");
   });
 
+  it("FX-2 review, finding 4: a required header set on another path, or detached anywhere, fails", () => {
+    const narrower = `${source("portal")}\n/index.html\n  Content-Security-Policy: default-src *\n`;
+    expect(g.checkSpaHeaders("portal", narrower).join("\n")).toContain(
+      "/index.html sets content-security-policy outside the /* block",
+    );
+    const detached = `${source("portal")}\n/index.html\n  ! Content-Security-Policy\n`;
+    expect(g.checkSpaHeaders("portal", detached).join("\n")).toContain(
+      "/index.html detaches content-security-policy",
+    );
+    // other headers on other paths (the cache rules) are fine
+    expect(g.checkSpaHeaders("portal", source("portal"))).toEqual([]);
+    expect(g.checkSpaHeaders("admin", source("admin"))).toEqual([]);
+  });
+
+  it("FX-2 review, finding 5: Turnstile in neither directive fails too (both SPAs sign in through it)", () => {
+    const none = source("portal").replace(/^(\s+Content-Security-Policy:.*)$/m, (line) =>
+      line.replaceAll(" https://challenges.cloudflare.com", ""),
+    );
+    expect(none).not.toBe(source("portal"));
+    const problems = g.checkSpaHeaders("portal", none).join("\n");
+    expect(problems).toContain("script-src must list https://challenges.cloudflare.com");
+    expect(problems).toContain("frame-src must list https://challenges.cloudflare.com");
+  });
+
   it("a missing file is a problem in itself", () => {
     expect(g.checkSpaHeadersFile("portal", "no/such/_headers").join()).toContain("is missing");
   });

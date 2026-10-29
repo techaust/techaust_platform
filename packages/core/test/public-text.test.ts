@@ -5,7 +5,9 @@ import {
   BANNED_PHRASES,
   findBannedPhrases,
   hasAmpersand,
+  hasStraightApostrophe,
   hasTypedAmount,
+  hasUnrendered,
   publicTextIssues,
   snapshotTextFields,
   snapshotTextIssues,
@@ -68,6 +70,22 @@ describe("publicTextIssues", () => {
       { rule: "typed_amount" },
     ]);
     expect(publicTextIssues("Discovery Sprint")).toEqual([]);
+  });
+
+  it("FX-2 review, finding 1: a straight apostrophe and unrendered marks are refused too, the curly apostrophe is not", () => {
+    expect(publicTextIssues("Founder's care plan")).toEqual([{ rule: "straight_apostrophe" }]);
+    expect(publicTextIssues("Founder’s care plan")).toEqual([]);
+    for (const t of ["On {{x}}", "half }}", "On **start**", "Final → delivery", "Tally ↔ Zoho"])
+      expect(publicTextIssues(t), t).toEqual([{ rule: "unrendered" }]);
+    expect(publicTextIssues("A's {{x}}")).toEqual([{ rule: "straight_apostrophe" }, { rule: "unrendered" }]);
+    // the shared global patterns keep no state between calls
+    expect([
+      hasUnrendered("**"),
+      hasUnrendered("**"),
+      hasStraightApostrophe("'"),
+      hasStraightApostrophe("'"),
+    ]).toEqual([true, true, true, true]);
+    expect([hasUnrendered("A single * star"), hasStraightApostrophe("‘quoted’")]).toEqual([false, false]);
   });
 });
 
