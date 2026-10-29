@@ -405,3 +405,65 @@ Builder, Opus 5.5 high, Tier B. Branch `fix/cloud-1-r4` from `origin/chore/cloud
 - Do the triage list above, each with tests from every probe named in "Second re-check" findings 1–3, 5 (the refused part) and 6.
 - No new false negatives and no new false positives: run the probe sets in the main checkout's `.logs/cloud1-recheck-probes/` (round 1: `cases.txt`, `cases2.txt`, `old.mjs`; round 2: `recheck2/` with `run.mjs`, `p*.txt`) before and after, and report the mismatch counts. Ordinary work listed in the second re-check must still pass.
 - Checks: touched test files, `biome check` on changed files, `bash tools/heavy.sh --log cloud1r4-check pnpm check`, web tests alone through the queue, the whole-repository `pnpm lint` last. Append "## Builder report, fix round 4".
+
+## Builder report, fix round 4 (Opus 5.5 high, 2026-10-30, branch `fix/cloud-1-r4` from `origin/chore/cloud-sessions` 0297d492)
+
+**Skills:**
+- `cloudflare:wrangler`: the `--staging` refusal is read from the four scripts themselves (`scripts/create-invite.mjs`, `reset-2fa.mjs`, `portal-link.mjs`, `portal-sample.mjs`: `--staging` is a parseArgs boolean that switches to `wrangler d1 execute --remote --env staging`), not from memory.
+- Not loaded: `cloudflare:workers-best-practices` (no Worker code), `update-config` (`.claude/settings.json` untouched), `code-review` / `security-review` (the reviewer's), `frontend-design` / `dataviz` (no screens), `aws-*` (no AWS). Context7 not needed: no library API beyond Node's own.
+
+**Per item (commits):**
+1. **`((` after a keyword** (4cdb39e7): `tools/cloud-guard.mjs` opens the arithmetic command at `((` also when the open word is an unquoted `for`, `if`, `elif`, `while`, `until`, `do`, `then`, `else` or `!` (`ARITH_KEYWORDS`): the word ends, then the text is scanned as arithmetic, so `for((i=0;i<<2;i++))`, `if((x<<2))`, `while((i<<1>9))` no longer open a heredoc.
+2. **Options after `-c`** (4cdb39e7): `shellTexts` reads all of the shell's options first (a `-c` anywhere among them, also in a cluster; `-o`/`+o`/`-O`/`+O` take one value per o/O, so `-eo pipefail`; `--rcfile`/`--init-file` take a value; other long options stand alone; `--` or `-` ends them); the first other word is the command text when `-c` was given, else a script.
+3. **`case` inside `$( … )`** (4cdb39e7): the scanner counts `case`/`esac` at the start of a command (after keywords too); a `)` that would close a `$( … )` (or `<( … )`) while a `case` is open marks the parse, and the command is refused ("a case pattern's ) inside $( … ) can't be checked"). Side effect, as briefed: a harmless `echo "$(case a in a) echo x;; esac)"` or `x=$(case …)` is refused too; a top-level `case … esac` and `( case … esac )` pass.
+4. **Launcher** (fff33481): `scripts/dev.mjs` `SIGINT_GRACE_MS` 2 s → **10 s**, and a server still running after it gets **SIGTERM**, never a second SIGINT; header and doc comment updated.
+5. **From 5** (4cdb39e7):
+   - `pnpm invite|admin:reset-2fa|portal:sample|portal:link` (also `pnpm run …` and `node scripts/{create-invite,reset-2fa,portal-link,portal-sample}.mjs`) with `--staging` / `--staging=…` are refused; without it they pass.
+   - The parser now marks what bash expands in a word: `subst` ($( … ), backticks, unquoted or in double quotes), `built` (that, `$'…'`, `$"…"`, an unquoted brace expansion `{a,b}` / `{1..3}`, a process substitution), `variable` (`$name`, `${…}`; the `{` of `${` is never a brace expansion, so `${x,,}` is not one). A **command name** that is `built` is refused (`{gh,}`, `$'\x67h'`, `$(echo gh)`, `` `echo gh` ``, `sudo {gh,} …`); a plain `$variable` command name is not (`"$HOME/bin/tool"`, `$EDITOR`).
+   - **git push:** any argument after `push` that is `built` or a `variable` is refused (`{main,}`, `--{force,}`, `"$B"`, `${BRANCH}`, `$(git branch --show-current)`, backticks, `$'…'`). Plain variables are included (my call: they are the same unreadable class as `$(…)`, and the reviewer's probe marks `"$B"` refused); say if you'd rather allow them.
+   - **eval / shell -c / source:** a `-c` text, eval's words or watch's quoted text containing a command substitution is refused (`eval "$(…)"`, `bash -c "$(…)"`, ``sh -c "`…`"``); `<( … )` / `>( … )` are now parsed like `$( … )` (their commands still checked) and marked on their command, and a shell or `source`/`.` with one is refused (`source <(…)`, `. <(…)`, `bash <(…)`, `bash < <(…)`); `diff <(…) <(…)` passes. `eval "$(…)"` is refused as a built command name (eval is a wrapper, so its first word reads as the command).
+   - **printf into a shell** is refused whatever its arguments (`printf "%s %s %s %s" gh pr merge 1 | bash`, also a harmless `printf 'ls\n' | sh`); `echo … | bash` keeps its text check (`echo 'ls -la' | bash` passes).
+   - **Header** of `tools/cloud-guard.mjs`: the new refusals, and the accepted best-effort classes: a script written then run, an alias, a function, another language; **programs that run their arguments or input** (`env -S`, `trap`, `find -exec`, `flock`, `su -c`, `script -c`, `parallel`) and a program's output piped into a shell (`base64 -d | bash`) or a shell the file doesn't name (`ksh`); the branch read in the hook's folder; with the **backstops** (branch protection on main, GraphQL blocked by the cloud's GitHub proxy, no Cloudflare network or token in the cloud).
+6. **Hook input** (4cdb39e7): `tools/model-guard.mjs` treats input that isn't a JSON object (unparseable, `null`, a list, a bare value, empty) as unreadable: under `CLAUDE_CODE_REMOTE=true` it answers `deny` ("The hook input could not be read…"); on this PC it prints nothing, as before. Header updated.
+- **Also found and fixed (speed, same commit):** a 200,000-character word took **62 s** in round 3 (16 s with my first round-4 draft): the scanner read `word.text.at(-1)` on every character, which flattens the growing string each time. A hook that runs past its timeout most likely lets the command through, so this was a fail-open. The last character is now kept apart (`lastChar`): **65–85 ms**. Two other quadratic scans went too: a copy of the remaining words per word (`do ` × 100,000: 47 s → 0.26 s) and a pipeline filter per command (now counted once per pipeline). Tested with a 5 s bound on three long inputs.
+
+**Tests** (`apps/web/test/model-guard.test.ts`, new describe "second re-check findings [CLOUD-1 fix round 4]", 11 tests; `apps/web/test/dev-ports.test.ts`, 1 test changed):
+- `ROUND4_REFUSED` (on main), one test per group: every probe named in findings 1–3 and in the refused part of 5, plus neighbours (`until((`, `elif((`, `!((`, `do((`, `then((`; `-c -o pipefail`, `-eo pipefail -c`, `-c -`; the four scripts with `--staging` and `node scripts/….mjs --staging`; `` `echo gh` ``, `sudo {gh,}`; `${BRANCH}`, backticks and `$'…'` in a push; ``sh -c "`…`"``, `. <(…)`, `bash <(…)`, `printf 'ls\n' | sh`).
+- `ROUND4_ALLOWED` (on fix/x): the harmless forms of each rule and the second re-check's ordinary work (the heredoc commit message, the PR body heredoc, `cloud-pr.sh`, the heavy queue, the `gh api` PR create, `for`/`if` loops, `{1..3}`, `${HOME}`, `${x,,}`, `diff <(…)`, `git push -u origin HEAD`, `TECHAUST_PORT_OFFSET=100 pnpm … dev`).
+- The reasons named; long input under 5 s; finding 6 through the real hook (six raw inputs: `deny` in the cloud, empty stdout here). The existing tests (all earlier tables, the on-this-PC tests) are unchanged and pass.
+- Launcher: the grace is 10,000 ms and the late signal is SIGTERM, never SIGINT.
+
+**Probe sets** (the lead's `.logs/cloud1-recheck-probes/`, run from a copy of the runners in my scratchpad pointed at this worktree's guard; a mismatch is a probe whose answer differs from its expected letter; `cases.txt` on fix/x, `cases2.txt` and `p1`–`p5` on main, `p6` (ordinary work) on fix/x):
+
+| Set | Probes | Before (round 3, 0297d492) | After |
+|---|---|---|---|
+| cases.txt | 187 | 6 | 6 |
+| cases2.txt | 13 | 0 | 0 |
+| recheck2/p1 | 32 | 3 | 0 |
+| recheck2/p3 (with the 9 large inputs) | 35 | 0 | 0 |
+| recheck2/p4 | 40 | 26 | 9 |
+| recheck2/p5 | 48 | 0 | 0 |
+| recheck2/p6 | 33 | 0 | 0 |
+| **Total** | 388 | **35** | **15** |
+
+- The 6 in `cases.txt` are round 3's: the 5 accepted (`let x=1<<2` and `echo x 1<<2` + next line, `echo \` + new line, `cat <<EOF > x.sh && bash x.sh`, `git switch main && git push`) and `git push`, which is refused on main and passes on fix/x as intended.
+- The 9 in `p4` are the classes the triage accepted and the header now names: `env -S`, `trap`, `script -qc`, `su -c`, `find -exec`, `flock`, `parallel`, `base64 -d | bash`, `| ksh`.
+- **Round 3 against round 4 directly:** 20 of 379 probes differ, every one a probe expected refused that round 3 let through and round 4 refuses; none the other way (no new false negative, no new false positive in the sets).
+
+**Commands and results:**
+- `git fetch`, `git checkout -b fix/cloud-1-r4 origin/chore/cloud-sessions` (0297d492); `pnpm install --frozen-lockfile --offline`: ok.
+- `vitest run --project node` (web) on `model-guard`, `dev-ports`, `cloud-setup`, `agent-slots`: **110 passed**.
+- `pnpm exec biome check` on the 5 changed code files: clean (three `biome-ignore` for `${…}` shell text in test strings, as in round 3).
+- `bash tools/heavy.sh --log cloud1r4-check pnpm check`: **exit 0** (typecheck clean, the guards ok).
+- `bash tools/heavy.sh --log cloud1r4-web-test pnpm --filter @techaust/web test`: **619 passed, 17 skipped** (32 files).
+- `bash tools/heavy.sh --log cloud1r4-lint pnpm lint` (final): **exit 0**, 1,328 files, 10 warnings and 8 infos, all in files this branch doesn't touch (admin `reports.test.ts`, web `catalogue.ts`, core `public-text.ts`, pdf tests).
+
+**Not verified:**
+- A real cloud session (as before): hooks seeing `CLAUDE_CODE_REMOTE=true`, Monitor reaching the hook, `git rev-parse` there, and what Claude Code does with a hook that runs past its timeout (the speed fix assumes it lets the call through).
+- Item 4 at run time: no dev server was started; the handler is unit-tested with a stand-in child and timer.
+- The new `for((`/`if((` and `case` behaviour against bash itself: I relied on the reviewer's bash confirmation for `for((` and `if((`; the other keywords follow the same grammar but were not run in bash.
+
+**Open points for the lead:**
+1. Plain variables in a `git push` (`"$B"`, `${BRANCH}`) are refused (see 5); revert to `$( … )`/brace/`$'…'` only if you prefer.
+2. `ksh` (and `mksh`, `fish`) could join `SHELLS` in one word, which would check `echo … | ksh` like `| bash`; left as a named accepted class because the triage didn't list it.
+3. Accepted false positives of the new rules: `x=$(case …)` / `"$(case …)"` with harmless text, any `printf … | sh`, `eval "$(ssh-agent -s)"`-style setup, and `$(…)`-built command names such as `$(npm bin)/tool`.
