@@ -4,6 +4,7 @@
 import { formatIstDateTime, MASKED } from "@techaust/core";
 import { ROLE_LABELS } from "@techaust/core/permissions";
 import type { AuditEntry } from "../api.ts";
+import { Y } from "./copy-y.ts";
 
 /** Every action the API writes today, in words. Unknown ones read as their own name ("lead.created"). */
 /** A label by its own key only: a free-form value such as "constructor" never reads an inherited property. */
@@ -91,30 +92,97 @@ export const ACTION_LABELS: Record<string, string> = {
   "approval.request": "asked for approval",
   "approval.decide": "decided an approval",
   "document.convert": "converted a document",
+  // FX-4 (full audit A5 4): the actions the API writes that had no label, so the log and the dashboard feed showed raw codes.
+  // Leads, care plans and time (M3.2, M3.5): the approved 07-Q words the dashboard already uses (dashboard.ts `ACTIVITY_PENDING`; a test keeps the two equal).
+  "lead.create": "added a lead",
+  "lead.update": "changed a lead",
+  "lead.note": "added a note to a lead",
+  "lead.stage": "moved a lead to another stage",
+  "lead.reply": "replied to a lead",
+  "lead.convert": "converted a lead into a client",
+  "care_plan.create": "added a care plan",
+  "care_plan.terms": "changed a care plan's terms",
+  "care_plan.status": "changed a care plan's status",
+  "time.create": "logged time",
+  "time.update": "changed a time entry",
+  "time.delete": "deleted a time entry",
+  "approval.expire": "marked an approval as expired",
+  // Written outside ROUTES (FX-4 fix round 1, early check M2): the jobs Worker's lead purge and offer expiry take their approved
+  // 07-Q words (DASH7, DASH14); the portal's offer actions are 07-Y below.
+  "lead.purge": "deleted old leads",
+  "document.expire": "marked a document as expired",
+  // Lines 07 lacked: 07-Y, PENDING the owner, marked until approved (the same lower-case form, after the person's name).
+  "document.resend": Y("sent a document again"),
+  "document.links_revoke": Y("revoked a document's links"),
+  "document.pdf_retry": Y("asked for a document's PDF again"),
+  "settings.signature.update": Y("changed the signature image"),
+  "settings.signature.delete": Y("removed the signature image"),
+  // The client portal's offers (M4.5), written by a client contact ("A client contact …"); only proposals and estimates are offers.
+  "document.view": Y("viewed a proposal or estimate"),
+  "document.accept": Y("accepted a proposal or estimate"),
+  "document.decline": Y("declined a proposal or estimate"),
+  "offer_link.use": Y("opened a proposal or estimate from an email link"),
+  // M5 invoices (07-R to 07-U had no audit words).
+  "invoice.create": Y("created an invoice draft"),
+  "invoice.update": Y("changed an invoice draft"),
+  "invoice.delete": Y("discarded an invoice draft"),
+  "invoice.issue": Y("issued an invoice"),
+  "invoice.issue_auto": Y("issued a care plan invoice automatically"),
+  "invoice.advance_issue": Y("issued a tax invoice for a payment received"),
+  "invoice.void": Y("voided an invoice"),
+  "invoice.note_create": Y("drafted a credit or debit note"),
+  "invoice.ims_status": Y("recorded a client's IMS response"),
+  "invoice.service_completed": Y("set the date the service was completed"),
+  "invoice.send": Y("sent an invoice"),
+  "invoice.links_revoke": Y("revoked an invoice's links"),
+  "invoice.pdf_retry": Y("asked for an invoice's PDF again"),
+  "invoice.reminders_pause": Y("paused payment reminders"),
+  "invoice.reminders_resume": Y("resumed payment reminders"),
+  "care_invoice.draft": Y("drafted a care plan invoice"),
+  "care_invoice.auto_issue_refused": Y("could not issue a care plan invoice automatically"),
 };
 
-/** Groups for the action filter (the API filters by one exact action). */
-export const ACTION_GROUPS: { label: string; prefix: string }[] = [
-  { label: "Sign-ins and security", prefix: "auth." },
-  { label: "Security alerts", prefix: "alert." },
-  { label: "Users and invites", prefix: "user." },
-  { label: "Settings", prefix: "settings." },
-  { label: "Notifications", prefix: "notification." },
-  { label: "Clients", prefix: "client." },
-  { label: "Contacts", prefix: "contact." },
-  { label: "Projects", prefix: "project." },
-  { label: "Milestones", prefix: "milestone." },
-  { label: "Notes", prefix: "note." },
-  { label: "Files", prefix: "file." },
-  { label: "Catalogue", prefix: "catalogue." },
-  { label: "Templates", prefix: "template." },
-  { label: "Proposals and estimates", prefix: "document." },
-  { label: "Approvals", prefix: "approval." },
-  { label: "Client portal", prefix: "portal." },
-  { label: "Audit log", prefix: "audit." },
+/**
+ * Groups for the action filter (the API filters by one exact action), in the sidebar's order. A group holds the actions that start with one of its
+ * prefixes; every labelled action sits in exactly one group (a test checks it), so none is left out of the filter. FX-4 (A5 4): Leads, Care plans, Time,
+ * Invoices and Reports are the sidebar's own words; a care plan's invoice actions sit with Invoices, an offer link with Proposals and estimates, and a
+ * document link with the client portal.
+ */
+export const ACTION_GROUPS: { label: string; prefixes: readonly string[] }[] = [
+  { label: "Sign-ins and security", prefixes: ["auth."] },
+  { label: "Security alerts", prefixes: ["alert."] },
+  { label: "Users and invites", prefixes: ["user."] },
+  { label: "Settings", prefixes: ["settings."] },
+  { label: "Notifications", prefixes: ["notification."] },
+  { label: "Leads", prefixes: ["lead."] },
+  { label: "Clients", prefixes: ["client."] },
+  { label: "Contacts", prefixes: ["contact."] },
+  { label: "Projects", prefixes: ["project."] },
+  { label: "Milestones", prefixes: ["milestone."] },
+  { label: "Notes", prefixes: ["note."] },
+  { label: "Files", prefixes: ["file."] },
+  { label: "Care plans", prefixes: ["care_plan."] },
+  { label: "Time", prefixes: ["time."] },
+  { label: "Catalogue", prefixes: ["catalogue."] },
+  { label: "Templates", prefixes: ["template."] },
+  { label: "Proposals and estimates", prefixes: ["document.", "offer_link."] },
+  { label: "Invoices", prefixes: ["invoice.", "care_invoice."] },
+  { label: "Reports", prefixes: ["report."] },
+  { label: "Approvals", prefixes: ["approval."] },
+  { label: "Client portal", prefixes: ["portal.", "doc_token."] },
+  { label: "Audit log", prefixes: ["audit."] },
 ];
 
-/** Record types the API writes (`entity_type`), for the record filter. */
+/** The actions of one filter group, in the order given. */
+export const actionsInGroup = (g: { prefixes: readonly string[] }, actions: readonly string[]): string[] =>
+  actions.filter((a) => g.prefixes.some((p) => a.startsWith(p)));
+
+/**
+ * Record types the API writes (`entity_type`), for the record filter (`routes/audit.tsx` offers every entry, in this order). FX-4 review M2: leads,
+ * care plans, time and reports take the sidebar's words (approved); no "Document sends" type, since sends are audited on their document (lead, after
+ * the FX-4 fix round). `audit-labels.test.ts` scans every
+ * writer for the types it can put in `audit_log` and fails on one without a label here.
+ */
 export const ENTITY_LABELS: Record<string, string> = {
   settings: "Settings",
   bank_account: "Bank details",
@@ -123,6 +191,7 @@ export const ENTITY_LABELS: Record<string, string> = {
   staff_invite: "Invites",
   staff_session: "Staff sessions",
   notification: "Notifications",
+  lead: "Leads",
   client: "Clients",
   contact: "Contacts",
   catalogue_item: "Catalogue",
@@ -133,8 +202,11 @@ export const ENTITY_LABELS: Record<string, string> = {
   milestone: "Milestones",
   note: "Notes",
   file: "Files",
+  care_plan: "Care plans",
+  time_log: "Time",
   document: "Documents",
   approval: "Approvals",
+  report: "Reports",
   audit_log: "Audit log",
 };
 
@@ -182,6 +254,8 @@ const FIELD_LABELS: Record<string, string> = {
   stateCode: "State code",
   defaultRateBp: "Default GST rate (basis points)",
   sacByCategory: "SAC codes",
+  // FX-4 (A5 12; 07-Y, PENDING): the tax setting's own field label (tax-settings.ts `TAX_SAC_COPY`).
+  defaultSac: Y("Default SAC for custom lines"),
   lut: "LUT",
   ga4Id: "Google Analytics ID",
   calComUrl: "Cal.com link",

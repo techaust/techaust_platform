@@ -265,8 +265,20 @@ function itemsTable(view: InvoiceView): string {
   return `<table class="grid items inv-items"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+/** The tax head keys of the totals rows. */
+const HEAD_KEYS: readonly string[] = ["cgst", "sgst", "igst"];
+
+/**
+ * A tax head's label: "CGST (estimate)" on a proforma sealed with the estimate marker (FX-4, A5 5; Researched 2026-10-28, s.31 CGST Act, Rule 46
+ * (08-C RA-28)), else the head as it is. A proforma sealed before FX-4 has no marker and prints exactly as it did.
+ */
+function headLabel(view: InvoiceView, head: string): string {
+  return view.proforma?.gstEstimate ? P.estimate(head) : head;
+}
+
 function totalsBlock(view: InvoiceView): string {
   const rows = view.totals
+    .map((row) => (HEAD_KEYS.includes(row.key) ? { ...row, label: headLabel(view, row.label) } : row))
     .map((t) =>
       t.strong
         ? `<tr class="grand"><th scope="row">${esc(t.label)}</th><td class="num" data-testid="total">${amountHtml(
@@ -320,9 +332,9 @@ function inrBlock(view: InvoiceView): string {
 function summaryTable(view: InvoiceView): string {
   if (view.summary.length === 0) return "";
   const S = C.summary;
-  const heads = intra(view) ? [S.cgst, S.sgst] : [S.igst];
+  const heads = (intra(view) ? [S.cgst, S.sgst] : [S.igst]).map((h) => headLabel(view, h));
   const keys = intra(view) ? (["cgst", "sgst"] as const) : (["igst"] as const);
-  const group = heads.map((h) => `<th scope="colgroup" colspan="2" class="inv-head">${h}</th>`).join("");
+  const group = heads.map((h) => `<th scope="colgroup" colspan="2" class="inv-head">${esc(h)}</th>`).join("");
   const sub = heads
     .map(
       () =>

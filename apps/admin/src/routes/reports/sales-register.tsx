@@ -6,12 +6,13 @@ import { formatRate } from "@techaust/core/gst";
 import { useEffect, useRef, useState } from "react";
 import { ensureStepUp } from "../../api.ts";
 import { EmptyState } from "../../components/display.tsx";
-import { Download, FileText } from "../../components/icons.tsx";
+import { AlertTriangle, Download, FileText } from "../../components/icons.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { GST_COPY, rangeOk, reportErrorText, SALES_COPY } from "../../lib/reports.ts";
 import { csvBlob, readAll, reportsApi, saveFile } from "../../lib/reports-api.ts";
 import { type SalesRegister as Built, buildSalesRegister } from "../../lib/reports-build.ts";
 import { ReportFrame } from "./frame.tsx";
+import { ManualEntries } from "./manual-entries.tsx";
 import { Amount, ProblemList, Progress, RangeForm, ReportBlock, WideList } from "./parts.tsx";
 
 type Phase =
@@ -100,9 +101,20 @@ function Results({ built, from, to }: { built: Built; from: string; to: string }
   const name = (stem: string) => `${stem}-${from}-to-${to}.csv`;
   return (
     <>
-      <h2 className="report-done" tabIndex={-1}>
-        <span>{GST_COPY.done(built.count)}</span>
+      {/* FX-4 (early check L3): with the 3B file on offer, the same line as the GST exports, never "No errors" while a tax-only note's tax must be entered by hand. */}
+      <h2
+        id="sales-done"
+        className={`report-done${built.manual.length > 0 ? " report-done--manual" : ""}`}
+        tabIndex={-1}
+      >
+        {built.manual.length > 0 && <AlertTriangle size={20} />}
+        <span>
+          {built.manual.length > 0
+            ? GST_COPY.doneManual(built.count, built.manual.length)
+            : GST_COPY.done(built.count)}
+        </span>
       </h2>
+      <ManualEntries lines={built.manual} id="sales-done" />
       <ReportBlock id="sales-output" title={SALES_COPY.previewHeading}>
         <WideList className="ledger-scroll" label={SALES_COPY.previewHeading}>
           <table className="ledger ledger--plain">

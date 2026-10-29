@@ -79,6 +79,11 @@ export const INV = {
     intermediary: EXPORT_PDF_COPY.payment.intermediary,
     purposeCode: EXPORT_PDF_COPY.payment.purposeCode,
     validUntil: PROFORMA_PDF_COPY.header.validUntil,
+    /**
+     * FX-4 review M1 (A5 5): a proforma sealed with the estimate marker names each tax head "CGST (estimate)", the PDF's own words (07-Y, pending;
+     * unmarked like the PDF, docs/13). Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28).
+     */
+    estimateHead: PROFORMA_PDF_COPY.estimate,
     noteTitles: { credit_note: NOTE_PDF_COPY.credit.title, debit_note: NOTE_PDF_COPY.debit.title },
     totals: {
       subtotal: "Sub-total",

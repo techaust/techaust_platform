@@ -208,6 +208,62 @@ body:has(.savebar) .toasts {
   font-variant-numeric: tabular-nums;
 }
 
+/* FX-4 (A5 12): the default SAC for custom lines, one short code field set like the codes above it. */
+.sac-input {
+  max-width: 10rem;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* FX-4 (A5 8): a LUT's year, and under it "Not saved yet" (a pencil, the edit mark the drafts' pills use, and the words) until the form is saved.
+   Plain words rather than a pill, stacked and free to wrap between words, so the year's column stays narrow: the list fits the settings column at
+   1024 px. Review M3: never inside a word (the column is as wide as its longest word, "[Placeholder]" while 07-Y is pending); the cells sit closer
+   (below) to make the room. */
+.lut-year {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+.lut-year__unsaved {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: var(--text-sm--line-height);
+  white-space: normal;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+}
+
+.lut-year__unsaved .icon {
+  flex: none;
+  margin-top: 0.125rem;
+  color: var(--color-warning);
+}
+
+/* The column heads may wrap, and the cells sit closer, inside the settings column (about 28 rem at 1024 px), so the list never runs past it, even
+   with a whole "Not saved yet" mark in the year's column (review M3). The outer cells keep the table's own inset. */
+.lut-list .dtable__table thead th {
+  white-space: normal;
+}
+
+.lut-list .dtable__table :is(thead, tbody) :is(th, td) {
+  padding-inline: var(--space-2);
+}
+
+.lut-list .dtable__table :is(thead, tbody) :is(th, td):first-child {
+  padding-inline-start: var(--space-3);
+}
+
+.lut-list .dtable__table :is(thead, tbody) :is(th, td):last-child {
+  padding-inline-end: var(--space-3);
+}
+
 /* Two controls side by side (day and month, from and to). */
 .pair {
   display: flex;

@@ -13,9 +13,10 @@ import { financialYear, fyOf } from "@techaust/core";
 import { CREDIT_REASONS, DEBIT_REASONS } from "@techaust/core/invoices";
 import type { Currency } from "../api.ts";
 import { RequestError } from "../api.ts";
+import { Y } from "./copy-y.ts";
 import { dayText } from "./documents.ts";
 import { fyLabel, INVT_COPY } from "./invoice-types.ts";
-import { blockerLine, invErrorText, moneyText, UNKNOWN } from "./invoices.ts";
+import { blockerLine, invErrorText, moneyText, typeLabel, UNKNOWN } from "./invoices.ts";
 import type {
   CreditableLine,
   CreditDeadlineView,
@@ -24,6 +25,7 @@ import type {
   NoteKind,
   NoteMode,
   NoteOfView,
+  NoteRow,
   Take,
 } from "./notes-api.ts";
 import { moneyFrom, moneyInput } from "./settings-form.ts";
@@ -211,11 +213,69 @@ export function deadlineBanner(
 // ---- the notes section (07-T §6, §8) -----------------------------------------------------------------------------------------------------------
 
 /**
- * "Balance due: {balance} (after {count} notes)": the invoice's balance as the server holds it, after its credit notes (a debit note is its own
- * payable and does not move the invoice's balance, LD42, so only credit notes are counted). One note is said in the singular.
+ * "Balance due: {balance} (after {count} credit notes)": the invoice's balance as the server holds it, after its credit notes (a debit note is its own
+ * payable and does not move the invoice's balance, LD42, so only credit notes are counted, and the line says so: FX-4, full audit A5 6; 07-T's "notes" became
+ * "credit notes", 07-Y, PENDING, marked). One credit note is said in the singular. `creditNotes` is `creditNoteCount` of the section.
  */
-export const balanceLine = (balance: string, count: number) =>
-  count === 1 ? `Balance due: ${balance} (after 1 note)` : `Balance due: ${balance} (after ${count} notes)`;
+export const balanceLine = (balance: string, creditNotes: number) =>
+  Y(
+    creditNotes === 1
+      ? `Balance due: ${balance} (after 1 credit note)`
+      : `Balance due: ${balance} (after ${creditNotes} credit notes)`,
+  );
+
+/** How many issued credit notes the invoice's balance is after (debit notes are their own payables, LD42): what `balanceLine` counts. */
+export const creditNoteCount = (notes: { credit: readonly NoteRow[] }): number => notes.credit.length;
+
+/** One row of an invoice's notes ledger with its kind and its type's name ("Credit note", "Debit note": core's series labels), for the screen to show (FX-4, A5 6). */
+export type NoteLedgerRow = NoteRow & {
+  type: "credit_note" | "debit_note";
+  kind: NoteKind;
+  typeText: string;
+};
+
+/** A document number as its series part and the integer at its end ("TH/CN/2627/10" -> "TH/CN/2627/", 10); no integer -> null. */
+const numberParts = (n: string | null): { series: string; seq: number | null } => {
+  const m = n === null ? null : /^(.*?)(\d+)$/.exec(n);
+  return m ? { series: m[1] as string, seq: Number(m[2]) } : { series: n ?? "", seq: null };
+};
+
+/** null after any number, so a missing value never jumps the queue. */
+const byNumber = (a: number | null | undefined, b: number | null | undefined): number =>
+  a == null ? (b == null ? 0 : 1) : b == null ? -1 : a - b;
+
+const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+/** Two document numbers: by series (text), then by the integer at the end, never by the text of the whole ("/10" after "/9"). */
+const byDocNumber = (a: string | null, b: string | null): number => {
+  const [x, y] = [numberParts(a), numberParts(b)];
+  return byText(x.series, y.series) || byNumber(x.seq, y.seq);
+};
+
+/**
+ * The issued notes of an invoice as one ledger, oldest first, each row with its type: by issue date, then the instant it was issued, then the number (series, then its
+ * integer: "TH/CN/2627/10" comes after "/9", early check L4), then the id, a stable order. The type comes from the row (the API sends it) or, from an older API, from the
+ * list it came in.
+ */
+export function noteLedgerRows(notes: {
+  credit: readonly NoteRow[];
+  debit: readonly NoteRow[];
+}): NoteLedgerRow[] {
+  const tag = (r: NoteRow, fallback: "credit_note" | "debit_note"): NoteLedgerRow => {
+    const type = r.type ?? fallback;
+    return { ...r, type, kind: type === "credit_note" ? "credit" : "debit", typeText: typeLabel(type) };
+  };
+  return [
+    ...notes.credit.map((r) => tag(r, "credit_note")),
+    ...notes.debit.map((r) => tag(r, "debit_note")),
+  ].sort(
+    (a, b) =>
+      byText(a.issueDate ?? "", b.issueDate ?? "") ||
+      byNumber(a.issuedAt, b.issuedAt) ||
+      byDocNumber(a.number, b.number) ||
+      byText(a.id, b.id),
+  );
+}
 export const refundLine = (amount: string) =>
   `Refund due to the client: ${amount}. Refunds are recorded with payments.`;
 

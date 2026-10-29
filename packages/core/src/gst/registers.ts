@@ -11,6 +11,7 @@ import {
   type CalendarDate,
   type Currency,
   compareDates,
+  compareDocNumbers,
   compareText,
   fail,
   type GstIssue,
@@ -152,8 +153,13 @@ export function salesRegisterRows(
         status: "cancelled",
       });
     }
-    // date, number; a document's rate rows keep their SAC and rate order (the sort is stable)
-    rows.sort((a, b) => compareDates(a.date, b.date) || compareText(a.number, b.number));
+    // date, number in issue order ("/10" after "/9", FX-4 review L3), id; a document's rate rows keep their SAC and rate order (the sort is stable)
+    rows.sort(
+      (a, b) =>
+        compareDates(a.date, b.date) ||
+        compareDocNumbers(a.number, b.number) ||
+        compareText(a.docId, b.docId),
+    );
     return ok(rows);
   });
 }

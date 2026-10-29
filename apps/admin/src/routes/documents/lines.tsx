@@ -47,6 +47,8 @@ export const LinesPanel = memo(function LinesPanel(props: {
   showSac?: { uid: string; at: number } | null | undefined;
   /** An invoice: every line needs a SAC to issue (the `line_sac_missing` blocker), so the field isn't marked "(optional)". */
   sacRequired?: boolean | undefined;
+  /** FX-4 (A5 12): the SAC a new custom line starts with (Settings › Tax, the view's `newLineSac`); none when not set. */
+  newLineSac?: string | null | undefined;
 }) {
   const { dispatch, current } = props;
   const [picking, setPicking] = useState(false);
@@ -54,6 +56,12 @@ export const LinesPanel = memo(function LinesPanel(props: {
   const [focusSac, setFocusSac] = useState(false);
   useEffect(() => {
     if (!props.showSac) return;
+    // FX-4 (A5 12): a custom line's SAC is on its row: the blocker puts the cursor there; otherwise the details dialog opens on it.
+    const onRow = document.getElementById(`ln-${props.showSac.uid}-sac`);
+    if (onRow) {
+      onRow.focus();
+      return;
+    }
     setFocusSac(true);
     setDetails(props.showSac.uid);
   }, [props.showSac]);
@@ -167,7 +175,7 @@ export const LinesPanel = memo(function LinesPanel(props: {
               code: null,
               description: "",
               detail: "",
-              sac: "",
+              sac: props.newLineSac ?? "",
               gstRate: "",
               unit: "fixed",
               qty: "1",
@@ -345,6 +353,26 @@ const LineRow = memo(function LineRow(p: RowProps) {
             />
           </div>
         </div>
+        {/* FX-4 (full audit A5 12): a custom line's SAC is typed on the row itself, not only behind "Edit details" (a catalogue line takes its code from the catalogue). */}
+        {!fromCatalogue && (
+          <div className="qledger__cell qledger__cell--sac">
+            <label className="qledger__label" htmlFor={id("sac")}>
+              {hidden}
+              SAC
+            </label>
+            <input
+              {...a11y("sac")}
+              className="tnum qledger__sac"
+              inputMode="numeric"
+              autoComplete="off"
+              spellCheck={false}
+              maxLength={6}
+              value={l.sac}
+              onChange={(e) => p.onEdit(l.uid, { sac: e.target.value.replace(/\D/g, "") })}
+              onBlur={blur("sac")}
+            />
+          </div>
+        )}
       </div>
       <dl className="qledger__figs">
         <div>

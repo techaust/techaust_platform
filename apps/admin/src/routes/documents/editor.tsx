@@ -485,6 +485,7 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
             type={view.type}
             dispatch={dispatch}
             current={currentLines}
+            newLineSac={view.newLineSac}
           />
 
           <section className="lead-panel doc-totals" aria-labelledby="doc-totals-h">
@@ -528,7 +529,13 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
                   )}
                 </FormField>
               </div>
-              <TaxPreview totals={f.totals} supply={f.supply} currency={s.currency} busy={s.saving} />
+              <TaxPreview
+                totals={f.totals}
+                supply={f.supply}
+                currency={s.currency}
+                busy={s.saving}
+                discounts={f.discounts}
+              />
             </div>
           </section>
 

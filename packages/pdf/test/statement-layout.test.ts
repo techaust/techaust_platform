@@ -117,6 +117,8 @@ describe("the statement page", () => {
     expect(detailsOf("receipt", null)).toBe("Payment received");
     expect(detailsOf("credit_note", "TH/INV/2627/0002")).toBe("Credit note against TH/INV/2627/0002");
     expect(detailsOf("credit_note", null)).toBe("");
+    // FX-4 (A5 7): a debit note names its invoice when the view has the number (07-Y, pending), else keeps 07-V's "Debit note"
+    expect(detailsOf("debit_note", "TH/INV/2627/0002")).toBe("Debit note against TH/INV/2627/0002");
   });
 
   it("ends with the billing@ question and the day it was made; the page footer names billing@ and counts pages", () => {

@@ -116,7 +116,7 @@ export const supplierFilename = (numberDisplay: string): string =>
 /**
  * The stored DUPLICATE FOR SUPPLIER copy of an issued tax invoice, export invoice, credit note or debit note (Q11, owner 2026-10-28; Rule 48(2) CGST Rules; Researched 2026-10-28, 08-C RA-07):
  * `GET /invoices/:id/pdf/supplier` for the Owner and the Accountant (`invoices.supplierCopy`). It answers like `/:id/pdf`: the file (an attachment, never cached), or 202 `{state: "making"}` while it is
- * not made yet (409 `pdf_pending` stays for an erased client, whose copy is never made). A proforma, a draft or an unknown id is 404. It is never attached to an email, never linked from the portal and never offered to a client. The copy is rendered by jobs after
+ * being made after the original; 409 `pdf_pending` while the original has no PDF (FX-4, A5 9) and for an erased client, whose copy is never made. A proforma, a draft or an unknown id is 404. It is never attached to an email, never linked from the portal and never offered to a client. The copy is rendered by jobs after
  * the original; a document issued before this existed (or whose message was lost) has none yet: this route then asks for it (an idempotent queue message) once the original's PDF exists.
  */
 export const invoiceSupplierPdf = new Hono<AppEnv>().get("/:id/pdf/supplier", param(idParam), async (c) => {
@@ -133,10 +133,12 @@ export const invoiceSupplierPdf = new Hono<AppEnv>().get("/:id/pdf/supplier", pa
     supplierPdfKey({ type: row.type, fy: label, number: row.number, version: 1 }),
   );
   if (!obj) {
-    // Not made yet: ask (only when the original exists, and never for an erased client), and say so. A copy that is being made (or will be) is
-    // 202 {state: "making"}, not an error (the screen polls without a console error per click); an erased client's copy is never made: 409.
-    if (row.gone === 1) return err(c, PDF_PENDING, 409);
-    if (row.pdf_sha256 !== null) c.executionCtx.waitUntil(enqueueSupplierPdfOnce(c.env, id));
+    // Not made yet. An erased client's copy is never made: 409. The copy is rendered after the original, so while the original has no PDF (not rendered yet, or its
+    // render failed: the original's own retry is `/:id/pdf/retry`) nothing here can make it: 409 `pdf_pending`, never a 202 answered forever (FX-4, full audit A5 9).
+    // Once the original exists the copy is asked for (an idempotent message) and is being made: 202 {state: "making"}, not an error (the screen polls without a
+    // console error per click).
+    if (row.gone === 1 || row.pdf_sha256 === null) return err(c, PDF_PENDING, 409);
+    c.executionCtx.waitUntil(enqueueSupplierPdfOnce(c.env, id));
     return c.json({ state: "making" as const }, 202);
   }
   return new Response(obj.body, {

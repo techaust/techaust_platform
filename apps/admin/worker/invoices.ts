@@ -886,6 +886,7 @@ export const invoices = new Hono<AppEnv>()
         items,
         state.currency,
         ctx.settings.tax.defaultRateBp,
+        ctx.settings.tax.defaultSac || null,
       );
       if (!made.ok) return err(c, made.error, made.status);
       state = { ...state, lines: withoutReference(made.lines) };

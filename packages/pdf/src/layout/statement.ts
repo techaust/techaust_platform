@@ -50,7 +50,7 @@ export type StatementLayoutView = {
     date: string;
     number: string;
     kind: StatementLineKind;
-    /** A credit note's invoice ("Credit note against {number}"); null when the view has none. */
+    /** A credit or debit note's invoice ("Credit note against {number}", "Debit note against {number}"); null when the view has none. */
     againstNumber: string | null;
     /** Null for the side a line is not on. */
     debit: string | null;
@@ -76,9 +76,13 @@ function amountHtml(value: string): string {
   return `${esc(value.slice(0, at))}<span data-testid="${testid}">${sign}</span>${esc(value.slice(at + 1))}`;
 }
 
-/** The words of a line's "Details" (07-V §6): a credit note names its invoice when the view has the number, else it reads "" (nothing is guessed). */
+/**
+ * The words of a line's "Details" (07-V §6): a credit note names its invoice when the view has the number, else it reads "" (nothing is guessed). A debit note names
+ * its invoice too when the view has the number (FX-4, full audit A5 7), else it keeps 07-V's "Debit note".
+ */
 export function detailsOf(kind: StatementLineKind, againstNumber: string | null): string {
   if (kind === "credit_note") return againstNumber ? C.kinds.credit_note(againstNumber) : "";
+  if (kind === "debit_note" && againstNumber) return C.kinds.debitNoteAgainst(againstNumber);
   return C.kinds[kind];
 }
 

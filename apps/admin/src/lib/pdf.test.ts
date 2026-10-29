@@ -1,11 +1,14 @@
 // The PDF panel's and the signature control's rules and wording (M4.4; 07-P §3, §4).
 import { SIGNATURE_MAX_BYTES, SIGNATURE_MIMES } from "@techaust/core/settings";
 import { describe, expect, it } from "vitest";
+import pdfPanelSource from "../routes/documents/pdf-panel.tsx?raw";
+import invoiceReadSource from "../routes/invoices/read.tsx?raw";
 import {
   adoptVersion,
   PDF_COPY,
   PDF_SLOW_AFTER_MS,
   pdfPhase,
+  pdfReadChanged,
   pdfRetryText,
   SIGNATURE_ACCEPT,
   SIGNATURE_COPY,
@@ -97,5 +100,27 @@ describe("the wording (07-P §3, §4)", () => {
       tooDetailed:
         "[Placeholder] This image is too detailed to keep as a signature. Use a scan on a plain white background.",
     });
+  });
+});
+
+describe("FX-4 review H2: the PDF panel follows the page's read in place, never remounted", () => {
+  const pending = { state: "pending", fingerprint: null };
+  const ready = { state: "ready", fingerprint: "a1b2c3d4e5f6" };
+  it("another state or another file is news; the same read is not", () => {
+    expect(pdfReadChanged(pending, ready)).toBe(true);
+    expect(pdfReadChanged(ready, { state: "ready", fingerprint: "ffffffffffff" })).toBe(true);
+    expect(pdfReadChanged(ready, { ...ready })).toBe(false);
+    expect(pdfReadChanged(pending, { ...pending })).toBe(false);
+  });
+  it("the invoice page keys the panel on the document only, so turning ready keeps the focus and the live region", () => {
+    const keys = [...invoiceReadSource.matchAll(/<PdfPanel[\s\S]*?key=\{([^}]*)\}/g)].map((m) => m[1]);
+    expect(keys).toEqual(["v.id"]);
+    expect(invoiceReadSource).not.toMatch(/key=\{`\$\{v\.id\}-\$\{v\.pdf\.state\}`\}/);
+  });
+  it("the panel takes a newer read from its props, and its words sit in a polite region that is always drawn", () => {
+    expect(pdfPanelSource).toMatch(
+      /if \(pdfReadChanged\(read, props\.initial\)\) \{\s*setRead\(props\.initial\);\s*setPdf\(props\.initial\);/,
+    );
+    expect(pdfPanelSource).toMatch(/<div className="pdf-panel__text" aria-live="polite">\s*<h2 id="pdf-h"/);
   });
 });

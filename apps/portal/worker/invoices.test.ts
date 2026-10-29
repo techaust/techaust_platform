@@ -11,12 +11,19 @@ import { bodyOf, call, one, sessionFor } from "./test-helpers.ts";
 let seq = 0;
 async function mk(
   orgId: string,
-  o: { type?: string; status?: string; issueDate?: string; pdfKey?: string | null; void?: boolean } = {},
+  o: {
+    type?: string;
+    status?: string;
+    issueDate?: string;
+    pdfKey?: string | null;
+    void?: boolean;
+    headerExtras?: string | null;
+  } = {},
 ) {
   const id = uuidv7();
   const n = ++seq + 7000;
   await env.DB.prepare(
-    "INSERT INTO documents (id, type, status, client_id, currency, frozen_at, series, fy, number, number_display, issue_date, due_date, subtotal_minor, taxable_minor, total_minor, balance_minor, pdf_r2_key, voided_at, void_reason) VALUES (?1, ?2, ?3, ?4, 'INR', 1000, 'inv-i', '2627', ?5, ?6, ?7, '2026-12-31', 100000, 100000, 118000, 118000, ?8, ?9, ?10)",
+    "INSERT INTO documents (id, type, status, client_id, currency, frozen_at, series, fy, number, number_display, issue_date, due_date, subtotal_minor, taxable_minor, total_minor, balance_minor, pdf_r2_key, voided_at, void_reason, header_extras) VALUES (?1, ?2, ?3, ?4, 'INR', 1000, 'inv-i', '2627', ?5, ?6, ?7, '2026-12-31', 100000, 100000, 118000, 118000, ?8, ?9, ?10, ?11)",
   )
     .bind(
       id,
@@ -29,6 +36,7 @@ async function mk(
       o.pdfKey ?? null,
       o.void ? 5 : null,
       o.void ? "x" : null,
+      o.headerExtras ?? null,
     )
     .run();
   return id;
@@ -130,6 +138,28 @@ describe("one invoice and its PDF [POR-06]", () => {
       await mk(f.a.id, { status: "void", void: true }),
     ])
       expect(await ask(id)).toEqual(expected);
+  });
+
+  it("FX-4 (A5 5; Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28)): gstEstimate is true only for a proforma sealed with the marker; an older proforma and every other type are false", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.a.finance);
+    const notice = "This is not a tax invoice. A tax invoice will be issued when payment is received.";
+    const estimateOf = async (id: string) => {
+      const res = await call(`/invoices/${id}`, { cookie: s.cookie });
+      expect(res.status).toBe(200);
+      return ((await bodyOf(res)).document as { gstEstimate: boolean }).gstEstimate;
+    };
+    const marked = JSON.stringify({ proforma: { notice, gstEstimate: true } });
+    expect(await estimateOf(await mk(f.a.id, { type: "proforma", headerExtras: marked }))).toBe(true);
+    // a proforma sealed before FX-4: the notice only, or no extras at all (the fixture's)
+    expect(
+      await estimateOf(
+        await mk(f.a.id, { type: "proforma", headerExtras: JSON.stringify({ proforma: { notice } }) }),
+      ),
+    ).toBe(false);
+    expect(await estimateOf(f.a.docs.proforma)).toBe(false);
+    // the marker means nothing on another type
+    expect(await estimateOf(await mk(f.a.id, { headerExtras: marked }))).toBe(false);
   });
 
   it("the PDF: 409 pdf_pending until it exists, then the attachment; another organisation's is the same 404", async () => {

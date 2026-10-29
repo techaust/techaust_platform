@@ -18,6 +18,7 @@ import { allowed, canManageUsers } from "../lib/access.ts";
 import {
   ACTION_GROUPS,
   ACTION_LABELS,
+  actionsInGroup,
   actionText,
   actorText,
   auditCsv,
@@ -212,9 +213,9 @@ function AuditLog() {
           <select id="au-action" value={f.action} onChange={(e) => set("action", e.target.value)}>
             <option value="">All actions</option>
             {ACTION_GROUPS.map((g) => {
-              const inGroup = actions.filter((a) => a.startsWith(g.prefix));
+              const inGroup = actionsInGroup(g, actions);
               return inGroup.length ? (
-                <optgroup key={g.prefix} label={g.label}>
+                <optgroup key={g.label} label={g.label}>
                   {inGroup.map((a) => (
                     <option key={a} value={a}>
                       {sentenceCase(actionText(a))}

@@ -10,10 +10,12 @@
 // multiplies or rounds money. The due date and the number are the server's; the screen never works them out.
 import { milestoneBillableRule } from "@techaust/core/invoices";
 import { SERIES, type Series } from "@techaust/core/numbering";
+import { PROFORMA_PDF_COPY } from "@techaust/pdf/copy";
 import type { Currency } from "../api.ts";
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
 import { milliToQty } from "./catalogue.ts";
+import { Y } from "./copy-y.ts";
 import {
   dayText,
   docErrorText,
@@ -57,6 +59,33 @@ export const INV_NO_MATCH = "No invoices match these filters";
 
 /** 07-R §7 (Q11, owner 2026-10-28): the stored supplier copy's download, for the Owner and the Accountant. */
 export const SUPPLIER_COPY_LABEL = "Download supplier copy";
+
+/**
+ * FX-4 (early check M1; 07-Y, PENDING, marked until approved): the line under "Download supplier copy" when the API answers 409 `pdf_pending` for an
+ * anonymised client: its copy is never made (no PDF work for an anonymised client), so the line says so and offers nothing.
+ * FX-4 review L2: the button is drawn only once the client's PDF is ready (the PDF panel's `extra`), and the copy follows that PDF, so for a live
+ * client the 409 can't follow from the screen. The old line for that case ("…made after the client's PDF…") had no way to show and is gone; a stale
+ * page that ever met one says it like any other failure (`supplierCopyLine` is null, and the screen's toast says to try again).
+ */
+export const SUPPLIER_COPY_NONE = Y(
+  "No supplier copy was made before this client was anonymised, and none can be made now.",
+);
+
+/**
+ * FX-4 review M1 (A5 5): a proforma's tax head as an estimate, "CGST (estimate)", in the PDF's own words (`PROFORMA_PDF_COPY.estimate`, 07-Y, pending;
+ * unmarked like the PDF, docs/13), so the screen and the PDF never differ. Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28).
+ */
+export const taxHeadEstimate: (head: string) => string = PROFORMA_PDF_COPY.estimate;
+
+/** Whether the view's tax heads read as estimates: only a proforma with the marker (sealed with it, or a draft that will be); never an older seal. */
+export const showsGstEstimate = (v: {
+  type: string;
+  proforma?: { gstEstimate?: boolean | undefined } | null | undefined;
+}): boolean => v.type === "proforma" && v.proforma?.gstEstimate === true;
+
+/** The line that stays under the supplier copy's button after an answer: only an anonymised client's 409 has one. */
+export const supplierCopyLine = (state: string, anonymised: boolean): string | null =>
+  state === "no_original" && anonymised ? SUPPLIER_COPY_NONE : null;
 
 // ---- 07-R §1–§4, word for word ---------------------------------------------------------------------------------------------------------------
 

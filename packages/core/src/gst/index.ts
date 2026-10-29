@@ -118,6 +118,7 @@ export {
   type Gstr1Params,
   type GstWarning,
   type GstWarningCode,
+  type ManualTaxEntry,
   type NoteParent,
   ok,
   type Path,

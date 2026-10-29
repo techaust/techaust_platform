@@ -13,8 +13,12 @@ export type ImsStatus = "pending" | "accepted" | "rejected" | "not_applicable";
 /** One issued note of an invoice (the notes section, 07-T §6). */
 export type NoteRow = {
   id: string;
+  /** Which kind of note (FX-4, A5 6); absent from an older API, when the list it came in says it. */
+  type?: "credit_note" | "debit_note";
   number: string | null;
   issueDate: string | null;
+  /** When it was issued (UTC ms; FX-4 early check L4); absent from an older API. */
+  issuedAt?: number | null;
   totalMinor: number;
   status: InvoiceStatus | string;
   imsStatus: ImsStatus | null;

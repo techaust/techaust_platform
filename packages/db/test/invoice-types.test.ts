@@ -1122,6 +1122,13 @@ describe("the seal and the content hash carry the M5.2 parts [LD24, LD25]", () =
     const pf = await invoiceSealOf({ ...parts, proforma: { notice: "n" } });
     expect(Object.keys(pf.input)).toContain("proforma");
     expect(pf.snapshotSha256).not.toBe(base);
+    // FX-4 (A5 5; 08-C RA-28): the GST estimate marker is sealed with the notice, and read back from `header_extras` as frozen
+    const est = await invoiceSealOf({ ...parts, proforma: { notice: "n", gstEstimate: true } });
+    expect(est.snapshotSha256).not.toBe(pf.snapshotSha256);
+    const frozen = headerExtrasJson({ proforma: { notice: "n", gstEstimate: true } });
+    expect(headerExtrasOfRow({ header_extras: frozen })).toEqual({
+      proforma: { notice: "n", gstEstimate: true },
+    });
     const adv = await invoiceSealOf({
       ...parts,
       advance: {

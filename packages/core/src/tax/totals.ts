@@ -51,6 +51,12 @@ export type AssembleInput = {
   readonly unregisteredRecipient: boolean;
   /** The INR view worked out by the caller (credit notes), instead of converting this document's own taxable value. */
   readonly inrPlan?: InrPlan | undefined;
+  /**
+   * No round-off: the total is the exact sum of the lines, as a USD document always is (a tax-only debit note only; FX-4, full audit A5 11). OPEN (08-C RA-33): may a
+   * tax-only debit note's total be rounded to the nearest rupee, and in which direction? Not rounding is the engine's existing "none" mode, so neither direction is
+   * invented and the total is never below the tax the note declares.
+   */
+  readonly noRoundOff?: boolean | undefined;
 };
 
 /** One line's INR taxable value and tax. */
@@ -175,7 +181,7 @@ export function assemble(input: AssembleInput, ctx: TaxContext): TaxResult<Compu
   const sgst = sum((l) => l.sgst);
   const igst = sum((l) => l.igst);
   const preRound = taxable + cgst + sgst + igst;
-  const unit = roundingUnit(currency, ctx);
+  const unit = input.noRoundOff === true ? 1n : roundingUnit(currency, ctx);
 
   let total: bigint;
   if (input.targetTotalMinor === undefined) {

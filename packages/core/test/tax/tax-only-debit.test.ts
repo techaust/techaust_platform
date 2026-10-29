@@ -71,9 +71,29 @@ describe("taxOnlyDebitNote", () => {
     ]);
     expect(d.lines.every((l) => l.taxableMinor === 0 && l.cgstMinor === 0 && l.sgstMinor === 0)).toBe(true);
     expect(d.igstMinor).toBe(20_501);
-    // the INR total is a whole rupee: 20,501 rounds half up to 20,500
-    expect(d.totalMinor).toBe(20_500);
-    expect(d.roundOffMinor).toBe(-1);
+    // FX-4 (full audit A5 11; OPEN 08-C RA-33): never rounded, so the total is the tax itself (it used to round down to 20,500, below the tax it declares)
+    expect(d.totalMinor).toBe(20_501);
+    expect(d.roundOffMinor).toBe(0);
+  });
+
+  it("FX-4 (A5 11): Rs 10.01 of IGST totals Rs 10.01 with no round-off, and the words say the exact amount", () => {
+    const d = good(taxOnlyDebitNote(good(inrDoc(REG_MH, [line(500_000)])), 1_001, DEFAULTS));
+    expect(d).toMatchObject({ taxableMinor: 0, igstMinor: 1_001, roundOffMinor: 0, totalMinor: 1_001 });
+    expect(d.words).toContain("One Paisa");
+  });
+
+  it("FX-4 (A5 11): for any amount the total is exactly the tax and never below it, intra or inter, with no round-off", () => {
+    const intraParent = good(
+      inrDoc(REG_WB, [line(1_000_000), line(250_000, { sac: "998313", gstRateBp: 500 })]),
+    );
+    for (const tax of [1, 2, 49, 50, 51, 99, 100, 101, 149, 150, 151, 1_001, 20_501, 99_999]) {
+      const i = good(taxOnlyDebitNote(inter(), tax, DEFAULTS));
+      expect([i.totalMinor, i.roundOffMinor]).toEqual([tax, 0]);
+      if (tax % 2 === 0) {
+        const a = good(taxOnlyDebitNote(intraParent, tax, DEFAULTS));
+        expect([a.totalMinor, a.roundOffMinor, a.cgstMinor + a.sgstMinor]).toEqual([tax, 0, tax]);
+      }
+    }
   });
 
   it("intra-state with two rates: each head takes half of the amount, and CGST equals SGST on every line", () => {

@@ -8,12 +8,17 @@
 //
 // No value import of `@techaust/core/gst` here (the gst core is fetched only by the reports screens: ./reports-build.ts); types only. Money is formatted
 // through core (`moneyText`); nothing here adds up an amount.
+import { compareDocNumbers, formatMoney, money } from "@techaust/core";
 import { formatDate, parseIsoDate } from "@techaust/core/dates";
 import type { CalendarDate, GstErrorCode, GstIssue, GstWarning, RealisationStage } from "@techaust/core/gst";
 import { STATE_CODES } from "@techaust/core/gstin";
 import type { StatementKind } from "@techaust/core/statement";
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
+import { Y } from "./copy-y.ts";
+
+/** An INR amount in words for a line (core formats it; nothing here adds up). */
+const inr = (minor: number): string => formatMoney(money(minor, "INR"));
 
 /** "1 document" / "3 documents": the count words 07-V's lines use ({count} documents). */
 const docs = (n: number) => `${n} ${n === 1 ? "document" : "documents"}`;
@@ -50,6 +55,14 @@ export const GST_COPY = {
   checking: (n: number) => `Checking ${n} documents`,
   /** 07-V has the plural; one document is said in its singular (the plural line's own words). */
   done: (n: number) => (n === 1 ? "1 document checked. No errors." : `${n} documents checked. No errors.`),
+  /**
+   * FX-4 (full audit A5 1; 07-Y, PENDING): said instead of `done` while a blocking warning is present (a tax-only note whose tax the files leave out), so the panel never
+   * says "No errors" then. OPEN (08-C RA-32): how such a note is reported in Table 9B.
+   */
+  doneManual: (n: number, k: number) =>
+    Y(
+      `${docs(n)} checked. ${k === 1 ? "1 note needs its" : `${k} notes need their`} tax entered by hand before you file.`,
+    ),
   errorsHeading: (n: number) =>
     n === 1
       ? "1 problem to fix before these files can be made"
@@ -214,7 +227,36 @@ export function gstWarningText(
     case "before_fema_2026":
       // OPEN (08-C RB-02): which period applies to an invoice raised before 1 October 2026.
       return "Issued before 1 October 2026: a different realisation period may apply. Ask your bank or CA.";
+    case "tax_only_note_manual":
+      return taxOnlyNoteText(w);
   }
+}
+
+/**
+ * FX-4 (full audit A5 1; 07-Y, PENDING): a tax-only note's blocking warning, naming the note, the recipient's GSTIN and each tax head with its amount to enter by hand.
+ * OPEN (08-C RA-32): how is a tax-only debit note (taxable value nil, tax only) reported in GSTR-1 Table 9B through the Offline Tool, and how does it flow to 3B Table 3?
+ * The line names what the files may leave out (OPEN (08-C RA-23): the Offline Tool import is untested, so it says "may not come through", never "would be nil") and
+ * sends the question to the CA; it never says how to file it.
+ */
+export function taxOnlyNoteText(w: GstWarning): string {
+  const m = w.manual;
+  if (!m) return Y("A tax-only note's tax is not in the files. Ask your CA how to report it.");
+  const heads = [
+    m.igstMinor > 0 ? `IGST ${inr(m.igstMinor)}` : null,
+    m.cgstMinor > 0 ? `CGST ${inr(m.cgstMinor)}` : null,
+    m.sgstMinor > 0 ? `SGST ${inr(m.sgstMinor)}` : null,
+  ].filter((h): h is string => h !== null);
+  const who = m.gstin === null ? "unregistered client" : `GSTIN ${m.gstin}`;
+  // By kind (early check L2): a debit note adds tax, a credit note takes it away. A b2cs note sits in the B2CS file, not a note file, so its line names no table.
+  const what =
+    m.kind === "credit_note"
+      ? "is a credit note that reduces tax only"
+      : "is a debit note that adds tax only";
+  const ask =
+    m.section === "b2cs" ? "Ask your CA how to report it." : "Ask your CA how to report it in Table 9B.";
+  return Y(
+    `${m.number} (${who}) ${what}. The files show it with a taxable value of 0.00 and no tax column, so its tax may not come through on import. Enter by hand: ${heads.join(", ")}. ${ask}`,
+  );
 }
 
 // ---- periods (07-V §2: the last complete quarter by default; QRMP quarters of the financial year) ----------------------------------------------------
@@ -487,7 +529,8 @@ export function byUrgency<
     if (s !== 0) return s;
     const d = key(dueOf(a)) - key(dueOf(b));
     if (d !== 0) return d;
-    return a.number < b.number ? -1 : a.number > b.number ? 1 : 0;
+    // the number in issue order ("/10" after "/9", FX-4 review L3), as the register's rows are
+    return compareDocNumbers(a.number, b.number);
   });
 }
 
@@ -536,7 +579,10 @@ export const STATEMENT_COPY = {
   caption: "Statement entries",
 } as const;
 
-/** 07-V §6 entry kinds (Details). A credit note says which invoice it is against when the API gives that number; else 07-U §3's type name. */
+/**
+ * 07-V §6 entry kinds (Details). A credit note says which invoice it is against when the API gives that number; else 07-U §3's type name. A debit note does the same
+ * (FX-4, full audit A5 7): "Debit note against {number}" is 07-Y's (PENDING, marked); without a number it stays 07-V's "Debit note".
+ */
 export function statementKindText(kind: StatementKind, againstNumber?: string | null): string {
   switch (kind) {
     case "tax_invoice":
@@ -544,7 +590,7 @@ export function statementKindText(kind: StatementKind, againstNumber?: string | 
     case "export_invoice":
       return "Export invoice";
     case "debit_note":
-      return "Debit note";
+      return againstNumber ? Y(`Debit note against ${againstNumber}`) : "Debit note";
     case "credit_note":
       return againstNumber ? `Credit note against ${againstNumber}` : "Credit note";
     case "receipt":
@@ -580,6 +626,15 @@ export function nearestScrollLeft(
   return rowScrollLeft;
 }
 
+/** The CSV's debit-note words (FX-4, A5 7): 07-Y's line with core's `{number}` slot (marked while 07-Y is pending), or 07-V's "Debit note" when a debit note in the file lacks its invoice number. */
+export function statementCsvDebitNoteLabel(
+  entries: readonly { kind: StatementKind; againstNumber?: string | null }[],
+) {
+  return entries.every((e) => e.kind !== "debit_note" || e.againstNumber)
+    ? Y("Debit note against {number}")
+    : "Debit note";
+}
+
 /** The CSV's words (core `statementCsv` takes them from the caller, LD83; it fills `{number}` with each note's invoice number). */
 export const statementCsvLabels = (
   entries: readonly { kind: StatementKind; againstNumber?: string | null }[] = [],
@@ -589,7 +644,7 @@ export const statementCsvLabels = (
   kinds: {
     tax_invoice: statementKindText("tax_invoice"),
     export_invoice: statementKindText("export_invoice"),
-    debit_note: statementKindText("debit_note"),
+    debit_note: statementCsvDebitNoteLabel(entries),
     credit_note: statementCsvCreditNoteLabel(entries),
     receipt: statementKindText("receipt"),
   } satisfies Record<StatementKind, string>,

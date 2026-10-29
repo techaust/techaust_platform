@@ -3,6 +3,8 @@
 // (the server's ids by position, figures kept when unchanged, a part edited during the save stays dirty).
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
+import docEditorSource from "../routes/documents/editor.tsx?raw";
+import invEditorSource from "../routes/invoices/editor.tsx?raw";
 
 /** The mark a line not yet approved would carry (none should). */
 const PLACEHOLDER_TAG = "[Placeholder]";
@@ -26,6 +28,8 @@ import {
   DOC_TOASTS,
   decisionLine,
   decisionTitle,
+  discountRowLabel,
+  discountSources,
   docErrorText,
   editor,
   emptySectionsOf,
@@ -49,6 +53,7 @@ import {
   sectionTitleName,
   sendLine,
   sentAs,
+  sentDiscounts,
   shownStatus,
   termsLine,
   unresolvedLine,
@@ -766,5 +771,61 @@ describe("recipientLine: who a document is for (M4.3 re-check 2, owner's rule)",
       name: "Acme Ltd",
       contact: null,
     });
+  });
+});
+
+describe("FX-4 (A5 3): the totals' discount row is named for where its discount comes from", () => {
+  const mark = `${PLACEHOLDER_TAG} `;
+  it("the document's own discount keeps 07-O's word; line discounts, or both, are named so (07-Y, marked)", () => {
+    expect(discountRowLabel({ lines: false, document: true })).toBe(DOC_COPY.documentDiscount);
+    expect(discountRowLabel({ lines: true, document: false })).toBe(`${mark}Line discounts`);
+    expect(discountRowLabel({ lines: true, document: true })).toBe(`${mark}Discounts (lines and document)`);
+  });
+  it("a frozen view: a zero discount takes nothing off and doesn't count", () => {
+    const pct = (value: number) => ({ kind: "percent" as const, value });
+    expect(discountSources({ lines: [{ discount: pct(500) }, { discount: null }], discount: null })).toEqual({
+      lines: true,
+      document: false,
+    });
+    expect(discountSources({ lines: [{ discount: pct(0) }], discount: pct(1000) })).toEqual({
+      lines: false,
+      document: true,
+    });
+  });
+  it("review L1: a save's own discounts, for the parts it sends only; a zero discount takes nothing off", () => {
+    const pct = (value: number) => ({ kind: "percent" as const, value });
+    expect(sentDiscounts({ lines: [{ discount: pct(500) }, { discount: null }] })).toEqual({ lines: true });
+    expect(sentDiscounts({ fields: { discount: pct(0) } })).toEqual({ document: false });
+    expect(sentDiscounts({})).toEqual({});
+  });
+  it("review L1: a draft's row is named from what is saved, never from what is typed", () => {
+    let s = initEditor(view());
+    expect(s.figures.discounts).toEqual({ lines: false, document: false });
+    // typed, not saved yet: the row (and its amount) still describe the saved draft
+    s = editor(s, {
+      type: "line",
+      uid: s.lines[0]?.uid as string,
+      patch: { discKind: "percent", disc: "5" },
+    });
+    expect(s.figures.discounts).toEqual({ lines: false, document: false });
+    const b = buildPatch(s);
+    if (!b.ok || !b.patch) throw new Error("no patch");
+    s = editor(s, { type: "saving" });
+    // typed while the save was in flight: the document's discount is not in this save
+    s = editor(s, { type: "fields", patch: { discKind: "percent", disc: "10" } });
+    s = editor(s, { type: "saved", answer: answer(s, ["l1"]), sent: b.sent });
+    expect(s.figures.discounts).toEqual({ lines: true, document: false });
+    // a refused or failed save changes nothing
+    s = editor(s, { type: "failed", status: "error", error: "x" });
+    expect(s.figures.discounts).toEqual({ lines: true, document: false });
+    const b2 = buildPatch(s);
+    if (!b2.ok || !b2.patch) throw new Error("no patch");
+    s = editor(s, { type: "saved", answer: answer(s, ["l1"]), sent: b2.sent });
+    expect(s.figures.discounts).toEqual({ lines: true, document: true });
+  });
+  it("review L1: both editors name the row from the saved state", () => {
+    expect(docEditorSource).toMatch(/discounts=\{f\.discounts\}/);
+    expect(invEditorSource).toMatch(/discounts=\{discountSources\(v\)\}/);
+    for (const src of [docEditorSource, invEditorSource]) expect(src).not.toMatch(/draftDiscountSources/);
   });
 });

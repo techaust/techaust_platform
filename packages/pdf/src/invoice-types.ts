@@ -58,7 +58,7 @@ export type InvoiceHeader = {
   computedSha256: string;
   /**
    * M5.2 (LD25): the optional keys, each present ONLY on the types that need it (an M5.1 envelope has none and still parses and verifies):
-   * `export` (an export invoice: the endorsement as frozen, the LUT, the country), `fx` (a USD tax or export invoice), `proforma` (the notice),
+   * `export` (an export invoice: the endorsement as frozen, the LUT, the country), `fx` (a USD tax or export invoice), `proforma` (the notice; from FX-4 also `gstEstimate: true`),
    * `advance` (the invoice made for money received), and (M5.3) `noteOf`: a credit or debit note's request, reason and the facts of its invoice (required on a note,
    * refused on any other type). They mirror core's `InvoiceSnapshotInput`; the issue batch froze them in `documents.header_extras`.
    */
@@ -241,8 +241,12 @@ export type InvoiceView = {
   inr: InvoiceViewInr | null;
   /** M5.2: the SWIFT payment details of a USD invoice that has them; null otherwise. */
   swift: InvoiceViewSwift | null;
-  /** M5.2: a proforma's notice (printed under the title) and its "Valid until" (its due date); null on every other type. */
-  proforma: { notice: string; validUntil: string } | null;
+  /**
+   * M5.2: a proforma's notice (printed under the title) and its "Valid until" (its due date); null on every other type. FX-4 (A5 5): `gstEstimate` is
+   * true only when the sealed header carries the marker (a proforma issued from FX-4 on): its tax heads then print "(estimate)" (Researched 2026-10-28,
+   * s.31 CGST Act, Rule 46 (08-C RA-28)).
+   */
+  proforma: { notice: string; validUntil: string; gstEstimate: boolean } | null;
   /** M5.2: the invoice made for money received against a proforma: the proforma's number and date, and the day the money arrived; null otherwise. */
   advance: {
     proformaNumber: string;
