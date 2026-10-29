@@ -34,7 +34,7 @@ import {
   TOO_MANY_LINES,
   taxContext,
 } from "./quote-model.ts";
-import { appendedText, autoHides, emptyServiceTokens, serviceData } from "./service-fill.ts";
+import { appendServices, autoHides, emptyServiceTokens, serviceData } from "./service-fill.ts";
 
 /** What a draft needs to know of its client: for the lead convert the client does not exist yet, so this is not a database row. */
 export type ClientFacts = {
@@ -170,24 +170,25 @@ export async function buildNewDraft(i: NewDraftInput): Promise<NewDraft> {
       .map((s) => s.key),
   );
   const drafts = sectionsFromTemplate(rendered);
-  // Mutable copies: the other services' texts are appended to them below.
+  // The other services' texts go in under their names by the one rule of a later save (`appendServices`, the block rule): a text the
+  // service's own block already holds is not repeated (the same line in another service's block never counts: round 5), and one that would
+  // pass a section's length limit or the document's is left out of that section and named as a gap (round 4, M3: never a draft every later
+  // save refuses). Mutable copies: the scope and the hiding below change them.
   const sections: {
     id: string;
     kind: string;
     title: string | null;
     bodyMd: string | null;
     hidden: boolean;
-  }[] = drafts.map((s) => ({ ...s, id: uuidv7() }));
+  }[] = appendServices(
+    drafts.map((s) => ({ ...s, id: uuidv7() })),
+    i.services.slice(1).map((s) => s.item),
+    i.services.map((s) => s.item),
+  ).map((s) => ({ ...s }));
   const append = (kind: string, text: string) => {
     const at = sections.find((s) => s.kind === kind);
     if (at) at.bodyMd = at.bodyMd ? `${at.bodyMd}\n\n${text}` : text;
   };
-  for (const s of i.services.slice(1)) {
-    const d = appendedText("deliverables", s.item);
-    if (d !== null) append("deliverables", d);
-    const aex = appendedText("assumptions_exclusions", s.item);
-    if (aex !== null) append("assumptions_exclusions", aex);
-  }
   // A section whose template text was only empty tokens and that no service filled is created hidden.
   // Never a required section (estimate, terms, acceptance): it stays shown, and the send check asks for its text (lead, 2026-10-29).
   for (const s of sections)

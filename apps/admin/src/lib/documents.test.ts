@@ -29,12 +29,14 @@ import {
   docErrorText,
   editor,
   emptySectionsOf,
+  gapGroups,
   guardLine,
   initEditor,
   isDirty,
   type LineDraft,
   lineErrors,
   mappedError,
+  mergeServerEdit,
   moved,
   newerTerms,
   OPEN_IT,
@@ -51,8 +53,9 @@ import {
   termsLine,
   unresolvedLine,
   versionLine,
+  waitForInflight,
 } from "./documents.ts";
-import type { DocumentView, SaveAnswer, ViewLine } from "./documents-api.ts";
+import type { CatalogueGap, DocumentView, SaveAnswer, ViewLine } from "./documents-api.ts";
 
 const view = (over: Partial<DocumentView> = {}): DocumentView => ({
   id: "d1",
@@ -544,7 +547,7 @@ describe("the autosave: how the answer lands", () => {
     expect(s.sections[0]).toMatchObject({ title: "Estimate for Asha", bodyMd: "Filled by the server" }); // already moved on: kept
   });
 
-  it("a section typed in while the save was in flight keeps what was typed; an answer with no sectionsChanged changes no text", () => {
+  it("round 4, M2: a section typed in while the save was in flight keeps what was typed AND gets the server's text; it stays dirty", () => {
     let s = initEditor(view());
     s = editor(s, { type: "fields", patch: { title: "New" } });
     const b = buildPatch(s);
@@ -553,10 +556,146 @@ describe("the autosave: how the answer lands", () => {
     s = editor(s, { type: "section", uid, patch: { bodyMd: "Typed meanwhile" } });
     const written = { id: "s1", title: "Estimate", bodyMd: "Filled by the server", hidden: false };
     const after = applySave(s, { ...answer(s, ["l1"]), sectionsChanged: [written] }, b.sent);
-    expect(after.sections[0]?.bodyMd).toBe("Typed meanwhile");
+    // the section was empty when the save left: the server's text is its own block after what was typed
+    expect(after.sections[0]?.bodyMd).toBe("Typed meanwhile\n\nFilled by the server");
     expect(isDirty(after)).toBe(true);
+    expect(after.status).toBe("idle");
+    // the next save carries both
+    const next = buildPatch(after);
+    if (!next.ok || !next.patch) throw new Error("no patch");
+    expect(next.patch.sections?.[0]?.bodyMd).toBe("Typed meanwhile\n\nFilled by the server");
     const plain = applySave(s, answer(s, ["l1"]), b.sent);
     expect(plain.sections[0]?.bodyMd).toBe("Typed meanwhile");
+  });
+
+  it("round 4, M2: text the server appended goes after what was typed; a span it changed inside is changed where it still stands", () => {
+    const withBody = (bodyMd: string) =>
+      view({
+        sections: [{ id: "s1", position: 1, kind: "estimate", hidden: false, title: "Estimate", bodyMd }],
+      });
+    let s = initEditor(withBody("A deliv"));
+    const uid = s.sections[0]?.uid as string;
+    s = editor(s, { type: "fields", patch: { title: "New" } });
+    const b = buildPatch(s);
+    if (!b.ok || !b.patch) throw new Error("no patch");
+    s = editor(s, { type: "section", uid, patch: { bodyMd: "A deliv, and more" } });
+    const appended = { id: "s1", title: "Estimate", bodyMd: "A deliv\n\n**Beta**\nB deliv", hidden: false };
+    const after = applySave(s, { ...answer(s, ["l1"]), sectionsChanged: [appended] }, b.sent);
+    expect(after.sections[0]?.bodyMd).toBe("A deliv, and more\n\n**Beta**\nB deliv");
+    expect(isDirty(after)).toBe(true);
+  });
+
+  it("mergeServerEdit: appended, changed inside (before or after what was typed), the contact's name, and the span the person changed", () => {
+    expect(mergeServerEdit("A", "A", "A typed")).toBe("A typed");
+    expect(mergeServerEdit("A", "A\n\nB", "A")).toBe("A\n\nB");
+    expect(mergeServerEdit("A", "A\n\nB", "A, typed")).toBe("A, typed\n\nB");
+    // a part put into the first block, the person typed at the end or at the start
+    const sent = "A assumes\n\n**Beta**\nB";
+    const server = "A assumes\nA excl\n\n**Beta**\nB";
+    expect(mergeServerEdit(sent, server, `${sent} typed`)).toBe(`${server} typed`);
+    expect(mergeServerEdit(sent, server, `Intro. ${sent}`)).toBe(`Intro. ${server}`);
+    // the contact's name in the Acceptance text
+    expect(
+      mergeServerEdit(
+        "Signed by {{client.contact}}.",
+        "Signed by Asha Rao.",
+        "Signed by {{client.contact}}. Thanks",
+      ),
+    ).toBe("Signed by Asha Rao. Thanks");
+    // the person rewrote the very span the server changed: theirs stays (the caller keeps what was typed)
+    expect(
+      mergeServerEdit("Signed by {{client.contact}}.", "Signed by Asha Rao.", "Signed by me."),
+    ).toBeNull();
+    // an empty section: the server's block after what was typed, or the server's text alone
+    expect(mergeServerEdit("", "**Beta**\nB", "Typed")).toBe("Typed\n\n**Beta**\nB");
+    expect(mergeServerEdit("", "**Beta**\nB", "  ")).toBe("**Beta**\nB");
+    // the server emptied the text: what was typed stays whole
+    expect(mergeServerEdit("{{service.deliverables}}", "", "{{service.deliverables}} and ours")).toBeNull();
+  });
+
+  it("round 4, L5: waitForInflight waits for a request started while it waited, each one once", async () => {
+    const order: string[] = [];
+    const slot: { current: Promise<unknown> | null } = { current: null };
+    await waitForInflight(slot); // nothing in flight
+    let second: Promise<unknown> | null = null;
+    const first = (async () => {
+      await Promise.resolve();
+      order.push("first");
+      // a fill starts while the save is still finishing
+      second = (async () => {
+        await new Promise((r) => setTimeout(r, 5));
+        order.push("second");
+      })();
+      slot.current = second;
+    })();
+    slot.current = first;
+    await waitForInflight(slot);
+    order.push("waited");
+    expect(order).toEqual(["first", "second", "waited"]);
+    // a settled promise left in the slot ends the wait (no spin); a rejected one is waited for, never thrown
+    slot.current = Promise.reject(new Error("refused"));
+    await expect(waitForInflight(slot)).resolves.toBeUndefined();
+    expect(second).not.toBeNull();
+  });
+
+  it("round 3, finding 3: fresh gaps bring their base with them, so a note left after a fill stays on screen; no gaps, no change", () => {
+    const gap = (field: CatalogueGap["field"], now: boolean): CatalogueGap => ({
+      sectionId: "s2",
+      sectionKind: "assumptions_exclusions",
+      field,
+      serviceCode: "S2",
+      serviceName: "Beta",
+      catalogueItemId: "i2",
+      catalogueHasTextNow: now,
+      noRoom: false,
+    });
+    let s = initEditor(
+      view({
+        sections: [
+          { id: "s1", position: 1, kind: "estimate", hidden: false, title: "Estimate", bodyMd: "E" },
+          {
+            id: "s2",
+            position: 2,
+            kind: "assumptions_exclusions",
+            hidden: true,
+            title: "Assumptions and exclusions",
+            bodyMd: null,
+          },
+        ],
+        catalogueGaps: [gap("assumptions", true), gap("exclusions", false)],
+      }),
+    );
+    expect(s.gapBase).toEqual(["s2"]);
+    // "Use Catalogue text": the fill's answer holds the filled section and the gaps after it (Beta's exclusions still missing)
+    const sent = {
+      parts: [],
+      rev: { ...s.rev },
+      uids: {},
+      sectionsAt: Object.fromEntries(s.sections.map((x) => [x.uid, x])),
+    };
+    const filled = { id: "s2", title: "Assumptions and exclusions", bodyMd: "Beta assumes", hidden: false };
+    const fresh = [gap("exclusions", false)];
+    const a = {
+      ...answer(s, ["l1"]),
+      sections: [
+        { id: "s1", position: 1 },
+        { id: "s2", position: 2 },
+      ],
+      sectionsChanged: [filled],
+      catalogueGaps: fresh,
+    };
+    const after = applySave(s, a, sent);
+    expect(after.sections[1]).toMatchObject({ bodyMd: "Beta assumes", hidden: false });
+    expect(after.gapBase).toEqual([]);
+    const groups = gapGroups(after.figures.gaps, after.sections, after.gapBase);
+    expect(groups.map((g) => [g.sectionId, g.services.map((x) => [x.name, x.missing, x.now])])).toEqual([
+      ["s2", [["Beta", ["exclusions"], []]]],
+    ]);
+    // before round 3 the base kept "s2", so this note was dropped until a reload
+    expect(gapGroups(fresh, after.sections, ["s2"])).toEqual([]);
+    // an answer without gaps keeps the base and the gaps it was taken with
+    s = applySave(after, answer(after, ["l1"]), { ...sent, sectionsAt: {} });
+    expect([s.gapBase, s.figures.gaps]).toEqual([[], fresh]);
   });
 
   it("a conflict stops the autosave until the latest is loaded", () => {

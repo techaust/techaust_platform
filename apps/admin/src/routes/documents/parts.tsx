@@ -158,3 +158,19 @@ export function documentColumns(withClient: boolean, rows: readonly ListRow[]): 
       : []),
   ];
 }
+
+/**
+ * A service's page in Catalogue, inline at the end of the sentence about it (the 44 px rule's inline exception), its name added for a
+ * screen reader. The section's note and the send panel's list both use it (round 4, M4: each link after its own sentence).
+ */
+export function CatalogueLink(props: { id: string; name: string; words: string }) {
+  return (
+    <Link
+      to={`/catalogue/${encodeURIComponent(props.id)}`}
+      className="blockers__link"
+      aria-label={`${props.words}: ${props.name}`}
+    >
+      {props.words}
+    </Link>
+  );
+}

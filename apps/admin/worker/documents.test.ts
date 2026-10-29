@@ -216,6 +216,7 @@ describe("create [ADM-PROP-01]", () => {
         serviceName: expect.any(String),
         catalogueItemId: item.id,
         catalogueHasTextNow: false,
+        noRoom: false,
       })),
     );
   });
