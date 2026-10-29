@@ -234,9 +234,28 @@ export type NoteLedgerRow = NoteRow & {
   typeText: string;
 };
 
+/** A document number as its series part and the integer at its end ("TH/CN/2627/10" -> "TH/CN/2627/", 10); no integer -> null. */
+const numberParts = (n: string | null): { series: string; seq: number | null } => {
+  const m = n === null ? null : /^(.*?)(\d+)$/.exec(n);
+  return m ? { series: m[1] as string, seq: Number(m[2]) } : { series: n ?? "", seq: null };
+};
+
+/** null after any number, so a missing value never jumps the queue. */
+const byNumber = (a: number | null | undefined, b: number | null | undefined): number =>
+  a == null ? (b == null ? 0 : 1) : b == null ? -1 : a - b;
+
+const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+/** Two document numbers: by series (text), then by the integer at the end, never by the text of the whole ("/10" after "/9"). */
+const byDocNumber = (a: string | null, b: string | null): number => {
+  const [x, y] = [numberParts(a), numberParts(b)];
+  return byText(x.series, y.series) || byNumber(x.seq, y.seq);
+};
+
 /**
- * The issued notes of an invoice as one ledger, oldest first (by issue date, then number, then id: a stable order), each row with its type. The type comes from the
- * row (the API sends it) or, from an older API, from the list it came in.
+ * The issued notes of an invoice as one ledger, oldest first, each row with its type: by issue date, then the instant it was issued, then the number (series, then its
+ * integer: "TH/CN/2627/10" comes after "/9", early check L4), then the id, a stable order. The type comes from the row (the API sends it) or, from an older API, from the
+ * list it came in.
  */
 export function noteLedgerRows(notes: {
   credit: readonly NoteRow[];
@@ -246,11 +265,16 @@ export function noteLedgerRows(notes: {
     const type = r.type ?? fallback;
     return { ...r, type, kind: type === "credit_note" ? "credit" : "debit", typeText: typeLabel(type) };
   };
-  const key = (r: NoteRow) => `${r.issueDate ?? ""}|${r.number ?? ""}|${r.id}`;
   return [
     ...notes.credit.map((r) => tag(r, "credit_note")),
     ...notes.debit.map((r) => tag(r, "debit_note")),
-  ].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+  ].sort(
+    (a, b) =>
+      byText(a.issueDate ?? "", b.issueDate ?? "") ||
+      byNumber(a.issuedAt, b.issuedAt) ||
+      byDocNumber(a.number, b.number) ||
+      byText(a.id, b.id),
+  );
 }
 export const refundLine = (amount: string) =>
   `Refund due to the client: ${amount}. Refunds are recorded with payments.`;

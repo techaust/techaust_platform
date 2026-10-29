@@ -167,6 +167,10 @@ describe("a credit note: draft, issue, ledger [ADM-INV-11, LD38, LD41]", () => {
     // FX-4 (A5 6): each ledger row carries its type, so the screen names it
     expect(after.notes.credit.map((r: J) => r.type)).toEqual(["credit_note"]);
     expect(after.notes.debit.map((r: J) => r.type)).toEqual(["debit_note"]);
+    // early check L4: and the instant it was issued, so the ledger orders one day's notes by it (the credit note was issued first)
+    const [cAt, dAt] = [after.notes.credit[0].issuedAt, after.notes.debit[0].issuedAt];
+    expect([typeof cAt, typeof dAt]).toEqual(["number", "number"]);
+    expect(cAt).toBeLessThanOrEqual(dAt);
     expect(after.notes.drafts).toEqual({ credit: (await json(draft)).id, debit: null });
     expect(after.actions.credit).toEqual({ allowed: false, reasons: ["note_draft_exists"] });
     expect(after.creditable.lines[0].taxableLeftMinor).toBe(90_000);

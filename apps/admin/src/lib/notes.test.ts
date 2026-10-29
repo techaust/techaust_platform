@@ -560,4 +560,31 @@ describe("FX-4 (A5 6): the notes ledger names each row's type, and the balance c
     expect(creditNoteCount(notes)).toBe(2);
     expect(creditNoteCount({ credit: [] })).toBe(0);
   });
+
+  it("early check L4: numbers sort as integers, never as text, and one day's notes follow the instant they were issued", () => {
+    const at = (r: ReturnType<typeof row>, issuedAt?: number) =>
+      issuedAt === undefined ? r : { ...r, issuedAt };
+    // an older API (no instant): /9 before /10 on the same day
+    const plain = noteLedgerRows({
+      credit: [row("c10", "2026-11-02", "TH/CN/2627/10"), row("c9", "2026-11-02", "TH/CN/2627/9")],
+      debit: [],
+    });
+    expect(plain.map((r) => r.id)).toEqual(["c9", "c10"]);
+    // the instant wins over the number across series on one day; the date wins over both
+    const mixed = noteLedgerRows({
+      credit: [
+        at(row("c10", "2026-11-02", "TH/CN/2627/10"), 3_000),
+        at(row("c9", "2026-11-02", "TH/CN/2627/9"), 2_000),
+        at(row("c1", "2026-11-01", "TH/CN/2627/1"), 9_000),
+      ],
+      debit: [at(row("d2", "2026-11-02", "TH/DN/2627/2"), 1_000)],
+    });
+    expect(mixed.map((r) => r.id)).toEqual(["c1", "d2", "c9", "c10"]);
+    // a row without an instant comes after those with one on the same day
+    const partial = noteLedgerRows({
+      credit: [row("c3", "2026-11-02", "TH/CN/2627/3"), at(row("c4", "2026-11-02", "TH/CN/2627/4"), 5)],
+      debit: [],
+    });
+    expect(partial.map((r) => r.id)).toEqual(["c4", "c3"]);
+  });
 });

@@ -43,6 +43,8 @@ const itemOf = (r: NoteListRow) => ({
   type: r.type as "credit_note" | "debit_note",
   number: r.number_display,
   issueDate: r.issue_date,
+  /** When it was issued (UTC ms), so the ledger orders notes of one day by the instant, never by the text of their numbers (early check L4). */
+  issuedAt: r.frozen_at,
   totalMinor: r.total_minor,
   status: r.status,
   imsStatus: r.ims_status,

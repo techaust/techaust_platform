@@ -17,6 +17,8 @@ export type NoteRow = {
   type?: "credit_note" | "debit_note";
   number: string | null;
   issueDate: string | null;
+  /** When it was issued (UTC ms; FX-4 early check L4); absent from an older API. */
+  issuedAt?: number | null;
   totalMinor: number;
   status: InvoiceStatus | string;
   imsStatus: ImsStatus | null;
