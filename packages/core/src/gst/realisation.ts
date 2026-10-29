@@ -10,6 +10,7 @@ import { addMonthsClamped } from "./period.ts";
 import {
   type Currency,
   compareDates,
+  compareDocNumbers,
   compareText,
   fail,
   type GstIssue,
@@ -251,7 +252,13 @@ export function realisationRows(
       });
     }
     if (errors.length > 0) return fail(errors);
-    rows.sort((a, b) => compareDates(a.issueDate, b.issueDate) || compareText(a.number, b.number));
+    // date, number in issue order ("/10" after "/9", FX-4 review L3), id
+    rows.sort(
+      (a, b) =>
+        compareDates(a.issueDate, b.issueDate) ||
+        compareDocNumbers(a.number, b.number) ||
+        compareText(a.id, b.id),
+    );
     return ok(rows, warnings);
   });
 }

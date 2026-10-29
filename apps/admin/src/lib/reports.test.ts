@@ -269,6 +269,22 @@ describe("realisation stages", () => {
     ];
     expect(byUrgency(rows).map((r) => r.number)).toEqual(["E3", "E4", "E2", "E1", "E5"]);
   });
+
+  it("same stage and due date: the number in issue order, /9 before /10 [FX-4 review L3]", () => {
+    const due = { year: 2027, month: 1, day: 5 };
+    const rows = ["TH/EXP/2627/10", "TH/EXP/2627/9", "TH/EXP/2627/100", "TH/EXP/2627/11"].map((number) => ({
+      number,
+      stage: "fema_overdue" as const,
+      femaDue: due,
+      gstDue: due,
+    }));
+    expect(byUrgency(rows).map((r) => r.number)).toEqual([
+      "TH/EXP/2627/9",
+      "TH/EXP/2627/10",
+      "TH/EXP/2627/11",
+      "TH/EXP/2627/100",
+    ]);
+  });
 });
 
 describe("statement words", () => {

@@ -9,6 +9,7 @@ import { classifyInvoice, classifyNote, type NoteSection, type UrType } from "./
 import { gstPeriod, inPeriod, type PeriodRange } from "./period.ts";
 import {
   compareDates,
+  compareDocNumbers,
   compareText,
   fail,
   GST_DOC_KINDS,
@@ -340,8 +341,14 @@ const mergeByRate = (rates: readonly RegisterRate[]): Omit<RegisterRate, "sac">[
     }));
 };
 
+/**
+ * Issue date, then the number in issue order (series, then its integer: "/10" after "/9", FX-4 review L3), then the id: a total order, so the rows and the
+ * blocking warnings of the same-day notes come out the same way every time.
+ */
 const byDateThenNumber = (a: Item, b: Item): number =>
-  compareDates(a.row.issueDate, b.row.issueDate) || compareText(a.row.number, b.row.number);
+  compareDates(a.row.issueDate, b.row.issueDate) ||
+  compareDocNumbers(a.row.number, b.row.number) ||
+  compareText(a.row.id, b.row.id);
 
 /**
  * The sections of one return period. Only the four kinds, not voided, issued in the period are reported (a voided document

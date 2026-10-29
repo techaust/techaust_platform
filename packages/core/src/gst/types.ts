@@ -253,3 +253,5 @@ export const compareDates = (a: CalendarDate, b: CalendarDate): -1 | 0 | 1 => {
 };
 /** Code-unit order of two strings: stable and locale-free. */
 export const compareText = (a: string, b: string): -1 | 0 | 1 => (a < b ? -1 : a > b ? 1 : 0);
+/** Document numbers in issue order ("/10" after "/9"); it lives with the numbering rules (Worker-safe, used by the SPA's lists too). */
+export { compareDocNumbers } from "../numbering.ts";

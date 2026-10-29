@@ -8,7 +8,7 @@
 //
 // No value import of `@techaust/core/gst` here (the gst core is fetched only by the reports screens: ./reports-build.ts); types only. Money is formatted
 // through core (`moneyText`); nothing here adds up an amount.
-import { formatMoney, money } from "@techaust/core";
+import { compareDocNumbers, formatMoney, money } from "@techaust/core";
 import { formatDate, parseIsoDate } from "@techaust/core/dates";
 import type { CalendarDate, GstErrorCode, GstIssue, GstWarning, RealisationStage } from "@techaust/core/gst";
 import { STATE_CODES } from "@techaust/core/gstin";
@@ -529,7 +529,8 @@ export function byUrgency<
     if (s !== 0) return s;
     const d = key(dueOf(a)) - key(dueOf(b));
     if (d !== 0) return d;
-    return a.number < b.number ? -1 : a.number > b.number ? 1 : 0;
+    // the number in issue order ("/10" after "/9", FX-4 review L3), as the register's rows are
+    return compareDocNumbers(a.number, b.number);
   });
 }
 
