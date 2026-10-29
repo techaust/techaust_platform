@@ -301,6 +301,15 @@ export function seriesPreview(p: { template: string; fy: string; padding: number
 // ---- blockers --------------------------------------------------------------------------------------------------------------------------------
 
 /**
+ * The blockers a screen lists (sweep finding 15): with no lines at all, "Add at least one line." says it all, so the totals that can't be
+ * worked out and the ₹0 total, both caused by it, are left out. The server's list is unchanged.
+ */
+export function shownBlockers<B extends { code: string }>(blockers: readonly B[]): B[] {
+  if (!blockers.some((b) => b.code === "no_lines")) return [...blockers];
+  return blockers.filter((b) => b.code !== "computed_errors" && b.code !== "zero_total");
+}
+
+/**
  * 07-R §2 "Blockers" and 07-S §3, §8: one line each. `{n}` is the line's position; `{currency}` the client's; `ctx.maxAgeDays` the oldest a rate may be
  * (Settings › Tax). The server sends `unregistered_high_value` WITH the address or State blocker it explains, and both lines are shown (lead, Q4).
  */

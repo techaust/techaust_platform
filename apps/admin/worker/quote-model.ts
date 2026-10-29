@@ -198,6 +198,23 @@ export type ItemRow = {
 };
 /** Items by id, for a request that names services: `json_each` keeps it to one bound value, whatever the count. */
 export const ITEMS_BY_ID = `SELECT ${ITEM_COLS} FROM catalogue_items WHERE id IN (SELECT value FROM json_each(?1))`;
+/**
+ * The current catalogue rows of the services on one DRAFT's lines (`?1` = the document id), with when each last changed: the draft's
+ * `catalogueGaps` read them in the same D1 call. A sent version has no gaps, so it reads no rows (review round 2, finding 9).
+ */
+export const ITEMS_OF_DOCUMENT = `SELECT ${ITEM_COLS}, updated_at FROM catalogue_items WHERE id IN (SELECT catalogue_item_id FROM document_lines WHERE document_id = ?1 AND catalogue_item_id IS NOT NULL) AND EXISTS (SELECT 1 FROM documents WHERE id = ?1 AND frozen_at IS NULL)`;
+/**
+ * Whether the sent Deliverables and Assumptions and exclusions sections (`?4`, a JSON array of `{id, kind, hidden, body}` as they will be
+ * stored, or NULL when the save sends no sections) differ from the stored ones: one has no stored twin with the same id, kind, visibility
+ * and exact text, or the number differs (one was added or taken out). Exact, so it says "differ" whenever `gapInputsChanged` does.
+ */
+const GAP_SECTIONS_DIFFER = `(?4 IS NOT NULL AND ((SELECT count(*) FROM document_sections WHERE document_id = ?1 AND kind IN ('deliverables', 'assumptions_exclusions')) <> json_array_length(?4) OR EXISTS (SELECT 1 FROM json_each(?4) j WHERE NOT EXISTS (SELECT 1 FROM document_sections s WHERE s.id = json_extract(j.value, '$.id') AND s.document_id = ?1 AND s.kind = json_extract(j.value, '$.kind') AND s.hidden = json_extract(j.value, '$.hidden') AND s.body_md IS json_extract(j.value, '$.body')))))`;
+/**
+ * A save's catalogue rows (`?1` = the document id, `?2` = a JSON array of the item ids the save adds): the services it adds and, when it
+ * sends lines (`?3` = 1) or Catalogue-text sections that differ from the stored ones (`?4`, round 4 L6: compared here, so an autosave of
+ * the other sections reads no catalogue row), those already on the draft (for the gaps in its answer and the first-service fill), in one read.
+ */
+export const ITEMS_OF_SAVE = `SELECT ${ITEM_COLS}, updated_at FROM catalogue_items WHERE id IN (SELECT value FROM json_each(?2) UNION SELECT catalogue_item_id FROM document_lines WHERE document_id = ?1 AND catalogue_item_id IS NOT NULL AND (?3 = 1 OR ${GAP_SECTIONS_DIFFER}))`;
 /** The newest proposal terms (the one a new draft pins), without the text: no admin route reads it. Version numbers only go up. */
 export const NEWEST_TERMS =
   "SELECT id, kind, version, sha256 FROM terms_versions WHERE kind = 'proposal' ORDER BY version DESC LIMIT 1";
@@ -926,10 +943,19 @@ export function draftColumns(
 
 // ---- what stops a send (also shown on the draft) ---------------------------------------------------------------------------------------
 
+export type PlaceholderWhere = {
+  name: string;
+  sectionId: string | null;
+  sectionKind: string | null;
+  part: "title" | "line" | "section" | "schedule";
+};
+
 export type Blocker = {
   code: string;
   /** `unresolved_placeholders`: the names still in the text. */
   names?: string[];
+  /** `unresolved_placeholders`: where each one sits (the part, and the section for a section), one entry per name and place. */
+  where?: PlaceholderWhere[];
   /** `sections_invalid`: which rules. */
   codes?: string[];
   /** `tax_errors`: the engine's issues (codes and paths, never values). */
@@ -961,14 +987,26 @@ export function sendBlockers(
   if (empty.length > 0)
     out.push({ code: "section_empty", sections: empty.map((x) => x.id), kinds: empty.map((x) => x.kind) });
   if (s.schedule.length === 0) out.push({ code: "schedule_missing" });
-  const names = unresolvedIn([
-    s.title,
-    ...s.lines.flatMap((l) => [l.description, l.detail]),
-    // A hidden section is never frozen, sent or printed, so its placeholders block nothing.
-    ...s.sections.filter((x) => !x.hidden).flatMap((x) => [x.title, x.bodyMd]),
-    ...s.schedule.flatMap((x) => [x.label, x.detail]),
-  ]);
-  if (names.length > 0) out.push({ code: "unresolved_placeholders", names });
+  // Where each placeholder sits, so the screen can name the place and link to it: the title, a line, a visible section, the schedule.
+  // A hidden section is never frozen, sent or printed, so its placeholders block nothing.
+  const where: PlaceholderWhere[] = [];
+  const scan = (
+    texts: readonly (string | null | undefined)[],
+    part: PlaceholderWhere["part"],
+    section: { id: string; kind: string } | null,
+  ) => {
+    for (const name of unresolvedIn(texts)) {
+      const at = { name, sectionId: section?.id ?? null, sectionKind: section?.kind ?? null, part };
+      if (!where.some((w) => w.name === name && w.part === part && w.sectionId === at.sectionId))
+        where.push(at);
+    }
+  };
+  scan([s.title], "title", null);
+  for (const l of s.lines) scan([l.description, l.detail], "line", null);
+  for (const x of s.sections) if (!x.hidden) scan([x.title, x.bodyMd], "section", x);
+  for (const x of s.schedule) scan([x.label, x.detail], "schedule", null);
+  const names = [...new Set(where.map((w) => w.name))];
+  if (names.length > 0) out.push({ code: "unresolved_placeholders", names, where });
   if (s.termsVersionId === null) out.push({ code: TERMS_MISSING.code });
   return out;
 }

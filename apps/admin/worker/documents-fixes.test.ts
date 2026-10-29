@@ -86,6 +86,10 @@ describe("the save answers slim [item 4]", () => {
         "approval",
         "blockers",
         "canSend",
+        // M5 owner fixes, review round 2 (findings 4 and 5): the gaps after a save of lines or sections, and the sections the server
+        // itself wrote (none here: the person's own text is never sent back, as the check below proves)
+        "catalogueGaps",
+        "sectionsChanged",
         "contentSha256",
         "errors",
         "guard",
@@ -121,6 +125,7 @@ describe("the save answers slim [item 4]", () => {
       lineTotalMinor: 1_180,
     });
     expect(answer.sections.map((s: J) => s.id)).toHaveLength(6);
+    expect(answer.sectionsChanged).toEqual([]);
     expect(answer.schedule[0]).toMatchObject({ position: 1, amountMinor: expect.any(Number) });
     expect(answer.totals.totalMinor).toBeGreaterThan(0);
     expect(answer.guard).toMatchObject({

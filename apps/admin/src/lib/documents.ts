@@ -18,10 +18,12 @@ import type { Currency } from "../api.ts";
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
 import { milliToQty, qtyToMilli } from "./catalogue.ts";
+import { X } from "./copy-x.ts";
 import type {
   ApprovalInfo,
   ApprovalState,
   Blocker,
+  CatalogueGap,
   Discount,
   DiscountKind,
   DocumentPatch,
@@ -31,6 +33,7 @@ import type {
   Issue,
   LineFigures,
   LineIn,
+  PlaceholderWhere,
   QuoteStatus,
   QuoteType,
   SaveAnswer,
@@ -143,12 +146,103 @@ export const inWords = (words: string) => `In words: ${words}`;
 export const validFor = (n: number) => `Valid for ${n} days from sending`;
 export const newerTerms = (n: number) =>
   `Newer terms (version ${n}) exist. Use them? This changes the content, so any approval has to be asked for again.`;
-/** 07-O's sentence around its list, so a screen can set each placeholder as code. */
+/** 07-O's sentence around its list (superseded on screen by 07-X §1's list in plain words; kept for its test until the owner approves 07-X). */
 export const UNRESOLVED_AROUND = [
   "These placeholders have no value yet: ",
   ". Fill them in before sending.",
 ] as const;
 export const unresolvedLine = (list: string) => `${UNRESOLVED_AROUND[0]}${list}${UNRESOLVED_AROUND[1]}`;
+
+// ---- 07-X (M5 owner fixes): new lines, PENDING the owner ---------------------------------------------------------------------
+// docs/07-content-appendix/X-m5-owner-fixes.md, marked through `X` (lib/copy-x.ts) until the owner approves the page. The line's section on
+// the X page is in its comment. Lines the brief gave word for word ("Use Catalogue text", "Text of {section}") carry no mark.
+
+/**
+ * 07-X §2: what each template value is called on screen. Staff never see the `{{…}}` syntax: a name outside this list (typed by hand) is
+ * "a value that can't be filled in".
+ */
+export const PLACEHOLDER_WORDS: Readonly<Record<string, string>> = {
+  "client.name": "the client's name",
+  "client.contact": "the contact's name",
+  "company.name": "the company name",
+  "proposal.validity_days": "the validity in days",
+  "service.code": "the service code",
+  "service.name": "the service name",
+  "service.short": "the service summary",
+  "service.deliverables": "the deliverables",
+  "service.assumptions": "the assumptions",
+  "service.exclusions": "the exclusions",
+  "service.schedule": "the service's payment schedule",
+};
+const UNKNOWN_VALUE = "a value that can't be filled in"; // 07-X §2.12
+export const placeholderWords = (name: string): string =>
+  Object.hasOwn(PLACEHOLDER_WORDS, name) ? (PLACEHOLDER_WORDS[name] as string) : UNKNOWN_VALUE;
+/** "a, b and c": a list in a sentence. */
+const andList = (w: readonly string[]): string =>
+  w.length <= 1 ? (w[0] ?? "") : `${w.slice(0, -1).join(", ")} and ${w.at(-1)}`;
+/** The values, each once, as a list in a sentence ("the assumptions and the exclusions"). */
+export const placeholderList = (names: readonly string[]): string =>
+  andList([...new Set(names.map(placeholderWords))]);
+/** "Deliverables", "Assumptions and exclusions": the Catalogue fields, as a list in a sentence. */
+const FIELD_WORDS = {
+  deliverables: "deliverables",
+  assumptions: "assumptions",
+  exclusions: "exclusions",
+} as const;
+export const fieldList = (fields: readonly (keyof typeof FIELD_WORDS)[]): string =>
+  andList(fields.map((f) => FIELD_WORDS[f]));
+
+export const GAP_COPY = {
+  /** §1.1: above the list of values still missing (the Send card; replaces 07-O's "These placeholders have no value yet: …"). */
+  unresolvedLead: X("Fill these in before sending:"),
+  /** §1.4, §1.5: the fix beside a value only a service line or a contact can give. */
+  addService: X("Add a service line"),
+  chooseContact: X("Choose a contact"),
+  /** §3.4: the link to the service in Catalogue. */
+  addInCatalogue: X("Add the text in Catalogue"),
+  /** §3.10 (round 4, M3): the link to a service whose text was left out for the length limit. */
+  openInCatalogue: X("Open it in Catalogue"),
+  /** §3.5: unhide a hidden section and put the cursor in its text. */
+  writeHere: X("Write it here"),
+  /** The brief's own words (B2's action). */
+  useCatalogue: "Use Catalogue text",
+  /** §3.6, §3.7 */
+  filled: X("Catalogue text added."),
+  nothingToFill: X("Catalogue has no text for this section yet."),
+} as const;
+/** §1.2: one place and the values it still waits for ("Acceptance: waiting for the contact's name."). */
+export const unresolvedItem = (place: string | null, names: readonly string[]): string =>
+  X(place ? `${place}: waiting for ${placeholderList(names)}.` : `Waiting for ${placeholderList(names)}.`);
+/** §1.3: inside a section, the values its text still waits for. */
+export const sectionHolesLine = (names: readonly string[]): string =>
+  X(`This text is waiting for ${placeholderList(names)}.`);
+/** §3.1: a service with no text in Catalogue for this section. */
+export const gapLine = (
+  service: string,
+  fields: readonly ("deliverables" | "assumptions" | "exclusions")[],
+) => X(`${service} has no ${fieldList(fields)} in Catalogue.`);
+/** §3.2: Catalogue has been filled in since the draft was made. */
+export const gapNowLine = (
+  service: string,
+  fields: readonly ("deliverables" | "assumptions" | "exclusions")[],
+) => X(`Catalogue now has the ${fieldList(fields)} for ${service}.`);
+/** §3.9 (round 4, M3): Catalogue has the text, but it would make the section or the proposal too long, so it was left out. */
+export const gapNoRoomLine = (
+  service: string,
+  fields: readonly ("deliverables" | "assumptions" | "exclusions")[],
+) =>
+  X(
+    `The ${fieldList(fields)} for ${service} were left out: this section has no room for them. To add them, shorten the section and copy them from Catalogue.`,
+  );
+/** §3.3: why a section is hidden. */
+export const GAP_HIDDEN = X("This section is hidden until it has text.");
+/** §4.1: the list's empty state when it shows one type (sweep finding 8; 07-O's line names both). */
+export const LIST_EMPTY_BY_TYPE: Record<QuoteType, string> = {
+  proposal: X("No proposals yet"),
+  estimate: X("No estimates yet"),
+};
+/** The brief's own words for a section's text box (finding 6), like 07-O §10's "Title of {section}". */
+export const sectionTextName = (section: string) => `Text of ${section}`;
 /** 07-O §1, the Terms section's line (the terms text itself is the versioned block). */
 export const termsLine = (n: number) => `The terms below are version ${n} of our terms.`;
 export const notSaved = (reason: string) => `Not saved: ${reason}`;
@@ -442,6 +536,8 @@ export const DOC_ERRORS = {
   lead_client_mismatch: "This lead belongs to a different client.",
   // 07-O §10
   approval_rejected: "The owner rejected this version. Change it before asking again.",
+  // 07-X §3.7 (B2's fill route)
+  nothing_to_fill: GAP_COPY.nothingToFill,
 } as const;
 const errorFor = (code: string): string | undefined =>
   Object.hasOwn(DOC_ERRORS, code) ? (DOC_ERRORS as Record<string, string>)[code] : undefined;
@@ -542,6 +638,8 @@ export type Figures = {
   errors: Issue[];
   warnings: Issue[];
   unresolved: string[];
+  /** The draft's Catalogue gaps (B2): from the read, and from a save answer when it carries them. */
+  gaps: CatalogueGap[];
   canSend: boolean;
   needsResave: boolean;
   termsOutdated: boolean;
@@ -572,6 +670,12 @@ export type EditorState = {
   error: string | null;
   /** A save was refused for the person's own input: show every field error, not only the ones they left. */
   showErrors: boolean;
+  /**
+   * The sections that were hidden or empty in the server's copy the gaps (`figures.gaps`) were worked out from: when the draft was read, or
+   * at the last answer that carried gaps (review round 3, finding 3). A gap on any other section is the partial case (one text missing); a
+   * gap on one of these that the person has since shown and written in is behind the screen, and is left out (`gapGroups`).
+   */
+  gapBase: string[];
 };
 
 let seq = 0;
@@ -610,6 +714,7 @@ export function figuresOf(v: DocumentView, lineUids: string[], stepUids: string[
     errors: v.errors,
     warnings: v.warnings,
     unresolved: v.unresolved,
+    gaps: v.catalogueGaps ?? [],
     canSend: v.canSend,
     needsResave: v.needsResave,
     termsOutdated: v.termsOutdated,
@@ -687,8 +792,13 @@ export function initEditor(v: DocumentView): EditorState {
     status: "idle",
     error: null,
     showErrors: false,
+    gapBase: closedSections(v.sections),
   };
 }
+
+/** The ids of the sections that are hidden or have no text (the base of `gapGroups`). */
+const closedSections = (list: readonly { id: string | null; hidden: boolean; bodyMd: string | null }[]) =>
+  list.flatMap((x) => (x.id !== null && (x.hidden || (x.bodyMd ?? "").trim() === "") ? [x.id] : []));
 
 export const dirtyParts = (s: EditorState): Part[] => PARTS.filter((p) => s.rev[p] !== s.savedRev[p]);
 export const isDirty = (s: EditorState) => dirtyParts(s).length > 0;
@@ -781,6 +891,11 @@ export type Sent = {
   parts: Part[];
   rev: Record<Part, number>;
   uids: Partial<Record<"lines" | "sections" | "schedule", string[]>>;
+  /**
+   * Each section as it was when the save was sent (by uid; the objects themselves, since every edit makes a new one): a section the server
+   * rewrote is applied from the answer only if the person has not touched it since, so nothing typed is lost.
+   */
+  sectionsAt?: Readonly<Record<string, SectionDraft>>;
 };
 
 /**
@@ -846,7 +961,8 @@ export function buildPatch(
       uids.schedule = s.schedule.map((x) => x.uid);
     }
   }
-  return { ok: true, patch, sent: { parts, rev: { ...s.rev }, uids } };
+  const sectionsAt = Object.fromEntries(s.sections.map((x) => [x.uid, x]));
+  return { ok: true, patch, sent: { parts, rev: { ...s.rev }, uids, sectionsAt } };
 }
 
 const sameFigures = (a: LineFigures | undefined, b: LineFigures) =>
@@ -856,6 +972,53 @@ const sameFigures = (a: LineFigures | undefined, b: LineFigures) =>
   a.sgstMinor === b.sgstMinor &&
   a.igstMinor === b.igstMinor &&
   a.lineTotalMinor === b.lineTotalMinor;
+
+/**
+ * Waits until no save or fill is in flight (round 4, L5): a request started while the one awaited ran (a fill after a save, say) is
+ * waited for too, so a save never builds its request on a version that is about to change. Each promise is awaited once: one that stays
+ * in the slot after it settled ends the wait instead of spinning.
+ */
+export async function waitForInflight(slot: { current: Promise<unknown> | null }): Promise<void> {
+  let seen: Promise<unknown> | null = null;
+  while (slot.current !== null && slot.current !== seen) {
+    seen = slot.current;
+    await seen.catch(() => null);
+  }
+}
+
+/**
+ * A server's change to a text, put into what the person typed while the save was in flight (round 4, M2): `sent` is the text the save
+ * carried, `server` the text the server stored, `typed` what is on screen now. The server's change is one span (a common start and end
+ * around it): text added at the end (Catalogue text under a service's name) is added at the end of what was typed; a span changed inside
+ * (a part put into a service's block, the contact's name) is changed where it still stands, found from the start or from the end. Null when
+ * it can't be placed (the person changed that very span).
+ */
+export function mergeServerEdit(sent: string, server: string, typed: string): string | null {
+  if (server === sent) return typed;
+  if (typed === sent) return server;
+  // the server emptied it (a text that was only a value with nothing to fill it): what was typed since is the person's, kept whole
+  if (server.trim() === "") return null;
+  // a section that was empty: the server's whole text is a block of its own after what was typed
+  if (sent.trim() === "") return typed.trim() === "" ? server : `${typed.trimEnd()}\n\n${server.trimStart()}`;
+  if (server.startsWith(sent)) return `${typed}${server.slice(sent.length)}`;
+  let pre = 0;
+  const max = Math.min(sent.length, server.length);
+  while (pre < max && sent[pre] === server[pre]) pre++;
+  let suf = 0;
+  while (suf < max - pre && sent[sent.length - 1 - suf] === server[server.length - 1 - suf]) suf++;
+  const removed = sent.slice(pre, sent.length - suf);
+  const inserted = server.slice(pre, server.length - suf);
+  const head = sent.slice(0, pre);
+  const tail = sent.slice(sent.length - suf);
+  // the person typed after the changed span: it still stands right after the same start
+  if (typed.startsWith(head + removed)) return `${head}${inserted}${typed.slice(pre + removed.length)}`;
+  // the person typed before it: it still stands right before the same end
+  if (typed.endsWith(removed + tail)) {
+    const at = typed.length - tail.length - removed.length;
+    return `${typed.slice(0, at)}${inserted}${typed.slice(at + removed.length)}`;
+  }
+  return null;
+}
 
 /**
  * The answer of a save onto the screen: the new `updatedAt`, the server's ids for the rows it made (by position in what was sent) and
@@ -900,17 +1063,50 @@ export function applySave(s: EditorState, a: SaveAnswer, sent: Sent): EditorStat
   });
   const savedRev = { ...s.savedRev };
   for (const p of sent.parts) savedRev[p] = sent.rev[p];
+  // The sections the server wrote (review round 2, finding 5): applied from the answer, so the screen holds what is stored and a later save
+  // never writes the old text (a `{{service.…}}` value, the old contact's name) back. A section the person edited while the save was in
+  // flight keeps what they typed (it saves next; anything left unfilled is named by the send check).
+  const rewritten = new Map((a.sectionsChanged ?? []).map((x) => [x.id, x]));
+  // Fresh gaps come with the server's copy they were worked out from: what this save sent (each section as it was when the save was built),
+  // with the sections the server wrote in their stored form. Their base is taken from that copy (round 3, finding 3), so the note for a
+  // service whose text is still missing stays on a section that a fill or the save just showed.
+  const gapBase =
+    a.catalogueGaps === undefined
+      ? s.gapBase
+      : closedSections(
+          s.sections.flatMap((x) => {
+            const at = sent.sectionsAt?.[x.uid] ?? x;
+            const id = sectionIds.get(x.uid) ?? at.id;
+            if (id === null) return [];
+            const r = rewritten.get(id);
+            return [
+              r ? { id, hidden: r.hidden, bodyMd: r.bodyMd } : { id, hidden: at.hidden, bodyMd: at.bodyMd },
+            ];
+          }),
+        );
   const next: EditorState = {
     ...s,
     updatedAt: a.updatedAt,
     lines: s.lines.map((l) =>
       l.id === null && lineIds.has(l.uid) ? { ...l, id: lineIds.get(l.uid) as string } : l,
     ),
-    sections: s.sections.map((x) =>
-      sectionIds.has(x.uid) && x.id !== sectionIds.get(x.uid)
-        ? { ...x, id: sectionIds.get(x.uid) as string }
-        : x,
-    ),
+    sections: s.sections.map((x) => {
+      const id = sectionIds.get(x.uid) ?? x.id;
+      const r = id === null ? undefined : rewritten.get(id);
+      const at = sent.sectionsAt?.[x.uid];
+      // untouched since the save was sent: the very object the save was built from
+      if (r && id !== null && at === x)
+        return { ...x, id, title: r.title ?? "", bodyMd: r.bodyMd ?? "", hidden: r.hidden };
+      // Typed into while the save was in flight (round 4, M2): the server's own change (Catalogue text it added, the contact's name) goes
+      // into what was typed, and the section stays dirty, so the next save keeps both. Text the merge can't place is left as typed.
+      if (r && id !== null && at) {
+        const bodyMd = mergeServerEdit(at.bodyMd, r.bodyMd ?? "", x.bodyMd) ?? x.bodyMd;
+        const title = mergeServerEdit(at.title, r.title ?? "", x.title) ?? x.title;
+        const hidden = r.hidden !== at.hidden && x.hidden === at.hidden ? r.hidden : x.hidden;
+        return { ...x, id, bodyMd, title, hidden };
+      }
+      return id !== null && id !== x.id ? { ...x, id } : x;
+    }),
     schedule: s.schedule.map((x) =>
       stepIds.has(x.uid) && x.id !== stepIds.get(x.uid) ? { ...x, id: stepIds.get(x.uid) as string } : x,
     ),
@@ -923,6 +1119,7 @@ export function applySave(s: EditorState, a: SaveAnswer, sent: Sent): EditorStat
     saving: false,
     error: null,
     showErrors: false,
+    gapBase,
     figures: {
       totals: a.totals,
       supply: a.supply,
@@ -935,6 +1132,7 @@ export function applySave(s: EditorState, a: SaveAnswer, sent: Sent): EditorStat
       errors: a.errors,
       warnings: a.warnings,
       unresolved: a.unresolved,
+      gaps: a.catalogueGaps ?? s.figures.gaps,
       canSend: a.canSend,
       needsResave: a.needsResave,
       termsOutdated: a.termsOutdated,
@@ -1088,3 +1286,161 @@ export const sectionName = (s: { title: string | null; kind: string }) =>
 
 /** An instant as its IST day ("05 Nov 2026"). */
 export const formatIstDay = (ms: number): string => formatDate(istDate(ms));
+
+// ---- the send check in plain words, and the Catalogue gaps (M5 owner fixes, D1) ----------------------------------------------------------
+
+/** Where a value still missing sits: a section (its row opens), the title, the lines or the payment schedule; null when nobody said. */
+export type HolePlace =
+  | { kind: "section"; uid: string; name: string }
+  | { kind: "title" | "lines" | "schedule" | "kind"; name: string }
+  | null;
+export type UnresolvedItem = {
+  key: string;
+  /** The values this place waits for, in the server's order. */
+  names: string[];
+  place: HolePlace;
+  /** What fills them besides typing: a service line (service values with no service yet) or a contact (the contact's name). */
+  fixes: ("service" | "contact")[];
+  text: string;
+};
+
+/** The names of the places, as the editor's own headings and labels say them. */
+const PLACE_NAMES = { title: "Title", lines: "Lines", schedule: "Payment schedule" } as const;
+
+type HoleSource = {
+  title: string;
+  lines: readonly { description: string; detail: string; catalogueItemId: string | null }[];
+  sections: readonly SectionDraft[];
+  schedule: readonly { label: string; detail: string }[];
+  contactId: string | null;
+};
+
+/** The places of the names, from the editor's own text: what an API without `where` leaves the screen to work out. */
+function localWhere(names: readonly string[], s: HoleSource): PlaceholderWhere[] {
+  const out: PlaceholderWhere[] = [];
+  const scan = (text: string, part: PlaceholderWhere["part"], sec?: SectionDraft) => {
+    for (const n of placeholdersIn(text)) {
+      const name = n.slice(2, -2);
+      if (names.includes(name))
+        out.push({ name, sectionId: sec?.id ?? null, sectionKind: sec?.kind ?? null, part });
+    }
+  };
+  scan(s.title, "title");
+  for (const l of s.lines) scan(`${l.description}\n${l.detail}`, "line");
+  for (const x of s.sections) if (!x.hidden) scan(`${x.title}\n${x.bodyMd}`, "section", x);
+  for (const x of s.schedule) scan(`${x.label}\n${x.detail}`, "schedule");
+  return out;
+}
+
+/**
+ * `unresolved_placeholders` as a list in plain words (07-X §1): one item per place, in the server's order, naming the place (a section by
+ * its name, so the screen can open it) and the values it waits for, never the `{{…}}` syntax. A name the server lists that no place holds
+ * any more (typed away since the last save) still shows, without a place.
+ */
+export function unresolvedItems(b: Blocker, s: HoleSource): UnresolvedItem[] {
+  const names = b.names ?? [];
+  const where = b.where && b.where.length > 0 ? b.where : localWhere(names, s);
+  const hasService = s.lines.some((l) => l.catalogueItemId !== null);
+  const fixOf = (name: string): "service" | "contact" | null =>
+    name.startsWith("service.") && !hasService
+      ? "service"
+      : name === "client.contact" && s.contactId === null
+        ? "contact"
+        : null;
+  const out: UnresolvedItem[] = [];
+  const push = (name: string, place: HolePlace) => {
+    const key = place ? (place.kind === "section" ? place.uid : `${place.kind}:${place.name}`) : "-";
+    let item = out.find((i) => i.key === key);
+    if (!item) {
+      item = { key, names: [], place, fixes: [], text: "" };
+      out.push(item);
+    }
+    if (!item.names.includes(name)) item.names.push(name);
+    const fix = fixOf(name);
+    if (fix && !item.fixes.includes(fix)) item.fixes.push(fix);
+    item.text = unresolvedItem(place?.name ?? null, item.names);
+  };
+  for (const w of where) {
+    if (names.length > 0 && !names.includes(w.name)) continue;
+    if (w.part === "section") {
+      const sec =
+        s.sections.find((x) => x.id !== null && x.id === w.sectionId) ??
+        (w.sectionKind ? s.sections.find((x) => x.kind === w.sectionKind) : undefined);
+      push(
+        w.name,
+        sec
+          ? { kind: "section", uid: sec.uid, name: sectionName(sec) }
+          : w.sectionKind
+            ? { kind: "kind", name: sectionLabel(w.sectionKind) }
+            : null,
+      );
+    } else {
+      const kind = w.part === "line" ? "lines" : w.part;
+      push(w.name, { kind, name: PLACE_NAMES[kind] });
+    }
+  }
+  for (const n of names) if (!out.some((i) => i.names.includes(n))) push(n, null);
+  return out;
+}
+
+export type GapField = CatalogueGap["field"];
+const FIELD_ORDER: readonly GapField[] = ["deliverables", "assumptions", "exclusions"];
+export type GapGroup = {
+  key: string;
+  /** The section's row in the editor; null when the draft has no such section (the item then names the kind and links to Catalogue only). */
+  uid: string | null;
+  sectionId: string | null;
+  name: string;
+  hidden: boolean;
+  /** Per service: no text in Catalogue (`missing`), text added there since (`now`), text left out for the length limit (`noRoom`). */
+  services: { id: string; name: string; missing: GapField[]; now: GapField[]; noRoom: GapField[] }[];
+  /** Catalogue has some of the text now: "Use Catalogue text" can add it (to a section the draft holds). */
+  canFill: boolean;
+};
+
+/**
+ * The Catalogue gaps by section (07-X §3), as the editor stands now: a gap shows while its section is hidden or has no text, and in the
+ * partial case (the section had text when the draft was read, but a service lacks one of its texts). A section the person has since
+ * shown and written in is theirs: its gap goes.
+ */
+export function gapGroups(
+  gaps: readonly CatalogueGap[],
+  sections: readonly SectionDraft[],
+  base: readonly string[],
+): GapGroup[] {
+  const groups = new Map<string, GapGroup>();
+  for (const g of gaps) {
+    const sec = g.sectionId ? sections.find((x) => x.id === g.sectionId) : undefined;
+    if (sec?.id && !sec.hidden && sec.bodyMd.trim() !== "" && base.includes(sec.id)) continue;
+    const key = sec ? sec.uid : `kind:${g.sectionKind}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        key,
+        uid: sec?.uid ?? null,
+        sectionId: sec?.id ?? null,
+        name: sec ? sectionName(sec) : sectionLabel(g.sectionKind),
+        hidden: sec ? sec.hidden : true,
+        services: [],
+        canFill: false,
+      };
+      groups.set(key, group);
+    }
+    let svc = group.services.find((x) => x.id === g.catalogueItemId);
+    if (!svc) {
+      svc = { id: g.catalogueItemId, name: g.serviceName, missing: [], now: [], noRoom: [] };
+      group.services.push(svc);
+    }
+    const list = g.noRoom ? svc.noRoom : g.catalogueHasTextNow ? svc.now : svc.missing;
+    if (!list.includes(g.field)) list.push(g.field);
+    if (g.catalogueHasTextNow && !g.noRoom && sec?.id) group.canFill = true;
+  }
+  const order = (a: GapField, b: GapField) => FIELD_ORDER.indexOf(a) - FIELD_ORDER.indexOf(b);
+  for (const group of groups.values())
+    for (const s of group.services) {
+      s.missing.sort(order);
+      s.now.sort(order);
+      s.noRoom.sort(order);
+    }
+  return [...groups.values()];
+}

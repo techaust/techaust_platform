@@ -175,10 +175,8 @@ export const invoiceRow = (id: string) =>
     id,
   );
 
-const REAL_FY = issueFyOf(Date.now()); // taken at load, before any test moves the clock
-
-/** The invoice counter's next number for the FY (the real one by default; null: no row yet). */
-export const invoiceCounter = async (fy: string = REAL_FY) =>
+/** The invoice counter's next number for the FY (by default the FY of now, read at the call: the clock may have been moved; null: no row yet). */
+export const invoiceCounter = async (fy: string = issueFyOf(Date.now())) =>
   (await one<{ next_no: number }>("SELECT next_no FROM doc_counters WHERE series = 'invoice' AND fy = ?", fy))
     ?.next_no ?? null;
 

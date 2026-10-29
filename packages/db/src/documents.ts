@@ -141,6 +141,8 @@ export type VersionRow = {
   valid_until: string | null;
   total_minor: number;
   updated_at: number;
+  /** When the version was made: the first one's is the baseline of a draft's Catalogue gaps (admin `gapBaseline`). */
+  created_at: number;
 };
 /** A terms version without its text: what an admin route needs (the pin, shown as id, version and hash). */
 export type TermsRef = { id: string; kind: string; version: number; sha256: string };
@@ -190,7 +192,7 @@ export const LOAD_DOCUMENT_SQL = {
   schedule:
     "SELECT id, position, label, trigger, pct_bp, amount_minor, detail, target_date FROM payment_schedules WHERE document_id = ?1 ORDER BY position",
   versions:
-    "SELECT id, version, status, number_display, sent_at, frozen_at, valid_until, total_minor, updated_at FROM documents WHERE version_group_id = (SELECT version_group_id FROM documents WHERE id = ?1) ORDER BY version",
+    "SELECT id, version, status, number_display, sent_at, frozen_at, valid_until, total_minor, updated_at, created_at FROM documents WHERE version_group_id = (SELECT version_group_id FROM documents WHERE id = ?1) ORDER BY version",
   terms:
     "SELECT id, kind, version, body_md, sha256 FROM terms_versions WHERE id = (SELECT terms_version_id FROM documents WHERE id = ?1)",
   /** The same row without the (up to 20 KB) text: the admin routes never need it. */

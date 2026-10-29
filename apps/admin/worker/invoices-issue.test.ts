@@ -33,7 +33,8 @@ import {
 import { beforeBatchHolding } from "./test-quotes.ts";
 
 const owner = () => sessionFor("owner", { stepUp: true });
-const FY = issueFyOf(Date.now());
+/** The FY of now, read when used (never at module load; a test that moves the clock puts it back in afterEach). */
+const fy = () => issueFyOf(Date.now());
 
 beforeAll(async () => {
   await putCompany();
@@ -65,7 +66,7 @@ describe("gap-free numbers [ADM-INV-03]", () => {
     const numbers = (await Promise.all(results.map(async (r) => (await json(r)).number as string))).sort();
     const first = before;
     expect(numbers).toEqual(
-      Array.from({ length: 20 }, (_, i) => `TH/INV/${FY}/${String(first + i).padStart(4, "0")}`),
+      Array.from({ length: 20 }, (_, i) => `TH/INV/${fy()}/${String(first + i).padStart(4, "0")}`),
     );
     expect(new Set(numbers).size).toBe(20);
     expect(await invoiceCounter()).toBe(first + 20);
@@ -97,7 +98,7 @@ describe("gap-free numbers [ADM-INV-03]", () => {
     expect(ok).toHaveLength(15);
     const numbers = (await Promise.all(ok.map(async (r) => (await json(r)).number as string))).sort();
     expect(numbers).toEqual(
-      Array.from({ length: 15 }, (_, i) => `TH/INV/${FY}/${String(before + i).padStart(4, "0")}`),
+      Array.from({ length: 15 }, (_, i) => `TH/INV/${fy()}/${String(before + i).padStart(4, "0")}`),
     );
     expect(await invoiceCounter()).toBe(before + 15);
     expect(await auditCount("invoice.issue")).toBe(auditsBefore + 15);
@@ -303,7 +304,7 @@ describe("who may issue [ADM-INV-03, ADM-AUTH-08, ADM-APR-01]", () => {
     const res = await decideApproval(o, reqId, "approve", "Fine");
     expect(res.status, await res.clone().text()).toBe(200);
     const body = await json(res);
-    expect(body.number).toBe(`TH/INV/${FY}/${String(before).padStart(4, "0")}`);
+    expect(body.number).toBe(`TH/INV/${fy()}/${String(before).padStart(4, "0")}`);
     expect(await invoiceRow(made.id)).toMatchObject({ status: "issued", issued_by: o.id, number: before });
     expect(await one("SELECT status, decided_by, note FROM approvals WHERE id = ?", reqId)).toEqual({
       status: "approved",
@@ -734,7 +735,7 @@ describe("refusals leave the counter, the audit log and the milestone unchanged 
     await env.DB.exec("DROP TRIGGER t_fail_ms");
     const ok = await issueInvoice(o, made);
     expect(ok.status, await ok.clone().text()).toBe(200);
-    expect((await json(ok)).number).toBe(`TH/INV/${FY}/${String(before.counter ?? 1).padStart(4, "0")}`);
+    expect((await json(ok)).number).toBe(`TH/INV/${fy()}/${String(before.counter ?? 1).padStart(4, "0")}`);
   });
 });
 

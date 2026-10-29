@@ -4,7 +4,9 @@
 import { describe, expect, it } from "vitest";
 import indexHtml from "../index.html?raw";
 import headersFile from "../public/_headers?raw";
+import themeBoot from "../public/theme-boot.js?raw";
 import passwordPolicy from "../src/lib/password-policy.ts?raw";
+import themeSource from "../src/lib/theme.ts?raw";
 import mainSource from "../src/main.tsx?raw";
 
 type Rule = Record<string, string[]>;
@@ -65,11 +67,13 @@ describe("Content-Security-Policy of the admin SPA [ADM-AUTH-01, docs/08 3.1]", 
     );
   });
 
-  it("index.html needs no inline script (the policy has no hash), only the one module", () => {
+  it("index.html needs no inline script (the policy has no hash): the blocking theme script, then the one module", () => {
     const scripts = [...indexHtml.matchAll(/<script\b[^>]*>/g)].map((m) => m[0]);
-    expect(scripts).toEqual(
-      ['<script type="module" src="/src/main.tsx"></script>'].map((s) => s.replace("></script>", ">")),
-    );
+    expect(scripts).toEqual(['<script src="/theme-boot.js">', '<script type="module" src="/src/main.tsx">']);
+    // The theme script sits in <head>, before anything is painted (sweep finding 16: no white flash in the dark in-app theme).
+    expect(indexHtml.indexOf('<script src="/theme-boot.js">')).toBeLessThan(indexHtml.indexOf("</head>"));
+    expect(themeBoot).toContain('localStorage.getItem("ta-admin-theme")');
+    expect(themeSource).toContain('const KEY = "ta-admin-theme";'); // the same key as the app's theme switch
     expect(indexHtml).not.toMatch(/<script[^>]*>[^<]+<\/script>/);
     expect(indexHtml).not.toMatch(/\son[a-z]+=/i);
   });

@@ -36,6 +36,22 @@
   text-underline-offset: 0.2em;
 }
 
+/* Tablets (sweep finding 17): the client's name and code take the first row, and the short facts share the second, so no fact is left
+   alone on a row of its own. Hairlines between rows, and between the facts of the second row. */
+@media (min-width: 48rem) and (max-width: 63.99rem) {
+  .doc-strip .client-strip__fact:first-child {
+    flex-basis: 100%;
+  }
+
+  .doc-strip .client-strip__fact + .client-strip__fact {
+    border-top: 1px solid var(--color-border);
+  }
+
+  .doc-strip .client-strip__fact:nth-child(2) {
+    border-inline-start: 0;
+  }
+}
+
 .doc-page {
   display: grid;
   gap: var(--space-4);
@@ -158,6 +174,10 @@
 }
 
 .qledger {
+  /* The quantity box (4.5 rem) and the longest unit beside it, "Per milestone" (round 4, M5): one width for every row at normal spacing.
+     It may grow, never clip, when a person's text spacing makes a unit wider (WCAG 1.4.12; round 4 re-check, finding 8); `max-content`
+     is worked out per row, so under such spacing a row with a wider unit sits a few pixels further right (round 5 re-check, L4). */
+  --qledger-qty: minmax(12rem, max-content);
   margin: 0 0 var(--space-4);
   padding: 0;
   list-style: none;
@@ -225,7 +245,9 @@
 .qledger__work {
   grid-area: work;
   display: grid;
-  grid-template-columns: minmax(6rem, 8rem) minmax(8rem, 11rem) minmax(10rem, 13rem);
+  /* Sweep finding 5 and round 4, M5: one quantity width for the whole list, wide enough for the longest unit ("Per milestone"), so
+     every row's rate and discount start on the same line (a width per row, from its own unit, left them out of line). */
+  grid-template-columns: var(--qledger-qty) minmax(8rem, 11rem) minmax(10rem, 13rem);
   gap: var(--space-2) var(--space-3);
   align-items: end;
 }
@@ -248,15 +270,19 @@
 }
 
 .qledger__qty input {
+  flex: none;
   width: 4.5rem;
   min-width: 0;
   text-align: end;
   border-radius: var(--radius-sm) 0 0 var(--radius-sm);
 }
 
+/* A unit wider than its cell wraps inside the box (two short lines) rather than running under the next field. */
 .qledger__unit {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
+  min-width: 0;
   padding: 0 var(--space-2);
   border: 1px solid var(--color-border-control);
   border-inline-start: 0;
@@ -264,7 +290,8 @@
   background: var(--color-surface-alt);
   color: var(--color-text-muted);
   font-size: var(--text-sm);
-  white-space: nowrap;
+  line-height: var(--text-sm--line-height);
+  overflow-wrap: anywhere;
 }
 
 .qledger .money-in {
@@ -460,7 +487,8 @@
 
 @media (min-width: 64rem) and (max-width: 87.99rem) {
   .qledger__work {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    /* The quantity cell keeps the list's one width (finding 5, round 4 M5), the rate and the discount share the rest. */
+    grid-template-columns: var(--qledger-qty) minmax(7rem, 1fr) minmax(min-content, 1fr);
   }
 
   .qledger__work--step {
@@ -622,11 +650,13 @@
   font-size: var(--text-sm);
 }
 
+/* The toggle never wraps: a long name wraps inside its label, and the chevron stays beside it (review round 2, finding 6: at 375 px it used
+   to drop onto a line of its own). */
 .section-row__toggle {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1) var(--space-3);
+  gap: var(--space-3);
+  min-width: 0;
   min-height: var(--target-min);
   padding: var(--space-2) 0;
   border: 0;
@@ -637,7 +667,16 @@
   cursor: pointer;
 }
 
+.section-row__label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+}
+
 .section-row__toggle .icon {
+  flex: none;
   color: var(--color-text-muted);
   transition: transform var(--duration-fast) var(--ease-standard);
 }
@@ -682,6 +721,20 @@
   font-weight: 600;
 }
 
+/* On a phone the word "Hidden" would leave the name too little room (the chevron could no longer sit beside "Deliverables"). The struck
+   name and the unticked eye already show it, so the word stays for screen readers only. */
+@media (max-width: 29.99rem) {
+  .section-row__flag--hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+
 .section-row__ctl {
   display: inline-flex;
   align-items: center;
@@ -721,12 +774,151 @@
   margin-bottom: 0;
 }
 
+/* The values a section's text still waits for, in words (07-X §1.3): the warning colour, the sentence's own type. */
 .section-row__holes {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
   margin: 0 0 var(--space-3);
   color: var(--color-warning);
-  font-family: var(--font-mono);
-  font-size: var(--text-code);
+  font-size: var(--text-sm);
   font-weight: 600;
+}
+
+.section-row__holes .icon {
+  flex: none;
+  margin-top: 0.125rem;
+}
+
+/* ---------- The Catalogue gap: a margin note on its section (07-X §3) ----------
+   Drawn like an editor's note in the margin of a manuscript: a fine verdigris rule down its left edge, set in the section's text column
+   (past the reading number), quiet type, and the ways out as plain text actions. It stays in full colour on a hidden section, whose name
+   is struck through: the note is what explains it. */
+.gap-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: start;
+  margin: 0 0 var(--space-3) calc(2rem + var(--space-2));
+  padding: var(--space-1) 0 var(--space-1) var(--space-3);
+  border-inline-start: 2px solid var(--color-accent-decor);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.gap-note > .icon {
+  margin-top: 0.125rem;
+  color: var(--color-text-accent);
+}
+
+.gap-note__body {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.gap-note__body p {
+  margin: 0;
+}
+
+.gap-note__hidden {
+  font-weight: 600;
+}
+
+.gap-note__acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-4);
+}
+
+.gap-note__act {
+  padding-inline: 0;
+}
+
+.gap-note__fill {
+  margin-block: var(--space-1);
+}
+
+@media (max-width: 29.99rem) {
+  .gap-note {
+    margin-inline-start: 0;
+  }
+}
+
+/* The send panel's list of values still missing (07-X §1): the lead-in, then one place per line with its fix beside it. */
+.holes-list {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.holes-list__items {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.holes-list__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-3);
+}
+
+.holes-list__fix {
+  min-height: var(--target-min);
+  padding-inline: 0;
+  font-size: var(--text-sm);
+}
+
+/* The send panel's Catalogue notes: below what stops the send, an information mark instead of the warning one (they stop nothing). */
+.gap-notes {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) 0 0;
+  border-top: 1px solid var(--color-border);
+  list-style: none;
+  font-size: var(--text-sm);
+}
+
+.gap-notes__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: start;
+}
+
+.gap-notes__item > .icon {
+  margin-top: 0.125rem;
+  color: var(--color-text-accent);
+}
+
+.gap-notes__body {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.gap-notes__body p {
+  margin: 0;
+}
+
+.gap-notes__head {
+  font-weight: 600;
+}
+
+.gap-notes__hidden {
+  color: var(--color-text-muted);
+}
+
+.gap-notes__fill {
+  justify-self: start;
+  margin-top: var(--space-1);
 }
 
 /* ---------- The send panel and the guard rule ---------- */

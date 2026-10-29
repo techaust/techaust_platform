@@ -8,6 +8,7 @@ import { clientTabs } from "./client-tabs.ts";
 import { clients, contacts } from "./clients.ts";
 import { dashboard } from "./dashboard.ts";
 import { documentConvert } from "./document-convert.ts";
+import { documentFill } from "./document-fill.ts";
 import { documentLinks } from "./document-links.ts";
 import { documentPdf, invoicePdf, invoiceSupplierPdf } from "./document-pdf.ts";
 import { documentSave } from "./document-save.ts";
@@ -48,6 +49,7 @@ export function mountApi(app: App) {
   // Proposals and estimates (M4.3): one router per concern, all under /documents. Static paths come before `/:id` where they exist.
   app.route("/v1/documents", documents);
   app.route("/v1/documents", documentSave);
+  app.route("/v1/documents", documentFill);
   app.route("/v1/documents", approvalRequests);
   app.route("/v1/documents", documentSend);
   app.route("/v1/documents", documentConvert);

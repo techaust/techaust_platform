@@ -1,6 +1,12 @@
 /* The Catalogue screens (M4.1): tokens only, on the M3.2/M3.3 panels (leads.css, clients.css). The one bold element is the
    payment schedule drawn to scale: a ruled bar of ink and verdigris steps; everything else stays quiet. */
 
+/* Sweep finding 9: under "Deliverables, assumptions and exclusions", what the three texts are for, with room before the first one. */
+.cat-texts-hint {
+  max-width: 65ch;
+  margin: 0 0 var(--space-4);
+}
+
 .pill-row {
   display: inline-flex;
   flex-wrap: wrap;

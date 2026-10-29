@@ -143,17 +143,36 @@ export async function putOnce(
   key: string,
   body: string | Uint8Array,
   contentType: string,
+  /** Lowercase hex SHA-256 of `body`: R2 refuses the write when the bytes it received hash differently. */
+  sha256?: string,
 ): Promise<{ created: true } | { created: false; existing: R2ObjectBody }> {
   if ((await bucket.head(key)) === null) {
     const put = await bucket.put(key, body, {
       httpMetadata: { contentType },
       onlyIf: { etagDoesNotMatch: "*" },
+      ...(sha256 === undefined ? {} : { sha256 }),
     });
     if (put !== null) return { created: true };
   }
   const existing = await bucket.get(key);
   if (existing === null) throw new Error("r2: the put was refused but no object is there");
   return { created: false, existing };
+}
+
+/**
+ * Stores rendered PDF bytes write-once and returns the stored file and its SHA-256, hashing the rendered bytes once (audit A6, finding 5):
+ * the same hash goes to R2 (which refuses bytes that differ) and to the row. When another render got there first, that file and its hash.
+ */
+export async function putPdfOnce(
+  bucket: R2Bucket,
+  key: string,
+  rendered: Uint8Array,
+): Promise<{ bytes: Uint8Array; sha256: string }> {
+  const sha256 = await sha256Bytes(rendered);
+  const stored = await putOnce(bucket, key, rendered, "application/pdf", sha256);
+  if (stored.created) return { bytes: rendered, sha256 };
+  const existing = new Uint8Array(await stored.existing.arrayBuffer());
+  return { bytes: existing, sha256: await sha256Bytes(existing) };
 }
 
 // ---- snapshot --------------------------------------------------------------------------------------------------------------------------
@@ -348,8 +367,7 @@ async function renderInvoice(
   const result = await renderPaced(env, html, pdfOptionsFor(view), clock);
   if (!result.ok) return failed(env, msg, result, now);
 
-  const stored = await putOnce(env.DOCS, target, result.bytes, "application/pdf");
-  const bytes = stored.created ? result.bytes : new Uint8Array(await stored.existing.arrayBuffer());
+  const { bytes, sha256 } = await putPdfOnce(env.DOCS, target, result.bytes);
   if (copy === "supplier") {
     // The copy is the supplier's own record: no row names it and nobody is told; the Browser Run time it used is counted like any render.
     const date = dayOf(now);
@@ -359,14 +377,7 @@ async function renderInvoice(
       env.DB.prepare(HALF_BELL_SQL).bind(date, BROWSER_ALERT_MS, BELL_COPY.half),
     ]);
   } else {
-    await settle(
-      env,
-      row,
-      keys.pdf,
-      await sha256Bytes(bytes),
-      { renders: 1, browserMs: result.browserMs },
-      now,
-    );
+    await settle(env, row, keys.pdf, sha256, { renders: 1, browserMs: result.browserMs }, now);
   }
   logEvent("pdf.rendered", {
     bytes: bytes.byteLength,
@@ -583,16 +594,8 @@ export async function processRender(
   const result = await renderPaced(env, renderDocumentHtml(view), pdfOptionsFor(view), clock);
   if (!result.ok) return failed(env, msg, result, now);
 
-  const stored = await putOnce(env.DOCS, keys.pdf, result.bytes, "application/pdf");
-  const bytes = stored.created ? result.bytes : new Uint8Array(await stored.existing.arrayBuffer());
-  await settle(
-    env,
-    row,
-    keys.pdf,
-    await sha256Bytes(bytes),
-    { renders: 1, browserMs: result.browserMs },
-    now,
-  );
+  const { bytes, sha256 } = await putPdfOnce(env.DOCS, keys.pdf, result.bytes);
+  await settle(env, row, keys.pdf, sha256, { renders: 1, browserMs: result.browserMs }, now);
   logEvent("pdf.rendered", { bytes: bytes.byteLength, browserMs: result.browserMs, hop: msg.hop });
   return "rendered";
 }
@@ -684,9 +687,8 @@ export async function processCertificate(
     clock,
   );
   if (!result.ok) return failed(env, msg, result, now);
-  const stored = await putOnce(env.DOCS, read.key, result.bytes, "application/pdf");
-  const bytes = stored.created ? result.bytes : new Uint8Array(await stored.existing.arrayBuffer());
-  await insert(await sha256Bytes(bytes), { browserMs: result.browserMs });
+  const { bytes, sha256 } = await putPdfOnce(env.DOCS, read.key, result.bytes);
+  await insert(sha256, { browserMs: result.browserMs });
   await onRendered(env, { kind: "certificate", acceptanceId: msg.acceptanceId });
   logEvent("pdf.certificate_rendered", {
     bytes: bytes.byteLength,

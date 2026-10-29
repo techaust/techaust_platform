@@ -11,7 +11,7 @@ import {
   verifyInvoiceSealed,
 } from "@techaust/db/documents";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { currentFy, lutOf, putSwiftBank, putTax, renew } from "./test-invoice-types.ts";
+import { currentFy, lutOf, putSwiftBank, putTax, renew, todayIso } from "./test-invoice-types.ts";
 import {
   codeOf,
   farSession,
@@ -228,9 +228,7 @@ describe("the debit note 'Tax charged too low' [Q35, RA-22]", () => {
   it("a note copies the parent's no-rate statement with the day it covers: the note's own fx columns and seal are the parent's (review 2026-10-28, finding 6)", async () => {
     const o = await farSession("owner");
     const day = (n: number) =>
-      new Date(Date.parse(`${new Date().toISOString().slice(0, 10)}T00:00:00Z`) + n * 86_400_000)
-        .toISOString()
-        .slice(0, 10);
+      new Date(Date.parse(`${todayIso()}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
     const inv = await mkIssuedInvoice(o, {
       prices: [100_000],
       client: mkOverseasClient,

@@ -77,6 +77,11 @@ describe("the Acceptance text follows the draft's contact [Q14]", () => {
     const text = (k: string) => doc.sections.find((s: J) => s.kind === k)?.bodyMd;
     expect(text("acceptance")).toBe("Prepared for Bina Das. Bina Das is named twice, Asha Raos once.");
     expect(doc.contact.id).toBe(second.id);
+    // the server wrote the Acceptance text, so the answer carries it (review round 2, finding 5): the screen applies it without a re-read
+    const acceptance = doc.sections.find((s: J) => s.kind === "acceptance");
+    expect((await json(res)).sectionsChanged).toEqual([
+      { id: acceptance.id, title: acceptance.title, bodyMd: acceptance.bodyMd, hidden: acceptance.hidden },
+    ]);
   });
 });
 

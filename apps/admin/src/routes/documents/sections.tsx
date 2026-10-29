@@ -16,26 +16,40 @@ import {
   ArrowUp,
   ChevronDown,
   Eye,
+  Info,
   Lock,
   Plus,
   Trash,
 } from "../../components/icons.tsx";
 import { MenuButton } from "../../components/popover.tsx";
+import { useKeptCaret } from "../../lib/caret.ts";
 import {
   ADDABLE_KINDS,
   DOC_COPY,
   DOC_PENDING,
   type EditorAction,
+  GAP_COPY,
+  GAP_HIDDEN,
+  type GapGroup,
+  gapLine,
+  gapNoRoomLine,
+  gapNowLine,
   isEmptyOptional,
   isRequiredSection,
   moved,
   placeholdersIn,
   type SectionDraft,
+  sectionHolesLine,
   sectionLabel,
+  sectionTextName,
   sectionTitleName,
   uid,
 } from "../../lib/documents.ts";
 import { COPY as PROJECT_COPY } from "../../lib/projects.ts";
+import { CatalogueLink } from "./parts.tsx";
+
+/** The names of the placeholders still in a text, without their braces (for the words of 07-X §2). */
+const holeNames = (text: string) => placeholdersIn(text).map((n) => n.slice(2, -2));
 
 export const SectionsPanel = memo(function SectionsPanel(props: {
   sections: SectionDraft[];
@@ -43,6 +57,11 @@ export const SectionsPanel = memo(function SectionsPanel(props: {
   current: () => SectionDraft[];
   /** A request to open one section and put the cursor in its text (from the send panel's `section_empty` links). */
   openRequest: { uid: string; n: number } | null;
+  /** The Catalogue gaps by section (07-X §3): each shows as a note on its section's row. */
+  gaps: GapGroup[];
+  /** "Use Catalogue text" (B2's route) for one section; the section being filled, while it runs. */
+  onFill: (sectionId: string) => void;
+  filling: string | null;
 }) {
   const { dispatch, current, openRequest } = props;
   // Open at first: the sections that still need words (a placeholder, or empty and not hidden).
@@ -54,15 +73,25 @@ export const SectionsPanel = memo(function SectionsPanel(props: {
           .map((s) => s.uid),
       ),
   );
-  useEffect(() => {
-    if (!openRequest) return;
-    setOpen((o) => new Set(o).add(openRequest.uid));
+  const openAndFocus = useCallback((u: string) => {
+    setOpen((o) => new Set(o).add(u));
     requestAnimationFrame(() => {
-      const body = document.getElementById(`sec-${openRequest.uid}-body`);
+      const body = document.getElementById(`sec-${u}-body`);
       body?.scrollIntoView({ block: "center" });
       body?.focus({ preventScroll: true });
     });
-  }, [openRequest]);
+  }, []);
+  useEffect(() => {
+    if (openRequest) openAndFocus(openRequest.uid);
+  }, [openRequest, openAndFocus]);
+  // "Write it here" on a hidden section's note: show it in the document, open it and put the cursor in its text.
+  const writeHere = useCallback(
+    (u: string) => {
+      dispatch({ type: "section", uid: u, patch: { hidden: false } });
+      openAndFocus(u);
+    },
+    [dispatch, openAndFocus],
+  );
   const toggle = useCallback(
     (u: string) =>
       setOpen((o) => {
@@ -146,6 +175,10 @@ export const SectionsPanel = memo(function SectionsPanel(props: {
             onEdit={edit}
             onMove={move}
             onRemove={remove}
+            gap={props.gaps.find((g) => g.uid === s.uid)}
+            onWriteHere={writeHere}
+            onFill={props.onFill}
+            filling={props.filling}
           />
         ))}
       </ol>
@@ -173,10 +206,20 @@ const SectionRow = memo(function SectionRow(p: {
   onEdit: (uid: string, patch: Partial<SectionDraft>) => void;
   onMove: (uid: string, by: -1 | 1) => void;
   onRemove: (uid: string) => void;
+  gap: GapGroup | undefined;
+  onWriteHere: (uid: string) => void;
+  onFill: (sectionId: string) => void;
+  filling: string | null;
 }) {
   const { s } = p;
+  // While "Use Catalogue text" fills this section its text, title and visibility are read-only (review round 3, finding 4): an edit made
+  // meanwhile would keep the filled text off the screen, and the next save would write over it.
+  const busy = p.filling !== null && p.filling === s.id;
+  // The server's own change merged into a box being typed in keeps the caret where it was (round 4 re-check, finding 2).
+  const titleCaret = useKeptCaret<HTMLInputElement>(s.title);
+  const bodyCaret = useKeptCaret<HTMLTextAreaElement>(s.bodyMd);
   const required = isRequiredSection(s.kind);
-  const holes = placeholdersIn(`${s.title}\n${s.bodyMd}`);
+  const holes = holeNames(`${s.title}\n${s.bodyMd}`);
   const empty = s.bodyMd.trim() === "";
   const name = s.title.trim() || sectionLabel(s.kind);
   // The section's kind names its title field; custom sections (up to three) add their place in the reading order.
@@ -201,7 +244,12 @@ const SectionRow = memo(function SectionRow(p: {
       : []),
   ];
   return (
-    <li className="section-row" data-hidden={s.hidden || undefined} data-open={p.open || undefined}>
+    <li
+      className="section-row"
+      data-hidden={s.hidden || undefined}
+      data-open={p.open || undefined}
+      aria-busy={busy || undefined}
+    >
       <div className="section-row__head">
         <span className="section-row__n tnum" aria-hidden="true">
           {String(p.n).padStart(2, "0")}
@@ -214,10 +262,13 @@ const SectionRow = memo(function SectionRow(p: {
           aria-controls={panel}
           onClick={() => p.onToggle(s.uid)}
         >
-          <span className="section-row__name">{name}</span>
-          {s.title.trim() && s.title.trim() !== sectionLabel(s.kind) && (
-            <span className="section-row__kind">{sectionLabel(s.kind)}</span>
-          )}
+          {/* The name (and the kind under a custom title) may wrap; the chevron stays beside them, never on a line of its own. */}
+          <span className="section-row__label">
+            <span className="section-row__name">{name}</span>
+            {s.title.trim() && s.title.trim() !== sectionLabel(s.kind) && (
+              <span className="section-row__kind">{sectionLabel(s.kind)}</span>
+            )}
+          </span>
           <ChevronDown size={16} />
         </button>
         <span className="section-row__flags">
@@ -231,10 +282,10 @@ const SectionRow = memo(function SectionRow(p: {
             <span className="section-row__flag section-row__flag--warn">
               <AlertTriangle size={16} />
               <span className="tnum">{holes.length}</span>
-              <span className="visually-hidden"> {holes.join(", ")}</span>
+              <span className="visually-hidden"> {sectionHolesLine(holes)}</span>
             </span>
           )}
-          {s.hidden && <span className="section-row__flag">Hidden</span>}
+          {s.hidden && <span className="section-row__flag section-row__flag--hidden">Hidden</span>}
         </span>
         <span className="section-row__ctl">
           {!required && (
@@ -243,6 +294,7 @@ const SectionRow = memo(function SectionRow(p: {
                 type="checkbox"
                 className="section-row__check"
                 checked={!s.hidden}
+                disabled={busy}
                 onChange={(e) => p.onEdit(s.uid, { hidden: !e.target.checked })}
                 aria-label={`Show ${name} in the document`}
               />
@@ -252,9 +304,15 @@ const SectionRow = memo(function SectionRow(p: {
           {items.length > 0 && <MenuButton label={`Actions for ${name}`} items={items} align="end" />}
         </span>
       </div>
+      {p.gap && <GapNote gap={p.gap} onWriteHere={p.onWriteHere} onFill={p.onFill} filling={p.filling} />}
       {p.open && (
         <div className="section-row__body" id={panel}>
-          {holes.length > 0 && <p className="section-row__holes">{holes.join(", ")}</p>}
+          {holes.length > 0 && (
+            <p className="section-row__holes">
+              <AlertTriangle size={16} />
+              <span>{sectionHolesLine(holes)}</span>
+            </p>
+          )}
           {!required && empty && !s.hidden && <p className="hint">{DOC_COPY.writtenPerProposal}</p>}
           <div className="field">
             {/* 07-O §10: the name says whose title it is (several sections are open at once); the visible word stays "Title". */}
@@ -264,8 +322,15 @@ const SectionRow = memo(function SectionRow(p: {
               aria-label={sectionTitleName(kindName)}
               autoComplete="off"
               maxLength={SECTION_TITLE_MAX}
+              readOnly={busy}
               value={s.title}
-              onChange={(e) => p.onEdit(s.uid, { title: e.target.value })}
+              ref={titleCaret.ref}
+              onSelect={titleCaret.onSelect}
+              onFocus={titleCaret.onFocus}
+              onChange={(e) => {
+                titleCaret.noteEdit();
+                p.onEdit(s.uid, { title: e.target.value });
+              }}
             />
           </div>
           <div className="field">
@@ -273,13 +338,22 @@ const SectionRow = memo(function SectionRow(p: {
             <p className="hint" id={`sec-${s.uid}-body-hint`}>
               {PROJECT_COPY.formattingHint}
             </p>
+            {/* Finding 6: several sections are open at once, so each text box's name says whose text it is; the visible word stays "Text". */}
             <textarea
               id={`sec-${s.uid}-body`}
+              aria-label={sectionTextName(kindName)}
               aria-describedby={`sec-${s.uid}-body-hint`}
               rows={Math.min(14, Math.max(4, s.bodyMd.split("\n").length + 1))}
               maxLength={SECTION_BODY_MAX}
+              readOnly={busy}
               value={s.bodyMd}
-              onChange={(e) => p.onEdit(s.uid, { bodyMd: e.target.value })}
+              ref={bodyCaret.ref}
+              onSelect={bodyCaret.onSelect}
+              onFocus={bodyCaret.onFocus}
+              onChange={(e) => {
+                bodyCaret.noteEdit();
+                p.onEdit(s.uid, { bodyMd: e.target.value });
+              }}
             />
           </div>
         </div>
@@ -287,3 +361,70 @@ const SectionRow = memo(function SectionRow(p: {
     </li>
   );
 });
+
+/**
+ * 07-X §3 on the section itself: a margin note under its name, open or closed, saying which service has no text in Catalogue (and that the
+ * section is hidden until it has some), with the way to Catalogue, "Write it here" for a hidden section, and "Use Catalogue text" once
+ * Catalogue has it.
+ */
+function GapNote(props: {
+  gap: GapGroup;
+  onWriteHere: (uid: string) => void;
+  onFill: (sectionId: string) => void;
+  filling: string | null;
+}) {
+  const { gap } = props;
+  const uidOf = gap.uid;
+  const sectionId = gap.sectionId;
+  return (
+    <div className="gap-note" role="note">
+      <Info size={16} />
+      <div className="gap-note__body">
+        {gap.hidden && <p className="gap-note__hidden">{GAP_HIDDEN}</p>}
+        {/* Each service's sentence carries its own link (round 4, M4: the send panel's layout), never a stack of links that read the same. */}
+        {gap.services.map((s) => (
+          <p key={s.id}>
+            {s.missing.length > 0 && (
+              <>
+                {gapLine(s.name, s.missing)}{" "}
+                <CatalogueLink id={s.id} name={s.name} words={GAP_COPY.addInCatalogue} />{" "}
+              </>
+            )}
+            {s.now.length > 0 && <>{gapNowLine(s.name, s.now)} </>}
+            {s.noRoom.length > 0 && (
+              <>
+                {gapNoRoomLine(s.name, s.noRoom)}{" "}
+                <CatalogueLink id={s.id} name={s.name} words={GAP_COPY.openInCatalogue} />
+              </>
+            )}
+          </p>
+        ))}
+        {((gap.hidden && uidOf) || (gap.canFill && sectionId)) && (
+          <div className="gap-note__acts">
+            {gap.hidden && uidOf && (
+              <button
+                type="button"
+                className="btn btn--text gap-note__act"
+                onClick={() => props.onWriteHere(uidOf)}
+                disabled={props.filling !== null}
+              >
+                {GAP_COPY.writeHere}
+              </button>
+            )}
+            {gap.canFill && sectionId && (
+              <button
+                type="button"
+                className="btn btn--secondary gap-note__fill"
+                onClick={() => props.onFill(sectionId)}
+                disabled={props.filling !== null}
+                aria-busy={props.filling === sectionId || undefined}
+              >
+                {GAP_COPY.useCatalogue}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

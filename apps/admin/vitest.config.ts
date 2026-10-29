@@ -22,6 +22,8 @@ export default defineConfig(async () => ({
           TOTP_ENC_KEY: TEST_KEY(3),
           SESSION_HMAC_KEY: TEST_KEY(4),
           TURNSTILE_SECRET: "test-turnstile-secret",
+          // Opt-in: run the suite as if it started at this instant (worker/test-setup.ts); empty by default.
+          TEST_CLOCK_AT: process.env.TA_TEST_CLOCK ?? "",
         },
       },
     }),

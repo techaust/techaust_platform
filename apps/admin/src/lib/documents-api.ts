@@ -21,6 +21,34 @@ export type Blocker = {
   /** `section_empty`: the visible optional sections with no text, as ids in order; `kinds` is the same list by kind (the names the Worker sends). */
   sections?: string[];
   kinds?: string[];
+  /** `unresolved_placeholders` (M5 owner fixes, B2): where each name still sits, so the screen can name the place and link to it. */
+  where?: PlaceholderWhere[];
+};
+/** One place a placeholder still sits in a draft (`unresolved_placeholders.where`). */
+export type PlaceholderWhere = {
+  name: string;
+  sectionId: string | null;
+  sectionKind: string | null;
+  part: "title" | "line" | "section" | "schedule";
+};
+/**
+ * A section a service's Catalogue text would fill but can't, because the service has none (M5 owner fixes, B2; owner 2026-10-28 and Q3 of
+ * 2026-10-29): worked out when a draft is read, from its service lines and their current Catalogue rows. Drafts only.
+ */
+export type CatalogueGap = {
+  sectionId: string | null;
+  sectionKind: "deliverables" | "assumptions_exclusions";
+  field: "deliverables" | "assumptions" | "exclusions";
+  serviceCode: string;
+  serviceName: string;
+  catalogueItemId: string;
+  /** Catalogue has the text now (filled in since the draft was made): "Use Catalogue text" can add it. */
+  catalogueHasTextNow: boolean;
+  /**
+   * Catalogue has the text, but it would make the section (6,000 characters) or the document (30,000) too long, so it was left out
+   * (round 4, M3; never a refused save). Never also `catalogueHasTextNow`.
+   */
+  noRoom: boolean;
 };
 
 /** What a sent version was addressed to, as frozen at send (review fix 1; the db's `RecipientSnapshot`). */
@@ -196,6 +224,8 @@ export type DocumentViewBase = {
   unresolved: string[];
   canSend: boolean;
   needsResave: boolean;
+  /** A draft's Catalogue gaps (B2); absent on a sent version and on an API before M5 owner fixes. */
+  catalogueGaps?: CatalogueGap[];
   /** The client's "Attach PDF" setting (M4.5 review fix 2): what a send applies when it names none; readable by every role that can send. */
   attachPdfDefault: boolean;
   /** A frozen version: the recipient and issuer as frozen (drafts read the live client and contact). */
@@ -237,6 +267,17 @@ export type SaveAnswer = {
   unresolved: string[];
   canSend: boolean;
   needsResave: boolean;
+  /**
+   * The gaps after a save that changed what they are worked out from (the services on the lines, or a Deliverables or Assumptions and
+   * exclusions section; review round 2 finding 4, round 3 finding 6); absent otherwise, and the editor keeps the last ones.
+   */
+  catalogueGaps?: CatalogueGap[];
+  /**
+   * The sections whose text the SERVER wrote in this save (the service values filled by the save that adds the first service line, the
+   * Catalogue text of a service added later, the contact's name in the Acceptance text, the section "Use Catalogue text" filled), exactly as
+   * stored (review round 2 finding 5, round 3 finding 1). Empty when it wrote none; absent from an older API.
+   */
+  sectionsChanged?: { id: string; title: string | null; bodyMd: string | null; hidden: boolean }[];
 };
 
 export type LineIn = {
@@ -389,6 +430,15 @@ export const documentsApi = {
       `/clients/${enc(clientId)}/documents${qs({ after })}`,
     ),
   get: (id: string) => request<DocumentView>(`/documents/${enc(id)}`),
+  /**
+   * "Use Catalogue text" (B2, `document-fill.ts`): adds the Catalogue text that is there now to one section, by the draft's own rules, and shows
+   * the section, in one batch. It answers the slim save answer, with the filled section in `sectionsChanged` and fresh `catalogueGaps`;
+   * 409 `stale_version`, `nothing_to_fill`, `client_anonymised` or `frozen`. The editor applies it like a save answer: no re-read.
+   */
+  fillFromCatalogue: (id: string, sectionId: string, expectedUpdatedAt: number) =>
+    request<SaveAnswer>(`/documents/${enc(id)}/sections/fill-from-catalogue`, {
+      body: { sectionId, expectedUpdatedAt },
+    }),
   create: (body: NewDocumentInput) => request<Created>("/documents", { body }),
   save: (id: string, body: DocumentPatch) =>
     request<SaveAnswer>(`/documents/${enc(id)}`, { method: "PATCH", body }),

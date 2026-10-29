@@ -278,7 +278,8 @@ export const shortSha = (sha: string) => sha.slice(0, 12);
 
 /**
  * The contacts the send dialog offers: live ones only, those with portal access first (they can be chosen), then those without (shown
- * with "Has no portal access yet"). Billing contacts with access are ticked to start with, at most `MAX_RECIPIENTS`.
+ * with "Has no portal access yet"). The draft's own "Send to" contact, when it has access, is the one ticked (sweep finding 4: the email's
+ * greeting then names that person); otherwise billing contacts with access are ticked to start with, at most `MAX_RECIPIENTS`.
  */
 export function recipientChoices<
   C extends {
@@ -288,10 +289,12 @@ export function recipientChoices<
     anonymisedAt: number | null;
     isPrimary: boolean;
   },
->(contacts: readonly C[]): { choices: C[]; ticked: string[] } {
+>(contacts: readonly C[], preferredId: string | null = null): { choices: C[]; ticked: string[] } {
   const live = contacts.filter((c) => c.anonymisedAt === null);
   const can = live.filter((c) => c.portalAccess);
   const cannot = live.filter((c) => !c.portalAccess);
+  if (preferredId && can.some((c) => c.id === preferredId))
+    return { choices: [...can, ...cannot], ticked: [preferredId] };
   let ticked = can.filter((c) => c.isBilling).map((c) => c.id);
   // No billing contact with access: the primary contact, when it has access, is the natural first choice.
   if (ticked.length === 0) ticked = can.filter((c) => c.isPrimary).map((c) => c.id);

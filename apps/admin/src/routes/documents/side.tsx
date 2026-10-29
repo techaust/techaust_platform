@@ -4,8 +4,9 @@
 // The words beside it carry the figure; the rule is a picture of them (hidden from screen readers), calm verdigris up to the mark and
 // the warning colour past it, always with the sentence that says what it means.
 import type { Role } from "@techaust/core/permissions";
+import type { ReactNode } from "react";
 import { Link } from "react-router";
-import { Alert, CheckCircle, Clock, Send } from "../../components/icons.tsx";
+import { Alert, CheckCircle, Clock, Info, Send } from "../../components/icons.tsx";
 import {
   approvalLine,
   blockerText,
@@ -13,18 +14,25 @@ import {
   DOC_PENDING,
   emptySectionsOf,
   formatIstDay,
+  GAP_COPY,
+  GAP_HIDDEN,
+  type GapGroup,
+  gapLine,
+  gapNoRoomLine,
+  gapNowLine,
   guardLine,
   type SaveStatus,
   SECTION_EMPTY_AROUND,
   type SectionDraft,
   STATUS_LABELS,
   sectionName,
+  type UnresolvedItem,
   versionLine,
 } from "../../lib/documents.ts";
 import type { ApprovalInfo, Blocker, Guard, QuoteType, VersionRow } from "../../lib/documents-api.ts";
 import { PDF_COPY } from "../../lib/pdf.ts";
 import { bpToPercent } from "../../lib/settings-form.ts";
-import { docHref } from "./parts.tsx";
+import { CatalogueLink, docHref } from "./parts.tsx";
 
 const OWNER_MARK_BP = 1000;
 
@@ -82,6 +90,14 @@ export function SendPanel(props: {
   onOpenSection: (uid: string) => void;
   /** Names the document in the "PDF after sending" line. */
   type: QuoteType;
+  /** `unresolved_placeholders` in plain words (07-X §1), each with its place and its fix. */
+  holes: UnresolvedItem[];
+  /** The Catalogue gaps by section (07-X §3): notes, never blockers (owner, 2026-10-28). */
+  gaps: GapGroup[];
+  onFix: (fix: "service" | "contact") => void;
+  /** "Use Catalogue text" for one section (B2's route); the section being filled, while it runs. */
+  onFill: (sectionId: string) => void;
+  filling: string | null;
 }) {
   const needs = !!props.guard?.needsApproval && props.role !== "owner";
   const approved = props.approval.state === "approved";
@@ -119,6 +135,8 @@ export function SendPanel(props: {
               <Alert size={16} />
               {b.code === "section_empty" ? (
                 <SectionEmpty sections={emptySectionsOf(b, props.sections)} onOpen={props.onOpenSection} />
+              ) : b.code === "unresolved_placeholders" && props.holes.length > 0 ? (
+                <HoleList items={props.holes} onOpen={props.onOpenSection} onFix={props.onFix} />
               ) : (
                 <span>{blockerText(b)}</span>
               )}
@@ -126,6 +144,15 @@ export function SendPanel(props: {
           ))}
         </ul>
       ) : null}
+      {props.gaps.length > 0 && (
+        <GapNotes
+          groups={props.gaps}
+          onOpen={props.onOpenSection}
+          onFill={props.onFill}
+          filling={props.filling}
+          canWrite={props.canWrite}
+        />
+      )}
       <GuardRule guard={props.guard} owner={props.role === "owner"} />
       {line && (
         <p className="approval-line" data-state={props.approval.state}>
@@ -184,6 +211,145 @@ function SectionEmpty(props: { sections: SectionDraft[]; onOpen: (uid: string) =
       ))}
       {SECTION_EMPTY_AROUND[1]}
     </span>
+  );
+}
+
+/** A sentence with one part of it as a control (a section's name as a link that opens it): the sentence stays whole for its words. */
+export function WithPlace(props: { text: string; place: string; children: (place: string) => ReactNode }) {
+  const at = props.place ? props.text.indexOf(props.place) : -1;
+  if (at < 0) return <>{props.text}</>;
+  return (
+    <>
+      {props.text.slice(0, at)}
+      {props.children(props.place)}
+      {props.text.slice(at + props.place.length)}
+    </>
+  );
+}
+
+/** 07-X §1: the values still missing, one per line, each naming its place (a section opens) and, where one exists, the fix. */
+function HoleList(props: {
+  items: UnresolvedItem[];
+  onOpen: (uid: string) => void;
+  onFix: (fix: "service" | "contact") => void;
+}) {
+  return (
+    <div className="holes-list">
+      <span>{GAP_COPY.unresolvedLead}</span>
+      <ul className="holes-list__items">
+        {props.items.map((it) => {
+          const place = it.place;
+          return (
+            <li key={it.key} className="holes-list__item">
+              <span>
+                {place?.kind === "section" ? (
+                  <WithPlace text={it.text} place={place.name}>
+                    {(name) => (
+                      <a
+                        href={`#sec-${place.uid}-toggle`}
+                        className="blockers__link"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          props.onOpen(place.uid);
+                        }}
+                      >
+                        {name}
+                      </a>
+                    )}
+                  </WithPlace>
+                ) : (
+                  it.text
+                )}
+              </span>
+              {it.fixes.map((fix) => (
+                <button
+                  key={fix}
+                  type="button"
+                  className="btn btn--text holes-list__fix"
+                  onClick={() => props.onFix(fix)}
+                >
+                  {fix === "service" ? GAP_COPY.addService : GAP_COPY.chooseContact}
+                </button>
+              ))}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * 07-X §3: the sections a service's Catalogue text would fill but can't. Notes, not blockers (sending goes ahead with the section hidden):
+ * each names the section (it opens) and the service, links to the service in Catalogue, and offers "Use Catalogue text" once it is there.
+ */
+function GapNotes(props: {
+  groups: GapGroup[];
+  onOpen: (uid: string) => void;
+  onFill: (sectionId: string) => void;
+  filling: string | null;
+  canWrite: boolean;
+}) {
+  return (
+    <ul className="gap-notes">
+      {props.groups.map((g) => {
+        const uid = g.uid;
+        const sectionId = g.sectionId;
+        return (
+          <li key={g.key} className="gap-notes__item">
+            <Info size={16} />
+            <div className="gap-notes__body">
+              <p className="gap-notes__head">
+                {uid ? (
+                  <a
+                    href={`#sec-${uid}-toggle`}
+                    className="blockers__link"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      props.onOpen(uid);
+                    }}
+                  >
+                    {g.name}
+                  </a>
+                ) : (
+                  g.name
+                )}
+              </p>
+              {g.services.map((s) => (
+                <p key={s.id}>
+                  {/* Each link right after its own sentence (round 4, M4), as on the section's note. */}
+                  {s.missing.length > 0 && (
+                    <>
+                      <span>{gapLine(s.name, s.missing)} </span>
+                      <CatalogueLink id={s.id} name={s.name} words={GAP_COPY.addInCatalogue} />{" "}
+                    </>
+                  )}
+                  {s.now.length > 0 && <span>{gapNowLine(s.name, s.now)} </span>}
+                  {s.noRoom.length > 0 && (
+                    <>
+                      <span>{gapNoRoomLine(s.name, s.noRoom)} </span>
+                      <CatalogueLink id={s.id} name={s.name} words={GAP_COPY.openInCatalogue} />
+                    </>
+                  )}
+                </p>
+              ))}
+              {g.hidden && <p className="gap-notes__hidden">{GAP_HIDDEN}</p>}
+              {g.canFill && sectionId && props.canWrite && (
+                <button
+                  type="button"
+                  className="btn btn--secondary gap-notes__fill"
+                  onClick={() => props.onFill(sectionId)}
+                  disabled={props.filling !== null}
+                  aria-busy={props.filling === sectionId || undefined}
+                >
+                  {GAP_COPY.useCatalogue}
+                </button>
+              )}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

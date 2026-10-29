@@ -41,6 +41,8 @@ export function SendDialog(props: {
   clientName: string;
   /** The client's "Attach PDF" setting as GET /documents/:id resolves it: the switch's starting position and the send path's default. */
   attachPdfDefault: boolean;
+  /** The draft's "Send to" contact: ticked to start with when it has portal access (sweep finding 4). */
+  preferredContactId?: string | null | undefined;
   /** "10 Nov 2026" (the version's validity, as the email states it); null while a draft has none yet. */
   validUntil: string | null;
   /** Sends; throws a RequestError to show (its `contactIds` mark the contacts that can't receive it). */
@@ -56,6 +58,7 @@ export function SendDialog(props: {
   const groupId = useId();
   const attachId = useId();
   const { open, clientId, attachPdfDefault } = props;
+  const preferred = props.preferredContactId ?? null;
 
   // The client's contacts, read when the dialog opens (the client page's own API); the switch starts from the document's resolved default.
   useEffect(() => {
@@ -68,7 +71,7 @@ export function SendDialog(props: {
     api.client(clientId).then(
       (page) => {
         if (!alive) return;
-        const { ticked } = recipientChoices(page.contacts);
+        const { ticked } = recipientChoices(page.contacts, preferred);
         setPicked(new Set(ticked));
         setLoaded({ state: "ready", contacts: page.contacts });
       },
@@ -77,7 +80,7 @@ export function SendDialog(props: {
     return () => {
       alive = false;
     };
-  }, [open, clientId, attachPdfDefault]);
+  }, [open, clientId, attachPdfDefault, preferred]);
 
   const choices = loaded.state === "ready" ? recipientChoices(loaded.contacts).choices : [];
   // Nobody can receive it (no live contact with portal access): Send is off and the dialog says where to turn access on.

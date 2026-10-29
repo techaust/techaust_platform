@@ -5,7 +5,7 @@
 // shows the "saved at the same moment" notice and stops saving until the latest is loaded.
 import { istDate } from "@techaust/core/dates";
 import { validUntil } from "@techaust/core/documents";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { api, RequestError } from "../../api.ts";
 import { PageHeader } from "../../components/display.tsx";
@@ -29,6 +29,8 @@ import {
   editor,
   fieldErrors,
   formatIstDay,
+  GAP_COPY,
+  gapGroups,
   initEditor,
   isDirty,
   newerTerms,
@@ -36,8 +38,9 @@ import {
   sentAs,
   TYPE_LABELS,
   titleOf,
-  UNRESOLVED_AROUND,
+  unresolvedItems,
   validFor,
+  waitForInflight,
 } from "../../lib/documents.ts";
 import { type DocumentView, documentsApi } from "../../lib/documents-api.ts";
 import { OFFER_COPY } from "../../lib/offers.ts";
@@ -85,9 +88,9 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
   const [dialog, setDialog] = useState<"send" | "request" | "discard" | null>(null);
   const canWrite = allowed(user.role, "proposals.draft");
   const canSendRole = allowed(user.role, "proposals.send");
-
   const save = useCallback(async (): Promise<boolean> => {
-    if (inflight.current) await inflight.current.catch(() => null);
+    // Every request in flight, not only the first one seen (round 4, L5).
+    await waitForInflight(inflight);
     const cur = ref.current;
     if (cur.status === "stale" || cur.status === "frozen") return false;
     const b = buildPatch(cur);
@@ -96,6 +99,8 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
       return false;
     }
     if (!b.patch) return true;
+    // A save the server writes sections in (the first service line fills the service values, a new contact renames the Acceptance text)
+    // answers with those sections (`sectionsChanged`), and `applySave` puts them on screen: no second read (review round 2, finding 5).
     dispatch({ type: "saving" });
     const p = documentsApi.save(cur.id, b.patch);
     inflight.current = p;
@@ -112,13 +117,14 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
       else dispatch({ type: "failed", status: "error", error: docErrorText(e) });
       return false;
     } finally {
-      inflight.current = null;
+      // Only its own promise (review round 3, finding 5): a fill or a save started meanwhile keeps its place, so a later save still waits for it.
+      if (inflight.current === p) inflight.current = null;
     }
   }, [dispatch]);
 
   /** Everything typed is saved; resolves with the `updatedAt` a send or a request must carry, or null when it could not save. */
   const flush = useCallback(async (): Promise<number | null> => {
-    if (inflight.current) await inflight.current.catch(() => null);
+    await waitForInflight(inflight);
     for (let i = 0; i < 3 && isDirty(ref.current); i++) if (!(await save())) return null;
     const cur = ref.current;
     return cur.status === "stale" || cur.status === "frozen" || isDirty(cur) ? null : cur.updatedAt;
@@ -170,8 +176,70 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
     [],
   );
 
-  const contacts = useLoad(() => api.clientContacts(view.client.id), view.client.id);
+  // The send check in plain words and the Catalogue gaps (07-X): worked out from the server's answer and what is on screen now.
   const f = s.figures;
+  const holesBlocker = f.blockers.find((b) => b.code === "unresolved_placeholders");
+  const holes = useMemo(
+    () =>
+      holesBlocker
+        ? unresolvedItems(holesBlocker, {
+            title: s.fields.title,
+            lines: s.lines,
+            sections: s.sections,
+            schedule: s.schedule,
+            contactId: s.fields.contactId,
+          })
+        : [],
+    [holesBlocker, s.fields.title, s.lines, s.sections, s.schedule, s.fields.contactId],
+  );
+  const gaps = useMemo(() => gapGroups(f.gaps, s.sections, s.gapBase), [f.gaps, s.sections, s.gapBase]);
+  // "Add a service line" and "Choose a contact": put the cursor on the control that fills the value.
+  const onFix = useCallback((fix: "service" | "contact") => {
+    const el = document.getElementById(fix === "service" ? "doc-add-catalogue" : "doc-contact");
+    el?.scrollIntoView({ block: "center" });
+    el?.focus({ preventScroll: true });
+  }, []);
+  // "Use Catalogue text": everything typed is saved first (the route takes the version it saw); its answer is a save answer whose
+  // `sectionsChanged` holds the filled section, applied like a save's (no re-read, so nothing typed meanwhile is lost; review round 2, finding 5).
+  // An autosave waits for it (`inflight`), so it never sends the old version. The section is read-only from the click until the answer is on
+  // screen (review round 3, finding 4): text typed into it meanwhile would keep the fill off the screen and the next save would overwrite it.
+  const [filling, setFilling] = useState<string | null>(null);
+  const onFill = useCallback(
+    async (sectionId: string) => {
+      if (filling) return;
+      setFilling(sectionId);
+      let p: Promise<unknown> | null = null;
+      try {
+        const at = await flush();
+        if (at === null) {
+          toast("error", ref.current.error ?? DOC_ERRORS.stale_version);
+          return;
+        }
+        const before = ref.current;
+        const call = documentsApi.fillFromCatalogue(before.id, sectionId, at);
+        p = call;
+        inflight.current = call;
+        const answer = await call;
+        const sectionsAt = Object.fromEntries(before.sections.map((x) => [x.uid, x]));
+        dispatch({
+          type: "saved",
+          answer,
+          sent: { parts: [], rev: { ...before.rev }, uids: {}, sectionsAt },
+        });
+        toast("success", GAP_COPY.filled);
+      } catch (e) {
+        toast("error", docErrorText(e));
+      } finally {
+        if (p !== null && inflight.current === p) inflight.current = null;
+        setFilling(null);
+      }
+    },
+    [dispatch, filling, flush, toast],
+  );
+
+  const contacts = useLoad(() => api.clientContacts(view.client.id), view.client.id);
+  const live = (contacts.data?.contacts ?? []).filter((c) => c.anonymisedAt === null);
+  const chosen = live.find((c) => c.id === s.fields.contactId);
   const title = titleOf(s.fields.title);
   const dirty = isDirty(s);
   const saveLine =
@@ -250,6 +318,11 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
             sections={s.sections}
             onOpenSection={onOpenSection}
             type={view.type}
+            holes={holes}
+            gaps={gaps}
+            onFix={onFix}
+            onFill={onFill}
+            filling={filling}
           />
         </div>
 
@@ -302,23 +375,6 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
               </div>
             </div>
           )}
-          {f.unresolved.length > 0 && (
-            <div className="notice notice--warning holes" role="status">
-              <Info size={20} />
-              <div>
-                <p>
-                  {UNRESOLVED_AROUND[0]}
-                  {f.unresolved.map((n, i) => (
-                    <span key={n}>
-                      <code className="hole">{`{{${n}}}`}</code>
-                      {i < f.unresolved.length - 1 ? ", " : ""}
-                    </span>
-                  ))}
-                  {UNRESOLVED_AROUND[1]}
-                </p>
-              </div>
-            </div>
-          )}
 
           <section className="lead-panel doc-details" aria-labelledby="doc-details-h">
             <h2 id="doc-details-h" className="visually-hidden">
@@ -341,7 +397,13 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
               <FormField
                 id="doc-contact"
                 label={DOC_COPY.sendTo}
-                hint={s.fields.contactId === null ? DOC_COPY.noContact : undefined}
+                hint={
+                  s.fields.contactId === null
+                    ? DOC_COPY.noContact
+                    : chosen && !chosen.portalAccess
+                      ? OFFER_COPY.noPortal
+                      : undefined
+                }
               >
                 {(a) => (
                   <select
@@ -356,13 +418,26 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
                     {view.contact && !contacts.data?.contacts.some((c) => c.id === view.contact?.id) && (
                       <option value={view.contact.id}>{view.contact.name}</option>
                     )}
-                    {(contacts.data?.contacts ?? [])
-                      .filter((c) => c.anonymisedAt === null)
+                    {/* Finding 14: only a contact with portal access can receive the offer, so those without it are grouped apart, under
+                        the send dialog's own words for them. They stay choosable: the name still fills the Acceptance text. */}
+                    {live
+                      .filter((c) => c.portalAccess)
                       .map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.name}, {c.email}
                         </option>
                       ))}
+                    {live.some((c) => !c.portalAccess) && (
+                      <optgroup label={OFFER_COPY.noPortal}>
+                        {live
+                          .filter((c) => !c.portalAccess)
+                          .map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}, {c.email}
+                            </option>
+                          ))}
+                      </optgroup>
+                    )}
                   </select>
                 )}
               </FormField>
@@ -471,6 +546,9 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
             dispatch={dispatch}
             current={currentSections}
             openRequest={openSection}
+            gaps={gaps}
+            onFill={onFill}
+            filling={filling}
           />
         </div>
 
@@ -493,6 +571,7 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
         clientId={view.client.id}
         clientName={view.client.name}
         attachPdfDefault={view.attachPdfDefault}
+        preferredContactId={s.fields.contactId}
         validUntil={sendValidUntil(s.fields.validityDays)}
         onClose={() => setDialog(null)}
         onSend={async (contactIds, attachPdf) => {
@@ -532,7 +611,8 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
         open={dialog === "discard"}
         onClose={() => setDialog(null)}
         onConfirm={async () => {
-          if (inflight.current) await inflight.current.catch(() => null);
+          // Every request in flight, including one started while waiting (round 4 re-check, finding 5).
+          await waitForInflight(inflight);
           await documentsApi.discard(view.id, ref.current.updatedAt);
           // Nothing is left to save: leaving must not ask about unsaved changes.
           ref.current = { ...ref.current, savedRev: { ...ref.current.rev } };
