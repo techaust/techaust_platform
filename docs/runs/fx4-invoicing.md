@@ -497,3 +497,48 @@ Branch `fix/fx4-b2` from `origin/fix/fx4-invoicing` (1a6e7441). Code commit 3ea3
 1. A tax head on a proforma sealed with the marker: "<head> (estimate)", i.e. "CGST (estimate)", "SGST (estimate)", "IGST (estimate)" (`PROFORMA_PDF_COPY.estimate`, exported through `@techaust/pdf/copy` so the screens can reuse it).
 
 **Open questions:** none.
+
+## Review (reviewer claude-opus-5-5/high, live browser, 2026-10-29 ~16:20–17:10 IST, on 99d28713): SEND BACK
+_(Summary by the lead; the full text is in the conversation record. Shots: `.logs/shots/fx4-review/` in the main checkout.)_
+
+**The tax and money core is correct and consistent across every layer**, checked live with locally issued documents:
+- 2 invoices, a proforma, a credit note and 2 tax-only debit notes (₹18.02 CGST+SGST, ₹10.01 IGST);
+- the GSTR-1 warning covers cdnr, cdnur and b2cs, and `complete === (blocking === 0)`;
+- the per-rate figures match the register;
+- no round-off held in core, the freeze `WHERE` and trigger 0052;
+- the statement's "against";
+- the supplier copy answers 409 then 202;
+- the proforma marker is sealed, and the PDF shows "(estimate)" only with it;
+- the audit action labels;
+- the ledger order;
+- no floats;
+- migration 0052 is clean.
+
+**Results:**
+- `pnpm check`: exit 0.
+- `pnpm test`: exit 0, no timeouts; admin 3,379, core 1,810, jobs 531, portal 631, db 478, pdf 348.
+- Builds are within budget. The admin API is 611,979 bytes (38 KB under the 650,000 third-Worker trigger; plan for it in M6).
+
+**Findings:**
+- **H1 (high):** `quote-model.ts:517` (`sac: l.sac ?? newCustomSac`) puts the default SAC back when the person clears it on a new custom line (the SPA sends `null`). That hides the `line_sac_missing` blocker, so an invoice can be issued with a SAC that was deliberately removed. `default-sac.test.ts:35` locks this in.
+  - Fix: apply the default only when `sac` is absent (`undefined`).
+- **H2 (high, accessibility):** `routes/invoices/read.tsx:308` keys the PDF panel on `v.pdf.state`, so the panel remounts when the PDF turns ready and focus falls to `<body>` (WCAG 2.4.3). The live region is also mounted already filled.
+  - Fix: keep `key={v.id}`, and sync the state from props or restore focus to `#pdf-h`. Add an SPA test.
+- **M1:** the screens don't show "(estimate)" for a marked proforma: the admin `TaxPreview` (`money.tsx:55`) and the portal (`screens/invoices.tsx:186,189`). A5 5 covers the screens too.
+- **M2:** `ENTITY_LABELS` (`lib/audit.ts:181`) lacks `lead`, `care_plan`, `time_log`, `document_send` and `report`, so raw codes show and the record filter can't pick them.
+  - Fix: add the labels, and extend the test to scan the entity types.
+- **M3:** the LUT "Not saved yet" line breaks mid-word at 1024 px (`screens.css:227-237`, `overflow-wrap: anywhere`).
+- **L1:** the discount row's name comes from the typed fields, but its amount from the saved totals (both editors).
+- **L2:** the live-client "no original" supplier line can't be reached (the panel shows `extra` only when the PDF is ready). Drop the dead branch or reword it.
+- **L3:** `byDateThenNumber` (`gst/sections.ts:344`) sorts same-day notes as text, so `/10` comes before `/9`.
+- **L4:**
+  - no test for a tax-only note in `cdnur`;
+  - the PDF prints the 07-Y lines "(estimate)" and "Debit note against …" unmarked; record that in docs/13.
+- **L5:** `WideList`'s `useEffect(measure)` has no dependency list (`reports/parts.tsx:129`).
+
+## Fix round 1 after the review (lead's triage)
+Everything is fixed in this task. L4's record is done by the lead (docs/13).
+- **Builder** (`fix/fx4-r1-b`): H1, M2 (the labels and the test), L3, L4 (the `cdnur` test).
+- **Designer** (`fix/fx4-r1-d`, when the browser is free): H2, M1 (admin and portal), M3, L1, L2, L5.
+
+Then a re-check (reviewer, Opus high), with H1 and H2 re-run live.
