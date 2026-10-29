@@ -930,12 +930,7 @@ function Enquiry({
             Enquiry
           </h2>
           {canEdit && !editing && (
-            <button
-              type="button"
-              id="lead-answers-edit"
-              className="btn btn--text"
-              onClick={onOpen}
-            >
+            <button type="button" id="lead-answers-edit" className="btn btn--text" onClick={onOpen}>
               <Pencil size={16} />
               Edit<span className="visually-hidden"> enquiry</span>
             </button>
