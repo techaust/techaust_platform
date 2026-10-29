@@ -164,6 +164,9 @@ describe("a credit note: draft, issue, ledger [ADM-INV-11, LD38, LD41]", () => {
     const after = await getInvoice(o, inv.id);
     expect(after.notes.credit.map((r: J) => r.id)).toEqual([cn.id]);
     expect(after.notes.debit.map((r: J) => r.id)).toEqual([dn.id]);
+    // FX-4 (A5 6): each ledger row carries its type, so the screen names it
+    expect(after.notes.credit.map((r: J) => r.type)).toEqual(["credit_note"]);
+    expect(after.notes.debit.map((r: J) => r.type)).toEqual(["debit_note"]);
     expect(after.notes.drafts).toEqual({ credit: (await json(draft)).id, debit: null });
     expect(after.actions.credit).toEqual({ allowed: false, reasons: ["note_draft_exists"] });
     expect(after.creditable.lines[0].taxableLeftMinor).toBe(90_000);

@@ -37,8 +37,10 @@ type NoteListRow = {
   frozen_at: number | null;
 };
 
+/** One issued note of the invoice's ledger; `type` says which kind it is, so a screen can name each row (FX-4, full audit A5 6). */
 const itemOf = (r: NoteListRow) => ({
   id: r.id,
+  type: r.type as "credit_note" | "debit_note",
   number: r.number_display,
   issueDate: r.issue_date,
   totalMinor: r.total_minor,

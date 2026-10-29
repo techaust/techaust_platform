@@ -1,5 +1,5 @@
 // GET /invoices/:id/pdf/supplier [Q11, owner 2026-10-28; Rule 48(2) CGST Rules]: the stored DUPLICATE FOR SUPPLIER copy, for the Owner and the Accountant only. It answers like /:id/pdf
-// (the file, or 202 {state: making}; 409 pdf_pending for an erased client), a proforma, a draft and an unknown id are 404, and a missing copy is asked for again, once the original exists.
+// (the file, or 202 {state: making} once the original exists; 409 pdf_pending while the original has no PDF (FX-4) and for an erased client), a proforma, a draft and an unknown id are 404, and a missing copy is asked for again, once the original exists.
 import { env } from "cloudflare:workers";
 import { fyLabelOfToken, supplierPdfKey } from "@techaust/core/pdf-jobs";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -72,19 +72,26 @@ describe("GET /invoices/:id/pdf/supplier", () => {
     expect((await call("/invoices/nope/pdf/supplier", { cookie: o.cookie })).status).toBe(404);
   });
 
-  it("not made yet: 202 making; with the original's PDF in place the route asks jobs for the copy (one idempotent message); without it, no message", async () => {
+  it("not made yet: without the original's PDF it is 409 pdf_pending and asks for nothing (FX-4, A5 9: never a 202 forever); with it in place, 202 making and one idempotent message for the copy", async () => {
     const o = await owner();
     const made = await mkInvoice(o);
     expect((await issueInvoice(o, made.id)).status).toBe(200);
     const a = queueOf();
-    const noOriginal = await call(
-      `/invoices/${made.id}/pdf/supplier`,
-      { cookie: o.cookie },
-      withEnv(env, { PDF_QUEUE: a.queue }),
-    );
-    expect(noOriginal.status).toBe(202);
-    expect(await noOriginal.json()).toEqual({ state: "making" });
+    // asked again and again while the original never rendered: the same 409 each time, nothing queued
+    for (let i = 0; i < 3; i++) {
+      const noOriginal = await call(
+        `/invoices/${made.id}/pdf/supplier`,
+        { cookie: o.cookie },
+        withEnv(env, { PDF_QUEUE: a.queue }),
+      );
+      expect(noOriginal.status).toBe(409);
+      expect(await codeOf(noOriginal)).toBe("pdf_pending");
+    }
     expect(a.sent).toEqual([]);
+    expect(
+      await one("SELECT key FROM pdf_asks WHERE key = ?", supplierAskKey(made.id)),
+      "no ask is claimed while the original is missing",
+    ).toBeNull();
     await env.DB.prepare("UPDATE documents SET pdf_r2_key = 'k', pdf_sha256 = ?2 WHERE id = ?1")
       .bind(made.id, "a".repeat(64))
       .run();

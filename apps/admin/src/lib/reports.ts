@@ -567,7 +567,10 @@ export const STATEMENT_COPY = {
   caption: "Statement entries",
 } as const;
 
-/** 07-V §6 entry kinds (Details). A credit note says which invoice it is against when the API gives that number; else 07-U §3's type name. */
+/**
+ * 07-V §6 entry kinds (Details). A credit note says which invoice it is against when the API gives that number; else 07-U §3's type name. A debit note does the same
+ * (FX-4, full audit A5 7): "Debit note against {number}" is 07-Y's (PENDING, marked); without a number it stays 07-V's "Debit note".
+ */
 export function statementKindText(kind: StatementKind, againstNumber?: string | null): string {
   switch (kind) {
     case "tax_invoice":
@@ -575,7 +578,7 @@ export function statementKindText(kind: StatementKind, againstNumber?: string | 
     case "export_invoice":
       return "Export invoice";
     case "debit_note":
-      return "Debit note";
+      return againstNumber ? Y(`Debit note against ${againstNumber}`) : "Debit note";
     case "credit_note":
       return againstNumber ? `Credit note against ${againstNumber}` : "Credit note";
     case "receipt":
@@ -611,6 +614,15 @@ export function nearestScrollLeft(
   return rowScrollLeft;
 }
 
+/** The CSV's debit-note words (FX-4, A5 7): 07-Y's line with core's `{number}` slot (marked while 07-Y is pending), or 07-V's "Debit note" when a debit note in the file lacks its invoice number. */
+export function statementCsvDebitNoteLabel(
+  entries: readonly { kind: StatementKind; againstNumber?: string | null }[],
+) {
+  return entries.every((e) => e.kind !== "debit_note" || e.againstNumber)
+    ? Y("Debit note against {number}")
+    : "Debit note";
+}
+
 /** The CSV's words (core `statementCsv` takes them from the caller, LD83; it fills `{number}` with each note's invoice number). */
 export const statementCsvLabels = (
   entries: readonly { kind: StatementKind; againstNumber?: string | null }[] = [],
@@ -620,7 +632,7 @@ export const statementCsvLabels = (
   kinds: {
     tax_invoice: statementKindText("tax_invoice"),
     export_invoice: statementKindText("export_invoice"),
-    debit_note: statementKindText("debit_note"),
+    debit_note: statementCsvDebitNoteLabel(entries),
     credit_note: statementCsvCreditNoteLabel(entries),
     receipt: statementKindText("receipt"),
   } satisfies Record<StatementKind, string>,

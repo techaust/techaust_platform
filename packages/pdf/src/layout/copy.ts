@@ -209,6 +209,8 @@ export const STATEMENT_PDF_COPY = {
     tax_invoice: "Invoice",
     export_invoice: "Export invoice",
     debit_note: "Debit note",
+    /** FX-4 (full audit A5 7): "Debit note against {number}" (07-Y, PENDING the owner; unmarked, as every PDF line is), when the view has the invoice's number. */
+    debitNoteAgainst: (againstNumber: string) => `Debit note against ${againstNumber}`,
     /** 07-V §6 "Credit note against {number}": with the invoice's number when the view has it. */
     credit_note: (againstNumber: string) => `Credit note against ${againstNumber}`,
     receipt: "Payment received",

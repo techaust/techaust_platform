@@ -348,6 +348,39 @@ describe("statement words", () => {
     expect(csvOf(null)).not.toContain("against");
   });
 
+  it("FX-4 (A5 7): a debit note names its invoice on the screen and in the CSV (07-Y, marked); without the number it stays 07-V's word", () => {
+    expect(statementDetailsText({ kind: "debit_note", againstNumber: "TH/INV/2627/0004" })).toBe(
+      `${Y_MARK}Debit note against TH/INV/2627/0004`,
+    );
+    expect(statementDetailsText({ kind: "debit_note", againstNumber: null })).toBe(`${M}Debit note`);
+    const entry = (againstNumber: string | null) => ({
+      id: "d1",
+      kind: "debit_note" as const,
+      date: "2026-06-03",
+      number: "TH/DN/2627/0001",
+      againstNumber,
+      amountMinor: 18_02,
+      debitMinor: 18_02,
+      creditMinor: 0,
+      balanceMinor: 18_02,
+    });
+    const csvOf = (againstNumber: string | null) =>
+      (
+        statementCsvText({
+          from: "2026-04-01",
+          to: "2026-10-28",
+          openingMinor: 0,
+          closingMinor: 18_02,
+          entries: [entry(againstNumber)],
+        }) as string
+      )
+        .trim()
+        .split(/\r?\n/)[2];
+    expect(csvOf("TH/INV/2627/0004")).toContain(`${Y_MARK}Debit note against TH/INV/2627/0004`);
+    expect(csvOf(null)).toContain("Debit note");
+    expect(csvOf(null)).not.toContain("against");
+  });
+
   it("reads the file name the server gave the PDF", () => {
     expect(dispositionName('attachment; filename="statement-C001.pdf"', "x.pdf")).toBe("statement-C001.pdf");
     expect(dispositionName("attachment; filename*=UTF-8''statement%20A.pdf", "x.pdf")).toBe(

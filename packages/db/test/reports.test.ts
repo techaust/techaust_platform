@@ -564,8 +564,8 @@ describe("the SQL rates are a twin of core's registerRatesOf", () => {
   });
 });
 
-describe("the statement lines carry the number of the invoice a credit note is against, and the PDF read is the same lines", () => {
-  it("parent only for a credit note; STATEMENT_ENTRIES_SQL(limit) gives the same order and stops at the limit", async () => {
+describe("the statement lines carry the number of the invoice a credit or debit note is against, and the PDF read is the same lines", () => {
+  it("parent for a credit note and (FX-4, A5 7) a debit note; STATEMENT_ENTRIES_SQL(limit) gives the same order and stops at the limit", async () => {
     const c = await mkReportClient("INR");
     const inv = await addDoc({ clientId: c, issueDate: "2026-09-02", lines: [line(100_00)] });
     const dn = await addDoc({
@@ -589,7 +589,7 @@ describe("the statement lines carry the number of the invoice a credit note is a
     );
     expect(page.map((r) => [r.id, r.kind, r.parent])).toEqual([
       [inv.id, "tax_invoice", null],
-      [dn.id, "debit_note", null],
+      [dn.id, "debit_note", inv.number],
       [cn.id, "credit_note", inv.number],
     ]);
     const all3 = await all<{ id: string; parent: string | null }>(STATEMENT_ENTRIES_SQL(201), ...binds);
