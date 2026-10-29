@@ -156,3 +156,16 @@ The owner asked for it on 2026-10-29 and approved this plan the same day. Facts 
 - **This PC:** after the merge, run `node tools/mcp-local-off.mjs` in the main checkout (the lead's sessions start there; subagents share the parent's MCP connections), then `--check`.
 - The flaky first `pnpm test` (a jobs test timed out while another agent's tests ran) passed alone; the review re-runs the full suite with the queue free.
 - Next: the analyst's early check (Tier B), then the review.
+
+## Early check (analyst claude-opus-5-5/high, 2026-10-29, on 377fefb8): CHANGE
+_(Summary by the lead; the full text is in the conversation record.)_ Sound: the hook is a no-op here (the exact settings command through `bash -c` with the spaced Windows path, `CLAUDE_CODE_REMOTE` unset and `false`: exit 0, no output); offset 0 reproduces today's command lines; the inspector-port change is sound; pins exact, Node 24.22.2 checksums match nodejs.org; the two Chromium installs don't delete each other (Playwright's dir lock); `cloud-pr.sh` never merges; no secrets or personal data; the guard is not weakened.
+- **H1:** in a cloud session nothing enforces "never merge, never deploy": REST `gh api` can merge (held PRs too), enable auto-merge, force-push, delete branches and dispatch workflows (`publish-catalogue` deploys staging, `backup` touches hosted data). Fix: a cloud-only block in `tools/model-guard.mjs`'s Bash branch, behind `CLAUDE_CODE_REMOTE === "true"` (no new process here).
+- **M1:** nothing sets or checks the main conversation's model in the cloud (`availableModels` without managed `enforceAvailableModels` doesn't). Runbook: pick Opus 5.5 in the menu; the SessionStart hook flags another model from its stdin `model` field; reword CLAUDE.md.
+- **M2:** after the merge, a new session here would start the `.mcp.json` server before `mcp-local-off` ran.
+- **M3:** two browser agents can't share one stdio server (one browser, one tab; cookies ignore ports): state it in docs/14 §4 and docs/13.
+- **Lows:** L1 hash `pnpm-workspace.yaml` too; L2 `ls-remote` by exact ref; L3 install `xz-utils` if missing; L4 `WRANGLER_SEND_METRICS=false`; L5 a clearer hook status message; L6 runbook labels, `nodejs.org` already default, the org switch; L7 one worktree per browser agent (own local D1); L8 test the settings command via `bash -c` with a spaced `CLAUDE_PROJECT_DIR`, and `mcp-local-off` refusing in the cloud; L9 optional `pnpm fetch` speed-up.
+
+## Lead's triage after the early check (2026-10-29)
+- **M2 done by the lead before the merge:** the main checkout's `.claude/settings.local.json` holds `disabledMcpjsonServers: ["playwright"]` (project scope only, narrower than `--user`; subagents share the parent's connections, and the lead never starts Claude in side worktrees), with `.claude/settings.local.json` in `.git/info/exclude` until this branch's `.gitignore` lands. Checked with `coversServers`: off. The runbook and the run file's "This PC" note say "before the merge".
+- **Builder fix round** (`fix/cloud-1-r1`): H1, M1, M3, L1–L8. L9 is kept as an idea for after the first cloud check (unverified; a fresh clone per session makes it uncertain).
+- **For the owner later (no workflow changes in this task):** an actor check in `publish-catalogue.yml` and `backup.yml` like `deploy-prod.yml`'s.
