@@ -2,7 +2,7 @@
 // when one is set; an existing line keeps its own (a cleared SAC stays cleared); nothing changes while the setting is empty (the issue is still blocked by
 // `line_sac_missing`). The views tell a draft's screen the SAC to start a new custom line with (`newLineSac`).
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { sessionFor } from "./test-helpers.ts";
+import { call, sessionFor } from "./test-helpers.ts";
 import { putTax } from "./test-invoice-types.ts";
 import { getInvoice, json, mkInvoice, patchInvoice, putBank, putCompany } from "./test-invoices.ts";
 import { getDoc, mkDraft, patchDoc } from "./test-quotes.ts";
@@ -86,5 +86,37 @@ describe("the default SAC of a custom line [A5 12]", () => {
     expect(res.status, await res.clone().text()).toBe(200);
     const after = await getDoc(o, made.id);
     expect(after.lines.map((l: { sac: string | null }) => l.sac)).toEqual(["998314"]);
+  });
+});
+
+describe("the default SAC setting through the API [A5 12, early check L9]", () => {
+  const put = (cookie: string, version: number, value: unknown) =>
+    call("/settings/groups/tax", { method: "PUT", cookie, body: { version, value } });
+
+  it("a SAC that is not six digits is 400 invalid on defaultSac and nothing is saved; six digits save and read back; empty clears it", async () => {
+    await putTax({ defaultSac: "998313" });
+    const o = await owner();
+    const get = async () => json(await call("/settings/groups/tax", { cookie: o.cookie }));
+    const before = await get();
+    for (const bad of ["12a456", "99831", "9983134", " 998313"]) {
+      const res = await put(o.cookie, before.version, { ...before.value, defaultSac: bad });
+      expect(res.status, bad).toBe(400);
+      const body = await json(res);
+      expect(body.error.code, bad).toBe("invalid");
+      expect(
+        body.fields.map((f: { path: string }) => f.path),
+        bad,
+      ).toContain("defaultSac");
+    }
+    const unchanged = await get();
+    expect([unchanged.version, unchanged.value.defaultSac]).toEqual([before.version, "998313"]);
+
+    const saved = await put(o.cookie, before.version, { ...before.value, defaultSac: "998314" });
+    expect(saved.status, await saved.clone().text()).toBe(200);
+    const after = await get();
+    expect(after.value.defaultSac).toBe("998314");
+    const cleared = await put(o.cookie, after.version, { ...after.value, defaultSac: "" });
+    expect(cleared.status, await cleared.clone().text()).toBe(200);
+    expect((await get()).value.defaultSac).toBe("");
   });
 });
