@@ -216,7 +216,9 @@ body:has(.savebar) .toasts {
 }
 
 /* FX-4 (A5 8): a LUT's year, and under it "Not saved yet" (a pencil, the edit mark the drafts' pills use, and the words) until the form is saved.
-   Plain words rather than a pill, stacked and free to wrap, so the year's column stays narrow: the list fits the settings column at 1024 px. */
+   Plain words rather than a pill, stacked and free to wrap between words, so the year's column stays narrow: the list fits the settings column at
+   1024 px. Review M3: never inside a word (the column is as wide as its longest word, "[Placeholder]" while 07-Y is pending); the cells sit closer
+   (below) to make the room. */
 .lut-year {
   display: inline-flex;
   flex-direction: column;
@@ -233,7 +235,9 @@ body:has(.savebar) .toasts {
   font-weight: 600;
   line-height: var(--text-sm--line-height);
   white-space: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
 }
 
 .lut-year__unsaved .icon {
@@ -242,14 +246,22 @@ body:has(.savebar) .toasts {
   color: var(--color-warning);
 }
 
-/* The column heads may wrap, and the cells sit a little closer, inside the settings column (about 28 rem at 1024 px), so the list never runs past
-   it. */
+/* The column heads may wrap, and the cells sit closer, inside the settings column (about 28 rem at 1024 px), so the list never runs past it, even
+   with a whole "Not saved yet" mark in the year's column (review M3). The outer cells keep the table's own inset. */
 .lut-list .dtable__table thead th {
   white-space: normal;
 }
 
 .lut-list .dtable__table :is(thead, tbody) :is(th, td) {
-  padding-inline: var(--space-3);
+  padding-inline: var(--space-2);
+}
+
+.lut-list .dtable__table :is(thead, tbody) :is(th, td):first-child {
+  padding-inline-start: var(--space-3);
+}
+
+.lut-list .dtable__table :is(thead, tbody) :is(th, td):last-child {
+  padding-inline-end: var(--space-3);
 }
 
 /* Two controls side by side (day and month, from and to). */
