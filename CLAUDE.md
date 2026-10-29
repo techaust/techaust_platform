@@ -73,7 +73,7 @@ The full plan is `docs/14-models-and-usage.md` (owner, 2026-10-29, replacing 202
 - **Never used:** Sonnet, Haiku, Fable (or the `fable` / `best` aliases), any effort but high, the built-in Explore, Plan, general-purpose and `claude` agents (use `code-finder` to search code). Exception (owner, 2026-10-22): the read-only helper that the `code-review` / `security-review` skills start on their own, on Opus 5.5 (docs/14 §9). A new Anthropic model is a question for the owner.
 - **Agents at once** (owner, 2026-10-29; every agent counts, the helpers too):
   - **this PC:** at most **2**, at most **1** using a browser (designer, reviewer), and none starts while free memory is under 300 MB;
-  - **a cloud session:** another agent starts while its virtual machine has at least **3 GB** free memory and a 1-minute load under **80 %** of its processors, up to **5**, at most **2** using a browser, each with its own ports (docs/14 §4–5);
+  - **a cloud session:** another agent starts while its virtual machine has at least **3 GB** free memory and a 1-minute load under **80 %** of its processors, up to **5**, at most **2** using a browser, each with its own ports (docs/14 §4–5); **1** until a second browser server exists (one `.mcp.json` server is one browser, docs/14 §4);
   - heavy commands still take turns on both. Each builder or designer gets its own git worktree (`isolation: "worktree"`) and a run file with a brief that stands on its own.
 - **Builders' and designers' own rules:**
   - commit at least every 20 minutes and at each finished layer or screen

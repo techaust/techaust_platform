@@ -4,7 +4,9 @@
 // - this PC: at most 2 agents (every agent counts, the helpers too), at most 1 using a browser, and none starts while free
 //   memory is under 300 MB;
 // - a cloud session (--cloud, or CLAUDE_CODE_REMOTE=true, which Claude Code sets only there, on any OS): another agent starts while
-//   the virtual machine has at least 3 GB of free memory and its 1-minute load average is under 80 % of its processors, up to 5 agents, at most 2 using a browser;
+//   the virtual machine has at least 3 GB of free memory and its 1-minute load average is under 80 % of its processors, up to 5 agents;
+//   at most 1 using a browser for now (the owner allows 2, but one .mcp.json server is one browser with one tab; a second browser
+//   agent needs a server of its own, a later task: docs/14 §4);
 // - the budget gate: new agents start while the 5-hour bar is at or under 95 %. A cloud session that can't read the bar uses the
 //   reading posted in docs/runs/usage-reading.md: none for today (IST) means nothing new starts, one over 2 hours old means one agent
 //   at a time.
@@ -13,7 +15,7 @@ import { cpus, freemem, loadavg } from "node:os";
 
 export const LIMITS = {
   local: { agents: 2, browsers: 1, minFreeBytes: 300 * 1024 ** 2 },
-  cloud: { agents: 5, browsers: 2, minFreeBytes: 3 * 1024 ** 3, maxLoadShare: 0.8 },
+  cloud: { agents: 5, browsers: 1, minFreeBytes: 3 * 1024 ** 3, maxLoadShare: 0.8 },
   gatePct: 95,
   staleReadingMs: 2 * 60 * 60 * 1000,
 };

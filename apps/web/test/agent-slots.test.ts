@@ -1,5 +1,5 @@
 // The agent-start rule (tools/agent-slots.mjs; docs/14 §5, owner 2026-10-29): this PC 2 agents and 1 browser with a 300 MB floor;
-// a cloud session up to 5 and 2 browsers while 3 GB is free and the load is under 80 % of its processors; the 95 % gate; the posted
+// a cloud session up to 5 and 1 browser (2 once a second browser server exists, docs/14 §4) while 3 GB is free and the load is under 80 % of its processors; the 95 % gate; the posted
 // reading for a cloud session that can't read the bar. Runs in Node.
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -60,11 +60,12 @@ describe("this PC", () => {
 });
 
 describe("a cloud session", () => {
-  it("up to 5 agents and 2 browser agents", () => {
+  it("up to 5 agents and, for now, 1 browser agent (one .mcp.json server is one browser; CLOUD-1 M3)", () => {
     expect(cloud({ running: 4 }).start).toBe(true);
     expect(cloud({ running: 5 }).start).toBe(false);
-    expect(cloud({ running: 3, browsers: 1, wantsBrowser: true }).start).toBe(true);
-    expect(cloud({ running: 3, browsers: 2, wantsBrowser: true }).start).toBe(false);
+    expect(cloud({ running: 3, browsers: 0, wantsBrowser: true }).start).toBe(true);
+    expect(cloud({ running: 3, browsers: 1, wantsBrowser: true }).start).toBe(false);
+    expect(cloud({ running: 3, browsers: 1, wantsBrowser: false }).start).toBe(true);
   });
   it("needs 3 GB free and a load under 80 % of its processors", () => {
     expect(cloud({ freeBytes: 2.9 * GB }).start).toBe(false);
