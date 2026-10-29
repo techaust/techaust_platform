@@ -23,7 +23,7 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Agent|Bash",
+        "matcher": "Agent|Bash|Monitor",
         "hooks": [
           {
             "type": "command",
