@@ -241,6 +241,8 @@ export type InvoiceFixture = {
 /** One sealed invoice envelope, made the way the issue route and the snapshot step make it. */
 export async function buildInvoiceFixture(
   name: InvoiceFixtureName | TypedFixtureName,
+  /** FX-4 (A5 5): seal the proforma with the GST estimate marker, as every proforma issued from FX-4 on is (default: a proforma sealed before it). */
+  opts: { gstEstimate?: boolean } = {},
 ): Promise<InvoiceFixture> {
   const spec = name in SPECS ? SPECS[name as InvoiceFixtureName] : TYPED_SPECS[name as TypedFixtureName];
   const type = spec.type ?? "tax_invoice";
@@ -400,7 +402,14 @@ export async function buildInvoiceFixture(
         }
       : {}),
     ...(fx ? { fx: { ...fx } } : {}),
-    ...(type === "proforma" ? { proforma: { notice: LITERAL_PROFORMA_NOTICE } } : {}),
+    ...(type === "proforma"
+      ? {
+          proforma: {
+            notice: LITERAL_PROFORMA_NOTICE,
+            ...(opts.gstEstimate ? { gstEstimate: true as const } : {}),
+          },
+        }
+      : {}),
     ...(spec.advance ? { advance: { ...SAMPLE_ADVANCE } } : {}),
   });
   const envelope = buildInvoiceEnvelope({

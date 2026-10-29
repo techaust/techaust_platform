@@ -834,7 +834,7 @@ export const ADVANCE_REFERENCE_INVALID = e(
 /**
  * The M5.2 keys of an invoice's sealed header, each only on the types that need it so an M5.1 seal stays byte-identical:
  * `export` (an export invoice: the endorsement as it is NOW, the LUT of the issue FY on the LUT route, the country, the pinned note),
- * `fx` (a USD tax or export invoice), `proforma` (the notice), `advance` (the tax invoice made for money received).
+ * `fx` (a USD tax or export invoice), `proforma` (the notice and, from FX-4, the GST estimate marker), `advance` (the tax invoice made for money received).
  */
 export function headerExtrasOf(a: {
   state: InvoiceState;
@@ -874,7 +874,9 @@ export function headerExtrasOf(a: {
       source: state.fx.source,
       ...(state.fx.noRateDay ? { noRateDay: state.fx.noRateDay } : {}),
     };
-  if (state.type === "proforma") out.proforma = { notice: PROFORMA_NOTICE };
+  // FX-4 (A5 5): every proforma issued from now on seals the estimate marker with its notice, so its tax heads print "(estimate)"; one sealed before
+  // has none and prints as it was (Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28): a proforma's GST is shown as an estimate).
+  if (state.type === "proforma") out.proforma = { notice: PROFORMA_NOTICE, gstEstimate: true };
   if (a.advance) out.advance = a.advance;
   return out;
 }

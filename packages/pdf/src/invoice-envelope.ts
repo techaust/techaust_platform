@@ -161,7 +161,16 @@ export function parseInvoiceEnvelope(text: string): InvoiceEnvelope | null {
   // M5.2: the optional header keys are absent on an M5.1 envelope; when present they must have their shape (a wrong shape is not an envelope).
   if (h.export !== undefined && !validExport(h.export)) return null;
   if (h.fx !== undefined && !validFx(h.fx)) return null;
-  if (h.proforma !== undefined && !(isObj(h.proforma) && typeof h.proforma.notice === "string")) return null;
+  // FX-4 (A5 5): the GST estimate marker, when present, is the literal `true` (the only value the issue path seals); anything else is not an envelope.
+  if (
+    h.proforma !== undefined &&
+    !(
+      isObj(h.proforma) &&
+      typeof h.proforma.notice === "string" &&
+      (h.proforma.gstEstimate === undefined || h.proforma.gstEstimate === true)
+    )
+  )
+    return null;
   if (h.advance !== undefined && !validAdvance(h.advance)) return null;
   // M5.3: a note's request, read back without zod (a wrong shape is not an envelope); a due date is a string or null.
   if (h.noteOf !== undefined && noteOfFromStored(h.noteOf) === null) return null;

@@ -154,6 +154,12 @@ export const EXPORT_PDF_COPY = {
 export const PROFORMA_PDF_COPY = {
   title: "Proforma Invoice",
   header: { number: "Proforma number", date: "Proforma date", validUntil: "Valid until" },
+  /**
+   * FX-4 (A5 5; 07-Y, PENDING the owner's approval; unmarked in the PDF like every PDF line): a tax head of a proforma sealed with the estimate marker,
+   * "CGST (estimate)". Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28): a proforma's GST is shown as an estimate. A proforma sealed before
+   * FX-4 has no marker and keeps its plain heads.
+   */
+  estimate: (head: string) => `${head} (estimate)`,
 } as const;
 
 /**

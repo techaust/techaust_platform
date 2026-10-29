@@ -16,12 +16,14 @@ import {
   fxDateOk,
   fxDateVerdict,
   fxSourceLabel,
+  gstEstimateOfHeaderExtras,
   HOUSE_RULE_ITEMS,
   INVOICE_CHECKLIST,
   ISSUE_BLOCKER_CODES,
   type IssueBlockerCode,
   type IssueFacts,
   invoiceSnapshotSha256,
+  isGstEstimate,
   isHouseRuleItem,
   isLutCheckKind,
   isLutCheckMessage,
@@ -908,6 +910,8 @@ describe("the sealed header: new keys only where they belong [LD25]", () => {
     const withKey = [
       { ...m51, fx: { rateMicros: 83_123_400, date: "2026-10-28", source: "FBIL reference rate" } },
       { ...m51, proforma: { notice: PROFORMA_NOTICE } },
+      // FX-4 (A5 5): the estimate marker is sealed too (a proforma with it hashes apart from one without)
+      { ...m51, proforma: { notice: PROFORMA_NOTICE, gstEstimate: true as const } },
       {
         ...m51,
         export: {
@@ -946,6 +950,42 @@ describe("the sealed header: new keys only where they belong [LD25]", () => {
       fx: { rateMicros: 83_123_500, date: "2026-10-28", source: "s" },
     });
     expect(a).not.toBe(b);
+  });
+});
+
+describe("the proforma GST estimate marker [FX-4 A5 5; Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28)]", () => {
+  it("counts only the literal true", () => {
+    expect(isGstEstimate({ gstEstimate: true })).toBe(true);
+    for (const v of [
+      undefined,
+      null,
+      {},
+      { gstEstimate: false },
+      { gstEstimate: "true" },
+      { gstEstimate: 1 },
+    ])
+      expect(isGstEstimate(v as { gstEstimate?: unknown } | null | undefined)).toBe(false);
+  });
+  it("reads the stored header_extras text: the marker only on a proforma object; anything unreadable is no marker", () => {
+    expect(
+      gstEstimateOfHeaderExtras(JSON.stringify({ proforma: { notice: PROFORMA_NOTICE, gstEstimate: true } })),
+    ).toBe(true);
+    // a proforma sealed before FX-4: the notice only
+    expect(gstEstimateOfHeaderExtras(JSON.stringify({ proforma: { notice: PROFORMA_NOTICE } }))).toBe(false);
+    for (const t of [
+      null,
+      undefined,
+      "",
+      "not json",
+      "null",
+      "[1]",
+      "42",
+      JSON.stringify({ proforma: null }),
+      JSON.stringify({ proforma: "x" }),
+      JSON.stringify({ proforma: { gstEstimate: "true" } }),
+      JSON.stringify({ export: { gstEstimate: true } }),
+    ])
+      expect(gstEstimateOfHeaderExtras(t)).toBe(false);
   });
 });
 

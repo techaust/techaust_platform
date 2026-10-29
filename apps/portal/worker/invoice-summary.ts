@@ -1,6 +1,7 @@
 // What the client sees of an invoice, proforma, credit note or debit note (M5.4; POR-06, LD62; Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22)): a summary built from the FROZEN row of the document and its frozen lines, never from the
 // R2 envelope (the full document is the PDF, which this Worker streams but never builds) and never importing `@techaust/pdf` (a 40 KB module the portal does not carry). The same function answers the
 // emailed link (`/t/document`) and the signed-in routes (`/invoices/:id`), so the two can never disagree. Pure: no I/O.
+import { gstEstimateOfHeaderExtras } from "@techaust/core/invoices";
 import { formatMoney, money } from "@techaust/core/money";
 
 /** The types a client can open: the whole invoice family except a receipt (M6). */
@@ -27,7 +28,7 @@ export const STATUSES_SQL = quoted(CLIENT_INVOICE_STATUSES);
 
 /** The columns of the frozen document the summary needs. */
 export const SUMMARY_COLS = `d.id, d.type, d.status, d.number_display, d.issue_date, d.due_date, d.currency, d.subtotal_minor, d.discount_minor, d.taxable_minor, d.cgst_minor, d.sgst_minor, d.igst_minor,
-    d.round_off_minor, d.total_minor, d.total_inr_minor, d.paid_minor, d.credited_minor, d.balance_minor, d.issuer, d.pdf_r2_key, d.viewed_at,
+    d.round_off_minor, d.total_minor, d.total_inr_minor, d.paid_minor, d.credited_minor, d.balance_minor, d.issuer, d.header_extras, d.pdf_r2_key, d.viewed_at,
     (SELECT p.number_display FROM documents p WHERE p.id = d.parent_id AND p.client_id = d.client_id) AS parent_number`;
 
 /** The frozen lines of one document of one client. `?1` client, `?2` document. */
@@ -55,6 +56,8 @@ export type SummaryRow = {
   credited_minor: number;
   balance_minor: number;
   issuer: string | null;
+  /** The frozen header keys (LD37); read only for a proforma's GST estimate marker (FX-4, A5 5). */
+  header_extras: string | null;
   pdf_r2_key: string | null;
   viewed_at: number | null;
   parent_number: string | null;
@@ -183,6 +186,11 @@ export function summaryOf(r: SummaryRow, lines: readonly LineRow[]) {
     dueDate: r.due_date,
     currency: r.currency,
     parentNumber: r.parent_number,
+    /**
+     * FX-4 (A5 5): a proforma sealed with the estimate marker (every one issued from FX-4 on) shows its tax heads as estimates; one sealed before shows
+     * as it was. False on every other type (Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28): a proforma's GST is shown as an estimate).
+     */
+    gstEstimate: r.type === "proforma" && gstEstimateOfHeaderExtras(r.header_extras),
     totals: {
       subtotalMinor: r.subtotal_minor,
       discountMinor: r.discount_minor,
