@@ -37,7 +37,7 @@ The new version keeps every section key and heading from M4.1. Sections marked "
 ### Terms block
 "These terms are part of the proposal from {{company.name}}."
 
-## 2. Proposal terms, first version (ADM-SET-08; client-facing; VERIFY WITH CA/LEGAL)
+## 2. Proposal terms, first version (ADM-SET-08; client-facing; OPEN (08-C RB-38))
 Every line comes from approved copy (07 §5.3, §5.5). Placeholders aren't used in terms.
 1. **Scope and price.** "The price covers the written scope. If you want something new, we quote it before doing it, and you decide. We don't bill for our own estimating mistakes."
 2. **Payment.** "Payments follow the schedule in this proposal. Invoices are due within 7 days. GST at 18 % is added for Indian clients."
@@ -45,6 +45,11 @@ Every line comes from approved copy (07 §5.3, §5.5). Placeholders aren't used 
 4. **Warranty.** "Defects in what we delivered are fixed free for 30 days after launch." 🟧 **The owner confirms** (07 §5.5 item 8 is still marked for the owner).
 5. **AI tools.** "We use AI coding and writing tools to work faster. A senior engineer reviews everything before it reaches you, and we never paste your confidential data into tools that train on it."
 6. **Validity.** "This proposal is valid until the date shown on it."
+
+### 2b. Proposal terms, second version (FX-5; owner-approved 2026-10-29, 07-Y items 1 and 2, docs/13; 08-C RB-38)
+Seeded as the next version of the proposal terms (`PROPOSAL_TERMS_V2`); documents already sent keep the version they pinned. Lines 1, 4, 5 and 6 are the first version's, word for word. The lawyer's final assignment wording is still OPEN (08-C RB-38).
+2. **Payment.** "Payments follow the schedule in this proposal. Invoices are due within 7 days. GST at 18 % is added unless the work is an export of services under our Letter of Undertaking."
+3. **Ownership.** "On full payment, we assign to you all copyright in the work we make under this proposal, worldwide and for its full term; the assignment does not lapse if unused. Our pre-existing tools and third-party or open-source parts are licensed to you, not assigned. We keep the right to reuse general know-how."
 
 ## 3. Editor (staff)
 | Where | Copy |
