@@ -4,5 +4,13 @@
     "allowImportingTsExtensions": true,
     "types": ["node"]
   },
-  "include": ["scripts", "drizzle.config.ts", "vitest.config.ts", "src/seed", "src/triggers.ts", "src/schema"]
+  "include": [
+    "scripts",
+    "drizzle.config.ts",
+    "vitest.config.ts",
+    "src/seed",
+    "src/triggers.ts",
+    "src/sql-rules.ts",
+    "src/schema"
+  ]
 }

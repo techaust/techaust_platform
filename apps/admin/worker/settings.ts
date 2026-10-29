@@ -26,7 +26,14 @@ import {
   PURPOSE_CODE,
 } from "@techaust/core/invoices";
 import { deleteAfterSql, LEAD_DELETABLE_SQL, LEAD_PURGE_NOTICE_DAYS } from "@techaust/core/lead-lifecycle";
-import { canSetNextNumber, maxNumber, SERIES, type Series, validateFormat } from "@techaust/core/numbering";
+import {
+  canSetNextNumber,
+  maxNumber,
+  numberingClashes,
+  SERIES,
+  type Series,
+  validateFormat,
+} from "@techaust/core/numbering";
 import { type Action, decide } from "@techaust/core/permissions";
 import {
   BRAND_LOGOS,
@@ -34,6 +41,7 @@ import {
   GATEWAY_SECRETS,
   GATEWAYS,
   legacyLutFate,
+  numberingClashMessage,
   panOf,
   resolveSetting,
   SETTINGS_DEFAULTS,
@@ -747,6 +755,20 @@ async function saveNumbering(c: Ctx, raw: unknown) {
           return check.ok ? [] : [{ path: [s], message: check.error }];
         });
       if (refusedFormats.length) return invalid(c, refusedFormats);
+      // A0 2 (Researched 2026-10-28, Rules 46(b), 50(b), 51(b), 53(1A) CGST Rules (08-C RA-09)): no two series may print the same number. Judged only for a
+      // pair with a series this save changes, like the format rules above, so a pair stored before this rule never blocks a save of another series.
+      const changedNow = new Set(
+        (Object.keys(after) as Series[]).filter(
+          (s) => JSON.stringify(after[s]) !== JSON.stringify(before[s]),
+        ),
+      );
+      const clashes = numberingClashes(after)
+        .filter(([a, b]) => changedNow.has(a) || changedNow.has(b))
+        .flatMap(([a, b]) => [
+          { path: [a], message: numberingClashMessage(b) },
+          { path: [b], message: numberingClashMessage(a) },
+        ]);
+      if (clashes.length) return invalid(c, clashes);
       // A series with an issued document this financial year is locked: its format AND its next number (any change, up or
       // down; a raised number leaves a gap in the series). Before the first issue both stay editable.
       const formatChanged = (Object.keys(after) as Series[]).filter(

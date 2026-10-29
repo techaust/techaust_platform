@@ -7,6 +7,7 @@ import { formatDocumentNumber, MAX_NUMBER_LENGTH, maxNumber } from "../src/numbe
 import {
   BRAND_LOGOS,
   floorRetention,
+  numberingClashMessage,
   panOf,
   RETENTION_FLOORS,
   resolveSetting,
@@ -62,6 +63,24 @@ describe("settings defaults (docs/08 §7.1, researched in 08-C)", () => {
       invoice: { template: "TH/INVOICE/{FY}/{N}", padding: 4 },
     };
     expect(() => resolveSetting("numbering", corrupt)).toThrow();
+  });
+
+  it("refuses a save where two series could print the same number, on both series' fields (A0 2, 08-C RA-09)", () => {
+    const clash = {
+      ...SETTINGS_DEFAULTS.numbering,
+      proforma: { template: "TH/INV/{FY}/{N}", padding: 4 },
+    };
+    const r = SETTINGS_SCHEMAS.numbering.safeParse(clash);
+    expect(r.success).toBe(false);
+    expect(r.error?.issues.map((i) => [i.path, i.message])).toEqual([
+      [["invoice"], numberingClashMessage("proforma")],
+      [["proforma"], numberingClashMessage("invoice")],
+    ]);
+    expect(numberingClashMessage("proforma")).toBe(
+      "Numbers in this series could be the same as in the Proforma invoice series. Give each series its own letters.",
+    );
+    // Reading a stored row is not refused (the rule applies to a save).
+    expect(resolveSetting("numbering", clash).proforma).toEqual(clash.proforma);
   });
 
   it("rejects unsafe changes", () => {

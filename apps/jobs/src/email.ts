@@ -239,6 +239,9 @@ async function sendClaimed(
     logEvent("email.failed", { template: m.template, why: result.error });
     return "failed";
   }
+  // A retry answer includes the transport's 8 s timeout (packages/email/src/transport.ts). SES may have accepted the email before the timeout fired, so the retry
+  // can send it twice: at-least-once delivery is ACCEPTED (full audit A6 4, FX-1); a lost transactional email is the worse outcome. The backoff is the queue's
+  // (`emailRetryDelay` in queue.ts: 60 s doubling to 1 h, 10 tries).
   await setStatus(env.DB, id, "queued", { error: `retry: ${result.error}` }, now);
   logEvent("email.retry", { template: m.template, why: result.error });
   return "retry";

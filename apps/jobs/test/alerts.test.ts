@@ -152,6 +152,18 @@ describe("unbilled work: IST day 25 exactly [ADM-INV-19, Rule 47]", () => {
     expect(await bells("milestone.unbilled")).toHaveLength(2);
   });
 
+  it("FX-1 (A6 7): the repeats at 10:00 and 11:00 IST queue nothing more after the 09:00 run", async () => {
+    await milestone();
+    await run1(FIRST, at("2026-11-10", 9));
+    const before = await bells("milestone.unbilled");
+    expect(before.length).toBeGreaterThan(0);
+    fakes.email.length = 0;
+    await run1(FIRST, at("2026-11-10", 10));
+    await run1(FIRST, at("2026-11-10", 11));
+    expect(fakes.email).toEqual([]);
+    expect(await bells("milestone.unbilled")).toHaveLength(before.length);
+  });
+
   it("emails first, bells after: a run that died before the bells is retried, and the emails are the SAME log rows", async () => {
     await milestone();
     await run1();

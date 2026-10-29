@@ -5,7 +5,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { enqueueHourly, HOURLY_CRON } from "./billing.ts";
 import { noteInvocation } from "./log.ts";
 import { enqueueSweep } from "./pdf.ts";
-import { enqueueDue, enqueueStatementPurge, PURGE_CRON } from "./purge.ts";
+import { enqueueStatementPurge, PURGE_CRON, purgeScanMessage } from "./purge.ts";
 import { handleQueue } from "./queue.ts";
 import { enqueueStats } from "./stats.ts";
 import { warmConsumers } from "./warm.ts";
@@ -26,9 +26,9 @@ app.notFound((c) => c.json({ error: { code: "not_found", message: "Not found" } 
 export default {
   fetch: app.fetch,
   // Cron dispatcher: only enqueues work (docs/05 §11.3), and reads nothing from D1.
-  //   `0 22 * * *` (03:30 IST, daily): the lead clean-up (M3.2), the PDF sweep (M4.4), the nightly statistics (M3.5), the expiry of sent proposals and estimates (M4.3; one message in the
+  //   `0 22 * * *` (03:30 IST, daily): the lead clean-up (M3.2; its first scan is a queued message since FX-1), the PDF sweep (M4.4), the nightly statistics (M3.5), the expiry of sent proposals and estimates (M4.3; one message in the
   //     statistics batch) and the statement PDF clean-up (M5.5b). The daily LUT check moved to the 09:00 IST alerts in M5.4 (LD61).
-  //   `30 * * * *` (the top of every IST hour, M5.4, LD61): ONE `sendBatch` with the reminder scan every hour, the care-plan scan at 06:00 IST, and at 09:00 IST the owners' alerts, the export realisation scan and (IST days 5 to 7) the EDF reminder (M5.5b).
+  //   `30 * * * *` (the top of every IST hour, M5.4, LD61): ONE `sendBatch` with the reminder scan every hour, the care-plan scan at 06:00 IST (again at 07:00 and 08:00, FX-1), the owners' alerts at 09:00 IST (again at 10:00 and 11:00), and at 09:00 IST the export realisation scan and (IST days 5 to 7) the EDF reminder (M5.5b).
   // One failing does not stop the others; the run still fails so the failure is seen.
   async scheduled(controller, env, _ctx) {
     noteInvocation();
@@ -38,10 +38,13 @@ export default {
     }
     if (controller.cron !== PURGE_CRON) return;
     const done = await Promise.allSettled([
-      enqueueDue(env, controller.scheduledTime),
       // M4.4: ONE sweep message on the PDF queue; the consumer picks the sent documents that still have no PDF (<= 20 a run).
       enqueueSweep(env, controller.scheduledTime),
-      enqueueStats(env, controller.scheduledTime, [expireMessage(controller.scheduledTime)]),
+      // The statistics, the expiry and (FX-1, A6 6) the lead clean-up's first scan: one `sendBatch` on the leads queue. The scan reads D1 in its consumer, never here.
+      enqueueStats(env, controller.scheduledTime, [
+        expireMessage(controller.scheduledTime),
+        purgeScanMessage(controller.scheduledTime),
+      ]),
       // M5.5b: ONE message to clean the statement PDF cache (30 days, and anonymised clients); nothing read here.
       enqueueStatementPurge(env, controller.scheduledTime),
     ]);

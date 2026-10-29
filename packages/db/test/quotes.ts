@@ -68,6 +68,8 @@ type SendOver = {
   contentSha256?: string;
   numberingVersion?: number | null;
   approvalNeeded?: boolean;
+  /** The highest number of the series (default 9999, padding 4). */
+  maxNumber?: number;
   /** Skip the unguarded `issue_result` (to prove what it protects). */
   skipPostAudit?: boolean;
 };
@@ -81,6 +83,7 @@ export async function sendBatch(q: Quote, over: SendOver = {}) {
     fy: over.fy ?? FY,
     pattern: pattern.pattern,
     argOrder: pattern.argOrder,
+    maxNumber: over.maxNumber ?? 9999,
     isFirstVersion: q.version === 1,
     groupId: q.groupId,
     version: q.version,

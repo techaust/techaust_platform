@@ -722,11 +722,23 @@ export async function issueCareDraft(env: CareEnv, args: { documentId: string })
     // The post-condition aborted the batch: something changed between the read and the freeze. Nothing was written (the counter did not move).
     const text = String(e) + String((e as Error)?.cause ?? "");
     if (
-      !/issue did not freeze|not an issuable draft|documents_(invoice|parent|void|note|credit_note|ims|ledger)/.test(
+      !/issue did not freeze|not an issuable draft|UNIQUE constraint failed: documents\.|documents_(invoice|parent|void|note|credit_note|ims|ledger)/.test(
         text,
       )
     )
       throw e;
+    // FX-1 (analyst, early check 2): a printed number already held by another document (0049) should be impossible; it is an integrity event for the owner,
+    // answered `freeze_refused` (never a retried RPC), with ids only in the log.
+    if (/UNIQUE constraint failed: documents\./.test(text))
+      console.error(
+        JSON.stringify({
+          level: "error",
+          message: "care invoice issue refused by a unique key",
+          documentId: d.id,
+          series,
+          fy,
+        }),
+      );
   }
   if (!done) {
     // Another call issued it first (two overlapping `care.issue` messages): that is not a refusal, so no bell and no audit row (early check, finding 1).

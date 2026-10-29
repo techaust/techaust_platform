@@ -125,12 +125,22 @@ describe("void [Q1, Q2, LD7]", () => {
       [
         "paid",
         "has_payment",
-        (id: string) => env.DB.prepare("UPDATE documents SET paid_minor = 1 WHERE id = ?").bind(id).run(),
+        (id: string) =>
+          env.DB.prepare(
+            "UPDATE documents SET paid_minor = 1, balance_minor = balance_minor - 1 WHERE id = ?",
+          )
+            .bind(id)
+            .run(),
       ],
       [
         "credited",
         "has_credit",
-        (id: string) => env.DB.prepare("UPDATE documents SET credited_minor = 1 WHERE id = ?").bind(id).run(),
+        (id: string) =>
+          env.DB.prepare(
+            "UPDATE documents SET credited_minor = 1, balance_minor = balance_minor - 1 WHERE id = ?",
+          )
+            .bind(id)
+            .run(),
       ],
       [
         "child",

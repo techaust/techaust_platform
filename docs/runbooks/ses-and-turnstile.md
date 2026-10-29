@@ -94,7 +94,7 @@ Workers can't sign in to AWS the modern way, so they need an access key. This us
 6. Open the user → **Security credentials** tab → **Access keys** → **Create access key** → use case **Application running outside AWS** → **Next** → description `cloudflare-jobs-staging` → **Create access key**.
 7. The page shows an **Access key** (starts with `AKIA`) and a **Secret access key** (shown **only once**). **Keep this page open** and go to Part 5 B. **Don't paste either into the chat.**
 
-The key is rotated every 90 days (08); I'll remind you.
+The key is rotated every 90 days (08); I'll remind you. The steps are in [Part 8](#part-8-rotate-the-ses-sending-key-every-90-days-about-15-minutes).
 
 ## Part 5. Store the secrets on the staging Workers (about 5 minutes; before the M2.4 PR merges)
 
@@ -159,3 +159,46 @@ The emails load the logo from `https://techaust-platform-web-staging.techaust-te
 5. **Access policies** → **Create new policy**: name `Public logos`, Action **Bypass**, Include selector **Everyone**. Save the policy and make sure it's the only policy on this application.
 6. Leave session settings as they are; **Save** the application.
 7. Check: open a private browser window at `https://techaust-platform-web-staging.techaust-technologies-153.workers.dev/brand/logo-email-badge@2x.png`. Before the M2.4 deploy it shows a "not found" page (not the Access sign-in); after the deploy, the logo. The home page in the same private window must still show the Access sign-in.
+
+## Part 8. Rotate the SES sending key every 90 days (about 15 minutes)
+
+The staging key of `techaust-ses-sender-staging` was made on 2026-10-23, so **the next rotation is due by about 2027-01-21**, then every 90 days from the day you make the new key (08). You make a second key first, switch the jobs Worker to it, check that email still works, and only then switch the old key off. An IAM user can hold two keys at once, so email keeps working throughout.
+
+**Pick a quiet time** (no one filling in a form, no invoice being sent). The two secrets are stored one after the other, and each store goes live at once. An email sent in the few seconds between them uses a new key ID with the old secret: SES refuses it, and that refusal is not retried, so that one email fails. Part 8 C checks for this.
+
+**A. Make the new key in AWS**
+1. Sign in to the AWS console (the TecHaust account), region **Asia Pacific (Mumbai) ap-south-1**.
+2. Search bar: **IAM** → left menu **Users** → `techaust-ses-sender-staging` → **Security credentials** tab.
+3. Under **Access keys** you see the current key (status **Active**). Note its **Access key ID** (starts with `AKIA`) for step D; keep it to yourself.
+4. **Create access key** → use case **Application running outside AWS** → **Next** → description `cloudflare-jobs-staging-<today's date>`, for example `cloudflare-jobs-staging-2027-01-20` → **Create access key**.
+   - If the button is greyed out, the user already has two keys: stop and tell me.
+5. The page shows the new **Access key** and the **Secret access key** (shown **only once**). **Keep this page open. Don't paste either into the chat.**
+
+**B. Store it on the staging jobs Worker** (the same script as Part 5 B)
+1. Press the **Windows key**, type `powershell`, open **Windows PowerShell**, paste this line and press **Enter**:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\.logs\owner\m2.4-ses-keys.ps1"
+```
+
+2. It asks for the **Access key**, then the **Secret access key**: copy each from the AWS page, paste it (the typing stays hidden), **Enter**.
+3. Copy back **only** the `RESULT:` line. If it says you are not logged in, use the two login lines at the end of Part 5, then run the script again.
+4. Close the AWS page only after `RESULT: OK - SES_ACCESS_KEY_ID and SES_SECRET_ACCESS_KEY set on techaust-platform-jobs-staging`.
+   - `RESULT: FAIL - could not set SES_SECRET_ACCESS_KEY`: the new key ID is stored but the secret is still the old one, so **no email can be sent** until it is fixed. Run the script again straight away with the same new key (the AWS page is still open), then tell me both result lines.
+   - `NOT LOGGED IN`, or a `FAIL` about the shape of a key: nothing was changed and the old key is still in use. Log in as at the end of Part 5 (or copy the key again) and run the script again.
+   - Any other result: tell me the result line before doing anything else.
+
+**C. Check that email still works (I check the records)**
+1. Open the staging website (Access asks you to sign in), go to **Contact**, and send a message from one of your verified inboxes.
+2. Within a minute you get the acknowledgement and `LEAD_ALERT_TO` gets the alert. Tell me it arrived.
+3. I check the staging email log for any `failed` row from the minutes of the rotation. If there is one (the gap described above), I'll tell you which email it was so it can be sent again.
+
+**D. Switch the old key off, then delete it**
+1. Back in **IAM → Users → `techaust-ses-sender-staging` → Security credentials**, find the **old** key (the ID you noted in A3, the one with the older "Created" date).
+2. **Actions → Deactivate** → confirm. Email keeps working, because the Worker now uses the new key.
+3. The next day, if nothing broke, come back: **Actions → Delete** on the old, inactive key → type its ID to confirm → **Delete**.
+4. Tell me the date of the new key. I record it here and in the status file, and set the next reminder for 90 days later.
+
+If email stops after step D2, **Actions → Activate** on the old key brings it back at once; then tell me.
+
+Production (Phase 7) gets its own IAM user and key, rotated the same way on the production jobs Worker.

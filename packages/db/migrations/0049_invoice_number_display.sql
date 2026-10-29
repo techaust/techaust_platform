@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `documents_invoice_number_display` ON `documents` (`number_display`) WHERE "documents"."number_display" is not null and "documents"."type" in ('proforma', 'tax_invoice', 'export_invoice', 'credit_note', 'debit_note', 'receipt', 'receipt_voucher', 'refund_voucher');

@@ -302,7 +302,17 @@ describe("void [Q1, LD7]", () => {
     expect(voidBlockers({ ...base, creditedMinor: 5 })).toEqual(["has_credit"]);
     expect(voidBlockers({ ...base, hasIssuedChild: true })).toEqual(["has_child_document"]);
     expect(voidBlockers({ ...base, emailed: true })).toEqual(["already_emailed"]);
-    expect(voidBlockers({ ...base, status: "paid", paidMinor: 5 })).toEqual(["not_issued", "has_payment"]);
+    // A5 10: a live issued status (part paid, paid, part credited, credited) is issued; its own blocker says why it cannot be voided.
+    expect(voidBlockers({ ...base, status: "paid", paidMinor: 5 })).toEqual(["has_payment"]);
+    expect(voidBlockers({ ...base, status: "partially_paid", paidMinor: 5 })).toEqual(["has_payment"]);
+    expect(
+      voidBlockers({ ...base, status: "partially_credited", creditedMinor: 5, hasIssuedChild: true }),
+    ).toEqual(["has_credit", "has_child_document"]);
+    expect(voidBlockers({ ...base, status: "credited", creditedMinor: 5, hasIssuedChild: true })).toEqual([
+      "has_credit",
+      "has_child_document",
+    ]);
+    expect(voidBlockers({ ...base, status: "converted" })).toEqual(["not_issued"]);
   });
   it("Q23: only inside the IST calendar month of issue (the 1st and the last day both count; the next day does not)", () => {
     expect(voidBlockers({ ...base, issueDate: "2026-10-01", today: "2026-10-31" })).toEqual([]);

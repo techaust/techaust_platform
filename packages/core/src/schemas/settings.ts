@@ -14,6 +14,7 @@ import {
   DEFAULT_PADDING,
   type FormatCheck,
   type NumberingFormat,
+  numberingClashes,
   SERIES,
   type Series,
   validateFormat,
@@ -296,8 +297,33 @@ const numberingFormatOf = (check: (f: NumberingFormat) => FormatCheck) =>
 
 const SERIES_KEYS = Object.keys(SERIES) as [Series, ...Series[]];
 
-/** The numbering settings as they are SAVED: every format passes `validateFormat` (LD18's first-character rule included). */
-export const numberingSettings = z.record(z.enum(SERIES_KEYS), numberingFormatOf(validateFormat));
+/**
+ * The message for a series whose numbers could be another series' (`numberingClashes`). New wording (FX-1): for the owner's copy page 07-Y.
+ * The same text answers the admin's Settings save (`apps/admin/worker/settings.ts`).
+ */
+export const numberingClashMessage = (other: Series): string =>
+  `Numbers in this series could be the same as in the ${SERIES[other].label} series. Give each series its own letters.`;
+
+/** One issue per series of each clashing pair, on that series' field (the Settings screen marks both). */
+const numberingClashIssues = (
+  formats: Readonly<Partial<Record<Series, NumberingFormat>>>,
+): { path: [Series]; message: string }[] =>
+  numberingClashes(formats).flatMap(([a, b]) => [
+    { path: [a] as [Series], message: numberingClashMessage(b) },
+    { path: [b] as [Series], message: numberingClashMessage(a) },
+  ]);
+
+/**
+ * The numbering settings as they are SAVED: every format passes `validateFormat` (LD18's first-character rule included), and no two series could print
+ * the same number (A0 2; Researched 2026-10-28, Rules 46(b), 50(b), 51(b), 53(1A) CGST Rules (08-C RA-09): unique for the FY across every series). The
+ * database backstop is the partial unique index `documents_invoice_number_display` (migration 0049).
+ */
+export const numberingSettings = z.record(z.enum(SERIES_KEYS), numberingFormatOf(validateFormat)).check(
+  z.superRefine((formats, ctx) => {
+    for (const issue of numberingClashIssues(formats))
+      ctx.issues.push({ code: "custom", input: formats, path: issue.path, message: issue.message });
+  }),
+);
 
 /** The numbering settings as they are READ: the rules that held before M5.1, so an older stored row never turns a route into a 500 (the owner fixes it on the next save). */
 export const storedNumberingSettings = z.record(z.enum(SERIES_KEYS), numberingFormatOf(validateStoredFormat));
