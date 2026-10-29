@@ -26,7 +26,10 @@ import {
   DOC_TOASTS,
   decisionLine,
   decisionTitle,
+  discountRowLabel,
+  discountSources,
   docErrorText,
+  draftDiscountSources,
   editor,
   emptySectionsOf,
   guardLine,
@@ -626,6 +629,37 @@ describe("recipientLine: who a document is for (M4.3 re-check 2, owner's rule)",
     expect(recipientLine({ client, contact: { name: "Anonymised client", anonymised: true } })).toEqual({
       name: "Acme Ltd",
       contact: null,
+    });
+  });
+});
+
+describe("FX-4 (A5 3): the totals' discount row is named for where its discount comes from", () => {
+  const mark = `${PLACEHOLDER_TAG} `;
+  it("the document's own discount keeps 07-O's word; line discounts, or both, are named so (07-Y, marked)", () => {
+    expect(discountRowLabel({ lines: false, document: true })).toBe(DOC_COPY.documentDiscount);
+    expect(discountRowLabel({ lines: true, document: false })).toBe(`${mark}Line discounts`);
+    expect(discountRowLabel({ lines: true, document: true })).toBe(`${mark}Discounts (lines and document)`);
+  });
+  it("a frozen view: a zero discount takes nothing off and doesn't count", () => {
+    const pct = (value: number) => ({ kind: "percent" as const, value });
+    expect(discountSources({ lines: [{ discount: pct(500) }, { discount: null }], discount: null })).toEqual({
+      lines: true,
+      document: false,
+    });
+    expect(discountSources({ lines: [{ discount: pct(0) }], discount: pct(1000) })).toEqual({
+      lines: false,
+      document: true,
+    });
+  });
+  it("a draft as typed: parsed as the save parses it; empty or unreadable text takes nothing off", () => {
+    const l = (disc: string, discKind: "percent" | "fixed" = "percent") => ({ disc, discKind });
+    expect(draftDiscountSources([l("5"), l("")], { discKind: "fixed", disc: "1000" }, "INR")).toEqual({
+      lines: true,
+      document: true,
+    });
+    expect(draftDiscountSources([l(""), l("x")], { discKind: "percent", disc: "0" }, "INR")).toEqual({
+      lines: false,
+      document: false,
     });
   });
 });

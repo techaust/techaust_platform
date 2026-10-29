@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { useLocation } from "react-router";
 import { DataTable } from "../../components/data-table.tsx";
 import { DateField, useUnreadDates } from "../../components/date-field.tsx";
+import { StatusPill } from "../../components/display.tsx";
 import { FormField, NumberUnit, SettingRow, Switch } from "../../components/form.tsx";
 import { AlertTriangle, Lock, Plus, Trash } from "../../components/icons.tsx";
 import { dateError } from "../../lib/date-field.ts";
@@ -24,7 +25,16 @@ import {
   lutsByYear,
 } from "../../lib/invoice-types.ts";
 import { TAX_FIELDS_COPY } from "../../lib/reports.ts";
-import { buildTax, CATEGORIES, type TaxForm as Form, type Tax, taxToForm } from "../../lib/tax-settings.ts";
+import {
+  buildTax,
+  CATEGORIES,
+  type TaxForm as Form,
+  LUT_UNSAVED,
+  lutIsUnsaved,
+  TAX_SAC_COPY,
+  type Tax,
+  taxToForm,
+} from "../../lib/tax-settings.ts";
 import { AnnualReturns } from "./annual-returns.tsx";
 import { ctl, GroupForm, type GroupSpec, MoneyIn, RowError } from "./kit.tsx";
 
@@ -71,6 +81,8 @@ function fyOptions(stored: string) {
  */
 function LutList(props: {
   luts: LutRow[];
+  /** The list as stored: a row not in it is marked "Not saved yet" until "Save changes" (FX-4, A5 8). */
+  saved: readonly LutRow[];
   exportMode: Tax["exportMode"];
   readOnly: boolean;
   onChange: (luts: LutRow[]) => void;
@@ -134,7 +146,16 @@ function LutList(props: {
               key: "fy",
               header: INVT_COPY.lutFy,
               card: "title",
-              cell: (l) => <span className="tnum">FY {fyLabel(l.fy)}</span>,
+              cell: (l) => (
+                <span className="lut-fy">
+                  <span className="tnum">FY {fyLabel(l.fy)}</span>
+                  {lutIsUnsaved(l, props.saved) && (
+                    <StatusPill tone="warning" icon="pencil" outline>
+                      {LUT_UNSAVED}
+                    </StatusPill>
+                  )}
+                </span>
+              ),
             },
             { key: "arn", header: INVT_COPY.lutArn, cell: (l) => <span className="docno">{l.arn}</span> },
             { key: "filed", header: INVT_COPY.lutFiledOn, cell: (l) => (l.filedOn ? day(l.filedOn) : null) },
@@ -298,7 +319,7 @@ function Checklist(props: {
 export function TaxSettings({ readOnly }: { readOnly: boolean }) {
   return (
     <GroupForm spec={spec} readOnly={readOnly}>
-      {({ form: f, set, error, readOnly }) => (
+      {({ form: f, set, error, readOnly, doc }) => (
         <>
           <h2 className="settings-sub">Rates and codes</h2>
           <div className="settings-rows">
@@ -355,6 +376,25 @@ export function TaxSettings({ readOnly }: { readOnly: boolean }) {
                   );
                 })}
               </div>
+            </SettingRow>
+            {/* FX-4 (A5 12): the SAC a new custom line starts with; empty means each custom line gets its own. */}
+            <SettingRow
+              id="tax-default-sac"
+              label={TAX_SAC_COPY.defaultSacLabel}
+              labelFor="f-defaultSac"
+              description={TAX_SAC_COPY.defaultSacHint}
+            >
+              <input
+                {...ctl("f-defaultSac", error("f-defaultSac"), "tax-default-sac-desc")}
+                className="sac-input"
+                inputMode="numeric"
+                maxLength={6}
+                autoComplete="off"
+                spellCheck={false}
+                value={f.defaultSac}
+                onChange={(e) => set({ defaultSac: e.target.value.replace(/\D/g, "") })}
+              />
+              <RowError id="f-defaultSac" error={error("f-defaultSac")} />
             </SettingRow>
             <SettingRow
               id="tax-round"
@@ -420,6 +460,7 @@ export function TaxSettings({ readOnly }: { readOnly: boolean }) {
 
           <LutList
             luts={f.luts}
+            saved={taxToForm(doc.value).luts}
             exportMode={f.exportMode}
             readOnly={readOnly}
             onChange={(luts) => set({ luts })}

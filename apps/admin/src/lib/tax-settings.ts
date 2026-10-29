@@ -43,6 +43,15 @@ export const TAX_SAC_COPY = {
   defaultSacError: Y("The default SAC has 6 digits, or leave it empty."),
 } as const;
 
+/**
+ * FX-4 (full audit A5 8; 07-Y, PENDING, marked): a LUT added to the list is kept only when the form is saved, so until then its row says so. A row is unsaved
+ * when the stored list has no LUT for its year with the same ARN and date.
+ */
+export const LUT_UNSAVED = Y("Not saved yet");
+
+export const lutIsUnsaved = (row: LutRow, saved: readonly LutRow[]): boolean =>
+  !saved.some((s) => s.fy === row.fy && s.arn === row.arn && (s.filedOn ?? "") === (row.filedOn ?? ""));
+
 /** The field id of an annual return's date (./routes/settings/annual-returns.tsx uses the same). */
 export const annualReturnFieldId = (fy: string) => `f-annualReturnsFiled-${fy}`;
 

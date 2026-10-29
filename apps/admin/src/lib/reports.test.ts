@@ -52,7 +52,14 @@ import {
   wholePeriodOf,
   zipOf,
 } from "./reports-build.ts";
-import { buildTax, REALISATION_ERRORS, TAX_SAC_COPY, taxToForm } from "./tax-settings.ts";
+import {
+  buildTax,
+  LUT_UNSAVED,
+  lutIsUnsaved,
+  REALISATION_ERRORS,
+  TAX_SAC_COPY,
+  taxToForm,
+} from "./tax-settings.ts";
 
 /** 07-V and 07-W were approved on 2026-10-28 (research and wording): no line carries a mark (`M` and `G` are empty). */
 const M = "";
@@ -687,6 +694,45 @@ describe("files from register rows (core does every sum)", () => {
     expect(whole.ok && whole.files.gstr3b !== null).toBe(true);
     expect(part.ok && part.files.gstr3b === null).toBe(true);
     expect(whole.ok && whole.outputTax.length).toBe(1);
+    // a clean period has nothing to enter by hand
+    expect(whole.ok && whole.manual).toEqual([]);
+  });
+
+  it("FX-4 early check L3: with the 3B file on offer, the sales register carries the GST export's blocking lines; without it, none", () => {
+    const inv = row({ id: "d1", number: "TH/INV/2627/0001", issueDate: { year: 2026, month: 7, day: 5 } });
+    const note = row({
+      id: "n1",
+      number: "TH/DN/2627/0001",
+      kind: "debit_note",
+      series: "debitNote",
+      issueDate: { year: 2026, month: 8, day: 3 },
+      totalMinor: 18_02,
+      totalInrMinor: 18_02,
+      outstandingMinor: 18_02,
+      rates: [
+        { sac: "998314", rateBp: 1800, taxableMinor: 0, igstMinor: 0, cgstMinor: 9_01, sgstMinor: 9_01 },
+      ],
+      noteOf: {
+        number: "TH/INV/2627/0001",
+        issueDate: { year: 2026, month: 7, day: 5 },
+        supplyType: "intra",
+        recipientStatus: "registered",
+        placeOfSupplyCode: "19",
+        totalInrMinor: 11_800_00,
+      },
+    });
+    const whole = buildSalesRegister([inv, note], meta, "2026-07-01", "2026-09-30");
+    if (!whole.ok) throw new Error(JSON.stringify(whole.problems));
+    expect(whole.files.gstr3b).not.toBeNull();
+    expect(whole.manual).toHaveLength(1);
+    expect(whole.manual[0]?.blocking).toBe(true);
+    expect(whole.manual[0]?.manual?.byRate).toEqual([
+      { rateBp: 1800, igstMinor: 0, cgstMinor: 9_01, sgstMinor: 9_01 },
+    ]);
+    // the line the panel says is the GST export's, never "No errors"
+    expect(GST_COPY.doneManual(whole.count, whole.manual.length)).not.toContain("No errors");
+    const part = buildSalesRegister([inv, note], meta, "2026-07-01", "2026-09-15");
+    expect(part.ok && part.files.gstr3b === null && part.manual.length === 0).toBe(true);
   });
 
   it("realisation uses the stored INR period, which core's mapping leaves out (LD77)", () => {
@@ -734,5 +780,19 @@ describe("the report index on a narrow screen (review 7)", () => {
     expect(nearestScrollLeft(0, 300, 420, 160)).toBe(280);
     expect(nearestScrollLeft(280, 300, 10, 120)).toBe(10);
     expect(nearestScrollLeft(50, 300, -5, 120)).toBe(0);
+  });
+});
+
+describe("FX-4 (A5 8): a LUT added on the screen says it isn't saved yet", () => {
+  const saved = [{ fy: "2627", arn: "AD1906260000001", filedOn: "2026-03-20" }];
+  it("a row the stored list holds is saved; a new year, or the same year with another ARN or date, is not", () => {
+    expect(lutIsUnsaved({ fy: "2627", arn: "AD1906260000001", filedOn: "2026-03-20" }, saved)).toBe(false);
+    expect(lutIsUnsaved({ fy: "2728", arn: "AD1906270000001", filedOn: null }, saved)).toBe(true);
+    expect(lutIsUnsaved({ fy: "2627", arn: "AD1906260000002", filedOn: "2026-03-20" }, saved)).toBe(true);
+    expect(lutIsUnsaved({ fy: "2627", arn: "AD1906260000001", filedOn: null }, saved)).toBe(true);
+    expect(lutIsUnsaved({ fy: "2627", arn: "X", filedOn: null }, [])).toBe(true);
+  });
+  it("the words are 07-Y's, marked until approved", () => {
+    expect(LUT_UNSAVED).toBe(`${APPROVED_07Y ? "" : `${PLACEHOLDER_MARK} `}Not saved yet`);
   });
 });

@@ -480,6 +480,7 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
             type={view.type}
             dispatch={dispatch}
             current={currentLines}
+            newLineSac={view.newLineSac}
           />
 
           <section className="lead-panel doc-totals" aria-labelledby="doc-totals-h">

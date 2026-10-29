@@ -488,6 +488,7 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
             current={currentLines}
             showSac={showSac}
             sacRequired
+            newLineSac={v.newLineSac}
           />
 
           <section className="lead-panel doc-totals" aria-labelledby="inv-totals-h">

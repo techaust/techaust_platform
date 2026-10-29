@@ -208,6 +208,21 @@ body:has(.savebar) .toasts {
   font-variant-numeric: tabular-nums;
 }
 
+/* FX-4 (A5 12): the default SAC for custom lines, one short code field set like the codes above it. */
+.sac-input {
+  max-width: 10rem;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* FX-4 (A5 8): a LUT's year, and beside it "Not saved yet" until the form is saved. */
+.lut-fy {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
 /* Two controls side by side (day and month, from and to). */
 .pair {
   display: flex;

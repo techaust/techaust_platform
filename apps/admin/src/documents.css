@@ -253,6 +253,23 @@
   min-width: 0;
 }
 
+/* FX-4 (A5 12): a custom line's SAC on its row, a six-digit code set like the catalogue's codes. Where the row has room for a fourth cell it sits
+   beside the discount; otherwise it wraps under the quantity with the row's own rhythm. */
+.qledger__sac {
+  max-width: 8rem;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (min-width: 88rem) {
+  .qledger__row[data-custom] .qledger__work {
+    grid-template-columns: minmax(8rem, max-content) minmax(8rem, 11rem) minmax(10rem, 13rem) minmax(
+        6.5rem,
+        8rem
+      );
+  }
+}
+
 .qledger__label {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
