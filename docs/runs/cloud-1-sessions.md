@@ -250,3 +250,14 @@ No critical or high findings; 3 medium, 8 low. Skills: `code-review` (high; its 
 ## Lead's triage after the review (2026-10-30)
 - Fix in this task (fix round 2, builder): 1, 2, 4 (refuse `heads/main`, and bare push / `HEAD` while on main), 5, 6, 7, 8, 9, 10, 11.
 - 3 changes `.claude/settings.json` (the hook matcher): asked the owner first, since it changes the project's hook configuration.
+
+## Fix round 2 brief (lead, 2026-10-30)
+Builder, Opus 5.5 high, Tier B. Branch `fix/cloud-1-r2` from `origin/chore/cloud-sessions` (d40ea728 or later); push only that branch.
+- Fix review findings 1, 2, 4, 5, 6, 7, 8, 9, 10 and 11 as described in the review above. Not 3 (waits on the owner; don't touch `.claude/settings.json`).
+- Finding 1: in the cloud, `gh` is an allow-list of read subcommands plus `api` under its current rules; everything else is refused with a clear reason (the reason names the allowed list). Keep what `tools/cloud-pr.sh` needs working.
+- Finding 4: refuse `heads/main` and `refs/heads/main` targets; refuse a bare `git push` or a `HEAD` refspec when the current branch is `main` (a read-only `git rev-parse --abbrev-ref HEAD`, only when `CLAUDE_CODE_REMOTE=true`; if it fails, refuse).
+- Finding 7: no new false negatives: the probes the review lists as correctly refused must stay refused.
+- Each fix gets tests in `apps/web/test/model-guard.test.ts`, `dev-ports.test.ts` or a new test beside them; every probe named in findings 1, 2, 4, 5, 6 and 7 becomes a test case.
+- On this PC (`CLAUDE_CODE_REMOTE` unset) the hooks must still print nothing and refuse nothing.
+- Checks: the touched test files, `pnpm exec biome check` on changed files, then `bash tools/heavy.sh --log cloud1r2-check pnpm check` and, as the final check, `bash tools/heavy.sh --log cloud1r2-lint pnpm lint`. No full `pnpm test` needed (only tooling and web tests change); run web's tests alone through the queue.
+- Append "## Builder report, fix round 2" to this file: what changed per finding, commands and results, not verified.
