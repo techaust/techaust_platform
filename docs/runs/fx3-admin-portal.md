@@ -639,3 +639,45 @@ API sentences (not screen copy): `type_not_allowed` on the signature upload is n
 2. A long PNG of a photo-like scan now fails the 256 KB cap where the original JPEG would have fitted (the new `tooDetailed` line says what to do). Keep the cap, or raise it for PNG?
 3. The phone order of the client Overview puts Figures after Details, Tax and billing and Notes (the side column follows the main one). Bring Figures first on phones?
 
+
+## Review (reviewer claude-opus-5-5/high, live browser, 2026-10-29 ~15:30–16:20 IST, on d976045f): APPROVE
+_(Summary by the lead; the full text is in the conversation record. Shots: `.logs/shots/fx3-review/` in the main checkout.)_
+
+**Every builder item (1–12), every round-3 item and every designer item is present and correct.** Highlights:
+- **Figures:** match the statement's rules, both currencies; at most 402 rows read for 200 documents; Sales 403; anonymised clients get `available:false`.
+- **`newer_version_pending`:** stays inside the link's version group.
+- **Signature API:** PNG-only, with the IHDR bound checked; stored JPEGs are still served.
+- **Hidden Scope:** fixed.
+- **Damaged and not-PDF renders:** their browser time is now counted.
+- **Care billing day:** the tick and the page agree.
+- **VERIFY retags:** spot-checked against 08-C.
+- **Package change:** importer-only, with nothing new resolved.
+- **Tests:** `pnpm check` exit 0. `pnpm test` exit 0 with no timeouts:
+  - core 1,800, db 471, email 128, pdf 340, auth 135;
+  - ui 469, web 510, portal 630, jobs 528, admin 3,347.
+- **e2e:** portal 9/9, admin 6/6.
+- **Live check:** every changed record page at 375, 768, 1024 and 1600 in both themes, with the app's theme set against the OS theme; plus care, catalogue, settings, account, audit and time. axe was clean; there was no sideways scroll, text ≥ 12 px and targets ≥ 44 px.
+
+**Findings:**
+1. **Medium:** the 256 KB check runs on the original file before scaling (`signature.tsx:57`, `lib/pdf.ts:61-62`), so a phone photo of a signature (1–4 MB) can never be uploaded.
+2. **Medium:** after a successful convert, `convert.tsx:126` navigates without `props.onConverted()`. With unsaved lead edits, the leave-guard stacks over a convert form that is still open; a second Convert then answers `already_converted`.
+3. **Medium:** the admin e2e sweep asks for `?limit=1`, which every list refuses with 400, so `first()` returns null and no record page is ever visited (`e2e/sweep.spec.ts:57-66`). The keyboard test also passes with zero regions.
+4. **Low:** the lead PATCH re-checks stored answers on every edit, and checks them before the source rule (`leads.ts:676-680`).
+5. **Low:** a placeholder in a heading is reported on the body field (`template.tsx`), so the summary link focuses the wrong input, and the heading input never gets `aria-invalid`.
+6. **Low:** rules duplicated: `TEXT_TOKENS`/`TOKEN_FIELD` (`service-fill.ts:153-158`) against core `TEXT_TOKEN_KINDS`; `templateKinds` against `sectionsFromTemplate` (`documents.ts:144-151`).
+7. **Low:** `REREAD_SQL` runs its subquery twice (`offer-sql.ts:113-123`); the figures read still runs for an anonymised client (`figures.ts:66-69`, `projects.ts:404`).
+8. **Low, M7.1 follow-up:** the portal must render shared notes with `parseNoteMarkdown`.
+9. **Low:** the VERIFY guard skips `.sql` (outside migrations), `.yml`, `.sh`, `tools/` and `.github/`.
+10. **Low:** at 768 px the currency rule in the client Figures panel is wider than its rows (`clients.css` `.acct*`).
+11. **Low, from before FX-3:** the project Overview shows "No notes yet" after a note is added on the Notes tab, until a reload (tabs don't refetch).
+
+## Fix round (lead's triage, 2026-10-29)
+Every finding is fixed in this task, except 8, which goes to M7.1's brief (status follow-ups). Two lead decisions from the designer's questions:
+- **The signature size limit stays at 256 KB, on the stored PNG.** The input cap before scaling is 10 MB.
+- **On phones, the client's Figures panel comes first.**
+
+Split so no two agents touch the same files:
+- **Builder** (`fix/fx3-fix-b`): items 4, 6, 7 and 9.
+- **Designer** (`fix/fx3-fix-d`, after the FX-4 review frees the browser): items 1, 2, 3, 5, 10 and 11, plus Figures first on phones.
+
+Item 1's `wrongFile` line changes, a 07-Y amendment: "Use a PNG or JPEG image up to 10 MB. We store it as a PNG of up to 256 KB."
