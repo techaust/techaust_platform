@@ -148,3 +148,11 @@ The owner asked for it on 2026-10-29 and approved this plan the same day. Facts 
 3. **Applying the local switch:** after the merge, run `node tools/mcp-local-off.mjs` in the main checkout, or `--user` once for the whole PC (covers worktrees too). The lead's choice; I applied it only in my own worktree.
 4. **Inspector ports at offset 0** are now named (9229–9233) instead of "first free from 9229", with the old behaviour as the fallback when a port is taken: a small change on this PC, made because the old behaviour crashed the jobs Worker when it started together with the admin (reproduced). Confirm, or ask me to keep offset 0 fully automatic.
 5. Not shifted: the Lighthouse run's port 8798 (`apps/web/lighthouserc.json`): it runs only through the heavy queue, one at a time per machine.
+
+## Lead, after the builder (2026-10-29)
+- Merged `fix/cloud-1-b` (2c895fed) into `chore/cloud-sessions`, then `main` (#111 squash; `git diff --quiet 275bdb32 origin/main` held, so this branch's side was kept).
+- **Accepted the inspector-port deviation** (one port per Worker even at offset 0): it fixes the reproduced 9229 clash that killed the jobs Worker. docs/13 row.
+- **Agent files:** added the 13 `mcp__playwright__browser_*` tools (the `.mcp.json` server's names) to `designer.md` and `reviewer.md` beside the plugin's, as the builder found. Agent files load only in new conversations; harmless here, where that server is off.
+- **This PC:** after the merge, run `node tools/mcp-local-off.mjs` in the main checkout (the lead's sessions start there; subagents share the parent's MCP connections), then `--check`.
+- The flaky first `pnpm test` (a jobs test timed out while another agent's tests ran) passed alone; the review re-runs the full suite with the queue free.
+- Next: the analyst's early check (Tier B), then the review.
