@@ -1,6 +1,6 @@
 Status: open
 Tier: B
-Usage:
+Usage: builder claude-opus-5-5/high, 5-h 0 → 9 % (skills: cloudflare:workers-best-practices, cloudflare:wrangler)
 
 # FX-3: admin and portal fixes from the full audit
 
@@ -242,3 +242,16 @@ API sentences changed (not screen copy):
 1. **Item 12 is blocked:** it needs `fix/m5-owner-findings` (rounds 4–5) in this task's base first. The lead decides the order.
 2. Should a manual lead's budget band, timeline and currency also be editable after creation (`PATCH /leads/:id`)? Only creation takes them now. Editing needs timeline labels for the three fields, which is the designer's part.
 3. The 08-C register needs rows for the questions listed under item 9. Each tag can be retagged once its row exists, and the guard's list then shrinks.
+
+## Lead's notes after the builder (2026-10-29 ~10:20 IST)
+- Merged `fix/fx3-builder` (31bdf3ec) into `fix/fx3-admin-portal` (fast-forward); removed the builder's worktree.
+- **Item 12 and the check of item 11** wait for the M5 owner-fix PR (#106) and FX-1 to reach `main`. Then this branch merges `main`, and a short builder round does item 12 on top of the M5 round 4–7 `noRoom` rule and re-checks the `series_full` line against the newer `documents.ts`.
+- **Open questions answered** (docs/13, 2026-10-29):
+  1. the order is as above;
+  2. a manual lead's currency, band and timeline are editable afterwards too: the same short builder round adds them to `PATCH /leads/:id`;
+  3. the 22 tags with no 08-C row stay in the guard's list until researched, as their own step after FX-4.
+- **Next: the designer**, after the FX-2 designer finishes (one browser agent at a time). Its extra items from the builder:
+  - the manual lead form fields;
+  - the portal line for `newer_version_pending`, plus the code in `offer.tsx`'s `FINAL` set;
+  - placing `SIGNATURE_COPY.scaled`;
+  - the client Overview and project Figures panels.
