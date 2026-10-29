@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { portOffset, shiftLocalUrl } from "./dev-ports.mjs";
 import { eligibleSql, linkStatements, linkUrl, normaliseEmail, ORIGINS } from "./portal-sql.mjs";
 
 const { values } = parseArgs({
@@ -69,7 +70,8 @@ const stored = rows(
 ).length;
 if (stored !== made.length) throw new Error("The links were not all stored; do not use any printed link.");
 
-const origin = values.staging ? ORIGINS.staging : ORIGINS.local;
+// The local link follows TECHAUST_PORT_OFFSET (CLOUD-1, scripts/dev-ports.mjs): the dev server the person opens it on.
+const origin = values.staging ? ORIGINS.staging : shiftLocalUrl(ORIGINS.local, portOffset());
 console.log(
   `${made.length === 1 ? "Link" : `${made.length} links (one per organisation)`} for ${email}, single use, valid 15 minutes:`,
 );

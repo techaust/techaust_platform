@@ -9,7 +9,8 @@
 # a wrapper killed hard while its command still runs does not let a second heavy command start). A lock with no
 # PID file (being created, or from the old script) is stale after 90 minutes; any lock is stale after 6 hours.
 # Stale removal is serialised by a second folder (<lock>.reaper), so only one waiter removes it and a live lock
-# can't be removed by mistake. Waits while free memory is under HEAVY_MIN_FREE_MB (0 turns the check off).
+# can't be removed by mistake. Waits while free memory is under HEAVY_MIN_FREE_MB (0 turns the check off). Runs on this PC (Git
+# Bash) and on Linux (a cloud session): the PID checks use `kill -0`, which works on both, and free memory is read per OS.
 # HEAVY_LOCK overrides the lock path (used by tools/heavy.selftest.sh). Exit code = the command's.
 set -u
 LOCK="${HEAVY_LOCK:-$HOME/.techaust-heavy.lock}"
@@ -27,9 +28,15 @@ if [ "${1:-}" = "--log" ]; then
 fi
 [ $# -gt 0 ] || usage
 
+# Free memory in MB, or nothing if it can't be read. Windows (this PC, Git Bash): PowerShell, as before. Linux (a cloud session,
+# CLOUD-1): MemAvailable from /proc/meminfo. HEAVY_MEMINFO names another meminfo file (used only by tools/heavy.selftest.sh).
 free_mb() {
   [ "$MIN_FREE_MB" -gt 0 ] || return 0
-  powershell.exe -NoProfile -Command "[int]((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1024)" 2>/dev/null | tr -d '\r'
+  if [ -z "${HEAVY_MEMINFO:-}" ] && command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoProfile -Command "[int]((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1024)" 2>/dev/null | tr -d '\r'
+  elif [ -r "${HEAVY_MEMINFO:-/proc/meminfo}" ]; then
+    awk '/^MemAvailable:/ { print int($2 / 1024); exit }' "${HEAVY_MEMINFO:-/proc/meminfo}"
+  fi
 }
 
 pid_alive() { [ -n "${1:-}" ] && kill -0 "$1" 2>/dev/null; }
