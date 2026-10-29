@@ -9,7 +9,7 @@ import {
   type ReportMessage,
   reminderScanMessage,
 } from "@techaust/core";
-import { CARE_SCAN_HOUR_IST } from "@techaust/core/care-billing";
+import { CARE_SCAN_HOUR_IST, CARE_SCAN_REPEAT_HOURS } from "@techaust/core/care-billing";
 import { istDate } from "@techaust/core/dates";
 import { istHourOf } from "@techaust/core/invoices";
 import { processAlertsDaily } from "./alerts.ts";
@@ -31,7 +31,7 @@ export const EDF_REMINDER_DAYS_IST = [5, 6, 7] as const;
  * message is caught the same morning. Both are idempotent: the care scan lists only plans whose current period is not billed yet (and `draftCarePlan` makes one
  * document per plan and period), and every alert is written once (the email log's entity and the bells' unique key).
  */
-export const REPEAT_HOURS = 2;
+export const REPEAT_HOURS = CARE_SCAN_REPEAT_HOURS; // one constant with core, which tells the care page the next billing day (FX-3)
 const inWindow = (hour: number, first: number) => hour >= first && hour <= first + REPEAT_HOURS;
 
 /**

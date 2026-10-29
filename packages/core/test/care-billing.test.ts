@@ -8,6 +8,8 @@ import {
   billingPeriodOf,
   CARE_LINE_WORDS,
   CARE_SCAN_HOUR_IST,
+  CARE_SCAN_LAST_HOUR_IST,
+  CARE_SCAN_REPEAT_HOURS,
   type CareCatalogue,
   careDue,
   careLines,
@@ -45,25 +47,29 @@ describe("nextBillingDayOf: the day the job next drafts the plan", () => {
       nextBillingDayOf("2026-11-06", plan(5, "2026-01-01"), "cancelled", "2026-11-05", active),
     ).toBeNull();
   });
-  it("a period due and unbilled is today before the scan's hour and tomorrow from 06:00 IST on (the scan has run); billed, paused or not started, the hour changes nothing (finding 11)", () => {
+  it("a period due and unbilled is today until the day's last scan (08:00 IST) has begun and tomorrow from then on; billed, paused or not started, the hour changes nothing (finding 11, FX-3)", () => {
     const p = plan(5, "2026-01-01");
     expect(CARE_SCAN_HOUR_IST).toBe(6);
-    // before the 06:00 scan: today, as without the hour
-    for (const h of [0, 5]) {
+    // FX-1 repeats the scan at 07:00 and 08:00 IST (jobs `hourlyMessages`): the last scan of the day begins at 08:00
+    expect(CARE_SCAN_REPEAT_HOURS).toBe(2);
+    expect(CARE_SCAN_LAST_HOUR_IST).toBe(8);
+    // before the 08:00 scan (the 06:00 and 07:00 ones included): today, as without the hour
+    for (const h of [0, 5, 6, 7]) {
       expect(nextBillingDayOf("2026-11-06", p, "active", "2026-10-05", active, h)).toBe("2026-11-06");
     }
     expect(nextBillingDayOf("2026-11-06", p, "active", "2026-10-05", active)).toBe("2026-11-06");
-    // from 06:00 on: tomorrow, across a month end and a year end too
-    for (const h of [6, 7, 15, 23]) {
+    // from 08:00 on: tomorrow, across a month end and a year end too
+    for (const h of [8, 9, 15, 23]) {
       expect(nextBillingDayOf("2026-11-06", p, "active", "2026-10-05", active, h)).toBe("2026-11-07");
     }
     expect(nextBillingDayOf("2026-11-30", p, "active", "2026-10-05", active, 10)).toBe("2026-12-01");
     expect(nextBillingDayOf("2026-12-31", plan(5, "2026-01-01"), "active", "2026-11-05", active, 10)).toBe(
       "2027-01-01",
     );
-    // the billing day itself, never billed: due today until 06:00, tomorrow after (a catch-up)
+    // the billing day itself, never billed: due today until 08:00, tomorrow after (a catch-up)
     expect(nextBillingDayOf("2026-11-05", p, "active", null, active, 5)).toBe("2026-11-05");
-    expect(nextBillingDayOf("2026-11-05", p, "active", null, active, 6)).toBe("2026-11-06");
+    expect(nextBillingDayOf("2026-11-05", p, "active", null, active, 7)).toBe("2026-11-05");
+    expect(nextBillingDayOf("2026-11-05", p, "active", null, active, 8)).toBe("2026-11-06");
     // already billed: the next period's first day, whatever the hour
     expect(nextBillingDayOf("2026-11-06", p, "active", "2026-11-05", active, 20)).toBe("2026-12-05");
     // not started: the start date; cancelled: none
