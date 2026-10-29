@@ -107,12 +107,21 @@ export const ACTION_LABELS: Record<string, string> = {
   "time.update": "changed a time entry",
   "time.delete": "deleted a time entry",
   "approval.expire": "marked an approval as expired",
+  // Written outside ROUTES (FX-4 fix round 1, early check M2): the jobs Worker's lead purge and offer expiry take their approved
+  // 07-Q words (DASH7, DASH14); the portal's offer actions are 07-Y below.
+  "lead.purge": "deleted old leads",
+  "document.expire": "marked a document as expired",
   // Lines 07 lacked: 07-Y, PENDING the owner, marked until approved (the same lower-case form, after the person's name).
   "document.resend": Y("sent a document again"),
   "document.links_revoke": Y("revoked a document's links"),
   "document.pdf_retry": Y("asked for a document's PDF again"),
   "settings.signature.update": Y("changed the signature image"),
   "settings.signature.delete": Y("removed the signature image"),
+  // The client portal's offers (M4.5), written by a client contact ("A client contact …"); only proposals and estimates are offers.
+  "document.view": Y("viewed a proposal or estimate"),
+  "document.accept": Y("accepted a proposal or estimate"),
+  "document.decline": Y("declined a proposal or estimate"),
+  "offer_link.use": Y("opened a proposal or estimate from an email link"),
   // M5 invoices (07-R to 07-U had no audit words).
   "invoice.create": Y("created an invoice draft"),
   "invoice.update": Y("changed an invoice draft"),

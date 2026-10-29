@@ -23,6 +23,120 @@ function routeActions(): string[] {
   return [...out].sort();
 }
 
+// Every source file that can write an audit row (FX-4 fix round 1, early check M2): the admin and portal Workers, the jobs Worker, the db
+// package and the command-line scripts. Tests and test helpers are left out (they insert sample rows).
+// (vite needs the glob options as an object literal on each call)
+const WRITERS = Object.entries({
+  ...(import.meta.glob("../../worker/**/*.ts", { query: "?raw", import: "default", eager: true }) as Record<
+    string,
+    string
+  >),
+  ...(import.meta.glob("../../../portal/worker/**/*.ts", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }) as Record<string, string>),
+  ...(import.meta.glob("../../../jobs/src/**/*.ts", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }) as Record<string, string>),
+  ...(import.meta.glob("../../../../packages/db/src/**/*.ts", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }) as Record<string, string>),
+  ...(import.meta.glob("../../../../scripts/*.mjs", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }) as Record<string, string>),
+}).filter(([path]) => !/\.test\.ts$|\/test-[^/]*$|\/test\//.test(path));
+
+/**
+ * Action values that are not a literal, by file and expression, with every code they can take. A new one fails the test until it is
+ * listed here (so a code built at run time can't slip past the scan). Pass-through readers (`r.action`, `m.action`) write nothing new.
+ */
+const DYNAMIC: Record<string, readonly string[]> = {
+  // AlertKind
+  "worker/alerts.ts kind": ["alert.new_device", "alert.2fa_change", "alert.lockout"],
+  // pdfRoutes("proposal, estimate", "document.pdf_retry") and the invoice family's "invoice.pdf_retry"
+  "worker/document-pdf.ts retryAction": ["document.pdf_retry", "invoice.pdf_retry"],
+  // the generic settings route, checked group by group in the ROUTES test
+  "worker/settings.ts `settings.${key}.update`": [],
+  // Turnstile actions (verifyTurnstile), not audit rows
+  'worker/auth.ts "admin_login"': [],
+  'portal/worker/auth.ts "portal_link"': [],
+};
+const PASS_THROUGH = /^(?:[a-z]\.action|string;?$|z\.|text\("action"\))/;
+const CODE = /^[a-z_0-9]+\.[a-z_0-9.]+$/;
+
+/** The action codes the writers can put in `audit_log`, with the file each came from; and the dynamic values not in `DYNAMIC`. */
+function writtenActions(): { codes: Map<string, string>; unknown: string[]; stale: string[] } {
+  const codes = new Map<string, string>();
+  const unknown: string[] = [];
+  const seen = new Set<string>();
+  const add = (code: string, file: string) => {
+    if (CODE.test(code) && !codes.has(code)) codes.set(code, file);
+  };
+  for (const [path, text] of WRITERS) {
+    const file = path.replace(/^(?:\.\.\/)+/, "").replace(/^apps\/admin\//, "");
+    // 1. `action: "x.y"`, `action: cond ? "a.b" : "c.d"`, or a value listed in DYNAMIC
+    for (const m of text.matchAll(/\baction: ([^\n]+)/g)) {
+      const value = (m[1] as string).trim().replace(/,$/, "");
+      const literals = [...value.matchAll(/"([^"]+)"/g)].map((l) => l[1] as string);
+      if (literals.length > 0 && literals.every((l) => CODE.test(l))) for (const l of literals) add(l, file);
+      else if (Object.hasOwn(DYNAMIC, `${file} ${value}`)) {
+        seen.add(`${file} ${value}`);
+        for (const c of DYNAMIC[`${file} ${value}`] ?? []) add(c, file);
+      } else if (!PASS_THROUGH.test(value)) unknown.push(`${file} ${value}`);
+    }
+    // 2. hand-written SQL: the first dotted literal after `INSERT INTO audit_log (…)` is its action
+    for (const m of text.matchAll(/INSERT INTO audit_log \([^)]*\)([\s\S]{0,300})/g)) {
+      const literal = /'([a-z_0-9]+\.[a-z_0-9.]+)'/.exec(m[1] as string);
+      if (literal) add(literal[1] as string, file);
+    }
+  }
+  return { codes, unknown, stale: Object.keys(DYNAMIC).filter((k) => !seen.has(k)) };
+}
+
+describe("audit labels outside ROUTES [FX-4 early check M2, ADM-AUD-02]", () => {
+  it("every action any Worker, job or script writes has a label", () => {
+    const { codes, unknown, stale } = writtenActions();
+    // the scan reached every writer (a moved folder fails here, not silently)
+    for (const code of [
+      "document.accept",
+      "document.decline",
+      "document.view",
+      "offer_link.use",
+      "document.expire",
+      "lead.purge",
+      "portal.link_minted",
+      "alert.lockout",
+      "invoice.pdf_retry",
+      "auth.logout",
+    ])
+      expect(codes.has(code), code).toBe(true);
+    expect(codes.size).toBeGreaterThan(90);
+    expect(unknown).toEqual([]);
+    // every listed dynamic value still exists (a stale entry would hide nothing, but it means the list no longer describes the code)
+    expect(stale).toEqual([]);
+    const missing = [...codes]
+      .filter(([code]) => !Object.hasOwn(ACTION_LABELS, code))
+      .map(([c, f]) => `${c} (${f})`);
+    expect(missing).toEqual([]);
+  });
+
+  it("the portal's offer actions are 07-Y lines; the jobs Worker's take their approved 07-Q words", () => {
+    const mark = APPROVED_07Y ? "" : `${PLACEHOLDER_MARK} `;
+    for (const a of ["document.view", "document.accept", "document.decline", "offer_link.use"])
+      expect(ACTION_LABELS[a]?.startsWith(mark), a).toBe(true);
+    expect(ACTION_LABELS["document.accept"]).toBe(`${mark}accepted a proposal or estimate`);
+    expect(ACTION_LABELS["lead.purge"]).toBe("deleted old leads");
+    expect(ACTION_LABELS["document.expire"]).toBe("marked a document as expired");
+  });
+});
+
 describe("audit labels [A5 4, ADM-AUD-02]", () => {
   it("every action a route in ROUTES writes has a label", () => {
     const actions = routeActions();
