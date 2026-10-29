@@ -1,6 +1,6 @@
 Status: open
 Tier: A
-Usage:
+Usage: builder claude-opus-5-5/high, 5-h 17 → 31 % (skills: cloudflare:workers-best-practices, cloudflare:wrangler); analyst claude-opus-5-5/high, 5-h 31 → 36 % (skills: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:workers-profiling)
 
 # FX-4: invoicing fixes from the full audit
 
@@ -216,3 +216,35 @@ Branch `fix/fx4-builder` from `origin/fix/fx4-invoicing` (a769e790), five commit
    - RA-33: may such a note be rounded to the rupee, and in which direction?
 2. **Lead or designer: should "blocking" also hold back the downloads?** I made the export *incomplete* (`complete: false`, never "No errors") but left the files downloadable. The person still needs them to file, with the tax entered by hand. If the lead wants the downloads held until the warning is acknowledged, that is a screen rule for the designer.
 3. **Lead:** the brief mentions "the trigger if one covers totals". No existing trigger did, so the new trigger is the third layer. Does the analyst want it kept, given that it adds migration 0052 to the merge order (FX-4 merges last)?
+
+## Early check (analyst claude-opus-5-5/high, 2026-10-29 ~10:35–11:00 IST, on 9a591121): PROCEED to the designer
+_(Summary by the lead; the full text is in the conversation record.)_ No critical or high findings. The tax-only rules are correct and consistent with each other: the GSTR-1 blocking warning (one per note, every section, `complete === (blocking === 0)`, no files when `ok: false`), and no round-off in core, the freeze `WHERE` and trigger 0052 (one shared SQL text, NULL-safe, fires only `draft → issued` of a `debit_note`, generated and pinned like the others, no rebuild, numbered 0052 after FX-1's 0051). The statement's "against" and the hash argument hold. `tax.defaultSac` reaches only new custom lines on drafts. The `ROUTES` label test is real. Budget: admin API 599,998 bytes; expect about 606 KB after `main` merges in, under the 650,000 trigger, and no CPU risk. Tests run: db 46, core 45, admin 60, all green.
+
+**Findings:**
+- **M1 (medium):** the SPA maps 409 `pdf_pending` to "being prepared" (`invoices-api.ts:466-470`), so the supplier copy still looks stuck to the user, including for an erased client. Fix (designer): a distinct state; while the original isn't ready, say so and point to the PDF retry; fix the stale comment at `:419-421`; add an SPA test.
+- **M2 (medium):** audit actions written outside `ROUTES` show raw codes:
+  - `document.accept`, `document.decline`, `document.view`, `offer_link.use` (portal);
+  - `document.expire`, `lead.purge` (jobs).
+
+  Fix: labels (07-Q words where they exist, else 07-Y placeholders), and extend `audit-labels.test.ts` to every file that writes `audit_log`.
+- **L1:** `sections.ts:427-432` tags an untested Offline Tool claim as Researched. Retag it `OPEN (08-C RA-23)`, and the warning says the tax "may not come through on import".
+- **L2:** `taxOnlyNoteText` ignores `m.kind`, and gives head totals only. Words per kind; the designer shows `manual.byRate`.
+- **L3:** the sales-register panel says "No errors" while it offers the 3B file. Show the same blocking count there (designer).
+- **L4:** `noteLedgerRows` sorts numbers as text (`CN/2627/10` before `/9`). Order by issue instant or integer number.
+- **L5:** the RA-33 wording. **Fixed by the lead.**
+- **L6:** record the no-round-off deviation in docs/13. **Done by the lead.**
+- **L7 (M6 follow-up):** a tax-only debit note can total paise, while the instalment split refuses a non-whole-rupee INR total (`tax/schedule.ts:74`). M6 must let a debit note be paid whole, or allow paise for an unrounded document. Goes on the status page's follow-ups.
+- **L8 (staging):** an unissued tax-only debit-note draft or pending approval with a non-zero round-off gets 409 `content_changed` at issue: the safe behaviour. A plain re-save recomputes it. The designer checks that the editor allows saving an unchanged draft.
+- **L9 (optional):** an API test that `defaultSac: "12a456"` is a 400.
+
+**Builder questions:** Q2, don't hold the downloads; Q3, keep the trigger (docs/13).
+
+## Fix round 1 (lead's brief; builder claude-opus-5-5/high)
+In one commit per item, on `fix/fx4-fix1` from `origin/fix/fx4-invoicing`:
+- **M2:** labels and the wider test.
+- **L1:** the comment, plus the warning words (07-Y).
+- **L2:** the words by kind (credit note vs debit note).
+- **L4:** the order.
+- **L9:** the test.
+
+Then the full `pnpm test` and `pnpm check` through the queue, and a report here under "Fix round 1 report". The screen items (M1, L2's per-rate table, L3, L8's check) go to the designer with the brief's designer part.
