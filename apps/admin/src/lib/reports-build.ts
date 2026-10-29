@@ -230,6 +230,11 @@ export type SalesRegister =
       count: number;
       outputTax: readonly OutputTaxRow[];
       files: { register: string; outputTax: string; gstr3b: string | null };
+      /**
+       * FX-4 (early check L3): when the 3B file is offered, the GST export's blocking lines (tax-only notes to enter by hand) of the same period, so the
+       * panel says what the GST exports say and never "No errors" while one is present. Empty when there is no 3B file.
+       */
+      manual: WarningLine[];
     };
 
 /** The sales register and output tax of a range (any range inside one FY), and the 3B figures when the range is a whole return period. */
@@ -256,17 +261,20 @@ export function buildSalesRegister(
     return { ok: false, problems: issueLines(e, docsById) };
   }
   let gstr3b: string | null = null;
+  let manual: WarningLine[] = [];
   const period = wholePeriodOf(from, to);
   if (period) {
     const g = buildGstExport(rows, meta, period);
     if (!g.ok) return { ok: false, problems: g.problems };
     gstr3b = g.files.find((f) => f.stem === "gstr3b_summary")?.csv ?? null;
+    manual = g.warnings.filter((w) => w.blocking);
   }
   return {
     ok: true,
     count: rows.length,
     outputTax: output.value,
     files: { register: regCsv.value, outputTax: outCsv.value, gstr3b },
+    manual,
   };
 }
 

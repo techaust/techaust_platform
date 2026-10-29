@@ -24,6 +24,7 @@ import {
   DOC_TOASTS,
   dayText,
   docErrorText,
+  draftDiscountSources,
   type EditorAction,
   type EditorState,
   editor,
@@ -522,7 +523,13 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
                   )}
                 </FormField>
               </div>
-              <TaxPreview totals={f.totals} supply={f.supply} currency={s.currency} busy={s.saving} />
+              <TaxPreview
+                totals={f.totals}
+                supply={f.supply}
+                currency={s.currency}
+                busy={s.saving}
+                discounts={draftDiscountSources(s.lines, s.fields, s.currency)}
+              />
             </div>
           </section>
 

@@ -14,6 +14,7 @@ import type { Currency } from "../api.ts";
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
 import { milliToQty } from "./catalogue.ts";
+import { Y } from "./copy-y.ts";
 import {
   dayText,
   docErrorText,
@@ -57,6 +58,18 @@ export const INV_NO_MATCH = "No invoices match these filters";
 
 /** 07-R §7 (Q11, owner 2026-10-28): the stored supplier copy's download, for the Owner and the Accountant. */
 export const SUPPLIER_COPY_LABEL = "Download supplier copy";
+
+/**
+ * FX-4 (early check M1; 07-Y, PENDING, marked until approved): the line under "Download supplier copy" when the API answers 409 `pdf_pending`, so it never reads as
+ * "being prepared" forever. The copy is made only after the client's PDF: while that has none, the line points to the PDF's own "Try again"; an anonymised
+ * client's copy is never made (no PDF work for an anonymised client), so it says so and offers nothing.
+ */
+export const supplierCopyUnavailable = (anonymised: boolean): string =>
+  anonymised
+    ? Y("No supplier copy was made before this client was anonymised, and none can be made now.")
+    : Y(
+        "The supplier copy is made after the client's PDF, which isn't ready yet. Use Try again on the PDF if it is taking longer than usual.",
+      );
 
 // ---- 07-R §1–§4, word for word ---------------------------------------------------------------------------------------------------------------
 

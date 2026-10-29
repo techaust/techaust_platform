@@ -1929,9 +1929,29 @@ a.pdf-panel__action:hover {
 }
 
 /* The stored supplier copy (07-R §7, Owner and Accountant): a quiet text action under the client's PDF, a full target on its own line. */
-.pdf-panel__supplier {
+.pdf-panel__supplier-wrap {
   grid-column: 1 / -1;
+  display: grid;
+  justify-items: start;
+  min-width: 0;
+}
+
+.pdf-panel__supplier {
   justify-self: start;
   min-height: var(--target-min);
   gap: var(--space-2);
+}
+
+/* FX-4 (early check M1): why the copy can't be had now. Muted secondary text under the action, never a toast that is gone before it is read. Empty, it
+   takes no room but stays rendered, so the live region announces the line when it appears. */
+.pdf-panel__supplier-note {
+  margin: 0;
+  max-width: var(--container-prose);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  color: var(--color-text-muted);
+}
+
+.pdf-panel__supplier-note:not(:empty) {
+  margin-top: var(--space-1);
 }

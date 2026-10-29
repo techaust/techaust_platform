@@ -141,6 +141,42 @@ export const lineColumns = {
   amount: "Amount",
 } as const;
 
+/**
+ * FX-4 (full audit A5 3; 07-Y, PENDING, marked until approved): the totals row's name says where its discount comes from, never "Document discount" for a
+ * line's own discount. The amount is the server's one `discountMinor` (lines and document together); the screen never splits or adds it, so a draft
+ * with both says so in the row's name, and each line's own discount stays in its row of the lines.
+ */
+export function discountRowLabel(has: { lines: boolean; document: boolean }): string {
+  if (has.lines && has.document) return Y("Discounts (lines and document)");
+  if (has.lines) return Y("Line discounts");
+  return DOC_COPY.documentDiscount;
+}
+
+/** Whether a stored discount takes anything off (a zero discount takes nothing). */
+const takesOff = (d: { value: number } | null | undefined): boolean => !!d && d.value > 0;
+
+/** Where a frozen or read view's discount comes from: its lines' own discounts, the document's, or both. */
+export const discountSources = (v: {
+  lines: readonly { discount: { value: number } | null }[];
+  discount: { value: number } | null;
+}) => ({ lines: v.lines.some((l) => takesOff(l.discount)), document: takesOff(v.discount) });
+
+/** The same for a draft as typed (the editor's text fields, parsed through core like the save is). */
+export function draftDiscountSources(
+  lines: readonly Pick<LineDraft, "discKind" | "disc">[],
+  fields: { discKind: DiscountKind; disc: string },
+  currency: Currency,
+): { lines: boolean; document: boolean } {
+  const typed = (kind: DiscountKind, text: string) => {
+    const d = parseDiscount(kind, text, currency);
+    return d.ok && takesOff(d.value);
+  };
+  return {
+    lines: lines.some((l) => typed(l.discKind, l.disc)),
+    document: typed(fields.discKind, fields.disc),
+  };
+}
+
 export const chooseDefaultLines = (service: string) => `Choose the default lines for ${service}`;
 export const placeOfSupplyText = (label: string) => `Place of supply: ${label}`;
 export const inWords = (words: string) => `In words: ${words}`;

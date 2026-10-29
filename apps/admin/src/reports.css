@@ -275,6 +275,75 @@
   color: var(--color-success);
 }
 
+/* FX-4 (A5 1): the files are made but not complete for filing: the line carries the warning mark, never the success tick. */
+.report-done--manual {
+  align-items: flex-start;
+}
+
+.report-done--manual .icon {
+  flex: none;
+  margin-top: 0.15em;
+  color: var(--color-warning);
+}
+
+/* The notes whose tax is entered by hand: each one a sentence, then its figures as a small ledger, set off by the warning rule the problem list uses
+   in danger. The figures keep the report's ledger (tabular, right-aligned, the double rule under a total). */
+.manual-entries {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.manual-entry {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5) var(--space-3);
+  border-inline-start: 3px solid var(--color-warning);
+  background: var(--color-surface);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.manual-entry > .icon {
+  margin-top: 0.15em;
+  color: var(--color-warning);
+}
+
+.manual-entry__body {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  min-width: 0;
+}
+
+.manual-entry__text {
+  margin: 0;
+  max-width: var(--container-prose);
+  overflow-wrap: anywhere;
+}
+
+.manual-entry__figures {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.manual-entry__table {
+  width: auto;
+  min-width: 16rem;
+  background: transparent;
+}
+
+.manual-entry__table th:first-child {
+  padding-inline-start: 0;
+}
+
+.manual-entry__open {
+  min-height: var(--target-min);
+  margin-inline-start: calc(-1 * var(--space-2));
+}
+
 .report-done:focus-visible,
 .report-problems__h:focus-visible {
   outline: 2px solid var(--color-focus);
@@ -378,8 +447,51 @@
   margin-bottom: var(--space-3);
 }
 
+/* FX-4 (full audit A5 14): the scroll cue around a wide ledger or list. The box holds the scrolling region and draws a soft shade on each edge that
+   hides more columns (`data-more-start`, `data-more-end`, set while measuring), over the content and under nothing that takes a click. It is a shade
+   of ink, so it reads on the surface in both themes; fading it in is the only motion, and reduced motion drops it. */
+.scroll-cue {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.scroll-cue::before,
+.scroll-cue::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  width: var(--space-6);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+}
+
+.scroll-cue::before {
+  inset-inline-start: 0;
+  background: linear-gradient(to right, color-mix(in srgb, var(--color-text) 16%, transparent), transparent);
+}
+
+.scroll-cue::after {
+  inset-inline-end: 0;
+  background: linear-gradient(to left, color-mix(in srgb, var(--color-text) 16%, transparent), transparent);
+}
+
+.scroll-cue[data-more-start]::before,
+.scroll-cue[data-more-end]::after {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-cue::before,
+  .scroll-cue::after {
+    transition: none;
+  }
+}
+
 /* A wide ledger scrolls inside its own box on a narrow screen; the page never scrolls sideways. */
 .ledger-scroll {
+  position: relative; /* the hidden caption is clipped inside the box, never past the page's edge */
   overflow-x: auto;
   max-width: 100%;
   scrollbar-width: thin;
@@ -453,6 +565,7 @@
 
 /* A wide list (DataTable) scrolls inside its own box; its headers wrap, and they don't stick (a sticky header can't live in a scrolling box). */
 .wide-list {
+  position: relative;
   max-width: 100%;
   overflow-x: auto;
   scrollbar-width: thin;

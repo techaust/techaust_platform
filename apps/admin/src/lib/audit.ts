@@ -142,29 +142,40 @@ export const ACTION_LABELS: Record<string, string> = {
   "care_invoice.auto_issue_refused": Y("could not issue a care plan invoice automatically"),
 };
 
-/** Groups for the action filter (the API filters by one exact action). */
-export const ACTION_GROUPS: { label: string; prefix: string }[] = [
-  { label: "Sign-ins and security", prefix: "auth." },
-  { label: "Security alerts", prefix: "alert." },
-  { label: "Users and invites", prefix: "user." },
-  { label: "Settings", prefix: "settings." },
-  { label: "Notifications", prefix: "notification." },
-  { label: "Clients", prefix: "client." },
-  { label: "Contacts", prefix: "contact." },
-  { label: "Projects", prefix: "project." },
-  { label: "Milestones", prefix: "milestone." },
-  { label: "Notes", prefix: "note." },
-  { label: "Files", prefix: "file." },
-  { label: "Catalogue", prefix: "catalogue." },
-  { label: "Templates", prefix: "template." },
-  { label: "Proposals and estimates", prefix: "document." },
-  // FX-4 (A5 4): 07-R's nav word and 07-V §1's group word.
-  { label: "Invoices", prefix: "invoice." },
-  { label: "Reports", prefix: "report." },
-  { label: "Approvals", prefix: "approval." },
-  { label: "Client portal", prefix: "portal." },
-  { label: "Audit log", prefix: "audit." },
+/**
+ * Groups for the action filter (the API filters by one exact action), in the sidebar's order. A group holds the actions that start with one of its
+ * prefixes; every labelled action sits in exactly one group (a test checks it), so none is left out of the filter. FX-4 (A5 4): Leads, Care plans, Time,
+ * Invoices and Reports are the sidebar's own words; a care plan's invoice actions sit with Invoices, an offer link with Proposals and estimates, and a
+ * document link with the client portal.
+ */
+export const ACTION_GROUPS: { label: string; prefixes: readonly string[] }[] = [
+  { label: "Sign-ins and security", prefixes: ["auth."] },
+  { label: "Security alerts", prefixes: ["alert."] },
+  { label: "Users and invites", prefixes: ["user."] },
+  { label: "Settings", prefixes: ["settings."] },
+  { label: "Notifications", prefixes: ["notification."] },
+  { label: "Leads", prefixes: ["lead."] },
+  { label: "Clients", prefixes: ["client."] },
+  { label: "Contacts", prefixes: ["contact."] },
+  { label: "Projects", prefixes: ["project."] },
+  { label: "Milestones", prefixes: ["milestone."] },
+  { label: "Notes", prefixes: ["note."] },
+  { label: "Files", prefixes: ["file."] },
+  { label: "Care plans", prefixes: ["care_plan."] },
+  { label: "Time", prefixes: ["time."] },
+  { label: "Catalogue", prefixes: ["catalogue."] },
+  { label: "Templates", prefixes: ["template."] },
+  { label: "Proposals and estimates", prefixes: ["document.", "offer_link."] },
+  { label: "Invoices", prefixes: ["invoice.", "care_invoice."] },
+  { label: "Reports", prefixes: ["report."] },
+  { label: "Approvals", prefixes: ["approval."] },
+  { label: "Client portal", prefixes: ["portal.", "doc_token."] },
+  { label: "Audit log", prefixes: ["audit."] },
 ];
+
+/** The actions of one filter group, in the order given. */
+export const actionsInGroup = (g: { prefixes: readonly string[] }, actions: readonly string[]): string[] =>
+  actions.filter((a) => g.prefixes.some((p) => a.startsWith(p)));
 
 /** Record types the API writes (`entity_type`), for the record filter. */
 export const ENTITY_LABELS: Record<string, string> = {

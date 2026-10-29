@@ -8,6 +8,7 @@ import {
   DOC_COPY,
   DOC_PENDING,
   dayText,
+  discountRowLabel,
   inWords,
   lineColumns,
   lineTaxText,
@@ -27,6 +28,8 @@ export function TaxPreview(props: {
   /** A sent version shows the figures as frozen, without the "preview" line. */
   frozen?: boolean;
   busy?: boolean;
+  /** FX-4 (A5 3): where the discount comes from (`discountSources`, `draftDiscountSources`), so the row is named for it. */
+  discounts?: { lines: boolean; document: boolean } | undefined;
 }) {
   const { totals: t, supply, currency } = props;
   if (!t) return null;
@@ -39,7 +42,7 @@ export function TaxPreview(props: {
       <dl className="totals">
         {t.discountMinor > 0 && (
           <div className="totals__row">
-            <dt>{DOC_COPY.documentDiscount}</dt>
+            <dt>{discountRowLabel(props.discounts ?? { lines: false, document: true })}</dt>
             <dd className="tnum">{moneyText(t.discountMinor, currency)}</dd>
           </div>
         )}

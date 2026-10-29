@@ -12,7 +12,7 @@ import { PageHeader } from "../../components/display.tsx";
 import { Ban, Download, FolderKanban, Lock } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { allowed } from "../../lib/access.ts";
-import { dayText, formatIstDay } from "../../lib/documents.ts";
+import { dayText, discountSources, formatIstDay } from "../../lib/documents.ts";
 import type { ViewLine } from "../../lib/documents-api.ts";
 import { sendState } from "../../lib/invoice-send.ts";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
@@ -24,6 +24,7 @@ import {
   milestoneBackLine,
   moneyText,
   SUPPLIER_COPY_LABEL,
+  supplierCopyUnavailable,
   typeLabel,
   UNKNOWN,
   voidBlockedText,
@@ -92,16 +93,34 @@ const issuedBy = (v: InvoiceView) => v.issuer?.sender?.name ?? UNKNOWN;
 /**
  * "Download supplier copy" (07-R §7): asks for the copy first, then saves it; while the jobs Worker is still making it (it follows the original), the
  * toast says so in 07-R §4's words, and a failure says to try again. A text button under the client's PDF: the client's copy stays the panel's action.
+ * FX-4 (early check M1): a 409 `pdf_pending` is its own state, a line that stays under the button (not a passing toast): nothing can make the copy until
+ * the client's PDF exists, so the line says so and `onNoOriginal` reads the page again, which brings back the PDF panel's own state and its "Try again".
+ * For an anonymised client the copy is never made, and the line says that instead.
  */
-function SupplierCopy({ id, number }: { id: string; number: string | null }) {
+function SupplierCopy({
+  id,
+  number,
+  anonymised,
+  onNoOriginal,
+}: {
+  id: string;
+  number: string | null;
+  anonymised: boolean;
+  onNoOriginal: () => void;
+}) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
+  const lineId = `supplier-copy-${id}`;
   async function download() {
     if (busy) return;
     setBusy(true);
     try {
       const r = await fetchSupplierCopy(id);
-      if (r.state === "ready") {
+      setUnavailable(r.state === "no_original");
+      if (r.state === "no_original") {
+        if (!anonymised) onNoOriginal();
+      } else if (r.state === "ready") {
         const url = URL.createObjectURL(r.blob);
         const a = document.createElement("a");
         a.href = url;
@@ -120,16 +139,23 @@ function SupplierCopy({ id, number }: { id: string; number: string | null }) {
     }
   }
   return (
-    <button
-      type="button"
-      className="btn btn--text pdf-panel__supplier"
-      onClick={() => void download()}
-      disabled={busy}
-      aria-busy={busy || undefined}
-    >
-      <Download size={16} />
-      {SUPPLIER_COPY_LABEL}
-    </button>
+    <div className="pdf-panel__supplier-wrap">
+      <button
+        type="button"
+        className="btn btn--text pdf-panel__supplier"
+        onClick={() => void download()}
+        disabled={busy}
+        aria-busy={busy || undefined}
+        aria-describedby={unavailable ? lineId : undefined}
+      >
+        <Download size={16} />
+        {SUPPLIER_COPY_LABEL}
+      </button>
+      {/* polite and always in the tree, so the line is read when it appears */}
+      <p id={lineId} className="pdf-panel__supplier-note" role="status">
+        {unavailable ? supplierCopyUnavailable(anonymised) : null}
+      </p>
+    </div>
   );
 }
 
@@ -277,7 +303,9 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
         <div className="doc-page__send">
           {v.frozen && v.pdf.state !== "none" && (
             <PdfPanel
-              key={v.id}
+              // FX-4 (early check M1): keyed on the state too, so a page read that finds the PDF in another state (after the supplier copy's 409) draws the
+              // panel afresh, with its own "Try again"; a read that finds the same state keeps the panel as it is.
+              key={`${v.id}-${v.pdf.state}`}
               id={v.id}
               sentAt={v.frozenAt}
               initial={v.pdf}
@@ -287,7 +315,12 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
               onReady={reload}
               extra={
                 canDownloadSupplierCopy(role, v.type) ? (
-                  <SupplierCopy id={v.id} number={v.number} />
+                  <SupplierCopy
+                    id={v.id}
+                    number={v.number}
+                    anonymised={v.client.anonymised}
+                    onNoOriginal={reload}
+                  />
                 ) : undefined
               }
             />
@@ -382,7 +415,13 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
             ) : (
               <>
                 <LinesTable lines={asViewLines(v)} currency={v.currency} supply={v.supply} />
-                <TaxPreview totals={v.totals} supply={v.supply} currency={v.currency} frozen={v.frozen} />
+                <TaxPreview
+                  totals={v.totals}
+                  supply={v.supply}
+                  currency={v.currency}
+                  frozen={v.frozen}
+                  discounts={discountSources(v)}
+                />
               </>
             )}
           </section>

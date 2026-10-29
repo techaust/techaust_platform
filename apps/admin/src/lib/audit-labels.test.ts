@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import guardSource from "../../worker/guard.ts?raw";
 import settingsSource from "../../worker/settings.ts?raw";
-import { ACTION_GROUPS, ACTION_LABELS, actionText } from "./audit.ts";
+import { ACTION_GROUPS, ACTION_LABELS, actionsInGroup, actionText } from "./audit.ts";
 import { APPROVED_07Y, PLACEHOLDER_MARK } from "./copy-y.ts";
 import { ACTIVITY_PENDING } from "./dashboard.ts";
 
@@ -181,7 +181,7 @@ describe("audit labels [A5 4, ADM-AUD-02]", () => {
   });
 
   it("the filter has Invoices and Reports groups, each matching labelled actions", () => {
-    const groups = new Map(ACTION_GROUPS.map((g) => [g.prefix, g.label]));
+    const groups = new Map(ACTION_GROUPS.flatMap((g) => g.prefixes.map((p) => [p, g.label] as const)));
     expect(groups.get("invoice.")).toBe("Invoices");
     expect(groups.get("report.")).toBe("Reports");
     for (const prefix of ["invoice.", "report."])
@@ -189,5 +189,25 @@ describe("audit labels [A5 4, ADM-AUD-02]", () => {
         Object.keys(ACTION_LABELS).some((a) => a.startsWith(prefix)),
         prefix,
       ).toBe(true);
+  });
+
+  it("every labelled action sits in exactly one filter group, so the filter leaves none out", () => {
+    const all = Object.keys(ACTION_LABELS);
+    for (const a of all)
+      expect(
+        ACTION_GROUPS.filter((g) => actionsInGroup(g, [a]).length > 0).map((g) => g.label),
+        a,
+      ).toHaveLength(1);
+    const labels = ACTION_GROUPS.map((g) => g.label);
+    for (const l of ["Leads", "Care plans", "Time", "Invoices", "Reports"]) expect(labels).toContain(l);
+    const invoices = ACTION_GROUPS.find((g) => g.label === "Invoices");
+    expect(invoices && actionsInGroup(invoices, all)).toContain("care_invoice.draft");
+    // no prefix is dead: each matches at least one labelled action
+    for (const g of ACTION_GROUPS)
+      for (const p of g.prefixes)
+        expect(
+          all.some((a) => a.startsWith(p)),
+          p,
+        ).toBe(true);
   });
 });

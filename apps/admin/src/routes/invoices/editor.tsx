@@ -29,6 +29,7 @@ import {
   DOC_COPY,
   DOC_PENDING,
   dayText,
+  draftDiscountSources,
   type EditorAction,
   formatIstDay,
   notSaved,
@@ -530,7 +531,13 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
                   )}
                 </FormField>
               </div>
-              <TaxPreview totals={v.totals} supply={v.supply} currency={s.currency} busy={s.saving} />
+              <TaxPreview
+                totals={v.totals}
+                supply={v.supply}
+                currency={s.currency}
+                busy={s.saving}
+                discounts={draftDiscountSources(s.lines, s.fields, s.currency)}
+              />
             </div>
           </section>
 

@@ -5,6 +5,7 @@ import { ISSUE_BLOCKER_CODES } from "@techaust/core/invoices";
 import { decide, ROLES } from "@techaust/core/permissions";
 import { describe, expect, it, vi } from "vitest";
 import { RequestError } from "../api.ts";
+import { APPROVED_07Y, PLACEHOLDER_MARK } from "./copy-y.ts";
 import {
   applyInvoiceSave,
   BADGE_LABELS,
@@ -35,6 +36,7 @@ import {
   seriesPreview,
   splitAtPlace,
   splitSentences,
+  supplierCopyUnavailable,
   typeLabel,
   voidBlockedText,
   voidTitle,
@@ -438,9 +440,9 @@ describe("M5.2 re-check: proforma wording and the advance rate date (07-S §8)",
           headers: { "Content-Type": "application/json" },
         });
       out[0]?.(pending());
-      out[1]?.(pending());
-      expect(await first).toEqual({ state: "pending" });
-      expect(await second).toEqual({ state: "pending" });
+      out[1]?.(new Response(JSON.stringify({ state: "making" }), { status: 202 }));
+      expect(await first).toEqual({ state: "no_original" });
+      expect(await second).toEqual({ state: "no_original" });
       expect(await other).toEqual({ state: "pending" });
       // once it has answered, the next ask is a new request
       const again = fetchSupplierCopy("doc-1");
@@ -450,6 +452,62 @@ describe("M5.2 re-check: proforma wording and the advance rate date (07-S §8)",
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+
+  it("FX-4 (early check M1): 409 pdf_pending is its own state, never 'being prepared'; 202 is; another 409 fails; the PDF is ready", async () => {
+    const answers: Record<string, () => Response> = {
+      making: () => new Response(JSON.stringify({ state: "making" }), { status: 202 }),
+      noOriginal: () =>
+        new Response(JSON.stringify({ error: { code: "pdf_pending" } }), {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        }),
+      otherConflict: () =>
+        new Response(JSON.stringify({ error: { code: "stale_version" } }), {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ready: () =>
+        new Response("%PDF-1.7", {
+          status: 200,
+          headers: {
+            "Content-Type": "application/pdf",
+            "Content-Disposition": 'attachment; filename="TH-INV-2627-0003-supplier-copy.pdf"',
+          },
+        }),
+      offline: () => {
+        throw new TypeError("network");
+      },
+    };
+    let next = "making";
+    vi.stubGlobal("fetch", async () => (answers[next] as () => Response)());
+    try {
+      expect(await fetchSupplierCopy("d")).toEqual({ state: "pending" });
+      next = "noOriginal";
+      expect(await fetchSupplierCopy("d")).toEqual({ state: "no_original" });
+      next = "otherConflict";
+      expect(await fetchSupplierCopy("d")).toEqual({ state: "failed" });
+      next = "offline";
+      expect(await fetchSupplierCopy("d")).toEqual({ state: "failed" });
+      next = "ready";
+      const r = await fetchSupplierCopy("d");
+      expect(r.state).toBe("ready");
+      expect(r.state === "ready" && r.filename).toBe("TH-INV-2627-0003-supplier-copy.pdf");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("FX-4 (early check M1): the line under the supplier copy names why it can't be had, by whether the client is anonymised (07-Y, marked)", () => {
+    const mark = APPROVED_07Y ? "" : `${PLACEHOLDER_MARK} `;
+    expect(supplierCopyUnavailable(false)).toBe(
+      `${mark}The supplier copy is made after the client's PDF, which isn't ready yet. Use Try again on the PDF if it is taking longer than usual.`,
+    );
+    expect(supplierCopyUnavailable(true)).toBe(
+      `${mark}No supplier copy was made before this client was anonymised, and none can be made now.`,
+    );
+    // never the "being prepared" words of a copy on its way
+    expect(supplierCopyUnavailable(false)).not.toContain(INV_COPY.pdfPreparing);
   });
 
   it("a proforma's void refused for a reason other than a payment says it was emailed", () => {
