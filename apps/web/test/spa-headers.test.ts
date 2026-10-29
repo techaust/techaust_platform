@@ -110,6 +110,41 @@ describe("each weakened header fails", () => {
   });
 });
 
+describe("fonts the policy would block [FX-2: the rupee-glyph subsets]", () => {
+  const css = (src: string): [string, string][] => [
+    [
+      "assets/index.css",
+      `@font-face{font-family:Archivo;src:url(${src})format("woff2");unicode-range:U+20B9}`,
+    ],
+  ];
+
+  it("a font inlined as data: fails while font-src is 'self'", () => {
+    const problems = g.checkInlinedFonts("portal", source("portal"), css("data:font/woff2;base64,d09GMgAB"));
+    expect(problems.join()).toContain("assetsInlineLimit");
+  });
+
+  it("a font file passes, and so does a data: font when the policy allows data: fonts", () => {
+    expect(g.checkInlinedFonts("portal", source("portal"), css("/assets/archivo-rupee-x.woff2"))).toEqual([]);
+    const allowing = source("portal").replace("font-src 'self'", "font-src 'self' data:");
+    expect(g.checkInlinedFonts("portal", allowing, css("data:font/woff2;base64,d09GMgAB"))).toEqual([]);
+  });
+
+  it.each(g.SPA_APPS as string[])("the %s build (when built) ships its fonts as files", (app) => {
+    expect(g.checkBuiltAssets(app)).toEqual([]);
+  });
+
+  it.each(["admin", "portal"])(
+    "%s's Vite config keeps client assets as files (assetsInlineLimit 0)",
+    (app) => {
+      const config = readFileSync(
+        fileURLToPath(new URL(`../../${app}/vite.config.ts`, import.meta.url)),
+        "utf8",
+      );
+      expect(config).toMatch(/client:\s*\{\s*build:\s*\{\s*assetsInlineLimit:\s*0\s*\}\s*\}/);
+    },
+  );
+});
+
 function run(...args: string[]) {
   return new Promise<{ code: number; out: string }>((resolve) => {
     execFile(process.execPath, [script, ...args], (err, stdout, stderr) =>

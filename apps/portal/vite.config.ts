@@ -19,5 +19,10 @@ export default defineConfig({
     __WEBSITE_ORIGIN__: JSON.stringify(websiteOriginForApp(new URL("./", import.meta.url))),
   },
   plugins: [react(), cloudflare({ persistState: { path: "../../.wrangler/state" } })],
-  environments: { techaust_platform_portal: { build: { minify: true } } },
+  environments: {
+    // Fonts and images stay files, never data: URIs (FX-2, audit A1 finding 1): the CSP's font-src is 'self' (public/_headers), so
+    // Vite's default inlining of the small rupee-glyph fonts (< 4 KB) would be blocked and ₹ would fall back to a system font.
+    client: { build: { assetsInlineLimit: 0 } },
+    techaust_platform_portal: { build: { minify: true } },
+  },
 });

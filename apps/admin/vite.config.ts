@@ -21,6 +21,9 @@ export default defineConfig({
     }),
   ],
   environments: {
+    // Fonts and images stay files, never data: URIs (FX-2): the CSP's font-src is 'self' (public/_headers), so Vite's default
+    // inlining of the small rupee-glyph fonts (< 4 KB) was blocked and ₹ fell back to a system font.
+    client: { build: { assetsInlineLimit: 0 } },
     techaust_platform_admin: { build: { minify: true } },
     techaust_platform_admin_api: { build: { minify: true } },
   },

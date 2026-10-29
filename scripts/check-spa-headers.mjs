@@ -5,7 +5,7 @@
 //                                                      checks dist/client/_headers
 //   node scripts/check-spa-headers.mjs --source       in `pnpm check`: checks both apps' public/_headers (no build needed)
 // Pure functions for apps/web/test/spa-headers.test.ts; the CLI is at the bottom.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseCsp, parseHeaders } from "./headers-shared.mjs";
@@ -98,6 +98,33 @@ export function checkSpaHeadersFile(app, file) {
   return checkSpaHeaders(app, readFileSync(file, "utf8"));
 }
 
+/**
+ * The built stylesheets against the policy they ship with: a font inlined as a data: URI (Vite inlines files under 4 KB unless
+ * `assetsInlineLimit` is 0) is blocked by `font-src 'self'`, so the glyph falls back to a system font and the browser logs a CSP
+ * violation (the rupee-sign subsets did exactly that, FX-2). `files` is [name, text] pairs of the built CSS.
+ */
+export function checkInlinedFonts(app, headersText, files) {
+  const fontSrc = parseCsp(parseHeaders(headersText)["content-security-policy"] ?? "")["font-src"];
+  if (fontSrc?.includes("data:")) return [];
+  return files
+    .filter(([, text]) => /url\(\s*["']?data:(?:font\/|application\/(?:x-)?font)/i.test(text))
+    .map(
+      ([name]) =>
+        `${app} ${name}: a font is inlined as a data: URI, which the CSP's font-src blocks (set build.assetsInlineLimit to 0 for the client)`,
+    );
+}
+
+/** checkInlinedFonts over `dist/client/assets/*.css` of a built app. */
+export function checkBuiltAssets(app, base = root) {
+  const client = join(base, "apps", app, "dist", "client");
+  const assets = join(client, "assets");
+  if (!existsSync(assets) || !existsSync(join(client, "_headers"))) return [];
+  const css = readdirSync(assets)
+    .filter((f) => f.endsWith(".css"))
+    .map((f) => [`assets/${f}`, readFileSync(join(assets, f), "utf8")]);
+  return checkInlinedFonts(app, readFileSync(join(client, "_headers"), "utf8"), css);
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const arg = process.argv[2];
   const targets =
@@ -110,7 +137,10 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     console.error("usage: node scripts/check-spa-headers.mjs admin|portal|--source");
     process.exit(2);
   }
-  const problems = targets.flatMap(([app, file]) => checkSpaHeadersFile(app, file));
+  const problems = targets.flatMap(([app, file]) => [
+    ...checkSpaHeadersFile(app, file),
+    ...(arg === "--source" ? [] : checkBuiltAssets(app)),
+  ]);
   if (problems.length > 0) {
     console.error(`check-spa-headers: ${problems.length} problem(s)`);
     for (const x of problems) console.error(`  - ${x}`);
