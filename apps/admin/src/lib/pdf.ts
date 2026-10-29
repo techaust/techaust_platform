@@ -1,6 +1,7 @@
 // The PDF of a sent proposal or estimate and the signature image, as staff see them (M4.4): the wording, word for word from 07-P §3
 // and §4 (approved with 07-Q), and the pure rules the screens follow. No I/O here.
 import { SIGNATURE_MAX_BYTES, SIGNATURE_MIMES } from "@techaust/core/settings";
+import { Y } from "./copy-y.ts";
 
 export const PDF_COPY = {
   download: "Download PDF",
@@ -27,7 +28,10 @@ export const SIGNATURE_COPY = {
   replace: "Replace",
   remove: "Remove",
   removeQuestion: "Remove the signature? Invoices issued already keep theirs.",
-  wrongFile: "Use a PNG or JPEG image up to 256 KB and 2400 by 1200 pixels.",
+  // FX-3 (A6 1c): a larger image is now scaled down before it uploads, so the pixel limit leaves the line (07-Y, pending the owner).
+  wrongFile: Y("Use a PNG or JPEG image up to 256 KB."),
+  /** FX-3 (07-Y, pending): after an upload the browser scaled down; the designer places it. */
+  scaled: Y("We made the image smaller to fit 800 by 400 pixels."),
 } as const;
 
 /** After this long without a PDF the screen says so and offers "Try again" (07-P §3: "after 5 minutes"). */

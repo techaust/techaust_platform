@@ -37,7 +37,8 @@ describe("07-Q, word for word", () => {
     expect(convertedToCare("Sample Client A (sample)", null)).toBe(
       "Converted to a care plan for Sample Client A (sample).",
     );
-    expect(SIGNATURE_COPY.wrongFile).toBe("Use a PNG or JPEG image up to 256 KB and 2400 by 1200 pixels.");
+    // FX-3 (A6 1c): the pixel limit left the line once the browser scales the image down (07-Y, pending the owner)
+    expect(SIGNATURE_COPY.wrongFile).toBe("[Placeholder] Use a PNG or JPEG image up to 256 KB.");
     expect(termsLine(3)).toBe("The terms below are version 3 of our terms.");
     expect(OFFER_COPY.viewedHint).toBe(
       "Viewed means the link was opened. Email security scanners can open links too.",

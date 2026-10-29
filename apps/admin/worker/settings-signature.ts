@@ -6,7 +6,15 @@
 // It is printed only on invoices (from M5.2). Researched 2026-10-28, Rule 46(q) proviso CGST Rules (08-C RA-06): a signature is not required on an invoice issued electronically; the image is optional.
 // Nothing here executes or renders the image: the type is decided by the first bytes (no SVG, no scripts), and the download is an
 // attachment with a sandbox CSP.
-import { resolveSetting, SIGNATURE_MAX_BYTES, type SignatureRef } from "@techaust/core/settings";
+// FX-3 (A6 1c): at most 800 by 400 pixels (core SIGNATURE_MAX_WIDTH and _HEIGHT), read from the header (a PNG's IHDR, a JPEG's frame header), so the
+// check costs no decoding. The admin scales a bigger image down before it uploads (lib/signature-scale.ts); a stored signature is left as it is.
+import {
+  resolveSetting,
+  SIGNATURE_MAX_BYTES,
+  SIGNATURE_MAX_HEIGHT,
+  SIGNATURE_MAX_WIDTH,
+  type SignatureRef,
+} from "@techaust/core/settings";
 import { Hono } from "hono/tiny";
 import { type ApiError, type AppEnv, actor, BAD_REQUEST, err, mutate, NOT_FOUND } from "./context.ts";
 import { loadRow, upsert } from "./settings.ts";
@@ -16,15 +24,15 @@ const TOO_LARGE: ApiError = { code: "file_too_large", message: "The image is lar
 const NOT_AN_IMAGE: ApiError = { code: "type_not_allowed", message: "Use a PNG or a JPEG image" };
 const TOO_BIG_PIXELS: ApiError = {
   code: "image_too_big",
-  message: "The image is larger than 2400 by 1200 pixels",
+  message: `The image is larger than ${SIGNATURE_MAX_WIDTH} by ${SIGNATURE_MAX_HEIGHT} pixels`,
 };
 const STALE: ApiError = {
   code: "stale_version",
   message: "Someone else changed the company settings; try again",
 };
 
-const MAX_WIDTH = 2400;
-const MAX_HEIGHT = 1200;
+const MAX_WIDTH = SIGNATURE_MAX_WIDTH;
+const MAX_HEIGHT = SIGNATURE_MAX_HEIGHT;
 
 type Sniffed =
   | {

@@ -80,12 +80,13 @@ describe("sniffSignature", () => {
       height: 50,
     });
   });
-  it("refuses a JPEG over 2400 by 1200 pixels (a small file with a huge size in its header), one with no frame header, and a zero size", () => {
-    expect(sniffSignature(jpeg(0, 2401, 100))).toEqual({ ok: false, reason: "pixels" });
-    expect(sniffSignature(jpeg(0, 100, 1201))).toEqual({ ok: false, reason: "pixels" });
+  it("refuses a JPEG over 800 by 400 pixels (FX-3; a small file with a huge size in its header), one with no frame header, and a zero size", () => {
+    expect(sniffSignature(jpeg(0, 801, 100))).toEqual({ ok: false, reason: "pixels" });
+    expect(sniffSignature(jpeg(0, 100, 401))).toEqual({ ok: false, reason: "pixels" });
+    expect(sniffSignature(jpeg(0, 2400, 1200))).toEqual({ ok: false, reason: "pixels" }); // the bound before FX-3
     expect(sniffSignature(jpeg(0, 65535, 65535))).toEqual({ ok: false, reason: "pixels" });
     expect(sniffSignature(jpeg(0, 0, 10))).toEqual({ ok: false, reason: "pixels" });
-    expect(sniffSignature(jpeg(0, 2400, 1200))).toMatchObject({ ok: true, width: 2400, height: 1200 });
+    expect(sniffSignature(jpeg(0, 800, 400))).toMatchObject({ ok: true, width: 800, height: 400 });
     expect(sniffSignature(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 7, 7, 7, 7]))).toEqual({
       ok: false,
       reason: "type",
@@ -104,9 +105,13 @@ describe("sniffSignature", () => {
     bad[12] = 0x58;
     expect(sniffSignature(bad)).toEqual({ ok: false, reason: "type" });
     expect(sniffSignature(png(0, 10))).toEqual({ ok: false, reason: "pixels" });
-    expect(sniffSignature(png(2401, 100))).toEqual({ ok: false, reason: "pixels" });
-    expect(sniffSignature(png(100, 1201))).toEqual({ ok: false, reason: "pixels" });
-    expect(sniffSignature(png(2400, 1200))).toMatchObject({ ok: true });
+    // FX-3 (A6 1c): the IHDR bound is 800 by 400, inclusive
+    expect(sniffSignature(png(801, 100))).toEqual({ ok: false, reason: "pixels" });
+    expect(sniffSignature(png(100, 401))).toEqual({ ok: false, reason: "pixels" });
+    expect(sniffSignature(png(2400, 1200))).toEqual({ ok: false, reason: "pixels" });
+    expect(sniffSignature(png(800, 400))).toMatchObject({ ok: true, width: 800, height: 400 });
+    expect(sniffSignature(png(800, 1))).toMatchObject({ ok: true });
+    expect(sniffSignature(png(1, 400))).toMatchObject({ ok: true });
   });
 });
 
@@ -160,6 +165,17 @@ describe("PUT /settings/signature", () => {
     const huge = await put(s, jpeg(0, 9000, 9000));
     expect(huge.status).toBe(415);
     expect((await json(huge)).error.code).toBe("image_too_big");
+    // FX-3 (A6 1c): a PNG one pixel past 800 by 400 is refused from its IHDR (the bound itself passes: see sniffSignature above)
+    for (const [w, h] of [
+      [801, 400],
+      [800, 401],
+    ] as const) {
+      const r = await put(s, png(w, h));
+      expect(r.status).toBe(415);
+      expect(await json(r)).toMatchObject({
+        error: { code: "image_too_big", message: "The image is larger than 800 by 400 pixels" },
+      });
+    }
     expect((await put(s, png(100, 100, 256 * 1024))).status).toBe(413);
     expect(
       (await call("/settings/signature", { cookie: s.cookie, method: "PUT", raw: new Uint8Array(0) })).status,

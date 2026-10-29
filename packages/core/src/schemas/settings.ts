@@ -75,6 +75,13 @@ const stateCode = z.enum(Object.keys(STATE_CODES) as [StateCode, ...StateCode[]]
  */
 export const SIGNATURE_MIMES = ["image/png", "image/jpeg"] as const;
 export const SIGNATURE_MAX_BYTES = 256 * 1024;
+/**
+ * FX-3 (A6 1c): the largest signature in pixels. The admin scales a bigger image down to fit (aspect kept, PNG out) before it uploads, and the
+ * API refuses a larger one from its header, so the PDF integrity check never inflates megabytes of pixels (jobs `pdf.ts`). A signature
+ * stored before FX-3 is left as it is.
+ */
+export const SIGNATURE_MAX_WIDTH = 800;
+export const SIGNATURE_MAX_HEIGHT = 400;
 export const signatureRef = z.strictObject({
   key: z.string().check(z.minLength(1), z.maxLength(120)),
   mime: z.enum(SIGNATURE_MIMES),

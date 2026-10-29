@@ -11,9 +11,11 @@ import { FieldError } from "../../components/ui.tsx";
 import {
   SIGNATURE_ACCEPT,
   SIGNATURE_COPY,
+  SIGNATURE_MAX,
   signatureErrorIsWrongFile,
   signatureFileOk,
 } from "../../lib/pdf.ts";
+import { browserImageIo, scaleSignature } from "../../lib/signature-scale.ts";
 
 /** "Remove the signature? Invoices issued already keep theirs.": the question is the dialog's title, the rest its body. */
 const [REMOVE_TITLE, REMOVE_BODY] = (() => {
@@ -54,7 +56,17 @@ export function SignatureControl(props: { initial: SignatureRef | null; adopt: (
     }
     setBusy(true);
     try {
-      const r = await signatureApi.put(file);
+      // FX-3 (A6 1c): larger than 800 by 400 pixels is drawn smaller first (PNG out, aspect kept); the API refuses a larger one.
+      const ready = await scaleSignature(file, browserImageIo);
+      if (!ready.ok) {
+        setError(SIGNATURE_COPY.wrongFile);
+        return;
+      }
+      if (ready.file.size > SIGNATURE_MAX) {
+        setError(SIGNATURE_COPY.wrongFile);
+        return;
+      }
+      const r = await signatureApi.put(ready.file);
       props.adopt(r.version);
       setSig(r.signature);
       setBroken(false);
