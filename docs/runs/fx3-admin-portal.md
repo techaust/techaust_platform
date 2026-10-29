@@ -681,3 +681,73 @@ Split so no two agents touch the same files:
 - **Designer** (`fix/fx3-fix-d`, after the FX-4 review frees the browser): items 1, 2, 3, 5, 10 and 11, plus Figures first on phones.
 
 Item 1's `wrongFile` line changes, a 07-Y amendment: "Use a PNG or JPEG image up to 10 MB. We store it as a PNG of up to 256 KB."
+
+### Fix round, builder report
+_(builder claude-opus-5-5/high, branch `fix/fx3-fix-b` from `origin/fix/fx3-admin-portal` 441e5ce0, 2026-10-29.)_
+
+#### Skills
+- `cloudflare:workers-best-practices`: loaded. It confirmed the approach of keeping the figures in one D1 batch (no extra round trip) and keeping every query typed against the generated `Env`. It changed no code.
+- `cloudflare:wrangler`: loaded for the Worker and D1 work. No config, binding or command changed, so it shaped nothing.
+- Not loaded:
+  - `cloudflare:workers-profiling`: no CPU budget or cold-start work.
+  - `frontend-design`: no screens.
+  - `code-review` / `security-review`: those are the reviewer's.
+
+#### Per item (one commit each)
+- **4, `698eb587`** `fix(leads)` [ADM-LEAD-03] (`apps/admin/worker/leads.ts`)
+  - The quote-answer checks now run only when the request **changes** currency, band or timeline. A request that sends the stored value unchanged changes nothing, so nothing is judged.
+  - Inside that check, the source rule comes first: a website lead's change is always 409 `lead_answers_fixed`. Only a manual lead's values reach the band and timeline checks.
+  - New test in `leads-api.test.ts`:
+    - a website lead holding an unknown band and timeline accepts an owner, name and phone edit;
+    - a manual lead with an unknown band accepts a company edit;
+    - on a website lead, `currency: "USD"`, `currency: null` and `timeline: "next-year"` are each 409 `lead_answers_fixed`, and nothing is written. Before this fix the first was a 400.
+- **6, `cce34bc0`** `refactor(documents)` [ADM-PROP-02]
+  - `apps/admin/worker/service-fill.ts`:
+    - `TEXT_TOKENS` is now `Object.keys(TEXT_TOKEN_KINDS)`.
+    - `TOKEN_FIELD` is a `Map` built by joining `GAP_FIELDS` with `TEXT_TOKEN_KINDS`: `service.<field>` maps to `<field>` when the kinds agree.
+    - A new test proves every token has its field, and that the field's section kind is the token's own kind.
+  - `packages/core/src/documents.ts`: `sectionsFromTemplate` takes each section's kind from `templateKinds`, and the missing required sections come from the same list.
+  - Behaviour is unchanged: the core documents tests (47) and the admin service-fill, documents and catalogue tests (129) pass unchanged.
+- **7, `132d0635`** `perf(offers, figures)` [POR-05, ADM-CLI-03, ADM-PRJ-05]
+  - **`REREAD_SQL`** (`apps/portal/worker/offer-sql.ts`) runs the "newest frozen version above" lookup once and joins that row by key (`LEFT JOIN documents l ON l.id = (…)`); `latest_id` and `latest_pdf` both come from it.
+    - New EXPLAIN test in `offer-routes.test.ts`: exactly one correlated subquery, `l` searched by primary key, no table scan.
+    - The existing `newer_version_pending` / `superseded` tests pass unchanged.
+  - **The figures reads** (`packages/db/src/reports.ts`):
+    - `CLIENT_FIGURES_SQL` now seeks with `d.client_id = (SELECT z.id FROM clients z WHERE z.id = ?1 AND z.anonymised_at IS NULL)`.
+    - `PROJECT_BILLED_SQL` does the same through the project's client.
+    - Once the client is anonymised the key is NULL, so SQLite skips the index seek and none of its documents is read.
+    - I tried a plain `NOT EXISTS` guard first. The VDBE dump showed it is checked once per index entry, and it still read 8 rows for 7 documents, so I replaced it.
+    - The batches in `figures.ts` and `projects.ts` keep one round trip and their `available: false` answers; only a comment changed in `figures.ts`.
+  - **Tests:**
+    - `figures.test.ts`: for an anonymised client the figures read returns no rows and reads at most 2 rows; for an anonymised client's project, at most 3 rows. With the documents read they would be 14 and 12.
+    - `packages/db/test/reports.test.ts`: the anonymised check is a non-correlated lookup by key. The existing index-seek assertions and the 200-document bound (≤ 402 rows) still hold.
+- **9, `62aa3943`** `test(compliance)` [ADM-SET-09] (`packages/core/test/verify-tags.test.ts`)
+  - The scan now also covers `tools/` and `.github/`, and the file types `.sql`, `.yml`, `.yaml`, `.sh` and `.ps1`.
+    - `.ps1` is my addition: `tools/` holds one PowerShell script, and leaving it out would leave a hole in "scan tools/".
+  - The migrations are skipped by their path only (`packages/db/migrations`), so a `.sql` file anywhere else is scanned.
+  - Dot folders below the tops and `node_modules`, `dist`, `coverage`, `generated`, `fonts` and `brand` are skipped as before.
+  - The count check (`NO_ROW_YET`) is unchanged; the widened scan found no new tag.
+  - New test: the scan reaches `tools/heavy.sh`, `.github/workflows/ci.yml` and `packages/db/src/triggers.ts`; no migration file is in it; the folder rule and the extension list behave as stated.
+
+#### Commands (heavy ones through `tools/heavy.sh`)
+- Per item:
+  - admin `leads-api.test.ts`: 32/32;
+  - core `documents.test.ts`: 47/47;
+  - admin service-fill, documents and catalogue: 129/129;
+  - portal `offer-routes.test.ts`: 63/63;
+  - db `reports.test.ts`: 26/26;
+  - admin figures and projects: 37/37;
+  - core `verify-tags.test.ts`: 3/3.
+- `pnpm exec biome check` on every changed file: clean.
+- **`pnpm check`**: exit 0 (`.logs/fx3b-check.log`). That covers lint, typecheck in every package, the web binding guard, the content lint, the Worker config guard, the SPA headers and the migration guard (52 migrations).
+- **`pnpm test`**: exit 0 with no timeouts (`.logs/fx3b-test.log`):
+  - core 1,801, db 471, email 128, pdf 340, auth 135;
+  - ui 469 (2 skipped), web 510 (17 skipped), portal 631, jobs 528, admin 3,349.
+
+#### Not verified
+- `pnpm build` was not run: no build was asked for, and the brief stays inside Worker code. So the Worker byte budget for these SQL-text changes isn't measured. They add a few hundred bytes to the admin API and portal bundles.
+- No staging or hosted check.
+- The rows-read figures come from local workerd D1 (miniflare), not from hosted D1.
+
+#### Open questions
+- None.
