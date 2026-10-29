@@ -90,7 +90,7 @@ Approved in the 2026-10-07 interview ([13-decisions.md](13-decisions.md)). No ne
 
 | Tool | Type | What it does | Access and limits |
 |---|---|---|---|
-| **builder** agent (`.claude/agents/builder.md`) | Claude Code subagent (Sonnet) | Writes code and tests for one task from a brief in `docs/runs/` | Its own git worktree; never touches hosted services, never pushes |
+| **builder** agent (`.claude/agents/builder.md`) | Claude Code subagent (Opus 5.5, high) | Writes code and tests for one task from a brief in `docs/runs/` | Its own git worktree; never touches hosted services, never pushes |
 | **reviewer** agent (`.claude/agents/reviewer.md`) | Claude Code subagent (Opus, high effort) | Reviews each task before it merges | Read-only |
 | Git worktrees | Built in (`isolation: "worktree"`) | A separate copy of the repo per builder or designer, in `.claude/worktrees/` (git-ignored) | Local disk only |
 | Monitor tool | Built in | Runs `tools/watch.sh` and wakes the lead only on an event | Local only |
@@ -103,23 +103,23 @@ Approved with the models and usage plan ([14-models-and-usage.md](14-models-and-
 
 | Tool | Type | What it does | Access and limits |
 |---|---|---|---|
-| **code-finder** agent (`.claude/agents/code-finder.md`) | Claude Code subagent (Haiku 5.5, low effort, skips CLAUDE.md) | Answers "where is X"; replaces the built-in Explore, Plan and general-purpose agents (Opus; the hook now refuses them) | Read-only (Read, Glob, Grep) |
-| **test-runner** agent (`.claude/agents/test-runner.md`) | Claude Code subagent (Haiku 5.5, low effort, skips CLAUDE.md) | Runs one suite through `tools/heavy.sh --log` and reports only the failures | Runs commands; changes no files; never staging or production |
-| **doc-clerk** agent (`.claude/agents/doc-clerk.md`) | Claude Code subagent (Haiku 5.5, medium effort, skips CLAUDE.md) | Drafts CHANGELOG lines, status tables and link fixes | Edits only `CHANGELOG.md`, `docs/12-status.md` and relative links; the lead checks the diff |
+| **code-finder** agent (`.claude/agents/code-finder.md`) | Claude Code subagent (Opus 5.5, high, skips CLAUDE.md) | Answers "where is X"; replaces the built-in Explore, Plan and general-purpose agents (Opus; the hook now refuses them) | Read-only (Read, Glob, Grep) |
+| **test-runner** agent (`.claude/agents/test-runner.md`) | Claude Code subagent (Opus 5.5, high, skips CLAUDE.md) | Runs one suite through `tools/heavy.sh --log` and reports only the failures | Runs commands; changes no files; never staging or production |
+| **doc-clerk** agent (`.claude/agents/doc-clerk.md`) | Claude Code subagent (Opus 5.5, high, skips CLAUDE.md) | Drafts CHANGELOG lines, status tables and link fixes | Edits only `CHANGELOG.md`, `docs/12-status.md` and relative links; the lead checks the diff |
 | `tools/heavy.sh --log <name>` | Repo script option | Writes the full output to `.logs/<name>.log` and prints only the exit code and last 40 lines | Local only; `*.log` is git-ignored |
 | Usage tool (`get_usage`) | Built in (desktop app) | Reads the plan's weekly and 5-hour usage for the budget gate | Read-only |
 
 The **builder** and **reviewer** rows in §9 still apply; their model and effort follow [14 §3](14-models-and-usage.md), and each agent's tools are a fixed list.
 
-## 11. The three-model plan (2026-10-12, owner-approved)
-Approved with the replacement of [14-models-and-usage.md](14-models-and-usage.md): only Opus 5.5, Sonnet 5.5 and Haiku 5.5, and Opus designs and builds every screen. No new packages, plugins or MCP servers: these are agent files, project settings and scripts in this repo, plus an update of the existing Claude Code command-line copy.
+## 11. The model plan (2026-10-12; since 2026-10-29: Opus 5.5 at high for every task, owner)
+Approved with the replacement of [14-models-and-usage.md](14-models-and-usage.md) on 2026-10-12: only Opus 5.5, Sonnet 5.5 and Haiku 5.5, and Opus designs and builds every screen. **Replaced on 2026-10-29 (owner): Opus 5.5 at high for every task; the Sonnet and Haiku aliases point at Opus; the budget gate is 95 %.** No new packages, plugins or MCP servers: these are agent files, project settings and scripts in this repo, plus an update of the existing Claude Code command-line copy.
 
 | Tool | Type | What it does | Access and limits |
 |---|---|---|---|
 | **designer** agent (`.claude/agents/designer.md`) | Claude Code subagent (Opus 5.5, high) | Designs and builds every screen, page, component, PDF layout and email template, and checks its own screenshots | Builder's tools plus the Playwright browser tools (T4); local dev servers only; screenshots in `.logs/shots/` (git-ignored) |
 | **analyst** agent (`.claude/agents/analyst.md`) | Claude Code subagent (Opus 5.5, high) | Drafts Tier A briefs, early checks, risky-merge plans, failure diagnoses and phase plans for the lead | Read-only (Read, Grep, Glob, Bash for git reads and tests) |
 | **reviewer** agent (updated) | Claude Code subagent (Opus 5.5, high) | Adds a visual review whenever there are screens | Gains the Playwright browser tools; still changes no code |
-| `.claude/settings.json` | Project settings (committed) | Pins the `opus` / `sonnet` / `haiku` aliases to the 5.5 model IDs, allows only those three models, sets effort medium, wires the hook | Local; contains no secrets |
+| `.claude/settings.json` | Project settings (committed) | Points the `opus` / `sonnet` / `haiku` aliases at `claude-opus-5-5`, allows only that model, sets effort high (2026-10-29), wires the hook | Local; contains no secrets |
 | `tools/model-guard.mjs` | Repo script (Claude Code `PreToolUse` hook, Node) | Refuses agents on other models, effort xhigh/max, or the built-in Explore/Plan/general-purpose/`claude` agents; tells the lead its effort level | Local only; reads the hook input, writes one small file per session in the temp folder |
 | `tools/model-audit.mjs` | Repo script (Node) | Lists each run's model and effort from its own log and flags anything outside the plan; run at the end of each day | Reads only this project's local Claude Code logs; prints no message content |
 | Claude Code command-line copy | Existing tool, updated | 2.1.288 → 2.1.295 (the version the app runs; Haiku 5.5 needs 2.1.293+) | Updated with the owner's approval, 2026-10-12 |

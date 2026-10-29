@@ -1,19 +1,20 @@
 // Claude Code hook (PreToolUse, matcher "Agent|Bash"), wired in .claude/settings.json.
 // Enforces docs/14-models-and-usage.md §6:
-// - Agent: refuses a model other than Opus, Sonnet or Haiku 5.5, effort xhigh/max, and the built-in
+// - Agent: refuses a model other than Opus 5.5, an effort other than high (owner, 2026-10-29: Opus 5.5 at high for every task),
+//   and the built-in
 //   Explore, Plan, general-purpose and catch-all agents (they run on the lead's Opus), named in any case, and a call with
 //   no subagent_type at all (that starts general-purpose). Tested by apps/web/test/model-guard.test.ts.
 // - Bash in the lead's own conversation: tells the lead its effort level the first time and whenever
-//   it changes, so the start-of-day check can confirm "medium".
+//   it changes, so the start-of-day check can confirm "high".
 // Prints nothing when there is nothing to say; never blocks Bash.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const MODELS = ["opus", "sonnet", "haiku", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
-const EFFORTS = ["low", "medium", "high"];
+const MODELS = ["opus", "claude-opus-5-5"];
+const EFFORTS = ["high"];
 const BANNED = ["Explore", "Plan", "general-purpose", "claude"];
-const RULE = "Allowed: Opus, Sonnet and Haiku 5.5, effort low to high (docs/14-models-and-usage.md).";
+const RULE = "Allowed: Opus 5.5 at high effort, for every task (docs/14-models-and-usage.md).";
 
 const out = (o) => console.log(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", ...o } }));
 const deny = (why) => out({ permissionDecision: "deny", permissionDecisionReason: `${why}. ${RULE}` });
@@ -55,7 +56,7 @@ if (input.tool_name === "Agent") {
     } catch {
       // reporting still works without the marker; it just repeats next time
     }
-    const note = level === "medium" ? "as the plan says" : "the plan says medium: tell the owner";
+    const note = level === "high" ? "as the plan says" : "the plan says high: tell the owner";
     out({ additionalContext: `Lead effort level: ${level} (${note}).` });
   }
 }
