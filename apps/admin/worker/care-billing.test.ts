@@ -1029,11 +1029,15 @@ describe("GET /care-plans/:id billing [M5.4 API gaps, Q3]", () => {
     });
   });
 
-  it("a period due and unbilled: today before the 06:00 IST scan, tomorrow once the scan's hour has begun (review 2026-10-28, finding 11)", async () => {
+  it("a period due and unbilled: today until the day's last scan (08:00 IST) has begun, tomorrow from then on (review 2026-10-28, finding 11; FX-3: the 07:00 and 08:00 repeats can still draft it)", async () => {
     const w = await world();
     clock(at("2026-11-05", "05:59:59.000"));
     expect((await plan(w.planId)).billing.nextBillingDay).toBe("2026-11-05");
     clock(at("2026-11-05", "06:00:00.000"));
+    expect((await plan(w.planId)).billing.nextBillingDay).toBe("2026-11-05");
+    clock(at("2026-11-05", "07:59:59.000"));
+    expect((await plan(w.planId)).billing.nextBillingDay).toBe("2026-11-05");
+    clock(at("2026-11-05", "08:00:00.000"));
     expect((await plan(w.planId)).billing.nextBillingDay).toBe("2026-11-06");
     clock(at("2026-11-05", "23:30:00.000"));
     expect((await plan(w.planId)).billing.nextBillingDay).toBe("2026-11-06");

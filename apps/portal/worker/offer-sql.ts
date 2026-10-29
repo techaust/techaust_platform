@@ -109,17 +109,25 @@ export const DECLINE_UPDATE_SQL = `UPDATE documents AS d SET status = 'rejected'
 /** The decline's audit row, directly after the UPDATE (guarded by `changes()`): the reason CODE, never the note. ?1 client, ?2 document, ?3 contact, ?7 reason, ?9 via, ?10 ip, ?11 ua, ?14 audit id, ?15 request id. */
 export const DECLINE_AUDIT_SQL = `INSERT INTO audit_log (id, actor_type, actor_id, role, action, entity_type, entity_id, summary, ip, user_agent, request_id) SELECT ?14, 'contact', ?3, NULL, 'document.decline', 'document', d.id, json_object('documentId', d.id, 'version', d.version, 'reason', ?7, 'via', ?9), ?10, ?11, ?15 FROM documents d WHERE d.id = ?2 AND d.client_id = ?1 AND changes() > 0`;
 
+/** The id of the newest frozen version of `d`'s group above `d` (rendered or not), looked up once and joined by primary key. */
+const NEWEST_ABOVE_ID =
+  "(SELECT n.id FROM documents n WHERE n.version_group_id = d.version_group_id AND n.version > d.version AND n.frozen_at IS NOT NULL ORDER BY n.version DESC LIMIT 1)";
+
 /**
  * When an accept or a decline wrote nothing: one read that picks the reason. ?1 client, ?2 document, ?3 the link's group (null on a session):
- * a link never learns the state of another offer of the same organisation.
+ * a link never learns the state of another offer of the same organisation. `latest_id` is the newest frozen version above this one and
+ * `latest_pdf` its PDF hash: null while that version is still being rendered (FX-3, A4 9: `newer_version_pending`, not a `superseded` that
+ * would point at a page the portal cannot show yet). Both come from one row `l`, found by one lookup (FX-3 fix round, item 7).
  */
-export const REREAD_SQL = `SELECT d.status, d.pdf_sha256, d.valid_until, (SELECT n.id FROM documents n WHERE n.version_group_id = d.version_group_id AND n.version > d.version AND n.frozen_at IS NOT NULL ORDER BY n.version DESC LIMIT 1) AS latest_id, a.typed_name, a.email AS a_email, a.accepted_at, a.contact_id AS a_contact, a.pdf_sha256 AS a_sha FROM documents d LEFT JOIN acceptances a ON a.document_id = d.id WHERE d.id = ?2 AND d.client_id = ?1 AND (?3 IS NULL OR d.version_group_id = ?3) AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL`;
+export const REREAD_SQL = `SELECT d.status, d.pdf_sha256, d.valid_until, l.id AS latest_id, l.pdf_sha256 AS latest_pdf, a.typed_name, a.email AS a_email, a.accepted_at, a.contact_id AS a_contact, a.pdf_sha256 AS a_sha FROM documents d LEFT JOIN documents l ON l.id = ${NEWEST_ABOVE_ID} LEFT JOIN acceptances a ON a.document_id = d.id WHERE d.id = ?2 AND d.client_id = ?1 AND (?3 IS NULL OR d.version_group_id = ?3) AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL`;
 
 export type Reread = {
   status: string;
   pdf_sha256: string | null;
   valid_until: string | null;
   latest_id: string | null;
+  /** The newest version's PDF hash; null while it is being rendered. Absent in rows read before FX-3 (treated as rendered). */
+  latest_pdf?: string | null;
   typed_name: string | null;
   a_email: string | null;
   accepted_at: number | null;
@@ -132,6 +140,8 @@ export type Refusal =
   | { code: "not_found"; status: 404 }
   | { code: "pdf_pending"; status: 409 }
   | { code: "superseded"; status: 409; latestId: string }
+  /** FX-3 (A4 9): a newer version is frozen but its PDF is not made yet, so there is nothing to open; try again shortly. */
+  | { code: "newer_version_pending"; status: 409 }
   | { code: "expired"; status: 409 }
   | { code: "already_accepted"; status: 409; name: string; at: number }
   | { code: "already_decided"; status: 409 };
@@ -145,8 +155,9 @@ export type Replay = {
 };
 
 /**
- * The reason, in this order: not found, the PDF not ready, superseded, an acceptance on this very version (a safe replay for the same
- * contact, a refusal for another), declined, expired. An accepted offer is final, so its acceptance comes before the date check.
+ * The reason, in this order: not found, an acceptance on this very version (a safe replay for the same contact, a refusal for another), the PDF
+ * not ready, a newer version (still being rendered: `newer_version_pending`; rendered: `superseded` with its id), declined, expired. An accepted
+ * offer is final, so its acceptance comes before the date check.
  */
 export function refusalOf(r: Reread | null, contactId: string, today: string): Refusal | Replay {
   if (!r) return { code: "not_found", status: 404 };
@@ -162,7 +173,10 @@ export function refusalOf(r: Reread | null, contactId: string, today: string): R
     return { code: "already_accepted", status: 409, name: r.typed_name, at: r.accepted_at };
   }
   if (r.pdf_sha256 === null) return { code: "pdf_pending", status: 409 };
-  if (r.latest_id !== null) return { code: "superseded", status: 409, latestId: r.latest_id };
+  if (r.latest_id !== null)
+    return r.latest_pdf === null
+      ? { code: "newer_version_pending", status: 409 }
+      : { code: "superseded", status: 409, latestId: r.latest_id };
   if (r.status === "rejected") return { code: "already_decided", status: 409 };
   if (r.status === "expired" || (r.valid_until !== null && r.valid_until < today))
     return { code: "expired", status: 409 };

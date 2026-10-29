@@ -1,9 +1,14 @@
 // The Leads screens' pure helpers [ADM-LEAD-02, -03, -06]: labels, the next-action day, timeline rows and reply gaps.
 import { formatIstDateTime } from "@techaust/core/dates";
+import { budgetBandLabel, TIMELINE_LABELS } from "@techaust/core/form-labels";
 import { LOST_REASONS as CORE_REASONS, LEAD_STAGES } from "@techaust/core/lead-lifecycle";
 import { hasUnfilledGap, REPLY_TEMPLATES } from "@techaust/core/reply-templates";
 import { describe, expect, it } from "vitest";
+import { ANSWERS_COPY, type Answers, answersPatch, withCurrency } from "../routes/leads/answers.tsx";
+import { Y } from "./copy-y.ts";
+import { relative, when } from "./format.ts";
 import {
+  answerText,
   countryOptions,
   dateToMs,
   daysUntil,
@@ -39,6 +44,47 @@ describe("labels", () => {
     for (const bad of ["UN", "EU", "EZ", "UK", "XA", "QO"])
       expect(c.some((x) => x.value === bad)).toBe(false);
   });
+
+  it("FX-3: a timeline row shows a band and a timeline in the quote form's words, never the code", () => {
+    expect(answerText("budget_band", "3l-7l")).toBe(budgetBandLabel("INR", "3l-7l"));
+    expect(answerText("budget_band", "5k-15k")).toBe(budgetBandLabel("USD", "5k-15k"));
+    expect(answerText("budget_band", "3l-7l")).not.toContain("3l");
+    expect(answerText("budget_band", "not-sure")).toBe("Not sure");
+    expect(answerText("timeline", "1-3-months")).toBe(TIMELINE_LABELS["1-3-months"]);
+    expect(answerText("currency", "USD")).toBe("USD");
+    expect(answerText("phone", "+91 1")).toBe("+91 1");
+  });
+});
+
+describe("a manual lead's quote answers (FX-3, A3 8)", () => {
+  const none: Answers = { currency: "", band: "", timeline: "" };
+  it("a new currency keeps a band only when that currency has it", () => {
+    const inr: Answers = { currency: "INR", band: "3l-7l", timeline: "asap" };
+    expect(withCurrency(inr, "USD")).toEqual({ currency: "USD", band: "", timeline: "asap" });
+    expect(withCurrency({ ...inr, band: "not-sure" }, "USD").band).toBe("not-sure");
+    expect(withCurrency(inr, "")).toEqual({ currency: "", band: "", timeline: "asap" });
+    expect(withCurrency(inr, "INR")).toEqual(inr);
+  });
+  it("a save sends only what changed; a changed currency carries the band it ends with", () => {
+    const base: Answers = { currency: "INR", band: "3l-7l", timeline: "asap" };
+    expect(answersPatch(base, base)).toEqual({});
+    expect(answersPatch(base, { ...base, timeline: "exploring" })).toEqual({ timeline: "exploring" });
+    expect(answersPatch(base, { ...base, band: "" })).toEqual({ budgetBand: null });
+    expect(answersPatch(base, { currency: "USD", band: "", timeline: "asap" })).toEqual({
+      currency: "USD",
+      budgetBand: null,
+    });
+    expect(answersPatch(none, { currency: "USD", band: "2k-5k", timeline: "" })).toEqual({
+      currency: "USD",
+      budgetBand: "2k-5k",
+    });
+  });
+  it("the two new lines are 07-Y lines, marked until the owner approves them", () => {
+    expect(ANSWERS_COPY.chooseCurrencyFirst).toBe(Y("Choose a currency first."));
+    expect(ANSWERS_COPY.answersFixed).toBe(
+      Y("These answers came from the website form and can't be changed."),
+    );
+  });
 });
 
 describe("the next-action day (stored as the last moment of the IST day)", () => {
@@ -49,6 +95,19 @@ describe("the next-action day (stored as the last moment of the IST day)", () =>
     expect(formatIstDateTime(ms as number)).toContain("23:59");
     expect(dateToMs("2026-02-30")).toBeNull();
     expect(msToDate(null)).toBe("");
+  });
+
+  it("FX-3 (A3 10): prints as the day alone, never '23:59 IST', with a relative day; a real time keeps its clock", () => {
+    const ms = dateToMs("2026-10-25") as number;
+    expect(when(ms)).toBe("25 Oct 2026");
+    const noonIst = Date.parse("2026-10-26T12:00:00+05:30");
+    expect(relative(ms, noonIst)).toBe("yesterday");
+    expect(relative(ms, Date.parse("2026-10-25T09:00:00+05:30"))).toBe("today");
+    expect(relative(ms, Date.parse("2026-10-22T23:00:00+05:30"))).toBe("in 3 days");
+    expect(relative(ms, Date.parse("2026-11-25T12:00:00+05:30"))).toBe("last month");
+    const real = Date.parse("2026-10-25T14:05:00+05:30");
+    expect(when(real)).toBe("25 Oct 2026, 14:05 IST");
+    expect(relative(real, real + 12 * 60_000)).toBe("12 minutes ago");
   });
 
   it("days until a moment round up", () => {

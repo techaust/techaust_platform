@@ -915,7 +915,8 @@ describe("approval.notify for an issue request [ADM-APR-01, ADM-MAIL-01; 07-R §
     expect(queued).toEqual([]);
   });
 
-  it("the email consumer sends each once (a redelivery is a duplicate)", async () => {
+  // 30 s: it issues, renders and sends through the whole pipeline; at 5 s it timed out when every package ran at once (FX-3 round 3).
+  it("the email consumer sends each once (a redelivery is a duplicate)", { timeout: 30_000 }, async () => {
     const w = await world();
     const a = await issueRequest(w);
     const e = makeEnv();

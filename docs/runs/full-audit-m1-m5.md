@@ -394,7 +394,12 @@ Shots: `.logs/shots/a5-invoicing/` (main checkout).
   - A6 8: explicit deploy order plus `/healthz` smoke checks;
   - A6 9: Traces.
 - **Owner's question:** A0 3, voiding an invoice the client has already viewed.
-- **Re-check:** after the fix tasks, a final sweep by a reviewer at all widths and in both themes, covering the screens A3 left out.
+- **Final sweep (owner, 2026-10-29):** after the fix tasks, one reviewer sweep of **all three front ends together: the public website, the admin and the portal**:
+  - every page and screen at 375, 768, 1024, 1280 and 1600 px;
+  - both themes, and the in-app theme against the OS theme;
+  - empty, loading and error states;
+  - axe, keyboard, the CSP, sideways scroll and text size;
+  - the screens A3 left out.
 
 ## Handover
 _(written at the end of each conversation)_

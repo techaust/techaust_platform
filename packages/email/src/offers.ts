@@ -168,7 +168,8 @@ export type ApprovalDecidedData = {
 export function approvalDecided(d: ApprovalDecidedData, opts: LayoutOptions): Rendered {
   const subject = headerValue(`${d.decision}: ${d.title} v${d.version}`);
   const before: Para[] = [
-    para(`${d.approver_name} has ${d.decision} your request for ${d.title} v${d.version}.`),
+    // FX-3 (A4 5): the decision is lower case mid-sentence ("has approved"); the subject keeps its capital ("Approved: …").
+    para(`${d.approver_name} has ${d.decision.toLowerCase()} your request for ${d.title} v${d.version}.`),
   ];
   if (d.decision_note) before.push(para(`Note: ${sentence(d.decision_note)}`));
   return securityEmail(subject, opts, { before, action: { label: "Open in admin", url: d.admin_url } });

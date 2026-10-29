@@ -17,7 +17,9 @@ import {
   type GuardLine,
   guardFigures,
   isQuoteType,
+  joinedPastLimit,
   MAX_SECTIONS,
+  misplacedTextTokens,
   REQUIRED_SECTIONS,
   SECTION_BODY_MAX,
   SECTIONS_TOTAL_MAX,
@@ -25,6 +27,8 @@ import {
   sectionsFromTemplate,
   snapshotHeader,
   snapshotSha256,
+  TEXT_TOKEN_KINDS,
+  templateKinds,
   UNRESOLVED_RE,
   unresolvedIn,
   validUntil,
@@ -391,6 +395,100 @@ describe("sectionsFromTemplate", () => {
   it("a surplus section with no text adds only its heading", () => {
     const out = sectionsFromTemplate([r("a"), r("b"), r("c"), r("d", "D", "")]);
     expect(out.filter((s) => s.kind === "custom").at(-1)?.bodyMd).toBe("t\n\n**D**");
+  });
+});
+
+describe("FX-3 round 3, Q3: the Catalogue-text placeholders only in their own sections' text [ADM-CAT-03]", () => {
+  const t = (key: string, body: string, heading = key) => ({ key, heading, body });
+
+  it("allowed in their own sections' text, with any other placeholder anywhere", () => {
+    expect(
+      misplacedTextTokens([
+        t("cover", "{{client.name}} {{service.name}}", "For {{client.name}}"),
+        t("deliverables", "Intro\n{{service.deliverables}}"),
+        t("assumptions_exclusions", "{{service.assumptions}}\n{{ service.exclusions }}"),
+      ]),
+    ).toEqual([]);
+    expect(TEXT_TOKEN_KINDS).toEqual({
+      "service.deliverables": "deliverables",
+      "service.assumptions": "assumptions_exclusions",
+      "service.exclusions": "assumptions_exclusions",
+    });
+  });
+
+  it("named in another section's text, in a custom or repeated section, and in any heading", () => {
+    expect(
+      misplacedTextTokens([
+        t("scope", "{{service.deliverables}} and {{service.exclusions}}"),
+        t("deliverables", "{{service.assumptions}}"),
+        t("deliverables", "{{service.deliverables}}"),
+        t("extra", "{{service.exclusions}}"),
+        t("assumptions_exclusions", "", "Notes on {{service.assumptions}}"),
+      ]),
+    ).toEqual([
+      { index: 0, name: "service.deliverables", part: "body" },
+      { index: 0, name: "service.exclusions", part: "body" },
+      { index: 1, name: "service.assumptions", part: "body" },
+      { index: 2, name: "service.deliverables", part: "body" },
+      { index: 3, name: "service.exclusions", part: "body" },
+      { index: 4, name: "service.assumptions", part: "heading" },
+    ]);
+  });
+});
+
+describe("FX-3 round 3, Q2: a template whose joined custom sections pass 6,000 characters [ADM-CAT-03]", () => {
+  const t = (key: string, body: string, heading = key) => ({ key, heading, body });
+  const text = (n: number) => "w".repeat(n);
+
+  it("templateKinds places sections as a draft does: a repeated or unknown key is custom", () => {
+    expect(
+      templateKinds([t("scope", ""), t("scope", ""), t("x", ""), t("custom", ""), t("estimate", "")]),
+    ).toEqual(["scope", "custom", "custom", "custom", "estimate"]);
+  });
+
+  it("names the third custom section and every one after it when their joined text passes the limit", () => {
+    const sections = [
+      t("cover", text(2_000)),
+      t("a", text(100)),
+      t("b", text(100)),
+      t("c", text(2_000)),
+      t("d", text(2_000)),
+      t("e", text(2_000)),
+    ];
+    expect(joinedPastLimit(sections)).toEqual([3, 4, 5]);
+    // the same text a draft stores, so the draft's section is the one that passes
+    const drafts = sectionsFromTemplate(
+      sections.map((s) => ({ key: s.key, heading: s.heading, text: s.body })),
+    );
+    expect((drafts.filter((d) => d.kind === "custom").at(-1)?.bodyMd ?? "").length).toBeGreaterThan(
+      SECTION_BODY_MAX,
+    );
+  });
+
+  it("nothing is named while the joined text fits, or nothing is joined", () => {
+    expect(joinedPastLimit([t("a", text(2_000)), t("b", text(2_000)), t("c", text(2_000))])).toEqual([]);
+    expect(
+      joinedPastLimit([
+        t("a", text(100)),
+        t("b", text(100)),
+        t("c", text(2_000)),
+        t("d", text(2_000)),
+        t("e", ""),
+      ]),
+    ).toEqual([]);
+    expect(joinedPastLimit([])).toEqual([]);
+  });
+
+  it("the heading added for each joined section counts", () => {
+    // 2,000 + 2,000 + 1,960 = 5,960 characters of text; the two joined headings and their breaks take it past 6,000
+    const sections = [
+      t("a", ""),
+      t("b", ""),
+      t("c", text(2_000)),
+      t("d", text(2_000), "D".repeat(30)),
+      t("e", text(1_960), "E".repeat(30)),
+    ];
+    expect(joinedPastLimit(sections)).toEqual([2, 3, 4]);
   });
 });
 

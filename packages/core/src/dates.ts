@@ -80,6 +80,20 @@ export function formatIstDateTime(utcMs: number): string {
   return `${formatDate(t)}, ${pad(t.hour)}:${pad(t.minute)} IST`;
 }
 
+/**
+ * A date-only moment (FX-3, A3 10; ADM-LEAD-03: a lead's next action is a day, not a time) is stored as the last millisecond of its IST day, so it is
+ * "due" all that day and overdue from the next. `istDayEnd` makes one; `isIstDayEnd` tells one apart from a real time.
+ */
+export const istDayEnd = (date: CalendarDate): number => fromIst(date, 23, 59, 59) + 999;
+export function isIstDayEnd(utcMs: number): boolean {
+  assertMs(utcMs);
+  return (((utcMs + IST_OFFSET_MS + 1) % DAY_MS) + DAY_MS) % DAY_MS === 0;
+}
+
+/** "06 Oct 2026" for a date-only moment (`isIstDayEnd`), else "06 Oct 2026, 14:05 IST": never "23:59 IST" for a day. */
+export const formatIstMoment = (utcMs: number): string =>
+  isIstDayEnd(utcMs) ? formatDate(istDate(utcMs)) : formatIstDateTime(utcMs);
+
 /** An Indian financial year, named by the calendar year it starts in (FY 2026-27 → 2026). */
 export type FinancialYear = {
   readonly startYear: number;

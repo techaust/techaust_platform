@@ -150,7 +150,7 @@ describe("clients_currency_locked [ADM-CLI-01]", () => {
   });
 });
 
-describe("clients_state_check [owner Q1, VERIFY WITH CA/LEGAL]", () => {
+describe("clients_state_check [owner Q1; Researched 2026-10-28, s.12 IGST (08-C RA-12)]", () => {
   it("registered and unregistered clients need a two-digit state code on insert", async () => {
     await rejects(newClient({ state_code: null }).insert(), /needs a state code/);
     await rejects(newClient({ state_code: "WB" }).insert(), /needs a state code/);

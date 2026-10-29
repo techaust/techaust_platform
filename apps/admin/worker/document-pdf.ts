@@ -1,7 +1,7 @@
 // The PDF of a sent proposal or estimate (M4.4; JOB-PDF-01, ADM-PROP-04): staff download it, and may ask for it to be made again.
 // The jobs Worker makes it (envelope in R2, then the render); this Worker only READS the bucket (`DOCS`) and enqueues. Streamed through the
-// session check: an attachment, never rendered by the browser, never cached, never sniffed. VERIFY WITH CA/LEGAL: the PDF is the
-// evidence an acceptance is tied to; its retention is the owner's decision (run file).
+// session check: an attachment, never rendered by the browser, never cached, never sniffed. Researched 2026-10-28, BSA 2023 s.63(4) (08-C RB-19):
+// the PDF is the evidence an acceptance is tied to (its SHA-256, an immutable copy); its retention is the owner's decision (run file).
 import { contentDisposition } from "@techaust/core/file-types";
 import { fyLabelOfToken, hasSupplierCopy, supplierPdfKey } from "@techaust/core/pdf-jobs";
 import { Hono } from "hono/tiny";

@@ -1,4 +1,4 @@
-// Sales register and output tax (M5.5b; ADM-REP-04, LD71, LD83; VERIFY WITH CA/LEGAL): a range inside one financial year, read from the same register
+// Sales register and output tax (M5.5b; ADM-REP-04, LD71, LD83; Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23)): a range inside one financial year, read from the same register
 // route as the GST files (a fresh code when the server asks, one audit row per page). The screen previews the output tax by supply and rate (the figures
 // a CA checks first) and offers the three files; the 3B figures only when the range is one whole month or quarter (core's 3B is per return period).
 import { fyOf, istDate, toIsoDate } from "@techaust/core/dates";

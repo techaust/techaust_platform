@@ -320,8 +320,19 @@ export function placeholdersOf(body: string): string[] {
   return [...new Set([...body.matchAll(PLACEHOLDER_RE)].map((m) => m[1] as string))];
 }
 
-/** Options of `renderTemplate`: `empty` names placeholders that are known to have NO text (unlike an unknown one, which stays in the text). */
-export type RenderOptions = { readonly empty?: ReadonlySet<string> | undefined };
+/**
+ * Options of `renderTemplate`:
+ *   - `empty` names placeholders that are known to have NO text (unlike an unknown one, which stays in the text);
+ *   - `max` bounds the length of the text (FX-3 round 3, docs/13 2026-10-29): when filling every value would take the text past it, the
+ *     values are filled in order and one that would take it past `max` stays unfilled, as written (the send check then names it, and the
+ *     person shortens the text). A text no longer than `max` before the fill is never longer after it;
+ *   - `unbounded` names placeholders `max` never holds back (they are always filled; the caller bounds them its own way).
+ */
+export type RenderOptions = {
+  readonly empty?: ReadonlySet<string> | undefined;
+  readonly max?: number | undefined;
+  readonly unbounded?: ReadonlySet<string> | undefined;
+};
 
 /** The text without its empty placeholders: a line that holds only such placeholders goes, in a mixed line only the placeholder goes. */
 function dropEmpty(body: string, empty: ReadonlySet<string>): string {
@@ -344,7 +355,8 @@ function dropEmpty(body: string, empty: ReadonlySet<string>): string {
  * Fills the placeholders from `data` (a flat map of `client.name`-style keys). A placeholder with no value (missing, null or empty)
  * stays in the text exactly as written and is listed in `unresolved`, so the caller can refuse to send it. A placeholder named in
  * `options.empty` is different: it is known to have no text, so it is taken out (its whole line when the line holds nothing else)
- * and is not unresolved. A name in `empty` that `data` does fill is filled.
+ * and is not unresolved. A name in `empty` that `data` does fill is filled. With `options.max`, a value that would take the text past it
+ * stays as written and is listed in `unresolved` too (see `RenderOptions`).
  */
 export function renderTemplate(
   body: string,
@@ -353,16 +365,55 @@ export function renderTemplate(
 ): { text: string; unresolved: string[] } {
   const unresolved = new Set<string>();
   const empty = options.empty;
-  const filled = body.replace(PLACEHOLDER_RE, (whole, name: string) => {
+  const valueFor = (name: string): string | null => {
     const v = data[name];
-    if (v === undefined || v === null || v === "") {
+    return v === undefined || v === null || v === "" ? null : String(v);
+  };
+  const held = heldBack(body, valueFor, options);
+  let at = 0;
+  const filled = body.replace(PLACEHOLDER_RE, (whole, name: string) => {
+    const n = at++;
+    const v = valueFor(name);
+    if (v === null) {
       if (!empty?.has(name)) unresolved.add(name);
       return whole;
     }
-    return String(v);
+    if (held.has(n)) {
+      unresolved.add(name);
+      return whole;
+    }
+    return v;
   });
-  const text = empty && empty.size > 0 ? dropEmpty(filled, empty) : filled;
+  // Only a placeholder with no value is taken out as empty: one held back by `max` has a value and stays, as written.
+  const drop = empty ? new Set([...empty].filter((name) => valueFor(name) === null)) : null;
+  const text = drop && drop.size > 0 ? dropEmpty(filled, drop) : filled;
   return { text, unresolved: [...unresolved] };
+}
+
+/**
+ * The placeholders `max` holds back, by their place in the text (0 = the first `{{…}}`). None while filling every value keeps the text
+ * within `max`; otherwise, in order, a value that would take the text past `max` is held back (one that shortens it, or a name in
+ * `unbounded`, is always filled). Counted before empty placeholders are taken out, which only shortens the text.
+ */
+function heldBack(
+  body: string,
+  valueFor: (name: string) => string | null,
+  options: RenderOptions,
+): Set<number> {
+  const out = new Set<number>();
+  const max = options.max;
+  if (max === undefined) return out;
+  const deltas = [...body.matchAll(PLACEHOLDER_RE)].map((m) => {
+    const v = valueFor(m[1] as string);
+    return { name: m[1] as string, delta: v === null ? 0 : v.length - m[0].length };
+  });
+  if (body.length + deltas.reduce((a, d) => a + d.delta, 0) <= max) return out;
+  let length = body.length;
+  deltas.forEach((d, n) => {
+    if (d.delta <= 0 || options.unbounded?.has(d.name) || length + d.delta <= max) length += d.delta;
+    else out.add(n);
+  });
+  return out;
 }
 
 /** A template body: ordered sections, each a heading and a text that may hold placeholders. */

@@ -1233,6 +1233,7 @@
 
 /* The read-only tables: they scroll sideways inside their own box on a phone. */
 .read-lines {
+  position: relative;
   overflow-x: auto;
 }
 

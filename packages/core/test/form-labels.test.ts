@@ -8,7 +8,9 @@ import {
   COUNTRY_CODES,
   callWindowText,
   countryName,
+  isBudgetBand,
   isCountryCode,
+  isTimeline,
   labelOf,
   TIMELINE_LABELS,
   TOOL_LABELS,
@@ -86,5 +88,20 @@ describe("isCountryCode", () => {
     expect(COUNTRY_CODES).toHaveLength(249);
     expect(new Set(COUNTRY_CODES).size).toBe(249);
     for (const c of COUNTRY_CODES) expect(countryName(c), c).not.toBe(c);
+  });
+});
+
+describe("isBudgetBand and isTimeline: the quote form's lists, for manual leads (FX-3) [ADM-LEAD-01]", () => {
+  it("accepts exactly the bands the form offers for the currency, and its timelines", () => {
+    for (const cur of ["INR", "USD"] as const) {
+      for (const band of BUDGET_BANDS[cur]) expect(isBudgetBand(cur, band), band).toBe(true);
+      const other = cur === "INR" ? "USD" : "INR";
+      for (const band of BUDGET_BANDS[other].filter((b) => b !== "not-sure"))
+        expect(isBudgetBand(cur, band), band).toBe(false);
+    }
+    for (const bad of ["", "toString", "__proto__", "constructor", "LT-1L"])
+      expect(isBudgetBand("INR", bad), bad).toBe(false);
+    for (const t of TIMELINES) expect(isTimeline(t)).toBe(true);
+    for (const bad of ["", "soon", "toString", "__proto__"]) expect(isTimeline(bad), bad).toBe(false);
   });
 });

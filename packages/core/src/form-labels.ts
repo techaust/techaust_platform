@@ -67,6 +67,17 @@ export const TOOL_LABELS: Record<(typeof TOOLS)[number], string> = {
   other: "Other",
 };
 
+/**
+ * FX-3 (ADM-LEAD-01): a budget band the quote form offers for that currency ("Not sure" included). The bounds above are the list, so the admin API checks
+ * a manual lead's band without loading the form schemas.
+ */
+export const isBudgetBand = (currency: Currency, value: string): boolean =>
+  value === "not-sure" || Object.hasOwn(BAND_BOUNDS[currency], value);
+
+/** FX-3 (ADM-LEAD-01): a timeline the quote form offers. */
+export const isTimeline = (value: string): value is (typeof TIMELINES)[number] =>
+  Object.hasOwn(TIMELINE_LABELS, value);
+
 /** The label of a coded answer; the code itself when unknown (a label list that lags never hides an answer). */
 export const labelOf = (labels: Readonly<Record<string, string>>, code: string): string =>
   labels[code] ?? code;

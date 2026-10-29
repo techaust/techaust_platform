@@ -137,7 +137,6 @@ function DetailsStep(props: { token: string; invite: Invite; onDone: (e: Enrolme
   const [pwError, setPwError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState<"idle" | "checking" | "hashing">("idle");
-  const [ms, setMs] = useState<number | null>(null);
   const inputs = personalWords(name, props.invite.email);
   const inputsKey = inputs.join(" ");
 
@@ -181,7 +180,6 @@ function DetailsStep(props: { token: string; invite: Invite; onDone: (e: Enrolme
       setPwError(null);
       setPhase("hashing");
       const hashed = await hashPassword({ password, salt: props.invite.salt, params: props.invite.params });
-      setMs(hashed.ms);
       const enrol = await api.inviteFinish(props.token, hashed.hash, name.trim());
       setPassword("");
       props.onDone(enrol);
@@ -251,11 +249,6 @@ function DetailsStep(props: { token: string; invite: Invite; onDone: (e: Enrolme
         {phase === "checking" ? "Checking password…" : phase === "hashing" ? "Saving…" : "Continue"}
       </button>
       <p className="hint hint--foot">{ENROLMENT_NOTICE}</p>
-      {ms !== null && (
-        <p className="hint hint--foot">
-          Password hashing took {ms.toLocaleString("en-IN")} ms on this device.
-        </p>
-      )}
     </form>
   );
 }

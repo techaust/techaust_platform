@@ -3,6 +3,8 @@
 // never HTML; the SPA renders it with ordinary elements (React escapes the text), so nothing here can inject markup.
 // Notes are parsed in the browser. Since M4.4 the AST is also rendered to escaped HTML inside the jobs Worker (packages/pdf
 // markdown-html.ts) for the sections of proposals and estimates: there the input is a frozen, size-capped snapshot.
+// FX-3 (A3 7): a NOTE also has headings, `#`, `##` and `###` (`parseNoteMarkdown`; the admin draws them as h3, h4 and h5, so a note never adds an h1
+// or h2 to its page). `parseMarkdown`, which the documents use, keeps a `#` line as text: a frozen proposal's sections read as they always did.
 
 export type Inline =
   | { t: "text"; text: string }
@@ -14,6 +16,10 @@ export type Block =
   | { t: "p"; children: Inline[] }
   | { t: "code"; text: string }
   | { t: "list"; ordered: boolean; items: Inline[][] };
+/** A note's heading: `#` is level 1, `##` level 2, `###` level 3 (a fourth `#` is text). */
+export type HeadingBlock = { t: "h"; level: 1 | 2 | 3; children: Inline[] };
+/** A note's blocks: the document blocks and headings. */
+export type NoteBlock = Block | HeadingBlock;
 
 /** The longest input parsed; the rest is ignored (the API caps a note well below this). */
 export const MAX_MARKDOWN_CHARS = 20_000;
@@ -120,10 +126,22 @@ function inline(s: string, depth: number): Inline[] {
 const BULLET = /^\s{0,3}[-*+]\s+(.*)$/;
 const ORDERED = /^\s{0,3}\d{1,9}[.)]\s+(.*)$/;
 const FENCE = /^\s{0,3}```/;
+/** An ATX heading: one to three `#`, a space, then text; closing `#`s after a space are dropped. `####` and `#text` stay text. */
+const HEADING = /^\s{0,3}(#{1,3})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
 
+/** The blocks of a document section (proposals, estimates, terms): no headings, so a `#` line stays text. */
 export function parseMarkdown(md: string): Block[] {
+  return parse(md, false) as Block[];
+}
+
+/** The blocks of a note (FX-3, ADM-PRJ-03): the same subset plus `#` to `###` headings. */
+export function parseNoteMarkdown(md: string): NoteBlock[] {
+  return parse(md, true);
+}
+
+function parse(md: string, headings: boolean): NoteBlock[] {
   const lines = md.slice(0, MAX_MARKDOWN_CHARS).replace(/\r\n?/g, "\n").split("\n");
-  const blocks: Block[] = [];
+  const blocks: NoteBlock[] = [];
   let para: string[] = [];
   const flush = () => {
     if (para.length) blocks.push({ t: "p", children: inline(para.join("\n"), 0) });
@@ -139,6 +157,16 @@ export function parseMarkdown(md: string): Block[] {
       blocks.push({ t: "code", text: body.join("\n") });
     } else if (line.trim() === "") flush();
     else {
+      const h = headings ? HEADING.exec(line) : null;
+      if (h && (h[2] as string).trim() !== "") {
+        flush();
+        blocks.push({
+          t: "h",
+          level: (h[1] as string).length as 1 | 2 | 3,
+          children: inline((h[2] as string).trim(), 0),
+        });
+        continue;
+      }
       const b = BULLET.exec(line);
       const o = b ? null : ORDERED.exec(line);
       const m = b ?? o;

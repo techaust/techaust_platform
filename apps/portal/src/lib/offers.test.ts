@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fileNameOf, type OfferItem, offerLinkApi, offersApi, RequestError } from "../api.ts";
 import { COPY } from "../copy.ts";
 import { N, PENDING } from "../copy-documents.ts";
-import { dateText, errorText, pdfName, splitOffers, takeOfferToken, titleOf } from "./offers.ts";
+import { APPROVED_07Y, OFFER_Y } from "../copy-y.ts";
+import { dateText, errorText, FINAL, pdfName, splitOffers, takeOfferToken, titleOf } from "./offers.ts";
 
 const TOKEN = "S".repeat(43);
 
@@ -102,6 +103,16 @@ describe("errors in 07-N's words (§7)", () => {
     expect(limited.startsWith("Too many attempts from this network. Wait ")).toBe(true);
     for (const t of [PENDING.nameTooLong, PENDING.nameInvalid, PENDING.showMore, limited])
       expect(t.includes("[Placeholder]")).toBe(false);
+  });
+  it("FX-3 (A4 9): a newer version still being prepared ends the decision with its own 07-Y line, marked until approved", () => {
+    const text = errorText(e(409, "newer_version_pending"));
+    expect(text).toBe(OFFER_Y.errors.newer_version_pending);
+    expect(text.startsWith("[Placeholder] ")).toBe(!APPROVED_07Y);
+    expect(text).not.toBe(COPY.server);
+    expect(FINAL.has("newer_version_pending")).toBe(true);
+    for (const code of ["already_accepted", "already_decided", "superseded", "expired"])
+      expect(FINAL.has(code)).toBe(true);
+    expect(FINAL.has("name_too_short")).toBe(false);
   });
 });
 

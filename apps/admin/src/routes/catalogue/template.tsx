@@ -2,6 +2,9 @@
 // version never changes (the table is append-only): on the newest version the owner's Edit makes a new one. The editor offers
 // the allowed placeholders as chips that insert at the caret, and a placeholder that doesn't exist is named in place, under its
 // section, with the 07-L line (on leaving the field and on saving; the API refuses it too, `unknown_placeholder`).
+// FX-3: the template rules (Catalogue-text placeholders only in their own section's text; custom sections joined past 6,000 characters)
+// are checked when the page opens, on the stored version (one saved before the rules is named, so staff save a new version), and live in
+// the editor, under each section; a save is held while one is broken, and the API's two refusals name the same sections.
 import { formatIstDateTime } from "@techaust/core";
 import { TEMPLATE_BODY_TOTAL, TEMPLATE_SECTION_MAX } from "@techaust/core/catalogue";
 import { type FormEvent, useRef, useState } from "react";
@@ -22,7 +25,10 @@ import {
   PENDING,
   PLACEHOLDERS,
   saveFailureText,
+  TEMPLATE_RULES,
   TOASTS,
+  templateRuleErrors,
+  templateRuleFields,
   templateTitle,
   unknownIn,
 } from "../../lib/catalogue.ts";
@@ -79,6 +85,8 @@ function TemplateView({ data }: { data: TemplatePage }) {
   const isNewest = !newest || newest.id === t.id;
   const [editing, setEditing] = useState<Section[] | null>(null);
   const title = templateTitle(t);
+  const rules = templateRuleErrors(t.kind, t.body.sections);
+  const broken = Object.keys(rules).length > 0;
   return (
     <>
       <PageHeader
@@ -110,6 +118,7 @@ function TemplateView({ data }: { data: TemplatePage }) {
           </p>
         </Notice>
       )}
+      {broken && isNewest && !editing && <Notice tone="info">{TEMPLATE_RULES.storedBreaks}</Notice>}
       <div className="lead-page">
         <div className="lead-page__main">
           {editing ? (
@@ -125,7 +134,7 @@ function TemplateView({ data }: { data: TemplatePage }) {
           ) : (
             <section className="lead-panel" aria-label={title}>
               <ol className="tpl-sections">
-                {t.body.sections.map((s) => (
+                {t.body.sections.map((s, i) => (
                   <li key={s.key} className="tpl-section">
                     <h2 className="tpl-section__h">
                       <PlaceholderText text={s.heading} />
@@ -137,6 +146,7 @@ function TemplateView({ data }: { data: TemplatePage }) {
                     ) : (
                       <p className="muted">None</p>
                     )}
+                    {rules[i] && <FieldError id={`tpl-r${i}`}>{rules[i]}</FieldError>}
                   </li>
                 ))}
               </ol>
@@ -183,6 +193,38 @@ function TemplateEditor(props: {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  // The template rules, live (they span sections: a joined section depends on the ones before it). Shown under each section; the error
+  // summary lists them once a save was tried. Each line sits on its field: a placeholder in a heading on the heading input.
+  const rules = templateRuleFields(props.meta.kind, props.sections);
+  // A save was tried: only then is there an error summary (fix round 3, 4). Before that, a field's own line shows when the person
+  // leaves it, but the summary never appears at the top on a blur and pushes the buttons down under the pointer.
+  const [tried, setTried] = useState(false);
+  // While Save or Cancel is pressed, a field's blur check waits until the press ends (fix round 3, 4): the line it adds above the
+  // buttons would otherwise move them between the press and the release, and the click would be lost. Run after the click, it
+  // shows the same line (a save shows every line and the summary anyway).
+  const pressing = useRef(false);
+  const held = useRef<(() => void)[]>([]);
+  function holdBlurChecks() {
+    pressing.current = true;
+    const end = () => {
+      window.removeEventListener("pointerup", end, true);
+      window.removeEventListener("pointercancel", end, true);
+      // after the click this press makes, if any
+      setTimeout(() => {
+        pressing.current = false;
+        const run = held.current;
+        held.current = [];
+        for (const f of run) f();
+      }, 0);
+    };
+    window.addEventListener("pointerup", end, true);
+    window.addEventListener("pointercancel", end, true);
+  }
+  const blurCheck = (i: number, s: Section) => {
+    const run = () => setErrors((x) => check(i, s, x));
+    if (pressing.current) held.current.push(run);
+    else run();
+  };
   // The body the chips write into: the last one that had focus (the first section until then).
   const target = useRef<{ index: number; start: number; end: number }>({ index: 0, start: 0, end: 0 });
   const original = props.meta.body.sections;
@@ -194,8 +236,12 @@ function TemplateEditor(props: {
     const out = { ...errs };
     delete out[`tpl-s${i}-heading`];
     delete out[`tpl-s${i}-body`];
+    // An unknown placeholder is reported on the field that holds it (FX-3 review 5): the heading's on the heading input.
+    const badHead = unknownIn(s.heading);
     if (!s.heading.trim()) out[`tpl-s${i}-heading`] = PENDING.emptySections;
-    const bad = unknownIn(`${s.heading}\n${s.body}`);
+    else if (badHead.length)
+      out[`tpl-s${i}-heading`] = badHead.map((p) => ERRORS.unknown_placeholder(p)).join(" ");
+    const bad = unknownIn(s.body);
     if (bad.length) out[`tpl-s${i}-body`] = bad.map((p) => ERRORS.unknown_placeholder(p)).join(" ");
     // The server's cap for one section (the field also stops typing at it; a paste is cut by the browser).
     else if (s.body.length > TEMPLATE_SECTION_MAX) out[`tpl-s${i}-body`] = COPY.tooLong;
@@ -226,7 +272,8 @@ function TemplateEditor(props: {
       errs = check(i, s, errs);
     });
     setErrors(errs);
-    if (Object.keys(errs).length) {
+    setTried(true);
+    if (Object.keys(errs).length || Object.keys(rules).length) {
       setSubmits((n) => n + 1);
       return;
     }
@@ -260,13 +307,32 @@ function TemplateEditor(props: {
       } else if (err instanceof RequestError && err.code === "template_category")
         setFailure(ERRORS.template_category);
       else if (err instanceof RequestError && err.code === "conflict") setFailure(ERRORS.conflict);
+      else if (
+        err instanceof RequestError &&
+        (err.code === "template_text_token_place" || err.code === "template_joined_too_long") &&
+        Object.keys(rules).length > 0
+      )
+        // The API names the same sections the screen already shows under each one: the summary lists them.
+        setSubmits((n) => n + 1);
       else setFailure(saveFailureText(err, errorText));
     } finally {
       setBusy(false);
     }
   }
 
-  const summary = Object.entries(errors).map(([id, text]) => ({ id, text }));
+  const summary = tried
+    ? [
+        ...Object.entries(errors).map(([id, text]) => ({ id, text })),
+        ...Object.entries(rules).flatMap(([i, r]) =>
+          (["heading", "body"] as const).flatMap((part) => {
+            const line = r[part];
+            return line
+              ? [{ id: `tpl-s${i}-${part}`, text: TEMPLATE_RULES.section(Number(i) + 1, line) }]
+              : [];
+          }),
+        ),
+      ]
+    : [];
   const next = props.meta.version + 1;
   return (
     <form className="lead-panel tpl-editor" onSubmit={save} noValidate aria-labelledby="tpl-editor-h">
@@ -308,7 +374,15 @@ function TemplateEditor(props: {
             const bid = `tpl-s${i}-body`;
             const bodyError = errors[bid];
             const headError = errors[hid];
-            const unknown = unknownIn(`${s.heading}\n${s.body}`);
+            const rule = rules[i]?.body;
+            const headRule = rules[i]?.heading;
+            const described = [bodyError ? `${bid}-error` : "tpl-ph-hint", rule ? `${bid}-rule` : null]
+              .filter(Boolean)
+              .join(" ");
+            const headDescribed = [headError ? `${hid}-error` : null, headRule ? `${hid}-rule` : null]
+              .filter(Boolean)
+              .join(" ");
+            const unknown = unknownIn(s.body);
             return (
               <li key={s.key} className="tpl-section">
                 <div className="field">
@@ -318,12 +392,13 @@ function TemplateEditor(props: {
                     autoComplete="off"
                     maxLength={120}
                     value={s.heading}
-                    aria-invalid={headError ? true : undefined}
-                    aria-describedby={headError ? `${hid}-error` : undefined}
+                    aria-invalid={headError || headRule ? true : undefined}
+                    aria-describedby={headDescribed || undefined}
                     onChange={(e) => edit(i, { heading: e.target.value })}
-                    onBlur={() => setErrors((x) => check(i, s, x))}
+                    onBlur={() => blurCheck(i, s)}
                   />
                   {headError && <FieldError id={`${hid}-error`}>{headError}</FieldError>}
+                  {headRule && <FieldError id={`${hid}-rule`}>{headRule}</FieldError>}
                 </div>
                 <div className="field">
                   <label htmlFor={bid}>Section {i + 1}, text</label>
@@ -332,8 +407,8 @@ function TemplateEditor(props: {
                     rows={Math.min(10, Math.max(3, s.body.split("\n").length + 1))}
                     maxLength={TEMPLATE_SECTION_MAX}
                     value={s.body}
-                    aria-invalid={bodyError ? true : undefined}
-                    aria-describedby={bodyError ? `${bid}-error` : "tpl-ph-hint"}
+                    aria-invalid={bodyError || rule ? true : undefined}
+                    aria-describedby={described}
                     onChange={(e) => edit(i, { body: e.target.value })}
                     onFocus={(e) => {
                       target.current = {
@@ -346,9 +421,10 @@ function TemplateEditor(props: {
                       const el = e.currentTarget;
                       target.current = { index: i, start: el.selectionStart, end: el.selectionEnd };
                     }}
-                    onBlur={() => setErrors((x) => check(i, s, x))}
+                    onBlur={() => blurCheck(i, s)}
                   />
                   {bodyError && <FieldError id={`${bid}-error`}>{bodyError}</FieldError>}
+                  {rule && <FieldError id={`${bid}-rule`}>{rule}</FieldError>}
                   {s.body.includes("{{") && (
                     <p className="tpl-section__body tpl-section__body--echo" aria-hidden="true">
                       <PlaceholderText text={s.body} unknown={bodyError ? unknown : undefined} />
@@ -361,10 +437,22 @@ function TemplateEditor(props: {
         </ol>
       </fieldset>
       <div className="lead-panel__actions">
-        <button type="button" className="btn btn--secondary" onClick={props.onCancel} disabled={busy}>
+        <button
+          type="button"
+          className="btn btn--secondary"
+          onPointerDown={holdBlurChecks}
+          onClick={props.onCancel}
+          disabled={busy}
+        >
           Cancel
         </button>
-        <button type="submit" className="btn btn--primary" disabled={busy} aria-busy={busy || undefined}>
+        <button
+          type="submit"
+          className="btn btn--primary"
+          onPointerDown={holdBlurChecks}
+          disabled={busy}
+          aria-busy={busy || undefined}
+        >
           {busy ? "Saving…" : `Save as version ${next}`}
         </button>
       </div>

@@ -1,6 +1,6 @@
 // The dashboard on a stress fixture [ADM-DASH-01, NFR-2]: 1,000 leads, 200 projects, 400 milestones, 50 care plans with 60 days of time
 // each, and 5,000 audit rows of which 80 % are sign-in and bell noise. D1 charges for rows read, so the sum of `meta.rows_read` of the
-// one batch is measured per role and held under 6,000; every statement of the batch must be served by an index. The wall times are a
+// one batch is measured per role and held under 6,100 (6,000 until FX-3 counted the 50 Planned projects too); every statement of the batch must be served by an index. The wall times are a
 // local upper bound (workerd, not the Free plan's metered CPU): the real reading is the staging `cpuTimeMs` at integration.
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
@@ -8,7 +8,7 @@ import { longSession, mkLog, today } from "./test-care.ts";
 import { call, withDb } from "./test-helpers.ts";
 
 const NOW = "(cast(unixepoch('subsec') * 1000 as integer))";
-const ROWS_READ_LIMIT = 6_000;
+const ROWS_READ_LIMIT = 6_100;
 const WORST_CASE_LIMIT = 8_000;
 /** Set to true to print the per-statement numbers (the test then fails on purpose, which is the only way vitest shows them). */
 const SHOW_REPORT = false;
@@ -96,7 +96,7 @@ function recording(): { db: D1Database; seen: Seen[]; rowsRead: () => number } {
 }
 
 describe("GET /dashboard on the stress fixture", () => {
-  it("reads at most 6,000 rows per call for every role, every statement from an index", async () => {
+  it("reads at most 6,100 rows per call for every role, every statement from an index", async () => {
     await fixture();
     const roles = ["owner", "staff", "sales", "accountant"] as const;
     const report: string[] = [];

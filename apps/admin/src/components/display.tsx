@@ -1,7 +1,7 @@
 // Display pieces of the admin shell (docs/06 §5.3): PageHeader with breadcrumbs, StatusPill, EmptyState, the
 // IST time with its relative form, and skeletons. Tokens only; the styles are in shell.css.
 
-import { formatIstDateTime } from "@techaust/core";
+import { formatIstMoment, isIstDayEnd, istDate, toIsoDate } from "@techaust/core/dates";
 import { type ReactNode, useEffect, useRef } from "react";
 import { Link, useLocation } from "react-router";
 import { relative } from "../lib/format.ts";
@@ -148,10 +148,12 @@ export function EmptyState(props: {
 /** A time as people read it: IST date and time, with how long ago underneath (both visible, docs/06 §5.3). */
 export function When({ ms, now, inline }: { ms: number | null; now?: number; inline?: boolean }) {
   if (ms === null) return <span className="when when--never">Never</span>;
-  const abs = formatIstDateTime(ms);
+  // FX-3 (A3 10): a date-only moment (a lead's next action) is the day alone, never "23:59 IST"; its machine form is the ISO day.
+  const day = isIstDayEnd(ms);
+  const abs = formatIstMoment(ms);
   return (
     <span className={inline ? "when when--inline" : "when"}>
-      <time dateTime={new Date(ms).toISOString()}>{abs}</time>
+      <time dateTime={day ? toIsoDate(istDate(ms)) : new Date(ms).toISOString()}>{abs}</time>
       <span className="when__rel">{relative(ms, now)}</span>
     </span>
   );

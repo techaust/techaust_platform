@@ -7,7 +7,7 @@
 // which is deleted with the lead by the retention clean-up.
 import { emailAddress } from "@techaust/auth";
 import { clientTaxCheck } from "@techaust/core/clients";
-import { isCountryCode } from "@techaust/core/form-labels";
+import { isBudgetBand, isCountryCode, isTimeline } from "@techaust/core/form-labels";
 import { uuidv7 } from "@techaust/core/ids";
 import {
   deleteAfterSql,
@@ -21,6 +21,7 @@ import {
   touchLeadSql,
 } from "@techaust/core/lead-lifecycle";
 import { generateLeadRef } from "@techaust/core/lead-ref";
+import type { Currency } from "@techaust/core/money";
 import { decide, ROLES } from "@techaust/core/permissions";
 import {
   fillReplyTemplate,
@@ -63,6 +64,12 @@ import {
 const ALREADY_CONVERTED: ApiError = { code: "already_converted", message: "That lead is already a client" };
 const GSTIN_IN_USE: ApiError = { code: "gstin_in_use", message: "A client with that GSTIN already exists" };
 const OWNER_INVALID: ApiError = { code: "owner_invalid", message: "Choose an active member of staff" };
+const ANSWERS_FIXED: ApiError = {
+  code: "lead_answers_fixed",
+  message: "The website form's answers can't be changed",
+};
+/** The quote form's answers on a lead: only a manual lead's can be changed (`PATCH /leads/:id`). */
+const QUOTE_ANSWER_COLUMNS: readonly string[] = ["currency", "budget_band", "timeline"];
 const LOST_REASON_REQUIRED: ApiError = {
   code: "lost_reason_required",
   message: "Choose why the lead was lost",
@@ -383,6 +390,11 @@ const createRequest = z.object({
   ownerId: z.optional(z.nullable(z.string().check(z.maxLength(64)))),
   nextActionAt: z.optional(z.nullable(z.int().check(z.gte(0)))),
   nextActionNote: z.optional(optText(500)),
+  // FX-3 (A3 8): the quote form's answers, given by hand. A budget band needs the currency it is a band of (core `isBudgetBand`); the
+  // timeline is one of the form's (core `isTimeline`). The SPA shows them with core's labels (`budgetBandLabel`, `TIMELINE_LABELS`).
+  currency: z.optional(z.nullable(z.enum(["INR", "USD"]))),
+  budgetBand: z.optional(z.nullable(z.string().check(z.maxLength(20)))),
+  timeline: z.optional(z.nullable(z.string().check(z.maxLength(20)))),
 });
 
 const patchRequest = z.object({
@@ -396,6 +408,11 @@ const patchRequest = z.object({
   phone: z.optional(optText(40)),
   company: z.optional(optText(120)),
   country: z.optional(z.nullable(country)),
+  // FX-3 round 2 (docs/13 2026-10-29): a manual lead's quote answers can be changed later, with the creation checks on the values the lead
+  // ends up with (a band needs its own currency). A website lead's answers are the visitor's own words: 409 `lead_answers_fixed`.
+  currency: z.optional(z.nullable(z.enum(["INR", "USD"]))),
+  budgetBand: z.optional(z.nullable(z.string().check(z.maxLength(20)))),
+  timeline: z.optional(z.nullable(z.string().check(z.maxLength(20)))),
 });
 
 const noteRequest = z.object({ body: text(2000) });
@@ -466,6 +483,12 @@ export const leads = new Hono<AppEnv>()
     const f = c.req.valid("json");
     const db = c.env.DB;
     if (f.country && !isCountryCode(f.country)) return err(c, BAD_REQUEST, 400);
+    const currency = f.currency ?? null;
+    const band = f.budgetBand ?? null;
+    const timeline = f.timeline ?? null;
+    if (band !== null && (currency === null || !isBudgetBand(currency, band)))
+      return err(c, BAD_REQUEST, 400);
+    if (timeline !== null && !isTimeline(timeline)) return err(c, BAD_REQUEST, 400);
     const service = f.serviceCode ?? null;
     let serviceName: string | null = null;
     if (service !== null && service !== NOT_SURE) {
@@ -497,10 +520,10 @@ export const leads = new Hono<AppEnv>()
           main: db
             .prepare(
               `INSERT INTO leads (id, ref, source, service_code, message, contact_name, contact_email, contact_phone, contact_company,
-                 contact_country, owner_id, next_action_at, next_action_note, duplicate_of, last_activity_at, delete_after)
+                 contact_country, owner_id, next_action_at, next_action_note, duplicate_of, last_activity_at, delete_after, currency, budget_band, timeline)
                SELECT ?1, ?2, 'manual', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
                  (SELECT id FROM leads WHERE contact_email = ?6 AND created_at >= ?14 AND created_at <= ?13 ORDER BY created_at DESC LIMIT 1),
-                 ?13, ${deleteAfterSql("?13")}
+                 ?13, ${deleteAfterSql("?13")}, ?16, ?17, ?18
                WHERE ?3 IS NULL OR ?3 = ?15 OR EXISTS (SELECT 1 FROM catalogue_items WHERE code = ?3 AND active = 1)`,
             )
             .bind(
@@ -519,6 +542,9 @@ export const leads = new Hono<AppEnv>()
               t,
               t - LEAD_DUPLICATE_WINDOW_MS,
               NOT_SURE,
+              currency,
+              band,
+              timeline,
             ),
           action: "lead.create",
           entityType: "lead",
@@ -629,7 +655,7 @@ export const leads = new Hono<AppEnv>()
     return c.json({ items: page.items.map(activityJson), next: page.next });
   })
 
-  // ---- edit the fields a person owns (owner, next action, contact) ----
+  // ---- edit the fields a person owns (owner, next action, contact; a manual lead's quote answers) ----
   .patch("/:id", param(idParam), body(patchRequest), async (c) => {
     const u = actor(c);
     const { id } = c.req.valid("param");
@@ -637,7 +663,7 @@ export const leads = new Hono<AppEnv>()
     const db = c.env.DB;
     const lead = await db
       .prepare(
-        "SELECT ref, owner_id, next_action_at, next_action_note, contact_name, contact_email, contact_phone, contact_company, contact_country, updated_at FROM leads WHERE id = ?1",
+        "SELECT ref, source, owner_id, next_action_at, next_action_note, contact_name, contact_email, contact_phone, contact_company, contact_country, currency, budget_band, timeline, updated_at FROM leads WHERE id = ?1",
       )
       .bind(id)
       .first<Record<string, string | number | null>>();
@@ -660,11 +686,36 @@ export const leads = new Hono<AppEnv>()
       ["phone", "contact_phone", f.phone === undefined ? undefined : norm(f.phone)],
       ["company", "contact_company", f.company === undefined ? undefined : norm(f.company)],
       ["country", "contact_country", f.country],
+      ["currency", "currency", f.currency],
+      ["budget_band", "budget_band", f.budgetBand],
+      ["timeline", "timeline", f.timeline],
     ];
     const changes = wanted.filter(
       (w): w is [string, string, string | number | null] => w[2] !== undefined && w[2] !== lead[w[1]],
     );
     if (!changes.length) return c.json({ ok: true, changed: false, updatedAt: lead.updated_at });
+    // The quote answers are checked only when the request changes one of them, so an edit of the owner or the contact never
+    // re-judges what the lead already holds (a lead may carry a band or a timeline the form no longer offers).
+    const changed = new Set(changes.map(([, col]) => col));
+    if (QUOTE_ANSWER_COLUMNS.some((col) => changed.has(col))) {
+      // The source rule first: a website lead's answers are the visitor's own words, whatever the new values.
+      if (lead.source !== "manual") return err(c, ANSWERS_FIXED, 409);
+      // A manual lead's changed answers, checked as at creation, each pair only when it changes. The UPDATE below runs only on
+      // this same version of the row (`updated_at`), so what is checked here is what it changes.
+      // - The band and its currency, when either changes: a band needs its own currency (core `isBudgetBand`). A stored band is in
+      //   the stored currency's amounts, so a new currency keeps it only when that currency has the same band ("Not sure");
+      //   otherwise the request changes or clears the band with it (the SPA's `withCurrency` does). A band the form no longer
+      //   offers is a band of no currency, so it can't move to another currency either, and a currency change alone is a 400.
+      if (changed.has("currency") || changed.has("budget_band")) {
+        const nextCurrency = f.currency !== undefined ? f.currency : (lead.currency as Currency | null);
+        const nextBand = f.budgetBand !== undefined ? f.budgetBand : (lead.budget_band as string | null);
+        if (nextBand !== null && (nextCurrency === null || !isBudgetBand(nextCurrency, nextBand)))
+          return err(c, BAD_REQUEST, 400);
+      }
+      // - The timeline, only when it changes: it stands alone, so a stored band never decides a timeline edit (nor the reverse).
+      if (changed.has("timeline") && f.timeline != null && !isTimeline(f.timeline))
+        return err(c, BAD_REQUEST, 400);
+    }
 
     const t = Date.now();
     const sets = changes.map(([, col], i) => `${col} = ?${i + 4}`);

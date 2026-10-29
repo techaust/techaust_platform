@@ -1,5 +1,6 @@
 // The catalogue, pure (M4.1, ADM-CAT-02..05): entry schemas, price history rows, the public snapshot and its mini twin (parity with
 // the classic schema), canonical JSON and the SHA, and template rendering.
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   type CatalogueRow,
@@ -340,6 +341,74 @@ describe("templates (ADM-CAT-03)", () => {
     const body = { sections: [{ key: "a", heading: "H {{nope.nope}}", body: "{{client.name}}" }] };
     expect(unknownPlaceholders(body)).toEqual(["nope.nope"]);
     expect(renderTemplateBody(body, data).unresolved).toEqual(["nope.nope"]);
+  });
+  it("max: a value that would take the text past it stays as written and is listed (FX-3 round 3)", () => {
+    const long = "L".repeat(118);
+    // everything fits: filled as before
+    expect(renderTemplate("For {{client.name}}", { "client.name": "Acme" }, { max: 120 })).toEqual({
+      text: "For Acme",
+      unresolved: [],
+    });
+    // the long name would pass 120: it stays unfilled; the shorter one after it still fits and is filled
+    const r = renderTemplate(
+      "{{client.name}}: {{service.name}}",
+      { "client.name": long, "service.name": "Audit" },
+      { max: 120 },
+    );
+    expect(r).toEqual({ text: "{{client.name}}: Audit", unresolved: ["client.name"] });
+    // in order: the first value that fits is taken, the next one that would pass is held back
+    const both = renderTemplate(
+      "{{service.name}} {{client.name}}",
+      { "client.name": long, "service.name": "S".repeat(100) },
+      { max: 120 },
+    );
+    expect(both).toEqual({ text: `${"S".repeat(100)} {{client.name}}`, unresolved: ["client.name"] });
+    // a value that shortens the text is always taken
+    const short = renderTemplate(
+      `${"x".repeat(90)} {{proposal.validity_days}} {{client.name}}`,
+      { "proposal.validity_days": 15, "client.name": long },
+      { max: 120 },
+    );
+    expect(short.text).toBe(`${"x".repeat(90)} 15 {{client.name}}`);
+    // `unbounded` names are always filled, and they never hold another back
+    const text = renderTemplate(
+      "{{service.deliverables}} {{client.name}}",
+      { "service.deliverables": "D".repeat(200), "client.name": "Acme Private Limited" },
+      { max: 120, unbounded: new Set(["service.deliverables"]) },
+    );
+    expect(text.text).toBe(`${"D".repeat(200)} {{client.name}}`);
+    expect(text.unresolved).toEqual(["client.name"]);
+  });
+  it("max: a held-back value is never taken out as empty, and an empty one still is", () => {
+    const empty = new Set(["service.short", "client.name"]);
+    const r = renderTemplate(
+      "{{client.name}}\n{{service.short}}",
+      { "client.name": "N".repeat(130) },
+      { max: 120, empty },
+    );
+    expect(r).toEqual({ text: "{{client.name}}", unresolved: ["client.name"] });
+  });
+  it("max: a text within the limit before the fill stays within it after (property)", () => {
+    const names = ["client.name", "service.name", "company.name", "proposal.validity_days"] as const;
+    fc.assert(
+      fc.property(
+        fc.array(fc.oneof(fc.constantFrom(...names.map((n) => `{{${n}}}`)), fc.string({ maxLength: 12 })), {
+          maxLength: 12,
+        }),
+        fc.array(fc.string({ maxLength: 150 }), { minLength: names.length, maxLength: names.length }),
+        fc.integer({ min: 0, max: 160 }),
+        (parts, values, max) => {
+          const body = parts.join("");
+          fc.pre(body.length <= max);
+          const data = Object.fromEntries(names.map((n, i) => [n, values[i]]));
+          const r = renderTemplate(body, data, { max });
+          expect(r.text.length).toBeLessThanOrEqual(max);
+          // without a limit nothing is held back
+          const all = renderTemplate(body, data);
+          if (all.text.length <= max) expect(r.text).toBe(all.text);
+        },
+      ),
+    );
   });
   it("validates a new version's shape", () => {
     const ok = {

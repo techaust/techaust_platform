@@ -48,6 +48,7 @@ import {
   requestInfo,
   STEP_UP_REQUIRED,
 } from "./context.ts";
+import { clientFinance } from "./figures.ts";
 import { dropObjects } from "./files.ts";
 import {
   body,
@@ -785,10 +786,9 @@ export const clients = new Hono<AppEnv>()
     return c.json({ ok: true, changed: true, updatedAt: t, warnings });
   })
 
-  // ---- the finance tab arrives with payments (M6); the statement is in statements.ts (M5.5b) ----
-  .get("/:id/finance", param(idParam), async (c) =>
-    (await clientExists(c, c.req.valid("param").id)) ? c.json({ available: false }) : err(c, NOT_FOUND, 404),
-  )
+  // ---- the Overview figures (FX-3, ADM-CLI-03): billed, credited, balance and overdue from the frozen documents (figures.ts); "collected" waits for
+  // payments (M6); the statement is in statements.ts (M5.5b) ----
+  .get("/:id/finance", param(idParam), (c) => clientFinance(c, c.req.valid("param").id))
 
   // ---- activity: the audit rows about the client and its contacts, newest first; finance actions only for a finance role ----
   .get("/:id/activity", param(idParam), query(pageQuery), async (c) => {
