@@ -10,7 +10,6 @@ import {
   SECTION_TITLE_MAX,
 } from "@techaust/core/documents";
 import { type Dispatch, memo, useCallback, useEffect, useState } from "react";
-import { Link } from "react-router";
 import {
   AlertTriangle,
   ArrowDown,
@@ -23,6 +22,7 @@ import {
   Trash,
 } from "../../components/icons.tsx";
 import { MenuButton } from "../../components/popover.tsx";
+import { useKeptCaret } from "../../lib/caret.ts";
 import {
   ADDABLE_KINDS,
   DOC_COPY,
@@ -32,6 +32,7 @@ import {
   GAP_HIDDEN,
   type GapGroup,
   gapLine,
+  gapNoRoomLine,
   gapNowLine,
   isEmptyOptional,
   isRequiredSection,
@@ -45,6 +46,7 @@ import {
   uid,
 } from "../../lib/documents.ts";
 import { COPY as PROJECT_COPY } from "../../lib/projects.ts";
+import { CatalogueLink } from "./parts.tsx";
 
 /** The names of the placeholders still in a text, without their braces (for the words of 07-X §2). */
 const holeNames = (text: string) => placeholdersIn(text).map((n) => n.slice(2, -2));
@@ -210,6 +212,12 @@ const SectionRow = memo(function SectionRow(p: {
   filling: string | null;
 }) {
   const { s } = p;
+  // While "Use Catalogue text" fills this section its text, title and visibility are read-only (review round 3, finding 4): an edit made
+  // meanwhile would keep the filled text off the screen, and the next save would write over it.
+  const busy = p.filling !== null && p.filling === s.id;
+  // The server's own change merged into a box being typed in keeps the caret where it was (round 4 re-check, finding 2).
+  const titleCaret = useKeptCaret<HTMLInputElement>(s.title);
+  const bodyCaret = useKeptCaret<HTMLTextAreaElement>(s.bodyMd);
   const required = isRequiredSection(s.kind);
   const holes = holeNames(`${s.title}\n${s.bodyMd}`);
   const empty = s.bodyMd.trim() === "";
@@ -236,7 +244,12 @@ const SectionRow = memo(function SectionRow(p: {
       : []),
   ];
   return (
-    <li className="section-row" data-hidden={s.hidden || undefined} data-open={p.open || undefined}>
+    <li
+      className="section-row"
+      data-hidden={s.hidden || undefined}
+      data-open={p.open || undefined}
+      aria-busy={busy || undefined}
+    >
       <div className="section-row__head">
         <span className="section-row__n tnum" aria-hidden="true">
           {String(p.n).padStart(2, "0")}
@@ -281,6 +294,7 @@ const SectionRow = memo(function SectionRow(p: {
                 type="checkbox"
                 className="section-row__check"
                 checked={!s.hidden}
+                disabled={busy}
                 onChange={(e) => p.onEdit(s.uid, { hidden: !e.target.checked })}
                 aria-label={`Show ${name} in the document`}
               />
@@ -308,8 +322,15 @@ const SectionRow = memo(function SectionRow(p: {
               aria-label={sectionTitleName(kindName)}
               autoComplete="off"
               maxLength={SECTION_TITLE_MAX}
+              readOnly={busy}
               value={s.title}
-              onChange={(e) => p.onEdit(s.uid, { title: e.target.value })}
+              ref={titleCaret.ref}
+              onSelect={titleCaret.onSelect}
+              onFocus={titleCaret.onFocus}
+              onChange={(e) => {
+                titleCaret.noteEdit();
+                p.onEdit(s.uid, { title: e.target.value });
+              }}
             />
           </div>
           <div className="field">
@@ -324,8 +345,15 @@ const SectionRow = memo(function SectionRow(p: {
               aria-describedby={`sec-${s.uid}-body-hint`}
               rows={Math.min(14, Math.max(4, s.bodyMd.split("\n").length + 1))}
               maxLength={SECTION_BODY_MAX}
+              readOnly={busy}
               value={s.bodyMd}
-              onChange={(e) => p.onEdit(s.uid, { bodyMd: e.target.value })}
+              ref={bodyCaret.ref}
+              onSelect={bodyCaret.onSelect}
+              onFocus={bodyCaret.onFocus}
+              onChange={(e) => {
+                bodyCaret.noteEdit();
+                p.onEdit(s.uid, { bodyMd: e.target.value });
+              }}
             />
           </div>
         </div>
@@ -353,46 +381,49 @@ function GapNote(props: {
       <Info size={16} />
       <div className="gap-note__body">
         {gap.hidden && <p className="gap-note__hidden">{GAP_HIDDEN}</p>}
+        {/* Each service's sentence carries its own link (round 4, M4: the send panel's layout), never a stack of links that read the same. */}
         {gap.services.map((s) => (
           <p key={s.id}>
-            {s.missing.length > 0 && <span>{gapLine(s.name, s.missing)} </span>}
-            {s.now.length > 0 && <span>{gapNowLine(s.name, s.now)}</span>}
+            {s.missing.length > 0 && (
+              <>
+                {gapLine(s.name, s.missing)}{" "}
+                <CatalogueLink id={s.id} name={s.name} words={GAP_COPY.addInCatalogue} />{" "}
+              </>
+            )}
+            {s.now.length > 0 && <>{gapNowLine(s.name, s.now)} </>}
+            {s.noRoom.length > 0 && (
+              <>
+                {gapNoRoomLine(s.name, s.noRoom)}{" "}
+                <CatalogueLink id={s.id} name={s.name} words={GAP_COPY.openInCatalogue} />
+              </>
+            )}
           </p>
         ))}
-        <div className="gap-note__acts">
-          {gap.services
-            .filter((s) => s.missing.length > 0)
-            .map((s) => (
-              <Link
-                key={s.id}
-                to={`/catalogue/${encodeURIComponent(s.id)}`}
+        {((gap.hidden && uidOf) || (gap.canFill && sectionId)) && (
+          <div className="gap-note__acts">
+            {gap.hidden && uidOf && (
+              <button
+                type="button"
                 className="btn btn--text gap-note__act"
-                aria-label={`${GAP_COPY.addInCatalogue}: ${s.name}`}
+                onClick={() => props.onWriteHere(uidOf)}
+                disabled={props.filling !== null}
               >
-                {GAP_COPY.addInCatalogue}
-              </Link>
-            ))}
-          {gap.hidden && uidOf && (
-            <button
-              type="button"
-              className="btn btn--text gap-note__act"
-              onClick={() => props.onWriteHere(uidOf)}
-            >
-              {GAP_COPY.writeHere}
-            </button>
-          )}
-          {gap.canFill && sectionId && (
-            <button
-              type="button"
-              className="btn btn--secondary gap-note__fill"
-              onClick={() => props.onFill(sectionId)}
-              disabled={props.filling !== null}
-              aria-busy={props.filling === sectionId || undefined}
-            >
-              {GAP_COPY.useCatalogue}
-            </button>
-          )}
-        </div>
+                {GAP_COPY.writeHere}
+              </button>
+            )}
+            {gap.canFill && sectionId && (
+              <button
+                type="button"
+                className="btn btn--secondary gap-note__fill"
+                onClick={() => props.onFill(sectionId)}
+                disabled={props.filling !== null}
+                aria-busy={props.filling === sectionId || undefined}
+              >
+                {GAP_COPY.useCatalogue}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

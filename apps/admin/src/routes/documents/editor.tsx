@@ -40,6 +40,7 @@ import {
   titleOf,
   unresolvedItems,
   validFor,
+  waitForInflight,
 } from "../../lib/documents.ts";
 import { type DocumentView, documentsApi } from "../../lib/documents-api.ts";
 import { OFFER_COPY } from "../../lib/offers.ts";
@@ -88,7 +89,8 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
   const canWrite = allowed(user.role, "proposals.draft");
   const canSendRole = allowed(user.role, "proposals.send");
   const save = useCallback(async (): Promise<boolean> => {
-    if (inflight.current) await inflight.current.catch(() => null);
+    // Every request in flight, not only the first one seen (round 4, L5).
+    await waitForInflight(inflight);
     const cur = ref.current;
     if (cur.status === "stale" || cur.status === "frozen") return false;
     const b = buildPatch(cur);
@@ -115,13 +117,14 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
       else dispatch({ type: "failed", status: "error", error: docErrorText(e) });
       return false;
     } finally {
-      inflight.current = null;
+      // Only its own promise (review round 3, finding 5): a fill or a save started meanwhile keeps its place, so a later save still waits for it.
+      if (inflight.current === p) inflight.current = null;
     }
   }, [dispatch]);
 
   /** Everything typed is saved; resolves with the `updatedAt` a send or a request must carry, or null when it could not save. */
   const flush = useCallback(async (): Promise<number | null> => {
-    if (inflight.current) await inflight.current.catch(() => null);
+    await waitForInflight(inflight);
     for (let i = 0; i < 3 && isDirty(ref.current); i++) if (!(await save())) return null;
     const cur = ref.current;
     return cur.status === "stale" || cur.status === "frozen" || isDirty(cur) ? null : cur.updatedAt;
@@ -198,12 +201,14 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
   }, []);
   // "Use Catalogue text": everything typed is saved first (the route takes the version it saw); its answer is a save answer whose
   // `sectionsChanged` holds the filled section, applied like a save's (no re-read, so nothing typed meanwhile is lost; review round 2, finding 5).
-  // An autosave waits for it (`inflight`), so it never sends the old version.
+  // An autosave waits for it (`inflight`), so it never sends the old version. The section is read-only from the click until the answer is on
+  // screen (review round 3, finding 4): text typed into it meanwhile would keep the fill off the screen and the next save would overwrite it.
   const [filling, setFilling] = useState<string | null>(null);
   const onFill = useCallback(
     async (sectionId: string) => {
       if (filling) return;
       setFilling(sectionId);
+      let p: Promise<unknown> | null = null;
       try {
         const at = await flush();
         if (at === null) {
@@ -211,9 +216,10 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
           return;
         }
         const before = ref.current;
-        const p = documentsApi.fillFromCatalogue(before.id, sectionId, at);
-        inflight.current = p;
-        const answer = await p;
+        const call = documentsApi.fillFromCatalogue(before.id, sectionId, at);
+        p = call;
+        inflight.current = call;
+        const answer = await call;
         const sectionsAt = Object.fromEntries(before.sections.map((x) => [x.uid, x]));
         dispatch({
           type: "saved",
@@ -224,7 +230,7 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
       } catch (e) {
         toast("error", docErrorText(e));
       } finally {
-        inflight.current = null;
+        if (p !== null && inflight.current === p) inflight.current = null;
         setFilling(null);
       }
     },
@@ -605,7 +611,8 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
         open={dialog === "discard"}
         onClose={() => setDialog(null)}
         onConfirm={async () => {
-          if (inflight.current) await inflight.current.catch(() => null);
+          // Every request in flight, including one started while waiting (round 4 re-check, finding 5).
+          await waitForInflight(inflight);
           await documentsApi.discard(view.id, ref.current.updatedAt);
           // Nothing is left to save: leaving must not ask about unsaved changes.
           ref.current = { ...ref.current, savedRev: { ...ref.current.rev } };

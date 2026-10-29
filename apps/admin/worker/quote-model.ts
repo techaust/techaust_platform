@@ -204,10 +204,17 @@ export const ITEMS_BY_ID = `SELECT ${ITEM_COLS} FROM catalogue_items WHERE id IN
  */
 export const ITEMS_OF_DOCUMENT = `SELECT ${ITEM_COLS}, updated_at FROM catalogue_items WHERE id IN (SELECT catalogue_item_id FROM document_lines WHERE document_id = ?1 AND catalogue_item_id IS NOT NULL) AND EXISTS (SELECT 1 FROM documents WHERE id = ?1 AND frozen_at IS NULL)`;
 /**
- * A save's catalogue rows (`?1` = the document id, `?2` = a JSON array of the item ids the save adds): the services it adds and, when it
- * changes lines or sections, those already on the draft (for the gaps in its answer and the first-service fill), in one read.
+ * Whether the sent Deliverables and Assumptions and exclusions sections (`?4`, a JSON array of `{id, kind, hidden, body}` as they will be
+ * stored, or NULL when the save sends no sections) differ from the stored ones: one has no stored twin with the same id, kind, visibility
+ * and exact text, or the number differs (one was added or taken out). Exact, so it says "differ" whenever `gapInputsChanged` does.
  */
-export const ITEMS_OF_SAVE = `SELECT ${ITEM_COLS}, updated_at FROM catalogue_items WHERE id IN (SELECT value FROM json_each(?2) UNION SELECT catalogue_item_id FROM document_lines WHERE document_id = ?1 AND catalogue_item_id IS NOT NULL AND ?3 = 1)`;
+const GAP_SECTIONS_DIFFER = `(?4 IS NOT NULL AND ((SELECT count(*) FROM document_sections WHERE document_id = ?1 AND kind IN ('deliverables', 'assumptions_exclusions')) <> json_array_length(?4) OR EXISTS (SELECT 1 FROM json_each(?4) j WHERE NOT EXISTS (SELECT 1 FROM document_sections s WHERE s.id = json_extract(j.value, '$.id') AND s.document_id = ?1 AND s.kind = json_extract(j.value, '$.kind') AND s.hidden = json_extract(j.value, '$.hidden') AND s.body_md IS json_extract(j.value, '$.body')))))`;
+/**
+ * A save's catalogue rows (`?1` = the document id, `?2` = a JSON array of the item ids the save adds): the services it adds and, when it
+ * sends lines (`?3` = 1) or Catalogue-text sections that differ from the stored ones (`?4`, round 4 L6: compared here, so an autosave of
+ * the other sections reads no catalogue row), those already on the draft (for the gaps in its answer and the first-service fill), in one read.
+ */
+export const ITEMS_OF_SAVE = `SELECT ${ITEM_COLS}, updated_at FROM catalogue_items WHERE id IN (SELECT value FROM json_each(?2) UNION SELECT catalogue_item_id FROM document_lines WHERE document_id = ?1 AND catalogue_item_id IS NOT NULL AND (?3 = 1 OR ${GAP_SECTIONS_DIFFER}))`;
 /** The newest proposal terms (the one a new draft pins), without the text: no admin route reads it. Version numbers only go up. */
 export const NEWEST_TERMS =
   "SELECT id, kind, version, sha256 FROM terms_versions WHERE kind = 'proposal' ORDER BY version DESC LIMIT 1";

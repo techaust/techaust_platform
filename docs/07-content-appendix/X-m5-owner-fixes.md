@@ -36,12 +36,15 @@ _Drafted by the designer of the M5 owner fixes task ([runs/m5-owner-fixes](../ru
 24. Toast after it: "Catalogue text added."
 25. Error `nothing_to_fill` (Catalogue still has no text): "Catalogue has no text for this section yet."
 26. Screen-reader name of each section's text box (given by the brief, not marked; like 07-O §10's "Title of {section}"): "Text of {section}"
+31. (Fix round 4, M3) Catalogue has the text, but adding it would make the section longer than its 6,000 characters (or the proposal longer than its 30,000), so it was left out; on the section's note and the Send panel, each followed by line 32: "The {fields} for {service} were left out: this section has no room for them. To add them, shorten the section and copy them from Catalogue." Example: "The deliverables for Custom Web Apps and Business Portals were left out: this section has no room for them. To add them, shorten the section and copy them from Catalogue."
+   Or (shorter): "No room for the {fields} for {service}. Shorten this section, then copy them from Catalogue."
+32. (Fix round 4, M3) Link after line 31 to the service's Catalogue page (its screen-reader name adds ": {service}"): "Open it in Catalogue"
 
 ## 4. Other screens (sweep findings 8 and 9)
 27. Proposals list with nothing to show (the type filter on): "No proposals yet" (finding 8; 07-O's "No proposals or estimates yet" stays when both types are shown)
 28. Estimates list, the same: "No estimates yet"
 29. Catalogue, under "Deliverables, assumptions and exclusions" (the service page and the edit form): "A new proposal takes its Deliverables section, and its Assumptions and exclusions section, from these texts. Where a text is empty, the section is hidden and the draft says so."
-   Or (shorter): "New proposals and estimates take their Deliverables and Assumptions and exclusions sections from these texts. An empty text hides its section."
+   Or (shorter): "New proposals take their Deliverables and Assumptions and exclusions sections from these texts. An empty text hides its section."
 
 ## 5. Client portal (client-facing, finding 7)
 30. A proposal or estimate email link that has ended (expired, revoked, the contact's access turned off, or never valid), under the heading "Proposals and estimates", with the "Sign in" button; the pattern of 07-U §3's invoice line: "This link no longer works. Sign in to your client portal to see your proposals and estimates, or ask us for a new link at contact@techaust.com."

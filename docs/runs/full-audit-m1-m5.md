@@ -373,6 +373,8 @@ Shots: `.logs/shots/a5-invoicing/` (main checkout).
 | **FX-1 data and jobs** | A0 2, 4, 5, 6, 8, 9, 10; A6 2, 3, 4, 6, 7, 10 | A (migrations: an index and triggers only; the analyst's early check) | builder | `packages/db`, `packages/core` (settings schema, invoices), `apps/jobs`, `apps/*/wrangler.jsonc`, `scripts/check-worker-config.mjs`, `docs/04` §9, `docs/runbooks` |
 | **FX-2 security and website** | A1 1, 2, 4, 6, 7; A2 1–10, 13, 14 | B | builder (A1, A2 2, 3, 4, 9) then designer (A2 screens) | the `public/_headers` files of all three apps (portal's is new), the header setup in `apps/{admin,portal}/worker/{app,index}.ts`, `scripts/check-prod-readiness.mjs`, a new SPA headers guard, `tools/model-guard.mjs`, `apps/web/**`, `apps/admin/worker/catalogue.ts` (publish text guard) |
 | **FX-3 admin and portal** | A3 1–10, 12, 13; A4 1–3, 5, 7–9; retagging the bare VERIFY tags; A6 1c (signature downscaled to ≤ 800×400 at upload) | B | builder (A3 4, 5, 7, 8, 10; A4 3, 5, 9; signature) then designer (A3 1–3, 6, 9, 12, 13; A4 1, 2, 7, 8) | `apps/admin/src/**`, `apps/admin/worker/{clients,projects,dashboard,leads,settings-signature}.ts`, `apps/portal/src/**`, `apps/portal/worker/offer-sql.ts`, `packages/pdf` (fonts), `packages/email/src/offers.ts`, `packages/core/src/markdown*` |
+| _(FX-3 addition)_ | M5 round 4 question 2: the first service's own template fill can pass 6,000 characters on a staff-edited template; apply the leave-out-and-name rule there too (`apps/admin/worker/service-fill.ts` `fillServiceTokens`) | B | builder | `apps/admin/worker/service-fill.ts` |
+| _(FX-3 addition)_ | FX-1 follow-ups: the care page's next billing day says "tomorrow" from 06:00 IST, though the 07:00 and 08:00 repeats can draft the same day (`nextBillingDayOf` in core, plus copy); a `series_full` message in `apps/admin/src/lib/documents.ts` | B | builder | `packages/core` care, `apps/admin/src/lib/documents.ts` |
 | **FX-4 invoicing** | A5 (after its audit) | A | builder then designer | as A5 finds |
 
 - **Shared files:**
@@ -383,6 +385,8 @@ Shots: `.logs/shots/a5-invoicing/` (main checkout).
   - A3 11: the dashboard foot line;
   - A4 4: the pre-existing tools line in the terms (also for the CA and lawyer);
   - A4 6: three places where estimates are worded as proposals;
+  - M5 L7: the proposal-sent email says it "covers scope, timeline, price and payment schedule" whatever sections show (`docs/07-content.md:542`, `apps/admin/src/lib/offers.ts:146`). Recommended: "Hi {{first_name}}, your proposal is ready, with the price and payment schedule. It's valid until {{valid_until}}."
+  - FX-1: the numbering clash message (Settings › Numbering) and the `pdf.refused` bell ("The PDF of {number} couldn't be made on 3 nights…").
   - plus every new line the fixes need.
 - **Owner's yes (workflow changes):**
   - A1 3: a dependency audit in CI;
