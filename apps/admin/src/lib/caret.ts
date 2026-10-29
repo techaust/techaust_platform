@@ -1,7 +1,7 @@
 // The caret kept where the person left it when a text box's value is changed from outside their typing (round 4 re-check, finding 2):
 // the server's own edit merged into the section being typed in (`mergeServerEdit`) used to leave the caret at the end of the text.
 // `shiftSelection` is pure (tested); `useKeptCaret` puts it on an <input> or <textarea>.
-import { type RefObject, useCallback, useLayoutEffect, useRef } from "react";
+import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
 /**
  * Where a selection `[start, end]` in `before` stands once the text is `after`, with the change taken as one span (the longest common
@@ -35,7 +35,9 @@ type Box = HTMLInputElement | HTMLTextAreaElement;
 
 /**
  * For a controlled text box: notes the person's caret on every edit and selection, and when `value` arrives from somewhere else while
- * the box has focus (the browser then puts the caret at the end), puts the caret back, shifted by any text inserted before it.
+ * the box has focus (the browser then puts the caret at the end), puts the caret back, shifted by any text inserted before it. A caret
+ * moved with no key or mouse event on the box (a phone's selection handles, a space-bar swipe, voice control) is noted from the
+ * document's `selectionchange` while the box has focus (round 5 re-check, L1).
  * Spread `onSelect` and `onFocus` on the box, call `noteEdit` in its `onChange`, and pass `ref`.
  */
 export function useKeptCaret<T extends Box>(
@@ -53,6 +55,15 @@ export function useKeptCaret<T extends Box>(
     if (!el) return;
     last.current = { value: el.value, start: el.selectionStart ?? 0, end: el.selectionEnd ?? 0 };
   }, []);
+  useEffect(() => {
+    // on the document, not the box: the box may mount after this hook does, and `selectionchange` on a text box is not fired everywhere
+    const onChange = () => {
+      const el = ref.current;
+      if (el && el.ownerDocument.activeElement === el) note();
+    };
+    document.addEventListener("selectionchange", onChange);
+    return () => document.removeEventListener("selectionchange", onChange);
+  }, [note]);
   useLayoutEffect(() => {
     const el = ref.current;
     const was = last.current;

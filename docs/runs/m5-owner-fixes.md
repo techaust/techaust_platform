@@ -1171,3 +1171,59 @@ The discard confirm in `editor.tsx` now uses `await waitForInflight(inflight)`.
 #### Open questions
 1. **Finding 4's rule** (an existing block gets nothing on re-add) replaces round 4's "adds only its missing part". Recommended to keep: whole-text comparison can't tell an edited part from a deleted one. The other way would re-add the Catalogue text under the person's edit.
 2. **The opening after a reorder** follows line order (the decision's "first service"). An alternative is "the first service in line order with no heading of its own", which survives a reorder but gives the opening to a later service when the first has a heading. I kept the decision as written.
+
+## Re-check of round 5 (reviewer claude-opus-5-5/high, live browser, 2026-10-29 ~09:05–09:35 IST, on 3932c5db): APPROVE
+_(Copied in by the lead: the reviewer's rules forbid it to commit.)_
+
+**Verdict:** APPROVE. Nothing critical or high; one new medium and four lows. The block model works live in all four cases asked for.
+
+**Skills loaded:**
+- `cloudflare:workers-best-practices`: `service-blocks.ts` is pure, the save is still one read batch and one write batch;
+- `code-review` at high: its helper's 8 candidates were checked. Number 1 is M1; numbers 2–5 are L1–L4; number 6 matches the brief; number 7 (re-parse CPU) is negligible at 6,000 characters; number 8 is a style note;
+- `frontend-design`: for the visual pass.
+
+**Round-4 re-check findings 1–8:**
+
+| # | Verdict | Evidence |
+|---|---|---|
+| 1 | Fixed | `service-blocks.ts:54-81`, `:155-196`, `:108-134`. Live: S5 and S6 share an exclusion line; S6's new assumptions went into S6's block, and S5's block was untouched (shots 01–03). |
+| 2 | Fixed for keyboard and mouse; one residual path (L1) | `lib/caret.ts`, `sections.tsx`. Live: the answer was held 15 s while the reviewer typed; the caret stayed at 32. |
+| 3 | Fixed | `service-fill.ts:322-344`, `:384-394` |
+| 4 | Fixed, by the decision | `service-fill.ts:147`. Live: after remove and re-add, both sections were byte-identical. |
+| 5 | Fixed | `editor.tsx:615` |
+| 6 | Fixed | `service-blocks.ts:71-79`, `:108-128` |
+| 7 | Fixed; the new comment overstated one point (M1) | `document-save.ts:299-303` |
+| 8 | Fixed | `--topbar-h` on `:root` (scroll padding computed at 80 px); the quantity column is `minmax(12rem, max-content)` and nothing clips under a 1.4.12 spacing override |
+
+**New findings:**
+- **M1 (medium):** one save that removes every service and adds another makes the added service own the unheaded opening, which still holds the old service's text (`document-save.ts:304-311`). Nothing is added and no gap is named. It was reproduced through the API: lines S9 → S10 gave `sectionsChanged: []` and `catalogueGaps: []`.
+  - The reviewer's fix: the services the draft had own the opening.
+  - Note: the two-save path (remove every line, save, then add one) was already silent before round 5. The lead decides it.
+- **L1:** a caret moved without a key or mouse event (phone selection handles, voice control) was restored to an older position. Fix: also note the caret on `selectionchange`.
+- **L2:** two services with the same line name share one heading (catalogue names are not unique). Fix: make names unique, or document the limit.
+- **L3:** the save orders services stored-first, while the reads use line order. A service added above an unheaded first service takes the opening on reads. A variant of the documented limit.
+- **L4:** under a text-spacing override, `max-content` is worked out per row, so a "Per milestone" row's columns sit 5 px right. Nothing clips; reword the comment.
+
+**Live check** (local admin, local D1, 49 migrations, seed; an invite and portal sample made locally only):
+- passed: the shared line, "Use Catalogue text", remove and re-add, and the caret during a merge;
+- empty Catalogue texts: both sections hidden with the note and its two links, and three gaps named;
+- axe: 0 violations at 375 and 1280 in both themes;
+- keyboard focus clear of the top bar;
+- no console errors.
+
+The dev server and browser were stopped. Shots: `.logs/shots/m5-recheck5/` (main checkout, 12 files).
+
+**Tests:**
+- admin: 106 files, 3,281 passed, 0 failed;
+- `pnpm check`: exit 0 (Biome checked 1,273 files, 10 existing warnings; typecheck, migration guard and Worker config guard all ok).
+
+## Fix round 6 (lead, 2026-10-29 ~09:45 IST; small fixes done by the lead, Opus high)
+- **M1:** when the save takes off every service the draft had, those services come first in the order the blocks are read in (`kept.length > 0 ? [...kept, ...added] : [...gone, ...added]`, `document-save.ts`). The removed first service keeps the opening, and the added one gets its own block under its name. The comment is corrected. New API test: "re-check M1: one save that replaces every service…" (`documents-service-text.test.ts`).
+- **The two-save path:** kept as it is, and named as a known limit in the `service-fill.ts` header. A draft with no service and no token left looks, to the server, like one whose tokens the person wrote over (round 4 L2, decided). Recorded in docs/13.
+- **L1:** `useKeptCaret` also notes the caret on the document's `selectionchange` while its box has focus (`lib/caret.ts`).
+- **L2, L3:** named as known limits in the `service-fill.ts` header.
+- **L4:** the `documents.css` comment now says "one width for every row at normal spacing" and explains the per-row growth.
+- **Tests:**
+  - `documents-service-text` and `caret`: 29/29 passed;
+  - the admin suite: 106 files, 3,282 passed;
+  - `pnpm check`: exit 0. A first run failed only because this side worktree lacked workspace links; it passed after `pnpm install --frozen-lockfile --offline`.

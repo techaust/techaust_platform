@@ -22,7 +22,14 @@
 //   - a part left out for room (M3) is named only while its service has no block in the section (services are left out whole); a part
 //     missing from a block the service has is the person's edit, named only once the Catalogue row changes (L1);
 //   - the reads (gaps, "Use Catalogue text") know only the services on the lines: the block of a service taken off the lines runs on as
-//     part of the block above it until its text is removed.
+//     part of the block above it until its text is removed;
+//   - a save puts the services the draft had before the ones it adds, while the reads take line order (round 5 re-check, L3): a service
+//     added on a line ABOVE a first service with no heading gets a headed block, and the reads then give the opening to the added service
+//     (the first limit above);
+//   - two services with the same line name share one heading, the first in line order owning it (round 5 re-check, L2): Catalogue names
+//     are not unique, so the second has no block of its own and its Catalogue text is offered again after each change of its row;
+//   - a save that adds a service to a draft with no service and no `{{service.*}}` token left (every line removed and saved, then a line
+//     added) puts nothing in: the text there is taken as the person's own, by the round 4 L2 rule.
 // Pure: no I/O. The Worker budget forbids `import()`; everything here is static.
 import { placeholdersOf, renderTemplate } from "@techaust/core/catalogue";
 import { REQUIRED_SECTIONS, SECTION_BODY_MAX, SECTIONS_TOTAL_MAX } from "@techaust/core/documents";

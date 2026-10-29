@@ -1001,4 +1001,25 @@ describe("round 5: one block per service (lead's decision 2026-10-29) [ADM-PROP-
     // (the Assumptions and exclusions section is hidden, with no text from either service: those gaps are expected)
     expect(doc.catalogueGaps.filter((g: J) => g.sectionKind === KINDS.deliverables)).toEqual([]);
   });
+
+  it("re-check M1: one save that replaces every service with another puts the new one's text under its name, never inside the old opening", async () => {
+    const o = await owner();
+    const a = await mkService(100_000, { name: "Old A", deliverables_md: "A delivers" });
+    const b = await mkService(50_000, { name: "New B", deliverables_md: "B delivers" });
+    const made = await draftOf([a]);
+    const v = await getDoc(o, made.id);
+    expect(section(v, KINDS.deliverables).bodyMd).toBe("A delivers");
+    const res = await patchDoc(o, made.id, {
+      expectedUpdatedAt: v.updatedAt,
+      lines: linesOf(v, (l: J) => l.catalogueItemId !== a.id, b),
+    });
+    expect(res.status, await res.clone().text()).toBe(200);
+    const body = await json(res);
+    const del = section(v, KINDS.deliverables);
+    expect(body.sectionsChanged.find((s: J) => s.id === del.id)?.bodyMd).toBe(
+      "A delivers\n\n**New B**\nB delivers",
+    );
+    const doc = await getDoc(o, made.id);
+    expect(section(doc, KINDS.deliverables).bodyMd).toBe("A delivers\n\n**New B**\nB delivers");
+  });
 });

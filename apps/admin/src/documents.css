@@ -174,8 +174,9 @@
 }
 
 .qledger {
-  /* The quantity box (4.5 rem) and the longest unit beside it, "Per milestone" (round 4, M5): one width for every row. It may grow, never
-     clip, when a person's text spacing makes a unit wider (WCAG 1.4.12; round 4 re-check, finding 8). */
+  /* The quantity box (4.5 rem) and the longest unit beside it, "Per milestone" (round 4, M5): one width for every row at normal spacing.
+     It may grow, never clip, when a person's text spacing makes a unit wider (WCAG 1.4.12; round 4 re-check, finding 8); `max-content`
+     is worked out per row, so under such spacing a row with a wider unit sits a few pixels further right (round 5 re-check, L4). */
   --qledger-qty: minmax(12rem, max-content);
   margin: 0 0 var(--space-4);
   padding: 0;

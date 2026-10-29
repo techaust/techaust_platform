@@ -300,7 +300,9 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
   // 4, L2): the save that adds the first service has filled the template's tokens above. A draft whose tokens the person wrote over keeps
   // their words, and no gap names the first service's Catalogue text it lacks (its block shows the person's text, and that text is offered
   // only once its Catalogue row changes after the draft was made: L1). The services the draft had come first, so an added service never
-  // owns the unheaded opening; a service this save takes off the lines still ends the block above its heading.
+  // owns the unheaded opening; a service this save takes off the lines still ends the block above its heading. When the save takes off
+  // every service the draft had (round 5 re-check, M1), the first of those still owns the opening: the text there is theirs, so an added
+  // service gets its own block under its name instead of being taken to hold it.
   if (storedServices.length > 0) {
     const current = servicesOf(state.lines, items);
     const kept = current.filter((x) => storedServices.includes(x.id));
@@ -308,7 +310,12 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
       const item = items.get(x);
       return item && !current.includes(item) ? [item] : [];
     });
-    sections = appendServices(sections, added, [...kept, ...added], gone);
+    sections = appendServices(
+      sections,
+      added,
+      kept.length > 0 ? [...kept, ...added] : [...gone, ...added],
+      gone,
+    );
   }
   const refilled = sections.some((x, n) => x !== state.sections[n]);
   if (refilled) {
