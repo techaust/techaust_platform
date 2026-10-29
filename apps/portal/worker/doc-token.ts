@@ -7,7 +7,7 @@
 // same 404, and counts toward the address's `p:fail:` counter like a failed sign-in link; a blocked address gets a 429 and writes nothing.
 //
 // Under the owner's Q1 = A a document-link use is a sign-in event: a valid use writes one `doc_token.use` audit row (actor type `contact`, the contact the link is bound to; the entity is the document), an
-// access row, and sets `documents.viewed_at` once (the first view); a failed one writes the counter and an access row.
+// access row, and sets `documents.viewed_at` once (the first view, before the answer; the PDF too); a failed one writes the counter and an access row.
 import {
   docTokenRequest,
   FAIL_SQL,
@@ -40,6 +40,7 @@ import {
   type SummaryRow,
   summaryOf,
   TYPES_SQL,
+  VIEW_SQL,
 } from "./invoice-summary.ts";
 import { streamPdf } from "./offer-core.ts";
 import { pdfFileName } from "./offer-sql.ts";
@@ -95,7 +96,8 @@ export const docToken = new Hono<AppEnv>()
     const db = c.env.DB;
     const t = Date.now();
     c.set("accessDone", true);
-    // One batch: the frozen lines (read first), the audit row of the use, the first view (set once: `viewed_at` may be filled in once after the freeze), and the access row.
+    // One batch: the frozen lines (read first), the audit row of the use, the first view (`VIEW_SQL`: set once, only on a document the client may still
+    // open, so never on a void one; FX-5, 08-C RA-10), and the access row.
     const [lines] = await db.batch([
       db.prepare(LINES_SQL).bind(doc.link_client_id, doc.id),
       auditStmt(db, {
@@ -107,22 +109,23 @@ export const docToken = new Hono<AppEnv>()
         entityType: "document",
         entityId: doc.id,
       }),
-      db
-        .prepare("UPDATE documents SET viewed_at = ?2 WHERE client_id = ?1 AND id = ?3 AND viewed_at IS NULL")
-        .bind(doc.link_client_id, t, doc.id),
+      db.prepare(VIEW_SQL).bind(doc.link_client_id, doc.id, t),
       accessStmt(db, accessEntry(c, 200, doc.link_contact_id)),
     ]);
     return c.json({ document: summaryOf(doc, (lines?.results ?? []) as LineRow[]) });
   })
   // The PDF behind the link (the same open and the same counter). The headers are those of the offer PDF: an attachment, never rendered, never cached, never sniffed.
+  // Opening it is a view too (FX-5, 08-C RA-10; parity with the signed-in PDF): the first view and the access row in one batch, before the answer.
   .post("/document/pdf", json(docTokenRequest), async (c) => {
     const { token } = c.req.valid("json");
     const o = await open(c, token);
     if (o instanceof Response) return o;
     const { doc } = o;
+    const db = c.env.DB;
     c.set("accessDone", true);
-    await c.env.DB.batch([
-      accessStmt(c.env.DB, accessEntry(c, doc.pdf_r2_key ? 200 : 409, doc.link_contact_id)),
+    await db.batch([
+      db.prepare(VIEW_SQL).bind(doc.link_client_id, doc.id, Date.now()),
+      accessStmt(db, accessEntry(c, doc.pdf_r2_key ? 200 : 409, doc.link_contact_id)),
     ]);
     if (!doc.pdf_r2_key)
       return c.json(

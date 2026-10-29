@@ -616,6 +616,27 @@ describe("the PDF behind the link [POR-06, M4.5 headers]", () => {
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(res.headers.get("Content-Security-Policy")).toBe("sandbox");
   });
+  it("FX-5 (early check 2; 08-C RA-10): opening the PDF through the link records the first view before the answer, once; a bad link writes none", async () => {
+    const f = await fixtures();
+    const viewedAt = async (id: string) =>
+      (await one<{ v: number | null }>("SELECT viewed_at AS v FROM documents WHERE id = ?", id))?.v ?? null;
+    const key = `docs/tax_invoice/2026-27/${9000 + ++seq}-v1.pdf`;
+    await env.DOCS.put(key, "%PDF-1.4 view");
+    const doc = await frozenDoc(f.a.id, "tax_invoice", { pdfKey: key });
+    const token = await link(f.a.finance, doc);
+    const res = await usePdf(token);
+    expect(res.status).toBe(200);
+    await res.arrayBuffer();
+    const first = await viewedAt(doc);
+    expect(first).not.toBeNull();
+    const again = await usePdf(token);
+    expect(again.status).toBe(200);
+    await again.arrayBuffer();
+    expect(await viewedAt(doc)).toBe(first);
+    const other = await frozenDoc(f.a.id, "tax_invoice", { pdfKey: key });
+    expect((await usePdf(`${token}x`)).status).toBe(404);
+    expect(await viewedAt(other)).toBeNull();
+  });
   it("a bad link is the same 404 and counts", async () => {
     const ip = "192.0.2.83";
     const res = await call("/t/document/pdf", { body: { token: "z".repeat(43) }, ip });

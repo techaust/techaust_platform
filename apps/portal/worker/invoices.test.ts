@@ -1,12 +1,15 @@
 // The signed-in contact's invoices [POR-06, POR-03, Q49, LD62, M5.4]: the list (keyset, newest first, never a draft or a void one), one document's summary and its PDF. A finance-only area; another
 // organisation's invoice is the same 404 as one that does not exist (the cross-tenant harness runs these routes in scope.test.ts too).
-import { env } from "cloudflare:workers";
+import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
+import { env, exports } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { fixtures } from "./fixtures.ts";
 import { ROUTES } from "./guard.ts";
+import app from "./index.ts";
+import { VIEW_SQL } from "./invoice-summary.ts";
 import { LIST_SQL, ONE_SQL } from "./invoices.ts";
-import { bodyOf, call, one, sessionFor } from "./test-helpers.ts";
+import { bodyOf, call, nextIp, ORIGIN, one, sessionFor } from "./test-helpers.ts";
 
 let seq = 0;
 async function mk(
@@ -181,5 +184,114 @@ describe("one invoice and its PDF [POR-06]", () => {
     expect((await call(`/invoices/${theirs}/pdf`, { cookie: s.cookie })).status).toBe(404);
     const plain = await sessionFor(f.a.plain);
     expect((await call(`/invoices/${withPdf}/pdf`, { cookie: plain.cookie })).status).toBe(404);
+  });
+});
+
+// FX-5 (early check 1, 2 and 4; owner decision 2026-10-30, docs/13; 08-C RA-10): a document the client has opened can't be voided, so the view is
+// written in the batch that reads what the answer shows, never in the background after it.
+describe("the first view is written before the answer [FX-5, ADM-INV-07, 08-C RA-10]", () => {
+  const viewedAt = async (id: string) =>
+    (await one<{ v: number | null }>("SELECT viewed_at AS v FROM documents WHERE id = ?", id))?.v ?? null;
+  const VOID =
+    "UPDATE documents SET status = 'void', voided_at = ?2, void_reason = 'Issued in error' WHERE id = ?1";
+  const voidNow = (id: string) => env.DB.prepare(VOID).bind(id, Date.now()).run();
+  /** The access log refuses every insert while this trigger is installed: the background write (session touch and access row) then fails whole. */
+  const BLOCK =
+    "CREATE TRIGGER test_fx5_block_access BEFORE INSERT ON access_log BEGIN SELECT RAISE(ABORT, 'test: access log blocked'); END";
+  const UNBLOCK = "DROP TRIGGER IF EXISTS test_fx5_block_access";
+  const signedIn = (cookie: string) => ({ headers: { Cookie: cookie, "CF-Connecting-IP": nextIp() } });
+
+  it("(a) viewed_at is set when exports.default.fetch resolves, and a void after it is refused by the database (documents_viewed_no_void)", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.a.finance);
+    const doc = await mk(f.a.id);
+    const res = await exports.default.fetch(`${ORIGIN}/api/v1/invoices/${doc}`, signedIn(s.cookie));
+    expect(res.status).toBe(200);
+    const at = await viewedAt(doc);
+    expect(at).not.toBeNull();
+    await expect(voidNow(doc)).rejects.toThrow(/documents_viewed_no_void/);
+    expect(await viewedAt(doc)).toBe(at);
+    // the control: the same void on a document nobody opened goes through (the refusal above is the view's, not another rule's)
+    const unopened = await mk(f.a.id);
+    await voidNow(unopened);
+    expect(await one("SELECT status FROM documents WHERE id = ?", unopened)).toEqual({ status: "void" });
+  });
+
+  it("(b) voided first: the summary and the PDF are the same 404 and viewed_at stays NULL", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.a.finance);
+    const key = `docs/tax_invoice/2026-27/${8000 + ++seq}-v1.pdf`;
+    await env.DOCS.put(key, "%PDF-1.4 voided first");
+    const doc = await mk(f.a.id, { pdfKey: key });
+    await voidNow(doc);
+    expect((await call(`/invoices/${doc}`, { cookie: s.cookie })).status).toBe(404);
+    expect((await call(`/invoices/${doc}/pdf`, { cookie: s.cookie })).status).toBe(404);
+    expect(await viewedAt(doc)).toBeNull();
+  });
+
+  it("(c) the view lands even when the background write fails, and before the request's background work is awaited", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.a.finance);
+    const doc = await mk(f.a.id);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    await env.DB.prepare(BLOCK).run();
+    try {
+      const ctx = createExecutionContext();
+      const res = await app.request(`${ORIGIN}/api/v1/invoices/${doc}`, signedIn(s.cookie), env, ctx);
+      expect(res.status).toBe(200);
+      // read before the background work is awaited: the view is already there
+      expect(await viewedAt(doc)).not.toBeNull();
+      await waitOnExecutionContext(ctx);
+      // the background write failed whole (its access row was refused), so the view can only have come from the answer's own batch
+      expect(logged.mock.calls.some(([line]) => String(line).includes("access log write failed"))).toBe(true);
+      expect(await viewedAt(doc)).not.toBeNull();
+      await expect(voidNow(doc)).rejects.toThrow(/documents_viewed_no_void/);
+    } finally {
+      await env.DB.prepare(UNBLOCK).run();
+      logged.mockRestore();
+    }
+  });
+
+  it("(d) opening the PDF records the first view too (also while it is still being prepared), once", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.a.finance);
+    const key = `docs/tax_invoice/2026-27/${8000 + ++seq}-v1.pdf`;
+    await env.DOCS.put(key, "%PDF-1.4 first view");
+    const doc = await mk(f.a.id, { pdfKey: key });
+    expect(await viewedAt(doc)).toBeNull();
+    const res = await call(`/invoices/${doc}/pdf`, { cookie: s.cookie });
+    expect(res.status).toBe(200);
+    await res.arrayBuffer();
+    const first = await viewedAt(doc);
+    expect(first).not.toBeNull();
+    const again = await call(`/invoices/${doc}/pdf`, { cookie: s.cookie });
+    expect(again.status).toBe(200);
+    await again.arrayBuffer();
+    expect(await viewedAt(doc)).toBe(first);
+    const pending = await mk(f.a.id);
+    expect((await call(`/invoices/${pending}/pdf`, { cookie: s.cookie })).status).toBe(409);
+    expect(await viewedAt(pending)).not.toBeNull();
+    // another organisation's PDF is a 404 and writes nothing on their document
+    const theirs = await mk(f.b.id, { pdfKey: key });
+    expect((await call(`/invoices/${theirs}/pdf`, { cookie: s.cookie })).status).toBe(404);
+    expect(await viewedAt(theirs)).toBeNull();
+  });
+
+  it("VIEW_SQL writes only a document the client may open: never a draft, a void one, an offer or another organisation's; at most once", async () => {
+    const f = await fixtures();
+    const changes = async (client: string, id: string) =>
+      (await env.DB.prepare(VIEW_SQL).bind(client, id, Date.now()).run()).meta.changes;
+    const open = await mk(f.a.id);
+    expect(await changes(f.a.id, open)).toBe(1);
+    expect(await changes(f.a.id, open)).toBe(0);
+    for (const id of [
+      f.a.docs.draft,
+      f.a.docs.void,
+      await mk(f.a.id, { status: "void", void: true }),
+      await mk(f.a.id, { status: "issued", void: true }),
+      f.a.docs.proposal,
+    ])
+      expect(await changes(f.a.id, id)).toBe(0);
+    expect(await changes(f.a.id, await mk(f.b.id))).toBe(0);
   });
 });
