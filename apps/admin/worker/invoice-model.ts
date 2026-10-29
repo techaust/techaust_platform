@@ -99,6 +99,11 @@ export const VIEWED_BY_CLIENT = e(
   "viewed_by_client",
   "The client has opened this invoice in the portal, so it can't be voided. Use a credit note instead.",
 );
+/** The same refusal for a proforma: it has no credit note, so it stays until converted (lead, 2026-10-30, docs/13; 07-Z §1's proforma line). */
+export const VIEWED_BY_CLIENT_PROFORMA = e(
+  "viewed_by_client",
+  "The client has opened this proforma in the portal, so it can't be voided.",
+);
 export const INVOICE_APPROVAL_EXPIRED = e(
   "approval_expired",
   "The invoice changed after the request, so the request expired",

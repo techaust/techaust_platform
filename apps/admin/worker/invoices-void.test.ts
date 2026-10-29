@@ -7,6 +7,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ISSUED_DOCUMENTS_SQL } from "./invoice-model.ts";
 import { insert } from "./test-clients.ts";
 import { call, countOf, one, rows, sessionFor } from "./test-helpers.ts";
+import { mkProforma } from "./test-invoice-types.ts";
 import {
   auditCount,
   codeOf,
@@ -462,5 +463,49 @@ describe("a document the client opened in the portal is never voided [FX-5, A0 3
         .bind(inv.id)
         .run(),
     ).rejects.toThrow(/documents_viewed_no_void/);
+  });
+
+  it("a viewed proforma: 409 viewed_by_client and the proforma's own line (no credit note: it stays until converted; lead, 2026-10-30); nothing written", async () => {
+    const o = await owner();
+    const pf = await mkProforma(o);
+    expect((await issueInvoice(o, pf.id)).status).toBe(200);
+    await view(pf.id);
+    const before = await invoiceRow(pf.id);
+    const res = await voidInvoice(o, pf.id);
+    expect(res.status).toBe(409);
+    const body = await json(res);
+    expect(body.error.code).toBe("viewed_by_client");
+    expect(body.reasons).toEqual(["viewed_by_client"]);
+    // the API's words are the proforma's (07-Z §1), never the invoice's credit-note advice; the screen's line is pinned in src/lib/invoices.test.ts
+    expect(body.error.message).toBe(
+      "The client has opened this proforma in the portal, so it can't be voided.",
+    );
+    expect(await invoiceRow(pf.id)).toEqual(before);
+    expect(await auditCount("invoice.void", pf.id)).toBe(0);
+    const v = await getInvoice(o, pf.id);
+    expect(v.void).toMatchObject({ canVoid: false, blockers: ["viewed_by_client"] });
+  });
+
+  it("viewed and past its month: 409 return_period_closed with both codes in reasons; the screen says the return period", async () => {
+    const o = await farSession();
+    const c = await mkInvoiceClient();
+    // 31 October 2026, 10:00 UTC = 15:30 IST: the month of issue is October
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.UTC(2026, 9, 31, 10, 0, 0, 0) });
+    const inv = await issued(o, { clientId: c.clientId });
+    await view(inv.id);
+    vi.setSystemTime(Date.UTC(2026, 9, 31, 18, 30, 0, 0)); // 1 November, 00:00 IST
+    const before = await invoiceRow(inv.id);
+    const res = await voidInvoice(o, inv.id);
+    expect(res.status).toBe(409);
+    const body = await json(res);
+    expect(body.error.code).toBe("return_period_closed");
+    expect(body.reasons).toEqual(["viewed_by_client", "return_period_closed"]);
+    expect(body.error.message).toBe(
+      "This invoice's GST return period has ended, so it can't be voided. Use a credit note instead.",
+    );
+    expect(await invoiceRow(inv.id)).toEqual(before);
+    expect(await auditCount("invoice.void", inv.id)).toBe(0);
+    const v = await getInvoice(o, inv.id);
+    expect(v.void.blockers).toEqual(["viewed_by_client", "return_period_closed"]);
   });
 });

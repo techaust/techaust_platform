@@ -76,6 +76,7 @@ import {
   taxContext,
   todayOf,
   VIEWED_BY_CLIENT,
+  VIEWED_BY_CLIENT_PROFORMA,
   VOID_NOT_ALLOWED,
   withoutReference,
 } from "./invoice-model.ts";
@@ -147,15 +148,18 @@ const idText = z.string().check(z.minLength(1), z.maxLength(64));
 
 /**
  * A refused void (409), with the exact reasons (codes) riding along. 07-R: `already_void` for a void one, `return_period_closed` for a closed
- * month, FX-5 (owner decision 2026-10-30, 08-C RA-10): `viewed_by_client` once the client opened it in the portal; `void_not_allowed` for the rest.
+ * month, FX-5 (owner decision 2026-10-30, 08-C RA-10): `viewed_by_client` once the client opened it in the portal (a proforma has its own words: it
+ * has no credit note and stays until converted; lead, 2026-10-30); `void_not_allowed` for the rest.
  */
-function voidRefused(c: Ctx, reasons: readonly VoidBlockerCode[]) {
+function voidRefused(c: Ctx, reasons: readonly VoidBlockerCode[], type: string) {
   const error = reasons.includes("already_void")
     ? ALREADY_VOID
     : reasons.includes("return_period_closed")
       ? RETURN_PERIOD_CLOSED
       : reasons.includes("viewed_by_client")
-        ? VIEWED_BY_CLIENT
+        ? type === "proforma"
+          ? VIEWED_BY_CLIENT_PROFORMA
+          : VIEWED_BY_CLIENT
         : VOID_NOT_ALLOWED;
   return c.json({ error: { code: error.code, message: error.message }, reasons, request_id: c.var.rid }, 409);
 }
@@ -1163,7 +1167,7 @@ export const invoices = new Hono<AppEnv>()
       today,
       type: d.type,
     });
-    if (reasons.length > 0) return voidRefused(c, reasons);
+    if (reasons.length > 0) return voidRefused(c, reasons, d.type);
     if (d.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
     // An anonymised client takes nothing new (the standing rule): a void is a write on its document.
     if (ctx.client.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
@@ -1246,7 +1250,7 @@ export const invoices = new Hono<AppEnv>()
           403,
         );
       // FX-5: the client opened it in the portal between the read and the write (a view never moves `updated_at`), so it says why.
-      return voidRefused(c, again.viewed_at !== null ? ["viewed_by_client"] : []);
+      return voidRefused(c, again.viewed_at !== null ? ["viewed_by_client"] : [], d.type);
     }
     // The milestone's new status for the toast ("back to Pending" or "back to Ready to bill"): read after the write, by the id the invoice was made
     // from (the void cleared the link). Null when the invoice had no milestone.

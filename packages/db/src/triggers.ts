@@ -926,7 +926,7 @@ export const VIEWED_NO_VOID_TYPES_0053 = ["proforma", "tax_invoice", "export_inv
 /**
  * FX-5 (full audit A0 3; owner decision 2026-10-30, docs/13; 08-C RA-10; a new trigger only, no table is rebuilt; the abort message starts with the
  * trigger's name): `documents_viewed_no_void`: a proforma, tax or export invoice the client has opened in the portal (`viewed_at` set) is never
- * voided; a credit note corrects it. The twin of core `voidBlockers` (`viewed_by_client`) and of the void route's `viewed_at IS NULL`.
+ * voided; a credit note corrects an invoice, a delivered proforma stays until converted (lead, 2026-10-30). The twin of core `voidBlockers` (`viewed_by_client`) and of the void route's `viewed_at IS NULL`.
  */
 export function voidViewTriggerStatements(): string[] {
   const types = VIEWED_NO_VOID_TYPES_0053.map((t) => `'${t}'`).join(", ");

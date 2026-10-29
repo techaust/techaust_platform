@@ -1,10 +1,11 @@
 // FX-5 (full audit A0 3; owner decision 2026-10-30, docs/13; 08-C RA-10; ADM-INV-07): an invoice-family document the client has opened in the portal
-// (`viewed_at` set) is never voided; a credit note corrects it. Held in three places: core `voidBlockers` (`viewed_by_client`), the void route's
+// (`viewed_at` set) is never voided; a credit note corrects an invoice, a delivered proforma stays until converted. Held in three places: core `voidBlockers` (`viewed_by_client`), the void route's
 // `viewed_at IS NULL` and the trigger `documents_viewed_no_void` (0053, a new trigger only: no table is rebuilt).
 import { describe, expect, it } from "vitest";
 import { voidViewTriggerStatements } from "../src/triggers.ts";
 import { first, rejects, run } from "./helpers.ts";
 import { parentInvoice } from "./note-helpers.ts";
+import { addDoc, mkClient } from "./reports-helpers.ts";
 
 const VOID =
   "UPDATE documents SET status = 'void', voided_at = 9000, void_reason = 'Issued in error' WHERE id = ?";
@@ -26,6 +27,17 @@ describe("0053 documents_viewed_no_void: a document the client opened is never v
       await rejects(run(VOID, p.id), /documents_viewed_no_void/);
       expect(await status(p.id)).toBe("issued");
     }
+  });
+
+  it("a viewed proforma is refused too (it has no credit note: it stays until converted; lead, 2026-10-30, docs/13); an unviewed one is voided", async () => {
+    const clientId = await mkClient();
+    const viewed = await addDoc({ type: "proforma", clientId, issueDate: "2026-10-10", status: "issued" });
+    await run("UPDATE documents SET viewed_at = 8000 WHERE id = ?", viewed.id);
+    await rejects(run(VOID, viewed.id), /documents_viewed_no_void/);
+    expect(await status(viewed.id)).toBe("issued");
+    const unviewed = await addDoc({ type: "proforma", clientId, issueDate: "2026-10-10", status: "issued" });
+    await run(VOID, unviewed.id);
+    expect(await status(unviewed.id)).toBe("void");
   });
 
   it("an invoice the client has not opened is still voided (the other rules unchanged)", async () => {
