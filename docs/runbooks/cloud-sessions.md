@@ -21,10 +21,10 @@ Installing the GitHub App changes a GitHub setting, so only you do it.
 3. On GitHub's page, choose the **techaust** account, then **Only select repositories** → pick **techaust_platform** → **Install**.
 4. You land back on claude.ai/code. The repository picker now lists **techaust/techaust_platform**.
 
-## Part 2. Create the "TecHaust" environment (once)
+## Part 2. Create the "techaust_platform" environment (once)
 1. On **https://claude.ai/code**, find the environment selector under the message box (it shows the current environment's name) and click it.
 2. Click **New environment** (or **Add environment**) at the bottom of the menu. If a dialog asks for the kind, pick the **Cloud** tab.
-3. **Name:** `TecHaust`
+3. **Name:** `techaust_platform` (owner, 2026-10-30)
 4. Click the **Network access** row:
    - choose **Custom**
    - tick **Also include default list of common package managers** (npm, GitHub, Ubuntu and the other trusted hosts)
@@ -48,7 +48,7 @@ Installing the GitHub App changes a GitHub setting, so only you do it.
 The first session in this environment takes a few minutes longer: the setup script installs Node 24, pnpm and the browsers, and Claude then keeps a copy, so later sessions start fast. The copy is rebuilt by itself about once a week, or when you change the script or the allowed domains.
 
 ## Part 3. Check it (once, then whenever something looks wrong)
-1. On **https://claude.ai/code**, pick the repository **techaust/techaust_platform**, the branch **main**, and the environment **TecHaust**.
+1. On **https://claude.ai/code**, pick the repository **techaust/techaust_platform**, the branch **main**, and the environment **techaust_platform**.
 2. In the model menu under the message box, choose **Opus 5.5** before sending (the project can't choose it for you). Do this every time you start a session. If you forget, the session's first note says "MODEL IS …, NOT Opus 5.5": stop and tell the lead.
 3. Type: **check cloud setup** and send it.
 4. Claude runs `bash scripts/cloud-check.sh` and answers with a short list. A good result ends with **"cloud check: all passed"**, and shows:

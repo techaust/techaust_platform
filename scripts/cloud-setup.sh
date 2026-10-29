@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Setup script of the claude.ai cloud environment "TecHaust" (CLOUD-1; docs/runbooks/cloud-sessions.md). The owner pastes this
+# Setup script of the claude.ai cloud environment "techaust_platform" (CLOUD-1; docs/runbooks/cloud-sessions.md). The owner pastes this
 # whole file into the environment's "Setup script" box; it is kept here only for review and history: editing this file changes
 # nothing in the cloud until it is pasted again.
 #
