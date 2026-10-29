@@ -299,3 +299,33 @@ Builder, Opus 5.5 high, Tier B. Branch `fix/cloud-1-r2` from `origin/chore/cloud
 - The parser is still not a full shell: `case … )` patterns and process substitution `<(…)` can be misread (they split more, so they check more); arithmetic `$(( a << b ))` is read as a heredoc, which would treat the following lines as its text (a possible false negative, needing a deliberate shift operator).
 
 **Open point for the lead:** `wrangler d1 migrations create` is now refused in the cloud (finding 5's `create`); say if that one local-only command should be allowed.
+
+## Re-check (reviewer, Opus 5.5 high, 2026-10-30, on b7569d83): SEND BACK (copied by the lead)
+All 11 review findings are closed as briefed. The new parser in `tools/cloud-guard.mjs` lets through forms the old guard (3c75ebd7) refused, which the finding 7 brief ruled out. About 200 probe commands, old guard against new (probes kept in the lead's `.logs/cloud1-recheck-probes/`). Skills: `code-review` (high; its helper's 10 candidates re-run, 9 confirmed), `security-review` by hand.
+
+1. **high** `tools/cloud-guard.mjs:290`: `<<<` (here-string) is read as a heredoc from its second `<`; the string becomes the delimiter and every later line goes unchecked. Pass now, refused before: `read -r n <<< "$(gh pr list …)"` then `gh pr merge "$n" --squash`; `jq -r .x <<< "$json"` then `gh pr merge 1`; `grep -q ok <<< "$out" && echo y` then `wrangler deploy`; `bash <<< 'gh pr merge 1'`, `bash <<<'gh pr merge 1'`. Fix: `<<<` is a three-character redirection, the next word a string; for a shell (`readsAsShell`), check that string as a command; tests.
+2. **medium** `:290`: an arithmetic shift is read as a heredoc: `x=$(( 1 << 3 ))` or `(( i <<= 1 ))` then `gh pr merge 1` passes. Fix: inside `$((…))` and `((…))` read to the matching `))` as text; `let x=1<<2` stays a heredoc (bash does the same); tests.
+3. **medium** `:315-321`: `|&` ends the pipeline at `&`, so `cat <<EOF |& bash` with `gh pr merge 1` in the body passes. Fix: `|&` is one pipe (`endCommand(true)`, advance 2); heredoc test.
+4. **low** `:481` (`shellTexts`): option scan stops at a long option's value: `bash --rcfile /dev/null -c 'gh pr merge 1'`, `bash --init-file x -c '…'` pass. Fix: skip `--rcfile`/`--init-file` values, or find a `-c`-style word anywhere after the shell name.
+5. **low** `:297-298`: redirection detection looks at the word's last character including quoted text: `echo "a>"& gh pr merge 1`, `echo "a>"| gh pr merge 1`, `echo 'a<'& gh pr merge 1` pass. Fix: last unquoted character only.
+6. **low** `:437`: `wrangler deploy --dry-run false` and `--dry-run --no-dry-run` pass. Fix: exempt only without `--no-dry-run` and when the word after `--dry-run` isn't `false`/`0`.
+7. **low** `:180, 283`: ~5,000 nested `$(` throw a RangeError; the hook exits with an error, which Claude Code treats as allowed. Fix: catch in `cloudRefusal` and refuse ("can't be parsed"), or cap the depth.
+8. **low** `scripts/dev.mjs:59-63`: on a terminal, a SIGINT sent to the launcher alone is swallowed. Fix: if the server is still running a moment after SIGINT, pass it on.
+9. **low, older or accepted best effort:** `echo 'gh pr merge 1' | bash` passes (old guard too); `cat <<EOF > x.sh && bash x.sh` passes (script class, accepted); wrangler is still a deny-list (`d1 time-travel restore`, `queues purge` pass; an allow-list closes the class); `git switch main && git push` / `cd elsewhere && git push` are checked against the hook's folder (branch protection stops them).
+
+**Commands:** `pnpm check` (queue): exit 0. Web tests (queue): 596 passed, 17 skipped. Old-vs-new probe runs; hook checks with `CLAUDE_CODE_REMOTE` unset (prints nothing, exit 0) and true.
+**Ordinary work passes** in a simulated cloud: `cloud-pr.sh`, `watch.sh`, `heavy.sh … pnpm check`, gh reads, `gh api` PR create and comment, `wrangler deploy --dry-run --outdir dist`.
+**Not verified:** a real cloud session (Monitor reaching the hook with `tool_input.command`, `CLAUDE_CODE_REMOTE=true` in hooks, `git rev-parse` there); wrangler's reading of `--dry-run false`; finding 8 at run time.
+
+## Lead's triage after the re-check (2026-10-30)
+- Fix round 3 (builder): 1–8, plus from 9: quoted text piped into a shell (`echo '…' | bash`, `printf … | sh`) is checked as a command; wrangler becomes an allow-list in the cloud (see the brief). Accepted as best effort and documented in the guard's header: a script written then run, and the folder used for the branch read (branch protection is the stop).
+- A high finding → a second re-check after the fix (1–3, 7 and the wrangler allow-list at least).
+
+## Fix round 3 brief (lead, 2026-10-30)
+Builder, Opus 5.5 high, Tier B. Branch `fix/cloud-1-r3` from `origin/chore/cloud-sessions` (this commit or later); push only that branch. Don't touch `.claude/settings.json`.
+- Fix re-check findings 1–8 as described above, each with tests built from every probe named there (all must be refused, and a here-string with harmless text such as `jq -r .x <<< "$json"` alone must pass).
+- From 9: a pipeline whose last command is a shell (`bash`, `sh`, `zsh`, `dash`, `source /dev/stdin`) checks the quoted text of `echo`/`printf` before it as a command.
+- wrangler in the cloud is an allow-list: `dev` (refused with `--remote`/`-r`), `types`, `build`, `deploy` only as a real dry run (finding 6), `d1 migrations list|apply` and `d1 execute` only with `--local`, `--version`/`-v`, `help`/`--help`. Everything else refused; the reason names the allowed list. Keep `pnpm --filter … dev`, `pnpm build`, `pnpm typecheck`, `pnpm db:migrate:local` and `pnpm --filter @techaust/jobs types` working in a simulated cloud (tests).
+- Header comment of `tools/cloud-guard.mjs`: name the accepted best-effort classes (a script written then run; the branch read uses the hook's folder; branch protection is the stop).
+- No new false negatives: every probe in the review and the re-check that the guard refuses today stays refused (add the re-check's list as a regression table; the lead's copy of the probe files is in the main checkout's `.logs/cloud1-recheck-probes/`, readable by absolute path).
+- Checks: touched test files, `biome check` on changed files, `bash tools/heavy.sh --log cloud1r3-check pnpm check`, web tests alone through the queue, and the whole-repository `pnpm lint` last. Append "## Builder report, fix round 3".
