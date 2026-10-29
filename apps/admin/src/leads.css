@@ -588,9 +588,32 @@ a.lead-card__name:hover {
 
 /* FX-3 (A3 8): a manual lead's answers being edited sit above the read-only facts, on their own hairline. */
 .lead-answers {
+  container-type: inline-size;
   margin-bottom: var(--space-5);
   padding-bottom: var(--space-5);
   border-bottom: 1px solid var(--color-border);
+}
+
+/* FX-3 fix round 3 (3): its fields go side by side by the form's own width, not the window's (as the timeline does). With the menu
+   open at 1024 px the Enquiry panel is about 16rem wide, where two selects would cut their values; they stack until the form has
+   about 30rem, room for the longest budget band in each half. Only this form changes; `.form-grid` keeps its window rule elsewhere. */
+.lead-answers .form-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container (min-width: 30rem) {
+  .lead-answers .form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* as `.form-grid` side by side (shell.css): each field spans two rows and shares them, so the controls start level */
+  .lead-answers .form-grid > * {
+    grid-row: span 2;
+  }
+
+  .lead-answers .form-grid > .field:has(> .field__head) {
+    grid-template-rows: subgrid;
+  }
 }
 
 .lead-links {
