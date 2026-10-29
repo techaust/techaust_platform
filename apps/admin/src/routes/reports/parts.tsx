@@ -125,18 +125,29 @@ export function WideList({
     const next = { start: left > 1, end: left + el.clientWidth < el.scrollWidth - 1 };
     setMore((m) => (m.start === next.start && m.end === next.end ? m : next));
   }, []);
-  // After every render too: new rows can widen the table without resizing the box (the state only changes when the answer does).
-  useEffect(measure);
+  // FX-4 review L5: one effect with its dependencies, set up once, instead of measuring after every render. It measures when the box is drawn, as it
+  // scrolls, when the box or the table inside it changes size, and when the content changes (new rows, or a table drawn afresh by a new read, which
+  // the size observer then watches in place of the old one).
   useEffect(() => {
     const el = box.current;
     if (!el) return;
-    el.addEventListener("scroll", measure, { passive: true });
     const ro = new ResizeObserver(measure);
+    const watchTable = () => {
+      if (el.firstElementChild) ro.observe(el.firstElementChild);
+    };
+    const mo = new MutationObserver(() => {
+      watchTable();
+      measure();
+    });
     ro.observe(el);
-    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    watchTable();
+    mo.observe(el, { childList: true, subtree: true });
+    el.addEventListener("scroll", measure, { passive: true });
+    measure();
     return () => {
       el.removeEventListener("scroll", measure);
       ro.disconnect();
+      mo.disconnect();
     };
   }, [measure]);
   return (

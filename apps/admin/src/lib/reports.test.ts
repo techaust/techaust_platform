@@ -6,6 +6,7 @@ import { realisationParamsFromStoredTax } from "@techaust/core/invoices";
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
+import reportPartsSource from "../routes/reports/parts.tsx?raw";
 import { ACTION_LABELS } from "./audit.ts";
 import { reportBellHref } from "./bell-links.ts";
 import { APPROVED_07Y, PLACEHOLDER_MARK } from "./copy-y.ts";
@@ -810,5 +811,13 @@ describe("FX-4 (A5 8): a LUT added on the screen says it isn't saved yet", () =>
   });
   it("the words are 07-Y's, marked until approved", () => {
     expect(LUT_UNSAVED).toBe(`${APPROVED_07Y ? "" : `${PLACEHOLDER_MARK} `}Not saved yet`);
+  });
+});
+
+describe("FX-4 review L5: the wide list's scroll cue measures from observers, not after every render", () => {
+  it("no effect without a dependency list; content changes are watched", () => {
+    expect(reportPartsSource).not.toMatch(/useEffect\(measure\)/);
+    expect(reportPartsSource).toMatch(/new MutationObserver\(/);
+    expect(reportPartsSource).toMatch(/\}, \[measure\]\);/);
   });
 });
