@@ -6,6 +6,7 @@ import { issueDateOf } from "@techaust/core/invoices";
 import type { Settings } from "@techaust/core/settings";
 import type { SettingsDoc } from "../api.ts";
 import type { Built } from "../routes/settings/kit.tsx";
+import { Y } from "./copy-y.ts";
 import type { LutRow } from "./invoice-types.ts";
 import { annualReturnError, annualReturnsOf } from "./notes.ts";
 import { TAX_FIELDS_COPY } from "./reports.ts";
@@ -30,6 +31,27 @@ export const REALISATION_ERRORS = {
   escalateExtraDays: "Enter the days before the final reminder, from 0 to 36,500.",
 } as const;
 
+/**
+ * FX-4 (full audit A5 12; 07-Y, PENDING, marked): the words of Settings › Tax "default SAC" for custom lines, for the designer's field. Six digits, or empty for none
+ * (Researched 2026-10-28, Notification 11/2017-CT (Rate) (08-C RA-16)).
+ */
+export const TAX_SAC_COPY = {
+  defaultSacLabel: Y("Default SAC for custom lines"),
+  defaultSacHint: Y(
+    "A new line that is not from the catalogue starts with this SAC. Leave it empty to enter one on each line.",
+  ),
+  defaultSacError: Y("The default SAC has 6 digits, or leave it empty."),
+} as const;
+
+/**
+ * FX-4 (full audit A5 8; 07-Y, PENDING, marked): a LUT added to the list is kept only when the form is saved, so until then its row says so. A row is unsaved
+ * when the stored list has no LUT for its year with the same ARN and date.
+ */
+export const LUT_UNSAVED = Y("Not saved yet");
+
+export const lutIsUnsaved = (row: LutRow, saved: readonly LutRow[]): boolean =>
+  !saved.some((s) => s.fy === row.fy && s.arn === row.arn && (s.filedOn ?? "") === (row.filedOn ?? ""));
+
 /** The field id of an annual return's date (./routes/settings/annual-returns.tsx uses the same). */
 export const annualReturnFieldId = (fy: string) => `f-annualReturnsFiled-${fy}`;
 
@@ -37,6 +59,8 @@ export type TaxForm = {
   rate: string;
   allowLineOverride: boolean;
   sac: Record<Category, string>;
+  /** FX-4 (A5 12): the SAC a new custom line starts with; "" is none. */
+  defaultSac: string;
   exportMode: Tax["exportMode"];
   /** M5.2 (ADM-INV-18): the letters of undertaking, one per financial year (replaces the single ARN field). */
   luts: LutRow[];
@@ -69,6 +93,7 @@ export function taxToForm(v: Tax): TaxForm {
     rate: bpToPercent(v.defaultRateBp),
     allowLineOverride: v.allowLineOverride,
     sac: { ...v.sacByCategory },
+    defaultSac: v.defaultSac ?? "",
     exportMode: v.exportMode,
     // The API folds the old single letter into the list on read (early check 3), so the list is the whole story.
     luts: (v.luts ?? []).map((l) => ({ fy: l.fy, arn: l.arn, filedOn: l.filedOn ?? null })),
@@ -101,6 +126,8 @@ export function buildTax(f: TaxForm, doc: Pick<SettingsDoc<"tax">, "value">, now
   for (const c of CATEGORIES)
     if (!/^\d{6}$/.test(f.sac[c.key].trim()))
       e[`f-sacByCategory-${c.key}`] = `The ${c.label} SAC has 6 digits.`;
+  const defaultSac = f.defaultSac.trim();
+  if (defaultSac !== "" && !/^\d{6}$/.test(defaultSac)) e["f-defaultSac"] = TAX_SAC_COPY.defaultSacError;
   const alertDays = intIn(f.invoiceAlertDays, 1, 30);
   if (alertDays === null) e["f-invoiceAlertDays"] = "Enter the tax invoice reminder in days, from 1 to 30.";
   const cnMonth = intIn(f.cnMonth, 1, 12);
@@ -154,6 +181,7 @@ export function buildTax(f: TaxForm, doc: Pick<SettingsDoc<"tax">, "value">, now
       sacByCategory: Object.fromEntries(
         CATEGORIES.map((c) => [c.key, f.sac[c.key].trim()]),
       ) as Tax["sacByCategory"],
+      defaultSac,
       exportMode: f.exportMode,
       // The deprecated single letter is never written again: the list is saved, the old key stays empty.
       lut: { arn: null, fy: null },

@@ -835,12 +835,19 @@ describe("a proforma [ADM-INV-01, ADM-INV-10, LD28, G-6]", () => {
       balance_minor: row?.total_minor,
     });
     expect(await invoiceCounter()).toBe(counter); // the INV counter did not move
-    expect(await sealCheck(made.id, { proforma: { notice: PROFORMA_NOTICE_LITERAL } })).toEqual({
+    // FX-4 (A5 5): the notice and the GST estimate marker are sealed together
+    expect(
+      await sealCheck(made.id, { proforma: { notice: PROFORMA_NOTICE_LITERAL, gstEstimate: true } }),
+    ).toEqual({
       content: true,
       snapshot: true,
     });
     expect(
-      (await sealCheckWith(made.id, { proforma: { notice: `${PROFORMA_NOTICE_LITERAL}.` } }))?.snapshot,
+      (
+        await sealCheckWith(made.id, {
+          proforma: { notice: `${PROFORMA_NOTICE_LITERAL}.`, gstEstimate: true },
+        })
+      )?.snapshot,
     ).toBe(false);
     expect((await sealCheckWith(made.id, {}))?.snapshot).toBe(false);
     // the SWIFT block of its (USD) bank details is frozen with it, and no LUT or rate exists on it
@@ -1258,7 +1265,7 @@ describe("the frozen header extras [LD37]: what was sealed is what is shown, wha
     ).rejects.toThrow(/issued document is frozen/);
   });
 
-  it("an M5.1-shaped tax invoice stores no extras (NULL) and keeps its seal; a proforma stores its notice only", async () => {
+  it("an M5.1-shaped tax invoice stores no extras (NULL) and keeps its seal; a proforma stores its notice and (FX-4) the GST estimate marker only", async () => {
     const o = await owner();
     const tax = await mkInvoice(o);
     expect((await issueInvoice(o, tax.id)).status).toBe(200);
@@ -1273,11 +1280,75 @@ describe("the frozen header extras [LD37]: what was sealed is what is shown, wha
     expect(await sealCheck(tax.id)).toEqual({ content: true, snapshot: true });
     const pf = await mkProforma(o);
     expect((await issueInvoice(o, pf.id)).status).toBe(200);
-    expect(await sealCheck(pf.id, { proforma: { notice: PROFORMA_NOTICE_LITERAL } })).toEqual({
+    expect(
+      await sealCheck(pf.id, { proforma: { notice: PROFORMA_NOTICE_LITERAL, gstEstimate: true } }),
+    ).toEqual({
       content: true,
       snapshot: true,
     });
     expect((await getInvoice(o, pf.id)).proforma.notice).toBe(PROFORMA_NOTICE_LITERAL);
+  });
+});
+
+describe("FX-4 (A5 5): a proforma's GST is sealed as an estimate [Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28)]", () => {
+  it("a new proforma carries the marker: the draft says so, the frozen header holds it, and the seal covers it", async () => {
+    const o = await owner();
+    const pf = await mkProforma(o);
+    // a draft will be issued with it
+    expect((await getInvoice(o, pf.id)).proforma.gstEstimate).toBe(true);
+    expect((await issueInvoice(o, pf.id)).status).toBe(200);
+    const extras = await one<{ header_extras: string }>(
+      "SELECT header_extras FROM documents WHERE id = ?",
+      pf.id,
+    );
+    expect(JSON.parse(extras?.header_extras ?? "null")).toEqual({
+      proforma: { notice: PROFORMA_NOTICE_LITERAL, gstEstimate: true },
+    });
+    expect((await getInvoice(o, pf.id)).proforma.gstEstimate).toBe(true);
+    // the seal covers it: the same header without the marker is another seal
+    expect((await sealCheckWith(pf.id, { proforma: { notice: PROFORMA_NOTICE_LITERAL } }))?.snapshot).toBe(
+      false,
+    );
+    // and the frozen row cannot lose it afterwards
+    await expect(
+      env.DB.prepare("UPDATE documents SET header_extras = ?1 WHERE id = ?2")
+        .bind(JSON.stringify({ proforma: { notice: PROFORMA_NOTICE_LITERAL } }), pf.id)
+        .run(),
+    ).rejects.toThrow();
+  });
+
+  it("an older proforma (sealed before FX-4, the notice only) shows its GST as it was issued: no marker", async () => {
+    const o = await owner();
+    const pf = await mkProforma(o);
+    expect((await issueInvoice(o, pf.id)).status).toBe(200);
+    // A copy of the issued row with the header a proforma issued before FX-4 has (the frozen-update trigger forbids editing the original).
+    const cols = (
+      await env.DB.prepare("SELECT name FROM pragma_table_info('documents')").all<{ name: string }>()
+    ).results.map((r) => r.name);
+    const pick = cols
+      .map((c) =>
+        c === "id"
+          ? "?2"
+          : c === "number"
+            ? "number + 900"
+            : c === "number_display"
+              ? "printf('TH/PI/%s/%04d', fy, number + 900)"
+              : c === "header_extras"
+                ? "?3"
+                : c === "milestone_id"
+                  ? "NULL"
+                  : c,
+      )
+      .join(", ");
+    const oldId = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO documents (${cols.join(", ")}) SELECT ${pick} FROM documents WHERE id = ?1`,
+    )
+      .bind(pf.id, oldId, JSON.stringify({ proforma: { notice: PROFORMA_NOTICE_LITERAL } }))
+      .run();
+    const view = await getInvoice(o, oldId);
+    expect(view.proforma.notice).toBe(PROFORMA_NOTICE_LITERAL);
+    expect(view.proforma.gstEstimate).toBe(false);
   });
 });
 

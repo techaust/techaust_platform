@@ -99,6 +99,8 @@ describe("a valid link opens exactly one document [POR-06]", () => {
         "creditedMinor",
         "currency",
         "dueDate",
+        // FX-4 (A5 5): false here (a tax invoice); true only for a proforma sealed with the estimate marker
+        "gstEstimate",
         "id",
         "issueDate",
         "lines",
@@ -117,6 +119,7 @@ describe("a valid link opens exactly one document [POR-06]", () => {
       type: "tax_invoice",
       status: "issued",
       currency: "INR",
+      gstEstimate: false,
       issueDate: "2026-11-05",
       dueDate: "2026-11-12",
       total: "₹1,180.00",

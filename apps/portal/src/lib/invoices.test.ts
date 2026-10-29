@@ -1,8 +1,66 @@
 // M5.4 portal invoice rules (lib/invoices.ts, copy-invoices.ts): the status a client reads, quantities as text, 07-U word for word, and the invoice
 // link's token (taken from `/i#t=`, stripped from the address, kept for the tab only).
+
+import { PROFORMA_PDF_COPY } from "@techaust/pdf/copy";
 import { describe, expect, it } from "vitest";
 import { documentWord, INV } from "../copy-invoices.ts";
-import { clientStatus, minusMoneyText, moneyText, qtyText, takeInvoiceToken, typeLabel } from "./invoices.ts";
+import {
+  clientStatus,
+  minusMoneyText,
+  moneyText,
+  qtyText,
+  takeInvoiceToken,
+  totalsRows,
+  typeLabel,
+} from "./invoices.ts";
+
+describe("FX-4 review M1 (A5 5): a marked proforma's tax heads read as estimates, in the PDF's words [POR-06]", () => {
+  const t = (o: Partial<Parameters<typeof totalsRows>[0]["totals"]>) => ({
+    subtotalMinor: 100_000,
+    discountMinor: 0,
+    taxableMinor: 100_000,
+    cgstMinor: 0,
+    sgstMinor: 0,
+    igstMinor: 0,
+    roundOffMinor: 0,
+    totalMinor: 118_000,
+    totalInrMinor: null,
+    ...o,
+  });
+  const intra = t({ cgstMinor: 9_000, sgstMinor: 9_000 });
+  const inter = t({ igstMinor: 18_000 });
+  const labels = (d: Parameters<typeof totalsRows>[0]) => totalsRows(d).map((r) => r.label);
+  it("with the marker: CGST, SGST and IGST each say (estimate), exactly as the PDF prints them", () => {
+    expect(labels({ type: "proforma", currency: "INR", totals: intra, gstEstimate: true })).toEqual([
+      "Taxable value",
+      "CGST (estimate)",
+      "SGST (estimate)",
+      "Total",
+    ]);
+    expect(labels({ type: "proforma", currency: "INR", totals: inter, gstEstimate: true })).toEqual([
+      "Taxable value",
+      PROFORMA_PDF_COPY.estimate("IGST"),
+      "Total",
+    ]);
+  });
+  it("a proforma sealed before FX-4 (no marker, or an older API without the field) keeps the plain heads", () => {
+    expect(labels({ type: "proforma", currency: "INR", totals: inter, gstEstimate: false })).toContain(
+      "IGST",
+    );
+    expect(labels({ type: "proforma", currency: "INR", totals: intra })).toEqual([
+      "Taxable value",
+      "CGST",
+      "SGST",
+      "Total",
+    ]);
+  });
+  it("never on another type, even if a stray flag came with it", () => {
+    for (const type of ["tax_invoice", "export_invoice", "debit_note", "credit_note"])
+      expect(labels({ type, currency: "INR", totals: intra, gstEstimate: true })).not.toContain(
+        "CGST (estimate)",
+      );
+  });
+});
 
 /** 07-U was approved on 2026-10-28 (research and wording): its lines carry no mark. */
 const M = "";

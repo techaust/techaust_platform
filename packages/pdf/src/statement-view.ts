@@ -18,7 +18,7 @@ export type StatementInputEntry = {
   debitMinor: number;
   creditMinor: number;
   balanceMinor: number;
-  /** A credit note: the invoice it is against. */
+  /** A credit or debit note: the invoice it is against (FX-4: debit notes too). */
   againstNumber?: string | null;
 };
 

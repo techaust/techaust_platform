@@ -141,6 +141,41 @@ export const lineColumns = {
   amount: "Amount",
 } as const;
 
+/**
+ * FX-4 (full audit A5 3; 07-Y, PENDING, marked until approved): the totals row's name says where its discount comes from, never "Document discount" for a
+ * line's own discount. The amount is the server's one `discountMinor` (lines and document together); the screen never splits or adds it, so a draft
+ * with both says so in the row's name, and each line's own discount stays in its row of the lines.
+ */
+export function discountRowLabel(has: { lines: boolean; document: boolean }): string {
+  if (has.lines && has.document) return Y("Discounts (lines and document)");
+  if (has.lines) return Y("Line discounts");
+  return DOC_COPY.documentDiscount;
+}
+
+/** Whether a stored discount takes anything off (a zero discount takes nothing). */
+const takesOff = (d: { value: number } | null | undefined): boolean => !!d && d.value > 0;
+
+export type DiscountSources = { lines: boolean; document: boolean };
+
+/** Where a stored view's discount comes from (a frozen view, or a draft as last saved): its lines' own discounts, the document's, or both. */
+export const discountSources = (v: {
+  lines: readonly { discount: { value: number } | null }[];
+  discount: { value: number } | null;
+}): DiscountSources => ({ lines: v.lines.some((l) => takesOff(l.discount)), document: takesOff(v.discount) });
+
+/**
+ * FX-4 review L1: a draft's row is named from what is SAVED, never from what is typed, so its name and its amount (the server's `discountMinor`, from the
+ * last save) always describe the same discount. The proposal editor keeps these in `figures.discounts`: from the read (`discountSources`), then from
+ * each save's own lines and discount as sent (`sentDiscounts`), taken only when the server answers. The invoice editor reads its saved view.
+ */
+export const sentDiscounts = (patch: {
+  lines?: readonly { discount?: { value: number } | null | undefined }[] | undefined;
+  fields?: { discount?: { value: number } | null | undefined } | undefined;
+}): Partial<DiscountSources> => ({
+  ...(patch.lines ? { lines: patch.lines.some((l) => takesOff(l.discount)) } : {}),
+  ...(patch.fields ? { document: takesOff(patch.fields.discount) } : {}),
+});
+
 export const chooseDefaultLines = (service: string) => `Choose the default lines for ${service}`;
 export const placeOfSupplyText = (label: string) => `Place of supply: ${label}`;
 export const inWords = (words: string) => `In words: ${words}`;
@@ -652,6 +687,8 @@ export type Figures = {
   newestTermsVersion: number | null;
   /** `bodyMd` is the pinned version's frozen text, on the read only (a save answer leaves it out). */
   terms: { id: string; version: number; sha256: string; bodyMd?: string | null } | null;
+  /** Review L1: where the SAVED draft's discount comes from, so the totals row is named for the amount it shows (never for what is typed). */
+  discounts: DiscountSources;
 };
 
 export type SaveStatus = "idle" | "saving" | "saved" | "error" | "stale" | "frozen";
@@ -726,6 +763,7 @@ export function figuresOf(v: DocumentView, lineUids: string[], stepUids: string[
     termsOutdated: v.termsOutdated,
     newestTermsVersion: v.newestTermsVersion ?? null,
     terms: v.terms,
+    discounts: discountSources(v),
   };
 }
 
@@ -902,6 +940,8 @@ export type Sent = {
    * rewrote is applied from the answer only if the person has not touched it since, so nothing typed is lost.
    */
   sectionsAt?: Readonly<Record<string, SectionDraft>>;
+  /** Review L1: where this save's discounts come from, for the parts it sends; they become the saved state when the server answers. */
+  discounts?: Partial<DiscountSources>;
 };
 
 /**
@@ -968,7 +1008,11 @@ export function buildPatch(
     }
   }
   const sectionsAt = Object.fromEntries(s.sections.map((x) => [x.uid, x]));
-  return { ok: true, patch, sent: { parts, rev: { ...s.rev }, uids, sectionsAt } };
+  return {
+    ok: true,
+    patch,
+    sent: { parts, rev: { ...s.rev }, uids, sectionsAt, discounts: sentDiscounts(patch) },
+  };
 }
 
 const sameFigures = (a: LineFigures | undefined, b: LineFigures) =>
@@ -1144,6 +1188,7 @@ export function applySave(s: EditorState, a: SaveAnswer, sent: Sent): EditorStat
       termsOutdated: a.termsOutdated,
       newestTermsVersion: a.newestTermsVersion ?? s.figures.newestTermsVersion,
       terms: a.terms,
+      discounts: { ...s.figures.discounts, ...sent.discounts },
     },
   };
   return { ...next, status: isDirty(next) ? "idle" : "saved" };

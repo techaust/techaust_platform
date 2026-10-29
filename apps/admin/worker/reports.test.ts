@@ -400,12 +400,13 @@ describe("a client's statement", () => {
       adv.number,
       adv.number,
     ]);
-    // 07-V §6 "Credit note against {number}": only the credit note carries the invoice it is against
+    // 07-V §6 "Credit note against {number}", and (FX-4, A5 7) the debit note too: each note carries the invoice it is against; an invoice paid from a
+    // proforma (its parent) and a receipt carry none
     expect(b.entries.map((e: J) => e.againstNumber ?? null)).toEqual([
       null,
       null,
       inv1.number,
-      null,
+      inv2.number,
       null,
       null,
     ]);

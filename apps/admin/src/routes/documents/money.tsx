@@ -8,6 +8,7 @@ import {
   DOC_COPY,
   DOC_PENDING,
   dayText,
+  discountRowLabel,
   inWords,
   lineColumns,
   lineTaxText,
@@ -17,6 +18,7 @@ import {
   taxLinesOf,
 } from "../../lib/documents.ts";
 import type { LineFigures, Supply, Totals, ViewLine, ViewStep } from "../../lib/documents-api.ts";
+import { taxHeadEstimate } from "../../lib/invoices.ts";
 import { bpToPercent } from "../../lib/settings-form.ts";
 
 /** The totals block: what the document comes to, and why. */
@@ -27,10 +29,21 @@ export function TaxPreview(props: {
   /** A sent version shows the figures as frozen, without the "preview" line. */
   frozen?: boolean;
   busy?: boolean;
+  /**
+   * FX-4 (A5 3): where the discount comes from (`discountSources`), so the row is named for it. Review L1: always the saved state (a draft's last save,
+   * `figures.discounts` or the invoice editor's saved view), so the name and the server's amount describe the same discount.
+   */
+  discounts?: { lines: boolean; document: boolean } | undefined;
+  /**
+   * FX-4 review M1 (A5 5): a proforma carrying the sealed estimate marker (`proforma.gstEstimate`; a draft proforma is issued with it) names each tax
+   * head "CGST (estimate)", in the PDF's own words; a proforma sealed before FX-4, and every other type, keeps the plain heads.
+   */
+  estimate?: boolean | undefined;
 }) {
   const { totals: t, supply, currency } = props;
   if (!t) return null;
   const kinds = taxLinesOf(supply);
+  const head = (k: (typeof kinds)[number]) => (props.estimate ? taxHeadEstimate(DOC_COPY[k]) : DOC_COPY[k]);
   return (
     <div className="tax-preview" aria-busy={props.busy || undefined}>
       {supply && (
@@ -39,7 +52,7 @@ export function TaxPreview(props: {
       <dl className="totals">
         {t.discountMinor > 0 && (
           <div className="totals__row">
-            <dt>{DOC_COPY.documentDiscount}</dt>
+            <dt>{discountRowLabel(props.discounts ?? { lines: false, document: true })}</dt>
             <dd className="tnum">{moneyText(t.discountMinor, currency)}</dd>
           </div>
         )}
@@ -49,7 +62,7 @@ export function TaxPreview(props: {
         </div>
         {kinds.map((k) => (
           <div className="totals__row" key={k}>
-            <dt>{DOC_COPY[k]}</dt>
+            <dt>{head(k)}</dt>
             <dd className="tnum">
               {moneyText(k === "cgst" ? t.cgstMinor : k === "sgst" ? t.sgstMinor : t.igstMinor, currency)}
             </dd>

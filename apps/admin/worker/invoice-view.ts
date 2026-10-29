@@ -16,6 +16,7 @@ import {
   INVOICE_ISSUABLE_TYPES,
   INVOICE_SERIES_OF,
   type IssueBlocker,
+  isGstEstimate,
   isInvoiceFlowType,
   isNoteType,
   issueDateOf,
@@ -310,6 +311,8 @@ export function invoiceView(i: InvoiceViewInput) {
       igstMinor: lineAt(n)?.igstMinor ?? null,
       lineTotalMinor: lineAt(n)?.lineTotalMinor ?? null,
     })),
+    /** A draft's new custom line starts with this SAC (Settings › Tax "default SAC"; FX-4, A5 12); null when none is set, and on an issued document. */
+    newLineSac: frozen ? null : settings.tax.defaultSac || null,
     totals: totalsOf(computed),
     supply: computed?.supply ?? null,
     summary: computed?.summary ?? null,
@@ -442,6 +445,11 @@ export function invoiceView(i: InvoiceViewInput) {
     proforma: isProforma
       ? {
           notice: frozen ? (sealed.proforma?.notice ?? null) : PROFORMA_NOTICE,
+          /**
+           * FX-4 (A5 5): label the tax heads "(estimate)". A frozen proforma says what it was sealed with (one issued before FX-4 has no marker and
+           * shows as it was); a draft will be issued with the marker (Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28)).
+           */
+          gstEstimate: frozen ? isGstEstimate(sealed.proforma) : true,
           validUntil: d.valid_until,
           paidMinor: d.paid_minor,
           balanceMinor: d.balance_minor,

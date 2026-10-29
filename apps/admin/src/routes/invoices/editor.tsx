@@ -29,6 +29,7 @@ import {
   DOC_COPY,
   DOC_PENDING,
   dayText,
+  discountSources,
   type EditorAction,
   formatIstDay,
   notSaved,
@@ -50,6 +51,7 @@ import {
   issuedToast,
   issueLabelFor,
   requestLine,
+  showsGstEstimate,
   typeLabel,
   UNKNOWN,
 } from "../../lib/invoices.ts";
@@ -487,6 +489,7 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
             current={currentLines}
             showSac={showSac}
             sacRequired
+            newLineSac={v.newLineSac}
           />
 
           <section className="lead-panel doc-totals" aria-labelledby="inv-totals-h">
@@ -530,7 +533,14 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
                   )}
                 </FormField>
               </div>
-              <TaxPreview totals={v.totals} supply={v.supply} currency={s.currency} busy={s.saving} />
+              <TaxPreview
+                totals={v.totals}
+                supply={v.supply}
+                currency={s.currency}
+                busy={s.saving}
+                discounts={discountSources(v)}
+                estimate={showsGstEstimate(v)}
+              />
             </div>
           </section>
 

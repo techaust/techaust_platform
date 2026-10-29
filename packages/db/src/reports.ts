@@ -152,11 +152,12 @@ const DEBIT_KINDS = "('tax_invoice', 'export_invoice', 'debit_note')";
  * The lines of a client's statement as one source `u(id, kind, date, ord, number, amount, sk)`: the debit documents and credit notes (issued, not voided,
  * the client's, in the currency) and the advance receipts of Q9 (their amount, dated by the day the money arrived; the number is that of the tax invoice they
  * paid). `ord` orders one day: 1 a debit document, 2 a credit note, 3 a receipt; `sk` is `date|ord`, the keyset key with `id`. Proformas are not here
- * (LD78: not a tax document; their payment shows through the tax invoice). `cond` is a SQL fragment over a date expression, e.g. `x BETWEEN ?3 AND ?4`.
+ * (LD78: not a tax document; their payment shows through the tax invoice). `cond` is a SQL fragment over a date expression, e.g. `x BETWEEN ?3 AND ?4`. With
+ * `withParent`, a credit or debit note carries the number of the invoice it is against (`parent`; FX-4, full audit A5 7: debit notes too); every other line NULL.
  */
 const statementSource = (cond: (dateExpr: string) => string, withParent = false): string =>
   `(SELECT d.id AS id, d.type AS kind, d.issue_date AS date, CASE d.type WHEN 'credit_note' THEN 2 ELSE 1 END AS ord, d.number_display AS number, d.total_minor AS amount,
-           d.issue_date || '|' || CASE d.type WHEN 'credit_note' THEN 2 ELSE 1 END AS sk${withParent ? ", CASE d.type WHEN 'credit_note' THEN (SELECT p.number_display FROM documents p WHERE p.id = d.parent_id) END AS parent" : ""}
+           d.issue_date || '|' || CASE d.type WHEN 'credit_note' THEN 2 ELSE 1 END AS sk${withParent ? ", CASE WHEN d.type IN ('credit_note', 'debit_note') THEN (SELECT p.number_display FROM documents p WHERE p.id = d.parent_id) END AS parent" : ""}
       FROM documents d INDEXED BY documents_client_issued
       WHERE d.frozen_at IS NOT NULL AND d.type IN ${GST_TYPES} AND d.client_id = ?1 AND d.currency = ?2 AND d.voided_at IS NULL AND d.status <> 'void' AND ${cond("d.issue_date")}
     UNION ALL

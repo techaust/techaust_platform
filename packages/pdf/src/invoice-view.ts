@@ -3,7 +3,7 @@
 // intra-state supply prints half of the rate under CGST and half under SGST, anything else prints the whole rate under IGST (Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)).
 // A missing bank block or signature leaves its part out; nothing is invented. A signature image is embedded only when the caller hands in bytes it
 // has already verified against the frozen SHA-256 (`verifySignatureBytes`).
-import { formatFxRate } from "@techaust/core/invoices";
+import { formatFxRate, isGstEstimate } from "@techaust/core/invoices";
 import { formatMoney, isCurrency, money } from "@techaust/core/money";
 import { fyLabelOfToken, placeOfSupplyLabel } from "@techaust/core/pdf-jobs";
 import type { ComputedDocument } from "@techaust/core/tax";
@@ -330,6 +330,8 @@ export function toInvoiceView(
       ? {
           notice: header.proforma.notice,
           validUntil: header.document.dueDate === null ? "" : shortIsoDate(header.document.dueDate),
+          // FX-4 (A5 5): only the sealed marker, and only on a proforma (Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28)).
+          gstEstimate: envelope.type === "proforma" && isGstEstimate(header.proforma),
         }
       : null,
     advance: header.advance

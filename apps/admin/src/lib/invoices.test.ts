@@ -3,8 +3,13 @@
 // status, a type or a due date) and how its answer lands (the server's ids by position; typing kept).
 import { ISSUE_BLOCKER_CODES } from "@techaust/core/invoices";
 import { decide, ROLES } from "@techaust/core/permissions";
+import { PROFORMA_PDF_COPY } from "@techaust/pdf/copy";
 import { describe, expect, it, vi } from "vitest";
 import { RequestError } from "../api.ts";
+import moneySource from "../routes/documents/money.tsx?raw";
+import editorSource from "../routes/invoices/editor.tsx?raw";
+import readSource from "../routes/invoices/read.tsx?raw";
+import { APPROVED_07Y, PLACEHOLDER_MARK } from "./copy-y.ts";
 import {
   applyInvoiceSave,
   BADGE_LABELS,
@@ -32,9 +37,13 @@ import {
   milestoneHasInvoice,
   requestRow,
   SUPPLIER_COPY_LABEL,
+  SUPPLIER_COPY_NONE,
   seriesPreview,
+  showsGstEstimate,
   splitAtPlace,
   splitSentences,
+  supplierCopyLine,
+  taxHeadEstimate,
   typeLabel,
   voidBlockedText,
   voidTitle,
@@ -438,9 +447,9 @@ describe("M5.2 re-check: proforma wording and the advance rate date (07-S §8)",
           headers: { "Content-Type": "application/json" },
         });
       out[0]?.(pending());
-      out[1]?.(pending());
-      expect(await first).toEqual({ state: "pending" });
-      expect(await second).toEqual({ state: "pending" });
+      out[1]?.(new Response(JSON.stringify({ state: "making" }), { status: 202 }));
+      expect(await first).toEqual({ state: "no_original" });
+      expect(await second).toEqual({ state: "no_original" });
       expect(await other).toEqual({ state: "pending" });
       // once it has answered, the next ask is a new request
       const again = fetchSupplierCopy("doc-1");
@@ -452,9 +461,86 @@ describe("M5.2 re-check: proforma wording and the advance rate date (07-S §8)",
     }
   });
 
+  it("FX-4 (early check M1): 409 pdf_pending is its own state, never 'being prepared'; 202 is; another 409 fails; the PDF is ready", async () => {
+    const answers: Record<string, () => Response> = {
+      making: () => new Response(JSON.stringify({ state: "making" }), { status: 202 }),
+      noOriginal: () =>
+        new Response(JSON.stringify({ error: { code: "pdf_pending" } }), {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        }),
+      otherConflict: () =>
+        new Response(JSON.stringify({ error: { code: "stale_version" } }), {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ready: () =>
+        new Response("%PDF-1.7", {
+          status: 200,
+          headers: {
+            "Content-Type": "application/pdf",
+            "Content-Disposition": 'attachment; filename="TH-INV-2627-0003-supplier-copy.pdf"',
+          },
+        }),
+      offline: () => {
+        throw new TypeError("network");
+      },
+    };
+    let next = "making";
+    vi.stubGlobal("fetch", async () => (answers[next] as () => Response)());
+    try {
+      expect(await fetchSupplierCopy("d")).toEqual({ state: "pending" });
+      next = "noOriginal";
+      expect(await fetchSupplierCopy("d")).toEqual({ state: "no_original" });
+      next = "otherConflict";
+      expect(await fetchSupplierCopy("d")).toEqual({ state: "failed" });
+      next = "offline";
+      expect(await fetchSupplierCopy("d")).toEqual({ state: "failed" });
+      next = "ready";
+      const r = await fetchSupplierCopy("d");
+      expect(r.state).toBe("ready");
+      expect(r.state === "ready" && r.filename).toBe("TH-INV-2627-0003-supplier-copy.pdf");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("FX-4 (early check M1, review L2): only an anonymised client's 409 leaves a line under the supplier copy (07-Y, marked)", () => {
+    const mark = APPROVED_07Y ? "" : `${PLACEHOLDER_MARK} `;
+    expect(SUPPLIER_COPY_NONE).toBe(
+      `${mark}No supplier copy was made before this client was anonymised, and none can be made now.`,
+    );
+    expect(supplierCopyLine("no_original", true)).toBe(SUPPLIER_COPY_NONE);
+    // a live client's button shows only once its PDF is ready, so a 409 there is a plain failure (the toast), never a line
+    expect(supplierCopyLine("no_original", false)).toBeNull();
+    for (const state of ["ready", "pending", "failed"]) expect(supplierCopyLine(state, true)).toBeNull();
+    // never the "being prepared" words of a copy on its way
+    expect(SUPPLIER_COPY_NONE).not.toContain(INV_COPY.pdfPreparing);
+  });
+
   it("a proforma's void refused for a reason other than a payment says it was emailed", () => {
     expect(voidBlockedText(["emailed"], "proforma")).toBe(
       "This proforma has been emailed to the client, so it can't be voided.",
     );
+  });
+});
+
+describe("FX-4 review M1 (A5 5): a marked proforma's tax heads read as estimates, in the PDF's words", () => {
+  it("the head is the PDF's own wording, so the screen and the PDF never differ", () => {
+    expect(taxHeadEstimate("CGST")).toBe("CGST (estimate)");
+    for (const h of ["CGST", "SGST", "IGST"]) expect(taxHeadEstimate(h)).toBe(PROFORMA_PDF_COPY.estimate(h));
+  });
+  it("only a proforma with the marker; one sealed before FX-4, or any other type, keeps the plain heads", () => {
+    expect(showsGstEstimate({ type: "proforma", proforma: { gstEstimate: true } })).toBe(true);
+    expect(showsGstEstimate({ type: "proforma", proforma: { gstEstimate: false } })).toBe(false);
+    expect(showsGstEstimate({ type: "proforma", proforma: {} })).toBe(false);
+    expect(showsGstEstimate({ type: "proforma", proforma: null })).toBe(false);
+    expect(showsGstEstimate({ type: "proforma" })).toBe(false);
+    for (const type of ["tax_invoice", "export_invoice", "credit_note", "debit_note"])
+      expect(showsGstEstimate({ type, proforma: { gstEstimate: true } })).toBe(false);
+  });
+  it("the invoice editor and the invoice page pass the marker to TaxPreview, which names the heads by it", () => {
+    for (const src of [editorSource, readSource]) expect(src).toMatch(/estimate=\{showsGstEstimate\(v\)\}/);
+    expect(moneySource).toMatch(/props\.estimate \? taxHeadEstimate\(DOC_COPY\[k\]\) : DOC_COPY\[k\]/);
   });
 });

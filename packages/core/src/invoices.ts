@@ -591,7 +591,7 @@ export type InvoiceSnapshotInput = {
    * (the key is absent, not null) and a parser accepts their absence.
    *   export:   an export invoice: the route, the endorsement as frozen, the LUT (LUT route), the country, and the optional declaration block pinned;
    *   fx:       every USD tax or export invoice (not a proforma): the rate the INR values were worked out at;
-   *   proforma: a proforma: the notice it carries;
+   *   proforma: a proforma: the notice it carries (and, from FX-4, the `gstEstimate` marker);
    *   advance:  the tax invoice made for money received (Q9): the proforma it settles and the receipt row.
    */
   readonly export?: {
@@ -615,7 +615,11 @@ export type InvoiceSnapshotInput = {
     /** Q24 (08-C RA-21): present only when the Owner stated that no rate was published; the DAY the statement covers (the day of supply), frozen with the rate so an older seal keeps its hash. */
     readonly noRateDay?: string;
   };
-  readonly proforma?: { readonly notice: string };
+  /**
+   * FX-4 (A5 5): `gstEstimate` is present (always `true`) on every proforma issued from FX-4 on, absent on one sealed before it, so an older seal keeps
+   * its hash and its PDF prints as it was (Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28): a proforma's GST is shown as an estimate).
+   */
+  readonly proforma?: { readonly notice: string; readonly gstEstimate?: true };
   readonly advance?: {
     readonly proformaId: string;
     readonly proformaNumber: string;

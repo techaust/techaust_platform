@@ -321,7 +321,8 @@ export function creditNote(
  * the tax each carries (largest remainder, so the parts add up exactly), at the original's supply and heads: an intra-state original adds CGST and SGST in equal
  * halves (so `taxMinor` must be even), an inter-state or IGST export original adds IGST. The original's index, SAC and rates are copied; a USD original's INR view
  * converts each head at the original's rate. Refused: a tax of zero or less, an odd amount on an intra-state original, an original with no tax on any line (an
- * export under LUT: nothing to correct by tax alone). There is no cap here: how much tax was missing is the Owner's figure. Never throws.
+ * export under LUT: nothing to correct by tax alone). There is no cap here: how much tax was missing is the Owner's figure. The total is never rounded (round-off 0,
+ * total = the tax; FX-4, OPEN 08-C RA-33). Never throws.
  */
 export function taxOnlyDebitNote(
   original: ComputedDocument,
@@ -376,6 +377,9 @@ export function taxOnlyDebitNote(
         fxRateMicros: rate,
         unregisteredRecipient: false,
         inrPlan: rate === null ? undefined : { lines: inrLines, totalLeft: inrSum, final: false },
+        // FX-4 (full audit A5 11): never rounded, so the total is exactly the tax (Rs 10.01 of IGST totals Rs 10.01, not Rs 10.00). OPEN (08-C RA-33): may a
+        // tax-only debit note's total be rounded to the nearest rupee, and in which direction? The freeze WHERE and the trigger `documents_tax_only_note_exact` hold it too.
+        noRoundOff: true,
       },
       ctx,
     );

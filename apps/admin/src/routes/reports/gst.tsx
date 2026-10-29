@@ -8,7 +8,7 @@ import { SERIES } from "@techaust/core/numbering";
 import { useEffect, useId, useRef, useState } from "react";
 import { ensureStepUp } from "../../api.ts";
 import { VerifyNote } from "../../components/form.tsx";
-import { Archive, Check, Download, FileText, XCircle } from "../../components/icons.tsx";
+import { AlertTriangle, Archive, Check, Download, FileText, XCircle } from "../../components/icons.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { moneyText } from "../../lib/documents.ts";
 import {
@@ -31,6 +31,7 @@ import {
 import { csvBlob, readAll, reportsApi, saveFile } from "../../lib/reports-api.ts";
 import { buildGstExport, type GstExport, TOTAL_KEYS, zipOf } from "../../lib/reports-build.ts";
 import { ReportFrame } from "./frame.tsx";
+import { ManualEntries } from "./manual-entries.tsx";
 import { Amount, ProblemList, Progress, ReportBlock, WarningList, WideList } from "./parts.tsx";
 
 type Phase =
@@ -188,11 +189,21 @@ function GstResults({ result, period, threshold }: { result: Ok; period: PeriodC
   const C = GST_COPY.columns;
   return (
     <>
-      <h2 className="report-done" tabIndex={-1}>
-        <Check size={20} />
-        <span>{GST_COPY.done(result.checked)}</span>
+      {/* FX-4 (A5 1): never "No errors" while a tax-only note's tax must be entered by hand; the notes follow, each with its figures. */}
+      <h2
+        id="gst-done"
+        className={`report-done${result.complete ? "" : " report-done--manual"}`}
+        tabIndex={-1}
+      >
+        {result.complete ? <Check size={20} /> : <AlertTriangle size={20} />}
+        <span>
+          {result.complete
+            ? GST_COPY.done(result.checked)
+            : GST_COPY.doneManual(result.checked, result.blocking)}
+        </span>
       </h2>
-      <WarningList warnings={result.warnings} />
+      <ManualEntries lines={result.warnings} id="gst-done" />
+      <WarningList warnings={result.warnings.filter((w) => !w.blocking)} />
       {/* Nothing issued: no ledgers of zeros. The files stay (a period with no supplies is still filed). */}
       {result.checked === 0 && <p className="report-empty-line">{SALES_COPY.empty}</p>}
 

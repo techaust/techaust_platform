@@ -71,6 +71,8 @@ export type InvoiceSeedOptions = {
   signatoryOff?: boolean;
   /** Freezes the INR bank block. */
   bank?: boolean;
+  /** FX-4 (A5 5): a proforma sealed with the GST estimate marker, as the issue route seals every proforma from FX-4 on (default: one sealed before it). */
+  gstEstimate?: boolean;
 };
 
 /** Makes a client and a draft tax invoice, then issues it through the real issue statements. */
@@ -292,7 +294,12 @@ export async function seedIssuedInvoice(o: InvoiceSeedOptions = {}): Promise<See
         },
       }
     : type === "proforma"
-      ? { proforma: { notice: LITERAL_PROFORMA_NOTICE } }
+      ? {
+          proforma: {
+            notice: LITERAL_PROFORMA_NOTICE,
+            ...(o.gstEstimate ? { gstEstimate: true as const } : {}),
+          },
+        }
       : {};
   const seal = await invoiceSealOf({
     document: {
