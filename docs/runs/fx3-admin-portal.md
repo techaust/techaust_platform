@@ -1082,3 +1082,9 @@ _(designer claude-opus-5-5/high, branch `fix/fx3-fix3-d` from `origin/fix/fx3-ad
 - "[Placeholder] Choose a country" (Convert dialog)
 
 **Open questions:** none. A possible later improvement, outside this brief: `imageHeaderSize` could read a PNG's eXIf orientation, so a turned PNG also takes the fitted decode instead of the full-size fallback.
+
+**Lead, after fix round 3 (2026-10-29 ~21:00 IST):** both deviations are accepted.
+1. The fitted decode allows the long side to come back exactly one pixel larger (Chrome rounds up), so large images keep the fast path; a turned image misses by far more and still falls back.
+2. The waiting focus target is dropped only after a key or pointer press, so the leave dialog handing focus back doesn't cancel round 2's D.
+
+The designer's idea of reading the PNG orientation chunk in `imageHeaderSize` (the fast path for turned PNGs too) is a nice-to-have, not a defect; kept as a note for M7. Next: the focused re-check.
