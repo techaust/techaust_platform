@@ -112,13 +112,13 @@ export function sectionsFromTemplate(
   rendered: readonly { key: string; heading: string; text: string }[],
 ): SectionDraft[] {
   const out: { kind: string; title: string | null; bodyMd: string | null; hidden: boolean }[] = [];
-  const used = new Set<string>();
-  for (const r of rendered) {
+  // One rule for the kind each section lands in, shared with the template checks (`templateKinds`, below).
+  const kinds = templateKinds(rendered);
+  for (const [n, r] of rendered.entries()) {
     const body = r.text.trim() === "" ? null : r.text;
-    const known = KINDS.includes(r.key) && r.key !== "custom" && !used.has(r.key);
-    if (known) {
-      used.add(r.key);
-      out.push({ kind: r.key, title: r.heading, bodyMd: body, hidden: false });
+    const kind = kinds[n] ?? "custom";
+    if (kind !== "custom") {
+      out.push({ kind, title: r.heading, bodyMd: body, hidden: false });
       continue;
     }
     const customs = out.filter((s) => s.kind === "custom");
@@ -131,7 +131,7 @@ export function sectionsFromTemplate(
     }
   }
   for (const k of REQUIRED_SECTIONS) {
-    if (!used.has(k)) out.push({ kind: k, title: REQUIRED_TITLES[k], bodyMd: null, hidden: false });
+    if (!kinds.includes(k)) out.push({ kind: k, title: REQUIRED_TITLES[k], bodyMd: null, hidden: false });
   }
   return out;
 }
