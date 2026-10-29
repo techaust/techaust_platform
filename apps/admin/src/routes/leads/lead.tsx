@@ -1019,6 +1019,9 @@ function Timeline(props: {
     setOlder([]);
     setNext(props.first.next);
     setError(null);
+    // A "Show older" still on its way belongs to the old page (fix round 3, 6): the button is ready again at once, and that answer,
+    // whenever it comes, changes nothing (`asked` below).
+    setLoading(false);
   }
   const items = [...props.first.items, ...older.filter((o) => !props.first.items.some((f) => f.id === o.id))];
   const now = Date.now();
@@ -1029,21 +1032,25 @@ function Timeline(props: {
   useEffect(() => {
     shownFirst.current = props.first;
   }, [props.first]);
+  // Each "Show older" request's number: only the latest one may show its answer or end the loading state.
+  const asked = useRef(0);
 
   async function more() {
     if (!next) return;
     const from = props.first;
+    const ask = ++asked.current;
+    const current = () => asked.current === ask && shownFirst.current === from;
     setLoading(true);
     setError(null);
     try {
       const r = await api.leadActivities(props.leadId, next);
-      if (shownFirst.current !== from) return;
+      if (!current()) return;
       setOlder((o) => [...o, ...r.items]);
       setNext(r.next);
     } catch (e) {
-      if (shownFirst.current === from) setError(`Older entries didn't load. ${errorText(e)}`);
+      if (current()) setError(`Older entries didn't load. ${errorText(e)}`);
     } finally {
-      setLoading(false);
+      if (asked.current === ask) setLoading(false);
     }
   }
 
