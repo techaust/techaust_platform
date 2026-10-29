@@ -17,6 +17,7 @@ import { useToast } from "../components/toast.tsx";
 import { Notice } from "../components/ui.tsx";
 import { allowed } from "../lib/access.ts";
 import { careErrorText, dayText, hoursText } from "../lib/care.ts";
+import { Y } from "../lib/copy-y.ts";
 import {
   dayHead,
   lockState,
@@ -37,6 +38,9 @@ import {
 import { useUser } from "../session.tsx";
 import { EntryDialog } from "./time/entry-dialog.tsx";
 import { ExportButton } from "./time/export.tsx";
+
+/** 07-Y (FX-3, A3 1): the name of the week's grid when it scrolls sideways (a keyboard stop, read out by its name). */
+export const SHEET_REGION = Y("Hours by day");
 
 export function Component() {
   const user = useUser();
@@ -344,7 +348,8 @@ function Timesheet({ data, today, showPeople }: { data: TimeWeek; today: string;
   const rows = sheetRows(data.groups);
   const totals = new Map(data.dayTotals.map((d) => [d.workDate, d]));
   const billable = data.dayTotals.reduce((n, d) => n + d.billableMinutes, 0);
-  const [sheetRef, sheetRegion] = useScrollRegion<HTMLDivElement>(weekHeading(data.week.start));
+  // Its own name: the panel around it is already "Week of …" (axe landmark-unique).
+  const [sheetRef, sheetRegion] = useScrollRegion<HTMLDivElement>(SHEET_REGION);
   // An empty week is one quiet line inside the week's panel (never a card in a card); the Entries panel is left out then.
   if (data.totalMinutes === 0)
     return (

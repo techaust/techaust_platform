@@ -2954,3 +2954,13 @@ table.diff__table td.diff__arrow {
 .annual-returns__year > label {
   font-variant-numeric: tabular-nums;
 }
+
+/* A settings page's table sits beside the settings menu, so it can be wider than its column at any width (FX-3: the numbering table
+   at 1024 px): it scrolls inside its own box, and its short header doesn't stick. */
+.settings__body .dtable {
+  overflow-x: auto;
+}
+
+.settings__body .dtable__table thead th {
+  position: static;
+}
