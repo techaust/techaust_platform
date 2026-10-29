@@ -8,9 +8,8 @@ import { useEffect, useState } from "react";
 import { useLocation } from "react-router";
 import { DataTable } from "../../components/data-table.tsx";
 import { DateField, useUnreadDates } from "../../components/date-field.tsx";
-import { StatusPill } from "../../components/display.tsx";
 import { FormField, NumberUnit, SettingRow, Switch } from "../../components/form.tsx";
-import { AlertTriangle, Lock, Plus, Trash } from "../../components/icons.tsx";
+import { AlertTriangle, Lock, Pencil, Plus, Trash } from "../../components/icons.tsx";
 import { dateError } from "../../lib/date-field.ts";
 import {
   CHECKLIST_LABELS,
@@ -147,12 +146,13 @@ function LutList(props: {
               header: INVT_COPY.lutFy,
               card: "title",
               cell: (l) => (
-                <span className="lut-fy">
+                <span className="lut-year">
                   <span className="tnum">FY {fyLabel(l.fy)}</span>
                   {lutIsUnsaved(l, props.saved) && (
-                    <StatusPill tone="warning" icon="pencil" outline>
-                      {LUT_UNSAVED}
-                    </StatusPill>
+                    <span className="lut-year__unsaved">
+                      <Pencil size={16} />
+                      <span>{LUT_UNSAVED}</span>
+                    </span>
                   )}
                 </span>
               ),

@@ -215,12 +215,41 @@ body:has(.savebar) .toasts {
   font-variant-numeric: tabular-nums;
 }
 
-/* FX-4 (A5 8): a LUT's year, and beside it "Not saved yet" until the form is saved. */
-.lut-fy {
+/* FX-4 (A5 8): a LUT's year, and under it "Not saved yet" (a pencil, the edit mark the drafts' pills use, and the words) until the form is saved.
+   Plain words rather than a pill, stacked and free to wrap, so the year's column stays narrow: the list fits the settings column at 1024 px. */
+.lut-year {
   display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-2);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+.lut-year__unsaved {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: var(--text-sm--line-height);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.lut-year__unsaved .icon {
+  flex: none;
+  margin-top: 0.125rem;
+  color: var(--color-warning);
+}
+
+/* The column heads may wrap, and the cells sit a little closer, inside the settings column (about 28 rem at 1024 px), so the list never runs past
+   it. */
+.lut-list .dtable__table thead th {
+  white-space: normal;
+}
+
+.lut-list .dtable__table :is(thead, tbody) :is(th, td) {
+  padding-inline: var(--space-3);
 }
 
 /* Two controls side by side (day and month, from and to). */
