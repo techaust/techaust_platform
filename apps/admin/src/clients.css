@@ -516,3 +516,126 @@
   color: var(--color-warning);
   font-size: var(--text-sm);
 }
+
+/* ---------- FX-3: the client's figures (routes/clients/figures.tsx; ADM-CLI-03) ----------
+   One figure leads: what the client owes now, in the display face, its label above it. The rest are ledger rows on hairlines,
+   label left and amount right in tabular figures; a note under an amount is muted. Overdue money carries the warning icon and its
+   count in words. With two currencies each has its own group under its code. */
+
+.acct__rows {
+  display: grid;
+  margin: 0;
+}
+
+.acct__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.acct__row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.acct__rows dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.acct__rows dd {
+  display: grid;
+  justify-items: end;
+  margin: 0;
+  text-align: end;
+}
+
+.acct__row.acct__lead {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
+  padding: 0 0 var(--space-3);
+}
+
+.acct__lead dd {
+  justify-items: start;
+  text-align: start;
+}
+
+.acct__amount {
+  font-variant-numeric: tabular-nums lining-nums;
+  white-space: nowrap;
+}
+
+.acct__amount--big {
+  font-family: var(--font-display);
+  font-stretch: var(--font-display--stretch);
+  font-size: var(--text-h3);
+  line-height: var(--text-h3--line-height);
+  font-weight: 560;
+}
+
+.acct__overdue {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-warning);
+  font-weight: 600;
+}
+
+.acct__sub,
+.acct__none,
+.acct__code,
+.acct__foot,
+.acct__currency {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.acct__lead .acct__none {
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+}
+
+.acct__sub {
+  display: block;
+}
+
+.acct__currency {
+  margin: 0 0 var(--space-2);
+}
+
+.acct__group + .acct__group {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-text);
+}
+
+.acct__foot {
+  margin: var(--space-4) 0 0;
+}
+
+.acct__loading {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.skeleton--figure {
+  height: 1.75rem;
+}
+
+/* The project's Figures list: one amount per currency, stacked. */
+.acct__stack {
+  display: grid;
+  justify-items: start;
+}
+
+.acct__line {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
