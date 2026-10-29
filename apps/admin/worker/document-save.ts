@@ -296,10 +296,20 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
     sections.some((x) => hasServiceToken(x.title) || hasServiceToken(x.bodyMd))
   )
     sections = fillServiceTokens(sections, servicesOf(state.lines, items), scheduleSentence(state.schedule));
-  // A service added to a draft that already had services gets its text not yet in its sections, under its name. Only then (round 4, L2):
-  // the save that adds the first service has filled the template's tokens above, and a draft whose tokens the person wrote over keeps
-  // their words (the gaps name what is missing).
-  if (storedServices.length > 0) sections = appendServices(sections, added);
+  // A service added to a draft that already had services gets the text its own block lacks, by the block rule (round 5). Only then (round
+  // 4, L2): the save that adds the first service has filled the template's tokens above. A draft whose tokens the person wrote over keeps
+  // their words, and no gap names the first service's Catalogue text it lacks (its block shows the person's text, and that text is offered
+  // only once its Catalogue row changes after the draft was made: L1). The services the draft had come first, so an added service never
+  // owns the unheaded opening; a service this save takes off the lines still ends the block above its heading.
+  if (storedServices.length > 0) {
+    const current = servicesOf(state.lines, items);
+    const kept = current.filter((x) => storedServices.includes(x.id));
+    const gone = storedServices.flatMap((x) => {
+      const item = items.get(x);
+      return item && !current.includes(item) ? [item] : [];
+    });
+    sections = appendServices(sections, added, [...kept, ...added], gone);
+  }
   const refilled = sections.some((x, n) => x !== state.sections[n]);
   if (refilled) {
     sections.forEach((x, n) => {

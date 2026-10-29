@@ -170,9 +170,10 @@ export async function buildNewDraft(i: NewDraftInput): Promise<NewDraft> {
       .map((s) => s.key),
   );
   const drafts = sectionsFromTemplate(rendered);
-  // The other services' texts go in under their names by the one rule of a later save (`appendServices`): a text already there is not
-  // repeated, and one that would pass a section's length limit or the document's is left out of that section and named as a gap (round 4,
-  // M3: never a draft every later save refuses). Mutable copies: the scope and the hiding below change them.
+  // The other services' texts go in under their names by the one rule of a later save (`appendServices`, the block rule): a text the
+  // service's own block already holds is not repeated (the same line in another service's block never counts: round 5), and one that would
+  // pass a section's length limit or the document's is left out of that section and named as a gap (round 4, M3: never a draft every later
+  // save refuses). Mutable copies: the scope and the hiding below change them.
   const sections: {
     id: string;
     kind: string;
@@ -182,6 +183,7 @@ export async function buildNewDraft(i: NewDraftInput): Promise<NewDraft> {
   }[] = appendServices(
     drafts.map((s) => ({ ...s, id: uuidv7() })),
     i.services.slice(1).map((s) => s.item),
+    i.services.map((s) => s.item),
   ).map((s) => ({ ...s }));
   const append = (kind: string, text: string) => {
     const at = sections.find((s) => s.kind === kind);
