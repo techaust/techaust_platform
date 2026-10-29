@@ -964,3 +964,31 @@ Designer: claude-opus-5-5 (high), 2026-10-29 ~18:30–19:40 IST, branch `fix/fx3
 1. The 1024 px narrow column also affects other two-column pages with the menu open (on the template editor, the editor column is about 300 px). I saw no broken words there, but it's worth a look in the next sweep; I changed only the lead timeline.
 
 **Lead, after fix round 2 (2026-10-29 ~19:20 IST):** both reports are kept above. The designer's fix beyond the brief is accepted: the lead timeline at 1024 px with the menu open now sizes to its panel. Its open question also stands: narrow second columns elsewhere at 1024 px with the menu open (the template editor is about 300 px). That goes on the final sweep's checklist. Next: the re-check (live).
+
+## Re-check of fix round 2 (reviewer claude-opus-5-5/high, live, 2026-10-29 ~19:25–20:10 IST, on 53cf9fe6): APPROVE
+_(Summary by the lead; the full text is in the conversation record. Shots: `.logs/shots/fx3-recheck2/`.)_
+
+**A, B, C, D, E and G are fixed; H is partly fixed. All were checked live:**
+- **A:** the heading levels in the accessibility tree are 3, 4, 4 / 3, 3, 3 / 3, 4, 5.
+- **B:** "Stay" after convert keeps the answers edit and the notes, and focuses Linked records.
+- **D:** focus lands correctly after each panel's save.
+- **E:** every PATCH combination answers as specified.
+- **H:** works for JPEG with Exif rotation and for plain PNG.
+- **The designer's timeline change:** good.
+- **The other-tab conflict paths:** correct.
+- **axe:** 0 violations at 375, 768 and 1024 (menu open), in both themes against the opposite OS theme.
+- **Results:** `pnpm check` exit 0; `pnpm test` exit 0 with no timeouts (admin 3,369); e2e 6/6.
+
+**Findings:**
+1. **Medium, new:** a PNG with an orientation chunk is stored stretched. `signature-scale.ts:70-72`, 187 and 205 read the size from the PNG header but ignore its orientation chunk, and Chrome applies the chunk.
+2. **Medium, new:** a stale `emailError` or `nextDateError` stays under the stored value after a conflict reload (`lead.tsx:180-185`, 201-202).
+3. **Medium, existing:** the Enquiry edit's `.form-grid` goes two columns by window width, so at 1024 px with the menu open (a 255 px column) the selects cut their values (`shell.css:2233`).
+4. **Medium, existing:** in the template editor, a heading's blur check shows the error summary and pushes Save down, so the first click is lost (`template.tsx:295-307`, 370).
+5. **Low:** a waiting focus target has no expiry (`lead.tsx:223-232`).
+6. **Low:** a stale "Show older" request keeps `loading` on.
+7. **Low, design note:** the answers are treated as one set. **Kept by the lead**, as the brief asked: a band belongs to its currency.
+8. **Low, existing:** opening Edit contact or Edit enquiry puts focus on `body`.
+
+## Fix round 3 (lead's triage)
+- **Designer** (`fix/fx3-fix3-d`): 1, 2, 3, 4, 5, 6 and 8. Item 7 is kept.
+- **After it:** a focused re-check of only these items, live. Then the FX-3 PR.
