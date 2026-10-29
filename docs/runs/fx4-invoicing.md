@@ -609,3 +609,84 @@ Branch `fix/fx4-r1-b` from `origin/fix/fx4-invoicing` (e31a6099). One commit per
 **Open question for the lead:** `document_send` is never written to `audit_log`. Sends are audited on the `document` record; the type appears only in `email_log`. The label was added as the brief asked, so the record filter now offers "Document sends", which always returns nothing. The test records this in `LABELLED_NOT_WRITTEN`. Recommendation: drop the label and its filter option, or keep it only if a send-level audit row is planned. One line either way.
 
 **Lead, after the builder (2026-10-29):** the builder's open question is answered. Dropped the `document_send` record label, because nothing writes that type to `audit_log` (sends are audited on their document), so its filter would always be empty. The test now proves the label is absent. `audit-labels.test.ts` passes.
+
+### Fix round 1 after the review, designer report (designer, Opus 5.5 high, 2026-10-29)
+Branch `fix/fx4-r1-d` from `origin/fix/fx4-invoicing` (acd6df8a). One commit per item: H2 adb3fa5c, L2 e60b2d69, M1 44cd9f9e, L1 78a991e5, L5 edc527f5, M3 fa4934b4, plus this report. Admin and portal SPA only: no Worker, no `packages/`, none of the builder's files.
+
+**Skills loaded:**
+- `frontend-design:frontend-design`: kept every change inside the existing screens and docs/06. "(estimate)" is the head's own words, no badge or colour. The H2 fix keeps the panel calm: nothing redraws, only the words change. For M3 I tightened the spacing rather than shrinking or restyling the mark.
+- Not loaded: `dataviz` (L5 is the scroll cue of a table, not a chart or tile), the Cloudflare skills (no Worker code), `code-review`/`security-review` (reviewer skills).
+
+**Items:**
+1. **H2** (`routes/documents/pdf-panel.tsx`, `routes/invoices/read.tsx`, `lib/pdf.ts`):
+   - the invoice page keys `PdfPanel` on `v.id` only;
+   - the panel takes a newer page read during render (`pdfReadChanged`: another state or fingerprint), so it is never remounted. The focus stays where it is, and the always-present polite region changes its words in place;
+   - `onReady` no longer fires again when the page's own read brought "ready" (no extra reload).
+   - Checked live: focus on `#pdf-h`, then the PDF was made ready in the local D1. After the panel's next poll: focus still on `#pdf-h`, the same live-region element (`isConnected`, identical node), one text mutation "PDF ready / Fingerprint a1b2c3d4e5f6", and Tab then goes to "Download PDF".
+   - SPA tests (`lib/pdf.test.ts`): the helper, plus source checks that the page keys on `v.id` only and that the panel syncs from `initial` inside the `aria-live` region. The admin tests have no DOM, so there is no render test.
+2. **L2** (`lib/invoices.ts`, `routes/invoices/read.tsx`, `lib/invoices-api.ts` comment):
+   - dropped the unreachable live-client line and the page re-read (`onNoOriginal`);
+   - `supplierCopyLine(state, anonymised)` gives the line only for an anonymised client's 409 (`SUPPLIER_COPY_NONE`, unchanged words, still `Y()`). A live client's 409 now gets the ordinary failure toast;
+   - tests updated.
+3. **M1** (admin: `routes/documents/money.tsx` `TaxPreview` `estimate` prop, `lib/invoices.ts` `taxHeadEstimate` = `PROFORMA_PDF_COPY.estimate` and `showsGstEstimate`, `lib/invoices-api.ts` `proforma.gstEstimate?`, the invoice editor and page; portal: `api.ts` `gstEstimate?`, `copy-invoices.ts` `INV.pdf.estimateHead`, `totalsRows` moved to `lib/invoices.ts`):
+   - CGST, SGST and IGST read "(estimate)" only on a proforma whose marker is `true`. That covers a draft proforma, which the API marks `true` because it will be issued with the marker;
+   - a proforma without the marker, an older API, and every other type keep the plain heads;
+   - the FX panel's "IGST in INR" stays plain, as on the PDF (only the totals heads change there);
+   - tests in both apps;
+   - portal sample: `pro-due` now has the marker, and a new `pro-old` is a proforma sealed before FX-4 (listed on `/preview`).
+4. **L1** (`lib/documents.ts`, both editors):
+   - the invoice editor names the row from its saved view (`discountSources(v)`);
+   - the proposal editor keeps `figures.discounts`: it starts from the read, then each save's sent lines and discount (`sentDiscounts`) are applied only when the server answers;
+   - `draftDiscountSources` is removed;
+   - tests: typing doesn't rename the row, a failed save changes nothing, and a later save that carries the document discount does. Checked live: typing a document discount kept "Line discounts ₹150.00"; after the autosave the row read "Discounts (lines and document) ₹435.00".
+5. **L5** (`routes/reports/parts.tsx`): one effect with `[measure]` replaces the dependency-free one. It measures on mount, on scroll, when the box or its first child resizes, and when the content changes (a `MutationObserver` on the subtree, which also re-observes a table drawn afresh).
+   - Checked live on the client statement at 768: nothing drawn while the table fits; the end shade appears when it is widened; the start shade after scrolling to the end; nothing again when it fits; a replaced, wider child shows the cue.
+   - The first child is the `DataTable`'s `.dtable` div, so adding rows is caught by the mutation observer.
+   - A source test was added.
+6. **M3** (`screens.css`): the "Not saved yet" mark wraps only between words (`overflow-wrap: normal; word-break: normal; hyphens: none`). The LUT list's inner cells use `--space-2` and the outer edges keep `--space-3`.
+   - At 1024 the table is 449 of 449 px, and "[Placeholder]" / "Not saved yet" are two whole-word lines.
+   - It is one line at 768 and 1600. At 375 it is the card layout.
+   - Once 07-Y is approved the mark is shorter and there is more room.
+
+**Shots** (`.logs/shots/fx4-r1-d/`, local sample data, full page unless "focus"):
+- `m1-admin-proforma-marked-1280-light.png`: TH/PI/2627/0001 with "CGST (estimate)", "SGST (estimate)".
+- `h2-pdf-ready-focus-kept-1280-light.png`: the panel after it turned ready, the focus ring still on "PDF ready".
+- `m3-lut-before-1024-light.png` (the mid-word break "[Placehold/er]") and `m3-lut-after-1024-light.png` (whole words).
+- The sweep at 375, 768, 1024 and 1600 in light and dark (`{screen}-{width}-{theme}.png`, with `-focus.png` crops for the LUT list and the statement table). Screens:
+  - `adm-pro-marked`: intra-state, PDF ready;
+  - `adm-pro-igst-marked`: IGST with a line discount;
+  - `adm-pro-old`: the marker removed from the API answer in the browser, plain "IGST";
+  - `adm-pro-draft`: the editor, "(estimate)";
+  - `adm-inv-draft`: L1, "Discounts (lines and document)";
+  - `adm-inv-issued`: the supplier copy button;
+  - `adm-settings-tax`: a LUT added, not saved;
+  - `adm-statement`: WideList;
+  - `por-pro-marked`: portal, "(estimate)";
+  - `por-pro-old`: portal, plain heads.
+- `adm-pro-marked-1280-app-dark-os-light.png` and `-app-light-os-dark.png`: the in-app theme against the OS theme.
+
+**Commands and results:**
+- Local setup in this worktree:
+  - `pnpm install --frozen-lockfile --offline`, `pnpm dev:secrets`, `db:migrate:local` (53), `db:seed:local`, `portal:sample`, `invite --role owner`;
+  - sample data through the local API: company legal name, address and a fake GSTIN (core check character), a sample INR bank, and billing addresses for clients A (WB) and B (MH);
+  - documents: TH/PI/2627/0001 and 0002, TH/INV/2627/0001, an invoice draft and a proforma draft;
+  - `pdf_sha256` set by hand in the local D1 only, on PI/0001 and INV/0001.
+- Dev servers on 5183 (admin) and 5184 (portal), because another worktree's admin dev server held 5173. Before I noticed, one navigation from my browser opened my invite link on that server (it said "invalid", nothing changed).
+- Sweep: a Playwright 1.64.1 script in my scratchpad (not committed), log `.logs/fx4r1d-sweep.log`. 10 screens × 4 widths × 2 themes, plus the two theme mismatches. axe (WCAG 2.0/2.1/2.2 A and AA): no violations anywhere. No sideways page overflow. No console errors.
+- Keyboard: Tab from the PDF heading reaches "Download PDF"; focus is visible; no traps on the changed screens.
+- Focused tests through `heavy.sh`: `pdf.test.ts` 12, admin `invoices.test.ts` 27, portal `invoices.test.ts` 10, `documents.test.ts` 34, `reports.test.ts` 40, all passed. Admin and portal `tsc -p tsconfig.json`: exit 0.
+- `pnpm exec biome check --write` on each changed file: clean.
+- `heavy.sh fx4r1d-test` (`pnpm test`): exit 0, no timeouts. admin 3,420, core 1,821, portal 635, jobs 531, web 510 (+17 skipped), db 478, ui 469 (+2 skipped), pdf 348, auth 135, email 128.
+- `heavy.sh fx4r1d-build` (admin and portal): green. Admin front 99,271 bytes, admin API 612,169 bytes (no Worker file changed in this round; 38 KB under the 650,000 trigger), portal 97,458 bytes.
+- `heavy.sh fx4r1d-check` (`pnpm check`, the one whole-repository lint): **exit 0**. 10 warnings, none in my files (`worker/reports.test.ts`, `public-text.ts`, `catalogue.ts`, the `pdf`/`ui` tests).
+- Both dev servers (and their workerd) stopped. No process runs from this worktree (checked). The browser is closed.
+
+**Not verified:**
+- No real PDF render (no jobs or Browser Run locally). "Ready" was simulated by setting `pdf_sha256` in the local D1.
+- A real proforma sealed before FX-4: "older" is simulated by removing the marker from the API answer in the browser (admin) and by sample data (portal).
+- The proposal editor's L1 was checked by unit test only, not in the browser.
+- No screen-reader run (NVDA); the live-region announcement is inferred from one in-place text mutation inside a persistent `aria-live="polite"` region.
+
+**Placeholder text:** nothing new. "(estimate)" uses the PDF's word, unmarked like the PDF (docs/13, L4). The `Y()` marks are unchanged. One 07-Y line left the code: the live-client supplier-copy line ("The supplier copy is made after the client's PDF…") can no longer show, so drop it from 07-Y when FX-5 approves the page.
+
+**Open questions:** none.
