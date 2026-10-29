@@ -8,6 +8,7 @@ export const workPage = {
       "Case studies from our client projects, anonymised at clients’ request: the problem, our approach, the stack and real results.",
   },
   h1: "Work",
+  /** Shown only while at least one case study is published (07-Y item 3, owner 2026-10-29). */
   lede: "Selected projects, anonymised at our clients’ request. Every number on these pages was measured on the real project.",
   empty:
     "Our first public case studies are being written with our clients’ permission. Want to see how we work? Ask us for a sample discovery report or architecture document.",

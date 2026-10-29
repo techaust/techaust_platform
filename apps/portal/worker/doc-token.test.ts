@@ -479,13 +479,25 @@ describe("everything else is the same 404 [POR-06]", () => {
     const f = await fixtures();
     const doc = await frozenDoc(f.b.id, "tax_invoice");
     const token = await link(f.b.finance, doc);
-    expect((await use(token)).status).toBe(200);
+    // FX-5 (owner decision 2026-10-30, 08-C RA-10): a document the client has opened is never voided (trigger documents_viewed_no_void), so
+    // the void lands before the first use here; the link made while it was open stops working.
     await env.DB.prepare(
       "UPDATE documents SET status = 'void', voided_at = ?1, void_reason = 'test' WHERE id = ?2",
     )
       .bind(Date.now(), doc)
       .run();
     expect((await use(token)).status).toBe(404);
+    // and once opened, a document can't be voided at all
+    const opened = await frozenDoc(f.b.id, "tax_invoice");
+    const openedToken = await link(f.b.finance, opened);
+    expect((await use(openedToken)).status).toBe(200);
+    await expect(
+      env.DB.prepare(
+        "UPDATE documents SET status = 'void', voided_at = ?1, void_reason = 'test' WHERE id = ?2",
+      )
+        .bind(Date.now(), opened)
+        .run(),
+    ).rejects.toThrow(/documents_viewed_no_void/);
   });
 });
 

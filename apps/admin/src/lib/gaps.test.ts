@@ -55,9 +55,9 @@ const gap = (over: Partial<CatalogueGap>): CatalogueGap => ({
 });
 
 describe("07-X copy", () => {
-  it("every new line is marked until the owner approves 07-X, and says no {{…}}", () => {
-    expect(APPROVED_07X).toBe(false);
-    expect(X("Line.")).toBe("[Placeholder] Line.");
+  it("every new line is unmarked now the owner has approved 07-X (2026-10-29), and says no {{…}}", () => {
+    expect(APPROVED_07X).toBe(true);
+    expect(X("Line.")).toBe("Line.");
     const lines = [
       ...Object.values(GAP_COPY).filter((l) => l !== GAP_COPY.useCatalogue),
       GAP_HIDDEN,
@@ -70,6 +70,7 @@ describe("07-X copy", () => {
     ];
     for (const l of lines) {
       expect(l.startsWith(M)).toBe(true);
+      expect(l).not.toContain("[Placeholder");
       expect(l).not.toMatch(/\{\{|\}\}|&/);
     }
     // The brief's own words carry no mark.

@@ -424,7 +424,7 @@ _Card labels, each page's problems, tools and FAQs, and the hub's closing line: 
 ### 5.4 Work (`/work`, `/work/[slug]`)
 - **Meta:** "Work: anonymised case studies | TecHaust" · "Case studies from our client projects, anonymised at clients' request: the problem, our approach, the stack and real results."
 - **H1:** "Work"
-- **Lede:** "Selected projects, anonymised at our clients' request. Every number on these pages was measured on the real project."
+- **Lede:** "Selected projects, anonymised at our clients' request. Every number on these pages was measured on the real project." Shown only once a case study is published; while there is none the page shows the empty state alone (07-Y item 3, owner 2026-10-29).
 - **Empty state:** "Our first public case studies are being written with our clients' permission. Want to see how we work? Ask us for a sample discovery report or architecture document."
 - **Detail template:** Context (industry, size, region) · The problem · What we did · Stack · Results (with how they were measured) · What's next · CTA "Similar project? Talk to us"
 
@@ -539,9 +539,9 @@ _Card labels, each page's problems, tools and FAQs, and the hub's closing line: 
 |---|---|---|
 | Lead acknowledgement (from hello@) | "We've received your request ({{ref}})" | "Hi {{first_name}}, thanks for getting in touch about {{service_name}}. We'll reply within one business day (Mon–Sat, 10:00–19:00 IST). If you'd like to pick a call time now: {{cal_link}}. Your reference: {{ref}}. — TecHaust Technologies" |
 | Internal lead alert | "New lead {{ref}}: {{service_name}} · {{budget_band}} · {{country}}" | A summary + "Open in admin" |
-| Proposal sent | "Proposal: {{proposal_title}} ({{number}} v{{version}})" | "Hi {{first_name}}, your proposal is ready. It covers scope, timeline, price and payment schedule, and it's valid until {{valid_until}}. [Review and accept]. Questions? Just reply to this email." |
+| Proposal sent | "Proposal: {{proposal_title}} ({{number}} v{{version}})" | "Hi {{first_name}}, your proposal is ready, with the price and payment schedule. It's valid until {{valid_until}}. [Review and accept]. Questions? Just reply to this email." (07-Y item 14, owner 2026-10-29) |
 | Estimate sent (from hello@) | "Estimate: {{estimate_title}} ({{number}} v{{version}})" | "Hi {{first_name}}, your estimate is ready. It covers the line items, price and payment terms, and it's valid until {{valid_until}}. [Review and accept]. Questions? Just reply to this email." |
-| Proposal accepted (both) | "Accepted: {{proposal_title}} ({{number}} v{{version}})" | "Thank you, {{typed_name}}. Your acceptance was recorded on {{accepted_at_ist}}. Links to the accepted proposal and the acceptance certificate are below. Next: {{next_step}}." |
+| Proposal accepted (both) | "Accepted: {{proposal_title}} ({{number}} v{{version}})" | "Thank you, {{typed_name}}. Your acceptance was recorded on {{accepted_at_ist}}. Links to the accepted proposal ("estimate" for an estimate, 07-Y item 13) and the acceptance certificate are below. Next: {{next_step}}." |
 | Proforma (billing@) | "Payment request {{number}}: {{amount}}" | "…for {{description}}. [Pay online] · bank details inside. A tax invoice will be issued when payment is received." |
 | Invoice issued | "Invoice {{number}} from TecHaust Technologies: {{amount}} due {{due_date}}" | "Hi {{first_name}}, please find invoice {{number}} for {{amount}}, due on {{due_date}}. [View & pay]. You can pay by {{methods}}." |
 | Reminder −3 | "Invoice {{number}} is due on {{due_date}}" | "A friendly reminder that invoice {{number}} ({{balance}}) is due in 3 days. [View & pay]. If you've already paid, thank you, and please ignore this." |

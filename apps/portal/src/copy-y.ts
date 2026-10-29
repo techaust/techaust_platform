@@ -1,8 +1,8 @@
-// 07-Y (FX-3, the full audit's admin and portal fixes): the portal's lines the fix task added, PENDING the owner. Each one shows the
+// 07-Y (FX-3, the full audit's admin and portal fixes): the portal's lines the fix task added, APPROVED by the owner on 2026-10-29 (switched on in FX-5). Each one shows the
 // "[Placeholder] " mark before the recommended words until the owner approves the page; then `APPROVED_07Y` turns true and the marks go
 // (the 07-X pattern in copy-documents.ts). The admin's twin is apps/admin/src/lib/copy-y.ts.
 
-export const APPROVED_07Y = false;
+export const APPROVED_07Y = true;
 const Y = (line: string): string => (APPROVED_07Y ? line : `[Placeholder] ${line}`);
 
 export const OFFER_Y = {

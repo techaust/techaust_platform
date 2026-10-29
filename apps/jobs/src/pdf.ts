@@ -96,9 +96,9 @@ export const BELL_COPY = {
   /** An invoice whose frozen signature image can't be used (missing, other bytes, oversized): 07-R §3. The fix is in Settings, not a developer. */
   invoiceSignature: (label: string) =>
     `The signature image couldn't be used for the PDF of ${label}, so the PDF wasn't made. Check the signature in Settings › Company.`,
-  /** FX-1 (A6 2): a document whose PDF failed on `SWEEP_MAX_FAILED_NIGHTS` nights; the nightly retry stops (kind `pdf.refused`). New wording, for the owner's copy page 07-Y. */
+  /** FX-1 (A6 2): a document whose PDF failed on `SWEEP_MAX_FAILED_NIGHTS` nights; the nightly retry stops (kind `pdf.refused`). 07-Y item 26 (owner 2026-10-29). */
   stoppedNightly: (label: string) =>
-    `The PDF of ${label} couldn't be made on 3 nights, so the nightly retry has stopped. A developer needs to look at it.`,
+    `The PDF of ${label} couldn't be made on 3 days, so the nightly retry has stopped. A developer needs to look at it.`,
   half: "Half of today's PDF allowance is used.",
   quota: "Today's PDF allowance is used up. Waiting PDFs are made tomorrow.",
 } as const;

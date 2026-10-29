@@ -45,9 +45,10 @@ export const WORDS = {
   allNeeded: "All fields are needed unless marked optional",
   // docs/07 §8: the footer line of every email, reused as the portal's footer.
   footer: "TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com",
-  // docs/07-A §7 (the website terms, "Client portal"): what accepting means and what is recorded.
-  binding:
-    "Accepting a proposal in the portal (typing your name and clicking Accept) forms a binding agreement on the terms of that proposal, and we keep a record of it (name, email, time, IP address, browser and a fingerprint of the document).",
+  // docs/07-A §7 (the website terms, "Client portal"): what accepting means and what is recorded. 07-Y item 13 (owner 2026-10-29): it says
+  // "estimate" when the document is an estimate (`kind` is `kindWord`'s "proposal" or "estimate").
+  binding: (kind: string) =>
+    `Accepting ${kind === "estimate" ? "an estimate" : "a proposal"} in the portal (typing your name and clicking Accept) forms a binding agreement on the terms of that ${kind === "estimate" ? "estimate" : "proposal"}, and we keep a record of it (name, email, time, IP address, browser and a fingerprint of the document).`,
   kind: { proposal: "Proposal", estimate: "Estimate" } satisfies Record<OfferKind, string>,
   // The brief (Screens 3): the six states a client sees ("Declined" is the client's word, docs/13 2026-10-25).
   status: {
@@ -191,10 +192,10 @@ export const NOTICES = {
 } as const;
 
 /**
- * 07-X (M5 owner fixes, docs/07-content-appendix/X-m5-owner-fixes.md): lines PENDING the owner, shown with the "[Placeholder] " mark before the
+ * 07-X (M5 owner fixes, docs/07-content-appendix/X-m5-owner-fixes.md): lines APPROVED by the owner on 2026-10-29 (switched on in FX-5), shown with the "[Placeholder] " mark before the
  * designer's recommended words until the page is approved (then `APPROVED_07X` turns true and the marks go).
  */
-export const APPROVED_07X = false;
+export const APPROVED_07X = true;
 const X = (line: string): string => (APPROVED_07X ? line : `[Placeholder] ${line}`);
 export const OFFER_LINK = {
   /** §5.1 (sweep finding 7): an offer's email link that has ended, in the pattern of 07-U §3's invoice line. */

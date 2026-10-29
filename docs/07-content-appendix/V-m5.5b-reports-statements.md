@@ -149,7 +149,7 @@ _Drafted by the lead on 2026-10-28 from approved facts:
 - "Payment requests awaiting payment": sub-label "{count} open"
 - "Exports nearing a deadline": counts "FEMA in 30 days", "Past FEMA", "GST in 30 days", "Past GST"; list heading "Next"
 - Empty states: "Nothing invoiced yet.", "Nothing outstanding.", "Nothing overdue.", "No payment requests open.", "No export deadlines coming up."
-- Replaces 07-J's line: "Collected figures arrive with payments."
+- Replaces 07-J's line: "Collected figures arrive with payments." The finance tiles' foot line joins both in one sentence: "Collected figures and payments waiting for checks arrive with payments." (07-Y item 4, owner 2026-10-29)
 
 ## 8. Settings › Tax
 - "B2CL threshold" hint: "Invoices to unregistered clients in another state above this amount are reported one by one (B2CL). Default ₹1,00,000." (Researched, 08-C RA-13)

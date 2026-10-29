@@ -23,7 +23,7 @@ describe("offer.sent [ADM-PROP-07, ADM-MAIL-01]", () => {
     expect(r.from).toEqual(SENDERS.hello);
     expect(r.replyTo).toBe("hello@techaust.com");
     expect(r.text).toContain(
-      "Hi Asha, your proposal is ready. It covers scope, timeline, price and payment schedule, and it's valid until 30 Nov 2026.",
+      "Hi Asha, your proposal is ready, with the price and payment schedule. It's valid until 30 Nov 2026.",
     );
     expect(r.text).toContain("Review and accept: https://portal.example.test/o#t=abc");
     expect(r.text).toContain("Questions? Just reply to this email.");
@@ -71,6 +71,19 @@ describe("acceptance emails", () => {
     expect(r.text).toContain("Next: we'll confirm the start date with you.");
     expect(r.text).toContain(acc.url);
     expect(r.from).toEqual(SENDERS.hello);
+  });
+  it("client, an estimate (07-Y item 13): the line says estimate; a proposal or a message with no kind says proposal", () => {
+    const est = renderEmail("offer.accepted.client", { ...acc, kind: "estimate" }, opts);
+    expect(est.text).toContain("Links to the accepted estimate and the acceptance certificate are below.");
+    expect(est.html).toContain("accepted estimate");
+    const pro = renderEmail("offer.accepted.client", { ...acc, kind: "proposal" }, opts);
+    expect(pro.text).toContain("Links to the accepted proposal and the acceptance certificate are below.");
+  });
+  it("estimate sent: its line is unchanged (07-Y item 14 changes the proposal's only)", () => {
+    const r = renderEmail("offer.sent", { ...sent, kind: "estimate" }, opts);
+    expect(r.text).toContain(
+      "your estimate is ready. It covers the line items, price and payment terms, and it's valid until",
+    );
   });
   it("staff: the same subject, the 07-N section 4 body and the admin link", () => {
     const r = renderEmail(

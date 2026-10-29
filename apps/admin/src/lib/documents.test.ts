@@ -338,9 +338,9 @@ describe("errors by API code (07-O §6)", () => {
     const m = mappedError(e("frozen")) as RequestError;
     expect([m.code, m.message]).toEqual(["frozen", DOC_ERRORS.frozen]);
   });
-  it("FX-3: a send refused with 409 series_full reads the invoice line's meaning (07-Y, marked until the owner approves it)", () => {
+  it("FX-3: a send refused with 409 series_full reads the invoice line's meaning (07-Y, approved 2026-10-29: no mark)", () => {
     expect(docErrorText(e("series_full", "This numbering series has no numbers left this year"))).toBe(
-      "[Placeholder] This series has run out of numbers for the year. Change the numbering format in Settings › Numbering.",
+      "This series has run out of numbers for the year. Change the numbering format in Settings › Numbering.",
     );
     expect((mappedError(e("series_full")) as RequestError).message).toBe(DOC_ERRORS.series_full);
   });
@@ -775,8 +775,9 @@ describe("recipientLine: who a document is for (M4.3 re-check 2, owner's rule)",
 });
 
 describe("FX-4 (A5 3): the totals' discount row is named for where its discount comes from", () => {
-  const mark = `${PLACEHOLDER_TAG} `;
-  it("the document's own discount keeps 07-O's word; line discounts, or both, are named so (07-Y, marked)", () => {
+  // 07-Y approved (owner 2026-10-29): no mark
+  const mark = "";
+  it("the document's own discount keeps 07-O's word; line discounts, or both, are named so (07-Y, approved)", () => {
     expect(discountRowLabel({ lines: false, document: true })).toBe(DOC_COPY.documentDiscount);
     expect(discountRowLabel({ lines: true, document: false })).toBe(`${mark}Line discounts`);
     expect(discountRowLabel({ lines: true, document: true })).toBe(`${mark}Discounts (lines and document)`);

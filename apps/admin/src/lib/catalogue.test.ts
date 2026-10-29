@@ -324,11 +324,12 @@ describe("FX-3 round 3: the template rules the editor shows before it sends [ADM
   const extra = (n: number, size: number) =>
     Array.from({ length: n }, (_, i) => s(`x${i}`, "w".repeat(size)));
 
-  it("Q2: names each joined section with the 07-Y line (marked until the owner approves it)", () => {
+  it("Q2: names each joined section with the 07-Y line (approved by the owner, 2026-10-29: no mark)", () => {
     const errs = templateRuleErrors("proposal", [s("cover", ""), ...extra(5, 2_000)]);
     expect(Object.keys(errs)).toEqual(["3", "4", "5"]);
     expect(errs[3]).toBe(TEMPLATE_RULES.joinedTooLong);
-    expect(TEMPLATE_RULES.joinedTooLong.startsWith(PLACEHOLDER_TAG)).toBe(true);
+    // 07-Y approved (owner 2026-10-29): no mark
+    expect(TEMPLATE_RULES.joinedTooLong.startsWith(PLACEHOLDER_TAG)).toBe(false);
     expect(templateRuleErrors("estimate", extra(5, 2_000))[2]).toBe(TEMPLATE_RULES.joinedTooLong);
     // fits, or a block that is never joined: nothing
     expect(templateRuleErrors("proposal", extra(5, 1_000))).toEqual({});
@@ -348,10 +349,10 @@ describe("FX-3 round 3: the template rules the editor shows before it sends [ADM
       ].join(" "),
     });
     expect(TEMPLATE_RULES.textInHeading("{{service.assumptions}}")).toBe(
-      `${PLACEHOLDER_TAG} {{service.assumptions}} can't go in a heading. Put it in the text of its own section.`,
+      `{{service.assumptions}} can't go in a heading. Put it in the text of its own section.`,
     );
     expect(TEMPLATE_RULES.textElsewhere("{{service.exclusions}}", "Assumptions and exclusions")).toBe(
-      `${PLACEHOLDER_TAG} {{service.exclusions}} can only go in the text of the Assumptions and exclusions section.`,
+      `{{service.exclusions}} can only go in the text of the Assumptions and exclusions section.`,
     );
   });
 
@@ -383,7 +384,7 @@ describe("FX-3 round 3: the template rules the editor shows before it sends [ADM
 
   it("the page's own lines: a stored version that breaks a rule, and a summary line naming its section (FX-3 designer)", () => {
     expect(TEMPLATE_RULES.storedBreaks).toBe(
-      `${PLACEHOLDER_TAG} This version was saved before the template rules below. Drafts made from it may not save. Edit it and save a new version.`,
+      `This version was saved before the template rules below. Drafts made from it may not save. Edit it and save a new version.`,
     );
     expect(TEMPLATE_RULES.section(4, TEMPLATE_RULES.joinedTooLong)).toBe(
       `Section 4: ${TEMPLATE_RULES.joinedTooLong}`,

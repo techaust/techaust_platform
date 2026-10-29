@@ -342,6 +342,8 @@ export async function processOfferAccepted(
     title: a.title ?? "",
     number: a.number_display ?? "",
     version: String(a.version),
+    // 07-Y item 13 (owner 2026-10-29): the client's email says "estimate" for an estimate.
+    kind: a.type,
     // 07-N §4 (PENDING the owner's approval): what happens next.
     next_step: "we'll confirm the start date with you and send the first invoice",
   };

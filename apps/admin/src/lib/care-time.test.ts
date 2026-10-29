@@ -223,6 +223,10 @@ describe("07-M copy, word for word (draft pending the owner)", () => {
     // M5.5b (on purpose): 07-V §7 replaces 07-J's line (07-V approved 2026-10-28).
     expect(DASH_COPY.financeArrives).toBe("Collected figures arrive with payments.");
     expect(DASH_COPY.paymentsArrive).toBe("Payments waiting for checks arrive with payments.");
+    // 07-Y item 4 (owner 2026-10-29): the finance foot line is one sentence
+    expect(DASH_COPY.footLine).toBe(
+      "Collected figures and payments waiting for checks arrive with payments.",
+    );
     expect([DASH_COPY.notStarted, DASH_COPY.system]).toEqual(["Not started", "System"]);
     expect(showingFirst(20)).toBe("Showing the first 20.");
     expect([

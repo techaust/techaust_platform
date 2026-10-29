@@ -95,10 +95,10 @@ describe("the wording (07-P §3, §4)", () => {
       remove: "Remove",
       removeQuestion: "Remove the signature? Invoices issued already keep theirs.",
       // FX-3: 07-Y, amended by the lead in the fix round (10 MB in, a PNG of up to 256 KB stored)
-      wrongFile: "[Placeholder] Use a PNG or JPEG image up to 10 MB. We store it as a PNG of up to 256 KB.",
-      scaled: "[Placeholder] We made the image smaller to fit 800 by 400 pixels.",
+      wrongFile: "Use a PNG or JPEG image up to 10 MB. We store it as a PNG of up to 256 KB.",
+      scaled: "We made the image smaller to fit 800 by 400 pixels.",
       tooDetailed:
-        "[Placeholder] This image is too detailed to keep as a signature. Use a scan on a plain white background.",
+        "This image is too detailed to keep as a signature. Use a scan on a plain white background.",
     });
   });
 });

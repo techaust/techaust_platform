@@ -148,7 +148,7 @@ export function FinanceTiles({ tile }: { tile: FinanceTile }) {
       <p className="panel-empty fin-arrives">
         <Wallet size={20} />
         <span>
-          {F.collectedArrives} {DASH_COPY.paymentsArrive}
+          {DASH_COPY.footLine}
         </span>
       </p>
     </div>

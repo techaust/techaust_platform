@@ -22,6 +22,8 @@ export const DASH_COPY = {
   /** M5.5b (07-V §7, replacing 07-J's line): invoiced figures are live; collected ones arrive with payments (M6). Marked until 07-V is approved. */
   financeArrives: FINANCE_COPY.collectedArrives,
   paymentsArrive: "Payments waiting for checks arrive with payments.",
+  /** 07-Y item 4 (owner 2026-10-29): the finance tiles' foot line, one sentence (it used to join the two lines above and repeat itself). */
+  footLine: "Collected figures and payments waiting for checks arrive with payments.",
   notStarted: "Not started",
   system: "System",
   noLeads: "No open leads.",

@@ -72,7 +72,7 @@ The text after each number is my recommendation. `{…}` is filled in by the app
     - "Document discount" stays as it is.
 20. **Proformas from now on:** "CGST (estimate)", "SGST (estimate)", "IGST (estimate)" (screen and PDF). Older proformas print as before.
 21. **Supplier copy:**
-    - "The supplier copy is made after the client's PDF, which isn't ready yet. Use Try again on the PDF if it is taking longer than usual."
+    - ~~"The supplier copy is made after the client's PDF, which isn't ready yet. Use Try again on the PDF if it is taking longer than usual."~~ Not used: the button shows only once the client's PDF is ready, so this case can't arise (FX-4 review L2; dropped in FX-5).
     - for an anonymised client: "No supplier copy was made before this client was anonymised, and none can be made now."
 22. **Settings › Tax:**
     - "Default SAC for custom lines";

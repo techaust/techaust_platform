@@ -346,7 +346,7 @@ function AcceptForm(props: DecisionProps & { kind: string }) {
             </dd>
           </div>
         </dl>
-        <p className="confirm__binding">{WORDS.binding}</p>
+        <p className="confirm__binding">{WORDS.binding(kind)}</p>
         <p className="hint confirm__record">{NOTICES.accept}</p>
       </ConfirmDialog>
 
