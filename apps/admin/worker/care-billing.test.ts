@@ -670,6 +670,59 @@ describe("issueCareDraft: the system issues only what the Owner authorised [LD58
       ).toBe("draft");
   });
 
+  it("a printed number already held by another document (the index of 0049) is freeze_refused with an ids-only log: the counter does not move, the draft stays a draft (FX-1)", async () => {
+    const w = await world();
+    // FY 2034-35 (token 3435): the planted number holds a year no other test issues in (a frozen row is never deleted).
+    clock(at("2034-11-05"));
+    const d = await draft(w);
+    const next =
+      (
+        await one<{ n: number }>(
+          "SELECT next_no AS n FROM doc_counters WHERE series = 'invoice' AND fy = '3435'",
+        )
+      )?.n ?? 1;
+    const printed = `TH/INV/3435/${String(next).padStart(4, "0")}`;
+    // A proforma of the same client that (impossibly) prints the number the invoice series is about to hand out.
+    await insert("documents", {
+      id: uuidv7(),
+      type: "proforma",
+      status: "issued",
+      client_id: w.clientId,
+      currency: "INR",
+      series: "proforma",
+      fy: "3435",
+      number: 9_876,
+      number_display: printed,
+      frozen_at: 1,
+    });
+    const logged: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((m: unknown) => void logged.push(String(m)));
+    try {
+      const r = await issueCareDraft(pdfQueue().env, { documentId: d.documentId as string });
+      expect(r).toMatchObject({ result: "refused", reasons: ["freeze_refused"] });
+    } finally {
+      spy.mockRestore();
+    }
+    const line = logged.find((l) => l.includes("unique key"));
+    expect(JSON.parse(line ?? "{}")).toMatchObject({
+      level: "error",
+      documentId: d.documentId,
+      series: "invoice",
+      fy: "3435",
+    });
+    expect(
+      (
+        await one<{ n: number }>(
+          "SELECT next_no AS n FROM doc_counters WHERE series = 'invoice' AND fy = '3435'",
+        )
+      )?.n ?? 1,
+    ).toBe(next);
+    expect(await one("SELECT status, number FROM documents WHERE id = ?", d.documentId)).toEqual({
+      status: "draft",
+      number: null,
+    });
+  });
+
   it("a forged call: a hand-made draft with no record of a period, a document of no plan, and an unknown id are not issued", async () => {
     const w = await world();
     const staffDraft = await call("/invoices", {
