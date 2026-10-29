@@ -47,6 +47,17 @@ export function intIn(input: string, min: number, max = Number.MAX_SAFE_INTEGER)
   return Number.isSafeInteger(n) && n >= min && n <= max ? n : null;
 }
 
+/**
+ * FX-5 (full audit C4, 07-Z §2 line 4): the days the newest proposal terms state (`meta.termsDueDays.stated`) when any of them differs from the
+ * payment due days on screen: the number being typed while it is a valid one (0 to 90), else the saved one. Empty: they agree, or the terms
+ * state no days.
+ */
+export function termsDueDaysClash(stated: readonly number[] | undefined, typed: string, saved: number): number[] {
+  if (!stated || stated.length === 0) return [];
+  const due = intIn(typed, 0, 90) ?? saved;
+  return stated.some((n) => n !== due) ? [...stated] : [];
+}
+
 /** Minor units as people type them back (no symbol; whole amounts without ".00"): 1_00_000_00 INR → "1,00,000". */
 export const moneyInput = (minor: number, currency: Currency) =>
   formatMoney(money(minor, currency), { symbol: false, wholeUnits: true });

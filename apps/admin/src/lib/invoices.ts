@@ -580,6 +580,16 @@ export function voidBlockedText(codes: readonly string[], type?: string): string
   return INV_ERRORS.void_not_allowed;
 }
 
+/**
+ * The void dialog's sentence for a failed void. A view that lands while the dialog is open answers 409 `viewed_by_client` (FX-5): the line is the
+ * document's own (07-Z §1), so a proforma never shows the invoice's "Use a credit note instead."
+ */
+export function voidErrorText(e: unknown, type?: string): string {
+  if (e instanceof RequestError && e.code === "viewed_by_client")
+    return voidBlockedText([e.code], type) ?? invErrorText(e);
+  return invErrorText(e);
+}
+
 /** "First. Rest." → ["First", "Rest."]: an empty state's title (without its full stop) and body, from one 07-R line. */
 export function splitSentences(text: string): [string, string] {
   const i = text.indexOf(". ");

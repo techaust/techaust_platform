@@ -77,6 +77,34 @@ describe("API client: step-up and expired sessions [ADM-AUTH-08, ADM-AUTH-05]", 
     expect(stray.extra).toEqual({});
   });
 
+  it("reads the top-level `details` of terms_due_days_mismatch only (the days the terms state, the setting's days) [ADM-SET-08, FX-5]", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          json(400, {
+            error: { code: "terms_due_days_mismatch", message: "x" },
+            details: { stated: [14, 30], dueDays: 7 },
+            fields: [{ path: "body", message: "x" }],
+          }),
+        )
+        .mockResolvedValueOnce(
+          json(400, { error: { code: "terms_due_days_mismatch", message: "x" }, details: { stated: "14" } }),
+        )
+        .mockResolvedValueOnce(
+          json(400, { error: { code: "invalid", message: "x" }, details: { stated: [14], dueDays: 7 } }),
+        ),
+    );
+    const refused = (await api.deactivate("u1").catch((x: unknown) => x)) as RequestError;
+    expect(refused.extra.termsDueDays).toEqual({ stated: [14, 30], dueDays: 7 });
+    expect(refused.fields[0]?.path).toBe("body");
+    const odd = (await api.deactivate("u1").catch((x: unknown) => x)) as RequestError;
+    expect(odd.extra).toEqual({});
+    const other = (await api.deactivate("u1").catch((x: unknown) => x)) as RequestError;
+    expect(other.extra).toEqual({});
+  });
+
   it("a cancelled step-up sends nothing more and reports that nothing changed", async () => {
     const fetchFn = vi.fn().mockResolvedValueOnce(json(403, STEP_UP));
     vi.stubGlobal("fetch", fetchFn);
