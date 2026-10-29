@@ -6,7 +6,9 @@
 // production blocked until each is supplied. The headshot frame has its top-right corner cut at 45° (docs/06 §4.3,
 // the signature detail "on the top-right corner of the hero image frame").
 // The headshot goes through astro:assets (WEB-G-13, audit A2 finding 13): the owner's file in src/assets/founder/, named
-// by site.founderPhoto, is built into AVIF and WebP at 1x to 3x the frame's width, with its own width and height.
+// by site.founderPhoto, is built into AVIF and WebP at 1x to 3x the frame's width, with its own width and height. The build
+// converts it with sharp, which apps/web can't resolve yet (astro's prerender chunk imports it from here): before the photo
+// lands, `sharp` (0.35.5, already in the lockfile) becomes a devDependency of @techaust/web (FX-2 open question, owner's yes).
 import { Picture } from "astro:assets";
 import "../styles/page.css";
 import CopyText from "../components/CopyText.astro";

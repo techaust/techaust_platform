@@ -9,20 +9,28 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 import { buildSecurityTxt } from "../lib/machine-files";
 
 const doc = legalPages.security;
-const txt = buildSecurityTxt(site.securityTxtExpires).trimEnd();
+// One span per line, each keeping its line break, so the text (and a copy of it) is the file's text.
+const lines = buildSecurityTxt(site.securityTxtExpires).trimEnd().split("\n");
 ---
 
 <BaseLayout title={doc.meta.title} description={doc.meta.description}>
   <LegalPage doc={doc}>
-    <pre class="sectxt"><code>{txt}</code></pre>
+    <pre class="sectxt"><code>{lines.map((line, i) => <span class="sectxt__line">{i < lines.length - 1 ? `${line}\n` : line}</span>)}</code></pre>
   </LegalPage>
 </BaseLayout>
 
 <style>
   /* The file wraps instead of scrolling sideways (audit A2 finding 1): a scroll box the keyboard can't reach fails WCAG
-     2.1.1 on phones. Lines break at spaces first and a long URL where it must; the text stays the file's own text. */
+     2.1.1 on phones. Lines break at spaces first and a long URL where it must; a wrapped line hangs under its field name,
+     so each field still reads as one line. */
   .sectxt {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+  }
+
+  .sectxt__line {
+    display: block;
+    padding-inline-start: 2ch;
+    text-indent: -2ch;
   }
 </style>
