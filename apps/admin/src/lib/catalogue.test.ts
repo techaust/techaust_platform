@@ -23,6 +23,8 @@ import {
   saveFailureText,
   scheduleTotal,
   splitPlaceholders,
+  TEMPLATE_RULES,
+  templateRuleErrors,
   templateTitle,
   unknownIn,
 } from "./catalogue.ts";
@@ -313,5 +315,22 @@ describe("copy", () => {
     expect(COPY.retire("S3", "DPDP Readiness for Apps")).toBe(
       "Retire S3 DPDP Readiness for Apps? It can't be added to new proposals or estimates. Documents that already include it don't change.",
     );
+  });
+});
+
+describe("FX-3 round 3: the template rules the editor shows before it sends [ADM-CAT-03]", () => {
+  const s = (key: string, body: string, heading = key) => ({ key, heading, body });
+  const extra = (n: number, size: number) =>
+    Array.from({ length: n }, (_, i) => s(`x${i}`, "w".repeat(size)));
+
+  it("Q2: names each joined section with the 07-Y line (marked until the owner approves it)", () => {
+    const errs = templateRuleErrors("proposal", [s("cover", ""), ...extra(5, 2_000)]);
+    expect(Object.keys(errs)).toEqual(["3", "4", "5"]);
+    expect(errs[3]).toBe(TEMPLATE_RULES.joinedTooLong);
+    expect(TEMPLATE_RULES.joinedTooLong.startsWith(PLACEHOLDER_TAG)).toBe(true);
+    expect(templateRuleErrors("estimate", extra(5, 2_000))[2]).toBe(TEMPLATE_RULES.joinedTooLong);
+    // fits, or a block that is never joined: nothing
+    expect(templateRuleErrors("proposal", extra(5, 1_000))).toEqual({});
+    expect(templateRuleErrors("care_block", extra(5, 2_000))).toEqual({});
   });
 });

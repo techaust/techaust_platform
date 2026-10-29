@@ -40,6 +40,7 @@ import {
   emptyServiceTokens,
   fitFirstService,
   renderSection,
+  renderWithin,
   serviceData,
   withoutTexts,
 } from "./service-fill.ts";
@@ -172,12 +173,17 @@ export async function buildNewDraft(i: NewDraftInput): Promise<NewDraft> {
   // save that adds the first service line). See service-fill.ts.
   const empty = emptyServiceTokens(first ?? null);
   // The template's sections as the draft will have them (custom sections past the cap joined into the last one), then filled: the values
-  // go into the draft's sections, so a value that would take a title past its limit stays unfilled (FX-3 round 3; `renderSection`).
-  // `raw` also tells which text tokens a section's template held.
+  // go into the draft's sections, so a short value that would take a title or a text past its limit stays unfilled (FX-3 round 3;
+  // `renderSection`, `renderWithin`). `raw` also tells which text tokens a section's template held. With a service, `full` carries its
+  // Catalogue texts unbounded, and `fitFirstService` decides between it and `bare`; with none, there are no texts to place.
   const raw = sectionsFromTemplate(
     (tpl?.sections ?? []).map((s) => ({ key: s.key, heading: s.heading, text: s.body })),
   );
-  const full = raw.map((s) => ({ ...s, ...renderSection(s, data, empty) }));
+  const rendered = first ? raw.map((s) => renderSection(s, data, empty)) : renderWithin(raw, data, empty);
+  const full = raw.map((s, n) => ({
+    ...s,
+    ...(rendered[n] as { title: string | null; bodyMd: string | null }),
+  }));
   const emptiedKeys = new Set(
     (tpl?.sections ?? [])
       .filter((s) => placeholdersOf(`${s.heading}\n${s.body}`).some((n) => empty.has(n)))
@@ -186,7 +192,7 @@ export async function buildNewDraft(i: NewDraftInput): Promise<NewDraft> {
   // The first service's own fill keeps to the limits too (FX-3 round 2): a section with no room for its Catalogue text keeps the
   // template's text without it, and the gaps name what was left out (`fitFirstService`).
   const bare = withoutTexts(data, empty);
-  const bareDrafts = raw.map((s) => renderSection(s, bare.data, bare.empty));
+  const bareDrafts = renderWithin(raw, bare.data, bare.empty);
   const fitted = first
     ? fitFirstService(
         full.map((f, n) => ({

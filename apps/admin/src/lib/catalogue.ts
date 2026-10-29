@@ -18,6 +18,7 @@ import {
   placeholdersOf,
   TEMPLATE_PLACEHOLDERS,
 } from "@techaust/core/catalogue";
+import { joinedPastLimit } from "@techaust/core/documents";
 import type {
   CatalogueCategory,
   CatalogueEntry,
@@ -30,6 +31,7 @@ import type {
   TemplateMeta,
 } from "../api.ts";
 import type { Draft } from "../routes/leads/drafts.ts";
+import { Y } from "./copy-y.ts";
 import { bpToPercent, moneyFrom, moneyInput, percentToBp } from "./settings-form.ts";
 
 // ---- labels (07-L) -------------------------------------------------------------------------------------------------------------
@@ -652,6 +654,30 @@ const KNOWN = new Set<string>(TEMPLATE_PLACEHOLDERS);
 
 /** The placeholders in a text that aren't on the list, in order of first use. */
 export const unknownIn = (text: string) => placeholdersOf(text).filter((p) => !KNOWN.has(p));
+
+/**
+ * 07-Y lines (FX-3 round 3, pending the owner) for the template rules the API also holds (`template_joined_too_long`): shown under each
+ * section the rule names.
+ */
+export const TEMPLATE_RULES = {
+  joinedTooLong: Y(
+    "A proposal or estimate has room for 3 sections of your own. This one and the ones after the third are joined into one, which would pass 6,000 characters. Shorten them or remove some.",
+  ),
+} as const;
+
+/**
+ * The template rules a save is refused for, by section (0-based), with the 07-Y line for each, so the editor shows them before it
+ * sends (the API answers the same sections). Proposal and estimate templates only: the care plan and terms blocks are never joined.
+ */
+export function templateRuleErrors(
+  kind: TemplateKind,
+  sections: readonly { key: string; heading: string; body: string }[],
+): Record<number, string> {
+  const out: Record<number, string> = {};
+  if (kind === "proposal" || kind === "estimate")
+    for (const n of joinedPastLimit(sections)) out[n] = TEMPLATE_RULES.joinedTooLong;
+  return out;
+}
 
 /** "Build proposal", "Care plan block". */
 export function templateTitle(t: Pick<TemplateMeta, "kind" | "category">): string {

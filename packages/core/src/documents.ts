@@ -136,6 +136,38 @@ export function sectionsFromTemplate(
   return out;
 }
 
+// ---- the template rules a saved version keeps (FX-3 round 3; lead's answers to round 2 Q2 and Q3, docs/13 2026-10-29) -------------
+
+type TemplateSection = { readonly key: string; readonly heading: string; readonly body: string };
+
+/** The draft section kind each template section lands in, by `sectionsFromTemplate`'s rule (a repeated or unknown key is custom). */
+export function templateKinds(sections: readonly { readonly key: string }[]): string[] {
+  const used = new Set<string>();
+  return sections.map((s) => {
+    const known = KINDS.includes(s.key) && s.key !== "custom" && !used.has(s.key);
+    if (!known) return "custom";
+    used.add(s.key);
+    return s.key;
+  });
+}
+
+/**
+ * Q2: the template sections (0-based, in order) a new draft would join into its last custom section when that joined text would pass
+ * SECTION_BODY_MAX: the third custom section and every custom one after it. Empty when the text fits, or nothing is joined. Counted on
+ * the template's own text, as a draft stores it; the values filled at creation are kept within the limit there (a value that would pass
+ * it stays unfilled).
+ */
+export function joinedPastLimit(sections: readonly TemplateSection[]): number[] {
+  const kinds = templateKinds(sections);
+  const customs = kinds.flatMap((k, n) => (k === "custom" ? [n] : []));
+  if (customs.length <= MAX_CUSTOM_SECTIONS) return [];
+  const drafts = sectionsFromTemplate(
+    sections.map((s) => ({ key: s.key, heading: s.heading, text: s.body })),
+  );
+  const last = drafts.filter((d) => d.kind === "custom").at(-1);
+  return (last?.bodyMd?.length ?? 0) > SECTION_BODY_MAX ? customs.slice(MAX_CUSTOM_SECTIONS - 1) : [];
+}
+
 // ---- the status flow (twin of the `documents_status_flow` trigger) -----------------------------------------------------------
 
 /**

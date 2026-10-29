@@ -22,6 +22,7 @@ import {
   snapshotFromRows,
   unknownPlaceholders,
 } from "@techaust/core/catalogue";
+import { joinedPastLimit } from "@techaust/core/documents";
 import { uuidv7 } from "@techaust/core/ids";
 import { type SiteGap, siteGaps } from "@techaust/core/site-references";
 import { Hono } from "hono/tiny";
@@ -52,6 +53,11 @@ const SLUG_IN_USE: ApiError = {
 const UNKNOWN_PLACEHOLDER: ApiError = {
   code: "unknown_placeholder",
   message: "The template uses a placeholder that does not exist",
+};
+const TEMPLATE_JOINED_TOO_LONG: ApiError = {
+  code: "template_joined_too_long",
+  message:
+    "A draft has room for 3 sections of the template's own; the ones after that are joined into the third, and together they pass 6,000 characters",
 };
 const TEMPLATE_CATEGORY: ApiError = {
   code: "template_category",
@@ -635,6 +641,19 @@ export const templates = new Hono<AppEnv>()
     const isBlock = BLOCK_KINDS.includes(f.kind);
     if (isBlock !== (f.category === null)) return err(c, TEMPLATE_CATEGORY, 400);
     if (unknownPlaceholders(f.body).length) return err(c, UNKNOWN_PLACEHOLDER, 400);
+    // A draft joins the custom sections past the third into the third (`sectionsFromTemplate`): a template whose joined text would pass
+    // a section's 6,000 characters would make drafts every save refuses, so it is refused here, naming the sections (0-based) joined
+    // (FX-3 round 3, lead's answer to round 2 Q2, docs/13 2026-10-29). Care plan and terms blocks are never made into drafts.
+    const joined = isBlock ? [] : joinedPastLimit(f.body.sections);
+    if (joined.length)
+      return c.json(
+        {
+          error: { code: TEMPLATE_JOINED_TOO_LONG.code, message: TEMPLATE_JOINED_TOO_LONG.message },
+          sections: joined,
+          request_id: c.var.rid,
+        },
+        400,
+      );
     const db = c.env.DB;
     const id = uuidv7();
     try {
