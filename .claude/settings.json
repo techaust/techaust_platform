@@ -16,7 +16,7 @@
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/cloud-session-start.sh\"",
             "timeout": 600,
-            "statusMessage": "Preparing the cloud session"
+            "statusMessage": "Session start (cloud setup only)"
           }
         ]
       }
