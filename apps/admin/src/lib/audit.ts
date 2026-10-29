@@ -177,7 +177,11 @@ export const ACTION_GROUPS: { label: string; prefixes: readonly string[] }[] = [
 export const actionsInGroup = (g: { prefixes: readonly string[] }, actions: readonly string[]): string[] =>
   actions.filter((a) => g.prefixes.some((p) => a.startsWith(p)));
 
-/** Record types the API writes (`entity_type`), for the record filter. */
+/**
+ * Record types the API writes (`entity_type`), for the record filter (`routes/audit.tsx` offers every entry, in this order). FX-4 review M2: leads,
+ * care plans, time and reports take the sidebar's words (approved); "Document sends" is a new 07-Y line, marked. `audit-labels.test.ts` scans every
+ * writer for the types it can put in `audit_log` and fails on one without a label here.
+ */
 export const ENTITY_LABELS: Record<string, string> = {
   settings: "Settings",
   bank_account: "Bank details",
@@ -186,6 +190,7 @@ export const ENTITY_LABELS: Record<string, string> = {
   staff_invite: "Invites",
   staff_session: "Staff sessions",
   notification: "Notifications",
+  lead: "Leads",
   client: "Clients",
   contact: "Contacts",
   catalogue_item: "Catalogue",
@@ -196,8 +201,12 @@ export const ENTITY_LABELS: Record<string, string> = {
   milestone: "Milestones",
   note: "Notes",
   file: "Files",
+  care_plan: "Care plans",
+  time_log: "Time",
   document: "Documents",
+  document_send: Y("Document sends"),
   approval: "Approvals",
+  report: "Reports",
   audit_log: "Audit log",
 };
 
