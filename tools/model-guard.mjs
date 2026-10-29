@@ -6,7 +6,13 @@
 //   no subagent_type at all (that starts general-purpose). Tested by apps/web/test/model-guard.test.ts.
 // - Bash in the lead's own conversation: tells the lead its effort level the first time and whenever
 //   it changes, so the start-of-day check can confirm "high".
-// Prints nothing when there is nothing to say; never blocks Bash.
+// - Bash in a Claude Code cloud session only (CLAUDE_CODE_REMOTE === "true", which Claude Code sets there and never on this PC;
+//   CLOUD-1): refuses merging, deploying, force-pushing or deleting branches, pushing to main, and changing GitHub or Cloudflare
+//   settings (gh pr merge|ready, gh workflow run, gh run rerun|cancel, gh secret|variable, gh api other than GET or opening or
+//   commenting on a PR, git push --force/--delete/":" refspecs/main, wrangler deploy|secret|versions|rollback|login|… and
+//   --remote, the deploy:* scripts). The patterns live in tools/cloud-guard.mjs, loaded only then. Best effort: a script can get
+//   round a pattern; CLAUDE.md "In a cloud session" stays the rule.
+// Prints nothing when there is nothing to say. On this PC it never blocks Bash and starts nothing new.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -39,7 +45,22 @@ if (input.tool_name === "Agent") {
   else if (BANNED.some((b) => b.toLowerCase() === type.toLowerCase()))
     why = `The built-in "${type}" agent is not used here; use code-finder`;
   if (why) deny(why);
-} else if (input.tool_name === "Bash" && !input.agent_id && input.effort?.level) {
+} else if (input.tool_name === "Bash") {
+  let refused = "";
+  if (process.env.CLAUDE_CODE_REMOTE === "true") {
+    const { cloudRefusal } = await import("./cloud-guard.mjs");
+    refused = cloudRefusal(String(input.tool_input?.command ?? ""));
+    if (refused)
+      out({
+        permissionDecision: "deny",
+        permissionDecisionReason: `${refused}. Not in a cloud session: merging, deploying, force-pushing and GitHub or Cloudflare settings are the local lead's (CLAUDE.md "In a cloud session"). This check is best effort; CLAUDE.md stays the rule.`,
+      });
+  }
+  if (!refused && !input.agent_id && input.effort?.level) reportEffort(input);
+}
+
+/** Tells the lead its effort level the first time and whenever it changes. */
+function reportEffort(input) {
   const level = input.effort.level;
   const dir = join(tmpdir(), "techaust-model-guard");
   const file = join(dir, `${String(input.session_id).replace(/[^\w-]/g, "")}.txt`);

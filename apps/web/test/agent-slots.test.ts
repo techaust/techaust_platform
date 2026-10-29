@@ -1,5 +1,5 @@
 // The agent-start rule (tools/agent-slots.mjs; docs/14 §5, owner 2026-10-29): this PC 2 agents and 1 browser with a 300 MB floor;
-// a cloud session up to 5 and 2 browsers while 3 GB is free and the load is under 80 % of its processors; the 95 % gate; the posted
+// a cloud session up to 5 and 1 browser (2 once a second browser server exists, docs/14 §4) while 3 GB is free and the load is under 80 % of its processors; the 95 % gate; the posted
 // reading for a cloud session that can't read the bar. Runs in Node.
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -60,11 +60,12 @@ describe("this PC", () => {
 });
 
 describe("a cloud session", () => {
-  it("up to 5 agents and 2 browser agents", () => {
+  it("up to 5 agents and, for now, 1 browser agent (one .mcp.json server is one browser; CLOUD-1 M3)", () => {
     expect(cloud({ running: 4 }).start).toBe(true);
     expect(cloud({ running: 5 }).start).toBe(false);
-    expect(cloud({ running: 3, browsers: 1, wantsBrowser: true }).start).toBe(true);
-    expect(cloud({ running: 3, browsers: 2, wantsBrowser: true }).start).toBe(false);
+    expect(cloud({ running: 3, browsers: 0, wantsBrowser: true }).start).toBe(true);
+    expect(cloud({ running: 3, browsers: 1, wantsBrowser: true }).start).toBe(false);
+    expect(cloud({ running: 3, browsers: 1, wantsBrowser: false }).start).toBe(true);
   });
   it("needs 3 GB free and a load under 80 % of its processors", () => {
     expect(cloud({ freeBytes: 2.9 * GB }).start).toBe(false);
@@ -107,5 +108,42 @@ describe("finding a cloud session (CLOUD-1)", () => {
     expect(runCli({}, "--cloud", "--running", "5")).toContain("the cloud limit is 5");
     expect(runCli({}, "--running", "5")).toContain("the local limit is 2");
     expect(runCli({ CLAUDE_CODE_REMOTE: "false" }, "--running", "5")).toContain("the local limit is 2");
+  });
+});
+
+// A non-numeric, negative or missing value used to become NaN and pass every check in `decide` (review side note on #111).
+describe("the command refuses a bad value", () => {
+  const SCRIPT = fileURLToPath(new URL("../../../tools/agent-slots.mjs", import.meta.url));
+  const run = (...args: string[]) => {
+    const { CLAUDE_CODE_REMOTE: _, ...env } = process.env;
+    return spawnSync(process.execPath, [SCRIPT, ...args], { env, encoding: "utf8" });
+  };
+  it.each([
+    [["--usage", "abc"], 'bad value for --usage: "abc"'],
+    [["--usage", "-5"], 'bad value for --usage: "-5"'],
+    [["--usage", ""], 'bad value for --usage: ""'],
+    [["--usage", "0x10"], 'bad value for --usage: "0x10"'],
+    [["--running", "1", "--usage"], "bad value for --usage: none given"],
+    [["--usage", "--running", "1"], 'bad value for --usage: "--running"'],
+    [["--usage", "40", "--running", "x"], 'bad value for --running: "x"'],
+    [["--usage", "40", "--running", "-1"], 'bad value for --running: "-1"'],
+    [["--usage", "40", "--running", "1.5"], 'bad value for --running: "1.5"'],
+    [["--usage", "40", "--browsers", "NaN"], 'bad value for --browsers: "NaN"'],
+    [["--usage", "40", "--browsers"], "bad value for --browsers: none given"],
+    [
+      ["--cloud", "--reading", "abc", "--reading-at", "2026-10-29T10:00:00Z"],
+      'bad value for --reading: "abc"',
+    ],
+    [["--cloud", "--reading", "40", "--reading-at", "yesterday"], 'bad value for --reading-at: "yesterday"'],
+    [["--cloud", "--reading", "40", "--reading-at"], "bad value for --reading-at: none given"],
+  ])("%j", (args, why) => {
+    const r = run(...args);
+    expect(r.stdout.trim()).toBe(`start: no (${why})`);
+    expect(r.status).toBe(1);
+  });
+  it("good values still decide", () => {
+    const r = run("--usage", "40.5", "--running", "0", "--browsers", "0");
+    expect(r.stdout).not.toContain("bad value");
+    expect(r.stdout).toMatch(/^start: (yes|no) \(/);
   });
 });

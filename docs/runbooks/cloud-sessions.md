@@ -16,7 +16,7 @@ Sources (read 2026-10-29): Claude Code docs "Claude Code on the web", "Cloud env
 
 ## Part 1. Let Claude reach the repository (once)
 Installing the GitHub App changes a GitHub setting, so only you do it.
-1. Open **https://claude.ai/code** and sign in with the TecHaust account.
+1. Open **https://claude.ai/code** and sign in with the TecHaust account. If it says cloud sessions are off for your organisation, turn them on under **Organization settings > Claude Code** (the **Cloud sessions** switch, at https://claude.ai/admin-settings/claude-code), then come back. (This step is from the Claude Code docs; it was not checked on the TecHaust Team organisation.)
 2. If it asks you to connect GitHub, click **Connect GitHub** (or **Install GitHub App**).
 3. On GitHub's page, choose the **techaust** account, then **Only select repositories** → pick **techaust_platform** → **Install**.
 4. You land back on claude.ai/code. The repository picker now lists **techaust/techaust_platform**.
@@ -27,14 +27,14 @@ Installing the GitHub App changes a GitHub setting, so only you do it.
 3. **Name:** `TecHaust`
 4. Click the **Network access** row:
    - choose **Custom**
-   - tick the box that **includes the default list** (package registries such as npm, GitHub, Ubuntu)
+   - tick **Also include default list of common package managers** (npm, GitHub, Ubuntu and the other trusted hosts)
    - in **Allowed domains**, type these three lines exactly:
      ```text
      nodejs.org
      cdn.playwright.dev
      playwright.download.prss.microsoft.com
      ```
-     (Node 24 comes from nodejs.org; the browser for screenshots comes from the two Playwright hosts.)
+     (Node 24 comes from nodejs.org, which is already in the default list: listing it again is harmless, so it stays. The browser for screenshots comes from the two Playwright hosts.)
 5. Click the **Environment variables** row and paste these three lines exactly (no secrets go here):
    ```text
    CLAUDE_CODE_EFFORT_LEVEL=high
@@ -49,7 +49,7 @@ The first session in this environment takes a few minutes longer: the setup scri
 
 ## Part 3. Check it (once, then whenever something looks wrong)
 1. On **https://claude.ai/code**, pick the repository **techaust/techaust_platform**, the branch **main**, and the environment **TecHaust**.
-2. Check the model shown is **Opus 5.5** (the project's settings ask for it).
+2. In the model menu under the message box, choose **Opus 5.5** before sending (the project can't choose it for you). Do this every time you start a session. If you forget, the session's first note says "MODEL IS …, NOT Opus 5.5": stop and tell the lead.
 3. Type: **check cloud setup** and send it.
 4. Claude runs `bash scripts/cloud-check.sh` and answers with a short list. A good result ends with **"cloud check: all passed"**, and shows:
    - `ok - cloud session (CLAUDE_CODE_REMOTE=true)`
@@ -68,11 +68,11 @@ The first session in this environment takes a few minutes longer: the setup scri
 | Piece | Where | What it does |
 |---|---|---|
 | `scripts/cloud-setup.sh` | the environment's setup script, before Claude starts (cloud only, cached) | Node 24.22.2 (checksum pinned) first on PATH, pnpm 12.9.1, Chromium for `@playwright/test` 1.64.1 and for `@playwright/mcp` 0.0.83 in `/opt/ms-playwright`; logs in `/var/log/techaust-setup/` |
-| `scripts/cloud-session-start.sh` | SessionStart hook in `.claude/settings.json` (on startup and resume) | exits at once unless `CLAUDE_CODE_REMOTE=true`; then Node 24 and `PLAYWRIGHT_BROWSERS_PATH` for every Bash command, `pnpm install --frozen-lockfile` (skipped while the lockfile, package files and the script are unchanged), dev secrets, local migrations and seed; log `.logs/cloud-session-start.log` |
+| `scripts/cloud-session-start.sh` | SessionStart hook in `.claude/settings.json` (on startup and resume) | exits at once unless `CLAUDE_CODE_REMOTE=true`; then flags a model other than Opus 5.5 (first in its summary line), Node 24 and `PLAYWRIGHT_BROWSERS_PATH` for every Bash command, `pnpm install --frozen-lockfile` (skipped while the lockfile, package files and the script are unchanged), dev secrets, local migrations and seed; log `.logs/cloud-session-start.log` |
 | `.mcp.json` | loaded by every session in this folder | the `playwright` browser server (headless Chromium, in-memory profile) |
-| `tools/mcp-local-off.mjs` | this PC, once per checkout | keeps that server off here (`disabledMcpjsonServers` in the git-ignored `.claude/settings.local.json`; `--user` writes `~/.claude/settings.json` instead, which covers every worktree); `--check` reports |
+| `tools/mcp-local-off.mjs` | this PC, once per checkout (the main checkout's was set before the merge) | keeps that server off here (`disabledMcpjsonServers` in the git-ignored `.claude/settings.local.json`; `--user` writes `~/.claude/settings.json` instead, which covers every worktree); `--check` reports |
 | `scripts/cloud-check.sh` | "check cloud setup" | the report in Part 3 |
 | `tools/cloud-pr.sh` | a cloud session's last step | opens the PR over REST and prints its address; never merges |
 | `TECHAUST_PORT_OFFSET` | browser agents (docs/14 §4) | 0 for the first, 100 for the second: every dev, browser-test and inspector port moves by 100 |
 
-**On this PC, after the CLOUD-1 merge:** in the main checkout run `node tools/mcp-local-off.mjs`, then `node tools/mcp-local-off.mjs --check` (it prints "off on this PC"). Without it, a session started from the desktop app or the SDK loads project servers without asking, and a second Playwright browser would start next to the plugin's.
+**On this PC, before the CLOUD-1 merge (done by the lead, 2026-10-29):** the main checkout's git-ignored `.claude/settings.local.json` holds `"disabledMcpjsonServers": ["playwright"]`, so the `.mcp.json` server never starts here, not even in the first session after the merge. After the merge, `node tools/mcp-local-off.mjs --check` in the main checkout confirms it (it prints "off on this PC"); `node tools/mcp-local-off.mjs` writes the setting again if it is ever lost. Without it, a session started from the desktop app or the SDK loads project servers without asking, and a second Playwright browser would start next to the plugin's.

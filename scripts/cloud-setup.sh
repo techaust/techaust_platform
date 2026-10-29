@@ -45,6 +45,12 @@ if [ ! -x "/opt/${NODE_NAME}/bin/node" ]; then
   curl -fsSL --retry 3 -o "/tmp/${NODE_NAME}.tar.xz" "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_NAME}.tar.xz" ||
     die "download of Node ${NODE_VERSION}"
   echo "${SUM}  /tmp/${NODE_NAME}.tar.xz" | sha256sum -c --status || die "Node ${NODE_VERSION}: checksum mismatch"
+  # tar needs xz for a .tar.xz; an image without it gets xz-utils from Ubuntu's archive (in the default network list).
+  if ! command -v xz >/dev/null 2>&1; then
+    { apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq xz-utils; } >"$LOGDIR/xz.log" 2>&1 ||
+      die "installing xz-utils (see $LOGDIR/xz.log)"
+    note "xz-utils installed (tar needs it for Node's .tar.xz)"
+  fi
   tar -xJf "/tmp/${NODE_NAME}.tar.xz" -C /opt || die "unpacking Node ${NODE_VERSION}"
   rm -f "/tmp/${NODE_NAME}.tar.xz"
 fi

@@ -2,9 +2,18 @@
 // session, the Playwright MCP server is pinned and off on this PC, and the cloud PR script never merges. Runs in Node; the cases
 // that run a shell script need bash (Git Bash on Windows, skipped if it is not installed).
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs without types
@@ -60,6 +69,12 @@ describe("the setup script's pins are the repository's", () => {
     expect(setup.trimEnd().endsWith("exit 0")).toBe(true);
     expect(setup).toContain("PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright");
   });
+  it("installs xz-utils, if xz is missing, before unpacking Node's .tar.xz (L3)", () => {
+    const xz = setup.indexOf("command -v xz");
+    expect(xz).toBeGreaterThan(0);
+    expect(setup).toContain("apt-get install -y -qq xz-utils");
+    expect(xz).toBeLessThan(setup.indexOf("tar -xJf"));
+  });
 });
 
 describe("the Playwright MCP server (.mcp.json)", () => {
@@ -111,6 +126,11 @@ describe("the SessionStart hook", () => {
     // biome-ignore lint/suspicious/noTemplateCurlyInString: a line of bash, not a template
     expect(code[0]).toBe('[ "${CLAUDE_CODE_REMOTE:-}" = "true" ] || exit 0');
   });
+  it("reinstalls when the lockfile, the workspace file or a package.json changes (L1)", () => {
+    expect(read("scripts/cloud-session-start.sh")).toContain(
+      "git ls-files -z -- pnpm-lock.yaml pnpm-workspace.yaml 'package.json' '*/package.json'",
+    );
+  });
   it.skipIf(!hasBash)("does nothing outside a cloud session: exit 0, no output, nothing written", () => {
     const dir = mkdtempSync(join(tmpdir(), "cloud-hook-"));
     try {
@@ -131,6 +151,97 @@ describe("the SessionStart hook", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+  it.skipIf(!hasBash)(
+    "the exact settings command, through bash -c with the real (spaced) project folder: exit 0, no output",
+    () => {
+      const command = settings.hooks.SessionStart[0].hooks[0].command;
+      const r = bash(["-c", command], {
+        CLAUDE_CODE_REMOTE: undefined,
+        CLAUDE_PROJECT_DIR: ROOT.replace(/[\\/]$/, ""),
+      });
+      expect(ROOT).toContain(" ");
+      expect(r.status).toBe(0);
+      expect(r.stdout + r.stderr).toBe("");
+    },
+  );
+  // M1: the model check. The cloud path runs here in an empty folder with a stand-in `pnpm` that fails at once, so every project
+  // step fails quickly (named in the summary) and only the model line, the env file and the exit code are read.
+  it.skipIf(!hasBash)(
+    "in a cloud session, a model other than Opus 5.5 leads the summary; Opus 5.5, no model or no input does not",
+    { timeout: 120_000 },
+    () => {
+      const run = (input: string | null) => {
+        const dir = mkdtempSync(join(tmpdir(), "cloud-model-"));
+        try {
+          const envFile = join(dir, "env");
+          writeFileSync(envFile, "");
+          mkdirSync(join(dir, "bin"));
+          writeFileSync(join(dir, "bin", "pnpm"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+          const { CLAUDE_CODE_REMOTE: _r, CLAUDE_ENV_FILE: _e, ...base } = process.env;
+          const pathKey = Object.keys(base).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
+          const r = spawnSync(BASH, ["scripts/cloud-session-start.sh"], {
+            cwd: ROOT,
+            env: {
+              ...base,
+              [pathKey]: `${join(dir, "bin")}${delimiter}${base[pathKey] ?? ""}`,
+              CLAUDE_CODE_REMOTE: "true",
+              CLAUDE_ENV_FILE: envFile,
+              CLAUDE_PROJECT_DIR: dir,
+            },
+            input: input ?? undefined,
+            stdio: [input === null ? "ignore" : "pipe", "pipe", "pipe"],
+            encoding: "utf8",
+            timeout: 60_000,
+          });
+          return { ...r, env: readFileSync(envFile, "utf8") };
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      };
+      const start = (model?: string) =>
+        JSON.stringify({ hook_event_name: "SessionStart", source: "startup", ...(model ? { model } : {}) });
+      const other = run(start("claude-sonnet-5-5"));
+      expect(other.status).toBe(0);
+      expect(other.stdout).toMatch(
+        /^MODEL IS claude-sonnet-5-5, NOT Opus 5\.5: stop and tell the owner; cloud session start/,
+      );
+      // L4: no wrangler telemetry from the cloud (also exported for every later command)
+      expect(other.env).toContain("export WRANGLER_SEND_METRICS=false");
+      for (const input of [
+        start("claude-opus-5-5"),
+        start("claude-opus-5-5[1m]"),
+        start(),
+        "",
+        "not json",
+        null,
+      ]) {
+        const r = run(input);
+        expect(r.status, String(input)).toBe(0);
+        expect(r.stdout, String(input)).toMatch(/^cloud session start \(/);
+      }
+    },
+  );
+});
+
+describe("tools/mcp-local-off.mjs in a cloud session", () => {
+  it("refuses and writes nothing (run from a copy, so a mistake could not touch this checkout)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "mcp-off-"));
+    try {
+      mkdirSync(join(dir, "tools"));
+      copyFileSync(join(ROOT, "tools", "mcp-local-off.mjs"), join(dir, "tools", "mcp-local-off.mjs"));
+      for (const args of [[], ["--user"]]) {
+        const r = spawnSync(process.execPath, [join(dir, "tools", "mcp-local-off.mjs"), ...args], {
+          env: { ...process.env, CLAUDE_CODE_REMOTE: "true", HOME: dir, USERPROFILE: dir },
+          encoding: "utf8",
+        });
+        expect(r.status, args.join(" ")).toBe(1);
+        expect(r.stderr).toContain("this is a cloud session");
+      }
+      expect(readdirSync(dir)).toEqual(["tools"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("tools/cloud-pr.sh", () => {
@@ -140,6 +251,10 @@ describe("tools/cloud-pr.sh", () => {
     expect(code.join("\n")).toContain('gh api --method POST "repos/$REPO/pulls"');
     expect(code.join("\n")).not.toMatch(/gh pr |merge|--auto|auto_merge|enablePullRequestAutoMerge/);
     expect(script).toContain('REPO="techaust/techaust_platform"');
+  });
+  it("checks the pushed branch by its exact ref (L2)", () => {
+    expect(code.join("\n")).toContain('git ls-remote origin "refs/heads/$HEAD"');
+    expect(code.join("\n")).not.toContain("ls-remote --heads");
   });
   it.skipIf(!hasBash)("--dry-run names the request and touches nothing; main is refused", () => {
     const dir = mkdtempSync(join(tmpdir(), "cloud-pr-"));
