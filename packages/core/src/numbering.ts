@@ -200,3 +200,37 @@ export function numberingClashes(
 /** Settings rule: the next number can be raised but never lowered (no reuse) [ADM-SET-04]. */
 export const canSetNextNumber = (current: number, proposed: number): boolean =>
   Number.isSafeInteger(proposed) && proposed >= current;
+
+const byCodeUnit = (a: string, b: string): -1 | 0 | 1 => (a < b ? -1 : a > b ? 1 : 0);
+
+/** A document number as its series part and the digits at its end ("TH/CN/2627/10" -> "TH/CN/2627/", "10"); no digits at the end -> null. */
+const numberParts = (n: string): { series: string; digits: string | null } => {
+  const m = /^(.*?)(\d+)$/.exec(n);
+  return m ? { series: m[1] as string, digits: m[2] as string } : { series: n, digits: null };
+};
+
+/** Two runs of digits as integers, compared as text (no conversion, so no size limit): fewer significant digits is smaller. */
+const compareDigits = (a: string, b: string): -1 | 0 | 1 => {
+  const x = a.replace(/^0+(?=\d)/, "");
+  const y = b.replace(/^0+(?=\d)/, "");
+  return x.length < y.length ? -1 : x.length > y.length ? 1 : byCodeUnit(x, y);
+};
+
+/**
+ * Two document numbers in the order they were issued (FX-4 review L3): by series (text), then by the integer at the end, never by the text of the whole, so
+ * "TH/CN/2627/10" comes after "/9" (as the notes ledger orders them, `apps/admin/src/lib/notes.ts`). A number with no digits at the end comes after its series'
+ * numbered ones; two that are still equal fall back to their text ("/09" before "/9"), so the order is total. Callers break a remaining tie on the id.
+ */
+export const compareDocNumbers = (a: string, b: string): -1 | 0 | 1 => {
+  const x = numberParts(a);
+  const y = numberParts(b);
+  const series = byCodeUnit(x.series, y.series);
+  if (series !== 0) return series;
+  if (x.digits === null || y.digits === null) {
+    if (x.digits !== y.digits) return x.digits === null ? 1 : -1;
+  } else {
+    const n = compareDigits(x.digits, y.digits);
+    if (n !== 0) return n;
+  }
+  return byCodeUnit(a, b);
+};

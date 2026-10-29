@@ -74,6 +74,7 @@ export function refuse(c: Ctx, r: Refusal) {
   const message: Record<string, string> = {
     pdf_pending: "The document is still being prepared",
     superseded: "A newer version has been sent",
+    newer_version_pending: "A newer version is being prepared",
     expired: "This offer has expired",
     already_accepted: "This offer has already been accepted",
     already_decided: "This offer has already been decided",

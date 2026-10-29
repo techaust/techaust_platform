@@ -1,14 +1,25 @@
 // The dashboard on a stress fixture [ADM-DASH-01, NFR-2]: 1,000 leads, 200 projects, 400 milestones, 50 care plans with 60 days of time
 // each, and 5,000 audit rows of which 80 % are sign-in and bell noise. D1 charges for rows read, so the sum of `meta.rows_read` of the
-// one batch is measured per role and held under 6,000; every statement of the batch must be served by an index. The wall times are a
+// one batch is measured per role and held under 6,300 on a pinned worst day (6,000 until FX-3 counted the 50 Planned projects too); every statement of the batch must be served by an index. The wall times are a
 // local upper bound (workerd, not the Free plan's metered CPU): the real reading is the staging `cpuTimeMs` at integration.
 import { env } from "cloudflare:workers";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { longSession, mkLog, today } from "./test-care.ts";
-import { call, withDb } from "./test-helpers.ts";
+import { call, pinClock, withDb } from "./test-helpers.ts";
 
-const NOW = "(cast(unixepoch('subsec') * 1000 as integer))";
-const ROWS_READ_LIMIT = 6_000;
+/**
+ * One pinned clock for the fixture and the dashboard. The rows read grow with the day of the month (each care plan's current period
+ * gets longer until its billing day), so a real clock let the count drift with the date (CI failed on 30 October). The pinned day is
+ * the worst one measured for this fixture: the 1st of a month after two 31-day months (1 September, 1 February), when every plan's
+ * current and previous periods are longest. Owner 6,299 rows and 7,869 in the worst case, against 6,255 on 1 August, 6,271 on
+ * 2 September, 6,261 on 31 August, 6,115 on 30 October and 5,965 on 28 August (2026-10-30). It is in the past, so no future-date
+ * rule refuses the data.
+ */
+const PINNED_MS = Date.parse("2025-09-01T06:30:00Z"); // 12:00 IST
+const NOW = String(PINNED_MS);
+/** The same instant as SQL text (UTC), for the fixture's `date(…)` calls. */
+const SQL_NOW = "'2025-09-01 06:30:00'";
+const ROWS_READ_LIMIT = 6_300;
 const WORST_CASE_LIMIT = 8_000;
 /** Set to true to print the per-statement numbers (the test then fails on purpose, which is the only way vitest shows them). */
 const SHOW_REPORT = false;
@@ -35,21 +46,21 @@ async function fixture() {
            'INR', ${NOW} - i * 1000, ${NOW} - i * 1000 FROM n`);
   await run(`${RECURSIVE(400)}
     INSERT INTO milestones (id, project_id, position, title, amount_minor, due_date, status)
-    SELECT 'ms-' || i, 'pj-' || ((i - 1) % 200 + 1), (i - 1) / 200 + 1, 'Milestone ' || i, 1000, date('now', '+' || (i % 30) || ' days'),
+    SELECT 'ms-' || i, 'pj-' || ((i - 1) % 200 + 1), (i - 1) / 200 + 1, 'Milestone ' || i, 1000, date(${SQL_NOW}, '+' || (i % 30) || ' days'),
            CASE i % 3 WHEN 0 THEN 'pending' WHEN 1 THEN 'ready_to_bill' ELSE 'invoiced' END FROM n`);
   await run(`${RECURSIVE(50)}
     INSERT INTO care_plans (id, client_id, tier, currency, price_minor, included_minutes, start_date, billing_day, status, rollover, overage_rate_minor, created_at, updated_at)
-    SELECT 'cp-' || i, 'cl-stress', CASE WHEN i % 2 = 0 THEN 'growth' ELSE 'essential' END, 'INR', 2499900, CASE WHEN i % 2 = 0 THEN 600 ELSE 120 END, date('now', '-100 days'), 1 + (i % 28), 'active', CASE WHEN i % 2 = 0 THEN 'one_month' ELSE 'none' END, 150000, ${NOW} - i * 1000, ${NOW} - i * 1000 FROM n`);
+    SELECT 'cp-' || i, 'cl-stress', CASE WHEN i % 2 = 0 THEN 'growth' ELSE 'essential' END, 'INR', 2499900, CASE WHEN i % 2 = 0 THEN 600 ELSE 120 END, date(${SQL_NOW}, '-100 days'), 1 + (i % 28), 'active', CASE WHEN i % 2 = 0 THEN 'one_month' ELSE 'none' END, 150000, ${NOW} - i * 1000, ${NOW} - i * 1000 FROM n`);
   await run(`${RECURSIVE(50)}
     INSERT INTO care_plan_terms (id, care_plan_id, effective_from, tier, price_minor, included_minutes, overage_rate_minor, rollover, created_by)
-    SELECT 'ct-' || i, 'cp-' || i, date('now', '-100 days'), CASE WHEN i % 2 = 0 THEN 'growth' ELSE 'essential' END, 2499900, CASE WHEN i % 2 = 0 THEN 600 ELSE 120 END, 150000, CASE WHEN i % 2 = 0 THEN 'one_month' ELSE 'none' END, 'st-stress' FROM n`);
+    SELECT 'ct-' || i, 'cp-' || i, date(${SQL_NOW}, '-100 days'), CASE WHEN i % 2 = 0 THEN 'growth' ELSE 'essential' END, 2499900, CASE WHEN i % 2 = 0 THEN 600 ELSE 120 END, 150000, CASE WHEN i % 2 = 0 THEN 'one_month' ELSE 'none' END, 'st-stress' FROM n`);
   await run(`${RECURSIVE(50)}
     INSERT INTO care_plan_status_log (id, care_plan_id, status, effective_on, created_by)
-    SELECT 'cs-' || i, 'cp-' || i, 'active', date('now', '-100 days'), 'st-stress' FROM n`);
+    SELECT 'cs-' || i, 'cp-' || i, 'active', date(${SQL_NOW}, '-100 days'), 'st-stress' FROM n`);
   // 50 plans x 60 days, one 15-minute entry each: 750 minutes a day for the one person, under the 24-hour cap
   await run(`WITH RECURSIVE p(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM p WHERE i < 50), d(k) AS (SELECT 0 UNION ALL SELECT k + 1 FROM d WHERE k < 59)
     INSERT INTO time_logs (id, user_id, work_date, minutes, care_plan_id, billable, created_at, updated_at)
-    SELECT 'tl-' || p.i || '-' || d.k, 'st-stress', date('now', '+5 hours', '+30 minutes', '-' || d.k || ' days'), 15, 'cp-' || p.i, 1, ${NOW}, ${NOW} FROM p, d`);
+    SELECT 'tl-' || p.i || '-' || d.k, 'st-stress', date(${SQL_NOW}, '+5 hours', '+30 minutes', '-' || d.k || ' days'), 15, 'cp-' || p.i, 1, ${NOW}, ${NOW} FROM p, d`);
   await run(`${RECURSIVE(5_000)}
     INSERT INTO audit_log (id, actor_type, actor_id, role, action, entity_type, entity_id, at)
     SELECT 'au-' || i, 'staff', 'st-stress', 'staff',
@@ -96,7 +107,12 @@ function recording(): { db: D1Database; seen: Seen[]; rowsRead: () => number } {
 }
 
 describe("GET /dashboard on the stress fixture", () => {
-  it("reads at most 6,000 rows per call for every role, every statement from an index", async () => {
+  beforeAll(() => {
+    pinClock(PINNED_MS);
+  });
+  afterAll(() => vi.useRealTimers());
+
+  it("reads at most 6,300 rows per call for every role on the worst day, every statement from an index", async () => {
     await fixture();
     const roles = ["owner", "staff", "sales", "accountant"] as const;
     const report: string[] = [];
@@ -132,7 +148,7 @@ describe("GET /dashboard on the stress fixture", () => {
     // under a looser ceiling (a plan that carries hours in needs last period's hours; real data is a handful of plans).
     await run(`${RECURSIVE(50)}
       INSERT INTO care_plan_terms (id, care_plan_id, effective_from, tier, price_minor, included_minutes, overage_rate_minor, rollover, created_by)
-      SELECT 'cw-' || i, 'cp-' || i, date('now', '-99 days'), 'growth', 2499900, 600, 150000, 'one_month', 'st-stress' FROM n WHERE i % 2 = 1`);
+      SELECT 'cw-' || i, 'cp-' || i, date(${SQL_NOW}, '-99 days'), 'growth', 2499900, 600, 150000, 'one_month', 'st-stress' FROM n WHERE i % 2 = 1`);
     const worst = recording();
     const owner = await longSession("owner");
     expect((await call("/dashboard", { cookie: owner.cookie }, withDb(worst.db))).status).toBe(200);
@@ -187,7 +203,8 @@ describe("GET /dashboard on the stress fixture", () => {
         call("/time", {
           cookie: s.cookie,
           body: {
-            workDate: `2026-01-${String(1 + (day++ % 28)).padStart(2, "0")}`,
+            // August 2025: before the pinned day, so the entry is not in the future
+            workDate: `2025-08-${String(1 + (day++ % 28)).padStart(2, "0")}`,
             minutes: 15,
             projectId: "pj-1",
             billable: true,

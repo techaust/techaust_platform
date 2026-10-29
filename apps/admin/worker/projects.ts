@@ -4,6 +4,7 @@
 // Audit rows hold ids, codes, field names and statuses, never a project name, a note or a filename.
 import { parseIsoDate } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
+import { decide } from "@techaust/core/permissions";
 import {
   canMoveMilestone,
   canMoveProject,
@@ -12,6 +13,7 @@ import {
   PROJECT_STATUSES,
   type ProjectStatus,
 } from "@techaust/core/projects";
+import type { ProjectBilledRow } from "@techaust/db/reports";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import {
@@ -21,7 +23,17 @@ import {
   projectClientGone,
   refuseAnonymised,
 } from "./anonymised.ts";
-import { type ApiError, type AppEnv, BAD_REQUEST, type Ctx, err, mutate, NOT_FOUND } from "./context.ts";
+import {
+  type ApiError,
+  type AppEnv,
+  actor,
+  BAD_REQUEST,
+  type Ctx,
+  err,
+  mutate,
+  NOT_FOUND,
+} from "./context.ts";
+import { projectBilledOf, projectBilledStatement } from "./figures.ts";
 import { type FileRow, fileListQuery, fileView, listFiles, uploadFile } from "./files.ts";
 import { body, idParam, isUnique, limitOf, param, query, refusedWith, STALE_VERSION, text } from "./http.ts";
 import { type Direction, decodeCursor, keysetSql, PREFIX_END, pageOf } from "./keyset.ts";
@@ -360,7 +372,9 @@ export const projects = new Hono<AppEnv>()
   .get("/:id", param(idParam), async (c) => {
     const { id } = c.req.valid("param");
     const db = c.env.DB;
-    const [p, ms, ns, fs, gone, hrs] = await db.batch<Record<string, unknown>>([
+    // FX-3 (A3 5): the billed figure is finance, so a role without `clients.finance.read` (Sales) never runs its statement and gets no `billed` key.
+    const seesFinance = decide(actor(c).role, "clients.finance.read") !== "deny";
+    const [p, ms, ns, fs, gone, hrs, billed] = await db.batch<Record<string, unknown>>([
       db
         .prepare(
           `SELECT ${PROJECT_COLS} FROM projects p JOIN clients c ON c.id = p.client_id WHERE p.id = ?1`,
@@ -387,15 +401,17 @@ export const projects = new Hono<AppEnv>()
       // The hours logged on the project (M3.5, ADM-PRJ-05): totals only, never a person or a note, so every role that reads a project
       // sees the same figure. Served by `time_logs_project_date`; a project has a handful of entries a day at most.
       db.prepare(PROJECT_HOURS_SQL).bind(id),
+      ...(seesFinance ? [projectBilledStatement(db, id)] : []),
     ]);
     const row = p?.results[0] as ProjectRow | undefined;
     if (!row) return err(c, NOT_FOUND, 404);
     const hours = hrs?.results[0] as { total: number; billable: number } | undefined;
     const milestones = (ms?.results ?? []) as MilestoneRow[];
+    const anonymised = (gone?.results[0] as { gone: number } | undefined)?.gone === 1;
     return c.json({
       project: projectView(row),
       /** The client is an anonymised individual: the screens are read-only (client_anonymised). */
-      clientAnonymised: (gone?.results[0] as { gone: number } | undefined)?.gone === 1,
+      clientAnonymised: anonymised,
       milestones: milestones.map((m) => milestoneView(m, row.budget_minor)),
       milestoneTotals: milestoneTotals(
         row.budget_minor,
@@ -403,9 +419,19 @@ export const projects = new Hono<AppEnv>()
       ),
       recentNotes: ((ns?.results ?? []) as NoteRow[]).map(noteView),
       recentFiles: ((fs?.results ?? []) as FileRow[]).map(fileView),
-      // Billed against paid needs invoices and says so, instead of showing a zero: the screens print "arrives with ...".
+      // FX-3 (A3 5, ADM-PRJ-05): billed from the project's issued invoice-family documents with the statement's rules (figures.ts), by currency, for a
+      // finance role only (absent for Sales); none for an anonymised client (as its Overview). "Paid" needs payments (M6): absent, never a zero.
       figures: {
-        billedVsPaid: { available: false, arrivesWith: "invoicing" },
+        ...(seesFinance
+          ? {
+              billed: anonymised
+                ? { available: false as const, reason: "anonymised" as const }
+                : {
+                    available: true as const,
+                    currencies: projectBilledOf((billed?.results ?? []) as ProjectBilledRow[]),
+                  },
+            }
+          : {}),
         hours: { available: true, totalMinutes: hours?.total ?? 0, billableMinutes: hours?.billable ?? 0 },
       },
     });

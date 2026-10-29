@@ -21,6 +21,7 @@ import {
   gstr3bCsv,
   gstr3bSummary,
   issuedRowsOf,
+  type ManualTaxEntry,
   type OutputTaxRow,
   outputTaxCsv,
   outputTaxRows,
@@ -57,40 +58,59 @@ const gstPeriodOf = (p: PeriodChoice): GstPeriod =>
     ? { kind: "month", year: p.year, month: p.month }
     : { kind: "quarter", fyStartYear: p.fyStartYear, quarter: p.quarter };
 
-/** A warning in words, with the state and rate (B2CS) or the SAC it names. */
+/**
+ * One warning in words. `blocking` (FX-4, full audit A5 1): the files are made but are not complete for filing until the person does what it says (a tax-only note's
+ * tax entered by hand); `manual` is what to enter, per rate, for the screen to set out.
+ */
+export type WarningLine = {
+  key: string;
+  text: string;
+  doc: DocRef | null;
+  blocking: boolean;
+  manual: ManualTaxEntry | null;
+};
+
+/** A warning in words, with the state and rate (B2CS) or the SAC it names; the blocking ones first. */
 function warningLines(
   warnings: readonly GstWarning[],
   b2cs: readonly { posCode: string; rateBp: number }[],
   docsById: ReadonlyMap<string, DocRef>,
-): { key: string; text: string; doc: DocRef | null }[] {
+): WarningLine[] {
   const seen = new Set<string>();
-  const out: { key: string; text: string; doc: DocRef | null }[] = [];
+  const out: WarningLine[] = [];
+  const line = (key: string, text: string, doc: DocRef | null, w: GstWarning): WarningLine => ({
+    key,
+    text,
+    doc,
+    blocking: w.blocking === true,
+    manual: w.manual ?? null,
+  });
   for (const w of warnings) {
     const k = `${w.code}|${w.path.join(".")}`;
     if (seen.has(k)) continue;
     seen.add(k);
     if (w.code === "b2cs_negative_net") {
       const row = typeof w.path[1] === "number" ? b2cs[w.path[1]] : undefined;
-      out.push({
-        key: k,
-        doc: null,
-        text: gstWarningText(w, {
-          state: row ? stateText(row.posCode) : "",
-          rate: row ? `${formatRate(row.rateBp)} %` : "",
-        }),
-      });
+      out.push(
+        line(
+          k,
+          gstWarningText(w, {
+            state: row ? stateText(row.posCode) : "",
+            rate: row ? `${formatRate(row.rateBp)} %` : "",
+          }),
+          null,
+          w,
+        ),
+      );
     } else if (w.code === "hsn_description_missing") {
-      out.push({ key: k, doc: null, text: gstWarningText(w, { sac: String(w.path[1] ?? "") }) });
+      out.push(line(k, gstWarningText(w, { sac: String(w.path[1] ?? "") }), null, w));
     } else {
       const id = w.path[0];
-      out.push({
-        key: k,
-        doc: typeof id === "string" ? (docsById.get(id) ?? null) : null,
-        text: gstWarningText(w),
-      });
+      out.push(line(k, gstWarningText(w), typeof id === "string" ? (docsById.get(id) ?? null) : null, w));
     }
   }
-  return out;
+  // Stable: the blocking lines first, each group in core's order.
+  return [...out.filter((l) => l.blocking), ...out.filter((l) => !l.blocking)];
 }
 
 /** The section totals the panel lists, in the order of the GSTR-1 files. */
@@ -129,7 +149,11 @@ export type GstExport =
         cancelled: number;
       }[];
       files: { name: string; stem: string; csv: string }[];
-      warnings: { key: string; text: string; doc: DocRef | null }[];
+      warnings: WarningLine[];
+      /** FX-4 (full audit A5 1): false while a blocking warning is present; the panel then says `GST_COPY.doneManual`, never "No errors". */
+      complete: boolean;
+      /** How many blocking warnings (tax-only notes to enter by hand). */
+      blocking: number;
       layout: string;
     };
 
@@ -158,6 +182,8 @@ export function buildGstExport(
     const errs = [...(files.ok ? [] : files.errors), ...(b3.ok ? [] : b3.errors)];
     return { ok: false, problems: issueLines(errs, docsById), checked };
   }
+  const warnings = warningLines([...sections.warnings, ...summary.warnings], sections.value.b2cs, docsById);
+  const blocking = warnings.filter((w) => w.blocking).length;
   return {
     ok: true,
     checked,
@@ -169,7 +195,9 @@ export function buildGstExport(
       ...files.value.map((f) => ({ name: f.name, stem: f.name.replace(/\.csv$/, ""), csv: f.csv })),
       { name: "gstr3b_summary.csv", stem: "gstr3b_summary", csv: b3.value },
     ],
-    warnings: warningLines([...sections.warnings, ...summary.warnings], sections.value.b2cs, docsById),
+    warnings,
+    complete: blocking === 0,
+    blocking,
     layout: CURRENT_GSTR1_LAYOUT,
   };
 }
@@ -202,6 +230,11 @@ export type SalesRegister =
       count: number;
       outputTax: readonly OutputTaxRow[];
       files: { register: string; outputTax: string; gstr3b: string | null };
+      /**
+       * FX-4 (early check L3): when the 3B file is offered, the GST export's blocking lines (tax-only notes to enter by hand) of the same period, so the
+       * panel says what the GST exports say and never "No errors" while one is present. Empty when there is no 3B file.
+       */
+      manual: WarningLine[];
     };
 
 /** The sales register and output tax of a range (any range inside one FY), and the 3B figures when the range is a whole return period. */
@@ -228,17 +261,20 @@ export function buildSalesRegister(
     return { ok: false, problems: issueLines(e, docsById) };
   }
   let gstr3b: string | null = null;
+  let manual: WarningLine[] = [];
   const period = wholePeriodOf(from, to);
   if (period) {
     const g = buildGstExport(rows, meta, period);
     if (!g.ok) return { ok: false, problems: g.problems };
     gstr3b = g.files.find((f) => f.stem === "gstr3b_summary")?.csv ?? null;
+    manual = g.warnings.filter((w) => w.blocking);
   }
   return {
     ok: true,
     count: rows.length,
     outputTax: output.value,
     files: { register: regCsv.value, outputTax: outCsv.value, gstr3b },
+    manual,
   };
 }
 
@@ -257,7 +293,7 @@ export type EdfList =
       ok: true;
       rows: readonly EdfRow[];
       csv: string;
-      warnings: { key: string; text: string; doc: DocRef | null }[];
+      warnings: WarningLine[];
     };
 
 export function buildEdf(

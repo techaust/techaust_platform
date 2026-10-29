@@ -71,6 +71,7 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0049_invoice_number_display.sql",
       "0050_ledger_triggers.sql",
       "0051_pdf_failures.sql",
+      "0052_tax_only_note_triggers.sql",
     ]);
   });
 

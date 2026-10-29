@@ -196,7 +196,7 @@ describe("M3.1 settings fields", () => {
     expect(S.email.safeParse({ ...e, bccOwner: { nope: true } }).success).toBe(false);
   });
 
-  it("the liability cap default is the figure the website printed before (INR 10,000, VERIFY WITH CA/LEGAL)", () => {
+  it("the liability cap default is the figure the website printed before (INR 10,000; OPEN (08-C RB-23): is it enforceable against a consumer?)", () => {
     expect(SETTINGS_DEFAULTS.payment_terms.websiteLiabilityCapInrMinor).toBe(1_000_000);
     expect(SETTINGS_DEFAULTS.payment_terms.razorpayMinPartialInrMinor).toBe(1_000_000);
   });
@@ -248,5 +248,23 @@ describe("M3.1 settings fields", () => {
     expect(tax.lut).toEqual({ arn: "AD1234567890123", fy: null });
     // an explicit stored value of the wrong type is not hidden by the default
     expect(() => resolveSetting("tax", { ...SETTINGS_DEFAULTS.tax, lut: null })).toThrow();
+  });
+});
+
+describe("FX-4 (full audit A5 12): the default SAC of a custom line", () => {
+  it("empty by default, and a stored row without it reads empty", () => {
+    expect(SETTINGS_DEFAULTS.tax.defaultSac).toBe("");
+    const { defaultSac: _d, ...old } = SETTINGS_DEFAULTS.tax;
+    expect(resolveSetting("tax", old).defaultSac).toBe("");
+    expect(SETTINGS_SCHEMAS.tax.parse(old).defaultSac).toBe("");
+  });
+
+  it("six digits or empty; anything else is refused", () => {
+    const parse = (defaultSac: unknown) =>
+      SETTINGS_SCHEMAS.tax.safeParse({ ...SETTINGS_DEFAULTS.tax, defaultSac }).success;
+    expect(parse("")).toBe(true);
+    expect(parse("998314")).toBe(true);
+    for (const bad of ["99831", "9983140", "99831a", " 998314", null, 998314])
+      expect(parse(bad), String(bad)).toBe(false);
   });
 });

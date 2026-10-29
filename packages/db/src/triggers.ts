@@ -27,7 +27,12 @@ import {
   termsBlocks,
   termsVersions,
 } from "./schema/index.ts";
-import { DISCOUNT_AFTER_SALE_FROM_SQL, fyTokenOfDateSql, LUT_FOR_FY_SQL } from "./sql-rules.ts";
+import {
+  DISCOUNT_AFTER_SALE_FROM_SQL,
+  fyTokenOfDateSql,
+  LUT_FOR_FY_SQL,
+  taxOnlyNoteExactSql,
+} from "./sql-rules.ts";
 
 /**
  * Columns of an issued document that may still change (ledger, status, void and the e-invoice status). FX-1 (A0 5): `irn`, `ack_no`, `ack_date` and
@@ -901,6 +906,20 @@ export function ledgerTriggerStatements(): string[] {
   ];
 }
 
+/**
+ * FX-4 (full audit A5 11; a new trigger only, no table is rebuilt; the abort message starts with the trigger's name): `documents_tax_only_note_exact`: a tax-only debit
+ * note (the reason "Tax charged too low", or a taxable value of nil) is issued with no round-off, its total exactly its tax, in its currency and its INR view. The twin
+ * of core `taxOnlyDebitNote` (never rounded) and of the note freeze's WHERE (`noteIssueTail`), all three from `taxOnlyNoteExactSql`. OPEN (08-C RA-33): may a
+ * tax-only debit note's total be rounded to the nearest rupee, and in which direction? Not rounding (the engine's "none" mode) invents no direction and never puts
+ * the total below the tax.
+ */
+export function taxOnlyNoteTriggerStatements(): string[] {
+  const issuing = "OLD.status = 'draft' AND NEW.status = 'issued' AND NEW.type = 'debit_note'";
+  return [
+    `CREATE TRIGGER \`documents_tax_only_note_exact\` BEFORE UPDATE OF status ON \`documents\` WHEN ${issuing} AND NOT ${taxOnlyNoteExactSql("NEW")} BEGIN ${abort("documents_tax_only_note_exact: a tax-only debit note is issued with no round-off, its total exactly its tax")} END;`,
+  ];
+}
+
 /** The trigger sets, by the name the migration is created with (`drizzle-kit generate --custom --name <set>`). */
 export const TRIGGER_SETS = {
   triggers: { what: "integrity triggers (docs/05 §5.3)", statements: triggerStatements },
@@ -962,6 +981,10 @@ export const TRIGGER_SETS = {
   ledger_triggers: {
     what: "full-audit data fixes (FX-1): e-invoice fields set once, the credit cap's INR guard, the ledger identity, the discount-after-sale date and the advance LUT of the receipt FY at issue",
     statements: ledgerTriggerStatements,
+  },
+  tax_only_note_triggers: {
+    what: "full-audit invoicing fix (FX-4): a tax-only debit note is issued with no round-off, its total exactly its tax",
+    statements: taxOnlyNoteTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;

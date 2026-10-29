@@ -19,12 +19,15 @@ import { badgeOf, INV_COPY, INV_ERRORS, moneyText } from "../../lib/invoices.ts"
 import {
   againstLine,
   balanceLine,
+  creditNoteCount,
   deadlineBanner,
   effectLine,
   IMS_LABELS,
   NOTE_COPY,
   NOTE_ERRORS,
+  type NoteLedgerRow as NoteLedgerRowData,
   noteErrorText,
+  noteLedgerRows,
   notesLimit,
   rateLine,
   reasonLine,
@@ -37,7 +40,6 @@ import {
   type CreditDeadlineView,
   type InvoiceWithNotes,
   type NoteKind,
-  type NoteRow,
   notesApi,
 } from "../../lib/notes-api.ts";
 import { InvoiceBadge, invoiceHref } from "./parts.tsx";
@@ -81,14 +83,18 @@ function reasonNotOffered(kind: NoteKind, reasons: readonly string[]): string | 
   return (NOTE_ERRORS as Record<string, string>)[r] ?? null;
 }
 
-function NoteLedgerRow({ row, currency }: { row: NoteRow; currency: Currency }) {
+/** One issued note: its number (the link), its type and date (FX-4, A5 6: a credit note and a debit note are told apart in words, not only by the series in the number), its total and status. */
+function LedgerRow({ row, currency }: { row: NoteLedgerRowData; currency: Currency }) {
   const date = dayText(row.issueDate) ?? "";
   return (
-    <li className="notes-row">
+    <li className="notes-row" data-kind={row.kind}>
       <Link className="notes-row__number" to={invoiceHref(row.id)}>
         <span className="docno">{row.number}</span>
       </Link>
-      <span className="notes-row__date">{date}</span>
+      <span className="notes-row__what">
+        <span className="notes-row__type">{row.typeText}</span>
+        <span className="notes-row__date">{date}</span>
+      </span>
       <span className="notes-row__total tnum">{moneyText(row.totalMinor, currency)}</span>
       <span className="notes-row__status">
         <InvoiceBadge badge={badgeOf({ status: row.status, overdue: false })} />
@@ -119,9 +125,8 @@ export function NotesPanel(props: { view: InvoiceWithNotes; role: Role; onIssue:
   const notes = v.notes;
   if (!notes || !v.actions) return null;
   const isVoid = v.status === "void";
-  const rows = [...notes.credit, ...notes.debit].sort((a, b) =>
-    (a.issueDate ?? "").localeCompare(b.issueDate ?? ""),
-  );
+  // FX-4 (A5 6, early check L4): one ledger, oldest first, each row typed; the order is the helper's (date, issue instant, then the number's integer).
+  const rows = noteLedgerRows(notes);
   const nothing = rows.length === 0 && !notes.drafts.credit && !notes.drafts.debit;
   // A void invoice has no notes (a note blocks the void) and gets none: the section says nothing there.
   if (isVoid && nothing) return null;
@@ -140,7 +145,7 @@ export function NotesPanel(props: { view: InvoiceWithNotes; role: Role; onIssue:
   const deadline = v.creditDeadline;
   // the deadline matters while something is left to credit
   const showDeadline = deadline !== null && !isVoid && !credit.reasons.includes("parent_fully_credited");
-  const credited = notes.credit.length;
+  const credited = creditNoteCount(notes);
   return (
     <section className="lead-panel notes-panel" aria-labelledby="notes-h">
       <div className="lead-panel__head notes-panel__head">
@@ -173,7 +178,7 @@ export function NotesPanel(props: { view: InvoiceWithNotes; role: Role; onIssue:
       {(rows.length > 0 || notes.drafts.credit || notes.drafts.debit) && (
         <ul className="notes-ledger">
           {rows.map((r) => (
-            <NoteLedgerRow key={r.id} row={r} currency={v.currency} />
+            <LedgerRow key={r.id} row={r} currency={v.currency} />
           ))}
           {notes.drafts.credit && <DraftRow kind="credit" id={notes.drafts.credit} />}
           {notes.drafts.debit && <DraftRow kind="debit" id={notes.drafts.debit} />}

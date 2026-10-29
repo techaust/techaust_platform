@@ -37,10 +37,14 @@ type NoteListRow = {
   frozen_at: number | null;
 };
 
+/** One issued note of the invoice's ledger; `type` says which kind it is, so a screen can name each row (FX-4, full audit A5 6). */
 const itemOf = (r: NoteListRow) => ({
   id: r.id,
+  type: r.type as "credit_note" | "debit_note",
   number: r.number_display,
   issueDate: r.issue_date,
+  /** When it was issued (UTC ms), so the ledger orders notes of one day by the instant, never by the text of their numbers (early check L4). */
+  issuedAt: r.frozen_at,
   totalMinor: r.total_minor,
   status: r.status,
   imsStatus: r.ims_status,

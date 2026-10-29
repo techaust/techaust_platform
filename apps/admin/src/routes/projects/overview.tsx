@@ -2,6 +2,8 @@
 // owner and staff, sending only what changed and the `updatedAt` it was loaded with; a 409 shows the shared stale notice), the
 // milestones timeline with the total against the budget, the five newest notes and files, and the hours logged (07-K words instead of a
 // zero before time logs). The old "billed and paid" placeholder is gone with M5.1: each milestone links its invoice on the Milestones tab.
+// FX-3 (A3 5): Figures shows the amount billed from the project's issued invoices and debit notes (and its credit notes) for the finance
+// roles; "paid" arrives with payments (07-V's line).
 import { type Dispatch, type FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { api, fileDownloadHref, type ProjectPage, RequestError } from "../../api.ts";
@@ -33,7 +35,9 @@ import {
   totalsWarning,
   typeName,
 } from "../../lib/projects.ts";
+import { FINANCE_COPY } from "../../lib/reports.ts";
 import { useUser } from "../../session.tsx";
+import { ProjectBilledFacts } from "../clients/figures.tsx";
 import { Fact } from "../clients/overview.tsx";
 import { Day, MilestonePill, MoneyIn, VisibilityPill } from "./parts.tsx";
 import type { Reload, TabKey } from "./project.tsx";
@@ -64,6 +68,9 @@ export function Overview(props: {
             Figures
           </h2>
           <dl className="facts figures">
+            {props.data.figures.billed?.available && (
+              <ProjectBilledFacts billed={props.data.figures.billed.currencies} />
+            )}
             <Fact label="Hours logged">
               {props.data.figures.hours.available ? (
                 <span className="panel-empty hours-figure">
@@ -83,6 +90,9 @@ export function Overview(props: {
               )}
             </Fact>
           </dl>
+          {props.data.figures.billed?.available && (
+            <p className="acct__foot">{FINANCE_COPY.collectedArrives}</p>
+          )}
         </section>
         <section className="lead-panel" aria-labelledby="linked-h">
           <h2 id="linked-h" className="lead-panel__title">
@@ -402,7 +412,7 @@ function RecentNotes({ data, onOpen }: { data: ProjectPage; onOpen: () => void }
                 <When ms={n.createdAt} inline />
                 <VisibilityPill shared={n.visibility === "shared"} />
               </p>
-              <Markdown source={n.bodyMd} className="note__body" />
+              <Markdown source={n.bodyMd} className="note__body" headings />
             </li>
           ))}
         </ul>

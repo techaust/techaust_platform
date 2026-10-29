@@ -174,3 +174,11 @@ The code step adds both terms changes as a new seeded terms version, plus a migr
 
 ## Added to this task (lead, 2026-10-29)
 - **Widen the VERIFY scan** (`packages/core/test/verify-tags.test.ts`) to the remaining tracked text types: `.html`, `.py` and `.example` files (`index.html`, `packages/ui/scripts/measure-cmyk.py`, `.dev.vars.example`). Snapshots (`.snap`, email and CSV fixtures) stay out: they are generated. None holds a tag today. This was the FX-3 fix round 2 builder's question.
+
+## Added to this task: void after a portal view (owner, 2026-10-30)
+Full audit A0 3 (08-C RA-10), owner's answer "View blocks void": an invoice-family document whose client has opened it in the portal (`viewed_at` set) can't be voided; corrections go through a credit note.
+- Add the condition everywhere the void rule lives: core (`packages/core/src/invoices.ts` void rule, about line 491: a new reason such as `viewed_by_client`), the admin void route (`apps/admin/worker/invoices.ts` about 1168–1176) and the SQL guard of the void statement, so a view landing between the check and the write still refuses (one batch, condition in SQL). Look for a trigger that already pairs voids (`invoice_triggers`, 0038); if a trigger is the right place, add a new one in a new migration (never edit an applied one).
+- The admin screen shows the refusal in plain words; new copy goes in 07-W style as `[Placeholder]` unless an approved line fits, and the report lists it.
+- Update 08-C RA-10 from OPEN to settled: "Owner decision 2026-10-30 (docs/13)".
+- Tests: core (property and unit), route (viewed → 409 with the reason; not viewed → still voidable), and the race (view between check and write).
+- Tier A for this item: stop after it and the core/route layers, commit, and say so in the report; the lead asks for the analyst's early check.

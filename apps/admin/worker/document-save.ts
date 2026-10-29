@@ -246,6 +246,7 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
       items,
       state.currency,
       settings.tax.defaultRateBp,
+      settings.tax.defaultSac || null,
     );
     if (!made.ok) return err(c, made.error, made.status);
     state = { ...state, lines: made.lines };
@@ -322,9 +323,10 @@ export const documentSave = new Hono<AppEnv>().patch("/:id", param(idParam), bod
     sections.forEach((x, n) => {
       if (x !== state.sections[n]) serverChanged.add(x.id);
     });
-    // Catalogue text a service ADDS that would pass a section's limit, or the document's, was left out of that section (round 4, M3) and
-    // is named as a gap (`noRoom`): it never makes the save, or any later one, a 400. What stays checked here is the first service's own
-    // template fill (a template text of up to 2,000 characters around both of its 2,500-character texts), as before.
+    // Catalogue text that would pass a section's limit, or the document's, was left out of that section (round 4, M3; the first service's
+    // own template fill too, FX-3 round 2) and is named as a gap (`noRoom`): it never makes the save, or any later one, a 400. A short
+    // value (the service's name, short text, code and schedule sentence) that would pass a title's or a text's limit stays unfilled
+    // (FX-3 round 3, `renderWithin`), so what stays checked here is the text the person wrote.
     const issues = checkSections(sections);
     if (issues.length > 0)
       return c.json(

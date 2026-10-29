@@ -262,6 +262,11 @@ export type InvoiceSummary = {
   currency: string;
   /** A credit or debit note: the invoice it is against. */
   parentNumber: string | null;
+  /**
+   * FX-4 (A5 5): a proforma sealed with the estimate marker shows its tax heads as estimates; false on one sealed before FX-4 and on every other type.
+   * Absent from an older API: no "(estimate)".
+   */
+  gstEstimate?: boolean;
   totals: {
     subtotalMinor: number;
     discountMinor: number;

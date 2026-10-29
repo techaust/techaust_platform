@@ -22,7 +22,14 @@ export type BlockPart = { field: "deliverables" | "assumptions" | "exclusions"; 
 type Line = { text: string; start: number; end: number };
 /** A run of lines `[from, to)` owned by one service (`owner` = its id), or by none (an opening no service owns). */
 type Segment = { owner: string | null; from: number; to: number };
-export type ParsedBlocks = { body: string; lines: Line[]; segments: Segment[]; eol: string };
+/** `opening`: the service that owns the unheaded opening (the draft's first, while it has no heading of its own), else null. */
+export type ParsedBlocks = {
+  body: string;
+  lines: Line[];
+  segments: Segment[];
+  eol: string;
+  opening: string | null;
+};
 
 /** A service's heading line. */
 export const headingLine = (name: string): string => `**${name}**`;
@@ -77,7 +84,7 @@ export function parseBlocks(
   });
   current.to = lines.length;
   segments.push(current);
-  return { body: text, lines, segments, eol: eolOf(text) };
+  return { body: text, lines, segments, eol: eolOf(text), opening };
 }
 
 /** The segments of one service; an opening of blank lines only is no block. */
@@ -89,6 +96,9 @@ function segmentsOf(p: ParsedBlocks, id: string): Segment[] {
 
 /** Whether the service has a block in the section. */
 export const hasBlock = (p: ParsedBlocks, id: string): boolean => segmentsOf(p, id).length > 0;
+
+/** Whether the service's block is the unheaded opening (it is the draft's first service and has no heading of its own). */
+export const ownsOpening = (p: ParsedBlocks, id: string): boolean => p.opening === id;
 
 /** A text's lines for comparing: each trimmed, a run of blank lines as one, no blank line at either end. */
 function comparable(text: string): string[] {

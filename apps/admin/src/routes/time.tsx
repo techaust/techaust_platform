@@ -11,11 +11,13 @@ import { ConfirmDialog } from "../components/confirm-dialog.tsx";
 import { type Column, DataTable } from "../components/data-table.tsx";
 import { PageHeader, Skeleton, StatusPill } from "../components/display.tsx";
 import { ChevronLeft, ChevronRight, Clock, Lock, Pencil, Plus, Trash } from "../components/icons.tsx";
+import { useScrollRegion } from "../components/scroll-region.ts";
 import { LoadFailed, NoAccess, StaleNotice, useLoad } from "../components/states.tsx";
 import { useToast } from "../components/toast.tsx";
 import { Notice } from "../components/ui.tsx";
 import { allowed } from "../lib/access.ts";
 import { careErrorText, dayText, hoursText } from "../lib/care.ts";
+import { Y } from "../lib/copy-y.ts";
 import {
   dayHead,
   lockState,
@@ -36,6 +38,9 @@ import {
 import { useUser } from "../session.tsx";
 import { EntryDialog } from "./time/entry-dialog.tsx";
 import { ExportButton } from "./time/export.tsx";
+
+/** 07-Y (FX-3, A3 1): the name of the week's grid when it scrolls sideways (a keyboard stop, read out by its name). */
+export const SHEET_REGION = Y("Hours by day");
 
 export function Component() {
   const user = useUser();
@@ -343,6 +348,8 @@ function Timesheet({ data, today, showPeople }: { data: TimeWeek; today: string;
   const rows = sheetRows(data.groups);
   const totals = new Map(data.dayTotals.map((d) => [d.workDate, d]));
   const billable = data.dayTotals.reduce((n, d) => n + d.billableMinutes, 0);
+  // Its own name: the panel around it is already "Week of …" (axe landmark-unique).
+  const [sheetRef, sheetRegion] = useScrollRegion<HTMLDivElement>(SHEET_REGION);
   // An empty week is one quiet line inside the week's panel (never a card in a card); the Entries panel is left out then.
   if (data.totalMinutes === 0)
     return (
@@ -370,7 +377,7 @@ function Timesheet({ data, today, showPeople }: { data: TimeWeek; today: string;
       {data.truncated && <Notice tone="info">{TIME_PENDING.truncated}</Notice>}
 
       {/* md and up: the week as a grid */}
-      <div className="sheet-wrap">
+      <div className="sheet-wrap" ref={sheetRef} {...sheetRegion}>
         <table className="sheet">
           <caption className="visually-hidden">{weekHeading(data.week.start)}</caption>
           <thead>

@@ -12,7 +12,7 @@ import { PageHeader } from "../../components/display.tsx";
 import { Ban, Download, FolderKanban, Lock } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { allowed } from "../../lib/access.ts";
-import { dayText, formatIstDay } from "../../lib/documents.ts";
+import { dayText, discountSources, formatIstDay } from "../../lib/documents.ts";
 import type { ViewLine } from "../../lib/documents-api.ts";
 import { sendState } from "../../lib/invoice-send.ts";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
@@ -24,6 +24,8 @@ import {
   milestoneBackLine,
   moneyText,
   SUPPLIER_COPY_LABEL,
+  showsGstEstimate,
+  supplierCopyLine,
   typeLabel,
   UNKNOWN,
   voidBlockedText,
@@ -92,15 +94,31 @@ const issuedBy = (v: InvoiceView) => v.issuer?.sender?.name ?? UNKNOWN;
 /**
  * "Download supplier copy" (07-R §7): asks for the copy first, then saves it; while the jobs Worker is still making it (it follows the original), the
  * toast says so in 07-R §4's words, and a failure says to try again. A text button under the client's PDF: the client's copy stays the panel's action.
+ * FX-4 (early check M1, review L2): the button is drawn only once the client's PDF is ready, so the one 409 `pdf_pending` it can meet is an anonymised
+ * client's, whose copy is never made: a line says so and stays under the button (not a passing toast). A live client's 409 can't follow from this screen
+ * and is said like any other failure.
  */
-function SupplierCopy({ id, number }: { id: string; number: string | null }) {
+function SupplierCopy({
+  id,
+  number,
+  anonymised,
+}: {
+  id: string;
+  number: string | null;
+  anonymised: boolean;
+}) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
+  const [line, setLine] = useState<string | null>(null);
+  const lineId = `supplier-copy-${id}`;
   async function download() {
     if (busy) return;
     setBusy(true);
     try {
       const r = await fetchSupplierCopy(id);
+      const said = supplierCopyLine(r.state, anonymised);
+      setLine(said);
+      if (said) return;
       if (r.state === "ready") {
         const url = URL.createObjectURL(r.blob);
         const a = document.createElement("a");
@@ -120,16 +138,23 @@ function SupplierCopy({ id, number }: { id: string; number: string | null }) {
     }
   }
   return (
-    <button
-      type="button"
-      className="btn btn--text pdf-panel__supplier"
-      onClick={() => void download()}
-      disabled={busy}
-      aria-busy={busy || undefined}
-    >
-      <Download size={16} />
-      {SUPPLIER_COPY_LABEL}
-    </button>
+    <div className="pdf-panel__supplier-wrap">
+      <button
+        type="button"
+        className="btn btn--text pdf-panel__supplier"
+        onClick={() => void download()}
+        disabled={busy}
+        aria-busy={busy || undefined}
+        aria-describedby={line ? lineId : undefined}
+      >
+        <Download size={16} />
+        {SUPPLIER_COPY_LABEL}
+      </button>
+      {/* polite and always in the tree, so the line is read when it appears */}
+      <p id={lineId} className="pdf-panel__supplier-note" role="status">
+        {line}
+      </p>
+    </div>
   );
 }
 
@@ -277,6 +302,8 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
         <div className="doc-page__send">
           {v.frozen && v.pdf.state !== "none" && (
             <PdfPanel
+              // FX-4 review H2: one panel per document. A page read that finds the PDF in another state is taken in place by the panel (it follows
+              // `initial`), so it is never drawn afresh: the focus stays put and the polite region announces "PDF ready".
               key={v.id}
               id={v.id}
               sentAt={v.frozenAt}
@@ -287,7 +314,7 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
               onReady={reload}
               extra={
                 canDownloadSupplierCopy(role, v.type) ? (
-                  <SupplierCopy id={v.id} number={v.number} />
+                  <SupplierCopy id={v.id} number={v.number} anonymised={v.client.anonymised} />
                 ) : undefined
               }
             />
@@ -382,7 +409,14 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
             ) : (
               <>
                 <LinesTable lines={asViewLines(v)} currency={v.currency} supply={v.supply} />
-                <TaxPreview totals={v.totals} supply={v.supply} currency={v.currency} frozen={v.frozen} />
+                <TaxPreview
+                  totals={v.totals}
+                  supply={v.supply}
+                  currency={v.currency}
+                  frozen={v.frozen}
+                  discounts={discountSources(v)}
+                  estimate={showsGstEstimate(v)}
+                />
               </>
             )}
           </section>

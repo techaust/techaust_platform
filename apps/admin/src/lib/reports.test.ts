@@ -6,8 +6,10 @@ import { realisationParamsFromStoredTax } from "@techaust/core/invoices";
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
+import reportPartsSource from "../routes/reports/parts.tsx?raw";
 import { ACTION_LABELS } from "./audit.ts";
 import { reportBellHref } from "./bell-links.ts";
+import { APPROVED_07Y, PLACEHOLDER_MARK } from "./copy-y.ts";
 import {
   byUrgency,
   FINANCE_COPY,
@@ -38,6 +40,7 @@ import {
   statementKindText,
   stateText,
   TAX_FIELDS_COPY,
+  taxOnlyNoteText,
 } from "./reports.ts";
 import { dispositionName } from "./reports-api.ts";
 import {
@@ -50,11 +53,20 @@ import {
   wholePeriodOf,
   zipOf,
 } from "./reports-build.ts";
-import { buildTax, REALISATION_ERRORS, taxToForm } from "./tax-settings.ts";
+import {
+  buildTax,
+  LUT_UNSAVED,
+  lutIsUnsaved,
+  REALISATION_ERRORS,
+  TAX_SAC_COPY,
+  taxToForm,
+} from "./tax-settings.ts";
 
 /** 07-V and 07-W were approved on 2026-10-28 (research and wording): no line carries a mark (`M` and `G` are empty). */
 const M = "";
 const G = "";
+/** 07-Y (FX-4's new lines) is PENDING the owner: each line carries the mark until `APPROVED_07Y`. */
+const Y_MARK = APPROVED_07Y ? "" : `${PLACEHOLDER_MARK} `;
 
 describe("07-V is approved word for word", () => {
   it("no 07-V or 07-W line carries the mark", () => {
@@ -258,6 +270,22 @@ describe("realisation stages", () => {
     ];
     expect(byUrgency(rows).map((r) => r.number)).toEqual(["E3", "E4", "E2", "E1", "E5"]);
   });
+
+  it("same stage and due date: the number in issue order, /9 before /10 [FX-4 review L3]", () => {
+    const due = { year: 2027, month: 1, day: 5 };
+    const rows = ["TH/EXP/2627/10", "TH/EXP/2627/9", "TH/EXP/2627/100", "TH/EXP/2627/11"].map((number) => ({
+      number,
+      stage: "fema_overdue" as const,
+      femaDue: due,
+      gstDue: due,
+    }));
+    expect(byUrgency(rows).map((r) => r.number)).toEqual([
+      "TH/EXP/2627/9",
+      "TH/EXP/2627/10",
+      "TH/EXP/2627/11",
+      "TH/EXP/2627/100",
+    ]);
+  });
 });
 
 describe("statement words", () => {
@@ -344,6 +372,39 @@ describe("statement words", () => {
     expect(csvOf(null)).not.toContain("against");
   });
 
+  it("FX-4 (A5 7): a debit note names its invoice on the screen and in the CSV (07-Y, marked); without the number it stays 07-V's word", () => {
+    expect(statementDetailsText({ kind: "debit_note", againstNumber: "TH/INV/2627/0004" })).toBe(
+      `${Y_MARK}Debit note against TH/INV/2627/0004`,
+    );
+    expect(statementDetailsText({ kind: "debit_note", againstNumber: null })).toBe(`${M}Debit note`);
+    const entry = (againstNumber: string | null) => ({
+      id: "d1",
+      kind: "debit_note" as const,
+      date: "2026-06-03",
+      number: "TH/DN/2627/0001",
+      againstNumber,
+      amountMinor: 18_02,
+      debitMinor: 18_02,
+      creditMinor: 0,
+      balanceMinor: 18_02,
+    });
+    const csvOf = (againstNumber: string | null) =>
+      (
+        statementCsvText({
+          from: "2026-04-01",
+          to: "2026-10-28",
+          openingMinor: 0,
+          closingMinor: 18_02,
+          entries: [entry(againstNumber)],
+        }) as string
+      )
+        .trim()
+        .split(/\r?\n/)[2];
+    expect(csvOf("TH/INV/2627/0004")).toContain(`${Y_MARK}Debit note against TH/INV/2627/0004`);
+    expect(csvOf(null)).toContain("Debit note");
+    expect(csvOf(null)).not.toContain("against");
+  });
+
   it("reads the file name the server gave the PDF", () => {
     expect(dispositionName('attachment; filename="statement-C001.pdf"', "x.pdf")).toBe("statement-C001.pdf");
     expect(dispositionName("attachment; filename*=UTF-8''statement%20A.pdf", "x.pdf")).toBe(
@@ -391,6 +452,22 @@ describe("Settings › Tax round trip (early check H2)", () => {
       if (!("value" in built)) return;
       expect(built.value.invoiceChecklist).toEqual({ bankDetails: true, paymentLink: false, signatory });
     }
+  });
+
+  it("FX-4 (A5 12): the default SAC of a custom line round-trips, saves empty or six digits, and refuses anything else (07-Y, marked)", () => {
+    expect(taxToForm(stored).defaultSac).toBe("");
+    const kept = buildTax({ ...taxToForm({ ...stored, defaultSac: "998313" }) }, { value: stored });
+    expect("value" in kept && kept.value.defaultSac).toBe("998313");
+    const trimmed = buildTax({ ...taxToForm(stored), defaultSac: " 998314 " }, { value: stored });
+    expect("value" in trimmed && trimmed.value.defaultSac).toBe("998314");
+    const cleared = buildTax(
+      { ...taxToForm(stored), defaultSac: "" },
+      { value: { ...stored, defaultSac: "998313" } },
+    );
+    expect("value" in cleared && cleared.value.defaultSac).toBe("");
+    const bad = buildTax({ ...taxToForm(stored), defaultSac: "99831" }, { value: stored });
+    expect("errors" in bad && bad.errors["f-defaultSac"]).toBe(TAX_SAC_COPY.defaultSacError);
+    expect(TAX_SAC_COPY.defaultSacError).toBe(`${Y_MARK}The default SAC has 6 digits, or leave it empty.`);
   });
 
   it("the two fields save what was typed, and refuse zero or out-of-range values in 07-V's words", () => {
@@ -500,6 +577,121 @@ describe("files from register rows (core does every sum)", () => {
     expect([zip[0], zip[1], zip[2], zip[3]]).toEqual([0x50, 0x4b, 0x03, 0x04]);
   });
 
+  it("FX-4 (A5 1; OPEN 08-C RA-32): a tax-only debit note is a blocking warning first in the list; the panel is not complete and never says No errors", () => {
+    const inv = row({ id: "d1", number: "TH/INV/2627/0001", issueDate: { year: 2026, month: 7, day: 5 } });
+    const note = row({
+      id: "n1",
+      number: "TH/DN/2627/0001",
+      kind: "debit_note",
+      series: "debitNote",
+      issueDate: { year: 2026, month: 8, day: 3 },
+      totalMinor: 18_02,
+      totalInrMinor: 18_02,
+      outstandingMinor: 18_02,
+      rates: [
+        { sac: "998314", rateBp: 1800, taxableMinor: 0, igstMinor: 0, cgstMinor: 9_01, sgstMinor: 9_01 },
+      ],
+      noteOf: {
+        number: "TH/INV/2627/0001",
+        issueDate: { year: 2026, month: 7, day: 5 },
+        supplyType: "intra",
+        recipientStatus: "registered",
+        placeOfSupplyCode: "19",
+        totalInrMinor: 11_800_00,
+      },
+    });
+    const r = buildGstExport([inv, note], meta, q2);
+    if (!r.ok) throw new Error(JSON.stringify(r.problems));
+    expect([r.complete, r.blocking]).toEqual([false, 1]);
+    const first = r.warnings[0];
+    expect(first?.blocking).toBe(true);
+    expect(first?.doc?.number).toBe("TH/DN/2627/0001");
+    expect(first?.manual).toMatchObject({
+      gstin: "19ABCDE1234F1ZX",
+      cgstMinor: 9_01,
+      sgstMinor: 9_01,
+      igstMinor: 0,
+    });
+    expect(first?.text).toBe(
+      `${Y_MARK}TH/DN/2627/0001 (GSTIN 19ABCDE1234F1ZX) is a debit note that adds tax only. The files show it with a taxable value of 0.00 and no tax column, so its tax may not come through on import. Enter by hand: CGST ₹9.01, SGST ₹9.01. Ask your CA how to report it in Table 9B.`,
+    );
+    expect(GST_COPY.doneManual(2, 1)).toBe(
+      `${Y_MARK}2 documents checked. 1 note needs its tax entered by hand before you file.`,
+    );
+    expect(GST_COPY.doneManual(1, 2)).toBe(
+      `${Y_MARK}1 document checked. 2 notes need their tax entered by hand before you file.`,
+    );
+    expect(GST_COPY.doneManual(2, 1)).not.toContain("No errors");
+    // a clean period stays complete
+    const clean = buildGstExport([inv], meta, q2);
+    expect(clean.ok && [clean.complete, clean.blocking]).toEqual([true, 0]);
+  });
+
+  it("an unregistered client's tax-only note says so in place of a GSTIN; IGST is named when it is the head", () => {
+    const text = taxOnlyNoteText({
+      code: "tax_only_note_manual",
+      path: ["n"],
+      blocking: true,
+      manual: {
+        docId: "n",
+        kind: "debit_note",
+        number: "TH/DN/2627/0002",
+        date: { year: 2026, month: 8, day: 3 },
+        section: "b2cs",
+        gstin: null,
+        receiverName: "x",
+        posCode: "27",
+        parentNumber: "TH/INV/2627/0002",
+        byRate: [{ rateBp: 1800, igstMinor: 10_01, cgstMinor: 0, sgstMinor: 0 }],
+        igstMinor: 10_01,
+        cgstMinor: 0,
+        sgstMinor: 0,
+      },
+    });
+    expect(text).toContain("TH/DN/2627/0002 (unregistered client) is a debit note that adds tax only.");
+    expect(text).toContain("Enter by hand: IGST ₹10.01.");
+    // a B2CS note is in the B2CS file, so the line names no table
+    expect(text.endsWith("Ask your CA how to report it.")).toBe(true);
+  });
+
+  it("FX-4 early check L2: the words follow the note's kind; a note in a note file names Table 9B", () => {
+    const manual = {
+      docId: "c",
+      kind: "credit_note",
+      number: "TH/CN/2627/0003",
+      date: { year: 2026, month: 8, day: 4 },
+      section: "cdnur",
+      gstin: null,
+      receiverName: "x",
+      posCode: "96",
+      parentNumber: "TH/INV/2627/0003",
+      byRate: [{ rateBp: 1800, igstMinor: 5_00, cgstMinor: 0, sgstMinor: 0 }],
+      igstMinor: 5_00,
+      cgstMinor: 0,
+      sgstMinor: 0,
+    } as const;
+    const credit = taxOnlyNoteText({ code: "tax_only_note_manual", path: ["c"], blocking: true, manual });
+    expect(credit).toBe(
+      `${Y_MARK}TH/CN/2627/0003 (unregistered client) is a credit note that reduces tax only. The files show it with a taxable value of 0.00 and no tax column, so its tax may not come through on import. Enter by hand: IGST ₹5.00. Ask your CA how to report it in Table 9B.`,
+    );
+    expect(credit).not.toContain("adds tax");
+    const debit = taxOnlyNoteText({
+      code: "tax_only_note_manual",
+      path: ["d"],
+      blocking: true,
+      manual: {
+        ...manual,
+        kind: "debit_note",
+        number: "TH/DN/2627/0004",
+        section: "cdnr",
+        gstin: "19ABCDE1234F1ZX",
+      },
+    });
+    expect(debit).toContain("TH/DN/2627/0004 (GSTIN 19ABCDE1234F1ZX) is a debit note that adds tax only.");
+    expect(debit).not.toContain("reduces");
+    expect(debit.endsWith("Ask your CA how to report it in Table 9B.")).toBe(true);
+  });
+
   it("a bad document stops every file and names the document", () => {
     const bad = row({
       id: "d2",
@@ -519,6 +711,45 @@ describe("files from register rows (core does every sum)", () => {
     expect(whole.ok && whole.files.gstr3b !== null).toBe(true);
     expect(part.ok && part.files.gstr3b === null).toBe(true);
     expect(whole.ok && whole.outputTax.length).toBe(1);
+    // a clean period has nothing to enter by hand
+    expect(whole.ok && whole.manual).toEqual([]);
+  });
+
+  it("FX-4 early check L3: with the 3B file on offer, the sales register carries the GST export's blocking lines; without it, none", () => {
+    const inv = row({ id: "d1", number: "TH/INV/2627/0001", issueDate: { year: 2026, month: 7, day: 5 } });
+    const note = row({
+      id: "n1",
+      number: "TH/DN/2627/0001",
+      kind: "debit_note",
+      series: "debitNote",
+      issueDate: { year: 2026, month: 8, day: 3 },
+      totalMinor: 18_02,
+      totalInrMinor: 18_02,
+      outstandingMinor: 18_02,
+      rates: [
+        { sac: "998314", rateBp: 1800, taxableMinor: 0, igstMinor: 0, cgstMinor: 9_01, sgstMinor: 9_01 },
+      ],
+      noteOf: {
+        number: "TH/INV/2627/0001",
+        issueDate: { year: 2026, month: 7, day: 5 },
+        supplyType: "intra",
+        recipientStatus: "registered",
+        placeOfSupplyCode: "19",
+        totalInrMinor: 11_800_00,
+      },
+    });
+    const whole = buildSalesRegister([inv, note], meta, "2026-07-01", "2026-09-30");
+    if (!whole.ok) throw new Error(JSON.stringify(whole.problems));
+    expect(whole.files.gstr3b).not.toBeNull();
+    expect(whole.manual).toHaveLength(1);
+    expect(whole.manual[0]?.blocking).toBe(true);
+    expect(whole.manual[0]?.manual?.byRate).toEqual([
+      { rateBp: 1800, igstMinor: 0, cgstMinor: 9_01, sgstMinor: 9_01 },
+    ]);
+    // the line the panel says is the GST export's, never "No errors"
+    expect(GST_COPY.doneManual(whole.count, whole.manual.length)).not.toContain("No errors");
+    const part = buildSalesRegister([inv, note], meta, "2026-07-01", "2026-09-15");
+    expect(part.ok && part.files.gstr3b === null && part.manual.length === 0).toBe(true);
   });
 
   it("realisation uses the stored INR period, which core's mapping leaves out (LD77)", () => {
@@ -566,5 +797,27 @@ describe("the report index on a narrow screen (review 7)", () => {
     expect(nearestScrollLeft(0, 300, 420, 160)).toBe(280);
     expect(nearestScrollLeft(280, 300, 10, 120)).toBe(10);
     expect(nearestScrollLeft(50, 300, -5, 120)).toBe(0);
+  });
+});
+
+describe("FX-4 (A5 8): a LUT added on the screen says it isn't saved yet", () => {
+  const saved = [{ fy: "2627", arn: "AD1906260000001", filedOn: "2026-03-20" }];
+  it("a row the stored list holds is saved; a new year, or the same year with another ARN or date, is not", () => {
+    expect(lutIsUnsaved({ fy: "2627", arn: "AD1906260000001", filedOn: "2026-03-20" }, saved)).toBe(false);
+    expect(lutIsUnsaved({ fy: "2728", arn: "AD1906270000001", filedOn: null }, saved)).toBe(true);
+    expect(lutIsUnsaved({ fy: "2627", arn: "AD1906260000002", filedOn: "2026-03-20" }, saved)).toBe(true);
+    expect(lutIsUnsaved({ fy: "2627", arn: "AD1906260000001", filedOn: null }, saved)).toBe(true);
+    expect(lutIsUnsaved({ fy: "2627", arn: "X", filedOn: null }, [])).toBe(true);
+  });
+  it("the words are 07-Y's, marked until approved", () => {
+    expect(LUT_UNSAVED).toBe(`${APPROVED_07Y ? "" : `${PLACEHOLDER_MARK} `}Not saved yet`);
+  });
+});
+
+describe("FX-4 review L5: the wide list's scroll cue measures from observers, not after every render", () => {
+  it("no effect without a dependency list; content changes are watched", () => {
+    expect(reportPartsSource).not.toMatch(/useEffect\(measure\)/);
+    expect(reportPartsSource).toMatch(/new MutationObserver\(/);
+    expect(reportPartsSource).toMatch(/\}, \[measure\]\);/);
   });
 });

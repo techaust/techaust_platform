@@ -22,6 +22,7 @@ import {
   DOC_PENDING,
   DOC_TOASTS,
   dayText,
+  discountSources,
   formatIstDay,
   isRequiredSection,
   moneyText,
@@ -117,7 +118,13 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
   const estimateBlock = (
     <div className="doc-sheet__estimate">
       <LinesTable lines={v.lines} currency={v.currency} supply={v.supply} />
-      <TaxPreview totals={v.totals} supply={v.supply} currency={v.currency} frozen={v.frozen} />
+      <TaxPreview
+        totals={v.totals}
+        supply={v.supply}
+        currency={v.currency}
+        frozen={v.frozen}
+        discounts={discountSources(v)}
+      />
       {v.schedule.length > 0 && (
         <>
           <h3 className="doc-sheet__h3">Payment schedule</h3>

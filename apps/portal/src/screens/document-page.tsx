@@ -134,6 +134,7 @@ export function DocumentPage(
         <Aside view={props.view} d={props} onDownload={props.onDownloadPdf} />
         <DocumentPaper
           view={props.view}
+          acceptOpen={m.status === "sent" || m.status === "viewed"}
           onDownload={props.onDownloadPdfInSheet}
           downloading={props.downloading === "pdf"}
           decision={

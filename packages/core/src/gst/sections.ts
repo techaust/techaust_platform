@@ -9,6 +9,7 @@ import { classifyInvoice, classifyNote, type NoteSection, type UrType } from "./
 import { gstPeriod, inPeriod, type PeriodRange } from "./period.ts";
 import {
   compareDates,
+  compareDocNumbers,
   compareText,
   fail,
   GST_DOC_KINDS,
@@ -22,6 +23,7 @@ import {
   isIntBetween,
   isNonNegInt,
   issue,
+  type ManualTaxEntry,
   num,
   ok,
   type RecipientStatus,
@@ -339,8 +341,14 @@ const mergeByRate = (rates: readonly RegisterRate[]): Omit<RegisterRate, "sac">[
     }));
 };
 
+/**
+ * Issue date, then the number in issue order (series, then its integer: "/10" after "/9", FX-4 review L3), then the id: a total order, so the rows and the
+ * blocking warnings of the same-day notes come out the same way every time.
+ */
 const byDateThenNumber = (a: Item, b: Item): number =>
-  compareDates(a.row.issueDate, b.row.issueDate) || compareText(a.row.number, b.row.number);
+  compareDates(a.row.issueDate, b.row.issueDate) ||
+  compareDocNumbers(a.row.number, b.row.number) ||
+  compareText(a.row.id, b.row.id);
 
 /**
  * The sections of one return period. Only the four kinds, not voided, issued in the period are reported (a voided document
@@ -402,6 +410,13 @@ export function gstr1Sections(
 
     items.sort(byDateThenNumber);
     const warnings: GstWarning[] = [];
+    // FX-4 (full audit A5 1): a tax-only note first, as a BLOCKING warning per note (the files leave its tax out).
+    for (const item of items) {
+      const manual = manualEntryOf(item);
+      if (manual !== null) {
+        warnings.push({ code: "tax_only_note_manual", path: [item.row.id], blocking: true, manual });
+      }
+    }
     const out = buildTables(items, params, warnings);
     return ok(
       {
@@ -414,6 +429,46 @@ export function gstr1Sections(
       warnings,
     );
   });
+}
+
+/**
+ * A note whose rate rows carry tax on a taxable value of nil (a "Tax charged too low" debit note, Researched 2026-10-28, s.34(3) CGST Act (08-C RA-22)): the cdnr, cdnur
+ * and b2cs files give a taxable value and a rate and no tax column. OPEN (08-C RA-23): what tax does the Offline Tool take for such a row on import? Untested (no test
+ * import yet); if it takes nil, GSTR-3B Table 3, auto-filled from GSTR-1 (Researched 2026-10-28, GSTN advisories of June 2025 (08-C RA-23)), would under-report it.
+ * The rows stay in the files; this names what they may leave out, so a person enters it by hand. OPEN (08-C RA-32): how is a tax-only debit note (taxable value nil, tax only) reported in GSTR-1 Table 9B through the Offline Tool, and how does it flow to
+ * 3B Table 3? Null for any other document. Only the rate rows with a nil taxable value and some tax are listed.
+ */
+function manualEntryOf(item: Item): ManualTaxEntry | null {
+  const { row } = item;
+  if ((row.kind !== "credit_note" && row.kind !== "debit_note") || row.noteOf === null) return null;
+  // A reported note's section is always a note section (`classifyNote` gives only cdnr, cdnur or b2cs), so no other value can reach here.
+  const section = item.section as NoteSection;
+  const byRate = item.byRate
+    .filter((r) => r.taxableMinor === 0 && r.igstMinor + r.cgstMinor + r.sgstMinor > 0)
+    .map((r) => ({
+      rateBp: r.rateBp,
+      igstMinor: r.igstMinor,
+      cgstMinor: r.cgstMinor,
+      sgstMinor: r.sgstMinor,
+    }));
+  if (byRate.length === 0) return null;
+  const sum = zero();
+  for (const r of byRate) accumulate(sum, { taxableMinor: 0, ...r }, 1n);
+  return {
+    docId: row.id,
+    kind: row.kind,
+    number: row.number,
+    date: row.issueDate,
+    section,
+    gstin: row.recipient.gstin,
+    receiverName: row.recipient.name,
+    posCode: row.placeOfSupplyCode,
+    parentNumber: row.noteOf.number,
+    byRate,
+    igstMinor: num(sum.igst),
+    cgstMinor: num(sum.cgst),
+    sgstMinor: num(sum.sgst),
+  };
 }
 
 type Tables = Pick<Gstr1Sections, "b2b" | "b2cl" | "b2cs" | "exp" | "cdnr" | "cdnur" | "hsnB2b" | "hsnB2c">;

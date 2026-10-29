@@ -476,6 +476,36 @@ form.inv-service {
   overflow-wrap: anywhere;
 }
 
+/* FX-4 (full audit A5 2): a blocker with a link is a full 44 px row. The link keeps its place in the sentence, and an invisible layer stretched over the row
+   (the row is its containing block) makes the whole row its target, so a short "Settings › Company" or a one-line sentence is never a 20 px target. The focus
+   ring is drawn on that layer, so it shows the whole target. Rows with nothing to open keep the list's quiet rhythm. */
+.inv-blockers:has(.blockers__link) {
+  gap: 0;
+}
+
+.inv-blockers .blockers__item:has(.blockers__link) {
+  position: relative;
+  min-height: var(--target-min);
+  padding-block: var(--space-1);
+  align-content: center;
+}
+
+.inv-blockers .blockers__item:has(.blockers__link) .blockers__link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-sm);
+}
+
+.inv-blockers .blockers__item:has(.blockers__link) .blockers__link:focus-visible {
+  outline: none;
+}
+
+.inv-blockers .blockers__item:has(.blockers__link) .blockers__link:focus-visible::after {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
 /* "Settings › Company" stays on one line: a place name broken at its arrow reads as two places. */
 .inv-blockers .inv-blockers__place {
   white-space: nowrap;

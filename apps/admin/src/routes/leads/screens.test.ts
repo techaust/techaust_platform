@@ -3,6 +3,7 @@
 import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 import type { LeadItem } from "../../api.ts";
+import { type Answers, answersPatch } from "./answers.tsx";
 import {
   type Contact,
   contactPatch,
@@ -70,8 +71,10 @@ describe("drafts on a lead's page (review finding 4)", () => {
     country: "IN",
   };
   const follow: Follow = { ownerId: "", date: "2026-11-02", note: "Call back" };
+  const answers: Answers = { currency: "INR", band: "3l-7l", timeline: "asap" };
 
-  const loaded = (s: Drafts, c: Contact, f: Follow) => drafts(s, { type: "loaded", contact: c, follow: f });
+  const loaded = (s: Drafts, c: Contact, f: Follow, a: Answers = answers) =>
+    drafts(s, { type: "loaded", contact: c, follow: f, answers: a });
 
   it("a typed note and an open contact edit survive the reload after a stage move or a pipeline save", () => {
     let s = drafts(NO_DRAFTS, { type: "note", text: "Asked about the timeline" });
@@ -92,7 +95,8 @@ describe("drafts on a lead's page (review finding 4)", () => {
       note: "Draft",
       contact: { base: contact, value: contact },
       follow: null,
-      conflict: { contact: false, follow: false },
+      answers: null,
+      conflict: { contact: false, follow: false, answers: false },
     });
   });
 
@@ -190,6 +194,73 @@ describe("drafts on a lead's page (review finding 4)", () => {
     s = drafts(s, { type: "contact", value: contact, base: contact });
     s = drafts(s, { type: "follow", value: follow, base: follow });
     s = loaded(s, { ...contact, name: "x" }, follow);
+    expect(drafts(s, { type: "reloaded-latest" })).toEqual({ ...NO_DRAFTS, note: "Draft" });
+  });
+});
+
+describe("a manual lead's quote-answers edit is a draft above the reload (FX-3 fix round 2, B)", () => {
+  const contact: Contact = {
+    name: "Sample Lead A",
+    email: "a@example.test",
+    phone: "",
+    company: "",
+    country: "IN",
+  };
+  const follow: Follow = { ownerId: "", date: "", note: "" };
+  const answers: Answers = { currency: "INR", band: "3l-7l", timeline: "asap" };
+  const loaded = (s: Drafts, a: Answers, f: Follow = follow) =>
+    drafts(s, { type: "loaded", contact, follow: f, answers: a });
+  const edit = (s: Drafts, value: Answers | null) => drafts(s, { type: "answers", value, base: answers });
+
+  it('"Stay" after a convert: the reload keeps an unsaved answers edit and the next-action note', () => {
+    // the person edits the timeline and the next-action note, converts, and stays; the convert's reload is a new copy of the lead
+    let s = edit(NO_DRAFTS, answers);
+    s = edit(s, { ...answers, timeline: "1-3-months" });
+    s = drafts(s, { type: "follow", value: { ...follow, note: "Send the proposal" }, base: follow });
+    s = loaded(s, answers);
+    expect(s.answers?.value).toEqual({ ...answers, timeline: "1-3-months" });
+    expect(s.follow?.value.note).toBe("Send the proposal");
+    expect(hasConflict(s)).toBe(false);
+    expect(s.answers && answersPatch(s.answers.base, s.answers.value)).toEqual({ timeline: "1-3-months" });
+  });
+
+  it("an open edit with nothing changed takes the stored answers; the base is kept from when the edit opened", () => {
+    let s = edit(NO_DRAFTS, answers);
+    s = loaded(s, { ...answers, timeline: "exploring" });
+    expect(s.answers).toEqual({
+      base: { ...answers, timeline: "exploring" },
+      value: { ...answers, timeline: "exploring" },
+    });
+    expect(hasConflict(s)).toBe(false);
+    let t = edit(NO_DRAFTS, { ...answers, band: "" });
+    t = drafts(t, { type: "answers", value: { ...answers, band: "1l-3l" }, base: { ...answers, band: "" } });
+    expect(t.answers?.base).toEqual(answers);
+  });
+
+  it("someone else's change to any answer, while the person changed one, drops the whole edit to theirs, with the notice", () => {
+    // the person picks a new INR band; someone else switches the lead to USD meanwhile: the INR band never lands on USD
+    let s = drafts(NO_DRAFTS, { type: "note", text: "Asked about the budget" });
+    s = edit(s, { ...answers, band: "7l-15l" });
+    const theirs: Answers = { currency: "USD", band: "", timeline: "asap" };
+    s = loaded(s, theirs);
+    expect(hasConflict(s)).toBe(true);
+    expect(s.conflict.answers).toBe(true);
+    expect(s.answers).toEqual({ base: theirs, value: theirs });
+    expect(s.answers && answersPatch(s.answers.base, s.answers.value)).toEqual({});
+    expect(s.note).toBe("Asked about the budget");
+    // the same change made by both is no conflict
+    let same = edit(NO_DRAFTS, { ...answers, timeline: "exploring" });
+    same = loaded(same, { ...answers, timeline: "exploring" });
+    expect(hasConflict(same)).toBe(false);
+  });
+
+  it("closing the edit (a save or a cancel) clears its notice; reloading the latest drops it, the note kept", () => {
+    let s = edit(NO_DRAFTS, { ...answers, timeline: "1-3-months" });
+    s = loaded(s, { ...answers, timeline: "exploring" });
+    expect(hasConflict(s)).toBe(true);
+    expect(hasConflict(edit(s, null))).toBe(false);
+    expect(edit(s, null).answers).toBeNull();
+    s = drafts(s, { type: "note", text: "Draft" });
     expect(drafts(s, { type: "reloaded-latest" })).toEqual({ ...NO_DRAFTS, note: "Draft" });
   });
 });

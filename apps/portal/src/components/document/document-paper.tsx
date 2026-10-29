@@ -331,7 +331,13 @@ function TimelineTable({ view }: { view: PdfView }) {
   );
 }
 
-function SectionBlock(props: { s: SheetSection; className?: string; children?: ReactNode }) {
+function SectionBlock(props: {
+  s: SheetSection;
+  className?: string;
+  /** Leave the section's own text out (the Acceptance text once the version can no longer be accepted). */
+  noBody?: boolean | undefined;
+  children?: ReactNode;
+}) {
   const { s } = props;
   return (
     <section
@@ -342,7 +348,7 @@ function SectionBlock(props: { s: SheetSection; className?: string; children?: R
       <h2 id={`${s.id}-h`} className="dsec__title">
         {s.title}
       </h2>
-      {s.bodyMd.trim() && <Markdown source={s.bodyMd} className="prose" />}
+      {!props.noBody && s.bodyMd.trim() && <Markdown source={s.bodyMd} className="prose" />}
       {props.children}
     </section>
   );
@@ -352,6 +358,11 @@ export function DocumentPaper(props: {
   view: PdfView;
   /** The acceptance block's content (the decision panel, a record, or a notice). */
   decision: ReactNode;
+  /**
+   * The version can still be accepted here. When it can't (decided, expired, or replaced), the Acceptance section's own text
+   * ("To accept, open this proposal…") is left out and only the record or the notice shows (FX-3, A4 7).
+   */
+  acceptOpen: boolean;
   onDownload: () => void;
   downloading?: boolean | undefined;
 }) {
@@ -390,7 +401,7 @@ export function DocumentPaper(props: {
               );
             case "acceptance":
               return (
-                <SectionBlock key={s.id} s={s} className="dsec--decision">
+                <SectionBlock key={s.id} s={s} className="dsec--decision" noBody={!props.acceptOpen}>
                   <div className="validity">
                     <p className="validity__line">{view.validityNote}</p>
                     <button

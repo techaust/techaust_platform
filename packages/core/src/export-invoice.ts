@@ -27,6 +27,32 @@ export type ExportRoute = keyof typeof EXPORT_ENDORSEMENT;
 export const PROFORMA_NOTICE =
   "This is not a tax invoice. A tax invoice will be issued when payment is received.";
 
+/**
+ * FX-4 (audit A5 5): a proforma's GST is an estimate, not a firm figure (Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28): a proforma is not
+ * a tax document; its GST is shown as an estimate). Every proforma issued from FX-4 on carries `proforma.gstEstimate: true` in its sealed header
+ * (`header_extras`), so the PDF, the admin view and the portal label its tax heads "(estimate)"; a proforma sealed before it has no marker and prints
+ * exactly as it was issued. Only the literal `true` counts: anything else (absent, false, a string) is no marker.
+ */
+export const isGstEstimate = (proforma: { readonly gstEstimate?: unknown } | null | undefined): boolean =>
+  proforma?.gstEstimate === true;
+
+/**
+ * The same marker read from the stored `documents.header_extras` text (the portal reads the frozen row, not the R2 envelope): false for null, text
+ * that is not a JSON object, or an object without the marker. Pure.
+ */
+export function gstEstimateOfHeaderExtras(text: string | null | undefined): boolean {
+  if (typeof text !== "string") return false;
+  let v: unknown;
+  try {
+    v = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  const p = (v as { proforma?: unknown }).proforma;
+  return typeof p === "object" && p !== null && isGstEstimate(p as { gstEstimate?: unknown });
+}
+
 // ---- letters of undertaking (G-8, U-1; ADM-INV-18) ---------------------------------------------------------------------------------------
 
 /** One saved letter of undertaking: the FY token ("2627") and the ARN from the GST portal (its format is NOT VERIFIED, so only a safe shape is checked). */

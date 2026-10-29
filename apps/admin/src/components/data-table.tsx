@@ -2,6 +2,7 @@
 // sortable columns (`aria-sort` on the header, a button inside it); below `md` the same rows render as cards that
 // keep every label. Paging is keyset ("Previous" / "Next" from a cursor; no page numbers, no total count). Filters
 // are chips that toggle (aria-pressed) and live in the URL, so a filtered list can be bookmarked and shared.
+// FX-3 (A3 1): a table wider than its box scrolls sideways inside it and is then a keyboard stop named by its caption.
 import { type ReactNode, useId, useState } from "react";
 import {
   ArrowDown,
@@ -14,6 +15,7 @@ import {
   Search,
   X,
 } from "./icons.tsx";
+import { useScrollRegion } from "./scroll-region.ts";
 
 export type SortDir = "asc" | "desc";
 export type Sort = { key: string; dir: SortDir };
@@ -45,6 +47,7 @@ export function DataTable<T>(props: {
   cardSub?: ((row: T) => ReactNode) | undefined;
 }) {
   const { columns, rows, loading } = props;
+  const [scrollRef, region] = useScrollRegion<HTMLDivElement>(props.caption);
   // The empty state sits where the table would, with the table's spacing (never touching the filters above it).
   if (!loading && rows.length === 0 && props.empty)
     return <div className="dtable dtable--empty">{props.empty}</div>;
@@ -53,7 +56,7 @@ export function DataTable<T>(props: {
   const facts = columns.filter((c) => c !== title && c.card !== "hidden");
 
   return (
-    <div className="dtable" aria-busy={loading || undefined}>
+    <div className="dtable" aria-busy={loading || undefined} ref={scrollRef} {...region}>
       {loading && (
         <p className="visually-hidden" role="status">
           Loading {props.caption.toLowerCase()}

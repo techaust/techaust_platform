@@ -7,6 +7,12 @@
 // The bound (lead, 2026-10-29, docs/13; audit A6 finding 1): a smaller stream can't hold a moved 8 KB block, so it is not inflated; past
 // `INFLATE_BUDGET_BYTES` of inflated output the remaining streams are not inflated and the PDF is accepted on the header, cross-reference and
 // `/Length` checks alone (`partial`), never refused or retried for its size: a large signature image must never make a PDF unrenderable.
+// Known limit, the same kind as `partial` (FX-3 round 3, item 4): a stream that is not Flate gets only its `/Length` check, so 8 KB blocks
+// moved among themselves wholly inside one such stream move no header and pass. In our PDFs the only such stream is a JPEG signature
+// (DCTDecode, invoice family; Chrome writes text, fonts, SVG and PNG images as Flate), and only one of 16 KB or more holds two whole blocks.
+// Not fixed: JPEG's entropy-coded data carries no checksum and no structure a byte check can test without decoding the image (far past the
+// 10 ms CPU budget). Comparing the stream with the JPEG the page embedded would work only if Browser Run copies JPEG bytes through
+// unchanged, which is unverified; a wrong guess would refuse every invoice with a JPEG signature for ever. Test: pdf-integrity.test.ts.
 // CPU (review round 2, finding 1): the check runs in a metered queue consumer, often in a cold isolate, so it reads the bytes directly.
 // No text decoding of the file (a whole-file decode alone cost about 2 ms cold on a 204 KB PDF), no regular expression, no allocation per
 // object; every search is the platform's native `Uint8Array.prototype.indexOf` / `lastIndexOf` on a byte that is rare in the keyword.

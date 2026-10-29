@@ -1,6 +1,7 @@
 // M5.4 (LD58): the invoice issue batch for the Owner and for an approval is BYTE-IDENTICAL to what M5.3 shipped (this snapshot was taken from M5.3's
 // code before the `care_auto` authority was added); the care_auto batch is its own text, binds exactly the placeholders it uses, and has no session in it.
 // FX-1 (A0 4) moved the credit note's snapshot once, on purpose: its two ledger statements are one (credited, balance and status from one recomputed sum).
+// FX-4 (A5 11) moved it once more, on purpose: the note tail adds the tax-only debit note rule (`taxOnlyNoteExactSql`: no round-off, its total its tax).
 import { describe, expect, it } from "vitest";
 import { invoiceIssueStatements } from "../src/issue.ts";
 

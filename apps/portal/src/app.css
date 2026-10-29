@@ -613,16 +613,29 @@ input[aria-invalid="true"] {
   margin-bottom: var(--space-5);
 }
 
+/* The buttons stay in view while a long dialog scrolls (FX-3, A4 2): they stick to the dialog's foot, on the dialog's own
+   surface, so the text scrolls under them. In a dialog that fits nothing moves. */
 .dialog__actions {
+  position: sticky;
+  bottom: calc(-1 * var(--space-6));
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--space-2);
+  margin-bottom: calc(-1 * var(--space-6));
+  padding-block: var(--space-3) var(--space-6);
+  background: var(--color-surface-raised);
 }
 
 @media (max-width: 29.99rem) {
   .dialog {
     padding: var(--space-5);
+  }
+
+  .dialog__actions {
+    bottom: calc(-1 * var(--space-5));
+    margin-bottom: calc(-1 * var(--space-5));
+    padding-bottom: var(--space-5);
   }
 
   .dialog__actions .btn {

@@ -258,6 +258,23 @@
   min-width: 0;
 }
 
+/* FX-4 (A5 12): a custom line's SAC on its row, a six-digit code set like the catalogue's codes. Where the row has room for a fourth cell it sits
+   beside the discount; otherwise it wraps under the quantity with the row's own rhythm. */
+.qledger__sac {
+  max-width: 8rem;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (min-width: 88rem) {
+  .qledger__row[data-custom] .qledger__work {
+    grid-template-columns: minmax(8rem, max-content) minmax(8rem, 11rem) minmax(10rem, 13rem) minmax(
+        6.5rem,
+        8rem
+      );
+  }
+}
+
 .qledger__label {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
@@ -503,6 +520,68 @@
   }
 }
 
+/* FX-4 sweep: the lines panel's own width decides, not the window's. At 1024 px with the menu open and the rail beside the editor, the panel is
+   about 18 rem wide, where the three cells of a line (and the totals' two columns) ran out of the panel. Below 30 rem the row takes the phone
+   arrangement; below 20 rem the cells stack. The window rules above stay for the widths where the panel is as wide as they assume. */
+.doc-lines,
+.doc-totals {
+  container-type: inline-size;
+}
+
+@container (max-width: 30rem) {
+  .qledger__row {
+    grid-template-columns: 1.5rem minmax(0, 1fr) auto;
+    grid-template-areas:
+      "n desc act"
+      ". amt amt"
+      ". work work"
+      ". figs figs"
+      ". meta meta"
+      ". err err";
+  }
+
+  .qledger__amount {
+    text-align: start;
+  }
+
+  .qledger__work,
+  .qledger__work--step {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .qledger__figs {
+    grid-area: figs;
+    justify-self: start;
+    justify-content: flex-start;
+  }
+
+  .qledger__meta {
+    grid-area: meta;
+  }
+
+  .qledger__figs > div {
+    text-align: start;
+  }
+}
+
+@container (max-width: 20rem) {
+  .qledger__work {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .qledger__qty input {
+    flex: none;
+  }
+
+  .qledger__unit {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: var(--text-sm--line-height);
+  }
+}
+
 .doc-lines__add {
   display: flex;
   flex-wrap: wrap;
@@ -525,6 +604,13 @@
   .doc-totals__grid {
     grid-template-columns: minmax(0, 14rem) minmax(0, 1fr);
     align-items: start;
+  }
+}
+
+/* FX-4 sweep: a narrow totals panel (1024 px with the rail) stacks the discount over the figures, as a phone does. */
+@container (max-width: 30rem) {
+  .doc-totals__grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -1233,6 +1319,7 @@
 
 /* The read-only tables: they scroll sideways inside their own box on a phone. */
 .read-lines {
+  position: relative;
   overflow-x: auto;
 }
 
@@ -1934,9 +2021,29 @@ a.pdf-panel__action:hover {
 }
 
 /* The stored supplier copy (07-R §7, Owner and Accountant): a quiet text action under the client's PDF, a full target on its own line. */
-.pdf-panel__supplier {
+.pdf-panel__supplier-wrap {
   grid-column: 1 / -1;
+  display: grid;
+  justify-items: start;
+  min-width: 0;
+}
+
+.pdf-panel__supplier {
   justify-self: start;
   min-height: var(--target-min);
   gap: var(--space-2);
+}
+
+/* FX-4 (early check M1): why the copy can't be had now. Muted secondary text under the action, never a toast that is gone before it is read. Empty, it
+   takes no room but stays rendered, so the live region announces the line when it appears. */
+.pdf-panel__supplier-note {
+  margin: 0;
+  max-width: var(--container-prose);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  color: var(--color-text-muted);
+}
+
+.pdf-panel__supplier-note:not(:empty) {
+  margin-top: var(--space-1);
 }

@@ -20,11 +20,11 @@ import { INV } from "../copy-invoices.ts";
 import {
   type ClientInvoiceStatus,
   clientStatus,
-  minusMoneyText,
   moneyText,
   qtyText,
   statusLabel,
   todayIst,
+  totalsRows,
   typeLabel,
 } from "../lib/invoices.ts";
 import { dateText } from "../lib/offers.ts";
@@ -170,26 +170,6 @@ function BankBlock({ bank }: { bank: NonNullable<InvoiceSummary["bank"]> }) {
       {purpose && <p className="inv-pay__lead">{INV.pdf.purposeCode(purpose)}</p>}
     </>
   );
-}
-
-/** The totals under the lines, as the PDF lists them (only the heads that apply; Total last and strong). */
-function totalsRows(d: InvoiceSummary) {
-  const t = d.totals;
-  const m = (n: number) => moneyText(n, d.currency);
-  const rows: { label: string; value: string; strong?: boolean }[] = [];
-  if (t.discountMinor !== 0) {
-    rows.push({ label: INV.pdf.totals.subtotal, value: m(t.subtotalMinor) });
-    rows.push({ label: INV.pdf.totals.discount, value: minusMoneyText(t.discountMinor, d.currency) });
-  }
-  rows.push({ label: INV.pdf.totals.taxable, value: m(t.taxableMinor) });
-  if (t.cgstMinor !== 0 || t.sgstMinor !== 0) {
-    rows.push({ label: INV.pdf.totals.cgst, value: m(t.cgstMinor) });
-    rows.push({ label: INV.pdf.totals.sgst, value: m(t.sgstMinor) });
-  }
-  if (t.igstMinor !== 0) rows.push({ label: INV.pdf.totals.igst, value: m(t.igstMinor) });
-  if (t.roundOffMinor !== 0) rows.push({ label: INV.pdf.totals.roundOff, value: m(t.roundOffMinor) });
-  rows.push({ label: INV.pdf.totals.total, value: m(t.totalMinor), strong: true });
-  return rows;
 }
 
 /**

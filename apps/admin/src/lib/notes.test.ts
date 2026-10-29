@@ -3,6 +3,7 @@
 import { CREDIT_REASONS, DEBIT_REASONS, NOTE_BLOCKER_CODES } from "@techaust/core/invoices";
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
+import { APPROVED_07Y, PLACEHOLDER_MARK } from "./copy-y.ts";
 import { BADGE_PILLS, badgeOf } from "./invoices.ts";
 import {
   AMOUNT_TOO_SMALL,
@@ -13,6 +14,7 @@ import {
   balanceLine,
   buildNoteFields,
   closestButton,
+  creditNoteCount,
   DEBIT_REASON_CODES,
   deadlineBanner,
   deadlineWarnLine,
@@ -28,6 +30,7 @@ import {
   noteErrorText,
   noteFormOf,
   noteIssuedToast,
+  noteLedgerRows,
   noteRequestRow,
   rateLine,
   reasonHint,
@@ -103,8 +106,10 @@ describe("07-T §3 to §6 word for word", () => {
   });
 
   it("the notes section's lines (the singular of one note is listed in the run file)", () => {
-    expect(balanceLine("₹40,560.00", 2)).toBe("Balance due: ₹40,560.00 (after 2 notes)");
-    expect(balanceLine("₹40,560.00", 1)).toBe("Balance due: ₹40,560.00 (after 1 note)");
+    // FX-4 (A5 6): the line names what it counts, credit notes only (07-Y, marked while pending)
+    const y = APPROVED_07Y ? "" : `${PLACEHOLDER_MARK} `;
+    expect(balanceLine("₹40,560.00", 2)).toBe(`${y}Balance due: ₹40,560.00 (after 2 credit notes)`);
+    expect(balanceLine("₹40,560.00", 1)).toBe(`${y}Balance due: ₹40,560.00 (after 1 credit note)`);
     expect(refundLine("₹1,180.00")).toBe(
       "Refund due to the client: ₹1,180.00. Refunds are recorded with payments.",
     );
@@ -518,5 +523,68 @@ describe("step 5: the T §9 lines and the tax-only debit note [Q35]", () => {
     expect(noteErrorText(err("credit_amount_unfit", { closestMinor: null }), "credit", "INR")).toBe(
       AMOUNT_TOO_SMALL,
     );
+  });
+});
+
+describe("FX-4 (A5 6): the notes ledger names each row's type, and the balance counts only credit notes", () => {
+  const row = (id: string, issueDate: string, number: string, type?: "credit_note" | "debit_note") => ({
+    id,
+    ...(type ? { type } : {}),
+    number,
+    issueDate,
+    totalMinor: 1_000,
+    status: "issued",
+    imsStatus: null,
+  });
+  const notes = {
+    credit: [
+      row("c2", "2026-11-09", "TH/CN/2627/0002", "credit_note"),
+      row("c1", "2026-11-02", "TH/CN/2627/0001"),
+    ],
+    debit: [
+      row("d1", "2026-11-05", "TH/DN/2627/0001", "debit_note"),
+      row("d0", "2026-11-02", "TH/DN/2627/0000"),
+    ],
+  };
+
+  it("one ledger, oldest first (date, then number), each row with its kind and its type's name; an older API's row takes its list's type", () => {
+    expect(noteLedgerRows(notes).map((r) => [r.id, r.type, r.kind, r.typeText])).toEqual([
+      ["c1", "credit_note", "credit", "Credit note"],
+      ["d0", "debit_note", "debit", "Debit note"],
+      ["d1", "debit_note", "debit", "Debit note"],
+      ["c2", "credit_note", "credit", "Credit note"],
+    ]);
+  });
+
+  it("the balance line's count is the credit notes alone: two debit notes do not change it", () => {
+    expect(creditNoteCount(notes)).toBe(2);
+    expect(creditNoteCount({ credit: [] })).toBe(0);
+  });
+
+  it("early check L4: numbers sort as integers, never as text, and one day's notes follow the instant they were issued", () => {
+    const at = (r: ReturnType<typeof row>, issuedAt?: number) =>
+      issuedAt === undefined ? r : { ...r, issuedAt };
+    // an older API (no instant): /9 before /10 on the same day
+    const plain = noteLedgerRows({
+      credit: [row("c10", "2026-11-02", "TH/CN/2627/10"), row("c9", "2026-11-02", "TH/CN/2627/9")],
+      debit: [],
+    });
+    expect(plain.map((r) => r.id)).toEqual(["c9", "c10"]);
+    // the instant wins over the number across series on one day; the date wins over both
+    const mixed = noteLedgerRows({
+      credit: [
+        at(row("c10", "2026-11-02", "TH/CN/2627/10"), 3_000),
+        at(row("c9", "2026-11-02", "TH/CN/2627/9"), 2_000),
+        at(row("c1", "2026-11-01", "TH/CN/2627/1"), 9_000),
+      ],
+      debit: [at(row("d2", "2026-11-02", "TH/DN/2627/2"), 1_000)],
+    });
+    expect(mixed.map((r) => r.id)).toEqual(["c1", "d2", "c9", "c10"]);
+    // a row without an instant comes after those with one on the same day
+    const partial = noteLedgerRows({
+      credit: [row("c3", "2026-11-02", "TH/CN/2627/3"), at(row("c4", "2026-11-02", "TH/CN/2627/4"), 5)],
+      debit: [],
+    });
+    expect(partial.map((r) => r.id)).toEqual(["c4", "c3"]);
   });
 });

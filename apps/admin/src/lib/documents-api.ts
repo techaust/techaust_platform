@@ -205,6 +205,8 @@ export type DocumentViewBase = {
   discount: Discount | null;
   exportMode: string | null;
   lines: ViewLine[];
+  /** FX-4 (A5 12): the SAC a new custom line starts with (Settings › Tax "default SAC"); null when none is set or on a sent version. Absent from an older API. */
+  newLineSac?: string | null;
   sections: ViewSection[];
   schedule: ViewStep[];
   totals: Totals | null;

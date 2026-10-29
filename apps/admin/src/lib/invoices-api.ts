@@ -172,6 +172,8 @@ export type InvoiceView = {
   issuer: InvoiceIssuerView | null;
   discount: Discount | null;
   lines: InvoiceLine[];
+  /** FX-4 (A5 12): the SAC a new custom line starts with (Settings › Tax "default SAC"); null when none is set or on an issued document. Absent from an older API. */
+  newLineSac?: string | null;
   totals: Totals | null;
   supply: Supply | null;
   summary: SummaryRow[] | null;
@@ -261,6 +263,11 @@ export type InvoiceView = {
   lutStatus?: LutStatus;
   proforma?: {
     notice: string | null;
+    /**
+     * FX-4 (A5 5): the tax heads are estimates. A frozen proforma says what it was sealed with (one issued before FX-4 has no marker); a draft is
+     * issued with it. Absent from an older API: no "(estimate)".
+     */
+    gstEstimate?: boolean;
     validUntil: string | null;
     paidMinor: number;
     balanceMinor: number;
@@ -415,7 +422,8 @@ export const invoicePdfHref = (id: string) => `/api/v1/invoices/${enc(id)}/pdf`;
 
 /**
  * Step 5 contract (Q11, 07-R §6–§7): the stored DUPLICATE FOR SUPPLIER copy, for the Owner and the Accountant, of a tax or export invoice and a credit or
- * debit note (a proforma has none: 404). It answers the PDF once ready, else 202 `{state: "making"}` (M5 owner fixes, B3; before: 409 `pdf_pending`).
+ * debit note (a proforma has none: 404). It answers the PDF once ready; 202 `{state: "making"}` while jobs makes it after the original (M5 owner fixes, B3);
+ * 409 `pdf_pending` while the original has no PDF, and for an anonymised client, whose copy is never made (FX-4, full audit A5 9: never a 202 answered forever).
  */
 export const invoiceSupplierPdfHref = (id: string) => `/api/v1/invoices/${enc(id)}/pdf/supplier`;
 
@@ -426,15 +434,20 @@ export const invoiceSupplierPdfHref = (id: string) => `/api/v1/invoices/${enc(id
 export const canDownloadSupplierCopy = (role: Role, type: string) =>
   allowed(role, "invoices.supplierCopy") && hasSupplierCopy(type);
 
+/**
+ * `pending`: 202, the copy is being made. `no_original` (FX-4, early check M1): 409 `pdf_pending`, nothing can make it now: the original has no PDF (its
+ * own retry is the PDF panel's "Try again"), or the client is anonymised and no copy was made before. The screen offers the copy only once the original
+ * is ready, so only the anonymised case is said on screen (`supplierCopyLine`, review L2). `failed`: anything else.
+ */
 export type SupplierCopyResult =
   | { state: "ready"; blob: Blob; filename: string | null }
-  | { state: "pending" | "failed" };
+  | { state: "pending" | "no_original" | "failed" };
 
 /** One request at a time per document: a second ask while the first is out gets the same answer (a click twice, or two tabs' worth of impatience, is one request). */
 const supplierAsks = new Map<string, Promise<SupplierCopyResult>>();
 
 /**
- * Fetches the supplier copy (same origin, the session cookie): `ready` with the file, or `pending` (202, or 409 `pdf_pending`), or `failed` (anything else). The
+ * Fetches the supplier copy (same origin, the session cookie): `ready` with the file, `pending` (202), `no_original` (409 `pdf_pending`), or `failed`. The
  * screen asks first instead of linking straight to it, so a copy still being made is said in words, never downloaded as an error. While a request for the same
  * document is pending it is not asked again (the server also asks jobs at most once in 5 minutes).
  */
@@ -457,12 +470,12 @@ async function askSupplierCopy(id: string): Promise<SupplierCopyResult> {
     const name = /filename="?([^";]+)"?/i.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? null;
     return { state: "ready", blob: await res.blob(), filename: name };
   }
-  // Sweep finding 11 (B3): a copy still being made answers 202 `{state: "making"}`, so the browser logs no error for it. A 409 `pdf_pending` from
-  // an older API means the same.
+  // Sweep finding 11 (B3): a copy still being made answers 202 `{state: "making"}`, so the browser logs no error for it. A 409 `pdf_pending` is not
+  // "being made" (FX-4, early check M1): nothing will make the copy until the original has its PDF, so the screen says that instead of "Preparing" forever.
   if (res.status === 202) return { state: "pending" };
   if (res.status === 409) {
     const body = (await res.json().catch(() => ({}))) as { error?: { code?: string } };
-    if (body.error?.code === "pdf_pending") return { state: "pending" };
+    if (body.error?.code === "pdf_pending") return { state: "no_original" };
   }
   return { state: "failed" };
 }

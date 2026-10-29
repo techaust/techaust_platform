@@ -6,6 +6,7 @@ import type { ComputedDocument, LineInput } from "@techaust/core/tax";
 import { describe, expect, it } from "vitest";
 import { goldenDocuments } from "../../core/test/tax/golden-cases.ts";
 import {
+  CLIENT_FIGURES_SQL,
   EDF_COUNT_SQL,
   EDF_MONTH_SQL,
   EXPORT_NEXT_SQL,
@@ -14,6 +15,7 @@ import {
   OVERDUE_OLDEST_SQL,
   OWED_SQL,
   PROFORMAS_AWAITING_SQL,
+  PROJECT_BILLED_SQL,
   REALISATION_BELLS_SQL,
   REALISATION_PAGE_SQL,
   REALISATION_SCAN_SQL,
@@ -161,6 +163,21 @@ describe("EXPLAIN: every report statement uses an index", () => {
   it("the ledger sum reads the client's documents by an index", async () => {
     const p = await plan(STATEMENT_LEDGER_SQL, "c", "INR");
     expect(scansTable(p), p).toBe(false);
+  });
+
+  it("FX-3: a client's Overview figures seek the client in `documents_client_issued`; a project's billed figure seeks `documents_project`", async () => {
+    const cl = await plan(CLIENT_FIGURES_SQL, "c", "2026-10-29");
+    expect(cl).toMatch(/SEARCH d USING INDEX documents_client_issued \(client_id=\?\)/);
+    expect(scansTable(cl), cl).toBe(false);
+    const pr = await plan(PROJECT_BILLED_SQL, "p");
+    expect(pr).toMatch(/SEARCH d USING INDEX documents_project \(project_id=\?\)/);
+    expect(scansTable(pr), pr).toBe(false);
+    // FX-3 fix round (item 7): the anonymised check is a one-off lookup by key (a plain SCALAR SUBQUERY, never a correlated one run per document)
+    for (const p of [cl, pr]) {
+      expect(p).not.toMatch(/CORRELATED/);
+      expect(p).toMatch(/SEARCH z USING (INDEX sqlite_autoindex_clients_1|PRIMARY KEY) \(id=\?\)/);
+      expect(p).not.toMatch(/SCAN (z|zp)\b(?! USING)/);
+    }
   });
 
   it("the dashboard's invoiced figure reads `documents_issued_on`; what clients owe and the oldest overdue read `documents_status_due`", async () => {
@@ -553,8 +570,8 @@ describe("the SQL rates are a twin of core's registerRatesOf", () => {
   });
 });
 
-describe("the statement lines carry the number of the invoice a credit note is against, and the PDF read is the same lines", () => {
-  it("parent only for a credit note; STATEMENT_ENTRIES_SQL(limit) gives the same order and stops at the limit", async () => {
+describe("the statement lines carry the number of the invoice a credit or debit note is against, and the PDF read is the same lines", () => {
+  it("parent for a credit note and (FX-4, A5 7) a debit note; STATEMENT_ENTRIES_SQL(limit) gives the same order and stops at the limit", async () => {
     const c = await mkReportClient("INR");
     const inv = await addDoc({ clientId: c, issueDate: "2026-09-02", lines: [line(100_00)] });
     const dn = await addDoc({
@@ -578,7 +595,7 @@ describe("the statement lines carry the number of the invoice a credit note is a
     );
     expect(page.map((r) => [r.id, r.kind, r.parent])).toEqual([
       [inv.id, "tax_invoice", null],
-      [dn.id, "debit_note", null],
+      [dn.id, "debit_note", inv.number],
       [cn.id, "credit_note", inv.number],
     ]);
     const all3 = await all<{ id: string; parent: string | null }>(STATEMENT_ENTRIES_SQL(201), ...binds);

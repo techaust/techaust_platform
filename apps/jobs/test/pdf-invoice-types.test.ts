@@ -283,6 +283,34 @@ describe("the render step: the statutory line before Browser Run [LD33]", () => 
     expect(await renderWith(makeEnv(b.binding).env, s.id)).toBe("rendered");
   });
 
+  it("FX-4 (A5 5; 08-C RA-28): a proforma sealed with the GST estimate marker renders its tax heads as estimates; one sealed before keeps its plain heads", async () => {
+    const fresh = await ready({ type: "proforma", gstEstimate: true });
+    const e = (await envelopeOf(fresh)) as NonNullable<Awaited<ReturnType<typeof envelopeOf>>>;
+    expect(e.snapshot.header.proforma).toEqual({ notice: LITERAL_PROFORMA_NOTICE, gstEstimate: true });
+    expect(await verifyInvoiceEnvelope(e)).toEqual({ ok: true });
+    const b = fakeBrowser();
+    expect(await renderWith(makeEnv(b.binding).env, fresh.id)).toBe("rendered");
+    expect(b.calls[0]?.html).toMatch(/(CGST|IGST) \(estimate\)/);
+    const older = await ready({ type: "proforma" });
+    const b2 = fakeBrowser();
+    expect(await renderWith(makeEnv(b2.binding).env, older.id)).toBe("rendered");
+    expect(b2.calls[0]?.html).not.toContain("(estimate)");
+  });
+
+  it("a stored proforma envelope whose estimate marker was removed is refused by the seal check, before any page is made", async () => {
+    const s = await ready({ type: "proforma", gstEstimate: true });
+    const key = keysOf(s).snapshot;
+    const text = (await (await realEnv.DOCS.get(key))?.text()) ?? "";
+    expect(text).toContain('"gstEstimate":true');
+    // the key may come first or last in the stored text: drop it either way, and prove the text changed
+    const without = text.replace('"gstEstimate":true,', "").replace(',"gstEstimate":true', "");
+    expect(without).not.toContain("gstEstimate");
+    await realEnv.DOCS.put(key, without);
+    const b = fakeBrowser();
+    expect(await renderWith(makeEnv(b.binding).env, s.id)).toBe("refused");
+    expect(b.calls).toHaveLength(0);
+  });
+
   it("a stored envelope whose endorsement was changed is refused by the seal check, before any page is made", async () => {
     const s = await ready({ type: "export_invoice" });
     const key = keysOf(s).snapshot;

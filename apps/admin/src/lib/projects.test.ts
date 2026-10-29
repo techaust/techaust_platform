@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { type MilestoneView, type ProjectView, RequestError, uploadHeaders } from "../api.ts";
 import { markdownElements } from "../components/markdown.tsx";
 import { lastLiveOfIndividual } from "./clients.ts";
+import { Y } from "./copy-y.ts";
 
 /** The mark a line not yet approved would carry (none should). */
 const PLACEHOLDER_TAG = "[Placeholder]";
@@ -105,6 +106,8 @@ describe("07-K copy, word for word [ADM-PRJ-01..05]", () => {
     );
     expect(COPY.noteDelete).toBe("Delete this note? This can't be undone.");
     expect(COPY.formattingHint).toBe("You can use **bold**, *italic*, lists and links.");
+    // FX-3 (A3 7): notes take headings; the line is a 07-Y line, marked until the owner approves it.
+    expect(COPY.noteFormattingHint).toBe(Y("You can use # headings, **bold**, *italic*, lists and links."));
     expect(COPY.uploadHint).toBe("PDF, PNG, JPG, WebP, Word, Excel, CSV, text or ZIP, up to 25 MB each.");
     expect(COPY.filesSharedExplainer).toBe(
       "Shared files can be downloaded from the client portal by everyone at this client who has portal access.",
@@ -344,5 +347,59 @@ describe("notes are React elements, never HTML [ADM-PRJ-03]", () => {
     const hrefs = seen.props.map((p) => p.href).filter(Boolean);
     expect(hrefs).toEqual(["https://example.test/"]);
     for (const p of seen.props.filter((x) => x.href)) expect(p.rel).toBe("noopener noreferrer");
+  });
+
+  it("FX-3: a note's `#` to `###` are h3 to h5 (never an h1 or h2 on the page); other Markdown keeps `#` as text", () => {
+    const tags = (nodes: ReactNode[]) => nodes.map((n) => (isValidElement(n) ? n.type : typeof n));
+    expect(tags(markdownElements("# One\n## Two\n### Three\n#### Four", true))).toEqual([
+      "h3",
+      "h4",
+      "h5",
+      "p",
+    ]);
+    const seen = walk(markdownElements("# <b>x</b> [l](javascript:x)", true), { props: [], text: [] });
+    expect(seen.props.some((p) => "dangerouslySetInnerHTML" in p)).toBe(false);
+    expect(seen.text.join("")).toBe("<b>x</b> l");
+    expect(tags(markdownElements("# One"))).toEqual(["p"]);
+  });
+
+  it("FX-3 fix round: a note's headings keep its outline and never skip a level under the panel's h2 (axe heading-order)", () => {
+    const tags = (nodes: ReactNode[]) => nodes.map((n) => (isValidElement(n) ? n.type : typeof n));
+    // a note that opens with `##` (found by the record-page sweep on the project Overview) starts at h3
+    expect(tags(markdownElements("## Second\nText.", true))).toEqual(["h3", "p"]);
+    expect(tags(markdownElements("### Only small", true))).toEqual(["h3"]);
+    // a jump of two levels is drawn one level deeper only; going back up is free
+    expect(tags(markdownElements("# Top\n### Deep\n## Mid\n# Top again", true))).toEqual([
+      "h3",
+      "h4",
+      "h4",
+      "h3",
+    ]);
+    expect(tags(markdownElements("## A\n### B\n## C", true))).toEqual(["h3", "h4", "h3"]);
+    // the size stays the author's
+    const [first] = markdownElements("## Second", true);
+    expect(isValidElement(first) && (first.props as { className: string }).className).toBe("md__h md__h--2");
+  });
+
+  it("FX-3 fix round 2 (WCAG 1.3.1): siblings stay siblings and going back up closes the deeper levels", () => {
+    const tags = (nodes: ReactNode[]) => nodes.map((n) => (isValidElement(n) ? n.type : typeof n));
+    const sizes = (nodes: ReactNode[]) =>
+      nodes.map((n) => (isValidElement(n) ? (n.props as { className?: string }).className : undefined));
+    // two `###` under one `#` are both h4 (not h4 then h5)
+    expect(tags(markdownElements("# Plan\n### Risks\n### Owners", true))).toEqual(["h3", "h4", "h4"]);
+    // a shallower heading after two siblings is their peer at the top, not one level down
+    expect(tags(markdownElements("## A\n## B\n# C", true))).toEqual(["h3", "h3", "h3"]);
+    // deeper: every level open, then closed one at a time, then a jump; text between headings changes nothing
+    expect(
+      tags(markdownElements("# A\n## B\n### C\nText.\n### D\n## E\n### F\n# G\n### H\n## I\n### J", true)),
+    ).toEqual(["h3", "h4", "h5", "p", "h5", "h4", "h5", "h3", "h4", "h4", "h5"]);
+    // a note that opens deep and later goes shallower: both are at the top
+    expect(tags(markdownElements("### Small\n# Big\n## Mid", true))).toEqual(["h3", "h3", "h4"]);
+    // the visual size is still the author's, whatever the tag
+    expect(sizes(markdownElements("# Plan\n### Risks\n### Owners", true))).toEqual([
+      "md__h md__h--1",
+      "md__h md__h--3",
+      "md__h md__h--3",
+    ]);
   });
 });

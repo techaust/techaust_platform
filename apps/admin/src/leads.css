@@ -488,6 +488,20 @@ a.lead-card__name:hover {
   line-height: var(--text-body--line-height);
 }
 
+/* FX-3 fix round 2 (D): a panel's heading takes the focus when a save or a cancel closes the control that had it (Pipeline after
+   "Save changes", Linked records after a convert). After a keyboard action the ring shows where the keyboard is, as the PDF panel's
+   heading does; after a click it stays quiet (app.css: programmatic focus on a heading has no ring). The heading is as wide as its
+   words, so the ring hugs them rather than boxing the panel's whole width. */
+.lead-panel__title[tabindex="-1"] {
+  width: fit-content;
+  border-radius: var(--radius-sm);
+}
+
+.lead-panel__title[tabindex="-1"]:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
 .lead-panel__head {
   display: flex;
   align-items: center;
@@ -572,6 +586,41 @@ a.lead-card__name:hover {
   margin: 0;
 }
 
+/* FX-3 (A3 8): a manual lead's answers being edited sit above the read-only facts, on their own hairline. */
+.lead-answers {
+  container-type: inline-size;
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* FX-3 fix round 3 (3): its fields go side by side by the form's own width, not the window's (as the timeline does). With the menu
+   open at 1024 px the Enquiry panel is about 16rem wide, where two selects would cut their values; they stack until the form has
+   about 30rem, room for the longest budget band in each half. Only this form changes; `.form-grid` keeps its window rule elsewhere. */
+.lead-answers .form-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* one column: none of the window rule's two-row spans (re-check of round 3, L5) */
+.lead-answers .form-grid > * {
+  grid-row: auto;
+}
+
+@container (min-width: 30rem) {
+  .lead-answers .form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* as `.form-grid` side by side (shell.css): each field spans two rows and shares them, so the controls start level */
+  .lead-answers .form-grid > * {
+    grid-row: span 2;
+  }
+
+  .lead-answers .form-grid > .field:has(> .field__head) {
+    grid-template-rows: subgrid;
+  }
+}
+
 .lead-links {
   display: grid;
   gap: var(--space-3);
@@ -623,7 +672,14 @@ a.lead-card__name:hover {
   padding-inline: 0;
 }
 
-@media (max-width: 29.99rem) {
+/* FX-3 fix round 2: the timeline answers its panel's width, not the window's. From 64rem the lead page has two columns, and with the
+   menu open at 1024 px the timeline panel is about as narrow as a phone's (320 px): the date column and the phone's tighter change
+   table then apply there too, so a change table never breaks its words letter by letter. The client's Activity tab shares it. */
+.lead-timeline {
+  container-type: inline-size;
+}
+
+@container (max-width: 29.99rem) {
   .lead-timeline__list .entry {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -661,6 +717,14 @@ a.lead-card__name:hover {
   flex: 1;
   min-width: 0;
   padding-top: var(--space-1);
+}
+
+/* The narrowest timelines (the lead page's main column with the menu open at 1024 px, about 16rem; a 320 px phone) give the entry's
+   icon's width to the change table, so its field names and values keep whole words. The icon only repeats the words beside it. */
+@container (max-width: 18rem) {
+  .act__icon {
+    display: none;
+  }
 }
 
 .act__text {
@@ -717,10 +781,12 @@ a.lead-card__name:hover {
 }
 
 /* Phones: tighter cells and a narrower Field column give Before and After about 96 px each at 375 px, so ordinary
-   words fit whole (re-check 2); only a word wider than that (a long email address) still breaks. */
-@media (max-width: 29.99rem) {
+   words fit whole (re-check 2); only a word wider than that (a long email address) still breaks. By the timeline panel's width
+   (fix round 2), so a narrow panel on a wide window gets them too. */
+@container (max-width: 29.99rem) {
+  /* 27 %: the longest field name, "Currency" (FX-3), stays whole; Before and After keep about 80 px each. */
   .act__diff thead th:first-child {
-    width: 24%;
+    width: 27%;
   }
 
   .act__diff thead th:nth-child(3) {
@@ -731,6 +797,11 @@ a.lead-card__name:hover {
   table.diff__table.act__diff th:not(:first-child),
   table.diff__table.act__diff td:not(.diff__arrow) {
     padding-inline: var(--space-1);
+  }
+
+  /* The Field column's end inset is tight too, so "Currency" fits whole (FX-3). */
+  table.diff__table.act__diff th:first-child {
+    padding-inline-end: var(--space-1);
   }
 }
 

@@ -152,11 +152,12 @@ const DEBIT_KINDS = "('tax_invoice', 'export_invoice', 'debit_note')";
  * The lines of a client's statement as one source `u(id, kind, date, ord, number, amount, sk)`: the debit documents and credit notes (issued, not voided,
  * the client's, in the currency) and the advance receipts of Q9 (their amount, dated by the day the money arrived; the number is that of the tax invoice they
  * paid). `ord` orders one day: 1 a debit document, 2 a credit note, 3 a receipt; `sk` is `date|ord`, the keyset key with `id`. Proformas are not here
- * (LD78: not a tax document; their payment shows through the tax invoice). `cond` is a SQL fragment over a date expression, e.g. `x BETWEEN ?3 AND ?4`.
+ * (LD78: not a tax document; their payment shows through the tax invoice). `cond` is a SQL fragment over a date expression, e.g. `x BETWEEN ?3 AND ?4`. With
+ * `withParent`, a credit or debit note carries the number of the invoice it is against (`parent`; FX-4, full audit A5 7: debit notes too); every other line NULL.
  */
 const statementSource = (cond: (dateExpr: string) => string, withParent = false): string =>
   `(SELECT d.id AS id, d.type AS kind, d.issue_date AS date, CASE d.type WHEN 'credit_note' THEN 2 ELSE 1 END AS ord, d.number_display AS number, d.total_minor AS amount,
-           d.issue_date || '|' || CASE d.type WHEN 'credit_note' THEN 2 ELSE 1 END AS sk${withParent ? ", CASE d.type WHEN 'credit_note' THEN (SELECT p.number_display FROM documents p WHERE p.id = d.parent_id) END AS parent" : ""}
+           d.issue_date || '|' || CASE d.type WHEN 'credit_note' THEN 2 ELSE 1 END AS sk${withParent ? ", CASE WHEN d.type IN ('credit_note', 'debit_note') THEN (SELECT p.number_display FROM documents p WHERE p.id = d.parent_id) END AS parent" : ""}
       FROM documents d INDEXED BY documents_client_issued
       WHERE d.frozen_at IS NOT NULL AND d.type IN ${GST_TYPES} AND d.client_id = ?1 AND d.currency = ?2 AND d.voided_at IS NULL AND d.status <> 'void' AND ${cond("d.issue_date")}
     UNION ALL
@@ -336,3 +337,54 @@ export const EXPORT_NEXT_SQL = (() => {
    WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND d.balance_minor > 0 AND ${stageSql("d", p)} IN (${ALERT_STAGE_LIST})
    ORDER BY due, d.id LIMIT 5`;
 })();
+
+// ---- a client's Overview figures and a project's billed figure (FX-3, A3 4 and A3 5; ADM-CLI-03, ADM-PRJ-05) ---------------------------------------
+// The statement's rules (LD78; Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28)): the documents counted are the issued tax invoices, export invoices,
+// debit notes and credit notes that are not voided; proformas never (LD22: not a tax document, their payment shows through the tax invoice). "Billed" is the
+// statement's debit column over all time (invoices and debit notes, tax included); "credited" is its credit notes. "Collected" and "paid" wait for payments
+// (M6), so nothing here reads a payment; a Q9 advance receipt already shows as a zero balance on the advance tax invoice it paid.
+// An anonymised client gets no figures (its Overview and its projects show none): the index seek's key is a one-off lookup of the client (or the
+// project) that is NULL when the client is anonymised, so the seek is skipped and its documents are never read, not even their index entries (FX-3
+// fix round, item 7; a plain NOT EXISTS guard is checked per index entry). The admin answers `available: false` from the client row read in the same batch.
+
+/**
+ * A client's figures by currency (`?1` the client, `?2` today, IST): billed, credited, the balance (Σ `balance_minor` of its open debit documents: what a
+ * statement made today closes at, `STATEMENT_LEDGER_SQL` for every currency at once) and the part of it past its due date (strictly before today, as
+ * `OWED_SQL`). One read of `documents_client_issued` by the client: the rows read are the client's issued GST documents and nothing else. No rows for
+ * an anonymised client (its row only is read).
+ */
+export const CLIENT_FIGURES_SQL = `SELECT d.currency,
+       coalesce(sum(CASE WHEN d.type IN ${DEBIT_KINDS} THEN d.total_minor END), 0) AS billed,
+       coalesce(sum(CASE WHEN d.type = 'credit_note' THEN d.total_minor END), 0) AS credited,
+       coalesce(sum(CASE WHEN d.type IN ${DEBIT_KINDS} AND d.balance_minor > 0 THEN d.balance_minor END), 0) AS balance,
+       coalesce(sum(CASE WHEN d.type IN ${DEBIT_KINDS} AND d.balance_minor > 0 AND d.due_date < ?2 THEN d.balance_minor END), 0) AS overdue,
+       count(CASE WHEN d.type IN ${DEBIT_KINDS} AND d.balance_minor > 0 AND d.due_date < ?2 THEN 1 END) AS overdue_n
+   FROM documents d INDEXED BY documents_client_issued
+   WHERE d.client_id = (SELECT z.id FROM clients z WHERE z.id = ?1 AND z.anonymised_at IS NULL) AND ${ISSUED_GST} AND d.voided_at IS NULL AND d.status <> 'void'
+   GROUP BY d.currency ORDER BY d.currency`;
+
+/**
+ * A project's billed and credited figures by currency (`?1` the project), from the same documents as the client's: the issued, not voided tax invoices,
+ * export invoices, debit notes and credit notes made for the project (a milestone invoice or a Q9 advance carries the milestone's project; a note copies its
+ * parent's). Read through `documents_project`: a project has a handful of documents. No rows when the project's client is anonymised (the project and
+ * client rows only are read).
+ */
+export const PROJECT_BILLED_SQL = `SELECT d.currency,
+       coalesce(sum(CASE WHEN d.type IN ${DEBIT_KINDS} THEN d.total_minor END), 0) AS billed,
+       coalesce(sum(CASE WHEN d.type = 'credit_note' THEN d.total_minor END), 0) AS credited
+   FROM documents d INDEXED BY documents_project
+   WHERE d.project_id = (SELECT zp.id FROM projects zp JOIN clients z ON z.id = zp.client_id WHERE zp.id = ?1 AND z.anonymised_at IS NULL)
+     AND ${ISSUED_GST} AND d.voided_at IS NULL AND d.status <> 'void'
+   GROUP BY d.currency ORDER BY d.currency`;
+
+/** One currency of `CLIENT_FIGURES_SQL` as D1 returns it. */
+export type ClientFiguresRow = {
+  currency: "INR" | "USD";
+  billed: number;
+  credited: number;
+  balance: number;
+  overdue: number;
+  overdue_n: number;
+};
+/** One currency of `PROJECT_BILLED_SQL` as D1 returns it. */
+export type ProjectBilledRow = { currency: "INR" | "USD"; billed: number; credited: number };

@@ -9,7 +9,7 @@ import { documentPdfHref, errorText, RequestError } from "../../api.ts";
 import { Download, RotateCcw } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { documentsApi, type PdfState } from "../../lib/documents-api.ts";
-import { PDF_COPY, PDF_POLL_MS, pdfPhase, pdfRetryText } from "../../lib/pdf.ts";
+import { PDF_COPY, PDF_POLL_MS, pdfPhase, pdfReadChanged, pdfRetryText } from "../../lib/pdf.ts";
 
 /** The panel's words: 07-P's for proposals and estimates; an invoice passes 07-R's. */
 export type PdfWords = { ready: string; making: string; slow: string; download: string; tryAgain: string };
@@ -51,20 +51,28 @@ export function PdfPanel(props: {
   const source = props.source ?? DOCUMENT_SOURCE;
   const toast = useToast();
   const [pdf, setPdf] = useState<PdfState>(props.initial);
+  // FX-4 review H2: the page's newer reading (after `onReady`, or any later read) is taken in place, during render, so the panel is never drawn afresh:
+  // the focus stays where it was (the heading after "Try again") and the polite region below announces the new words.
+  const [read, setRead] = useState<PdfState>(props.initial);
+  if (pdfReadChanged(read, props.initial)) {
+    setRead(props.initial);
+    setPdf(props.initial);
+  }
   const [since, setSince] = useState<number | null>(props.sentAt);
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
   const moved = useRef(false);
   const phase = pdfPhase(pdf.state, since, now);
-  // Tell the page once, when the state moves to ready here (not when it was ready from the start).
+  // Tell the page once, when the state moves to ready here (not when it was ready from the start, nor when the page's own read brought it).
   const wasReady = useRef(props.initial.state === "ready");
   const onReady = props.onReady;
+  const pageKnows = props.initial.state === "ready";
   useEffect(() => {
     if (pdf.state !== "ready" || wasReady.current) return;
     wasReady.current = true;
-    onReady?.();
-  }, [pdf.state, onReady]);
+    if (!pageKnows) onReady?.();
+  }, [pdf.state, onReady, pageKnows]);
 
   // Ask again while the PDF is being made; stop once it is ready or the 5 minutes are over.
   useEffect(() => {

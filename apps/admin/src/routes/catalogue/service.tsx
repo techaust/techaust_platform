@@ -19,6 +19,7 @@ import { PageHeader, Skeleton, When } from "../../components/display.tsx";
 import { ErrorSummary, SaveBar } from "../../components/form.tsx";
 import { Archive, Pencil, RotateCcw } from "../../components/icons.tsx";
 import { Markdown } from "../../components/markdown.tsx";
+import { useScrollRegion } from "../../components/scroll-region.ts";
 import { LoadFailed, NotFound, StaleNotice, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
@@ -358,8 +359,9 @@ function MdBlock({ title, source }: { title: string; source: string | null }) {
 }
 
 function LinesTable({ item }: { item: CatalogueEntry }) {
+  const [ref, region] = useScrollRegion<HTMLDivElement>("Default lines");
   return (
-    <div className="lines-table">
+    <div className="lines-table" ref={ref} {...region}>
       <table>
         <caption className="visually-hidden">Default lines</caption>
         <thead>

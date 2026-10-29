@@ -1,7 +1,7 @@
 // A lead entered by hand (M3.2, ADM-LEAD-01): a call, an email or a meeting becomes a lead with source "Added by hand".
 // Name and email are required, every other field is marked optional (owner decision 2026-10-24). The API links it to
 // an earlier lead with the same email within 30 days (FRM-04) and tells the others through the bell. On success the
-// new lead's page opens.
+// new lead's page opens. FX-3 (A3 8): the quote form's currency, budget and timeline can be given too (answers.tsx).
 import { type FormEvent, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { api, errorText, RequestError } from "../../api.ts";
@@ -14,6 +14,7 @@ import { Notice } from "../../components/ui.tsx";
 import { UnsavedChangesGuard } from "../../components/unsaved.tsx";
 import { dateError } from "../../lib/date-field.ts";
 import { countryOptions, dateToMs, SERVICE_OPTIONS } from "../../lib/leads.ts";
+import { type Answers, AnswersFields, NO_ANSWERS } from "./answers.tsx";
 import { CRUMBS, LeadsGate } from "./parts.tsx";
 
 export function Component() {
@@ -44,13 +45,18 @@ function NewLead() {
   const toast = useToast();
   const people = useLoad(() => api.leadAssignees(), "");
   const [f, setF] = useState<Form>(EMPTY);
+  const [answers, setAnswers] = useState<Answers>(NO_ANSWERS);
   const dates = useUnreadDates<"date">();
   const [errors, setErrors] = useState<SummaryError[]>([]);
   const [submits, setSubmits] = useState(0);
   const [failure, setFailure] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
-  const dirty = !saved && (dates.any || JSON.stringify(f) !== JSON.stringify(EMPTY));
+  const dirty =
+    !saved &&
+    (dates.any ||
+      JSON.stringify(f) !== JSON.stringify(EMPTY) ||
+      JSON.stringify(answers) !== JSON.stringify(NO_ANSWERS));
   const set = (patch: Partial<Form>) => setF((x) => ({ ...x, ...patch }));
   const errorOf = (id: string) => errors.find((e) => e.id === id)?.text;
   // Open the new lead once the form no longer counts as unsaved (the leave-without-saving guard has seen it).
@@ -83,6 +89,9 @@ function NewLead() {
         ownerId: f.ownerId || null,
         nextActionAt: f.date ? dateToMs(f.date) : null,
         nextActionNote: opt(f.note),
+        currency: answers.currency || null,
+        budgetBand: answers.band || null,
+        timeline: answers.timeline || null,
       });
       toast("success", `Added lead ${r.ref}.`);
       setSaved(r.id);
@@ -184,6 +193,7 @@ function NewLead() {
               )}
             </FormField>
           </div>
+          <AnswersFields idPrefix="nl" value={answers} onChange={setAnswers} />
           <FormField id="nl-message" label="Message" optional>
             {(a) => (
               <textarea

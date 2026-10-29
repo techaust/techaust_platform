@@ -1,19 +1,15 @@
 // The signature image on Settings, Company (M4.4; ADM-SET-01): upload, replace, or remove it (with a confirmation). It saves on its own,
 // outside the company form: each change answers the company settings' new version, which the form takes on (`adopt`). The preview is the
 // way it prints: on white paper, above the line "Authorised signatory" (from M5.2, on tax invoices only; optional on an electronic invoice: Researched 2026-10-28, 08-C RA-06). The
-// file is checked here first (PNG or JPEG, up to 256 KB) and again by the server by its bytes. Wording: 07-P §3–§4 and 07-R §7.
+// file is checked here first (PNG or JPEG, up to 10 MB), drawn again as a PNG of up to 256 KB, and checked again by the server by its bytes. Wording: 07-P §3–§4 and 07-R §7.
 import type { SignatureRef } from "@techaust/core/settings";
 import { useEffect, useId, useRef, useState } from "react";
 import { errorText, RequestError, signatureApi, signatureSrc } from "../../api.ts";
 import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
 import { Upload } from "../../components/icons.tsx";
 import { FieldError } from "../../components/ui.tsx";
-import {
-  SIGNATURE_ACCEPT,
-  SIGNATURE_COPY,
-  signatureErrorIsWrongFile,
-  signatureFileOk,
-} from "../../lib/pdf.ts";
+import { SIGNATURE_ACCEPT, SIGNATURE_COPY, signatureErrorIsWrongFile } from "../../lib/pdf.ts";
+import { browserImageIo, prepareSignature } from "../../lib/signature-scale.ts";
 
 /** "Remove the signature? Invoices issued already keep theirs.": the question is the dialog's title, the rest its body. */
 const [REMOVE_TITLE, REMOVE_BODY] = (() => {
@@ -30,6 +26,8 @@ export function SignatureControl(props: { initial: SignatureRef | null; adopt: (
   const [error, setError] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
   const [broken, setBroken] = useState(false);
+  // The last upload was drawn smaller to fit 800 by 400 pixels: said once under the preview, until the next change.
+  const [scaled, setScaled] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const firstButton = useRef<HTMLButtonElement>(null);
   const refocus = useRef(false);
@@ -48,16 +46,21 @@ export function SignatureControl(props: { initial: SignatureRef | null; adopt: (
 
   async function upload(file: File) {
     setError(null);
-    if (!signatureFileOk(file)) {
-      setError(SIGNATURE_COPY.wrongFile);
-      return;
-    }
+    setScaled(false);
     setBusy(true);
     try {
-      const r = await signatureApi.put(file);
+      // FX-3 (A6 1c, docs/13 2026-10-29): every image is drawn again as a PNG, smaller when it passes 800 by 400 pixels (aspect kept); the
+      // API takes only a PNG within that box. The original is checked only for its type and 10 MB; the 256 KB is the PNG's (fix round).
+      const ready = await prepareSignature(file, browserImageIo);
+      if (!ready.ok) {
+        setError(SIGNATURE_COPY[ready.line]);
+        return;
+      }
+      const r = await signatureApi.put(ready.file);
       props.adopt(r.version);
       setSig(r.signature);
       setBroken(false);
+      setScaled(ready.scaled);
       refocus.current = true;
     } catch (e) {
       setError(
@@ -139,6 +142,9 @@ export function SignatureControl(props: { initial: SignatureRef | null; adopt: (
       <div className="signature__alert" role="alert">
         {error && <FieldError id={errorId}>{error}</FieldError>}
       </div>
+      <p className="hint signature__scaled" role="status">
+        {scaled && sig && !error ? SIGNATURE_COPY.scaled : null}
+      </p>
 
       <ConfirmDialog
         open={asking}
@@ -150,6 +156,7 @@ export function SignatureControl(props: { initial: SignatureRef | null; adopt: (
           const r = await signatureApi.remove();
           props.adopt(r.version);
           setSig(null);
+          setScaled(false);
           refocus.current = true;
           return undefined;
         }}

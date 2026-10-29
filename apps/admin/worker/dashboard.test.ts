@@ -268,7 +268,7 @@ describe("the figures against a fixture", () => {
     await ms(plus(2), "invoiced"); // already billed
     await ms(null, "pending"); // no date
     const body = await dash(o.cookie);
-    expect(body.tiles.projects).toEqual({ active: 2, onHold: 1 });
+    expect(body.tiles.projects).toEqual({ planned: 1, active: 2, onHold: 1 }); // FX-3: Planned counts too
     expect(body.tiles.milestones.windowDays).toBe(14);
     expect(body.tiles.milestones.count).toBe(3);
     expect(body.tiles.milestones.next.map((m: J) => m.id)).toEqual(inWindow);

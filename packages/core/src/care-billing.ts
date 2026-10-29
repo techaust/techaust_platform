@@ -25,6 +25,13 @@ import { formatMoney, money } from "./money.ts";
 
 /** The IST hour the care scan runs (the hourly tick queues `care.scan` at 06:00 IST; jobs `hourlyMessages`). */
 export const CARE_SCAN_HOUR_IST = 6;
+/**
+ * FX-1 (A6 7): the hourly tick queues the care scan (and the owners' alerts) again at the next this-many IST hours, so a lost tick or a failed message is caught
+ * the same morning (jobs `REPEAT_HOURS`). One constant, so the care page's "next billing day" follows the ticks the jobs Worker really runs (FX-3).
+ */
+export const CARE_SCAN_REPEAT_HOURS = 2;
+/** The IST hour of the day's LAST care scan (08:00): until it has begun, a period due and unbilled can still be drafted today. */
+export const CARE_SCAN_LAST_HOUR_IST = CARE_SCAN_HOUR_IST + CARE_SCAN_REPEAT_HOURS;
 
 /** The catalogue services the invoice lines come from (S16 Care Plans, S17 AI Ops, S18 Dev Subscription: `CARE_SERVICE_CODES` in care.ts). */
 export type CareServiceCode = "S16" | "S17" | "S18";
@@ -88,8 +95,9 @@ export function careDue(
 /**
  * The day the billing job next drafts this plan's invoice, as the job sees it (`careDue`): the start date before the plan starts; today when the current period is due and
  * not yet billed (the next 06:00 IST scan picks it up); else the first day of the next period. null for a cancelled plan. Pure: the same inputs as `careDue`.
- * `istHour` (0 to 23, the hour it is now in IST): from the scan's hour on, today's scan has already run (a period due and unbilled now is a catch-up, drafted at the next scan), so the
- * day is TOMORROW, not today (review 2026-10-28, finding 11). Without it the answer is as before.
+ * `istHour` (0 to 23, the hour it is now in IST): the scan runs at 06:00 and again at 07:00 and 08:00 IST (FX-1), so a period due and unbilled is still drafted
+ * TODAY until the last scan's hour (08:00) has begun; from then on today's scans have all run and it is a catch-up, drafted TOMORROW (review 2026-10-28,
+ * finding 11; FX-3 follow-up: "tomorrow" from 06:00 was wrong while the 07:00 and 08:00 repeats could still draft it). Without the hour the answer is today.
  */
 export function nextBillingDayOf(
   today: string,
@@ -104,7 +112,7 @@ export function nextBillingDayOf(
   if (!period) return plan.startDate;
   const due = careDue(today, plan, lastBilled, statusOn(statuses, period.start)?.status ?? null, statuses);
   if (!due.due) return nextPeriodStart(today, plan.billingDay);
-  if (istHour !== undefined && istHour >= CARE_SCAN_HOUR_IST) {
+  if (istHour !== undefined && istHour >= CARE_SCAN_LAST_HOUR_IST) {
     const d = parseIsoDate(today);
     if (d) return toIsoDate(addDays(d, 1));
   }

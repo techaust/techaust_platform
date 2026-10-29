@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { offerSent } from "../../../../packages/email/src/offers.ts";
 import { RequestError } from "../api.ts";
+import { DOC_ERRORS } from "./documents.ts";
 
 /** The mark a line not yet approved would carry (none should). */
 const PLACEHOLDER_TAG = "[Placeholder]";
@@ -65,6 +66,12 @@ describe("07-N word for word", () => {
     expect(offerErrorText(new RequestError(409, "stale_version", "x"))).toBe(
       "Someone else saved this at the same moment. Reload and try again.",
     );
+    // FX-3 round 2, item 11 re-check: the send dialog's 409 `series_full` (document-send.ts) reads the 07-Y line through `docErrorText`
+    expect(
+      offerErrorText(
+        new RequestError(409, "series_full", "This numbering series has no numbers left this year"),
+      ),
+    ).toBe(DOC_ERRORS.series_full);
   });
 
   it("the client's decline reasons (§3)", () => {

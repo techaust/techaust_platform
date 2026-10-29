@@ -189,6 +189,25 @@ describe("the statement PDF: read, view, content hash, render, store once", () =
     expect(logs.join("\n")).not.toContain(inv.numberDisplay);
   });
 
+  it("FX-4 (A5 7): a debit note names the invoice it is against, as a credit note does", async () => {
+    const owner = await staff("owner");
+    const clientId = await mkClient();
+    const inv = await mkDoc(clientId, null, { issueDate: "2026-10-05", total: 118_000, balance: 118_000 });
+    const dn = await mkDoc(clientId, null, {
+      type: "debit_note",
+      issueDate: "2026-10-14",
+      parentId: inv.id,
+      total: 1_802,
+      balance: 1_802,
+    });
+    const row = await mkStatement(clientId, owner.id);
+    const b = browser();
+    expect(await processStatementPdf(mkEnv(b), message(row.id), NOW, clock)).toBe("rendered");
+    const html = b.pages[0] as string;
+    expect(html).toContain(dn.numberDisplay);
+    expect(html).toContain(`Debit note against ${inv.numberDisplay}`);
+  });
+
   it("the same data asked for again on the same IST day is ADOPTED: no second render, the same object, the same view hash", async () => {
     const { owner, clientId } = await seed();
     const first = await mkStatement(clientId, owner.id);
