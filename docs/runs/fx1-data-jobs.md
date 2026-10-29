@@ -59,8 +59,30 @@ PRD: ADM-SET-04, ADM-INV-02/09/14, JOB-PDF-01, JOB-Q-01, JOB-CRON-01/02 (as cite
 - workflow changes (the owner's yes);
 - FX-2, FX-3 and FX-4 files (`apps/admin/src`, `apps/portal`, `apps/web`, the headers files, `packages/pdf`).
 
-## Early check
-_(pending)_
+## Early check (analyst claude-opus-5-5/high, 2026-10-29 ~06:40–06:55 IST, on origin/fix/fx1-builder eb009c87): CHANGE (two small fixes), the rest GO
+- **GO:**
+  - 0049: no legitimate flow needs a repeated printed number; the WHERE list equals `INVOICE_FAMILY`.
+  - 0050:
+    - the frozen-update rebuild matches the 0047 constants, plus the four set-once fields;
+    - the INR cap bites only on foreign-currency parents;
+    - the ledger identity is kept by all four write paths (`issue.ts` 385, 544, 737, 754); void writes nothing;
+    - the `UPDATE … FROM` is sound;
+    - the discount and LUT triggers are the exact mirror of core and the freeze WHERE (RA-19 stays OPEN).
+  - `formatsCanClash` can't miss a clash.
+  - The `sendStatements` guard and `voidBlockers` are correct.
+  - Ran: db 470, core 101, admin 174, migration guard: all pass.
+- **Changes:**
+  1. **High (test only):** in `packages/pdf/test/fixtures/notes.ts:330`, date only the discount-after-sale fixture `2026-11-02`: `issueDate: spec.reason.code === "discount_after_sale" ? "2026-11-02" : "2026-10-28"`. Keep the reason, which is the only coverage of its label. The builder makes this change; no other branch touches `notes.ts`.
+  2. **Medium:** `care-billing.ts:725`: the refusal regex must also match `UNIQUE constraint failed: documents\.` and log the ids-only integrity line, so a 0049 clash during auto-issue is `freeze_refused`, not a retried RPC. Test: a row pre-inserted with the next number makes the auto-issue refuse, leaves the counter unmoved, and leaves the draft a draft.
+- **Kept (low):** the literal-text rule refuses some pairs that can't actually clash (only ever more). No change.
+- **Builder's questions:** receipt and voucher types go to M6 (widen `LEDGER_IDENTITY_TYPES` in a new migration; RA-17 is OPEN). An INSERT twin trigger comes with the first writer that inserts non-draft rows. Both are follow-ups.
+- **Lead's staging check (2026-10-29, read-only SELECTs on staging D1):**
+  - (a) duplicate invoice-family numbers: none;
+  - (b) rows that break the ledger identity: none;
+  - (c) the stored numbering formats all have distinct prefixes (TH/INV, EXP, CN, DN, RV, RF, RCT, PI, EST, PRP): no clash;
+  - (d) e-invoice fields set: 0.
+
+  0049 and 0050 will apply cleanly.
 
 ## Builder report
 _(pending)_
