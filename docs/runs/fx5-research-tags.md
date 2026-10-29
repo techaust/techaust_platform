@@ -135,3 +135,11 @@ After FX-3 and FX-4 merge:
 2. It fixes C1 (place of supply) and C4 (due days).
 3. C2 and C3 wait for the owner's interim wording. C5 is an M7 follow-up, due before 13 May 2027.
 4. Then a review and a PR.
+
+## Owner's answers (2026-10-29 ~14:05 IST)
+- **Udyam:** yes, a micro enterprise. MSMED ss.15–16 apply to TecHaust's Indian buyers. Printing the Udyam number and the MSMED rights on invoices stays on the CA list (RB-39(a), now a narrower question).
+- **Ownership:** the interim wording above (docs/13) goes into a new terms version.
+- **GST line:** "GST at 18 % is added unless the work is an export of services under our Letter of Undertaking."
+- **Who builds:** only the owner so far, so RB-38(b) is closed for now. Future contractors must assign in writing.
+
+The code step adds both terms changes as a new seeded terms version, plus a migration if the seed's terms rows need it (insert-only; never edit an applied one). 07 records the two lines as owner-approved.
