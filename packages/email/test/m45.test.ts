@@ -152,7 +152,17 @@ describe("approval emails (07 section 8, 07-O: title and version, not the number
     };
     const withNote = renderEmail("approval.decided", { ...base, decision_note: "Fine" }, opts);
     expect(withNote.subject).toBe("Approved: Website rebuild v1");
-    expect(withNote.text).toContain("Rupak has Approved your request for Website rebuild v1.");
+    expect(withNote.text).toContain("Rupak has approved your request for Website rebuild v1.");
+    expect(withNote.text).not.toContain("has Approved");
+    expect(withNote.html).toContain("Rupak has approved your request");
+    // FX-3 (A4 5): a rejection reads the same way; the subject keeps its capital
+    const rejected = renderEmail(
+      "approval.decided",
+      { ...base, decision: "Rejected", decision_note: "" },
+      opts,
+    );
+    expect(rejected.subject).toBe("Rejected: Website rebuild v1");
+    expect(rejected.text).toContain("Rupak has rejected your request for Website rebuild v1.");
     expect(withNote.text).toContain("Note: Fine.");
     expect(renderEmail("approval.decided", { ...base, decision_note: "" }, opts).text).not.toContain("Note:");
   });
