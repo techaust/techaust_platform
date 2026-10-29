@@ -216,7 +216,8 @@ forms.all("/forms/:kind", async (c) => {
   }
 
   // A service the site doesn't offer (hidden by the catalogue or a flag, or not a service at all) is refused, so the
-  // schema's S1–S18 range does not let a visitor name one (the seed catalogue's rule, the same as the pages').
+  // schema's S1–S18 range does not let a visitor name one. The list comes from the snapshot this build used, with the pages' rule
+  // (lib/service-visibility.ts, audit A2 finding 3).
   if ("service" in payload.data && !isQuotableService(payload.data.service))
     return fail("invalid", { fields: ["service"] });
 
