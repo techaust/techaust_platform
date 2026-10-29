@@ -317,14 +317,16 @@ function GapNotes(props: {
               </p>
               {g.services.map((s) => (
                 <p key={s.id}>
-                  {s.missing.length > 0 && <span>{gapLine(s.name, s.missing)} </span>}
-                  {s.now.length > 0 && <span>{gapNowLine(s.name, s.now)} </span>}
+                  {/* Each link right after its own sentence (round 4, M4), as on the section's note. */}
                   {s.missing.length > 0 && (
-                    <CatalogueLink id={s.id} name={s.name} words={GAP_COPY.addInCatalogue} />
+                    <>
+                      <span>{gapLine(s.name, s.missing)} </span>
+                      <CatalogueLink id={s.id} name={s.name} words={GAP_COPY.addInCatalogue} />{" "}
+                    </>
                   )}
+                  {s.now.length > 0 && <span>{gapNowLine(s.name, s.now)} </span>}
                   {s.noRoom.length > 0 && (
                     <>
-                      {s.missing.length > 0 && " "}
                       <span>{gapNoRoomLine(s.name, s.noRoom)} </span>
                       <CatalogueLink id={s.id} name={s.name} words={GAP_COPY.openInCatalogue} />
                     </>
