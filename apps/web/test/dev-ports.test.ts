@@ -1,6 +1,7 @@
 // Separate dev ports (CLOUD-1, scripts/dev-ports.mjs): one variable, TECHAUST_PORT_OFFSET, moves every local dev server so two
-// browser agents can run side by side; offset 0 must stay exactly today's commands. Runs in Node.
+// browser agents can run side by side; offset 0 keeps today's ports. Runs in Node.
 import { existsSync, readFileSync } from "node:fs";
+import { type AddressInfo, createServer } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -11,7 +12,9 @@ import {
   BASE_PORTS,
   devCommand,
   devPort,
+  freeInspectorPort,
   inspectorPort,
+  isPortFree,
   localOrigin,
   parseOffset,
   portOffset,
@@ -36,29 +39,38 @@ describe("offset 0 is today's behaviour", () => {
     });
     expect(localOrigin("admin")).toBe("http://localhost:5173");
   });
+  // `none`: the launcher found the inspector port taken, so no port is named (exactly the command line before CLOUD-1).
+  const run = (name: (typeof SERVERS)[number], opts?: { inspector?: number }) => {
+    const c = devCommand(name, 0, ROOT, opts);
+    return { app: c.app, line: `${c.bin[1]} ${c.args.join(" ")}`, env: c.env };
+  };
+  const none = { inspector: undefined };
   it("exactly the commands the scripts ran before, with no extra environment", () => {
-    const run = (name: (typeof SERVERS)[number]) => {
-      const c = devCommand(name, 0, ROOT);
-      return { app: c.app, line: `${c.bin[1]} ${c.args.join(" ")}`, env: c.env };
-    };
     expect(run("web")).toEqual({ app: "web", line: "astro dev --port 4321", env: {} });
-    expect(run("webWorker")).toEqual({ app: "web", line: "wrangler dev", env: {} });
-    expect(run("webE2e")).toEqual({
+    expect(run("webWorker", none)).toEqual({ app: "web", line: "wrangler dev", env: {} });
+    expect(run("webE2e", none)).toEqual({
       app: "web",
       line: "wrangler dev --port 8799 --var FORMS_ALLOWED_ORIGINS:http://localhost:8799",
       env: {},
     });
     expect(run("admin")).toEqual({ app: "admin", line: "vite --port 5173 --strictPort", env: {} });
     expect(run("portal")).toEqual({ app: "portal", line: "vite --port 5174 --strictPort", env: {} });
-    expect(run("jobs")).toEqual({
+    expect(run("jobs", none)).toEqual({
       app: "jobs",
       line: "wrangler dev --port 8787 --persist-to ../../.wrangler/state",
       env: {},
     });
   });
-  it("no inspector port is named and no URL moves", () => {
-    for (const name of ["admin", "portal", "jobs", "webWorker", "webE2e"] as const)
-      expect(inspectorPort(name, 0)).toBeUndefined();
+  it("the only addition: each Worker its own inspector port, so apps started together never race for 9229", () => {
+    expect(
+      ["admin", "portal", "jobs", "webWorker", "webE2e"].map((s) => inspectorPort(s as "admin", 0)),
+    ).toEqual([9229, 9230, 9231, 9232, 9233]);
+    expect(run("jobs").line).toBe(
+      "wrangler dev --port 8787 --persist-to ../../.wrangler/state --inspector-port 9231",
+    );
+    expect(run("webWorker").line).toBe("wrangler dev --inspector-port 9232");
+  });
+  it("no URL moves and the global dev registry stays", () => {
     expect(shiftLocalUrl("http://localhost:4321", 0)).toBe("http://localhost:4321");
     expect(registryEnv(ROOT, 0)).toEqual({});
   });
@@ -137,9 +149,24 @@ describe("offsets are checked", () => {
   });
   it("the inspector ports stay clear of every dev port at every offset", () => {
     const listen = new Set(ALLOWED_OFFSETS.flatMap((o) => SERVERS.map((s) => devPort(s, o))));
-    for (const offset of ALLOWED_OFFSETS.slice(1))
+    for (const offset of ALLOWED_OFFSETS)
       for (const name of ["admin", "portal", "jobs", "webWorker", "webE2e"] as const)
-        expect(listen.has(inspectorPort(name, offset) as number)).toBe(false);
+        expect(listen.has(inspectorPort(name, offset))).toBe(false);
+  });
+});
+
+describe("a taken inspector port falls back to the old automatic choice", () => {
+  it("free: its own port; taken: none named (wrangler and Vite pick one), with a note", async () => {
+    expect(await freeInspectorPort("jobs", 100, async () => true)).toBe(9331);
+    expect(await freeInspectorPort("jobs", 100, async () => false)).toBeUndefined();
+  });
+  it("isPortFree sees a real listener", async () => {
+    const server = createServer();
+    await new Promise<void>((resolve) => server.listen({ port: 0, host: "127.0.0.1" }, resolve));
+    const { port } = server.address() as AddressInfo;
+    expect(await isPortFree(port)).toBe(false);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    expect(await isPortFree(port)).toBe(true);
   });
 });
 
@@ -168,13 +195,11 @@ describe("the apps use it", () => {
     ])
       expect(read(file), file).not.toMatch(/\b(4321|5173|5174|8787|8799|9229)\b/);
   });
-  it("the Vite plugins name the inspector port of the offset", () => {
-    expect(read("apps/admin/vite.config.ts")).toContain(
-      'inspectorPort: inspectorPort("admin", portOffset())',
-    );
-    expect(read("apps/portal/vite.config.ts")).toContain(
-      'inspectorPort: inspectorPort("portal", portOffset())',
-    );
+  it("the Vite plugins name the inspector port of the offset (dev server only)", () => {
+    for (const app of ["admin", "portal"])
+      expect(read(`apps/${app}/vite.config.ts`)).toContain(
+        `inspectorPort: command === "serve" ? await freeInspectorPort("${app}", portOffset()) : undefined`,
+      );
   });
   it("the launcher finds each binary it runs", () => {
     for (const name of SERVERS) {

@@ -2,12 +2,15 @@
 // the admin, portal and web browser-test configs run it:
 //   node ../../scripts/dev.mjs <web | webWorker | webE2e | admin | portal | jobs> [extra arguments…]
 // It runs the package's own binary with this Node (no shell, so it behaves the same on Windows and Linux), in the app's folder,
-// passes Ctrl-C and kill signals on, and exits with the server's exit code. At offset 0 the command is exactly the one the script
-// ran before.
+// passes Ctrl-C and kill signals on, and exits with the server's exit code. At offset 0 the ports are the ones the scripts used
+// before; a wrangler Worker also gets its own inspector port when that port is free (the Vite apps set theirs in vite.config.ts).
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { devCommand, portOffset, REPO_ROOT } from "./dev-ports.mjs";
+import { devCommand, freeInspectorPort, portOffset, REPO_ROOT } from "./dev-ports.mjs";
+
+/** The servers whose inspector port the launcher names on the command line (wrangler); Vite's is in its config. */
+const WRANGLER_SERVERS = new Set(["webWorker", "webE2e", "jobs"]);
 
 /** The JavaScript file of a package's binary, as installed in the app's node_modules (read from its package.json `bin`). */
 export function binFile(appDir, pkg, name) {
@@ -26,7 +29,9 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, "
   }
   let cmd;
   try {
-    cmd = devCommand(name, portOffset());
+    const offset = portOffset();
+    const opts = WRANGLER_SERVERS.has(name) ? { inspector: await freeInspectorPort(name, offset) } : {};
+    cmd = devCommand(name, offset, REPO_ROOT, opts);
   } catch (e) {
     console.error(`[dev] ${e instanceof Error ? e.message : e}`);
     process.exit(2);

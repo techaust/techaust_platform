@@ -1,7 +1,7 @@
 import { cloudflare } from "@cloudflare/vite-plugin";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
-import { inspectorPort, portOffset, shiftLocalUrl } from "../../scripts/dev-ports.mjs";
+import { freeInspectorPort, portOffset, shiftLocalUrl } from "../../scripts/dev-ports.mjs";
 import { siteKeyForApp } from "../../scripts/turnstile-site-key.mjs";
 import { websiteOriginForApp } from "../../scripts/website-origin.mjs";
 
@@ -14,8 +14,9 @@ import { websiteOriginForApp } from "../../scripts/website-origin.mjs";
 // __TURNSTILE_SITE_KEY__: the sign-in widget's public key from wrangler.jsonc for CLOUDFLARE_ENV (M2.4b); a staging build with an
 // empty key fails here.
 // TECHAUST_PORT_OFFSET (CLOUD-1, scripts/dev-ports.mjs): a non-zero offset moves the local website origin with the other dev ports
-// (a staging or production origin never changes) and names the plugin's inspector port; at 0 both are as before.
-export default defineConfig({
+// (a staging or production origin never changes). inspectorPort: the dev server's own, so the apps started together never race
+// for one; if it is taken, undefined lets the plugin pick a free one as before. Not used by `vite build`.
+export default defineConfig(async ({ command }) => ({
   define: {
     __TURNSTILE_SITE_KEY__: JSON.stringify(siteKeyForApp(new URL("./", import.meta.url))),
     // __WEBSITE_ORIGIN__: the website of this environment (vars.WEBSITE_ORIGIN; 07-W 5.5), for the "Privacy notice" link.
@@ -27,7 +28,7 @@ export default defineConfig({
     react(),
     cloudflare({
       persistState: { path: "../../.wrangler/state" },
-      inspectorPort: inspectorPort("portal", portOffset()),
+      inspectorPort: command === "serve" ? await freeInspectorPort("portal", portOffset()) : undefined,
     }),
   ],
   environments: {
@@ -36,4 +37,4 @@ export default defineConfig({
     client: { build: { assetsInlineLimit: 0 } },
     techaust_platform_portal: { build: { minify: true } },
   },
-});
+}));

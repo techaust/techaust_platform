@@ -3,14 +3,19 @@
 //
 //   TECHAUST_PORT_OFFSET=100 pnpm --filter @techaust/admin dev   → admin on :5273, its workerd inspector on :9329
 //
-// Offset 0 (the default, and every run on this PC) is today's behaviour exactly: the same ports, no inspector port is named (wrangler
-// and the Vite plugin pick the first free one from 9229 themselves), and the global dev registry. Any other offset also gives each
-// Worker a fixed inspector port and a dev registry of its own (`.wrangler/registry-<offset>` in the repository), so the jobs
-// Worker's service binding to the admin API (ADMIN_JOBS) finds the admin API of its own set, never the other agent's.
+// Offset 0 (the default, and every run on this PC) keeps today's ports and the global dev registry. Any other offset also gives the
+// set a dev registry of its own (`.wrangler/registry-<offset>` in the repository), so the jobs Worker's service binding to the admin
+// API (ADMIN_JOBS) finds the admin API of its own set, never the other agent's.
+// Inspector (DevTools) ports: every Worker process gets its own, 9229 + slot + offset, at every offset. Before, wrangler and the
+// Vite plugin each took "the first free port from 9229", and processes started together could pick the same one: two of them
+// starting at once was seen to crash the jobs Worker (`bind(): … os error 10013`, CLOUD-1 proof). A port that is already taken
+// (another program) falls back to that old automatic choice (`freeInspectorPort`), so nothing fails that worked before.
 // Allowed offsets: 0, 100, 200 … 900 (a test proves no two of them share a port).
 //
-// Pure functions, except `portOffset()`'s default argument (process.env), so the tests never depend on the caller's environment.
+// Pure functions, except `portOffset()`'s default argument (process.env) and `freeInspectorPort` (it tries the port), so the tests
+// never depend on the caller's environment.
 import { readFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -24,7 +29,7 @@ export const BASE_PORTS = Object.freeze({
   jobs: 8787, // wrangler dev: the jobs Worker
 });
 
-/** The inspector (DevTools) port of each Worker process at a non-zero offset: 9229 + slot + offset. */
+/** The inspector (DevTools) port of each Worker process: 9229 + slot + offset. */
 export const INSPECTOR_BASE = 9229;
 const INSPECTOR_SLOT = Object.freeze({ admin: 0, portal: 1, jobs: 2, webWorker: 3, webE2e: 4 });
 
@@ -60,21 +65,38 @@ export const devPort = (name, offset = 0) => BASE_PORTS[known(name)] + parseOffs
 /** `http://localhost:<port>` of one dev server. */
 export const localOrigin = (name, offset = 0) => `http://localhost:${devPort(name, offset)}`;
 
-/** The inspector port to name for one Worker process, or undefined at offset 0 (wrangler and Vite pick a free one, as today). */
+/** The inspector port of one Worker process. */
 export function inspectorPort(name, offset = 0) {
   const n = parseOffset(offset);
   if (!Object.hasOwn(INSPECTOR_SLOT, name)) throw new Error(`dev ports: "${name}" has no Worker inspector`);
-  return n === 0 ? undefined : INSPECTOR_BASE + INSPECTOR_SLOT[name] + n;
+  return INSPECTOR_BASE + INSPECTOR_SLOT[name] + n;
 }
 
-/** Every port one set of dev servers may listen on at an offset (the inspector ports only where they are named). */
+/** Whether nothing listens on a local port yet (tries to listen on it for a moment). */
+export function isPortFree(port, host = "127.0.0.1") {
+  return new Promise((resolve) => {
+    const server = createServer();
+    server.once("error", () => resolve(false));
+    server.listen({ port, host, exclusive: true }, () => server.close(() => resolve(true)));
+  });
+}
+
+/**
+ * The inspector port to name for one Worker process: its own port when free, else undefined (wrangler and the Vite plugin then
+ * pick a free one themselves, as they did before CLOUD-1), with a note on stderr.
+ */
+export async function freeInspectorPort(name, offset = 0, isFree = isPortFree) {
+  const port = inspectorPort(name, offset);
+  if (await isFree(port)) return port;
+  console.error(`[dev] inspector port ${port} (${name}) is taken; the Worker picks a free one itself`);
+  return undefined;
+}
+
+/** Every port one set of dev servers listens on at an offset. */
 export function portsOf(offset) {
   const n = parseOffset(offset);
   const ports = Object.keys(BASE_PORTS).map((name) => devPort(name, n));
-  for (const name of Object.keys(INSPECTOR_SLOT)) {
-    const p = inspectorPort(name, n);
-    if (p !== undefined) ports.push(p);
-  }
+  for (const name of Object.keys(INSPECTOR_SLOT)) ports.push(inspectorPort(name, n));
   return [...new Set(ports)];
 }
 
@@ -120,21 +142,22 @@ function shiftedVars(app, names, offset, repoRoot) {
   ]);
 }
 
-const inspectorArgs = (name, offset) => {
-  const p = inspectorPort(name, offset);
-  return p === undefined ? [] : ["--inspector-port", String(p)];
-};
-
 /**
  * The command one dev server runs, as `{ app, bin: [package, binName], args, env }`: `app` is the folder under apps/ it runs in,
  * `bin` the package whose binary runs (the launcher scripts/dev.mjs resolves it to a file and runs it with this Node), `env` the
- * extra environment. At offset 0 the arguments are exactly the ones the apps' scripts used before CLOUD-1.
+ * extra environment. At offset 0 the ports are the ones the apps' scripts used before CLOUD-1; the only addition is the inspector
+ * port. `opts.inspector`: the inspector port to name (default: the Worker's own; `undefined` names none, so wrangler picks one).
  * @param {"web" | "webWorker" | "webE2e" | "admin" | "portal" | "jobs"} name
+ * @param {{ inspector?: number }} [opts]
  */
-export function devCommand(name, offset = 0, repoRoot = REPO_ROOT) {
+export function devCommand(name, offset = 0, repoRoot = REPO_ROOT, opts = {}) {
   const n = parseOffset(offset);
   const port = String(devPort(name, n));
   const env = registryEnv(repoRoot, n);
+  const inspectorArgs = () => {
+    const p = "inspector" in opts ? opts.inspector : inspectorPort(name, n);
+    return p === undefined ? [] : ["--inspector-port", String(p)];
+  };
   switch (name) {
     case "web":
       return { app: "web", bin: ["astro", "astro"], args: ["dev", "--port", port], env: {} };
@@ -147,7 +170,7 @@ export function devCommand(name, offset = 0, repoRoot = REPO_ROOT) {
         args: [
           "dev",
           ...(n === 0 ? [] : ["--port", port]),
-          ...inspectorArgs(name, n),
+          ...inspectorArgs(),
           ...shiftedVars("web", ["FORMS_ALLOWED_ORIGINS"], n, repoRoot),
         ],
         env,
@@ -161,7 +184,7 @@ export function devCommand(name, offset = 0, repoRoot = REPO_ROOT) {
           "dev",
           "--port",
           port,
-          ...inspectorArgs(name, n),
+          ...inspectorArgs(),
           "--var",
           `FORMS_ALLOWED_ORIGINS:${localOrigin(name, n)}`,
         ],
@@ -182,7 +205,7 @@ export function devCommand(name, offset = 0, repoRoot = REPO_ROOT) {
           port,
           "--persist-to",
           "../../.wrangler/state",
-          ...inspectorArgs(name, n),
+          ...inspectorArgs(),
           ...shiftedVars("jobs", ["ADMIN_URL", "PORTAL_URL", "EMAIL_ASSET_BASE"], n, repoRoot),
         ],
         env,
