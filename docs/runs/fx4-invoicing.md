@@ -542,3 +542,68 @@ Everything is fixed in this task. L4's record is done by the lead (docs/13).
 - **Designer** (`fix/fx4-r1-d`, when the browser is free): H2, M1 (admin and portal), M3, L1, L2, L5.
 
 Then a re-check (reviewer, Opus high), with H1 and H2 re-run live.
+
+### Fix round 1 after the review, builder report (builder, Opus 5.5 high, 2026-10-29)
+Branch `fix/fx4-r1-b` from `origin/fix/fx4-invoicing` (e31a6099). One commit per item: H1 3fa327fb, M2 8fff219d, L3 6eab67ad, L4 b95f479a, plus this report.
+
+**Skills loaded:**
+- `cloudflare:workers-best-practices`: the H1 change is pure request-shape logic in `resolveLines`. No new per-request state, no `import()`, no binding.
+- `cloudflare:wrangler`: no config, binding or var changed, so no `wrangler types` and no deploy.
+- Not loaded: `cloudflare:workers-profiling` (no CPU-sensitive path changed), `frontend-design` (no screen), `code-review`/`security-review` (reviewer skills).
+
+**H1 (`apps/admin/worker/quote-model.ts` `resolveLines`):** a new custom line now takes the default SAC only when its `sac` key is absent (`l.sac === undefined ? newCustomSac : l.sac`). An explicit `null` stays null, so `line_sac_missing` blocks the issue.
+- Paths checked: `resolveLines` has two callers, the proposal and estimate save (`document-save.ts:243`) and the invoice draft save (`invoices.ts:883`); both pass `settings.tax.defaultSac || null`. The route schema (`document-save.ts:81`) takes `sac` as optional and nullable, six digits.
+- SPA (`lib/documents.ts` `lineIn`, shared by both editors): a custom line always sends `sac` (`nul(l.sac)`: the value, or `null` when empty), and a new line is prefilled from `newLineSac` (`routes/documents/lines.tsx:178`). So the screen sends the default as a value, and a cleared field as `null`, which now stays cleared. Only an API caller that leaves the key out gets the default.
+- Existing and catalogue lines are unchanged.
+- `default-sac.test.ts`: the old "null is the same as none" test is flipped (a line with a SAC, a line with `null` and a line without the key give `["998316", null, "998313"]` and the blocker on line 2). New tests:
+  - "a new custom line sent with `sac: null` stays null and the issue is blocked": the issue is 409 `issue_blocked` with `line_sac_missing`, and no number is assigned;
+  - "a new custom line sent without `sac` takes the default";
+  - the same for a proposal draft (`[null, "998314"]`).
+
+**M2 (`apps/admin/src/lib/audit.ts` `ENTITY_LABELS`):** added `lead` "Leads", `care_plan` "Care plans", `time_log` "Time" and `report` "Reports" (the sidebar's approved words, unmarked), and `document_send` `Y("Document sends")` (new, marked). The record filter (`routes/audit.tsx`) lists every entry of `ENTITY_LABELS`, so all five are offered with no screen change.
+- `audit-labels.test.ts` has a new scan, `writtenEntityTypes`, over the same writers as the action scan (admin and portal Workers, jobs, `packages/db`, `scripts/*.mjs`, tests left out). It reads:
+  - every `entityType: …`: literals and ternaries; pass-throughs (`m.entityType`, `r.entity_type`, type annotations, the schema column) are skipped; any other dynamic value fails until it is listed in `DYNAMIC_ENTITY`, which is empty today;
+  - in hand-written `INSERT INTO audit_log (…)` SQL, the literal that follows the action literal.
+- It fails on any written type without a label. It also fails on a label that nothing writes, unless that label is listed in `LABELLED_NOT_WRITTEN` with a reason. Further checks: the 07-Y mark, the sidebar words, unique filter words, and that the filter maps `ENTITY_LABELS`.
+- Mutation check: removing `time_log` from the labels fails the scan with `time_log (worker/time-logs.ts)`. Restored afterwards.
+
+**L3 (issue order of document numbers):** new `compareDocNumbers` in `packages/core/src/numbering.ts`, Worker-safe and re-exported by `gst/types.ts`.
+- Order: series as text, then the integer at the end (compared as digit strings, so there is no 2^53 limit), then the full text, so the order is total. A number with no trailing digits sorts after its series' numbered ones.
+- `byDateThenNumber` (`gst/sections.ts`) is now date, then `compareDocNumbers`, then id. The cdnr, cdnur and b2b row order and the blocking `tax_only_note_manual` warnings (built from the same sorted items) follow it.
+- The same text sort was in three more GST lists and the SPA list, all fixed the same way (date, number, id):
+  - `salesRegisterRows` (`gst/registers.ts`, id = `docId`);
+  - `edfRows` (`gst/edf.ts`);
+  - `realisationRows` (`gst/realisation.ts`);
+  - the SPA's `byUrgency` (`lib/reports.ts`), which already imported `@techaust/core` and gains no gst value import.
+- `noteLedgerRows` (`lib/notes.ts`) is unchanged: it already did this.
+- Tests (`packages/core/test/gst/number-order.test.ts`):
+  - helper cases and fast-check properties (antisymmetric, equal only when identical, transitive, matches the integers);
+  - 10 same-day credit notes put in shuffled, coming out /1 to /10 in cdnr and in the sales register;
+  - 10 same-day tax-only notes, whose warnings come out in issue order;
+  - EDF and realisation with /1 to /10;
+  - an id tie-break case;
+  - `reports.test.ts` checks `byUrgency` /9, /10, /11, /100.
+- The core coverage gate (gst 100 % branches) holds.
+
+**L4 (`packages/core/test/gst/tax-only-debit.test.ts`):** two cdnur cases, worked out by hand:
+- **EXPWP:** a USD export with IGST, two rates, ₹48,000.00 at 80; the tax-only debit note is USD 12.00 = ₹960.00 IGST, split ₹80.00 at 5 % and ₹880.00 at 18 %. Two cdnur rows (type D, EXPWP, taxable 0, IGST only) and one blocking warning: section `cdnur`, GSTIN null, place of supply 96, `byRate` per rate, IGST 96,000 paise.
+- **B2CL:** an inter-state invoice to an unregistered client above the B2CL limit; the tax-only note has ₹10.01 IGST. One cdnur B2CL row and a blocking warning with no GSTIN, place of supply 27 and IGST 1,001.
+
+**Commands and results** (heavy ones through `tools/heavy.sh`):
+- `pnpm exec biome check --write <changed files>`: clean each time.
+- `vitest run` on `default-sac`, `invoices-issue` and `documents` (admin): 84 passed. `.logs/fx4b-sac.log`
+- `vitest run` on `audit-labels` and `screens` (admin): 34 passed. `.logs/fx4b-audit.log`. The mutation run failed as intended: `.logs/fx4b-audit-mut.log`.
+- `pnpm --filter @techaust/core test`: the first run had every test passing but stopped on the gst 100 % branch gate (the id tie-break in `edf.ts:151` and `realisation.ts:258` was never reached). After the tie test it passed: 91 files, 1,820 tests. `.logs/fx4b-core.log`
+- `pnpm test`: exit 0, no timeouts. `.logs/fx4b-test.log`
+  - admin 3,386, core 1,820, jobs 531, portal 631, db 478, pdf 348;
+  - web 510 (17 skipped), ui 469 (2 skipped), auth 135, email 128.
+- `pnpm check`: exit 0. Lint, typecheck, binding, content, worker config, SPA headers and migration guards all passed (53 migrations). `.logs/fx4b-check.log`
+
+**Not verified:**
+- No live browser run of H1. The reviewer's re-check runs it live, as the triage says.
+- The SPA's `lineIn` behaviour was checked by reading the code, not by an SPA test.
+
+**Placeholder lines (07-Y, new):**
+1. The audit record type `document_send`: "Document sends". "Leads", "Care plans", "Time" and "Reports" are the sidebar's approved words, so they are unmarked.
+
+**Open question for the lead:** `document_send` is never written to `audit_log`. Sends are audited on the `document` record; the type appears only in `email_log`. The label was added as the brief asked, so the record filter now offers "Document sends", which always returns nothing. The test records this in `LABELLED_NOT_WRITTEN`. Recommendation: drop the label and its filter option, or keep it only if a send-level audit row is planned. One line either way.
