@@ -546,7 +546,12 @@ function LeadView({
                   type="button"
                   id="lead-contact-edit"
                   className="btn btn--text"
-                  onClick={() => setContact(contactOf(lead))}
+                  onClick={() => {
+                    // The Edit button goes as the form opens: the focus moves to its first field (fix round 3, 8).
+                    setEmailError(null);
+                    setContact(contactOf(lead));
+                    focusLater("lead-name");
+                  }}
                 >
                   <Pencil size={16} />
                   Edit<span className="visually-hidden"> contact</span>
@@ -668,6 +673,11 @@ function LeadView({
             canEdit={canWrite && lead.source === "manual"}
             answers={answers}
             onAnswers={setAnswers}
+            onOpen={() => {
+              // The Edit button goes as the form opens: the focus moves to its first field (fix round 3, 8).
+              setAnswers({ base: answersOf(lead), value: answersOf(lead) });
+              focusLater("lead-currency");
+            }}
             busy={busy === "answers"}
             error={error?.where === "answers" ? error.text : null}
             onCancel={() => {
@@ -860,6 +870,7 @@ function Enquiry({
   canEdit,
   answers,
   onAnswers,
+  onOpen,
   busy,
   error,
   onCancel,
@@ -869,6 +880,8 @@ function Enquiry({
   canEdit: boolean;
   answers: AnswersDraft | null;
   onAnswers: (a: AnswersDraft | null) => void;
+  /** Opens the edit (from the stored answers) and moves the focus into it. */
+  onOpen: () => void;
   busy: boolean;
   error: string | null;
   onCancel: () => void;
@@ -921,7 +934,7 @@ function Enquiry({
               type="button"
               id="lead-answers-edit"
               className="btn btn--text"
-              onClick={() => onAnswers({ base: answersOf(lead), value: answersOf(lead) })}
+              onClick={onOpen}
             >
               <Pencil size={16} />
               Edit<span className="visually-hidden"> enquiry</span>
