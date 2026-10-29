@@ -522,10 +522,14 @@
    label left and amount right in tabular figures; a note under an amount is muted. Overdue money carries the warning icon and its
    count in words. With two currencies each has its own group under its code. */
 
-/* On a tablet the side column runs the page's width: the rows keep a reading width, so a label stays near its amount. */
+/* On a tablet the panel runs the page's width: each currency's group keeps a reading width, so a label stays near its amount and the
+   rule between two currencies is as wide as their rows (FX-3 review 10). */
+.acct__group {
+  max-width: 30rem;
+}
+
 .acct__rows {
   display: grid;
-  max-width: 30rem;
   margin: 0;
 }
 
