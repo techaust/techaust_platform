@@ -94,7 +94,8 @@ export type TaxCheck =
 const fail = (code: TaxErrorCode, message: string): TaxCheck => ({ ok: false, code, message });
 
 /**
- * The tax identity of a client as one rule (ADM-CLI-01, owner answer Q1 of 2026-10-25), VERIFY WITH CA/LEGAL:
+ * The tax identity of a client as one rule (ADM-CLI-01, owner answer Q1 of 2026-10-25; Researched 2026-10-28, s.12 IGST and Rule 46 CGST
+ * (08-C RA-12, RA-05)):
  * - registered: India, a valid GSTIN; the state defaults to the GSTIN's, a different one is a warning (never a block);
  * - unregistered: India and a state code (the place of supply for a client without a GSTIN);
  * - overseas: a country other than India, no GSTIN, no state.

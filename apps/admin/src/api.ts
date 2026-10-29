@@ -78,6 +78,7 @@ export type SeriesState = {
   lockReason: string | null;
 };
 export type GroupMeta = {
+  /** Which 08-C §5 list holds the group's open questions: "08-C §5: CA", or "08-C §5: CA and lawyer" (FX-3; was a "VERIFY WITH" tag). */
   verify?: string;
   /** M5.2 (Settings › Tax): today's LUT reminder, worked out by the server from the saved letters. */
   lutStatus?: {
