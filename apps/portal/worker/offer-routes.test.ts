@@ -538,6 +538,41 @@ describe("POST /offers/:id/accept: the evidence row and its effects [ADM-PROP-08
     expect(await countOf("acceptances", "document_id = ?", v1.id)).toBe(0);
     expect((await accept(v2.id, await sign(f.a.finance))).status).toBe(200);
   });
+  it("FX-3 (A4 9): a newer version frozen but not rendered yet is 409 newer_version_pending (no id to open); once rendered, superseded points to it", async () => {
+    const f = await fixtures();
+    const cookie = await sign(f.a.finance);
+    const v1 = await mkOffer(f.a);
+    const v2 = await mkOffer(f.a, { groupId: v1.groupId, version: 2, number: v1.number, rendered: false });
+    for (const res of [await accept(v1.id, cookie), await decline(v1.id, cookie)]) {
+      expect(res.status).toBe(409);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(body).toMatchObject({
+        error: { code: "newer_version_pending", message: "A newer version is being prepared" },
+      });
+      expect(body.latestId).toBeUndefined();
+    }
+    expect(await countOf("acceptances", "document_id = ?", v1.id)).toBe(0);
+    expect((await one<{ status: string }>("SELECT status FROM documents WHERE id = ?", v1.id))?.status).toBe(
+      "sent",
+    );
+    // v2 rendered, v3 frozen and not: still pending (v2 can't be accepted either, so pointing to it would be wrong)
+    // the jobs Worker's two writes (apps/jobs/src/pdf.ts): the snapshot key, then the PDF
+    await env.DB.prepare(
+      "UPDATE documents SET snapshot_r2_key = 's' WHERE id = ?1 AND snapshot_r2_key IS NULL",
+    )
+      .bind(v2.id)
+      .run();
+    await env.DB.prepare(
+      "UPDATE documents SET pdf_r2_key = 'k', pdf_sha256 = ?2 WHERE id = ?1 AND pdf_sha256 IS NULL",
+    )
+      .bind(v2.id, `pdfsha-${v2.id}`)
+      .run();
+    const res2 = await accept(v1.id, cookie);
+    expect(await res2.json()).toMatchObject({ error: { code: "superseded" }, latestId: v2.id });
+    await mkOffer(f.a, { groupId: v1.groupId, version: 3, number: v1.number, rendered: false });
+    expect(await codeOf(await accept(v1.id, cookie))).toBe("newer_version_pending");
+    expect(await codeOf(await accept(v2.id, cookie))).toBe("newer_version_pending");
+  });
   it("refuses a declined offer (409 already_decided)", async () => {
     const f = await fixtures();
     const o = await mkOffer(f.a);
