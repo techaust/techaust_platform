@@ -670,14 +670,6 @@ export const leads = new Hono<AppEnv>()
     if (!lead) return err(c, NOT_FOUND, 404);
     if (lead.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
     if (f.country && !isCountryCode(f.country)) return err(c, BAD_REQUEST, 400);
-    // The quote answers as the lead will hold them, checked as at creation: a band is one of its own currency's, the timeline the form's.
-    // The UPDATE below runs only on this same version of the row (`updated_at`), so what is checked here is what it changes.
-    const nextCurrency = f.currency !== undefined ? f.currency : (lead.currency as Currency | null);
-    const nextBand = f.budgetBand !== undefined ? f.budgetBand : (lead.budget_band as string | null);
-    const nextTimeline = f.timeline !== undefined ? f.timeline : (lead.timeline as string | null);
-    if (nextBand !== null && (nextCurrency === null || !isBudgetBand(nextCurrency, nextBand)))
-      return err(c, BAD_REQUEST, 400);
-    if (nextTimeline !== null && !isTimeline(nextTimeline)) return err(c, BAD_REQUEST, 400);
     if (f.ownerId && !(await activeStaff(db, f.ownerId))) return err(c, OWNER_INVALID, 400);
 
     // field name (as the timeline names it), column, wanted value
@@ -702,8 +694,28 @@ export const leads = new Hono<AppEnv>()
       (w): w is [string, string, string | number | null] => w[2] !== undefined && w[2] !== lead[w[1]],
     );
     if (!changes.length) return c.json({ ok: true, changed: false, updatedAt: lead.updated_at });
-    if (lead.source !== "manual" && changes.some(([, col]) => QUOTE_ANSWER_COLUMNS.includes(col)))
-      return err(c, ANSWERS_FIXED, 409);
+    // The quote answers are checked only when the request changes one of them, so an edit of the owner or the contact never
+    // re-judges what the lead already holds (a lead may carry a band or a timeline the form no longer offers).
+    const changed = new Set(changes.map(([, col]) => col));
+    if (QUOTE_ANSWER_COLUMNS.some((col) => changed.has(col))) {
+      // The source rule first: a website lead's answers are the visitor's own words, whatever the new values.
+      if (lead.source !== "manual") return err(c, ANSWERS_FIXED, 409);
+      // A manual lead's changed answers, checked as at creation, each pair only when it changes. The UPDATE below runs only on
+      // this same version of the row (`updated_at`), so what is checked here is what it changes.
+      // - The band and its currency, when either changes: a band needs its own currency (core `isBudgetBand`). A stored band is in
+      //   the stored currency's amounts, so a new currency keeps it only when that currency has the same band ("Not sure");
+      //   otherwise the request changes or clears the band with it (the SPA's `withCurrency` does). A band the form no longer
+      //   offers is a band of no currency, so it can't move to another currency either, and a currency change alone is a 400.
+      if (changed.has("currency") || changed.has("budget_band")) {
+        const nextCurrency = f.currency !== undefined ? f.currency : (lead.currency as Currency | null);
+        const nextBand = f.budgetBand !== undefined ? f.budgetBand : (lead.budget_band as string | null);
+        if (nextBand !== null && (nextCurrency === null || !isBudgetBand(nextCurrency, nextBand)))
+          return err(c, BAD_REQUEST, 400);
+      }
+      // - The timeline, only when it changes: it stands alone, so a stored band never decides a timeline edit (nor the reverse).
+      if (changed.has("timeline") && f.timeline != null && !isTimeline(f.timeline))
+        return err(c, BAD_REQUEST, 400);
+    }
 
     const t = Date.now();
     const sets = changes.map(([, col], i) => `${col} = ?${i + 4}`);

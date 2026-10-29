@@ -1,4 +1,4 @@
-Status: open
+Status: PR opened (2026-10-29)
 Tier: B
 Usage: builder claude-opus-5-5/high, 5-h 0 → 9 % (skills: cloudflare:workers-best-practices, cloudflare:wrangler)
 
@@ -681,3 +681,439 @@ Split so no two agents touch the same files:
 - **Designer** (`fix/fx3-fix-d`, after the FX-4 review frees the browser): items 1, 2, 3, 5, 10 and 11, plus Figures first on phones.
 
 Item 1's `wrongFile` line changes, a 07-Y amendment: "Use a PNG or JPEG image up to 10 MB. We store it as a PNG of up to 256 KB."
+
+### Fix round, builder report
+_(builder claude-opus-5-5/high, branch `fix/fx3-fix-b` from `origin/fix/fx3-admin-portal` 441e5ce0, 2026-10-29.)_
+
+#### Skills
+- `cloudflare:workers-best-practices`: loaded. It confirmed the approach of keeping the figures in one D1 batch (no extra round trip) and keeping every query typed against the generated `Env`. It changed no code.
+- `cloudflare:wrangler`: loaded for the Worker and D1 work. No config, binding or command changed, so it shaped nothing.
+- Not loaded:
+  - `cloudflare:workers-profiling`: no CPU budget or cold-start work.
+  - `frontend-design`: no screens.
+  - `code-review` / `security-review`: those are the reviewer's.
+
+#### Per item (one commit each)
+- **4, `698eb587`** `fix(leads)` [ADM-LEAD-03] (`apps/admin/worker/leads.ts`)
+  - The quote-answer checks now run only when the request **changes** currency, band or timeline. A request that sends the stored value unchanged changes nothing, so nothing is judged.
+  - Inside that check, the source rule comes first: a website lead's change is always 409 `lead_answers_fixed`. Only a manual lead's values reach the band and timeline checks.
+  - New test in `leads-api.test.ts`:
+    - a website lead holding an unknown band and timeline accepts an owner, name and phone edit;
+    - a manual lead with an unknown band accepts a company edit;
+    - on a website lead, `currency: "USD"`, `currency: null` and `timeline: "next-year"` are each 409 `lead_answers_fixed`, and nothing is written. Before this fix the first was a 400.
+- **6, `cce34bc0`** `refactor(documents)` [ADM-PROP-02]
+  - `apps/admin/worker/service-fill.ts`:
+    - `TEXT_TOKENS` is now `Object.keys(TEXT_TOKEN_KINDS)`.
+    - `TOKEN_FIELD` is a `Map` built by joining `GAP_FIELDS` with `TEXT_TOKEN_KINDS`: `service.<field>` maps to `<field>` when the kinds agree.
+    - A new test proves every token has its field, and that the field's section kind is the token's own kind.
+  - `packages/core/src/documents.ts`: `sectionsFromTemplate` takes each section's kind from `templateKinds`, and the missing required sections come from the same list.
+  - Behaviour is unchanged: the core documents tests (47) and the admin service-fill, documents and catalogue tests (129) pass unchanged.
+- **7, `132d0635`** `perf(offers, figures)` [POR-05, ADM-CLI-03, ADM-PRJ-05]
+  - **`REREAD_SQL`** (`apps/portal/worker/offer-sql.ts`) runs the "newest frozen version above" lookup once and joins that row by key (`LEFT JOIN documents l ON l.id = (…)`); `latest_id` and `latest_pdf` both come from it.
+    - New EXPLAIN test in `offer-routes.test.ts`: exactly one correlated subquery, `l` searched by primary key, no table scan.
+    - The existing `newer_version_pending` / `superseded` tests pass unchanged.
+  - **The figures reads** (`packages/db/src/reports.ts`):
+    - `CLIENT_FIGURES_SQL` now seeks with `d.client_id = (SELECT z.id FROM clients z WHERE z.id = ?1 AND z.anonymised_at IS NULL)`.
+    - `PROJECT_BILLED_SQL` does the same through the project's client.
+    - Once the client is anonymised the key is NULL, so SQLite skips the index seek and none of its documents is read.
+    - I tried a plain `NOT EXISTS` guard first. The VDBE dump showed it is checked once per index entry, and it still read 8 rows for 7 documents, so I replaced it.
+    - The batches in `figures.ts` and `projects.ts` keep one round trip and their `available: false` answers; only a comment changed in `figures.ts`.
+  - **Tests:**
+    - `figures.test.ts`: for an anonymised client the figures read returns no rows and reads at most 2 rows; for an anonymised client's project, at most 3 rows. With the documents read they would be 14 and 12.
+    - `packages/db/test/reports.test.ts`: the anonymised check is a non-correlated lookup by key. The existing index-seek assertions and the 200-document bound (≤ 402 rows) still hold.
+- **9, `62aa3943`** `test(compliance)` [ADM-SET-09] (`packages/core/test/verify-tags.test.ts`)
+  - The scan now also covers `tools/` and `.github/`, and the file types `.sql`, `.yml`, `.yaml`, `.sh` and `.ps1`.
+    - `.ps1` is my addition: `tools/` holds one PowerShell script, and leaving it out would leave a hole in "scan tools/".
+  - The migrations are skipped by their path only (`packages/db/migrations`), so a `.sql` file anywhere else is scanned.
+  - Dot folders below the tops and `node_modules`, `dist`, `coverage`, `generated`, `fonts` and `brand` are skipped as before.
+  - The count check (`NO_ROW_YET`) is unchanged; the widened scan found no new tag.
+  - New test: the scan reaches `tools/heavy.sh`, `.github/workflows/ci.yml` and `packages/db/src/triggers.ts`; no migration file is in it; the folder rule and the extension list behave as stated.
+
+#### Commands (heavy ones through `tools/heavy.sh`)
+- Per item:
+  - admin `leads-api.test.ts`: 32/32;
+  - core `documents.test.ts`: 47/47;
+  - admin service-fill, documents and catalogue: 129/129;
+  - portal `offer-routes.test.ts`: 63/63;
+  - db `reports.test.ts`: 26/26;
+  - admin figures and projects: 37/37;
+  - core `verify-tags.test.ts`: 3/3.
+- `pnpm exec biome check` on every changed file: clean.
+- **`pnpm check`**: exit 0 (`.logs/fx3b-check.log`). That covers lint, typecheck in every package, the web binding guard, the content lint, the Worker config guard, the SPA headers and the migration guard (52 migrations).
+- **`pnpm test`**: exit 0 with no timeouts (`.logs/fx3b-test.log`):
+  - core 1,801, db 471, email 128, pdf 340, auth 135;
+  - ui 469 (2 skipped), web 510 (17 skipped), portal 631, jobs 528, admin 3,349.
+
+#### Not verified
+- `pnpm build` was not run: no build was asked for, and the brief stays inside Worker code. So the Worker byte budget for these SQL-text changes isn't measured. They add a few hundred bytes to the admin API and portal bundles.
+- No staging or hosted check.
+- The rows-read figures come from local workerd D1 (miniflare), not from hosted D1.
+
+#### Open questions
+- None.
+### Fix round, designer report
+Designer: claude-opus-5-5 (high), 2026-10-29 ~16:40–18:00 IST, branch `fix/fx3-fix-d` from `origin/fix/fx3-admin-portal` (441e5ce0). 9 commits plus this report; only `fix/fx3-fix-d` pushed.
+
+#### Skills
+- `frontend-design:frontend-design` (loaded first): kept every change inside the existing panels, rules and tokens. What it changed: Figures first is done by reading order (the panel is the page's first child) rather than a visual `order:` trick, so sight and Tab agree; the rule between currencies is part of the group's reading width, not a second decoration; a note's headings keep the author's size while their levels follow the page's outline.
+- `dataviz`: loaded for the Figures panel (stat figures). Applied: the lead figure and ledger rows unchanged, text in text tokens, the rule as wide as the figures it separates. No chart, so no palette run.
+- Not loaded: Cloudflare skills (no Worker, binding or config change; one Worker test only), `code-review`/`security-review` (reviewer's).
+
+#### Per item (files under `apps/admin/` unless named)
+- **1, signature (167a34c6):** `src/lib/pdf.ts`: `SIGNATURE_INPUT_MAX` = 10 MB; `signatureFileOk` checks only the type and 1 byte to 10 MB; `SIGNATURE_COPY.wrongFile` is now `Y("Use a PNG or JPEG image up to 10 MB. We store it as a PNG of up to 256 KB.")`. `src/lib/signature-scale.ts`: new `prepareSignature(file, io)` runs the checks in order (type and 10 MB, then decode and scale, then the 256 KB on the PNG that comes out, `tooDetailed`); `src/routes/settings/signature.tsx` uses it. Tests: `signature-scale.test.ts` (a 1 MB 3000 × 4000 phone photo scaled to a 300 × 400 PNG and handed on; exactly 10 MB read; 11 MB and 10 MB + 1 refused before decoding; the 256 KB edge on the output), `worker/settings-signature.test.ts` (that 300 × 400, 180 KB PNG is stored), `pdf.test.ts`, `batch-review.test.ts`. Live: a 1.37 MB phone-style JPEG became a 300 × 400 PNG of 75,711 bytes, stored, with the "We made the image smaller" line; an 11 MB file shows the new line.
+- **2, convert (3d46a736, then 8ba36bab):** the first commit called `onConverted()` (close and reload) before `navigate`. **Checked live, that was wrong:** the reload gives the lead a new `updatedAt`, `LeadView` is keyed by it, so the page started again, the leave question went with the old page and the proposal never opened. Now (8ba36bab): `ConvertDialog` calls a new `onOpening()` (closes the dialog, arms a reload) and then `navigate`; `UnsavedChangesGuard` (`src/components/unsaved.tsx`) gains an optional `onStay`, and the lead page reloads only on "Stay on this page" (or Escape). `onConverted` stays for the `already_converted` "Reload the latest" button. Live with unsaved lead edits: the convert dialog closes and the leave question stands alone; "Stay" shows the lead converted (no Convert button, client and draft proposal linked) with the edits kept; "Leave without saving" opens `/proposals/:id`.
+- **3, e2e sweep (4cf6821e):** `e2e/sweep.spec.ts`: the lists are read with their own first page (no `?limit=1`), each must answer 200 with its key; a lead, a client and a template must be found; the record pages found are logged. The keyboard test also visits Settings › Numbering at 1024 and fails when it meets no `[data-scrolls]` box (it met 4). `e2e/global-setup.ts` adds one labelled sample lead ("Sample Lead (e2e sample)", `sample-lead@example.test`) over the API when the local database has none. The sweep now visits a lead, a client, a project, a document, a catalogue item and a template (local database: no care plan or invoice to visit).
+- **New, found by the fixed sweep (69825606):** `/projects/:id` failed axe `heading-order`: a note that opened with `##` was drawn as an h4 straight under the panel's h2. `src/components/markdown.tsx` `noteHeadingTags`: a note's shallowest heading is an h3 and no heading goes more than one level below the one before; the size class stays the author's (`md__h--N`). Test in `src/lib/projects.test.ts`.
+- **5, template heading (066ce0e9):** `src/lib/catalogue.ts` `templateRuleFields` (rules by field; `templateRuleErrors` now derives from it for the read view); `src/routes/catalogue/template.tsx`: a Catalogue-text placeholder in a heading and an unknown placeholder in a heading land on `tpl-s{i}-heading` (its own line `tpl-s{i}-heading-rule`, `aria-invalid`, `aria-describedby`), and the summary link is `#tpl-s{i}-heading`. Live: Save, then Tab and Enter on the summary link, focuses the heading input. Test in `lib/catalogue.test.ts`.
+- **10, currency rule (a43b9317):** `src/clients.css`: the 30rem reading width moved from `.acct__rows` to `.acct__group`, so the rule between two currencies is as wide as their rows (both 480 px at 768).
+- **11, project Overview (8acac0a1):** `src/routes/projects/project.tsx`: every return to the Overview from another tab reads the page again (quietly), from an effect on the tab, so any path counts. The old rule reloaded only on a direct switch from Notes or Files; Notes, then Milestones, then Overview showed "No notes yet". Live: that path now shows the new note.
+- **Figures first on one column (5dda1d68):** `src/routes/clients/overview.tsx`: the Figures panel is the page's first child (out of the side column), so on phones and tablets it sits straight under the page heading, and the first Tab stop after the tab panel is "Open the statement". `src/clients.css`: from 64rem, `.client-overview:has(> .acct)` places it in column 2, row 1, the main column spans both rows, and the rest of the side column (primary contact, linked records) follows in row 2. **Changed behaviour to note:** in this layout the side column scrolls with the page (it was sticky; a sticky column would slide under the panel). Without a finance role, or for an anonymised client, the page is as before (sticky side column). The project Overview (which shares `client-overview`) is unaffected (its panel stays inside its side column).
+
+#### Shots (`.logs/shots/fx3-fix-d/` in this worktree; `-SAMPLE` = the finance answer replaced in the page by labelled sample figures, two currencies with overdue and a credit note; no past-due invoice can be made locally)
+- `client-figures-first-375-dark-on-light-os-SAMPLE.png`: phone, Figures straight under the heading and the tabs.
+- `client-figures-first-empty-375-light-on-light-os.png`: the real empty state ("Nothing invoiced yet.") first on a phone.
+- `client-figures-first-768-light-SAMPLE.png`: full page at 768: Figures, then Details, Tax and billing, Notes, Primary contact.
+- `client-figures-rule-768-dark-on-light-os-SAMPLE.png`: item 10, the rule between INR and USD as wide as the rows.
+- `client-figures-first-focus-768-dark-SAMPLE.png`: keyboard: the first Tab stop is "Open the statement", focus ring visible.
+- `client-figures-side-1024-light-on-dark-os-SAMPLE.png`, `client-figures-side-1280-light-SAMPLE.png`, `client-figures-side-1280-dark-on-light-os-SAMPLE.png`, `client-figures-side-1600-dark-on-light-os-SAMPLE.png`: from 64rem, Figures heads the side column, Primary contact below it, 16 px apart as in the main column.
+- `project-overview-notes-after-milestones-1280-light.png`: item 11, the Overview after Notes, then Milestones: both notes shown.
+- `lead-convert-unsaved-leave-question-alone-light.png`: item 2, the leave question alone after a convert with unsaved edits (browser at about 1536 px).
+- `lead-convert-stay-reloaded-converted-light.png`: after "Stay": no Convert button, the edit kept.
+- `template-heading-rule-focus-1280-light.png`: item 5, the rule line under the heading input, which has focus from the summary link.
+- `template-heading-unknown-375-dark-on-light-os.png`, `template-heading-unknown-1024-light-on-dark-os.png`: an unknown placeholder in the heading, on the heading.
+- `signature-1mb-phone-photo-stored-1280-light.png`: item 1, the 1.37 MB photo stored as a 300 × 400 PNG with the scaled line.
+- `signature-11mb-refused-1280-light.png`, `signature-11mb-refused-375-dark-on-light-os.png`: the 11 MB file refused with the amended line.
+- axe (WCAG 2.2 AA + best practice, moderate and up) run in the page on every changed screen at 375, 768, 1024, 1280 and 1600 in both in-app themes against the opposite OS theme: clean, and no sideways scroll. (Two runs right after a theme switch reported `color-contrast` mid-transition; re-run after 800 ms, clean.) No console errors.
+
+#### Commands (heavy ones through `tools/heavy.sh`)
+- Local setup in this worktree: `pnpm dev:secrets`, `pnpm db:migrate:local`, `pnpm db:seed:local`, `pnpm portal:sample` (local only).
+- Targeted vitest while working: `signature-scale`, `pdf`, `batch-review`, `worker/settings-signature` (43/43), `catalogue` (23/23), `routes/leads` (14/14), `projects` (21/21).
+- `pnpm --filter @techaust/admin exec playwright test -g keyboard` (`.logs/fx3fd-e2e-kbd.log`): 1/1, met 4 boxes.
+- `pnpm --filter @techaust/admin typecheck`: exit 0 (twice).
+- `pnpm --filter @techaust/admin e2e`, first full run (`.logs/fx3fd-e2e-admin.log`): 4 of 6 failed, all on the new project page's `heading-order` (above); after 69825606 (`.logs/fx3fd-e2e-admin2.log`): **6/6 passed in 9.6 min**, record pages visited: lead, client, project, document, catalogue item, template.
+- Full `pnpm test` (`.logs/fx3fd-test.log`): exit 0, no timeouts: core 1,800, db 471, email 128, pdf 340, auth 135, ui 469 (2 skipped), web 510 (17 skipped), portal 630, jobs 528, admin 3,354.
+- `pnpm check` (the one whole-repository lint, last; `.logs/fx3fd-check.log`): exit 0; its 10 warnings and 8 infos are in files I didn't touch (pdf tests, db `reports.test.ts`, web `catalogue.ts`, core `public-text.ts`).
+- Dev server stopped, browser closed; no node, workerd or Chrome process left from this worktree.
+
+#### Not verified
+- Overdue and two-currency figures with real invoices (sample answers injected in the page, `-SAMPLE`); a care plan's and an invoice's record page in the sweep (none in the local database).
+- Safari, Firefox, NVDA, real phones; staging.
+- The Playwright tool wrote its page snapshots to the main checkout's `.playwright-mcp/` (git-ignored).
+
+#### Placeholder lines
+- Changed: `SIGNATURE_COPY.wrongFile` = "Use a PNG or JPEG image up to 10 MB. We store it as a PNG of up to 256 KB." (07-Y amendment, marked through `Y()`). No other new screen text. Sample data: the e2e lead and my local leads, project and notes are labelled "(sample)" / "(e2e sample)" with `@example.test` addresses, local database only.
+
+#### Open questions (lead's call)
+1. With Figures out of the side column, the client Overview's side column no longer sticks from 64rem when the Figures panel shows. Keep (recommended: a sticky column would slide under the panel), or ask for a different desktop arrangement?
+2. `UnsavedChangesGuard` gained an optional `onStay`; only the lead page uses it. Fine as a shared-part change?
+
+**Lead, after the fix round (2026-10-29 ~18:10 IST):** both reports are kept above. The designer's two open questions are accepted:
+1. From 64rem, the client Overview's side column scrolls with the page when the Figures panel is at its top (a fixed column would slide under the panel).
+2. `UnsavedChangesGuard` gains the optional `onStay`.
+
+The item-2 deviation from the brief is the right fix: reloading the lead would restart the page, so the lead reloads only when the person answers "Stay". Next: a re-check of the fix-round diff (reviewer, Opus high, live), then the PR.
+
+## Re-check of the fix round (reviewer claude-opus-5-5/high, live, 2026-10-29 ~18:15–19:00 IST, on d08f26ee): SEND BACK
+_(Summary by the lead; the full text is in the conversation record. Shots: `.logs/shots/fx3-recheck/` in the main checkout.)_
+
+**Every earlier finding is fixed** (1–7, 9, 10 and 11, plus Figures first on phones), checked live:
+- a 4 MB, 12 MP phone JPEG was stored as a 125 KB PNG; an 11 MB file is refused with the amended line;
+- convert with and without unsaved edits works;
+- the e2e sweep visits the lead, client, catalogue-item and template pages and meets 4 scroll boxes;
+- the heading rule focuses the heading;
+- the currency rule is 480 px at 768;
+- the Overview refetches;
+- Figures sit first at 375 and head the side column at 1280.
+
+**Results:**
+- `pnpm check`: exit 0.
+- `pnpm test`: exit 0, no timeouts. Admin 3,356, core 1,801, portal 631, jobs 528.
+- Admin e2e: 6 passed.
+
+**New findings:**
+- **A (high, WCAG 1.3.1):** `components/markdown.tsx:23` `noteHeadingTags` limits each heading to one below the previous *tag*. So `# Plan / ### Risks / ### Owners` gives h3, h4, **h5**: siblings announced as nested. Also `## A / ## B / # C` gives h3, h4, h3.
+  - Fix: a stack of open author levels, tag = depth − 1, capped at h5, plus tests.
+- **B (medium):** "Stay" after convert reloads the lead, which remounts `LeadView` (keyed by `updatedAt`). An unsaved quote-answers edit is lost, although the dialog promised staying keeps it (`lead.tsx:116,171,292-297`).
+- **C (medium, one line):** the error summary's `key={e.id}` collides when a heading breaks two rules (`form.tsx:78`). Use `${e.id}-${i}`.
+- **D (medium, from before FX-3):** every lead reload drops keyboard focus to `<body>` (`lead.tsx:116`).
+- **E (low):** the lead PATCH still judges the whole answer set when only the timeline or currency changes (`leads.ts:699-709`).
+- **F (low, information only):** at 64rem and wider, Tab reaches the Figures panel's link after the left column. That follows the accepted reading order; kept by the lead.
+- **G (low, one line):** the VERIFY scan leaves out `.jsonc`.
+- **H (low):** `createImageBitmap(file)` decodes at full resolution before scaling (`signature-scale.ts:98`). Use `resizeWidth`/`resizeHeight`.
+
+## Fix round 2 (lead's triage)
+All but F are fixed in this task.
+- **Builder** (`fix/fx3-fix2-b`): E and G.
+- **Designer** (`fix/fx3-fix2-d`): A, B, C, D and H. For B and D, either keep the lead view mounted across reloads (don't key it by `updatedAt`, and sync from props), or hold the answers edit in the drafts above the reload and restore focus to the control or panel heading that was used. Prefer the first if it's clean.
+
+Then a re-check (live: the heading cases, convert then Stay with an answers edit, focus after a lead save).
+
+### Fix round 2, builder report
+_(builder claude-opus-5-5/high, branch `fix/fx3-fix2-b` from `origin/fix/fx3-admin-portal` 7dc4a611, 2026-10-29.)_
+
+#### Skills
+- `cloudflare:workers-best-practices`: loaded. The change stays inside one Hono handler: no new round trip, no binding, typed against the generated `Env`. It changed no code.
+- `cloudflare:wrangler`: loaded because item G is about the `wrangler.jsonc` files. No config or command changed; it shaped nothing.
+- Not loaded:
+  - `cloudflare:workers-profiling`: no CPU or cold-start work.
+  - `frontend-design` / `dataviz`: no screens.
+  - `code-review` / `security-review`: those are the reviewer's.
+
+#### Per item (one commit each)
+- **E, `3f8ab558`** `fix(leads)` [ADM-LEAD-03] (`apps/admin/worker/leads.ts`, `leads-api.test.ts`)
+  - The source rule still comes first: on a website lead, any change to currency, band or timeline is 409 `lead_answers_fixed`.
+  - On a manual lead, each pair is now judged only when it changes:
+    - the band against its currency, when the currency or the band changes;
+    - the timeline, when the timeline changes. Only the new value is judged.
+  - So a stored band the form no longer offers can't make a timeline-only change fail, and a stored retired timeline can't make a band or currency change fail.
+  - **The decision (currency change with a stored band), by "a band needs its own currency":**
+    - A stored band is in the stored currency's amounts. A new currency keeps it only when that currency has the same band, which today means only "Not sure".
+    - A band the form no longer offers belongs to no currency, so it can't move to another one either. A currency-only change that keeps it is a 400.
+    - To change the currency, the request has to change or clear the band in the same save. The SPA's `withCurrency` / `answersPatch` already do that: a changed currency always sends the band it ends with, and drops one the new currency lacks.
+    - Clearing the currency while a band stays (even "Not sure") is a 400, as it was.
+  - New test, "FX-3 fix round 2 (ADM-LEAD-03)". Each case runs on a fresh manual lead.
+    - These save:
+      - a timeline change, or clearing the timeline, with a retired band;
+      - a band change, or a currency change with "Not sure", while the lead holds a retired timeline;
+      - a currency change with no band.
+    - A timeline that isn't the form's is still a 400.
+    - These are 400 and write nothing:
+      - a rupee band, or a retired band, with the currency changed to USD;
+      - a retired band, or "Not sure", with the currency cleared;
+      - a retired band sent unchanged next to the new currency;
+      - a valid timeline change sent together with a bad currency change.
+    - A currency change saves when the band changes with it, or when both are cleared.
+    - A website lead with a retired band is 409 `lead_answers_fixed` for a timeline-only change.
+  - The two earlier PATCH answer tests pass unchanged.
+- **G, `0fe6c9ca`** `test(compliance)` [ADM-SET-09] (`packages/core/test/verify-tags.test.ts`)
+  - `EXTENSIONS` now matches `jsonc?`.
+  - The scope test checks that the scan reaches all six wrangler configs: admin, admin API, jobs, portal, web and db. It also checks that `x.json` and `x.jsonc` match.
+  - **Confirmed:** no `.jsonc` file holds a bare tag. A grep of the six files for `VERIFY`, `OPEN (08-C` and `Researched` finds nothing, and the count test passes with `NO_ROW_YET` unchanged.
+
+#### Commands (heavy ones through `tools/heavy.sh`)
+- `pnpm install --frozen-lockfile --offline` (the worktree had no workspace links): no version changed.
+- `pnpm exec biome check` on the three changed files: clean (one format fix applied to the test file).
+- admin `leads-api.test.ts`: 33/33 (`.logs/fx3f2-leads.log`).
+- core `verify-tags.test.ts`: 3/3 (`.logs/fx3f2-verify.log`).
+- **`pnpm test`**: exit 0 with no timeouts (`.logs/fx3f2-test.log`):
+  - core 1,801, db 471, email 128, pdf 340, auth 135;
+  - ui 469 (2 skipped), web 510 (17 skipped), portal 631, jobs 528, admin 3,357.
+- **`pnpm check`**: exit 0 (`.logs/fx3f2-check.log`). This was the one full lint, plus typecheck in every package, the web binding guard, the content lint, the Worker config guard, the SPA headers and the migration guard (52 migrations).
+
+#### Not verified
+- No build, so the admin API byte budget isn't measured. The change is a few lines of handler logic.
+- No live or staging check. The SPA was not exercised against the new rule; per the code, `answersPatch` already sends the band with a changed currency.
+
+#### Open questions
+- None blocking.
+- For the lead: tracked text files of other types still sit outside the VERIFY scan: `index.html` (admin, portal), `.dev.vars.example`, `packages/ui/scripts/measure-cmyk.py`, and the email, CSV and `.snap` snapshots. None holds a tag today (grep). I didn't widen the scan, because the brief named `.jsonc` only.
+### Fix round 2, designer report
+Designer: claude-opus-5-5 (high), 2026-10-29 ~18:30–19:40 IST, branch `fix/fx3-fix2-d` from `origin/fix/fx3-admin-portal` (7dc4a611). Four commits plus this report; only `fix/fx3-fix2-d` pushed. (The task branch moved to de7dbfb1 with the builder's E and G meanwhile; none of my files overlap, only this run file.)
+
+#### Skills
+- `frontend-design:frontend-design` (loaded first): kept every change inside the existing panels, tokens and type. What it changed: the focus that a save hands back goes to the control that opened the form (the Edit buttons) or to the panel's own heading, never a new element; a heading that takes focus hugs its words with the small radius, so its ring reads like the Edit button's ring rather than a box around the whole panel; the narrow timeline gives the decorative icon's width to the words.
+- Not loaded: `dataviz` (no chart or stat tile), Cloudflare skills (no Worker, binding or config change), `code-review`/`security-review` (reviewer's).
+
+#### Per item (files under `apps/admin/src`)
+- **A (ce010a90), `components/markdown.tsx` `noteHeadingTags`:** a stack of the author levels still open; each heading pops every level ≥ its own, pushes its own, and its tag is h(2 + depth), capped at h5; the size class stays the author's (`md__h--N`). Tests (`lib/projects.test.ts`): `# Plan / ### Risks / ### Owners` is h3, h4, h4; `## A / ## B / # C` is h3, h3, h3; an 11-heading deep case (`h3 h4 h5 p h5 h4 h5 h3 h4 h4 h5`); `### Small / # Big / ## Mid` is h3, h3, h4; sizes kept. The earlier cases still hold. Live on a sample project's Notes tab (three notes with those outlines): every tag as above, axe clean; the e2e sweep visited that project page.
+- **C (9b21283a), `components/form.tsx`:** the error summary's key is `${e.id}-${i}`. Live: the template heading `Cover {{nope}} {{service.deliverables}}` puts two lines on `#tpl-s0-heading`; both show, and the console has no duplicate-key error.
+- **H (e2a252fe), `lib/signature-scale.ts`:** `imageHeaderSize` reads a PNG's IHDR or a JPEG's frame header (first 1 MB, `HEADER_READ`), turning the size for Exif orientation 5–8; `scaleSignature` asks `io.decode(file, fit)` for the box-fitted size when the image is larger than 800 × 400; `decodeFitted` calls `createImageBitmap(file, { resizeWidth, resizeHeight, resizeQuality: "high" })` (`fittedDecodeOptions`) and keeps the bitmap only when it comes back at exactly that size. If the browser rejects the options, ignores them, or applies them before the orientation, it closes that bitmap and takes the old path (a full-size decode drawn smaller on the canvas). An unreadable header also takes the old path. Tests (`lib/signature-scale.test.ts`, 16): the options (300 × 400, `high`); one decode at the fitted size; an Exif-6 JPEG asked for its shown shape; the three fallbacks (each bitmap freed); no options for a small image or an unreadable header; a broken image still refused; the old tests unchanged. Live in Chrome: a 3000 × 4000 PNG, a 4000 × 3000 JPEG and an Exif-6 phone JPEG were each decoded once, straight at 300 × 400, 533 × 400 and 300 × 400; the Exif-6 result matched a full decode drawn smaller at the sampled pixels (Chrome orients before it resizes); a 600 × 200 PNG was decoded without options; the Exif-6 photo uploaded on Settings › Company was stored as a 300 × 400 PNG with the "smaller" line.
+- **B and D (eea514b3), the lead page:** the preferred route. `LeadView` is no longer keyed by `updatedAt`, so a reload is new props for the same view.
+  - `routes/leads/drafts.ts`: the quote-answers edit is a draft above the reload (`answers`, `conflict.answers`, action `answers`; `loaded` carries the stored answers). `rebaseAnswers` treats the three answers as one set (a band belongs to its currency): untouched, the edit takes the stored answers; changed, it keeps the person's unless someone else changed any of them, when it takes theirs and the "Someone else changed this lead…" notice shows. "Reload the latest" drops it; the note is kept.
+  - `routes/leads/lead.tsx`: on a new version the 409 flag and a failed save's line reset (as the remount did); the Timeline restarts its pages from the new first page, and an older page that answers after a reload is dropped. Focus after a save or cancel (`focusLater`): Pipeline's heading after "Save changes" or Discard; the contact's and Enquiry's Edit button after Save or Cancel; the note field after "Add note"; Linked records after a convert answered "Stay" (or Escape) or after "Reload the latest" on `already_converted`; the page heading after "Reload the latest" on the stale notice. "Move to…", Reply and Lost keep their own focus now that their buttons stay mounted.
+  - `leads.css`: a lead panel heading that takes focus is as wide as its words with `--radius-sm`, and shows the focus ring after a keyboard action (none after a click, as app.css has it for headings).
+  - **Found and fixed on the way (same commit):** at 1024 px with the menu open, the lead page's two columns leave the Timeline panel about 300 px wide, and the change table broke its words letter by letter (before FX-3 too; the sweep's sideways-scroll check can't see it). The timeline now answers its panel's width: `.lead-timeline` is a container; the single date column and the phone's tighter table apply below 30rem of panel; under 18rem the decorative entry icon gives its width to the table. Phones (375) look as before; the client's Activity tab, which shares the timeline, is unchanged at 1024 (its panel is wide).
+  - Tests (`routes/leads/screens.test.ts`, 4 new): "Stay" after a convert keeps an answers edit and the next-action note; an untouched edit takes the stored answers and keeps its base; someone else's currency change drops the whole edit with the notice, and the same change by both is no conflict; closing clears the notice, and "Reload the latest" drops the edit and keeps the note. The SPA tests run in workerd without a DOM, so the mount and focus behaviour is checked live only.
+  - Live (keyboard): Pipeline "Save changes" → focus on the Pipeline heading with the ring; contact Save → "Edit contact"; Enquiry Save → "Edit enquiry"; Add note → the note field, the new note on the timeline; Move to… Qualified → focus stays on "Move to…". Convert with an unsaved answers edit (timeline 3–6 months) and an unsaved next-action note: the convert dialog closes and one dialog ("Leave without saving?") stands; "Stay" (and, on a second lead, Escape) keeps both edits, the Convert button goes, Linked records shows the client and the draft proposal and has the focus. "Leave without saving" opens `/proposals/:id`; a convert with no edits opens the proposal at once. An answers conflict made over the API shows the notice and the stored answers; "Reload the latest" puts the focus on the page heading.
+
+#### Shots (`.logs/shots/fx3-fix2-d/` in this worktree; light/dark = the in-app theme, "on-dark-os"/"on-light-os" = the emulated OS theme)
+- `lead-follow-saved-focus-pipeline-768-dark-on-light-os.png`: D, after "Save changes" on Pipeline: the ring hugs "Pipeline"; the saved note shown.
+- `lead-contact-saved-focus-edit-1024-light-on-dark-os.png`: D, after "Save contact": focus on Edit, the "Saved." toast.
+- `lead-answers-saved-focus-edit-375-light-on-dark-os.png`: D, after the Enquiry save on a phone: focus on Edit, timeline 3–6 months.
+- `lead-convert-leave-question-alone-1280-dark.png`: B, the leave question alone after a convert with unsaved edits.
+- `lead-convert-stay-answers-kept-focus-linked-1280-dark.png`: B, after "Stay" (full page): the answers edit (3–6 months) and the next-action note kept, Convert gone, Linked records focused. (The top bar drawn mid-page is the full-page capture's sticky header, not the page.)
+- `lead-convert-escape-stay-kept-focus-linked-1600-dark-on-light-os.png`: B, the same after Escape on a second lead.
+- `lead-answers-conflict-notice-1536-dark.png`: someone else's currency change during an open answers edit: the notice and the stored answers.
+- `lead-timeline-narrow-panel-1024-light-on-dark-os.png`: the timeline at 1024 with the menu open: whole words in the change tables.
+- `lead-timeline-phone-unchanged-375-dark-on-light-os.png`: the timeline on a phone, as before.
+- `client-activity-1024-dark-on-light-os.png`: the client's Activity tab (empty state) at 1024, unchanged.
+- `project-note-headings-1024-light-on-dark-os.png`: A, three notes: the sizes are the author's, the levels as above.
+- `template-heading-two-rules-summary-1024-light-on-dark-os.png`: C, two lines for one heading in the summary.
+- `signature-exif6-photo-decoded-fitted-stored-1536-light.png`: H, the Exif-6 phone photo stored as a 300 × 400 PNG.
+- axe (WCAG 2.2 AA + best practice, moderate and up), run in the page on the lead page at 375 (light on dark OS), 768 (dark on light OS), 1024 (light on dark OS) and 1600 (dark on light OS), with the forms open and after each save: clean, no sideways scroll. One run at 1600 reported `target-size` on the timeline select while the page was scrolled so that the sticky top bar covered it; at the top it is clean. Project notes and template pages: clean. No console errors or warnings on any of them.
+
+#### Commands (heavy ones through `tools/heavy.sh`)
+- Local setup in this worktree: `pnpm install --frozen-lockfile --offline`, `pnpm dev:secrets`, `pnpm db:migrate:local`, `pnpm db:seed:local`, `pnpm portal:sample`. A throwaway Owner (`designer-…@example.test`, local database only) was enrolled over the API as the e2e setup does, then signed in through the UI. Sample leads B, C and D, a sample project and its notes are labelled "(designer sample)" / "(sample)" with `@example.test` addresses.
+- Targeted vitest: `src/lib/projects.test.ts` 22/22, `src/lib/signature-scale.test.ts` 16/16, `src/routes/leads` + `src/lib/leads.test.ts` 35/35.
+- `pnpm --filter @techaust/admin typecheck` (`.logs/fx3f2d-tc2.log`): exit 0 (the first run, `.logs/fx3f2d-tc.log`, found two test typings, fixed before the H commit).
+- Full `pnpm test` (`.logs/fx3f2d-test.log`): exit 0, no timeouts: core 1,801, db 471, email 128, pdf 340, auth 135, ui 469 (2 skipped), web 510 (17 skipped), portal 631, jobs 528, admin 3,368.
+- `pnpm --filter @techaust/admin e2e` (`.logs/fx3f2d-e2e.log`): 6/6 passed in 9.4 min. Record pages visited: lead, client, project (with the heading notes), document, catalogue item, template; 4 scroll boxes met by the keyboard.
+- `pnpm check` (the one whole-repository lint, last; `.logs/fx3f2d-check.log`): every step ran through to the migration guard. Its 10 warnings and 8 infos are in files I didn't touch (admin `reports.test.ts`, web `catalogue.ts`, core `public-text.ts`, pdf tests).
+- `pnpm exec biome check` on each changed file: clean.
+- Dev server stopped, browser closed; no node, workerd or bash process left from this worktree.
+
+#### Not verified
+- Firefox and Safari (the `createImageBitmap` fallback is covered by tests; Chrome honours the options); NVDA; real phones; staging.
+- The mount and focus behaviour has no automated test (no DOM in the admin's workerd tests); checked live only.
+- The Playwright tool wrote its page snapshots to the main checkout's `.playwright-mcp/` (git-ignored).
+
+#### Placeholder lines
+- None new. No screen text was added or changed.
+
+#### Open questions (lead's call)
+1. The 1024 px narrow column also affects other two-column pages with the menu open (on the template editor, the editor column is about 300 px). I saw no broken words there, but it's worth a look in the next sweep; I changed only the lead timeline.
+
+**Lead, after fix round 2 (2026-10-29 ~19:20 IST):** both reports are kept above. The designer's fix beyond the brief is accepted: the lead timeline at 1024 px with the menu open now sizes to its panel. Its open question also stands: narrow second columns elsewhere at 1024 px with the menu open (the template editor is about 300 px). That goes on the final sweep's checklist. Next: the re-check (live).
+
+## Re-check of fix round 2 (reviewer claude-opus-5-5/high, live, 2026-10-29 ~19:25–20:10 IST, on 53cf9fe6): APPROVE
+_(Summary by the lead; the full text is in the conversation record. Shots: `.logs/shots/fx3-recheck2/`.)_
+
+**A, B, C, D, E and G are fixed; H is partly fixed. All were checked live:**
+- **A:** the heading levels in the accessibility tree are 3, 4, 4 / 3, 3, 3 / 3, 4, 5.
+- **B:** "Stay" after convert keeps the answers edit and the notes, and focuses Linked records.
+- **D:** focus lands correctly after each panel's save.
+- **E:** every PATCH combination answers as specified.
+- **H:** works for JPEG with Exif rotation and for plain PNG.
+- **The designer's timeline change:** good.
+- **The other-tab conflict paths:** correct.
+- **axe:** 0 violations at 375, 768 and 1024 (menu open), in both themes against the opposite OS theme.
+- **Results:** `pnpm check` exit 0; `pnpm test` exit 0 with no timeouts (admin 3,369); e2e 6/6.
+
+**Findings:**
+1. **Medium, new:** a PNG with an orientation chunk is stored stretched. `signature-scale.ts:70-72`, 187 and 205 read the size from the PNG header but ignore its orientation chunk, and Chrome applies the chunk.
+2. **Medium, new:** a stale `emailError` or `nextDateError` stays under the stored value after a conflict reload (`lead.tsx:180-185`, 201-202).
+3. **Medium, existing:** the Enquiry edit's `.form-grid` goes two columns by window width, so at 1024 px with the menu open (a 255 px column) the selects cut their values (`shell.css:2233`).
+4. **Medium, existing:** in the template editor, a heading's blur check shows the error summary and pushes Save down, so the first click is lost (`template.tsx:295-307`, 370).
+5. **Low:** a waiting focus target has no expiry (`lead.tsx:223-232`).
+6. **Low:** a stale "Show older" request keeps `loading` on.
+7. **Low, design note:** the answers are treated as one set. **Kept by the lead**, as the brief asked: a band belongs to its currency.
+8. **Low, existing:** opening Edit contact or Edit enquiry puts focus on `body`.
+
+## Fix round 3 (lead's triage)
+- **Designer** (`fix/fx3-fix3-d`): 1, 2, 3, 4, 5, 6 and 8. Item 7 is kept.
+- **After it:** a focused re-check of only these items, live. Then the FX-3 PR.
+
+### Fix round 3, designer report
+_(designer claude-opus-5-5/high, branch `fix/fx3-fix3-d` from `origin/fix/fx3-admin-portal` 5fd84df9, 2026-10-29)_
+
+**Skills:** `frontend-design:frontend-design` loaded first. It kept every change inside docs/06 (tokens only; the Enquiry form uses the timeline's own container pattern; no new visual devices). It also pushed item 4 past the summary to the real cause of the lost click: a line appearing between the press and the release. `dataviz` does not apply (no chart or tile).
+
+**Items, one commit each:**
+1. `821c081a` Signature (`apps/admin/src/lib/signature-scale.ts`, `.test.ts`):
+   - The fitted decode passes only `resizeWidth`, with `resizeQuality: "high"` and `imageOrientation: "from-image"`. The full-size decode also passes `imageOrientation: "from-image"`.
+   - Both sides are still checked (`fittedDecodeMatches`): the width exactly, the height equal or one pixel more. Chrome rounds the side it computes up (measured live: 2400 by 901, asked for 800 wide, comes back 800 by 301; our fit rounds to 300). Without that one pixel, about half of all large images would fall back to the full-size decode and undo fix round 2's H. A match is drawn at exactly the fitted size.
+   - New tests: a PNG that its orientation chunk turns the other way falls back (533 by 711, then 3000 by 4000, drawn at 300 by 400, both bitmaps freed); the rounding-up case; the match rule.
+   - Live (Chrome): a 4000 by 3000 PNG with an eXIf chunk (orientation 6) is stored at 300 by 400, turned, with a drawn circle of 120 by 120 px (not stretched). The old both-sides options gave 533 by 400, the stretch the reviewer saw. A 4000 by 3000 JPEG with Exif 6 is stored at 300 by 400, circle 120 by 120.
+2. `52b33625` Stale field lines (`lead.tsx`):
+   - When a new copy arrives, `emailError` goes if the email field now shows a different value from the one the person last saw; `nextDateError` and `dates.reset()` go if the follow date does. A line under the person's own kept text stays.
+   - "Reload the latest" now clears the email line too. Before, it was left behind and came back on the next Edit.
+   - Live: the reviewer's steps (a bad email and an unreadable date saved, both changed in "another tab" through the API, then a note added here) leave no red line; the stored values and the stale notice show. In the opposite case (the other tab changed only the phone), the email line stays under the still-bad email.
+3. `1a519f17` Enquiry edit (`leads.css`):
+   - `.lead-answers` is an inline-size container. Its `.form-grid` has one column, and two from 30rem of form width, with the shared span-2 and subgrid rules so the controls start level. `.form-grid` elsewhere is unchanged.
+   - Measured: the longest value (INR "₹7,00,000 to ₹15,00,000") needs 198 px; at 30rem each column is 228 px.
+   - Live form widths: 255 px at 1024 with the menu open (stacked), 439 at 1024 with the menu closed (stacked), 407 at 768 (stacked), 294 at 375 (stacked), 511 at 1280 (two columns), 831 at 1600 (two columns). Every select shows its full value, and the budget hint row keeps both controls level.
+4. `4adecc0d` Template editor (`template.tsx`):
+   - The error summary renders only after a save was tried (`tried`).
+   - Field lines still show live on blur. But a blur caused by pressing Save or Cancel waits until the press ends (`holdBlurChecks` on `pointerdown`, run after `pointerup` or `pointercancel`), because the field line alone also moved Save from under the pointer.
+   - Live:
+     - an invalid heading, then Save straight away: the summary appears and takes focus on the first click;
+     - a valid heading, then Save straight away: saved as version 3;
+     - an invalid body in the last section (the line right above Save), then Save: the summary on the first click;
+     - Tab out of an invalid heading before any save: the field line, no summary.
+5. `af217e15` Waiting focus (`lead.tsx`):
+   - A waiting target lapses when a key or a pointer was pressed after `focusLater` and the focus is now on an element other than `body`.
+   - A plain "focus moved" test was not used. The leave dialog hands focus back to "Convert to client" while the target waits, so that test would have broken fix round 2's D.
+   - Live, with the lead reload delayed by 3 s: "Stay" after a convert, with no action, and Linked records takes the focus. The same with a press and focus in the note field while waiting: the note keeps the focus and Linked records doesn't take it.
+6. `3c7905a2` "Show older" (`lead.tsx`, Timeline): a new first page sets `loading` to false, and each request has a number (`asked`); only the latest one shows its answer or ends the loading. Live (activities delayed by 6 s, 55 sample notes): "Show older" pressed, then a note added here. The button at once reads "Show older" and is enabled, and the stale answer adds nothing (25 entries).
+8. `ccf61c76` First field (`lead.tsx`): Edit contact focuses Name (and clears a leftover email line); Edit enquiry focuses Currency. Checked live by mouse and by keyboard (Enter); Cancel returns the focus to the Edit button.
+- `de01bd4e`: formatting of the Edit enquiry button. `pnpm check` caught it; my per-file check had hidden the error because I cut its output with `tail`.
+
+**Files:**
+- `apps/admin/src/lib/signature-scale.ts`
+- `apps/admin/src/lib/signature-scale.test.ts`
+- `apps/admin/src/routes/leads/lead.tsx`
+- `apps/admin/src/leads.css`
+- `apps/admin/src/routes/catalogue/template.tsx`
+- this run file
+
+**Screenshots** (`.logs/shots/fx3-fix3-d/` in the worktree; I opened and checked each one):
+- `01-signature-png-exif6-1280-light.png`: the signature stored from the turned PNG, upright and round.
+- `02-enquiry-edit-1024-menu-open-light.png`: stacked selects with full values, focus on Currency.
+- `03-enquiry-edit-1280-light.png`: two columns, full values.
+- `04-enquiry-edit-1600-dark-in-app-os-light.png`: two columns, in-app dark against OS light.
+- `05-enquiry-edit-768-light-in-app-os-dark.png`: stacked, in-app light against OS dark.
+- `06-enquiry-edit-375-dark-in-app-os-light.png`: stacked on a phone.
+- `07-enquiry-edit-1024-menu-closed-dark-hint.png`: stacked, with the "choose a currency" hint.
+- `08-enquiry-edit-1280-menu-closed-dark-hint-aligned.png`: two columns, controls level despite the hint.
+- `09-lead-errors-before-other-tab-1280-dark.png`: the email and date lines before the other tab's change.
+- `10-lead-no-stale-errors-after-reload-1280-dark.png`: after the note: the stored values, no stale lines, the notice.
+- `11-edit-contact-focus-on-name-1280-dark.png`: Edit contact open, focus ring on Name.
+- `12-template-first-save-click-summary-1280-dark.png`: the summary after the first Save click.
+- `13-template-summary-after-submit-375-light.png`: the same at 375.
+- `14-edit-contact-keyboard-focus-1600-light-in-app-os-dark.png`: Edit contact opened by keyboard, focus on Name.
+
+**Checks:**
+- **axe** (axe-core 4.14, WCAG 2.0 to 2.2 A and AA):
+  - the lead page with both edits open, at 375, 768, 1024 (menu open and closed) and 1600, in-app light and dark, each against OS light and OS dark: 0 violations;
+  - one `target-size` hit at 768 appeared only while the page was scrolled so the sticky top bar covered the date field; at the top of the page it was 0;
+  - the template editor with the summary, both themes: 0.
+- **Keyboard:**
+  - Edit enquiry by Enter goes to Currency; Tab order is Currency, Budget, Timeline, Cancel, Save; Enter on Cancel returns to Edit.
+  - Edit contact by Enter goes to Name.
+  - Focus rings are visible and there are no traps.
+- **Console:** no errors on the checked pages. The only ones were the expected 401s on the invite page before sign-in.
+- **Commands:**
+  - `pnpm --filter @techaust/admin exec vitest run src/lib/signature-scale.test.ts`: 19 passed.
+  - `bash tools/heavy.sh --log fx3d-typecheck-admin pnpm --filter @techaust/admin typecheck`: exit 0.
+  - `bash tools/heavy.sh --log fx3d-test pnpm test`: exit 0, no timeouts. Admin 3,372; portal 631; jobs 528; core 1,801; db 471; pdf 340; web 510 (+17 skipped); ui 469 (+2 skipped); auth 135; email 128.
+  - `bash tools/heavy.sh --log fx3d-e2e-admin pnpm --filter @techaust/admin e2e`: 6/6 passed (9.2 min).
+  - `bash tools/heavy.sh --log fx3d-check pnpm check`: exit 1, on my formatting of `lead.tsx` (fixed in `de01bd4e`).
+  - `bash tools/heavy.sh --log fx3d-check2 pnpm check`: **exit 0**. Its 10 warnings and 8 infos are in files this round didn't touch.
+- **Local data only:** an Owner `designer-fx3@example.test`, and sample leads "Sample Lead Asha/Bina/Chand/Devi (fake)" with `@example.test` addresses and notes, in this worktree's local D1.
+- **Clean-up:** the dev server and the e2e server are stopped, no process runs from the worktree, and the browser is closed.
+
+**Not verified:**
+- Safari and Firefox were not run. The press hold in item 4 relies on `pointerdown` coming before `blur`, which is the order in all three engines.
+- The PNG eXIf path was checked in Chrome only.
+
+**Placeholders seen (not mine):**
+- "[Placeholder] We made the image smaller to fit 800 by 400 pixels." (signature)
+- "[Placeholder] Choose a currency first." (the Enquiry budget hint)
+- "[Placeholder] Choose a country" (Convert dialog)
+
+**Open questions:** none. A possible later improvement, outside this brief: `imageHeaderSize` could read a PNG's eXIf orientation, so a turned PNG also takes the fitted decode instead of the full-size fallback.
+
+**Lead, after fix round 3 (2026-10-29 ~21:00 IST):** both deviations are accepted.
+1. The fitted decode allows the long side to come back exactly one pixel larger (Chrome rounds up), so large images keep the fast path; a turned image misses by far more and still falls back.
+2. The waiting focus target is dropped only after a key or pointer press, so the leave dialog handing focus back doesn't cancel round 2's D.
+
+The designer's idea of reading the PNG orientation chunk in `imageHeaderSize` (the fast path for turned PNGs too) is a nice-to-have, not a defect; kept as a note for M7. Next: the focused re-check.
+
+## Focused re-check of fix round 3 (reviewer claude-opus-5-5/high, live, 2026-10-29 ~21:05–21:30 IST, on f411e201): APPROVE
+_(Summary by the lead. Shots: `.logs/shots/fx3-recheck3/`.)_ All seven items are fixed and checked live:
+- **Signatures:** a PNG with an eXIf chunk falls back and is stored 300×400 with a round circle; a JPEG with Exif 6 decodes once.
+- **Stale lines:** gone after another tab's change, and kept under the person's own bad text.
+- **Enquiry form:** stacked at 255 px and two columns at 511 px; axe 0 at 375, 768, 1024 and 1280.
+- **Template:** the first click shows the summary.
+- **Focus target:** kept, or yielded to typing.
+- **"Show older":** ready at once, with no duplicates or gaps.
+- **First-field focus:** right, and Cancel returns focus.
+- **Results:** `pnpm check` exit 0; admin tests 3,372 passed.
+
+**Low findings:**
+- **L1:** the full-size fallback passed `imageOrientation`, which an older engine refuses. **Fixed by the lead:** no options on the fallback.
+- **L2:** very tall images lose the fitted fast path; the output stays correct. **Kept:** a signature over 2:1 tall is unusual. Noted for M7.
+- **L3:** a narrow moment where a stale "Show older" answer could still slip in. **Fixed by the lead:** `asked` bumps in the reset, declared above its use.
+- **L4:** on touch, a tap on Save may be lost after a heading blur (not verifiable here). **Goes on the final sweep's checklist** (touch emulation), with the reviewer's simpler `onMouseDown` preventDefault fix ready.
+- **L5:** the window rule's two-row spans reached the one-column Enquiry form. **Fixed by the lead:** `grid-row: auto` in the one-column rule.
+
+Signature tests 19/19 after the lead's fixes; the test now expects no options on the full-size decode.
+
+## Integration (lead, 2026-10-29 ~22:00 IST)
+After merging `main` (#109, the model plan):
+- `pnpm check`: exit 0.
+- `pnpm test`: exit 0, 8,385 passed:
+  - admin 3,372, core 1,801, portal 631, jobs 528, web 510;
+  - db 471, ui 469, pdf 340, auth 135, email 128.
+
+PR opened with auto-merge.

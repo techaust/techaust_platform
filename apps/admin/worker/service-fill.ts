@@ -47,6 +47,7 @@ import {
   SECTION_BODY_MAX,
   SECTION_TITLE_MAX,
   SECTIONS_TOTAL_MAX,
+  TEXT_TOKEN_KINDS,
 } from "@techaust/core/documents";
 import { type ItemRow, lineName } from "./quote-model.ts";
 import {
@@ -149,13 +150,22 @@ const putIn = (
     others,
   );
 
-/** The `service.*` tokens that carry a service's Catalogue text: the ones whose value can be long (up to 2,500 characters each). */
-export const TEXT_TOKENS = ["service.deliverables", "service.assumptions", "service.exclusions"] as const;
-const TOKEN_FIELD: Record<(typeof TEXT_TOKENS)[number], GapField> = {
-  "service.deliverables": "deliverables",
-  "service.assumptions": "assumptions",
-  "service.exclusions": "exclusions",
-};
+/**
+ * The `service.*` tokens that carry a service's Catalogue text: the ones whose value can be long (up to 2,500 characters each). One
+ * source, core's `TEXT_TOKEN_KINDS` (the template rule `misplacedTextTokens` reads the same list).
+ */
+export const TEXT_TOKENS: readonly string[] = Object.keys(TEXT_TOKEN_KINDS);
+
+/**
+ * Each text token's Catalogue field: `service.<field>` of the GAP_FIELDS row whose section kind is the token's own kind in
+ * `TEXT_TOKEN_KINDS`. A token without one would be filled but never counted for room; service-fill.test.ts proves every token has one.
+ */
+export const TOKEN_FIELD: ReadonlyMap<string, GapField> = new Map(
+  GAP_FIELDS.flatMap((g) => {
+    const token = `service.${g.field}`;
+    return TEXT_TOKEN_KINDS[token] === g.kind ? [[token, g.field] as const] : [];
+  }),
+);
 
 /** Template data without the Catalogue texts, and the empty set with them: the render that leaves the first service's texts out. */
 export function withoutTexts<V>(
@@ -254,7 +264,7 @@ export function fitFirstService(
     if (fits(before, r.full.bodyMd ?? "", total)) return take(r.full.bodyMd, false);
     if (isGapKind(r.kind)) {
       const held = new Set(r.raw === null ? [] : placeholdersOf(r.raw));
-      const fields = new Set(TEXT_TOKENS.filter((t) => held.has(t)).map((t) => TOKEN_FIELD[t]));
+      const fields = new Set(TEXT_TOKENS.flatMap((t) => (held.has(t) ? [TOKEN_FIELD.get(t)] : [])));
       const parts = partsOf(r.kind, first).filter((p) => fields.has(p.field));
       if (parts.length > 0) {
         const next = putIn(before, all, first, parts, []);

@@ -74,8 +74,10 @@ export function ErrorSummary({ errors, focusKey }: { errors: SummaryError[]; foc
         {errors.length === 1 ? "Fix 1 thing before saving" : `Fix ${errors.length} things before saving`}
       </h2>
       <ul>
-        {errors.map((e) => (
-          <li key={e.id}>
+        {errors.map((e, i) => (
+          // one field can break two rules (a template heading with two placeholder faults): the position keeps the keys apart
+          // biome-ignore lint/suspicious/noArrayIndexKey: the list is rebuilt whole on every submit; the id alone can repeat
+          <li key={`${e.id}-${i}`}>
             <a
               href={`#${e.id}`}
               onClick={(ev) => {

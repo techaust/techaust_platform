@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { fixtures } from "./fixtures.ts";
 import { createApp } from "./index.ts";
 import { colleague, DAY, mkOffer, SECRETS, testViewer } from "./offer-fixtures.ts";
-import { LIST_SQL } from "./offer-sql.ts";
+import { LIST_SQL, REREAD_SQL } from "./offer-sql.ts";
 import {
   bodyOf,
   callerFor,
@@ -197,6 +197,16 @@ describe("GET /offers: the latest version of each offer, with keyset paging [POR
       `EXPLAIN QUERY PLAN ${LIST_SQL.replace(/\?\d/g, "'x'").replace("LIMIT 'x'", "LIMIT 5")}`,
     );
     expect(plan.map((p) => p.detail).join(" | ")).not.toMatch(/SCAN d\b(?! USING)/);
+  });
+
+  it("FX-3 fix round (item 7): the re-read finds the newest version above once and joins it by key, no table scan", async () => {
+    const plan = (
+      await rows<{ detail: string }>(`EXPLAIN QUERY PLAN ${REREAD_SQL.replace(/\?\d/g, "'x'")}`)
+    ).map((p) => p.detail);
+    const text = plan.join(" | ");
+    expect(plan.filter((d) => /CORRELATED SCALAR SUBQUERY/.test(d))).toHaveLength(1);
+    expect(text).toMatch(/SEARCH l USING (INDEX sqlite_autoindex_documents_1|PRIMARY KEY) \(id=\?\)/);
+    expect(text).not.toMatch(/SCAN (d|l|n)\b(?! USING)/);
   });
 });
 

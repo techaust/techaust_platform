@@ -503,6 +503,173 @@ describe("PATCH /leads/:id [ADM-LEAD-03]", () => {
     });
   });
 
+  it("FX-3 fix round (ADM-LEAD-03): stored answers are judged only when the request changes one, and a website lead's source rule comes first", async () => {
+    const s = await sessionFor("sales");
+    const owner = await sessionFor("owner");
+    // a website lead holding a band the form no longer offers: an owner or contact edit still saves
+    const old = await addLead({ currency: "INR", budget_band: "retired-band", timeline: "someday" });
+    const edit = await send(
+      `/leads/${old.id}`,
+      "PATCH",
+      { expectedUpdatedAt: old.updated_at, ownerId: owner.id, name: "New Contact", phone: "+91 22222" },
+      s.cookie,
+    );
+    expect(edit.status).toBe(200);
+    expect(
+      await one(
+        "SELECT owner_id, contact_name, contact_phone, budget_band, timeline FROM leads WHERE id = ?",
+        old.id,
+      ),
+    ).toEqual({
+      owner_id: owner.id,
+      contact_name: "New Contact",
+      contact_phone: "+91 22222",
+      budget_band: "retired-band",
+      timeline: "someday",
+    });
+    // a manual lead with an unknown stored band: a contact edit saves too (its answers aren't re-judged)
+    const manual = await addLead({ source: "manual", currency: "USD", budget_band: "retired-band" });
+    const manualEdit = await send(
+      `/leads/${manual.id}`,
+      "PATCH",
+      { expectedUpdatedAt: manual.updated_at, company: "Renamed Ltd" },
+      s.cookie,
+    );
+    expect(manualEdit.status).toBe(200);
+
+    // a currency change on a website lead is the source rule's 409, not the band check's 400 (its rupee band isn't a dollar band)
+    const web = await addLead({ currency: "INR", budget_band: "1l-3l", timeline: "exploring" });
+    for (const extra of [{ currency: "USD" }, { currency: null }, { timeline: "next-year" }]) {
+      const res = await send(
+        `/leads/${web.id}`,
+        "PATCH",
+        { expectedUpdatedAt: web.updated_at, ...extra },
+        s.cookie,
+      );
+      expect(res.status, JSON.stringify(extra)).toBe(409);
+      expect((await json(res)).error.code).toBe("lead_answers_fixed");
+    }
+    expect(
+      await one("SELECT currency, budget_band, timeline, updated_at FROM leads WHERE id = ?", web.id),
+    ).toEqual({
+      currency: "INR",
+      budget_band: "1l-3l",
+      timeline: "exploring",
+      updated_at: web.updated_at,
+    });
+  });
+
+  it("FX-3 fix round 2 (ADM-LEAD-03): a manual lead's band is judged only when the band or currency changes, the timeline only when it changes", async () => {
+    const s = await sessionFor("sales");
+    const quote = (id: string) => one("SELECT currency, budget_band, timeline FROM leads WHERE id = ?", id);
+    /** One PATCH on a fresh manual lead holding `stored`; the status, the error code and the answers it ends with. */
+    const tryPatch = async (stored: Record<string, unknown>, extra: Record<string, unknown>) => {
+      const lead = await addLead({ source: "manual", ...stored });
+      const res = await send(
+        `/leads/${lead.id}`,
+        "PATCH",
+        { expectedUpdatedAt: lead.updated_at, ...extra },
+        s.cookie,
+      );
+      const out = await json(res);
+      return { status: res.status, code: out.error?.code as string | undefined, after: await quote(lead.id) };
+    };
+
+    // a stored band the form no longer offers never decides a timeline-only change
+    expect(
+      await tryPatch(
+        { currency: "INR", budget_band: "retired-band", timeline: "asap" },
+        { timeline: "3-6-months" },
+      ),
+    ).toEqual({
+      status: 200,
+      code: undefined,
+      after: { currency: "INR", budget_band: "retired-band", timeline: "3-6-months" },
+    });
+    // ... nor clearing the timeline
+    expect(
+      (await tryPatch({ currency: "INR", budget_band: "retired-band", timeline: "asap" }, { timeline: null }))
+        .after,
+    ).toEqual({ currency: "INR", budget_band: "retired-band", timeline: null });
+    // a stored timeline the form no longer offers never decides a band-only or currency-only change
+    expect(
+      await tryPatch({ currency: "INR", budget_band: "1l-3l", timeline: "someday" }, { budgetBand: "3l-7l" }),
+    ).toEqual({
+      status: 200,
+      code: undefined,
+      after: { currency: "INR", budget_band: "3l-7l", timeline: "someday" },
+    });
+    expect(
+      (await tryPatch({ currency: "INR", budget_band: "not-sure", timeline: "someday" }, { currency: "USD" }))
+        .after,
+    ).toEqual({ currency: "USD", budget_band: "not-sure", timeline: "someday" });
+    // a currency-only change keeps a band both currencies have ("Not sure"), and is fine with no band at all
+    expect(
+      (await tryPatch({ currency: "USD", budget_band: null, timeline: "asap" }, { currency: "INR" })).status,
+    ).toBe(200);
+    // the timeline still has to be the form's when it is the thing that changes
+    expect(
+      (
+        await tryPatch(
+          { currency: "INR", budget_band: "retired-band", timeline: "asap" },
+          { timeline: "next-year" },
+        )
+      ).status,
+    ).toBe(400);
+
+    // a currency change that leaves the stored band outside the new currency is a 400, nothing written: a band needs its own
+    // currency. A band the form no longer offers is a band of no currency, so it can't move to another one either.
+    for (const [stored, extra] of [
+      [{ currency: "INR", budget_band: "1l-3l" }, { currency: "USD" }],
+      [{ currency: "INR", budget_band: "retired-band" }, { currency: "USD" }],
+      [{ currency: "INR", budget_band: "retired-band" }, { currency: null }],
+      [{ currency: "USD", budget_band: "not-sure" }, { currency: null }],
+      // the band sent unchanged next to the currency is still the band the lead ends with
+      [
+        { currency: "INR", budget_band: "retired-band" },
+        { currency: "USD", budgetBand: "retired-band" },
+      ],
+      // a timeline change next to it doesn't carry the bad currency change through
+      [
+        { currency: "INR", budget_band: "1l-3l" },
+        { currency: "USD", timeline: "exploring" },
+      ],
+    ] as const) {
+      const r = await tryPatch({ timeline: "asap", ...stored }, extra);
+      expect(r.status, JSON.stringify([stored, extra])).toBe(400);
+      expect(r.after, JSON.stringify([stored, extra])).toEqual({ timeline: "asap", ...stored });
+    }
+    // changed together with the band (or the band cleared), the currency change saves, the retired band included
+    expect(
+      (
+        await tryPatch(
+          { currency: "INR", budget_band: "retired-band", timeline: "asap" },
+          { currency: "USD", budgetBand: "2k-5k" },
+        )
+      ).after,
+    ).toEqual({ currency: "USD", budget_band: "2k-5k", timeline: "asap" });
+    expect(
+      (
+        await tryPatch(
+          { currency: "INR", budget_band: "retired-band", timeline: "asap" },
+          { currency: null, budgetBand: null },
+        )
+      ).after,
+    ).toEqual({ currency: null, budget_band: null, timeline: "asap" });
+
+    // the source rule stays first: a website lead with a retired band is 409 lead_answers_fixed for a timeline-only change
+    const web = await addLead({ currency: "INR", budget_band: "retired-band", timeline: "asap" });
+    const res = await send(
+      `/leads/${web.id}`,
+      "PATCH",
+      { expectedUpdatedAt: web.updated_at, timeline: "exploring" },
+      s.cookie,
+    );
+    expect(res.status).toBe(409);
+    expect((await json(res)).error.code).toBe("lead_answers_fixed");
+    expect(await quote(web.id)).toEqual({ currency: "INR", budget_band: "retired-band", timeline: "asap" });
+  });
+
   it("changes only what was sent; contact values go on the timeline, NEVER in the audit row", async () => {
     const s = await sessionFor("sales");
     const member = await sessionFor("staff");

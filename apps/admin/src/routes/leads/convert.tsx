@@ -58,7 +58,10 @@ export function ConvertDialog(props: {
   open: boolean;
   lead: LeadDetail;
   onClose: () => void;
+  /** "Reload the latest" after `already_converted`: closes the dialog and reloads the lead. */
   onConverted: () => void;
+  /** Converted: the dialog closes just before the proposal opens; the lead reloads only if the person stays (unsaved edits). */
+  onOpening: () => void;
 }) {
   const toast = useToast();
   const navigate = useNavigate();
@@ -122,7 +125,11 @@ export function ConvertDialog(props: {
         displayName: f.displayName.trim(),
       });
       toast("success", `Converted to client ${r.clientCode}.`);
-      // ADM-LEAD-04: the next step is the proposal, so it opens straight away (the lead links to it as before).
+      // ADM-LEAD-04: the next step is the proposal, so it opens straight away (the lead links to it as before). The dialog closes first
+      // (FX-3 review 2): with unsaved lead edits the leave question then stands alone, and "Stay" reloads the lead, which then shows it
+      // converted. The reload waits for that answer: a fresh copy of the lead starts its page again, which would drop the question and
+      // the proposal with it.
+      props.onOpening();
       navigate(`/proposals/${encodeURIComponent(r.proposalId)}`);
     } catch (err) {
       if (err instanceof RequestError && err.code === "country_mismatch") {

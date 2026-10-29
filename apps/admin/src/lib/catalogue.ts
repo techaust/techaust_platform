@@ -693,20 +693,50 @@ export function templateRuleErrors(
   kind: TemplateKind,
   sections: readonly { key: string; heading: string; body: string }[],
 ): Record<number, string> {
-  const lines = new Map<number, string[]>();
-  const add = (n: number, line: string) => lines.set(n, [...(lines.get(n) ?? []), line]);
+  const fields = templateRuleFields(kind, sections);
+  const out: Record<number, string> = {};
+  sections.forEach((_, i) => {
+    const line = [fields[i]?.heading, fields[i]?.body].filter(Boolean).join(" ");
+    if (line) out[i] = line;
+  });
+  return out;
+}
+
+/**
+ * The same rules by field (FX-3 review 5): a Catalogue-text placeholder in a heading belongs to the heading input (`tpl-s{i}-heading`,
+ * its own `aria-invalid` and summary link); one in another section's text and a joined section's length belong to the text.
+ */
+export function templateRuleFields(
+  kind: TemplateKind,
+  sections: readonly { key: string; heading: string; body: string }[],
+): Record<number, { heading?: string; body?: string }> {
+  const lines = new Map<number, { heading: string[]; body: string[] }>();
+  const add = (n: number, part: "heading" | "body", line: string) => {
+    const at = lines.get(n) ?? { heading: [], body: [] };
+    at[part].push(line);
+    lines.set(n, at);
+  };
   for (const m of misplacedTextTokens(sections)) {
     const placeholder = `{{${m.name}}}`;
-    add(
-      m.index,
-      m.part === "heading"
-        ? TEMPLATE_RULES.textInHeading(placeholder)
-        : TEMPLATE_RULES.textElsewhere(placeholder, TEXT_HOME[TEXT_TOKEN_KINDS[m.name] ?? ""] ?? ""),
-    );
+    if (m.part === "heading") add(m.index, "heading", TEMPLATE_RULES.textInHeading(placeholder));
+    else
+      add(
+        m.index,
+        "body",
+        TEMPLATE_RULES.textElsewhere(placeholder, TEXT_HOME[TEXT_TOKEN_KINDS[m.name] ?? ""] ?? ""),
+      );
   }
   if (kind === "proposal" || kind === "estimate")
-    for (const n of joinedPastLimit(sections)) add(n, TEMPLATE_RULES.joinedTooLong);
-  return Object.fromEntries([...lines].map(([n, l]) => [n, l.join(" ")]));
+    for (const n of joinedPastLimit(sections)) add(n, "body", TEMPLATE_RULES.joinedTooLong);
+  return Object.fromEntries(
+    [...lines].map(([n, l]) => [
+      n,
+      {
+        ...(l.heading.length ? { heading: l.heading.join(" ") } : {}),
+        ...(l.body.length ? { body: l.body.join(" ") } : {}),
+      },
+    ]),
+  );
 }
 
 /** "Build proposal", "Care plan block". */

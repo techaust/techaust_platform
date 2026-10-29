@@ -3,7 +3,8 @@
 // credit notes are listed apart, proformas are left out, voided documents never count. The SQL is `@techaust/db/reports` (EXPLAIN-tested); the twin test
 // `figures.test.ts` proves that billed and the balance agree with GET /clients/:id/statement for the same client.
 // "Collected" (client) and "paid" (project) need payments (M6): they are left out of the answer, never sent as 0. An anonymised client gets no figures
-// (the Overview and its projects show none), though its frozen documents stay.
+// (the Overview and its projects show none), though its frozen documents stay; the figures reads skip its documents themselves (their index seek's key is
+// a lookup of the client that is NULL once it is anonymised, `@techaust/db/reports`), so the batch stays one round trip and reads nothing it would throw away.
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import {
   CLIENT_FIGURES_SQL,

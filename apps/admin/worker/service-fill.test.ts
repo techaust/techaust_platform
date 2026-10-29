@@ -1,6 +1,11 @@
 // The pure rules of service-fill.ts [ADM-PROP-02]: unknown vs empty tokens, every service counted, the gaps, the text "Use Catalogue text" adds.
 
-import { SECTION_BODY_MAX, SECTION_TITLE_MAX, SECTIONS_TOTAL_MAX } from "@techaust/core/documents";
+import {
+  SECTION_BODY_MAX,
+  SECTION_TITLE_MAX,
+  SECTIONS_TOTAL_MAX,
+  TEXT_TOKEN_KINDS,
+} from "@techaust/core/documents";
 import { describe, expect, it } from "vitest";
 import {
   appendServices,
@@ -11,12 +16,15 @@ import {
   fillServiceTokens,
   fitFirstService,
   fits,
+  GAP_FIELDS,
   gapInputsChanged,
   renderSection,
   renderWithin,
   type ServiceFacts,
   serviceIdsOf,
   servicesOf,
+  TEXT_TOKENS,
+  TOKEN_FIELD,
   textLength,
 } from "./service-fill.ts";
 
@@ -36,6 +44,20 @@ const sec = (kind: string, bodyMd: string | null, hidden = false, id = kind) => 
   title: kind,
   bodyMd,
   hidden,
+});
+
+describe("FX-3 fix round, item 6: the text tokens come from core's TEXT_TOKEN_KINDS [ADM-PROP-02]", () => {
+  it("every text token has its Catalogue field, of the same section kind, and nothing else", () => {
+    expect(TEXT_TOKENS).toEqual(Object.keys(TEXT_TOKEN_KINDS));
+    expect([...TOKEN_FIELD.keys()]).toEqual([...TEXT_TOKENS]);
+    expect(Object.fromEntries(TOKEN_FIELD)).toEqual({
+      "service.deliverables": "deliverables",
+      "service.assumptions": "assumptions",
+      "service.exclusions": "exclusions",
+    });
+    for (const [token, field] of TOKEN_FIELD)
+      expect(GAP_FIELDS.find((g) => g.field === field)?.kind).toBe(TEXT_TOKEN_KINDS[token]);
+  });
 });
 
 describe("unknown vs empty", () => {

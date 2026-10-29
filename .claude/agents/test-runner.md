@@ -1,8 +1,8 @@
 ---
 name: test-runner
 description: Runs one test suite or check of the TecHaust repo through the heavy-command queue and reports only the failures. Changes no files.
-model: claude-haiku-5-5
-effort: low
+model: claude-opus-5-5
+effort: high
 omitClaudeMd: true
 tools: Bash, Read, Grep
 ---

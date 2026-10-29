@@ -6,6 +6,9 @@
 // `stale_version`, or a reload that brings someone else's change to a field a draft holds, shows the shared "changed
 // by someone else" notice, keeps nothing half-saved and offers the latest. Leaving with unsaved edits asks first
 // (ADM-G-04).
+// FX-3 fix round 2 (B, D): a reload never starts the page again. The view stays mounted and takes the new copy as props, so the
+// open forms, their drafts and the keyboard focus stay where they were; a control that goes away with a save or a cancel hands
+// the focus to the control that opened its form, or to its panel's heading (`focusAfter`).
 import { formatDate, formatIstDateTime, istDate } from "@techaust/core/dates";
 import {
   budgetBandLabel,
@@ -14,7 +17,16 @@ import {
   TIMELINE_LABELS,
   TOOL_LABELS,
 } from "@techaust/core/form-labels";
-import { type Dispatch, type FormEvent, type ReactNode, useId, useReducer, useState } from "react";
+import {
+  type Dispatch,
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useId,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import { Link, useParams } from "react-router";
 import {
   type Assignee,
@@ -96,7 +108,12 @@ function LeadScreen({ id }: { id: string }) {
   const [seen, setSeen] = useState<LeadPageData | null>(null);
   if (page.state === "ready" && page.data !== seen) {
     setSeen(page.data);
-    draft({ type: "loaded", contact: contactOf(page.data.lead), follow: followOf(page.data.lead) });
+    draft({
+      type: "loaded",
+      contact: contactOf(page.data.lead),
+      follow: followOf(page.data.lead),
+      answers: answersOf(page.data.lead),
+    });
   }
 
   if (page.state === "failed") {
@@ -111,9 +128,9 @@ function LeadScreen({ id }: { id: string }) {
   if (page.state === "loading") return <LeadSkeleton />;
   return (
     <LeadView
-      // A fresh copy of the lead (after a save or a reload) starts the page again from what's stored; what the person
-      // has typed and not saved (the drafts) is held here, above the reload, and carried across it.
-      key={page.data.lead.updatedAt}
+      // A fresh copy of the lead (after a save or a reload) is new props for the same view, never a new page (fix round 2, B and D):
+      // what the person has typed and not saved (the drafts) is held here, above the reload, and carried onto it; open forms and
+      // the focus stay.
       data={page.data}
       assignees={people.data?.assignees ?? []}
       drafts={drafts}
@@ -157,6 +174,7 @@ function LeadView({
   const canWrite = allowed(user.role, "leads.write");
   const canConvert = allowed(user.role, "clients.write") && allowed(user.role, "proposals.draft");
   const [saveStale, setStale] = useState(false);
+  const [error, setError] = useState<{ where: Where; text: string } | null>(null);
   const stale = saveStale || hasConflict(drafts);
   const follow = drafts.follow?.value ?? followOf(lead);
   const followBase = drafts.follow?.base ?? followOf(lead);
@@ -166,18 +184,43 @@ function LeadView({
   const contactBase = drafts.contact?.base ?? contactOf(lead);
   const setContact = (value: Contact | null) => draft({ type: "contact", value, base: contactOf(lead) });
   const [busy, setBusy] = useState<Where | null>(null);
-  const [error, setError] = useState<{ where: Where; text: string } | null>(null);
-  // FX-3 (A3 8): a manual lead's quote answers, edited on the Enquiry panel (null while shown read-only).
-  const [answers, setAnswers] = useState<{ base: Answers; value: Answers } | null>(null);
+  // FX-3 (A3 8): a manual lead's quote answers, edited on the Enquiry panel (null while shown read-only); a draft above the reload
+  // (fix round 2, B), so "Stay" after a convert keeps it.
+  const answers = drafts.answers;
+  const setAnswers = (value: AnswersDraft | null) =>
+    draft({ type: "answers", value: value?.value ?? null, base: value?.base ?? answersOf(lead) });
   const answersDirty = answers !== null && JSON.stringify(answers.value) !== JSON.stringify(answers.base);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [nextDateError, setNextDateError] = useState<string | null>(null);
   const dates = useUnreadDates<"date">();
-  // A stale reload sets the edits aside, so unreadable date text and its error line go with them.
+
+  // The email and the follow date as the person last saw them, so a new copy can tell whether the reload replaced them (fix round 3, 2).
+  const shown = useRef({ email: contact.email, date: follow.date });
+  useEffect(() => {
+    shown.current = { email: contact.email, date: follow.date };
+  });
+  // A new copy of the lead: a refused save's 409 and a failed save's line belonged to the old copy (the drafts were carried onto
+  // the new one), as when the page used to start again. A field line goes only with the text it was about: when the reload put
+  // another value in the email or the follow date (someone else changed it, and the person's edit was set aside), its line goes,
+  // and the date's unread text with it (fix round 3, 2); a line under the person's own kept text stays.
+  const [version, setVersion] = useState(lead.updatedAt);
+  if (version !== lead.updatedAt) {
+    setVersion(lead.updatedAt);
+    setStale(false);
+    setError(null);
+    if (contact.email !== shown.current.email) setEmailError(null);
+    if (follow.date !== shown.current.date) {
+      setNextDateError(null);
+      dates.reset();
+    }
+  }
+  // A stale reload sets the edits aside (the answers too: `reloaded-latest`), so unreadable date text and every field line go with
+  // them. The notice and its button go too: the focus moves to the page's heading, the top of the latest copy.
   const reloadStale = () => {
-    setAnswers(null);
     dates.reset();
     setNextDateError(null);
+    setEmailError(null);
+    focusLater(() => document.querySelector<HTMLElement>("#main h1"));
     reload("stale");
   };
   const note = drafts.note;
@@ -185,6 +228,46 @@ function LeadView({
   const [lost, setLost] = useState(false);
   const [replying, setReplying] = useState(false);
   const [converting, setConverting] = useState(false);
+  // Converted, and the proposal is opening: the lead reloads only if the leave question is answered "Stay" (FX-3 review 2).
+  const [convertedAway, setConvertedAway] = useState(false);
+
+  // Where the focus goes once a save or a cancel has taken away the control that had it (fix round 2, D): the control that opened
+  // the form, or the panel's heading. Taken as soon as that element is on the page (after the reload for one that only the new copy
+  // shows, such as Linked records after a convert).
+  // A waiting target lapses once the person has moved the focus somewhere themselves (fix round 3, 5): a key or a pointer pressed
+  // since it was set, and the focus now on an element other than the page itself. A focus the code moves meanwhile (a dialog handing
+  // it back to its opener as it closes) doesn't count, so Linked records still takes it after a convert.
+  const focusAfter = useRef<{ target: () => HTMLElement | null; acted: boolean } | null>(null);
+  function focusLater(target: string | (() => HTMLElement | null)) {
+    focusAfter.current = {
+      target: typeof target === "string" ? () => document.getElementById(target) : target,
+      acted: false,
+    };
+  }
+  useEffect(() => {
+    const acted = () => {
+      if (focusAfter.current) focusAfter.current.acted = true;
+    };
+    document.addEventListener("keydown", acted, true);
+    document.addEventListener("pointerdown", acted, true);
+    return () => {
+      document.removeEventListener("keydown", acted, true);
+      document.removeEventListener("pointerdown", acted, true);
+    };
+  }, []);
+  useEffect(() => {
+    const waiting = focusAfter.current;
+    if (!waiting) return;
+    const active = document.activeElement;
+    if (waiting.acted && active && active !== document.body) {
+      focusAfter.current = null;
+      return;
+    }
+    const el = waiting.target();
+    if (!el) return;
+    focusAfter.current = null;
+    el.focus();
+  });
 
   // Text in the Next action field that can't be read is a change too: Save shows the line, Discard takes it back.
   const followDirty = dates.any || JSON.stringify(follow) !== JSON.stringify(followBase);
@@ -200,8 +283,8 @@ function LeadView({
     try {
       const r = await api.updateLead(lead.id, { ...patch, expectedUpdatedAt: lead.updatedAt });
       toast("success", r.changed ? "Saved." : "No change: that's already saved.");
-      if (where === "contact") setContact(null);
-      else if (where === "answers") setAnswers(null);
+      if (where === "contact") closeContact();
+      else if (where === "answers") closeAnswers();
       else discardFollow();
       reload();
     } catch (e) {
@@ -219,6 +302,18 @@ function LeadView({
     setFollow(null);
     dates.reset();
     setNextDateError(null);
+    focusLater("pipeline-h");
+  }
+
+  // The contact and Enquiry forms close back onto their own Edit button.
+  function closeContact() {
+    setContact(null);
+    setEmailError(null);
+    focusLater("lead-contact-edit");
+  }
+  function closeAnswers() {
+    setAnswers(null);
+    focusLater("lead-answers-edit");
   }
 
   function saveFollow(e: FormEvent) {
@@ -258,6 +353,8 @@ function LeadView({
     try {
       await api.addLeadNote(lead.id, text);
       setNote("");
+      // "Add note" is disabled while the field is empty, so the field keeps the focus, ready for the next note.
+      focusLater("lead-note");
       toast("success", "Note added.");
       reload();
     } catch (err) {
@@ -283,7 +380,18 @@ function LeadView({
   return (
     <>
       {/* Drafts survive a draft conflict, so they stay guarded; only a refused save (409) lifts it, the note still guarded. */}
-      <UnsavedChangesGuard dirty={note.trim() !== "" || (dirty && !saveStale)} what="this lead" />
+      <UnsavedChangesGuard
+        dirty={note.trim() !== "" || (dirty && !saveStale)}
+        what="this lead"
+        // Converted with unsaved edits, and the person stays: now the lead is read again and shows the client and the proposal.
+        onStay={() => {
+          if (!convertedAway) return;
+          setConvertedAway(false);
+          // The Convert button goes; Linked records then shows the client and the proposal.
+          focusLater("linked-h");
+          reload();
+        }}
+      />
       <PageHeader
         title={lead.name}
         crumbs={CRUMBS}
@@ -326,7 +434,7 @@ function LeadView({
       <div className="lead-page">
         <aside className="lead-page__side" aria-label="Pipeline and contact">
           <section className="lead-panel" aria-labelledby="pipeline-h">
-            <h2 id="pipeline-h" className="lead-panel__title">
+            <h2 id="pipeline-h" className="lead-panel__title" tabIndex={-1}>
               Pipeline
             </h2>
             <div className="lead-stage">
@@ -434,7 +542,17 @@ function LeadView({
                 Contact
               </h2>
               {canWrite && !editing && (
-                <button type="button" className="btn btn--text" onClick={() => setContact(contactOf(lead))}>
+                <button
+                  type="button"
+                  id="lead-contact-edit"
+                  className="btn btn--text"
+                  onClick={() => {
+                    // The Edit button goes as the form opens: the focus moves to its first field (fix round 3, 8).
+                    setEmailError(null);
+                    setContact(contactOf(lead));
+                    focusLater("lead-name");
+                  }}
+                >
                   <Pencil size={16} />
                   Edit<span className="visually-hidden"> contact</span>
                 </button>
@@ -512,8 +630,7 @@ function LeadView({
                     type="button"
                     className="btn btn--secondary"
                     onClick={() => {
-                      setContact(null);
-                      setEmailError(null);
+                      closeContact();
                       setError(null);
                     }}
                     disabled={busy === "contact"}
@@ -556,10 +673,15 @@ function LeadView({
             canEdit={canWrite && lead.source === "manual"}
             answers={answers}
             onAnswers={setAnswers}
+            onOpen={() => {
+              // The Edit button goes as the form opens: the focus moves to its first field (fix round 3, 8).
+              setAnswers({ base: answersOf(lead), value: answersOf(lead) });
+              focusLater("lead-currency");
+            }}
             busy={busy === "answers"}
             error={error?.where === "answers" ? error.text : null}
             onCancel={() => {
-              setAnswers(null);
+              closeAnswers();
               setError(null);
             }}
             onSave={(base, value) => save("answers", answersPatch(base, value))}
@@ -619,7 +741,12 @@ function LeadView({
           onClose={() => setConverting(false)}
           onConverted={() => {
             setConverting(false);
+            focusLater("linked-h");
             reload();
+          }}
+          onOpening={() => {
+            setConverting(false);
+            setConvertedAway(true);
           }}
         />
       )}
@@ -670,7 +797,7 @@ function Linked({ data }: { data: LeadPageData }) {
   if (!data.client && !data.proposal && data.duplicates.length === 0) return null;
   return (
     <section className="lead-panel" aria-labelledby="linked-h">
-      <h2 id="linked-h" className="lead-panel__title">
+      <h2 id="linked-h" className="lead-panel__title" tabIndex={-1}>
         Linked records
       </h2>
       <ul className="lead-links">
@@ -743,6 +870,7 @@ function Enquiry({
   canEdit,
   answers,
   onAnswers,
+  onOpen,
   busy,
   error,
   onCancel,
@@ -752,6 +880,8 @@ function Enquiry({
   canEdit: boolean;
   answers: AnswersDraft | null;
   onAnswers: (a: AnswersDraft | null) => void;
+  /** Opens the edit (from the stored answers) and moves the focus into it. */
+  onOpen: () => void;
   busy: boolean;
   error: string | null;
   onCancel: () => void;
@@ -800,11 +930,7 @@ function Enquiry({
             Enquiry
           </h2>
           {canEdit && !editing && (
-            <button
-              type="button"
-              className="btn btn--text"
-              onClick={() => onAnswers({ base: answersOf(lead), value: answersOf(lead) })}
-            >
+            <button type="button" id="lead-answers-edit" className="btn btn--text" onClick={onOpen}>
               <Pencil size={16} />
               Edit<span className="visually-hidden"> enquiry</span>
             </button>
@@ -893,22 +1019,49 @@ function Timeline(props: {
   const [next, setNext] = useState(props.first.next);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Each "Show older" request's number: only the latest one may show its answer or end the loading state.
+  const asked = useRef(0);
+  // A reload brings a new first page (fix round 2: the view is no longer started again): older pages and the cursor start over from
+  // it, so a new entry that pushed one off the first page never leaves a gap before "Show older".
+  const [first, setFirst] = useState(props.first);
+  if (first !== props.first) {
+    setFirst(props.first);
+    setOlder([]);
+    setNext(props.first.next);
+    setError(null);
+    // A "Show older" still on its way belongs to the old page (fix round 3, 6): the button is ready again at once, and that answer,
+    // whenever it comes, changes nothing (`asked` below).
+    setLoading(false);
+    // and that answer is no longer the latest, even in the moment before the effect below records the new first page (re-check of
+    // round 3, L3)
+    asked.current++;
+  }
   const items = [...props.first.items, ...older.filter((o) => !props.first.items.some((f) => f.id === o.id))];
   const now = Date.now();
   const titleId = useId();
 
+  // The first page an answer belongs to: a page that arrives after a reload replaced it is dropped (its cursor is the old one's).
+  const shownFirst = useRef(props.first);
+  useEffect(() => {
+    shownFirst.current = props.first;
+  }, [props.first]);
+
   async function more() {
     if (!next) return;
+    const from = props.first;
+    const ask = ++asked.current;
+    const current = () => asked.current === ask && shownFirst.current === from;
     setLoading(true);
     setError(null);
     try {
       const r = await api.leadActivities(props.leadId, next);
+      if (!current()) return;
       setOlder((o) => [...o, ...r.items]);
       setNext(r.next);
     } catch (e) {
-      setError(`Older entries didn't load. ${errorText(e)}`);
+      if (current()) setError(`Older entries didn't load. ${errorText(e)}`);
     } finally {
-      setLoading(false);
+      if (asked.current === ask) setLoading(false);
     }
   }
 

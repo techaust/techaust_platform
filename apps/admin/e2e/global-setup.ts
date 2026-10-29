@@ -126,4 +126,29 @@ export default async function globalSetup() {
   if (!cookies.some((c) => c.name === "__Host-ta_admin")) throw new Error("e2e setup: no session cookie");
   mkdirSync(here("../.e2e/"), { recursive: true });
   writeFileSync(here("../.e2e/owner-state.json"), JSON.stringify({ cookies, origins: [] }, null, 2));
+  await sampleLead(cookies.map((c) => `${c.name}=${c.value}`).join("; "));
+}
+
+/**
+ * The sweep visits a lead's page, and a fresh local database has none (the seed holds the catalogue and templates, `pnpm portal:sample`
+ * the clients): when the list is empty, one clearly labelled sample lead is added over the API, as New lead does (FX-3 review 3).
+ */
+async function sampleLead(cookie: string) {
+  const list = await fetch(`${ORIGIN}/api/v1/leads`, { headers: { Cookie: cookie } });
+  if (list.status !== 200) throw new Error(`e2e setup: GET /leads answered ${list.status}`);
+  const { leads } = (await list.json()) as { leads: unknown[] };
+  if (leads.length > 0) return;
+  const made = await fetch(`${ORIGIN}/api/v1/leads`, {
+    method: "POST",
+    headers: { Cookie: cookie, Origin: ORIGIN, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: "Sample Lead (e2e sample)",
+      email: "sample-lead@example.test",
+      company: "Sample Company (e2e sample)",
+      country: "IN",
+      message: "Sample enquiry made by the admin e2e setup. Not a real lead.",
+    }),
+  });
+  if (made.status !== 200 && made.status !== 201)
+    throw new Error(`e2e setup: POST /leads answered ${made.status}`);
 }

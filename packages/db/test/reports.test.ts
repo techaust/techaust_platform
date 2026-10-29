@@ -172,6 +172,12 @@ describe("EXPLAIN: every report statement uses an index", () => {
     const pr = await plan(PROJECT_BILLED_SQL, "p");
     expect(pr).toMatch(/SEARCH d USING INDEX documents_project \(project_id=\?\)/);
     expect(scansTable(pr), pr).toBe(false);
+    // FX-3 fix round (item 7): the anonymised check is a one-off lookup by key (a plain SCALAR SUBQUERY, never a correlated one run per document)
+    for (const p of [cl, pr]) {
+      expect(p).not.toMatch(/CORRELATED/);
+      expect(p).toMatch(/SEARCH z USING (INDEX sqlite_autoindex_clients_1|PRIMARY KEY) \(id=\?\)/);
+      expect(p).not.toMatch(/SCAN (z|zp)\b(?! USING)/);
+    }
   });
 
   it("the dashboard's invoiced figure reads `documents_issued_on`; what clients owe and the oldest overdue read `documents_status_due`", async () => {
