@@ -152,6 +152,33 @@ describe("unrendered content in visible text (review finding 4)", () => {
   });
 });
 
+describe("curly apostrophes in visible text (audit A2 finding 6)", () => {
+  const body = (b: string) => `<!doctype html><html><head><title>T</title></head><body>${b}</body></html>`;
+
+  it("fails on a straight apostrophe or quote in text, a title or a read-out attribute", () => {
+    expect(c.checkApostrophes("a.html", body("<h1>We couldn't find that page</h1>"))).toHaveLength(1);
+    expect(c.checkApostrophes("a.html", body("<p>e.g. &#39;Stop retyping&#x27;</p>"))).toHaveLength(2);
+    expect(
+      c.checkApostrophes(
+        "a.html",
+        `<html><head><title>Thanks, we've got it.</title><meta property="og:title" content="we've"></head></html>`,
+      ),
+    ).toHaveLength(2);
+    expect(c.checkApostrophes("a.html", body(`<button aria-label="It's off"></button>`))).toHaveLength(1);
+  });
+
+  it("allows curly ones, and straight ones in code, pre, scripts and comments", () => {
+    const ok = body(
+      [
+        "<p>We’ll reply. It isn’t a commitment. e.g. ‘Stop retyping’</p>",
+        "<pre>Contact: 'x'</pre><code>it's</code>",
+        "<script>const a = 'b';</script><!-- it's -->",
+      ].join(""),
+    );
+    expect(c.checkApostrophes("a.html", ok)).toEqual([]);
+  });
+});
+
 describe('"and", never "&", in page text (owner, 2026-10-22; docs/07 §1.1)', () => {
   const body = (b: string) => `<!doctype html><html><head><title>T</title></head><body>${b}</body></html>`;
 

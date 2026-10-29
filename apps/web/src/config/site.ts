@@ -25,7 +25,11 @@ export const site = {
   ga4Id: "",
   /** OWNER: postal address for the legal pages (07-A `{{postal_address}}`). Empty = a labelled placeholder (never invented). */
   postalAddress: "Pirozpur, Balurghat, Dakshin Dinajpur, West Bengal 733133" as string,
-  /** OWNER: founder's headshot, a path under /brand or a built asset. Empty = the About page shows a placeholder. */
+  /**
+   * OWNER: founder's headshot: the file name of an image put in apps/web/src/assets/founder/ (e.g. "founder.jpg", at least
+   * 1200 px tall, 4:5). The build makes AVIF and WebP copies through astro:assets (WEB-G-13); a name with no file fails the
+   * build. Empty = the About page shows a placeholder.
+   */
   founderPhoto: "" as string,
   /** OWNER: founder's short bio (About, 07 §5.7). Empty = placeholder. */
   founderBio: "" as string,

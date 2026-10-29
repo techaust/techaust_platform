@@ -177,6 +177,24 @@ export function checkLeftovers(name, html) {
   return problems;
 }
 
+/**
+ * Typographic apostrophes and quotes (’ ‘), never the straight ' (audit A2 finding 6; docs/07 writes them curly), in what
+ * a visitor reads or hears: page text and the read-out or shown attributes, titles and share text included. Code and
+ * preformatted blocks keep theirs.
+ */
+export function checkApostrophes(name, html) {
+  const text = visibleText(html.replace(/<(code|pre)\b[\s\S]*?<\/\1>/gi, " "));
+  const problems = [];
+  for (const hit of text.matchAll(/'/g)) {
+    const around = text
+      .slice(Math.max(0, hit.index - 30), hit.index + 30)
+      .replace(/\s+/g, " ")
+      .trim();
+    problems.push(`${name}: straight ' in visible text ("…${around}…"; write ’ or ‘ ’)`);
+  }
+  return problems;
+}
+
 /** WEB-G-07: no money amount typed into a template (prices come from the catalogue snapshot). */
 export function checkAmountLiterals(name, source) {
   const problems = [];
@@ -338,6 +356,7 @@ export function checkWeb(webDir) {
         ...checkHtml(name, text, headersText),
         ...checkAmpersands(name, text),
         ...checkLeftovers(name, text),
+        ...checkApostrophes(name, text),
         ...checkMetaDescription(name, text),
         ...checkExternalLinks(name, text),
         ...lintBuiltPage(name, text, allow.entries),

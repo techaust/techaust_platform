@@ -5,6 +5,9 @@
 // shows the Placeholder component in its place (never an invented value), and scripts/check-prod-readiness.mjs keeps
 // production blocked until each is supplied. The headshot frame has its top-right corner cut at 45° (docs/06 §4.3,
 // the signature detail "on the top-right corner of the hero image frame").
+// The headshot goes through astro:assets (WEB-G-13, audit A2 finding 13): the owner's file in src/assets/founder/, named
+// by site.founderPhoto, is built into AVIF and WebP at 1x to 3x the frame's width, with its own width and height.
+import { Picture } from "astro:assets";
 import "../styles/page.css";
 import CopyText from "../components/CopyText.astro";
 import CTABand from "../components/CTABand.astro";
@@ -22,6 +25,19 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 
 const f = about.founder;
 const talk = cta.talk();
+
+// The owner's headshot (a file name in src/assets/founder/); a name with no file there fails the build, never a blank frame.
+const headshots = import.meta.glob<{ default: ImageMetadata }>(
+  "../assets/founder/*.{jpg,jpeg,png,webp,avif}",
+  {
+    eager: true,
+  },
+);
+const headshot = site.founderPhoto ? headshots[`../assets/founder/${site.founderPhoto}`]?.default : undefined;
+if (site.founderPhoto && !headshot)
+  throw new Error(
+    `About: site.founderPhoto "${site.founderPhoto}" is not an image in apps/web/src/assets/founder/`,
+  );
 ---
 
 <BaseLayout title={about.meta.title} description={about.meta.description}>
@@ -33,8 +49,16 @@ const talk = cta.talk();
       <div class="founder">
         <figure class="founder__photo">
           {
-            site.founderPhoto ? (
-              <img src={site.founderPhoto} alt={f.name} width="480" height="600" loading="lazy" decoding="async" />
+            headshot ? (
+              <Picture
+                src={headshot}
+                alt={f.name}
+                formats={["avif", "webp"]}
+                widths={[352, 704, 1056]}
+                sizes="min(22rem, 100vw)"
+                loading="lazy"
+                decoding="async"
+              />
             ) : (
               <Placeholder what="Founder headshot, at least 1200 px, plain background" class="founder__ph" />
             )
@@ -124,7 +148,8 @@ const talk = cta.talk();
     clip-path: polygon(0 0, calc(100% - var(--cut)) 0, 100% var(--cut), 100% 100%, 0 100%);
   }
 
-  .founder__photo img {
+  /* The <picture> and <img> come from astro:assets, outside this page's style scope. */
+  .founder__photo :global(img) {
     position: absolute;
     inset: 0;
     inline-size: 100%;

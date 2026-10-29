@@ -17,3 +17,12 @@ const txt = buildSecurityTxt(site.securityTxtExpires).trimEnd();
     <pre class="sectxt"><code>{txt}</code></pre>
   </LegalPage>
 </BaseLayout>
+
+<style>
+  /* The file wraps instead of scrolling sideways (audit A2 finding 1): a scroll box the keyboard can't reach fails WCAG
+     2.1.1 on phones. Lines break at spaces first and a long URL where it must; the text stays the file's own text. */
+  .sectxt {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+</style>
