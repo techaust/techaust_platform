@@ -129,6 +129,8 @@
 }
 
 .notes-row__type {
+  /* the dates line up down the column whichever type comes first ("Credit note" is the longer name) */
+  min-width: 11ch;
   font-size: var(--text-sm);
   font-weight: 500;
   white-space: nowrap;

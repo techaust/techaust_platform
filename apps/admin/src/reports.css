@@ -324,19 +324,9 @@
   overflow-wrap: anywhere;
 }
 
+/* At most three columns (a rate and one or two heads): it fits a phone, so it never scrolls. */
 .manual-entry__figures {
   max-width: 100%;
-  overflow-x: auto;
-}
-
-.manual-entry__table {
-  width: auto;
-  min-width: 16rem;
-  background: transparent;
-}
-
-.manual-entry__table th:first-child {
-  padding-inline-start: 0;
 }
 
 .manual-entry__open {
@@ -555,6 +545,24 @@
 
 .ledger.ledger--3b tbody th {
   max-width: 24rem;
+}
+
+/* FX-4 (A5 1): a tax-only note's figures (./routes/reports/manual-entries.tsx), the ledger made compact: it sits inside the note's card, flush with its text. */
+.ledger.manual-entry__table {
+  width: min(18rem, 100%);
+  background: transparent;
+}
+
+.ledger.manual-entry__table :is(thead, tbody, tfoot) :is(th, td) {
+  padding-inline: var(--space-2);
+}
+
+.ledger.manual-entry__table :is(thead, tbody, tfoot) :is(th, td):first-child {
+  padding-inline-start: 0;
+}
+
+.ledger.manual-entry__table :is(thead, tbody, tfoot) :is(th, td):last-child {
+  padding-inline-end: 0;
 }
 
 /* A section with no documents in the period reads quieter (its zeros are still there). */
