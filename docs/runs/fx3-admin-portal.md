@@ -533,3 +533,109 @@ API sentences (not screen copy):
   - signatures always PNG;
   - the lead timeline labels (`budgetBandLabel`, `TIMELINE_LABELS`);
   - the `lead_answers_fixed` line.
+
+## Designer report
+Designer: claude-opus-5-5 (high), 2026-10-29 ~13:45–15:40 IST, branch `fix/fx3-designer` from `origin/fix/fx3-admin-portal` (200e5f02). 12 commits plus this report, pushed.
+
+### Skills
+- `frontend-design:frontend-design` (loaded first): set the direction inside docs/06. Changes it led to: the client Figures panel leads with one figure (what the client owes now, in the display face, a ledger total's weight) and keeps the rest as quiet hairline rows; no card in a card for the panel's failed state (one quiet line); note headings step down in size without competing with the panel title; every new element reuses existing tokens, pills, panels and lines.
+- `dataviz`: loaded for the figures panels (stat figures). Applied its stat-tile rules: one hero number, tabular figures, text in text tokens, the overdue state with icon and count in words (never colour alone). No chart was drawn, so the palette validator wasn't needed.
+- Not loaded: the Cloudflare skills (one Worker change only, a refusal in `settings-signature.ts`; no binding, config or platform feature), `code-review`/`security-review` (reviewer skills).
+
+### Per item (files under `apps/admin/src` or `apps/portal/src` unless named)
+- **A3 1 (keyboard scroll):** `components/scroll-region.ts` (new `useScrollRegion`): a box that overflows sideways gets `tabIndex=0`, `role="region"`, its name and `data-scrolls`, only while it overflows (a box that fits adds no stop); the global `:focus-visible` ring shows. Used by `DataTable` (`components/data-table.tsx`, named by its caption), the week grid (`routes/time.tsx`, named "Hours by day": the panel already carries "Week of …", so axe's `landmark-unique` stays clean) and the catalogue's default lines (`routes/catalogue/service.tsx`).
+- **A3 2 (no sideways page scroll):** `position: relative` on the overflow boxes (`shell.css .dtable`, `care.css .sheet-wrap`, `catalogue.css .lines-table` and `.md pre`, `documents.css .read-lines`, `screens.css .tabs__scroll`, `projects.css .md pre`). The new sweep found one more: Settings › Numbering scrolled the page at 1024 (the table beside the settings menu); `.settings__body .dtable` now scrolls in its own box (`shell.css`, end).
+- **A3 3:** `care.css .entry-note`: `overflow-wrap: break-word` and `min-width: 12rem` (words wrap; a column of one letter per line can't happen).
+- **A3 6:** the "Password hashing took N ms" line is gone from sign-in and from enrolment (`routes/sign-in.tsx`, `routes/invite.tsx`).
+- **A3 9 and A3 12:** `routes/leads/convert.tsx`: a lead with no country starts unchosen ("Choose a country"), the country is required, GST status and state appear once it's chosen; after converting, the draft proposal opens (`/proposals/:id`).
+- **A3 13:** sign-in's password field has the same Show/Hide toggle as enrolment (`routes/sign-in.tsx`; hidden again when the code step opens).
+- **A4 1:** `components/decision/decision-panel.tsx`: after a check, the name's error follows the field as it is typed (never on blur), so a press of Accept can't be lost to a line vanishing under the pointer.
+- **A4 2:** the number in the confirmation is `nowrap`; under 30rem each fact's label sits above its value (`portal.css .facts--confirm`); the dialog's buttons stick to its foot (`app.css .dialog__actions`).
+- **A4 7:** `components/document/document-paper.tsx` (`acceptOpen`, set by `screens/document-page.tsx`): once a version can't be accepted (decided, expired, replaced), the Acceptance section's own "Accept this offer…" text is left out.
+- **A4 8:** the whole agreement row is a `<label class="check">`, 44 px (`portal.css .check`, `.check__text`).
+- **Client Overview figures (ADM-CLI-03):** `routes/clients/figures.tsx` (new; `ClientFiguresPanel`), first in the Overview's side column for finance roles, none for an anonymised client (`routes/clients/overview.tsx`, `client.tsx`). Outstanding (large), overdue (warning icon, amount, "{n} documents"), billed to date with its note, credit notes when there are any, 07-V's "Collected figures arrive with payments.", and a way to the Statement tab. Per currency, each under its code when there are two. Loading (skeleton), failed (one line and "Try again"), none ("Nothing invoiced yet."). Styles: `clients.css` (`.acct*`). Amounts through `moneyText` (core `formatMoney`); nothing is summed on screen.
+- **Project Figures (ADM-PRJ-05):** `ProjectBilledFacts` in the project's Figures list (billed, per currency; credit notes when any), with the 07-V line (`routes/projects/overview.tsx`). Sales sees no money rows.
+- **Note headings (ADM-PRJ-03):** `projects.css` `.md__h--1..3` (body-lg, body, small muted; more room above than below); the note editor's hint names headings (`lib/projects.ts noteFormattingHint`, `routes/projects/notes.tsx`). Document sections keep the old hint (no headings there).
+- **Manual lead fields (ADM-LEAD-01):** `routes/leads/answers.tsx` (new; `AnswersFields`, `withCurrency`, `answersPatch`): Currency, Budget (the chosen currency's bands; a new currency drops a band it doesn't have; disabled with a hint until a currency is chosen), Timeline. On New lead (`routes/leads/new.tsx`) and, for a manual lead, behind the Enquiry panel's Edit (`routes/leads/lead.tsx`; only the changed fields are sent; part of the unsaved-changes guard; a stale save shows the usual notice). `leads.css .lead-answers`.
+- **Timeline labels:** `lib/leads.ts answerText` (a band by the currency that has it, the timeline by `TIMELINE_LABELS`), used by the lead timeline's change table; `leads.css` Field column 27 % and tighter on phones so "Currency" stays whole at 375.
+- **`lead_answers_fixed`:** mapped to its 07-Y line on the lead page (a race only: the screen never offers a website lead's answers).
+- **`newer_version_pending` (A4 9):** `copy-y.ts` (portal, new), `lib/offers.ts` (`errorText`, and `FINAL` moved here from `routes/offer.tsx` so a test can read it), the sample API's `sample-pending` document and its `/preview` entry.
+- **Signatures always PNG (docs/13 2026-10-29):** `lib/signature-scale.ts` draws every image again as a PNG within 800 × 400 (a JPEG or a PNG that fits included; `scaled` says whether the size changed); `apps/admin/worker/settings-signature.ts` refuses any new JPEG (415 `type_not_allowed`, "Send the signature as a PNG image"; the JPEG size reader is gone); a stored JPEG is served as before. `routes/settings/signature.tsx` shows `SIGNATURE_COPY.scaled` after a scaled upload and a new `tooDetailed` line when the PNG passes 256 KB (`lib/pdf.ts`, `screens.css .signature__scaled`).
+- **Template rules:** `routes/catalogue/template.tsx`: `templateRuleErrors` on the stored version when the page opens (a notice above, the line under each section) and live in the editor (under each section; a save is held and the summary lists "Section N: …"); `template_text_token_place` and `template_joined_too_long` from the API name the same sections (otherwise the API sentence). `lib/catalogue.ts` `TEMPLATE_RULES.storedBreaks` and `section`.
+- **Care's next billing day:** no screen change was needed (the page prints the date the builder's rule gives). Not looked at on screen: see below.
+- **`series_full`:** already wired by the builder (`DOC_ERRORS`, `offerErrorText`); nothing to change.
+- **E2E (A3 1, 2; A4 1):**
+  - `apps/admin/playwright.config.ts`, `e2e/global-setup.ts` (enrols a throwaway Owner `e2e-…@example.test` in the local D1 over the API, Node's argon2 and TOTP, as `scripts/bench-auth.mjs` does), `e2e/sweep.spec.ts`: every admin route (36 lists and settings pages plus the first lead, client, project, document, invoice, catalogue item and template the database holds) at 768 and 1024, light and dark, with the in-app theme against the opposite OS theme: `scrollWidth` ≤ `clientWidth` and axe (WCAG 2.2 AA + best practice, moderate and up); 375, 1280 and 1600 for sideways scroll; every `[data-scrolls]` box takes focus and moves with the arrow keys.
+  - `apps/portal/playwright.config.ts`, `e2e/accept.spec.ts` on the labelled sample API: A4 1 (one press after a correction; the error follows typing, not blur), A4 8 (44 px row; a press at its far end ticks it), A4 2 (one-line number at 375, buttons in view), A4 7, A4 9, and axe at 375, 768 and 1024.
+  - **Designer decision, for the lead to confirm:** `@playwright/test` 1.64.1 and `@axe-core/playwright` 4.14.0 (the versions `apps/web` already pins) are now dev dependencies of admin and portal, with an `e2e` script each. The lockfile change is the two importers only; no new package or version was downloaded (`pnpm install --offline`). `.gitignore` gains `apps/{admin,portal}/test-results/` and `apps/admin/.e2e/`. CI doesn't run these (no workflow change); run them by hand like `apps/web`'s.
+
+### Tests added or changed
+- admin: `lib/leads.test.ts` (answer labels, `withCurrency`, `answersPatch`, the two lines), `lib/projects.test.ts` (note hint), `lib/catalogue.test.ts` (the page's two template lines), `lib/signature-scale.test.ts` (every image re-encoded to PNG), `lib/pdf.test.ts` (`tooDetailed`), `worker/settings-signature.test.ts` (every new JPEG refused with its code and message; a stored JPEG still served as `image/jpeg`).
+- portal: `lib/offers.test.ts` (`newer_version_pending` line, marked; `FINAL`).
+- e2e as above.
+
+### Shots (`.logs/shots/fx3-designer/`, in this worktree; `-SAMPLE` = the API answer replaced in the page by labelled sample figures, or the portal's sample API)
+- `client-figures-empty-1280-light.png`: Figures with nothing invoiced.
+- `client-figures-1280-light.png`: one real local invoice (₹47,200), outstanding, nothing overdue.
+- `client-figures-two-currencies-overdue-1280-light-SAMPLE.png`, `…-1280-dark-on-light-os-SAMPLE.png`, `client-figures-375-dark-SAMPLE.png`, `client-figures-768-dark-SAMPLE.png`: INR with overdue and credit notes beside USD; light, dark against a light OS, phone, tablet (rows held to a reading width).
+- `client-figures-loading-1280-dark.png`, `client-figures-error-1280-dark-SAMPLE.png`: loading and failed states.
+- `project-figures-empty-1280-dark.png`, `project-figures-empty-768-dark.png`, `project-figures-billed-1280-dark-SAMPLE.png`: project Figures, none billed and two currencies with a credit note.
+- `project-note-headings-1280-dark.png`: a note with `#`, `##`, `###`.
+- `lead-new-answers-1280-dark.png`, `lead-edit-answers-1280-dark.png`, `lead-timeline-labels-1280-dark.png`, `lead-timeline-diff-375-dark.png`: the answers on New lead and on edit; the timeline in the form's words.
+- `convert-no-country-1280-dark.png`, `convert-country-chosen-1280-dark.png`, `convert-opens-draft-1280-dark.png`: A3 12 and A3 9.
+- `sign-in-show-password-375-dark.png`, `sign-in-code-no-hashing-line-375-dark.png`: A3 13 and A3 6.
+- `time-1024-dark.png`, `time-sheet-region-focus-1024-dark.png`: A3 3 notes wrap on words; the week grid focused by Tab, scrolled by the arrow keys.
+- `settings-numbering-1024-dark.png`: the table in its own scroll box.
+- `signature-jpeg-to-png-scaled-1280-dark.png`, `signature-too-detailed-1280-dark.png`: a 1600 × 600 JPEG stored as an 800 × 300 PNG (40 KB) with the scaled line; a noisy image refused with the new line.
+- `template-stored-breaks-rule-1280-dark-SAMPLE.png`, `template-stored-breaks-section-1280-dark-SAMPLE.png`, `template-editor-rule-summary-1280-dark-SAMPLE.png`: a stored version with `{{service.deliverables}}` in Scope (injected into the page's answer): the notice, the section line, the editor's summary.
+- `portal-accept-errors-375-light-SAMPLE.png`, `portal-accept-dialog-375-light-SAMPLE.png`, `portal-accept-dialog-375-dark-SAMPLE.png`, `portal-accepted-record-375-dark-SAMPLE.png`, `portal-newer-version-pending-375-dark-SAMPLE.png`: A4 1, 2, 7, 8, 9.
+- `matrix/` (110 full-page shots + `report.txt`): client overview, project overview and notes, New lead, a manual lead, Time, Settings › Company and › Numbering, a template, and two portal proposals, each at 375, 768, 1024, 1280 and 1600, light and dark (admin: in-app theme against the opposite OS theme). No sideways scroll in any. Looked at by eye: a sample (client 1600 light, lead 375 light, New lead 375 dark, project 768 light, portal accepted 1600 light); the lead one showed "Currenc/y" breaking at 375, fixed (0f373164).
+
+### Commands (heavy ones through `tools/heavy.sh`)
+- Targeted vitest runs while working (portal `lib/offers`, admin `lib/leads`, `lib/projects`, `routes/leads/screens`, `lib/pdf`, `lib/signature-scale`, `lib/batch-review`, `worker/settings-signature`, `lib/catalogue`): all green.
+- `pnpm --filter @techaust/portal e2e`: 9/9 passed (`.logs/fx3d-e2e-portal.log`).
+- `pnpm --filter @techaust/admin e2e`: first run 3 of 5 failed and found `/time` `landmark-unique` and `/settings/numbering` sideways at 1024; after the fixes 6/6 passed in 8.0 min (`.logs/fx3d-e2e-admin2.log`).
+- `pnpm --filter @techaust/admin --filter @techaust/portal typecheck`: exit 0.
+- `pnpm --filter @techaust/admin test`: 3,347 passed (112 files).
+- Full `pnpm test` (`.logs/fx3d-test.log`): core 1,800 (coverage gate passed), db 471, email 128, pdf 340, auth 135, ui 469 (2 skipped), web 510 (17 skipped) passed; jobs had one timeout at 5 s under the parallel load (`reports-b.test.ts` "realisation.scan: pages > 51 open exports", untouched here, the same class as round 3's two), so pnpm stopped admin and portal. Re-run one package at a time: jobs 528/528, portal 630/630, admin 3,347/3,347.
+- `pnpm --filter @techaust/admin build`: exit 0; front 99,271 bytes (startup 10.9 ms), API 611,161 bytes (56.4 ms).
+- `pnpm --filter @techaust/portal build`: exit 0; 97,151 bytes (9.8 ms).
+- `pnpm check` (the one whole-repository lint, last): exit 0; its 10 warnings and 8 infos are all in files I didn't touch (pdf tests, admin `reports.test.ts`, web `catalogue.ts`, core `public-text.ts`).
+- Dev servers stopped; the browser closed.
+
+### Not verified
+- The care page's next billing day on screen: no care plan in the local database, and building one by hand was skipped; the page prints the date as before, the rule is the builder's (tested).
+- Overdue amounts and two-currency figures with real data: no past-due invoice can be made locally today, so those states were shown with labelled sample answers injected into the page (`-SAMPLE` shots); the real panel was seen with one real invoice.
+- A credit note on a real client (FX-4's screens).
+- The `template_*` refusals from the real API (the editor holds the save first; the API tests are the builder's).
+- Safari, Firefox, NVDA, phones; staging.
+- The jobs timeout under full parallel load was not investigated (jobs untouched; passes alone).
+- The `-1600` and other matrix shots were not all opened one by one: the sweep checks sideways scroll and axe for every route, and the matrix's report confirms no sideways scroll.
+
+### Placeholder lines (07-Y; shown with "[Placeholder] " until approved)
+Admin (`apps/admin/src/lib/copy-y.ts` `Y()`):
+1. `routes/leads/convert.tsx` `CONVERT_COPY.chooseCountry`: "Choose a country"
+2. `CONVERT_COPY.countryRequired`: "Choose the client's country."
+3. `routes/clients/figures.tsx` `FIGURES_COPY.billed`: "Billed to date"
+4. `FIGURES_COPY.billedHint`: "Invoices and debit notes, GST included."
+5. `FIGURES_COPY.credited`: "Credit notes"
+6. `FIGURES_COPY.openStatement`: "Open the statement"
+7. `lib/projects.ts` `COPY.noteFormattingHint`: "You can use # headings, **bold**, *italic*, lists and links."
+8. `routes/leads/answers.tsx` `ANSWERS_COPY.chooseCurrencyFirst`: "Choose a currency first."
+9. `ANSWERS_COPY.answersFixed`: "These answers came from the website form and can't be changed."
+10. `lib/pdf.ts` `SIGNATURE_COPY.tooDetailed`: "This image is too detailed to keep as a signature. Use a scan on a plain white background."
+11. `lib/catalogue.ts` `TEMPLATE_RULES.storedBreaks`: "This version was saved before the template rules below. Drafts made from it may not save. Edit it and save a new version."
+12. `routes/time.tsx` `SHEET_REGION` (the week grid's accessible name when it scrolls): "Hours by day"
+
+Portal (`apps/portal/src/copy-y.ts`):
+13. `OFFER_Y.errors.newer_version_pending`: "This version can no longer be accepted: a newer one is being prepared." (the page then also shows 07-N's "A new version is being prepared. We'll email you when it's ready.")
+
+Lines now shown that the builder had already added: `SIGNATURE_COPY.scaled`, `SIGNATURE_COPY.wrongFile`, `TEMPLATE_RULES.textInHeading`, `.textElsewhere`, `.joinedTooLong`, `DOC_ERRORS.series_full`.
+Reused approved words (no new line): "Outstanding", "Overdue", "{n} documents", "Nothing outstanding.", "Nothing overdue.", "Nothing invoiced yet.", "Collected figures arrive with payments." (07-V §7); "Figures" (07-K); "Currency", "Budget", "Timeline", "Not given"; the Statement tab; "This didn't load." and "Try again" (the shared LoadFailed). Unmarked composition: "Section {n}: {line}" in the template summary.
+API sentences (not screen copy): `type_not_allowed` on the signature upload is now "Send the signature as a PNG image".
+
+### Open questions (lead's call)
+1. Are `@playwright/test` and `@axe-core/playwright` as admin and portal dev dependencies acceptable (same pinned versions as `apps/web`, no download)? If not, the two e2e folders can move under `apps/web` or wait for the owner's yes.
+2. A long PNG of a photo-like scan now fails the 256 KB cap where the original JPEG would have fitted (the new `tooDetailed` line says what to do). Keep the cap, or raise it for PNG?
+3. The phone order of the client Overview puts Figures after Details, Tax and billing and Notes (the side column follows the main one). Bring Figures first on phones?
+
