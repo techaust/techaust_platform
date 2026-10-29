@@ -503,6 +503,62 @@ describe("PATCH /leads/:id [ADM-LEAD-03]", () => {
     });
   });
 
+  it("FX-3 fix round (ADM-LEAD-03): stored answers are judged only when the request changes one, and a website lead's source rule comes first", async () => {
+    const s = await sessionFor("sales");
+    const owner = await sessionFor("owner");
+    // a website lead holding a band the form no longer offers: an owner or contact edit still saves
+    const old = await addLead({ currency: "INR", budget_band: "retired-band", timeline: "someday" });
+    const edit = await send(
+      `/leads/${old.id}`,
+      "PATCH",
+      { expectedUpdatedAt: old.updated_at, ownerId: owner.id, name: "New Contact", phone: "+91 22222" },
+      s.cookie,
+    );
+    expect(edit.status).toBe(200);
+    expect(
+      await one(
+        "SELECT owner_id, contact_name, contact_phone, budget_band, timeline FROM leads WHERE id = ?",
+        old.id,
+      ),
+    ).toEqual({
+      owner_id: owner.id,
+      contact_name: "New Contact",
+      contact_phone: "+91 22222",
+      budget_band: "retired-band",
+      timeline: "someday",
+    });
+    // a manual lead with an unknown stored band: a contact edit saves too (its answers aren't re-judged)
+    const manual = await addLead({ source: "manual", currency: "USD", budget_band: "retired-band" });
+    const manualEdit = await send(
+      `/leads/${manual.id}`,
+      "PATCH",
+      { expectedUpdatedAt: manual.updated_at, company: "Renamed Ltd" },
+      s.cookie,
+    );
+    expect(manualEdit.status).toBe(200);
+
+    // a currency change on a website lead is the source rule's 409, not the band check's 400 (its rupee band isn't a dollar band)
+    const web = await addLead({ currency: "INR", budget_band: "1l-3l", timeline: "exploring" });
+    for (const extra of [{ currency: "USD" }, { currency: null }, { timeline: "next-year" }]) {
+      const res = await send(
+        `/leads/${web.id}`,
+        "PATCH",
+        { expectedUpdatedAt: web.updated_at, ...extra },
+        s.cookie,
+      );
+      expect(res.status, JSON.stringify(extra)).toBe(409);
+      expect((await json(res)).error.code).toBe("lead_answers_fixed");
+    }
+    expect(
+      await one("SELECT currency, budget_band, timeline, updated_at FROM leads WHERE id = ?", web.id),
+    ).toEqual({
+      currency: "INR",
+      budget_band: "1l-3l",
+      timeline: "exploring",
+      updated_at: web.updated_at,
+    });
+  });
+
   it("changes only what was sent; contact values go on the timeline, NEVER in the audit row", async () => {
     const s = await sessionFor("sales");
     const member = await sessionFor("staff");
