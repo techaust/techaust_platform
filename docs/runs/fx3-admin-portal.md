@@ -255,3 +255,19 @@ API sentences changed (not screen copy):
   - the portal line for `newer_version_pending`, plus the code in `offer.tsx`'s `FINAL` set;
   - placing `SIGNATURE_COPY.scaled`;
   - the client Overview and project Figures panels.
+
+## Merge of `main` (lead, 2026-10-29 ~11:30 IST)
+`main` now holds the M5 owner fixes (#106) and FX-1 (#107); `main` equals FX-1's final head. Merged into this branch (1486aca9):
+- **main's side** wherever FX-3 never changed the file;
+- **`apps/admin/src/lib/documents.ts` and its test:** main's files, with FX-3's `series_full` line, its `Y` import and its test re-applied;
+- **`apps/jobs/src/billing.ts`:** FX-3's shared `CARE_SCAN_REPEAT_HOURS` kept;
+- **docs/13:** both sets of rows.
+
+## Builder round 2 (lead's brief; builder claude-opus-5-5/high)
+On `fix/fx3-b2` from `origin/fix/fx3-admin-portal`:
+1. **First, prove the merge.** Run the full `pnpm test` and `pnpm check`; fix anything the merge broke.
+2. **Item 12:** in `apps/admin/worker/service-fill.ts` `fillServiceTokens`, the first service's own template fill can pass 6,000 characters on a staff-edited template. Apply the same leave-out-and-name rule (`noRoom` gap) the other services get under the block model (M5 rounds 4–7; see the file header and `docs/runs/m5-owner-fixes.md`). Test it with a long template: the save and the creation both succeed, the gap is named, and nothing is refused.
+3. **Item 11 re-check:** the `series_full` line in `apps/admin/src/lib/documents.ts` still maps correctly against the newer file.
+4. **Manual lead fields after creation (docs/13 2026-10-29):** `PATCH /leads/:id` takes `currency`, `budgetBand` and `timeline` with the same checks as `POST` (a band needs its own currency). Add tests.
+
+Make one commit per item. Report under "### Builder round 2 report".
