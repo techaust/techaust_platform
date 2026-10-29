@@ -300,3 +300,101 @@ Branch `fix/fx4-fix1` from `origin/fix/fx4-invoicing` (e9b8ef1e). One commit per
 - The scanner finds codes only in the forms listed above. An action passed through a helper other than `action:`, `auditFirstRow`'s spec or a literal `INSERT INTO audit_log` would not be seen. None exists today.
 
 **Open questions:** none new. The audit filter groups have no "Leads", "Care plans", "Time" or offer-link group yet. That is the designer's audit filter item.
+
+## Designer report (designer, Opus 5.5 high, 2026-10-29)
+Branch `fix/fx4-designer` from `origin/fix/fx4-invoicing` (bce6f435), six commits: e80ef6d4, 404fd2bc, fcbc6416, 5cccb205, 32f9654b, 86e593b3, plus this report. Admin SPA only (no Worker, no `packages/`, no portal file changed).
+
+**Skills loaded:**
+- `frontend-design:frontend-design`: set the direction inside docs/06. One new device only, the manual-entry card (the problem list's left rule, in warning, with a compact ledger of the report's own type), and no decoration elsewhere; the scroll cue is a plain ink shade, not a new component; the unsaved LUT is plain words with the drafts' pencil, not another pill; I checked each choice against the existing screens rather than adding chrome.
+- `dataviz`: the per-rate figures are a table, not a chart (its form heuristic), so no chart was made. What it changed: text in text tokens only, numbers right-aligned in tabular figures, a total row only when there is more than one rate, and only the heads that carry tax.
+
+### Items
+1. **A5 2, blocker targets** (`invoices.css`): a blocker row with a link is a full 44 px row. An invisible layer over the row is the link's target and carries the focus ring, so "Settings › Company" and one-line sentences are no longer 20 px targets. Rows with nothing to open keep the old rhythm. Measured: rows 44 to 75 px; clicking "Line 1 needs a 6-digit SAC code." puts the cursor in the line's SAC field.
+2. **A5 1 (screen), the GST panel, L2** (`routes/reports/gst.tsx`, new `routes/reports/manual-entries.tsx`, `reports.css`):
+   - the heading uses `complete`: the tick and `GST_COPY.done` only when complete, otherwise the warning mark and `GST_COPY.doneManual(checked, blocking)`. It never says "No errors" while a blocking line is present;
+   - under it, each tax-only note is a card: the builder's sentence, a ledger of `manual.byRate` (Rate, then only the heads with tax, a Total row when there are two or more rates), and "Open document" (44 px);
+   - "Check before filing" keeps only the non-blocking warnings. The downloads stay open (lead's answer to builder Q2).
+   - Its own module, because `./parts.tsx` is also imported by the client statement tab, which must not pull in the gst core.
+3. **L3, sales register** (`lib/reports-build.ts`, `routes/reports/sales-register.tsx`): `SalesRegister` carries `manual` (the GST export's blocking lines when the 3B file is offered; empty otherwise). With any, the panel shows the same heading line and the same cards. Test added.
+4. **A5 3, discounts** (`lib/documents.ts`, `routes/documents/money.tsx`, both editors and both read views): the totals row is named by where the discount comes from: the document only keeps 07-O's "Document discount"; lines only is "Line discounts"; both is "Discounts (lines and document)" (07-Y). Drafts read it from what is typed, parsed through core as the save is; frozen views from the stored discounts. The amount is still the server's one `discountMinor`. Separate rows need the API's help (open question 2).
+5. **A5 5, "GST (estimate)" on proformas: not done, blocked.** Telling a new proforma from a frozen one needs a marker sealed at issue, which is the builder's (open question 1). Nothing was changed for it.
+6. **A5 6, ledger rows** (`routes/invoices/notes-parts.tsx`, `notes.css`): the section uses `noteLedgerRows` (date, issue instant, integer number) and `creditNoteCount`. Each row shows its type ("Credit note", "Debit note") before its date, with the dates aligned down the column. On a phone the type and date sit under the number.
+7. **A5 8, LUT not saved** (`routes/settings/tax.tsx`, `lib/tax-settings.ts` `LUT_UNSAVED`, `lutIsUnsaved`, `screens.css`): a row the stored list doesn't hold (same year, ARN and date) shows "Not saved yet" with a pencil under its year until "Save changes". The list's heads wrap and its cells sit closer, so it fits the settings column at 1024 px (it ran past it once the mark was added; it was already 33 px too wide before, hidden by the page padding). Tests added.
+8. **A5 12, SAC** (`routes/documents/lines.tsx`, `documents.css`, both editors, `routes/settings/tax.tsx`, `screens.css`):
+   - a custom line's SAC is a field on its row (a catalogue line has none to type). The blocker puts the cursor there, and the details dialog keeps its field;
+   - a new custom line starts with the view's `newLineSac`;
+   - Settings › Tax has the "Default SAC for custom lines" field with the builder's words.
+9. **A5 14, scroll cue** (`routes/reports/parts.tsx` `WideList`, `reports.css`): every report table that scrolls sideways is a focusable region with `role="region"` and its label, inside a box that draws a soft ink shade on the edge hiding more columns, moving to the other edge as it scrolls. It shows only while there is more to see, the box measures on scroll, resize and render, and with reduced motion there is no fade. It also applies to the client statement tab, which uses the same `WideList`; that tab's file is unchanged.
+10. **The audit filter groups** (`lib/audit.ts` `ACTION_GROUPS` now `prefixes`, `actionsInGroup`; `routes/audit.tsx`):
+    - added Leads, Care plans and Time (the sidebar's words), in the sidebar's order;
+    - `care_invoice.*` sits under Invoices, `offer_link.use` under Proposals and estimates, `doc_token.use` under Client portal.
+    - New test: every labelled action is in exactly one group, and no prefix is dead. Checked on screen: 22 groups.
+11. **M1, supplier copy** (`lib/invoices-api.ts`, `lib/invoices.ts` `supplierCopyUnavailable`, `routes/invoices/read.tsx`, `documents.css`):
+    - 409 `pdf_pending` is its own state, `no_original`; 202 stays `pending`. The stale comment at the old `:419-421` now says what the route answers.
+    - The button keeps a polite line under it, not a passing toast. For a live client: the copy follows the client's PDF, use Try again on the PDF. For an anonymised client: none was made and none can be.
+    - For a live client the page is read again; the PDF panel is keyed on its state, so a page read that finds the PDF not ready draws the panel with its own "Try again".
+    - SPA tests: the 202, 409 `pdf_pending`, another 409, offline and ready answers, and both lines.
+12. **L8, unchanged draft:** checked by reading `note-dialog.tsx`. Its first step always saves the request (create, or `notesApi.save` on the open draft) before the issue step, with no "unchanged" short-cut. Reopening an old tax-only debit-note draft and pressing the issue button therefore re-saves it, which recomputes the round-off, and then issues with the new `contentSha256`. No change needed. Not exercised with an old draft in the browser.
+13. **Found in the sweep, fixed** (`documents.css`, shared by the invoice and proposal editors): at 1024 px with the menu open and the rail beside it, the editor column is about 21 rem wide. A line's quantity, rate and discount ran out of the panel (the unit set one letter per line) and the totals ran past the card. This was there before FX-4. The lines panel and the totals panel are now size containers: below 30 rem a row takes the phone arrangement, and below 20 rem the cells stack. Re-swept: no overflow at any width.
+
+### Shots (`.logs/shots/fx4-designer/`, all local sample data; full page unless "focus")
+- `01-invoice-draft-1280-light.png`: a draft with seven blockers as 44 px rows, a custom line's SAC on its row, "Discounts (lines and document)".
+- `02-invoice-issued-notes-1280-light.png`: the notes ledger with types, the balance line "(after 1 credit note)", the discount row.
+- `03-supplier-copy-no-original-1280-light.png`: the supplier copy's 409 line under the button (the 409 simulated in the browser; locally no PDF is ever made).
+- `04-gst-manual-1280-light.png`: the GST panel for Q3 2026-27 with one tax-only debit note: warning heading, the card with its per-rate ledger, the totals.
+- `06-invoice-draft-1024-container-fix.png`: the same draft at 1024 after the container fix.
+- `07-keyboard-blocker-focus-1280.png`: keyboard focus on a blocker row (the ring around the whole 44 px row).
+- `08-lut-unsaved-1024-light.png`: "Not saved yet" under a new LUT's year, the list inside its column.
+- `09-sales-output-scroll-cue-375-light.png`, `10-sales-manual-entry-375-light.png`: the output-tax table's scroll cue at 375, and the sales register's manual-entry card.
+- The sweep, `{screen}-{375,768,1024,1280,1600}-{light,dark}.png` plus `{screen}-1280-app-dark-os-light.png` and `-app-light-os-dark.png` (in-app theme against the OS theme), with `-focusN.png` crops of the changed part. Screens:
+  - `inv-draft`, `inv-issued` and `dn-taxonly` (the ₹18.02 tax-only note, no round-off line);
+  - `gst-idle`, `gst-loading` (the read held 4 s), `gst-error` (the register route answering 500) and `gst-manual`;
+  - `sales-manual` (1 Oct to 31 Dec 2026) and `sales-empty` (April 2026, the empty state);
+  - `settings-tax` (a LUT added, not saved);
+  - `audit`, `statement` (client A, "Debit note against …") and `invoices-list`.
+
+### Commands and results
+- `pnpm install --frozen-lockfile --offline`: ok. Local setup: `pnpm dev:secrets`, `db:migrate:local` (53, with 0052), `db:seed:local`, `portal:sample`, `invite --role owner`.
+  - Sample data was made through the local API: company, bank and client A's GSTIN and address; TH/INV/2627/0001 issued; TH/CN/2627/0001; TH/DN/2627/0001 (tax only, ₹18.02); TH/DN/2627/0002; a draft for client B; `tax.defaultSac` 998314; one stored LUT.
+  - Fake GSTINs were made with core's check character.
+  - The invoice's `pdf_sha256` was set by hand in the local D1 only, to show the supplier-copy button.
+- `heavy.sh fx4d-tc1` (admin `tsc -p tsconfig.json`): exit 0.
+- `heavy.sh fx4d-spa1` (5 SPA test files): 124 passed.
+- `pnpm exec biome check --write` on every file I changed: clean.
+- `heavy.sh fx4d-test` (`pnpm test`): all green. auth 135, ui 469 (+2 skipped), core 1776, email 128, db 478, pdf 340, web 428 (+16 skipped), portal 621, jobs 526, admin 3277 (was 3268).
+- `heavy.sh fx4d-build` (admin, portal, jobs): green.
+  - admin front 99,131 bytes;
+  - admin API 600,019 bytes (+21; under the 650,000 trigger);
+  - portal 97,011 bytes;
+  - jobs 867,955 bytes.
+- `heavy.sh fx4d-check` (`pnpm check`, the one whole-repository lint): exit 0. 10 warnings, all in files I didn't touch; typecheck, binding, content, Worker config and migration guards ok.
+- Sweeps (a Playwright 1.64.1 script in my scratchpad, not committed; logs `.logs/fx4d-sweep{1..4}.log`): 13 screens × 5 widths × 2 themes, plus the two theme mismatches at 1280. axe uses the WCAG 2.0/2.1/2.2 A and AA tags.
+  - The first pass found two problems: `target-size` on the line SAC at 1024 (the overflow above) and a 99 px sideways scroll on Settings › Tax at 1024 (the LUT list). Both are fixed.
+  - The re-sweeps of the changed screens: axe clean, no sideways overflow, at every width and theme.
+  - Console: only the 401 before sign-in and the 500s I injected for the error state.
+- Keyboard: Tab reaches each blocker row (ring on the whole row) and the scrollable tables. The blocker link focuses the line's SAC field. No traps.
+- The dev server (admin, port 5173) was stopped, and every browser was closed.
+
+### Not verified
+- A real PDF or Browser Run render. The supplier copy's 409 was simulated in the browser (fetch answering 409). The anonymised-client line is checked by unit test only.
+- The proposal editor at 1024. It shares the container fix but I didn't open one.
+- A tax-only draft saved before 0052 being re-saved in the browser (L8 is from reading the code).
+- After a default-SAC prefill, clearing the SAC on a line never saved: the server may apply the default to a line sent without a SAC. I didn't check what the save sends for an empty field.
+- The portal (no portal file changed). NVDA, Safari, Firefox and real phones were not tested.
+
+### Placeholder lines (07-Y, `[Placeholder]` on screen until `APPROVED_07Y`; mine, in addition to the builder's)
+1. Under "Download supplier copy", live client: "The supplier copy is made after the client's PDF, which isn't ready yet. Use Try again on the PDF if it is taking longer than usual."
+2. The same, anonymised client: "No supplier copy was made before this client was anonymised, and none can be made now."
+3. Totals row, line discounts only: "Line discounts".
+4. Totals row, line and document discounts: "Discounts (lines and document)".
+5. A LUT added but not saved: "Not saved yet".
+
+Words used that were already approved: "SAC" (the details dialog's label), "Rate" and "Total" (07-V's columns), "Open document" (07-V), and "Leads", "Care plans" and "Time" (the sidebar).
+
+### Open questions
+1. **A5 5 ("GST (estimate)" on new proformas): blocked on data.** Telling a new proforma from a frozen one needs a marker sealed at issue.
+   - Recommended: the builder adds `header.proforma.gstEstimate: true` in the proforma issue path, sealed with the rest. `packages/pdf` (`invoice-view.ts`, `layout/invoice.ts`), the admin `TaxPreview` and the portal invoice view then print the head names as "CGST (estimate)", "SGST (estimate)", "IGST (estimate)" only when it is present (wording for 07-Y).
+   - Or the lead sets a cut-over date. I didn't invent one.
+   - Then a short designer round.
+2. **A5 3 as two rows?** I named the one row by its source (the finding's own alternative). Two rows ("Line discounts", "Document discount") need the views' totals to carry `lineDiscountMinor` and `documentDiscountMinor`; the computed document already has them per line, and the sum is server work. Keep the label (recommended for this task), or a builder round?
+3. **The DataTable at 1024 in narrow columns.** The `.dtable` scroll region is FX-3's (A3 1). I only made the LUT list fit; other narrow-column tables may still run into the page padding.
