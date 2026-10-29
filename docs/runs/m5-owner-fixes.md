@@ -1,4 +1,4 @@
-Status: open
+Status: PR opened (2026-10-29)
 Tier: B
 Usage: analyst claude-opus-5-5/high: 5-h 3 → ? % (skills: cloudflare:workers-best-practices, cloudflare:cloudflare); reviewer claude-opus-5-5/high (sweep): 5-h 3 → ? % (skills: frontend-design)
 
@@ -1227,3 +1227,33 @@ The dev server and browser were stopped. Shots: `.logs/shots/m5-recheck5/` (main
   - `documents-service-text` and `caret`: 29/29 passed;
   - the admin suite: 106 files, 3,282 passed;
   - `pnpm check`: exit 0. A first run failed only because this side worktree lacked workspace links; it passed after `pnpm install --frozen-lockfile --offline`.
+
+## Re-check of fix round 6 (reviewer claude-opus-5-5/high, live browser, 2026-10-29 ~09:45–10:00 IST, on 98857b69): APPROVE
+_(Copied in by the lead.)_
+- **M1:** fixed. API and editor, live: one save that turned [S9] into [S10] appended S10 under its heading. The lead's three edge cases were checked:
+  - first service removed, a later one kept: unchanged by round 6, correct;
+  - every service removed and two added: each gets a headed block;
+  - removed services listed twice: no side effect except the intended opening owner and N1.
+- **L1:** fixed, live. The caret was moved with `setSelectionRange(5,5)` only and the save answer held; after the merge the caret stayed at [5,5].
+- **L2, L3:** written down as limits. **L4:** the comment is accurate.
+- **N1 (low, new):** when the replaced service had no text in a section, the added service, now the only one, was written there under a `**Name**` heading, unlike creation (`service-blocks.ts:193-194`). Shot: `.logs/shots/m5-recheck6/` (main checkout).
+- **N2 (low, no action):** the `selectionchange` listener may overlap React's own `onSelect` plumbing. It is cheap, and no hook test exists. Kept by the lead: the live check passes, and the hook needs a DOM test setup the admin unit tests don't have.
+- **Skills loaded:** `code-review` (9 candidates checked) and `workers-best-practices`.
+- **Tests:** `documents-service-text` and `caret`: 29/29 passed.
+
+## Fix round 7 (lead, 2026-10-29 ~10:05 IST)
+- **N1:** in a blank section, the unheaded path goes to the first service that is still on the lines (`services.find((s) => !others.some(…))`, `service-blocks.ts`). New API test "re-check N1: replacing a service that had no Assumptions text…". It fails without the fix and passes with it.
+- **Tests:** `documents-service-text`, `caret`, `service-blocks` and `service-fill`: 79/79 passed.
+- **Before the PR:** `pnpm check` exit 0, and the full `pnpm test` exit 0:
+  - admin 3,283;
+  - jobs 519;
+  - portal 620;
+  - web 427 (16 skipped);
+  - pdf 340;
+  - db 452;
+  - email 128;
+  - core 1,755;
+  - ui 469 (2 skipped);
+  - auth 135.
+
+  That's 8,128 passed, 0 failed.

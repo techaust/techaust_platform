@@ -1022,4 +1022,25 @@ describe("round 5: one block per service (lead's decision 2026-10-29) [ADM-PROP-
     const doc = await getDoc(o, made.id);
     expect(section(doc, KINDS.deliverables).bodyMd).toBe("A delivers\n\n**New B**\nB delivers");
   });
+
+  it("re-check N1: replacing a service that had no Assumptions text writes the new one there without a heading, as at creation", async () => {
+    const o = await owner();
+    const a = await mkService(100_000, { name: "Bare A", deliverables_md: "A delivers" });
+    const b = await mkService(50_000, {
+      name: "Full B",
+      deliverables_md: "B delivers",
+      assumptions_md: "B assumes",
+    });
+    const made = await draftOf([a]);
+    const v = await getDoc(o, made.id);
+    expect(section(v, KINDS.aex).hidden).toBe(true);
+    const res = await patchDoc(o, made.id, {
+      expectedUpdatedAt: v.updatedAt,
+      lines: linesOf(v, (l: J) => l.catalogueItemId !== a.id, b),
+    });
+    expect(res.status, await res.clone().text()).toBe(200);
+    const doc = await getDoc(o, made.id);
+    expect(section(doc, KINDS.aex).bodyMd).toBe("B assumes");
+    expect(section(doc, KINDS.aex).hidden).toBe(false);
+  });
 });

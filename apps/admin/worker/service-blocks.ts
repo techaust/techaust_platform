@@ -190,7 +190,10 @@ export function insertParts(
   const p = parseBlocks(text, services, others);
   const kept = withoutTrailingBlank(p);
   const parts2 = fresh.map((t) => inEol(t, p.eol)).join(p.eol);
+  // A blank section: the first service still on the lines writes without a heading, as at creation. A removed service listed first only to
+  // keep the opening it holds (`others`; round 6 re-check, N1) holds nothing here, so it never makes the added one take a heading.
+  const firstLive = services.find((s) => !others.some((o) => o.id === s.id));
   if (kept === "")
-    return services[0]?.id === service.id ? parts2 : `${headingLine(service.name)}${p.eol}${parts2}`;
+    return firstLive?.id === service.id ? parts2 : `${headingLine(service.name)}${p.eol}${parts2}`;
   return `${kept}${p.eol}${p.eol}${headingLine(service.name)}${p.eol}${parts2}`;
 }
