@@ -400,3 +400,122 @@ Work on `fix/fx3-b3` from `origin/fix/fx3-admin-portal`, one commit per item:
    - `packages/pdf/src/integrity.ts:~359`: streams that aren't Flate get no byte-level check beyond `/Length` → `endstream`. Judge whether out-of-order chunks inside a large non-Flate stream (images) can pass the xref and `/Length` checks; if they can, say so in the run file with the reason, and decide fix or limit.
 
 Then run the full `pnpm test` and `pnpm check` through the queue, and report under "### Builder round 3 report".
+
+### Builder round 3 report
+Builder: claude-opus-5-5 (high), 2026-10-29 ~12:35–13:30 IST, branch `fix/fx3-b3` from `origin/fix/fx3-admin-portal` (74f3f8a2). One commit per item (9aec0b5f, acc903f8, 9408b937, dd630cf6) plus this report, pushed. The lead's docs commit 294f5b7f landed on the task branch after I branched; this branch does not touch its files.
+
+#### Skills
+- `cloudflare:workers-best-practices`: Worker routes, D1 and the queue consumer. Applied: the template refusals answer before any write; the refused render's browser time goes in one D1 batch on the failure path, before the throw that retries; no request state at module level.
+- `cloudflare:wrangler`: no config or binding changed; nothing beyond the existing `wrangler types` in typecheck.
+- `cloudflare:workers-profiling`: loaded for item 4's CPU question. It profiles deployed Workers, which are off-limits, so no profile was taken; the CPU reasoning for the integrity check is below, and the bundle and startup figures come from the build's budget script.
+- `cloudflare:cloudflare`: loaded for Browser Run (item 4); no platform feature changed.
+
+#### Item 1: long values in section titles (Q1), commit 9aec0b5f
+- `packages/core/src/catalogue.ts`: `renderTemplate` takes `max` and `unbounded` (`RenderOptions`).
+  - When filling every value keeps the text within `max`, nothing changes.
+  - Otherwise the values are filled in order. One that would take the text past `max` stays as written and is listed as unresolved. A value that shortens the text, or a name in `unbounded`, is always filled.
+  - A held-back placeholder is never taken out as "empty": only names with no value are dropped.
+- `apps/admin/worker/service-fill.ts`: new `renderSection`.
+  - A title is bounded at 120 characters. The Catalogue texts are `unbounded` there, because `fitFirstService` decides their room as before.
+  - `fillServiceTokens` (the save that adds the first service) uses it.
+- `apps/admin/worker/document-draft.ts`: creation now joins the template's custom sections first (`sectionsFromTemplate` on the raw template), then fills the draft's sections, so the bound applies to what is stored.
+- Result: the draft is made and every later save works. The send check names the placeholder in the title (`unresolved_placeholders`, part `section`), and a shorter title sends.
+
+#### Item 2: joined custom sections (Q2), commit acc903f8
+- Core `packages/core/src/documents.ts`:
+  - `templateKinds`: the draft kind each template section becomes, by `sectionsFromTemplate`'s rule;
+  - `joinedPastLimit`: the 0-based template sections joined into the third custom section when that text passes 6,000 characters. Counted on the same text a draft stores.
+- `apps/admin/worker/catalogue.ts` (`POST /api/v1/templates`): a proposal or estimate template that breaks the rule is a 400 `template_joined_too_long` with `sections: [indexes]`, and nothing is stored. Care plan and terms blocks are never joined, so they are exempt.
+  - This is FX-2's file. The change is two separate hunks (an import line and the route). `git merge-tree` against `origin/fix/fx2-security-web` merges `catalogue.ts` cleanly.
+  - `merge-tree` does report conflicts in `document-draft.ts`, `service-fill.ts`, `service-fill.test.ts` and `docs/13`. Those exist between `origin/fix/fx3-admin-portal` itself and FX-2 already; they are not new in this round.
+- **Builder decision: the same bound for texts.** The joined text is checked raw, but values can still grow it at creation. So a short value (a name, the short text, the schedule sentence) that would take a section's text past 6,000, or the document past 30,000, now stays unfilled too.
+  - `renderWithin` shares out the document's room in section order; `held` keeps unfilled sections as they stand.
+  - It is used for the render without Catalogue texts (`bare`), and for the whole fill at creation when there is no service.
+  - Without it, Q2's guarantee (no draft that every later save refuses) would hold only on the template's own text.
+  - The `document-save.ts` comment now says what `checkSections` still guards: the person's own text.
+- SPA lib `apps/admin/src/lib/catalogue.ts`: `templateRuleErrors(kind, sections)` gives section index → the 07-Y line, so the editor can show the rule before it sends. `TEMPLATE_RULES.joinedTooLong` is a `Y()` line.
+- Known limit, written in the `service-fill.ts` header: a template version saved before this rule whose joined sections already pass 6,000 still makes drafts whose saves are refused until that section is shortened. The seeded templates never do.
+
+#### Item 3: Catalogue-text placeholders only in their own sections (Q3), commit 9408b937
+- Core `misplacedTextTokens` and `TEXT_TOKEN_KINDS`:
+  - `{{service.deliverables}}` is allowed only in the text of the Deliverables section; `{{service.assumptions}}` and `{{service.exclusions}}` only in the text of Assumptions and exclusions;
+  - none of them in any heading. That was my round-2 recommendation, which the lead accepted;
+  - the section is the one a draft makes of it, so a second `deliverables` key is a custom section.
+- `POST /api/v1/templates` answers 400 `template_text_token_place` with `sections: [{ index, name, part }]` for every template kind, and stores nothing.
+- `templateRuleErrors` adds the two 07-Y lines, `textInHeading` and `textElsewhere`. Several lines on one section are joined.
+- **Seed check:** `packages/db/test/catalogue.test.ts` now proves that every seeded template version (V1–V3, all kinds) passes Q2 and Q3.
+  - The local seed has no other templates. The fixtures that break the rule (`documents-first-fill`, `documents-service-text`, `documents-convert`) insert with SQL, as stored legacy versions would be, so they still exercise the old paths.
+- The `service-fill.ts` header limit about Catalogue text outside its sections now says that only a version saved before this rule can do it.
+
+#### Item 4: the FX-2 reviewer helper's findings, commit dd630cf6
+1. **Hidden Scope after the lead's message (`document-draft.ts`): confirmed and fixed.**
+   - A Scope section emptied by the first service (for example `{{service.deliverables}}` in Scope with no deliverables text: only a template version saved before Q3) was created hidden. The convert then appended the lead's message, but the section stayed hidden.
+   - Appending the message now shows the section, which is `appendServices`' rule.
+   - The new test in `documents-convert.test.ts` fails without the fix: I checked this by commenting the line out.
+   - Known limit, written at the code: the message (at most 2,000 characters) is not held to the section's 6,000. Only a template whose Scope short values already fill 4,000 characters or more could pass it.
+2. **A refused render's browser time (`browser.ts`, `pdf.ts`): confirmed and fixed.**
+   - The pacing between calls was always applied (`paced` waits in `finally`). What the finding meant was the day's browser-time figure: `pdf.browser_ms` and the half-of-the-day bell counted only stored PDFs. A response refused as `damaged` or `not_pdf` (a 2xx, so the browser did the work), and every retry it caused, went uncounted.
+   - Those two errors now carry `browserMs`: the `X-Browser-Ms-Used` header, else the wall time, as for a success.
+   - `failed` adds that time and the half bell in one batch, then throws as before. No render is counted.
+   - An error status or a thrown error adds nothing.
+   - CPU: one small D1 batch on a failure path only.
+3. **Non-Flate streams (`integrity.ts`): can pass. Kept as a known limit, with a test.**
+   - 8 KB blocks moved among themselves wholly inside one non-Flate stream move no object, no xref target and no stream end, so every check passes.
+   - In our PDFs the only such stream is a JPEG signature (DCTDecode, invoice family). The signature upload accepts JPEG up to 256 KB; Chrome writes text, fonts, SVG and PNG as Flate. Only a JPEG of 16 KB or more can hold two whole blocks.
+   - **Why not fixed:**
+     - JPEG entropy-coded data has no checksum or structure a byte check can test without decoding the image, which is far past the 10 ms budget.
+     - The only cheap alternative is comparing each DCTDecode stream's SHA-256 with the JPEG the page embedded (about 0.2 ms for 256 KB). It works only if Browser Run copies JPEG bytes through unchanged, which is unverified here. A wrong guess would refuse every invoice with a JPEG signature for ever.
+     - Converting JPEGs to PNG in the browser could push a signature past the 256 KB upload cap, and an 800 × 400 PNG mostly lands past the 512 KiB inflate budget anyway (the accepted `partial` limit).
+   - Written in the `integrity.ts` header. `pdf-integrity.test.ts` proves both sides: the move inside a DCTDecode stream passes, and the same move across its end fails.
+
+#### Tests
+- New or changed:
+  - core `catalogue.test.ts`: 3 tests (the `max` rule, held-back vs empty, a fast-check property that a text within `max` stays within it and nothing is held back when all fits);
+  - core `documents.test.ts`: 6 tests (Q3: 2; Q2: 4);
+  - db `catalogue.test.ts`: the seed passes Q2 and Q3;
+  - admin `service-fill.test.ts`: 5 tests (`renderSection`; the first-service save with a long name; `renderWithin` per text, per document and with `held`; the save with many short values);
+  - admin `documents-template-limits.test.ts` (new, its own database, 7 API tests):
+    - Q1 at creation: made, saved, the send names `client.name` and `service.name` in the titles, and shorter titles send;
+    - a name that fits fills;
+    - Q2 refused with sections `[3, 4, 5]` and nothing stored, estimate too;
+    - Q2 saved when it fits, and a care block is exempt;
+    - short values held at 6,000 at creation, and the draft saves;
+    - Q3 refused for body, custom and heading placements, a terms block too, nothing stored;
+    - Q3 saved in their own sections;
+  - admin `documents-convert.test.ts`: 1 test (item 4.1);
+  - admin `src/lib/catalogue.test.ts`: 2 tests (the editor's rule lines, marked `[Placeholder]`);
+  - jobs `pdf.test.ts`: 2 tests (damaged and not_pdf counted with the half bell; 503 and thrown errors add nothing);
+  - jobs `pdf-integrity.test.ts`: 1 test (the documented limit).
+- Full `pnpm test` (`.logs/fx3b3-test.log`):
+  - core 1,777, db 471, email 128, pdf 340, auth 135, ui 469 (2 skipped), web 428 (16 skipped): all passed, core's coverage gate included.
+  - jobs: 2 tests timed out at 5 s while every package ran at once (setup 328 s): `offers.test.ts` "the email consumer sends each once" and `pdf.test.ts` "burst: 20 sends". pnpm then stopped admin and portal.
+- Re-run one package at a time through the queue, all exit 0:
+  - jobs: 528 passed (`.logs/fx3b3-jobs.log`);
+  - admin: 3,332 passed, 15 more than round 2 (`.logs/fx3b3-admin.log`);
+  - portal: 621 passed (`.logs/fx3b3-portal.log`).
+- `pnpm check` (`.logs/fx3b3-check.log`), the one whole-repository lint: exit 0. Its 10 warnings and 8 infos are the same as round 2, none in a file I changed.
+- `pnpm --filter @techaust/admin build`: exit 0. Front 99,131 bytes, startup 14.9 ms; API 608,204 bytes (+1,970), startup 77.6 ms (fastest of 7, under this PC's load). Still under the 650,000 mark for a third Worker.
+
+#### Not verified
+- No screen was looked at, and no dev server was started. The template editor (`routes/catalogue/template.tsx`, the designer's) does not call `templateRuleErrors` yet and has no branch for the two new codes; until it does, a refused save shows the API sentence through `saveFailureText`.
+- What Browser Run really sends with a damaged or non-PDF 2xx (the `X-Browser-Ms-Used` header): tested with fakes only.
+- Whether Browser Run copies JPEG bytes through unchanged (item 4.3): not testable locally.
+- The two jobs timeouts under full parallel load passed on the re-run. I did not investigate them further; neither test touches the code changed here except through `failed`, which only adds work on damaged and not_pdf answers.
+- Staging: nothing deployed (not mine to do).
+
+#### Placeholder lines (for 07-Y)
+SPA, `apps/admin/src/lib/catalogue.ts` `TEMPLATE_RULES`, shown with `[Placeholder] ` until 07-Y is approved:
+1. `textInHeading`: "{placeholder} can't go in a heading. Put it in the text of its own section." (for example `{{service.deliverables}}`)
+2. `textElsewhere`: "{placeholder} can only go in the text of the {section} section." ({section} is "Deliverables" or "Assumptions and exclusions", the seeded headings)
+3. `joinedTooLong`: "A proposal or estimate has room for 3 sections of your own. This one and the ones after the third are joined into one, which would pass 6,000 characters. Shorten them or remove some."
+
+API sentences (not screen copy):
+- `template_text_token_place`: "Catalogue text placeholders go only in the text of their own section: deliverables in Deliverables, assumptions and exclusions in Assumptions and exclusions";
+- `template_joined_too_long`: "A draft has room for 3 sections of the template's own; the ones after that are joined into the third, and together they pass 6,000 characters".
+
+#### Open questions (lead's call)
+1. **Stored template versions that break Q2 or Q3** (staff-saved on staging before this round) stay as they are, and drafts from them keep the old limits. Recommended: the designer runs `templateRuleErrors` on the template page when it loads, so staff see the rule and save a new version. Alternatively, a read-only local check of the staging templates by the lead.
+2. **JPEG signatures (item 4.3).** Recommended: a short staging experiment (render one invoice with a JPEG signature and compare its DCTDecode stream with the uploaded bytes). If they are equal, add the SHA-256 comparison and close the limit. Otherwise keep the limit as written.
+3. **Limits left in place, both pre-existing and theoretical; recommended to keep:**
+   - the lead's message is not held to Scope's 6,000;
+   - `renameContact` could take an Acceptance text past 6,000 only with dozens of occurrences of a long contact name.

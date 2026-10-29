@@ -469,6 +469,60 @@ describe("the render step", () => {
     expect(await all("SELECT 1 FROM notifications WHERE kind = 'pdf.browser_half'")).toHaveLength(1);
   });
 
+  it("FX-3 round 3, item 4: a refused answer (damaged, not a PDF) still counts its browser time, and can ring the half-day bell", async () => {
+    const day = Date.UTC(2026, 9, 28, 6, 0, 0);
+    await realEnv.DB.prepare(
+      "INSERT INTO stats_daily (date, metric, dimension, value, updated_at) VALUES ('2026-10-28', 'pdf.browser_ms', '', ?1, 1)",
+    )
+      .bind(BROWSER_ALERT_MS - 1000)
+      .run();
+    const s = await readyDoc();
+    const f = fakeClock(day);
+    // the stub PDF with a Content-Length longer than its bytes: refused as damaged (length_mismatch), after 1,800 ms of browser time
+    const damaged = () =>
+      new Response(stubPdf(), {
+        status: 200,
+        headers: {
+          "content-type": "application/pdf",
+          "content-length": String(stubPdf().length + 8192),
+          "x-browser-ms-used": "1800",
+        },
+      });
+    const { env, queue } = makeEnv(fakeBrowser(f.clock, damaged).binding);
+    await expect(processRender(env, render(s.id), day, f.clock)).rejects.toThrow("damaged");
+    const notPdf = () =>
+      new Response("<html>", {
+        status: 200,
+        headers: { "content-type": "text/html", "x-browser-ms-used": "700" },
+      });
+    const second = makeEnv(fakeBrowser(f.clock, notPdf).binding);
+    await expect(processRender(second.env, render(s.id), day, f.clock)).rejects.toThrow("not_pdf");
+    expect(
+      await all(
+        "SELECT metric, value FROM stats_daily WHERE date = '2026-10-28' AND metric LIKE 'pdf.%' ORDER BY metric",
+      ),
+    ).toEqual([{ metric: "pdf.browser_ms", value: BROWSER_ALERT_MS - 1000 + 1800 + 700 }]);
+    expect(await all("SELECT entity_id FROM notifications WHERE kind = 'pdf.browser_half'")).toContainEqual({
+      entity_id: "2026-10-28",
+    });
+    // nothing stored, nothing queued: the queue's retry renders again
+    expect(await realEnv.DOCS.head(keysOf(s).pdf)).toBeNull();
+    expect(queue.sent).toEqual([]);
+  });
+
+  it("FX-3 round 3, item 4: an answer the browser never gave (an error status, a thrown error) adds no browser time", async () => {
+    const day = Date.UTC(2026, 9, 29, 6, 0, 0);
+    const s = await readyDoc();
+    const f = fakeClock(day);
+    for (const answer of [() => new Response("down", { status: 503 }), () => new Error("network")]) {
+      const { env } = makeEnv(fakeBrowser(f.clock, answer).binding);
+      await expect(processRender(env, render(s.id), day, f.clock)).rejects.toThrow();
+    }
+    expect(await all("SELECT 1 FROM stats_daily WHERE date = '2026-10-29' AND metric LIKE 'pdf.%'")).toEqual(
+      [],
+    );
+  });
+
   it("uses the local stub only when ENVIRONMENT is local", async () => {
     const s = await readyDoc();
     const f = fakeClock();

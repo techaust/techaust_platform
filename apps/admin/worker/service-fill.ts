@@ -25,7 +25,8 @@
 //     once the Catalogue row changes (L1). The first service's parts deleted by the person from its opening, in a section with no room for
 //     them, read as left out and are named too;
 //   - the first service's Catalogue text left out of a section of another kind (a staff template that puts `{{service.deliverables}}` into
-//     Scope, say) or out of a section title is not named: the gaps read only the Deliverables and Assumptions and exclusions sections;
+//     Scope, say) or out of a section title is not named: the gaps read only the Deliverables and Assumptions and exclusions sections.
+//     Since FX-3 round 3 (Q3) a template can't be saved that way (`misplacedTextTokens`), so only a version saved before it can do this;
 //   - the reads (gaps, "Use Catalogue text") know only the services on the lines: the block of a service taken off the lines runs on as
 //     part of the block above it until its text is removed;
 //   - a save puts the services the draft had before the ones it adds, while the reads take line order (round 5 re-check, L3): a service
@@ -34,7 +35,11 @@
 //   - two services with the same line name share one heading, the first in line order owning it (round 5 re-check, L2): Catalogue names
 //     are not unique, so the second has no block of its own and its Catalogue text is offered again after each change of its row;
 //   - a save that adds a service to a draft with no service and no `{{service.*}}` token left (every line removed and saved, then a line
-//     added) puts nothing in: the text there is taken as the person's own, by the round 4 L2 rule.
+//     added) puts nothing in: the text there is taken as the person's own, by the round 4 L2 rule;
+//   - short values never take a title or a text past its limit (FX-3 round 3: they stay unfilled and the send names them), but the
+//     template's own text is not shortened: a template version saved before the joined-sections rule (Q2) whose custom sections past the
+//     third join past 6,000 characters still makes a draft whose saves are refused until that section is shortened. Templates made from
+//     the seed never do.
 // Pure: no I/O. The Worker budget forbids `import()`; everything here is static.
 import { placeholdersOf, renderTemplate } from "@techaust/core/catalogue";
 import {
@@ -164,6 +169,55 @@ export function withoutTexts<V>(
 
 type Rendered = { title: string | null; bodyMd: string | null };
 
+const TEXT_SET: ReadonlySet<string> = new Set(TEXT_TOKENS);
+
+/**
+ * A draft section's title and text with the template's values filled (at creation, and by the save that adds the first service). A
+ * value that would take the title past SECTION_TITLE_MAX stays unfilled, as written (FX-3 round 3, lead's answer to round 2 Q1,
+ * docs/13 2026-10-29): the send check names it and the person writes a shorter title, so the draft is never stored with a title every
+ * later save refuses. The Catalogue texts are never held back here (`unbounded`): their room is `fitFirstService`'s rule. With
+ * `bodyMax`, the text is held to it the same way (`renderWithin`). A text left with nothing in it is null.
+ */
+export function renderSection(
+  s: Rendered,
+  data: Readonly<Record<string, string | number | null | undefined>>,
+  empty: ReadonlySet<string>,
+  bodyMax?: number,
+): Rendered {
+  const title =
+    s.title === null
+      ? null
+      : renderTemplate(s.title, data, { empty, max: SECTION_TITLE_MAX, unbounded: TEXT_SET }).text;
+  const body =
+    s.bodyMd === null
+      ? null
+      : renderTemplate(s.bodyMd, data, { empty, max: bodyMax, unbounded: TEXT_SET }).text;
+  return { title, bodyMd: body === null || body.trim() === "" ? null : body };
+}
+
+/**
+ * The sections with the template's values filled, each text kept within SECTION_BODY_MAX and all of them within SECTIONS_TOTAL_MAX (FX-3
+ * round 3, with the lead's answer to round 2 Q2): a short value (a name, the short text, the schedule sentence) that would take a text past
+ * its share stays unfilled, as for a title, and the send check names it. In section order, each text may grow by what the document has
+ * left. Only the sections `held` marks are filled (all when it is absent); the others count as they stand. Used for the render without
+ * the Catalogue texts (`bare`, and the whole fill when there is no service yet); the Catalogue texts are `fitFirstService`'s.
+ */
+export function renderWithin<S extends Rendered>(
+  sections: readonly S[],
+  data: Readonly<Record<string, string | number | null | undefined>>,
+  empty: ReadonlySet<string>,
+  held?: readonly boolean[],
+): Rendered[] {
+  let left = SECTIONS_TOTAL_MAX - textLength(sections);
+  return sections.map((s, n) => {
+    if (held && !held[n]) return s;
+    const before = s.bodyMd?.length ?? 0;
+    const r = renderSection(s, data, empty, Math.min(SECTION_BODY_MAX, before + Math.max(0, left)));
+    left -= (r.bodyMd?.length ?? 0) - before;
+    return r;
+  });
+}
+
 /**
  * One section of the first service's own template fill: its kind, its text before the fill (`raw`, for the tokens it holds), and the
  * section rendered twice: `full` with the service's Catalogue texts, `bare` with them taken out (their lines too, as for an empty text).
@@ -258,21 +312,18 @@ export function fillServiceTokens<S extends Fillable>(
   const bare = withoutTexts(data, empty);
   const all = asBlocks(services);
   const held = sections.map((s) => hasServiceToken(s.title) || hasServiceToken(s.bodyMd));
-  const render = (text: string | null, d: Record<string, string | null>, e: ReadonlySet<string>) =>
-    text === null ? null : renderTemplate(text, d, { empty: e }).text;
   // The first service's own fill keeps to the limits too (FX-3 round 2): a section with no room for its Catalogue text keeps the
-  // template's text without it, and the gaps name what was left out.
+  // template's text without it, and the gaps name what was left out. A short value that would pass a title's limit, or a text's, stays
+  // unfilled (round 3: `renderSection`, `renderWithin`).
+  const bareRendered = renderWithin(sections, bare.data, bare.empty, held);
   const fitted = fitFirstService(
     sections.map((s, n) =>
       held[n]
         ? {
             kind: s.kind,
             raw: s.bodyMd,
-            full: { title: render(s.title, data, empty), bodyMd: render(s.bodyMd, data, empty) },
-            bare: {
-              title: render(s.title, bare.data, bare.empty),
-              bodyMd: render(s.bodyMd, bare.data, bare.empty),
-            },
+            full: renderSection(s, data, empty),
+            bare: bareRendered[n] as Rendered,
           }
         : { kind: s.kind, raw: null, full: s, bare: s },
     ),

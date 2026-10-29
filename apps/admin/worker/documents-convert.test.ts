@@ -292,6 +292,33 @@ describe("the lead convert builds the full draft [ADM-LEAD-04; M3.2 convert uses
     expect(doc.needsResave).toBe(false);
   });
 
+  it("FX-3 round 3, item 4: a Scope section hidden for having no text is shown once the lead's message is in it", async () => {
+    const o = await owner();
+    await mkTerms();
+    // a template version saved before the round 3 rule (Q3): Catalogue text in Scope, and a service with none, so Scope is emptied
+    const item = await mkService(300_000, { category: "connect", deliverables_md: null });
+    await insert("templates", {
+      id: crypto.randomUUID(),
+      kind: "proposal",
+      category: "connect",
+      version: 8,
+      body: JSON.stringify({
+        sections: [{ key: "scope", heading: "Scope", body: "{{service.deliverables}}" }],
+      }),
+    });
+    const lead = await mkLead(`${crypto.randomUUID()}@example.com`, {
+      service_code: item.code,
+      message: "Connect the shop to the warehouse.",
+      contact_company: "Das Stores",
+    });
+    const res = await convertLead(o.cookie, lead);
+    expect(res.status, await res.clone().text()).toBe(201);
+    const doc = await getDoc(o, ((await json(res)) as J).proposalId);
+    const scope = doc.sections.find((s: J) => s.kind === "scope");
+    expect(scope.bodyMd).toBe("Connect the shop to the warehouse.");
+    expect(scope.hidden).toBe(false);
+  });
+
   it("a service that needs a choice of lines, or is not priced here, gives sections and a schedule but no lines; an unknown code gives sections only", async () => {
     const o = await owner();
     const tiers = JSON.stringify([

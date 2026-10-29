@@ -2,7 +2,7 @@
 // a sent version's rows, and the lead convert (M3.2), so a draft always has its group, its template sections, server-built lines, its
 // schedule and the newest terms. The statements it returns go into the caller's own batch.
 
-import { placeholdersOf, renderTemplateBody, type TemplateBody } from "@techaust/core/catalogue";
+import { placeholdersOf, type TemplateBody } from "@techaust/core/catalogue";
 import type { TaxInput } from "@techaust/core/clients";
 import type { CalendarDate } from "@techaust/core/dates";
 import { sectionsFromTemplate } from "@techaust/core/documents";
@@ -39,6 +39,8 @@ import {
   autoHides,
   emptyServiceTokens,
   fitFirstService,
+  renderSection,
+  renderWithin,
   serviceData,
   withoutTexts,
 } from "./service-fill.ts";
@@ -170,22 +172,27 @@ export async function buildNewDraft(i: NewDraftInput): Promise<NewDraft> {
   // A service with no text for a token makes it EMPTY (taken out, section hidden); no service at all leaves it UNKNOWN (kept, filled by the
   // save that adds the first service line). See service-fill.ts.
   const empty = emptyServiceTokens(first ?? null);
-  const full = sectionsFromTemplate(tpl ? renderTemplateBody(tpl, data, { empty }).sections : []);
+  // The template's sections as the draft will have them (custom sections past the cap joined into the last one), then filled: the values
+  // go into the draft's sections, so a short value that would take a title or a text past its limit stays unfilled (FX-3 round 3;
+  // `renderSection`, `renderWithin`). `raw` also tells which text tokens a section's template held. With a service, `full` carries its
+  // Catalogue texts unbounded, and `fitFirstService` decides between it and `bare`; with none, there are no texts to place.
+  const raw = sectionsFromTemplate(
+    (tpl?.sections ?? []).map((s) => ({ key: s.key, heading: s.heading, text: s.body })),
+  );
+  const rendered = first ? raw.map((s) => renderSection(s, data, empty)) : renderWithin(raw, data, empty);
+  const full = raw.map((s, n) => ({
+    ...s,
+    ...(rendered[n] as { title: string | null; bodyMd: string | null }),
+  }));
   const emptiedKeys = new Set(
     (tpl?.sections ?? [])
       .filter((s) => placeholdersOf(`${s.heading}\n${s.body}`).some((n) => empty.has(n)))
       .map((s) => s.key),
   );
   // The first service's own fill keeps to the limits too (FX-3 round 2): a section with no room for its Catalogue text keeps the
-  // template's text without it, and the gaps name what was left out (`fitFirstService`). The three renders give the same sections in the
-  // same order (`sectionsFromTemplate` places them by key alone); `raw` tells which text tokens a section's template held.
+  // template's text without it, and the gaps name what was left out (`fitFirstService`).
   const bare = withoutTexts(data, empty);
-  const bareDrafts = sectionsFromTemplate(
-    tpl ? renderTemplateBody(tpl, bare.data, { empty: bare.empty }).sections : [],
-  );
-  const raw = sectionsFromTemplate(
-    (tpl?.sections ?? []).map((s) => ({ key: s.key, heading: s.heading, text: s.body })),
-  );
+  const bareDrafts = renderWithin(raw, bare.data, bare.empty);
   const fitted = first
     ? fitFirstService(
         full.map((f, n) => ({
@@ -217,9 +224,15 @@ export async function buildNewDraft(i: NewDraftInput): Promise<NewDraft> {
     i.services.slice(1).map((s) => s.item),
     i.services.map((s) => s.item),
   ).map((s) => ({ ...s }));
+  // The lead's message goes into the Scope section, which is then shown: one hidden below for having no text has some now (the rule a
+  // later save follows, `appendServices`), and the client must see what they asked for (FX-3 round 3, item 4). Known limit: the message
+  // (at most 2,000 characters) is not held to the section's 6,000; only a template whose Scope section's short values already fill
+  // 4,000 characters or more could take it past that.
   const append = (kind: string, text: string) => {
     const at = sections.find((s) => s.kind === kind);
-    if (at) at.bodyMd = at.bodyMd ? `${at.bodyMd}\n\n${text}` : text;
+    if (!at) return;
+    at.bodyMd = at.bodyMd ? `${at.bodyMd}\n\n${text}` : text;
+    at.hidden = false;
   };
   // A section whose template text was only empty tokens and that no service filled is created hidden, and so is one left with no text
   // when the first service's Catalogue text had no room in it (FX-3 round 2; the gaps name it).

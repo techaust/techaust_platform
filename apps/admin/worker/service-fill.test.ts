@@ -1,6 +1,6 @@
 // The pure rules of service-fill.ts [ADM-PROP-02]: unknown vs empty tokens, every service counted, the gaps, the text "Use Catalogue text" adds.
 
-import { SECTION_BODY_MAX, SECTIONS_TOTAL_MAX } from "@techaust/core/documents";
+import { SECTION_BODY_MAX, SECTION_TITLE_MAX, SECTIONS_TOTAL_MAX } from "@techaust/core/documents";
 import { describe, expect, it } from "vitest";
 import {
   appendServices,
@@ -12,6 +12,8 @@ import {
   fitFirstService,
   fits,
   gapInputsChanged,
+  renderSection,
+  renderWithin,
   type ServiceFacts,
   serviceIdsOf,
   servicesOf,
@@ -729,5 +731,104 @@ describe("FX-3 round 2: the first service's own template fill keeps to the limit
     expect(catalogueGaps(holdsOne, [s], CREATED)).toEqual([]);
     // the opening holds none of them, and they would fit: the person took them out
     expect(catalogueGaps([sec("assumptions_exclusions", "Our own words")], [s], CREATED)).toEqual([]);
+  });
+});
+
+describe("FX-3 round 3, Q1: a value that would take a section title past 120 characters stays unfilled [ADM-PROP-02]", () => {
+  it("renderSection: the title keeps the token, the text is filled, the title stays within the limit", () => {
+    const name = "N".repeat(110);
+    const r = renderSection(
+      { title: "Proposal for {{client.name}}", bodyMd: "Dear {{client.name}}" },
+      { "client.name": name },
+      new Set(),
+    );
+    expect(r.title).toBe("Proposal for {{client.name}}");
+    expect(r.bodyMd).toBe(`Dear ${name}`);
+    // a name that fits is filled as before
+    const ok = renderSection(
+      { title: "For {{client.name}}", bodyMd: null },
+      { "client.name": "Acme" },
+      new Set(),
+    );
+    expect(ok).toEqual({ title: "For Acme", bodyMd: null });
+    // a text left with nothing in it is null
+    const none = renderSection(
+      { title: "T", bodyMd: "{{service.short}}" },
+      { "service.short": null },
+      new Set(["service.short"]),
+    );
+    expect(none.bodyMd).toBeNull();
+  });
+
+  it("the save that adds the first service: a long service name stays unfilled in the title, a short one fills", () => {
+    const titled = () => ({
+      ...sec("deliverables", "{{service.deliverables}}"),
+      title: "Deliverables of {{service.name}}",
+    });
+    const out = fillServiceTokens(
+      [titled()],
+      [svc({ name: "S".repeat(118), deliverables_md: "Ships" })],
+      null,
+    );
+    expect(out[0]?.title).toBe("Deliverables of {{service.name}}");
+    expect((out[0]?.title ?? "").length).toBeLessThanOrEqual(SECTION_TITLE_MAX);
+    expect(out[0]?.bodyMd).toBe("Ships");
+    const short = fillServiceTokens([titled()], [svc({ name: "Audit", deliverables_md: "Ships" })], null);
+    expect(short[0]?.title).toBe("Deliverables of Audit");
+  });
+});
+
+describe("FX-3 round 3, Q2: short values keep every text within 6,000 and the document within 30,000 [ADM-PROP-02]", () => {
+  const many = "{{service.name}} ".repeat(117); // 1,989 characters of template
+  const name = "N".repeat(60);
+
+  it("renderWithin: a text the values would take past 6,000 keeps the values that would pass it unfilled", () => {
+    const out = renderWithin([{ title: "T", bodyMd: `${many}${many}` }], { "service.name": name }, new Set());
+    const body = out[0]?.bodyMd ?? "";
+    expect(body.length).toBeLessThanOrEqual(SECTION_BODY_MAX);
+    expect(body).toContain(name);
+    expect(body).toContain("{{service.name}}");
+    // the values come first, in order: no unfilled value before a filled one
+    expect(body.indexOf("{{service.name}}")).toBeGreaterThan(body.lastIndexOf(name));
+  });
+
+  it("renderWithin: the document's 30,000 is shared out in section order, and a section that is not filled counts as it stands", () => {
+    const sections = Array.from({ length: 6 }, () => ({
+      title: "T",
+      bodyMd: `${"x".repeat(4_900)} {{service.name}}`,
+    }));
+    const out = renderWithin(sections, { "service.name": name }, new Set());
+    expect(textLength(out)).toBeLessThanOrEqual(SECTIONS_TOTAL_MAX);
+    // 6 x 4,917 = 29,502 before, so 498 are left; each fill adds 44: all six fit
+    expect(out.every((s) => s.bodyMd?.endsWith(name))).toBe(true);
+    // 6 x 4,983 = 29,898 before, so 102 are left: two fills fit, the third would pass 30,000
+    const tight = Array.from({ length: 6 }, () => ({
+      title: "T",
+      bodyMd: `${"x".repeat(4_966)} {{service.name}}`,
+    }));
+    const t = renderWithin(tight, { "service.name": name }, new Set());
+    expect(textLength(t)).toBeLessThanOrEqual(SECTIONS_TOTAL_MAX);
+    expect(t.map((s) => s.bodyMd?.endsWith(name))).toEqual([true, true, false, false, false, false]);
+    // `held` false: the section is returned as it is, and still counts
+    const kept = renderWithin(tight, { "service.name": name }, new Set(), [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+    ]);
+    expect(kept[0]).toBe(tight[0]);
+    expect(kept.map((s) => s.bodyMd?.endsWith(name))).toEqual([false, true, true, false, false, false]);
+  });
+
+  it("the save that adds the first service: a long template of short values saves within the limits", () => {
+    const out = fillServiceTokens(
+      [{ ...sec("scope", `${many}${many}`) }],
+      [svc({ name, deliverables_md: "Ships" })],
+      null,
+    );
+    expect((out[0]?.bodyMd ?? "").length).toBeLessThanOrEqual(SECTION_BODY_MAX);
+    expect(out[0]?.bodyMd).toContain("{{service.name}}");
   });
 });
