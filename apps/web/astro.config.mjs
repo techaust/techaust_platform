@@ -55,10 +55,18 @@ export default defineConfig({
   site: "https://techaust.com",
   output: "static",
   trailingSlash: "never",
-  build: { format: "file" },
+  // Styles are always a file, never an inline <style> (the CSP's style-src is 'self' only).
+  build: { format: "file", inlineStylesheets: "never" },
   integrations: [devPreviewPages, emailLogos],
   // The dev toolbar overlays the page and would sit in every design screenshot.
   devToolbar: { enabled: false },
-  // Fonts, icons and logos stay files (cacheable, and allowed by the CSP's font-src/img-src 'self'), never data: URIs.
-  vite: { build: { assetsInlineLimit: 0 } },
+  vite: {
+    build: {
+      // Fonts, icons and logos stay files (cacheable, and allowed by the CSP's font-src/img-src 'self'), never data: URIs.
+      assetsInlineLimit: 0,
+      // One site stylesheet (audit A2 finding 10): every page links the same file, so a visitor makes one render-blocking
+      // CSS request and every later page comes from the cache (11-13 per-component files per page before).
+      cssCodeSplit: false,
+    },
+  },
 });
