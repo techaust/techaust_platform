@@ -53,6 +53,16 @@ export function pdfPhase(state: "none" | "pending" | "ready", since: number | nu
   return since !== null && now - since < PDF_SLOW_AFTER_MS ? "making" : "slow";
 }
 
+/**
+ * FX-4 review H2: whether a page read brings news about the PDF the panel should take (another state, or another file). The panel is drawn once per
+ * document and follows its props in place, never remounted, so the focus stays where it is and the live text changes inside the polite region (WCAG
+ * 2.4.3, 4.1.3). A read that finds what the previous read found changes nothing, so a "Try again" the panel started on its own isn't undone.
+ */
+export const pdfReadChanged = (
+  prev: { state: string; fingerprint: string | null },
+  next: { state: string; fingerprint: string | null },
+): boolean => prev.state !== next.state || prev.fingerprint !== next.fingerprint;
+
 /** The `accept` of the file input: the types the API takes (the server decides by the bytes, never by the name). */
 export const SIGNATURE_ACCEPT = SIGNATURE_MIMES.join(",");
 export const SIGNATURE_MAX = SIGNATURE_MAX_BYTES;

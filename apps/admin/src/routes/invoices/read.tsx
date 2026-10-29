@@ -303,9 +303,9 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
         <div className="doc-page__send">
           {v.frozen && v.pdf.state !== "none" && (
             <PdfPanel
-              // FX-4 (early check M1): keyed on the state too, so a page read that finds the PDF in another state (after the supplier copy's 409) draws the
-              // panel afresh, with its own "Try again"; a read that finds the same state keeps the panel as it is.
-              key={`${v.id}-${v.pdf.state}`}
+              // FX-4 review H2: one panel per document. A page read that finds the PDF in another state is taken in place by the panel (it follows
+              // `initial`), so it is never drawn afresh: the focus stays put and the polite region announces "PDF ready".
+              key={v.id}
               id={v.id}
               sentAt={v.frozenAt}
               initial={v.pdf}
