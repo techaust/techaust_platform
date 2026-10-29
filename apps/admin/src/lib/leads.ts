@@ -94,6 +94,10 @@ export const FIELD_LABELS: Record<string, string> = {
   phone: "Phone",
   company: "Company",
   country: "Country",
+  // FX-3 round 2: a manual lead's quote answers (the words the lead page already shows for them)
+  currency: "Currency",
+  budget_band: "Budget",
+  timeline: "Timeline",
 };
 
 const parse = <T>(body: string | null): T | null => {

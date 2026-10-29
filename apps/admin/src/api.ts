@@ -313,10 +313,12 @@ export type NewLead = {
   budgetBand?: string | null;
   timeline?: string | null;
 };
-export type LeadPatch = Omit<
-  Partial<NewLead>,
-  "serviceCode" | "message" | "currency" | "budgetBand" | "timeline"
-> & {
+/**
+ * FX-3 round 2 (docs/13 2026-10-29): a manual lead's `currency`, `budgetBand` and `timeline` can be changed, with the creation checks on the
+ * values the lead ends up with (a band needs its own currency: change both together); anything else is a 400. A website lead's answers are
+ * fixed: changing one is a 409 `lead_answers_fixed`.
+ */
+export type LeadPatch = Omit<Partial<NewLead>, "serviceCode" | "message"> & {
   expectedUpdatedAt: number;
 };
 export type ReplyTemplateFilled = { id: string; label: string; subject: string; body: string };

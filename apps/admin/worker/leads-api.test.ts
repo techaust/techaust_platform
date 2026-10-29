@@ -406,6 +406,103 @@ describe("GET /leads/:id: the lead page [ADM-LEAD-03]", () => {
 });
 
 describe("PATCH /leads/:id [ADM-LEAD-03]", () => {
+  it("FX-3 round 2 (ADM-LEAD-01): a manual lead's currency, budget band and timeline change with the creation checks; a website lead's are fixed", async () => {
+    const s = await sessionFor("sales");
+    const lead = await addLead({ source: "manual", currency: "INR", budget_band: "3l-7l", timeline: "asap" });
+    const quote = () => one("SELECT currency, budget_band, timeline FROM leads WHERE id = ?", lead.id);
+    let at = lead.updated_at;
+    const patch = async (extra: Record<string, unknown>) => {
+      const res = await send(`/leads/${lead.id}`, "PATCH", { expectedUpdatedAt: at, ...extra }, s.cookie);
+      const out = await json(res);
+      if (res.status === 200) at = out.updatedAt;
+      return { status: res.status, out };
+    };
+    // a band of the same currency, and the timeline
+    expect((await patch({ budgetBand: "7l-15l", timeline: "1-3-months" })).status).toBe(200);
+    expect(await quote()).toEqual({ currency: "INR", budget_band: "7l-15l", timeline: "1-3-months" });
+    // the band the lead holds must stay one of its currency's: a currency change alone is refused, both together are fine
+    const before = await quote();
+    for (const extra of [
+      { currency: "USD" }, // the stored rupee band in dollars
+      { currency: null }, // a band without its currency
+      { budgetBand: "2k-5k" }, // a dollar band on a rupee lead
+      { currency: "USD", budgetBand: "3l-7l" },
+      { budgetBand: "toString" },
+      { currency: "EUR" },
+      { timeline: "next-year" },
+      { timeline: "__proto__" },
+    ]) {
+      const r = await patch(extra);
+      expect(r.status, JSON.stringify(extra)).toBe(400);
+    }
+    expect(await quote()).toEqual(before);
+    expect((await patch({ currency: "USD", budgetBand: "2k-5k" })).status).toBe(200);
+    expect(await quote()).toEqual({ currency: "USD", budget_band: "2k-5k", timeline: "1-3-months" });
+    // cleared, band first (alone), then the currency
+    expect((await patch({ budgetBand: null, timeline: null })).status).toBe(200);
+    expect((await patch({ currency: null })).status).toBe(200);
+    expect(await quote()).toEqual({ currency: null, budget_band: null, timeline: null });
+    // the timeline holds the field names and values; the audit row the names only
+    const changes = (
+      await rows<{ body: string }>(
+        "SELECT body FROM lead_activities WHERE lead_id = ? AND kind = 'updated' ORDER BY rowid",
+        lead.id,
+      )
+    ).flatMap(
+      (r) => (JSON.parse(r.body) as { changes: { field: string; from: unknown; to: unknown }[] }).changes,
+    );
+    expect(changes[0]).toEqual({ field: "budget_band", from: "3l-7l", to: "7l-15l" });
+    expect(changes.map((c) => c.field)).toEqual([
+      "budget_band",
+      "timeline",
+      "currency",
+      "budget_band",
+      "budget_band",
+      "timeline",
+      "currency",
+    ]);
+    const audits = await rows<{ summary: string }>(
+      "SELECT summary FROM audit_log WHERE action = 'lead.update' AND entity_id = ? ORDER BY rowid",
+      lead.id,
+    );
+    expect(JSON.parse(audits[0]?.summary ?? "{}").changed).toEqual(["budget_band", "timeline"]);
+    for (const a of audits) expect(a.summary).not.toMatch(/7l-15l|2k-5k|1-3-months/);
+
+    // a website lead: the visitor's answers can't be changed (409, nothing written); sending them unchanged is no change; other fields still save
+    const web = await addLead({ currency: "INR", budget_band: "1l-3l", timeline: "exploring" });
+    const refused = await send(
+      `/leads/${web.id}`,
+      "PATCH",
+      { expectedUpdatedAt: web.updated_at, budgetBand: "3l-7l", name: "Renamed" },
+      s.cookie,
+    );
+    expect(refused.status).toBe(409);
+    expect((await json(refused)).error.code).toBe("lead_answers_fixed");
+    expect(
+      await one("SELECT contact_name, budget_band, updated_at FROM leads WHERE id = ?", web.id),
+    ).toMatchObject({
+      budget_band: "1l-3l",
+      updated_at: web.updated_at,
+    });
+    const same = await send(
+      `/leads/${web.id}`,
+      "PATCH",
+      {
+        expectedUpdatedAt: web.updated_at,
+        currency: "INR",
+        budgetBand: "1l-3l",
+        timeline: "exploring",
+        name: "Renamed",
+      },
+      s.cookie,
+    );
+    expect(same.status).toBe(200);
+    expect(await one("SELECT contact_name, budget_band FROM leads WHERE id = ?", web.id)).toEqual({
+      contact_name: "Renamed",
+      budget_band: "1l-3l",
+    });
+  });
+
   it("changes only what was sent; contact values go on the timeline, NEVER in the audit row", async () => {
     const s = await sessionFor("sales");
     const member = await sessionFor("staff");
