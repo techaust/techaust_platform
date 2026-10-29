@@ -152,3 +152,22 @@ The code step adds both terms changes as a new seeded terms version, plus a migr
   - add a layout-gate test that renders a certificate with a Bengali and a Devanagari name;
   - check the jobs bundle budget (1,000,000 bytes) and the PDF size;
   - **the owner approved this install.**
+
+## Added to this task: the approved wording (owner, 2026-10-29: "Approve all")
+07-X (lines 1–32) and 07-Y (items 1–31) are approved. After FX-3 and FX-4 merge:
+- **Turn every approval switch on**, so no `[Placeholder]` mark is left anywhere:
+  - `APPROVED_07X` in `apps/admin/src/lib/copy-x.ts` and `apps/portal/src/copy-documents.ts`;
+  - `APPROVED_07Y` in the admin and portal `copy-y.ts`;
+  - `APPROVED_07Y_PUBLISH` in `apps/admin/src/lib/publish-text.ts`;
+  - plus any other switch a grep finds.
+
+  `check-prod-readiness` must then find no `[Placeholder` outside the issue guard.
+- **Apply the lines that change existing text:**
+  - 07-Y 1 and 2: the terms, as a new seeded terms version;
+  - 3: hide the /work lede while there is no case study;
+  - 4: the dashboard foot line;
+  - 13: "estimate" wording, three places;
+  - 14: the proposal-sent email;
+  - 24: the numbering clash message;
+  - 26: the bell says "on 3 days".
+- **Copy the approved lines into docs/07** where the convention asks for it, and update the tests that pin the old words.

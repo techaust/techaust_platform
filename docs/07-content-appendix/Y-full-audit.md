@@ -1,6 +1,6 @@
 # 07-Y: wording from the full audit (for the owner's approval)
 
-Status: **PENDING the owner** (drafted by the lead, 2026-10-29). Every line below shows "[Placeholder]" on screen until you approve this page. Then one switch per app (`APPROVED_07Y`) removes the marks.
+Status: **APPROVED by the owner, 2026-10-29 ("Approve all", items 1–31)** (drafted by the lead, 2026-10-29). Every line below shows "[Placeholder]" on screen until you approve this page. Then one switch per app (`APPROVED_07Y`) removes the marks.
 
 **How to answer:**
 - "Approve all";
