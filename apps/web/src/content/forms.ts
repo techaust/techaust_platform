@@ -61,12 +61,12 @@ export const quotePage = {
     contact: "Your details",
   },
   service: {
-    hint: "Pick the closest. We'll refine it together.",
+    hint: "Pick the closest. We’ll refine it together.",
     notSure: "Not sure: recommend something",
   },
   goals: {
     label: "What would you like to achieve?",
-    hint: "e.g. 'Stop retyping 400 invoices a month into Tally'",
+    hint: "e.g. ‘Stop retyping 400 invoices a month into Tally’",
     tools: "Which tools do you use today?",
   },
   /** 07 §5.9 tool names: one list in @techaust/core (form-labels.ts), shared with the lead alert. */
@@ -75,7 +75,7 @@ export const quotePage = {
     /** NEW: the two questions of step 3 (07 names the step "Budget and timing"). */
     budgetLegend: "Budget",
     timelineLegend: "Timeline",
-    hint: "This helps us suggest the right approach. It isn't a commitment.",
+    hint: "This helps us suggest the right approach. It isn’t a commitment.",
     /** 04 FRM-QUOTE "Not sure" band. */
     notSure: BAND_WORDS.notSure,
   },
@@ -99,15 +99,15 @@ export const quotePage = {
 export const thanksPage = {
   meta: {
     /** NEW: 07 §5.10 gives no meta title; this is the h1 with the site name (the page is noindex). */
-    title: "Thanks, we've got it. | TecHaust Technologies",
+    title: "Thanks, we’ve got it. | TecHaust Technologies",
   },
-  h1: "Thanks, we've got it.",
+  h1: "Thanks, we’ve got it.",
   /** 07 §5.10, split where the page fills in the reference: "Your reference is **{{ref}}**." */
   refBefore: "Your reference is",
   refAfter: ".",
-  reply: `We'll reply within one business day ${hours}.`,
+  reply: `We’ll reply within one business day ${hours}.`,
   /** Shown only with a WhatsApp number and a reference. */
-  urgent: "If it's urgent, message us on WhatsApp and quote your reference.",
+  urgent: "If it’s urgent, message us on WhatsApp and quote your reference.",
   /** The Cal.com link (07 writes the question as the link). */
   call: "Want to pick a time now?",
   whileYouWait: "While you wait:",

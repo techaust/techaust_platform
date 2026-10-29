@@ -139,7 +139,7 @@ export const shell = {
     analyticsText: "Google Analytics, only after consent.",
   },
   notFound: {
-    title: "We couldn't find that page",
+    title: "We couldn’t find that page",
     text: "It may have moved, or the link may be wrong. Here are some useful places:",
     links: [
       { label: "Services", href: "/services" },

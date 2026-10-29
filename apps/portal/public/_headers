@@ -1,0 +1,31 @@
+# Headers on every static response of the client portal SPA (audit A1 finding 1; docs/08-security-compliance.md section 3.1).
+# /api/* answers come from the Worker, which sets its own (secureHeaders in worker/index.ts). The build fails when
+# dist/client/_headers lacks any of these (scripts/check-spa-headers.mjs, run by `pnpm --filter @techaust/portal build`).
+# The Content-Security-Policy has no 'unsafe-inline' and no 'unsafe-eval':
+#  - script-src: our own files, and challenges.cloudflare.com for the Turnstile widget on the sign-in page (M2.4b; the
+#    Turnstile docs ask for that host in script-src and frame-src). No 'wasm-unsafe-eval': clients sign in by email link,
+#    so the portal compiles no WebAssembly (the admin's Argon2id needs it, the portal doesn't).
+#  - frame-src: the Turnstile widget's frame.
+#  - connect-src: our own API only (the portal checks no passwords, so no Have I Been Pwned host).
+#  - frame-ancestors 'none': no other site can frame Accept or Continue (clickjacking).
+# Cross-Origin-Resource-Policy same-site: the portal's files are for the portal (and its sibling hosts) only.
+# X-Robots-Tag keeps the portal out of search in every environment: it is never meant to be indexed.
+/*
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-site
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-src https://challenges.cloudflare.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'
+  X-Robots-Tag: noindex, nofollow
+
+# The page itself is always re-checked, so a new deploy shows at once.
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+
+# Vite writes content-hashed file names under /assets/, so these never change under the same name and can be cached for a year.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

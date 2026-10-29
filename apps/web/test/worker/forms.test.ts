@@ -2,6 +2,7 @@
 // (mock queue, mock rate limiter, stubbed siteverify) so each check can be forced; no network is used.
 import { LEAD_REF } from "@techaust/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import QUOTABLE from "../../src/generated/quotable-services.json";
 import app from "../../src/worker.ts";
 
 const ORIGIN = "https://web.test";
@@ -392,5 +393,64 @@ describe("review fixes [FRM-02, FRM-03, FRM-QUOTE]", () => {
     expect((await request({ ...quote(), service: "S99" }, { kind: "quote" })).status).toBe(422);
     expect((await request({ ...quote(), service: "not-sure" }, { kind: "quote" })).status).toBe(200);
     expect((await request({ ...quote(), service: "S5" }, { kind: "quote" })).status).toBe(200);
+  });
+
+  it("rate limiter (mocked) [A2-9]: keyed by the hashed address only; a 429 says only rate_limited", async () => {
+    limitSuccess = false;
+    const res = await request(valid(), { ip: "198.51.100.23" });
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe("60");
+    expect(await res.json()).toEqual({ ok: false, error: "rate_limited" });
+    expect(limitCalls).toHaveLength(1);
+    expect(limitCalls[0]).toMatch(/^[A-Za-z0-9+/=_-]{20,}$/);
+    expect(limitCalls[0]).not.toContain("198.51.100.23");
+    expect(sent).toHaveLength(0);
+    expect(verifyBodies).toHaveLength(0);
+    // The same address is the same key; another address is another key.
+    await request(valid(), { ip: "198.51.100.23" });
+    await request(valid(), { ip: "198.51.100.24" });
+    expect(limitCalls[1]).toBe(limitCalls[0]);
+    expect(limitCalls[2]).not.toBe(limitCalls[0]);
+  });
+
+  it("rate limiter (mocked) [A2-9]: a plain form post that is limited goes back to the page with the error", async () => {
+    limitSuccess = false;
+    const res = await request(valid(), { type: "application/x-www-form-urlencoded" });
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/contact?error=rate_limited");
+    const q = await request(quote(), { type: "application/x-www-form-urlencoded", kind: "quote" });
+    expect(q.headers.get("location")).toBe("/get-a-quote?error=rate_limited");
+    expect(sent).toHaveLength(0);
+  });
+
+  it("rate limiter (mocked) [A2-9]: when the binding fails, Turnstile and every later check still run", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const e = {
+      ...env(),
+      RL_FORMS: {
+        limit: async () => {
+          throw new Error("internal error");
+        },
+      },
+    } as unknown as Env;
+    siteverify = { success: false };
+    const refused = await post(e, valid());
+    expect(refused.status).toBe(400);
+    expect(verifyBodies).toHaveLength(1);
+    siteverify = { success: true, action: "contact", hostname: "web.test" };
+    expect((await post(e, { ...valid(), email: "nope" })).status).toBe(422);
+    expect(sent).toHaveLength(0);
+  });
+
+  it("accepts exactly the services of the build-time list (the pages' snapshot and rule) [A2-3]", async () => {
+    siteverify = { success: true, action: "quote", hostname: "web.test" };
+    const listed = new Set((QUOTABLE as { codes: string[] }).codes);
+    expect(listed.size).toBeGreaterThan(10);
+    for (let n = 1; n <= 20; n++) {
+      const code = `S${n}`;
+      limitSuccess = true;
+      const res = await request({ ...quote(), service: code }, { kind: "quote" });
+      expect(res.status, code).toBe(listed.has(code) ? 200 : 422);
+    }
   });
 });

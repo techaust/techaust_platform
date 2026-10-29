@@ -11,7 +11,7 @@ const { page } = Astro.props;
 const rows = [...page.changes].reverse();
 ---
 
-<div class="prose-table" role="region" tabindex="0" aria-label={P.changes}>
+<div class="prose-table" role="group" tabindex="0" aria-label={P.changes}>
   <table>
     <thead>
       <tr>

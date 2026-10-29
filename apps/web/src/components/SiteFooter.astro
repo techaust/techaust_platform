@@ -264,11 +264,12 @@ const columns = [
     color: var(--color-text-muted);
   }
 
+  /* Every link's first line sits at the same depth in its 44 px row, whether the name takes one line or two, so the
+     columns' rows line up across the footer and two-line names keep the same rhythm (audit A2 finding 14). */
   .site-footer__col a {
-    display: flex;
-    align-items: center;
+    display: block;
     min-block-size: var(--target-min);
-    padding-block: var(--space-1);
+    padding-block: calc((var(--target-min) - var(--text-sm--line-height) * 1em) / 2);
     text-decoration: none;
     line-height: var(--text-sm--line-height);
   }

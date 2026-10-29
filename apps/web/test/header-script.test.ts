@@ -94,6 +94,7 @@ describe("checkResponseHeaders", () => {
       "referrer-policy": "no-referrer",
       "permissions-policy": "camera=()",
       "cross-origin-opener-policy": "same-origin",
+      "cross-origin-resource-policy": "same-site",
       "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
     }),
   );
@@ -106,9 +107,11 @@ describe("checkResponseHeaders", () => {
   it("names every missing header", () => {
     const m = new Map(good);
     m.delete("cross-origin-opener-policy");
+    m.delete("cross-origin-resource-policy");
     m.set("x-content-type-options", "sniff");
     const p = c.checkResponseHeaders("x", get(m)).join("\n");
     expect(p).toContain("missing cross-origin-opener-policy");
+    expect(p).toContain("missing cross-origin-resource-policy");
     expect(p).toContain("nosniff");
   });
 

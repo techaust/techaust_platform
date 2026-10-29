@@ -5,10 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port 5173 --strictPort",
-    "build": "vite build && node ../../scripts/worker-budget.mjs admin && node ../../scripts/worker-budget.mjs adminApi",
+    "build": "vite build && node ../../scripts/check-spa-headers.mjs admin && node ../../scripts/worker-budget.mjs admin && node ../../scripts/worker-budget.mjs adminApi",
     "typecheck": "wrangler types --env staging && tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
     "test": "vitest run",
-    "deploy:staging": "CLOUDFLARE_ENV=staging vite build && wrangler deploy --config dist/techaust_platform_admin_api/wrangler.json && wrangler deploy",
+    "deploy:staging": "CLOUDFLARE_ENV=staging vite build && node ../../scripts/check-spa-headers.mjs admin && wrangler deploy --config dist/techaust_platform_admin_api/wrangler.json && wrangler deploy",
     "types": "wrangler types --env staging"
   },
   "dependencies": {

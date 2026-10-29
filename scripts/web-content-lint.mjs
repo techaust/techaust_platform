@@ -10,46 +10,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { BANNED_PHRASES, findBannedPhrases } from "../packages/core/src/public-text.ts";
 import { walk } from "./web-shared.mjs";
 
-// Word-bounded: not glued to letters, digits, "_" or "-" on either side. `caseSensitive` is for "LIVE" as a badge,
-// which must not catch the ordinary word "live".
-const BEFORE = String.raw`(?<![\p{L}\p{N}_-])`;
-const AFTER = String.raw`(?![\p{L}\p{N}_-])`;
-
-/** The docs/07 §1.3 list. `id` is what an allow-list entry names. */
-export const BANNED = [
-  { id: "100%", re: String.raw`(?<![\p{L}\p{N}_.,-])100\s?(?:%|per\s?cent|percent)(?![\p{L}])` },
-  { id: "guarantee", re: String.raw`${BEFORE}guarantee\w*${AFTER}` },
-  { id: "no hallucinations", re: String.raw`${BEFORE}no\s+hallucinations?${AFTER}` },
-  { id: "zero errors", re: String.raw`${BEFORE}zero\s+errors?${AFTER}` },
-  { id: "zero manual", re: String.raw`${BEFORE}zero\s+manual${AFTER}` },
-  { id: "ironclad", re: String.raw`${BEFORE}ironclad${AFTER}` },
-  { id: "bulletproof", re: String.raw`${BEFORE}bulletproof${AFTER}` },
-  { id: "military-grade", re: String.raw`${BEFORE}military[-\s]grade${AFTER}` },
-  { id: "LIVE", re: String.raw`${BEFORE}LIVE${AFTER}`, caseSensitive: true },
-  { id: "real-time", re: String.raw`${BEFORE}real[-\s]?time${AFTER}` },
-  { id: "trusted by", re: String.raw`${BEFORE}trusted\s+by${AFTER}` },
-  { id: "industry-leading", re: String.raw`${BEFORE}industry[-\s]leading${AFTER}` },
-  { id: "#1", re: String.raw`(?<![&\p{L}\p{N}_-])#1(?![\p{L}\p{N}_])` },
-  { id: "best-in-class", re: String.raw`${BEFORE}best[-\s]in[-\s]class${AFTER}` },
-  { id: "world-class", re: String.raw`${BEFORE}world[-\s]class${AFTER}` },
-  { id: "fully compliant", re: String.raw`${BEFORE}fully\s+compliant${AFTER}` },
-  { id: "certified", re: String.raw`${BEFORE}certified${AFTER}` },
-  { id: "next-gen", re: String.raw`${BEFORE}next[-\s]gen${AFTER}` },
-  { id: "revolutionary", re: String.raw`${BEFORE}revolutionary${AFTER}` },
-  { id: "cutting-edge", re: String.raw`${BEFORE}cutting[-\s]edge${AFTER}` },
-  { id: "limited slots", re: String.raw`${BEFORE}limited\s+slots${AFTER}` },
-  { id: "act now", re: String.raw`${BEFORE}act\s+now${AFTER}` },
-  // Prior-price wording (research round 2026-10-28, 08-C RB-22): the Consumer Protection (E-Commerce) Amendment Rules 2026 (in force 1 Jan 2027, if they apply to us) make a "was X, now Y"
-  // or "N % off" claim a risk unless the earlier price was really charged. We state prices only from the catalogue (`{{price:Sx}}` tokens) and make no claim of a reduction. These two are
-  // not in docs/07 §1.3; allow-list an entry, with its reason, if one is ever true and shown.
-  {
-    id: "prior price (was/now)",
-    re: String.raw`${BEFORE}(?:was|now)\s*:?\s*(?:[₹$€£]|rs\.?\s?|inr\s?|usd\s?|\{\{\s*price)`,
-  },
-  { id: "% off", re: String.raw`${BEFORE}\d{1,3}(?:\.\d+)?\s?(?:%|per\s?cent|percent)\s+off${AFTER}` },
-].map((b) => ({ ...b, regex: new RegExp(b.re, b.caseSensitive ? "gu" : "giu") }));
+// The docs/07 §1.3 list lives in @techaust/core (packages/core/src/public-text.ts), one source for this lint, the built-HTML checks and
+// the admin's catalogue publish (audit A2 finding 2). `id` is what an allow-list entry names.
+export const BANNED = BANNED_PHRASES;
 
 /** Validates the allow-list file's content (already parsed). Returns { entries, problems }. */
 export function parseAllowList(json) {
@@ -70,19 +36,7 @@ export function parseAllowList(json) {
 }
 
 /** Banned phrases found in `text`; each with the phrase id and a little context. */
-export function findBanned(text) {
-  const found = [];
-  for (const b of BANNED) {
-    for (const m of text.matchAll(b.regex)) {
-      const around = text
-        .slice(Math.max(0, m.index - 25), m.index + m[0].length + 25)
-        .replace(/\s+/g, " ")
-        .trim();
-      found.push({ id: b.id, around });
-    }
-  }
-  return found;
-}
+export const findBanned = (text) => findBannedPhrases(text);
 
 /** Problems for one file's text, minus allow-listed (file, phrase) pairs. */
 export function checkBanned(name, text, allow = []) {
