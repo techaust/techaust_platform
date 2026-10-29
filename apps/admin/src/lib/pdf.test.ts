@@ -9,6 +9,7 @@ import {
   pdfRetryText,
   SIGNATURE_ACCEPT,
   SIGNATURE_COPY,
+  SIGNATURE_INPUT_MAX,
   SIGNATURE_MAX,
   signatureErrorIsWrongFile,
   signatureFileOk,
@@ -31,17 +32,21 @@ describe("pdfPhase", () => {
 });
 
 describe("the signature file", () => {
-  it("accepts a PNG or JPEG of up to 256 KB, as the API does", () => {
+  it("reads a PNG or JPEG of up to 10 MB before scaling; the stored PNG's limit stays the API's 256 KB (fix round, lead 2026-10-29)", () => {
     expect(SIGNATURE_MAX).toBe(SIGNATURE_MAX_BYTES);
+    expect(SIGNATURE_INPUT_MAX).toBe(10 * 1024 * 1024);
     expect(SIGNATURE_ACCEPT.split(",")).toEqual([...SIGNATURE_MIMES]);
     expect(signatureFileOk({ type: "image/png", size: 1 })).toBe(true);
-    expect(signatureFileOk({ type: "image/jpeg", size: SIGNATURE_MAX })).toBe(true);
+    expect(signatureFileOk({ type: "image/jpeg", size: SIGNATURE_MAX + 1 })).toBe(true);
+    expect(signatureFileOk({ type: "image/jpeg", size: 1024 * 1024 })).toBe(true);
+    expect(signatureFileOk({ type: "image/jpeg", size: SIGNATURE_INPUT_MAX })).toBe(true);
   });
-  it("refuses another type, an empty file or a larger one", () => {
+  it("refuses another type, an empty file or one over 10 MB", () => {
     expect(signatureFileOk({ type: "image/svg+xml", size: 100 })).toBe(false);
     expect(signatureFileOk({ type: "image/webp", size: 100 })).toBe(false);
     expect(signatureFileOk({ type: "image/png", size: 0 })).toBe(false);
-    expect(signatureFileOk({ type: "image/png", size: SIGNATURE_MAX + 1 })).toBe(false);
+    expect(signatureFileOk({ type: "image/png", size: SIGNATURE_INPUT_MAX + 1 })).toBe(false);
+    expect(signatureFileOk({ type: "image/jpeg", size: 11 * 1024 * 1024 })).toBe(false);
   });
 });
 
@@ -86,7 +91,8 @@ describe("the wording (07-P §3, §4)", () => {
       replace: "Replace",
       remove: "Remove",
       removeQuestion: "Remove the signature? Invoices issued already keep theirs.",
-      wrongFile: "[Placeholder] Use a PNG or JPEG image up to 256 KB.", // FX-3: 07-Y, pending the owner
+      // FX-3: 07-Y, amended by the lead in the fix round (10 MB in, a PNG of up to 256 KB stored)
+      wrongFile: "[Placeholder] Use a PNG or JPEG image up to 10 MB. We store it as a PNG of up to 256 KB.",
       scaled: "[Placeholder] We made the image smaller to fit 800 by 400 pixels.",
       tooDetailed:
         "[Placeholder] This image is too detailed to keep as a signature. Use a scan on a plain white background.",
