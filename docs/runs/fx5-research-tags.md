@@ -253,3 +253,36 @@ Builder, Opus 5.5 high, Tier A. Branch `fix/fx5-r2` from `origin/fix/fx5-researc
 - Docs: RA-10 in 08-C as in 5; one docs/13 row at the end, who: Lead: "A proforma the client has viewed can't be voided either (as for an emailed one); it stays until converted, since a proforma has no credit note. Applies the owner's 2026-10-30 void decision | Lead | 08-C RA-10, `@techaust/core/invoices`".
 - Then the designer step follows (not yours): leave the two Settings screen lines from your report alone.
 - Checks: touched packages' tests (portal, admin void tests, db, core) through the queue, `bash tools/heavy.sh --log fx5r2-check pnpm check`, whole-repository `pnpm lint` last. Append "## Builder report, fix round 1".
+
+## Builder report, fix round 1
+Builder claude-opus-5-5/high, 2026-10-30 ~03:50–04:20 IST, branch `fix/fx5-r2` from `origin/fix/fx5-research-tags` (816878f0), pushed.
+
+**Skills loaded:** `cloudflare:workers-best-practices` (the `waitUntil` rule: work the answer depends on is awaited in the request, never left to the background; the view now rides the read batch, the access row and session touch stay in `waitUntil`), `cloudflare:wrangler` (no config or binding change; nothing to regenerate). Not loaded: `cloudflare:workers-profiling` (no CPU work added beyond one primary-key UPDATE in an existing batch), `frontend-design` (no screen).
+
+### Per finding (change, commit)
+1. **high, view before the answer (`f987ae78`).** New `VIEW_SQL` in `apps/portal/worker/invoice-summary.ts`: `UPDATE documents SET viewed_at = ?3 WHERE client_id = ?1 AND id = ?2 AND viewed_at IS NULL AND frozen_at IS NOT NULL AND voided_at IS NULL AND status IN (…) AND type IN (…)`. `GET /invoices/:id` runs it as the first statement of its existing read batch (`VIEW_SQL`, `ONE_SQL`, `LINES_SQL`); the `c.set("after", …)` for the view is gone. The access row and the session touch stay in the background. Still one D1 call; one primary-key UPDATE per GET, 0 rows written after the first view.
+2. **medium, PDFs (`f987ae78`).** Signed-in `GET /invoices/:id/pdf`: one batch (`VIEW_SQL`, `ONE_SQL`) in place of the single `.first()` (still one D1 call). Emailed link `POST /t/document/pdf`: `VIEW_SQL` joins the existing access-row batch (still 2 calls). A 409 `pdf_pending` also counts as a view (the document was found and is the client's; see question 2).
+3. **low, emailed-link view (`f987ae78`).** `POST /t/document` uses the same `VIEW_SQL`, so `voided_at IS NULL` (and the status and type guards) are in it.
+4. **low, tests (`f987ae78`, `11eb2afb`).**
+   - Portal `invoices.test.ts`: (a) `viewed_at` is set when `exports.default.fetch` resolves, then a direct void UPDATE fails with `documents_viewed_no_void` (an unopened control is voided by the same statement); (b) voided first: summary and PDF are 404 and `viewed_at` stays NULL; (c) with a temporary trigger refusing `access_log` inserts, a request through `app.request` with its own execution context: `viewed_at` is set before `waitOnExecutionContext`, the background write fails whole ("access log write failed" logged), `viewed_at` is still set and the void is refused. This is the order proof that doesn't depend on `waitUntil`: against the old `invoices.ts`, (c) and (d) fail; (d) the signed-in PDF sets `viewed_at` once, also on a 409 pending, never on another organisation's document; plus `VIEW_SQL` writes only an openable document (never a draft, a void one, an offer or another organisation's; once).
+   - Portal `doc-token.test.ts`: the emailed-link PDF records the view once; a bad link writes none.
+   - db `void-view.test.ts`: a viewed proforma is refused, an unviewed one is voided.
+   - Admin `invoices-void.test.ts`: a viewed proforma is 409 `viewed_by_client` with `reasons: ["viewed_by_client"]` and the proforma's message, nothing written, no audit row, and the view's blockers say so; viewed and past its month is 409 `return_period_closed` with `reasons: ["viewed_by_client", "return_period_closed"]`. The screen lines for both cases were already pinned in `src/lib/invoices.test.ts`.
+5. **low, wording (`11eb2afb`, `74d940d2`).** The void route's 409 for a viewed proforma now says "The client has opened this proforma in the portal, so it can't be voided." (`VIEWED_BY_CLIENT_PROFORMA` in `invoice-model.ts`, 07-Z §1 line 2; read path and race path), never the credit-note advice. 08-C RA-10 now opens with "Our rule: settled by owner decision 2026-10-30 (docs/13) · Source question: OPEN (CA)" and says "a credit note corrects an invoice; a delivered proforma stays until converted". The docs/13 Lead row is added as the brief wrote it. Comments in `triggers.ts` and `void-view.test.ts` are reworded the same way. The trigger's SQL and abort message (0053) are unchanged; no migration touched.
+
+### Commands and results (heavy ones through `tools/heavy.sh`)
+- `pnpm install --frozen-lockfile --offline`: ok.
+- Portal `invoices.test.ts` + `doc-token.test.ts`: 40 pass. The new tests against the old `invoices.ts` (temporarily restored, then put back): (c) and (d) fail, as they should.
+- db `void-view.test.ts`: 4 pass. Admin `invoices-void.test.ts`: 18 pass.
+- Packages: portal 641 pass (25 files); db 485 pass; core 1824 pass; admin `invoices-void`, `invoice-types`, `split`, `src/lib/invoices`: 393 pass.
+- `bash tools/heavy.sh --log fx5r2-check pnpm check`: ok (typecheck in every package, the guards, migration guard: 54 migrations).
+- `pnpm lint` (whole repository, last): ok, 10 warnings and 8 infos, none in files this round touched.
+
+### Not verified
+- The whole admin package was not run (only the four files above); jobs, web, pdf, email, ui and auth were not run (not touched).
+- Staging and the live portal were not opened; no hosted service touched.
+
+### Open questions and notes for the lead
+1. **SPA line during a race (designer, not changed):** `invErrorText` maps a 409 `viewed_by_client` to the invoice's line (`INV_ERRORS.viewed_by_client`) whatever the type. A proforma whose view lands while the void dialog is open would show the invoice's "Use a credit note instead." line, though the API's message is now the proforma's. The dialog could use `voidBlockedText([code], type)`. Left for the designer step.
+2. **A `pdf_pending` 409 counts as a view** on both PDF routes. The early check didn't say either way. Say if only a delivered PDF should count (`AND pdf_r2_key IS NOT NULL` on the PDF routes only).
+3. 0053's abort message still ends "a credit note corrects it" (a developer message, never shown to a person). Changing it means regenerating 0053 (not applied anywhere yet, but the brief said no migration change), so it is left as is.
