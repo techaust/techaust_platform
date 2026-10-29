@@ -1019,6 +1019,8 @@ function Timeline(props: {
   const [next, setNext] = useState(props.first.next);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Each "Show older" request's number: only the latest one may show its answer or end the loading state.
+  const asked = useRef(0);
   // A reload brings a new first page (fix round 2: the view is no longer started again): older pages and the cursor start over from
   // it, so a new entry that pushed one off the first page never leaves a gap before "Show older".
   const [first, setFirst] = useState(props.first);
@@ -1030,6 +1032,9 @@ function Timeline(props: {
     // A "Show older" still on its way belongs to the old page (fix round 3, 6): the button is ready again at once, and that answer,
     // whenever it comes, changes nothing (`asked` below).
     setLoading(false);
+    // and that answer is no longer the latest, even in the moment before the effect below records the new first page (re-check of
+    // round 3, L3)
+    asked.current++;
   }
   const items = [...props.first.items, ...older.filter((o) => !props.first.items.some((f) => f.id === o.id))];
   const now = Date.now();
@@ -1040,8 +1045,6 @@ function Timeline(props: {
   useEffect(() => {
     shownFirst.current = props.first;
   }, [props.first]);
-  // Each "Show older" request's number: only the latest one may show its answer or end the loading state.
-  const asked = useRef(0);
 
   async function more() {
     if (!next) return;

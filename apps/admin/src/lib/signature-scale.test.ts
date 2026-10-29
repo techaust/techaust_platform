@@ -267,7 +267,8 @@ describe("decoding straight at the fitted size (FX-3 fix round 2, H)", () => {
     };
     return { create, calls, made };
   };
-  const FULL = { options: { imageOrientation: "from-image" } };
+  // the full-size decode passes no options (re-check of round 3, L1: an older engine may refuse imageOrientation)
+  const FULL = { options: undefined };
   const run = (bytes: Uint8Array<ArrayBuffer>, type: string, b: ReturnType<typeof browser>) => {
     const drawn: [number, number][] = [];
     const io: ImageIo<ImageBitmap> = {

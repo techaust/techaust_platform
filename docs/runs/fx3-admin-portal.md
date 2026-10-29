@@ -1088,3 +1088,23 @@ _(designer claude-opus-5-5/high, branch `fix/fx3-fix3-d` from `origin/fix/fx3-ad
 2. The waiting focus target is dropped only after a key or pointer press, so the leave dialog handing focus back doesn't cancel round 2's D.
 
 The designer's idea of reading the PNG orientation chunk in `imageHeaderSize` (the fast path for turned PNGs too) is a nice-to-have, not a defect; kept as a note for M7. Next: the focused re-check.
+
+## Focused re-check of fix round 3 (reviewer claude-opus-5-5/high, live, 2026-10-29 ~21:05–21:30 IST, on f411e201): APPROVE
+_(Summary by the lead. Shots: `.logs/shots/fx3-recheck3/`.)_ All seven items are fixed and checked live:
+- **Signatures:** a PNG with an eXIf chunk falls back and is stored 300×400 with a round circle; a JPEG with Exif 6 decodes once.
+- **Stale lines:** gone after another tab's change, and kept under the person's own bad text.
+- **Enquiry form:** stacked at 255 px and two columns at 511 px; axe 0 at 375, 768, 1024 and 1280.
+- **Template:** the first click shows the summary.
+- **Focus target:** kept, or yielded to typing.
+- **"Show older":** ready at once, with no duplicates or gaps.
+- **First-field focus:** right, and Cancel returns focus.
+- **Results:** `pnpm check` exit 0; admin tests 3,372 passed.
+
+**Low findings:**
+- **L1:** the full-size fallback passed `imageOrientation`, which an older engine refuses. **Fixed by the lead:** no options on the fallback.
+- **L2:** very tall images lose the fitted fast path; the output stays correct. **Kept:** a signature over 2:1 tall is unusual. Noted for M7.
+- **L3:** a narrow moment where a stale "Show older" answer could still slip in. **Fixed by the lead:** `asked` bumps in the reset, declared above its use.
+- **L4:** on touch, a tap on Save may be lost after a heading blur (not verifiable here). **Goes on the final sweep's checklist** (touch emulation), with the reviewer's simpler `onMouseDown` preventDefault fix ready.
+- **L5:** the window rule's two-row spans reached the one-column Enquiry form. **Fixed by the lead:** `grid-row: auto` in the one-column rule.
+
+Signature tests 19/19 after the lead's fixes; the test now expects no options on the full-size decode.

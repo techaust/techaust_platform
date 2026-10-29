@@ -601,6 +601,11 @@ a.lead-card__name:hover {
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* one column: none of the window rule's two-row spans (re-check of round 3, L5) */
+.lead-answers .form-grid > * {
+  grid-row: auto;
+}
+
 @container (min-width: 30rem) {
   .lead-answers .form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

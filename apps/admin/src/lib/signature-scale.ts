@@ -191,9 +191,6 @@ export function fittedDecodeOptions(size: { width: number; height: number }): Im
   return { resizeWidth: size.width, resizeQuality: "high", imageOrientation: "from-image" };
 }
 
-/** The full-size decode, turned by the image's orientation as the browser shows it. */
-export const FULL_DECODE_OPTIONS: ImageBitmapOptions = { imageOrientation: "from-image" };
-
 /**
  * Whether a bitmap decoded with `fittedDecodeOptions(size)` is the fitted image. Both sides are checked: the width exactly, the height
  * allowing only the one pixel by which the browser's rounding (up, in the HTML standard) can differ from `signatureFit`'s (to the
@@ -228,7 +225,9 @@ export async function decodeFitted(
       // the options were refused: the old path below
     }
   }
-  return create(file, FULL_DECODE_OPTIONS);
+  // No options here (re-check of round 3, L1): an older engine that refuses `imageOrientation: "from-image"` still decodes, and current
+  // engines turn the image by its orientation by default.
+  return create(file);
 }
 
 /** The browser's `ImageIo`: `createImageBitmap` to decode, a canvas with high-quality smoothing to draw, `toBlob` for the PNG. */
