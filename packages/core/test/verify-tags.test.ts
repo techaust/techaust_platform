@@ -1,7 +1,8 @@
 // No new bare "VERIFY WITH CA/LEGAL" tag (FX-3, A4 lead's addition; owner rule 8 of 2026-10-28): a tax or legal note in code says
 // `Researched <date>, <source> (08-C <ID>)` when the register settles it, or `OPEN (08-C <ID>): <question>` when it does not. This test scans
-// apps/, packages/, scripts/, tools/ and .github/ (code, styles, JSON, Markdown, SQL, YAML and shell or PowerShell scripts; applied migrations are
-// never edited, so `packages/db/migrations/` is left out; FX-3 fix round, item 9) and fails on a bare tag in a file that is not below, or on more
+// apps/, packages/, scripts/, tools/ and .github/ (code, styles, JSON and JSONC, Markdown, SQL, YAML and shell or PowerShell scripts; applied
+// migrations are never edited, so `packages/db/migrations/` is left out; FX-3 fix round, item 9; the wrangler `.jsonc` configs, whose comments
+// can carry a note, fix round 2, item G) and fails on a bare tag in a file that is not below, or on more
 // tags than the file is allowed. The list is the tags whose question has no 08-C row yet (FX-3 builder report): each is retagged
 // once the register has a row, and a stale count fails too, so the list only shrinks.
 import { readdirSync, readFileSync } from "node:fs";
@@ -14,7 +15,7 @@ const SCANNED = ["apps", "packages", "scripts", "tools", ".github"];
 const SKIP_DIRS = new Set(["node_modules", "dist", "coverage", "generated", "fonts", "brand"]);
 /** The applied migrations (never edited): skipped by their path only, so a `.sql` file anywhere else is scanned. */
 const SKIP_PATHS = new Set(["packages/db/migrations"]);
-const EXTENSIONS = /\.(ts|tsx|mts|mjs|cjs|js|astro|css|json|md|sql|ya?ml|sh|ps1)$/;
+const EXTENSIONS = /\.(ts|tsx|mts|mjs|cjs|js|astro|css|jsonc?|md|sql|ya?ml|sh|ps1)$/;
 /** "VERIFY WITH CA", "VERIFY WITH CA/LEGAL", "VERIFY WITH LEGAL", also when a comment breaks the line between the words. */
 const BARE = /VERIFY\s+WITH(?:\s|\/\/|\*)+(?:CA|LEGAL)\b/g;
 const SELF = "packages/core/test/verify-tags.test.ts";
@@ -105,9 +106,20 @@ describe("bare VERIFY tags (FX-3)", () => {
     expect(n("// Researched 2026-10-28, s.12 IGST (08-C RA-12)")).toBe(0);
   });
 
-  it("FX-3 fix round (item 9): the scan reaches tools/, .github/, SQL, YAML and shell files, and skips only the applied migrations", () => {
+  it("FX-3 fix round (item 9): the scan reaches tools/, .github/, SQL, YAML, shell and (fix round 2, item G) JSONC files, and skips only the applied migrations", () => {
     const all = scanned();
-    for (const want of ["tools/heavy.sh", ".github/workflows/ci.yml", "packages/db/src/triggers.ts"])
+    for (const want of [
+      "tools/heavy.sh",
+      ".github/workflows/ci.yml",
+      "packages/db/src/triggers.ts",
+      // fix round 2 (item G): every wrangler config, comments included
+      "apps/admin/wrangler.jsonc",
+      "apps/admin/wrangler.api.jsonc",
+      "apps/jobs/wrangler.jsonc",
+      "apps/portal/wrangler.jsonc",
+      "apps/web/wrangler.jsonc",
+      "packages/db/wrangler.jsonc",
+    ])
       expect(all, want).toContain(want);
     expect(all.some((f) => f.startsWith("packages/db/migrations/"))).toBe(false);
     // the folder rule: the migrations are skipped at their own path only; installed packages and dot folders below the tops never entered
@@ -115,7 +127,7 @@ describe("bare VERIFY tags (FX-3)", () => {
     expect(entersDir("packages/db/src/migrations", "migrations")).toBe(true);
     expect(entersDir("apps/web/node_modules", "node_modules")).toBe(false);
     expect(entersDir("apps/web/.wrangler", ".wrangler")).toBe(false);
-    for (const name of ["x.sql", "x.yml", "x.yaml", "x.sh", "x.ps1", "x.ts", "x.md"])
+    for (const name of ["x.sql", "x.yml", "x.yaml", "x.sh", "x.ps1", "x.ts", "x.md", "x.json", "x.jsonc"])
       expect(EXTENSIONS.test(name), name).toBe(true);
     for (const name of ["x.png", "x.woff2", "x.pdf", "x.lock"])
       expect(EXTENSIONS.test(name), name).toBe(false);
