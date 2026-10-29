@@ -218,8 +218,10 @@ describe("the finance boundary: Sales never gets the finance tab's data [ADM-CLI
     expect(
       (await call(`/clients/${id}/billing`, { method: "PATCH", cookie: staff.cookie, body })).status,
     ).toBe(200);
-    expect(await json(await call(`/clients/${id}/finance`, { cookie: acc.cookie }))).toEqual({
-      available: false,
+    // FX-3: the Overview figures (no issued document yet: no currencies; figures.test.ts covers the sums)
+    expect(await json(await call(`/clients/${id}/finance`, { cookie: acc.cookie }))).toMatchObject({
+      available: true,
+      currencies: [],
     });
   });
 });

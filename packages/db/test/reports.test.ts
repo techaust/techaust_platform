@@ -6,6 +6,7 @@ import type { ComputedDocument, LineInput } from "@techaust/core/tax";
 import { describe, expect, it } from "vitest";
 import { goldenDocuments } from "../../core/test/tax/golden-cases.ts";
 import {
+  CLIENT_FIGURES_SQL,
   EDF_COUNT_SQL,
   EDF_MONTH_SQL,
   EXPORT_NEXT_SQL,
@@ -14,6 +15,7 @@ import {
   OVERDUE_OLDEST_SQL,
   OWED_SQL,
   PROFORMAS_AWAITING_SQL,
+  PROJECT_BILLED_SQL,
   REALISATION_BELLS_SQL,
   REALISATION_PAGE_SQL,
   REALISATION_SCAN_SQL,
@@ -161,6 +163,15 @@ describe("EXPLAIN: every report statement uses an index", () => {
   it("the ledger sum reads the client's documents by an index", async () => {
     const p = await plan(STATEMENT_LEDGER_SQL, "c", "INR");
     expect(scansTable(p), p).toBe(false);
+  });
+
+  it("FX-3: a client's Overview figures seek the client in `documents_client_issued`; a project's billed figure seeks `documents_project`", async () => {
+    const cl = await plan(CLIENT_FIGURES_SQL, "c", "2026-10-29");
+    expect(cl).toMatch(/SEARCH d USING INDEX documents_client_issued \(client_id=\?\)/);
+    expect(scansTable(cl), cl).toBe(false);
+    const pr = await plan(PROJECT_BILLED_SQL, "p");
+    expect(pr).toMatch(/SEARCH d USING INDEX documents_project \(project_id=\?\)/);
+    expect(scansTable(pr), pr).toBe(false);
   });
 
   it("the dashboard's invoiced figure reads `documents_issued_on`; what clients owe and the oldest overdue read `documents_status_due`", async () => {

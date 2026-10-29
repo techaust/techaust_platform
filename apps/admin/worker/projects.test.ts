@@ -196,7 +196,7 @@ describe("GET /projects/:id [ADM-PRJ-05]", () => {
     expect(JSON.stringify(res)).not.toContain("r2_key");
     expect(JSON.stringify(res)).not.toContain("r2Key");
     expect(res.figures).toEqual({
-      billedVsPaid: { available: false, arrivesWith: "invoicing" },
+      billed: { available: true, currencies: [] }, // FX-3: no issued invoice yet ("paid" arrives with payments and is not sent)
       hours: { available: true, totalMinutes: 0, billableMinutes: 0 }, // M3.5: the time-log totals (no entries yet)
     });
     expect((await call("/projects/no-such-project", { cookie: o.cookie })).status).toBe(404);

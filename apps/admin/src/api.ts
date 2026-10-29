@@ -560,6 +560,23 @@ export type FileView = {
   uploadedByName: string | null;
   createdAt: number;
 };
+/** FX-3: one currency of a project's billed figure (worker/figures.ts `ProjectBilled`); minor units, tax included. */
+export type ProjectBilled = { currency: Currency; billedMinor: number; creditedMinor: number };
+/**
+ * FX-3 (ADM-CLI-03): one currency of a client's Overview figures (worker/figures.ts `ClientFigures`); minor units, tax included. Billed is the statement's
+ * debit column over all time, the balance its closing balance today; "collected" arrives with payments (M6) and is not sent.
+ */
+export type ClientFigures = {
+  currency: Currency;
+  billedMinor: number;
+  creditedMinor: number;
+  balanceMinor: number;
+  overdueMinor: number;
+  overdueCount: number;
+};
+export type ClientFinance =
+  | { available: true; asOf: string; currencies: ClientFigures[] }
+  | { available: false; reason: "anonymised" };
 export type ProjectPage = {
   project: ProjectView;
   milestones: MilestoneView[];
@@ -569,7 +586,11 @@ export type ProjectPage = {
   recentNotes: NoteView[];
   recentFiles: FileView[];
   figures: {
-    billedVsPaid: { available: boolean; arrivesWith: string };
+    /**
+     * FX-3 (ADM-PRJ-05): billed from the project's issued invoices and debit notes, and its credit notes, by currency (the client statement's rules).
+     * Absent for a role without `clients.finance.read` (Sales); `available: false` for an anonymised client. "Paid" arrives with payments (M6).
+     */
+    billed?: { available: true; currencies: ProjectBilled[] } | { available: false; reason: "anonymised" };
     /** M3.5: the time logged on the project (totals only, the same for every role). */
     hours:
       | { available: true; totalMinutes: number; billableMinutes: number }
@@ -1305,8 +1326,8 @@ export const api = {
       method: "PATCH",
       body,
     }),
-  clientFinance: (id: string) =>
-    request<{ available: boolean }>(`/clients/${encodeURIComponent(id)}/finance`),
+  /** FX-3 (ADM-CLI-03): the Overview figures (finance roles). Shape: worker/figures.ts `ClientFinanceAnswer`. */
+  clientFinance: (id: string) => request<ClientFinance>(`/clients/${encodeURIComponent(id)}/finance`),
   /** M5.5b (ADM-CLI-04, LD78): one page (≤ 50 entries) of the statement of one currency; `after` is the previous page's `next`. */
   clientStatement: (id: string, q: { from: string; to: string; currency?: Currency; after?: string }) =>
     request<StatementPage>(`/clients/${encodeURIComponent(id)}/statement${qs(q)}`),
