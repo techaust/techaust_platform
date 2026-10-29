@@ -60,16 +60,19 @@ export const INV_NO_MATCH = "No invoices match these filters";
 export const SUPPLIER_COPY_LABEL = "Download supplier copy";
 
 /**
- * FX-4 (early check M1; 07-Y, PENDING, marked until approved): the line under "Download supplier copy" when the API answers 409 `pdf_pending`, so it never reads as
- * "being prepared" forever. The copy is made only after the client's PDF: while that has none, the line points to the PDF's own "Try again"; an anonymised
- * client's copy is never made (no PDF work for an anonymised client), so it says so and offers nothing.
+ * FX-4 (early check M1; 07-Y, PENDING, marked until approved): the line under "Download supplier copy" when the API answers 409 `pdf_pending` for an
+ * anonymised client: its copy is never made (no PDF work for an anonymised client), so the line says so and offers nothing.
+ * FX-4 review L2: the button is drawn only once the client's PDF is ready (the PDF panel's `extra`), and the copy follows that PDF, so for a live
+ * client the 409 can't follow from the screen. The old line for that case ("…made after the client's PDF…") had no way to show and is gone; a stale
+ * page that ever met one says it like any other failure (`supplierCopyLine` is null, and the screen's toast says to try again).
  */
-export const supplierCopyUnavailable = (anonymised: boolean): string =>
-  anonymised
-    ? Y("No supplier copy was made before this client was anonymised, and none can be made now.")
-    : Y(
-        "The supplier copy is made after the client's PDF, which isn't ready yet. Use Try again on the PDF if it is taking longer than usual.",
-      );
+export const SUPPLIER_COPY_NONE = Y(
+  "No supplier copy was made before this client was anonymised, and none can be made now.",
+);
+
+/** The line that stays under the supplier copy's button after an answer: only an anonymised client's 409 has one. */
+export const supplierCopyLine = (state: string, anonymised: boolean): string | null =>
+  state === "no_original" && anonymised ? SUPPLIER_COPY_NONE : null;
 
 // ---- 07-R §1–§4, word for word ---------------------------------------------------------------------------------------------------------------
 

@@ -24,7 +24,7 @@ import {
   milestoneBackLine,
   moneyText,
   SUPPLIER_COPY_LABEL,
-  supplierCopyUnavailable,
+  supplierCopyLine,
   typeLabel,
   UNKNOWN,
   voidBlockedText,
@@ -93,34 +93,32 @@ const issuedBy = (v: InvoiceView) => v.issuer?.sender?.name ?? UNKNOWN;
 /**
  * "Download supplier copy" (07-R §7): asks for the copy first, then saves it; while the jobs Worker is still making it (it follows the original), the
  * toast says so in 07-R §4's words, and a failure says to try again. A text button under the client's PDF: the client's copy stays the panel's action.
- * FX-4 (early check M1): a 409 `pdf_pending` is its own state, a line that stays under the button (not a passing toast): nothing can make the copy until
- * the client's PDF exists, so the line says so and `onNoOriginal` reads the page again, which brings back the PDF panel's own state and its "Try again".
- * For an anonymised client the copy is never made, and the line says that instead.
+ * FX-4 (early check M1, review L2): the button is drawn only once the client's PDF is ready, so the one 409 `pdf_pending` it can meet is an anonymised
+ * client's, whose copy is never made: a line says so and stays under the button (not a passing toast). A live client's 409 can't follow from this screen
+ * and is said like any other failure.
  */
 function SupplierCopy({
   id,
   number,
   anonymised,
-  onNoOriginal,
 }: {
   id: string;
   number: string | null;
   anonymised: boolean;
-  onNoOriginal: () => void;
 }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
-  const [unavailable, setUnavailable] = useState(false);
+  const [line, setLine] = useState<string | null>(null);
   const lineId = `supplier-copy-${id}`;
   async function download() {
     if (busy) return;
     setBusy(true);
     try {
       const r = await fetchSupplierCopy(id);
-      setUnavailable(r.state === "no_original");
-      if (r.state === "no_original") {
-        if (!anonymised) onNoOriginal();
-      } else if (r.state === "ready") {
+      const said = supplierCopyLine(r.state, anonymised);
+      setLine(said);
+      if (said) return;
+      if (r.state === "ready") {
         const url = URL.createObjectURL(r.blob);
         const a = document.createElement("a");
         a.href = url;
@@ -146,14 +144,14 @@ function SupplierCopy({
         onClick={() => void download()}
         disabled={busy}
         aria-busy={busy || undefined}
-        aria-describedby={unavailable ? lineId : undefined}
+        aria-describedby={line ? lineId : undefined}
       >
         <Download size={16} />
         {SUPPLIER_COPY_LABEL}
       </button>
       {/* polite and always in the tree, so the line is read when it appears */}
       <p id={lineId} className="pdf-panel__supplier-note" role="status">
-        {unavailable ? supplierCopyUnavailable(anonymised) : null}
+        {line}
       </p>
     </div>
   );
@@ -315,12 +313,7 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
               onReady={reload}
               extra={
                 canDownloadSupplierCopy(role, v.type) ? (
-                  <SupplierCopy
-                    id={v.id}
-                    number={v.number}
-                    anonymised={v.client.anonymised}
-                    onNoOriginal={reload}
-                  />
+                  <SupplierCopy id={v.id} number={v.number} anonymised={v.client.anonymised} />
                 ) : undefined
               }
             />

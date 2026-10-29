@@ -431,7 +431,8 @@ export const canDownloadSupplierCopy = (role: Role, type: string) =>
 
 /**
  * `pending`: 202, the copy is being made. `no_original` (FX-4, early check M1): 409 `pdf_pending`, nothing can make it now: the original has no PDF (its
- * own retry is the PDF panel's "Try again"), or the client is anonymised and no copy was made before. `failed`: anything else.
+ * own retry is the PDF panel's "Try again"), or the client is anonymised and no copy was made before. The screen offers the copy only once the original
+ * is ready, so only the anonymised case is said on screen (`supplierCopyLine`, review L2). `failed`: anything else.
  */
 export type SupplierCopyResult =
   | { state: "ready"; blob: Blob; filename: string | null }

@@ -33,10 +33,11 @@ import {
   milestoneHasInvoice,
   requestRow,
   SUPPLIER_COPY_LABEL,
+  SUPPLIER_COPY_NONE,
   seriesPreview,
   splitAtPlace,
   splitSentences,
-  supplierCopyUnavailable,
+  supplierCopyLine,
   typeLabel,
   voidBlockedText,
   voidTitle,
@@ -498,16 +499,17 @@ describe("M5.2 re-check: proforma wording and the advance rate date (07-S §8)",
     }
   });
 
-  it("FX-4 (early check M1): the line under the supplier copy names why it can't be had, by whether the client is anonymised (07-Y, marked)", () => {
+  it("FX-4 (early check M1, review L2): only an anonymised client's 409 leaves a line under the supplier copy (07-Y, marked)", () => {
     const mark = APPROVED_07Y ? "" : `${PLACEHOLDER_MARK} `;
-    expect(supplierCopyUnavailable(false)).toBe(
-      `${mark}The supplier copy is made after the client's PDF, which isn't ready yet. Use Try again on the PDF if it is taking longer than usual.`,
-    );
-    expect(supplierCopyUnavailable(true)).toBe(
+    expect(SUPPLIER_COPY_NONE).toBe(
       `${mark}No supplier copy was made before this client was anonymised, and none can be made now.`,
     );
+    expect(supplierCopyLine("no_original", true)).toBe(SUPPLIER_COPY_NONE);
+    // a live client's button shows only once its PDF is ready, so a 409 there is a plain failure (the toast), never a line
+    expect(supplierCopyLine("no_original", false)).toBeNull();
+    for (const state of ["ready", "pending", "failed"]) expect(supplierCopyLine(state, true)).toBeNull();
     // never the "being prepared" words of a copy on its way
-    expect(supplierCopyUnavailable(false)).not.toContain(INV_COPY.pdfPreparing);
+    expect(SUPPLIER_COPY_NONE).not.toContain(INV_COPY.pdfPreparing);
   });
 
   it("a proforma's void refused for a reason other than a payment says it was emailed", () => {
