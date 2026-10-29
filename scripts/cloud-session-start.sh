@@ -6,8 +6,8 @@
 #   - the model check: the hook's input (stdin JSON) may carry the session's `model`; if it does and it isn't Opus 5.5
 #     (claude-opus-5-5…), the summary line starts with "MODEL IS <x>, NOT Opus 5.5: stop and tell the owner" (SessionStart stdout
 #     reaches Claude as context). No `model` field, empty input or a terminal: no check, never a wait.
-#   - Node 24 (/opt/node24) first on PATH, and PLAYWRIGHT_BROWSERS_PATH, for this script and for every later Bash command
-#     (written to CLAUDE_ENV_FILE)
+#   - Node 24 (/opt/node24) first on PATH, PLAYWRIGHT_BROWSERS_PATH and WRANGLER_SEND_METRICS=false (no wrangler telemetry), for
+#     this script and for every later Bash command (written to CLAUDE_ENV_FILE)
 #   - `pnpm install --frozen-lockfile`, skipped while a sha256 of pnpm-lock.yaml, every package.json and this script is unchanged
 #   - `pnpm dev:secrets` (local random values only; an existing .dev.vars keeps its values), `pnpm db:migrate:local`,
 #     `pnpm db:seed:local` (both safe to repeat)
@@ -34,11 +34,13 @@ BROWSERS=/opt/ms-playwright
 [ -x "$NODE_BIN/node" ] && export PATH="$NODE_BIN:$PATH"
 [ -d "$BROWSERS" ] && export PLAYWRIGHT_BROWSERS_PATH="$BROWSERS"
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+export WRANGLER_SEND_METRICS=false
 if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
   {
     [ -x "$NODE_BIN/node" ] && echo "export PATH=\"$NODE_BIN:\$PATH\""
     [ -d "$BROWSERS" ] && echo "export PLAYWRIGHT_BROWSERS_PATH=$BROWSERS"
     echo "export COREPACK_ENABLE_DOWNLOAD_PROMPT=0"
+    echo "export WRANGLER_SEND_METRICS=false"
   } >>"$CLAUDE_ENV_FILE"
 fi
 

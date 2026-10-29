@@ -167,6 +167,8 @@ describe("the SessionStart hook", () => {
       expect(other.stdout).toMatch(
         /^MODEL IS claude-sonnet-5-5, NOT Opus 5\.5: stop and tell the owner; cloud session start/,
       );
+      // L4: no wrangler telemetry from the cloud (also exported for every later command)
+      expect(other.env).toContain("export WRANGLER_SEND_METRICS=false");
       for (const input of [
         start("claude-opus-5-5"),
         start("claude-opus-5-5[1m]"),
