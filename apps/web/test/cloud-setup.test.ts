@@ -2,7 +2,16 @@
 // session, the Playwright MCP server is pinned and off on this PC, and the cloud PR script never merges. Runs in Node; the cases
 // that run a shell script need bash (Git Bash on Windows, skipped if it is not installed).
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -136,6 +145,19 @@ describe("the SessionStart hook", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+  it.skipIf(!hasBash)(
+    "the exact settings command, through bash -c with the real (spaced) project folder: exit 0, no output",
+    () => {
+      const command = settings.hooks.SessionStart[0].hooks[0].command;
+      const r = bash(["-c", command], {
+        CLAUDE_CODE_REMOTE: undefined,
+        CLAUDE_PROJECT_DIR: ROOT.replace(/[\\/]$/, ""),
+      });
+      expect(ROOT).toContain(" ");
+      expect(r.status).toBe(0);
+      expect(r.stdout + r.stderr).toBe("");
+    },
+  );
   // M1: the model check. The cloud path runs here in an empty folder, where every project step fails at once (named in the
   // summary), so only the model line, the env file and the exit code are read.
   it.skipIf(!hasBash)(
@@ -188,6 +210,27 @@ describe("the SessionStart hook", () => {
       }
     },
   );
+});
+
+describe("tools/mcp-local-off.mjs in a cloud session", () => {
+  it("refuses and writes nothing (run from a copy, so a mistake could not touch this checkout)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "mcp-off-"));
+    try {
+      mkdirSync(join(dir, "tools"));
+      copyFileSync(join(ROOT, "tools", "mcp-local-off.mjs"), join(dir, "tools", "mcp-local-off.mjs"));
+      for (const args of [[], ["--user"]]) {
+        const r = spawnSync(process.execPath, [join(dir, "tools", "mcp-local-off.mjs"), ...args], {
+          env: { ...process.env, CLAUDE_CODE_REMOTE: "true", HOME: dir, USERPROFILE: dir },
+          encoding: "utf8",
+        });
+        expect(r.status, args.join(" ")).toBe(1);
+        expect(r.stderr).toContain("this is a cloud session");
+      }
+      expect(readdirSync(dir)).toEqual(["tools"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("tools/cloud-pr.sh", () => {
