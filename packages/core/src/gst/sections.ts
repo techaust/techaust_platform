@@ -432,9 +432,10 @@ export function gstr1Sections(
  * 3B Table 3? Null for any other document. Only the rate rows with a nil taxable value and some tax are listed.
  */
 function manualEntryOf(item: Item): ManualTaxEntry | null {
-  const { row, section } = item;
+  const { row } = item;
   if ((row.kind !== "credit_note" && row.kind !== "debit_note") || row.noteOf === null) return null;
-  if (section !== "cdnr" && section !== "cdnur" && section !== "b2cs") return null;
+  // A reported note's section is always a note section (`classifyNote` gives only cdnr, cdnur or b2cs), so no other value can reach here.
+  const section = item.section as NoteSection;
   const byRate = item.byRate
     .filter((r) => r.taxableMinor === 0 && r.igstMinor + r.cgstMinor + r.sgstMinor > 0)
     .map((r) => ({
