@@ -9,8 +9,12 @@
 // the person changed was also changed in the store by someone else, only that field's edit is dropped (it shows the
 // stored value; the person's other edits stay) and the page shows the owner's "Someone else changed this lead while you
 // were editing it." notice (re-check 2). The note has no base and always survives: adding a note never conflicts.
+// FX-3 fix round 2 (B): a manual lead's open quote-answers edit is a draft here too, so it survives every reload (a convert
+// answered "Stay" included). Its three answers go together (a budget band belongs to its currency), so someone else's change to
+// any of them, while the person changed one, drops the whole edit to the stored answers (`rebaseAnswers`), with the same notice.
 import type { LeadPatch } from "../../api.ts";
 import { dateToMs } from "../../lib/leads.ts";
+import type { Answers } from "./answers.tsx";
 
 export type Follow = { ownerId: string; date: string; note: string };
 export type Contact = { name: string; email: string; phone: string; company: string; country: string };
@@ -24,21 +28,25 @@ export type Drafts = {
   contact: Draft<Contact> | null;
   /** The pipeline form once it has been touched; null means it shows what is stored. */
   follow: Draft<Follow> | null;
+  /** A manual lead's quote answers while their edit is open on the Enquiry panel; null when shown read-only. */
+  answers: Draft<Answers> | null;
   /** A reload found someone else's change in a field a draft held; that field's edit was dropped. Cleared by the
    *  person's own next save or cancel of that form, or by "Reload the latest". */
-  conflict: { contact: boolean; follow: boolean };
+  conflict: { contact: boolean; follow: boolean; answers: boolean };
 };
 
-/** True while either form's notice should show. */
-export const hasConflict = (d: Drafts): boolean => d.conflict.contact || d.conflict.follow;
+/** True while any form's notice should show. */
+export const hasConflict = (d: Drafts): boolean =>
+  d.conflict.contact || d.conflict.follow || d.conflict.answers;
 
 export type DraftAction =
   | { type: "note"; text: string }
   /** `base` is what is stored now; it is kept only when the draft starts, never moved by later typing. */
   | { type: "contact"; value: Contact | null; base: Contact }
   | { type: "follow"; value: Follow | null; base: Follow }
-  /** A fresh copy of the lead arrived: carry the drafts onto it (see `rebase`). */
-  | { type: "loaded"; contact: Contact; follow: Follow }
+  | { type: "answers"; value: Answers | null; base: Answers }
+  /** A fresh copy of the lead arrived: carry the drafts onto it (see `rebase` and `rebaseAnswers`). */
+  | { type: "loaded"; contact: Contact; follow: Follow; answers: Answers }
   /** "Reload the latest" after a 409 or a conflict: start again from what is stored, keeping only the note. */
   | { type: "reloaded-latest" };
 
@@ -46,7 +54,8 @@ export const NO_DRAFTS: Drafts = {
   note: "",
   contact: null,
   follow: null,
-  conflict: { contact: false, follow: false },
+  answers: null,
+  conflict: { contact: false, follow: false, answers: false },
 };
 
 function start<T>(current: Draft<T> | null, value: T | null, base: T): Draft<T> | null {
@@ -73,6 +82,26 @@ export function rebase<T extends Record<string, string>>(
   const value = { ...now };
   for (const k of changed) if (!clash.includes(k)) value[k] = d.value[k];
   return { draft: { base: now, value }, conflict: clash.length > 0 };
+}
+
+/**
+ * Carries an answers draft onto a fresh copy, as one set: untouched, it takes the stored answers; changed, it keeps the person's
+ * answers unless someone else changed any of the three meanwhile (to something other than what the person chose), when the whole
+ * edit takes the stored answers and `conflict` is set (a band kept from one currency over another person's new currency would be
+ * a pair nobody chose). The edit stays open either way.
+ */
+export function rebaseAnswers(
+  d: Draft<Answers> | null,
+  now: Answers,
+): { draft: Draft<Answers> | null; conflict: boolean } {
+  if (d === null) return { draft: null, conflict: false };
+  const keys = Object.keys(now) as (keyof Answers)[];
+  const theirs = keys.some((k) => now[k] !== d.base[k]);
+  const mine = changedFields(d).length > 0;
+  if (!theirs) return { draft: { base: now, value: d.value }, conflict: false };
+  if (!mine || keys.every((k) => now[k] === d.value[k]))
+    return { draft: { base: now, value: now }, conflict: false };
+  return { draft: { base: now, value: now }, conflict: true };
 }
 
 const nullable = (v: string) => (v.trim() ? v.trim() : null);
@@ -115,16 +144,25 @@ export function drafts(state: Drafts, a: DraftAction): Drafts {
         follow: start(state.follow, a.value, a.base),
         conflict: a.value === null ? { ...state.conflict, follow: false } : state.conflict,
       };
+    case "answers":
+      return {
+        ...state,
+        answers: start(state.answers, a.value, a.base),
+        conflict: a.value === null ? { ...state.conflict, answers: false } : state.conflict,
+      };
     case "loaded": {
       const contact = rebase(state.contact, a.contact);
       const follow = rebase(state.follow, a.follow);
+      const answers = rebaseAnswers(state.answers, a.answers);
       return {
         note: state.note,
         contact: contact.draft,
         follow: follow.draft,
+        answers: answers.draft,
         conflict: {
           contact: state.conflict.contact || contact.conflict,
           follow: state.conflict.follow || follow.conflict,
+          answers: state.conflict.answers || answers.conflict,
         },
       };
     }

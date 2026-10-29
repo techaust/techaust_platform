@@ -380,4 +380,26 @@ describe("notes are React elements, never HTML [ADM-PRJ-03]", () => {
     const [first] = markdownElements("## Second", true);
     expect(isValidElement(first) && (first.props as { className: string }).className).toBe("md__h md__h--2");
   });
+
+  it("FX-3 fix round 2 (WCAG 1.3.1): siblings stay siblings and going back up closes the deeper levels", () => {
+    const tags = (nodes: ReactNode[]) => nodes.map((n) => (isValidElement(n) ? n.type : typeof n));
+    const sizes = (nodes: ReactNode[]) =>
+      nodes.map((n) => (isValidElement(n) ? (n.props as { className?: string }).className : undefined));
+    // two `###` under one `#` are both h4 (not h4 then h5)
+    expect(tags(markdownElements("# Plan\n### Risks\n### Owners", true))).toEqual(["h3", "h4", "h4"]);
+    // a shallower heading after two siblings is their peer at the top, not one level down
+    expect(tags(markdownElements("## A\n## B\n# C", true))).toEqual(["h3", "h3", "h3"]);
+    // deeper: every level open, then closed one at a time, then a jump; text between headings changes nothing
+    expect(
+      tags(markdownElements("# A\n## B\n### C\nText.\n### D\n## E\n### F\n# G\n### H\n## I\n### J", true)),
+    ).toEqual(["h3", "h4", "h5", "p", "h5", "h4", "h5", "h3", "h4", "h4", "h5"]);
+    // a note that opens deep and later goes shallower: both are at the top
+    expect(tags(markdownElements("### Small\n# Big\n## Mid", true))).toEqual(["h3", "h3", "h4"]);
+    // the visual size is still the author's, whatever the tag
+    expect(sizes(markdownElements("# Plan\n### Risks\n### Owners", true))).toEqual([
+      "md__h md__h--1",
+      "md__h md__h--3",
+      "md__h md__h--3",
+    ]);
+  });
 });

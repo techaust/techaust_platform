@@ -5,7 +5,10 @@ import { describe, expect, it } from "vitest";
 import { SIGNATURE_INPUT_MAX, SIGNATURE_MAX } from "./pdf.ts";
 import {
   type DecodedImage,
+  decodeFitted,
+  fittedDecodeOptions,
   type ImageIo,
+  imageHeaderSize,
   prepareSignature,
   scaleSignature,
   signatureFit,
@@ -160,5 +163,167 @@ describe("prepareSignature (fix round, lead 2026-10-29: 10 MB in, a PNG of up to
     });
     const r = await prepareSignature(file(2 * MB), io(800, 400, undefined, SIGNATURE_MAX).fake);
     expect(r).toMatchObject({ ok: true, scaled: false });
+  });
+});
+
+// FX-3 fix round 2 (H): the size comes from the header, so a larger image is decoded straight at its fitted size.
+const png = (width: number, height: number) => {
+  const b = new Uint8Array(40);
+  b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  new DataView(b.buffer).setUint32(16, width);
+  new DataView(b.buffer).setUint32(20, height);
+  return b;
+};
+/** A JPEG's first segments: optional Exif (in either byte order) with an orientation, an XMP-like APP1, a DQT, then SOF0. */
+const jpeg = (width: number, height: number, orientation?: number, little = false) => {
+  const parts: number[] = [0xff, 0xd8];
+  if (orientation !== undefined) {
+    const u16 = (v: number) => (little ? [v & 255, v >> 8] : [v >> 8, v & 255]);
+    const u32 = (v: number) =>
+      little ? [...u16(v & 0xffff), ...u16(v >>> 16)] : [...u16(v >>> 16), ...u16(v & 0xffff)];
+    const tiff = [
+      ...(little ? [0x49, 0x49] : [0x4d, 0x4d]),
+      ...u16(42),
+      ...u32(8),
+      ...u16(2), // two entries: another tag first, then the orientation
+      ...u16(0x010f),
+      ...u16(2),
+      ...u32(4),
+      ...u32(0),
+      ...u16(0x0112),
+      ...u16(3),
+      ...u32(1),
+      ...u16(orientation),
+      0,
+      0,
+      ...u32(0),
+    ];
+    const body = [0x45, 0x78, 0x69, 0x66, 0, 0, ...tiff];
+    parts.push(0xff, 0xe1, (body.length + 2) >> 8, (body.length + 2) & 255, ...body);
+  }
+  const xmp = [...new TextEncoder().encode("http://ns.adobe.com/xap/1.0/\0<x/>")];
+  parts.push(0xff, 0xe1, (xmp.length + 2) >> 8, (xmp.length + 2) & 255, ...xmp);
+  parts.push(0xff, 0xdb, 0, 4, 0, 0); // a (short) DQT
+  parts.push(0xff, 0xff); // a fill byte
+  parts.push(0xff, 0xc0, 0, 11, 8, height >> 8, height & 255, width >> 8, width & 255, 1, 1, 0x11, 0);
+  parts.push(0xff, 0xda, 0, 2);
+  return new Uint8Array(parts);
+};
+
+describe("imageHeaderSize", () => {
+  it("reads a PNG's and a JPEG's size without decoding, a JPEG turned by its Exif orientation", () => {
+    expect(imageHeaderSize(png(3000, 4000))).toEqual({ width: 3000, height: 4000 });
+    expect(imageHeaderSize(jpeg(4000, 3000))).toEqual({ width: 4000, height: 3000 });
+    expect(imageHeaderSize(jpeg(4000, 3000, 1))).toEqual({ width: 4000, height: 3000 });
+    expect(imageHeaderSize(jpeg(4000, 3000, 3, true))).toEqual({ width: 4000, height: 3000 });
+    // 5 to 8 turn it a quarter: a phone held upright stores 4000 by 3000 and shows 3000 by 4000
+    for (const o of [5, 6, 7, 8]) {
+      expect(imageHeaderSize(jpeg(4000, 3000, o))).toEqual({ width: 3000, height: 4000 });
+      expect(imageHeaderSize(jpeg(4000, 3000, o, true))).toEqual({ width: 3000, height: 4000 });
+    }
+  });
+
+  it("is null for anything it can't read (the scaling then decodes at full size)", () => {
+    expect(imageHeaderSize(new Uint8Array(0))).toBeNull();
+    expect(imageHeaderSize(new Uint8Array(64))).toBeNull();
+    expect(imageHeaderSize(png(0, 10))).toBeNull();
+    expect(imageHeaderSize(jpeg(4000, 3000).slice(0, 20))).toBeNull(); // cut before the frame header
+    expect(imageHeaderSize(new Uint8Array([0xff, 0xd8, 0xff, 0xda, 0, 2]))).toBeNull(); // image data first
+    expect(imageHeaderSize(new Uint8Array([0xff, 0xd8, 0x00, 0x00, 0, 2]))).toBeNull(); // not a marker
+  });
+});
+
+describe("decoding straight at the fitted size (FX-3 fix round 2, H)", () => {
+  type Made = ImageBitmap & { closed: boolean };
+  const bitmap = (width: number, height: number): Made => {
+    const b = { width, height, closed: false } as Made;
+    b.close = () => {
+      b.closed = true;
+    };
+    return b;
+  };
+  /** A fake `createImageBitmap`: `mode` says what the browser does with the resize options. */
+  const browser = (
+    natural: [number, number],
+    mode: "honours" | "rejects" | "ignores" | "swaps" | "broken",
+  ) => {
+    const calls: { options: ImageBitmapOptions | undefined }[] = [];
+    const made: Made[] = [];
+    const create = async (_file: Blob, options?: ImageBitmapOptions) => {
+      calls.push({ options });
+      if (mode === "broken") throw new DOMException("cannot decode", "InvalidStateError");
+      let b = bitmap(...natural);
+      if (options?.resizeWidth !== undefined && options.resizeHeight !== undefined) {
+        if (mode === "rejects") throw new TypeError("resize options not supported");
+        if (mode === "honours") b = bitmap(options.resizeWidth, options.resizeHeight);
+        if (mode === "swaps") b = bitmap(options.resizeHeight, options.resizeWidth);
+      }
+      made.push(b);
+      return b;
+    };
+    return { create, calls, made };
+  };
+  const run = (bytes: Uint8Array<ArrayBuffer>, type: string, b: ReturnType<typeof browser>) => {
+    const drawn: [number, number][] = [];
+    const io: ImageIo<ImageBitmap> = {
+      decode: (file, size) => decodeFitted(file, size, b.create),
+      toPng: async (_image, w, h) => {
+        drawn.push([w, h]);
+        return new Blob([new Uint8Array(10)], { type: "image/png" });
+      },
+    };
+    return { drawn, result: scaleSignature(new Blob([bytes], { type }), io) };
+  };
+
+  it("asks the browser for the box-fitted size with high-quality resampling", () => {
+    expect(fittedDecodeOptions({ width: 300, height: 400 })).toEqual({
+      resizeWidth: 300,
+      resizeHeight: 400,
+      resizeQuality: "high",
+    });
+  });
+
+  it("a 3000 by 4000 photo is decoded once, at 300 by 400 (the options above), and drawn at that size", async () => {
+    const b = browser([3000, 4000], "honours");
+    const r = run(png(3000, 4000), "image/png", b);
+    expect(await r.result).toMatchObject({ ok: true, scaled: true, width: 300, height: 400 });
+    expect(b.calls).toEqual([{ options: { resizeWidth: 300, resizeHeight: 400, resizeQuality: "high" } }]);
+    expect(r.drawn).toEqual([[300, 400]]);
+    expect(b.made.map((m) => m.closed)).toEqual([true]);
+  });
+
+  it("an upright phone JPEG (stored 4000 by 3000, Exif 6) is asked for 300 by 400, its shown shape", async () => {
+    const b = browser([3000, 4000], "honours");
+    const r = run(jpeg(4000, 3000, 6), "image/jpeg", b);
+    expect(await r.result).toMatchObject({ ok: true, scaled: true, width: 300, height: 400 });
+    expect(b.calls[0]?.options).toMatchObject({ resizeWidth: 300, resizeHeight: 400 });
+  });
+
+  it("falls back to a full-size decode, drawn smaller, when the browser rejects, ignores or misapplies the options", async () => {
+    for (const mode of ["rejects", "ignores", "swaps"] as const) {
+      const b = browser([2400, 900], mode);
+      const r = run(png(2400, 900), "image/png", b);
+      expect(await r.result).toMatchObject({ ok: true, scaled: true, width: 800, height: 300 });
+      expect(b.calls).toHaveLength(2);
+      expect(b.calls[1]).toEqual({ options: undefined });
+      expect(r.drawn).toEqual([[800, 300]]);
+      // every bitmap made is freed: a wrong-sized one at once, the full-size one after drawing
+      expect(b.made.every((m) => m.closed)).toBe(true);
+    }
+  });
+
+  it("an image that fits, or whose header can't be read, is decoded without options; a broken one is still refused", async () => {
+    for (const bytes of [png(600, 200), new Uint8Array(5)]) {
+      const b = browser([600, 200], "honours");
+      const r = run(bytes, "image/png", b);
+      expect(await r.result).toMatchObject({ ok: true, scaled: false, width: 600, height: 200 });
+      expect(b.calls).toEqual([{ options: undefined }]);
+    }
+    const broken = browser([3000, 4000], "broken");
+    expect(await run(png(3000, 4000), "image/png", broken).result).toEqual({
+      ok: false,
+      reason: "unreadable",
+    });
+    expect(broken.calls).toHaveLength(2);
   });
 });
