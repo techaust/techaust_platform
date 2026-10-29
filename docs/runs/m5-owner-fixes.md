@@ -1011,3 +1011,163 @@ Shots: `.logs/shots/m5-r4/` (main checkout).
 - finding 5, finding 7 (correct the comment) and finding 8.
 
 **Done means:** `pnpm check` and the full `pnpm test` pass, and a live check of the shared-text case in the browser. Append "### Fix round 5 report".
+
+### Fix round 5 report
+Builder: Opus 5.5 (high), branch `fix/m5-owner-fixes-r5` from `origin/fix/m5-owner-findings` (8ba2c1a3), worktree `agent-a14d5df2bcb190ce5`.
+- Findings 1, 3, 4 and 6 are fixed by the block model.
+- Findings 2, 5, 7 and 8 are fixed.
+- No migration, and no hosted service touched.
+- `packages/db`, `apps/jobs`, `packages/pdf`, `apps/web`, `catalogue.ts` and the headers files are untouched.
+- Every behaviour marked FIXED in rounds 1–4 is kept: the full suite passes, and the expectations I changed are listed below.
+
+**Skills:**
+- `cloudflare:workers-best-practices`: the new module is pure, with no module-level request state. I briefly wrote a module-level `Map` and replaced it with a parameter before the first commit. The save keeps one read batch and one write batch, and there is no hand-written `Env`.
+- `cloudflare:wrangler`: used only for the local D1 (`d1 execute --local`: migrations, seed, Catalogue texts by SQL) and the dev server. No config changed.
+- `frontend-design:frontend-design`: the caret fix and the two CSS changes keep the existing look. Restraint: no new styles.
+- Not loaded:
+  - `cloudflare:workers-profiling`: no CPU path worth measuring (the bundle is reported below);
+  - `cloudflare:cloudflare`: no platform feature;
+  - `dataviz`: no chart;
+  - AWS, Supabase, Upstash and Sentry: no matching work.
+- Context7: not needed. No library API was in question; only React's `useLayoutEffect` and DOM `setSelectionRange` are used, as they already are elsewhere.
+
+**Commits:**
+1. `0cd745dc` fix(admin): service text as blocks, one per service; inserts, holds, offers and room only inside the service's own block [ADM-PROP-02, ADM-CAT-03]
+2. `8c8f58e9` fix(admin): caret kept when the server's text is merged into typing, discard waits for every request, top bar height on :root, quantity column may grow [ADM-PROP-02, ADM-G-01]
+3. This report.
+
+#### The block model (finding 1; also 3, 4 and 6)
+**The module:** `apps/admin/worker/service-blocks.ts` is new and pure. It provides `parseBlocks`, `hasBlock`, `holdsText`, `insertParts` and `headingLine`.
+
+How it reads a section's text:
+- **A block** starts at a line that is exactly a draft service's `**Name**`; spaces around the line are ignored, and the name is the line name, with "&" written "and". It runs up to the next line that is exactly *another* service's heading, or to the end of the text, blank lines included.
+- **The unheaded opening** is the draft's first service's block, only while that service has no heading of its own. Otherwise no service owns it.
+- **Lines that only look like headings** do not start a block: `**Note**`, a heading the person edited (`**Beta (phase 1)**`), or a different case.
+- **A repeated heading** of the same service (an older second heading) stays part of that service's text.
+- **Services taken off the lines:** in a save, their headings still end the block above them (`others`).
+
+How it compares:
+- `holdsText` matches whole lines, each trimmed, as one consecutive run, with any run of blank lines counted as one.
+- So "None." inside a sentence is never "None.", and a two-paragraph text is held whole.
+- CRLF is read as LF.
+
+How it inserts:
+- **Into the service's own block:** assumptions go just before the service's *own* exclusions when its block holds them, else at the block's end, after its last line with text.
+- **No block:** a new block goes at the end, under the heading. It is plain only for the draft's first service in a blank section.
+- **Where the edit lands:** each insert is a splice at one place, in the text's own line ending (CRLF kept). Nothing else in the text changes.
+
+**Used everywhere:** `service-fill.ts` uses only this module, which keeps creation, save, "Use Catalogue text" and the gaps on one rule.
+- `holds`, `included` (the 60-character sample) and the old `insertParts`/`headingAt` are gone.
+- `appendServices(sections, added, services, others)` and `fillServiceTokens` take the draft's services in line order, so the first service is known.
+
+**The save** (`document-save.ts`) passes the services the draft already had first, then the added ones. So an added service never owns the opening, which was written before it came. The services the save took off the lines are passed as `others`.
+
+**Creation** (`document-draft.ts`) passes every service in line order.
+
+**Finding 4 (re-add after an edit):**
+- A service that already has a block in the section gets nothing appended by a save. That covers a service taken off and put back, and a heading the person wrote. Its block, edited or not, is the person's, so text is never repeated under an edit.
+- The gaps read it the same way: a part missing from a block the service has is the person's edit. It is named only when the Catalogue row changed (L1).
+- This replaces round 4's "adds only its missing part" for a re-added service. I recommend keeping it: whole-text comparison can't tell an edited part from a deleted one.
+
+**Finding 3 (`roomFor`):** the room check counts only the parts that would really be put in:
+- the offered parts, for "Use Catalogue text" and "now";
+- for a service with no block at all (left out whole by a save or at creation, round 4 M3), the parts an append would add.
+
+A service that has a block and a part the person deleted is never called "no room".
+
+**Finding 6:** blocks run past blank lines, and texts are compared and inserted whole (two-paragraph tests).
+
+**Finding 7:** the comment in `document-save.ts` was wrong. When the person wrote over the first service's tokens, no gap names its missing Catalogue text: that text is offered only once its row changes (L1). The comment now says so.
+
+**Known limits, documented in the header of `service-fill.ts`:**
+- **The opening follows line order.** After the person reorders the lines so that another service with no heading of its own comes first, the opening is that service's. The service whose text it holds then has no block, so nothing names it, and it is offered again under its name only after its Catalogue row changes.
+  - The pure test "the order of the lines does not matter" (finding 12, round 2) now expects no gap for that reordered case. A new assertion shows that B is still named once A's text sits under its own heading.
+  - This is the decision's own rule ("the draft's first service").
+- **The read routes see only the services on the lines.** For the gaps and "Use Catalogue text", the block of a service taken off the lines runs on as part of the block above it, until its text is removed.
+
+**Expectations changed by the decision:**
+- **The first service's new Catalogue text goes at the end of its unheaded opening, without a `**Name**` heading.** It used to go in a new headed block. This affects `service-fill.test.ts` "finding 3" and `documents-service-text.test.ts` "finding 3": `"We build five pages\nBuild six pages"`.
+- **A whole line in the first service's opening no longer counts for another service.** `appendServices` gives that service its own block with its own copy (round 4 L3 test).
+- **Round 4 M1 tests:** the cases of inserting into an existing block now run through "Use Catalogue text", because an append no longer writes into an existing block (finding 4).
+
+#### Finding 2 (caret)
+- **`apps/admin/src/lib/caret.ts`:**
+  - `shiftSelection(before, after, start, end)` is pure. It takes the change as one span. A position before the span stays, a position after it moves by the change in length, and a position inside a replaced span goes to the end of the new text. Text put in exactly at the caret goes after it.
+  - `useKeptCaret(value)` notes the caret on every edit, selection and focus. When `value` arrives from elsewhere while the box has focus, it restores the selection in a layout effect, before paint.
+- **Where it is used** (`routes/documents/sections.tsx`): each section's title and text box.
+
+#### Finding 5
+The discard confirm in `editor.tsx` now uses `await waitForInflight(inflight)`.
+
+#### Finding 8
+- **`--topbar-h`** moves from `.shell` to `:root` in `shell.css`. `app.css` uses `scroll-padding-top: calc(var(--topbar-h) + var(--space-4))`.
+- **The quantity column** (`documents.css`) is `--qledger-qty: minmax(12rem, max-content)`. Rows still share one width at normal spacing, and a unit may grow instead of clipping (WCAG 1.4.12).
+
+#### Tests added or changed
+- **`apps/admin/worker/service-blocks.test.ts`** (new, 18 tests), the adversarial cases:
+  - blocks and the opening; an opening that belongs to nobody;
+  - a blank opening; a two-paragraph text, including a run of blank lines;
+  - a heading-like `**Important**` line inside a text; a person-edited heading; a different case;
+  - CRLF and trailing spaces; a heading with spaces around it;
+  - a repeated heading;
+  - "None." inside a sentence, and as part of a line;
+  - `others`;
+  - inserts: before the service's own exclusions; at the block's end before blank lines; into the first service's opening;
+  - shared exclusions in both directions; "None." inside another service's sentence;
+  - a two-paragraph text inserted whole, with a later part after it;
+  - new blocks, plain or headed; CRLF kept on insert; a heading-like line inside a block.
+- **`apps/admin/worker/service-fill.test.ts`** (33 tests):
+  - a new "round 5" group: creation with shared texts; S6's part into its own block; "None." in another service's sentence; a two-paragraph Catalogue text never offered again and a part placed after it; finding 3's room rule; a person-edited heading;
+  - finding 4: a re-add adds nothing, and the gaps name nothing until Catalogue changes;
+  - the existing tests moved to the new signatures and the decided behaviour.
+- **`apps/admin/worker/documents-service-text.test.ts`** (24 tests), a new group "round 5", end to end through the API:
+  - creation with a shared exclusion line (each block holds its own copy; no gaps; `nothing_to_fill`);
+  - the reviewer's case: S6's new assumptions are filled into S6's block, before S6's own copy;
+  - a service taken off and put back after its block was edited: `sectionsChanged` is empty, and the text is unchanged.
+- **`apps/admin/src/lib/caret.test.ts`** (new, 4 tests): insert before, after and at the caret; a replaced span; deletion; clamping; and together with `mergeServerEdit`.
+
+#### Live check (local D1 in this worktree; Playwright scripts in the scratchpad; screenshots in `.logs/shots/m5-r5/`, 8 files)
+- **Setup:** `pnpm dev:secrets`, `db:migrate:local`, `db:seed:local`, `pnpm invite --email owner@example.test --role owner` and `portal:sample`. Enrolment went through with a TOTP made by the script.
+- **Catalogue texts, set by SQL on the local D1 only:** S5 has assumptions plus "Third-party fees are billed separately."; S6 has only that same exclusion line.
+- **Creation** (S5, then S6): the Assumptions and exclusions text is `…before work starts.\nThird-party fees are billed separately.\n\n**MVP and SaaS Product Development**\nThird-party fees are billed separately.`. S6 gets its own block with its own copy. Shot `01-created-shared-1280-light.png`.
+- **"Use Catalogue text":** S6 got assumptions by SQL, with its `updated_at` moved on.
+  - The note offers "Catalogue now has the assumptions for MVP and SaaS Product Development" (shot `02`).
+  - After the click, the text is `…\n\n**MVP and SaaS Product Development**\nYou name one person who signs off each release.\nThird-party fees are billed separately.`. That is inside S6's block, before **S6's own** copy of the shared line. S5's block is unchanged, and the note closes (shot `03`).
+- **axe** (WCAG 2.0–2.2 A and AA): no violations at 1280 light, 1280 dark, 375 light and 375 dark (shots `04-*`).
+- **Caret, two runs:**
+  - Plain typing mid-text through an autosave: the caret stayed right after the typed text (7).
+  - The race: the save's answer was held for 3 s, "Send to" was changed (the server renames the contact in Acceptance), and "Q" was typed right after the old name while the save was in flight. The merged text was `Prepared for Team Contact (no finance)Q (…`, and the caret stood right after "Q" (39), not at the end (247). Shot `06`. The script's own "expected" figure printed 12, because it cut the new name at the first " (": an error in the script's arithmetic, not in the app.
+- **Stopped:** the dev server and every browser. No process of this worktree is left.
+
+#### Commands and results
+- `pnpm install --frozen-lockfile --offline` (heavy.sh): ok (the worktree lacked links; no version changed).
+- `pnpm exec biome check --write <changed files>`: clean.
+- **Targeted runs** (heavy.sh):
+  - service-blocks, service-fill, documents-service-text, documents, documents-batch-fixes and documents-fixes: 127 passed;
+  - SPA `vitest run src`: 389 passed;
+  - `pnpm --filter @techaust/admin typecheck`: exit 0.
+- **Full `pnpm test`** (heavy.sh): auth 135, ui 469 (2 skipped), core 1,755, email 128, db 452, pdf 340, web 427 (16 skipped: no `apps/web/dist`), portal 620 and jobs 519 all passed. Admin had 3,280 passed and **1 timeout**: `reports.test.ts`, "the statement PDF … refuses…", at 5 s under load while FX-2 ran its web build. That file is untouched by this branch, and it passed alone (21/21).
+- **Admin package re-run in full:** 106 files, **3,281 passed, 0 failed**.
+- **`pnpm --filter @techaust/admin build`:** exit 0.
+
+  | Worker | Bundle (bytes) | Startup (limit 200 ms) |
+  |---|---|---|
+  | admin front | 99,131 / 150,000 | 15.5 ms |
+  | admin API | 599,123 / 800,000 (+1,782 on round 4's 597,341; the third-Worker trigger is 650,000) | 56.6 ms |
+
+- **`pnpm check`** (heavy.sh; the final check, with the whole-repository lint run once): exit 0.
+  - Lint checked 1,273 files, with 10 warnings and 8 infos, all existing.
+  - Typecheck ok.
+  - Binding, content, Worker config and migration guards ok (49 migrations, none new).
+
+#### Not verified
+- Firefox and Safari, for the caret restore and `:has()`.
+- NVDA.
+- The staging admin and staging CPU.
+- Text spacing overrides (WCAG 1.4.12) in a browser: the quantity column change was checked by reading the CSS only.
+- Drafts made before this branch whose text has a service's part inside another service's block, from round 4's insert: they stay as they are, and nothing moves text that is already stored.
+- Carried over: the real PDF and jobs, the portal offer page with a real offer, Browser Run's `Content-Encoding`, and R2's `sha256` refusal.
+
+#### Open questions
+1. **Finding 4's rule** (an existing block gets nothing on re-add) replaces round 4's "adds only its missing part". Recommended to keep: whole-text comparison can't tell an edited part from a deleted one. The other way would re-add the Catalogue text under the person's edit.
+2. **The opening after a reorder** follows line order (the decision's "first service"). An alternative is "the first service in line order with no heading of its own", which survives a reorder but gives the opening to a later service when the first has a heading. I kept the decision as written.
