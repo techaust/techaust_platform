@@ -271,3 +271,114 @@ On `fix/fx3-b2` from `origin/fix/fx3-admin-portal`:
 4. **Manual lead fields after creation (docs/13 2026-10-29):** `PATCH /leads/:id` takes `currency`, `budgetBand` and `timeline` with the same checks as `POST` (a band needs its own currency). Add tests.
 
 Make one commit per item. Report under "### Builder round 2 report".
+
+### Builder round 2 report
+Builder: claude-opus-5-5 (high), 2026-10-29 ~11:45–12:30 IST, branch `fix/fx3-b2` from `origin/fix/fx3-admin-portal` (97020de6). Three commits (655ebfed, 12fbf076, b62b8129) plus this report, pushed.
+
+#### Skills
+- `cloudflare:workers-best-practices`: Worker routes and D1. Applied: the lead PATCH stays one guarded `mutate` batch; the check runs on the row read at the same `updated_at` the UPDATE is bound to; no request state at module level.
+- `cloudflare:wrangler`: no config or binding changed, so nothing to do beyond the existing `wrangler types` in typecheck.
+- Not loaded: `cloudflare:workers-profiling` (it profiles deployed Workers, which are off-limits; the bundle and startup figures come from the build's budget script), `cloudflare:cloudflare` (no platform feature changed).
+
+#### Per item
+1. **The merge is proven; nothing needed fixing, so there is no commit for it.**
+   - Full `pnpm test` on 97020de6: exit 0, every package green.
+   - Caveat: I started item 2's edits while that run's admin package was still going, so its admin count (3,304) may include half-edited files. The final run below, on the finished branch, is the clean proof.
+   - `pnpm check` ran once, at the end (below). It covers the merge too.
+2. **Item 12, the first service's own fill past 6,000 characters: done (655ebfed).**
+   - New `fitFirstService` in `service-fill.ts`. Each section that holds the first service's tokens is rendered twice: `full`, with the Catalogue texts, and `bare`, with them taken out like an empty text (`withoutTexts`). In section order:
+     - a section takes `full` while it stays within 6,000 characters and the document within 30,000. The document is counted with every section bare, so the first service comes before the services added after it;
+     - otherwise, in a Deliverables or Assumptions and exclusions section, the parts whose tokens the template held go in once, by the block rule, when that fits. A repeated token, or the token's own line, can make `full` the longer text;
+     - otherwise the section keeps the template's words without the texts (`leftOut`). A section left with no text is hidden like an empty one;
+     - a title that would pass 120 characters takes its bare title.
+   - It is used in both places:
+     - the save that adds the first service line (`fillServiceTokens`);
+     - creation (`document-draft.ts`). There, the full, bare and raw templates each go through `sectionsFromTemplate`, which places sections by key alone, so the rows line up.
+   - **Naming (`catalogueGaps`):** a left-out first service keeps the template's words as its unheaded opening, so under the old rule it "had a block" and was never named. It is now named `noRoom` when its opening holds none of the section's parts and they don't fit. The new `ownsOpening` comes from `parseBlocks`'s `opening` field.
+     - My first version named any block like that. The round 5 finding 3 test caught it: a headed block the person emptied must not be called "no room". So I narrowed the rule to the first service's unheaded opening.
+     - The fill and the read count the room the same way, and the total only grows after the fill. So whatever the fill leaves out of those two sections is named.
+   - `document-save.ts`: the comment on the remaining `checkSections` now says what it still guards (the short values; see open question 1).
+   - The header limits were updated in `service-fill.ts`:
+     - deleting the first service's parts from its opening, in a section with no room for them, reads as "left out" and is named;
+     - text left out of a section of another kind, or out of a title, is not named.
+3. **Item 11 re-check: done (12fbf076, test only).**
+   - The merged `documents.ts` still has `DOC_ERRORS.series_full` (the 07-Y line), and `document-send.ts:318` still answers 409 `series_full`.
+   - The send dialog maps errors with `offerErrorText`, which falls through to `docErrorText`. The new test in `offers.test.ts` proves that path; the existing `documents.test.ts` test still passes.
+4. **Manual lead fields after creation: done (b62b8129).**
+   - `PATCH /leads/:id` takes `currency`, `budgetBand` and `timeline`. The creation checks run on the values the lead **ends up with**, so a band must be one of its own currency's: a currency change that strands the stored band is a 400, and changing both together works. Any 400 writes nothing.
+   - Changes go on the timeline (field names `currency`, `budget_band`, `timeline`, with before and after); the audit row gets the names only.
+   - **Builder decision:** docs/13 says "a manual lead's", so a website lead's answers stay the visitor's own words:
+     - changing one is 409 `lead_answers_fixed` ("The website form's answers can't be changed"), and nothing is written;
+     - sending them unchanged is no change, so a whole-form save still works.
+     - See open question 4.
+   - SPA:
+     - `LeadPatch` now includes the three fields;
+     - `FIELD_LABELS` gets "Currency", "Budget" and "Timeline", the words the lead page already shows (`lead.tsx:725-733`), so it is not new copy.
+
+#### Tests
+- `apps/admin/worker/service-fill.test.ts`, 10 new tests:
+  - the reviewer's case (2,000 characters of template around both texts at 2,500): the template's words kept, both parts `noRoom`, nothing to fill;
+  - a text that fits, as before;
+  - a repeated token: the text goes in once;
+  - only the parts whose tokens the template held go in;
+  - the 30,000 total: the section is hidden and named;
+  - a later service still gets its block;
+  - the title bound;
+  - a section of another kind is left out and not named;
+  - `fitFirstService` pass-through;
+  - L1 still holds (an opening holding one part, or none while they would fit, names nothing).
+- `apps/admin/worker/documents-first-fill.test.ts` (new, 2 API tests, its own database because it adds a template):
+  - **creation:** 201, every section ≤ 6,000, both parts named `noRoom`, then save 200 and send 200;
+  - **the save that adds the first line:** 200, the template's words kept, gaps named and equal to the read, `sectionsChanged` carries both sections, a later save 200, and "Use Catalogue text" answers 409 `nothing_to_fill`.
+- `apps/admin/src/lib/offers.test.ts`: `series_full` through `offerErrorText`.
+- `apps/admin/worker/leads-api.test.ts`, one new test:
+  - a band change in the same currency, and the timeline;
+  - eight refusals (currency alone strands the band, currency null, a dollar band on a rupee lead, both wrong, an unknown band, EUR, an unknown timeline, `__proto__`), each writing nothing;
+  - currency and band changed together; clearing;
+  - the timeline's field order and values; the audit rows hold no values;
+  - a website lead: 409 `lead_answers_fixed` writes nothing (not even the name sent with it), and the same answers plus a name change is 200.
+
+#### Commands (heavy ones through `tools/heavy.sh`)
+- Targeted runs while working: `service-fill` and `service-blocks` (59 tests), `documents-first-fill`, `documents-service-text`, `service-fill` and `service-blocks` (87), `offers`, `documents` and `documents-series-full` (46), `leads-api` and `leads` (44). All green at the end; the one failure on the way is explained under item 2.
+- `pnpm --filter @techaust/admin typecheck`: exit 0.
+- Final full `pnpm test` on b62b8129: exit 0.
+
+  | Package | Tests passed |
+  |---|---|
+  | core | 1,768 |
+  | db | 471 |
+  | email | 128 |
+  | pdf | 340 |
+  | auth | 135 |
+  | ui | 469 (2 skipped) |
+  | web | 428 (16 skipped) |
+  | jobs | 525 |
+  | portal | 621 |
+  | admin | 3,317 (13 more than after the merge) |
+
+- `pnpm --filter @techaust/admin build`: exit 0.
+  - front bundle 99,131 bytes, startup 16.2 ms;
+  - API bundle 606,234 bytes, startup 70.5 ms (fastest of 7, under this PC's load). That is under the 650,000 mark for a third Worker.
+- `pnpm check` (the one whole-repository lint): exit 0. Its 10 warnings and 8 infos are the same ones as round 1, none in a file I changed.
+
+#### Not verified
+- No screen was looked at and no dev server was started:
+  - the `noRoom` note for the first service on the editor;
+  - the lead edit form for the three fields;
+  - the timeline rows for them. Their values print as raw codes (`3l-7l`) until the designer formats them with `budgetBandLabel` and `TIMELINE_LABELS`.
+- The SPA has no line for `lead_answers_fixed` yet. It falls back to the API sentence.
+- Staging: nothing deployed (not mine to do).
+
+#### Placeholder lines (for 07-Y)
+- No new `[Placeholder]` line in code.
+- For the designer, if the lead form ever sends a changed answer on a website lead: suggested "These answers came from the website form and can't be changed." The screen should simply not offer those fields for a website lead.
+- API sentence added (not screen copy): `lead_answers_fixed`, "The website form's answers can't be changed".
+
+#### Open questions (lead's call)
+1. **Overlong titles from short values (existing before this task, not item 12):** a template heading of up to 120 characters plus `{{service.name}}` (up to 120) or `{{client.name}}` can pass the 120-character title bound.
+   - At creation the draft is stored that way, and every later save is a 400 `section_title_too_long`.
+   - At the save that adds the first line, it is a 400.
+   - Recommended: a follow-up that shortens or bounds the rendered title, or a template rule.
+2. **More than 3 custom sections (existing before this task):** `sectionsFromTemplate` joins custom sections beyond the third into the last one. Several 2,000-character template sections can then make a body over 6,000 at creation. Recommended: the template save refuses a body whose merge would pass the limit.
+3. **Text tokens outside their own sections:** a staff template that puts `{{service.deliverables}}` into Scope, or into a heading, now has that text left out when there is no room, but it is not named (the gaps read only the two service sections). Recommended: a template-save rule that allows the three text tokens only in their own section kinds, once each, and never in a heading. That needs a core change and a template copy line.
+4. **Website leads' answers:** I kept them fixed (409). If the owner wants staff to correct a visitor's answers too, drop the source check: one line in `leads.ts` and its test.
