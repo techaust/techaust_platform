@@ -9,20 +9,21 @@ import { type ReactNode, useMemo } from "react";
 
 /**
  * A note's headings as elements under the page's h1 and the panel's h2 (FX-3 fix round: the record-page sweep found a note that
- * opened with `##` drawn as an h4 straight under the h2). The note's outline is kept, never its absolute depth: its shallowest
- * heading is an h3, and no heading goes more than one level below the one before it. The size stays the author's (`md__h--N`).
+ * opened with `##` drawn as an h4 straight under the h2). The note's outline is kept, never its absolute depth (fix round 2,
+ * WCAG 1.3.1): a stack holds the author levels still open; each heading closes every open level at or below its own (≥ its
+ * level), then opens its own, and its tag is h3 plus the levels open above it, capped at h5. So siblings stay siblings
+ * (`# Plan / ### Risks / ### Owners` is h3, h4, h4), a jump of two levels is one level deeper only, and going back up closes
+ * the levels below (`## A / ## B / # C` is h3, h3, h3). The size stays the author's (`md__h--N`).
  */
 const TAGS = ["h3", "h4", "h5"] as const;
 export function noteHeadingTags(blocks: readonly NoteBlock[]): Map<number, (typeof TAGS)[number]> {
-  const levels = blocks.flatMap((b) => (b.t === "h" ? [b.level] : []));
-  const top = Math.min(...levels);
   const out = new Map<number, (typeof TAGS)[number]>();
-  let prev = -1; // the panel's h2, as an index below TAGS
+  const open: number[] = []; // the author levels still open, shallowest first
   blocks.forEach((b, i) => {
     if (b.t !== "h") return;
-    const at = Math.max(0, Math.min(b.level - top, prev + 1, TAGS.length - 1));
-    out.set(i, TAGS[at] ?? "h3");
-    prev = at;
+    while (open.length > 0 && (open.at(-1) ?? 0) >= b.level) open.pop();
+    open.push(b.level);
+    out.set(i, TAGS[Math.min(open.length, TAGS.length) - 1] ?? "h3");
   });
   return out;
 }
