@@ -3,7 +3,7 @@
 // documents never count, overdue is due strictly before today (IST), "collected" and "paid" are never sent, an anonymised client gets no figures, Sales gets a
 // 403 (client) or no `billed` key (project), and one indexed read covers a client with 200 documents.
 import { env } from "cloudflare:workers";
-import { CLIENT_FIGURES_SQL } from "@techaust/db/reports";
+import { CLIENT_FIGURES_SQL, PROJECT_BILLED_SQL } from "@techaust/db/reports";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { call, pinClock, sessionFor } from "./test-helpers.ts";
 import { putTax } from "./test-invoice-types.ts";
@@ -168,6 +168,11 @@ describe("GET /clients/:id/finance: the Overview figures [ADM-CLI-03]", () => {
     const { c } = await fullClient(o.id);
     await env.DB.prepare("UPDATE clients SET anonymised_at = 5 WHERE id = ?1").bind(c).run();
     expect(await finance(o.cookie, c)).toEqual({ available: false, reason: "anonymised" });
+    // FX-3 fix round (item 7): the figures read itself skips an anonymised client's documents: no rows, and only the client is read (its key entry and
+    // its row: 2; its 7 documents would add 14, or 7 index entries with a guard checked per entry).
+    const read = await env.DB.prepare(CLIENT_FIGURES_SQL).bind(c, TODAY).all();
+    expect(read.results).toEqual([]);
+    expect(read.meta.rows_read).toBeLessThanOrEqual(2);
     expect((await call("/clients/nope/finance", { cookie: o.cookie })).status).toBe(404);
     const s = await sessionFor("sales");
     expect((await call(`/clients/${c}/finance`, { cookie: s.cookie })).status).toBe(403);
@@ -253,7 +258,8 @@ describe("GET /projects/:id: the billed figure [ADM-PRJ-05]", () => {
   it("Sales gets no billed key (its statement never runs); an anonymised client's project gets no figures", async () => {
     const c = await mkReportClient();
     const p = await mkProject(c);
-    await addDoc({ clientId: c, issueDate: "2026-05-01", over: { project_id: p.id } });
+    for (let i = 1; i <= 6; i++)
+      await addDoc({ clientId: c, issueDate: `2026-05-0${i}`, over: { project_id: p.id } });
     const s = await sessionFor("sales");
     const sales = await json(await call(`/projects/${p.id}`, { cookie: s.cookie }));
     expect(Object.keys(sales.figures)).toEqual(["hours"]);
@@ -264,5 +270,10 @@ describe("GET /projects/:id: the billed figure [ADM-PRJ-05]", () => {
     const o = await sessionFor("owner");
     const gone = await json(await call(`/projects/${p.id}`, { cookie: o.cookie }));
     expect(gone.figures.billed).toEqual({ available: false, reason: "anonymised" });
+    // FX-3 fix round (item 7): the billed read itself skips the documents of an anonymised client's project: no rows, and only the project and its client
+    // are read (3 rows as D1 counts them; its 6 documents would add 12).
+    const read = await env.DB.prepare(PROJECT_BILLED_SQL).bind(p.id).all();
+    expect(read.results).toEqual([]);
+    expect(read.meta.rows_read).toBeLessThanOrEqual(3);
   });
 });
