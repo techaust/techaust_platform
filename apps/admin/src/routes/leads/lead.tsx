@@ -185,6 +185,8 @@ function LeadView({
   const [lost, setLost] = useState(false);
   const [replying, setReplying] = useState(false);
   const [converting, setConverting] = useState(false);
+  // Converted, and the proposal is opening: the lead reloads only if the leave question is answered "Stay" (FX-3 review 2).
+  const [convertedAway, setConvertedAway] = useState(false);
 
   // Text in the Next action field that can't be read is a change too: Save shows the line, Discard takes it back.
   const followDirty = dates.any || JSON.stringify(follow) !== JSON.stringify(followBase);
@@ -283,7 +285,16 @@ function LeadView({
   return (
     <>
       {/* Drafts survive a draft conflict, so they stay guarded; only a refused save (409) lifts it, the note still guarded. */}
-      <UnsavedChangesGuard dirty={note.trim() !== "" || (dirty && !saveStale)} what="this lead" />
+      <UnsavedChangesGuard
+        dirty={note.trim() !== "" || (dirty && !saveStale)}
+        what="this lead"
+        // Converted with unsaved edits, and the person stays: now the lead is read again and shows the client and the proposal.
+        onStay={() => {
+          if (!convertedAway) return;
+          setConvertedAway(false);
+          reload();
+        }}
+      />
       <PageHeader
         title={lead.name}
         crumbs={CRUMBS}
@@ -620,6 +631,10 @@ function LeadView({
           onConverted={() => {
             setConverting(false);
             reload();
+          }}
+          onOpening={() => {
+            setConverting(false);
+            setConvertedAway(true);
           }}
         />
       )}
