@@ -152,16 +152,24 @@ describe("the SessionStart hook", () => {
     }
   });
   it.skipIf(!hasBash)(
-    "the exact settings command, through bash -c with the real (spaced) project folder: exit 0, no output",
+    "the exact settings command, through bash -c with a spaced project folder: exit 0, no output",
     () => {
       const command = settings.hooks.SessionStart[0].hooks[0].command;
-      const r = bash(["-c", command], {
-        CLAUDE_CODE_REMOTE: undefined,
-        CLAUDE_PROJECT_DIR: ROOT.replace(/[\\/]$/, ""),
-      });
-      expect(ROOT).toContain(" ");
-      expect(r.status).toBe(0);
-      expect(r.stdout + r.stderr).toBe("");
+      // The project folder has spaces on this PC but not on CI's runner, so the test makes its own spaced folder.
+      const dir = mkdtempSync(join(tmpdir(), "cloud project "));
+      try {
+        mkdirSync(join(dir, "scripts"));
+        copyFileSync(
+          join(ROOT, "scripts/cloud-session-start.sh"),
+          join(dir, "scripts", "cloud-session-start.sh"),
+        );
+        expect(dir).toContain(" ");
+        const r = bash(["-c", command], { CLAUDE_CODE_REMOTE: undefined, CLAUDE_PROJECT_DIR: dir });
+        expect(r.status).toBe(0);
+        expect(r.stdout + r.stderr).toBe("");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     },
   );
   // M1: the model check. The cloud path runs here in an empty folder with a stand-in `pnpm` that fails at once, so every project
