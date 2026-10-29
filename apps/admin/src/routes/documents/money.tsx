@@ -29,7 +29,10 @@ export function TaxPreview(props: {
   /** A sent version shows the figures as frozen, without the "preview" line. */
   frozen?: boolean;
   busy?: boolean;
-  /** FX-4 (A5 3): where the discount comes from (`discountSources`, `draftDiscountSources`), so the row is named for it. */
+  /**
+   * FX-4 (A5 3): where the discount comes from (`discountSources`), so the row is named for it. Review L1: always the saved state (a draft's last save,
+   * `figures.discounts` or the invoice editor's saved view), so the name and the server's amount describe the same discount.
+   */
   discounts?: { lines: boolean; document: boolean } | undefined;
   /**
    * FX-4 review M1 (A5 5): a proforma carrying the sealed estimate marker (`proforma.gstEstimate`; a draft proforma is issued with it) names each tax

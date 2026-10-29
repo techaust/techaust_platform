@@ -29,7 +29,7 @@ import {
   DOC_COPY,
   DOC_PENDING,
   dayText,
-  draftDiscountSources,
+  discountSources,
   type EditorAction,
   formatIstDay,
   notSaved,
@@ -538,7 +538,7 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
                 supply={v.supply}
                 currency={s.currency}
                 busy={s.saving}
-                discounts={draftDiscountSources(s.lines, s.fields, s.currency)}
+                discounts={discountSources(v)}
                 estimate={showsGstEstimate(v)}
               />
             </div>
