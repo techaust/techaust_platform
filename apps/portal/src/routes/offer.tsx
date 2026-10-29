@@ -17,7 +17,7 @@ import { Alert } from "../components/icons.tsx";
 import { PageTitle } from "../components/shell/portal-shell.tsx";
 import { COPY } from "../copy.ts";
 import { N } from "../copy-documents.ts";
-import { errorText, pdfName, saveDownload } from "../lib/offers.ts";
+import { errorText, FINAL, pdfName, saveDownload } from "../lib/offers.ts";
 import { DocumentPage } from "../screens/document-page.tsx";
 import { NotFoundScreen, ScreenSkeleton } from "../screens/home.tsx";
 
@@ -35,9 +35,6 @@ type State =
   | { phase: "ready"; page: OfferPage }
   | { phase: "missing" }
   | { phase: "failed"; error: unknown };
-
-/** The refusals that end the decision: the page reloads to show what is true now, and says why (07-N §7). */
-const FINAL = new Set(["already_accepted", "already_decided", "superseded", "expired"]);
 
 export function OfferScreen(props: {
   source: OfferSource;
