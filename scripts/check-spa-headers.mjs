@@ -1,0 +1,190 @@
+// Header guard for the two SPAs (audit A1 finding 1; docs/08-security-compliance.md section 3.1). Every static response of the
+// admin and the portal gets its headers from `public/_headers`, which Vite copies to `dist/client/_headers`; Cloudflare reads
+// that copy at deploy. The portal shipped without one (A1), so a missing or thinned file now fails:
+//   node scripts/check-spa-headers.mjs admin|portal   after `vite build` (the apps' `build` and `deploy:staging` scripts):
+//                                                      checks dist/client/_headers
+//   node scripts/check-spa-headers.mjs --source       in `pnpm check`: checks both apps' public/_headers (no build needed)
+// Pure functions for apps/web/test/spa-headers.test.ts; the CLI is at the bottom.
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { parseCsp, parseHeaders } from "./headers-shared.mjs";
+
+export const SPA_APPS = ["admin", "portal"];
+
+/** Referrer policies that never send a path or query to another site (docs/08: strict-origin-when-cross-origin, or stricter). */
+const REFERRER_OK = new Set([
+  "strict-origin-when-cross-origin",
+  "strict-origin",
+  "same-origin",
+  "no-referrer",
+]);
+/** Browser features no SPA uses (docs/08 section 3.1: camera, microphone, geolocation and payment off). */
+const FEATURES_OFF = ["camera", "microphone", "geolocation", "payment"];
+
+/**
+ * Sources an app must NOT allow. The portal signs clients in by email link: it compiles no WebAssembly (the admin's Argon2id
+ * does) and checks no password against Have I Been Pwned, so those two admin allowances stay out of its policy (FX-2 brief).
+ */
+export const FORBIDDEN_SOURCES = {
+  admin: [],
+  portal: ["'wasm-unsafe-eval'", "https://api.pwnedpasswords.com"],
+};
+
+/** The headers the `/*` block must set; no other block may set or detach them (FX-2 review, finding 4). */
+const REQUIRED_HEADERS = [
+  "strict-transport-security",
+  "x-content-type-options",
+  "referrer-policy",
+  "permissions-policy",
+  "cross-origin-opener-policy",
+  "cross-origin-resource-policy",
+  "x-robots-tag",
+  "content-security-policy",
+];
+
+/**
+ * A required header set or detached (`! Name`) anywhere but the `/*` block: Cloudflare applies every matching block, so a narrower
+ * path with a weaker value, or a `! Content-Security-Policy` on `/index.html`, would serve the SPA without the policy the guard checked.
+ */
+function outsideRootBlock(text) {
+  const out = [];
+  let block = null;
+  for (const raw of text.split(/\r?\n/)) {
+    if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
+    if (!/^\s/.test(raw)) {
+      block = raw.trim();
+      continue;
+    }
+    const line = raw.trim();
+    const detached = line.startsWith("!");
+    const name = (detached ? line.slice(1) : (line.split(":")[0] ?? "")).trim().toLowerCase();
+    if (!REQUIRED_HEADERS.includes(name)) continue;
+    if (detached) out.push(`${block ?? "(no path)"} detaches ${name}`);
+    else if (block !== "/*") out.push(`${block ?? "(no path)"} sets ${name} outside the /* block`);
+  }
+  return out;
+}
+
+/** Problems with the `/*` block of one SPA's `_headers` text (empty = the docs/08 section 3.1 set is there). */
+export function checkSpaHeaders(app, text) {
+  const p = (m) => `${app} _headers: ${m}`;
+  const h = parseHeaders(text);
+  const problems = outsideRootBlock(text).map((m) =>
+    p(`${m}: the security headers are set once, on /*, for every path`),
+  );
+
+  const hsts = h["strict-transport-security"] ?? "";
+  const maxAge = Number(/max-age=(\d+)/i.exec(hsts)?.[1] ?? 0);
+  if (maxAge < 31536000)
+    problems.push(p("Strict-Transport-Security needs max-age of at least 31536000 (1 year)"));
+  if (!/includesubdomains/i.test(hsts)) problems.push(p("Strict-Transport-Security needs includeSubDomains"));
+  if ((h["x-content-type-options"] ?? "").toLowerCase() !== "nosniff")
+    problems.push(p("X-Content-Type-Options must be nosniff"));
+  if (!REFERRER_OK.has((h["referrer-policy"] ?? "").toLowerCase()))
+    problems.push(p("Referrer-Policy must be strict-origin-when-cross-origin (or stricter)"));
+  const perms = (h["permissions-policy"] ?? "").replace(/\s+/g, "");
+  for (const f of FEATURES_OFF)
+    if (!perms.split(",").includes(`${f}=()`))
+      problems.push(p(`Permissions-Policy must switch ${f} off (${f}=())`));
+  if ((h["cross-origin-opener-policy"] ?? "").toLowerCase() !== "same-origin")
+    problems.push(p("Cross-Origin-Opener-Policy must be same-origin"));
+  if (!["same-site", "same-origin"].includes((h["cross-origin-resource-policy"] ?? "").toLowerCase()))
+    problems.push(p("Cross-Origin-Resource-Policy must be same-site (or same-origin)"));
+  if (!/\bnoindex\b/i.test(h["x-robots-tag"] ?? ""))
+    problems.push(p("X-Robots-Tag must say noindex (the admin and the portal are never indexed)"));
+
+  const raw = h["content-security-policy"];
+  if (!raw) return [...problems, p("no Content-Security-Policy")];
+  const csp = parseCsp(raw);
+  const is = (dir, value) => (csp[dir] ?? []).length === 1 && csp[dir][0] === value;
+  if (!csp["default-src"]) problems.push(p("CSP has no default-src"));
+  if (!csp["script-src"]) problems.push(p("CSP has no script-src"));
+  else if (!csp["script-src"].includes("'self'")) problems.push(p("CSP script-src must allow 'self'"));
+  for (const dir of ["default-src", "script-src", "script-src-elem", "script-src-attr", "style-src"]) {
+    const src = csp[dir] ?? [];
+    for (const bad of ["'unsafe-inline'", "'unsafe-eval'", "*", "data:", "blob:", "http:", "https:"])
+      if ((dir !== "style-src" || bad.startsWith("'")) && src.includes(bad))
+        problems.push(p(`CSP ${dir} must not contain ${bad}`));
+  }
+  if (!is("frame-ancestors", "'none'")) problems.push(p("CSP frame-ancestors must be 'none'"));
+  if (!is("object-src", "'none'")) problems.push(p("CSP object-src must be 'none'"));
+  if (!is("base-uri", "'none'") && !is("base-uri", "'self'"))
+    problems.push(p("CSP base-uri must be 'none' or 'self'"));
+  if (!csp["form-action"]) problems.push(p("CSP has no form-action"));
+  // Turnstile: its script host and its frame, both required (developers.cloudflare.com/turnstile/reference/content-security-policy).
+  // Both SPAs show the widget at sign-in (the portal always, the admin after 3 failures; M2.4b), so a policy without it would block
+  // sign-in while the build stayed green (FX-2 review, finding 5).
+  const turnstile = "https://challenges.cloudflare.com";
+  for (const dir of ["script-src", "frame-src"])
+    if (!(csp[dir] ?? []).includes(turnstile))
+      problems.push(p(`CSP ${dir} must list ${turnstile} (the Turnstile widget at sign-in)`));
+  const all = Object.values(csp).flat();
+  for (const bad of FORBIDDEN_SOURCES[app] ?? [])
+    if (all.includes(bad)) problems.push(p(`CSP must not allow ${bad} (${app} does not need it)`));
+  return problems;
+}
+
+const root = join(fileURLToPath(new URL(".", import.meta.url)), "..");
+export const builtHeadersFile = (app, base = root) => join(base, "apps", app, "dist", "client", "_headers");
+export const sourceHeadersFile = (app, base = root) => join(base, "apps", app, "public", "_headers");
+
+/** The check for one file: a missing file is a problem in itself (the SPA would ship with no headers). */
+export function checkSpaHeadersFile(app, file) {
+  if (!existsSync(file))
+    return [`${app}: ${file} is missing, so every page would ship without security headers`];
+  return checkSpaHeaders(app, readFileSync(file, "utf8"));
+}
+
+/**
+ * The built stylesheets against the policy they ship with: a font inlined as a data: URI (Vite inlines files under 4 KB unless
+ * `assetsInlineLimit` is 0) is blocked by `font-src 'self'`, so the glyph falls back to a system font and the browser logs a CSP
+ * violation (the rupee-sign subsets did exactly that, FX-2). `files` is [name, text] pairs of the built CSS.
+ */
+export function checkInlinedFonts(app, headersText, files) {
+  const fontSrc = parseCsp(parseHeaders(headersText)["content-security-policy"] ?? "")["font-src"];
+  if (fontSrc?.includes("data:")) return [];
+  return files
+    .filter(([, text]) => /url\(\s*["']?data:(?:font\/|application\/(?:x-)?font)/i.test(text))
+    .map(
+      ([name]) =>
+        `${app} ${name}: a font is inlined as a data: URI, which the CSP's font-src blocks (set build.assetsInlineLimit to 0 for the client)`,
+    );
+}
+
+/** checkInlinedFonts over `dist/client/assets/*.css` of a built app. */
+export function checkBuiltAssets(app, base = root) {
+  const client = join(base, "apps", app, "dist", "client");
+  const assets = join(client, "assets");
+  if (!existsSync(assets) || !existsSync(join(client, "_headers"))) return [];
+  const css = readdirSync(assets)
+    .filter((f) => f.endsWith(".css"))
+    .map((f) => [`assets/${f}`, readFileSync(join(assets, f), "utf8")]);
+  return checkInlinedFonts(app, readFileSync(join(client, "_headers"), "utf8"), css);
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const arg = process.argv[2];
+  const targets =
+    arg === "--source"
+      ? SPA_APPS.map((app) => [app, sourceHeadersFile(app)])
+      : SPA_APPS.includes(arg)
+        ? [[arg, builtHeadersFile(arg)]]
+        : null;
+  if (!targets) {
+    console.error("usage: node scripts/check-spa-headers.mjs admin|portal|--source");
+    process.exit(2);
+  }
+  const problems = targets.flatMap(([app, file]) => [
+    ...checkSpaHeadersFile(app, file),
+    ...(arg === "--source" ? [] : checkBuiltAssets(app)),
+  ]);
+  if (problems.length > 0) {
+    console.error(`check-spa-headers: ${problems.length} problem(s)`);
+    for (const x of problems) console.error(`  - ${x}`);
+    process.exit(1);
+  }
+  console.log(
+    `check-spa-headers: ok (${targets.map(([app]) => app).join(", ")}: the docs/08 section 3.1 set)`,
+  );
+}

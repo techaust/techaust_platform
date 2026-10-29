@@ -13,6 +13,7 @@ import {
   templateBody,
   unknownPlaceholders,
 } from "@techaust/core/catalogue";
+import { joinedPastLimit, misplacedTextTokens } from "@techaust/core/documents";
 import { describe, expect, it } from "vitest";
 import { seedStatements } from "../src/seed/index.ts";
 import { SEED_TEMPLATES } from "../src/seed/templates.ts";
@@ -101,6 +102,9 @@ describe("the seed (ADM-CAT-01, ADM-CAT-03)", () => {
       const body = templateBody.parse(JSON.parse(r.body));
       expect(unknownPlaceholders(body), `${r.kind}/${r.category}/${r.version}`).toEqual([]);
       expect(renderTemplateBody(body, data).unresolved, `${r.kind}/${r.category}/${r.version}`).toEqual([]);
+      // the rules a saved version keeps (FX-3 round 3, Q2 and Q3): the seed would pass the save
+      expect(misplacedTextTokens(body.sections), `${r.kind}/${r.category}/${r.version}`).toEqual([]);
+      expect(joinedPastLimit(body.sections), `${r.kind}/${r.category}/${r.version}`).toEqual([]);
     }
   });
 

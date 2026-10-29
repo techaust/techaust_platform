@@ -454,6 +454,7 @@
 }
 
 .sheet-wrap {
+  position: relative;
   overflow-x: auto;
 }
 
@@ -597,10 +598,13 @@
   margin-top: var(--space-2);
 }
 
+/* The note wraps between words (A3 3): `break-word` breaks only a word longer than the line, and unlike `anywhere` it never
+   lets the table squeeze the column to one letter per line. */
 .entry-note {
   display: block;
+  min-width: 12rem;
   max-width: 40ch;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   white-space: pre-line;
 }
 

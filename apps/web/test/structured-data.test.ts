@@ -52,6 +52,30 @@ describe("organization and website nodes", () => {
     });
   });
 
+  it("carries WEB-G-10's identity fields word for word: alternate name, area served, NAICS and the Tech Australia line [A2-4]", () => {
+    const o = organizationNode(SITE) as J;
+    expect(o.alternateName).toEqual(["TecHaust"]);
+    expect(o.alternateName).not.toContain("Techaust");
+    expect(o.areaServed).toEqual([
+      { "@type": "Country", name: "India" },
+      { "@type": "Place", name: "Worldwide" },
+    ]);
+    expect(o.naics).toBe("541511");
+    expect(o.disambiguatingDescription).toBe(
+      "Indian software and AI automation studio; not affiliated with Tech Australia",
+    );
+    // Owner decision (WEB-G-10): no tax ID and no proprietor name in the schema.
+    expect(o).not.toHaveProperty("taxID");
+    expect(o).not.toHaveProperty("founder");
+    // The same wording as docs/04 WEB-G-10.
+    const prd = readFileSync(fileURLToPath(new URL("../../../docs/04-prd.md", import.meta.url)), "utf8");
+    expect(prd).toContain(`"${o.disambiguatingDescription}"`);
+    expect(prd).toContain(`NAICS ${o.naics}`);
+    // Not shared between calls: a page that edits its graph cannot change the next page's.
+    (o.areaServed as J[]).pop();
+    expect((organizationNode(SITE) as J).areaServed).toHaveLength(2);
+  });
+
   it("has no sameAs until the company LinkedIn is set, then exactly that link", () => {
     expect(organizationNode(SITE)).not.toHaveProperty("sameAs");
     const o = organizationNode({ ...SITE, linkedinCompany: "https://www.linkedin.com/company/x" }) as J;
@@ -353,6 +377,18 @@ describe("checkStructuredData (WEB-SVC-04, WEB-BLOG)", () => {
     delete org.email;
     expect(seo.checkStructuredData("about.html", page([org, websiteNode(SITE)])).join()).toContain(
       "Organization has no email",
+    );
+    // WEB-G-10's identity fields are required too [A2-4].
+    for (const field of ["alternateName", "areaServed", "naics", "disambiguatingDescription"]) {
+      const o = { ...(organizationNode(SITE) as object) } as Record<string, unknown>;
+      delete o[field];
+      expect(seo.checkStructuredData("about.html", page([o, websiteNode(SITE)])).join(), field).toContain(
+        `Organization has no ${field}`,
+      );
+    }
+    const wrongCode = { ...(organizationNode(SITE) as object), naics: "541512" };
+    expect(seo.checkStructuredData("about.html", page([wrongCode, websiteNode(SITE)])).join()).toContain(
+      "naics must be 541511",
     );
     expect(seo.checkStructuredData("about.html", page([...base(), svc()])).join()).toContain(
       "not a service page",

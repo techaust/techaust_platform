@@ -2,7 +2,14 @@
 // (docs/04 ADM-LEAD-02); the enquiry field names are the internal lead alert's (packages/email leadAlert). Pure: no I/O,
 // so the helpers are tested in lib/leads.test.ts.
 import { istDate, istDayEnd, parseIsoDate, toIsoDate } from "@techaust/core/dates";
-import { COUNTRY_CODES, countryName } from "@techaust/core/form-labels";
+import {
+  BAND_BOUNDS,
+  budgetBandLabel,
+  COUNTRY_CODES,
+  countryName,
+  labelOf,
+  TIMELINE_LABELS,
+} from "@techaust/core/form-labels";
 import { LEAD_STAGES } from "@techaust/core/lead-lifecycle";
 import { REPLY_GAPS } from "@techaust/core/reply-templates";
 import { CATALOGUE } from "@techaust/db/catalogue";
@@ -94,7 +101,22 @@ export const FIELD_LABELS: Record<string, string> = {
   phone: "Phone",
   company: "Company",
   country: "Country",
+  // FX-3 round 2: a manual lead's quote answers (the words the lead page already shows for them)
+  currency: "Currency",
+  budget_band: "Budget",
+  timeline: "Timeline",
 };
+
+/**
+ * A timeline row's answer in the quote form's words, never a raw code (FX-3): a band by the currency whose band it is (the codes of the
+ * two currencies differ; "not-sure" is "Not sure" in both), a timeline by its label. Any other field's value is returned as it is.
+ */
+export function answerText(field: string, value: string): string {
+  if (field === "budget_band")
+    return budgetBandLabel(Object.hasOwn(BAND_BOUNDS.USD, value) ? "USD" : "INR", value);
+  if (field === "timeline") return labelOf(TIMELINE_LABELS, value);
+  return value;
+}
 
 const parse = <T>(body: string | null): T | null => {
   if (!body) return null;

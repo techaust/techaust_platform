@@ -3,7 +3,9 @@
 // services to fix. The API answers that with snapshot paths only ("items.3.unit", never values); the snapshot holds the active
 // services marked for the website in code order, which is the order of GET /catalogue?active=1&onSite=1, so the screen reads
 // that list to name each service. What the website itself needs (a service it shows, its price or default line) comes as `needs`
-// by code, one line each, with a link to the services list at that code. Below: the last 20 published price lists (every role
+// by code, one line each, with a link to the services list at that code. A 400 `public_text_refused` (the website's content rules,
+// audit A2 finding 2) lists each service or the payment terms to open, and under it each field and the rule it breaks
+// (lib/publish-text.ts; its words are 07-Y, marked until the owner approves them). Below: the last 20 published price lists (every role
 // reads them). "Publish prices" is shown by the `catalogue.publish` action, not `catalogue.write`.
 import { formatIstDateTime } from "@techaust/core";
 import { useRef, useState } from "react";
@@ -21,11 +23,18 @@ import {
   type PublishProblem,
   publishProblems,
 } from "../../lib/catalogue.ts";
+import {
+  PUBLIC_TEXT_HEADING,
+  type PublicTextGroup,
+  publicTextFields,
+  publicTextProblems,
+} from "../../lib/publish-text.ts";
 import { useCanPublish } from "./parts.tsx";
 
 type Answer =
   | { kind: "published" | "unchanged" | "republished" }
   | { kind: "invalid"; problems: PublishProblem[] }
+  | { kind: "text"; groups: PublicTextGroup[] }
   | { kind: "failed"; text: string };
 
 /** The active services on the website, in code order, far enough down the list to reach `upTo` (at most 50 a page). */
@@ -66,6 +75,11 @@ export function PublishTab() {
         const upTo = maxItemIndex(e.paths);
         const items = upTo < 0 ? [] : await onSiteItems(upTo).catch(() => []);
         next = { kind: "invalid", problems: publishProblems(e.paths, items, e.needs) };
+      } else if (e instanceof RequestError && e.code === "public_text_refused") {
+        // Paths name services by code; the whole on-site list (a few dozen at most) names and links each one.
+        const fields = publicTextFields(e.fields as readonly unknown[]);
+        const items = await onSiteItems(Number.MAX_SAFE_INTEGER).catch(() => []);
+        next = { kind: "text", groups: publicTextProblems(fields, items) };
       } else next = { kind: "failed", text: errorText(e) };
     } finally {
       setBusy(false);
@@ -133,6 +147,7 @@ function AnswerNotice({ answer }: { answer: Answer }) {
   if (answer.kind === "republished") return <Notice tone="success">{COPY.republished}</Notice>;
   if (answer.kind === "unchanged") return <Notice tone="info">{COPY.unchanged}</Notice>;
   if (answer.kind === "failed") return <Notice tone="error">{answer.text}</Notice>;
+  if (answer.kind === "text") return <TextRefusal groups={answer.groups} />;
   if (answer.kind !== "invalid") return null;
   return (
     <Notice tone="error">
@@ -169,6 +184,35 @@ function AnswerNotice({ answer }: { answer: Answer }) {
             <li key={i}>{PENDING.noneOnSite}</li>
           ),
         )}
+      </ul>
+    </Notice>
+  );
+}
+
+/** 400 `public_text_refused`: what to open (a service, or Settings › Payment terms), and under it each field and the rule it breaks. */
+function TextRefusal({ groups }: { groups: PublicTextGroup[] }) {
+  return (
+    <Notice tone="error">
+      <p>{PUBLIC_TEXT_HEADING()}</p>
+      <ul className="pub-fix">
+        {groups.map((g) => (
+          <li key={g.kind === "service" ? g.code : g.kind}>
+            {g.kind === "service" ? (
+              <Link to={g.item ? `/catalogue/${g.item.id}` : `/catalogue?q=${encodeURIComponent(g.code)}`}>
+                <span className="docno">{g.code}</span>
+                {g.item ? ` ${g.item.name}` : null}
+              </Link>
+            ) : g.kind === "terms" ? (
+              <Link to="/settings/payment-terms">Settings › Payment terms</Link>
+            ) : null}
+            <ul className="pub-fix__lines">
+              {g.lines.map((line, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: the fields in the order the API named them
+                <li key={i}>{line}</li>
+              ))}
+            </ul>
+          </li>
+        ))}
       </ul>
     </Notice>
   );

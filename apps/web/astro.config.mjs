@@ -2,6 +2,15 @@
 import { copyFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "astro/config";
+import { writeQuotable } from "./src/lib/quotable-build.ts";
+
+// The quote form's list of services (audit A2 finding 3), from the same snapshot and rule as the pages: written on every astro
+// command (build, dev, check), so `build` and `deploy:staging` bundle the list of the snapshot they build, before wrangler runs.
+writeQuotable({
+  snapshotPath:
+    process.env.CATALOGUE_SNAPSHOT ?? fileURLToPath(new URL("./catalogue-snapshot.json", import.meta.url)),
+  out: fileURLToPath(new URL("./src/generated/quotable-services.json", import.meta.url)),
+});
 
 /**
  * The M2.1 design-preview pages (src/preview/*.astro) exist in `astro dev` only: they are injected as routes for the
@@ -46,10 +55,18 @@ export default defineConfig({
   site: "https://techaust.com",
   output: "static",
   trailingSlash: "never",
-  build: { format: "file" },
+  // Styles are always a file, never an inline <style> (the CSP's style-src is 'self' only).
+  build: { format: "file", inlineStylesheets: "never" },
   integrations: [devPreviewPages, emailLogos],
   // The dev toolbar overlays the page and would sit in every design screenshot.
   devToolbar: { enabled: false },
-  // Fonts, icons and logos stay files (cacheable, and allowed by the CSP's font-src/img-src 'self'), never data: URIs.
-  vite: { build: { assetsInlineLimit: 0 } },
+  vite: {
+    build: {
+      // Fonts, icons and logos stay files (cacheable, and allowed by the CSP's font-src/img-src 'self'), never data: URIs.
+      assetsInlineLimit: 0,
+      // One site stylesheet (audit A2 finding 10): every page links the same file, so a visitor makes one render-blocking
+      // CSS request and every later page comes from the cache (11-13 per-component files per page before).
+      cssCodeSplit: false,
+    },
+  },
 });

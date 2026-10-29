@@ -1,4 +1,4 @@
-Status: open
+Status: PR opened (2026-10-29)
 Tier: A (it touches money, ledgers, numbering and triggers)
 Usage:
 
@@ -258,3 +258,19 @@ Builder claude-opus-5-5, high, 2026-10-29. Branch `fix/fx1-builder` (from `origi
   6. `environments.md` stated the deploy order as a fact. **Fixed by the lead** ("currently … not guaranteed until A6 8").
   7. The care repeat test sets `last_billed_period` by hand. No change: admin's tests prove `already_billed`.
 - **The four slow admin tests:** each now has a 30 s timeout with its reason (`documents-send` V8, `invoice-notes` discard, the `reports` statement PDF block, `turnstile` 100 requests). The four files pass (147 tests); numbering passes (28).
+
+## Integration (lead, 2026-10-29 ~11:00 IST)
+- **Merged `main`** after the M5 owner-fix PR #106 into this branch (3cbbf5fe). `main` equals the M5 head (`git diff --quiet origin/fix/m5-owner-findings origin/main`), but this branch held an older M5 point (6383881d). Every one of the 21 conflicts was in a file FX-1 never changed since that point, so `main`'s side was taken for each.
+- **`pnpm check`:** exit 0.
+- **`pnpm test`:** exit 0, 8,162 passed:
+  - admin 3,287;
+  - core 1,760;
+  - portal 620;
+  - jobs 525;
+  - db 470;
+  - ui 469 (2 skipped);
+  - web 428 (16 skipped);
+  - pdf 340;
+  - auth 135;
+  - email 128.
+- **Deploy note:** migrations 0049–0051 apply on staging with the deploy. The admin API deploys before jobs (CLAUDE.md M5.4).

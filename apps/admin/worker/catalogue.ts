@@ -22,7 +22,9 @@ import {
   snapshotFromRows,
   unknownPlaceholders,
 } from "@techaust/core/catalogue";
+import { joinedPastLimit, misplacedTextTokens } from "@techaust/core/documents";
 import { uuidv7 } from "@techaust/core/ids";
+import { snapshotTextIssues } from "@techaust/core/public-text";
 import { type SiteGap, siteGaps } from "@techaust/core/site-references";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
@@ -53,6 +55,16 @@ const UNKNOWN_PLACEHOLDER: ApiError = {
   code: "unknown_placeholder",
   message: "The template uses a placeholder that does not exist",
 };
+const TEMPLATE_TEXT_TOKEN_PLACE: ApiError = {
+  code: "template_text_token_place",
+  message:
+    "Catalogue text placeholders go only in the text of their own section: deliverables in Deliverables, assumptions and exclusions in Assumptions and exclusions",
+};
+const TEMPLATE_JOINED_TOO_LONG: ApiError = {
+  code: "template_joined_too_long",
+  message:
+    "A draft has room for 3 sections of the template's own; the ones after that are joined into the third, and together they pass 6,000 characters",
+};
 const TEMPLATE_CATEGORY: ApiError = {
   code: "template_category",
   message: "Proposals and estimates need a category; care plan and terms blocks have none",
@@ -64,6 +76,11 @@ const VERSION_RACE: ApiError = {
 const SNAPSHOT_INVALID: ApiError = {
   code: "snapshot_invalid",
   message: "The catalogue cannot be published yet. Fix the items listed",
+};
+const PUBLIC_TEXT: ApiError = {
+  code: "public_text_refused",
+  message:
+    "The catalogue cannot be published: some website text breaks the content rules. Fix the fields listed",
 };
 
 /** A gap as the API names it: the service code and what is missing, never a value. */
@@ -287,6 +304,20 @@ export const catalogue = new Hono<AppEnv>()
           request_id: c.var.rid,
         },
         422,
+      );
+    // The website's public-text rules (audit A2 finding 2; docs/07 section 1.3, WEB-G-07, WEB-G-14), from the same source as its
+    // content lint (@techaust/core/public-text): no "&", no banned phrase, no typed money amount in any text the site can print.
+    // Refused here, before anything is stored, so a staging deploy never builds from such text. The answer names each field and
+    // the rule (and a banned phrase by its id), never the text.
+    const textIssues = snapshotTextIssues(parsed.data);
+    if (textIssues.length)
+      return c.json(
+        {
+          error: { code: PUBLIC_TEXT.code, message: PUBLIC_TEXT.message },
+          fields: textIssues.slice(0, 20).map((f) => ({ path: f.path, issues: f.issues })),
+          request_id: c.var.rid,
+        },
+        400,
       );
     // The website's build throws on a price it prints that is missing, and so would every later staging deploy. So a snapshot
     // that lacks something the pages use (core's SITE_REFERENCES) is refused here, not stored (review finding 2). The paths are
@@ -635,6 +666,31 @@ export const templates = new Hono<AppEnv>()
     const isBlock = BLOCK_KINDS.includes(f.kind);
     if (isBlock !== (f.category === null)) return err(c, TEMPLATE_CATEGORY, 400);
     if (unknownPlaceholders(f.body).length) return err(c, UNKNOWN_PLACEHOLDER, 400);
+    // The Catalogue texts only in their own sections' text, never in a heading (FX-3 round 3, lead's answer to round 2 Q3, docs/13
+    // 2026-10-29): only there are their room and gaps worked out. The answer names each section (0-based), placeholder and part.
+    const misplaced = misplacedTextTokens(f.body.sections);
+    if (misplaced.length)
+      return c.json(
+        {
+          error: { code: TEMPLATE_TEXT_TOKEN_PLACE.code, message: TEMPLATE_TEXT_TOKEN_PLACE.message },
+          sections: misplaced,
+          request_id: c.var.rid,
+        },
+        400,
+      );
+    // A draft joins the custom sections past the third into the third (`sectionsFromTemplate`): a template whose joined text would pass
+    // a section's 6,000 characters would make drafts every save refuses, so it is refused here, naming the sections (0-based) joined
+    // (FX-3 round 3, lead's answer to round 2 Q2, docs/13 2026-10-29). Care plan and terms blocks are never made into drafts.
+    const joined = isBlock ? [] : joinedPastLimit(f.body.sections);
+    if (joined.length)
+      return c.json(
+        {
+          error: { code: TEMPLATE_JOINED_TOO_LONG.code, message: TEMPLATE_JOINED_TOO_LONG.message },
+          sections: joined,
+          request_id: c.var.rid,
+        },
+        400,
+      );
     const db = c.env.DB;
     const id = uuidv7();
     try {

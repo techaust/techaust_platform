@@ -64,7 +64,7 @@ const put = (s: { cookie: string }, raw: Uint8Array) =>
   call("/settings/signature", { cookie: s.cookie, method: "PUT", raw });
 
 describe("sniffSignature", () => {
-  it("knows a PNG (with its size) and a JPEG by their first bytes", () => {
+  it("knows a PNG (with its size) by its first bytes", () => {
     expect(sniffSignature(png(400, 120))).toMatchObject({
       ok: true,
       mime: "image/png",
@@ -72,21 +72,10 @@ describe("sniffSignature", () => {
       width: 400,
       height: 120,
     });
-    expect(sniffSignature(jpeg())).toMatchObject({
-      ok: true,
-      mime: "image/jpeg",
-      ext: "jpg",
-      width: 100,
-      height: 50,
-    });
   });
-  it("refuses a JPEG over 800 by 400 pixels (FX-3; a small file with a huge size in its header), one with no frame header, and a zero size", () => {
-    expect(sniffSignature(jpeg(0, 801, 100))).toEqual({ ok: false, reason: "pixels" });
-    expect(sniffSignature(jpeg(0, 100, 401))).toEqual({ ok: false, reason: "pixels" });
-    expect(sniffSignature(jpeg(0, 2400, 1200))).toEqual({ ok: false, reason: "pixels" }); // the bound before FX-3
-    expect(sniffSignature(jpeg(0, 65535, 65535))).toEqual({ ok: false, reason: "pixels" });
-    expect(sniffSignature(jpeg(0, 0, 10))).toEqual({ ok: false, reason: "pixels" });
-    expect(sniffSignature(jpeg(0, 800, 400))).toMatchObject({ ok: true, width: 800, height: 400 });
+  it("refuses every JPEG for a new upload, whatever its size (FX-3, docs/13 2026-10-29: the admin re-encodes to PNG)", () => {
+    for (const j of [jpeg(), jpeg(0, 800, 400), jpeg(0, 1, 1), jpeg(0, 2400, 1200), jpeg(500)])
+      expect(sniffSignature(j)).toEqual({ ok: false, reason: "type" });
     expect(sniffSignature(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 7, 7, 7, 7]))).toEqual({
       ok: false,
       reason: "type",
@@ -146,9 +135,9 @@ describe("PUT /settings/signature", () => {
   it("a replacement gets a new key, keeps the old object and says replaced", async () => {
     const s = await owner();
     const first = (await json(await put(s, png(300, 100, 10)))).signature;
-    const second = (await json(await put(s, jpeg(80)))).signature;
+    const second = (await json(await put(s, png(320, 110, 80)))).signature;
     expect(second.key).not.toBe(first.key);
-    expect(second.mime).toBe("image/jpeg");
+    expect(second.mime).toBe("image/png");
     expect(await env.DOCS.head(second.key)).not.toBeNull();
     expect(await env.DOCS.head(first.key)).not.toBeNull();
     const audit = await one<{ summary: string }>(
@@ -157,14 +146,20 @@ describe("PUT /settings/signature", () => {
     expect(JSON.parse(audit?.summary ?? "{}").replaced).toBe(true);
   });
 
-  it("refuses what is not a small PNG or JPEG, and writes nothing", async () => {
+  it("refuses what is not a small PNG, and writes nothing", async () => {
     const s = await owner();
     const before = (await rows("SELECT key FROM settings")).length;
     expect((await put(s, new TextEncoder().encode("<svg onload=alert(1)></svg>"))).status).toBe(415);
     expect((await put(s, png(5000, 100))).status).toBe(415);
-    const huge = await put(s, jpeg(0, 9000, 9000));
+    const huge = await put(s, png(9000, 9000));
     expect(huge.status).toBe(415);
     expect((await json(huge)).error.code).toBe("image_too_big");
+    // FX-3 (docs/13 2026-10-29): a new JPEG is refused, even a small one, with the wrong-type code the screen words as its one line
+    const small = await put(s, jpeg(80));
+    expect(small.status).toBe(415);
+    expect(await json(small)).toMatchObject({
+      error: { code: "type_not_allowed", message: "Send the signature as a PNG image" },
+    });
     // FX-3 (A6 1c): a PNG one pixel past 800 by 400 is refused from its IHDR (the bound itself passes: see sniffSignature above)
     for (const [w, h] of [
       [801, 400],
@@ -236,6 +231,32 @@ describe("the company form and older rows", () => {
     });
     expect(forged.status).toBe(200);
     expect((await company(s)).value.signature).toMatchObject({ key: ref.key });
+  });
+
+  it("a JPEG stored before the PNG-only rule keeps working: served with its own type (FX-3, docs/13 2026-10-29)", async () => {
+    const s = await owner();
+    const bytes = jpeg(40);
+    const key = "settings/signature-00112233aabbccdd.jpg";
+    await env.DOCS.put(key, bytes, { httpMetadata: { contentType: "image/jpeg" } });
+    const signature = {
+      key,
+      mime: "image/jpeg",
+      size: bytes.byteLength,
+      sha256: "00112233aabbccdd".repeat(4),
+      width: 100,
+      height: 50,
+      updatedAt: 1,
+    };
+    await env.DB.prepare(
+      "INSERT INTO settings (key, value, version) VALUES ('company', ?1, 1) ON CONFLICT(key) DO UPDATE SET value = excluded.value, version = excluded.version",
+    )
+      .bind(JSON.stringify({ ...SETTINGS_DEFAULTS.company, signature }))
+      .run();
+    expect((await company(s)).value.signature).toMatchObject({ key, mime: "image/jpeg" });
+    const img = await call("/settings/signature", { cookie: s.cookie });
+    expect(img.status).toBe(200);
+    expect(img.headers.get("content-type")).toBe("image/jpeg");
+    expect(new Uint8Array(await img.arrayBuffer())).toEqual(bytes);
   });
 
   it("a company row stored before M4.4 (no signature key) reads as null", async () => {

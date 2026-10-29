@@ -30,7 +30,14 @@ export type App = Hono<AppEnv, Record<string, never>, "/api">;
 export function createApp(mount: (app: App) => void, before?: (app: App) => void) {
   const app: App = new Hono<AppEnv>().basePath("/api");
   before?.(app);
-  app.use(secureHeaders());
+  // docs/08 section 3.1 on every API answer (audit A1 finding 4): Hono's defaults, plus HSTS for one year with subdomains (its
+  // default is 180 days) and the same Permissions-Policy as the static files (public/_headers).
+  app.use(
+    secureHeaders({
+      strictTransportSecurity: "max-age=31536000; includeSubDomains",
+      permissionsPolicy: { camera: [], microphone: [], geolocation: [], payment: [], usb: [] },
+    }),
+  );
 
   // One diagnostic line per /api request, to tell cold isolates from busy ones in Workers Logs. Exactly these keys
   // [NFR-6]: the route PATTERN (or "other"), the status, the request ID (`cf-ray` or random), a random per-isolate ID

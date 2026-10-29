@@ -21,6 +21,7 @@ import type {
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
 import { type Draft, rebase } from "../routes/leads/drafts.ts";
+import { Y } from "./copy-y.ts";
 import { dateError, type UnreadDates } from "./date-field.ts";
 import { sentence } from "./format.ts";
 import { bpToPercent, moneyFrom, moneyInput, percentToBp } from "./settings-form.ts";
@@ -93,6 +94,8 @@ export const COPY = {
     "Shared notes appear in the client portal for everyone at this client who has portal access.",
   noteDelete: "Delete this note? This can't be undone.",
   formattingHint: "You can use **bold**, *italic*, lists and links.",
+  /** FX-3 (A3 7), 07-Y: a note also takes `#` to `###` headings (document sections don't). */
+  noteFormattingHint: Y("You can use # headings, **bold**, *italic*, lists and links."),
   uploadHint: "PDF, PNG, JPG, WebP, Word, Excel, CSV, text or ZIP, up to 25 MB each.",
   filesSharedExplainer:
     "Shared files can be downloaded from the client portal by everyone at this client who has portal access.",

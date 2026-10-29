@@ -4,6 +4,9 @@
 // newer version is still being prepared, can't be accepted. After a decision focus moves to the result, so a screen-reader user hears
 // what happened. Words: 07-N §3 (approved with 07-Q, 2026-10-26); the binding sentence 07-A §7; the record notice 07-A §9 (Researched 2026-10-28,
 // 08-C RB-19; the ground for recording the IP address and browser is OPEN, RB-12).
+// FX-3 (A4 1, 2, 8): once the form has been checked, each error follows the field as it changes (never on blur), so the
+// line can't vanish under the pointer between pressing and releasing Accept; the whole agreement row is the checkbox's
+// label (44 px); the number in the confirmation never breaks.
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import type { OfferKind, OfferStatus } from "../../api.ts";
 import { N, NOTICES, WORDS } from "../../copy-documents.ts";
@@ -259,10 +262,11 @@ function AcceptForm(props: DecisionProps & { kind: string }) {
           <input
             id={nameId}
             value={name}
-            onChange={(e) => setName(e.target.value)}
-            onBlur={() =>
-              errors && setErrors({ ...errors, name: name.trim().length >= 2 ? undefined : N.nameMissing })
-            }
+            onChange={(e) => {
+              const v = e.target.value;
+              setName(v);
+              if (errors) setErrors({ ...errors, name: v.trim().length >= 2 ? undefined : N.nameMissing });
+            }}
             autoComplete="name"
             autoCapitalize="words"
             spellCheck={false}
@@ -273,7 +277,7 @@ function AcceptForm(props: DecisionProps & { kind: string }) {
           />
           {nameError && <FieldError id={`${nameId}-error`}>{nameError}</FieldError>}
         </div>
-        <div className="check">
+        <label className="check" htmlFor={agreeId}>
           <input
             type="checkbox"
             id={agreeId}
@@ -286,8 +290,8 @@ function AcceptForm(props: DecisionProps & { kind: string }) {
             aria-invalid={agreeError ? true : undefined}
             aria-describedby={agreeError ? `${agreeId}-error` : undefined}
           />
-          <label htmlFor={agreeId}>{WORDS.agree}</label>
-        </div>
+          <span className="check__text">{WORDS.agree}</span>
+        </label>
         <p className="check__more">
           <a href="#terms">{N.readTerms}</a>
         </p>
@@ -327,7 +331,7 @@ function AcceptForm(props: DecisionProps & { kind: string }) {
           <div>
             <dt>{WORDS.doc.number}</dt>
             <dd>
-              {model.numberDisplay} v{model.version}
+              <span className="nowrap">{model.numberDisplay}</span> v{model.version}
             </dd>
           </div>
           <div>

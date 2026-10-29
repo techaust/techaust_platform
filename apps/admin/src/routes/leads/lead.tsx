@@ -49,6 +49,7 @@ import { allowed } from "../../lib/access.ts";
 import { dateError } from "../../lib/date-field.ts";
 import { relative } from "../../lib/format.ts";
 import {
+  answerText,
   type Change,
   countryOptions,
   FIELD_LABELS,
@@ -60,6 +61,7 @@ import {
 } from "../../lib/leads.ts";
 import { REASON_LABEL, reasonText } from "../../lib/offer-words.ts";
 import { useUser } from "../../session.tsx";
+import { ANSWERS_COPY, type Answers, AnswersFields, answersPatch } from "./answers.tsx";
 import { ConvertDialog } from "./convert.tsx";
 import {
   type Contact,
@@ -163,13 +165,17 @@ function LeadView({
   const contact = drafts.contact?.value ?? contactOf(lead);
   const contactBase = drafts.contact?.base ?? contactOf(lead);
   const setContact = (value: Contact | null) => draft({ type: "contact", value, base: contactOf(lead) });
-  const [busy, setBusy] = useState<"follow" | "contact" | null>(null);
-  const [error, setError] = useState<{ where: "follow" | "contact"; text: string } | null>(null);
+  const [busy, setBusy] = useState<Where | null>(null);
+  const [error, setError] = useState<{ where: Where; text: string } | null>(null);
+  // FX-3 (A3 8): a manual lead's quote answers, edited on the Enquiry panel (null while shown read-only).
+  const [answers, setAnswers] = useState<{ base: Answers; value: Answers } | null>(null);
+  const answersDirty = answers !== null && JSON.stringify(answers.value) !== JSON.stringify(answers.base);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [nextDateError, setNextDateError] = useState<string | null>(null);
   const dates = useUnreadDates<"date">();
   // A stale reload sets the edits aside, so unreadable date text and its error line go with them.
   const reloadStale = () => {
+    setAnswers(null);
     dates.reset();
     setNextDateError(null);
     reload("stale");
@@ -183,22 +189,25 @@ function LeadView({
   // Text in the Next action field that can't be read is a change too: Save shows the line, Discard takes it back.
   const followDirty = dates.any || JSON.stringify(follow) !== JSON.stringify(followBase);
   const contactDirty = editing && JSON.stringify(contact) !== JSON.stringify(contactBase);
-  const dirty = followDirty || contactDirty || note.trim() !== "";
+  const dirty = followDirty || contactDirty || answersDirty || note.trim() !== "";
 
   const names = new Map<string, string>(assignees.map((a) => [a.id, a.name]));
   if (lead.ownerId && lead.ownerName) names.set(lead.ownerId, lead.ownerName);
 
-  async function save(where: "follow" | "contact", patch: Omit<LeadPatch, "expectedUpdatedAt">) {
+  async function save(where: Where, patch: Omit<LeadPatch, "expectedUpdatedAt">) {
     setBusy(where);
     setError(null);
     try {
       const r = await api.updateLead(lead.id, { ...patch, expectedUpdatedAt: lead.updatedAt });
       toast("success", r.changed ? "Saved." : "No change: that's already saved.");
       if (where === "contact") setContact(null);
+      else if (where === "answers") setAnswers(null);
       else discardFollow();
       reload();
     } catch (e) {
       if (e instanceof RequestError && e.code === "stale_version") setStale(true);
+      else if (e instanceof RequestError && e.code === "lead_answers_fixed")
+        setError({ where, text: ANSWERS_COPY.answersFixed });
       else setError({ where, text: errorText(e) });
     } finally {
       setBusy(null);
@@ -542,7 +551,19 @@ function LeadView({
         </aside>
 
         <div className="lead-page__main">
-          <Enquiry lead={lead} />
+          <Enquiry
+            lead={lead}
+            canEdit={canWrite && lead.source === "manual"}
+            answers={answers}
+            onAnswers={setAnswers}
+            busy={busy === "answers"}
+            error={error?.where === "answers" ? error.text : null}
+            onCancel={() => {
+              setAnswers(null);
+              setError(null);
+            }}
+            onSave={(base, value) => save("answers", answersPatch(base, value))}
+          />
           <Timeline
             leadId={lead.id}
             first={data.timeline}
@@ -704,8 +725,39 @@ const UTM_LABELS: Record<string, string> = {
   content: "UTM content",
 };
 
-/** What was asked, in the internal lead alert's words (packages/email leadAlert), plus the consent record, read-only. */
-function Enquiry({ lead }: { lead: LeadDetail }) {
+type Where = "follow" | "contact" | "answers";
+type AnswersDraft = { base: Answers; value: Answers };
+
+const answersOf = (l: LeadDetail): Answers => ({
+  currency: l.currency ?? "",
+  band: l.budgetBand ?? "",
+  timeline: l.timeline ?? "",
+});
+
+/**
+ * What was asked, in the internal lead alert's words (packages/email leadAlert), plus the consent record, read-only. A manual lead's
+ * currency, budget and timeline can be edited here (FX-3, A3 8); a website lead's are the visitor's own and stay as given.
+ */
+function Enquiry({
+  lead,
+  canEdit,
+  answers,
+  onAnswers,
+  busy,
+  error,
+  onCancel,
+  onSave,
+}: {
+  lead: LeadDetail;
+  canEdit: boolean;
+  answers: AnswersDraft | null;
+  onAnswers: (a: AnswersDraft | null) => void;
+  busy: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onSave: (base: Answers, value: Answers) => void;
+}) {
+  const editing = answers !== null;
   const facts: [string, ReactNode][] = [
     [
       "Reference",
@@ -721,16 +773,18 @@ function Enquiry({ lead }: { lead: LeadDetail }) {
   };
   add("Type", lead.requestType?.replaceAll("-", " "));
   add("Plan", lead.plan);
-  add(
-    "Budget",
-    lead.budgetBand
-      ? lead.currency
-        ? budgetBandLabel(lead.currency, lead.budgetBand)
-        : lead.budgetBand
-      : null,
-  );
-  add("Timeline", lead.timeline ? labelOf(TIMELINE_LABELS, lead.timeline) : null);
-  add("Currency", lead.currency);
+  if (!editing) {
+    add(
+      "Budget",
+      lead.budgetBand
+        ? lead.currency
+          ? budgetBandLabel(lead.currency, lead.budgetBand)
+          : lead.budgetBand
+        : null,
+    );
+    add("Timeline", lead.timeline ? labelOf(TIMELINE_LABELS, lead.timeline) : null);
+    add("Currency", lead.currency);
+  }
   add("Tools", lead.tools?.length ? lead.tools.map((t) => labelOf(TOOL_LABELS, t)).join(", ") : null);
   add("Best time for a call", lead.callWindow);
   add("Page", lead.sourcePage);
@@ -741,9 +795,51 @@ function Enquiry({ lead }: { lead: LeadDetail }) {
   return (
     <>
       <section className="lead-panel" aria-labelledby="enquiry-h">
-        <h2 id="enquiry-h" className="lead-panel__title">
-          Enquiry
-        </h2>
+        <div className="lead-panel__head">
+          <h2 id="enquiry-h" className="lead-panel__title">
+            Enquiry
+          </h2>
+          {canEdit && !editing && (
+            <button
+              type="button"
+              className="btn btn--text"
+              onClick={() => onAnswers({ base: answersOf(lead), value: answersOf(lead) })}
+            >
+              <Pencil size={16} />
+              Edit<span className="visually-hidden"> enquiry</span>
+            </button>
+          )}
+        </div>
+        {answers && (
+          <form
+            className="lead-answers"
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault();
+              onSave(answers.base, answers.value);
+            }}
+          >
+            {error && <Notice tone="error">{error}</Notice>}
+            <AnswersFields
+              idPrefix="lead"
+              value={answers.value}
+              onChange={(value) => onAnswers({ ...answers, value })}
+            />
+            <div className="lead-panel__actions">
+              <button type="button" className="btn btn--secondary" onClick={onCancel} disabled={busy}>
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="btn btn--primary"
+                disabled={busy}
+                aria-busy={busy || undefined}
+              >
+                {busy ? "Saving…" : "Save changes"}
+              </button>
+            </div>
+          </form>
+        )}
         <dl className="facts facts--two">
           {facts.map(([label, v]) => (
             <Fact key={label} label={label}>
@@ -944,7 +1040,7 @@ function shown(field: string, value: unknown, names: ReadonlyMap<string, string>
   if (field === "owner") return names.get(String(value)) ?? "A former staff member";
   if (field === "next_action_at" && typeof value === "number") return formatDate(istDate(value));
   if (field === "country") return countryName(String(value));
-  return String(value);
+  return answerText(field, String(value));
 }
 
 function ChangeTable({ changes, names }: { changes: Change[]; names: ReadonlyMap<string, string> }) {

@@ -25,8 +25,8 @@ export type RenderError =
   | { ok: false; kind: "quota"; message: string }
   | { ok: false; kind: "render"; message: string }
   | { ok: false; kind: "upstream"; message: string }
-  | { ok: false; kind: "not_pdf"; message: string }
-  | { ok: false; kind: "damaged"; message: string };
+  | { ok: false; kind: "not_pdf"; message: string; browserMs?: number }
+  | { ok: false; kind: "damaged"; message: string; browserMs?: number };
 export type RenderOk = { ok: true; bytes: Uint8Array; browserMs: number };
 export type RenderResult = RenderOk | RenderError;
 
@@ -83,12 +83,18 @@ const err = {
     kind: "upstream",
     message: `Browser Run unavailable (${what})`,
   }),
-  damaged: (code: string): RenderError => ({
+  damaged: (code: string, browserMs: number): RenderError => ({
     ok: false,
     kind: "damaged",
     message: `PDF structure damaged (${code})`,
+    browserMs,
   }),
-  notPdf: (why: string): RenderError => ({ ok: false, kind: "not_pdf", message: `Not a PDF (${why})` }),
+  notPdf: (why: string, browserMs: number): RenderError => ({
+    ok: false,
+    kind: "not_pdf",
+    message: `Not a PDF (${why})`,
+    browserMs,
+  }),
 };
 
 /** `Retry-After` as whole seconds (1 to 3600), else the default. */
@@ -148,13 +154,16 @@ async function readPdf(res: Response, startedAt: number, now: () => number): Pro
     }
     return classify(res.status, text, res.headers.get("retry-after"));
   }
+  // A 2xx answer means the browser did the work, whatever came back: its time counts towards the day's browser time, also when the bytes
+  // are refused (FX-3 round 3, item 4), so the daily figure and the half-of-the-day bell see the retries a refusal causes.
+  const used = () => browserMsOf(res.headers, startedAt, now);
   const type = res.headers.get("content-type") ?? "";
-  if (!/application\/pdf/i.test(type)) return err.notPdf("content type");
+  if (!/application\/pdf/i.test(type)) return err.notPdf("content type", used());
   const declared = Number(res.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_PDF_BYTES) return err.notPdf("too large");
+  if (Number.isFinite(declared) && declared > MAX_PDF_BYTES) return err.notPdf("too large", used());
   const bytes = new Uint8Array(await res.arrayBuffer());
-  if (bytes.byteLength > MAX_PDF_BYTES) return err.notPdf("too large");
-  if (!hasPdfMagic(bytes)) return err.notPdf("no %PDF- header");
+  if (bytes.byteLength > MAX_PDF_BYTES) return err.notPdf("too large", used());
+  if (!hasPdfMagic(bytes)) return err.notPdf("no %PDF- header", used());
   // A PDF whose blocks arrived out of order once reached R2 and unlocked the portal offer (owner finding F1): never stored, always retried.
   const check = await checkPdfIntegrity(bytes, declaredBodyLength(res.headers));
   if (!check.ok) {
@@ -165,7 +174,7 @@ async function readPdf(res: Response, startedAt: number, now: () => number): Pro
       firstBadOffsetMod8192: check.firstBadOffset === null ? undefined : check.firstBadOffset % 8192,
       displacement: check.displacement ?? undefined,
     });
-    return err.damaged(check.code);
+    return err.damaged(check.code, used());
   }
   // Past the inflate budget the PDF is kept on its header, xref and Length checks (lead, 2026-10-29): logged, never refused or retried.
   if (check.partial)
@@ -174,13 +183,14 @@ async function readPdf(res: Response, startedAt: number, now: () => number): Pro
       inflated: check.partial.inflated,
       skippedStreams: check.partial.skippedStreams,
     });
-  const header = res.headers.get("x-browser-ms-used");
+  return { ok: true, bytes, browserMs: used() };
+}
+
+/** The browser time a 2xx answer used: Browser Run's `X-Browser-Ms-Used` header, else the wall time since the call started. */
+function browserMsOf(headers: Headers, startedAt: number, now: () => number): number {
+  const header = headers.get("x-browser-ms-used");
   const ms = header === null || header.trim() === "" ? Number.NaN : Number(header);
-  return {
-    ok: true,
-    bytes,
-    browserMs: Number.isFinite(ms) && ms >= 0 ? Math.round(ms) : Math.max(0, now() - startedAt),
-  };
+  return Number.isFinite(ms) && ms >= 0 ? Math.round(ms) : Math.max(0, now() - startedAt);
 }
 
 /**

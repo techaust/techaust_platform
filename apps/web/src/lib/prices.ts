@@ -10,7 +10,7 @@
 import { formatMoney, type Money, money, scheduleText } from "@techaust/core";
 import { flags } from "../config/site";
 import { snapshot } from "./catalogue";
-import { isVisible } from "./service-visibility";
+import { isVisible } from "./visibility";
 
 /** A price as the site shows it: INR always, USD where the service is offered internationally. */
 export type SitePrice = { readonly inr: Money; readonly usd: Money | null };

@@ -1,5 +1,5 @@
-// FX-3 (A6 1c) [ADM-SET-01]: the signature is scaled down in the browser to fit 800 by 400 pixels, aspect kept, PNG out; an image that fits is sent
-// unchanged; an unreadable one is refused. The browser's canvas is replaced by a fake `ImageIo`, so the rules run here.
+// FX-3 (A6 1c) [ADM-SET-01]: the signature is scaled down in the browser to fit 800 by 400 pixels, aspect kept, PNG out; an image that fits is drawn
+// again as a PNG at its own size (PNG only, docs/13 2026-10-29); an unreadable one is refused. The browser's canvas is replaced by a fake `ImageIo`, so the rules run here.
 import { SIGNATURE_MAX_HEIGHT, SIGNATURE_MAX_WIDTH } from "@techaust/core/settings";
 import { describe, expect, it } from "vitest";
 import { type DecodedImage, type ImageIo, scaleSignature, signatureFit } from "./signature-scale.ts";
@@ -71,13 +71,17 @@ const io = (width: number, height: number, fail?: "decode" | "draw") => {
 };
 
 describe("scaleSignature", () => {
-  it("sends an image that fits as it is (a JPEG stays a JPEG) and frees the decoded image", async () => {
-    const file = new Blob([new Uint8Array(5)], { type: "image/jpeg" });
-    const t = io(600, 200);
-    const r = await scaleSignature(file, t.fake);
-    expect(r).toEqual({ ok: true, file, scaled: false, width: 600, height: 200 });
-    expect(t.drawn).toEqual([]);
-    expect(t.image()?.closed).toBe(true);
+  it("draws an image that fits again as a PNG at its own size (a JPEG becomes a PNG; docs/13 2026-10-29) and frees the decoded image", async () => {
+    for (const type of ["image/jpeg", "image/png"]) {
+      const file = new Blob([new Uint8Array(5)], { type });
+      const t = io(600, 200);
+      const r = await scaleSignature(file, t.fake);
+      expect(r).toMatchObject({ ok: true, scaled: false, width: 600, height: 200 });
+      expect(r.ok && r.file).not.toBe(file);
+      expect(r.ok && r.file.type).toBe("image/png");
+      expect(t.drawn).toEqual([[600, 200]]);
+      expect(t.image()?.closed).toBe(true);
+    }
   });
 
   it("draws a larger one at the fitted size as a PNG", async () => {

@@ -162,8 +162,20 @@ export type ViewInput = {
 };
 
 /**
+ * The baseline of a draft's Catalogue gaps (review round 3, finding 2): the first creation time of its version group. A revision copies its
+ * sections from the version before it, which took them from the first, so the Catalogue text changed since the FIRST version was made is
+ * what none of them holds (the draft's own `created_at` would hide a change made between the first version and the revision).
+ */
+export function gapBaseline(bundle: Pick<DocumentBundle<TermsRef>, "document" | "versions">): number {
+  let at = bundle.document.created_at;
+  for (const v of bundle.versions)
+    if (typeof v.created_at === "number" && v.created_at < at) at = v.created_at;
+  return at;
+}
+
+/**
  * The gaps between a draft's service sections and the current Catalogue (none for a sent version or when no rows were read). `createdAt`
- * is the draft's `created_at`: Catalogue text changed after it is the only text called new on a section that shows text.
+ * is the baseline (`gapBaseline`): Catalogue text changed after it is the only text called new on a section that shows text.
  */
 export function gapsOf(
   state: DocState,
@@ -360,7 +372,7 @@ export async function documentView(i: ViewInput) {
     warnings: !frozen && computation ? computation.warnings : [],
     blockers,
     // Where Catalogue has no text for a section of this draft (or has it now): the screen names the service and links to it. A draft only.
-    catalogueGaps: frozen ? [] : gapsOf(state, i.catalogueItems, d.created_at),
+    catalogueGaps: frozen ? [] : gapsOf(state, i.catalogueItems, gapBaseline(bundle)),
     // The placeholders still in the text (`{{client.name}}`): the editor lists them; a document with any cannot be sent.
     unresolved: blockers.find((b) => b.code === "unresolved_placeholders")?.names ?? [],
     canSend: !frozen && computation !== null && blockers.length === 0,

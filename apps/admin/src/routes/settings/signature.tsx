@@ -32,6 +32,8 @@ export function SignatureControl(props: { initial: SignatureRef | null; adopt: (
   const [error, setError] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
   const [broken, setBroken] = useState(false);
+  // The last upload was drawn smaller to fit 800 by 400 pixels: said once under the preview, until the next change.
+  const [scaled, setScaled] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const firstButton = useRef<HTMLButtonElement>(null);
   const refocus = useRef(false);
@@ -50,26 +52,29 @@ export function SignatureControl(props: { initial: SignatureRef | null; adopt: (
 
   async function upload(file: File) {
     setError(null);
+    setScaled(false);
     if (!signatureFileOk(file)) {
       setError(SIGNATURE_COPY.wrongFile);
       return;
     }
     setBusy(true);
     try {
-      // FX-3 (A6 1c): larger than 800 by 400 pixels is drawn smaller first (PNG out, aspect kept); the API refuses a larger one.
+      // FX-3 (A6 1c, docs/13 2026-10-29): every image is drawn again as a PNG, smaller when it passes 800 by 400 pixels (aspect kept); the
+      // API takes only a PNG within that box.
       const ready = await scaleSignature(file, browserImageIo);
       if (!ready.ok) {
         setError(SIGNATURE_COPY.wrongFile);
         return;
       }
       if (ready.file.size > SIGNATURE_MAX) {
-        setError(SIGNATURE_COPY.wrongFile);
+        setError(SIGNATURE_COPY.tooDetailed);
         return;
       }
       const r = await signatureApi.put(ready.file);
       props.adopt(r.version);
       setSig(r.signature);
       setBroken(false);
+      setScaled(ready.scaled);
       refocus.current = true;
     } catch (e) {
       setError(
@@ -151,6 +156,9 @@ export function SignatureControl(props: { initial: SignatureRef | null; adopt: (
       <div className="signature__alert" role="alert">
         {error && <FieldError id={errorId}>{error}</FieldError>}
       </div>
+      <p className="hint signature__scaled" role="status">
+        {scaled && sig && !error ? SIGNATURE_COPY.scaled : null}
+      </p>
 
       <ConfirmDialog
         open={asking}
@@ -162,6 +170,7 @@ export function SignatureControl(props: { initial: SignatureRef | null; adopt: (
           const r = await signatureApi.remove();
           props.adopt(r.version);
           setSig(null);
+          setScaled(false);
           refocus.current = true;
           return undefined;
         }}

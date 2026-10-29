@@ -12,6 +12,12 @@ html {
   text-size-adjust: 100%;
 }
 
+/* WCAG 2.4.11 (round 4, H1): a control reached by Tab or Shift+Tab scrolls clear of the shell's sticky top bar (`--topbar-h`, set on
+   :root in shell.css), with a gap, instead of stopping under it. Only inside the shell: the sign-in screens have no bar. */
+html:has(.shell) {
+  scroll-padding-top: calc(var(--topbar-h) + var(--space-4));
+}
+
 body {
   margin: 0;
   min-height: 100dvh;

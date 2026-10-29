@@ -10,6 +10,7 @@ import {
   GAP_HIDDEN,
   gapGroups,
   gapLine,
+  gapNoRoomLine,
   gapNowLine,
   LIST_EMPTY_BY_TYPE,
   PLACEHOLDER_WORDS,
@@ -49,6 +50,7 @@ const gap = (over: Partial<CatalogueGap>): CatalogueGap => ({
   serviceName: "Custom Web Apps",
   catalogueItemId: "cat-s5",
   catalogueHasTextNow: false,
+  noRoom: false,
   ...over,
 });
 
@@ -208,8 +210,8 @@ describe("Catalogue gaps by section", () => {
       canFill: false,
     });
     expect(groups[0]?.services).toEqual([
-      { id: "cat-s5", name: "Custom Web Apps", missing: ["assumptions", "exclusions"], now: [] },
-      { id: "cat-s1", name: "Discovery Sprint", missing: ["assumptions"], now: [] },
+      { id: "cat-s5", name: "Custom Web Apps", missing: ["assumptions", "exclusions"], now: [], noRoom: [] },
+      { id: "cat-s1", name: "Discovery Sprint", missing: ["assumptions"], now: [], noRoom: [] },
     ]);
     expect(gapLine("Custom Web Apps", ["assumptions", "exclusions"])).toBe(
       `${M}Custom Web Apps has no assumptions and exclusions in Catalogue.`,
@@ -227,6 +229,31 @@ describe("Catalogue gaps by section", () => {
     expect(gapNowLine("Custom Web Apps", ["assumptions"])).toBe(
       `${M}Catalogue now has the assumptions for Custom Web Apps.`,
     );
+  });
+
+  it("round 4, M3: text left out for the length limit is its own line with its own link, and offers no fill", () => {
+    const long = sec("s-ae", "assumptions_exclusions", { bodyMd: "Long text" });
+    const groups = gapGroups(
+      [
+        gap({ field: "exclusions", noRoom: true }),
+        gap({ field: "assumptions", noRoom: true }),
+        gap({ field: "deliverables", sectionKind: "deliverables", sectionId: "s-d" }),
+      ],
+      [long],
+      [],
+    );
+    expect(groups[0]?.services[0]).toEqual({
+      id: "cat-s5",
+      name: "Custom Web Apps",
+      missing: [],
+      now: [],
+      noRoom: ["assumptions", "exclusions"],
+    });
+    expect(groups[0]?.canFill).toBe(false);
+    expect(gapNoRoomLine("Custom Web Apps", ["assumptions", "exclusions"])).toBe(
+      `${M}The assumptions and exclusions for Custom Web Apps were left out: this section has no room for them. To add them, shorten the section and copy them from Catalogue.`,
+    );
+    expect(GAP_COPY.openInCatalogue).toBe(`${M}Open it in Catalogue`);
   });
 
   it("the partial case shows on a section that had text; a section the person has since written in drops its gap", () => {

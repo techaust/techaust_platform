@@ -3,8 +3,8 @@
 // reads; the money settings only for roles with clients.finance.read; edited through PATCH /clients/:id/billing by roles
 // with clients.finance.write). Each edit sends only the fields the person changed and the `updatedAt` it was loaded
 // with; a 409 `stale_version` or a reload that clashes with a draft shows the shared notice (M3.2 pattern). The side
-// column: the primary contact and the source lead. (The balance panel returns with payments in M5.3, when GET /finance has figures; until then
-// the client's invoices are on its Invoices tab, so the old 07-J "arrive with invoicing" line is gone: M5.1 review finding 16.)
+// column: the figures (FX-3, ADM-CLI-03: outstanding, overdue, billed to date and credit notes from GET /clients/:id/finance, for the finance
+// roles; ./figures.tsx), the primary contact and the source lead.
 // GST treatment: Researched 2026-10-28, s.12 IGST and Rule 46 CGST (08-C RA-12, RA-05).
 import { countryName } from "@techaust/core/form-labels";
 import { type Dispatch, type FormEvent, type ReactNode, useState } from "react";
@@ -41,6 +41,7 @@ import { sentence } from "../../lib/format.ts";
 import { CARE_COPY } from "../../lib/invoice-send.ts";
 import { useUser } from "../../session.tsx";
 import { NotesPanel } from "../projects/notes.tsx";
+import { ClientFiguresPanel } from "./figures.tsx";
 import { AddressFields, type Tax, TaxFields, taxFieldErrors } from "./parts.tsx";
 
 /** Owner-approved 2026-10-25. */
@@ -59,6 +60,8 @@ export function Overview(props: {
   reload: (cause?: "own" | "stale") => void;
   onStale: () => void;
   onContacts: () => void;
+  /** Opens the Statement tab (the figures panel's way on). */
+  onStatement: () => void;
 }) {
   const user = useUser();
   const { client } = props.data;
@@ -82,6 +85,9 @@ export function Overview(props: {
         )}
       </div>
       <aside className="lead-page__side" aria-label="Summary">
+        {canFinance && !props.data.anonymised && (
+          <ClientFiguresPanel clientId={client.id} onStatement={props.onStatement} />
+        )}
         <section className="lead-panel" aria-labelledby="primary-h">
           <h2 id="primary-h" className="lead-panel__title">
             Primary contact

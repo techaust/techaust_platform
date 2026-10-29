@@ -180,6 +180,7 @@ function ClientView(props: {
             reload={props.reload}
             onStale={() => setSaveStale(true)}
             onContacts={() => select("contacts")}
+            onStatement={() => select("statement")}
           />
         ) : tab === "contacts" ? (
           <Contacts data={props.data} reload={() => props.reload()} />

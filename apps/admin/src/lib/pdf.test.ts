@@ -88,6 +88,8 @@ describe("the wording (07-P §3, §4)", () => {
       removeQuestion: "Remove the signature? Invoices issued already keep theirs.",
       wrongFile: "[Placeholder] Use a PNG or JPEG image up to 256 KB.", // FX-3: 07-Y, pending the owner
       scaled: "[Placeholder] We made the image smaller to fit 800 by 400 pixels.",
+      tooDetailed:
+        "[Placeholder] This image is too detailed to keep as a signature. Use a scan on a plain white background.",
     });
   });
 });

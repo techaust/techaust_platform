@@ -21,6 +21,10 @@ apps/web/test-results/
 apps/web/.lighthouseci/
 apps/web/.lhci/
 apps/web/wrangler.lhci.jsonc
+# browser test output of the admin and portal (FX-3): reports and the throwaway sign-in state stay on the machine
+apps/admin/test-results/
+apps/admin/.e2e/
+apps/portal/test-results/
 # owner-supplied originals (moved into packages/ui/brand/source in M1.1)
 brand-incoming/
 .claude/launch.json
@@ -34,3 +38,5 @@ apps/web/catalogue-snapshot.json
 packages/pdf/visual/__snapshots__/win32/
 packages/pdf/visual/__snapshots__/darwin/
 packages/pdf/visual/test-results/
+# the quote form's list of services, written at build time from the catalogue snapshot (apps/web/src/lib/quotable-build.ts)
+apps/web/src/generated/

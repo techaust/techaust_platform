@@ -84,6 +84,7 @@ describe("Content-Security-Policy of the admin SPA [ADM-AUTH-01, docs/08 3.1]", 
     expect(all["x-content-type-options"]).toEqual(["nosniff"]);
     expect(all["referrer-policy"]).toEqual(["strict-origin-when-cross-origin"]);
     expect(all["cross-origin-opener-policy"]).toEqual(["same-origin"]);
+    expect(all["cross-origin-resource-policy"]).toEqual(["same-site"]); // audit A1 finding 2
     expect(all["x-robots-tag"]?.[0]).toMatch(/noindex/);
   });
 });

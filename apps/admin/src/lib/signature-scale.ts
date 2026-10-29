@@ -1,7 +1,8 @@
 // The signature image is scaled down in the browser before it uploads (FX-3, A6 1c; ADM-SET-01): an image larger than 800 by 400 pixels (core
-// SIGNATURE_MAX_WIDTH and _HEIGHT) is drawn onto a canvas that fits inside that box, the aspect kept, and sent as a PNG. An image that already
-// fits is sent as it is (no second compression). The API refuses anything larger from the header (worker/settings-signature.ts), so the PDF's
-// integrity check never inflates megabytes of pixels. The drawing goes through `ImageIo`, so the rules are tested without a browser.
+// SIGNATURE_MAX_WIDTH and _HEIGHT) is drawn onto a canvas that fits inside that box, the aspect kept, and sent as a PNG. Every other image is
+// drawn again as a PNG at its own size (PNG only, docs/13 2026-10-29: a JPEG included). The API refuses anything larger and any JPEG
+// (worker/settings-signature.ts), so the PDF's integrity check never inflates megabytes of pixels and always meets Flate data. The drawing goes
+// through `ImageIo`, so the rules are tested without a browser.
 import { SIGNATURE_MAX_HEIGHT, SIGNATURE_MAX_WIDTH } from "@techaust/core/settings";
 
 /** The size an image of `width` by `height` takes inside the box: never larger than it was, aspect kept, at least 1 pixel each way. */
@@ -43,7 +44,11 @@ export type ScaledSignature =
   | { ok: true; file: Blob; scaled: boolean; width: number; height: number }
   | { ok: false; reason: "unreadable" };
 
-/** The file to upload: the original when it fits, else a PNG that fits. An image the browser can't read is `unreadable`. */
+/**
+ * The file to upload: always a PNG that fits (docs/13, 2026-10-29: every image, a JPEG or a PNG that already fits included, is drawn again as
+ * a PNG, so the stored signature's pixels are Flate data the PDF integrity check can follow; it also leaves out any metadata the original
+ * carried). `scaled` says whether the size changed. An image the browser can't read is `unreadable`.
+ */
 export async function scaleSignature<I extends DecodedImage>(
   file: Blob,
   io: ImageIo<I>,
@@ -57,9 +62,8 @@ export async function scaleSignature<I extends DecodedImage>(
   try {
     if (!(image.width > 0 && image.height > 0)) return { ok: false, reason: "unreadable" };
     const fit = signatureFit(image.width, image.height);
-    if (!fit.scaled) return { ok: true, file, scaled: false, width: fit.width, height: fit.height };
     const png = await io.toPng(image, fit.width, fit.height);
-    return { ok: true, file: png, scaled: true, width: fit.width, height: fit.height };
+    return { ok: true, file: png, scaled: fit.scaled, width: fit.width, height: fit.height };
   } catch {
     return { ok: false, reason: "unreadable" };
   } finally {

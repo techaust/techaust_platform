@@ -42,7 +42,7 @@ describe("M2.4 form copy", () => {
     expect(contactPage.submit).toBe("Send message");
     expect(quotePage.h1).toBe("Tell us about your project");
     expect(quotePage.submit).toBe("Send request");
-    expect(thanksPage.h1).toBe("Thanks, we've got it.");
+    expect(thanksPage.h1).toBe("Thanks, we’ve got it.");
     expect(noJsNote).toBe(
       "This form needs JavaScript for spam protection. You can email contact@techaust.com instead.",
     );

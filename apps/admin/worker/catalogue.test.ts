@@ -609,6 +609,70 @@ describe("publish [ADM-CAT-05, WEB-G-07]", () => {
     expect(await countOf("site_snapshots")).toBe(before);
   });
 
+  it("refuses website text with '&', a banned phrase or a typed amount: 400 naming each field and rule, nothing stored [A2-2]", async () => {
+    await siteItems();
+    const o = await owner();
+    const amp = await mkItem({ name: "Audit & fix" });
+    const banned = await mkItem({
+      name: "Rescue",
+      default_lines: JSON.stringify([
+        {
+          description: "Guaranteed real-time sync",
+          unit: "fixed",
+          qtyMilli: 1_000,
+          rateInrMinor: 100,
+          rateUsdMinor: null,
+        },
+        {
+          description: "Setup for ₹5,000",
+          unit: "fixed",
+          qtyMilli: 1_000,
+          rateInrMinor: 100,
+          rateUsdMinor: null,
+        },
+      ]),
+    });
+    const before = await countOf("site_snapshots");
+    const audits = await countOf("audit_log", "action = 'catalogue.publish'");
+    const res = await publish(o.cookie);
+    expect(res.status).toBe(400);
+    const out = await json(res);
+    expect(out.error.code).toBe("public_text_refused");
+    expect(out.fields).toEqual([
+      { path: `items.${amp.code}.name`, issues: [{ rule: "ampersand" }] },
+      {
+        path: `items.${banned.code}.defaultLines.0.description`,
+        issues: [
+          { rule: "banned_phrase", phrase: "guarantee" },
+          { rule: "banned_phrase", phrase: "real-time" },
+        ],
+      },
+      { path: `items.${banned.code}.defaultLines.1.description`, issues: [{ rule: "typed_amount" }] },
+    ]);
+    // The answer names fields and rules, never the text itself.
+    expect(JSON.stringify(out)).not.toContain("Guaranteed");
+    expect(JSON.stringify(out)).not.toContain("5,000");
+    expect(await countOf("site_snapshots")).toBe(before);
+    expect(await countOf("audit_log", "action = 'catalogue.publish'")).toBe(audits);
+  });
+
+  it("checks the payment terms' schedule labels too", async () => {
+    await siteItems();
+    const o = await owner();
+    const terms = SETTINGS_DEFAULTS.payment_terms;
+    await putPaymentTerms({
+      ...terms,
+      buildSchedule: terms.buildSchedule.map((s, i) => (i === 0 ? { ...s, label: "Kick-off & design" } : s)),
+    });
+    const res = await publish(o.cookie);
+    expect(res.status).toBe(400);
+    expect((await json(res)).fields).toEqual([
+      { path: "paymentTerms.buildSchedule.0.label", issues: [{ rule: "ampersand" }] },
+    ]);
+    // Back to the default terms; not published here, so the next test's first successful publish is still a new row.
+    await putPaymentTerms();
+  });
+
   it("refuses when nothing is on the site, and when the payment terms are missing", async () => {
     await retireAll();
     const o = await owner();

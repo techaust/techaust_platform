@@ -4,6 +4,8 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { hasTypedAmount, STRAIGHT_APOSTROPHE, UNRENDERED } from "../packages/core/src/public-text.ts";
+import { parseCsp, parseHeaders } from "./headers-shared.mjs";
 import { lintBuiltPage, lintSource, readAllowList, visibleText } from "./web-content-lint.mjs";
 import { checkLinks } from "./web-link-check.mjs";
 import { checkOgImage, readDist } from "./web-og.mjs";
@@ -16,32 +18,7 @@ import {
 } from "./web-seo-checks.mjs";
 import { readSiteString, walk } from "./web-shared.mjs";
 
-/** The `/*` block of a Cloudflare `_headers` file as a lower-cased-name map. */
-export function parseHeaders(text) {
-  const headers = {};
-  let inBlock = false;
-  for (const raw of text.split(/\r?\n/)) {
-    if (raw.trim() === "" || raw.trim().startsWith("#")) continue;
-    if (!/^\s/.test(raw)) {
-      inBlock = raw.trim() === "/*";
-      continue;
-    }
-    if (!inBlock) continue;
-    const i = raw.indexOf(":");
-    if (i > 0) headers[raw.slice(0, i).trim().toLowerCase()] = raw.slice(i + 1).trim();
-  }
-  return headers;
-}
-
-/** Directive name → source list. */
-export function parseCsp(csp) {
-  const out = {};
-  for (const part of csp.split(";")) {
-    const [name, ...sources] = part.trim().split(/\s+/);
-    if (name) out[name.toLowerCase()] = sources;
-  }
-  return out;
-}
+export { parseCsp, parseHeaders };
 
 export function sha256Source(text) {
   return `'sha256-${createHash("sha256").update(text, "utf8").digest("base64")}'`;
@@ -68,6 +45,7 @@ const REQUIRED_HEADERS = [
   "referrer-policy",
   "permissions-policy",
   "cross-origin-opener-policy",
+  "cross-origin-resource-policy",
   "content-security-policy",
 ];
 
@@ -189,12 +167,32 @@ const ARROW_ENTITY = /&(?:rarr|harr|#8594|#8596|#x2192|#x2194);/gi;
 export function checkLeftovers(name, html) {
   const text = visibleText(html.replace(HIDDEN_ARROW, "").replace(ARROW_ENTITY, "→"));
   const problems = [];
-  for (const hit of text.matchAll(/\{\{|\}\}|\*\*|→|↔/g)) {
+  // the pattern is shared with the catalogue publish (@techaust/core public-text.ts, FX-2 review finding 1)
+  for (const hit of text.matchAll(UNRENDERED)) {
     const around = text
       .slice(Math.max(0, hit.index - 30), hit.index + 30)
       .replace(/\s+/g, " ")
       .trim();
     problems.push(`${name}: unrendered content "${hit[0]}" in visible text ("…${around}…")`);
+  }
+  return problems;
+}
+
+/**
+ * Typographic apostrophes and quotes (’ ‘), never the straight ' (audit A2 finding 6; docs/07 writes them curly), in what
+ * a visitor reads or hears: page text and the read-out or shown attributes, titles and share text included. Code and
+ * preformatted blocks keep theirs.
+ */
+export function checkApostrophes(name, html) {
+  const text = visibleText(html.replace(/<(code|pre)\b[\s\S]*?<\/\1>/gi, " "));
+  const problems = [];
+  // the pattern is shared with the catalogue publish (@techaust/core public-text.ts, FX-2 review finding 1)
+  for (const hit of text.matchAll(STRAIGHT_APOSTROPHE)) {
+    const around = text
+      .slice(Math.max(0, hit.index - 30), hit.index + 30)
+      .replace(/\s+/g, " ")
+      .trim();
+    problems.push(`${name}: straight ' in visible text ("…${around}…"; write ’ or ‘ ’)`);
   }
   return problems;
 }
@@ -209,8 +207,8 @@ export function checkAmountLiterals(name, source) {
     const t = line.trim();
     if (code && (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*") || t.startsWith("<!--")))
       return;
-    const rupee = "(?:₹|&#8377;|&#x20b9;|&inr;|\\bRs\\.?|\\bINR|\\bUSD|US\\$|\\$)";
-    if (new RegExp(`${rupee}\\s*\\d|\\d\\s*(?:₹|&#8377;|&#x20b9;|\\bINR\\b|\\bUSD\\b)`, "i").test(t))
+    // The rule is shared with the admin's catalogue publish (@techaust/core public-text.ts, audit A2 finding 2).
+    if (hasTypedAmount(t))
       problems.push(
         `${name}:${i + 1}: a price amount typed into a template (use {{price:Sx}} / formatMoney)`,
       );
@@ -360,6 +358,7 @@ export function checkWeb(webDir) {
         ...checkHtml(name, text, headersText),
         ...checkAmpersands(name, text),
         ...checkLeftovers(name, text),
+        ...checkApostrophes(name, text),
         ...checkMetaDescription(name, text),
         ...checkExternalLinks(name, text),
         ...lintBuiltPage(name, text, allow.entries),

@@ -21,6 +21,7 @@ import {
   touchLeadSql,
 } from "@techaust/core/lead-lifecycle";
 import { generateLeadRef } from "@techaust/core/lead-ref";
+import type { Currency } from "@techaust/core/money";
 import { decide, ROLES } from "@techaust/core/permissions";
 import {
   fillReplyTemplate,
@@ -63,6 +64,12 @@ import {
 const ALREADY_CONVERTED: ApiError = { code: "already_converted", message: "That lead is already a client" };
 const GSTIN_IN_USE: ApiError = { code: "gstin_in_use", message: "A client with that GSTIN already exists" };
 const OWNER_INVALID: ApiError = { code: "owner_invalid", message: "Choose an active member of staff" };
+const ANSWERS_FIXED: ApiError = {
+  code: "lead_answers_fixed",
+  message: "The website form's answers can't be changed",
+};
+/** The quote form's answers on a lead: only a manual lead's can be changed (`PATCH /leads/:id`). */
+const QUOTE_ANSWER_COLUMNS: readonly string[] = ["currency", "budget_band", "timeline"];
 const LOST_REASON_REQUIRED: ApiError = {
   code: "lost_reason_required",
   message: "Choose why the lead was lost",
@@ -401,6 +408,11 @@ const patchRequest = z.object({
   phone: z.optional(optText(40)),
   company: z.optional(optText(120)),
   country: z.optional(z.nullable(country)),
+  // FX-3 round 2 (docs/13 2026-10-29): a manual lead's quote answers can be changed later, with the creation checks on the values the lead
+  // ends up with (a band needs its own currency). A website lead's answers are the visitor's own words: 409 `lead_answers_fixed`.
+  currency: z.optional(z.nullable(z.enum(["INR", "USD"]))),
+  budgetBand: z.optional(z.nullable(z.string().check(z.maxLength(20)))),
+  timeline: z.optional(z.nullable(z.string().check(z.maxLength(20)))),
 });
 
 const noteRequest = z.object({ body: text(2000) });
@@ -643,7 +655,7 @@ export const leads = new Hono<AppEnv>()
     return c.json({ items: page.items.map(activityJson), next: page.next });
   })
 
-  // ---- edit the fields a person owns (owner, next action, contact) ----
+  // ---- edit the fields a person owns (owner, next action, contact; a manual lead's quote answers) ----
   .patch("/:id", param(idParam), body(patchRequest), async (c) => {
     const u = actor(c);
     const { id } = c.req.valid("param");
@@ -651,13 +663,21 @@ export const leads = new Hono<AppEnv>()
     const db = c.env.DB;
     const lead = await db
       .prepare(
-        "SELECT ref, owner_id, next_action_at, next_action_note, contact_name, contact_email, contact_phone, contact_company, contact_country, updated_at FROM leads WHERE id = ?1",
+        "SELECT ref, source, owner_id, next_action_at, next_action_note, contact_name, contact_email, contact_phone, contact_company, contact_country, currency, budget_band, timeline, updated_at FROM leads WHERE id = ?1",
       )
       .bind(id)
       .first<Record<string, string | number | null>>();
     if (!lead) return err(c, NOT_FOUND, 404);
     if (lead.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
     if (f.country && !isCountryCode(f.country)) return err(c, BAD_REQUEST, 400);
+    // The quote answers as the lead will hold them, checked as at creation: a band is one of its own currency's, the timeline the form's.
+    // The UPDATE below runs only on this same version of the row (`updated_at`), so what is checked here is what it changes.
+    const nextCurrency = f.currency !== undefined ? f.currency : (lead.currency as Currency | null);
+    const nextBand = f.budgetBand !== undefined ? f.budgetBand : (lead.budget_band as string | null);
+    const nextTimeline = f.timeline !== undefined ? f.timeline : (lead.timeline as string | null);
+    if (nextBand !== null && (nextCurrency === null || !isBudgetBand(nextCurrency, nextBand)))
+      return err(c, BAD_REQUEST, 400);
+    if (nextTimeline !== null && !isTimeline(nextTimeline)) return err(c, BAD_REQUEST, 400);
     if (f.ownerId && !(await activeStaff(db, f.ownerId))) return err(c, OWNER_INVALID, 400);
 
     // field name (as the timeline names it), column, wanted value
@@ -674,11 +694,16 @@ export const leads = new Hono<AppEnv>()
       ["phone", "contact_phone", f.phone === undefined ? undefined : norm(f.phone)],
       ["company", "contact_company", f.company === undefined ? undefined : norm(f.company)],
       ["country", "contact_country", f.country],
+      ["currency", "currency", f.currency],
+      ["budget_band", "budget_band", f.budgetBand],
+      ["timeline", "timeline", f.timeline],
     ];
     const changes = wanted.filter(
       (w): w is [string, string, string | number | null] => w[2] !== undefined && w[2] !== lead[w[1]],
     );
     if (!changes.length) return c.json({ ok: true, changed: false, updatedAt: lead.updated_at });
+    if (lead.source !== "manual" && changes.some(([, col]) => QUOTE_ANSWER_COLUMNS.includes(col)))
+      return err(c, ANSWERS_FIXED, 409);
 
     const t = Date.now();
     const sets = changes.map(([, col], i) => `${col} = ?${i + 4}`);
