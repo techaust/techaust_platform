@@ -293,3 +293,16 @@ Commands: `pnpm install --frozen-lockfile --offline`; `pnpm dev:secrets`, `pnpm 
 
 Not verified: the export draft's note switch row itself (the sample data has no export declaration terms block, so `x.declaration.available` is false and the row isn't drawn; the panel's container is in place and the test checks the row whenever it is drawn). The e2e folder isn't type-checked by `tsc` (as before); Playwright compiled and ran it. No placeholder text.
 Open questions: none.
+
+### Re-check (reviewer, Opus 5.5 high, 2026-10-31): APPROVE (1 medium, 5 low), condensed by the lead
+Ran at ff07c985: `pnpm check` exit 0; core 1,849 (99.04 %); db 503; pdf 360; jobs 531; admin 3,472; e2e 7 passed with axe. Live: five Settings pages at 390/768/1024/1280/1920, the notes ledger (also with a ₹10,00,00,000.00 amount), the export panel, keyboard order, no app console errors. Screenshots `.logs/shots/rt1-notes-rules-recheck/`. Fixes 1, 2, 3, 6–11 hold; 12 done.
+1. **medium** `packages/core/src/export-invoice.ts:225-237` (`lutForFyAsSql`, used at `note-model.ts:373`): widening core to match SQL lets a malformed pre-M5.2 legacy ARN pass the debit-note blocker and be sealed and printed. Unreachable today (every Tax save folds and clears the old key; staging has no LUT; production no D1).
+2. **low** `packages/db/src/sql-rules.ts:8`: the `LUT_FOR_FY_SQL` comment names the wrong pure twin.
+3. **low** `apps/admin/src/lib/invoices.ts:556`, `apps/admin/src/routes/invoices/types-parts.tsx:543`: pass `UNKNOWN` to `fyLabel` in sentences.
+4. **low** M5.2 export and advance paths still use `lutFor(lutsOf)` (fail closed): the legacy-LUT migration follow-up closes it.
+5. **low** `note-view.ts:82` / `note-model.ts:327`: each caller still picks the recipient status for `creditDeadlineOf`.
+6. **low (tests)** `apps/jobs/test/pdf-note-seed.ts:~192`: a restore error in `finally` can hide the real error.
+
+**Lead triage:** fix 1 by making `lutForFyAsSql` count a legacy entry only when `legacyLutFate` folds it (fail closed again; the twin test states the one known difference), plus 2, 3, 5 and 6. 4 stays the listed follow-up: one migration that folds any legacy `tax.lut` into the list and drops the key, **a precondition before production** (to `check-prod-readiness` thinking in Phase 7).
+
+### Re-check fixes
