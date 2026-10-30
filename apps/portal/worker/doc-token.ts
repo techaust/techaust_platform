@@ -33,6 +33,8 @@ import {
 } from "./context.ts";
 import {
   CLIENT_INVOICE_TYPES,
+  CREDIT_NOTES_SQL,
+  type CreditNoteRow,
   LINES_SQL,
   type LineRow,
   STATUSES_SQL,
@@ -99,8 +101,9 @@ export const docToken = new Hono<AppEnv>()
     c.set("accessDone", true);
     // One batch: the frozen lines (read first), the audit row of the use, the first view (`VIEW_SQL`: set once, only on a document the client may still
     // open, so never on a void one; FX-5, 08-C RA-10), and the access row.
-    const [lines] = await db.batch([
+    const [lines, credits] = await db.batch([
       db.prepare(LINES_SQL).bind(doc.link_client_id, doc.id),
+      db.prepare(CREDIT_NOTES_SQL).bind(doc.link_client_id, doc.id),
       auditStmt(db, {
         ...requestInfo(c),
         actorType: "contact",
@@ -113,7 +116,13 @@ export const docToken = new Hono<AppEnv>()
       db.prepare(VIEW_SQL).bind(doc.link_client_id, doc.id, t),
       accessStmt(db, accessEntry(c, 200, doc.link_contact_id)),
     ]);
-    return c.json({ document: summaryOf(doc, (lines?.results ?? []) as LineRow[]) });
+    return c.json({
+      document: summaryOf(
+        doc,
+        (lines?.results ?? []) as LineRow[],
+        (credits?.results ?? []) as CreditNoteRow[],
+      ),
+    });
   })
   // The PDF behind the link (the same open and the same counter). The headers are those of the offer PDF: an attachment, never rendered, never cached, never sniffed.
   // Opening it is a view too (FX-5, 08-C RA-10; parity with the signed-in PDF): the first view and the access row in one batch, before the answer.

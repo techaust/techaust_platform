@@ -1,8 +1,9 @@
 // What the client sees of an invoice, proforma, credit note or debit note (M5.4; POR-06, LD62; Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22)): a summary built from the FROZEN row of the document and its frozen lines, never from the
 // R2 envelope (the full document is the PDF, which this Worker streams but never builds) and never importing `@techaust/pdf` (a 40 KB module the portal does not carry). The same function answers the
 // emailed link (`/t/document`) and the signed-in routes (`/invoices/:id`), so the two can never disagree. Pure: no I/O.
-import { gstEstimateOfHeaderExtras } from "@techaust/core/invoices";
+import { gstEstimateOfHeaderExtras, NOTES_MAX, noteOfFromStored } from "@techaust/core/invoices";
 import { formatMoney, money } from "@techaust/core/money";
+import { percentFromBp } from "@techaust/core/schedule-text";
 
 /** The types a client can open: the whole invoice family except a receipt (M6). */
 export const CLIENT_INVOICE_TYPES = [
@@ -26,10 +27,15 @@ const quoted = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(", ");
 export const TYPES_SQL = quoted(CLIENT_INVOICE_TYPES);
 export const STATUSES_SQL = quoted(CLIENT_INVOICE_STATUSES);
 
-/** The columns of the frozen document the summary needs. */
+/**
+ * The columns of the frozen document the summary needs. `parent_open_id` (final sweep P15): a credit or debit note's invoice, only when it is the same
+ * client's and one the client may open itself (frozen, not void, an open status and type: the list's own rule), so the page can link to it.
+ */
 export const SUMMARY_COLS = `d.id, d.type, d.status, d.number_display, d.issue_date, d.due_date, d.currency, d.subtotal_minor, d.discount_minor, d.taxable_minor, d.cgst_minor, d.sgst_minor, d.igst_minor,
     d.round_off_minor, d.total_minor, d.total_inr_minor, d.paid_minor, d.credited_minor, d.balance_minor, d.issuer, d.header_extras, d.pdf_r2_key, d.viewed_at,
-    (SELECT p.number_display FROM documents p WHERE p.id = d.parent_id AND p.client_id = d.client_id) AS parent_number`;
+    (SELECT p.number_display FROM documents p WHERE p.id = d.parent_id AND p.client_id = d.client_id) AS parent_number,
+    (SELECT p.id FROM documents p WHERE p.id = d.parent_id AND p.client_id = d.client_id AND d.type IN ('credit_note', 'debit_note')
+       AND p.frozen_at IS NOT NULL AND p.voided_at IS NULL AND p.status IN (${STATUSES_SQL}) AND p.type IN (${TYPES_SQL})) AS parent_open_id`;
 
 /**
  * The client's first view of one document (`?1` client, `?2` document, `?3` now; a primary-key UPDATE, 0 rows after the first view). FX-5 (owner decision
@@ -44,9 +50,18 @@ export const VIEW_SQL = `UPDATE documents SET viewed_at = ?3
 /** The PDF routes' view: only a PDF that is delivered counts (a 409 `pdf_pending` gives the client nothing; lead, 2026-10-30). */
 export const VIEW_PDF_SQL = `${VIEW_SQL} AND pdf_r2_key IS NOT NULL`;
 
-/** The frozen lines of one document of one client. `?1` client, `?2` document. */
+/** The frozen lines of one document of one client, with each line's discount as typed (the PDF's Discount column, final sweep P3). `?1` client, `?2` document. */
 export const LINES_SQL =
-  "SELECT l.position, l.description, l.detail, l.sac, l.qty_milli, l.unit, l.rate_minor, l.taxable_minor, l.gst_rate_bp, l.cgst_minor, l.sgst_minor, l.igst_minor, l.line_total_minor FROM document_lines l JOIN documents d ON d.id = l.document_id WHERE d.client_id = ?1 AND d.id = ?2 ORDER BY l.position LIMIT 101";
+  "SELECT l.position, l.description, l.detail, l.sac, l.qty_milli, l.unit, l.rate_minor, l.discount_kind, l.discount_value, l.taxable_minor, l.gst_rate_bp, l.cgst_minor, l.sgst_minor, l.igst_minor, l.line_total_minor FROM document_lines l JOIN documents d ON d.id = l.document_id WHERE d.client_id = ?1 AND d.id = ?2 ORDER BY l.position LIMIT 101";
+
+/**
+ * The issued credit notes of the same client against one invoice (final sweep P2, the "Credited ({numbers})" row): only notes the client may open
+ * itself (frozen, not void, an open status), in the order they were issued. `?1` client, `?2` the invoice. At most `NOTES_MAX` (20) can be issued
+ * per invoice (LD51), so one page holds them all. Served by `documents_parent`.
+ */
+export const CREDIT_NOTES_SQL = `SELECT n.id, n.number_display FROM documents n INDEXED BY documents_parent
+   WHERE n.parent_id = ?2 AND n.client_id = ?1 AND n.type = 'credit_note' AND n.frozen_at IS NOT NULL AND n.voided_at IS NULL AND n.status IN (${STATUSES_SQL})
+   ORDER BY n.frozen_at, n.id LIMIT ${NOTES_MAX}`;
 
 export type SummaryRow = {
   id: string;
@@ -74,6 +89,7 @@ export type SummaryRow = {
   pdf_r2_key: string | null;
   viewed_at: number | null;
   parent_number: string | null;
+  parent_open_id: string | null;
 };
 export type LineRow = {
   position: number;
@@ -83,6 +99,9 @@ export type LineRow = {
   qty_milli: number;
   unit: string;
   rate_minor: number;
+  /** "percent" (value in basis points) or "fixed" (value in minor units), both null when the line has no discount. */
+  discount_kind: string | null;
+  discount_value: number | null;
   taxable_minor: number;
   gst_rate_bp: number;
   cgst_minor: number;
@@ -152,8 +171,35 @@ function bankOf(issuer: string | null, currency: string): BankView {
   }
 }
 
+export type CreditNoteRow = { id: string; number_display: string | null };
+
 const text = (minor: number, currency: string) =>
   formatMoney(money(minor, currency === "USD" ? "USD" : "INR"));
+
+/** A line's discount as the PDF prints it (`packages/pdf/src/invoice-view.ts`): "10 %" for a percentage, the amount for a fixed one; null for none. */
+function discountText(l: LineRow, currency: string): string | null {
+  if (l.discount_value === null || !Number.isSafeInteger(l.discount_value) || l.discount_value < 0)
+    return null;
+  if (l.discount_kind === "percent") return `${percentFromBp(l.discount_value)} %`;
+  if (l.discount_kind === "fixed") return text(l.discount_value, currency);
+  return null;
+}
+
+/** A credit or debit note's reason as frozen in `header_extras.noteOf` (the code, and the words typed for it); null on other types or damaged data. */
+function noteReasonOf(type: string, headerExtras: string | null): { code: string; text: string } | null {
+  if ((type !== "credit_note" && type !== "debit_note") || !headerExtras) return null;
+  let extras: unknown;
+  try {
+    extras = JSON.parse(headerExtras);
+  } catch {
+    return null;
+  }
+  const noteOf =
+    typeof extras === "object" && extras !== null
+      ? noteOfFromStored((extras as { noteOf?: unknown }).noteOf)
+      : null;
+  return noteOf ? { code: noteOf.reason.code, text: noteOf.reason.text } : null;
+}
 
 /** The list row: what a table needs. */
 export function listItemOf(
@@ -189,7 +235,8 @@ export function listItemOf(
  * The page's data. Money is given in minor units with the currency AND as text for the headline figures. A credit note has no due date and no balance (nothing is owed on it); a debit note's due date is its
  * own (Q30). `pdfReady` says whether the PDF exists yet (the download answers 409 `pdf_pending` until it does). No payment fields here: paying is M6 and M7.1.
  */
-export function summaryOf(r: SummaryRow, lines: readonly LineRow[]) {
+export function summaryOf(r: SummaryRow, lines: readonly LineRow[], creditNotes: readonly CreditNoteRow[]) {
+  const isInvoice = r.type === "tax_invoice" || r.type === "export_invoice";
   return {
     id: r.id,
     type: r.type,
@@ -199,6 +246,12 @@ export function summaryOf(r: SummaryRow, lines: readonly LineRow[]) {
     dueDate: r.due_date,
     currency: r.currency,
     parentNumber: r.parent_number,
+    /** Final sweep P15: a note's invoice, when the client may open it (same client, open status); null otherwise and on every other type. */
+    parentId: r.parent_open_id,
+    /** Final sweep P15: a credit or debit note's reason as frozen (`code` is one of core `NOTE_REASONS`; `text` the words typed); null on other types. */
+    noteReason: noteReasonOf(r.type, r.header_extras),
+    /** Final sweep P2: the issued credit notes against this invoice (the "Credited" row names them); empty on every other type. */
+    creditNotes: isInvoice ? creditNotes.map((n) => ({ id: n.id, numberDisplay: n.number_display })) : [],
     /**
      * FX-4 (A5 5): a proforma sealed with the estimate marker (every one issued from FX-4 on) shows its tax heads as estimates; one sealed before shows
      * as it was. False on every other type (Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28): a proforma's GST is shown as an estimate).
@@ -228,6 +281,10 @@ export function summaryOf(r: SummaryRow, lines: readonly LineRow[]) {
       qtyMilli: l.qty_milli,
       unit: l.unit,
       rateMinor: l.rate_minor,
+      /** Final sweep P3: the line's discount as typed ("percent": basis points; "fixed": minor units) and as the PDF prints it. */
+      discountKind: l.discount_value === null ? null : l.discount_kind,
+      discountValue: l.discount_value,
+      discount: discountText(l, r.currency),
       taxableMinor: l.taxable_minor,
       gstRateBp: l.gst_rate_bp,
       cgstMinor: l.cgst_minor,
