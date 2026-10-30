@@ -11,7 +11,7 @@ import { DataTable } from "../../components/data-table.tsx";
 import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { FormField, NumberUnit, SettingRow, Switch } from "../../components/form.tsx";
 import { AlertTriangle, Lock, Pencil, Plus, Trash } from "../../components/icons.tsx";
-import { GSTR1_FILING_COPY } from "../../lib/copy-zd.ts";
+import { CN_CUTOFF_HINT, GSTR1_FILING_COPY } from "../../lib/copy-zd.ts";
 import { dateError } from "../../lib/date-field.ts";
 import {
   CHECKLIST_LABELS,
@@ -516,11 +516,7 @@ export function TaxSettings({ readOnly }: { readOnly: boolean }) {
               />
               <RowError id="f-invoiceAlertDays" error={error("f-invoiceAlertDays")} />
             </SettingRow>
-            <SettingRow
-              id="tax-cn"
-              label="Credit note cut-off"
-              description="After this date following the financial year of the supply, credit notes for it are blocked."
-            >
+            <SettingRow id="tax-cn" label="Credit note cut-off" description={CN_CUTOFF_HINT}>
               <div className="pair">
                 <label className="visually-hidden" htmlFor="f-creditNoteCutoff-day">
                   Day

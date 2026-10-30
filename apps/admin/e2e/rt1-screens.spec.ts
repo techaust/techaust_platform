@@ -1,5 +1,5 @@
 // rt1 screens in the browser [ADM-INV-11, ADM-INV-18, ADM-REP-04, ADM-SET-03]: 07-ZD's lines where they are drawn, axe (WCAG 2.2 AA) on each, both themes,
-// a desktop and a phone width. Signed in as global-setup's Owner on the LOCAL database, with E2E_SAMPLE=1's sample invoices (e2e/sample-data.ts).
+// a desktop, a tablet and a phone width. Signed in as global-setup's Owner on the LOCAL database, with E2E_SAMPLE=1's sample invoices (e2e/sample-data.ts).
 //   - Settings › Tax: "GSTR-1 filing" (line 1) is saved and read back (Monthly, then Quarterly again), through the real API.
 //   - The credit-note deadline on the sample tax invoice: the server's own banner (before the deadline, line 2), then the warning (line 4) with the quarterly
 //     line (line 3) and the passed line (line 5). The local clock can't reach a 2027 deadline, so those two answers are the server's view with only
@@ -8,6 +8,9 @@
 //     FY and links "Settings › Tax" to the LUT list; the LUT and the draft are put back as they were.
 //   - Reports › GST exports: the 3B held row (line 7) and the panel's line (line 8). The register is answered in the browser with clearly fake rows
 //     (an invoice and three credit notes to "Sample client A (fake)", two not accepted in IMS), and the step-up is taken as fresh (SIMULATED).
+//   - rt1 review 2 and 3, laid out by their own width: every Settings list's rows go side by side only when the words keep at least 16rem (768 px has
+//     the menu and the settings menu beside them), and no part of an issued note's row in the invoice's notes ledger lies over another, at 768, 1024,
+//     1280 and 1920; the same for the note switch of an export invoice draft (made for the test and deleted after).
 // Screenshots only when RT1_SHOTS names a folder (absolute path); the checks run either way. Run through the queue:
 //   E2E_SAMPLE=1 RT1_SHOTS=<abs dir> bash tools/heavy.sh --log rt1-e2e pnpm --filter @techaust/admin exec playwright test e2e/rt1-screens.spec.ts
 import { mkdirSync } from "node:fs";
@@ -18,12 +21,34 @@ import { expect, type Page, test } from "@playwright/test";
 const FAILING = new Set(["moderate", "serious", "critical"]);
 const SHOTS = process.env.RT1_SHOTS ?? "";
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
+/** `menu: "open"`: the side menu kept open at a width where it starts as icons (below 1024 px), as a person can choose; the narrowest content. */
+type View = { readonly width: number; readonly theme: "light" | "dark"; readonly menu?: "open" };
 const VIEWS = [
   { width: 1280, theme: "light" },
   { width: 1280, theme: "dark" },
+  // rt1 review: the tablet width, where the menu leaves the content a phone's width
+  { width: 768, theme: "light" },
+  { width: 768, theme: "dark" },
   { width: 390, theme: "light" },
   { width: 390, theme: "dark" },
-] as const;
+] as const satisfies readonly View[];
+/** The layout checks of the review fixes: the four widths (768 with the menu as icons and kept open, as the review saw it), the theme alternating (each
+ *  against the opposite OS theme). */
+const LAYOUT_VIEWS = [
+  { width: 768, theme: "light", menu: "open" },
+  { width: 768, theme: "dark" },
+  { width: 1024, theme: "dark" },
+  { width: 1280, theme: "light" },
+  { width: 1920, theme: "dark" },
+] as const satisfies readonly View[];
+/** Every Settings page whose rows are a `settings-rows` list (shell.css `.setting`). */
+const SETTINGS_ROW_PAGES = [
+  "/settings/tax",
+  "/settings/payment-terms",
+  "/settings/email",
+  "/settings/retention",
+  "/settings/flags",
+];
 
 // biome-ignore lint/suspicious/noExplicitAny: API answers are read loosely here, as in the sample data
 type J = Record<string, any>;
@@ -44,17 +69,22 @@ async function axe(page: Page, where: string) {
   );
 }
 
-async function view(page: Page, v: (typeof VIEWS)[number]) {
+async function view(page: Page, v: View) {
   await page.setViewportSize({ width: v.width, height: 900 });
   // the in-app theme against the opposite OS theme: the app's choice must win
   await page.addInitScript((t) => localStorage.setItem("ta-admin-theme", t), v.theme);
+  // the side menu: kept open, or as the shell chooses by width (init scripts run in order, so the last view's choice wins)
+  await page.addInitScript((open) => {
+    if (open) localStorage.setItem("ta-admin-nav", "expanded");
+    else localStorage.removeItem("ta-admin-nav");
+  }, v.menu === "open");
   await page.emulateMedia({ colorScheme: v.theme === "light" ? "dark" : "light", reducedMotion: "reduce" });
 }
 
 /** An element's screenshot (and the page's at 1280 when `page` is asked), named by what it shows, the width and the theme. */
-async function shot(page: Page, name: string, v: (typeof VIEWS)[number], target?: string) {
+async function shot(page: Page, name: string, v: View, target?: string) {
   if (!SHOTS) return;
-  const file = join(SHOTS, `${name}-${v.width}-${v.theme}.png`);
+  const file = join(SHOTS, `${name}-${v.width}${v.menu === "open" ? "-menu-open" : ""}-${v.theme}.png`);
   if (target) {
     const el = page.locator(target).first();
     await el.scrollIntoViewIfNeeded();
@@ -122,6 +152,10 @@ test.describe("rt1 screens", () => {
         "Sets the last day for credit notes on last year's invoices: 31 October for GST-registered clients, and 30 September for other clients if you file quarterly.",
       );
       await expect(field).toHaveAttribute("aria-describedby", "tax-gstr1-desc");
+      // 07-ZD line 9 (rt1 review 1): the cut-off's hint, which points at this field
+      await expect(page.locator("#tax-cn-desc")).toHaveText(
+        "Credit notes on last year's invoices are blocked after the last GST return period that ends before this date (see GSTR-1 filing below).",
+      );
       await axe(page, `/settings/tax ${v.width} ${v.theme}`);
       await shot(page, "tax-gstr1-filing", v, ".settings-rows:has(#f-gstr1Frequency)");
     }
@@ -340,6 +374,132 @@ test.describe("rt1 screens", () => {
       await shot(page, "sales-3b-held-SIMULATED", v, ".report-results");
     }
     await page.unrouteAll({ behavior: "ignoreErrors" });
+  });
+
+  test("rt1 review 2 and 3: the Settings rows and the notes ledger are laid out by their own width (768, 1024, 1280, 1920)", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const inv = (await invoices(page)).find(
+      (r) => r.type === "tax_invoice" && r.status !== "void" && r.status !== "draft",
+    );
+    expect(inv, "the sample data has an issued tax invoice").toBeTruthy();
+    const href = `/invoices/${encodeURIComponent(inv?.id)}`;
+    const rem = 16;
+    for (const v of LAYOUT_VIEWS) {
+      await view(page, v);
+      for (const route of SETTINGS_ROW_PAGES) {
+        await page.goto(route);
+        await settled(page);
+        const rows = await page.locator(".settings-rows .setting").evaluateAll((els) =>
+          els.map((el) => {
+            const t = el.querySelector(".setting__text")?.getBoundingClientRect();
+            const c = el.querySelector(".setting__control")?.getBoundingClientRect();
+            // the container's content box, as the container query measures it
+            const l = el.closest(".settings-rows");
+            const cs = l ? getComputedStyle(l) : null;
+            return {
+              label: el.querySelector(".setting__label")?.textContent ?? "",
+              words: t?.width ?? 0,
+              list: l && cs ? l.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) : 0,
+              // side by side when the control starts to the right of the words, on the same line
+              beside: !!t && !!c && c.left >= t.right && c.top < t.bottom,
+            };
+          }),
+        );
+        expect(rows.length, `${route} has settings rows`).toBeGreaterThan(0);
+        for (const r of rows) {
+          // the words never get a column narrower than 16rem (a hint of 30 or so characters a line), side by side or stacked
+          expect(r.words, `${route} ${v.width} "${r.label}" words`).toBeGreaterThanOrEqual(16 * rem - 1);
+          // side by side only in a list of at least 40rem (shell.css `@container setting-rows`)
+          expect(r.beside, `${route} ${v.width} "${r.label}" in a ${Math.round(r.list)} px list`).toBe(
+            r.list >= 40 * rem,
+          );
+        }
+        expect(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+          ),
+          `${route} ${v.width}: no sideways scroll`,
+        ).toBe(true);
+        await axe(page, `${route} ${v.width} ${v.theme}`);
+        await shot(page, `settings-rows${route.replace("/settings/", "-")}`, v, ".settings-rows");
+      }
+      // The notes ledger: no part of an issued note's row lies over another (the review saw the type and date under the amount at 768).
+      await page.goto(href);
+      await settled(page);
+      const overlaps = await page.locator(".notes-row:not(.notes-row--draft)").evaluateAll((els) =>
+        els.flatMap((row) => {
+          const parts = [...row.children].map((c) => ({ name: c.className, r: c.getBoundingClientRect() }));
+          const out: string[] = [];
+          for (const [i, a] of parts.entries())
+            for (const b of parts.slice(i + 1)) {
+              const x = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left);
+              const y = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top);
+              if (x > 1 && y > 1) out.push(`${a.name} over ${b.name}`);
+            }
+          // and the type's words keep their own width (the date under them at most)
+          const what = row.querySelector(".notes-row__type")?.getBoundingClientRect();
+          if (what && what.width < 40) out.push(`type ${what.width} px`);
+          return out;
+        }),
+      );
+      expect(
+        await page.locator(".notes-row:not(.notes-row--draft)").count(),
+        "an issued note",
+      ).toBeGreaterThan(0);
+      expect(overlaps, `${href} ${v.width}`).toEqual([]);
+      await axe(page, `${href} notes ${v.width} ${v.theme}`);
+      await shot(page, "notes-ledger", v, ".notes-panel");
+    }
+  });
+
+  test("rt1 review 3: the export invoice draft's note switch is a settings row laid out by its panel's width", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const exp = (await invoices(page)).find((r) => r.type === "export_invoice" && r.status !== "void");
+    expect(exp?.clientId, "the sample data has an export invoice").toBeTruthy();
+    const cat = await api(page, "/catalogue");
+    const services = (cat.data.items as J[])
+      .filter((i) => i.active !== false && i.priceInrMinor && i.priceUsdMinor)
+      .slice(0, 1)
+      .map((i) => ({ catalogueItemId: i.id }));
+    const made = await api(page, "/invoices", { body: { clientId: exp?.clientId, services } });
+    expect(made.status, "an export draft").toBe(201);
+    const id = made.data.id as string;
+    try {
+      for (const v of LAYOUT_VIEWS) {
+        await view(page, v);
+        await page.goto(`/invoices/${encodeURIComponent(id)}`);
+        await settled(page);
+        await expect(page.locator(".inv-export")).toBeVisible();
+        const row = page.locator(".inv-export .setting");
+        if (await row.count()) {
+          const g = await row.evaluate((el) => {
+            const t = el.querySelector(".setting__text")?.getBoundingClientRect();
+            const c = el.querySelector(".setting__control")?.getBoundingClientRect();
+            // the container's content box, as the container query measures it
+            const p = el.closest(".inv-export");
+            const cs = p ? getComputedStyle(p) : null;
+            return {
+              words: t?.width ?? 0,
+              panel: p && cs ? p.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) : 0,
+              beside: !!t && !!c && c.left >= t.right && c.top < t.bottom,
+            };
+          });
+          expect(g.words, `${v.width}: the note's words`).toBeGreaterThanOrEqual(16 * 16 - 1);
+          expect(g.beside, `${v.width}: in a ${Math.round(g.panel)} px panel`).toBe(g.panel >= 40 * 16);
+        }
+        await axe(page, `export draft ${v.width} ${v.theme}`);
+        await shot(page, "export-draft-panel", v, ".inv-export");
+      }
+    } finally {
+      const d = await api(page, `/invoices/${encodeURIComponent(id)}`);
+      await api(page, `/invoices/${encodeURIComponent(id)}?expectedUpdatedAt=${d.data.updatedAt}`, {
+        method: "DELETE",
+      });
+    }
   });
 });
 

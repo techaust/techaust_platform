@@ -6,7 +6,6 @@
 //
 // Money: amounts are the server's minor units, formatted through core; typed amounts are parsed through core (`moneyFrom`), the rate through core's
 // `parseFxRate` (digit by digit, no float). Nothing here adds, multiplies or rounds money: the only arithmetic is comparing two integers.
-import { financialYear } from "@techaust/core";
 import {
   FX_SOURCE_CODES,
   type FxSourceCode,
@@ -15,6 +14,7 @@ import {
   PURPOSE_CODE,
   parseFxRate,
 } from "@techaust/core/invoices";
+import { fyLabelOfToken } from "@techaust/core/pdf-jobs";
 import type { Currency } from "../api.ts";
 import { dayText, moneyText } from "./documents.ts";
 import { moneyFrom } from "./settings-form.ts";
@@ -186,10 +186,14 @@ export const advanceLine = (
 
 // ---- small rules -----------------------------------------------------------------------------------------------------------------------------------
 
-/** "2627" as people read it ("2026-27"); anything else as it is. */
-export function fyLabel(token: string | null | undefined): string {
-  if (!token || !/^\d{4}$/.test(token)) return token ?? "";
-  return financialYear(2000 + Number(token.slice(0, 2))).label;
+/**
+ * The admin's one FY label (rt1 review, finding 10): "2627" as people read it ("2026-27"), through core's `fyLabelOfToken`, which also refuses a
+ * damaged token ("2729"). A missing or damaged token reads as `otherwise` when given (a sentence passes `UNKNOWN`, never a guessed year), else
+ * as it came.
+ */
+export function fyLabel(token: string | null | undefined, otherwise?: string): string {
+  const label = token ? fyLabelOfToken(token) : null;
+  return label ?? otherwise ?? token ?? "";
 }
 
 /** A date as the admin writes it ("27 Oct 2026"), or the text as it came. */

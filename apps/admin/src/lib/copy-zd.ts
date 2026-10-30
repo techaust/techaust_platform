@@ -11,6 +11,10 @@ export const GSTR1_FILING_COPY = {
   hint: "Sets the last day for credit notes on last year's invoices: 31 October for GST-registered clients, and 30 September for other clients if you file quarterly.",
 } as const;
 
+/** Line 9: Settings › Tax, the "Credit note cut-off" hint (lead, 2026-10-31, staff-only wording under the owner's delegation; replaces the earlier one). */
+export const CN_CUTOFF_HINT =
+  "Credit notes on last year's invoices are blocked after the last GST return period that ends before this date (see GSTR-1 filing below).";
+
 /** Line 2, the note banner before the deadline: `lastDay` the last day a credit note may be dated, `returnBy` the day its return must be filed by. */
 export const deadlineBeforeLine = (lastDay: string, returnBy: string) =>
   `Issue any credit note for this invoice by ${lastDay}, so it goes into a GST return filed by ${returnBy}.`;
