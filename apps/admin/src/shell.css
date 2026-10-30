@@ -2434,6 +2434,15 @@ input[readonly] {
   white-space: nowrap;
 }
 
+/* T4 (07-ZC line 3): what the signatory switch reaches, as a hint under its badge (the label's weight is the row's; this reads as a note to it) */
+.checklist__scope {
+  max-width: 60ch;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  line-height: var(--text-sm--line-height);
+}
+
 .row-controls {
   display: flex;
   flex-wrap: wrap;

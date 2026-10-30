@@ -22,8 +22,9 @@ export const PDF_COPY = {
 
 export const SIGNATURE_COPY = {
   heading: "Signature",
-  // 07-R §7 (Researched 2026-10-28, Rule 46 CGST proviso, 08-C RA-06); replaces 07-P's hint.
-  hint: `Optional. Invoices you send electronically don't need a signature (GST Rule 46). If you add one, it prints above "Authorised signatory".`,
+  // 07-ZC line 2 (approved 2026-10-31; T4, rt2), replacing 07-R §7's: notes are signed under Rule 53(1A) (08-C RA-22) and an invoice for a payment received
+  // under Rule 50 (08-C RA-17), whatever the switch in Settings › Tax; the others keep the Rule 46(q) proviso (Researched 2026-10-28, 08-C RA-06).
+  hint: `Credit notes, debit notes and invoices for a payment received always carry the signature. Other invoices you send electronically don't need one (GST Rule 46). If you add one, it prints above "Authorised signatory".`,
   upload: "Upload signature",
   replace: "Replace",
   remove: "Remove",
