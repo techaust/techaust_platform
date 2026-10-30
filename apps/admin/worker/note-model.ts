@@ -16,7 +16,7 @@ import {
   debitNoteInput,
   isLiveParentStatus,
   isNoteType,
-  lutForFyAsSql,
+  lutForFy,
   NOTES_MAX,
   type NoteBlocker,
   type NoteKind,
@@ -324,21 +324,29 @@ export function leftOf(p: ParentCtx): { totalLeft: number; taxableLeft: number[]
  * Rule 59(1)-(2) CGST Rules (IFF) (08-C RA-31, RA-03)).
  */
 export function deadlineOf(p: ParentCtx, settings: InvoiceSettings): CreditDeadline {
-  return creditDeadlineOf({ row: p.row, extras: p.extras, recipientStatus: p.recipientStatus }, settings);
+  return creditDeadlineOf({ row: p.row, extras: p.extras, recipient: p.recipient }, settings);
 }
 
-/** What `creditDeadlineOf` reads of an issued invoice: its frozen row's FY, issue day and service completion, its header extras and its frozen recipient status. */
+/** What `creditDeadlineOf` reads of an issued invoice: its frozen row's FY, issue day and service completion, its header extras and its frozen recipient. */
 export type DeadlineSource = {
   row: { fy: string | null; issue_date: string | null; service_completed_on?: string | null | undefined };
   extras: InvoiceHeaderExtras;
-  recipientStatus: "registered" | "unregistered" | "overseas";
+  /** The invoice's FROZEN recipient (its `recipient` column as parsed); null or without a GST status when damaged. */
+  recipient: { readonly gstStatus?: string | undefined } | null | undefined;
 };
+
+/** The GST statuses an invoice freezes in its recipient. */
+const RECIPIENT_STATUSES = ["registered", "unregistered", "overseas"] as const;
+type RecipientStatus = (typeof RECIPIENT_STATUSES)[number];
 
 /**
  * rt1 review 8: the ONE place the credit-note deadline's input is built, for the note routes (`deadlineOf`) and the invoice's notes view (`invoiceNotesView`), so the
- * banner and the refusal are never fed different facts.
+ * banner and the refusal are never fed different facts. rt1 re-check 5: it also picks the recipient status itself, from the invoice's FROZEN recipient: every issued
+ * invoice freezes its GST status; one without a known status (damaged) is judged as unregistered, the earlier and stricter last day (lead D2).
  */
 export function creditDeadlineOf(src: DeadlineSource, settings: InvoiceSettings): CreditDeadline {
+  const frozen = src.recipient?.gstStatus;
+  const recipientStatus: RecipientStatus = RECIPIENT_STATUSES.find((s) => s === frozen) ?? "unregistered";
   return creditNoteDeadline(
     {
       parentFy: src.row.fy ?? "",
@@ -348,7 +356,7 @@ export function creditDeadlineOf(src: DeadlineSource, settings: InvoiceSettings)
     },
     settings.tax.creditNoteCutoff,
     settings.tax.annualReturnsFiled,
-    { frequency: settings.tax.gstr1Frequency, recipientStatus: src.recipientStatus },
+    { frequency: settings.tax.gstr1Frequency, recipientStatus },
   );
 }
 
@@ -369,8 +377,9 @@ export function noteLutOf(
   // rt1 F5: the parent's frozen `supply_type` column, the one the freeze WHERE, the trigger and `explainNote` read (lead D7)
   if (kind !== "debit" || (p.row.export_mode !== "lut" && p.row.supply_type !== "export_lut")) return null;
   const fy = fyOf(now).token;
-  // rt1 review 6: judged exactly as `LUT_FOR_FY_SQL` judges the stored row (the legacy `tax.lut` included), so this blocker, the freeze WHERE and trigger 0054 agree
-  return { fy, lut: lutForFyAsSql(fy, settings.tax) };
+  // rt1 re-check 1: `lutFor(lutsOf)` (the legacy `tax.lut` only when it folds), so this blocker never allows what `LUT_FOR_FY_SQL` (the freeze WHERE, trigger 0054)
+  // refuses; the one difference, a legacy ARN that would not fold, is refused here first (fail closed)
+  return { fy, lut: lutForFy(fy, settings.tax) };
 }
 
 export { creditAllowed };

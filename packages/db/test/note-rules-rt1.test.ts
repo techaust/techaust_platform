@@ -4,9 +4,10 @@
 //   - T2: a debit note on an export under LUT is issued only while a LUT with an ARN is saved for the FY of its own issue day (Researched 2026-10-30, Rule 96A(1)
 //     CGST Rules, Notification 37/2017-CT (08-C RA-19, Q39)): in the freeze's WHERE (`noteIssueTail`) and in the trigger `documents_debit_note_lut_fy` (0054, a
 //     new trigger only: no table is rebuilt).
-//   - rt1 review 6: core's check (`lutForFyAsSql`, what the admin's `noteLutOf` asks) is pinned to `LUT_FOR_FY_SQL` over the same stored rows.
-import { lutForFyAsSql } from "@techaust/core/invoices";
-import { resolveSetting, SETTINGS_DEFAULTS } from "@techaust/core/settings";
+//   - rt1 re-check 1: core's check (`lutForFy`, what the admin's `noteLutOf` asks) never allows what `LUT_FOR_FY_SQL` refuses over the same stored rows; the one
+//     known difference (a legacy `tax.lut` that would not fold: SQL counts it, core refuses it) is pinned as the only one.
+import { lutForFy } from "@techaust/core/invoices";
+import { legacyLutFate, resolveSetting, SETTINGS_DEFAULTS } from "@techaust/core/settings";
 import { afterEach, describe, expect, it } from "vitest";
 import { LUT_FOR_FY_SQL } from "../src/issue.ts";
 import { noteLutTriggerStatements } from "../src/triggers.ts";
@@ -171,7 +172,7 @@ describe("the note freeze's WHERE [rt1 T1, T2]: a refusal writes nothing", () =>
   });
 });
 
-describe("rt1 review 6: core's LUT-for-FY check is the twin of LUT_FOR_FY_SQL [ADM-INV-18; 08-C RA-19, Q39]", () => {
+describe("rt1 re-check 1: core's LUT-for-FY check fails closed against LUT_FOR_FY_SQL [ADM-INV-18; 08-C RA-19, Q39]", () => {
   const FYS = ["2526", "2627", "2728", "2829"];
   const full = Array.from({ length: 20 }, (_, i) => ({
     fy: `${30 + i}${31 + i}`,
@@ -206,8 +207,9 @@ describe("rt1 review 6: core's LUT-for-FY check is the twin of LUT_FOR_FY_SQL [A
     { luts: full },
   ];
 
-  it("for every stored value and FY, core says a LUT is saved exactly when SQL does", async () => {
+  it("for every stored value and FY, core never allows what SQL refuses; they differ only on a legacy letter that would not fold", async () => {
     let counted = 0;
+    const differences: string[] = [];
     for (const stored of CASES) {
       await setTax(stored);
       const rows = await all<{ fy: string; ok: number }>(
@@ -218,22 +220,32 @@ describe("rt1 review 6: core's LUT-for-FY check is the twin of LUT_FOR_FY_SQL [A
       // the admin reads the stored row through the schema, as `readInvoiceSettings` does
       const tax = resolveSetting("tax", stored);
       for (const r of rows) {
-        const core = lutForFyAsSql(r.fy, tax);
-        expect(core !== null, `${JSON.stringify(stored)} ${r.fy}`).toBe(r.ok === 1);
-        if (core) {
+        const what = `${JSON.stringify(stored)} ${r.fy}`;
+        const core = lutForFy(r.fy, tax);
+        // fail closed: core's blocker never lets through a debit note the freeze WHERE and trigger 0054 would refuse
+        if (core !== null) {
+          expect(r.ok, what).toBe(1);
           expect(core.fy).toBe(r.fy);
           counted++;
+        } else if (r.ok === 1) {
+          // the one known difference: SQL counts the legacy `lut` of that FY (its ARN not blank once spaces are trimmed) even when
+          // `legacyLutFate` would not fold it (an ARN the list refuses, a full list); core refuses it, so nothing malformed is sealed
+          expect(tax.luts.some((l) => l.fy === r.fy)).toBe(false);
+          expect(tax.lut.fy, what).toBe(r.fy);
+          expect(["invalid", "full"], what).toContain(legacyLutFate(tax).fate);
+          differences.push(what);
         }
       }
     }
-    // both sides of the comparison were met
+    // both sides of the comparison were met, and the known difference is exercised (hyphen, 31 characters, a tab, a full list)
     expect(counted).toBeGreaterThan(5);
+    expect(differences).toHaveLength(4);
   });
 
   it("with no `tax` row at all, neither counts a LUT", async () => {
     await run("DELETE FROM settings WHERE key = 'tax'");
     const r = await first<{ ok: number }>(`SELECT ${LUT_FOR_FY_SQL.replaceAll("?FY", "?1")} AS ok`, "2728");
     expect(r?.ok).toBe(0);
-    expect(lutForFyAsSql("2728", SETTINGS_DEFAULTS.tax)).toBeNull();
+    expect(lutForFy("2728", SETTINGS_DEFAULTS.tax)).toBeNull();
   });
 });
