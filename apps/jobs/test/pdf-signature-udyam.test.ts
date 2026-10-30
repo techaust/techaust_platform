@@ -71,17 +71,17 @@ const refusedBells = async (id: string) =>
       .bind(id)
       .all<{ title: string; link: string }>()
   ).results;
-/** The structured log lines of `pdf.refused`, by code. */
-const refusedCodes = (spy: ReturnType<typeof vi.spyOn>) =>
-  spy.mock.calls
-    .map((c) => {
+/** The codes of the structured `pdf.refused` log lines (`logEvent` writes one JSON object per `console.log` call). */
+const refusedCodes = (calls: readonly (readonly unknown[])[]): (string | undefined)[] =>
+  calls
+    .map((c): { ev?: string; code?: string } => {
       try {
-        return JSON.parse(String(c[0])) as { message?: string; event?: string; code?: string };
+        return JSON.parse(String(c[0])) as { ev?: string; code?: string };
       } catch {
         return {};
       }
     })
-    .filter((l) => JSON.stringify(l).includes("pdf.refused"))
+    .filter((l) => l.ev === "pdf.refused")
     .map((l) => l.code);
 const pdfStored = async (key: string) => (await realEnv.DOCS.head(key)) !== null;
 
@@ -97,7 +97,6 @@ describe("L4: a document that must be signed and froze no signature is refused [
       const s = await seedIssuedNote(name, { unsigned: true });
       await snapshot(s.id);
       const log = vi.spyOn(console, "log");
-      const warn = vi.spyOn(console, "warn");
       const b = browser();
       expect(await render(b, s.id)).toBe("refused");
       expect(b.calls).toHaveLength(0);
@@ -107,7 +106,7 @@ describe("L4: a document that must be signed and froze no signature is refused [
       const bells = await refusedBells(s.id);
       expect(bells.length).toBeGreaterThan(0);
       expect(bells[0]?.link).toBe(`/invoices/${s.id}`);
-      expect([...refusedCodes(log), ...refusedCodes(warn)]).toContain("signature_required");
+      expect(refusedCodes(log.mock.calls)).toContain("signature_required");
     },
   );
 
