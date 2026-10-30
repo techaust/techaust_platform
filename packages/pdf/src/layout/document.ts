@@ -126,7 +126,7 @@ function totalsBlock(view: PdfView): string {
     .join("");
   const notes = [
     `<p class="words">${esc(C.words(view.words))}</p>`,
-    isInr(view) ? p("note", C.inrNote) : p("note", C.usdNote),
+    isInr(view) ? "" : p("note", C.usdNote),
     view.inrNote ? `<p class="note">${inrNoteHtml(view.inrNote)}</p>` : "",
   ].join("");
   return `<div class="totals"><div class="totals__notes">${notes}</div><table class="totals__table">${rows}</table></div>`;
@@ -183,7 +183,9 @@ function timelineTable(steps: readonly ViewStep[]): string {
 }
 
 function moneyBlock(view: PdfView, hasTimeline: boolean): string {
-  return `<div class="money">${itemsTable(view)}${totalsBlock(view)}${summaryTable(view)}${scheduleTable(view, !hasTimeline)}</div>`;
+  // 07-ZA item 16 (owner 2026-10-30): "Prices exclude GST." under the lines, whose amounts exclude it, never under a total that includes it.
+  const linesNote = isInr(view) ? p("note lines-note", C.inrNote) : "";
+  return `<div class="money">${itemsTable(view)}${linesNote}${totalsBlock(view)}${summaryTable(view)}${scheduleTable(view, !hasTimeline)}</div>`;
 }
 
 function acceptanceBox(view: PdfView): string {

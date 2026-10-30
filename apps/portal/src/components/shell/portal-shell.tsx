@@ -18,6 +18,8 @@ export type { NavKey };
 export function PortalShell(props: {
   current: NavKey | null;
   hrefOf: (key: NavKey) => string;
+  /** Sections this contact has no access to: left out of both menus (07-ZA item 12: Invoices for a contact who can't see finance). */
+  hidden?: readonly NavKey[] | undefined;
   account: AccountProps;
   /** Preview only: open the account panel on arrival (for its screenshot). */
   accountOpen?: boolean | undefined;
@@ -41,12 +43,17 @@ export function PortalShell(props: {
           </Link>
           <div className="pbar__end">
             <AccountMenu {...props.account} defaultOpen={props.accountOpen} />
-            <MobileMenu {...props.account} current={props.current} hrefOf={props.hrefOf} />
+            <MobileMenu
+              {...props.account}
+              current={props.current}
+              hrefOf={props.hrefOf}
+              hidden={props.hidden}
+            />
           </div>
         </div>
         <nav className="pnav" aria-label="Portal">
           <ul className="pnav__list">
-            {NAV.map((item) => (
+            {NAV.filter((item) => !props.hidden?.includes(item.key)).map((item) => (
               <li key={item.key}>
                 <Link
                   to={props.hrefOf(item.key)}

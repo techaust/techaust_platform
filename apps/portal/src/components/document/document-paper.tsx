@@ -249,7 +249,7 @@ function Totals({ view }: { view: PdfView }) {
       </dl>
       <div className="money__notes">
         <p className="words">{C.words(view.words)}</p>
-        <p className="money__note">{view.currency === "INR" ? C.inrNote : C.usdNote}</p>
+        {view.currency !== "INR" && <p className="money__note">{C.usdNote}</p>}
         {view.inrNote && <p className="money__note">{view.inrNote}</p>}
       </div>
     </div>
@@ -391,6 +391,9 @@ export function DocumentPaper(props: {
               return (
                 <SectionBlock key={s.id} s={s} className="dsec--money">
                   <LinesTable view={view} />
+                  {/* 07-ZA item 16 (owner 2026-10-30): "Prices exclude GST." sits under the lines, whose amounts exclude it, never
+                      under a total that includes it (final sweep P11; the PDF does the same). */}
+                  {view.currency === "INR" && <p className="money__note money__note--lines">{C.inrNote}</p>}
                   <Totals view={view} />
                   <SummaryTable view={view} />
                   <ScheduleTable view={view} withDetail={!hasTimeline} />

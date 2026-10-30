@@ -164,14 +164,8 @@ export function HomeScreen(props: {
           {N.alsoTitle}
         </h2>
         <div className="soons">
-          {props.invoicesTile ?? (
-            <ComingSoon
-              level={3}
-              title={WORDS.nav.invoices}
-              icon={<Receipt size={24} />}
-              body={N.soon.invoices}
-            />
-          )}
+          {/* 07-ZA item 12: no Invoices tile for a contact who can't see finance (the route passes none for them). */}
+          {props.invoicesTile}
           <ComingSoon
             level={3}
             title={WORDS.nav.projects}

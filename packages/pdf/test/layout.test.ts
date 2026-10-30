@@ -120,14 +120,16 @@ describe("the money (07-P §1)", () => {
     expect(await bodyOf("short-intra-inr")).toContain('<span class="sub">SAC 998314</span>');
   });
 
-  it("prints the totals, the amount in words and the INR note together", async () => {
+  it("prints the totals and the amount in words together; the INR note under the lines, never under the total (07-ZA item 16)", async () => {
     const html = await bodyOf("short-intra-inr");
     const totals = html.slice(html.indexOf('class="totals"'), html.indexOf("Tax summary"));
     for (const label of ["Sub-total", "Discount", "Taxable value", "CGST", "SGST", "Round-off", "Total"])
       expect(totals).toContain(`<th scope="row">${label}</th>`);
     expect(totals).toContain("Amount in words: Rupees");
-    expect(totals).toContain("Prices exclude GST.");
+    expect(totals).not.toContain("Prices exclude GST.");
     expect(totals).not.toContain("International projects");
+    const lines = html.slice(html.indexOf('class="grid items"'), html.indexOf('class="totals"'));
+    expect(lines).toContain('<p class="note lines-note">Prices exclude GST.</p>');
   });
 
   it("prints the tax summary with CGST and SGST inside the state, IGST across states, and none for an export", async () => {

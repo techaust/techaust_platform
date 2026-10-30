@@ -1300,6 +1300,11 @@ html:has(.mmenu[open]) {
   font-weight: 500;
 }
 
+/* A payment request's own notice (07-ZA item 15), above its summary slip with the page's rhythm. */
+.inv-doc__notice {
+  margin-block-end: var(--space-6);
+}
+
 /* From, Prepared for, Document: the PDF's three blocks, side by side on a wide sheet. */
 .parties {
   display: grid;
@@ -2036,6 +2041,11 @@ textarea[aria-invalid="true"] {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
   line-height: var(--text-sm--line-height);
+}
+
+/* Under the lines table (07-ZA item 16): the line belongs to the amounts above it. */
+.money__note--lines {
+  margin-block: var(--space-2) var(--space-4);
 }
 
 /* ---------- M5.4: invoices, payment requests and notes (POR-06) ---------- */

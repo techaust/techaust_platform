@@ -4,6 +4,7 @@
 //   PDF"; and approved portal words from copy-documents.ts (the navigation, "Download PDF", "Show more", "Sign in").
 // A line 07-U lacked is 07-W's (approved 2026-10-28), never invented. English (India/UK spelling),
 // "and" never "&". The payment line is a product rule (Researched 2026-10-28, 08-C RA-28: a statement or reminder is not a tax document).
+import { PROFORMA_NOTICE } from "@techaust/core/invoices";
 import { EXPORT_PDF_COPY, INVOICE_PDF_COPY, NOTE_PDF_COPY, PROFORMA_PDF_COPY } from "@techaust/pdf/copy";
 import { N, PENDING, WORDS } from "./copy-documents.ts";
 
@@ -46,6 +47,10 @@ export const INV = {
   dueOn: (date: string) => `Due ${date}`,
   total: "Total",
   balanceDue: "Balance due",
+  /** 07-ZA item 15 (owner 2026-10-30): a payment request says what the PDF says, the frozen statutory line (07-S §2). */
+  proformaNotice: PROFORMA_NOTICE,
+  /** 07-ZA item 11 (owner 2026-10-30): the money row between Total and Balance due once something was paid. */
+  paid: "Paid",
   againstInvoice: (number: string) => `Against invoice ${number}`,
   howToPay: (type: string, number: string) =>
     `Pay by bank transfer to the account shown on the ${documentWord(type)}. Please quote ${number} as the payment reference.`,

@@ -44,6 +44,9 @@ function currentOf(pathname: string): NavKey | null {
   return null;
 }
 
+/** 07-ZA item 12 (owner 2026-10-30): a contact who can't see finance gets no Invoices link (it only led to "Page not found"). */
+const NO_FINANCE: readonly NavKey[] = ["invoices"];
+
 /** The frame: signed out, the sign-in form at any address; signed in, the shell and the section. */
 export function PortalLayout() {
   const { me } = useSession();
@@ -83,7 +86,12 @@ function SignedIn() {
     },
   };
   return (
-    <PortalShell current={currentOf(pathname)} hrefOf={hrefOf} account={account}>
+    <PortalShell
+      current={currentOf(pathname)}
+      hrefOf={hrefOf}
+      hidden={me.canSeeFinance ? undefined : NO_FINANCE}
+      account={account}
+    >
       <Outlet />
     </PortalShell>
   );

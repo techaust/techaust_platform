@@ -213,6 +213,7 @@ export function InvoicePage(props: {
         </div>
       </header>
       {props.notices}
+      {d.type === "proforma" && <p className="sheet-notice inv-doc__notice">{INV.proformaNotice}</p>}
 
       <section className="inv-slip" aria-label={number}>
         <p className="inv-slip__dates">
@@ -228,6 +229,13 @@ export function InvoicePage(props: {
             <dt>{INV.total}</dt>
             <dd>{d.total}</dd>
           </div>
+          {/* 07-ZA item 11: a payment shows between the total and the balance (final sweep P2). */}
+          {!credit && d.paidMinor > 0 && (
+            <div>
+              <dt>{INV.paid}</dt>
+              <dd>{moneyText(d.paidMinor, d.currency)}</dd>
+            </div>
+          )}
           {!credit && (
             <div className="inv-slip__balance">
               <dt>{INV.balanceDue}</dt>
