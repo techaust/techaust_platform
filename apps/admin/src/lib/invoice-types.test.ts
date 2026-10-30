@@ -388,6 +388,12 @@ describe("the letters of undertaking", () => {
       errors: { arn: INVT_COPY.lutArnMissing },
     });
     expect(fyLabel("2627")).toBe("2026-27");
+    // rt1 review 10: one helper, through core; a damaged token is never read as a guessed year
+    expect(fyLabel("2729")).toBe("2729");
+    expect(fyLabel("2729", "…")).toBe("…");
+    expect(fyLabel(null, "…")).toBe("…");
+    expect(fyLabel(undefined)).toBe("");
+    expect(fyLabel("9900")).toBe("2099-00");
     expect(
       lutsByYear([
         { fy: "2526", arn: "A", filedOn: null },

@@ -11,7 +11,7 @@ import reportPartsSource from "../routes/reports/parts.tsx?raw";
 import { ACTION_LABELS } from "./audit.ts";
 import { reportBellHref } from "./bell-links.ts";
 import { APPROVED_07Y, PLACEHOLDER_MARK } from "./copy-y.ts";
-import { GSTR1_FILING_COPY, IMS_HELD_ROW, imsHeldLine } from "./copy-zd.ts";
+import { CN_CUTOFF_HINT, GSTR1_FILING_COPY, IMS_HELD_ROW, imsHeldLine } from "./copy-zd.ts";
 import {
   byUrgency,
   FINANCE_COPY,
@@ -455,6 +455,10 @@ describe("Settings › Tax round trip (early check H2)", () => {
     expect(GSTR1_FILING_COPY.label).toBe("GSTR-1 filing");
     expect(GSTR1_FILING_COPY.hint).toBe(
       "Sets the last day for credit notes on last year's invoices: 31 October for GST-registered clients, and 30 September for other clients if you file quarterly.",
+    );
+    // 07-ZD line 9 (lead, 2026-10-31): the cut-off's hint, word for word
+    expect(CN_CUTOFF_HINT).toBe(
+      "Credit notes on last year's invoices are blocked after the last GST return period that ends before this date (see GSTR-1 filing below).",
     );
   });
 

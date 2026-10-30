@@ -12,7 +12,6 @@
 import { financialYear, fyOf } from "@techaust/core";
 import { noteReasonLabel } from "@techaust/core/invoice-email";
 import { CREDIT_REASONS, DEBIT_REASONS } from "@techaust/core/invoices";
-import { fyLabelOfToken } from "@techaust/core/pdf-jobs";
 import type { Currency } from "../api.ts";
 import { RequestError } from "../api.ts";
 import { Y } from "./copy-y.ts";
@@ -193,7 +192,7 @@ export function deadlineBanner(
   }
   if (invoiceFy !== null && d.supplyFy !== invoiceFy)
     lines.push(
-      `The deadline counts from FY ${fyLabel(d.supplyFy)}, when the payment was received or the work was completed.`,
+      `The deadline counts from FY ${fyLabel(d.supplyFy, UNKNOWN)}, when the payment was received or the work was completed.`,
     );
   return { tone, lines };
 }
@@ -369,8 +368,8 @@ export type NoteBlockerIn = { code: string; line?: number; remaining?: number; d
 export function noteBlockerLine(b: NoteBlockerIn, kind: NoteKind, currency: Currency): string {
   switch (b.code) {
     case "debit_lut_missing":
-      // The FY of the debit note's date, as a label ("2027-28") through core; "…" (UNKNOWN) when the server sent none or a damaged token.
-      return debitLutMissingLine((b.fy ? fyLabelOfToken(b.fy) : null) ?? UNKNOWN);
+      // The FY of the debit note's date, as a label ("2027-28") through the admin's one helper; "…" (UNKNOWN) when the server sent none or a damaged token.
+      return debitLutMissingLine(fyLabel(b.fy, UNKNOWN));
     case "parent_not_issued":
     case "parent_void":
     case "parent_fully_credited":

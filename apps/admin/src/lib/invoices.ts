@@ -402,7 +402,7 @@ export function blockerLine(
     case "fx_missing":
       return `Enter the exchange rate for ${b.date ? (dayText(b.date) ?? b.date) : UNKNOWN} before issuing a USD invoice.`;
     case "lut_missing":
-      return `Save the LUT ARN for FY ${b.fy ? fyLabel(b.fy) : UNKNOWN} in Settings › Tax before issuing an export invoice under LUT. Or issue it with IGST paid.`;
+      return `Save the LUT ARN for FY ${fyLabel(b.fy, UNKNOWN)} in Settings › Tax before issuing an export invoice under LUT. Or issue it with IGST paid.`;
     case "unregistered_high_value":
       return "For an unregistered client and an invoice of ₹50,000 or more, add the client's name, address and state.";
     case "bank_missing":
@@ -416,7 +416,7 @@ export function blockerLine(
     case "fx_same_day_exists":
       return `A rate was published on ${dateOr(b.date)}, so use that day's rate.`;
     case "advance_lut_missing":
-      return advanceLutMissing(b.fy ? fyLabel(b.fy) : UNKNOWN);
+      return advanceLutMissing(fyLabel(b.fy, UNKNOWN));
     default:
       // A code this screen has no words for (a newer server): its code, never invented words (a test keeps every core code covered above).
       return b.code;
