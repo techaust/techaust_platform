@@ -257,3 +257,83 @@ e2e `signature-udyam.spec.ts` 5 passed. Live as a local Owner: Company (all five
 **Lead triage:** fix 1, 2 and 3 now (designer, on the task branch, before rt1 merges; a second review follows because of the high). **Kept, 4:** the same deliberate behaviour as rt1 D12 (the dialog and the server refuse); a follow-up to show known blockers on the dialog's confirm step before step-up, for every blocker, in one admin UI task. The note dialog fix also covers rt1's `debit_lut_missing` refusal once both are merged.
 
 ### Visual fixes
+Designer, Opus 5.5 high, 2026-10-31. Branch `design/rt2-visual-fix` from `origin/task/rt2-signature-udyam` (b46c43a0). Fix commit 011ab71e. Only `apps/admin/src` and `apps/admin/e2e` were changed: no `apps/admin/worker`, `packages` or `apps/jobs` files.
+
+**Skills:** `frontend-design:frontend-design`, loaded first. It kept the fixes inside the existing system: no new colours, components or copy. The ring on a focused refusal stands in for the box's hairline, so it never shows a double line. When the Udyam row has too little room it stacks into one column, like the single-column fields below it, instead of squeezing. `dataviz` was not loaded (no chart). Context7 was not needed (no new library API).
+
+**1 (high), refusals in the note and advance dialogs**
+- `components/dialog.tsx`: a new `useRefusalFocus()` hook. After the refusal is drawn it focuses that element (`focus({ preventScroll: true })`) and brings it to the top of the dialog's view (`scrollIntoView({ block: "start" })`). With "nearest", the dialog's sticky actions covered the refusal's last line at 390, as seen in the first screenshots.
+- `note-dialog.tsx`: the refusal box is now `role="alert"` with `tabIndex={-1}` and the ref. After the issue is refused (409 `issue_blocked`) the box takes focus. Two other cases also leave focus with nothing to land on, so the form's error line (`Notice`) takes it too: any other refusal on the confirm step, and a refusal on the compose step that has no field to point at. A field refusal still focuses its field, as before.
+- `types-parts.tsx` (the advance dialog): the existing `role="alert"` box takes focus on the server's blocker lines. When the only line is about the rate's date, focus stays on the rate's date field (unchanged). The failure line takes focus on any other error.
+- `components/ui.tsx`: `Notice` accepts an optional `ref`. A notice given a ref also gets `tabIndex={-1}`.
+- CSS:
+  - `invoices.css`: `.inv-issue__blocked[tabindex="-1"]` gets `scroll-margin-top`. On `:focus-visible` it gets a 2 px focus ring at `--space-2` offset, and the top hairline turns transparent while the ring shows (the border keeps its width).
+  - `app.css`: the same treatment for a focused `.notice`.
+  - The global `[tabindex="-1"]:focus { outline: none }` would otherwise have hidden the ring.
+  - After a mouse click there is no ring, which is the normal focus-visible behaviour.
+
+**2 (medium), the Udyam number clipped**
+- `shell.css`: `.form-grid.form-grid--udyam { grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)) }`.
+- Measured in Chromium: the full number with the field's letter-spacing needs a 224 px field. Each column was 220 px at 1024 with the menu open, and the same at 768 with it open (stored preference). 17rem leaves room for a larger text setting.
+- The two fields now sit side by side only when the number fits. Otherwise the category goes under the number, at any window or menu width.
+- The GSTIN letter-spacing is unchanged, so the number still reads like the GSTIN above it.
+- Measured before and after at 390, 768, 1024, 1280 and 1920, with the menu open and closed:
+  - before the fix, the text was 222 px in a 218 px box at 1024 open and at 768 open (stored "expanded")
+  - after the fix, the text fits everywhere: one column at 1024 and 768 open, two columns elsewhere
+
+**3 (low), the "Unsaved changes" bar**
+- `app.css`: `html:has(.shell .savebar) { scroll-padding-bottom }` is the bar's height plus a gap: `--space-20` + `--space-4` from 48rem (the bar is 69 px), and `--space-32` + `--space-4` below 48rem (two rows). These are the same measures the toasts use to clear the bar.
+- **CSS alone was not enough.** With only the scroll-padding, the new test failed at 1280×900: `#f-principalPlace ends at 844px, the bar starts at 831px`. Chromium does not scroll a field that is already inside the window, even one under the fixed bar.
+- So `components/form.tsx` `SaveBar` also has `useClearOfBar`. While the bar is up, a `focusin` inside `main` (never inside a dialog) is measured one frame later. If the field's bottom is within 16 px (`--space-4`) of the bar's top or below it, the page scrolls up by the difference, instantly. The scroll is capped at the top bar's `scroll-padding-top`, so a field taller than the room keeps its top in view.
+- This covers every page that uses `SaveBar`: Company, Tax, Payment terms, Gateways, Email, Data retention and Feature flags (through `GroupForm`), plus Gateways' own bar and the catalogue service page.
+
+**Spec `apps/admin/e2e/signature-udyam.spec.ts`**
+- New helper `refusalHasFocus`, used for both dialogs. Each dialog is now driven by keyboard (`press("Enter")`). After the refusal the helper checks four things:
+  - the box has `role="alert"`
+  - the box has focus
+  - `document.activeElement` is not `<body>` and is inside `dialog[open]`
+  - the ring shows, with the line 1 text
+- The note dialog was added to the test: the draft page's "Issue debit note", then compose, then confirm, then the refusal.
+- `expectNumberFits` checks the input's `scrollWidth ≤ clientWidth` on every filled state, and at 1024 with the menu `expanded` and `collapsed`.
+- A new test, "a field reached by Tab stops clear of the Unsaved changes bar". It covers the 7 Settings pages with the bar, at 1280×900, 768×1024 and 390×844. On each page it makes one unsaved change, Tabs through every field to the bar, and checks each focused field's bottom against the bar's top. It then discards the change.
+- Gateways has nothing it can change locally: its only fields are the test/live radios, and live is locked by `PAYMENTS_LIVE_ALLOWED=false`. The test skips it and asserts that it is the only page skipped. It shares `SaveBar`, so the fix still applies to it.
+- `RT2_ALL_WIDTHS=1` runs every state of the spec at all five review widths. The default stays at 1280 and 390.
+
+**Files changed**
+- `apps/admin/src/components/{dialog.tsx, form.tsx, ui.tsx}`
+- `apps/admin/src/routes/invoices/{note-dialog.tsx, types-parts.tsx}`
+- `apps/admin/src/{app.css, invoices.css, shell.css}`
+- `apps/admin/e2e/signature-udyam.spec.ts`
+
+**Commands and results** (heavy ones through `bash tools/heavy.sh`)
+- `pnpm --filter @techaust/admin e2e e2e/signature-udyam.spec.ts` with `E2E_SAMPLE=1` and `TECHAUST_PORT_OFFSET=0`:
+  - `rt2vf-e2e1` failed: the new bar test caught the CSS-only fix at 1280 (that failure led to `useClearOfBar`).
+  - `rt2vf-e2e2` and `rt2vf-e2e3` failed on the Gateways radios (the test's own change helper, fixed). In `rt2vf-e2e2` the two Company tests passed at all five widths.
+  - The runs with `RT2_ALL_WIDTHS=1` and `RT2_SHOTS` then passed: `rt2vf-e2e4` (bar, Tax, dialogs, console: 4 passed, plus the temporary screenshot spec) and `rt2vf-e2e5` (dialogs after the scroll change: 2 passed).
+  - Final default run `rt2vf-e2e-final`: **6 passed**.
+  - axe found 0 moderate, serious or critical violations on every state, both in-app themes against the opposite OS theme, reduced motion. No console errors.
+- A temporary spec, `e2e/zz-tmp.spec.ts`, was rewritten three times. It measured the scroller and the Udyam widths (before and after, with the old two-column rule injected) and took the `udyam-*` and `savebar-*` screenshots. It was deleted before the commit.
+- `pnpm --filter @techaust/admin typecheck` (`rt2vf-typecheck`): passed.
+- `pnpm --filter @techaust/admin test` (`rt2vf-admin-test`): 118 files, 3,472 passed.
+- `pnpm exec biome check --write` on the 9 changed files: clean (one formatting fix in the spec).
+- `pnpm lint` (once, `rt2vf-lint`): green. 10 warnings and 8 infos, none in the changed files.
+- The admin build and Worker budget were not run. Only SPA code changed, and no Worker code.
+- Playwright's webServer started the dev server and stopped it; port 5173 was free at the end. Local setup in this worktree: `pnpm install --frozen-lockfile --offline`, `pnpm dev:secrets`, `pnpm db:migrate:local`, `pnpm db:seed:local`, `pnpm portal:sample`.
+
+**Screenshots** (`.logs/rt2-visual-fix/` in this worktree, git-ignored; light and dark are the in-app theme against the opposite OS theme)
+- `note-dialog-refused-{390,768,1024,1280,1920}-{light,dark}.png`: the note dialog after the keyboard issue is refused. The ringed box is in view above the sticky actions, with line 1 and the link.
+- `advance-blocker-{390,768,1024,1280,1920}-{light,dark}.png`: the advance dialog refused, with the same box and ring. At 390 the whole box now shows above the actions (with "nearest" the last line was covered).
+- `udyam-1024-menu-{expanded,collapsed}-{light,dark}.png`: an unsaved full number at 1024. With the menu open it is one column and the category is below. With the menu closed it is two columns with the controls level.
+- `company-{empty,error,filled}-{390,768,1024,1280,1920}-{light,dark}.png`: Company at every width, with the number fitting.
+- `savebar-tab-{1280,768,390}-{light,dark}.png`: "Principal place of business" reached by Tab, with the bar up. At 1280 it ends 15 px above the bar; before the fix it ended 13 px under it.
+- `tax-signatory-*` and `note-blocker-*` at the five widths: unchanged screens, re-shot for the record.
+
+**Placeholder text:** none. No copy was added or changed.
+
+**Not verified, and open questions**
+1. NVDA was not run. Focus on a `role="alert"` box may be announced twice (once as the alert, once as the focused element). The brief asked for both, and the box has no accessible name of its own, so the focus announcement reads its text.
+2. The invoice issue dialog (`dialogs.tsx`) draws its known blockers when it opens, not after a server refusal, so it was left as it is. Whether its own 409 path loses focus was not checked (outside this brief).
+3. `useClearOfBar` corrects the scroll after focus, so a field under the bar moves once, by keyboard only, and instantly. Pages outside Settings that use `SaveBar` (the catalogue service page) get the same behaviour; it was not checked on screen there.
+4. Gateways' bar could not be raised locally (live mode is locked), so it was not seen on screen.
+
+Usage: designer claude-opus-5-5/high (this worktree agent; skills frontend-design).
