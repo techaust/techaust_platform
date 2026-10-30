@@ -900,10 +900,12 @@ async function saveBank(c: Ctx, kind: "INR" | "USD_SWIFT") {
   const again = cleanAccountNo(norm(b.accountNoAgain) ?? "") || null;
   if (typed !== null && !ACCOUNT_NO.test(typed))
     bad.push({ path: ["accountNo"], message: "Use letters and digits only, 5 to 34 characters" });
+  // 07-ZA item 7 (owner 2026-10-30), word for word, as the SPA's lines (`lib/bank-form.ts`): the line names its account (final sweep review 5)
+  const which = kind === "INR" ? "INR" : "USD";
   if (typed !== null && again === null)
-    bad.push({ path: ["accountNoAgain"], message: "Type the account number again." });
+    bad.push({ path: ["accountNoAgain"], message: `Type the ${which} account number again.` });
   else if (typed !== null && typed !== again)
-    bad.push({ path: ["accountNoAgain"], message: "The two account numbers don't match" });
+    bad.push({ path: ["accountNoAgain"], message: `The two ${which} account numbers don't match.` });
   const ifsc = norm(b.ifsc)?.toUpperCase() ?? null;
   const swift = norm(b.swift)?.toUpperCase() ?? null;
   if (kind === "INR" && (!ifsc || !IFSC.test(ifsc)))
