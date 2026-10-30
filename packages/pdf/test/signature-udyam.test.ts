@@ -1,7 +1,7 @@
 // T4 and T10 (rt2; ADM-INV-01, ADM-INV-06): the envelope, view and integrity logic of the signature rule and the Udyam line. A present Udyam block has the canonical
 // shape and is only on a tax invoice (else the envelope is refused); the view gives the layout 07-ZC line 6; the gate refuses a page that does not print it as ONE text
-// node; a credit or debit note and an invoice for a payment received need a frozen signature (`signatureMissing`, the jobs refusal). The layout itself is the designer's:
-// the cases that need the real layout to print the line are in the designer's tests.
+// node; a credit or debit note and an invoice for a payment received need a frozen signature (`signatureMissing`, the jobs refusal). The layouts (designed and skeleton)
+// print the line under the GSTIN line, and the F1 cases below prove it on the real HTML.
 import { invoiceSnapshotSha256 } from "@techaust/core/invoices";
 import { describe, expect, it } from "vitest";
 import {
@@ -11,9 +11,11 @@ import {
   verifyInvoiceEnvelope,
 } from "../src/invoice-envelope.ts";
 import { missingStatutoryLine, requiresSignature, signatureMissing } from "../src/invoice-integrity.ts";
-import type { InvoiceEnvelope } from "../src/invoice-types.ts";
+import type { InvoiceEnvelope, InvoiceView } from "../src/invoice-types.ts";
 import { toInvoiceView } from "../src/invoice-view.ts";
 import { UDYAM_COPY } from "../src/layout/copy.ts";
+import { supplierLinesHtml } from "../src/layout/invoice.ts";
+import { invoiceBody } from "../src/layout/invoice-skeleton.ts";
 import { renderDocumentHtml } from "../src/render.ts";
 import { DEFAULT_VIEW_CONFIG } from "../src/view.ts";
 import { buildInvoiceFixture } from "./fixtures/invoice.ts";
@@ -35,6 +37,12 @@ const withUdyam = async (e: InvoiceEnvelope, udyam: unknown = UDYAM): Promise<In
 };
 /** A page with the line as one text node (what the designer's layout must print), and pages that split or reword it. */
 const page = (body: string) => `<html><body><div class="supplier">${body}</div></body></html>`;
+/** The first party block of a page ("From": the supplier), up to the next one. */
+const supplierBlock = (html: string): string => {
+  const at = html.indexOf('<div class="party">');
+  const next = html.indexOf('<div class="party', at + 1);
+  return html.slice(at, next < 0 ? undefined : next);
+};
 
 describe("07-ZC line 6 and the category words (approved 2026-10-31)", () => {
   it("prints the number and the category's words; the three categories are line 5's options", () => {
@@ -145,16 +153,59 @@ describe("the view and the gate [T10]", () => {
     expect(missingStatutoryLine(envelope, page("<p>no line</p>"))).toBeNull();
   });
 
-  it("the real layout of today does not print it yet, so the gate refuses a sealed invoice (the designer's layout must print it)", async () => {
+  it("the designed layout prints it once, as ONE text node, right under the GSTIN line, so the gate passes it [F1]", async () => {
+    for (const name of ["intra", "advance"] as const) {
+      const { envelope } = await buildInvoiceFixture(name);
+      const sealed = await withUdyam(envelope);
+      const view = toInvoiceView(sealed, DEFAULT_VIEW_CONFIG);
+      const html = renderDocumentHtml(view);
+      expect(html, name).toContain(`>${LINE}<`);
+      expect(html.split(LINE), name).toHaveLength(2);
+      expect(missingStatutoryLine(sealed, html), name).toBeNull();
+      // in the supplier block ("From"), the paragraph after the registration line and before the email line
+      const from = supplierBlock(html);
+      const registration = view.supplier.lines[view.supplier.registrationAt] ?? "";
+      expect(registration.startsWith("GSTIN "), name).toBe(true);
+      const after = from.indexOf("GSTIN");
+      expect(after, name).toBeGreaterThan(-1);
+      expect(from.indexOf(LINE), name).toBeGreaterThan(after);
+      expect(from.indexOf(LINE), name).toBeLessThan(from.indexOf("billing@example.test"));
+      expect(from, name).toContain(`<p class="party__line inv-udyam" data-testid="udyam">${LINE}</p>`);
+      // the line breaks only at its spaces, never after a hyphen of the number (the measured 12em, both layouts)
+      expect(html, name).toContain(".doc--invoice .inv-udyam { max-width: 12em; overflow-wrap: normal; }");
+    }
+  });
+
+  it("the skeleton (a type the designed layout does not know) prints it the same way [F1]", async () => {
     const { envelope } = await buildInvoiceFixture("intra");
     const sealed = await withUdyam(envelope);
-    const html = renderDocumentHtml(toInvoiceView(sealed, DEFAULT_VIEW_CONFIG));
-    const printed = html.includes(`>${LINE}<`);
-    expect(missingStatutoryLine(sealed, html)).toBe(printed ? null : "udyam");
-    // and an invoice without the key is not affected by the new check
-    expect(
-      missingStatutoryLine(envelope, renderDocumentHtml(toInvoiceView(envelope, DEFAULT_VIEW_CONFIG))),
-    ).toBeNull();
+    const view = toInvoiceView(sealed, DEFAULT_VIEW_CONFIG);
+    const body = invoiceBody({ ...view, type: "receipt_voucher" });
+    expect(body).not.toContain("doc--tax-invoice");
+    expect(body).toContain(`>${LINE}<`);
+    expect(body.split(LINE)).toHaveLength(2);
+    expect(missingStatutoryLine(sealed, body)).toBeNull();
+    expect(supplierBlock(body).indexOf(LINE)).toBeGreaterThan(supplierBlock(body).indexOf("GSTIN"));
+  });
+
+  it("without the key neither layout prints a Udyam line, and nothing is asked of the page", async () => {
+    const { envelope } = await buildInvoiceFixture("intra");
+    const view = toInvoiceView(envelope, DEFAULT_VIEW_CONFIG);
+    const html = renderDocumentHtml(view);
+    expect(html).not.toContain("Udyam");
+    expect(html).not.toContain('data-testid="udyam"');
+    expect(invoiceBody({ ...view, type: "receipt_voucher" })).not.toContain("Udyam");
+    expect(missingStatutoryLine(envelope, html)).toBeNull();
+  });
+
+  it("a view without a registration line puts the Udyam line after the supplier's last line", () => {
+    const html = supplierLinesHtml(
+      {
+        supplier: { name: "S", legalName: null, lines: ["A", "B"], registrationAt: -1, udyam: LINE },
+      } as InvoiceView,
+      (t) => `<p>${t}</p>`,
+    );
+    expect(html).toBe(`<p>A</p><p>B</p><p class="party__line inv-udyam" data-testid="udyam">${LINE}</p>`);
   });
 });
 

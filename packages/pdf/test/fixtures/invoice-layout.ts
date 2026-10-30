@@ -17,6 +17,8 @@
 //   proforma        a proforma (INR, intra-state): its notice under the title, "Proforma number", "Valid until", no copy mark
 //   advance         a tax invoice issued for a payment received against a proforma: the "Against proforma" line, no balance due, no "How to pay"
 //   advance-export  the same as an export invoice under LUT
+// rt2 (T4, T10; 07-ZC): `advance` and `advance-export` carry the signature (an invoice for a payment received is always signed, 08-C RA-17);
+//   udyam           a tax invoice with a Udyam registration (a made-up number) printed under the GSTIN line (07-ZC line 6), signed
 import { deflateSync } from "node:zlib";
 import { contentHash, type DraftContent } from "@techaust/core/documents";
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
@@ -41,6 +43,7 @@ export const INVOICE_LAYOUT_FIXTURES = [
   "proforma",
   "advance",
   "advance-export",
+  "udyam",
 ] as const;
 export type InvoiceLayoutFixture = (typeof INVOICE_LAYOUT_FIXTURES)[number];
 
@@ -69,6 +72,8 @@ type Spec = {
   type?: "tax_invoice" | "export_invoice" | "proforma";
   route?: "lut" | "igst_paid";
   advance?: boolean;
+  /** rt2 (T10): the supplier's Udyam registration (sample number), sealed into the issuer block of a tax invoice. */
+  udyam?: boolean;
   note?: boolean;
   country?: { code: string; name: string };
 };
@@ -369,6 +374,7 @@ const SPECS: Record<InvoiceLayoutFixture, Spec> = {
   advance: {
     recipient: wb,
     advance: true,
+    signed: true,
     lines: [
       {
         description: "Payment received against proforma TH/PI/2627/0004",
@@ -384,6 +390,7 @@ const SPECS: Record<InvoiceLayoutFixture, Spec> = {
     route: "lut",
     bank: true,
     advance: true,
+    signed: true,
     country: { code: "US", name: "United States" },
     lines: [
       {
@@ -391,6 +398,28 @@ const SPECS: Record<InvoiceLayoutFixture, Spec> = {
         qtyMilli: 1000,
         unit: "fixed",
         rateMinor: 150_000,
+      },
+    ],
+  },
+  udyam: {
+    recipient: wb,
+    bank: true,
+    signed: true,
+    udyam: true,
+    lines: [
+      {
+        description: "Sample website build, phase one",
+        sac: "998314",
+        qtyMilli: 1000,
+        unit: "fixed",
+        rateMinor: 4_500_000,
+      },
+      {
+        description: "Sample hosting set-up",
+        sac: "998313",
+        qtyMilli: 1000,
+        unit: "fixed",
+        rateMinor: 600_000,
       },
     ],
   },
@@ -469,6 +498,9 @@ const hexOf = async (bytes: Uint8Array) =>
   Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), (b) =>
     b.toString(16).padStart(2, "0"),
   ).join("");
+
+/** A made-up Udyam registration in the canonical shape (07-ZC line 4), never a real one. */
+export const LAYOUT_UDYAM = { number: "UDYAM-WB-00-0000001", category: "micro" } as const;
 
 function companyOf(kind: Spec["supplier"]): InvoiceIssuerSnapshot["company"] {
   if (kind === "bare")
@@ -583,7 +615,7 @@ export async function buildInvoiceLayoutFixture(name: InvoiceLayoutFixture): Pro
     "Sample notes pinned at issue.\n\n1. Sample note one: payment is due on the due date shown above.\n2. Sample note two, long enough to wrap onto a second line of the notes block at the foot of the invoice.";
   const termsSha = await sha256Hex(termsBody);
   const issuer: InvoiceIssuerSnapshot = {
-    company: companyOf(spec.supplier),
+    company: spec.udyam ? { ...companyOf(spec.supplier), udyam: LAYOUT_UDYAM } : companyOf(spec.supplier),
     bank: isExport
       ? {
           inr: null,

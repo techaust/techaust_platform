@@ -299,6 +299,7 @@ export function toInvoiceView(
       name: company.tradeName,
       legalName: nonEmpty(company.legalName) ? company.legalName : null,
       lines: supplierLines,
+      registrationAt: supplierLines.indexOf(registration),
       // T10: 07-ZC line 6 from the frozen block (only a tax invoice can carry one: the envelope check refuses it anywhere else)
       udyam: company.udyam ? UDYAM_COPY.line(company.udyam.number, company.udyam.category) : null,
     },
