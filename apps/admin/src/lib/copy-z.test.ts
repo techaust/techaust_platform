@@ -5,8 +5,8 @@ import { APPROVED_07Z, PLACEHOLDER_MARK, TERMS_DUE_DAYS_COPY, VOID_VIEWED_COPY, 
 const mark = APPROVED_07Z ? "" : `${PLACEHOLDER_MARK} `;
 
 describe("07-Z lines [FX-5]", () => {
-  it("are marked until the owner approves the page", () => {
-    expect(APPROVED_07Z).toBe(false);
+  it("are approved (owner, 2026-10-30): no mark", () => {
+    expect(APPROVED_07Z).toBe(true);
     expect(Z("Line.")).toBe(`${mark}Line.`);
   });
 
