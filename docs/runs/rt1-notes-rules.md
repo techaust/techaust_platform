@@ -145,3 +145,29 @@ Every rule R1–R5 holds in every layer; 0054 is trigger-only and equals `noteLu
 Usage: analyst claude-opus-5-5/high (agent-a8f2ba7b…, skills workers-best-practices, wrangler).
 
 ### Builder fixes (F1–F5)
+**Builder, 2026-10-31; branch `fix/rt1-early-check` from `origin/task/rt1-notes-rules` (e73f7228); commits 2cee17e8, a9294ab3, 10e4c853, cee66adc.**
+
+**Skills loaded:** `cloudflare:workers-best-practices` (no binding, handler or config change; F5 reads a column already in the parent's row, no extra D1 read), `cloudflare:wrangler` (no config or binding change, so no `wrangler types` rerun). No other skill in docs/14 §9 fits builder fixes with no screens.
+
+**What changed:**
+- **F1** `packages/pdf/src/invoice-view.ts`: a note's route mode is the frozen `exportMode` when typed, else the frozen `computed.supply.type` (`export_lut` → `lut`, `export_igst` → `igst_paid`, anything else none). The LUT line (`noteOf.lut ?? noteOf.parent.lut`) and "Outside India (96)" now print for a note on the settings' route.
+- **F2** `packages/core/src/notes.ts` `creditNoteDeadline`: `year = cutoff.month <= 3 ? start + 2 : start + 1`; the `CreditDeadline.date` doc comment says so. {1,31} on FY 2025-26 → cutoff 2027-01-31, last day 2026-12-31 for all six filings; {3,31} → 2027-03-31, monthly 2027-02-28, quarterly unregistered or overseas 2026-12-31. The February clamp cases moved to the new year (FY 2022-23 → 2024-02-29 leap, FY 2024-25 → 2026-02-28). The property test also checks the cutoff is after the supply FY ends. November and June cutoffs (every existing route test) are unchanged.
+- **F3** `packages/core/src/gst/layouts.ts`: `heldRowOf` prints the held row as magnitudes (bigint negation through `num`, so a zero is `0`, never `-0`); `Gstr3bImsHeld` stays signed. Doc comments in `summary.ts`, `layouts.ts` and `apps/admin/src/lib/reports-build.ts` say so. v2 golden regenerated: only the last row changed (`-2000.00,0.00,-180.00,-180.00` → `2000.00,0.00,180.00,180.00`); v1 golden unchanged. Tests: held prints positive with no "-", `3.1(a) printed − held printed = linesDeductingAll 3.1(a)` on the golden data, zero row `0.00`, `heldRowOf(NO_IMS_HELD)` is `+0` by `Object.is`, a one-paisa held row prints `0.01`. The admin `reports.test.ts` 3B row expectation moved to positive.
+- **F4** `packages/pdf/test/fixtures/notes.ts` gains `route: "typed" | "settings"` and `noteLut` options, so `noteOf.lut` is sealed by the real `invoiceSealOf` (not patched into a built envelope). `invoice-layout-m53.test.ts`: for both route kinds the sealed debit note verifies (`verifyInvoiceEnvelope` ok), survives serialise and parse and still verifies, prints its own LUT line, and passes `missingStatutoryLine`; an ARN changed after the seal fails with `snapshot_hash`. F1 tests there too: debit (own LUT 2728) and credit (the invoice's 2627) notes with a null mode under LUT print the LUT line and "Outside India (96)"; an `export_igst` note with a null mode prints no LUT line and the export place; a domestic note has no route and no export place.
+- **F5** `apps/admin/worker/note-model.ts` `noteLutOf` reads `p.row.supply_type` (doc comment updated). New pure test `apps/admin/worker/note-lut.test.ts`: with `computed` deliberately disagreeing with the columns, the settings' LUT route is judged (with and without a 2728 LUT), IGST-paid and domestic parents are not, a credit note is not.
+- **Jobs suite (asked by F4):** the first run failed 2 tests in `apps/jobs/test/pdf-notes.test.ts` (`debit_usd_lut`): trigger `documents_debit_note_lut_fy` (0054) refused the seed's freeze because the jobs database has no LUT saved. That was rt1's trigger meeting an old test seed (the jobs suite was not run at the early check), not F1–F5. Fixed in the test only: `apps/jobs/test/pdf-note-seed.ts` saves a LUT for the note's issue-day FY just for the freeze and puts the tax row back as it was (or deletes it) afterwards.
+
+**Files changed:** apps/admin/src/lib/{reports-build.ts, reports.test.ts}; apps/admin/worker/{note-model.ts, note-lut.test.ts (new)}; apps/jobs/test/pdf-note-seed.ts; packages/core/src/{notes.ts, gst/layouts.ts, gst/summary.ts}; packages/core/test/{notes.test.ts, gst/report-csv.test.ts, gst/__snapshots__/gstr3b-summary-v2-q3.csv}; packages/pdf/src/invoice-view.ts; packages/pdf/test/{fixtures/notes.ts, invoice-layout-m53.test.ts}. No migration, SQL, trigger or screen touched.
+
+**Commands and results:**
+- `pnpm exec biome check --write` on every changed file: clean (3 files reformatted).
+- `bash tools/heavy.sh --log rt1fx-core pnpm --filter @techaust/core test`: 91 files, 1844 passed, coverage gates met.
+- `bash tools/heavy.sh --log rt1fx-pdf pnpm --filter @techaust/pdf test`: 20 files, 360 passed.
+- `bash tools/heavy.sh --log rt1fx-jobs pnpm --filter @techaust/jobs test`: first run 2 failed (above); after the seed fix 31 files, 531 passed. The log still carries one `[mf:error] ZodError` line from miniflare; every test passes and I did not trace which test logs it.
+- `bash tools/heavy.sh --log rt1fx-admin pnpm --filter @techaust/admin test`: 117 files, 3461 passed, **1 failed**: `src/lib/notes.test.ts` "a line for every note blocker code" (the `debit_lut_missing` copy line), left for the designer as briefed.
+- `bash tools/heavy.sh --log rt1fx-check pnpm check`: green (lint, typecheck, guards, migration guard 55 migrations).
+
+**Not verified:** the db suite was not rerun (no db file changed). The admin build and worker-budget reading were not rerun (one line changed in `note-model.ts`; the early-check reading was 617,171 bytes). The whole-repository `pnpm test`. Screens (the designer's).
+
+**Open questions:** none.
+Usage: builder claude-opus-5-5/high (skills workers-best-practices, wrangler).
