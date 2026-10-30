@@ -32,22 +32,23 @@ type J = Record<string, any>;
 const secret = () =>
   Buffer.from(readFileSync(new URL("../.e2e/owner-totp.hex", import.meta.url), "utf8"), "hex");
 
-/** A fresh step-up for this session (the codes' replay guard: a step already used is refused, so the next one is tried, waiting for it if needed). */
+/**
+ * A step-up for this session, unless one is still good for two minutes (`/auth/me`). The codes' replay guard refuses a step already used, so a refused
+ * code waits for the next 30-second step (one try per step, never a burst of wrong codes).
+ */
 async function stepUp(page: Page) {
+  const me = await page.request.get("/api/v1/auth/me");
+  const until = ((await me.json()) as J).stepUpUntil as number | null;
+  if (until !== null && until - Date.now() > 120_000) return;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const step = Math.floor(Date.now() / 30_000) + attempt;
     const res = await page.request.post("/api/v1/auth/step-up", {
       headers,
-      data: { code: totpAt(secret(), step) },
+      data: { code: totpAt(secret(), Math.floor(Date.now() / 30_000)) },
     });
     if (res.ok()) return;
+    await page.waitForTimeout(30_000 - (Date.now() % 30_000) + 500);
   }
-  await page.waitForTimeout(31_000);
-  const res = await page.request.post("/api/v1/auth/step-up", {
-    headers,
-    data: { code: totpAt(secret(), Math.floor(Date.now() / 30_000)) },
-  });
-  expect(res.status(), "step-up").toBe(200);
+  throw new Error("e2e: no step-up after three steps");
 }
 
 async function api(page: Page, method: "GET" | "PUT" | "POST" | "DELETE", path: string, data?: unknown) {
@@ -108,7 +109,9 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
 
   test.beforeEach(async ({ page }) => {
     page.on("console", (m) => {
-      if (m.type() === "error") consoleErrors.push(`${page.url()}: ${m.text()}`);
+      // Chromium logs every non-2xx answer as a console error: the advance dialog's 409 `issue_blocked` is the refusal this spec provokes on purpose
+      if (m.type() !== "error" || m.text().includes("responded with a status of 409 (Conflict)")) return;
+      consoleErrors.push(`${page.url()}: ${m.text()}`);
     });
     page.on("pageerror", (e) => consoleErrors.push(`${page.url()}: ${e.message}`));
     await page.goto("/");
