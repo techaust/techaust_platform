@@ -3,6 +3,7 @@
 // element), an optional lede, then whatever the page adds (prices notes, a version line, CTAs) in the slot. Same
 // spacing as the service hero and the services hub, so every page starts on the same line.
 import Breadcrumbs from "./Breadcrumbs.astro";
+import CopyText from "./CopyText.astro";
 
 interface Props {
   title: string;
@@ -19,7 +20,13 @@ const { title, lede, trail, id = "page-title", class: cls } = Astro.props;
   <div class="container">
     {trail && <Breadcrumbs trail={trail} />}
     <h1 class="t-display-2 phero__title" id={id}>{title}</h1>
-    {lede && <p class="t-lede phero__lede">{lede}</p>}
+    {
+      lede && (
+        <p class="t-lede phero__lede">
+          <CopyText text={lede} as="span" />
+        </p>
+      )
+    }
     {Astro.slots.has("default") && (
       <div class="phero__extra">
         <slot />

@@ -4,6 +4,7 @@
 // (or no JavaScript) shows the text without a reference. The WhatsApp line needs a number and a reference, the Cal.com
 // line a link: both stay out while their value is empty (WEB-G-18). noindex: nobody arrives here from a search.
 import "../styles/page.css";
+import CopyText from "../components/CopyText.astro";
 import ExternalLink from "../components/ExternalLink.astro";
 import Icon from "../components/Icon.astro";
 import { site } from "../config/site";
@@ -18,7 +19,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       <p class="thanks__ref" data-ref-line hidden>
         {t.refBefore} <strong class="thanks__code" data-ref></strong>{t.refAfter}
       </p>
-      <p class="t-lede thanks__reply">{t.reply}</p>
+      <p class="t-lede thanks__reply"><CopyText text={t.reply} as="span" /></p>
       {
         site.whatsapp && (
           <p class="thanks__urgent" data-ref-only hidden>

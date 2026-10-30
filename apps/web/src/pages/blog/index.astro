@@ -4,6 +4,7 @@
 // for feed readers once there is something in it.
 import { getCollection } from "astro:content";
 import "../../styles/page.css";
+import CopyText from "../../components/CopyText.astro";
 import PageHero from "../../components/PageHero.astro";
 import { pageLabels as P } from "../../content/labels";
 import { blogPage } from "../../content/work-page";
@@ -48,7 +49,9 @@ const iso = istDay;
             ))}
           </ul>
         ) : (
-          <p class="empty">{blogPage.empty}</p>
+          <p class="empty">
+            <CopyText text={blogPage.empty} as="span" />
+          </p>
         )
       }
     </div>

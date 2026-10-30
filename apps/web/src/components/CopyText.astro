@@ -16,6 +16,8 @@
 // 5. Inline code. 07-A's `ta_consent`-style names become <code>.
 // 6. A pending owner input ({{postal_address}} while site.postalAddress is empty) is drawn as a marked gap, never as
 //    ordinary text, so nobody mistakes it for the address.
+// 7. Short joined runs never break inside: a range of short words or times ("Mon–Sat,", "10:00–19:00") and an "e-" word
+//    ("e-invoicing", "e-way"), so a line never ends on "(Mon–" or "GST e-" (final sweep W6).
 import { shared } from "../content/shared";
 import { draft } from "../content/shell";
 import { displayAmount } from "../lib/prices";
@@ -33,11 +35,14 @@ const { text, as: Tag = "p", class: cls } = Astro.props;
 type Mode = "both" | "inr" | "usd";
 type Bit =
   | { kind: "text"; value: string; bold: boolean }
+  | { kind: "keep"; value: string; bold: boolean }
   | { kind: "arrow"; char: "→" | "↔"; bold: boolean }
   | { kind: "link"; label: string; href: string; bold: boolean }
   | { kind: "pending"; value: string }
   | { kind: "code"; value: string };
 const LINK = /\[([^\]]+)\]\(([^)\s]+)\)/g;
+/** Item 7: the runs kept on one line (a capture group, so `split` keeps them). */
+const KEEP = /((?<![\p{L}\d])[\p{L}\d:]{1,5}–[\p{L}\d:]{1,5}(?![\p{L}\d]),?|(?<![\p{L}\d-])e-\p{L}+)/u;
 type Part = Bit | PricePart;
 
 const parts: Part[] = [];
@@ -61,7 +66,10 @@ for (const p of parseTokens(text)) {
         }
         for (const bit of piece.split(/([→↔])/)) {
           if (bit === "→" || bit === "↔") parts.push({ kind: "arrow", char: bit, bold });
-          else if (bit) parts.push({ kind: "text", value: bit, bold });
+          else if (bit)
+            bit.split(KEEP).forEach((run, k) => {
+              if (run) parts.push({ kind: k % 2 === 1 ? "keep" : "text", value: run, bold });
+            });
         }
       });
     };
@@ -93,6 +101,8 @@ const modes: (Mode | null)[] = priced ? ["both", "inr", "usd"] : [null];
             ) : (
               p.value
             )
+          ) : p.kind === "keep" ? (
+            <span class="copy__keep">{p.bold ? <strong class="copy__strong">{p.value}</strong> : p.value}</span>
           ) : p.kind === "link" ? (
             p.href === "#cookie-settings" ? (
               <a href="/cookies" data-cookie-settings>
@@ -155,7 +165,8 @@ const modes: (Mode | null)[] = priced ? ["both", "inr", "usd"] : [null];
 
   /* "₹40,000 + GST" never breaks inside. */
   .copy__price,
-  .copy__amount {
+  .copy__amount,
+  .copy__keep {
     white-space: nowrap;
   }
 
