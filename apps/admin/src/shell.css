@@ -1347,6 +1347,12 @@ body:has(.shell) {
 
 /* Phones: the search stays; the chip groups fold behind a "Filters" button, so the list comes first. */
 @media (max-width: 47.99rem) {
+  /* One column as wide as the panel: an open group's widest piece (the Service menu's longest name, a person shown with their email) wraps
+     or shrinks inside it instead of pushing the page sideways (found in the final sweep, round 3). */
+  .filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .filters__toggle {
     display: inline-flex;
     justify-self: start;
@@ -1433,6 +1439,11 @@ body:has(.shell) {
   font-weight: 500;
   cursor: pointer;
   transition: background-color var(--duration-fast) var(--ease-standard);
+  /* A long label (a person shown with their email, final sweep A20) wraps inside the pill instead of widening the panel past a phone screen. */
+  max-width: 100%;
+  padding-block: var(--space-1);
+  text-align: start;
+  overflow-wrap: anywhere;
 }
 
 .chip::after {
