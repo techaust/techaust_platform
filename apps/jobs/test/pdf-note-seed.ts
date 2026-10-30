@@ -141,6 +141,24 @@ export async function seedIssuedNote(
     }),
   ]);
 
+  // rt1 T2: a debit note on an export under LUT freezes only with a LUT saved for its own issue day's FY (trigger documents_debit_note_lut_fy, 0054; Researched
+  // 2026-10-30, Rule 96A(1) CGST Rules (08-C RA-19, Q39)). The tax row gets one for the freeze and is put back as it was afterwards, so no other test sees it.
+  const lutFreeze =
+    envelope.type === "debit_note" && (route === "lut" || computed.supply.type === "export_lut");
+  const taxBefore = lutFreeze
+    ? await env.DB.prepare("SELECT value FROM settings WHERE key = 'tax'").first<{ value: string }>()
+    : null;
+  if (lutFreeze) {
+    const [y = 0, m = 0] = String(d.issue_date).split("-").map(Number);
+    const start = m >= 4 ? y : y - 1;
+    const fyToken = `${String(start % 100).padStart(2, "0")}${String((start + 1) % 100).padStart(2, "0")}`;
+    await env.DB.prepare(
+      "INSERT INTO settings (key, value, version) VALUES ('tax', ?1, 1) ON CONFLICT(key) DO UPDATE SET value = excluded.value, version = version + 1",
+    )
+      .bind(JSON.stringify({ luts: [{ fy: fyToken, arn: "AD1903270000003" }] }))
+      .run();
+  }
+
   // the freeze, as the issue statement leaves it (a credit note: balance 0, no due date, IMS status set)
   const credit = envelope.type === "credit_note";
   await env.DB.prepare(
@@ -166,6 +184,12 @@ export async function seedIssuedNote(
       o.dropFrozenExtras ? null : headerExtrasJson({ noteOf }),
     )
     .run();
+  if (lutFreeze) {
+    await (taxBefore
+      ? env.DB.prepare("UPDATE settings SET value = ?1 WHERE key = 'tax'").bind(taxBefore.value)
+      : env.DB.prepare("DELETE FROM settings WHERE key = 'tax'")
+    ).run();
+  }
 
   return {
     id: documentId,
