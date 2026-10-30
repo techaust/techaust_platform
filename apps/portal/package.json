@@ -8,7 +8,8 @@
     "build": "vite build && node ../../scripts/check-spa-headers.mjs portal && node ../../scripts/worker-budget.mjs portal",
     "typecheck": "wrangler types --env staging && tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
     "test": "vitest run",
-    "deploy:staging": "CLOUDFLARE_ENV=staging vite build && node ../../scripts/check-spa-headers.mjs portal && wrangler deploy",
+    "build:staging": "CLOUDFLARE_ENV=staging vite build && node ../../scripts/check-spa-headers.mjs portal",
+    "deploy:staging": "node ../../scripts/check-staging-build.mjs portal && wrangler deploy",
     "types": "wrangler types --env staging",
     "e2e": "playwright test"
   },
@@ -23,7 +24,7 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-router": "8.4.0",
-    "zod": "4.6.5"
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",

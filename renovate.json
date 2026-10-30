@@ -25,9 +25,10 @@
       "matchPackageNames": ["vitest", "@vitest/**", "@cloudflare/vitest-plugin"]
     },
     {
+      "description": "Full audit A1 5 (owner's yes 2026-10-30): dev tools run in CI and in the build, so their updates are reviewed like any other; nothing is automerged",
       "matchDepTypes": ["devDependencies"],
-      "matchUpdateTypes": ["patch"],
-      "automerge": true
+      "automerge": false
     }
-  ]
+  ],
+  "automerge": false
 }

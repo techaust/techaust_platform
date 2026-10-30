@@ -96,6 +96,29 @@ Your Zero Trust account is new, so **strict service token authentication** is on
 
 The workflow runs only when you press **Run workflow** in GitHub Actions, only for the `techaust` account, and never on fork pull requests.
 
+## Part 4. A service token for the deploy health checks (about 10 minutes; before the workflow PR merges)
+
+After each staging deploy, the workflow asks every Worker "are you healthy?" (full audit A6 8, owner 2026-10-30). Staging sits behind Access, so the check needs its own robot ID card that all four staging apps accept.
+
+**A. Create the token**
+1. Open **https://one.dash.cloudflare.com** and pick the **Techaust Technologies** account.
+2. In the left menu: **Access controls → Service credentials → Service Tokens**. (Older layout: **Access → Service Auth → Service Tokens**.)
+3. Click **Create Service Token**. Name: `staging-deploy-check`. Service Token Duration: **1 year**.
+4. Click **Generate token**. Keep the page open: the Client Secret is shown only once. **Don't paste either value into the chat.**
+
+**B. Store it in GitHub**
+1. In PowerShell, paste this line and press **Enter**:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\.logs\owner\set-deploy-token.ps1"
+```
+
+2. Paste the Client ID, then the Client Secret (the typing stays hidden), pressing **Enter** after each.
+3. Copy back to the lead **only the `RESULT:` line**.
+
+**C. Let the token into all four staging apps**
+For each application (**admin-staging, portal-staging, jobs-staging, web-staging**): **Access controls → Applications**, open it, **Configure** (or **Edit**) → **Policies** → **Add a policy**: name `Deploy check (service token)`, Action **Service Auth**, Include Selector **Service Token**, Value `staging-deploy-check`. Save, check the policy is in the application's **Access policies** list, and **Save** the application. Keep the existing sign-in policy as it is.
+
 ## Later: webhook bypass on jobs (M6)
 
 When the jobs Worker gets its webhook routes (`/razorpay`, `/stripe`, `/paypal`, `/ses`), the providers must reach them without signing in; signature checks protect them instead. In M6 I'll give you the exact steps for a **Bypass** policy on those paths.

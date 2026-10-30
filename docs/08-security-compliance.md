@@ -128,7 +128,8 @@ See [05 §6](05-architecture.md). Key controls:
 - [ ] E2E tests (Playwright) + axe
 - [ ] A security review (the `/security-review` command or a manual checklist) before each milestone sign-off
 - [x] gitleaks (full git history) in CI; exact pins + `minimumReleaseAge` + `allowBuilds` (Phase 5)
-- [ ] Dependency audit in CI; Renovate app with a 7-day delay (installing the Renovate app needs owner approval)
+- [x] Dependency audit in CI (full audit A1 3, owner's yes 2026-10-30): `scripts/dependency-audit.mjs` in the `checks` job, right after the install, runs the pinned pnpm's `pnpm audit --json` and fails on any **high or critical** advisory in the lockfile (dev tools included). The only way through is a reviewed entry in `scripts/dependency-audit-allow.json`: the advisory (GHSA id) and package, the reason (a false positive, no fix yet, or a fix waiting for its parent package), who added it and when, and an expiry at most 90 days later. Expired, stale (no longer reported) and malformed entries fail the job, and an unreadable registry answer fails closed (re-run the job). The step is never turned off
+- [ ] Renovate app with a 7-day delay (installing the Renovate app needs owner approval); devDependency updates are not automerged (full audit A1 5)
 
 ---
 
