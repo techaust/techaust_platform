@@ -1,6 +1,6 @@
 # 07-Z: new lines from FX-5 (for the owner's approval)
 
-Status: **PENDING the owner** (drafted by the FX-5 builder, 2026-10-30). Every line below shows "[Placeholder]" on screen until you approve this page. Then one switch (`APPROVED_07Z` in `apps/admin/src/lib/copy-z.ts`) removes the marks.
+Status: **APPROVED by the owner, 2026-10-30** ("The four new screen lines (07-Z): Yes"). The switch `APPROVED_07Z` in `apps/admin/src/lib/copy-z.ts` is on, so no line shows "[Placeholder]".
 
 **How to answer:**
 - "Approve all";
