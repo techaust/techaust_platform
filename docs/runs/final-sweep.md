@@ -156,3 +156,15 @@ Branch `fix/final-sweep-d1` (from `origin/fix/final-sweep` dccdb06f; 5dd20ba2 me
 
 ### Not verified
 Safari, Firefox, phones, NVDA, staging; P5's cover and A11/A12's figures with real data (simulated in the page); a real Browser Run PDF; A9 at 1280 with long real names.
+
+## Lead, after the designer's rounds 1 and 2 (2026-10-30)
+- Merged `fix/final-sweep-d1` (63830858) and `main` (with #118) into `fix/final-sweep` (e77cada6).
+- Stopped items needing an API or SQL change go to the builder (brief below), then a short designer round 3 shows them: A13, A20, P2 (Credited row), P3, P15.
+- W3's approved /blog line is 158 characters (limit 155) and four copy questions the designer spotted go to the owner.
+
+## Builder brief, round 3 data (lead, 2026-10-30), with the terms version 3 brief above
+Builder, Opus 5.5 high. Branch `fix/final-sweep-b1` from `origin/fix/final-sweep` (e77cada6 or later); push only that branch. Do the "Builder brief, 07-ZA 14: proposal terms version 3" above first, then the data the screens need (API and SQL only; the designer shows them in round 3):
+- **A13** admin dashboard "Recent activity": each row carries what it is about: a document's number, else its title (or "Untitled" as the bells do), and a time entry's project code and name. Read from data already in the database; keep the dashboard's one-batch read and its rows-read target (≤ 9,000 at 2,000 documents; `dashboard-stress.test.ts`).
+- **A20** `/time/people` and `/leads/assignees`: also return each person's email, so the screens can tell two people with the same name apart (staff routes only; no client data).
+- **P2 Credited row**, **P3 line discounts**, **P15 credit note parent and reason** in the portal invoice summary (`apps/portal/worker/invoice-summary.ts`, frozen rows only, every query bound to the session's client): the credit notes' numbers (issued, same client, against this invoice); each line's discount as the PDF shows it; for a credit or debit note, its parent invoice's id and number (only if that parent is the same client's and visible to this contact) and its reason as frozen in `header_extras.noteOf`.
+- Tests for each (scoping: another client's parent or notes never appear), plus the existing portal and admin suites through the queue (`bash tools/heavy.sh --log …`), `pnpm check`, the whole-repository `pnpm lint` last. Append "## Builder report, round 3 data" (and the terms version 3 report).
