@@ -64,6 +64,18 @@
   "env": {
     "staging": {
       "name": "techaust-platform-admin-staging",
+      // Workers Traces on STAGING only (full audit A6 9, owner's yes 2026-10-30); production keeps its own block below, without traces.
+      // Logs stay as before: on, invocation logs on, not sampled (the CPU benchmarks need every request, docs/13 2026-10-22).
+      // Traces: 10 % of invocations (head sampling). Free plan, Cloudflare docs read 2026-10-30: traces are kept 7 days; from
+      // 2026-12-01 logs and traces share the account's Observability allowance of 0.5 GB ingested a day, and ingestion stops for the
+      // rest of the day when it is used up. Same rate on all five staging Workers (scripts/check-worker-config.mjs); headroom in
+      // docs/runbooks/cpu-baseline.md ("Traces").
+      "observability": {
+        "enabled": true,
+        "redact_query_string": true,
+        "logs": { "enabled": true, "invocation_logs": true },
+        "traces": { "enabled": true, "head_sampling_rate": 0.1 }
+      },
       "workers_dev": true,
       // Version/Preview URLs would skip Cloudflare Access (docs/runbooks/access-staging.md).
       "preview_urls": false,

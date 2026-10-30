@@ -3,7 +3,7 @@ name: Publish catalogue
 # ADM-CAT-05 (owner decision 2026-10-25): when the owner publishes the catalogue in the admin, the STAGING website is rebuilt from the new
 # snapshot within about 30 minutes, with no new secret. Every 30 minutes this reads the newest snapshot's row id from the staging D1 (a
 # read with the existing staging token). If a cache entry `catalogue-<id>` says that snapshot row was already deployed, it stops.
-# Otherwise it builds the website with the snapshot, deploys the WEB Worker only (`--env staging`), and the cache entry is saved when the
+# Otherwise it builds the website with the snapshot (without the token), deploys the WEB Worker only (`--env staging`), and the cache entry is saved when the
 # job ends successfully. A failed deploy saves nothing, so the next check tries again.
 # The key is the row id, not the SHA: publishing an earlier list again (A, B, A) makes a new row with an old SHA, and staging must go back.
 # Production follows the normal approved deploy (deploy-prod.yml, owner-approved), never this workflow.
@@ -31,7 +31,7 @@ jobs:
     if: github.repository == 'techaust/techaust_platform' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # The Cloudflare credentials are set only on the steps that use them, so the install step never sees them.
+    # The Cloudflare credentials are set only on the steps that use them, so the install and build steps never see them.
     steps:
       # Only the owner (techaust) may start this by hand or re-run it (owner, 2026-10-29), as in deploy-prod.yml. A scheduled run's
       # first attempt is GitHub's own and always passes; a re-run of it must come from the owner.
@@ -85,8 +85,13 @@ jobs:
         with:
           path: .catalogue-published
           key: catalogue-${{ steps.snapshot.outputs.id }}
+      # Full audit A1 5 (owner's yes 2026-10-30): `astro build` runs package code, so it runs here WITHOUT the Cloudflare token; only the
+      # deploy step below has it (and its script first checks that the pages were built for staging).
       - if: steps.creds.outputs.ready == 'true' && steps.snapshot.outputs.found == 'true' && steps.deployed.outputs.cache-hit != 'true'
-        name: Build and deploy the web Worker (staging)
+        name: Build the website (staging, no token)
+        run: pnpm --filter @techaust/web run build:staging
+      - if: steps.creds.outputs.ready == 'true' && steps.snapshot.outputs.found == 'true' && steps.deployed.outputs.cache-hit != 'true'
+        name: Deploy the web Worker (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
