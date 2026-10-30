@@ -37,6 +37,11 @@ import { draftCredit, draftDebit, mkIssuedInvoice, parentRow } from "./test-note
 const owner = () => sessionFor("owner", { stepUp: true });
 type Owner = Awaited<ReturnType<typeof owner>>;
 const UDYAM = { number: "UDYAM-WB-01-0012345", category: "micro" } as const;
+/** A credit note and a debit note draft of 10,000 paise taxable on the invoice's first line (made by the Owner). */
+const DRAFTS = [
+  (o: Owner, id: string) => draftCredit(o, id, { mode: "lines", lines: [{ line: 0, taxableMinor: 10_000 }] }),
+  (o: Owner, id: string) => draftDebit(o, id, { lines: [{ line: 0, taxableMinor: 10_000 }] }),
+] as const;
 
 /** The `tax` row with the checklist's signatory switch off (or on). */
 const putSignatory = (off: boolean) =>
@@ -89,9 +94,9 @@ describe("T4: a note always carries the signature [ADM-INV-06, ADM-INV-07; 08-C 
   it("no signature saved: 409 signature_missing on the issue, the issue request and the view, for both kinds; nothing is written", async () => {
     const o = await owner();
     const staff = await sessionFor("staff");
-    for (const make of [draftCredit, draftDebit]) {
+    for (const make of DRAFTS) {
       const inv = await mkIssuedInvoice(o, { prices: [100_000] });
-      const d = await json(await make(o, inv.id, { mode: "full" }));
+      const d = await json(await make(o, inv.id));
       await putCompany({ signature: null });
       const before = { parent: await parentRow(inv.id), audits: await auditCount("invoice.issue") };
       const res = await issueInvoice(o, d.id);
@@ -111,11 +116,11 @@ describe("T4: a note always carries the signature [ADM-INV-06, ADM-INV-07; 08-C 
   it("the switch off: the note still freezes the signature, with no `signatory` key, and its seal verifies", async () => {
     const o = await owner();
     await putSignatory(true);
-    for (const make of [draftCredit, draftDebit]) {
+    for (const make of DRAFTS) {
       const inv = await mkIssuedInvoice(o, { prices: [100_000] });
       // the parent tax invoice followed the switch (Rule 46(q) proviso, RA-06)
       expect(await issuerOfRow(inv.id)).toMatchObject({ signatory: false, signature: null });
-      const d = await json(await make(o, inv.id, { mode: "full" }));
+      const d = await json(await make(o, inv.id));
       const res = await issueInvoice(o, d.id);
       expect(res.status, await res.clone().text()).toBe(200);
       const issuer = await issuerOfRow(d.id);
@@ -280,10 +285,10 @@ describe("T10: the Udyam number is frozen only on a tax invoice [ADM-INV-01; 08-
     expect((await issuerOfRow(exp.id)).company).not.toHaveProperty("udyam");
     const pf = await issuedProforma(o);
     expect((await issuerOfRow(pf.id)).company).not.toHaveProperty("udyam");
-    for (const make of [draftCredit, draftDebit]) {
+    for (const make of DRAFTS) {
       const inv = await mkIssuedInvoice(o, { prices: [100_000] });
       expect((await issuerOfRow(inv.id)).company.udyam).toEqual(UDYAM);
-      const d = await json(await make(o, inv.id, { mode: "full" }));
+      const d = await json(await make(o, inv.id));
       expect((await issueInvoice(o, d.id)).status).toBe(200);
       expect((await issuerOfRow(d.id)).company).not.toHaveProperty("udyam");
     }
