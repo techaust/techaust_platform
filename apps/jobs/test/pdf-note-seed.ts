@@ -146,13 +146,14 @@ export async function seedIssuedNote(
   // 2026-10-30, Rule 96A(1) CGST Rules (08-C RA-19, Q39)). The tax row gets one for the freeze and is put back as it was afterwards, so no other test sees it.
   const lutFreeze =
     envelope.type === "debit_note" && (route === "lut" || computed.supply.type === "export_lut");
-  // rt1 review 11: the row is read whole (value AND version) and put back in a `finally`, so a freeze that throws never leaves the LUT behind for the next test.
+  // rt1 review 11: the row is read whole (value AND version) and put back after the freeze, also when it throws, so the LUT is never left behind for the next test.
   const taxBefore = lutFreeze
     ? await env.DB.prepare("SELECT value, version FROM settings WHERE key = 'tax'").first<{
         value: string;
         version: number;
       }>()
     : null;
+  let seedError: { error: unknown } | null = null;
   try {
     if (lutFreeze) {
       // the FY of the note's own issue day, by core's rule (the trigger's `fyTokenOfDateSql` is pinned to it day by day in the db tests)
@@ -189,8 +190,13 @@ export async function seedIssuedNote(
         o.dropFrozenExtras ? null : headerExtrasJson({ noteOf }),
       )
       .run();
-  } finally {
-    if (lutFreeze)
+  } catch (error) {
+    seedError = { error };
+  }
+  // rt1 re-check 6: the tax row is put back whether or not the freeze threw, and a failed restore never hides the seed's own error: with both, both are thrown
+  // together, the seed's first (and its message in the text); with only one, that one.
+  if (lutFreeze)
+    try {
       await (taxBefore
         ? env.DB.prepare("UPDATE settings SET value = ?1, version = ?2 WHERE key = 'tax'").bind(
             taxBefore.value,
@@ -198,7 +204,15 @@ export async function seedIssuedNote(
           )
         : env.DB.prepare("DELETE FROM settings WHERE key = 'tax'")
       ).run();
-  }
+    } catch (restoreError) {
+      if (!seedError) throw restoreError;
+      const first = seedError.error instanceof Error ? seedError.error.message : String(seedError.error);
+      throw new AggregateError(
+        [seedError.error, restoreError],
+        `the note seed failed (${first}), and putting the tax row back failed too`,
+      );
+    }
+  if (seedError) throw seedError.error;
 
   return {
     id: documentId,
