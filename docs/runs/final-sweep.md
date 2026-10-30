@@ -357,3 +357,13 @@ None.
 ### Lead, after the designer's round 4 (2026-10-30)
 - Merged `fix/final-sweep-d4` (996b74f7). Questions: (1) the 1280 table keeps no inner scroll (the review's ask); a long note wrapping more lines is the accepted cost; (2) the week grid's "1 h 45 min" wrapping at 1280 with the menu open is a listed follow-up.
 - Next: a narrow re-check of the review fixes (builder items 1, 3–8 and designer item 2 plus the email line), then the PR.
+
+## Narrow re-check of the review fixes (reviewer, Opus 5.5 high, 2026-10-31, on 254dd9e0): APPROVE (copied by the lead)
+No findings. Items 1–8 and the "Log time for" email closed as asked, checked live (invoice rows open `/invoices/:id`; gone records lose title and link; Time at 1280 open/closed and 1600 with no inner scroll; the email under the field with `aria-describedby`); nothing regressed (dashboard one batch, stress and EXPLAIN tests; every portal query bound to the client incl. the parent LEFT JOIN and the credit-notes guard; `answerError` on all three paths keeps the words; 07-ZA 7 word for word). `pnpm check` 0; core 1,827, pdf 352, portal 651, admin 3,452 passed; admin e2e 5 passed + the 375/1280/1600 case passed alone (15-minute timeout under load in the full run). axe 0, keyboard clean, no console errors. Shots: main `.logs/shots/sweep-recheck/` (21).
+Seen, not from this round (follow-ups): the feed says "issued an invoice" for a credit note; two same-name people look alike in the Entries table's Person column.
+
+## Follow-ups (lead, 2026-10-31)
+- The week grid's "1 h 45 min" wraps at 1280 with the menu open.
+- The activity feed's label for a credit or debit note issue.
+- Same-name people in the Time Entries table.
+- Website focus outline measures 1.6 px where docs/06 says 2 px (pre-existing).
