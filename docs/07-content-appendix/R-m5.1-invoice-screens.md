@@ -25,7 +25,7 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 - Title of a draft: "Draft invoice for {client name}"
 - Under the title: "Drafts can be edited. Issuing gives the next number and locks the invoice."
 - Fields: "Contact" · "Lines" · "Document discount" · "Due date"
-- Due date note: "Due {date}: {days} days after the issue date (the client's terms, or Net 7)."
+- Due date note: "Due {date}: {days} days after the issue date (the client's terms, or Net 7)." (The 7 is Settings › Payment terms' due days, printed as that number: FX-5 review L6.)
 - Lines use the proposal line editor labels (07-O §3).
 - From a milestone: "Created from the milestone "{milestone name}" of {project name}. The total matches the milestone amount, GST included."
 - Buttons: "Save draft" · "Issue invoice" (Owner) · "Request issue" (Staff) · "Delete draft"

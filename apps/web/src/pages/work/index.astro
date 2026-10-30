@@ -18,7 +18,8 @@ const talk = cta.talk();
 ---
 
 <BaseLayout title={w.meta.title} description={w.meta.description}>
-  <PageHero title={w.h1} lede={w.lede} />
+  {/* 07-Y item 3 (owner 2026-10-29): the lede speaks of the case studies, so it shows only once there is one. */}
+  <PageHero title={w.h1} lede={cases.length > 0 ? w.lede : undefined} />
 
   <section class="section section--flush-top">
     <div class="container">

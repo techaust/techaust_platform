@@ -12,6 +12,8 @@ import {
   type SummaryRow,
   summaryOf,
   TYPES_SQL,
+  VIEW_PDF_SQL,
+  VIEW_SQL,
 } from "./invoice-summary.ts";
 import { bound, streamPdf } from "./offer-core.ts";
 import { pdfFileName } from "./offer-sql.ts";
@@ -60,26 +62,28 @@ export const invoices = new Hono<AppEnv>()
     const s = scope(c);
     const id = idOf(c);
     if (!id) return err(c, NOT_FOUND, 404);
-    const [doc, lines] = await c.env.DB.batch([
+    // FX-5 (08-C RA-10): the first view is written FIRST, in the batch that reads what the answer shows, never after the answer (a void landing
+    // between a 200 and a background write would pass, and a failed background write would lose the view). The access row and the session touch stay
+    // in the background (index.ts).
+    const [, doc, lines] = await c.env.DB.batch([
+      bound(c.env.DB, VIEW_SQL, [s.clientId, id, Date.now()]),
       bound(c.env.DB, ONE_SQL, [s.clientId, id]),
       bound(c.env.DB, LINES_SQL, [s.clientId, id]),
     ]);
     const row = doc?.results[0] as SummaryRow | undefined;
     if (!row) return err(c, NOT_FOUND, 404);
-    // The first view is recorded once, in the request's single after-the-answer write (`viewed_at` may be filled in once after the freeze).
-    if (row.viewed_at === null)
-      c.set("after", [
-        c.env.DB.prepare(
-          "UPDATE documents SET viewed_at = ?2 WHERE client_id = ?1 AND id = ?3 AND viewed_at IS NULL",
-        ).bind(s.clientId, Date.now(), id),
-      ]);
     return c.json({ document: summaryOf(row, (lines?.results ?? []) as LineRow[]) });
   })
   .get("/:id/pdf", async (c) => {
     const s = scope(c);
     const id = idOf(c);
     if (!id) return err(c, NOT_FOUND, 404);
-    const row = await bound(c.env.DB, ONE_SQL, [s.clientId, id]).first<SummaryRow>();
+    // FX-5 (08-C RA-10): opening the PDF is a view too, written in the same batch as the read (as above), once the PDF exists.
+    const [, doc] = await c.env.DB.batch([
+      bound(c.env.DB, VIEW_PDF_SQL, [s.clientId, id, Date.now()]),
+      bound(c.env.DB, ONE_SQL, [s.clientId, id]),
+    ]);
+    const row = doc?.results[0] as SummaryRow | undefined;
     if (!row) return err(c, NOT_FOUND, 404);
     if (!row.pdf_r2_key)
       return c.json(

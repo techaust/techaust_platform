@@ -95,10 +95,11 @@ describe("public_text_refused on the Publish tab", () => {
     ).toEqual([{ path: "items.S1.name", issues: [{ rule: "banned_phrase", phrase: "#1" }] }]);
   });
 
-  it("marks every new line until the owner approves 07-Y, and never shows the refused text", () => {
-    expect(APPROVED_07Y_PUBLISH).toBe(false);
-    expect(PUBLIC_TEXT_HEADING()).toBe(`[Placeholder] ${W.heading}`);
+  it("shows every line unmarked now the owner has approved 07-Y (2026-10-29), and never shows the refused text", () => {
+    expect(APPROVED_07Y_PUBLISH).toBe(true);
+    expect(PUBLIC_TEXT_HEADING()).toBe(W.heading);
     const [g] = publicTextProblems([{ path: "items.S1.name", issues: [{ rule: "ampersand" }] }], ON_SITE);
-    for (const line of g?.lines ?? []) expect(line.startsWith("[Placeholder] ")).toBe(true);
+    expect(g?.lines.length).toBeGreaterThan(0);
+    for (const line of g?.lines ?? []) expect(line.startsWith("[Placeholder")).toBe(false);
   });
 });

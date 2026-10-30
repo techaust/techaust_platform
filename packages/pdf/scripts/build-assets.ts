@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { BRAND_LOGOS } from "@techaust/core/settings";
+import { PDF_FALLBACK_FONTS, pdfFallbackFileName, unicodeRange } from "../../ui/src/fonts/config.ts";
 
 const UI = fileURLToPath(new URL("../../ui/", import.meta.url));
 const OUT = fileURLToPath(new URL("../src/generated/assets.ts", import.meta.url));
@@ -38,6 +39,15 @@ export function fontFaceCss(): string {
     const uri = `url("data:font/woff2;base64,${read(`fonts/${file}`).toString("base64")}") format("woff2")`;
     out.push(block.replace(/src:\s*url\([^;]*;/, `src: ${uri};`));
   }
+  // FX-5 (full audit A4 3): the Bengali and Devanagari fallbacks join the "Archivo" family for their own characters only (unicode-range), with
+  // Archivo's descriptors so the browser treats them as one composite face: a name typed in those scripts prints, with no change to any font stack.
+  // They have one weight; the 600 of a heading prints at 400.
+  for (const f of PDF_FALLBACK_FONTS) {
+    const uri = `url("data:font/woff2;base64,${read(`fonts/${pdfFallbackFileName(f)}`).toString("base64")}") format("woff2")`;
+    out.push(
+      `@font-face {\n  font-family: "Archivo";\n  font-style: normal;\n  font-weight: 400 600;\n  font-stretch: 100% 116%;\n  font-display: swap;\n  src: ${uri};\n  unicode-range: ${unicodeRange(f.ranges)};\n}`,
+    );
+  }
   return `${out.join("\n\n")}\n`;
 }
 
@@ -64,7 +74,7 @@ import type { BRAND_LOGOS } from "@techaust/core/settings";
 
 export type BrandLogo = (typeof BRAND_LOGOS)[number];
 
-/** @font-face rules with the Archivo woff2 files inlined (variable, weights 400 to 600, widths 100 to 116 %; the rupee sign U+20B9 in its own face). */
+/** @font-face rules with the Archivo woff2 files inlined (variable, weights 400 to 600, widths 100 to 116 %; the rupee sign U+20B9 in its own face), then the Noto Sans Bengali and Devanagari fallbacks under the same family for their scripts only (FX-5). */
 export const TECHAUST_PDF_FONT_DATA: string = ${j(fontCss)};
 
 /** packages/ui/generated/print.css (the @page size and margins, the colours, the print type scale). */

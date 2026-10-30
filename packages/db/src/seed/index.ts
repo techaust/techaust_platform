@@ -3,13 +3,24 @@
 // does on every merge) adds what's missing and never overwrites the Owner's edits. The conflict clause has no target on
 // purpose: a changed code or a reused slug (another unique index) skips the row instead of failing the whole seed. Pure: it returns SQL text,
 // which tests run with D1 batches and scripts/seed-sql.ts prints for `wrangler d1 execute`.
-import { SETTINGS_DEFAULTS, SETTINGS_SCHEMAS, type SeededSettingKey, stableId } from "@techaust/core";
+import {
+  SETTINGS_DEFAULTS,
+  SETTINGS_SCHEMAS,
+  type SeededSettingKey,
+  stableId,
+  termsDueDays,
+} from "@techaust/core";
 import { CATALOGUE } from "./catalogue.ts";
 import { SEED_TEMPLATES } from "./templates.ts";
-import { PROPOSAL_TERMS_V1, PROPOSAL_TERMS_V1_SHA256 } from "./terms.ts";
+import {
+  PROPOSAL_TERMS_V1,
+  PROPOSAL_TERMS_V1_SHA256,
+  PROPOSAL_TERMS_V2,
+  PROPOSAL_TERMS_V2_SHA256,
+} from "./terms.ts";
 
 /** Bump when the seed's content changes (recorded nowhere else; it documents intent in reviews). */
-export const SEED_VERSION = 2;
+export const SEED_VERSION = 3;
 
 type Value = string | number | boolean | null | object;
 
@@ -31,6 +42,30 @@ const insert = (table: string, row: Record<string, Value>) => {
     .map((c) => literal(row[c] as Value))
     .join(", ")}) ON CONFLICT DO NOTHING;`;
 };
+
+/**
+ * FX-5 (07-Y items 1 and 2, owner 2026-10-29): the second proposal terms, as the SELECT the seed inserts from. It yields one row only while
+ *   - the NEWEST proposal terms row is the seed's version 1 (its SHA-256): text the owner saved after it is never replaced, however late the
+ *     seed runs (review M2);
+ *   - no proposal row has version 2's SHA-256 yet (it is added once);
+ *   - Settings › Payment terms has the due days the text states (full audit C4: the terms never promise other days than the setting; the
+ *     settings rows are inserted earlier in the same seed, so the default counts on a fresh database).
+ * A filtered row, never an aggregate: when a guard fails the SELECT yields nothing, so nothing rests on the unique index (review L1).
+ */
+export function proposalTermsV2Select(): string {
+  const [days] = termsDueDays(PROPOSAL_TERMS_V2);
+  if (days === undefined) throw new Error("PROPOSAL_TERMS_V2 states no due days");
+  const sha = literal(PROPOSAL_TERMS_V2_SHA256);
+  const setting = `coalesce(json_extract((SELECT value FROM \`settings\` WHERE key = 'payment_terms'), '$.dueDays'), ${literal(SETTINGS_DEFAULTS.payment_terms.dueDays)})`;
+  return `SELECT ${literal(stableId("terms:proposal:fx5-ownership-gst"))}, 'proposal', t.version + 1, ${literal(
+    PROPOSAL_TERMS_V2,
+  )}, ${sha} FROM \`terms_versions\` AS t WHERE t.kind = 'proposal' AND t.sha256 = ${literal(
+    PROPOSAL_TERMS_V1_SHA256,
+  )} AND t.version = (SELECT max(version) FROM \`terms_versions\` WHERE kind = 'proposal') AND NOT EXISTS (SELECT 1 FROM \`terms_versions\` WHERE kind = 'proposal' AND sha256 = ${sha}) AND ${setting} = ${literal(days)}`;
+}
+
+const proposalTermsV2 = () =>
+  `INSERT INTO \`terms_versions\` (\`id\`, \`kind\`, \`version\`, \`body_md\`, \`sha256\`) ${proposalTermsV2Select()} ON CONFLICT DO NOTHING;`;
 
 export function seedStatements(): string[] {
   const settings = (Object.keys(SETTINGS_SCHEMAS) as SeededSettingKey[]).map((key) => {
@@ -66,7 +101,7 @@ export function seedStatements(): string[] {
       body: t.body,
     }),
   );
-  // The first proposal terms (07-O section 2). A terms row the owner already saved as version 1 makes this a no-op.
+  // The first proposal terms (07-O section 2). A terms row the owner already saved as version 1 makes this a no-op. Then the second (FX-5).
   const terms = [
     insert("terms_versions", {
       id: stableId("terms:proposal:1"),
@@ -75,6 +110,7 @@ export function seedStatements(): string[] {
       body_md: PROPOSAL_TERMS_V1,
       sha256: PROPOSAL_TERMS_V1_SHA256,
     }),
+    proposalTermsV2(),
   ];
   return [...settings, ...catalogue, ...templates, ...terms];
 }

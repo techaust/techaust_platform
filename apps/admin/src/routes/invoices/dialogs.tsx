@@ -25,6 +25,8 @@ import {
   seriesPreview,
   shownBlockers,
   splitAtPlace,
+  voidErrorText,
+  voidRefusalStalesPage,
   voidTitle,
 } from "../../lib/invoices.ts";
 import type { InvoiceBlocker, InvoiceView } from "../../lib/invoices-api.ts";
@@ -336,8 +338,12 @@ export function RequestIssueDialog(props: {
 export function VoidDialog(props: {
   open: boolean;
   number: string;
+  /** The document's type: a refusal names it (a proforma never gets the invoice's credit-note advice, FX-5). */
+  type?: string | undefined;
   onClose: () => void;
   onVoid: (reason: string) => Promise<void>;
+  /** Called after `onClose` when a refusal made the page's data stale (a portal view landed meanwhile: FX-5 review L2), so the page reloads. */
+  onStale?: () => void;
 }) {
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState<string | null>(null);
@@ -345,6 +351,7 @@ export function VoidDialog(props: {
   const [codeError, setCodeError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [stale, setStale] = useState(false);
   const needsCode = !stepUpActive();
 
   function close() {
@@ -353,7 +360,9 @@ export function VoidDialog(props: {
     setCode("");
     setCodeError(null);
     setError(null);
+    setStale(false);
     props.onClose();
+    if (stale) props.onStale?.();
   }
 
   async function confirm() {
@@ -373,7 +382,8 @@ export function VoidDialog(props: {
       setReason("");
       setCode("");
     } catch (e) {
-      setError(invErrorText(e));
+      setError(voidErrorText(e, props.type));
+      if (voidRefusalStalesPage(e)) setStale(true);
     } finally {
       setBusy(false);
     }

@@ -1,7 +1,7 @@
 // The expiry of sent proposals and estimates [JOB-CRON-01, ADM-PROP-06; M4.3 item 9]: the cron only enqueues (one message, no D1 read), one page of
 // at most 50 per message, the day of validity counts (valid_until = today is not expired), only sent or viewed offers of the two types, one batch
 // with a system audit row per document, a continuation for a full page, idempotent, a dead letter acknowledged with no alert, and every statement
-// served by an index. VERIFY WITH CA/LEGAL: what an expired offer means.
+// served by an index. Researched 2026-10-29, Contract Act s.6(2) (08-C RB-35).
 import { env as realEnv } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
 import { EXPIRE_PAGE, type ExpireMessage, expireMessage, isExpireMessage } from "@techaust/core/expiry";

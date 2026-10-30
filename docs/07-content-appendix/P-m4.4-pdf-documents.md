@@ -14,7 +14,7 @@ _Drafted by the lead on 2026-10-26 from approved facts:
 | Titles | "Proposal" · "Estimate" |
 | Header blocks | "From" · "Prepared for" · "Document" |
 | Supplier block | "Proprietor: {legal name}" · "GSTIN {gstin} · State {state} ({code})" · `hello@techaust.com`. Fields still empty in Settings are left out, never shown as blanks. |
-| Recipient block | "GSTIN {gstin}" (or left out) · "Place of supply: {state} ({code})" · for export: "Place of supply: Outside India (96 – Other Territory)" (VERIFY WITH CA) |
+| Recipient block | "GSTIN {gstin}" (or left out) · "Place of supply: {state} ({code})" · for export: "Place of supply: Outside India (96)" (Researched 2026-10-29, Rule 46(n), e-invoice master code 96 (08-C RA-35); FX-5) |
 | Document block | "No. {number} v{version}" · "Date {date}" · "Valid until {date}" · "Currency {INR/USD}" |
 | Document status (beside "Document") | "Sent" (approved 2026-10-26, 07-Q Q4; it carries the PDF's status check) |
 | Cover (proposal) | "Prepared for {client}" · "{date}" · "Version {n}" · "Valid until {date}" · "{number}" · "Your contact at TecHaust: {name}, {email}" |

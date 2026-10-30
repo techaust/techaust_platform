@@ -56,6 +56,8 @@ import {
   TERMS_BLOCKS,
   type TermsBlockId,
   termsBody,
+  termsDueDays,
+  termsDueDaysMismatch,
   termsTarget,
 } from "@techaust/core/terms";
 import { Hono } from "hono/tiny";
@@ -79,6 +81,12 @@ import { ANNUAL_RETURN_FUTURE } from "./note-model.ts";
 const CHECKLIST_STATUTORY = {
   code: "checklist_item_statutory",
   message: "Required by GST law, so it can't be turned off.",
+} as const;
+
+/** FX-5 (full audit C4): the proposal terms state due days other than Settings › Payment terms. The SPA shows its own line (07-Z §2). */
+const TERMS_DUE_DAYS_MISMATCH = {
+  code: "terms_due_days_mismatch",
+  message: "The terms give a different number of days to pay than Settings › Payment terms",
 } as const;
 
 /** The notice before a lead is deleted: a re-dated lead is never due sooner than this (Researched 2026-10-28, DPDP Act s.8(7), Rule 8 (08-C RB-10)). */
@@ -353,6 +361,16 @@ async function groupMeta(c: Ctx, group: Generic | "gateways", value: unknown) {
         })),
         houseRuleItems: HOUSE_RULE_ITEMS,
       };
+    case "payment_terms": {
+      // FX-5 (full audit C4): the newest proposal terms' "due within N days", so the screen can say when a changed due-days setting no longer
+      // matches them (the terms save refuses a mismatch; the setting is saved first, then the terms).
+      const terms = await c.env.DB.prepare(
+        "SELECT body_md FROM terms_versions WHERE kind = 'proposal' ORDER BY version DESC LIMIT 1",
+      ).first<{ body_md: string }>();
+      const stated = terms ? termsDueDays(terms.body_md) : [];
+      const dueDays = (value as Settings["payment_terms"]).dueDays;
+      return { verify, termsDueDays: { stated, matches: stated.every((n) => n === dueDays) } };
+    }
     case "retention":
       return {
         verify,
@@ -648,6 +666,17 @@ export const settings = new Hono<AppEnv>()
     const parsed = z.object({ body: termsBody(id) }).safeParse(await bodyOf(c));
     if (!parsed.success) return invalid(c, parsed.error.issues);
     const text = parsed.data.body;
+    // FX-5 (full audit C4; Researched 2026-10-29, commercial settings (08-C RB-39)): the proposal terms are shared by every proposal, so a
+    // "due within N days" they state must be the Settings › Payment terms due days; change the setting first, then the terms.
+    if (id === "proposal_terms") {
+      const dueDays = resolveSetting(
+        "payment_terms",
+        (await loadRow(c.env.DB, "payment_terms"))?.value,
+      ).dueDays;
+      const stated = termsDueDaysMismatch(text, dueDays);
+      // The standard error shape (review L8): the numbers ride in `error.details`, read by the SPA's one details reader.
+      if (stated.length > 0) return err(c, TERMS_DUE_DAYS_MISMATCH, 400, { stated, dueDays });
+    }
     const sha = hex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))));
     const db = c.env.DB;
     const latest = await db

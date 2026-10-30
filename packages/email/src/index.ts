@@ -91,6 +91,8 @@ const acceptedData = (get: (k: string) => string) => ({
   version: get("version"),
   url: get("url"),
   next_step: get("next_step"),
+  // 07-Y item 13: "proposal" or "estimate" (empty: a proposal, as older queued messages carry no kind).
+  kind: get("kind"),
 });
 
 const who = (get: (k: string) => string) => ({ name: get("name"), first_name: get("first_name") });

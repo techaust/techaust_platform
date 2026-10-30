@@ -200,6 +200,21 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
         : voidBlockedText(v.void.blockers, v.type)
       : null;
   const title = v.number ?? draftTitle(v.client.name, v.type);
+  const showMore = v.frozen && ownerVoids && !isVoid && v.void.canVoid;
+  // FX-5 re-check, finding 1: closing the void dialog hands focus back to More, but the reload after a void (or after a refusal because the client
+  // opened it) removes More, whose only item is Void. Focus would fall to the page; it goes to the title instead.
+  const wasVoiding = useRef(false);
+  useEffect(() => {
+    if (voiding) {
+      wasVoiding.current = true;
+      return;
+    }
+    if (!wasVoiding.current || showMore) return;
+    wasVoiding.current = false;
+    const active = document.activeElement;
+    if (!active || active === document.body || !active.isConnected)
+      document.querySelector<HTMLElement>("#main h1")?.focus();
+  }, [voiding, showMore]);
 
   return (
     <>
@@ -209,7 +224,7 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
         status={<InvoiceBadge badge={badge} />}
         lede={v.frozen ? undefined : INV_COPY.draftLede}
         more={
-          v.frozen && ownerVoids && !isVoid && v.void.canVoid
+          showMore
             ? [
                 {
                   label: INV_COPY.voidButton,
@@ -450,7 +465,9 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
         <VoidDialog
           open={voiding}
           number={v.number}
+          type={v.type}
           onClose={() => setVoiding(false)}
+          onStale={reload}
           onVoid={async (reason) => {
             const r = await invoicesApi.void(v.id, v.updatedAt, reason);
             setVoiding(false);

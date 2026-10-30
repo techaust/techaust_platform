@@ -80,7 +80,7 @@ describe("toPdfView", () => {
 
   it("an export: Outside India, no tax rows or summary, an INR note", async () => {
     const v = toPdfView((await buildFixture("usd-export")).envelope);
-    expect(v.placeOfSupply).toBe("Outside India (96 – Other Territory)");
+    expect(v.placeOfSupply).toBe("Outside India (96)");
     expect(v.totals.map((t) => t.key)).toEqual(["subtotal", "taxable", "total"]);
     expect(v.summary).toEqual([]);
     expect(v.totals.at(-1)?.value).toMatch(/^\$/);

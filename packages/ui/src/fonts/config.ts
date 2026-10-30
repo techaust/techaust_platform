@@ -87,6 +87,33 @@ export const FACES: readonly Face[] = [
 
 export const fontFileName = (face: Face, file: FaceFile) => `${face.id}-${file.suffix}.woff2`;
 
+/**
+ * FX-5 (full audit A4 3, owner-approved 2026-10-29): fonts for the PDFs only, so a name typed in Bengali or Devanagari prints (Archivo has
+ * neither script). Never in fonts.css (no web page loads them): packages/pdf inlines them under the "Archivo" family with these unicode
+ * ranges, so the browser takes their glyphs for those characters only. The ranges are each script's block, the joiners (U+200C, U+200D) and the
+ * dotted circle (U+25CC) the shaper draws for a lone mark; the Vedic and extended blocks a name doesn't use are left out.
+ */
+export type PdfFallbackFont = { id: string; script: string; source: string; ranges: readonly Range[] };
+const JOINERS: readonly Range[] = [
+  [0x200c, 0x200d],
+  [0x25cc, 0x25cc],
+];
+export const PDF_FALLBACK_FONTS: readonly PdfFallbackFont[] = [
+  {
+    id: "noto-sans-bengali",
+    script: "Bengali",
+    source: fs("@fontsource/noto-sans-bengali", "noto-sans-bengali-bengali-400-normal.woff2"),
+    ranges: [[0x0964, 0x0965], [0x0980, 0x09fe], ...JOINERS],
+  },
+  {
+    id: "noto-sans-devanagari",
+    script: "Devanagari",
+    source: fs("@fontsource/noto-sans-devanagari", "noto-sans-devanagari-devanagari-400-normal.woff2"),
+    ranges: [[0x0900, 0x097f], ...JOINERS],
+  },
+];
+export const pdfFallbackFileName = (f: PdfFallbackFont) => `${f.id}-pdf.woff2`;
+
 export const codePoints = (ranges: readonly Range[]) =>
   ranges.flatMap(([a, b]) => Array.from({ length: b - a + 1 }, (_, i) => a + i));
 

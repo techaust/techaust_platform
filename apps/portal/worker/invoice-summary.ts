@@ -31,6 +31,19 @@ export const SUMMARY_COLS = `d.id, d.type, d.status, d.number_display, d.issue_d
     d.round_off_minor, d.total_minor, d.total_inr_minor, d.paid_minor, d.credited_minor, d.balance_minor, d.issuer, d.header_extras, d.pdf_r2_key, d.viewed_at,
     (SELECT p.number_display FROM documents p WHERE p.id = d.parent_id AND p.client_id = d.client_id) AS parent_number`;
 
+/**
+ * The client's first view of one document (`?1` client, `?2` document, `?3` now; a primary-key UPDATE, 0 rows after the first view). FX-5 (owner decision
+ * 2026-10-30, docs/13; 08-C RA-10): a document the client has opened can't be voided (core `viewed_by_client`, the void route's `viewed_at IS NULL`, the
+ * trigger `documents_viewed_no_void`), so the view is written BEFORE the answer, in the same batch as the read that serves it, and only on a document the
+ * client may open: frozen, not void, an open status and type. A void that lands first leaves `viewed_at` NULL and the read a 404; a view that lands first
+ * refuses the void. `viewed_at` may be filled in once after the freeze (the frozen-document trigger allows it).
+ */
+export const VIEW_SQL = `UPDATE documents SET viewed_at = ?3
+   WHERE client_id = ?1 AND id = ?2 AND viewed_at IS NULL AND frozen_at IS NOT NULL AND voided_at IS NULL AND status IN (${STATUSES_SQL}) AND type IN (${TYPES_SQL})`;
+
+/** The PDF routes' view: only a PDF that is delivered counts (a 409 `pdf_pending` gives the client nothing; lead, 2026-10-30). */
+export const VIEW_PDF_SQL = `${VIEW_SQL} AND pdf_r2_key IS NOT NULL`;
+
 /** The frozen lines of one document of one client. `?1` client, `?2` document. */
 export const LINES_SQL =
   "SELECT l.position, l.description, l.detail, l.sac, l.qty_milli, l.unit, l.rate_minor, l.taxable_minor, l.gst_rate_bp, l.cgst_minor, l.sgst_minor, l.igst_minor, l.line_total_minor FROM document_lines l JOIN documents d ON d.id = l.document_id WHERE d.client_id = ?1 AND d.id = ?2 ORDER BY l.position LIMIT 101";

@@ -26,7 +26,7 @@ export type Address = {
   country: string;
 };
 
-/** The consent receipt kept with a lead (FRM-05, VERIFY WITH CA/LEGAL). */
+/** The consent receipt kept with a lead (FRM-05; Researched 2026-10-28, DPDP s.6, s.6(10) (08-C RB-28)). */
 export type ConsentReceipt = {
   noticeVersion: string;
   purposes: string[];

@@ -72,12 +72,15 @@ export function actor(c: Ctx): Actor {
   return user;
 }
 
-/** Every error body is `{ error: { code, message }, request_id }` [05 §7.1]. */
+/** A value of `error.details`: a scalar, or a list of numbers or strings (FX-5 review L8: `terms_due_days_mismatch` sends `{ stated: [14], dueDays: 7 }`). */
+export type ErrorDetail = string | number | boolean | null | readonly number[] | readonly string[];
+
+/** Every error body is `{ error: { code, message }, request_id }` [05 §7.1]; `details` rides inside `error`. */
 export const err = (
   c: Ctx,
   e: ApiError,
   status: ContentfulStatusCode,
-  details?: Readonly<Record<string, string | number | boolean | null>>,
+  details?: Readonly<Record<string, ErrorDetail>>,
 ) =>
   c.json(
     { error: { code: e.code, message: e.message, ...(details ? { details } : {}) }, request_id: c.var.rid },

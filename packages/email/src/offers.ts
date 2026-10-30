@@ -39,10 +39,11 @@ export function offerSent(d: OfferSentData, opts: LayoutOptions): Rendered {
   const subject = headerValue(
     `${estimate ? "Estimate" : "Proposal"}: ${d.title} (${d.number} v${d.version})`,
   );
-  const covers = estimate
-    ? "the line items, price and payment terms"
-    : "scope, timeline, price and payment schedule";
-  const lead = `Hi ${d.first_name}, your ${estimate ? "estimate" : "proposal"} is ready. It covers ${covers}, and it's valid until ${d.valid_until}.`;
+  // 07-Y item 14 (owner 2026-10-29): the proposal's line no longer says it covers scope and timeline (those sections can be hidden); the
+  // estimate's line is unchanged.
+  const lead = estimate
+    ? `Hi ${d.first_name}, your estimate is ready. It covers the line items, price and payment terms, and it's valid until ${d.valid_until}.`
+    : `Hi ${d.first_name}, your proposal is ready, with the price and payment schedule. It's valid until ${d.valid_until}.`;
   const rows: [string, string][] = [
     ["Number", `${d.number} v${d.version}`],
     ["Total", d.total],
@@ -86,7 +87,8 @@ export function offerAcceptedClient(d: OfferAcceptedData, opts: LayoutOptions): 
   return securityEmail(acceptedSubject(d), opts, {
     before: [
       para(
-        `Thank you, ${d.typed_name}. Your acceptance was recorded on ${d.accepted_at_ist}. Links to the accepted proposal and the acceptance certificate are below.`,
+        // 07-Y item 13 (owner 2026-10-29): "estimate" when the document is an estimate.
+        `Thank you, ${d.typed_name}. Your acceptance was recorded on ${d.accepted_at_ist}. Links to the accepted ${d.kind === "estimate" ? "estimate" : "proposal"} and the acceptance certificate are below.`,
       ),
     ],
     // 07-N has no label for this button yet (the link opens the accepted version, with both downloads).

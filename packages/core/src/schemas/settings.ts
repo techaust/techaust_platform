@@ -50,7 +50,7 @@ const intBetween = (min: number, max?: number) =>
 const text = (min: number, max?: number) =>
   z.string().check(z.minLength(min), ...(max === undefined ? [] : [z.maxLength(max)]));
 
-/** A GSTIN, normalised (trim, upper case, no spaces) and checked: shape, known state, check character (VERIFY WITH CA). */
+/** A GSTIN, normalised (trim, upper case, no spaces) and checked: shape, known state, check character (state codes Researched 2026-10-29 (08-C RA-34); the check-character algorithm OPEN (08-C RA-34): no official text found). */
 const gstin = z.pipe(
   z.string({ error: "Enter the GSTIN" }),
   z.transform((value, ctx) => {
@@ -98,7 +98,7 @@ export const companySettings = z
   .strictObject({
     tradeName: text(1),
     legalName: z.nullable(text(1)),
-    /** Checked like any GSTIN: shape, a known state code and the check character (VERIFY WITH CA). */
+    /** Checked like any GSTIN: shape, a known state code and the check character (08-C RA-34). */
     gstin: z.nullable(gstin),
     stateCode,
     address: z.nullable(z.string()),
@@ -572,7 +572,8 @@ export const SETTINGS_DEFAULTS: Settings = {
     smallJobThreshold: { INR: 1_00_000_00, USD: 2_000_00 },
     reminderOffsetsDays: [-3, 0, 3, 7, 14],
     reminderWindowIst: { fromHour: 9, toHour: 19 },
-    // VERIFY WITH CA/LEGAL: the default part-payment floor (docs/04 ADM-SET-05): INR 10,000.
+    // The default part-payment floor (docs/04 ADM-SET-05): INR 10,000. Researched 2026-10-29, Razorpay first_min_partial_amount (08-C RB-39): a
+    // commercial default, no regulatory floor.
     razorpayMinPartialInrMinor: 10_000_00,
     // OPEN (08-C RB-23): is a ₹10,000 website-use cap enforceable against a consumer? INR 10,000 is the figure the site printed before this setting existed.
     websiteLiabilityCapInrMinor: 1_000_000,

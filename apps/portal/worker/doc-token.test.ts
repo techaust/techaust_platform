@@ -479,13 +479,25 @@ describe("everything else is the same 404 [POR-06]", () => {
     const f = await fixtures();
     const doc = await frozenDoc(f.b.id, "tax_invoice");
     const token = await link(f.b.finance, doc);
-    expect((await use(token)).status).toBe(200);
+    // FX-5 (owner decision 2026-10-30, 08-C RA-10): a document the client has opened is never voided (trigger documents_viewed_no_void), so
+    // the void lands before the first use here; the link made while it was open stops working.
     await env.DB.prepare(
       "UPDATE documents SET status = 'void', voided_at = ?1, void_reason = 'test' WHERE id = ?2",
     )
       .bind(Date.now(), doc)
       .run();
     expect((await use(token)).status).toBe(404);
+    // and once opened, a document can't be voided at all
+    const opened = await frozenDoc(f.b.id, "tax_invoice");
+    const openedToken = await link(f.b.finance, opened);
+    expect((await use(openedToken)).status).toBe(200);
+    await expect(
+      env.DB.prepare(
+        "UPDATE documents SET status = 'void', voided_at = ?1, void_reason = 'test' WHERE id = ?2",
+      )
+        .bind(Date.now(), opened)
+        .run(),
+    ).rejects.toThrow(/documents_viewed_no_void/);
   });
 });
 
@@ -592,6 +604,10 @@ describe("the PDF behind the link [POR-06, M4.5 headers]", () => {
     const pending = await usePdf(await link(f.a.finance, none));
     expect(pending.status).toBe(409);
     expect(((await bodyOf(pending)).error as { code: string }).code).toBe("pdf_pending");
+    // a PDF not delivered yet is not a view (lead, FX-5 fix round 1, question 2)
+    expect(
+      (await one<{ v: number | null }>("SELECT viewed_at AS v FROM documents WHERE id = ?", none))?.v ?? null,
+    ).toBeNull();
     const key = `docs/tax_invoice/2026-27/${9000 + ++seq}-v1.pdf`;
     await env.DOCS.put(key, "%PDF-1.4 test");
     const doc = await frozenDoc(f.a.id, "tax_invoice", { pdfKey: key });
@@ -603,6 +619,27 @@ describe("the PDF behind the link [POR-06, M4.5 headers]", () => {
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(res.headers.get("Content-Security-Policy")).toBe("sandbox");
+  });
+  it("FX-5 (early check 2; 08-C RA-10): opening the PDF through the link records the first view before the answer, once; a bad link writes none", async () => {
+    const f = await fixtures();
+    const viewedAt = async (id: string) =>
+      (await one<{ v: number | null }>("SELECT viewed_at AS v FROM documents WHERE id = ?", id))?.v ?? null;
+    const key = `docs/tax_invoice/2026-27/${9000 + ++seq}-v1.pdf`;
+    await env.DOCS.put(key, "%PDF-1.4 view");
+    const doc = await frozenDoc(f.a.id, "tax_invoice", { pdfKey: key });
+    const token = await link(f.a.finance, doc);
+    const res = await usePdf(token);
+    expect(res.status).toBe(200);
+    await res.arrayBuffer();
+    const first = await viewedAt(doc);
+    expect(first).not.toBeNull();
+    const again = await usePdf(token);
+    expect(again.status).toBe(200);
+    await again.arrayBuffer();
+    expect(await viewedAt(doc)).toBe(first);
+    const other = await frozenDoc(f.a.id, "tax_invoice", { pdfKey: key });
+    expect((await usePdf(`${token}x`)).status).toBe(404);
+    expect(await viewedAt(other)).toBeNull();
   });
   it("a bad link is the same 404 and counts", async () => {
     const ip = "192.0.2.83";

@@ -143,7 +143,8 @@ export const EMAIL_PREVIEW = {
   lead: (kind: string, firstName: string, validUntil: string) =>
     kind === "estimate"
       ? `Hi ${firstName}, your estimate is ready. It covers the line items, price and payment terms, and it's valid until ${validUntil}.`
-      : `Hi ${firstName}, your proposal is ready. It covers scope, timeline, price and payment schedule, and it's valid until ${validUntil}.`,
+      : // 07-Y item 14 (owner 2026-10-29)
+        `Hi ${firstName}, your proposal is ready, with the price and payment schedule. It's valid until ${validUntil}.`,
   facts: { number: "Number", total: "Total", validUntil: "Valid until" },
   button: "Review and accept",
   attached: "The PDF is attached.",

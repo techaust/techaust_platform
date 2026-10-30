@@ -6,11 +6,13 @@ import { describe, expect, it } from "vitest";
 import { createDb } from "../src/client.ts";
 import { catalogueItems, settings } from "../src/schema/index.ts";
 import { CATALOGUE } from "../src/seed/catalogue.ts";
-import { literal, seedSql, seedStatements } from "../src/seed/index.ts";
+import { literal, proposalTermsV2Select, seedSql, seedStatements } from "../src/seed/index.ts";
 import {
   PROPOSAL_TERMS_V1,
   PROPOSAL_TERMS_V1_OWNER_CONFIRMS,
   PROPOSAL_TERMS_V1_SHA256,
+  PROPOSAL_TERMS_V2,
+  PROPOSAL_TERMS_V2_SHA256,
 } from "../src/seed/terms.ts";
 import { all, first, run } from "./helpers.ts";
 
@@ -138,7 +140,15 @@ describe("seed [ADM-CAT-01]", () => {
     expect(v1?.body_md).toBe(PROPOSAL_TERMS_V1);
     expect(v1?.sha256).toBe(await sha256Hex(PROPOSAL_TERMS_V1));
     expect(PROPOSAL_TERMS_V1_SHA256).toBe(await sha256Hex(PROPOSAL_TERMS_V1));
-    expect(await first("SELECT count(*) AS n FROM terms_versions WHERE kind = 'proposal'")).toEqual({ n: 1 });
+    // FX-5: version 2 (07-Y items 1 and 2) follows it, once, however often the seed runs
+    expect(await first("SELECT count(*) AS n FROM terms_versions WHERE kind = 'proposal'")).toEqual({ n: 2 });
+    expect(
+      await first("SELECT version, sha256 FROM terms_versions WHERE kind = 'proposal' AND version = 2"),
+    ).toEqual({ version: 2, sha256: PROPOSAL_TERMS_V2_SHA256 });
+    await seed();
+    expect(await first("SELECT count(*) AS n FROM terms_versions WHERE kind = 'proposal'")).toEqual({ n: 2 });
+    // once version 2 is there, its SELECT yields nothing on its own (no reliance on the unique index: review L1)
+    expect(await all(proposalTermsV2Select())).toEqual([]);
     // six numbered terms, no placeholders, the warranty line is the one the owner still has to confirm
     expect(PROPOSAL_TERMS_V1.split("\n\n")).toHaveLength(6);
     expect(PROPOSAL_TERMS_V1).not.toMatch(/\{\{/);
@@ -146,17 +156,66 @@ describe("seed [ADM-CAT-01]", () => {
       "4. **Warranty.** Defects in what we delivered are fixed free for 30 days after launch.",
     );
     expect(PROPOSAL_TERMS_V1_OWNER_CONFIRMS).toBe("warranty");
-    // the owner writes version 2; the seed leaves it, and does not add anything
+    // the owner writes version 3; the seed leaves it, and does not add anything
     await run(
-      "INSERT INTO terms_versions (id, kind, version, body_md, sha256) VALUES ('owner-terms-2', 'proposal', 2, 'Owner text', 'h2')",
+      "INSERT INTO terms_versions (id, kind, version, body_md, sha256) VALUES ('owner-terms-3', 'proposal', 3, 'Owner text', 'h3')",
     );
     await seed();
     expect(
       await all("SELECT version, body_md FROM terms_versions WHERE kind = 'proposal' ORDER BY version"),
     ).toEqual([
       { version: 1, body_md: PROPOSAL_TERMS_V1 },
-      { version: 2, body_md: "Owner text" },
+      { version: 2, body_md: PROPOSAL_TERMS_V2 },
+      { version: 3, body_md: "Owner text" },
     ]);
+  });
+
+  it("FX-5 (07-Y items 1 and 2, owner 2026-10-29): version 2 differs from version 1 only in the Ownership clause and the GST line; its hash is its text's", async () => {
+    expect(PROPOSAL_TERMS_V2_SHA256).toBe(await sha256Hex(PROPOSAL_TERMS_V2));
+    const one = PROPOSAL_TERMS_V1.split("\n\n");
+    const two = PROPOSAL_TERMS_V2.split("\n\n");
+    expect(two).toHaveLength(6);
+    expect(two.filter((t, i) => t !== one[i]).map((t) => t.slice(0, 15))).toEqual([
+      "2. **Payment.**",
+      "3. **Ownership.",
+    ]);
+    expect(two[1]).toBe(
+      "2. **Payment.** Payments follow the schedule in this proposal. Invoices are due within 7 days. GST at 18 % is added unless the work is an export of services under our Letter of Undertaking.",
+    );
+    expect(two[2]).toBe(
+      "3. **Ownership.** On full payment, we assign to you all copyright in the work we make under this proposal, worldwide and for its full term; the assignment does not lapse if unused. Our pre-existing tools and third-party or open-source parts are licensed to you, not assigned. We keep the right to reuse general know-how.",
+    );
+    expect(PROPOSAL_TERMS_V2).not.toMatch(/\{\{|for Indian clients|which we list/);
+  });
+
+  it("FX-5: on a database where the owner saved a later version, version 2's text is never added, even under another hash and id, at 7 days (review M2, L1)", async () => {
+    // terms rows are append-only, so the statement is run again under another hash and id, as if version 2's text were not there yet; the
+    // newest row is the owner's version 3 (above), so the guards alone refuse it
+    const stmt = seedStatements().find((s) => s.includes(PROPOSAL_TERMS_V2_SHA256)) as string;
+    expect(stmt).toBe(
+      `INSERT INTO \`terms_versions\` (\`id\`, \`kind\`, \`version\`, \`body_md\`, \`sha256\`) ${proposalTermsV2Select()} ON CONFLICT DO NOTHING;`,
+    );
+    // a filtered row, not an aggregate (an aggregate SELECT always yields a row)
+    expect(stmt).not.toContain("coalesce(max(version)");
+    const select = proposalTermsV2Select()
+      .replaceAll(PROPOSAL_TERMS_V2_SHA256, "f".repeat(64))
+      .replace(/^SELECT '[^']+', 'proposal'/, "SELECT 'fx5-guard-test', 'proposal'");
+    expect(select).toContain("'fx5-guard-test'");
+    expect(
+      await first<{ dueDays: number }>(
+        "SELECT json_extract(value, '$.dueDays') AS dueDays FROM settings WHERE key = 'payment_terms'",
+      ),
+    ).toEqual({ dueDays: 7 });
+    const before = await all(
+      "SELECT version, sha256 FROM terms_versions WHERE kind = 'proposal' ORDER BY version",
+    );
+    expect(await all(select)).toEqual([]);
+    await run(
+      `INSERT INTO terms_versions (id, kind, version, body_md, sha256) ${select} ON CONFLICT DO NOTHING`,
+    );
+    expect(
+      await all("SELECT version, sha256 FROM terms_versions WHERE kind = 'proposal' ORDER BY version"),
+    ).toEqual(before);
   });
 
   it("produces SQL for wrangler d1 execute, with safe literals", () => {

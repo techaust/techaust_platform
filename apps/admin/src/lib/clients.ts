@@ -1,7 +1,7 @@
 // How the Clients screens read and write (M3.3, ADM-CLI-01..05): the labels, addresses and tags as form text and back,
 // the two edit forms of a client page (details and billing) as drafts of plain text, the patches that send only what the
 // person changed (the M3.2 drafts rule), where an API refusal lands, the activity in words and the data export file.
-// Pure, so the rules are tested without a browser. GST treatment: Researched 2026-10-28, s.12 IGST and Rule 46 CGST (08-C RA-12, RA-05); data-subject items: VERIFY WITH CA/LEGAL (no 08-C row).
+// Pure, so the rules are tested without a browser. GST treatment: Researched 2026-10-28, s.12 IGST and Rule 46 CGST (08-C RA-12, RA-05); data-subject items: Researched 2026-10-29, DPDP s.11, s.12(3) (08-C RB-36, RB-37), with their OPEN parts.
 import { ERASE_REASONS, type EraseReason } from "@techaust/core/clients";
 import { countryName } from "@techaust/core/form-labels";
 import { isStateCode, STATE_CODES, validateGstin } from "@techaust/core/gstin";
@@ -365,8 +365,8 @@ export function contactCountText(page: { liveContactCount: number }): string {
 }
 
 /**
- * Erasing or anonymising this contact also removes the client's project notes and files (owner, 2026-10-25; VERIFY WITH
- * CA/LEGAL): the client is an individual and this is its last live contact, the API's own condition (clients.ts).
+ * Erasing or anonymising this contact also removes the client's project notes and files (owner, 2026-10-25;
+ * Researched 2026-10-29, DPDP s.12(3) (08-C RB-37)): the client is an individual and this is its last live contact, the API's own condition (clients.ts).
  */
 export const lastLiveOfIndividual = (
   page: { client: { type: "business" | "individual" }; liveContactCount: number },

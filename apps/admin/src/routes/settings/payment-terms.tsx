@@ -1,11 +1,12 @@
-// Payment terms (ADM-SET-05, VERIFY WITH CA/LEGAL): due days, proposal validity, the small-job threshold in both
+// Payment terms (ADM-SET-05; Researched 2026-10-29, commercial settings, MSMED ss.15-16 (08-C RB-39); the liability cap OPEN (08-C RB-23)): due days, proposal validity, the small-job threshold in both
 // currencies, the Razorpay part-payment floor, the website's liability cap, reminder offsets and their sending window,
 // and the build schedule (which must add up to 100 %). Amounts are typed in rupees or dollars and stored in minor units
 // through @techaust/core; percentages are stored in basis points. How advances are documented lives under Tax.
 import type { Settings } from "@techaust/core/settings";
 import { Link } from "react-router";
 import { NumberUnit, SettingRow } from "../../components/form.tsx";
-import { Plus, X } from "../../components/icons.tsx";
+import { AlertTriangle, Plus, X } from "../../components/icons.tsx";
+import { TERMS_DUE_DAYS_COPY } from "../../lib/copy-z.ts";
 import {
   bpToPercent,
   type FieldErrors,
@@ -14,6 +15,7 @@ import {
   moneyInput,
   offsetText,
   percentToBp,
+  termsDueDaysClash,
 } from "../../lib/settings-form.ts";
 import { type Built, ctl, GroupForm, type GroupSpec, MoneyIn, RowError } from "./kit.tsx";
 
@@ -40,6 +42,28 @@ const HOURS = Array.from({ length: 24 }, (_, h) => h);
 let rows = 0;
 const rowId = () => `row-${++rows}`;
 const hh = (h: number) => `${String(h).padStart(2, "0")}:00`;
+
+const TERMS_PAGE = "Settings › Terms";
+
+/** 07-Z §2 line 4 (FX-5), its "Settings › Terms" a link to that page; the words are the line's own. */
+function TermsDueDaysWarning({ stated }: { stated: readonly number[] }) {
+  const line = TERMS_DUE_DAYS_COPY.warning(stated);
+  const at = line.indexOf(TERMS_PAGE);
+  return (
+    <p className="field-warning setting__warning" id="pt-due-terms">
+      <AlertTriangle size={16} />
+      {at < 0 ? (
+        <span>{line}</span>
+      ) : (
+        <span>
+          {line.slice(0, at)}
+          <Link to="/settings/terms">{TERMS_PAGE}</Link>
+          {line.slice(at + TERMS_PAGE.length)}
+        </span>
+      )}
+    </p>
+  );
+}
 
 /** The schedule's total in basis points, or null while a share isn't a valid percentage. */
 function scheduleTotal(steps: Step[]): number | null {
@@ -138,8 +162,10 @@ export function PaymentTerms() {
         </p>
       }
     >
-      {({ form: f, set, error }) => {
+      {({ form: f, set, error, doc }) => {
         const total = scheduleTotal(f.schedule);
+        // FX-5 (full audit C4): the newest proposal terms state other days to pay than the ones on screen.
+        const clash = termsDueDaysClash(doc.meta.termsDueDays?.stated, f.dueDays, doc.value.dueDays);
         return (
           <>
             <h2 className="settings-sub">Due dates</h2>
@@ -151,12 +177,18 @@ export function PaymentTerms() {
                 description="Days after the invoice date. Clients can have their own."
               >
                 <NumberUnit
-                  a11y={ctl("f-dueDays", error("f-dueDays"), "pt-due-desc")}
+                  a11y={ctl(
+                    "f-dueDays",
+                    error("f-dueDays"),
+                    clash.length > 0 ? "pt-due-desc pt-due-terms" : "pt-due-desc",
+                  )}
                   value={f.dueDays}
                   onChange={(dueDays) => set({ dueDays })}
                   unit="days"
                 />
                 <RowError id="f-dueDays" error={error("f-dueDays")} />
+                {/* A live region that stays on the page, so the line is read out when typing makes the two disagree. */}
+                <div aria-live="polite">{clash.length > 0 && <TermsDueDaysWarning stated={clash} />}</div>
               </SettingRow>
               <SettingRow
                 id="pt-valid"

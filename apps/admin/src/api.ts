@@ -90,6 +90,8 @@ export type GroupMeta = {
     currentMissing: boolean;
   } | null;
   notes?: string;
+  /** FX-5 (Settings › Payment terms): the days the newest proposal terms state, and whether they all match the saved due days. */
+  termsDueDays?: { stated: number[]; matches: boolean };
   pan?: string | null;
   logos?: readonly string[];
   fy?: string;
@@ -971,7 +973,7 @@ export type StatementPage = {
 export type FieldIssue = { path: string; message: string };
 
 type ApiErrorBody = {
-  /** `details` (step 5): the worker's `err(..., details)`, e.g. `{ fy }` of `advance_lut_missing`. */
+  /** `details` (step 5): the worker's `err(..., details)`, e.g. `{ fy }` of `advance_lut_missing`, `{ stated, dueDays }` of `terms_due_days_mismatch`. */
   error?: { code: string; message: string; details?: unknown };
   request_id?: string;
   fields?: FieldIssue[];
@@ -1023,6 +1025,8 @@ export class RequestError extends Error {
       fy?: string;
       /** `error.details.reason` (`debit_tax_only_invalid`: `odd_amount`, 07-W 5.9). */
       reason?: string;
+      /** FX-5: 400 `terms_due_days_mismatch`, the days the terms state that differ (`stated`) and Settings › Payment terms' days (`dueDays`). */
+      termsDueDays?: { stated: number[]; dueDays: number };
     } = {},
   ) {
     super(message);
@@ -1104,6 +1108,12 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
   const details = typeof inner === "object" && inner !== null ? (inner as Record<string, unknown>) : {};
   const fy = typeof details.fy === "string" ? details.fy : undefined;
   const date = typeof data.date === "string" ? data.date : undefined;
+  // FX-5: `terms_due_days_mismatch` sends `{ stated, dueDays }` (the days the terms state that differ, Settings › Payment terms' days).
+  const stated = Array.isArray(details.stated) ? details.stated.filter(isDays) : [];
+  const termsDueDays =
+    e.code === "terms_due_days_mismatch" && stated.length > 0 && isDays(details.dueDays)
+      ? { stated, dueDays: details.dueDays }
+      : undefined;
   const error = new RequestError(
     res.status,
     e.code,
@@ -1134,6 +1144,7 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
       ...(date !== undefined ? { date } : {}),
       ...(fy !== undefined ? { fy } : {}),
       ...(typeof details.reason === "string" ? { reason: details.reason } : {}),
+      ...(termsDueDays ? { termsDueDays } : {}),
     },
   );
   if (signedIn && res.status === 401 && e.code === "unauthenticated") unauthenticatedHandler?.();
@@ -1141,6 +1152,8 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
 }
 
 const strings = (xs: unknown[]): string[] => xs.filter((x): x is string => typeof x === "string");
+
+const isDays = (x: unknown): x is number => typeof x === "number" && Number.isInteger(x) && x >= 0;
 
 /** The blockers of a 409 `issue_blocked`: the code, and the line, amount, year or date its sentence names (M5.2: `lut_missing` has `fy`,
  * `fx_missing` `date`; M5.3: a note's `remaining` and `date`). */

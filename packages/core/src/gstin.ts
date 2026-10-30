@@ -1,6 +1,8 @@
-// GSTIN validation and GST state codes [ADM-SET-01, ADM-CLI-01]. VERIFY WITH CA: the state list is the
-// e-way bill master (docs.ewaybillgst.gov.in/apidocs/state-code.html, checked 2026-10-06; docs/08-A §place
-// of supply). Tax and place-of-supply rules live in settings and the tax engine (M4.2), not here.
+// GSTIN validation and GST state codes [ADM-SET-01, ADM-CLI-01]. Researched 2026-10-29, e-invoice portal master codes (08-C RA-34): the state
+// list matches the master (97 Other Territory; 96, other countries, is the export place of supply below); 25 (Daman and Diu, merged
+// into 26 from 1 Aug 2020, Circular 168/24/2021-GST) and 28 are kept as legacy codes, accepted with a flag. First checked against the e-way
+// bill master (docs.ewaybillgst.gov.in/apidocs/state-code.html, 2026-10-06; docs/08-A §place of supply). Tax and place-of-supply rules live in
+// settings and the tax engine (M4.2), not here.
 
 export type StateInfo = {
   readonly name: string;

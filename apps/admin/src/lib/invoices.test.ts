@@ -10,6 +10,8 @@ import moneySource from "../routes/documents/money.tsx?raw";
 import editorSource from "../routes/invoices/editor.tsx?raw";
 import readSource from "../routes/invoices/read.tsx?raw";
 import { APPROVED_07Y, PLACEHOLDER_MARK } from "./copy-y.ts";
+import { APPROVED_07Z } from "./copy-z.ts";
+import { INVT_COPY } from "./invoice-types.ts";
 import {
   applyInvoiceSave,
   BADGE_LABELS,
@@ -46,6 +48,8 @@ import {
   taxHeadEstimate,
   typeLabel,
   voidBlockedText,
+  voidErrorText,
+  voidRefusalStalesPage,
   voidTitle,
 } from "./invoices.ts";
 import { canDownloadSupplierCopy, fetchSupplierCopy, type InvoiceView } from "./invoices-api.ts";
@@ -61,6 +65,7 @@ const view = (over: Partial<InvoiceView> = {}): InvoiceView => ({
   issueDate: null,
   dueDate: null,
   dueDays: 7,
+  defaultDueDays: 7,
   dueDatePreview: "2026-11-03",
   createdAt: 1,
   updatedAt: 100,
@@ -145,8 +150,15 @@ describe("07-R copy", () => {
     expect(INV_COPY.deleteBody).toBe(
       "Delete this draft? It has no number yet, so nothing is lost from the series.",
     );
-    expect(dueNote("03 Nov 2026", 7)).toBe(
+    expect(dueNote("03 Nov 2026", 7, 7)).toBe(
       "Due 03 Nov 2026: 7 days after the issue date (the client's terms, or Net 7).",
+    );
+    // FX-5 review L6: "Net N" is the setting's number (here 14), whatever the client's own days
+    expect(dueNote("10 Nov 2026", 14, 14)).toBe(
+      "Due 10 Nov 2026: 14 days after the issue date (the client's terms, or Net 14).",
+    );
+    expect(dueNote("20 Nov 2026", 24, 14)).toBe(
+      "Due 20 Nov 2026: 24 days after the issue date (the client's terms, or Net 14).",
     );
     expect(fromMilestone("Design", "Rebuild")).toBe(
       'Created from the milestone "Design" of Rebuild. The total matches the milestone amount, GST included.',
@@ -305,6 +317,49 @@ describe("errors", () => {
       INV_ERRORS.return_period_closed,
     );
     expect(voidBlockedText(["has_payment"])).toBe(INV_ERRORS.void_not_allowed);
+  });
+
+  it("FX-5 (owner decision 2026-10-30, 08-C RA-10): a document the client opened says so (07-Z §1, marked until approved); a payment or a credit still wins", () => {
+    const invoiceLine =
+      "The client has opened this invoice in the portal, so it can't be voided. Use a credit note instead.";
+    const mark = APPROVED_07Z ? "" : "[Placeholder] ";
+    expect(voidBlockedText(["viewed_by_client"])).toBe(`${mark}${invoiceLine}`);
+    expect(voidBlockedText(["already_emailed", "viewed_by_client"])).toBe(`${mark}${invoiceLine}`);
+    expect(voidBlockedText(["has_payment", "viewed_by_client"])).toBe(INV_ERRORS.void_not_allowed);
+    expect(voidBlockedText(["viewed_by_client", "return_period_closed"])).toBe(
+      INV_ERRORS.return_period_closed,
+    );
+    expect(voidBlockedText(["viewed_by_client"], "proforma")).toBe(
+      `${mark}The client has opened this proforma in the portal, so it can't be voided.`,
+    );
+    expect(voidBlockedText(["has_payment", "viewed_by_client"], "proforma")).toBe(
+      INVT_COPY.proformaVoidBlocked,
+    );
+    // the dialog's sentence for the route's 409 (a view that landed while the dialog was open)
+    expect(invErrorText(new RequestError(409, "viewed_by_client", "x"))).toBe(`${mark}${invoiceLine}`);
+    // the void dialog names the document's own type; other failures keep invErrorText's sentence
+    const viewed = new RequestError(409, "viewed_by_client", "x");
+    expect(voidErrorText(viewed, "proforma")).toBe(
+      `${mark}The client has opened this proforma in the portal, so it can't be voided.`,
+    );
+    expect(voidErrorText(viewed, "proforma")).not.toContain("credit note");
+    expect(voidErrorText(viewed, "tax_invoice")).toBe(`${mark}${invoiceLine}`);
+    expect(voidErrorText(viewed)).toBe(`${mark}${invoiceLine}`);
+    const closed = new RequestError(409, "return_period_closed", "x");
+    expect(voidErrorText(closed, "proforma")).toBe(invErrorText(closed));
+    // re-check finding 2: a proforma refused for a payment or a converted invoice keeps its own line, never the invoice's credit note
+    const notAllowed = new RequestError(409, "void_not_allowed", "x");
+    expect(voidErrorText(notAllowed, "proforma")).toBe(INVT_COPY.proformaVoidBlocked);
+    expect(voidErrorText(notAllowed, "proforma")).not.toContain("credit note");
+    expect(voidErrorText(notAllowed, "tax_invoice")).toBe(invErrorText(notAllowed));
+    // review L2, re-check finding 3: any refused void (409) makes the page behind the dialog stale (it reloads when the dialog closes)
+    expect(voidRefusalStalesPage(viewed)).toBe(true);
+    expect(voidRefusalStalesPage(closed)).toBe(true);
+    expect(voidRefusalStalesPage(notAllowed)).toBe(true);
+    expect(voidRefusalStalesPage(new RequestError(409, "already_void", "x"))).toBe(true);
+    expect(voidRefusalStalesPage(new RequestError(400, "invalid", "x"))).toBe(false);
+    expect(voidRefusalStalesPage(new RequestError(0, "network", "x"))).toBe(false);
+    expect(voidRefusalStalesPage(new Error("viewed_by_client"))).toBe(false);
   });
 
   it("a proforma has its own title, locked banner and void line (07-S §8), never the credit-note advice", () => {

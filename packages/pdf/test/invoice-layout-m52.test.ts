@@ -154,6 +154,25 @@ describe("the export invoice (07-S §1)", () => {
 });
 
 describe("the proforma (07-S §2)", () => {
+  it("an overseas proforma prints its place of supply whole, 'Outside India (96)', with no 'State code' fact; an Indian one still splits (review M1)", async () => {
+    const { envelope, signature } = await buildInvoiceLayoutFixture("proforma");
+    const indian = body(renderDocumentHtml(toInvoiceView(envelope, DEFAULT_VIEW_CONFIG, { signature })));
+    expect(indian).toContain("<dt>Place of supply</dt><dd>West Bengal</dd>");
+    expect(indian).toContain("<dt>State code</dt><dd>19</dd>");
+    for (const type of ["export_lut", "export_igst"]) {
+      const e = clone(envelope);
+      e.snapshot.header.supply = { ...e.snapshot.header.supply, type, placeOfSupplyCode: "96" };
+      const view = toInvoiceView(e, DEFAULT_VIEW_CONFIG, { signature });
+      expect(view.type).toBe("proforma");
+      expect(view.export).toBeFalsy();
+      expect(view.placeOfSupply).toBe("Outside India (96)");
+      const h = body(renderDocumentHtml(view));
+      expect(h).toContain('<div class="wrap"><dt>Place of supply</dt><dd>Outside India (96)</dd></div>');
+      expect(h).not.toContain("<dt>State code</dt>");
+      expect(h).not.toContain("<dd>96</dd>");
+    }
+  });
+
   it("its title, the frozen notice under it as one text node, no copy mark and no empty paragraph, 'Proforma number', 'Proforma date', 'Valid until'", async () => {
     const { html, view } = await built("proforma");
     const h = body(html);

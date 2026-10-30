@@ -23,3 +23,21 @@ export const termsBody = (id: TermsBlockId) =>
   id === "refund_link"
     ? z.url({ protocol: /^https$/, error: "Enter a full https:// address" }).check(z.maxLength(300))
     : z.string().check(z.trim(), z.minLength(1, { error: "Enter the text" }), z.maxLength(12_000));
+
+/**
+ * FX-5 (full audit C4; Researched 2026-10-29, commercial settings (08-C RB-39)): every "due within N days" the proposal terms state, in order,
+ * without repeats. The terms are fixed text shared by every proposal, so a number that differs from Settings › Payment terms (`dueDays`) would
+ * promise the client one due date while its invoices carry another. Empty: the text states no number of days.
+ */
+export function termsDueDays(text: string): number[] {
+  const out: number[] = [];
+  for (const m of text.matchAll(/\bdue within (\d{1,3}) days?\b/gi)) {
+    const n = Number(m[1]);
+    if (!out.includes(n)) out.push(n);
+  }
+  return out;
+}
+
+/** The days the terms state that differ from the setting (empty: they agree, or the text states none). */
+export const termsDueDaysMismatch = (text: string, dueDays: number): number[] =>
+  termsDueDays(text).filter((n) => n !== dueDays);

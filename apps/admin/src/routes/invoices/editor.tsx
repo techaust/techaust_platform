@@ -339,7 +339,7 @@ export function InvoiceEditor({ view, reload }: { view: InvoiceView; reload: () 
               <dt>{INV_COPY.dueDate}</dt>
               <dd>
                 {v.dueDatePreview
-                  ? dueNote(dayText(v.dueDatePreview) ?? v.dueDatePreview, v.dueDays)
+                  ? dueNote(dayText(v.dueDatePreview) ?? v.dueDatePreview, v.dueDays, v.defaultDueDays)
                   : UNKNOWN}
               </dd>
             </dl>

@@ -111,7 +111,7 @@ export const milestoneDeleteConfirm = (title: string) =>
 export const shareConfirm = (client: string) =>
   `Share this note with ${client}? Their portal users will be able to read it.`;
 export const fileDeleteConfirm = (filename: string) => `Delete ${filename}? This can't be undone.`;
-/** 07-K addition to the 07-J erase and anonymise confirmations (VERIFY WITH CA/LEGAL). */
+/** 07-K addition to the 07-J erase and anonymise confirmations (Researched 2026-10-29, DPDP s.12(3) (08-C RB-37)). */
 export const lastContactLine = (client: string) =>
   `This is ${client}'s last contact, so their notes and files are deleted too, and their projects keep only their codes.`;
 

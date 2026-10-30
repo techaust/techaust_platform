@@ -920,6 +920,21 @@ export function taxOnlyNoteTriggerStatements(): string[] {
   ];
 }
 
+/** FX-5: the document types `documents_viewed_no_void` (0053) covers, pinned so a later type cannot move the bytes of 0053. */
+export const VIEWED_NO_VOID_TYPES_0053 = ["proforma", "tax_invoice", "export_invoice"] as const;
+
+/**
+ * FX-5 (full audit A0 3; owner decision 2026-10-30, docs/13; 08-C RA-10; a new trigger only, no table is rebuilt; the abort message starts with the
+ * trigger's name): `documents_viewed_no_void`: a proforma, tax or export invoice the client has opened in the portal (`viewed_at` set) is never
+ * voided; a credit note corrects an invoice, a delivered proforma stays until converted (lead, 2026-10-30). The twin of core `voidBlockers` (`viewed_by_client`) and of the void route's `viewed_at IS NULL`.
+ */
+export function voidViewTriggerStatements(): string[] {
+  const types = VIEWED_NO_VOID_TYPES_0053.map((t) => `'${t}'`).join(", ");
+  return [
+    `CREATE TRIGGER \`documents_viewed_no_void\` BEFORE UPDATE OF status ON \`documents\` WHEN NEW.status = 'void' AND OLD.status <> 'void' AND OLD.viewed_at IS NOT NULL AND OLD.type IN (${types}) BEGIN ${abort("documents_viewed_no_void: a document the client has opened in the portal is never voided; a credit note corrects it")} END;`,
+  ];
+}
+
 /** The trigger sets, by the name the migration is created with (`drizzle-kit generate --custom --name <set>`). */
 export const TRIGGER_SETS = {
   triggers: { what: "integrity triggers (docs/05 §5.3)", statements: triggerStatements },
@@ -985,6 +1000,10 @@ export const TRIGGER_SETS = {
   tax_only_note_triggers: {
     what: "full-audit invoicing fix (FX-4): a tax-only debit note is issued with no round-off, its total exactly its tax",
     statements: taxOnlyNoteTriggerStatements,
+  },
+  void_view_triggers: {
+    what: "full-audit fix (FX-5, owner decision 2026-10-30): an invoice-family document the client has opened in the portal is never voided",
+    statements: voidViewTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;

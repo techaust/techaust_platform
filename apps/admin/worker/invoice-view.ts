@@ -219,6 +219,7 @@ export function invoiceView(i: InvoiceViewInput) {
     creditedMinor: d.credited_minor,
     hasIssuedChild: i.hasIssuedChild,
     emailed: i.emailed,
+    viewed: d.viewed_at !== null,
     issueDate: d.issue_date,
     today: todayIso,
     type: d.type,
@@ -243,6 +244,8 @@ export function invoiceView(i: InvoiceViewInput) {
     dueDate: d.due_date,
     // A draft shows the due date it WOULD get today; the editor shows it read-only as "Net N" (it is never typed).
     dueDays,
+    // Settings › Payment terms' due days, the "Net N" the editor names when the client has no terms of its own (review L6).
+    defaultDueDays: settings.paymentTerms.dueDays,
     // A credit note has no due date (nothing is owed on it).
     dueDatePreview:
       d.type === "credit_note"

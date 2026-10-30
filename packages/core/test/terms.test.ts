@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { FINANCE_AUDIT_ACTIONS } from "../src/audit.ts";
-import { TERMS_BLOCK_IDS, TERMS_BLOCKS, termsBody, termsTarget } from "../src/terms.ts";
+import {
+  TERMS_BLOCK_IDS,
+  TERMS_BLOCKS,
+  termsBody,
+  termsDueDays,
+  termsDueDaysMismatch,
+  termsTarget,
+} from "../src/terms.ts";
 
 describe("document terms blocks [ADM-SET-08]", () => {
   it("maps the five PRD blocks to a table and kind, and refuses website and unknown names", () => {
@@ -32,5 +39,24 @@ describe("the accountant's audit list [ADM-AUD-02]", () => {
     for (const a of FINANCE_AUDIT_ACTIONS) expect(a).toMatch(/^[a-z_]+(\.[a-z_]+)+$/);
     expect(FINANCE_AUDIT_ACTIONS).toContain("settings.tax.update");
     expect(FINANCE_AUDIT_ACTIONS).not.toContain("settings.company.update");
+  });
+});
+
+describe("the due days the proposal terms state [FX-5 C4, ADM-SET-05, 08-C RB-39]", () => {
+  it("reads every 'due within N days', once each, in order; none is empty", () => {
+    expect(termsDueDays("2. **Payment.** Invoices are due within 7 days. GST at 18 % is added.")).toEqual([
+      7,
+    ]);
+    expect(termsDueDays("Due within 7 days. Then due within 30 days, and again due within 7 days.")).toEqual([
+      7, 30,
+    ]);
+    expect(termsDueDays("Invoices are DUE WITHIN 1 day of issue.")).toEqual([1]);
+    expect(termsDueDays("Payable on receipt.")).toEqual([]);
+    expect(termsDueDays("overdue within 7 days")).toEqual([]);
+  });
+  it("names only the days that differ from the setting", () => {
+    expect(termsDueDaysMismatch("Invoices are due within 7 days.", 7)).toEqual([]);
+    expect(termsDueDaysMismatch("Invoices are due within 7 days.", 14)).toEqual([7]);
+    expect(termsDueDaysMismatch("No number here.", 14)).toEqual([]);
   });
 });

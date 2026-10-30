@@ -24,6 +24,7 @@ import {
   moneyInput,
   nearestField,
   percentToBp,
+  termsDueDaysClash,
 } from "./settings-form.ts";
 import { userRows } from "./users.ts";
 
@@ -186,6 +187,19 @@ const entry = (over: Partial<AuditEntry>): AuditEntry => ({
   ip: "203.0.113.5",
   userAgent: null,
   ...over,
+});
+
+describe("Settings › Payment terms against the proposal terms' due days [ADM-SET-05, FX-5]", () => {
+  it("names the terms' days when any differs from the days on screen (typed while valid, else saved)", () => {
+    expect(termsDueDaysClash([7], "7", 7)).toEqual([]);
+    expect(termsDueDaysClash([7], "14", 7)).toEqual([7]);
+    expect(termsDueDaysClash([7], "", 14)).toEqual([7]);
+    expect(termsDueDaysClash([7], "abc", 7)).toEqual([]);
+    expect(termsDueDaysClash([7], "120", 7)).toEqual([]);
+    expect(termsDueDaysClash([7, 30], "7", 7)).toEqual([7, 30]);
+    expect(termsDueDaysClash([], "14", 7)).toEqual([]);
+    expect(termsDueDaysClash(undefined, "14", 7)).toEqual([]);
+  });
 });
 
 describe("the audit log in words and as CSV [ADM-AUD-02]", () => {

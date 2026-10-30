@@ -4,12 +4,12 @@
 // "paymentTerms.buildSchedule.1.label") and each rule, a banned phrase by its id, never the text. This turns them into one
 // group per thing to fix (a service, or Settings › Payment terms), each with a line per field and rule in the entry form's words.
 //
-// The words are new (07-Y, PENDING the owner): every line shows the "[Placeholder] " mark until the owner approves the page,
+// The words are new (07-Y, APPROVED by the owner on 2026-10-29, switched on in FX-5): every line shows the "[Placeholder] " mark until the owner approves the page,
 // then `APPROVED_07Y_PUBLISH` turns true and the marks go (the 07-X pattern, lib/copy-x.ts).
 import type { CatalogueListItem } from "../api.ts";
 import { PLACEHOLDER_MARK } from "./copy-x.ts";
 
-export const APPROVED_07Y_PUBLISH = false;
+export const APPROVED_07Y_PUBLISH = true;
 /** A 07-Y line as the screen shows it: marked until the owner approves 07-Y. */
 const Y = (line: string): string => (APPROVED_07Y_PUBLISH ? line : `${PLACEHOLDER_MARK} ${line}`);
 

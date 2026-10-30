@@ -7,6 +7,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ISSUED_DOCUMENTS_SQL } from "./invoice-model.ts";
 import { insert } from "./test-clients.ts";
 import { call, countOf, one, rows, sessionFor } from "./test-helpers.ts";
+import { mkProforma } from "./test-invoice-types.ts";
 import {
   auditCount,
   codeOf,
@@ -25,6 +26,7 @@ import {
   putCompany,
   voidInvoice,
 } from "./test-invoices.ts";
+import { beforeBatchHolding } from "./test-quotes.ts";
 
 const owner = () => sessionFor("owner", { stepUp: true });
 
@@ -396,5 +398,175 @@ describe("what was issued, for GSTR-1 Table 13 [08-A §4]", () => {
     expect(list.invoices[0]).toMatchObject({ status: "void", number: b.number });
     expect(await countOf("documents", "client_id = ? AND status = 'void'", c.clientId)).toBe(1);
     expect(await invoiceCounter()).toBeGreaterThan(Math.max(...nums));
+  });
+});
+
+describe("a document the client opened in the portal is never voided [FX-5, A0 3; owner decision 2026-10-30; 08-C RA-10]", () => {
+  const view = (id: string, at = Date.now()) =>
+    env.DB.prepare("UPDATE documents SET viewed_at = ?2 WHERE id = ?1 AND viewed_at IS NULL")
+      .bind(id, at)
+      .run();
+
+  it("viewed: 409 viewed_by_client with the reason, nothing written; the view says so before anyone tries", async () => {
+    const o = await owner();
+    const inv = await issued(o);
+    await view(inv.id);
+    const before = await invoiceRow(inv.id);
+    const res = await voidInvoice(o, inv.id);
+    expect(res.status).toBe(409);
+    const body = await json(res);
+    expect(body.error.code).toBe("viewed_by_client");
+    expect(body.reasons).toEqual(["viewed_by_client"]);
+    expect(await invoiceRow(inv.id)).toEqual(before);
+    expect(await auditCount("invoice.void", inv.id)).toBe(0);
+    const v = await getInvoice(o, inv.id);
+    expect(v.void).toMatchObject({ canVoid: false, blockers: ["viewed_by_client"] });
+  });
+
+  it("not viewed: still voidable (the other rules unchanged)", async () => {
+    const o = await owner();
+    const inv = await issued(o);
+    const v = await getInvoice(o, inv.id);
+    expect(v.void).toMatchObject({ canVoid: true, blockers: [] });
+    const res = await voidInvoice(o, inv.id);
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await invoiceRow(inv.id)).toMatchObject({ status: "void" });
+  });
+
+  it("a view landing between the check and the write refuses it in SQL: 409 viewed_by_client, nothing written, no audit row", async () => {
+    const o = await owner();
+    const inv = await issued(o);
+    const before = await invoiceRow(inv.id);
+    const row = await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?", inv.id);
+    const res = await call(
+      `/invoices/${inv.id}/void`,
+      { cookie: o.cookie, body: { expectedUpdatedAt: row?.updated_at, reason: "Issued in error" } },
+      beforeBatchHolding("SET status = 'void'", async () => {
+        await view(inv.id);
+      }),
+    );
+    expect(res.status, await res.clone().text()).toBe(409);
+    const body = await json(res);
+    expect(body.error.code).toBe("viewed_by_client");
+    expect(body.reasons).toEqual(["viewed_by_client"]);
+    // the view is the only change, and `invoiceRow` does not read `viewed_at` (a view never moves `updated_at`)
+    expect(await invoiceRow(inv.id)).toEqual(before);
+    expect(await auditCount("invoice.void", inv.id)).toBe(0);
+  });
+
+  it("the database refuses it too, whatever writes the void (trigger documents_viewed_no_void, 0053)", async () => {
+    const o = await owner();
+    const inv = await issued(o);
+    await view(inv.id);
+    await expect(
+      env.DB.prepare("UPDATE documents SET status = 'void', voided_at = 1, void_reason = 'x' WHERE id = ?")
+        .bind(inv.id)
+        .run(),
+    ).rejects.toThrow(/documents_viewed_no_void/);
+  });
+
+  it("a viewed proforma: 409 viewed_by_client and the proforma's own line (no credit note: it stays until converted; lead, 2026-10-30); nothing written", async () => {
+    const o = await owner();
+    const pf = await mkProforma(o);
+    expect((await issueInvoice(o, pf.id)).status).toBe(200);
+    await view(pf.id);
+    const before = await invoiceRow(pf.id);
+    const res = await voidInvoice(o, pf.id);
+    expect(res.status).toBe(409);
+    const body = await json(res);
+    expect(body.error.code).toBe("viewed_by_client");
+    expect(body.reasons).toEqual(["viewed_by_client"]);
+    // the API's words are the proforma's (07-Z §1), never the invoice's credit-note advice; the screen's line is pinned in src/lib/invoices.test.ts
+    expect(body.error.message).toBe(
+      "The client has opened this proforma in the portal, so it can't be voided.",
+    );
+    expect(await invoiceRow(pf.id)).toEqual(before);
+    expect(await auditCount("invoice.void", pf.id)).toBe(0);
+    const v = await getInvoice(o, pf.id);
+    expect(v.void).toMatchObject({ canVoid: false, blockers: ["viewed_by_client"] });
+  });
+
+  it("viewed with a payment, a credit or an issued child: 409 void_not_allowed, the stronger reason ranks first (review L3); viewed alone stays viewed_by_client", async () => {
+    const o = await owner();
+    for (const [name, code, prepare] of [
+      [
+        "paid",
+        "has_payment",
+        (id: string) =>
+          env.DB.prepare(
+            "UPDATE documents SET paid_minor = 1, balance_minor = balance_minor - 1 WHERE id = ?",
+          )
+            .bind(id)
+            .run(),
+      ],
+      [
+        "credited",
+        "has_credit",
+        (id: string) =>
+          env.DB.prepare(
+            "UPDATE documents SET credited_minor = 1, balance_minor = balance_minor - 1 WHERE id = ?",
+          )
+            .bind(id)
+            .run(),
+      ],
+      [
+        "child",
+        "has_child_document",
+        async (id: string) => {
+          const client = (
+            await one<{ client_id: string }>("SELECT client_id FROM documents WHERE id = ?", id)
+          )?.client_id as string;
+          await insert("documents", {
+            id: `cn-viewed-${id}`,
+            type: "credit_note",
+            client_id: client,
+            currency: "INR",
+            parent_id: id,
+            status: "issued",
+            frozen_at: 1,
+            series: "creditNote",
+            fy: "2627",
+            number: Math.floor(Math.random() * 1e9),
+            number_display: `CNV/${id.slice(-8)}`,
+          });
+        },
+      ],
+    ] as const) {
+      const inv = await issued(o);
+      await prepare(inv.id);
+      await view(inv.id);
+      const before = await invoiceRow(inv.id);
+      const res = await voidInvoice(o, inv.id);
+      expect(res.status, name).toBe(409);
+      const body = await json(res);
+      expect(body.error.code, name).toBe("void_not_allowed");
+      expect(body.reasons, name).toContain(code);
+      expect(body.reasons, name).toContain("viewed_by_client");
+      expect(await invoiceRow(inv.id), name).toEqual(before);
+      expect(await auditCount("invoice.void", inv.id), name).toBe(0);
+    }
+  });
+
+  it("viewed and past its month: 409 return_period_closed with both codes in reasons; the screen says the return period", async () => {
+    const o = await farSession();
+    const c = await mkInvoiceClient();
+    // 31 October 2026, 10:00 UTC = 15:30 IST: the month of issue is October
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.UTC(2026, 9, 31, 10, 0, 0, 0) });
+    const inv = await issued(o, { clientId: c.clientId });
+    await view(inv.id);
+    vi.setSystemTime(Date.UTC(2026, 9, 31, 18, 30, 0, 0)); // 1 November, 00:00 IST
+    const before = await invoiceRow(inv.id);
+    const res = await voidInvoice(o, inv.id);
+    expect(res.status).toBe(409);
+    const body = await json(res);
+    expect(body.error.code).toBe("return_period_closed");
+    expect(body.reasons).toEqual(["viewed_by_client", "return_period_closed"]);
+    expect(body.error.message).toBe(
+      "This invoice's GST return period has ended, so it can't be voided. Use a credit note instead.",
+    );
+    expect(await invoiceRow(inv.id)).toEqual(before);
+    expect(await auditCount("invoice.void", inv.id)).toBe(0);
+    const v = await getInvoice(o, inv.id);
+    expect(v.void.blockers).toEqual(["viewed_by_client", "return_period_closed"]);
   });
 });

@@ -1,10 +1,10 @@
-// Document terms (ADM-SET-08, VERIFY WITH CA/LEGAL): the five blocks (standard terms, proposal terms, invoice footer
+// Document terms (ADM-SET-08; OPEN (08-C RB-38): the proposal terms text; export declaration RA-18; refund link RB-24): the five blocks (standard terms, proposal terms, invoice footer
 // notes, export declaration, refund-policy link), each versioned. Saving never edits a version: it adds the next one,
 // and documents keep the version they were made with. "Used by N documents" exists for the proposal terms and invoice
 // notes; documents don't record the other three until M5, and the page says so instead of showing a zero.
 
 import { formatIstDateTime } from "@techaust/core";
-import type { TermsBlockId } from "@techaust/core/terms";
+import { type TermsBlockId, termsDueDaysMismatch } from "@techaust/core/terms";
 import { type FormEvent, useState } from "react";
 import { api, errorText, RequestError, type TermsBlock, type TermsVersion } from "../../api.ts";
 import { Modal } from "../../components/dialog.tsx";
@@ -16,6 +16,7 @@ import { LoadFailed, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice, SkeletonRows } from "../../components/ui.tsx";
 import { UnsavedChangesGuard } from "../../components/unsaved.tsx";
+import { TERMS_DUE_DAYS_COPY } from "../../lib/copy-z.ts";
 import { sentence } from "../../lib/format.ts";
 import { FormSkeleton, StaleNotice } from "./kit.tsx";
 
@@ -137,6 +138,8 @@ function Editor(props: {
   const start = block.current?.bodyMd ?? "";
   const [body, setBody] = useState(start);
   const [error, setError] = useState<string | null>(null);
+  // FX-5 (07-Z §2 line 3): the setting's days from a refused save, so the line goes as soon as the text states only those days.
+  const [refusedDue, setRefusedDue] = useState<number | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -159,6 +162,7 @@ function Editor(props: {
       return;
     }
     setError(null);
+    setRefusedDue(null);
     setFailure(null);
     setBusy(true);
     try {
@@ -172,7 +176,17 @@ function Editor(props: {
       props.onSaved();
     } catch (err) {
       if (err instanceof RequestError && err.code === "version_clash") setStale(true);
-      else if (err instanceof RequestError && err.fields.length) {
+      else if (
+        err instanceof RequestError &&
+        err.code === "terms_due_days_mismatch" &&
+        err.extra.termsDueDays
+      ) {
+        // FX-5 (full audit C4): the terms state other days to pay than Settings › Payment terms; 07-Z §2 line 3 names both numbers.
+        const { stated, dueDays } = err.extra.termsDueDays;
+        setError(TERMS_DUE_DAYS_COPY.refused(stated, dueDays));
+        setRefusedDue(dueDays);
+        document.getElementById(id)?.focus();
+      } else if (err instanceof RequestError && err.fields.length) {
         setError(sentence(err.fields[0]?.message ?? "Check the text"));
         document.getElementById(id)?.focus();
       } else setFailure(errorText(err));
@@ -210,7 +224,13 @@ function Editor(props: {
               rows={10}
               maxLength={12_000}
               value={body}
-              onChange={(e) => setBody(e.target.value)}
+              onChange={(e) => {
+                setBody(e.target.value);
+                if (refusedDue !== null && termsDueDaysMismatch(e.target.value, refusedDue).length === 0) {
+                  setError(null);
+                  setRefusedDue(null);
+                }
+              }}
             />
           )
         }

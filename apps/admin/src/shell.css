@@ -2284,6 +2284,18 @@ input[readonly] {
   max-width: 22rem;
 }
 
+/* FX-5: Settings › Payment terms says when the proposal terms state other days to pay (07-Z §2), under the field, at reading width. */
+.field-warning.setting__warning {
+  display: flex;
+  max-width: 38rem;
+  margin: var(--space-2) 0 0;
+}
+
+/* The page's name stays on one line ("Settings › Terms"). */
+.setting__warning a {
+  white-space: nowrap;
+}
+
 .settings-sub {
   margin: var(--space-8) 0 var(--space-2);
 }

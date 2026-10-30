@@ -7,7 +7,14 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import subsetFont from "subset-font";
-import { codePoints, FACES, fontFileName, MAIN_RANGES } from "../src/fonts/config.ts";
+import {
+  codePoints,
+  FACES,
+  fontFileName,
+  MAIN_RANGES,
+  PDF_FALLBACK_FONTS,
+  pdfFallbackFileName,
+} from "../src/fonts/config.ts";
 import { fontsCssFromDisk } from "../src/fonts/disk.ts";
 import { type Metrics, type MetricsFile, measure, parseFont } from "../src/fonts/metrics.ts";
 
@@ -45,6 +52,19 @@ for (const face of FACES) {
   }
 }
 
+// FX-5: the PDF-only fallbacks (Bengali, Devanagari), subset to their ranges with their shaping tables kept.
+for (const f of PDF_FALLBACK_FONTS) {
+  const out = await subsetFont(
+    readFileSync(require.resolve(f.source)),
+    String.fromCodePoint(...codePoints(f.ranges)),
+    {
+      targetFormat: "woff2",
+    },
+  );
+  writeFileSync(join(fontsDir, pdfFallbackFileName(f)), out);
+  console.log(`${pdfFallbackFileName(f)}  ${(out.length / 1024).toFixed(1)} KB`);
+}
+
 let system = previous.system;
 if (process.argv.includes("--measure-system")) {
   const path = "C:/Windows/Fonts/arial.ttf";
@@ -54,7 +74,12 @@ if (process.argv.includes("--measure-system")) {
 writeFileSync(metricsPath, `${JSON.stringify({ web, system }, null, 2)}\n`);
 
 // The OFL requires the copyright + licence to travel with the font files.
-const pkgs = [...new Set(FACES.map((f) => f.files[0]?.source.split("/files/")[0] ?? ""))];
+const pkgs = [
+  ...new Set([
+    ...FACES.map((f) => f.files[0]?.source.split("/files/")[0] ?? ""),
+    ...PDF_FALLBACK_FONTS.map((f) => f.source.split("/files/")[0] ?? ""),
+  ]),
+];
 const licences = pkgs.map((pkg) => {
   const meta = JSON.parse(readFileSync(require.resolve(`${pkg}/package.json`), "utf8")) as {
     version: string;
