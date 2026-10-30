@@ -1232,3 +1232,47 @@ input[readonly] {
     color: var(--color-black);
   }
 }
+
+/* ---------- The edge shade of a box that scrolls sideways (components/scroll-cue.tsx; the reports' wide lists, the invoice lines) ---------- */
+/* FX-4 (full audit A5 14): the box holds the scrolling region and draws a soft shade on each edge that hides more columns (`data-more-start`,
+   `data-more-end`, set while measuring), over the content and under nothing that takes a click. It is a shade of ink, so it reads on the surface
+   in both themes; fading it in is the only motion, and reduced motion drops it. */
+
+.scroll-cue {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.scroll-cue::before,
+.scroll-cue::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  width: var(--space-8);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+}
+
+.scroll-cue::before {
+  inset-inline-start: 0;
+  background: linear-gradient(to right, color-mix(in srgb, var(--color-text) 26%, transparent), transparent);
+}
+
+.scroll-cue::after {
+  inset-inline-end: 0;
+  background: linear-gradient(to left, color-mix(in srgb, var(--color-text) 26%, transparent), transparent);
+}
+
+.scroll-cue[data-more-start]::before,
+.scroll-cue[data-more-end]::after {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-cue::before,
+  .scroll-cue::after {
+    transition: none;
+  }
+}

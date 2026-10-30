@@ -397,8 +397,10 @@ function PastPeriods({ data }: { data: CarePlanPage }) {
       cell: (u) => (u.flag === "none" ? <span className="muted">None</span> : <FlagPill flag={u.flag} />),
     },
   ];
+  // A panel with its heading, not a landmark: when the table scrolls sideways it becomes a region named by its caption, and two regions
+  // named "Last 12 billing periods" broke axe landmark-unique (final sweep A10).
   return (
-    <section className="lead-panel periods-panel" aria-labelledby="periods-h">
+    <div className="lead-panel periods-panel">
       <h2 id="periods-h" className="lead-panel__title">
         Last 12 billing periods
       </h2>
@@ -411,7 +413,7 @@ function PastPeriods({ data }: { data: CarePlanPage }) {
           empty={<p className="muted">{CARE_COPY.notStarted}</p>}
         />
       </div>
-    </section>
+    </div>
   );
 }
 

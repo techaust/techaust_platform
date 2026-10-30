@@ -3,6 +3,7 @@
 // Every amount is the server's, formatted through core; nothing is added or rounded here.
 import type { Currency } from "../../api.ts";
 import { Markdown } from "../../components/markdown.tsx";
+import { ScrollCue, useScrollCue } from "../../components/scroll-cue.tsx";
 import { milliToQty, TRIGGER_LABELS, UNIT_LABELS } from "../../lib/catalogue.ts";
 import {
   DOC_COPY,
@@ -92,82 +93,105 @@ const discountText = (l: ViewLine, currency: Currency) =>
       ? `${bpToPercent(l.discount.value)} %`
       : moneyText(l.discount.value, currency);
 
+/**
+ * A line's tax cell: CGST and SGST one under the other, so the column stays narrow, each named for a screen reader (the column head says only
+ * "Tax"; final sweep A6). IGST, or the zero of an LUT export, is one amount.
+ */
+export function LineTax(props: {
+  figures: LineFigures | undefined;
+  currency: Currency;
+  supply: Supply | null;
+}) {
+  const parts = lineTaxText(props.figures, props.currency, props.supply).split(" + ");
+  if (parts.length < 2) return <>{parts[0]}</>;
+  const names = [DOC_COPY.cgst, DOC_COPY.sgst];
+  return (
+    <>
+      {parts.map((part, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: CGST then SGST, a fixed pair that never reorders (equal amounts)
+        <span key={i} className="read-lines__tax">
+          <span className="visually-hidden">{names[i]} </span>
+          {part}
+        </span>
+      ))}
+    </>
+  );
+}
+
 /** A sent version's lines: a plain table (scrolls sideways inside its box on a phone). */
 export function LinesTable(props: { lines: ViewLine[]; currency: Currency; supply: Supply | null }) {
   const { currency } = props;
+  // On a phone the table is wider than its box: the edge shade says so (final sweep A7).
+  const [box, more] = useScrollCue<HTMLElement>();
   return (
-    // A box that may scroll sideways on a phone is a Tab stop of its own, so keyboard users can scroll it (WCAG 2.1.1).
-    // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region must be focusable
-    <section className="read-lines" aria-label="Lines" tabIndex={0}>
-      <table>
-        <caption className="visually-hidden">Lines</caption>
-        <thead>
-          <tr>
-            <th scope="col">{lineColumns.description}</th>
-            <th scope="col" className="num">
-              {lineColumns.quantity}
-            </th>
-            <th scope="col" className="num">
-              {lineColumns.rate}
-            </th>
-            <th scope="col" className="num">
-              {lineColumns.taxable}
-            </th>
-            <th scope="col" className="num">
-              {lineColumns.tax}
-            </th>
-            <th scope="col" className="num">
-              {lineColumns.amount}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {props.lines.map((l) => {
-            const f: LineFigures = l;
-            return (
-              <tr key={l.id}>
-                <th scope="row">
-                  <span className="read-lines__desc">{l.description}</span>
-                  {l.detail && <span className="read-lines__detail">{l.detail}</span>}
-                  {l.catalogueItemId === null && (
-                    <span className="read-lines__custom">{DOC_COPY.customLine}</span>
-                  )}
-                </th>
-                <td className="num">
-                  {milliToQty(l.qtyMilli)}
-                  <span className="read-lines__unit">
-                    {UNIT_LABELS[l.unit as keyof typeof UNIT_LABELS] ?? l.unit}
-                  </span>
-                </td>
-                <td className="num">
-                  {moneyText(l.rateMinor, currency)}
-                  {l.discount && (
+    <ScrollCue more={more}>
+      {/* A box that may scroll sideways on a phone is a Tab stop of its own, so keyboard users can scroll it (WCAG 2.1.1). */}
+      {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region must be focusable */}
+      <section ref={box} className="read-lines" aria-label="Lines" tabIndex={0}>
+        <table>
+          <caption className="visually-hidden">Lines</caption>
+          <thead>
+            <tr>
+              <th scope="col">{lineColumns.description}</th>
+              <th scope="col" className="num">
+                {lineColumns.quantity}
+              </th>
+              <th scope="col" className="num">
+                {lineColumns.rate}
+              </th>
+              <th scope="col" className="num">
+                {lineColumns.taxable}
+              </th>
+              <th scope="col" className="num">
+                {lineColumns.tax}
+              </th>
+              <th scope="col" className="num">
+                {lineColumns.amount}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {props.lines.map((l) => {
+              const f: LineFigures = l;
+              return (
+                <tr key={l.id}>
+                  <th scope="row">
+                    <span className="read-lines__desc">{l.description}</span>
+                    {l.detail && <span className="read-lines__detail">{l.detail}</span>}
+                    {l.catalogueItemId === null && (
+                      <span className="read-lines__custom">{DOC_COPY.customLine}</span>
+                    )}
+                  </th>
+                  <td className="num">
+                    {milliToQty(l.qtyMilli)}
                     <span className="read-lines__unit">
-                      {lineColumns.discount} {discountText(l, currency)}
+                      {UNIT_LABELS[l.unit as keyof typeof UNIT_LABELS] ?? l.unit}
                     </span>
-                  )}
-                </td>
-                <td className="num">{f.taxableMinor === null ? "" : moneyText(f.taxableMinor, currency)}</td>
-                <td className="num">
-                  {/* CGST and SGST one under the other, so the column stays narrow. */}
-                  {lineTaxText(f, currency, props.supply)
-                    .split(" + ")
-                    .map((part, i) => (
-                      // biome-ignore lint/suspicious/noArrayIndexKey: CGST then SGST, a fixed pair that never reorders (equal amounts)
-                      <span key={i} className="read-lines__tax">
-                        {part}
+                  </td>
+                  <td className="num">
+                    {moneyText(l.rateMinor, currency)}
+                    {l.discount && (
+                      <span className="read-lines__unit">
+                        {lineColumns.discount} {discountText(l, currency)}
                       </span>
-                    ))}
-                </td>
-                <td className="num">
-                  {f.lineTotalMinor === null ? "" : moneyText(f.lineTotalMinor, currency)}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </section>
+                    )}
+                  </td>
+                  <td className="num">
+                    {f.taxableMinor === null ? "" : moneyText(f.taxableMinor, currency)}
+                  </td>
+                  <td className="num">
+                    <LineTax figures={f} currency={currency} supply={props.supply} />
+                  </td>
+                  <td className="num">
+                    {f.lineTotalMinor === null ? "" : moneyText(f.lineTotalMinor, currency)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </section>
+    </ScrollCue>
   );
 }
 

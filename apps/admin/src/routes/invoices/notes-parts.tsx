@@ -12,9 +12,10 @@ import { useState } from "react";
 import { Link } from "react-router";
 import type { Currency } from "../../api.ts";
 import { Calendar, Plus, RotateCcw } from "../../components/icons.tsx";
+import { ScrollCue, useScrollCue } from "../../components/scroll-cue.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { allowed } from "../../lib/access.ts";
-import { DOC_COPY, dayText, inWords, lineColumns, lineTaxText } from "../../lib/documents.ts";
+import { DOC_COPY, dayText, inWords, lineColumns } from "../../lib/documents.ts";
 import { badgeOf, INV_COPY, INV_ERRORS, moneyText } from "../../lib/invoices.ts";
 import {
   againstLine,
@@ -42,6 +43,7 @@ import {
   type NoteKind,
   notesApi,
 } from "../../lib/notes-api.ts";
+import { LineTax } from "../documents/money.tsx";
 import { InvoiceBadge, invoiceHref } from "./parts.tsx";
 import { StatutoryBand } from "./types-parts.tsx";
 
@@ -331,56 +333,52 @@ export function ImsPanel({ view, onSaved }: { view: InvoiceWithNotes; onSaved: (
 /** A note's lines: each with the invoice line it is against (07-T §8), its taxable value, tax and amount; read from the note as saved or frozen. */
 export function NoteLinesTable({ view }: { view: InvoiceWithNotes }) {
   const takes = view.noteOf?.request.takes ?? [];
+  const [box, more] = useScrollCue<HTMLElement>();
   return (
-    // biome-ignore lint/a11y/noNoninteractiveTabindex: a box that may scroll sideways on a phone is a Tab stop of its own (WCAG 2.1.1)
-    <section className="read-lines notes-lines" aria-label={INV_COPY.lines} tabIndex={0}>
-      <table>
-        <caption className="visually-hidden">{INV_COPY.lines}</caption>
-        <thead>
-          <tr>
-            <th scope="col">{lineColumns.description}</th>
-            <th scope="col" className="num">
-              {lineColumns.taxable}
-            </th>
-            <th scope="col" className="num">
-              {lineColumns.tax}
-            </th>
-            <th scope="col" className="num">
-              {lineColumns.amount}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {view.lines.map((l, i) => {
-            const take = takes[i];
-            return (
-              <tr key={l.id}>
-                <th scope="row">
-                  <span className="read-lines__desc">{l.description}</span>
-                  {take && <span className="read-lines__detail tnum">{againstLine(take.line + 1)}</span>}
-                </th>
-                <td className="num">
-                  {l.taxableMinor === null ? "" : moneyText(l.taxableMinor, view.currency)}
-                </td>
-                <td className="num">
-                  {lineTaxText(l, view.currency, view.supply)
-                    .split(" + ")
-                    .map((part, k) => (
-                      // biome-ignore lint/suspicious/noArrayIndexKey: CGST then SGST, a fixed pair
-                      <span key={k} className="read-lines__tax">
-                        {part}
-                      </span>
-                    ))}
-                </td>
-                <td className="num">
-                  {l.lineTotalMinor === null ? "" : moneyText(l.lineTotalMinor, view.currency)}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </section>
+    <ScrollCue more={more}>
+      {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a box that may scroll sideways on a phone is a Tab stop of its own (WCAG 2.1.1) */}
+      <section ref={box} className="read-lines notes-lines" aria-label={INV_COPY.lines} tabIndex={0}>
+        <table>
+          <caption className="visually-hidden">{INV_COPY.lines}</caption>
+          <thead>
+            <tr>
+              <th scope="col">{lineColumns.description}</th>
+              <th scope="col" className="num">
+                {lineColumns.taxable}
+              </th>
+              <th scope="col" className="num">
+                {lineColumns.tax}
+              </th>
+              <th scope="col" className="num">
+                {lineColumns.amount}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {view.lines.map((l, i) => {
+              const take = takes[i];
+              return (
+                <tr key={l.id}>
+                  <th scope="row">
+                    <span className="read-lines__desc">{l.description}</span>
+                    {take && <span className="read-lines__detail tnum">{againstLine(take.line + 1)}</span>}
+                  </th>
+                  <td className="num">
+                    {l.taxableMinor === null ? "" : moneyText(l.taxableMinor, view.currency)}
+                  </td>
+                  <td className="num">
+                    <LineTax figures={l} currency={view.currency} supply={view.supply} />
+                  </td>
+                  <td className="num">
+                    {l.lineTotalMinor === null ? "" : moneyText(l.lineTotalMinor, view.currency)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </section>
+    </ScrollCue>
   );
 }
 

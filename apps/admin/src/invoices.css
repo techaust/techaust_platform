@@ -472,6 +472,13 @@ form.inv-service {
   cursor: pointer;
 }
 
+/* Final sweep A2: the FX panel's one sentence is its way in, so the button is a full 44 px target (the sentence centred in it, no visible
+   box until it takes focus). */
+.inv-fx__empty .inv-blockers__jump {
+  min-height: var(--target-min);
+  border-radius: var(--radius-sm);
+}
+
 .inv-blockers .blockers__link {
   overflow-wrap: anywhere;
 }

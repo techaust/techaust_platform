@@ -136,6 +136,16 @@
   overflow-wrap: anywhere;
 }
 
+/* A link in a strip (the client, the invoice a note corrects) is a 44 px target: padding above and below, taken back by an equal negative
+   margin, so the strip's rhythm is unchanged (final sweep A3). */
+.client-strip dd a {
+  --strip-pad: max(0px, calc((var(--target-min) - 1lh) / 2));
+  display: inline-block;
+  max-width: 100%;
+  padding-block: var(--strip-pad);
+  margin-block: calc(-1 * var(--strip-pad));
+}
+
 .client-strip--skeleton {
   display: block;
   padding: var(--space-4);

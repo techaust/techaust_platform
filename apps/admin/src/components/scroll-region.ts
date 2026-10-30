@@ -12,6 +12,16 @@ export type ScrollRegionProps =
 export const overflowsSideways = (el: { scrollWidth: number; clientWidth: number }): boolean =>
   el.scrollWidth > el.clientWidth + 1;
 
+/**
+ * True when the box itself scrolls sideways: wider inside than out AND its own `overflow-x` is auto or scroll. A box whose content spills
+ * into a scrolling parent (a DataTable inside a report's WideList) is no keyboard stop: the arrow keys would move nothing, and its region
+ * would repeat the parent's name (final sweep A8).
+ */
+export const scrollsSideways = (el: HTMLElement): boolean => {
+  const x = getComputedStyle(el).overflowX;
+  return (x === "auto" || x === "scroll") && overflowsSideways(el);
+};
+
 export function useScrollRegion<T extends HTMLElement>(label: string): [RefCallback<T>, ScrollRegionProps] {
   const [el, setEl] = useState<T | null>(null);
   const [overflows, setOverflows] = useState(false);
@@ -19,7 +29,7 @@ export function useScrollRegion<T extends HTMLElement>(label: string): [RefCallb
 
   useEffect(() => {
     if (!el) return;
-    const check = () => setOverflows(overflowsSideways(el));
+    const check = () => setOverflows(scrollsSideways(el));
     check();
     if (typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(check);

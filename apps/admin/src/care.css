@@ -598,6 +598,22 @@
   margin-top: var(--space-2);
 }
 
+/* The entries table scrolls inside its own box at every width from a tablet up, not only to 80rem: at 1280 px beside the week panel its
+   note and actions columns pushed it past the panel and the page scrolled 6 px sideways (final sweep A9). The header does not stick (a
+   sticky header can't live in a scrolling box). */
+@media (min-width: 48rem) {
+  .entries-table .dtable {
+    overflow-x: auto;
+  }
+
+  /* Headers wrap, so a long column name ("Project or care plan") never sets the width of a column of short codes. */
+  .entries-table .dtable__table thead th {
+    position: static;
+    white-space: normal;
+    vertical-align: bottom;
+  }
+}
+
 /* The note wraps between words (A3 3): `break-word` breaks only a word longer than the line, and unlike `anywhere` it never
    lets the table squeeze the column to one letter per line. */
 .entry-note {
