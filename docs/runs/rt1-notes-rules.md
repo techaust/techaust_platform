@@ -1,6 +1,6 @@
 # Run: rt1, the credit-note deadline by filing frequency (T1), the LUT of a debit note's FY (T2), and IMS in the 3B helper (T3)
 
-Status: open
+Status: open (PR pending)
 Tier: A
 Usage: analyst claude-opus-5-5/high (agent-ac4e091f…, brief draft; skills workers-best-practices, wrangler)
 
@@ -330,3 +330,12 @@ Ran at ff07c985: `pnpm check` exit 0; core 1,849 (99.04 %); db 503; pdf 360; job
 
 **Open questions:** none.
 Usage: builder claude-opus-5-5/high (skills workers-best-practices, wrangler).
+
+## Integration notes (lead, 2026-10-31)
+- **Merged into the task branch:** the build (9c2f91ee), early-check fixes F1–F5, the designer (a427ec7d), review fixes (builder 6–11, designer 1–3, 10), re-check fixes (1, 2, 3, 5, 6); `origin/main` (#122) merged before the review. The run file's two parallel reports kept side by side.
+- **Full checks at 6b38d334 (lead, `tools/heavy.sh`):** `pnpm check` exit 0; `pnpm test` all green: auth 135, ui 471 (+2 skipped), core 1,850, email 130, db 503, pdf 360, web 714 (+17 skipped), portal 651, jobs 531, admin 3,473. Admin build: front 99,271 bytes (startup 11.1 ms), admin API **617,235** bytes of the 650,000 plan line (startup 55.7 ms).
+- **Reviews:** review APPROVE (3 medium, 9 low) → fixes → re-check APPROVE (1 medium, 5 low) → fixes, verified by the lead from the diff (the core LUT twin is fail closed again, `lutForFy` = `lutFor(lutsOf)`).
+- **Merge order:** this PR merges first; `rt2-signature-udyam` then takes its 0054 out and regenerates as 0055 (plan in its run file).
+- **Follow-ups:** (1) a migration that folds any legacy `tax.lut` into the list and drops the key, **before production** (re-check 4); (2) the 3B helper's IMS status per period (OPEN RA-04, review 4); (3) an optional "IFF filed" setting (OPEN RA-31, review 5); (4) show known blockers on a dialog's confirm step before step-up (with rt2); (5) the draft row's 44 px inline link line gap (cosmetic, M5.3).
+- **Owner duty (record):** file the October IFF by 13 November when an October credit note relies on it.
+- **Not verified:** staging (deploys after merge), a screen reader, Browser Run renders of the LUT line on notes.
