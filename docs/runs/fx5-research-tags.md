@@ -363,3 +363,36 @@ All in `.logs/shots/fx5-d1/`. The sample data is in this worktree's own local D1
 ### Open questions and notes for the lead
 1. **Existing approved copy, not changed:** for a proforma too, the void dialog's title says "Void invoice" and its body ends "…after that, use a credit note" (07-R §4 `voidTitle`, `voidBody`). With the new proforma line under it, the credit-note advice reads oddly for a proforma. A proforma version of that text would be new copy for the owner.
 2. **Stale Void action after a refusal:** after a 409 `viewed_by_client`, the page behind the dialog still offers Void until it is reloaded. Reloading on that refusal would remount the page (the skeleton) and drop the dialog's line, so I left it as it is. Tell me if you want a quiet refetch there.
+
+## Review (reviewer, Opus 5.5 high, 2026-10-30, on 3ac0afd5): APPROVE (copied by the lead)
+No critical or high. `pnpm check` exit 0; `pnpm test` exit 0 (auth 135, ui 471, core 1824, email 130, db 485, pdf 349, web 624, portal 641, jobs 531, admin 3,433). Visual: Settings › Payment terms warning, Settings › Terms refusal, the void dialog (invoice, and a proforma after a real portal view), the portal proforma view; axe 0 violations; keyboard and focus fine. Screenshots in the lead's `.logs/shots/fx5-review/` (13). Skills: code-review (10 candidates, 7 kept), security-review by hand (nothing exploitable), frontend-design, workers-best-practices.
+
+1. **M1 medium** `packages/pdf/src/layout/invoice.ts:231` + `packages/core/src/pdf-jobs.ts:139`: "Outside India (96)" now matches `splitPlaceOfSupply` (`invoice.ts:105`); a proforma for an overseas client (supply `export_*`, no `header.export`) prints "Outside India" plus a fact "State code: 96". 96 is no State; 07-S §1 and docs/13 keep the line whole; stored PDFs are write-once. The test was rewritten to plain "Outside India" (`invoice-layout.test.ts:247`). Fix: split only for a real State code (not 96/97), else print whole; layout test for an overseas proforma.
+2. **M2 medium** `packages/db/src/seed/index.ts:51-59`: terms v2 is added as the next version whatever the owner saved before; it can replace the owner's newest proposal terms (also months later, when due days return to 7). Fix: add v2 only while v1's sha is the newest; test with an owner v2.
+3. **L1** `seed/index.ts:58`: the aggregate `INSERT … SELECT max()+1 … WHERE <guards>` always yields a row; nothing is inserted only because of the unique index. Fix: guards in `HAVING` or a filtered subquery (with M2).
+4. **L2** `apps/admin/src/routes/invoices/read.tsx:450`: after a `viewed_by_client` refusal and Cancel, the page still offers Void until reload. Fix: `reload()` when the dialog closes after that refusal.
+5. **L3** `apps/admin/worker/invoices.ts:154-165`: `voidRefused` ranks `viewed_by_client` above payment, credit and child; the SPA prefers those. Fix: rank it after them (or `voidErrorText` uses `e.reasons`).
+6. **L4** `packages/core/src/terms.ts:33`: only "due within N day(s)" is recognised ("working days", "payable within", "due in" pass). Fix: a `{{payment.dueDays}}` token (also builder question 3) or a wider pattern.
+7. **L5 copy**: the void dialog body (07-R) lists only "emailed, paid or corrected"; for a proforma the title and body speak of an invoice, GST return and credit note; the proforma's locked banner keeps "void it and issue a new one" beside the 07-Z line. Fix: proforma and "opened in the portal" variants in 07-Z for the owner.
+8. **L6** `apps/admin/src/lib/invoices.ts:172`: "… (the client's terms, or Net 7)" hardcodes 7 (seen with the setting at 14). Fix: the setting's number.
+9. **L7** `packages/pdf/scripts/build-assets.ts:45`: the Noto subsets (~107 KB base64) go into every PDF's HTML. Fix: only when the text has those code points.
+10. **L8** `apps/admin/worker/settings.ts:676-684`: `details` at the top level, not `error.details` (`err()` allows scalars only), hence a second parser (`termsDueDaysOf`). Fix: allow arrays in `err` details; standard shape.
+11. **L9** `apps/portal/worker/invoices.ts:82-86`, `doc-token.ts:127-130`: a set `pdf_r2_key` whose object is missing still records the view (404 to the client). Fix: `head` first, or accept.
+
+**Dismissed:** the emailed-link race (an emailed document can't be voided); "nothing else sets `viewed_at`" confirmed; 0053, research tags, copy switches and packages all checked correct. RA-10's Table 13 question stays OPEN for the CA.
+**Not verified:** any PDF render (M1, the Noto fallbacks on Browser Run); /work page; emails beyond tests; the sharp proof; staging.
+
+## Lead's triage after the review (2026-10-30)
+- Fix round 2 (builder): M1, M2 with L1, L2, L3, L6, L8.
+- L4: a follow-up together with per-client due days (builder question 3): a `{{payment.dueDays}}` token filled at draft time. It touches the sealed text, so it is planned, not squeezed in.
+- L5: owner copy (07-Z additions for the proforma void dialog, its banner, and "opened in the portal"), asked in the morning; the code keeps today's approved lines until then.
+- L7: follow-up (PDF size and render time, not bundle bytes); listed with the jobs bundle headroom.
+- L9: kept with a reason: `DOCS` is write-once and jobs stores only a checked PDF, so a key without its object means storage loss, which is an incident, not a client view question.
+- No high finding: after round 2, a narrow re-check of M1, M2 and L1.
+
+## Fix round 2 brief (lead, 2026-10-30)
+Builder, Opus 5.5 high, Tier A (seed and PDF layout). Branch `fix/fx5-r3` from `origin/fix/fx5-research-tags` (this commit or later); push only that branch.
+- M1: `splitPlaceOfSupply` splits only for a real State code (core `isStateCode`, never 96 or 97); otherwise the label prints whole. Layout tests: an overseas proforma prints "Outside India (96)" whole with no "State code" fact; an Indian one still splits. Restore a test that feeds the real label.
+- M2 + L1: v2 is inserted only while the newest proposal terms row is v1 (its sha) and due days are 7; guards that hold on their own (a filtered subquery or `HAVING`), not the unique index. Tests: owner's own v2 → nothing added; due days 14 → nothing added without relying on the index; fresh seed → v2 once; rerun → still once.
+- L2: in the invoice read page, close of the void dialog after a `viewed_by_client` refusal reloads the page data (the dialog's line stays visible until then). L3: rank `viewed_by_client` after `has_payment`, `has_credit`, `has_child_document` in `voidRefused`; test. L6: the void/due line uses the setting's due days, not "Net 7" (no new wording: the number only; if the sentence needs new words, stop and report). L8: `err()` accepts the array details; `terms_due_days_mismatch` uses `error.details`; drop the second parser; tests.
+- Checks: touched packages' tests through the queue (pdf, db, core, admin), `pnpm check`, the whole-repository `pnpm lint` last. Append "## Builder report, fix round 2".
