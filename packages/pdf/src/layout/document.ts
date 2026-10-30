@@ -11,6 +11,7 @@
 //
 // No logic beyond formatting: every value is a pre-formatted string of the view. Every dynamic string goes through `esc`; Markdown goes
 // through `markdownBlocks` (escaped, safe links only). Wording: ./copy.ts (07-P).
+import { coverLines } from "@techaust/core/markdown";
 import { esc } from "../escape.ts";
 import { PDF_LOGOS } from "../generated/assets.ts";
 import { markdownBlocks } from "../markdown-html.ts";
@@ -243,15 +244,10 @@ function sectionsHtml(view: PdfView, sections: readonly ViewSection[]): string {
 
 // ---- the two documents --------------------------------------------------------------------------------------------------------
 
-/**
- * The cover's text is a set of lines ("{{client.name}}", "{{service.name}}", "Proposal from {{company.name}}"), not a sentence: each line is
- * its own paragraph, where Markdown would join single line breaks into one run (final sweep P5). Blank-line paragraphs are kept as they are.
- */
-const coverLines = (md: string): string => md.replace(/(?<!\n)\n(?!\n)/g, "\n\n");
-
 function coverHtml(view: PdfView, cover: ViewSection | undefined): string {
   // The masthead carries the kind ("Proposal"), as on the inner pages; the page itself belongs to the document's own title.
   const title = view.documentTitle ?? view.docLabel;
+  // the cover's lines, one paragraph each (final sweep P5; core `coverLines`, the portal's paper uses the same rule)
   const lede = cover ? markdownBlocks(coverLines(cover.bodyMd)).join("") : "";
   const meta = [
     view.issueDate,

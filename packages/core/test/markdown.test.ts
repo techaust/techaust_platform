@@ -2,6 +2,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   type Block,
+  coverLines,
   type Inline,
   MAX_MARKDOWN_CHARS,
   parseMarkdown,
@@ -232,6 +233,32 @@ describe("parseNoteMarkdown: a note's headings (FX-3, A3 7) [ADM-PRJ-03]", () =>
         if (!src.includes("#")) expect(parseNoteMarkdown(src)).toEqual(parseMarkdown(src));
       }),
       { numRuns: 500 },
+    );
+  });
+});
+
+describe("the cover's lines (final sweep P5, review 7: one rule for the portal and the PDF)", () => {
+  it("each single line break starts a paragraph; blank-line paragraphs stay as they are", () => {
+    expect(coverLines("Sample Client\nWebsite rebuild\nProposal from Sample Co")).toBe(
+      "Sample Client\n\nWebsite rebuild\n\nProposal from Sample Co",
+    );
+    expect(parseMarkdown(coverLines("Sample Client\nWebsite rebuild\nProposal from Sample Co"))).toHaveLength(
+      3,
+    );
+    expect(coverLines("One\n\nTwo")).toBe("One\n\nTwo");
+    expect(coverLines("One\n\n\nTwo")).toBe("One\n\n\nTwo");
+    expect(coverLines("One line")).toBe("One line");
+    expect(coverLines("")).toBe("");
+  });
+  it("never joins lines: as many paragraphs as lines (property)", () => {
+    const line = fc.stringMatching(/^[A-Za-z][A-Za-z ]{0,20}[A-Za-z]$/);
+    fc.assert(
+      fc.property(fc.array(line, { minLength: 1, maxLength: 6 }), (lines) => {
+        const blocks = parseMarkdown(coverLines(lines.join("\n")));
+        expect(blocks).toHaveLength(lines.length);
+        expect(blocks.every((b) => b.t === "p")).toBe(true);
+      }),
+      { numRuns: 200 },
     );
   });
 });

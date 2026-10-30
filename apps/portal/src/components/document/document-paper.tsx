@@ -4,6 +4,7 @@
 // order, with the money in the Investment section, the terms, and the acceptance block. Set as one sheet of "paper": a verdigris rule
 // under the masthead and the mark's 45° cut on its top-right corner. Every value arrives formatted; this file adds nothing up.
 // The fixed words are the PDF's (07-P §1, `@techaust/pdf/copy`) and 07-N §2.
+import { coverLines } from "@techaust/core/markdown";
 import { PDF_COPY as C } from "@techaust/pdf/copy";
 import logoColor from "@techaust/ui/brand/logo-primary-color.svg?url";
 import logoDark from "@techaust/ui/brand/logo-primary-dark.svg?url";
@@ -126,9 +127,6 @@ function Parties({ view }: { view: PdfView }) {
   );
 }
 
-/** The cover's lines, one paragraph each (final sweep P5; the same rule as `coverLines` in packages/pdf/src/layout/document.ts). */
-const coverLines = (md: string): string => md.replace(/(?<!\n)\n(?!\n)/g, "\n\n");
-
 function Cover({ view }: { view: PdfView }) {
   const cover = view.sections.find((s) => s.kind === "cover");
   const title = view.documentTitle ?? view.docLabel;
@@ -139,7 +137,7 @@ function Cover({ view }: { view: PdfView }) {
       <PageTitle text={title} className="cover__title" id="doc-title">
         {title}
       </PageTitle>
-      {/* One paragraph per line of the cover, as the PDF prints it (final sweep P5). */}
+      {/* One paragraph per line of the cover, as the PDF prints it (final sweep P5; core `coverLines`, one rule for both). */}
       {cover?.bodyMd.trim() && <Markdown source={coverLines(cover.bodyMd)} className="cover__lede" />}
       <p className="cover__for">
         {C.cover.preparedFor} <strong>{view.recipient.name}</strong>
