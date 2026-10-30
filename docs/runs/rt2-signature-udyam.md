@@ -226,3 +226,9 @@ Branch `fix/rt2-early-check` from `origin/task/rt2-signature-udyam` (fix commit 
 Commands (all through `bash tools/heavy.sh`): `rt2fx-admin-file` (the one admin file, used to read the digest: 11 passed, 1 expected probe failure, then fixed), `rt2fx-jobs-file` 4/4 passed; `rt2fx-core` 91 files / 1,836 tests passed (coverage 99.03 % statements); `rt2fx-admin` 117 files / 3,465 tests passed; `rt2fx-jobs` 33 files / 545 tests passed; `rt2fx-check` (`pnpm check`: lint, typecheck, guards, migration guard 55) exit 0. Biome on the six changed files: clean after `--write` (formatting of the new test only).
 Not verified: the designer's parallel changes (F1, the form always sending `udyam`) are not on this branch, so the combined result is unrun; the pdf and db packages were not rerun (no file of theirs changed). No hosted service touched. No open questions.
 Usage: builder claude-opus-5-5/high (skills workers-best-practices, wrangler).
+
+### Lead after the designer (2026-10-31)
+- **L10** The Udyam line prints on the tax invoice PDF only: neither the admin nor the portal invoice page has a supplier block, and the owner's choice was about the invoice. No on-screen supplier block in this task (it would need API and copy work); not a follow-up unless the owner asks.
+- **L11** The Udyam fields stay as a second row of the "GST registration" fieldset (no new legend).
+- Follow-up: fresh visual baselines for the `invoice-udyam`, advance and note fixtures when the visual suite's baselines are next made (with the open "Linux PDF visual baselines" item).
+- Merged `design/rt2-screens` (ce0a7eaa) into the task branch cleanly; screenshots copied to `.logs/rt2-design/`. Usage: designer claude-opus-5-5/high (frontend-design); builder (F2–F5) claude-opus-5-5/high (workers-best-practices, wrangler).
