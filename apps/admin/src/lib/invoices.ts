@@ -591,6 +591,13 @@ export function voidErrorText(e: unknown, type?: string): string {
   return invErrorText(e);
 }
 
+/**
+ * A void refused because the client opened the document meanwhile (409 `viewed_by_client`): the page behind the dialog still offers Void, so it
+ * reloads its data when the dialog closes (FX-5 review L2). The dialog keeps its line until then.
+ */
+export const voidRefusalStalesPage = (e: unknown): boolean =>
+  e instanceof RequestError && e.code === "viewed_by_client";
+
 /** "First. Rest." → ["First", "Rest."]: an empty state's title (without its full stop) and body, from one 07-R line. */
 export function splitSentences(text: string): [string, string] {
   const i = text.indexOf(". ");

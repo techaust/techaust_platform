@@ -49,6 +49,7 @@ import {
   typeLabel,
   voidBlockedText,
   voidErrorText,
+  voidRefusalStalesPage,
   voidTitle,
 } from "./invoices.ts";
 import { canDownloadSupplierCopy, fetchSupplierCopy, type InvoiceView } from "./invoices-api.ts";
@@ -346,6 +347,11 @@ describe("errors", () => {
     expect(voidErrorText(viewed)).toBe(`${mark}${invoiceLine}`);
     const closed = new RequestError(409, "return_period_closed", "x");
     expect(voidErrorText(closed, "proforma")).toBe(invErrorText(closed));
+    // review L2: only the view refusal makes the page behind the dialog stale (it reloads when the dialog closes)
+    expect(voidRefusalStalesPage(viewed)).toBe(true);
+    expect(voidRefusalStalesPage(closed)).toBe(false);
+    expect(voidRefusalStalesPage(new RequestError(0, "network", "x"))).toBe(false);
+    expect(voidRefusalStalesPage(new Error("viewed_by_client"))).toBe(false);
   });
 
   it("a proforma has its own title, locked banner and void line (07-S §8), never the credit-note advice", () => {
