@@ -210,7 +210,7 @@ export const SAMPLE_INVOICES: InvoiceSummary[] = [
     creditedMinor: 0,
     balanceMinor: 0,
     lines: [
-      line(1, "Discount after sale (sample)", 1000, "item", 200_000, 200_000, {
+      line(1, "Credit for two reports delivered late (sample)", 1000, "item", 200_000, 200_000, {
         cgst: 18_000,
         sgst: 18_000,
         rateBp: 1800,
