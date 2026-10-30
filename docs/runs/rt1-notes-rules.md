@@ -272,3 +272,4 @@ Observations: F1 re-renders older settings-route notes with the route/LUT line (
 
 **Open questions:** none.
 Usage: builder claude-opus-5-5/high (skills workers-best-practices, wrangler).
+**Lead on the builder's two points (2026-10-31):** both concern the pre-M5.2 single `tax.lut` key. (1) The M5.2 export-invoice and advance paths still judge it through `lutsOf` (fail-closed); (2) an old ARN of only a tab or line break counts in SQL and now in core. Neither can arise on staging today (no LUT saved yet) or production (no D1). Follow-up, one task: a migration that folds any legacy `tax.lut` into the list (and drops the key), after which every path reads only the list.
