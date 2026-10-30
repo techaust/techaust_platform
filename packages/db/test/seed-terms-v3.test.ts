@@ -127,6 +127,25 @@ describe("seed: proposal terms version 3 (07-ZA item 14) [ADM-SET-08]", () => {
     ]);
     // pointed at the owner's row as if it were the seeded version 2: the same SELECT would add it, so the newest-row guard is what stops it
     expect(await all(elsewhere())).toEqual([]);
-    expect(await all(elsewhere().replaceAll(PROPOSAL_TERMS_V2_SHA256, "owner-hash-4"))).toHaveLength(1);
+    expect(
+      await all(
+        elsewhere()
+          .replaceAll(PROPOSAL_TERMS_V2_SHA256, "owner-hash-4")
+          .replace(/t\.id = '[^']+' AND /, "t.id = 'owner-terms-4' AND "),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("an owner's row that repeats version 2's text word for word is not followed either (bound by the seeded id; early check 1)", async () => {
+    await run(
+      "INSERT INTO terms_versions (id, kind, version, body_md, sha256) VALUES ('owner-terms-5', 'proposal', 5, ?, ?)",
+      PROPOSAL_TERMS_V2,
+      PROPOSAL_TERMS_V2_SHA256,
+    );
+    expect(await all(proposalTermsV3Select())).toEqual([]);
+    await seed();
+    const rows = await proposalTerms();
+    expect(rows.at(-1)).toEqual({ version: 5, sha256: PROPOSAL_TERMS_V2_SHA256 });
+    expect(rows.filter((r) => r.sha256 === PROPOSAL_TERMS_V3_SHA256)).toHaveLength(1);
   });
 });

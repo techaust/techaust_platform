@@ -47,8 +47,9 @@ const insert = (table: string, row: Record<string, Value>) => {
 
 /**
  * A later seeded proposal terms version, as the SELECT the seed inserts from. It yields one row only while
- *   - the NEWEST proposal terms row is the seeded version it follows (`afterSha256`): text the owner saved after it is never replaced or
- *     followed, however late the seed runs (FX-5 review M2);
+ *   - the NEWEST proposal terms row is the seeded version it follows, by its seeded id (`afterId`) and its SHA-256 (`afterSha256`): text the
+ *     owner saved after it is never replaced or followed, however late the seed runs, even an owner's row that repeats a seeded text (FX-5
+ *     review M2; final sweep early check 1);
  *   - no proposal row has this version's SHA-256 yet (it is added once);
  *   - Settings › Payment terms has the due days the text states (full audit C4: the terms never promise other days than the setting; the
  *     settings rows are inserted earlier in the same seed, so the default counts on a fresh database).
@@ -58,6 +59,7 @@ function nextProposalTermsSelect(next: {
   id: string;
   body: string;
   sha256: string;
+  afterId: string;
   afterSha256: string;
 }): string {
   const [days] = termsDueDays(next.body);
@@ -66,7 +68,7 @@ function nextProposalTermsSelect(next: {
   const setting = `coalesce(json_extract((SELECT value FROM \`settings\` WHERE key = 'payment_terms'), '$.dueDays'), ${literal(SETTINGS_DEFAULTS.payment_terms.dueDays)})`;
   return `SELECT ${literal(stableId(next.id))}, 'proposal', t.version + 1, ${literal(
     next.body,
-  )}, ${sha} FROM \`terms_versions\` AS t WHERE t.kind = 'proposal' AND t.sha256 = ${literal(
+  )}, ${sha} FROM \`terms_versions\` AS t WHERE t.kind = 'proposal' AND t.id = ${literal(stableId(next.afterId))} AND t.sha256 = ${literal(
     next.afterSha256,
   )} AND t.version = (SELECT max(version) FROM \`terms_versions\` WHERE kind = 'proposal') AND NOT EXISTS (SELECT 1 FROM \`terms_versions\` WHERE kind = 'proposal' AND sha256 = ${sha}) AND ${setting} = ${literal(days)}`;
 }
@@ -77,6 +79,7 @@ export const proposalTermsV2Select = (): string =>
     id: "terms:proposal:fx5-ownership-gst",
     body: PROPOSAL_TERMS_V2,
     sha256: PROPOSAL_TERMS_V2_SHA256,
+    afterId: "terms:proposal:1",
     afterSha256: PROPOSAL_TERMS_V1_SHA256,
   });
 
@@ -86,6 +89,7 @@ export const proposalTermsV3Select = (): string =>
     id: "terms:proposal:za14-proposal-or-estimate",
     body: PROPOSAL_TERMS_V3,
     sha256: PROPOSAL_TERMS_V3_SHA256,
+    afterId: "terms:proposal:fx5-ownership-gst",
     afterSha256: PROPOSAL_TERMS_V2_SHA256,
   });
 
