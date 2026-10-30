@@ -394,6 +394,11 @@ describe("the letters of undertaking", () => {
     expect(fyLabel(null, "…")).toBe("…");
     expect(fyLabel(undefined)).toBe("");
     expect(fyLabel("9900")).toBe("2099-00");
+    // rt1 re-check 3: a real label (the 409 `advance_lut_missing`, the sealed `igstNoLutFy`) is kept; a damaged one is not
+    expect(fyLabel("2027-28", "…")).toBe("2027-28");
+    expect(fyLabel("2099-00", "…")).toBe("2099-00");
+    for (const bad of ["2027-29", "1927-28", "2027-2", "2027–28", " 2027-28"])
+      expect(fyLabel(bad, "…")).toBe("…");
     expect(
       lutsByYear([
         { fy: "2526", arn: "A", filedOn: null },

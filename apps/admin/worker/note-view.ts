@@ -76,12 +76,9 @@ export function invoiceNotesView(a: {
   };
   const credited = creditedSoFarOf(computed, (creditedR?.results ?? []) as never, totals);
   const extras = headerExtrasOfRow(d);
-  // rt1 review 8: built by the same helper as the note routes' `deadlineOf`. rt1 T1: the return period comes from the GSTR-1 frequency and the invoice's FROZEN
-  // recipient. Every issued invoice freezes its GST status; one without it (damaged) is judged as unregistered, the earlier and stricter last day (D2).
-  const dl: CreditDeadline = creditDeadlineOf(
-    { row: d, extras, recipientStatus: d.recipient?.gstStatus ?? "unregistered" },
-    a.settings,
-  );
+  // rt1 review 8 and re-check 5: the same helper as the note routes' `deadlineOf`, given the invoice's FROZEN recipient; it picks the status (a damaged one is
+  // judged as unregistered, D2) and the return period by the GSTR-1 frequency (rt1 T1).
+  const dl: CreditDeadline = creditDeadlineOf({ row: d, extras, recipient: d.recipient }, a.settings);
   const passed = !creditAllowed(a.todayIso, dl);
   const last = parseIsoDate(dl.lastDay);
   const today = parseIsoDate(a.todayIso);

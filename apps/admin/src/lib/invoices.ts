@@ -553,7 +553,7 @@ export function invErrorText(e: unknown): string {
       return e.extra.number ? alreadyIssued(e.extra.number) : sentenceOf(e.message);
     // 07-S §9 (Q37): the year that has no LUT rides on the 409 (contract: `details.fy`, "2027-28" or a token).
     if (e.code === "advance_lut_missing")
-      return e.extra.fy ? advanceLutMissing(fyLabel(e.extra.fy)) : sentenceOf(e.message);
+      return e.extra.fy ? advanceLutMissing(fyLabel(e.extra.fy, UNKNOWN)) : sentenceOf(e.message);
     // 07-S §8: as a 400 the server's own words are 07-S's line, with the day and the limit in it.
     if (e.code === "fx_same_day_exists" || e.code === "fx_date_invalid") return sentenceOf(e.message);
     if (Object.hasOwn(INV_ERRORS, e.code)) return (INV_ERRORS as Record<string, string>)[e.code] as string;
