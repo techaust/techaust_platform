@@ -247,3 +247,28 @@ Observations: F1 re-renders older settings-route notes with the route/LUT line (
 **Lead triage:** fix 1, 2, 3 and 10 (designer); fix 6, 7, 8, 9, 11 (builder), in parallel on separate files; a re-check follows. **Kept as follow-ups:** 4 (IMS acceptance date per period, OPEN RA-04) and 5 (an optional "IFF filed" setting, OPEN RA-31; the owner duty goes in the record). 12 is the lead's integration work.
 
 ### Review fixes
+#### Builder (findings 6, 7, 8, 9, 11), 2026-10-31; branch `fix/rt1-review` from `origin/task/rt1-notes-rules`; commits 26d2234a (core), 1c372001 (admin, db test), 4ee5b531 (jobs test), then this report
+**Skills loaded:** `cloudflare:workers-best-practices` (no binding, handler or config change; `explainNote` still makes its one D1 read, now with the issue day bound instead of a JS-computed FY; no extra read anywhere), `cloudflare:wrangler` (no config or binding change, so no `wrangler types` rerun beyond the typecheck's own). No other docs/14 §9 skill fits (no screens, PDFs or emails).
+
+**What changed** (no migration, trigger or SQL constant touched; none of the designer's `apps/admin/src/**` files):
+- **6** Core and SQL disagreed only on the legacy `tax.lut` of M3: core counted it only when `legacyLutFate` said `folded`; `LUT_FOR_FY_SQL` counts any legacy letter of that FY whose ARN is not blank after SQLite's `trim` (spaces only). So an ARN the list would refuse (a hyphen, more than 30 characters, only a tab) or a full list of 20 made core block (`debit_lut_missing`) where the freeze and trigger 0054 would pass: fail-closed only. New core `lutForFyAsSql(fy, tax)` (`packages/core/src/export-invoice.ts`) is the exact twin (list entry first, else the legacy letter; the legacy ARN returned normalised, or as stored when normalising leaves nothing). `noteLutOf` (`apps/admin/worker/note-model.ts`) uses it. Twin test in `packages/db/test/note-rules-rt1.test.ts`: 19 stored rows (the list, the legacy letter in every fate, both, a full list) × 4 FYs, SQL vs core over the same row read through `resolveSetting`; plus no row at all. Core unit tests (`invoice-types.test.ts`) incl. a property: it never counts less than `lutFor(lutsOf)` did. Admin pure test (`note-lut.test.ts`): a hyphenated legacy ARN now seals as the debit note's LUT.
+- **7** `apps/admin/worker/note-issue.ts` `explainNote` binds `x.issueDate` as `?3` and computes the FY in SQL with `fyTokenOfDateSql("?3")` (the `lut_ok` test and the `fy` returned in the blocker), like `noteIssueTail` (`?6`) and the trigger (`NEW.issue_date`). The `fyOfDate`/`parseIsoDate` import is gone. The existing route test (LUT removed between the read and the batch → `{debit_lut_missing, fy: "2728"}`) covers it.
+- **8** `note-model.ts` `creditDeadlineOf(src, settings)` with `DeadlineSource {row: {fy, issue_date, service_completed_on?}, extras, recipientStatus}` is the one builder; `deadlineOf(p, s)` and `note-view.ts` `invoiceNotesView` both call it (the view keeps its "damaged recipient → unregistered" fallback at the call). New pure test `apps/admin/worker/note-deadline.test.ts` (recipient and frequency, advance receipt day, service completion > 30 days, undefined completion = null, `deadlineOf` equals the builder).
+- **9** `packages/core/src/gst/layouts.ts`: each `GSTR3B_LAYOUTS` entry is a frozen `Gstr3bLayout<R>` (`stem`, `columns`, `rowsOf(summary)`, `csv(summary, opts)`); v1's builder is `linesDeductingAll`, v2's is the summary's lines plus `heldRowOf(imsHeld ?? NO_IMS_HELD)`. `gstr3bCsv` is `Object.hasOwn` + the entry's `csv` (no version named). v1 and v2 goldens unchanged byte for byte (snapshots not rewritten; `git status` clean after the run). New test: each version's `rowsOf`, and `gstr3bCsv(v)` equals the entry's `csv` with one line per row.
+- **11** `apps/jobs/test/pdf-note-seed.ts`: the FY token comes from core `fyOfDate(parseIsoDate(issue_date)).token`; the LUT is written and the freeze run inside `try`, and the tax row (value and version) is restored or deleted in `finally`.
+
+**Commands and results:**
+- `pnpm exec biome check --write` on the 11 changed files: clean (5 reformatted).
+- `bash tools/heavy.sh --log rt1rv-core-tc pnpm --filter @techaust/core typecheck`: first run 3 type errors (my union call and an intersection type), fixed; then exit 0.
+- `--log rt1rv-core` core test: 91 files, **1,849 passed**; coverage 99.04 % statements, 98.1 % branches.
+- `--log rt1rv-db` db test: 34 files, **503 passed** (501 + 2 twin tests).
+- `--log rt1rv-admin-tc` admin typecheck: exit 0. `--log rt1rv-admin` admin test: 118 files, **3,472 passed** (3,467 + 5).
+- `--log rt1rv-jobs` jobs test: 31 files, **531 passed**.
+- `--log rt1rv-check` `pnpm check`: exit 0 (lint 1,357 files, 10 warnings, none in a file I changed; typecheck everywhere; guards; migration guard 55 migrations).
+
+**Not verified:** the admin build and worker-budget reading (one helper added to `note-model.ts`, one import swapped; last reading 617,181 bytes); pdf suite (no pdf file changed); the whole-repository `pnpm test`; e2e. The designer's parallel changes are not in this branch.
+
+**Notes for the lead:** (a) the M5.2 export-invoice and advance paths still judge the legacy letter through `lutsOf` (folded only) against SQL that counts it more widely; same fail-closed direction, outside this finding's scope; a follow-up could switch them to `lutForFyAsSql` too. (b) A legacy ARN of only a tab or line break counts in SQL (SQLite `trim` takes spaces only), so it now counts in core too and would be sealed as stored; reachable only from an M3 row never saved since M5.2.
+
+**Open questions:** none.
+Usage: builder claude-opus-5-5/high (skills workers-best-practices, wrangler).
