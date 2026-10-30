@@ -192,6 +192,7 @@ const okFacts = (over: Partial<NoteFacts> = {}): NoteFacts => ({
   reverseChargeText: "Tax payable on reverse charge: No",
   deadline: { lastDay: "2027-11-30", passed: false },
   bank: { inr: true, swift: true },
+  signatureSaved: true,
   ...over,
 });
 const codes = (f: NoteFacts, bank = true) => noteBlockers(f, { bankDetails: bank }).map((b) => b.code);
@@ -225,6 +226,30 @@ describe("noteBlockers [LD50, Rule 53(1A)]", () => {
   it("the supplier", () => {
     const f = okFacts({ supplier: { legalName: " ", address: null, gstin: "", stateCode: null } });
     expect(codes(f)).toEqual(["supplier_legal_name", "supplier_address", "supplier_gstin", "supplier_state"]);
+  });
+
+  it("T4: both kinds always need the signature, whatever the bank switch; none with a signature (Rule 53(1A), 08-C RA-22)", () => {
+    for (const kind of ["credit", "debit"] as const) {
+      const f = okFacts({
+        kind,
+        deadline: kind === "credit" ? okFacts().deadline : null,
+        signatureSaved: false,
+      });
+      expect(codes(f), kind).toEqual(["signature_missing"]);
+      expect(codes(f, false), kind).toEqual(["signature_missing"]);
+      expect(codes({ ...f, signatureSaved: true }), kind).toEqual([]);
+    }
+    expect(NOTE_BLOCKER_CODES).toContain("signature_missing");
+    // the stable order: after the supplier, before the parent
+    expect(
+      codes(
+        okFacts({
+          signatureSaved: false,
+          supplier: { legalName: "L", address: "A", gstin: "G", stateCode: null },
+          parent: { status: "void", totalMinor: 1, creditedMinor: 0 },
+        }),
+      ),
+    ).toEqual(["supplier_state", "signature_missing", "parent_void"]);
   });
 
   it("the parent: void, fully credited (a credit note), a draft", () => {

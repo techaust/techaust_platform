@@ -15,6 +15,7 @@ import {
   SETTINGS_SCHEMAS,
   type SeededSettingKey,
 } from "../src/schemas/settings.ts";
+import { isUdyam, UDYAM_CATEGORIES, UDYAM_NUMBER_RE, udyamPrintedOn } from "../src/udyam.ts";
 
 describe("settings defaults (docs/08 §7.1, researched in 08-C)", () => {
   it.each(Object.keys(SETTINGS_SCHEMAS) as SeededSettingKey[])("%s validates against its schema", (key) => {
@@ -154,6 +155,73 @@ describe("company GSTIN and state code (ADM-SET-01)", () => {
     expect(company({ stateCode: "1" }).success).toBe(false);
     expect(company({ gstin: valid, stateCode: "27" }).success).toBe(false);
     expect(company({ gstin: valid, stateCode: "19" }).success).toBe(true);
+  });
+});
+
+describe("T10: the Udyam registration (ADM-SET-01; 07-ZC lines 4-5; 08-C RB-39)", () => {
+  const company = (patch: Record<string, unknown>) =>
+    SETTINGS_SCHEMAS.company.safeParse({ ...SETTINGS_DEFAULTS.company, ...patch });
+  const udyam = (number: string, category = "micro") => company({ udyam: { number, category } });
+
+  it("defaults to none; null and an absent key both parse, and an absent key reads as null", () => {
+    expect(SETTINGS_DEFAULTS.company.udyam).toBeNull();
+    expect(company({ udyam: null }).success).toBe(true);
+    const { udyam: _drop, ...without } = SETTINGS_DEFAULTS.company;
+    expect(SETTINGS_SCHEMAS.company.safeParse(without).success).toBe(true);
+    expect(resolveSetting("company", without).udyam).toBeNull();
+  });
+
+  it("accepts the canonical form with each category", () => {
+    for (const category of UDYAM_CATEGORIES) {
+      const r = udyam("UDYAM-WB-01-0012345", category);
+      expect(r.success && r.data.udyam).toEqual({ number: "UDYAM-WB-01-0012345", category });
+    }
+    expect(
+      resolveSetting("company", { udyam: { number: "UDYAM-WB-01-0012345", category: "small" } }).udyam,
+    ).toEqual({ number: "UDYAM-WB-01-0012345", category: "small" });
+  });
+
+  it("refuses lower case, digits for the state letters, 6 or 8 digits, no prefix, spaces, an unknown category or an extra key", () => {
+    for (const bad of [
+      "udyam-wb-01-0012345",
+      "UDYAM-wb-01-0012345",
+      "UDYAM-W1-01-0012345",
+      "UDYAM-12-01-0012345",
+      "UDYAM-WB-01-001234",
+      "UDYAM-WB-01-00123456",
+      "WB-01-0012345",
+      "UDYAM-WB-1-0012345",
+      " UDYAM-WB-01-0012345",
+      "UDYAM-WB-01-0012345 ",
+      "",
+    ])
+      expect(udyam(bad).success, bad).toBe(false);
+    const r = udyam("udyam-wb-01-0012345");
+    expect(!r.success && r.error.issues[0]?.message).toBe("Enter the number as UDYAM-XX-00-0000000.");
+    expect(udyam("UDYAM-WB-01-0012345", "large").success).toBe(false);
+    expect(company({ udyam: { number: "UDYAM-WB-01-0012345", category: "micro", extra: 1 } }).success).toBe(
+      false,
+    );
+    expect(company({ udyam: { number: "UDYAM-WB-01-0012345" } }).success).toBe(false);
+  });
+
+  it("isUdyam is the zod-free twin of the schema", () => {
+    expect(isUdyam({ number: "UDYAM-WB-01-0012345", category: "medium" })).toBe(true);
+    for (const v of [
+      null,
+      "UDYAM-WB-01-0012345",
+      [],
+      { number: "UDYAM-WB-01-0012345" },
+      { number: "udyam-wb-01-0012345", category: "micro" },
+      { number: "UDYAM-WB-01-0012345", category: "large" },
+      { number: "UDYAM-WB-01-0012345", category: "micro", extra: 1 },
+      { number: 1, category: "micro" },
+    ])
+      expect(isUdyam(v), JSON.stringify(v)).toBe(false);
+    expect(UDYAM_NUMBER_RE.test("UDYAM-WB-01-0012345")).toBe(true);
+    expect(udyamPrintedOn("tax_invoice")).toBe(true);
+    for (const t of ["export_invoice", "proforma", "credit_note", "debit_note", "proposal"])
+      expect(udyamPrintedOn(t), t).toBe(false);
   });
 });
 

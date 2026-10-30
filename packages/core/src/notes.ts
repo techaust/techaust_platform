@@ -205,6 +205,8 @@ export const NOTE_BLOCKER_CODES = [
   "supplier_address",
   "supplier_gstin",
   "supplier_state",
+  // T4 (rt2): a note always carries the signature (Researched 2026-10-30, Rule 53(1A) CGST Rules (08-C RA-22)); the signatory switch never lifts it
+  "signature_missing",
   "parent_not_issued",
   "parent_void",
   "parent_fully_credited",
@@ -260,12 +262,14 @@ export type NoteFacts = {
   readonly deadline: { readonly lastDay: string; readonly passed: boolean } | null;
   /** The active bank accounts (a debit note prints the bank block, like an invoice). */
   readonly bank: { readonly inr: boolean; readonly swift: boolean };
+  /** T4: a signature image is saved in Settings › Company. A note always carries it (core `signatureRequired`), whatever the checklist's signatory switch says. */
+  readonly signatureSaved: boolean;
 };
 
 const blank = (v: string | null | undefined): boolean => v === null || v === undefined || v.trim() === "";
 
 /**
- * Everything that stops a note from being issued, as codes (empty = it can be issued). Order is stable: the supplier, the parent, the request, the
+ * Everything that stops a note from being issued, as codes (empty = it can be issued). Order is stable: the supplier (and the signature, T4), the parent, the request, the
  * deadline, the reason, the totals, the reverse charge, the bank (a debit note, when the Owner's checklist asks for it), the limit. The parent's
  * recipient and place of supply come from its frozen snapshot, so no recipient, LUT or B2C code is raised here (LD49).
  */
@@ -275,6 +279,9 @@ export function noteBlockers(f: NoteFacts, checklist: Pick<ChecklistSettings, "b
   if (blank(f.supplier.address)) out.push({ code: "supplier_address" });
   if (blank(f.supplier.gstin)) out.push({ code: "supplier_gstin" });
   if (blank(f.supplier.stateCode)) out.push({ code: "supplier_state" });
+  // T4 (L1): keyed on the document, never on the checklist. OPEN (08-C RA-22): do Rules 50 and 53 carry Rule 46(q)'s electronic-issue proviso, and does a stored
+  // image meet "signature" on an electronic document? The safest reading is built: required.
+  if (!f.signatureSaved) out.push({ code: "signature_missing" });
   const live = isLiveParentStatus(f.parent.status);
   if (f.parent.status === "void") out.push({ code: "parent_void" });
   else if (f.parent.status === "credited") {
