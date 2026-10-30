@@ -214,15 +214,18 @@ describe("what an activity row is about (final sweep A13)", () => {
     const goneDraft = crypto.randomUUID();
     const sent = crypto.randomUUID();
     const untitled = crypto.randomUUID();
-    for (const [id, clientId, title, number] of [
-      [draft, client, "Website rebuild", null],
-      [goneDraft, gone, "Asha Rao's shop", null],
-      [sent, client, "Sent title", "TH/PRP/2627/0042"],
-      [untitled, client, null, null],
+    const invoiceDraft = crypto.randomUUID();
+    const deleted = crypto.randomUUID(); // a draft deleted since its event: never inserted
+    for (const [id, clientId, title, number, type] of [
+      [draft, client, "Website rebuild", null, "proposal"],
+      [goneDraft, gone, "Asha Rao's shop", null, "proposal"],
+      [sent, client, "Sent title", "TH/PRP/2627/0042", "proposal"],
+      [untitled, client, null, null, "proposal"],
+      [invoiceDraft, client, "March retainer", null, "tax_invoice"],
     ] as const)
       await insert("documents", {
         id,
-        type: "proposal",
+        type,
         client_id: clientId,
         currency: "INR",
         version_group_id: id,
@@ -250,6 +253,9 @@ describe("what an activity row is about (final sweep A13)", () => {
     await audit("document.send", o.id, now - 3000, ["document", sent]);
     await audit("document.create", o.id, now - 3500, ["document", untitled]);
     await audit("approval.request", o.id, now - 4000, ["approval", approval]);
+    await audit("invoice.issue", o.id, now - 4200, ["document", invoiceDraft]);
+    await audit("document.create", o.id, now - 4400, ["document", deleted]);
+    await audit("lead.create", o.id, now - 4600, ["lead", "purged-lead"]);
     // the entry was logged against one project and later moved (or deleted): the row names the project of its own event
     await audit("time.create", staff.id, now - 5000, ["time_log", "tl-a13-1"], {
       timeLogId: "tl-a13-1",
@@ -283,12 +289,33 @@ describe("what an activity row is about (final sweep A13)", () => {
     expect(byEntity(draft, "document.create")).toMatchObject({
       ref: null,
       title: "Website rebuild",
+      docType: "proposal",
+      gone: false,
       ...none,
     });
+    // review 1: the row carries the document's type, so an invoice opens /invoices/:id
+    expect(byEntity(invoiceDraft, "invoice.issue")).toMatchObject({
+      docType: "tax_invoice",
+      gone: false,
+      title: "March retainer",
+    });
+    // review 3: a deleted draft and a purged lead are gone: no title, no type
+    expect(byEntity(deleted, "document.create")).toMatchObject({
+      gone: true,
+      title: null,
+      docType: null,
+      ref: null,
+    });
+    expect(byEntity("purged-lead", "lead.create")).toMatchObject({ gone: true, ref: null, docType: null });
     expect(byEntity(goneDraft, "document.create")).toMatchObject({ ref: null, title: null, ...none });
     expect(byEntity(sent, "document.send")).toMatchObject({ ref: "TH/PRP/2627/0042", title: null, ...none });
     expect(byEntity(untitled, "document.create")).toMatchObject({ ref: null, title: null });
-    expect(byEntity(approval, "approval.request")).toMatchObject({ ref: null, title: "Website rebuild" });
+    expect(byEntity(approval, "approval.request")).toMatchObject({
+      ref: null,
+      title: "Website rebuild",
+      docType: null, // an approval opens the approval page, whatever its document
+      gone: false,
+    });
     expect(byEntity("tl-a13-1", "time.create")).toMatchObject({
       ref: null,
       title: null,
@@ -301,6 +328,7 @@ describe("what an activity row is about (final sweep A13)", () => {
     expect(byEntity("tl-a13-2", "time.delete")).toMatchObject({
       project: null,
       carePlan: { id: plan.id, clientCode },
+      gone: false, // a time entry is named by what it was logged against, never "gone"
     });
     // the summary is read in SQL for the two ids only: nothing of it is in the answer
     expect(JSON.stringify(items)).not.toContain("timeLogId");

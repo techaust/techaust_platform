@@ -304,6 +304,8 @@ describe("07-Q lines carry no placeholder tag", () => {
       activityRef({
         entityType: "document",
         entityId: "d1",
+        docType: "proposal",
+        gone: false,
         ref: null,
         title: null,
         project: null,
@@ -344,6 +346,54 @@ describe("07-Q lines carry no placeholder tag", () => {
       text: "L-0004",
       href: "/leads/l1",
     });
+  });
+  it("the invoice family opens its invoice page, an offer its document page (final sweep review 1) [ADM-DASH-01]", () => {
+    for (const docType of ["tax_invoice", "export_invoice", "proforma", "credit_note", "debit_note"])
+      expect(activityHref("document", "d 1", docType)).toBe("/invoices/d%201");
+    for (const docType of ["proposal", "estimate", null, undefined, "toString"])
+      expect(activityHref("document", "d 1", docType)).toBe("/documents/d%201");
+    // only a document row's type counts: an approval opens the approval page
+    expect(activityHref("approval", "a1", "tax_invoice")).toBe("/approvals/a1");
+    const base = { gone: false, title: null, project: null, carePlan: null } as const;
+    expect(
+      activityRef({
+        ...base,
+        entityType: "document",
+        entityId: "inv1",
+        docType: "tax_invoice",
+        ref: "TH/INV/2627/0001",
+      }),
+    ).toEqual({ kind: "ref", text: "TH/INV/2627/0001", href: "/invoices/inv1" });
+    expect(
+      activityRef({
+        ...base,
+        entityType: "document",
+        entityId: "inv2",
+        docType: "debit_note",
+        ref: null,
+        title: "Extra hours",
+      }),
+    ).toEqual({ kind: "title", text: "Extra hours", href: "/invoices/inv2" });
+  });
+  it("a record that no longer exists gets neither a title nor a link (final sweep review 3) [ADM-DASH-01]", () => {
+    const gone = (o: Partial<Parameters<typeof activityRef>[0]>) =>
+      activityRef({
+        entityType: "document",
+        entityId: "d1",
+        docType: null,
+        gone: true,
+        ref: null,
+        title: null,
+        project: null,
+        carePlan: null,
+        ...o,
+      });
+    expect(gone({})).toBeNull(); // never "Untitled" leading to Not found
+    expect(gone({ title: "Old title" })).toBeNull();
+    expect(gone({ entityType: "approval", entityId: "a1" })).toBeNull();
+    expect(gone({ entityType: "lead", entityId: "l1" })).toBeNull();
+    // a reference still names it, without a link
+    expect(gone({ ref: "TH/PRP/2627/0001" })).toEqual({ kind: "ref", text: "TH/PRP/2627/0001", href: null });
   });
 });
 

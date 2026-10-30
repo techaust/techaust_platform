@@ -893,6 +893,10 @@ export type DashboardTiles = {
       entityType: string;
       entityId: string | null;
       ref: string | null;
+      /** A document row's own type (the invoice family opens /invoices/:id, an offer /documents/:id); null for every other row. */
+      docType: string | null;
+      /** The record the row names no longer exists (a deleted draft, a purged lead): no title and no link. */
+      gone: boolean;
       /** A document (or an approval of one) with no number yet: its title; null for an anonymised client's, or when it has none ("Untitled"). */
       title: string | null;
       /** A time entry logged against a project, as its audit row recorded it. */

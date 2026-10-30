@@ -1,6 +1,7 @@
 // The words of the dashboard (M3.5, ADM-DASH-01): the tile titles, the "arrives with" lines, the empty lines and the recent
 // activity in words. 07-M word for word (approved with 07-Q); the activity names 07-M lacked take
 // their 07-Q words. Pure, so the words are tested without a browser.
+import { isInvoiceFlowType } from "@techaust/core/invoices";
 import type { DashboardTiles } from "../api.ts";
 import { ACTION_LABELS } from "./audit.ts";
 import { DOC_PENDING } from "./documents.ts";
@@ -68,9 +69,18 @@ export function activityText(action: string): string {
   return action;
 }
 
-/** Where an activity row leads, by its record type: the page of that lead, client, project, care plan, document or approval; null otherwise. */
-export function activityHref(entityType: string, entityId: string | null): string | null {
+/**
+ * Where an activity row leads, by its record type: the page of that lead, client, project, care plan, document or approval; null otherwise.
+ * A document of the invoice family (an invoice, a proforma, a note) opens its invoice page, an offer its document page (final sweep review 1).
+ */
+export function activityHref(
+  entityType: string,
+  entityId: string | null,
+  docType?: string | null,
+): string | null {
   if (!entityId) return null;
+  if (entityType === "document" && isInvoiceFlowType(docType))
+    return `/invoices/${encodeURIComponent(entityId)}`;
   const base: Record<string, string> = {
     lead: "/leads/",
     client: "/clients/",
@@ -97,10 +107,15 @@ export type ActivityRef =
   | { kind: "plan"; code: string; href: string };
 
 export function activityRef(
-  a: Pick<ActivityItem, "entityType" | "entityId" | "ref" | "title" | "project" | "carePlan">,
+  a: Pick<
+    ActivityItem,
+    "entityType" | "entityId" | "docType" | "gone" | "ref" | "title" | "project" | "carePlan"
+  >,
 ): ActivityRef | null {
-  const href = activityHref(a.entityType, a.entityId);
+  // a record that no longer exists (a deleted draft) gets no link, and a document or approval of it no title (final sweep review 3)
+  const href = a.gone ? null : activityHref(a.entityType, a.entityId, a.docType);
   if (a.ref) return { kind: "ref", text: a.ref, href };
+  if (a.gone) return null;
   if (a.entityType === "document" || a.entityType === "approval")
     return { kind: "title", text: a.title?.trim() || DOC_PENDING.untitled, href };
   if (a.project)

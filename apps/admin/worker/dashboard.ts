@@ -69,6 +69,10 @@ const CARE_ROWS = 20;
  *   - a time entry: its project (code and name) or its care plan (the client's code), as the event's own audit row recorded them
  *     (`time.create`, `time.update` and `time.delete` all write `projectId` and `carePlanId`), so a deleted or moved entry still names
  *     what it was logged against then. Only those two ids are read from the summary in SQL; the summary itself never leaves the Worker.
+ *
+ * Where a row leads (final sweep review 1 and 3): a document's own type (`doc_type`), so the screen sends the invoice family to its invoice page
+ * and an offer to its document page; and whether the record it names is gone (`gone`: a deleted draft, a purged lead), read from the same
+ * joins, so the screen shows neither a title nor a link to a page that no longer exists. No extra statement and no extra row read.
  */
 export const ACTIVITY_SQL = (ownOnly: boolean, byAction: boolean) =>
   `SELECT a.id, a.at, (SELECT name FROM staff_users WHERE id = a.actor_id) AS actor_name, a.action, a.entity_type, a.entity_id,
@@ -76,7 +80,11 @@ export const ACTIVITY_SQL = (ownOnly: boolean, byAction: boolean) =>
           CASE WHEN d.number_display IS NULL AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = d.client_id AND z.anonymised_at IS NOT NULL)
                THEN d.title END AS doc_title,
           tp.id AS time_project_id, tp.code AS time_project_code, tp.name AS time_project_name,
-          tcp.id AS time_care_plan_id, tcc.code AS time_care_client_code
+          tcp.id AS time_care_plan_id, tcc.code AS time_care_client_code,
+          CASE WHEN a.entity_type = 'document' THEN d.type END AS doc_type,
+          CASE a.entity_type WHEN 'lead' THEN l.id IS NULL WHEN 'client' THEN cl.id IS NULL WHEN 'project' THEN pr.id IS NULL
+               WHEN 'approval' THEN ap.id IS NULL WHEN 'document' THEN d.id IS NULL WHEN 'care_plan' THEN cpl.id IS NULL
+               ELSE 0 END AS gone
    FROM audit_log a INDEXED BY ${byAction ? "audit_log_action" : "audit_log_at"}
    LEFT JOIN leads l ON a.entity_type = 'lead' AND l.id = a.entity_id
    LEFT JOIN clients cl ON a.entity_type = 'client' AND cl.id = a.entity_id
@@ -502,6 +510,8 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
         time_project_name: string;
         time_care_plan_id: string | null;
         time_care_client_code: string;
+        doc_type: string | null;
+        gone: number;
       }>("activity").map((r) => ({
         id: r.id,
         at: r.at,
@@ -510,8 +520,12 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
         entityType: r.entity_type,
         entityId: r.entity_id,
         ref: r.ref,
+        // review 1: the invoice family opens its invoice page, an offer its document page
+        docType: r.doc_type,
+        // review 3: the record no longer exists (a deleted draft): no title and no link
+        gone: r.gone === 1,
         // A13: a document without a number (a draft) by its title; a time entry by what it was logged against
-        title: r.doc_title,
+        title: r.gone === 1 ? null : r.doc_title,
         project:
           r.time_project_id !== null
             ? { id: r.time_project_id, code: r.time_project_code, name: r.time_project_name }
