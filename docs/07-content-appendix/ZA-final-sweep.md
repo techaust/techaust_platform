@@ -38,3 +38,11 @@ Status: **APPROVED by the owner, 2026-10-30** ("Approve all"). Built in the fina
 14. **An estimate's terms say "this proposal"** (three times). Recommended: the next terms version says "this proposal or estimate" in those three places (one shared text, as today).
 15. **The payment request (proforma) page** doesn't say it isn't a tax invoice (the estimate page does; the PDF does). Recommended: the PDF's own line, "This is not a tax invoice. A tax invoice will be issued when payment is received."
 16. **"Prices exclude GST."** shows under a total that includes GST. Recommended: show it only where the amounts shown exclude GST, never under a total that includes it.
+
+## Additions (owner, 2026-10-30, approved as recommended)
+17. **/blog description, shortened to fit 155 characters** (item 3 was 158): "Notes on custom software, AI document automation, workflow automation and connecting business systems, from the TecHaust team. First posts are on the way."
+18. **A proforma's void dialog, the reason box:** "Reason (required, kept with the proforma)". Invoices keep "Reason (required, kept with the invoice)".
+19. **An accepted proposal's two fingerprints:** "PDF fingerprint" (was "Document fingerprint") and "Content fingerprint".
+20. **The proposal cover keeps the client's name** as well as "Prepared for" (no template change).
+
+Lead's note: item 4's error is set without a final full stop, like every other error on the quote form (punctuation follows the form; the words are as approved).
