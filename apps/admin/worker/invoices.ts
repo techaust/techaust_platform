@@ -149,14 +149,18 @@ const idText = z.string().check(z.minLength(1), z.maxLength(64));
 /**
  * A refused void (409), with the exact reasons (codes) riding along. 07-R: `already_void` for a void one, `return_period_closed` for a closed
  * month, FX-5 (owner decision 2026-10-30, 08-C RA-10): `viewed_by_client` once the client opened it in the portal (a proforma has its own words: it
- * has no credit note and stays until converted; lead, 2026-10-30); `void_not_allowed` for the rest.
+ * has no credit note and stays until converted; lead, 2026-10-30); `void_not_allowed` for the rest. A payment, a credit or an issued child document is
+ * the stronger reason, so with one of them the view is not the answer (`void_not_allowed`), as the screen's `voidBlockedText` ranks them (review L3).
  */
 function voidRefused(c: Ctx, reasons: readonly VoidBlockerCode[], type: string) {
+  const stronger = reasons.some(
+    (r) => r === "has_payment" || r === "has_credit" || r === "has_child_document",
+  );
   const error = reasons.includes("already_void")
     ? ALREADY_VOID
     : reasons.includes("return_period_closed")
       ? RETURN_PERIOD_CLOSED
-      : reasons.includes("viewed_by_client")
+      : reasons.includes("viewed_by_client") && !stronger
         ? type === "proforma"
           ? VIEWED_BY_CLIENT_PROFORMA
           : VIEWED_BY_CLIENT

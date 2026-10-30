@@ -486,6 +486,67 @@ describe("a document the client opened in the portal is never voided [FX-5, A0 3
     expect(v.void).toMatchObject({ canVoid: false, blockers: ["viewed_by_client"] });
   });
 
+  it("viewed with a payment, a credit or an issued child: 409 void_not_allowed, the stronger reason ranks first (review L3); viewed alone stays viewed_by_client", async () => {
+    const o = await owner();
+    for (const [name, code, prepare] of [
+      [
+        "paid",
+        "has_payment",
+        (id: string) =>
+          env.DB.prepare(
+            "UPDATE documents SET paid_minor = 1, balance_minor = balance_minor - 1 WHERE id = ?",
+          )
+            .bind(id)
+            .run(),
+      ],
+      [
+        "credited",
+        "has_credit",
+        (id: string) =>
+          env.DB.prepare(
+            "UPDATE documents SET credited_minor = 1, balance_minor = balance_minor - 1 WHERE id = ?",
+          )
+            .bind(id)
+            .run(),
+      ],
+      [
+        "child",
+        "has_child_document",
+        async (id: string) => {
+          const client = (
+            await one<{ client_id: string }>("SELECT client_id FROM documents WHERE id = ?", id)
+          )?.client_id as string;
+          await insert("documents", {
+            id: `cn-viewed-${id}`,
+            type: "credit_note",
+            client_id: client,
+            currency: "INR",
+            parent_id: id,
+            status: "issued",
+            frozen_at: 1,
+            series: "creditNote",
+            fy: "2627",
+            number: Math.floor(Math.random() * 1e9),
+            number_display: `CNV/${id.slice(-8)}`,
+          });
+        },
+      ],
+    ] as const) {
+      const inv = await issued(o);
+      await prepare(inv.id);
+      await view(inv.id);
+      const before = await invoiceRow(inv.id);
+      const res = await voidInvoice(o, inv.id);
+      expect(res.status, name).toBe(409);
+      const body = await json(res);
+      expect(body.error.code, name).toBe("void_not_allowed");
+      expect(body.reasons, name).toContain(code);
+      expect(body.reasons, name).toContain("viewed_by_client");
+      expect(await invoiceRow(inv.id), name).toEqual(before);
+      expect(await auditCount("invoice.void", inv.id), name).toBe(0);
+    }
+  });
+
   it("viewed and past its month: 409 return_period_closed with both codes in reasons; the screen says the return period", async () => {
     const o = await farSession();
     const c = await mkInvoiceClient();
