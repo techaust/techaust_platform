@@ -28,3 +28,15 @@ export function personLabels(people: readonly Person[], you?: string | null): Ma
 /** One person's label from `personLabels`, falling back to their name. */
 export const personLabel = (labels: Map<string, string>, p: Person): string =>
   labels.get(p.id) ?? (p.name.trim() || NAME_NOT_SET);
+
+/**
+ * The work email to show under a closed menu for the chosen person, or null: only while another person in `people` has the same name
+ * (the comparison `personLabels` uses), and never for `you` (their entry reads "(you)"). A closed select on a phone cuts a long
+ * "Name (email)" label, so the email is shown whole below the field (lead, after final sweep round 3).
+ */
+export function sharedNameEmail(people: readonly Person[], id: string, you?: string | null): string | null {
+  if (you && id === you) return null;
+  const p = people.find((x) => x.id === id);
+  if (!p?.email) return null;
+  return people.some((x) => x.id !== id && key(x.name) === key(p.name)) ? p.email : null;
+}

@@ -1,6 +1,6 @@
 // Staff names in a menu (final sweep A20): two people with one name are told apart by their work email; everyone else is their name alone.
 import { describe, expect, it } from "vitest";
-import { NAME_NOT_SET, personLabel, personLabels } from "./people.ts";
+import { NAME_NOT_SET, personLabel, personLabels, sharedNameEmail } from "./people.ts";
 
 describe("staff names in a menu (final sweep A20) [ADM-TIME-01, ADM-LEAD-03]", () => {
   const sam1 = { id: "u1", name: "Sam Same", email: "sam.one@example.test" };
@@ -42,5 +42,31 @@ describe("staff names in a menu (final sweep A20) [ADM-TIME-01, ADM-LEAD-03]", (
     ]);
     expect(personLabel(l, { id: "x", name: "Sam" })).toBe("Sam");
     expect(personLabel(new Map(), { id: "z", name: "" })).toBe(NAME_NOT_SET);
+  });
+});
+
+describe("the chosen person's email under the field (lead, after final sweep round 3) [ADM-TIME-01]", () => {
+  const sam1 = { id: "u1", name: "Sam Same", email: "sam.one@example.test" };
+  const sam2 = { id: "u2", name: " SAM SAME", email: "sam.two@example.test" };
+  const ria = { id: "u3", name: "Ria", email: "ria@example.test" };
+
+  it("shows the email only while the chosen name repeats", () => {
+    expect(sharedNameEmail([sam1, sam2, ria], "u2")).toBe("sam.two@example.test");
+    expect(sharedNameEmail([sam1, sam2, ria], "u3")).toBeNull();
+    expect(sharedNameEmail([sam1, ria], "u1")).toBeNull();
+  });
+
+  it("never for the reader, an unknown id or a person without an email", () => {
+    expect(sharedNameEmail([sam1, sam2], "u1", "u1")).toBeNull();
+    expect(sharedNameEmail([sam1, sam2], "nobody")).toBeNull();
+    expect(
+      sharedNameEmail(
+        [
+          { id: "x", name: "Sam" },
+          { id: "y", name: "Sam" },
+        ],
+        "x",
+      ),
+    ).toBeNull();
   });
 });
