@@ -228,3 +228,22 @@ Usage: designer claude-opus-5-5/high (skills frontend-design).
 - Merged `design/rt1-screens` and `origin/main` into the task branch; screenshots copied to `.logs/rt1-design/`. Usage: builder (F1–F5) claude-opus-5-5/high (workers-best-practices, wrangler); designer claude-opus-5-5/high (frontend-design).
 
 ## Review
+### Review (reviewer, Opus 5.5 high, 2026-10-31): APPROVE (3 medium, 9 low), condensed by the lead
+Skills: code-review (10 candidates, 7 kept after verification), security-review (by hand over the branch diff; nothing reached the bar), workers-best-practices. Ran at fc028984: `pnpm check` exit 0; core 1,844; db 501; pdf 360; jobs 531; admin 3,467; e2e `rt1-screens.spec.ts` 5 passed (axe at 1280 and 390, both themes against the opposite OS theme). Live pass at 768 and 1920 with reduced motion; a real 409 `debit_lut_missing` through the dialog, nothing written. Screenshots `.logs/shots/rt1-notes-rules-review/`.
+1. **medium** `apps/admin/src/routes/settings/tax.tsx:522`: 07-ZD line 9 not applied (the cut-off hint still says "After this date…").
+2. **medium (older, M5.3)** `apps/admin/src/notes.css:96`: at 768 the issued-note row's text column shrinks to 0 and "Credit note / 31 Oct 2026" overlaps the amount. Stack earlier (container query) or give `.notes-row__what` a real minimum.
+3. **medium (older)** `apps/admin/src/shell.css:2275`: `.setting` goes two-column at a 48rem viewport; at 768 with the sidebar and sub-nav the label column is ~80 px and every hint wraps word by word. Container query on `.settings-rows` or ~64rem.
+4. **low** `packages/core/src/gst/summary.ts:116`: IMS status read at report time, so a past quarter's 3B changes after a later acceptance (OPEN 08-C RA-04).
+5. **low** `packages/core/src/notes.ts:389`: assumes the quarterly filer files the optional IFF (OPEN 08-C RA-31; owner duty at integration).
+6. **low** `apps/admin/worker/note-model.ts:359` vs `LUT_FOR_FY_SQL`: core counts a legacy `tax.lut` only when folded, SQL accepts any matching legacy LUT (fails closed only). Twin test pinning core against SQL.
+7. **low** `apps/admin/worker/note-issue.ts:214`: `explainNote` computes the FY in JS; bind the issue date and use `fyTokenOfDateSql`.
+8. **low** `apps/admin/worker/note-view.ts:80`: builds its own `creditNoteDeadline` input; share one helper with `deadlineOf`.
+9. **low** `packages/core/src/gst/layouts.ts:459`: `gstr3bCsv` hard-codes v1/v2; a row builder per layout in the registry.
+10. **low** `apps/admin/src/lib/notes.ts:15`: two FY-label helpers in the SPA; use one.
+11. **low (tests)** `apps/jobs/test/pdf-note-seed.ts:151`: restore the tax row in `try/finally`; FY token from core `fyOfDate(...).token`.
+12. **low** record updates for integration (08-C, 04, 07-T §4, 13, CLAUDE.md M5.3 paragraph).
+Observations: F1 re-renders older settings-route notes with the route/LUT line (a correction; stored PDFs stay write-once); a wide line gap from the 44 px inline link in the draft row (cosmetic).
+
+**Lead triage:** fix 1, 2, 3 and 10 (designer); fix 6, 7, 8, 9, 11 (builder), in parallel on separate files; a re-check follows. **Kept as follow-ups:** 4 (IMS acceptance date per period, OPEN RA-04) and 5 (an optional "IFF filed" setting, OPEN RA-31; the owner duty goes in the record). 12 is the lead's integration work.
+
+### Review fixes
