@@ -1090,9 +1090,25 @@ type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 /** `raw`: a binary body sent as it is (`application/octet-stream`; the signature image), instead of JSON. */
 type Options = { method?: Method; body?: unknown; raw?: Blob; signedIn?: boolean };
 
-const NETWORK = "Couldn't reach the server. Check your connection and try again.";
+/** No answer at all (the fetch itself failed): the only case that reads as offline. */
+export const NETWORK = "Couldn't reach the server. Check your connection and try again.";
 /** The words of the Worker's own unhandled error (`worker/app.ts` onError), for an error answer that carries none. */
 const SERVER_ERROR = "Something went wrong";
+
+/**
+ * The error an answer carries, one rule for every path that reads one (`request`, the file upload, the statement PDF poll; final sweep A15 and
+ * review 4): our JSON error with its code and words; anything else (a Cloudflare 502 or 503 page, a CPU-limit page, an error without words,
+ * no body) the Worker's own unhandled error, in its words or the caller's `fallback`. The server answered, so it is never `network` (offline).
+ */
+export function answerError(
+  data: unknown,
+  fallback: string = SERVER_ERROR,
+): { code: string; message: string } {
+  const err = typeof data === "object" && data !== null ? (data as ApiErrorBody).error : undefined;
+  const code = typeof err?.code === "string" && err.code !== "" ? err.code : null;
+  if (code && typeof err?.message === "string" && err.message !== "") return { code, message: err.message };
+  return { code: code ?? "internal", message: fallback };
+}
 
 async function send<T>(path: string, { method, body, raw, signedIn = true }: Options): Promise<T> {
   const m: Method = method ?? (body === undefined && raw === undefined ? "GET" : "POST");
@@ -1114,12 +1130,8 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
   }
   const data = (await res.json().catch(() => ({}))) as T & ApiErrorBody;
   if (res.ok) return data;
-  // The server answered, so this is never "offline" (final sweep A15): an answer that isn't our JSON error (a Cloudflare 502 or 503 page, a
-  // CPU-limit page) or one without its words reads as the Worker's own unhandled error, in its words.
-  const e =
-    data.error && typeof data.error.code === "string" && data.error.message
-      ? data.error
-      : { code: data.error?.code || "internal", message: SERVER_ERROR };
+  // The server answered, so this is never "offline" (final sweep A15): `answerError`.
+  const e = answerError(data);
   // The worker's `error.details` (`err(..., details)`): `advance_lut_missing` sends `{ fy }`, `debit_tax_only_invalid` `{ reason }`. The last day of
   // `credit_deadline_passed` is a top-level `date` (M5.3).
   const inner = data.error?.details;
@@ -1556,7 +1568,8 @@ export function uploadFile(
         data = null;
       }
       if (xhr.status >= 200 && xhr.status < 300 && data) return resolve(data);
-      const e = data?.error ?? { code: "network", message: NETWORK };
+      // the server answered: its error, or the Worker's own unhandled one, never "offline" (final sweep review 4)
+      const e = answerError(data);
       if (xhr.status === 401 && e.code === "unauthenticated") unauthenticatedHandler?.();
       reject(new RequestError(xhr.status, e.code, e.message, data?.request_id ?? null));
     };

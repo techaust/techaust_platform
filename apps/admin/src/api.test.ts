@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  answerError,
   api,
   documentPdfHref,
   onStepUpRequired,
@@ -7,7 +8,9 @@ import {
   RequestError,
   signatureApi,
   signatureSrc,
+  uploadFile,
 } from "./api.ts";
+import { pollStatementPdf } from "./lib/reports-api.ts";
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -214,6 +217,105 @@ describe("API client: step-up and expired sessions [ADM-AUTH-08, ADM-AUTH-05]", 
       status: 500,
       message: "Something went wrong",
     });
+  });
+});
+
+describe("one rule for an error answer: request, the upload and the statement PDF (final sweep review 4)", () => {
+  it("answerError: our JSON error as it is; anything else the Worker's own words, never network", () => {
+    expect(answerError({ error: { code: "file_too_large", message: "Too big" } })).toEqual({
+      code: "file_too_large",
+      message: "Too big",
+    });
+    for (const data of [null, undefined, {}, [], "html", 5, { error: null }, { error: { code: "" } }])
+      expect(answerError(data)).toEqual({ code: "internal", message: "Something went wrong" });
+    // a code without words keeps its code
+    expect(answerError({ error: { code: "conflict", message: "" } })).toEqual({
+      code: "conflict",
+      message: "Something went wrong",
+    });
+    expect(answerError(null, "The PDF couldn't be read.")).toEqual({
+      code: "internal",
+      message: "The PDF couldn't be read.",
+    });
+  });
+
+  /** A stand-in for XMLHttpRequest (the test pool is workerd, which has none): it answers `status` with `body` when sent. */
+  const fakeXhr = (status: number, body: string, mode: "load" | "error" = "load") =>
+    class {
+      status = 0;
+      responseText = "";
+      withCredentials = false;
+      upload: { onprogress: ((e: unknown) => void) | null } = { onprogress: null };
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onabort: (() => void) | null = null;
+      open() {}
+      setRequestHeader() {}
+      abort() {}
+      send() {
+        queueMicrotask(() => {
+          if (mode === "error") return this.onerror?.();
+          this.status = status;
+          this.responseText = body;
+          this.onload?.();
+        });
+      }
+    };
+  const file = () => new File(["hello"], "notes.txt", { type: "text/plain" });
+  const scope = { kind: "project", id: "p1" } as const;
+
+  it("the upload: a 502 page reads as the server's error, a JSON refusal keeps its words, no answer at all is network", async () => {
+    vi.stubGlobal("XMLHttpRequest", fakeXhr(502, "<html>Bad gateway</html>"));
+    await expect(uploadFile(scope, file(), "a".repeat(64), () => {})).rejects.toMatchObject({
+      status: 502,
+      code: "internal",
+      message: "Something went wrong",
+    });
+    vi.stubGlobal(
+      "XMLHttpRequest",
+      fakeXhr(
+        413,
+        JSON.stringify({ error: { code: "file_too_large", message: "Too big" }, request_id: "r9" }),
+      ),
+    );
+    await expect(uploadFile(scope, file(), "a".repeat(64), () => {})).rejects.toMatchObject({
+      status: 413,
+      code: "file_too_large",
+      message: "Too big",
+      requestId: "r9",
+    });
+    vi.stubGlobal("XMLHttpRequest", fakeXhr(0, "", "error"));
+    await expect(uploadFile(scope, file(), "a".repeat(64), () => {})).rejects.toMatchObject({
+      code: "network",
+    });
+  });
+
+  it("the statement PDF: a 502 page is an error under code internal with the PDF's line, never network", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response("<html>Bad gateway</html>", { status: 502, headers: { "Content-Type": "text/html" } }),
+        ),
+    );
+    await expect(pollStatementPdf("c1", "s1")).rejects.toMatchObject({
+      status: 502,
+      code: "internal",
+      message: "The PDF couldn't be read.",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(json(409, { error: { code: "statement_pdf_failed", message: "It failed" } })),
+    );
+    const failed = await pollStatementPdf("c1", "s1");
+    expect(failed).toMatchObject({
+      state: "failed",
+      error: { code: "statement_pdf_failed", message: "It failed" },
+    });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    await expect(pollStatementPdf("c1", "s1")).rejects.toBeInstanceOf(RequestError);
+    await expect(pollStatementPdf("c1", "s1")).rejects.toMatchObject({ code: "network", status: 0 });
   });
 });
 
