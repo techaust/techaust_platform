@@ -210,7 +210,7 @@ describe("columns with a missing value are blank, not 'null'", () => {
     cgstMinor: 0,
     sgstMinor: 0,
   } as const;
-  const note = { ...invoice, section: "cdnr", noteType: "D", urType: null } as const;
+  const note = { ...invoice, section: "cdnr", noteType: "D", urType: null, imsStatus: null } as const;
 
   it("a B2B row without a GSTIN, an export without a type, a note without a UR type", () => {
     expect(v1.b2b.columns[0]?.cell(invoice)).toEqual({ kind: "blank" });
