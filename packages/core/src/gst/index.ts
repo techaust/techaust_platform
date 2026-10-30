@@ -42,6 +42,7 @@ export {
   GSTR1_LAYOUTS,
   GSTR3B_LAYOUTS,
   type Gstr1LayoutId,
+  type Gstr3bCsvRow,
   type Gstr3bLayoutId,
   gstr1Csv,
   gstr3bCsv,
@@ -103,7 +104,16 @@ export {
   statementCsv,
   statementCsvRows,
 } from "./statement-csv.ts";
-export { type Gstr3bLine, type Gstr3bSummary, type Gstr3bTable, gstr3bSummary } from "./summary.ts";
+export {
+  type Gstr3bImsHeld,
+  type Gstr3bLine,
+  type Gstr3bSummary,
+  type Gstr3bTable,
+  gstr3bSummary,
+  imsDeducts,
+  linesDeductingAll,
+  NO_IMS_HELD,
+} from "./summary.ts";
 export {
   type CalendarDate,
   type Currency,

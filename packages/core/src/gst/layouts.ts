@@ -10,7 +10,13 @@ import type { EdfRow } from "./edf.ts";
 import type { RealisationRow } from "./realisation.ts";
 import type { OutputTaxRow, SalesRegisterRow } from "./registers.ts";
 import type { B2csRow, Gstr1Sections, HsnRow, InvoiceRow, NoteRow } from "./sections.ts";
-import type { Gstr3bLine, Gstr3bSummary } from "./summary.ts";
+import {
+  type Gstr3bImsHeld,
+  type Gstr3bLine,
+  type Gstr3bSummary,
+  linesDeductingAll,
+  NO_IMS_HELD,
+} from "./summary.ts";
 import { fail, type GstResult, guard, issue, ok } from "./types.ts";
 
 export type Column<R> = { readonly header: string; readonly cell: (row: R) => Cell };
@@ -365,9 +371,37 @@ const gstr3bV1 = file<Gstr3bLine>("gstr3b_summary", [
   col("CGST", (r) => (r.table === "3.2" ? cell.blank() : cell.amount(r.cgstMinor))),
   col("SGST", (r) => (r.table === "3.2" ? cell.blank() : cell.amount(r.sgstMinor))),
 ]);
-export const GSTR3B_LAYOUTS = Object.freeze({ "gstr3b-summary-v1": gstr3bV1 } as const);
+/** One row of `gstr3b-summary-v2`: a summary line, or (last) the credit notes held back until the client accepts them in IMS (rt1 T3). */
+export type Gstr3bCsvRow = Gstr3bLine | (Gstr3bImsHeld & { readonly table: "ims_held" });
+
+/** 07-ZD line 7 (owner, 2026-10-31): the held row's description. Its Table and Place of supply cells are blank: it is not a 3B table. */
+const GSTR3B_IMS_HELD_V2 = "Credit notes to registered clients not yet accepted in IMS (not deducted)";
+
+const gstr3bV2 = file<Gstr3bCsvRow>("gstr3b_summary", [
+  col("Table", (r) => (r.table === "ims_held" ? cell.blank() : cell.text(r.table))),
+  col("Description", (r) =>
+    cell.text(r.table === "ims_held" ? GSTR3B_IMS_HELD_V2 : GSTR3B_DESCRIPTION_V1[r.table]),
+  ),
+  col("Place of supply", (r) =>
+    r.table === "ims_held" || r.posCode === null ? cell.blank() : posLabelV1(r.posCode),
+  ),
+  col("Taxable value", (r) => cell.amount(r.taxableMinor)),
+  col("IGST", (r) => cell.amount(r.igstMinor)),
+  col("CGST", (r) => (r.table === "3.2" ? cell.blank() : cell.amount(r.cgstMinor))),
+  col("SGST", (r) => (r.table === "3.2" ? cell.blank() : cell.amount(r.sgstMinor))),
+]);
+
+/**
+ * v1 (M5.5b) prints every credit note in cdnr deducted from 3.1(a), as it did (`linesDeductingAll`), so a v1 file is byte for byte what it was. v2 (rt1 T3, D6; the
+ * current one) prints 3.1(a) with only IMS-accepted credit notes deducted, and a last row with the held ones (always present, zero when none). Researched 2026-10-28,
+ * s.34(2) proviso CGST Act w.e.f. 1 Oct 2025 (08-C RA-04).
+ */
+export const GSTR3B_LAYOUTS = Object.freeze({
+  "gstr3b-summary-v1": gstr3bV1,
+  "gstr3b-summary-v2": gstr3bV2,
+} as const);
 export type Gstr3bLayoutId = keyof typeof GSTR3B_LAYOUTS;
-export const CURRENT_GSTR3B_LAYOUT: Gstr3bLayoutId = "gstr3b-summary-v1";
+export const CURRENT_GSTR3B_LAYOUT: Gstr3bLayoutId = "gstr3b-summary-v2";
 
 /** The sales register of a range. */
 export function salesRegisterCsv(
@@ -401,9 +435,16 @@ export function gstr3bCsv(
   version: Gstr3bLayoutId = CURRENT_GSTR3B_LAYOUT,
   opts: CsvOptions = {},
 ): GstResult<string> {
-  return guard(() =>
-    Object.hasOwn(GSTR3B_LAYOUTS, version)
-      ? ok(render(GSTR3B_LAYOUTS[version], summary.lines, opts))
-      : fail([issue("layout_unknown", "version")]),
-  );
+  return guard(() => {
+    if (version === "gstr3b-summary-v1") return ok(render(gstr3bV1, linesDeductingAll(summary), opts));
+    if (version === "gstr3b-summary-v2")
+      return ok(
+        render(
+          gstr3bV2,
+          [...summary.lines, { table: "ims_held" as const, ...(summary.imsHeld ?? NO_IMS_HELD) }],
+          opts,
+        ),
+      );
+    return fail([issue("layout_unknown", "version")]);
+  });
 }

@@ -4,6 +4,10 @@
 //   3.1(a) outward taxable supplies (other than zero rated, nil rated and exempted) = b2b + b2cl + b2cs + cdnr + cdnur (B2CL);
 //   3.1(b) outward taxable supplies (zero rated)                                   = exp + cdnur (EXPWP and EXPWOP);
 //   3.2    inter-state supplies to unregistered persons, by place of supply        = b2cl + cdnur (B2CL) + inter-state b2cs, netted.
+// rt1 T3 (Researched 2026-10-28, s.34(2) proviso CGST Act w.e.f. 1 Oct 2025 (08-C RA-04)): a credit note in cdnr reduces 3.1(a) only once the client has
+// ACCEPTED it in IMS; a pending, rejected or unanswered one stays in 3.1(a) (not deducted) and is listed as held (`imsHeld`). Debit notes, cdnur and b2cs are
+// unchanged, and so are the GSTR-1 files. A note accepted in a later period is not added to that later period here (it under-deducts, the safe side):
+// OPEN (08-C RA-04): in which 3B period does a later IMS acceptance reduce liability?
 // Every figure is checked against the GSTR-1 totals; a disagreement is `totals_mismatch` (nothing is shown that does not add up).
 import type { StateCode } from "../gstin.ts";
 import type { Gstr1Sections, InvoiceRow, NoteRow, SectionTotals } from "./sections.ts";
@@ -21,7 +25,34 @@ export type Gstr3bLine = {
   readonly sgstMinor: number;
 };
 
-export type Gstr3bSummary = { readonly lines: readonly Gstr3bLine[] };
+/**
+ * rt1 T3: the credit notes in cdnr not yet accepted in IMS, so NOT deducted from 3.1(a). `count` notes (distinct documents), their `numbers` in GSTR-1 order (each
+ * once), and their amounts SIGNED as cdnr sums them (a credit note's amounts are negative), so that `3.1(a) + held` is the 3.1(a) that deducts every credit note.
+ */
+export type Gstr3bImsHeld = {
+  readonly count: number;
+  readonly numbers: readonly string[];
+  readonly taxableMinor: number;
+  readonly igstMinor: number;
+  readonly cgstMinor: number;
+  readonly sgstMinor: number;
+};
+
+/** `imsHeld` is always set by `gstr3bSummary`; a summary built by hand without it holds nothing back. */
+export type Gstr3bSummary = { readonly lines: readonly Gstr3bLine[]; readonly imsHeld?: Gstr3bImsHeld };
+
+export const NO_IMS_HELD: Gstr3bImsHeld = Object.freeze({
+  count: 0,
+  numbers: Object.freeze([]) as readonly string[],
+  taxableMinor: 0,
+  igstMinor: 0,
+  cgstMinor: 0,
+  sgstMinor: 0,
+});
+
+/** rt1 T3: a credit note in cdnr is deducted only when its IMS answer is `accepted`; anything else (pending, rejected, not applicable, none) is held. */
+export const imsDeducts = (r: Pick<NoteRow, "noteType" | "imsStatus">): boolean =>
+  r.noteType !== "C" || r.imsStatus === "accepted";
 
 type Sum = { taxable: bigint; igst: bigint; cgst: bigint; sgst: bigint };
 const zero = (): Sum => ({ taxable: 0n, igst: 0n, cgst: 0n, sgst: 0n });
@@ -36,6 +67,12 @@ const add = (into: Sum, r: Amounts, sign: bigint): void => {
   into.igst += sign * BigInt(r.igstMinor);
   into.cgst += sign * BigInt(r.cgstMinor);
   into.sgst += sign * BigInt(r.sgstMinor);
+};
+const addSum = (into: Sum, s: Sum): void => {
+  into.taxable += s.taxable;
+  into.igst += s.igst;
+  into.cgst += s.cgst;
+  into.sgst += s.sgst;
 };
 const noteSign = (r: NoteRow): bigint => (r.noteType === "C" ? -1n : 1n);
 const sameAs = (s: Sum, t: SectionTotals): boolean =>
@@ -69,17 +106,27 @@ export function gstr3bSummary(sections: Gstr1Sections): GstResult<Gstr3bSummary>
     const exp = sumInvoices(sections.exp, zero());
     const b2cs = zero();
     for (const r of sections.b2cs) add(b2cs, r, 1n);
+    // cdnr in two parts: what 3.1(a) deducts or adds now, and the credit notes held until the client accepts them in IMS (rt1 T3).
     const cdnr = zero();
-    for (const r of sections.cdnr) add(cdnr, r, noteSign(r));
+    const cdnrIn = zero();
+    const held = zero();
+    const heldDocs: string[] = [];
+    const heldNumbers: string[] = [];
+    for (const r of sections.cdnr) {
+      add(cdnr, r, noteSign(r));
+      if (imsDeducts(r)) add(cdnrIn, r, noteSign(r));
+      else {
+        add(held, r, noteSign(r));
+        if (!heldDocs.includes(r.docId)) {
+          heldDocs.push(r.docId);
+          if (!heldNumbers.includes(r.number)) heldNumbers.push(r.number);
+        }
+      }
+    }
     const cdnur = zero();
     for (const r of sections.cdnur) add(cdnur, r, noteSign(r));
 
-    for (const s of [b2b, b2cl, b2cs, cdnr]) {
-      a.taxable += s.taxable;
-      a.igst += s.igst;
-      a.cgst += s.cgst;
-      a.sgst += s.sgst;
-    }
+    for (const s of [b2b, b2cl, b2cs, cdnrIn]) addSum(a, s);
     for (const r of sections.cdnur) {
       add(r.urType === "B2CL" ? a : b, r, noteSign(r));
     }
@@ -96,7 +143,8 @@ export function gstr3bSummary(sections: Gstr1Sections): GstResult<Gstr3bSummary>
       if (r.posCode !== "96" && r.posCode !== sections.supplierStateCode) add(interOf(r.posCode), r, 1n);
     }
 
-    // checks against GSTR-1 (rule: nothing is shown that does not add up)
+    // checks against GSTR-1 (rule: nothing is shown that does not add up). cdnr is checked whole (every note, held or not); the overall check adds the held notes
+    // back, so `3.1(a) + held + 3.1(b)` is GSTR-1's overall total: the held part is exactly what 3.1(a) does not deduct.
     const errors: GstIssue[] = [];
     const t = sections.totals;
     const checks: [string, Sum, SectionTotals][] = [
@@ -111,12 +159,7 @@ export function gstr3bSummary(sections: Gstr1Sections): GstResult<Gstr3bSummary>
       if (!sameAs(sum, totals)) errors.push(issue("totals_mismatch", "gstr3b", name));
     }
     const all = zero();
-    for (const s of [a, b]) {
-      all.taxable += s.taxable;
-      all.igst += s.igst;
-      all.cgst += s.cgst;
-      all.sgst += s.sgst;
-    }
+    for (const s of [a, b, held]) addSum(all, s);
     if (!sameAs(all, t.overall)) errors.push(issue("totals_mismatch", "gstr3b", "overall"));
     if (errors.length > 0) return fail(errors);
 
@@ -133,6 +176,33 @@ export function gstr3bSummary(sections: Gstr1Sections): GstResult<Gstr3bSummary>
       const s = interOf(pos);
       lines.push(line("3.2", pos, { taxable: s.taxable, igst: s.igst, cgst: 0n, sgst: 0n }));
     }
-    return ok({ lines });
+    const imsHeld: Gstr3bImsHeld = {
+      count: heldDocs.length,
+      numbers: heldNumbers,
+      taxableMinor: num(held.taxable),
+      igstMinor: num(held.igst),
+      cgstMinor: num(held.cgst),
+      sgstMinor: num(held.sgst),
+    };
+    return ok({ lines, imsHeld });
   });
+}
+
+/**
+ * The lines as the summary gave them before rt1 (every credit note in cdnr deducted from 3.1(a)): `3.1(a) + held`. The `gstr3b-summary-v1` layout prints these, so
+ * a v1 file is byte for byte what it was for the same documents; v2 prints the IMS rule and the held row.
+ */
+export function linesDeductingAll(summary: Gstr3bSummary): readonly Gstr3bLine[] {
+  const h = summary.imsHeld ?? NO_IMS_HELD;
+  return summary.lines.map((l) =>
+    l.table === "3.1(a)"
+      ? {
+          ...l,
+          taxableMinor: num(BigInt(l.taxableMinor) + BigInt(h.taxableMinor)),
+          igstMinor: num(BigInt(l.igstMinor) + BigInt(h.igstMinor)),
+          cgstMinor: num(BigInt(l.cgstMinor) + BigInt(h.cgstMinor)),
+          sgstMinor: num(BigInt(l.sgstMinor) + BigInt(h.sgstMinor)),
+        }
+      : l,
+  );
 }

@@ -67,11 +67,36 @@ describe("golden CSVs", () => {
     await expect(csv).toMatchFileSnapshot("./__snapshots__/output-tax-v1-q3.csv");
   });
 
-  it("gstr3b-summary-v1", async () => {
+  it("gstr3b-summary-v1 (byte for byte as before rt1: every credit note in cdnr deducted)", async () => {
     const sections = unwrap(gstr1Sections(GOLDEN_API_REGISTER, Q3, PARAMS));
-    const csv = unwrap(gstr3bCsv(unwrap(gstr3bSummary(sections))));
+    const csv = unwrap(gstr3bCsv(unwrap(gstr3bSummary(sections)), "gstr3b-summary-v1"));
     expect(hasBareLineBreak(csv)).toBe(false);
     await expect(csv).toMatchFileSnapshot("./__snapshots__/gstr3b-summary-v1-q3.csv");
+  });
+
+  it("gstr3b-summary-v2 (rt1 T3, RA-04): only IMS-accepted credit notes deducted, the held row last (07-ZD line 7)", async () => {
+    const sections = unwrap(gstr1Sections(GOLDEN_API_REGISTER, Q3, PARAMS));
+    const summary = unwrap(gstr3bSummary(sections));
+    const csv = unwrap(gstr3bCsv(summary));
+    expect(csv).toBe(unwrap(gstr3bCsv(summary, "gstr3b-summary-v2")));
+    expect(hasBareLineBreak(csv)).toBe(false);
+    const CRLF = "\r\n";
+    const last = csv.split(CRLF).at(-2) ?? "";
+    expect(
+      last.startsWith(",Credit notes to registered clients not yet accepted in IMS (not deducted),,"),
+    ).toBe(true);
+    await expect(csv).toMatchFileSnapshot("./__snapshots__/gstr3b-summary-v2-q3.csv");
+    // with every credit note accepted, v2's lines are v1's and the held row is zero
+    const accepted = GOLDEN_API_REGISTER.map((r) =>
+      r.kind === "credit_note" ? { ...r, imsStatus: "accepted" } : r,
+    );
+    const all = unwrap(gstr3bSummary(unwrap(gstr1Sections(accepted, Q3, PARAMS))));
+    const v1 = unwrap(gstr3bCsv(all, "gstr3b-summary-v1")).split(CRLF);
+    const v2 = unwrap(gstr3bCsv(all, "gstr3b-summary-v2")).split(CRLF);
+    expect(v2.slice(0, v1.length - 1)).toEqual(v1.slice(0, -1));
+    expect(v2.at(-2)).toBe(
+      ",Credit notes to registered clients not yet accepted in IMS (not deducted),,0.00,0.00,0.00,0.00",
+    );
   });
 
   it("statement-v1", async () => {
@@ -174,10 +199,10 @@ describe("text is defused, numbers are not", () => {
 });
 
 describe("layout versions", () => {
-  it("the current versions are the v1 ones, known and frozen", () => {
+  it("the current versions are known and frozen (3B is v2 since rt1)", () => {
     expect(CURRENT_SALES_REGISTER_LAYOUT).toBe("sales-register-v1");
     expect(CURRENT_OUTPUT_TAX_LAYOUT).toBe("output-tax-v1");
-    expect(CURRENT_GSTR3B_LAYOUT).toBe("gstr3b-summary-v1");
+    expect(CURRENT_GSTR3B_LAYOUT).toBe("gstr3b-summary-v2");
     expect(CURRENT_STATEMENT_LAYOUT).toBe("statement-v1");
     for (const layouts of [SALES_REGISTER_LAYOUTS, OUTPUT_TAX_LAYOUTS, GSTR3B_LAYOUTS, STATEMENT_LAYOUTS]) {
       expect(Object.isFrozen(layouts)).toBe(true);
@@ -213,7 +238,7 @@ describe("layout versions", () => {
     for (const csv of [
       unwrap(salesRegisterCsv([])),
       unwrap(outputTaxCsv([])),
-      unwrap(gstr3bCsv({ lines: [] })),
+      unwrap(gstr3bCsv({ lines: [] }, "gstr3b-summary-v1")),
     ]) {
       expect(csv.endsWith("\r\n")).toBe(true);
       expect(csv.split("\r\n")).toHaveLength(2);
