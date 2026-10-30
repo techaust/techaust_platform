@@ -171,3 +171,52 @@ Usage: analyst claude-opus-5-5/high (agent-a8f2ba7b…, skills workers-best-prac
 
 **Open questions:** none.
 Usage: builder claude-opus-5-5/high (skills workers-best-practices, wrangler).
+
+### Designer report
+**Designer, 2026-10-31; branch `design/rt1-screens` from `origin/task/rt1-notes-rules` (e0192d78); commits e9f3dcbb (screens), a3d1bac3 (e2e spec), f37f802c (visual-pass fixes), 904c6c1f (spec: sales register), then this report.** No worker, db, migration or jobs file changed; one core line (an export). Nothing hosted touched. The dev server Playwright started is stopped (no port listening); no MCP browser was opened.
+
+**Skills loaded:**
+- `frontend-design:frontend-design`, **loaded first, before any other work.** What it changed: one quiet idea, inside docs/06 and the M5.3/M5.5 screens, no new colours or components. The 3B held amount is drawn as part of 3.1(a), not as a new table: an indented row under 3.1(a) in the muted ink, with a 3 px warning rule on its name, and the same warning rule on the line-8 sentence under the table, so the row and its sentence read as one thing; the held notes' numbers follow in the number face so the Owner knows which to follow up in IMS. The deadline banner keeps M5.3's dated, toned line (the first line carries the weight, the rest quieter) with `text-wrap: pretty` so no line ends on "IFF.". The GSTR-1 field is the page's own select row, placed straight after the cut-off it works with.
+- `dataviz`: not loaded. No chart, stat tile or dashboard: the 3B change is one ledger row and one sentence.
+- No other docs/14 §9 skill fits (no Worker, route, binding, PDF or email work).
+
+**What was built (07-ZD word for word; every line in `apps/admin/src/lib/copy-zd.ts`):**
+- **Line 1, Settings › Tax:** "GSTR-1 filing" select ("Quarterly (QRMP scheme)", "Monthly", core's `GSTR1_FREQUENCIES` order) with the hint, right after "Credit note cut-off". `lib/tax-settings.ts` reads `gstr1Frequency` (a row stored before rt1 reads "quarterly", as the server reads it) and always saves the field's value back (lead D9).
+- **Lines 2 to 5, the banner** (`lib/notes.ts` `deadlineBanner`, `routes/invoices/notes-parts.tsx`): line 2 with `lastDay` and `returnBy` (an older API without `returnBy` falls back to `date`); line 3 only when `period` is "quarter" and never after the deadline; from `deadlineWarnFrom` the tone is warning and line 4 leads while at least one day is left (on the last day itself the tone stays warning and line 2 names the day); line 5 in danger once passed. No "30 November", no "Talk to your CA" (a test scans every line). `CreditDeadlineView` gains optional `returnBy` and `period`. 07-T's "The deadline counts from FY …" line is kept.
+- **Line 6, `debit_lut_missing`** (`lib/notes.ts` `noteBlockerLine`): the FY label through core `fyLabelOfToken`; "…" when the server sends no FY or a damaged token. `lib/invoices.ts` `blockerTarget` sends it to `/settings/tax#luts`. A new `NoteBlockerList` (notes-parts.tsx) is used by the note draft page and the note dialog: a blocker fixed on a settings page now carries the page's name as its link (the invoice editor's pattern, the whole row a 44 px target). The red test "a line for every note blocker code" is green.
+- **Lines 7 and 8, Reports:** GST exports' 3B table gets the held row (line 7's words, positive amounts from core `heldRowOf`, lead D8), only when something is held; `ImsHeldNotice` (routes/reports/parts.tsx) under the table with line 8 and the held numbers. The sales register shows the same notice when its 3B file is on offer. `packages/core/src/gst/index.ts` now exports `heldRowOf` (one line, no logic).
+- **Visual-pass fixes on these screens (pre-existing defects met in the shots):** (1) `ReportBlock` was a `<section>` region named like the wide list inside it: three duplicate landmarks on the GST results (axe `landmark-unique`; the sweep only sees the idle page, so it never met them); it is now a plain block under its heading. (2) On a phone the notes ledger's draft row put its dashed slot over the sentence's second line; the draft row keeps its two columns. (3) The 3B row names get `min-width: 11rem` on a phone (the box already scrolls), so a name is not one word a line.
+- **Singular forms (flag for the lead):** line 4 with 1 day reads "Only 1 day left to issue a credit note on this invoice."; line 8 with 1 note reads "1 credit note isn't deducted until your client accepts it in IMS. Check the GST portal's GSTR-3B figures before you file." This is the admin's existing practice (07-T's day line, the balance line), but the singular of line 8 changes "aren't … them" to "isn't … it", which 07-ZD does not print. If the owner wants only the plural, it is one line in `copy-zd.ts`.
+
+**Files changed:** apps/admin/src/lib/{copy-zd.ts (new), notes.ts, notes-api.ts, invoices.ts, tax-settings.ts, notes.test.ts, reports.test.ts}; apps/admin/src/routes/invoices/{notes-parts.tsx, note-draft.tsx, note-dialog.tsx}; apps/admin/src/routes/settings/tax.tsx; apps/admin/src/routes/reports/{gst.tsx, parts.tsx, sales-register.tsx}; apps/admin/src/{notes.css, reports.css}; apps/admin/e2e/rt1-screens.spec.ts (new); packages/core/src/gst/index.ts (the `heldRowOf` export).
+
+**Tests:**
+- Unit (admin `src/lib`): the banner (lines 2 to 5, the quarter line only for "quarter" and never after, the warning from the server's day, the last day itself, one day in the singular, an older API without `returnBy`/`period`/`deadlineWarnFrom`, the annual-return date, no "30 November" or "CA"); `debit_lut_missing` (FY label twice, "…" for a missing or damaged token, the target `/settings/tax#luts`, the place found in the sentence); Settings › Tax round trip (monthly kept through another field's save, switched both ways, an old row reads quarterly, the words and options); the 3B held row's name equals the CSV's, core's figures are positive, line 8 in both forms.
+- E2E `apps/admin/e2e/rt1-screens.spec.ts` (5 tests; axe on every state at 1280 and 390 in both in-app themes against the opposite OS theme; no console errors): Settings › Tax saves Monthly and reads it back, then Quarterly again (real API); the banner from the real server (FY 2026-27 invoice to the sample's unregistered client: 30 Sep 2027, quarter line), then month, warning and passed states with only `creditDeadline` changed in the browser (SIMULATED: the clock can't reach 2027); `debit_lut_missing` through the **real server** (the LUT list emptied, a debit draft made on the sample export invoice, its page names FY 2026-27 and links to the LUT list; Tab reaches the link, Enter lands on `#luts` in view; the LUT and the draft are put back and the test checks the LUT list equals the original); GST exports and Sales register with fake register rows answered in the browser and the step-up taken as fresh (SIMULATED): the held row ₹2,000.00 / ₹0.00 / ₹180.00 / ₹180.00, positive, line 8, the two numbers.
+
+**Commands and results (heavy ones through `bash tools/heavy.sh`):**
+- `pnpm install --frozen-lockfile --offline`; `pnpm dev:secrets`, `pnpm db:migrate:local` (0054 applied), `pnpm db:seed:local`, `pnpm portal:sample` (local only).
+- `pnpm exec biome check --write` on every changed file before each commit: clean.
+- `--log rt1d-admin-files` vitest on `src/lib/notes.test.ts` and `src/lib/reports.test.ts`: 73 passed.
+- `--log rt1d-e2e5` `E2E_SAMPLE=1 TECHAUST_PORT_OFFSET=0 RT1_SHOTS=… playwright test e2e/rt1-screens.spec.ts`: **5 passed** (runs e2e to e2e4 found the duplicate landmarks, a selector of mine and the date field's label; fixed).
+- `--log rt1d-admin-test` `pnpm --filter @techaust/admin test`: **117 files, 3,467 passed, 0 failed** (the builder's 1 failure is green).
+- `--log rt1d-admin-typecheck` `pnpm --filter @techaust/admin typecheck`: exit 0.
+- `--log rt1d-admin-build` `pnpm --filter @techaust/admin build`: **admin front 99,271 bytes, startup 9.7 ms; admin API 617,181 bytes** (builder's 617,171 + 10; under the 650,000 plan), startup 59.2 ms; no forbidden modules.
+- `--log rt1d-lint` `pnpm lint` (whole repository, once, last): exit 0; 10 warnings and 8 infos, all in files this task didn't touch.
+
+**Screenshots** (`.logs/rt1-design/` in my worktree, 34 PNGs; each at 1280 and 390, light and dark, unless noted):
+- `tax-gstr1-filing-*`: the Documents and alerts rows, the GSTR-1 field after the cut-off. `keyboard-tax-gstr1-focus-1280-light`: its focus ring after Tab from the cut-off month.
+- `deadline-before-*` (real server): lines 2 and 3, 30 Sep 2027, info. `deadline-before-month-SIMULATED-*`: line 2 alone, 31 Oct 2027. `deadline-warning-SIMULATED-*`: line 4 leading, then 2 and 3, warning. `deadline-passed-SIMULATED-*`: line 5, danger, the credit action gone.
+- `blocker-debit-lut-missing-*` (real server): line 6 with "Settings › Tax" as the link. `keyboard-blocker-link-focus-1280-light`: the whole-row focus ring.
+- `gst-3b-held-SIMULATED-*`: the 3B table with the held row under 3.1(a) and the line-8 notice with the numbers. `sales-3b-held-SIMULATED-*`: the same notice between the output tax and the downloads.
+
+**Placeholder text:** none. Every word is 07-ZD's (or 07-T's kept line); the singulars above are the only inflections.
+
+**Not verified:** the note dialog's confirm step with `debit_lut_missing` (the same `NoteBlockerList` as the draft page, not opened in the browser); a real 409 `issue_blocked` with `{debit_lut_missing, fy}` at issue (the builder's route tests); the warning, passed and month banners and both 3B screens against a real server (SIMULATED as named); 768 and 1920 widths (the brief asked 1280 and 390; the sweep covers 768 and 1024); a screen reader; the whole-repository `pnpm test` and `pnpm check` (admin suite, admin typecheck and build, and the whole lint only).
+
+**Questions for the lead:**
+1. The singular of line 8 ("1 credit note isn't deducted until your client accepts it in IMS.") is not printed in 07-ZD: keep it, or only the plural?
+2. "Credit note cut-off"'s existing hint ("After this date following the financial year of the supply, credit notes for it are blocked.") is no longer exact: the block now falls at the end of the last return period before that date (31 October or 30 September by default). It is 07 copy I didn't touch; an owner line for 07 if wanted.
+3. The note draft page keeps "Issue debit note" enabled while a blocker shows (M5.3 behaviour: the dialog shows the blockers again and the server refuses). Unchanged; say if it should be disabled.
+
+Usage: designer claude-opus-5-5/high (skills frontend-design).
