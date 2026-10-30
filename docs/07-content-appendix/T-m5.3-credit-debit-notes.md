@@ -44,6 +44,7 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 - Done toasts: "Credit note {number} issued." · "Debit note {number} issued."
 
 ## 4. Deadline banner (ADM-INV-11; s.34(2))
+**Replaced on 2026-10-31 by [07-ZD](ZD-notes-deadline-lut-ims.md) lines 2-5 (owner-approved; dates by GSTR-1 filing frequency, no "Talk to your CA"). The lines below are kept for history only.**
 - Before the deadline: "A credit note for this invoice must be reported in a GST return filed by {date} (30 November after its financial year, or the day you file that year's annual return, if earlier)." (Researched, 08-C RA-03)
 - From the first day of the month before the deadline month (1 October with the default 30 November; replaces "within 30 days"; lead 2026-10-28): "Only {days} days left for a credit note on this invoice. Issue it by {advice date} so it goes into a return filed in time." ({advice date} = the last day of the month before the deadline month, 31 October by default, never after an annual-return filing date) (OPEN, 08-C RA-31: the warning is the safe side)
 - After it (credit actions disabled): "The deadline for a credit note on this invoice was {date}. A refund now can't reduce the GST already paid. Talk to your CA." (Researched, 08-C RA-03)
