@@ -315,3 +315,6 @@ Staging. The screens by eye: the activity row of a deleted draft now ends at its
 ### Open questions
 - Item 3 covers every record type the feed joins (a purged lead too), not only documents: it is the same defect and needs no extra read. Say if it should be documents only.
 - Commit b48a8f42 cites `POR-03` (scoping). The closer ID is POR-05 (the proposal view); only the message is affected.
+
+### Lead, after the builder's review fixes (2026-10-30)
+- Merged `fix/final-sweep-b2` (a50f5c29). The builder's question: yes, item 3 covers every record type the feed joins (a purged lead's row also loses its link). Commit b48a8f42's message cites POR-03; the right ID is POR-05 (the squash merge's message carries the right one).
