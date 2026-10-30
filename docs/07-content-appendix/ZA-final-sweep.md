@@ -1,6 +1,6 @@
 # 07-ZA: copy from the final sweep (for the owner's approval)
 
-Status: **PENDING the owner** (lead, 2026-10-30). From the full audit's final sweep of the website, admin and portal (`docs/runs/final-sweep.md`).
+Status: **APPROVED by the owner, 2026-10-30** ("Approve all"). Built in the final sweep fixes, round 2. From the full audit's final sweep of the website, admin and portal (`docs/runs/final-sweep.md`).
 
 **How to answer:** "Approve all"; or "Approve all except N, M", giving your wording for those; or "Change N to …". The text after each number is the recommendation; "Now:" is what shows today.
 
