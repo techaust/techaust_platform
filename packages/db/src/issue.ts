@@ -19,13 +19,19 @@ import type {
   IssuerSnapshot,
   RecipientSnapshot,
 } from "./schema/documents.ts";
-import { DISCOUNT_AFTER_SALE_FROM_SQL, LUT_FOR_FY_SQL, taxOnlyNoteExactSql } from "./sql-rules.ts";
+import {
+  DISCOUNT_AFTER_SALE_FROM_SQL,
+  LUT_FOR_FY_SQL,
+  signedIssuerSql,
+  taxOnlyNoteExactSql,
+} from "./sql-rules.ts";
 
 /** The pure SQL of the rules the triggers share (`sql-rules.ts`, no D1 types, so the Node-only trigger script can read it). */
 export {
   DISCOUNT_AFTER_SALE_FROM_SQL,
   fyTokenOfDateSql,
   LUT_FOR_FY_SQL,
+  signedIssuerSql,
   taxOnlyNoteExactSql,
 } from "./sql-rules.ts";
 /** The two frozen blocks of a sent document, for a caller that builds them (type only: nothing of the schema reaches a Worker bundle). */
@@ -336,6 +342,15 @@ export const NOTE_COUNTS_SQL = `SELECT c.type, count(*) AS count FROM documents 
 const FROZEN_BY_THIS_BATCH =
   "EXISTS (SELECT 1 FROM documents n WHERE n.id = ?1 AND n.status = 'issued' AND n.frozen_at = ?2)";
 
+/**
+ * T4 (rt2): the freeze of a document that must be signed (a credit or debit note, an invoice for a payment received; core `signatureRequired`). The issuer block
+ * being frozen (`?9`) carries a signature reference and no `signatory` key (`signedIssuerSql`), and its SHA-256 is the one saved in Settings › Company at the issue
+ * instant, so a signature removed or replaced between the read and the freeze refuses the batch. No new bind parameter. Researched 2026-10-30, Rule 53(1A) CGST Rules
+ * (08-C RA-22); s.31(3)(d) CGST Act and Rule 50 CGST Rules (08-C RA-17). OPEN (08-C RA-22): do Rules 50 and 53 carry Rule 46(q)'s electronic-issue proviso, and does a
+ * stored image meet "signature" on an electronic document? The safest reading is built.
+ */
+export const SIGNED_FREEZE_SQL = `${signedIssuerSql("?9")} AND json_extract(?9, '$.signature.sha256') = (SELECT json_extract(cs.value, '$.signature.sha256') FROM settings cs WHERE cs.key = 'company')`;
+
 /** What every invoice freeze needs, whoever the authority is (the owner, an approval, or the owner's advance action). */
 type FreezeBase = Omit<InvoiceIssueArgs, "authority" | "bell">;
 
@@ -451,7 +466,8 @@ function noteIssueTail(n: NoteIssueArgs, first: number): { where: string; binds:
     where: ` AND EXISTS (SELECT 1 FROM documents p WHERE p.id = documents.parent_id AND p.id = ${p} AND p.type IN ('tax_invoice', 'export_invoice') AND p.frozen_at IS NOT NULL AND p.status IN ${NOTE_PARENT_LIVE} AND p.client_id = documents.client_id AND p.currency = documents.currency AND p.updated_at = ${at(1)} AND p.credited_minor = ${at(2)} AND (documents.type = 'debit_note' OR (documents.total_minor <= p.total_minor - p.credited_minor AND ?6 <= ${at(3)} AND (${at(4)} IS NULL OR ?6 < ${at(4)}))))
          AND (SELECT count(*) FROM documents c WHERE c.parent_id = ${p} AND c.type = documents.type AND c.frozen_at IS NOT NULL) < ${NOTES_MAX_SQL}
          AND (json_extract(documents.header_extras, '$.noteOf.reason.code') IS NOT 'discount_after_sale' OR ?6 >= '${DISCOUNT_AFTER_SALE_FROM_SQL}')
-         AND ${taxOnlyNoteExactSql("documents")}`,
+         AND ${taxOnlyNoteExactSql("documents")}
+         AND ${SIGNED_FREEZE_SQL}`,
     binds: [
       n.parentId,
       n.expectedParentUpdatedAt,
@@ -708,7 +724,8 @@ export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): Sen
     {
       where: ` AND total_minor = ?30
          AND EXISTS (SELECT 1 FROM documents p WHERE p.id = ?31 AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.status IN ('issued', 'converted') AND p.updated_at = ?32 AND p.balance_minor >= ?30 AND p.client_id = documents.client_id AND p.currency = documents.currency)
-         AND (?33 IS NULL OR ${LUT_FOR_FY_SQL.replaceAll("?FY", "?33")})`,
+         AND (?33 IS NULL OR ${LUT_FOR_FY_SQL.replaceAll("?FY", "?33")})
+         AND ${SIGNED_FREEZE_SQL}`,
       binds: [a.amountMinor, a.proformaId, a.expectedProformaUpdatedAt, a.lutFy ?? null],
     },
   );

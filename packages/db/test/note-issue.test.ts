@@ -21,7 +21,7 @@ import {
   NOTES_MAX_SQL,
 } from "../src/issue.ts";
 import { MUTABLE_AFTER_FREEZE, noteTriggerStatements } from "../src/triggers.ts";
-import { all, first, rejects, run } from "./helpers.ts";
+import { all, first, rejects, run, SIGNED_ISSUER } from "./helpers.ts";
 import {
   CTX,
   creditedBySql,
@@ -262,8 +262,9 @@ describe("the note freeze [documents_note_issue_check, documents_credit_note_cap
     // by hand, past the statement: the trigger refuses
     await rejects(
       run(
-        "UPDATE documents SET status = 'issued', frozen_at = 99, ims_status = 'pending', series = 'creditNote', fy = ?, number = 77, number_display = 'X/77' WHERE id = ?",
+        "UPDATE documents SET status = 'issued', frozen_at = 99, ims_status = 'pending', series = 'creditNote', fy = ?, number = 77, number_display = 'X/77', issuer = ? WHERE id = ?",
         p.fy,
+        SIGNED_ISSUER,
         y.id,
       ),
       /documents_credit_note_cap/,
@@ -279,8 +280,9 @@ describe("the note freeze [documents_note_issue_check, documents_credit_note_cap
     await run("UPDATE documents SET cgst_minor = ? WHERE id = ?", p.computed.cgstMinor + 1, d.id);
     await rejects(
       run(
-        "UPDATE documents SET status = 'issued', frozen_at = 99, ims_status = 'pending', series = 'creditNote', fy = ?, number = 1, number_display = 'X/2' WHERE id = ?",
+        "UPDATE documents SET status = 'issued', frozen_at = 99, ims_status = 'pending', series = 'creditNote', fy = ?, number = 1, number_display = 'X/2', issuer = ? WHERE id = ?",
         p.fy,
+        SIGNED_ISSUER,
         d.id,
       ),
       /documents_credit_note_cap/,

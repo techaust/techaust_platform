@@ -21,6 +21,26 @@ export const first = <T = Record<string, unknown>>(sql: string, ...params: unkno
     .bind(...params)
     .first<T>();
 
+/** T4 (rt2): the signature reference a note or an advance invoice freezes in its issuer block (no image: the freeze checks the reference only). */
+export const TEST_SIGNATURE = {
+  key: "settings/signature-00112233aabbccdd.png",
+  sha256: "ab".repeat(32),
+  mime: "image/png",
+} as const;
+
+/** T4: an issuer column that passes `documents_signature_required` (a draft moved to issued by hand in a test of another trigger). */
+export const SIGNED_ISSUER = JSON.stringify({ signature: TEST_SIGNATURE });
+
+/**
+ * T4: a company settings row with `TEST_SIGNATURE` saved (inserted once per file; an existing row is left alone), so the note and advance freezes find the SHA-256
+ * they need (`SIGNED_FREEZE_SQL`). Call it before reading the settings versions a freeze checks.
+ */
+export const signedCompany = () =>
+  run(
+    "INSERT OR IGNORE INTO settings (key, value, version) VALUES ('company', ?1, 1)",
+    JSON.stringify({ signature: { ...TEST_SIGNATURE, size: 10, width: null, height: null, updatedAt: 1 } }),
+  );
+
 /** Expect a statement to be rejected by SQLite (trigger, CHECK, UNIQUE or FK), with a matching message. */
 export async function rejects(promise: Promise<unknown>, message: RegExp): Promise<void> {
   let error: unknown;

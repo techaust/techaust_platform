@@ -8,7 +8,16 @@ import { INVOICE_FLOW_TYPES } from "@techaust/core/invoices";
 import { describe, expect, it } from "vitest";
 import { fyTokenOfDateSql } from "../src/issue.ts";
 import { LEDGER_IDENTITY_TYPES_0050, ledgerTriggerStatements } from "../src/triggers.ts";
-import { all, first, insertClient, insertDraftInvoice, issueBatch, rejects, run } from "./helpers.ts";
+import {
+  all,
+  first,
+  insertClient,
+  insertDraftInvoice,
+  issueBatch,
+  rejects,
+  run,
+  SIGNED_ISSUER,
+} from "./helpers.ts";
 import {
   creditedBySql,
   insertNoteDraft,
@@ -256,10 +265,12 @@ describe("0050 documents_discount_after_sale_from: the reason is in force from 2
   /** The freeze of a note written straight in (the note freeze's own WHERE would refuse first; this proves the trigger alone). */
   const freeze = (id: string, issueDate: string) =>
     run(
-      "UPDATE documents SET status = 'issued', frozen_at = 9000, series = 'creditNote', fy = ?3, number = 1, number_display = 'CN/' || ?3 || '/1', issue_date = ?2, ims_status = CASE WHEN type = 'credit_note' THEN 'pending' END, balance_minor = CASE WHEN type = 'credit_note' THEN 0 ELSE total_minor END WHERE id = ?1",
+      "UPDATE documents SET status = 'issued', frozen_at = 9000, series = 'creditNote', fy = ?3, number = 1, number_display = 'CN/' || ?3 || '/1', issue_date = ?2, ims_status = CASE WHEN type = 'credit_note' THEN 'pending' END, balance_minor = CASE WHEN type = 'credit_note' THEN 0 ELSE total_minor END, issuer = ?4 WHERE id = ?1",
       id,
       issueDate,
       nextFy(),
+      // T4: signed, so only the discount date is under test (documents_signature_required, 0054)
+      SIGNED_ISSUER,
     );
 
   it("a credit or debit note for a discount after sale dated before 1 November 2026 is refused; from that day it issues", async () => {

@@ -5,7 +5,7 @@ import { type ComputedDocument, taxOnlyDebitNote } from "@techaust/core/tax";
 import { describe, expect, it } from "vitest";
 import { taxOnlyNoteExactSql } from "../src/issue.ts";
 import { taxOnlyNoteTriggerStatements } from "../src/triggers.ts";
-import { all, first, rejects, run } from "./helpers.ts";
+import { all, first, rejects, run, SIGNED_ISSUER } from "./helpers.ts";
 import {
   CTX,
   insertNoteDraft,
@@ -32,9 +32,11 @@ const roundedDown = (k: ComputedDocument, by: number): ComputedDocument => ({
 /** A freeze written straight in (the note freeze's own WHERE would refuse first; this proves the trigger alone). */
 const rawFreeze = (id: string) =>
   run(
-    "UPDATE documents SET status = 'issued', frozen_at = 9000, series = 'debitNote', fy = ?2, number = 1, number_display = 'DN/' || ?2 || '/1', issue_date = '2026-11-05', balance_minor = total_minor WHERE id = ?1",
+    "UPDATE documents SET status = 'issued', frozen_at = 9000, series = 'debitNote', fy = ?2, number = 1, number_display = 'DN/' || ?2 || '/1', issue_date = '2026-11-05', balance_minor = total_minor, issuer = ?3 WHERE id = ?1",
     id,
     nextFy(),
+    // T4: signed, so only the round-off is under test (documents_signature_required, 0054)
+    SIGNED_ISSUER,
   );
 
 const status = async (id: string) =>

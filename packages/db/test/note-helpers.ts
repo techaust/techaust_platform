@@ -12,7 +12,7 @@ import {
   type TaxContext,
 } from "@techaust/core/tax";
 import { type InvoiceIssueArgs, invoiceIssueStatements, noteDraftStatements } from "../src/issue.ts";
-import { all, first, run } from "./helpers.ts";
+import { all, first, run, signedCompany, TEST_SIGNATURE } from "./helpers.ts";
 
 let seq = 0;
 let fyN = 7000;
@@ -106,7 +106,8 @@ export const issuerOf = (staffId: string) => ({
     logo: "logo-primary-color.svg",
   },
   bank: { inr: null },
-  signature: null,
+  // T4: a note always freezes the signature (the company row of `signedCompany` holds the same SHA-256)
+  signature: { ...TEST_SIGNATURE },
   reverseChargeText: "Tax payable on reverse charge: No",
   sender: { staffId, name: "N", email: "billing@example.com" },
 });
@@ -371,6 +372,7 @@ export async function noteIssueArgs(
     note?: Partial<NonNullable<InvoiceIssueArgs["note"]>>;
   } = {},
 ): Promise<InvoiceIssueArgs> {
+  await signedCompany();
   const v = await versions();
   const client = await first<{ updated_at: number }>(
     "SELECT updated_at FROM clients WHERE id = ?",
