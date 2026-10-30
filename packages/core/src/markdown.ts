@@ -129,6 +129,13 @@ const FENCE = /^\s{0,3}```/;
 /** An ATX heading: one to three `#`, a space, then text; closing `#`s after a space are dropped. `####` and `#text` stay text. */
 const HEADING = /^\s{0,3}(#{1,3})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
 
+/**
+ * The cover of a proposal or estimate is a set of lines ("{{client.name}}", "{{service.name}}", "Proposal from {{company.name}}"), not a sentence:
+ * each single line break becomes a paragraph break, where Markdown would join the lines into one run (final sweep P5). Blank-line paragraphs are
+ * kept as they are. One rule for the portal's paper and the PDF (final sweep review 7), applied before `parseMarkdown`.
+ */
+export const coverLines = (md: string): string => md.replace(/(?<!\n)\n(?!\n)/g, "\n\n");
+
 /** The blocks of a document section (proposals, estimates, terms): no headings, so a `#` line stays text. */
 export function parseMarkdown(md: string): Block[] {
   return parse(md, false) as Block[];

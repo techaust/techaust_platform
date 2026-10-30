@@ -20,7 +20,9 @@ import { INV } from "../copy-invoices.ts";
 import {
   type ClientInvoiceStatus,
   clientStatus,
+  minusMoneyText,
   moneyText,
+  noteReasonLines,
   qtyText,
   statusLabel,
   todayIst,
@@ -101,7 +103,13 @@ export function InvoicesScreen(props: { items: InvoiceItem[]; more?: ReactNode; 
                   <span className="nowrap">{dateText(d.dueDate)}</span>
                 ),
             },
-            { key: "total", label: INV.cols.total, num: true, cell: (d) => d.total },
+            {
+              key: "total",
+              label: INV.cols.total,
+              num: true,
+              // A credit note takes its amount off what is owed: a true minus sign, as the PDF prints a deduction (final sweep P16).
+              cell: (d) => (d.type === "credit_note" ? minusMoneyText(d.totalMinor, d.currency) : d.total),
+            },
             {
               key: "balance",
               label: INV.cols.balance,
@@ -183,6 +191,11 @@ export function InvoicePage(props: {
   /** The download's own message (the PDF isn't ready, or the request failed). */
   pdfProblem: string | null;
   onPdf: () => void;
+  /**
+   * The signed-in page: a note's invoice is a link to that invoice's page (final sweep P15). The emailed link opens one document only, so there the
+   * invoice is named, never linked (its page would ask the reader to sign in).
+   */
+  linkParent?: boolean;
   now?: number;
 }) {
   const d = props.doc;
@@ -190,6 +203,9 @@ export function InvoicePage(props: {
   const credit = d.type === "credit_note";
   const owed = !credit && d.balanceMinor > 0 && d.status !== "void";
   const number = d.numberDisplay ?? "–";
+  const reason = noteReasonLines(d.noteReason);
+  // 07-ZA item 11: what credit notes took off, by their numbers (final sweep P2).
+  const creditNumbers = (d.creditNotes ?? []).flatMap((n) => (n.numberDisplay ? [n.numberDisplay] : []));
   return (
     <div className="screen inv-sheet inv-doc">
       <header className="screen__head inv-doc__head">
@@ -200,12 +216,30 @@ export function InvoicePage(props: {
         <PageTitle text={number} className="screen__title inv-doc__number">
           {number}
         </PageTitle>
-        <div className="inv-doc__meta">
-          <InvoiceStatusPill status={status} />
-          {d.parentNumber && <span className="inv-doc__against">{INV.againstInvoice(d.parentNumber)}</span>}
-        </div>
+        {(status !== null || d.parentNumber) && (
+          <div className="inv-doc__meta">
+            <InvoiceStatusPill status={status} />
+            {d.parentNumber &&
+              (props.linkParent && d.parentId ? (
+                <Link to={invoiceHref(d.parentId)} className="inv-doc__against inv-doc__against--link">
+                  {INV.againstInvoice(d.parentNumber)}
+                  <ArrowRight size={16} />
+                </Link>
+              ) : (
+                <span className="inv-doc__against">{INV.againstInvoice(d.parentNumber)}</span>
+              ))}
+          </div>
+        )}
+        {/* A note says why it was issued, as its PDF does (07-T §1; final sweep P15). */}
+        {reason && (
+          <div className="inv-doc__reason">
+            <p className="inv-doc__reason-line">{reason.line}</p>
+            {reason.detail && <p className="inv-doc__reason-detail">{reason.detail}</p>}
+          </div>
+        )}
       </header>
       {props.notices}
+      {d.type === "proforma" && <p className="sheet-notice inv-doc__notice">{INV.proformaNotice}</p>}
 
       <section className="inv-slip" aria-label={number}>
         <p className="inv-slip__dates">
@@ -221,6 +255,19 @@ export function InvoicePage(props: {
             <dt>{INV.total}</dt>
             <dd>{d.total}</dd>
           </div>
+          {/* 07-ZA item 11: a payment shows between the total and the balance (final sweep P2). */}
+          {!credit && d.paidMinor > 0 && (
+            <div>
+              <dt>{INV.paid}</dt>
+              <dd>{moneyText(d.paidMinor, d.currency)}</dd>
+            </div>
+          )}
+          {!credit && d.creditedMinor > 0 && (
+            <div className="inv-slip__credited">
+              <dt>{INV.credited(creditNumbers)}</dt>
+              <dd>{moneyText(d.creditedMinor, d.currency)}</dd>
+            </div>
+          )}
           {!credit && (
             <div className="inv-slip__balance">
               <dt>{INV.balanceDue}</dt>
@@ -292,6 +339,19 @@ export function InvoicePage(props: {
               num: true,
               cell: (l) => moneyText(l.rateMinor, d.currency),
             },
+            // As the PDF: a Discount column only when a line has one, its text as printed ("10 %", or the amount; final sweep P3).
+            ...(d.lines.some((l) => l.discount)
+              ? [
+                  {
+                    key: "discount",
+                    label: INV.pdf.lines.discount,
+                    num: true,
+                    cell: (l: InvoiceSummary["lines"][number]) => (
+                      <span className="nowrap">{l.discount || "–"}</span>
+                    ),
+                  },
+                ]
+              : []),
             {
               key: "taxable",
               label: INV.pdf.lines.taxable,
@@ -340,10 +400,19 @@ export function InvoicesTile(props: { items: InvoiceItem[] | null; problem: stri
             <li key={d.id}>
               <Link to={invoiceHref(d.id)} className="inv-tile__row">
                 <span className="inv-tile__num">{d.numberDisplay}</span>
-                <span className="inv-tile__bal">{d.balance}</span>
+                {/* The amount says what it is, and a "Due" pill is followed by the date alone, never "Due Due 06 Nov" (final sweep P13). */}
+                <span className="inv-tile__bal">
+                  <span className="inv-tile__bal-label">{INV.balanceDue}</span> {d.balance}
+                </span>
                 <span className="inv-tile__due">
                   <InvoiceStatusPill status={clientStatus(d, today)} />
-                  {d.dueDate && <span>{INV.dueOn(dateText(d.dueDate))}</span>}
+                  {d.dueDate && (
+                    <span>
+                      {clientStatus(d, today) === "due"
+                        ? dateText(d.dueDate)
+                        : INV.dueOn(dateText(d.dueDate))}
+                    </span>
+                  )}
                 </span>
               </Link>
             </li>

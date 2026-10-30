@@ -1161,6 +1161,19 @@
   color: var(--color-link-hover);
 }
 
+/* A link inside a sentence (a section's name in the send panel and the gap notes, "Add the text in Catalogue") is a 44 px target: padding above and
+   below an inline link widens what takes the click without moving a line of text (final sweep A14; the invoice side's rows already are). */
+a.blockers__link {
+  --hit-pad: calc((var(--target-min) - 1em) / 2);
+  padding-block: var(--hit-pad);
+}
+
+/* The focus ring hugs the words (2 px out from them, as everywhere), not the taller target, so it never crosses the lines around it: the padding
+   only serves a pointer, and inline padding moves nothing, so dropping it while the link has keyboard focus changes no layout. */
+a.blockers__link:focus-visible {
+  padding-block: 0;
+}
+
 /* The approvals queue's result line: where focus lands after a decision when no other request waits. */
 .decided-line {
   display: flex;

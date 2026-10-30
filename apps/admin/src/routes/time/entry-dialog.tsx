@@ -13,6 +13,7 @@ import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { FieldError, Notice } from "../../components/ui.tsx";
 import { careErrorText, QUARTERS, TIER_LABELS } from "../../lib/care.ts";
+import { personLabel, personLabels, sharedNameEmail } from "../../lib/people.ts";
 import { PENDING } from "../../lib/projects.ts";
 import {
   type EntryErrors,
@@ -149,6 +150,15 @@ function EntryFormBody(
   const err = (k: keyof EntryErrors | "userId") =>
     errors[k] ? <FieldError id={`${P}-${k}-error`}>{errors[k]}</FieldError> : null;
   const others = (people.data?.people ?? []).filter((p) => p.id !== props.me.id);
+  // Two people with one name are told apart by their work email (final sweep A20).
+  const labels = personLabels(people.data?.people ?? []);
+  // A closed menu on a phone cuts "Name (email)", so the chosen person's email is shown whole under the field while their name
+  // repeats (lead, after final sweep round 3); the select names it as its description.
+  const chosenEmail = sharedNameEmail(people.data?.people ?? [], f.userId, props.me.id);
+  const userIdDescribedBy =
+    [chosenEmail ? `${P}-userId-email` : null, errors.userId ? `${P}-userId-error` : null]
+      .filter(Boolean)
+      .join(" ") || undefined;
 
   return (
     <form onSubmit={submit} noValidate className="entry-form">
@@ -158,14 +168,24 @@ function EntryFormBody(
         {props.canWriteAny && !props.entry && others.length > 0 && (
           <div className="field">
             <label htmlFor={`${P}-userId`}>{TIME_COPY.logFor}</label>
-            <select {...a11y("userId")} value={f.userId} onChange={(e) => set({ userId: e.target.value })}>
+            <select
+              {...a11y("userId")}
+              aria-describedby={userIdDescribedBy}
+              value={f.userId}
+              onChange={(e) => set({ userId: e.target.value })}
+            >
               <option value={props.me.id}>{`${props.me.name || "Name not set yet"} (you)`}</option>
               {others.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name || "Name not set yet"}
+                  {personLabel(labels, p)}
                 </option>
               ))}
             </select>
+            {chosenEmail && (
+              <p className="hint entry-form__email" id={`${P}-userId-email`}>
+                {chosenEmail}
+              </p>
+            )}
             {err("userId")}
           </div>
         )}

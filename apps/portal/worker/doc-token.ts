@@ -33,10 +33,13 @@ import {
 } from "./context.ts";
 import {
   CLIENT_INVOICE_TYPES,
+  CREDIT_NOTES_SQL,
+  type CreditNoteRow,
   LINES_SQL,
   type LineRow,
   STATUSES_SQL,
   SUMMARY_COLS,
+  SUMMARY_PARENT_JOIN,
   type SummaryRow,
   summaryOf,
   TYPES_SQL,
@@ -58,6 +61,7 @@ export const DOC_READ = `SELECT ${SUMMARY_COLS}, t.contact_id AS link_contact_id
   JOIN documents d ON d.id = t.document_id AND d.client_id = t.client_id
   JOIN contacts c ON c.id = t.contact_id AND c.client_id = t.client_id AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL AND lower(c.email) = t.email
   JOIN clients cl ON cl.id = t.client_id AND cl.anonymised_at IS NULL
+  ${SUMMARY_PARENT_JOIN}
   WHERE t.token_hash = ?1 AND t.revoked_at IS NULL AND t.expires_at > ?2 AND t.purpose = 'view_pay' AND d.voided_at IS NULL AND d.frozen_at IS NOT NULL AND d.status IN (${STATUSES_SQL}) AND d.type IN (${TYPES_SQL})`;
 
 type Found = SummaryRow & { link_contact_id: string; link_client_id: string };
@@ -99,8 +103,9 @@ export const docToken = new Hono<AppEnv>()
     c.set("accessDone", true);
     // One batch: the frozen lines (read first), the audit row of the use, the first view (`VIEW_SQL`: set once, only on a document the client may still
     // open, so never on a void one; FX-5, 08-C RA-10), and the access row.
-    const [lines] = await db.batch([
+    const [lines, credits] = await db.batch([
       db.prepare(LINES_SQL).bind(doc.link_client_id, doc.id),
+      db.prepare(CREDIT_NOTES_SQL).bind(doc.link_client_id, doc.id),
       auditStmt(db, {
         ...requestInfo(c),
         actorType: "contact",
@@ -113,7 +118,13 @@ export const docToken = new Hono<AppEnv>()
       db.prepare(VIEW_SQL).bind(doc.link_client_id, doc.id, t),
       accessStmt(db, accessEntry(c, 200, doc.link_contact_id)),
     ]);
-    return c.json({ document: summaryOf(doc, (lines?.results ?? []) as LineRow[]) });
+    return c.json({
+      document: summaryOf(
+        doc,
+        (lines?.results ?? []) as LineRow[],
+        (credits?.results ?? []) as CreditNoteRow[],
+      ),
+    });
   })
   // The PDF behind the link (the same open and the same counter). The headers are those of the offer PDF: an attachment, never rendered, never cached, never sniffed.
   // Opening it is a view too (FX-5, 08-C RA-10; parity with the signed-in PDF): the first view and the access row in one batch, before the answer.

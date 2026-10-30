@@ -96,7 +96,7 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 - Void button (Owner): "Void invoice"
 - Void dialog title: "Void invoice {number}"
 - Void body: "Voiding cancels this invoice. It keeps its number, which is reported as cancelled in your GST return. You can only void an invoice in the month it was issued, before it has been emailed, paid or corrected by a credit or debit note; after that, use a credit note." (OPEN, 08-C RA-10)
-- Reason label: "Reason (required, kept with the invoice)"
+- Reason label: "Reason (required, kept with the invoice)"; a proforma's: "Reason (required, kept with the proforma)" (07-ZA item 18, owner 2026-10-30)
 - Empty reason error: "Enter a reason for voiding."
 - Buttons: "Void invoice" · "Cancel"
 - Void badge line: "Voided {date} by {name}: {reason}"

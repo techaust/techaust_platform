@@ -34,6 +34,17 @@ describe("the proposal", () => {
     expect(html).not.toContain("sec--cover");
   });
 
+  it("prints each line of the cover as its own paragraph (final sweep P5; core coverLines, the portal's rule too)", async () => {
+    const view = toPdfView(await envOf("long-inter-inr"));
+    const cover = view.sections.find((s) => s.kind === "cover");
+    if (!cover) throw new Error("the fixture has a cover");
+    cover.bodyMd = "Sample Client\nSample service\nProposal from Sample Company";
+    const html = documentBody(view);
+    const lede = html.slice(html.indexOf('class="cover"'), html.indexOf('class="parties"'));
+    for (const line of ["Sample Client", "Sample service", "Proposal from Sample Company"])
+      expect(lede).toContain(`<p>${line}</p>`);
+  });
+
   it("uses the kind as the cover title when the document has no title", async () => {
     const e = await envOf("short-intra-inr");
     e.snapshot.header.document.title = null;
@@ -120,14 +131,16 @@ describe("the money (07-P §1)", () => {
     expect(await bodyOf("short-intra-inr")).toContain('<span class="sub">SAC 998314</span>');
   });
 
-  it("prints the totals, the amount in words and the INR note together", async () => {
+  it("prints the totals and the amount in words together; the INR note under the lines, never under the total (07-ZA item 16)", async () => {
     const html = await bodyOf("short-intra-inr");
     const totals = html.slice(html.indexOf('class="totals"'), html.indexOf("Tax summary"));
     for (const label of ["Sub-total", "Discount", "Taxable value", "CGST", "SGST", "Round-off", "Total"])
       expect(totals).toContain(`<th scope="row">${label}</th>`);
     expect(totals).toContain("Amount in words: Rupees");
-    expect(totals).toContain("Prices exclude GST.");
+    expect(totals).not.toContain("Prices exclude GST.");
     expect(totals).not.toContain("International projects");
+    const lines = html.slice(html.indexOf('class="grid items"'), html.indexOf('class="totals"'));
+    expect(lines).toContain('<p class="note lines-note">Prices exclude GST.</p>');
   });
 
   it("prints the tax summary with CGST and SGST inside the state, IGST across states, and none for an export", async () => {

@@ -7,7 +7,7 @@
 | **Inputs** | [02](02-services-strategy.md) positioning, portfolio and prices · [04 PRD](04-prd.md) · [06 design system](06-design-system.md) · legal research [08-B](08-research-appendix/B-dpdp-legal.md) |
 | **Legal page drafts** | [07-A Legal pages](07-content-appendix/A-legal-pages.md) (privacy, terms, refund, delivery, cookies, security, accessibility). VERIFY WITH CA/LEGAL. |
 | **Social profiles** | [07-B Social media profiles](07-content-appendix/B-social-profiles.md) (bios, tagline and profile details for every platform; images in `packages/ui/brand/social/`) |
-| **Admin and portal copy (M3–M4)** | [07-H](07-content-appendix/H-m3.1-admin-emails.md) to [07-P](07-content-appendix/P-m4.4-pdf-documents.md), one per milestone · [07-Q batch review copy](07-content-appendix/Q-batch-review-copy.md) (every placeholder line and copy question of M3.4 to M4.5, owner-approved word for word 2026-10-26; it overrides earlier drafts where they differ) |
+| **Admin and portal copy (M3–M4)** | [07-H](07-content-appendix/H-m3.1-admin-emails.md) to [07-P](07-content-appendix/P-m4.4-pdf-documents.md), one per milestone · [07-Q batch review copy](07-content-appendix/Q-batch-review-copy.md) (every placeholder line and copy question of M3.4 to M4.5, owner-approved word for word 2026-10-26; it overrides earlier drafts where they differ) · [07-ZB portal sign-in and account](07-content-appendix/ZB-portal-sign-in-account.md) (the M1.6 lines, owner-approved 2026-10-30) |
 | **M2.3 additions** | [07-C service FAQs](07-content-appendix/C-service-faqs.md) · [07-D missing copy](07-content-appendix/D-m2.3-missing-copy.md) · [07-E blog drafts](07-content-appendix/E-blog-drafts.md) · [07-F meta descriptions](07-content-appendix/F-m2.3-meta-descriptions.md) (industries hub, blog and RSS, legal pages) |
 
 **How to read this document**
@@ -142,7 +142,7 @@
 Link: "All services →"
 
 **How we work** (4 steps)
-1. **Discover.** "A paid Discovery Sprint, or a free first call for smaller jobs. We learn how the work is done today and what 'better' means in numbers."
+1. **Discover.** "A paid Discovery Sprint, or a free first call for smaller jobs. We learn how the work is done today and what ‘better’ means in numbers."
 2. **Plan and price.** "A written proposal: scope, deliverables, timeline, a fixed price and a payment schedule. No surprises later."
 3. **Build in the open.** "Staging from the first week, regular demos, and you can see progress at any time."
 4. **Launch and look after it.** "We launch, fix anything we got wrong under warranty, and keep it healthy on a care plan."
@@ -410,7 +410,7 @@ _Card labels, each page's problems, tools and FAQs, and the hub's closing line: 
 - **Sections:** the price table grouped by category (from the catalogue) · care-plan tiers (as §4.14)
 - **"What affects the price":** number of user roles and screens · integrations and data migration · document variety (for AI) · deadlines · hosting and compliance needs
 - **"How payment works":**
-  - "**Builds:** 40 % to start, 30 % at a mid-project milestone, 30 % on delivery."
+  - "**Builds:** 40 % on acceptance, 30 % at the midpoint milestone, 30 % on delivery."
   - "**Smaller fixed jobs** (under {{terms:small_job_threshold}}): paid in full upfront."
   - "**Care plans and subscriptions:** monthly in advance."
   - "**Invoices are due within 7 days.** Proposals are valid for 15 days."
@@ -423,6 +423,7 @@ _Card labels, each page's problems, tools and FAQs, and the hub's closing line: 
 
 ### 5.4 Work (`/work`, `/work/[slug]`)
 - **Meta:** "Work: anonymised case studies | TecHaust" · "Case studies from our client projects, anonymised at clients' request: the problem, our approach, the stack and real results."
+- **Meta while no case study is published** (07-ZA item 1, owner 2026-10-30): "Work | TecHaust" · "Anonymised case studies from our client projects are being written. Until then, see how we work and what each service includes."
 - **H1:** "Work"
 - **Lede:** "Selected projects, anonymised at our clients' request. Every number on these pages was measured on the real project." Shown only once a case study is published; while there is none the page shows the empty state alone (07-Y item 3, owner 2026-10-29).
 - **Empty state:** "Our first public case studies are being written with our clients' permission. Want to see how we work? Ask us for a sample discovery report or architecture document."
@@ -469,6 +470,7 @@ _Card labels, each page's problems, tools and FAQs, and the hub's closing line: 
 
 ### 5.8 Contact (`/contact`)
 - **Meta:** "Contact TecHaust Technologies" · "Email, WhatsApp or send a message. We reply within one business day (Mon–Sat, 10:00–19:00 IST)."
+- **Meta while there is no WhatsApp number** (07-ZA item 2, owner 2026-10-30): "Email us or send a message. We reply within one business day (Mon–Sat, 10:00–19:00 IST)."
 - **H1:** "Talk to us"
 - **Lede:** "Tell us a little about what you need. We reply within one business day (Mon–Sat, 10:00–19:00 IST)."
 - **Form labels:** Your name · Work email · Company (optional) · Phone or WhatsApp (optional) · How can we help? (hint: "A few sentences is plenty.") · Submit: "Send message"
@@ -486,7 +488,7 @@ _Card labels, each page's problems, tools and FAQs, and the hub's closing line: 
 - **Step 2, "What should it achieve?":** "What would you like to achieve?" (textarea; hint: "e.g. 'Stop retyping 400 invoices a month into Tally'") · "Which tools do you use today?" (Tally, Zoho, Excel/Sheets, QuickBooks, Xero, Shopify, WhatsApp Business, Other)
 - **Step 3, "Budget and timing":** budget bands (INR or USD by the currency toggle; [04 FRM-QUOTE](04-prd.md)) with a hint: "This helps us suggest the right approach. It isn't a commitment." · timeline (As soon as possible · 1–3 months · 3–6 months · Just exploring)
 - **Step 4, "Your details":** name · work email · company · country · phone/WhatsApp (optional) · "Best time for a call" (IST + "your time: {{local}}") · consent notice and optional updates checkbox (as §5.8) · Submit: "Send request"
-- **Errors** (examples): "Enter your name" · "Enter an email address like name@company.com" · "Tell us a little more: at least 20 characters" · "Please choose a service, or 'Not sure'"
+- **Errors** (examples): "Enter your name" · "Enter an email address like name@company.com" · "Tell us a little more: at least 20 characters" · "Please choose a service, or ‘Not sure: recommend something’"
 
 ### 5.10 Thanks (`/thanks`)
 - **H1:** "Thanks, we've got it."

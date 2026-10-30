@@ -227,7 +227,8 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
           showMore
             ? [
                 {
-                  label: INV_COPY.voidButton,
+                  // The action keeps one name from the menu to the dialog's button (07-ZA item 9 for a proforma).
+                  label: v.type === "proforma" ? INV_COPY.voidProformaConfirm : INV_COPY.voidButton,
                   icon: <Ban size={16} />,
                   tone: "danger",
                   onSelect: () => setVoiding(true),
@@ -303,6 +304,9 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
                 {issuedLine(v.issueDate ? (dayText(v.issueDate) ?? v.issueDate) : "", issuedBy(v))}{" "}
                 {NOTE_COPY.finalStatement}
               </p>
+            ) : isVoid ? (
+              // A void invoice is not corrected with notes (final sweep A5): only who issued it and when, without the locked line.
+              <p>{issuedLine(v.issueDate ? (dayText(v.issueDate) ?? v.issueDate) : "", issuedBy(v))}</p>
             ) : (
               <p>
                 {frozenBanner(v.issueDate ? (dayText(v.issueDate) ?? v.issueDate) : "", issuedBy(v), v.type)}
@@ -401,11 +405,10 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
               </p>
             )
           )}
-          <section className="lead-panel doc-sheet inv-sheet" aria-labelledby="inv-sheet-h">
-            <h2 id="inv-sheet-h" className="visually-hidden">
-              {INV_COPY.lines}
-            </h2>
-            <div className="inv-sheet__head">
+          {/* Named by its number and type, not "Lines": the lines table inside is its own region named "Lines" (final sweep A4, axe landmark-unique). */}
+          <section className="lead-panel doc-sheet inv-sheet" aria-labelledby="inv-sheet-name">
+            <h2 className="visually-hidden">{INV_COPY.lines}</h2>
+            <div className="inv-sheet__head" id="inv-sheet-name">
               <NumberMark number={v.number} void={isVoid} size="lead" />
               <span className="inv-sheet__type">{typeLabel(v.type)}</span>
             </div>

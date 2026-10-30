@@ -94,7 +94,7 @@ describe("quote form [FRM-QUOTE]", () => {
   it("validates each step on its own", () => {
     expect(quoteSteps.service.safeParse({ service: "not-sure" }).success).toBe(true);
     expect(errors(quoteSteps.service.safeParse({ service: "S19" }))).toEqual({
-      service: "Please choose a service, or 'Not sure'",
+      service: "Please choose a service, or ‘Not sure: recommend something’",
     });
     expect(quoteSteps.goals.parse({ goals: quote.goals, tools: "zoho" }).tools).toEqual(["zoho"]);
     expect(quoteSteps.goals.parse({ goals: quote.goals }).tools).toEqual([]);
@@ -108,7 +108,7 @@ describe("quote form [FRM-QUOTE]", () => {
     expect(
       errors(quoteSteps.budget.safeParse({ currency: "USD", budget: "3l-7l", timeline: "asap" })),
     ).toEqual({
-      budget: "Choose a budget range, or 'Not sure'",
+      budget: "Choose a budget range, or ‘Not sure’",
     });
     expect(
       errors(quoteSteps.budget.safeParse({ currency: "INR", budget: "3l-7l", timeline: "soon" })),

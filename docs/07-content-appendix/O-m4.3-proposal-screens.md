@@ -51,6 +51,12 @@ Seeded as the next version of the proposal terms (`PROPOSAL_TERMS_V2`), only whi
 2. **Payment.** "Payments follow the schedule in this proposal. Invoices are due within 7 days. GST at 18 % is added unless the work is an export of services under our Letter of Undertaking."
 3. **Ownership.** "On full payment, we assign to you all copyright in the work we make under this proposal, worldwide and for its full term; the assignment does not lapse if unused. Our pre-existing tools and third-party or open-source parts are licensed to you, not assigned. We keep the right to reuse general know-how."
 
+### 2c. Proposal terms, third version (final sweep; owner-approved 2026-10-30, 07-ZA item 14, docs/13; 08-C RB-38)
+Seeded as the next version of the proposal terms (`PROPOSAL_TERMS_V3`), only while the newest proposal terms row is the seeded second version (by its id and text) and Payment terms says 7 days; terms the owner saved are never followed or replaced, and documents already sent keep the version they pinned. Proposals and estimates share these terms, so it is the second version word for word except:
+2. **Payment.** "Payments follow the schedule in this proposal or estimate. Invoices are due within 7 days. GST at 18 % is added unless the work is an export of services under our Letter of Undertaking."
+3. **Ownership.** "On full payment, we assign to you all copyright in the work we make under this proposal or estimate, worldwide and for its full term; the assignment does not lapse if unused. Our pre-existing tools and third-party or open-source parts are licensed to you, not assigned. We keep the right to reuse general know-how."
+6. **Validity.** "This proposal or estimate is valid until the date shown on it."
+
 ## 3. Editor (staff)
 | Where | Copy |
 |---|---|

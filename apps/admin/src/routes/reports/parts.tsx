@@ -1,11 +1,12 @@
 // Pieces the four reports share (M5.5b): the list of problems that stop a file (each with its document, 07-V §2.1), the warnings to check before
 // filing (§2.2), a figure in tabular numerals, and the progress line of a read.
-import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useState } from "react";
 import { Link } from "react-router";
 import type { Currency } from "../../api.ts";
 import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { FormField } from "../../components/form.tsx";
 import { AlertTriangle, Info } from "../../components/icons.tsx";
+import { ScrollCue, useScrollCue } from "../../components/scroll-cue.tsx";
 import { FieldError } from "../../components/ui.tsx";
 import { dateError } from "../../lib/date-field.ts";
 import { moneyText } from "../../lib/documents.ts";
@@ -115,53 +116,15 @@ export function WideList({
   className?: string;
   children: ReactNode;
 }) {
-  const box = useRef<HTMLElement>(null);
-  const [more, setMore] = useState({ start: false, end: false });
-  const measure = useCallback(() => {
-    const el = box.current;
-    if (!el) return;
-    // RTL scrollLeft runs negative; the magnitude is what matters here.
-    const left = Math.abs(el.scrollLeft);
-    const next = { start: left > 1, end: left + el.clientWidth < el.scrollWidth - 1 };
-    setMore((m) => (m.start === next.start && m.end === next.end ? m : next));
-  }, []);
-  // FX-4 review L5: one effect with its dependencies, set up once, instead of measuring after every render. It measures when the box is drawn, as it
-  // scrolls, when the box or the table inside it changes size, and when the content changes (new rows, or a table drawn afresh by a new read, which
-  // the size observer then watches in place of the old one).
-  useEffect(() => {
-    const el = box.current;
-    if (!el) return;
-    const ro = new ResizeObserver(measure);
-    const watchTable = () => {
-      if (el.firstElementChild) ro.observe(el.firstElementChild);
-    };
-    const mo = new MutationObserver(() => {
-      watchTable();
-      measure();
-    });
-    ro.observe(el);
-    watchTable();
-    mo.observe(el, { childList: true, subtree: true });
-    el.addEventListener("scroll", measure, { passive: true });
-    measure();
-    return () => {
-      el.removeEventListener("scroll", measure);
-      ro.disconnect();
-      mo.disconnect();
-    };
-  }, [measure]);
+  const [box, more] = useScrollCue<HTMLElement>();
   return (
-    <div
-      className="scroll-cue"
-      data-more-start={more.start || undefined}
-      data-more-end={more.end || undefined}
-    >
+    <ScrollCue more={more}>
       {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling region must be reachable by keyboard (WCAG 2.1.1) */}
       {/* biome-ignore lint/a11y/noRedundantRoles: the region role is stated outright, as the other scrolling tables do (full audit A3 1, A5 14) */}
       <section ref={box} className={className} tabIndex={0} role="region" aria-label={label}>
         {children}
       </section>
-    </div>
+    </ScrollCue>
   );
 }
 

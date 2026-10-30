@@ -598,14 +598,65 @@
   margin-top: var(--space-2);
 }
 
-/* The note wraps between words (A3 3): `break-word` breaks only a word longer than the line, and unlike `anywhere` it never
-   lets the table squeeze the column to one letter per line. */
+/* The entries table scrolls inside its own box at every width from a tablet up, not only to 80rem: at 1280 px beside the week panel its
+   note and actions columns pushed it past the panel and the page scrolled 6 px sideways (final sweep A9). The header does not stick (a
+   sticky header can't live in a scrolling box). */
+@media (min-width: 48rem) {
+  .entries-table .dtable {
+    overflow-x: auto;
+  }
+
+  /* Headers wrap, so a long column name ("Project or care plan") never sets the width of a column of short codes. */
+  .entries-table .dtable__table thead th {
+    position: static;
+    white-space: normal;
+    vertical-align: bottom;
+  }
+
+  /* Seven columns share about 900 px at 1280 beside the open menu (final sweep review 2): a tighter gutter here keeps every column
+     at its readable minimum below, with the note taking what is left, and no scroll inside the box. */
+  .entries-table .dtable__table :is(thead th, tbody th, td) {
+    padding-inline: var(--space-3);
+  }
+
+  .entries-table .dtable__table td.dtable__actions {
+    padding-inline-end: var(--space-2);
+  }
+}
+
+/* `break-word` breaks only a word longer than the line, and unlike `anywhere` it never lets the table squeeze the column to one
+   letter per line (A3 3). */
 .entry-note {
   display: block;
-  min-width: 12rem;
   max-width: 40ch;
   overflow-wrap: break-word;
   white-space: pre-line;
+}
+
+/* In the table (final sweep review 2): a person's name keeps a readable width (a first and last name on one or two lines, not a
+   word per line); a project's code is one unit (never broken at its hyphen); a care plan's label wraps between its words. The note
+   is the column that takes the wrap; the table gives it the most room left, up to 40ch. */
+.entries-table .dtable__table .entry-person {
+  display: block;
+  min-width: 7.5rem;
+}
+
+.entries-table .dtable__table .entry-target {
+  display: block;
+  min-width: 6.5rem;
+}
+
+.entry-target--code {
+  white-space: nowrap;
+}
+
+.entries-table .dtable__table .entry-note {
+  min-width: 8rem;
+}
+
+/* A phone's card: the note has the card's full width, not half of it beside an empty cell. */
+.entries-table .dcard__facts > div:has(.entry-note) {
+  grid-column: 1 / -1;
 }
 
 .entries-table .dtable__table time,
@@ -626,6 +677,11 @@
 
 .entry-form__who {
   margin: 0 0 var(--space-4);
+}
+
+/* "Log time for": the chosen person's email while their name repeats, whole on a phone (an address has no spaces to wrap at). */
+.entry-form__email {
+  overflow-wrap: anywhere;
 }
 
 .target-picker {
@@ -993,16 +1049,22 @@
   list-style: none;
 }
 
+/* One line where the tile is wide enough; where it isn't, "INR  1 open," stays on the first line and "₹3,00,000.00 before GST" moves, whole, to
+   the start of the next (final sweep A12: the line used to end on "1 open," with the amount indented under it). */
 .pipeline__row {
-  display: grid;
-  grid-template-columns: 3rem minmax(0, 1fr);
-  gap: var(--space-3);
+  display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
+  gap: var(--space-1) var(--space-3);
 }
 
-.pipeline__line {
+.pipeline__count,
+.pipeline__value {
   color: var(--color-text-muted);
-  text-wrap: balance;
+}
+
+.pipeline__value {
+  white-space: nowrap;
 }
 
 .pipeline__total {

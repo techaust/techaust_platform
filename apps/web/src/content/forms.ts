@@ -22,7 +22,10 @@ export const noJsNote = `This form needs JavaScript for spam protection. You can
 export const contactPage = {
   meta: {
     title: "Contact TecHaust Technologies",
-    description: `Email, WhatsApp or send a message. We reply within one business day ${hours}.`,
+    // 07-ZA item 2 (owner 2026-10-30): WhatsApp is named only once the number is set.
+    description: site.whatsapp
+      ? `Email, WhatsApp or send a message. We reply within one business day ${hours}.`
+      : `Email us or send a message. We reply within one business day ${hours}.`,
   },
   h1: "Talk to us",
   lede: `Tell us a little about what you need. We reply within one business day ${hours}.`,

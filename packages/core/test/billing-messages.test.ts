@@ -1,6 +1,13 @@
 // The M5.4 queue messages [JOB-Q-01, LD56, LD57]: ids and cursors only, a body of the family is never taken for a lead or an ordinary email.
 import { describe, expect, it } from "vitest";
-import { INVOICE_EMAIL_DATA, isInvoiceEmailTemplate, noteReasonWords } from "../src/invoice-email.ts";
+import {
+  INVOICE_EMAIL_DATA,
+  isInvoiceEmailTemplate,
+  NOTE_REASON_LABELS,
+  noteReasonLabel,
+  noteReasonWords,
+} from "../src/invoice-email.ts";
+import { CREDIT_REASONS, DEBIT_REASONS } from "../src/notes.ts";
 import {
   alertsDailyMessage,
   BILLING_KINDS,
@@ -184,6 +191,23 @@ describe("the M5.4 email templates", () => {
     expect(noteReasonWords("other", "Goodwill")).toBe("Goodwill");
     expect(noteReasonWords("other", " ")).toBe("Other");
     expect(noteReasonWords("mystery", "")).toBe("mystery");
+  });
+  it("holds every note reason's 07-T §3 label in one map, for the emails, the PDF, admin and the portal", () => {
+    expect([...CREDIT_REASONS, ...DEBIT_REASONS].every((c) => Object.hasOwn(NOTE_REASON_LABELS, c))).toBe(
+      true,
+    );
+    expect(NOTE_REASON_LABELS).toEqual({
+      price_correction: "Price correction",
+      service_not_delivered: "Service not delivered",
+      service_deficient: "Service deficient",
+      discount_after_sale: "Discount after sale",
+      tax_charged_too_low: "Tax charged too low",
+      other: "Other",
+    });
+    expect(noteReasonLabel("tax_charged_too_low")).toBe("Tax charged too low");
+    // a code nobody knows is printed as it is, and an inherited name is no label
+    expect(noteReasonLabel("mystery")).toBe("mystery");
+    expect(noteReasonLabel("constructor")).toBe("constructor");
   });
   it("an invoice email with a PDF attached passes the message schema (the key is an invoice key)", () => {
     expect(

@@ -22,7 +22,7 @@ export const pricing = {
     "hosting and compliance needs",
   ],
   payment: [
-    "**Builds:** 40 % to start, 30 % at a mid-project milestone, 30 % on delivery.",
+    "**Builds:** 40 % on acceptance, 30 % at the midpoint milestone, 30 % on delivery.",
     "**Smaller fixed jobs** (under {{terms:small_job_threshold}}): paid in full upfront.",
     "**Care plans and subscriptions:** monthly in advance.",
     "**Invoices are due within 7 days.** Proposals are valid for 15 days.",

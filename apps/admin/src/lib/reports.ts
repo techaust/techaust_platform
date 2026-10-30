@@ -688,7 +688,8 @@ export const FINANCE_COPY = {
   thisMonth: "This month",
   thisFy: "This financial year",
   beforeGst: "Before GST",
-  inrEquivalent: (amount: string) => `≈ ${amount} in INR`,
+  // A no-break space after "≈": the sign never ends a line on its own (final sweep A11, a 320 px tile).
+  inrEquivalent: (amount: string) => `≈\u00a0${amount} in INR`,
   outstanding: "Outstanding",
   overdue: "Overdue",
   documents: (n: number) => docs(n),

@@ -1,5 +1,5 @@
-// Every word the M1.6 portal screens show, in one place. PLACEHOLDER COPY (English, India/UK spelling): the lead
-// checks it against docs/07 §1.3 (banned phrases) and the §8 magic-link email wording before it is final. The
+// Every word the M1.6 portal screens show, in one place: owner-approved and recorded word for word in
+// docs/07-content-appendix/ZB-portal-sign-in-account.md (07-ZA item 13, 2026-10-30); change a line there first. The
 // sign-in reply never says whether an email belongs to a client (POR-01): one generic sentence for every outcome.
 import { RequestError } from "./api.ts";
 

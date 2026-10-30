@@ -752,20 +752,40 @@ describe("bank details: masked everywhere [ADM-SET-02, ADM-G-06]", () => {
     ).run();
   });
 
-  it("an empty second account-number field says 'Type the account number again.'; a different one says they don't match [ADM-SET-02]", async () => {
+  it("an empty second account-number field asks for it again, a different one says they don't match, each naming its account (07-ZA item 7) [ADM-SET-02]", async () => {
     await reset();
     const o = await owner();
     const empty = await json(await putBank("/settings/bank/INR", o.cookie, body({ accountNoAgain: "" })));
-    expect(empty.fields).toEqual([{ path: "accountNoAgain", message: "Type the account number again." }]);
+    expect(empty.fields).toEqual([{ path: "accountNoAgain", message: "Type the INR account number again." }]);
     const { accountNoAgain: _drop, ...without } = body();
     const none = await json(
       await put("/settings/bank/INR", o.cookie, { ...without, expectedUpdatedAt: null }),
     );
-    expect(none.fields[0].message).toBe("Type the account number again.");
+    expect(none.fields[0].message).toBe("Type the INR account number again.");
     const other = await json(
       await putBank("/settings/bank/INR", o.cookie, body({ accountNoAgain: "5550123450000" })),
     );
-    expect(other.fields[0].message).toBe("The two account numbers don't match");
+    expect(other.fields[0].message).toBe("The two INR account numbers don't match.");
+    // the USD account's lines name USD (final sweep review 5)
+    const usd = {
+      accountName: "Sample Account (test)",
+      accountNo: NUMBER,
+      bankName: "Sample Bank",
+      swift: "SMPLINBB",
+      bankAddress: "Sample street",
+    };
+    const usdEmpty = await json(
+      await putBank("/settings/bank/USD_SWIFT", o.cookie, { ...usd, accountNoAgain: "" }),
+    );
+    expect(usdEmpty.fields).toEqual([
+      { path: "accountNoAgain", message: "Type the USD account number again." },
+    ]);
+    const usdOther = await json(
+      await putBank("/settings/bank/USD_SWIFT", o.cookie, { ...usd, accountNoAgain: "5550123450000" }),
+    );
+    expect(usdOther.fields).toEqual([
+      { path: "accountNoAgain", message: "The two USD account numbers don't match." },
+    ]);
   });
 });
 

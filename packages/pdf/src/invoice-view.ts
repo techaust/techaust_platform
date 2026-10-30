@@ -3,6 +3,7 @@
 // intra-state supply prints half of the rate under CGST and half under SGST, anything else prints the whole rate under IGST (Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)).
 // A missing bank block or signature leaves its part out; nothing is invented. A signature image is embedded only when the caller hands in bytes it
 // has already verified against the frozen SHA-256 (`verifySignatureBytes`).
+import { noteReasonLabel } from "@techaust/core/invoice-email";
 import { formatFxRate, isGstEstimate } from "@techaust/core/invoices";
 import { formatMoney, isCurrency, money } from "@techaust/core/money";
 import { fyLabelOfToken, placeOfSupplyLabel } from "@techaust/core/pdf-jobs";
@@ -35,16 +36,6 @@ const DOC_LABELS: Readonly<Record<string, string>> = {
   // 07-T §1 (pending the owner's approval): the titles of the notes.
   credit_note: "Credit Note",
   debit_note: "Debit Note",
-};
-
-/** 07-T §3: the label of each reason a person can pick (the code is what is frozen; `other` is then described in words). Q35 (owner 2026-10-28): a debit note has three (07-T §9). */
-const REASON_LABELS: Readonly<Record<string, string>> = {
-  price_correction: "Price correction",
-  service_not_delivered: "Service not delivered",
-  service_deficient: "Service deficient",
-  discount_after_sale: "Discount after sale",
-  tax_charged_too_low: "Tax charged too low",
-  other: "Other",
 };
 
 /** 07-S §1: the place of supply line of an export invoice (code 96: outside India). */
@@ -247,7 +238,8 @@ export function toInvoiceView(
         },
         reason: {
           code: noteOf.reason.code,
-          label: REASON_LABELS[noteOf.reason.code] ?? noteOf.reason.code,
+          // 07-T §3, from the one shared map (the code is what is frozen; `other` is then described in words).
+          label: noteReasonLabel(noteOf.reason.code),
           text: noteOf.reason.text,
         },
         totalLabel: noteOf.kind === "credit" ? "credited" : "added",

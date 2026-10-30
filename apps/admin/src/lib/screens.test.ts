@@ -318,9 +318,14 @@ describe("bank form checks and the stale guard [ADM-SET-02]", () => {
   it("an empty second account number asks for it again; a different one says they differ (review L8)", () => {
     const f = { ...toBlockForm(stored), accountNo: "12345678" };
     const again = (x: typeof f) => checkBlock("INR", x, stored).errors["bank-INR-accountNoAgain"];
-    expect(again(f)).toBe("Type the account number again.");
-    expect(again({ ...f, accountNoAgain: "12345679" })).toBe("The two account numbers don't match.");
+    // 07-ZA item 7: the line names its account.
+    expect(again(f)).toBe("Type the INR account number again.");
+    expect(again({ ...f, accountNoAgain: "12345679" })).toBe("The two INR account numbers don't match.");
     expect(checkBlock("INR", { ...f, accountNoAgain: "1234 5678" }, stored).errors).toEqual({});
+    const usd = checkBlock("USD_SWIFT", { ...f, accountNoAgain: "" }, stored).errors[
+      "bank-USD_SWIFT-accountNoAgain"
+    ];
+    expect(usd).toBe("Type the USD account number again.");
   });
 });
 

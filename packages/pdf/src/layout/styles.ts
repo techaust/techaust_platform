@@ -209,6 +209,7 @@ table.grid { width: 100%; table-layout: fixed; border-collapse: collapse; font-s
 .totals__notes { grid-column: 1 / span 7; font-size: var(--print-table); line-height: 1.4; }
 .totals__notes .words { font-weight: 500; margin-bottom: 2mm; }
 .totals__notes .note { color: var(--color-text-muted); font-size: var(--print-small); margin-bottom: 1mm; }
+.money > .lines-note { color: var(--color-text-muted); font-size: var(--print-small); margin: 1.5mm 0 3mm; }
 .totals__table { grid-column: 8 / -1; width: 100%; border-collapse: collapse; font-size: var(--print-table); }
 .totals__table th, .totals__table td { padding: 0.6mm 0; vertical-align: baseline; }
 .totals__table th { text-align: left; font-weight: 400; color: var(--color-text-muted); }

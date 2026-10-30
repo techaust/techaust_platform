@@ -4,6 +4,7 @@
 // order, with the money in the Investment section, the terms, and the acceptance block. Set as one sheet of "paper": a verdigris rule
 // under the masthead and the mark's 45° cut on its top-right corner. Every value arrives formatted; this file adds nothing up.
 // The fixed words are the PDF's (07-P §1, `@techaust/pdf/copy`) and 07-N §2.
+import { coverLines } from "@techaust/core/markdown";
 import { PDF_COPY as C } from "@techaust/pdf/copy";
 import logoColor from "@techaust/ui/brand/logo-primary-color.svg?url";
 import logoDark from "@techaust/ui/brand/logo-primary-dark.svg?url";
@@ -136,7 +137,8 @@ function Cover({ view }: { view: PdfView }) {
       <PageTitle text={title} className="cover__title" id="doc-title">
         {title}
       </PageTitle>
-      {cover?.bodyMd.trim() && <Markdown source={cover.bodyMd} className="cover__lede" />}
+      {/* One paragraph per line of the cover, as the PDF prints it (final sweep P5; core `coverLines`, one rule for both). */}
+      {cover?.bodyMd.trim() && <Markdown source={coverLines(cover.bodyMd)} className="cover__lede" />}
       <p className="cover__for">
         {C.cover.preparedFor} <strong>{view.recipient.name}</strong>
       </p>
@@ -245,7 +247,7 @@ function Totals({ view }: { view: PdfView }) {
       </dl>
       <div className="money__notes">
         <p className="words">{C.words(view.words)}</p>
-        <p className="money__note">{view.currency === "INR" ? C.inrNote : C.usdNote}</p>
+        {view.currency !== "INR" && <p className="money__note">{C.usdNote}</p>}
         {view.inrNote && <p className="money__note">{view.inrNote}</p>}
       </div>
     </div>
@@ -387,6 +389,9 @@ export function DocumentPaper(props: {
               return (
                 <SectionBlock key={s.id} s={s} className="dsec--money">
                   <LinesTable view={view} />
+                  {/* 07-ZA item 16 (owner 2026-10-30): "Prices exclude GST." sits under the lines, whose amounts exclude it, never
+                      under a total that includes it (final sweep P11; the PDF does the same). */}
+                  {view.currency === "INR" && <p className="money__note money__note--lines">{C.inrNote}</p>}
                   <Totals view={view} />
                   <SummaryTable view={view} />
                   <ScheduleTable view={view} withDetail={!hasTimeline} />
@@ -402,19 +407,23 @@ export function DocumentPaper(props: {
             case "acceptance":
               return (
                 <SectionBlock key={s.id} s={s} className="dsec--decision" noBody={!props.acceptOpen}>
-                  <div className="validity">
-                    <p className="validity__line">{view.validityNote}</p>
-                    <button
-                      type="button"
-                      className="btn btn--secondary"
-                      onClick={props.onDownload}
-                      disabled={props.downloading}
-                      aria-busy={props.downloading || undefined}
-                    >
-                      <Download size={20} />
-                      {WORDS.downloadPdf}
-                    </button>
-                  </div>
+                  {/* The validity line and its PDF button serve a decision still to make: once decided (or expired, or replaced), the
+                      decision block says what happened and offers its own downloads (final sweep P14). */}
+                  {props.acceptOpen && (
+                    <div className="validity">
+                      <p className="validity__line">{view.validityNote}</p>
+                      <button
+                        type="button"
+                        className="btn btn--secondary"
+                        onClick={props.onDownload}
+                        disabled={props.downloading}
+                        aria-busy={props.downloading || undefined}
+                      >
+                        <Download size={20} />
+                        {WORDS.downloadPdf}
+                      </button>
+                    </div>
+                  )}
                   {props.decision}
                 </SectionBlock>
               );

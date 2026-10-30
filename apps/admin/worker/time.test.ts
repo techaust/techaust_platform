@@ -698,7 +698,7 @@ describe("reading time [ADM-TIME-02]", () => {
         (await json(await call(`/time?userId=${viewer.id}`, { cookie: viewer.cookie }))).entries,
       ).toHaveLength(1);
       const me = people.find((x) => x.who === viewer);
-      expect(parts[2]?.people).toEqual([{ id: viewer.id, name: me?.name }]);
+      expect(parts[2]?.people).toEqual([{ id: viewer.id, name: me?.name, email: expect.any(String) }]);
     }
   });
 
@@ -781,6 +781,34 @@ describe("reading time [ADM-TIME-02]", () => {
       expect(ids).toEqual(expect.arrayContaining([o.id, st.id, sa.id]));
       expect(ids).not.toContain(acc.id);
     }
+  });
+
+  it("each person comes with their work email, so two people with the same name can be told apart (final sweep A20)", async () => {
+    const o = await sessionFor("owner", { name: "Sam Same" });
+    const twin = await sessionFor("staff", { name: "Sam Same" });
+    const emailOf = async (id: string) =>
+      (
+        await env.DB.prepare("SELECT email FROM staff_users WHERE id = ?1")
+          .bind(id)
+          .first<{ email: string }>()
+      )?.email;
+    const people = (await json(await call("/time/people", { cookie: o.cookie }))).people as {
+      id: string;
+      name: string;
+      email: string;
+    }[];
+    const same = people.filter((p) => p.name === "Sam Same");
+    expect(same).toEqual(
+      expect.arrayContaining([
+        { id: o.id, name: "Sam Same", email: await emailOf(o.id) },
+        { id: twin.id, name: "Sam Same", email: await emailOf(twin.id) },
+      ]),
+    );
+    expect(new Set(same.map((p) => p.email)).size).toBe(2);
+    // a viewer who logs only their own time gets themselves, with their own email
+    expect((await json(await call("/time/people", { cookie: twin.cookie }))).people).toEqual([
+      { id: twin.id, name: "Sam Same", email: await emailOf(twin.id) },
+    ]);
   });
 
   it("pages newest day first without a repeat or a gap; the range is 366 days at most; the default is the last 30 days", async () => {

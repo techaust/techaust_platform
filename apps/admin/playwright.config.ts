@@ -5,6 +5,8 @@
 //   pnpm dev:secrets && pnpm db:migrate:local && pnpm db:seed:local && pnpm portal:sample
 // then run `pnpm --filter @techaust/admin e2e` (through `bash tools/heavy.sh --log e2e-admin …`). The global setup enrols a
 // throwaway Owner (`e2e-…@example.test`, local database only) over the API, as a browser would, and signs the tests in.
+// With `E2E_SAMPLE=1` it also adds realistic sample data when the database has no invoice yet (e2e/sample-data.ts: settings, two
+// clients, a project with milestones, time, a care plan, issued, credited, export and void invoices), so the sweep runs with data.
 // The port follows TECHAUST_PORT_OFFSET (CLOUD-1, scripts/dev-ports.mjs): the admin's usual dev port by default, 100 higher for the
 // second browser agent.
 import { defineConfig, devices } from "@playwright/test";

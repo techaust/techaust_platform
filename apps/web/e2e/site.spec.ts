@@ -1,6 +1,7 @@
-// Routes and layout stability: the services hub links all resolve, the flagged-off S3 page is a 404 (WEB-G-17), and the
-// currency swap moves nothing (CLS, WEB-G-06, NFR-1).
+// Routes and layout stability: the services hub links all resolve, the flagged-off S3 page is a 404 (WEB-G-17), the
+// currency swap moves nothing (CLS, WEB-G-06, NFR-1), and no page scrolls sideways at the narrowest width (WCAG 1.4.10).
 import { expect, type Page, test } from "@playwright/test";
+import { builtPages } from "./pages";
 
 test.describe("services hub", () => {
   test("every link on it resolves, and none points at the flagged-off DPDP page", async ({
@@ -147,4 +148,25 @@ test.describe("aria-current in the header (WEB-G-11)", () => {
     await expect(page.locator("header a.nav-link[href='/pricing']")).toHaveAttribute("aria-current", "page");
     expect(await currentLinks(page)).toEqual(["/pricing"]);
   });
+});
+
+// Reflow (WCAG 1.4.10, final sweep W1): every page fits 320 px (1280 px at 400 % zoom) without sideways scrolling.
+// Playwright's headless Chromium hides scrollbars, so 303 px stands in for 320 px with a classic 17 px scrollbar.
+test.describe("no sideways scroll at the narrowest widths", () => {
+  for (const { name, url } of builtPages()) {
+    test(`${name} at 320 and 303 px`, async ({ browser }) => {
+      const context = await browser.newContext({ viewport: { width: 320, height: 720 } });
+      const page = await context.newPage();
+      await page.goto(url);
+      await page.evaluate(() => document.fonts.ready);
+      for (const width of [320, 303]) {
+        await page.setViewportSize({ width, height: 720 });
+        const over = await page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        );
+        expect(over, `${url} scrolls ${over} px sideways at ${width} px`).toBeLessThanOrEqual(0);
+      }
+      await context.close();
+    });
+  }
 });

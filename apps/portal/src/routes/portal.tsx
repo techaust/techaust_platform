@@ -1,12 +1,14 @@
 // The signed-in portal (M4.5; POR-02 to POR-05): the shell around five sections, home, the proposals-and-estimates list and one
 // document. Everything a screen shows comes from the API with the session's organisation (POR-03); another organisation's document
 // is the same "Page not found" as one that doesn't exist. Signed out, every address shows the sign-in form.
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router";
 import { api, type OfferItem, offersApi, RequestError } from "../api.ts";
+import { LoadProblemScreen } from "../components/load-problem.tsx";
 import { type NavKey, PortalShell } from "../components/shell/portal-shell.tsx";
-import { LoadingCard, Notice } from "../components/ui.tsx";
+import { LoadingCard } from "../components/ui.tsx";
 import { COPY } from "../copy.ts";
+import { WORDS } from "../copy-documents.ts";
 import { splitOffers } from "../lib/offers.ts";
 import {
   DocumentsScreen,
@@ -41,6 +43,9 @@ function currentOf(pathname: string): NavKey | null {
   if (pathname.startsWith("/profile")) return "profile";
   return null;
 }
+
+/** 07-ZA item 12 (owner 2026-10-30): a contact who can't see finance gets no Invoices link (it only led to "Page not found"). */
+const NO_FINANCE: readonly NavKey[] = ["invoices"];
 
 /** The frame: signed out, the sign-in form at any address; signed in, the shell and the section. */
 export function PortalLayout() {
@@ -81,7 +86,12 @@ function SignedIn() {
     },
   };
   return (
-    <PortalShell current={currentOf(pathname)} hrefOf={hrefOf} account={account}>
+    <PortalShell
+      current={currentOf(pathname)}
+      hrefOf={hrefOf}
+      hidden={me.canSeeFinance ? undefined : NO_FINANCE}
+      account={account}
+    >
       <Outlet />
     </PortalShell>
   );
@@ -112,26 +122,13 @@ function useOffers() {
   return { items, next, error, busy, more: () => next && page(next), retry: () => page() };
 }
 
-function LoadProblem(props: { error: unknown; onRetry: () => void; children?: ReactNode }) {
-  const text =
-    props.error instanceof RequestError && props.error.code !== "network" ? COPY.server : COPY.network;
-  return (
-    <div className="screen">
-      {props.children}
-      <Notice tone="error">{text}</Notice>
-      <button type="button" className="btn btn--secondary" onClick={props.onRetry}>
-        {COPY.reload}
-      </button>
-    </div>
-  );
-}
-
 export function HomeRoute() {
   const me = useMe();
   const o = useOffers();
   // M5.4: the invoices tile, for a contact who can see finance (the API answers 404 otherwise)
   const inv = useInvoices(me.canSeeFinance);
-  if (o.error && !o.items) return <LoadProblem error={o.error} onRetry={o.retry} />;
+  if (o.error && !o.items)
+    return <LoadProblemScreen title={me.organisation.displayName} error={o.error} onRetry={o.retry} />;
   if (!o.items) return <ScreenSkeleton label={COPY.loading} />;
   const { awaiting, decided } = splitOffers(o.items);
   return (
@@ -153,7 +150,8 @@ export function HomeRoute() {
 
 export function ProposalsRoute() {
   const o = useOffers();
-  if (o.error && !o.items) return <LoadProblem error={o.error} onRetry={o.retry} />;
+  if (o.error && !o.items)
+    return <LoadProblemScreen title={WORDS.nav.documents} error={o.error} onRetry={o.retry} />;
   if (!o.items) return <ScreenSkeleton label={COPY.loading} />;
   const { awaiting, decided } = splitOffers(o.items);
   return (

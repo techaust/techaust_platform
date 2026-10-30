@@ -17,10 +17,12 @@ import {
   PROPOSAL_TERMS_V1_SHA256,
   PROPOSAL_TERMS_V2,
   PROPOSAL_TERMS_V2_SHA256,
+  PROPOSAL_TERMS_V3,
+  PROPOSAL_TERMS_V3_SHA256,
 } from "./terms.ts";
 
 /** Bump when the seed's content changes (recorded nowhere else; it documents intent in reviews). */
-export const SEED_VERSION = 3;
+export const SEED_VERSION = 4;
 
 type Value = string | number | boolean | null | object;
 
@@ -44,28 +46,55 @@ const insert = (table: string, row: Record<string, Value>) => {
 };
 
 /**
- * FX-5 (07-Y items 1 and 2, owner 2026-10-29): the second proposal terms, as the SELECT the seed inserts from. It yields one row only while
- *   - the NEWEST proposal terms row is the seed's version 1 (its SHA-256): text the owner saved after it is never replaced, however late the
- *     seed runs (review M2);
- *   - no proposal row has version 2's SHA-256 yet (it is added once);
+ * A later seeded proposal terms version, as the SELECT the seed inserts from. It yields one row only while
+ *   - the NEWEST proposal terms row is the seeded version it follows, by its seeded id (`afterId`) and its SHA-256 (`afterSha256`): text the
+ *     owner saved after it is never replaced or followed, however late the seed runs, even an owner's row that repeats a seeded text (FX-5
+ *     review M2; final sweep early check 1);
+ *   - no proposal row has this version's SHA-256 yet (it is added once);
  *   - Settings › Payment terms has the due days the text states (full audit C4: the terms never promise other days than the setting; the
  *     settings rows are inserted earlier in the same seed, so the default counts on a fresh database).
- * A filtered row, never an aggregate: when a guard fails the SELECT yields nothing, so nothing rests on the unique index (review L1).
+ * A filtered row, never an aggregate: when a guard fails the SELECT yields nothing, so nothing rests on the unique index (FX-5 review L1).
  */
-export function proposalTermsV2Select(): string {
-  const [days] = termsDueDays(PROPOSAL_TERMS_V2);
-  if (days === undefined) throw new Error("PROPOSAL_TERMS_V2 states no due days");
-  const sha = literal(PROPOSAL_TERMS_V2_SHA256);
+function nextProposalTermsSelect(next: {
+  id: string;
+  body: string;
+  sha256: string;
+  afterId: string;
+  afterSha256: string;
+}): string {
+  const [days] = termsDueDays(next.body);
+  if (days === undefined) throw new Error(`Seeded proposal terms ${next.id} state no due days`);
+  const sha = literal(next.sha256);
   const setting = `coalesce(json_extract((SELECT value FROM \`settings\` WHERE key = 'payment_terms'), '$.dueDays'), ${literal(SETTINGS_DEFAULTS.payment_terms.dueDays)})`;
-  return `SELECT ${literal(stableId("terms:proposal:fx5-ownership-gst"))}, 'proposal', t.version + 1, ${literal(
-    PROPOSAL_TERMS_V2,
-  )}, ${sha} FROM \`terms_versions\` AS t WHERE t.kind = 'proposal' AND t.sha256 = ${literal(
-    PROPOSAL_TERMS_V1_SHA256,
+  return `SELECT ${literal(stableId(next.id))}, 'proposal', t.version + 1, ${literal(
+    next.body,
+  )}, ${sha} FROM \`terms_versions\` AS t WHERE t.kind = 'proposal' AND t.id = ${literal(stableId(next.afterId))} AND t.sha256 = ${literal(
+    next.afterSha256,
   )} AND t.version = (SELECT max(version) FROM \`terms_versions\` WHERE kind = 'proposal') AND NOT EXISTS (SELECT 1 FROM \`terms_versions\` WHERE kind = 'proposal' AND sha256 = ${sha}) AND ${setting} = ${literal(days)}`;
 }
 
-const proposalTermsV2 = () =>
-  `INSERT INTO \`terms_versions\` (\`id\`, \`kind\`, \`version\`, \`body_md\`, \`sha256\`) ${proposalTermsV2Select()} ON CONFLICT DO NOTHING;`;
+/** FX-5 (07-Y items 1 and 2, owner 2026-10-29): the second proposal terms, after the seeded version 1. */
+export const proposalTermsV2Select = (): string =>
+  nextProposalTermsSelect({
+    id: "terms:proposal:fx5-ownership-gst",
+    body: PROPOSAL_TERMS_V2,
+    sha256: PROPOSAL_TERMS_V2_SHA256,
+    afterId: "terms:proposal:1",
+    afterSha256: PROPOSAL_TERMS_V1_SHA256,
+  });
+
+/** Final sweep (07-ZA item 14, owner 2026-10-30): the third proposal terms ("this proposal or estimate"), after the seeded version 2. */
+export const proposalTermsV3Select = (): string =>
+  nextProposalTermsSelect({
+    id: "terms:proposal:za14-proposal-or-estimate",
+    body: PROPOSAL_TERMS_V3,
+    sha256: PROPOSAL_TERMS_V3_SHA256,
+    afterId: "terms:proposal:fx5-ownership-gst",
+    afterSha256: PROPOSAL_TERMS_V2_SHA256,
+  });
+
+const insertTermsFrom = (select: string) =>
+  `INSERT INTO \`terms_versions\` (\`id\`, \`kind\`, \`version\`, \`body_md\`, \`sha256\`) ${select} ON CONFLICT DO NOTHING;`;
 
 export function seedStatements(): string[] {
   const settings = (Object.keys(SETTINGS_SCHEMAS) as SeededSettingKey[]).map((key) => {
@@ -101,7 +130,8 @@ export function seedStatements(): string[] {
       body: t.body,
     }),
   );
-  // The first proposal terms (07-O section 2). A terms row the owner already saved as version 1 makes this a no-op. Then the second (FX-5).
+  // The first proposal terms (07-O section 2). A terms row the owner already saved as version 1 makes this a no-op. Then the second (FX-5)
+  // and the third (07-ZA item 14), in this order: one batch runs them in turn, so a fresh database ends with versions 1, 2 and 3.
   const terms = [
     insert("terms_versions", {
       id: stableId("terms:proposal:1"),
@@ -110,7 +140,8 @@ export function seedStatements(): string[] {
       body_md: PROPOSAL_TERMS_V1,
       sha256: PROPOSAL_TERMS_V1_SHA256,
     }),
-    proposalTermsV2(),
+    insertTermsFrom(proposalTermsV2Select()),
+    insertTermsFrom(proposalTermsV3Select()),
   ];
   return [...settings, ...catalogue, ...templates, ...terms];
 }

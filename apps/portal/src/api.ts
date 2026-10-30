@@ -243,6 +243,11 @@ export type InvoiceLine = {
   qtyMilli: number;
   unit: string;
   rateMinor: number;
+  /** Final sweep P3: the line's discount as typed ("percent": basis points; "fixed": minor units), null when none. Absent from an older API. */
+  discountKind?: "percent" | "fixed" | null;
+  discountValue?: number | null;
+  /** The discount as the PDF prints it ("10 %", or the amount), null when the line has none. */
+  discount?: string | null;
   taxableMinor: number;
   gstRateBp: number;
   cgstMinor: number;
@@ -262,6 +267,15 @@ export type InvoiceSummary = {
   currency: string;
   /** A credit or debit note: the invoice it is against. */
   parentNumber: string | null;
+  /**
+   * Final sweep P15: a credit or debit note's invoice id, when the client may open that invoice (same organisation, an open status), so the page can
+   * link to it; null otherwise. Absent from an older API.
+   */
+  parentId?: string | null;
+  /** Final sweep P15: a credit or debit note's reason as frozen (`code` from core `NOTE_REASONS`, `text` the words typed); null on other types. */
+  noteReason?: { code: string; text: string } | null;
+  /** Final sweep P2: the issued credit notes against this invoice, in issue order (the "Credited ({numbers})" row); empty on other types. */
+  creditNotes?: { id: string; numberDisplay: string | null }[];
   /**
    * FX-4 (A5 5): a proforma sealed with the estimate marker shows its tax heads as estimates; false on one sealed before FX-4 and on every other type.
    * Absent from an older API: no "(estimate)".

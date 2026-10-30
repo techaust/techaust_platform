@@ -2,7 +2,7 @@
 // rows; `readAll` follows `next` to the end, saying how many rows it has so far. A register page needs a live step-up (`exports.gst`): `request`
 // opens the step-up dialog when the server asks and sends the same page again, so a long read that outlives the step-up asks once more, never fails.
 import type { CalendarDate, RegisterApiRow, ReportMeta } from "@techaust/core/gst";
-import { qs, RequestError, request } from "../api.ts";
+import { answerError, NETWORK, qs, RequestError, request } from "../api.ts";
 
 export type ReportPage = { rows: RegisterApiRow[]; meta: ReportMeta; next: string | null };
 export type EdfPage = ReportPage & { meta: ReportMeta & { edfDue: CalendarDate } };
@@ -68,7 +68,7 @@ export async function pollStatementPdf(clientId: string, sid: string): Promise<P
   try {
     res = await fetch(statementPdfPath(clientId, sid), { credentials: "same-origin" });
   } catch {
-    throw new RequestError(0, "network", "Couldn't reach the server. Check your connection and try again.");
+    throw new RequestError(0, "network", NETWORK);
   }
   if (res.status === 202) return { state: "pending" };
   if (res.ok && (res.headers.get("Content-Type") ?? "").startsWith("application/pdf")) {
@@ -79,8 +79,8 @@ export async function pollStatementPdf(clientId: string, sid: string): Promise<P
       filename: dispositionName(res.headers.get("Content-Disposition"), "statement.pdf"),
     };
   }
-  const data = (await res.json().catch(() => ({}))) as { error?: { code: string; message: string } };
-  const e = data.error ?? { code: "network", message: "The PDF couldn't be read." };
+  // the server answered: its error, or (a 502 page, no words) the PDF's own line under code `internal`, never "offline" (final sweep review 4)
+  const e = answerError(await res.json().catch(() => null), "The PDF couldn't be read.");
   const error = new RequestError(res.status, e.code, e.message);
   if (res.status === 409) return { state: "failed", error };
   throw error;

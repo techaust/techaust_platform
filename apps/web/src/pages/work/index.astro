@@ -17,7 +17,11 @@ const cases = publishedCases(await getCollection("caseStudies"));
 const talk = cta.talk();
 ---
 
-<BaseLayout title={w.meta.title} description={w.meta.description}>
+{/* 07-ZA item 1: while no case study is published, the title and description don't promise any. */}
+<BaseLayout
+  title={cases.length > 0 ? w.meta.title : w.metaEmpty.title}
+  description={cases.length > 0 ? w.meta.description : w.metaEmpty.description}
+>
   {/* 07-Y item 3 (owner 2026-10-29): the lede speaks of the case studies, so it shows only once there is one. */}
   <PageHero title={w.h1} lede={cases.length > 0 ? w.lede : undefined} />
 

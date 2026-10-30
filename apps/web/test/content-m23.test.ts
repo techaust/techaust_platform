@@ -274,6 +274,13 @@ describe("RSS description and meta descriptions (07-F, owner-approved)", () => {
     );
   });
 
+  it("gives /blog its 07-ZA item 17 description while no post is published, within 155 characters", () => {
+    expect(blogPage.metaEmptyDescription).toBe(
+      "Notes on custom software, AI document automation, workflow automation and connecting business systems, from the TecHaust team. First posts are on the way.",
+    );
+    expect(blogPage.metaEmptyDescription.length).toBeLessThanOrEqual(155);
+  });
+
   it("gives every legal page a description of at most 155 characters, word for word from 07-F", () => {
     expect(legalPages.privacy.meta.description).toBe(
       "What personal data TecHaust Technologies collects and why, who we share it with, how long we keep it, and how to use your rights.",

@@ -11,6 +11,7 @@
 //
 // No logic beyond formatting: every value is a pre-formatted string of the view. Every dynamic string goes through `esc`; Markdown goes
 // through `markdownBlocks` (escaped, safe links only). Wording: ./copy.ts (07-P).
+import { coverLines } from "@techaust/core/markdown";
 import { esc } from "../escape.ts";
 import { PDF_LOGOS } from "../generated/assets.ts";
 import { markdownBlocks } from "../markdown-html.ts";
@@ -126,7 +127,7 @@ function totalsBlock(view: PdfView): string {
     .join("");
   const notes = [
     `<p class="words">${esc(C.words(view.words))}</p>`,
-    isInr(view) ? p("note", C.inrNote) : p("note", C.usdNote),
+    isInr(view) ? "" : p("note", C.usdNote),
     view.inrNote ? `<p class="note">${inrNoteHtml(view.inrNote)}</p>` : "",
   ].join("");
   return `<div class="totals"><div class="totals__notes">${notes}</div><table class="totals__table">${rows}</table></div>`;
@@ -183,7 +184,9 @@ function timelineTable(steps: readonly ViewStep[]): string {
 }
 
 function moneyBlock(view: PdfView, hasTimeline: boolean): string {
-  return `<div class="money">${itemsTable(view)}${totalsBlock(view)}${summaryTable(view)}${scheduleTable(view, !hasTimeline)}</div>`;
+  // 07-ZA item 16 (owner 2026-10-30): "Prices exclude GST." under the lines, whose amounts exclude it, never under a total that includes it.
+  const linesNote = isInr(view) ? p("note lines-note", C.inrNote) : "";
+  return `<div class="money">${itemsTable(view)}${linesNote}${totalsBlock(view)}${summaryTable(view)}${scheduleTable(view, !hasTimeline)}</div>`;
 }
 
 function acceptanceBox(view: PdfView): string {
@@ -244,7 +247,8 @@ function sectionsHtml(view: PdfView, sections: readonly ViewSection[]): string {
 function coverHtml(view: PdfView, cover: ViewSection | undefined): string {
   // The masthead carries the kind ("Proposal"), as on the inner pages; the page itself belongs to the document's own title.
   const title = view.documentTitle ?? view.docLabel;
-  const lede = cover ? markdownBlocks(cover.bodyMd).join("") : "";
+  // the cover's lines, one paragraph each (final sweep P5; core `coverLines`, the portal's paper uses the same rule)
+  const lede = cover ? markdownBlocks(coverLines(cover.bodyMd)).join("") : "";
   const meta = [
     view.issueDate,
     view.versionLabel,

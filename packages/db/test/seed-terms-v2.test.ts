@@ -9,7 +9,7 @@ import { PROPOSAL_TERMS_V1_SHA256, PROPOSAL_TERMS_V2_SHA256 } from "../src/seed/
 import { all, run } from "./helpers.ts";
 
 const seed = () => env.DB.batch(seedStatements().map((s) => env.DB.prepare(s)));
-/** Everything the seed writes except version 2: a database whose newest proposal terms are the seeded version 1. */
+/** Everything the seed writes except versions 2 and 3 (version 3's statement names version 2's hash too): newest is the seeded version 1. */
 const seedWithoutV2 = () =>
   env.DB.batch(
     seedStatements()

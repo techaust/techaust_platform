@@ -69,6 +69,23 @@
   display: none;
 }
 
+/* The narrowest phones (320 px, or 1280 px at 400 % zoom, with a classic scrollbar ~303 px left): the logo, the gap and
+   "Menu" needed 329 px (final sweep W1, WCAG 1.4.10). A smaller lockup (20 px tall, ~143 px wide: above the 96 px
+   minimum, docs/06 §1.4), a smaller gap and a tighter trigger bring it to ~285 px. The dialog's bar matches. */
+@media (max-width: 22.49rem) {
+  .site-header__bar,
+  .mnav__top {
+    --logo-h: var(--space-5);
+    gap: var(--space-4);
+  }
+
+  /* Two classes: wins over the plain .menu-trigger rule further down. */
+  .site-header__bar .menu-trigger,
+  .mnav__top .menu-trigger {
+    padding-inline: var(--space-3);
+  }
+}
+
 @media (min-width: 48rem) {
   .site-header__cta.site-header__cta {
     display: inline-flex;

@@ -443,15 +443,16 @@ export const timeLogs = new Hono<AppEnv>()
     });
   })
 
-  // Whose time the viewer may log or read: only themselves, unless they read everyone's or log for others.
+  // Whose time the viewer may log or read: only themselves, unless they read everyone's or log for others. Each with the work email, so
+  // the screen can tell two people with the same name apart (final sweep A20; staff only).
   .get("/people", async (c) => {
     const me = actor(c);
     const wide = can(me.role, "time.readAll") || can(me.role, "time.writeAny");
-    if (!wide) return c.json({ people: [{ id: me.id, name: me.name }] });
+    if (!wide) return c.json({ people: [{ id: me.id, name: me.name, email: me.email }] });
     // Only roles that log time: the accountant reads the timesheet but never logs, so is not offered as a person.
     const { results } = await c.env.DB.prepare(
-      `SELECT id, name FROM staff_users WHERE status = 'active' AND role IN (${TIME_ROLES_SQL}) ORDER BY name COLLATE NOCASE, id LIMIT 100`,
-    ).all<{ id: string; name: string }>();
+      `SELECT id, name, email FROM staff_users WHERE status = 'active' AND role IN (${TIME_ROLES_SQL}) ORDER BY name COLLATE NOCASE, id LIMIT 100`,
+    ).all<{ id: string; name: string; email: string }>();
     return c.json({ people: results });
   })
 

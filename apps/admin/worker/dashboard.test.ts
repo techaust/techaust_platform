@@ -8,6 +8,7 @@ import { addDays, parseIsoDate, toIsoDate } from "@techaust/core/dates";
 import { ROLES } from "@techaust/core/permissions";
 import { SETTINGS_SCHEMAS } from "@techaust/core/settings";
 import { describe, expect, it } from "vitest";
+import { ACTIVITY_SQL } from "./dashboard.ts";
 import { ROUTES } from "./guard.ts";
 import { mkLog, mkPlan, today } from "./test-care.ts";
 import { insert, keysDeep, mkClient } from "./test-clients.ts";
@@ -31,6 +32,7 @@ async function audit(
   actor: string | null,
   at: number,
   entity: [string, string | null] = ["client", null],
+  summary: Record<string, unknown> = { secret: "never-shown" },
 ) {
   await insert("audit_log", {
     id: `a-${++n}-${crypto.randomUUID()}`,
@@ -40,7 +42,7 @@ async function audit(
     action,
     entity_type: entity[0],
     entity_id: entity[1],
-    summary: JSON.stringify({ secret: "never-shown" }),
+    summary: JSON.stringify(summary),
     ip: "203.0.113.77",
     user_agent: "Hidden/9.9",
     at,
@@ -199,6 +201,162 @@ describe("the activity lists", () => {
     const now = Date.now();
     for (let i = 0; i < 25; i++) await audit("lead.note", o.id, now - 100_000 - i);
     expect((await dash(o.cookie)).tiles.activity.items).toHaveLength(20);
+  });
+});
+
+describe("what an activity row is about (final sweep A13)", () => {
+  it("a draft by its title (never an anonymised client's), a sent document and an approval by the number, a time entry by its project or care plan as logged", async () => {
+    const o = await sessionFor("owner");
+    const staff = await sessionFor("staff");
+    const client = await mkClient();
+    const gone = await mkClient({ type: "individual", anonymised_at: Date.now() - 1000 });
+    const draft = crypto.randomUUID();
+    const goneDraft = crypto.randomUUID();
+    const sent = crypto.randomUUID();
+    const untitled = crypto.randomUUID();
+    const invoiceDraft = crypto.randomUUID();
+    const deleted = crypto.randomUUID(); // a draft deleted since its event: never inserted
+    for (const [id, clientId, title, number, type] of [
+      [draft, client, "Website rebuild", null, "proposal"],
+      [goneDraft, gone, "Asha Rao's shop", null, "proposal"],
+      [sent, client, "Sent title", "TH/PRP/2627/0042", "proposal"],
+      [untitled, client, null, null, "proposal"],
+      [invoiceDraft, client, "March retainer", null, "tax_invoice"],
+    ] as const)
+      await insert("documents", {
+        id,
+        type,
+        client_id: clientId,
+        currency: "INR",
+        version_group_id: id,
+        version: 1,
+        title,
+        number_display: number,
+      });
+    const approval = crypto.randomUUID();
+    await insert("approvals", {
+      id: approval,
+      kind: "discount",
+      document_id: draft,
+      requested_by: o.id,
+      content_sha256: "h",
+      status: "pending",
+      created_at: 1,
+    });
+    // completed, so the project counts of the figures below stay the fixture's own
+    const project = await mkProject(client, { status: "completed" });
+    const moved = await mkProject(client, { status: "completed" });
+    const plan = await mkPlan(o.id, { clientId: client });
+    const now = Date.now();
+    await audit("document.create", o.id, now - 1000, ["document", draft]);
+    await audit("document.create", o.id, now - 2000, ["document", goneDraft]);
+    await audit("document.send", o.id, now - 3000, ["document", sent]);
+    await audit("document.create", o.id, now - 3500, ["document", untitled]);
+    await audit("approval.request", o.id, now - 4000, ["approval", approval]);
+    await audit("invoice.issue", o.id, now - 4200, ["document", invoiceDraft]);
+    await audit("document.create", o.id, now - 4400, ["document", deleted]);
+    await audit("lead.create", o.id, now - 4600, ["lead", "purged-lead"]);
+    // the entry was logged against one project and later moved (or deleted): the row names the project of its own event
+    await audit("time.create", staff.id, now - 5000, ["time_log", "tl-a13-1"], {
+      timeLogId: "tl-a13-1",
+      projectId: project.id,
+      carePlanId: null,
+    });
+    await audit("time.update", staff.id, now - 6000, ["time_log", "tl-a13-1"], {
+      timeLogId: "tl-a13-1",
+      projectId: moved.id,
+      carePlanId: null,
+    });
+    await audit("time.delete", staff.id, now - 7000, ["time_log", "tl-a13-2"], {
+      timeLogId: "tl-a13-2",
+      projectId: null,
+      carePlanId: plan.id,
+    });
+    const projectRow = await env.DB.prepare("SELECT code, name FROM projects WHERE id = ?")
+      .bind(project.id)
+      .first<{ code: string; name: string }>();
+    const movedRow = await env.DB.prepare("SELECT code, name FROM projects WHERE id = ?")
+      .bind(moved.id)
+      .first<{ code: string; name: string }>();
+    const clientCode = (
+      await env.DB.prepare("SELECT code FROM clients WHERE id = ?").bind(client).first<{ code: string }>()
+    )?.code;
+
+    const items = (await dash(o.cookie)).tiles.activity.items as J[];
+    const byEntity = (id: string, action: string) =>
+      items.find((i) => i.entityId === id && i.action === action);
+    const none = { project: null, carePlan: null };
+    expect(byEntity(draft, "document.create")).toMatchObject({
+      ref: null,
+      title: "Website rebuild",
+      docType: "proposal",
+      gone: false,
+      ...none,
+    });
+    // review 1: the row carries the document's type, so an invoice opens /invoices/:id
+    expect(byEntity(invoiceDraft, "invoice.issue")).toMatchObject({
+      docType: "tax_invoice",
+      gone: false,
+      title: "March retainer",
+    });
+    // review 3: a deleted draft and a purged lead are gone: no title, no type
+    expect(byEntity(deleted, "document.create")).toMatchObject({
+      gone: true,
+      title: null,
+      docType: null,
+      ref: null,
+    });
+    expect(byEntity("purged-lead", "lead.create")).toMatchObject({ gone: true, ref: null, docType: null });
+    expect(byEntity(goneDraft, "document.create")).toMatchObject({ ref: null, title: null, ...none });
+    expect(byEntity(sent, "document.send")).toMatchObject({ ref: "TH/PRP/2627/0042", title: null, ...none });
+    expect(byEntity(untitled, "document.create")).toMatchObject({ ref: null, title: null });
+    expect(byEntity(approval, "approval.request")).toMatchObject({
+      ref: null,
+      title: "Website rebuild",
+      docType: null, // an approval opens the approval page, whatever its document
+      gone: false,
+    });
+    expect(byEntity("tl-a13-1", "time.create")).toMatchObject({
+      ref: null,
+      title: null,
+      project: { id: project.id, code: projectRow?.code, name: projectRow?.name },
+      carePlan: null,
+    });
+    expect(byEntity("tl-a13-1", "time.update")).toMatchObject({
+      project: { id: moved.id, code: movedRow?.code, name: movedRow?.name },
+    });
+    expect(byEntity("tl-a13-2", "time.delete")).toMatchObject({
+      project: null,
+      carePlan: { id: plan.id, clientCode },
+      gone: false, // a time entry is named by what it was logged against, never "gone"
+    });
+    // the summary is read in SQL for the two ids only: nothing of it is in the answer
+    expect(JSON.stringify(items)).not.toContain("timeLogId");
+
+    // Staff sees only their own time rows, with the same project (time entries are their personal data)
+    const staffItems = (await dash(staff.cookie)).tiles.activity.items as J[];
+    expect(staffItems.find((i) => i.action === "time.create" && i.entityId === "tl-a13-1")?.project?.id).toBe(
+      project.id,
+    );
+  });
+
+  it("every join of the activity statement is an index seek (EXPLAIN), for the newest-first and the by-action plans", async () => {
+    for (const [own, byAction] of [
+      [false, false],
+      [true, false],
+      [false, true],
+    ] as const) {
+      const plan = (
+        await env.DB.prepare(`EXPLAIN QUERY PLAN ${ACTIVITY_SQL(own, byAction)}`)
+          .bind(0, "[]", ...(own ? ["[]", "x"] : []))
+          .all<{ detail: string }>()
+      ).results
+        .map((r) => r.detail)
+        .join("\n");
+      expect(plan).not.toMatch(/SCAN (leads|clients|projects|approvals|documents|care_plans|staff_users)\b/);
+      expect(plan).toMatch(/SEARCH d USING INDEX/);
+      expect(plan).toMatch(/SEARCH tp USING INDEX/);
+    }
   });
 });
 

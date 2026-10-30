@@ -514,6 +514,16 @@ html:has(.mmenu[open]) {
   flex: none;
 }
 
+/* The address is a link with a 44 px target: padding above and below, inline, so the line doesn't move. */
+.pfoot__mail {
+  padding-block: calc((var(--target-min) - 1em) / 2);
+  color: inherit;
+}
+
+.pfoot__mail:focus-visible {
+  padding-block: 0;
+}
+
 /* ---------- Shared bits ---------- */
 
 .line {
@@ -883,6 +893,13 @@ html:has(.mmenu[open]) {
 
   .drow__main {
     grid-column: auto;
+  }
+
+  /* The pill sits in a slot of its own width, so the dates line up down the list whatever the status says (final sweep P7). */
+  .drow__status {
+    display: grid;
+    grid-template-columns: 7.5rem minmax(0, 1fr);
+    justify-items: start;
   }
 }
 
@@ -1281,6 +1298,11 @@ html:has(.mmenu[open]) {
   border-inline-start: 3px solid var(--color-accent-decor);
   background: var(--color-surface-alt);
   font-weight: 500;
+}
+
+/* A payment request's own notice (07-ZA item 15), above its summary slip with the page's rhythm. */
+.inv-doc__notice {
+  margin-block-end: var(--space-6);
 }
 
 /* From, Prepared for, Document: the PDF's three blocks, side by side on a wide sheet. */
@@ -2021,6 +2043,11 @@ textarea[aria-invalid="true"] {
   line-height: var(--text-sm--line-height);
 }
 
+/* Under the lines table (07-ZA item 16): the line belongs to the amounts above it. */
+.money__note--lines {
+  margin-block: var(--space-2) var(--space-4);
+}
+
 /* ---------- M5.4: invoices, payment requests and notes (POR-06) ---------- */
 
 /* The tables of these screens switch to cards by their own width (the RTable rule). */
@@ -2070,6 +2097,43 @@ textarea[aria-invalid="true"] {
 .inv-doc__against {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
+}
+
+/* Signed in, a note's invoice is one step away: the same words as a 44 px link, the arrow saying where it goes (final sweep P15). */
+.inv-doc__against--link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.75rem;
+  color: var(--color-link);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.inv-doc__against--link:hover {
+  color: var(--color-link-hover);
+}
+
+/* A note's reason, as its PDF prints it: the reason, then the words typed for it, read as one short passage under the heading. */
+.inv-doc__reason {
+  display: grid;
+  gap: var(--space-1);
+  max-width: var(--container-prose);
+  padding-inline-start: var(--space-4);
+  border-inline-start: 2px solid var(--color-border);
+}
+
+.inv-doc__reason p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.inv-doc__reason-line {
+  font-weight: 500;
+}
+
+.inv-doc__reason-detail {
+  color: var(--color-text-muted);
 }
 
 .inv-doc > .notice {
@@ -2299,6 +2363,14 @@ textarea[aria-invalid="true"] {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   text-align: end;
+}
+
+/* The label sits over its amount (as the summary slip's figures), so a phone keeps the number on one line beside it. */
+.inv-tile__bal-label {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 400;
 }
 
 .inv-tile__due {

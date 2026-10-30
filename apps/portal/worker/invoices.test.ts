@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { fixtures } from "./fixtures.ts";
 import { ROUTES } from "./guard.ts";
 import app from "./index.ts";
-import { VIEW_SQL } from "./invoice-summary.ts";
+import { CREDIT_NOTES_SQL, SUMMARY_COLS, SUMMARY_PARENT_JOIN, VIEW_SQL } from "./invoice-summary.ts";
 import { LIST_SQL, ONE_SQL } from "./invoices.ts";
 import { bodyOf, call, nextIp, ORIGIN, one, sessionFor } from "./test-helpers.ts";
 
@@ -188,6 +188,260 @@ describe("one invoice and its PDF [POR-06]", () => {
     expect((await call(`/invoices/${theirs}/pdf`, { cookie: s.cookie })).status).toBe(404);
     const plain = await sessionFor(f.a.plain);
     expect((await call(`/invoices/${withPdf}/pdf`, { cookie: plain.cookie })).status).toBe(404);
+  });
+});
+
+/** An issued invoice with three lines (10 % off, ₹50.00 off, no discount): the lines go in while it is a draft, as the issue does. */
+async function invoiceWithLines(orgId: string) {
+  const id = uuidv7();
+  const n = ++seq + 8000;
+  await env.DB.prepare(
+    "INSERT INTO documents (id, type, status, client_id, currency, subtotal_minor, taxable_minor, cgst_minor, sgst_minor, total_minor, balance_minor) VALUES (?1, 'tax_invoice', 'draft', ?2, 'INR', 300000, 285000, 25650, 25650, 336300, 0)",
+  )
+    .bind(id, orgId)
+    .run();
+  const line = (pos: number, kind: string | null, value: number | null, taxable: number) =>
+    env.DB.prepare(
+      "INSERT INTO document_lines (id, document_id, position, description, qty_milli, unit, rate_minor, discount_kind, discount_value, taxable_minor, gst_rate_bp, cgst_minor, sgst_minor, line_total_minor) VALUES (?1, ?2, ?3, ?4, 1000, 'fixed', 100000, ?5, ?6, ?7, 1800, ?8, ?8, ?9)",
+    ).bind(
+      uuidv7(),
+      id,
+      pos,
+      `Line ${pos}`,
+      kind,
+      value,
+      taxable,
+      (taxable * 9) / 100,
+      (taxable * 118) / 100,
+    );
+  await env.DB.batch([
+    line(1, "percent", 1000, 90000),
+    line(2, "fixed", 5000, 95000),
+    line(3, null, null, 100000),
+  ]);
+  await env.DB.prepare(
+    "UPDATE documents SET status = 'issued', series = 'inv-l', fy = '2627', number = ?2, number_display = ?3, frozen_at = 1000, issue_date = '2026-11-05', due_date = '2026-11-12', balance_minor = 336300 WHERE id = ?1",
+  )
+    .bind(id, n, `TH/INV/2627/${n}`)
+    .run();
+  return { id, number: `TH/INV/2627/${n}` };
+}
+
+/** A note against `parent`, inserted frozen (as doc-token.test.ts does), with its frozen request in `header_extras.noteOf`. */
+async function noteAgainst(
+  orgId: string,
+  parent: { id: string; number: string },
+  type: "credit_note" | "debit_note",
+  o: { frozenAt?: number; reason?: { code: string; text: string }; headerExtras?: string } = {},
+) {
+  const id = uuidv7();
+  const n = ++seq + 8500;
+  const number = `TH/${type === "credit_note" ? "CN" : "DN"}/2627/${n}`;
+  const noteOf = {
+    kind: type === "credit_note" ? "credit" : "debit",
+    parent: {
+      id: parent.id,
+      type: "tax_invoice",
+      fy: "2627",
+      number: parent.number,
+      issueDate: "2026-11-05",
+      supplyType: "intra",
+      recipientStatus: "unregistered",
+      placeOfSupplyCode: "19",
+      totalMinor: 336300,
+      totalInrMinor: null,
+    },
+    reason: o.reason ?? { code: "service_deficient", text: "Two pages were late" },
+    request: { mode: "amount", grossMinor: 5000, takes: [{ line: 0, taxableMinor: 4237 }] },
+  };
+  await env.DB.prepare(
+    "INSERT INTO documents (id, type, status, client_id, currency, parent_id, frozen_at, series, fy, number, number_display, issue_date, due_date, total_minor, balance_minor, header_extras) VALUES (?1, ?2, 'issued', ?3, 'INR', ?4, ?5, 'note-l', '2627', ?6, ?7, '2026-11-06', ?8, 5000, ?9, ?10)",
+  )
+    .bind(
+      id,
+      type,
+      orgId,
+      parent.id,
+      o.frozenAt ?? 1000,
+      n,
+      number,
+      type === "credit_note" ? null : "2026-11-13",
+      type === "credit_note" ? 0 : 5000,
+      o.headerExtras ?? JSON.stringify({ noteOf }),
+    )
+    .run();
+  return { id, number };
+}
+
+describe("the summary's line discounts, credit notes and a note's invoice and reason (final sweep P2, P3, P15) [POR-06]", () => {
+  type Doc = {
+    id: string;
+    parentId: string | null;
+    parentNumber: string | null;
+    noteReason: { code: string; text: string } | null;
+    creditNotes: { id: string; numberDisplay: string | null }[];
+    lines: {
+      position: number;
+      discountKind: string | null;
+      discountValue: number | null;
+      discount: string | null;
+    }[];
+  };
+  const get = async (cookie: string, id: string) => {
+    const res = await call(`/invoices/${id}`, { cookie });
+    return { status: res.status, doc: ((await bodyOf(res)) as { document?: Doc }).document };
+  };
+
+  it("an invoice carries each line's discount as the PDF prints it and its issued credit notes, in issue order; never a debit note", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.a.finance);
+    const inv = await invoiceWithLines(f.a.id);
+    const second = await noteAgainst(f.a.id, inv, "credit_note", { frozenAt: 3000 });
+    const first = await noteAgainst(f.a.id, inv, "credit_note", { frozenAt: 2000 });
+    await noteAgainst(f.a.id, inv, "debit_note", { reason: { code: "price_correction", text: "Rate" } });
+    const { status, doc } = await get(s.cookie, inv.id);
+    expect(status).toBe(200);
+    expect(doc?.lines.map((l) => [l.position, l.discountKind, l.discountValue, l.discount])).toEqual([
+      [1, "percent", 1000, "10 %"],
+      [2, "fixed", 5000, "₹50.00"],
+      [3, null, null, null],
+    ]);
+    expect(doc?.creditNotes).toEqual([
+      { id: first.id, numberDisplay: first.number },
+      { id: second.id, numberDisplay: second.number },
+    ]);
+    // an invoice has no parent of its own here and no reason
+    expect(doc).toMatchObject({ parentId: null, noteReason: null });
+  });
+
+  it("a credit or debit note carries its invoice (id and number) and its reason as frozen; no credit notes of its own", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.a.finance);
+    const inv = await invoiceWithLines(f.a.id);
+    const cn = await noteAgainst(f.a.id, inv, "credit_note");
+    const dn = await noteAgainst(f.a.id, inv, "debit_note", {
+      reason: { code: "tax_charged_too_low", text: "" },
+    });
+    expect((await get(s.cookie, cn.id)).doc).toMatchObject({
+      parentId: inv.id,
+      parentNumber: inv.number,
+      noteReason: { code: "service_deficient", text: "Two pages were late" },
+      creditNotes: [],
+    });
+    expect((await get(s.cookie, dn.id)).doc).toMatchObject({
+      parentId: inv.id,
+      parentNumber: inv.number,
+      noteReason: { code: "tax_charged_too_low", text: "" },
+      creditNotes: [],
+    });
+    // damaged frozen data names no reason (never a 500)
+    const damaged = await noteAgainst(f.a.id, inv, "credit_note", {
+      headerExtras: JSON.stringify({ noteOf: { kind: "credit", reason: "x" } }),
+    });
+    expect((await get(s.cookie, damaged.id)).doc).toMatchObject({ parentId: inv.id, noteReason: null });
+    const notJson = await noteAgainst(f.a.id, inv, "credit_note", { headerExtras: "{not json" });
+    expect((await get(s.cookie, notJson.id)).doc).toMatchObject({ noteReason: null });
+  });
+
+  it("scoping: another organisation's contact gets the same 404 for the invoice and its notes; the statements bound to another organisation return nothing", async () => {
+    const f = await fixtures();
+    const a = await sessionFor(f.a.finance);
+    const b = await sessionFor(f.b.finance);
+    const inv = await invoiceWithLines(f.a.id);
+    const cn = await noteAgainst(f.a.id, inv, "credit_note");
+    const missing = await call(`/invoices/no-such-${uuidv7()}`, { cookie: b.cookie });
+    const expected = { status: missing.status, body: await bodyOf(missing) };
+    for (const id of [inv.id, cn.id]) {
+      const r = await call(`/invoices/${id}`, { cookie: b.cookie });
+      expect({ status: r.status, body: await bodyOf(r) }).toEqual(expected);
+    }
+    // the credit notes and the parent are read with the session's organisation only
+    const credits = (await env.DB.prepare(CREDIT_NOTES_SQL).bind(f.b.id, inv.id).all()).results;
+    expect(credits).toEqual([]);
+    expect((await env.DB.prepare(CREDIT_NOTES_SQL).bind(f.a.id, inv.id).all()).results).toHaveLength(1);
+    expect((await env.DB.prepare(ONE_SQL).bind(f.b.id, cn.id).all()).results).toEqual([]);
+    // B's own invoice lists none of A's notes; a contact without finance sees nothing
+    const theirs = await mk(f.b.id);
+    expect((await get(b.cookie, theirs)).doc?.creditNotes).toEqual([]);
+    const plain = await sessionFor(f.a.plain);
+    expect((await call(`/invoices/${inv.id}`, { cookie: plain.cookie })).status).toBe(404);
+    expect((await get(a.cookie, inv.id)).doc?.creditNotes).toEqual([{ id: cn.id, numberDisplay: cn.number }]);
+  });
+
+  it("the parent is named only while the client may open it: one join bound to the organisation, the open statuses on the link (review 7)", async () => {
+    // the parent check trigger allows only an issued parent of the same client, so the guard is proven on the statement itself: pointed at
+    // another organisation, or at a parent that is void, it yields NULL
+    const f = await fixtures();
+    const inv = await invoiceWithLines(f.a.id);
+    const cn = await noteAgainst(f.a.id, inv, "credit_note");
+    const parentOf = async (cols: string, join = SUMMARY_PARENT_JOIN) =>
+      (await env.DB.prepare(`SELECT ${cols} FROM documents d ${join} WHERE d.id = ?1`)
+        .bind(cn.id)
+        .first<{ parent_number: string | null; parent_open_id: string | null }>()) ?? null;
+    expect(await parentOf(SUMMARY_COLS)).toMatchObject({ parent_number: inv.number, parent_open_id: inv.id });
+    // another organisation's parent is never joined: neither its number nor its id
+    expect(
+      await parentOf(
+        SUMMARY_COLS,
+        SUMMARY_PARENT_JOIN.replace("p.client_id = d.client_id", `p.client_id = '${f.b.id}'`),
+      ),
+    ).toMatchObject({ parent_number: null, parent_open_id: null });
+    // a parent the client may not open (void) keeps its number but no link
+    expect(
+      await parentOf(SUMMARY_COLS.replace("p.voided_at IS NULL", "p.voided_at IS NOT NULL")),
+    ).toMatchObject({ parent_number: inv.number, parent_open_id: null });
+    // an invoice's own parent (a converted proforma) is not offered as a link: notes only
+    expect(SUMMARY_COLS).toContain("d.type IN ('credit_note', 'debit_note')");
+    // the parent is read once, by one join, not by two subselects
+    expect(SUMMARY_COLS).not.toContain("SELECT");
+    expect(SUMMARY_PARENT_JOIN).toBe(
+      "LEFT JOIN documents p ON p.id = d.parent_id AND p.client_id = d.client_id",
+    );
+  });
+
+  it("the statements that select the summary join the parent by its primary key (EXPLAIN QUERY PLAN)", async () => {
+    const plan = (
+      await env.DB.prepare(`EXPLAIN QUERY PLAN ${ONE_SQL}`).bind("c", "d").all<{ detail: string }>()
+    ).results
+      .map((r) => r.detail)
+      .join(" | ");
+    expect(plan).toMatch(/SEARCH p USING INDEX sqlite_autoindex_documents_1 \(id=\?\)/);
+    expect(plan).not.toMatch(/SCAN [dp]\b(?! USING)/);
+  });
+
+  it("CREDIT_NOTES_SQL reads the invoice by its primary key, then its notes by documents_parent (EXPLAIN QUERY PLAN)", async () => {
+    const plan = (
+      await env.DB.prepare(`EXPLAIN QUERY PLAN ${CREDIT_NOTES_SQL}`).bind("c", "d").all<{ detail: string }>()
+    ).results
+      .map((r) => r.detail)
+      .join(" | ");
+    expect(plan).toMatch(/SEARCH i USING INDEX sqlite_autoindex_documents_1 \(id=\?\)/);
+    expect(plan).toMatch(/SEARCH n USING INDEX documents_parent/);
+    expect(plan).not.toMatch(/SCAN [in]\b(?! USING)/);
+  });
+
+  it("CREDIT_NOTES_SQL reads notes only for a tax or export invoice the client may open (final sweep review 6)", async () => {
+    const f = await fixtures();
+    const inv = await invoiceWithLines(f.a.id);
+    const cn = await noteAgainst(f.a.id, inv, "credit_note");
+    const notes = async (sql: string, id: string) =>
+      (await env.DB.prepare(sql).bind(f.a.id, id).all<{ id: string }>()).results.map((r) => r.id);
+    expect(await notes(CREDIT_NOTES_SQL, inv.id)).toEqual([cn.id]);
+    // a note (or a proforma, or anything else) reads none, whatever points at it
+    expect(await notes(CREDIT_NOTES_SQL, cn.id)).toEqual([]);
+    // the type rule on its own: the same invoice read as if it were a proforma or a note gives nothing
+    expect(CREDIT_NOTES_SQL).toContain("i.type IN ('tax_invoice', 'export_invoice')");
+    for (const other of ["'proforma'", "'credit_note', 'debit_note'"])
+      expect(
+        await notes(
+          CREDIT_NOTES_SQL.replace("i.type IN ('tax_invoice', 'export_invoice')", `i.type IN (${other})`),
+          inv.id,
+        ),
+      ).toEqual([]);
+    // and on an invoice the client may not open (void), as the guard on its own
+    expect(
+      await notes(CREDIT_NOTES_SQL.replace("i.voided_at IS NULL", "i.voided_at IS NOT NULL"), inv.id),
+    ).toEqual([]);
   });
 });
 

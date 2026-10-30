@@ -295,7 +295,8 @@ export type LeadsQuery = {
   before?: string | undefined;
 };
 export type BoardColumn = { stage: LeadStage; count: number; leads: LeadItem[]; next: string | null };
-export type Assignee = { id: string; name: string };
+/** A member a lead can be assigned to; the work email tells two members with the same name apart (final sweep A20). */
+export type Assignee = { id: string; name: string; email: string };
 export type NewLead = {
   name: string;
   email: string;
@@ -892,6 +893,16 @@ export type DashboardTiles = {
       entityType: string;
       entityId: string | null;
       ref: string | null;
+      /** A document row's own type (the invoice family opens /invoices/:id, an offer /documents/:id); null for every other row. */
+      docType: string | null;
+      /** The record the row names no longer exists (a deleted draft, a purged lead): no title and no link. */
+      gone: boolean;
+      /** A document (or an approval of one) with no number yet: its title; null for an anonymised client's, or when it has none ("Untitled"). */
+      title: string | null;
+      /** A time entry logged against a project, as its audit row recorded it. */
+      project: { id: string; code: string; name: string } | null;
+      /** A time entry logged against a care plan: the plan and its client's code. */
+      carePlan: { id: string; clientCode: string } | null;
     }[];
   };
 };
@@ -1079,7 +1090,25 @@ type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 /** `raw`: a binary body sent as it is (`application/octet-stream`; the signature image), instead of JSON. */
 type Options = { method?: Method; body?: unknown; raw?: Blob; signedIn?: boolean };
 
-const NETWORK = "Couldn't reach the server. Check your connection and try again.";
+/** No answer at all (the fetch itself failed): the only case that reads as offline. */
+export const NETWORK = "Couldn't reach the server. Check your connection and try again.";
+/** The words of the Worker's own unhandled error (`worker/app.ts` onError), for an error answer that carries none. */
+const SERVER_ERROR = "Something went wrong";
+
+/**
+ * The error an answer carries, one rule for every path that reads one (`request`, the file upload, the statement PDF poll; final sweep A15 and
+ * review 4): our JSON error with its code and words; anything else (a Cloudflare 502 or 503 page, a CPU-limit page, an error without words,
+ * no body) the Worker's own unhandled error, in its words or the caller's `fallback`. The server answered, so it is never `network` (offline).
+ */
+export function answerError(
+  data: unknown,
+  fallback: string = SERVER_ERROR,
+): { code: string; message: string } {
+  const err = typeof data === "object" && data !== null ? (data as ApiErrorBody).error : undefined;
+  const code = typeof err?.code === "string" && err.code !== "" ? err.code : null;
+  if (code && typeof err?.message === "string" && err.message !== "") return { code, message: err.message };
+  return { code: code ?? "internal", message: fallback };
+}
 
 async function send<T>(path: string, { method, body, raw, signedIn = true }: Options): Promise<T> {
   const m: Method = method ?? (body === undefined && raw === undefined ? "GET" : "POST");
@@ -1101,7 +1130,8 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
   }
   const data = (await res.json().catch(() => ({}))) as T & ApiErrorBody;
   if (res.ok) return data;
-  const e = data.error ?? { code: "network", message: NETWORK };
+  // The server answered, so this is never "offline" (final sweep A15): `answerError`.
+  const e = answerError(data);
   // The worker's `error.details` (`err(..., details)`): `advance_lut_missing` sends `{ fy }`, `debit_tax_only_invalid` `{ reason }`. The last day of
   // `credit_deadline_passed` is a top-level `date` (M5.3).
   const inner = data.error?.details;
@@ -1460,7 +1490,7 @@ export const api = {
   timeEntries: (q: TimeQuery = {}) => request<TimePage>(`/time${qs(q)}`),
   timeWeek: (q: TimeWeekQuery = {}) => request<TimeWeek>(`/time/week${qs(q)}`),
   timeTargets: (q: string, workDate?: string) => request<TimeTargets>(`/time/targets${qs({ q, workDate })}`),
-  timePeople: () => request<{ people: { id: string; name: string }[] }>("/time/people"),
+  timePeople: () => request<{ people: { id: string; name: string; email: string }[] }>("/time/people"),
   logTime: (body: NewTimeInput) =>
     request<{ id: string; createdAt: number; updatedAt: number }>("/time", { body }),
   updateTime: (id: string, body: TimePatch) =>
@@ -1538,7 +1568,8 @@ export function uploadFile(
         data = null;
       }
       if (xhr.status >= 200 && xhr.status < 300 && data) return resolve(data);
-      const e = data?.error ?? { code: "network", message: NETWORK };
+      // the server answered: its error, or the Worker's own unhandled one, never "offline" (final sweep review 4)
+      const e = answerError(data);
       if (xhr.status === 401 && e.code === "unauthenticated") unauthenticatedHandler?.();
       reject(new RequestError(xhr.status, e.code, e.message, data?.request_id ?? null));
     };

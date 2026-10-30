@@ -14,6 +14,7 @@ import { Notice } from "../../components/ui.tsx";
 import { UnsavedChangesGuard } from "../../components/unsaved.tsx";
 import { dateError } from "../../lib/date-field.ts";
 import { countryOptions, dateToMs, SERVICE_OPTIONS } from "../../lib/leads.ts";
+import { personLabel, personLabels } from "../../lib/people.ts";
 import { type Answers, AnswersFields, NO_ANSWERS } from "./answers.tsx";
 import { CRUMBS, LeadsGate } from "./parts.tsx";
 
@@ -44,6 +45,8 @@ function NewLead() {
   const navigate = useNavigate();
   const toast = useToast();
   const people = useLoad(() => api.leadAssignees(), "");
+  // Two people with one name are told apart by their work email (final sweep A20).
+  const ownerLabels = personLabels(people.data?.assignees ?? []);
   const [f, setF] = useState<Form>(EMPTY);
   const [answers, setAnswers] = useState<Answers>(NO_ANSWERS);
   const dates = useUnreadDates<"date">();
@@ -216,7 +219,7 @@ function NewLead() {
                   <option value="">Unassigned</option>
                   {(people.data?.assignees ?? []).map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name || "Name not set yet"}
+                      {personLabel(ownerLabels, p)}
                     </option>
                   ))}
                 </select>

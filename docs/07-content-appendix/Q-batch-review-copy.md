@@ -254,7 +254,7 @@
 | OFF33 | Nothing is sent to the client. | Dialog note |
 | OFF34 | Starting… | Busy |
 | OFF35 | Project {code} started. | Toast |
-| OFF36 | Accepted by · Email · Date and time · Document fingerprint · Declined by · Reason · IP address · Browser | Record labels |
+| OFF36 | Accepted by · Email · Date and time · PDF fingerprint (07-ZA item 19; was Document fingerprint) · Declined by · Reason · IP address · Browser | Record labels |
 | OFF37 | Download the acceptance certificate | Button |
 | OFF38 | Start project | Button |
 | OFF39 | Number · Total · Valid until | Email preview facts |
@@ -313,7 +313,7 @@
 | POR35 | Accepting… | Busy |
 | POR36 | You accepted this {kind} | Result |
 | POR37 | {name} accepted this {kind} | Result |
-| POR38 | Accepted by · Email · Date and time · Document fingerprint · Declined by · Reason | Record labels |
+| POR38 | Accepted by · Email · Date and time · PDF fingerprint (07-ZA item 19; was Document fingerprint) · Declined by · Reason | Record labels |
 | POR39 | This version is locked: it can't be changed or accepted again. | Result note |
 | POR40 | What happens next: we'll confirm the start date with you and send the first invoice. | Result note |
 | POR41 | Why are you declining? | Decline title |

@@ -153,7 +153,11 @@ export function AccountMenu(props: AccountProps & { defaultOpen?: boolean | unde
 
 /** Below md: one "Menu" button opens the sections and the account, full screen. */
 export function MobileMenu(
-  props: AccountProps & { current: NavKey | null; hrefOf: (key: NavKey) => string },
+  props: AccountProps & {
+    current: NavKey | null;
+    hrefOf: (key: NavKey) => string;
+    hidden?: readonly NavKey[] | undefined;
+  },
 ) {
   const ref = useRef<HTMLDialogElement>(null);
   const [open, setOpen] = useState(false);
@@ -203,7 +207,7 @@ export function MobileMenu(
             </div>
             <nav aria-label="Portal">
               <ul className="mmenu__list">
-                {NAV.map((item) => (
+                {NAV.filter((item) => !props.hidden?.includes(item.key)).map((item) => (
                   <li key={item.key}>
                     <Link
                       to={props.hrefOf(item.key)}

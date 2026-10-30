@@ -164,14 +164,8 @@ export function HomeScreen(props: {
           {N.alsoTitle}
         </h2>
         <div className="soons">
-          {props.invoicesTile ?? (
-            <ComingSoon
-              level={3}
-              title={WORDS.nav.invoices}
-              icon={<Receipt size={24} />}
-              body={N.soon.invoices}
-            />
-          )}
+          {/* 07-ZA item 12: no Invoices tile for a contact who can't see finance (the route passes none for them). */}
+          {props.invoicesTile}
           <ComingSoon
             level={3}
             title={WORDS.nav.projects}
@@ -213,7 +207,10 @@ export function DocumentsScreen(props: {
                     <span className="drow__title">{titleOf(d)}</span>
                     <span className="drow__meta">
                       {WORDS.kind[d.kind]} <span className="nowrap">{d.numberDisplay}</span>,{" "}
-                      {WORDS.doc.version.toLowerCase()} {d.version}
+                      {/* "version 1" never splits across lines (final sweep P6). */}
+                      <span className="nowrap">
+                        {WORDS.doc.version.toLowerCase()} {d.version}
+                      </span>
                     </span>
                   </span>
                   <span className="drow__status">

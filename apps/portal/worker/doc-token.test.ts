@@ -97,6 +97,8 @@ describe("a valid link opens exactly one document [POR-06]", () => {
         "balanceMinor",
         "bank",
         "creditedMinor",
+        // final sweep P2: the issued credit notes against an invoice (none here)
+        "creditNotes",
         "currency",
         "dueDate",
         // FX-4 (A5 5): false here (a tax invoice); true only for a proforma sealed with the estimate marker
@@ -105,7 +107,10 @@ describe("a valid link opens exactly one document [POR-06]", () => {
         "issueDate",
         "lines",
         "numberDisplay",
+        // final sweep P15: a note's reason and its invoice's id (both null on an invoice)
+        "noteReason",
         "paidMinor",
+        "parentId",
         "parentNumber",
         "pdfReady",
         "status",
@@ -248,6 +253,58 @@ describe("a valid link opens exactly one document [POR-06]", () => {
       balanceMinor: 0,
       bank: null,
     });
+  });
+
+  it("final sweep P2, P15: the link to an invoice names its issued credit notes; the link to a note names its invoice (id, number) and its frozen reason", async () => {
+    const f = await fixtures();
+    const parent = await frozenDoc(f.a.id, "tax_invoice");
+    const parentNumber = (
+      await one<{ n: string }>("SELECT number_display AS n FROM documents WHERE id = ?", parent)
+    )?.n;
+    const noteOf = {
+      kind: "credit",
+      parent: {
+        id: parent,
+        type: "tax_invoice",
+        fy: "2627",
+        number: parentNumber,
+        issueDate: "2026-11-05",
+        supplyType: "intra",
+        recipientStatus: "unregistered",
+        placeOfSupplyCode: "19",
+        totalMinor: 118000,
+        totalInrMinor: null,
+      },
+      reason: { code: "price_correction", text: "Agreed rate" },
+      request: { mode: "full", takes: [{ line: 0, taxableMinor: 100000 }] },
+    };
+    const cn = uuidv7();
+    await env.DB.prepare(
+      "INSERT INTO documents (id, type, status, client_id, currency, parent_id, frozen_at, series, fy, number, number_display, issue_date, total_minor, balance_minor, header_extras) VALUES (?1, 'credit_note', 'issued', ?2, 'INR', ?3, 1000, 'cn-p', '2627', 78, 'TH/CN/2627/0078', '2026-11-06', 5000, 0, ?4)",
+    )
+      .bind(cn, f.a.id, parent, JSON.stringify({ noteOf }))
+      .run();
+    const inv = (await (await use(await link(f.a.finance, parent))).json()) as {
+      document: Record<string, unknown>;
+    };
+    expect(inv.document).toMatchObject({
+      creditNotes: [{ id: cn, numberDisplay: "TH/CN/2627/0078" }],
+      parentId: null,
+      noteReason: null,
+    });
+    const note = (await (await use(await link(f.a.finance, cn))).json()) as {
+      document: Record<string, unknown>;
+    };
+    expect(note.document).toMatchObject({
+      parentId: parent,
+      parentNumber,
+      noteReason: { code: "price_correction", text: "Agreed rate" },
+      creditNotes: [],
+    });
+    // another organisation's link opens its own document only: none of A's notes or invoice
+    const theirs = (await (await use(f.tokens.bIssued)).json()) as { document: Record<string, unknown> };
+    expect(theirs.document).toMatchObject({ creditNotes: [], parentId: null });
+    expect(JSON.stringify(theirs)).not.toContain(cn);
   });
 
   it("is declared public, a POST, with no token in the path or query of any route", () => {

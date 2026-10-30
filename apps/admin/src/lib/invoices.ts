@@ -145,8 +145,14 @@ export const INV_COPY = {
   voidButton: "Void invoice",
   // OPEN (08-C RA-10): whether a never-delivered invoice may be reported as cancelled.
   voidBody:
-    "Voiding cancels this invoice. It keeps its number, which is reported as cancelled in your GST return. You can only void an invoice in the month it was issued, before it has been emailed, paid or corrected by a credit or debit note; after that, use a credit note.",
+    "Voiding cancels this invoice. It keeps its number, which is reported as cancelled in your GST return. You can only void an invoice in the month it was issued, before it has been emailed, opened by the client in the portal, paid or corrected by a credit or debit note; after that, use a credit note.",
+  // 07-ZA item 9 (owner 2026-10-30): a proforma's own void dialog.
+  voidProformaBody:
+    "Voiding cancels this proforma. It keeps its number. You can void it only before it has been emailed, opened by the client in the portal, paid or converted into an invoice.",
+  voidProformaConfirm: "Void proforma",
   voidReason: "Reason (required, kept with the invoice)",
+  // 07-ZA item 18 (owner 2026-10-30): the reason box of a proforma's void dialog.
+  voidProformaReason: "Reason (required, kept with the proforma)",
   voidReasonEmpty: "Enter a reason for voiding.",
   voidConfirm: "Void invoice",
   milestoneBackReady: "The milestone is back to Ready to bill.",
@@ -192,7 +198,8 @@ export const frozenBanner = (date: string, name: string, type?: string) =>
   type === "proforma"
     ? proformaLockedLine(date, name)
     : `Issued ${date} by ${name}. This invoice is locked: corrections are made with a credit note or a debit note.`;
-export const voidTitle = (number: string) => `Void invoice ${number}`;
+export const voidTitle = (number: string, type?: string) =>
+  type === "proforma" ? `Void proforma ${number}` : `Void invoice ${number}`;
 export const voidedLine = (date: string, name: string, reason: string) =>
   `Voided ${date} by ${name}: ${reason}`;
 /** 07-R §4: "This milestone already has invoice {number}." or, for a draft, "This milestone already has a draft invoice." */

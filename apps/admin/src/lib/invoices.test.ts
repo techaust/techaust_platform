@@ -173,6 +173,8 @@ describe("07-R copy", () => {
       "Issued 27 Oct 2026 by Asha. This invoice is locked: corrections are made with a credit note or a debit note.",
     );
     expect(voidTitle("TH/INV/2627/0001")).toBe("Void invoice TH/INV/2627/0001");
+    // 07-ZA item 9: a proforma's dialog names a proforma.
+    expect(voidTitle("TH/PI/2627/0001", "proforma")).toBe("Void proforma TH/PI/2627/0001");
     expect(milestoneHasInvoice(null)).toBe("This milestone already has a draft invoice.");
     expect(milestoneHasInvoice("TH/INV/2627/0001")).toBe(
       "This milestone already has invoice TH/INV/2627/0001.",
@@ -180,6 +182,9 @@ describe("07-R copy", () => {
     expect(convertedToInvoice(null)).toBe("Converted to a draft invoice.");
     expect(convertedToInvoice("TH/INV/2627/0001")).toBe("Converted to invoice TH/INV/2627/0001.");
     expect(INV_COPY.voidReasonEmpty).toBe("Enter a reason for voiding.");
+    // 07-ZA item 18: the reason box names what is voided.
+    expect(INV_COPY.voidReason).toBe("Reason (required, kept with the invoice)");
+    expect(INV_COPY.voidProformaReason).toBe("Reason (required, kept with the proforma)");
     // 07-R's four, then M5.2's Converted (07-S §6) and Paid (docs/06 §5.5), then M5.3's two (07-T §6; changed on purpose)
     expect(BADGE_LABELS).toEqual({
       draft: "Draft",

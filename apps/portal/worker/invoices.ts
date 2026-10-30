@@ -4,11 +4,14 @@
 import { Hono } from "hono/tiny";
 import { type AppEnv, BAD_REQUEST, type Ctx, err, NOT_FOUND } from "./context.ts";
 import {
+  CREDIT_NOTES_SQL,
+  type CreditNoteRow,
   LINES_SQL,
   type LineRow,
   listItemOf,
   STATUSES_SQL,
   SUMMARY_COLS,
+  SUMMARY_PARENT_JOIN,
   type SummaryRow,
   summaryOf,
   TYPES_SQL,
@@ -31,7 +34,7 @@ export const LIST_SQL = `SELECT d.id, d.type, d.status, d.number_display, d.issu
    ORDER BY d.issue_date DESC, d.id DESC LIMIT ?4`;
 
 /** One document of this client (?1 client, ?2 id): the summary's columns. */
-export const ONE_SQL = `SELECT ${SUMMARY_COLS} FROM documents d
+export const ONE_SQL = `SELECT ${SUMMARY_COLS} FROM documents d ${SUMMARY_PARENT_JOIN}
    WHERE d.client_id = ?1 AND d.id = ?2 AND d.frozen_at IS NOT NULL AND d.voided_at IS NULL AND d.status IN (${STATUSES_SQL}) AND d.type IN (${TYPES_SQL})`;
 
 /** An id the database could not hold is a 404 without a query. */
@@ -65,14 +68,21 @@ export const invoices = new Hono<AppEnv>()
     // FX-5 (08-C RA-10): the first view is written FIRST, in the batch that reads what the answer shows, never after the answer (a void landing
     // between a 200 and a background write would pass, and a failed background write would lose the view). The access row and the session touch stay
     // in the background (index.ts).
-    const [, doc, lines] = await c.env.DB.batch([
+    const [, doc, lines, credits] = await c.env.DB.batch([
       bound(c.env.DB, VIEW_SQL, [s.clientId, id, Date.now()]),
       bound(c.env.DB, ONE_SQL, [s.clientId, id]),
       bound(c.env.DB, LINES_SQL, [s.clientId, id]),
+      bound(c.env.DB, CREDIT_NOTES_SQL, [s.clientId, id]),
     ]);
     const row = doc?.results[0] as SummaryRow | undefined;
     if (!row) return err(c, NOT_FOUND, 404);
-    return c.json({ document: summaryOf(row, (lines?.results ?? []) as LineRow[]) });
+    return c.json({
+      document: summaryOf(
+        row,
+        (lines?.results ?? []) as LineRow[],
+        (credits?.results ?? []) as CreditNoteRow[],
+      ),
+    });
   })
   .get("/:id/pdf", async (c) => {
     const s = scope(c);

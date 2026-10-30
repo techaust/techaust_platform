@@ -22,8 +22,10 @@ export type ContactForm = z.infer<typeof contactForm>;
 
 /** Catalogue codes S1–S18 (which ones are active is checked against the catalogue on the server). */
 export const serviceCode = z
-  .string({ error: "Please choose a service, or 'Not sure'" })
-  .regex(/^(S([1-9]|1[0-8])|not-sure)$/, { error: "Please choose a service, or 'Not sure'" });
+  .string({ error: "Please choose a service, or ‘Not sure: recommend something’" })
+  .regex(/^(S([1-9]|1[0-8])|not-sure)$/, {
+    error: "Please choose a service, or ‘Not sure: recommend something’",
+  });
 
 export const TOOLS = [
   "tally",
@@ -61,11 +63,11 @@ export const quoteSteps = {
   budget: z
     .object({
       currency: z.enum(["INR", "USD"]),
-      budget: z.string({ error: "Choose a budget range, or 'Not sure'" }),
+      budget: z.string({ error: "Choose a budget range, or ‘Not sure’" }),
       timeline: z.enum(TIMELINES, { error: "Choose a timeline" }),
     })
     .refine((v) => (BUDGET_BANDS[v.currency] as readonly string[]).includes(v.budget), {
-      error: "Choose a budget range, or 'Not sure'",
+      error: "Choose a budget range, or ‘Not sure’",
       path: ["budget"],
     }),
   contact: z.object({
