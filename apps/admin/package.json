@@ -8,7 +8,9 @@
     "build": "vite build && node ../../scripts/check-spa-headers.mjs admin && node ../../scripts/worker-budget.mjs admin && node ../../scripts/worker-budget.mjs adminApi",
     "typecheck": "wrangler types --env staging && tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
     "test": "vitest run",
-    "deploy:staging": "CLOUDFLARE_ENV=staging vite build && node ../../scripts/check-spa-headers.mjs admin && wrangler deploy --config dist/techaust_platform_admin_api/wrangler.json && wrangler deploy",
+    "build:staging": "CLOUDFLARE_ENV=staging vite build && node ../../scripts/check-spa-headers.mjs admin",
+    "deploy:staging:api": "node ../../scripts/check-staging-build.mjs admin-api && wrangler deploy --config dist/techaust_platform_admin_api/wrangler.json",
+    "deploy:staging:front": "node ../../scripts/check-staging-build.mjs admin && wrangler deploy",
     "types": "wrangler types --env staging",
     "e2e": "playwright test"
   },

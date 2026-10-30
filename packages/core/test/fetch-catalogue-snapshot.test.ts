@@ -129,7 +129,9 @@ describe("the workflows (read, not run)", () => {
     expect(
       at("node scripts/fetch-catalogue-snapshot.mjs --out apps/web/catalogue-snapshot.json"),
     ).toBeGreaterThan(at("Migrate and seed staging D1"));
-    expect(at("name: Deploy all Workers (staging)")).toBeGreaterThan(at("fetch-catalogue-snapshot.mjs"));
+    expect(at("name: Deploy 1 of 5, the admin API Worker (staging)")).toBeGreaterThan(
+      at("fetch-catalogue-snapshot.mjs"),
+    );
   });
 
   it("publish-catalogue runs every 30 minutes and by hand, only for this repository's main", () => {

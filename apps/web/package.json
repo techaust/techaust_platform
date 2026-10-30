@@ -11,7 +11,8 @@
     "test": "vitest run",
     "e2e": "playwright test",
     "lhci": "node ../../scripts/web-lhci.mjs",
-    "deploy:staging": "CLOUDFLARE_ENV=staging astro build && node ../../scripts/build-og.mjs && node ../../scripts/check-web-dist.mjs && wrangler deploy --env staging",
+    "build:staging": "CLOUDFLARE_ENV=staging astro build && node ../../scripts/build-og.mjs && node ../../scripts/check-web-dist.mjs",
+    "deploy:staging": "node ../../scripts/check-staging-build.mjs web && wrangler deploy --env staging",
     "types": "wrangler types"
   },
   "dependencies": {
