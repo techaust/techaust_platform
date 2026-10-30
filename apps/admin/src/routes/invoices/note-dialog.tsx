@@ -496,7 +496,7 @@ function NoteDialogBody(props: {
         {blockers.length > 0 && (
           <div className="inv-issue__blocked" role="alert" tabIndex={-1} ref={refusal.ref}>
             <p className="inv-issue__fix">{INV_COPY.fixFirst}</p>
-            <NoteBlockerList blockers={blockers} kind={kind} currency={currency} clientId={p.client.id} />
+            <NoteBlockerList blockers={blockers} kind={kind} currency={currency} />
           </div>
         )}
       </div>

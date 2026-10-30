@@ -259,6 +259,12 @@ export const taxSettings = z.object({
   invoiceAlertDays: intBetween(1, 30),
   /** G-11: credit notes are blocked after this date following the FY of supply (or the annual return). */
   creditNoteCutoff: z.object({ month: intBetween(1, 12), day: intBetween(1, 31) }),
+  /**
+   * rt1 R3 (owner, 2026-10-31: TecHaust files GSTR-1 quarterly under QRMP): how often GSTR-1 is filed. It sets the last day a credit note on last year's invoice may be
+   * dated (core `creditNoteDeadline`; Researched 2026-10-30, s.34(2) CGST Act; Rule 59(1)-(2) CGST Rules (IFF) (08-C RA-31)). A stored row without it reads quarterly.
+   * The list is core's `GSTR1_FREQUENCIES` (written out here so this schema does not pull the tax engine into every bundle; a test compares them).
+   */
+  gstr1Frequency: z.prefault(z.enum(["quarterly", "monthly"]), "quarterly"),
   /** G-11, Q33 (M5.3): the annual returns filed, at most one per FY, at most 20; a stored row without it reads as empty. */
   annualReturnsFiled: z.prefault(
     z.array(annualReturnEntry).check(
@@ -564,6 +570,7 @@ export const SETTINGS_DEFAULTS: Settings = {
     reverseChargeText: "Tax payable on reverse charge: No",
     invoiceAlertDays: 25,
     creditNoteCutoff: { month: 11, day: 30 },
+    gstr1Frequency: "quarterly",
     annualReturnsFiled: [],
     b2cDetailsThresholdInrMinor: 50_000_00,
     realisation: { warnMonths: 9, inrMonths: 12, escalateMonths: 12, escalateExtraDays: 15 },

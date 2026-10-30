@@ -937,22 +937,40 @@ export function voidViewTriggerStatements(): string[] {
 }
 
 /**
- * T4 (rt2): the document types `documents_signature_required` (0054) always requires the signature on, pinned so a later change of core `SIGNED_ALWAYS_TYPES`
- * cannot move the bytes of 0054 (a db test compares the two).
+ * rt1 T2 (a new trigger only, no table is rebuilt; the abort message starts with the trigger's name): `documents_debit_note_lut_fy`: a debit note on an export
+ * invoice under LUT (`export_mode` 'lut', or the supply `export_lut` when the route came from the settings) is issued only while a LUT with an ARN is saved for the FY of the note's OWN
+ * issue day (Researched 2026-10-30, Rule 96A(1) CGST Rules, Notification 37/2017-CT (08-C RA-19, Q39)). No IGST route is offered for it. The twin of core
+ * `noteBlockers` (`debit_lut_missing`) and of the note freeze's WHERE (`noteIssueTail`), all three from `LUT_FOR_FY_SQL`.
  */
-export const SIGNED_ALWAYS_TYPES_0054 = ["credit_note", "debit_note"] as const;
+export function noteLutTriggerStatements(): string[] {
+  // The LUT route: the note's (or its invoice's) `export_mode` is 'lut', or its supply is `export_lut`. An export invoice issued on the settings' route leaves
+  // `export_mode` empty (only a route typed on the draft is stored there), so the supply type is what says it went out under LUT.
+  const lutRoute =
+    "(NEW.export_mode IS 'lut' OR NEW.supply_type IS 'export_lut' OR EXISTS (SELECT 1 FROM documents p WHERE p.id = NEW.parent_id AND (p.export_mode IS 'lut' OR p.supply_type IS 'export_lut')))";
+  const issuing = `OLD.status = 'draft' AND NEW.status = 'issued' AND NEW.type = 'debit_note' AND ${lutRoute}`;
+  const lutBad = `(NEW.issue_date IS NULL OR NOT ${LUT_FOR_FY_SQL.replaceAll("?FY", fyTokenOfDateSql("NEW.issue_date"))})`;
+  return [
+    `CREATE TRIGGER \`documents_debit_note_lut_fy\` BEFORE UPDATE OF status ON \`documents\` WHEN ${issuing} AND ${lutBad} BEGIN ${abort("documents_debit_note_lut_fy: a debit note on an export under LUT needs a LUT saved for the financial year of its own issue day")} END;`,
+  ];
+}
+
+/**
+ * T4 (rt2): the document types `documents_signature_required` (0055) always requires the signature on, pinned so a later change of core `SIGNED_ALWAYS_TYPES`
+ * cannot move the bytes of 0055 (a db test compares the two).
+ */
+export const SIGNED_ALWAYS_TYPES_0055 = ["credit_note", "debit_note"] as const;
 
 /**
  * T4 (rt2; a new trigger only, no table is rebuilt; the abort message starts with the trigger's name): `documents_signature_required`: a credit or debit note
- * (Researched 2026-10-30, Rule 53(1A) CGST Rules (08-C RA-22)), and a tax or export invoice for a payment received (`header_extras.advance` present; Researched
+ * (Researched 2026-10-30, Rule 53(1A) CGST Rules (08-C RA-22)), and a tax or export invoice for a payment received (`header_extras.advance` an object, never a JSON null, like core's truthiness; Researched
  * 2026-10-30, s.31(3)(d) CGST Act and Rule 50 CGST Rules (08-C RA-17), the safest reading), is issued only with a signature reference in its issuer block and no
- * `signatory` key (`signedIssuerSql`). Fires only on draft to issued, so a note frozen before 0054 without a signature keeps every later ledger write. The twin of
+ * `signatory` key (`signedIssuerSql`). Fires only on draft to issued, so a note frozen before 0055 without a signature keeps every later ledger write. The twin of
  * core `signatureRequired` and of the note and advance freeze WHEREs (`SIGNED_FREEZE_SQL`). OPEN (08-C RA-22): do Rules 50 and 53 carry Rule 46(q)'s
  * electronic-issue proviso, and does a stored image meet "signature" on an electronic document? The safest reading is built.
  */
 export function signatureTriggerStatements(): string[] {
-  const types = SIGNED_ALWAYS_TYPES_0054.map((t) => `'${t}'`).join(", ");
-  const mustSign = `(NEW.type IN (${types}) OR (NEW.type IN ('tax_invoice', 'export_invoice') AND json_type(NEW.header_extras, '$.advance') IS NOT NULL))`;
+  const types = SIGNED_ALWAYS_TYPES_0055.map((t) => `'${t}'`).join(", ");
+  const mustSign = `(NEW.type IN (${types}) OR (NEW.type IN ('tax_invoice', 'export_invoice') AND json_type(NEW.header_extras, '$.advance') = 'object'))`;
   return [
     `CREATE TRIGGER \`documents_signature_required\` BEFORE UPDATE OF status ON \`documents\` WHEN OLD.status = 'draft' AND NEW.status = 'issued' AND ${mustSign} AND NOT ${signedIssuerSql("NEW.issuer")} BEGIN ${abort("documents_signature_required: a credit note, a debit note or an invoice for a payment received is issued with the signature")} END;`,
   ];
@@ -1027,6 +1045,10 @@ export const TRIGGER_SETS = {
   void_view_triggers: {
     what: "full-audit fix (FX-5, owner decision 2026-10-30): an invoice-family document the client has opened in the portal is never voided",
     statements: voidViewTriggerStatements,
+  },
+  note_lut_triggers: {
+    what: "rt1 T2: a debit note on an export under LUT is issued only with a LUT saved for the financial year of its own issue day",
+    statements: noteLutTriggerStatements,
   },
   signature_triggers: {
     what: "settle-08c T4: a credit note, a debit note and an invoice for a payment received are issued with the signature",

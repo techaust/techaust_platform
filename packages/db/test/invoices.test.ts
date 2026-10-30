@@ -97,7 +97,7 @@ describe("the status flow trigger agrees with core canMoveInvoiceStatus, move by
             ? await mkDoc(client, type, {
                 status: from,
                 parent_id: await frozenDoc(client, "tax_invoice"),
-                // T4: a note is issued only with the signature (documents_signature_required, 0054); this test is about the flow
+                // T4: a note is issued only with the signature (documents_signature_required, 0055); this test is about the flow
                 issuer: SIGNED_ISSUER,
                 ...(from === "void" ? { voided_at: 5, void_reason: "x" } : {}),
               })

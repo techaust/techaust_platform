@@ -329,7 +329,7 @@ export function checklistItemOn(item: ChecklistItem, s: ChecklistSettings): bool
 /**
  * The types that always carry the signature, whatever the checklist's signatory switch says: a credit or debit note (Researched 2026-10-30, Rule 53(1A) CGST Rules
  * (08-C RA-22)). OPEN (08-C RA-22): do Rules 50 and 53 carry Rule 46(q)'s electronic-issue proviso, and does a stored image meet "signature" on an electronic document?
- * The safest reading is built (no CA is engaged): the signature is required. A DSC is out of scope. Pinned by a db test to the 0054 trigger's list.
+ * The safest reading is built (no CA is engaged): the signature is required. A DSC is out of scope. Pinned by a db test to the 0055 trigger's list.
  */
 export const SIGNED_ALWAYS_TYPES = ["credit_note", "debit_note"] as const;
 

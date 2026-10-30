@@ -16,10 +16,12 @@ import {
   creditForGross,
   creditNoteAdvice,
   creditNoteDeadline,
+  creditNotePeriod,
   DEBIT_REASONS,
   DISCOUNT_AFTER_SALE_FROM,
   debitNoteInput,
   GROSS_EVALUATIONS_MAX,
+  GSTR1_FREQUENCIES,
   IMS_STATUSES,
   imsStatusAtIssue,
   isNoteReason,
@@ -38,7 +40,12 @@ import {
   refundDueOf,
   takesTuples,
 } from "../src/invoices.ts";
-import { annualReturnEntry, SETTINGS_DEFAULTS, taxSettings } from "../src/schemas/settings.ts";
+import {
+  annualReturnEntry,
+  resolveSetting,
+  SETTINGS_DEFAULTS,
+  taxSettings,
+} from "../src/schemas/settings.ts";
 import {
   type ComputedDocument,
   type CreditedSoFar,
@@ -136,6 +143,20 @@ describe("the stored request (header_extras.noteOf)", () => {
     expect(Object.keys((back as NoteOf).request)).toEqual(["mode", "taxMinor", "takes"]);
   });
 
+  it("rt1 T2: a debit note's own LUT reads back last, after the request; a note without one has no key", () => {
+    const n: NoteOf = {
+      ...noteOf({ kind: "debit", parent: { ...noteOf().parent, lut: { fy: "2627", arn: "AA1" } } }),
+      lut: { fy: "2728", arn: "AA2" },
+    };
+    const back = noteOfFromStored(JSON.parse(JSON.stringify(n)));
+    expect(back).toEqual(n);
+    expect(JSON.stringify(back)).toBe(JSON.stringify(n));
+    expect(Object.keys(back as NoteOf)).toEqual(["kind", "parent", "reason", "request", "lut"]);
+    expect(Object.keys(noteOfFromStored(JSON.parse(JSON.stringify(noteOf()))) as NoteOf)).not.toContain(
+      "lut",
+    );
+  });
+
   it("anything damaged reads as none", () => {
     const good1 = JSON.parse(JSON.stringify(noteOf()));
     const bad: unknown[] = [
@@ -162,6 +183,9 @@ describe("the stored request (header_extras.noteOf)", () => {
       { ...good1, parent: { ...good1.parent, totalInrMinor: "1" } },
       { ...good1, parent: { ...good1.parent, lut: "x" } },
       { ...good1, parent: { ...good1.parent, lut: { fy: 1, arn: "a" } } },
+      { ...good1, lut: "x" },
+      { ...good1, lut: { fy: "2728" } },
+      { ...good1, lut: { fy: "2728", arn: 5 } },
     ];
     for (const b of bad) expect(noteOfFromStored(b), JSON.stringify(b)).toBeNull();
   });
@@ -340,127 +364,257 @@ describe("noteBlockers [LD50, Rule 53(1A)]", () => {
     // a credit note has no bank block
     expect(codes(okFacts({ bank: { inr: false, swift: false } }))).toEqual([]);
   });
+
+  it("rt1 T2 [RA-19 Q39]: a debit note on an export under LUT needs the LUT of its own FY, last, with that FY; a credit note and a saved LUT are not judged", () => {
+    expect(NOTE_BLOCKER_CODES.at(-1)).toBe("debit_lut_missing");
+    expect(NOTE_BLOCKER_CODES.indexOf("notes_limit")).toBe(NOTE_BLOCKER_CODES.length - 2);
+    const dn = (over: Partial<NoteFacts>) => okFacts({ kind: "debit", deadline: null, ...over });
+    // no LUT (or a blank ARN, which the caller reads as not saved) for FY 2728
+    expect(
+      noteBlockers(dn({ lut: { needed: true, fy: "2728", saved: false } }), { bankDetails: true }),
+    ).toEqual([{ code: "debit_lut_missing", fy: "2728" }]);
+    // last, after the limit
+    expect(codes(dn({ issuedOfKind: NOTES_MAX, lut: { needed: true, fy: "2728", saved: false } }))).toEqual([
+      "notes_limit",
+      "debit_lut_missing",
+    ]);
+    expect(codes(dn({ lut: { needed: true, fy: "2728", saved: true } }))).toEqual([]);
+    // a parent that is not under LUT (igst_paid, domestic): not needed
+    expect(codes(dn({ lut: { needed: false, fy: "2728", saved: false } }))).toEqual([]);
+    expect(codes(dn({}))).toEqual([]);
+    // a credit note is never judged on it
+    expect(codes(okFacts({ lut: { needed: true, fy: "2728", saved: false } }))).toEqual([]);
+  });
 });
 
-describe("creditNoteAdvice [RA-31; 07-T §4]: the banner's dates", () => {
-  it("1 October warns and 31 October is the advised last day, in the year the deadline falls in; an unreadable date gives none", () => {
-    const dl = creditNoteDeadline(
-      { parentFy: "2526", parentIssueDate: "2025-10-05" },
-      SETTINGS_DEFAULTS.tax.creditNoteCutoff,
-      [],
-    );
-    expect(dl.date).toBe("2026-11-30");
-    expect(creditNoteAdvice(dl)).toEqual({ deadlineWarnFrom: "2026-10-01", adviseIssueBy: "2026-10-31" });
-    expect(creditNoteAdvice({ date: "soon" })).toEqual({ deadlineWarnFrom: null, adviseIssueBy: null });
+// rt1 T1: the filing of the return a credit note goes into (Researched 2026-10-30, s.34(2) CGST Act; Rule 59(1)-(2) CGST Rules (IFF) (08-C RA-31, RA-03)).
+const MONTHLY_REG = { frequency: "monthly", recipientStatus: "registered" } as const;
+const MONTHLY_UNREG = { frequency: "monthly", recipientStatus: "unregistered" } as const;
+const MONTHLY_OVERSEAS = { frequency: "monthly", recipientStatus: "overseas" } as const;
+const QRMP_REG = { frequency: "quarterly", recipientStatus: "registered" } as const;
+const QRMP_UNREG = { frequency: "quarterly", recipientStatus: "unregistered" } as const;
+const QRMP_OVERSEAS = { frequency: "quarterly", recipientStatus: "overseas" } as const;
+const FILINGS = [MONTHLY_REG, MONTHLY_UNREG, MONTHLY_OVERSEAS, QRMP_REG, QRMP_UNREG, QRMP_OVERSEAS];
+
+describe("creditNoteAdvice [rt1 R2, D3; 07-ZD]: the banner's dates follow the last day", () => {
+  const fy2526 = { parentFy: "2526", parentIssueDate: "2025-10-05" };
+  const cutoff = SETTINGS_DEFAULTS.tax.creditNoteCutoff;
+
+  it("a registered client (or monthly filing): warn from 1 September, advise 31 October, the last day itself", () => {
+    const dl = creditNoteDeadline(fy2526, cutoff, [], QRMP_REG);
+    expect(dl.lastDay).toBe("2026-10-31");
+    expect(creditNoteAdvice(dl)).toEqual({ deadlineWarnFrom: "2026-09-01", adviseIssueBy: "2026-10-31" });
+    expect(creditNoteAdvice(creditNoteDeadline(fy2526, cutoff, [], MONTHLY_UNREG))).toEqual({
+      deadlineWarnFrom: "2026-09-01",
+      adviseIssueBy: "2026-10-31",
+    });
   });
 
-  it("follows the cutoff setting: the month before the cutoff month, first day to last day (a 30 June cutoff gives May, a 31 January one December of the year before)", () => {
-    expect(creditNoteAdvice({ date: "2027-06-30" })).toEqual({
-      deadlineWarnFrom: "2027-05-01",
-      adviseIssueBy: "2027-05-31",
-    });
-    expect(creditNoteAdvice({ date: "2027-01-31" })).toEqual({
+  it("an unregistered or overseas client of a quarterly filer: warn from 1 August, advise 30 September", () => {
+    for (const filing of [QRMP_UNREG, QRMP_OVERSEAS]) {
+      const dl = creditNoteDeadline(fy2526, cutoff, [], filing);
+      expect(creditNoteAdvice(dl)).toEqual({ deadlineWarnFrom: "2026-08-01", adviseIssueBy: "2026-09-30" });
+    }
+  });
+
+  it("a last day in January warns from 1 December of the year before; an unreadable date gives none", () => {
+    expect(creditNoteAdvice({ lastDay: "2027-01-31" })).toEqual({
       deadlineWarnFrom: "2026-12-01",
-      adviseIssueBy: "2026-12-31",
+      adviseIssueBy: "2027-01-31",
     });
-    // a leap February, and a cutoff in March (the month before is February)
-    expect(creditNoteAdvice({ date: "2028-03-31" })).toEqual({
-      deadlineWarnFrom: "2028-02-01",
+    expect(creditNoteAdvice({ lastDay: "2028-02-29" })).toEqual({
+      deadlineWarnFrom: "2028-01-01",
       adviseIssueBy: "2028-02-29",
     });
-    expect(creditNoteAdvice({ date: "2027-03-31" }).adviseIssueBy).toBe("2027-02-28");
-    // the default, through the settings and the deadline
-    const dl = creditNoteDeadline(
-      { parentFy: "2627", parentIssueDate: "2026-06-05" },
-      { month: 11, day: 30 },
-      [],
-    );
-    expect(creditNoteAdvice(dl)).toEqual({ deadlineWarnFrom: "2027-10-01", adviseIssueBy: "2027-10-31" });
+    expect(creditNoteAdvice({ lastDay: "soon" })).toEqual({ deadlineWarnFrom: null, adviseIssueBy: null });
   });
 
-  it("neither date is later than the last day a note is allowed: an annual return filed before the cutoff caps both (the day before it was filed)", () => {
-    const cutoff = SETTINGS_DEFAULTS.tax.creditNoteCutoff;
-    const filed = (filedOn: string) =>
-      creditNoteDeadline({ parentFy: "2526", parentIssueDate: "2025-10-05" }, cutoff, [
-        { fy: "2526", filedOn },
-      ]);
-    // filed on 20 September: the last day is 19 September, before 1 October, so both are 19 September
-    const early = filed("2026-09-20");
-    expect(early.lastDay).toBe("2026-09-19");
-    expect(creditNoteAdvice(early)).toEqual({ deadlineWarnFrom: "2026-09-19", adviseIssueBy: "2026-09-19" });
-    // filed on 15 October: the warning still starts on 1 October, the advice is capped at the 14th
-    const mid = filed("2026-10-15");
-    expect(creditNoteAdvice(mid)).toEqual({ deadlineWarnFrom: "2026-10-01", adviseIssueBy: "2026-10-14" });
-    // filed after the advice date (5 November) or after the cutoff: no cap
-    expect(creditNoteAdvice(filed("2026-11-05"))).toEqual({
-      deadlineWarnFrom: "2026-10-01",
-      adviseIssueBy: "2026-10-31",
-    });
-    expect(creditNoteAdvice(filed("2026-12-20"))).toEqual({
-      deadlineWarnFrom: "2026-10-01",
-      adviseIssueBy: "2026-10-31",
-    });
+  it("an annual return filed before the cutoff moves both dates earlier with the last day", () => {
+    const dl = creditNoteDeadline(fy2526, cutoff, [{ fy: "2526", filedOn: "2026-09-15" }], QRMP_REG);
+    expect(dl.lastDay).toBe("2026-08-31");
+    expect(creditNoteAdvice(dl)).toEqual({ deadlineWarnFrom: "2026-07-01", adviseIssueBy: "2026-08-31" });
   });
 });
 
-describe("creditNoteDeadline [s.34(2); Q32, Q33; Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03)]", () => {
+describe("creditNoteDeadline [s.34(2); Q32, Q33; rt1 R1; Researched 2026-10-30, s.34(2) CGST Act; Rule 59(1)-(2) CGST Rules (IFF) (08-C RA-31, RA-03)]", () => {
   const cutoff = { month: 11, day: 30 };
   const base = { parentFy: "2627", parentIssueDate: "2026-10-25" };
+  const fy2526 = { parentFy: "2526", parentIssueDate: "2025-10-05" };
 
-  it("30 November after the end of the FY of the supply", () => {
-    const d = creditNoteDeadline(base, cutoff, []);
-    expect(d).toEqual({
-      date: "2027-11-30",
-      basis: "cutoff",
-      supplyFy: "2627",
-      filedOn: null,
-      lastDay: "2027-11-30",
-    });
-    expect(creditAllowed("2027-11-30", d)).toBe(true);
-    expect(creditAllowed("2027-12-01", d)).toBe(false);
-    expect(creditAllowed("2026-10-26", d)).toBe(true);
+  it("FY 2025-26, the default cutoff: 31 October for monthly filing or a registered client, 30 September for a quarterly filer's unregistered or overseas client", () => {
+    for (const filing of [MONTHLY_REG, MONTHLY_UNREG, MONTHLY_OVERSEAS, QRMP_REG]) {
+      const d = creditNoteDeadline(fy2526, cutoff, [], filing);
+      expect(d).toEqual({
+        date: "2026-11-30",
+        basis: "cutoff",
+        supplyFy: "2526",
+        filedOn: null,
+        returnBy: "2026-11-30",
+        period: "month",
+        lastDay: "2026-10-31",
+      });
+    }
+    for (const filing of [QRMP_UNREG, QRMP_OVERSEAS]) {
+      const d = creditNoteDeadline(fy2526, cutoff, [], filing);
+      expect(d.period).toBe("quarter");
+      expect(d.lastDay).toBe("2026-09-30");
+      expect(d.returnBy).toBe("2026-11-30");
+    }
   });
 
-  it("a day past the month's end is clamped (31 November is the 30th)", () => {
-    expect(creditNoteDeadline(base, { month: 11, day: 31 }, []).date).toBe("2027-11-30");
+  it("creditAllowed follows the last day, not the cutoff: 31 October is allowed, 1 November is not", () => {
+    const d = creditNoteDeadline(fy2526, cutoff, [], QRMP_REG);
+    expect(creditAllowed("2026-10-31", d)).toBe(true);
+    expect(creditAllowed("2026-11-01", d)).toBe(false);
+    expect(creditAllowed("2026-11-30", d)).toBe(false);
+    const u = creditNoteDeadline(fy2526, cutoff, [], QRMP_UNREG);
+    expect(creditAllowed("2026-09-30", u)).toBe(true);
+    expect(creditAllowed("2026-10-01", u)).toBe(false);
+  });
+
+  it("rt1 F2: a cutoff of 31 January is the one AFTER the FY ends (2027-01-31 for FY 2025-26) and gives 31 December 2026 for every filing and recipient", () => {
+    for (const filing of FILINGS) {
+      const d = creditNoteDeadline(fy2526, { month: 1, day: 31 }, [], filing);
+      expect(d.date).toBe("2027-01-31");
+      expect(d.returnBy).toBe("2027-01-31");
+      expect(d.lastDay).toBe("2026-12-31");
+      expect(creditAllowed("2026-12-31", d)).toBe(true);
+      expect(creditAllowed("2027-01-01", d)).toBe(false);
+    }
+  });
+
+  it("rt1 F2: a cutoff of 31 March (FY 2025-26) is 2027-03-31: 28 February 2027 monthly, 31 December 2026 for a quarterly filer's unregistered client", () => {
+    const march = { month: 3, day: 31 };
+    for (const filing of [MONTHLY_REG, MONTHLY_UNREG, MONTHLY_OVERSEAS, QRMP_REG]) {
+      expect(creditNoteDeadline(fy2526, march, [], filing)).toMatchObject({
+        date: "2027-03-31",
+        period: "month",
+        lastDay: "2027-02-28",
+      });
+    }
+    for (const filing of [QRMP_UNREG, QRMP_OVERSEAS]) {
+      expect(creditNoteDeadline(fy2526, march, [], filing)).toMatchObject({
+        date: "2027-03-31",
+        period: "quarter",
+        lastDay: "2026-12-31",
+      });
+    }
+    // April onwards stays in the year the FY ends
+    expect(creditNoteDeadline(fy2526, { month: 4, day: 30 }, [], MONTHLY_REG).date).toBe("2026-04-30");
+  });
+
+  it("a day past the month's end is clamped (31 November is the 30th; February by the year)", () => {
+    expect(creditNoteDeadline(base, { month: 11, day: 31 }, [], QRMP_REG).date).toBe("2027-11-30");
+    // a February cutoff is in the year after the FY ends (rt1 F2): FY 2022-23 -> February 2024 (leap), FY 2024-25 -> February 2026
     expect(
       creditNoteDeadline(
-        { ...base, parentFy: "2324", parentIssueDate: "2023-05-01" },
+        { ...base, parentFy: "2223", parentIssueDate: "2022-05-01" },
         { month: 2, day: 31 },
         [],
-      ).date,
-    ).toBe("2024-02-29");
+        MONTHLY_REG,
+      ),
+    ).toMatchObject({ date: "2024-02-29", lastDay: "2024-01-31" });
     expect(
       creditNoteDeadline(
         { ...base, parentFy: "2425", parentIssueDate: "2024-05-01" },
         { month: 2, day: 31 },
         [],
-      ).date,
-    ).toBe("2025-02-28");
-    expect(creditNoteDeadline(base, { month: 12, day: 31 }, []).date).toBe("2027-12-31");
+        QRMP_UNREG,
+      ),
+    ).toMatchObject({ date: "2026-02-28", lastDay: "2025-12-31" });
+    expect(creditNoteDeadline(base, { month: 12, day: 31 }, [], QRMP_REG)).toMatchObject({
+      date: "2027-12-31",
+      lastDay: "2027-11-30",
+    });
   });
 
-  it("the annual return (Q33): a note dated on the filing day or after is refused, the day before is not", () => {
-    const d = creditNoteDeadline(base, cutoff, [{ fy: "2627", filedOn: "2027-09-20" }]);
-    expect(d.basis).toBe("annual_return");
-    expect(d.filedOn).toBe("2027-09-20");
-    expect(d.lastDay).toBe("2027-09-19");
-    expect(d.date).toBe("2027-11-30");
-    expect(creditAllowed("2027-09-19", d)).toBe(true);
-    expect(creditAllowed("2027-09-20", d)).toBe(false);
-    expect(creditAllowed("2027-09-21", d)).toBe(false);
+  it("the annual return (Q33, D4): filed on 15 September, the return is due by the 14th, so 31 August monthly and 30 June for a quarterly filer's unregistered client", () => {
+    const filed = [{ fy: "2526", filedOn: "2026-09-15" }];
+    const monthly = creditNoteDeadline(fy2526, cutoff, filed, MONTHLY_UNREG);
+    expect(monthly).toEqual({
+      date: "2026-11-30",
+      basis: "annual_return",
+      supplyFy: "2526",
+      filedOn: "2026-09-15",
+      returnBy: "2026-09-14",
+      period: "month",
+      lastDay: "2026-08-31",
+    });
+    expect(creditNoteDeadline(fy2526, cutoff, filed, QRMP_REG).lastDay).toBe("2026-08-31");
+    expect(creditNoteDeadline(fy2526, cutoff, filed, QRMP_UNREG).lastDay).toBe("2026-06-30");
+    expect(creditAllowed("2026-08-31", monthly)).toBe(true);
+    expect(creditAllowed("2026-09-01", monthly)).toBe(false);
+    expect(creditAllowed("2026-09-15", monthly)).toBe(false);
+    // filed on the first of a month: the return is due by the last day of the month before, so the period before that is the last one
+    expect(
+      creditNoteDeadline(fy2526, cutoff, [{ fy: "2526", filedOn: "2026-10-01" }], MONTHLY_REG).lastDay,
+    ).toBe("2026-08-31");
     // the return of another FY does not matter
-    expect(creditNoteDeadline(base, cutoff, [{ fy: "2526", filedOn: "2026-01-01" }]).basis).toBe("cutoff");
+    expect(creditNoteDeadline(base, cutoff, [{ fy: "2526", filedOn: "2026-01-01" }], QRMP_REG).basis).toBe(
+      "cutoff",
+    );
     // a return filed after the cutoff does not move it
-    const late = creditNoteDeadline(base, cutoff, [{ fy: "2627", filedOn: "2028-01-15" }]);
-    expect(late.basis).toBe("cutoff");
-    expect(late.lastDay).toBe("2027-11-30");
-    expect(creditAllowed("2027-11-30", late)).toBe(true);
-    expect(creditAllowed("2027-12-01", late)).toBe(false);
+    const late = creditNoteDeadline(base, cutoff, [{ fy: "2627", filedOn: "2028-01-15" }], QRMP_REG);
+    expect(late).toMatchObject({
+      basis: "cutoff",
+      filedOn: "2028-01-15",
+      returnBy: "2027-11-30",
+      lastDay: "2027-10-31",
+    });
+    expect(creditAllowed("2027-10-31", late)).toBe(true);
+    expect(creditAllowed("2027-11-01", late)).toBe(false);
     // a filing day that is not a date is ignored
-    const junk = creditNoteDeadline(base, cutoff, [{ fy: "2627", filedOn: "soon" }]);
+    const junk = creditNoteDeadline(base, cutoff, [{ fy: "2627", filedOn: "soon" }], QRMP_REG);
     expect(junk.filedOn).toBeNull();
     expect(junk.basis).toBe("cutoff");
+  });
+
+  it("property: the last day is a period end strictly before the return deadline, a quarter never later than a month, and creditAllowed is exactly `day <= lastDay`", () => {
+    const monthEndOf = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 2017, max: 2090 }),
+        fc.integer({ min: 1, max: 12 }),
+        fc.integer({ min: 1, max: 31 }),
+        fc.option(fc.integer({ min: 0, max: 800 }), { nil: null }),
+        fc.constantFrom(...FILINGS),
+        (startYear, month, day, filedAfter, filing) => {
+          const token = `${String(startYear % 100).padStart(2, "0")}${String((startYear + 1) % 100).padStart(2, "0")}`;
+          const input = { parentFy: token, parentIssueDate: `${startYear}-06-01` };
+          const filedOn =
+            filedAfter === null
+              ? []
+              : [
+                  {
+                    fy: token,
+                    filedOn: new Date(Date.UTC(startYear + 1, 3, 1 + filedAfter)).toISOString().slice(0, 10),
+                  },
+                ];
+          const d = creditNoteDeadline(input, { month, day }, filedOn, filing);
+          // rt1 F2: the cutoff always falls after the supply FY ends (31 March of startYear + 1)
+          expect(d.date > `${startYear + 1}-03-31`).toBe(true);
+          expect(d.lastDay < d.returnBy).toBe(true);
+          expect(d.returnBy <= d.date).toBe(true);
+          if (d.filedOn !== null && d.basis === "annual_return") expect(d.returnBy < d.filedOn).toBe(true);
+          const [y, m, dd] = d.lastDay.split("-").map(Number) as [number, number, number];
+          expect(dd).toBe(monthEndOf(y, m));
+          if (d.period === "quarter") expect(m % 3).toBe(0);
+          const monthly = creditNoteDeadline(input, { month, day }, filedOn, {
+            frequency: "monthly",
+            recipientStatus: filing.recipientStatus,
+          });
+          const quarterly = creditNoteDeadline(input, { month, day }, filedOn, {
+            frequency: "quarterly",
+            recipientStatus: "unregistered",
+          });
+          expect(quarterly.lastDay <= monthly.lastDay).toBe(true);
+          expect(creditAllowed(d.lastDay, d)).toBe(true);
+          const next = new Date(`${d.lastDay}T00:00:00Z`);
+          next.setUTCDate(next.getUTCDate() + 1);
+          expect(creditAllowed(next.toISOString().slice(0, 10), d)).toBe(false);
+        },
+      ),
+    );
   });
 
   it("Q32: the supply FY is the earliest of the invoice's, the advance's receipt and the service (when invoiced more than 30 days later)", () => {
@@ -469,14 +623,17 @@ describe("creditNoteDeadline [s.34(2); Q32, Q33; Researched 2026-10-28, s.34(2) 
       { parentFy: "2728", parentIssueDate: "2027-04-02", advanceReceivedOn: "2027-03-28" },
       cutoff,
       [],
+      QRMP_REG,
     );
     expect(advance.supplyFy).toBe("2627");
     expect(advance.date).toBe("2027-11-30");
+    expect(advance.lastDay).toBe("2027-10-31");
     // the service was completed 10 February 2027 and invoiced on 20 April (more than 30 days after): FY 2627
     const late = creditNoteDeadline(
       { parentFy: "2728", parentIssueDate: "2027-04-20", serviceCompletedOn: "2027-02-10" },
       cutoff,
       [],
+      QRMP_REG,
     );
     expect(late.supplyFy).toBe("2627");
     // within 30 days of the service: the invoice's FY
@@ -484,6 +641,7 @@ describe("creditNoteDeadline [s.34(2); Q32, Q33; Researched 2026-10-28, s.34(2) 
       { parentFy: "2728", parentIssueDate: "2027-04-20", serviceCompletedOn: "2027-03-25" },
       cutoff,
       [],
+      QRMP_REG,
     );
     expect(soon.supplyFy).toBe("2728");
     expect(soon.date).toBe("2028-11-30");
@@ -493,32 +651,53 @@ describe("creditNoteDeadline [s.34(2); Q32, Q33; Researched 2026-10-28, s.34(2) 
         { parentFy: "2728", parentIssueDate: "2027-04-24", serviceCompletedOn: "2027-03-25" },
         cutoff,
         [],
+        QRMP_REG,
       ).supplyFy,
     ).toBe("2728");
     // the dates only ever move it earlier; unreadable dates are ignored
     expect(
-      creditNoteDeadline({ ...base, advanceReceivedOn: "2027-03-28", serviceCompletedOn: "x" }, cutoff, [])
-        .supplyFy,
+      creditNoteDeadline(
+        { ...base, advanceReceivedOn: "2027-03-28", serviceCompletedOn: "x" },
+        cutoff,
+        [],
+        QRMP_REG,
+      ).supplyFy,
     ).toBe("2627");
     expect(
       creditNoteDeadline(
         { ...base, advanceReceivedOn: "x", serviceCompletedOn: "2026-01-01", parentIssueDate: "y" },
         cutoff,
         [],
+        QRMP_REG,
       ).supplyFy,
     ).toBe("2627");
   });
 
-  it("creditAllowed is the two clauses of Q33 on any deadline", () => {
+  it("creditAllowed is the last day and the second clause of Q33 on any deadline", () => {
     const d: CreditDeadline = {
       date: "2027-11-30",
       basis: "cutoff",
       supplyFy: "2627",
       filedOn: "2027-06-01",
-      lastDay: "2027-06-01",
+      returnBy: "2027-11-30",
+      period: "month",
+      lastDay: "2027-10-31",
     };
     expect(creditAllowed("2027-05-31", d)).toBe(true);
+    // on or after the filing day: refused even before the last day (a deadline built by hand that does not hold the rule of `creditNoteDeadline`)
     expect(creditAllowed("2027-06-01", d)).toBe(false);
+    expect(creditAllowed("2027-11-01", { ...d, filedOn: null })).toBe(false);
+    expect(creditAllowed("2027-10-31", { ...d, filedOn: null })).toBe(true);
+  });
+
+  it("creditNotePeriod: a month unless a quarterly filer's client is unregistered or overseas (D2)", () => {
+    expect(FILINGS.map(creditNotePeriod)).toEqual(["month", "month", "month", "month", "quarter", "quarter"]);
+  });
+
+  it("the settings' list of frequencies is core's", () => {
+    expect([...GSTR1_FREQUENCIES]).toEqual(["quarterly", "monthly"]);
+    for (const f of GSTR1_FREQUENCIES)
+      expect(taxSettings.safeParse({ ...SETTINGS_DEFAULTS.tax, gstr1Frequency: f }).success).toBe(true);
   });
 });
 
@@ -1082,6 +1261,23 @@ describe("the content hash of a note [LD39]", () => {
     expect(
       contentHashInput(draft({ note: { ...note, mode: "amount", grossMinor: 118_000 } }), null).note,
     ).toEqual(["p1", "credit", "price_correction", "", "amount", 118_000, [[0, 5_000]]]);
+  });
+});
+
+describe("the GSTR-1 filing frequency (Settings > Tax) [rt1 R3, ADM-SET-03]", () => {
+  it("defaults to quarterly (QRMP, owner 2026-10-31); a stored row without it reads quarterly", () => {
+    expect(SETTINGS_DEFAULTS.tax.gstr1Frequency).toBe("quarterly");
+    const { gstr1Frequency: _drop, ...without } = SETTINGS_DEFAULTS.tax;
+    const r = taxSettings.safeParse(without);
+    expect(r.success && r.data.gstr1Frequency).toBe("quarterly");
+    expect(resolveSetting("tax", without).gstr1Frequency).toBe("quarterly");
+  });
+
+  it("monthly is kept; anything else is refused", () => {
+    const tax = (v: unknown) => taxSettings.safeParse({ ...SETTINGS_DEFAULTS.tax, gstr1Frequency: v });
+    const monthly = tax("monthly");
+    expect(monthly.success && monthly.data.gstr1Frequency).toBe("monthly");
+    for (const bad of ["weekly", "Quarterly", "", null, 3]) expect(tax(bad).success, String(bad)).toBe(false);
   });
 });
 

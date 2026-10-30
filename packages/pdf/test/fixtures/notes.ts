@@ -154,10 +154,15 @@ export async function buildNoteFixture(
     parentNumber?: string;
     /** T4: seal the note with no signature (as one issued before the rule). */
     unsigned?: boolean;
+    /** rt1 F1: "settings" freezes no typed route (`exportMode` null), as an export issued on the settings' route does; the supply type still says it. */
+    route?: "typed" | "settings";
+    /** rt1 T2 / F4: the LUT a debit note seals for its own issue day's FY (`noteOf.lut`). */
+    noteLut?: { fy: string; arn: string };
   } = {},
 ): Promise<NoteFixture> {
   const spec = SPECS[name];
   const usd = spec.usd !== undefined;
+  const exportMode = opts.route === "settings" ? null : (spec.usd ?? null);
   // (no contact: the rows a test inserts then need no contact row)
   const {
     contactId: _id,
@@ -257,6 +262,7 @@ export async function buildNoteFixture(
       ...(spec.usd === "lut" ? { lut: { fy: "2627", arn: SAMPLE_ARN } } : {}),
     },
     reason: spec.reason,
+    ...(opts.noteLut ? { lut: opts.noteLut } : {}),
     request: {
       mode: spec.mode ?? "lines",
       ...(spec.mode === "amount" ? { grossMinor: spec.gross } : {}),
@@ -275,7 +281,7 @@ export async function buildNoteFixture(
     termsVersionId: null,
     discountKind: null,
     discountValue: null,
-    exportMode: spec.usd ?? null,
+    exportMode,
     ...(usd ? { fx: { ...FX } } : {}),
     lines,
     sections: [],
@@ -352,7 +358,7 @@ export async function buildNoteFixture(
       dueDate: spec.kind === "credit" ? null : "2026-11-04",
       contentSha256: contentSha,
       termsRef: null,
-      exportMode: spec.usd ?? null,
+      exportMode,
     },
     computed,
     recipient,

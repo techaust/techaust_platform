@@ -234,6 +234,11 @@
   border-top: 1px solid var(--color-border);
 }
 
+/* The note switch is a settings row (shell.css): it goes side by side by this panel's width, as a settings list does (rt1 review 3). */
+.inv-export {
+  container: setting-rows / inline-size;
+}
+
 /* The rate, written as the equation it is: "1 USD = ₹83.1234", then its source and date. */
 .inv-fx__rate {
   display: flex;

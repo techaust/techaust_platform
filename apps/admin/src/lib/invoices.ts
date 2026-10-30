@@ -405,7 +405,7 @@ export function blockerLine(
     case "fx_missing":
       return `Enter the exchange rate for ${b.date ? (dayText(b.date) ?? b.date) : UNKNOWN} before issuing a USD invoice.`;
     case "lut_missing":
-      return `Save the LUT ARN for FY ${b.fy ? fyLabel(b.fy) : UNKNOWN} in Settings › Tax before issuing an export invoice under LUT. Or issue it with IGST paid.`;
+      return `Save the LUT ARN for FY ${fyLabel(b.fy, UNKNOWN)} in Settings › Tax before issuing an export invoice under LUT. Or issue it with IGST paid.`;
     case "unregistered_high_value":
       return "For an unregistered client and an invoice of ₹50,000 or more, add the client's name, address and state.";
     case "bank_missing":
@@ -419,7 +419,7 @@ export function blockerLine(
     case "fx_same_day_exists":
       return `A rate was published on ${dateOr(b.date)}, so use that day's rate.`;
     case "advance_lut_missing":
-      return advanceLutMissing(b.fy ? fyLabel(b.fy) : UNKNOWN);
+      return advanceLutMissing(fyLabel(b.fy, UNKNOWN));
     default:
       // A code this screen has no words for (a newer server): its code, never invented words (a test keeps every core code covered above).
       return b.code;
@@ -452,6 +452,8 @@ export function blockerTarget(b: InvoiceBlocker, clientId: string): BlockerTarge
       return { kind: "page", to: "/settings/tax", place: "Settings › Tax" };
     case "lut_missing":
     case "advance_lut_missing":
+    // rt1 T2 (07-ZD line 6): a debit note on an LUT export needs the LUT of its own FY, saved in the same list.
+    case "debit_lut_missing":
       return { kind: "page", to: "/settings/tax#luts", place: "Settings › Tax" };
     case "bank_missing":
     case "swift_missing":
@@ -555,7 +557,7 @@ export function invErrorText(e: unknown): string {
       return e.extra.number ? alreadyIssued(e.extra.number) : sentenceOf(e.message);
     // 07-S §9 (Q37): the year that has no LUT rides on the 409 (contract: `details.fy`, "2027-28" or a token).
     if (e.code === "advance_lut_missing")
-      return e.extra.fy ? advanceLutMissing(fyLabel(e.extra.fy)) : sentenceOf(e.message);
+      return e.extra.fy ? advanceLutMissing(fyLabel(e.extra.fy, UNKNOWN)) : sentenceOf(e.message);
     // 07-S §8: as a 400 the server's own words are 07-S's line, with the day and the limit in it.
     if (e.code === "fx_same_day_exists" || e.code === "fx_date_invalid") return sentenceOf(e.message);
     if (Object.hasOwn(INV_ERRORS, e.code)) return (INV_ERRORS as Record<string, string>)[e.code] as string;

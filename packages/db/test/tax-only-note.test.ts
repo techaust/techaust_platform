@@ -35,7 +35,7 @@ const rawFreeze = (id: string) =>
     "UPDATE documents SET status = 'issued', frozen_at = 9000, series = 'debitNote', fy = ?2, number = 1, number_display = 'DN/' || ?2 || '/1', issue_date = '2026-11-05', balance_minor = total_minor, issuer = ?3 WHERE id = ?1",
     id,
     nextFy(),
-    // T4: signed, so only the round-off is under test (documents_signature_required, 0054)
+    // T4: signed, so only the round-off is under test (documents_signature_required, 0055)
     SIGNED_ISSUER,
   );
 

@@ -102,6 +102,8 @@ export type NoteRow = {
   readonly igstMinor: number;
   readonly cgstMinor: number;
   readonly sgstMinor: number;
+  /** rt1 T3: the note's IMS answer (the register row's `imsStatus`, null when none). Not a GSTR-1 column: only the 3B helper reads it. */
+  readonly imsStatus: string | null;
 };
 
 /** One row of b2cs: per (place of supply, rate), the signed sums of invoices and of the notes netted in. */
@@ -524,7 +526,8 @@ function buildTables(
     } else if (section === "cdnr" || section === "cdnur") {
       const target = section === "cdnr" ? cdnr : cdnur;
       const noteType = row.kind === "credit_note" ? "C" : "D";
-      for (const d of docRows) target.push({ ...d, section, noteType, urType: item.urType });
+      const imsStatus = row.imsStatus ?? null;
+      for (const d of docRows) target.push({ ...d, section, noteType, urType: item.urType, imsStatus });
     } else {
       for (const r of item.byRate) {
         const key = `${row.placeOfSupplyCode}|${r.rateBp}`;

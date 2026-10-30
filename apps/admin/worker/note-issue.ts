@@ -14,7 +14,13 @@ import {
 } from "@techaust/core/invoices";
 import type { TaxIssue } from "@techaust/core/tax";
 import type { DocumentBundle, InvoiceHeaderExtras, TermsRef } from "@techaust/db/documents";
-import type { InvoiceIssuerSnapshot, NoteIssueArgs, RecipientSnapshot } from "@techaust/db/issue";
+import {
+  fyTokenOfDateSql,
+  type InvoiceIssuerSnapshot,
+  LUT_FOR_FY_SQL,
+  type NoteIssueArgs,
+  type RecipientSnapshot,
+} from "@techaust/db/issue";
 import { type Ctx, err, NOT_FOUND } from "./context.ts";
 import {
   type BankRow,
@@ -35,6 +41,7 @@ import {
   NOTE_PARENT_READS,
   noteComputation,
   noteLines,
+  noteLutOf,
   noteOfOf,
   noteState,
   notesLimit,
@@ -120,7 +127,9 @@ export async function prepareNoteIssue(
   const issueDate = issueDateOf(now);
   const taxCtx = taxContext(i.settings);
   const re = recomputeNote(kind, p, stored.request, taxCtx, today);
-  const noteOf = noteOfOf(kind, p, stored.reason, stored.request);
+  // rt1 T2: a debit note on an export under LUT seals the LUT of its own issue day's FY (none saved: the blocker below, and the freeze refuses too).
+  const lut = noteLutOf(kind, p, i.settings, now);
+  const noteOf = noteOfOf(kind, p, stored.reason, stored.request, lut?.lut ?? null);
   const state = noteState({
     id: d.id,
     kind,
@@ -148,6 +157,7 @@ export async function prepareNoteIssue(
     bank: i.bank,
     issueDate,
     deadline: dl,
+    lut,
   });
   if (blockers.length > 0 || !re.computed)
     return c.json(
@@ -205,11 +215,23 @@ export async function explainNote(
     issueDate: string;
   },
 ): Promise<Response | null> {
+  // rt1 review 7: the issue DAY is bound and its FY worked out in SQL by `fyTokenOfDateSql`, exactly as the freeze WHERE (`noteIssueTail`, `?6`) and the trigger
+  // `documents_debit_note_lut_fy` (0054, `NEW.issue_date`) do, so this explanation can never name a different FY from the one that refused.
   const row = await c.env.DB.prepare(
-    "SELECT p.status, p.updated_at, p.credited_minor, p.total_minor, (SELECT count(*) FROM documents n WHERE n.parent_id = p.id AND n.type = ?2 AND n.frozen_at IS NOT NULL) AS n FROM documents p WHERE p.id = ?1",
+    `SELECT p.status, p.updated_at, p.credited_minor, p.total_minor, p.export_mode, p.supply_type, (SELECT count(*) FROM documents n WHERE n.parent_id = p.id AND n.type = ?2 AND n.frozen_at IS NOT NULL) AS n, ${LUT_FOR_FY_SQL.replaceAll("?FY", fyTokenOfDateSql("?3"))} AS lut_ok, ${fyTokenOfDateSql("?3")} AS fy FROM documents p WHERE p.id = ?1`,
   )
-    .bind(d.parentId, d.kind === "credit" ? "credit_note" : "debit_note")
-    .first<{ status: string; updated_at: number; credited_minor: number; total_minor: number; n: number }>();
+    .bind(d.parentId, d.kind === "credit" ? "credit_note" : "debit_note", x.issueDate)
+    .first<{
+      status: string;
+      updated_at: number;
+      credited_minor: number;
+      total_minor: number;
+      export_mode: string | null;
+      supply_type: string | null;
+      n: number;
+      lut_ok: number;
+      fy: string;
+    }>();
   if (!row) return err(c, PARENT_NOT_ISSUED, 409);
   if (row.status === "void") return err(c, PARENT_VOID, 409);
   if (!isLiveParentStatus(row.status))
@@ -227,6 +249,18 @@ export async function explainNote(
     (x.issueDate > x.deadline.lastDay || (x.deadline.filedOn !== null && x.issueDate >= x.deadline.filedOn))
   )
     return c.json({ error: CREDIT_DEADLINE_PASSED, date: x.deadline.lastDay, request_id: c.var.rid }, 409);
+  // rt1 T2 (Researched 2026-10-30, Rule 96A(1) CGST Rules, Notification 37/2017-CT (08-C RA-19, Q39)): a debit note on an export under LUT whose issue day's FY has no
+  // LUT saved (the twin of the freeze's WHERE): the blocker the issue itself gives, with that FY.
+  const lutRoute = row.export_mode === "lut" || row.supply_type === "export_lut";
+  if (d.kind === "debit" && lutRoute && row.lut_ok !== 1)
+    return c.json(
+      {
+        error: { code: ISSUE_BLOCKED.code, message: ISSUE_BLOCKED.message },
+        blockers: [{ code: "debit_lut_missing", fy: row.fy }],
+        request_id: c.var.rid,
+      },
+      409,
+    );
   if (row.updated_at !== x.expectedParentUpdatedAt || row.credited_minor !== x.expectedParentCredited)
     return err(c, PARENT_CHANGED, 409);
   if (row.n >= NOTES_MAX) return err(c, notesLimit(d.kind), 409);

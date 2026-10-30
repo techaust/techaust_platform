@@ -2266,9 +2266,14 @@ input[readonly] {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
 }
 
+/* A settings row goes side by side by the width of its own list, not the window's (rt1 review 3): at 768 px the menu and the settings menu leave
+   the list a phone's width, and a window query gave the words a column of about 80 px (one word a line). Stacked, the hint reads at full width
+   above its control; side by side, the words keep at least 16rem and the control 14rem to 22rem. The export invoice's note switch is a `setting`
+   too: its panel names the same container (`.inv-export`, invoices.css). */
 .settings-rows {
   margin-bottom: var(--space-6);
   border-bottom: 1px solid var(--color-border);
+  container: setting-rows / inline-size;
 }
 
 .setting {
@@ -2278,9 +2283,9 @@ input[readonly] {
   border-top: 1px solid var(--color-border);
 }
 
-@media (min-width: 48rem) {
+@container setting-rows (min-width: 40rem) {
   .setting {
-    grid-template-columns: minmax(0, 1fr) minmax(14rem, 22rem);
+    grid-template-columns: minmax(16rem, 1fr) minmax(14rem, 22rem);
     align-items: start;
   }
 }

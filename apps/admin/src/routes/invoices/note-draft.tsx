@@ -105,7 +105,7 @@ export function NoteDraft({
                 {issueLabel(kind)}
               </h2>
             </div>
-            <NoteBlockerList blockers={v.blockers} kind={kind} currency={v.currency} clientId={v.client.id} />
+            <NoteBlockerList blockers={v.blockers} kind={kind} currency={v.currency} />
             {waiting && (
               <p className="approval-line" data-state="pending">
                 <Clock size={16} />

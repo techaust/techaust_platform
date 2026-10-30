@@ -212,6 +212,29 @@ export function lutsFromStoredTax(json: unknown): { fy: string; arn: string }[] 
   return fate.fate === "folded" ? [...list, { fy: fate.entry.fy, arn: fate.entry.arn }] : list;
 }
 
+/**
+ * rt1 re-check 1 (Researched 2026-10-30, Rule 96A(1) CGST Rules, Notification 37/2017-CT (08-C RA-19, Q39)): the letter a debit note on an export under LUT relies on,
+ * from the parsed `tax` settings: a list entry of that FY with an ARN (`lutFor`), else the one legacy `lut` of M3 only when `legacyLutFate` folds it, so an ARN the list
+ * would refuse, or a letter a full list leaves out, never passes the blocker and is never sealed. It is exactly `lutFor(fyToken, lutsOf(tax))`, the rule of the M5.2
+ * export and advance paths (a core test proves it). Against db `LUT_FOR_FY_SQL` (the freeze WHERE and the trigger `documents_debit_note_lut_fy`, 0054) it is stricter in
+ * ONE case, failing closed: SQL also counts a legacy letter of that FY whose ARN is not blank once its spaces are trimmed even when it would not fold; this refuses it (a
+ * db test pins that core never allows what SQL refuses, and that this is the only difference). Null: none.
+ */
+export function lutForFy(
+  fyToken: string,
+  tax: {
+    readonly lut: LegacyLutTax["lut"];
+    readonly luts: readonly { readonly fy: string; readonly arn: string }[];
+  },
+): { fy: string; arn: string } | null {
+  const listed = lutFor(fyToken, tax.luts);
+  if (listed) return listed;
+  const fate = legacyLutFate(tax);
+  return fate.fate === "folded" && fate.entry.fy === fyToken
+    ? { fy: fate.entry.fy, arn: fate.entry.arn }
+    : null;
+}
+
 /** The export route stored in a `tax` settings value (`exportMode`), read WITHOUT zod; anything else is the default, the LUT route (G-8). */
 export function exportModeFromStoredTax(json: unknown): ExportRoute {
   return isRecord(json) && json.exportMode === "igst_paid" ? "igst_paid" : "lut";

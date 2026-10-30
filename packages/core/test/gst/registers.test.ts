@@ -7,6 +7,8 @@ import {
   gstr1Sections,
   gstr3bSummary,
   inPeriod,
+  linesDeductingAll,
+  NO_IMS_HELD,
   OUTPUT_TAX_BUCKETS,
   outputTaxRows,
   type RegisterApiRow,
@@ -252,15 +254,17 @@ describe("the GSTR-3B summary", () => {
     return r.value.lines;
   };
 
-  it("3.1(a) and 3.1(b) add up to GSTR-1's overall totals; 3.1(b) is exp and the export notes", () => {
+  it("3.1(a), the IMS-held credit notes and 3.1(b) add up to GSTR-1's overall totals; 3.1(b) is exp and the export notes", () => {
     const lines = summary();
     const a = lines.find((l) => l.table === "3.1(a)");
     const b = lines.find((l) => l.table === "3.1(b)");
     const t = sections().totals;
-    expect((a?.taxableMinor ?? 0) + (b?.taxableMinor ?? 0)).toBe(t.overall.taxableMinor);
-    expect((a?.igstMinor ?? 0) + (b?.igstMinor ?? 0)).toBe(t.overall.igstMinor);
-    expect((a?.cgstMinor ?? 0) + (b?.cgstMinor ?? 0)).toBe(t.overall.cgstMinor);
-    expect((a?.sgstMinor ?? 0) + (b?.sgstMinor ?? 0)).toBe(t.overall.sgstMinor);
+    const r = gstr3bSummary(sections());
+    const h = (r.ok && r.value.imsHeld) || NO_IMS_HELD;
+    expect((a?.taxableMinor ?? 0) + h.taxableMinor + (b?.taxableMinor ?? 0)).toBe(t.overall.taxableMinor);
+    expect((a?.igstMinor ?? 0) + h.igstMinor + (b?.igstMinor ?? 0)).toBe(t.overall.igstMinor);
+    expect((a?.cgstMinor ?? 0) + h.cgstMinor + (b?.cgstMinor ?? 0)).toBe(t.overall.cgstMinor);
+    expect((a?.sgstMinor ?? 0) + h.sgstMinor + (b?.sgstMinor ?? 0)).toBe(t.overall.sgstMinor);
     expect(b?.taxableMinor).toBe(t.exp.taxableMinor + 0 - 835_000);
     expect(b?.igstMinor).toBe(t.exp.igstMinor);
   });
@@ -327,13 +331,16 @@ describe("the GSTR-3B summary", () => {
       rates: [rate("998314", 1800, 100_000, "intra")],
       ...base,
     });
-    const cn = row({
-      id: "c",
-      number: "C1",
-      kind: "credit_note",
-      rates: [rate("998314", 1800, 30_000, "intra")],
-      ...base,
-    });
+    const cn = {
+      ...row({
+        id: "c",
+        number: "C1",
+        kind: "credit_note",
+        rates: [rate("998314", 1800, 30_000, "intra")],
+        ...base,
+      }),
+      imsStatus: "accepted",
+    };
     const s = gstr1Sections(
       [parent, dn, cn].map((r, i) => toApi(r, i + 1)),
       period,
@@ -344,6 +351,130 @@ describe("the GSTR-3B summary", () => {
     expect(r.ok && r.value.lines[0]).toMatchObject({
       table: "3.1(a)",
       taxableMinor: 1_000_000 + 100_000 - 30_000,
+    });
+    expect(r.ok && r.value.imsHeld).toEqual(NO_IMS_HELD);
+  });
+
+  describe("rt1 T3 [RA-04]: a credit note in cdnr is deducted only once accepted in IMS", () => {
+    const parentOf = (id: string) =>
+      row({ id, number: id.toUpperCase(), rates: [rate("998314", 1800, 1_000_000, "intra")] });
+    const noteBase = (parent: string, supply: "intra") => ({
+      noteOf: {
+        number: parent.toUpperCase(),
+        issueDate: d(2026, 10, 5),
+        supplyType: supply,
+        recipientStatus: "registered" as const,
+        placeOfSupplyCode: "19" as const,
+        totalInrMinor: 1_180_000,
+      },
+      date: d(2026, 10, 20),
+    });
+    const credit = (id: string, taxable: number, ims: string | null | undefined, parent = "p") => ({
+      ...row({
+        id,
+        number: id.toUpperCase(),
+        kind: "credit_note",
+        rates: [rate("998314", 1800, taxable, "intra")],
+        ...noteBase(parent, "intra"),
+      }),
+      ...(ims === undefined ? {} : { imsStatus: ims }),
+    });
+    const build = (rows: ReturnType<typeof row>[]) => {
+      const s = gstr1Sections(
+        rows.map((r, i) => toApi(r, i + 1)),
+        period,
+        PARAMS,
+      );
+      if (!s.ok) throw new Error(JSON.stringify(s.errors));
+      const r = gstr3bSummary(s.value);
+      if (!r.ok) throw new Error(JSON.stringify(r.errors));
+      return { sections: s.value, summary: r.value };
+    };
+
+    it("pending, rejected, not applicable, null and missing are held; accepted is deducted; the identity 3.1(a) + held = the old 3.1(a) holds", () => {
+      const rows = [
+        parentOf("p"),
+        credit("c1", 10_000, "pending"),
+        credit("c2", 20_000, "rejected"),
+        credit("c3", 40_000, null),
+        credit("c4", 80_000, undefined),
+        credit("c5", 160_000, "not_applicable"),
+        credit("c6", 5_000, "accepted"),
+      ];
+      const { sections: s, summary } = build(rows);
+      const a = summary.lines[0];
+      // only C6 is deducted
+      expect(a).toMatchObject({ table: "3.1(a)", taxableMinor: 1_000_000 - 5_000 });
+      expect(summary.imsHeld).toEqual({
+        count: 5,
+        numbers: ["C1", "C2", "C3", "C4", "C5"],
+        taxableMinor: -(10_000 + 20_000 + 40_000 + 80_000 + 160_000),
+        igstMinor: 0,
+        cgstMinor: -(900 + 1_800 + 3_600 + 7_200 + 14_400),
+        sgstMinor: -(900 + 1_800 + 3_600 + 7_200 + 14_400),
+      });
+      // 3.1(a) + held is what every credit note deducted gives (GSTR-1's cdnr is unchanged)
+      const old = linesDeductingAll(summary)[0];
+      expect(old?.taxableMinor).toBe(1_000_000 - 315_000);
+      expect((a?.taxableMinor ?? 0) + (summary.imsHeld?.taxableMinor ?? 0)).toBe(old?.taxableMinor);
+      expect(s.totals.cdnr.taxableMinor).toBe(-315_000);
+    });
+
+    it("debit notes in cdnr, cdnur and b2cs are unaffected, whatever their IMS value", () => {
+      const parentU = row({
+        id: "u",
+        number: "U1",
+        rates: [rate("998314", 1800, 1_000_000, "intra")],
+        status: "unregistered",
+        gstin: null,
+      });
+      const dn = {
+        ...row({
+          id: "dn",
+          number: "DN1",
+          kind: "debit_note",
+          rates: [rate("998314", 1800, 50_000, "intra")],
+          ...noteBase("p", "intra"),
+        }),
+        imsStatus: "pending",
+      };
+      const b2csNote = {
+        ...row({
+          id: "cu",
+          number: "CU1",
+          kind: "credit_note",
+          rates: [rate("998314", 1800, 7_000, "intra")],
+          status: "unregistered",
+          gstin: null,
+          noteOf: {
+            ...noteBase("u", "intra").noteOf,
+            recipientStatus: "unregistered" as const,
+            number: "U1",
+          },
+          date: d(2026, 10, 20),
+        }),
+        imsStatus: "pending",
+      };
+      const { summary } = build([parentOf("p"), parentU, dn, b2csNote]);
+      expect(summary.imsHeld).toEqual(NO_IMS_HELD);
+      expect(summary.lines[0]).toMatchObject({ taxableMinor: 1_000_000 + 1_000_000 + 50_000 - 7_000 });
+    });
+
+    it("a note of two rates counts once, its number once; no totals_mismatch", () => {
+      const two = {
+        ...row({
+          id: "c2r",
+          number: "C2R",
+          kind: "credit_note",
+          rates: [rate("998314", 1800, 10_000, "intra"), rate("998313", 500, 10_000, "intra")],
+          ...noteBase("p", "intra"),
+        }),
+        imsStatus: "pending",
+      };
+      const { summary } = build([parentOf("p"), two]);
+      expect(summary.imsHeld?.count).toBe(1);
+      expect(summary.imsHeld?.numbers).toEqual(["C2R"]);
+      expect(summary.imsHeld?.taxableMinor).toBe(-20_000);
     });
   });
 
@@ -369,6 +500,7 @@ describe("the GSTR-3B summary", () => {
           { table: "3.1(a)", posCode: null, taxableMinor: 0, igstMinor: 0, cgstMinor: 0, sgstMinor: 0 },
           { table: "3.1(b)", posCode: null, taxableMinor: 0, igstMinor: 0, cgstMinor: 0, sgstMinor: 0 },
         ],
+        imsHeld: { count: 0, numbers: [], taxableMinor: 0, igstMinor: 0, cgstMinor: 0, sgstMinor: 0 },
       },
       warnings: [],
     });

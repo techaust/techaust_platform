@@ -53,57 +53,12 @@ export const isNoteView = (v: { type: string }) => v.type === "credit_note" || v
 export const noteKindOfView = (v: { type: string }): NoteKind =>
   v.type === "credit_note" ? "credit" : "debit";
 
-// ---- what still stops the issue (07-T, 07-ZC line 1) ----------------------------------------------------------------------------------------
+// ---- the deadline (07-ZD lines 2 to 5) ----------------------------------------------------------------------------------------------------------
 
 /**
- * The blockers of a credit or debit note, one line each in 07-T's words, as the invoice's `BlockerList` draws them: a line fixed on another page (Settings ›
- * Company for the supplier's details and, since rt2 (T4), the signature every note carries; the client's page for the client's) links its place there.
- * The note's lines come from its invoice, so no line points inside the note.
+ * The credit deadline of an invoice: dated lines in the tone of how close it is (info; warning from the first day of the month before the last day, the
+ * days left leading; danger once passed). The first line carries the weight, the rest are quieter.
  */
-export function NoteBlockerList(props: {
-  blockers: readonly NoteBlockerIn[];
-  kind: NoteKind;
-  currency: Currency;
-  clientId: string;
-}) {
-  if (props.blockers.length === 0) return null;
-  return (
-    <ul className="blockers inv-blockers">
-      {props.blockers.map((b, i) => {
-        const line = noteBlockerLine(b, props.kind, props.currency);
-        const t = blockerTarget(b, props.clientId);
-        const parts = t?.kind === "page" ? splitAtPlace(line, t.place) : null;
-        const body =
-          t?.kind !== "page" ? (
-            line
-          ) : parts ? (
-            <>
-              {parts[0]}
-              <Link className="blockers__link inv-blockers__place" to={t.to}>
-                {parts[1]}
-              </Link>
-              {parts[2]}
-            </>
-          ) : (
-            <Link className="blockers__link" to={t.to}>
-              {line}
-            </Link>
-          );
-        return (
-          // biome-ignore lint/suspicious/noArrayIndexKey: a code can repeat for different lines; the list is redrawn whole
-          <li key={`${b.code}-${i}`} className="blockers__item">
-            <Alert size={16} />
-            <span>{body}</span>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-// ---- the deadline (07-T §4) ---------------------------------------------------------------------------------------------------------------------
-
-/** The credit deadline of an invoice: a dated line in the tone of how close it is (info, then warning from 1 October, then danger once passed). */
 export function DeadlineNotice({ deadline, fy }: { deadline: CreditDeadlineView; fy: string | null }) {
   const b = deadlineBanner(deadline, fy, issueDateOf(Date.now()));
   return (
@@ -117,6 +72,55 @@ export function DeadlineNotice({ deadline, fy }: { deadline: CreditDeadlineView;
         ))}
       </div>
     </div>
+  );
+}
+
+// ---- what stops a note's issue (07-T §7, 07-R, 07-ZD line 6) -------------------------------------------------------------------------------------
+
+/**
+ * A note's blockers, one sentence each. A blocker fixed on a settings page (the supplier's details and the signature every note carries since rt2 T4
+ * (07-ZC line 1, `/settings/company`), the reverse-charge line, the bank, the LUT of the debit note's year: rt1 T2, `/settings/tax#luts`) carries that page's name as its link, the invoice editor's pattern (`blockerTarget`, the whole row a 44 px
+ * target); the others are plain sentences. `id` lets a dialog point at the list.
+ */
+export function NoteBlockerList(props: {
+  blockers: readonly NoteBlockerIn[];
+  kind: NoteKind;
+  currency: Currency;
+  id?: string;
+}) {
+  if (props.blockers.length === 0) return null;
+  return (
+    <ul className="blockers inv-blockers" id={props.id}>
+      {props.blockers.map((b, i) => {
+        const line = noteBlockerLine(b, props.kind, props.currency);
+        // No note blocker opens the client (the only target that needs its id), so none is passed.
+        const t = blockerTarget(b, "");
+        const parts = t?.kind === "page" ? splitAtPlace(line, t.place) : null;
+        return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: a code can repeat for different lines; the list is redrawn whole
+          <li key={`${b.code}-${i}`} className="blockers__item" data-code={b.code}>
+            <Alert size={16} />
+            <span>
+              {t?.kind === "page" && parts ? (
+                <>
+                  {parts[0]}
+                  <Link className="blockers__link inv-blockers__place" to={t.to}>
+                    {parts[1]}
+                  </Link>
+                  {parts[2]}
+                </>
+              ) : t?.kind === "page" ? (
+                <Link className="blockers__link" to={t.to}>
+                  {line}
+                </Link>
+              ) : (
+                line
+              )}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

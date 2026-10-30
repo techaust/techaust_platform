@@ -224,6 +224,18 @@
         "CGST",
         "SGST"
       ]
+    },
+    "gstr3b-summary-v2": {
+      "stem": "gstr3b_summary",
+      "headers": [
+        "Table",
+        "Description",
+        "Place of supply",
+        "Taxable value",
+        "IGST",
+        "CGST",
+        "SGST"
+      ]
     }
   },
   "statement": {

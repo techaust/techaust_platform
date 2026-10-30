@@ -4,7 +4,8 @@ import { CREDIT_REASONS, DEBIT_REASONS, NOTE_BLOCKER_CODES } from "@techaust/cor
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
 import { APPROVED_07Y, PLACEHOLDER_MARK } from "./copy-y.ts";
-import { BADGE_PILLS, badgeOf } from "./invoices.ts";
+import { deadlineWarnLine } from "./copy-zd.ts";
+import { BADGE_PILLS, badgeOf, blockerTarget, splitAtPlace } from "./invoices.ts";
 import {
   AMOUNT_TOO_SMALL,
   ANNUAL_RETURN_ERRORS,
@@ -17,7 +18,6 @@ import {
   creditNoteCount,
   DEBIT_REASON_CODES,
   deadlineBanner,
-  deadlineWarnLine,
   effectLine,
   emptyNoteForm,
   firstErrorKey,
@@ -42,9 +42,12 @@ import {
 } from "./notes.ts";
 import type { CreditDeadlineView, NoteOfView } from "./notes-api.ts";
 
+/** An FY 2026-27 invoice to a registered client, default cutoff (rt1 T1): the return by 30 Nov 2027, the last day 31 Oct 2027, a monthly period. */
 const deadline = (d: Partial<CreditDeadlineView>): CreditDeadlineView => ({
   date: "2027-11-30",
-  lastDay: "2027-11-30",
+  lastDay: "2027-10-31",
+  returnBy: "2027-11-30",
+  period: "month",
   basis: "cutoff",
   supplyFy: "2627",
   filedOn: null,
@@ -131,78 +134,117 @@ describe("badges (07-T §6, docs/06 §5.5)", () => {
   });
 });
 
-describe("the deadline banner (07-T §4; Researched 2026-10-28, 08-C RA-03; the warning OPEN, RA-31)", () => {
+describe("the deadline banner (07-ZD lines 2 to 5; Researched 2026-10-30, s.34(2) CGST Act, Rule 59 CGST Rules (08-C RA-31, RA-03))", () => {
   const BEFORE =
-    "A credit note for this invoice must be reported in a GST return filed by 30 Nov 2027 (30 November after its financial year, or the day you file that year's annual return, if earlier).";
+    "Issue any credit note for this invoice by 31 Oct 2027, so it goes into a GST return filed by 30 Nov 2027.";
+  const QUARTER =
+    "This client isn't GST registered, so the note goes in your quarterly GSTR-1, not a monthly IFF.";
+  // The server's R2 dates: warn from the first day of the month before the last day's month; advise the last day.
   const warnDl = (d: Partial<CreditDeadlineView>) =>
-    deadline({ deadlineWarnFrom: "2027-10-01", adviseIssueBy: "2027-10-31", ...d });
+    deadline({ deadlineWarnFrom: "2027-09-01", adviseIssueBy: "2027-10-31", ...d });
 
-  it("before: the return date; from the warning day: the days left lead, with the advice date; passed: the passed line in danger", () => {
+  it("before (line 2): the last day and the return date, both the server's, in the admin's date words", () => {
     expect(deadlineBanner(warnDl({}), "2627", "2027-06-01")).toEqual({ tone: "info", lines: [BEFORE] });
-    const near = deadlineBanner(warnDl({ daysLeft: 60 }), "2627", "2027-10-01");
-    expect(near).toEqual({
-      tone: "warning",
-      lines: [
-        "Only 60 days left for a credit note on this invoice. Issue it by 31 Oct 2027 so it goes into a return filed in time.",
-        BEFORE,
-      ],
-    });
-    // after the advice date it would come too late: the days left alone
-    expect(deadlineBanner(warnDl({ daysLeft: 12 }), "2627", "2027-11-18").lines[0]).toBe(
-      "Only 12 days left for a credit note on this invoice.",
-    );
-    expect(deadlineWarnLine(1, null)).toBe("Only 1 day left for a credit note on this invoice.");
-    // an older API without the warning date: within 30 days, as before
-    expect(deadlineBanner(deadline({ daysLeft: 12 }), "2627", "2027-11-18").tone).toBe("warning");
-    expect(deadlineBanner(deadline({ daysLeft: 45 }), "2627", "2027-10-16").tone).toBe("info");
-    // on the last day itself the date says it
-    expect(deadlineBanner(warnDl({ daysLeft: 0 }), "2627", "2027-11-30").lines).toHaveLength(1);
-    const gone = deadlineBanner(deadline({ passed: true, daysLeft: -3 }), "2627", "2027-12-03");
-    expect(gone).toEqual({
-      tone: "danger",
-      lines: [
-        "The deadline for a credit note on this invoice was 30 Nov 2027. A refund now can't reduce the GST already paid. Talk to your CA.",
-      ],
-    });
   });
 
-  it("the advice line fills {advice date} from the server's date, whatever the month (finding 7); no date, no advice", () => {
-    expect(
-      deadlineBanner(
-        warnDl({ daysLeft: 30, deadlineWarnFrom: "2027-05-01", adviseIssueBy: "2027-05-31" }),
-        "2627",
-        "2027-05-02",
-      ).lines[0],
-    ).toBe(
-      "Only 30 days left for a credit note on this invoice. Issue it by 31 May 2027 so it goes into a return filed in time.",
-    );
-    // capped at the day before an annual return
-    expect(
-      deadlineBanner(warnDl({ daysLeft: 5, adviseIssueBy: "2027-10-14" }), "2627", "2027-10-10").lines[0],
-    ).toContain("Issue it by 14 Oct 2027 so it goes");
-    // on the advice day itself it is still said; the next day it is not
-    expect(deadlineBanner(warnDl({ daysLeft: 30 }), "2627", "2027-10-31").lines[0]).toContain(
-      "Issue it by 31 Oct 2027",
-    );
-    expect(deadlineBanner(warnDl({ daysLeft: 29 }), "2627", "2027-11-01").lines[0]).toBe(
-      "Only 29 days left for a credit note on this invoice.",
-    );
-    expect(
-      deadlineBanner(deadline({ deadlineWarnFrom: "2027-10-01", daysLeft: 30 }), "2627", "2027-10-31")
-        .lines[0],
-    ).toBe("Only 30 days left for a credit note on this invoice.");
-  });
-
-  it("an annual return filed earlier: the filing day is the date shown", () => {
-    const b = deadlineBanner(
-      deadline({ basis: "annual_return", filedOn: "2027-09-20", date: "2027-09-20", lastDay: "2027-09-19" }),
+  it("the quarterly basis (line 3) only when the note goes in the quarterly GSTR-1", () => {
+    const q = deadlineBanner(
+      warnDl({
+        period: "quarter",
+        lastDay: "2027-09-30",
+        deadlineWarnFrom: "2027-08-01",
+        adviseIssueBy: "2027-09-30",
+      }),
       "2627",
       "2027-06-01",
     );
-    expect(b.lines[0]).toContain("filed by 20 Sep 2027");
+    expect(q).toEqual({
+      tone: "info",
+      lines: [
+        "Issue any credit note for this invoice by 30 Sep 2027, so it goes into a GST return filed by 30 Nov 2027.",
+        QUARTER,
+      ],
+    });
+    expect(deadlineBanner(warnDl({ period: "month" }), "2627", "2027-06-01").lines).not.toContain(QUARTER);
+    // an older API without `period`: no basis line
+    const { period: _p, ...noPeriod } = warnDl({});
+    expect(deadlineBanner(noPeriod, "2627", "2027-06-01").lines).toEqual([BEFORE]);
+    // after the deadline the basis is not said again
+    expect(
+      deadlineBanner(deadline({ period: "quarter", passed: true, daysLeft: -1 }), "2627", "2027-10-01").lines,
+    ).not.toContain(QUARTER);
   });
 
-  it("a supply year earlier than the invoice's says so", () => {
+  it("from the warning day (line 4): a warning, the days left leading; one day in its singular; on the last day itself line 2 names it", () => {
+    expect(deadlineBanner(warnDl({ daysLeft: 61 }), "2627", "2027-08-31").tone).toBe("info");
+    expect(deadlineBanner(warnDl({ daysLeft: 60 }), "2627", "2027-09-01")).toEqual({
+      tone: "warning",
+      lines: ["Only 60 days left to issue a credit note on this invoice.", BEFORE],
+    });
+    expect(deadlineWarnLine(12)).toBe("Only 12 days left to issue a credit note on this invoice.");
+    expect(deadlineWarnLine(1)).toBe("Only 1 day left to issue a credit note on this invoice.");
+    expect(deadlineBanner(warnDl({ daysLeft: 0 }), "2627", "2027-10-31")).toEqual({
+      tone: "warning",
+      lines: [BEFORE],
+    });
+    // with the quarterly line: the days lead, then lines 2 and 3
+    expect(
+      deadlineBanner(
+        warnDl({ period: "quarter", lastDay: "2027-09-30", deadlineWarnFrom: "2027-08-01", daysLeft: 5 }),
+        "2627",
+        "2027-09-25",
+      ).lines,
+    ).toEqual([
+      "Only 5 days left to issue a credit note on this invoice.",
+      "Issue any credit note for this invoice by 30 Sep 2027, so it goes into a GST return filed by 30 Nov 2027.",
+      QUARTER,
+    ]);
+    // an older API without the warning date: within 30 days, as before
+    expect(deadlineBanner(deadline({ daysLeft: 12 }), "2627", "2027-10-19").tone).toBe("warning");
+    expect(deadlineBanner(deadline({ daysLeft: 45 }), "2627", "2027-09-16").tone).toBe("info");
+  });
+
+  it("after the deadline (line 5): the last day, in danger, and nothing else", () => {
+    expect(deadlineBanner(deadline({ passed: true, daysLeft: -3 }), "2627", "2027-11-03")).toEqual({
+      tone: "danger",
+      lines: [
+        "The last day for a credit note on this invoice was 31 Oct 2027. A refund now can't reduce the GST already paid.",
+      ],
+    });
+  });
+
+  it("no line names a fixed day or sends the reader to a CA (07-ZD replaces 07-T §4's lines)", () => {
+    const all = [
+      deadlineBanner(warnDl({}), "2627", "2027-06-01"),
+      deadlineBanner(warnDl({ daysLeft: 20, period: "quarter" }), "2627", "2027-10-11"),
+      deadlineBanner(deadline({ passed: true, daysLeft: -3 }), "2627", "2027-11-03"),
+    ].flatMap((b) => b.lines);
+    for (const line of all) {
+      expect(line).not.toMatch(/30 November/);
+      expect(line).not.toMatch(/CA\b/);
+    }
+  });
+
+  it("an annual return filed earlier: the server's return date (the day before the filing) is the date shown; an older API falls back to `date`", () => {
+    const b = deadlineBanner(
+      deadline({
+        basis: "annual_return",
+        filedOn: "2027-09-20",
+        date: "2027-09-20",
+        returnBy: "2027-09-19",
+        lastDay: "2027-08-31",
+      }),
+      "2627",
+      "2027-06-01",
+    );
+    expect(b.lines[0]).toBe(
+      "Issue any credit note for this invoice by 31 Aug 2027, so it goes into a GST return filed by 19 Sep 2027.",
+    );
+    const { returnBy: _r, ...older } = deadline({});
+    expect(deadlineBanner(older, "2627", "2027-06-01").lines[0]).toBe(BEFORE);
+  });
+
+  it("a supply year earlier than the invoice's says so (07-T)", () => {
     const b = deadlineBanner(deadline({ supplyFy: "2526" }), "2627", "2027-06-01");
     expect(b.lines.at(-1)).toBe(
       "The deadline counts from FY 2025-26, when the payment was received or the work was completed.",
@@ -265,6 +307,28 @@ describe("errors and blockers (07-T §7, §8)", () => {
     expect(noteBlockerLine({ code: "notes_limit" }, "debit", "INR")).toBe(
       "This invoice already has 20 debit notes, the most it can have.",
     );
+  });
+
+  it("rt1 T2 `debit_lut_missing` (07-ZD line 6; Researched 2026-10-30, Rule 96A(1) CGST Rules (08-C RA-19, Q39)): the FY label twice, the fix in Settings › Tax#luts", () => {
+    expect(noteBlockerLine({ code: "debit_lut_missing", fy: "2728" }, "debit", "INR")).toBe(
+      "This debit note is dated in FY 2027-28 and the invoice was exported under LUT. Save your LUT for FY 2027-28 in Settings › Tax first.",
+    );
+    // no FY, or a damaged token: "…", never a guessed year
+    for (const fy of [undefined, "27", "2729"]) {
+      const b = fy === undefined ? { code: "debit_lut_missing" } : { code: "debit_lut_missing", fy };
+      expect(noteBlockerLine(b, "debit", "USD")).toBe(
+        "This debit note is dated in FY … and the invoice was exported under LUT. Save your LUT for FY … in Settings › Tax first.",
+      );
+    }
+    // the place in the sentence is the link to the LUT list, as for the invoice's LUT blockers
+    const t = blockerTarget({ code: "debit_lut_missing", fy: "2728" }, "c1");
+    expect(t).toEqual({ kind: "page", to: "/settings/tax#luts", place: "Settings › Tax" });
+    expect(
+      splitAtPlace(
+        noteBlockerLine({ code: "debit_lut_missing", fy: "2728" }, "debit", "INR"),
+        "Settings › Tax",
+      )?.[1],
+    ).toBe("Settings › Tax");
   });
 });
 

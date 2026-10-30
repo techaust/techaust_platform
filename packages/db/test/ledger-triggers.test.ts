@@ -269,7 +269,7 @@ describe("0050 documents_discount_after_sale_from: the reason is in force from 2
       id,
       issueDate,
       nextFy(),
-      // T4: signed, so only the discount date is under test (documents_signature_required, 0054)
+      // T4: signed, so only the discount date is under test (documents_signature_required, 0055)
       SIGNED_ISSUER,
     );
 

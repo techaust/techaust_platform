@@ -5,9 +5,13 @@
 export const DISCOUNT_AFTER_SALE_FROM_SQL = "2026-11-01";
 
 /**
- * Q37: a letter of undertaking with an ARN is saved in the `tax` setting for the FY token `?FY` (the pure twin is core `lutFor`: the `luts` list, and the one
- * legacy `lut {arn, fy}` of M3). Used inside a freeze WHERE, so a LUT removed between the read and the freeze refuses the batch; and, with `?FY` replaced by
- * `fyTokenOfDateSql` of the receipt day, by the trigger `documents_advance_lut_fy` (0050).
+ * Q37: a letter of undertaking with an ARN is saved in the `tax` setting for the FY token `?FY`: a `luts` list entry of that FY, or the one legacy `lut {arn, fy}`
+ * of M3 of that FY, each with an ARN not blank once its spaces are trimmed. The pure twins are core `lutFor(fy, lutsOf(tax))` (export invoice and advance) and
+ * core `lutForFy` (a debit note; the same rule), and both are STRICTER than this in one case, failing closed: they count the legacy `lut` only when
+ * `legacyLutFate` folds it, so a legacy ARN the list would refuse (or one a full list leaves out) is refused by the blocker before this would pass it (a db test,
+ * `note-rules-rt1.test.ts`, pins that core never allows what this refuses). Used inside a freeze WHERE, so a LUT removed between the read and the freeze refuses
+ * the batch; and, with `?FY` replaced by `fyTokenOfDateSql` of the receipt day, by the trigger `documents_advance_lut_fy` (0050) and of the note's issue day by
+ * `documents_debit_note_lut_fy` (0054).
  */
 export const LUT_FOR_FY_SQL = `EXISTS (SELECT 1 FROM settings ts WHERE ts.key = 'tax' AND (
            EXISTS (SELECT 1 FROM json_each(ts.value, '$.luts') l WHERE json_extract(l.value, '$.fy') = ?FY AND trim(coalesce(json_extract(l.value, '$.arn'), '')) <> '')
@@ -26,7 +30,7 @@ export const taxOnlyNoteExactSql = (n: string): string =>
 /**
  * T4 (rt2): an issuer block (`issuer`, an SQL expression holding its JSON: a bound parameter or `NEW.issuer`) that carries the signature: a signature reference
  * with its SHA-256, and no `signatory` key (the switch-off marker never appears on a document that must be signed). The twin of core `signatureRequired` with a saved
- * signature; used by the note and advance freeze WHEREs (`issue.ts`) and the trigger `documents_signature_required` (0054). Researched 2026-10-30, Rule 53(1A) CGST
+ * signature; used by the note and advance freeze WHEREs (`issue.ts`) and the trigger `documents_signature_required` (0055). Researched 2026-10-30, Rule 53(1A) CGST
  * Rules (08-C RA-22) for notes; s.31(3)(d) CGST Act and Rule 50 CGST Rules (08-C RA-17) for the invoice for a payment received.
  */
 export const signedIssuerSql = (issuer: string): string =>

@@ -13,7 +13,7 @@ import { csvBlob, readAll, reportsApi, saveFile } from "../../lib/reports-api.ts
 import { type SalesRegister as Built, buildSalesRegister } from "../../lib/reports-build.ts";
 import { ReportFrame } from "./frame.tsx";
 import { ManualEntries } from "./manual-entries.tsx";
-import { Amount, ProblemList, Progress, RangeForm, ReportBlock, WideList } from "./parts.tsx";
+import { Amount, ImsHeldNotice, ProblemList, Progress, RangeForm, ReportBlock, WideList } from "./parts.tsx";
 
 type Phase =
   | { kind: "idle" }
@@ -162,6 +162,8 @@ function Results({ built, from, to }: { built: Built; from: string; to: string }
           </table>
         </WideList>
       </ReportBlock>
+      {/* rt1 T3 (07-ZD line 8): with the 3B file on offer, the same line as the GST exports when credit notes are held back until IMS acceptance. */}
+      {built.imsHeld && <ImsHeldNotice held={built.imsHeld} id="sales-3b-held" />}
       <div className="report-downloads">
         <button
           type="button"

@@ -21,6 +21,7 @@ import type {
 } from "./schema/documents.ts";
 import {
   DISCOUNT_AFTER_SALE_FROM_SQL,
+  fyTokenOfDateSql,
   LUT_FOR_FY_SQL,
   signedIssuerSql,
   taxOnlyNoteExactSql,
@@ -456,14 +457,17 @@ function freezeStatement(
  * `updated_at`, its `credited_minor`, the last day a credit note may be dated, the day the annual return was filed). The invoice is still the frozen, live
  * tax or export invoice that was read, of this client and currency; a credit note fits inside what is left of it (the total only: the trigger of 0042 holds
  * each tax head) and is dated (`?6`, the issue day) on or before the last day and strictly before the day the return was filed; and fewer than 20 notes of
- * this kind are issued on it. A tax-only debit note has no round-off: its total is exactly its tax (FX-4, `taxOnlyNoteExactSql`; OPEN 08-C RA-33). Everything is in
- * the statement, so a refusal writes nothing.
+ * this kind are issued on it. A tax-only debit note has no round-off: its total is exactly its tax (FX-4, `taxOnlyNoteExactSql`; OPEN 08-C RA-33). A debit note on an
+ * export under LUT needs a LUT with an ARN saved for the FY of its own issue day `?6` (rt1 T2; Researched 2026-10-30, Rule 96A(1) CGST Rules, Notification 37/2017-CT
+ * (08-C RA-19, Q39); the twin of the trigger `documents_debit_note_lut_fy`, 0054). The last day a credit note may be dated is the caller's `lastDay` (rt1 T1: the end of
+ * the latest return period before the return deadline, core `creditNoteDeadline`). Everything is in the statement, so a refusal writes nothing.
  */
 function noteIssueTail(n: NoteIssueArgs, first: number): { where: string; binds: readonly unknown[] } {
   const p = `?${first}`;
   const at = (k: number) => `?${first + k}`;
   return {
-    where: ` AND EXISTS (SELECT 1 FROM documents p WHERE p.id = documents.parent_id AND p.id = ${p} AND p.type IN ('tax_invoice', 'export_invoice') AND p.frozen_at IS NOT NULL AND p.status IN ${NOTE_PARENT_LIVE} AND p.client_id = documents.client_id AND p.currency = documents.currency AND p.updated_at = ${at(1)} AND p.credited_minor = ${at(2)} AND (documents.type = 'debit_note' OR (documents.total_minor <= p.total_minor - p.credited_minor AND ?6 <= ${at(3)} AND (${at(4)} IS NULL OR ?6 < ${at(4)}))))
+    where: ` AND EXISTS (SELECT 1 FROM documents p WHERE p.id = documents.parent_id AND p.id = ${p} AND p.type IN ('tax_invoice', 'export_invoice') AND p.frozen_at IS NOT NULL AND p.status IN ${NOTE_PARENT_LIVE} AND p.client_id = documents.client_id AND p.currency = documents.currency AND p.updated_at = ${at(1)} AND p.credited_minor = ${at(2)} AND (documents.type = 'debit_note' OR (documents.total_minor <= p.total_minor - p.credited_minor AND ?6 <= ${at(3)} AND (${at(4)} IS NULL OR ?6 < ${at(4)})))
+           AND (documents.type <> 'debit_note' OR (p.export_mode IS NOT 'lut' AND p.supply_type IS NOT 'export_lut') OR ${LUT_FOR_FY_SQL.replaceAll("?FY", fyTokenOfDateSql("?6"))}))
          AND (SELECT count(*) FROM documents c WHERE c.parent_id = ${p} AND c.type = documents.type AND c.frozen_at IS NOT NULL) < ${NOTES_MAX_SQL}
          AND (json_extract(documents.header_extras, '$.noteOf.reason.code') IS NOT 'discount_after_sale' OR ?6 >= '${DISCOUNT_AFTER_SALE_FROM_SQL}')
          AND ${taxOnlyNoteExactSql("documents")}

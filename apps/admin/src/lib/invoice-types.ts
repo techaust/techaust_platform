@@ -6,7 +6,6 @@
 //
 // Money: amounts are the server's minor units, formatted through core; typed amounts are parsed through core (`moneyFrom`), the rate through core's
 // `parseFxRate` (digit by digit, no float). Nothing here adds, multiplies or rounds money: the only arithmetic is comparing two integers.
-import { financialYear } from "@techaust/core";
 import {
   FX_SOURCE_CODES,
   type FxSourceCode,
@@ -15,6 +14,7 @@ import {
   PURPOSE_CODE,
   parseFxRate,
 } from "@techaust/core/invoices";
+import { fyLabelOfToken } from "@techaust/core/pdf-jobs";
 import type { Currency } from "../api.ts";
 import { dayText, moneyText } from "./documents.ts";
 import { moneyFrom } from "./settings-form.ts";
@@ -189,11 +189,22 @@ export const advanceLine = (
 
 // ---- small rules -----------------------------------------------------------------------------------------------------------------------------------
 
-/** "2627" as people read it ("2026-27"); anything else as it is. */
-export function fyLabel(token: string | null | undefined): string {
-  if (!token || !/^\d{4}$/.test(token)) return token ?? "";
-  return financialYear(2000 + Number(token.slice(0, 2))).label;
+/**
+ * The admin's one FY label (rt1 review, finding 10): "2627" as people read it ("2026-27"), through core's `fyLabelOfToken`, which also refuses a
+ * damaged token ("2729"). A label that is already one ("2027-28", as the 409 `advance_lut_missing` and the sealed `advance.igstNoLutFy` carry it) is
+ * kept when it is the label of a real token. A missing or damaged value reads as `otherwise` when given (a sentence passes `UNKNOWN`, never a guessed
+ * year), else as it came.
+ */
+export function fyLabel(token: string | null | undefined, otherwise?: string): string {
+  const label = token ? (fyLabelOfToken(token) ?? labelAsIs(token)) : null;
+  return label ?? otherwise ?? token ?? "";
 }
+
+/** "2027-28" when it is exactly the label core gives its token ("2728"), else null. */
+const labelAsIs = (text: string): string | null => {
+  const m = /^\d{2}(\d{2})-(\d{2})$/.exec(text);
+  return m && fyLabelOfToken(`${m[1]}${m[2]}`) === text ? text : null;
+};
 
 /** A date as the admin writes it ("27 Oct 2026"), or the text as it came. */
 export const day = (iso: string | null | undefined) => (iso ? (dayText(iso) ?? iso) : "");

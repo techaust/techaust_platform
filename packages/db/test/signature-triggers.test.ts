@@ -1,12 +1,12 @@
 // T4 (rt2; ADM-INV-06, ADM-INV-07): a credit note, a debit note and a tax or export invoice for a payment received are issued only with the signature. Held in core
 // (`signatureRequired`, the `signature_missing` blocker), in the note and advance freeze WHEREs (`SIGNED_FREEZE_SQL`) and in the trigger `documents_signature_required`
-// (0054, a new trigger only: no table is rebuilt). Researched 2026-10-30, Rule 53(1A) CGST Rules (08-C RA-22); s.31(3)(d) CGST Act and Rule 50 CGST Rules (08-C RA-17).
+// (0055, a new trigger only: no table is rebuilt). Researched 2026-10-30, Rule 53(1A) CGST Rules (08-C RA-22); s.31(3)(d) CGST Act and Rule 50 CGST Rules (08-C RA-17).
 // The freeze of an advance invoice is tested with its own batch in invoice-types.test.ts.
 import { uuidv7 } from "@techaust/core";
 import { SIGNED_ALWAYS_TYPES } from "@techaust/core/invoices";
 import { describe, expect, it } from "vitest";
 import { SIGNED_FREEZE_SQL, signedIssuerSql } from "../src/issue.ts";
-import { SIGNED_ALWAYS_TYPES_0054, signatureTriggerStatements } from "../src/triggers.ts";
+import { SIGNED_ALWAYS_TYPES_0055, signatureTriggerStatements } from "../src/triggers.ts";
 import { all, first, rejects, run, SIGNED_ISSUER, TEST_SIGNATURE } from "./helpers.ts";
 import {
   insertNoteDraft,
@@ -80,14 +80,14 @@ const noteFreeze = (id: string, kind: "credit" | "debit", issuer: string) =>
 const status = async (id: string) =>
   (await first<{ status: string }>("SELECT status FROM documents WHERE id = ?", id))?.status;
 
-describe("0054 documents_signature_required [T4; ADM-INV-06; 08-C RA-17, RA-22]", () => {
-  it("the migration installs exactly the generated trigger, and its type list is core's (pinned as SIGNED_ALWAYS_TYPES_0054)", async () => {
+describe("0055 documents_signature_required [T4; ADM-INV-06; 08-C RA-17, RA-22]", () => {
+  it("the migration installs exactly the generated trigger, and its type list is core's (pinned as SIGNED_ALWAYS_TYPES_0055)", async () => {
     const t = await first<{ sql: string }>(
       "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'documents_signature_required'",
     );
     expect(t?.sql).toBe(signatureTriggerStatements()[0]?.replace(/;$/, ""));
-    expect([...SIGNED_ALWAYS_TYPES_0054]).toEqual([...SIGNED_ALWAYS_TYPES]);
-    expect(t?.sql).toContain(`NEW.type IN (${SIGNED_ALWAYS_TYPES_0054.map((x) => `'${x}'`).join(", ")})`);
+    expect([...SIGNED_ALWAYS_TYPES_0055]).toEqual([...SIGNED_ALWAYS_TYPES]);
+    expect(t?.sql).toContain(`NEW.type IN (${SIGNED_ALWAYS_TYPES_0055.map((x) => `'${x}'`).join(", ")})`);
   });
 
   it("refuses an unsigned or switched-off credit note and debit note; a signed one issues", async () => {
@@ -139,10 +139,10 @@ describe("0054 documents_signature_required [T4; ADM-INV-06; 08-C RA-17, RA-22]"
     }
   });
 
-  it("a note frozen before 0054 without a signature keeps every later write: the trigger judges only the move from draft to issued", async () => {
+  it("a note frozen before 0055 without a signature keeps every later write: the trigger judges only the move from draft to issued", async () => {
     const p = await parentInvoice();
     const old = await insertNoteDraft(p, "credit", sampleCredit(p, [[0, 10_000]]));
-    // as before 0054: the trigger dropped for the one freeze, then installed again
+    // as before 0055: the trigger dropped for the one freeze, then installed again
     await run("DROP TRIGGER documents_signature_required");
     try {
       await noteFreeze(old.id, "credit", UNSIGNED);

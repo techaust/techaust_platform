@@ -76,7 +76,7 @@ export type InvoiceSeedOptions = {
   gstEstimate?: boolean;
   /**
    * T4 (rt2): a tax or export invoice for a payment received (`header.advance` sealed and frozen). Without `signature` it is an invoice issued before the rule (an
-   * older staging document), frozen past the 0054 trigger.
+   * older staging document), frozen past the 0055 trigger.
    */
   advance?: boolean;
   /** T10 (rt2): the Udyam block the issuer froze (only a tax invoice is ever issued with one; a test may freeze one elsewhere to prove the refusal). */
