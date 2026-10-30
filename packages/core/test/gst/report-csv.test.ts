@@ -234,6 +234,12 @@ describe("layout versions", () => {
     ).toEqual(expected);
   });
 
+  it("gstr3b-summary-v2 of a summary built by hand without `imsHeld`: the held row is zeros (nothing held back)", () => {
+    expect(unwrap(gstr3bCsv({ lines: [] }))).toBe(
+      "Table,Description,Place of supply,Taxable value,IGST,CGST,SGST\r\n,Credit notes to registered clients not yet accepted in IMS (not deducted),,0.00,0.00,0.00,0.00\r\n",
+    );
+  });
+
   it("a header-only file for no rows ends in CRLF", () => {
     for (const csv of [
       unwrap(salesRegisterCsv([])),

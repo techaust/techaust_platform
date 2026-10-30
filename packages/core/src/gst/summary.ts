@@ -117,9 +117,10 @@ export function gstr3bSummary(sections: Gstr1Sections): GstResult<Gstr3bSummary>
       if (imsDeducts(r)) add(cdnrIn, r, noteSign(r));
       else {
         add(held, r, noteSign(r));
+        // one row per (note, rate): a note is counted, and its number listed, once (GSTR-1 refuses two documents of one number: `duplicate_row`)
         if (!heldDocs.includes(r.docId)) {
           heldDocs.push(r.docId);
-          if (!heldNumbers.includes(r.number)) heldNumbers.push(r.number);
+          heldNumbers.push(r.number);
         }
       }
     }
