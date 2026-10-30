@@ -629,7 +629,8 @@ describe("files from register rows (core does every sum)", () => {
     const csv = r.files.find((f) => f.stem === "gstr3b_summary")?.csv ?? "";
     const lines = csv.split("\r\n");
     expect(lines.at(-2)).toBe(
-      ",Credit notes to registered clients not yet accepted in IMS (not deducted),,-1000.00,0.00,-90.00,-90.00",
+      // rt1 F3 (lead D8): printed as positive amounts not deducted; `imsHeld` above stays signed
+      ",Credit notes to registered clients not yet accepted in IMS (not deducted),,1000.00,0.00,90.00,90.00",
     );
     // the sales register's 3B file carries the same block
     const sr = buildSalesRegister(

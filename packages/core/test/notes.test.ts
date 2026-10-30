@@ -447,19 +447,43 @@ describe("creditNoteDeadline [s.34(2); Q32, Q33; rt1 R1; Researched 2026-10-30, 
     expect(creditAllowed("2026-10-01", u)).toBe(false);
   });
 
-  it("a cutoff of 31 January gives 31 December for every filing and recipient (the cutoff's year is the one the FY ends in, as before rt1)", () => {
+  it("rt1 F2: a cutoff of 31 January is the one AFTER the FY ends (2027-01-31 for FY 2025-26) and gives 31 December 2026 for every filing and recipient", () => {
     for (const filing of FILINGS) {
       const d = creditNoteDeadline(fy2526, { month: 1, day: 31 }, [], filing);
-      expect(d.date).toBe("2026-01-31");
-      expect(d.lastDay).toBe("2025-12-31");
+      expect(d.date).toBe("2027-01-31");
+      expect(d.returnBy).toBe("2027-01-31");
+      expect(d.lastDay).toBe("2026-12-31");
+      expect(creditAllowed("2026-12-31", d)).toBe(true);
+      expect(creditAllowed("2027-01-01", d)).toBe(false);
     }
+  });
+
+  it("rt1 F2: a cutoff of 31 March (FY 2025-26) is 2027-03-31: 28 February 2027 monthly, 31 December 2026 for a quarterly filer's unregistered client", () => {
+    const march = { month: 3, day: 31 };
+    for (const filing of [MONTHLY_REG, MONTHLY_UNREG, MONTHLY_OVERSEAS, QRMP_REG]) {
+      expect(creditNoteDeadline(fy2526, march, [], filing)).toMatchObject({
+        date: "2027-03-31",
+        period: "month",
+        lastDay: "2027-02-28",
+      });
+    }
+    for (const filing of [QRMP_UNREG, QRMP_OVERSEAS]) {
+      expect(creditNoteDeadline(fy2526, march, [], filing)).toMatchObject({
+        date: "2027-03-31",
+        period: "quarter",
+        lastDay: "2026-12-31",
+      });
+    }
+    // April onwards stays in the year the FY ends
+    expect(creditNoteDeadline(fy2526, { month: 4, day: 30 }, [], MONTHLY_REG).date).toBe("2026-04-30");
   });
 
   it("a day past the month's end is clamped (31 November is the 30th; February by the year)", () => {
     expect(creditNoteDeadline(base, { month: 11, day: 31 }, [], QRMP_REG).date).toBe("2027-11-30");
+    // a February cutoff is in the year after the FY ends (rt1 F2): FY 2022-23 -> February 2024 (leap), FY 2024-25 -> February 2026
     expect(
       creditNoteDeadline(
-        { ...base, parentFy: "2324", parentIssueDate: "2023-05-01" },
+        { ...base, parentFy: "2223", parentIssueDate: "2022-05-01" },
         { month: 2, day: 31 },
         [],
         MONTHLY_REG,
@@ -472,7 +496,7 @@ describe("creditNoteDeadline [s.34(2); Q32, Q33; rt1 R1; Researched 2026-10-30, 
         [],
         QRMP_UNREG,
       ),
-    ).toMatchObject({ date: "2025-02-28", lastDay: "2024-12-31" });
+    ).toMatchObject({ date: "2026-02-28", lastDay: "2025-12-31" });
     expect(creditNoteDeadline(base, { month: 12, day: 31 }, [], QRMP_REG)).toMatchObject({
       date: "2027-12-31",
       lastDay: "2027-11-30",
@@ -542,6 +566,8 @@ describe("creditNoteDeadline [s.34(2); Q32, Q33; rt1 R1; Researched 2026-10-30, 
                   },
                 ];
           const d = creditNoteDeadline(input, { month, day }, filedOn, filing);
+          // rt1 F2: the cutoff always falls after the supply FY ends (31 March of startYear + 1)
+          expect(d.date > `${startYear + 1}-03-31`).toBe(true);
           expect(d.lastDay < d.returnBy).toBe(true);
           expect(d.returnBy <= d.date).toBe(true);
           if (d.filedOn !== null && d.basis === "annual_return") expect(d.returnBy < d.filedOn).toBe(true);

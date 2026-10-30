@@ -144,7 +144,8 @@ export type GstExport =
       gstr3b: readonly Gstr3bLine[];
       /**
        * rt1 T3 (Researched 2026-10-28, s.34(2) proviso CGST Act (08-C RA-04)): the credit notes to registered clients not yet accepted in IMS, NOT deducted from
-       * 3.1(a) (`count` for the panel's 07-ZD line 8; amounts signed as cdnr sums them). The 3B file (`gstr3b-summary-v2`) prints them as its last row.
+       * 3.1(a) (`count` for the panel's 07-ZD line 8; amounts SIGNED as cdnr sums them, negative). The 3B file (`gstr3b-summary-v2`) prints them as its last
+       * row as positive amounts not deducted (rt1 F3, lead D8); a screen that shows them shows them positive too.
        */
       imsHeld: Gstr3bImsHeld;
       table13: readonly {

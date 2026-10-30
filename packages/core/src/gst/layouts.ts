@@ -17,7 +17,7 @@ import {
   linesDeductingAll,
   NO_IMS_HELD,
 } from "./summary.ts";
-import { fail, type GstResult, guard, issue, ok } from "./types.ts";
+import { fail, type GstResult, guard, issue, num, ok } from "./types.ts";
 
 export type Column<R> = { readonly header: string; readonly cell: (row: R) => Cell };
 export type FileLayout<R> = { readonly stem: string; readonly columns: readonly Column<R>[] };
@@ -371,8 +371,28 @@ const gstr3bV1 = file<Gstr3bLine>("gstr3b_summary", [
   col("CGST", (r) => (r.table === "3.2" ? cell.blank() : cell.amount(r.cgstMinor))),
   col("SGST", (r) => (r.table === "3.2" ? cell.blank() : cell.amount(r.sgstMinor))),
 ]);
-/** One row of `gstr3b-summary-v2`: a summary line, or (last) the credit notes held back until the client accepts them in IMS (rt1 T3). */
+/**
+ * One row of `gstr3b-summary-v2`: a summary line, or (last) the credit notes held back until the client accepts them in IMS (rt1 T3). The held row carries
+ * POSITIVE magnitudes (`heldRowOf`): the amount not deducted, so `3.1(a) printed - held printed` is the 3.1(a) that deducts every credit note.
+ */
 export type Gstr3bCsvRow = Gstr3bLine | (Gstr3bImsHeld & { readonly table: "ims_held" });
+
+/**
+ * rt1 F3 (lead D8): the held row as printed. `Gstr3bImsHeld` stays SIGNED as cdnr sums it (a credit note's amounts are negative); the file prints the magnitude, the
+ * amount 3.1(a) does not deduct. Negated as bigint, so a zero row prints 0.00, never -0.00. Held rows are credit notes only, so the signed amounts are never positive.
+ */
+export function heldRowOf(h: Gstr3bImsHeld): Gstr3bImsHeld & { readonly table: "ims_held" } {
+  const neg = (minor: number) => num(-BigInt(minor));
+  return {
+    table: "ims_held",
+    count: h.count,
+    numbers: h.numbers,
+    taxableMinor: neg(h.taxableMinor),
+    igstMinor: neg(h.igstMinor),
+    cgstMinor: neg(h.cgstMinor),
+    sgstMinor: neg(h.sgstMinor),
+  };
+}
 
 /** 07-ZD line 7 (owner, 2026-10-31): the held row's description. Its Table and Place of supply cells are blank: it is not a 3B table. */
 const GSTR3B_IMS_HELD_V2 = "Credit notes to registered clients not yet accepted in IMS (not deducted)";
@@ -393,7 +413,8 @@ const gstr3bV2 = file<Gstr3bCsvRow>("gstr3b_summary", [
 
 /**
  * v1 (M5.5b) prints every credit note in cdnr deducted from 3.1(a), as it did (`linesDeductingAll`), so a v1 file is byte for byte what it was. v2 (rt1 T3, D6; the
- * current one) prints 3.1(a) with only IMS-accepted credit notes deducted, and a last row with the held ones (always present, zero when none). Researched 2026-10-28,
+ * current one) prints 3.1(a) with only IMS-accepted credit notes deducted, and a last row with the held ones as positive amounts not deducted (always present,
+ * 0.00 when none; lead D8). Researched 2026-10-28,
  * s.34(2) proviso CGST Act w.e.f. 1 Oct 2025 (08-C RA-04).
  */
 export const GSTR3B_LAYOUTS = Object.freeze({
@@ -438,13 +459,7 @@ export function gstr3bCsv(
   return guard(() => {
     if (version === "gstr3b-summary-v1") return ok(render(gstr3bV1, linesDeductingAll(summary), opts));
     if (version === "gstr3b-summary-v2")
-      return ok(
-        render(
-          gstr3bV2,
-          [...summary.lines, { table: "ims_held" as const, ...(summary.imsHeld ?? NO_IMS_HELD) }],
-          opts,
-        ),
-      );
+      return ok(render(gstr3bV2, [...summary.lines, heldRowOf(summary.imsHeld ?? NO_IMS_HELD)], opts));
     return fail([issue("layout_unknown", "version")]);
   });
 }

@@ -25,6 +25,8 @@ import {
   statementCsv,
   statementCsvRows,
 } from "../../src/gst/index.ts";
+import { heldRowOf } from "../../src/gst/layouts.ts";
+import { linesDeductingAll, NO_IMS_HELD } from "../../src/gst/summary.ts";
 import { statementEntries } from "../../src/statement.ts";
 import { GOLDEN_API_REGISTER, hasBareLineBreak, PARAMS, Q3, row, toApi } from "./fixtures.ts";
 
@@ -86,6 +88,27 @@ describe("golden CSVs", () => {
       last.startsWith(",Credit notes to registered clients not yet accepted in IMS (not deducted),,"),
     ).toBe(true);
     await expect(csv).toMatchFileSnapshot("./__snapshots__/gstr3b-summary-v2-q3.csv");
+    // rt1 F3 (lead D8): the held row prints positive amounts not deducted; the value stays signed inside
+    expect(last).toBe(
+      ",Credit notes to registered clients not yet accepted in IMS (not deducted),,2000.00,0.00,180.00,180.00",
+    );
+    expect(last).not.toContain("-");
+    expect(summary.imsHeld?.taxableMinor).toBe(-200_000);
+    // 3.1(a) printed - held printed = the 3.1(a) that deducts every credit note (v1's)
+    const amounts = (line: string) =>
+      line
+        .split(",")
+        .slice(-4)
+        .map((v) => Math.round(Number(v) * 100));
+    const a = amounts(csv.split(CRLF)[1] ?? "");
+    const held = amounts(last);
+    const all31a = linesDeductingAll(summary).find((l) => l.table === "3.1(a)");
+    expect(a.map((v, i) => v - (held[i] ?? 0))).toEqual([
+      all31a?.taxableMinor,
+      all31a?.igstMinor,
+      all31a?.cgstMinor,
+      all31a?.sgstMinor,
+    ]);
     // with every credit note accepted, v2's lines are v1's and the held row is zero
     const accepted = GOLDEN_API_REGISTER.map((r) =>
       r.kind === "credit_note" ? { ...r, imsStatus: "accepted" } : r,
@@ -232,6 +255,39 @@ describe("layout versions", () => {
         "statement-v0" as never,
       ),
     ).toEqual(expected);
+  });
+
+  it("rt1 F3: heldRowOf prints magnitudes (bigint negation: a zero is 0, never -0) and keeps the count and numbers", () => {
+    const zero = heldRowOf(NO_IMS_HELD);
+    for (const v of [zero.taxableMinor, zero.igstMinor, zero.cgstMinor, zero.sgstMinor]) {
+      expect(Object.is(v, 0)).toBe(true);
+    }
+    expect(
+      heldRowOf({
+        count: 2,
+        numbers: ["C1", "C2"],
+        taxableMinor: -150_050,
+        igstMinor: -27_009,
+        cgstMinor: 0,
+        sgstMinor: 0,
+      }),
+    ).toEqual({
+      table: "ims_held",
+      count: 2,
+      numbers: ["C1", "C2"],
+      taxableMinor: 150_050,
+      igstMinor: 27_009,
+      cgstMinor: 0,
+      sgstMinor: 0,
+    });
+    expect(
+      unwrap(
+        gstr3bCsv({
+          lines: [],
+          imsHeld: { count: 1, numbers: ["C1"], taxableMinor: -1, igstMinor: 0, cgstMinor: 0, sgstMinor: 0 },
+        }),
+      ).split("\r\n")[1],
+    ).toBe(",Credit notes to registered clients not yet accepted in IMS (not deducted),,0.01,0.00,0.00,0.00");
   });
 
   it("gstr3b-summary-v2 of a summary built by hand without `imsHeld`: the held row is zeros (nothing held back)", () => {

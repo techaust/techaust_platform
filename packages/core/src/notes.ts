@@ -354,7 +354,10 @@ export type CreditFiling = {
 };
 
 export type CreditDeadline = {
-  /** The cutoff day of the year the supply FY ends (`tax.creditNoteCutoff`: 30 November), clamped to the month's last day. */
+  /**
+   * The cutoff (`tax.creditNoteCutoff`: 30 November) on the first such day after the supply FY ends: in the year the FY ends for April to December, in the year after
+   * for January to March (rt1 F2; 31 January for FY 2025-26 is 2027-01-31). Clamped to the month's last day.
+   */
   readonly date: string;
   /** What binds: the cutoff, or the annual return when it was filed on or before the cutoff. */
   readonly basis: "cutoff" | "annual_return";
@@ -428,7 +431,9 @@ export function creditNoteDeadline(
   const issued = parseIsoDate(input.parentIssueDate);
   if (done && issued && daysBetween(done, issued) > 30) consider(done);
   const fy = financialYear(start);
-  const year = start + 1;
+  // rt1 F2: the cutoff is the first such day AFTER the supply FY ends (s.34(2): "the thirtieth day of November following the end of the financial year"). A cutoff in
+  // January to March falls in the year after the FY's end year; any other month in the year the FY ends.
+  const year = cutoff.month <= 3 ? start + 2 : start + 1;
   const cut: CalendarDate = {
     year,
     month: cutoff.month,

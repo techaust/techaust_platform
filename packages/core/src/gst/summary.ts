@@ -28,6 +28,7 @@ export type Gstr3bLine = {
 /**
  * rt1 T3: the credit notes in cdnr not yet accepted in IMS, so NOT deducted from 3.1(a). `count` notes (distinct documents), their `numbers` in GSTR-1 order (each
  * once), and their amounts SIGNED as cdnr sums them (a credit note's amounts are negative), so that `3.1(a) + held` is the 3.1(a) that deducts every credit note.
+ * Signed here only: the `gstr3b-summary-v2` file and the screens print the magnitudes, positive, as the amount not deducted (rt1 F3, lead D8; `heldRowOf`).
  */
 export type Gstr3bImsHeld = {
   readonly count: number;
