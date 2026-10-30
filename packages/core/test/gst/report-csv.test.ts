@@ -290,6 +290,25 @@ describe("layout versions", () => {
     ).toBe(",Credit notes to registered clients not yet accepted in IMS (not deducted),,0.01,0.00,0.00,0.00");
   });
 
+  it("rt1 review 9: each 3B version owns its row builder in the registry, and the writer is only that entry", () => {
+    const summary = unwrap(gstr3bSummary(unwrap(gstr1Sections(GOLDEN_API_REGISTER, Q3, PARAMS))));
+    const v1 = GSTR3B_LAYOUTS["gstr3b-summary-v1"];
+    const v2 = GSTR3B_LAYOUTS["gstr3b-summary-v2"];
+    // v1: every credit note in cdnr deducted, no held row
+    expect(v1.rowsOf(summary)).toEqual(linesDeductingAll(summary));
+    // v2: the summary's own lines (only IMS-accepted credit notes deducted), then the held row as printed
+    expect(v2.rowsOf(summary)).toEqual([...summary.lines, heldRowOf(summary.imsHeld ?? NO_IMS_HELD)]);
+    expect(v2.rowsOf({ lines: [] })).toEqual([heldRowOf(NO_IMS_HELD)]);
+    for (const [version, layout] of Object.entries(GSTR3B_LAYOUTS)) {
+      expect(typeof layout.rowsOf).toBe("function");
+      expect(unwrap(gstr3bCsv(summary, version as keyof typeof GSTR3B_LAYOUTS))).toBe(
+        layout.csv(summary, {}),
+      );
+      // the file has a header and one line per row the builder gives
+      expect(layout.csv(summary, {}).split("\r\n")).toHaveLength(layout.rowsOf(summary).length + 2);
+    }
+  });
+
   it("gstr3b-summary-v2 of a summary built by hand without `imsHeld`: the held row is zeros (nothing held back)", () => {
     expect(unwrap(gstr3bCsv({ lines: [] }))).toBe(
       "Table,Description,Place of supply,Taxable value,IGST,CGST,SGST\r\n,Credit notes to registered clients not yet accepted in IMS (not deducted),,0.00,0.00,0.00,0.00\r\n",

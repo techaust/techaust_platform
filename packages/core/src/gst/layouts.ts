@@ -361,6 +361,27 @@ const GSTR3B_DESCRIPTION_V1: Readonly<Record<Gstr3bLine["table"], string>> = Obj
   "3.2": "Inter-state supplies to unregistered persons, by place of supply",
 });
 
+/**
+ * A GSTR-3B layout version: its file and the rows it prints from a summary (rt1 review 9: each version owns its row builder, so `gstr3bCsv` never names a version and
+ * a new one is only a new registry entry). Frozen like every layout.
+ */
+export type Gstr3bLayout<R> = FileLayout<R> & {
+  /** The rows this version prints from a summary. */
+  readonly rowsOf: (summary: Gstr3bSummary) => readonly R[];
+  /** The file's text: `rowsOf` through this version's own columns (typed per version, so the writer needs no switch). */
+  readonly csv: (summary: Gstr3bSummary, opts: CsvOptions) => string;
+};
+const gstr3bLayout = <R>(
+  layout: FileLayout<R>,
+  rowsOf: (summary: Gstr3bSummary) => readonly R[],
+): Gstr3bLayout<R> =>
+  Object.freeze({
+    stem: layout.stem,
+    columns: layout.columns,
+    rowsOf,
+    csv: (summary: Gstr3bSummary, opts: CsvOptions) => render(layout, rowsOf(summary), opts),
+  });
+
 const gstr3bV1 = file<Gstr3bLine>("gstr3b_summary", [
   col("Table", (r) => cell.text(r.table)),
   col("Description", (r) => cell.text(GSTR3B_DESCRIPTION_V1[r.table])),
@@ -418,8 +439,11 @@ const gstr3bV2 = file<Gstr3bCsvRow>("gstr3b_summary", [
  * s.34(2) proviso CGST Act w.e.f. 1 Oct 2025 (08-C RA-04).
  */
 export const GSTR3B_LAYOUTS = Object.freeze({
-  "gstr3b-summary-v1": gstr3bV1,
-  "gstr3b-summary-v2": gstr3bV2,
+  "gstr3b-summary-v1": gstr3bLayout(gstr3bV1, linesDeductingAll),
+  "gstr3b-summary-v2": gstr3bLayout(gstr3bV2, (s): readonly Gstr3bCsvRow[] => [
+    ...s.lines,
+    heldRowOf(s.imsHeld ?? NO_IMS_HELD),
+  ]),
 } as const);
 export type Gstr3bLayoutId = keyof typeof GSTR3B_LAYOUTS;
 export const CURRENT_GSTR3B_LAYOUT: Gstr3bLayoutId = "gstr3b-summary-v2";
@@ -456,10 +480,9 @@ export function gstr3bCsv(
   version: Gstr3bLayoutId = CURRENT_GSTR3B_LAYOUT,
   opts: CsvOptions = {},
 ): GstResult<string> {
-  return guard(() => {
-    if (version === "gstr3b-summary-v1") return ok(render(gstr3bV1, linesDeductingAll(summary), opts));
-    if (version === "gstr3b-summary-v2")
-      return ok(render(gstr3bV2, [...summary.lines, heldRowOf(summary.imsHeld ?? NO_IMS_HELD)], opts));
-    return fail([issue("layout_unknown", "version")]);
-  });
+  return guard(() =>
+    Object.hasOwn(GSTR3B_LAYOUTS, version)
+      ? ok(GSTR3B_LAYOUTS[version].csv(summary, opts))
+      : fail([issue("layout_unknown", "version")]),
+  );
 }

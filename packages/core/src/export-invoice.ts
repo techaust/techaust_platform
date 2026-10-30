@@ -212,6 +212,30 @@ export function lutsFromStoredTax(json: unknown): { fy: string; arn: string }[] 
   return fate.fate === "folded" ? [...list, { fy: fate.entry.fy, arn: fate.entry.arn }] : list;
 }
 
+/** SQLite's `trim(x)` with no second argument: only spaces (U+0020) are taken off, never tabs or line breaks. */
+const sqlTrim = (s: string): string => s.replace(/^ +| +$/g, "");
+
+/**
+ * rt1 review 6 (Researched 2026-10-30, Rule 96A(1) CGST Rules, Notification 37/2017-CT (08-C RA-19, Q39)): the letter a debit note on an export under LUT relies on, judged
+ * EXACTLY as db `LUT_FOR_FY_SQL` judges the stored `tax` row (the freeze WHERE and the trigger `documents_debit_note_lut_fy`, 0054), so the blocker the screen shows and the
+ * refusal of the issue never disagree (a db test runs both over the same rows). A list entry of that FY whose ARN is not blank once its spaces are trimmed; else the one
+ * legacy `lut` of M3 with that FY and such an ARN, whatever `legacyLutFate` says of it (an ARN the list would refuse, a full list: SQL counts them, so this counts them).
+ * The legacy ARN is returned as the list keeps one (`normaliseLutArn`), or as stored when that would leave nothing. Null: none.
+ */
+export function lutForFyAsSql(
+  fyToken: string,
+  tax: {
+    readonly lut: LegacyLutTax["lut"];
+    readonly luts: readonly { readonly fy: string; readonly arn: string }[];
+  },
+): { fy: string; arn: string } | null {
+  const listed = tax.luts.find((l) => l.fy === fyToken && sqlTrim(l.arn) !== "");
+  if (listed) return { fy: listed.fy, arn: listed.arn };
+  const { arn, fy } = tax.lut;
+  if (fy !== fyToken || arn === null || sqlTrim(arn) === "") return null;
+  return { fy, arn: normaliseLutArn(arn) || arn };
+}
+
 /** The export route stored in a `tax` settings value (`exportMode`), read WITHOUT zod; anything else is the default, the LUT route (G-8). */
 export function exportModeFromStoredTax(json: unknown): ExportRoute {
   return isRecord(json) && json.exportMode === "igst_paid" ? "igst_paid" : "lut";
