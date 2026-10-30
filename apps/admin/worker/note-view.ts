@@ -86,6 +86,12 @@ export function invoiceNotesView(a: {
     },
     a.settings.tax.creditNoteCutoff,
     a.settings.tax.annualReturnsFiled,
+    // rt1 T1: the return period comes from the GSTR-1 frequency and the invoice's FROZEN recipient. Every issued invoice freezes its GST status; one without it
+    // (damaged) is judged as unregistered, the earlier and stricter last day (D2).
+    {
+      frequency: a.settings.tax.gstr1Frequency,
+      recipientStatus: d.recipient?.gstStatus ?? "unregistered",
+    },
   );
   const passed = !creditAllowed(a.todayIso, dl);
   const last = parseIsoDate(dl.lastDay);
@@ -145,8 +151,12 @@ export function invoiceNotesView(a: {
       basis: dl.basis,
       supplyFy: dl.supplyFy,
       filedOn: dl.filedOn,
+      /** rt1 T1: the last day the return carrying the note may be filed (the cutoff, or the day before the annual return was filed), 07-ZD line 2's "{cutoff date}". */
+      returnBy: dl.returnBy,
+      /** rt1 T1: the return period the note goes into: "month" (monthly GSTR-1, or the IFF for a registered client) or "quarter" (07-ZD line 3). */
+      period: dl.period,
       daysLeft,
-      /** The first day of the month before the cutoff month (1 October by default): from this day the banner says how many days are left, and the last day of that month is the advised last day to issue (07-T §4; 08-C RA-31). The block itself is `passed`. */
+      /** rt1 R2 (07-ZD): from the first day of the month before `lastDay`'s month the banner says how many days are left; `adviseIssueBy` is `lastDay`, the block itself is `passed`. */
       ...creditNoteAdvice(dl),
       passed,
     },

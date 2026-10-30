@@ -937,13 +937,16 @@ export function voidViewTriggerStatements(): string[] {
 
 /**
  * rt1 T2 (a new trigger only, no table is rebuilt; the abort message starts with the trigger's name): `documents_debit_note_lut_fy`: a debit note on an export
- * invoice under LUT (the note's `export_mode` is the parent's, pinned by `badParent`) is issued only while a LUT with an ARN is saved for the FY of the note's OWN
+ * invoice under LUT (`export_mode` 'lut', or the supply `export_lut` when the route came from the settings) is issued only while a LUT with an ARN is saved for the FY of the note's OWN
  * issue day (Researched 2026-10-30, Rule 96A(1) CGST Rules, Notification 37/2017-CT (08-C RA-19, Q39)). No IGST route is offered for it. The twin of core
  * `noteBlockers` (`debit_lut_missing`) and of the note freeze's WHERE (`noteIssueTail`), all three from `LUT_FOR_FY_SQL`.
  */
 export function noteLutTriggerStatements(): string[] {
-  const issuing =
-    "OLD.status = 'draft' AND NEW.status = 'issued' AND NEW.type = 'debit_note' AND NEW.export_mode IS 'lut'";
+  // The LUT route: the note's (or its invoice's) `export_mode` is 'lut', or its supply is `export_lut`. An export invoice issued on the settings' route leaves
+  // `export_mode` empty (only a route typed on the draft is stored there), so the supply type is what says it went out under LUT.
+  const lutRoute =
+    "(NEW.export_mode IS 'lut' OR NEW.supply_type IS 'export_lut' OR EXISTS (SELECT 1 FROM documents p WHERE p.id = NEW.parent_id AND (p.export_mode IS 'lut' OR p.supply_type IS 'export_lut')))";
+  const issuing = `OLD.status = 'draft' AND NEW.status = 'issued' AND NEW.type = 'debit_note' AND ${lutRoute}`;
   const lutBad = `(NEW.issue_date IS NULL OR NOT ${LUT_FOR_FY_SQL.replaceAll("?FY", fyTokenOfDateSql("NEW.issue_date"))})`;
   return [
     `CREATE TRIGGER \`documents_debit_note_lut_fy\` BEFORE UPDATE OF status ON \`documents\` WHEN ${issuing} AND ${lutBad} BEGIN ${abort("documents_debit_note_lut_fy: a debit note on an export under LUT needs a LUT saved for the financial year of its own issue day")} END;`,

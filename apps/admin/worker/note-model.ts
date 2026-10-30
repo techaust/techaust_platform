@@ -2,7 +2,7 @@
 // note is against, how a request becomes takes and a computed document, the draft's state and hash, the deadline, and the error lines. No route is here
 // (`invoice-notes.ts` makes the draft and answers the IMS route; `invoice-issue.ts` issues through `prepareNoteIssue`), and nothing here trusts a draft: every
 // figure is worked out again from the frozen invoice, the credit notes issued so far (summed by SQL) and the stored takes.
-import { type CalendarDate, istDate } from "@techaust/core/dates";
+import { type CalendarDate, fyOf, istDate } from "@techaust/core/dates";
 import { contentHash } from "@techaust/core/documents";
 import { uuidv7 } from "@techaust/core/ids";
 import {
@@ -16,6 +16,7 @@ import {
   debitNoteInput,
   isLiveParentStatus,
   isNoteType,
+  lutFor,
   NOTES_MAX,
   type NoteBlocker,
   type NoteKind,
@@ -33,6 +34,7 @@ import {
   type CreditedSoFar,
   computeDocument,
   creditNote,
+  lutsOf,
   type TaxContext,
   type TaxIssue,
   taxOnlyDebitNote,
@@ -317,7 +319,11 @@ export function leftOf(p: ParentCtx): { totalLeft: number; taxableLeft: number[]
   };
 }
 
-/** The deadline of a credit note on this invoice (Q32, Q33; Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03)). */
+/**
+ * The deadline of a credit note on this invoice (Q32, Q33; Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03)). rt1 T1: its last day is the end of the latest return
+ * period before the return deadline, by the GSTR-1 frequency (`tax.gstr1Frequency`) and the invoice's FROZEN recipient status (Researched 2026-10-30, s.34(2) CGST Act;
+ * Rule 59(1)-(2) CGST Rules (IFF) (08-C RA-31, RA-03)).
+ */
 export function deadlineOf(p: ParentCtx, settings: InvoiceSettings): CreditDeadline {
   return creditNoteDeadline(
     {
@@ -328,7 +334,28 @@ export function deadlineOf(p: ParentCtx, settings: InvoiceSettings): CreditDeadl
     },
     settings.tax.creditNoteCutoff,
     settings.tax.annualReturnsFiled,
+    { frequency: settings.tax.gstr1Frequency, recipientStatus: p.recipientStatus },
   );
+}
+
+/** rt1 T2: what a debit note on an export under LUT needs at its issue: the FY token of the issue instant (IST) and the LUT with an ARN saved for it (null: none). */
+export type NoteLut = { fy: string; lut: { fy: string; arn: string } | null };
+
+/**
+ * rt1 T2 (Researched 2026-10-30, Rule 96A(1) CGST Rules, Notification 37/2017-CT (08-C RA-19, Q39)): a debit note on an export invoice under LUT relies on the LUT of
+ * the FY of its OWN issue day, not the invoice's. Null for a credit note and for a parent not under LUT (nothing to judge). The LUT route is `export_mode` 'lut' or
+ * a frozen supply of `export_lut` (an invoice issued on the settings' route leaves `export_mode` empty). `now` is the one instant of the issue.
+ */
+export function noteLutOf(
+  kind: NoteKind,
+  p: ParentCtx,
+  settings: InvoiceSettings,
+  now: number,
+): NoteLut | null {
+  if (kind !== "debit" || (p.row.export_mode !== "lut" && p.computed.supply.type !== "export_lut"))
+    return null;
+  const fy = fyOf(now).token;
+  return { fy, lut: lutFor(fy, lutsOf(settings.tax)) };
 }
 
 export { creditAllowed };
@@ -567,6 +594,8 @@ export function blockersOfNote(a: {
   issueDate: string;
   /** The credit deadline when the caller has worked it out already (`null`: a debit note has none); left out, it is worked out here. */
   deadline?: CreditDeadline | null;
+  /** rt1 T2: the LUT of a debit note's issue FY (`noteLutOf`); null or left out: not judged. */
+  lut?: NoteLut | null;
 }): NoteBlocker[] {
   const asked = refusalFacts(a.re.refusal);
   const known = asked.empty || asked.exceeds !== null;
@@ -598,6 +627,7 @@ export function blockersOfNote(a: {
         inr: a.bank.some((r) => r.kind === "INR"),
         swift: a.bank.some((r) => r.kind === "USD_SWIFT" && !!r.swift),
       },
+      ...(a.lut ? { lut: { needed: true, fy: a.lut.fy, saved: a.lut.lut !== null } } : {}),
     },
     a.settings.tax.invoiceChecklist,
   );
@@ -611,17 +641,22 @@ export type NoteReasonIn = { code: string; text: string };
 export const reasonsOf = (kind: NoteKind): readonly string[] =>
   kind === "credit" ? CREDIT_REASONS : DEBIT_REASONS;
 
-/** The `noteOf` a draft stores in `header_extras` and the freeze seals. */
+/**
+ * The `noteOf` a draft stores in `header_extras` and the freeze seals. `lut` (rt1 T2, at the issue only): the LUT a debit note on an export under LUT relies on, the
+ * one of its own issue day's FY (`noteLutOf`), sealed last; a draft has none (its issue day is not known yet).
+ */
 export const noteOfOf = (
   kind: NoteKind,
   p: ParentCtx,
   reason: NoteReasonIn,
   request: NoteRequest,
+  lut?: { fy: string; arn: string } | null,
 ): NoteOf => ({
   kind,
   parent: parentFacts(p),
   reason: { code: reason.code, text: reason.text },
   request,
+  ...(lut ? { lut: { fy: lut.fy, arn: lut.arn } } : {}),
 });
 
 /** The lines of a note: one per take, with the invoice line's description, SAC, unit and rate, quantity one, the taxable value taken as the rate. */

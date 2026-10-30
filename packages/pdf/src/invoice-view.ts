@@ -227,6 +227,9 @@ export function toInvoiceView(
     : null;
 
   // M5.3: a credit or debit note's facts, from the sealed `noteOf` only. The invoice's route and LUT travel with it (the note copies them at issue; Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22)).
+  // rt1 T2: a debit note on an export under LUT seals the LUT of its OWN issue day's FY (`noteOf.lut`; Researched 2026-10-30, Rule 96A(1) CGST Rules, Notification
+  // 37/2017-CT (08-C RA-19, Q39)) and prints that one; a note sealed before rt1 (no `noteOf.lut`) prints the invoice's, as it was issued.
+  const noteLut = noteOf ? (noteOf.lut ?? noteOf.parent.lut) : undefined;
   const noteView: InvoiceViewNote | null = noteOf
     ? {
         kind: noteOf.kind,
@@ -255,11 +258,11 @@ export function toInvoiceView(
           header.document.exportMode === "lut" || header.document.exportMode === "igst_paid"
             ? {
                 mode: header.document.exportMode,
-                lut: noteOf.parent.lut
+                lut: noteLut
                   ? {
-                      fy: noteOf.parent.lut.fy,
-                      fyLabel: fyLabelOfToken(noteOf.parent.lut.fy) ?? noteOf.parent.lut.fy,
-                      arn: noteOf.parent.lut.arn,
+                      fy: noteLut.fy,
+                      fyLabel: fyLabelOfToken(noteLut.fy) ?? noteLut.fy,
+                      arn: noteLut.arn,
                     }
                   : null,
               }

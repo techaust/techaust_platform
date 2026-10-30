@@ -96,6 +96,19 @@ describe("0054 documents_debit_note_lut_fy [rt1 T2; 08-C RA-19, Q39]", () => {
     await rawFreeze(dd.id, "2027-04-02");
     expect(await status(dd.id)).toBe("issued");
   });
+
+  it("the settings' LUT route (export_mode left empty, the supply export_lut) is judged too", async () => {
+    const p = await parentInvoice({ overseas: true, exportMode: null, lines: [line(1_000_00)] });
+    expect(await first("SELECT export_mode, supply_type FROM documents WHERE id = ?", p.id)).toEqual({
+      export_mode: null,
+      supply_type: "export_lut",
+    });
+    const d = await insertNoteDraft(p, "debit", await take(p), { exportMode: null });
+    await rejects(rawFreeze(d.id, "2027-04-02"), /documents_debit_note_lut_fy/);
+    await setTax({ luts: [{ fy: "2728", arn: "AD1903270000002" }] });
+    await rawFreeze(d.id, "2027-04-02");
+    expect(await status(d.id)).toBe("issued");
+  });
 });
 
 describe("the note freeze's WHERE [rt1 T1, T2]: a refusal writes nothing", () => {
@@ -128,6 +141,16 @@ describe("the note freeze's WHERE [rt1 T1, T2]: a refusal writes nothing", () =>
         { fy: "2728", arn: "AD1903270000002" },
       ],
     });
+    await issueNote(p, d, "debit", { issueDate: "2027-04-02" });
+    expect(await status(d.id)).toBe("issued");
+  });
+
+  it("T2 on the settings' LUT route (export_mode empty): refused without the LUT, frozen with it", async () => {
+    const p = await parentInvoice({ overseas: true, exportMode: null, lines: [line(1_000_00)] });
+    const d = await insertNoteDraft(p, "debit", await take(p), { exportMode: null });
+    await rejects(issueNote(p, d, "debit", { issueDate: "2027-04-02" }), /issue did not freeze/);
+    expect(await status(d.id)).toBe("draft");
+    await setTax({ luts: [{ fy: "2728", arn: "AD1903270000002" }] });
     await issueNote(p, d, "debit", { issueDate: "2027-04-02" });
     expect(await status(d.id)).toBe("issued");
   });

@@ -145,7 +145,8 @@ export async function parentInvoice(
     status?: string;
     paid?: number;
     fx?: number;
-    exportMode?: "lut" | "igst_paid";
+    /** The route; `null` (rt1): the settings' LUT route, which leaves the column empty (the supply says `export_lut`). */
+    exportMode?: "lut" | "igst_paid" | null;
     gstStatus?: "registered" | "unregistered";
   } = {},
 ): Promise<Parent> {
@@ -167,7 +168,7 @@ export async function parentInvoice(
         recipient: { gstStatus: "overseas" as const, country: "US" },
         lines,
         fx: { rateMicros: over.fx ?? 83_123_400 },
-        exportMode: over.exportMode,
+        exportMode: over.exportMode ?? undefined,
       }
     : {
         currency: "INR" as const,
@@ -207,7 +208,7 @@ export async function parentInvoice(
     due_date: "2026-11-01",
     content_sha256: "p".repeat(64),
     snapshot_sha256: "q".repeat(64),
-    export_mode: overseas ? (over.exportMode ?? "lut") : null,
+    export_mode: overseas ? (over.exportMode === undefined ? "lut" : over.exportMode) : null,
     fx_rate_micros: overseas ? (over.fx ?? 83_123_400) : null,
     fx_date: overseas ? "2026-10-24" : null,
     fx_source: overseas ? "FBIL" : null,

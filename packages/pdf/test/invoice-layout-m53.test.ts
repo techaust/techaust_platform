@@ -141,6 +141,20 @@ describe("a credit note (07-T §1)", () => {
     expect(h).toContain('<div class="wrap"><dt>Place of supply</dt><dd>Outside India (96)</dd></div>');
   });
 
+  it("rt1 T2 [RA-19 Q39]: a debit note prints its own sealed LUT (its issue day's FY); an older envelope without one prints the invoice's", async () => {
+    const { envelope, html } = await built("debit_usd_lut");
+    // an envelope sealed before rt1: the invoice's LUT, as it was issued
+    expect(body(html)).toContain(`data-testid="lut">LUT ARN: ${SAMPLE_ARN} (FY 2026-27)<`);
+    const own = clone(envelope);
+    const noteOf = own.snapshot.header.noteOf as { lut?: { fy: string; arn: string } };
+    noteOf.lut = { fy: "2728", arn: "AD1903270000002" };
+    const view = toInvoiceView(own, DEFAULT_VIEW_CONFIG);
+    expect(view.note?.route?.lut).toEqual({ fy: "2728", fyLabel: "2027-28", arn: "AD1903270000002" });
+    const h = body(renderDocumentHtml(view));
+    expect(h).toContain('data-testid="lut">LUT ARN: AD1903270000002 (FY 2027-28)<');
+    expect(h).not.toContain(SAMPLE_ARN);
+  });
+
   it("in USD with IGST paid: no LUT line, the IGST in INR", async () => {
     const h = body((await built("credit_usd_igst")).html);
     expect(h).not.toContain('data-testid="lut"');
