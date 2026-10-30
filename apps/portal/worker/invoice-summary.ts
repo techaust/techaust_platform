@@ -26,16 +26,26 @@ export const CLIENT_INVOICE_STATUSES = [
 const quoted = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(", ");
 export const TYPES_SQL = quoted(CLIENT_INVOICE_TYPES);
 export const STATUSES_SQL = quoted(CLIENT_INVOICE_STATUSES);
+/** The types that list their credit notes (final sweep P2): a tax invoice and an export invoice. A proforma or a note has none of its own. */
+export const CREDITABLE_TYPES = ["tax_invoice", "export_invoice"] as const;
+const CREDITABLE_SQL = quoted(CREDITABLE_TYPES);
 
 /**
- * The columns of the frozen document the summary needs. `parent_open_id` (final sweep P15): a credit or debit note's invoice, only when it is the same
- * client's and one the client may open itself (frozen, not void, an open status and type: the list's own rule), so the page can link to it.
+ * The parent of the document, joined once (final sweep review 7): a primary-key seek bound to the same client, so another client's document is
+ * never read. Every statement that selects `SUMMARY_COLS` (as `d`) adds this join (`p`).
+ */
+export const SUMMARY_PARENT_JOIN =
+  "LEFT JOIN documents p ON p.id = d.parent_id AND p.client_id = d.client_id";
+
+/**
+ * The columns of the frozen document the summary needs (with `SUMMARY_PARENT_JOIN`). `parent_open_id` (final sweep P15): a credit or debit note's
+ * invoice, only when one the client may open itself (frozen, not void, an open status and type: the list's own rule), so the page can link to it.
  */
 export const SUMMARY_COLS = `d.id, d.type, d.status, d.number_display, d.issue_date, d.due_date, d.currency, d.subtotal_minor, d.discount_minor, d.taxable_minor, d.cgst_minor, d.sgst_minor, d.igst_minor,
     d.round_off_minor, d.total_minor, d.total_inr_minor, d.paid_minor, d.credited_minor, d.balance_minor, d.issuer, d.header_extras, d.pdf_r2_key, d.viewed_at,
-    (SELECT p.number_display FROM documents p WHERE p.id = d.parent_id AND p.client_id = d.client_id) AS parent_number,
-    (SELECT p.id FROM documents p WHERE p.id = d.parent_id AND p.client_id = d.client_id AND d.type IN ('credit_note', 'debit_note')
-       AND p.frozen_at IS NOT NULL AND p.voided_at IS NULL AND p.status IN (${STATUSES_SQL}) AND p.type IN (${TYPES_SQL})) AS parent_open_id`;
+    p.number_display AS parent_number,
+    CASE WHEN d.type IN ('credit_note', 'debit_note') AND p.frozen_at IS NOT NULL AND p.voided_at IS NULL AND p.status IN (${STATUSES_SQL})
+       AND p.type IN (${TYPES_SQL}) THEN p.id END AS parent_open_id`;
 
 /**
  * The client's first view of one document (`?1` client, `?2` document, `?3` now; a primary-key UPDATE, 0 rows after the first view). FX-5 (owner decision
@@ -57,10 +67,14 @@ export const LINES_SQL =
 /**
  * The issued credit notes of the same client against one invoice (final sweep P2, the "Credited ({numbers})" row): only notes the client may open
  * itself (frozen, not void, an open status), in the order they were issued. `?1` client, `?2` the invoice. At most `NOTES_MAX` (20) can be issued
- * per invoice (LD51), so one page holds them all. Served by `documents_parent`.
+ * per invoice (LD51), so one page holds them all. The statement sits in a batch before the document's type is known, so the type is checked here
+ * (final sweep review 6): the document is read first by its primary key, and only a tax or export invoice of this client that the client may open
+ * reads any note (a proforma, a note or anything else reads none). The notes are served by `documents_parent`.
  */
-export const CREDIT_NOTES_SQL = `SELECT n.id, n.number_display FROM documents n INDEXED BY documents_parent
-   WHERE n.parent_id = ?2 AND n.client_id = ?1 AND n.type = 'credit_note' AND n.frozen_at IS NOT NULL AND n.voided_at IS NULL AND n.status IN (${STATUSES_SQL})
+export const CREDIT_NOTES_SQL = `SELECT n.id, n.number_display FROM documents i
+   JOIN documents n INDEXED BY documents_parent ON n.parent_id = i.id
+   WHERE i.id = ?2 AND i.client_id = ?1 AND i.type IN (${CREDITABLE_SQL}) AND i.frozen_at IS NOT NULL AND i.voided_at IS NULL AND i.status IN (${STATUSES_SQL})
+     AND n.client_id = ?1 AND n.type = 'credit_note' AND n.frozen_at IS NOT NULL AND n.voided_at IS NULL AND n.status IN (${STATUSES_SQL})
    ORDER BY n.frozen_at, n.id LIMIT ${NOTES_MAX}`;
 
 export type SummaryRow = {
@@ -236,7 +250,7 @@ export function listItemOf(
  * own (Q30). `pdfReady` says whether the PDF exists yet (the download answers 409 `pdf_pending` until it does). No payment fields here: paying is M6 and M7.1.
  */
 export function summaryOf(r: SummaryRow, lines: readonly LineRow[], creditNotes: readonly CreditNoteRow[]) {
-  const isInvoice = r.type === "tax_invoice" || r.type === "export_invoice";
+  const isInvoice = (CREDITABLE_TYPES as readonly string[]).includes(r.type);
   return {
     id: r.id,
     type: r.type,

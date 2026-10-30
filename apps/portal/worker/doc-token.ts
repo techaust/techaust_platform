@@ -39,6 +39,7 @@ import {
   type LineRow,
   STATUSES_SQL,
   SUMMARY_COLS,
+  SUMMARY_PARENT_JOIN,
   type SummaryRow,
   summaryOf,
   TYPES_SQL,
@@ -60,6 +61,7 @@ export const DOC_READ = `SELECT ${SUMMARY_COLS}, t.contact_id AS link_contact_id
   JOIN documents d ON d.id = t.document_id AND d.client_id = t.client_id
   JOIN contacts c ON c.id = t.contact_id AND c.client_id = t.client_id AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL AND lower(c.email) = t.email
   JOIN clients cl ON cl.id = t.client_id AND cl.anonymised_at IS NULL
+  ${SUMMARY_PARENT_JOIN}
   WHERE t.token_hash = ?1 AND t.revoked_at IS NULL AND t.expires_at > ?2 AND t.purpose = 'view_pay' AND d.voided_at IS NULL AND d.frozen_at IS NOT NULL AND d.status IN (${STATUSES_SQL}) AND d.type IN (${TYPES_SQL})`;
 
 type Found = SummaryRow & { link_contact_id: string; link_client_id: string };

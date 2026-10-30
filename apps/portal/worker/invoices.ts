@@ -11,6 +11,7 @@ import {
   listItemOf,
   STATUSES_SQL,
   SUMMARY_COLS,
+  SUMMARY_PARENT_JOIN,
   type SummaryRow,
   summaryOf,
   TYPES_SQL,
@@ -33,7 +34,7 @@ export const LIST_SQL = `SELECT d.id, d.type, d.status, d.number_display, d.issu
    ORDER BY d.issue_date DESC, d.id DESC LIMIT ?4`;
 
 /** One document of this client (?1 client, ?2 id): the summary's columns. */
-export const ONE_SQL = `SELECT ${SUMMARY_COLS} FROM documents d
+export const ONE_SQL = `SELECT ${SUMMARY_COLS} FROM documents d ${SUMMARY_PARENT_JOIN}
    WHERE d.client_id = ?1 AND d.id = ?2 AND d.frozen_at IS NOT NULL AND d.voided_at IS NULL AND d.status IN (${STATUSES_SQL}) AND d.type IN (${TYPES_SQL})`;
 
 /** An id the database could not hold is a 404 without a query. */

@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { fixtures } from "./fixtures.ts";
 import { ROUTES } from "./guard.ts";
 import app from "./index.ts";
-import { CREDIT_NOTES_SQL, SUMMARY_COLS, VIEW_SQL } from "./invoice-summary.ts";
+import { CREDIT_NOTES_SQL, SUMMARY_COLS, SUMMARY_PARENT_JOIN, VIEW_SQL } from "./invoice-summary.ts";
 import { LIST_SQL, ONE_SQL } from "./invoices.ts";
 import { bodyOf, call, nextIp, ORIGIN, one, sessionFor } from "./test-helpers.ts";
 
@@ -368,39 +368,80 @@ describe("the summary's line discounts, credit notes and a note's invoice and re
     expect((await get(a.cookie, inv.id)).doc?.creditNotes).toEqual([{ id: cn.id, numberDisplay: cn.number }]);
   });
 
-  it("the parent is named only while the client may open it: the subselect is bound to the organisation and the open statuses", async () => {
+  it("the parent is named only while the client may open it: one join bound to the organisation, the open statuses on the link (review 7)", async () => {
     // the parent check trigger allows only an issued parent of the same client, so the guard is proven on the statement itself: pointed at
     // another organisation, or at a parent that is void, it yields NULL
     const f = await fixtures();
     const inv = await invoiceWithLines(f.a.id);
     const cn = await noteAgainst(f.a.id, inv, "credit_note");
-    const parentOf = async (sql: string) =>
-      (
-        await env.DB.prepare(`SELECT ${sql} FROM documents d WHERE d.id = ?1`)
-          .bind(cn.id)
-          .first<{ p: string | null }>()
-      )?.p ?? null;
-    const subselect = SUMMARY_COLS.slice(SUMMARY_COLS.lastIndexOf("(SELECT p.id")).replace(
-      / AS parent_open_id$/,
-      " AS p",
-    );
-    expect(await parentOf(subselect)).toBe(inv.id);
+    const parentOf = async (cols: string, join = SUMMARY_PARENT_JOIN) =>
+      (await env.DB.prepare(`SELECT ${cols} FROM documents d ${join} WHERE d.id = ?1`)
+        .bind(cn.id)
+        .first<{ parent_number: string | null; parent_open_id: string | null }>()) ?? null;
+    expect(await parentOf(SUMMARY_COLS)).toMatchObject({ parent_number: inv.number, parent_open_id: inv.id });
+    // another organisation's parent is never joined: neither its number nor its id
     expect(
-      await parentOf(subselect.replace("p.client_id = d.client_id", `p.client_id = '${f.b.id}'`)),
-    ).toBeNull();
-    expect(await parentOf(subselect.replace("p.voided_at IS NULL", "p.voided_at IS NOT NULL"))).toBeNull();
+      await parentOf(
+        SUMMARY_COLS,
+        SUMMARY_PARENT_JOIN.replace("p.client_id = d.client_id", `p.client_id = '${f.b.id}'`),
+      ),
+    ).toMatchObject({ parent_number: null, parent_open_id: null });
+    // a parent the client may not open (void) keeps its number but no link
+    expect(
+      await parentOf(SUMMARY_COLS.replace("p.voided_at IS NULL", "p.voided_at IS NOT NULL")),
+    ).toMatchObject({ parent_number: inv.number, parent_open_id: null });
     // an invoice's own parent (a converted proforma) is not offered as a link: notes only
     expect(SUMMARY_COLS).toContain("d.type IN ('credit_note', 'debit_note')");
+    // the parent is read once, by one join, not by two subselects
+    expect(SUMMARY_COLS).not.toContain("SELECT");
+    expect(SUMMARY_PARENT_JOIN).toBe(
+      "LEFT JOIN documents p ON p.id = d.parent_id AND p.client_id = d.client_id",
+    );
   });
 
-  it("CREDIT_NOTES_SQL is served by documents_parent (EXPLAIN QUERY PLAN)", async () => {
+  it("the statements that select the summary join the parent by its primary key (EXPLAIN QUERY PLAN)", async () => {
+    const plan = (
+      await env.DB.prepare(`EXPLAIN QUERY PLAN ${ONE_SQL}`).bind("c", "d").all<{ detail: string }>()
+    ).results
+      .map((r) => r.detail)
+      .join(" | ");
+    expect(plan).toMatch(/SEARCH p USING INDEX sqlite_autoindex_documents_1 \(id=\?\)/);
+    expect(plan).not.toMatch(/SCAN [dp]\b(?! USING)/);
+  });
+
+  it("CREDIT_NOTES_SQL reads the invoice by its primary key, then its notes by documents_parent (EXPLAIN QUERY PLAN)", async () => {
     const plan = (
       await env.DB.prepare(`EXPLAIN QUERY PLAN ${CREDIT_NOTES_SQL}`).bind("c", "d").all<{ detail: string }>()
     ).results
       .map((r) => r.detail)
       .join(" | ");
-    expect(plan).toMatch(/documents_parent/);
-    expect(plan).not.toMatch(/SCAN n\b(?! USING)/);
+    expect(plan).toMatch(/SEARCH i USING INDEX sqlite_autoindex_documents_1 \(id=\?\)/);
+    expect(plan).toMatch(/SEARCH n USING INDEX documents_parent/);
+    expect(plan).not.toMatch(/SCAN [in]\b(?! USING)/);
+  });
+
+  it("CREDIT_NOTES_SQL reads notes only for a tax or export invoice the client may open (final sweep review 6)", async () => {
+    const f = await fixtures();
+    const inv = await invoiceWithLines(f.a.id);
+    const cn = await noteAgainst(f.a.id, inv, "credit_note");
+    const notes = async (sql: string, id: string) =>
+      (await env.DB.prepare(sql).bind(f.a.id, id).all<{ id: string }>()).results.map((r) => r.id);
+    expect(await notes(CREDIT_NOTES_SQL, inv.id)).toEqual([cn.id]);
+    // a note (or a proforma, or anything else) reads none, whatever points at it
+    expect(await notes(CREDIT_NOTES_SQL, cn.id)).toEqual([]);
+    // the type rule on its own: the same invoice read as if it were a proforma or a note gives nothing
+    expect(CREDIT_NOTES_SQL).toContain("i.type IN ('tax_invoice', 'export_invoice')");
+    for (const other of ["'proforma'", "'credit_note', 'debit_note'"])
+      expect(
+        await notes(
+          CREDIT_NOTES_SQL.replace("i.type IN ('tax_invoice', 'export_invoice')", `i.type IN (${other})`),
+          inv.id,
+        ),
+      ).toEqual([]);
+    // and on an invoice the client may not open (void), as the guard on its own
+    expect(
+      await notes(CREDIT_NOTES_SQL.replace("i.voided_at IS NULL", "i.voided_at IS NOT NULL"), inv.id),
+    ).toEqual([]);
   });
 });
 
