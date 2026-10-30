@@ -578,6 +578,74 @@ describe("files from register rows (core does every sum)", () => {
     expect([zip[0], zip[1], zip[2], zip[3]]).toEqual([0x50, 0x4b, 0x03, 0x04]);
   });
 
+  it("rt1 T3 [RA-04]: a credit note to a registered client not yet accepted in IMS is held: not deducted from 3.1(a), counted, and the last row of the 3B file (07-ZD line 7)", () => {
+    const inv = row({ id: "d1", number: "TH/INV/2627/0001", issueDate: { year: 2026, month: 7, day: 5 } });
+    const credit = (id: string, number: string, imsStatus: string | null) =>
+      row({
+        id,
+        number,
+        kind: "credit_note",
+        series: "creditNote",
+        issueDate: { year: 2026, month: 8, day: 3 },
+        totalMinor: 1_180_00,
+        totalInrMinor: 1_180_00,
+        outstandingMinor: 0,
+        rates: [
+          {
+            sac: "998314",
+            rateBp: 1800,
+            taxableMinor: 1_000_00,
+            igstMinor: 0,
+            cgstMinor: 90_00,
+            sgstMinor: 90_00,
+          },
+        ],
+        noteOf: {
+          number: "TH/INV/2627/0001",
+          issueDate: { year: 2026, month: 7, day: 5 },
+          supplyType: "intra",
+          recipientStatus: "registered",
+          placeOfSupplyCode: "19",
+          totalInrMinor: 11_800_00,
+        },
+        imsStatus,
+      });
+    const r = buildGstExport(
+      [inv, credit("n1", "TH/CN/2627/0001", "pending"), credit("n2", "TH/CN/2627/0002", "accepted")],
+      meta,
+      q2,
+    );
+    if (!r.ok) throw new Error(JSON.stringify(r.problems));
+    expect(r.imsHeld).toEqual({
+      count: 1,
+      numbers: ["TH/CN/2627/0001"],
+      taxableMinor: -1_000_00,
+      igstMinor: 0,
+      cgstMinor: -90_00,
+      sgstMinor: -90_00,
+    });
+    // 3.1(a): the invoice less the accepted note only
+    expect(r.gstr3b[0]).toMatchObject({ table: "3.1(a)", taxableMinor: 9_000_00, cgstMinor: 810_00 });
+    const csv = r.files.find((f) => f.stem === "gstr3b_summary")?.csv ?? "";
+    const lines = csv.split("\r\n");
+    expect(lines.at(-2)).toBe(
+      ",Credit notes to registered clients not yet accepted in IMS (not deducted),,-1000.00,0.00,-90.00,-90.00",
+    );
+    // the sales register's 3B file carries the same block
+    const sr = buildSalesRegister(
+      [inv, credit("n1", "TH/CN/2627/0001", "pending")],
+      meta,
+      "2026-07-01",
+      "2026-09-30",
+    );
+    expect(sr.ok && sr.imsHeld?.count).toBe(1);
+    // nothing held: zeros, and a part-period has no 3B file and no block
+    const clean = buildGstExport([inv], meta, q2);
+    expect(clean.ok && clean.imsHeld.count).toBe(0);
+    const part = buildSalesRegister([inv], meta, "2026-07-01", "2026-07-15");
+    expect(part.ok && part.imsHeld).toBeNull();
+  });
+
   it("FX-4 (A5 1; OPEN 08-C RA-32): a tax-only debit note is a blocking warning first in the list; the panel is not complete and never says No errors", () => {
     const inv = row({ id: "d1", number: "TH/INV/2627/0001", issueDate: { year: 2026, month: 7, day: 5 } });
     const note = row({

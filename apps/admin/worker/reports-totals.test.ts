@@ -210,6 +210,14 @@ describe("the register, read back through the route", () => {
     );
     expect(allRows.find((r) => r.id === voidedId)?.voided).toBe(true);
     expect(allRows.filter((r) => r.voided)).toHaveLength(1);
+    // rt1 T3: every row carries the stored IMS answer: a credit note to a registered client is pending, an unregistered one's not applicable, the rest none
+    const ims = await rows<{ id: string; ims_status: string | null }>(
+      "SELECT id, ims_status FROM documents WHERE frozen_at IS NOT NULL",
+    );
+    for (const r of allRows)
+      expect(r.imsStatus, r.number).toBe(ims.find((x) => x.id === r.id)?.ims_status ?? null);
+    expect(allRows.some((r) => r.kind === "credit_note" && r.imsStatus === "pending")).toBe(true);
+    expect(allRows.filter((r) => r.kind !== "credit_note").every((r) => r.imsStatus === null)).toBe(true);
     const proformas = await rows<{ id: string }>("SELECT id FROM documents WHERE type = 'proforma'");
     for (const p of proformas) expect(allRows.some((r) => r.id === p.id)).toBe(false);
   });
@@ -280,11 +288,13 @@ describe("the totals equal the invoices' and each other's", () => {
       if (!summary.ok) throw new Error(JSON.stringify(summary.errors));
       const a = summary.value.lines.find((l) => l.table === "3.1(a)");
       const b = summary.value.lines.find((l) => l.table === "3.1(b)");
+      // rt1 T3: the credit notes not yet accepted in IMS are not deducted from 3.1(a); added back (signed), the sum is GSTR-1's
+      const h = summary.value.imsHeld ?? { taxableMinor: 0, igstMinor: 0, cgstMinor: 0, sgstMinor: 0 };
       b3 = {
-        taxable: b3.taxable + (a?.taxableMinor ?? 0) + (b?.taxableMinor ?? 0),
-        igst: b3.igst + (a?.igstMinor ?? 0) + (b?.igstMinor ?? 0),
-        cgst: b3.cgst + (a?.cgstMinor ?? 0) + (b?.cgstMinor ?? 0),
-        sgst: b3.sgst + (a?.sgstMinor ?? 0) + (b?.sgstMinor ?? 0),
+        taxable: b3.taxable + (a?.taxableMinor ?? 0) + (b?.taxableMinor ?? 0) + h.taxableMinor,
+        igst: b3.igst + (a?.igstMinor ?? 0) + (b?.igstMinor ?? 0) + h.igstMinor,
+        cgst: b3.cgst + (a?.cgstMinor ?? 0) + (b?.cgstMinor ?? 0) + h.cgstMinor,
+        sgst: b3.sgst + (a?.sgstMinor ?? 0) + (b?.sgstMinor ?? 0) + h.sgstMinor,
       };
     }
     const expected = { taxable: o.taxable, igst: o.igst, cgst: o.cgst, sgst: o.sgst };
