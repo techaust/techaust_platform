@@ -1,6 +1,6 @@
 # Run: rt1, the credit-note deadline by filing frequency (T1), the LUT of a debit note's FY (T2), and IMS in the 3B helper (T3)
 
-Status: open (PR pending)
+Status: merging (PR #123)
 Tier: A
 Usage: analyst claude-opus-5-5/high (agent-ac4e091f…, brief draft; skills workers-best-practices, wrangler)
 
