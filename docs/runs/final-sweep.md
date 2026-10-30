@@ -212,3 +212,44 @@ Staging (nothing deployed); the seed on the staging database (it runs on the nex
 - Merged `fix/final-sweep-b1` (6e53554f).
 - The builder's questions: (1) the portal shows a note's reason with the approved 07-T §3 words; the designer takes them from one shared place (move `REASON_LABELS` to `@techaust/pdf/copy` or core so portal, admin and PDF read the same words; no new words); (2) yes, the activity feed follows the bells' rule (a number, else "Untitled", never a title for an anonymised client's draft).
 - The terms version 3 seed is Tier A (terms pinned by documents): an analyst's early check of 1f75df51 runs beside the designer's round 3.
+
+## Designer report, round 3 (designer, Opus 5.5 high, 2026-10-30)
+Branch `fix/final-sweep-d3` from `origin/fix/final-sweep` ce3ba97d; commits bd8b0c05, 74dd0e82, 159cb092, 09844b2e, 2c9b3bdd (all pushed; this report is the last commit). Skills: `frontend-design:frontend-design`, loaded first (it kept every addition inside docs/06 and the screens' existing language: the portal's note reason reads as the PDF's band, a quiet ruled passage under the heading, not a new card; the Credited figure sits in the slip's existing row of figures; the activity row's subject is a link in the sentence, a number or code in mono, a title in the sentence's own type). `dataviz` not loaded (no chart or stat tile); no other docs/14 §9 skill fits screen work.
+
+### Built
+- **07-ZA 17** (bd8b0c05): /blog's description while no post is published (`blogPage.metaEmptyDescription`, 154 characters); the 07-F line (and the RSS channel, which keeps it) comes back with the first post. Recorded in 07-F; test in `content-m23.test.ts`; checked in `dist/blog.html`.
+- **07-ZA 18** (bd8b0c05): a proforma's void dialog labels its reason "Reason (required, kept with the proforma)" (`INV_COPY.voidProformaReason`); invoices keep theirs. Recorded in 07-R; test updated.
+- **07-ZA 19** (bd8b0c05): "PDF fingerprint" on the accepted record, in the portal and on the admin record (the same fact; admin's record labels are "the client's words"). Recorded in 07-N and 07-Q (OFF36, POR38). The acceptance certificate PDF keeps "Document fingerprint (SHA-256 of the accepted PDF)" (07-N §5, CERT7; item 19 names the record only).
+- **Reason labels in one place** (74dd0e82, the lead's note): `NOTE_REASON_LABELS` and `noteReasonLabel` are exported from `@techaust/core/invoice-email` (it already held the 07-T §3 words for the emails); the PDF (`packages/pdf/src/invoice-view.ts`), admin (`apps/admin/src/lib/notes.ts`) and the portal read them; the copies in pdf and admin are gone. Test in `packages/core/test/billing-messages.test.ts`. Core rather than `@techaust/pdf/copy` because core can't import pdf and the emails read the same words.
+- **A13** (74dd0e82): `activityRef` (`apps/admin/src/lib/dashboard.ts`) and `ActivityAbout` (`routes/dashboard.tsx`): a row names its number or code (as before); else a document or approval its title, or "Untitled" (the API leaves an anonymised client's title out: the bells' rule, as the lead confirmed); else a time entry its project (code and name, linked to the project) or its care plan ("Care plan {client code}", the Time page's words, linked to the plan). Test in `care-time.test.ts`.
+- **A20** (74dd0e82): `personLabels` / `personLabel` (`apps/admin/src/lib/people.ts`): a name repeated in the list shows each person's work email; "(you)" stays on your own. Used in "Log time for", the Time page's Person filter, the leads and projects Owner filters, and the Owner fields of a lead, a new lead, a new project and a project (all fed by the same two lists). Test `people.test.ts`.
+- **P2, P3, P15** (74dd0e82; portal `screens/invoices.tsx`, `lib/invoices.ts`, `copy-invoices.ts`, `portal.css`, `routes/invoices.tsx`): the "Credited ({credit note numbers})" figure between Paid and Balance due (07-ZA 11; "Credited" alone if an older API sends no numbers); a Discount column only when a line has one, its text as the PDF prints it; a note's "Against invoice …" is a 44 px link to that invoice when signed in (plain text on the emailed link, which opens one document only), and its reason "Reason: {label}" with the words typed for it below, as the PDF's band (`noteReasonLines`). Tests in `lib/invoices.test.ts`.
+- **Found on the way** (09844b2e): with the filters open on a phone, the leads page scrolled 24 px (375) to 79 px (320) sideways: the Service menu's longest name set the filter panel's width. Below 48rem `.filters` is one `minmax(0, 1fr)` column, and a chip wraps a long label (a person with their email) inside the pill. 0 px at 320 and 375 on leads, projects and time afterwards.
+- Preview samples (159cb092, 2c9b3bdd; dev only): line discounts, a note's invoice and reason, an invoice's credit notes.
+
+### Screenshots (main checkout `.logs/shots/sweep-fix/`, `progress.md` beside them)
+- `R3-A13-activity-{1280-light,1280-dark,768-light,375-dark}.png`: Recent activity naming a draft by its title, time by its care plan and by its project, invoices by number. `R3-A13-activity-focus-1280-dark.png`: the title link focused.
+- `R3-A20-log-time-for-{1280-light,1280-dark,768-light,375-dark}.png`: "Log time for" with two "Sam Rao (sample)" told apart by email. `R3-A20-leads-owner-filter-*.png`: the Owner chips. `R3-A20-leads-filters-open-{320,375}-dark.png`: the open filters fitting a phone (after 09844b2e).
+- `R3-inv-paid-{375-dark,1280-light,768-dark}.png`: Paid and "Credited (TH/CN/2627/0001)".
+- `R3-inv-discount-{1280-light,768-dark,375-light,1920-dark}.png`: the Discount column ("10 %", "₹3,000.00"); cards on a phone.
+- `R3-debit-note-{1280-dark,375-light,768-light}.png`, `R3-P15-debit-note-link-focus-1280-dark.png`: the invoice link (44 px, focused) and the reason with its typed words. `R3-credit-note-{768-light,375-dark,1280-dark}.png`: a reason without typed words.
+- `R3-credit-note-link-{375-dark,1280-light}.png`: the emailed link: "Against invoice …" as text, the reason shown.
+- `R3-accepted-{1280-light,375-dark}.png`: "PDF fingerprint" in the record, "Content fingerprint" on the paper.
+
+### Commands and results
+- `bash tools/heavy.sh --log d3-typecheck pnpm --filter @techaust/{admin,portal,core,pdf} typecheck`: exit 0.
+- Tests: core `billing-messages.test.ts` 9 passed; pdf all passed (97 % statements); admin `vitest run src/` 479 passed; portal `vitest run src/` 47 passed; web 731 passed.
+- e2e: admin with `E2E_SAMPLE=1` (setup as round 1), 6/6 passed (14.2 min); portal 9 passed; web 211 passed, 1 failed (CLS 0.024 on /services/app-rescue at 375 while the machine was short of memory; the test's 4 cases passed on a re-run; this round changed nothing there).
+- Builds: web build and dist checks ok; portal Worker 100,469 bytes (startup 19.1 ms); admin front 99,271, admin API 614,993; jobs 978,987 (limit 1,000,000; the PDF now imports a core module jobs already bundled).
+- `pnpm check`: exit 0. Whole-repository `pnpm lint`, last: exit 0, 1,351 files, 10 warnings and 8 infos, all in the same untouched files as before (admin `worker/reports.test.ts`, web `src/lib/catalogue.ts`, core `src/public-text.ts`, three pdf tests).
+- Visual: axe 0 and no sideways scroll on every portal shot above; admin dashboard, leads, projects and time with no sideways scroll at 320, 375, 768 and 1280; no console errors. The admin screens were driven by a Playwright script with the e2e Owner's storage state (the MCP browser can't set `__Host-` cookies); two staff rows "Sam Rao (sample)" (`@example.test`), a draft proposal and two time entries were added to my local database only. Dev servers stopped, browsers closed.
+
+### Not verified
+Safari, Firefox, phones, NVDA, staging; the proforma void dialog's new label by eye (no proforma in the local sample; one constant, tested); P2, P3 and P15 against the real API by eye (seen on the labelled preview samples; the builder's API tests cover the data); an approval row and an anonymised client's draft in the activity feed (unit-tested only).
+
+### Placeholder text
+None added.
+
+### Open questions
+- In "Log time for" at 375 px the closed select cuts the email ("Sam Rao (sample) (sam.rao.two@e…"); the open list shows it whole. Keep, or show the chosen person's email under the field when their name repeats (no new words)?
+- The acceptance certificate PDF still says "Document fingerprint (SHA-256 of the accepted PDF)" (CERT7). Item 19 named the record only; say if the certificate should follow.
