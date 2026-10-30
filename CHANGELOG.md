@@ -2,6 +2,7 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-31 [#123](https://github.com/techaust/techaust_platform/pull/123) feat(notes): credit-note deadline by GSTR-1 frequency, the LUT of a debit note's FY, IMS in the 3B helper [ADM-INV-11, ADM-INV-18, ADM-REP-04, ADM-SET-03]
 - 2026-10-30 [#120](https://github.com/techaust/techaust_platform/pull/120) fix: full audit final sweep, website, admin and portal (reflow, targets, landmarks, errors, portal invoice rows, approved copy, terms v3) [ADM-INV-07, ADM-DASH-01, POR-05, POR-06, WEB-G-07]
 - 2026-10-30 [#119](https://github.com/techaust/techaust_platform/pull/119) docs: settling the research register's OPEN items (no CA or lawyer)
 - 2026-10-30 [#118](https://github.com/techaust/techaust_platform/pull/118) ci: full audit workflow changes (dependency audit, build apart from deploy, deploy order and health checks, staging traces, zod 4.6.6)

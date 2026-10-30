@@ -73,6 +73,7 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0051_pdf_failures.sql",
       "0052_tax_only_note_triggers.sql",
       "0053_void_view_triggers.sql",
+      "0054_note_lut_triggers.sql",
     ]);
   });
 

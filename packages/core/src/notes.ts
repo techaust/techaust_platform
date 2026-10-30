@@ -2,7 +2,9 @@
 // screens' (07-T). EVERY RULE HERE IS A RESEARCHED DEFAULT: Researched 2026-10-28, s.34(2) proviso CGST Act (08-C RA-04) (s.34 CGST Act, Rule 53(1A), the 30 November block, IMS).
 //
 //   - the reasons, the limits and the note blockers (own codes, LD50: `ISSUE_BLOCKER_CODES` is the invoice's and does not move),
-//   - the deadline of a credit note (s.34(2): 30 November after the end of the FY of the supply, or earlier once the annual return is filed; Q32, Q33),
+//   - the deadline of a credit note (s.34(2): the return it goes into is filed by 30 November after the end of the FY of the supply, or before the annual return; the last
+//     day it may be dated is the end of the latest GSTR-1 or IFF period before that, by the filing frequency and the recipient: rt1 T1, 08-C RA-31, RA-03; Q32, Q33),
+//   - the LUT a debit note on an export under LUT needs: the one of the note's own FY (rt1 T2, 08-C RA-19 Q39),
 //   - the ledger of the parent (status, balance, refund due: derived, never stored beyond the columns the batch recomputes),
 //   - `creditForGross`: the largest credit note that fits an amount typed GST included (LD44),
 //   - the debit note's input for the shared engine (LD43), and the twin of the IMS triggers.
@@ -110,6 +112,11 @@ export type NoteOf = {
   readonly parent: NoteParentFacts;
   readonly reason: { readonly code: string; readonly text: string };
   readonly request: NoteRequest;
+  /**
+   * rt1 T2: a debit note on an export invoice under LUT seals the letter it relies on, the one of the FY of its own issue day (Researched 2026-10-30, Rule 96A(1) CGST
+   * Rules, Notification 37/2017-CT (08-C RA-19, Q39)); its PDF prints this one, not `parent.lut`. Absent on every other note, and on a note sealed before rt1.
+   */
+  readonly lut?: { readonly fy: string; readonly arn: string };
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -124,6 +131,11 @@ const isNum = (v: unknown): v is number => typeof v === "number" && Number.isSaf
 export function noteOfFromStored(v: unknown): NoteOf | null {
   if (!isRecord(v)) return null;
   const { kind, parent, reason, request } = v;
+  let ownLut: { fy: string; arn: string } | undefined;
+  if (v.lut !== undefined) {
+    if (!isRecord(v.lut) || !isStr(v.lut.fy) || !isStr(v.lut.arn)) return null;
+    ownLut = { fy: v.lut.fy, arn: v.lut.arn };
+  }
   if (kind !== "credit" && kind !== "debit") return null;
   if (!isRecord(parent) || !isRecord(reason) || !isRecord(request)) return null;
   const takes = request.takes;
@@ -183,6 +195,7 @@ export function noteOfFromStored(v: unknown): NoteOf | null {
       ...(request.taxMinor !== undefined ? { taxMinor: request.taxMinor } : {}),
       takes: takes.map((t) => ({ line: t.line as number, taxableMinor: t.taxableMinor as number })),
     },
+    ...(ownLut ? { lut: ownLut } : {}),
   };
 }
 
@@ -221,15 +234,21 @@ export const NOTE_BLOCKER_CODES = [
   "bank_missing",
   "swift_missing",
   "notes_limit",
+  // rt1 T2 (appended last: the codes above keep their order).
+  "debit_lut_missing",
 ] as const;
 export type NoteBlockerCode = (typeof NOTE_BLOCKER_CODES)[number];
 
-/** `line`: the parent's line index (`line_credit_exceeds`). `remaining`: what can still be credited (minor units: on the line, or on the invoice). `date`: the last day (`credit_deadline_passed`). */
+/**
+ * `line`: the parent's line index (`line_credit_exceeds`). `remaining`: what can still be credited (minor units: on the line, or on the invoice). `date`: the last day
+ * (`credit_deadline_passed`). `fy`: the FY token of the note's issue day whose LUT is missing (`debit_lut_missing`).
+ */
 export type NoteBlocker = {
   readonly code: NoteBlockerCode;
   readonly line?: number;
   readonly remaining?: number;
   readonly date?: string;
+  readonly fy?: string;
 };
 
 export type NoteFacts = {
@@ -260,14 +279,22 @@ export type NoteFacts = {
   readonly deadline: { readonly lastDay: string; readonly passed: boolean } | null;
   /** The active bank accounts (a debit note prints the bank block, like an invoice). */
   readonly bank: { readonly inr: boolean; readonly swift: boolean };
+  /**
+   * rt1 T2: a debit note on an export invoice under LUT (`needed`) needs a LUT with an ARN saved for `fy`, the FY token of its issue day (`saved`). Left out (a credit
+   * note, a parent not under LUT): nothing is judged.
+   */
+  readonly lut?: { readonly needed: boolean; readonly fy: string; readonly saved: boolean };
 };
 
 const blank = (v: string | null | undefined): boolean => v === null || v === undefined || v.trim() === "";
 
 /**
  * Everything that stops a note from being issued, as codes (empty = it can be issued). Order is stable: the supplier, the parent, the request, the
- * deadline, the reason, the totals, the reverse charge, the bank (a debit note, when the Owner's checklist asks for it), the limit. The parent's
- * recipient and place of supply come from its frozen snapshot, so no recipient, LUT or B2C code is raised here (LD49).
+ * deadline, the reason, the totals, the reverse charge, the bank (a debit note, when the Owner's checklist asks for it), the limit, then the LUT of a
+ * debit note's FY. The parent's recipient and place of supply come from its frozen snapshot, so no recipient or B2C code is raised here (LD49). LD49's
+ * "no LUT code" no longer holds for a debit note (rt1 T2): a debit note on an export under LUT needs the LUT of its OWN issue day's FY, `debit_lut_missing`
+ * with that FY (Researched 2026-10-30, Rule 96A(1) CGST Rules, Notification 37/2017-CT (08-C RA-19, Q39)). It has no IGST route (the trigger `badParent` pins
+ * the note's `export_mode` to the parent's). A credit note copies the parent's route and LUT as before.
  */
 export function noteBlockers(f: NoteFacts, checklist: Pick<ChecklistSettings, "bankDetails">): NoteBlocker[] {
   const out: NoteBlocker[] = [];
@@ -307,23 +334,42 @@ export function noteBlockers(f: NoteFacts, checklist: Pick<ChecklistSettings, "b
     if (f.currency === "USD" && !f.bank.swift) out.push({ code: "swift_missing" });
   }
   if (f.issuedOfKind >= NOTES_MAX) out.push({ code: "notes_limit" });
+  if (f.kind === "debit" && f.lut?.needed && !f.lut.saved)
+    out.push({ code: "debit_lut_missing", fy: f.lut.fy });
   return out;
 }
 
-// ---- the deadline of a credit note (s.34(2); G-11; Q32, Q33; Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03)) ---------------------------------------------------------------
+// ---- the deadline of a credit note (s.34(2); G-11; Q32, Q33; rt1 T1; Researched 2026-10-30, s.34(2) CGST Act; Rule 59(1)-(2) CGST Rules (IFF) (08-C RA-31, RA-03)) ----------
 
 export type AnnualReturnFiled = { readonly fy: string; readonly filedOn: string };
 
+/** How often GSTR-1 is filed (`tax.gstr1Frequency`, rt1 R3): quarterly under the QRMP scheme (the owner's, 2026-10-31, and the default) or monthly. */
+export const GSTR1_FREQUENCIES = ["quarterly", "monthly"] as const;
+export type Gstr1Frequency = (typeof GSTR1_FREQUENCIES)[number];
+
+/** What decides the return period a credit note is reported in: the filing frequency and the parent's frozen recipient status. */
+export type CreditFiling = {
+  readonly frequency: Gstr1Frequency;
+  readonly recipientStatus: "registered" | "unregistered" | "overseas";
+};
+
 export type CreditDeadline = {
-  /** The cutoff day of the year the supply FY ends (`tax.creditNoteCutoff`: 30 November), clamped to the month's last day. */
+  /**
+   * The cutoff (`tax.creditNoteCutoff`: 30 November) on the first such day after the supply FY ends: in the year the FY ends for April to December, in the year after
+   * for January to March (rt1 F2; 31 January for FY 2025-26 is 2027-01-31). Clamped to the month's last day.
+   */
   readonly date: string;
-  /** What binds: the cutoff, or the annual return when it was filed before the cutoff. */
+  /** What binds: the cutoff, or the annual return when it was filed on or before the cutoff. */
   readonly basis: "cutoff" | "annual_return";
   /** The FY token the supply belongs to (Q32): the earliest of the invoice's, the advance's and the service's. */
   readonly supplyFy: string;
   /** The day the annual return of that FY was filed (null: not filed). A note dated on this day or after it is refused (Q33). */
   readonly filedOn: string | null;
-  /** The last day a note may be dated: the cutoff, or the day before the return was filed. */
+  /** The last day the return carrying the note may be filed: the cutoff, or the day before the annual return was filed (D4). */
+  readonly returnBy: string;
+  /** The return period the note is reported in: a month (monthly GSTR-1, or the IFF of a quarterly filer for a registered client), or a quarter (rt1 R1). */
+  readonly period: "month" | "quarter";
+  /** The last day a note may be dated: the end of the latest return period that ends strictly before `returnBy` (rt1 R1). */
   readonly lastDay: string;
 };
 
@@ -334,10 +380,36 @@ const monthEnd = (year: number, month: number): number =>
   month === 2 ? (isLeap(year) ? 29 : 28) : [4, 6, 9, 11].includes(month) ? 30 : 31;
 
 /**
+ * The return period of a credit note (rt1 R1, D2): a month when GSTR-1 is filed monthly, or quarterly and the client is GST registered (the note goes in that month's
+ * IFF); a quarter when GSTR-1 is filed quarterly and the client is unregistered or overseas (overseas counts as unregistered: the stricter side).
+ * OPEN (08-C RA-31): does IFF carry only supplies to registered persons (so export and B2C notes go in the quarterly GSTR-1), and can a period's return be filed from the
+ * day after it ends?
+ */
+export const creditNotePeriod = (filing: CreditFiling): "month" | "quarter" =>
+  filing.frequency === "monthly" || filing.recipientStatus === "registered" ? "month" : "quarter";
+
+/**
+ * The end of the latest return period that ends STRICTLY before `day`: the last day of the month before (a month), or of the quarter before (quarters end 30 June,
+ * 30 September, 31 December and 31 March).
+ */
+function periodEndBefore(day: CalendarDate, period: "month" | "quarter"): CalendarDate {
+  // the quarter before: the month before the first month of `day`'s quarter (0 is December of the year before)
+  const before = period === "month" ? day.month - 1 : day.month - 1 - ((day.month - 1) % 3);
+  const year = before === 0 ? day.year - 1 : day.year;
+  const month = before === 0 ? 12 : before;
+  return { year, month, day: monthEnd(year, month) };
+}
+
+/**
  * Q32 (Researched 2026-10-28, s.34(2) CGST Act (08-C RA-03)): the credit note is judged against the FY the SUPPLY belongs to. That is the earliest of three: the FY of the invoice; the FY of the day
  * an advance was received (the tax invoice made for money already received, Q9: the supply's time of supply is the receipt); and the FY of the day the service was
  * completed, when the invoice came more than 30 days after it (Rule 47: the invoice is due within 30 days of the supply). `cutoff` is `tax.creditNoteCutoff`.
- * `annualReturnsFiled` (Q33): the return of that FY, once filed, closes credit notes from the day it was filed. An unreadable date is ignored.
+ * `annualReturnsFiled` (Q33): the return of that FY, once filed on or before the cutoff, moves the last filing day to the day before it (D4). An unreadable date is ignored.
+ *
+ * rt1 T1 (Researched 2026-10-30, s.34(2) CGST Act; Rule 59(1)-(2) CGST Rules (IFF) (08-C RA-31, RA-03)): s.34(2) asks that the note be DECLARED in a return filed by the
+ * cutoff, and a return can only be filed for a period that has ended. So the last day a note may be dated is the end of the latest return period (`creditNotePeriod`)
+ * that ends strictly before `returnBy`. With the default 30 November: 31 October for a monthly filer or a registered client (IFF), 30 September for a quarterly filer's
+ * unregistered or overseas client.
  */
 export function creditNoteDeadline(
   input: {
@@ -348,6 +420,7 @@ export function creditNoteDeadline(
   },
   cutoff: { readonly month: number; readonly day: number },
   annualReturnsFiled: readonly AnnualReturnFiled[],
+  filing: CreditFiling,
 ): CreditDeadline {
   let start = fyOfToken(input.parentFy).startYear;
   const consider = (d: CalendarDate | null) => {
@@ -358,56 +431,52 @@ export function creditNoteDeadline(
   const issued = parseIsoDate(input.parentIssueDate);
   if (done && issued && daysBetween(done, issued) > 30) consider(done);
   const fy = financialYear(start);
-  const year = start + 1;
-  const date = toIsoDate({
+  // rt1 F2: the cutoff is the first such day AFTER the supply FY ends (s.34(2): "the thirtieth day of November following the end of the financial year"). A cutoff in
+  // January to March falls in the year after the FY's end year; any other month in the year the FY ends.
+  const year = cutoff.month <= 3 ? start + 2 : start + 1;
+  const cut: CalendarDate = {
     year,
     month: cutoff.month,
     day: Math.min(cutoff.day, monthEnd(year, cutoff.month)),
-  });
+  };
+  const date = toIsoDate(cut);
+  const period = creditNotePeriod(filing);
   const filedOn = annualReturnsFiled.find((r) => r.fy === fy.token)?.filedOn ?? null;
   const filed = filedOn !== null ? parseIsoDate(filedOn) : null;
-  if (filedOn !== null && filed && filedOn <= date) {
-    const lastDay = toIsoDate(addDays(filed, -1));
-    return { date, basis: "annual_return", supplyFy: fy.token, filedOn, lastDay };
-  }
+  const byReturn = filedOn !== null && filed !== null && filedOn <= date;
+  const returnBy = byReturn && filed !== null ? addDays(filed, -1) : cut;
   return {
     date,
-    basis: "cutoff",
+    basis: byReturn ? "annual_return" : "cutoff",
     supplyFy: fy.token,
-    filedOn: filedOn !== null && filed ? filedOn : null,
-    lastDay: date,
+    filedOn: filed !== null ? filedOn : null,
+    returnBy: toIsoDate(returnBy),
+    period,
+    lastDay: toIsoDate(periodEndBefore(returnBy, period)),
   };
 }
 
 /**
- * The advice dates of the deadline banner (research round 2026-10-28, 08-C RA-31; 07-T §4; review 2026-10-28, finding 7). The banner warns from the FIRST day of the month before the month the
- * cutoff falls in (1 October with the default 30 November) and advises issuing the note by the LAST day of that month (31 October), so it goes into a return filed in time (a quarterly
- * filer's November filing is the open question). Both follow the cutoff setting (a cutoff in January gives December), and neither is later than the last day a note is still allowed: when an
- * annual return was filed before the cutoff, that is the day before it was filed (`lastDay`; a note dated on the filing day is refused, `creditAllowed`). The hard block is unchanged.
- * ISO days; an unreadable date gives none.
+ * The advice dates of the deadline banner (rt1 R2, D3; 07-ZD): the banner warns from the FIRST day of the month before the month `lastDay` falls in (1 September
+ * with the default 31 October), and advises issuing the note by `lastDay` itself, the hard block. ISO days; an unreadable date gives none.
  */
-export function creditNoteAdvice(
-  deadline: Pick<CreditDeadline, "date"> & Partial<Pick<CreditDeadline, "lastDay">>,
-): {
+export function creditNoteAdvice(deadline: Pick<CreditDeadline, "lastDay">): {
   readonly deadlineWarnFrom: string | null;
   readonly adviseIssueBy: string | null;
 } {
-  const d = parseIsoDate(deadline.date);
+  const d = parseIsoDate(deadline.lastDay);
   if (!d) return { deadlineWarnFrom: null, adviseIssueBy: null };
   const year = d.month === 1 ? d.year - 1 : d.year;
   const month = d.month === 1 ? 12 : d.month - 1;
-  const last =
-    deadline.lastDay !== undefined && parseIsoDate(deadline.lastDay) !== null ? deadline.lastDay : null;
-  const notLater = (day: string): string => (last !== null && last < day ? last : day);
-  return {
-    deadlineWarnFrom: notLater(toIsoDate({ year, month, day: 1 })),
-    adviseIssueBy: notLater(toIsoDate({ year, month, day: monthEnd(year, month) })),
-  };
+  return { deadlineWarnFrom: toIsoDate({ year, month, day: 1 }), adviseIssueBy: toIsoDate(d) };
 }
 
-/** Q33: a credit note dated `issueDate` (ISO) is allowed on or before the cutoff, and strictly before the day the annual return was filed. */
+/**
+ * Q33 and rt1 R1: a credit note dated `issueDate` (ISO) is allowed on or before `lastDay` (the end of the latest return period before the return deadline), and
+ * strictly before the day the annual return was filed (always true when it is on or before `lastDay`; kept as the second clause of Q33).
+ */
 export const creditAllowed = (issueDate: string, d: CreditDeadline): boolean =>
-  issueDate <= d.date && (d.filedOn === null || issueDate < d.filedOn);
+  issueDate <= d.lastDay && (d.filedOn === null || issueDate < d.filedOn);
 
 // ---- the ledger of the parent (LD41) ---------------------------------------------------------------------------------------------------------------
 

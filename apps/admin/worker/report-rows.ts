@@ -116,6 +116,8 @@ export function registerRowOf(r: RegisterSqlRow): RegisterApiRow {
     noteOf: note ? noteParentOf(r.note_of, r.currency) : null,
     outstandingMinor: r.balance_minor,
     purposeCode: r.purpose_code,
+    // rt1 T3: the credit note's IMS answer as stored (null for every other document); only the 3B helper reads it.
+    imsStatus: r.ims_status,
     series: r.series as RegisterApiRow["series"],
     fy: r.fy,
     seq: r.seq,

@@ -227,6 +227,19 @@ export function toInvoiceView(
     : null;
 
   // M5.3: a credit or debit note's facts, from the sealed `noteOf` only. The invoice's route and LUT travel with it (the note copies them at issue; Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22)).
+  // rt1 T2: a debit note on an export under LUT seals the LUT of its OWN issue day's FY (`noteOf.lut`; Researched 2026-10-30, Rule 96A(1) CGST Rules, Notification
+  // 37/2017-CT (08-C RA-19, Q39)) and prints that one; a note sealed before rt1 (no `noteOf.lut`) prints the invoice's, as it was issued.
+  const noteLut = noteOf ? (noteOf.lut ?? noteOf.parent.lut) : undefined;
+  // rt1 F1: a note on an export issued on the settings' route has no typed `exportMode` (null, copied from its invoice); the frozen supply type then says
+  // which route it went (`export_lut` -> LUT, `export_igst` -> IGST paid), so its route line, LUT and export place still print.
+  const noteMode: "lut" | "igst_paid" | null =
+    header.document.exportMode === "lut" || header.document.exportMode === "igst_paid"
+      ? header.document.exportMode
+      : computed.supply.type === "export_lut"
+        ? "lut"
+        : computed.supply.type === "export_igst"
+          ? "igst_paid"
+          : null;
   const noteView: InvoiceViewNote | null = noteOf
     ? {
         kind: noteOf.kind,
@@ -252,14 +265,14 @@ export function toInvoiceView(
           ? { rate: formatFxRate(header.fx.rateMicros), parentNumber: noteOf.parent.number }
           : null,
         route:
-          header.document.exportMode === "lut" || header.document.exportMode === "igst_paid"
+          noteMode !== null
             ? {
-                mode: header.document.exportMode,
-                lut: noteOf.parent.lut
+                mode: noteMode,
+                lut: noteLut
                   ? {
-                      fy: noteOf.parent.lut.fy,
-                      fyLabel: fyLabelOfToken(noteOf.parent.lut.fy) ?? noteOf.parent.lut.fy,
-                      arn: noteOf.parent.lut.arn,
+                      fy: noteLut.fy,
+                      fyLabel: fyLabelOfToken(noteLut.fy) ?? noteLut.fy,
+                      arn: noteLut.arn,
                     }
                   : null,
               }

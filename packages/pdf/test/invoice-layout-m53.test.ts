@@ -3,6 +3,11 @@
 // fixture), each line's "Against line {n}", the total's label and the effect line; a credit note prints no due date, no balance and no bank block, a
 // debit note is paid like an invoice; a USD note prints the rate of its invoice. Sample data only (fixtures/notes.ts). Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22).
 import { describe, expect, it } from "vitest";
+import {
+  parseInvoiceEnvelope,
+  serializeInvoiceEnvelope,
+  verifyInvoiceEnvelope,
+} from "../src/invoice-envelope.ts";
 import { missingStatutoryLine } from "../src/invoice-integrity.ts";
 import type { InvoiceEnvelope } from "../src/invoice-types.ts";
 import { toInvoiceView } from "../src/invoice-view.ts";
@@ -21,8 +26,8 @@ import {
 const body = (h: string) => h.slice(h.indexOf("<body>"));
 const clone = (e: InvoiceEnvelope): InvoiceEnvelope => JSON.parse(JSON.stringify(e)) as InvoiceEnvelope;
 
-async function built(name: NoteFixtureName) {
-  const { envelope, noteOf } = await buildNoteFixture(name);
+async function built(name: NoteFixtureName, opts: Parameters<typeof buildNoteFixture>[1] = {}) {
+  const { envelope, noteOf } = await buildNoteFixture(name, opts);
   const view = toInvoiceView(envelope, DEFAULT_VIEW_CONFIG, { portalLink: "portal.example.test" });
   return { envelope, noteOf, view, html: renderDocumentHtml(view) };
 }
@@ -141,6 +146,20 @@ describe("a credit note (07-T §1)", () => {
     expect(h).toContain('<div class="wrap"><dt>Place of supply</dt><dd>Outside India (96)</dd></div>');
   });
 
+  it("rt1 T2 [RA-19 Q39]: a debit note prints its own sealed LUT (its issue day's FY); an older envelope without one prints the invoice's", async () => {
+    const { envelope, html } = await built("debit_usd_lut");
+    // an envelope sealed before rt1: the invoice's LUT, as it was issued
+    expect(body(html)).toContain(`data-testid="lut">LUT ARN: ${SAMPLE_ARN} (FY 2026-27)<`);
+    const own = clone(envelope);
+    const noteOf = own.snapshot.header.noteOf as { lut?: { fy: string; arn: string } };
+    noteOf.lut = { fy: "2728", arn: "AD1903270000002" };
+    const view = toInvoiceView(own, DEFAULT_VIEW_CONFIG);
+    expect(view.note?.route?.lut).toEqual({ fy: "2728", fyLabel: "2027-28", arn: "AD1903270000002" });
+    const h = body(renderDocumentHtml(view));
+    expect(h).toContain('data-testid="lut">LUT ARN: AD1903270000002 (FY 2027-28)<');
+    expect(h).not.toContain(SAMPLE_ARN);
+  });
+
   it("in USD with IGST paid: no LUT line, the IGST in INR", async () => {
     const h = body((await built("credit_usd_igst")).html);
     expect(h).not.toContain('data-testid="lut"');
@@ -172,5 +191,78 @@ describe("a debit note (07-T §1, §8)", () => {
     expect(h).toContain(`(the rate of invoice ${PARENT_NUMBER})`);
     expect(h).toContain('data-testid="lut"');
     expect(h).toContain('data-testid="reason">Reason: Extra revision round agreed by email.<');
+  });
+});
+
+// rt1 F1: an export issued on the settings' route freezes no typed route (`exportMode` null) and its note copies that; the frozen supply type says the route.
+describe("rt1 F1 [RA-19, RA-03]: a note on an export issued on the settings' route (no typed route)", () => {
+  const PLACE = '<div class="wrap"><dt>Place of supply</dt><dd>Outside India (96)</dd></div>';
+  const OWN = { fy: "2728", arn: "AD1903270000002" } as const;
+
+  it("a debit note under LUT prints its own sealed LUT and the export place", async () => {
+    const { envelope, view, html } = await built("debit_usd_lut", { route: "settings", noteLut: OWN });
+    expect(envelope.snapshot.header.document.exportMode).toBeNull();
+    expect(view.note?.route).toEqual({
+      mode: "lut",
+      lut: { fy: "2728", fyLabel: "2027-28", arn: OWN.arn },
+    });
+    const h = body(html);
+    expect(h).toContain(`data-testid="lut">LUT ARN: ${OWN.arn} (FY 2027-28)<`);
+    expect(h).not.toContain(SAMPLE_ARN);
+    expect(h).toContain(PLACE);
+  });
+
+  it("a credit note under LUT prints its invoice's LUT and the export place", async () => {
+    const { envelope, view, html } = await built("credit_usd_lut", { route: "settings" });
+    expect(envelope.snapshot.header.document.exportMode).toBeNull();
+    expect(view.note?.route?.mode).toBe("lut");
+    const h = body(html);
+    expect(h).toContain(`data-testid="lut">LUT ARN: ${SAMPLE_ARN} (FY 2026-27)<`);
+    expect(h).toContain(PLACE);
+  });
+
+  it("a note under IGST paid prints no LUT line and the export place", async () => {
+    const { envelope, view, html } = await built("credit_usd_igst", { route: "settings" });
+    expect(envelope.snapshot.header.document.exportMode).toBeNull();
+    expect(view.note?.route?.mode).toBe("igst_paid");
+    const h = body(html);
+    expect(h).not.toContain('data-testid="lut"');
+    expect(h).toContain(PLACE);
+  });
+
+  it("a domestic note still has no route, no LUT line and its state as the place of supply", async () => {
+    const { view, html } = await built("debit", { route: "settings" });
+    expect(view.note?.route).toBeNull();
+    const h = body(html);
+    expect(h).not.toContain('data-testid="lut"');
+    expect(h).not.toContain("Outside India (96)");
+  });
+});
+
+// rt1 F4: `noteOf.lut` sealed through the issue route's own seal (`invoiceSealOf`, in the fixture), not patched into a built envelope.
+describe("rt1 F4 [RA-19 Q39]: a debit note's own LUT through the real seal", () => {
+  it.each(["typed", "settings"] as const)(
+    "%s route: the seal verifies, survives a store and read back, and the page prints the sealed LUT",
+    async (route) => {
+      const own = { fy: "2728", arn: "AD1903270000002" };
+      const { envelope, view, html } = await built("debit_usd_lut", { route, noteLut: own });
+      expect(envelope.snapshot.header.noteOf?.lut).toEqual(own);
+      expect(await verifyInvoiceEnvelope(envelope)).toEqual({ ok: true });
+      const back = parseInvoiceEnvelope(serializeInvoiceEnvelope(envelope));
+      expect(back?.snapshot.header.noteOf?.lut).toEqual(own);
+      expect(await verifyInvoiceEnvelope(back as InvoiceEnvelope)).toEqual({ ok: true });
+      expect(view.note?.route?.lut?.arn).toBe(own.arn);
+      expect(body(html)).toContain(`data-testid="lut">LUT ARN: ${own.arn} (FY 2027-28)<`);
+      expect(missingStatutoryLine(envelope, html)).toBeNull();
+    },
+  );
+
+  it("a sealed LUT changed after the seal no longer verifies", async () => {
+    const { envelope } = await built("debit_usd_lut", {
+      noteLut: { fy: "2728", arn: "AD1903270000002" },
+    });
+    const forged = clone(envelope);
+    (forged.snapshot.header.noteOf as { lut: { arn: string } }).lut.arn = "AD1903270000099";
+    expect(await verifyInvoiceEnvelope(forged)).toEqual({ ok: false, code: "snapshot_hash" });
   });
 });

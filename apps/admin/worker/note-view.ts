@@ -7,7 +7,6 @@ import {
   creditAllowed,
   creditedSoFarOf,
   creditNoteAdvice,
-  creditNoteDeadline,
   isNoteType,
   NOTES_MAX,
   type NoteOf,
@@ -17,7 +16,7 @@ import { decide, type Role } from "@techaust/core/permissions";
 import { type DocumentBundle, headerExtrasOfRow, type TermsRef } from "@techaust/db/documents";
 import { CREDITED_SO_FAR_SQL, CREDITED_TOTALS_SQL } from "@techaust/db/issue";
 import type { InvoiceSettings } from "./invoice-model.ts";
-import { isLiveParentStatus, isNoteParentType, type ParentCtx } from "./note-model.ts";
+import { creditDeadlineOf, isLiveParentStatus, isNoteParentType, type ParentCtx } from "./note-model.ts";
 
 /** Keyed by the INVOICE's id (`?1`): what an issued tax or export invoice's view needs about its notes. At most 50 rows (20 issued of each kind and an open draft of each). */
 export const NOTES_VIEW_READS = [
@@ -77,16 +76,9 @@ export function invoiceNotesView(a: {
   };
   const credited = creditedSoFarOf(computed, (creditedR?.results ?? []) as never, totals);
   const extras = headerExtrasOfRow(d);
-  const dl: CreditDeadline = creditNoteDeadline(
-    {
-      parentFy: d.fy ?? "",
-      parentIssueDate: d.issue_date ?? "",
-      advanceReceivedOn: extras.advance?.receivedOn ?? null,
-      serviceCompletedOn: d.service_completed_on ?? null,
-    },
-    a.settings.tax.creditNoteCutoff,
-    a.settings.tax.annualReturnsFiled,
-  );
+  // rt1 review 8 and re-check 5: the same helper as the note routes' `deadlineOf`, given the invoice's FROZEN recipient; it picks the status (a damaged one is
+  // judged as unregistered, D2) and the return period by the GSTR-1 frequency (rt1 T1).
+  const dl: CreditDeadline = creditDeadlineOf({ row: d, extras, recipient: d.recipient }, a.settings);
   const passed = !creditAllowed(a.todayIso, dl);
   const last = parseIsoDate(dl.lastDay);
   const today = parseIsoDate(a.todayIso);
@@ -145,8 +137,12 @@ export function invoiceNotesView(a: {
       basis: dl.basis,
       supplyFy: dl.supplyFy,
       filedOn: dl.filedOn,
+      /** rt1 T1: the last day the return carrying the note may be filed (the cutoff, or the day before the annual return was filed), 07-ZD line 2's "{cutoff date}". */
+      returnBy: dl.returnBy,
+      /** rt1 T1: the return period the note goes into: "month" (monthly GSTR-1, or the IFF for a registered client) or "quarter" (07-ZD line 3). */
+      period: dl.period,
       daysLeft,
-      /** The first day of the month before the cutoff month (1 October by default): from this day the banner says how many days are left, and the last day of that month is the advised last day to issue (07-T §4; 08-C RA-31). The block itself is `passed`. */
+      /** rt1 R2 (07-ZD): from the first day of the month before `lastDay`'s month the banner says how many days are left; `adviseIssueBy` is `lastDay`, the block itself is `passed`. */
       ...creditNoteAdvice(dl),
       passed,
     },

@@ -15,6 +15,13 @@ import { CREDIT_REASONS, DEBIT_REASONS } from "@techaust/core/invoices";
 import type { Currency } from "../api.ts";
 import { RequestError } from "../api.ts";
 import { Y } from "./copy-y.ts";
+import {
+  DEADLINE_QUARTER_LINE,
+  deadlineBeforeLine,
+  deadlinePassedLine,
+  deadlineWarnLine,
+  debitLutMissingLine,
+} from "./copy-zd.ts";
 import { dayText } from "./documents.ts";
 import { fyLabel, INVT_COPY } from "./invoice-types.ts";
 import { blockerLine, invErrorText, moneyText, typeLabel, UNKNOWN } from "./invoices.ts";
@@ -149,55 +156,43 @@ export const reasonHint = (code: string): string | undefined =>
 export const reasonText = (r: { code: string; text: string }): string =>
   r.code === "other" && r.text.trim() !== "" ? r.text.trim() : noteReasonLabel(r.code);
 
-// ---- the deadline banner (07-T §4; s.34(2), Q32, Q33; Researched 2026-10-28, 08-C RA-03; the warning is OPEN, RA-31) ------------------------
+// ---- the deadline banner (07-ZD lines 2 to 5; Researched 2026-10-30, s.34(2) CGST Act; Rule 59(1)-(2) CGST Rules (IFF) (08-C RA-31, RA-03)) ---------
 
 export type DeadlineBanner = { tone: "info" | "warning" | "danger"; lines: string[] };
 
 /**
- * 07-T §4 "From the first day of the month before the deadline month": the days left lead, then the advice to issue by {advice date} (the server's `adviseIssueBy`, shown as the other dates
- * of the banner are; one day is said in its singular). Without a date (null) the advice is left out.
- */
-export const deadlineWarnLine = (days: number, adviseBy: string | null) => {
-  const left = days === 1 ? "Only 1 day left" : `Only ${days} days left`;
-  return adviseBy !== null
-    ? `${left} for a credit note on this invoice. Issue it by ${dayText(adviseBy) ?? adviseBy} so it goes into a return filed in time.`
-    : `${left} for a credit note on this invoice.`;
-};
-
-/**
- * What the invoice says about its credit deadline: before it, the date a return must be filed by (`date`: 30 November after the FY, or the day the
- * annual return was filed); from `deadlineWarnFrom` (the first day of the month before the deadline month, the contract), the days left as well, leading, with the advice to
- * issue by `adviseIssueBy` (the last day of that month, never after an annual-return filing) until that day has gone (after it, the advice is left out rather than said late); after the deadline, that it has passed (and the credit actions are
- * gone). An older API without `deadlineWarnFrom` warns within 30 days, as before. When the supply's FY is earlier than the invoice's (a payment received
- * or the work completed in the year before), the line that says so. `today` is today's IST date (ISO).
+ * What the invoice says about its credit deadline (rt1 T1, 07-ZD, replacing 07-T §4's lines). Before it: the last day a credit note may be dated (`lastDay`,
+ * the end of the last return period before the return date) and the day its return must be filed by (`returnBy`; from an older API without it, `date`),
+ * line 2; when the note goes in the quarterly GSTR-1 (`period` "quarter"), why, line 3. From `deadlineWarnFrom` (the first day of the month before
+ * `lastDay`'s month, R2) the banner is a warning, led by the days left (line 4) while at least one is left; on the last day itself line 2 names that day.
+ * After it (`passed`): line 5 in danger, and the credit actions are gone. An older API without `deadlineWarnFrom` warns within 30 days, as before. When the
+ * supply's FY is earlier than the invoice's (a payment received or the work completed in the year before), 07-T's line that says so. `today` is today's
+ * IST date (ISO). No line names a fixed day ("30 November") or sends the reader elsewhere: every date is the server's, for this invoice.
  */
 export function deadlineBanner(
   d: CreditDeadlineView,
   invoiceFy: string | null,
   today: string,
 ): DeadlineBanner {
-  const date = dayText(d.date) ?? d.date;
+  const lastDay = dayText(d.lastDay) ?? d.lastDay;
   const lines: string[] = [];
   let tone: DeadlineBanner["tone"] = "info";
   if (d.passed) {
     tone = "danger";
-    lines.push(
-      `The deadline for a credit note on this invoice was ${date}. A refund now can't reduce the GST already paid. Talk to your CA.`,
-    );
+    lines.push(deadlinePassedLine(lastDay));
   } else {
-    lines.push(
-      `A credit note for this invoice must be reported in a GST return filed by ${date} (30 November after its financial year, or the day you file that year's annual return, if earlier).`,
-    );
+    const returnBy = d.returnBy ?? d.date;
+    lines.push(deadlineBeforeLine(lastDay, dayText(returnBy) ?? returnBy));
+    if (d.period === "quarter") lines.push(DEADLINE_QUARTER_LINE);
     const warn = d.deadlineWarnFrom ? today >= d.deadlineWarnFrom : d.daysLeft !== null && d.daysLeft <= 30;
-    if (warn && d.daysLeft !== null && d.daysLeft >= 1) {
+    if (warn && d.daysLeft !== null && d.daysLeft >= 0) {
       tone = "warning";
-      const adviseBy = d.adviseIssueBy && today <= d.adviseIssueBy ? d.adviseIssueBy : null;
-      lines.unshift(deadlineWarnLine(d.daysLeft, adviseBy));
+      if (d.daysLeft >= 1) lines.unshift(deadlineWarnLine(d.daysLeft));
     }
   }
   if (invoiceFy !== null && d.supplyFy !== invoiceFy)
     lines.push(
-      `The deadline counts from FY ${fyLabel(d.supplyFy)}, when the payment was received or the work was completed.`,
+      `The deadline counts from FY ${fyLabel(d.supplyFy, UNKNOWN)}, when the payment was received or the work was completed.`,
     );
   return { tone, lines };
 }
@@ -362,15 +357,19 @@ export function noteErrorText(e: unknown, kind: NoteKind, currency: Currency): s
   return invErrorText(e);
 }
 
-/** A note blocker as the server sends it: the code, the invoice's line (0-based), what is left, the last day. */
-export type NoteBlockerIn = { code: string; line?: number; remaining?: number; date?: string };
+/** A note blocker as the server sends it: the code, the invoice's line (0-based), what is left, the last day, the FY token whose LUT is missing. */
+export type NoteBlockerIn = { code: string; line?: number; remaining?: number; date?: string; fy?: string };
 
 /**
  * One line per note blocker (`NOTE_BLOCKER_CODES`): the note's own codes in 07-T's words; the supplier's details, the tax, the reverse-charge line and
- * the bank in 07-R's (the same fix, in the same place, as for an invoice).
+ * the bank in 07-R's (the same fix, in the same place, as for an invoice); the debit note's LUT in 07-ZD's (line 6; Researched 2026-10-30, Rule 96A(1)
+ * CGST Rules, Notification 37/2017-CT (08-C RA-19, Q39)).
  */
 export function noteBlockerLine(b: NoteBlockerIn, kind: NoteKind, currency: Currency): string {
   switch (b.code) {
+    case "debit_lut_missing":
+      // The FY of the debit note's date, as a label ("2027-28") through the admin's one helper; "…" (UNKNOWN) when the server sent none or a damaged token.
+      return debitLutMissingLine(fyLabel(b.fy, UNKNOWN));
     case "parent_not_issued":
     case "parent_void":
     case "parent_fully_credited":

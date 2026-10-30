@@ -32,6 +32,7 @@ import {
   lutBellFor,
   lutCheckMessage,
   lutFor,
+  lutForFy,
   lutReminder,
   lutsFromStoredTax,
   normaliseReference,
@@ -294,6 +295,68 @@ describe("lutsFromStoredTax: the reader without zod [finding 7]", () => {
       lut: { arn: "OLD", fy: "2526" },
     });
     expect(lutsFromStoredTax(tax)).toEqual(lutsOf(tax));
+  });
+});
+
+describe("lutForFy: the debit note's LUT, failing closed against db LUT_FOR_FY_SQL [rt1 re-check 1; ADM-INV-18; Q39]", () => {
+  const tax = (luts: { fy: string; arn: string }[], lut: { arn: string | null; fy: string | null }) => ({
+    luts,
+    lut,
+  });
+  const none = { arn: null, fy: null };
+  it("a list entry of that FY with an ARN counts; another FY or a blank ARN does not", () => {
+    expect(lutForFy("2728", tax([{ fy: "2728", arn: "AD1" }], none))).toEqual({
+      fy: "2728",
+      arn: "AD1",
+    });
+    expect(lutForFy("2728", tax([{ fy: "2627", arn: "AD1" }], none))).toBeNull();
+    expect(lutForFy("2728", tax([{ fy: "2728", arn: "   " }], none))).toBeNull();
+    expect(lutForFy("2728", tax([], none))).toBeNull();
+  });
+  it("the legacy `lut` of that FY counts only when `legacyLutFate` folds it, normalised as the list keeps an ARN", () => {
+    expect(lutForFy("2728", tax([], { arn: "ad 19 03", fy: "2728" }))).toEqual({
+      fy: "2728",
+      arn: "AD1903",
+    });
+  });
+  it("a legacy `lut` that would not fold never counts (SQL counts these; this refuses them: fail closed)", () => {
+    // invalid for the list (a hyphen; more than 30 characters; only a tab, which SQLite's trim leaves)
+    for (const arn of ["AD-1903", "A".repeat(31), "\t"]) {
+      expect(legacyLutFate({ lut: { arn, fy: "2728" }, luts: [] }).fate).toBe("invalid");
+      expect(lutForFy("2728", tax([], { arn, fy: "2728" }))).toBeNull();
+    }
+    // the list is full of other years
+    const full = Array.from({ length: 20 }, (_, i) => ({ fy: `${30 + i}${31 + i}`, arn: `A${i}` }));
+    expect(legacyLutFate({ lut: { arn: "OLD1", fy: "2728" }, luts: full }).fate).toBe("full");
+    expect(lutForFy("2728", tax(full, { arn: "OLD1", fy: "2728" }))).toBeNull();
+  });
+  it("the legacy `lut` of another FY, without an ARN, or blank does not count; a listed FY's entry wins", () => {
+    expect(lutForFy("2728", tax([], { arn: "OLD", fy: "2627" }))).toBeNull();
+    expect(lutForFy("2728", tax([], { arn: null, fy: "2728" }))).toBeNull();
+    expect(lutForFy("2728", tax([], { arn: "  ", fy: "2728" }))).toBeNull();
+    expect(lutForFy("2728", tax([], { arn: "", fy: "2728" }))).toBeNull();
+    expect(lutForFy("2728", tax([{ fy: "2728", arn: "NEW" }], { arn: "OLD", fy: "2728" }))).toEqual({
+      fy: "2728",
+      arn: "NEW",
+    });
+  });
+  it("is exactly `lutFor(lutsOf)` over parsed settings (the rule of the M5.2 export and advance paths)", () => {
+    fc.assert(
+      fc.property(
+        fc.subarray(["2526", "2627", "2728"]),
+        fc.constantFrom("2526", "2627", "2728", "2729", null),
+        fc.constantFrom("OLD1", "ad 12", "AD-12", "A".repeat(31), "\t", "  ", "", null),
+        fc.constantFrom("2526", "2627", "2728"),
+        (listed, legacyFy, legacyArn, fy) => {
+          const t = resolveSetting("tax", {
+            ...SETTINGS_DEFAULTS.tax,
+            luts: listed.map((y) => ({ fy: y, arn: `L${y}`, filedOn: null })),
+            lut: { arn: legacyArn, fy: legacyFy },
+          });
+          expect(lutForFy(fy, t)).toEqual(lutFor(fy, lutsOf(t)));
+        },
+      ),
+    );
   });
 });
 

@@ -32,6 +32,7 @@ const base = (over: Partial<SqlRow> = {}): SqlRow => ({
   r_address: null,
   note_of: null,
   purpose_code: null,
+  ims_status: null,
   rates: "[]",
   ...over,
 });
@@ -96,5 +97,13 @@ describe("registerRowOf: the recipient (L3)", () => {
   it("a status the snapshot never had is passed on as it is (core: supply_mismatch), not read as unregistered", () => {
     const row = registerRowOf(base({ r_status: null }));
     expect(row.recipient.status).toBeNull();
+  });
+});
+
+describe("registerRowOf: the IMS answer (rt1 T3)", () => {
+  it("is the stored ims_status as it is, null when none", () => {
+    expect(registerRowOf(base()).imsStatus).toBeNull();
+    expect(registerRowOf(base({ type: "credit_note", ims_status: "pending" })).imsStatus).toBe("pending");
+    expect(registerRowOf(base({ type: "credit_note", ims_status: "accepted" })).imsStatus).toBe("accepted");
   });
 });

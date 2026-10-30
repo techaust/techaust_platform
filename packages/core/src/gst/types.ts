@@ -70,6 +70,11 @@ export type RegisterRow = {
   readonly outstandingMinor: number;
   /** EDF only (the M5.2 hint); may be null. */
   readonly purposeCode: string | null;
+  /**
+   * rt1 T3: a credit note's IMS answer as stored (`documents.ims_status`: pending, accepted, rejected, not_applicable; null or left out: none). Only the GSTR-3B helper
+   * reads it (a credit note in cdnr is deducted only once accepted); GSTR-1 ignores it.
+   */
+  readonly imsStatus?: string | null;
 };
 
 /**

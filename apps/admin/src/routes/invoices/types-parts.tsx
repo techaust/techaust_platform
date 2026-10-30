@@ -44,7 +44,7 @@ import {
   splitAdvanceRefusal,
   warn25Line,
 } from "../../lib/invoice-types.ts";
-import { blockerLine, INV_COPY, invErrorText, issuedToast, typeLabel } from "../../lib/invoices.ts";
+import { blockerLine, INV_COPY, invErrorText, issuedToast, typeLabel, UNKNOWN } from "../../lib/invoices.ts";
 import { type InvoiceBlocker, type InvoiceView, invoicesApi } from "../../lib/invoices-api.ts";
 import { withCode } from "../../lib/step-up.ts";
 import { BlockerList } from "./dialogs.tsx";
@@ -540,7 +540,7 @@ export function AdvanceOrigin({ view }: { view: InvoiceView }) {
     a.proformaNumber,
     day(a.proformaIssueDate),
     day(a.receivedOn),
-    a.igstNoLutFy ? fyLabel(a.igstNoLutFy) : null,
+    a.igstNoLutFy ? fyLabel(a.igstNoLutFy, UNKNOWN) : null,
   );
   const at = line.indexOf(a.proformaNumber);
   return (

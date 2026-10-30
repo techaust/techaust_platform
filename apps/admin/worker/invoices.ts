@@ -106,6 +106,7 @@ import {
   NOTE_PARENT_READS,
   noteComputation,
   noteLines,
+  noteLutOf,
   noteOfOf,
   noteState,
   parentCtxOf,
@@ -745,6 +746,8 @@ export const invoices = new Hono<AppEnv>()
           settings: ctx.settings,
           bank: ctx.bank,
           issueDate: issueDateOf(now),
+          // rt1 T2: a debit note on an export under LUT, judged against the LUT of today's FY (the day it would be issued)
+          lut: noteLutOf(kind, p, ctx.settings, now),
         });
       }
     } else if (isParent) {

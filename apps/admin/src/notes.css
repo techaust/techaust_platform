@@ -68,6 +68,8 @@
   margin: 0;
   max-width: 68ch;
   color: var(--color-text);
+  /* rt1: the 07-ZD lines are long sentences with a date at the end; no line ends on one word ("IFF.") */
+  text-wrap: pretty;
 }
 
 .notes-deadline__main {
@@ -80,18 +82,23 @@
   line-height: var(--text-sm--line-height);
 }
 
-/* The ledger: one note per line. The number in the number face, the date, the amount on the right in tabular figures, the status. */
+/* The ledger: one note per line. The number in the number face, the date, the amount on the right in tabular figures, the status. The row is laid
+   out by the ledger's own width, not the window's (rt1 review 2): beside the menu at 768 px the panel is a phone's width, and four columns there
+   squeezed the type and date under the amount. */
 .notes-ledger {
   display: grid;
   margin: 0;
   padding: 0;
   list-style: none;
   border-top: 1px solid var(--color-border);
+  container: notes-ledger / inline-size;
 }
 
+/* No column is narrower than its own words (the number, "Credit note" and its date never slide under a neighbour); the ledger stacks the row
+   before that could happen (below). */
 .notes-row {
   display: grid;
-  grid-template-columns: minmax(0, 12rem) minmax(0, 1fr) auto minmax(7.5rem, auto);
+  grid-template-columns: minmax(min-content, 12rem) minmax(min-content, 1fr) auto minmax(7.5rem, auto);
   gap: var(--space-1) var(--space-4);
   align-items: center;
   min-height: var(--target-min);
@@ -172,8 +179,9 @@
   text-underline-offset: 0.2em;
 }
 
-/* Phones: the number and the status on the first line, the date and the amount under them. */
-@media (max-width: 39.99rem) {
+/* A narrow ledger (a phone, or the panel beside the menu at 768 px): the number and the status on the first line, the type with its date and the
+   amount under them. 38rem holds the widest row on one line: the number, "Credit note" over its date, a crore amount and the status. */
+@container notes-ledger (max-width: 37.99rem) {
   .notes-row {
     grid-template-columns: minmax(0, 1fr) auto;
   }
@@ -196,6 +204,17 @@
   .notes-row__total {
     grid-column: 2;
     grid-row: 2;
+  }
+
+  /* An open draft keeps its own two columns (the slot, then the sentence): the phone grid above would put the sentence in the narrow column and the
+     slot over its second line (rt1 visual pass). */
+  .notes-row.notes-row--draft {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .notes-row--draft .inv-slot {
+    margin-top: 0.125rem;
   }
 }
 

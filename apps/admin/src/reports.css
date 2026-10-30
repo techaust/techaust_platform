@@ -504,7 +504,56 @@
 }
 
 .ledger.ledger--3b tbody th {
+  /* on a phone the box scrolls sideways anyway: a row's name keeps a readable measure instead of one word a line (rt1 visual pass) */
+  min-width: 11rem;
   max-width: 24rem;
+}
+
+/* rt1 T3: the notice under the 3B table (the held row's rule is below, after the quieter-row rule it must follow). */
+.ims-held {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-alt);
+  border-inline-start: 3px solid var(--color-warning);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.ims-held > .icon {
+  margin-top: 0.125rem;
+  color: var(--color-warning);
+}
+
+.ims-held__body {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.ims-held__line {
+  max-width: var(--container-prose);
+  margin: 0;
+}
+
+/* The held notes by number: the number face, in a wrapping row, quiet. */
+.ims-held__numbers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+/* The sales register shows the sentence between the preview and the downloads. */
+.report-block + .ims-held {
+  margin-top: 0;
 }
 
 /* FX-4 (A5 1): a tax-only note's figures (./routes/reports/manual-entries.tsx), the ledger made compact: it sits inside the note's card, flush with its text. */
@@ -529,6 +578,13 @@
 .ledger tbody tr[data-empty] td,
 .ledger tbody tr[data-empty] th {
   color: var(--color-text-muted);
+}
+
+/* rt1 T3: the credit notes 3.1(a) still carries until the client accepts them in IMS. Indented under 3.1(a) as part of it, in the muted ink, and marked by
+   the warning rule the notice under the table carries too, so the row and its sentence read as one thing. The figures stay in the ink: they are the file's. */
+.ledger .ledger__held-label {
+  color: var(--color-text-muted);
+  box-shadow: inset 3px 0 0 var(--color-warning);
 }
 
 /* A wide list (DataTable) scrolls inside its own box; its headers wrap, and they don't stick (a sticky header can't live in a scrolling box). */

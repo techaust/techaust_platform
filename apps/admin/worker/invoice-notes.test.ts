@@ -15,7 +15,7 @@ import {
 } from "@techaust/db/documents";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { call, one, sessionFor } from "./test-helpers.ts";
-import { currentFy, lutOf, mkProforma, putSwiftBank, putTax } from "./test-invoice-types.ts";
+import { currentFy, lutOf, mkProforma, putSwiftBank, putTax, renew } from "./test-invoice-types.ts";
 import {
   auditCount,
   codeOf,
@@ -60,6 +60,11 @@ beforeEach(async () => {
   await putTax({ luts: [lutOf(currentFy())] });
 });
 afterEach(() => vi.useRealTimers());
+
+const at = (iso: string) => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(iso));
+};
 
 const blockersOf = async (res: Response) => ((await json(res)).blockers ?? []) as J[];
 const sealOf = async (id: string) => {
@@ -413,7 +418,7 @@ describe("the deadline of a credit note [s.34(2), Q32, Q33; Researched 2026-10-2
     2000 +
     Number(((await one<{ fy: string }>("SELECT fy FROM documents WHERE id = ?", id))?.fy ?? "").slice(2));
 
-  it("the last instant of the deadline day (IST) issues; the first instant after it is 409 credit_deadline_passed with the date; nothing changes", async () => {
+  it("the last instant of the last day (IST) issues; the first instant after it is 409 credit_deadline_passed with the date; nothing changes (rt1 T1: an unregistered client of a quarterly filer, 30 September)", async () => {
     const o = await farSession("owner");
     const inv = await mkIssuedInvoice(o, { prices: [100_000, 50_000] });
     const year = await deadlineYear(inv.id);
@@ -421,38 +426,41 @@ describe("the deadline of a credit note [s.34(2), Q32, Q33; Researched 2026-10-2
       await draftCredit(o, inv.id, { mode: "lines", lines: [{ line: 0, taxableMinor: 10_000 }] }),
     );
     vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date(`${year}-12-01T00:00:00.000+05:30`));
+    vi.setSystemTime(new Date(`${year}-10-01T00:00:00.000+05:30`));
     const late = await issueInvoice(o, a.id);
     expect(late.status, await late.clone().text()).toBe(409);
     const lb = await json(late);
-    expect(lb.blockers).toEqual([{ code: "credit_deadline_passed", date: `${year}-11-30` }]);
+    expect(lb.blockers).toEqual([{ code: "credit_deadline_passed", date: `${year}-09-30` }]);
     expect((await noteRow(a.id))?.status).toBe("draft");
-    // a draft past the deadline is refused too
-    vi.setSystemTime(new Date(`${year}-12-01T00:00:00.000+05:30`));
+    // a draft past the last day is refused too
+    vi.setSystemTime(new Date(`${year}-10-01T00:00:00.000+05:30`));
     await env.DB.prepare("DELETE FROM documents WHERE id = ?").bind(a.id).run();
     const refused = await draftCredit(o, inv.id, { mode: "full" });
     expect(refused.status).toBe(409);
     const rb = await json(refused);
     expect(rb.error.code).toBe("credit_deadline_passed");
-    expect(rb.date).toBe(`${year}-11-30`);
+    expect(rb.date).toBe(`${year}-09-30`);
     // the draft is made at noon and issued at the last millisecond of the day (an issue is never stamped before its draft: `now` is at least the draft's stamp + 1)
-    vi.setSystemTime(new Date(`${year}-11-30T12:00:00.000+05:30`));
+    vi.setSystemTime(new Date(`${year}-09-30T12:00:00.000+05:30`));
     const ok = await draftCredit(o, inv.id, { mode: "lines", lines: [{ line: 0, taxableMinor: 10_000 }] });
     expect(ok.status, await ok.clone().text()).toBe(201);
-    vi.setSystemTime(new Date(`${year}-11-30T23:59:59.999+05:30`));
+    vi.setSystemTime(new Date(`${year}-09-30T23:59:59.999+05:30`));
     const issued = await issueInvoice(o, (await json(ok)).id);
     expect(issued.status, await issued.clone().text()).toBe(200);
     // the view says so
     const view = await getInvoice(o, inv.id);
     expect(view.creditDeadline).toMatchObject({
       date: `${year}-11-30`,
+      returnBy: `${year}-11-30`,
+      lastDay: `${year}-09-30`,
+      period: "quarter",
       passed: false,
       daysLeft: 0,
-      // RA-31 (07-T §4): the banner warns from 1 October of the deadline year and advises 31 October; the block is unchanged
-      deadlineWarnFrom: `${year}-10-01`,
-      adviseIssueBy: `${year}-10-31`,
+      // rt1 R2 (07-ZD): the banner warns from the first day of the month before the last day's month, and advises the last day itself
+      deadlineWarnFrom: `${year}-08-01`,
+      adviseIssueBy: `${year}-09-30`,
     });
-    vi.setSystemTime(new Date(`${year}-12-01T00:00:00.000+05:30`));
+    vi.setSystemTime(new Date(`${year}-10-01T00:00:00.000+05:30`));
     const after = await getInvoice(o, inv.id);
     expect(after.creditDeadline).toMatchObject({ passed: true });
     expect(after.actions.credit.reasons).toContain("credit_deadline_passed");
@@ -460,7 +468,7 @@ describe("the deadline of a credit note [s.34(2), Q32, Q33; Researched 2026-10-2
     expect((await draftDebit(o, inv.id, { lines: [{ line: 0, taxableMinor: 500 }] })).status).toBe(201);
   });
 
-  it("the annual return (Q33): the day before it was filed issues, the day it was filed is refused; a return saved between the read and the batch is 409 settings_changed", async () => {
+  it("the annual return (Q33, rt1 D4): filed on 20 September, the return is due by the 19th, so a monthly filer's last day is 31 August; a return saved between the read and the batch is 409 settings_changed", async () => {
     const o = await farSession("owner");
     const inv = await mkIssuedInvoice(o, { prices: [100_000] });
     const year = await deadlineYear(inv.id);
@@ -468,49 +476,152 @@ describe("the deadline of a credit note [s.34(2), Q32, Q33; Researched 2026-10-2
     const a = await json(
       await draftCredit(o, inv.id, { mode: "lines", lines: [{ line: 0, taxableMinor: 10_000 }] }),
     );
-    await putTax({ luts: [lutOf(currentFy())], annualReturnsFiled: [{ fy, filedOn: `${year}-09-20` }] });
+    const tax = (filedOn: string) => ({
+      luts: [lutOf(currentFy())],
+      gstr1Frequency: "monthly",
+      annualReturnsFiled: [{ fy, filedOn }],
+    });
+    await putTax(tax(`${year}-09-20`));
     vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date(`${year}-09-20T00:00:00.000+05:30`));
+    vi.setSystemTime(new Date(`${year}-09-01T00:00:00.000+05:30`));
     const filedDay = await issueInvoice(o, a.id);
     expect(filedDay.status).toBe(409);
-    expect(await blockersOf(filedDay)).toEqual([{ code: "credit_deadline_passed", date: `${year}-09-19` }]);
-    vi.setSystemTime(new Date(`${year}-09-19T12:00:00.000+05:30`));
+    expect(await blockersOf(filedDay)).toEqual([{ code: "credit_deadline_passed", date: `${year}-08-31` }]);
+    vi.setSystemTime(new Date(`${year}-08-31T12:00:00.000+05:30`));
     // saved between the read and the batch
     const changed = await call(
       `/invoices/${a.id}/issue`,
       { cookie: o.cookie, body: await issueBodyOfNote(a.id) },
       beforeBatchHolding("issue_guard", async () => {
-        await putTax({ luts: [lutOf(currentFy())], annualReturnsFiled: [{ fy, filedOn: `${year}-09-19` }] });
+        await putTax(tax(`${year}-09-19`));
       }),
     );
     expect(await codeOf(changed)).toBe("settings_changed");
-    await putTax({ luts: [lutOf(currentFy())], annualReturnsFiled: [{ fy, filedOn: `${year}-09-20` }] });
+    await putTax(tax(`${year}-09-20`));
     expect((await issueInvoice(o, a.id)).status).toBe(200);
   });
 
-  it("the advice dates follow the cutoff setting and an earlier annual return (review 2026-10-28, finding 7)", async () => {
+  it("the advice dates follow the last day: the cutoff setting, the filing frequency and an earlier annual return (rt1 R2)", async () => {
     const o = await owner();
     await putTax({ luts: [lutOf(currentFy())], creditNoteCutoff: { month: 6, day: 30 } });
     const inv = await mkIssuedInvoice(o, { prices: [100_000] });
     const year = await deadlineYear(inv.id);
-    // a 30 June cutoff: the warning from 1 May, the advice 31 May
+    // a 30 June cutoff, an unregistered client of a quarterly filer: the last quarter before is January to March, so 31 March; the warning from 1 February
     expect((await getInvoice(o, inv.id)).creditDeadline).toMatchObject({
       date: `${year}-06-30`,
-      deadlineWarnFrom: `${year}-05-01`,
+      lastDay: `${year}-03-31`,
+      period: "quarter",
+      deadlineWarnFrom: `${year}-02-01`,
+      adviseIssueBy: `${year}-03-31`,
+    });
+    // monthly filing: 31 May, the warning from 1 April
+    await putTax({
+      luts: [lutOf(currentFy())],
+      creditNoteCutoff: { month: 6, day: 30 },
+      gstr1Frequency: "monthly",
+    });
+    expect((await getInvoice(o, inv.id)).creditDeadline).toMatchObject({
+      lastDay: `${year}-05-31`,
+      period: "month",
+      deadlineWarnFrom: `${year}-04-01`,
       adviseIssueBy: `${year}-05-31`,
     });
-    // an annual return filed on 20 May: nothing is advised for after the day before it
+    // an annual return filed on 20 May: the return is due by the 19th, so 30 April, the warning from 1 March
     const fy = (await one<{ fy: string }>("SELECT fy FROM documents WHERE id = ?", inv.id))?.fy ?? "";
     await putTax({
       luts: [lutOf(currentFy())],
       creditNoteCutoff: { month: 6, day: 30 },
+      gstr1Frequency: "monthly",
       annualReturnsFiled: [{ fy, filedOn: `${year}-05-20` }],
     });
     expect((await getInvoice(o, inv.id)).creditDeadline).toMatchObject({
-      lastDay: `${year}-05-19`,
-      deadlineWarnFrom: `${year}-05-01`,
-      adviseIssueBy: `${year}-05-19`,
+      basis: "annual_return",
+      returnBy: `${year}-05-19`,
+      lastDay: `${year}-04-30`,
+      deadlineWarnFrom: `${year}-03-01`,
+      adviseIssueBy: `${year}-04-30`,
     });
+  });
+
+  it("rt1 T1 [RA-31]: a registered client's FY 2025-26 invoice: a credit draft on 31 October 2026 is made, on 1 November it is 409 with 31 October; issuing past it is issue_blocked", async () => {
+    const o = await farSession("owner");
+    at("2026-03-20T12:00:00.000+05:30");
+    await renew(o);
+    await putTax({ luts: [lutOf("2526"), lutOf("2627")] });
+    const inv = await mkIssuedInvoice(o, { prices: [100_000], client: mkRegisteredClient });
+    expect((await one<{ fy: string }>("SELECT fy FROM documents WHERE id = ?", inv.id))?.fy).toBe("2526");
+    at("2026-10-31T12:00:00.000+05:30");
+    await renew(o);
+    const ok = await draftCredit(o, inv.id, { mode: "lines", lines: [{ line: 0, taxableMinor: 10_000 }] });
+    expect(ok.status, await ok.clone().text()).toBe(201);
+    const view = await getInvoice(o, inv.id);
+    expect(view.creditDeadline).toMatchObject({
+      date: "2026-11-30",
+      returnBy: "2026-11-30",
+      lastDay: "2026-10-31",
+      period: "month",
+      deadlineWarnFrom: "2026-09-01",
+      adviseIssueBy: "2026-10-31",
+      passed: false,
+      daysLeft: 0,
+    });
+    at("2026-11-01T00:00:00.000+05:30");
+    await renew(o);
+    const okId = (await json(ok)).id as string;
+    const issued = await issueInvoice(o, okId);
+    expect(issued.status).toBe(409);
+    expect((await json(issued)).blockers).toEqual([{ code: "credit_deadline_passed", date: "2026-10-31" }]);
+    // a new draft past the last day is refused too (the open one removed first)
+    await env.DB.prepare("DELETE FROM documents WHERE id = ?").bind(okId).run();
+    const before = await docCount();
+    const refused = await draftCredit(o, inv.id, { mode: "full" });
+    expect(refused.status).toBe(409);
+    const rb = await json(refused);
+    expect(rb.error.code).toBe("credit_deadline_passed");
+    expect(rb.date).toBe("2026-10-31");
+    expect(await docCount()).toBe(before);
+    expect((await getInvoice(o, inv.id)).creditDeadline).toMatchObject({ passed: true });
+  });
+
+  it("rt1 T1 [RA-31, D2]: an unregistered client of a quarterly filer stops on 30 September (a draft on 1 October is 409); monthly filing gives 31 October", async () => {
+    const o = await farSession("owner");
+    at("2026-03-20T12:00:00.000+05:30");
+    await renew(o);
+    await putTax({ luts: [lutOf("2526"), lutOf("2627")] });
+    const inv = await mkIssuedInvoice(o, { prices: [100_000] });
+    at("2026-10-01T09:00:00.000+05:30");
+    await renew(o);
+    const refused = await draftCredit(o, inv.id, { mode: "full" });
+    expect(refused.status).toBe(409);
+    expect((await json(refused)).date).toBe("2026-09-30");
+    await putTax({ luts: [lutOf("2526"), lutOf("2627")], gstr1Frequency: "monthly" });
+    const ok = await draftCredit(o, inv.id, { mode: "full" });
+    expect(ok.status, await ok.clone().text()).toBe(201);
+    expect((await getInvoice(o, inv.id)).creditDeadline).toMatchObject({
+      lastDay: "2026-10-31",
+      period: "month",
+    });
+  });
+
+  it("rt1 R3: the GSTR-1 frequency saves through Settings > Tax; a bad value is 400", async () => {
+    const o = await owner();
+    const get = await json(await call("/settings/groups/tax", { cookie: o.cookie }));
+    expect(get.value.gstr1Frequency).toBe("quarterly");
+    const bad = await call("/settings/groups/tax", {
+      method: "PUT",
+      cookie: o.cookie,
+      body: { version: get.version, value: { ...get.value, gstr1Frequency: "weekly" } },
+    });
+    expect(bad.status).toBe(400);
+    const ok = await call("/settings/groups/tax", {
+      method: "PUT",
+      cookie: o.cookie,
+      body: { version: get.version, value: { ...get.value, gstr1Frequency: "monthly" } },
+    });
+    expect(ok.status, await ok.clone().text()).toBe(200);
+    expect((await json(await call("/settings/groups/tax", { cookie: o.cookie }))).value.gstr1Frequency).toBe(
+      "monthly",
+    );
   });
 
   it("the cutoff is a setting and a day past the month's end is clamped; the service date moves the supply FY earlier (Q32)", async () => {
@@ -726,6 +837,81 @@ describe("export invoices [LD43, LD49; Researched 2026-10-28, s.2(6) IGST Act, R
       export_mode: "igst_paid",
     });
     expect(Number(rd?.total_inr_minor)).toBeGreaterThan(0);
+  });
+
+  it("rt1 T2 [RA-19 Q39]: a debit note on an LUT export dated in FY 2027-28 needs the 2728 LUT: 409 debit_lut_missing with the FY and nothing written; with it, 200 and its own LUT sealed", async () => {
+    const o = await farSession("owner");
+    at("2027-03-20T12:00:00.000+05:30");
+    await renew(o);
+    await putTax({ luts: [lutOf("2627")] });
+    // the settings' LUT route: the invoice's export_mode stays empty, its supply is export_lut
+    const inv = await mkIssuedInvoice(o, { prices: [100_000], client: mkOverseasClient });
+    expect(await noteRow(inv.id)).toMatchObject({ export_mode: null, supply_type: "export_lut" });
+    at("2027-04-02T10:00:00.000+05:30");
+    await renew(o);
+    // a debit draft is not refused at create
+    const made = await draftDebit(o, inv.id, { lines: [{ line: 0, taxableMinor: 1_000 }] });
+    expect(made.status, await made.clone().text()).toBe(201);
+    const { id } = await json(made);
+    const view = await getInvoice(o, id);
+    expect(view.blockers).toEqual([{ code: "debit_lut_missing", fy: "2728" }]);
+    const before = await docCount();
+    const refused = await issueInvoice(o, id);
+    expect(refused.status).toBe(409);
+    const rb = await json(refused);
+    expect(rb.error.code).toBe("issue_blocked");
+    expect(rb.blockers).toEqual([{ code: "debit_lut_missing", fy: "2728" }]);
+    expect(await noteRow(id)).toMatchObject({ status: "draft", number_display: null });
+    expect(await docCount()).toBe(before);
+    expect(await auditCount("invoice.issue", id)).toBe(0);
+    // with the 2728 letter saved: issued, and the note seals that letter (not the invoice's 2627 one)
+    await putTax({ luts: [lutOf("2627"), lutOf("2728", "AD1903270000002")] });
+    // the letter gone between the read and the batch without a new settings version (written straight in): the freeze's own WHERE refuses, and the answer says why
+    const gone = await call(
+      `/invoices/${id}/issue`,
+      { cookie: o.cookie, body: await issueBodyOfNote(id) },
+      beforeBatchHolding("issue_guard", async () => {
+        await env.DB.prepare(
+          "UPDATE settings SET value = json_set(value, '$.luts', json(?1)) WHERE key = 'tax'",
+        )
+          .bind(JSON.stringify([lutOf("2627")]))
+          .run();
+      }),
+    );
+    expect(gone.status, await gone.clone().text()).toBe(409);
+    expect(await blockersOf(gone)).toEqual([{ code: "debit_lut_missing", fy: "2728" }]);
+    expect(await noteRow(id)).toMatchObject({ status: "draft", number_display: null });
+    await putTax({ luts: [lutOf("2627"), lutOf("2728", "AD1903270000002")] });
+    const issued = await issueInvoice(o, id);
+    expect(issued.status, await issued.clone().text()).toBe(200);
+    const row = await noteRow(id);
+    const noteOf = JSON.parse(String(row?.header_extras)).noteOf;
+    expect(noteOf.lut).toEqual({ fy: "2728", arn: "AD1903270000002" });
+    expect(noteOf.parent.lut).toMatchObject({ fy: "2627" });
+    expect(Object.keys(noteOf)).toEqual(["kind", "parent", "reason", "request", "lut"]);
+    const { check } = await sealOf(id);
+    expect(check).toEqual({ content: true, snapshot: true });
+    // a credit note on the same invoice is not judged on it
+    expect(
+      (await draftCredit(o, inv.id, { mode: "lines", lines: [{ line: 0, taxableMinor: 500 }] })).status,
+    ).toBe(201);
+  });
+
+  it("rt1 T2: a debit note on an IGST-paid export needs no LUT of its year", async () => {
+    const o = await farSession("owner");
+    at("2027-03-20T12:00:00.000+05:30");
+    await renew(o);
+    await putTax({ luts: [lutOf("2627")] });
+    const inv = await mkIssuedInvoice(o, {
+      prices: [100_000],
+      client: mkOverseasClient,
+      fields: { exportMode: "igst_paid" },
+    });
+    at("2027-04-02T10:00:00.000+05:30");
+    await renew(o);
+    const d = await issueDebit(o, inv.id, { lines: [{ line: 0, taxableMinor: 1_000 }] });
+    const noteOf = JSON.parse(String((await noteRow(d.id))?.header_extras)).noteOf;
+    expect(noteOf.lut).toBeUndefined();
   });
 });
 
@@ -1031,7 +1217,7 @@ describe("roles and the approval of a note [ADM-APR-01/02, LD38]", () => {
     vi.setSystemTime(new Date(`${year}-12-01T09:00:00.000+05:30`));
     const late = await decideApproval(o, asked.id, "approve");
     expect(late.status).toBe(409);
-    expect((await json(late)).blockers).toEqual([{ code: "credit_deadline_passed", date: `${year}-11-30` }]);
+    expect((await json(late)).blockers).toEqual([{ code: "credit_deadline_passed", date: `${year}-09-30` }]);
     expect((await noteRow(d.id))?.status).toBe("draft");
     vi.useRealTimers();
     // rejected: the draft stays, the requester is told in the note's words

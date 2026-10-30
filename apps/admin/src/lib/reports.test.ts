@@ -1,8 +1,8 @@
 // M5.5b admin words and rules (lib/reports.ts, lib/reports-build.ts, lib/tax-settings.ts, lib/bell-links.ts): the marks on 07-V lines, one message per
 // GST error code, the periods, the urgency order and the stage pills, the statement's words, the tax form's round trip (early check H2), and the files
 // the screens make from register rows through the gst core (the sums are core's; these tests only check that the screens pass them on whole).
-import type { RegisterApiRow, ReportMeta } from "@techaust/core/gst";
-import { realisationParamsFromStoredTax } from "@techaust/core/invoices";
+import { heldRowOf, type RegisterApiRow, type ReportMeta } from "@techaust/core/gst";
+import { GSTR1_FREQUENCIES, realisationParamsFromStoredTax } from "@techaust/core/invoices";
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
@@ -11,6 +11,7 @@ import reportPartsSource from "../routes/reports/parts.tsx?raw";
 import { ACTION_LABELS } from "./audit.ts";
 import { reportBellHref } from "./bell-links.ts";
 import { APPROVED_07Y, PLACEHOLDER_MARK } from "./copy-y.ts";
+import { CN_CUTOFF_HINT, GSTR1_FILING_COPY, IMS_HELD_ROW, imsHeldLine } from "./copy-zd.ts";
 import {
   byUrgency,
   FINANCE_COPY,
@@ -432,6 +433,35 @@ describe("Settings › Tax round trip (early check H2)", () => {
     realisation: { ...SETTINGS_DEFAULTS.tax.realisation, inrMonths: 18 },
   };
 
+  it("rt1 T1 (R3, lead D9; 07-ZD line 1): the GSTR-1 filing round-trips as stored, saves what the field holds, and an old row reads quarterly", () => {
+    expect(SETTINGS_DEFAULTS.tax.gstr1Frequency).toBe("quarterly");
+    expect(taxToForm(stored).gstr1Frequency).toBe("quarterly");
+    // Monthly stays monthly through a save of another field (the schema's prefault would reset a dropped key to quarterly)
+    const monthly = { ...stored, gstr1Frequency: "monthly" as const };
+    const kept = buildTax({ ...taxToForm(monthly), reverseChargeText: "Changed line" }, { value: monthly });
+    expect("value" in kept && kept.value.gstr1Frequency).toBe("monthly");
+    const switched = buildTax({ ...taxToForm(stored), gstr1Frequency: "monthly" }, { value: stored });
+    expect("value" in switched && switched.value.gstr1Frequency).toBe("monthly");
+    const back = buildTax({ ...taxToForm(monthly), gstr1Frequency: "quarterly" }, { value: monthly });
+    expect("value" in back && back.value.gstr1Frequency).toBe("quarterly");
+    // a row stored before rt1 has no key: the field reads it as the server does
+    const { gstr1Frequency: _g, ...old } = stored;
+    expect(taxToForm(old as typeof stored).gstr1Frequency).toBe("quarterly");
+    // the field's words and options, word for word, in core's order
+    expect(GSTR1_FREQUENCIES.map((k) => GSTR1_FILING_COPY.options[k])).toEqual([
+      "Quarterly (QRMP scheme)",
+      "Monthly",
+    ]);
+    expect(GSTR1_FILING_COPY.label).toBe("GSTR-1 filing");
+    expect(GSTR1_FILING_COPY.hint).toBe(
+      "Sets the last day for credit notes on last year's invoices: 31 October for GST-registered clients, and 30 September for other clients if you file quarterly.",
+    );
+    // 07-ZD line 9 (lead, 2026-10-31): the cut-off's hint, word for word
+    expect(CN_CUTOFF_HINT).toBe(
+      "Credit notes on last year's invoices are blocked after the last GST return period that ends before this date (see GSTR-1 filing below).",
+    );
+  });
+
   it("a save of other fields keeps the stored B2CL threshold and INR realisation period", () => {
     const form = { ...taxToForm(stored), reverseChargeText: "Changed line" };
     const built = buildTax(form, { value: stored });
@@ -576,6 +606,90 @@ describe("files from register rows (core does every sum)", () => {
     expect(r.table13).toHaveLength(1);
     const zip = zipOf(r.files);
     expect([zip[0], zip[1], zip[2], zip[3]]).toEqual([0x50, 0x4b, 0x03, 0x04]);
+  });
+
+  it("rt1 T3 [RA-04]: a credit note to a registered client not yet accepted in IMS is held: not deducted from 3.1(a), counted, and the last row of the 3B file (07-ZD line 7)", () => {
+    const inv = row({ id: "d1", number: "TH/INV/2627/0001", issueDate: { year: 2026, month: 7, day: 5 } });
+    const credit = (id: string, number: string, imsStatus: string | null) =>
+      row({
+        id,
+        number,
+        kind: "credit_note",
+        series: "creditNote",
+        issueDate: { year: 2026, month: 8, day: 3 },
+        totalMinor: 1_180_00,
+        totalInrMinor: 1_180_00,
+        outstandingMinor: 0,
+        rates: [
+          {
+            sac: "998314",
+            rateBp: 1800,
+            taxableMinor: 1_000_00,
+            igstMinor: 0,
+            cgstMinor: 90_00,
+            sgstMinor: 90_00,
+          },
+        ],
+        noteOf: {
+          number: "TH/INV/2627/0001",
+          issueDate: { year: 2026, month: 7, day: 5 },
+          supplyType: "intra",
+          recipientStatus: "registered",
+          placeOfSupplyCode: "19",
+          totalInrMinor: 11_800_00,
+        },
+        imsStatus,
+      });
+    const r = buildGstExport(
+      [inv, credit("n1", "TH/CN/2627/0001", "pending"), credit("n2", "TH/CN/2627/0002", "accepted")],
+      meta,
+      q2,
+    );
+    if (!r.ok) throw new Error(JSON.stringify(r.problems));
+    expect(r.imsHeld).toEqual({
+      count: 1,
+      numbers: ["TH/CN/2627/0001"],
+      taxableMinor: -1_000_00,
+      igstMinor: 0,
+      cgstMinor: -90_00,
+      sgstMinor: -90_00,
+    });
+    // 3.1(a): the invoice less the accepted note only
+    expect(r.gstr3b[0]).toMatchObject({ table: "3.1(a)", taxableMinor: 9_000_00, cgstMinor: 810_00 });
+    const csv = r.files.find((f) => f.stem === "gstr3b_summary")?.csv ?? "";
+    const lines = csv.split("\r\n");
+    expect(lines.at(-2)).toBe(
+      // rt1 F3 (lead D8): printed as positive amounts not deducted; `imsHeld` above stays signed
+      ",Credit notes to registered clients not yet accepted in IMS (not deducted),,1000.00,0.00,90.00,90.00",
+    );
+    // the screen's 3B table names its held row in the file's own words (07-ZD line 7), and the panel's sentence counts the notes (line 8)
+    expect(lines.at(-2)?.split(",")[1]).toBe(IMS_HELD_ROW);
+    // and shows core's positive figures (lead D8), the file's
+    expect(heldRowOf(r.imsHeld)).toMatchObject({
+      taxableMinor: 1_000_00,
+      igstMinor: 0,
+      cgstMinor: 90_00,
+      sgstMinor: 90_00,
+    });
+    expect(imsHeldLine(r.imsHeld.count)).toBe(
+      "1 credit note isn't deducted until your client accepts it in IMS. Check the GST portal's GSTR-3B figures before you file.",
+    );
+    expect(imsHeldLine(3)).toBe(
+      "3 credit notes aren't deducted until your client accepts them in IMS. Check the GST portal's GSTR-3B figures before you file.",
+    );
+    // the sales register's 3B file carries the same block
+    const sr = buildSalesRegister(
+      [inv, credit("n1", "TH/CN/2627/0001", "pending")],
+      meta,
+      "2026-07-01",
+      "2026-09-30",
+    );
+    expect(sr.ok && sr.imsHeld?.count).toBe(1);
+    // nothing held: zeros, and a part-period has no 3B file and no block
+    const clean = buildGstExport([inv], meta, q2);
+    expect(clean.ok && clean.imsHeld.count).toBe(0);
+    const part = buildSalesRegister([inv], meta, "2026-07-01", "2026-07-15");
+    expect(part.ok && part.imsHeld).toBeNull();
   });
 
   it("FX-4 (A5 1; OPEN 08-C RA-32): a tax-only debit note is a blocking warning first in the list; the panel is not complete and never says No errors", () => {

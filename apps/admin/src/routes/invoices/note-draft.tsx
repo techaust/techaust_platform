@@ -6,16 +6,23 @@ import type { Role } from "@techaust/core/permissions";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { PageHeader } from "../../components/display.tsx";
-import { Alert, Clock, FileCheck, Send, Trash } from "../../components/icons.tsx";
+import { Clock, FileCheck, Send, Trash } from "../../components/icons.tsx";
 import { useLoad } from "../../components/states.tsx";
 import { allowed } from "../../lib/access.ts";
 import { INV_COPY, moneyText, requestLine, typeLabel } from "../../lib/invoices.ts";
 import { invoicesApi } from "../../lib/invoices-api.ts";
-import { issueLabel, NOTE_COPY, noteBlockerLine, noteDialogTitle } from "../../lib/notes.ts";
+import { issueLabel, NOTE_COPY, noteDialogTitle } from "../../lib/notes.ts";
 import type { InvoiceWithNotes } from "../../lib/notes-api.ts";
 import { DeleteDraftDialog } from "./dialogs.tsx";
 import { NoteDialog } from "./note-dialog.tsx";
-import { AgainstInvoice, NoteFacts, NoteLinesTable, NoteTotals, noteKindOfView } from "./notes-parts.tsx";
+import {
+  AgainstInvoice,
+  NoteBlockerList,
+  NoteFacts,
+  NoteLinesTable,
+  NoteTotals,
+  noteKindOfView,
+} from "./notes-parts.tsx";
 import { INVOICES_CRUMB, InvoiceBadge, invoiceHref, NumberMark } from "./parts.tsx";
 
 export function NoteDraft({
@@ -98,17 +105,7 @@ export function NoteDraft({
                 {issueLabel(kind)}
               </h2>
             </div>
-            {v.blockers.length > 0 && (
-              <ul className="blockers inv-blockers">
-                {v.blockers.map((b, i) => (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: a code can repeat for different lines; the list is redrawn whole
-                  <li key={`${b.code}-${i}`} className="blockers__item">
-                    <Alert size={16} />
-                    <span>{noteBlockerLine(b, kind, v.currency)}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <NoteBlockerList blockers={v.blockers} kind={kind} currency={v.currency} />
             {waiting && (
               <p className="approval-line" data-state="pending">
                 <Clock size={16} />

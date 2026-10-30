@@ -2,6 +2,7 @@
 // (core's real tax engine, sealed with the issue route's own `invoiceSealOf`); its rows are then written the way the freeze leaves them (a draft with its lines, then one
 // `UPDATE` that freezes it with every sealed block), so what the snapshot step reads reproduces its seal and its content hash. SAMPLE DATA ONLY.
 import { env } from "cloudflare:workers";
+import { fyOfDate, parseIsoDate } from "@techaust/core/dates";
 import { headerExtrasJson } from "@techaust/db/documents";
 import { invoiceBundleOf } from "../../../packages/pdf/test/fixtures/invoice.ts";
 import { buildNoteFixture, type NoteFixtureName } from "../../../packages/pdf/test/fixtures/notes.ts";
@@ -141,31 +142,77 @@ export async function seedIssuedNote(
     }),
   ]);
 
-  // the freeze, as the issue statement leaves it (a credit note: balance 0, no due date, IMS status set)
-  const credit = envelope.type === "credit_note";
-  await env.DB.prepare(
-    `UPDATE documents SET status = 'issued', frozen_at = ?2, series = ?3, fy = ?4, number = ?5, number_display = ?6, issue_date = ?7, due_date = ?8, snapshot_sha256 = ?9,
-       recipient = ?10, issuer = ?11, computed = ?12, balance_minor = ?13, ims_status = ?14, header_extras = ?15
-     WHERE id = ?1`,
-  )
-    .bind(
-      documentId,
-      envelope.issuedAt,
-      envelope.series,
-      d.fy,
-      number,
-      envelope.numberDisplay,
-      d.issue_date,
-      d.due_date ?? null,
-      envelope.snapshotSha256,
-      JSON.stringify(envelope.snapshot.header.recipient),
-      JSON.stringify(envelope.snapshot.header.issuer),
-      envelope.snapshot.computedJson,
-      credit ? 0 : computed.totalMinor,
-      credit ? "pending" : null,
-      o.dropFrozenExtras ? null : headerExtrasJson({ noteOf }),
+  // rt1 T2: a debit note on an export under LUT freezes only with a LUT saved for its own issue day's FY (trigger documents_debit_note_lut_fy, 0054; Researched
+  // 2026-10-30, Rule 96A(1) CGST Rules (08-C RA-19, Q39)). The tax row gets one for the freeze and is put back as it was afterwards, so no other test sees it.
+  const lutFreeze =
+    envelope.type === "debit_note" && (route === "lut" || computed.supply.type === "export_lut");
+  // rt1 review 11: the row is read whole (value AND version) and put back after the freeze, also when it throws, so the LUT is never left behind for the next test.
+  const taxBefore = lutFreeze
+    ? await env.DB.prepare("SELECT value, version FROM settings WHERE key = 'tax'").first<{
+        value: string;
+        version: number;
+      }>()
+    : null;
+  let seedError: { error: unknown } | null = null;
+  try {
+    if (lutFreeze) {
+      // the FY of the note's own issue day, by core's rule (the trigger's `fyTokenOfDateSql` is pinned to it day by day in the db tests)
+      const issued = parseIsoDate(String(d.issue_date));
+      if (!issued) throw new Error(`the fixture's issue date is not a date: ${String(d.issue_date)}`);
+      await env.DB.prepare(
+        "INSERT INTO settings (key, value, version) VALUES ('tax', ?1, 1) ON CONFLICT(key) DO UPDATE SET value = excluded.value, version = version + 1",
+      )
+        .bind(JSON.stringify({ luts: [{ fy: fyOfDate(issued).token, arn: "AD1903270000003" }] }))
+        .run();
+    }
+    // the freeze, as the issue statement leaves it (a credit note: balance 0, no due date, IMS status set)
+    const credit = envelope.type === "credit_note";
+    await env.DB.prepare(
+      `UPDATE documents SET status = 'issued', frozen_at = ?2, series = ?3, fy = ?4, number = ?5, number_display = ?6, issue_date = ?7, due_date = ?8, snapshot_sha256 = ?9,
+         recipient = ?10, issuer = ?11, computed = ?12, balance_minor = ?13, ims_status = ?14, header_extras = ?15
+       WHERE id = ?1`,
     )
-    .run();
+      .bind(
+        documentId,
+        envelope.issuedAt,
+        envelope.series,
+        d.fy,
+        number,
+        envelope.numberDisplay,
+        d.issue_date,
+        d.due_date ?? null,
+        envelope.snapshotSha256,
+        JSON.stringify(envelope.snapshot.header.recipient),
+        JSON.stringify(envelope.snapshot.header.issuer),
+        envelope.snapshot.computedJson,
+        credit ? 0 : computed.totalMinor,
+        credit ? "pending" : null,
+        o.dropFrozenExtras ? null : headerExtrasJson({ noteOf }),
+      )
+      .run();
+  } catch (error) {
+    seedError = { error };
+  }
+  // rt1 re-check 6: the tax row is put back whether or not the freeze threw, and a failed restore never hides the seed's own error: with both, both are thrown
+  // together, the seed's first (and its message in the text); with only one, that one.
+  if (lutFreeze)
+    try {
+      await (taxBefore
+        ? env.DB.prepare("UPDATE settings SET value = ?1, version = ?2 WHERE key = 'tax'").bind(
+            taxBefore.value,
+            taxBefore.version,
+          )
+        : env.DB.prepare("DELETE FROM settings WHERE key = 'tax'")
+      ).run();
+    } catch (restoreError) {
+      if (!seedError) throw restoreError;
+      const first = seedError.error instanceof Error ? seedError.error.message : String(seedError.error);
+      throw new AggregateError(
+        [seedError.error, restoreError],
+        `the note seed failed (${first}), and putting the tax row back failed too`,
+      );
+    }
+  if (seedError) throw seedError.error;
 
   return {
     id: documentId,

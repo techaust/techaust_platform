@@ -4,12 +4,14 @@
 // A problem in any document stops every file (owner decision 2026-10-27): the list names each document with a link to fix it. The totals stand on
 // the ledger's double rule; the HSN/SAC check sits under them and blocks the download when it fails.
 import { istDate } from "@techaust/core/dates";
+import { heldRowOf } from "@techaust/core/gst";
 import { SERIES } from "@techaust/core/numbering";
 import { useEffect, useId, useRef, useState } from "react";
 import { ensureStepUp } from "../../api.ts";
 import { VerifyNote } from "../../components/form.tsx";
 import { AlertTriangle, Archive, Check, Download, FileText, XCircle } from "../../components/icons.tsx";
 import { Notice } from "../../components/ui.tsx";
+import { IMS_HELD_ROW } from "../../lib/copy-zd.ts";
 import { moneyText } from "../../lib/documents.ts";
 import {
   fileDownloadText,
@@ -32,7 +34,15 @@ import { csvBlob, readAll, reportsApi, saveFile } from "../../lib/reports-api.ts
 import { buildGstExport, type GstExport, TOTAL_KEYS, zipOf } from "../../lib/reports-build.ts";
 import { ReportFrame } from "./frame.tsx";
 import { ManualEntries } from "./manual-entries.tsx";
-import { Amount, ProblemList, Progress, ReportBlock, WarningList, WideList } from "./parts.tsx";
+import {
+  Amount,
+  ImsHeldNotice,
+  ProblemList,
+  Progress,
+  ReportBlock,
+  WarningList,
+  WideList,
+} from "./parts.tsx";
 
 type Phase =
   | { kind: "idle" }
@@ -279,7 +289,8 @@ function GstResults({ result, period, threshold }: { result: Ok; period: PeriodC
         </ReportBlock>
 
         <ReportBlock id="gst-3b" title={GST_COPY.gstr3bHeading}>
-          <Gstr3bTable lines={result.gstr3b} />
+          <Gstr3bTable lines={result.gstr3b} held={result.imsHeld} />
+          <ImsHeldNotice held={result.imsHeld} id="gst-3b-held" />
         </ReportBlock>
       </div>
 
@@ -363,13 +374,21 @@ function GstResults({ result, period, threshold }: { result: Ok; period: PeriodC
   );
 }
 
-/** The 3B figures: 3.1(a) and 3.1(b) with every head, then 3.2 by place of supply (taxable value and IGST only). */
-function Gstr3bTable({ lines }: { lines: Ok["gstr3b"] }) {
+/**
+ * The 3B figures: 3.1(a) and 3.1(b) with every head, then 3.2 by place of supply (taxable value and IGST only). rt1 T3: while credit notes are held back
+ * (not yet accepted in IMS), the row under 3.1(a) says how much 3.1(a) still carries for them, in 07-ZD line 7's words and as POSITIVE amounts (core's
+ * `heldRowOf`, the 3B file's own figures; lead D8). No row when none is held.
+ */
+function Gstr3bTable({ lines, held }: { lines: Ok["gstr3b"]; held: Ok["imsHeld"] }) {
   const C = GST_COPY.columns;
   const a = lines.filter((l) => l.table === "3.1(a)");
   const b = lines.filter((l) => l.table === "3.1(b)");
   const pos = lines.filter((l) => l.table === "3.2");
-  const heads = (l: Ok["gstr3b"][number], all: boolean) => (
+  const heldRow = held.count > 0 ? heldRowOf(held) : null;
+  const heads = (
+    l: Pick<Ok["gstr3b"][number], "taxableMinor" | "igstMinor" | "cgstMinor" | "sgstMinor">,
+    all: boolean,
+  ) => (
     <>
       <td className="num">
         <Amount minor={l.taxableMinor} />
@@ -409,6 +428,14 @@ function Gstr3bTable({ lines }: { lines: Ok["gstr3b"] }) {
               {heads(l, true)}
             </tr>
           ))}
+          {heldRow && (
+            <tr className="ledger__sub ledger__held">
+              <th scope="row" className="ledger__held-label">
+                {IMS_HELD_ROW}
+              </th>
+              {heads(heldRow, true)}
+            </tr>
+          )}
           {b.map((l) => (
             <tr key="b">
               <th scope="row">{GST_COPY.table31b}</th>

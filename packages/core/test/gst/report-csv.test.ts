@@ -25,6 +25,8 @@ import {
   statementCsv,
   statementCsvRows,
 } from "../../src/gst/index.ts";
+import { heldRowOf } from "../../src/gst/layouts.ts";
+import { linesDeductingAll, NO_IMS_HELD } from "../../src/gst/summary.ts";
 import { statementEntries } from "../../src/statement.ts";
 import { GOLDEN_API_REGISTER, hasBareLineBreak, PARAMS, Q3, row, toApi } from "./fixtures.ts";
 
@@ -67,11 +69,57 @@ describe("golden CSVs", () => {
     await expect(csv).toMatchFileSnapshot("./__snapshots__/output-tax-v1-q3.csv");
   });
 
-  it("gstr3b-summary-v1", async () => {
+  it("gstr3b-summary-v1 (byte for byte as before rt1: every credit note in cdnr deducted)", async () => {
     const sections = unwrap(gstr1Sections(GOLDEN_API_REGISTER, Q3, PARAMS));
-    const csv = unwrap(gstr3bCsv(unwrap(gstr3bSummary(sections))));
+    const csv = unwrap(gstr3bCsv(unwrap(gstr3bSummary(sections)), "gstr3b-summary-v1"));
     expect(hasBareLineBreak(csv)).toBe(false);
     await expect(csv).toMatchFileSnapshot("./__snapshots__/gstr3b-summary-v1-q3.csv");
+  });
+
+  it("gstr3b-summary-v2 (rt1 T3, RA-04): only IMS-accepted credit notes deducted, the held row last (07-ZD line 7)", async () => {
+    const sections = unwrap(gstr1Sections(GOLDEN_API_REGISTER, Q3, PARAMS));
+    const summary = unwrap(gstr3bSummary(sections));
+    const csv = unwrap(gstr3bCsv(summary));
+    expect(csv).toBe(unwrap(gstr3bCsv(summary, "gstr3b-summary-v2")));
+    expect(hasBareLineBreak(csv)).toBe(false);
+    const CRLF = "\r\n";
+    const last = csv.split(CRLF).at(-2) ?? "";
+    expect(
+      last.startsWith(",Credit notes to registered clients not yet accepted in IMS (not deducted),,"),
+    ).toBe(true);
+    await expect(csv).toMatchFileSnapshot("./__snapshots__/gstr3b-summary-v2-q3.csv");
+    // rt1 F3 (lead D8): the held row prints positive amounts not deducted; the value stays signed inside
+    expect(last).toBe(
+      ",Credit notes to registered clients not yet accepted in IMS (not deducted),,2000.00,0.00,180.00,180.00",
+    );
+    expect(last).not.toContain("-");
+    expect(summary.imsHeld?.taxableMinor).toBe(-200_000);
+    // 3.1(a) printed - held printed = the 3.1(a) that deducts every credit note (v1's)
+    const amounts = (line: string) =>
+      line
+        .split(",")
+        .slice(-4)
+        .map((v) => Math.round(Number(v) * 100));
+    const a = amounts(csv.split(CRLF)[1] ?? "");
+    const held = amounts(last);
+    const all31a = linesDeductingAll(summary).find((l) => l.table === "3.1(a)");
+    expect(a.map((v, i) => v - (held[i] ?? 0))).toEqual([
+      all31a?.taxableMinor,
+      all31a?.igstMinor,
+      all31a?.cgstMinor,
+      all31a?.sgstMinor,
+    ]);
+    // with every credit note accepted, v2's lines are v1's and the held row is zero
+    const accepted = GOLDEN_API_REGISTER.map((r) =>
+      r.kind === "credit_note" ? { ...r, imsStatus: "accepted" } : r,
+    );
+    const all = unwrap(gstr3bSummary(unwrap(gstr1Sections(accepted, Q3, PARAMS))));
+    const v1 = unwrap(gstr3bCsv(all, "gstr3b-summary-v1")).split(CRLF);
+    const v2 = unwrap(gstr3bCsv(all, "gstr3b-summary-v2")).split(CRLF);
+    expect(v2.slice(0, v1.length - 1)).toEqual(v1.slice(0, -1));
+    expect(v2.at(-2)).toBe(
+      ",Credit notes to registered clients not yet accepted in IMS (not deducted),,0.00,0.00,0.00,0.00",
+    );
   });
 
   it("statement-v1", async () => {
@@ -174,10 +222,10 @@ describe("text is defused, numbers are not", () => {
 });
 
 describe("layout versions", () => {
-  it("the current versions are the v1 ones, known and frozen", () => {
+  it("the current versions are known and frozen (3B is v2 since rt1)", () => {
     expect(CURRENT_SALES_REGISTER_LAYOUT).toBe("sales-register-v1");
     expect(CURRENT_OUTPUT_TAX_LAYOUT).toBe("output-tax-v1");
-    expect(CURRENT_GSTR3B_LAYOUT).toBe("gstr3b-summary-v1");
+    expect(CURRENT_GSTR3B_LAYOUT).toBe("gstr3b-summary-v2");
     expect(CURRENT_STATEMENT_LAYOUT).toBe("statement-v1");
     for (const layouts of [SALES_REGISTER_LAYOUTS, OUTPUT_TAX_LAYOUTS, GSTR3B_LAYOUTS, STATEMENT_LAYOUTS]) {
       expect(Object.isFrozen(layouts)).toBe(true);
@@ -209,11 +257,69 @@ describe("layout versions", () => {
     ).toEqual(expected);
   });
 
+  it("rt1 F3: heldRowOf prints magnitudes (bigint negation: a zero is 0, never -0) and keeps the count and numbers", () => {
+    const zero = heldRowOf(NO_IMS_HELD);
+    for (const v of [zero.taxableMinor, zero.igstMinor, zero.cgstMinor, zero.sgstMinor]) {
+      expect(Object.is(v, 0)).toBe(true);
+    }
+    expect(
+      heldRowOf({
+        count: 2,
+        numbers: ["C1", "C2"],
+        taxableMinor: -150_050,
+        igstMinor: -27_009,
+        cgstMinor: 0,
+        sgstMinor: 0,
+      }),
+    ).toEqual({
+      table: "ims_held",
+      count: 2,
+      numbers: ["C1", "C2"],
+      taxableMinor: 150_050,
+      igstMinor: 27_009,
+      cgstMinor: 0,
+      sgstMinor: 0,
+    });
+    expect(
+      unwrap(
+        gstr3bCsv({
+          lines: [],
+          imsHeld: { count: 1, numbers: ["C1"], taxableMinor: -1, igstMinor: 0, cgstMinor: 0, sgstMinor: 0 },
+        }),
+      ).split("\r\n")[1],
+    ).toBe(",Credit notes to registered clients not yet accepted in IMS (not deducted),,0.01,0.00,0.00,0.00");
+  });
+
+  it("rt1 review 9: each 3B version owns its row builder in the registry, and the writer is only that entry", () => {
+    const summary = unwrap(gstr3bSummary(unwrap(gstr1Sections(GOLDEN_API_REGISTER, Q3, PARAMS))));
+    const v1 = GSTR3B_LAYOUTS["gstr3b-summary-v1"];
+    const v2 = GSTR3B_LAYOUTS["gstr3b-summary-v2"];
+    // v1: every credit note in cdnr deducted, no held row
+    expect(v1.rowsOf(summary)).toEqual(linesDeductingAll(summary));
+    // v2: the summary's own lines (only IMS-accepted credit notes deducted), then the held row as printed
+    expect(v2.rowsOf(summary)).toEqual([...summary.lines, heldRowOf(summary.imsHeld ?? NO_IMS_HELD)]);
+    expect(v2.rowsOf({ lines: [] })).toEqual([heldRowOf(NO_IMS_HELD)]);
+    for (const [version, layout] of Object.entries(GSTR3B_LAYOUTS)) {
+      expect(typeof layout.rowsOf).toBe("function");
+      expect(unwrap(gstr3bCsv(summary, version as keyof typeof GSTR3B_LAYOUTS))).toBe(
+        layout.csv(summary, {}),
+      );
+      // the file has a header and one line per row the builder gives
+      expect(layout.csv(summary, {}).split("\r\n")).toHaveLength(layout.rowsOf(summary).length + 2);
+    }
+  });
+
+  it("gstr3b-summary-v2 of a summary built by hand without `imsHeld`: the held row is zeros (nothing held back)", () => {
+    expect(unwrap(gstr3bCsv({ lines: [] }))).toBe(
+      "Table,Description,Place of supply,Taxable value,IGST,CGST,SGST\r\n,Credit notes to registered clients not yet accepted in IMS (not deducted),,0.00,0.00,0.00,0.00\r\n",
+    );
+  });
+
   it("a header-only file for no rows ends in CRLF", () => {
     for (const csv of [
       unwrap(salesRegisterCsv([])),
       unwrap(outputTaxCsv([])),
-      unwrap(gstr3bCsv({ lines: [] })),
+      unwrap(gstr3bCsv({ lines: [] }, "gstr3b-summary-v1")),
     ]) {
       expect(csv.endsWith("\r\n")).toBe(true);
       expect(csv.split("\r\n")).toHaveLength(2);

@@ -53,7 +53,7 @@ export const REGISTER_COLUMNS = `d.id, d.type, d.series, d.fy, d.number AS seq, 
        d.fx_rate_micros, d.supply_type, d.place_of_supply_code, d.balance_minor, d.voided_at, d.client_id, c.code AS client_code,
        coalesce(json_extract(d.recipient, '$.legalName'), json_extract(d.recipient, '$.displayName')) AS r_name, json_extract(d.recipient, '$.gstStatus') AS r_status, json_extract(d.recipient, '$.gstin') AS r_gstin,
        json_extract(d.recipient, '$.stateCode') AS r_state, json_extract(d.recipient, '$.country') AS r_country, json_extract(d.recipient, '$.address') AS r_address,
-       json_extract(d.header_extras, '$.noteOf') AS note_of, json_extract(d.issuer, '$.bank.swift.purposeCode') AS purpose_code,
+       json_extract(d.header_extras, '$.noteOf') AS note_of, json_extract(d.issuer, '$.bank.swift.purposeCode') AS purpose_code, d.ims_status,
        ${RATES_SQL} AS rates`;
 
 /** One row of `REGISTER_COLUMNS` as D1 returns it. */
@@ -84,6 +84,8 @@ export type RegisterSqlRow = {
   r_address: string | null;
   note_of: string | null;
   purpose_code: string | null;
+  /** rt1 T3: a credit note's IMS answer (null for every other document); only the 3B helper reads it. */
+  ims_status: string | null;
   rates: string | null;
 };
 

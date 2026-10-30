@@ -11,12 +11,12 @@ import type { Role } from "@techaust/core/permissions";
 import { useState } from "react";
 import { Link } from "react-router";
 import type { Currency } from "../../api.ts";
-import { Calendar, Plus, RotateCcw } from "../../components/icons.tsx";
+import { Alert, Calendar, Plus, RotateCcw } from "../../components/icons.tsx";
 import { ScrollCue, useScrollCue } from "../../components/scroll-cue.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { allowed } from "../../lib/access.ts";
 import { DOC_COPY, dayText, inWords, lineColumns } from "../../lib/documents.ts";
-import { badgeOf, INV_COPY, INV_ERRORS, moneyText } from "../../lib/invoices.ts";
+import { badgeOf, blockerTarget, INV_COPY, INV_ERRORS, moneyText, splitAtPlace } from "../../lib/invoices.ts";
 import {
   againstLine,
   balanceLine,
@@ -26,7 +26,9 @@ import {
   IMS_LABELS,
   NOTE_COPY,
   NOTE_ERRORS,
+  type NoteBlockerIn,
   type NoteLedgerRow as NoteLedgerRowData,
+  noteBlockerLine,
   noteErrorText,
   noteLedgerRows,
   notesLimit,
@@ -51,9 +53,12 @@ export const isNoteView = (v: { type: string }) => v.type === "credit_note" || v
 export const noteKindOfView = (v: { type: string }): NoteKind =>
   v.type === "credit_note" ? "credit" : "debit";
 
-// ---- the deadline (07-T §4) ---------------------------------------------------------------------------------------------------------------------
+// ---- the deadline (07-ZD lines 2 to 5) ----------------------------------------------------------------------------------------------------------
 
-/** The credit deadline of an invoice: a dated line in the tone of how close it is (info, then warning from 1 October, then danger once passed). */
+/**
+ * The credit deadline of an invoice: dated lines in the tone of how close it is (info; warning from the first day of the month before the last day, the
+ * days left leading; danger once passed). The first line carries the weight, the rest are quieter.
+ */
 export function DeadlineNotice({ deadline, fy }: { deadline: CreditDeadlineView; fy: string | null }) {
   const b = deadlineBanner(deadline, fy, issueDateOf(Date.now()));
   return (
@@ -67,6 +72,55 @@ export function DeadlineNotice({ deadline, fy }: { deadline: CreditDeadlineView;
         ))}
       </div>
     </div>
+  );
+}
+
+// ---- what stops a note's issue (07-T §7, 07-R, 07-ZD line 6) -------------------------------------------------------------------------------------
+
+/**
+ * A note's blockers, one sentence each. A blocker fixed on a settings page (the supplier's details, the reverse-charge line, the bank, the LUT of the debit
+ * note's year: rt1 T2, `/settings/tax#luts`) carries that page's name as its link, the invoice editor's pattern (`blockerTarget`, the whole row a 44 px
+ * target); the others are plain sentences. `id` lets a dialog point at the list.
+ */
+export function NoteBlockerList(props: {
+  blockers: readonly NoteBlockerIn[];
+  kind: NoteKind;
+  currency: Currency;
+  id?: string;
+}) {
+  if (props.blockers.length === 0) return null;
+  return (
+    <ul className="blockers inv-blockers" id={props.id}>
+      {props.blockers.map((b, i) => {
+        const line = noteBlockerLine(b, props.kind, props.currency);
+        // No note blocker opens the client (the only target that needs its id), so none is passed.
+        const t = blockerTarget(b, "");
+        const parts = t?.kind === "page" ? splitAtPlace(line, t.place) : null;
+        return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: a code can repeat for different lines; the list is redrawn whole
+          <li key={`${b.code}-${i}`} className="blockers__item" data-code={b.code}>
+            <Alert size={16} />
+            <span>
+              {t?.kind === "page" && parts ? (
+                <>
+                  {parts[0]}
+                  <Link className="blockers__link inv-blockers__place" to={t.to}>
+                    {parts[1]}
+                  </Link>
+                  {parts[2]}
+                </>
+              ) : t?.kind === "page" ? (
+                <Link className="blockers__link" to={t.to}>
+                  {line}
+                </Link>
+              ) : (
+                line
+              )}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

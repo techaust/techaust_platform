@@ -1,0 +1,6 @@
+Table,Description,Place of supply,Taxable value,IGST,CGST,SGST
+3.1(a),Outward taxable supplies (other than zero-rated),,459016.95,39163.06,20170.00,20170.00
+3.1(b),Outward taxable supplies (zero-rated),,147150.00,7560.00,0.00,0.00
+3.2,"Inter-state supplies to unregistered persons, by place of supply",27-Maharashtra,-5000.00,-900.00,,
+3.2,"Inter-state supplies to unregistered persons, by place of supply",29-Karnataka,161016.95,28983.06,,
+,Credit notes to registered clients not yet accepted in IMS (not deducted),,2000.00,0.00,180.00,180.00

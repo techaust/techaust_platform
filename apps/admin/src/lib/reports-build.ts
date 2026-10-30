@@ -14,6 +14,7 @@ import {
   type GstIssue,
   type GstPeriod,
   type Gstr1Totals,
+  type Gstr3bImsHeld,
   type Gstr3bLine,
   type GstWarning,
   gstr1Csv,
@@ -22,6 +23,7 @@ import {
   gstr3bSummary,
   issuedRowsOf,
   type ManualTaxEntry,
+  NO_IMS_HELD,
   type OutputTaxRow,
   outputTaxCsv,
   outputTaxRows,
@@ -140,6 +142,12 @@ export type GstExport =
       totals: Gstr1Totals;
       hsnOk: boolean;
       gstr3b: readonly Gstr3bLine[];
+      /**
+       * rt1 T3 (Researched 2026-10-28, s.34(2) proviso CGST Act (08-C RA-04)): the credit notes to registered clients not yet accepted in IMS, NOT deducted from
+       * 3.1(a) (`count` for the panel's 07-ZD line 8; amounts SIGNED as cdnr sums them, negative). The 3B file (`gstr3b-summary-v2`) prints them as its last
+       * row as positive amounts not deducted (rt1 F3, lead D8); a screen that shows them shows them positive too.
+       */
+      imsHeld: Gstr3bImsHeld;
       table13: readonly {
         series: string;
         nature: string;
@@ -190,6 +198,7 @@ export function buildGstExport(
     totals: sections.value.totals,
     hsnOk: hsnMatches(sections.value.totals),
     gstr3b: summary.value.lines,
+    imsHeld: summary.value.imsHeld ?? NO_IMS_HELD,
     table13: docs.value,
     files: [
       ...files.value.map((f) => ({ name: f.name, stem: f.name.replace(/\.csv$/, ""), csv: f.csv })),
@@ -235,6 +244,8 @@ export type SalesRegister =
        * panel says what the GST exports say and never "No errors" while one is present. Empty when there is no 3B file.
        */
       manual: WarningLine[];
+      /** rt1 T3: with the 3B file, the credit notes held back until the client accepts them in IMS (07-ZD line 8); null when there is no 3B file. */
+      imsHeld: Gstr3bImsHeld | null;
     };
 
 /** The sales register and output tax of a range (any range inside one FY), and the 3B figures when the range is a whole return period. */
@@ -262,12 +273,14 @@ export function buildSalesRegister(
   }
   let gstr3b: string | null = null;
   let manual: WarningLine[] = [];
+  let imsHeld: Gstr3bImsHeld | null = null;
   const period = wholePeriodOf(from, to);
   if (period) {
     const g = buildGstExport(rows, meta, period);
     if (!g.ok) return { ok: false, problems: g.problems };
     gstr3b = g.files.find((f) => f.stem === "gstr3b_summary")?.csv ?? null;
     manual = g.warnings.filter((w) => w.blocking);
+    imsHeld = g.imsHeld;
   }
   return {
     ok: true,
@@ -275,6 +288,7 @@ export function buildSalesRegister(
     outputTax: output.value,
     files: { register: regCsv.value, outputTax: outCsv.value, gstr3b },
     manual,
+    imsHeld,
   };
 }
 

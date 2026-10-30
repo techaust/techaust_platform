@@ -145,7 +145,8 @@ export async function parentInvoice(
     status?: string;
     paid?: number;
     fx?: number;
-    exportMode?: "lut" | "igst_paid";
+    /** The route; `null` (rt1): the settings' LUT route, which leaves the column empty (the supply says `export_lut`). */
+    exportMode?: "lut" | "igst_paid" | null;
     gstStatus?: "registered" | "unregistered";
   } = {},
 ): Promise<Parent> {
@@ -167,7 +168,7 @@ export async function parentInvoice(
         recipient: { gstStatus: "overseas" as const, country: "US" },
         lines,
         fx: { rateMicros: over.fx ?? 83_123_400 },
-        exportMode: over.exportMode,
+        exportMode: over.exportMode ?? undefined,
       }
     : {
         currency: "INR" as const,
@@ -207,7 +208,7 @@ export async function parentInvoice(
     due_date: "2026-11-01",
     content_sha256: "p".repeat(64),
     snapshot_sha256: "q".repeat(64),
-    export_mode: overseas ? (over.exportMode ?? "lut") : null,
+    export_mode: overseas ? (over.exportMode === undefined ? "lut" : over.exportMode) : null,
     fx_rate_micros: overseas ? (over.fx ?? 83_123_400) : null,
     fx_date: overseas ? "2026-10-24" : null,
     fx_source: overseas ? "FBIL" : null,
@@ -298,6 +299,8 @@ export async function insertNoteDraft(
     mode?: string;
     reasonCode?: string;
     taxMinor?: number;
+    /** The note's route (rt1 T2): the parent's, which the trigger `badParent` pins; defaults to 'lut' on a USD parent. */
+    exportMode?: "lut" | "igst_paid" | null;
   } = {},
 ): Promise<Draft> {
   const id = uuidv7();
@@ -319,7 +322,8 @@ export async function insertNoteDraft(
       client_id: p.clientId,
       parent_id: p.id,
       currency: p.computed.currency,
-      export_mode: p.computed.currency === "USD" ? "lut" : null,
+      export_mode:
+        over.exportMode !== undefined ? over.exportMode : p.computed.currency === "USD" ? "lut" : null,
       fx_rate_micros: p.computed.fxRateMicros,
       fx_date: p.computed.fxRateMicros ? "2026-10-24" : null,
       fx_source: p.computed.fxRateMicros ? "FBIL" : null,
