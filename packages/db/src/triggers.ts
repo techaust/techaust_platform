@@ -935,6 +935,21 @@ export function voidViewTriggerStatements(): string[] {
   ];
 }
 
+/**
+ * rt1 T2 (a new trigger only, no table is rebuilt; the abort message starts with the trigger's name): `documents_debit_note_lut_fy`: a debit note on an export
+ * invoice under LUT (the note's `export_mode` is the parent's, pinned by `badParent`) is issued only while a LUT with an ARN is saved for the FY of the note's OWN
+ * issue day (Researched 2026-10-30, Rule 96A(1) CGST Rules, Notification 37/2017-CT (08-C RA-19, Q39)). No IGST route is offered for it. The twin of core
+ * `noteBlockers` (`debit_lut_missing`) and of the note freeze's WHERE (`noteIssueTail`), all three from `LUT_FOR_FY_SQL`.
+ */
+export function noteLutTriggerStatements(): string[] {
+  const issuing =
+    "OLD.status = 'draft' AND NEW.status = 'issued' AND NEW.type = 'debit_note' AND NEW.export_mode IS 'lut'";
+  const lutBad = `(NEW.issue_date IS NULL OR NOT ${LUT_FOR_FY_SQL.replaceAll("?FY", fyTokenOfDateSql("NEW.issue_date"))})`;
+  return [
+    `CREATE TRIGGER \`documents_debit_note_lut_fy\` BEFORE UPDATE OF status ON \`documents\` WHEN ${issuing} AND ${lutBad} BEGIN ${abort("documents_debit_note_lut_fy: a debit note on an export under LUT needs a LUT saved for the financial year of its own issue day")} END;`,
+  ];
+}
+
 /** The trigger sets, by the name the migration is created with (`drizzle-kit generate --custom --name <set>`). */
 export const TRIGGER_SETS = {
   triggers: { what: "integrity triggers (docs/05 §5.3)", statements: triggerStatements },
@@ -1004,6 +1019,10 @@ export const TRIGGER_SETS = {
   void_view_triggers: {
     what: "full-audit fix (FX-5, owner decision 2026-10-30): an invoice-family document the client has opened in the portal is never voided",
     statements: voidViewTriggerStatements,
+  },
+  note_lut_triggers: {
+    what: "rt1 T2: a debit note on an export under LUT is issued only with a LUT saved for the financial year of its own issue day",
+    statements: noteLutTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;

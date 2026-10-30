@@ -298,6 +298,8 @@ export async function insertNoteDraft(
     mode?: string;
     reasonCode?: string;
     taxMinor?: number;
+    /** The note's route (rt1 T2): the parent's, which the trigger `badParent` pins; defaults to 'lut' on a USD parent. */
+    exportMode?: "lut" | "igst_paid" | null;
   } = {},
 ): Promise<Draft> {
   const id = uuidv7();
@@ -319,7 +321,8 @@ export async function insertNoteDraft(
       client_id: p.clientId,
       parent_id: p.id,
       currency: p.computed.currency,
-      export_mode: p.computed.currency === "USD" ? "lut" : null,
+      export_mode:
+        over.exportMode !== undefined ? over.exportMode : p.computed.currency === "USD" ? "lut" : null,
       fx_rate_micros: p.computed.fxRateMicros,
       fx_date: p.computed.fxRateMicros ? "2026-10-24" : null,
       fx_source: p.computed.fxRateMicros ? "FBIL" : null,
