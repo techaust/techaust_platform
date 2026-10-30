@@ -1,56 +1,54 @@
 # 12: Status
 
-_Replaced (never appended) at the end of every session. Last updated: **2026-10-28, 23:15** (IST)._
+_Replaced (never appended) at the end of every session. Last updated: **2026-10-31, 02:00** (IST)._
 
 ## Done
 - **Phases 1–5, M1 (foundation), M2 (public website), M3.1–M3.5, M4.1–M4.5:** all approved by the owner (latest: the M3.4–M4.5 batch, 2026-10-26, PR #93). Details live in the run files under [runs/](runs/) and in [13-decisions.md](13-decisions.md).
-- **Working rules:** the three-model plan ([14-models-and-usage.md](14-models-and-usage.md)); Team plan gate (5-hour window only; no new agent at ≥ 80 %); skills mandatory; Cloudflare Access on every staging Worker; owner rule 8 (2026-10-28): tax and legal items are researched from official sources and tagged "Researched <date>, <source>" or "OPEN: <question>".
-- **The M5 batch: M5.0 to M5.5 built, reviewed and on staging** (PRs [#95](https://github.com/techaust/techaust_platform/pull/95)–[#97](https://github.com/techaust/techaust_platform/pull/97), [#99](https://github.com/techaust/techaust_platform/pull/99)–[#101](https://github.com/techaust/techaust_platform/pull/101); [batch run file](runs/m5-batch.md)): admin Worker split, tax invoices, export invoices, proformas and advances, credit and debit notes, sending, reminders and recurring care invoices, GST and CA exports, realisation, EDF, statements, finance tiles. Staging fix after the owner's M5.0 check: [#103](https://github.com/techaust/techaust_platform/pull/103).
-- **Research and wording, merged 2026-10-28** ([PR #104](https://github.com/techaust/techaust_platform/pull/104); [run file](runs/research-and-wording.md)). It replaces the owner's line-by-line M5 review (owner, 2026-10-28).
-  - **Register:** [08-C](08-research-appendix/C-research-register.md), 65 items, settled with a source or OPEN with the CA's or lawyer's question.
-  - **Owner answers:** Q37 lapsed LUT blocked; Q11 DUPLICATE FOR SUPPLIER copy; Q35 tax-only debit note; accept-by-link for any value. Every other batch question (Q1–Q71) is settled by the register or by its built default (08-C §7).
-  - **Rules built:** the LUT of the receipt day's FY; discount after sale from 1 Nov 2026; tax-only debit note; supplier copy; FX same-day rule with a dated statement; credit-note advice dates; email logs ≥ 12 months; signatory switch; backup gate before production; security.txt ≤ 365 days; prior-price lint.
-  - **Copy:** 07-R to 07-V approved by the lead under the owner's delegation; 07-W for the gaps; legal pages v0.3; no `[Placeholder]` left on any screen. Care invoices can now be issued automatically where an owner has switched it on.
-  - Migrations 0046–0048.
-- **Verified 2026-10-28:** `pnpm check` and `pnpm test` pass in every package (auth 135, ui 469, core 1,752, email 128, db 452, pdf 318, web 443, portal 620, jobs 507, admin 3,170); review SEND BACK (1 high, 3 medium, 7 low) → all fixed → re-check APPROVE; CI green on #104. Bundles: admin API 587,821 bytes (third Worker planned at 650,000), jobs 851,190 (limit 1,000,000).
+- **The M5 batch (M5.0–M5.5)** built, reviewed and on staging (PRs #95–#101, #103), with the research and wording task (#104) and the owner's M5 findings (#106). Waits for the owner's "approved".
+- **The full audit of M1–M5: complete** (owner's order, 2026-10-29; [run file](runs/full-audit-m1-m5.md)). Seven areas audited; every finding fixed in FX-1 to FX-5 ([#107](https://github.com/techaust/techaust_platform/pull/107), [#108](https://github.com/techaust/techaust_platform/pull/108), [#110](https://github.com/techaust/techaust_platform/pull/110), [#113](https://github.com/techaust/techaust_platform/pull/113), [#116](https://github.com/techaust/techaust_platform/pull/116)); the final sweep of the website, admin and portal and its fixes ([#120](https://github.com/techaust/techaust_platform/pull/120); [run file](runs/final-sweep.md)). Every fix task went through a review, its fixes and a re-check.
+  - **FX-5:** research tags, 07-X/07-Y wording, Bengali and Devanagari PDF fallback fonts, and the owner's rule that an invoice the client has opened can't be voided (trigger 0053; the portal records the view in the read's own batch).
+  - **Final sweep:** website reflow at 320 px; admin layouts at tablet widths, 44 px targets, unique landmarks, server errors never shown as "offline", activity rows with working links; portal load-failure pages, Paid, Credited and discount rows, a note's invoice link and reason; the 07-ZA copy (owner-approved 1–20) and 07-ZB; proposal terms version 3 ("this proposal or estimate").
+- **Workflow changes (owner's yes, 2026-10-30; [#118](https://github.com/techaust/techaust_platform/pull/118); [run file](runs/audit-workflows.md)):** a dependency audit in CI; builds without the Cloudflare token; five deploys in a fixed order with an Access health check after each (the new `staging-deploy-check` token); Workers Traces on staging; zod 4.6.6. The first deploy on it passed every step.
+- **Cloud sessions setup ([#115](https://github.com/techaust/techaust_platform/pull/115); [run file](runs/cloud-1-sessions.md)):** the cloud command guard (four review rounds), dev ports per session, the REST PR helper. Not yet used in a real cloud session.
+- **No CA or lawyer (owner, 2026-10-30):** every OPEN item in the research register settled on the safest reading, with the owner's choices ([#119](https://github.com/techaust/techaust_platform/pull/119); [run file](runs/settle-08c.md)); CLAUDE.md rule 8 updated.
+- **Verified 2026-10-30/31:** `pnpm check` and every package's tests pass (core 1,827, pdf 352, portal 651, admin 3,452, db 491, web 714, jobs 531; timeouts only under load, each passing alone); e2e web 212, portal 9, admin 6/6 with sample data (`E2E_SAMPLE=1`); axe 0 on every checked screen; Workers within budget (portal 100,589; admin front 99,271; admin API 615,441; jobs 978,987 bytes).
 
 ## In progress
-- Nothing is being built. No agent is running. The staging deploy of #104 runs from `main` (CI, then "Deploy staging", which applies migrations 0046–0048 to staging D1). If it fails on a temporary Cloudflare API error, the lead re-runs it once (13-decisions, 2026-10-27).
+- Nothing is being built. No agent is running. The staging deploy of #120 follows main's CI (it adds proposal terms version 3 where staging's newest terms are the seeded version 2); the next session checks it.
 
 ## Next (when work resumes)
-1. **Check the #104 staging deploy** (run green, migrations 0046–0048 applied); re-run once if Cloudflare's API flaked.
-2. **The owner checks staging and says "approved" for the M5 batch** (see "Waits on the owner"). Their findings are collected first, then one fix task, after a reviewer UI/UX sweep of every affected screen (owner rule 2026-10-26).
-3. **Staging readings** once someone signs in to staging (`cpuTimeMs`, front + API ≤ 7 ms): invoice issue at 1 and 100 lines, export, proforma, advance, note issue, send, `/dashboard`, a register page, `realisation.scan`, `pdf.statement`, `pdf.supplier`, `care.bill`, `care.issue`, `reminder.send`; plus the M4.x readings still open. The lead can't sign in through Cloudflare Access.
-4. **After approval: M6.1** (payments, sandbox only). The 80 % usage gate applies.
+1. **Check #120's staging deploy** (all five deploys and health checks green).
+2. **The owner checks staging and says "approved" for the M5 batch** (see "Waits on the owner").
+3. **Research tasks from [settle-08c](runs/settle-08c.md)**, Tier A ones with an analyst brief and early check: T1 credit-note cutoff one month earlier (needs the GSTR-1 frequency), T2 the LUT of a debit note's FY, T3 the 3B helper nets a credit note only once IMS-accepted, T4 signature always on notes and advance invoices, T10 the Udyam number on tax invoices, T7 erasure in never-accepted offers (before 13 May 2027), T6 terms and offer copy with the four new clauses (copy to the owner), T11 the deed of assignment for Aadhaar eSign, T5 the CERT-In log copy to S3 Mumbai (after the owner's AWS setup), T12 retag and rewrite 08-C §5.
+4. **Withdraw a proforma the client has seen** (owner's yes, 2026-10-30; Tier A; new copy to the owner).
+5. **After approval: M6.1** (payments, sandbox only), with T8 (TDS by certificate) and the planned third admin Worker (admin API at 615,441 bytes; plan before 650,000).
 
-**Usage now:** 5-hour window 57 % (resets 23:10 IST). Gate: no new agent at ≥ 80 %; two agents at once, one browser agent.
+**Usage now:** 5-hour window about 40 %. Gate: new agents at or under 95 %; this PC at most 2 agents, 1 using a browser.
 
 ## Waits on the owner
-- **Dated duties** ([08-C](08-research-appendix/C-research-register.md) §6):
-  - **now:** file the FY 2026-27 LUT and save its ARN in Settings › Tax (LUT export invoices stay blocked until then);
-  - **by 31 October:** credit notes for FY 2025-26 supplies (the law's limit is reporting them by 30 November);
-  - **by 30 November:** the October EDF to your bank, if any export invoice was raised in October;
-  - **every April:** the turnover check.
-- **For the CA and the lawyer:** the OPEN list in [08-C §5](08-research-appendix/C-research-register.md) (one place; it replaces the earlier scattered "VERIFY WITH CA/LEGAL" items).
-- **M5 staging check and approval:**
-  - the M5.0 six steps: sign in to the staging admin; open Dashboard, Leads and a lead; open a client, a proposal and its PDF; in a project, upload and download a file; save one Settings page; sign out;
-  - then try an invoice, a credit note and the Settings › Tax checklist;
-  - tell the lead "done" with any findings, or "approved".
-- **Local test database** (only before someone runs the app on this PC): stop the app, delete `.wrangler\state\v3\d1`, then run `pnpm db:migrate:local` and `pnpm db:seed:local` (the permission check refused the lead's delete).
-- **Staging data for invoicing:** the real company profile (legal name, GSTIN, address) and clearly labelled sample bank details in staging Settings; the LUT ARN when filed.
-- **Zoho:** confirm the `billing@` alias exists (invoice emails and statements); also `hello` and `no-reply`.
-- **Catalogue › Publish on staging** (if not done yet), so the website shows the six service names with "and".
-- **When TecHaust's AWS is needed (Phase 7):** sign the AWS MCP in to the TecHaust account (the lead gives steps).
-- **For the website:**
-  - content: a new headshot; bio facts; the company LinkedIn page URL; WhatsApp Business number; Cal.com link; 2–3 case-study briefs; one social handle per platform; the 3 blog drafts ([07-E](07-content-appendix/E-blog-drafts.md)); one line for when the "I'm human" check can't load;
-  - the postal address, checked against the GST certificate;
-  - before production: the security@ and privacy@ aliases (U-5).
-- **SES key rotation:** the staging IAM key `techaust-ses-sender-staging` by **2027-01-21**.
-- **Not blocking:** upload the social kit; "since 2019" against the GST registration date; wallpapers; Renovate; trademark search (U-8, 08-C RB-34); printed brand proof and Pantone; business-card phone number; Argon2id timing on a phone; U-6 and U-7.
-- **Model menu:** keep **Opus 5.5, medium** for every conversation.
+- **Your GSTR-1 frequency** (monthly or quarterly): gst.gov.in › Login › Services › Returns › Opt-in for Quarterly Return.
+- **M5 staging check and approval:** sign in to the staging admin; open Dashboard, Leads and a lead; a client, a proposal and its PDF; in a project, upload and download a file; save one Settings page; try an invoice, a credit note and the Settings › Tax checklist; sign out. Then "done" with any findings, or "approved".
+- **Dated duties** (your own actions; steps in [settle-08c](runs/settle-08c.md)):
+  - **before the next export invoice:** file the FY 2026-27 LUT and save its ARN in Settings › Tax;
+  - **by 30 November:** the October EDF to your bank, if any export invoice was raised in October; ask the bank the questions in settle-08c (EDF format, purpose code, IEC, closure up to ₹10 lakh, PA-CB proof);
+  - **monthly:** reverse charge on foreign services, by spreadsheet;
+  - **every April:** the turnover check;
+  - **once:** the Offline Tool test import before the first real GSTR-1; the CERT-In point of contact (the lead confirms the format first); the trademark search (classes 9, 35, 42).
+- **For T5:** an AWS S3 bucket in Mumbai and an access key, with the lead's script (when the task starts).
+- **Staging data for invoicing:** the real company profile (legal name, GSTIN, address), clearly labelled sample bank details, the Udyam number (in Settings, never in code).
+- **Zoho:** confirm the `billing@` alias (invoice emails and statements); also `hello` and `no-reply`.
+- **Catalogue › Publish on staging** (if not done yet).
+- **When TecHaust's AWS is needed:** sign the AWS MCP in to the TecHaust account (it is on another account today).
+- **For the website:** a new headshot; bio facts; the company LinkedIn page URL; WhatsApp Business number; Cal.com link; 2–3 case-study briefs; one social handle per platform; the 3 blog drafts; the postal address checked against the GST certificate; before production, the security@ and privacy@ aliases.
+- **Renewals:** the staging SES key `techaust-ses-sender-staging` by **2027-01-21**; Access tokens `staging-cpu-benchmark` by 2027-10-17 and `staging-deploy-check` by 2027-10-30.
+- **Not blocking:** upload the social kit; "since 2019" against the GST registration date; wallpapers; printed brand proof and Pantone; business-card phone number; Argon2id timing on a phone; a one-off lawyer review of the deed of assignment someday.
+- **Model menu:** Opus 5.5, high, for every conversation.
 
 ## Open follow-ups
-- **Research and wording (2026-10-28, run file):** a docs-only sweep of the 224 remaining VERIFY tags (older plan and research docs) against 08-C; purge `pdf_asks` rows; release the supplier-copy claim when jobs refuses a render; one clock reading for the draft's no-rate day (`invoices.ts:861`); the 07-T banner names "30 November" while the cutoff is a setting; `meta.verify` strings → a `kind` field; re-read the CBIC s.34 page after 1 November; not verified: a real Browser Run render of the supplier copy, signatory-off and IGST-advance PDFs; the shared local D1 needs a reset before the next local run (steps in the run file).
+- **Final sweep (2026-10-31, [run file](runs/final-sweep.md)):** the week grid's "1 h 45 min" wraps at 1280 with the menu open; the activity feed's label for a credit or debit note issue; same-name people in the Time Entries table; the website focus outline 1.6 px against docs/06's 2 px.
+- **Workflows (2026-10-30, [run file](runs/audit-workflows.md)):** allow-list entries bound to a version or path; a separate deploy job; a web `/api/health`; trace size and query-string redaction after a week (by 2026-11-06); the zod allow-list entry expires 2026-11-13 (astro update).
+- **Cloud sessions:** the first real cloud session runs "check cloud setup" ([runbook](runbooks/cloud-sessions.md) Part 3).
+- **Research (2026-10-30, [run file](runs/settle-08c.md)):** still OPEN: RB-06 (purpose code, a bank fact), RB-21 (West Bengal stamp rate), RB-22(b) (read G.S.R. 789(E) before 1 Jan 2027), RA-34 (the GSTIN check test before Phase 7); also the FX day of a USD debit note, the IGST-route endorsement wording, the LUT ARN format.
 - **M5 (2026-10-28, run files):**
   - a longer timeout for the M5.4 test "each send names the staff member…" in `apps/admin/worker/invoice-send.test.ts` (times out under a full parallel run);
   - export the realisation bounds (1,200 / 36,500) from core instead of three copies (M5.5b re-check low 4);

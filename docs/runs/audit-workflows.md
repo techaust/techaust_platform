@@ -150,3 +150,7 @@ Security pass by hand (fork-safe triggers, secret reach, no `${{ }}` in `run`, S
 - 2: the environments runbook (Access row, step 5, repo secrets), docs/05 (ci.yml "Today" lists the dependency audit; deploy-staging names a check after each app), docs/12's deploy-order follow-up removed.
 - 6: test "the deploy-check token is checked before the first deploy, and reaches no step but that check and the health checks" (31 passed).
 - 3, 5, 7: follow-ups (listed for docs/12 at the end of the day). 4: accepted as documented.
+
+## Handover (lead, 2026-10-31)
+Merged as #118 (2026-10-30) after the owner's deploy-check token and four Access policies (checked read-only by the lead). The first deploy on it: token check, three builds without the token, five deploys in order, four health checks: all green. Follow-ups: allow-list entries bound to a version or path; a separate deploy job; a web `/api/health`; trace size and query-string redaction after a week (by 2026-11-06); the zod entry expires 2026-11-13 (astro update).
+Usage: builder claude-opus-5-5/high (agent-afa708d1…, wrangler, workers-best-practices, cloudflare, workers-profiling); reviewer claude-opus-5-5/high (agent-af0b2c1c…, security-review, wrangler, workers-best-practices, code-review).

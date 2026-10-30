@@ -367,3 +367,7 @@ Seen, not from this round (follow-ups): the feed says "issued an invoice" for a 
 - The activity feed's label for a credit or debit note issue.
 - Same-name people in the Time Entries table.
 - Website focus outline measures 1.6 px where docs/06 says 2 px (pre-existing).
+
+## Handover (lead, 2026-10-31)
+Merged as #120 (2026-10-31 IST). Three sweeps (website, admin in three attempts after network drops, portal) → designer rounds 1–3 → builder (terms v3, data) → analyst early check GO → review APPROVE → builder and designer fixes → narrow re-check APPROVE (no findings). The staging deploy of #120 runs after main's CI. Next: the follow-ups above; the research tasks T1–T12 ([settle-08c](settle-08c.md)); withdrawing a seen proforma (Tier A).
+Usage: reviewers claude-opus-5-5/high (agent-a6ce5614… web; agent-abc2ce1a…, agent-a996c854…, agent-a4c56226… admin; agent-af63a4f1… portal; agent-ad21b963… review; agent-a891131d… re-check); designers claude-opus-5-5/high (agent-a427e87e…, agent-a263d191…, agent-a3dd277e…; frontend-design); builders claude-opus-5-5/high (agent-a9cf032c…, agent-a86f379b…; workers-best-practices, wrangler); analyst claude-opus-5-5/high (agent-aab6bdf5…).

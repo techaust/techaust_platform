@@ -2,6 +2,22 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-30 [#120](https://github.com/techaust/techaust_platform/pull/120) fix: full audit final sweep, website, admin and portal (reflow, targets, landmarks, errors, portal invoice rows, approved copy, terms v3) [ADM-INV-07, ADM-DASH-01, POR-05, POR-06, WEB-G-07]
+- 2026-10-30 [#119](https://github.com/techaust/techaust_platform/pull/119) docs: settling the research register's OPEN items (no CA or lawyer)
+- 2026-10-30 [#118](https://github.com/techaust/techaust_platform/pull/118) ci: full audit workflow changes (dependency audit, build apart from deploy, deploy order and health checks, staging traces, zod 4.6.6)
+- 2026-10-30 [#117](https://github.com/techaust/techaust_platform/pull/117) docs: owner answers of 2026-10-30 (07-Z approved, workflow changes, withdrawing a seen proforma, no CA or lawyer)
+- 2026-10-30 [#116](https://github.com/techaust/techaust_platform/pull/116) fix: full audit FX-5, research tags, approved wording, PDF fallback fonts, no void after a portal view [ADM-INV-07, ADM-SET-08]
+- 2026-10-30 [#115](https://github.com/techaust/techaust_platform/pull/115) chore(cloud): cloud sessions setup, command guard, dev ports, owner-only workflow runs [CLOUD-1]
+- 2026-10-30 [#114](https://github.com/techaust/techaust_platform/pull/114) test(dashboard): stress test on a pinned worst day, no drift with the date [ADM-DASH-01]
+- 2026-10-30 [#113](https://github.com/techaust/techaust_platform/pull/113) fix: full audit FX-4, invoicing (tax-only notes in GSTR-1, no round-off, statement, supplier copy, default SAC, estimate heads, audit labels) [ADM-INV-05, ADM-INV-07, ADM-REP-01, POR-06]
+- 2026-10-30 [#112](https://github.com/techaust/techaust_platform/pull/112) chore(skills): start the day catches up with cloud sessions
+- 2026-10-29 [#111](https://github.com/techaust/techaust_platform/pull/111) chore: agents at once by place and resources, gate at or under 95 %, cloud usage reading, tiers decide only checks (owner)
+- 2026-10-29 [#110](https://github.com/techaust/techaust_platform/pull/110) fix: full audit FX-3, admin and portal (client and project figures, leads, templates, signatures, portal accept, accessibility) [ADM-CLI-03, ADM-PRJ-05, ADM-LEAD-01, POR-05]
+- 2026-10-29 [#109](https://github.com/techaust/techaust_platform/pull/109) chore: Opus 5.5 at high effort for every task, budget gate 95 % (owner)
+- 2026-10-29 [#108](https://github.com/techaust/techaust_platform/pull/108) fix: full audit FX-2, security and website (portal headers, header guard, publish text rules, one stylesheet) [WEB-G-07, WEB-G-14, ADM-CAT-05]
+- 2026-10-29 [#107](https://github.com/techaust/techaust_platform/pull/107) fix: full audit FX-1, data and jobs (distinct numbers, ledger triggers, PDF sweep stop, email backoff, cron repeats) [ADM-SET-04, ADM-INV-02, ADM-INV-14, JOB-PDF-01, JOB-Q-01, JOB-CRON-01]
+- 2026-10-29 [#106](https://github.com/techaust/techaust_platform/pull/106) fix: M5 owner findings: PDF integrity check before store, service text by blocks [ADM-PROP-02, ADM-PROP-05, ADM-CAT-03, JOB-PDF-01]
+- 2026-10-28 [#105](https://github.com/techaust/techaust_platform/pull/105) docs: end of day 2026-10-28 (research and wording merged)
 - 2026-10-28 [#104](https://github.com/techaust/techaust_platform/pull/104) feat: researched tax and legal defaults and final wording (research register 08-C; LUT per receipt FY, discount after sale from 1 Nov 2026, tax-only debit note, DUPLICATE FOR SUPPLIER copy, FX same-day rule, email-log floor, legal pages v0.3, 07-R to 07-W approved) [ADM-INV-06, ADM-INV-08, ADM-INV-10, ADM-INV-11, ADM-SET-09]
 - 2026-10-28 [#103](https://github.com/techaust/techaust_platform/pull/103) fix(admin): draft PDF line and unread request bodies behind the front Worker [ADM-PROP-05]
 - 2026-10-28 [#102](https://github.com/techaust/techaust_platform/pull/102) docs: end of day 2026-10-28 (M5 batch complete: status, decisions, changelog, CLAUDE.md, review pack)
