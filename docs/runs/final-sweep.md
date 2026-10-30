@@ -92,3 +92,67 @@ Builder, Opus 5.5 high, Tier A (terms pinned by documents). Branch `fix/final-sw
 - Tests: `seed.test.ts` (counts and bodies), `seed-terms-v2.test.ts` (still standing alone), a version 3 test file in the same style; every admin, portal or jobs test that pins the newest terms text or count.
 - Documents already sent keep the terms they pinned (check a sent proposal's frozen terms are unchanged).
 - Checks: db, admin, portal, jobs tests through the queue (`bash tools/heavy.sh --log …`), `pnpm check`, the whole-repository `pnpm lint` last. Append "## Builder report, terms version 3".
+
+## Designer report, rounds 1 and 2 (designer, Opus 5.5 high, 2026-10-30)
+Branch `fix/final-sweep-d1` (from `origin/fix/final-sweep` dccdb06f; 5dd20ba2 merged in at 66b003af before round 2). Every commit is pushed. Screenshots: the main checkout's `.logs/shots/sweep-fix/` (named by item; `progress.md` beside them). Skills: `frontend-design:frontend-design`, loaded first (it kept every fix inside docs/06 and the existing visual language: no new devices, the existing 44 px and focus patterns reused, a deliberate layout per narrow case rather than smaller type everywhere); `dataviz` not loaded (no chart or new stat tile: A11 and A12 only re-flow existing figures); no other docs/14 §9 skill fits a designer's screen fixes.
+
+### Round 1
+**Website**
+- W1 (1ab2b8b6): below 22.5rem the header's lockup is 20 px tall (about 143 px wide, above the 96 px minimum), with a smaller gap and Menu padding; the phone menu's bar matches: 329 → about 285 px. New e2e test in `apps/web/e2e/site.spec.ts`: every built page at 320 and 303 px (303 = 320 with a classic 17 px scrollbar; Playwright hides scrollbars) has no sideways scroll; the old header fails it. Shots `W1-W6-thanks-320-light.png` (a real classic scrollbar), `W1-menu-open-320-dark.png`.
+- W6 (1ab2b8b6): `CopyText` keeps short ranges ("Mon–Sat,", "10:00–19:00") and "e-" words on one line; the page hero lede, the /thanks reply and the empty-blog line go through `CopyText`. Shots `W6-contact-375-light.png`, `W6-blog-768-dark.png`, `W6-thanks-1280-light.png`.
+
+**Admin**
+- A1 (e70ef69c): the milestones ledger switches by the panel's own width (container `ledger`): columns from 50rem, stacked rows below; from 36rem due, amount and status share one line under the full-width title. Shots `A1-milestones-768-light.png`, `-1024-light`, `-1280-dark`, `-375-dark`.
+- A2 (3186336e): the FX panel's sentence button is 44 px tall. Shot `A2-fx-empty-focus-1280-dark.png` (focused).
+- A3 (3186336e): links in a client strip (the client, "Against invoice") are 44 px targets; padding taken back by a negative margin. Shot `A3-credit-note-1024-dark.png`.
+- A4 (3186336e): invoice and note sheets are named by their head (number and type), not a second "Lines"; axe 0 on the void invoice and the draft debit note at 1024.
+- A5 (3186336e): a void invoice shows "Issued {date} by {name}." without the locked line. Shot `A4-A5-A6-void-invoice-1024-dark.png`.
+- A6 (3186336e): `LineTax` (routes/documents/money.tsx) names CGST and SGST for screen readers on invoice and note lines.
+- A7 (3186336e): the scroll cue moved from the reports' WideList to `components/scroll-cue.tsx` (CSS in app.css) and wraps the invoice and note lines. Shot `A7-invoice-lines-375-dark.png`.
+- A8 (3186336e): `useScrollRegion` makes a box a keyboard region only when its own overflow-x is auto or scroll (`scrollsSideways`): one region on the realisation report. Shot `A8-realisation-768-dark.png`.
+- A9 (3186336e): the Time entries table scrolls in its own box from 48rem and its headers wrap; at 1280 neither page nor box scrolls. Shot `A9-time-1280-dark.png` (taken before the header wrap; 0 px of box scroll measured after it).
+- A10 (3186336e): "Last 12 billing periods" is a plain panel with its heading, not a second landmark of the same name. Shot `A10-care-plan-1024-dark.png`.
+- A11 (3c8f9198): at 320 px the Invoiced figures take the small size, the INR line under a USD figure the caption size, with a no-break space after "≈". Shot `A11-dashboard-invoiced-320-dark-simulated-figures.png` (the reviewer's figures injected).
+- A12 (3c8f9198): the pipeline row is two unbreakable pieces, "INR  1 open," and "₹3,00,000.00 before GST": one line where it fits, else the amount starts the next line whole. Shots `A12-pipeline-*-simulated.png` (no sent proposal locally; rows injected).
+- A14 (3c8f9198): `a.blockers__link` (section names in the send panel and gap notes, "Add the text in Catalogue") is padded to 44 px; the padding drops while it has keyboard focus so the ring hugs the words. Shot `A14-send-panel-links-1280-dark.png`.
+- A15 (3c8f9198): an error answer that isn't our JSON, or has no message, is `internal` "Something went wrong" (the Worker's own words), never "offline"; test in `src/api.test.ts`.
+- A18, A19 (3c8f9198): `.btn`, breadcrumb links and the catalogue name link are at least 44 px wide. Shot `A18-A19-numbering-1280-dark.png`.
+- Admin e2e with data: `apps/admin/e2e/sample-data.ts`, run by global-setup when `E2E_SAMPLE=1` and the database has no invoice: company (valid GSTIN), LUT, INR and USD bank rows, two sample clients, a project with three milestones, eight time entries, a care plan started 13 months back, and through the API a tax invoice with an issued credit note and a draft debit note, an export invoice under the LUT and a voided invoice. The sweep now visits every invoice of the first page. Run: `pnpm dev:secrets && pnpm db:migrate:local && pnpm db:seed:local && pnpm portal:sample`, then `E2E_SAMPLE=1 bash tools/heavy.sh --log … pnpm --filter @techaust/admin e2e`: 6/6 passed (13.8 min; 5 scroll boxes met by the keyboard).
+
+**Portal**
+- P1 (48a5811d): `components/load-problem.tsx` (`LoadProblemScreen`): a failed load keeps the page's h1 and tab title (home: the organisation; the list: "Proposals and estimates"; invoice list and page: "Invoices") and focus moves to it. Shot `P1-invoices-load-failed-375-dark.png` (502 page injected).
+- P5 (48a5811d): the cover's lines are separate paragraphs on the portal and in the PDF (`coverLines`). Not seen live (no sample cover text); PDF tests pass.
+- P6, P7 (48a5811d): "version 1" never splits; from 48rem the status pill has a 7.5rem slot so the dates line up. Shot `P6-P7-proposals-decided-768-light-simulated.png` (rows injected).
+- P12 (48a5811d): the receipt icon has text lines instead of "$" (portal and admin). Shot `P12-P13-home-invoices-tile-375-dark.png`.
+- P13 (48a5811d): the home tile's amount is labelled "Balance due" (existing words) above it; a "Due" pill is followed by the date alone.
+- P14 (48a5811d): the validity line and its Download PDF button show only while the decision is open. Shot `P14-accepted-1280-light-preview.png`.
+- P16 (48a5811d): a credit note's list total has a true minus (`minusMoneyText`, core `negate`). Shot `P12-P16-invoices-1280-light.png`.
+- P17 (48a5811d): the footer address is a mailto link with a 44 px target. Shot `P17-footer-mailto-focus-1280-dark.png` (focused).
+
+### Round 2 (07-ZA, owner-approved)
+- W2, W3, W4, W5 (ae05b538): /work title and description while no case study is published (`workPage.metaEmpty`, 127 characters); /contact description without WhatsApp while `site.whatsapp` is empty; curly quotes in the service and budget errors (`packages/core/src/schemas/forms.ts`, test updated) and in docs/07; /pricing "How payment works" in the catalogue's wording. docs/07 records the new lines.
+- A16, A17, FX-5 L5 (d14d9fc0): bank errors name INR or USD (SPA; test updated, USD case added); "RBI reference rate on the date of supply"; the void dialog's longer sentence; a proforma's own dialog ("Void proforma {number}", its body, the "Void proforma" button and menu item); the proforma's locked banner (test updated). Shot `R2-L5-void-proforma-dialog-1280-dark.png`.
+- P2, part (c81b8dd9): a "Paid" row between Total and Balance due once something was paid. Shot `R2-P2-paid-row-375-dark-preview.png`.
+- P4 (c81b8dd9): no Invoices link (bar and phone menu) and no Invoices tile for a contact who can't see finance. Shot `R2-P4-no-finance-home-1280-dark.png`.
+- P8 (c81b8dd9): the M1.6 lines recorded word for word as [07-ZB](../07-content-appendix/ZB-portal-sign-in-account.md), indexed in docs/07's header; the "PLACEHOLDER COPY" header is gone from `apps/portal/src/copy.ts`.
+- P10 (c81b8dd9): the payment request page shows the frozen statutory line (core `PROFORMA_NOTICE`). Shot `R2-P10-payment-request-1280-light-preview.png`.
+- P11 (c81b8dd9): "Prices exclude GST." sits under the lines (portal paper and PDF), never under the total; PDF test updated.
+
+### Stopped (each needs an API or SQL change, or wording from the owner)
+- A13: the activity feed returns `ref: null` for a draft and nothing about a time entry's project.
+- A20: `/time/people` and `/leads/assignees` return id and name only (no email).
+- P3: the portal invoice summary selects no line discount (`apps/portal/worker/invoice-summary.ts`, LINES SQL).
+- P15: the summary has no parent id and no reason for a note.
+- P2, the "Credited ({credit note numbers})" row: the summary carries `creditedMinor` but not the notes' numbers.
+- W3, the /blog description: the approved line (07-ZA item 3) is 158 characters, over the 155 the build enforces; it needs a shorter wording (or a decision on the limit).
+- Copy questions seen on the way (nothing changed): a proforma's void dialog still says "Reason (required, kept with the invoice)"; the acceptance block's "Document fingerprint" beside the paper's "Content fingerprint" (P14's last part); the proposal cover names the client twice (its first line and "Prepared for"); 07-ZA item 4's service error ends with a full stop, the code keeps the form's no-full-stop style.
+
+### Checks
+- Tests: admin SPA (`vitest run src/`) 473 passed; portal 641; pdf 351; core 1,824; web 641.
+- e2e: web 212 passed after round 2 (37 new reflow tests); portal 9 passed after round 2; admin 6/6 passed with data after round 1 (round 2 changed only admin words; not re-run).
+- Builds: web build and dist checks ok; portal Worker 97,558 bytes (startup 11.1 ms); admin front 99,271 bytes, admin API 613,384 bytes (startup 69.1 ms).
+- `pnpm check` ok. Whole-repository `pnpm lint`, run last: exit 0, 1,337 files, 10 warnings and 8 infos, all in files this task didn't touch (admin `worker/reports.test.ts`, web `src/lib/catalogue.ts`, core `src/public-text.ts`, three pdf tests).
+- Visual: each screen at its finding's widths and 375/1280, light and dark (admin in-app theme set), axe 0 (axe-core injected) on the void invoice, the draft debit note, the care plan and the realisation report at their finding widths; focus seen on the FX button, a send-panel link and the portal footer link; no console errors from the changed screens. Dev servers stopped and the browser closed.
+
+### Not verified
+Safari, Firefox, phones, NVDA, staging; P5's cover and A11/A12's figures with real data (simulated in the page); a real Browser Run PDF; A9 at 1280 with long real names.
