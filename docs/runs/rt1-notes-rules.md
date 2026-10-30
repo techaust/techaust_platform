@@ -306,3 +306,27 @@ Ran at ff07c985: `pnpm check` exit 0; core 1,849 (99.04 %); db 503; pdf 360; job
 **Lead triage:** fix 1 by making `lutForFyAsSql` count a legacy entry only when `legacyLutFate` folds it (fail closed again; the twin test states the one known difference), plus 2, 3, 5 and 6. 4 stays the listed follow-up: one migration that folds any legacy `tax.lut` into the list and drops the key, **a precondition before production** (to `check-prod-readiness` thinking in Phase 7).
 
 ### Re-check fixes
+#### Builder (findings 1, 2, 3, 5, 6), Opus 5.5 high, 2026-10-31; branch `fix/rt1-recheck` from `origin/task/rt1-notes-rules` (1d80e49f); commits ec388bd1 (core, db), dddfb914 (admin), e4a26465 (jobs test), then this report
+**Skills loaded:** `cloudflare:workers-best-practices` (no binding, handler, config or I/O change; the deadline and LUT helpers stay pure, no extra D1 read), `cloudflare:wrangler` (no config or binding change; `wrangler types` ran only inside the typechecks). No other docs/14 §9 skill fits (no screen, PDF layout or email).
+
+**What changed** (no migration, trigger or SQL text; `LUT_FOR_FY_SQL` itself untouched):
+- **1** `packages/core/src/export-invoice.ts`: `lutForFyAsSql` is renamed **`lutForFy`** (the old name no longer fits): a list entry of that FY with an ARN (`lutFor`), else the legacy `tax.lut` **only when `legacyLutFate` folds it**, sealed as the folded (normalised) ARN. It is exactly `lutFor(fy, lutsOf(tax))`, the M5.2 rule; the SQL-trim helper is gone. `apps/admin/worker/note-model.ts` `noteLutOf` uses it. Tests: core `invoice-types.test.ts` (a hyphen, 31 characters, a tab and a full list now give null; a property over parsed settings that it **equals** `lutFor(lutsOf)`); admin `note-lut.test.ts` (a folding legacy ARN seals as `AD1903`; a hyphenated or tab-only one gives `lut: null`); db `note-rules-rt1.test.ts` over the same 19 stored rows × 4 FYs: whenever core counts a LUT, SQL does (core never allows what SQL refuses), and every disagreement is the one known difference (no list entry for that FY, the legacy `lut` of that FY, `legacyLutFate` `invalid` or `full`: SQL accepts, core refuses, fail closed); exactly 4 such cases are met (hyphen, 31 characters, a tab, a full list).
+- **2** `packages/db/src/sql-rules.ts`: the `LUT_FOR_FY_SQL` comment names the twins (`lutFor(fy, lutsOf(tax))` for export and advance, `lutForFy` for a debit note, the same rule), says both are stricter in that one case (fail closed), points at the db test, and also names trigger 0054.
+- **3** `apps/admin/src/lib/invoices.ts` (409 `advance_lut_missing`) and `apps/admin/src/routes/invoices/types-parts.tsx` (`AdvanceOrigin`, `igstNoLutFy`) pass `UNKNOWN`. Both values arrive as a **label** ("2027-28": `chosen.fyLabel` in `invoice-advance.ts`), which `fyLabelOfToken` refuses, so passing `UNKNOWN` alone would have printed "…" for every real year. `fyLabel` (`apps/admin/src/lib/invoice-types.ts`) therefore also keeps a value that is exactly core's label of a real token (`labelAsIs`); a damaged label ("2027-29", "1927-28", an en dash) reads as `otherwise`. Tests in `invoice-types.test.ts`.
+- **5** `creditDeadlineOf(src, settings)`: `DeadlineSource` takes `recipient` (the frozen recipient as parsed, or null) instead of `recipientStatus`; the builder picks the status itself, any value outside registered/unregistered/overseas (none, missing, unknown) judged as unregistered (D2). `deadlineOf` passes `p.recipient`; `note-view.ts` passes `d.recipient`. `note-deadline.test.ts` updated, plus a test for the damaged recipients.
+- **6** `apps/jobs/test/pdf-note-seed.ts`: no `finally` (Biome's `noUnsafeFinally` refuses a throw there): the freeze's error is caught, the tax row is put back, a failed restore with a seed error throws `AggregateError([seedError, restoreError])` with the seed's message in its text, a failed restore alone throws itself, and otherwise the seed's error is rethrown.
+
+**Commands and results** (all through `bash tools/heavy.sh`):
+- `pnpm exec biome check --write` on the 13 changed files: clean after the `finally` rework (2 files reformatted).
+- `--log rt1rc-core-tc` core typecheck: exit 0. `--log rt1rc-core` core test: 91 files, **1,850 passed**; coverage 99.04 % statements, 98.1 % branches.
+- `--log rt1rc-db` db test: 34 files, **503 passed**.
+- `--log rt1rc-admin-tc` admin typecheck: exit 0 (0 `error TS`). `--log rt1rc-admin` admin test (worker and `src/**`): 118 files, **3,473 passed**.
+- `--log rt1rc-jobs-tc` jobs typecheck (includes `test/`): exit 0. `--log rt1rc-jobs` jobs test: 31 files, **531 passed**.
+- `--log rt1rc-check` `pnpm check`: exit 0 (lint 1,357 files, 10 warnings, none in a file I changed; typecheck everywhere; guards; migration guard 55 migrations).
+
+**Not verified:** the admin build and worker-budget reading (a renamed import and a small status check in `note-model.ts`; last reading 617,181 bytes); pdf and portal suites (no file there changed); the whole-repository `pnpm test`; e2e (the two SPA sentences only change for a damaged FY value, which the sample data cannot produce).
+
+**Notes for the lead:** finding 4 (the legacy-key migration follow-up) is untouched. The name `lutForFyAsSql` remains only in earlier sections of this run file.
+
+**Open questions:** none.
+Usage: builder claude-opus-5-5/high (skills workers-best-practices, wrangler).
