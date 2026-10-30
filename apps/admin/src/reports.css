@@ -580,7 +580,7 @@
 
 /* rt1 T3: the credit notes 3.1(a) still carries until the client accepts them in IMS. Indented under 3.1(a) as part of it, in the muted ink, and marked by
    the warning rule the notice under the table carries too, so the row and its sentence read as one thing. The figures stay in the ink: they are the file's. */
-.ledger.ledger--3b tbody tr.ledger__held th {
+.ledger .ledger__held-label {
   color: var(--color-text-muted);
   box-shadow: inset 3px 0 0 var(--color-warning);
 }

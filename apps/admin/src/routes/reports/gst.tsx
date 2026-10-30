@@ -430,7 +430,9 @@ function Gstr3bTable({ lines, held }: { lines: Ok["gstr3b"]; held: Ok["imsHeld"]
           ))}
           {heldRow && (
             <tr className="ledger__sub ledger__held">
-              <th scope="row">{IMS_HELD_ROW}</th>
+              <th scope="row" className="ledger__held-label">
+                {IMS_HELD_ROW}
+              </th>
               {heads(heldRow, true)}
             </tr>
           )}
