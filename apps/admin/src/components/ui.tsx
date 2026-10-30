@@ -194,13 +194,22 @@ export function Notice({
   tone,
   children,
   id,
+  ref,
 }: {
   tone: "error" | "info" | "success";
   children: ReactNode;
   id?: string | undefined;
+  /** Given when the screen moves focus to the notice (a server's refusal in a dialog); it then takes focus programmatically only. */
+  ref?: Ref<HTMLDivElement> | undefined;
 }) {
   return (
-    <div className={`notice notice--${tone}`} role={tone === "error" ? "alert" : "status"} id={id}>
+    <div
+      className={`notice notice--${tone}`}
+      role={tone === "error" ? "alert" : "status"}
+      id={id}
+      ref={ref}
+      tabIndex={ref ? -1 : undefined}
+    >
       {tone === "success" ? <Check size={20} /> : tone === "info" ? <Info size={20} /> : <Alert size={20} />}
       <div>{children}</div>
     </div>

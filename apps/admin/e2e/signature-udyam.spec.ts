@@ -3,8 +3,10 @@
 //   - Settings › Company: the Udyam number and category through FormField (07-ZC lines 4 and 5), the error on leaving the field, the save (the key is always
 //     sent: L8), the signature hint (line 2); keyboard order and visible focus.
 //   - Settings › Tax: the signatory switch's added line (line 3), in the switch's accessible description.
-//   - With no signature saved: a draft debit note lists `signature_missing` (line 1) with "Settings › Company" as a link, and the advance dialog of an issued
-//     proforma is refused with the same line and link.
+//   - With no signature saved: a draft debit note lists `signature_missing` (line 1) with "Settings › Company" as a link; its note dialog and the advance
+//     dialog of an issued proforma are refused by the server with the same line and link, in a `role="alert"` box that takes the focus (visual review 1).
+//   - The saved full number fits its field at every width, and at 1024 with the side menu open or closed (visual review 2); a field reached by Tab
+//     stops clear of the "Unsaved changes" bar (visual review 3).
 // axe (WCAG 2.2 AA) on every state, both in-app themes against the opposite OS theme, at 1280 and 390 px; no console errors. With RT2_SHOTS=<absolute folder>
 // each state is also saved as a screenshot (for the designer's review; never committed). Sample data only; the signature is put back at the end.
 import { readFileSync } from "node:fs";
@@ -15,7 +17,8 @@ import { sampleSignaturePng, totpAt } from "./sample-data.ts";
 
 const FAILING = new Set(["moderate", "serious", "critical"]);
 const THEMES = ["light", "dark"] as const;
-const WIDTHS = [1280, 390] as const;
+// RT2_ALL_WIDTHS=1 runs every state at the five review widths (the visual review); by default the two ends
+const WIDTHS = process.env.RT2_ALL_WIDTHS ? [390, 768, 1024, 1280, 1920] : [1280, 390];
 const SHOTS = process.env.RT2_SHOTS;
 const LINE1 =
   "Add the signature in Settings › Company. Credit notes, debit notes and invoices for a payment received always carry it.";
@@ -86,6 +89,76 @@ async function axe(page: Page, where: string) {
     .filter((v) => FAILING.has(v.impact ?? ""))
     .map((v) => `${where}: ${v.id} (${v.impact}) ${v.nodes.map((n) => n.target.join(" ")).join(" | ")}`);
   expect(bad, bad.join("\n")).toEqual([]);
+}
+
+/**
+ * A dialog the server refused: its refusal box is a live region (`role="alert"`) and holds the focus, which is inside the open dialog, never on
+ * `<body>` (WCAG 2.4.3, 4.1.3); the signature's line is in it.
+ */
+async function refusalHasFocus(page: Page, line: string) {
+  const box = page.getByRole("dialog").locator(".inv-issue__blocked");
+  await expect(box).toHaveAttribute("role", "alert");
+  await expect(box).toBeFocused();
+  const where = await page.evaluate(() => {
+    const a = document.activeElement;
+    return { body: a === document.body, inDialog: a?.closest("dialog[open]") != null };
+  });
+  expect(where).toEqual({ body: false, inDialog: true });
+  await expect(box.locator(".blockers__item", { hasText: "Add the signature in" })).toHaveText(line);
+  // the keyboard press that issued it leaves the ring on the box (focus-visible), so a sighted keyboard user sees where focus went
+  expect(await box.evaluate((el) => getComputedStyle(el).outlineStyle)).not.toBe("none");
+}
+
+/** The Settings pages whose form shows the "Unsaved changes" bar (SaveBar through `GroupForm`, and Gateways). */
+const BAR_PAGES = ["company", "tax", "payment-terms", "gateways", "email", "retention", "flags"] as const;
+const FIELD =
+  "input:not([readonly]):not([disabled]):not([type=hidden]):not([type=file]), select:not([disabled]), textarea:not([readonly]):not([disabled])";
+
+/**
+ * One change to the form's first field that can change, so the bar appears (never saved: the test discards it). False when nothing can: Gateways
+ * locally, whose only fields are the test/live radios with live locked (`PAYMENTS_LIVE_ALLOWED=false`).
+ */
+async function makeDirty(page: Page): Promise<boolean> {
+  const fields = page.locator("main form").first().locator(FIELD);
+  const count = await fields.count();
+  for (let i = 0; i < count; i++) {
+    const field = fields.nth(i);
+    const kind = await field.evaluate((el) =>
+      el instanceof HTMLInputElement ? el.type : el.tagName.toLowerCase(),
+    );
+    if (kind === "checkbox") await field.setChecked(!(await field.isChecked()), { force: true });
+    else if (kind === "radio") {
+      // a radio changes only by picking another of its group
+      const other = page.locator(
+        `main form input[type=radio][name="${await field.getAttribute("name")}"]:not(:checked):not([disabled])`,
+      );
+      if ((await other.count()) === 0) continue;
+      await other.first().check({ force: true });
+    } else if (kind === "select") {
+      const at = await field.evaluate((el: HTMLSelectElement) =>
+        el.options.length > 1 ? el.selectedIndex : -1,
+      );
+      if (at < 0) continue;
+      await field.selectOption({ index: at === 0 ? 1 : 0 });
+    } else {
+      await field.focus();
+      await page.keyboard.press("End");
+      await page.keyboard.type("1");
+    }
+    return true;
+  }
+  return false;
+}
+
+/** The saved full number is shown whole in its field: nothing scrolled out of the box (rt2 visual review 2). */
+async function expectNumberFits(page: Page, where: string) {
+  const number = page.getByLabel("Udyam registration number");
+  await expect(number).toHaveValue("UDYAM-WB-00-0000001");
+  const m = await number.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+  expect(
+    m.scroll,
+    `${where}: the number's text (${m.scroll}px) within its field (${m.client}px)`,
+  ).toBeLessThanOrEqual(m.client);
 }
 
 async function shot(page: Page, name: string, fullPage = true) {
@@ -179,12 +252,23 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
       await settled(page);
       await expect(page.getByLabel("Udyam registration number")).toHaveValue("UDYAM-WB-00-0000001");
       await expect(page.getByLabel("Enterprise category")).toHaveValue("small");
+      await expectNumberFits(page, tag);
       await axe(page, `company filled ${tag}`);
       await page
         .getByLabel("Udyam registration number")
         .evaluate((el) => el.scrollIntoView({ block: "center" }));
       await shot(page, `company-filled-${tag}`);
     });
+
+    // rt2 visual review 2: at 1024 with the side menu open (the narrowest the two-column form gets), and with it closed, the full number shows whole
+    await page.setViewportSize({ width: 1024, height: 900 });
+    for (const nav of ["expanded", "collapsed"]) {
+      await page.addInitScript((v) => localStorage.setItem("ta-admin-nav", v), nav);
+      await page.goto("/settings/company");
+      await settled(page);
+      await expectNumberFits(page, `1024 menu ${nav}`);
+    }
+    await page.addInitScript(() => localStorage.removeItem("ta-admin-nav"));
 
     // cleared and saved: the key is sent as null, so the number is gone (L8)
     await page.goto("/settings/company");
@@ -216,6 +300,54 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
       expect(f.ring, `visible focus on #${f.id}`).toBe(true);
     }
     expect(seen.slice(0, 2)).toEqual(["f-udyam-number", "f-udyam-category"]);
+  });
+
+  test("Settings: a field reached by Tab stops clear of the Unsaved changes bar, on every page that has it", async ({
+    page,
+  }) => {
+    for (const [width, height] of [
+      [1280, 900],
+      [768, 1024],
+      [390, 844],
+    ] as const) {
+      await page.setViewportSize({ width, height });
+      for (const slug of BAR_PAGES) {
+        await page.goto(`/settings/${slug}`);
+        await settled(page);
+        if (!(await makeDirty(page))) {
+          expect(slug, "only Gateways has nothing to change locally").toBe("gateways");
+          continue;
+        }
+        await expect(page.locator(".savebar")).toBeVisible();
+        await page.evaluate(() => window.scrollTo(0, 0));
+        await page.locator("main form").first().locator(FIELD).first().focus();
+        const under: string[] = [];
+        for (let i = 0; i < 200; i++) {
+          await page.keyboard.press("Tab");
+          // two frames: the browser's own scroll, then the bar's (SaveBar measures after a frame)
+          const r = await page.evaluate(async () => {
+            await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+            const a = document.activeElement as HTMLElement | null;
+            const bar = document.querySelector(".savebar");
+            if (!a || !bar || bar.contains(a)) return null;
+            const box = a.getBoundingClientRect();
+            const label = `#${a.id || a.getAttribute("name") || a.tagName.toLowerCase()}`;
+            return {
+              label,
+              bottom: Math.round(box.bottom),
+              barTop: Math.round(bar.getBoundingClientRect().top),
+              sized: box.height > 0,
+            };
+          });
+          if (r === null) break; // the bar's own buttons come last: every field of the form was passed
+          if (r.sized && r.bottom > r.barTop)
+            under.push(`${r.label} ends at ${r.bottom}px, the bar starts at ${r.barTop}px`);
+        }
+        expect(under, `/settings/${slug} at ${width}: ${under.join("; ")}`).toEqual([]);
+        await page.getByRole("button", { name: "Discard" }).click();
+        await expect(page.locator(".savebar")).toHaveCount(0);
+      }
+    }
   });
 
   test("Settings › Tax: the signatory switch says which documents it covers [ADM-INV-06]", async ({
@@ -277,22 +409,34 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
         await item.evaluate((el) => el.scrollIntoView({ block: "center" }));
         await shot(page, `note-blocker-${tag}`, false);
 
-        // the proforma's advance dialog: refused by the server with the same line and link
+        // the note dialog, by keyboard: the server refuses the issue; the refusal box is announced (role alert) and takes the focus, inside the dialog
+        // (rt2 visual review 1: focus fell to <body> once the pressed button was disabled)
+        await page.getByRole("button", { name: "Issue debit note" }).press("Enter");
+        const noteDialog = page.getByRole("dialog");
+        await noteDialog.getByRole("button", { name: "Issue debit note" }).press("Enter");
+        await expect(noteDialog.locator(".note-final")).toBeVisible();
+        await noteDialog.getByRole("button", { name: "Issue debit note" }).press("Enter");
+        await refusalHasFocus(page, LINE1);
+        await axe(page, `note dialog refused ${tag}`);
+        await shot(page, `note-dialog-refused-${tag}`, false);
+        await page.keyboard.press("Escape");
+        await expect(noteDialog).toHaveCount(0);
+
+        // the proforma's advance dialog: refused by the server with the same line and link; the same focus and role
         await page.goto(`/invoices/${encodeURIComponent(draft.body.id)}`);
         await settled(page);
         await page.getByRole("button", { name: "Issue tax invoice for payment received" }).first().click();
         const dialog = page.getByRole("dialog");
         await dialog.getByLabel("Amount received").fill("100");
         await dialog.getByLabel("Payment reference").fill("SAMPLE-UTR-0001");
-        await dialog.getByRole("button", { name: "Issue tax invoice for payment received" }).click();
+        await dialog.getByRole("button", { name: "Issue tax invoice for payment received" }).press("Enter");
+        await refusalHasFocus(page, LINE1);
         const refused = dialog.locator(".blockers__item", { hasText: "Add the signature in" });
-        await expect(refused).toHaveText(LINE1);
         await expect(refused.getByRole("link", { name: "Settings › Company" })).toHaveAttribute(
           "href",
           "/settings/company",
         );
         await axe(page, `advance refused ${tag}`);
-        await refused.evaluate((el) => el.scrollIntoView({ block: "center" }));
         await shot(page, `advance-blocker-${tag}`, false);
         await page.keyboard.press("Escape");
       });

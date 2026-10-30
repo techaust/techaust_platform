@@ -2259,6 +2259,13 @@ input[readonly] {
   }
 }
 
+/* Settings › Company, the Udyam row (rt2 visual review 2): a full number (UDYAM-WB-00-0000001, spaced as a GSTIN) needs about 14rem of field (measured
+   224px), more than half the form at 1024 with the side menu open (220px). 17rem leaves room for a larger text setting. The two fields sit side by side only while the number has that room; else the category goes
+   under it, at any window or menu width. */
+.form-grid.form-grid--udyam {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+}
+
 .settings-rows {
   margin-bottom: var(--space-6);
   border-bottom: 1px solid var(--color-border);

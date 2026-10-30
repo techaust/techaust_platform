@@ -1,7 +1,7 @@
 // A modal dialog on the native <dialog> element: showModal() gives the top layer, an inert page behind, focus
 // inside and Escape to cancel, which is the WAI-ARIA dialog pattern without a library. Focus goes back to the
 // control that opened it.
-import { type ReactNode, type Ref, useEffect, useId, useRef } from "react";
+import { type ReactNode, type Ref, useEffect, useId, useRef, useState } from "react";
 
 export function Modal(props: {
   open: boolean;
@@ -61,4 +61,22 @@ export function Modal(props: {
       )}
     </dialog>
   );
+}
+
+/**
+ * A server's refusal inside a dialog (its blocker lines or its error line) takes the focus once it is drawn: the pressed button was disabled
+ * while busy, so focus would otherwise fall to `<body>` (WCAG 2.4.3, 4.1.3; rt2 visual review 1). Give `ref` to the refusal (focusable by
+ * script only: `tabIndex={-1}`) and call `show()` after setting it. It is brought to the top of the dialog's view, never "nearest": the dialog's
+ * sticky actions would cover its last lines (as the advance dialog's route choice, M5.2).
+ */
+export function useRefusalFocus() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [shown, setShown] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    if (shown === 0 || !el) return;
+    el.focus({ preventScroll: true });
+    el.scrollIntoView({ block: "start" });
+  }, [shown]);
+  return { ref, show: () => setShown((n) => n + 1) };
 }
