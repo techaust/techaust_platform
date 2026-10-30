@@ -344,7 +344,7 @@ export type NoteLut = { fy: string; lut: { fy: string; arn: string } | null };
 /**
  * rt1 T2 (Researched 2026-10-30, Rule 96A(1) CGST Rules, Notification 37/2017-CT (08-C RA-19, Q39)): a debit note on an export invoice under LUT relies on the LUT of
  * the FY of its OWN issue day, not the invoice's. Null for a credit note and for a parent not under LUT (nothing to judge). The LUT route is `export_mode` 'lut' or
- * a frozen supply of `export_lut` (an invoice issued on the settings' route leaves `export_mode` empty). `now` is the one instant of the issue.
+ * the parent's frozen `supply_type` column `export_lut` (an invoice issued on the settings' route leaves `export_mode` empty). `now` is the one instant of the issue.
  */
 export function noteLutOf(
   kind: NoteKind,
@@ -352,8 +352,8 @@ export function noteLutOf(
   settings: InvoiceSettings,
   now: number,
 ): NoteLut | null {
-  if (kind !== "debit" || (p.row.export_mode !== "lut" && p.computed.supply.type !== "export_lut"))
-    return null;
+  // rt1 F5: the parent's frozen `supply_type` column, the one the freeze WHERE, the trigger and `explainNote` read (lead D7)
+  if (kind !== "debit" || (p.row.export_mode !== "lut" && p.row.supply_type !== "export_lut")) return null;
   const fy = fyOf(now).token;
   return { fy, lut: lutFor(fy, lutsOf(settings.tax)) };
 }
