@@ -36,6 +36,11 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # docs/08 §3.5 (full audit A1 3, owner's yes 2026-10-30): the pinned pnpm asks the registry the install already used for the
+      # advisories of every package in the lockfile; any high or critical one fails the job unless a reviewed, dated entry in
+      # scripts/dependency-audit-allow.json lets it through (expired, stale and malformed entries fail too). No secret is used.
+      - name: Dependency audit (high and critical advisories, reviewed allow-list)
+        run: node scripts/dependency-audit.mjs
       - name: Lint (Biome)
         run: pnpm lint
       - name: Type-check

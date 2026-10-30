@@ -1,0 +1,98 @@
+[
+  {
+    "advisory": "GHSA-mrhx-c7xc-m3w5",
+    "package": "zod",
+    "reason": "PRODUCTION dependency (zod 4.6.5 in the Workers; also 3.25.76 and 4.4.3 in dev tools). Fixed in zod 4.6.6. Request bodies are capped at 16 or 32 KB before any schema runs, which limits the collections a request can carry; not assessed further. Temporary: the version update needs the lead's go-ahead (agents change no versions).",
+    "added": "2026-10-30",
+    "addedBy": "builder, audit-workflows (A1 3); for the lead to confirm",
+    "expires": "2026-11-06"
+  },
+  {
+    "advisory": "GHSA-xjj6-f33q-929c",
+    "package": "undici",
+    "reason": "Dev and build tools only (astro > unifont at build time; miniflare in tests and wrangler dev). Fixed in undici 7.30.1 and 8.12.2; waits for updates of astro and the Cloudflare tooling. Temporary.",
+    "added": "2026-10-30",
+    "addedBy": "builder, audit-workflows (A1 3); for the lead to confirm",
+    "expires": "2026-11-13"
+  },
+  {
+    "advisory": "GHSA-4w7w-5xrc-9h26",
+    "package": "undici",
+    "reason": "Dev and build tools only (astro > unifont at build time; miniflare in tests and wrangler dev). Fixed in undici 7.30.1 and 8.12.2; waits for updates of astro and the Cloudflare tooling. Temporary.",
+    "added": "2026-10-30",
+    "addedBy": "builder, audit-workflows (A1 3); for the lead to confirm",
+    "expires": "2026-11-13"
+  },
+  {
+    "advisory": "GHSA-2m5v-pch6-74hx",
+    "package": "undici",
+    "reason": "Dev and build tools only (astro > unifont at build time; miniflare in tests and wrangler dev). Fixed in undici 7.30.1 and 8.12.2; waits for updates of astro and the Cloudflare tooling. Temporary.",
+    "added": "2026-10-30",
+    "addedBy": "builder, audit-workflows (A1 3); for the lead to confirm",
+    "expires": "2026-11-13"
+  },
+  {
+    "advisory": "GHSA-qrxm-fqhp-jwvm",
+    "package": "undici",
+    "reason": "Dev and build tools only (astro > unifont at build time; miniflare in tests and wrangler dev). Fixed in undici 7.30.1 and 8.12.2; waits for updates of astro and the Cloudflare tooling. Temporary.",
+    "added": "2026-10-30",
+    "addedBy": "builder, audit-workflows (A1 3); for the lead to confirm",
+    "expires": "2026-11-13"
+  },
+  {
+    "advisory": "GHSA-587h-7wmj-h5pm",
+    "package": "vite",
+    "reason": "Dev tools only (vite 8.3.2 under vitest; the dev server's open-in-editor check on Windows). Fixed in vite 8.3.3; waits for a vitest update. Temporary.",
+    "added": "2026-10-30",
+    "addedBy": "builder, audit-workflows (A1 3); for the lead to confirm",
+    "expires": "2026-11-13"
+  },
+  {
+    "advisory": "GHSA-wq5f-xc86-pv6w",
+    "package": "sharp",
+    "reason": "Dev tools only (sharp 0.35.4 under miniflare in tests; the website's own sharp is already 0.35.5). Fixed in sharp 0.35.5; waits for a Cloudflare tooling update. Temporary.",
+    "added": "2026-10-30",
+    "addedBy": "builder, audit-workflows (A1 3); for the lead to confirm",
+    "expires": "2026-11-13"
+  },
+  {
+    "advisory": "GHSA-ph9p-34f9-6g65",
+    "package": "tmp",
+    "reason": "Dev tools only (@lhci/cli, Lighthouse CI on the CI runner with no secrets). Fixed in tmp 0.2.6; waits for an @lhci/cli update. Temporary.",
+    "added": "2026-10-30",
+    "addedBy": "builder, audit-workflows (A1 3); for the lead to confirm",
+    "expires": "2026-11-13"
+  },
+  {
+    "advisory": "GHSA-jmr9-qjv8-65gv",
+    "package": "extract-zip",
+    "reason": "Dev tools only (@lhci/cli > lighthouse > puppeteer-core > @puppeteer/browsers, on the CI runner with no secrets). No fixed release yet. Temporary.",
+    "added": "2026-10-30",
+    "addedBy": "builder, audit-workflows (A1 3); for the lead to confirm",
+    "expires": "2026-11-13"
+  },
+  {
+    "advisory": "GHSA-7pqw-9j4j-h8q3",
+    "package": "extract-zip",
+    "reason": "Dev tools only (@lhci/cli > lighthouse > puppeteer-core > @puppeteer/browsers, on the CI runner with no secrets). No fixed release yet. Temporary.",
+    "added": "2026-10-30",
+    "addedBy": "builder, audit-workflows (A1 3); for the lead to confirm",
+    "expires": "2026-11-13"
+  },
+  {
+    "advisory": "GHSA-c475-qrg2-pj4r",
+    "package": "basic-ftp",
+    "reason": "Dev tools only (@lhci/cli's proxy support, on the CI runner with no secrets; no proxy is configured). Fixed in basic-ftp 6.2.1; waits for an @lhci/cli update. Temporary.",
+    "added": "2026-10-30",
+    "addedBy": "builder, audit-workflows (A1 3); for the lead to confirm",
+    "expires": "2026-11-13"
+  },
+  {
+    "advisory": "GHSA-27r3-jxmh-p828",
+    "package": "body-parser",
+    "reason": "Dev tools only (@lhci/cli's local express server on the CI runner). Fixed in body-parser 1.20.9; waits for an @lhci/cli update. Temporary.",
+    "added": "2026-10-30",
+    "addedBy": "builder, audit-workflows (A1 3); for the lead to confirm",
+    "expires": "2026-11-13"
+  }
+]
