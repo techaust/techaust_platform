@@ -5,8 +5,8 @@
 /**
  * The shape of a Udyam registration number, canonical form only (upper case, no spaces): `UDYAM-XX-00-0000000` (two letters for the state, two digits, seven
  * digits). The form trims and upper-cases what is typed; the schema accepts only this (L5: shape only, no cross-check with the GSTIN's state).
- * OPEN (08-C RB-39): the official format source (the Udyam portal or the MSME notification) was not read; this is the shape of the owner's own number and of
- * the 07-ZC line 4 hint.
+ * OPEN (08-C RB-39): is UDYAM-XX-00-0000000 the official format? The Udyam portal and the MSME notification were not read; this is the shape of the owner's
+ * own number and of 07-ZC line 4.
  */
 export const UDYAM_NUMBER_RE = /^UDYAM-[A-Z]{2}-\d{2}-\d{7}$/;
 

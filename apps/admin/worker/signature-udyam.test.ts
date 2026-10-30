@@ -242,6 +242,38 @@ describe("T10: the Udyam number in Settings › Company [ADM-SET-01; 07-ZC lines
     expect((await company(s)).value.udyam).toBeNull();
     expect((await company(s)).value.signature).toMatchObject({ sha256: FROZEN_SIGNATURE.sha256 });
   });
+
+  it("L8: a PUT without the `udyam` key keeps the stored number (a tab opened before the field existed); only an explicit null clears it", async () => {
+    const s = await owner();
+    const UD = { number: "UDYAM-WB-01-0012345", category: "micro" };
+    expect((await putUdyam(s, UD)).status).toBe(200);
+    // an older form's body: every other field, no `udyam` key, and another change that must still be saved
+    const got = await company(s);
+    const { udyam: _u, ...withoutKey } = got.value as J;
+    const old = await call("/settings/groups/company", {
+      cookie: s.cookie,
+      method: "PUT",
+      body: { version: got.version, value: { ...withoutKey, principalPlace: "Balurghat office" } },
+    });
+    expect(old.status, await old.clone().text()).toBe(200);
+    const after = await company(s);
+    expect(after.version).not.toBe(got.version);
+    expect(after.value.principalPlace).toBe("Balurghat office");
+    expect(after.value.udyam).toEqual(UD);
+    expect(after.value.signature).toMatchObject({ sha256: FROZEN_SIGNATURE.sha256 });
+    // the explicit null still clears it, and a later PUT without the key keeps it cleared
+    expect((await putUdyam(s, null)).status).toBe(200);
+    expect((await company(s)).value.udyam).toBeNull();
+    const cleared = await company(s);
+    const { udyam: _n, ...again } = cleared.value as J;
+    const res = await call("/settings/groups/company", {
+      cookie: s.cookie,
+      method: "PUT",
+      body: { version: cleared.version, value: again },
+    });
+    expect(res.status).toBe(200);
+    expect((await company(s)).value.udyam ?? null).toBeNull();
+  });
 });
 
 describe("T10: the Udyam number is frozen only on a tax invoice [ADM-INV-01; 08-C RB-39]", () => {
@@ -327,6 +359,8 @@ describe("L6: with no Udyam number and the switch on, the issuer block is the M5
     reverseChargeText: SETTINGS_DEFAULTS.tax.reverseChargeText,
     sender: { staffId: "s1", name: "N", email: SETTINGS_DEFAULTS.email.senders.billing },
   };
+  /** The SHA-256 (hex) of `invoiceSealOf` over the M5.1 block below and this fixture's document (F5 of the rt2 early check). */
+  const GOLDEN_M51_SEAL = "0f904eacf4c1197dd50b7eb627379da51bbc66ceeb4c930adccd4bfaa8a88d3c";
   const parts = (issuer: unknown) => ({
     document: {
       type: "tax_invoice",
@@ -345,6 +379,8 @@ describe("L6: with no Udyam number and the switch on, the issuer block is the M5
 
   it("every type without a saved number gives exactly that block, and the same seal", async () => {
     const golden = (await invoiceSealOf(parts(M51))).snapshotSha256;
+    // F5: the M5.1 seal of this fixture as a literal, so a change to the seal itself (not only to the block) fails here too
+    expect(golden).toBe(GOLDEN_M51_SEAL);
     for (const type of ["tax_invoice", "export_invoice", "proforma"]) {
       const block = issuerOf(settings(), [], who, "INR", { type, advance: false });
       expect(block, type).toStrictEqual(M51);

@@ -486,15 +486,17 @@ export const settings = new Hono<AppEnv>()
       });
     // The company form can neither set nor clear the signature image (only PUT/DELETE /settings/signature do): whatever the body says,
     // the stored reference is kept, so a form that never heard of the field cannot drop it.
-    // T10 (rt2): the Udyam registration is the form's own field: `udyam: {number, category}` sets it, `null` (or no key) clears it. The schema accepts only the
+    // T10 (rt2): the Udyam registration is the form's own field: `udyam: {number, category}` sets it and only an explicit `udyam: null` clears it (L8, lead
+    // 2026-10-31); a body without the key keeps the stored number, so a tab opened before the field existed cannot wipe it. The schema accepts only the
     // canonical `UDYAM-XX-00-0000000` (L5: the form trims and upper-cases first), so anything else is 400 with 07-ZC line 4 on `udyam.number`. An issued tax invoice
     // keeps the number it froze (the issuer block is sealed), whatever is saved later.
     if (group === "company") {
-      const stored = await loadRow(c.env.DB, "company");
-      const keep = resolveSetting("company", stored?.value).signature;
+      const stored = resolveSetting("company", (await loadRow(c.env.DB, "company"))?.value);
       const value = env.data.value;
-      if (typeof value === "object" && value !== null && !Array.isArray(value))
-        return save(c, "company", { ...value, signature: keep }, env.data.version);
+      if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+        const keepUdyam = !Object.hasOwn(value, "udyam") && stored.udyam ? { udyam: stored.udyam } : {};
+        return save(c, "company", { ...value, ...keepUdyam, signature: stored.signature }, env.data.version);
+      }
     }
     // M5.2 (early check 3): a saved `tax` row never keeps the deprecated single `lut`: it is folded into `luts` (unless that FY is listed) and cleared.
     if (group === "tax") {
