@@ -543,14 +543,34 @@ function Entries(props: {
       cell: (e) => <time dateTime={e.workDate}>{dayText(e.workDate)}</time>,
     },
     ...(props.showPeople
-      ? [{ key: "who", header: "Person", cell: (e: TimeEntry) => e.userName ?? "A former staff member" }]
+      ? [
+          {
+            key: "who",
+            header: "Person",
+            cell: (e: TimeEntry) => (
+              <span className="entry-person">{e.userName ?? "A former staff member"}</span>
+            ),
+          },
+        ]
       : []),
     {
       key: "target",
       header: "Project or care plan",
+      // A project's code is one unit (never broken at its hyphen); a care plan's label wraps between its words (final sweep review 2).
       cell: (e) => {
         const t = targetOf(e);
-        return t ? <span className="docno-label">{t.label}</span> : <span className="muted">Not set</span>;
+        if (!t) return <span className="muted">Not set</span>;
+        return (
+          <span
+            className={
+              t.kind === "project"
+                ? "docno-label entry-target entry-target--code"
+                : "docno-label entry-target"
+            }
+          >
+            {t.label}
+          </span>
+        );
       },
     },
     {
@@ -574,7 +594,8 @@ function Entries(props: {
     {
       key: "note",
       header: "Note",
-      width: "30%",
+      // No fixed share: a fixed 30 % held the person and the care plan at their narrowest even with room to spare (final sweep
+      // review 2); the table now gives the room by content, the note (up to 40ch) taking the most.
       cell: (e) =>
         e.note ? <span className="entry-note">{e.note}</span> : <span className="muted">None</span>,
     },
