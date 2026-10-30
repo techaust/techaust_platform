@@ -288,3 +288,39 @@ Also not built yet: "Log time for" shows the chosen person's email under the fie
 All fixed in this task, in two parallel parts on separate files, then a narrow re-check and the PR:
 - **Builder** (`fix/final-sweep-b2`): 1, 3, 4, 5, 6, 7, 8 (logic, SQL, the error helper, the Worker's bank lines word for word from 07-ZA 7, ids). Files: `apps/admin/worker/dashboard.ts`, `apps/admin/src/lib/dashboard.ts`, `apps/admin/src/api.ts`, `apps/admin/src/lib/reports-api.ts`, `apps/admin/worker/settings.ts`, `apps/portal/worker/{invoices,doc-token,invoice-summary}.ts`, a core `coverLines` used by the portal component and the PDF layout, and the three screen files only to delete the ids.
 - **Designer** (`fix/final-sweep-d4`): 2 and the "Log time for" email under the field. Files: `apps/admin/src/care.css`, `apps/admin/src/routes/time/entry-dialog.tsx` (and `lib/people.ts` if needed). Not the builder's files.
+
+## Designer report, round 4 (designer, Opus 5.5 high, 2026-10-30)
+Branch `fix/final-sweep-d4` from `origin/fix/final-sweep` 1beb3c66; fix commit 4ae74eeb, this report the last commit (both pushed). Skills: `frontend-design:frontend-design`, loaded first (it kept the fix inside the table's existing language: no new column, no new type, the gutter and the minimums chosen so the note is the one column that wraps, the email under the field set as the Date field's own quiet echo line). `dataviz` not loaded (no chart or stat tile); no other docs/14 §9 skill fits screen work.
+
+### Built
+- **Review item 2** (the Time page's Entries table at 1280 beside the open menu). Reproduced first (`R4-before-1280-light-open.png`: "PRJ-" and "X0001" on two lines, names on three to five lines, the box scrolling 29 px). Seven columns share 900 px there, and before the change their narrowest widths already added up to 931 px, so the fix sets the minimums and makes room for them:
+  - `care.css`: from 48rem a 12 px gutter in this table (was 16 px); the person's name at least 7.5rem (a first and last name on one or two lines); the project or care plan at least 6.5rem; a project's code `nowrap` (never broken at its hyphen; a care plan's label "Care plan X0001 (Growth)" wraps between its words); the note at least 8rem, up to 40ch, and it takes the wrap. On a phone's card the note now spans the card (it sat in half the card beside an empty cell).
+  - `routes/time.tsx` (outside the listed files, not one of the builder's; needed because CSS alone can't tell the columns apart or a code from a care plan's label): the person and the target cells get a class each (`entry-person`, `entry-target`, `entry-target--code` for a project), and the note column loses its fixed `width: "30%"`, which held the person and the care plan at their narrowest even at 1600 px. No words changed.
+- **"Log time for"** (the lead's note after round 3): while the chosen person's name repeats in the list, their work email shows whole under the field (`.hint`, `overflow-wrap: anywhere`), and the select names it in `aria-describedby` (with the error, when there is one). Never for "(you)". `sharedNameEmail` in `lib/people.ts` (the same name comparison as `personLabels`), tested in `people.test.ts`. No new words: the email is the one the list already shows.
+
+### Screenshots (main checkout `.logs/shots/sweep-fix/`, "Round 4" in `progress.md` there)
+- `R4-before-1280-light-open.png`: the review's finding, before the fix.
+- `R4-time-1280-{light,dark}-open.png`: beside the open menu: codes whole, care plan on two lines, the note wraps, no inner scroll. `R4-time-1280-{light,dark}-closed.png`: menu closed, the names on one line where they fit, notes on one or two lines.
+- `R4-time-1600-light-open.png`, `R4-time-1600-dark-closed.png`, `R4-time-1920-dark-open.png`: wide screens, every column at ease.
+- `R4-time-1024-light-open.png`, `R4-time-1024-dark-closed.png`: 1024 scrolls inside its box by design (A9; 248 px with the menu open, 64 closed), the page never.
+- `R4-time-768-{light,dark}-open.png`, `R4-time-375-{light,dark}-open.png`, `R4-time-320-light-open.png`, `R4-time-cards-375-{light,dark}.png`: cards, the note across the card.
+- `R4-time-focus-1280-{light,dark}.png`: Edit focused (2 px ring) in the table.
+- `R4-log-time-for-{375,1280}-{light,dark}.png`: the second "Saraswati Venkataraman (sample)" chosen, their email whole under the field (at 375 the closed select cuts it; the line below shows it).
+
+### Commands and results
+- `pnpm exec biome check` on the five changed files: clean.
+- Admin `vitest run src/`: 27 files, 481 passed.
+- Admin e2e `E2E_SAMPLE=1`, offset 100, through the queue: first run 5 passed, 1 failed ("375, 1280 and 1600": the page closed after 2.5 min); a re-run of that test alone timed out on the client page at 375, where the trace shows two Vite dependency versions (`?v=46592f27` and `?v=08a38889`): the dev server I had started by hand re-optimised its dependencies mid-run. With that server stopped and a fresh one started by Playwright: **6/6 passed (10.5 min)**.
+- `pnpm check` (queue): exit 0. Whole-repository `pnpm lint` (queue), last: exit 0, 1,351 files, 10 warnings and 8 infos, all in the same untouched files as round 3 (admin `worker/reports.test.ts`, web `src/lib/catalogue.ts`, core `src/public-text.ts`, three pdf tests).
+- My own checks (a Playwright script with the e2e Owner's storage state; the MCP browser can't set `__Host-` cookies): Time at 320, 375, 768, 1024, 1280 (menu open and closed), 1600 and 1920, both themes: page sideways 0 everywhere; the Entries box doesn't scroll from 1280 up; axe 0 (WCAG 2.2 AA tags) on every shot and in the dialog; no console errors; Tab goes through Edit and Delete in row order, each with a visible 2 px outline, and no trap.
+- Local data (local D1 only, labelled): the e2e sample, two staff "Saraswati Venkataraman (sample)" (`@example.test`), care-plan and project entries this week, a second project with a long name. Dev servers stopped, browsers closed.
+
+### Not verified
+Safari, Firefox, phones, NVDA, staging. Real names: the sample suffix "(sample)" puts "Saraswati Venkataraman (sample)" on three lines at 1280 beside the open menu; the same name without it takes two.
+
+### Placeholder text
+None.
+
+### Open questions
+- At 1280 beside the open menu the note column is about 130 px wide, so a long note wraps to five or six lines; that is the trade-off for no inner scroll with seven columns. Closing the menu gives it about 260 px. Say if you'd rather keep the 1280 table scrolling and give the note more room.
+- Not this round's item, seen on the way: in the week grid above at 1280 beside the open menu, the day cells wrap "1 h 45 min" to two lines (they fit on one with the menu closed). Left as it was; say if it should be a follow-up.
