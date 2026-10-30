@@ -167,7 +167,11 @@ export async function prepareNoteIssue(
     blockers,
     recipient: noteRecipientOf(p, i.contact),
     // A credit note prints no bank block (nothing is owed on it), a debit note the invoice's: the same issuer block as an invoice of the currency.
-    issuer: issuerOf(settings, kind === "credit" ? [] : i.bank, who, kind === "credit" ? "INR" : d.currency),
+    // T4 (L2): a note always freezes the signature (no `signatory` key, whatever the checklist's switch says), and never the Udyam number
+    issuer: issuerOf(settings, kind === "credit" ? [] : i.bank, who, kind === "credit" ? "INR" : d.currency, {
+      type: d.type,
+      advance: false,
+    }),
     // No footer notes on a credit note; a debit note pins the newest `invoice` terms (LD52).
     terms: kind === "credit" ? null : i.newestTerms,
     // Nothing is owed on a credit note: no due date. A debit note is due by the client's terms.

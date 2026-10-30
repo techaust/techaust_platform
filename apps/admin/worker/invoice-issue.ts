@@ -238,7 +238,10 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
   const recipient = note ? note.recipient : recipientOf(ctx.client, ctx.contact);
   const issuer = note
     ? note.issuer
-    : issuerOf(ctx.settings, ctx.bank, { id: u.id, name: u.name }, d.currency);
+    : issuerOf(ctx.settings, ctx.bank, { id: u.id, name: u.name }, d.currency, {
+        type: d.type,
+        advance: false,
+      });
   const terms = note ? note.terms : ctx.newestTerms;
   // LD23: the optional extra export note, pinned at issue: the NEWEST block, when the draft asked for one (never on a note).
   const newestDeclaration =

@@ -257,6 +257,11 @@ describe("errors and blockers (07-T §7, §8)", () => {
     expect(noteBlockerLine({ code: "supplier_gstin" }, "credit", "INR")).toBe(
       "Add the company's GSTIN in Settings › Company.",
     );
+    // T4 (rt2): 07-ZC line 1, the same for both kinds
+    for (const kind of ["credit", "debit"] as const)
+      expect(noteBlockerLine({ code: "signature_missing" }, kind, "INR")).toBe(
+        "Add the signature in Settings › Company. Credit notes, debit notes and invoices for a payment received always carry it.",
+      );
     expect(noteBlockerLine({ code: "notes_limit" }, "debit", "INR")).toBe(
       "This invoice already has 20 debit notes, the most it can have.",
     );

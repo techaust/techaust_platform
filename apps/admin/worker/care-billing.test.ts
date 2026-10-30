@@ -755,6 +755,26 @@ describe("issueCareDraft: the system issues only what the Owner authorised [LD58
     );
   });
 
+  it("T10 (rt2): an automatic care invoice is a tax invoice, so it freezes the saved Udyam number in its sealed issuer block [ADM-INV-01; 08-C RB-39]", async () => {
+    const udyam = { number: "UDYAM-WB-01-0012345", category: "micro" };
+    await putCompany({ udyam });
+    try {
+      const w = await world();
+      clock(at("2026-11-05"));
+      const d = await draft(w);
+      const r = await issueCareDraft(pdfQueue().env, { documentId: d.documentId as string });
+      expect(r.result).toBe("issued");
+      const issuer = JSON.parse(
+        (await one<{ issuer: string }>("SELECT issuer FROM documents WHERE id = ?", d.documentId))?.issuer ??
+          "{}",
+      );
+      expect(issuer.company.udyam).toEqual(udyam);
+      expect(issuer).not.toHaveProperty("signatory");
+    } finally {
+      await putCompany();
+    }
+  });
+
   it("the guard that refuses a line carrying '[Placeholder' stays (a safety net, not copy): the Owner's own issue is 409 line_text_placeholder", async () => {
     const w = await world();
     clock(at("2026-11-05"));

@@ -600,6 +600,8 @@ export async function issueCareDraft(env: CareEnv, args: { documentId: string })
     ctx.bank,
     { id: "system", name: ctx.settings.company.tradeName },
     d.currency,
+    // T10: an automatic care invoice is a tax invoice, so it carries the Udyam number when one is saved
+    { type: d.type, advance: false },
   );
   const terms = ctx.newestTerms;
   const extras = headerExtrasOf({

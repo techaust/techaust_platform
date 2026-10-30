@@ -11,6 +11,8 @@ import {
   issueBlockers,
   lutFor,
   PROFORMA_NOTICE,
+  signatureRequired,
+  udyamPrintedOn,
 } from "@techaust/core/invoices";
 import { milestoneTotals } from "@techaust/core/projects";
 import { percentFromBp } from "@techaust/core/schedule-text";
@@ -262,19 +264,30 @@ export function recipientOf(client: ClientRow, contact: ContactFacts | null): Re
   };
 }
 
+/** What the issuer block depends on besides the settings (L2): the document type, and whether it is the tax or export invoice for a payment received. */
+export type IssuerKind = { readonly type: string; readonly advance: boolean };
+
 /**
  * The supplier block: the company as saved, the INR bank block (and, on a USD document, the SWIFT block, M5.2), the signature as a reference (LD11),
  * and the sender (the billing address and who issued it). An INR document's block has no `swift` key, so it is the M5.1 block unchanged.
+ * T4 (rt2, L2): a credit or debit note and an invoice for a payment received always freeze the signature reference and never `signatory: false` (core
+ * `signatureRequired`; Researched 2026-10-30, Rule 53(1A) CGST Rules (08-C RA-22); s.31(3)(d) CGST Act and Rule 50 CGST Rules (08-C RA-17)): the checklist's switch is
+ * ignored for them. T10: a tax invoice issued while a Udyam number is saved freezes it as `company.udyam` (owner, 2026-10-31; Researched 2026-10-30, MSMED ss.15-16
+ * (08-C RB-39(a))). Neither key is written when absent (never `undefined` or `null`, L6), so every other block, and every earlier seal, is unchanged.
  */
 export function issuerOf(
   s: InvoiceSettings,
   bank: readonly BankRow[],
   who: { id: string; name: string },
-  currency: string = "INR",
+  currency: string,
+  kind: IssuerKind,
 ): InvoiceIssuerSnapshot {
   const c = s.company;
   const sig = c.signature;
-  const signatoryOff = s.tax.invoiceChecklist.signatory === false;
+  const signatoryOff =
+    !signatureRequired(kind.type, kind.advance) && s.tax.invoiceChecklist.signatory === false;
+  const udyam =
+    udyamPrintedOn(kind.type) && c.udyam ? { number: c.udyam.number, category: c.udyam.category } : null;
   return {
     company: {
       tradeName: c.tradeName,
@@ -286,6 +299,7 @@ export function issuerOf(
       ...(c.documentsEmail ? { email: c.documentsEmail } : {}),
       ...(c.documentsPhone ? { phone: c.documentsPhone } : {}),
       ...(c.principalPlace ? { principalPlace: c.principalPlace } : {}),
+      ...(udyam ? { udyam } : {}),
     },
     bank: { inr: inrBankOf(bank), ...(currency === "USD" ? { swift: swiftBankOf(bank) } : {}) },
     // 07-W 5.6 (08-C RA-06): with the checklist's signatory item off, the choice is frozen here, so the PDF leaves the block out and a later settings change never alters it.
@@ -747,6 +761,8 @@ export function issueFactsOf(
     },
     advance: x.advance === true,
     b2cThresholdInrMinor: settings.tax.b2cDetailsThresholdInrMinor,
+    // T4: judged only where core `signatureRequired` says so (the advance invoice here)
+    signatureSaved: settings.company.signature != null,
   };
 }
 

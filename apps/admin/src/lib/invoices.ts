@@ -368,6 +368,9 @@ export function blockerLine(
       return "Add the company's GSTIN in Settings › Company.";
     case "supplier_state":
       return "Add the company's state in Settings › Company.";
+    // T4 (rt2): 07-ZC line 1 (approved 2026-10-31). A note shows the same line (`noteBlockerLine` falls through to here).
+    case "signature_missing":
+      return "Add the signature in Settings › Company. Credit notes, debit notes and invoices for a payment received always carry it.";
     case "recipient_legal_name":
       return "Add the client's legal name.";
     case "recipient_address":
@@ -443,6 +446,7 @@ export function blockerTarget(b: InvoiceBlocker, clientId: string): BlockerTarge
     case "supplier_address":
     case "supplier_gstin":
     case "supplier_state":
+    case "signature_missing":
       return { kind: "page", to: "/settings/company", place: "Settings › Company" };
     case "reverse_charge_text":
       return { kind: "page", to: "/settings/tax", place: "Settings › Tax" };
