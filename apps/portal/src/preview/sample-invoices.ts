@@ -120,15 +120,26 @@ export const SAMPLE_INVOICES: InvoiceSummary[] = [
     paidMinor: 2_000_000,
     creditedMinor: 0,
     balanceMinor: 3_310_000,
+    // final sweep P3: one line with a percent discount, one with an amount, as the PDF prints them
     lines: [
-      line(1, "Discovery workshop (sample)", 2000, "day", 1_000_000, 1_800_000, {
-        igst: 324_000,
-        rateBp: 1800,
-      }),
-      line(2, "Order portal build (sample)", 1000, "project", 3_000_000, 2_700_000, {
-        igst: 486_000,
-        rateBp: 1800,
-      }),
+      {
+        ...line(1, "Discovery workshop (sample)", 2000, "day", 1_000_000, 1_800_000, {
+          igst: 324_000,
+          rateBp: 1800,
+        }),
+        discountKind: "percent",
+        discountValue: 1000,
+        discount: "10 %",
+      },
+      {
+        ...line(2, "Order portal build (sample)", 1000, "project", 3_000_000, 2_700_000, {
+          igst: 486_000,
+          rateBp: 1800,
+        }),
+        discountKind: "fixed",
+        discountValue: 300_000,
+        discount: moneyText(300_000, "INR"),
+      },
     ],
     bank: INR_BANK,
     pdfReady: true,
@@ -167,6 +178,9 @@ export const SAMPLE_INVOICES: InvoiceSummary[] = [
     dueDate: day(4),
     currency: "INR",
     parentNumber: "TH/INV/2627/0004",
+    // final sweep P15: the note's invoice (openable, so linked when signed in) and its frozen reason with words typed for it
+    parentId: "inv-overdue",
+    noteReason: { code: "price_correction", text: "The rate on line 2 was typed lower than agreed (sample)" },
     totals: totals({ taxableMinor: 100_000, igstMinor: 18_000, totalMinor: 118_000 }),
     paidMinor: 0,
     creditedMinor: 0,
@@ -189,6 +203,8 @@ export const SAMPLE_INVOICES: InvoiceSummary[] = [
     dueDate: null,
     currency: "INR",
     parentNumber: "TH/INV/2627/0003",
+    parentId: "inv-paid",
+    noteReason: { code: "service_deficient", text: "" },
     totals: totals({ taxableMinor: 200_000, cgstMinor: 18_000, sgstMinor: 18_000, totalMinor: 236_000 }),
     paidMinor: 0,
     creditedMinor: 0,
@@ -220,6 +236,8 @@ export const SAMPLE_INVOICES: InvoiceSummary[] = [
     }),
     paidMinor: 1_180_000,
     creditedMinor: 236_000,
+    // final sweep P2: the "Credited ({numbers})" row
+    creditNotes: [{ id: "cn-1", numberDisplay: "TH/CN/2627/0001" }],
     balanceMinor: 0,
     lines: [
       line(1, "Monthly care plan, Essential (sample)", 1000, "month", 1_200_000, 1_200_000, {
