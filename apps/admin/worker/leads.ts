@@ -468,12 +468,13 @@ export const leads = new Hono<AppEnv>()
   })
 
   // ---- who a lead can be assigned to: active members whose role works leads (the owner picker and filter), and the caller ----
+  // Each with the work email, so the screen can tell two members with the same name apart (final sweep A20; staff only).
   .get("/assignees", async (c) => {
     const { results } = await c.env.DB.prepare(
-      `SELECT id, name FROM staff_users WHERE status = 'active' AND role IN (${LEAD_READERS.map((_, i) => `?${i + 1}`).join(", ")}) ORDER BY name COLLATE NOCASE, id`,
+      `SELECT id, name, email FROM staff_users WHERE status = 'active' AND role IN (${LEAD_READERS.map((_, i) => `?${i + 1}`).join(", ")}) ORDER BY name COLLATE NOCASE, id`,
     )
       .bind(...LEAD_READERS)
-      .all<{ id: string; name: string }>();
+      .all<{ id: string; name: string; email: string }>();
     return c.json({ me: actor(c).id, assignees: results });
   })
 

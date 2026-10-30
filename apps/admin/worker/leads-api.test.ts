@@ -1134,7 +1134,16 @@ describe("GET /leads/assignees: who a lead can be assigned to [ADM-LEAD-03]", ()
     expect(ids).not.toContain(accountant.id);
     expect(ids).not.toContain(gone.id);
     expect(ids.indexOf(owner.id)).toBeLessThan(ids.indexOf(s.id));
-    expect(Object.keys(body.assignees[0]).sort()).toEqual(["id", "name"]);
+    // the work email tells two members with the same name apart (final sweep A20)
+    expect(Object.keys(body.assignees[0]).sort()).toEqual(["email", "id", "name"]);
+    const ownerRow = await env.DB.prepare("SELECT email FROM staff_users WHERE id = ?1")
+      .bind(owner.id)
+      .first<{ email: string }>();
+    expect(body.assignees.find((a: { id: string }) => a.id === owner.id)).toEqual({
+      id: owner.id,
+      name: "Aaron Assignee Owner",
+      email: ownerRow?.email,
+    });
   });
 });
 

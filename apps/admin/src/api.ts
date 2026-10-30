@@ -295,7 +295,8 @@ export type LeadsQuery = {
   before?: string | undefined;
 };
 export type BoardColumn = { stage: LeadStage; count: number; leads: LeadItem[]; next: string | null };
-export type Assignee = { id: string; name: string };
+/** A member a lead can be assigned to; the work email tells two members with the same name apart (final sweep A20). */
+export type Assignee = { id: string; name: string; email: string };
 export type NewLead = {
   name: string;
   email: string;
@@ -1473,7 +1474,7 @@ export const api = {
   timeEntries: (q: TimeQuery = {}) => request<TimePage>(`/time${qs(q)}`),
   timeWeek: (q: TimeWeekQuery = {}) => request<TimeWeek>(`/time/week${qs(q)}`),
   timeTargets: (q: string, workDate?: string) => request<TimeTargets>(`/time/targets${qs({ q, workDate })}`),
-  timePeople: () => request<{ people: { id: string; name: string }[] }>("/time/people"),
+  timePeople: () => request<{ people: { id: string; name: string; email: string }[] }>("/time/people"),
   logTime: (body: NewTimeInput) =>
     request<{ id: string; createdAt: number; updatedAt: number }>("/time", { body }),
   updateTime: (id: string, body: TimePatch) =>
