@@ -1132,8 +1132,15 @@ describe("the proposal terms' due days follow Settings › Payment terms [FX-5 C
     expect(refused.status).toBe(400);
     const body = await json(refused);
     expect(body.error.code).toBe("terms_due_days_mismatch");
-    expect(body.details).toEqual({ stated: [14], dueDays: 7 });
-    expect(body.fields[0].path).toBe("body");
+    // the standard error shape: `error.details`, nothing at the top level (review L8)
+    expect(body).toEqual({
+      error: {
+        code: "terms_due_days_mismatch",
+        message: "The terms give a different number of days to pay than Settings › Payment terms",
+        details: { stated: [14], dueDays: 7 },
+      },
+      request_id: expect.any(String),
+    });
     expect(await countOf("terms_versions", "kind = 'proposal'")).toBe(before);
     // other blocks are not checked (the invoice footer may say anything)
     expect(

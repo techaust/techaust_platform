@@ -973,7 +973,7 @@ export type StatementPage = {
 export type FieldIssue = { path: string; message: string };
 
 type ApiErrorBody = {
-  /** `details` (step 5): the worker's `err(..., details)`, e.g. `{ fy }` of `advance_lut_missing`. */
+  /** `details` (step 5): the worker's `err(..., details)`, e.g. `{ fy }` of `advance_lut_missing`, `{ stated, dueDays }` of `terms_due_days_mismatch`. */
   error?: { code: string; message: string; details?: unknown };
   request_id?: string;
   fields?: FieldIssue[];
@@ -994,8 +994,6 @@ type ApiErrorBody = {
   closestMinor?: unknown;
   draftId?: unknown;
   date?: unknown;
-  /** FX-5: 400 `terms_due_days_mismatch` (Settings › Terms) sends `{ stated, dueDays }` as a top-level `details`. */
-  details?: unknown;
 };
 
 export class RequestError extends Error {
@@ -1110,7 +1108,12 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
   const details = typeof inner === "object" && inner !== null ? (inner as Record<string, unknown>) : {};
   const fy = typeof details.fy === "string" ? details.fy : undefined;
   const date = typeof data.date === "string" ? data.date : undefined;
-  const termsDueDays = e.code === "terms_due_days_mismatch" ? termsDueDaysOf(data.details) : undefined;
+  // FX-5: `terms_due_days_mismatch` sends `{ stated, dueDays }` (the days the terms state that differ, Settings › Payment terms' days).
+  const stated = Array.isArray(details.stated) ? details.stated.filter(isDays) : [];
+  const termsDueDays =
+    e.code === "terms_due_days_mismatch" && stated.length > 0 && isDays(details.dueDays)
+      ? { stated, dueDays: details.dueDays }
+      : undefined;
   const error = new RequestError(
     res.status,
     e.code,
@@ -1151,15 +1154,6 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
 const strings = (xs: unknown[]): string[] => xs.filter((x): x is string => typeof x === "string");
 
 const isDays = (x: unknown): x is number => typeof x === "number" && Number.isInteger(x) && x >= 0;
-
-/** FX-5: the top-level `details` of 400 `terms_due_days_mismatch` (`apps/admin/worker/settings.ts`), or undefined when it isn't that shape. */
-function termsDueDaysOf(raw: unknown): { stated: number[]; dueDays: number } | undefined {
-  if (typeof raw !== "object" || raw === null) return undefined;
-  const { stated, dueDays } = raw as { stated?: unknown; dueDays?: unknown };
-  if (!Array.isArray(stated) || !isDays(dueDays)) return undefined;
-  const days = stated.filter(isDays);
-  return days.length > 0 ? { stated: days, dueDays } : undefined;
-}
 
 /** The blockers of a 409 `issue_blocked`: the code, and the line, amount, year or date its sentence names (M5.2: `lut_missing` has `fy`,
  * `fx_missing` `date`; M5.3: a note's `remaining` and `date`). */

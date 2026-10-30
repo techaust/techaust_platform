@@ -674,16 +674,8 @@ export const settings = new Hono<AppEnv>()
         (await loadRow(c.env.DB, "payment_terms"))?.value,
       ).dueDays;
       const stated = termsDueDaysMismatch(text, dueDays);
-      if (stated.length > 0)
-        return c.json(
-          {
-            error: { code: TERMS_DUE_DAYS_MISMATCH.code, message: TERMS_DUE_DAYS_MISMATCH.message },
-            details: { stated, dueDays },
-            fields: [{ path: "body", message: TERMS_DUE_DAYS_MISMATCH.message }],
-            request_id: c.var.rid,
-          },
-          400,
-        );
+      // The standard error shape (review L8): the numbers ride in `error.details`, read by the SPA's one details reader.
+      if (stated.length > 0) return err(c, TERMS_DUE_DAYS_MISMATCH, 400, { stated, dueDays });
     }
     const sha = hex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))));
     const db = c.env.DB;
