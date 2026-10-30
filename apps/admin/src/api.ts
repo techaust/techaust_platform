@@ -892,6 +892,12 @@ export type DashboardTiles = {
       entityType: string;
       entityId: string | null;
       ref: string | null;
+      /** A document (or an approval of one) with no number yet: its title; null for an anonymised client's, or when it has none ("Untitled"). */
+      title: string | null;
+      /** A time entry logged against a project, as its audit row recorded it. */
+      project: { id: string; code: string; name: string } | null;
+      /** A time entry logged against a care plan: the plan and its client's code. */
+      carePlan: { id: string; clientCode: string } | null;
     }[];
   };
 };

@@ -62,17 +62,32 @@ const CARE_ROWS = 20;
  * The activity statement, exported so a test can EXPLAIN it. Most roles see frequent actions, so `INDEXED BY audit_log_at` keeps the
  * newest-first scan that stops at the limit. The Accountant sees only the finance events, which are rare among the sign-in noise: a
  * newest-first scan would read the whole 30 days to find none, so that role reads them through `audit_log_action` (a seek per action).
+ *
+ * What a row is about (final sweep A13), every join a primary-key seek on one of the at most 20 rows:
+ *   - a document, or an approval of one: its number, else (a draft) its title; never the title of an anonymised client's document (its
+ *     title can name the person; the screen then says "Untitled", as the bells do);
+ *   - a time entry: its project (code and name) or its care plan (the client's code), as the event's own audit row recorded them
+ *     (`time.create`, `time.update` and `time.delete` all write `projectId` and `carePlanId`), so a deleted or moved entry still names
+ *     what it was logged against then. Only those two ids are read from the summary in SQL; the summary itself never leaves the Worker.
  */
 export const ACTIVITY_SQL = (ownOnly: boolean, byAction: boolean) =>
   `SELECT a.id, a.at, (SELECT name FROM staff_users WHERE id = a.actor_id) AS actor_name, a.action, a.entity_type, a.entity_id,
-          coalesce(l.ref, cl.code, pr.code, ccl.code, d.number_display) AS ref
+          coalesce(l.ref, cl.code, pr.code, ccl.code, d.number_display) AS ref,
+          CASE WHEN d.number_display IS NULL AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = d.client_id AND z.anonymised_at IS NOT NULL)
+               THEN d.title END AS doc_title,
+          tp.id AS time_project_id, tp.code AS time_project_code, tp.name AS time_project_name,
+          tcp.id AS time_care_plan_id, tcc.code AS time_care_client_code
    FROM audit_log a INDEXED BY ${byAction ? "audit_log_action" : "audit_log_at"}
    LEFT JOIN leads l ON a.entity_type = 'lead' AND l.id = a.entity_id
    LEFT JOIN clients cl ON a.entity_type = 'client' AND cl.id = a.entity_id
    LEFT JOIN projects pr ON a.entity_type = 'project' AND pr.id = a.entity_id
-   LEFT JOIN documents d ON a.entity_type = 'document' AND d.id = a.entity_id
+   LEFT JOIN approvals ap ON a.entity_type = 'approval' AND ap.id = a.entity_id
+   LEFT JOIN documents d ON d.id = CASE a.entity_type WHEN 'document' THEN a.entity_id WHEN 'approval' THEN ap.document_id END
    LEFT JOIN care_plans cpl ON a.entity_type = 'care_plan' AND cpl.id = a.entity_id
    LEFT JOIN clients ccl ON ccl.id = cpl.client_id
+   LEFT JOIN projects tp ON a.entity_type = 'time_log' AND tp.id = json_extract(a.summary, '$.projectId')
+   LEFT JOIN care_plans tcp ON a.entity_type = 'time_log' AND tcp.id = json_extract(a.summary, '$.carePlanId')
+   LEFT JOIN clients tcc ON tcc.id = tcp.client_id
    WHERE a.at >= ?1 AND a.action IN (SELECT value FROM json_each(?2))${ownOnly ? " AND (a.action NOT IN (SELECT value FROM json_each(?3)) OR a.actor_id = ?4)" : ""}
    ORDER BY a.at DESC, a.rowid DESC LIMIT ${ACTIVITY_LIMIT}`;
 
@@ -480,6 +495,13 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
         entity_type: string;
         entity_id: string | null;
         ref: string | null;
+        doc_title: string | null;
+        time_project_id: string | null;
+        /** Set whenever the id is (NOT NULL columns of the same row). */
+        time_project_code: string;
+        time_project_name: string;
+        time_care_plan_id: string | null;
+        time_care_client_code: string;
       }>("activity").map((r) => ({
         id: r.id,
         at: r.at,
@@ -488,6 +510,16 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
         entityType: r.entity_type,
         entityId: r.entity_id,
         ref: r.ref,
+        // A13: a document without a number (a draft) by its title; a time entry by what it was logged against
+        title: r.doc_title,
+        project:
+          r.time_project_id !== null
+            ? { id: r.time_project_id, code: r.time_project_code, name: r.time_project_name }
+            : null,
+        carePlan:
+          r.time_care_plan_id !== null
+            ? { id: r.time_care_plan_id, clientCode: r.time_care_client_code }
+            : null,
       })),
     };
   }
