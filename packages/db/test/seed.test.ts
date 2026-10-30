@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { createDb } from "../src/client.ts";
 import { catalogueItems, settings } from "../src/schema/index.ts";
 import { CATALOGUE } from "../src/seed/catalogue.ts";
-import { literal, seedSql, seedStatements } from "../src/seed/index.ts";
+import { literal, proposalTermsV2Select, seedSql, seedStatements } from "../src/seed/index.ts";
 import {
   PROPOSAL_TERMS_V1,
   PROPOSAL_TERMS_V1_OWNER_CONFIRMS,
@@ -142,6 +142,13 @@ describe("seed [ADM-CAT-01]", () => {
     expect(PROPOSAL_TERMS_V1_SHA256).toBe(await sha256Hex(PROPOSAL_TERMS_V1));
     // FX-5: version 2 (07-Y items 1 and 2) follows it, once, however often the seed runs
     expect(await first("SELECT count(*) AS n FROM terms_versions WHERE kind = 'proposal'")).toEqual({ n: 2 });
+    expect(
+      await first("SELECT version, sha256 FROM terms_versions WHERE kind = 'proposal' AND version = 2"),
+    ).toEqual({ version: 2, sha256: PROPOSAL_TERMS_V2_SHA256 });
+    await seed();
+    expect(await first("SELECT count(*) AS n FROM terms_versions WHERE kind = 'proposal'")).toEqual({ n: 2 });
+    // once version 2 is there, its SELECT yields nothing on its own (no reliance on the unique index: review L1)
+    expect(await all(proposalTermsV2Select())).toEqual([]);
     // six numbered terms, no placeholders, the warranty line is the one the owner still has to confirm
     expect(PROPOSAL_TERMS_V1.split("\n\n")).toHaveLength(6);
     expect(PROPOSAL_TERMS_V1).not.toMatch(/\{\{/);
@@ -181,29 +188,34 @@ describe("seed [ADM-CAT-01]", () => {
     expect(PROPOSAL_TERMS_V2).not.toMatch(/\{\{|for Indian clients|which we list/);
   });
 
-  it("FX-5: on a database where the owner already saved versions, version 2's text comes as the NEXT version, once; never while the due days differ (C4)", async () => {
-    // terms rows are append-only, so the statement is run again under another hash and id, as if version 2's text were not there yet
+  it("FX-5: on a database where the owner saved a later version, version 2's text is never added, even under another hash and id, at 7 days (review M2, L1)", async () => {
+    // terms rows are append-only, so the statement is run again under another hash and id, as if version 2's text were not there yet; the
+    // newest row is the owner's version 3 (above), so the guards alone refuse it
     const stmt = seedStatements().find((s) => s.includes(PROPOSAL_TERMS_V2_SHA256)) as string;
-    expect(stmt).toMatch(/coalesce\(max\(version\), 0\) \+ 1/);
-    expect(stmt).toMatch(/NOT EXISTS \(SELECT 1 FROM `terms_versions` WHERE kind = 'proposal' AND sha256 = /);
-    const guarded = stmt
+    expect(stmt).toBe(
+      `INSERT INTO \`terms_versions\` (\`id\`, \`kind\`, \`version\`, \`body_md\`, \`sha256\`) ${proposalTermsV2Select()} ON CONFLICT DO NOTHING;`,
+    );
+    // a filtered row, not an aggregate (an aggregate SELECT always yields a row)
+    expect(stmt).not.toContain("coalesce(max(version)");
+    const select = proposalTermsV2Select()
       .replaceAll(PROPOSAL_TERMS_V2_SHA256, "f".repeat(64))
-      .replace(/SELECT '[^']+', 'proposal'/, "SELECT 'fx5-guard-test', 'proposal'");
-    expect(guarded).toContain("'fx5-guard-test'");
-    // the due-days guard: with the setting at 14 days, nothing is added
-    await run("UPDATE settings SET value = json_set(value, '$.dueDays', 14) WHERE key = 'payment_terms'");
-    const before = await first<{ n: number }>(
-      "SELECT count(*) AS n FROM terms_versions WHERE kind = 'proposal'",
+      .replace(/^SELECT '[^']+', 'proposal'/, "SELECT 'fx5-guard-test', 'proposal'");
+    expect(select).toContain("'fx5-guard-test'");
+    expect(
+      await first<{ dueDays: number }>(
+        "SELECT json_extract(value, '$.dueDays') AS dueDays FROM settings WHERE key = 'payment_terms'",
+      ),
+    ).toEqual({ dueDays: 7 });
+    const before = await all(
+      "SELECT version, sha256 FROM terms_versions WHERE kind = 'proposal' ORDER BY version",
     );
-    await run(guarded);
-    expect(await first("SELECT count(*) AS n FROM terms_versions WHERE kind = 'proposal'")).toEqual(before);
-    // at 7 days the same statement adds it as the next version
-    await run("UPDATE settings SET value = json_set(value, '$.dueDays', 7) WHERE key = 'payment_terms'");
-    await run(guarded);
-    const last = await first<{ version: number; sha256: string }>(
-      "SELECT version, sha256 FROM terms_versions WHERE kind = 'proposal' ORDER BY version DESC LIMIT 1",
+    expect(await all(select)).toEqual([]);
+    await run(
+      `INSERT INTO terms_versions (id, kind, version, body_md, sha256) ${select} ON CONFLICT DO NOTHING`,
     );
-    expect(last).toEqual({ version: (before?.n ?? 0) + 1, sha256: "f".repeat(64) });
+    expect(
+      await all("SELECT version, sha256 FROM terms_versions WHERE kind = 'proposal' ORDER BY version"),
+    ).toEqual(before);
   });
 
   it("produces SQL for wrangler d1 execute, with safe literals", () => {

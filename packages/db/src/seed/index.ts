@@ -44,19 +44,28 @@ const insert = (table: string, row: Record<string, Value>) => {
 };
 
 /**
- * FX-5 (07-Y items 1 and 2, owner 2026-10-29): the second proposal terms, added as the NEXT proposal version once (while no row has its SHA-256),
- * and only while Settings › Payment terms has the due days the text states (full audit C4: the terms never promise other days than the setting;
- * the settings rows are inserted earlier in the same seed, so the default counts on a fresh database).
+ * FX-5 (07-Y items 1 and 2, owner 2026-10-29): the second proposal terms, as the SELECT the seed inserts from. It yields one row only while
+ *   - the NEWEST proposal terms row is the seed's version 1 (its SHA-256): text the owner saved after it is never replaced, however late the
+ *     seed runs (review M2);
+ *   - no proposal row has version 2's SHA-256 yet (it is added once);
+ *   - Settings › Payment terms has the due days the text states (full audit C4: the terms never promise other days than the setting; the
+ *     settings rows are inserted earlier in the same seed, so the default counts on a fresh database).
+ * A filtered row, never an aggregate: when a guard fails the SELECT yields nothing, so nothing rests on the unique index (review L1).
  */
-function proposalTermsV2(): string {
+export function proposalTermsV2Select(): string {
   const [days] = termsDueDays(PROPOSAL_TERMS_V2);
   if (days === undefined) throw new Error("PROPOSAL_TERMS_V2 states no due days");
   const sha = literal(PROPOSAL_TERMS_V2_SHA256);
   const setting = `coalesce(json_extract((SELECT value FROM \`settings\` WHERE key = 'payment_terms'), '$.dueDays'), ${literal(SETTINGS_DEFAULTS.payment_terms.dueDays)})`;
-  return `INSERT INTO \`terms_versions\` (\`id\`, \`kind\`, \`version\`, \`body_md\`, \`sha256\`) SELECT ${literal(
-    stableId("terms:proposal:fx5-ownership-gst"),
-  )}, 'proposal', coalesce(max(version), 0) + 1, ${literal(PROPOSAL_TERMS_V2)}, ${sha} FROM \`terms_versions\` WHERE kind = 'proposal' AND NOT EXISTS (SELECT 1 FROM \`terms_versions\` WHERE kind = 'proposal' AND sha256 = ${sha}) AND ${setting} = ${literal(days)} ON CONFLICT DO NOTHING;`;
+  return `SELECT ${literal(stableId("terms:proposal:fx5-ownership-gst"))}, 'proposal', t.version + 1, ${literal(
+    PROPOSAL_TERMS_V2,
+  )}, ${sha} FROM \`terms_versions\` AS t WHERE t.kind = 'proposal' AND t.sha256 = ${literal(
+    PROPOSAL_TERMS_V1_SHA256,
+  )} AND t.version = (SELECT max(version) FROM \`terms_versions\` WHERE kind = 'proposal') AND NOT EXISTS (SELECT 1 FROM \`terms_versions\` WHERE kind = 'proposal' AND sha256 = ${sha}) AND ${setting} = ${literal(days)}`;
 }
+
+const proposalTermsV2 = () =>
+  `INSERT INTO \`terms_versions\` (\`id\`, \`kind\`, \`version\`, \`body_md\`, \`sha256\`) ${proposalTermsV2Select()} ON CONFLICT DO NOTHING;`;
 
 export function seedStatements(): string[] {
   const settings = (Object.keys(SETTINGS_SCHEMAS) as SeededSettingKey[]).map((key) => {

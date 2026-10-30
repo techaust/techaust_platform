@@ -47,7 +47,7 @@ Every line comes from approved copy (07 §5.3, §5.5). Placeholders aren't used 
 6. **Validity.** "This proposal is valid until the date shown on it."
 
 ### 2b. Proposal terms, second version (FX-5; owner-approved 2026-10-29, 07-Y items 1 and 2, docs/13; 08-C RB-38)
-Seeded as the next version of the proposal terms (`PROPOSAL_TERMS_V2`); documents already sent keep the version they pinned. Lines 1, 4, 5 and 6 are the first version's, word for word. The lawyer's final assignment wording is still OPEN (08-C RB-38).
+Seeded as the next version of the proposal terms (`PROPOSAL_TERMS_V2`), only while the newest proposal terms are still the seeded first version and Payment terms says 7 days (terms the owner saved are never replaced); documents already sent keep the version they pinned. Lines 1, 4, 5 and 6 are the first version's, word for word. The lawyer's final assignment wording is still OPEN (08-C RB-38).
 2. **Payment.** "Payments follow the schedule in this proposal. Invoices are due within 7 days. GST at 18 % is added unless the work is an export of services under our Letter of Undertaking."
 3. **Ownership.** "On full payment, we assign to you all copyright in the work we make under this proposal, worldwide and for its full term; the assignment does not lapse if unused. Our pre-existing tools and third-party or open-source parts are licensed to you, not assigned. We keep the right to reuse general know-how."
 
