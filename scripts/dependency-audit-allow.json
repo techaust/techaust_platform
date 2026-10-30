@@ -2,10 +2,10 @@
   {
     "advisory": "GHSA-mrhx-c7xc-m3w5",
     "package": "zod",
-    "reason": "PRODUCTION dependency (zod 4.6.5 in the Workers; also 3.25.76 and 4.4.3 in dev tools). Fixed in zod 4.6.6. Request bodies are capped at 16 or 32 KB before any schema runs, which limits the collections a request can carry; not assessed further. Temporary: the version update needs the lead's go-ahead (agents change no versions).",
+    "reason": "Build and dev tools only since the lead's update to zod 4.6.6 (owner's yes, 2026-10-30) in every Worker and package: the remaining 4.6.5 comes from astro 7.3.5 at build time, and 3.25.76 and 4.4.3 from other dev tools. Fixed in zod 4.6.6; waits for those tools' updates. Temporary.",
     "added": "2026-10-30",
-    "addedBy": "builder, audit-workflows (A1 3); for the lead to confirm",
-    "expires": "2026-11-06"
+    "addedBy": "builder, audit-workflows (A1 3); narrowed by the lead after the zod update",
+    "expires": "2026-11-13"
   },
   {
     "advisory": "GHSA-xjj6-f33q-929c",
