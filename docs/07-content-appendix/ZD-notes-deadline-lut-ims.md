@@ -10,3 +10,6 @@ Status: **APPROVED by the owner, 2026-10-31** (all eight lines as drafted). Chan
 6. Issue blocker `debit_lut_missing`: "This debit note is dated in FY {fy} and the invoice was exported under LUT. Save your LUT for FY {fy} in Settings › Tax first."
 7. GSTR-3B summary CSV (layout v2), the held row: "Credit notes to registered clients not yet accepted in IMS (not deducted)"
 8. Reports › GSTR-3B panel: "{count} credit notes aren't deducted until your client accepts them in IMS. Check the GST portal's GSTR-3B figures before you file."
+9. Settings › Tax, the "Credit note cut-off" hint (replaces the earlier one): "Credit notes on last year's invoices are blocked after the last GST return period that ends before this date (see GSTR-1 filing below)." (Lead, 2026-10-31, staff-only wording under the owner's delegation.)
+
+Singular forms (lead, 2026-10-31): line 4 "Only 1 day left to issue a credit note on this invoice."; line 8 "1 credit note isn't deducted until your client accepts it in IMS. Check the GST portal's GSTR-3B figures before you file."

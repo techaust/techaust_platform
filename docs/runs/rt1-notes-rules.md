@@ -220,3 +220,11 @@ Usage: builder claude-opus-5-5/high (skills workers-best-practices, wrangler).
 3. The note draft page keeps "Issue debit note" enabled while a blocker shows (M5.3 behaviour: the dialog shows the blockers again and the server refuses). Unchanged; say if it should be disabled.
 
 Usage: designer claude-opus-5-5/high (skills frontend-design).
+
+### Lead after the designer (2026-10-31)
+- **D10** Singular forms approved (lead, staff-only wording under the owner's delegation): line 4 "Only 1 day left to issue a credit note on this invoice."; line 8 "1 credit note isn't deducted until your client accepts it in IMS. Check the GST portal's GSTR-3B figures before you file." Added to 07-ZD.
+- **D11** The "Credit note cut-off" hint is no longer exact. New staff-only line (lead, under the delegation; 07-ZD line 9), to be applied in the review fixes: "Credit notes on last year's invoices are blocked after the last GST return period that ends before this date (see GSTR-1 filing below)." 
+- **D12** "Issue debit note" stays enabled while a blocker shows (as M5.3: the dialog lists the blockers and the server refuses).
+- Merged `design/rt1-screens` and `origin/main` into the task branch; screenshots copied to `.logs/rt1-design/`. Usage: builder (F1–F5) claude-opus-5-5/high (workers-best-practices, wrangler); designer claude-opus-5-5/high (frontend-design).
+
+## Review
