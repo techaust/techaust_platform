@@ -232,3 +232,17 @@ Usage: builder claude-opus-5-5/high (skills workers-best-practices, wrangler).
 - **L11** The Udyam fields stay as a second row of the "GST registration" fieldset (no new legend).
 - Follow-up: fresh visual baselines for the `invoice-udyam`, advance and note fixtures when the visual suite's baselines are next made (with the open "Linux PDF visual baselines" item).
 - Merged `design/rt2-screens` (ce0a7eaa) into the task branch cleanly; screenshots copied to `.logs/rt2-design/`. Usage: designer claude-opus-5-5/high (frontend-design); builder (F2–F5) claude-opus-5-5/high (workers-best-practices, wrangler).
+
+## Review
+### Code review (reviewer, Opus 5.5 high, 2026-10-31, no browser): APPROVE, condensed by the lead
+Skills: code-review (9 candidates, 6 kept after verification), security-review (by hand over the task diff; no exploitable issue). Checks at 7b24fff8 in its own worktree: `pnpm check` exit 0 (55 migrations, none rebuilds); core 99.03 %/98.11 %; db 501; pdf 366; jobs 545; admin 3,472. **Budgets at the head:** jobs 983,300 bytes (16,700 left; startup 63.5 ms), admin API 616,569 (startup 54.7 ms), admin front 99,271. R1–R3, L8 and 07-ZC lines 1–7 verified; tags correct, no "VERIFY", no `import { z }`.
+1. **low** `apps/jobs/src/pdf.ts:350`: the supplier copy of an older unsigned staging note or advance is refused for good and rings line 7 each ask. Fix: skip the signature refusal for `copy === "supplier"` when the recipient PDF is stored (`row.pdf_sha256` set).
+2. **low** `packages/db/src/triggers.ts:955`: the trigger treats a JSON-null `$.advance` as an advance; core uses truthiness. Fix at regeneration: `json_type(NEW.header_extras,'$.advance') = 'object'`, plus a db test pinning the clause.
+3. **low** `apps/admin/worker/settings-signature.ts:6`: stale header comment; add the T4 sentence.
+4. **low** `apps/admin/src/routes/invoices/notes-parts.tsx:63`: links inside the note dialog drop typed input (same as the advance dialog's `BlockerList`); `NoteBlockerList` duplicates `BlockerList`'s link branch.
+5. **low** `apps/admin/src/lib/udyam.ts:13` and core `udyamSettings`: the line 4 error typed twice; export it once from core.
+6. **low** `packages/pdf/src/layout/invoice-skeleton.ts:232`: move `.inv-udyam { max-width: 12em }` into `TAX_INVOICE_CSS` with its comment.
+Merge-plan additions: also conflicting `packages/core/test/notes.test.ts` (`okFacts` keeps `signatureSaved: true`), `packages/core/src/schemas/settings.ts`, `apps/admin/worker/note-issue.ts`, `packages/db/test/note-helpers.ts`, `apps/jobs/test/pdf-note-seed.ts`, `packages/pdf/test/fixtures/notes.ts`, `apps/admin/src/lib/notes.test.ts`, the care-auto snapshot; after the merge type-check rt1's tests that build `NoteFacts` or freeze notes (`invoice-notes.test.ts` relies on `putCompany` carrying a signature) and run `e2e/rt1-screens.spec.ts` and `signature-udyam.spec.ts` one after the other; rename "0054" in `signature-triggers.test.ts`, `triggers.ts`, `sql-rules.ts`, `issue.ts`, `schema/documents.ts`.
+Not verified: the live visual pass (next, when the browser is free), Browser Run, staging, NVDA.
+
+**Lead triage:** fix 1, 2, 3, 5, 6 in this task, together with the merge after rt1 (one builder run with an integration brief). **Kept, 4:** the dialog links follow the existing advance-dialog pattern; one shared blocker list that confirms before leaving unsaved input becomes a listed follow-up (admin UI), not this task.
