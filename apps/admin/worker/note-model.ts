@@ -16,7 +16,7 @@ import {
   debitNoteInput,
   isLiveParentStatus,
   isNoteType,
-  lutFor,
+  lutForFyAsSql,
   NOTES_MAX,
   type NoteBlocker,
   type NoteKind,
@@ -34,7 +34,6 @@ import {
   type CreditedSoFar,
   computeDocument,
   creditNote,
-  lutsOf,
   type TaxContext,
   type TaxIssue,
   taxOnlyDebitNote,
@@ -325,16 +324,31 @@ export function leftOf(p: ParentCtx): { totalLeft: number; taxableLeft: number[]
  * Rule 59(1)-(2) CGST Rules (IFF) (08-C RA-31, RA-03)).
  */
 export function deadlineOf(p: ParentCtx, settings: InvoiceSettings): CreditDeadline {
+  return creditDeadlineOf({ row: p.row, extras: p.extras, recipientStatus: p.recipientStatus }, settings);
+}
+
+/** What `creditDeadlineOf` reads of an issued invoice: its frozen row's FY, issue day and service completion, its header extras and its frozen recipient status. */
+export type DeadlineSource = {
+  row: { fy: string | null; issue_date: string | null; service_completed_on?: string | null | undefined };
+  extras: InvoiceHeaderExtras;
+  recipientStatus: "registered" | "unregistered" | "overseas";
+};
+
+/**
+ * rt1 review 8: the ONE place the credit-note deadline's input is built, for the note routes (`deadlineOf`) and the invoice's notes view (`invoiceNotesView`), so the
+ * banner and the refusal are never fed different facts.
+ */
+export function creditDeadlineOf(src: DeadlineSource, settings: InvoiceSettings): CreditDeadline {
   return creditNoteDeadline(
     {
-      parentFy: p.row.fy ?? "",
-      parentIssueDate: p.row.issue_date ?? "",
-      advanceReceivedOn: p.extras.advance?.receivedOn ?? null,
-      serviceCompletedOn: p.row.service_completed_on,
+      parentFy: src.row.fy ?? "",
+      parentIssueDate: src.row.issue_date ?? "",
+      advanceReceivedOn: src.extras.advance?.receivedOn ?? null,
+      serviceCompletedOn: src.row.service_completed_on ?? null,
     },
     settings.tax.creditNoteCutoff,
     settings.tax.annualReturnsFiled,
-    { frequency: settings.tax.gstr1Frequency, recipientStatus: p.recipientStatus },
+    { frequency: settings.tax.gstr1Frequency, recipientStatus: src.recipientStatus },
   );
 }
 
@@ -355,7 +369,8 @@ export function noteLutOf(
   // rt1 F5: the parent's frozen `supply_type` column, the one the freeze WHERE, the trigger and `explainNote` read (lead D7)
   if (kind !== "debit" || (p.row.export_mode !== "lut" && p.row.supply_type !== "export_lut")) return null;
   const fy = fyOf(now).token;
-  return { fy, lut: lutFor(fy, lutsOf(settings.tax)) };
+  // rt1 review 6: judged exactly as `LUT_FOR_FY_SQL` judges the stored row (the legacy `tax.lut` included), so this blocker, the freeze WHERE and trigger 0054 agree
+  return { fy, lut: lutForFyAsSql(fy, settings.tax) };
 }
 
 export { creditAllowed };

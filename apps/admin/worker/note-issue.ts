@@ -3,7 +3,6 @@
 // are only what the person saw, never what is frozen, so a hash that does not match is `content_changed` (another note issued meanwhile lands here). The freeze
 // statement (`invoiceIssueStatements` with `note`) holds the same rules in SQL: the invoice is still the one that was read, a credit note fits inside what is left
 // and inside the deadline, at most 20 notes of the kind; a credit note moves its invoice's ledger in the same batch.
-import { fyOfDate, parseIsoDate } from "@techaust/core/dates";
 import {
   dueDateOf,
   imsStatusAtIssue,
@@ -16,6 +15,7 @@ import {
 import type { TaxIssue } from "@techaust/core/tax";
 import type { DocumentBundle, InvoiceHeaderExtras, TermsRef } from "@techaust/db/documents";
 import {
+  fyTokenOfDateSql,
   type InvoiceIssuerSnapshot,
   LUT_FOR_FY_SQL,
   type NoteIssueArgs,
@@ -211,12 +211,12 @@ export async function explainNote(
     issueDate: string;
   },
 ): Promise<Response | null> {
-  const issued = parseIsoDate(x.issueDate);
-  const fy = issued ? fyOfDate(issued).token : "";
+  // rt1 review 7: the issue DAY is bound and its FY worked out in SQL by `fyTokenOfDateSql`, exactly as the freeze WHERE (`noteIssueTail`, `?6`) and the trigger
+  // `documents_debit_note_lut_fy` (0054, `NEW.issue_date`) do, so this explanation can never name a different FY from the one that refused.
   const row = await c.env.DB.prepare(
-    `SELECT p.status, p.updated_at, p.credited_minor, p.total_minor, p.export_mode, p.supply_type, (SELECT count(*) FROM documents n WHERE n.parent_id = p.id AND n.type = ?2 AND n.frozen_at IS NOT NULL) AS n, ${LUT_FOR_FY_SQL.replaceAll("?FY", "?3")} AS lut_ok FROM documents p WHERE p.id = ?1`,
+    `SELECT p.status, p.updated_at, p.credited_minor, p.total_minor, p.export_mode, p.supply_type, (SELECT count(*) FROM documents n WHERE n.parent_id = p.id AND n.type = ?2 AND n.frozen_at IS NOT NULL) AS n, ${LUT_FOR_FY_SQL.replaceAll("?FY", fyTokenOfDateSql("?3"))} AS lut_ok, ${fyTokenOfDateSql("?3")} AS fy FROM documents p WHERE p.id = ?1`,
   )
-    .bind(d.parentId, d.kind === "credit" ? "credit_note" : "debit_note", fy)
+    .bind(d.parentId, d.kind === "credit" ? "credit_note" : "debit_note", x.issueDate)
     .first<{
       status: string;
       updated_at: number;
@@ -226,6 +226,7 @@ export async function explainNote(
       supply_type: string | null;
       n: number;
       lut_ok: number;
+      fy: string;
     }>();
   if (!row) return err(c, PARENT_NOT_ISSUED, 409);
   if (row.status === "void") return err(c, PARENT_VOID, 409);
@@ -251,7 +252,7 @@ export async function explainNote(
     return c.json(
       {
         error: { code: ISSUE_BLOCKED.code, message: ISSUE_BLOCKED.message },
-        blockers: [{ code: "debit_lut_missing", fy }],
+        blockers: [{ code: "debit_lut_missing", fy: row.fy }],
         request_id: c.var.rid,
       },
       409,

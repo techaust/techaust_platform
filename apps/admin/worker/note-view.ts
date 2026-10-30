@@ -7,7 +7,6 @@ import {
   creditAllowed,
   creditedSoFarOf,
   creditNoteAdvice,
-  creditNoteDeadline,
   isNoteType,
   NOTES_MAX,
   type NoteOf,
@@ -17,7 +16,7 @@ import { decide, type Role } from "@techaust/core/permissions";
 import { type DocumentBundle, headerExtrasOfRow, type TermsRef } from "@techaust/db/documents";
 import { CREDITED_SO_FAR_SQL, CREDITED_TOTALS_SQL } from "@techaust/db/issue";
 import type { InvoiceSettings } from "./invoice-model.ts";
-import { isLiveParentStatus, isNoteParentType, type ParentCtx } from "./note-model.ts";
+import { creditDeadlineOf, isLiveParentStatus, isNoteParentType, type ParentCtx } from "./note-model.ts";
 
 /** Keyed by the INVOICE's id (`?1`): what an issued tax or export invoice's view needs about its notes. At most 50 rows (20 issued of each kind and an open draft of each). */
 export const NOTES_VIEW_READS = [
@@ -77,21 +76,11 @@ export function invoiceNotesView(a: {
   };
   const credited = creditedSoFarOf(computed, (creditedR?.results ?? []) as never, totals);
   const extras = headerExtrasOfRow(d);
-  const dl: CreditDeadline = creditNoteDeadline(
-    {
-      parentFy: d.fy ?? "",
-      parentIssueDate: d.issue_date ?? "",
-      advanceReceivedOn: extras.advance?.receivedOn ?? null,
-      serviceCompletedOn: d.service_completed_on ?? null,
-    },
-    a.settings.tax.creditNoteCutoff,
-    a.settings.tax.annualReturnsFiled,
-    // rt1 T1: the return period comes from the GSTR-1 frequency and the invoice's FROZEN recipient. Every issued invoice freezes its GST status; one without it
-    // (damaged) is judged as unregistered, the earlier and stricter last day (D2).
-    {
-      frequency: a.settings.tax.gstr1Frequency,
-      recipientStatus: d.recipient?.gstStatus ?? "unregistered",
-    },
+  // rt1 review 8: built by the same helper as the note routes' `deadlineOf`. rt1 T1: the return period comes from the GSTR-1 frequency and the invoice's FROZEN
+  // recipient. Every issued invoice freezes its GST status; one without it (damaged) is judged as unregistered, the earlier and stricter last day (D2).
+  const dl: CreditDeadline = creditDeadlineOf(
+    { row: d, extras, recipientStatus: d.recipient?.gstStatus ?? "unregistered" },
+    a.settings,
   );
   const passed = !creditAllowed(a.todayIso, dl);
   const last = parseIsoDate(dl.lastDay);

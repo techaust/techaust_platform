@@ -4,9 +4,13 @@
 //   - T2: a debit note on an export under LUT is issued only while a LUT with an ARN is saved for the FY of its own issue day (Researched 2026-10-30, Rule 96A(1)
 //     CGST Rules, Notification 37/2017-CT (08-C RA-19, Q39)): in the freeze's WHERE (`noteIssueTail`) and in the trigger `documents_debit_note_lut_fy` (0054, a
 //     new trigger only: no table is rebuilt).
+//   - rt1 review 6: core's check (`lutForFyAsSql`, what the admin's `noteLutOf` asks) is pinned to `LUT_FOR_FY_SQL` over the same stored rows.
+import { lutForFyAsSql } from "@techaust/core/invoices";
+import { resolveSetting, SETTINGS_DEFAULTS } from "@techaust/core/settings";
 import { afterEach, describe, expect, it } from "vitest";
+import { LUT_FOR_FY_SQL } from "../src/issue.ts";
 import { noteLutTriggerStatements } from "../src/triggers.ts";
-import { first, rejects, run } from "./helpers.ts";
+import { all, first, rejects, run } from "./helpers.ts";
 import {
   creditedBySql,
   insertNoteDraft,
@@ -164,5 +168,72 @@ describe("the note freeze's WHERE [rt1 T1, T2]: a refusal writes nothing", () =>
     const dd = await insertNoteDraft(dom, "debit", await take(dom));
     await issueNote(dom, dd, "debit", { issueDate: "2027-04-02" });
     expect(await status(dd.id)).toBe("issued");
+  });
+});
+
+describe("rt1 review 6: core's LUT-for-FY check is the twin of LUT_FOR_FY_SQL [ADM-INV-18; 08-C RA-19, Q39]", () => {
+  const FYS = ["2526", "2627", "2728", "2829"];
+  const full = Array.from({ length: 20 }, (_, i) => ({
+    fy: `${30 + i}${31 + i}`,
+    arn: `A${i}`,
+    filedOn: null,
+  }));
+  /** Stored `tax` values the admin can read (each parses): the list, the legacy `lut` of M3 in every fate, and both together. */
+  const CASES: Record<string, unknown>[] = [
+    {},
+    { luts: [] },
+    { luts: [{ fy: "2728", arn: "AD1903270000002", filedOn: null }] },
+    { luts: [{ fy: "2627", arn: "ad 19 03", filedOn: "2026-03-20" }] },
+    {
+      luts: [
+        { fy: "2627", arn: "A1", filedOn: null },
+        { fy: "2728", arn: "A2", filedOn: null },
+      ],
+    },
+    { lut: { arn: "OLD1", fy: "2728" } },
+    { lut: { arn: "ad 19 03", fy: "2728" } },
+    { lut: { arn: "AD-1903", fy: "2728" } },
+    { lut: { arn: "A".repeat(31), fy: "2728" } },
+    { lut: { arn: "   ", fy: "2728" } },
+    { lut: { arn: "", fy: "2728" } },
+    { lut: { arn: "\t", fy: "2728" } },
+    { lut: { arn: " X ", fy: "2728" } },
+    { lut: { arn: null, fy: "2728" } },
+    { lut: { arn: "OLD1", fy: null } },
+    { luts: [{ fy: "2728", arn: "NEW", filedOn: null }], lut: { arn: "OLD", fy: "2728" } },
+    { luts: [{ fy: "2627", arn: "NEW", filedOn: null }], lut: { arn: "OLD", fy: "2728" } },
+    { luts: full, lut: { arn: "OLD1", fy: "2728" } },
+    { luts: full },
+  ];
+
+  it("for every stored value and FY, core says a LUT is saved exactly when SQL does", async () => {
+    let counted = 0;
+    for (const stored of CASES) {
+      await setTax(stored);
+      const rows = await all<{ fy: string; ok: number }>(
+        `SELECT j.value AS fy, ${LUT_FOR_FY_SQL.replaceAll("?FY", "j.value")} AS ok FROM json_each(?1) j`,
+        JSON.stringify(FYS),
+      );
+      expect(rows.length).toBe(FYS.length);
+      // the admin reads the stored row through the schema, as `readInvoiceSettings` does
+      const tax = resolveSetting("tax", stored);
+      for (const r of rows) {
+        const core = lutForFyAsSql(r.fy, tax);
+        expect(core !== null, `${JSON.stringify(stored)} ${r.fy}`).toBe(r.ok === 1);
+        if (core) {
+          expect(core.fy).toBe(r.fy);
+          counted++;
+        }
+      }
+    }
+    // both sides of the comparison were met
+    expect(counted).toBeGreaterThan(5);
+  });
+
+  it("with no `tax` row at all, neither counts a LUT", async () => {
+    await run("DELETE FROM settings WHERE key = 'tax'");
+    const r = await first<{ ok: number }>(`SELECT ${LUT_FOR_FY_SQL.replaceAll("?FY", "?1")} AS ok`, "2728");
+    expect(r?.ok).toBe(0);
+    expect(lutForFyAsSql("2728", SETTINGS_DEFAULTS.tax)).toBeNull();
   });
 });
