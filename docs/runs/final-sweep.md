@@ -213,7 +213,6 @@ Staging (nothing deployed); the seed on the staging database (it runs on the nex
 - The builder's questions: (1) the portal shows a note's reason with the approved 07-T §3 words; the designer takes them from one shared place (move `REASON_LABELS` to `@techaust/pdf/copy` or core so portal, admin and PDF read the same words; no new words); (2) yes, the activity feed follows the bells' rule (a number, else "Untitled", never a title for an anonymised client's draft).
 - The terms version 3 seed is Tier A (terms pinned by documents): an analyst's early check of 1f75df51 runs beside the designer's round 3.
 
-<<<<<<< HEAD
 ## Early check, terms version 3 (analyst, Opus 5.5 high, 2026-10-30, on 1f75df51): GO (copied by the lead)
 Text differs from version 2 in exactly the three approved places; SHA-256 right; version 2's SQL byte-identical after the refactor; each guard holds on its own (simulated in `node:sqlite`: fresh seed twice → 1, 2, 3; owner's own v3 → nothing; 14 days → nothing, back to 7 → added; no payment_terms row → default 7); statement order gives 1→2→3 in one run; sent documents keep their pinned terms (proposals and estimates pin kind 'proposal'; invoices use kind 'invoice'; conversion pins none); nothing parses the text; `SEED_VERSION` is a comment only.
 1. **low** `seed/index.ts` `nextProposalTermsSelect`: an owner's row that repeats version 2's exact text would be followed. Fix: bind the predecessor's seeded id too.
@@ -225,7 +224,6 @@ Notes: drafts made under version 2 show the "newer terms" notice and can adopt v
 ### Lead's fixes after the early check (2026-10-30)
 - 1: `afterId` (the seeded predecessor's id) bound in the SELECT; test "an owner's row that repeats version 2's text word for word is not followed either"; the newest-row test adjusted. 2: 07-O §2c with the three lines (each checked word for word against `PROPOSAL_TERMS_V3`). 3: both comments fixed. 4: covered by the owner-row tests.
 - `seed.test.ts`, `seed-terms-v2.test.ts`, `seed-terms-v3.test.ts`: 16 passed.
-=======
 ## Designer report, round 3 (designer, Opus 5.5 high, 2026-10-30)
 Branch `fix/final-sweep-d3` from `origin/fix/final-sweep` ce3ba97d; commits bd8b0c05, 74dd0e82, 159cb092, 09844b2e, 2c9b3bdd (all pushed; this report is the last commit). Skills: `frontend-design:frontend-design`, loaded first (it kept every addition inside docs/06 and the screens' existing language: the portal's note reason reads as the PDF's band, a quiet ruled passage under the heading, not a new card; the Credited figure sits in the slip's existing row of figures; the activity row's subject is a link in the sentence, a number or code in mono, a title in the sentence's own type). `dataviz` not loaded (no chart or stat tile); no other docs/14 §9 skill fits screen work.
 
@@ -266,7 +264,6 @@ None added.
 ### Open questions
 - In "Log time for" at 375 px the closed select cuts the email ("Sam Rao (sample) (sam.rao.two@e…"); the open list shows it whole. Keep, or show the chosen person's email under the field when their name repeats (no new words)?
 - The acceptance certificate PDF still says "Document fingerprint (SHA-256 of the accepted PDF)" (CERT7). Item 19 named the record only; say if the certificate should follow.
->>>>>>> origin/fix/final-sweep-d3
 
 ### Lead, after the designer's round 3 (2026-10-30)
 - Merged `fix/final-sweep-d3` (1cc43d56) into the task branch with the lead's seed fix (e549657b).
