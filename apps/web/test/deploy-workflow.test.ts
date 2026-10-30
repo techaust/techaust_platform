@@ -118,19 +118,37 @@ describe("deploy-staging.yml order and health checks [A6-8]", () => {
     expect(health).toBeLessThan(running(steps, ORDER[2] as string));
     const step = steps[health] ?? "";
     expect(hasToken(step)).toBe(false);
-    expect(step).toContain(`CF_ACCESS_CLIENT_ID: ${secret("CF_ACCESS_BENCH_CLIENT_ID")}`);
-    expect(step).toContain(`CF_ACCESS_CLIENT_SECRET: ${secret("CF_ACCESS_BENCH_CLIENT_SECRET")}`);
+    expect(step).toContain(`CF_ACCESS_CLIENT_ID: ${secret("CF_ACCESS_DEPLOY_CLIENT_ID")}`);
+    expect(step).toContain(`CF_ACCESS_CLIENT_SECRET: ${secret("CF_ACCESS_DEPLOY_CLIENT_SECRET")}`);
     expect(step).not.toMatch(/continue-on-error/);
   });
 
-  it("uses no secrets beyond the existing four", () => {
+  it.each([
+    ["portal", 2],
+    ["jobs", 3],
+    ["web", 4],
+  ] as const)(
+    "checks the %s Worker's health right after its deploy, with the deploy-check token only",
+    (app, at) => {
+      const health = running(steps, `node scripts/staging-health.mjs ${app}`);
+      expect(health).toBe(running(steps, ORDER[at] as string) + 1);
+      if (at < 4) expect(health).toBeLessThan(running(steps, ORDER[at + 1] as string));
+      const step = steps[health] ?? "";
+      expect(hasToken(step)).toBe(false);
+      expect(step).toContain(`CF_ACCESS_CLIENT_ID: ${secret("CF_ACCESS_DEPLOY_CLIENT_ID")}`);
+      expect(step).toContain(`CF_ACCESS_CLIENT_SECRET: ${secret("CF_ACCESS_DEPLOY_CLIENT_SECRET")}`);
+      expect(step).not.toMatch(/continue-on-error/);
+    },
+  );
+
+  it("uses no secrets beyond the existing two and the deploy-check token", () => {
     const used = [...workflow("deploy-staging.yml").matchAll(/secrets\.(\w+)/g)].map((m) => m[1]);
     expect(new Set(used)).toEqual(
       new Set([
         "CF_API_TOKEN_STAGING",
         "CLOUDFLARE_ACCOUNT_ID",
-        "CF_ACCESS_BENCH_CLIENT_ID",
-        "CF_ACCESS_BENCH_CLIENT_SECRET",
+        "CF_ACCESS_DEPLOY_CLIENT_ID",
+        "CF_ACCESS_DEPLOY_CLIENT_SECRET",
       ]),
     );
   });

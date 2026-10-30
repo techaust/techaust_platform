@@ -95,9 +95,8 @@ jobs:
       # The deploy order (full audit A6 8, owner's yes 2026-10-30), one Worker per step: the admin API first (the admin front binds it as
       # ADMIN_API, and jobs binds its BillingJobs entrypoint as ADMIN_JOBS), then the admin front, the portal, jobs and the website.
       # A failed step stops the job, so no Worker is deployed after a failed one. After each app, a health check through Cloudflare
-      # Access where a service token is accepted (scripts/staging-health.mjs): today only the admin app accepts one (the benchmark
-      # token's Service Auth policy, docs/runbooks/access-staging.md Part 2). The portal, jobs and website checks wait for the owner's
-      # Access change (docs/runbooks/environments.md, "Health checks after a deploy").
+      # Access with the deploy-check service token (scripts/staging-health.mjs; `staging-deploy-check`, a Service Auth policy on all
+      # four staging apps, owner 2026-10-30; docs/runbooks/access-staging.md Part 4).
       - if: steps.creds.outputs.ready == 'true'
         name: Deploy 1 of 5, the admin API Worker (staging)
         env:
@@ -114,8 +113,8 @@ jobs:
       - if: steps.creds.outputs.ready == 'true'
         name: Health check, the admin front and API Workers (staging)
         env:
-          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_BENCH_CLIENT_ID }}
-          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_BENCH_CLIENT_SECRET }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_SECRET }}
         run: node scripts/staging-health.mjs admin
       - if: steps.creds.outputs.ready == 'true'
         name: Deploy 3 of 5, the portal Worker (staging)
@@ -124,14 +123,32 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm --filter @techaust/portal run deploy:staging
       - if: steps.creds.outputs.ready == 'true'
+        name: Health check, the portal Worker (staging)
+        env:
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_SECRET }}
+        run: node scripts/staging-health.mjs portal
+      - if: steps.creds.outputs.ready == 'true'
         name: Deploy 4 of 5, the jobs Worker (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm --filter @techaust/jobs run deploy:staging
       - if: steps.creds.outputs.ready == 'true'
+        name: Health check, the jobs Worker (staging)
+        env:
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_SECRET }}
+        run: node scripts/staging-health.mjs jobs
+      - if: steps.creds.outputs.ready == 'true'
         name: Deploy 5 of 5, the website Worker (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm --filter @techaust/web run deploy:staging
+      - if: steps.creds.outputs.ready == 'true'
+        name: Health check, the website Worker (staging)
+        env:
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_SECRET }}
+        run: node scripts/staging-health.mjs web
