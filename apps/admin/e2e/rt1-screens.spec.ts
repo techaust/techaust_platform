@@ -58,7 +58,12 @@ async function shot(page: Page, name: string, v: (typeof VIEWS)[number], target?
   if (target) {
     const el = page.locator(target).first();
     await el.scrollIntoViewIfNeeded();
-    await el.screenshot({ path: file, animations: "disabled" });
+    // A section taller than the window is stitched from several scrolls: the sticky top bar would be drawn over it, so it is not sticky for the shot.
+    await el.screenshot({
+      path: file,
+      animations: "disabled",
+      style: ".topbar { position: static !important; }",
+    });
   } else await page.screenshot({ path: file, fullPage: true, animations: "disabled" });
 }
 
@@ -81,7 +86,31 @@ async function invoices(page: Page): Promise<J[]> {
 test.describe("rt1 screens", () => {
   test.describe.configure({ timeout: 10 * 60_000 });
 
+  // No console error on any of these screens (a request this spec answers itself never fails).
+  let consoleErrors: string[] = [];
+  test.beforeEach(({ page }) => {
+    consoleErrors = [];
+    page.on("console", (m) => {
+      if (m.type() === "error") consoleErrors.push(m.text());
+    });
+    page.on("pageerror", (e) => consoleErrors.push(e.message));
+  });
+  test.afterEach(() => {
+    expect(consoleErrors).toEqual([]);
+  });
+
   test("Settings › Tax: GSTR-1 filing (07-ZD line 1) saves and reads back", async ({ page }) => {
+    // Keyboard: the field sits in the Tab order right after the cut-off it works with, and shows the focus ring.
+    await view(page, VIEWS[0]);
+    await page.goto("/settings/tax");
+    await settled(page);
+    await page.locator("#f-creditNoteCutoff-month").focus();
+    await page.keyboard.press("Tab");
+    await expect(page.locator("#f-gstr1Frequency")).toBeFocused();
+    expect(
+      await page.locator("#f-gstr1Frequency").evaluate((el) => getComputedStyle(el).outlineStyle),
+    ).not.toBe("none");
+    await shot(page, "keyboard-tax-gstr1-focus", VIEWS[0], ".setting:has(#f-gstr1Frequency)");
     for (const v of VIEWS) {
       await view(page, v);
       await page.goto("/settings/tax");
@@ -230,14 +259,21 @@ test.describe("rt1 screens", () => {
         await axe(page, `debit draft ${v.width} ${v.theme}`);
         await shot(page, "blocker-debit-lut-missing", v, ".inv-issue-panel");
       }
-      // the link lands on the LUT list
+      // Keyboard: Tab from the top of the page reaches the link (no trap on the way), its focus ring shows, and Enter lands on the LUT list.
       await view(page, VIEWS[0]);
       await page.goto(`/invoices/${encodeURIComponent(draftId as string)}`);
       await settled(page);
-      await page
+      const link = page
         .locator(".blockers__item[data-code='debit_lut_missing']")
-        .getByRole("link", { name: "Settings › Tax" })
-        .click();
+        .getByRole("link", { name: "Settings › Tax" });
+      let reached = false;
+      for (let i = 0; i < 80 && !reached; i++) {
+        await page.keyboard.press("Tab");
+        reached = await link.evaluate((el) => el === document.activeElement);
+      }
+      expect(reached, "Tab reaches the Settings › Tax link").toBe(true);
+      await shot(page, "keyboard-blocker-link-focus", VIEWS[0], ".inv-issue-panel");
+      await page.keyboard.press("Enter");
       await expect(page).toHaveURL(/\/settings\/tax#luts$/);
       await expect(page.locator("#luts")).toBeInViewport();
     } finally {
@@ -267,7 +303,7 @@ test.describe("rt1 screens", () => {
       await settled(page);
       await page.getByRole("button", { name: "Make files" }).click();
       await expect(page.locator("#gst-done")).toBeVisible();
-      const held = page.locator("#gst-3b .ledger__held");
+      const held = page.locator(".ledger--3b .ledger__held");
       await expect(held.locator("th")).toHaveText(
         "Credit notes to registered clients not yet accepted in IMS (not deducted)",
       );
@@ -280,7 +316,28 @@ test.describe("rt1 screens", () => {
         ["TH/CN/2627/0001", "TH/CN/2627/0003"],
       );
       await axe(page, `/reports/gst ${v.width} ${v.theme}`);
-      await shot(page, "gst-3b-held-SIMULATED", v, "#gst-3b");
+      await shot(page, "gst-3b-held-SIMULATED", v, ".report-block[data-block='gst-3b']");
+    }
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  });
+
+  test("Reports › Sales register: with the 3B file on offer (a whole quarter), the same line 8", async ({
+    page,
+  }) => {
+    for (const v of VIEWS) {
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+      await registerAnswer(page);
+      await view(page, v);
+      await page.goto("/reports/sales-register");
+      await settled(page);
+      await page.getByLabel("From", { exact: true }).fill("01/07/2026");
+      await page.getByLabel("To", { exact: true }).fill("30/09/2026");
+      await page.getByRole("button", { name: "Show" }).click();
+      await expect(page.locator("#sales-3b-held-line")).toHaveText(
+        "2 credit notes aren't deducted until your client accepts them in IMS. Check the GST portal's GSTR-3B figures before you file.",
+      );
+      await axe(page, `/reports/sales-register ${v.width} ${v.theme}`);
+      await shot(page, "sales-3b-held-SIMULATED", v, ".report-results");
     }
     await page.unrouteAll({ behavior: "ignoreErrors" });
   });

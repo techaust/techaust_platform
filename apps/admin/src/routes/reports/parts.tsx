@@ -158,7 +158,10 @@ export function WideList({
   );
 }
 
-/** A labelled block of a report's results. */
+/**
+ * A block of a report's results under its heading. A plain block, not a landmark: the wide list inside it is already a region named by the same words, and
+ * two regions of one name fail axe's `landmark-unique` (rt1 visual pass: the GST results had three such pairs). The heading still names the block.
+ */
 export function ReportBlock(props: {
   id: string;
   title: string;
@@ -167,7 +170,7 @@ export function ReportBlock(props: {
   hidden?: boolean;
 }) {
   return (
-    <section className="report-block" aria-labelledby={props.id} hidden={props.hidden}>
+    <div className="report-block" data-block={props.id} hidden={props.hidden}>
       <div className="report-block__head">
         <h2 id={props.id} className="report-sub">
           {props.title}
@@ -175,7 +178,7 @@ export function ReportBlock(props: {
         {props.aside}
       </div>
       {props.children}
-    </section>
+    </div>
   );
 }
 

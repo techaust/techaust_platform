@@ -68,6 +68,8 @@
   margin: 0;
   max-width: 68ch;
   color: var(--color-text);
+  /* rt1: the 07-ZD lines are long sentences with a date at the end; no line ends on one word ("IFF.") */
+  text-wrap: pretty;
 }
 
 .notes-deadline__main {
@@ -196,6 +198,17 @@
   .notes-row__total {
     grid-column: 2;
     grid-row: 2;
+  }
+
+  /* An open draft keeps its own two columns (the slot, then the sentence): the phone grid above would put the sentence in the narrow column and the
+     slot over its second line (rt1 visual pass). */
+  .notes-row.notes-row--draft {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .notes-row--draft .inv-slot {
+    margin-top: 0.125rem;
   }
 }
 
