@@ -53,7 +53,7 @@ Also found in code, outside §5: which day's FX rate a USD debit note uses (`app
 
 ## Owner's answers (2026-10-30)
 - FY 2025-26 credit notes needed: **none**.
-- GSTR-1 frequency: **not sure**; the lead sent the steps to check. T1's dates wait for the answer.
+- GSTR-1 frequency: **not sure**; the lead sent the steps to check. T1's dates wait for the answer. **Answered 2026-10-31: quarterly (QRMP).**
 - Udyam number on tax invoices: **print it**, as "Udyam Registration No. … (Micro enterprise)". The number goes in Settings, never in code.
 - Reverse charge on foreign services: **a monthly spreadsheet with the lead's steps**; no app feature now.
 - EU and UK representatives: **before the first EU or UK client** (the lead reminds).
