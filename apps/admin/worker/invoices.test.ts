@@ -1,6 +1,7 @@
 // Invoice drafts [ADM-INV-01, ADM-INV-04, ADM-PRJ-02, ADM-APR-02]: create (from services and from a milestone), read, save, discard, list, and who may
 // do what. Issuing and voiding are in invoices-issue.test.ts and invoices-void.test.ts.
 import { env } from "cloudflare:workers";
+import { SETTINGS_DEFAULTS } from "@techaust/core";
 import { uuidv7 } from "@techaust/core/ids";
 import { beforeAll, describe, expect, it } from "vitest";
 import { ROUTES } from "./guard.ts";
@@ -72,6 +73,32 @@ describe("creating a draft from services [ADM-INV-01]", () => {
     const id = (await json(res)).id as string;
     expect(await invoiceRow(id)).toMatchObject({ type: "export_invoice" });
     expect((await getInvoice(o, id)).currency).toBe("USD");
+  });
+
+  it("the view carries the due days (the client's, else the setting's) and the setting's own days for the editor's 'Net N' (FX-5 review L6)", async () => {
+    const o = await owner();
+    const inv = await mkInvoice(o);
+    const before = await one<{ value: string }>("SELECT value FROM settings WHERE key = 'payment_terms'");
+    try {
+      await env.DB.prepare(
+        "INSERT INTO settings (key, value, version) VALUES ('payment_terms', ?1, 1) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      )
+        .bind(JSON.stringify({ ...SETTINGS_DEFAULTS.payment_terms, dueDays: 14 }))
+        .run();
+      expect(await getInvoice(o, inv.id)).toMatchObject({ dueDays: 14, defaultDueDays: 14 });
+      await env.DB.prepare(
+        "UPDATE clients SET payment_terms_days = 24 WHERE id = (SELECT client_id FROM documents WHERE id = ?)",
+      )
+        .bind(inv.id)
+        .run();
+      expect(await getInvoice(o, inv.id)).toMatchObject({ dueDays: 24, defaultDueDays: 14 });
+    } finally {
+      if (before)
+        await env.DB.prepare("UPDATE settings SET value = ? WHERE key = 'payment_terms'")
+          .bind(before.value)
+          .run();
+      else await env.DB.prepare("DELETE FROM settings WHERE key = 'payment_terms'").run();
+    }
   });
 
   it("the default contact is the billing contact, else the primary live one; a given contact must be the client's", async () => {

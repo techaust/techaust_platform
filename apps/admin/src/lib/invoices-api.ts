@@ -149,6 +149,8 @@ export type InvoiceView = {
   issueDate: string | null;
   dueDate: string | null;
   dueDays: number;
+  /** Settings › Payment terms' due days: the "Net N" of the due-date note (FX-5 review L6). */
+  defaultDueDays: number;
   dueDatePreview: string | null;
   createdAt: number;
   updatedAt: number;

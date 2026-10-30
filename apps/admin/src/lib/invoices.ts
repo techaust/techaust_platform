@@ -168,8 +168,9 @@ export const milestoneBackLine = (status: string | null | undefined): string | n
 /** 07-R "Draft invoice for {client}"; a proforma has its own (07-S §8). */
 export const draftTitle = (client: string, type?: string) =>
   type === "proforma" ? proformaDraftTitle(client) : `Draft invoice for ${client}`;
-export const dueNote = (date: string, days: number) =>
-  `Due ${date}: ${days} days after the issue date (the client's terms, or Net 7).`;
+/** 07-R's due-date note; "Net N" is Settings › Payment terms' number, never a fixed 7 (FX-5 review L6). */
+export const dueNote = (date: string, days: number, netDays: number) =>
+  `Due ${date}: ${days} days after the issue date (the client's terms, or Net ${netDays}).`;
 export const fromMilestone = (milestone: string, project: string) =>
   `Created from the milestone "${milestone}" of ${project}. The total matches the milestone amount, GST included.`;
 export const issueBody = (seriesPreview: string, example: string, issueDate: string) =>

@@ -64,6 +64,7 @@ const view = (over: Partial<InvoiceView> = {}): InvoiceView => ({
   issueDate: null,
   dueDate: null,
   dueDays: 7,
+  defaultDueDays: 7,
   dueDatePreview: "2026-11-03",
   createdAt: 1,
   updatedAt: 100,
@@ -148,8 +149,15 @@ describe("07-R copy", () => {
     expect(INV_COPY.deleteBody).toBe(
       "Delete this draft? It has no number yet, so nothing is lost from the series.",
     );
-    expect(dueNote("03 Nov 2026", 7)).toBe(
+    expect(dueNote("03 Nov 2026", 7, 7)).toBe(
       "Due 03 Nov 2026: 7 days after the issue date (the client's terms, or Net 7).",
+    );
+    // FX-5 review L6: "Net N" is the setting's number (here 14), whatever the client's own days
+    expect(dueNote("10 Nov 2026", 14, 14)).toBe(
+      "Due 10 Nov 2026: 14 days after the issue date (the client's terms, or Net 14).",
+    );
+    expect(dueNote("20 Nov 2026", 24, 14)).toBe(
+      "Due 20 Nov 2026: 24 days after the issue date (the client's terms, or Net 14).",
     );
     expect(fromMilestone("Design", "Rebuild")).toBe(
       'Created from the milestone "Design" of Rebuild. The total matches the milestone amount, GST included.',
