@@ -1,5 +1,6 @@
 // The tax invoice layout (M5.1 phase 2: layout/invoice.ts; docs/06 §7.3; words 07-R §6) and the skeleton it replaced for tax invoices only.
 // Every Rule 46 field the view carries is printed, the reverse-charge line exactly as frozen. Researched 2026-10-28, Rules 46(p), 50 and 51 CGST Rules (08-C RA-26) for every rule printed.
+import { placeOfSupplyLabel } from "@techaust/core/pdf-jobs";
 import { describe, expect, it } from "vitest";
 import type { InvoiceEnvelope, InvoiceView } from "../src/invoice-types.ts";
 import { toInvoiceView } from "../src/invoice-view.ts";
@@ -249,6 +250,34 @@ describe("the layout's formatting helpers", () => {
       code: null,
     });
     expect(splitPlaceOfSupply("97")).toEqual({ name: "97", code: null });
+  });
+
+  it("splitPlaceOfSupply on the real labels (core placeOfSupplyLabel): a State splits, 96 and 97 never do (review M1)", () => {
+    expect(splitPlaceOfSupply(placeOfSupplyLabel("19", "intra"))).toEqual({
+      name: "West Bengal",
+      code: "19",
+    });
+    expect(splitPlaceOfSupply(placeOfSupplyLabel("27", "inter"))).toEqual({
+      name: "Maharashtra",
+      code: "27",
+    });
+    // 96 is no State: an overseas supply's label stays whole, as 07-S §1 prints it
+    for (const supply of ["export_lut", "export_igst"]) {
+      const label = placeOfSupplyLabel("96", supply);
+      expect(label).toBe("Outside India (96)");
+      expect(splitPlaceOfSupply(label)).toEqual({ name: "Outside India (96)", code: null });
+    }
+    expect(splitPlaceOfSupply(placeOfSupplyLabel("96", "inter"))).toEqual({
+      name: "Outside India (96)",
+      code: null,
+    });
+    // 97 is in the master as "Other Territory", not a State: whole too
+    expect(splitPlaceOfSupply(placeOfSupplyLabel("97", "inter"))).toEqual({
+      name: "Other Territory (97)",
+      code: null,
+    });
+    // a two-digit number that is no code at all stays whole
+    expect(splitPlaceOfSupply("Somewhere (99)")).toEqual({ name: "Somewhere (99)", code: null });
   });
 
   it("every rule of the layout's CSS is scoped to .doc--tax-invoice, so the skeleton and the proposal never change", () => {

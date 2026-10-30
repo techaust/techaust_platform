@@ -32,6 +32,7 @@
 // No logic beyond formatting: every value is a pre-formatted string of the view. Every dynamic string goes through `esc`; Markdown through
 // `markdownBlocks`. Data-testids (the tests and the visual suite rely on them): `rupee`, `currency-symbol`, `total`, `integrity`,
 // `reverse-charge`, `copy-label`, `signature`, `signatory`, `endorsement`, `notice`, `lut`, `export-note`, `advance`, `inr`, `balance-due`.
+import { isStateCode, STATE_CODES } from "@techaust/core/gstin";
 import { esc } from "../escape.ts";
 import { PDF_LOGOS } from "../generated/assets.ts";
 import type { InvoiceView, InvoiceViewBank, InvoiceViewSwift } from "../invoice-types.ts";
@@ -101,10 +102,17 @@ export function titleOf(view: InvoiceView): string {
   return C.title;
 }
 
-/** "West Bengal (19)" as its State name and code, for the two header facts; anything else stays whole, with no code. */
+/**
+ * "West Bengal (19)" as its State name and code, for the two header facts. Only a real State or Union territory code splits (core
+ * `isStateCode`, never 97 "Other Territory" and never 96, which is no State: an overseas proforma prints "Outside India (96)" whole, as 07-S §1
+ * and every export invoice do); anything else stays whole, with no code.
+ */
 export function splitPlaceOfSupply(label: string): { name: string; code: string | null } {
   const m = /^(.+) \((\d{2})\)$/.exec(label);
-  return m ? { name: m[1] as string, code: m[2] as string } : { name: label, code: null };
+  const code = m?.[2];
+  if (!m || code === undefined || !isStateCode(code) || STATE_CODES[code].kind === "other")
+    return { name: label, code: null };
+  return { name: m[1] as string, code };
 }
 
 // ---- header -------------------------------------------------------------------------------------------------------------------------
