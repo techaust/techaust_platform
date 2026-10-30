@@ -8,6 +8,7 @@ import {
   clientStatus,
   minusMoneyText,
   moneyText,
+  noteReasonLines,
   qtyText,
   takeInvoiceToken,
   totalsRows,
@@ -121,6 +122,33 @@ describe("text", () => {
     expect(INV.title).toBe("Invoices");
     expect(INV.downloadPdf).toBe("Download PDF");
     expect(documentWord("debit_note")).toBe("debit note");
+  });
+  it("07-ZA item 11: the Credited row names the credit notes, and never shows empty brackets [POR-06]", () => {
+    expect(INV.credited(["TH/CN/2627/0001"])).toBe("Credited (TH/CN/2627/0001)");
+    expect(INV.credited(["TH/CN/2627/0001", "TH/CN/2627/0002"])).toBe(
+      "Credited (TH/CN/2627/0001, TH/CN/2627/0002)",
+    );
+    expect(INV.credited([])).toBe("Credited");
+  });
+  it("a note's reason reads as its PDF prints it, in 07-T §3's words from core's one map [POR-06]", () => {
+    expect(noteReasonLines(null)).toBeNull();
+    expect(noteReasonLines(undefined)).toBeNull();
+    expect(noteReasonLines({ code: "service_deficient", text: "" })).toEqual({
+      line: "Reason: Service deficient",
+      detail: null,
+    });
+    expect(noteReasonLines({ code: "price_correction", text: " Rate typed wrong " })).toEqual({
+      line: "Reason: Price correction",
+      detail: "Rate typed wrong",
+    });
+    expect(noteReasonLines({ code: "other", text: "Goodwill" })).toEqual({
+      line: "Reason: Goodwill",
+      detail: null,
+    });
+    expect(noteReasonLines({ code: "other", text: " " })).toEqual({ line: "Reason: Other", detail: null });
+    expect(noteReasonLines({ code: "tax_charged_too_low", text: "" })?.line).toBe(
+      "Reason: Tax charged too low",
+    );
   });
 });
 

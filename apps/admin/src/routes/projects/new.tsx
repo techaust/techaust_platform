@@ -14,6 +14,7 @@ import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { UnsavedChangesGuard } from "../../components/unsaved.tsx";
 import { allowed } from "../../lib/access.ts";
+import { personLabel, personLabels } from "../../lib/people.ts";
 import { type DetailsForm, detailsErrors, PENDING, projectErrorText, TOASTS } from "../../lib/projects.ts";
 import { moneyFrom } from "../../lib/settings-form.ts";
 import { useUser } from "../../session.tsx";
@@ -52,6 +53,8 @@ function NewProject() {
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
   const people = useLoad(() => api.leadAssignees(), "");
+  // Two people with one name are told apart by their work email; "(you)" stays on your own name (final sweep A20).
+  const ownerLabels = personLabels(people.data?.assignees ?? [], people.data?.me);
   // A client named by the link (the client page's "New project"): loaded once, then shown as chosen.
   const presetLoad = useLoad(() => (preset ? api.client(preset) : Promise.resolve(null)), preset ?? "");
   const [presetSeen, setPresetSeen] = useState(false);
@@ -182,9 +185,7 @@ function NewProject() {
                   <option value="">No owner</option>
                   {(people.data?.assignees ?? []).map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.id === people.data?.me
-                        ? `${p.name || "Name not set yet"} (you)`
-                        : p.name || "Name not set yet"}
+                      {personLabel(ownerLabels, p)}
                     </option>
                   ))}
                 </select>

@@ -2099,6 +2099,43 @@ textarea[aria-invalid="true"] {
   font-size: var(--text-sm);
 }
 
+/* Signed in, a note's invoice is one step away: the same words as a 44 px link, the arrow saying where it goes (final sweep P15). */
+.inv-doc__against--link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.75rem;
+  color: var(--color-link);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.inv-doc__against--link:hover {
+  color: var(--color-link-hover);
+}
+
+/* A note's reason, as its PDF prints it: the reason, then the words typed for it, read as one short passage under the heading. */
+.inv-doc__reason {
+  display: grid;
+  gap: var(--space-1);
+  max-width: var(--container-prose);
+  padding-inline-start: var(--space-4);
+  border-inline-start: 2px solid var(--color-border);
+}
+
+.inv-doc__reason p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.inv-doc__reason-line {
+  font-weight: 500;
+}
+
+.inv-doc__reason-detail {
+  color: var(--color-text-muted);
+}
+
 .inv-doc > .notice {
   margin-bottom: var(--space-6);
 }

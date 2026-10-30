@@ -10,6 +10,7 @@
 // here adds, multiplies or rounds money: what can still be credited, the totals and the balance are the server's. A typed amount is only COMPARED
 // with what the server said is left, so the person hears it before a request is sent; the server checks it again.
 import { financialYear, fyOf } from "@techaust/core";
+import { noteReasonLabel } from "@techaust/core/invoice-email";
 import { CREDIT_REASONS, DEBIT_REASONS } from "@techaust/core/invoices";
 import type { Currency } from "../api.ts";
 import { RequestError } from "../api.ts";
@@ -118,15 +119,6 @@ export const DEBIT_LINE_LABEL = "Taxable value";
 /** The tax-only debit note's reason (Q35, owner 2026-10-28): taxable value 0, the tax only. */
 export const TAX_TOO_LOW = "tax_charged_too_low";
 
-const REASON_WORDS: Record<string, string> = {
-  price_correction: "Price correction",
-  service_not_delivered: "Service not delivered",
-  service_deficient: "Service deficient",
-  discount_after_sale: "Discount after sale",
-  [TAX_TOO_LOW]: "Tax charged too low",
-  other: "Other",
-};
-
 /**
  * The debit reasons in 07-T §9's order: core's `DEBIT_REASONS` (price correction, tax charged too low, other), the one list the screen and the API share.
  */
@@ -142,7 +134,7 @@ export const reasonsOf = (
     .filter((code) => !(code === TAX_TOO_LOW && supplyType === "export_lut"))
     .map((code) => ({
       code,
-      label: REASON_WORDS[code] ?? code,
+      label: noteReasonLabel(code),
     }));
 
 /** The hint under the reason (07-T §9): what "Discount after sale" and "Tax charged too low" do; none for the others. */
@@ -155,7 +147,7 @@ export const reasonHint = (code: string): string | undefined =>
 
 /** A stored reason as the screens print it: "Other" is the words typed for it; any other code is its label. */
 export const reasonText = (r: { code: string; text: string }): string =>
-  r.code === "other" && r.text.trim() !== "" ? r.text.trim() : (REASON_WORDS[r.code] ?? r.code);
+  r.code === "other" && r.text.trim() !== "" ? r.text.trim() : noteReasonLabel(r.code);
 
 // ---- the deadline banner (07-T §4; s.34(2), Q32, Q33; Researched 2026-10-28, 08-C RA-03; the warning is OPEN, RA-31) ------------------------
 

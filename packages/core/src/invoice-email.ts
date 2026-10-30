@@ -29,8 +29,11 @@ const DOCUMENT_KEYS = [
   "parent_balance",
 ] as const;
 
-/** 07-T §3: the label of each reason a person can pick. */
-const NOTE_REASON_LABELS: Readonly<Record<string, string>> = {
+/**
+ * 07-T §3 (and §9, Q35): the label of each reason a person can pick for a credit or debit note. THE one place for these words (final sweep, lead
+ * 2026-10-30): the emails, the PDF (`@techaust/pdf`), the admin note screens and the portal's note page all read this map, so they never drift.
+ */
+export const NOTE_REASON_LABELS: Readonly<Record<string, string>> = {
   price_correction: "Price correction",
   service_not_delivered: "Service not delivered",
   service_deficient: "Service deficient",
@@ -39,10 +42,14 @@ const NOTE_REASON_LABELS: Readonly<Record<string, string>> = {
   other: "Other",
 };
 
+/** A reason code's 07-T §3 label; a code nobody knows is printed as it is. */
+export const noteReasonLabel = (code: string): string =>
+  Object.hasOwn(NOTE_REASON_LABELS, code) ? (NOTE_REASON_LABELS[code] as string) : code;
+
 /** A frozen note reason in words: the typed text alone for "other", else the code's label, then the typed text in brackets when one was typed ("Price correction (rate typed wrong)", Q68). A code nobody knows is printed as it is. */
 export function noteReasonWords(code: string, text: string): string {
   const t = text.trim();
-  const label = NOTE_REASON_LABELS[code] ?? code;
+  const label = noteReasonLabel(code);
   if (code === "other") return t || label;
   return t ? `${label} (${t})` : label;
 }

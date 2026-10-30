@@ -4,6 +4,7 @@
 //   PDF"; and approved portal words from copy-documents.ts (the navigation, "Download PDF", "Show more", "Sign in").
 // A line 07-U lacked is 07-W's (approved 2026-10-28), never invented. English (India/UK spelling),
 // "and" never "&". The payment line is a product rule (Researched 2026-10-28, 08-C RA-28: a statement or reminder is not a tax document).
+import { noteReasonLabel } from "@techaust/core/invoice-email";
 import { PROFORMA_NOTICE } from "@techaust/core/invoices";
 import { EXPORT_PDF_COPY, INVOICE_PDF_COPY, NOTE_PDF_COPY, PROFORMA_PDF_COPY } from "@techaust/pdf/copy";
 import { N, PENDING, WORDS } from "./copy-documents.ts";
@@ -51,6 +52,12 @@ export const INV = {
   proformaNotice: PROFORMA_NOTICE,
   /** 07-ZA item 11 (owner 2026-10-30): the money row between Total and Balance due once something was paid. */
   paid: "Paid",
+  /**
+   * 07-ZA item 11 (owner 2026-10-30): the money row of what credit notes took off, named by their numbers (final sweep P2). An older API sends no
+   * numbers: then the row is the status word "Credited" alone (07-U §3), never empty brackets.
+   */
+  credited: (numbers: readonly string[]) =>
+    numbers.length > 0 ? `Credited (${numbers.join(", ")})` : "Credited",
   againstInvoice: (number: string) => `Against invoice ${number}`,
   howToPay: (type: string, number: string) =>
     `Pay by bank transfer to the account shown on the ${documentWord(type)}. Please quote ${number} as the payment reference.`,
@@ -90,6 +97,9 @@ export const INV = {
      */
     estimateHead: PROFORMA_PDF_COPY.estimate,
     noteTitles: { credit_note: NOTE_PDF_COPY.credit.title, debit_note: NOTE_PDF_COPY.debit.title },
+    /** 07-T §1: a note's "Reason: {reason}", the reason's label from core's one map (07-T §3, `noteReasonLabel`), as the PDF prints it. */
+    reason: NOTE_PDF_COPY.reason,
+    reasonLabel: noteReasonLabel,
     totals: {
       subtotal: "Sub-total",
       discount: "Discount",

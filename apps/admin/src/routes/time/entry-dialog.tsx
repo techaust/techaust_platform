@@ -13,6 +13,7 @@ import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { FieldError, Notice } from "../../components/ui.tsx";
 import { careErrorText, QUARTERS, TIER_LABELS } from "../../lib/care.ts";
+import { personLabel, personLabels } from "../../lib/people.ts";
 import { PENDING } from "../../lib/projects.ts";
 import {
   type EntryErrors,
@@ -149,6 +150,8 @@ function EntryFormBody(
   const err = (k: keyof EntryErrors | "userId") =>
     errors[k] ? <FieldError id={`${P}-${k}-error`}>{errors[k]}</FieldError> : null;
   const others = (people.data?.people ?? []).filter((p) => p.id !== props.me.id);
+  // Two people with one name are told apart by their work email (final sweep A20).
+  const labels = personLabels(people.data?.people ?? []);
 
   return (
     <form onSubmit={submit} noValidate className="entry-form">
@@ -162,7 +165,7 @@ function EntryFormBody(
               <option value={props.me.id}>{`${props.me.name || "Name not set yet"} (you)`}</option>
               {others.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name || "Name not set yet"}
+                  {personLabel(labels, p)}
                 </option>
               ))}
             </select>
