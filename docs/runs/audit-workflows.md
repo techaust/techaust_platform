@@ -150,3 +150,6 @@ Security pass by hand (fork-safe triggers, secret reach, no `${{ }}` in `run`, S
 - 2: the environments runbook (Access row, step 5, repo secrets), docs/05 (ci.yml "Today" lists the dependency audit; deploy-staging names a check after each app), docs/12's deploy-order follow-up removed.
 - 6: test "the deploy-check token is checked before the first deploy, and reaches no step but that check and the health checks" (31 passed).
 - 3, 5, 7: follow-ups (listed for docs/12 at the end of the day). 4: accepted as documented.
+
+### Owner's token, checked by the lead (2026-10-30)
+Owner: "RESULT: OK - both deploy-check secrets set (ID format ok, secret format cfast)"; policies saved. Lead's read-only check: repo secrets `CF_ACCESS_DEPLOY_CLIENT_ID`/`_SECRET` set 2026-10-30; Cloudflare Access (read-only API): token `staging-deploy-check` expires 2027-10-30; a "Deploy check (service token)" Service Auth policy on all four staging apps (admin, portal, jobs, web), after the account-members policy; the benchmark policy only on admin; the logo bypass unchanged. PR #118 released: auto-merge on.
