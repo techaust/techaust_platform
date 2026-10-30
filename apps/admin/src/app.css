@@ -469,6 +469,8 @@ input[readonly] {
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
+  /* 44 px both ways: a short text button ("Edit" in Settings › Numbering) was 42 px wide (final sweep A18). */
+  min-width: var(--target-min);
   min-height: var(--target-min);
   padding: var(--space-2) var(--space-5);
   font: inherit;

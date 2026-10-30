@@ -146,6 +146,20 @@
   }
 }
 
+/* The narrowest phones (320 px): two 12-character figures and the currency needed 278 px of a 273 px tile (final sweep A11), so the figures take
+   the small size, still in the display weight, and the INR line under a USD figure the caption size. */
+@media (max-width: 22.49rem) {
+  .fin-invoiced .fin-money__value.fin-money--lg {
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+  }
+
+  .fin-invoiced .fin-figure__sub {
+    font-size: var(--text-caption);
+    line-height: var(--text-caption--line-height);
+  }
+}
+
 .fin-invoiced__cur {
   width: 1%;
   color: var(--color-text-muted);

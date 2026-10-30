@@ -1009,16 +1009,22 @@
   list-style: none;
 }
 
+/* One line where the tile is wide enough; where it isn't, "INR  1 open," stays on the first line and "₹3,00,000.00 before GST" moves, whole, to
+   the start of the next (final sweep A12: the line used to end on "1 open," with the amount indented under it). */
 .pipeline__row {
-  display: grid;
-  grid-template-columns: 3rem minmax(0, 1fr);
-  gap: var(--space-3);
+  display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
+  gap: var(--space-1) var(--space-3);
 }
 
-.pipeline__line {
+.pipeline__count,
+.pipeline__value {
   color: var(--color-text-muted);
-  text-wrap: balance;
+}
+
+.pipeline__value {
+  white-space: nowrap;
 }
 
 .pipeline__total {

@@ -6,6 +6,7 @@ import { realisationParamsFromStoredTax } from "@techaust/core/invoices";
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
+import scrollCueSource from "../components/scroll-cue.tsx?raw";
 import reportPartsSource from "../routes/reports/parts.tsx?raw";
 import { ACTION_LABELS } from "./audit.ts";
 import { reportBellHref } from "./bell-links.ts";
@@ -816,8 +817,10 @@ describe("FX-4 (A5 8): a LUT added on the screen says it isn't saved yet", () =>
 
 describe("FX-4 review L5: the wide list's scroll cue measures from observers, not after every render", () => {
   it("no effect without a dependency list; content changes are watched", () => {
-    expect(reportPartsSource).not.toMatch(/useEffect\(measure\)/);
-    expect(reportPartsSource).toMatch(/new MutationObserver\(/);
-    expect(reportPartsSource).toMatch(/\}, \[measure\]\);/);
+    // The cue moved to components/scroll-cue.tsx (final sweep A7: the invoice lines share it); the wide list uses it.
+    expect(reportPartsSource).toMatch(/useScrollCue</);
+    expect(scrollCueSource).not.toMatch(/useEffect\(measure\)/);
+    expect(scrollCueSource).toMatch(/new MutationObserver\(/);
+    expect(scrollCueSource).toMatch(/\}, \[measure\]\);/);
   });
 });

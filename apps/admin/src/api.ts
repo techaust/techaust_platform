@@ -1080,6 +1080,8 @@ type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 type Options = { method?: Method; body?: unknown; raw?: Blob; signedIn?: boolean };
 
 const NETWORK = "Couldn't reach the server. Check your connection and try again.";
+/** The words of the Worker's own unhandled error (`worker/app.ts` onError), for an error answer that carries none. */
+const SERVER_ERROR = "Something went wrong";
 
 async function send<T>(path: string, { method, body, raw, signedIn = true }: Options): Promise<T> {
   const m: Method = method ?? (body === undefined && raw === undefined ? "GET" : "POST");
@@ -1101,7 +1103,12 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
   }
   const data = (await res.json().catch(() => ({}))) as T & ApiErrorBody;
   if (res.ok) return data;
-  const e = data.error ?? { code: "network", message: NETWORK };
+  // The server answered, so this is never "offline" (final sweep A15): an answer that isn't our JSON error (a Cloudflare 502 or 503 page, a
+  // CPU-limit page) or one without its words reads as the Worker's own unhandled error, in its words.
+  const e =
+    data.error && typeof data.error.code === "string" && data.error.message
+      ? data.error
+      : { code: data.error?.code || "internal", message: SERVER_ERROR };
   // The worker's `error.details` (`err(..., details)`): `advance_lut_missing` sends `{ fy }`, `debit_tax_only_invalid` `{ reason }`. The last day of
   // `credit_deadline_passed` is a top-level `date` (M5.3).
   const inner = data.error?.details;

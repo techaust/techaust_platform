@@ -84,8 +84,12 @@
 }
 
 /* The name link is a 44 px target without moving the text (the M3.2 lead-name treatment). */
+/* A 44 px target both ways: a short name ("AI Ops") was 38 px wide (final sweep A19); the negative margin keeps the row's rhythm. */
 .svc-name__link {
   --reach: calc((var(--target-min) - 1lh) / 2);
+  display: inline-block;
+  min-width: var(--target-min);
+  max-width: 100%;
   padding: var(--reach) 0;
   margin: calc(-1 * var(--reach)) 0;
   font-weight: 600;

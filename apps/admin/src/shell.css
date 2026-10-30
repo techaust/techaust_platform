@@ -1071,9 +1071,11 @@ body:has(.shell) {
   display: none;
 }
 
+/* 44 px both ways: a short first crumb ("Leads") was 38 px wide (final sweep A19). */
 .crumbs a {
   display: inline-flex;
   align-items: center;
+  min-width: var(--target-min);
   min-height: var(--target-min);
   color: var(--color-text-muted);
 }

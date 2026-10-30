@@ -193,6 +193,28 @@ describe("API client: step-up and expired sessions [ADM-AUTH-08, ADM-AUTH-05]", 
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
     await expect(api.me()).rejects.toMatchObject({ code: "network", status: 0 });
   });
+
+  it("a server error that isn't our JSON (a 502 page) or carries no words is a server error, never offline (final sweep A15)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response("<html>Bad gateway</html>", { status: 502, headers: { "Content-Type": "text/html" } }),
+        ),
+    );
+    await expect(api.me()).rejects.toMatchObject({
+      code: "internal",
+      status: 502,
+      message: "Something went wrong",
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(500, { error: { code: "internal" } })));
+    await expect(api.me()).rejects.toMatchObject({
+      code: "internal",
+      status: 500,
+      message: "Something went wrong",
+    });
+  });
 });
 
 describe("API client: the signature image and the PDF (M4.4) [ADM-SET-01, ADM-PROP-05]", () => {

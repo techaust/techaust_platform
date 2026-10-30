@@ -155,8 +155,10 @@ function PipelineTile({ tile }: { tile: NonNullable<DashboardTiles["pipelineValu
             return (
               <li key={r.currency} className="pipeline__row">
                 <span className="pipeline__cur docno">{r.currency}</span>
-                <span className="pipeline__line">
-                  {PIPELINE_AROUND[0](r.count)}
+                {/* Two pieces that never break inside: where the tile is too narrow for one line, the amount and "before GST" start
+                    the next line together (final sweep A12). */}
+                <span className="pipeline__count">{PIPELINE_AROUND[0](r.count)}</span>
+                <span className="pipeline__value">
                   <span className="pipeline__total tnum">{total}</span>
                   {PIPELINE_AROUND[1]}
                 </span>
