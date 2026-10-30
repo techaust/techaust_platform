@@ -126,6 +126,9 @@ function Parties({ view }: { view: PdfView }) {
   );
 }
 
+/** The cover's lines, one paragraph each (final sweep P5; the same rule as `coverLines` in packages/pdf/src/layout/document.ts). */
+const coverLines = (md: string): string => md.replace(/(?<!\n)\n(?!\n)/g, "\n\n");
+
 function Cover({ view }: { view: PdfView }) {
   const cover = view.sections.find((s) => s.kind === "cover");
   const title = view.documentTitle ?? view.docLabel;
@@ -136,7 +139,8 @@ function Cover({ view }: { view: PdfView }) {
       <PageTitle text={title} className="cover__title" id="doc-title">
         {title}
       </PageTitle>
-      {cover?.bodyMd.trim() && <Markdown source={cover.bodyMd} className="cover__lede" />}
+      {/* One paragraph per line of the cover, as the PDF prints it (final sweep P5). */}
+      {cover?.bodyMd.trim() && <Markdown source={coverLines(cover.bodyMd)} className="cover__lede" />}
       <p className="cover__for">
         {C.cover.preparedFor} <strong>{view.recipient.name}</strong>
       </p>
@@ -402,19 +406,23 @@ export function DocumentPaper(props: {
             case "acceptance":
               return (
                 <SectionBlock key={s.id} s={s} className="dsec--decision" noBody={!props.acceptOpen}>
-                  <div className="validity">
-                    <p className="validity__line">{view.validityNote}</p>
-                    <button
-                      type="button"
-                      className="btn btn--secondary"
-                      onClick={props.onDownload}
-                      disabled={props.downloading}
-                      aria-busy={props.downloading || undefined}
-                    >
-                      <Download size={20} />
-                      {WORDS.downloadPdf}
-                    </button>
-                  </div>
+                  {/* The validity line and its PDF button serve a decision still to make: once decided (or expired, or replaced), the
+                      decision block says what happened and offers its own downloads (final sweep P14). */}
+                  {props.acceptOpen && (
+                    <div className="validity">
+                      <p className="validity__line">{view.validityNote}</p>
+                      <button
+                        type="button"
+                        className="btn btn--secondary"
+                        onClick={props.onDownload}
+                        disabled={props.downloading}
+                        aria-busy={props.downloading || undefined}
+                      >
+                        <Download size={20} />
+                        {WORDS.downloadPdf}
+                      </button>
+                    </div>
+                  )}
                   {props.decision}
                 </SectionBlock>
               );

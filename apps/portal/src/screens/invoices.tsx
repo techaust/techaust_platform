@@ -20,6 +20,7 @@ import { INV } from "../copy-invoices.ts";
 import {
   type ClientInvoiceStatus,
   clientStatus,
+  minusMoneyText,
   moneyText,
   qtyText,
   statusLabel,
@@ -101,7 +102,13 @@ export function InvoicesScreen(props: { items: InvoiceItem[]; more?: ReactNode; 
                   <span className="nowrap">{dateText(d.dueDate)}</span>
                 ),
             },
-            { key: "total", label: INV.cols.total, num: true, cell: (d) => d.total },
+            {
+              key: "total",
+              label: INV.cols.total,
+              num: true,
+              // A credit note takes its amount off what is owed: a true minus sign, as the PDF prints a deduction (final sweep P16).
+              cell: (d) => (d.type === "credit_note" ? minusMoneyText(d.totalMinor, d.currency) : d.total),
+            },
             {
               key: "balance",
               label: INV.cols.balance,
@@ -340,10 +347,19 @@ export function InvoicesTile(props: { items: InvoiceItem[] | null; problem: stri
             <li key={d.id}>
               <Link to={invoiceHref(d.id)} className="inv-tile__row">
                 <span className="inv-tile__num">{d.numberDisplay}</span>
-                <span className="inv-tile__bal">{d.balance}</span>
+                {/* The amount says what it is, and a "Due" pill is followed by the date alone, never "Due Due 06 Nov" (final sweep P13). */}
+                <span className="inv-tile__bal">
+                  <span className="inv-tile__bal-label">{INV.balanceDue}</span> {d.balance}
+                </span>
                 <span className="inv-tile__due">
                   <InvoiceStatusPill status={clientStatus(d, today)} />
-                  {d.dueDate && <span>{INV.dueOn(dateText(d.dueDate))}</span>}
+                  {d.dueDate && (
+                    <span>
+                      {clientStatus(d, today) === "due"
+                        ? dateText(d.dueDate)
+                        : INV.dueOn(dateText(d.dueDate))}
+                    </span>
+                  )}
                 </span>
               </Link>
             </li>

@@ -6,8 +6,8 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Link, useParams } from "react-router";
 import { type InvoiceItem, type InvoiceSummary, invoiceLinkApi, invoicesApi, RequestError } from "../api.ts";
 import { LogIn } from "../components/icons.tsx";
+import { LoadProblemScreen, problemText } from "../components/load-problem.tsx";
 import { PageTitle, TokenShell } from "../components/shell/portal-shell.tsx";
-import { Notice } from "../components/ui.tsx";
 import { COPY } from "../copy.ts";
 import { N } from "../copy-documents.ts";
 import { INV } from "../copy-invoices.ts";
@@ -27,10 +27,6 @@ type State =
   | { phase: "ready"; doc: InvoiceSummary }
   | { phase: "missing" }
   | { phase: "failed"; error: unknown };
-
-/** The words of a failed request: the network, or our side. */
-const problemText = (e: unknown) =>
-  e instanceof RequestError && e.code !== "network" ? COPY.server : COPY.network;
 
 function DocumentScreen(props: {
   source: Source;
@@ -68,15 +64,9 @@ function DocumentScreen(props: {
 
   if (state.phase === "loading") return <ScreenSkeleton label={COPY.loading} />;
   if (state.phase === "missing") return props.link ? <LinkEnded /> : <NotFoundScreen homeHref="/" />;
+  // The number is unknown until the invoice loads, so the failed page keeps the section's title (final sweep P1).
   if (state.phase === "failed")
-    return (
-      <div className="screen">
-        <Notice tone="error">{problemText(state.error)}</Notice>
-        <button type="button" className="btn btn--secondary" onClick={load}>
-          {COPY.reload}
-        </button>
-      </div>
-    );
+    return <LoadProblemScreen title={INV.title} error={state.error} onRetry={load} />;
   const doc = state.doc;
   return (
     <InvoicePage
@@ -207,14 +197,7 @@ export function InvoicesRoute() {
   const list = useInvoices(me.canSeeFinance);
   if (!me.canSeeFinance) return <NotFoundScreen homeHref="/" />;
   if (list.error && !list.items)
-    return (
-      <div className="screen">
-        <Notice tone="error">{problemText(list.error)}</Notice>
-        <button type="button" className="btn btn--secondary" onClick={list.retry}>
-          {COPY.reload}
-        </button>
-      </div>
-    );
+    return <LoadProblemScreen title={INV.title} error={list.error} onRetry={list.retry} />;
   if (!list.items) return <ScreenSkeleton label={COPY.loading} />;
   return (
     <InvoicesScreen

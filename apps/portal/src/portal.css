@@ -514,6 +514,16 @@ html:has(.mmenu[open]) {
   flex: none;
 }
 
+/* The address is a link with a 44 px target: padding above and below, inline, so the line doesn't move. */
+.pfoot__mail {
+  padding-block: calc((var(--target-min) - 1em) / 2);
+  color: inherit;
+}
+
+.pfoot__mail:focus-visible {
+  padding-block: 0;
+}
+
 /* ---------- Shared bits ---------- */
 
 .line {
@@ -883,6 +893,13 @@ html:has(.mmenu[open]) {
 
   .drow__main {
     grid-column: auto;
+  }
+
+  /* The pill sits in a slot of its own width, so the dates line up down the list whatever the status says (final sweep P7). */
+  .drow__status {
+    display: grid;
+    grid-template-columns: 7.5rem minmax(0, 1fr);
+    justify-items: start;
   }
 }
 
@@ -2299,6 +2316,14 @@ textarea[aria-invalid="true"] {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   text-align: end;
+}
+
+/* The label sits over its amount (as the summary slip's figures), so a phone keeps the number on one line beside it. */
+.inv-tile__bal-label {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 400;
 }
 
 .inv-tile__due {

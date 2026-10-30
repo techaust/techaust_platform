@@ -213,7 +213,10 @@ export function DocumentsScreen(props: {
                     <span className="drow__title">{titleOf(d)}</span>
                     <span className="drow__meta">
                       {WORDS.kind[d.kind]} <span className="nowrap">{d.numberDisplay}</span>,{" "}
-                      {WORDS.doc.version.toLowerCase()} {d.version}
+                      {/* "version 1" never splits across lines (final sweep P6). */}
+                      <span className="nowrap">
+                        {WORDS.doc.version.toLowerCase()} {d.version}
+                      </span>
                     </span>
                   </span>
                   <span className="drow__status">

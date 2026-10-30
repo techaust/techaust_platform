@@ -241,10 +241,16 @@ function sectionsHtml(view: PdfView, sections: readonly ViewSection[]): string {
 
 // ---- the two documents --------------------------------------------------------------------------------------------------------
 
+/**
+ * The cover's text is a set of lines ("{{client.name}}", "{{service.name}}", "Proposal from {{company.name}}"), not a sentence: each line is
+ * its own paragraph, where Markdown would join single line breaks into one run (final sweep P5). Blank-line paragraphs are kept as they are.
+ */
+const coverLines = (md: string): string => md.replace(/(?<!\n)\n(?!\n)/g, "\n\n");
+
 function coverHtml(view: PdfView, cover: ViewSection | undefined): string {
   // The masthead carries the kind ("Proposal"), as on the inner pages; the page itself belongs to the document's own title.
   const title = view.documentTitle ?? view.docLabel;
-  const lede = cover ? markdownBlocks(cover.bodyMd).join("") : "";
+  const lede = cover ? markdownBlocks(coverLines(cover.bodyMd)).join("") : "";
   const meta = [
     view.issueDate,
     view.versionLabel,
