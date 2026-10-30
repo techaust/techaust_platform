@@ -17,7 +17,17 @@ import type { InvoiceIssuerSnapshot, RecipientSnapshot } from "@techaust/db/issu
 import { buildInvoiceEnvelope } from "../../src/invoice-envelope.ts";
 import type { InvoiceEnvelope, InvoiceHeader } from "../../src/invoice-types.ts";
 import type { EnvLine } from "../../src/types.ts";
-import { OVERSEAS_RECIPIENT, SAMPLE_ARN, SAMPLE_SUPPLIER_GSTIN, WB_RECIPIENT } from "./invoice.ts";
+import {
+  hexOf,
+  OVERSEAS_RECIPIENT,
+  SAMPLE_ARN,
+  SAMPLE_SUPPLIER_GSTIN,
+  SIGNATURE_BYTES,
+  WB_RECIPIENT,
+} from "./invoice.ts";
+
+/** T4: where a note fixture's signature is stored (the jobs seed puts `SIGNATURE_BYTES` there). */
+export const NOTE_SIGNATURE_KEY = "settings/signature-0123456789abcdef.png";
 
 export const NOTE_FIXTURE_NAMES = [
   "credit_lines",
@@ -318,7 +328,12 @@ export async function buildNoteFixture(
                 branch: "Sample branch",
               },
             },
-    signature: null,
+    // T4 (rt2): a note always carries the signature (Rule 53(1A), 08-C RA-22): the same made-up PNG as the "signed" invoice fixture
+    signature: {
+      key: NOTE_SIGNATURE_KEY,
+      sha256: await hexOf(SIGNATURE_BYTES),
+      mime: "image/png",
+    },
     reverseChargeText: "Tax payable on reverse charge: No",
     sender: { staffId: "stf_sample_1", name: "Sample Proprietor", email: "sender@example.test" },
   };

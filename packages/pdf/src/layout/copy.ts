@@ -227,6 +227,17 @@ export const STATEMENT_PDF_COPY = {
   page: { word: "Page", of: "of" },
 } as const;
 
+/**
+ * T10 (rt2): the Udyam registration, word for word from 07-ZC (APPROVED by the owner, 2026-10-31). `categories` are line 5's options (the admin's select and the
+ * printed words, L3); `line` is line 6, printed on a tax invoice and its on-screen paper under the GSTIN line, as ONE text node (`missingStatutoryLine` checks it).
+ * Owner's choice, not a legal requirement: Researched 2026-10-30, MSMED ss.15–16 (08-C RB-39(a)).
+ */
+export const UDYAM_COPY = {
+  categories: { micro: "Micro enterprise", small: "Small enterprise", medium: "Medium enterprise" },
+  line: (number: string, category: "micro" | "small" | "medium") =>
+    `Udyam Registration No. ${number} (${UDYAM_COPY.categories[category]})`,
+} as const;
+
 /** The line under the title of a tax or export invoice issued for a payment received against a proforma (07-S §8, Q9; PENDING approval). */
 export const advanceLine = (
   proformaNumber: string,

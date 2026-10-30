@@ -29,7 +29,7 @@ export const SIGNATURE_BYTES = Uint8Array.from(
   (c) => c.charCodeAt(0),
 );
 
-const hexOf = async (bytes: Uint8Array) =>
+export const hexOf = async (bytes: Uint8Array) =>
   Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)), (b) =>
     b.toString(16).padStart(2, "0"),
   ).join("");
@@ -361,13 +361,15 @@ export async function buildInvoiceFixture(
                 branch: "Sample branch",
               },
         },
-    signature: spec.signed
-      ? {
-          key: "settings/signature-0123456789abcdef.png",
-          sha256: await hexOf(SIGNATURE_BYTES),
-          mime: "image/png",
-        }
-      : null,
+    // T4 (rt2): an invoice for a payment received always carries the signature (08-C RA-17)
+    signature:
+      spec.signed || spec.advance
+        ? {
+            key: "settings/signature-0123456789abcdef.png",
+            sha256: await hexOf(SIGNATURE_BYTES),
+            mime: "image/png",
+          }
+        : null,
     reverseChargeText: "Tax payable on reverse charge: No",
     sender: { staffId: "stf_sample_1", name: "Sample Proprietor", email: "sender@example.test" },
   };

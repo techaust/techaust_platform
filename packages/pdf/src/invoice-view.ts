@@ -22,6 +22,7 @@ import type {
   InvoiceViewSwift,
   VerifiedSignature,
 } from "./invoice-types.ts";
+import { UDYAM_COPY } from "./layout/copy.ts";
 import type { ViewConfig } from "./types.ts";
 import { addressLines, nonEmpty, pct, totalsOf } from "./view.ts";
 
@@ -298,6 +299,8 @@ export function toInvoiceView(
       name: company.tradeName,
       legalName: nonEmpty(company.legalName) ? company.legalName : null,
       lines: supplierLines,
+      // T10: 07-ZC line 6 from the frozen block (only a tax invoice can carry one: the envelope check refuses it anywhere else)
+      udyam: company.udyam ? UDYAM_COPY.line(company.udyam.number, company.udyam.category) : null,
     },
     recipient: {
       name,
