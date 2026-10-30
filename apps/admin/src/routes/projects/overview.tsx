@@ -17,6 +17,7 @@ import { FieldError, Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
 import { hoursLoggedLine } from "../../lib/care.ts";
 import { OPEN_IT } from "../../lib/documents.ts";
+import { personLabel, personLabels } from "../../lib/people.ts";
 import {
   COPY,
   type DetailsErrors,
@@ -144,6 +145,8 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const people = useLoad(() => (props.canWrite ? api.leadAssignees() : Promise.resolve(null)), "");
+  // Two people with one name are told apart by their work email (final sweep A20).
+  const ownerLabels = personLabels(people.data?.assignees ?? []);
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -228,7 +231,7 @@ function Details(props: Parameters<typeof Overview>[0] & { canWrite: boolean }) 
                 )}
                 {(people.data?.assignees ?? []).map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name || "Name not set yet"}
+                    {personLabel(ownerLabels, p)}
                   </option>
                 ))}
               </select>

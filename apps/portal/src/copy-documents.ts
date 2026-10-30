@@ -127,7 +127,8 @@ export const N = {
     acceptedBy: "Accepted by",
     email: "Email",
     when: "Date and time",
-    fingerprint: "Document fingerprint",
+    // 07-ZA item 19 (owner 2026-10-30): the accepted PDF's fingerprint, told apart from the paper's "Content fingerprint".
+    fingerprint: "PDF fingerprint",
     declinedBy: "Declined by",
     reason: "Reason",
   },

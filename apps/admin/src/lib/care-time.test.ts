@@ -46,6 +46,7 @@ const PLACEHOLDER_TAG = "[Placeholder]";
 import {
   ACTIVITY_PENDING,
   activityHref,
+  activityRef,
   activityText,
   DASH_COPY,
   showingFirst,
@@ -297,6 +298,52 @@ describe("07-Q lines carry no placeholder tag", () => {
     expect(activityHref("lead", "l1")).toBe("/leads/l1");
     expect(activityHref("time_log", "t1")).toBeNull();
     expect(activityHref("toString", "x")).toBeNull();
+  });
+  it("names what each row is about: a number, a title or Untitled, a project, a care plan (final sweep A13) [ADM-DASH-01]", () => {
+    const row = (o: Partial<Parameters<typeof activityRef>[0]>) =>
+      activityRef({
+        entityType: "document",
+        entityId: "d1",
+        ref: null,
+        title: null,
+        project: null,
+        carePlan: null,
+        ...o,
+      });
+    expect(row({ ref: "TH/INV/2627/0001" })).toEqual({
+      kind: "ref",
+      text: "TH/INV/2627/0001",
+      href: "/documents/d1",
+    });
+    expect(row({ title: "Website rebuild" })).toEqual({
+      kind: "title",
+      text: "Website rebuild",
+      href: "/documents/d1",
+    });
+    // no title (an anonymised client's draft, or none typed): "Untitled", as the bells say
+    expect(row({})).toEqual({ kind: "title", text: "Untitled", href: "/documents/d1" });
+    expect(row({ title: "  " })).toMatchObject({ text: "Untitled" });
+    expect(row({ entityType: "approval", entityId: "a1" })).toEqual({
+      kind: "title",
+      text: "Untitled",
+      href: "/approvals/a1",
+    });
+    expect(
+      row({
+        entityType: "time_entry",
+        entityId: "t1",
+        project: { id: "p 1", code: "P-0003", name: "Portal" },
+      }),
+    ).toEqual({ kind: "project", code: "P-0003", name: "Portal", href: "/projects/p%201" });
+    expect(
+      row({ entityType: "time_entry", entityId: "t1", carePlan: { id: "cp1", clientCode: "ACME" } }),
+    ).toEqual({ kind: "plan", code: "ACME", href: "/care-plans/cp1" });
+    expect(row({ entityType: "time_entry", entityId: "t1" })).toBeNull();
+    expect(row({ entityType: "lead", entityId: "l1", ref: "L-0004" })).toEqual({
+      kind: "ref",
+      text: "L-0004",
+      href: "/leads/l1",
+    });
   });
 });
 

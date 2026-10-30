@@ -72,6 +72,7 @@ import {
   STAGE_LABELS,
 } from "../../lib/leads.ts";
 import { REASON_LABEL, reasonText } from "../../lib/offer-words.ts";
+import { personLabel, personLabels } from "../../lib/people.ts";
 import { useUser } from "../../session.tsx";
 import { ANSWERS_COPY, type Answers, AnswersFields, answersPatch } from "./answers.tsx";
 import { ConvertDialog } from "./convert.tsx";
@@ -275,6 +276,8 @@ function LeadView({
   const dirty = followDirty || contactDirty || answersDirty || note.trim() !== "";
 
   const names = new Map<string, string>(assignees.map((a) => [a.id, a.name]));
+  // Two people with one name are told apart by their work email in the Owner menu (final sweep A20).
+  const ownerLabels = personLabels(assignees);
   if (lead.ownerId && lead.ownerName) names.set(lead.ownerId, lead.ownerName);
 
   async function save(where: Where, patch: Omit<LeadPatch, "expectedUpdatedAt">) {
@@ -459,7 +462,7 @@ function LeadView({
                       <option value="">Unassigned</option>
                       {assignees.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.name || "Name not set yet"}
+                          {personLabel(ownerLabels, p)}
                         </option>
                       ))}
                       {lead.ownerId && !assignees.some((p) => p.id === lead.ownerId) && (

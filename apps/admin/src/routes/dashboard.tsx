@@ -13,8 +13,10 @@ import { LoadFailed, useLoad } from "../components/states.tsx";
 import { allowed } from "../lib/access.ts";
 import { CARE_COPY, dayText, hoursText, moneyText } from "../lib/care.ts";
 import {
-  activityHref,
+  type ActivityRef,
+  activityRef,
   activityText,
+  carePlanWords,
   DASH_COPY,
   PIPELINE_AROUND,
   showingFirst,
@@ -381,7 +383,7 @@ function ActivityTile({ tile }: { tile: NonNullable<DashboardTiles["activity"]> 
       ) : (
         <ol className="activity-list">
           {tile.items.map((a) => {
-            const href = activityHref(a.entityType, a.entityId);
+            const about = activityRef(a);
             return (
               <li key={a.id} className="activity-item">
                 <p className="activity-item__text">
@@ -389,20 +391,12 @@ function ActivityTile({ tile }: { tile: NonNullable<DashboardTiles["activity"]> 
                     {a.actor === "System" ? DASH_COPY.system : a.actor}
                   </span>{" "}
                   {activityText(a.action)}
-                  {a.ref &&
-                    (href ? (
-                      <>
-                        {" "}
-                        <Link to={href} className="docno activity-item__ref">
-                          {a.ref}
-                        </Link>
-                      </>
-                    ) : (
-                      <>
-                        {" "}
-                        <span className="docno">{a.ref}</span>
-                      </>
-                    ))}
+                  {about && (
+                    <>
+                      {" "}
+                      <ActivityAbout about={about} />
+                    </>
+                  )}
                 </p>
                 <When ms={a.at} inline />
               </li>
@@ -411,6 +405,37 @@ function ActivityTile({ tile }: { tile: NonNullable<DashboardTiles["activity"]> 
         </ol>
       )}
     </Tile>
+  );
+}
+
+/** What a row is about (final sweep A13): a number or code set as one, a title in the sentence's own type, a project's code and name, or a care plan. */
+function ActivityAbout({ about }: { about: ActivityRef }) {
+  let body: ReactNode;
+  let cls = "activity-item__ref";
+  if (about.kind === "ref") {
+    body = about.text;
+    cls = "docno activity-item__ref";
+  } else if (about.kind === "title") {
+    body = about.text;
+  } else if (about.kind === "project") {
+    body = (
+      <>
+        <span className="docno">{about.code}</span> {about.name}
+      </>
+    );
+  } else {
+    body = (
+      <>
+        {carePlanWords} <span className="docno">{about.code}</span>
+      </>
+    );
+  }
+  return about.href ? (
+    <Link to={about.href} className={cls}>
+      {body}
+    </Link>
+  ) : (
+    <span className={cls}>{body}</span>
   );
 }
 

@@ -42,6 +42,22 @@ export function clientStatus(
 export const statusLabel = (s: Exclude<ClientInvoiceStatus, null>) => INV.status[s];
 
 /**
+ * A note's frozen reason as its PDF prints it (07-T §1, `packages/pdf/src/layout/invoice.ts`): "Reason: {label}", with the words typed for it on a line
+ * of their own; for "Other", the words typed are the reason itself. Nothing for a document that isn't a note (final sweep P15).
+ */
+export function noteReasonLines(
+  r: InvoiceSummary["noteReason"],
+): { line: string; detail: string | null } | null {
+  if (!r) return null;
+  const typed = r.text.trim();
+  const other = r.code === "other" && typed !== "";
+  return {
+    line: INV.pdf.reason(other ? typed : INV.pdf.reasonLabel(r.code)),
+    detail: !other && typed !== "" ? typed : null,
+  };
+}
+
+/**
  * The totals under the lines, as the PDF lists them (only the heads that apply; Total last and strong). Every amount is the server's, formatted here.
  * FX-4 review M1 (A5 5): a proforma sealed with the estimate marker (`gstEstimate`) names its tax heads "CGST (estimate)" as its PDF does; one sealed
  * before FX-4 (no marker, or an older API without the field) keeps the plain heads.

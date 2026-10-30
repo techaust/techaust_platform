@@ -28,6 +28,7 @@ import {
   storedView,
   storeView,
 } from "../lib/leads.ts";
+import { personLabel, personLabels } from "../lib/people.ts";
 import { useUser } from "../session.tsx";
 import { Board } from "./leads/board.tsx";
 import { LeadName, LeadsGate, NextAction, StagePill } from "./leads/parts.tsx";
@@ -171,6 +172,8 @@ function LeadList() {
   const clear = () => set({ q: null, stage: null, owner: null, source: null, service: null, overdue: null });
 
   const others = (people.data?.assignees ?? []).filter((a) => a.id !== people.data?.me);
+  // Two people with one name (you included) are told apart by their work email (final sweep A20).
+  const ownerLabels = personLabels(people.data?.assignees ?? []);
   const columns: Column<LeadItem>[] = [
     { key: "name", header: "Lead", card: "title", width: "30%", cell: (r) => <LeadName lead={r} /> },
     { key: "stage", header: "Stage", cell: (r) => <StagePill stage={r.stage} reason={r.lostReason} /> },
@@ -233,7 +236,7 @@ function LeadList() {
             options: [
               { value: "me", label: "Mine" },
               { value: "none", label: "Unassigned" },
-              ...others.map((a) => ({ value: a.id, label: a.name || "Name not set yet" })),
+              ...others.map((a) => ({ value: a.id, label: personLabel(ownerLabels, a) })),
             ],
           },
           {

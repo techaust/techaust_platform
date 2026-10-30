@@ -7,6 +7,7 @@ import { EmptyState, PageHeader } from "../components/display.tsx";
 import { FolderKanban, Plus, Search } from "../components/icons.tsx";
 import { LoadFailed, useLoad } from "../components/states.tsx";
 import { allowed } from "../lib/access.ts";
+import { personLabel, personLabels } from "../lib/people.ts";
 import { COPY, moneyText, PROJECT_STATUS_LABELS, PROJECT_STATUSES } from "../lib/projects.ts";
 import { useUser } from "../session.tsx";
 import { ClientFilter } from "./projects/client-filter.tsx";
@@ -71,6 +72,8 @@ function Projects() {
 
   const me = people.data?.me;
   const others = (people.data?.assignees ?? []).filter((a) => a.id !== me);
+  // Two people with one name (you included) are told apart by their work email (final sweep A20).
+  const ownerLabels = personLabels(people.data?.assignees ?? []);
 
   const columns: Column<ProjectView>[] = [
     { key: "name", header: "Project", card: "title", width: "28%", cell: (r) => <ProjectName project={r} /> },
@@ -144,7 +147,7 @@ function Projects() {
             selected: owner ? [owner] : [],
             options: [
               ...(me ? [{ value: me, label: "Mine" }] : []),
-              ...others.map((a) => ({ value: a.id, label: a.name || "Name not set yet" })),
+              ...others.map((a) => ({ value: a.id, label: personLabel(ownerLabels, a) })),
             ],
           },
         ].filter((g) => g.options.length > 0)}

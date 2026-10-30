@@ -18,6 +18,7 @@ import { Notice } from "../components/ui.tsx";
 import { allowed } from "../lib/access.ts";
 import { careErrorText, dayText, hoursText } from "../lib/care.ts";
 import { Y } from "../lib/copy-y.ts";
+import { personLabel, personLabels } from "../lib/people.ts";
 import {
   dayHead,
   lockState,
@@ -87,6 +88,8 @@ function TimeScreen() {
     );
 
   const people = useLoad(() => api.timePeople(), "");
+  // Two people with one name are told apart by their work email (final sweep A20).
+  const peopleLabels = personLabels(people.data?.people ?? []);
   // The owner logs for others: their own id (for "(you)" in "Log time for") comes from the lead assignees list, as on Projects.
   const self = useLoad(
     () => (canWriteAny ? api.leadAssignees() : Promise.resolve(null)),
@@ -148,7 +151,7 @@ function TimeScreen() {
               {readAll && <option value="">Everyone</option>}
               {(people.data?.people ?? []).map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name || "Name not set yet"}
+                  {personLabel(peopleLabels, p)}
                 </option>
               ))}
             </select>

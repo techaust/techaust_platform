@@ -28,6 +28,9 @@ export const blogPage = {
     description:
       "Practical notes on custom software, AI document automation, workflow automation and connecting business systems, from the TecHaust team.",
   },
+  /** 07-ZA items 3 and 17 (owner 2026-10-30): the page's description while no post is published; `meta.description` comes back with the first (the RSS channel keeps it). */
+  metaEmptyDescription:
+    "Notes on custom software, AI document automation, workflow automation and connecting business systems, from the TecHaust team. First posts are on the way.",
   /** 07-D §6: shown while no post is published (owner decision 2026-10-22, docs/13). */
   empty:
     "Our first articles are on their way: practical guides on Tally automation, GST e-invoicing and automation audits.",

@@ -399,7 +399,11 @@ export function VoidDialog(props: {
     >
       <div className="dialog__body">
         <p>{props.type === "proforma" ? INV_COPY.voidProformaBody : INV_COPY.voidBody}</p>
-        <FormField id="void-reason" label={INV_COPY.voidReason} error={reasonError}>
+        <FormField
+          id="void-reason"
+          label={props.type === "proforma" ? INV_COPY.voidProformaReason : INV_COPY.voidReason}
+          error={reasonError}
+        >
           {(a) => (
             <textarea
               {...a}

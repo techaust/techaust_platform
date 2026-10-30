@@ -70,6 +70,7 @@ function DocumentScreen(props: {
   const doc = state.doc;
   return (
     <InvoicePage
+      linkParent={!props.link}
       doc={doc}
       notices={props.notices}
       downloading={downloading}
