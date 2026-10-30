@@ -252,6 +252,7 @@
 
 /* Columns: handle, position, title, due, amount, status, actions. Without write access there is no handle or menu. */
 .ledger-panel {
+  container: ledger / inline-size;
   --ledger-cols: 2rem minmax(0, 1fr) 8rem 9.5rem 9rem;
   --amount-col: 4;
 }
@@ -424,7 +425,7 @@
 }
 
 /* On the Milestones tab the foot keeps the ledger's columns: each sum sits under the amounts, its name before it. */
-@media (min-width: 48rem) {
+@container ledger (min-width: 50rem) {
   .ledger-panel .ledger__foot {
     display: grid;
     grid-template-columns: var(--ledger-cols);
@@ -457,7 +458,9 @@
   margin: 0;
 }
 
-@media (max-width: 47.99rem) {
+/* Stacked rows whenever the panel is too narrow for the columns, not only on phones: the fixed columns take ~37rem,
+   so below 50rem the title shrank to one letter a line at 768 and 1024 px (final sweep A1). */
+@container ledger (max-width: 49.99rem) {
   .ledger__head {
     display: none;
   }
@@ -529,6 +532,35 @@
     font-size: var(--text-sm);
   }
 
+  .ledger-sum {
+    justify-content: flex-start;
+    text-align: start;
+  }
+}
+
+/* A tablet-sized panel (768 to ~1100 px windows): the title keeps its full line, and the due date, the amount and the status share the
+   second, each with its name before it, instead of three more lines. */
+@container ledger (min-width: 36rem) and (max-width: 49.99rem) {
+  .ledger__row,
+  .ledger-panel .ledger__row {
+    grid-template-columns: 1.5rem repeat(3, minmax(0, 1fr)) var(--target-min);
+    grid-template-areas:
+      "pos title title title actions"
+      "pos due amount status status";
+    column-gap: var(--space-3);
+  }
+
+  .ledger__label {
+    min-width: 0;
+  }
+
+  .ledger__cell {
+    align-items: center;
+  }
+}
+
+/* The Overview's sums sit outside the ledger panel, so they keep the phone rule. */
+@media (max-width: 47.99rem) {
   .ledger-sum {
     justify-content: flex-start;
     text-align: start;

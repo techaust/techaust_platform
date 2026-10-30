@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInviteStatements } from "../../../scripts/create-invite-sql.mjs";
 import { localOrigin, portOffset } from "../../../scripts/dev-ports.mjs";
+import { sampleData } from "./sample-data.ts";
 
 const ORIGIN = localOrigin("admin", portOffset()); // the same server as playwright.config.ts (TECHAUST_PORT_OFFSET, CLOUD-1)
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
@@ -127,7 +128,27 @@ export default async function globalSetup() {
   if (!cookies.some((c) => c.name === "__Host-ta_admin")) throw new Error("e2e setup: no session cookie");
   mkdirSync(here("../.e2e/"), { recursive: true });
   writeFileSync(here("../.e2e/owner-state.json"), JSON.stringify({ cookies, origins: [] }, null, 2));
-  await sampleLead(cookies.map((c) => `${c.name}=${c.value}`).join("; "));
+  const cookie = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+  await sampleLead(cookie);
+  // E2E_SAMPLE=1: the realistic sample data (invoices, notes, an export, time, a care plan), so the sweep runs with data (e2e/sample-data.ts).
+  if (process.env.E2E_SAMPLE === "1")
+    await sampleData({
+      d1,
+      secret,
+      email,
+      call: async (path, init = {}) => {
+        const res = await fetch(`${ORIGIN}/api/v1${path}`, {
+          method: init.method ?? (init.body === undefined ? "GET" : "POST"),
+          headers: {
+            Cookie: cookie,
+            Origin: ORIGIN,
+            ...(init.body === undefined ? {} : { "Content-Type": "application/json" }),
+          },
+          ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+        });
+        return { status: res.status, data: await res.json().catch(() => ({})) };
+      },
+    });
 }
 
 /**

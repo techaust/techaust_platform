@@ -74,11 +74,21 @@ async function records(page: Page): Promise<Record<string, string>> {
     first("project", "/projects", "projects", (id) => `/projects/${id}`),
     first("care plan", "/care-plans", "carePlans", (id) => `/care-plans/${id}`),
     first("document", "/documents", "documents", (id) => `/documents/${id}`),
-    first("invoice", "/invoices", "invoices", (id) => `/invoices/${id}`),
     first("catalogue item", "/catalogue", "items", (id) => `/catalogue/${id}`),
     first("template", "/templates", "templates", (id) => `/catalogue/templates/${id}`),
   ]);
-  return Object.fromEntries(found.filter((f): f is readonly [string, string] => f[1] !== null));
+  // Every invoice of the first page (up to 8): a tax invoice, a void one, an export, a credit note and a draft debit note each draw their own
+  // panels, and a landmark or target fault on one type alone was missed when only the newest was swept (final sweep A4).
+  const inv = await page.request.get("/api/v1/invoices");
+  expect(inv.status(), "GET /api/v1/invoices").toBe(200);
+  const { invoices = [] } = (await inv.json()) as { invoices?: { id: string }[] };
+  const invoicePages = invoices
+    .slice(0, 8)
+    .map((v, i) => [`invoice ${i + 1}`, `/invoices/${encodeURIComponent(v.id)}`] as const);
+  return Object.fromEntries([
+    ...found.filter((f): f is readonly [string, string] => f[1] !== null),
+    ...invoicePages,
+  ]);
 }
 
 /** Waits until the route has drawn its content: no skeleton and nothing busy (the lists load after the shell). */
