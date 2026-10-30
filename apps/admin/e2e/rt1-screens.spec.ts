@@ -330,8 +330,8 @@ test.describe("rt1 screens", () => {
       await view(page, v);
       await page.goto("/reports/sales-register");
       await settled(page);
-      await page.getByLabel("From", { exact: true }).fill("01/07/2026");
-      await page.getByLabel("To", { exact: true }).fill("30/09/2026");
+      await page.locator("#sales-from").fill("01/07/2026");
+      await page.locator("#sales-to").fill("30/09/2026");
       await page.getByRole("button", { name: "Show" }).click();
       await expect(page.locator("#sales-3b-held-line")).toHaveText(
         "2 credit notes aren't deducted until your client accepts them in IMS. Check the GST portal's GSTR-3B figures before you file.",
