@@ -2,6 +2,7 @@
 // (core's real tax engine, sealed with the issue route's own `invoiceSealOf`); its rows are then written the way the freeze leaves them (a draft with its lines, then one
 // `UPDATE` that freezes it with every sealed block), so what the snapshot step reads reproduces its seal and its content hash. SAMPLE DATA ONLY.
 import { env } from "cloudflare:workers";
+import { fyOfDate, parseIsoDate } from "@techaust/core/dates";
 import { headerExtrasJson } from "@techaust/db/documents";
 import { invoiceBundleOf } from "../../../packages/pdf/test/fixtures/invoice.ts";
 import { buildNoteFixture, type NoteFixtureName } from "../../../packages/pdf/test/fixtures/notes.ts";
@@ -145,50 +146,58 @@ export async function seedIssuedNote(
   // 2026-10-30, Rule 96A(1) CGST Rules (08-C RA-19, Q39)). The tax row gets one for the freeze and is put back as it was afterwards, so no other test sees it.
   const lutFreeze =
     envelope.type === "debit_note" && (route === "lut" || computed.supply.type === "export_lut");
+  // rt1 review 11: the row is read whole (value AND version) and put back in a `finally`, so a freeze that throws never leaves the LUT behind for the next test.
   const taxBefore = lutFreeze
-    ? await env.DB.prepare("SELECT value FROM settings WHERE key = 'tax'").first<{ value: string }>()
+    ? await env.DB.prepare("SELECT value, version FROM settings WHERE key = 'tax'").first<{
+        value: string;
+        version: number;
+      }>()
     : null;
-  if (lutFreeze) {
-    const [y = 0, m = 0] = String(d.issue_date).split("-").map(Number);
-    const start = m >= 4 ? y : y - 1;
-    const fyToken = `${String(start % 100).padStart(2, "0")}${String((start + 1) % 100).padStart(2, "0")}`;
+  try {
+    if (lutFreeze) {
+      // the FY of the note's own issue day, by core's rule (the trigger's `fyTokenOfDateSql` is pinned to it day by day in the db tests)
+      const issued = parseIsoDate(String(d.issue_date));
+      if (!issued) throw new Error(`the fixture's issue date is not a date: ${String(d.issue_date)}`);
+      await env.DB.prepare(
+        "INSERT INTO settings (key, value, version) VALUES ('tax', ?1, 1) ON CONFLICT(key) DO UPDATE SET value = excluded.value, version = version + 1",
+      )
+        .bind(JSON.stringify({ luts: [{ fy: fyOfDate(issued).token, arn: "AD1903270000003" }] }))
+        .run();
+    }
+    // the freeze, as the issue statement leaves it (a credit note: balance 0, no due date, IMS status set)
+    const credit = envelope.type === "credit_note";
     await env.DB.prepare(
-      "INSERT INTO settings (key, value, version) VALUES ('tax', ?1, 1) ON CONFLICT(key) DO UPDATE SET value = excluded.value, version = version + 1",
+      `UPDATE documents SET status = 'issued', frozen_at = ?2, series = ?3, fy = ?4, number = ?5, number_display = ?6, issue_date = ?7, due_date = ?8, snapshot_sha256 = ?9,
+         recipient = ?10, issuer = ?11, computed = ?12, balance_minor = ?13, ims_status = ?14, header_extras = ?15
+       WHERE id = ?1`,
     )
-      .bind(JSON.stringify({ luts: [{ fy: fyToken, arn: "AD1903270000003" }] }))
+      .bind(
+        documentId,
+        envelope.issuedAt,
+        envelope.series,
+        d.fy,
+        number,
+        envelope.numberDisplay,
+        d.issue_date,
+        d.due_date ?? null,
+        envelope.snapshotSha256,
+        JSON.stringify(envelope.snapshot.header.recipient),
+        JSON.stringify(envelope.snapshot.header.issuer),
+        envelope.snapshot.computedJson,
+        credit ? 0 : computed.totalMinor,
+        credit ? "pending" : null,
+        o.dropFrozenExtras ? null : headerExtrasJson({ noteOf }),
+      )
       .run();
-  }
-
-  // the freeze, as the issue statement leaves it (a credit note: balance 0, no due date, IMS status set)
-  const credit = envelope.type === "credit_note";
-  await env.DB.prepare(
-    `UPDATE documents SET status = 'issued', frozen_at = ?2, series = ?3, fy = ?4, number = ?5, number_display = ?6, issue_date = ?7, due_date = ?8, snapshot_sha256 = ?9,
-       recipient = ?10, issuer = ?11, computed = ?12, balance_minor = ?13, ims_status = ?14, header_extras = ?15
-     WHERE id = ?1`,
-  )
-    .bind(
-      documentId,
-      envelope.issuedAt,
-      envelope.series,
-      d.fy,
-      number,
-      envelope.numberDisplay,
-      d.issue_date,
-      d.due_date ?? null,
-      envelope.snapshotSha256,
-      JSON.stringify(envelope.snapshot.header.recipient),
-      JSON.stringify(envelope.snapshot.header.issuer),
-      envelope.snapshot.computedJson,
-      credit ? 0 : computed.totalMinor,
-      credit ? "pending" : null,
-      o.dropFrozenExtras ? null : headerExtrasJson({ noteOf }),
-    )
-    .run();
-  if (lutFreeze) {
-    await (taxBefore
-      ? env.DB.prepare("UPDATE settings SET value = ?1 WHERE key = 'tax'").bind(taxBefore.value)
-      : env.DB.prepare("DELETE FROM settings WHERE key = 'tax'")
-    ).run();
+  } finally {
+    if (lutFreeze)
+      await (taxBefore
+        ? env.DB.prepare("UPDATE settings SET value = ?1, version = ?2 WHERE key = 'tax'").bind(
+            taxBefore.value,
+            taxBefore.version,
+          )
+        : env.DB.prepare("DELETE FROM settings WHERE key = 'tax'")
+      ).run();
   }
 
   return {
