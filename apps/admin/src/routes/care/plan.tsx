@@ -401,9 +401,7 @@ function PastPeriods({ data }: { data: CarePlanPage }) {
   // named "Last 12 billing periods" broke axe landmark-unique (final sweep A10).
   return (
     <div className="lead-panel periods-panel">
-      <h2 id="periods-h" className="lead-panel__title">
-        Last 12 billing periods
-      </h2>
+      <h2 className="lead-panel__title">Last 12 billing periods</h2>
       <div className="clients-table periods-table">
         <DataTable
           caption="Last 12 billing periods"

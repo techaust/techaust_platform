@@ -146,9 +146,7 @@ export function NoteDraft({
           <NoteFacts view={v} />
           {/* Named by its number and type, not "Lines": the lines table inside is its own region named "Lines" (final sweep A4, axe landmark-unique). */}
           <section className="lead-panel doc-sheet inv-sheet" aria-labelledby="note-sheet-name">
-            <h2 id="note-sheet-h" className="visually-hidden">
-              {INV_COPY.lines}
-            </h2>
+            <h2 className="visually-hidden">{INV_COPY.lines}</h2>
             <div className="inv-sheet__head" id="note-sheet-name">
               <NumberMark number={null} size="lead" />
               <span className="inv-sheet__type">{typeLabel(v.type)}</span>
