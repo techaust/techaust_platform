@@ -133,3 +133,20 @@ Not loaded: `cloudflare:turnstile-spin` (Turnstile is unchanged; only its site k
 - Owner's answers: **zod 4.6.6 yes** (done by the lead: the four package.json pins and the lockfile; astro 7.3.5 still pulls 4.6.5 at build time, and older zod in dev tools, so the GHSA-mrhx-c7xc-m3w5 entry stays, narrowed to build and dev tools, expiring 2026-11-13); **a new service token `staging-deploy-check`** on all four staging Access apps (owner creates it; `.logs/owner/set-deploy-token.ps1` stores `CF_ACCESS_DEPLOY_CLIENT_ID` and `CF_ACCESS_DEPLOY_CLIENT_SECRET`). The benchmark token stays for the benchmark only.
 - Checks on the zod update: `pnpm check` exit 0; `pnpm test`: auth, ui 471, core 1824, email 130, db 487, pdf 351, web 709 passed; one timeout each in jobs (`stats.test.ts`), portal (`session.test.ts`) and admin (`invoice-notes.test.ts`) while a browser sweep shared the PC, each file then passed alone (25, 25, 37). The `[mf:error] ZodError` in jobs is miniflare's own log, present in the passing run too.
 - Next: switch the admin check to the deploy token and wire the portal, jobs and web checks (after the owner's `RESULT: OK`); review (no screens); PR.
+
+## Review (reviewer, Opus 5.5 high, 2026-10-30, on b422754e): APPROVE with a merge gate (copied by the lead)
+Security pass by hand (fork-safe triggers, secret reach, no `${{ }}` in `run`, SHA pins, guard and health scripts): no vulnerability. `pnpm check` exit 0; web tests 712 passed, 17 skipped; `node scripts/dependency-audit.mjs` ok (12 high, all allowed). Guard trial: a plain admin build is refused by `check-staging-build.mjs`, a staging build passes, a missing build fails.
+1. **medium, merge gate** `deploy-staging.yml:113-153`, `staging-health.mjs:100-105`: without `CF_ACCESS_DEPLOY_*` and the four policies, every deploy stops after the admin (half-updated staging). Fix: hold the PR until the owner's `RESULT: OK` and the policies; better, check the secrets before the first deploy.
+2. **medium** docs out of step: `environments.md:24, 39, 59`, `docs/05-architecture.md:613-614`, `docs/12-status.md:58`.
+3. **low** `dependency-audit.mjs:88-97`: entries match advisory and package only; the zod entry's "build and dev tools" isn't enforced. Follow-up: a `via`/`versions` field or a test that the Worker packages resolve zod ≥ 4.6.6.
+4. **low** shared-runner limit (documented): a separate deploy job is the follow-up.
+5. **low** `staging-health.mjs:28`: the web check (`/api/geo`) can't prove it's the staging web Worker. Follow-up: a web `/api/health` with `service` and `env`.
+6. **low** `deploy-workflow.test.ts:144-154`: no test that only health steps get `CF_ACCESS_DEPLOY_*`.
+7. **low, verify after a week:** traces' size and attributes; whether query strings (admin `?q=`) are redacted in trace spans; note it in `cpu-baseline.md`.
+**Not verified:** the workflows on GitHub; Access in practice; traces in the dashboard; the Free plan limits beyond the wrangler schema.
+
+### Lead's fixes after the review (2026-10-30)
+- 1: a step "Check the deploy-check token is set" right after the credentials check (emptiness only) stops the job before anything is uploaded; the PR stays **held, no auto-merge**, until the owner's `RESULT: OK` and the four Access policies.
+- 2: the environments runbook (Access row, step 5, repo secrets), docs/05 (ci.yml "Today" lists the dependency audit; deploy-staging names a check after each app), docs/12's deploy-order follow-up removed.
+- 6: test "the deploy-check token is checked before the first deploy, and reaches no step but that check and the health checks" (31 passed).
+- 3, 5, 7: follow-ups (listed for docs/12 at the end of the day). 4: accepted as documented.

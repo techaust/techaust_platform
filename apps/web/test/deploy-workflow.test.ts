@@ -141,6 +141,16 @@ describe("deploy-staging.yml order and health checks [A6-8]", () => {
     },
   );
 
+  it("the deploy-check token is checked before the first deploy, and reaches no step but that check and the health checks", () => {
+    const check = named(steps, "Check the deploy-check token is set");
+    expect(check).toBeGreaterThan(-1);
+    expect(check).toBeLessThan(running(steps, ORDER[0] as string));
+    expect(hasToken(steps[check] ?? "")).toBe(false);
+    for (const [i, step] of steps.entries())
+      if (step.includes("CF_ACCESS_DEPLOY"))
+        expect(i === check || step.includes("node scripts/staging-health.mjs"), `step ${i}`).toBe(true);
+  });
+
   it("uses no secrets beyond the existing two and the deploy-check token", () => {
     const used = [...workflow("deploy-staging.yml").matchAll(/secrets\.(\w+)/g)].map((m) => m[1]);
     expect(new Set(used)).toEqual(

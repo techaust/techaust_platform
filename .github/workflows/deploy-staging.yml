@@ -44,6 +44,18 @@ jobs:
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
+      # The deploy-check token (Access Part 4) must be set before anything is uploaded: without it the job would stop at the admin's
+      # health check, after the admin's deploy, and leave staging half updated (workflow review, finding 1). Emptiness only.
+      - if: steps.creds.outputs.ready == 'true'
+        name: Check the deploy-check token is set
+        env:
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_SECRET }}
+        run: |
+          if [ -z "$CF_ACCESS_CLIENT_ID" ] || [ -z "$CF_ACCESS_CLIENT_SECRET" ]; then
+            echo "::error::CF_ACCESS_DEPLOY_CLIENT_ID or CF_ACCESS_DEPLOY_CLIENT_SECRET is not set (docs/runbooks/access-staging.md Part 4); nothing was deployed."
+            exit 1
+          fi
       - if: steps.creds.outputs.ready == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

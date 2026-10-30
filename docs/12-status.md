@@ -55,7 +55,6 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
   - a longer timeout for the M5.4 test "each send names the staff member…" in `apps/admin/worker/invoice-send.test.ts` (times out under a full parallel run);
   - export the realisation bounds (1,200 / 36,500) from core instead of three copies (M5.5b re-check low 4);
   - check the code-review helper's 10 M5.4 candidates (it reviewed `main` by mistake) against `main`;
-  - the deploy workflow doesn't enforce "admin API before jobs" (a workflow change: owner's yes);
   - a CI job for Linux PDF visual baselines (workflow change: owner's yes);
   - FEMA extensions (M6.1, Q60); refunds, the payment register and "collected" figures (M6);
   - the admin API is at 587,821 bytes: plan the third admin Worker before it passes 650,000 (likely during M6);
