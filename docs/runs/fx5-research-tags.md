@@ -443,3 +443,7 @@ Small, so done by the lead:
 - 4: the owner-terms test starts from v1 only and 7 days; passes alone (`-t "owner's own"`).
 - 5: stays with the L4 follow-up (a `{{payment.dueDays}}` token).
 - Checks: admin typecheck ok; admin SPA 26 files, 472 passed; db `seed-terms-v2` + `seed` 12 passed.
+
+## Handover (lead, 2026-10-31)
+Merged as #116 (2026-10-30); on staging (migration 0053 applied). Builder → analyst early check of the void rule (CHANGE: the portal wrote the view after the answer) → fix round 1 (+ the lead's delivered-PDF rule) → designer → review APPROVE (2 medium, 9 low) → fix round 2 → re-check APPROVE → the lead's focus, proforma-line, 409-reload and seed-test fixes. Follow-ups now in [settle-08c](settle-08c.md) and [final-sweep](final-sweep.md) (proforma copy done in 07-ZA). Not verified: Browser Run PDFs with the Noto fonts.
+Usage: builder claude-opus-5-5/high (agent-a7c87ed0…, workers-best-practices, wrangler, cloudflare); analyst claude-opus-5-5/high (agent-aeb8fd0b…); builder r1 claude-opus-5-5/high (agent-a506e7f8…); designer claude-opus-5-5/high (agent-a1af776d…, frontend-design); reviewer claude-opus-5-5/high (agent-a9fca53f…, code-review, security-review, frontend-design, workers-best-practices; flagged "no skill" for its post-midnight log segment only); builder r2 claude-opus-5-5/high (agent-acb3b494…); reviewer re-check claude-opus-5-5/high (agent-a3e904bc…).

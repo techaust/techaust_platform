@@ -75,3 +75,7 @@ Also found in code, outside §5: which day's FX rate a USD debit note uses (`app
 - **T11** a deed of assignment PDF on full payment, for eSign (Tier B; wording for a one-off lawyer review).
 - **T12** retag every settled `OPEN (08-C X)` comment and rewrite 08-C §5 (Tier C; a builder for the code comments, the lead for the register).
 - **Owner duties:** the LUT for FY 2026-27; the bank questions and the monthly EDF; the Offline Tool test import; the RCM monthly steps; the CERT-In point of contact (address and format to be confirmed from the Directions first); the trademark search; the April turnover check.
+
+## Handover (lead, 2026-10-31)
+Recorded in #119. Waiting on the owner: the GSTR-1 frequency (for T1's dates); the AWS bucket and key for T5 (script to come). Next: the tasks T1–T12 after the final sweep, Tier A ones with an analyst brief and early check; T12 rewrites 08-C §5 with the new tag.
+Usage: analyst claude-opus-5-5/high (agent-a605f8e9…, workers-best-practices).

@@ -403,3 +403,6 @@ Shots: `.logs/shots/a5-invoicing/` (main checkout).
 
 ## Handover
 _(written at the end of each conversation)_
+
+## Handover (lead, 2026-10-31)
+**The full audit is complete.** All seven areas audited (2026-10-29); every finding fixed in FX-1 to FX-5 (#107, #108, #110, #113, #116) after the M5 owner fixes (#106); the owner-approved workflow changes (#118); the final sweep of all three front ends and its fixes (#120). Kept with a reason or moved to a later milestone: listed in each run file. Next: the owner's staging check and "approved" for the M5 batch, which opens M6.1.
