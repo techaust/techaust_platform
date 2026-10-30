@@ -38,6 +38,11 @@ describe("seed: proposal terms version 2 (FX-5, review M2 and L1) [ADM-SET-08]",
   });
 
   it("the owner's own version 2 is never followed or replaced by the seed's: the SELECT yields no row, at 7 days", async () => {
+    // stands on its own (re-check finding 4): version 1 only and 7 days, so the owner's row is what stops the seed
+    await seedWithoutV2();
+    await setDueDays(7);
+    expect(await proposalTerms()).toEqual([{ version: 1, sha256: PROPOSAL_TERMS_V1_SHA256 }]);
+    expect(await all(proposalTermsV2Select())).toHaveLength(1);
     await run(
       "INSERT INTO terms_versions (id, kind, version, body_md, sha256) VALUES ('owner-terms-2', 'proposal', 2, 'Owner text', 'owner-hash-2')",
     );

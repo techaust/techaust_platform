@@ -588,15 +588,18 @@ export function voidBlockedText(codes: readonly string[], type?: string): string
 export function voidErrorText(e: unknown, type?: string): string {
   if (e instanceof RequestError && e.code === "viewed_by_client")
     return voidBlockedText([e.code], type) ?? invErrorText(e);
+  // A proforma refused for a payment or a converted invoice (the server ranks those above a view): its own line, never the invoice's credit note
+  // (FX-5 re-check, finding 2).
+  if (e instanceof RequestError && e.code === "void_not_allowed" && type === "proforma")
+    return INVT_COPY.proformaVoidBlocked;
   return invErrorText(e);
 }
 
 /**
- * A void refused because the client opened the document meanwhile (409 `viewed_by_client`): the page behind the dialog still offers Void, so it
- * reloads its data when the dialog closes (FX-5 review L2). The dialog keeps its line until then.
+ * Any refused void (409: viewed, paid, credited, converted, already void, the period closed) leaves the page behind the dialog out of date, perhaps
+ * still offering Void, so it reloads its data when the dialog closes (FX-5 review L2, re-check finding 3). The dialog keeps its line until then.
  */
-export const voidRefusalStalesPage = (e: unknown): boolean =>
-  e instanceof RequestError && e.code === "viewed_by_client";
+export const voidRefusalStalesPage = (e: unknown): boolean => e instanceof RequestError && e.status === 409;
 
 /** "First. Rest." → ["First", "Rest."]: an empty state's title (without its full stop) and body, from one 07-R line. */
 export function splitSentences(text: string): [string, string] {

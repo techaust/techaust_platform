@@ -426,3 +426,20 @@ Builder claude-opus-5-5/high, 2026-10-30 ~05:30–06:00 IST (one pause on a netw
 ### Notes for the lead
 1. L8 drops `fields: [{path: "body"}]` from the terms refusal (the standard shape has none). The terms screen uses `extra.termsDueDays` first; if the details were ever missing, it would show the generic failure line instead of a field error.
 2. L2 and L6 touch two screen files with one line each (`read.tsx` passes `onStale={reload}`, `editor.tsx` passes `v.defaultDueDays`) plus the dialog's stale state. There is no visual change, so no designer step seems needed; your call.
+
+## Re-check of fix round 2 (reviewer, Opus 5.5 high, 2026-10-30, on dab0ae62): APPROVE (copied by the lead)
+M1, M2 + L1, L3, L6, L8 and L2 hold (L2, L6 and L8 tried live in local dev; the seed tried on a fresh local D1, twice). `pnpm check` exit 0; pdf 351, db 487, admin 3,435, admin SPA 472 passed. Screenshots in the lead's `.logs/shots/fx5-recheck/`.
+1. **medium** `read.tsx:455` + `dialogs.tsx:365`: after a refused void (viewed) and the reload, More disappears (Void was its only item) and focus falls to `<body>`; the same already happens after a successful void. Fix: after the void dialog closes, if More isn't drawn, focus the h1.
+2. **low** `lib/invoices.ts:588-592`: after L3, a proforma refused with `void_not_allowed` shows the invoice line ("Use a credit note instead."). Fix: the proforma's approved line.
+3. **low** `lib/invoices.ts:598-599`: only `viewed_by_client` reloads the page; other 409s leave a stale Void offer. Fix: any 409.
+4. **low** `seed-terms-v2.test.ts:41-58`: the second test depends on the first. Fix: start from v1 only and 7 days.
+5. **low, outside round 2:** `apps/web/src/content/pricing.ts:28` says 7 days; it would disagree if the setting changed. With the L4 follow-up.
+**Not verified:** a PDF render (M1 rests on layout tests); axe on the round 2 screens; the portal race simulated in SQL.
+
+### Lead's fixes after the re-check (2026-10-30)
+Small, so done by the lead:
+- 1: `read.tsx`: `showMore` names the More condition; an effect after the void dialog closes moves focus to the page's h1 once More is gone and focus has fallen to the page (covers the refusal and the successful void). Not tried live (the final sweep's keyboard pass covers it).
+- 2: `voidErrorText`: a proforma's `void_not_allowed` gives `INVT_COPY.proformaVoidBlocked` (approved 07-S line). 3: `voidRefusalStalesPage` is any 409. Tests updated (`invoices.test.ts`).
+- 4: the owner-terms test starts from v1 only and 7 days; passes alone (`-t "owner's own"`).
+- 5: stays with the L4 follow-up (a `{{payment.dueDays}}` token).
+- Checks: admin typecheck ok; admin SPA 26 files, 472 passed; db `seed-terms-v2` + `seed` 12 passed.

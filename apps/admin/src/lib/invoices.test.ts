@@ -347,9 +347,17 @@ describe("errors", () => {
     expect(voidErrorText(viewed)).toBe(`${mark}${invoiceLine}`);
     const closed = new RequestError(409, "return_period_closed", "x");
     expect(voidErrorText(closed, "proforma")).toBe(invErrorText(closed));
-    // review L2: only the view refusal makes the page behind the dialog stale (it reloads when the dialog closes)
+    // re-check finding 2: a proforma refused for a payment or a converted invoice keeps its own line, never the invoice's credit note
+    const notAllowed = new RequestError(409, "void_not_allowed", "x");
+    expect(voidErrorText(notAllowed, "proforma")).toBe(INVT_COPY.proformaVoidBlocked);
+    expect(voidErrorText(notAllowed, "proforma")).not.toContain("credit note");
+    expect(voidErrorText(notAllowed, "tax_invoice")).toBe(invErrorText(notAllowed));
+    // review L2, re-check finding 3: any refused void (409) makes the page behind the dialog stale (it reloads when the dialog closes)
     expect(voidRefusalStalesPage(viewed)).toBe(true);
-    expect(voidRefusalStalesPage(closed)).toBe(false);
+    expect(voidRefusalStalesPage(closed)).toBe(true);
+    expect(voidRefusalStalesPage(notAllowed)).toBe(true);
+    expect(voidRefusalStalesPage(new RequestError(409, "already_void", "x"))).toBe(true);
+    expect(voidRefusalStalesPage(new RequestError(400, "invalid", "x"))).toBe(false);
     expect(voidRefusalStalesPage(new RequestError(0, "network", "x"))).toBe(false);
     expect(voidRefusalStalesPage(new Error("viewed_by_client"))).toBe(false);
   });
