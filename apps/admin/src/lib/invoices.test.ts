@@ -173,6 +173,8 @@ describe("07-R copy", () => {
       "Issued 27 Oct 2026 by Asha. This invoice is locked: corrections are made with a credit note or a debit note.",
     );
     expect(voidTitle("TH/INV/2627/0001")).toBe("Void invoice TH/INV/2627/0001");
+    // 07-ZA item 9: a proforma's dialog names a proforma.
+    expect(voidTitle("TH/PI/2627/0001", "proforma")).toBe("Void proforma TH/PI/2627/0001");
     expect(milestoneHasInvoice(null)).toBe("This milestone already has a draft invoice.");
     expect(milestoneHasInvoice("TH/INV/2627/0001")).toBe(
       "This milestone already has invoice TH/INV/2627/0001.",

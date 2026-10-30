@@ -452,7 +452,7 @@ export function TaxSettings({ readOnly }: { readOnly: boolean }) {
                 value={f.fxSource}
                 onChange={(e) => set({ fxSource: e.target.value as Form["fxSource"] })}
               >
-                <option value="FBIL/RBI">RBI reference rate on the invoice date</option>
+                <option value="FBIL/RBI">RBI reference rate on the date of supply</option>
                 <option value="manual">Entered by hand on each invoice</option>
               </select>
             </SettingRow>

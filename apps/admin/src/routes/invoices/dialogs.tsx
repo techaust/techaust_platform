@@ -390,9 +390,15 @@ export function VoidDialog(props: {
   }
 
   return (
-    <Modal open={props.open} title={voidTitle(props.number)} onClose={close} busy={busy} tone="danger">
+    <Modal
+      open={props.open}
+      title={voidTitle(props.number, props.type)}
+      onClose={close}
+      busy={busy}
+      tone="danger"
+    >
       <div className="dialog__body">
-        <p>{INV_COPY.voidBody}</p>
+        <p>{props.type === "proforma" ? INV_COPY.voidProformaBody : INV_COPY.voidBody}</p>
         <FormField id="void-reason" label={INV_COPY.voidReason} error={reasonError}>
           {(a) => (
             <textarea
@@ -430,7 +436,11 @@ export function VoidDialog(props: {
           disabled={busy}
           aria-busy={busy || undefined}
         >
-          {busy ? "Working…" : INV_COPY.voidConfirm}
+          {busy
+            ? "Working…"
+            : props.type === "proforma"
+              ? INV_COPY.voidProformaConfirm
+              : INV_COPY.voidConfirm}
         </button>
       </div>
     </Modal>

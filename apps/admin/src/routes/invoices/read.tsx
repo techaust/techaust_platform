@@ -227,7 +227,8 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
           showMore
             ? [
                 {
-                  label: INV_COPY.voidButton,
+                  // The action keeps one name from the menu to the dialog's button (07-ZA item 9 for a proforma).
+                  label: v.type === "proforma" ? INV_COPY.voidProformaConfirm : INV_COPY.voidButton,
                   icon: <Ban size={16} />,
                   tone: "danger",
                   onSelect: () => setVoiding(true),

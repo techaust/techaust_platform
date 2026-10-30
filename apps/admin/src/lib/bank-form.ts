@@ -57,8 +57,10 @@ export function checkBlock(kind: BankKind, f: BlockForm, account: BankAccount | 
   else if (no && !ACCOUNT_NO.test(no))
     e[fid("accountNo")] = "Use letters and digits only, 5 to 34 characters.";
   // The same line as the API (review L8): an empty second field asks for it, a different one says they differ.
-  if (no && !again) e[fid("accountNoAgain")] = "Type the account number again.";
-  else if (no && no !== again) e[fid("accountNoAgain")] = "The two account numbers don't match.";
+  // 07-ZA item 7 (owner 2026-10-30): the line names its account, so the error summary of a form with both says which one.
+  const which = kind === "INR" ? "INR" : "USD";
+  if (no && !again) e[fid("accountNoAgain")] = `Type the ${which} account number again.`;
+  else if (no && no !== again) e[fid("accountNoAgain")] = `The two ${which} account numbers don't match.`;
   if (kind === "INR" && !IFSC.test(clean(f.ifsc)))
     e[fid("ifsc")] = "An IFSC has 11 characters: 4 letters, a zero, then 6 letters or digits.";
   if (kind === "USD_SWIFT" && !SWIFT.test(clean(f.swift)))
