@@ -207,3 +207,8 @@ Staging (nothing deployed); the seed on the staging database (it runs on the nex
 ### Open questions
 - The portal needs labels for the note reason codes (07-T §3 has them for the PDF, `REASON_LABELS` in `packages/pdf/src/invoice-view.ts`); the designer should reuse those words.
 - An anonymised client's draft shows no title in the activity feed (I chose this following the bells' rule; the documents list still shows such titles). Lead to confirm.
+
+### Lead, after the builder's round (2026-10-30)
+- Merged `fix/final-sweep-b1` (6e53554f).
+- The builder's questions: (1) the portal shows a note's reason with the approved 07-T §3 words; the designer takes them from one shared place (move `REASON_LABELS` to `@techaust/pdf/copy` or core so portal, admin and PDF read the same words; no new words); (2) yes, the activity feed follows the bells' rule (a number, else "Untitled", never a title for an anonymised client's draft).
+- The terms version 3 seed is Tier A (terms pinned by documents): an analyst's early check of 1f75df51 runs beside the designer's round 3.
