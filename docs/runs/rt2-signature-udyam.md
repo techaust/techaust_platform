@@ -246,3 +246,14 @@ Merge-plan additions: also conflicting `packages/core/test/notes.test.ts` (`okFa
 Not verified: the live visual pass (next, when the browser is free), Browser Run, staging, NVDA.
 
 **Lead triage:** fix 1, 2, 3, 5, 6 in this task, together with the merge after rt1 (one builder run with an integration brief). **Kept, 4:** the dialog links follow the existing advance-dialog pattern; one shared blocker list that confirms before leaving unsaved input becomes a listed follow-up (admin UI), not this task.
+
+### Visual review (reviewer, Opus 5.5 high, 2026-10-31, live browser): SEND BACK (1 high, 1 medium, 2 low), condensed by the lead
+e2e `signature-udyam.spec.ts` 5 passed. Live as a local Owner: Company (all five widths), Tax, the note draft page, the note dialog and the advance dialog refusals (390 and 1280), both theme pairs; axe 0 everywhere, no target under 44 px, no text under 12 px, no overflow, reduced motion respected; copy word for word (line 4 shows "(optional)" from `FormField`). PDF line and signatures checked on the designer's PDFs. Screenshots `.logs/shots/rt2-visual/`.
+1. **high** `apps/admin/src/routes/invoices/note-dialog.tsx:489`: the note dialog's refusal box is not a live region (the advance dialog's is `role="alert"`), and in **both** dialogs focus falls to `<body>` after the 409, so a keyboard or screen-reader user gets no feedback (WCAG 4.1.3, 2.4.3). Older wrapper (M5.2/M5.3), but rt2 makes it the main path of 07-ZC line 1. Fix: `role="alert"` on the note-dialog box; after `setBlockers`/`setRefused` move focus to the box (`tabIndex={-1}` + ref) in both dialogs; the spec asserts focus stays in the dialog and the role.
+2. **medium** `apps/admin/src/routes/settings/company.tsx:276`: at 1024 with the sidebar open the Udyam field (`.field--gstin`, letter-spacing 0.06em) hides the last digit. Fix the letter-spacing for this field or give `.form-grid--udyam` a minimum first column; re-check 1024 with a full number.
+3. **low (shared)** the sticky "Unsaved changes" bar nearly covers the focused field at 1280×900; `scroll-padding-bottom` on the scroller equal to the bar's height.
+4. **low** the note draft page shows `signature_missing` but "Issue debit note" walks through compose and step-up before the refusal.
+
+**Lead triage:** fix 1, 2 and 3 now (designer, on the task branch, before rt1 merges; a second review follows because of the high). **Kept, 4:** the same deliberate behaviour as rt1 D12 (the dialog and the server refuse); a follow-up to show known blockers on the dialog's confirm step before step-up, for every blocker, in one admin UI task. The note dialog fix also covers rt1's `debit_lut_missing` refusal once both are merged.
+
+### Visual fixes
