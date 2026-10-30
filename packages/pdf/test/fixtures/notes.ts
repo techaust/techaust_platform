@@ -152,6 +152,8 @@ export async function buildNoteFixture(
     parentId?: string;
     number?: number;
     parentNumber?: string;
+    /** T4: seal the note with no signature (as one issued before the rule). */
+    unsigned?: boolean;
   } = {},
 ): Promise<NoteFixture> {
   const spec = SPECS[name];
@@ -328,12 +330,15 @@ export async function buildNoteFixture(
                 branch: "Sample branch",
               },
             },
-    // T4 (rt2): a note always carries the signature (Rule 53(1A), 08-C RA-22): the same made-up PNG as the "signed" invoice fixture
-    signature: {
-      key: NOTE_SIGNATURE_KEY,
-      sha256: await hexOf(SIGNATURE_BYTES),
-      mime: "image/png",
-    },
+    // T4 (rt2): a note always carries the signature (Rule 53(1A), 08-C RA-22): the same made-up PNG as the "signed" invoice fixture. `unsigned`: a note issued
+    // before the rule (an older staging document), which the jobs Worker refuses.
+    signature: opts.unsigned
+      ? null
+      : {
+          key: NOTE_SIGNATURE_KEY,
+          sha256: await hexOf(SIGNATURE_BYTES),
+          mime: "image/png",
+        },
     reverseChargeText: "Tax payable on reverse charge: No",
     sender: { staffId: "stf_sample_1", name: "Sample Proprietor", email: "sender@example.test" },
   };

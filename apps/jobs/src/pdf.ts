@@ -54,6 +54,7 @@ import {
   renderDocumentHtml,
   serializeEnvelope,
   serializeInvoiceEnvelope,
+  signatureMissing,
   toInvoiceView,
   toPdfView,
   verifyEnvelope,
@@ -338,6 +339,20 @@ async function renderInvoice(
     return "adopted";
   }
 
+  // T4 (rt2, L4): a credit or debit note, or an invoice for a payment received, is never rendered without the signature it must carry (Researched 2026-10-30, Rule 53(1A)
+  // CGST Rules (08-C RA-22); s.31(3)(d) CGST Act and Rule 50 CGST Rules (08-C RA-17)). Checked after the adoption above, so a PDF already stored stays; an older staging
+  // document issued before the rule is refused here (one bell, no retry: the frozen envelope would print the same page). The fix is not in Settings (the document is
+  // frozen), so the bell is the refused line with the invoice's page.
+  if (signatureMissing(envelope)) {
+    logEvent("pdf.refused", {
+      stage: "render",
+      code: "signature_required",
+      family: "invoice",
+      type: envelope.type,
+    });
+    await env.DB.batch([refusedBell(env, row.id, label)]);
+    return "refused";
+  }
   const signature = await verifiedSignature(env, envelope);
   if (signature === "refused") {
     logEvent("pdf.refused", { stage: "render", code: "signature", family: "invoice" });
