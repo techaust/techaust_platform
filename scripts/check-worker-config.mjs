@@ -1,5 +1,6 @@
 // Guard: Version/Preview URLs skip Cloudflare Access, so every Worker config must switch them off at the top level
-// and in `env.staging` and `env.production` (audit 2026-10-22, M1; docs/runbooks/access-staging.md).
+// and in `env.staging` and `env.production` (audit 2026-10-22, M1; docs/runbooks/access-staging.md). Also the admin API Worker's
+// config against the front's (M5.0), the jobs crons and binding (M5.4, FX-1), and Workers Traces on staging only (full audit A6 9).
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -86,6 +87,9 @@ export function apiConfigProblems(api, front) {
     }
     if (queueKeys(c).join(",") !== queueKeys(f).join(","))
       problems.push(`${scope}: queues differ from the front's`);
+    // A6 9: the two admin Workers are read together in the CPU baseline, so they log and trace alike.
+    if (canonical(c.observability) !== canonical(f?.observability))
+      problems.push(`${scope}: observability differs from the front's`);
   }
   return problems;
 }
@@ -144,6 +148,51 @@ export function jobsConfigProblems(jobs, api) {
   return problems;
 }
 
+/** The head sampling rate of Workers Traces on staging (full audit A6 9, owner's yes 2026-10-30; headroom in docs/runbooks/cpu-baseline.md). */
+export const STAGING_TRACE_RATE = 0.1;
+
+/** Production's observability block, unchanged by A6 9: console logs on, NO invocation logs, no traces. */
+export const PRODUCTION_OBSERVABILITY = {
+  enabled: true,
+  redact_query_string: true,
+  logs: { enabled: true, invocation_logs: false },
+};
+
+/** Key-order-independent JSON, to compare two parsed blocks. */
+const canonical = (v) =>
+  v && typeof v === "object" && !Array.isArray(v)
+    ? `{${Object.keys(v)
+        .sort()
+        .map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`)
+        .join(",")}}`
+    : JSON.stringify(v);
+
+/**
+ * Workers Traces only in `env.staging` (A6 9): there, logs as before (on, invocation logs on, no log sampling), the query string
+ * redacted, and traces on at exactly STAGING_TRACE_RATE; at the top level (local, and inherited by any environment without its own
+ * block) traces must stay off, and production's block must be exactly PRODUCTION_OBSERVABILITY. Empty = passes.
+ */
+export function observabilityProblems(config) {
+  const problems = [];
+  const top = config.observability;
+  if (top?.traces?.enabled) problems.push("(top level): traces must stay off (staging only)");
+  const prod = config.env?.production?.observability;
+  if (canonical(prod) !== canonical(PRODUCTION_OBSERVABILITY))
+    problems.push(`env.production: observability must stay ${JSON.stringify(PRODUCTION_OBSERVABILITY)}`);
+  const s = config.env?.staging?.observability;
+  if (!s) return [...problems, "env.staging: needs its own observability block with traces"];
+  if (s.enabled !== true) problems.push("env.staging: observability.enabled must be true");
+  if (s.redact_query_string !== true) problems.push("env.staging: redact_query_string must be true");
+  if (s.head_sampling_rate !== undefined) problems.push("env.staging: no top-level head_sampling_rate");
+  if (s.logs?.enabled !== true || s.logs?.invocation_logs !== true)
+    problems.push("env.staging: logs and invocation logs stay on");
+  if (s.logs?.head_sampling_rate !== undefined) problems.push("env.staging: logs are not sampled");
+  if (s.traces?.enabled !== true) problems.push("env.staging: traces.enabled must be true");
+  if (s.traces?.head_sampling_rate !== STAGING_TRACE_RATE)
+    problems.push(`env.staging: traces.head_sampling_rate must be ${STAGING_TRACE_RATE}`);
+  return problems;
+}
+
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
   let failed = false;
   for (const app of APPS) {
@@ -174,8 +223,14 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
     console.error(`apps/jobs: ${p}`);
     failed = true;
   }
+  for (const file of [...APPS.map((a) => `${a}/wrangler.jsonc`), "admin/wrangler.api.jsonc"]) {
+    for (const p of observabilityProblems(read(file))) {
+      console.error(`apps/${file}: ${p}`);
+      failed = true;
+    }
+  }
   if (failed) process.exit(1);
   console.log(
-    "worker config guard: ok (preview_urls is false everywhere; the admin API Worker has no public URL)",
+    "worker config guard: ok (preview_urls is false everywhere; the admin API Worker has no public URL; traces on staging only)",
   );
 }
