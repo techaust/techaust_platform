@@ -2,14 +2,16 @@
 // category, the fixed rounding rules, exports under LUT (with the ARN for the year), advances, the USD rate source,
 // e-invoicing, the reverse-charge line, and the alert thresholds. The accountant reads them; the owner changes them.
 // M5.3: the day each year's annual return (GSTR-9) was filed, which closes credit notes for that year (./annual-returns.tsx).
+// rt1 T1: how GSTR-1 is filed (07-ZD line 1), beside the credit note cut-off it works with.
 import { financialYear, fyOf } from "@techaust/core";
-import { INVOICE_CHECKLIST, issueDateOf, lutReminder } from "@techaust/core/invoices";
+import { GSTR1_FREQUENCIES, INVOICE_CHECKLIST, issueDateOf, lutReminder } from "@techaust/core/invoices";
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router";
 import { DataTable } from "../../components/data-table.tsx";
 import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { FormField, NumberUnit, SettingRow, Switch } from "../../components/form.tsx";
 import { AlertTriangle, Lock, Pencil, Plus, Trash } from "../../components/icons.tsx";
+import { GSTR1_FILING_COPY } from "../../lib/copy-zd.ts";
 import { dateError } from "../../lib/date-field.ts";
 import {
   CHECKLIST_LABELS,
@@ -546,6 +548,26 @@ export function TaxSettings({ readOnly }: { readOnly: boolean }) {
                 </select>
               </div>
               <RowError id="f-creditNoteCutoff-day" error={error("f-creditNoteCutoff-day")} />
+            </SettingRow>
+            {/* rt1 T1 (07-ZD line 1; Researched 2026-10-30, s.34(2) CGST Act, Rule 59 CGST Rules (08-C RA-31)): with the cut-off it decides the last day for a credit note. */}
+            <SettingRow
+              id="tax-gstr1"
+              label={GSTR1_FILING_COPY.label}
+              labelFor="f-gstr1Frequency"
+              description={GSTR1_FILING_COPY.hint}
+            >
+              <select
+                id="f-gstr1Frequency"
+                aria-describedby="tax-gstr1-desc"
+                value={f.gstr1Frequency}
+                onChange={(e) => set({ gstr1Frequency: e.target.value as Form["gstr1Frequency"] })}
+              >
+                {GSTR1_FREQUENCIES.map((k) => (
+                  <option key={k} value={k}>
+                    {GSTR1_FILING_COPY.options[k]}
+                  </option>
+                ))}
+              </select>
             </SettingRow>
             <AnnualReturns
               value={f.annualReturns}

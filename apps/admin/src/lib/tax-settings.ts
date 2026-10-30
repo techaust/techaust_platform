@@ -75,6 +75,11 @@ export type TaxForm = {
   invoiceAlertDays: string;
   cnMonth: string;
   cnDay: string;
+  /**
+   * rt1 T1 (R3, owner 2026-10-31; 07-ZD line 1): how GSTR-1 is filed, which sets the last day for a credit note on last year's invoices. Read as stored and
+   * always saved back as the field holds it: the schema's `prefault` would otherwise turn a missing key back into "quarterly" (lead D9).
+   */
+  gstr1Frequency: Tax["gstr1Frequency"];
   /** M5.3 (Q33): the day the annual return of each FY was filed, by FY token; "" is no return. */
   annualReturns: Record<string, string>;
   b2c: string;
@@ -106,6 +111,8 @@ export function taxToForm(v: Tax): TaxForm {
     invoiceAlertDays: String(v.invoiceAlertDays),
     cnMonth: String(v.creditNoteCutoff.month),
     cnDay: String(v.creditNoteCutoff.day),
+    // A row stored before rt1 has no key: it reads as the schema's default (quarterly), as the server reads it.
+    gstr1Frequency: v.gstr1Frequency ?? "quarterly",
     annualReturns: Object.fromEntries((v.annualReturnsFiled ?? []).map((r) => [r.fy, r.filedOn])),
     b2c: moneyInput(v.b2cDetailsThresholdInrMinor, "INR"),
     b2cl: moneyInput(v.b2clThresholdInrMinor, "INR"),
@@ -193,6 +200,7 @@ export function buildTax(f: TaxForm, doc: Pick<SettingsDoc<"tax">, "value">, now
       reverseChargeText: f.reverseChargeText.trim(),
       invoiceAlertDays: alertDays,
       creditNoteCutoff: { month: cnMonth, day: cnDay },
+      gstr1Frequency: f.gstr1Frequency,
       annualReturnsFiled: annualReturnsOf(f.annualReturns),
       b2cDetailsThresholdInrMinor: b2c.minor,
       b2clThresholdInrMinor: b2cl.minor,

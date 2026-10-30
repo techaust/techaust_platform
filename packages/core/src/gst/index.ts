@@ -46,6 +46,7 @@ export {
   type Gstr3bLayoutId,
   gstr1Csv,
   gstr3bCsv,
+  heldRowOf,
   OUTPUT_TAX_LAYOUTS,
   type OutputTaxLayoutId,
   outputTaxCsv,

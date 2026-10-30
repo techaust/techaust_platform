@@ -1,5 +1,6 @@
 // Pieces the four reports share (M5.5b): the list of problems that stop a file (each with its document, 07-V §2.1), the warnings to check before
 // filing (§2.2), a figure in tabular numerals, and the progress line of a read.
+import type { Gstr3bImsHeld } from "@techaust/core/gst";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { Link } from "react-router";
 import type { Currency } from "../../api.ts";
@@ -8,6 +9,7 @@ import { FormField } from "../../components/form.tsx";
 import { AlertTriangle, Info } from "../../components/icons.tsx";
 import { ScrollCue, useScrollCue } from "../../components/scroll-cue.tsx";
 import { FieldError } from "../../components/ui.tsx";
+import { imsHeldLine } from "../../lib/copy-zd.ts";
 import { dateError } from "../../lib/date-field.ts";
 import { moneyText } from "../../lib/documents.ts";
 import { type DocRef, documentHref, GST_COPY, type IssueLine } from "../../lib/reports.ts";
@@ -15,6 +17,34 @@ import { type DocRef, documentHref, GST_COPY, type IssueLine } from "../../lib/r
 /** An amount through core's formatter, in tabular numerals, never broken across lines. */
 export function Amount({ minor, currency = "INR" }: { minor: number; currency?: Currency }) {
   return <span className="amount tnum">{moneyText(minor, currency)}</span>;
+}
+
+/**
+ * rt1 T3 (07-ZD line 8; Researched 2026-10-28, s.34(2) proviso CGST Act (08-C RA-04)): the credit notes to registered clients that 3.1(a) does not deduct
+ * yet, because the client hasn't accepted them in IMS. One sentence (the count), then the notes' numbers in the number face, so the Owner knows which to
+ * follow up in the GST portal. Nothing when none is held. The list is named by the sentence above it.
+ */
+export function ImsHeldNotice({ held, id }: { held: Pick<Gstr3bImsHeld, "count" | "numbers">; id: string }) {
+  if (held.count === 0) return null;
+  return (
+    <div className="ims-held" id={id}>
+      <AlertTriangle size={20} />
+      <div className="ims-held__body">
+        <p className="ims-held__line" id={`${id}-line`}>
+          {imsHeldLine(held.count)}
+        </p>
+        {held.numbers.length > 0 && (
+          <ul className="ims-held__numbers" aria-labelledby={`${id}-line`}>
+            {held.numbers.map((n) => (
+              <li key={n} className="docno">
+                {n}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
 }
 
 /** A document's number linking to its page. */

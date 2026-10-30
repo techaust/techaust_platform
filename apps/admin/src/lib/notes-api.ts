@@ -38,6 +38,11 @@ export type CreditableLine = {
  * Step 5 contract (T §4, review 2026-10-28): `deadlineWarnFrom` is the first day of the month before the deadline's month (1 October by default) and `adviseIssueBy` the last
  * day of that month (31 October), both ISO and never after the last allowed day when an annual return was filed earlier; optional, so an older API still loads (the warning
  * then follows `daysLeft`).
+ *
+ * rt1 T1 (Researched 2026-10-30, s.34(2) CGST Act; Rule 59(1)-(2) CGST Rules (IFF) (08-C RA-31, RA-03)): `lastDay` is now the end of the last return period
+ * before `returnBy` (the cutoff, or the day before the annual return was filed), so `daysLeft` and `passed` count to `lastDay`; `deadlineWarnFrom` is the first day
+ * of the month before `lastDay`'s month and `adviseIssueBy` is `lastDay` (R2). `returnBy` fills 07-ZD line 2's "{cutoff date}"; `period` says whether the note goes
+ * in a monthly return (monthly GSTR-1, or the IFF for a registered client) or the quarterly GSTR-1 (07-ZD line 3). Both optional, so an older API still loads.
  */
 export type CreditDeadlineView = {
   date: string;
@@ -49,6 +54,8 @@ export type CreditDeadlineView = {
   passed: boolean;
   deadlineWarnFrom?: string | null;
   adviseIssueBy?: string | null;
+  returnBy?: string;
+  period?: "month" | "quarter";
 };
 
 export type NoteAction = { allowed: boolean; reasons: string[] };

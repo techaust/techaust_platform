@@ -11,7 +11,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { RequestError, stepUpActive } from "../../api.ts";
 import { Modal } from "../../components/dialog.tsx";
 import { FormField } from "../../components/form.tsx";
-import { Alert, Pencil } from "../../components/icons.tsx";
+import { Pencil } from "../../components/icons.tsx";
 import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { CodeField, FieldError, Notice } from "../../components/ui.tsx";
@@ -35,7 +35,6 @@ import {
   type NoteBlockerIn,
   type NoteForm,
   type NoteFormErrors,
-  noteBlockerLine,
   noteDialogTitle,
   noteErrorText,
   noteFormOf,
@@ -54,7 +53,7 @@ import {
 } from "../../lib/notes-api.ts";
 import { moneyInput } from "../../lib/settings-form.ts";
 import { withCode } from "../../lib/step-up.ts";
-import { NoteTotals } from "./notes-parts.tsx";
+import { NoteBlockerList, NoteTotals } from "./notes-parts.tsx";
 
 const CODE_MISSING = "Enter the 6-digit code from your authenticator app.";
 
@@ -489,15 +488,7 @@ function NoteDialogBody(props: {
         {blockers.length > 0 && (
           <div className="inv-issue__blocked">
             <p className="inv-issue__fix">{INV_COPY.fixFirst}</p>
-            <ul className="blockers inv-blockers">
-              {blockers.map((b, i) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: a code can repeat for different lines; the list is redrawn whole
-                <li key={`${b.code}-${i}`} className="blockers__item">
-                  <Alert size={16} />
-                  <span>{noteBlockerLine(b, kind, currency)}</span>
-                </li>
-              ))}
-            </ul>
+            <NoteBlockerList blockers={blockers} kind={kind} currency={currency} />
           </div>
         )}
       </div>

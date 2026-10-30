@@ -448,6 +448,8 @@ export function blockerTarget(b: InvoiceBlocker, clientId: string): BlockerTarge
       return { kind: "page", to: "/settings/tax", place: "Settings › Tax" };
     case "lut_missing":
     case "advance_lut_missing":
+    // rt1 T2 (07-ZD line 6): a debit note on an LUT export needs the LUT of its own FY, saved in the same list.
+    case "debit_lut_missing":
       return { kind: "page", to: "/settings/tax#luts", place: "Settings › Tax" };
     case "bank_missing":
     case "swift_missing":
