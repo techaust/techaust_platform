@@ -7,6 +7,12 @@ export const workPage = {
     description:
       "Case studies from our client projects, anonymised at clients’ request: the problem, our approach, the stack and real results.",
   },
+  /** 07-ZA item 1 (owner 2026-10-30): the title and description while no case study is published; `meta` comes back with the first. */
+  metaEmpty: {
+    title: "Work | TecHaust",
+    description:
+      "Anonymised case studies from our client projects are being written. Until then, see how we work and what each service includes.",
+  },
   h1: "Work",
   /** Shown only while at least one case study is published (07-Y item 3, owner 2026-10-29). */
   lede: "Selected projects, anonymised at our clients’ request. Every number on these pages was measured on the real project.",
