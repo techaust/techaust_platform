@@ -38,7 +38,7 @@ _Drafted by the lead on 2026-10-26 from approved facts:
 | Decline hint | "Not going ahead? You can decline instead and tell us why." · button "Decline" |
 | Accept confirmation | Title "Accept this {proposal/estimate}?" · "Please check the details below." · then the 07-A §7 sentence on what is recorded · buttons "Accept" · "Back" |
 | Accepting | "Accepting…" |
-| Accepted record | "You accepted this {proposal/estimate}" / "{name} accepted this {proposal/estimate}" · "Accepted by" · "Email" · "Date and time" · "Document fingerprint" · "This version is locked: it can't be changed or accepted again." |
+| Accepted record | "You accepted this {proposal/estimate}" / "{name} accepted this {proposal/estimate}" · "Accepted by" · "Email" · "Date and time" · "PDF fingerprint" (07-ZA item 19, owner 2026-10-30; was "Document fingerprint") · "This version is locked: it can't be changed or accepted again." |
 | What happens next | "What happens next: we'll confirm the start date with you and send the first invoice." |
 | Decline reason | Title "Why are you declining?" · reasons: "The price doesn't fit our budget" · "The timing doesn't work for us" · "We've chosen another option" · "We've decided not to go ahead" · "Other" |
 | Other | Label "Tell us the reason" · error "Tell us the reason." · "Choose a reason." (no reason chosen) |

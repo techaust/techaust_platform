@@ -182,6 +182,9 @@ describe("07-R copy", () => {
     expect(convertedToInvoice(null)).toBe("Converted to a draft invoice.");
     expect(convertedToInvoice("TH/INV/2627/0001")).toBe("Converted to invoice TH/INV/2627/0001.");
     expect(INV_COPY.voidReasonEmpty).toBe("Enter a reason for voiding.");
+    // 07-ZA item 18: the reason box names what is voided.
+    expect(INV_COPY.voidReason).toBe("Reason (required, kept with the invoice)");
+    expect(INV_COPY.voidProformaReason).toBe("Reason (required, kept with the proforma)");
     // 07-R's four, then M5.2's Converted (07-S §6) and Paid (docs/06 §5.5), then M5.3's two (07-T §6; changed on purpose)
     expect(BADGE_LABELS).toEqual({
       draft: "Draft",

@@ -151,6 +151,8 @@ export const INV_COPY = {
     "Voiding cancels this proforma. It keeps its number. You can void it only before it has been emailed, opened by the client in the portal, paid or converted into an invoice.",
   voidProformaConfirm: "Void proforma",
   voidReason: "Reason (required, kept with the invoice)",
+  // 07-ZA item 18 (owner 2026-10-30): the reason box of a proforma's void dialog.
+  voidProformaReason: "Reason (required, kept with the proforma)",
   voidReasonEmpty: "Enter a reason for voiding.",
   voidConfirm: "Void invoice",
   milestoneBackReady: "The milestone is back to Ready to bill.",

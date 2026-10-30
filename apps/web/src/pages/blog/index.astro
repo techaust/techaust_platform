@@ -16,7 +16,12 @@ const posts = published(await getCollection("blog"));
 const iso = istDay;
 ---
 
-<BaseLayout title={blogPage.meta.title} description={blogPage.meta.description} rss={posts.length > 0}>
+{/* 07-ZA item 17: while no post is published, the description doesn't describe posts that aren't there. */}
+<BaseLayout
+  title={blogPage.meta.title}
+  description={posts.length > 0 ? blogPage.meta.description : blogPage.metaEmptyDescription}
+  rss={posts.length > 0}
+>
   <PageHero title={P.blog} />
 
   <section class="section section--flush-top">

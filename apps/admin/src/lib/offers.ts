@@ -121,7 +121,8 @@ export const OFFER_COPY = {
   acceptedBy: "Accepted by",
   email: "Email",
   when: "Date and time",
-  fingerprint: "Document fingerprint",
+  // 07-ZA item 19 (owner 2026-10-30): the accepted PDF's fingerprint (the portal's word for the same fact).
+  fingerprint: "PDF fingerprint",
   declinedBy: "Declined by",
   reason: REASON_LABEL,
   // The brief (ADM-PROP-08, Screens 4) and the portal's own label for the same file.

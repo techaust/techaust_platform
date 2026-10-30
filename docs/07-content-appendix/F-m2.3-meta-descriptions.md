@@ -6,6 +6,7 @@ _Drafted by the lead on 2026-10-22 from approved copy (07 §5.2, 07-A, 07-D); **
 |---|---|---|
 | `/industries` | Where our experience runs deepest: finance, accounting and legal teams; retail, e-commerce and logistics; and SaaS companies and startups. | 138 |
 | `/blog` and the RSS channel description | Practical notes on custom software, AI document automation, workflow automation and connecting business systems, from the TecHaust team. | 136 |
+| `/blog` while no post is published (07-ZA items 3 and 17, owner 2026-10-30; the line above comes back with the first post) | Notes on custom software, AI document automation, workflow automation and connecting business systems, from the TecHaust team. First posts are on the way. | 154 |
 | `/privacy` | What personal data TecHaust Technologies collects and why, who we share it with, how long we keep it, and how to use your rights. | 129 |
 | `/terms` | The terms for using techaust.com and our client portal: prices and tax, our content, acceptable use, liability and the law that applies. | 136 |
 | `/refund-policy` | How cancellations and refunds work for fixed-price projects, small fixed jobs, care plans and subscriptions, and how to ask for a refund. | 137 |
