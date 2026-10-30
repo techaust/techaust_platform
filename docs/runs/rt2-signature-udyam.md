@@ -142,6 +142,80 @@ Start from `origin/task/rt2-signature-udyam` on `design/rt2-screens`. Load `fron
 
 ### Designer report
 
+Designer, Opus 5.5 high, 2026-10-31. Branch `design/rt2-screens`, created from `origin/task/rt2-signature-udyam` (03f7cfa7) and pushed. None of the builder's F2–F5 files were touched.
+
+**Skills:** `frontend-design:frontend-design`, loaded first. It set the direction: everything stays inside the existing system, with no new decoration. The Udyam pair sits with the GST registration as one more registration row. The 07-ZC line 3 note is a muted hint under the "House rule" badge. The Udyam line on the PDF uses the supplier block's own style. The one deliberate choice is where that line breaks (see the PDF item below). `dataviz` was not loaded because the task has no chart or stat tile. Context7 was not needed because no new library API was used.
+
+**What was built**
+- **PDF (both layouts).** `supplierLinesHtml` in `packages/pdf/src/layout/invoice.ts` is also used by the skeleton. It prints 07-ZC line 6 as one `<p class="party__line inv-udyam" data-testid="udyam">` holding a single text node, right under the "GSTIN … · State …" line.
+  - The view now has `supplier.registrationAt` (`invoice-view.ts`, `invoice-types.ts`): the index of that line in `lines`. With no registration line, the Udyam line goes last.
+  - Chromium breaks a line after any hyphen of `UDYAM-WB-00-0000001`, and no CSS stops it. I measured the widths in Archivo: the number is at most 11.4em, and "Udyam Registration No. UDYAM-" is 14.7em. `.doc--invoice .inv-udyam { max-width: 12em }` therefore makes the line always break at its spaces: "Udyam Registration No." / the number / "(Micro enterprise)". The explanation is a TS comment outside the CSS string, so the PDF page carries no extra bytes or words.
+- **F1 (hard tests).**
+  - `packages/pdf/test/signature-udyam.test.ts`: the designed layout (intra and advance tax invoices) prints the line once, as one text node, inside "From", after the GSTIN line and before the email. `missingStatutoryLine` is null. The skeleton (forced unknown type) does the same. Without the key, neither layout prints any Udyam text. A view with no registration line puts the line last.
+  - `apps/jobs/test/pdf-signature-udyam.test.ts`: the passing case uses the default real layout (no `htmlOf`) and expects `"rendered"`, the line exactly once and no bell. The refusals swap the real line out (missing or split) and first assert that the real page had it.
+- **Fixtures.**
+  - New layout fixture `udyam` (signed tax invoice, made-up `UDYAM-WB-00-0000001`, `LAYOUT_UDYAM`).
+  - `advance` and `advance-export` now carry the signature (T4).
+  - `visual/notes.spec.ts` passes the signature image, so the visual suite shows notes as they now print.
+- **Settings › Company** (`routes/settings/company.tsx`, new `lib/udyam.ts`):
+  - "Udyam registration number" (optional) and "Enterprise category" go through `FormField`, as a second row of the GST registration fieldset, with field ids `f-udyam-number` and `f-udyam-category` so API refusals land on the field.
+  - The number is upper-cased as it is typed and trimmed when the field is left. It is checked on leaving the field and on save, using core's `UDYAM_NUMBER_RE`, with the 07-ZC line 4 error.
+  - The options use `@techaust/pdf/copy`'s `UDYAM_COPY.categories` (L3).
+  - The form always sends `udyam`, as the block or `null` (L8). The e2e test proves the request body both ways.
+- **Signature hint:** `SIGNATURE_COPY.hint` is now 07-ZC line 2.
+- **Settings › Tax:** the signatory switch shows 07-ZC line 3 (`INVT_COPY.signatoryScope`, `.checklist__scope`). The line is part of the switch's accessible description ("House rule This switch covers …").
+- **Note blockers:** new `NoteBlockerList` in `notes-parts.tsx`, used by `note-dialog.tsx` and `note-draft.tsx`. A note blocker whose fix is on another page now links that place, the same way the invoice `BlockerList` does: `signature_missing` links "Settings › Company". The advance dialog already used `BlockerList`, so it needed no change; the e2e test proves the refusal and its link.
+- **e2e infra (needed by the T4 rule):**
+  - `e2e/sample-data.ts` now uploads a drawn sample signature PNG before it issues its credit note. Without it, `E2E_SAMPLE=1` would fail on the 409.
+  - `Call` accepts a raw body.
+  - `global-setup.ts` writes the throwaway Owner's code secret to the git-ignored `apps/admin/.e2e/owner-totp.hex`, so a spec can step up.
+- **New spec `apps/admin/e2e/signature-udyam.spec.ts`:** Company (empty, refused, saved, cleared), keyboard order and visible focus, the Tax switch line, the note blocker and the advance refusal with no signature saved (the signature is put back afterwards), and no console errors. axe runs on every state, in both in-app themes against the opposite OS theme, at 1280 and 390.
+
+**Files changed**
+- `packages/pdf/src/{invoice-types.ts, invoice-view.ts, layout/invoice.ts, layout/invoice-skeleton.ts}`
+- `packages/pdf/test/{signature-udyam.test.ts, fixtures/invoice-layout.ts}`
+- `packages/pdf/visual/notes.spec.ts`
+- `apps/jobs/test/pdf-signature-udyam.test.ts`
+- `apps/admin/src/routes/settings/{company.tsx, tax.tsx}`
+- `apps/admin/src/routes/invoices/{notes-parts.tsx, note-dialog.tsx, note-draft.tsx}`
+- `apps/admin/src/lib/{udyam.ts (new), udyam.test.ts (new), pdf.ts, pdf.test.ts, invoice-types.ts, invoice-types.test.ts}`
+- `apps/admin/src/shell.css`
+- `apps/admin/e2e/{signature-udyam.spec.ts (new), sample-data.ts, global-setup.ts}`
+
+**Commands and results** (heavy ones through `bash tools/heavy.sh`)
+- `pnpm --filter @techaust/pdf test` (rt2d-pdf): 21 files, 366 passed. Coverage 97.12 % statements, 91.47 % branches.
+- `pnpm --filter @techaust/jobs test` (rt2d-jobs): 32 files, 541 passed.
+- `pnpm --filter @techaust/admin test` (rt2d-admin): 118 files, 3471 passed.
+- `pnpm --filter @techaust/admin typecheck` passed; `pnpm --filter @techaust/pdf --filter @techaust/jobs typecheck` passed.
+- `pnpm --filter @techaust/admin e2e e2e/signature-udyam.spec.ts` with `E2E_SAMPLE=1`, `TECHAUST_PORT_OFFSET=0` and `RT2_SHOTS` (rt2d-e2e): 5 passed. axe found 0 moderate, serious or critical violations on every state.
+- Budgets:
+  - jobs 982,690 bytes (+554 over the builder's 982,136; 17,310 left), startup 51.5 ms
+  - admin front 99,271 and admin API 616,502 (both unchanged)
+- `pnpm lint` (once, rt2d-lint): green. 10 warnings, all already in `packages/pdf/test/{envelope,render,variants}.test.ts`.
+- Local setup in the worktree: `pnpm dev:secrets`, `pnpm db:migrate:local` (0054 applied), `pnpm db:seed:local`, `pnpm portal:sample`. The Playwright webServer stopped the admin dev server at the end (health check: no answer).
+
+**Screenshots** (`.logs/rt2-design/`, in this worktree, git-ignored)
+- `company-empty-{1280,390}-{light,dark}.png`: Settings › Company with no number. Shows the Udyam row, the hint, "Micro enterprise", and the new signature hint (line 2).
+- `company-error-{1280,390}-{light,dark}.png`: "UDYAM-WB-00-000001" after leaving the field. Red border and the line 4 error.
+- `company-filled-{1280,390}-{light,dark}.png`: saved as `UDYAM-WB-00-0000001` with "Small enterprise". The full-page captures at 1280 show the sticky top bar halfway down. That is how a full-page capture draws it, not a page defect.
+- `tax-signatory-{1280,390}-{light,dark}.png`: the "Authorised signatory" switch with the House rule badge and line 3.
+- `note-blocker-{1280,390}-{light,dark}.png`: a draft debit note with no signature saved. Line 1 with the "Settings › Company" link (focused in the capture).
+- `advance-blocker-{1280,390}-{light,dark}.png`: the advance dialog of an issued sample proforma, refused with line 1 and its link.
+- `pdf-udyam.png/.pdf`: a tax invoice with the Udyam line in three lines under "State West Bengal (19)", plus the signature.
+- `pdf-advance.png/.pdf` and `pdf-advance-export.png/.pdf`: invoices for a payment received, signed.
+- `pdf-note-credit_lines.png/.pdf` and `pdf-note-debit.png/.pdf`: credit and debit notes, signed.
+- The PNGs are print-media HTML screenshots at 794 px; the PDFs come from the local Playwright Chromium, not Browser Run.
+
+**Placeholder text:** none. Every new line is 07-ZC word for word.
+
+**Not verified, and open questions**
+1. **No on-screen invoice paper exists for the Udyam line, in admin or portal.** The portal invoice page (`apps/portal/src/screens/invoices.tsx`) shows a slip of dates, figures, lines and the tax summary, with no supplier block. Its API (`apps/portal/worker/invoice-summary.ts`) returns no issuer company. The admin invoice page has no supplier block either. The only "paper" is the proposal/estimate `document-paper.tsx`, which never prints Udyam. So 07-ZC line 6 appears on the PDF only. Adding a supplier block to either page would need a builder change (the portal summary API) and new approved copy for the block (for example a "From" heading). That is for the lead and the owner to decide, so I did not build it.
+2. **The Udyam fields have no section heading of their own.** No legend was approved, so they sit in the "GST registration" fieldset as a second row. If the owner wants them in their own section, a legend line (for example "Udyam registration") needs approval first.
+3. **Visual suite:** the Linux baselines for the new `invoice-udyam` fixture, and for the advance and note fixtures that now show the signature, need regenerating where the suite's baselines are made. The visual suite was not run here (it isn't in CI). The new fixture was printed and looked at instead.
+4. **Not checked:** Browser Run itself (the line-break rule depends on the same embedded Archivo, so it should match), staging, and NVDA.
+
+Usage: designer claude-opus-5-5/high (this worktree agent; skills frontend-design).
+
 ### Builder fixes (F2–F5)
 Branch `fix/rt2-early-check` from `origin/task/rt2-signature-udyam` (fix commit 338ab20e). Skills: `cloudflare:workers-best-practices` (checked the jobs refusal: the bell still goes in one awaited `DB.batch`, no fire-and-forget; no other change), `cloudflare:wrangler` (no config or binding change, so no `wrangler types` rerun; tests ran through the project's pinned Wrangler/Vitest).
 - **F2 (L7)** `apps/jobs/src/pdf.ts`: new `BELL_COPY.invoiceUnsigned(label)` = 07-ZC line 7 word for word; the `signature_required` refusal rings it with kind `pdf.refused`, entity `document`, link `/invoices/${row.id}` (the other refusals keep `invoiceRefused`). New test `apps/jobs/test/pdf-unsigned-bell.test.ts` (4 tests): the line word for word, and for an unsigned credit note, debit note and invoice for a payment received, every bell is `{kind: pdf.refused, entity_type: document, title: invoiceUnsigned(number), link: /invoices/:id}` and never the "saved copy" line; no Browser Run call. (The designer's `apps/jobs/test/pdf-signature-udyam.test.ts` was not touched.)

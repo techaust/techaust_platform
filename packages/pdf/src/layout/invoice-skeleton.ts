@@ -20,7 +20,7 @@ import { esc } from "../escape.ts";
 import { PDF_LOGOS, PDF_SYMBOL } from "../generated/assets.ts";
 import type { InvoiceView, InvoiceViewLine } from "../invoice-types.ts";
 import { markdownBlocks } from "../markdown-html.ts";
-import { DESIGNED_INVOICE_TYPES, TAX_INVOICE_CSS, taxInvoiceBody } from "./invoice.ts";
+import { DESIGNED_INVOICE_TYPES, supplierLinesHtml, TAX_INVOICE_CSS, taxInvoiceBody } from "./invoice.ts";
 import { cssString } from "./styles.ts";
 
 /** The skeleton's words: 07-R §6 where it has a line (PENDING the owner's word-for-word approval), the rest plain. The designer takes them over in phase 2. */
@@ -87,7 +87,7 @@ function masthead(view: InvoiceView): string {
 function parties(view: InvoiceView): string {
   const C = INVOICE_COPY;
   const line = (t: string) => p("party__line", t);
-  const from = `<div class="party"><p class="label">${C.from}</p>${p("party__name", view.supplier.name)}${view.supplier.lines.map(line).join("")}</div>`;
+  const from = `<div class="party"><p class="label">${C.from}</p>${p("party__name", view.supplier.name)}${supplierLinesHtml(view, line)}</div>`;
   const r = view.recipient;
   const to = `<div class="party"><p class="label">${C.billTo}</p>${p("party__name", r.name)}${r.lines.map(line).join("")}${
     r.gstin ? line(`${C.gstin} ${r.gstin}`) : ""
@@ -221,9 +221,15 @@ ${signatoryBlock(view)}
 }
 
 /** What the invoice family adds to the template CSS: the skeleton's body size (the proposal layout sets it on its own class), then the tax invoice
- * layout's rules (all scoped to `.doc--tax-invoice`, so they never reach the skeleton). */
+ * layout's rules (all scoped to `.doc--tax-invoice`, so they never reach the skeleton).
+ *
+ * The last rule is T10's (rt2), for both layouts (`.doc--invoice`): the Udyam line (07-ZC line 6) is ONE text node, and Chromium breaks a line after any
+ * hyphen of "UDYAM-WB-00-0000001" (no CSS property stops it). 12em is wider than the number at its widest (11.4em, measured in Archivo for
+ * "UDYAM-WW-88-8888888") and narrower than "Udyam Registration No. UDYAM-" (14.7em), so the line always breaks at its spaces: "Udyam Registration No.",
+ * the number, "(Micro enterprise)". */
 export const INVOICE_SKELETON_CSS = `.doc--invoice { font-size: var(--print-proposal-body); line-height: var(--print-proposal-leading); }
-${TAX_INVOICE_CSS}`;
+${TAX_INVOICE_CSS}
+.doc--invoice .inv-udyam { max-width: 12em; overflow-wrap: normal; }`;
 
 const SYMBOL_URI = `data:image/svg+xml,${encodeURIComponent(PDF_SYMBOL)}`;
 

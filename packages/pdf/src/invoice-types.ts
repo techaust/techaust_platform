@@ -217,8 +217,15 @@ export type InvoiceView = {
   /**
    * `legalName` is the frozen company legal name (Rule 46: "For {legal name}"). `udyam` (T10): 07-ZC line 6 ("Udyam Registration No. {number} ({category})") when the
    * frozen issuer block of a tax invoice has one, else null; the layout prints it under the GSTIN line as ONE text node (`missingStatutoryLine` refuses the PDF otherwise).
+   * `registrationAt` is the index in `lines` of the "GSTIN … · State …" line, so a layout can print the Udyam line right under it (-1: none).
    */
-  supplier: { name: string; legalName: string | null; lines: string[]; udyam: string | null };
+  supplier: {
+    name: string;
+    legalName: string | null;
+    lines: string[];
+    registrationAt: number;
+    udyam: string | null;
+  };
   /** The recipient block: name, address, GSTIN when registered, the State name and code. */
   recipient: {
     name: string;

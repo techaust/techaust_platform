@@ -2,7 +2,8 @@
 // without the signature they must carry (`pdf.refused`, code `signature_required`, the owners' bell, no Browser Run call, no retry); a PDF already stored is adopted
 // first; a plain tax invoice without a signature renders as before. T10: a tax invoice sealed with a Udyam number must print 07-ZC line 6 as ONE text node or it is
 // refused like any statutory line. Researched 2026-10-30, Rule 53(1A) CGST Rules (08-C RA-22); s.31(3)(d) CGST Act and Rule 50 CGST Rules (08-C RA-17); MSMED
-// ss.15–16 (08-C RB-39(a)). The layout that prints the line is the designer's: here the page is the real layout with the line added or left out (`htmlOf`).
+// ss.15–16 (08-C RB-39(a)). The page is the real layout (`@techaust/pdf`, which prints the line under the GSTIN line); the refusals take the line out of it or split it
+// (`htmlOf`). F1 of the early check: the passing case runs the real layout untouched, so a layout that stops printing the line fails here.
 import { env as realEnv } from "cloudflare:workers";
 import { type PdfMessage, pdfKeys } from "@techaust/core/pdf-jobs";
 import { renderDocumentHtml } from "@techaust/pdf";
@@ -158,32 +159,33 @@ describe("L4: a document that must be signed and froze no signature is refused [
 });
 
 describe("T10: the Udyam line is a statutory line of the page", () => {
-  /** The real layout with 07-ZC line 6 added as one text node after the body opens (what the designer's layout will print in the supplier block). */
-  const withLine = (v: Parameters<typeof renderDocumentHtml>[0]) =>
-    renderDocumentHtml(v).replace("<body>", `<body><p data-testid="udyam">${LINE}</p>`);
+  type View = Parameters<typeof renderDocumentHtml>[0];
 
-  it("a tax invoice sealed with a number renders when the page prints it as one text node", async () => {
+  it("a tax invoice sealed with a number renders with the real layout, which prints it once as one text node", async () => {
     const s = await seedIssuedInvoice({ udyam: UDYAM });
     await snapshot(s.id);
     const b = browser();
-    expect(await render(b, s.id, withLine)).toBe("rendered");
+    expect(await render(b, s.id)).toBe("rendered");
     expect(b.calls).toHaveLength(1);
     expect(b.calls[0]).toContain(`>${LINE}<`);
+    expect(b.calls[0]?.split(LINE)).toHaveLength(2);
+    expect(await refusedBells(s.id)).toEqual([]);
   });
 
   it("a page without the line, or with it split, is refused (statutory_udyam): no Browser Run call, one bell", async () => {
+    /** The real layout with its line swapped for `to` (the real page must have the line, or the case would prove nothing). */
+    const swapped = (to: string) => (v: View) => {
+      const html = renderDocumentHtml(v);
+      expect(html).toContain(`>${LINE}<`);
+      return html.replace(`>${LINE}<`, `>${to}<`);
+    };
     for (const htmlOf of [
-      (v: Parameters<typeof renderDocumentHtml>[0]) => renderDocumentHtml(v).replace(`>${LINE}<`, ">Udyam<"),
-      (v: Parameters<typeof renderDocumentHtml>[0]) =>
-        renderDocumentHtml(v).replace(
-          "<body>",
-          "<body><p>Udyam Registration No. <b>UDYAM-WB-01-0012345</b> (Micro enterprise)</p>",
-        ),
+      swapped("Udyam"),
+      swapped("Udyam Registration No. <b>UDYAM-WB-01-0012345</b> (Micro enterprise)"),
     ]) {
       const s = await seedIssuedInvoice({ udyam: UDYAM });
       await snapshot(s.id);
       const b = browser();
-      // (the real layout of today may already print the line: the first page then has it taken out by the replace)
       expect(await render(b, s.id, htmlOf)).toBe("refused");
       expect(b.calls).toHaveLength(0);
       expect((await refusedBells(s.id)).length).toBeGreaterThan(0);
@@ -199,7 +201,7 @@ describe("T10: the Udyam line is a statutory line of the page", () => {
       const s = await seedIssuedInvoice(o);
       await snapshot(s.id);
       const b = browser();
-      const outcome = await render(b, s.id, withLine);
+      const outcome = await render(b, s.id);
       expect(outcome, JSON.stringify(o)).toBe("refused");
       expect(b.calls).toHaveLength(0);
     }

@@ -11,12 +11,12 @@ import type { Role } from "@techaust/core/permissions";
 import { useState } from "react";
 import { Link } from "react-router";
 import type { Currency } from "../../api.ts";
-import { Calendar, Plus, RotateCcw } from "../../components/icons.tsx";
+import { Alert, Calendar, Plus, RotateCcw } from "../../components/icons.tsx";
 import { ScrollCue, useScrollCue } from "../../components/scroll-cue.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { allowed } from "../../lib/access.ts";
 import { DOC_COPY, dayText, inWords, lineColumns } from "../../lib/documents.ts";
-import { badgeOf, INV_COPY, INV_ERRORS, moneyText } from "../../lib/invoices.ts";
+import { badgeOf, blockerTarget, INV_COPY, INV_ERRORS, moneyText, splitAtPlace } from "../../lib/invoices.ts";
 import {
   againstLine,
   balanceLine,
@@ -26,7 +26,9 @@ import {
   IMS_LABELS,
   NOTE_COPY,
   NOTE_ERRORS,
+  type NoteBlockerIn,
   type NoteLedgerRow as NoteLedgerRowData,
+  noteBlockerLine,
   noteErrorText,
   noteLedgerRows,
   notesLimit,
@@ -50,6 +52,54 @@ import { StatutoryBand } from "./types-parts.tsx";
 export const isNoteView = (v: { type: string }) => v.type === "credit_note" || v.type === "debit_note";
 export const noteKindOfView = (v: { type: string }): NoteKind =>
   v.type === "credit_note" ? "credit" : "debit";
+
+// ---- what still stops the issue (07-T, 07-ZC line 1) ----------------------------------------------------------------------------------------
+
+/**
+ * The blockers of a credit or debit note, one line each in 07-T's words, as the invoice's `BlockerList` draws them: a line fixed on another page (Settings ›
+ * Company for the supplier's details and, since rt2 (T4), the signature every note carries; the client's page for the client's) links its place there.
+ * The note's lines come from its invoice, so no line points inside the note.
+ */
+export function NoteBlockerList(props: {
+  blockers: readonly NoteBlockerIn[];
+  kind: NoteKind;
+  currency: Currency;
+  clientId: string;
+}) {
+  if (props.blockers.length === 0) return null;
+  return (
+    <ul className="blockers inv-blockers">
+      {props.blockers.map((b, i) => {
+        const line = noteBlockerLine(b, props.kind, props.currency);
+        const t = blockerTarget(b, props.clientId);
+        const parts = t?.kind === "page" ? splitAtPlace(line, t.place) : null;
+        const body =
+          t?.kind !== "page" ? (
+            line
+          ) : parts ? (
+            <>
+              {parts[0]}
+              <Link className="blockers__link inv-blockers__place" to={t.to}>
+                {parts[1]}
+              </Link>
+              {parts[2]}
+            </>
+          ) : (
+            <Link className="blockers__link" to={t.to}>
+              {line}
+            </Link>
+          );
+        return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: a code can repeat for different lines; the list is redrawn whole
+          <li key={`${b.code}-${i}`} className="blockers__item">
+            <Alert size={16} />
+            <span>{body}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
 // ---- the deadline (07-T §4) ---------------------------------------------------------------------------------------------------------------------
 

@@ -128,6 +128,9 @@ export default async function globalSetup() {
   if (!cookies.some((c) => c.name === "__Host-ta_admin")) throw new Error("e2e setup: no session cookie");
   mkdirSync(here("../.e2e/"), { recursive: true });
   writeFileSync(here("../.e2e/owner-state.json"), JSON.stringify({ cookies, origins: [] }, null, 2));
+  // The throwaway Owner's authenticator secret (local database only, git-ignored like the state above), so a spec can open a step-up the way a
+  // person types a code (rt2: the issue and the payment dialogs).
+  writeFileSync(here("../.e2e/owner-totp.hex"), secret.toString("hex"));
   const cookie = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
   await sampleLead(cookie);
   // E2E_SAMPLE=1: the realistic sample data (invoices, notes, an export, time, a care plan), so the sweep runs with data (e2e/sample-data.ts).
@@ -138,13 +141,21 @@ export default async function globalSetup() {
       email,
       call: async (path, init = {}) => {
         const res = await fetch(`${ORIGIN}/api/v1${path}`, {
-          method: init.method ?? (init.body === undefined ? "GET" : "POST"),
+          method: init.method ?? (init.body === undefined && init.raw === undefined ? "GET" : "POST"),
           headers: {
             Cookie: cookie,
             Origin: ORIGIN,
-            ...(init.body === undefined ? {} : { "Content-Type": "application/json" }),
+            ...(init.raw !== undefined
+              ? { "Content-Type": "application/octet-stream" }
+              : init.body === undefined
+                ? {}
+                : { "Content-Type": "application/json" }),
           },
-          ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+          ...(init.raw !== undefined
+            ? { body: init.raw }
+            : init.body === undefined
+              ? {}
+              : { body: JSON.stringify(init.body) }),
         });
         return { status: res.status, data: await res.json().catch(() => ({})) };
       },

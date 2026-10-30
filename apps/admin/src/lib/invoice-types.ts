@@ -40,6 +40,9 @@ export const INVT_COPY = {
     'Issuing is blocked while anything ticked here is missing. The defaults follow GST Rule 46. Items marked "House rule" aren\'t required by GST law; you can turn them off.',
   checklistLocked: "Required by GST law, so it can't be turned off.",
   houseRule: "House rule",
+  // 07-ZC line 3 (approved 2026-10-31; T4, rt2): under the "Authorised signatory" switch. Credit and debit notes (Rule 53(1A), 08-C RA-22) and invoices for a
+  // payment received (Rule 50, 08-C RA-17) are always signed, so the switch (Rule 46(q) proviso, 08-C RA-06) reaches only these three types.
+  signatoryScope: "This switch covers tax invoices, export invoices and proformas only.",
   // §4
   fxTitle: "Exchange rate for this invoice",
   fxRate: "1 USD = ₹",

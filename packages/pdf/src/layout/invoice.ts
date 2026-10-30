@@ -180,14 +180,30 @@ function advanceHtml(view: InvoiceView): string {
   );
 }
 
+/**
+ * The supplier's lines, with the Udyam line (07-ZC line 6, T10) right under the "GSTIN … · State …" line: ONE text node in its own paragraph, never split
+ * into parts (the jobs gate `missingStatutoryLine` refuses the PDF otherwise). A view without a registration line puts it after the last line. Shared with the
+ * skeleton, so both layouts print it the same way.
+ */
+export function supplierLinesHtml(view: InvoiceView, line: (text: string) => string): string {
+  const { lines, registrationAt, udyam } = view.supplier;
+  const out = lines.map(line);
+  if (udyam !== null) {
+    const at = registrationAt >= 0 && registrationAt < lines.length ? registrationAt + 1 : lines.length;
+    out.splice(at, 0, p("party__line inv-udyam", udyam, ' data-testid="udyam"'));
+  }
+  return out.join("");
+}
+
 const fact = (term: string, value: string, cls = "") =>
   `<div${cls ? ` class="${cls}"` : ""}><dt>${esc(term)}</dt><dd>${esc(value)}</dd></div>`;
 
 function parties(view: InvoiceView): string {
   const R = C.parties;
-  const from = `<div class="party"><p class="label">${R.from}</p>${p("party__name", view.supplier.name)}${view.supplier.lines
-    .map((l) => partsLine("party__line", l))
-    .join("")}</div>`;
+  const from = `<div class="party"><p class="label">${R.from}</p>${p("party__name", view.supplier.name)}${supplierLinesHtml(
+    view,
+    (l) => partsLine("party__line", l),
+  )}</div>`;
 
   const r = view.recipient;
   const ids = [r.gstin ? fact(R.gstin, r.gstin) : "", r.state ? fact(R.state, r.state) : ""].join("");

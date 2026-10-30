@@ -2,7 +2,10 @@
 // valid GSTIN), the address and contact printed on documents, and the two logos, picked from the generated brand files
 // (lead decision L7 of M4.4: never uploaded). After the form, the signature image (M4.4), which is uploaded and saves on its own.
 // Changes apply to new documents only (GST fields: Researched 2026-10-28, Rule 46 CGST, 08-C RA-05).
+// T10 (rt2): the Udyam registration number and enterprise category (07-ZC lines 4 and 5), beside the GST registration because both print on the tax invoice
+// under the supplier's name; the form always sends `udyam` (the block, or null for none: L8), so a later save never keeps a number that was cleared here.
 import { STATE_CODES, type StateCode, selectableStates, validateGstin } from "@techaust/core";
+import type { UdyamCategory } from "@techaust/core/invoices";
 import { BRAND_LOGOS, type Settings } from "@techaust/core/settings";
 import primaryBlack from "@techaust/ui/brand/logo-primary-black.svg?url";
 import primaryColor from "@techaust/ui/brand/logo-primary-color.svg?url";
@@ -18,6 +21,7 @@ import { useState } from "react";
 import { StatusPill } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
 import { type FieldErrors, fieldId, looksLikeEmail, orNull } from "../../lib/settings-form.ts";
+import { normaliseUdyam, UDYAM_FORM_COPY, UDYAM_OPTIONS, udyamCategoryOf, udyamOf } from "../../lib/udyam.ts";
 import { type Built, GroupForm, type GroupSpec } from "./kit.tsx";
 import { SignatureControl } from "./signature.tsx";
 
@@ -48,6 +52,8 @@ type Form = {
   documentsPhone: string;
   logoLight: Logo;
   logoDark: Logo;
+  udyamNumber: string;
+  udyamCategory: UdyamCategory;
 };
 
 const ID = {
@@ -62,6 +68,9 @@ const ID = {
   documentsPhone: fieldId("documentsPhone"),
   logoLight: fieldId("logoLight"),
   logoDark: fieldId("logoDark"),
+  // the schema's paths (`udyam.number`, `udyam.category`), so a refusal from the API lands on its field
+  udyamNumber: fieldId("udyam.number"),
+  udyamCategory: fieldId("udyam.category"),
 };
 
 const spec: GroupSpec<"company", Form> = {
@@ -80,6 +89,8 @@ const spec: GroupSpec<"company", Form> = {
     documentsPhone: v.documentsPhone ?? "",
     logoLight: v.logoLight,
     logoDark: v.logoDark,
+    udyamNumber: v.udyam?.number ?? "",
+    udyamCategory: udyamCategoryOf(v.udyam),
   }),
   build: (f): Built<"company"> => {
     const e: FieldErrors = {};
@@ -91,7 +102,9 @@ const spec: GroupSpec<"company", Form> = {
     if (!f.address.trim()) e[ID.address] = "Enter the address printed on documents.";
     if (!looksLikeEmail(f.documentsEmail))
       e[ID.documentsEmail] = "Enter an email address, like accounts@example.com.";
-    if (Object.keys(e).length || !g?.ok) return { errors: e };
+    const udyam = udyamOf(f.udyamNumber, f.udyamCategory);
+    if (!udyam.ok) e[ID.udyamNumber] = udyam.error;
+    if (Object.keys(e).length || !g?.ok || !udyam.ok) return { errors: e };
     const value: Settings["company"] = {
       tradeName: f.tradeName.trim(),
       legalName: f.legalName.trim(),
@@ -103,6 +116,7 @@ const spec: GroupSpec<"company", Form> = {
       documentsPhone: orNull(f.documentsPhone),
       logoLight: f.logoLight,
       logoDark: f.logoDark,
+      udyam: udyam.value,
     };
     return { value };
   },
@@ -135,6 +149,10 @@ function Fields({
   const liveError = checked && gst && !gst.ok ? `${gst.error}.` : null;
   const lockedState = gst?.ok ? (gst.stateCode as StateCode) : null;
   const states = selectableStates();
+  // The Udyam number, like the GSTIN, is checked once the field is left (or the save is tried), never while it is typed.
+  const [udyamLeft, setUdyamLeft] = useState(false);
+  const udyamCheck = udyamOf(f.udyamNumber, f.udyamCategory);
+  const udyamLive = udyamLeft && !udyamCheck.ok ? udyamCheck.error : null;
 
   return (
     <>
@@ -249,6 +267,51 @@ function Fields({
                 </select>
               )
             }
+          </FormField>
+        </div>
+        <div className="form-grid form-grid--udyam">
+          <FormField
+            id={ID.udyamNumber}
+            label={UDYAM_FORM_COPY.label}
+            className="field--gstin"
+            optional
+            hint={UDYAM_FORM_COPY.hint}
+            error={error(ID.udyamNumber) ?? udyamLive}
+          >
+            {(a) => (
+              <input
+                {...a}
+                autoComplete="off"
+                spellCheck={false}
+                autoCapitalize="characters"
+                maxLength={30}
+                value={f.udyamNumber}
+                onChange={(e) => {
+                  set({ udyamNumber: e.target.value.toUpperCase() });
+                  if (udyamLeft && e.target.value.trim() === "") setUdyamLeft(false);
+                }}
+                onBlur={() => {
+                  const n = normaliseUdyam(f.udyamNumber);
+                  if (n !== f.udyamNumber) set({ udyamNumber: n });
+                  setUdyamLeft(n !== "");
+                }}
+              />
+            )}
+          </FormField>
+          <FormField id={ID.udyamCategory} label={UDYAM_FORM_COPY.categoryLabel}>
+            {(a) => (
+              <select
+                {...a}
+                value={f.udyamCategory}
+                onChange={(e) => set({ udyamCategory: e.target.value as UdyamCategory })}
+              >
+                {UDYAM_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            )}
           </FormField>
         </div>
       </fieldset>
