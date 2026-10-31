@@ -175,4 +175,39 @@ describe("the page the designer's layout makes from the view", () => {
     const html = renderStatementHtml(statementView(input({ closingMinor: 0 })));
     expect(html).not.toContain('data-testid="amount-due"');
   });
+
+  it("M6.1 (07-ZH line 19; early check A1): a receipt with no number (SQL gives '', never NULL) and a TDS line, which reads 'TDS deducted'", () => {
+    const view = statementView(
+      input({
+        entries: [
+          {
+            kind: "receipt",
+            date: "2026-10-06",
+            number: "",
+            amountMinor: 5_000_00,
+            debitMinor: 0,
+            creditMinor: 5_000_00,
+            balanceMinor: 0,
+          },
+          {
+            kind: "tds",
+            date: "2026-10-07",
+            number: "TH/INV/2627/0001",
+            amountMinor: 1_000_00,
+            debitMinor: 0,
+            creditMinor: 1_000_00,
+            balanceMinor: -1_000_00,
+          },
+        ],
+        debitMinor: 0,
+        creditMinor: 6_000_00,
+        closingMinor: -1_000_00,
+      }),
+    );
+    const body = renderStatementHtml(view).replace(/<style>[\s\S]*?<\/style>/, "");
+    expect(body).toContain("Payment received");
+    expect(body).toContain("TDS deducted");
+    expect(body).not.toContain("null");
+    expect((body.match(/data-testid="entry"/g) ?? []).length).toBe(2);
+  });
 });

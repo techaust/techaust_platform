@@ -124,6 +124,9 @@ describe("a valid link opens exactly one document [POR-06]", () => {
         "parentNumber",
         "pdfReady",
         "status",
+        // M6.1 (07-ZH line 18): the TDS the client deducted, and its summary row (null when none)
+        "tdsMinor",
+        "tdsRow",
         "total",
         "totals",
         "type",
