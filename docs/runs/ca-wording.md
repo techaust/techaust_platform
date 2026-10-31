@@ -1,6 +1,6 @@
-Status: builder running (07-ZK approved)
+Status: reviewer running
 Tier: C (copy lines and the tests that pin them; no logic, no migrations)
-Usage: lead claude-opus-5-5/high; builder b1 started 2026-11-01 (5-h reading 20 % at 02:55 IST; model and effort from model-audit after it reports)
+Usage: lead claude-opus-5-5/high, skills: none (no §9 row fits copy work); builder b1 claude-opus-5-5/high 2026-10-31T20:59Z, skills: none (flagged by model-audit: the cloudflare skills don't load in a cloud session and the change is string values only; lead accepts); 5-h reading 20 % at 02:55 IST
 
 # ca-wording: replace the lines that send the owner to "your CA" or "your CA and lawyer"
 
@@ -62,7 +62,11 @@ Tests that pin them: `apps/admin/src/lib/reports.test.ts:96`, `:733`, `:771`, `:
 - **08-C, a new row:** how a B2CS row that nets below zero after credit notes is reported on the GST portal (07-ZK line 3 only says to check it; 08-C has no row).
 - **08-C RA-32 for B2CS:** RA-32 settles Table 9B for registered and B2CL notes; a tax-only note in the B2CS file has no settled route (07-ZK line 6 names no table).
 - **Website, About › team** (`apps/web/src/content/company.ts:152`, 07 §466): "We bring in trusted specialists, such as security testers and legal partners, when a project needs them." Not a "your CA" line, so outside this task; the owner may want to confirm it is still true now that there is no lawyer.
+- **Reports › Export realisation** `REALISATION_COPY.beforeFema` (`apps/admin/src/lib/reports.ts:475`, 07-V §11): "Issued before 1 October 2026: a different realisation period may apply." Names no CA, so outside 07-ZK, but it now disagrees with 07-ZK line 4 (RB-02 settled: 9 months from the invoice date). New copy needs approval; in practice no app invoice predates 1 October 2026 (08-C §5 RB-02).
 - `apps/admin/worker/care.ts:10` comment "To check with the CA (no 08-C row yet)": a research item without an 08-C row (comment only).
+
+## Integration notes (lead)
+- 2026-11-01: `fix/ca-wording-b1` (4b68b9d) merged into `fix/ca-wording` (merge commit, no conflicts); the lead read the whole diff against 07-ZK (every line word for word; the three copies of line 9 identical). The builder's extra comment edit in `apps/admin/src/lib/copy-zd.ts:3` (the 07-T history now says "sent the owner to a CA") accepted: history kept, grep clean. Worktree removed, branches deleted.
 
 ## Handover
 - 2026-11-01: inventory done, 07-ZK drafted, Q1 written. Next: the owner's answer to Q1 (through the main session), then the builder per the brief.
