@@ -90,7 +90,8 @@ export type DeedBlocker =
   | "care_plan"
   | "no_invoices"
   | "balance_due"
-  | "short_paid";
+  | "short_paid"
+  | "nothing_paid";
 
 /** The aggregated facts (`deedFactsSql`'s row, or `deedFactsOf`'s): what `deedBlockersOf` decides on. */
 export type DeedFactSums = {
@@ -103,6 +104,8 @@ export type DeedFactSums = {
   readonly payables: number;
   readonly unpaid: number;
   readonly settledMinor: number;
+  /** Σ `credited_minor` of the live payables in the accepted currency: credit notes lower the target (owner, 2026-11-01). */
+  readonly creditedMinor: number;
 };
 
 const big = (n: number, what: string): bigint => {
@@ -137,7 +140,12 @@ export function deedFactsOf(f: DeedFacts): DeedFactSums {
   const live = f.documents.filter(isLivePayable);
   const currency = f.source?.currency ?? null;
   let settled = 0n;
-  for (const d of live) if (d.currency === currency) settled += BigInt(settledOf(d));
+  let credited = 0n;
+  for (const d of live)
+    if (d.currency === currency) {
+      settled += BigInt(settledOf(d));
+      credited += big(d.creditedMinor, "credited");
+    }
   return {
     projectStatus: f.projectStatus,
     sourceOk: f.source !== null && sourceAccepted(f.source),
@@ -148,12 +156,25 @@ export function deedFactsOf(f: DeedFacts): DeedFactSums {
     payables: live.length,
     unpaid: live.filter((d) => d.balanceMinor !== 0).length,
     settledMinor: Number(settled),
+    creditedMinor: Number(credited),
   };
 }
 
 /**
+ * The amount the money must reach: the accepted total less the credit notes on the project's live payables (owner, 2026-11-01: a credit note given as a
+ * discount lowers what is owed, so the client still gets a deed once everything owed is paid). Never below zero. Null without an accepted total.
+ */
+export function deedTargetOf(s: Pick<DeedFactSums, "acceptedTotalMinor" | "creditedMinor">): number | null {
+  if (s.acceptedTotalMinor === null) return null;
+  const t = big(s.acceptedTotalMinor, "accepted total") - big(s.creditedMinor, "credited");
+  return Number(t > 0n ? t : 0n);
+}
+
+/**
  * L2 (run file; Researched 2026-10-31, Copyright Act s.19(1) and (3) (08-C RB-38(a)): the deed records that the price was paid in full): every reason the project
- * cannot have a deed yet, in a fixed order; none means eligible. Care-plan projects and anonymised clients never get one (L2, L7).
+ * cannot have a deed yet, in a fixed order; none means eligible. Care-plan projects and anonymised clients never get one (L2, L7). The money settled must reach the
+ * accepted total less the credit notes (owner, 2026-11-01), and some money must have been settled at all: a project credited in full gets no deed (lead,
+ * 2026-11-01, decision (a)). The twin of `deedEligibleSql`: `Σ settled + Σ credited >= accepted total AND Σ settled > 0`.
  */
 export function deedBlockersOf(s: DeedFactSums): DeedBlocker[] {
   const out: DeedBlocker[] = [];
@@ -163,19 +184,23 @@ export function deedBlockersOf(s: DeedFactSums): DeedBlocker[] {
   if (s.carePlan) out.push("care_plan");
   if (s.payables === 0) out.push("no_invoices");
   if (s.unpaid > 0) out.push("balance_due");
-  if (
-    s.acceptedTotalMinor !== null &&
-    big(s.settledMinor, "settled") < big(s.acceptedTotalMinor, "accepted total")
-  )
-    out.push("short_paid");
+  const target = deedTargetOf(s);
+  if (target !== null && big(s.settledMinor, "settled") < BigInt(target)) out.push("short_paid");
+  if (big(s.settledMinor, "settled") <= 0n) out.push("nothing_paid");
   return out;
 }
 
 export type DeedEligibility = {
   readonly eligible: boolean;
   readonly blockers: readonly DeedBlocker[];
+  /** What the money settled (the deed's `{amount_paid}`). */
   readonly settledMinor: number;
   readonly acceptedTotalMinor: number | null;
+  /** The credit notes on the live payables in the accepted currency, and the target they leave (the accepted total less them, never below 0). */
+  readonly creditedMinor: number;
+  readonly targetMinor: number | null;
+  /** How far the settled money is short of the target (0 once it reaches it; null without an accepted total). */
+  readonly shortfallMinor: number | null;
   readonly currency: string | null;
 };
 
@@ -187,11 +212,16 @@ export function deedEligibility(f: DeedFacts): DeedEligibility {
 /** L2 over the aggregated facts (the admin's read of `deedFactsSql`). */
 export function eligibilityOfSums(s: DeedFactSums): DeedEligibility {
   const blockers = deedBlockersOf(s);
+  const target = deedTargetOf(s);
+  const short = target === null ? null : BigInt(target) - big(s.settledMinor, "settled");
   return {
     eligible: blockers.length === 0,
     blockers,
     settledMinor: s.settledMinor,
     acceptedTotalMinor: s.acceptedTotalMinor,
+    creditedMinor: s.creditedMinor,
+    targetMinor: target,
+    shortfallMinor: short === null ? null : Number(short > 0n ? short : 0n),
     currency: s.acceptedCurrency,
   };
 }
@@ -209,7 +239,7 @@ export type DeedSnapshot = {
   readonly layout: typeof DEED_LAYOUT_ID;
   /** ISO date (IST) the deed is made on. */
   readonly madeOn: string;
-  /** Settings › Company at finalising: the address and the GSTIN (L6). */
+  /** Settings › Company at finalising: the principal place of business on one line, and the GSTIN (L6; lead, 2026-11-01, triage 4). */
   readonly supplier: { readonly address: string; readonly gstin: string };
   /** The client record at finalising (L6): legal name, the billing address as one line, and the GSTIN when it has one. */
   readonly client: {
@@ -250,6 +280,16 @@ export type DeedAddress = {
 
 const nonBlank = (s: string | null | undefined): s is string => typeof s === "string" && s.trim() !== "";
 
+/** A multi-line text (the principal place as typed in Settings) on one line: each non-blank line trimmed, trailing commas dropped, joined with ", "; null when empty. */
+export function deedOneLine(text: string | null | undefined): string | null {
+  if (typeof text !== "string") return null;
+  const parts = text
+    .split(/\r?\n/)
+    .map((l) => l.replace(/\s+/g, " ").trim().replace(/,+$/, "").trim())
+    .filter((l) => l !== "");
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
 export function deedAddressLine(
   a: DeedAddress | null,
   countryName: (code: string) => string = (c) => c,
@@ -270,7 +310,11 @@ export function deedAddressLine(
 export type DeedInputs = {
   /** ISO date (IST) of finalising (or of today, for a draft's preview). */
   readonly madeOn: string;
-  readonly company: { readonly address: string | null; readonly gstin: string | null };
+  /**
+   * Settings › Company: `principalPlace` (lead, 2026-11-01, triage 4: `{supplier_address}` is the GST principal place of business, the address registered
+   * against the GSTIN printed beside it) and the GSTIN.
+   */
+  readonly company: { readonly principalPlace: string | null; readonly gstin: string | null };
   readonly client: {
     readonly legalName: string;
     readonly address: DeedAddress | null;
@@ -291,7 +335,7 @@ export type DeedInputs = {
 };
 
 export type DeedValueProblem =
-  | "company_address_missing"
+  | "company_principal_place_missing"
   | "company_gstin_missing"
   | "offer_unreadable"
   | "schedules_blank"
@@ -306,12 +350,13 @@ export type DeedSnapshotResult =
     };
 
 /**
- * L6: every value of the deed. Refused (never guessed) when the company's address or GSTIN is missing from Settings › Company (07-ZE prints "GSTIN {gstin}"
+ * L6: every value of the deed. Refused (never guessed) when the principal place or the GSTIN is missing from Settings › Company (07-ZE prints "GSTIN {gstin}"
  * unconditionally), when the accepted version has no number, type or decision day, or when a Schedule field is blank.
  */
 export function deedSnapshotOf(i: DeedInputs): DeedSnapshotResult {
   const problems: DeedValueProblem[] = [];
-  if (!nonBlank(i.company.address)) problems.push("company_address_missing");
+  const supplierAddress = deedOneLine(i.company.principalPlace);
+  if (supplierAddress === null) problems.push("company_principal_place_missing");
   if (!nonBlank(i.company.gstin)) problems.push("company_gstin_missing");
   const docType = i.offer.type === "proposal" || i.offer.type === "estimate" ? i.offer.type : null;
   if (
@@ -338,7 +383,7 @@ export function deedSnapshotOf(i: DeedInputs): DeedSnapshotResult {
     snapshot: {
       layout: DEED_LAYOUT_ID,
       madeOn: i.madeOn,
-      supplier: { address: (i.company.address as string).trim(), gstin: (i.company.gstin as string).trim() },
+      supplier: { address: supplierAddress as string, gstin: (i.company.gstin as string).trim() },
       client: {
         legalName: i.client.legalName.trim(),
         address: deedAddressLine(i.client.address, i.countryName),

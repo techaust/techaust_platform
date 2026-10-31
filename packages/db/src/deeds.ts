@@ -7,9 +7,10 @@
 //   - its client is not anonymised; it is not a care-plan project (no care plan was made from its source document, and no invoice of it belongs to a care plan);
 //   - it has at least one LIVE payable document (a frozen, not void tax invoice, export invoice or debit note: an invoice for a payment received is a tax or
 //     export invoice; a proforma is never counted, a credit note is a reduction, never a payable), and every one of them has `balance_minor = 0`;
-//   - the money that settles them reaches the accepted version's total, in its currency: per document `max(0, min(paid + tds, total - credited))`, summed.
-//     `paid` is what CONFIRMED payments hold on the document (the M6.1 recompute, net of every release) and `tds` the TDS by certificate (08-C RA-30); the
-//     `min` with `total - credited` takes a credit note off what the money settles, so a credit note after payment can only lower the figure (the L4 warning).
+//   - the money that settles them reaches the accepted version's total LESS the credit notes on them, in its currency (owner, 2026-11-01: a credit note given
+//     as a discount lowers what is owed): `Σ settled + Σ credited >= accepted total`, per document `settled = max(0, min(paid + tds, total - credited))`.
+//     `paid` is what CONFIRMED payments hold on the document (the M6.1 recompute, net of every release) and `tds` the TDS by certificate (08-C RA-30);
+//   - and some money was settled at all (`Σ settled > 0`): a project credited in full gets no deed (lead, 2026-11-01, decision (a)).
 // Counting each rupee once (the early check): money is counted where it is ALLOCATED, never by a document's total. An advance's tax invoice (M5.2
 // `advanceIssueStatements`) is a tax or export invoice whose parent is the proforma; its money is the one confirmed payment `pay_<receipt>` (or the pending entry
 // it confirmed) allocated whole onto it (`pal_<receipt>`), and the proforma's own `paid_minor` (the advance batch's) is never read here (proformas are not
@@ -28,10 +29,15 @@ const livePayable = (alias: string, p: string) =>
 export const settledSql = (d: string): string =>
   `max(0, min(${d}.paid_minor + ${d}.tds_minor, ${d}.total_minor - ${d}.credited_minor))`;
 
+/** The live payables of project `p` in its accepted version's currency (the set `settled` and `credited` sum over). */
+const livePayableInAccepted = (alias: string, p: string, currency: string) =>
+  `${livePayable(alias, p)} AND ${alias}.currency = ${currency}`;
+
 /**
  * The facts L2 decides on, for project `p` (an SQL expression for its id): one row the admin reads for the project page and the twin test compares with core.
  * Columns: `status`, `client_id`, `source_document_id`, `source_ok` (an accepted proposal or estimate of the client), `accepted_currency`, `accepted_total`,
- * `anonymised`, `care_plan`, `payables`, `unpaid` (payables with a balance), `settled` (in the accepted currency), `has_deed`.
+ * `anonymised`, `care_plan`, `payables`, `unpaid` (payables with a balance), `settled` and `credited` (in the accepted currency), `has_deed` (any status),
+ * `has_open_deed` (a draft, final or signed deed: a cancelled one is history).
  */
 export const deedFactsSql = (p: string): string =>
   `SELECT pr.id AS project_id, pr.status, pr.client_id, pr.source_document_id,
@@ -42,28 +48,54 @@ export const deedFactsSql = (p: string): string =>
      (EXISTS (SELECT 1 FROM care_plans cp WHERE cp.source_document_id = pr.source_document_id) OR EXISTS (SELECT 1 FROM documents cd WHERE cd.project_id = pr.id AND cd.care_plan_id IS NOT NULL)) AS care_plan,
      (SELECT count(*) FROM documents d WHERE ${livePayable("d", "pr.id")}) AS payables,
      (SELECT count(*) FROM documents d WHERE ${livePayable("d", "pr.id")} AND d.balance_minor <> 0) AS unpaid,
-     (SELECT coalesce(sum(${settledSql("d")}), 0) FROM documents d WHERE ${livePayable("d", "pr.id")} AND d.currency = (SELECT s.currency FROM documents s WHERE s.id = pr.source_document_id)) AS settled,
-     EXISTS (SELECT 1 FROM deeds dd WHERE dd.project_id = pr.id) AS has_deed
+     (SELECT coalesce(sum(${settledSql("d")}), 0) FROM documents d WHERE ${livePayableInAccepted("d", "pr.id", "(SELECT s.currency FROM documents s WHERE s.id = pr.source_document_id)")}) AS settled,
+     (SELECT coalesce(sum(d.credited_minor), 0) FROM documents d WHERE ${livePayableInAccepted("d", "pr.id", "(SELECT s.currency FROM documents s WHERE s.id = pr.source_document_id)")}) AS credited,
+     EXISTS (SELECT 1 FROM deeds dd WHERE dd.project_id = pr.id) AS has_deed,
+     EXISTS (SELECT 1 FROM deeds dd WHERE dd.project_id = pr.id AND dd.status <> 'cancelled') AS has_open_deed
    FROM projects pr WHERE pr.id = ${p}`;
 
 /**
- * L2 as one SQL condition on the project row `p` (a table alias): the project is completed, fully paid and may have a deed (none exists yet). The twin of core
- * `deedEligibility(...).eligible` together with "no deed yet" (`noDeedYet`; the finalise re-checks without it: the deed being finalised exists).
+ * Which deeds already there stop a new draft (L3; lead, 2026-11-01, decision (b)):
+ *   - `"none"` (every automatic hook): a deed of ANY status, so a ledger event or a completed → active → completed flip never undoes the Owner's cancel;
+ *   - `"open"` (the Owner's "Check again"): a draft, final or signed deed only, so after a cancel the Owner can have a fresh draft made (the cancelled one stays
+ *     as history; `deeds_project_open` is unique over the open statuses only);
+ *   - `false` (the finalise re-check): none: the deed being finalised exists.
  */
-export const deedEligibleSql = (p: string, noDeedYet = true): string =>
+export type NoDeedYet = "none" | "open" | false;
+
+/**
+ * L2 as one SQL condition on the project row `p` (a table alias): the project is completed, fully paid and may have a deed (`noDeedYet`). The twin of core
+ * `deedEligibility(...).eligible` together with the deed clause.
+ */
+export const deedEligibleSql = (p: string, noDeedYet: NoDeedYet = "none"): string =>
   `${p}.status = 'completed' AND ${p}.source_document_id IS NOT NULL
    AND EXISTS (SELECT 1 FROM documents s WHERE s.id = ${p}.source_document_id AND s.client_id = ${p}.client_id AND s.type IN ('proposal', 'estimate') AND s.status = 'accepted' AND s.frozen_at IS NOT NULL
-     AND (SELECT coalesce(sum(${settledSql("ed")}), 0) FROM documents ed WHERE ${livePayable("ed", `${p}.id`)} AND ed.currency = s.currency) >= s.total_minor)
+     AND (SELECT coalesce(sum(${settledSql("ed")} + ed.credited_minor), 0) FROM documents ed WHERE ${livePayableInAccepted("ed", `${p}.id`, "s.currency")}) >= s.total_minor
+     AND (SELECT coalesce(sum(${settledSql("ed")}), 0) FROM documents ed WHERE ${livePayableInAccepted("ed", `${p}.id`, "s.currency")}) > 0)
    AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = ${p}.client_id AND z.anonymised_at IS NOT NULL)
    AND NOT EXISTS (SELECT 1 FROM care_plans cp WHERE cp.source_document_id = ${p}.source_document_id)
    AND NOT EXISTS (SELECT 1 FROM documents cd WHERE cd.project_id = ${p}.id AND cd.care_plan_id IS NOT NULL)
    AND EXISTS (SELECT 1 FROM documents d WHERE ${livePayable("d", `${p}.id`)})
    AND NOT EXISTS (SELECT 1 FROM documents d WHERE ${livePayable("d", `${p}.id`)} AND d.balance_minor <> 0)${
-     noDeedYet
+     noDeedYet === "none"
        ? `
    AND NOT EXISTS (SELECT 1 FROM deeds dd WHERE dd.project_id = ${p}.id)`
-       : ""
+       : noDeedYet === "open"
+         ? `
+   AND NOT EXISTS (SELECT 1 FROM deeds dd WHERE dd.project_id = ${p}.id AND dd.status <> 'cancelled')`
+         : ""
    }`;
+
+/** The invoice-family document types whose frozen rows the finalise seals from (L6's `{invoice_numbers}` and `{amount_paid}`; early check 7). */
+const INVOICE_FAMILY_SQL = "('tax_invoice', 'export_invoice', 'debit_note', 'credit_note', 'proforma')";
+
+/**
+ * Early check 7: the stamp of a project's frozen invoice-family documents, `n` (how many) and `at` (the latest `updated_at`; null when none). Every ledger
+ * recompute, credit-note issue and void moves a document's `updated_at`, so the finalise binds the stamp it read into its WHERE: a payment, a credit note or a
+ * void landing between the read and the batch refuses it (the route answers `stale_version`) instead of sealing figures that are no longer true. `?1` the project.
+ */
+export const DEED_DOCS_STAMP_SQL = `SELECT count(*) AS n, max(fd.updated_at) AS at FROM documents fd WHERE fd.project_id = ?1 AND fd.frozen_at IS NOT NULL AND fd.type IN ${INVOICE_FAMILY_SQL}`;
+export type DeedDocsStamp = { n: number; at: number | null };
 
 /**
  * Which projects a batch may have brought to "fully paid" (L3): the project named, and the projects of the documents named or of every document the payments
@@ -92,13 +124,14 @@ const guarded = (g: GuardSql | undefined, used: number): { sql: string; params: 
 /**
  * L3: the draft deed of every eligible project of the target, then a system audit row (`deed.draft`) and a bell for every active Owner for each deed THIS
  * statement made (the deed's `created_at` is the batch's `now`, and the bell and the audit row are `INSERT OR IGNORE`/once per deed), each guarded on `g`
- * (normally the batch's audit row) so a refused change makes no deed. `ON CONFLICT DO NOTHING`: a project has at most one deed (`deeds_project`), and a cancelled
- * one is never replaced (the eligibility needs no deed at all). Append these to any batch that can complete a project or bring its documents to zero, AFTER
- * the ledger recompute (it reads the recomputed balances).
+ * (normally the batch's audit row) so a refused change makes no deed. `ON CONFLICT DO NOTHING`: a project has at most one OPEN deed (`deeds_project_open`).
+ * The automatic hooks need no deed of any status, so a cancelled one is never replaced by them; `redraft` (the Owner's "Check again" only) needs no open deed,
+ * so a fresh draft follows a cancel (lead, 2026-11-01, decision (b)). Append these to any batch that can complete a project or bring its documents to zero,
+ * AFTER the ledger recompute (it reads the recomputed balances); `test/deed-hooks.test.ts` in core lists every recompute and checks it.
  */
 export function deedDraftStatements(
   db: D1Database,
-  a: { target: DeedTarget; now: number; bell?: DeedBell },
+  a: { target: DeedTarget; now: number; bell?: DeedBell; redraft?: boolean },
   g?: GuardSql,
 ): D1PreparedStatement[] {
   const target = [
@@ -115,7 +148,7 @@ export function deedDraftStatements(
       .prepare(
         `INSERT INTO deeds (id, client_id, project_id, source_document_id, status, created_at, updated_at)
          SELECT 'deed_' || lower(hex(randomblob(16))), p.client_id, p.id, p.source_document_id, 'draft', ?4, ?4
-         FROM projects p WHERE p.id IN (${TARGET_PROJECTS}) AND ${deedEligibleSql("p")}${g1.sql}
+         FROM projects p WHERE p.id IN (${TARGET_PROJECTS}) AND ${deedEligibleSql("p", a.redraft ? "open" : "none")}${g1.sql}
          ON CONFLICT DO NOTHING`,
       )
       .bind(...target, a.now, ...g1.params),
@@ -210,13 +243,17 @@ export type FinaliseDeedArgs = {
   companyVersion: number | null;
   /** The client row's `updated_at` read with the facts: a change to the assignee's name, address or GSTIN in between refuses the finalise. */
   clientUpdatedAt: number;
+  /** Early check 7: the stamp of the project's frozen invoice-family documents read with the facts (`DEED_DOCS_STAMP_SQL`). */
+  docs: DeedDocsStamp;
 };
 
 /**
  * Finalise (L1, L4): the DRAFT deed read at `expectedUpdatedAt` takes the next number of (`deed`, FY), its date and the sealed snapshot, only while the project is
  * STILL eligible (L2 without the "no deed" clause), the settings and the client are as read, the series has room, the Schedules are filled in (also the trigger
  * `deeds_finalise_ready`) and the session is an Owner's with a fresh step-up. The number is the counter's `next_no`; `deedCounterTakeStatement` (guarded on
- * the audit row) then moves the counter, so a refused finalise takes no number and leaves no gap. Binds `?1`..`?16`.
+ * the audit row) then moves the counter, so a refused finalise takes no number and leaves no gap. The sealed `{invoice_numbers}` and `{amount_paid}` come
+ * from the read before the batch, so the stamp of the project's invoice-family documents read then is bound here too (early check 7): any document moved in
+ * between refuses it. Binds `?1`..`?16`.
  */
 export function finaliseDeedStatement(db: D1Database, a: FinaliseDeedArgs): D1PreparedStatement {
   if (!Number.isSafeInteger(a.maxNumber) || a.maxNumber < 1)
@@ -233,6 +270,8 @@ export function finaliseDeedStatement(db: D1Database, a: FinaliseDeedArgs): D1Pr
          AND (SELECT version FROM settings WHERE key = 'numbering') IS ?12
          AND (SELECT version FROM settings WHERE key = 'company') IS ?13
          AND (SELECT updated_at FROM clients WHERE id = deeds.client_id) = ?14
+         AND (SELECT count(*) FROM documents fd WHERE fd.project_id = deeds.project_id AND fd.frozen_at IS NOT NULL AND fd.type IN ${INVOICE_FAMILY_SQL}) = ?15
+         AND (SELECT max(fd.updated_at) FROM documents fd WHERE fd.project_id = deeds.project_id AND fd.frozen_at IS NOT NULL AND fd.type IN ${INVOICE_FAMILY_SQL}) IS ?16
          AND ${clientLive("deeds")}
          AND EXISTS (SELECT 1 FROM projects pr WHERE pr.id = deeds.project_id AND pr.source_document_id = deeds.source_document_id AND ${eligible})
          AND ${sessionSql("?4", "?3", ["owner"], true)}
@@ -254,6 +293,8 @@ export function finaliseDeedStatement(db: D1Database, a: FinaliseDeedArgs): D1Pr
       a.numberingVersion,
       a.companyVersion,
       a.clientUpdatedAt,
+      a.docs.n,
+      a.docs.at,
     );
 }
 
@@ -333,7 +374,10 @@ export function cancelDeedStatement(
     .bind(a.deedId, a.expectedUpdatedAt, a.now, a.sessionId, a.memberId, a.reason);
 }
 
-/** L7: anonymising a client deletes its DRAFT deeds through the trigger `clients_anonymised_draft_deeds` (0062): no statement here. Final and signed stay. */
+/**
+ * L7: anonymising a client deletes its DRAFT and CANCELLED deeds (a cancelled one holds the Owner's typed reason; early check 5) through the trigger
+ * `clients_anonymised_draft_deeds` (0062): no statement here. Final and signed stay.
+ */
 
 /** The columns every deed read takes. */
 export const DEED_COLS =
@@ -388,5 +432,7 @@ export type DeedFactsRow = {
   payables: number;
   unpaid: number;
   settled: number;
+  credited: number;
   has_deed: number;
+  has_open_deed: number;
 };

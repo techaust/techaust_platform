@@ -21,6 +21,7 @@ import {
   esignMomentIst,
   parseDeedSnapshot,
   parseEsignMoment,
+  settledOf,
 } from "@techaust/core/deeds";
 import { maxNumber, sqlPrintfPattern } from "@techaust/core/numbering";
 import { decide } from "@techaust/core/permissions";
@@ -28,6 +29,8 @@ import { resolveSetting } from "@techaust/core/settings";
 import {
   cancelDeedStatement,
   DEED_COLS,
+  DEED_DOCS_STAMP_SQL,
+  type DeedDocsStamp,
   type DeedFactsRow,
   type DeedRow,
   deedCounterRowStatement,
@@ -126,11 +129,16 @@ const CLIENT_SQL =
 const SOURCE_SQL =
   "SELECT s.type, s.number_display, s.version, s.decided_at, s.currency, s.total_minor FROM documents s WHERE s.id = (SELECT source_document_id FROM projects WHERE id = ?1)";
 /** The project's live payable documents (L2's set; `documents_project`), at most 200: a project has a handful. */
-const DOCS_SQL = `SELECT d.type, d.frozen_at IS NOT NULL AS frozen, d.status, d.currency, d.total_minor, d.paid_minor, d.credited_minor, d.tds_minor, d.balance_minor,
+const DOCS_SQL = `SELECT d.id, d.type, d.frozen_at IS NOT NULL AS frozen, d.status, d.currency, d.total_minor, d.paid_minor, d.credited_minor, d.tds_minor, d.balance_minor,
     d.care_plan_id IS NOT NULL AS care_plan, d.number_display
   FROM documents d WHERE d.project_id = ?1 AND d.type IN ('tax_invoice', 'export_invoice', 'debit_note') AND d.frozen_at IS NOT NULL AND d.status <> 'void' LIMIT 200`;
 const SETTINGS_SQL = "SELECT key, value, version FROM settings WHERE key IN ('company', 'numbering')";
-const DEED_BY_PROJECT = `SELECT ${DEED_COLS}, (SELECT name FROM staff_users WHERE id = d.finalised_by) AS finalised_by_name, (SELECT name FROM staff_users WHERE id = d.signed_by) AS signed_by_name, (SELECT name FROM staff_users WHERE id = d.cancelled_by) AS cancelled_by_name FROM deeds d WHERE d.project_id = ?1`;
+/** The project's open deed when it has one, else its newest cancelled one (early check 2): an open deed sorts first. */
+const DEED_BY_PROJECT = `SELECT ${DEED_COLS}, (SELECT name FROM staff_users WHERE id = d.finalised_by) AS finalised_by_name, (SELECT name FROM staff_users WHERE id = d.signed_by) AS signed_by_name, (SELECT name FROM staff_users WHERE id = d.cancelled_by) AS cancelled_by_name FROM deeds d WHERE d.project_id = ?1 ORDER BY (d.status <> 'cancelled') DESC, d.created_at DESC LIMIT 1`;
+/** The cancelled deeds of a project, newest first (at most `HISTORY_MAX`): the reason, who cancelled and when (early check 2). */
+export const HISTORY_MAX = 10;
+const HISTORY_SQL = `SELECT d.id, d.cancelled_at, d.cancel_reason, d.created_at, (SELECT name FROM staff_users WHERE id = d.cancelled_by) AS cancelled_by_name
+  FROM deeds d WHERE d.project_id = ?1 AND d.status = 'cancelled' ORDER BY d.created_at DESC LIMIT ${HISTORY_MAX}`;
 const DEED_BY_ID = `SELECT ${DEED_COLS} FROM deeds d WHERE d.id = ?1`;
 
 type ProjectRow = {
@@ -156,6 +164,7 @@ type SourceRow = {
   total_minor: number;
 };
 type DocRow = {
+  id: string;
   type: string;
   frozen: number;
   status: string;
@@ -173,6 +182,13 @@ type FullDeedRow = DeedRow & {
   signed_by_name: string | null;
   cancelled_by_name: string | null;
 };
+type HistoryRow = {
+  id: string;
+  cancelled_at: number;
+  cancel_reason: string;
+  created_at: number;
+  cancelled_by_name: string | null;
+};
 
 type Bundle = {
   project: ProjectRow;
@@ -180,8 +196,11 @@ type Bundle = {
   deed: FullDeedRow | null;
   client: ClientRow | null;
   source: SourceRow | null;
-  docs: (DeedDocFact & { numberDisplay: string | null })[];
+  docs: (DeedDocFact & { id: string; numberDisplay: string | null })[];
   settings: { key: string; value: string; version: number }[];
+  history: HistoryRow[];
+  /** Early check 7: the stamp of the project's frozen invoice-family documents, bound into the finalise. */
+  stamp: DeedDocsStamp;
 };
 
 /** Everything the deed of a project needs, in ONE batch. Null: no such project. */
@@ -195,6 +214,8 @@ async function readBundle(c: Ctx, projectId: string): Promise<Bundle | null> {
     db.prepare(SOURCE_SQL).bind(projectId),
     db.prepare(DOCS_SQL).bind(projectId),
     db.prepare(SETTINGS_SQL),
+    db.prepare(HISTORY_SQL).bind(projectId),
+    db.prepare(DEED_DOCS_STAMP_SQL).bind(projectId),
   ]);
   const project = r[0]?.results[0] as ProjectRow | undefined;
   const facts = r[1]?.results[0] as DeedFactsRow | undefined;
@@ -206,6 +227,7 @@ async function readBundle(c: Ctx, projectId: string): Promise<Bundle | null> {
     client: (r[3]?.results[0] as ClientRow | undefined) ?? null,
     source: (r[4]?.results[0] as SourceRow | undefined) ?? null,
     docs: ((r[5]?.results ?? []) as DocRow[]).map((d) => ({
+      id: d.id,
       type: d.type,
       frozen: d.frozen === 1,
       status: d.status,
@@ -219,6 +241,8 @@ async function readBundle(c: Ctx, projectId: string): Promise<Bundle | null> {
       numberDisplay: d.number_display,
     })),
     settings: (r[6]?.results ?? []) as { key: string; value: string; version: number }[],
+    history: (r[7]?.results ?? []) as HistoryRow[],
+    stamp: (r[8]?.results[0] as DeedDocsStamp | undefined) ?? { n: 0, at: null },
   };
 }
 
@@ -233,7 +257,27 @@ const eligibilityOf = (f: DeedFactsRow) =>
     payables: f.payables,
     unpaid: f.unpaid,
     settledMinor: f.settled,
+    creditedMinor: f.credited,
   });
+
+/**
+ * Finding 8: the documents L2 counted, for the panel (why a project is or is not paid in full): every live payable of the project, whether it counts towards
+ * the accepted currency's target, and its figures. An invoice made without a milestone has no project and is never here (the panel says so in 07-ZJ words).
+ */
+const countedOf = (b: Bundle) =>
+  b.docs.map((d) => ({
+    id: d.id,
+    number: d.numberDisplay,
+    type: d.type,
+    currency: d.currency,
+    counted: d.currency === b.facts.accepted_currency,
+    totalMinor: d.totalMinor,
+    paidMinor: d.paidMinor,
+    tdsMinor: d.tdsMinor,
+    creditedMinor: d.creditedMinor,
+    balanceMinor: d.balanceMinor,
+    settledMinor: settledOf(d),
+  }));
 
 const schedulesOf = (d: DeedRow): DeedSchedules => ({
   deliverables: d.sched_deliverables,
@@ -294,7 +338,8 @@ function valuesNow(b: Bundle, deed: DeedRow, madeOn: string) {
     settings: s,
     result: deedSnapshotOf({
       madeOn,
-      company: { address: s.company.address, gstin: s.company.gstin },
+      // Triage 4 (lead, 2026-11-01): `{supplier_address}` is the GST principal place of business, the address registered against the GSTIN beside it.
+      company: { principalPlace: s.company.principalPlace, gstin: s.company.gstin },
       client: {
         legalName: b.client?.legal_name ?? "",
         address: addressOf(b.client?.billing_address ?? null),
@@ -356,7 +401,9 @@ function deedView(c: Ctx, b: Bundle) {
       /** L4: a final or signed deed whose project is no longer paid in full (a credit note since): the screen warns; nothing changes on its own. */
       notFullyPaid:
         (d.status === "final" || d.status === "signed") &&
-        eligibility.blockers.some((x) => x === "balance_due" || x === "short_paid" || x === "no_invoices"),
+        eligibility.blockers.some(
+          (x) => x === "balance_due" || x === "short_paid" || x === "no_invoices" || x === "nothing_paid",
+        ),
       unsignedPdf: d.unsigned_r2_key !== null,
       signed:
         d.status === "signed" && d.esign_at !== null && d.esign_txn !== null
@@ -389,14 +436,32 @@ function deedView(c: Ctx, b: Bundle) {
       sourceDocumentId: b.project.source_document_id,
     },
     clientAnonymised: anonymised,
+    /** L2 with the target the credit notes leave (`targetMinor`, `creditedMinor`) and how far the money is short of it (`shortfallMinor`). */
     eligibility,
+    /** Finding 8: the live payables L2 read (`counted`: in the accepted currency, so towards the target). */
+    documents: countedOf(b),
     deed,
+    /** The project's cancelled deeds, newest first (at most 10): the reason, who cancelled and when (early check 2). */
+    history: b.history.map((h) => ({
+      id: h.id,
+      createdAt: h.created_at,
+      cancelledAt: h.cancelled_at,
+      cancelledByName: h.cancelled_by_name,
+      reason: h.cancel_reason,
+    })),
     can: {
       editSchedules: d?.status === "draft" && !anonymised && can("deeds.editSchedules"),
       finalise: d?.status === "draft" && !anonymised && can("deeds.finalise"),
       uploadSigned: d?.status === "final" && !anonymised && can("deeds.uploadSigned"),
       cancel: d?.status === "draft" && can("deeds.cancel"),
-      recheck: d === null && can("deeds.recheck"),
+      // Decision (b): "Check again" while the project has no deed, or only cancelled ones (then it can make a fresh draft).
+      recheck: (d === null || d.status === "cancelled") && !anonymised && can("deeds.recheck"),
+      // The jobs Worker renders the unsigned PDF; the Owner may ask again while a final or signed deed has none.
+      renderPdf:
+        (d?.status === "final" || d?.status === "signed") &&
+        d.unsigned_r2_key === null &&
+        !anonymised &&
+        can("deeds.renderPdf"),
     },
   };
 }
@@ -435,7 +500,9 @@ export const projectDeed = new Hono<AppEnv>()
     return c.json(deedView(c, b));
   })
 
-  // L3: the Owner asks for a project completed before T11 (or any project) to be checked again; the same statement as every batch that can complete it.
+  // L3: the Owner asks for a project completed before T11 (or any project) to be checked again; the same statement as every batch that can complete it, with
+  // `redraft` (decision (b)): after a cancel, only this makes a fresh draft. Its own audit action `deed.recheck` (early check 10): the draft it makes still gets
+  // its one system `deed.draft` row and the bells, as from any other batch.
   .post("/:id/deed/recheck", param(idParam), body(recheckBody), async (c) => {
     const { id } = c.req.valid("param");
     const db = c.env.DB;
@@ -444,13 +511,13 @@ export const projectDeed = new Hono<AppEnv>()
     const now = Date.now();
     const target = { projectId: id };
     const created = await mutate(c, {
-      main: deedDraftStatements(db, { target, now })[0] as D1PreparedStatement,
-      action: "deed.draft",
+      main: deedDraftStatements(db, { target, now, redraft: true })[0] as D1PreparedStatement,
+      action: "deed.recheck",
       entityType: "project",
       entityId: id,
-      summary: { projectId: id, via: "recheck" },
+      summary: { projectId: id },
       status: 200,
-      side: (g) => deedDraftStatements(db, { target, now }, g).slice(1),
+      side: (g) => deedDraftStatements(db, { target, now, redraft: true }, g).slice(1),
     });
     const b = await readBundle(c, id);
     if (!b) return err(c, NOT_FOUND, 404);
@@ -542,6 +609,7 @@ export const deeds = new Hono<AppEnv>()
           numberingVersion: settings.numberingVersion,
           companyVersion: settings.companyVersion,
           clientUpdatedAt: b.client?.updated_at ?? 0,
+          docs: b.stamp,
         }),
       ],
       onResults: (results, auditAt) => {
@@ -565,6 +633,8 @@ export const deeds = new Hono<AppEnv>()
       if (session) return session;
       const now2 = eligibilityOf(again.facts);
       if (!now2.eligible) return err(c, DEED_NOT_ELIGIBLE, 409, { blockers: now2.blockers });
+      // Early check 7: a payment, a credit note or a void moved a document of the project since the read: the figures to seal changed. Read again.
+      if (again.stamp.n !== b.stamp.n || again.stamp.at !== b.stamp.at) return err(c, STALE_VERSION, 409);
       const counter = await c.env.DB.prepare(
         "SELECT next_no FROM doc_counters WHERE series = 'deed' AND fy = ?1",
       )

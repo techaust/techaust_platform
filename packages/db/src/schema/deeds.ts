@@ -2,10 +2,11 @@
 // CREATE TABLE only: nothing that exists is rebuilt. Nothing references `deeds` (notifications and the audit log name it by a plain id), so its CHECK constraints
 // may be widened later by a rebuild of this table alone.
 //
-// One deed per project (`deeds_project`, unique): made as a `draft` by `deedDraftStatement` (`packages/db/src/deeds.ts`) when the accepted proposal or estimate
-// behind a completed project is paid in full (L2, L3); `final` once the Owner finalises it (number, sealed snapshot, unsigned PDF); `signed` once the Owner uploads
-// the copy signed with Aadhaar eSign (07-ZE Q4). A draft may be `cancelled` (reason required). The status flow, the freeze after `final`, the set-once columns and
-// the delete rule are held by the triggers of the `deed_triggers` set (`src/triggers.ts`).
+// One OPEN deed per project (`deeds_project_open`, unique over draft, final and signed): made as a `draft` by `deedDraftStatements` (`packages/db/src/deeds.ts`)
+// when the accepted proposal or estimate behind a completed project is paid in full (L2, L3); `final` once the Owner finalises it (number, sealed snapshot,
+// unsigned PDF); `signed` once the Owner uploads the copy signed with Aadhaar eSign (07-ZE Q4). A draft may be `cancelled` (reason required); it stays as history,
+// and only the Owner's "Check again" makes a fresh draft after it. The status flow, the freeze after `final`, the set-once columns and the delete rule are held
+// by the triggers of the `deed_triggers` set (`src/triggers.ts`).
 import { sql } from "drizzle-orm";
 import {
   check,
@@ -92,7 +93,10 @@ export const deeds = sqliteTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    uniqueIndex("deeds_project").on(t.projectId),
+    // One OPEN deed per project (owner, 2026-11-01, answer 2): a cancelled draft stays as history and the Owner's "Check again" may make a fresh one.
+    uniqueIndex("deeds_project_open").on(t.projectId).where(sql`${t.status} in ('draft', 'final', 'signed')`),
+    // A project's deeds, newest first (the project page: the open one and the cancelled history).
+    index("deeds_project_created").on(t.projectId, t.createdAt),
     uniqueIndex("deeds_fy_number").on(t.fy, t.number).where(sql`${t.number} is not null`),
     uniqueIndex("deeds_number_display").on(t.numberDisplay).where(sql`${t.numberDisplay} is not null`),
     // The portal's read: a client's deeds by the accepted version they belong to; the erase batch's delete by client.

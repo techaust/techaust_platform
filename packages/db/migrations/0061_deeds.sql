@@ -56,7 +56,8 @@ CREATE TABLE `deeds` (
 	CONSTRAINT "deeds_snapshot_json" CHECK("deeds"."snapshot" is null or json_valid("deeds"."snapshot"))
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `deeds_project` ON `deeds` (`project_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `deeds_project_open` ON `deeds` (`project_id`) WHERE "deeds"."status" in ('draft', 'final', 'signed');--> statement-breakpoint
+CREATE INDEX `deeds_project_created` ON `deeds` (`project_id`,`created_at`);--> statement-breakpoint
 CREATE UNIQUE INDEX `deeds_fy_number` ON `deeds` (`fy`,`number`) WHERE "deeds"."number" is not null;--> statement-breakpoint
 CREATE UNIQUE INDEX `deeds_number_display` ON `deeds` (`number_display`) WHERE "deeds"."number_display" is not null;--> statement-breakpoint
 CREATE INDEX `deeds_client_source` ON `deeds` (`client_id`,`source_document_id`);--> statement-breakpoint

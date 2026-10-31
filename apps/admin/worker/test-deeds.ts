@@ -2,10 +2,11 @@
 // Schedules, finalise and the signed upload as the SPA sends them. Used by deeds.test.ts and the audit scenarios of rbac.test.ts. All names, references and
 // amounts are invented test data.
 
+import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core/ids";
 import { expect } from "vitest";
 import { insert } from "./test-clients.ts";
-import { call, one, type TestSession } from "./test-helpers.ts";
+import { call, one, type TestSession, withDb } from "./test-helpers.ts";
 import { type J, json } from "./test-invoices.ts";
 import { putDoc, recordBody, recorded } from "./test-payments.ts";
 import { mkProject, PDF_BYTES } from "./test-projects.ts";
@@ -111,6 +112,41 @@ export async function finalisedDeed(s: TestSession) {
   expect(res.status, await res.clone().text()).toBe(200);
   return { ...f, answer: await json(res) };
 }
+
+/**
+ * Early check 9: an `env` whose DB counts every statement a request runs (each statement of a batch counts one, as on D1 Free's 50 queries per invocation;
+ * the same counter as payments.test.ts's).
+ */
+export function statementCounter() {
+  let n = 0;
+  const real = new WeakMap<object, D1PreparedStatement>();
+  const counted = (t: D1PreparedStatement): D1PreparedStatement => {
+    const p = new Proxy(t, {
+      get(target, k) {
+        if (k === "bind") return (...v: unknown[]) => counted(target.bind(...v));
+        if (k === "first" || k === "run" || k === "all" || k === "raw")
+          return (...a: unknown[]) => {
+            n++;
+            return (Reflect.get(target, k) as (...x: unknown[]) => unknown).apply(target, a);
+          };
+        return Reflect.get(target, k);
+      },
+    });
+    real.set(p, t);
+    return p;
+  };
+  const db = {
+    prepare: (q: string) => counted(env.DB.prepare(q)),
+    batch: (stmts: D1PreparedStatement[]) => {
+      n += stmts.length;
+      return env.DB.batch(stmts.map((s) => real.get(s) ?? s));
+    },
+  } as unknown as D1Database;
+  return { env: withDb(db), count: () => n };
+}
+
+/** D1 Free: at most 50 queries per Worker invocation (a batch's statements each count). */
+export const D1_FREE_QUERIES = 50;
 
 /** The eSign moment as the provider shows it in IST, to the second: a second ago (after the finalise, never in the future). */
 export const istNowText = () => new Date(Date.now() + 19_800_000 - 1_000).toISOString().slice(0, 19);

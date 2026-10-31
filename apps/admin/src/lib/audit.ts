@@ -158,6 +158,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "care_invoice.auto_issue_refused": Y("could not issue a care plan invoice automatically"),
   // T11, the deed of assignment: the builder leaves the codes marked; the designer drafts the words in 07-ZJ (staff-only lines, approved by the lead).
   "deed.draft": "[Placeholder] deed.draft",
+  "deed.recheck": "[Placeholder] deed.recheck",
   "deed.edit": "[Placeholder] deed.edit",
   "deed.finalise": "[Placeholder] deed.finalise",
   "deed.sign": "[Placeholder] deed.sign",

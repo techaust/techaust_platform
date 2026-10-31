@@ -19,6 +19,7 @@ import {
   deedBlockersOf,
   deedEligibility,
   deedFactsOf,
+  deedOneLine,
   deedSignatureLine,
   deedSignedKey,
   deedSnapshotJson,
@@ -98,6 +99,9 @@ describe("L2: full payment [RB-38(a)]", () => {
       blockers: [],
       settledMinor: 100_000,
       acceptedTotalMinor: 100_000,
+      creditedMinor: 0,
+      targetMinor: 100_000,
+      shortfallMinor: 0,
       currency: "INR",
     });
   });
@@ -125,10 +129,11 @@ describe("L2: full payment [RB-38(a)]", () => {
       "balance_due",
       "short_paid",
     ]);
-    expect(deedEligibility(facts([])).blockers).toEqual(["no_invoices", "short_paid"]);
+    expect(deedEligibility(facts([])).blockers).toEqual(["no_invoices", "short_paid", "nothing_paid"]);
     expect(deedEligibility(facts([], { source: null })).blockers).toEqual([
       "no_accepted_source",
       "no_invoices",
+      "nothing_paid",
     ]);
     expect(
       deedEligibility(facts([doc({ paidMinor: 100_000 })], { carePlanFromSource: true })).blockers,
@@ -163,21 +168,71 @@ describe("L2: full payment [RB-38(a)]", () => {
     ).toBe(true);
   });
 
-  it("partial payment is short and due; a credit note after payment lowers what the money settles; TDS settles like money", () => {
-    expect(deedEligibility(facts([doc({ paidMinor: 60_000 })])).blockers).toEqual([
-      "balance_due",
-      "short_paid",
-    ]);
-    expect(deedEligibility(facts([doc({ paidMinor: 100_000, creditedMinor: 10_000 })])).blockers).toEqual([
-      "short_paid",
-    ]);
+  it("partial payment is short and due; TDS settles like money", () => {
+    expect(deedEligibility(facts([doc({ paidMinor: 60_000 })]))).toMatchObject({
+      blockers: ["balance_due", "short_paid"],
+      targetMinor: 100_000,
+      shortfallMinor: 40_000,
+    });
     expect(deedEligibility(facts([doc({ paidMinor: 90_000, tdsMinor: 10_000 })])).eligible).toBe(true);
+  });
+
+  it("a credit note lowers the target (owner, 2026-11-01): a discount still gets a deed; the deed's amount is what was paid", () => {
+    // A 20 % discount by credit note, the rest paid.
+    expect(deedEligibility(facts([doc({ paidMinor: 80_000, creditedMinor: 20_000 })]))).toEqual({
+      eligible: true,
+      blockers: [],
+      settledMinor: 80_000,
+      acceptedTotalMinor: 100_000,
+      creditedMinor: 20_000,
+      targetMinor: 80_000,
+      shortfallMinor: 0,
+      currency: "INR",
+    });
+    // A credit note after full payment (an overpayment left as credit): still eligible, the money settles only what is owed.
+    expect(deedEligibility(facts([doc({ paidMinor: 100_000, creditedMinor: 10_000 })]))).toMatchObject({
+      eligible: true,
+      settledMinor: 90_000,
+      targetMinor: 90_000,
+    });
+    // Short of the lowered target.
+    expect(
+      deedEligibility(facts([doc({ paidMinor: 70_000, creditedMinor: 20_000, balanceMinor: 10_000 })])),
+    ).toMatchObject({ blockers: ["balance_due", "short_paid"], shortfallMinor: 10_000 });
+    // A credit note larger than the accepted total never makes a negative target.
+    expect(
+      eligibilityOfSums({
+        projectStatus: "completed",
+        sourceOk: true,
+        acceptedCurrency: "INR",
+        acceptedTotalMinor: 100,
+        clientAnonymised: false,
+        carePlan: false,
+        payables: 1,
+        unpaid: 0,
+        settledMinor: 5,
+        creditedMinor: 500,
+      }),
+    ).toMatchObject({ eligible: true, targetMinor: 0, shortfallMinor: 0 });
+  });
+
+  it("a project credited in full gets no deed (lead decision (a)): nothing was paid", () => {
+    expect(deedEligibility(facts([doc({ creditedMinor: 100_000 })]))).toMatchObject({
+      eligible: false,
+      blockers: ["nothing_paid"],
+      settledMinor: 0,
+      targetMinor: 0,
+    });
   });
 
   it("a proforma and a voided or draft invoice are never counted; a debit note is a payable", () => {
     const proforma = doc({ type: "proforma", paidMinor: 100_000 });
     expect(isLivePayable(proforma)).toBe(false);
-    expect(deedEligibility(facts([proforma])).blockers).toEqual(["no_invoices", "short_paid"]);
+    expect(deedEligibility(facts([proforma])).blockers).toEqual([
+      "no_invoices",
+      "short_paid",
+      "nothing_paid",
+    ]);
     const voided = doc({ status: "void", totalMinor: 50_000 });
     const draft = doc({ frozen: false, status: "draft" });
     expect(deedEligibility(facts([doc({ paidMinor: 100_000 }), voided, draft])).eligible).toBe(true);
@@ -215,10 +270,29 @@ describe("L2: full payment [RB-38(a)]", () => {
       deedEligibility(
         facts([doc({ currency: "INR", totalMinor: 2_000_00, paidMinor: 2_000_00 })], { source: usdSource }),
       ).blockers,
-    ).toEqual(["short_paid"]);
+    ).toEqual(["short_paid", "nothing_paid"]);
+    // A credit note in another currency never lowers the target.
+    expect(
+      deedEligibility(
+        facts(
+          [
+            doc({
+              currency: "USD",
+              type: "export_invoice",
+              totalMinor: 2_000_00,
+              paidMinor: 1_000_00,
+              creditedMinor: 0,
+              balanceMinor: 0,
+            }),
+            doc({ currency: "INR", totalMinor: 2_000_00, paidMinor: 1_000_00, creditedMinor: 1_000_00 }),
+          ],
+          { source: usdSource },
+        ),
+      ),
+    ).toMatchObject({ creditedMinor: 0, targetMinor: 2_000_00, blockers: ["short_paid"] });
   });
 
-  it("property: eligible exactly when completed, live, not care, at least one live payable, none due and the settled sum reaches the total", () => {
+  it("property: eligible exactly when completed, live, not care, at least one live payable, none due, something settled and settled plus credited reaches the total", () => {
     const arbDoc = fc
       .record({
         type: fc.constantFrom("tax_invoice", "export_invoice", "debit_note", "proforma", "credit_note"),
@@ -280,6 +354,7 @@ describe("L2: full payment [RB-38(a)]", () => {
               (a, d) => a + Math.max(0, Math.min(d.paidMinor + d.tdsMinor, d.totalMinor - d.creditedMinor)),
               0,
             );
+          const credited = live.filter((d) => d.currency === "INR").reduce((a, d) => a + d.creditedMinor, 0);
           const expected =
             status === "completed" &&
             !anonymised &&
@@ -287,10 +362,13 @@ describe("L2: full payment [RB-38(a)]", () => {
             !docs.some((d) => d.carePlan) &&
             live.length > 0 &&
             live.every((d) => d.balanceMinor === 0) &&
-            settled >= total;
+            settled > 0 &&
+            settled + credited >= total;
           const r = deedEligibility(f);
           expect(r.eligible).toBe(expected);
           expect(r.settledMinor).toBe(settled);
+          expect(r.creditedMinor).toBe(credited);
+          expect(r.targetMinor).toBe(Math.max(0, total - credited));
           // The sums path decides the same way (the admin's read of `deedFactsSql`).
           expect(eligibilityOfSums(deedFactsOf(f)).eligible).toBe(expected);
         },
@@ -315,6 +393,7 @@ describe("L2: full payment [RB-38(a)]", () => {
         payables: 1,
         unpaid: 0,
         settledMinor: 10,
+        creditedMinor: 0,
       }),
     ).toEqual([]);
   });
@@ -322,7 +401,7 @@ describe("L2: full payment [RB-38(a)]", () => {
 
 const inputs = (o: Partial<DeedInputs> = {}): DeedInputs => ({
   madeOn: "2026-11-01",
-  company: { address: "12 Example Road, Balurghat, West Bengal 733101", gstin: "19ABCDE1234F1Z5" },
+  company: { principalPlace: "12 Example Road,\n Balurghat, West Bengal 733101", gstin: "19ABCDE1234F1Z5" },
   client: {
     legalName: "Example Traders Private Limited",
     address: {
@@ -392,7 +471,7 @@ describe("L6: the values", () => {
   it("refuses, never guesses: no company address or GSTIN, an unreadable offer, a blank Schedule, a bad date", () => {
     const r = deedSnapshotOf(
       inputs({
-        company: { address: null, gstin: " " },
+        company: { principalPlace: " \n ", gstin: " " },
         offer: { type: "proforma", numberDisplay: null, version: 1, decidedAt: null, currency: "INR" },
         schedules: { deliverables: "x", location: "", deliveredDates: "x", tools: "x", thirdParty: null },
         madeOn: "2026-13-01",
@@ -401,7 +480,7 @@ describe("L6: the values", () => {
     expect(r).toEqual({
       ok: false,
       problems: [
-        "company_address_missing",
+        "company_principal_place_missing",
         "company_gstin_missing",
         "offer_unreadable",
         "schedules_blank",
@@ -409,6 +488,14 @@ describe("L6: the values", () => {
       ],
       blankFields: ["location", "thirdParty"],
     });
+  });
+
+  it("the principal place prints on one line (triage 4)", () => {
+    expect(deedOneLine("1 Sample Road,\r\n\r\n  Balurghat,  West Bengal\n733101 ")).toBe(
+      "1 Sample Road, Balurghat, West Bengal, 733101",
+    );
+    expect(deedOneLine(" \n ")).toBeNull();
+    expect(deedOneLine(null)).toBeNull();
   });
 
   it("an address with no country name function keeps the code; none is null", () => {

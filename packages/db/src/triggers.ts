@@ -1405,8 +1405,10 @@ export const DEED_SCHEDULE_COLUMNS_0062 = [
  *   6. `deeds_frozen`: once out of `draft`, the number, date, Schedules, snapshot, finaliser and the cancel facts never change, and a cancelled deed never changes;
  *   7. `deeds_set_once`: the unsigned PDF and the signed copy's columns are set once; the unsigned PDF only on a final or signed deed, the signed copy only in
  *      the move final → signed;
- *   8. `deeds_no_delete`: only a DRAFT deed of an anonymised client is deleted (L7); a final or signed deed is kept like an invoice;
- *   9. `clients_anonymised_draft_deeds`: anonymising a client deletes its draft deeds in the same statement (L7; the erase batch stays within its budget).
+ *   8. `deeds_no_delete`: only a DRAFT or CANCELLED deed of an anonymised client is deleted (L7; early check 5: a cancelled deed holds the Owner's typed
+ *      reason); a final or signed deed is kept like an invoice (Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) as 08-C RB-11 reads them);
+ *   9. `clients_anonymised_draft_deeds`: anonymising a client deletes its draft and cancelled deeds in the same statement (L7; the erase batch stays within its
+ *      budget of 45 statements).
  */
 export function deedTriggerStatements(): string[] {
   const named = (name: string, message: string) => abort(`${name}: ${message}`);
@@ -1436,10 +1438,10 @@ export function deedTriggerStatements(): string[] {
     `CREATE TRIGGER \`deeds_identity_fixed\` BEFORE UPDATE ON \`deeds\` WHEN ${changed(DEED_IDENTITY_0062)} BEGIN ${named("deeds_identity_fixed", "the parties and the accepted version of a deed never change")} END;`,
     `CREATE TRIGGER \`deeds_frozen\` BEFORE UPDATE ON \`deeds\` WHEN ${frozenBad} BEGIN ${named("deeds_frozen", "a final or signed deed keeps its number, Schedules and snapshot, and a cancelled deed never changes")} END;`,
     `CREATE TRIGGER \`deeds_set_once\` BEFORE UPDATE ON \`deeds\` WHEN ${setOnceBad} BEGIN ${named("deeds_set_once", "the unsigned PDF is set once on a final deed, and the signed copy once, when the deed is signed")} END;`,
-    `CREATE TRIGGER \`deeds_no_delete\` BEFORE DELETE ON \`deeds\` WHEN OLD.status IS NOT 'draft' OR NOT ${gone("OLD.client_id")} BEGIN ${named("deeds_no_delete", "only a draft deed of an anonymised client is deleted; a final or signed deed is kept")} END;`,
-    // 9. L7: the moment a client is anonymised (the erase batch's step 3), its draft deeds go with it, in the same statement: no extra statement in the erase
-    //    batch, which is held to 45 D1 statements (T7's budget). Final and signed deeds stay (`deeds_no_delete` lets only drafts go, and only now).
-    "CREATE TRIGGER `clients_anonymised_draft_deeds` AFTER UPDATE OF anonymised_at ON `clients` WHEN OLD.anonymised_at IS NULL AND NEW.anonymised_at IS NOT NULL BEGIN DELETE FROM deeds WHERE client_id = NEW.id AND status = 'draft'; END;",
+    `CREATE TRIGGER \`deeds_no_delete\` BEFORE DELETE ON \`deeds\` WHEN OLD.status NOT IN ('draft', 'cancelled') OR NOT ${gone("OLD.client_id")} BEGIN ${named("deeds_no_delete", "only a draft or cancelled deed of an anonymised client is deleted; a final or signed deed is kept")} END;`,
+    // 9. L7: the moment a client is anonymised (the erase batch's step 3), its draft and cancelled deeds go with it, in the same statement: no extra statement
+    //    in the erase batch, which is held to 45 D1 statements (T7's budget). Final and signed deeds stay (`deeds_no_delete` lets only those two go, and only now).
+    "CREATE TRIGGER `clients_anonymised_draft_deeds` AFTER UPDATE OF anonymised_at ON `clients` WHEN OLD.anonymised_at IS NULL AND NEW.anonymised_at IS NOT NULL BEGIN DELETE FROM deeds WHERE client_id = NEW.id AND status IN ('draft', 'cancelled'); END;",
   ];
 }
 
@@ -1534,7 +1536,7 @@ export const TRIGGER_SETS = {
     statements: paymentTriggerStatements,
   },
   deed_triggers: {
-    what: "T11 deed of assignment: born a draft for an accepted proposal or estimate, the status flow, Schedules filled before finalising, frozen once final, set-once PDFs, only an erased client's draft is deleted",
+    what: "T11 deed of assignment: born a draft for an accepted proposal or estimate, the status flow, Schedules filled before finalising, frozen once final, set-once PDFs, only an erased client's draft or cancelled deed is deleted",
     statements: deedTriggerStatements,
   },
 } as const;

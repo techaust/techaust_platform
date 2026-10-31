@@ -14,6 +14,8 @@ import { describe, expect, it } from "vitest";
 import {
   cancelDeedStatement,
   DEED_COLS,
+  DEED_DOCS_STAMP_SQL,
+  type DeedDocsStamp,
   type DeedRow,
   deedCounterRowStatement,
   deedCounterTakeStatement,
@@ -184,13 +186,21 @@ async function fillSchedules(deed: DeedRow, owner: string): Promise<number> {
   return row?.updated_at ?? 0;
 }
 
-async function finalise(fx: Fixture & { deed: DeedRow }, o: { stepUp?: boolean; fy?: string } = {}) {
+const docsStamp = async (projectId: string): Promise<DeedDocsStamp> =>
+  (await first<DeedDocsStamp>(DEED_DOCS_STAMP_SQL, projectId)) ?? { n: 0, at: null };
+
+async function finalise(
+  fx: Fixture & { deed: DeedRow },
+  o: { stepUp?: boolean; fy?: string; docs?: DeedDocsStamp; beforeBatch?: () => Promise<void> } = {},
+) {
   const updatedAt = await fillSchedules(fx.deed, fx.owner);
   const s = await session(fx.owner, o.stepUp ?? true);
   const client = await first<{ updated_at: number }>(
     "SELECT updated_at FROM clients WHERE id = ?",
     fx.clientId,
   );
+  const docs = o.docs ?? (await docsStamp(fx.projectId));
+  await o.beforeBatch?.();
   const fy = o.fy ?? "2627";
   const res = await db().batch([
     deedCounterRowStatement(db(), fy),
@@ -210,6 +220,7 @@ async function finalise(fx: Fixture & { deed: DeedRow }, o: { stepUp?: boolean; 
       numberingVersion: null,
       companyVersion: null,
       clientUpdatedAt: client?.updated_at ?? 0,
+      docs,
     }),
     deedCounterTakeStatement(db(), { deedId: fx.deed.id, fy }, { sql: () => "changes() > 0", params: [] }),
   ]);
@@ -317,11 +328,28 @@ describe("deedDraftStatements: L2 and L3 [RB-38(a), ADM-PRJ-04]", () => {
     }
   });
 
-  it("a credit note after payment takes its amount off what the money settles; TDS counts as settled money", async () => {
-    const credited = await mkProject();
-    await mkDoc(credited.clientId, credited.projectId, { paid: 100_000, credited: 10_000 });
-    await draft({ projectId: credited.projectId });
-    expect(await deedOf(credited.projectId)).toBeNull();
+  it("a credit note lowers the target (owner, 2026-11-01); a project credited in full gets none (decision (a)); TDS counts as settled money", async () => {
+    // A discount by credit note, the rest paid: a deed.
+    const discount = await mkProject();
+    await mkDoc(discount.clientId, discount.projectId, { paid: 80_000, credited: 20_000 });
+    await draft({ projectId: discount.projectId });
+    expect((await deedOf(discount.projectId))?.status).toBe("draft");
+    expect(await first(deedFactsSql("?1"), discount.projectId)).toMatchObject({
+      settled: 80_000,
+      credited: 20_000,
+    });
+
+    // Short of the lowered target: none.
+    const short = await mkProject();
+    await mkDoc(short.clientId, short.projectId, { paid: 70_000, credited: 20_000 });
+    await draft({ projectId: short.projectId });
+    expect(await deedOf(short.projectId)).toBeNull();
+
+    // Credited in full, nothing paid: none.
+    const full = await mkProject();
+    await mkDoc(full.clientId, full.projectId, { credited: 100_000 });
+    await draft({ projectId: full.projectId });
+    expect(await deedOf(full.projectId)).toBeNull();
 
     const tds = await mkProject();
     await mkDoc(tds.clientId, tds.projectId, { paid: 90_000, tds: 10_000 });
@@ -436,7 +464,7 @@ describe("deedDraftStatements: L2 and L3 [RB-38(a), ADM-PRJ-04]", () => {
     expect((await deedOf(byPay.projectId))?.status).toBe("draft");
   });
 
-  it("a cancelled deed is never replaced", async () => {
+  it("after a cancel the automatic hooks make nothing; the Owner's redraft makes one fresh draft (decision (b)); one open deed per project", async () => {
     const fx = await draftDeed();
     const s = await session(fx.owner);
     await cancelDeedStatement(db(), {
@@ -448,8 +476,49 @@ describe("deedDraftStatements: L2 and L3 [RB-38(a), ADM-PRJ-04]", () => {
       reason: "Not needed",
     }).run();
     await draft({ projectId: fx.projectId }, T + 100);
-    const rows = await all<{ status: string }>("SELECT status FROM deeds WHERE project_id = ?", fx.projectId);
-    expect(rows).toEqual([{ status: "cancelled" }]);
+    const statuses = async () =>
+      (
+        await all<{ status: string }>(
+          "SELECT status FROM deeds WHERE project_id = ? ORDER BY created_at",
+          fx.projectId,
+        )
+      ).map((r) => r.status);
+    expect(await statuses()).toEqual(["cancelled"]);
+    const redraft = (now: number) =>
+      db().batch(deedDraftStatements(db(), { target: { projectId: fx.projectId }, now, redraft: true }));
+    await redraft(T + 200);
+    expect(await statuses()).toEqual(["cancelled", "draft"]);
+    // The fresh draft has its own system audit row and bell.
+    const fresh = await first<{ id: string }>(
+      "SELECT id FROM deeds WHERE project_id = ? AND status = 'draft'",
+      fx.projectId,
+    );
+    expect(
+      (await all("SELECT id FROM audit_log WHERE action = 'deed.draft' AND entity_id = ?", fresh?.id)).length,
+    ).toBe(1);
+    expect(
+      (
+        await all(
+          "SELECT id FROM notifications WHERE kind = 'deed.draft' AND entity_id = ? AND user_id = ?",
+          fresh?.id,
+          fx.owner,
+        )
+      ).length,
+    ).toBe(1);
+    // A second redraft finds the open draft: nothing new.
+    await redraft(T + 300);
+    expect(await statuses()).toEqual(["cancelled", "draft"]);
+    // The partial unique index holds one open deed per project even against a raw insert.
+    await rejects(
+      run(
+        "INSERT INTO deeds (id, client_id, project_id, source_document_id, status) VALUES (?1, ?2, ?3, ?4, 'draft')",
+        uuidv7(),
+        fx.clientId,
+        fx.projectId,
+        fx.quoteId,
+      ),
+      /UNIQUE|deeds_project_open/,
+    );
   });
 });
 
@@ -584,12 +653,26 @@ describe("deed_triggers (0062) [L4, L7]", () => {
     await rejects(run("UPDATE deeds SET status = 'final' WHERE id = ?", fx.deed.id), /deeds_status_flow/);
   });
 
-  it("delete: only a draft of an anonymised client (L7); a final or signed deed stays", async () => {
+  it("delete: only a draft or cancelled deed of an anonymised client (L7, early check 5); a final or signed deed stays", async () => {
     const fx = await draftDeed();
     await rejects(run("DELETE FROM deeds WHERE id = ?", fx.deed.id), /deeds_no_delete/);
     // Anonymising the client deletes the draft (the trigger clients_anonymised_draft_deeds runs the allowed delete).
     await run("UPDATE clients SET anonymised_at = 9 WHERE id = ?", fx.clientId);
     expect(await deedOf(fx.projectId)).toBeNull();
+
+    // A cancelled deed holds the Owner's typed reason: it goes too.
+    const cancelled = await draftDeed();
+    await cancelDeedStatement(db(), {
+      deedId: cancelled.deed.id,
+      expectedUpdatedAt: cancelled.deed.updated_at,
+      now: Date.now(),
+      sessionId: await session(cancelled.owner),
+      memberId: cancelled.owner,
+      reason: "The client asked for none",
+    }).run();
+    await rejects(run("DELETE FROM deeds WHERE id = ?", cancelled.deed.id), /deeds_no_delete/);
+    await run("UPDATE clients SET anonymised_at = 9 WHERE id = ?", cancelled.clientId);
+    expect(await all("SELECT id FROM deeds WHERE project_id = ?", cancelled.projectId)).toEqual([]);
 
     const kept = await draftDeed();
     await finalise(kept);
@@ -648,14 +731,47 @@ describe("the Owner's and Staff's moves [L1, L4]", () => {
     ).toBe(3);
   });
 
-  it("finalise re-checks full payment: a credit note issued since refuses it", async () => {
+  it("finalise re-checks full payment: a payment withdrawn since refuses it", async () => {
     const fx = await mkProject();
     const inv = await mkDoc(fx.clientId, fx.projectId, { paid: 100_000 });
     const d = await draftDeed(fx);
-    await run("UPDATE documents SET credited_minor = 10000, status = 'paid' WHERE id = ?", inv);
+    await run(
+      "UPDATE documents SET paid_minor = 50000, balance_minor = 50000, status = 'partially_paid' WHERE id = ?",
+      inv,
+    );
     const res = await finalise(d);
     expect(res.changed).toBe(0);
     expect(res.row?.status).toBe("draft");
+  });
+
+  it("early check 7: a document of the project moved between the read and the batch refuses the finalise (the sealed figures would be stale)", async () => {
+    const fx = await mkProject();
+    const inv = await mkDoc(fx.clientId, fx.projectId, { paid: 100_000 });
+    const d = await draftDeed(fx);
+    // A credit note lands in between (still eligible: the target drops with it), but the seal was read before it.
+    const moved = await finalise(d, {
+      beforeBatch: () =>
+        run("UPDATE documents SET credited_minor = 10000, updated_at = updated_at + 1 WHERE id = ?", inv),
+    });
+    expect(moved.changed).toBe(0);
+    expect(moved.row?.status).toBe("draft");
+    // A new frozen document of the project (a further invoice issued) moves the count.
+    const fresh = await first<DeedRow>(`SELECT ${DEED_COLS} FROM deeds d WHERE d.id = ?1`, d.deed.id);
+    const stamp = await docsStamp(fx.projectId);
+    const counted = await finalise(
+      { ...d, deed: fresh as DeedRow },
+      {
+        docs: stamp,
+        beforeBatch: async () => {
+          await mkDoc(fx.clientId, fx.projectId, { total: 1_000, paid: 1_000 });
+        },
+      },
+    );
+    expect(counted.changed).toBe(0);
+    // Read at the current stamp: it goes through.
+    const again = await first<DeedRow>(`SELECT ${DEED_COLS} FROM deeds d WHERE d.id = ?1`, d.deed.id);
+    const ok = await finalise({ ...d, deed: again as DeedRow });
+    expect(ok.changed).toBe(1);
   });
 
   it("Schedules: Owner or Staff, a draft only, at the version read", async () => {
@@ -735,6 +851,13 @@ describe("the Owner's and Staff's moves [L1, L4]", () => {
       "s",
     );
     expect(portal.map((p) => p.detail).join("\n")).toMatch(/deeds_client_source/);
+    const byProject = await all<{ detail: string }>(
+      "EXPLAIN QUERY PLAN SELECT id FROM deeds WHERE project_id = ?1 ORDER BY created_at DESC LIMIT 11",
+      "p",
+    );
+    expect(byProject.map((p) => p.detail).join("\n")).toMatch(/deeds_project_created/);
+    const stamp = await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${DEED_DOCS_STAMP_SQL}`, "p");
+    expect(stamp.map((p) => p.detail).join("\n")).toMatch(/documents_project/);
   });
 });
 
@@ -753,7 +876,7 @@ describe("deedEligibleSql and deedFactsSql are core deedEligibility's twin [L2]"
     };
     // An INR client in India: tax invoices (an export invoice needs an overseas client: the USD test covers it), debit notes, proformas, credit notes.
     const types = ["tax_invoice", "tax_invoice", "debit_note", "proforma", "credit_note"] as const;
-    const seen = { yes: 0, no: 0 };
+    const seen = { yes: 0, no: 0, credited: 0 };
     for (let k = 0; k < 40; k++) {
       // Half the projects have a small accepted total, so a fully paid invoice can reach it (both outcomes are exercised).
       const total = rnd(2) === 0 ? 5_000 + rnd(10_000) : 50_000 + rnd(100_000);
@@ -765,7 +888,7 @@ describe("deedEligibleSql and deedFactsSql are core deedEligibility's twin [L2]"
         const type = types[rnd(types.length)] as (typeof types)[number];
         const t = 10_000 + rnd(90_000);
         const paid = rnd(2) === 0 ? t : rnd(3) === 0 ? 0 : rnd(t + 1);
-        const credited = rnd(4) === 0 ? rnd(Math.max(1, t - paid) + 1) : 0;
+        const credited = rnd(7) < 2 ? 1 + rnd(Math.max(1, t - paid)) : 0;
         const tds =
           type === "tax_invoice" && rnd(5) === 0 ? Math.min(t - Math.min(t, paid + credited), rnd(5_000)) : 0;
         const voided = paid === 0 && credited === 0 && tds === 0 && rnd(6) === 0;
@@ -808,17 +931,20 @@ describe("deedEligibleSql and deedFactsSql are core deedEligibility's twin [L2]"
         `SELECT ${deedEligibleSql("p")} AS ok FROM projects p WHERE p.id = ?1`,
         fx.projectId,
       );
-      const facts = await first<{ settled: number; payables: number; unpaid: number }>(
+      const facts = await first<{ settled: number; credited: number; payables: number; unpaid: number }>(
         deedFactsSql("?1"),
         fx.projectId,
       );
       expect(Boolean(sqlRow?.ok), `case ${k}`).toBe(core.eligible);
       seen[core.eligible ? "yes" : "no"]++;
+      if (core.creditedMinor > 0) seen.credited++;
       expect(facts?.settled, `case ${k}`).toBe(core.settledMinor);
+      expect(facts?.credited, `case ${k}`).toBe(core.creditedMinor);
       expect(facts?.payables).toBe(docs.filter(isLivePayable).length);
       expect(facts?.unpaid).toBe(docs.filter((d) => isLivePayable(d) && d.balanceMinor !== 0).length);
     }
     expect(seen.yes, "some random projects are eligible").toBeGreaterThan(0);
     expect(seen.no).toBeGreaterThan(0);
+    expect(seen.credited, "some random projects carry credit notes").toBeGreaterThan(0);
   });
 });

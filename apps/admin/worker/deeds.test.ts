@@ -19,9 +19,10 @@ import {
   SCHEDULES,
 } from "./test-deeds.ts";
 import { call, countOf, one, sessionFor, type TestSession } from "./test-helpers.ts";
-import { codeOf, type J, json, putCompany } from "./test-invoices.ts";
-import { record, recordBody, recorded, verify } from "./test-payments.ts";
+import { codeOf, type J, json, putCompany, voidInvoice } from "./test-invoices.ts";
+import { record, recordBody, recorded, today, verify } from "./test-payments.ts";
 import { PDF_BYTES, PNG_BYTES } from "./test-projects.ts";
+import { addDoc } from "./test-reports.ts";
 
 const owner = () => sessionFor("owner", { stepUp: true });
 
@@ -117,26 +118,88 @@ describe("L3: the draft is made by the batch that completes the project or pays 
     });
     expect((await json(await recheck(o, f.projectId))).created).toBe(false);
     expect(await countOf("deeds", "project_id = ?", f.projectId)).toBe(1);
+    // Its own audit action (early check 10): one deed.recheck by the Owner, one system deed.draft for the deed.
+    expect(await countOf("audit_log", "action = 'deed.recheck' AND entity_id = ?", f.projectId)).toBe(1);
+    const d = (await deedRowOf(f.projectId)) as { id: string };
+    expect(await countOf("audit_log", "action = 'deed.draft' AND entity_id = ?", d.id)).toBe(1);
+  });
+
+  it("a discount by credit note lowers the target (owner, 2026-11-01): the rest paid makes the draft; the view shows the target and the counted documents", async () => {
+    const o = await owner();
+    const f = await mkDeedProject({ status: "completed" });
+    // The parent's ledger as the M5.3 credit-note batch leaves it: 18,000 credited, nothing paid yet.
+    await env.DB.prepare(
+      "UPDATE documents SET credited_minor = 18000, balance_minor = total_minor - 18000, status = 'partially_credited', updated_at = updated_at + 1 WHERE id = ?",
+    )
+      .bind(f.inv.id)
+      .run();
+    await recorded(
+      o,
+      recordBody(f.clientId, DEED_TOTAL - 18_000, [
+        { documentId: f.inv.id, amountMinor: DEED_TOTAL - 18_000 },
+      ]),
+    );
+    expect((await deedRowOf(f.projectId))?.status).toBe("draft");
+    const view = await json(await getDeed(o, f.projectId));
+    expect(view.eligibility).toMatchObject({
+      eligible: true,
+      settledMinor: DEED_TOTAL - 18_000,
+      creditedMinor: 18_000,
+      acceptedTotalMinor: DEED_TOTAL,
+      targetMinor: DEED_TOTAL - 18_000,
+      shortfallMinor: 0,
+    });
+    expect(view.documents).toEqual([
+      expect.objectContaining({
+        id: f.inv.id,
+        number: f.inv.number,
+        counted: true,
+        creditedMinor: 18_000,
+        balanceMinor: 0,
+        settledMinor: DEED_TOTAL - 18_000,
+      }),
+    ]);
+  });
+
+  it("voiding the only unpaid invoice of a completed, otherwise paid project makes the draft (early check 4)", async () => {
+    const o = await owner();
+    const g = await mkDeedProject({ status: "completed" });
+    // A duplicate invoice issued today, never sent: it blocks the deed until it is voided.
+    const dup = await addDoc({ clientId: g.clientId, issueDate: today(), over: { project_id: g.projectId } });
+    await payAll(o, g.clientId, g.inv.id);
+    expect(await deedRowOf(g.projectId)).toBeNull();
+    expect((await json(await getDeed(o, g.projectId))).eligibility.blockers).toEqual(["balance_due"]);
+    const res = await voidInvoice(o, dup.id);
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect((await deedRowOf(g.projectId))?.status).toBe("draft");
   });
 });
 
 // ---- reads and permissions ---------------------------------------------------------------------------------------------------------------------------
 
 describe("GET /projects/:id/deed [L6, L8]", () => {
-  it("Owner, Staff and Accountant read it; Sales gets 403; the blockers before, the draft with its preview after", async () => {
+  it("Owner and Staff read it; Sales and Accountant get 403 (decision (c)); the blockers before, the draft with its preview after", async () => {
     const o = await owner();
     const f = await mkDeedProject();
     const before = await json(await getDeed(o, f.projectId));
     expect(before.deed).toBeNull();
     expect(before.eligibility).toMatchObject({
       eligible: false,
-      blockers: ["not_completed", "balance_due", "short_paid"],
+      blockers: ["not_completed", "balance_due", "short_paid", "nothing_paid"],
+      targetMinor: DEED_TOTAL,
+      shortfallMinor: DEED_TOTAL,
+      creditedMinor: 0,
     });
+    expect(before.documents).toEqual([
+      expect.objectContaining({ id: f.inv.id, counted: true, balanceMinor: DEED_TOTAL, settledMinor: 0 }),
+    ]);
+    expect(before.history).toEqual([]);
+    expect(before.can).toMatchObject({ recheck: true, renderPdf: false });
     await complete(o, f.projectId);
     await payAll(o, f.clientId, f.inv.id);
-    for (const role of ["staff", "accountant"] as const)
-      expect((await getDeed(await sessionFor(role), f.projectId)).status, role).toBe(200);
-    expect((await getDeed(await sessionFor("sales"), f.projectId)).status).toBe(403);
+    expect((await getDeed(await sessionFor("staff"), f.projectId)).status).toBe(200);
+    for (const role of ["sales", "accountant"] as const)
+      expect((await getDeed(await sessionFor(role), f.projectId)).status, role).toBe(403);
     const view = await json(await getDeed(o, f.projectId));
     expect(view.deed).toMatchObject({
       status: "draft",
@@ -236,14 +299,46 @@ describe("finalise [L1, L4, L6]", () => {
     expect((await deedRowOf(f.projectId))?.status).toBe("draft");
   });
 
-  it("a credit note after finalising: the screen warns, nothing changes on its own", async () => {
+  it("a credit note after finalising lowers the target: no warning; a payment withdrawn: the screen warns, nothing changes on its own", async () => {
     const o = await owner();
     const f = await finalisedDeed(o);
     await env.DB.prepare("UPDATE documents SET credited_minor = 10000 WHERE id = ?").bind(f.inv.id).run();
     expect((await json(await getDeed(o, f.projectId))).deed).toMatchObject({
       status: "final",
+      notFullyPaid: false,
+    });
+    const paid = (await one<{ payment_id: string }>(
+      "SELECT payment_id FROM payment_allocations WHERE document_id = ?",
+      f.inv.id,
+    )) as { payment_id: string };
+    const w = await call(`/payments/${paid.payment_id}/withdraw`, {
+      cookie: o.cookie,
+      body: { reason: "x" },
+    });
+    expect(w.status, await w.clone().text()).toBe(200);
+    expect((await json(await getDeed(o, f.projectId))).deed).toMatchObject({
+      status: "final",
       notFullyPaid: true,
     });
+    expect((await deedRowOf(f.projectId))?.status).toBe("final");
+  });
+
+  it("refused when the principal place is missing from Settings › Company (triage 4: the supplier address)", async () => {
+    const o = await owner();
+    const f = await draftDeed(o);
+    await putSchedules(o, f.deedId);
+    await putCompany({ principalPlace: null });
+    expect(await json(await finaliseDeed(o, f.deedId))).toMatchObject({
+      error: { code: "deed_values_missing", details: { problems: ["company_principal_place_missing"] } },
+    });
+    await putCompany({ principalPlace: "1 Example Road,\nBalurghat, West Bengal 733101" });
+    expect((await finaliseDeed(o, f.deedId)).status).toBe(200);
+    const parties = ((await json(await getDeed(o, f.projectId))).deed.text.parties as J[])
+      .map((r) => r.text)
+      .join("");
+    expect(parties).toContain(
+      "trading as TecHaust Technologies, 1 Example Road, Balurghat, West Bengal 733101, GSTIN ",
+    );
   });
 });
 
@@ -279,8 +374,12 @@ describe("the signed copy [L4, L5]", () => {
     const again = await putSigned(o, f.deedId);
     expect(again.status).toBe(409);
     expect(await codeOf(again)).toBe("deed_not_final");
+    expect(
+      (await call(`/deeds/${f.deedId}/pdf/signed`, { cookie: (await sessionFor("accountant")).cookie }))
+        .status,
+    ).toBe(403);
     const pdf = await call(`/deeds/${f.deedId}/pdf/signed`, {
-      cookie: (await sessionFor("accountant")).cookie,
+      cookie: (await sessionFor("staff")).cookie,
     });
     expect(pdf.status).toBe(200);
     expect(pdf.headers.get("Content-Type")).toBe("application/pdf");
@@ -301,7 +400,7 @@ describe("the signed copy [L4, L5]", () => {
 });
 
 describe("cancel [L4]", () => {
-  it("the Owner cancels a draft with a reason; Staff cannot; the reason stays out of the audit row; a cancelled deed is never replaced", async () => {
+  it("the Owner cancels a draft with a reason; Staff cannot; the reason stays out of the audit row; only Check again redrafts (decision (b))", async () => {
     const o = await owner();
     const f = await draftDeed(o);
     expect((await cancel(await sessionFor("staff"), f.deedId, "x")).status).toBe(403);
@@ -312,10 +411,27 @@ describe("cancel [L4]", () => {
       f.deedId,
     );
     expect(audit?.summary).not.toContain("asked");
-    expect(await json(await recheck(o, f.projectId))).toMatchObject({
-      created: false,
-      deed: { status: "cancelled" },
-    });
+    const cancelled = await json(await getDeed(o, f.projectId));
+    expect(cancelled.deed.status).toBe("cancelled");
+    expect(cancelled.can.recheck).toBe(true);
+    expect(cancelled.history).toEqual([
+      expect.objectContaining({
+        id: f.deedId,
+        reason: "The client asked for none",
+        cancelledByName: expect.any(String),
+      }),
+    ]);
+    // An automatic hook (a further payment's batch) never undoes the cancel.
+    await recorded(o, recordBody(f.clientId, 5_000));
+    await complete(o, f.projectId);
+    expect(await countOf("deeds", "project_id = ?", f.projectId)).toBe(1);
+    // The Owner's Check again makes a fresh draft; the cancelled one stays as history.
+    const again = await json(await recheck(o, f.projectId));
+    expect(again).toMatchObject({ created: true, deed: { status: "draft" }, can: { recheck: false } });
+    expect(again.deed.id).not.toBe(f.deedId);
+    expect(again.history).toHaveLength(1);
+    expect((await json(await recheck(o, f.projectId))).created).toBe(false);
+    expect(await countOf("deeds", "project_id = ?", f.projectId)).toBe(2);
   });
 });
 
