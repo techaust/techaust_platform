@@ -94,6 +94,8 @@ The local lead (or the owner) posts the reading: the percentage and the time, as
 | **This PC** (8 GB, 4 processors) | at most **2** | at most **1** | free memory at least **300 MB** |
 | **A cloud session** (its virtual machine) | at most **5** | at most **2** (§4: each with its own ports and browser server); **1** until a second browser server exists | at least **3 GB** free memory, and the 1-minute load average under **80 %** of its processors |
 
+**Several cloud sessions at once** (owner, 2026-10-31): when the pending tasks run as parallel cloud sessions (one task each, controlled by a main session on this PC; [runbook Part 4](runbooks/cloud-sessions.md)), each one runs **at most 2 agents at once**, 1 using a browser. All of them draw on the one shared 5-hour window. The shared prompt holds this limit; `tools/agent-slots.mjs` doesn't check it yet (follow-up).
+
 **Heavy commands** (the full lint, typecheck, builds, the database and end-to-end suites) still take turns, one at a time per machine, through `tools/heavy.sh`, both here and in a cloud session.
 
 The gate and the limits change **how much runs at once, never the model or the effort.** If a weekly limit for Opus ever appears in the reading, the lead tells the owner before relying on this section.
