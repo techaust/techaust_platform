@@ -474,8 +474,11 @@
   vertical-align: middle;
 }
 
+/* A duration is one unit: "1 h 45 min" never breaks across lines (polish sweep 1a; at 1280 beside the open menu it did). The table's
+   minimum below holds every day at its widest duration, and its box scrolls sideways before the page would. */
 .sheet .num {
   text-align: end;
+  white-space: nowrap;
 }
 
 .sheet thead th {
@@ -639,6 +642,16 @@
 .entries-table .dtable__table .entry-person {
   display: block;
   min-width: 7.5rem;
+}
+
+/* Two people with one name: the work email on a quiet second line, as under "Log time for" (polish sweep 1c). It breaks before its "@" (a
+   <wbr> in time.tsx), and inside a part only when that part is wider than the cell (a phone's card). */
+.entry-person__email {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  overflow-wrap: break-word;
 }
 
 .entries-table .dtable__table .entry-target {

@@ -4,12 +4,15 @@
 //     sent: L8), the signature hint (line 2); keyboard order and visible focus. Typing inside a filled Udyam number or GSTIN keeps the caret (kept as
 //     typed, shown in capitals, stored in capitals on leaving: second review 2); the category waits for a number and never makes the form dirty alone (4).
 //   - Settings › Tax: the signatory switch's added line (line 3), in the switch's accessible description.
-//   - With no signature saved: a draft debit note lists `signature_missing` (line 1) with "Settings › Company" as a link; its note dialog and the advance
-//     dialog of an issued proforma are refused by the server with the same line and link, in a `role="alert"` box that takes the focus (visual review 1).
+//   - With no signature saved: a draft debit note lists `signature_missing` (line 1) with "Settings › Company" as a link; its note dialog lists it on the
+//     confirm step before any code is asked, with the issue button disabled (polish sweep 2a); when the view the dialog reads knows no blocker, the
+//     note dialog and the advance dialog of an issued proforma are refused by the server with the same line and link, in a `role="alert"` box that
+//     takes the focus (visual review 1).
 //   - The saved full number fits its field at every width, and at 1024 with the side menu open or closed (visual review 2); a field reached by Tab
 //     stops clear of the "Unsaved changes" bar (visual review 3).
-//   - The code field of the note, advance, invoice issue and step-up dialogs, reached by the keyboard and after a wrong code (the field focused, its
-//     line under it), is never under the dialog's sticky actions (WCAG 2.4.11; re-check A), at 390×844, 768 and 1280. A case-only GSTIN change is no
+//   - The code field of the note, advance, invoice issue and step-up dialogs, reached by the keyboard and after a wrong code (the field cleared and
+//     focused, its line under it; the invoice issue dialog's too since polish sweep 3a), is never under the dialog's sticky actions or its sticky title
+//     (WCAG 2.4.11; re-check A, polish sweep 5b), at 390×844, 768 and 1280. A case-only GSTIN change is no
 //     unsaved change (B); a save in flight leaves the waiting category's look alone (E).
 // axe (WCAG 2.2 AA) on every state, both in-app themes against the opposite OS theme, at 1280 and 390 px; no console errors. With RT2_SHOTS=<absolute folder>
 // each state is also saved as a screenshot (for the designer's review; never committed). Sample data only; the signature is put back at the end.
@@ -452,7 +455,10 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
     await expect(page.locator("fieldset.settings-form__body")).not.toHaveAttribute("disabled");
     expect(await category.evaluate(look)).toBe(waiting);
     await page.unrouteAll();
-    await page.getByRole("button", { name: "Discard" }).click();
+    // "No change" takes the form back to the saved values: the trailing space goes, and with it the "Unsaved changes" bar (polish sweep 3c)
+    await expect(trade).not.toHaveValue(/ $/);
+    await expect(page.locator(".savebar")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Discard" })).toHaveCount(0);
   });
 
   test("Settings › Company: keyboard order and visible focus through the Udyam fields", async ({ page }) => {
@@ -588,12 +594,39 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
         await item.evaluate((el) => el.scrollIntoView({ block: "center" }));
         await shot(page, `note-blocker-${tag}`, false);
 
-        // the note dialog, by keyboard: the server refuses the issue; the refusal box is announced (role alert) and takes the focus, inside the dialog
-        // (rt2 visual review 1: focus fell to <body> once the pressed button was disabled)
+        // the note dialog, by keyboard: the blocker the note's view knows is on the confirm step before any code is asked, and nothing can be pressed
+        // (polish sweep 2a)
         await page.getByRole("button", { name: "Issue debit note" }).press("Enter");
         const noteDialog = page.getByRole("dialog");
         await noteDialog.getByRole("button", { name: "Issue debit note" }).press("Enter");
         await expect(noteDialog.locator(".note-final")).toBeVisible();
+        const known = noteDialog.locator(".inv-issue__blocked .blockers__item", {
+          hasText: "Add the signature in",
+        });
+        await expect(known).toHaveText(LINE1);
+        await expect(known.getByRole("link", { name: "Settings › Company" })).toHaveAttribute(
+          "href",
+          "/settings/company",
+        );
+        await expect(noteDialog.getByLabel("Authenticator code")).toHaveCount(0);
+        await expect(noteDialog.getByRole("button", { name: "Issue debit note" })).toBeDisabled();
+        await axe(page, `note dialog known blocker ${tag}`);
+        await shot(page, `note-dialog-known-${tag}`, false);
+
+        // the server's own refusal still works: back to the request, and this time the note's view knows no blocker (as when the signature goes
+        // between the read and the issue); the refusal box is announced (role alert) and takes the focus, inside the dialog (rt2 visual review 1:
+        // focus fell to <body> once the pressed button was disabled)
+        await noteDialog.getByRole("button", { name: "Change" }).press("Enter");
+        const noteView = (u: URL) => u.pathname === `/api/v1/invoices/${debit?.id}`;
+        await page.route(noteView, async (route) => {
+          if (route.request().method() !== "GET") return route.continue();
+          const res = await route.fetch();
+          await route.fulfill({ response: res, json: { ...((await res.json()) as J), blockers: [] } });
+        });
+        await noteDialog.getByRole("button", { name: "Issue debit note" }).press("Enter");
+        await expect(noteDialog.locator(".note-final")).toBeVisible();
+        await expect(noteDialog.locator(".inv-issue__blocked")).toHaveCount(0);
+        await page.unroute(noteView);
         await noteDialog.getByRole("button", { name: "Issue debit note" }).press("Enter");
         await refusalHasFocus(page, LINE1);
         await axe(page, `note dialog refused ${tag}`);
@@ -743,14 +776,20 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
       await page.keyboard.press("Escape");
       await expect(advance).toHaveCount(0);
 
-      // a draft tax invoice's issue dialog: its code field by Tab (a wrong code there still shows in the dialog's notice: follow-up F)
+      // a draft tax invoice's issue dialog: its code field by Tab, then a wrong code, which is the code field's own error like the others (rt2
+      // follow-up F, polish sweep 3a: it used to show in the dialog's notice)
       await page.goto(`/invoices/${encodeURIComponent(draftInvoice)}`);
       await settled(page);
       await page.getByRole("button", { name: "Issue invoice", exact: true }).click();
       const issue = page.getByRole("dialog");
-      await tabbedTo(issue.getByLabel("Authenticator code"), `issue dialog ${at}`);
+      const issueCode = issue.getByLabel("Authenticator code");
+      await tabbedTo(issueCode, `issue dialog ${at}`);
       await axe(page, `issue dialog ${at}`);
       await shot(page, `tab-code-issue-${at}`, false);
+      await wrongCode(issueCode, issue.getByRole("button", { name: "Issue invoice" }), `issue dialog ${at}`);
+      await expect(issue.locator(".notice--error")).toHaveCount(0);
+      await axe(page, `issue dialog wrong code ${at}`);
+      await shot(page, `wrong-code-issue-${at}`, false);
       await page.keyboard.press("Escape");
       await expect(issue).toHaveCount(0);
 

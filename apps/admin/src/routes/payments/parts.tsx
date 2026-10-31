@@ -6,7 +6,7 @@ import "../invoices/parts.tsx";
 import "../../payments.css";
 import { useCallback, useRef, useState } from "react";
 import type { PaymentStatus } from "../../api.ts";
-import { RequestError, stepUpActive } from "../../api.ts";
+import { stepUpActive } from "../../api.ts";
 import { StatusPill } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Alert, Upload, X } from "../../components/icons.tsx";
@@ -23,6 +23,7 @@ import {
   STATUS_LABELS,
   STATUS_PILLS,
 } from "../../lib/payments.ts";
+import { isWrongCode } from "../../lib/step-up.ts";
 
 /**
  * Which dialog is open, for a screen that mounts its dialogs only while open: focus goes back to the control that opened one when it closes (WCAG 2.4.3;
@@ -100,7 +101,7 @@ export function useCodeSlot(id: string, wanted: boolean) {
     },
     /** After a refusal: true when it was the code (said under the field). */
     refused(e: unknown): boolean {
-      if (!(e instanceof RequestError) || e.code !== "invalid_code") return false;
+      if (!isWrongCode(e)) return false;
       setCode("");
       setError(e.message);
       document.getElementById(id)?.focus();

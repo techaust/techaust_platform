@@ -2,7 +2,7 @@
 // Tokens only (@techaust/ui); the design-system React components arrive with the admin shell in M3.1.
 import logoColor from "@techaust/ui/brand/logo-primary-color.svg?url";
 import logoDark from "@techaust/ui/brand/logo-primary-dark.svg?url";
-import { type ReactNode, type Ref, useEffect, useRef, useState } from "react";
+import { type ReactNode, type Ref, useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { digitsOnly } from "../lib/format.ts";
 import { Alert, ArrowLeft, Check, Copy, Info } from "./icons.tsx";
@@ -84,6 +84,20 @@ export function useFocusOnChange<T extends HTMLElement>(key: unknown) {
   return ref;
 }
 
+/**
+ * A field's error line as state, with a key that changes every time it is set (`[error, setError, errorKey]`): give both to `Field` or
+ * `CodeField`, so the same error said twice (the same wrong code again) is brought into view again (polish sweep 3b).
+ */
+export function useFieldError() {
+  const [error, setError] = useState<string | null>(null);
+  const [said, setSaid] = useState(0);
+  const set = useCallback((text: string | null) => {
+    setError(text);
+    if (text !== null) setSaid((n) => n + 1);
+  }, []);
+  return [error, set, said] as const;
+}
+
 export function Field(props: {
   id: string;
   label: string;
@@ -93,6 +107,8 @@ export function Field(props: {
   autoComplete: string;
   hint?: ReactNode | undefined;
   error?: string | null | undefined;
+  /** Changes each time `error` is said, even in the same words (`useFieldError`). */
+  errorKey?: number | undefined;
   inputMode?: "numeric" | "email" | "text" | undefined;
   onFocus?: (() => void) | undefined;
   onBlur?: (() => void) | undefined;
@@ -110,12 +126,15 @@ export function Field(props: {
     .join(" ");
   // An error drawn under the field that has the focus (a wrong step-up code: the field is focused, then its line appears) brings the whole field,
   // the line included, into view: inside a dialog that is above its sticky actions (the dialog's scroll padding; rt2 re-check A, WCAG 2.4.11).
+  // `errorKey` (from `useFieldError`) changes each time the error is said, so the same words twice (a second wrong code) bring it into view again;
+  // a mere re-render (a key press) changes neither and never scrolls (polish sweep 3b).
   const box = useRef<HTMLDivElement>(null);
-  const { error } = props;
+  const { error, errorKey } = props;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `errorKey` is the trigger: it marks the same error said again
   useEffect(() => {
     const el = box.current;
     if (error && el?.contains(document.activeElement)) el.scrollIntoView({ block: "nearest" });
-  }, [error]);
+  }, [error, errorKey]);
   return (
     <div ref={box} className={props.className ? `field ${props.className}` : "field"}>
       <label htmlFor={props.id}>{props.label}</label>
@@ -177,6 +196,8 @@ export function CodeField(props: {
   onChange: (v: string) => void;
   hint?: ReactNode | undefined;
   error?: string | null | undefined;
+  /** Changes each time `error` is said, even in the same words (`useFieldError`). */
+  errorKey?: number | undefined;
   autoFocus?: boolean | undefined;
 }) {
   return (
@@ -189,6 +210,7 @@ export function CodeField(props: {
       inputMode="numeric"
       hint={props.hint}
       error={props.error}
+      errorKey={props.errorKey}
       autoFocus={props.autoFocus}
       className="field--code"
       spellCheck={false}
