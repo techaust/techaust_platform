@@ -1,4 +1,4 @@
-Status: builder r1 and analyst (candidate check) running
+Status: builder r1 running; item 5 checked (4 real defects, fixed in builder r2 after r1)
 Tier: B
 Usage: (filled in as agents finish; models and efforts from `node tools/model-audit.mjs`)
 
@@ -35,7 +35,33 @@ Final brief by the lead (2026-11-01). Tier B: builder → analyst early check �
 - Deliverable: the reply to the lead (the lead pastes it under "Item 5: candidate check").
 
 ## Item 5: candidate check
-(pending)
+_Pasted by the lead from the analyst's reply (Opus 5.5 high, read-only, 2026-11-01). Base `fix/test-hardening` ca682a9 = main 474ec9c + the run file; no in-scope file differs from main. Verified by reading code, SQL, callers, triggers and tests; no test run. The lead re-read #1 (`apps/jobs/src/invoice-send.ts:50-54`, admin `invoice-send.ts:210-218`) and confirms it._
+
+**The code-review helper's 10 candidates (re-run on main): 4 confirmed, 6 dropped.**
+
+| # | file:line | Failing scenario | Sev. | Fix (all in bounds, no migration) |
+|---|---|---|---|---|
+| 1 | jobs `invoice-send.ts:50-54` `LINK_SQL`; admin `invoice-send.ts:210-218` | `invoice.send` mints token A, `EMAIL_QUEUE.send` throws, the message retries in 60 s; meanwhile staff "Revoke links": A is revoked but the send isn't cancelled (the cancel only takes sends without a token); the retry's `LINK_SQL` checks only `s.cancelled_at IS NULL`, mints a **live** token B and emails a working 180-day link after the revoke. A plain redelivery after a successful run mints an un-emailed live B that still counts in `LIVE_LINKS_SQL` ("1 live link" after a revoke). Same pattern for offers: jobs `offers.ts:181-185` with admin `document-links.ts:207`. The comment at admin :210-211 is wrong for this path. | medium | `LINK_SQL` gains `AND NOT EXISTS (SELECT 1 FROM doc_access_tokens r WHERE r.document_id = d.id AND r.send_id = s.id AND r.revoked_at IS NOT NULL)` (indexed by `document_id`); the same on `offer_links` in jobs `offers.ts`; the existing refusal path then `markNotSent`. Fix the three comments. Test: mint, revoke, redeliver → refused, send cancelled, no live token (invoice and offer). |
+| 2 | jobs `reminders.ts:97-98` `GIVE_BACK_SQL`, :204-209; admin `invoice-send.ts:224-228` | Claim commits (links minted), revoke commits before `sendBatch` (links revoked; the pause skips claimed rows), `sendBatch` throws, give-back makes the row waiting (not paused), the retry emails fresh live links after the revoke and pause. | low | Give-back sets `skipped_reason = 'paused'` when a token of the document was revoked at or after the claim (`reminders_fixed` 0044 allows both moves in one UPDATE). Test beside `reminders.test.ts:397`. |
+| 3 | admin `care-billing.ts:759` (comment :515) | `enqueuePdf` never throws (returns false; `document-events.ts:86-98`) and the result is ignored, so a failed `PDF_QUEUE.send` at the 06:00 IST care issue leaves the invoice frozen with its `auto` sends waiting for the 03:30 IST sweep: emailed about a day late while the bell already says "issued and emailed". The comment "awaited: the jobs Worker retries" is false. | low | On `false` throw so `care.issue` retries; in the `already_issued` branch (:526) enqueue again when `pdf_sha256` is null. Test both. |
+| 4 | admin `care-billing.ts:404-423` (comment :501) | Statements 1 (move `last_billed_period`) and 2 (insert `care_invoices`) have no anonymised-client guard (only the draft does). A client erased between the read and write batches leaves the period marked billed and `care_invoices.document_id` naming a document never inserted (no FK), answered `already_billed`, no audit row; the comment says "Nothing was written". | low | Statement 1 gains `AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = care_plans.client_id AND z.anonymised_at IS NOT NULL)`; statement 2 already hangs on `changes()`. Test with the client anonymised between the batches (DB proxy, as M1's test). |
+
+**Dropped (helper candidates a–f and the analyst's own):** (a) `queued_at` stamped when `LINK_SQL` wrote nothing: `markNotSent` cancels and `sendState` reads `cancelledAt` first, no visible effect; (b) `REMINDERS_OF_SQL LIMIT 20`: Settings allow ≤ 8 offsets, a client policy ≤ 10; (c) `VALID_INVOICE_RECIPIENTS_SQL` via `.replace`: maintainability, pinned by the H1 tests; (d) claim/facts subqueries written twice in `billing.ts`: pinned by the twin test `billing-sql.test.ts:329`; (e) the resend route rebuilds helpers: quality only; (f) `processReminderScan` two sequential reads: one extra round trip an hour. Also: the care "issued and emailed" bell is the approved 07-U line (M1's area); `document-links.ts:197` unreachable `NOT_A_QUOTE` branch (harmless); `document-links.ts:91` stale `?2 today` comment; admin revoke's cancel subquery `t.send_id = document_sends.id` has no index on `send_id` (adding `t.document_id = ?1 AND` makes it indexed; not checked with EXPLAIN); concurrent first sends can't duplicate reminders (`INSERT OR IGNORE`). `overview.tsx` (`apps/admin/src/routes/clients/overview.tsx`, reminder policy and the care switch): nothing.
+
+**T6 candidates:**
+- `packages/pdf/src/view.ts` (now ~:115-116, :207-214): **real, staging-only, no fix.** "(IST)" and "replaces version N" are computed at render, not frozen; the portal re-runs `toPdfView` on every view (`apps/portal/worker/viewer.ts:15`), so a pre-#130 offer shows both lines on screen but not in its write-once PDF (and a pre-#130 envelope first rendered after #130 prints them). Both lines are true to the frozen facts (version frozen; validity always IST). Nothing is live before L8. Matches the T6 follow-up already kept.
+- `apps/admin/src/lib/offers.ts:151`: **not real.** The preview uses `firstNameOf` (`documents/send-dialog.tsx:92`) and the same `validityDateIst`/`offerReplacesLine` as the email; `offers.test.ts:153-156` keeps them equal.
+- `send-parts.tsx:112` and the five other first-word splits (t6 line 208): **no wrong greeting possible**: every stored name is trimmed on write (staff `packages/auth/src/schemas.ts:13`; contacts and leads admin `http.ts:23` `text()`; form leads `fields.ts:19,44`, re-parsed in jobs `leads.ts:182`), and for a trimmed string `split(/\s+/)[0]` equals `firstNameOf`. `jobs/invoice-mail.ts:46` does trim (the T6 note miscounted it). Moving them onto `firstNameOf` is optional cleanup with no output change.
+
+**Skills:** `code-review` (recipe; its read-only helper re-reviewed the six files and returned 10 unverified candidates, each verified by the analyst); `security-review` not loaded (no diff yet; the reviewer loads it for the r2 revoke fixes); Cloudflare skills don't load in cloud sessions.
+
+**Lead triage:** #1–#4 are fixed in this task by builder r2 after r1 (r1 also edits jobs `offers.ts` for item 6, so they run in sequence). The six first-word splits move onto `firstNameOf` in r2 too (no output change; trimmed input proven above), and the admin revoke's cancel subquery gains `t.document_id = ?1 AND` (index), with the stale comments fixed.
+
+### Builder r2 brief (branch `fix/test-hardening-r2` from `origin/fix/test-hardening` after r1 is merged; starts when r1 reports)
+The four verified defects of "Item 5" (#1–#4, fixes as in its table, each with its test), plus:
+- the admin revoke's cancel subquery `t.send_id = document_sends.id` (admin `invoice-send.ts` revoke, and the offer twin in `document-links.ts` if it has the same shape) gains `t.document_id = ?1 AND` so it uses `doc_access_tokens_document`; fix the stale comments named in Item 5 (`invoice-send.ts:210-211`, `care-billing.ts:501`, `:515`, `document-links.ts:91`);
+- the six hand-written first-word splits (`send-parts.tsx:112`, admin `leads.ts:836`, `email-fixtures.ts:45`, jobs `invoice-mail.ts:46`, `leads.ts:93`, `staff-alerts.ts:94`) use core `firstNameOf`; output unchanged (the existing email/preview tests must pass untouched); watch the portal/jobs bytes.
+Same rules as r1 (out-of-bounds list, no migration, no wording change, heavy queue). Done: each fix committed with its test, `pnpm check` and `pnpm test` green, Worker bytes, report under "Builder report r2".
 
 ## Builder report r1
 (pending)
