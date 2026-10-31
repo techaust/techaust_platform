@@ -577,7 +577,7 @@ export function voidBlockedText(codes: readonly string[], type?: string): string
   if (codes.includes("already_void")) return INV_ERRORS.already_void;
   // M6.1: a payment waiting for the owner's check (07-ZH line 21, approved) says so first: rejecting it is the way on, for an invoice or a proforma.
   if (codes.includes("payment_pending")) return VOID_PAYMENT_PENDING;
-  // M6.1 (second early check): a payment put on the invoice, even one withdrawn later (07-ZH line 77, marked until approved).
+  // M6.1 (second early check): a payment put on the invoice, even one withdrawn later (07-ZH line 25, marked until approved).
   if (codes.includes("payment_recorded") && type !== "proforma") return VOID_PAYMENT_RECORDED;
   // A proforma has no credit note and no return period (LD28): what stops its void is a payment recorded against it, or (from M5.4) that it was
   // emailed (07-S §8).

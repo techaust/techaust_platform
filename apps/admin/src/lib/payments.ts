@@ -130,7 +130,7 @@ export function monthText(month: string): string {
 
 // ---- 07-ZH lines 23 onwards (the designer's words, marked until approved) ------------------------------------------------------------------------------
 
-/** Lines 23–48: the API codes 07-ZH had no words for (the builder's list of 26), by code. */
+/** Line 23: the API codes 07-ZH had no words for (the builder's list of 26, and the second early check's `proforma_ask_whole`), by code. */
 export const PAY_ERRORS = {
   already_recorded: ZH("This payment is already recorded."),
   use_payment_verify: ZH("Check this payment from Payments, not from Approvals."),
@@ -158,21 +158,21 @@ export const PAY_ERRORS = {
   file_type_not_allowed: ZH("Attach a PDF, JPEG or PNG file."),
   letter_already_set: ZH("The bank's letter is already attached."),
   not_an_export_invoice: ZH("Only an issued export invoice has a realisation date."),
-  // line 76 (second early check): a Staff request naming a proforma puts the whole payment on that one proforma (L5)
+  // second early check: a Staff request naming a proforma puts the whole payment on that one proforma (L5)
   proforma_ask_whole: ZH("A payment for a proforma goes on that proforma alone, in full."),
 } as const;
 
-/** Line 77 (second early check): the void blocker `payment_recorded`, a payment put on this invoice, even one withdrawn later (line 21 is `payment_pending`). */
+/** Line 25 (second early check): the void blocker `payment_recorded`, a payment put on this invoice, even one withdrawn later (line 21 is `payment_pending`). */
 export const VOID_PAYMENT_RECORDED = ZH(
   "A payment was put on this invoice, so it can't be voided. Use a credit note instead.",
 );
 
-/** Line 47: `extension_not_later`, with the current FEMA date. */
+/** Line 24: `extension_not_later`, with the current FEMA date. */
 export const extensionNotLater = (date: string) => ZH(`The new last date must be after ${date}.`);
-/** Line 48: `extension_too_far`, with the latest date allowed. */
+/** Line 24: `extension_too_far`, with the latest date allowed. */
 export const extensionTooFar = (date: string) => ZH(`The new last date can't be after ${date}.`);
 
-/** Line 50: the status chip of an entry (docs/06 §5.5: pending verification is Warning with its own icon; never colour alone). */
+/** Line 27: the status chip of an entry (docs/06 §5.5: pending verification is Warning with its own icon; never colour alone). */
 export const STATUS_LABELS: Record<PaymentStatus, string> = {
   pending_verification: ZH("Waiting for the owner's check"),
   confirmed: ZH("Confirmed"),
@@ -189,35 +189,35 @@ export const STATUS_PILLS: Record<
   withdrawn: { tone: "muted", icon: "undo" },
 };
 
-/** Lines 51–80: the screens' own labels, empty states, dialogs and toasts. */
+/** Lines 28–45: the screens' own labels, empty states, dialogs and toasts. */
 export const PAY_UI = {
-  // 51 kinds
+  // 28 entries and columns
   kindPayment: ZH("Payment"),
   kindTds: ZH("TDS"),
-  // 52 panel actions
+  // 29 the panel
   recordTds: ZH("Record TDS"),
   moveExcess: ZH("Move excess to credit"),
-  // 53 panel and list columns
-  colAmount: ZH("Amount"),
-  colClient: ZH("Client"),
+  // 28
+  colAmount: "Amount",
+  colClient: "Client",
   colStatus: ZH("Status"),
   colKind: ZH("Entry"),
-  // 54 panel empty
+  // 29
   noneOnInvoice: ZH("No payments recorded on this invoice yet."),
-  // 55 proof
+  // 30 proof
   openProof: ZH("Open proof"),
   noProof: ZH("None yet"),
   attachProof: ZH("Attach proof"),
   proofFileHint: ZH("PDF, JPEG or PNG, up to 5 MB."),
   proofKindMissing: ZH("Enter the proof type."),
-  // 56 allocation table
+  // 31 allocation table ("Invoice" and "Amount" are 07-V §4's column words)
   allocHeading: ZH("Put it on these invoices"),
   allocAmount: ZH("Amount on this invoice"),
   allocHint: ZH("Leave a row empty to skip that invoice."),
   allocNone: ZH("This client has no open invoices. The whole amount is kept as the client's credit."),
   allocMore: ZH("This is more than the invoice still owes."),
-  allocInvoice: ZH("Invoice"),
-  // 57 TDS
+  allocInvoice: "Invoice",
+  // 32 TDS
   certificateOn: ZH("Certificate date"),
   certificateBoth: ZH("Enter the certificate number and its date together, or leave both empty."),
   tdsSectionMissing: ZH("Enter the section the client used."),
@@ -226,12 +226,12 @@ export const PAY_UI = {
   tdsInvoiceHint: ZH("Rupee tax invoices and debit notes only."),
   addCertificate: ZH("Add certificate"),
   certificateTitle: ZH("Add the TDS certificate"),
-  // 58 USD
+  // 33 USD
   inrReceived: ZH("Amount credited in INR (bank advice)"),
-  // 59 record from /payments
-  pickClient: ZH("Client"),
+  // 34 record from Payments
+  pickClient: "Client",
   pickClientMissing: ZH("Pick the client who paid."),
-  // 60 toasts
+  // 35 toasts
   recordedConfirmed: ZH("Payment recorded and confirmed."),
   recordedPending: ZH("Payment recorded. The owner checks it next."),
   tdsRecorded: ZH("TDS recorded."),
@@ -243,7 +243,7 @@ export const PAY_UI = {
   extensionSaved: ZH("Extension recorded."),
   certificateSaved: ZH("Certificate recorded."),
   proofSaved: ZH("Proof attached."),
-  // 61 list
+  // 36 list
   allPayments: ZH("All payments"),
   noneToCheck: ZH("No payments waiting for your check."),
   noneYet: ZH("No payments recorded yet."),
@@ -251,14 +251,14 @@ export const PAY_UI = {
   from: ZH("Received from"),
   to: ZH("Received to"),
   showMore: ZH("Show more payments"),
-  // 62 check dialogs
+  // 37 check dialogs
   confirmTitle: ZH("Confirm this payment"),
   confirmBody: ZH(
     "It counts toward the balance of the invoices below as soon as you confirm. You can change the amounts first.",
   ),
   rejectTitle: ZH("Reject this payment"),
   rejectBody: ZH("Nothing is put on any invoice. The person who recorded it is told why."),
-  // 63 withdraw
+  // 38 withdraw
   withdraw: ZH("Withdraw"),
   withdrawTitle: ZH("Withdraw this payment"),
   withdrawBody: ZH(
@@ -266,42 +266,37 @@ export const PAY_UI = {
   ),
   withdrawReason: ZH("Why it is withdrawn"),
   withdrawReasonMissing: ZH("Say why it is withdrawn."),
-  // 64 detail
+  // 39 an entry
   detailTitle: ZH("Payment"),
   recordedBy: ZH("Recorded by"),
   checkedBy: ZH("Checked by"),
-  withdrawnBy: ZH("Withdrawn by"),
   rejectedWhy: ZH("Why it was rejected"),
   withdrawnWhy: ZH("Why it was withdrawn"),
   putOn: ZH("Put on"),
   askedFor: ZH("Asked for"),
-  keptAsCredit: ZH("Kept as credit"),
   movedToCredit: ZH("Moved to credit"),
   close: ZH("Close"),
-  // 65 credit
+  // 40 credit
   amountToUse: ZH("Amount to use"),
   amountToMove: ZH("Amount to move"),
   fromPayment: (date: string) => ZH(`From the payment received on ${date}`),
-  noCredit: ZH("No credit held."),
   creditInvoiceMissing: ZH("Pick the invoice the credit goes on."),
-  // 66 export realisation
+  // 41 export realisation
   femaDate: ZH("FEMA date"),
   gstDate: ZH("GST date"),
   extensions: ZH("Extensions by the bank"),
   extensionRow: (date: string, ref: string) => ZH(`Extended to ${date}, bank's reference ${ref}`),
   noLetter: ZH("Letter not attached"),
-  openLetter: ZH("Open letter"),
-  attachLetter: ZH("Attach letter"),
   newDateMissing: ZH("Enter the new last date."),
   bankRefMissing: ZH("Enter the bank's reference."),
-  // 67 proforma
+  // 42 proforma
   confirmByIssuing: ZH("Confirm by issuing the tax invoice"),
-  // 68 dashboard
+  // 43 dashboard
   paymentsCount: (n: number) => ZH(n === 1 ? "1 payment" : `${n} payments`),
   noneCollected: ZH("Nothing collected this month."),
   nothingToCheck: ZH("Nothing to check."),
   openToCheck: ZH("Open payments to check"),
-  // 69 register
+  // 44 register
   registerLede: ZH(
     "Every confirmed payment and TDS entry received in the financial year, for your books and for matching TDS with Form 26AS and AIS.",
   ),
@@ -312,19 +307,19 @@ export const PAY_UI = {
   download: ZH("Download the register (CSV)"),
   awaitingHeading: ZH("TDS waiting for a certificate"),
   awaitingNone: ZH("Every TDS entry has its certificate."),
-  // 70 realisation report note (replaces 07-V §5's note that pointed to "the payments update")
+  // 45 realisation report note (replaces 07-V §5's note that pointed to "the payments update")
   extensionNote: ZH(
     "If your bank extended a date, record it on the export invoice's page: Bank extended the date.",
   ),
-  // 73 the record form's own checks
+  // 34
   modeMissing: ZH("Pick how it was paid."),
-  // 74 the submit button once a seen reference was explained (line 13)
+  // 34 the submit button once a seen reference was explained (line 13)
   recordAgain: ZH("Record it again"),
-  // 75 the client search on Payments
+  // 34 the client search on Payments
   searchClients: ZH("Search clients"),
 } as const;
 
-/** Line 72: the register's CSV header (one file; TDS rows carry their certificate columns, for Form 26AS and AIS matching). */
+/** Line 44: the register's CSV header (one file; TDS rows carry their certificate columns, for Form 26AS and AIS matching). */
 export const REGISTER_COLUMNS = [
   "Date received",
   "Entry",

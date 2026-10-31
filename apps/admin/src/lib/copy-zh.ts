@@ -8,7 +8,7 @@ export const PLACEHOLDER_MARK = "[Placeholder]";
 /** A 07-ZH line from 23 as the screen shows it: marked until approved. */
 export const ZH = (line: string): string => (APPROVED_07ZH_NEW ? line : `${PLACEHOLDER_MARK} ${line}`);
 
-/** Line 49: the audit log's words for the eight new actions (lib/audit.ts reads them; the record type "Payments" is line 1). */
+/** Line 26: the audit log's words for the eight new actions (lib/audit.ts reads them; the record type "Payments" is line 1). */
 export const PAY_AUDIT = {
   "invoice.realisation_extend": ZH("recorded the bank's extension of a realisation date"),
   "payment.record": ZH("recorded a payment"),

@@ -173,7 +173,7 @@ function CollectedTile({ collected }: { collected: Extract<FinanceTile["collecte
       empty={collected.month.length === 0}
       emptyText={PAY_UI.noneCollected}
       icon={<Wallet size={20} />}
-      link={{ to: "/payments?tab=all&status=confirmed", text: PAY_COPY.heading }}
+      link={{ to: "/payments?tab=all", text: PAY_COPY.heading }}
     >
       <ul className="fin-figures">
         {collected.month.map((r) => {
