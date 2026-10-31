@@ -712,3 +712,15 @@
 .pay-sources li:last-child {
   border-bottom: 0;
 }
+
+/* The payment lists never push the page sideways: a table wider than its box scrolls inside it (the DataTable makes the box a named, focusable
+   region when it does), at every width from md up, and a long status chip may wrap. */
+@media (min-width: 48rem) {
+  .pay-table .dtable {
+    overflow-x: auto;
+  }
+}
+
+.pay-table .spill {
+  white-space: normal;
+}

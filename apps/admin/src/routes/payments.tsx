@@ -508,6 +508,17 @@ function EntryView(props: {
     !p.advanceReceiptId &&
     !p.clientGone;
   const allocs = props.data.allocations;
+  // What a waiting entry asks for names documents by id only: their numbers are read once (at most 10, L6).
+  const askedIds = pending ? p.requestedAllocations.map((a) => a.documentId) : [];
+  const asked = useLoad(
+    () =>
+      Promise.all(
+        askedIds.map((id) =>
+          invoicesApi.get(id).then((d) => [id, { number: d.number, type: d.type }] as const),
+        ),
+      ).then((pairs) => Object.fromEntries(pairs) as Record<string, { number: string | null; type: string }>),
+    askedIds.join(","),
+  );
   return (
     <>
       <div className="dialog__body pay-entry">
@@ -636,8 +647,8 @@ function EntryView(props: {
             pending
               ? p.requestedAllocations.map((a) => ({
                   documentId: a.documentId,
-                  number: null,
-                  type: "",
+                  number: asked.state === "ready" ? (asked.data[a.documentId]?.number ?? null) : null,
+                  type: asked.state === "ready" ? (asked.data[a.documentId]?.type ?? "") : "",
                   amountMinor: a.amountMinor,
                   kind: "allocate" as const,
                 }))
@@ -703,7 +714,7 @@ function PutOn(props: {
           // biome-ignore lint/suspicious/noArrayIndexKey: an allocation and a later release of the same invoice share the document id
           <li key={`${r.documentId}-${i}`}>
             <Link to={`/invoices/${encodeURIComponent(r.documentId)}`} className="docno">
-              {r.number ?? (r.type ? typeLabel(r.type as never) : INV_COPY.colNumber)}
+              {r.number ?? (r.type ? typeLabel(r.type as never) : "…")}
             </Link>
             <span className="pay-lines__meta">{r.kind === "release" ? PAY_UI.movedToCredit : ""}</span>
             <span className="tnum">{amountText(r.amountMinor, props.currency)}</span>

@@ -262,6 +262,13 @@ export function InvoicePage(props: {
               <dd>{moneyText(d.paidMinor, d.currency)}</dd>
             </div>
           )}
+          {/* M6.1 (T8; 07-ZH line 18, approved): the TDS the client deducted, in the server's words and amount (core-formatted), after Paid. */}
+          {!credit && d.tdsRow && (
+            <div>
+              <dt>{d.tdsRow.label}</dt>
+              <dd>{d.tdsRow.amount}</dd>
+            </div>
+          )}
           {!credit && d.creditedMinor > 0 && (
             <div className="inv-slip__credited">
               <dt>{INV.credited(creditNumbers)}</dt>

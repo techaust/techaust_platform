@@ -48,6 +48,8 @@ type Panel = InvoicePaymentsPanel;
 type Dialog = "record" | "tds" | "credit" | "excess" | "extend" | { certificate: string } | null;
 
 const PAYABLE = ["tax_invoice", "export_invoice", "debit_note"];
+/** 07-V §5's title (approved), kept here so the panel doesn't load the reports' words. */
+const REALISATION_TITLE = "Export realisation";
 
 export const paymentHref = (id: string) => `/payments/${encodeURIComponent(id)}`;
 
@@ -454,7 +456,8 @@ function Realisation(props: {
   return (
     <div className="pay-real">
       <div className="pay-real__head">
-        <h3 className="pay-sub">{PAY_UI.femaDate}</h3>
+        {/* 07-V §5's report title names the block (approved); the dates under it are line 41's */}
+        <h3 className="pay-sub">{REALISATION_TITLE}</h3>
         {props.canExtend && (
           <button type="button" className="btn btn--secondary" onClick={props.onExtend}>
             <Calendar size={20} />
