@@ -29,14 +29,15 @@ import { allowed } from "../lib/access.ts";
 import { pendingBadge } from "../lib/documents.ts";
 import { INV_COPY, typeLabel } from "../lib/invoices.ts";
 import { invoicesApi } from "../lib/invoices-api.ts";
+import { confirmDocsOf, OPEN_DOCS_CAP } from "../lib/open-docs.ts";
 import {
   type AllocRow,
   amountText,
+  blockingRefusals,
   earlierMonthLine,
   earlierMonthOf,
   leftoverLine,
   MODE_LABELS,
-  type OpenDoc,
   PAY_COPY,
   PAY_ERRORS,
   PAY_UI,
@@ -44,6 +45,7 @@ import {
   plainAmount,
   readAllocations,
   STATUS_LABELS,
+  showingFirstLine,
 } from "../lib/payments.ts";
 import { bpToPercent } from "../lib/settings-form.ts";
 import { withCode } from "../lib/step-up.ts";
@@ -208,7 +210,10 @@ function PaymentList(props: {
   };
   const list = useLoad(() => paymentsApi.list(q), JSON.stringify(q));
   const [more, setMore] = useState<PaymentView[]>([]);
+  // Re-check finding 6: whether a further page was read is its own fact (an empty page leaves `more` empty), so "Show more" never asks for the same page again.
+  const [paged, setPaged] = useState(false);
   const [after, setAfter] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [open, setOpenState] = useDialogState<{ id: string; act?: "confirm" | "reject" }>("main");
   const setOpen = setOpenState;
   // a bell's or the approvals queue's link opens that entry once the list is drawn
@@ -225,12 +230,28 @@ function PaymentList(props: {
     if (props.refresh === firstRefresh.current) return;
     firstRefresh.current = props.refresh;
     setMore([]);
+    setPaged(false);
     setAfter(null);
     reload(true);
   }, [props.refresh, reload]);
   const entryHref = (id: string) => `${paymentHref(id)}${props.linkSearch ? `?${props.linkSearch}` : ""}`;
   const rows = [...(list.data?.payments ?? []), ...more];
-  const next = more.length ? after : (list.data?.next ?? null);
+  const next = paged ? after : (list.data?.next ?? null);
+  async function showMore() {
+    if (!next) return;
+    setLoadingMore(true);
+    try {
+      const r = await paymentsApi.list({ ...q, after: next });
+      setMore((m) => [...m, ...r.payments.filter((x) => !m.some((y) => y.id === x.id))]);
+      setPaged(true);
+      // an empty page ends the list, whatever `next` it names
+      setAfter(r.payments.length > 0 ? r.next : null);
+    } catch (e) {
+      toast("error", payErrorText(e));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
   const filtered =
     props.status !== null || props.client !== undefined || props.from !== "" || props.to !== "";
 
@@ -397,13 +418,11 @@ function PaymentList(props: {
         <button
           type="button"
           className="btn btn--secondary notes__more"
-          onClick={async () => {
-            const r = await paymentsApi.list({ ...q, after: next });
-            setMore((m) => [...m, ...r.payments]);
-            setAfter(r.next);
-          }}
+          onClick={() => void showMore()}
+          disabled={loadingMore}
+          aria-busy={loadingMore || undefined}
         >
-          {PAY_UI.showMore}
+          {loadingMore ? "Loading…" : PAY_UI.showMore}
         </button>
       )}
       {open && (
@@ -420,6 +439,7 @@ function PaymentList(props: {
             props.onLinkedDone();
             toast("success", text);
             setMore([]);
+            setPaged(false);
             setAfter(null);
             list.reload(true);
             props.onChanged();
@@ -762,12 +782,21 @@ function PutOn(props: {
   );
 }
 
-/** Confirm (line 4; Owner, fresh code): the invoices Staff asked for, which the Owner may change (L6); a proforma is confirmed by its advance (line 12). */
+/**
+ * Confirm (line 4; Owner, fresh code): the invoices Staff asked for, which the Owner may change (L6); a proforma is confirmed by its advance (line 12).
+ * Re-check finding 1: nothing Staff asked for is dropped. The client's open documents are read in full (the shared paged loader), and an asked-for document the
+ * lists didn't return is read by id: a row prefilled with the amount asked, or a refused row with its reason that blocks Confirm until the Owner clears it. A
+ * failed read is the failed-load state with "Try again", and Confirm stays disabled.
+ */
 function ConfirmStep(props: { payment: PaymentView; onBack: () => void; onDone: (t: string) => void }) {
   const p = props.payment;
   const cur = p.currency;
-  const [docs, setDocs] = useState<OpenDoc[] | null>(null);
-  const [proformaAsk, setProformaAsk] = useState<string | null>(null);
+  const load = useLoad(() => confirmDocsOf(p), `${p.id}:${p.recordedAt}`);
+  const ready = load.state === "ready" && load.data.kind === "ready" ? load.data : null;
+  const docs = ready?.docs ?? null;
+  const refused = ready?.refused ?? [];
+  const refusedText = Object.fromEntries(refused.map((r) => [r.id, r.error]));
+  const proformaAsk = load.state === "ready" && load.data.kind === "proforma" ? load.data.id : null;
   const [rows, setRows] = useState<AllocRow[]>(() =>
     p.requestedAllocations.map((a) => ({ documentId: a.documentId, text: plainAmount(a.amountMinor, cur) })),
   );
@@ -776,43 +805,8 @@ function ConfirmStep(props: { payment: PaymentView; onBack: () => void; onDone: 
   const [busy, setBusy] = useState(false);
   const code = useCodeSlot("pay-confirm-code", true);
   const refusal = useRefusalFocus();
-  useEffect(() => {
-    let live = true;
-    Promise.all(
-      (["issued", "partially_paid", "partially_credited"] as const).map((status) =>
-        invoicesApi.list({ clientId: p.clientId, status, limit: "50" }),
-      ),
-    )
-      .then(async (pages) => {
-        const all = pages.flatMap((x) => x.invoices);
-        // a request that names a proforma: its advance confirms it (L5)
-        const asked = p.requestedAllocations.map((a) => a.documentId);
-        const pf = all.find((d) => d.type === "proforma" && asked.includes(d.id));
-        if (live) setProformaAsk(pf?.id ?? null);
-        const open = all
-          .filter(
-            (d) =>
-              ["tax_invoice", "export_invoice", "debit_note"].includes(d.type) &&
-              d.balanceMinor > 0 &&
-              d.number,
-          )
-          .map((d) => ({
-            id: d.id,
-            number: d.number,
-            type: d.type,
-            currency: d.currency,
-            balanceMinor: d.balanceMinor,
-            dueDate: d.dueDate,
-            issueDate: d.issueDate,
-          }));
-        if (live) setDocs(open);
-      })
-      .catch(() => live && setDocs([]));
-    return () => {
-      live = false;
-    };
-  }, [p.clientId, p.requestedAllocations]);
-  const plan = docs ? readAllocations(rows, docs, p.amountMinor, cur) : null;
+  const plan = docs ? readAllocations(rows, docs, p.amountMinor, cur, refusedText) : null;
+  const blocked = blockingRefusals(rows, refused);
   const leftover =
     docs && plan?.ok ? leftoverLine(plan.leftMinor, p.amountMinor, docs, cur, p.clientName) : null;
   // Line 10's warning before the confirm (visual review finding 6): an invoice it goes on was issued in a later month than the money arrived.
@@ -825,7 +819,7 @@ function ConfirmStep(props: { payment: PaymentView; onBack: () => void; onDone: 
       : null;
 
   async function submit() {
-    if (!plan) return;
+    if (!plan || blocked.length > 0) return;
     // Visual review finding 5: every attempt starts clean; the rows first, then the code, then the sum.
     setFailure(null);
     if (!plan.ok) {
@@ -898,17 +892,28 @@ function ConfirmStep(props: { payment: PaymentView; onBack: () => void; onDone: 
         <p>{PAY_UI.confirmBody}</p>
         <fieldset className="form-section pay-alloc">
           <legend>{PAY_UI.allocHeading}</legend>
-          <AllocationTable
-            docs={docs ?? []}
-            rows={rows}
-            onRow={(id, text) =>
-              setRows([...rows.filter((r) => r.documentId !== id), { documentId: id, text }])
-            }
-            errors={errors}
-            idPrefix="pay-confirm"
-            symbol={cur === "INR" ? "₹" : "$"}
-            loading={docs === null}
-          />
+          {load.state === "failed" ? (
+            <LoadFailed error={load.error} onRetry={() => load.reload()} headingLevel={3} />
+          ) : (
+            <>
+              {docs !== null && docs.length + refused.length > 0 && (
+                <p className="hint">{PAY_UI.allocHint}</p>
+              )}
+              <AllocationTable
+                docs={docs ?? []}
+                refused={refused}
+                rows={rows}
+                onRow={(id, text) =>
+                  setRows([...rows.filter((r) => r.documentId !== id), { documentId: id, text }])
+                }
+                errors={errors}
+                idPrefix="pay-confirm"
+                symbol={cur === "INR" ? "₹" : "$"}
+                loading={docs === null}
+              />
+              {ready?.capped && <p className="hint">{showingFirstLine(OPEN_DOCS_CAP)}</p>}
+            </>
+          )}
           {leftover && (
             <p className="pay-line" role="status" data-kind={leftover.kind}>
               <FileText size={16} />
@@ -931,8 +936,8 @@ function ConfirmStep(props: { payment: PaymentView; onBack: () => void; onDone: 
         <button
           type="submit"
           className="btn btn--primary"
-          disabled={busy || docs === null}
-          aria-busy={busy || undefined}
+          disabled={busy || docs === null || blocked.length > 0}
+          aria-busy={busy || load.state === "loading" || undefined}
         >
           {busy ? "Working…" : PAY_COPY.confirm}
         </button>

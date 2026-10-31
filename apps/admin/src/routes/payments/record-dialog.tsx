@@ -21,13 +21,14 @@ import {
 import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
 import { FormField } from "../../components/form.tsx";
-import { Alert, Info, RefreshCw } from "../../components/icons.tsx";
+import { Alert, Info } from "../../components/icons.tsx";
+import { LoadFailed } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { dateError } from "../../lib/date-field.ts";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
 import { INV_COPY } from "../../lib/invoices.ts";
-import { invoicesApi } from "../../lib/invoices-api.ts";
+import { loadOpenDocs, OPEN_DOCS_CAP } from "../../lib/open-docs.ts";
 import {
   type AllocRow,
   amountText,
@@ -38,12 +39,12 @@ import {
   MODE_LABELS,
   MODES,
   type OpenDoc,
-  openDocsOf,
   PAY_COPY,
   PAY_ERRORS,
   PAY_UI,
   payErrorText,
   readAllocations,
+  showingFirstLine,
   todayIst,
 } from "../../lib/payments.ts";
 import { moneyFrom, percentToBp } from "../../lib/settings-form.ts";
@@ -63,15 +64,6 @@ export type FromDoc = {
 };
 
 const symbolOf = (c: Currency) => (c === "INR" ? "₹" : "$");
-const LIST_STATUSES = ["issued", "partially_paid", "partially_credited"] as const;
-
-/** The client's open invoices (issued, partly paid or partly credited, a balance left), read once when the dialog opens. */
-async function loadOpen(clientId: string) {
-  const pages = await Promise.all(
-    LIST_STATUSES.map((status) => invoicesApi.list({ clientId, status, limit: "50" })),
-  );
-  return pages.flatMap((p) => p.invoices);
-}
 
 export function RecordPaymentDialog(props: {
   open: boolean;
@@ -176,11 +168,14 @@ function RecordBody(props: {
   const toast = useToast();
 
   const [docs, setDocs] = useState<OpenDoc[] | null>(null);
+  // Re-check finding 5: every open document of the client (the shared paged loader, up to its cap, in due-date order).
+  const [capped, setCapped] = useState(false);
   // Visual review finding 7: a failed read is its own state (an error with a retry), never "no open invoices", and the entry can't be sent without it.
-  const [docsFailed, setDocsFailed] = useState(false);
+  const [docsFailed, setDocsFailed] = useState<unknown>(null);
   const [docsTry, setDocsTry] = useState(0);
   useEffect(() => {
-    setDocsFailed(false);
+    setDocsFailed(null);
+    setCapped(false);
     if (!client) {
       setDocs(null);
       return;
@@ -188,22 +183,24 @@ function RecordBody(props: {
     let live = true;
     setDocs(null);
     void docsTry;
-    loadOpen(client.id)
-      .then((list) => {
+    loadOpenDocs(client.id, { kind: props.kind, proformas: !owner })
+      .then((page) => {
         if (!live) return;
-        const open = openDocsOf(list, { kind: props.kind, proformas: !owner });
-        // The invoice the dialog came from is always a row, even past the first page of the list.
         const from = props.from;
-        if (from && !open.some((d) => d.id === from.id) && from.balanceMinor > 0)
-          open.unshift({ ...from, dueDate: null });
+        // The invoice the dialog came from is always a row, the first (even past the cap); the rest in due-date order.
+        const listed = from ? page.docs.find((d) => d.id === from.id) : undefined;
+        const open: OpenDoc[] = page.docs.filter((d) => d.id !== from?.id);
+        if (listed) open.unshift(listed);
+        else if (from && from.balanceMinor > 0) open.unshift({ ...from, dueDate: null });
         setDocs(open);
+        setCapped(page.capped);
       })
-      .catch(() => live && setDocsFailed(true));
+      .catch((e: unknown) => live && setDocsFailed(e ?? new Error("failed")));
     return () => {
       live = false;
     };
   }, [client, props.kind, props.from, owner, docsTry]);
-  const docsWaiting = client !== null && (docs === null || docsFailed);
+  const docsWaiting = client !== null && (docs === null || docsFailed !== null);
 
   const parsed = useMemo(() => {
     const m = moneyFrom(form.amount, currency);
@@ -234,7 +231,8 @@ function RecordBody(props: {
         )
       : null;
 
-  /** Visual review finding 8: another client's rows and TDS invoice never follow a change of client. */
+  /** Visual review finding 8: another client's rows and TDS invoice never follow a change of client (re-check finding 1: they are cleared here, so the
+   * allocation reading never has to skip a row). */
   function pickClient(c: PayClient | null) {
     if (c?.id === client?.id) return;
     setClient(c);
@@ -437,7 +435,7 @@ function RecordBody(props: {
                   disabled={docs === null}
                   onChange={(e) => setForm({ ...form, invoice: e.target.value })}
                 >
-                  <option value="">{docs === null && !docsFailed && client ? "Loading…" : ""}</option>
+                  <option value="">{docs === null && docsFailed === null && client ? "Loading…" : ""}</option>
                   {tdsDocs.map((d) => (
                     <option key={d.id} value={d.id}>
                       {`${d.number ?? ""} · ${INV_COPY.colBalance} ${amountText(d.balanceMinor, d.currency)}`}
@@ -573,8 +571,8 @@ function RecordBody(props: {
             {client && (
               <fieldset className="form-section pay-alloc">
                 <legend>{PAY_UI.allocHeading}</legend>
-                {docsFailed ? (
-                  <DocsFailed onRetry={() => setDocsTry((n) => n + 1)} />
+                {docsFailed !== null ? (
+                  <LoadFailed error={docsFailed} onRetry={() => setDocsTry((n) => n + 1)} headingLevel={3} />
                 ) : (
                   <>
                     {docs !== null && docs.length > 0 && <p className="hint">{PAY_UI.allocHint}</p>}
@@ -587,6 +585,7 @@ function RecordBody(props: {
                       symbol={sym}
                       loading={docs === null}
                     />
+                    {capped && <p className="hint">{showingFirstLine(OPEN_DOCS_CAP)}</p>}
                   </>
                 )}
                 {leftover && (
@@ -683,7 +682,10 @@ function RecordBody(props: {
             />
           )}
         </FormField>
-        {tds && client && docsFailed && <DocsFailed onRetry={() => setDocsTry((n) => n + 1)} />}
+        {tds && client && docsFailed !== null && (
+          <LoadFailed error={docsFailed} onRetry={() => setDocsTry((n) => n + 1)} headingLevel={3} />
+        )}
+        {tds && capped && <p className="hint">{showingFirstLine(OPEN_DOCS_CAP)}</p>}
         {tds && <EarlierMonthWarning month={month} />}
         {!owner && (
           <p className="approval-line" data-state="pending">
@@ -712,28 +714,12 @@ function RecordBody(props: {
           type="submit"
           className="btn btn--primary"
           disabled={busy || docsWaiting}
-          aria-busy={busy || (client !== null && docs === null && !docsFailed) || undefined}
+          aria-busy={busy || (client !== null && docs === null && docsFailed === null) || undefined}
         >
           {busy ? "Working…" : seen ? PAY_UI.recordAgain : tds ? PAY_UI.recordTds : PAY_COPY.recordTitle}
         </button>
       </div>
     </form>
-  );
-}
-
-/** The open invoices didn't load: the shared words of a failed read (states.tsx, panel.tsx) and a retry, in place of the table. */
-function DocsFailed({ onRetry }: { onRetry: () => void }) {
-  return (
-    <div className="pay-alloc__failed">
-      <p className="panel-empty" role="alert">
-        <RefreshCw size={20} />
-        <span>This didn't load. Try again in a moment.</span>
-      </p>
-      <button type="button" className="btn btn--secondary" onClick={onRetry}>
-        <RefreshCw size={20} />
-        Try again
-      </button>
-    </div>
   );
 }
 

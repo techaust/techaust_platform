@@ -6,8 +6,11 @@ import { RequestError } from "../api.ts";
 import auditSource from "./audit.ts?raw";
 import { APPROVED_07ZH_NEW, PAY_AUDIT, PLACEHOLDER_MARK, ZH } from "./copy-zh.ts";
 import { voidBlockedText, voidErrorText, withdrawErrorText } from "./invoices.ts";
+import type { InvoiceListRow } from "./invoices-api.ts";
+import { confirmDocsOf, loadOpenDocs, loadOpenRows, OPEN_DOCS_CAP } from "./open-docs.ts";
 import {
   autoFill,
+  blockingRefusals,
   earlierMonthLine,
   earlierMonthOf,
   fyChoices,
@@ -110,6 +113,10 @@ describe("07-ZH lines 47–49 (visual review fixes, staff-only drafts)", () => {
     ]);
     // line 10's button words stay where an invoice is in context
     expect(PAY_COPY.useCredit).toBe("Use credit on this invoice");
+  });
+  it("line 50 (re-check finding 2): the letter dialog's missing-file error, apart from the file hint", () => {
+    expect(PAY_UI.letterMissing).toBe(mark("Choose the bank's letter."));
+    expect(PAY_UI.letterMissing).not.toBe(PAY_UI.proofFileHint);
   });
 });
 
@@ -216,7 +223,7 @@ describe("the allocation table", () => {
       expect(r.errors.a).toBeTruthy();
     }
   });
-  it("a row whose document isn't listed (the previous client's) is skipped, never sent", () => {
+  it("re-check finding 1: a row with an amount whose document isn't listed is never skipped; it is the row's error", () => {
     const r = readAllocations(
       [
         { documentId: "gone", text: "999999" },
@@ -226,12 +233,29 @@ describe("the allocation table", () => {
       1_000_00,
       "INR",
     );
-    expect(r).toEqual({
-      ok: true,
-      allocations: [{ documentId: "b", amountMinor: 500_00 }],
-      leftMinor: 500_00,
-      over: false,
+    expect(r).toEqual({ ok: false, errors: { gone: PAY_ERRORS.not_payable } });
+    // the reason the Confirm step found wins; an emptied (removed) row is left out
+    const why = readAllocations([{ documentId: "gone", text: "10" }], docs, 1_000_00, "INR", {
+      gone: PAY_ERRORS.client_mismatch,
     });
+    expect(why).toEqual({ ok: false, errors: { gone: PAY_ERRORS.client_mismatch } });
+    expect(readAllocations([{ documentId: "gone", text: "" }], docs, 1_000_00, "INR", { gone: "x" })).toEqual(
+      {
+        ok: true,
+        allocations: [],
+        leftMinor: 1_000_00,
+        over: false,
+      },
+    );
+    expect(
+      blockingRefusals(
+        [
+          { documentId: "gone", text: "10" },
+          { documentId: "kept", text: " " },
+        ],
+        [{ id: "gone" }, { id: "kept" }],
+      ),
+    ).toEqual(["gone"]);
   });
   it("line 9 only for a real overpayment; a deliberate split reads line 47 (visual review finding 2)", () => {
     // the listed invoices owe 52,200 together
@@ -301,6 +325,203 @@ describe("the documents a payment can go on", () => {
       row({ id: "4", type: "debit_note" }),
     ];
     expect(openDocsOf(rows, { kind: "tds", proformas: true }).map((d) => d.id)).toEqual(["1", "4"]);
+  });
+  it("in due-date order, the ones without a due date last (re-check finding 7)", () => {
+    const rows = [
+      row({ id: "none" }),
+      row({ id: "late", dueDate: "2026-12-01" }),
+      row({ id: "early", dueDate: "2026-09-01" }),
+      row({ id: "mid", dueDate: "2026-10-15" }),
+    ];
+    expect(openDocsOf(rows, { kind: "payment", proformas: false }).map((d) => d.id)).toEqual([
+      "early",
+      "mid",
+      "late",
+      "none",
+    ]);
+  });
+});
+
+// ---- the shared paged loader and the Confirm step's documents (re-check findings 1, 5 and 7) ------------------------------------------------------------
+
+type Row = InvoiceListRow;
+const listRow = (id: string, over: Partial<Row> = {}): Row => ({
+  id,
+  type: "tax_invoice",
+  status: "issued",
+  number: `TH/INV/${id}`,
+  clientId: "c1",
+  clientCode: "X0001",
+  clientName: "Sample client",
+  currency: "INR",
+  totalMinor: 1_000_00,
+  balanceMinor: 1_000_00,
+  issueDate: "2026-10-01",
+  dueDate: "2026-10-15",
+  overdue: false,
+  pdf: "ready",
+  createdAt: 0,
+  updatedAt: 1,
+  approval: null as unknown as Row["approval"],
+  ...over,
+});
+/** A fake list API: `byStatus` rows in pages of `size`, with keyset cursors; `calls` records every request. */
+function fakeList(byStatus: Partial<Record<string, Row[]>>, size = 50) {
+  const calls: { status?: string | undefined; after?: string | undefined }[] = [];
+  const list = async (q: { status?: string | undefined; after?: string | undefined }) => {
+    calls.push({ status: q.status, after: q.after });
+    const all = byStatus[q.status ?? ""] ?? [];
+    const from = q.after ? Number(q.after) : 0;
+    const page = all.slice(from, from + size);
+    return { invoices: page, next: from + size < all.length ? String(from + size) : null };
+  };
+  return { list: list as never, calls };
+}
+const view = (id: string, over: Record<string, unknown> = {}) =>
+  ({
+    id,
+    type: "tax_invoice",
+    status: "partially_paid",
+    number: `TH/INV/${id}`,
+    currency: "INR",
+    balanceMinor: 400_00,
+    dueDate: "2026-04-30",
+    issueDate: "2026-04-01",
+    client: { id: "c1" },
+    ...over,
+  }) as never;
+const payment = (asked: string[]) => ({
+  clientId: "c1",
+  currency: "INR" as const,
+  requestedAllocations: asked.map((documentId) => ({ documentId })),
+});
+
+describe("the shared paged loader of open documents", () => {
+  it("follows `next` to the end of every status, de-duplicates, and sorts by due date", async () => {
+    const issued = Array.from({ length: 120 }, (_, i) =>
+      listRow(`i${i}`, { dueDate: `2026-${String((i % 9) + 1).padStart(2, "0")}-01` }),
+    );
+    const f = fakeList({ issued, partially_paid: [listRow("p1"), listRow("i3")] });
+    const { rows, capped } = await loadOpenRows("c1", f.list);
+    expect(rows.length).toBe(121);
+    expect(capped).toBe(false);
+    expect(f.calls.filter((c) => c.status === "issued").map((c) => c.after)).toEqual([
+      undefined,
+      "50",
+      "100",
+    ]);
+    const { docs } = await loadOpenDocs("c1", { kind: "payment", proformas: false }, f.list);
+    const dues = docs.map((d) => d.dueDate ?? "");
+    expect(dues).toEqual([...dues].sort());
+  });
+  it("stops at the cap and says so", async () => {
+    const f = fakeList({ issued: Array.from({ length: 700 }, (_, i) => listRow(`i${i}`)) });
+    const { rows, capped } = await loadOpenRows("c1", f.list, OPEN_DOCS_CAP);
+    expect(rows.length).toBe(OPEN_DOCS_CAP);
+    expect(capped).toBe(true);
+    expect(f.calls.filter((c) => c.status === "issued").length).toBe(OPEN_DOCS_CAP / 50);
+  });
+  it("an empty page ends a list even if it names a next one (never loops)", async () => {
+    const calls: unknown[] = [];
+    const list = (async () => {
+      calls.push(1);
+      return { invoices: [], next: "same" };
+    }) as never;
+    const { rows } = await loadOpenRows("c1", list);
+    expect(rows).toEqual([]);
+    expect(calls.length).toBe(3);
+  });
+});
+
+describe("the Confirm step's documents (re-check finding 1)", () => {
+  // 60 newer open invoices fill the first page; Staff asked for an older one, on the second page
+  const newer = Array.from({ length: 60 }, (_, i) => listRow(`n${i}`, { dueDate: "2026-11-07" }));
+  it("a requested invoice not on the first page is a row, and the leftover line counts it", async () => {
+    const f = fakeList({ issued: newer, partially_paid: [] }, 50);
+    // even with the loader reading every page, an asked-for document beyond the lists is read by id
+    const got: string[] = [];
+    const r = await confirmDocsOf(payment(["old", "n59"]), {
+      list: f.list,
+      get: async (id) => {
+        got.push(id);
+        return view(id);
+      },
+    });
+    expect(got).toEqual(["old"]);
+    expect(r.kind).toBe("ready");
+    if (r.kind !== "ready") return;
+    expect(r.refused).toEqual([]);
+    // the rows asked for first, in the order asked; the rest by due date
+    expect(r.docs.slice(0, 2).map((d) => d.id)).toEqual(["old", "n59"]);
+    expect(r.docs.some((d) => d.id === "n59")).toBe(true);
+    // the Owner's rows start from the request: nothing is dropped
+    const plan = readAllocations([{ documentId: "old", text: "400" }], r.docs, 5_000_00, "INR");
+    expect(plan).toEqual({
+      ok: true,
+      allocations: [{ documentId: "old", amountMinor: 400_00 }],
+      leftMinor: 4_600_00,
+      over: false,
+    });
+    // line 47, not line 9: the listed invoices (the asked-for one included) owe far more than the payment
+    expect(leftoverLine(4_600_00, 5_000_00, r.docs, "INR", "R")?.kind).toBe("kept");
+  });
+  it("a requested document that can't take the payment is a refused row with its reason, blocking Confirm until cleared", async () => {
+    const f = fakeList({ issued: [listRow("a")] });
+    const r = await confirmDocsOf(payment(["void1", "other", "gone", "paid1"]), {
+      list: f.list,
+      get: async (id) => {
+        if (id === "gone") throw new RequestError(404, "not_found", "Not found.");
+        if (id === "void1") return view(id, { status: "void" });
+        if (id === "paid1") return view(id, { status: "paid", balanceMinor: 0 });
+        return view(id, { client: { id: "c2" } });
+      },
+    });
+    expect(r.kind).toBe("ready");
+    if (r.kind !== "ready") return;
+    expect(r.docs.map((d) => d.id)).toEqual(["a"]);
+    const why = Object.fromEntries(r.refused.map((x) => [x.id, x.error]));
+    expect(why.void1).toBe(PAY_ERRORS.not_payable);
+    expect(why.other).toBe(PAY_ERRORS.client_mismatch);
+    expect(why.paid1).toBe(PAY_UI.allocMore);
+    expect(why.gone).toBeTruthy();
+    const rows = [
+      { documentId: "void1", text: "10" },
+      { documentId: "other", text: "" },
+      { documentId: "gone", text: "10" },
+      { documentId: "paid1", text: "10" },
+    ];
+    expect(blockingRefusals(rows, r.refused).sort()).toEqual(["gone", "paid1", "void1"]);
+    expect(readAllocations(rows, r.docs, 100_00, "INR", why).ok).toBe(false);
+  });
+  it("a failed read throws (the screen shows Try again and keeps Confirm disabled), never an empty list", async () => {
+    const failing = (async () => {
+      throw new RequestError(500, "internal", "Something went wrong.");
+    }) as never;
+    await expect(
+      confirmDocsOf(payment(["a"]), { list: failing, get: async (id) => view(id) }),
+    ).rejects.toBeInstanceOf(RequestError);
+    // the list loads, but reading an asked-for document fails on the server or offline: a failed read too, not a dropped row
+    const f = fakeList({ issued: [] });
+    await expect(
+      confirmDocsOf(payment(["x"]), {
+        list: f.list,
+        get: async () => {
+          throw new RequestError(0, "network", "Offline.");
+        },
+      }),
+    ).rejects.toBeInstanceOf(RequestError);
+  });
+  it("a request naming a proforma is confirmed through its advance (L5), listed or read by id", async () => {
+    const listed = await confirmDocsOf(payment(["pf"]), {
+      list: fakeList({ issued: [listRow("pf", { type: "proforma" })] }).list,
+      get: async (id) => view(id),
+    });
+    expect(listed).toEqual({ kind: "proforma", id: "pf" });
+    const byId = await confirmDocsOf(payment(["pf2"]), {
+      list: fakeList({}).list,
+      get: async (id) => view(id, { type: "proforma", status: "issued" }),
+    });
+    expect(byId).toEqual({ kind: "proforma", id: "pf2" });
   });
 });
 

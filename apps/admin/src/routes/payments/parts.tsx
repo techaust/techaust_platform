@@ -189,7 +189,13 @@ export function AllocationTable(props: {
   idPrefix: string;
   symbol: string;
   loading?: boolean;
+  /**
+   * Re-check finding 1: documents asked for that can't take the payment (the Confirm step). Each is a row of its own, first, with its amount and its reason
+   * shown at once; clearing the amount removes it (line 31's hint).
+   */
+  refused?: readonly { id: string; number: string | null; type: string | null; error: string }[];
 }) {
+  const refused = props.refused ?? [];
   if (props.loading)
     return (
       <div className="alloc alloc--loading" aria-busy="true">
@@ -197,7 +203,8 @@ export function AllocationTable(props: {
         <span className="skeleton" style={{ width: "55%" }} />
       </div>
     );
-  if (props.docs.length === 0) return <p className="alloc__none">{PAY_UI.allocNone}</p>;
+  if (props.docs.length === 0 && refused.length === 0)
+    return <p className="alloc__none">{PAY_UI.allocNone}</p>;
   return (
     <table className="alloc">
       <caption className="visually-hidden">{PAY_UI.allocHeading}</caption>
@@ -213,6 +220,41 @@ export function AllocationTable(props: {
         </tr>
       </thead>
       <tbody>
+        {refused.map((d) => {
+          const row = props.rows.find((r) => r.documentId === d.id);
+          const id = `${props.idPrefix}-${d.id}`;
+          const name = d.number ?? (d.type ? typeLabel(d.type as never) : "");
+          return (
+            <tr key={d.id} data-invalid={true} data-refused={true}>
+              <th scope="row">
+                <span className="alloc__doc">
+                  <span className="docno">{name || "…"}</span>
+                  {d.number && d.type && <span className="alloc__meta">{typeLabel(d.type as never)}</span>}
+                </span>
+                {/* the reason is about the document, not the amount: it sits under the document, so the columns keep their widths */}
+                <FieldError id={`${id}-error`}>{d.error}</FieldError>
+              </th>
+              <td className="num tnum" data-label={PAY_COPY.balance} />
+              <td className="num alloc__cell" data-label={PAY_UI.allocAmount}>
+                <label className="visually-hidden" htmlFor={id}>
+                  {`${PAY_UI.allocAmount}: ${name}`}
+                </label>
+                <div className="money-in alloc__in">
+                  <span aria-hidden="true">{props.symbol}</span>
+                  <input
+                    id={id}
+                    inputMode="decimal"
+                    autoComplete="off"
+                    value={row?.text ?? ""}
+                    aria-invalid={(row?.text.trim() ?? "") !== "" ? true : undefined}
+                    aria-describedby={`${id}-error`}
+                    onChange={(e) => props.onRow(d.id, e.target.value)}
+                  />
+                </div>
+              </td>
+            </tr>
+          );
+        })}
         {props.docs.map((d) => {
           const row = props.rows.find((r) => r.documentId === d.id);
           const id = `${props.idPrefix}-${d.id}`;

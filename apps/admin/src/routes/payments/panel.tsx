@@ -4,6 +4,7 @@
 // credit (Owner, fresh code). An export invoice adds its realisation dates, the bank's extensions and "Bank extended the date" (line 14, Owner). A proforma
 // shows only the entries waiting for it and "Confirm by issuing the tax invoice" (line 12, L5), which opens the advance dialog with the payment.
 // Figures come from GET /invoices/:id/payments and are formatted by core; nothing is added up here.
+import { PAYABLE_TYPES } from "@techaust/core/ledger";
 import type { Role } from "@techaust/core/permissions";
 import { type ReactNode, useMemo, useState } from "react";
 import { Link } from "react-router";
@@ -56,7 +57,8 @@ type Dialog =
   | { letter: string }
   | null;
 
-const PAYABLE = ["tax_invoice", "export_invoice", "debit_note"];
+/** The types a payment goes on (core, re-check cleanup). */
+const PAYABLE: readonly string[] = PAYABLE_TYPES;
 /** 07-V §5's title (approved), kept here so the panel doesn't load the reports' words. */
 const REALISATION_TITLE = "Export realisation";
 
@@ -809,7 +811,7 @@ function LetterDialog(props: {
   const refusal = useRefusalFocus();
   async function submit() {
     if (!file) {
-      setError(PAY_UI.proofFileHint);
+      setError(PAY_UI.letterMissing);
       document.getElementById("pay-letter-file")?.focus();
       return;
     }

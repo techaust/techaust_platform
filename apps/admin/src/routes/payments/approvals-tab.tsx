@@ -17,17 +17,21 @@ export function PaymentApprovals(props: { owner: boolean; state: string | null }
   const list = useLoad(() => paymentsApi.approvals(filter), props.state ?? "all");
   // Visual review (low): the queue follows `next` with line 36's "Show more payments", as /payments does.
   const [more, setMore] = useState<PaymentApprovalItem[]>([]);
+  // Re-check finding 6: "a further page was read" apart from `more.length`, so an empty page never sends the button back to the first cursor.
+  const [paged, setPaged] = useState(false);
   const [after, setAfter] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const toast = useToast();
-  const next = more.length ? after : list.state === "ready" ? list.data.next : null;
+  const next = paged ? after : list.state === "ready" ? list.data.next : null;
   async function showMore() {
     if (!next) return;
     setLoadingMore(true);
     try {
       const r = await paymentsApi.approvals({ ...filter, after: next });
       setMore((m) => [...m, ...r.approvals.filter((a) => !m.some((x) => x.id === a.id))]);
-      setAfter(r.next);
+      setPaged(true);
+      // an empty page ends the list, whatever `next` it names
+      setAfter(r.approvals.length > 0 ? r.next : null);
     } catch (e) {
       toast("error", payErrorText(e));
     } finally {
