@@ -20,10 +20,13 @@ Steps checked against each provider's own documentation on 2026-10-31. Screens c
 5. Tell the lead "Razorpay account ready".
 
 ### Stripe
-1. Open https://dashboard.stripe.com/register and sign up with your email, name, country (India) and a password from your password manager.
-2. Stripe opens in a **sandbox** (a test area). Don't activate payments or add bank details: that is Phase 7.
-3. Open https://dashboard.stripe.com/apikeys while the sandbox is selected. Check you see a **Publishable key** starting `pk_test_` and a **Secret key** starting `sk_test_`. Sandbox keys can be revealed again at any time, so nothing needs saving now.
+TecHaust uses **your existing verified Stripe account** (the one for the same business on another domain; owner, 2026-10-31). Stripe accounts in India are invite-only, so a second account under the same login can't be activated (https://support.stripe.com/questions/stripe-accounts-are-invite-only-in-india); close the new TecHaust account you opened.
+1. Sign in to https://dashboard.stripe.com with the existing account. Open **Settings** › **Business** › **Account details** and check that the legal name, PAN and GSTIN are TecHaust's. Tell the lead if any of them differ: that changes the plan.
+2. Switch to the account's **sandbox** (a test area). Don't change the account's public website, and don't touch live mode: that is Phase 7.
+3. Open https://dashboard.stripe.com/apikeys while the sandbox is selected and check the page opens. In M6.3 you make a **restricted key** (`rk_test_…`) there, straight into the script (Part B); the lead lists the permissions it needs.
 4. Tell the lead "Stripe account ready".
+
+What the lead builds around a shared account (M6.3): the webhook acts only on payments TecHaust itself created (anything else is recorded and ignored); the statement name customers see is checked before go-live; no payment-method domain needs registering, because Checkout is hosted by Stripe. Optional, before going live: ask Stripe's account team for a separate India account for TecHaust.
 
 ### PayPal
 1. Open https://developer.paypal.com and click **Log in to Dashboard**. Sign in with a PayPal account, or create one (a business account in TecHaust's name is best, since the same login is used for live payments later).
@@ -48,7 +51,7 @@ The script:
 
 What to have open when you run it:
 - **Razorpay:** Test Mode › **Account & Settings** › **API Keys** › **Generate Key** (or **Generate new key**). Paste the **Key Id** when asked, then the **Key Secret**. Close the dialog only after the script says `RESULT:`. If the secret is lost, generate a new key and run the script again.
-- **Stripe:** https://dashboard.stripe.com/apikeys in the sandbox; reveal and copy the **Secret key** (`sk_test_…`).
+- **Stripe:** https://dashboard.stripe.com/apikeys in the existing account's sandbox; **Create restricted key** with the permissions the lead lists, then copy it (`rk_test_…`).
 - **PayPal:** **Apps & Credentials** (Sandbox) › your app; copy the **Client ID**, then the **Secret**.
 
 If a key was ever pasted anywhere else (chat, email, a document), treat it as exposed: make a new one and run the script again.
