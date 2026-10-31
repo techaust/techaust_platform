@@ -3,6 +3,7 @@
 // costs CPU on the Free plan), and `offerSection` shapes their rows. Read only; nothing here writes.
 //
 // The IP address and the browser of an acceptance are shown to the owner only (LD8): they are evidence, and not every member needs them.
+import { ANONYMISED_CONTACT } from "@techaust/core/clients";
 import type { Role } from "@techaust/core/permissions";
 import type { readContext } from "./documents.ts";
 import { readSettings, todayIst } from "./quote-model.ts";
@@ -38,8 +39,11 @@ export function startPlanOf(ctx: Pick<Context, "bundle" | "client" | "settingsRo
 
 const GROUP = "(SELECT version_group_id FROM documents WHERE id = ?1)";
 
-/** The group's send rows (every version), newest first. `email_log` status of the offer email by the row's id (index `email_log_entity`). */
-export const DELIVERY_SQL = `SELECT s.id, d.version, s.kind, s.queued_at, s.cancelled_at, s.created_at, s.attach_pdf, s.email, c.name AS contact_name,
+/**
+ * The group's send rows (every version), newest first. `email_log` status of the offer email by the row's id (index `email_log_entity`). `removed`: the
+ * send's contact was erased or anonymised (`deleteContactAccess` cleared `contact_id` and `email`; a send is always written with a contact).
+ */
+export const DELIVERY_SQL = `SELECT s.id, d.version, s.kind, s.queued_at, s.cancelled_at, s.created_at, s.attach_pdf, s.email, c.name AS contact_name, s.contact_id IS NULL AS removed,
   (SELECT e.status FROM email_log e WHERE e.entity_type = 'document_send' AND e.entity_id = s.id AND e.template = 'offer.sent' ORDER BY e.created_at DESC LIMIT 1) AS email_status
   FROM document_sends s JOIN documents d ON d.id = s.document_id LEFT JOIN contacts c ON c.id = s.contact_id
   WHERE d.version_group_id = ${GROUP} ORDER BY s.created_at DESC, s.id DESC LIMIT 50`;
@@ -169,8 +173,10 @@ export function offerSection(
       id: r.id as string,
       version: r.version as number,
       kind: r.kind as string,
-      contactName: (r.contact_name as string | null) ?? null,
-      email: (r.email as string | null) ?? null,
+      // Polish sweep 5a: a removed person reads "Removed contact" (core ANONYMISED_CONTACT, the anonymised contact's own name), never a dash; the
+      // row keeps no name or address of theirs.
+      contactName: r.removed === 1 ? ANONYMISED_CONTACT : ((r.contact_name as string | null) ?? null),
+      email: r.removed === 1 ? null : ((r.email as string | null) ?? null),
       attachPdf: r.attach_pdf === 1,
       state: deliveryState(
         (r.queued_at as number | null) ?? null,

@@ -69,6 +69,7 @@ import {
   dropOfferObjects,
   type RedactionPlan,
   readRedactionPlan,
+  redactionCancelStatements,
   redactionGuard,
   redactionStatements,
   TOO_MANY_OFFERS,
@@ -1319,6 +1320,9 @@ async function eraseBatch(
            WHERE id IN (${MATCHED_LEADS}) AND ${g.sql(5)}`,
         )
         .bind(id, ANONYMISED_CONTACT, anonymisedEmail(id), t, ...g.params),
+      // 2a. (anonymise) T7, the first statement of step 2e: the redacted offers' sends that never got a link are cancelled, BEFORE this contact's links
+      //     are deleted below: after, "no link" also matched their emailed sends and the Emails row read "Not sent" (polish sweep 5a).
+      ...(plan ? redactionCancelStatements(db, plan, g, t) : []),
       // 2. sign-in access: sessions and links of this contact
       ...deleteContactAccess(db, id, g),
       // 2b. an individual client's notes and files go with its last live contact (owner, 2026-10-25; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11); a
@@ -1406,7 +1410,7 @@ async function eraseBatch(
         .bind(id, ...g.params),
       // 2e. (anonymise) T7: the personal details in the frozen copy of every proposal or estimate that was never accepted and names this person
       //     (addressed to them, declined by them, or any offer of an individual client whose last live contact they are) are replaced, the decision note
-      //     cleared, its child rows marked, the offer withdrawn (sends cancelled, the group's links revoked when it is the newest version), its bells
+      //     cleared, its child rows marked, the offer withdrawn (sends cancelled in step 2a, the group's links revoked when it is the newest version), its bells
       //     deleted and its approvals' free text cleared; one `document.redact` audit row each (Settled by the lead on the safest reading, 2026-10-30
       //     (08-C RB-37)). Before steps 3 and 4: the eligibility reads the live email and the last-live state. Accepted offers stay untouched.
       ...(plan
