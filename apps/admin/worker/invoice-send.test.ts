@@ -20,12 +20,9 @@ import {
 
 const owner = () => sessionFor("owner", { stepUp: true });
 
-/**
- * An issued invoice (the owner issued it) and its client's contacts with portal access. `as`: the owner session to issue with (a test that
- * needs a named member passes its own, so no second session is made: test-hardening 2).
- */
-async function issued(contacts = 2, as?: Awaited<ReturnType<typeof owner>>) {
-  const s = as ?? (await owner());
+/** An issued invoice (the owner issued it) and its client's contacts with portal access. */
+async function issued(contacts = 2) {
+  const s = await owner();
   await putCompany();
   await putBank();
   const made = await mkInvoice(s);
@@ -332,8 +329,8 @@ describe("the view after a send [ADM-INV-15]", () => {
 
   it("each send names the staff member who made it; an automatic send names nobody (Q5)", async () => {
     const s = await sessionFor("owner", { stepUp: true, name: "Rupak Sarkar" });
-    // the named member issues the invoice and sends it (one session, not two: test-hardening 2)
-    const { made, ids } = await issued(2, s);
+    const { made, ids } = await issued(2);
+    // the invoice above belongs to its own session: send again as the named member (so a name taken from the issuer or creator fails here)
     await send(s, made.id, { contactIds: ids });
     const mine = (await sendsOf(made.id)).filter((r) => r.created_by === s.id);
     expect(mine).toHaveLength(2);
