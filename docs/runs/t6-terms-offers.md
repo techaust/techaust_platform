@@ -1,8 +1,8 @@
 # Run: T6, the offer wording, proposal terms v4 and website Terms 0.2
 
-Status: analyst early check running
+Status: designer running (analyst GO)
 Tier: B
-Usage: lead claude-opus-5-5/high (cloud session t6-terms); builder claude-opus-5-5/high (skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, unavailable in cloud; 5-h 8 % at start, reading of 12:58)
+Usage: lead claude-opus-5-5/high (cloud session t6-terms); builder claude-opus-5-5/high (skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, unavailable in cloud; 5-h 8 % at start, reading of 12:58); analyst claude-opus-5-5/high (skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:workers-profiling, unavailable in cloud; 5-h 8 %, reading of 12:58)
 
 **Source:** [settle-08c](settle-08c.md) task T6; wording [07-ZE](../07-content-appendix/ZE-terms-offers-deed.md) (approved by the owner, 2026-10-31: 20 lines, Q1–Q4). Cloud session `t6-terms`, branch `feat/t6-terms-offers`, controlled by the main session on the owner's PC. Merge order today: T12, **T6**, proforma withdraw, T7, M6.1.
 
@@ -44,6 +44,20 @@ Run (each through `bash tools/heavy.sh --log <name> …` where heavy): `pnpm --f
 ### Done
 Analyst GO; designer screenshots; reviewer APPROVE with a live visual review; every finding fixed or kept with a reason; `pnpm check` and `pnpm test` green at the branch tip; Worker bytes recorded here.
 
+## Early check (analyst, 2026-10-31): GO
+Copied by the lead from the analyst's reply. Read-only; ran the diff, a v3/v4/07-ZE text and hash script, an in-memory jobs bundle, and single vitest files (core 35, db 18, email 17, pdf 77, admin 19), all passing; `check-worker-config.mjs` ok.
+- **Wording:** v4 items 1–5 identical to v3; items 6–10 and line 6 word for word, in the brief's order; web lines 13–15 and line 6 word for word; apostrophes match each file; Terms 0.2 version, effective date and both Changes entries word for word. v4 is about three times v3's length: PDF page breaks for the designer.
+- **Seed:** v4 only when the newest proposal row is the seeded v3 by id and hash, v4's hash absent and due days 7; owner rows never followed; idempotent; pinned v3 stays v3. `SEED_VERSION` only labels the SQL header. On staging v4 lands at merge only if the newest row is the seeded v3.
+- **"(IST)":** every view is computed at render time (portal `toPdfView`, jobs from the envelope, email from `valid_until`); no snapshot, seal or hash changes; stored PDFs write-once; proforma untouched; never doubled; staff lists unchanged. Offers sent before the deploy show "(IST)" and line 3 in the portal and a resent email but not in their stored PDF: harmless (expiry was always the IST day).
+- **Line 3:** revise only from the latest sent version (code and SQL); n−1 was always sent; null for v1.
+- **PORTAL_ORIGIN:** right per env, front Worker only (test proves the API config lacks it), admin API bytes unchanged, SPA-only, `staffReplyText` plain text, null cases sensible.
+- **Tags:** as the brief; two accurate extras (terms item 6 RB-35(a); legal §12 RB-38(c)).
+- **Bytes:** jobs 985,956 (+1,690; unused core lines tree-shaken); 9,044 left before the 995,000 stop line: T7 and M6.1 should watch it.
+- **L1 (low):** the admin vitest define and the web origin test passed `undefined`, which falls back to `CLOUDFLARE_ENV`; failed under `CLOUDFLARE_ENV=staging`. **Fixed by the lead** (pass `""`); both files re-run green with `CLOUDFLARE_ENV=staging` (19 and 5 tests).
+- **L2 (optional):** a direct seed test: an owner row as version 4 after v3, seed twice, the owner's row stays newest and no row has the v4 hash. Goes to the fix round.
+- **L3:** CLAUDE.md and the environments runbook should mention admin `vars.PORTAL_ORIGIN` / `__PORTAL_ORIGIN__` (follow-up for the main session).
+- **For the designer:** send dialog (validity fact, line 3 after the lead, the closing line's `muted` style, "… (IST)" without a date); the staff-reply box; portal expired notices in `decision-panel.tsx:171` and `document-page.tsx:122` via `offerExpiredNotice(kind, view.validUntilDate)`; card and list dates (`home.tsx`); line 3 under the title next to the superseded notice, once per screen; `.replaces-note` has no style in the facts column (`styles.ts:211`); the cover's validity and v4 page breaks; baselines.
+
 ## Questions for the owner
 **Q1 (07-ZE line 12, arbitration for clients outside India).** Plain English: the check passed: MCIA's rules let us choose Kolkata as the seat. But MCIA's fees are high next to our project sizes: a ₹50,000 filing fee plus, for a dispute up to ₹10 lakh, up to ₹1.1 lakh administration and up to ₹1.85 lakh for the arbitrator (about ₹3.45 lakh in all, normally split half each; half that on the fast, papers-only track). It only ever applies to an overseas client, after 30 days of trying to settle. Its value: an arbitration award can be enforced in most countries (New York Convention); an Indian court judgment usually can't.
 - **A. Keep MCIA, seated in Kolkata, as approved (Recommended).** Wording unchanged. The cost deters weak claims on both sides and the award can be enforced abroad.
@@ -67,6 +81,8 @@ Analyst GO; designer screenshots; reviewer APPROVE with a live visual review; ev
 
 - 2026-10-31 | The admin staff-reply box copies with the existing `CopyButton` ("Copied" / "Copied to the clipboard", already approved copy), no new toast line; the box shows only on a sent, viewed or expired proposal or estimate, never on a replaced (`revised`) version, which can't be accepted | Lead | `apps/admin/src/lib/offers.ts` `staffReplyText`
 - 2026-10-31 | The admin front Worker gets `vars.PORTAL_ORIGIN` (local, staging, `https://portal.techaust.com` per docs/05) baked into the SPA as `__PORTAL_ORIGIN__`, following the portal's `__WEBSITE_ORIGIN__` pattern | Lead | `apps/admin/wrangler.jsonc`, `scripts/website-origin.mjs`
+
+- 2026-10-31 | The staff-reply box greets the document's own contact (`doc.contact`) even when another recipient replied; staff edit the pasted text if needed (analyst's question, kept as built) | Lead | `staffReplyText`
 
 ## Follow-ups (for 12)
 - **Cloud setup script (lead, 2026-10-31): fixed by #126** (Node in /opt/techaust-node). the environment's setup script failed (`node -v says v24.22.1, not v24.22.2`): the image now ships `/opt/node24` as a real directory, so `ln -sfn /opt/node-v24.22.2-linux-x64 /opt/node24` makes a link inside it and Node stays 24.22.1; the browser step never ran. Fixed by hand in this session (moved the image's directory aside, linked 24.22.2, installed both Chromiums). Fix for `scripts/cloud-setup.sh` and the pasted environment script: before the `ln -sfn` line, add `[ -d /opt/node24 ] && [ ! -L /opt/node24 ] && mv /opt/node24 "/opt/node24.image.$(date +%s)"`. The owner pastes the corrected script into the environment's settings.
@@ -115,3 +131,7 @@ Builder (Opus 5.5, high; cloud session), 2026-10-31, branch `fix/t6-terms-build`
 **Open questions (for the lead)**
 1. The designer's "copy to clipboard with a toast" needs a toast line 07-ZE lacks. `CopyButton` in `apps/admin/src/components/ui.tsx` already says "Copied" / "Copied to the clipboard" (existing words); if a different line is wanted, it is a copy question.
 2. Should the box also show on a `revised` (replaced) version? Built as no (sent, viewed, expired only); the reply's last sentence covers a newer version when staff answer from the newest one.
+- **CLAUDE.md (main session):** add admin `vars.PORTAL_ORIGIN` / `__PORTAL_ORIGIN__` (front Worker only, baked into the SPA; `scripts/website-origin.mjs` `portalOriginForApp`) next to the portal's `__WEBSITE_ORIGIN__` (analyst L3).
+- **Jobs Worker headroom:** 985,956 bytes after T6, 9,044 before the 995,000 stop line; T7 and M6.1 watch it.
+- **Remote sub-branch `fix/t6-terms-build`** is merged into the task branch; a cloud session can't delete remote branches (hook), so the main session deletes it.
+- **MCIA re-read (before launch):** open https://mcia.org.in/pdfs/MCIA-Rules-2025.pdf and the fee page on the owner's PC and confirm r.30.1 and the fees recorded in 08-C RB-38 (the cloud network blocks mcia.org.in).

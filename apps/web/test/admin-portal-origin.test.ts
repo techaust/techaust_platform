@@ -37,7 +37,7 @@ describe("the admin's portal origin", () => {
   });
 
   it("reads the real file per CLOUDFLARE_ENV", () => {
-    expect(portalOriginForApp(ADMIN, undefined)).toBe("http://localhost:5174");
+    expect(portalOriginForApp(ADMIN, "")).toBe("http://localhost:5174");
     expect(portalOriginForApp(ADMIN, "staging")).toContain("techaust-platform-portal-staging");
     expect(portalOriginForApp(ADMIN, "production")).toBe("https://portal.techaust.com");
   });

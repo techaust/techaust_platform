@@ -11,7 +11,7 @@ const TEST_KEY = (n: number) => btoa(String.fromCharCode(...new Uint8Array(32).f
 export default defineConfig(async () => ({
   // The SPA's build constant (vite.config.ts) for the pure src modules under test: the local portal origin (T6, 07-ZE line 5).
   define: {
-    __PORTAL_ORIGIN__: JSON.stringify(portalOriginForApp(new URL("./", import.meta.url), undefined)),
+    __PORTAL_ORIGIN__: JSON.stringify(portalOriginForApp(new URL("./", import.meta.url), "")),
   },
   plugins: [
     cloudflareTest({
