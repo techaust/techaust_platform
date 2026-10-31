@@ -103,6 +103,11 @@ code {
   overflow-wrap: anywhere;
 }
 
+/* Figures that line up in a column (amounts, dates, counts). Shared by every screen; the reports add nowrap in their own scope. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;

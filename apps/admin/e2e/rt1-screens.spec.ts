@@ -337,7 +337,7 @@ test.describe("rt1 screens", () => {
       await settled(page);
       await page.getByRole("button", { name: "Make files" }).click();
       await expect(page.locator("#gst-done")).toBeVisible();
-      const held = page.locator(".ledger--3b .ledger__held");
+      const held = page.locator(".rledger--3b .rledger__held");
       await expect(held.locator("th")).toHaveText(
         "Credit notes to registered clients not yet accepted in IMS (not deducted)",
       );

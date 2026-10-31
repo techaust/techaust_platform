@@ -37,7 +37,7 @@ export function ManualEntries({ lines, id }: { lines: readonly WarningLine[]; id
               {m && heads.length > 0 && (
                 <div className="manual-entry__figures">
                   {/* named by the note's number: the sentence above says the rest */}
-                  <table className="ledger ledger--plain manual-entry__table" aria-label={m.number}>
+                  <table className="rledger manual-entry__table" aria-label={m.number}>
                     <thead>
                       <tr>
                         <th scope="col">{SALES_COPY.columns.rate}</th>
@@ -64,7 +64,7 @@ export function ManualEntries({ lines, id }: { lines: readonly WarningLine[]; id
                     </tbody>
                     {m.byRate.length > 1 && (
                       <tfoot>
-                        <tr className="ledger__total">
+                        <tr className="rledger__total">
                           <th scope="row">{GST_COPY.table13Columns.total}</th>
                           {heads.map((h) => (
                             <td key={h.key} className="num">

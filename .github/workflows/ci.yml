@@ -53,6 +53,8 @@ jobs:
         run: node scripts/check-worker-config.mjs
       - name: Migration rebuild guard (no migration rebuilds a referenced table)
         run: node scripts/check-migrations.mjs
+      - name: Stylesheet clash guard (no class is a base rule in two stylesheets of one app)
+        run: node scripts/css-collisions.mjs
       - name: Build (before the tests, which read the built site)
         run: pnpm build
       - name: Tests (unit + Workers runtime)

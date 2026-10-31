@@ -905,20 +905,9 @@ html:has(.mmenu[open]) {
 
 /* ---------- The document page ---------- */
 
-.back {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: var(--target-min);
+/* The back link (app.css `.back`) above the document: pulled up into the page's top space, its text on the content's left edge. */
+.docpage .back {
   margin: calc(-1 * var(--space-4)) 0 var(--space-4) calc(-1 * var(--space-2));
-  padding-inline: var(--space-2);
-  font-weight: 560;
-  text-decoration: none;
-  border-radius: var(--radius-md);
-}
-
-.back:hover {
-  text-decoration: underline;
 }
 
 .docpage__notices {
