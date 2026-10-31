@@ -34,3 +34,71 @@ Not clashes (intentional local adjustments, leave them): `.hint`, `.radios`, `.b
 **Out of scope:** any copy change; the other style findings in 12 (week grid wrap, focus outline width); changing the switch's look beyond making GST match the shared one.
 
 **Rules:** your own branch from `origin/fix/css-collisions` (e.g. `fix/css-collisions-design`), push only that; commit at each finished step and at least every 20 minutes; heavy commands through `bash tools/heavy.sh --log <name> <command>`; stop every dev server you started before reporting; `TECHAUST_PORT_OFFSET=0`. Append your report below as "Designer report".
+
+## Designer report
+Branch `fix/css-collisions-design` (from `origin/fix/css-collisions`). Commits: `cfe1fb62` (the fix and the guard), `96c6e91d` (the 3B table width after the rename), and this report. Opus 5.5, high.
+
+**Skills loaded:** `frontend-design:frontend-design` (first step). It set the rule for this run: no new look, one owner per component, and the shared switch's own design (the chosen half filled edge to edge with `--color-selection`, weight 600) is the only switch. That is also why the GST page's old inverse span had to go, not be restyled. `dataviz`: not loaded, because there are no charts or stat tiles here. No other docs/14 §9 row fits a CSS-only task.
+
+**Cause, confirmed:** I reproduced the owner's screenshot (`before/01-gst-quarter-dark-1280.png`: a light block that doesn't fill its half). The leak is real too. After Reports, the milestone list took the report table's smaller text (`before/07-project-milestones-*` against `before-clean/07-*`), and the switches on Clients › New, Invoices › New and Settings › Gateways shrank to the old inline copy (`before/05`, `06`, `09`). **I also found that the Reports page itself loads eight other route stylesheets** (leads, clients, projects, catalogue, documents, invoices and payments css, through shared imports). So the report tables were also getting projects' `.ledger` rules, and the GST files list was getting projects' `.file-list { margin: 0 }`.
+
+**What changed**
+- **Switch:** both `.segmented` blocks are gone from `reports.css`. The GST markup drops its inner `<span>`, so it matches the other ten screens. Phone width comes from a scoped `.period-picker .segmented` in the existing `max-width: 479px` block. The chosen state is fill plus weight 600 (500 → 600), visible in both themes (`after/01`, `02`). Disabled now uses the shared muted and surface-alt look instead of opacity 0.7.
+- **Report tables** are now `.rledger`, `.rledger--plain`, `.rledger--3b`, `.rledger__total/__group/__sub/__held/__held-label`, `.rledger-scroll` and `.rledger-check(--bad)`. That covers `reports.css`, `routes/reports/{gst,manual-entries,payments,sales-register}.tsx` and the e2e locator in `apps/admin/e2e/rt1-screens.spec.ts:340`. My first pass missed the second class in the compound `.rledger.ledger--3b`, so the 3B row names lost their width. The screenshot diff caught it and `96c6e91d` fixes it.
+- **The GST files list** is `.report-files*`.
+- **Settings › Terms versions** use `.terms-versions`, `__item`, `__title` and `__meta` (`screens.css`, `routes/settings/terms.tsx`). The proposal's versions panel kept its names. It had been borrowing `display: grid; gap: space-4` from Settings' `.versions` (screens.css is always loaded), so `documents.css` now owns that rule.
+- **`.tnum`:** one copy in `app.css` (`tabular-nums`). Reports and the statement keep `lining-nums` and `nowrap` only in their own scope (`.amount, .report .tnum, .statement .tnum`), so projects wrap again.
+- **`.md`:** one copy in `shell.css`, projects' fuller version with the note headings. Both old copies are deleted.
+- **Portal `.back`:** the two copies were not identical. `portal.css` replaced the margins. So the shared look stays in `app.css`, and each context sets its own margins: `.card__top .back` (inline-end −space-2, as before) and `.docpage .back` (the same shorthand `portal.css` had).
+- **Guard:** `scripts/css-collisions.mjs` (+ `.d.mts`) scans every `.css` under `apps/<app>/src`. A base rule is a single compound selector, also inside `@media` and `@supports`. Its key is its set of classes, ignoring what is inside `:has()`, `:not()`, `:is()` and attribute selectors. The same key in two files of one app fails, unless `scripts/css-collisions-allow.json` lists it with a reason. That list is `[]` today, and a stale entry fails too. The script runs a self-test first: it must catch the `.segmented` case and pass `.dialog .radios` and `.period-picker .segmented`. Before the fix, the scan found exactly the brief's 8 clashes; now it finds none. It is wired into `pnpm check` (root `package.json`) and, as one extra step, into CI (`.github/workflows/ci.yml`, "Stylesheet clash guard"). CI runs these guards as separate steps, so `pnpm check` alone wouldn't have reached CI. Node test: `apps/web/test/css-collisions.test.ts`, 7 tests.
+
+**Files changed:** `.github/workflows/ci.yml`, `package.json`, `scripts/css-collisions.mjs`, `scripts/css-collisions.d.mts`, `scripts/css-collisions-allow.json`, `apps/web/test/css-collisions.test.ts`, `apps/admin/src/{app,shell,reports,projects,catalogue,screens,documents}.css`, `apps/admin/src/routes/reports/{gst,manual-entries,payments,sales-register}.tsx`, `apps/admin/src/routes/settings/terms.tsx`, `apps/admin/e2e/rt1-screens.spec.ts`, `apps/portal/src/{app,portal}.css`.
+
+**Visible differences on a component's own screen (please check):**
+1. **GST › Files:** the list now keeps the 20 px bottom margin that `reports.css` always declared. Projects' `.file-list` had been zeroing it on the Reports page, so the "Researched default" note sat flush under the last row. I kept the designed gap. If the old flush look is wanted, `.report-files { margin: 0 }` is a one-line change. This makes GST pages 17 px taller. All other report pixels are identical (sales register 0 px different; GST tables identical).
+2. **Settings › Terms:** the terms text now gets the shared `.md` rules on every visit (list indent `space-6` instead of the browser's 40 px, `space-2` between blocks), the same as the same text on a proposal. Before, it got them only if a Projects, Catalogue or proposal screen had been opened first.
+3. **A proposal's versions list with two or more versions** no longer draws the bottom hairline that leaked from Settings' list. The design in `documents.css` is the left rule. The sample proposal has one version, so the screenshots can't show this.
+
+**Screenshots** (in `D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\.claude\worktrees\agent-a7633676adc00747b\.logs\css-collisions\`, every name in light and dark at 1280 and 390, e.g. `01-gst-quarter-dark-1280.png`). Four folders:
+- `before/`: the old code, Reports first, then each screen by in-app navigation (the leak).
+- `before-clean/`: the old code, each screen by a fresh load (each component's own look).
+- `after/`: the new code, the same route as `before/`.
+- `after-clean/`: the new code, fresh loads.
+
+Screens:
+- `01-gst-quarter`: the switch.
+- `02-gst-month-focus`: Month chosen, keyboard focus ring.
+- `03-gst-result`: a made report with the tables and files.
+- `04-sales-register`: the renamed table.
+- `05-clients-new`, `06-invoices-new` (the dialog), `07-project-milestones`, `08-project-files`, `09-settings-gateways`, `10-settings-terms`, `10b-terms-versions-dialog`, `11-proposal-versions`, `12-client-statement`.
+- `cmp-*.png`: side-by-side bands I used to check the differences.
+
+**Pixel comparison** (`diff.mjs`):
+- `after` against `before-clean`: 0 px different for milestones, gateways, proposal versions and the sales register. So after a Reports visit these screens now look exactly as they do on their own.
+- `after` against `after-clean`: identical apart from three kinds of band:
+  - "N minutes ago" text on project files and the terms dialog;
+  - the date fields (the clock passed midnight between runs);
+  - one band on the 390 px New invoice dialog's search field, where I checked the computed border, outline and shadow and they are identical on both paths (interaction state).
+
+**axe** (WCAG 2.0, 2.1 and 2.2 A/AA tags) on Reports › GST exports and Clients › New client (a switch screen), light and dark, 1280 and 390: **0 violations** in all 8 runs, before and after. Console errors: 0. Keyboard: Tab reaches the switch, arrow keys move the choice, and the focus ring shows inside the chosen half (`after/02-*`).
+
+**Commands and results**
+- `pnpm install --frozen-lockfile --offline`: ok.
+- Local data: `pnpm dev:secrets && pnpm db:migrate:local && pnpm db:seed:local && pnpm portal:sample`, then the admin e2e global setup with `E2E_SAMPLE=1` and two sample files plus one proposal draft over the local API. All local and labelled sample.
+- `node scripts/css-collisions.mjs`: ok (22 stylesheets in 4 apps).
+- `bash tools/heavy.sh --log css-admin-test pnpm --filter @techaust/admin test`: 126 files, 3,809 tests passed.
+- `bash tools/heavy.sh --log css-portal-test pnpm --filter @techaust/portal test`: 678 passed, 1 timeout (`worker/scope.test.ts` "the spy sees the schema's client_id tables", 5 s limit, a Worker test with no CSS involved). Re-run alone (`css-portal-scope`): 42 of 42 passed.
+- `bash tools/heavy.sh --log css-web-node-test pnpm --filter @techaust/web exec vitest run --project node`: 37 files, 707 passed, 17 skipped.
+- `bash tools/heavy.sh --log css-admin-build pnpm --filter @techaust/admin build`: ok. Front 100,839 bytes, API 438,052, finance 507,872.
+- `bash tools/heavy.sh --log css-portal-build pnpm --filter @techaust/portal build`: ok, 104,589 bytes.
+- `bash tools/heavy.sh --log css-check pnpm check` (the one whole-repo lint): ok, every guard including "css collisions: ok".
+- `pnpm exec biome check` on the changed files: ok.
+
+**Not verified**
+- **Portal `.back`:** I took no screenshots, because the portal needs a client sign-in. By construction the document page's computed margins are unchanged: before, `portal.css`'s `margin` shorthand replaced `app.css`'s inline-end margin; now `.docpage .back` sets the same shorthand. The card's `back` prop has no callers today.
+- **The admin e2e suite:** not run (about 15 minutes); only its one locator changed.
+- **Production CSS order:** not checked in a built SPA. The fix no longer depends on stylesheet order.
+
+**Placeholder text:** none. No copy changed.
+
+**Open questions:** visible difference 1 (keep the GST files list's designed 20 px gap, or restore the old flush look). Dev server stopped; browser closed.
