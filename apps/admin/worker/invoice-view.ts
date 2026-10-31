@@ -33,10 +33,11 @@ import {
 } from "@techaust/core/invoices";
 import type { Series } from "@techaust/core/numbering";
 import { decide, type Role } from "@techaust/core/permissions";
+import { viewRecipient } from "@techaust/core/redaction";
 import { type ComputedDocument, lutsOf } from "@techaust/core/tax";
 import { type DocumentBundle, headerExtrasOfRow, type TermsRef } from "@techaust/db/documents";
 import type { careView } from "./care-billing.ts";
-import { type ContactFacts, pdfOf, viewRecipient } from "./document-view.ts";
+import { type ContactFacts, pdfOf } from "./document-view.ts";
 import {
   type BankRow,
   blockersOf,

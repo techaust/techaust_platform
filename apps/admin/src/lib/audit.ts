@@ -112,6 +112,9 @@ export const ACTION_LABELS: Record<string, string> = {
   // 07-Q words (DASH7, DASH14); the portal's offer actions are 07-Y below.
   "lead.purge": "deleted old leads",
   "document.expire": "marked a document as expired",
+  // T7 (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): one row per never-accepted offer whose personal details an anonymise erased.
+  // 07-ZG line 4 (owner-approved 2026-10-31).
+  "document.redact": "erased personal details from a proposal or estimate",
   // Lines 07 lacked: 07-Y, PENDING the owner, marked until approved (the same lower-case form, after the person's name).
   "document.resend": Y("sent a document again"),
   "document.links_revoke": Y("revoked a document's links"),

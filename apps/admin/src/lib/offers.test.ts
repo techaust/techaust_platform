@@ -253,6 +253,9 @@ describe("the staff reply to an acceptance by email (07-ZE line 5; owner's Q2: A
     expect(staffReplyText({ ...doc, client: { ...doc.client, anonymised: true } })).toBeNull();
     expect(staffReplyText({ ...doc, contact: { ...doc.contact, name: "   " } })).toBeNull();
     expect(staffReplyText(doc, "")).toBeNull();
+    // T7: an offer whose personal details were erased is withdrawn, so no reply points anyone to it
+    expect(staffReplyText({ ...doc, redactedAt: Date.UTC(2026, 9, 31) })).toBeNull();
+    expect(staffReplyText({ ...doc, redactedAt: null })).toBe(filled("http://localhost:5174"));
     // an invoice-family type never gets it (the shape is shared with nothing else, but the guard is cheap)
     expect(staffReplyText({ ...doc, type: "invoice" as unknown as "proposal" })).toBeNull();
   });

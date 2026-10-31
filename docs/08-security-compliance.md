@@ -187,7 +187,7 @@ See [05 §6](05-architecture.md). Key controls:
 | Data | Mechanism | RPO | Retention |
 |---|---|---|---|
 | D1 (all tables) | **D1 Time Travel** (built-in, point-in-time) | Minutes | 7 days (Free) |
-| D1 (all tables) | **Nightly `wrangler d1 export`** → age-encrypt → S3 Mumbai (versioning + Object Lock, governance mode) | 24 h | 90 daily copies (all tables) + the first-of-month copy for **10 years, finance/GST tables only** (invoices, notes, receipts, payments, ledger, audit of those; no leads or contacts), owner decision 2026-10-07 so erased personal data leaves every backup within 90 days (GST ≥ 8 years; VERIFY WITH CA/LEGAL) |
+| D1 (all tables) | **Nightly `wrangler d1 export`** → age-encrypt → S3 Mumbai (versioning + Object Lock, governance mode) | 24 h | 90 daily copies (all tables) + the first-of-month copy for **10 years, finance/GST tables only** (invoices, notes, receipts, payments, ledger, audit of those; no leads or contacts), owner decision 2026-10-07 so erased personal data leaves every backup within 90 days; the `documents` table also holds proposals and estimates, so the monthly copy must leave them out (T7 follow-up F1, before Phase 7) (GST ≥ 8 years; VERIFY WITH CA/LEGAL) |
 | R2 documents (frozen PDFs, snapshots) | Weekly sync of new objects → S3 Mumbai (encrypted) via GitHub Actions | 7 days (the documents can also be re-rendered from D1 snapshots) | 10 years |
 | R2 client files | Weekly incremental sync → S3 | 7 days | While the client is active + 1 year (data-processing note) |
 | Code and config | GitHub (+ the local clone) | Each commit | Forever |

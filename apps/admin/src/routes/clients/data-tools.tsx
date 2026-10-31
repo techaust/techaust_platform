@@ -5,7 +5,8 @@
 //   part of the manifest, page by page (≤ 50 rows each, one audit row per call), assembled into one JSON file in the
 //   browser and downloaded. Progress is shown and announced; Cancel stops before the next call and downloads nothing.
 // - Erase or anonymise: the mode, the 07-J confirmation for it, a reason (07-J), and the code. A 409 lands in place:
-//   `on_issued_document` offers Anonymise instead; `legal_hold` says the hold stops both.
+//   `on_issued_document` offers Anonymise instead; `legal_hold` says the hold stops both; `too_many_offers` (T7, 07-ZG line 3) says nothing
+//   was changed and the person must be anonymised in parts (the button stays off until the mode changes).
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -31,6 +32,7 @@ import {
   exportFile,
   exportFileName,
 } from "../../lib/clients.ts";
+import { TOO_MANY_OFFERS_LINE } from "../../lib/copy-zg.ts";
 import { sentence } from "../../lib/format.ts";
 import { lastContactLine } from "../../lib/projects.ts";
 import { withCode } from "../../lib/step-up.ts";
@@ -254,7 +256,7 @@ export function EraseDialog(props: {
 
   function pick(m: EraseMode) {
     setMode(m);
-    if (blocked?.code === "on_issued_document") setBlocked(null);
+    if (blocked?.code === "on_issued_document" || blocked?.code === "too_many_offers") setBlocked(null);
     setFailure(null);
   }
 
@@ -278,8 +280,14 @@ export function EraseDialog(props: {
       toast("success", mode === "erase" ? "Contact erased." : "Contact anonymised.");
       props.onDone();
     } catch (e) {
-      if (e instanceof RequestError && (e.code === "on_issued_document" || e.code === "legal_hold")) {
-        setBlocked({ code: e.code, text: sentence(e.message) });
+      if (
+        e instanceof RequestError &&
+        (e.code === "on_issued_document" || e.code === "legal_hold" || e.code === "too_many_offers")
+      ) {
+        setBlocked({
+          code: e.code,
+          text: e.code === "too_many_offers" ? TOO_MANY_OFFERS_LINE : sentence(e.message),
+        });
       } else if (e instanceof RequestError && e.code === "invalid_code") {
         setCode("");
         setCodeError(e.message);
@@ -386,7 +394,9 @@ export function EraseDialog(props: {
           type="button"
           className="btn btn--danger"
           onClick={confirm}
-          disabled={busy || held || blocked?.code === "on_issued_document"}
+          disabled={
+            busy || held || blocked?.code === "on_issued_document" || blocked?.code === "too_many_offers"
+          }
           aria-busy={busy || undefined}
         >
           {busy ? "Working…" : mode === "erase" ? "Erase contact" : "Anonymise contact"}

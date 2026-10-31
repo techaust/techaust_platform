@@ -841,3 +841,51 @@ describe("hygiene", () => {
     expect(DAY).toBe(86_400_000);
   });
 });
+
+// T7 (Q1 = A, owner 2026-10-31; Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): an offer whose personal details were erased is withdrawn
+// for everyone in the organisation. [POR-04, POR-05, ADM-PROP-08]
+describe("a redacted offer is gone from the portal", () => {
+  const redact = (id: string) =>
+    env.DB.prepare("UPDATE documents SET redacted_at = ?2 WHERE id = ?1").bind(id, Date.now()).run();
+
+  it("not listed; the view, the PDF, accept and decline are one 404, and nothing is written", async () => {
+    const f = await fixtures();
+    const cookie = await sign(f.a.finance);
+    const gone = await mkOffer(f.a, { title: "Erased offer" });
+    const kept = await mkOffer(f.a, { title: "Kept offer" });
+    await redact(gone.id);
+    const list = (await (await call("/offers", { cookie })).json()) as { offers: { id: string }[] };
+    expect(list.offers.map((o) => o.id)).toContain(kept.id);
+    expect(list.offers.map((o) => o.id)).not.toContain(gone.id);
+    expect((await view(gone.id, cookie)).status).toBe(404);
+    expect((await call(`/offers/${gone.id}/pdf`, { cookie })).status).toBe(404);
+    const audits = await countOf("audit_log");
+    const a = await accept(gone.id, cookie);
+    expect(a.status).toBe(404);
+    expect(await codeOf(a)).toBe("not_found");
+    const d = await decline(gone.id, cookie);
+    expect(d.status).toBe(404);
+    expect(await countOf("acceptances", "document_id = ?", gone.id)).toBe(0);
+    expect(await one("SELECT status, viewed_at, decided_at FROM documents WHERE id = ?", gone.id)).toEqual({
+      status: "sent",
+      viewed_at: null,
+      decided_at: null,
+    });
+    expect(await countOf("audit_log")).toBe(audits);
+  });
+
+  it("the accept statement itself refuses a redacted offer, and so does the database", async () => {
+    const f = await fixtures();
+    const gone = await mkOffer(f.a);
+    await redact(gone.id);
+    const { ACCEPT_INSERT_SQL } = await import("./offer-sql.ts");
+    expect(ACCEPT_INSERT_SQL).toContain("d.redacted_at IS NULL");
+    await expect(
+      env.DB.prepare(
+        "INSERT INTO acceptances (id, document_id, contact_id, typed_name, email, accepted_at, pdf_sha256) VALUES (?1, ?2, ?3, 'x', 'x@example.test', 1, 'x')",
+      )
+        .bind(crypto.randomUUID(), gone.id, f.a.finance.id)
+        .run(),
+    ).rejects.toThrow(/acceptances_redacted/);
+  });
+});

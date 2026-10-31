@@ -118,14 +118,19 @@ async function dropObject(env: Env, key: string, why: string) {
 }
 
 /** Deletes R2 objects after a database change; a failure leaves an orphan whose key is logged (the M7.4 clean-up lists them). */
-export async function dropObjects(env: Env, keys: string[], why: string) {
+export async function dropObjects(bucket: R2Bucket, keys: string[], why: string) {
   for (let i = 0; i < keys.length; i += 1000) {
     const part = keys.slice(i, i + 1000);
-    try {
-      await env.FILES.delete(part);
-    } catch {
-      for (const key of part)
-        console.error(JSON.stringify({ level: "error", message: `r2 delete failed (${why})`, key }));
+    // T7: tried twice; what is still left is logged by key only (never a name) for the sweep (M7.4).
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await bucket.delete(part);
+        break;
+      } catch {
+        if (attempt === 1)
+          for (const key of part)
+            console.error(JSON.stringify({ level: "error", message: `r2 delete failed (${why})`, key }));
+      }
     }
   }
 }

@@ -76,6 +76,8 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0054_note_lut_triggers.sql",
       "0055_signature_triggers.sql",
       "0056_proforma_withdraw_triggers.sql",
+      "0057_offer_redaction.sql",
+      "0058_offer_redaction_triggers.sql",
     ]);
   });
 

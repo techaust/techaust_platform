@@ -719,7 +719,8 @@ describe("POST /contacts/:id/erase: erase and anonymise [ADM-CLI-05; owner answe
       expect(await code(res), name).toBe(why);
       expect(await snapshot(), name).toBe(before);
     }
-    // Anonymise is allowed there, and the issued document keeps its snapshot.
+    // Anonymise is allowed there, and the issued invoice keeps its snapshot (the invoice family is never redacted; only a never-accepted proposal or
+    // estimate is, T7: offer-erasure.test.ts).
     const frozenBefore = JSON.stringify(await rows("SELECT * FROM documents WHERE id = ?", docId));
     const res = await erase(o.cookie, onDoc.id, { mode: "anonymise" });
     expect(res.status).toBe(200);

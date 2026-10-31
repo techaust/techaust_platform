@@ -197,6 +197,8 @@ export async function processSnapshot(env: Env, msg: PdfSnapshotMessage): Promis
   if (d.pdf_sha256 !== null) return skip("done");
   // An erased client takes nothing new: no envelope, no PDF, no bell (the standing rule for anonymised clients; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)).
   if (await clientIsGone(env, d.client_id)) return skip("client_gone");
+  // T7: an offer whose personal details were erased is never snapshotted, rendered or verified again: no object, no bell (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)).
+  if ((d.redacted_at ?? null) !== null) return skip("redacted");
   if (isInvoiceFlowType(d.type)) return snapshotInvoice(env, msg, bundle, label);
   const made = await envelopeOfBundle(bundle);
   if (!made.ok) {
@@ -220,9 +222,16 @@ export async function processSnapshot(env: Env, msg: PdfSnapshotMessage): Promis
     ]);
     return "refused";
   }
-  await env.DB.prepare("UPDATE documents SET snapshot_r2_key = ?2 WHERE id = ?1 AND snapshot_r2_key IS NULL")
+  const saved = await env.DB.prepare(
+    "UPDATE documents SET snapshot_r2_key = ?2 WHERE id = ?1 AND snapshot_r2_key IS NULL AND redacted_at IS NULL",
+  )
     .bind(d.id, keys.snapshot)
     .run();
+  // T7: redacted while the envelope was being stored: the object just stored goes, and nothing follows.
+  if (saved.meta.changes === 0 && (await isRedacted(env, d.id))) {
+    await env.DOCS.delete(keys.snapshot);
+    return skip("redacted");
+  }
   await env.PDF_QUEUE.send({ v: 1, kind: "pdf.render", documentId: d.id, hop: 0 } satisfies PdfRenderMessage);
   logEvent("pdf.snapshot", { reason: msg.reason, created: put.created });
   return "queued";
@@ -437,6 +446,11 @@ export async function processSupplierCopy(
     logEvent("pdf.supplier_skipped", { why: "client_gone" });
     return "skipped";
   }
+  // T7: only a proposal or estimate is ever redacted; the check stays with the others so no copy is made from a redacted row.
+  if (row.redacted) {
+    logEvent("pdf.supplier_skipped", { why: "redacted" });
+    return "skipped";
+  }
   // The original's PDF comes first (it is made from the same envelope): until then there is nothing to copy; the original's own render sends this message again once it is stored.
   if (row.pdf_sha256 === null || row.snapshot_r2_key === null) {
     logEvent("pdf.supplier_skipped", { why: "original_not_ready" });
@@ -455,6 +469,12 @@ export async function enqueueSupplierCopy(env: Pick<Env, "PDF_QUEUE">, documentI
 const GONE_SQL = "SELECT 1 AS gone FROM clients WHERE id = ?1 AND anonymised_at IS NOT NULL";
 async function clientIsGone(env: Env, clientId: string): Promise<boolean> {
   return (await env.DB.prepare(GONE_SQL).bind(clientId).first()) !== null;
+}
+
+const REDACTED_SQL = "SELECT 1 AS redacted FROM documents WHERE id = ?1 AND redacted_at IS NOT NULL";
+/** T7: whether the offer's personal details were erased (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)). Read only when a write matched nothing. */
+async function isRedacted(env: Env, documentId: string): Promise<boolean> {
+  return (await env.DB.prepare(REDACTED_SQL).bind(documentId).first()) !== null;
 }
 
 function skip(why: string): SnapshotOutcome {
@@ -476,10 +496,13 @@ type RenderRow = {
   snapshot_sha256: string | null;
   pdf_sha256: string | null;
   client_gone: number;
+  /** T7: 1 once the offer's personal details were erased (never rendered again). */
+  redacted: number;
 };
 
 export const RENDER_ROW_SQL = `SELECT id, type, frozen_at, fy, number, number_display, version, snapshot_r2_key, snapshot_sha256, pdf_sha256,
-  EXISTS (SELECT 1 FROM clients c WHERE c.id = documents.client_id AND c.anonymised_at IS NOT NULL) AS client_gone
+  EXISTS (SELECT 1 FROM clients c WHERE c.id = documents.client_id AND c.anonymised_at IS NOT NULL) AS client_gone,
+  redacted_at IS NOT NULL AS redacted
   FROM documents WHERE id = ?1`;
 
 /** The view of an envelope as this Worker prints it: the acceptance box names the host of `PORTAL_URL` (07-P §1). */
@@ -515,7 +538,7 @@ async function settle(
   const date = dayOf(now);
   const statements = [
     env.DB.prepare(
-      "UPDATE documents SET pdf_r2_key = ?2, pdf_sha256 = ?3 WHERE id = ?1 AND pdf_sha256 IS NULL",
+      "UPDATE documents SET pdf_r2_key = ?2, pdf_sha256 = ?3 WHERE id = ?1 AND pdf_sha256 IS NULL AND redacted_at IS NULL",
     ).bind(row.id, pdfKey, pdfSha256),
   ];
   if (usage.renders > 0) {
@@ -525,7 +548,13 @@ async function settle(
       env.DB.prepare(HALF_BELL_SQL).bind(date, BROWSER_ALERT_MS, BELL_COPY.half),
     );
   }
-  await env.DB.batch(statements);
+  const [saved] = await env.DB.batch(statements);
+  // T7: redacted while it was being rendered: the PDF just stored is deleted, and no email follows (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)).
+  if (saved?.meta.changes === 0 && (await isRedacted(env, row.id))) {
+    await env.DOCS.delete(pdfKey);
+    logEvent("pdf.render_skipped", { why: "redacted" });
+    return;
+  }
   await onRendered(env, { kind: "document", documentId: row.id });
   // Q11: the supplier's copy follows the original, as its own unit of work (after `onRendered`, so a failed send leaves the client's PDF and its emails untouched).
   if (hasSupplierCopy(row.type)) await enqueueSupplierCopy(env, row.id);
@@ -546,6 +575,11 @@ export async function processRender(
   const invoice = row !== null && isInvoiceFlowType(row.type);
   if (!row || row.frozen_at === null || (row.type !== "proposal" && row.type !== "estimate" && !invoice)) {
     logEvent("pdf.render_skipped", { why: row ? "not_supported" : "not_found" });
+    return "skipped";
+  }
+  // T7: an offer whose personal details were erased is never rendered and wakes no send (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)).
+  if (row.redacted) {
+    logEvent("pdf.render_skipped", { why: "redacted" });
     return "skipped";
   }
   if (row.pdf_sha256 !== null) {
@@ -747,7 +781,7 @@ export const SWEEP_MAX_FAILED_NIGHTS = 3;
  */
 export const SWEEP_SQL = `SELECT documents.id FROM documents INDEXED BY documents_pdf_pending LEFT JOIN pdf_failures f ON f.document_id = documents.id
   WHERE documents.frozen_at IS NOT NULL AND documents.pdf_sha256 IS NULL AND documents.type IN ('proposal', 'estimate', 'tax_invoice', 'export_invoice', 'proforma', 'credit_note', 'debit_note') AND documents.frozen_at <= ?1
-    AND coalesce(f.nights, 0) < ${SWEEP_MAX_FAILED_NIGHTS}
+    AND coalesce(f.nights, 0) < ${SWEEP_MAX_FAILED_NIGHTS} AND documents.redacted_at IS NULL
     AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL)
     AND NOT EXISTS (SELECT 1 FROM notifications r WHERE r.entity_type = 'document' AND r.entity_id = documents.id AND r.kind = 'pdf.refused')
   ORDER BY coalesce(f.last_attempt_at, 0), documents.frozen_at, documents.id LIMIT ${SWEEP_LIMIT}`;
@@ -843,14 +877,26 @@ export async function processPdfDeadLetter(env: Env, body: unknown, now = Date.n
   } else if (isPdfMessage(body) && (body.kind === "pdf.snapshot" || body.kind === "pdf.render")) {
     const row = await env.DB.prepare(
       `SELECT type, number_display, version,
-        EXISTS (SELECT 1 FROM clients c WHERE c.id = documents.client_id AND c.anonymised_at IS NOT NULL) AS client_gone
+        EXISTS (SELECT 1 FROM clients c WHERE c.id = documents.client_id AND c.anonymised_at IS NOT NULL) AS client_gone,
+        redacted_at IS NOT NULL AS redacted
         FROM documents WHERE id = ?1`,
     )
       .bind(body.documentId)
-      .first<{ type: string; number_display: string | null; version: number; client_gone: number }>();
+      .first<{
+        type: string;
+        number_display: string | null;
+        version: number;
+        client_gone: number;
+        redacted: number;
+      }>();
     // No bell for an anonymised client: nothing is left to try again.
     if (row?.client_gone) {
       logEvent("pdf.dead_letter", { kind: body.kind, skipped: "client_gone" });
+      return;
+    }
+    // T7: nor for an offer whose personal details were erased: it is never made again (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)).
+    if (row?.redacted) {
+      logEvent("pdf.dead_letter", { kind: body.kind, skipped: "redacted" });
       return;
     }
     // An invoice has one version and its own page: no "v1", and the link is the invoice's.

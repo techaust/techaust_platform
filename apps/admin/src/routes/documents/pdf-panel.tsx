@@ -3,11 +3,13 @@
 // 10 seconds for 5 minutes (from the send, or from the last "Try again"), then stops and offers the retry. Errors while asking are
 // ignored: the next ask, or the retry, says what is true. The download is a plain same-origin link: the API answers an attachment.
 // Once the PDF turns ready while the page is open, `onReady` tells the page, so the emails that waited for it are read again (finding 10).
-// Wording: 07-P §3–§4 (approved by the owner with 07-Q, 2026-10-26).
+// Wording: 07-P §3–§4 (approved by the owner with 07-Q, 2026-10-26). T7: the PDF of an offer whose personal details were erased was deleted; the
+// panel says so in 07-ZG line 2 and offers nothing (no download, no "Try again", no asking again).
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { documentPdfHref, errorText, RequestError } from "../../api.ts";
 import { Download, RotateCcw } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
+import { PDF_ERASED_LINE } from "../../lib/copy-zg.ts";
 import { documentsApi, type PdfState } from "../../lib/documents-api.ts";
 import { PDF_COPY, PDF_POLL_MS, pdfPhase, pdfReadChanged, pdfRetryText } from "../../lib/pdf.ts";
 
@@ -139,7 +141,7 @@ export function PdfPanel(props: {
       <PageGlyph />
       <div className="pdf-panel__text" aria-live="polite">
         <h2 id="pdf-h" ref={heading} tabIndex={-1} className="pdf-panel__title">
-          {words[phase]}
+          {phase === "erased" ? PDF_ERASED_LINE : words[phase]}
         </h2>
         {phase === "ready" && pdf.fingerprint && (
           <p className="pdf-panel__meta">

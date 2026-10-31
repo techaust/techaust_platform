@@ -18,6 +18,14 @@ export const PDF_PENDING: ApiError = {
   message: "The PDF isn't ready yet. Try again in a minute.",
 };
 export const PDF_DONE: ApiError = { code: "pdf_done", message: "This document already has its PDF" };
+/**
+ * T7: the PDF of a never-accepted offer whose personal details were erased was deleted, and is never made again (07-ZG line 2, owner-approved 2026-10-31;
+ * Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)).
+ */
+export const PDF_ERASED: ApiError = {
+  code: "pdf_erased",
+  message: "The PDF was deleted when the personal details were erased.",
+};
 
 type PdfRow = {
   id: string;
@@ -28,12 +36,14 @@ type PdfRow = {
   frozen_at: number | null;
   pdf_r2_key: string | null;
   pdf_sha256: string | null;
+  /** T7: set once the offer's personal details were erased (its PDF is gone). */
+  redacted_at: number | null;
   gone: number;
 };
 
 /** The row of the document whose PDF is asked for, for the types of one router (proposals and estimates, or the invoice flow, M5.1). */
 const pdfRowSql = (types: string) =>
-  `SELECT id, type, status, version, number_display, frozen_at, pdf_r2_key, pdf_sha256, ${clientGoneSql("client_id")} AS gone FROM documents WHERE id = ?1 AND type IN (${types})`;
+  `SELECT id, type, status, version, number_display, frozen_at, pdf_r2_key, pdf_sha256, redacted_at, ${clientGoneSql("client_id")} AS gone FROM documents WHERE id = ?1 AND type IN (${types})`;
 
 /** `TH-PRP-2627-0003-v2.pdf`: the number with its slashes changed, so a browser keeps the name. */
 export const pdfFilename = (numberDisplay: string, version: number): string =>
@@ -55,6 +65,8 @@ function pdfRoutes(types: string, retryAction: string) {
         const { id } = c.req.valid("param");
         const row = await c.env.DB.prepare(PDF_ROW).bind(id).first<PdfRow>();
         if (notSent(row) || !row) return err(c, NOT_FOUND, 404);
+        // T7: deleted with the personal details (410: it existed and is gone for good).
+        if (row.redacted_at !== null) return err(c, PDF_ERASED, 410);
         if (row.pdf_sha256 === null || row.pdf_r2_key === null) return err(c, PDF_PENDING, 409);
         const obj = await c.env.DOCS.get(row.pdf_r2_key);
         if (!obj) {
@@ -81,6 +93,8 @@ function pdfRoutes(types: string, retryAction: string) {
         const { id } = c.req.valid("param");
         const row = await c.env.DB.prepare(PDF_ROW).bind(id).first<PdfRow>();
         if (notSent(row) || !row) return err(c, NOT_FOUND, 404);
+        // T7: a redacted offer is never rendered again (the jobs Worker refuses it too).
+        if (row.redacted_at !== null) return err(c, PDF_ERASED, 409);
         if (row.pdf_sha256 !== null) return err(c, PDF_DONE, 409);
         // An erased client takes nothing new (the standing rule): no audit row, no message. The download above is unchanged (owner question).
         if (row.gone === 1) return err(c, CLIENT_GONE, 409);

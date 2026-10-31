@@ -204,9 +204,12 @@ describe("documents_void_no_view (0056) [ADM-INV-10, POR-06]", () => {
     }
     const seen = await proforma({ viewed: true });
     await voidDoc(seen.id);
+    // Clearing a view is refused twice over: by `documents_void_no_view` and by the set-once rule of `documents_frozen_update`. T7's 0058 creates the
+    // frozen trigger again, and SQLite runs the newest trigger first, so the frozen message comes first since then (T7; Settled by the lead on the
+    // safest reading, 2026-10-30 (08-C RB-37)). Either way nothing is written.
     await rejects(
       run("UPDATE documents SET viewed_at = NULL WHERE id = ?", seen.id),
-      /documents_void_no_view/,
+      /documents_void_no_view|issued document is frozen/,
     );
     await run("UPDATE documents SET viewed_at = 8000 WHERE id = ?", seen.id);
     expect(

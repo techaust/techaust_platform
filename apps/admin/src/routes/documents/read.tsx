@@ -1,7 +1,9 @@
 // A proposal or estimate to read (M4.3, ADM-PROP-05, ADM-EST-02): a sent version exactly as it was frozen (`computed`, never worked out
 // again), or a draft for a role that may read but not change it. The page reads like the document: its sections in order, the estimate
 // section with the lines, the tax preview and the payment schedule. Beside it: what can happen next (a new version, or for an accepted
-// estimate an invoice draft or a care plan), the PDF of a sent version (M4.4) and the versions.
+// estimate an invoice draft or a care plan), the PDF of a sent version (M4.4) and the versions. T7: a never-accepted offer whose personal
+// details were erased says so in a banner at the top (07-ZG line 1); its PDF panel says the PDF was deleted (line 2), and it is never sent again
+// ("Send again" and the PDF's "Try again" are gone; "Revoke links" stays). Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37).
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
@@ -14,6 +16,7 @@ import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
 import { TIER_LABELS } from "../../lib/care.ts";
+import { erasedBanner, isErased } from "../../lib/copy-zg.ts";
 import {
   CONVERTED_TO_INVOICE,
   careOfLines,
@@ -79,6 +82,8 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
     reload,
   );
   const accepted = v.versions.some((x) => x.status === "accepted");
+  // T7: whether the personal details were erased (`redactedAt`, the newest erasure, is then the banner's date).
+  const erased = isErased(v);
   const newer = v.versions.filter((x) => x.version > v.version).at(-1);
   const latestSent = Math.max(
     0,
@@ -183,6 +188,8 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
         )}
       </dl>
 
+      {erased && <Notice tone="info">{erasedBanner(formatIstDay(v.redactedAt as number))}</Notice>}
+
       <div className="doc-page doc-page--read">
         <div className="doc-page__send">
           {v.frozen && v.pdf && v.pdf.state !== "none" && (
@@ -191,7 +198,7 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
               id={v.id}
               sentAt={v.sentAt}
               initial={v.pdf}
-              canRetry={allowed(user.role, "proposals.send") && !v.client.anonymised}
+              canRetry={allowed(user.role, "proposals.send") && !v.client.anonymised && !erased}
               onReady={reload}
             />
           )}
