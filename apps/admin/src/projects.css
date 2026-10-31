@@ -4,10 +4,6 @@
    milestone LEDGER: a numbered sequence (milestones really are one) closed by a heavier rule and the total against the budget,
    the way a hand-kept account book closes a column. Loaded with the Projects screens, never on sign-in. */
 
-.tnum {
-  font-variant-numeric: tabular-nums;
-}
-
 .btn--text.btn--danger-text {
   color: var(--color-danger);
 }
@@ -752,79 +748,6 @@
 .notes-empty,
 .files-empty {
   margin: 0;
-}
-
-/* The Markdown subset: quiet prose, the body size, a measure that reads. */
-.md {
-  max-width: var(--container-prose);
-  overflow-wrap: anywhere;
-}
-
-.md > * {
-  margin: 0;
-}
-
-.md > * + * {
-  margin-top: var(--space-2);
-}
-
-.md ul,
-.md ol {
-  padding-inline-start: var(--space-6);
-}
-
-.md code {
-  padding: 0 var(--space-1);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-alt);
-  font-family: var(--font-mono);
-  font-size: var(--text-code);
-}
-
-/* FX-3 (A3 7): a note's own headings (h3 to h5 under the panel's h2) step down from the large body size to the small one, all in the
-   body face's semibold, so they organise the note without competing with the panel title. More room above than below ties each to the
-   text it heads. */
-.md .md__h {
-  font-weight: 600;
-  overflow-wrap: break-word;
-}
-
-.md > .md__h:not(:first-child) {
-  margin-top: var(--space-4);
-}
-
-.md > .md__h + * {
-  margin-top: var(--space-1);
-}
-
-.md .md__h--1 {
-  font-size: var(--text-body-lg);
-  line-height: var(--text-body-lg--line-height);
-}
-
-.md .md__h--2 {
-  font-size: var(--text-body);
-  line-height: var(--text-body--line-height);
-}
-
-.md .md__h--3 {
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-  line-height: var(--text-sm--line-height);
-}
-
-.md pre {
-  position: relative;
-  padding: var(--space-3) var(--space-4);
-  overflow-x: auto;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-alt);
-}
-
-.md pre code {
-  padding: 0;
-  background: none;
 }
 
 /* ---------- Files ---------- */

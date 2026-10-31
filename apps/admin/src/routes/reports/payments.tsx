@@ -130,8 +130,8 @@ function Results({ rows, fy }: { rows: PaymentsRegisterRow[]; fy: string }) {
             <span>{PAY_UI.awaitingNone}</span>
           </p>
         ) : (
-          <WideList className="ledger-scroll" label={PAY_UI.awaitingHeading}>
-            <table className="ledger ledger--plain">
+          <WideList className="rledger-scroll" label={PAY_UI.awaitingHeading}>
+            <table className="rledger rledger--plain">
               <caption className="visually-hidden">{PAY_UI.awaitingHeading}</caption>
               <thead>
                 <tr>

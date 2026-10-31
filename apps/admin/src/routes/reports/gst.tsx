@@ -127,7 +127,7 @@ export function GstExports() {
                       choose(first ?? (periodOptions(today, k)[0] as PeriodChoice));
                     }}
                   />
-                  <span>{k === "month" ? GST_COPY.month : GST_COPY.quarter}</span>
+                  {k === "month" ? GST_COPY.month : GST_COPY.quarter}
                 </label>
               ))}
             </div>
@@ -219,8 +219,8 @@ function GstResults({ result, period, threshold }: { result: Ok; period: PeriodC
 
       <div className="report-grid" hidden={result.checked === 0}>
         <ReportBlock id="gst-totals" title={GST_COPY.totalsHeading}>
-          <WideList className="ledger-scroll" label={GST_COPY.totalsHeading}>
-            <table className="ledger">
+          <WideList className="rledger-scroll" label={GST_COPY.totalsHeading}>
+            <table className="rledger">
               <caption className="visually-hidden">{GST_COPY.totalsHeading}</caption>
               <thead>
                 <tr>
@@ -263,7 +263,7 @@ function GstResults({ result, period, threshold }: { result: Ok; period: PeriodC
                 ))}
               </tbody>
               <tfoot>
-                <tr className="ledger__total">
+                <tr className="rledger__total">
                   <th scope="row">{GST_COPY.overall}</th>
                   <td className="num tnum">{t.overall.documents}</td>
                   <td className="num">
@@ -282,7 +282,7 @@ function GstResults({ result, period, threshold }: { result: Ok; period: PeriodC
               </tfoot>
             </table>
           </WideList>
-          <p className={`ledger-check${result.hsnOk ? "" : " ledger-check--bad"}`}>
+          <p className={`rledger-check${result.hsnOk ? "" : " rledger-check--bad"}`}>
             {result.hsnOk ? <Check size={16} /> : <XCircle size={16} />}
             <span>{result.hsnOk ? GST_COPY.hsnMatches : GST_COPY.hsnDiffers}</span>
           </p>
@@ -295,8 +295,8 @@ function GstResults({ result, period, threshold }: { result: Ok; period: PeriodC
       </div>
 
       <ReportBlock id="gst-docs" title={GST_COPY.table13Heading} hidden={result.checked === 0}>
-        <WideList className="ledger-scroll" label={GST_COPY.table13Heading}>
-          <table className="ledger ledger--plain">
+        <WideList className="rledger-scroll" label={GST_COPY.table13Heading}>
+          <table className="rledger rledger--plain">
             <caption className="visually-hidden">{GST_COPY.table13Heading}</caption>
             <thead>
               <tr>
@@ -348,7 +348,7 @@ function GstResults({ result, period, threshold }: { result: Ok; period: PeriodC
         }
       >
         {/* One row per file: the whole row is the button (07-V's label), the file's own name beside it; the two HSN files carry B2B and B2C. */}
-        <ul className="file-list">
+        <ul className="report-files">
           {result.files.map((f) => {
             const section =
               f.stem === "gstr3b_summary" ? GST_COPY.gstr3bHeading : sectionNameOf(f.stem, thresholdText);
@@ -356,13 +356,13 @@ function GstResults({ result, period, threshold }: { result: Ok; period: PeriodC
               <li key={f.name}>
                 <button
                   type="button"
-                  className="file-list__btn"
+                  className="report-files__btn"
                   disabled={!result.hsnOk}
                   onClick={() => saveFile(csvBlob(f.csv), f.name)}
                 >
                   <Download size={20} />
-                  <span className="file-list__label">{fileDownloadText(f.stem, section)}</span>
-                  <span className="docno file-list__file">{f.name}</span>
+                  <span className="report-files__label">{fileDownloadText(f.stem, section)}</span>
+                  <span className="docno report-files__file">{f.name}</span>
                 </button>
               </li>
             );
@@ -401,8 +401,8 @@ function Gstr3bTable({ lines, held }: { lines: Ok["gstr3b"]; held: Ok["imsHeld"]
     </>
   );
   return (
-    <WideList className="ledger-scroll" label={GST_COPY.gstr3bHeading}>
-      <table className="ledger ledger--plain ledger--3b">
+    <WideList className="rledger-scroll" label={GST_COPY.gstr3bHeading}>
+      <table className="rledger rledger--plain rledger--3b">
         <caption className="visually-hidden">{GST_COPY.gstr3bHeading}</caption>
         <thead>
           <tr>
@@ -429,8 +429,8 @@ function Gstr3bTable({ lines, held }: { lines: Ok["gstr3b"]; held: Ok["imsHeld"]
             </tr>
           ))}
           {heldRow && (
-            <tr className="ledger__sub ledger__held">
-              <th scope="row" className="ledger__held-label">
+            <tr className="rledger__sub rledger__held">
+              <th scope="row" className="rledger__held-label">
                 {IMS_HELD_ROW}
               </th>
               {heads(heldRow, true)}
@@ -442,7 +442,7 @@ function Gstr3bTable({ lines, held }: { lines: Ok["gstr3b"]; held: Ok["imsHeld"]
               {heads(l, true)}
             </tr>
           ))}
-          <tr className="ledger__group">
+          <tr className="rledger__group">
             <th scope="rowgroup" colSpan={5}>
               {GST_COPY.table32}
             </th>
@@ -455,7 +455,7 @@ function Gstr3bTable({ lines, held }: { lines: Ok["gstr3b"]; held: Ok["imsHeld"]
             </tr>
           ) : (
             pos.map((l) => (
-              <tr key={l.posCode ?? "none"} className="ledger__sub">
+              <tr key={l.posCode ?? "none"} className="rledger__sub">
                 <th scope="row">{stateText(l.posCode)}</th>
                 {heads(l, false)}
               </tr>

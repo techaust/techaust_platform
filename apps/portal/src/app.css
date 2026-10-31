@@ -215,13 +215,13 @@ a:hover {
   }
 }
 
+/* The back link, one look everywhere (the document page sets only its own margins, in portal.css). */
 .back {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   min-height: var(--target-min);
   padding-inline: var(--space-2);
-  margin-inline-end: calc(-1 * var(--space-2));
   font-weight: 560;
   text-decoration: none;
   border-radius: var(--radius-md);
@@ -229,6 +229,11 @@ a:hover {
 
 .back:hover {
   text-decoration: underline;
+}
+
+/* In the card's top row, beside the brand: its text lines up with the card's right edge. */
+.card__top .back {
+  margin-inline-end: calc(-1 * var(--space-2));
 }
 
 h1 {

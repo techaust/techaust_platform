@@ -116,8 +116,8 @@ function Results({ built, from, to }: { built: Built; from: string; to: string }
       </h2>
       <ManualEntries lines={built.manual} id="sales-done" />
       <ReportBlock id="sales-output" title={SALES_COPY.previewHeading}>
-        <WideList className="ledger-scroll" label={SALES_COPY.previewHeading}>
-          <table className="ledger ledger--plain">
+        <WideList className="rledger-scroll" label={SALES_COPY.previewHeading}>
+          <table className="rledger rledger--plain">
             <caption className="visually-hidden">{SALES_COPY.previewHeading}</caption>
             <thead>
               <tr>
