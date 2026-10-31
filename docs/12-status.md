@@ -22,8 +22,8 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 
 ## Next
 1. **The owner approves M6.1 on staging** (the lead gives a click-by-click checklist: record a payment as Staff, confirm it as Owner with the code, TDS by certificate, an overpayment kept as credit, the payments register; nothing on the staging sample data is real).
-2. **Decide L9 (the jobs size) before M6.2:** the analyst recommends jobs `minify: true` with source maps and webhook processing in the finance Worker (13, [M6.1 Plan 2](runs/m6.1-ledger-payments.md)). An owner question.
-3. **M6.2 Razorpay** once M6.1 is approved, L9 decided and the owner has the Razorpay test account (runbook Part A); then M6.3 Stripe, M6.4 PayPal, M6.5; T11 (the deed) after M6.1's approval.
+2. **L9 decided (owner, 2026-11-01):** jobs `minify: true` with uploaded source maps, webhook processing in the finance Worker (13); built as M6.2's first step.
+3. **M6.2 Razorpay** once M6.1 is approved and the owner has the Razorpay test account (runbook Part A); then M6.3 Stripe, M6.4 PayPal, M6.5; T11 (the deed) after M6.1's approval.
 4. **Build the `/orchestrate` skill** (owner, 2026-10-31; 13): the watcher in `tools/watch-cloud.mjs` with the lessons in CLAUDE.md "In a cloud session".
 5. **M7.1–M7.5**, the audit of M6–M7, then **Phase 7 all at once** (estimate on 2026-10-31: about 12–17 working days for M6, M7 and Phase 7, gateway live approval not included).
 
@@ -31,7 +31,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 
 ## Waits on the owner
 - **Now:** archive the five cloud sessions of today's run (T12, T6, proforma withdraw, T7; M6.1 once staging is confirmed) and this main conversation once the record PR has merged.
-- **Next:** approve M6.1 on staging; answer the L9 question.
+- **Next:** approve M6.1 on staging.
 - **Payment gateways:** Part A of the [runbook](runbooks/payment-gateways.md) (Razorpay, Stripe, PayPal test accounts, about 30–60 minutes); the keys themselves at each milestone (Part B).
 - **Start early (the lead gives click-by-click steps when each comes up):** SES production access and a production IAM user; the AWS backup bucket (and for T5 the S3 bucket in Mumbai), after signing the AWS MCP in to the TecHaust account; website inputs (headshot, bio facts, the email aliases, the launch date, the company LinkedIn page, WhatsApp Business number, Cal.com link, 2–3 case-study briefs, one social handle per platform, the 3 blog drafts).
 - **Dated duties** (steps in [settle-08c](runs/settle-08c.md)): **by 13 November** the October IFF if an October credit note relies on it; **before the next export invoice** the FY 2026-27 LUT (ARN in Settings › Tax); **by 30 November** the October EDF if any export invoice was raised in October; **monthly** reverse charge on foreign services; **every April** the turnover check; **once** the Offline Tool test import, the CERT-In point of contact, the trademark search (classes 9, 35, 42).
