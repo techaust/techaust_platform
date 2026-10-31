@@ -110,11 +110,12 @@ export const BUDGETS = {
  * the guard flaky (lead, 2026-10-25).
  */
 export function measureStartup(code, runs = 7) {
-  // The export list ends the code; a trailing license comment (the jobs bundle has one) may follow it.
+  // The export list ends the code; a trailing license comment (the jobs bundle has one) may follow it, and since L9 (jobs minified with
+  // uploaded source maps) a `//# sourceMappingURL=` line, on its own line or straight after the list on the same line.
   // M5.4: the admin API Worker exports the named entrypoint `BillingJobs` (a `WorkerEntrypoint` subclass), so its bundle starts with
   // `import{WorkerEntrypoint as e}from"cloudflare:workers"`. The probe has no such module: the import becomes a stand-in class of the same name (its own cost is the platform's, not the code's).
   const src = code
-    .replace(/\bexport\s*\{[^}]*\};?[ ]*$/m, "")
+    .replace(/\bexport\s*\{[^}]*\};?[ ]*(?:\/\/# sourceMappingURL=\S*[ ]*)?$/m, "")
     .replace(/\bimport\s*\{([^}]*)\}\s*from\s*["']cloudflare:workers["'];?/g, (_m, names) => {
       // Only `WorkerEntrypoint` may be stood in for (early check, finding 10): a bundle that starts importing anything else from the runtime (`env`, `DurableObject`,
       // `waitUntil`...) would run in the probe with a class where it needs a value and measure something else, so it fails the probe instead.

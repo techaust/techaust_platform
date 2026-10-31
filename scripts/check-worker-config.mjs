@@ -1,7 +1,7 @@
 // Guard: Version/Preview URLs skip Cloudflare Access, so every Worker config must switch them off at the top level
 // and in `env.staging` and `env.production` (audit 2026-10-22, M1; docs/runbooks/access-staging.md). Also the admin API Worker's
 // config against the front's (M5.0; the finance Worker's too since M6.1 stage A), the jobs crons and binding (M5.4, FX-1), and Workers
-// Traces on staging only (full audit A6 9).
+// Traces on staging only (full audit A6 9), and the jobs Worker minified with source maps (L9).
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -167,6 +167,23 @@ export function jobsConfigProblems(jobs, target) {
   return problems;
 }
 
+/**
+ * L9 (owner, 2026-10-31; PR #138): the jobs Worker is minified with its source maps uploaded. Both keys must be `true` at the top
+ * level (wrangler inherits them into every environment), and no environment may set either to anything but `true` (a `false`
+ * there would quietly ship the unminified bundle, about a third bigger, or drop the readable stack traces). Empty = passes.
+ */
+export function jobsBuildProblems(jobs) {
+  const problems = [];
+  for (const key of ["minify", "upload_source_maps"]) {
+    if (jobs[key] !== true) problems.push(`(top level): ${key} must be true (L9)`);
+    for (const [name, env] of Object.entries(jobs.env ?? {})) {
+      if (env && key in env && env[key] !== true)
+        problems.push(`env.${name}: ${key} must not be switched off (L9)`);
+    }
+  }
+  return problems;
+}
+
 /** The head sampling rate of Workers Traces on staging (full audit A6 9, owner's yes 2026-10-30; headroom in docs/runbooks/cpu-baseline.md). */
 export const STAGING_TRACE_RATE = 0.1;
 
@@ -249,6 +266,10 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
     console.error(`apps/jobs: ${p}`);
     failed = true;
   }
+  for (const p of jobsBuildProblems(read("jobs/wrangler.jsonc"))) {
+    console.error(`apps/jobs: ${p}`);
+    failed = true;
+  }
   for (const file of [
     ...APPS.map((a) => `${a}/wrangler.jsonc`),
     ...ADMIN_AUX_CONFIGS.map((f) => `admin/${f}`),
@@ -260,6 +281,6 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
   }
   if (failed) process.exit(1);
   console.log(
-    "worker config guard: ok (preview_urls is false everywhere; the admin API and finance Workers have no public URL; traces on staging only)",
+    "worker config guard: ok (preview_urls is false everywhere; the admin API and finance Workers have no public URL; traces on staging only; jobs minified with source maps)",
   );
 }

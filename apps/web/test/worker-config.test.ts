@@ -243,6 +243,40 @@ describe("jobs Worker config guard (M5.4, LD57, LD61)", () => {
   });
 });
 
+describe("jobs Worker minify and source maps (L9, owner 2026-10-31)", () => {
+  const read = (p: string) => guard.parseJsonc(readFileSync(new URL(`../../${p}`, import.meta.url), "utf8"));
+  const jobs = read("jobs/wrangler.jsonc");
+
+  it("the real config minifies and uploads source maps at the top level, and no environment switches them off", () => {
+    expect(jobs.minify).toBe(true);
+    expect(jobs.upload_source_maps).toBe(true);
+    expect(guard.jobsBuildProblems(jobs)).toEqual([]);
+  });
+
+  it("fails a missing or false top-level key", () => {
+    const a = structuredClone(jobs);
+    delete a.minify;
+    a.upload_source_maps = false;
+    expect(guard.jobsBuildProblems(a)).toEqual([
+      "(top level): minify must be true (L9)",
+      "(top level): upload_source_maps must be true (L9)",
+    ]);
+  });
+
+  it("fails an environment that sets either key to anything but true", () => {
+    const b = structuredClone(jobs);
+    b.env.staging.minify = false;
+    b.env.production.upload_source_maps = "false";
+    expect(guard.jobsBuildProblems(b)).toEqual([
+      "env.staging: minify must not be switched off (L9)",
+      "env.production: upload_source_maps must not be switched off (L9)",
+    ]);
+    const c = structuredClone(jobs);
+    c.env.staging.minify = true;
+    expect(guard.jobsBuildProblems(c)).toEqual([]);
+  });
+});
+
 describe("admin finance Worker config guard (M6.1 stage A, ADM-PAY-01)", () => {
   const read = (p: string) => guard.parseJsonc(readFileSync(new URL(`../../${p}`, import.meta.url), "utf8"));
   const finance = read("admin/wrangler.finance.jsonc");
