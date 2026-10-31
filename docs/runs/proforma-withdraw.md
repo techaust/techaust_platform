@@ -1,6 +1,6 @@
-Status: analyst early check and designer running in parallel (disjoint files; started 13:54 IST); owner answered Q1–Q4, 07-ZF approved
+Status: builder round 2 (early-check fixes) and designer running; owner answered Q1–Q4, 07-ZF approved
 Tier: A
-Usage: analyst (brief draft) claude-opus-5-5/high, skills: none available (no Cloudflare plugin in the cloud); 5-h 8 % at start · builder r1 claude-opus-5-5/high, skills: none (same reason; flagged by model-audit); 5-h 8 → 46 % (reading 13:46)
+Usage: analyst (brief draft) claude-opus-5-5/high, skills: none available (no Cloudflare plugin in the cloud); 5-h 8 % at start · builder r1 claude-opus-5-5/high, skills: none (same reason; flagged by model-audit); 5-h 8 → 46 % (reading 13:46) · analyst (early check) claude-opus-5-5/high, skills: code-review (+ its read-only helper); 5-h 46 % · designer r1 (started 5-h 46 %)
 
 # Withdraw a proforma the client has seen (cloud session "proforma-withdraw")
 
@@ -123,6 +123,18 @@ Branch (builder r1, c0b71b2): admin front 99,391; admin API **625,014** (+6,592;
 Main (a5f9f92): admin API 618,422 (plan line 650,000), jobs 984,266 of 1,000,000.
 
 ## Early check
+Analyst, 2026-10-31, on 8c77a82 (diff 9470b04..HEAD): **CHANGE.** The design holds: the four guard layers agree; the step-up/owner clause matches void character for character; 0056 re-creates `documents_viewed_no_void` byte-identical to 0053 except the types and rebuilds nothing; every existing `document_sends` insert is `INSERT … SELECT … WHERE` not void, so the new triggers never fire on a real path; portal scoping, no view on a withdrawn proforma, no R2 read on a refused PDF, no `p:fail:` count, no reason leak; CPU and bytes fine. Skills: `code-review` (its read-only helper, 10 candidates checked by hand: 4 fixes, 2 lows, 2 for the designer, 2 dismissed).
+- **A1 (high, CI red):** the jobs suite fails 2 of 549 (`apps/jobs/test/invoice-send.test.ts:333`, `ld56.test.ts:85`): fixtures create a void document, then insert its send row, which `document_sends_not_void` refuses. Fix: issue, send, then void (or a `voidAfterSend` fixture option); rerun the full jobs suite.
+- **A2 (medium, Q3 A):** the portal summary returns the frozen `bank` block for a withdrawn proforma (`apps/portal/worker/invoice-summary.ts:342`). Fix: `bank: null` when withdrawn; tests on the page and the emailed link, and a live proforma keeps its bank. Handoff to M6/M7.1: any payment field they add is null for a withdrawn proforma.
+- **B1 (low):** the withdraw router is mounted twice (`apps/admin/worker/routes-api.ts:64-65`).
+- **B2 (low):** `isWithdrawnRow` (`invoice-summary.ts:46`) decides on status alone; make it `type = proforma AND status = void`.
+- **B3 (low):** `voidBody` hard-codes 500 (`invoices.ts:493`); use `WITHDRAW_REASON_MAX` (one shared reason schema).
+- **B4 (low):** share the owner step-up clause and the milestone-release statement between void and withdraw.
+- **B5 (low):** the void route has no catch for `documents_proforma_withdraw`/`documents_viewed_no_void`; map a trigger abort to the re-read (409, never 500).
+- **B6 (low):** the trigger's advance-receipt clause isn't tested alone; test it with the scope trigger dropped and restored.
+- **For the designer (D1):** the portal SPA's `clientStatus` shows "withdrawn" as "Paid"; `balanceMinor` nullable, `withdrawnOn`; admin `voidErrorText` for 07-ZF 15/16. Sent to the designer.
+- **Lead accepts (with reasons):** a concurrent payment or advance answers `stale_version` rather than `proforma_paid` (the advance moves `updated_at`; the screen reloads and then shows the blocker; same as void). Old data: a proforma viewed then voided between M5.4 and FX-5 (about 2026-10-28 to 30) would now show as withdrawn; only staging could hold one (production has no D1 until Phase 7), so it's test data (follow-up below). The "Network connection lost" lines come from the vault's truncated-upload test (`vault.test.ts` alone prints them), not from this branch.
+- **Lead triage:** A1, A2, B1–B6 all go to the builder (round 2); D1 to the designer; docs/04 §9 row and ADM-INV-02/-10 wording by the lead.
 
 ## Builder report
 Builder (round 1, branch `build/proforma-withdraw-r1`, head c0b71b2, merged into the task branch by the lead as 10b4f02; worktree removed, logs in `.logs/proforma-withdraw/`).
@@ -144,6 +156,9 @@ Builder (round 1, branch `build/proforma-withdraw-r1`, head c0b71b2, merged into
 ## Integration notes
 
 ## Follow-ups (for 12)
+- **Staging data check (needs the owner's yes, read-only):** any proforma on staging that was viewed in the portal and then voided before FX-5 (2026-10-28 to 30) now reads as "withdrawn" and reappears in that client's portal. Test data only; check before Phase 7 if wanted.
+- **M6/M7.1 handoff:** M6.1's migration adds "no payment row" to both proforma statements (void, withdraw) and to `documents_proforma_withdraw`; any payment field added to the portal summary is null for a withdrawn proforma.
+- **Admin API bytes:** 625,014 after this task (about 25 KB under the 650,000 plan line), for M6.1's third-Worker plan.
 - **Fixed by #126.** ~~Cloud setup script (found 2026-10-31 at this session's start):~~ the setup script stopped with "node -v says v24.22.1, not v24.22.2". Cause: the cloud image now ships `/opt/node24` as a real folder (Node 24.22.1), so `ln -sfn "/opt/${NODE_NAME}" /opt/node24` in `scripts/cloud-setup.sh` (line 57) puts the link inside that folder instead of replacing it, and the version check fails before the browser step. Fix: add `[ -L /opt/node24 ] || rm -rf /opt/node24` on the line before it, then paste the script into the environment's "Setup script" box again (owner). This session ran on the image's Node 24.22.1 (inside `engines` >= 24.19.0) and the lead installed the two Chromium builds by hand (`pnpm exec playwright install --with-deps chromium` from `apps/web`, and `npx @playwright/mcp@0.0.83 install-browser --no-shell chromium`, both into `/opt/ms-playwright`); `bash scripts/cloud-check.sh` then: all passed. Note: `npx -y playwright@1.64.1 install` picked up the image's own Playwright and installed revision 1243, not 1248; the repository's own binary is the reliable path.
 
 ## Handover
