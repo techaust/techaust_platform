@@ -1,6 +1,6 @@
-Status: early check CHANGE (M1, L1–L3 + stale-check sites) sent to builder r2; builder r2 running
+Status: r2 merged (4e2366a) + lead fix 60bcb5c; reviewer waits for the window reset (main session: no new agent before 06:10 IST)
 Tier: B
-Usage: analyst (item 5) claude-opus-5-5/high, skills: code-review (+ its read-only general-purpose helper claude-opus-5-5/high); 5-h 17 → 62 % (shared window, four sessions) · builder r1 claude-opus-5-5/high, skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:turnstile-spin (not installed in the cloud); 5-h 17 → 62 % · analyst (early check r1) claude-opus-5-5/high, skills: code-review (+ read-only helper); 5-h 62 %
+Usage: analyst (item 5) claude-opus-5-5/high, skills: code-review (+ its read-only general-purpose helper claude-opus-5-5/high); 5-h 17 → 62 % (shared window, four sessions) · builder r1 claude-opus-5-5/high, skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:turnstile-spin (not installed in the cloud); 5-h 17 → 62 % · analyst (early check r1) claude-opus-5-5/high, skills: code-review (+ read-only helper); 5-h 62 % · builder r2 claude-opus-5-5/high, skills tried: cloudflare:workers-best-practices (not installed in the cloud); 5-h 62 → 88 %
 
 # Test and guard hardening (cloud session "test-hardening")
 
@@ -338,6 +338,7 @@ _Pasted by the lead from the analyst's reply (Opus 5.5 high, read-only, 2026-11-
 
 ## Lead decisions (for 13)
 - 2026-11-01: the optimistic stale check on six admin writers (leads, catalogue, client, client billing, contact, bank account) stamps `max(now, expected + 1)`, the house pattern, closing a same-millisecond/clock-skew gap (analyst: theoretical, low); the billing step-up check keeps the real clock.
+- 2026-11-01 (builder r2's question): a send whose email already has its `email_log` row is never marked cancelled by a refused redelivery (it stays Sent/Delivered/Failed); jobs `MARK_NOT_SENT_SQL` in `invoice-send.ts` and `offers.ts`, tests in both (fail without the fix, checked). Lead commit 60bcb5c.
 - 2026-11-01: item-5 defects #1–#4 (a revoked link re-minted on a queue retry, a reminder given back unpaused after a revoke, a care PDF enqueue failure ignored, care billing statements unguarded against a just-anonymised client) fixed in this task.
 - 2026-11-01: the M5.4 code-review candidates were never recorded, so item 5 is a fresh focused pass over the six named files on main (analyst), not a re-check of a list.
 - 2026-11-01: `git remote set-head origin main` run in this session's clone so `security-review` can load (cloud follow-up from T6).
@@ -347,6 +348,8 @@ _Pasted by the lead from the analyst's reply (Opus 5.5 high, read-only, 2026-11-
 - **Stale stamps without their own check (low):** leads stage `leads.ts:797`, convert `:1039`, `documents.ts:384`, contacts `clients.ts:909`, `:1126`, `:1484` stamp a stale-checked row with a bare `Date.now()`; SQL `updated_at = max(?n, updated_at + 1)` would close the same theoretical gap; optionally a guard test.
 - **Udyam paste:** non-breaking hyphen U+2011, en dash and zero-width characters are not cleaned (whitespace only); the form's `maxLength={30}` can cut a paste with many spaces before it is cleaned.
 - **issue.ts / triggers.ts** (out of bounds in this run): `issue.ts` has no type list (it applies `SIGNED_FREEZE_SQL` per path), so no test ties the path choice to core's `signatureRequired`; the 0055 trigger copies stay pinned by `signature-triggers.test.ts`.
+- **An email still on `EMAIL_QUEUE` when its send is cancelled** (no log row yet): the email consumer doesn't check `cancelled_at`, so it can still go (with a revoked, dead link) while the send reads Cancelled; pre-existing, rare (queue failure plus a revoke within seconds).
+- **Resume between a revoke and a failed reminder send** (item 5 #2): the claimed reminder comes back paused and needs a second Resume (builder r2, accepted).
 - **Merge commit 0dffdec** (builder r1) carries git's default message without the co-author footer; left as is (fixing it needs a force-push).
 
 ## Questions for the owner
