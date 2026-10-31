@@ -28,7 +28,7 @@ import {
   type TermsRaw,
   type UsageRaw,
 } from "@techaust/db/care";
-import { COLLECTED_SQL, PENDING_PAYMENTS_COUNT_SQL } from "@techaust/db/ledger";
+import { COLLECTED_TILE_SQL, PENDING_PAYMENTS_COUNT_SQL } from "@techaust/db/ledger";
 import {
   EXPORT_NEXT_SQL,
   EXPORT_STAGE_COUNTS_SQL,
@@ -161,10 +161,10 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
       db.prepare(SETTINGS_TAX_SQL),
       db.prepare(EXPORT_STAGE_COUNTS_SQL).bind(today),
       db.prepare(EXPORT_NEXT_SQL).bind(today),
-      // M6.1 (07-ZH line 16): collected this IST month and this FY, by currency (confirmed payments only, `payments_confirmed`); and, for the Owner, how
-      // many payments wait for a check (`payments_pending`, the partial index only).
-      db.prepare(COLLECTED_SQL).bind(monthFrom, today),
-      db.prepare(COLLECTED_SQL).bind(fyFrom, fyTo),
+      // M6.1 (07-ZH line 16): collected this FY and this IST month, by currency (confirmed payments only, `payments_confirmed`), in one pass with no
+      // GROUP BY b-tree (early check 2, finding 6: one row read per payment of the FY); and, for the Owner, how many payments wait for a check
+      // (`payments_pending`, the partial index only).
+      db.prepare(COLLECTED_TILE_SQL).bind(fyFrom, fyTo, monthFrom, today),
       ...(me.role === "owner" ? [db.prepare(PENDING_PAYMENTS_COUNT_SQL)] : []),
     );
   }
@@ -279,6 +279,13 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
     // The export statements read the tax row's own values in SQL; if the row is not valid (the no-zod reader says so) their figures are withheld, never guessed.
     const rulesOk = taxJson !== null && realisationParamsFromStoredTax(taxJson).ok;
     const stageCount = new Map(rows<{ stage: string; n: number }>("finance", 5).map((r) => [r.stage, r.n]));
+    const collected = rows<{
+      currency: string;
+      fy_collected: number;
+      fy_n: number;
+      month_collected: number;
+      month_n: number;
+    }>("finance", 7);
     out.finance = {
       today,
       month: {
@@ -370,21 +377,15 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
         : { available: false, reason: "settings_invalid" },
       collected: {
         available: true,
-        month: rows<{ currency: string; collected: number; n: number }>("finance", 7).map((r) => ({
-          currency: r.currency,
-          collectedMinor: r.collected,
-          count: r.n,
-        })),
-        fy: rows<{ currency: string; collected: number; n: number }>("finance", 8).map((r) => ({
-          currency: r.currency,
-          collectedMinor: r.collected,
-          count: r.n,
-        })),
+        month: collected
+          .filter((r) => r.month_n > 0)
+          .map((r) => ({ currency: r.currency, collectedMinor: r.month_collected, count: r.month_n })),
+        fy: collected.map((r) => ({ currency: r.currency, collectedMinor: r.fy_collected, count: r.fy_n })),
       },
       // The Owner's tile only (the check is the Owner's): Staff and the Accountant get no figure, not a zero.
       paymentsToVerify:
         me.role === "owner"
-          ? { available: true, count: count("finance", 9) }
+          ? { available: true, count: count("finance", 8) }
           : { available: false, reason: "owner_only" },
     };
   }

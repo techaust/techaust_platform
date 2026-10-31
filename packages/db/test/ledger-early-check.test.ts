@@ -7,6 +7,9 @@ import { parseIsoDate, toIsoDate } from "@techaust/core/dates";
 import { DEFAULT_REALISATION_RULES, realisationDates } from "@techaust/core/gst";
 import { describe, expect, it } from "vitest";
 import {
+  COLLECTED_CURRENCIES,
+  COLLECTED_SQL,
+  COLLECTED_TILE_SQL,
   extensionLetterStatement,
   ledgerResultStatement,
   PAYMENT_ASKS_FOR_DOCUMENT_SQL,
@@ -18,6 +21,7 @@ import {
 } from "../src/ledger.ts";
 import { femaDueSql, gstDueSql, SCAN_BINDS } from "../src/realisation.ts";
 import { REALISATION_PAGE_SQL, REGISTER_PAGE_SQL, STATEMENT_PAGE_SQL } from "../src/reports.ts";
+import { CURRENCY_CODES } from "../src/schema/common.ts";
 import { mkClientRow, mkIssued, mkMember, next } from "./billing-helpers.ts";
 import { first, rejects, run } from "./helpers.ts";
 
@@ -404,5 +408,65 @@ describe("early check 2 (stage B2): the void fragment as a builder, and the eras
       decision_note: null,
       withdraw_reason: null,
     });
+  });
+});
+
+describe("early check 2, finding 6: the Collected tile in one pass", () => {
+  it("names every currency a payment can be in, and equals the grouped twin over the FY and the month, with no GROUP BY b-tree", async () => {
+    expect([...COLLECTED_CURRENCIES]).toEqual([...CURRENCY_CODES]);
+    const owner = await mkMember("owner");
+    const inr = await mkClientRow();
+    const usd = await mkClientRow({ currency: "USD" });
+    const ids: string[] = [];
+    for (const [client, currency, amount, day] of [
+      [inr, "INR", 1_000, "2031-04-02"],
+      [inr, "INR", 2_000, "2031-10-03"],
+      [usd, "USD", 300, "2031-09-30"],
+      [usd, "USD", 400, "2032-03-31"],
+    ] as const) {
+      const id = uuidv7();
+      ids.push(id);
+      await run(
+        `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, reference_norm, recorded_by, recorded_at, verified_by, verified_at)
+         VALUES (?1, ?2, 'payment', 'manual', 'confirmed', ?3, ?4, ?5, 'neft', NULL, ?6, ?7, ?6, ?7)`,
+        id,
+        client,
+        currency,
+        amount,
+        day,
+        owner,
+        T,
+      );
+    }
+    const tile = await env.DB.prepare(COLLECTED_TILE_SQL)
+      .bind("2031-04-01", "2032-03-31", "2031-10-01", "2031-10-31")
+      .all();
+    expect(tile.results).toEqual([
+      { currency: "INR", fy_collected: 3_000, fy_n: 2, month_collected: 2_000, month_n: 1 },
+      { currency: "USD", fy_collected: 700, fy_n: 2, month_collected: 0, month_n: 0 },
+    ]);
+    const twin = await env.DB.prepare(COLLECTED_SQL).bind("2031-04-01", "2032-03-31").all();
+    expect(twin.results).toEqual([
+      { currency: "INR", collected: 3_000, n: 2 },
+      { currency: "USD", collected: 700, n: 2 },
+    ]);
+    // a FY with no payment: no row at all (as the grouped twin)
+    expect(
+      (
+        await env.DB.prepare(COLLECTED_TILE_SQL)
+          .bind("2040-04-01", "2041-03-31", "2040-10-01", "2040-10-31")
+          .all()
+      ).results,
+    ).toEqual([]);
+    const plan = (
+      await env.DB.prepare(`EXPLAIN QUERY PLAN ${COLLECTED_TILE_SQL}`)
+        .bind("2031-04-01", "2032-03-31", "2031-10-01", "2031-10-31")
+        .all<{ detail: string }>()
+    ).results
+      .map((r) => r.detail)
+      .join(" | ");
+    expect(plan).toContain("payments_confirmed");
+    expect(plan).not.toContain("GROUP BY");
+    expect(ids).toHaveLength(4);
   });
 });

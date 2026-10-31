@@ -103,8 +103,10 @@ export type InvoiceViewInput = {
   /** A `document_sends` row exists (the Q1 void rule), and an issued document names this one as its parent. */
   emailed: boolean;
   hasIssuedChild: boolean;
-  /** M6.1 (L17): a PENDING payment asks for this document, or an allocation row names it (the void blockers). */
+  /** M6.1 (L17): a PENDING payment asks for this document (the void blockers). */
   paymentPending: boolean;
+  /** M6.1 (L17, L32): an allocation row names this document (the void blockers). */
+  paymentRecorded: boolean;
   /** M5.2: the active bank rows (the blockers), the newest extra export note and the documents made from this one. */
   bank: readonly BankRow[];
   declaration: TermsRef | null;
@@ -228,6 +230,7 @@ export function invoiceView(i: InvoiceViewInput) {
     type: d.type,
     tdsMinor: d.tds_minor,
     paymentPending: i.paymentPending,
+    paymentRecorded: i.paymentRecorded,
   });
   const clientDays = client.payment_terms_days;
   const dueDays = clientDays ?? settings.paymentTerms.dueDays;

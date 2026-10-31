@@ -66,6 +66,7 @@ import {
   PAYMENT_CLOSED,
   PAYMENT_NOT_CONFIRMED,
   PAYMENT_NOT_PENDING,
+  PROFORMA_ASK_WHOLE,
   PROOF_ALREADY_SET,
   paymentLink,
   RECEIVED_ON_FUTURE,
@@ -78,6 +79,7 @@ import {
   USE_ADVANCE_INVOICE,
 } from "./payment-messages.ts";
 import { CLIENT_GONE } from "./quote-model.ts";
+import { sessionRefusal } from "./session-refusal.ts";
 
 // ---- reads ----------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -361,25 +363,6 @@ function receiptWarnings(receivedOn: string, docs: readonly DocRow[], ids: reado
     );
 }
 
-/** The session state behind a refused batch, read once: signed out (401), no fresh code (403), else null. */
-async function sessionRefusal(c: Ctx, needsStepUp: boolean): Promise<Response | null> {
-  const u = actor(c);
-  const t = Date.now();
-  const s = await c.env.DB.prepare(
-    "SELECT (idle_expires_at > ?2 AND abs_expires_at > ?2) AS live, step_up_until FROM staff_sessions WHERE id = ?1 AND revoked_at IS NULL",
-  )
-    .bind(u.sessionId, t)
-    .first<{ live: number; step_up_until: number | null }>();
-  if (s?.live !== 1) return err(c, { code: "unauthenticated", message: "Sign in" }, 401);
-  if (needsStepUp && (s.step_up_until === null || s.step_up_until <= t))
-    return err(
-      c,
-      { code: "step_up_required", message: "Confirm with a fresh code from your authenticator first" },
-      403,
-    );
-  return null;
-}
-
 const contentOf = (p: {
   id: string;
   clientId: string;
@@ -537,6 +520,15 @@ export const payments = new Hono<AppEnv>()
         ? err(c, TDS_NOT_ALLOWED, 409, { documentId: first.documentId })
         : err(c, USE_ADVANCE_INVOICE, 409, { documentId: first.documentId });
     }
+    // Early check 2, finding 3: a proforma ask is the whole payment on that one proforma. The Owner confirms it only by issuing the tax invoice for the
+    // payment received, for exactly the payment's amount (L5), so a split between a proforma and invoices (or two proformas) could never be confirmed.
+    if (
+      proformaAsks.length > 0 &&
+      (requested.length !== 1 || (proformaAsks[0] as AllocationRequest).amountMinor !== f.amountMinor)
+    )
+      return err(c, PROFORMA_ASK_WHOLE, 409, {
+        documentId: (proformaAsks[0] as AllocationRequest).documentId,
+      });
     for (const r of proformaAsks) {
       const d = docs.find((x) => x.id === r.documentId) as DocRow;
       if (d.client_id !== f.clientId) return err(c, CLIENT_MISMATCH, 409, { documentId: d.id });

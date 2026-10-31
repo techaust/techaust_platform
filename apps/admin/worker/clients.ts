@@ -1373,6 +1373,29 @@ export const contacts = new Hono<AppEnv>()
                AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = clients.id AND o.id <> ?1 AND o.anonymised_at IS NULL) AND ${g.sql(2)}`,
           )
           .bind(id, ...g.params),
+        // 3b. M6.1 (early check 2, finding 4; L31): its payments' free text and bells, once the client reads as anonymised (step 3, above; the trigger
+        //     `payments_fixed` / `payments_status_flow` allow these three columns to become NULL only then). The bells (`payment.verify`, `payment.decided`)
+        //     name the client; the entry's note, the Owner's decision note and the withdraw reason are words a person typed, and the `payment_verify` approval's
+        //     note copies the decision note. Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11): data kept for a legal duty may be used for it,
+        //     and the free text is not needed for it. Amounts, dates, references, proof and the TDS certificate stay untouched: they are tax records
+        //     (Researched 2026-10-28, s.36 CGST Act, Rules 56 and 57 (08-C RA-25)). Same conditions as step 3; a business client's are never touched.
+        db
+          .prepare(
+            `DELETE FROM notifications WHERE entity_type = 'payment' AND entity_id IN (SELECT id FROM payments WHERE ${LAST_LIVE_INDIVIDUAL("payments.client_id")}) AND ${g.sql(2)}`,
+          )
+          .bind(id, ...g.params),
+        db
+          .prepare(
+            `UPDATE approvals SET note = NULL WHERE kind = 'payment_verify' AND note IS NOT NULL AND payment_id IN (SELECT id FROM payments WHERE ${LAST_LIVE_INDIVIDUAL("payments.client_id")}) AND ${g.sql(2)}`,
+          )
+          .bind(id, ...g.params),
+        db
+          .prepare(
+            `UPDATE payments SET note = NULL, decision_note = NULL, withdraw_reason = NULL
+             WHERE (note IS NOT NULL OR decision_note IS NOT NULL OR withdraw_reason IS NOT NULL) AND ${LAST_LIVE_INDIVIDUAL("payments.client_id")}
+               AND EXISTS (SELECT 1 FROM clients pa WHERE pa.id = payments.client_id AND pa.anonymised_at IS NOT NULL) AND ${g.sql(2)}`,
+          )
+          .bind(id, ...g.params),
         // 4. the contact itself. A business client's drafts may still be addressed to this contact: they lose the addressee first (a draft's
         //    `contact_id` references the contact, and an erase deletes it), and the saved hash with it, so the draft is saved again with another
         //    contact before it is sent or issued. An ANONYMISED contact does the same (M5.1 review 1: an invoice frozen with a contact the

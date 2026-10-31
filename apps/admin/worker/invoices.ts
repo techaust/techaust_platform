@@ -25,7 +25,7 @@ import {
   voidBlockers,
 } from "@techaust/core/invoices";
 import { bundleOf, LOAD_STATEMENTS, loadStatements, type TermsRef } from "@techaust/db/documents";
-import { PAYMENT_ASKS_FOR_DOCUMENT_SQL } from "@techaust/db/ledger";
+import { paymentBlocksVoidSql, paymentPendingForSql, paymentRecordedSql } from "@techaust/db/ledger";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
@@ -332,17 +332,16 @@ export async function listInvoices(
  * their versions), the active bank rows, the newest invoice footer notes, its `issue` approvals, its milestone, and whether it was emailed or has
  * an issued child. A route that needs more reads passes those statements in `extra`; their results come back after the others.
  */
-/** M6.1 (L17): the void statement's own test of the same rule, on the row it updates (no allocation row, no pending payment asking for it). */
-const VOID_PAYMENT_SQL = PAYMENT_ASKS_FOR_DOCUMENT_SQL.replace(/^SELECT \(/, "(")
-  .replace(/ AS pending$/, "")
-  .replaceAll("?1", "documents.id")
-  .replaceAll("?2", "documents.client_id");
+/** M6.1 (L17; early check 2, finding 10): the void statement's own test of the same rule, on the row it updates (no allocation row, no pending payment asking for it). */
+const VOID_PAYMENT_SQL = paymentBlocksVoidSql("documents.id", "documents.client_id");
 
-/** L17 (the void facts): `PAYMENT_ASKS_FOR_DOCUMENT_SQL` with the document's own client, as a scalar subquery of the facts read (`?1` the document). */
-const PAYMENT_PENDING_OF_SQL = PAYMENT_ASKS_FOR_DOCUMENT_SQL.replaceAll(
-  "?2",
-  "(SELECT pd.client_id FROM documents pd WHERE pd.id = ?1)",
-);
+/** The client of the document `?1`, as a scalar subquery (the void facts read). */
+const CLIENT_OF_DOC = "(SELECT pd.client_id FROM documents pd WHERE pd.id = ?1)";
+/**
+ * L17, L32 (the void facts, `?1` the document): `payment_pending` (a pending payment of its client asks for it) and `payment_recorded` (an allocation row names
+ * it), two columns of the facts read and of the re-read after a refused void.
+ */
+const PAYMENT_FACTS_SQL = `${paymentPendingForSql("?1", CLIENT_OF_DOC)} AS payment_pending, ${paymentRecordedSql("?1")} AS payment_recorded`;
 
 export async function readInvoice(
   c: { env: { DB: D1Database } },
@@ -369,7 +368,7 @@ export async function readInvoice(
     db.prepare(MILESTONE_OF_SQL).bind(id),
     db
       .prepare(
-        `SELECT EXISTS (SELECT 1 FROM document_sends s WHERE s.document_id = ?1) AS emailed, EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = ?1 AND x.frozen_at IS NOT NULL) AS child, CASE WHEN (SELECT status FROM documents WHERE id = ?1) = 'void' THEN (SELECT u.name FROM audit_log a JOIN staff_users u ON u.id = a.actor_id WHERE a.entity_type = 'document' AND a.entity_id = ?1 AND a.action = 'invoice.void' ORDER BY a.at DESC LIMIT 1) END AS voided_by_name, (${PAYMENT_PENDING_OF_SQL}) AS payment_pending`,
+        `SELECT EXISTS (SELECT 1 FROM document_sends s WHERE s.document_id = ?1) AS emailed, EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = ?1 AND x.frozen_at IS NOT NULL) AS child, CASE WHEN (SELECT status FROM documents WHERE id = ?1) = 'void' THEN (SELECT u.name FROM audit_log a JOIN staff_users u ON u.id = a.actor_id WHERE a.entity_type = 'document' AND a.entity_id = ?1 AND a.action = 'invoice.void' ORDER BY a.at DESC LIMIT 1) END AS voided_by_name, ${PAYMENT_FACTS_SQL}`,
       )
       .bind(id),
     ...extra,
@@ -385,11 +384,13 @@ export async function readInvoice(
     child: 0,
     voided_by_name: null,
     payment_pending: 0,
+    payment_recorded: 0,
   }) as {
     emailed: number;
     child: number;
     voided_by_name: string | null;
     payment_pending: number;
+    payment_recorded: number;
   };
   return {
     bundle,
@@ -405,8 +406,10 @@ export async function readInvoice(
     milestone: (milestoneR?.results[0] as MilestoneFacts | undefined) ?? null,
     emailed: facts.emailed === 1,
     hasIssuedChild: facts.child === 1,
-    /** M6.1 (L17): a PENDING payment asks for this document, or an allocation row names it (`PAYMENT_ASKS_FOR_DOCUMENT_SQL`). */
+    /** M6.1 (L17): a PENDING payment asks for this document (`paymentPendingForSql`). */
     paymentPending: facts.payment_pending === 1,
+    /** M6.1 (L17, L32): an allocation row names this document, one released or withdrawn since included (`paymentRecordedSql`). */
+    paymentRecorded: facts.payment_recorded === 1,
     /** The name of the member who voided it (from the `invoice.void` audit row; null when it is not void). */
     voidedByName: facts.voided_by_name,
     extra: results.slice(LOAD_STATEMENTS + 8),
@@ -810,6 +813,7 @@ export const invoices = new Hono<AppEnv>()
         emailed: ctx.emailed,
         hasIssuedChild: ctx.hasIssuedChild,
         paymentPending: ctx.paymentPending,
+        paymentRecorded: ctx.paymentRecorded,
         bank: ctx.bank,
         declaration: (ctx.extra[0]?.results[0] as TermsRef | undefined) ?? null,
         children: (ctx.extra[1]?.results ?? []) as ChildRow[],
@@ -1052,6 +1056,7 @@ export const invoices = new Hono<AppEnv>()
         emailed: false,
         hasIssuedChild: false,
         paymentPending: ctx.paymentPending,
+        paymentRecorded: ctx.paymentRecorded,
         bank: ctx.bank,
         declaration: (ctx.extra[2]?.results[0] as TermsRef | undefined) ?? null,
         children: [],
@@ -1198,6 +1203,7 @@ export const invoices = new Hono<AppEnv>()
       type: d.type,
       tdsMinor: d.tds_minor,
       paymentPending: ctx.paymentPending,
+      paymentRecorded: ctx.paymentRecorded,
     });
     if (reasons.length > 0) return voidRefused(c, reasons, d.type);
     if (d.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
@@ -1266,7 +1272,7 @@ export const invoices = new Hono<AppEnv>()
     if (!done) {
       const again = await db
         .prepare(
-          `SELECT status, updated_at, viewed_at, tds_minor, (${PAYMENT_PENDING_OF_SQL}) AS payment_pending, ${clientGoneSql("client_id")} AS gone, (SELECT step_up_until FROM staff_sessions WHERE id = ?2 AND revoked_at IS NULL) AS step_up, (SELECT idle_expires_at > ?3 AND abs_expires_at > ?3 FROM staff_sessions WHERE id = ?2 AND revoked_at IS NULL) AS session_live FROM documents WHERE id = ?1`,
+          `SELECT status, updated_at, viewed_at, tds_minor, ${PAYMENT_FACTS_SQL}, ${clientGoneSql("client_id")} AS gone, (SELECT step_up_until FROM staff_sessions WHERE id = ?2 AND revoked_at IS NULL) AS step_up, (SELECT idle_expires_at > ?3 AND abs_expires_at > ?3 FROM staff_sessions WHERE id = ?2 AND revoked_at IS NULL) AS session_live FROM documents WHERE id = ?1`,
         )
         .bind(id, u.sessionId, t)
         .first<{
@@ -1275,6 +1281,7 @@ export const invoices = new Hono<AppEnv>()
           viewed_at: number | null;
           tds_minor: number;
           payment_pending: number;
+          payment_recorded: number;
           gone: number;
           step_up: number | null;
           session_live: number | null;
@@ -1294,6 +1301,7 @@ export const invoices = new Hono<AppEnv>()
       // M6.1 (L17): a payment or TDS recorded on it between the read and the write says so too.
       const late: VoidBlockerCode[] = [];
       if (again.payment_pending === 1) late.push("payment_pending");
+      if (again.payment_recorded === 1) late.push("payment_recorded");
       if (again.tds_minor > 0) late.push("tds_recorded");
       if (again.viewed_at !== null) late.push("viewed_by_client");
       return voidRefused(c, late, d.type);

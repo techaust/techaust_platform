@@ -50,6 +50,10 @@ export const USE_ADVANCE_INVOICE = e(
 export const VOID_PAYMENT_PENDING_LINE =
   "A payment recorded on it is waiting for the owner's check. Reject it first.";
 
+/** L32: the void blocker `payment_recorded` (a payment was put on it, one released or withdrawn since included). 07-ZH from line 23 (the designer's draft). */
+export const VOID_PAYMENT_RECORDED_LINE =
+  "[Placeholder] A payment was put on this invoice. Correct it with a credit note.";
+
 /** A bank reference `normaliseReference` refuses (early check A1): the words of M5.2's `advance_reference_invalid` (07-S, approved). */
 export const REFERENCE_INVALID = e(
   "reference_invalid",
@@ -110,6 +114,11 @@ export const EXTENSION_TOO_FAR = pending("extension_too_far", "The new last date
 export const PAYMENT_MISMATCH = pending(
   "payment_mismatch",
   "The amount or date doesn't match the payment being confirmed.",
+);
+/** Early check 2, finding 3: `proforma_ask_whole` (07-ZH from line 23, the designer's draft): a payment asked for a proforma goes whole onto that one proforma. */
+export const PROFORMA_ASK_WHOLE = pending(
+  "proforma_ask_whole",
+  "A payment for a proforma goes whole onto that one proforma.",
 );
 export const LEDGER_CHANGED = pending(
   "ledger_changed",
