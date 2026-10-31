@@ -1,6 +1,6 @@
 # 07-ZH: the ledger and manual payments, TDS and FEMA extensions (M6.1)
 
-Status: **DRAFT, waiting for the owner** (run file [m6.1-ledger-payments](../runs/m6.1-ledger-payments.md), Q3). Recommendation: approve all lines as written. Until they are approved, every line shows "[Placeholder]" in code. Change a line here first, then in the code. Lines in `{braces}` are filled in by the screen. Lines 1–17 and 19–21 are for staff (admin); line 18 is for clients (portal); line 19 also prints on the client's statement.
+Status: **APPROVED by the owner, 2026-10-31** (lines 1–21 as written; run file [m6.1-ledger-payments](../runs/m6.1-ledger-payments.md), Q3). Change a line here first, then in the code. Lines in `{braces}` are filled in by the screen. Lines 1–17 and 19–21 are for staff (admin); line 18 is for clients (portal); line 19 also prints on the client's statement.
 
 1. Invoice › Payments panel: heading "Payments"; rows "Paid", "TDS deducted by the client", "Credited", "Balance", "Paid above what it owes".
 2. Record payment dialog: title "Record a payment"; fields "Amount the client paid", "Date received", "How it was paid" (options NEFT, RTGS, IMPS, UPI, SWIFT), "Bank reference (UTR)", "Bank charges (we absorb them)", "Proof", "Proof type" (hint "FIRA, FIRC, e-BRC or bank advice"), "Proof reference", "Note".
@@ -28,4 +28,4 @@ Status: **DRAFT, waiting for the owner** (run file [m6.1-ledger-payments](../run
 20. Reports: "Payments and TDS register".
 21. Void blocker: "A payment recorded on it is waiting for the owner's check. Reject it first."
 
-Lines the designer may still need (an empty state, a withdraw dialog, a Reject confirmation) are added here as new numbered lines before the owner sees this page.
+Any line added after 2026-10-31 (an empty state, a withdraw dialog, a Reject confirmation) is numbered from 22 and is marked with whoever approved it.
