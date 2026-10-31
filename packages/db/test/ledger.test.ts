@@ -11,8 +11,11 @@ import { describe, expect, it } from "vitest";
 import { REMINDER_CLAIM_SQL } from "../src/billing.ts";
 import {
   allocationStatements,
+  allocationsInsertStatement,
   CLIENT_CREDIT_SQL,
   COLLECTED_SQL,
+  CREDIT_DRAW_MAX,
+  CREDIT_DRAW_SQL,
   CREDIT_SOURCES_SQL,
   creditClaimStatement,
   DOCUMENT_HOLDINGS_SQL,
@@ -40,6 +43,7 @@ import {
 import { femaDueSql, gstDueSql, SCAN_BINDS } from "../src/realisation.ts";
 import {
   CLIENT_FIGURES_SQL,
+  CLIENT_PAYMENTS_ONLY_SQL,
   PAYMENTS_REGISTER_SQL,
   PROJECT_BILLED_SQL,
   STATEMENT_LEDGER_SQL,
@@ -1361,6 +1365,105 @@ describe("the statement's closing balance is its ledger check, with payments, TD
       .map((r) => r.detail)
       .join("\n");
     expect(p).not.toMatch(/CORRELATED/);
+  });
+
+  it("code review finding 8: the collected aggregate is evaluated once (one scalar subquery over payments_client per aggregate in the plan)", async () => {
+    const p = (await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${CLIENT_FIGURES_SQL}`, "c", "2026-10-31"))
+      .map((r) => r.detail)
+      .join("\n");
+    // the collected aggregate (cp) and the allocated one (ap), each once: before the fix, cp appeared twice
+    expect(p.match(/SEARCH cp USING INDEX payments_client/g)).toHaveLength(1);
+    expect(p.match(/SEARCH ap USING INDEX payments_client/g)).toHaveLength(1);
+  });
+
+  it("code review finding 7: payments and no issued document answer collected and credit; documents or an anonymised client answer none, cheaply", async () => {
+    const owner = await mkMember("owner");
+    const payOnly = await mkClientRow();
+    const p = await pay(payOnly, owner, { amount: 5_000 });
+    await pay(payOnly, owner, { amount: 7, status: "pending_verification" });
+    const withDocs = await mkClientRow();
+    for (let i = 0; i < 60; i++) await mkIssued(withDocs);
+    await pay(withDocs, owner, { amount: 10 });
+    const q = (id: string) => db().prepare(CLIENT_PAYMENTS_ONLY_SQL).bind(id).all();
+    const only = await q(payOnly);
+    expect(only.results).toEqual([{ currency: "INR", collected: 5_000, credit: 5_000 }]);
+    // an allocation on a document makes it a client with an issued document: no row any more (the figures' own row answers)
+    const inv = await mkIssued(payOnly);
+    await alloc(p, inv, 1_000);
+    expect((await q(payOnly)).results).toEqual([]);
+    // a client with documents: one probe of documents_client_issued, never its payments or its other documents
+    const docs = await q(withDocs);
+    expect(docs.results).toEqual([]);
+    expect(docs.meta.rows_read).toBeLessThanOrEqual(2);
+    // an anonymised client: no rows
+    const anon = await mkClientRow();
+    await pay(anon, owner, { amount: 3 });
+    await run("UPDATE clients SET anonymised_at = 5 WHERE id = ?1", anon);
+    expect((await q(anon)).results).toEqual([]);
+  });
+});
+
+describe("code review finding 3: Use credit draws on the whole credit in one read and one write", () => {
+  it("CREDIT_DRAW_SQL lists, first in first out, only the sources that cover the amount, past the 50 CREDIT_SOURCES_SQL lists", async () => {
+    const owner = await mkMember("owner");
+    const clientId = await mkClientRow();
+    const ids: string[] = [];
+    for (let i = 0; i < 55; i++)
+      ids.push(
+        await pay(clientId, owner, {
+          amount: 100,
+          receivedOn: `2026-0${4 + Math.floor(i / 28)}-${String(1 + (i % 28)).padStart(2, "0")}`,
+        }),
+      );
+    // a payment partly used counts with what it has left
+    const inv = await mkIssued(clientId);
+    await alloc(ids[0] as string, inv, 60);
+    expect(await all(CREDIT_SOURCES_SQL, clientId, "INR")).toHaveLength(50);
+    const draw = (amount: number) =>
+      all<{ id: string; amount_minor: number; net: number }>(CREDIT_DRAW_SQL, clientId, "INR", amount);
+    // 40 left on the first, then 100 each: 140 needs the first two, 141 the first three
+    expect((await draw(40)).map((r) => r.id)).toEqual([ids[0]]);
+    expect((await draw(140)).map((r) => r.id)).toEqual([ids[0], ids[1]]);
+    expect((await draw(141)).map((r) => r.id)).toEqual([ids[0], ids[1], ids[2]]);
+    const whole = await draw(40 + 54 * 100);
+    expect(whole).toHaveLength(55);
+    expect(whole.reduce((s, r) => s + r.amount_minor - r.net, 0)).toBe(40 + 54 * 100);
+    // more than the credit: every source, still at most CREDIT_DRAW_MAX
+    expect(await draw(1_000_000)).toHaveLength(55);
+    expect(CREDIT_DRAW_MAX).toBe(500);
+    expect(CREDIT_DRAW_SQL).toContain(`LIMIT ${CREDIT_DRAW_MAX}`);
+  });
+
+  it("allocationsInsertStatement writes every row in one statement, each checked by payment_allocations_bounds as it lands", async () => {
+    const { owner, clientId, inv } = await setup();
+    const a = await pay(clientId, owner, { amount: 300 });
+    const b = await pay(clientId, owner, { amount: 300 });
+    const row = (paymentId: string, amountMinor: number) => ({
+      id: uuidv7(),
+      paymentId,
+      documentId: inv,
+      amountMinor,
+      kind: "allocate" as const,
+    });
+    await allocationsInsertStatement(db(), [row(a, 300), row(b, 200)], owner, T).run();
+    const held = await all<{ payment_id: string; amount_minor: number; created_by: string }>(
+      "SELECT payment_id, amount_minor, created_by FROM payment_allocations WHERE document_id = ?1 ORDER BY amount_minor DESC",
+      inv,
+    );
+    expect(held).toEqual([
+      { payment_id: a, amount_minor: 300, created_by: owner },
+      { payment_id: b, amount_minor: 200, created_by: owner },
+    ]);
+    // the second row would put payment a above its amount: the trigger refuses it, and the whole statement (the first row too) is undone
+    const before = held.length;
+    await rejects(
+      allocationsInsertStatement(db(), [row(b, 100), row(a, 1)], owner, T).run(),
+      /payment_allocations_bounds/,
+    );
+    expect(await all("SELECT id FROM payment_allocations WHERE document_id = ?1", inv)).toHaveLength(before);
+    // an empty list writes nothing
+    await allocationsInsertStatement(db(), [], owner, T).run();
+    expect(await all("SELECT id FROM payment_allocations WHERE document_id = ?1", inv)).toHaveLength(before);
   });
 });
 

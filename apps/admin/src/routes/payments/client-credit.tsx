@@ -26,6 +26,41 @@ import { day, useCodeSlot } from "./parts.tsx";
 
 type Doc = OpenDoc & { updatedAt: number };
 
+/** The open invoice statuses credit can go on, each read as its own keyset list. */
+const OPEN_STATUSES = ["issued", "partially_paid", "partially_credited"] as const;
+type OpenStatus = (typeof OPEN_STATUSES)[number];
+/** Where each status's list continues (code review finding 4: older open invoices behind the first 50 can be picked through "Show more"). */
+type Cursors = Partial<Record<OpenStatus, string>>;
+
+/** One more page of every status that has one (all of them on the first call), as open documents with their stamps, and where each continues. */
+async function openDocsPage(
+  clientId: string,
+  after: Cursors | null,
+): Promise<{ docs: Doc[]; next: Cursors }> {
+  const statuses = after === null ? OPEN_STATUSES : OPEN_STATUSES.filter((s) => after[s] !== undefined);
+  const pages = await Promise.all(
+    statuses.map((status) =>
+      invoicesApi.list({
+        clientId,
+        status,
+        limit: "50",
+        ...(after?.[status] ? { after: after[status] } : {}),
+      }),
+    ),
+  );
+  const rows = pages.flatMap((p) => p.invoices);
+  const next: Cursors = {};
+  statuses.forEach((status, i) => {
+    const n = pages[i]?.next;
+    if (n) next[status] = n;
+  });
+  const docs = openDocsOf(rows, { kind: "payment", proformas: false }).map((d) => ({
+    ...d,
+    updatedAt: rows.find((r) => r.id === d.id)?.updatedAt ?? 0,
+  }));
+  return { docs, next };
+}
+
 export function ClientCreditDialog(props: {
   clientId: string;
   onClose: () => void;
@@ -33,6 +68,8 @@ export function ClientCreditDialog(props: {
 }) {
   const [credit, setCredit] = useState<ClientCredit | null>(null);
   const [docs, setDocs] = useState<Doc[] | null>(null);
+  const [more, setMore] = useState<Cursors>({});
+  const [loadingMore, setLoadingMore] = useState(false);
   const [doc, setDoc] = useState("");
   const [text, setText] = useState("");
   const [errors, setErrors] = useState<{ doc?: string; amount?: string }>({});
@@ -46,18 +83,11 @@ export function ClientCreditDialog(props: {
       .clientCredit(props.clientId)
       .then((c) => live && setCredit(c))
       .catch((e) => live && setFailure(payErrorText(e)));
-    Promise.all(
-      (["issued", "partially_paid", "partially_credited"] as const).map((status) =>
-        invoicesApi.list({ clientId: props.clientId, status, limit: "50" }),
-      ),
-    )
-      .then((pages) => {
-        const rows = pages.flatMap((p) => p.invoices);
-        const open = openDocsOf(rows, { kind: "payment", proformas: false }).map((d) => ({
-          ...d,
-          updatedAt: rows.find((r) => r.id === d.id)?.updatedAt ?? 0,
-        }));
-        if (live) setDocs(open);
+    openDocsPage(props.clientId, null)
+      .then((page) => {
+        if (!live) return;
+        setDocs(page.docs);
+        setMore(page.next);
       })
       .catch(() => live && setDocs([]));
     return () => {
@@ -67,6 +97,23 @@ export function ClientCreditDialog(props: {
   const held = credit?.credits[0];
   const currency: Currency = held?.currency ?? "INR";
   const picked = docs?.find((d) => d.id === doc) ?? null;
+  const hasMore = Object.keys(more).length > 0;
+
+  async function showMore() {
+    setLoadingMore(true);
+    try {
+      const page = await openDocsPage(props.clientId, more);
+      setDocs((was) => {
+        const seen = new Set((was ?? []).map((d) => d.id));
+        return [...(was ?? []), ...page.docs.filter((d) => !seen.has(d.id))];
+      });
+      setMore(page.next);
+    } catch (e) {
+      setFailure(payErrorText(e));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   function pick(id: string) {
     setDoc(id);
@@ -146,6 +193,17 @@ export function ClientCreditDialog(props: {
               </select>
             )}
           </FormField>
+          {hasMore && (
+            <button
+              type="button"
+              className="btn btn--secondary"
+              onClick={() => void showMore()}
+              disabled={busy || loadingMore}
+              aria-busy={loadingMore || undefined}
+            >
+              {loadingMore ? "Loading…" : "Show more"}
+            </button>
+          )}
           <FormField id="pay-credit-amount" label={PAY_UI.amountToUse} error={errors.amount}>
             {(a) => (
               <div className="money-in">

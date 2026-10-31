@@ -13,12 +13,21 @@
 // is blocked.
 import { addDays, istDate, parseIsoDate, toIsoDate } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
-import { creditSources, receiptMonthWarning, refundDueOf, releasable } from "@techaust/core/ledger";
+import {
+  balanceOf,
+  creditSources,
+  type LedgerDoc,
+  PAYABLE_TYPES,
+  receiptMonthWarning,
+  refundDueOf,
+  releasable,
+} from "@techaust/core/ledger";
 import { creditApplyBody, creditReleaseBody, realisationExtensionBody } from "@techaust/core/payment-schemas";
 import {
   type AllocationRow,
-  allocationStatements,
+  allocationsInsertStatement,
   CLIENT_CREDIT_SQL,
+  CREDIT_DRAW_SQL,
   CREDIT_SOURCES_SQL,
   clientCreditSql,
   creditClaimStatement,
@@ -57,7 +66,8 @@ import { sessionRefusal } from "./session-refusal.ts";
  */
 export const EXTENSION_MAX_DAYS = 36_500;
 
-const PAYABLE = ["tax_invoice", "export_invoice", "debit_note"];
+/** The types the Payments panel answers for: what a payment is put on (core `PAYABLE_TYPES`), plus the proforma and the credit note it shows read-only. */
+const PANEL_TYPES: readonly string[] = [...PAYABLE_TYPES, "proforma", "credit_note"];
 
 /** A document as the ledger routes read it, with its client's state and its current FEMA date when it is an export invoice. */
 const DOC_SQL = `SELECT d.id, d.type, d.status, d.client_id, d.currency, d.frozen_at, d.voided_at, d.issue_date, d.number_display, d.total_minor, d.paid_minor,
@@ -86,7 +96,22 @@ type DocRow = {
   fema_due: string | null;
 };
 
-const isPayable = (d: DocRow) => PAYABLE.includes(d.type) && d.frozen_at !== null && d.status !== "void";
+const isPayable = (d: DocRow) =>
+  (PAYABLE_TYPES as readonly string[]).includes(d.type) && d.frozen_at !== null && d.status !== "void";
+
+/** The document as core's ledger rules read it. */
+const ledgerDocOf = (d: DocRow): LedgerDoc => ({
+  id: d.id,
+  clientId: d.client_id,
+  currency: d.currency,
+  type: d.type,
+  status: d.status,
+  frozen: d.frozen_at !== null,
+  totalMinor: d.total_minor,
+  paidMinor: d.paid_minor,
+  creditedMinor: d.credited_minor,
+  tdsMinor: d.tds_minor,
+});
 
 type SourceRow = { id: string; received_on: string; amount_minor: number; net: number };
 
@@ -138,7 +163,7 @@ export const clientCredit = new Hono<AppEnv>()
       anonymised: client.anonymised_at !== null,
       /** 07-ZH line 10 "Credit held: {amount}", by currency (a client has one currency, M3.3). */
       credits: creditView((creditR?.results ?? []) as { currency: string; credit: number }[]),
-      /** Where the credit comes from, first in first out (the order "Use credit" takes it in). At most 50. */
+      /** Where the credit comes from, first in first out (the order "Use credit" takes it in). At most 50 are listed; "Use credit" draws past them (finding 3). */
       sources: sourcesView(sources),
     });
   })
@@ -156,14 +181,15 @@ export const clientCredit = new Hono<AppEnv>()
     if (!isPayable(d)) return err(c, NOT_PAYABLE, 409, { documentId: d.id });
     if (d.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
     if (d.gone === 1) return err(c, CLIENT_GONE, 409);
-    const balance = Math.max(0, d.total_minor - d.paid_minor - d.credited_minor - d.tds_minor);
+    const balance = balanceOf(d.total_minor, d.paid_minor, d.credited_minor, d.tds_minor);
     if (f.amountMinor > balance)
       return err(c, allocationExceedsBalance(balance, d.currency), 409, {
         documentId: d.id,
         balanceMinor: balance,
       });
+    // Finding 3: the whole credit can be used. One read lists as many sources as cover the amount (first in first out), not only the oldest 50.
     const sources =
-      (await db.prepare(CREDIT_SOURCES_SQL).bind(id, d.currency).all<SourceRow>()).results ?? [];
+      (await db.prepare(CREDIT_DRAW_SQL).bind(id, d.currency, f.amountMinor).all<SourceRow>()).results ?? [];
     const picked = creditSources(
       sources.map((s) => ({
         id: s.id,
@@ -206,7 +232,7 @@ export const clientCredit = new Hono<AppEnv>()
           sources: rows.map((r) => ({ paymentId: r.paymentId, amountMinor: r.amountMinor })),
         },
         side: (g) => [
-          ...allocationStatements(db, rows, u.id, now, g),
+          allocationsInsertStatement(db, rows, u.id, now, g),
           recomputeStatement(db, { documentIds: [d.id] }, now, g),
           // Early check A8: every source payment is a target too, so each one's net allocations are checked against its amount.
           ledgerResultStatement(db, { paymentIds: rows.map((r) => r.paymentId), documentIds: [d.id] }),
@@ -254,6 +280,32 @@ type HoldingRow = {
   held: number;
 };
 
+/**
+ * What "Move excess to credit" may move (code review finding 1): core `releasable` over the confirmed `payment` holdings (never TDS, a pending or a withdrawn
+ * entry), at most the excess in total. The TDS part of an excess is never released: it stays as refund due (follow-up on 08-C RA-30, decided with M6.5 refunds).
+ * Holdings come oldest first; the newest money comes off first, so the oldest stays on the invoice.
+ */
+function releaseOrder(d: DocRow, holdings: readonly HoldingRow[]): { holding: HoldingRow; room: number }[] {
+  if (!isPayable(d)) return [];
+  const doc = ledgerDocOf(d);
+  return holdings
+    .filter((h) => h.status === "confirmed" && h.kind === "payment")
+    .map((h) => ({ holding: h, room: releasable(doc, h.kind, h.held) }))
+    .filter((x) => x.room > 0)
+    .reverse();
+}
+
+/** The figure the panel shows and the dialog is capped at: Σ of each holding's room, at most the excess. */
+function releasableOf(d: DocRow, holdings: readonly HoldingRow[]): number {
+  const excess = refundDueOf(d.total_minor, d.paid_minor, d.credited_minor, d.tds_minor);
+  let sum = 0;
+  for (const x of releaseOrder(d, holdings)) {
+    sum += x.room;
+    if (sum >= excess) return excess;
+  }
+  return sum;
+}
+
 /** The client of the document `?1`, as a scalar subquery (the panel's client-scoped reads ride in the same batch). */
 const CLIENT_OF_DOCUMENT = "(SELECT cd.client_id FROM documents cd WHERE cd.id = ?1)";
 
@@ -292,7 +344,7 @@ export const invoiceLedger = new Hono<AppEnv>()
       db.prepare(REALISATION_OF_SQL).bind(id, today),
     ]);
     const d = docR?.results[0] as DocRow | undefined;
-    if (!d || ![...PAYABLE, "proforma", "credit_note"].includes(d.type)) return err(c, NOT_FOUND, 404);
+    if (!d || !PANEL_TYPES.includes(d.type)) return err(c, NOT_FOUND, 404);
     const real = realR?.results[0] as
       | { fema_standard: string; fema_due: string; gst_due: string; stage: string }
       | undefined;
@@ -309,6 +361,8 @@ export const invoiceLedger = new Hono<AppEnv>()
       creditedMinor: d.credited_minor,
       balanceMinor: d.balance_minor,
       excessMinor: refundDueOf(d.total_minor, d.paid_minor, d.credited_minor, d.tds_minor),
+      /** What "Move excess to credit" may move (finding 1): the excess less its TDS part. The button shows only above 0; the dialog is capped at it. */
+      releasableMinor: releasableOf(d, (holdR?.results ?? []) as HoldingRow[]),
       payments: ((holdR?.results ?? []) as HoldingRow[]).map((r) => ({
         paymentId: r.payment_id,
         kind: r.kind,
@@ -399,35 +453,23 @@ export const invoiceLedger = new Hono<AppEnv>()
       db.prepare(DOCUMENT_HOLDINGS_SQL).bind(id),
     ]);
     const d = docR?.results[0] as DocRow | undefined;
-    if (!d || ![...PAYABLE, "proforma", "credit_note"].includes(d.type)) return err(c, NOT_FOUND, 404);
+    if (!d || !PANEL_TYPES.includes(d.type)) return err(c, NOT_FOUND, 404);
     if (d.status === "void") return err(c, INVOICE_VOID, 409);
     if (!isPayable(d)) return err(c, NOT_PAYABLE, 409, { documentId: d.id });
     if (d.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
     if (d.gone === 1) return err(c, CLIENT_GONE, 409);
-    const doc = {
-      id: d.id,
-      clientId: d.client_id,
-      currency: d.currency,
-      type: d.type,
-      status: d.status,
-      frozen: true,
-      totalMinor: d.total_minor,
-      paidMinor: d.paid_minor,
-      creditedMinor: d.credited_minor,
-      tdsMinor: d.tds_minor,
-    };
+    const holdings = (holdR?.results ?? []) as HoldingRow[];
     const excess = refundDueOf(d.total_minor, d.paid_minor, d.credited_minor, d.tds_minor);
-    if (f.amountMinor > excess) return err(c, EXCEEDS_EXCESS, 409, { excessMinor: excess });
+    // Finding 1: the cap is what the confirmed payments can give back, never the TDS part of the excess.
+    const room = releasableOf(d, holdings);
+    if (f.amountMinor > room)
+      return err(c, EXCEEDS_EXCESS, 409, { excessMinor: excess, releasableMinor: room });
     // The newest money comes off first, so the oldest stays on the invoice (each payment gives back at most what it holds there, never TDS).
-    const holdings = ((holdR?.results ?? []) as HoldingRow[])
-      .filter((h) => h.status === "confirmed")
-      .reverse();
     let need = f.amountMinor;
     const rows: AllocationRow[] = [];
-    for (const h of holdings) {
+    for (const { holding: h, room: has } of releaseOrder(d, holdings)) {
       if (need === 0) break;
-      const take = Math.min(need, releasable(doc, h.kind, h.held));
-      if (take <= 0) continue;
+      const take = Math.min(need, has);
       rows.push({
         id: uuidv7(),
         paymentId: h.payment_id,
@@ -437,7 +479,7 @@ export const invoiceLedger = new Hono<AppEnv>()
       });
       need -= take;
     }
-    if (need > 0) return err(c, EXCEEDS_EXCESS, 409, { excessMinor: excess });
+    if (need > 0) return err(c, EXCEEDS_EXCESS, 409, { excessMinor: excess, releasableMinor: room });
     const now = Math.max(Date.now(), d.updated_at + 1);
     let done = false;
     try {
@@ -461,7 +503,7 @@ export const invoiceLedger = new Hono<AppEnv>()
           sources: rows.map((r) => ({ paymentId: r.paymentId, amountMinor: r.amountMinor })),
         },
         side: (g) => [
-          ...allocationStatements(db, rows, u.id, now, g),
+          allocationsInsertStatement(db, rows, u.id, now, g),
           recomputeStatement(db, { documentIds: [d.id] }, now, g),
           ledgerResultStatement(db, { documentIds: [d.id] }),
         ],

@@ -125,7 +125,8 @@ function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onCha
     v.client.gstStatus !== "overseas";
   const credit = p.credits.find((c) => c.currency === p.currency)?.creditMinor ?? 0;
   const canCredit = live && allowed(role, "payments.applyCredit") && credit > 0 && p.balanceMinor > 0;
-  const canMove = live && allowed(role, "payments.applyCredit") && p.excessMinor > 0;
+  // Code review finding 1: only what the confirmed payments can give back; the TDS part of an excess stays as refund due.
+  const canMove = live && allowed(role, "payments.applyCredit") && p.releasableMinor > 0;
   const canCert = allowed(role, "payments.attachProof") && !v.client.anonymised;
   const done = (text: string) => {
     setDialog(null);
@@ -626,10 +627,10 @@ function ExcessDialog(props: { panel: Panel; onClose: () => void; onDone: () => 
   return (
     <AmountDialog
       title={PAY_UI.moveExcess}
-      lede={moveExcessLine(amountText(p.excessMinor, p.currency))}
+      lede={moveExcessLine(amountText(p.releasableMinor, p.currency))}
       label={PAY_UI.amountToMove}
-      initialMinor={p.excessMinor}
-      maxMinor={p.excessMinor}
+      initialMinor={p.releasableMinor}
+      maxMinor={p.releasableMinor}
       currency={p.currency}
       exceedsText={PAY_ERRORS.exceeds_excess}
       confirmLabel={PAY_UI.moveExcess}

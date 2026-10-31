@@ -18,6 +18,7 @@ import {
   PAY_UI,
   payErrorText,
   plainAmount,
+  putOnText,
   readAllocations,
   registerCsv,
   STATUS_LABELS,
@@ -280,6 +281,43 @@ describe("the payments and TDS register", () => {
     expect(lines[2]).toContain("TDS,X0001");
     expect(lines[2]).toContain("393(1),10,,");
     expect(lines[2]?.endsWith("TH/INV/1 5000.00")).toBe(true);
+  });
+  it("code review finding 2: Put on nets each document (allocate − release) and leaves out a document released whole", () => {
+    const csv = registerCsv([
+      {
+        kind: "payment",
+        receivedOn: "2026-10-29",
+        currency: "INR",
+        amountMinor: 30_000_00,
+        chargesMinor: 0,
+        mode: "neft",
+        reference: "UTR2",
+        inrReceivedMinor: null,
+        tds: null,
+        proof: null,
+        client: { code: "X0002", name: "Hillside Stores" },
+        allocations: [
+          { documentId: "d1", number: "TH/INV/1", kind: "allocate", amountMinor: 20_000_00 },
+          { documentId: "d2", number: "TH/INV/2", kind: "allocate", amountMinor: 5_000_00 },
+          { documentId: "d1", number: "TH/INV/1", kind: "release", amountMinor: 8_000_00 },
+          { documentId: "d2", number: "TH/INV/2", kind: "release", amountMinor: 5_000_00 },
+          { documentId: "d3", number: "TH/INV/3", kind: "allocate", amountMinor: 8_000_00 },
+        ],
+      },
+    ]);
+    const line = csv.trim().split("\r\n")[1] ?? "";
+    expect(line.endsWith("TH/INV/1 12000.00; TH/INV/3 8000.00")).toBe(true);
+    expect(line).not.toContain("TH/INV/2");
+    // without document ids (older callers) the number keys the net the same way
+    expect(
+      putOnText({
+        currency: "INR",
+        allocations: [
+          { number: "TH/INV/1", kind: "allocate", amountMinor: 100 },
+          { number: "TH/INV/1", kind: "release", amountMinor: 40 },
+        ],
+      }),
+    ).toBe("TH/INV/1 0.60");
   });
   it("five financial years, newest first", () => {
     const fys = fyChoices(Date.parse("2026-10-31T06:00:00Z"));

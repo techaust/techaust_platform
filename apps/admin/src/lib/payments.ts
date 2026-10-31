@@ -507,8 +507,28 @@ export type RegisterRowIn = {
   } | null;
   proof: { kind: string; ref: string | null } | null;
   client: { code: string; name: string };
-  allocations: { number: string | null; kind: string; amountMinor: number }[];
+  allocations: { documentId?: string; number: string | null; kind: string; amountMinor: number }[];
 };
+
+/**
+ * The "Put on" cell (code review finding 2): what the entry holds on each document now, Σ allocate − Σ release per document, in the order the documents first
+ * appear; a document it no longer holds anything on (all released) is left out.
+ */
+export function putOnText(r: Pick<RegisterRowIn, "allocations" | "currency">): string {
+  const held = new Map<string, { number: string | null; minor: number }>();
+  for (const a of r.allocations) {
+    const key = a.documentId ?? a.number ?? "";
+    const was = held.get(key) ?? { number: a.number, minor: 0 };
+    held.set(key, {
+      number: was.number ?? a.number,
+      minor: was.minor + (a.kind === "release" ? -a.amountMinor : a.amountMinor),
+    });
+  }
+  return [...held.values()]
+    .filter((h) => h.minor !== 0)
+    .map((h) => `${h.number ?? ""} ${decimal(h.minor, r.currency)}`.trim())
+    .join("; ");
+}
 
 /** The payments and TDS register as CSV text: money rows first, then the TDS rows apart (for Form 26AS and AIS matching), each by date received. */
 export function registerCsv(rows: readonly RegisterRowIn[]): string {
@@ -531,10 +551,7 @@ export function registerCsv(rows: readonly RegisterRowIn[]): string {
       r.tds?.certificateOn ?? "",
       r.proof?.kind ?? "",
       r.proof?.ref ?? "",
-      r.allocations
-        .filter((a) => a.kind === "allocate")
-        .map((a) => `${a.number ?? ""} ${decimal(a.amountMinor, r.currency)}`.trim())
-        .join("; "),
+      putOnText(r),
     ]
       .map(csvCell)
       .join(","),
