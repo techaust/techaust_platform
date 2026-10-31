@@ -1,6 +1,6 @@
-Status: r1 merged (5602464); analyst early check of r1 and builder r2 (item 5 fixes) running
+Status: early check CHANGE (M1, L1–L3 + stale-check sites) sent to builder r2; builder r2 running
 Tier: B
-Usage: analyst (item 5) claude-opus-5-5/high, skills: code-review (+ its read-only general-purpose helper claude-opus-5-5/high); 5-h 17 → 62 % (shared window, four sessions) · builder r1 claude-opus-5-5/high, skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:turnstile-spin (not installed in the cloud); 5-h 17 → 62 %
+Usage: analyst (item 5) claude-opus-5-5/high, skills: code-review (+ its read-only general-purpose helper claude-opus-5-5/high); 5-h 17 → 62 % (shared window, four sessions) · builder r1 claude-opus-5-5/high, skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:turnstile-spin (not installed in the cloud); 5-h 17 → 62 % · analyst (early check r1) claude-opus-5-5/high, skills: code-review (+ read-only helper); 5-h 62 %
 
 # Test and guard hardening (cloud session "test-hardening")
 
@@ -229,7 +229,23 @@ _Builder r1 (Opus 5.5 high, cloud session, 2026-11-01). Branch `fix/test-hardeni
 None.
 
 ## Early check (analyst)
-(pending)
+_Pasted by the lead from the analyst's reply (Opus 5.5 high, read-only, 2026-11-01). Range `474ec9c..9b26707` without docs/runs._
+
+**CHANGE** (one medium, three low; no production defect). Production refactors are behaviour-identical: realisation bounds (1–1,200 months, 0–36,500 days incl. `approachingDays`; `inrMonths` 1–120 in schema and form, as before; messages unchanged), the signature rule (`noteTypeOf` only returns note types, so the same documents are blocked; no list outside out-of-bounds `db/triggers.ts`, pinned for both clauses), decline labels byte-identical to the three old copies and 07-N line 43, the Udyam normaliser (stored value canonical, server still refines with `isUdyamNumber`; whitespace removal can't invent another number), the PNG encoder (same bytes; PDF SHA pinned). `packages/testing` is imported only by admin e2e and pdf test fixtures (precedent `packages/auth/test/csrf-corpus.ts`), never bundled. Test changes keep their claims (leads fake clock coexists with `TA_TEST_CLOCK`; dashboard fixture unchanged; portal `tablesWithClientId` equivalent; web e2e stronger: asserts the POST's 200 before /thanks).
+
+| # | file:line | Finding | Sev. | Fix |
+|---|---|---|---|---|
+| M1 | admin `invoice-send.test.ts:332-335` (`issued(…, as?)` :22-27) | The named owner now issues **and** sends, so a regression taking `sent_by_name` from the issuer would pass; no time saved (41 → 40/49 ms) | medium | revert to `issued(2)` with its own owner, then send as `s` |
+| L1 | core `realisation-bounds.ts:5` | comment claims a `@techaust/core/gst` export that doesn't exist | low | fix the comment; no gst export (SPA-only) |
+| L2 | admin e2e `sample-data.ts:84`, pdf `fixtures/invoice-layout.ts:454` | comments say `png.test.ts` pins the bytes; it doesn't (PDF pinned in `sample-signature.test.ts`; admin PNG pinned nowhere) | low | correct; optionally pin the admin PNG |
+| L3 | pdf `sample-signature.test.ts:10-13` | the pin includes `node:zlib` output; Node 24 → 26 may change it with a bare hash failure | low | an assertion message: check visual baselines, then re-pin |
+
+**Stale-check verdict:** real in theory (clock skew or same-ms writes; `Date.now()` in Workers moves only with I/O, and a stale page needs a round trip after the write), practically unreachable; low; cheap to fix. No trigger reads `updated_at`. Fix sites (in bounds): admin `leads.ts:721`, `catalogue.ts:511`, `clients.ts:659`, `:753` (billing: `?3` doubles as step-up "now"), `:1070` (contact), `settings.ts:967` (bank). Already safe: `notes.ts:159`, `invoice-notes.ts:579`/`:686` (the builder's list was wrong on these two), `time-logs.ts:613`, `care.ts:539`/`:606`, `document-write.ts:52`, `document-send.ts:127`, `invoice-withdraw.ts:149`, `care-billing.ts:569`, and the out-of-bounds `projects.ts`, `invoices.ts`, `invoice-issue.ts`, `payment-ledger.ts`, `invoice-advance.ts`. Follow-up (low): writers that stamp a stale-checked row with a bare `Date.now()` and no check of their own (leads stage `leads.ts:797`, convert `:1039`, `documents.ts:384`, contacts `clients.ts:909`, `:1126`, `:1484`) could use SQL `max(?n, updated_at + 1)`; optionally a guard test.
+
+**Helper candidates (9):** 4 kept (above), 5 dropped (`inrMonths` 120 deliberate; relative test import has precedent; the `_0055` advance pin is out of bounds and now pinned; empty Turnstile key not reachable in e2e builds; Udyam U+2011/U+200B/en-dash not cleaned: outside "whitespace only", a follow-up; `maxLength={30}` cuts a paste with > 11 whitespace characters before normalising, not verified as a problem).
+**Not verified:** no tests run by the analyst; admin/portal SPA chunk sizes after the `@techaust/core/offers` import (core `sideEffects: false`, portal Worker unchanged). **Skills:** `code-review` (+ read-only helper on this range); `security-review` left for the reviewer (r2 touches revoke); Cloudflare skills unavailable in the cloud.
+
+**Lead triage (2026-11-01):** M1, L1–L3 and the six stale-check sites go to builder r2 (sent by message; the billing site binds a separate real `now` for the step-up check). The bare-`Date.now()` writers and the Udyam dash/zero-width characters are follow-ups.
 
 ## Review
 (pending)
@@ -238,11 +254,17 @@ None.
 (pending)
 
 ## Lead decisions (for 13)
+- 2026-11-01: the optimistic stale check on six admin writers (leads, catalogue, client, client billing, contact, bank account) stamps `max(now, expected + 1)`, the house pattern, closing a same-millisecond/clock-skew gap (analyst: theoretical, low); the billing step-up check keeps the real clock.
+- 2026-11-01: item-5 defects #1–#4 (a revoked link re-minted on a queue retry, a reminder given back unpaused after a revoke, a care PDF enqueue failure ignored, care billing statements unguarded against a just-anonymised client) fixed in this task.
 - 2026-11-01: the M5.4 code-review candidates were never recorded, so item 5 is a fresh focused pass over the six named files on main (analyst), not a re-check of a list.
 - 2026-11-01: `git remote set-head origin main` run in this session's clone so `security-review` can load (cloud follow-up from T6).
 
 ## Follow-ups (for 12)
-(none yet)
+- **Web e2e form submissions can't run in a cloud session:** challenges.cloudflare.com is unreachable (proxy 403), so the contact and quote tests fail there before and after this task; the 1a fix is verified only by a stubbed slow-token reproduction. CI (or the PC) is the proof.
+- **Stale stamps without their own check (low):** leads stage `leads.ts:797`, convert `:1039`, `documents.ts:384`, contacts `clients.ts:909`, `:1126`, `:1484` stamp a stale-checked row with a bare `Date.now()`; SQL `updated_at = max(?n, updated_at + 1)` would close the same theoretical gap; optionally a guard test.
+- **Udyam paste:** non-breaking hyphen U+2011, en dash and zero-width characters are not cleaned (whitespace only); the form's `maxLength={30}` can cut a paste with many spaces before it is cleaned.
+- **issue.ts / triggers.ts** (out of bounds in this run): `issue.ts` has no type list (it applies `SIGNED_FREEZE_SQL` per path), so no test ties the path choice to core's `signatureRequired`; the 0055 trigger copies stay pinned by `signature-triggers.test.ts`.
+- **Merge commit 0dffdec** (builder r1) carries git's default message without the co-author footer; left as is (fixing it needs a force-push).
 
 ## Questions for the owner
 (none)
