@@ -589,6 +589,18 @@ export const invMapped = (e: unknown): unknown =>
   e instanceof RequestError ? new RequestError(e.status, e.code, invErrorText(e), e.requestId) : e;
 
 /** What stops a void, as one sentence (07-R §5): void already, the return period over, or the rest (emailed, paid, corrected). */
+/**
+ * The line under an issued invoice's actions when the Owner can't void it (re-check N1): an anonymised client takes nothing new, so neither Void nor
+ * Withdraw is offered (`canVoid` and `canWithdraw` are false), and the line says that rather than a blocker that points to Withdraw.
+ */
+export function voidLockText(o: {
+  anonymised: boolean;
+  codes: readonly string[];
+  type?: string;
+}): string | null {
+  return o.anonymised ? INV_ERRORS.client_anonymised : voidBlockedText(o.codes, o.type);
+}
+
 export function voidBlockedText(codes: readonly string[], type?: string): string | null {
   if (codes.length === 0) return null;
   if (codes.includes("already_void")) return INV_ERRORS.already_void;

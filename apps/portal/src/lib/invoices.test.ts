@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
 import { documentWord, INV } from "../copy-invoices.ts";
 import { WITHDRAWN_ZF } from "../copy-zf.ts";
+import routeSource from "../routes/invoices.tsx?raw";
 import {
   clientStatus,
   minusMoneyText,
@@ -208,5 +209,20 @@ describe("a PDF download that fails (ADM-INV-10, review L3) [POR-06]", () => {
       reload: false,
     });
     expect(pdfFailure(new TypeError("offline"), otherwise)).toEqual({ text: "OTHER", reload: false });
+  });
+});
+
+describe("re-check N2: another document starts without the last one's download message [POR-06]", () => {
+  it("clears the message when the page loads a different document, and keeps it on the in-place refresh (L3)", () => {
+    const effect = routeSource.slice(
+      routeSource.indexOf("alive.current = true;"),
+      routeSource.indexOf("[load, props.loadKey]"),
+    );
+    expect(effect).toMatch(/setPdfProblem\(null\);\s*load\(\);/);
+    const refresh = routeSource.slice(
+      routeSource.indexOf("const refresh = useCallback"),
+      routeSource.indexOf("}, [source]);", routeSource.indexOf("const refresh = useCallback")),
+    );
+    expect(refresh).not.toContain("setPdfProblem");
   });
 });

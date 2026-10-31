@@ -67,6 +67,8 @@ function DocumentScreen(props: {
   useEffect(() => {
     alive.current = true;
     void props.loadKey;
+    // Re-check N2: another document (a note's parent link) starts without the previous one's download message; `refresh()` keeps it (L3).
+    setPdfProblem(null);
     load();
     return () => {
       alive.current = false;

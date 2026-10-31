@@ -31,8 +31,8 @@ import {
   supplierCopyLine,
   typeLabel,
   UNKNOWN,
-  voidBlockedText,
   voidedLine,
+  voidLockText,
 } from "../../lib/invoices.ts";
 import {
   canDownloadSupplierCopy,
@@ -202,7 +202,7 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
     ownerVoids && v.frozen && !isVoid
       ? isNote
         ? NOTE_ERRORS.note_not_voidable
-        : voidBlockedText(v.void.blockers, v.type)
+        : voidLockText({ anonymised: v.client.anonymised, codes: v.void.blockers, type: v.type })
       : null;
   const title = v.number ?? draftTitle(v.client.name, v.type);
   const canVoidNow = v.frozen && ownerVoids && !isVoid && v.void.canVoid;
