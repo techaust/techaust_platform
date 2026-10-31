@@ -460,6 +460,10 @@ export const DEED_STAMP_NOTE =
 /** 07-ZE line 17: the assignor (a proprietorship is not a legal person); fixed wording. */
 const ASSIGNOR = "Rupak Sarkar";
 
+/** L5: 07-ZE's signature sentence up to "TecHaust Technologies" (the unsigned PDF prints it; screens add the eSign moment and transaction). */
+export const DEED_SIGNATURE_LEAD =
+  "Signed by the assignor with an Aadhaar-based electronic signature (eSign): Rupak Sarkar, sole proprietor, TecHaust Technologies";
+
 /** The amount as the deed prints it: core money format, en-IN for INR, en-US for USD (L6). */
 export const deedAmount = (minor: number, currency: Currency): string =>
   formatMoney({ amount: minor, currency });
@@ -538,8 +542,7 @@ export function deedText(s: DeedSnapshot, deedNumber: string): DeedText {
         body: `Indian law governs this deed; disputes follow item 10 of the terms of the ${t}.`,
       },
     ],
-    signatureLead:
-      "Signed by the assignor with an Aadhaar-based electronic signature (eSign): Rupak Sarkar, sole proprietor, TecHaust Technologies",
+    signatureLead: DEED_SIGNATURE_LEAD,
     schedule1: {
       heading: "Schedule 1, the work",
       deliverables: s.schedule1.deliverables,

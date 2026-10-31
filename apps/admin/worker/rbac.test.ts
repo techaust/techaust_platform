@@ -10,6 +10,15 @@ import { mkLog, mkOpenProject, mkPlan, today } from "./test-care.ts";
 import { entryBody, mkItem, putPaymentTerms, siteItems } from "./test-catalogue.ts";
 import { insert, mkContact } from "./test-clients.ts";
 import {
+  schedulesBody as deedSchedulesBody,
+  deedStamp,
+  draftDeed,
+  finalisedDeed,
+  mkDeedProject,
+  putSchedules,
+  putSigned,
+} from "./test-deeds.ts";
+import {
   accept,
   bodyOf,
   call,
@@ -1176,6 +1185,52 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       const inv = await addDoc({ clientId, currency: "USD", issueDate: "2026-10-05" });
       return run(s, `/invoices/${inv.id}/realisation-extensions`, {
         body: { extendedTo: "2028-01-31", bankRef: "AD-BANK-1" },
+      });
+    },
+    // T11: the deed of assignment.
+    "POST /api/v1/projects/:id/deed/recheck": async () => {
+      const s = await owner();
+      await putCompany();
+      const f = await mkDeedProject({ status: "completed" });
+      await env.DB.prepare(
+        "UPDATE documents SET paid_minor = total_minor, balance_minor = 0, status = 'paid' WHERE id = ?",
+      )
+        .bind(f.inv.id)
+        .run();
+      return run(s, `/projects/${f.projectId}/deed/recheck`, { body: {} });
+    },
+    "PUT /api/v1/deeds/:id/schedules": async () => {
+      const s = await owner();
+      await putCompany();
+      const f = await draftDeed(s);
+      return run(s, `/deeds/${f.deedId}/schedules`, {
+        method: "PUT",
+        body: await deedSchedulesBody(f.deedId),
+      });
+    },
+    "POST /api/v1/deeds/:id/finalise": async () => {
+      const s = await owner();
+      await putCompany();
+      const f = await draftDeed(s);
+      await putSchedules(s, f.deedId);
+      return run(s, `/deeds/${f.deedId}/finalise`, {
+        body: { expectedUpdatedAt: await deedStamp(f.deedId) },
+      });
+    },
+    "PUT /api/v1/deeds/:id/signed": async () => {
+      const s = await owner();
+      await putCompany();
+      const f = await finalisedDeed(s);
+      const rid = `ray-${crypto.randomUUID()}`;
+      const res = await putSigned(s, f.deedId, PDF_BYTES, { headers: headers(rid) });
+      return { res, rid, actor: s };
+    },
+    "POST /api/v1/deeds/:id/cancel": async () => {
+      const s = await owner();
+      await putCompany();
+      const f = await draftDeed(s);
+      return run(s, `/deeds/${f.deedId}/cancel`, {
+        body: { expectedUpdatedAt: await deedStamp(f.deedId), reason: "Not needed" },
       });
     },
     "PUT /api/v1/invoices/:id/realisation-extensions/:eid/letter": async () => {

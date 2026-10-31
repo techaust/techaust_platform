@@ -36,6 +36,9 @@ export const ROUTES: readonly RouteDef[] = [
   R("GET", "/invoices/:id", "finance"),
   R("GET", "/invoices/:id/pdf", "finance"),
   // Proposals and estimates (M4.5, POR-04, POR-05): the signed-in contact's offers. Each query is scoped to the session's organisation.
+  // T11 (POR-05; 08-C RB-38(a)): the organisation's SIGNED deeds of assignment, and a signed PDF named in the body.
+  R("GET", "/deeds", "session"),
+  R("POST", "/deeds/pdf", "session"),
   R("GET", "/offers", "session"),
   R("GET", "/offers/:id", "session"),
   R("GET", "/offers/:id/pdf", "session"),
