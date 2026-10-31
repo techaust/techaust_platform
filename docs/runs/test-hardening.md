@@ -1,4 +1,4 @@
-Status: r2 merged (4e2366a) + lead fix 60bcb5c; reviewer waits for the window reset (main session: no new agent before 06:10 IST)
+Status: check and test green on b9e226b (9,522 passed); reviewer starts after 06:10 IST (main session hold)
 Tier: B
 Usage: analyst (item 5) claude-opus-5-5/high, skills: code-review (+ its read-only general-purpose helper claude-opus-5-5/high); 5-h 17 → 62 % (shared window, four sessions) · builder r1 claude-opus-5-5/high, skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:turnstile-spin (not installed in the cloud); 5-h 17 → 62 % · analyst (early check r1) claude-opus-5-5/high, skills: code-review (+ read-only helper); 5-h 62 % · builder r2 claude-opus-5-5/high, skills tried: cloudflare:workers-best-practices (not installed in the cloud); 5-h 62 → 88 %
 
@@ -334,7 +334,7 @@ _Pasted by the lead from the analyst's reply (Opus 5.5 high, read-only, 2026-11-
 (pending)
 
 ## Integration notes
-(pending)
+- 2026-11-01 03:47 IST, lead on b9e226b (r1 + r2 + lead fix 60bcb5c): `bash tools/heavy.sh --log th-lead-check pnpm check` exit 0; `bash tools/heavy.sh --log th-lead-test pnpm test` exit 0: testing 4, auth 135, ui 471 (+2 skipped), core 1,956, email 132, db 623, pdf 380, web 750 (+17 skipped, no dist), portal 680, jobs 570, admin 3,821. Before review; the final run follows the review and a merge of main.
 
 ## Lead decisions (for 13)
 - 2026-11-01: the optimistic stale check on six admin writers (leads, catalogue, client, client billing, contact, bank account) stamps `max(now, expected + 1)`, the house pattern, closing a same-millisecond/clock-skew gap (analyst: theoretical, low); the billing step-up check keeps the real clock.
