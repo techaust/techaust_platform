@@ -110,11 +110,13 @@ type SendRow = {
   contact_email: string | null;
 };
 
+// A send whose email already has its log row (the email consumer took it: sent, delivered or failed) keeps that state: a redelivery refused after "Revoke links"
+// must not relabel an email that went as "Cancelled" (test-hardening, lead decision 2026-11-01). `email_log_entity` index.
+const MARK_NOT_SENT_SQL = `UPDATE document_sends SET cancelled_at = ?2 WHERE id = ?1 AND cancelled_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM email_log e WHERE e.entity_type = 'document_send' AND e.entity_id = document_sends.id)`;
 /** Marks a send as never going out (set once, by the trigger's rule); the offer page then shows `not_sent`. */
 async function markNotSent(env: OfferEnv, sendId: string, now: number): Promise<void> {
-  await env.DB.prepare("UPDATE document_sends SET cancelled_at = ?2 WHERE id = ?1 AND cancelled_at IS NULL")
-    .bind(sendId, now)
-    .run();
+  await env.DB.prepare(MARK_NOT_SENT_SQL).bind(sendId, now).run();
 }
 
 export async function processOfferSend(

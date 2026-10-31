@@ -441,6 +441,22 @@ describe("a revoke between a failed queue send and its retry (item 5 #1) [ADM-IN
     expect(queuedEmails()).toHaveLength(1); // only the first, before the revoke
   });
 
+  it("a redelivery refused after a revoke keeps an emailed send's state: the log row exists, so the send is never marked cancelled", async () => {
+    const w = await world();
+    expect(await processInvoiceSend(makeEnv(), msg(w), NOW)).toBe("queued");
+    // What the email consumer writes once it takes the email (status as after SES accepted it).
+    await run(
+      "INSERT INTO email_log (id, to_email, template, entity_type, entity_id, status, created_at, updated_at) VALUES (?1, 'a@example.test', 'invoice.sent', 'document_send', ?2, 'sent', ?3, ?3)",
+      uuidv7(),
+      w.send,
+      NOW + 5,
+    );
+    await revokeLinks(w.doc.id, NOW + 10);
+    expect(await processInvoiceSend(makeEnv(), msg(w), NOW + 1000)).toBe("refused");
+    expect((await sendRow(w.send))?.cancelled_at).toBeNull();
+    expect(queuedEmails()).toHaveLength(1);
+  });
+
   it("another send of the same document whose link was never revoked still goes (the rule is per send)", async () => {
     const w = await world();
     await processInvoiceSend(makeEnv(), msg(w), NOW);

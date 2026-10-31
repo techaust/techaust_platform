@@ -56,11 +56,13 @@ const LINK_SQL = `INSERT INTO doc_access_tokens (token_hash, document_id, purpos
   WHERE s.id = ?2 AND s.cancelled_at IS NULL AND d.frozen_at IS NOT NULL AND d.voided_at IS NULL AND d.status <> 'void' AND cl.anonymised_at IS NULL
     AND NOT EXISTS (SELECT 1 FROM doc_access_tokens r WHERE r.document_id = d.id AND r.send_id = s.id AND r.revoked_at IS NOT NULL)`;
 
+// A send whose email already has its log row (the email consumer took it: sent, delivered or failed) keeps that state: a redelivery refused after "Revoke links"
+// must not relabel an email that went as "Cancelled" (test-hardening, lead decision 2026-11-01). `email_log_entity` index.
+const MARK_NOT_SENT_SQL = `UPDATE document_sends SET cancelled_at = ?2 WHERE id = ?1 AND cancelled_at IS NULL
+  AND NOT EXISTS (SELECT 1 FROM email_log e WHERE e.entity_type = 'document_send' AND e.entity_id = document_sends.id)`;
 /** Marks a send as never going out (set once); the screens then show "not sent" instead of "queued" for ever. */
 async function markNotSent(env: Env, sendId: string, now: number): Promise<void> {
-  await env.DB.prepare("UPDATE document_sends SET cancelled_at = ?2 WHERE id = ?1 AND cancelled_at IS NULL")
-    .bind(sendId, now)
-    .run();
+  await env.DB.prepare(MARK_NOT_SENT_SQL).bind(sendId, now).run();
 }
 
 export async function processInvoiceSend(

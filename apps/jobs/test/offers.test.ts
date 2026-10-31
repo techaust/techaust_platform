@@ -1292,6 +1292,20 @@ describe("a revoke between a failed queue send and its retry (test-hardening ite
     expect(await cancelledAt(w)).toBe(NOW + 60_000);
   });
 
+  it("a redelivery refused after a revoke keeps an emailed send's state: the log row exists, so the send is never marked cancelled", async () => {
+    const w = await world();
+    expect(await processOfferSend(makeEnv(), sendMsg(w), NOW)).toBe("queued");
+    await run(
+      "INSERT INTO email_log (id, to_email, template, entity_type, entity_id, status, created_at, updated_at) VALUES (?1, 'a@example.test', 'proposal.sent', 'document_send', ?2, 'sent', ?3, ?3)",
+      uuidv7(),
+      w.send,
+      NOW + 5,
+    );
+    await revoke(w, NOW + 10);
+    expect(await processOfferSend(makeEnv(), sendMsg(w), NOW + 1000)).toBe("refused");
+    expect(await cancelledAt(w)).toBeNull();
+  });
+
   it("a plain redelivery after a successful send and a revoke mints no live link", async () => {
     const w = await world();
     expect(await processOfferSend(makeEnv(), sendMsg(w), NOW)).toBe("queued");
