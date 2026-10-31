@@ -30,4 +30,4 @@ Status: **APPROVED by the owner, 2026-10-31** (lines 1–21 as written; run file
 
 22. Refusal when anonymising a client with a payment waiting for the check (`payments_pending`): "This client has payments waiting for the owner's check. Confirm or reject them first." (Lead, 2026-10-31, staff-only wording under the owner's delegation.)
 
-Any line added after 2026-10-31 (an empty state, a withdraw dialog, a Reject confirmation) is numbered from 22 and is marked with whoever approved it.
+Any line added after 2026-10-31 (an empty state, a withdraw dialog, a Reject confirmation) is numbered from 23 and is marked with whoever approved it.
