@@ -1,6 +1,8 @@
 // A sent version of a client or contact whose personal details were removed (M4.3 re-check, candidate 2; the owner's answer of 2026-10-26;
-// Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)): the staff GET shows "Anonymised client" and no name, email, GSTIN or address, and the stored snapshot stays as it
-// was sent, byte for byte, as evidence of the offer.
+// Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)): the staff GET shows "Anonymised client" and no name, email, GSTIN or address. These tests
+// mark the client or contact anonymised straight in the database, so they test the VIEW alone: the stored snapshot stays byte for byte, as it does for an
+// accepted offer. The anonymise ROUTE also redacts the stored copy of a never-accepted offer (T7; Settled by the lead on the safest reading, 2026-10-30
+// (08-C RB-37)): offer-erasure.test.ts.
 import { env } from "cloudflare:workers";
 import { ANONYMISED_CLIENT } from "@techaust/core/clients";
 import { viewRecipient } from "@techaust/core/redaction";
