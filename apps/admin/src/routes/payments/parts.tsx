@@ -228,13 +228,11 @@ export function AllocationTable(props: {
             <tr key={d.id} data-invalid={true} data-refused={true}>
               <th scope="row">
                 <span className="alloc__doc">
-                  {d.number ? (
-                    <span className="docno">{d.number}</span>
-                  ) : (
-                    <span className="alloc__unknown">{name || "…"}</span>
-                  )}
+                  <span className="docno">{name || "…"}</span>
                   {d.number && d.type && <span className="alloc__meta">{typeLabel(d.type as never)}</span>}
                 </span>
+                {/* the reason is about the document, not the amount: it sits under the document, so the columns keep their widths */}
+                <FieldError id={`${id}-error`}>{d.error}</FieldError>
               </th>
               <td className="num tnum" data-label={PAY_COPY.balance} />
               <td className="num alloc__cell" data-label={PAY_UI.allocAmount}>
@@ -253,7 +251,6 @@ export function AllocationTable(props: {
                     onChange={(e) => props.onRow(d.id, e.target.value)}
                   />
                 </div>
-                <FieldError id={`${id}-error`}>{d.error}</FieldError>
               </td>
             </tr>
           );

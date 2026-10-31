@@ -186,11 +186,12 @@ function RecordBody(props: {
     loadOpenDocs(client.id, { kind: props.kind, proformas: !owner })
       .then((page) => {
         if (!live) return;
-        const open: OpenDoc[] = page.docs;
-        // The invoice the dialog came from is always a row, even past the cap.
         const from = props.from;
-        if (from && !open.some((d) => d.id === from.id) && from.balanceMinor > 0)
-          open.unshift({ ...from, dueDate: null });
+        // The invoice the dialog came from is always a row, the first (even past the cap); the rest in due-date order.
+        const listed = from ? page.docs.find((d) => d.id === from.id) : undefined;
+        const open: OpenDoc[] = page.docs.filter((d) => d.id !== from?.id);
+        if (listed) open.unshift(listed);
+        else if (from && from.balanceMinor > 0) open.unshift({ ...from, dueDate: null });
         setDocs(open);
         setCapped(page.capped);
       })

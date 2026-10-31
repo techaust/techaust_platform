@@ -128,5 +128,8 @@ export async function confirmDocsOf(
     if (r.ok) extra.push(r.doc);
     else refused.push({ id: v.id, number: v.number, type: v.type, error: r.error });
   }
-  return { kind: "ready", docs: byDueDate([...docs, ...extra]), refused, capped };
+  // The rows Staff asked for come first, in the order asked, so the Owner sees the request without scrolling; the rest in due-date order.
+  const all = byDueDate([...docs, ...extra]);
+  const first = asked.flatMap((id) => all.filter((d) => d.id === id));
+  return { kind: "ready", docs: [...first, ...all.filter((d) => !asked.includes(d.id))], refused, capped };
 }

@@ -451,7 +451,8 @@ describe("the Confirm step's documents (re-check finding 1)", () => {
     expect(r.kind).toBe("ready");
     if (r.kind !== "ready") return;
     expect(r.refused).toEqual([]);
-    expect(r.docs[0]?.id).toBe("old"); // the earliest due first
+    // the rows asked for first, in the order asked; the rest by due date
+    expect(r.docs.slice(0, 2).map((d) => d.id)).toEqual(["old", "n59"]);
     expect(r.docs.some((d) => d.id === "n59")).toBe(true);
     // the Owner's rows start from the request: nothing is dropped
     const plan = readAllocations([{ documentId: "old", text: "400" }], r.docs, 5_000_00, "INR");
