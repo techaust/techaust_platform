@@ -1,6 +1,6 @@
 # Run: T6, the offer wording, proposal terms v4 and website Terms 0.2
 
-Status: designer running (analyst GO)
+Status: designer running (analyst GO); main (T12, #129) merged in at 909f7e6
 Tier: B
 Usage: lead claude-opus-5-5/high (cloud session t6-terms); builder claude-opus-5-5/high (skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, unavailable in cloud; 5-h 8 % at start, reading of 12:58); analyst claude-opus-5-5/high (skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:workers-profiling, unavailable in cloud; 5-h 8 %, reading of 12:58)
 
@@ -58,7 +58,9 @@ Copied by the lead from the analyst's reply. Read-only; ran the diff, a v3/v4/07
 - **L3:** CLAUDE.md and the environments runbook should mention admin `vars.PORTAL_ORIGIN` / `__PORTAL_ORIGIN__` (follow-up for the main session).
 - **For the designer:** send dialog (validity fact, line 3 after the lead, the closing line's `muted` style, "… (IST)" without a date); the staff-reply box; portal expired notices in `decision-panel.tsx:171` and `document-page.tsx:122` via `offerExpiredNotice(kind, view.validUntilDate)`; card and list dates (`home.tsx`); line 3 under the title next to the superseded notice, once per screen; `.replaces-note` has no style in the facts column (`styles.ts:211`); the cover's validity and v4 page breaks; baselines.
 
-## Questions for the owner
+## Integration notes
+- 2026-10-31 (lead): origin/main with T12 (#129) merged into the task branch (909f7e6), as the main session asked. One conflict, `apps/web/src/content/legal-pages.ts` §10 and §12: T12's tag form kept (RB-23 OPEN, RB-38(c) OPEN) with T6's 07-ZE text; `seed/terms.ts` header comment now says versions 1 to 3 are superseded by version 4. 08-C: main's §5 and T6's RB-23, RB-35, RB-38 rows. Re-run green: core `verify-tags` (3), db seed v4, v4-owner and seed (15), web `content-m23` and `admin-portal-origin` (38), the content lint. The designer was told to merge (not rebase) the moved task branch.
+
 **Q1 (07-ZE line 12, arbitration for clients outside India).** Plain English: the check passed: MCIA's rules let us choose Kolkata as the seat. But MCIA's fees are high next to our project sizes: a ₹50,000 filing fee plus, for a dispute up to ₹10 lakh, up to ₹1.1 lakh administration and up to ₹1.85 lakh for the arbitrator (about ₹3.45 lakh in all, normally split half each; half that on the fast, papers-only track). It only ever applies to an overseas client, after 30 days of trying to settle. Its value: an arbitration award can be enforced in most countries (New York Convention); an Indian court judgment usually can't.
 - **A. Keep MCIA, seated in Kolkata, as approved (Recommended).** Wording unchanged. The cost deters weak claims on both sides and the award can be enforced abroad.
 - B. Arbitration without an institution ("ad hoc") under the 1996 Act, seated in Kolkata: no MCIA fees, but if the client won't agree on an arbitrator, the Supreme Court has to appoint one (s.11), which is slow and costly. Needs new wording, back to you.
