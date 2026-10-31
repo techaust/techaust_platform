@@ -98,7 +98,7 @@ export function payAmountVerdict(i: {
   return { ok: true };
 }
 
-/** The reasons a gateway payment waits in "Needs review" (07-ZI line 20; the twin of `REVIEW_KINDS` in the db schema, held by the 0062 triggers). */
+/** The reasons a gateway payment waits in "Needs review" (07-ZI line 20; the twin of `REVIEW_KINDS` in the db schema, held by the 0064 triggers). */
 export const REVIEW_KINDS = [
   "amount_mismatch",
   "currency_mismatch",

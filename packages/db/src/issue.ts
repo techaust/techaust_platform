@@ -613,14 +613,53 @@ export type AdvanceLine = {
   lineTotalMinor: number;
 };
 
+/**
+ * Who issues the tax invoice for a payment received (M6.2, L6): the Owner with a live step-up (M5.2), or the system for a Razorpay payment received against a
+ * proforma (`gateway_auto`: the pending gateway payment `paymentId`, its paid checkout `checkoutId`, and `onBehalfOf`, the proforma's issuing Owner).
+ */
+export type AdvanceAuthority =
+  | { kind: "owner"; sessionId: string }
+  | { kind: "gateway_auto"; paymentId: string; checkoutId: string; onBehalfOf: string };
+
+/**
+ * The authority of an automatic tax invoice for a Razorpay payment received against a proforma (M6.2, L5, L6; PRD ADM-INV-10, Q-P3-3), in the freeze WHERE (the
+ * `CARE_AUTO_SQL` pattern: no session; the Owner's earlier choice, issuing the proforma, is read back from the rows). `?24` is the payment, `?30` the amount, `?31`
+ * the proforma, `?38` the checkout and `?39` the Owner on whose behalf the system issues. In order: the payment is a PENDING Razorpay `payment` with no member,
+ * re-fetched from Razorpay's API (ADR 0008), of exactly this amount, in INR, of this client, asking for exactly this proforma and amount; its checkout is `paid`
+ * by this very payment, for this proforma, through the same provider; the proforma was issued by `?39`, an active Owner; the client is in India and not overseas
+ * (owner, 2026-11-01, Q3 A); the new invoice is a tax invoice in INR with no author. The advance tail adds the rest: the proforma still read, issued or converted,
+ * with a balance of at least the amount; the pending payment's day; the signature (`SIGNED_FREEZE_SQL`; T4, Researched 2026-10-30, Rule 53(1A) CGST Rules (08-C
+ * RA-22)); and `freezeStatement` every M5.1 settings, client and contact guard. Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17): GST on
+ * an advance is due on receipt and a tax invoice for the amount received is valid. Researched 2026-10-28, s.12(2) IGST Act (08-C RA-12): the place of supply
+ * follows the client's state at the payment's time of supply (the caller builds the draft from the current client; a changed supply refuses the automatic issue).
+ */
+export const GATEWAY_AUTO_SQL = `EXISTS (SELECT 1 FROM payments gp
+            JOIN checkout_sessions gc ON gc.id = gp.checkout_id
+            JOIN documents gpf ON gpf.id = ?31
+            JOIN staff_users gow ON gow.id = gpf.issued_by AND gow.role = 'owner' AND gow.status = 'active'
+            JOIN clients gk ON gk.id = documents.client_id
+    WHERE gp.id = ?24 AND gp.provider = 'razorpay' AND gp.kind = 'payment' AND gp.status = 'pending_verification' AND gp.recorded_by IS NULL
+      AND gp.refetched_at IS NOT NULL AND gp.amount_minor = ?30 AND gp.currency = 'INR' AND gp.client_id = documents.client_id
+      AND EXISTS (SELECT 1 FROM json_each(gp.requested_allocations) gj WHERE json_extract(gj.value, '$.documentId') = ?31 AND json_extract(gj.value, '$.amountMinor') = ?30)
+      AND gc.id = ?38 AND gc.status = 'paid' AND gc.paid_payment_id = gp.id AND gc.document_id = gpf.id AND gc.provider = gp.provider
+      AND gpf.type = 'proforma' AND gpf.issued_by = ?39
+      AND gk.country = 'IN' AND gk.gst_status <> 'overseas')
+  AND documents.type = 'tax_invoice' AND documents.currency = 'INR' AND documents.created_by IS NULL`;
+
 export type AdvanceIssueArgs = Omit<InvoiceIssueArgs, "authority" | "bell" | "expected" | "type"> & {
   /** The new invoice's type: an export invoice for an overseas client, else a tax invoice. */
   type: "tax_invoice" | "export_invoice";
   /** The proforma the money was received against, and the `updated_at` it was read at (a changed proforma refuses the batch). */
   proformaId: string;
   expectedProformaUpdatedAt: number;
-  /** Owner only: the session whose live step-up the freeze checks. */
-  sessionId: string;
+  /** The Owner's session whose live step-up the freeze checks (the `owner` authority, the default). Ignored with `authority: gateway_auto`. */
+  sessionId?: string;
+  /**
+   * M6.2 (L6): who issues. Absent or `owner`: the Owner's session, as M5.2. `gateway_auto`: the system issues the tax invoice for a Razorpay payment received
+   * against a proforma, with no session: `GATEWAY_AUTO_SQL` holds the authority in the freeze WHERE, `issued_by` and every member column of the batch are NULL, and
+   * the receipt's `created_by` (NOT NULL) is `onBehalfOf`, the active Owner who issued the proforma.
+   */
+  authority?: AdvanceAuthority;
   amountMinor: number;
   /**
    * Q37 (owner 2026-10-28): the FY token ("2627") of the receipt day, set only when this is an export invoice on the LUT route; the freeze then needs a LUT with
@@ -683,9 +722,19 @@ export type AdvanceIssueArgs = Omit<InvoiceIssueArgs, "authority" | "bell" | "ex
  * balance of at least the amount. After the audit row: `issue_result` UNGUARDED (a refusal rolls the whole batch back, the inserted draft and the
  * counter with it), the `advance_receipts` row (a repeated reference aborts the batch on its unique key), the proforma moved to `converted` with its
  * paid and balance updated, the proforma's milestone to `invoiced` once its balance is 0 (delivered_at kept, LD12), and the new invoice to `paid`
- * with balance 0. Authority: the Owner's session with a live step-up, checked inside the freeze statement.
+ * with balance 0. Authority: the Owner's session with a live step-up, checked inside the freeze statement; or (M6.2, `authority: gateway_auto`) `GATEWAY_AUTO_SQL`
+ * for a pending Razorpay payment received against the proforma, which the same batch confirms (no member: trigger `payments_status_flow` allows that move only with
+ * the advance receipt in the same update).
  */
-export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): SendStatements {
+export function advanceIssueStatements(db: D1Database, args: AdvanceIssueArgs): SendStatements {
+  // M6.2 (L6): with `gateway_auto` the batch runs with no member: `issued_by`, the draft's author, the payment's verifier and the allocation's author are NULL, the
+  // pending payment is the authority's, and only the receipt names a member (its `created_by` is NOT NULL): the proforma's issuing Owner, held by GATEWAY_AUTO_SQL.
+  const auth: AdvanceAuthority = args.authority ?? { kind: "owner", sessionId: args.sessionId ?? "" };
+  const gateway = auth.kind === "gateway_auto" ? auth : null;
+  const a: AdvanceIssueArgs = gateway
+    ? { ...args, issuedBy: null, paymentId: gateway.paymentId, decidedBell: null, confirmDuplicate: false }
+    : args;
+  const receiptCreatedBy = gateway ? gateway.onBehalfOf : a.issuedBy;
   const d = a.draft;
   const insert = db
     .prepare(
@@ -754,7 +803,9 @@ export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): Sen
   const freeze = freezeStatement(
     db,
     base,
-    { sql: OWNER_AUTHORITY_SQL, bind: a.sessionId },
+    gateway
+      ? { sql: GATEWAY_AUTO_SQL, bind: gateway.paymentId }
+      : { sql: OWNER_AUTHORITY_SQL, bind: (auth as { sessionId: string }).sessionId },
     {
       where: ` AND total_minor = ?30
          AND EXISTS (SELECT 1 FROM documents p WHERE p.id = ?31 AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.status IN ('issued', 'converted') AND p.updated_at = ?32 AND p.balance_minor >= ?30 AND p.client_id = documents.client_id AND p.currency = documents.currency)
@@ -775,6 +826,8 @@ export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): Sen
         a.receivedOn,
         a.referenceNorm,
         a.confirmDuplicate === true ? 1 : 0,
+        // M6.2: GATEWAY_AUTO_SQL's checkout (?38) and the Owner on whose behalf the system issues (?39); bound only with that authority (D1 refuses extra values).
+        ...(gateway ? [gateway.checkoutId, gateway.onBehalfOf] : []),
       ],
     },
   );
@@ -801,7 +854,7 @@ export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): Sen
           a.amountMinor,
           a.receivedOn,
           a.referenceNorm,
-          a.issuedBy,
+          receiptCreatedBy,
           a.now,
         ),
       // The proforma is converted (terminal) with the payment on it; it stays `converted` while a balance is left (further payments are allowed).

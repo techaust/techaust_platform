@@ -1,5 +1,5 @@
-// M6.2 Razorpay in the database, the migrations and the triggers (ADM-PAY-01, -02, -06, -07, JOB-HOOK-01..03; run file docs/runs/m6.2-razorpay.md A and H): 0061 creates and
-// adds only, 0062's pinned lists equal the schema's, manual payments behave as in M6.1, a gateway payment's shape and moves (never rejected or withdrawn; the
+// M6.2 Razorpay in the database, the migrations and the triggers (ADM-PAY-01, -02, -06, -07, JOB-HOOK-01..03; run file docs/runs/m6.2-razorpay.md A and H): 0063 creates and
+// adds only, 0064's pinned lists equal the schema's, manual payments behave as in M6.1, a gateway payment's shape and moves (never rejected or withdrawn; the
 // `gateway_auto` confirm only with its advance receipt), the unique gateway payment id, the checkout, webhook event and review item flows, no deletes, and the
 // EXPLAIN plans of the new indexes. Raw SQL: the triggers are the subject. All names and amounts are invented test data.
 import { env } from "cloudflare:workers";
@@ -17,15 +17,15 @@ import {
   WEBHOOK_EVENT_STATUSES,
 } from "../src/schema/payments.ts";
 import {
-  CHECKOUT_SOURCES_0062,
-  CHECKOUT_STATUSES_0062,
-  GATEWAY_PROVIDERS_0062,
-  PAYMENT_MODES_0062,
-  PAYMENT_PROVIDERS_0062,
-  REVIEW_KINDS_0062,
-  REVIEW_RESOLUTIONS_0062,
-  REVIEW_SOURCES_0062,
-  WEBHOOK_EVENT_STATUSES_0062,
+  CHECKOUT_SOURCES_0064,
+  CHECKOUT_STATUSES_0064,
+  GATEWAY_PROVIDERS_0064,
+  PAYMENT_MODES_0064,
+  PAYMENT_PROVIDERS_0064,
+  REVIEW_KINDS_0064,
+  REVIEW_RESOLUTIONS_0064,
+  REVIEW_SOURCES_0064,
+  WEBHOOK_EVENT_STATUSES_0064,
 } from "../src/triggers.ts";
 import { mkClientRow, mkContact, mkIssued, mkMember } from "./billing-helpers.ts";
 import { all, first, rejects, run } from "./helpers.ts";
@@ -113,9 +113,9 @@ async function setup() {
   return { owner, clientId, contactId, inv };
 }
 
-describe("0061 and 0062: no rebuild, the pinned lists [run file A]", () => {
-  it("0061 only creates tables and indexes and adds payment columns: no DROP, no copy, no rebuild", () => {
-    const m = env.TEST_MIGRATIONS.find((x) => x.name === "0061_gateway.sql");
+describe("0063 and 0064: no rebuild, the pinned lists [run file A]", () => {
+  it("0063 only creates tables and indexes and adds payment columns: no DROP, no copy, no rebuild", () => {
+    const m = env.TEST_MIGRATIONS.find((x) => x.name === "0063_gateway.sql");
     expect(m).toBeDefined();
     for (const q of (m?.queries ?? []).map((x) => x.replace(/^(\s|--> statement-breakpoint)+/, "")))
       expect(q.trim(), q.slice(0, 60)).toMatch(
@@ -124,8 +124,8 @@ describe("0061 and 0062: no rebuild, the pinned lists [run file A]", () => {
     expect((m?.queries ?? []).join("\n")).not.toMatch(/DROP TABLE|__new_|INSERT INTO/);
   });
 
-  it("0062 drops only payment triggers it creates again, and nothing else", () => {
-    const m = env.TEST_MIGRATIONS.find((x) => x.name === "0062_gateway_triggers.sql");
+  it("0064 drops only payment triggers it creates again, and nothing else", () => {
+    const m = env.TEST_MIGRATIONS.find((x) => x.name === "0064_gateway_triggers.sql");
     const text = (m?.queries ?? []).join("\n");
     expect(text).not.toMatch(/DROP TABLE|DROP INDEX|__new_|ALTER TABLE/);
     const dropped = [...text.matchAll(/DROP TRIGGER `([a-z_]+)`/g)].map((x) => x[1]);
@@ -139,20 +139,20 @@ describe("0061 and 0062: no rebuild, the pinned lists [run file A]", () => {
     for (const name of dropped) expect(text).toContain(`CREATE TRIGGER \`${name}\``);
   });
 
-  it("the trigger lists of 0062 are the schema's lists today", () => {
-    expect(PAYMENT_PROVIDERS_0062).toEqual(PAYMENT_PROVIDERS);
-    expect(PAYMENT_MODES_0062).toEqual(PAYMENT_MODES);
-    expect(GATEWAY_PROVIDERS_0062).toEqual(GATEWAY_PROVIDERS);
-    expect(WEBHOOK_EVENT_STATUSES_0062).toEqual(WEBHOOK_EVENT_STATUSES);
-    expect(CHECKOUT_SOURCES_0062).toEqual(CHECKOUT_SOURCES);
-    expect(CHECKOUT_STATUSES_0062).toEqual(CHECKOUT_STATUSES);
-    expect(REVIEW_SOURCES_0062).toEqual(REVIEW_SOURCES);
-    expect(REVIEW_RESOLUTIONS_0062).toEqual(REVIEW_RESOLUTIONS);
-    expect(REVIEW_KINDS_0062).toEqual(REVIEW_KINDS);
+  it("the trigger lists of 0064 are the schema's lists today", () => {
+    expect(PAYMENT_PROVIDERS_0064).toEqual(PAYMENT_PROVIDERS);
+    expect(PAYMENT_MODES_0064).toEqual(PAYMENT_MODES);
+    expect(GATEWAY_PROVIDERS_0064).toEqual(GATEWAY_PROVIDERS);
+    expect(WEBHOOK_EVENT_STATUSES_0064).toEqual(WEBHOOK_EVENT_STATUSES);
+    expect(CHECKOUT_SOURCES_0064).toEqual(CHECKOUT_SOURCES);
+    expect(CHECKOUT_STATUSES_0064).toEqual(CHECKOUT_STATUSES);
+    expect(REVIEW_SOURCES_0064).toEqual(REVIEW_SOURCES);
+    expect(REVIEW_RESOLUTIONS_0064).toEqual(REVIEW_RESOLUTIONS);
+    expect(REVIEW_KINDS_0064).toEqual(REVIEW_KINDS);
   });
 });
 
-describe("manual payments are unchanged by 0062 [ADM-PAY-05, M6.1]", () => {
+describe("manual payments are unchanged by 0064 [ADM-PAY-05, M6.1]", () => {
   it("a manual entry still needs its recorder and an Owner to confirm, and may carry none of the gateway columns", async () => {
     const { owner, clientId, contactId, inv } = await setup();
     const staff = await mkMember("staff");

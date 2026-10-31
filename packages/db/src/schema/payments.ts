@@ -96,7 +96,7 @@ export const payments = sqliteTable(
     withdrawnBy: text("withdrawn_by").references(() => staffUsers.id),
     withdrawnAt: integer("withdrawn_at"),
     withdrawReason: text("withdraw_reason"),
-    // M6.2 (ADD COLUMN only, 0061; their rules are triggers of `gateway_triggers`, never a CHECK here, which would make drizzle-kit rebuild a referenced table):
+    // M6.2 (ADD COLUMN only, 0063; their rules are triggers of `gateway_triggers`, never a CHECK here, which would make drizzle-kit rebuild a referenced table):
     /** The gateway's own payment id (Razorpay's `pay_...`); with `provider`, unique: the real idempotency key of a gateway payment (JOB-HOOK-02). */
     providerPaymentId: text("provider_payment_id"),
     /** The checkout (payment link) the money came through. */
@@ -206,7 +206,7 @@ export const realisationExtensions = sqliteTable(
 );
 
 // ---- M6.2: online payments through a gateway (Razorpay in test mode; ADM-PAY-01, -02, -07, JOB-HOOK-01..03; run file docs/runs/m6.2-razorpay.md A) -------------
-// CREATE TABLE only (0061). As in M6.1 (L3), the enumeration columns have no CHECK: the triggers of `gateway_triggers` (0062) hold them, so M6.3/M6.4 widen a list
+// CREATE TABLE only (0063). As in M6.1 (L3), the enumeration columns have no CHECK: the triggers of `gateway_triggers` (0064) hold them, so M6.3/M6.4 widen a list
 // with a trigger swap, never a rebuild of a table other tables reference. Nothing here stores a raw webhook body, a payer's email, phone, UPI address or card
 // detail (L8; ADM-PAY-12; Researched 2026-10-28, RBI PA Directions 2025, Annex 1 2.1 (08-C RB-07)): `facts` is a whitelist the code builds.
 

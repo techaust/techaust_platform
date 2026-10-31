@@ -464,7 +464,7 @@ export function isRazorpayShortUrl(v: unknown): boolean {
 
 // ---- methods, references, keys ------------------------------------------------------------------------------------------------------------------------
 
-/** Razorpay's payment `method` to our `payments.mode` (the 0062 list); anything we do not name is `other` (`options.checkout.method` is undocumented, so any method is accepted and recorded). */
+/** Razorpay's payment `method` to our `payments.mode` (the 0064 list); anything we do not name is `other` (`options.checkout.method` is undocumented, so any method is accepted and recorded). */
 export function methodToMode(method: string | null | undefined): string {
   switch (method) {
     case "upi":

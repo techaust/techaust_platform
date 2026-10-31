@@ -508,7 +508,7 @@ describe("short URL hosts, methods, references", () => {
       expect(isRazorpayShortUrl(bad), String(bad)).toBe(false);
   });
 
-  it("maps Razorpay's methods to the 0062 modes, anything else to other", () => {
+  it("maps Razorpay's methods to the 0064 modes, anything else to other", () => {
     for (const m of ["upi", "card", "netbanking", "wallet", "emi", "paylater"])
       expect(methodToMode(m)).toBe(m);
     expect(methodToMode("cardless_emi")).toBe("emi");

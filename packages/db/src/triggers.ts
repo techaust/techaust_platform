@@ -1349,9 +1349,9 @@ export function paymentTriggerStatements(): string[] {
   ];
 }
 
-/** M6.2 (L3): the values the payment triggers of 0062 accept, pinned (a db test compares them with the schema's lists today; M6.3 to M6.5 widen them in their own migrations). */
-export const PAYMENT_PROVIDERS_0062 = ["manual", "razorpay"] as const;
-export const PAYMENT_MODES_0062 = [
+/** M6.2 (L3): the values the payment triggers of 0064 accept, pinned (a db test compares them with the schema's lists today; M6.3 to M6.5 widen them in their own migrations). */
+export const PAYMENT_PROVIDERS_0064 = ["manual", "razorpay"] as const;
+export const PAYMENT_MODES_0064 = [
   "neft",
   "rtgs",
   "imps",
@@ -1364,17 +1364,17 @@ export const PAYMENT_MODES_0062 = [
   "paylater",
   "other",
 ] as const;
-/** M6.2: the gateway tables' lists as 0062 holds them (pinned; the schema's lists are compared by a db test). */
-export const GATEWAY_PROVIDERS_0062 = ["razorpay"] as const;
-export const WEBHOOK_EVENT_STATUSES_0062 = [
+/** M6.2: the gateway tables' lists as 0064 holds them (pinned; the schema's lists are compared by a db test). */
+export const GATEWAY_PROVIDERS_0064 = ["razorpay"] as const;
+export const WEBHOOK_EVENT_STATUSES_0064 = [
   "received",
   "processed",
   "ignored",
   "needs_review",
   "failed",
 ] as const;
-export const CHECKOUT_SOURCES_0062 = ["portal", "link", "staff"] as const;
-export const CHECKOUT_STATUSES_0062 = [
+export const CHECKOUT_SOURCES_0064 = ["portal", "link", "staff"] as const;
+export const CHECKOUT_STATUSES_0064 = [
   "creating",
   "live",
   "paid",
@@ -1383,14 +1383,14 @@ export const CHECKOUT_STATUSES_0062 = [
   "stale",
   "failed",
 ] as const;
-export const REVIEW_SOURCES_0062 = ["webhook", "dlq", "refresh"] as const;
-export const REVIEW_RESOLUTIONS_0062 = [
+export const REVIEW_SOURCES_0064 = ["webhook", "dlq", "refresh"] as const;
+export const REVIEW_RESOLUTIONS_0064 = [
   "confirmed",
   "advance_issued",
   "left_as_credit",
   "dismissed",
 ] as const;
-export const REVIEW_KINDS_0062 = [
+export const REVIEW_KINDS_0064 = [
   "amount_mismatch",
   "currency_mismatch",
   "reference_mismatch",
@@ -1407,8 +1407,8 @@ export const REVIEW_KINDS_0062 = [
   "proforma_overpaid",
   "client_gone",
 ] as const;
-/** The columns `payments_fixed` freezes as 0062 recreates it: 0060's list plus M6.2's gateway columns (pinned). */
-export const PAYMENT_FROZEN_0062 = [
+/** The columns `payments_fixed` freezes as 0064 recreates it: 0060's list plus M6.2's gateway columns (pinned). */
+export const PAYMENT_FROZEN_0064 = [
   "id",
   "client_id",
   "kind",
@@ -1432,7 +1432,7 @@ export const PAYMENT_FROZEN_0062 = [
   "webhook_event_id",
 ] as const;
 /** The gateway reference columns' bound (`PROVIDER_REF_MAX` in the schema). */
-const GATEWAY_REF_MAX_0062 = 64;
+const GATEWAY_REF_MAX_0064 = 64;
 
 /**
  * M6.2 Razorpay in test mode (ADM-PAY-01, -02, -06, -07, ADM-INV-10, JOB-HOOK-01..03; run file docs/runs/m6.2-razorpay.md A): the trigger set `gateway_triggers`. No
@@ -1445,7 +1445,7 @@ const GATEWAY_REF_MAX_0062 = 64;
  *   3. `payments_gateway_shape` (new): a manual entry carries no gateway column; a gateway payment is money received (`payment`, never TDS) in INR (owner, 2026-11-01, Q3 A:
  *      domestic INR clients only; OPEN (08-C RB-01): does a USD invoice paid through a PA-CB that credits us in INR count as "settled in INR"?), with a mode and a reference, and its
  *      fee tax is never negative;
- *   4. `payments_fixed` recreated: 0060's rule over `PAYMENT_FROZEN_0062` (the gateway columns never change);
+ *   4. `payments_fixed` recreated: 0060's rule over `PAYMENT_FROZEN_0064` (the gateway columns never change);
  *   5. `payments_status_flow` recreated: 0060's flow, plus: a gateway payment is never rejected or withdrawn (refunds are M6.5, L7); a pending gateway payment is
  *      confirmed by an active Owner, or by the system (`gateway_auto`, L6) with no member, `verified_at` set and its `advance_receipt_id` set in the same update (the
  *      tax invoice for the payment received is issued in that very batch: Researched 2026-10-28, s.31(3)(d) CGST Act, Rule 50 CGST Rules (08-C RA-17));
@@ -1468,11 +1468,11 @@ export function gatewayTriggerStatements(): string[] {
   const owner = (who: string) =>
     `EXISTS (SELECT 1 FROM staff_users ou WHERE ou.id = ${who} AND ou.role = 'owner' AND ou.status = 'active')`;
   // A gateway payment, by its provider (never "not manual": an unknown provider must fall through to `payments_values_insert`'s message).
-  const gateway = (row: "NEW" | "OLD") => `${row}.provider IN (${q(GATEWAY_PROVIDERS_0062)})`;
+  const gateway = (row: "NEW" | "OLD") => `${row}.provider IN (${q(GATEWAY_PROVIDERS_0064)})`;
   const anonymised = (client: string) =>
     `EXISTS (SELECT 1 FROM clients ec WHERE ec.id = ${client} AND ec.anonymised_at IS NOT NULL)`;
   // 1. payments: the values
-  const valuesBad = `NEW.kind NOT IN (${q(PAYMENT_KINDS_0060)}) OR NEW.provider NOT IN (${q(PAYMENT_PROVIDERS_0062)}) OR NEW.status NOT IN (${q(PAYMENT_STATUSES_0060)}) OR (NEW.mode IS NOT NULL AND NEW.mode NOT IN (${q(PAYMENT_MODES_0062)})) OR (NEW.proof_mime IS NOT NULL AND NEW.proof_mime NOT IN (${q(PROOF_MIME_TYPES_0060)}))`;
+  const valuesBad = `NEW.kind NOT IN (${q(PAYMENT_KINDS_0060)}) OR NEW.provider NOT IN (${q(PAYMENT_PROVIDERS_0064)}) OR NEW.status NOT IN (${q(PAYMENT_STATUSES_0060)}) OR (NEW.mode IS NOT NULL AND NEW.mode NOT IN (${q(PAYMENT_MODES_0064)})) OR (NEW.proof_mime IS NOT NULL AND NEW.proof_mime NOT IN (${q(PROOF_MIME_TYPES_0060)}))`;
   const valuesMsg = "a payment has a known kind, provider, status, mode and proof type";
   // 2. payments: the insert state
   const pendingOk =
@@ -1482,7 +1482,7 @@ export function gatewayTriggerStatements(): string[] {
   const insertBad = `(${manualBad}) OR (${gatewayBad}) OR NEW.withdrawn_by IS NOT NULL OR NEW.withdrawn_at IS NOT NULL OR NEW.withdraw_reason IS NOT NULL`;
   // 3. payments: the gateway shape
   const shapeBad = `(NEW.provider = 'manual' AND (NEW.provider_payment_id IS NOT NULL OR NEW.checkout_id IS NOT NULL OR NEW.fee_tax_minor IS NOT NULL OR NEW.refetched_at IS NOT NULL OR NEW.webhook_event_id IS NOT NULL))
-    OR (${gateway("NEW")} AND (NEW.kind IS NOT 'payment' OR NEW.currency IS NOT 'INR' OR NEW.mode IS NULL OR NEW.reference_norm IS NULL OR length(NEW.provider_payment_id) NOT BETWEEN 1 AND ${GATEWAY_REF_MAX_0062} OR (NEW.fee_tax_minor IS NOT NULL AND NEW.fee_tax_minor < 0) OR NEW.inr_received_minor IS NOT NULL))`;
+    OR (${gateway("NEW")} AND (NEW.kind IS NOT 'payment' OR NEW.currency IS NOT 'INR' OR NEW.mode IS NULL OR NEW.reference_norm IS NULL OR length(NEW.provider_payment_id) NOT BETWEEN 1 AND ${GATEWAY_REF_MAX_0064} OR (NEW.fee_tax_minor IS NOT NULL AND NEW.fee_tax_minor < 0) OR NEW.inr_received_minor IS NOT NULL))`;
   // 4. payments: fixed (0060's rule over the longer frozen list)
   const onceCols = [
     "proof_kind",
@@ -1497,7 +1497,7 @@ export function gatewayTriggerStatements(): string[] {
   const confirming = "OLD.status = 'pending_verification' AND NEW.status = 'confirmed'";
   const erasingText = (col: string) =>
     `(NEW.\`${col}\` IS NULL AND NEW.status IS OLD.status AND ${anonymised("OLD.client_id")})`;
-  const fixedBad = `${changed(PAYMENT_FROZEN_0062)} OR (NEW.\`note\` IS NOT OLD.\`note\` AND NOT ${erasingText("note")}) OR ${setOnce(onceCols)} OR (NEW.advance_receipt_id IS NOT OLD.advance_receipt_id AND NOT (${confirming})) OR ((NEW.tds_certificate_no IS NOT OLD.tds_certificate_no OR NEW.tds_certificate_on IS NOT OLD.tds_certificate_on) AND OLD.kind IS NOT 'tds')`;
+  const fixedBad = `${changed(PAYMENT_FROZEN_0064)} OR (NEW.\`note\` IS NOT OLD.\`note\` AND NOT ${erasingText("note")}) OR ${setOnce(onceCols)} OR (NEW.advance_receipt_id IS NOT OLD.advance_receipt_id AND NOT (${confirming})) OR ((NEW.tds_certificate_no IS NOT OLD.tds_certificate_no OR NEW.tds_certificate_on IS NOT OLD.tds_certificate_on) AND OLD.kind IS NOT 'tds')`;
   // 5. payments: the status flow
   const deciding = "OLD.status = 'pending_verification' AND NEW.status IN ('confirmed', 'rejected')";
   const withdrawing = "OLD.status = 'confirmed' AND NEW.status = 'withdrawn'";
@@ -1511,7 +1511,7 @@ export function gatewayTriggerStatements(): string[] {
     OR ((${changed(["withdrawn_by", "withdrawn_at"])}) AND NOT (${withdrawing}))
     OR (NEW.withdraw_reason IS NOT OLD.withdraw_reason AND NOT (${withdrawing}) AND NOT ${erasingText("withdraw_reason")})`;
   // 6. checkout_sessions
-  const checkoutValuesBad = `NEW.provider NOT IN (${q(GATEWAY_PROVIDERS_0062)}) OR NEW.source NOT IN (${q(CHECKOUT_SOURCES_0062)}) OR NEW.status NOT IN (${q(CHECKOUT_STATUSES_0062)})`;
+  const checkoutValuesBad = `NEW.provider NOT IN (${q(GATEWAY_PROVIDERS_0064)}) OR NEW.source NOT IN (${q(CHECKOUT_SOURCES_0064)}) OR NEW.status NOT IN (${q(CHECKOUT_STATUSES_0064)})`;
   const checkoutValuesMsg = "a checkout has a known provider, source and status";
   const checkoutInsertBad =
     "NEW.status IS NOT 'creating' OR NEW.paid_payment_id IS NOT NULL OR NEW.provider_link_id IS NOT NULL OR NEW.short_url IS NOT NULL OR NEW.last_refresh_at IS NOT NULL OR NOT ((NEW.source = 'portal' AND NEW.contact_id IS NOT NULL AND NEW.doc_token_id IS NULL AND NEW.created_by IS NULL) OR (NEW.source = 'link' AND NEW.doc_token_id IS NOT NULL AND NEW.created_by IS NULL) OR (NEW.source = 'staff' AND NEW.created_by IS NOT NULL AND NEW.contact_id IS NULL AND NEW.doc_token_id IS NULL))";
@@ -1523,10 +1523,10 @@ export function gatewayTriggerStatements(): string[] {
     OR (NEW.paid_payment_id IS NOT OLD.paid_payment_id AND NOT (NEW.status = 'paid' AND OLD.status IN ('live', 'stale') AND OLD.paid_payment_id IS NULL))`;
   const checkoutFixedBad = `${changed(["id", "provider", "document_id", "client_id", "contact_id", "doc_token_id", "created_by", "source", "currency", "amount_minor", "created_at"])} OR ${setOnce(["provider_link_id", "short_url", "paid_payment_id"])} OR (NEW.expires_at IS NOT OLD.expires_at AND NOT (OLD.status = 'creating' AND NEW.status = 'live')) OR NEW.updated_at < OLD.updated_at`;
   // 7. webhook_events
-  const eventValuesBad = `NEW.provider NOT IN (${q(GATEWAY_PROVIDERS_0062)}) OR NEW.status NOT IN (${q(WEBHOOK_EVENT_STATUSES_0062)})`;
+  const eventValuesBad = `NEW.provider NOT IN (${q(GATEWAY_PROVIDERS_0064)}) OR NEW.status NOT IN (${q(WEBHOOK_EVENT_STATUSES_0064)})`;
   const eventFlowBad = `(NEW.status IS NOT OLD.status AND NOT ((OLD.status = 'received' AND NEW.status IN ('processed', 'ignored', 'needs_review', 'failed')) OR (OLD.status = 'failed' AND NEW.status = 'received'))) OR NEW.attempts < OLD.attempts`;
   // 8. review_items
-  const reviewValuesBad = `NEW.source NOT IN (${q(REVIEW_SOURCES_0062)}) OR NEW.provider NOT IN (${q(GATEWAY_PROVIDERS_0062)}) OR NEW.kind NOT IN (${q(REVIEW_KINDS_0062)}) OR NEW.status NOT IN ('open', 'resolved') OR (NEW.resolution IS NOT NULL AND NEW.resolution NOT IN (${q(REVIEW_RESOLUTIONS_0062)}))`;
+  const reviewValuesBad = `NEW.source NOT IN (${q(REVIEW_SOURCES_0064)}) OR NEW.provider NOT IN (${q(GATEWAY_PROVIDERS_0064)}) OR NEW.kind NOT IN (${q(REVIEW_KINDS_0064)}) OR NEW.status NOT IN ('open', 'resolved') OR (NEW.resolution IS NOT NULL AND NEW.resolution NOT IN (${q(REVIEW_RESOLUTIONS_0064)}))`;
   const reviewValuesMsg = "a review item has a known source, provider, kind, status and resolution";
   const resolving = "OLD.status = 'open' AND NEW.status = 'resolved'";
   const reviewFlowBad = `(NEW.status IS NOT OLD.status AND NOT (${resolving}))
