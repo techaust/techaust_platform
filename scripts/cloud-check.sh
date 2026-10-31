@@ -22,7 +22,7 @@ if cloud; then ok "cloud session (CLAUDE_CODE_REMOTE=true)"; else info "not a cl
 node_v="$(node -v 2>/dev/null)"
 case "$node_v" in
   "v${NODE_WANT}".*) ok "node ${node_v} ($(command -v node))" ;;
-  *) bad "node ${node_v:-missing}: the repository needs ${NODE_WANT}.x (.nvmrc); the setup script installs it in /opt/node24" ;;
+  *) bad "node ${node_v:-missing}: the repository needs ${NODE_WANT}.x (.nvmrc); the setup script installs it in /opt/techaust-node" ;;
 esac
 pnpm_v="$(pnpm -v 2>/dev/null)"
 if [ "$pnpm_v" = "$PNPM_WANT" ]; then ok "pnpm ${pnpm_v}"; else bad "pnpm ${pnpm_v:-missing}: package.json pins ${PNPM_WANT}"; fi
