@@ -1,7 +1,7 @@
 # Run: T7, erase a person's data in the frozen copies of never-accepted offers
-Status: builder running (started 13:25 IST, branch fix/t7-offer-erasure-b1); owner answered Q1 and 07-ZG (2026-10-31)
+Status: WAITING ON OWNER (07-ZG line 4, an audit label; not blocking); analyst early check running (builder done at 72f193c)
 Tier: A (deleting or anonymising data; docs/14 §2)
-Usage: lead claude-opus-5-5/high (cloud session t7-erasure); analyst claude-opus-5-5/high (brief draft; skills: tried `cloudflare:workers-best-practices` and `cloudflare:wrangler`, both "Unknown skill" in the cloud session although model-audit lists them; 5-h 8 % at 12:58 IST, no newer reading)
+Usage: lead claude-opus-5-5/high (cloud session t7-erasure); analyst claude-opus-5-5/high (brief draft; skills: tried `cloudflare:workers-best-practices` and `cloudflare:wrangler`, both "Unknown skill" in the cloud session although model-audit lists them; 5-h 8 % at 12:58 IST); builder claude-opus-5-5/high (agent-ac9b3fbc, layers to the Tier A stop point, 13:25–14:16 IST; same two skills tried, both unknown; 5-h 46 % at 13:46 IST)
 
 **Task (main session, 2026-10-31):** 08-C RB-37(a), settled by the lead on the safest reading (2026-10-30, [settle-08c](settle-08c.md)): on an erasure request, erase the person's data in the frozen copy of every proposal or estimate that was **never accepted**; keep the number, status, dates and hash. Accepted offers and every invoice-family document stay untouched (financial records). Due before 13 May 2027 (DPDP core duties).
 
@@ -16,6 +16,10 @@ Branch `feat/t7-offer-erasure` from `main` 8d5b958. Copy file: [07-ZG](../07-con
 **Copy 07-ZG lines 1–3** (staff-facing; [07-ZG](../07-content-appendix/ZG-offer-erasure.md)): approve as written (Recommended), or change a line.
 
 **Owner's answers (2026-10-31, through the main session):** Q1 **A** (an open offer is withdrawn at once when its addressee is anonymised: hidden from the portal for everyone, accept and decline refused, it still expires on its date). 07-ZG lines 1–3 **approved as written**; the code uses the real text (builder told at once).
+
+**Q2 (new, 2026-10-31, not blocking).** The staff audit log needs a label for the new action `document.redact` (one row per offer whose personal details were erased); it shows "[Placeholder]" until approved. Proposed 07-ZG line 4: "erased personal details from a proposal or estimate".
+- **A. (Recommended)** As written (it matches "viewed a proposal or estimate" next to it).
+- B. "erased a person's details from an offer".
 
 ## Brief
 Final version by the lead from the analyst's draft (2026-10-31). Lead changes to the draft are marked **(lead)**.
@@ -202,6 +206,7 @@ Accepted offers and the invoice family; serving an anonymised client's accepted-
 ## Integration notes
 
 ## Lead decisions (for 13)
+- 2026-10-31, Lead (builder's Q-B2): erasing details from an open offer cancels every send of it that has no link yet, queued-but-unprocessed ones included (the "Revoke links" rule), so no email goes out about a withdrawn offer. The builder's other differences from the brief (D1–D14 in the Builder report) are accepted, subject to the early check.
 - 2026-10-31, **Owner** (T7 Q1): when a never-accepted open offer's addressee is anonymised, the offer is withdrawn at once: hidden from the portal for everyone, accept and decline refused, it still expires on its date; the one exception to "a sent offer stays open until the next version" (2026-10-25). Applied: `apps/portal/worker/offer-sql.ts`, trigger `acceptances_redacted`, `apps/admin/worker/clients.ts`.
 - 2026-10-31, **Owner**: 07-ZG lines 1–3 approved word for word ([07-ZG](../07-content-appendix/ZG-offer-erasure.md)).
 - 2026-10-31, Lead (analyst's draft): T7 design L1–L8 above (per-version scope; what is kept and erased; "Anonymised client" by whole words, values under 2 characters skipped; erase eligibility unchanged, redaction in anonymise mode; cap 10 offers per request; no backfill; never-accepted offers' PDFs deleted; RB-37(a) supersedes the 2026-10-26 "stored snapshot untouched" rows for never-accepted offers only).
