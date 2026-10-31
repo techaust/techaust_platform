@@ -148,9 +148,10 @@ describe("every ROUTES row has one owner", () => {
 
   it("the table has front, API and finance rows, and no row is two of them", () => {
     expect(FRONT_ROWS.length).toBe(24);
-    // M6.1 (added on purpose): 15 payment rows (payments, a client's credit, an invoice's panel, credit release, FEMA extensions, the payments register).
-    expect(FINANCE_ROWS.length).toBe(45);
-    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 45);
+    // M6.1 (added on purpose): 15 payment rows (payments, a client's credit, an invoice's panel, credit release, FEMA extensions, the payments register);
+    // main's proforma withdraw (ADM-INV-10) joins them as an invoice route.
+    expect(FINANCE_ROWS.length).toBe(46);
+    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 46);
     expect(new Set([...FRONT_ROWS, ...API_ROWS, ...FINANCE_ROWS].map(key)).size).toBe(ROUTES.length);
   });
 
@@ -184,7 +185,7 @@ describe("every ROUTES row has one owner", () => {
 
   it("no handler is mounted twice (early check B1: a router mounted twice registers its routes twice)", () => {
     // A route's middleware and handler are separate entries, so the same path appears more than once; the same FUNCTION on the same path never should.
-    for (const app of [createApp(mountFront), createApp(mountApi)]) {
+    for (const app of [createApp(mountFront), createApp(mountApi), createApp(mountFinance)]) {
       const seen = new Map<string, Set<unknown>>();
       const twice: string[] = [];
       for (const r of app.routes.filter((x) => x.method !== "ALL")) {

@@ -132,6 +132,11 @@ export const WITHDRAW_ERRORS = {
     "proforma_paid",
     "This proforma can't be withdrawn because a payment has been recorded against it.",
   ),
+  // M6.1 (L37): 07-ZH line 46, the words of line 21 reused (lead, 2026-10-31, owner's delegation; staff-only).
+  payment_pending: e(
+    "payment_pending",
+    "A payment recorded on it is waiting for the owner's check. Reject it first.",
+  ),
   not_delivered: e("not_delivered", "This proforma hasn't reached the client yet, so void it instead."),
 } as const satisfies Record<WithdrawBlockerCode, ApiError>;
 export const INVOICE_APPROVAL_EXPIRED = e(

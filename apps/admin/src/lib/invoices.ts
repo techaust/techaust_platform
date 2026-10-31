@@ -655,6 +655,8 @@ export function voidErrorText(e: unknown, type?: string): string {
  * screens' sentence (stale, anonymised, the step-up, a network failure).
  */
 export function withdrawErrorText(e: unknown): string {
+  // M6.1 (L37): a pending payment asks for the proforma: 07-ZH line 46, the words of the void's line 21.
+  if (e instanceof RequestError && e.code === "payment_pending") return VOID_PAYMENT_PENDING;
   if (e instanceof RequestError && Object.hasOwn(WITHDRAW_ERRORS, e.code))
     return WITHDRAW_ERRORS[e.code as keyof typeof WITHDRAW_ERRORS];
   return invErrorText(e);

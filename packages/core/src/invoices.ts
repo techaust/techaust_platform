@@ -571,6 +571,7 @@ export const WITHDRAW_BLOCKER_CODES = [
   "not_issued",
   "proforma_converted",
   "proforma_paid",
+  "payment_pending",
   "not_delivered",
 ] as const;
 export type WithdrawBlockerCode = (typeof WITHDRAW_BLOCKER_CODES)[number];
@@ -591,6 +592,11 @@ export type WithdrawFacts = {
   readonly emailed: boolean;
   /** The client opened it in the portal (`viewed_at` set). */
   readonly viewed: boolean;
+  /**
+   * M6.1 (L37): a PENDING payment of its client asks for it (the payment's requested allocation names it). Withdrawing it would void the proforma under
+   * the payment, so the entry is confirmed or rejected first (the withdraw statement's WHERE and the trigger `documents_void_no_payment` hold it too).
+   */
+  readonly paymentPending: boolean;
 };
 
 /**
@@ -619,6 +625,7 @@ export function withdrawBlockers(f: WithdrawFacts): WithdrawBlockerCode[] {
     out.push("not_issued");
   if (f.status === "converted" || f.hasChildDocument) out.push("proforma_converted");
   if (f.paidMinor > 0 || f.creditedMinor > 0 || f.hasAdvanceReceipt) out.push("proforma_paid");
+  if (f.paymentPending) out.push("payment_pending");
   if (!delivered) out.push("not_delivered");
   return out;
 }

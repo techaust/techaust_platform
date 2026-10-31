@@ -248,6 +248,7 @@ export function invoiceView(i: InvoiceViewInput) {
     hasAdvanceReceipt: i.hasAdvanceReceipt,
     emailed: i.emailed,
     viewed: d.viewed_at !== null,
+    paymentPending: i.paymentPending,
   });
   const withdrawn = isWithdrawn({
     type: d.type,

@@ -567,6 +567,7 @@ describe("withdraw a delivered proforma [ADM-INV-10]", () => {
     hasAdvanceReceipt: false,
     emailed: true,
     viewed: false,
+    paymentPending: false,
   };
   it("refuses first: anything but a proforma, whatever else holds", () => {
     for (const type of ["tax_invoice", "export_invoice", "credit_note", "debit_note", "proposal"])
@@ -583,6 +584,26 @@ describe("withdraw a delivered proforma [ADM-INV-10]", () => {
     expect(
       withdrawBlockers({ ...base, status: "void", emailed: false, paidMinor: 5, hasChildDocument: true }),
     ).toEqual(["already_void"]);
+    expect(withdrawBlockers({ ...base, status: "void", paymentPending: true })).toEqual([
+      "already_withdrawn",
+    ]);
+  });
+  it("M6.1 (L37): a pending payment asking for it refuses the withdrawal, after a payment and before delivery in the list's order", () => {
+    expect(withdrawBlockers({ ...base, paymentPending: true })).toEqual(["payment_pending"]);
+    expect(withdrawBlockers({ ...base, viewed: true, emailed: false, paymentPending: true })).toEqual([
+      "payment_pending",
+    ]);
+    expect(withdrawBlockers({ ...base, paidMinor: 1, paymentPending: true, emailed: false })).toEqual([
+      "proforma_paid",
+      "payment_pending",
+      "not_delivered",
+    ]);
+    expect(
+      withdrawBlockers({ ...base, status: "converted", paymentPending: true, hasAdvanceReceipt: true }),
+    ).toEqual(["proforma_converted", "proforma_paid", "payment_pending"]);
+    expect(withdrawBlockers({ ...base, type: "tax_invoice", paymentPending: true })).toEqual([
+      "not_proforma",
+    ]);
   });
   it("each other reason has its code, in the list's order", () => {
     expect(withdrawBlockers({ ...base, status: "draft", emailed: false })).toEqual([
@@ -624,6 +645,7 @@ describe("withdraw a delivered proforma [ADM-INV-10]", () => {
       "not_issued",
       "proforma_converted",
       "proforma_paid",
+      "payment_pending",
       "not_delivered",
     ]);
     expect(WITHDRAW_REASON_MAX).toBe(500);
@@ -676,6 +698,7 @@ describe("withdraw a delivered proforma [ADM-INV-10]", () => {
           hasAdvanceReceipt: fc.boolean(),
           emailed: fc.boolean(),
           viewed: fc.boolean(),
+          paymentPending: fc.boolean(),
         }),
         (f) => {
           const out = withdrawBlockers(f);
@@ -689,6 +712,7 @@ describe("withdraw a delivered proforma [ADM-INV-10]", () => {
               f.creditedMinor === 0 &&
               !f.hasChildDocument &&
               !f.hasAdvanceReceipt &&
+              !f.paymentPending &&
               (f.emailed || f.viewed),
           );
         },
