@@ -871,8 +871,8 @@ function advancePaymentStatements(db: D1Database, a: AdvanceIssueArgs): D1Prepar
       a.now,
       receiptMade,
     ),
-    recomputeStatement(db, { paymentId, documentIds: [a.documentId] }, a.now, receiptMade),
-    ledgerResultStatement(db, { paymentId, documentIds: [a.documentId] }),
+    recomputeStatement(db, { paymentIds: [paymentId], documentIds: [a.documentId] }, a.now, receiptMade),
+    ledgerResultStatement(db, { paymentIds: [paymentId], documentIds: [a.documentId] }),
   ];
 }
 

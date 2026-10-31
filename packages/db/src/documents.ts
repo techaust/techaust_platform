@@ -34,6 +34,8 @@ export type DocumentRow = {
   paid_minor: number;
   credited_minor: number;
   balance_minor: number;
+  /** M6.1 (T8; Settled by the lead on the safest reading, 2026-10-30 (08-C RA-30)): the TDS the client deducted, recorded on the ledger (0 on every other row). */
+  tds_minor: number;
   voided_at: number | null;
   void_reason: string | null;
   /** M5.2: the exchange rate of a USD invoice (INR micros per USD), its date and its source as printed; the day the service was completed; the pinned export-declaration block. */
@@ -180,7 +182,7 @@ export type DocumentBundle<T extends TermsRef = TermsRow> = {
 };
 
 const DOCUMENT_COLUMNS =
-  "id, type, status, client_id, version_group_id, version, series, fy, number, number_display, currency, issue_date, due_date, parent_id, paid_minor, credited_minor, balance_minor, voided_at, void_reason, fx_rate_micros, fx_date, fx_source, fx_no_rate_day, service_completed_on, export_declaration_id, header_extras, ims_status, valid_until, supply_type, place_of_supply_code, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor, total_minor, terms_version_id, snapshot_r2_key, snapshot_sha256, pdf_r2_key, pdf_sha256, frozen_at, issued_by, title, contact_id, validity_days, discount_kind, discount_value, export_mode, content_sha256, catalogue_reference_minor, source_document_id, source_step, sent_at, viewed_at, decided_at, decision_reason, decision_note, decided_contact_id, created_by, created_at, updated_at, recipient, issuer, computed";
+  "id, type, status, client_id, version_group_id, version, series, fy, number, number_display, currency, issue_date, due_date, parent_id, paid_minor, credited_minor, balance_minor, tds_minor, voided_at, void_reason, fx_rate_micros, fx_date, fx_source, fx_no_rate_day, service_completed_on, export_declaration_id, header_extras, ims_status, valid_until, supply_type, place_of_supply_code, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor, total_minor, terms_version_id, snapshot_r2_key, snapshot_sha256, pdf_r2_key, pdf_sha256, frozen_at, issued_by, title, contact_id, validity_days, discount_kind, discount_value, export_mode, content_sha256, catalogue_reference_minor, source_document_id, source_step, sent_at, viewed_at, decided_at, decision_reason, decision_note, decided_contact_id, created_by, created_at, updated_at, recipient, issuer, computed";
 
 /** The statements of `loadDocument`, exported so a test can EXPLAIN each one. */
 export const LOAD_DOCUMENT_SQL = {

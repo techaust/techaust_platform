@@ -960,7 +960,7 @@ export const isFinanceTile = (t: DashboardTiles["finance"]): t is FinanceTile =>
 /** One line of a statement (M5.5b): core `StatementEntry`. */
 export type StatementEntryView = {
   id: string;
-  kind: "tax_invoice" | "export_invoice" | "debit_note" | "credit_note" | "receipt";
+  kind: "tax_invoice" | "export_invoice" | "debit_note" | "credit_note" | "receipt" | "tds";
   date: string;
   number: string;
   /** A credit note's invoice number (07-V §6 "Credit note against {number}"); null for every other kind. */

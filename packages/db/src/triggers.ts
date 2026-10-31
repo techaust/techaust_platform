@@ -1015,12 +1015,12 @@ export const PROOF_MIME_TYPES_0057 = ["application/pdf", "image/jpeg", "image/pn
  *      invoice or debit note (never a proforma, L5, or a credit note); a TDS row only allocates, onto an INR tax invoice or debit note; `allocate` is at most the
  *      document's balance worked out from the allocation rows themselves (so two rows in one batch cannot both take the same balance) and the payment never gives
  *      more than its amount; `release` is at most the document's excess and what this payment holds on it;
- *   9. `ledger_result` (a view, INSERT INSTEAD OF, the `issue_result` pattern, NOT guarded on the audit row): aborts unless a confirmed TDS payment is allocated
- *      exactly once and in full, the payment's net allocations are at most its amount, and every document listed has paid, TDS, balance and status equal to the
+ *   9. `ledger_result` (a view, INSERT INSTEAD OF, the `issue_result` pattern, NOT guarded on the audit row): aborts unless each payment listed (`payment_ids`, a JSON array) that is a confirmed TDS payment is allocated
+ *      exactly once and in full, each payment's net allocations are at most its amount, and every document listed has paid, TDS, balance and status equal to the
  *      recompute from the allocation rows;
  *  10. `documents_ledger_identity` dropped and created again: `tds_minor` >= 0 too, and `balance = max(0, total - paid - credited - tds)`, for 0050's types;
  *  11. `documents_tds_bounds_insert` / `_update`: `tds_minor` is never negative, and above zero only on an INR tax invoice or debit note (L8);
- *  12. `documents_void_no_payment`: no void with TDS, with any allocation row (one released since included), or while a payment that was not rejected asks for
+ *  12. `documents_void_no_payment`: no void with TDS, with any allocation row (one released since included), or while a PENDING payment asks for
  *      the document (L17; core `voidBlockers` `payment_pending` and `tds_recorded` are the twin);
  *  13. `approvals_payment_verify_insert`: a `payment_verify` approval names an existing pending payment and no document; `approvals_payment_fixed`: its payment
  *      never changes (the partial unique index `approvals_payment_pending` is in 0056: one pending verification per payment).
@@ -1090,7 +1090,7 @@ export function paymentTriggerStatements(): string[] {
         ELSE NEW.amount_minor <= ${docExcess} AND NEW.amount_minor <= ${paymentNetSql("p.id", "d.id")} END`;
   const boundBad = `NOT EXISTS (SELECT 1 FROM payments p JOIN documents d ON d.id = NEW.document_id WHERE p.id = NEW.payment_id AND ${boundOk})`;
   // The post-condition: the payment (if any) and every document listed.
-  const resultPaymentBad = `EXISTS (SELECT 1 FROM payments p WHERE p.id = NEW.payment_id AND p.status = 'confirmed' AND (${paymentNetSql("p.id")} > p.amount_minor OR (p.kind = 'tds' AND NOT ((SELECT count(*) FROM payment_allocations t WHERE t.payment_id = p.id) = 1 AND (SELECT sum(t.amount_minor) FROM payment_allocations t WHERE t.payment_id = p.id AND t.kind = 'allocate') = p.amount_minor))))`;
+  const resultPaymentBad = `EXISTS (SELECT 1 FROM json_each(NEW.payment_ids) pj JOIN payments p ON p.id = pj.value WHERE p.status = 'confirmed' AND (${paymentNetSql("p.id")} > p.amount_minor OR (p.kind = 'tds' AND NOT ((SELECT count(*) FROM payment_allocations t WHERE t.payment_id = p.id) = 1 AND (SELECT sum(t.amount_minor) FROM payment_allocations t WHERE t.payment_id = p.id AND t.kind = 'allocate') = p.amount_minor))))`;
   const paid = livePaidSql("d.id");
   const tds = liveTdsSql("d.id");
   const resultDocBad = `EXISTS (SELECT 1 FROM json_each(NEW.document_ids) j JOIN documents d ON d.id = j.value WHERE d.type IN ${PAYABLE_TYPES_SQL} AND d.frozen_at IS NOT NULL AND (d.paid_minor IS NOT ${paid} OR d.tds_minor IS NOT ${tds} OR d.balance_minor IS NOT max(0, d.total_minor - ${paid} - d.credited_minor - ${tds}) OR (d.status IN ${LEDGER_STATUSES_SQL} AND d.status IS NOT ${ledgerStatusCaseSql("d.total_minor", `(${paid} + ${tds})`, "d.credited_minor")})))`;
@@ -1100,7 +1100,7 @@ export function paymentTriggerStatements(): string[] {
     "NEW.tds_minor IS NULL OR NEW.tds_minor < 0 OR (NEW.tds_minor > 0 AND NOT (NEW.type IN ('tax_invoice', 'debit_note') AND NEW.currency = 'INR'))";
   const tdsBoundsMsg = "TDS is never negative, and only an INR tax invoice or debit note carries it";
   const voidBad =
-    "NEW.status = 'void' AND OLD.status <> 'void' AND (OLD.tds_minor > 0 OR EXISTS (SELECT 1 FROM payment_allocations va WHERE va.document_id = OLD.id) OR EXISTS (SELECT 1 FROM payments vp, json_each(vp.requested_allocations) vj WHERE vp.client_id = OLD.client_id AND vp.status <> 'rejected' AND vp.requested_allocations IS NOT NULL AND json_extract(vj.value, '$.documentId') = OLD.id))";
+    "NEW.status = 'void' AND OLD.status <> 'void' AND (OLD.tds_minor > 0 OR EXISTS (SELECT 1 FROM payment_allocations va WHERE va.document_id = OLD.id) OR EXISTS (SELECT 1 FROM payments vp, json_each(vp.requested_allocations) vj WHERE vp.client_id = OLD.client_id AND vp.status = 'pending_verification' AND vp.requested_allocations IS NOT NULL AND json_extract(vj.value, '$.documentId') = OLD.id))";
   const approvalBad =
     "NEW.kind = 'payment_verify' AND (NEW.document_id IS NOT NULL OR NEW.payment_id IS NULL OR NOT EXISTS (SELECT 1 FROM payments ap WHERE ap.id = NEW.payment_id AND ap.status = 'pending_verification'))";
   const extensionBad = `NOT EXISTS (SELECT 1 FROM documents ed WHERE ed.id = NEW.document_id AND ed.type = 'export_invoice' AND ed.frozen_at IS NOT NULL AND ed.status <> 'void' AND ed.issue_date IS NOT NULL AND NEW.extended_to > ed.issue_date) OR NEW.extended_to <= coalesce((SELECT max(ex.extended_to) FROM realisation_extensions ex WHERE ex.document_id = NEW.document_id), '') OR (NEW.letter_mime IS NOT NULL AND NEW.letter_mime NOT IN (${q(PROOF_MIME_TYPES_0057)}))`;
@@ -1123,7 +1123,7 @@ export function paymentTriggerStatements(): string[] {
     `CREATE TRIGGER \`payment_allocations_kind\` BEFORE INSERT ON \`payment_allocations\` WHEN NEW.kind NOT IN ('allocate', 'release') BEGIN ${named("payment_allocations_kind", "an allocation allocates or releases")} END;`,
     `CREATE TRIGGER \`payment_allocations_bounds\` BEFORE INSERT ON \`payment_allocations\` WHEN ${boundBad} BEGIN ${named("payment_allocations_bounds", "a confirmed payment goes onto an issued, live invoice or debit note of its client and currency, never above the balance or the payment; a release takes back no more than the excess it holds")} END;`,
     // 9. the post-condition
-    "CREATE VIEW `ledger_result` AS SELECT NULL AS payment_id, NULL AS document_ids;",
+    "CREATE VIEW `ledger_result` AS SELECT NULL AS payment_ids, NULL AS document_ids;",
     `CREATE TRIGGER \`ledger_result_check\` INSTEAD OF INSERT ON \`ledger_result\` WHEN ${resultPaymentBad} OR ${resultDocBad} BEGIN ${named("ledger_result_check", "the ledger does not add up after this change")} END;`,
     // 10-12. documents
     "DROP TRIGGER `documents_ledger_identity`;",

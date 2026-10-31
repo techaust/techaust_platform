@@ -204,7 +204,7 @@ export async function addReceipt(o: {
     o.ownerId,
     now,
   );
-  await recomputeStatement(env.DB, { paymentId: `pay_${id}` }, now).run();
+  await recomputeStatement(env.DB, { paymentIds: [`pay_${id}`] }, now).run();
   return id;
 }
 

@@ -1,8 +1,10 @@
 // Fixtures of the M5.5b report tests: issued (frozen) documents of the four GST kinds, inserted as the freeze leaves them (like `parentInvoice` in the database tests), with a real
 // computed document, and the Q9 receipt rows. Used where a test needs many documents on chosen dates: the totals test (M5.5b) issues through the real routes instead.
+import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core/ids";
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
 import { type ComputedDocument, computeDocument, type LineInput, type TaxContext } from "@techaust/core/tax";
+import { recomputeStatement } from "@techaust/db/ledger";
 import { insert, mkClient } from "./test-clients.ts";
 
 const CTX: TaxContext = {
@@ -160,5 +162,34 @@ export async function addReceipt(o: {
     reference_norm: `REF-${id.slice(-8)}`,
     created_by: o.createdBy,
   });
+  // M6.1 (L4): the advance batch writes the money onto the ledger too: a confirmed payment `pay_<receipt>` and its allocation `pal_<receipt>` onto the invoice
+  // (the ids of the back-fill and of `advanceIssueStatements`), then the recompute, so the invoice's stored figures are the ledger's. `createdBy` is an active Owner.
+  const now = Date.now();
+  await insert("payments", {
+    id: `pay_${id}`,
+    client_id: o.clientId,
+    kind: "payment",
+    provider: "manual",
+    status: "confirmed",
+    currency: o.currency,
+    amount_minor: o.amountMinor,
+    received_on: o.receivedOn,
+    reference_norm: `REF-${id.slice(-8)}`,
+    advance_receipt_id: id,
+    recorded_by: o.createdBy,
+    recorded_at: now,
+    verified_by: o.createdBy,
+    verified_at: now,
+  });
+  await insert("payment_allocations", {
+    id: `pal_${id}`,
+    payment_id: `pay_${id}`,
+    document_id: o.invoiceId,
+    amount_minor: o.amountMinor,
+    kind: "allocate",
+    created_by: o.createdBy,
+    created_at: now,
+  });
+  await recomputeStatement(env.DB, { paymentIds: [`pay_${id}`] }, now).run();
   return id;
 }

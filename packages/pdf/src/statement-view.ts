@@ -9,7 +9,7 @@ import type { Address } from "./types.ts";
 
 /** One line of a statement as the jobs Worker reads it: the amount is positive and the kind says which side it is on (`@techaust/core/statement`). */
 export type StatementInputEntry = {
-  kind: "tax_invoice" | "export_invoice" | "debit_note" | "credit_note" | "receipt";
+  kind: "tax_invoice" | "export_invoice" | "debit_note" | "credit_note" | "receipt" | "tds";
   /** ISO date (IST): the issue date, or the day the money arrived. */
   date: string;
   /** The document's printed number (a receipt shows the number of the invoice it paid). */

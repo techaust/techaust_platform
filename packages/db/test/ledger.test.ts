@@ -144,9 +144,9 @@ const alloc = (
     kind,
     T,
   );
-const recompute = (t: { paymentId?: string; documentIds?: string[] }) =>
+const recompute = (t: { paymentIds?: string[]; documentIds?: string[] }) =>
   recomputeStatement(db(), t, Date.now()).run();
-const result = (t: { paymentId?: string; documentIds?: string[] }) => ledgerResultStatement(db(), t).run();
+const result = (t: { paymentIds?: string[]; documentIds?: string[] }) => ledgerResultStatement(db(), t).run();
 const docRow = (id: string) =>
   first<{
     status: string;
@@ -543,42 +543,42 @@ describe("the recompute and ledger_result [run file A.5, A.6]", () => {
     await alloc(p, inv, 100_000);
     await alloc(t, inv, 18_000);
     const before = await docRow(inv);
-    await recompute({ paymentId: p, documentIds: [inv] });
+    await recompute({ paymentIds: [p], documentIds: [inv] });
     const after = await docRow(inv);
     expect(after).toMatchObject({ status: "paid", paid_minor: 100_000, tds_minor: 18_000, balance_minor: 0 });
     expect(after?.updated_at).toBeGreaterThan(before?.updated_at ?? 0);
-    await result({ paymentId: t, documentIds: [inv] });
+    await result({ paymentIds: [t], documentIds: [inv] });
     // a withdrawn payment no longer counts
     await run(
       "UPDATE payments SET status = 'withdrawn', withdrawn_by = ?2, withdrawn_at = 1, withdraw_reason = 'x' WHERE id = ?1",
       p,
       owner,
     );
-    await recompute({ paymentId: p });
+    await recompute({ paymentIds: [p] });
     expect(await docRow(inv)).toMatchObject({
       status: "partially_paid",
       paid_minor: 0,
       tds_minor: 18_000,
       balance_minor: 100_000,
     });
-    await result({ paymentId: p });
+    await result({ paymentIds: [p] });
   });
 
   it("aborts on a drifted ledger (rows written, no recompute) and on a partial TDS allocation", async () => {
     const { owner, clientId, inv } = await setup();
     const p = await pay(clientId, owner, { amount: 1_000 });
     await alloc(p, inv, 1_000);
-    await rejects(result({ paymentId: p }), /ledger_result_check/);
+    await rejects(result({ paymentIds: [p] }), /ledger_result_check/);
     await rejects(result({ documentIds: [inv] }), /ledger_result_check/);
-    await recompute({ paymentId: p });
-    await result({ paymentId: p });
+    await recompute({ paymentIds: [p] });
+    await result({ paymentIds: [p] });
     const t = await pay(clientId, owner, { kind: "tds", amount: 100 });
     await alloc(t, inv, 50);
     await recompute({ documentIds: [inv] });
-    await rejects(result({ paymentId: t }), /ledger_result_check/);
+    await rejects(result({ paymentIds: [t] }), /ledger_result_check/);
     await alloc(t, inv, 50);
     await recompute({ documentIds: [inv] });
-    await rejects(result({ paymentId: t }), /ledger_result_check/); // two rows: not "exactly once"
+    await rejects(result({ paymentIds: [t] }), /ledger_result_check/); // two rows: not "exactly once"
   });
 
   it("a batch that ends in ledger_result rolls back as a whole", async () => {
@@ -592,7 +592,7 @@ describe("the recompute and ledger_result [run file A.5, A.6]", () => {
           owner,
           T,
         ),
-        ledgerResultStatement(db(), { paymentId: p }),
+        ledgerResultStatement(db(), { paymentIds: [p] }),
       ]),
       /ledger_result_check/,
     );
@@ -751,8 +751,8 @@ describe("record, verify, withdraw: the builders of ledger.ts in a mutate-shaped
           args.now,
           g,
         ),
-        recomputeStatement(db(), { paymentId: args.id, documentIds: [inv] }, args.now, g),
-        ledgerResultStatement(db(), { paymentId: args.id, documentIds: [inv] }),
+        recomputeStatement(db(), { paymentIds: [args.id], documentIds: [inv] }, args.now, g),
+        ledgerResultStatement(db(), { paymentIds: [args.id], documentIds: [inv] }),
       ]);
       return res[0]?.meta.changes ?? 0;
     };
@@ -857,7 +857,7 @@ describe("record, verify, withdraw: the builders of ledger.ts in a mutate-shaped
           now,
           g,
         ),
-        recomputeStatement(db(), { paymentId: a.id, documentIds: [inv] }, now, g),
+        recomputeStatement(db(), { paymentIds: [a.id], documentIds: [inv] }, now, g),
         ...decideApprovalStatements(
           db(),
           {
@@ -869,7 +869,7 @@ describe("record, verify, withdraw: the builders of ledger.ts in a mutate-shaped
           },
           g,
         ),
-        ledgerResultStatement(db(), { paymentId: a.id, documentIds: [inv] }),
+        ledgerResultStatement(db(), { paymentIds: [a.id], documentIds: [inv] }),
       ]);
       return res[0]?.meta.changes ?? 0;
     };
@@ -903,7 +903,7 @@ describe("record, verify, withdraw: the builders of ledger.ts in a mutate-shaped
     const p = await pay(clientId, owner, { amount: 200_000 });
     await alloc(p, inv, 118_000);
     await alloc(p, inv2, 82_000);
-    await recompute({ paymentId: p });
+    await recompute({ paymentIds: [p] });
     const stale = await session(owner, false);
     expect(
       (
@@ -921,8 +921,8 @@ describe("record, verify, withdraw: the builders of ledger.ts in a mutate-shaped
     await db().batch([
       withdrawPaymentStatement(db(), { paymentId: p, now, sessionId: os, reason: "Entered twice" }),
       audit(id, owner, true),
-      recomputeStatement(db(), { paymentId: p }, now, auditGuard(id)),
-      ledgerResultStatement(db(), { paymentId: p }),
+      recomputeStatement(db(), { paymentIds: [p] }, now, auditGuard(id)),
+      ledgerResultStatement(db(), { paymentIds: [p] }),
     ]);
     expect(await docRow(inv)).toMatchObject({ paid_minor: 0, balance_minor: 118_000, status: "issued" });
     expect(await docRow(inv2)).toMatchObject({ paid_minor: 0, balance_minor: 118_000, status: "issued" });
@@ -1187,8 +1187,8 @@ describe("the statement's closing balance is its ledger check, with payments, TD
     await alloc(p, inv, 100_000);
     await alloc(p, inv2, 18_000);
     await alloc(t, inv2, 10_000);
-    await recompute({ paymentId: p });
-    await recompute({ paymentId: t });
+    await recompute({ paymentIds: [p] });
+    await recompute({ paymentIds: [t] });
     // a credit note on inv of 30000 makes an excess of 12000 there (the balance stops at zero)
     await run(
       "UPDATE documents SET credited_minor = 30000, balance_minor = 0, status = 'paid' WHERE id = ?",
@@ -1206,13 +1206,22 @@ describe("the statement's closing balance is its ledger check, with payments, TD
     expect(tot?.debit).toBe(236_000);
     expect(tot?.credit).toBe(160_000);
     expect(ledger?.balance).toBe(closing);
+    // Early check A4: the client's figures keep `balance` as what is owed and add `excess`; balance − excess − credit is what the statement closes at.
+    const fig = await first<{ balance: number; excess: number; credit: number }>(
+      CLIENT_FIGURES_SQL,
+      clientId,
+      "2026-10-31",
+    );
+    expect(fig?.excess).toBe(12_000);
+    expect(fig?.credit).toBe(32_000);
+    expect((fig?.balance ?? 0) - (fig?.excess ?? 0) - (fig?.credit ?? 0)).toBe(ledger?.balance);
   });
 
   it("collected, credit and TDS on the client's figures; paid and TDS on a project's; the register lists confirmed payments only", async () => {
     const { owner, clientId, inv } = await setup();
     const p = await pay(clientId, owner, { amount: 120_000, receivedOn: "2026-10-28" });
     await alloc(p, inv, 118_000);
-    await recompute({ paymentId: p });
+    await recompute({ paymentIds: [p] });
     const staff = await mkMember("staff");
     await pay(clientId, staff, { status: "pending_verification", amount: 7 });
     const rows = await all(COLLECTED_SQL, "2026-10-01", "2026-10-31");
@@ -1301,7 +1310,7 @@ describe("a confirmed payment stops the invoice's reminders [ADM-INV-13, run fil
     const r1 = await mkReminder(inv, 1, now - 1_000);
     const p = await pay(clientId, owner, { amount: 118_000 });
     await alloc(p, inv, 118_000);
-    await recompute({ paymentId: p });
+    await recompute({ paymentIds: [p] });
     expect(await all(REMINDER_CLAIM_SQL, r1, now)).toHaveLength(0);
     // withdrawn: the balance is back, and the reminder is due again
     await run(
@@ -1309,7 +1318,7 @@ describe("a confirmed payment stops the invoice's reminders [ADM-INV-13, run fil
       p,
       owner,
     );
-    await recompute({ paymentId: p });
+    await recompute({ paymentIds: [p] });
     expect(await all(REMINDER_CLAIM_SQL, r1, now)).toHaveLength(1);
   });
 });
@@ -1364,8 +1373,8 @@ describe("a guard that did not pass writes nothing (the audit row missing)", () 
         T,
         g,
       ),
-      recomputeStatement(db(), { paymentId: p, documentIds: [inv] }, Date.now(), g),
-      ledgerResultStatement(db(), { paymentId: p, documentIds: [inv] }),
+      recomputeStatement(db(), { paymentIds: [p], documentIds: [inv] }, Date.now(), g),
+      ledgerResultStatement(db(), { paymentIds: [p], documentIds: [inv] }),
     ]);
     expect(res[0]?.meta.changes).toBe(0);
     expect(await docRow(inv)).toMatchObject({ paid_minor: 0, balance_minor: 118_000 });

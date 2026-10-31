@@ -11,6 +11,8 @@ import { invoiceIssue } from "./invoice-issue.ts";
 import { invoiceNotes } from "./invoice-notes.ts";
 import { invoiceSend } from "./invoice-send.ts";
 import { invoices } from "./invoices.ts";
+import { clientCredit, invoiceLedger } from "./payment-ledger.ts";
+import { payments } from "./payments.ts";
 import { reports } from "./reports.ts";
 import { statementPdf } from "./statement-pdf.ts";
 import { statements } from "./statements.ts";
@@ -32,4 +34,8 @@ export function mountFinance(app: App) {
   app.route("/v1/invoices", invoiceSupplierPdf);
   app.route("/v1/approvals", approvals);
   app.route("/v1/dashboard", dashboard);
+  // M6.1: manual payments and TDS, a client's credit, an invoice's Payments panel, credit moves and FEMA extensions.
+  app.route("/v1/payments", payments);
+  app.route("/v1/clients", clientCredit);
+  app.route("/v1/invoices", invoiceLedger);
 }

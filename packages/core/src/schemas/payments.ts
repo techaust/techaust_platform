@@ -23,12 +23,20 @@ export const TDS_CERTIFICATE_MAX = 40;
 
 export const allocationIn = z.strictObject({ documentId: ref, amountMinor: positive });
 
-export const tdsIn = z.strictObject({
-  section: text(TDS_SECTION_MAX),
-  rateBp: z.int().check(z.gte(1), z.lte(10_000)),
-  certificateNo: z.optional(text(TDS_CERTIFICATE_MAX)),
-  certificateOn: z.optional(isoDate),
-});
+/** The certificate's number and date come together or not at all (L19: "Certificate awaited" until both are entered). */
+export const tdsIn = z
+  .strictObject({
+    section: text(TDS_SECTION_MAX),
+    rateBp: z.int().check(z.gte(1), z.lte(10_000)),
+    certificateNo: z.optional(text(TDS_CERTIFICATE_MAX)),
+    certificateOn: z.optional(isoDate),
+  })
+  .check(
+    z.refine((v) => (v.certificateNo === undefined) === (v.certificateOn === undefined), {
+      message: "certificate_both_or_neither",
+      path: ["certificateNo"],
+    }),
+  );
 
 /**
  * `POST /payments` (record). A `payment` has a mode and no TDS block; a `tds` row has the TDS block, no mode, no charges, is in INR and goes whole onto one
@@ -55,6 +63,11 @@ export const recordPaymentBody = z
     z.refine((v) => v.kind !== "payment" || (v.mode != null && v.tds === undefined), {
       message: "payment_needs_mode",
       path: ["mode"],
+    }),
+    // Early check A1: money received always carries its bank reference (the statement's line number when no tax invoice was made for it).
+    z.refine((v) => v.kind !== "payment" || v.reference !== undefined, {
+      message: "reference_required",
+      path: ["reference"],
     }),
     z.refine(
       (v) =>
@@ -135,6 +148,7 @@ export function warmPayments(): number {
           amountMinor: 100,
           receivedOn: "2026-10-31",
           mode: "neft",
+          reference: "WARMUTR1",
           allocations: [{ documentId: "warm-document", amountMinor: 100 }],
         },
       ],

@@ -48,18 +48,24 @@ const sessionUser = (s: string) => `(SELECT ss.user_id FROM staff_sessions ss WH
 
 // ---- the recompute and the post-condition -------------------------------------------------------------------------------------------------------------
 
-/** What a recompute or a post-condition covers: every document the payment has an allocation row on, plus the documents listed. */
-export type LedgerTarget = { readonly paymentId?: string | null; readonly documentIds?: readonly string[] };
+/**
+ * What a recompute or a post-condition covers: every document the payments listed have an allocation row on, plus the documents listed (early check A8: a
+ * list, so "Use credit" passes every source payment).
+ */
+export type LedgerTarget = {
+  readonly paymentIds?: readonly string[];
+  readonly documentIds?: readonly string[];
+};
 
 const targetIds =
-  "SELECT value AS id FROM json_each(?1) UNION SELECT document_id FROM payment_allocations WHERE payment_id = ?2";
+  "SELECT value AS id FROM json_each(?1) UNION SELECT document_id FROM payment_allocations WHERE payment_id IN (SELECT value FROM json_each(?2))";
 
 /**
  * The ledger recompute (run file A.6): for each frozen, not void tax invoice, export invoice or debit note of the target, `paid` = Σ allocate − Σ release over
  * confirmed `payment` rows, `tds` = Σ allocate over confirmed `tds` rows, `balance = max(0, total − paid − credited − tds)`, the status from the CASE twin of core
  * `ledgerStatusOf(total, paid, credited, tds)` (a void, converted or draft row keeps its status: only frozen ledger statuses move), and `updated_at =
  * max(now, updated_at + 1)` so a stale read is always refused. One statement writes all of them, so `documents_ledger_identity` sees the row whole. A proforma is
- * never recomputed: its paid amount is the advance batch's (M5.2). `?1` the JSON list, `?2` the payment, `?3` now, then the guard.
+ * never recomputed: its paid amount is the advance batch's (M5.2). `?1` the JSON list of documents, `?2` the JSON list of payments, `?3` now, then the guard.
  */
 export function recomputeStatement(
   db: D1Database,
@@ -76,16 +82,16 @@ export function recomputeStatement(
        FROM (SELECT t.id, ${livePaidSql("t.id")} AS paid, ${liveTdsSql("t.id")} AS tds FROM (${targetIds}) t) AS r
        WHERE documents.id = r.id AND documents.frozen_at IS NOT NULL AND documents.type IN ${PAYABLE_TYPES_SQL} AND documents.status <> 'void'${gs.sql}`,
     )
-    .bind(JSON.stringify(t.documentIds ?? []), t.paymentId ?? null, now, ...gs.params);
+    .bind(JSON.stringify(t.documentIds ?? []), JSON.stringify(t.paymentIds ?? []), now, ...gs.params);
 }
 
-/** `INSERT INTO ledger_result`: the post-condition, LAST in the batch and never guarded (see the header). `?1` the JSON list, `?2` the payment. */
+/** `INSERT INTO ledger_result`: the post-condition, LAST in the batch and never guarded (see the header). `?1` the JSON list of documents, `?2` of payments. */
 export function ledgerResultStatement(db: D1Database, t: LedgerTarget): D1PreparedStatement {
   return db
     .prepare(
-      `INSERT INTO ledger_result (payment_id, document_ids) SELECT ?2, (SELECT json_group_array(t.id) FROM (${targetIds}) t)`,
+      `INSERT INTO ledger_result (payment_ids, document_ids) SELECT ?2, (SELECT json_group_array(t.id) FROM (${targetIds}) t)`,
     )
-    .bind(JSON.stringify(t.documentIds ?? []), t.paymentId ?? null);
+    .bind(JSON.stringify(t.documentIds ?? []), JSON.stringify(t.paymentIds ?? []));
 }
 
 /** One allocation row to write (ids are UUIDv7 picked by the caller; the trigger `payment_allocations_bounds` checks each row as it lands). */
@@ -146,7 +152,7 @@ export type RecordPaymentArgs = {
 /**
  * The main statement of a record: one `INSERT ... SELECT` whose WHERE holds every guard: the id is new; the client is live and of this currency; the reference
  * was not seen on a pending or confirmed payment (unless confirmed past, L12); the session is live and belongs to the recorder, an Owner with a fresh step-up for
- * a confirmed entry (Q2) or an Owner or Staff member for a pending one. The triggers hold the shape (TDS rules, the insert state). Binds `?1`..`?21`.
+ * a confirmed entry (Q2) or a Staff member for a pending one (early check A6: an Owner never records a pending entry). The triggers hold the shape (TDS rules, the insert state). Binds `?1`..`?21`.
  */
 export function recordPaymentStatement(db: D1Database, a: RecordPaymentArgs): D1PreparedStatement {
   return db
@@ -158,7 +164,7 @@ export function recordPaymentStatement(db: D1Database, a: RecordPaymentArgs): D1
        WHERE NOT EXISTS (SELECT 1 FROM payments x WHERE x.id = ?1)
          AND EXISTS (SELECT 1 FROM clients c WHERE c.id = ?2 AND c.anonymised_at IS NULL AND c.currency = ?5)
          AND (?21 = 1 OR ?10 IS NULL OR NOT EXISTS (SELECT 1 FROM payments r WHERE r.reference_norm = ?10 AND r.status IN ('pending_verification', 'confirmed')))
-         AND CASE ?4 WHEN 'confirmed' THEN ${sessionSql("?20", "?19", ["owner"], true, "?18")} ELSE ${sessionSql("?20", "?19", ["owner", "staff"], false, "?18")} END`,
+         AND CASE ?4 WHEN 'confirmed' THEN ${sessionSql("?20", "?19", ["owner"], true, "?18")} ELSE ${sessionSql("?20", "?19", ["staff"], false, "?18")} END`,
     )
     .bind(
       a.id,
@@ -280,8 +286,8 @@ export function decideApprovalStatements(
 /**
  * The main statement of a withdraw: a CONFIRMED payment of a live client, by an Owner with a fresh step-up, with a reason. A payment that stands for an M5.2
  * advance receipt is never withdrawn here (`advance_receipt_id IS NULL`): its tax invoice was issued because the money arrived, so a credit note is the
- * correction (lead's safe side; listed for the early check). Follow it with `recomputeStatement(db, {paymentId}, now, g)` (every document the payment touched)
- * and `ledgerResultStatement(db, {paymentId})`. Binds `?1` payment, `?2` now, `?3` session, `?4` reason.
+ * correction (lead's safe side; listed for the early check). Follow it with `recomputeStatement(db, {paymentIds: [paymentId]}, now, g)` (every document the payment
+ * touched) and `ledgerResultStatement(db, {paymentIds: [paymentId]})`. Binds `?1` payment, `?2` now, `?3` session, `?4` reason.
  */
 export function withdrawPaymentStatement(
   db: D1Database,
@@ -404,7 +410,7 @@ export function realisationExtensionStatement(
     .bind(a.id, a.documentId, a.extendedTo, a.bankRef, a.recordedBy, a.now, a.sessionId);
 }
 
-/** The bank's letter of an extension, set once (DOCS key `extensions/<id>/letter-<sha256>`), by an active Owner. */
+/** The bank's letter of an extension, set once (DOCS key `extensions/<id>/letter-<sha256>`), by an active Owner, while the client is live (early check A5). */
 export function extensionLetterStatement(
   db: D1Database,
   a: {
@@ -420,7 +426,9 @@ export function extensionLetterStatement(
   return db
     .prepare(
       `UPDATE realisation_extensions SET letter_r2_key = ?3, letter_sha256 = ?4, letter_mime = ?5
-       WHERE id = ?1 AND document_id = ?2 AND letter_r2_key IS NULL AND ${sessionSql("?6", "?7", ["owner"], false)}`,
+       WHERE id = ?1 AND document_id = ?2 AND letter_r2_key IS NULL
+         AND EXISTS (SELECT 1 FROM documents ld JOIN clients z ON z.id = ld.client_id WHERE ld.id = ?2 AND z.anonymised_at IS NULL)
+         AND ${sessionSql("?6", "?7", ["owner"], false)}`,
     )
     .bind(a.id, a.documentId, a.r2Key, a.sha256, a.mime, a.sessionId, a.now);
 }
@@ -461,11 +469,11 @@ export const PENDING_PAYMENTS_COUNT_SQL =
   "SELECT count(*) AS n FROM payments p INDEXED BY payments_pending WHERE p.status = 'pending_verification'";
 
 /**
- * L17 (the void facts): whether a payment that was not rejected asks for document `?1` (of client `?2`), or any allocation row names it. The twin of the trigger
+ * L17 (the void facts): whether a PENDING payment asks for document `?1` (of client `?2`), or any allocation row names it. The twin of the trigger
  * `documents_void_no_payment` and of core `voidBlockers` (`payment_pending`).
  */
 export const PAYMENT_ASKS_FOR_DOCUMENT_SQL = `SELECT (EXISTS (SELECT 1 FROM payment_allocations va INDEXED BY payment_allocations_document WHERE va.document_id = ?1)
-       OR EXISTS (SELECT 1 FROM payments vp INDEXED BY payments_client, json_each(vp.requested_allocations) vj WHERE vp.client_id = ?2 AND vp.status <> 'rejected'
+       OR EXISTS (SELECT 1 FROM payments vp INDEXED BY payments_client, json_each(vp.requested_allocations) vj WHERE vp.client_id = ?2 AND vp.status = 'pending_verification'
                   AND vp.requested_allocations IS NOT NULL AND json_extract(vj.value, '$.documentId') = ?1)) AS pending`;
 
 /** "Collected": confirmed `payment` rows by currency received from `?1` to `?2` (ISO, inclusive), read through `payments_confirmed`. */

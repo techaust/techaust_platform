@@ -147,7 +147,7 @@ export function invoiceNotesView(a: {
       passed,
     },
     /** What the client is owed back (paid and credited above the total): derived, display only (M6 records the refund). */
-    refundDueMinor: refundDueOf(d.total_minor, d.paid_minor, d.credited_minor),
+    refundDueMinor: refundDueOf(d.total_minor, d.paid_minor, d.credited_minor, d.tds_minor),
     actions: {
       credit: { allowed: credit.length === 0, reasons: credit },
       debit: { allowed: debit.length === 0, reasons: debit },

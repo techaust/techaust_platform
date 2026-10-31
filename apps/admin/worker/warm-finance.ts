@@ -4,6 +4,7 @@
 //  - the invoice and note request schemas and one credit note worked out (invoice-warm.ts, M5.1 to M5.3);
 //  - the approval decision body (it moved here from the document warm-up with the approvals routes).
 // Pure of `env`, nothing stored or logged.
+import { warmPayments } from "@techaust/core/payment-schemas";
 import { warmSettings } from "@techaust/core/settings";
 import { decideBody } from "./approvals.ts";
 import { warmInvoices } from "./invoice-warm.ts";
@@ -17,4 +18,5 @@ export function warmApprovals(): number {
   }
 }
 
-export const financeWarm: number = warmSettings() + warmInvoices() + warmApprovals();
+// M6.1: the payment request bodies (`warmPayments`, nine samples).
+export const financeWarm: number = warmSettings() + warmInvoices() + warmApprovals() + warmPayments();

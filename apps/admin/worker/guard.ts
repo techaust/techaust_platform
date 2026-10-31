@@ -160,6 +160,8 @@ export const ROUTES: readonly RouteDef[] = [
   X("GET", "/reports/registers", "exports.gst", { audit: "report.export" }),
   X("GET", "/reports/edf", "reports.finance"),
   X("GET", "/reports/realisation", "reports.finance"),
+  // M6.1: the payments and TDS register of one FY (07-ZH line 20; the SPA builds the CSV, the TDS rows apart for Form 26AS and AIS matching).
+  X("GET", "/reports/payments", "reports.finance"),
   // Catalogue, templates and publishing (M4.1, ADM-CAT-01..05). Static paths (`snapshots`, `publish`) are declared before `:id`.
   R("GET", "/catalogue", "catalogue.read"),
   R("GET", "/catalogue/snapshots", "catalogue.read"),
@@ -225,6 +227,28 @@ export const ROUTES: readonly RouteDef[] = [
   X("POST", "/invoices/:id/reminders/pause", "invoices.send", { audit: "invoice.reminders_pause" }),
   X("POST", "/invoices/:id/reminders/resume", "invoices.send", { audit: "invoice.reminders_resume" }),
   X("GET", "/clients/:id/invoices", "invoices.read"),
+  // M6.1 (ADM-PAY-01, -05, -06, ADM-INV-16, -17, Q60; run file C): manual payments and TDS. Recording or confirming needs the Owner's fresh code (owner, Q2
+  // A, 2026-10-31); a Staff member's entry waits for the Owner (`payments.record` is "approval" for Staff: the handler records it as pending). Withdrawing and
+  // using credit are the Owner's with a fresh code; a proof or a TDS certificate is added by the Owner or Staff; a FEMA extension is the Owner's.
+  X("GET", "/payments", "payments.read"),
+  X("POST", "/payments", "payments.record", { audit: "payment.record" }),
+  X("GET", "/payments/:id", "payments.read"),
+  X("POST", "/payments/:id/verify", "payments.verify", { audit: "payment.verify" }),
+  X("POST", "/payments/:id/withdraw", "payments.withdraw", { audit: "payment.withdraw" }),
+  X("PUT", "/payments/:id/proof", "payments.attachProof", { audit: "payment.proof", body: "upload" }),
+  X("GET", "/payments/:id/proof", "payments.read"),
+  X("POST", "/payments/:id/tds-certificate", "payments.attachProof", { audit: "payment.tds_certificate" }),
+  X("GET", "/clients/:id/credit", "payments.read"),
+  X("POST", "/clients/:id/credit/apply", "payments.applyCredit", { audit: "payment.credit_apply" }),
+  X("GET", "/invoices/:id/payments", "payments.read"),
+  X("POST", "/invoices/:id/credit/release", "payments.applyCredit", { audit: "payment.credit_release" }),
+  X("POST", "/invoices/:id/realisation-extensions", "realisation.extend", {
+    audit: "invoice.realisation_extend",
+  }),
+  X("PUT", "/invoices/:id/realisation-extensions/:eid/letter", "realisation.extend", {
+    audit: "invoice.realisation_extend",
+    body: "upload",
+  }),
   // The owner's approval queue. Staff and Sales read only their own requests (the handler filters); only the owner decides.
   X("GET", "/approvals", "approvals.readOwn"),
   X("POST", "/approvals/:id/decide", "approvals.decide", { audit: "approval.decide" }),

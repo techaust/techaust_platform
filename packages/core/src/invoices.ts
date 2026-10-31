@@ -516,11 +516,11 @@ export type VoidFacts = {
   readonly type?: string;
   /**
    * M6.1 (L17; the twin of the trigger `documents_void_no_payment` and of the void statement's WHERE): TDS recorded on the document (`documents.tds_minor`).
-   * Optional only so the M5 callers compile until the finance routes pass it (stage B2); absent counts as none.
+   * Required, so no caller can forget it (stage B2 passes it from every void path).
    */
-  readonly tdsMinor?: number;
-  /** M6.1 (L17): a payment that was not rejected asks for this document (`payments.requested_allocations`), or an allocation row names it (even one released since). */
-  readonly paymentPending?: boolean;
+  readonly tdsMinor: number;
+  /** M6.1 (L17): a PENDING payment asks for this document (`payments.requested_allocations`), or an allocation row names it (even one released since). */
+  readonly paymentPending: boolean;
 };
 
 /**
@@ -539,7 +539,7 @@ export function voidBlockers(f: VoidFacts): VoidBlockerCode[] {
   if (f.paidMinor > 0) out.push("has_payment");
   if (f.creditedMinor > 0) out.push("has_credit");
   if (f.paymentPending === true) out.push("payment_pending");
-  if ((f.tdsMinor ?? 0) > 0) out.push("tds_recorded");
+  if (f.tdsMinor > 0) out.push("tds_recorded");
   if (f.hasIssuedChild) out.push("has_child_document");
   if (f.emailed) out.push("already_emailed");
   if (f.viewed) out.push("viewed_by_client");

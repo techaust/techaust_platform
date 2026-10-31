@@ -12,6 +12,7 @@
     "./documents": "./src/documents.ts",
     "./issue": "./src/issue.ts",
     "./lead-stage": "./src/lead-stage.ts",
+    "./ledger": "./src/ledger.ts",
     "./log": "./src/log.ts",
     "./portal-shared": "./src/portal-shared.ts",
     "./realisation": "./src/realisation.ts",

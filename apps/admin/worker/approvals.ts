@@ -24,6 +24,7 @@ import { notifyApproval } from "./document-events.ts";
 import { body, idParam, limitOf, param, query, text } from "./http.ts";
 import { decideIssue } from "./invoice-issue.ts";
 import { type Direction, decodeCursor, keysetSql, pageOf } from "./keyset.ts";
+import { USE_PAYMENT_VERIFY } from "./payment-messages.ts";
 import { APPROVAL_EXPIRED } from "./quote-model.ts";
 
 const APPROVAL_DECIDED: ApiError = { code: "approval_decided", message: "That request was already decided" };
@@ -41,7 +42,7 @@ export const decideBody = z.strictObject({
 const idText = z.string().check(z.minLength(1), z.maxLength(64));
 const listQuery = z.object({
   /** M5.1: the list of one kind (default `discount`: what the queue showed before invoices). */
-  kind: z.optional(z.enum(["discount", "issue"])),
+  kind: z.optional(z.enum(["discount", "issue", "payment"])),
   status: z.optional(z.enum(["pending", "approved", "rejected", "expired"])),
   /** M5.1: one request by id (a bell's link can point at an older request than the first page holds); Staff still see only their own. */
   id: z.optional(idText),
@@ -127,6 +128,70 @@ export const ISSUE_APPROVALS_SQL = (f: { status: boolean; own: boolean; cursor: 
      ORDER BY a.created_at DESC, a.id DESC LIMIT`;
 };
 
+type PaymentApprovalListRow = {
+  id: string;
+  status: string;
+  created_at: number;
+  decided_at: number | null;
+  note: string | null;
+  requested_by: string;
+  requester_name: string | null;
+  decided_by: string | null;
+  decider_name: string | null;
+  payment_id: string;
+  payment_kind: string;
+  payment_status: string;
+  currency: string;
+  amount_minor: number;
+  received_on: string;
+  client_id: string;
+  client_code: string;
+  client_name: string;
+  client_gone: number;
+};
+
+/** M6.1 (ADM-APR-01, L18): the payments Staff recorded, waiting for the Owner; the same keyset and filters. Decided only through POST /payments/:id/verify. */
+export const PAYMENT_APPROVALS_SQL = (f: {
+  status: boolean;
+  own: boolean;
+  cursor: boolean;
+  id?: boolean;
+}) => {
+  const ownAt = 1 + (f.status ? 1 : 0);
+  const cursorAt = ownAt + (f.own ? 1 : 0);
+  const idAt = cursorAt + (f.cursor ? 2 : 0);
+  return `SELECT a.id, a.status, a.created_at, a.decided_at, a.note, a.requested_by, ru.name AS requester_name, a.decided_by, du.name AS decider_name,
+       p.id AS payment_id, p.kind AS payment_kind, p.status AS payment_status, p.currency, p.amount_minor, p.received_on,
+       cl.id AS client_id, cl.code AS client_code, cl.display_name AS client_name, (cl.anonymised_at IS NOT NULL) AS client_gone
+     FROM approvals a JOIN payments p ON p.id = a.payment_id JOIN clients cl ON cl.id = p.client_id LEFT JOIN staff_users ru ON ru.id = a.requested_by LEFT JOIN staff_users du ON du.id = a.decided_by
+     WHERE a.kind = 'payment_verify'${f.status ? " AND a.status = ?1" : ""}${f.own ? ` AND a.requested_by = ?${ownAt}` : ""}${f.cursor ? ` AND ${keysetSql("a.created_at", "a.id", false, "after", cursorAt).where}` : ""}${f.id ? ` AND a.id = ?${idAt}` : ""}
+     ORDER BY a.created_at DESC, a.id DESC LIMIT`;
+};
+
+const paymentApprovalView = (r: PaymentApprovalListRow) => ({
+  id: r.id,
+  kind: "payment" as const,
+  state: r.status,
+  createdAt: r.created_at,
+  decidedAt: r.decided_at,
+  note: r.note,
+  requestedBy: r.requested_by,
+  requesterName: r.requester_name,
+  decidedBy: r.decided_by,
+  deciderName: r.decider_name,
+  payment: {
+    id: r.payment_id,
+    kind: r.payment_kind,
+    status: r.payment_status,
+    currency: r.currency,
+    amountMinor: r.amount_minor,
+    receivedOn: r.received_on,
+    clientId: r.client_id,
+    clientCode: r.client_code,
+    clientName: r.client_gone === 1 ? ANONYMISED_CLIENT : r.client_name,
+  },
+});
+
 const issueApprovalView = (r: IssueApprovalListRow) => {
   // A request for content that is no longer the draft's is shown as expired (the save that changed it also writes it, in the same batch).
   const stale =
@@ -204,6 +269,23 @@ export const approvals = new Hono<AppEnv>()
     const cur = q.after === undefined ? null : decodeCursor(q.after);
     if (q.after !== undefined && (!cur || typeof cur.k !== "number")) return err(c, BAD_REQUEST, 400);
     const own = decide(u.role, "approvals.decide") === "deny";
+    if (q.kind === "payment") {
+      const found = await c.env.DB.prepare(
+        `${PAYMENT_APPROVALS_SQL({ status: q.status !== undefined, own, cursor: cur !== null, id: q.id !== undefined })} ${limit + 1}`,
+      )
+        .bind(
+          ...(q.status !== undefined ? [q.status] : []),
+          ...(own ? [u.id] : []),
+          ...(cur ? [cur.k, cur.id] : []),
+          ...(q.id !== undefined ? [q.id] : []),
+        )
+        .all<PaymentApprovalListRow>();
+      const paymentPage = pageOf(found.results, limit, dir, cur !== null, (r) => ({
+        k: r.created_at,
+        id: r.id,
+      }));
+      return c.json({ approvals: paymentPage.items.map(paymentApprovalView), next: paymentPage.next });
+    }
     if (q.kind === "issue") {
       const issueSql = `${ISSUE_APPROVALS_SQL({ status: q.status !== undefined, own, cursor: cur !== null, id: q.id !== undefined })} ${limit + 1}`;
       const found = await c.env.DB.prepare(issueSql)
@@ -242,7 +324,7 @@ export const approvals = new Hono<AppEnv>()
     const row = await db
       .prepare(
         `SELECT a.kind, a.status, a.content_sha256, a.requested_by, a.document_id, d.status AS document_status, d.frozen_at, d.content_sha256 AS document_sha, d.title, d.version
-         FROM approvals a JOIN documents d ON d.id = a.document_id WHERE a.id = ?1`,
+         FROM approvals a LEFT JOIN documents d ON d.id = a.document_id WHERE a.id = ?1`,
       )
       .bind(id)
       .first<{
@@ -258,6 +340,8 @@ export const approvals = new Hono<AppEnv>()
         version: number;
       }>();
     if (!row) return err(c, NOT_FOUND, 404);
+    // M6.1 (L18): a payment is confirmed or rejected only through POST /payments/:id/verify (its allocations and the ledger move in that batch).
+    if (row.kind === "payment_verify") return err(c, USE_PAYMENT_VERIFY, 409);
     // An approval a save already expired (the content changed after the request) answers as expired, not as "decided".
     if (row.status === "expired") return err(c, APPROVAL_EXPIRED, 409);
     if (row.status !== "pending") return err(c, APPROVAL_DECIDED, 409);
@@ -312,7 +396,7 @@ export const approvals = new Hono<AppEnv>()
 async function expire(c: Ctx, id: string, documentId: string) {
   await mutate(c, {
     main: c.env.DB.prepare(
-      "UPDATE approvals SET status = 'expired' WHERE id = ?1 AND status = 'pending'",
+      "UPDATE approvals SET status = 'expired' WHERE id = ?1 AND status = 'pending' AND kind <> 'payment_verify'",
     ).bind(id),
     action: "approval.expire",
     entityType: "approval",

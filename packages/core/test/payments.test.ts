@@ -143,6 +143,7 @@ describe("payment bodies (zod/mini) [ADM-PAY-05, ADM-INV-16, Q60]", () => {
     amountMinor: 1000,
     receivedOn: "2026-10-31",
     mode: "neft",
+    reference: "UTR 0001",
   };
   const issues = (r: { success: boolean; error?: { issues: { message: string }[] } }) =>
     r.error?.issues.map((i) => i.message) ?? [];
@@ -159,6 +160,10 @@ describe("payment bodies (zod/mini) [ADM-PAY-05, ADM-INV-16, Q60]", () => {
     expect(recordPaymentBody.safeParse({ ...base, amountMinor: 0 }).success).toBe(false);
     expect(recordPaymentBody.safeParse({ ...base, amountMinor: 1.5 }).success).toBe(false);
     expect(recordPaymentBody.safeParse({ ...base, extra: 1 }).success).toBe(false);
+    // Early check A1: money received always carries its bank reference.
+    expect(issues(recordPaymentBody.safeParse({ ...base, reference: undefined }))).toContain(
+      "reference_required",
+    );
     expect(
       recordPaymentBody.safeParse({
         ...base,
@@ -176,6 +181,20 @@ describe("payment bodies (zod/mini) [ADM-PAY-05, ADM-INV-16, Q60]", () => {
       allocations: [{ documentId: "d1", amountMinor: 1000 }],
     };
     expect(recordPaymentBody.safeParse(tds).success).toBe(true);
+    // A TDS row needs no bank reference; its certificate number and date come both or neither (early check A9).
+    expect(recordPaymentBody.safeParse({ ...tds, reference: undefined }).success).toBe(true);
+    expect(
+      recordPaymentBody.safeParse({
+        ...tds,
+        tds: { ...tds.tds, certificateNo: "C1", certificateOn: "2026-10-30" },
+      }).success,
+    ).toBe(true);
+    expect(
+      issues(recordPaymentBody.safeParse({ ...tds, tds: { ...tds.tds, certificateNo: "C1" } })),
+    ).toContain("certificate_both_or_neither");
+    expect(
+      issues(recordPaymentBody.safeParse({ ...tds, tds: { ...tds.tds, certificateOn: "2026-10-30" } })),
+    ).toContain("certificate_both_or_neither");
     expect(issues(recordPaymentBody.safeParse({ ...tds, mode: "neft" }))).toContain("tds_shape");
     expect(issues(recordPaymentBody.safeParse({ ...tds, chargesMinor: 5 }))).toContain("tds_shape");
     expect(

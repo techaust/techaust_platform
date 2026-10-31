@@ -293,6 +293,8 @@ describe("void [Q1, LD7]", () => {
     viewed: false,
     issueDate: "2026-10-05",
     today: "2026-10-31",
+    tdsMinor: 0,
+    paymentPending: false,
   };
   it("an unsent, unpaid, uncredited issued invoice can be voided", () => {
     expect(voidBlockers(base)).toEqual([]);

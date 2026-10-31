@@ -21,8 +21,10 @@ describe("voidBlockers: a payment waiting, an allocation, or TDS refuses a void 
     viewed: false,
     issueDate: "2026-10-05",
     today: "2026-10-31",
+    tdsMinor: 0,
+    paymentPending: false,
   };
-  it("each has its code, and a caller that passes neither is unchanged", () => {
+  it("each has its code, and none when neither is there", () => {
     expect(voidBlockers(base)).toEqual([]);
     expect(voidBlockers({ ...base, paymentPending: true })).toEqual(["payment_pending"]);
     expect(voidBlockers({ ...base, tdsMinor: 10 })).toEqual(["tds_recorded"]);

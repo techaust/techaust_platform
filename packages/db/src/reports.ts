@@ -55,7 +55,8 @@ export const REGISTER_COLUMNS = `d.id, d.type, d.series, d.fy, d.number AS seq, 
        coalesce(json_extract(d.recipient, '$.legalName'), json_extract(d.recipient, '$.displayName')) AS r_name, json_extract(d.recipient, '$.gstStatus') AS r_status, json_extract(d.recipient, '$.gstin') AS r_gstin,
        json_extract(d.recipient, '$.stateCode') AS r_state, json_extract(d.recipient, '$.country') AS r_country, json_extract(d.recipient, '$.address') AS r_address,
        json_extract(d.header_extras, '$.noteOf') AS note_of, json_extract(d.issuer, '$.bank.swift.purposeCode') AS purpose_code, d.ims_status,
-       ${RATES_SQL} AS rates`;
+       ${RATES_SQL} AS rates,
+       CASE d.type WHEN 'export_invoice' THEN (SELECT max(x.extended_to) FROM realisation_extensions x WHERE x.document_id = d.id) END AS extended_to`;
 
 /** One row of `REGISTER_COLUMNS` as D1 returns it. */
 export type RegisterSqlRow = {
@@ -88,6 +89,8 @@ export type RegisterSqlRow = {
   /** rt1 T3: a credit note's IMS answer (null for every other document); only the 3B helper reads it. */
   ims_status: string | null;
   rates: string | null;
+  /** M6.1 (Q60, L14): an export invoice's latest AD-bank extension of its FEMA period (one seek of `realisation_extensions_document`); NULL otherwise. */
+  extended_to: string | null;
 };
 
 const KEYSET = "AND (d.issue_date > ?3 OR (d.issue_date = ?3 AND d.id > ?4))";
@@ -154,7 +157,7 @@ const DEBIT_KINDS = "('tax_invoice', 'export_invoice', 'debit_note')";
 /**
  * The lines of a client's statement as one source `u(id, kind, date, ord, number, amount, sk)`: the debit documents and credit notes (issued, not voided,
  * the client's, in the currency), and from M6.1 the CONFIRMED payments of the ledger (L4: the advance receipts of Q9 were back-filled as payments, 0057): a
- * `receipt` line for money received (its full amount, dated by the day it arrived; the number is the tax invoice an advance paid, else the bank reference) and
+ * `receipt` line for money received (its full amount, dated by the day it arrived; the number is the tax invoice an advance paid, else the bank reference, else '' (never NULL: the PDF escapes it)) and
  * a `tds` line for tax the client deducted (T8; dated by its advice; the number is the invoice it is on). A pending, rejected or withdrawn payment is never a line.
  * `ord` orders one day: 1 a debit document, 2 a credit note, 3 a receipt, 4 a TDS line; `sk` is `date|ord`, the keyset key with `id`. Proformas are not here
  * (LD78: not a tax document; their payment shows through the tax invoice). `cond` is a SQL fragment over a date expression, e.g. `x BETWEEN ?3 AND ?4`. With
@@ -167,8 +170,8 @@ const statementSource = (cond: (dateExpr: string) => string, withParent = false)
       WHERE d.frozen_at IS NOT NULL AND d.type IN ${GST_TYPES} AND d.client_id = ?1 AND d.currency = ?2 AND d.voided_at IS NULL AND d.status <> 'void' AND ${cond("d.issue_date")}
     UNION ALL
     SELECT r.id, CASE r.kind WHEN 'tds' THEN 'tds' ELSE 'receipt' END, r.received_on, CASE r.kind WHEN 'tds' THEN 4 ELSE 3 END,
-           CASE r.kind WHEN 'tds' THEN (SELECT td.number_display FROM payment_allocations ta JOIN documents td ON td.id = ta.document_id WHERE ta.payment_id = r.id AND ta.kind = 'allocate' LIMIT 1)
-             ELSE coalesce((SELECT inv.number_display FROM advance_receipts ar JOIN documents inv ON inv.id = ar.invoice_id WHERE ar.id = r.advance_receipt_id), r.reference_norm) END,
+           CASE r.kind WHEN 'tds' THEN coalesce((SELECT td.number_display FROM payment_allocations ta JOIN documents td ON td.id = ta.document_id WHERE ta.payment_id = r.id AND ta.kind = 'allocate' LIMIT 1), '')
+             ELSE coalesce((SELECT inv.number_display FROM advance_receipts ar JOIN documents inv ON inv.id = ar.invoice_id WHERE ar.id = r.advance_receipt_id), r.reference_norm, '') END,
            r.amount_minor, r.received_on || '|' || CASE r.kind WHEN 'tds' THEN 4 ELSE 3 END${withParent ? ", NULL" : ""}
       FROM payments r INDEXED BY payments_client
       WHERE r.client_id = ?1 AND r.currency = ?2 AND r.status = 'confirmed' AND ${cond("r.received_on")}) u`;
@@ -374,9 +377,10 @@ const ALLOCATED_BY_CURRENCY = `(SELECT json_group_object(y.cur, y.net) FROM (SEL
        WHERE ap.client_id = ?1 AND ap.status = 'confirmed' AND ap.kind = 'payment' GROUP BY ap.currency) y)`;
 
 /**
- * A client's figures by currency (`?1` the client, `?2` today, IST): billed, credited, the balance (Σ `balance_minor` of its open debit documents: what a
- * statement made today closes at, `STATEMENT_LEDGER_SQL` for every currency at once) and the part of it past its due date (strictly before today, as
- * `OWED_SQL`). One read of `documents_client_issued` by the client: the rows read are the client's issued GST documents and nothing else. No rows for
+ * A client's figures by currency (`?1` the client, `?2` today, IST): billed, credited, the balance (Σ `balance_minor` of its open debit documents: what the
+ * client owes, each document stopping at zero) and the part of it past its due date (strictly before today, as `OWED_SQL`). M6.1 (early check A4): `excess`
+ * is Σ max(0, paid + credited + TDS − total) over the debit documents (what was settled above what they owe), so what a statement made today closes at is
+ * `balance − excess − credit` (`STATEMENT_LEDGER_SQL`; a twin test proves it). One read of `documents_client_issued` by the client: the rows read are the client's issued GST documents and nothing else. No rows for
  * an anonymised client (its row only is read). M6.1: `tds` (TDS recorded on its debit documents), `collected` (its confirmed payments in the currency) and
  * `credit` (what they hold unallocated), from two aggregates of the client's payments (`COLLECTED_BY_CURRENCY`, `ALLOCATED_BY_CURRENCY`), each run once. A currency with payments and no issued document has no row (a client
  * has one currency, M3.3).
@@ -388,6 +392,7 @@ export const CLIENT_FIGURES_SQL = `SELECT d.currency,
        coalesce(sum(CASE WHEN d.type IN ${DEBIT_KINDS} AND d.balance_minor > 0 AND d.due_date < ?2 THEN d.balance_minor END), 0) AS overdue,
        count(CASE WHEN d.type IN ${DEBIT_KINDS} AND d.balance_minor > 0 AND d.due_date < ?2 THEN 1 END) AS overdue_n,
        coalesce(sum(CASE WHEN d.type IN ${DEBIT_KINDS} THEN d.tds_minor END), 0) AS tds,
+       coalesce(sum(CASE WHEN d.type IN ${DEBIT_KINDS} THEN max(0, d.paid_minor + d.credited_minor + d.tds_minor - d.total_minor) END), 0) AS excess,
        coalesce(json_extract(${COLLECTED_BY_CURRENCY}, '$.' || d.currency), 0) AS collected,
        coalesce(json_extract(${COLLECTED_BY_CURRENCY}, '$.' || d.currency), 0) - coalesce(json_extract(${ALLOCATED_BY_CURRENCY}, '$.' || d.currency), 0) AS credit
    FROM documents d INDEXED BY documents_client_issued
@@ -420,6 +425,8 @@ export type ClientFiguresRow = {
   overdue_n: number;
   /** M6.1 */
   tds: number;
+  /** M6.1 (early check A4): Σ max(0, paid + credited + TDS − total) over the debit documents. */
+  excess: number;
   collected: number;
   credit: number;
 };

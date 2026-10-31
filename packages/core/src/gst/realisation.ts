@@ -242,6 +242,7 @@ export function realisationRows(
           currency: row.currency,
           supplyType: row.supplyType,
           extension,
+          extendedTo: row.extendedTo ?? undefined,
           outstandingMinor: row.outstandingMinor,
         },
         today,

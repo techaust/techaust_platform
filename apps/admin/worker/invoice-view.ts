@@ -27,6 +27,7 @@ import {
   PROFORMA_NOTICE,
   proformaWarnAt,
   proformaWarnDate,
+  refundDueOf,
   voidBlockers,
 } from "@techaust/core/invoices";
 import type { Series } from "@techaust/core/numbering";
@@ -102,6 +103,8 @@ export type InvoiceViewInput = {
   /** A `document_sends` row exists (the Q1 void rule), and an issued document names this one as its parent. */
   emailed: boolean;
   hasIssuedChild: boolean;
+  /** M6.1 (L17): a PENDING payment asks for this document, or an allocation row names it (the void blockers). */
+  paymentPending: boolean;
   /** M5.2: the active bank rows (the blockers), the newest extra export note and the documents made from this one. */
   bank: readonly BankRow[];
   declaration: TermsRef | null;
@@ -223,6 +226,8 @@ export function invoiceView(i: InvoiceViewInput) {
     issueDate: d.issue_date,
     today: todayIso,
     type: d.type,
+    tdsMinor: d.tds_minor,
+    paymentPending: i.paymentPending,
   });
   const clientDays = client.payment_terms_days;
   const dueDays = clientDays ?? settings.paymentTerms.dueDays;
@@ -322,6 +327,10 @@ export function invoiceView(i: InvoiceViewInput) {
     paidMinor: d.paid_minor,
     creditedMinor: d.credited_minor,
     balanceMinor: d.balance_minor,
+    /** M6.1 (T8, 07-ZH line 1 "TDS deducted by the client"): TDS recorded on the ledger; it settles the balance, the invoice and its GST stay at full value. */
+    tdsMinor: d.tds_minor,
+    /** M6.1 (07-ZH line 1 "Paid above what it owes"): paid + credited + TDS above the total (derived). */
+    excessMinor: refundDueOf(d.total_minor, d.paid_minor, d.credited_minor, d.tds_minor),
     overdue: isOverdue(d, todayIso),
     errors: !frozen && computation ? computation.errors : [],
     warnings: !frozen && computation ? computation.warnings : [],

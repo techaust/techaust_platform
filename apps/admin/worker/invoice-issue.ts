@@ -469,12 +469,12 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
               id: r.id,
               status:
                 note.noteArgs.kind === "credit"
-                  ? ledgerStatusOf(r.total_minor, r.paid_minor, credited)
+                  ? ledgerStatusOf(r.total_minor, r.paid_minor, credited, r.tds_minor)
                   : r.status,
               creditedMinor: credited,
               balanceMinor:
                 note.noteArgs.kind === "credit"
-                  ? balanceOf(r.total_minor, r.paid_minor, credited)
+                  ? balanceOf(r.total_minor, r.paid_minor, credited, r.tds_minor)
                   : r.balance_minor,
             };
           })(),
