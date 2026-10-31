@@ -805,6 +805,43 @@ describe("record, verify, withdraw: the builders of ledger.ts in a mutate-shaped
     expect(await first("SELECT id FROM payments WHERE id = ?", over.id)).toBeNull();
   });
 
+  it("L38 (R4): a Staff entry asking for a proforma voided or withdrawn since the read writes nothing; one asking for an issued proforma is recorded", async () => {
+    const { clientId } = await setup();
+    const staff = await mkMember("staff");
+    const sessionId = await session(staff, false);
+    const ask = (documentId: string) =>
+      recordArgs(
+        { clientId, owner: staff, sessionId },
+        {
+          status: "pending_verification",
+          requestedAllocations: JSON.stringify([{ documentId, amountMinor: 118_000 }]),
+        },
+      );
+    const voided = await mkIssued(clientId, { type: "proforma" });
+    await run(
+      "UPDATE documents SET status = 'void', voided_at = 2, void_reason = 'issued in error' WHERE id = ?",
+      voided,
+    );
+    const withdrawn = await mkIssued(clientId, { type: "proforma" });
+    await mkSend(withdrawn, clientId, null, { createdBy: staff });
+    await run(
+      "UPDATE documents SET status = 'void', voided_at = 2, void_reason = 'withdrawn' WHERE id = ?",
+      withdrawn,
+    );
+    for (const id of [voided, withdrawn]) {
+      const a = ask(id);
+      const res = await recordPaymentStatement(db(), a).run();
+      expect(res.meta.changes, id).toBe(0);
+      expect(await first("SELECT id FROM payments WHERE id = ?", a.id)).toBeNull();
+    }
+    const live = await mkIssued(clientId, { type: "proforma" });
+    const ok = ask(live);
+    expect((await recordPaymentStatement(db(), ok).run()).meta.changes).toBe(1);
+    expect(await first("SELECT status FROM payments WHERE id = ?", ok.id)).toEqual({
+      status: "pending_verification",
+    });
+  });
+
   it("the Owner without a fresh step-up, Staff confirming, an anonymised client or another currency write nothing (Q2)", async () => {
     const { owner, clientId } = await setup();
     const stale = await session(owner, false);

@@ -21,6 +21,7 @@ import {
   verify,
 } from "./test-payments.ts";
 import { mkProject, PDF_BYTES, PNG_BYTES } from "./test-projects.ts";
+import { beforeBatchHolding } from "./test-quotes.ts";
 import { addDoc, mkReportClient } from "./test-reports.ts";
 
 const owner = () => sessionFor("owner", { stepUp: true });
@@ -802,6 +803,33 @@ describe("early check 2: the advance and the payment entries [L5, L12; 07-ZH lin
     expect(await rows("SELECT id FROM advance_receipts WHERE proforma_id = ?", pf.id)).toHaveLength(0);
     expect(await rows("SELECT id FROM payment_allocations WHERE payment_id = ?", made.id)).toHaveLength(0);
     expect((await paymentRow(made.id)).advance_receipt_id).toBeNull();
+  });
+
+  it("L38 (R4): a proforma voided between the record's read and its write: 409, no payment, approval or bell written", async () => {
+    const o = await owner();
+    const staff = await sessionFor("staff");
+    const pf = await issuedProforma(o);
+    const body = recordBody(pf.clientId, pf.total, [{ documentId: pf.id, amountMinor: pf.total }]);
+    const res = await call(
+      "/payments",
+      { cookie: staff.cookie, body },
+      beforeBatchHolding("INSERT INTO payments", async () => {
+        await env.DB.prepare(
+          "UPDATE documents SET status = 'void', voided_at = ?2, void_reason = 'Issued in error' WHERE id = ?1",
+        )
+          .bind(pf.id, Date.now())
+          .run();
+      }),
+    );
+    expect(res.status, await res.clone().text()).toBe(409);
+    expect(await one("SELECT id FROM payments WHERE id = ?", body.id)).toBeNull();
+    expect(await rows("SELECT id FROM approvals WHERE payment_id = ?", body.id)).toHaveLength(0);
+    expect(
+      await rows("SELECT id FROM notifications WHERE entity_type = 'payment' AND entity_id = ?", body.id),
+    ).toHaveLength(0);
+    expect(
+      await rows("SELECT id FROM audit_log WHERE action = 'payment.record' AND entity_id = ?", body.id),
+    ).toHaveLength(0);
   });
 
   it("finding 3: a proforma ask is the only allocation and the whole amount, else 409 proforma_ask_whole with nothing written", async () => {

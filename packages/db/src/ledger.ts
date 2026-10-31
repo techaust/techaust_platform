@@ -154,6 +154,8 @@ export type RecordPaymentArgs = {
  * The main statement of a record: one `INSERT ... SELECT` whose WHERE holds every guard: the id is new; the client is live and of this currency; the reference
  * was not seen on a pending or confirmed payment (unless confirmed past, L12); the session is live and belongs to the recorder, an Owner with a fresh step-up for
  * a confirmed entry (Q2) or a Staff member for a pending one (early check A6: an Owner never records a pending entry). The triggers hold the shape (TDS rules, the insert state). Binds `?1`..`?21`.
+ * L38 (merge plan R4): no requested proforma is void (voided or withdrawn between the route's read and this write), so a Staff entry never asks for a proforma
+ * that is no longer issued; `json_each(NULL)` has no rows, so the Owner's entry (no requested allocations) is untouched.
  */
 export function recordPaymentStatement(db: D1Database, a: RecordPaymentArgs): D1PreparedStatement {
   return db
@@ -165,6 +167,7 @@ export function recordPaymentStatement(db: D1Database, a: RecordPaymentArgs): D1
        WHERE NOT EXISTS (SELECT 1 FROM payments x WHERE x.id = ?1)
          AND EXISTS (SELECT 1 FROM clients c WHERE c.id = ?2 AND c.anonymised_at IS NULL AND c.currency = ?5)
          AND (?21 = 1 OR ?10 IS NULL OR NOT EXISTS (SELECT 1 FROM payments r WHERE r.reference_norm = ?10 AND r.status IN ('pending_verification', 'confirmed')))
+         AND NOT EXISTS (SELECT 1 FROM json_each(?12) rj JOIN documents rd ON rd.id = json_extract(rj.value, '$.documentId') WHERE rd.type = 'proforma' AND rd.status = 'void')
          AND CASE ?4 WHEN 'confirmed' THEN ${sessionSql("?20", "?19", ["owner"], true, "?18")} ELSE ${sessionSql("?20", "?19", ["staff"], false, "?18")} END`,
     )
     .bind(
