@@ -1,0 +1,10 @@
+export type Sheet = { name: string; css: string };
+export type Clash = { key: string; files: string[] };
+export type ClashAllowance = { app: string; key: string; files: string[]; reason: string };
+export function selectorsOf(css: string): string[];
+export function baseKey(selector: string): string | null;
+export function baseKeysOf(css: string): Set<string>;
+export function findClashes(files: Sheet[]): Clash[];
+export function checkApps(apps: Record<string, Sheet[]>, allow?: ClashAllowance[]): string[];
+export function selfTest(): string[];
+export function loadApps(root: string): Record<string, Sheet[]>;

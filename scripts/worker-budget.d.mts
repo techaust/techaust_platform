@@ -6,6 +6,9 @@ export type Budget = {
   planBytes?: number;
   maxStartupMs: number;
   forbidden: Forbidden[];
+  /** L9: the build's metafile, whose input paths are checked against `forbiddenInputs` (minify drops path comments). */
+  metafile?: string;
+  forbiddenInputs?: Forbidden[];
 };
 export const INVOICE_CODE: Forbidden;
 export const BUDGETS: {
@@ -18,6 +21,6 @@ export const BUDGETS: {
 export function measureStartup(code: string, runs?: number): number;
 export function planNote(size: number, budget: Budget): string | null;
 export function checkBundle(
-  bundle: { size: number; text: string; startupMs: number },
+  bundle: { size: number; text: string; startupMs: number; inputs?: string[] },
   budget: Budget,
 ): string[];
