@@ -89,6 +89,11 @@ describe("the client's status [POR-06]", () => {
     expect(clientStatus(d({ status: "void" }), today)).toBe("void");
     expect(clientStatus(d({ type: "credit_note", balanceMinor: 0, dueDate: null }), today)).toBeNull();
   });
+  it("ADM-INV-10: a withdrawn payment request reads Withdrawn (its balance is null), never Paid", () => {
+    const w = { type: "proforma", status: "withdrawn", balanceMinor: null, dueDate: null };
+    expect(clientStatus(w, today)).toBe("withdrawn");
+    expect(clientStatus({ ...w, balanceMinor: 100, dueDate: "2026-11-01" }, today)).toBe("withdrawn");
+  });
 });
 
 describe("text", () => {
