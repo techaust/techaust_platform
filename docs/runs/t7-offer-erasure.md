@@ -1,5 +1,5 @@
 # Run: T7, erase a person's data in the frozen copies of never-accepted offers
-Status: designer done and merged; reviewer next (starts after the 15:10 IST usage reset)
+Status: reviewer running (code + visual)
 Tier: A (deleting or anonymising data; docs/14 §2)
 Usage: lead claude-opus-5-5/high (cloud session t7-erasure); analyst claude-opus-5-5/high (brief draft; skills: tried `cloudflare:workers-best-practices` and `cloudflare:wrangler`, both "Unknown skill" in the cloud session although model-audit lists them; 5-h 8 % at 12:58 IST); builder claude-opus-5-5/high (agent-ac9b3fbc, layers to the Tier A stop point, 13:25–14:16 IST; same two skills tried, both unknown; 5-h 46 % at 13:46 IST); analyst claude-opus-5-5/high (agent-af81419a, early check; tried the two skills and `cloudflare:workers-profiling`, all unknown); builder claude-opus-5-5/high (agent-ab068a97, early-check fixes, 14:16–14:39 IST; same three skills tried, all unknown; 5-h 68 % at 14:16); designer claude-opus-5-5/high (agent-a51b4663, screens, 14:39–14:59 IST; tried `frontend-design:frontend-design`, unknown in the cloud session; 5-h 68 → 89 %)
 
