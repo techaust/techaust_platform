@@ -449,7 +449,8 @@ export const clientCreditSql = (client: string): string =>
    FROM payments p INDEXED BY payments_client WHERE p.client_id = ${client} AND p.status = 'confirmed' AND p.kind = 'payment' GROUP BY p.currency ORDER BY p.currency`;
 
 /** A client's credit by currency (`?1` the client). */
-export const CLIENT_CREDIT_SQL = clientCreditSql("?1");
+// Built by a call, so marked pure: a Worker that imports this module without the name (the admin API, through `issue.ts`) drops it from its bundle.
+export const CLIENT_CREDIT_SQL = /* @__PURE__ */ clientCreditSql("?1");
 
 /** Where credit comes from (`?1` client, `?2` currency): confirmed payments holding something unallocated, first in first out (core `creditSources`), at most 50. */
 export const CREDIT_SOURCES_SQL = `SELECT p.id, p.received_on, p.amount_minor, ${paymentNetSql("p.id")} AS net
@@ -499,7 +500,8 @@ export const paymentBlocksVoidSql = (doc: string, client: string): string =>
   `(${paymentRecordedSql(doc)} OR ${paymentPendingForSql(doc, client)})`;
 
 /** L17, L32 (the void facts): for document `?1` of client `?2`, whether a PENDING payment asks for it (`pending`) and whether an allocation row names it (`recorded`). */
-export const PAYMENT_ASKS_FOR_DOCUMENT_SQL = `SELECT ${paymentPendingForSql("?1", "?2")} AS pending, ${paymentRecordedSql("?1")} AS recorded`;
+export const PAYMENT_ASKS_FOR_DOCUMENT_SQL = /* @__PURE__ */ (() =>
+  `SELECT ${paymentPendingForSql("?1", "?2")} AS pending, ${paymentRecordedSql("?1")} AS recorded`)();
 
 /** "Collected": confirmed `payment` rows by currency received from `?1` to `?2` (ISO, inclusive), read through `payments_confirmed` (the reference twin of the tile). */
 export const COLLECTED_SQL = `SELECT p.currency, coalesce(sum(p.amount_minor), 0) AS collected, count(*) AS n
@@ -509,12 +511,6 @@ export const COLLECTED_SQL = `SELECT p.currency, coalesce(sum(p.amount_minor), 0
 /** The currencies a payment can be in (the schema's `CURRENCY_CODES`; a db test pins the two together). */
 export const COLLECTED_CURRENCIES = ["INR", "USD"] as const;
 
-const collectedCols = COLLECTED_CURRENCIES.flatMap((c) => [
-  `coalesce(sum(CASE WHEN p.currency = '${c}' THEN p.amount_minor END), 0) AS fy_${c}`,
-  `count(CASE WHEN p.currency = '${c}' THEN 1 END) AS fyn_${c}`,
-  `coalesce(sum(CASE WHEN p.currency = '${c}' AND p.received_on >= ?3 AND p.received_on <= ?4 THEN p.amount_minor END), 0) AS m_${c}`,
-  `count(CASE WHEN p.currency = '${c}' AND p.received_on >= ?3 AND p.received_on <= ?4 THEN 1 END) AS mn_${c}`,
-]).join(", ");
 const collectedPick = (prefix: string) =>
   `CASE c.currency ${COLLECTED_CURRENCIES.map((c) => `WHEN '${c}' THEN t.${prefix}_${c}`).join(" ")} END`;
 
@@ -524,9 +520,17 @@ const collectedPick = (prefix: string) =>
  * a temporary GROUP BY b-tree takes in and gives back, which doubled the reads (measured: 2,000 for 1,000 payments grouped, 1,000 flat); the sums per currency
  * are columns of one aggregate row, turned into rows afterwards. Equal to `COLLECTED_SQL` over each range (a test holds the twins together).
  */
-export const COLLECTED_TILE_SQL = `SELECT c.currency, ${collectedPick("fy")} AS fy_collected, ${collectedPick("fyn")} AS fy_n,
+export const COLLECTED_TILE_SQL = /* @__PURE__ */ (() => {
+  const cols = COLLECTED_CURRENCIES.flatMap((c) => [
+    `coalesce(sum(CASE WHEN p.currency = '${c}' THEN p.amount_minor END), 0) AS fy_${c}`,
+    `count(CASE WHEN p.currency = '${c}' THEN 1 END) AS fyn_${c}`,
+    `coalesce(sum(CASE WHEN p.currency = '${c}' AND p.received_on >= ?3 AND p.received_on <= ?4 THEN p.amount_minor END), 0) AS m_${c}`,
+    `count(CASE WHEN p.currency = '${c}' AND p.received_on >= ?3 AND p.received_on <= ?4 THEN 1 END) AS mn_${c}`,
+  ]).join(", ");
+  return `SELECT c.currency, ${collectedPick("fy")} AS fy_collected, ${collectedPick("fyn")} AS fy_n,
        ${collectedPick("m")} AS month_collected, ${collectedPick("mn")} AS month_n
-   FROM (SELECT ${collectedCols}
+   FROM (SELECT ${cols}
          FROM payments p INDEXED BY payments_confirmed WHERE p.status = 'confirmed' AND p.kind = 'payment' AND p.received_on >= ?1 AND p.received_on <= ?2) t
    JOIN (${COLLECTED_CURRENCIES.map((c) => `SELECT '${c}' AS currency`).join(" UNION ALL ")}) c
    WHERE ${collectedPick("fyn")} > 0 ORDER BY c.currency`;
+})();
