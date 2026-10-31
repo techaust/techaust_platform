@@ -149,6 +149,17 @@ Builder (round 1, branch `build/proforma-withdraw-r1`, head c0b71b2, merged into
 - **Open:** the portal summary still returns the frozen `bank` block for a withdrawn proforma (lead: to be nulled by the API, Q3's reason; see the early check). The portal SPA's types (`apps/portal/src/api.ts`) and the admin SPA's `copy-z.ts`/`voidErrorText` are the designer's.
 - **Skills:** none (the Cloudflare skills aren't installed in this cloud session; supabase is Postgres-only).
 
+### Builder report, round 2 (early-check fixes)
+Builder (round 2, branch `fix/proforma-withdraw-early-check` from 0c89aae; no SPA file touched).
+- **Most important:** the jobs suite is green again (549 of 549). A1 is fixed in the fixtures only: `voidDoc` in `apps/jobs/test/billing-fixtures.ts` voids after the send; the consumer and sweep tests still prove a void document is refused (`refused`) and not swept.
+- **Commits:** 127fd3d A1 (jobs fixtures); 1f5523f A2 + B2 (portal `bank: null` on a withdrawn proforma with the M6/M7.1 handoff comment; `isWithdrawnRow` = proforma and void); 8066154 B1 (one mount; `split.test.ts` fails any handler mounted twice on a path, checked by putting the double mount back); de5ca43 B3–B5 (`apps/admin/worker/invoice-void-rules.ts`: `voidReasonIn` bounded by `WITHDRAW_REASON_MAX`, `OWNER_STEP_UP_SQL`, `milestoneReleaseStmt`, `VOID_REFUSED`; the void route maps those four trigger aborts to its re-read, 409; another database error still 500); 61ec550 B6 (db: the advance-receipt clause alone, `advance_receipts_scope_insert` dropped, restored from `src/triggers.ts` and compared).
+- **Files:** `apps/jobs/test/{billing-fixtures,invoice-send.test,ld56.test}.ts`; `apps/portal/worker/{invoice-summary,invoices-withdrawn.test}.ts`; `apps/admin/worker/{routes-api,split.test,invoice-void-rules (new),invoice-withdraw,invoices,invoices-void.test}.ts`; `packages/db/test/proforma-withdraw.test.ts`.
+- **New tests:** portal: page and link return `bank: null` and no account number for a withdrawn proforma; a live proforma keeps its bank (page and link); `isWithdrawnRow` truth table. Admin: no double mount; both bodies share `voidReasonIn` (500 passes, 501 fails); the void route's four trigger aborts each 409 `void_not_allowed`, nothing written, no audit row (fails with the catch disabled); another abort is a 500. db: B6. The A2 page and link tests fail with the fix reverted (checked).
+- **Results (tools/heavy.sh):** jobs 33 files / 549 tests; db 36 / 532; admin 121 / 3,528; portal 26 / 660; all exit 0. `pnpm check` exit 0 (the whole-repo lint inside it: 1,373 files, 10 warnings and 8 infos, all in untouched files; migration guard 57 migrations, no rebuild).
+- **Worker bytes (builds):** admin front 99,391; admin API **624,565** (−449 against r1's 625,014; plan line 650,000); portal 103,500 of 120,000 (+24); jobs 984,407 of 1,000,000 (unchanged from r1). Startup (fastest of 7): front 11.9 ms, API 55.1 ms, portal 8.9 ms, jobs 54.1 ms.
+- **Not verified:** the two "Network connection lost" lines are still in the admin log (the vault's truncated-upload test, per the early check); core tests not rerun (no core change).
+- **Skills:** none (the Cloudflare skills of docs/14 §9 aren't installed in this cloud session; supabase skills are Postgres-only, not D1).
+
 ## Designer report
 
 ## Review

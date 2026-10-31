@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { REMINDER_CLAIM_SQL } from "../src/billing.ts";
 import { proformaDeliveredSql, withdrawnSql } from "../src/sql-rules.ts";
 import {
+  invoiceTypeTriggerStatements,
   proformaWithdrawTriggerStatements,
   VIEWED_NO_VOID_TYPES_0053,
   voidViewTriggerStatements,
@@ -146,6 +147,39 @@ describe("documents_proforma_withdraw (0056) [ADM-INV-10]", () => {
     );
     expect((await all("SELECT id FROM advance_receipts WHERE proforma_id = ?", p.id)).length).toBe(1);
     await rejects(voidDoc(p.id), /documents_(proforma_withdraw|invoice_status_flow)/);
+    expect(await status(p.id)).toBe("issued");
+  });
+  it("the advance-receipt clause on its own: a receipt with no child invoice still refuses it (early check B6)", async () => {
+    // `advance_receipts_scope_insert` (0040) only accepts a receipt whose invoice is a frozen child of the proforma, which trips the child clause first;
+    // it is dropped for this test so the receipt clause is the only one that can fire, and restored from src/triggers.ts.
+    const scope = invoiceTypeTriggerStatements().find((s) =>
+      s.startsWith("CREATE TRIGGER `advance_receipts_scope_insert`"),
+    );
+    expect(scope).toBeDefined();
+    const installed = await triggerSql("advance_receipts_scope_insert");
+    expect(installed).toBe(scope?.replace(/;$/, ""));
+    const p = await proforma({ viewed: true });
+    const unrelated = await mkIssued(p.clientId, { type: "tax_invoice" }); // not made from the proforma: no child
+    await run("DROP TRIGGER `advance_receipts_scope_insert`");
+    try {
+      await run(
+        "INSERT INTO advance_receipts (id, proforma_id, invoice_id, client_id, currency, amount_minor, received_on, reference_norm, created_by) VALUES (?1, ?2, ?3, ?4, 'INR', 1000, '2026-10-28', ?5, ?6)",
+        uuidv7(),
+        p.id,
+        unrelated,
+        p.clientId,
+        `REF-${uuidv7().slice(-8)}`,
+        p.owner,
+      );
+    } finally {
+      await run(scope as string);
+    }
+    expect(await triggerSql("advance_receipts_scope_insert")).toBe(installed);
+    expect((await all("SELECT id FROM documents WHERE parent_id = ?", p.id)).length).toBe(0);
+    expect(
+      await first("SELECT status, paid_minor, credited_minor FROM documents WHERE id = ?", p.id),
+    ).toMatchObject({ status: "issued", paid_minor: 0, credited_minor: 0 });
+    await rejects(voidDoc(p.id), /documents_proforma_withdraw/);
     expect(await status(p.id)).toBe("issued");
   });
   it("an unviewed, unsent, unpaid proforma is still voided (the void route's case)", async () => {

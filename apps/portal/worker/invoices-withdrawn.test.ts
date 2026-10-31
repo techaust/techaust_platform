@@ -7,9 +7,19 @@ import { uuidv7 } from "@techaust/core";
 import { issueDateOf } from "@techaust/core/invoices";
 import { describe, expect, it, vi } from "vitest";
 import { type FxContact, fixtures } from "./fixtures.ts";
+import { isWithdrawnRow } from "./invoice-summary.ts";
 import { attemptsRow, bodyOf, call, nextIp, one, sessionFor } from "./test-helpers.ts";
 
 const REASON = "Owner reason text never shown";
+/** The frozen issuer's bank block (sample values): a live proforma shows it; a withdrawn one never does (Q3 A, early check A2). */
+const BANK = {
+  accountName: "Sample Account",
+  accountNo: "000111222333",
+  ifsc: "SMPL0000001",
+  bankName: "Sample Bank",
+  branch: null,
+};
+const ISSUER = JSON.stringify({ company: { tradeName: "TecHaust" }, bank: { inr: BANK, swift: null } });
 let seq = 0;
 let staffId: string | null = null;
 
@@ -37,9 +47,9 @@ async function proforma(
   const key = `docs/proforma/2026-27/${n}-v1.pdf`;
   await env.DOCS.put(key, "%PDF-1.4 proforma with bank details");
   await env.DB.prepare(
-    "INSERT INTO documents (id, type, status, client_id, currency, frozen_at, series, fy, number, number_display, issue_date, due_date, subtotal_minor, taxable_minor, total_minor, balance_minor, pdf_r2_key) VALUES (?1, 'proforma', 'issued', ?2, 'INR', 1000, 'proforma-w', '2627', ?3, ?4, '2026-11-05', '2026-11-20', 100000, 100000, 118000, 118000, ?5)",
+    "INSERT INTO documents (id, type, status, client_id, currency, frozen_at, series, fy, number, number_display, issue_date, due_date, subtotal_minor, taxable_minor, total_minor, balance_minor, pdf_r2_key, issuer) VALUES (?1, 'proforma', 'issued', ?2, 'INR', 1000, 'proforma-w', '2627', ?3, ?4, '2026-11-05', '2026-11-20', 100000, 100000, 118000, 118000, ?5, ?6)",
   )
-    .bind(id, orgId, n, `TH/PF/${n}`, key)
+    .bind(id, orgId, n, `TH/PF/${n}`, key, ISSUER)
     .run();
   const delivered = o.delivered ?? "emailed";
   if (delivered === "viewed")
@@ -179,7 +189,7 @@ describe("what the client sees [ADM-INV-10, POR-06, Q3]", () => {
     expect(live).toMatchObject({ status: "issued", withdrawnOn: null, balanceMinor: 118000 });
   });
 
-  it("the page: withdrawn, no balance, due date or PDF, never the reason; reading it writes no view", async () => {
+  it("the page: withdrawn, no balance, due date, bank details or PDF, never the reason; reading it writes no view", async () => {
     const f = await fixtures();
     const s = await sessionFor(f.a.finance);
     const pf = await proforma(f.a.id, { delivered: "emailed" });
@@ -194,10 +204,23 @@ describe("what the client sees [ADM-INV-10, POR-06, Q3]", () => {
       balanceMinor: null,
       balance: null,
       dueDate: null,
+      bank: null,
       pdfReady: false,
     });
     expect(JSON.stringify(body)).not.toContain(REASON);
+    expect(JSON.stringify(body)).not.toContain(BANK.accountNo);
     expect(await viewedAt(pf.id)).toBeNull();
+  });
+
+  it("a live proforma still shows its frozen bank details, signed in and through the link (only a withdrawn one hides them)", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.a.finance);
+    const live = await proforma(f.a.id, { delivered: "emailed", voided: false });
+    const page = await bodyOf(await call(`/invoices/${live.id}`, { cookie: s.cookie }));
+    expect(page.document).toMatchObject({ status: "issued", bank: { inr: BANK } });
+    const viaLink = await call("/t/document", { body: { token: await link(f.a.finance, live.id) } });
+    expect(viaLink.status).toBe(200);
+    expect((await bodyOf(viaLink)).document).toMatchObject({ status: "issued", bank: { inr: BANK } });
   });
 
   it("the emailed link: 200 with the withdrawn page, no failure counted, no view written", async () => {
@@ -212,10 +235,22 @@ describe("what the client sees [ADM-INV-10, POR-06, Q3]", () => {
       status: "withdrawn",
       balanceMinor: null,
       dueDate: null,
+      bank: null,
       pdfReady: false,
     });
     expect(JSON.stringify(body)).not.toContain(REASON);
+    expect(JSON.stringify(body)).not.toContain(BANK.accountNo);
     expect(await attemptsRow(await portalFailKey(env.PORTAL_KEY_PEPPER, ip))).toBeNull();
     expect(await viewedAt(pf.id)).toBeNull();
+  });
+});
+
+describe("isWithdrawnRow [ADM-INV-10, early check B2]", () => {
+  it("is a void proforma only: a void row of another type, or a live proforma, never reads as withdrawn", () => {
+    expect(isWithdrawnRow({ type: "proforma", status: "void" })).toBe(true);
+    for (const type of ["tax_invoice", "export_invoice", "credit_note", "debit_note"])
+      expect(isWithdrawnRow({ type, status: "void" }), type).toBe(false);
+    for (const status of ["issued", "sent", "converted", "paid"])
+      expect(isWithdrawnRow({ type: "proforma", status }), status).toBe(false);
   });
 });
