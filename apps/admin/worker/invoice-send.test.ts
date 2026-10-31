@@ -3,6 +3,7 @@ import { env } from "cloudflare:workers";
 import { toIsoDate, toIst } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import { describe, expect, it, vi } from "vitest";
+import { cancelUnlinkedSendsSql } from "./invoice-send.ts";
 import { insert, mkClient, mkContact } from "./test-clients.ts";
 import { call, captureQueue, one, rows, sessionFor } from "./test-helpers.ts";
 import {
@@ -435,6 +436,21 @@ describe("revoking the links [POR-06, LD60]", () => {
     expect((await call(`/invoices/${uuidv7()}/links/revoke`, { cookie: s.cookie, body: {} })).status).toBe(
       404,
     );
+  });
+
+  it("the cancel's link lookup names the document, so it SEARCHes doc_access_tokens by its document index, never a SCAN (test-hardening item 5)", async () => {
+    const plan = (
+      await rows<{ detail: string }>(
+        `EXPLAIN QUERY PLAN ${cancelUnlinkedSendsSql("EXISTS (SELECT 1 FROM audit_log WHERE id = ?3)")}`,
+        "doc-x",
+        1,
+        "audit-x",
+      )
+    )
+      .map((r) => r.detail)
+      .join("\n");
+    expect(plan).not.toMatch(/SCAN (t|doc_access_tokens)\b/);
+    expect(plan).toMatch(/SEARCH t USING (COVERING )?INDEX doc_access_tokens_document/);
   });
 
   it("a draft has nothing to revoke (409 not_issued); Sales may not", async () => {
