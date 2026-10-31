@@ -720,7 +720,9 @@ export const leads = new Hono<AppEnv>()
         return err(c, BAD_REQUEST, 400);
     }
 
-    const t = Date.now();
+    // Strictly after the version this save was made from (as `document-write.ts`): a save in the same millisecond as the row's last write, or on a clock behind
+    // it, would otherwise keep (or move back) `updated_at`, and a second save from the same stale page would pass the check too.
+    const t = Math.max(Date.now(), f.expectedUpdatedAt + 1);
     const sets = changes.map(([, col], i) => `${col} = ?${i + 4}`);
     const ref = lead.ref as string;
     const done = await mutate(c, {

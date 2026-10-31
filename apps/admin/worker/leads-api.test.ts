@@ -799,6 +799,32 @@ describe("PATCH /leads/:id [ADM-LEAD-03]", () => {
     }
   });
 
+  it("two saves from the same page in the SAME millisecond as the lead's last write: the first moves updated_at past it, the second is 409 (test-hardening E)", async () => {
+    const s = await sessionFor("owner");
+    const lead = await addLead({ contact_phone: "+91 1" });
+    try {
+      // the clock reads the stored `updated_at` itself for both saves (or a clock behind it)
+      vi.useFakeTimers({ toFake: ["Date"], now: lead.updated_at });
+      const a = await send(
+        `/leads/${lead.id}`,
+        "PATCH",
+        { expectedUpdatedAt: lead.updated_at, phone: "+91 3" },
+        s.cookie,
+      );
+      expect(await json(a)).toMatchObject({ ok: true, changed: true, updatedAt: lead.updated_at + 1 });
+      const b = await send(
+        `/leads/${lead.id}`,
+        "PATCH",
+        { expectedUpdatedAt: lead.updated_at, phone: "+91 4" },
+        s.cookie,
+      );
+      expect(b.status).toBe(409);
+      expect((await json(b)).error.code).toBe("stale_version");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("an owner must be an active member who can read leads (not an accountant)", async () => {
     const s = await sessionFor("owner");
     const acc = await sessionFor("accountant");

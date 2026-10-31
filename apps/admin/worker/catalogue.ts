@@ -508,7 +508,8 @@ export const catalogue = new Hono<AppEnv>()
       defaultLines: f.defaultLines === undefined ? jsonOr(row.default_lines) : f.defaultLines,
     };
     const history = priceChanges(pricedOf(row), after);
-    const t = Date.now();
+    // Strictly after the version this save was made from (as `document-write.ts`), so a second save from the same stale page is 409 even in the same millisecond (test-hardening E).
+    const t = Math.max(Date.now(), f.expectedUpdatedAt + 1);
     const actorId = actor(c).id;
     let done: boolean;
     try {
