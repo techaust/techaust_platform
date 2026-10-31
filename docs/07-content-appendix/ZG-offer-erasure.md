@@ -1,6 +1,6 @@
 # 07-ZG: erasing a person's details from never-accepted offers (T7)
 
-Status: **DRAFT, waiting for the owner** (2026-10-31). Until a line is approved, the code shows "[Placeholder]" in its place. Change a line here first, then in the code. Lines in `{braces}` are filled in by the screen. All three lines are staff-facing (admin only); the portal gets no new wording, because an erased offer simply disappears from it.
+Status: **APPROVED by the owner, 2026-10-31** (all three lines as drafted). Change a line here first, then in the code. Lines in `{braces}` are filled in by the screen. All three lines are staff-facing (admin only); the portal gets no new wording, because an erased offer simply disappears from it.
 
 Context: when you anonymise a person (Clients › contact › Erase or anonymise), every proposal or estimate that was sent to them but **never accepted** loses their name, email and address, and its PDF is deleted (08-C RB-37(a)). The number, status, dates and amounts stay. Accepted offers and every invoice stay exactly as they are.
 

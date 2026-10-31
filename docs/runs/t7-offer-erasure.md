@@ -1,11 +1,11 @@
 # Run: T7, erase a person's data in the frozen copies of never-accepted offers
-Status: WAITING ON OWNER (Q1, 07-ZG lines 1–3); builder running on the recommended answers
+Status: builder running (started 13:25 IST, branch fix/t7-offer-erasure-b1); owner answered Q1 and 07-ZG (2026-10-31)
 Tier: A (deleting or anonymising data; docs/14 §2)
 Usage: lead claude-opus-5-5/high (cloud session t7-erasure); analyst claude-opus-5-5/high (brief draft; skills: tried `cloudflare:workers-best-practices` and `cloudflare:wrangler`, both "Unknown skill" in the cloud session although model-audit lists them; 5-h 8 % at 12:58 IST, no newer reading)
 
 **Task (main session, 2026-10-31):** 08-C RB-37(a), settled by the lead on the safest reading (2026-10-30, [settle-08c](settle-08c.md)): on an erasure request, erase the person's data in the frozen copy of every proposal or estimate that was **never accepted**; keep the number, status, dates and hash. Accepted offers and every invoice-family document stay untouched (financial records). Due before 13 May 2027 (DPDP core duties).
 
-Branch `feat/t7-offer-erasure` from `main` 8d5b958. Copy file: [07-ZG](../07-content-appendix/ZG-offer-erasure.md) (3 lines, draft). Merges fourth (T12 → T6 → proforma withdraw → **T7** → M6.1).
+Branch `feat/t7-offer-erasure` from `main` 8d5b958. Copy file: [07-ZG](../07-content-appendix/ZG-offer-erasure.md) (3 lines, approved by the owner 2026-10-31). Merges fourth (T12 → T6 → proforma withdraw → **T7** → M6.1).
 
 ## Questions for the owner
 **Q1. An offer that is still open when the person it is addressed to asks to be erased.** Once their details are erased from an offer it can't safely be accepted any more: the acceptance is proved against the PDF, and the PDF is deleted. At a business client, other people at the company may also have the offer by email. Today a sent offer stays open until a new version replaces it (your rule of 2026-10-25); this would be the one exception.
@@ -15,7 +15,7 @@ Branch `feat/t7-offer-erasure` from `main` 8d5b958. Copy file: [07-ZG](../07-con
 
 **Copy 07-ZG lines 1–3** (staff-facing; [07-ZG](../07-content-appendix/ZG-offer-erasure.md)): approve as written (Recommended), or change a line.
 
-The builder builds Q1 = A meanwhile (B would be a smaller change; C would be a new task). The new lines show "[Placeholder]" until approved.
+**Owner's answers (2026-10-31, through the main session):** Q1 **A** (an open offer is withdrawn at once when its addressee is anonymised: hidden from the portal for everyone, accept and decline refused, it still expires on its date). 07-ZG lines 1–3 **approved as written**; the code uses the real text (builder told at once).
 
 ## Brief
 Final version by the lead from the analyst's draft (2026-10-31). Lead changes to the draft are marked **(lead)**.
@@ -58,7 +58,7 @@ AND ( json_extract(d.recipient,'$.contactId') = c.id OR lower(json_extract(d.rec
 
 Kept in every scope: `country`, `clientType`, `gstStatus`, `stateCode`, `contactId`.
 
-**Open offers (Q1 = A until the owner answers):** redaction withdraws the offer for everyone: the portal hides it; accept and decline are refused (SQL and trigger); its not-yet-queued sends are cancelled; if it is the newest frozen version of its group, the group's live offer links are revoked; its status is unchanged, so the expiry job still moves it to `expired` and a revision still moves it to `revised`.
+**Open offers (Q1 = A, owner, 2026-10-31):** redaction withdraws the offer for everyone: the portal hides it; accept and decline are refused (SQL and trigger); its not-yet-queued sends are cancelled; if it is the newest frozen version of its group, the group's live offer links are revoked; its status is unchanged, so the expiry job still moves it to `expired` and a revision still moves it to `revised`.
 
 ### 2. How the write is made (no read-then-write race)
 - D1 has no regex and SQLite can't express the Unicode whole-word boundary, so the **Worker computes** the redacted values from one read, then runs the existing audit-first anonymise batch.
@@ -103,7 +103,7 @@ Never edit an applied migration; never rebuild a referenced table (`scripts/chec
 ### 8. Afterwards
 - **Export:** the contact is anonymised, so 409 `contact_anonymised` as today; another contact's export never shows the redacted rows' old values.
 - **Admin document GET** (`document-view.ts`): adds `redactedAt`; `pdfOf` gains the state `"erased"`; the stored values are already redacted.
-- **PDF routes** (`document-pdf.ts`, `pdfRowSql` gains `redacted_at`): GET 410 `pdf_erased`, retry 409 `pdf_erased` (message 07-ZG line 2, "[Placeholder]" until approved).
+- **PDF routes** (`document-pdf.ts`, `pdfRowSql` gains `redacted_at`): GET 410 `pdf_erased`, retry 409 `pdf_erased` (message 07-ZG line 2).
 - **Resend** (`document-links.ts`): adds `AND d.redacted_at IS NULL`; a redacted offer answers 409 `not_resendable` (existing copy). Revoke links still works.
 - **Revise:** allowed; the new version copies the redacted text, and the anonymised contact blocks sending until another contact is chosen (existing `contactGone`).
 - **Portal** (`apps/portal/worker/offer-sql.ts`): `d.redacted_at IS NULL` in `LIST_SQL`, `DOC_SQL`, `KEYS_SQL`, `VIEW_SQL`, `PRE_SQL`, `REREAD_SQL`, `ACCEPT_INSERT_SQL`, `DECLINE_UPDATE_SQL`: a redacted offer is a 404. A link to v1 whose newest version v2 was redacted answers "superseded", then v2 is 404 (kept).
@@ -117,7 +117,7 @@ Never edit an applied migration; never rebuild a referenced table (`scripts/chec
 - `apps/admin/worker`: `clients.ts`, new `offer-redaction.ts` (read and plan statements, exported SQL for EXPLAIN tests), `document-view.ts`, `document-pdf.ts`, `document-links.ts`, `files.ts`;
 - `apps/portal/worker/offer-sql.ts`;
 - `apps/jobs/src/pdf.ts`;
-- every new user-facing string (07-ZG 1–3) is `"[Placeholder]"` until the owner approves.
+- every new user-facing string uses the approved 07-ZG text word for word.
 
 **Tier A stop point:** all of the above committed, tested and pushed; then the analyst's early check before any screen.
 
@@ -153,6 +153,8 @@ Accepted offers and the invoice family; serving an anonymised client's accepted-
 ## Integration notes
 
 ## Lead decisions (for 13)
+- 2026-10-31, **Owner** (T7 Q1): when a never-accepted open offer's addressee is anonymised, the offer is withdrawn at once: hidden from the portal for everyone, accept and decline refused, it still expires on its date; the one exception to "a sent offer stays open until the next version" (2026-10-25). Applied: `apps/portal/worker/offer-sql.ts`, trigger `acceptances_redacted`, `apps/admin/worker/clients.ts`.
+- 2026-10-31, **Owner**: 07-ZG lines 1–3 approved word for word ([07-ZG](../07-content-appendix/ZG-offer-erasure.md)).
 - 2026-10-31, Lead (analyst's draft): T7 design L1–L8 above (per-version scope; what is kept and erased; "Anonymised client" by whole words, values under 2 characters skipped; erase eligibility unchanged, redaction in anonymise mode; cap 10 offers per request; no backfill; never-accepted offers' PDFs deleted; RB-37(a) supersedes the 2026-10-26 "stored snapshot untouched" rows for never-accepted offers only).
 
 ## Follow-ups (for 12)
