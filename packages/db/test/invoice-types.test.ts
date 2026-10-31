@@ -900,7 +900,8 @@ describe("the tax invoice for money received [Q9, LD22; Researched 2026-10-28, s
         "UPDATE documents SET status = 'void', voided_at = 1, void_reason = 'x' WHERE id = ?",
         a.documentId,
       ),
-      /documents_invoice_status_flow|documents_void_pairing/,
+      // M6.1 (L17): the paid invoice carries the advance's allocation, which `documents_void_no_payment` (0057) refuses as well
+      /documents_invoice_status_flow|documents_void_pairing|documents_void_no_payment/,
     );
   });
 });
@@ -1290,5 +1291,111 @@ describe("PROFORMA_TAX_INVOICE_DUE_SQL [ADM-INV-10]", () => {
     );
     expect(next.map((r) => r.milestone_id)[0]).toBe(later);
     expect(page.length).toBeLessThanOrEqual(50);
+  });
+});
+
+describe("M6.1: the advance batch writes the money onto the ledger [L4, L5; 08-C RA-17]", () => {
+  it("a new confirmed payment pay_<receipt> and its allocation pal_<receipt> onto the new invoice; the recompute makes it paid", async () => {
+    const w = await world();
+    const a = await advanceArgs(w, { mode: "upi" }, 59_000);
+    await runAdvance(a);
+    expect(
+      await first(
+        "SELECT id, client_id, kind, status, amount_minor, received_on, mode, reference_norm, advance_receipt_id, recorded_by, verified_by FROM payments WHERE advance_receipt_id = ?",
+        a.receiptId,
+      ),
+    ).toEqual({
+      id: `pay_${a.receiptId}`,
+      client_id: w.clientId,
+      kind: "payment",
+      status: "confirmed",
+      amount_minor: 59_000,
+      received_on: "2026-10-27",
+      mode: "upi",
+      reference_norm: a.referenceNorm,
+      advance_receipt_id: a.receiptId,
+      recorded_by: w.ownerId,
+      verified_by: w.ownerId,
+    });
+    expect(
+      await all(
+        "SELECT id, document_id, amount_minor, kind FROM payment_allocations WHERE payment_id = ?",
+        `pay_${a.receiptId}`,
+      ),
+    ).toEqual([
+      { id: `pal_${a.receiptId}`, document_id: a.documentId, amount_minor: 59_000, kind: "allocate" },
+    ]);
+    expect(
+      await first(
+        "SELECT status, paid_minor, tds_minor, balance_minor FROM documents WHERE id = ?",
+        a.documentId,
+      ),
+    ).toEqual({ status: "paid", paid_minor: 59_000, tds_minor: 0, balance_minor: 0 });
+    // the proforma's paid amount stays as M5.2 writes it (never recomputed: no allocation can name a proforma)
+    expect(await proformaState(w.proformaId)).toMatchObject({
+      status: "converted",
+      paid_minor: 59_000,
+      balance_minor: 59_000,
+    });
+  });
+
+  it("a pending payment Staff recorded against the proforma is confirmed by the batch, linked to the receipt, and its approval approved", async () => {
+    const w = await world();
+    const staff = uuidv7();
+    await run(
+      "INSERT INTO staff_users (id, email, name, role, status) VALUES (?1, ?2, 'Staff', 'staff', 'active')",
+      staff,
+      `${staff}@example.com`,
+    );
+    const pid = uuidv7();
+    await run(
+      "INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, requested_allocations, recorded_by, recorded_at) VALUES (?1, ?2, 'payment', 'manual', 'pending_verification', 'INR', 59000, '2026-10-27', 'neft', ?3, ?4, 1)",
+      pid,
+      w.clientId,
+      JSON.stringify([{ documentId: w.proformaId, amountMinor: 59_000 }]),
+      staff,
+    );
+    await run(
+      "INSERT INTO approvals (id, kind, payment_id, requested_by, content_sha256) VALUES (?1, 'payment_verify', ?2, ?3, 'h')",
+      uuidv7(),
+      pid,
+      staff,
+    );
+    // the proforma cannot be voided while the payment waits for it (L17)
+    await rejects(
+      run(
+        "UPDATE documents SET status = 'void', voided_at = 1, void_reason = 'x' WHERE id = ?",
+        w.proformaId,
+      ),
+      /documents_void_no_payment/,
+    );
+    // not the payment's amount: the payment stays pending, the allocation is refused, nothing is written
+    const wrong = await advanceArgs(w, { paymentId: pid }, 50_000);
+    await rejects(runAdvance(wrong), /payment_allocations_bounds/);
+    expect(await first("SELECT status FROM payments WHERE id = ?", pid)).toEqual({
+      status: "pending_verification",
+    });
+    expect(await first("SELECT id FROM documents WHERE id = ?", wrong.documentId)).toBeNull();
+    const a = await advanceArgs(w, { paymentId: pid }, 59_000);
+    await runAdvance(a);
+    expect(
+      await first("SELECT status, verified_by, advance_receipt_id, mode FROM payments WHERE id = ?", pid),
+    ).toEqual({
+      status: "confirmed",
+      verified_by: w.ownerId,
+      advance_receipt_id: a.receiptId,
+      mode: "neft",
+    });
+    expect(await first("SELECT status, decided_by FROM approvals WHERE payment_id = ?", pid)).toEqual({
+      status: "approved",
+      decided_by: w.ownerId,
+    });
+    expect(
+      await all("SELECT document_id, amount_minor FROM payment_allocations WHERE payment_id = ?", pid),
+    ).toEqual([{ document_id: a.documentId, amount_minor: 59_000 }]);
+    expect(await first("SELECT status, balance_minor FROM documents WHERE id = ?", a.documentId)).toEqual({
+      status: "paid",
+      balance_minor: 0,
+    });
   });
 });

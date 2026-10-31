@@ -38,6 +38,10 @@ const MONEY_FILES = [
   "src/documents.ts",
   "src/invoices.ts",
   "src/notes.ts",
+  // M6.1: the ledger, the payment providers and the payment bodies
+  "src/ledger.ts",
+  "src/payments.ts",
+  "src/schemas/payments.ts",
   "src/export-invoice.ts",
   "src/fx.ts",
   "src/schedule-text.ts",

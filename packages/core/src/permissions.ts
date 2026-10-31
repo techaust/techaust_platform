@@ -105,10 +105,21 @@ const MATRIX = {
   // M5.4 (Q43, LD58; Researched 2026-10-28, s.31(5) CGST Act (08-C RA-24)): turning on the automatic issue of a client's monthly care invoice lets the system issue invoices WITHOUT the Owner each month, so only the Owner
   // may, with a fresh code (turning it off is `clients.finance.write`: Staff may). A new docs/04 §9 row.
   "clients.careAutoIssue": { owner: "step-up" },
-  // Manual payments (Staff entries wait for the Owner's verification)
+  // Manual payments (Staff entries wait for the Owner's verification). Owner's decision (2026-10-31, M6.1 Q2): recording or confirming a payment needs a fresh
+  // authenticator code (one code covers the next few minutes, so a batch of confirmations needs one).
   "payments.read": { owner: "allow", staff: "allow", accountant: "allow" },
-  "payments.record": { owner: "allow", staff: "approval" },
-  "payments.verify": { owner: "allow" },
+  "payments.record": { owner: "step-up", staff: "approval" },
+  "payments.verify": { owner: "step-up" },
+  // M6.1 (L7, L13; ADM-PAY-06): withdrawing a confirmed entry made in error, and using a client's credit on an invoice (or moving an invoice's excess to credit),
+  // move money after confirmation, like a void: the Owner only, with a fresh code. New docs/04 §9 rows.
+  "payments.withdraw": { owner: "step-up" },
+  "payments.applyCredit": { owner: "step-up" },
+  // M6.1 (L11; ADM-INV-17): a payment's proof file or its TDS certificate number is added once, later, by the Owner or Staff (it moves no money). OPEN (08-C RB-05):
+  // see the register row for which proof of a receipt is needed; the proof's type is free text plus the file. A new docs/04 §9 row.
+  "payments.attachProof": { owner: "allow", staff: "allow" },
+  // M6.1 (L14, Q60): recording the AD bank's extension of an export's realisation date (Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-04): the AD
+  // bank extends; Rule 96A(1)(b) CGST Rules (08-C RA-20): the GST date follows): the Owner only. A new docs/04 §9 row.
+  "realisation.extend": { owner: "allow" },
   // Refunds
   "refunds.read": { owner: "allow", accountant: "allow" },
   "refunds.issue": { owner: "step-up" },

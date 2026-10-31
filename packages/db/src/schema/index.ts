@@ -7,4 +7,5 @@ export * from "./crm.ts";
 export * from "./documents.ts";
 export * from "./email.ts";
 export * from "./identity.ts";
+export * from "./payments.ts";
 export * from "./settings.ts";

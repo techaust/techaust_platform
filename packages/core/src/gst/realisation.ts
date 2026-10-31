@@ -89,6 +89,13 @@ export type RealisationInput = {
   readonly supplyType: SupplyType;
   /** The FEMA due date as extended by the bank or RBI, if any: it replaces the computed one. */
   readonly extension?: { readonly femaDue?: CalendarDate } | undefined;
+  /**
+   * M6.1 (Q60, L14): the latest day the AD bank extended the realisation period to (`realisation_extensions.extended_to`, the latest one). The FEMA date becomes
+   * the later of the standard date and this day (an extension never shortens the period), and the GST date follows it (Researched 2026-10-28, FEMA 23(R)/2026-RB
+   * Reg. 5(1) (08-C RB-04): the AD bank extends; Rule 96A(1)(b) CGST Rules (08-C RA-20): the FEMA period with any extension, whichever is later). The SQL twin is
+   * `femaDueSql` in `@techaust/db/realisation`.
+   */
+  readonly extendedTo?: CalendarDate | undefined;
 };
 
 export type RealisationDates = { readonly femaDue: CalendarDate; readonly gstDue: CalendarDate };
@@ -111,13 +118,19 @@ const issuesOf = (
   if (!isValidDate(input.invoiceDate)) out.push(issue("date_invalid", ...path));
   const extended = input.extension?.femaDue;
   if (extended !== undefined && !isValidDate(extended)) out.push(issue("date_invalid", ...path, "extension"));
+  if (input.extendedTo !== undefined && !isValidDate(input.extendedTo))
+    out.push(issue("date_invalid", ...path, "extendedTo"));
   return out;
 };
 
 /** The due dates, with the input and the rules already checked (a caller that has not checked them uses `realisationDates`). */
 export function dueDatesOf(input: RealisationInput, rules: RealisationRules): RealisationDates {
   const femaMonths = input.currency === "INR" ? rules.femaMonthsInr : rules.femaMonthsForeign;
-  const femaDue = input.extension?.femaDue ?? addMonthsClamped(input.invoiceDate, femaMonths);
+  const standard = input.extension?.femaDue ?? addMonthsClamped(input.invoiceDate, femaMonths);
+  const femaDue =
+    input.extendedTo !== undefined && compareDates(input.extendedTo, standard) > 0
+      ? input.extendedTo
+      : standard;
   const gstBase = addMonthsClamped(input.invoiceDate, rules.gstMonths);
   const later = compareDates(gstBase, femaDue) >= 0 ? gstBase : femaDue;
   return { femaDue, gstDue: addDays(later, rules.gstExtraDays) };

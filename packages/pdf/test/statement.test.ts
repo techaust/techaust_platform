@@ -145,15 +145,15 @@ describe("statementViewSha256", () => {
   });
 
   it("the layout id is part of the hash: the same view under another layout id would be another object", async () => {
-    expect(STATEMENT_LAYOUT_ID).toBe("statement-1");
+    expect(STATEMENT_LAYOUT_ID).toBe("statement-2");
     const v = statementView(input());
     const content = v;
     const { canonicalJson, sha256Hex } = await import("../src/hash.ts");
     expect(await statementViewSha256(v)).toBe(
-      await sha256Hex(canonicalJson({ layout: "statement-1", ...content })),
+      await sha256Hex(canonicalJson({ layout: "statement-2", ...content })),
     );
     expect(await statementViewSha256(v)).not.toBe(
-      await sha256Hex(canonicalJson({ layout: "statement-2", ...content })),
+      await sha256Hex(canonicalJson({ layout: "statement-1", ...content })),
     );
   });
 });

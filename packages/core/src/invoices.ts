@@ -11,6 +11,7 @@ import { addDays, fyOf, istDate, parseIsoDate, toIsoDate } from "./dates.ts";
 import { type ExportRoute, type Lut, lutFor } from "./export-invoice.ts";
 import { fxDateVerdict } from "./fx.ts";
 import { canonicalJson, sha256Hex } from "./hash.ts";
+import { LEDGER_STATUSES } from "./ledger.ts";
 import type { NoteOf } from "./notes.ts";
 import type { Series } from "./numbering.ts";
 
@@ -55,14 +56,8 @@ export const INVOICE_SERIES_OF: Readonly<Record<InvoiceFlowType, Series>> = {
   debit_note: "debitNote",
 };
 
-/** The statuses of an issued document that the ledger (M5.3, M6) moves between. */
-export const LEDGER_STATUSES = [
-  "issued",
-  "partially_paid",
-  "paid",
-  "partially_credited",
-  "credited",
-] as const;
+/** The statuses of an issued document that the ledger (M5.3, M6) moves between: one list, in `ledger.ts` (M6.1), re-exported here. */
+export { LEDGER_STATUSES };
 
 // ---- the status flow ---------------------------------------------------------------------------------------------------------------
 
@@ -496,6 +491,9 @@ export const VOID_BLOCKER_CODES = [
   "already_emailed",
   "viewed_by_client",
   "return_period_closed",
+  // M6.1 (L17): a payment waits for the Owner's check against it, or a payment was ever put on it; TDS is recorded on it.
+  "payment_pending",
+  "tds_recorded",
 ] as const;
 export type VoidBlockerCode = (typeof VOID_BLOCKER_CODES)[number];
 
@@ -516,6 +514,13 @@ export type VoidFacts = {
   readonly today: string;
   /** M5.2 (LD28): a proforma is not a tax document, so the month rule of Q23 does not apply to it (OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?). Absent: any other type. */
   readonly type?: string;
+  /**
+   * M6.1 (L17; the twin of the trigger `documents_void_no_payment` and of the void statement's WHERE): TDS recorded on the document (`documents.tds_minor`).
+   * Optional only so the M5 callers compile until the finance routes pass it (stage B2); absent counts as none.
+   */
+  readonly tdsMinor?: number;
+  /** M6.1 (L17): a payment that was not rejected asks for this document (`payments.requested_allocations`), or an allocation row names it (even one released since). */
+  readonly paymentPending?: boolean;
 };
 
 /**
@@ -533,6 +538,8 @@ export function voidBlockers(f: VoidFacts): VoidBlockerCode[] {
   if (!(LEDGER_STATUSES as readonly string[]).includes(f.status)) out.push("not_issued");
   if (f.paidMinor > 0) out.push("has_payment");
   if (f.creditedMinor > 0) out.push("has_credit");
+  if (f.paymentPending === true) out.push("payment_pending");
+  if ((f.tdsMinor ?? 0) > 0) out.push("tds_recorded");
   if (f.hasIssuedChild) out.push("has_child_document");
   if (f.emailed) out.push("already_emailed");
   if (f.viewed) out.push("viewed_by_client");
