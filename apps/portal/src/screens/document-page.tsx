@@ -2,6 +2,7 @@
 // expired, a new version is on its way, it was opened from an email link), then the document beside a short summary that stays in
 // view on wide screens (status, total, validity, the next step, the PDF and the contents). On phones everything is one column: the
 // summary, then the document, then the acceptance block at its end.
+import { offerExpiredNotice } from "@techaust/core/offers";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import type { PdfView } from "../api.ts";
@@ -119,7 +120,7 @@ export function DocumentPage(
           {m.status === "expired" && (
             <div className="notice notice--warning" role="note">
               <Alert size={20} />
-              <div>{N.expired(kind, m.validUntil)}</div>
+              <div>{offerExpiredNotice(m.kind, m.validUntilDate)}</div>
             </div>
           )}
           {m.status === "revised" && (

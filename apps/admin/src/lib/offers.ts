@@ -3,9 +3,20 @@
 // the API's (apps/admin/worker/document-offer.ts `OfferSection`, document-links.ts, document-start.ts); the words are 07-N §3, §6 and §7
 // (approved with 07-Q) and, where 07-N had no line, `OFFER_PENDING` (its 07-Q words, no tag).
 // Pure, so the copy and the rules are tested without a browser. Money is formatted only, never worked out.
+// T6 (07-ZE lines 1, 3, 4 and 5, approved 2026-10-31): the preview's "(IST)", version line and closing line, and the staff reply to an acceptance
+// by email, all from @techaust/core/offers (the words the email, the PDF and the portal use).
+import {
+  firstNameOf,
+  OFFER_EMAIL_CLOSING,
+  offerReplacesLine,
+  staffAcceptReply,
+  validityDateIst,
+} from "@techaust/core/offers";
 import { RequestError } from "../api.ts";
 import { docErrorText } from "./documents.ts";
+import type { DocumentView } from "./documents-api.ts";
 import { REASON_LABEL, reasonText } from "./offer-words.ts";
+import { PORTAL_ORIGIN } from "./portal-origin.ts";
 
 // ---- the API's shapes ----------------------------------------------------------------------------------------------------------
 
@@ -135,23 +146,58 @@ export const OFFER_COPY = {
 
 /**
  * The email as the dialog previews it: 07 §8 (subject, core sentence, "Review and accept", "Questions?") and 07-N §4 (the facts and the
- * PDF note), the same words packages/email sends (`offerSent`). The template is the source; a test keeps the two equal.
+ * PDF note), the same words packages/email sends (`offerSent`). The template is the source; a test keeps the two equal. T6 (07-ZE): the
+ * lead sentence and the "Valid until" value say "(IST)" (`validUntilValue`), version 2 onwards has the `replaces` paragraph right after the
+ * lead sentence (null for version 1), and `questions` is the 07-ZE line 4 closing line.
  */
 export const EMAIL_PREVIEW = {
   from: "TecHaust Technologies, hello@techaust.com",
   subject: (kind: string, title: string, number: string, version: number) =>
     `${kind === "estimate" ? "Estimate" : "Proposal"}: ${title} (${number} v${version})`,
-  lead: (kind: string, firstName: string, validUntil: string) =>
+  /** `validUntil` null (a draft without validity days) prints "…" without "(IST)". */
+  lead: (kind: string, firstName: string, validUntil: string | null) =>
     kind === "estimate"
-      ? `Hi ${firstName}, your estimate is ready. It covers the line items, price and payment terms, and it's valid until ${validUntil}.`
+      ? `Hi ${firstName}, your estimate is ready. It covers the line items, price and payment terms, and it's valid until ${validUntil ? validityDateIst(validUntil) : "…"}.`
       : // 07-Y item 14 (owner 2026-10-29)
-        `Hi ${firstName}, your proposal is ready, with the price and payment schedule. It's valid until ${validUntil}.`,
+        `Hi ${firstName}, your proposal is ready, with the price and payment schedule. It's valid until ${validUntil ? validityDateIst(validUntil) : "…"}.`,
+  /** 07-ZE line 3, the paragraph after the lead sentence; null for version 1. */
+  replaces: (version: number): string | null => offerReplacesLine(version),
   facts: { number: "Number", total: "Total", validUntil: "Valid until" },
+  /** 07-ZE line 1: the "Valid until" fact's value. */
+  validUntilValue: (validUntil: string): string => validityDateIst(validUntil),
   button: "Review and accept",
   attached: "The PDF is attached.",
   linked: "You can download the PDF from the same page.",
-  questions: "Questions? Just reply to this email.",
+  /** 07-ZE line 4 (it replaced "Questions? Just reply to this email."). */
+  questions: OFFER_EMAIL_CLOSING,
 } as const;
+
+// ---- the staff reply to an acceptance by email (07-ZE line 5; owner's Q2 answer, 2026-10-31) -------------------------------------
+
+/** The box's two labels, approved word for word by the owner (Q2: A, 2026-10-31). */
+export const STAFF_REPLY_COPY = {
+  heading: "Client accepted by email?",
+  copy: "Copy reply",
+} as const;
+
+/** The statuses whose version the box shows on: sent and still open, or past its last day (the reply's last sentence covers expiry). */
+const STAFF_REPLY_STATUSES: ReadonlySet<string> = new Set(["sent", "viewed", "expired"]);
+
+type StaffReplyDoc = Pick<DocumentView, "type" | "status" | "number" | "version" | "client" | "contact">;
+
+/**
+ * 07-ZE line 5 filled for a sent proposal or estimate: the addressed contact's first name, the number, the version and the portal of this
+ * environment (`__PORTAL_ORIGIN__`, scripts/website-origin.mjs). Null where the box isn't shown: a draft, an accepted, declined or replaced
+ * version, no number yet, an erased client or contact, or no contact name to greet. Researched 2026-10-31, Contract Act s.7(2) (08-C RB-35).
+ */
+export function staffReplyText(doc: StaffReplyDoc, portalOrigin: string = PORTAL_ORIGIN): string | null {
+  if (doc.type !== "proposal" && doc.type !== "estimate") return null;
+  if (!STAFF_REPLY_STATUSES.has(doc.status) || !doc.number) return null;
+  if (doc.client.anonymised || !doc.contact || doc.contact.anonymised) return null;
+  const firstName = firstNameOf(doc.contact.name);
+  if (firstName === "" || portalOrigin === "") return null;
+  return staffAcceptReply({ firstName, number: doc.number, version: doc.version, portalLink: portalOrigin });
+}
 
 /** The preview's PDF line for the switch's position (the send dialog always sends the switch, so this is the line that goes). */
 export const pdfNote = (attached: boolean): string =>

@@ -7,6 +7,7 @@
 // FX-3 (A4 1, 2, 8): once the form has been checked, each error follows the field as it changes (never on blur), so the
 // line can't vanish under the pointer between pressing and releasing Accept; the whole agreement row is the checkbox's
 // label (44 px); the number in the confirmation never breaks.
+import { offerExpiredNotice } from "@techaust/core/offers";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import type { OfferKind, OfferStatus } from "../../api.ts";
 import { N, NOTICES, WORDS } from "../../copy-documents.ts";
@@ -25,8 +26,10 @@ export type DecisionModel = {
   /** The grand total, as formatted on the document. */
   total: string;
   status: OfferStatus;
-  /** "06 Oct 2026". */
+  /** "06 Oct 2026 (IST)": the validity as the document shows it (07-ZE line 1). */
   validUntil: string;
+  /** "06 Oct 2026": the bare last valid day, for the expired notice, which adds its own "(IST)" (07-ZE line 2). */
+  validUntilDate: string;
   acceptance: { typedName: string; email: string; acceptedAt: number; fingerprint: string } | null;
   /** True when the person looking accepted it (signed in as that contact, or they just pressed Accept here). */
   acceptedByMe: boolean;
@@ -168,7 +171,7 @@ export function DecisionPanel(props: DecisionProps) {
     return (
       <div className="notice notice--warning" role="note">
         <Alert size={20} />
-        <div>{N.expired(kind, model.validUntil)}</div>
+        <div>{offerExpiredNotice(model.kind, model.validUntilDate)}</div>
       </div>
     );
   }

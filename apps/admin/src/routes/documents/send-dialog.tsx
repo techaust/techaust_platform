@@ -2,6 +2,9 @@
 // with portal access (billing contacts ticked; up to five; each gets their own email and link), the "Attach the PDF" switch that starts
 // from the client's setting as the document read resolves it (`attachPdfDefault`, so a role that can't read the client sees it too), and the message as it will go (07 §8 with 07-N §4). The first send also says what sending does (07-O §5)
 // and for how much to whom. The owner-approved preview's layout: the choices on the left, the message on the right (stacked when narrow).
+// T6 (07-ZE lines 1, 3 and 4): the preview follows packages/email `offerSent` paragraph for paragraph: "(IST)" on the validity, the version line
+// after the lead from version 2, and the closing line as an ordinary paragraph (it states how to accept, so it isn't stepped back).
+import { firstNameOf } from "@techaust/core/offers";
 import { type FormEvent, useEffect, useId, useState } from "react";
 import { Link } from "react-router";
 import { api, type ContactView, type Currency, RequestError } from "../../api.ts";
@@ -31,7 +34,7 @@ export function SendDialog(props: {
   /** "send": a draft's first send (it freezes the version); "resend": the latest sent version again. */
   mode: "send" | "resend";
   type: "proposal" | "estimate";
-  /** The number once sent (a v2+ draft carries its group's); null for a first draft (numbered at send). */
+  /** The group's number (a v2+ draft passes its sent predecessor's: its own is set only at send); null for a first draft (numbered at send). */
   number: string | null;
   title: string;
   version: number;
@@ -86,7 +89,7 @@ export function SendDialog(props: {
   // Nobody can receive it (no live contact with portal access): Send is off and the dialog says where to turn access on.
   const noneCan = loaded.state === "ready" && !choices.some((c) => c.portalAccess);
   const firstPicked = choices.find((c) => picked.has(c.id));
-  const firstName = firstPicked ? (firstPicked.name.trim().split(/\s+/)[0] ?? "") : "";
+  const firstName = firstPicked ? firstNameOf(firstPicked.name) : "";
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -122,6 +125,8 @@ export function SendDialog(props: {
     props.mode === "send" ? OFFER_COPY.sendTitle(numberOrTitle, props.version) : OFFER_PENDING.sendAgain;
   const subject = EMAIL_PREVIEW.subject(props.type, props.title, props.number ?? "…", props.version);
   const total = props.totalMinor !== null ? moneyText(props.totalMinor, props.currency) : null;
+  // 07-ZE line 3: from version 2, the paragraph the email puts right after its lead sentence (null for version 1).
+  const replaces = EMAIL_PREVIEW.replaces(props.version);
 
   return (
     <Modal open={props.open} title={title} onClose={props.onClose} busy={busy} wide>
@@ -230,7 +235,8 @@ export function SendDialog(props: {
             </div>
           </dl>
           <div className="sendd__body">
-            <p>{EMAIL_PREVIEW.lead(props.type, firstName || "…", props.validUntil ?? "…")}</p>
+            <p>{EMAIL_PREVIEW.lead(props.type, firstName || "…", props.validUntil ?? null)}</p>
+            {replaces && <p>{replaces}</p>}
             <dl className="sendd__facts">
               <div>
                 <dt>{EMAIL_PREVIEW.facts.number}</dt>
@@ -246,14 +252,14 @@ export function SendDialog(props: {
               )}
               <div>
                 <dt>{EMAIL_PREVIEW.facts.validUntil}</dt>
-                <dd>{props.validUntil ?? "…"}</dd>
+                <dd>{props.validUntil ? EMAIL_PREVIEW.validUntilValue(props.validUntil) : "…"}</dd>
               </div>
             </dl>
             <p>
               <span className="sendd__btn">{EMAIL_PREVIEW.button}</span>
             </p>
             <p>{pdfNote(attach)}</p>
-            <p className="muted">{EMAIL_PREVIEW.questions}</p>
+            <p>{EMAIL_PREVIEW.questions}</p>
           </div>
           <p className="hint">{OFFER_COPY.deliveryNote}</p>
         </section>

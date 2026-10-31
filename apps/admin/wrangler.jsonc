@@ -25,7 +25,10 @@
     "TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
     "TURNSTILE_HOSTNAMES": "localhost",
     // Mirrors the jobs Worker's LEAD_PURGE_MODE so the deletion view can say the clean-up is a dry run (only "live" deletes).
-    "LEAD_PURGE_MODE": "dry_run"
+    "LEAD_PURGE_MODE": "dry_run",
+    // The portal of this environment, for the staff reply to an acceptance by email (07-ZE line 5, T6); read at build time by vite.config.ts
+    // (scripts/website-origin.mjs `portalOriginForApp`) into the SPA as __PORTAL_ORIGIN__. An origin: no path, no trailing slash.
+    "PORTAL_ORIGIN": "http://localhost:5174"
   },
   // Login secrets (docs/05 §4): names only; values are set with `wrangler secret put` (docs/runbooks/access-staging.md).
   // TURNSTILE_SECRET is the secret of the widget above (local: `pnpm dev:secrets` writes the always-pass test secret).
@@ -86,7 +89,8 @@
         "PAYMENTS_LIVE_ALLOWED": "false",
         "TURNSTILE_SITE_KEY": "0x4AAAAAAFhrfYyx9bhG6lmt",
         "TURNSTILE_HOSTNAMES": "techaust-platform-admin-staging.techaust-technologies-153.workers.dev",
-        "LEAD_PURGE_MODE": "dry_run"
+        "LEAD_PURGE_MODE": "dry_run",
+        "PORTAL_ORIGIN": "https://techaust-platform-portal-staging.techaust-technologies-153.workers.dev"
       },
       "secrets": {
         "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"]
@@ -120,7 +124,8 @@
         "ENVIRONMENT": "production",
         "PAYMENTS_LIVE_ALLOWED": "false",
         "TURNSTILE_SITE_KEY": "",
-        "TURNSTILE_HOSTNAMES": "admin.techaust.com"
+        "TURNSTILE_HOSTNAMES": "admin.techaust.com",
+        "PORTAL_ORIGIN": "https://portal.techaust.com"
       },
       "secrets": {
         "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"]

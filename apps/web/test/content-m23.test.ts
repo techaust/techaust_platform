@@ -324,9 +324,52 @@ describe("accessibility statement version (07-A §8)", () => {
     expect(legal.accessibility.changes).toEqual([
       { version: "0.2", date: "2026-10-22", note: "First published version." },
     ]);
-    // 07-A v0.3 (2026-10-28) moved the privacy notice and the refund policy to 0.2; the rest stay at 0.1.
+    // 07-A v0.3 (2026-10-28) moved the privacy notice and the refund policy to 0.2; T6 (07-ZE, 2026-10-31) the website terms; the rest stay
+    // at 0.1 (Delivery 0.2 waits for T11).
     expect(legal.privacy.version).toBe("0.2");
     expect(legal["refund-policy"].version).toBe("0.2");
-    expect(legal.terms.version).toBe("0.1");
+    expect(legal.terms.version).toBe("0.2");
+    expect(legal["delivery-policy"].version).toBe("0.1");
+  });
+});
+
+describe("website terms 0.2 (07-ZE lines 13, 14, 15 and 6; T6) [WEB-LEGAL]", () => {
+  const terms = legalPages.terms;
+  const section = (id: string) => terms?.sections?.find((s) => s.id === id);
+  const text = (id: string) =>
+    (section(id)?.blocks ?? []).map((b) => ("p" in b ? b.p : "")).filter((p) => p !== "");
+
+  it("its version line and Changes entry are 07-ZE's, word for word", () => {
+    expect(legal.terms).toEqual({
+      version: "0.2",
+      effective: "2026-10-31",
+      changes: [
+        { version: "0.1", date: "2026-10-22", note: "First published draft." },
+        {
+          version: "0.2",
+          date: "2026-10-31",
+          note: "How to accept a proposal or estimate, and that a newer version replaces earlier ones; your rights as a consumer are not limited; arbitration for clients outside India.",
+        },
+      ],
+    });
+  });
+
+  it("§7 adds line 13 after the fingerprint sentence; §10 keeps the cap and adds the consumer carve-out (line 14)", () => {
+    const [portal] = text("client-portal");
+    expect(portal).toMatch(
+      /a fingerprint of the document\)\. Accept in the portal is the only way to accept a proposal or estimate; a reply by email isn’t an acceptance\. When we send a newer version, the earlier ones can no longer be accepted\. Validity dates end at midnight India Standard Time \(IST\)\.$/,
+    );
+    const [liability] = text("liability");
+    expect(liability).toContain("is limited to ₹10,000.");
+    expect(liability).toMatch(
+      /such as liability for fraud, or your rights under the Consumer Protection Act, 2019 \(see Law and courts\)\.$/,
+    );
+  });
+
+  it("§12 replaces the signed-contract clause with line 15, and line 6 follows as its own paragraph", () => {
+    expect(text("law-and-courts")).toEqual([
+      "These terms are governed by the laws of India. The courts at **Balurghat, Dakshin Dinajpur, West Bengal** have exclusive jurisdiction, except where your accepted proposal, estimate or signed contract says otherwise (for clients outside India, it provides for arbitration).",
+      "If you are a consumer under the Consumer Protection Act, 2019, nothing in these terms limits your rights under that Act, including where you may bring a complaint.",
+    ]);
   });
 });
