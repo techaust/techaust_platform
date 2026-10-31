@@ -72,7 +72,11 @@ const long: DeedSnapshot = {
 
 const usd: DeedSnapshot = {
   ...base,
-  client: { legalName: "Sample Robotics Inc.", address: "100 Example Avenue, Austin, Texas, 78701, United States", reg: null },
+  client: {
+    legalName: "Sample Robotics Inc.",
+    address: "100 Example Avenue, Austin, Texas, 78701, United States",
+    reg: null,
+  },
   payment: { invoiceNumbers: ["TH/EXP/2627/0003"], amountPaidMinor: 1_250_000, currency: "USD" },
 };
 

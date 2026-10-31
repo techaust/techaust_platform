@@ -5,9 +5,9 @@
 // amounts are invented test data. [RB-38(a), RB-21]
 import { type DeedSnapshot, deedText } from "@techaust/core/deeds";
 import { describe, expect, it } from "vitest";
+import { DEED_LAYOUT_PLACEHOLDER, DEED_PDF_LAYOUT_ID, esc, renderDeedHtml } from "../src/index.ts";
 import { DEED_PDF_COPY } from "../src/layout/copy.ts";
 import { deedBody, deedTitleParts, unsignedSignatureLine } from "../src/layout/deed.ts";
-import { DEED_LAYOUT_PLACEHOLDER, DEED_PDF_LAYOUT_ID, esc, renderDeedHtml } from "../src/index.ts";
 import { DEED_FIXTURE_NAMES, deedFixture } from "./fixtures/deed.ts";
 
 const snapshot: DeedSnapshot = {
@@ -17,7 +17,11 @@ const snapshot: DeedSnapshot = {
   client: { legalName: "Example <Traders> & Co", address: "4 Sample Street, Kolkata, India", reg: null },
   offer: { docType: "proposal", number: "TH/PRP/2627/0007", version: 2, acceptedOn: "2026-10-05" },
   payment: { invoiceNumbers: ["TH/INV/2627/0009"], amountPaidMinor: 100_000, currency: "INR" },
-  schedule1: { deliverables: "Website source\nDesign files", location: "Git repository", deliveredDates: "28 Oct 2026" },
+  schedule1: {
+    deliverables: "Website source\nDesign files",
+    location: "Git repository",
+    deliveredDates: "28 Oct 2026",
+  },
   schedule2: { tools: "None", thirdParty: "Astro (MIT licence)" },
 };
 
@@ -69,13 +73,16 @@ describe("the deed's layout [T11]", () => {
   });
 
   it("sets the title and its number on two lines; the metadata title keeps 07-ZE's whole line", () => {
-    expect(deedTitleParts(t.title)).toEqual({ title: "Deed of assignment of copyright", number: "No. TH/DA/2627/0001" });
+    expect(deedTitleParts(t.title)).toEqual({
+      title: "Deed of assignment of copyright",
+      number: "No. TH/DA/2627/0001",
+    });
     expect(html).toContain(`<title>${esc(t.title)}</title>`);
     expect(html).toMatch(/data-testid="deed-number">No\. TH\/DA\/2627\/0001</);
     expect(deedTitleParts("No separator")).toEqual({ title: "No separator", number: null });
   });
 
-  it("ends the signature sentence at \"TecHaust Technologies.\" and leaves the space below it empty of words (L5)", () => {
+  it('ends the signature sentence at "TecHaust Technologies." and leaves the space below it empty of words (L5)', () => {
     expect(unsignedSignatureLine(t.signatureLead)).toBe(
       "Signed by the assignor with an Aadhaar-based electronic signature (eSign): Rupak Sarkar, sole proprietor, TecHaust Technologies.",
     );

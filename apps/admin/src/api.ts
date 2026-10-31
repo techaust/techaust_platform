@@ -2143,7 +2143,9 @@ export const deedsApi = {
     request<DeedPage & { created: boolean }>(`/projects/${pid(projectId)}/deed/recheck`, { body: {} }),
   saveSchedules: (
     deedId: string,
-    body: { expectedUpdatedAt: number } & Partial<Record<"deliverables" | "location" | "deliveredDates" | "tools" | "thirdParty", string | null>>,
+    body: { expectedUpdatedAt: number } & Partial<
+      Record<"deliverables" | "location" | "deliveredDates" | "tools" | "thirdParty", string | null>
+    >,
   ) =>
     request<{ ok: true; updatedAt: number; blankSchedules: string[] }>(`/deeds/${pid(deedId)}/schedules`, {
       method: "PUT",

@@ -9,8 +9,8 @@ import { chromium } from "@playwright/test";
 import { toInvoiceView } from "../src/invoice-view.ts";
 import { renderDeedHtml, renderDocumentHtml } from "../src/render.ts";
 import { DEFAULT_VIEW_CONFIG, toPdfView } from "../src/view.ts";
-import { buildFixture, FIXTURE_NAMES } from "../test/fixtures/index.ts";
 import { DEED_FIXTURE_NAMES, deedFixture } from "../test/fixtures/deed.ts";
+import { buildFixture, FIXTURE_NAMES } from "../test/fixtures/index.ts";
 import { buildInvoiceLayoutFixture, INVOICE_LAYOUT_FIXTURES } from "../test/fixtures/invoice-layout.ts";
 
 const out = process.argv[2];
@@ -44,15 +44,15 @@ try {
       await print(renderDocumentHtml(toPdfView(envelope)), `${name}.pdf`);
     }
   if (process.argv[3] !== "deeds")
-  for (const name of INVOICE_LAYOUT_FIXTURES) {
-    const { envelope, signature } = await buildInvoiceLayoutFixture(name);
-    await print(
-      renderDocumentHtml(
-        toInvoiceView(envelope, DEFAULT_VIEW_CONFIG, { signature, portalLink: "portal.techaust.com" }),
-      ),
-      `invoice-${name}.pdf`,
-    );
-  }
+    for (const name of INVOICE_LAYOUT_FIXTURES) {
+      const { envelope, signature } = await buildInvoiceLayoutFixture(name);
+      await print(
+        renderDocumentHtml(
+          toInvoiceView(envelope, DEFAULT_VIEW_CONFIG, { signature, portalLink: "portal.techaust.com" }),
+        ),
+        `invoice-${name}.pdf`,
+      );
+    }
 } finally {
   await browser.close();
 }
