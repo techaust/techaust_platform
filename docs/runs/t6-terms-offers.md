@@ -1,6 +1,6 @@
 # Run: T6, the offer wording, proposal terms v4 and website Terms 0.2
 
-Status: PR opening (review APPROVE, re-check PASS, check and test green)
+Status: PR READY https://github.com/techaust/techaust_platform/pull/130
 Tier: B
 Usage: lead claude-opus-5-5/high (cloud session t6-terms); builder claude-opus-5-5/high (skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, unavailable in cloud; 5-h 8 % at start, reading of 12:58); analyst claude-opus-5-5/high (skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:workers-profiling, unavailable in cloud; 5-h 8 %, reading of 12:58); designer claude-opus-5-5/high (skills tried: frontend-design:frontend-design, unavailable in cloud; docs/06 followed; 5-h 8 %, reading of 12:58); reviewer claude-opus-5-5/high (skills: code-review loaded; security-review failed to load, no origin/HEAD; 5-h 46 %, reading of 13:46; re-check at 5-h 68 %, reading of 14:16)
 
