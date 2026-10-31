@@ -6,13 +6,14 @@
 //   - header.document.termsRef and the footer notes agree, and sha256(notes) = termsRef.sha256
 //   - header.document.contentSha256 = core `contentHash` of the lines, the discount and the computed result (the issue route's own)
 //   - (M5.3) a credit or debit note carries `header.noteOf` (and no other type does), its kind is its type's, it takes one line per take, and a credit note has no due date
-//   - (T10) a Udyam block is only on a tax invoice, and of the canonical shape (`isUdyam`): anything else is not an envelope to print from
+//   - (T10) a Udyam block is only on a tax invoice, and has the sealed shape (`isSealedUdyam`: two non-blank strings, never today's format rule): anything
+//     else is not an envelope to print from
 // A signature image is checked separately (`verifySignatureBytes`): the envelope holds only its key, SHA-256 and mime (LD11).
 import { contentHash, type DraftContent } from "@techaust/core/documents";
 import {
   invoiceSnapshotSha256,
   isNoteType,
-  isUdyam,
+  isSealedUdyam,
   noteKindOf,
   noteOfFromStored,
   udyamPrintedOn,
@@ -166,8 +167,10 @@ export function parseInvoiceEnvelope(text: string): InvoiceEnvelope | null {
     return null;
   if (i.signature !== null && !isObj(i.signature)) return null;
   if (i.signatory !== undefined && i.signatory !== false) return null;
-  // T10: a present Udyam block has the canonical shape (`{number, category}`, 07-ZC), else the text is not an envelope.
-  if (i.company.udyam !== undefined && !isUdyam(i.company.udyam)) return null;
+  // T10: a present Udyam block has the sealed shape (`{number, category}`, two non-blank strings of at most 40 units), else the text is not an envelope. Shape
+  // only, never the live `isUdyam` (final re-check): a later change to the format or the categories (OPEN (08-C RB-39)) must not refuse an invoice sealed
+  // before it; the seal hash protects its content.
+  if (i.company.udyam !== undefined && !isSealedUdyam(i.company.udyam)) return null;
   // M5.2: the optional header keys are absent on an M5.1 envelope; when present they must have their shape (a wrong shape is not an envelope).
   if (h.export !== undefined && !validExport(h.export)) return null;
   if (h.fx !== undefined && !validFx(h.fx)) return null;

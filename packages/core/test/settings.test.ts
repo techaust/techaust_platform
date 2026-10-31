@@ -16,8 +16,10 @@ import {
   type SeededSettingKey,
 } from "../src/schemas/settings.ts";
 import {
+  isSealedUdyam,
   isUdyam,
   isUdyamNumber,
+  SEALED_UDYAM_MAX,
   UDYAM_CATEGORIES,
   UDYAM_NUMBER_ERROR,
   UDYAM_NUMBER_RE,
@@ -252,6 +254,45 @@ describe("T10: the Udyam registration (ADM-SET-01; 07-ZC lines 4-5; 08-C RB-39)"
     expect(udyamPrintedOn("tax_invoice")).toBe(true);
     for (const t of ["export_invoice", "proforma", "credit_note", "debit_note", "proposal"])
       expect(udyamPrintedOn(t), t).toBe(false);
+  });
+
+  it("a sealed block is read by its shape only, never by today's format or categories (final re-check; OPEN 08-C RB-39)", () => {
+    // every live block is a sealed one
+    for (const category of UDYAM_CATEGORIES)
+      expect(isSealedUdyam({ number: "UDYAM-WB-01-0012345", category }), category).toBe(true);
+    // blocks today's rule refuses, as a later change of the format or the categories would leave older invoices: still sealed blocks
+    for (const v of [
+      { number: "udyam-wb-01-0012345", category: "micro" },
+      { number: "UDYAM-WB-01-001234", category: "micro" },
+      { number: "UDYAM-WB-01-0012345", category: "large" },
+      { number: "UDYAM-WB-001-00123456", category: "tiny" },
+      { number: "x".repeat(SEALED_UDYAM_MAX), category: "c".repeat(SEALED_UDYAM_MAX) },
+    ]) {
+      expect(isUdyam(v), JSON.stringify(v)).toBe(false);
+      expect(isSealedUdyam(v), JSON.stringify(v)).toBe(true);
+    }
+    // a wrong shape is never one: not an object, a missing or extra key, a value not a string, empty or blank, longer than the bound
+    for (const v of [
+      null,
+      undefined,
+      "UDYAM-WB-01-0012345",
+      [],
+      ["UDYAM-WB-01-0012345", "micro"],
+      {},
+      { number: "UDYAM-WB-01-0012345" },
+      { category: "micro" },
+      { number: "UDYAM-WB-01-0012345", category: "micro", extra: 1 },
+      { number: 12, category: "micro" },
+      { number: "UDYAM-WB-01-0012345", category: null },
+      { number: "", category: "micro" },
+      { number: "UDYAM-WB-01-0012345", category: "" },
+      { number: "   ", category: "micro" },
+      { number: "UDYAM-WB-01-0012345", category: "\t" },
+      { number: "x".repeat(SEALED_UDYAM_MAX + 1), category: "micro" },
+      { number: "UDYAM-WB-01-0012345", category: "c".repeat(SEALED_UDYAM_MAX + 1) },
+    ])
+      expect(isSealedUdyam(v), String(JSON.stringify(v))).toBe(false);
+    expect(SEALED_UDYAM_MAX).toBe(40);
   });
 });
 

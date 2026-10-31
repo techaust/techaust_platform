@@ -1,7 +1,7 @@
 // Commercial documents (docs/05 §5.2–5.4): one table for every type. Issued (frozen) documents are protected
 // by triggers in the hand-written migration (see migrations/*_triggers.sql). Researched 2026-10-28, rule by rule in 08-C section 1 throughout.
 import type { Series } from "@techaust/core";
-import type { Udyam } from "@techaust/core/invoices";
+import type { SealedUdyam } from "@techaust/core/invoices";
 import type { ComputedDocument } from "@techaust/core/tax";
 import { sql } from "drizzle-orm";
 import {
@@ -133,8 +133,9 @@ export type InvoiceIssuerSnapshot = {
   /**
    * `udyam` (T10, rt2): the Udyam registration as saved in Settings › Company, present ONLY on a tax invoice issued while one was saved (owner, 2026-10-31; 07-ZC
    * line 6; Researched 2026-10-30, MSMED ss.15–16 (08-C RB-39(a))). Absent on every other document and on every earlier snapshot, so earlier seals are unchanged (L6).
+   * Typed as sealed (`SealedUdyam`): written from today's valid settings value, but read back as the value of its day of issue, which a later rule may refuse.
    */
-  company: IssuerSnapshot["company"] & { phone?: string; principalPlace?: string; udyam?: Udyam };
+  company: IssuerSnapshot["company"] & { phone?: string; principalPlace?: string; udyam?: SealedUdyam };
   /** `swift` (M5.2) exists only on a USD document that has one: an M5.1 snapshot has no such key and still parses. */
   bank: { inr: InvoiceBankBlock | null; swift?: InvoiceSwiftBlock | null };
   signature: { key: string; sha256: string; mime: string } | null;

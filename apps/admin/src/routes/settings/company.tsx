@@ -4,7 +4,7 @@
 // Changes apply to new documents only (GST fields: Researched 2026-10-28, Rule 46 CGST, 08-C RA-05).
 // T10 (rt2): the Udyam registration number and enterprise category (07-ZC lines 4 and 5), beside the GST registration because both print on the tax invoice
 // under the supplier's name; the form always sends `udyam` (the block, or null for none: L8), so a later save never keeps a number that was cleared here.
-import { STATE_CODES, type StateCode, selectableStates, validateGstin } from "@techaust/core";
+import { normaliseGstin, STATE_CODES, type StateCode, selectableStates, validateGstin } from "@techaust/core";
 import type { UdyamCategory } from "@techaust/core/invoices";
 import { BRAND_LOGOS, type Settings } from "@techaust/core/settings";
 import primaryBlack from "@techaust/ui/brand/logo-primary-black.svg?url";
@@ -73,9 +73,6 @@ const ID = {
   udyamCategory: fieldId("udyam.category"),
 };
 
-/** The GSTIN as it is saved: what `validateGstin` reads (no spaces, capitals), so `g.gstin` of a valid one. */
-const normaliseGstin = (typed: string): string => typed.replace(/\s+/g, "").toUpperCase();
-
 const spec: GroupSpec<"company", Form> = {
   group: "company",
   what: "the company profile",
@@ -129,6 +126,7 @@ const spec: GroupSpec<"company", Form> = {
     const udyamNumber = normaliseUdyam(f.udyamNumber);
     return {
       ...f,
+      // core's one normalisation, the very one `validateGstin` reads, so the saved GSTIN is `g.gstin` of a valid one
       gstin: normaliseGstin(f.gstin),
       udyamNumber,
       udyamCategory: udyamNumber === "" ? null : f.udyamCategory,

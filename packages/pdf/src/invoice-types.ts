@@ -2,7 +2,7 @@
 // LD11). Pure data; no I/O. The sealed header mirrors core's `InvoiceSnapshotInput` (`{v: 3, kind: "invoice", header}`); the envelope adds what the
 // issue batch takes AFTER the hash (the number, series, FY and the instant of issue) and the content the PDF needs (the lines, the discount, the
 // footer notes). A proposal's envelope is `types.ts`'s `Envelope` (format 1); this one is format 3 with `kind: "invoice"`.
-import type { InvoiceSnapshotInput, Udyam } from "@techaust/core/invoices";
+import type { InvoiceSnapshotInput, SealedUdyam } from "@techaust/core/invoices";
 import type { EnvLine, IssuerSnap, RecipientSnap } from "./types.ts";
 
 /** The INR bank block frozen with the invoice (db `InvoiceBankBlock`). */
@@ -30,8 +30,11 @@ export type InvoiceSwiftSnap = {
 export type InvoiceSignatureRef = { key: string; sha256: string; mime: string };
 
 export type InvoiceIssuerSnap = {
-  /** `udyam` (T10): only on a tax invoice issued while a Udyam number was saved (db `InvoiceIssuerSnapshot`); the envelope check refuses any other shape or type. */
-  company: IssuerSnap["company"] & { phone?: string; principalPlace?: string; udyam?: Udyam };
+  /**
+   * `udyam` (T10): only on a tax invoice issued while a Udyam number was saved (db `InvoiceIssuerSnapshot`); the envelope check refuses any other shape or type.
+   * As sealed (`SealedUdyam`): the number and the category of the day of issue, which today's rule may no longer accept.
+   */
+  company: IssuerSnap["company"] & { phone?: string; principalPlace?: string; udyam?: SealedUdyam };
   bank: { inr: InvoiceBankSnap | null; swift?: InvoiceSwiftSnap | null };
   signature: InvoiceSignatureRef | null;
   /** `false` only when the signature block was switched off at issue (07-W 5.6): the layout prints none. Absent = block printed. */

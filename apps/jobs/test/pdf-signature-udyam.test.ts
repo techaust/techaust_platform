@@ -192,9 +192,24 @@ describe("T10: the Udyam line is a statutory line of the page", () => {
     }
   });
 
-  it("a malformed block, or one on another type, never reaches the page: the envelope is refused", async () => {
+  it("a block sealed under an older format or category list still renders its line as sealed (final re-check; OPEN 08-C RB-39)", async () => {
+    // a number and a category today's settings rule refuses: the seal protects them, the envelope reads them by their shape only
+    const old = { number: "UDYAM-WB-001-00123456", category: "tiny" };
+    const oldLine = "Udyam Registration No. UDYAM-WB-001-00123456 (tiny)";
+    const s = await seedIssuedInvoice({ udyam: old });
+    await snapshot(s.id);
+    const b = browser();
+    expect(await render(b, s.id)).toBe("rendered");
+    expect(b.calls).toHaveLength(1);
+    expect(b.calls[0]?.split(`>${oldLine}<`)).toHaveLength(2);
+    expect(await refusedBells(s.id)).toEqual([]);
+  });
+
+  it("a block of the wrong shape, or one on another type, never reaches the page: the envelope is refused", async () => {
     for (const o of [
-      { udyam: { number: "udyam-wb-01-0012345", category: "micro" } },
+      { udyam: { number: "", category: "micro" } },
+      { udyam: { number: "U".repeat(41), category: "micro" } },
+      { udyam: { number: "UDYAM-WB-01-0012345", category: 1 } },
       { type: "proforma" as const, udyam: UDYAM },
     ]) {
       // (the rows reproduce what was sealed, so the snapshot is written; the render reads it back and refuses it)

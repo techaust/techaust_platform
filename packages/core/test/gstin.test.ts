@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   gstinCheckChar,
   isStateCode,
+  normaliseGstin,
   STATE_CODES,
   SUPPLIER_STATE_CODE,
   selectableStates,
@@ -91,6 +92,25 @@ describe("GSTIN check character [ADM-SET-01]", () => {
       legacyState: true,
       state: "Daman and Diu",
     });
+  });
+
+  it("normaliseGstin is the one normalisation validateGstin reads: spaces anywhere dropped, upper case", () => {
+    expect(normaliseGstin("  27aapfu 0939f1zv\t\n")).toBe("27AAPFU0939F1ZV");
+    expect(normaliseGstin("")).toBe("");
+    // the saved value of a valid typed GSTIN is exactly the validated one, whatever the spacing and case
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...VECTORS.map((v) => v.gstin)),
+        fc.array(fc.boolean(), { minLength: 15, maxLength: 15 }),
+        fc.constantFrom(" ", "  ", "\t"),
+        (gstin, lower, gap) => {
+          const typed = ` ${[...gstin].map((ch, i) => (lower[i] ? ch.toLowerCase() : ch)).join(gap)} `;
+          const r = validateGstin(typed);
+          expect(r.ok && r.gstin).toBe(normaliseGstin(typed));
+          expect(normaliseGstin(typed)).toBe(gstin);
+        },
+      ),
+    );
   });
 });
 

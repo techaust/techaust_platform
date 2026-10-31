@@ -1,8 +1,8 @@
-// T4 and T10 (rt2; ADM-INV-01, ADM-INV-06): the envelope, view and integrity logic of the signature rule and the Udyam line. A present Udyam block has the canonical
-// shape and is only on a tax invoice (else the envelope is refused); the view gives the layout 07-ZC line 6; the gate refuses a page that does not print it as ONE text
+// T4 and T10 (rt2; ADM-INV-01, ADM-INV-06): the envelope, view and integrity logic of the signature rule and the Udyam line. A present Udyam block has the sealed
+// shape (two non-blank strings, never today's format rule) and is only on a tax invoice (else the envelope is refused); the view gives the layout 07-ZC line 6; the gate refuses a page that does not print it as ONE text
 // node; a credit or debit note and an invoice for a payment received need a frozen signature (`signatureMissing`, the jobs refusal). The layouts (designed and skeleton)
 // print the line under the GSTIN line, and the F1 cases below prove it on the real HTML.
-import { invoiceSnapshotSha256 } from "@techaust/core/invoices";
+import { invoiceSnapshotSha256, isUdyam } from "@techaust/core/invoices";
 import { describe, expect, it } from "vitest";
 import {
   invoiceSnapshotInputOf,
@@ -55,6 +55,13 @@ describe("07-ZC line 6 and the category words (approved 2026-10-31)", () => {
     expect(UDYAM_COPY.line("UDYAM-WB-01-0012345", "medium")).toBe(
       "Udyam Registration No. UDYAM-WB-01-0012345 (Medium enterprise)",
     );
+    // a sealed category line 5 has no words for prints as stored (own keys only: "toString" is not a category)
+    expect(UDYAM_COPY.line("UDYAM-WB-01-0012345", "tiny")).toBe(
+      "Udyam Registration No. UDYAM-WB-01-0012345 (tiny)",
+    );
+    expect(UDYAM_COPY.line("UDYAM-WB-01-0012345", "toString")).toBe(
+      "Udyam Registration No. UDYAM-WB-01-0012345 (toString)",
+    );
   });
 });
 
@@ -83,20 +90,74 @@ describe("the envelope [T10, L6]", () => {
     });
   });
 
-  it("a malformed block is not an envelope (null): lower case, a short number, an unknown category, an extra key, null, a string", async () => {
+  it("a block sealed under an older format or category list still parses, verifies, views and passes the gate (final re-check; OPEN 08-C RB-39)", async () => {
+    const { envelope } = await buildInvoiceFixture("intra");
+    // numbers and categories today's rule (`isUdyam`) refuses, as a later change of the format or the categories would leave an invoice sealed before it
+    for (const [old, line] of [
+      [
+        { number: "UDYAM-WB-001-00123456", category: "micro" },
+        "Udyam Registration No. UDYAM-WB-001-00123456 (Micro enterprise)",
+      ],
+      [
+        { number: "UDYAM-WB-01-0012345", category: "tiny" },
+        "Udyam Registration No. UDYAM-WB-01-0012345 (tiny)",
+      ],
+      [
+        { number: "udyam-wb-01-001234", category: "Large" },
+        "Udyam Registration No. udyam-wb-01-001234 (Large)",
+      ],
+      // a key that is not line 5's own words, even an inherited property's name, prints as stored
+      [
+        { number: "UDYAM-WB-01-0012345", category: "constructor" },
+        "Udyam Registration No. UDYAM-WB-01-0012345 (constructor)",
+      ],
+    ] as const) {
+      expect(isUdyam(old), JSON.stringify(old)).toBe(false);
+      const sealed = await withUdyam(envelope, old);
+      const parsed = parseInvoiceEnvelope(serializeInvoiceEnvelope(sealed));
+      expect(parsed, JSON.stringify(old)).not.toBeNull();
+      expect(parsed?.snapshot.header.issuer.company.udyam).toEqual(old);
+      expect(await verifyInvoiceEnvelope(parsed as InvoiceEnvelope), JSON.stringify(old)).toEqual({
+        ok: true,
+      });
+      const view = toInvoiceView(parsed as InvoiceEnvelope, DEFAULT_VIEW_CONFIG);
+      expect(view.supplier.udyam).toBe(line);
+      // the designed layout prints it as ONE text node, so the gate passes the page
+      const html = renderDocumentHtml(view);
+      expect(html.split(line), JSON.stringify(old)).toHaveLength(2);
+      expect(missingStatutoryLine(parsed as InvoiceEnvelope, html), JSON.stringify(old)).toBeNull();
+      // the seal still protects it: another value without a reseal fails the snapshot hash
+      const changed = clone(parsed as InvoiceEnvelope);
+      (changed.snapshot.header.issuer.company as Record<string, unknown>).udyam = {
+        ...old,
+        number: "UDYAM-WB-01-0099999",
+      };
+      expect(await verifyInvoiceEnvelope(changed)).toEqual({ ok: false, code: "snapshot_hash" });
+    }
+  });
+
+  it("a block of the wrong shape is not an envelope (null): empty, blank or too long values, a value not a string, a missing or extra key, null, a string", async () => {
     const { envelope } = await buildInvoiceFixture("intra");
     for (const bad of [
-      { number: "udyam-wb-01-0012345", category: "micro" },
-      { number: "UDYAM-WB-01-001234", category: "micro" },
-      { number: "UDYAM-WB-01-0012345", category: "large" },
+      { number: "", category: "micro" },
+      { number: "UDYAM-WB-01-0012345", category: "" },
+      { number: "  ", category: "micro" },
+      { number: "U".repeat(41), category: "micro" },
+      { number: "UDYAM-WB-01-0012345", category: "m".repeat(41) },
+      { number: 12345, category: "micro" },
+      { number: "UDYAM-WB-01-0012345", category: 1 },
       { number: "UDYAM-WB-01-0012345", category: "micro", extra: 1 },
       { number: "UDYAM-WB-01-0012345" },
+      {},
       null,
       "UDYAM-WB-01-0012345",
     ]) {
       const e = await withUdyam(envelope, bad);
       expect(parseInvoiceEnvelope(serializeInvoiceEnvelope(e)), JSON.stringify(bad)).toBeNull();
     }
+    // the bound itself is accepted
+    const atBound = await withUdyam(envelope, { number: "U".repeat(40), category: "m".repeat(40) });
+    expect(parseInvoiceEnvelope(serializeInvoiceEnvelope(atBound))).not.toBeNull();
   });
 
   it("a block on an export invoice, a proforma or a note is a mismatch, even resealed", async () => {

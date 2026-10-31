@@ -230,13 +230,21 @@ export const STATEMENT_PDF_COPY = {
 /**
  * T10 (rt2): the Udyam registration, word for word from 07-ZC (APPROVED by the owner, 2026-10-31). `categories` are line 5's options (the admin's select and the
  * printed words, L3); `line` is line 6, printed on a tax invoice and its on-screen paper under the GSTIN line, as ONE text node (`missingStatutoryLine` checks it).
+ * `line` takes the category as sealed: a key it has no words for (possible after a later change of the categories, OPEN (08-C RB-39)) is printed as
+ * stored, so an older sealed invoice still prints.
  * Owner's choice, not a legal requirement: Researched 2026-10-30, MSMED ss.15–16 (08-C RB-39(a)).
  */
 export const UDYAM_COPY = {
   categories: { micro: "Micro enterprise", small: "Small enterprise", medium: "Medium enterprise" },
-  line: (number: string, category: "micro" | "small" | "medium") =>
-    `Udyam Registration No. ${number} (${UDYAM_COPY.categories[category]})`,
+  line: (number: string, category: string) =>
+    `Udyam Registration No. ${number} (${udyamCategoryWords(category)})`,
 } as const;
+
+/** The words of a sealed category: line 5's words for a key it knows (own keys only, so "constructor" is not one), else the category as stored. */
+function udyamCategoryWords(category: string): string {
+  const words: Readonly<Record<string, string>> = UDYAM_COPY.categories;
+  return Object.hasOwn(words, category) ? (words[category] ?? category) : category;
+}
 
 /** The line under the title of a tax or export invoice issued for a payment received against a proforma (07-S §8, Q9; PENDING approval). */
 export const advanceLine = (

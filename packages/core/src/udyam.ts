@@ -1,5 +1,5 @@
 // The Udyam registration number (T10; ADM-SET-01, ADM-INV-01): saved in Settings › Company and printed on tax invoices only (owner, 2026-10-31; 07-ZC
-// line 6). Pure, no zod: the settings schema, the admin's issuer block and the PDF envelope check all read these. Printing it is the owner's choice, not a legal
+// line 6). Pure, no zod: the settings schema and the admin's issuer block read the live rule; the PDF envelope reads a sealed block by its shape only. Printing it is the owner's choice, not a legal
 // requirement: Researched 2026-10-30, MSMED ss.15–16 (08-C RB-39(a)).
 
 /**
@@ -11,8 +11,8 @@
 export const UDYAM_NUMBER_RE = /^UDYAM-[A-Z]{2}-\d{2}-\d{7}$/;
 
 /**
- * The one check of a number's shape (second review 5b): the settings schema refines with it and `isUdyam` (the issuer block, the PDF envelope check) reads it,
- * so the shape lives here only.
+ * The one check of a number's shape (second review 5b): the settings schema refines with it and `isUdyam` (the live settings value) reads it, so the shape
+ * lives here only. Never applied to a sealed block (`isSealedUdyam`).
  */
 export const isUdyamNumber = (n: unknown): n is string => typeof n === "string" && UDYAM_NUMBER_RE.test(n);
 
@@ -30,7 +30,10 @@ export type Udyam = { readonly number: string; readonly category: UdyamCategory 
 export const UDYAM_PRINTED_ON = "tax_invoice";
 export const udyamPrintedOn = (type: string): boolean => type === UDYAM_PRINTED_ON;
 
-/** True when `v` is a Udyam block of the canonical shape (a stored or frozen value read back without zod). */
+/**
+ * True when `v` is a Udyam block of the canonical shape, by TODAY's rule (`UDYAM_NUMBER_RE`, `UDYAM_CATEGORIES`): for live inputs only (Settings › Company
+ * read back without zod). A block frozen into an issued document is read with `isSealedUdyam` instead.
+ */
 export function isUdyam(v: unknown): v is Udyam {
   if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
   const o = v as Record<string, unknown>;
@@ -41,4 +44,26 @@ export function isUdyam(v: unknown): v is Udyam {
     typeof o.category === "string" &&
     (UDYAM_CATEGORIES as readonly string[]).includes(o.category)
   );
+}
+
+/**
+ * The Udyam block as an issued document froze it (final re-check, lead triage): what was valid on the day of issue. The number's format and the categories
+ * may change later (OPEN (08-C RB-39)), so a sealed block is never read with today's rule; the seal hash protects its content.
+ */
+export type SealedUdyam = { readonly number: string; readonly category: string };
+
+/** The bound on each sealed value, in UTF-16 units (a canonical number is 19, the longest category key 6): a sanity bound, not a format rule. */
+export const SEALED_UDYAM_MAX = 40;
+
+const sealedText = (s: unknown): s is string =>
+  typeof s === "string" && s.trim().length > 0 && s.length <= SEALED_UDYAM_MAX;
+
+/**
+ * True when `v` has the shape of a sealed Udyam block: exactly `number` and `category`, each a non-blank string of at most `SEALED_UDYAM_MAX` units. Shape
+ * only, never `UDYAM_NUMBER_RE` or `UDYAM_CATEGORIES`: a later change to either must never refuse an invoice issued before it.
+ */
+export function isSealedUdyam(v: unknown): v is SealedUdyam {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  const o = v as Record<string, unknown>;
+  return Object.keys(o).length === 2 && sealedText(o.number) && sealedText(o.category);
 }
