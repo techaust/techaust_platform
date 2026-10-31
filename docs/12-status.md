@@ -21,7 +21,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 - **This record** (docs PR) merges itself once CI passes. No agent and no cloud session is working.
 
 ## Next
-1. **Take the M6.1 staging CPU baseline** (the finance Worker's cold reading, `ledger_result_check`, the payment reads; `docs/runbooks/cpu-baseline.md`).
+1. **The M6.1 CPU reading on staging failed its gate** (2026-10-31, [cpu-baseline](runbooks/cpu-baseline.md)): first requests 10–16 ms, the finance invoice detail 17–18 ms, all finished. An analyst diagnosis before M6.2's API stage.
 2. **L9 decided (owner, 2026-10-31):** jobs `minify: true` with uploaded source maps, webhook processing in the finance Worker (13); built as M6.2's first step.
 3. **M6.2 Razorpay** (Tier A; the owner's Razorpay, Stripe and PayPal accounts are ready, 2026-10-31); its first step is the jobs minify (L9). Then M6.3 Stripe (the owner's existing verified account, 13), M6.4 PayPal, M6.5. **T11 (the deed)** can start now.
 4. **Build the `/orchestrate` skill** (owner, 2026-10-31; 13): the watcher in `tools/watch-cloud.mjs` with the lessons in CLAUDE.md "In a cloud session".
