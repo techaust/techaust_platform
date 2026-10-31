@@ -376,3 +376,15 @@ Builder, Opus 5.5 high, 2026-10-31. Branch `fix/rt2-integrate` from `origin/task
 
 **Open questions:** none. Code review 4 stays a follow-up, as triaged.
 Usage: builder claude-opus-5-5/high (skills workers-best-practices, wrangler).
+
+### Second review (reviewer, Opus 5.5 high, 2026-10-31, live browser): SEND BACK (1 high, 1 medium, 4 low), condensed by the lead
+`pnpm check` exit 0 (56 migrations); full `pnpm test` exit 1 (portal 650 passed, 1 failed; everything else green, admin 3,493 and jobs 548 re-run alone); e2e `rt1-screens` 7 and `signature-udyam` 6 passed. Integration verified (0055 after main's 0054, trigger order, both freeze clauses, rt1 tests signed, `= 'object'` clause, fixes 1/3/5/6). Live: both refusal dialogs and rt1's `debit_lut_missing` by keyboard (focus on the alert, ring, Tab stays in the dialog), the Udyam row at 768/1024/1920 with the menu open and closed, the save bar; axe 0. Screenshots `.logs/shots/rt2-second-review/`.
+1. **high** `apps/portal/worker/doc-token.test.ts:22-60` (`frozenDoc`): freezes credit and debit notes with an unsigned issuer, so trigger 0055 aborts; the portal suite (and CI) is red. Fix: a signature reference in the issuer JSON (as db `SIGNED_ISSUER`).
+2. **medium** `apps/admin/src/routes/settings/company.tsx:290`: upper-casing in `onChange` makes the caret jump to the end (reproduced); same older pattern on the GSTIN field (`:226`). Keep the typed value, normalise on blur, `text-transform: uppercase` for display (or restore the selection).
+3. **low** `note-dialog.tsx:271`, `types-parts.tsx:781`: a wrong step-up code goes to the refusal notice; send `invalid_code` to the code field and focus it.
+4. **low** `company.tsx:306`: the category select is enabled with no number, and a chosen category is silently dropped on save; disable it until a number exists (or keep it out of the dirty check).
+5. **low** follow-ups: a second hand-written PNG builder in `apps/admin/e2e/sample-data.ts`; the Udyam shape checked three times (refine the zod schema with core `isUdyam`); `registrationAt` found by `indexOf` (`invoice-view.ts:315`); the 12em rule depends on font metrics; the `SIGNED_FREEZE_SQL` overlap (kept).
+
+**Lead triage:** fix 1 (builder) with 5's zod refine and `registrationAt` index (same builder, `packages/*`); fix 2 (Udyam and GSTIN), 3 and 4 (designer, `apps/admin/src/**`), in parallel. Kept as follow-ups: the PNG builder duplication, the font-metric note, the freeze overlap (deliberate). Re-check of the fix diff and the full `pnpm test` follows.
+
+### Second-review fixes
