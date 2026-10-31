@@ -1,6 +1,6 @@
-Status: reviewer running (code + visual; started 14:28 IST); owner answered Q1–Q4, 07-ZF approved
+Status: review APPROVE; fixes running (builder r3: L1, L2, L4; designer r2: M1, L3, L5)
 Tier: A
-Usage: analyst (brief draft) claude-opus-5-5/high, skills: none available (no Cloudflare plugin in the cloud); 5-h 8 % at start · builder r1 claude-opus-5-5/high, skills: none (same reason; flagged by model-audit); 5-h 8 → 46 % (reading 13:46) · analyst (early check) claude-opus-5-5/high, skills: code-review (+ its read-only helper); 5-h 46 % · designer r1 claude-opus-5-5/high, skills: frontend-design:frontend-design (attempted; not installed in the cloud); 5-h 46 → 68 % · builder r2 claude-opus-5-5/high, skills: none (flagged; Cloudflare skills not installed); 5-h 46 → 68 %
+Usage: analyst (brief draft) claude-opus-5-5/high, skills: none available (no Cloudflare plugin in the cloud); 5-h 8 % at start · builder r1 claude-opus-5-5/high, skills: none (same reason; flagged by model-audit); 5-h 8 → 46 % (reading 13:46) · analyst (early check) claude-opus-5-5/high, skills: code-review (+ its read-only helper); 5-h 46 % · designer r1 claude-opus-5-5/high, skills: frontend-design:frontend-design (attempted; not installed in the cloud); 5-h 46 → 68 % · builder r2 claude-opus-5-5/high, skills: none (flagged; Cloudflare skills not installed); 5-h 46 → 68 % · reviewer claude-opus-5-5/high, skills: code-review (+ helper), security-review failed to load (no origin/HEAD); 5-h 68 → 89 %
 
 # Withdraw a proforma the client has seen (cloud session "proforma-withdraw")
 
@@ -173,10 +173,20 @@ Designer (round 1, branch `design/proforma-withdraw-r1`, head cc360a3, merged by
 - **Lead decisions on the designer's questions:** (1) the 07-ZA 15 statutory line is hidden on a withdrawn payment request (it promises a tax invoice on payment, which contradicts "You don't need to pay it"; no PDF is served): kept; (2) "Waiting for the PDF" on a proforma withdrawn before its PDF exists: rare, follow-up; (3) the Void filter also lists withdrawn proformas, each with its badge (no new filter, as briefed): kept; (4) 07-Z §1's proforma line now points to 07-ZF 15 (lead edit).
 
 ## Review
+Reviewer, 2026-10-31, on 094c8ce (diff 8d5b958..HEAD): **APPROVE** (no critical or high). Skills: `code-review` (its read-only helper; 10 candidates checked by hand); `security-review` failed to load (its preamble needs `origin/HEAD`, absent here), so the Tier A security pass was done by hand; Cloudflare skills not installed. Ran on 094c8ce (heavy.sh): core 91 / 1,873 (99.05 % / 98.13 %), db 36 / 532, admin 122 / 3,536, portal 27 / 664, jobs 33 / 549, `pnpm check` exit 0; bytes as the builder's r2. Visual: 77 screenshots (copied to `.logs/proforma-withdraw/review-screens/`), 360/768/1280, both themes, in-app theme vs OS, keyboard, axe 18 runs clean; the undelivered proforma's Void still works; a viewed tax invoice still can't be voided.
+- **M1 (medium):** the portal invoice list scrolls sideways at 768 px with a "Withdrawn" row (table 770 px; `apps/portal/src/screens/invoices.tsx:44`, `:126`; `.rtable` in `portal.css:1446`). → designer r2.
+- **L1 (low):** the emailed-link PDF route checks the row read in an earlier batch (`apps/portal/worker/doc-token.ts:141`); a withdrawal landing in the gap still serves the PDF. Same gap exists for a tax invoice's void on main. → builder r3 (re-check inside the second batch).
+- **L2 (low):** `withdraw.canWithdraw` (and `canVoid`) offered on an anonymised client (`apps/admin/worker/invoice-view.ts:380`). → builder r3.
+- **L3 (low):** the portal page isn't reloaded after a 409 `withdrawn` PDF answer (`apps/portal/src/routes/invoices.tsx:89`). → designer r2.
+- **L4 (low):** the admin list hand-writes the rule instead of `withdrawnSql` (`apps/admin/worker/invoices.ts:248`). → builder r3.
+- **L5 (low):** admin `ProformaPanel` still shows "A tax invoice will be issued when payment is received." on a withdrawn/void proforma (`apps/admin/src/routes/invoices/read.tsx:389`). → designer r2.
+- **L6 (low, record):** 08-C RA-10 "Our rule" still says a delivered proforma stays until converted. → lead, after T12 merges (follow-up).
+- **Notes:** `readInvoice`'s two extra EXISTS run on every invoice read (`invoices.ts:372`) → builder r3 gates them on `type = 'proforma'`. `explain()` partly repeats the void re-read: kept (lead: the two re-reads answer different code sets; sharing would couple them for little gain).
 
 ## Integration notes
 
 ## Follow-ups (for 12)
+- **08-C RA-10 (review L6):** its §1 "Our rule" text still says a delivered proforma stays until converted; the lead updates it to the owner's withdraw rule once T12 (which retags RA-10's OPEN text) has merged and this branch takes `main` in.
 - **Cloud browser:** the `.mcp.json` Playwright MCP server looked for Chromium in `/opt/pw-browsers/chromium-1247` while the setup script installs it in `/opt/ms-playwright` (`cloud-check.sh` reports it there); the designer fell back to `@playwright/test`. Check how the MCP server gets `PLAYWRIGHT_BROWSERS_PATH` (setup script or `.mcp.json`).
 - **Admin Emails panel:** a proforma withdrawn before its PDF exists keeps "Waiting for the PDF…" until jobs skips the send; a "won't be sent" line needs new copy (rare).
 - **Staging data check (needs the owner's yes, read-only):** any proforma on staging that was viewed in the portal and then voided before FX-5 (2026-10-28 to 30) now reads as "withdrawn" and reappears in that client's portal. Test data only; check before Phase 7 if wanted.
