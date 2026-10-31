@@ -557,7 +557,14 @@ function Entries(props: {
               return (
                 <span className="entry-person">
                   {e.userName ?? "A former staff member"}
-                  {email && <span className="entry-person__email">{email}</span>}
+                  {email && (
+                    <span className="entry-person__email">
+                      {/* the line breaks before the "@" rather than inside a word */}
+                      {email.slice(0, email.indexOf("@"))}
+                      <wbr />
+                      {email.slice(email.indexOf("@"))}
+                    </span>
+                  )}
                 </span>
               );
             },

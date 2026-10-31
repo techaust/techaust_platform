@@ -644,14 +644,14 @@
   min-width: 7.5rem;
 }
 
-/* Two people with one name: the work email on a quiet second line, as under "Log time for" (polish sweep 1c). An address has no spaces, so
-   it may break anywhere rather than widen the column past the note. */
+/* Two people with one name: the work email on a quiet second line, as under "Log time for" (polish sweep 1c). It breaks before its "@" (a
+   <wbr> in time.tsx), and inside a part only when that part is wider than the cell (a phone's card). */
 .entry-person__email {
   display: block;
   color: var(--color-text-muted);
   font-size: var(--text-sm);
   line-height: var(--text-sm--line-height);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
 .entries-table .dtable__table .entry-target {
