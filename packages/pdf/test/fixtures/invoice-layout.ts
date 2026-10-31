@@ -451,7 +451,7 @@ function sampleSignaturePng(): Uint8Array {
     dot(x, y, 2);
   }
   for (let t = 0; t <= 1; t += 0.001) dot(60 + t * 250, 88 - t * 6, 1);
-  // the shared test encoder (test-hardening 4c; the bytes are unchanged, pinned by packages/testing/test/png.test.ts)
+  // the shared test encoder (test-hardening 4c; the bytes are unchanged, pinned by packages/pdf/test/sample-signature.test.ts)
   return rgbaPng(w, h, px, (raw) => deflateSync(raw, { level: 9 }));
 }
 

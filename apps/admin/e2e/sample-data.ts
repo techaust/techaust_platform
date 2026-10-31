@@ -81,7 +81,7 @@ export function sampleSignaturePng(): Uint8Array {
       px.set([0x14, 0x23, 0x1f, 255], o);
     }
   }
-  // the shared test encoder (test-hardening 4c; the bytes are unchanged, pinned by packages/testing/test/png.test.ts)
+  // the shared test encoder (test-hardening 4c; the bytes are unchanged: 679 bytes, SHA-256 pinned in worker/e2e-sample-signature.test.ts)
   return rgbaPng(w, h, px, (raw) => deflateSync(raw));
 }
 
