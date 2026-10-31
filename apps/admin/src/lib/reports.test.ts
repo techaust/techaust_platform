@@ -6,6 +6,7 @@ import { GSTR1_FREQUENCIES, realisationParamsFromStoredTax } from "@techaust/cor
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
+import { researchedSettingsText } from "../components/form.tsx";
 import scrollCueSource from "../components/scroll-cue.tsx?raw";
 import reportPartsSource from "../routes/reports/parts.tsx?raw";
 import { ACTION_LABELS } from "./audit.ts";
@@ -19,6 +20,7 @@ import {
   GST_COPY,
   GST_ERRORS,
   gstErrorText,
+  gstWarningText,
   issueLines,
   lastCompleteQuarter,
   nearestScrollLeft,
@@ -93,7 +95,7 @@ describe("07-V is approved word for word", () => {
   it("the lines changed on 2026-10-28 (07-V §11, 08-C RB-01 to RB-04, RA-20)", () => {
     expect(STAGE_LABELS.gst_approaching).toBe("GST date in 30 days");
     expect(GST_COPY.verify("gstr1-csv-v1")).toBe(
-      "Made with layout gstr1-csv-v1 for the GSTR-1 offline tool. Layouts change; before your first upload, test-import one file with your CA.",
+      "Made with layout gstr1-csv-v1 for the GSTR-1 offline tool. Layouts change; before your first upload, test-import each file into the offline tool and check what it shows.",
     );
     expect(REALISATION_COPY.lede).toBe(
       "Export invoices not yet fully paid, most urgent first. Money from an export must reach India within the FEMA period: 9 months from the invoice date, or 12 if it was invoiced or settled in Indian Rupees.",
@@ -135,6 +137,53 @@ describe("07-V is approved word for word", () => {
     expect(sectionNameOf("hsn_b2b", "")).toBe(sectionNameOf("hsn_b2c", ""));
     expect(sectionNameOf("docs", "")).toBe(`${M}Documents issued (Table 13)`);
     expect(sectionNameOf("unknown", "")).toBe("unknown");
+  });
+});
+
+describe("07-ZK (approved 2026-11-01): no line sends the owner to a CA or a lawyer", () => {
+  it("the GST export lines, the tax-only note card and the researched-default note name neither", () => {
+    const manual = {
+      docId: "n",
+      kind: "debit_note",
+      number: "TH/DN/2627/0009",
+      date: { year: 2026, month: 8, day: 3 },
+      section: "cdnr",
+      gstin: "19ABCDE1234F1ZX",
+      receiverName: "x",
+      posCode: "19",
+      parentNumber: "TH/INV/2627/0009",
+      byRate: [{ rateBp: 1800, igstMinor: 0, cgstMinor: 9_00, sgstMinor: 9_00 }],
+      igstMinor: 0,
+      cgstMinor: 9_00,
+      sgstMinor: 9_00,
+    } as const;
+    const note = { code: "tax_only_note_manual", path: ["n"], blocking: true } as const;
+    const lines = [
+      GST_COPY.lede,
+      GST_COPY.verify("gstr1-csv-v1"),
+      gstWarningText({ code: "b2cs_negative_net", path: ["x"] }, { state: "West Bengal (19)", rate: "18%" }),
+      gstWarningText({ code: "before_fema_2026", path: ["x"] }),
+      taxOnlyNoteText(note),
+      taxOnlyNoteText({ ...note, manual }),
+      taxOnlyNoteText({ ...note, manual: { ...manual, section: "b2cs", gstin: null } }),
+      researchedSettingsText(),
+    ];
+    for (const line of lines) expect(line).not.toMatch(/\bCA\b|lawyer/);
+    expect(GST_COPY.lede).toBe(
+      "Files for your GSTR-1 and GSTR-3B, made from the invoices and notes issued in the period. Check the figures before you file.",
+    );
+    expect(lines[2]).toBe(
+      "B2CS for West Bengal (19) and 18% comes to below zero after credit notes. Check how this row shows on the GST portal before you file.",
+    );
+    expect(lines[3]).toBe(
+      "Issued before 1 October 2026: the 9 months run from the invoice date. If they have passed, ask your bank for an extension.",
+    );
+    expect(lines[4]).toBe(
+      `${Y_MARK}A tax-only note's tax is not in the files. Enter it by hand on the GST portal, then check GSTR-3B Table 3 before you file.`,
+    );
+    expect(researchedSettingsText()).toBe(
+      "These defaults follow official sources, researched on 28 October 2026. Where the sources leave a question open, the default takes the safest reading.",
+    );
   });
 });
 
@@ -730,7 +779,7 @@ describe("files from register rows (core does every sum)", () => {
       igstMinor: 0,
     });
     expect(first?.text).toBe(
-      `${Y_MARK}TH/DN/2627/0001 (GSTIN 19ABCDE1234F1ZX) is a debit note that adds tax only. The files show it with a taxable value of 0.00 and no tax column, so its tax may not come through on import. Enter by hand: CGST ₹9.01, SGST ₹9.01. Ask your CA how to report it in Table 9B.`,
+      `${Y_MARK}TH/DN/2627/0001 (GSTIN 19ABCDE1234F1ZX) is a debit note that adds tax only. The files show it with a taxable value of 0.00 and no tax column, so its tax may not come through on import. Enter it by hand in Table 9B on the GST portal: CGST ₹9.01, SGST ₹9.01. Then check GSTR-3B Table 3 before you file.`,
     );
     expect(GST_COPY.doneManual(2, 1)).toBe(
       `${Y_MARK}2 documents checked. 1 note needs its tax entered by hand before you file.`,
@@ -766,9 +815,11 @@ describe("files from register rows (core does every sum)", () => {
       },
     });
     expect(text).toContain("TH/DN/2627/0002 (unregistered client) is a debit note that adds tax only.");
-    expect(text).toContain("Enter by hand: IGST ₹10.01.");
-    // a B2CS note is in the B2CS file, so the line names no table
-    expect(text.endsWith("Ask your CA how to report it.")).toBe(true);
+    // a B2CS note is in the B2CS file, so the line names no table (07-ZK line 6)
+    expect(text).toContain(
+      "Enter it by hand on the GST portal: IGST ₹10.01. Then check GSTR-3B Table 3 before you file.",
+    );
+    expect(text).not.toContain("Table 9B");
   });
 
   it("FX-4 early check L2: the words follow the note's kind; a note in a note file names Table 9B", () => {
@@ -789,7 +840,7 @@ describe("files from register rows (core does every sum)", () => {
     } as const;
     const credit = taxOnlyNoteText({ code: "tax_only_note_manual", path: ["c"], blocking: true, manual });
     expect(credit).toBe(
-      `${Y_MARK}TH/CN/2627/0003 (unregistered client) is a credit note that reduces tax only. The files show it with a taxable value of 0.00 and no tax column, so its tax may not come through on import. Enter by hand: IGST ₹5.00. Ask your CA how to report it in Table 9B.`,
+      `${Y_MARK}TH/CN/2627/0003 (unregistered client) is a credit note that reduces tax only. The files show it with a taxable value of 0.00 and no tax column, so its tax may not come through on import. Enter it by hand in Table 9B on the GST portal: IGST ₹5.00. Then check GSTR-3B Table 3 before you file.`,
     );
     expect(credit).not.toContain("adds tax");
     const debit = taxOnlyNoteText({
@@ -806,7 +857,8 @@ describe("files from register rows (core does every sum)", () => {
     });
     expect(debit).toContain("TH/DN/2627/0004 (GSTIN 19ABCDE1234F1ZX) is a debit note that adds tax only.");
     expect(debit).not.toContain("reduces");
-    expect(debit.endsWith("Ask your CA how to report it in Table 9B.")).toBe(true);
+    expect(debit).toContain("Enter it by hand in Table 9B on the GST portal: IGST ₹5.00.");
+    expect(debit.endsWith("Then check GSTR-3B Table 3 before you file.")).toBe(true);
   });
 
   it("a bad document stops every file and names the document", () => {

@@ -82,7 +82,7 @@ export const INVT_COPY = {
   exportNoteHint:
     "Optional. Printed on export invoices after the legal export statement, which is always printed.",
   previousPeriod:
-    "This payment arrived in an earlier month. The GST on it belongs to that month's return: check with your CA.",
+    "This payment arrived in an earlier month. GST on it was due in that month's return; if that return is filed, add it to the next one with interest.",
   routeLegend: "How is GST handled on this export?",
   routeLut: "Under LUT, without IGST",
   routeIgst: "With IGST paid",
@@ -96,7 +96,7 @@ export const INVT_COPY = {
     "This proforma will get the next number in its series and can't be edited afterwards. It is not a tax invoice.",
   proformaVoidBlocked: "This proforma can't be voided because a payment has been recorded against it.",
   advanceSupplyChanged:
-    "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's details with your CA before recording the payment.",
+    "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's GST details. If they are right, issue a new proforma and record the payment on it.",
   // §9 (Q37, owner 2026-10-28; Researched 2026-10-28, Rule 96A CGST, 08-C RA-19): the route when the payment's year has no LUT.
   advanceRouteLegend: "This payment's year has no LUT",
   advanceRouteSaveLut: "Save the LUT first",
