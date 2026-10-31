@@ -17,11 +17,11 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 - **Verified:** each PR's review verdicts, CI and diff checked by the main session before auto-merge; CI green on every merged PR (one flaky web e2e on main after #134 passed on re-run); staging deploys green through T7 (#133). Worker bytes after M6.1: admin front 100,839, admin API 438,052, admin finance 507,872, portal 104,589, **jobs 994,592 of 1,000,000**.
 
 ## In progress
-- **M6.1 on staging:** CI on main (f0d10f5d) and the staging deploy (the finance Worker's first deploy) were running at 22:00; check the "Deploy staging" run for f0d10f5d first thing.
+- **M6.1 is on staging:** CI on main (f0d10f5d) green; the staging deploy (run 41219354758) green in all six steps, the finance Worker's first deploy included, with every health check passing (22:00 IST). Waits for the owner's approval.
 - **This record** (docs PR) merges itself once CI passes. No agent and no cloud session is working.
 
 ## Next
-1. **Check M6.1's staging deploy** (above), then **the owner approves M6.1 on staging** (the lead gives a click-by-click checklist: record a payment as Staff, confirm it as Owner with the code, TDS by certificate, an overpayment kept as credit, the payments register; nothing on the staging sample data is real).
+1. **The owner approves M6.1 on staging** (the lead gives a click-by-click checklist: record a payment as Staff, confirm it as Owner with the code, TDS by certificate, an overpayment kept as credit, the payments register; nothing on the staging sample data is real).
 2. **Decide L9 (the jobs size) before M6.2:** the analyst recommends jobs `minify: true` with source maps and webhook processing in the finance Worker (13, [M6.1 Plan 2](runs/m6.1-ledger-payments.md)). An owner question.
 3. **M6.2 Razorpay** once M6.1 is approved, L9 decided and the owner has the Razorpay test account (runbook Part A); then M6.3 Stripe, M6.4 PayPal, M6.5; T11 (the deed) after M6.1's approval.
 4. **Build the `/orchestrate` skill** (owner, 2026-10-31; 13): the watcher in `tools/watch-cloud.mjs` with the lessons in CLAUDE.md "In a cloud session".

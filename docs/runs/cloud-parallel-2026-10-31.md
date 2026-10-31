@@ -187,9 +187,8 @@ Next, in order:
 | 2026-10-31 21:35 | m6-1-ledger | PR #135 | reviewed (APPROVE, 0059/0060, the deploy-staging.yml diff = the owner's Q1, finance Worker no public URL, PAYMENTS_LIVE_ALLOWED false, jobs 994,592); branch updated; merged | |
 
 ## Handover (main session, 2026-10-31, 22:00 IST)
-Where it stands: all five tasks merged (T12 #129, T6 #130, proforma withdraw #132, T7 #133, M6.1 #135); every owner question answered and recorded in 13; the record updated (12, 13, CHANGELOG, CLAUDE.md). M6.1's staging deploy (f0d10f5d, the finance Worker's first) was still running at handover.
+Where it stands: all five tasks merged (T12 #129, T6 #130, proforma withdraw #132, T7 #133, M6.1 #135); every owner question answered and recorded in 13; the record updated (12, 13, CHANGELOG, CLAUDE.md). M6.1's staging deploy (f0d10f5d, run 41219354758, the finance Worker's first) passed all six steps and health checks at 22:00 IST.
 
 Next:
-1. Check the "Deploy staging" run for f0d10f5d (all six health checks); if it failed, a new session fixes it from [m6.1-ledger-payments](m6.1-ledger-payments.md).
 2. The owner approves M6.1 on staging (checklist from the lead); the L9 question to the owner before M6.2.
 3. Build the `/orchestrate` skill with this run's lessons (CLAUDE.md "In a cloud session"; 13).
