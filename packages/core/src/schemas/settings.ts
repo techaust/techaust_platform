@@ -20,7 +20,7 @@ import {
   validateFormat,
   validateStoredFormat,
 } from "../numbering.ts";
-import { UDYAM_CATEGORIES, UDYAM_NUMBER_ERROR, UDYAM_NUMBER_RE } from "../udyam.ts";
+import { isUdyamNumber, UDYAM_CATEGORIES, UDYAM_NUMBER_ERROR } from "../udyam.ts";
 
 /**
  * The brand logo files a document may use (ADM-SET-01), file names under `packages/ui/brand`. A fixed list: the PDF and the
@@ -100,9 +100,10 @@ export type SignatureRef = z.infer<typeof signatureRef>;
  * Researched 2026-10-30, MSMED ss.15–16 (08-C RB-39(a)). The canonical form only (the form trims and upper-cases first, L5; `UDYAM_NUMBER_RE`).
  * OPEN (08-C RB-39): is UDYAM-XX-00-0000000 the official format? The Udyam portal and the MSME notification were not read; this is the shape of the owner's
  * own number and of 07-ZC line 4. The category is stored as a key (L3); its printed words are `@techaust/pdf/copy`'s.
+ * The number refines with core `isUdyamNumber`, the very check `isUdyam` makes (second review 5b: the shape lives in one place).
  */
 export const udyamSettings = z.strictObject({
-  number: z.string().check(z.regex(UDYAM_NUMBER_RE, { error: UDYAM_NUMBER_ERROR })),
+  number: z.string().check(z.refine(isUdyamNumber, { error: UDYAM_NUMBER_ERROR })),
   category: z.enum(UDYAM_CATEGORIES),
 });
 

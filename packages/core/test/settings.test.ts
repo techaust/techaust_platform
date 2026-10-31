@@ -17,6 +17,7 @@ import {
 } from "../src/schemas/settings.ts";
 import {
   isUdyam,
+  isUdyamNumber,
   UDYAM_CATEGORIES,
   UDYAM_NUMBER_ERROR,
   UDYAM_NUMBER_RE,
@@ -227,6 +228,27 @@ describe("T10: the Udyam registration (ADM-SET-01; 07-ZC lines 4-5; 08-C RB-39)"
     ])
       expect(isUdyam(v), JSON.stringify(v)).toBe(false);
     expect(UDYAM_NUMBER_RE.test("UDYAM-WB-01-0012345")).toBe(true);
+    // second review 5b: one shape check, read by the schema and by isUdyam alike, so the two can never disagree
+    for (const n of ["UDYAM-WB-01-0012345", "UDYAM-KA-99-9999999"]) {
+      expect(isUdyamNumber(n), n).toBe(true);
+      expect(isUdyam({ number: n, category: "micro" }), n).toBe(true);
+      expect(udyam(n).success, n).toBe(true);
+    }
+    for (const n of [
+      "udyam-wb-01-0012345",
+      "UDYAM-WB-1-0012345",
+      "UDYAM-WB-01-001234",
+      " UDYAM-WB-01-0012345",
+      "UDYAM-W1-01-0012345",
+      "UDYAM-WB-01-0012345\n",
+      "",
+    ]) {
+      expect(isUdyamNumber(n), JSON.stringify(n)).toBe(false);
+      expect(isUdyam({ number: n, category: "micro" }), JSON.stringify(n)).toBe(false);
+      const r = udyam(n);
+      expect(!r.success && r.error.issues[0]?.message, JSON.stringify(n)).toBe(UDYAM_NUMBER_ERROR);
+    }
+    for (const n of [12, null, undefined, {}]) expect(isUdyamNumber(n), String(n)).toBe(false);
     expect(udyamPrintedOn("tax_invoice")).toBe(true);
     for (const t of ["export_invoice", "proforma", "credit_note", "debit_note", "proposal"])
       expect(udyamPrintedOn(t), t).toBe(false);

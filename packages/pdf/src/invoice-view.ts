@@ -156,18 +156,27 @@ export function toInvoiceView(
   ]
     .filter(nonEmpty)
     .join(" · ");
-  const supplierLines = [
+  // The registration line's index is taken when it is pushed (second review 5c), never searched for by its text, so an earlier line with the same words
+  // can't move the Udyam line.
+  const supplierLines: string[] = [];
+  const pushLine = (line: string | null | undefined) => {
+    if (nonEmpty(line)) supplierLines.push(line);
+  };
+  pushLine(
     nonEmpty(company.legalName) && company.legalName !== company.tradeName
       ? `Proprietor: ${company.legalName}`
       : null,
-    company.address,
+  );
+  pushLine(company.address);
+  pushLine(
     nonEmpty(company.principalPlace) && company.principalPlace !== company.address
       ? `Principal place of business: ${company.principalPlace}`
       : null,
-    registration,
-    emailOnDocuments,
-    nonEmpty(company.phone) ? company.phone : null,
-  ].filter(nonEmpty);
+  );
+  const registrationAt = nonEmpty(registration) ? supplierLines.length : -1;
+  pushLine(registration);
+  pushLine(emailOnDocuments);
+  pushLine(nonEmpty(company.phone) ? company.phone : null);
 
   const b = header.issuer.bank.inr;
   const bank: InvoiceViewBank | null = b
@@ -312,7 +321,7 @@ export function toInvoiceView(
       name: company.tradeName,
       legalName: nonEmpty(company.legalName) ? company.legalName : null,
       lines: supplierLines,
-      registrationAt: supplierLines.indexOf(registration),
+      registrationAt,
       // T10: 07-ZC line 6 from the frozen block (only a tax invoice can carry one: the envelope check refuses it anywhere else)
       udyam: company.udyam ? UDYAM_COPY.line(company.udyam.number, company.udyam.category) : null,
     },

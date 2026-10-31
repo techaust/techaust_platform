@@ -18,7 +18,16 @@ const usePdf = (token: string, init: { ip?: string | null; headers?: Record<stri
   call("/t/document/pdf", { body: { token }, ...init });
 
 let seq = 0;
-/** A frozen document of an organisation with two lines (the lines go in while it is still a draft, as the issue does). */
+/**
+ * settle-08c T4 (rt2): a credit note, a debit note and an invoice for a payment received freeze only with a signature reference in the issuer block (trigger
+ * `documents_signature_required`, migration 0055). The same reference as db `SIGNED_ISSUER` (no image: the trigger checks the reference only).
+ */
+const TEST_SIGNATURE = {
+  key: "settings/signature-00112233aabbccdd.png",
+  sha256: "ab".repeat(32),
+  mime: "image/png",
+} as const;
+/** A frozen document of an organisation with two lines (the lines go in while it is still a draft, as the issue does); its issuer is signed (T4). */
 async function frozenDoc(
   orgId: string,
   type: string,
@@ -48,6 +57,7 @@ async function frozenDoc(
       o.balance ?? 118000,
       o.pdfKey ?? null,
       JSON.stringify({
+        signature: TEST_SIGNATURE,
         bank: {
           inr: {
             accountName: "TecHaust",

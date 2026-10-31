@@ -10,6 +10,12 @@
  */
 export const UDYAM_NUMBER_RE = /^UDYAM-[A-Z]{2}-\d{2}-\d{7}$/;
 
+/**
+ * The one check of a number's shape (second review 5b): the settings schema refines with it and `isUdyam` (the issuer block, the PDF envelope check) reads it,
+ * so the shape lives here only.
+ */
+export const isUdyamNumber = (n: unknown): n is string => typeof n === "string" && UDYAM_NUMBER_RE.test(n);
+
 /** 07-ZC line 4, the error for a number of any other shape (APPROVED by the owner, 2026-10-31): one text for the settings schema and the company form (code review 5). */
 export const UDYAM_NUMBER_ERROR = "Enter the number as UDYAM-XX-00-0000000.";
 
@@ -31,8 +37,7 @@ export function isUdyam(v: unknown): v is Udyam {
   const keys = Object.keys(o);
   return (
     keys.length === 2 &&
-    typeof o.number === "string" &&
-    UDYAM_NUMBER_RE.test(o.number) &&
+    isUdyamNumber(o.number) &&
     typeof o.category === "string" &&
     (UDYAM_CATEGORIES as readonly string[]).includes(o.category)
   );

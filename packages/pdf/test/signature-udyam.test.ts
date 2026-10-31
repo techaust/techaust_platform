@@ -182,6 +182,26 @@ describe("the view and the gate [T10]", () => {
     }
   });
 
+  it("registrationAt is the index the registration line was pushed at, not the first line with its words (second review 5c)", async () => {
+    const { envelope } = await buildInvoiceFixture("intra");
+    const sealed = await withUdyam(envelope);
+    const plain = toInvoiceView(sealed, DEFAULT_VIEW_CONFIG).supplier;
+    const registration = plain.lines[plain.registrationAt] ?? "";
+    expect(registration.startsWith("GSTIN "), registration).toBe(true);
+    // an earlier line (the address) with the very same words: the Udyam line still goes under the real registration line
+    const twin = clone(sealed);
+    (twin.snapshot.header.issuer.company as Record<string, unknown>).address = registration;
+    const view = toInvoiceView(await reseal(twin), DEFAULT_VIEW_CONFIG);
+    const s = view.supplier;
+    const first = s.lines.indexOf(registration);
+    expect(s.lines.lastIndexOf(registration)).toBeGreaterThan(first);
+    expect(s.registrationAt).toBe(s.lines.lastIndexOf(registration));
+    const out = supplierLinesHtml(view, (t) => `<p>${t}</p>`).split("</p>");
+    expect(out[s.registrationAt]).toBe(`<p>${registration}`);
+    expect(out[s.registrationAt + 1]).toContain(LINE);
+    expect(out[first + 1]).not.toContain(LINE);
+  });
+
   it("the skeleton (a type the designed layout does not know) prints it the same way [F1]", async () => {
     const { envelope } = await buildInvoiceFixture("intra");
     const sealed = await withUdyam(envelope);
