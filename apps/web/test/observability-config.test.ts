@@ -21,6 +21,7 @@ const FILES = [
   "web/wrangler.jsonc",
   "admin/wrangler.jsonc",
   "admin/wrangler.api.jsonc",
+  "admin/wrangler.finance.jsonc",
   "portal/wrangler.jsonc",
   "jobs/wrangler.jsonc",
 ];

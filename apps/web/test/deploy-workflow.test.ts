@@ -1,6 +1,6 @@
 // The staging deploy workflows (owner's yes 2026-10-30): full audit A1 5, package code (install, seed SQL, astro and vite builds) runs
 // only in steps WITHOUT the Cloudflare token, and the deploy scripts upload only a staging build; A6 8, the Workers deploy one per step
-// in a fixed order (admin API, admin front, portal, jobs, website) with a health check after the admin. Runs in Node (reads files).
+// in a fixed order (admin API, admin finance since M6.1, admin front, portal, jobs, website) with a health check after the admin. Runs in Node (reads files).
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
@@ -79,13 +79,14 @@ describe("deploy-staging.yml order and health checks [A6-8]", () => {
   const steps = stepsOf(workflow("deploy-staging.yml"));
   const ORDER = [
     "pnpm --filter @techaust/admin run deploy:staging:api",
+    "pnpm --filter @techaust/admin run deploy:staging:finance",
     "pnpm --filter @techaust/admin run deploy:staging:front",
     "pnpm --filter @techaust/portal run deploy:staging",
     "pnpm --filter @techaust/jobs run deploy:staging",
     "pnpm --filter @techaust/web run deploy:staging",
   ];
 
-  it("deploys the five Workers one per step, in order: admin API, admin front, portal, jobs, website", () => {
+  it("deploys the six Workers one per step, in order: admin API, admin finance, admin front, portal, jobs, website", () => {
     const at = ORDER.map((c) => running(steps, c));
     for (const [i, index] of at.entries()) expect(index, ORDER[i]).toBeGreaterThan(-1);
     expect([...at].sort((a, b) => a - b)).toEqual(at);
@@ -93,8 +94,12 @@ describe("deploy-staging.yml order and health checks [A6-8]", () => {
     expect(workflow("deploy-staging.yml")).not.toMatch(/pnpm -r[^\n]*deploy/);
   });
 
-  it("the admin API Worker (bound by jobs as ADMIN_JOBS) is deployed before jobs", () => {
-    expect(running(steps, ORDER[0] as string)).toBeLessThan(running(steps, ORDER[3] as string));
+  it("the admin finance Worker (bound by the front as ADMIN_FINANCE and by jobs as ADMIN_JOBS) is deployed after the API and before the front and jobs (M6.1)", () => {
+    const finance = running(steps, ORDER[1] as string);
+    expect(finance).toBe(running(steps, ORDER[0] as string) + 1);
+    expect(finance).toBeLessThan(running(steps, ORDER[2] as string));
+    expect(finance).toBeLessThan(running(steps, ORDER[4] as string));
+    expect(hasToken(steps[finance] ?? "")).toBe(true);
   });
 
   it("migrates, seeds, reads the snapshot and builds everything before the first deploy", () => {
@@ -112,10 +117,10 @@ describe("deploy-staging.yml order and health checks [A6-8]", () => {
     );
   });
 
-  it("checks the admin's health right after its two Workers, before the portal, with the Access token only", () => {
+  it("checks the admin's health right after its three Workers, before the portal, with the Access token only", () => {
     const health = running(steps, "node scripts/staging-health.mjs admin");
-    expect(health).toBe(running(steps, ORDER[1] as string) + 1);
-    expect(health).toBeLessThan(running(steps, ORDER[2] as string));
+    expect(health).toBe(running(steps, ORDER[2] as string) + 1);
+    expect(health).toBeLessThan(running(steps, ORDER[3] as string));
     const step = steps[health] ?? "";
     expect(hasToken(step)).toBe(false);
     expect(step).toContain(`CF_ACCESS_CLIENT_ID: ${secret("CF_ACCESS_DEPLOY_CLIENT_ID")}`);
@@ -124,15 +129,15 @@ describe("deploy-staging.yml order and health checks [A6-8]", () => {
   });
 
   it.each([
-    ["portal", 2],
-    ["jobs", 3],
-    ["web", 4],
+    ["portal", 3],
+    ["jobs", 4],
+    ["web", 5],
   ] as const)(
     "checks the %s Worker's health right after its deploy, with the deploy-check token only",
     (app, at) => {
       const health = running(steps, `node scripts/staging-health.mjs ${app}`);
       expect(health).toBe(running(steps, ORDER[at] as string) + 1);
-      if (at < 4) expect(health).toBeLessThan(running(steps, ORDER[at + 1] as string));
+      if (at < 5) expect(health).toBeLessThan(running(steps, ORDER[at + 1] as string));
       const step = steps[health] ?? "";
       expect(hasToken(step)).toBe(false);
       expect(step).toContain(`CF_ACCESS_CLIENT_ID: ${secret("CF_ACCESS_DEPLOY_CLIENT_ID")}`);
@@ -177,6 +182,7 @@ describe("the apps' staging scripts [A1-5]", () => {
 
   const DEPLOYS: [string, string, string][] = [
     ["admin", "deploy:staging:api", "admin-api"],
+    ["admin", "deploy:staging:finance", "admin-finance"],
     ["admin", "deploy:staging:front", "admin"],
     ["portal", "deploy:staging", "portal"],
     ["web", "deploy:staging", "web"],
@@ -195,7 +201,7 @@ describe("the apps' staging scripts [A1-5]", () => {
     expect(scripts("jobs")["deploy:staging"]).toBe("wrangler deploy --env staging");
   });
 
-  it("admin has no combined deploy:staging (its two Workers deploy in separate steps)", () => {
+  it("admin has no combined deploy:staging (its three Workers deploy in separate steps)", () => {
     expect(scripts("admin")["deploy:staging"]).toBeUndefined();
   });
 

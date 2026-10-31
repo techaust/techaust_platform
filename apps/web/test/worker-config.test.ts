@@ -198,12 +198,13 @@ describe("admin API Worker config guard (M5.0)", () => {
 
 describe("jobs Worker config guard (M5.4, LD57, LD61)", () => {
   const read = (p: string) => guard.parseJsonc(readFileSync(new URL(`../../${p}`, import.meta.url), "utf8"));
-  const api = read("admin/wrangler.api.jsonc");
+  // M6.1 stage A: the BillingJobs entrypoint is exported by the admin finance Worker.
+  const finance = read("admin/wrangler.finance.jsonc");
   const jobs = read("jobs/wrangler.jsonc");
 
   it("the real config passes: both crons and the BillingJobs binding at the top level and in staging, neither in production", () => {
     expect(guard.JOBS_CRONS).toEqual(["0 22 * * *", "30 * * * *"]);
-    expect(guard.jobsConfigProblems(jobs, api)).toEqual([]);
+    expect(guard.jobsConfigProblems(jobs, finance)).toEqual([]);
     // FX-1 (A6 3): triggers are inherited, so production states an empty list.
     expect(jobs.env.production.triggers).toEqual({ crons: [] });
     expect(jobs.env.production.services).toBeUndefined();
@@ -212,7 +213,7 @@ describe("jobs Worker config guard (M5.4, LD57, LD61)", () => {
   it("production without its own triggers would inherit the crons: refused (FX-1, A6 3)", () => {
     const d = structuredClone(jobs);
     d.env.production.triggers = undefined;
-    expect(guard.jobsConfigProblems(d, api)).toEqual([
+    expect(guard.jobsConfigProblems(d, finance)).toEqual([
       'env.production: needs "triggers": { "crons": [] } (an environment without its own triggers inherits the top level\'s)',
     ]);
   });
@@ -220,24 +221,107 @@ describe("jobs Worker config guard (M5.4, LD57, LD61)", () => {
   it("fails a missing hourly cron, a missing or mispointed binding or entrypoint, and anything in production", () => {
     const a = structuredClone(jobs);
     a.env.staging.triggers.crons = ["0 22 * * *"];
-    expect(guard.jobsConfigProblems(a, api)).toEqual([
+    expect(guard.jobsConfigProblems(a, finance)).toEqual([
       'env.staging: crons must be exactly ["0 22 * * *","30 * * * *"]',
     ]);
     const b = structuredClone(jobs);
     b.env.staging.services = undefined;
-    b.services[0].service = "techaust-platform-admin-api-staging";
+    b.services[0].service = "techaust-platform-admin-finance-staging";
     b.services[0].entrypoint = "default";
-    expect(guard.jobsConfigProblems(b, api)).toEqual([
-      "(top level): ADMIN_JOBS points at techaust-platform-admin-api-staging, expected techaust-platform-admin-api",
+    expect(guard.jobsConfigProblems(b, finance)).toEqual([
+      "(top level): ADMIN_JOBS points at techaust-platform-admin-finance-staging, expected techaust-platform-admin-finance",
       "(top level): ADMIN_JOBS must name the entrypoint BillingJobs",
       "env.staging: the ADMIN_JOBS service binding is missing",
     ]);
     const c = structuredClone(jobs);
     c.env.production.triggers = { crons: ["30 * * * *"] };
     c.env.production.services = structuredClone(jobs.services);
-    expect(guard.jobsConfigProblems(c, api)).toEqual([
+    expect(guard.jobsConfigProblems(c, finance)).toEqual([
       "env.production: no cron triggers until Phase 7",
       "env.production: no ADMIN_JOBS service binding until Phase 7",
+    ]);
+  });
+});
+
+describe("admin finance Worker config guard (M6.1 stage A, ADM-PAY-01)", () => {
+  const read = (p: string) => guard.parseJsonc(readFileSync(new URL(`../../${p}`, import.meta.url), "utf8"));
+  const finance = read("admin/wrangler.finance.jsonc");
+  const api = read("admin/wrangler.api.jsonc");
+  const front = read("admin/wrangler.jsonc");
+  const jobs = read("jobs/wrangler.jsonc");
+
+  it("covers both auxiliary admin configs, and the real configs pass", () => {
+    expect(guard.ADMIN_AUX_CONFIGS).toEqual(["wrangler.api.jsonc", "wrangler.finance.jsonc"]);
+    expect(guard.apiConfigProblems(finance, front)).toEqual([]);
+    expect(guard.missingPreviewOff(finance)).toEqual([]);
+    expect(guard.observabilityProblems(finance)).toEqual([]);
+    expect(guard.frontServiceProblems(front, api, finance)).toEqual([]);
+  });
+
+  it("names its own Worker in every scope, runs finance.ts, and has no public URL", () => {
+    expect(finance.main).toBe("worker/finance.ts");
+    expect([finance.name, finance.env.staging.name, finance.env.production.name]).toEqual([
+      "techaust-platform-admin-finance",
+      "techaust-platform-admin-finance-staging",
+      "techaust-platform-admin-finance",
+    ]);
+    for (const c of [finance, finance.env.staging, finance.env.production]) {
+      expect(c.workers_dev).toBe(false);
+      expect(c.preview_urls).toBe(false);
+    }
+  });
+
+  it("the front binds ADMIN_FINANCE in all three scopes, to the finance Worker of that scope", () => {
+    const want = [
+      [front, "techaust-platform-admin-finance"],
+      [front.env.staging, "techaust-platform-admin-finance-staging"],
+      [front.env.production, "techaust-platform-admin-finance"],
+    ] as const;
+    for (const [c, service] of want) {
+      expect(c.services).toContainEqual({ binding: "ADMIN_FINANCE", service });
+    }
+  });
+
+  it("fails a front without ADMIN_FINANCE, one pointing at the API Worker, or one naming an entrypoint", () => {
+    const a = structuredClone(front);
+    a.env.production.services = a.env.production.services.filter(
+      (s: { binding: string }) => s.binding !== "ADMIN_FINANCE",
+    );
+    expect(guard.frontServiceProblems(a, api, finance)).toEqual([
+      "env.production: the ADMIN_FINANCE service binding is missing",
+    ]);
+    const b = structuredClone(front);
+    b.env.staging.services[1].service = "techaust-platform-admin-api-staging";
+    b.env.staging.services[1].entrypoint = "BillingJobs";
+    expect(guard.frontServiceProblems(b, api, finance)).toEqual([
+      "env.staging: ADMIN_FINANCE points at techaust-platform-admin-api-staging, expected techaust-platform-admin-finance-staging",
+      "env.staging: ADMIN_FINANCE must not name an entrypoint",
+    ]);
+  });
+
+  it("fails a finance Worker named like the API Worker", () => {
+    const f = structuredClone(finance);
+    f.env.staging.name = api.env.staging.name;
+    expect(guard.frontServiceProblems(front, api, f)).toContain(
+      "env.staging: the API and finance Workers must have different names",
+    );
+  });
+
+  it("fails a finance config with a public URL or another bucket", () => {
+    const f = structuredClone(finance);
+    f.env.staging.workers_dev = true;
+    f.env.staging.r2_buckets[0].bucket_name = "other";
+    expect(guard.apiConfigProblems(f, front)).toEqual([
+      "env.staging: workers_dev must be false",
+      "env.staging: r2_buckets differ from the front's",
+    ]);
+  });
+
+  it("jobs binds BillingJobs on the finance Worker, no longer on the API Worker", () => {
+    expect(guard.jobsConfigProblems(jobs, finance)).toEqual([]);
+    expect(guard.jobsConfigProblems(jobs, api)).toEqual([
+      "(top level): ADMIN_JOBS points at techaust-platform-admin-finance, expected techaust-platform-admin-api",
+      "env.staging: ADMIN_JOBS points at techaust-platform-admin-finance-staging, expected techaust-platform-admin-api-staging",
     ]);
   });
 });

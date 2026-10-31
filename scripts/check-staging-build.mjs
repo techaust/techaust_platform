@@ -3,10 +3,10 @@
 //   - admin, portal: `CLOUDFLARE_ENV=staging vite build` writes `.wrangler/deploy/config.json`, which points `wrangler deploy` at the
 //     flattened config in dist/. That config must name the staging Worker. A plain `vite build` (local, CI) flattens the TOP level,
 //     whose name is the PRODUCTION Worker's, so a deploy after it would go to production: refused here. Admin also checks the API
-//     Worker's flattened config (deployed with `--config`).
+//     Worker's and (M6.1 stage A) the finance Worker's flattened configs (each deployed with `--config`).
 //   - web: `wrangler deploy --env staging` picks the Worker, but the pages are static and carry the Turnstile site key chosen at build
 //     time; the built pages must hold env.staging's key and not the top level's test key.
-// Usage: node scripts/check-staging-build.mjs admin|admin-api|portal|web   (run from anywhere; reads apps/<app>/ only).
+// Usage: node scripts/check-staging-build.mjs admin|admin-api|admin-finance|portal|web   (run from anywhere; reads apps/<app>/ only).
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -62,19 +62,26 @@ function htmlFiles(dir) {
   });
 }
 
+/**
+ * The admin Workers behind the front, each deployed with `--config dist/<dist>/wrangler.json`: the API (M5.0) and finance (M6.1 stage A,
+ * ADM-PAY-01) Workers. `config` is the app's own config, whose env.staging name the flattened build must carry.
+ */
+export const ADMIN_AUX_TARGETS = {
+  "admin-api": { config: "wrangler.api.jsonc", dist: "techaust_platform_admin_api" },
+  "admin-finance": { config: "wrangler.finance.jsonc", dist: "techaust_platform_admin_finance" },
+};
+
 export function problemsFor(target) {
   if (target === "admin" || target === "portal") {
     const appDir = join(APPS_DIR, target);
     const name = stagingNameOf(readFileSync(join(appDir, "wrangler.jsonc"), "utf8"));
     return builtConfigProblems(redirected(appDir), name);
   }
-  if (target === "admin-api") {
+  const aux = ADMIN_AUX_TARGETS[target];
+  if (aux) {
     const appDir = join(APPS_DIR, "admin");
-    const name = stagingNameOf(readFileSync(join(appDir, "wrangler.api.jsonc"), "utf8"));
-    return builtConfigProblems(
-      readJson(join(appDir, "dist", "techaust_platform_admin_api", "wrangler.json")),
-      name,
-    );
+    const name = stagingNameOf(readFileSync(join(appDir, aux.config), "utf8"));
+    return builtConfigProblems(readJson(join(appDir, "dist", aux.dist, "wrangler.json")), name);
   }
   if (target === "web") {
     const appDir = join(APPS_DIR, "web");
