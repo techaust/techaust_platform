@@ -2,6 +2,7 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-31 [#125](https://github.com/techaust/techaust_platform/pull/125) docs: T6 and T11 wording approved (07-ZE: offer wording, proposal terms v4, legal pages 0.2, the deed of assignment; Q1-Q4)
 - 2026-10-31 [#124](https://github.com/techaust/techaust_platform/pull/124) feat(invoices): signature always on notes and advance invoices, Udyam number on tax invoices [ADM-INV-01, ADM-INV-06, ADM-INV-07, ADM-SET-01]
 - 2026-10-31 [#123](https://github.com/techaust/techaust_platform/pull/123) feat(notes): credit-note deadline by GSTR-1 frequency, the LUT of a debit note's FY, IMS in the 3B helper [ADM-INV-11, ADM-INV-18, ADM-REP-04, ADM-SET-03]
 - 2026-10-30 [#120](https://github.com/techaust/techaust_platform/pull/120) fix: full audit final sweep, website, admin and portal (reflow, targets, landmarks, errors, portal invoice rows, approved copy, terms v3) [ADM-INV-07, ADM-DASH-01, POR-05, POR-06, WEB-G-07]
