@@ -42,7 +42,7 @@ Installing the GitHub App changes a GitHub setting, so only you do it.
    BASH_MAX_TIMEOUT_MS=600000
    ```
 6. Click the **Setup script** row. In a new browser tab open
-   **https://github.com/techaust/techaust_platform/blob/main/scripts/cloud-setup.sh**, click **Raw**, press **Ctrl+A** then **Ctrl+C**, come back and paste it into the box (**Ctrl+V**). Paste the whole file; don't edit it.
+   **https://github.com/techaust/techaust_platform/blob/main/scripts/cloud-setup.sh**, click **Raw**, press **Ctrl+A** then **Ctrl+C**, come back and paste it into the box (**Ctrl+V**). Paste the whole file; don't edit it. **Whenever `scripts/cloud-setup.sh` changes on `main`, do this step again** (replace the box's whole content: Ctrl+A in the box, then Ctrl+V), or every new session keeps the old script.
 7. Click **Add environment** (or **Save changes**).
 
 The first session in this environment takes a few minutes longer: the setup script installs Node 24, pnpm and the browsers, and Claude then keeps a copy, so later sessions start fast. The copy is rebuilt by itself about once a week, or when you change the script or the allowed domains.
@@ -62,6 +62,20 @@ The first session in this environment takes a few minutes longer: the setup scri
 
 **If a line says FAIL:** copy the whole answer to the lead. If the session didn't start at all, the setup script stopped: open the environment (gear icon next to its name), check Part 2 was pasted exactly, and save again; the next session reruns it.
 
+
+**If the session stops before it starts with `[setup] FAILED: …`:** the setup script stopped (the line names the step). Copy the line to the lead. Example (2026-10-31): "node -v says v24.22.1, not v24.22.2": the image had begun to ship its own Node in `/opt/node24`. #126 moved ours to `/opt/techaust-node`; then the script is pasted again (Part 2, step 6).
+
+## Part 4. Several tasks at once (parallel task sessions; owner, 2026-10-31)
+The pending tasks can run side by side, one cloud session each, while one session on this PC (the **main session**) controls them.
+1. **The main session starts them.** It uses `start_session` with target cloud and the environment `techaust_platform`. Each gets the shared prompt plus its task, from [runs/cloud-parallel-2026-10-31.md](../runs/cloud-parallel-2026-10-31.md) (the template; a later run copies it with new tasks). Each cloud session starts from `main`, so the setup script and the hook must be current on `main` first.
+2. **Each cloud session is its task's lead.** It runs the usual order (analyst brief for Tier A, builder, early check, designer, reviewer, fixes, re-check) with **at most 2 agents at once**, 1 using a browser.
+3. **It talks through its run file:** a `Status:` line, "Questions for the owner" (multiple choice, recommendation first) and new copy in its own 07 appendix. It pushes often and carries on with unblocked work. It ends its turn only with "WAITING ON OWNER: <name>" or "PR READY: <url>".
+4. **The main session:**
+   - reads the run files (`git fetch`, then `git show origin/<branch>:docs/runs/<file>`) when the owner says **"check the cloud sessions"** (cloud sessions can't message back);
+   - brings the owner every question in one batch, and sends answers and usage readings (`USAGE <pct> at <ISO time>`) as messages;
+   - turns on auto-merge and Auto-fix in the planned merge order, and tells the next branch to take `main` in (renumbering unapplied migrations) before it merges;
+   - alone edits 12, 13, CHANGELOG, CLAUDE.md and memory, from each run file's "Lead decisions (for 13)" and "Follow-ups (for 12)".
+5. **You:** keep this PC's Claude window open while sessions are being created (the app creates them within about 10 minutes). Answer the batch of questions the main session brings. Approve milestones on staging as usual.
 ---
 
 ## What runs where (for the lead)

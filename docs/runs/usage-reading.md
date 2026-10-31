@@ -7,4 +7,6 @@ A cloud session that can't read the 5-hour bar itself reads this file before sta
 
 The local lead (or the owner) updates the line below on the cloud session's branch. Keep the format: `node tools/agent-slots.mjs --cloud --reading <pct> --reading-at <time>` takes these two values.
 
+**Parallel task sessions** (owner, 2026-10-31; [runbook Part 4](../runbooks/cloud-sessions.md)): the main session sends each cloud session `USAGE <pct> at <ISO time>` (e.g. `USAGE 3 at 2026-10-31T11:54+05:30`) as a message. The session passes the newest one to `agent-slots.mjs` and never edits or commits this file, so five branches don't fight over one line.
+
 Reading: none yet
