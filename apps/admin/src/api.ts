@@ -1221,6 +1221,7 @@ const PAYMENT_DETAIL_KEYS = [
   "documentId",
   "balanceMinor",
   "excessMinor",
+  "releasableMinor",
   "receivedOn",
   "clientCode",
   "clientName",
@@ -1884,6 +1885,8 @@ export type InvoicePaymentsPanel = {
   creditedMinor: number;
   balanceMinor: number;
   excessMinor: number;
+  /** What "Move excess to credit" may move: the excess less its TDS part (code review finding 1). */
+  releasableMinor: number;
   payments: {
     paymentId: string;
     kind: PaymentKind;

@@ -17,6 +17,7 @@ import { uuidv7 } from "@techaust/core/ids";
 import { issueDateOf, normaliseReference } from "@techaust/core/invoices";
 import {
   type AllocationRequest,
+  balanceOf,
   type LedgerDoc,
   planAllocations,
   receiptMonthWarning,
@@ -338,7 +339,7 @@ function planRefusal(
     case "tds_not_whole":
       return err(c, TDS_NOT_WHOLE, 400);
     case "exceeds_balance": {
-      const balance = d ? Math.max(0, d.total_minor - d.paid_minor - d.credited_minor - d.tds_minor) : 0;
+      const balance = d ? balanceOf(d.total_minor, d.paid_minor, d.credited_minor, d.tds_minor) : 0;
       return err(c, allocationExceedsBalance(balance, d?.currency ?? "INR"), 409, {
         documentId: documentId ?? null,
         balanceMinor: balance,

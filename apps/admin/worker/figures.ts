@@ -8,7 +8,9 @@
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import {
   CLIENT_FIGURES_SQL,
+  CLIENT_PAYMENTS_ONLY_SQL,
   type ClientFiguresRow,
+  type ClientPaymentsOnlyRow,
   PROJECT_BILLED_SQL,
   type ProjectBilledRow,
 } from "@techaust/db/reports";
@@ -51,8 +53,30 @@ export type ProjectBilled = {
   readonly tdsMinor: number;
 };
 
-export const clientFiguresOf = (rows: readonly ClientFiguresRow[]): ClientFigures[] =>
-  rows.map((r) => ({
+export const clientFiguresOf = (
+  rows: readonly ClientFiguresRow[],
+  paymentsOnly: readonly ClientPaymentsOnlyRow[] = [],
+): ClientFigures[] =>
+  [
+    ...rows,
+    // Code review finding 7: a currency with payments and no issued document, its document figures at zero (Collected and Credit held before the first invoice).
+    ...paymentsOnly
+      .filter((p) => !rows.some((r) => r.currency === p.currency))
+      .map(
+        (p): ClientFiguresRow => ({
+          currency: p.currency,
+          billed: 0,
+          credited: 0,
+          balance: 0,
+          overdue: 0,
+          overdue_n: 0,
+          tds: 0,
+          excess: 0,
+          collected: p.collected,
+          credit: p.credit,
+        }),
+      ),
+  ].map((r) => ({
     currency: r.currency,
     billedMinor: r.billed,
     creditedMinor: r.credited,
@@ -85,9 +109,10 @@ export const projectBilledStatement = (db: D1Database, projectId: string): D1Pre
 export async function clientFinance(c: Ctx, id: string, now = Date.now()): Promise<Response> {
   const db = c.env.DB;
   const today = toIsoDate(istDate(now));
-  const [client, figures] = await db.batch<Record<string, unknown>>([
+  const [client, figures, paymentsOnly] = await db.batch<Record<string, unknown>>([
     db.prepare("SELECT anonymised_at FROM clients WHERE id = ?1").bind(id),
     db.prepare(CLIENT_FIGURES_SQL).bind(id, today),
+    db.prepare(CLIENT_PAYMENTS_ONLY_SQL).bind(id),
   ]);
   const row = client?.results[0] as { anonymised_at: number | null } | undefined;
   if (!row) return err(c, NOT_FOUND, 404);
@@ -97,7 +122,10 @@ export async function clientFinance(c: Ctx, id: string, now = Date.now()): Promi
       : {
           available: true,
           asOf: today,
-          currencies: clientFiguresOf((figures?.results ?? []) as ClientFiguresRow[]),
+          currencies: clientFiguresOf(
+            (figures?.results ?? []) as ClientFiguresRow[],
+            (paymentsOnly?.results ?? []) as ClientPaymentsOnlyRow[],
+          ),
         };
   return c.json(answer);
 }

@@ -475,26 +475,30 @@ export const EXPORT_NEXT_SQL = (() => {
 // fix round, item 7; a plain NOT EXISTS guard is checked per index entry). The admin answers `available: false` from the client row read in the same batch.
 
 /**
- * M6.1: the client's (`?1`) confirmed payments by currency, as one JSON object (`{"INR": n}`): a scalar subquery that does not depend on the outer row, so SQLite
- * runs it once per statement (never once per document), a seek of `payments_client`; and what those payments hold net on documents, the same way (the
- * allocations read by payment). The client's credit is the first less the second (L2).
+ * M6.1: the client's (`?1`) confirmed payments by currency, as one JSON object (`{"INR": n}`), a seek of `payments_client`; and what those payments hold net
+ * on documents, the same way (the allocations read by payment). The client's credit is the first less the second (L2).
  */
 const COLLECTED_BY_CURRENCY = `(SELECT json_group_object(x.cur, x.amount) FROM (SELECT cp.currency AS cur, sum(cp.amount_minor) AS amount FROM payments cp INDEXED BY payments_client
        WHERE cp.client_id = ?1 AND cp.status = 'confirmed' AND cp.kind = 'payment' GROUP BY cp.currency) x)`;
 const ALLOCATED_BY_CURRENCY = `(SELECT json_group_object(y.cur, y.net) FROM (SELECT ap.currency AS cur, sum(CASE aa.kind WHEN 'allocate' THEN aa.amount_minor ELSE -aa.amount_minor END) AS net
        FROM payments ap INDEXED BY payments_client JOIN payment_allocations aa INDEXED BY payment_allocations_payment ON aa.payment_id = ap.id
        WHERE ap.client_id = ?1 AND ap.status = 'confirmed' AND ap.kind = 'payment' GROUP BY ap.currency) y)`;
-
 /**
  * A client's figures by currency (`?1` the client, `?2` today, IST): billed, credited, the balance (Σ `balance_minor` of its open debit documents: what the
  * client owes, each document stopping at zero) and the part of it past its due date (strictly before today, as `OWED_SQL`). M6.1 (early check A4): `excess`
  * is Σ max(0, paid + credited + TDS − total) over the debit documents (what was settled above what they owe), so what a statement made today closes at is
- * `balance − excess − credit` (`STATEMENT_LEDGER_SQL`; a twin test proves it). One read of `documents_client_issued` by the client: the rows read are the client's issued GST documents and nothing else. No rows for
- * an anonymised client (its row only is read). M6.1: `tds` (TDS recorded on its debit documents), `collected` (its confirmed payments in the currency) and
- * `credit` (what they hold unallocated), from two aggregates of the client's payments (`COLLECTED_BY_CURRENCY`, `ALLOCATED_BY_CURRENCY`), each run once. A currency with payments and no issued document has no row (a client
- * has one currency, M3.3).
+ * `balance − excess − credit` (`STATEMENT_LEDGER_SQL`; a twin test proves it). One read of `documents_client_issued` by the client: the rows read are the
+ * client's issued GST documents and nothing else. No rows for an anonymised client (its row only is read). M6.1: `tds` (TDS recorded on its debit documents),
+ * `collected` (its confirmed payments in the currency) and `credit` (what they hold unallocated). A currency with payments and no issued document has no row
+ * here: `CLIENT_PAYMENTS_ONLY_SQL` answers it, in the same batch (code review finding 7).
+ *
+ * Code review finding 8: each payment aggregate is evaluated once. The grouped documents are a derived table `f` whose `pay` column holds both amounts for the
+ * currency (`[collected, allocated]`); the outer query reads it twice without evaluating `COLLECTED_BY_CURRENCY` again. The order is the inner `ORDER BY`
+ * (an outer one would add a sorter that D1 counts as rows read; a client has one currency, M3.3).
  */
-export const CLIENT_FIGURES_SQL = `SELECT d.currency,
+export const CLIENT_FIGURES_SQL = `SELECT f.currency, f.billed, f.credited, f.balance, f.overdue, f.overdue_n, f.tds, f.excess,
+       coalesce(json_extract(f.pay, '$[0]'), 0) AS collected, coalesce(json_extract(f.pay, '$[0]'), 0) - coalesce(json_extract(f.pay, '$[1]'), 0) AS credit
+   FROM (SELECT d.currency,
        coalesce(sum(CASE WHEN d.type IN ${DEBIT_KINDS} THEN d.total_minor END), 0) AS billed,
        coalesce(sum(CASE WHEN d.type = 'credit_note' THEN d.total_minor END), 0) AS credited,
        coalesce(sum(CASE WHEN d.type IN ${DEBIT_KINDS} AND d.balance_minor > 0 THEN d.balance_minor END), 0) AS balance,
@@ -502,11 +506,26 @@ export const CLIENT_FIGURES_SQL = `SELECT d.currency,
        count(CASE WHEN d.type IN ${DEBIT_KINDS} AND d.balance_minor > 0 AND d.due_date < ?2 THEN 1 END) AS overdue_n,
        coalesce(sum(CASE WHEN d.type IN ${DEBIT_KINDS} THEN d.tds_minor END), 0) AS tds,
        coalesce(sum(CASE WHEN d.type IN ${DEBIT_KINDS} THEN max(0, d.paid_minor + d.credited_minor + d.tds_minor - d.total_minor) END), 0) AS excess,
-       coalesce(json_extract(${COLLECTED_BY_CURRENCY}, '$.' || d.currency), 0) AS collected,
-       coalesce(json_extract(${COLLECTED_BY_CURRENCY}, '$.' || d.currency), 0) - coalesce(json_extract(${ALLOCATED_BY_CURRENCY}, '$.' || d.currency), 0) AS credit
-   FROM documents d INDEXED BY documents_client_issued
-   WHERE d.client_id = (SELECT z.id FROM clients z WHERE z.id = ?1 AND z.anonymised_at IS NULL) AND ${ISSUED_GST} AND d.voided_at IS NULL AND d.status <> 'void'
-   GROUP BY d.currency ORDER BY d.currency`;
+       json_array(json_extract(${COLLECTED_BY_CURRENCY}, '$.' || d.currency), json_extract(${ALLOCATED_BY_CURRENCY}, '$.' || d.currency)) AS pay
+     FROM documents d INDEXED BY documents_client_issued
+     WHERE d.client_id = (SELECT z.id FROM clients z WHERE z.id = ?1 AND z.anonymised_at IS NULL) AND ${ISSUED_GST} AND d.voided_at IS NULL AND d.status <> 'void'
+     GROUP BY d.currency ORDER BY d.currency) f`;
+
+/**
+ * Code review finding 7: a client's collected money and credit in a currency that has payments and no issued GST document (`?1` the client), so the Overview
+ * shows Collected and Credit held before the first invoice; `clientFinance` adds such a currency to the figures with its document figures at zero. Both
+ * conditions are constant, so they are checked before any payment is read: a client with an issued document (which every client with invoices has) costs one
+ * probe of `documents_client_issued`, and an anonymised client has no rows. A client has one currency (M3.3; it locks once an invoice or a payment exists).
+ */
+export const CLIENT_PAYMENTS_ONLY_SQL = `SELECT pc.cur AS currency, pc.amount AS collected, pc.amount - coalesce(json_extract(${ALLOCATED_BY_CURRENCY}, '$.' || pc.cur), 0) AS credit
+   FROM (SELECT cp.currency AS cur, sum(cp.amount_minor) AS amount FROM payments cp INDEXED BY payments_client
+         WHERE cp.client_id = ?1 AND cp.status = 'confirmed' AND cp.kind = 'payment' GROUP BY cp.currency ORDER BY cp.currency) pc
+   WHERE NOT EXISTS (SELECT 1 FROM documents x INDEXED BY documents_client_issued
+           WHERE x.client_id = ?1 AND x.frozen_at IS NOT NULL AND x.type IN ${GST_TYPES} AND x.voided_at IS NULL AND x.status <> 'void')
+     AND EXISTS (SELECT 1 FROM clients y WHERE y.id = ?1 AND y.anonymised_at IS NULL)`;
+
+/** One currency of `CLIENT_PAYMENTS_ONLY_SQL` as D1 returns it. */
+export type ClientPaymentsOnlyRow = { currency: "INR" | "USD"; collected: number; credit: number };
 
 /**
  * A project's billed and credited figures by currency (`?1` the project), from the same documents as the client's: the issued, not voided tax invoices,

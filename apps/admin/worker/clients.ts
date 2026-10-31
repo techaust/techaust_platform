@@ -498,11 +498,18 @@ const listClients = async (c: Ctx, f: z.infer<typeof listQuery>) => {
   return c.json({ clients: page.items.map((r) => clientView(r, role)), next: page.next, prev: page.prev });
 };
 
-/** The unlock check: an invoice-family document of any status. */
-const HAS_INVOICE_SQL = `EXISTS (SELECT 1 FROM documents WHERE client_id = c.id AND type IN (${INVOICE_FAMILY_SQL}))`;
+/**
+ * The currency lock: an invoice-family document of any status, or (M6.1 code review finding 6) a payment pending or confirmed, since a payment's currency is
+ * the client's (L23.4) and its credit is held in it. A rejected or withdrawn entry holds nothing, so it does not lock.
+ */
+const LIVE_PAYMENT_OF = (client: string) =>
+  `EXISTS (SELECT 1 FROM payments WHERE client_id = ${client} AND status IN ('pending_verification', 'confirmed'))`;
+/** The unlock check (GET): the lock above, read for the screen. */
+const HAS_INVOICE_SQL = `(EXISTS (SELECT 1 FROM documents WHERE client_id = c.id AND type IN (${INVOICE_FAMILY_SQL})) OR ${LIVE_PAYMENT_OF("c.id")})`;
 const NO_FROZEN_DOC_SQL =
   "NOT EXISTS (SELECT 1 FROM documents WHERE client_id = ?1 AND frozen_at IS NOT NULL)";
-const NO_INVOICE_SQL = `NOT EXISTS (SELECT 1 FROM documents WHERE client_id = ?1 AND type IN (${INVOICE_FAMILY_SQL}))`;
+/** The lock in the billing write's WHERE (the same 409 `currency_locked` for an invoice or a payment). */
+const NO_INVOICE_SQL = `NOT EXISTS (SELECT 1 FROM documents WHERE client_id = ?1 AND type IN (${INVOICE_FAMILY_SQL})) AND NOT ${LIVE_PAYMENT_OF("?1")}`;
 
 const clientExists = async (c: Ctx, id: string) =>
   (await c.env.DB.prepare("SELECT 1 AS x FROM clients WHERE id = ?1").bind(id).first()) !== null;

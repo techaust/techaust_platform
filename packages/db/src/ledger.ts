@@ -122,6 +122,43 @@ export function allocationStatements(
   });
 }
 
+/**
+ * The same rows in ONE statement (code review finding 3): "Use credit" may draw on many sources and "Move excess to credit" may give back from many payments, so
+ * the batch stays a fixed number of statements however many rows it writes (D1 Free: 50 queries per invocation, every batch statement counted; the T7 budget of
+ * 45). The rows land one by one in list order, so `payment_allocations_bounds` checks each as it lands, exactly as with `allocationStatements`. `?1` the JSON
+ * list of rows, `?2` the member, `?3` now, then the guard. Nothing is written for an empty list.
+ */
+export function allocationsInsertStatement(
+  db: D1Database,
+  rows: readonly AllocationRow[],
+  who: string | null,
+  now: number,
+  g?: GuardSql,
+): D1PreparedStatement {
+  const gs = guarded(g, 3);
+  return db
+    .prepare(
+      `INSERT INTO payment_allocations (id, payment_id, document_id, amount_minor, kind, created_by, created_at)
+       SELECT json_extract(j.value, '$.id'), json_extract(j.value, '$.paymentId'), json_extract(j.value, '$.documentId'), json_extract(j.value, '$.amountMinor'),
+              json_extract(j.value, '$.kind'), ?2, ?3
+       FROM json_each(?1) j WHERE 1 = 1${gs.sql} ORDER BY j.key`,
+    )
+    .bind(
+      JSON.stringify(
+        rows.map((r) => ({
+          id: r.id,
+          paymentId: r.paymentId,
+          documentId: r.documentId,
+          amountMinor: r.amountMinor,
+          kind: r.kind,
+        })),
+      ),
+      who,
+      now,
+      ...gs.params,
+    );
+}
+
 // ---- record (POST /payments) --------------------------------------------------------------------------------------------------------------------------
 
 export type RecordPaymentArgs = {
@@ -461,6 +498,22 @@ export const CREDIT_SOURCES_SQL = `SELECT p.id, p.received_on, p.amount_minor, $
    FROM payments p INDEXED BY payments_client
    WHERE p.client_id = ?1 AND p.currency = ?2 AND p.status = 'confirmed' AND p.kind = 'payment' AND p.amount_minor > ${paymentNetSql("p.id")}
    ORDER BY p.received_on, p.id LIMIT 50`;
+
+/** The most sources one "Use credit" draws on (`CREDIT_DRAW_SQL`); more would be refused as `exceeds_credit`. */
+export const CREDIT_DRAW_MAX = 500;
+
+/**
+ * The sources "Use credit" draws `?3` from (`?1` client, `?2` currency; code review finding 3): the same confirmed `payment` rows as `CREDIT_SOURCES_SQL`, first
+ * in first out, but only as many as cover the amount: a row is listed while the credit before it is below `?3` (a running sum over `payments_client`'s order). ONE
+ * read however many sources there are, at most `CREDIT_DRAW_MAX` rows; each row's net is evaluated once. Core `creditSources` then picks from these rows.
+ */
+export const CREDIT_DRAW_SQL = `SELECT w.id, w.received_on, w.amount_minor, w.net FROM (
+     SELECT s.id, s.received_on, s.amount_minor, s.net, sum(s.amount_minor - s.net) OVER (ORDER BY s.received_on, s.id ROWS UNBOUNDED PRECEDING) AS upto FROM (
+       SELECT p.id, p.received_on, p.amount_minor, ${paymentNetSql("p.id")} AS net
+       FROM payments p INDEXED BY payments_client
+       WHERE p.client_id = ?1 AND p.currency = ?2 AND p.status = 'confirmed' AND p.kind = 'payment') s
+     WHERE s.amount_minor > s.net) w
+   WHERE w.upto - (w.amount_minor - w.net) < ?3 ORDER BY w.received_on, w.id LIMIT ${CREDIT_DRAW_MAX}`;
 
 /** The ledger panel of a document (`?1`): each payment with a row on it, what it holds there net, oldest money first. */
 export const DOCUMENT_HOLDINGS_SQL = `SELECT a.payment_id, p.kind, p.status, p.received_on, p.mode, p.reference_norm, p.currency, p.amount_minor, p.tds_section, p.tds_rate_bp,
