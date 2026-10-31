@@ -361,7 +361,8 @@ describe("the payment received against a proforma (Q9)", () => {
     expect([INVT_COPY.routeLut, INVT_COPY.routeIgst]).toEqual(["Under LUT, without IGST", "With IGST paid"]);
     expect(proformaDraftTitle("Sample Client (fake)")).toBe("Draft proforma for Sample Client (fake)");
     expect(proformaLockedLine("27 Oct 2026", "Asha (fake)")).toBe(
-      "Issued 27 Oct 2026 by Asha (fake). This proforma is locked. If it's wrong and it hasn't been emailed, opened by the client, paid or converted, void it and issue a new one.",
+      // ADM-INV-10: 07-ZF 17 (owner 2026-10-31) replaced the end of 07-ZA §10's line
+      "Issued 27 Oct 2026 by Asha (fake). This proforma is locked. If it's wrong and nothing has been paid or converted, void it if the client hasn't received it yet, or withdraw it if they have, then issue a new one.",
     );
     expect(invErrorText(new RequestError(409, "advance_supply_changed", "x"))).toBe(
       "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's details with your CA before recording the payment.",

@@ -11,6 +11,7 @@ import { PageTitle, TokenShell } from "../components/shell/portal-shell.tsx";
 import { COPY } from "../copy.ts";
 import { N } from "../copy-documents.ts";
 import { INV } from "../copy-invoices.ts";
+import { WITHDRAWN_ZF } from "../copy-zf.ts";
 import { capturedInvoiceToken, invoicePdfName } from "../lib/invoices.ts";
 import { saveDownload } from "../lib/offers.ts";
 import { MoreButton, NotFoundScreen, ScreenSkeleton } from "../screens/home.tsx";
@@ -84,9 +85,12 @@ function DocumentScreen(props: {
           setPdfProblem(
             e instanceof RequestError && e.code === "pdf_pending"
               ? INV.pdfNotReady
-              : e instanceof RequestError && e.status === 404
-                ? INV.linkEnded
-                : problemText(e),
+              : // ADM-INV-10: withdrawn while the page was open (07-ZF 20)
+                e instanceof RequestError && e.code === "withdrawn"
+                ? WITHDRAWN_ZF.pdfRefused
+                : e instanceof RequestError && e.status === 404
+                  ? INV.linkEnded
+                  : problemText(e),
           );
         } finally {
           setDownloading(false);

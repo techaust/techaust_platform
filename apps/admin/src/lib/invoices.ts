@@ -17,6 +17,7 @@ import type { PillTone } from "../components/display.tsx";
 import { milliToQty } from "./catalogue.ts";
 import { Y } from "./copy-y.ts";
 import { VOID_VIEWED_COPY } from "./copy-z.ts";
+import { VOID_DELIVERED_PROFORMA, WITHDRAW_COPY, WITHDRAW_ERRORS } from "./copy-zf.ts";
 import {
   dayText,
   docErrorText,
@@ -256,8 +257,13 @@ export type Badge =
   | "converted"
   | "paid"
   | "partly_credited"
-  | "credited";
-export const BADGES: readonly Badge[] = [
+  | "credited"
+  | "withdrawn";
+/**
+ * The status filter's badges. "Withdrawn" (ADM-INV-10, 07-ZF 8) is a badge but not a filter (runs/proforma-withdraw: no new list filter): a withdrawn
+ * proforma is void in the data, so the Void filter lists it.
+ */
+export const BADGES: readonly Exclude<Badge, "withdrawn">[] = [
   "draft",
   "issued",
   "overdue",
@@ -277,10 +283,12 @@ export const BADGE_LABELS: Record<Badge, string> = {
   // 07-T §6
   partly_credited: "Partly credited",
   credited: "Credited",
+  // 07-ZF 8 (owner 2026-10-31)
+  withdrawn: WITHDRAW_COPY.badge,
 };
 type Pill = {
   tone: PillTone;
-  icon: "pencil" | "fileCheck" | "alert" | "xCircle" | "check" | "progress" | "undo";
+  icon: "pencil" | "fileCheck" | "alert" | "xCircle" | "check" | "progress" | "undo" | "archive";
   outline?: boolean;
 };
 /**
@@ -299,12 +307,22 @@ export const BADGE_PILLS: Record<Badge, Pill> = {
   // of it back: nothing is owed and nothing was paid, so it is muted, not struck (it is not void). Both carry the turning-back arrow.
   partly_credited: { tone: "warning", icon: "undo", outline: true },
   credited: { tone: "muted", icon: "undo" },
+  // ADM-INV-10: a proforma taken back from the client. Muted, as Void is (nothing is owed), but never struck: docs/06 §5.5's archive icon (it stays in the
+  // records), so it is told from Void and from Credited without colour.
+  withdrawn: { tone: "muted", icon: "archive" },
 };
 
-/** The badge of a row or a view: a debt still owed past its due date reads Overdue before it reads Partly credited. */
-export function badgeOf(d: { status: InvoiceStatus | string; overdue: boolean }): Badge {
+/**
+ * The badge of a row or a view: a debt still owed past its due date reads Overdue before it reads Partly credited. ADM-INV-10: a void proforma that had
+ * reached the client is Withdrawn (the server's `withdrawn`, from the list row or the view's `void.withdrawn`).
+ */
+export function badgeOf(d: {
+  status: InvoiceStatus | string;
+  overdue: boolean;
+  withdrawn?: boolean | undefined;
+}): Badge {
   if (d.status === "draft") return "draft";
-  if (d.status === "void") return "void";
+  if (d.status === "void") return d.withdrawn === true ? "withdrawn" : "void";
   if (d.status === "paid") return "paid";
   if (d.status === "credited") return "credited";
   if (d.overdue) return "overdue";
@@ -583,12 +601,13 @@ export function voidBlockedText(codes: readonly string[], type?: string): string
     !codes.includes("has_payment") &&
     !codes.includes("has_credit") &&
     !codes.includes("has_child_document");
+  // ADM-INV-10 (owner 2026-10-30, docs/13): a proforma the client received (opened or emailed) is withdrawn instead, and its line says so (07-ZF 15, 16).
   if (type === "proforma")
     return codes.includes("has_payment") || codes.includes("has_child_document")
       ? INVT_COPY.proformaVoidBlocked
       : viewedOnly
-        ? VOID_VIEWED_COPY.proforma
-        : "This proforma has been emailed to the client, so it can't be voided.";
+        ? VOID_DELIVERED_PROFORMA.viewed
+        : VOID_DELIVERED_PROFORMA.emailed;
   if (codes.includes("return_period_closed")) return INV_ERRORS.return_period_closed;
   if (viewedOnly) return VOID_VIEWED_COPY.invoice;
   return INV_ERRORS.void_not_allowed;
@@ -603,8 +622,22 @@ export function voidErrorText(e: unknown, type?: string): string {
     return voidBlockedText([e.code], type) ?? invErrorText(e);
   // A proforma refused for a payment or a converted invoice (the server ranks those above a view): its own line, never the invoice's credit note
   // (FX-5 re-check, finding 2).
+  // ADM-INV-10: the 409 names every reason; an emailed proforma's (`already_emailed`, no payment or invoice) points to Withdraw (07-ZF 16). Without the
+  // reasons (an older API) the payment line stands.
   if (e instanceof RequestError && e.code === "void_not_allowed" && type === "proforma")
-    return INVT_COPY.proformaVoidBlocked;
+    return e.extra.reasons && e.extra.reasons.length > 0
+      ? (voidBlockedText(e.extra.reasons, type) ?? INVT_COPY.proformaVoidBlocked)
+      : INVT_COPY.proformaVoidBlocked;
+  return invErrorText(e);
+}
+
+/**
+ * The withdraw dialog's sentence for a failed withdrawal (ADM-INV-10): 07-ZF 10 to 14 by the API's code (the first reason's), else the invoice
+ * screens' sentence (stale, anonymised, the step-up, a network failure).
+ */
+export function withdrawErrorText(e: unknown): string {
+  if (e instanceof RequestError && Object.hasOwn(WITHDRAW_ERRORS, e.code))
+    return WITHDRAW_ERRORS[e.code as keyof typeof WITHDRAW_ERRORS];
   return invErrorText(e);
 }
 
