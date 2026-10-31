@@ -2,7 +2,7 @@
 // LD11). Pure data; no I/O. The sealed header mirrors core's `InvoiceSnapshotInput` (`{v: 3, kind: "invoice", header}`); the envelope adds what the
 // issue batch takes AFTER the hash (the number, series, FY and the instant of issue) and the content the PDF needs (the lines, the discount, the
 // footer notes). A proposal's envelope is `types.ts`'s `Envelope` (format 1); this one is format 3 with `kind: "invoice"`.
-import type { InvoiceSnapshotInput } from "@techaust/core/invoices";
+import type { InvoiceSnapshotInput, SealedUdyam } from "@techaust/core/invoices";
 import type { EnvLine, IssuerSnap, RecipientSnap } from "./types.ts";
 
 /** The INR bank block frozen with the invoice (db `InvoiceBankBlock`). */
@@ -30,7 +30,11 @@ export type InvoiceSwiftSnap = {
 export type InvoiceSignatureRef = { key: string; sha256: string; mime: string };
 
 export type InvoiceIssuerSnap = {
-  company: IssuerSnap["company"] & { phone?: string; principalPlace?: string };
+  /**
+   * `udyam` (T10): only on a tax invoice issued while a Udyam number was saved (db `InvoiceIssuerSnapshot`); the envelope check refuses any other shape or type.
+   * As sealed (`SealedUdyam`): the number and the category of the day of issue, which today's rule may no longer accept.
+   */
+  company: IssuerSnap["company"] & { phone?: string; principalPlace?: string; udyam?: SealedUdyam };
   bank: { inr: InvoiceBankSnap | null; swift?: InvoiceSwiftSnap | null };
   signature: InvoiceSignatureRef | null;
   /** `false` only when the signature block was switched off at issue (07-W 5.6): the layout prints none. Absent = block printed. */
@@ -213,8 +217,18 @@ export type InvoiceView = {
   /** "ORIGINAL FOR RECIPIENT" on a tax or export invoice; null on a proforma (it prints no copy mark). */
   copyLabel: string | null;
   logo: string;
-  /** `legalName` is the frozen company legal name (Rule 46: "For {legal name}"). */
-  supplier: { name: string; legalName: string | null; lines: string[] };
+  /**
+   * `legalName` is the frozen company legal name (Rule 46: "For {legal name}"). `udyam` (T10): 07-ZC line 6 ("Udyam Registration No. {number} ({category})") when the
+   * frozen issuer block of a tax invoice has one, else null; the layout prints it under the GSTIN line as ONE text node (`missingStatutoryLine` refuses the PDF otherwise).
+   * `registrationAt` is the index in `lines` of the "GSTIN … · State …" line, so a layout can print the Udyam line right under it (-1: none).
+   */
+  supplier: {
+    name: string;
+    legalName: string | null;
+    lines: string[];
+    registrationAt: number;
+    udyam: string | null;
+  };
   /** The recipient block: name, address, GSTIN when registered, the State name and code. */
   recipient: {
     name: string;

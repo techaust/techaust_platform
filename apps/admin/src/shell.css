@@ -2259,6 +2259,25 @@ input[readonly] {
   }
 }
 
+/* Settings › Company, the Udyam row (rt2 visual review 2): a full number (UDYAM-WB-00-0000001, spaced as a GSTIN) needs about 14rem of field (measured
+   224px), more than half the form at 1024 with the side menu open (220px). 17rem leaves room for a larger text setting. The two fields sit side by side only while the number has that room; else the category goes
+   under it, at any window or menu width. */
+.form-grid.form-grid--udyam {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+}
+
+/* The category waits for a number (rt2 second review 4): drawn like a read-only value (sunken ground, dashed edge), not the browser's grey. Keyed
+   on the select's own `data-waiting`, never on the fieldset: a save in flight disables the fieldset, whose full-contrast read-only rule
+   (screens.css) would otherwise flash in for the length of the save (re-check E). Company has no read-only role, so it never meets that rule. */
+.settings-form__body .form-grid--udyam select[data-waiting]:disabled {
+  background: var(--color-surface-alt);
+  border-style: dashed;
+  color: var(--color-text-muted);
+  -webkit-text-fill-color: var(--color-text-muted);
+  opacity: 1;
+  cursor: not-allowed;
+}
+
 /* A settings row goes side by side by the width of its own list, not the window's (rt1 review 3): at 768 px the menu and the settings menu leave
    the list a phone's width, and a window query gave the words a column of about 80 px (one word a line). Stacked, the hint reads at full width
    above its control; side by side, the words keep at least 16rem and the control 14rem to 22rem. The export invoice's note switch is a `setting`
@@ -2437,6 +2456,15 @@ input[readonly] {
   font-weight: 500;
   line-height: 1.6;
   white-space: nowrap;
+}
+
+/* T4 (07-ZC line 3): what the signatory switch reaches, as a hint under its badge (the label's weight is the row's; this reads as a note to it) */
+.checklist__scope {
+  max-width: 60ch;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 400;
+  line-height: var(--text-sm--line-height);
 }
 
 .row-controls {

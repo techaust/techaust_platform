@@ -1,7 +1,8 @@
 // Realistic sample data for the admin sweep (final sweep, round 1: the sweep's checks must hold with data, not only on empty lists). Run by
 // global-setup when `E2E_SAMPLE=1` and the local database has no invoice yet, so a second run reuses what the first made.
 // What it makes, all clearly fake ("(sample)" names, @example.test addresses, SAMPLE bank values), in the LOCAL database only:
-//   - Settings: the company (a GSTIN with a valid check character), an INR and a USD bank account, a LUT for this FY.
+//   - Settings: the company (a GSTIN with a valid check character), an INR and a USD bank account, a LUT for this FY, and a drawn sample signature
+//     (rt2, T4: a credit or debit note can't be issued without one; a made-up stroke, not anyone's signature).
 //   - Two clients: an Indian business in West Bengal (INR) and a US company (USD, export), each with a primary contact.
 //   - A project with three milestones (one with a long title), eight time entries on it, and a care plan started 13 months ago, so its
 //     "Last 12 billing periods" table is full.
@@ -9,10 +10,12 @@
 //     a draft; an export invoice under the LUT, issued (so Reports › Export realisation has a row); a tax invoice issued and voided.
 // Rows the API has no route for (bank accounts, clients, projects, time, care plans) are written straight to the table, as the Worker tests do.
 import { createHmac, randomUUID } from "node:crypto";
+import { deflateSync } from "node:zlib";
 
 type Call = (
   path: string,
-  init?: { method?: string; body?: unknown },
+  /** `raw`: a binary body sent as it is (`application/octet-stream`: the signature image), instead of JSON. */
+  init?: { method?: string; body?: unknown; raw?: Uint8Array },
 ) => Promise<{ status: number; data: J }>;
 // biome-ignore lint/suspicious/noExplicitAny: API answers are read loosely here, as in the Worker tests
 type J = Record<string, any>;
@@ -64,6 +67,51 @@ export function totpAt(secret: Buffer, step: number): string {
   return String((h.readUInt32BE(o) & 0x7fffffff) % 1_000_000).padStart(6, "0");
 }
 
+/** A 240 × 80 PNG of an ink stroke on transparent (a made-up sample, not anyone's signature): the signature the sample company uploads. */
+export function sampleSignaturePng(): Uint8Array {
+  const w = 240;
+  const h = 80;
+  const px = new Uint8Array(w * h * 4);
+  for (let t = 0; t <= 1; t += 0.0008) {
+    const x = Math.round(16 + t * 208);
+    const y = Math.round(42 + Math.sin(t * Math.PI * 6) * (20 - t * 10));
+    for (let d = -1; d <= 1; d++) {
+      const o = ((y + d) * w + x) * 4;
+      px.set([0x14, 0x23, 0x1f, 255], o);
+    }
+  }
+  const raw = new Uint8Array(h * (w * 4 + 1));
+  for (let y = 0; y < h; y++) raw.set(px.subarray(y * w * 4, (y + 1) * w * 4), y * (w * 4 + 1) + 1);
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc = (b: Uint8Array) => {
+    let c = 0xffffffff;
+    for (const x of b) c = (crcTable[(c ^ x) & 0xff] as number) ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const u32 = (n: number) => Uint8Array.of(n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255);
+  const chunk = (type: string, data: Uint8Array) => {
+    const body = new Uint8Array([...new TextEncoder().encode(type), ...data]);
+    return [...u32(data.length), ...body, ...u32(crc(body))];
+  };
+  return new Uint8Array([
+    0x89,
+    0x50,
+    0x4e,
+    0x47,
+    0x0d,
+    0x0a,
+    0x1a,
+    0x0a,
+    ...chunk("IHDR", new Uint8Array([...u32(w), ...u32(h), 8, 6, 0, 0, 0])),
+    ...chunk("IDAT", new Uint8Array(deflateSync(raw))),
+    ...chunk("IEND", new Uint8Array()),
+  ]);
+}
+
 function must(what: string, res: { status: number; data: J }, ok = [200, 201]) {
   if (!ok.includes(res.status))
     throw new Error(`e2e sample data: ${what} answered ${res.status} ${JSON.stringify(res.data)}`);
@@ -110,6 +158,8 @@ export async function sampleData(opts: {
       },
     }),
   );
+  // rt2 (T4): every credit and debit note carries the signature, so the company has one before the notes below are issued
+  must("PUT signature", await call("/settings/signature", { method: "PUT", raw: sampleSignaturePng() }));
   const tax = must("GET tax", await call("/settings/groups/tax"));
   must(
     "PUT tax",

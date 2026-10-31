@@ -19,7 +19,27 @@ export const codeOf = async (res: Response): Promise<string> => ((await res.json
 const FIRST14 = "19ABCDE1234F1Z";
 export const COMPANY_GSTIN = `${FIRST14}${gstinCheckChar(FIRST14)}`;
 
-/** The company the invoices are issued by: everything the minimal Rule 46 list asks of the supplier. A row with a new version each time. */
+/**
+ * T4 (rt2): the signature reference the company row holds (no image in `DOCS`: admin never reads the bytes). Credit and debit notes and invoices for a payment
+ * received are issued only with one, so every test company has it unless a test passes `signature: null`.
+ */
+export const TEST_SIGNATURE = {
+  key: "settings/signature-00112233aabbccdd.png",
+  mime: "image/png",
+  size: 120,
+  sha256: "ab".repeat(32),
+  width: 200,
+  height: 80,
+  updatedAt: 1_700_000_000_000,
+} as const;
+/** The reference as an issuer block freezes it (`{key, sha256, mime}`). */
+export const FROZEN_SIGNATURE = {
+  key: TEST_SIGNATURE.key,
+  sha256: TEST_SIGNATURE.sha256,
+  mime: TEST_SIGNATURE.mime,
+};
+
+/** The company the invoices are issued by: everything the minimal Rule 46 list asks of the supplier, and the signature (T4). A row with a new version each time. */
 export async function putCompany(over: Record<string, unknown> = {}) {
   const value = {
     ...SETTINGS_DEFAULTS.company,
@@ -28,6 +48,7 @@ export async function putCompany(over: Record<string, unknown> = {}) {
     address: "1 Example Road, Balurghat, West Bengal 733101",
     documentsPhone: "+91 90000 00000",
     principalPlace: "1 Example Road, Balurghat",
+    signature: TEST_SIGNATURE,
     ...over,
   };
   await env.DB.prepare(

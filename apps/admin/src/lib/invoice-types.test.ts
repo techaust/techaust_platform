@@ -343,6 +343,10 @@ describe("the payment received against a proforma (Q9)", () => {
     );
     expect(INVT_COPY.checklistLocked).toBe("Required by GST law, so it can't be turned off.");
     expect(INVT_COPY.houseRule).toBe("House rule");
+    // 07-ZC line 3 (T4, rt2)
+    expect(INVT_COPY.signatoryScope).toBe(
+      "This switch covers tax invoices, export invoices and proformas only.",
+    );
     expect(HOUSE_RULE_IDS).toEqual(["bankDetails", "paymentLink", "signatory"]);
     expect(isHouseRule({ id: "signatory" })).toBe(true);
     expect(isHouseRule({ id: "companyNames" })).toBe(false);

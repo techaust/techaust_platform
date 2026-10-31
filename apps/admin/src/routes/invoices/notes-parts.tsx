@@ -78,8 +78,8 @@ export function DeadlineNotice({ deadline, fy }: { deadline: CreditDeadlineView;
 // ---- what stops a note's issue (07-T §7, 07-R, 07-ZD line 6) -------------------------------------------------------------------------------------
 
 /**
- * A note's blockers, one sentence each. A blocker fixed on a settings page (the supplier's details, the reverse-charge line, the bank, the LUT of the debit
- * note's year: rt1 T2, `/settings/tax#luts`) carries that page's name as its link, the invoice editor's pattern (`blockerTarget`, the whole row a 44 px
+ * A note's blockers, one sentence each. A blocker fixed on a settings page (the supplier's details and the signature every note carries since rt2 T4
+ * (07-ZC line 1, `/settings/company`), the reverse-charge line, the bank, the LUT of the debit note's year: rt1 T2, `/settings/tax#luts`) carries that page's name as its link, the invoice editor's pattern (`blockerTarget`, the whole row a 44 px
  * target); the others are plain sentences. `id` lets a dialog point at the list.
  */
 export function NoteBlockerList(props: {

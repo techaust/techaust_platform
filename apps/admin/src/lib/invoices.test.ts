@@ -259,6 +259,15 @@ describe("blockers", () => {
       place: "Settings › Company",
     });
     expect(blockerTarget({ code: "reverse_charge_text" }, "c1")).toMatchObject({ to: "/settings/tax" });
+    // T4 (rt2): 07-ZC line 1, linked to Settings › Company
+    expect(blockerTarget({ code: "signature_missing" }, "c1")).toEqual({
+      kind: "page",
+      to: "/settings/company",
+      place: "Settings › Company",
+    });
+    expect(blockerLine({ code: "signature_missing" }, "INR")).toBe(
+      "Add the signature in Settings › Company. Credit notes, debit notes and invoices for a payment received always carry it.",
+    );
     expect(blockerTarget({ code: "recipient_address" }, "c 1")).toEqual({
       kind: "page",
       to: "/clients/c%201",

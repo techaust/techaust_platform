@@ -30,7 +30,7 @@ import {
   SET_ONCE_0050,
   SET_ONCE_AFTER_FREEZE,
 } from "../src/triggers.ts";
-import { all, first, rejects, run } from "./helpers.ts";
+import { all, first, rejects, run, signedCompany, TEST_SIGNATURE } from "./helpers.ts";
 
 let seq = 0;
 const FYS = { n: 9800 };
@@ -241,6 +241,8 @@ async function advanceArgs(
   over: Partial<AdvanceIssueArgs> = {},
   amount = 59_000,
 ): Promise<AdvanceIssueArgs> {
+  // T4: an invoice for a payment received freezes the signature saved in Settings › Company
+  await signedCompany();
   const v = await versions();
   const p = await proformaState(w.proformaId);
   const overseas =
@@ -259,7 +261,7 @@ async function advanceArgs(
     issueDate: "2026-10-28",
     dueDate: "2026-10-28",
     recipient: { legalName: "L", country: overseas ? "US" : "IN" },
-    issuer: issuer(w.ownerId),
+    issuer: { ...issuer(w.ownerId), signature: { ...TEST_SIGNATURE } },
     computedJson: "{}",
     snapshotSha256: "a".repeat(64),
     issuedBy: w.ownerId,
@@ -982,6 +984,44 @@ describe("the advance batch keeps the ledger identity and the receipt FY's LUT [
       });
     } finally {
       await run("DELETE FROM settings WHERE key = 'tax'");
+    }
+  });
+});
+
+describe("T4: the advance freeze holds the signature (SIGNED_FREEZE_SQL; 08-C RA-17)", () => {
+  it("an unsigned issuer, the switch-off marker or another SHA-256 writes nothing: no invoice, no receipt, no number, the proforma unchanged", async () => {
+    for (const overseas of [false, true]) {
+      const w = await world({ overseas, total: 100_000 });
+      const series = overseas ? "export" : "invoice";
+      for (const issuerOver of [
+        { signature: null },
+        { signature: { ...TEST_SIGNATURE }, signatory: false },
+        { signature: null, signatory: false },
+        { signature: { ...TEST_SIGNATURE, sha256: "cd".repeat(32) } },
+      ]) {
+        const base = await advanceArgs(w, {}, 50_000);
+        const before = {
+          counter: await counterOf(series, w.fy),
+          proforma: await proformaState(w.proformaId),
+        };
+        await rejects(
+          runAdvance({ ...base, issuer: { ...base.issuer, ...issuerOver } as never }),
+          /issue did not freeze/,
+        );
+        expect(await first("SELECT id FROM documents WHERE id = ?", base.documentId)).toBeNull();
+        expect(await all("SELECT id FROM advance_receipts WHERE id = ?", base.receiptId)).toEqual([]);
+        expect(await counterOf(series, w.fy)).toBe(before.counter);
+        expect(await proformaState(w.proformaId)).toEqual(before.proforma);
+      }
+      // the saved signature: it issues, and the frozen issuer carries it with no `signatory` key
+      const ok = await advanceArgs(w, {}, 50_000);
+      await runAdvance(ok);
+      const issuer = JSON.parse(
+        (await first<{ issuer: string }>("SELECT issuer FROM documents WHERE id = ?", ok.documentId))
+          ?.issuer ?? "{}",
+      );
+      expect(issuer.signature).toEqual(TEST_SIGNATURE);
+      expect(issuer).not.toHaveProperty("signatory");
     }
   });
 });

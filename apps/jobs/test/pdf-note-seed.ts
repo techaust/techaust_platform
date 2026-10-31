@@ -4,8 +4,12 @@
 import { env } from "cloudflare:workers";
 import { fyOfDate, parseIsoDate } from "@techaust/core/dates";
 import { headerExtrasJson } from "@techaust/db/documents";
-import { invoiceBundleOf } from "../../../packages/pdf/test/fixtures/invoice.ts";
-import { buildNoteFixture, type NoteFixtureName } from "../../../packages/pdf/test/fixtures/notes.ts";
+import { invoiceBundleOf, SIGNATURE_BYTES } from "../../../packages/pdf/test/fixtures/invoice.ts";
+import {
+  buildNoteFixture,
+  NOTE_SIGNATURE_KEY,
+  type NoteFixtureName,
+} from "../../../packages/pdf/test/fixtures/notes.ts";
 
 export type SeededNote = {
   id: string;
@@ -19,6 +23,23 @@ export type SeededNote = {
 
 let counter = 5000;
 
+/**
+ * T4: runs `fn` with the trigger `documents_signature_required` (0055) taken out and puts the very same trigger back (its SQL read from the schema), so a test can
+ * hold a document issued before the rule. Test databases only.
+ */
+export async function withoutSignatureTrigger<T>(fn: () => Promise<T>): Promise<T> {
+  const t = await env.DB.prepare(
+    "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'documents_signature_required'",
+  ).first<{ sql: string }>();
+  if (!t) throw new Error("seed: the signature trigger is not installed");
+  await env.DB.prepare("DROP TRIGGER documents_signature_required").run();
+  try {
+    return await fn();
+  } finally {
+    await env.DB.prepare(t.sql).run();
+  }
+}
+
 /** Makes a client, the invoice the note is against (frozen, live) and the note itself (frozen with its seal). */
 export async function seedIssuedNote(
   name: NoteFixtureName,
@@ -26,6 +47,8 @@ export async function seedIssuedNote(
     number?: number;
     /** Freezes the row WITHOUT its `header_extras` (the sealed request is lost): the rows then cannot reproduce the seal. */
     dropFrozenExtras?: boolean;
+    /** T4: a note issued before the signature rule (an older staging document): sealed and frozen with no signature, past the 0055 trigger. */
+    unsigned?: boolean;
   } = {},
 ): Promise<SeededNote> {
   const n = ++counter;
@@ -39,6 +62,7 @@ export async function seedIssuedNote(
     parentId,
     number,
     parentNumber: `TH/INV/2627/${String(n).padStart(4, "0")}`,
+    ...(o.unsigned ? { unsigned: true } : {}),
   });
   const usd = computed.currency === "USD";
   const bundle = invoiceBundleOf(envelope);
@@ -47,6 +71,8 @@ export async function seedIssuedNote(
   const fx = envelope.snapshot.header.fx ?? null;
   const parentNumberDisplay = noteOf.parent.number;
   const parentNumber = n;
+  // T4: a note carries the signature; its image is in DOCS under the frozen key (as the Settings route stores it)
+  await env.DOCS.put(NOTE_SIGNATURE_KEY, SIGNATURE_BYTES);
 
   await env.DB.batch([
     // an active owner: the bells of a refused PDF go to the owners
@@ -167,29 +193,30 @@ export async function seedIssuedNote(
     }
     // the freeze, as the issue statement leaves it (a credit note: balance 0, no due date, IMS status set)
     const credit = envelope.type === "credit_note";
-    await env.DB.prepare(
+    const freeze = env.DB.prepare(
       `UPDATE documents SET status = 'issued', frozen_at = ?2, series = ?3, fy = ?4, number = ?5, number_display = ?6, issue_date = ?7, due_date = ?8, snapshot_sha256 = ?9,
          recipient = ?10, issuer = ?11, computed = ?12, balance_minor = ?13, ims_status = ?14, header_extras = ?15
        WHERE id = ?1`,
-    )
-      .bind(
-        documentId,
-        envelope.issuedAt,
-        envelope.series,
-        d.fy,
-        number,
-        envelope.numberDisplay,
-        d.issue_date,
-        d.due_date ?? null,
-        envelope.snapshotSha256,
-        JSON.stringify(envelope.snapshot.header.recipient),
-        JSON.stringify(envelope.snapshot.header.issuer),
-        envelope.snapshot.computedJson,
-        credit ? 0 : computed.totalMinor,
-        credit ? "pending" : null,
-        o.dropFrozenExtras ? null : headerExtrasJson({ noteOf }),
-      )
-      .run();
+    ).bind(
+      documentId,
+      envelope.issuedAt,
+      envelope.series,
+      d.fy,
+      number,
+      envelope.numberDisplay,
+      d.issue_date,
+      d.due_date ?? null,
+      envelope.snapshotSha256,
+      JSON.stringify(envelope.snapshot.header.recipient),
+      JSON.stringify(envelope.snapshot.header.issuer),
+      envelope.snapshot.computedJson,
+      credit ? 0 : computed.totalMinor,
+      credit ? "pending" : null,
+      o.dropFrozenExtras ? null : headerExtrasJson({ noteOf }),
+    );
+    // T4: a note issued before the signature rule freezes past the 0055 trigger
+    if (o.unsigned) await withoutSignatureTrigger(() => freeze.run());
+    else await freeze.run();
   } catch (error) {
     seedError = { error };
   }

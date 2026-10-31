@@ -18,6 +18,7 @@ export * from "./export-invoice.ts";
 export * from "./fx.ts";
 export * from "./notes.ts";
 export * from "./reminders.ts";
+export * from "./udyam.ts";
 
 // ---- types -------------------------------------------------------------------------------------------------------------------------
 
@@ -142,6 +143,8 @@ export const ISSUE_BLOCKER_CODES = [
   "supplier_address",
   "supplier_gstin",
   "supplier_state",
+  // T4 (rt2): a tax or export invoice for a payment received has no signature to freeze (no checklist item owns it, so the signatory switch never lifts it)
+  "signature_missing",
   "recipient_legal_name",
   "recipient_address",
   "recipient_gstin",
@@ -188,7 +191,11 @@ export type ChecklistType = "tax_invoice" | "export_invoice" | "proforma";
 export type ChecklistSettings = {
   readonly bankDetails: boolean;
   readonly paymentLink: false;
-  /** A house rule too (07-S §3): absent is on. It owns no blocker (the signature is optional on an electronic invoice, Rule 46(q) proviso), so switching it off is the Owner's record of the choice. */
+  /**
+   * A house rule too (07-S §3): absent is on. On a tax invoice, an export invoice and a proforma it owns no blocker (the signature is optional on an electronic invoice:
+   * Researched 2026-10-28, Rule 46(q) proviso CGST Rules (08-C RA-06)), so switching it off is the Owner's record of the choice. It never covers a credit or debit note, or
+   * an invoice for a payment received: those always carry the signature (`signatureRequired`, T4) and raise `signature_missing`, which no checklist item owns.
+   */
   readonly signatory?: boolean | undefined;
 };
 export const DEFAULT_CHECKLIST: ChecklistSettings = { bankDetails: true, paymentLink: false };
@@ -317,6 +324,25 @@ export function checklistItemOn(item: ChecklistItem, s: ChecklistSettings): bool
   return true;
 }
 
+// ---- the signature (T4, rt2; L1: keyed on the document, never on the checklist) --------------------------------------------------------------------------------
+
+/**
+ * The types that always carry the signature, whatever the checklist's signatory switch says: a credit or debit note (Researched 2026-10-30, Rule 53(1A) CGST Rules
+ * (08-C RA-22)). OPEN (08-C RA-22): do Rules 50 and 53 carry Rule 46(q)'s electronic-issue proviso, and does a stored image meet "signature" on an electronic document?
+ * The safest reading is built (no CA is engaged): the signature is required. A DSC is out of scope. Pinned by a db test to the 0055 trigger's list.
+ */
+export const SIGNED_ALWAYS_TYPES = ["credit_note", "debit_note"] as const;
+
+/**
+ * Whether a document must be issued with the signature: a credit or debit note, or a tax or export invoice for a payment received (`header_extras.advance`; Researched
+ * 2026-10-30, s.31(3)(d) CGST Act and Rule 50 CGST Rules (08-C RA-17), the safest reading, docs/13 2026-10-30). Every other invoice keeps the Owner's signatory switch
+ * (Researched 2026-10-28, Rule 46(q) proviso CGST Rules (08-C RA-06)). The twin of db `signedIssuerSql` in the freeze WHERE and of the trigger `documents_signature_required`.
+ */
+export function signatureRequired(type: string, isAdvance: boolean): boolean {
+  if ((SIGNED_ALWAYS_TYPES as readonly string[]).includes(type)) return true;
+  return isAdvance && (type === "tax_invoice" || type === "export_invoice");
+}
+
 export type IssueFacts = {
   readonly type: string;
   readonly currency: string;
@@ -370,6 +396,8 @@ export type IssueFacts = {
   readonly advance: boolean;
   /** `tax.b2cDetailsThresholdInrMinor` (Q25: compared with the total including GST). */
   readonly b2cThresholdInrMinor: number;
+  /** T4: a signature image is saved in Settings › Company (it matters only where `signatureRequired`: the advance invoice here). */
+  readonly signatureSaved: boolean;
 };
 
 const blank = (v: string | null | undefined): boolean => v === null || v === undefined || v.trim() === "";
@@ -405,6 +433,8 @@ export function issueBlockers(
   if (blank(f.supplier.address)) add("supplier_address");
   if (blank(f.supplier.gstin)) add("supplier_gstin");
   if (blank(f.supplier.stateCode)) add("supplier_state");
+  // T4: owned by no checklist item, so the signatory switch never lifts it (L1).
+  if (signatureRequired(f.type, f.advance) && !f.signatureSaved) add("signature_missing");
   if (blank(f.recipient.legalName)) add("recipient_legal_name");
   if (blank(f.recipient.addressLine1)) add("recipient_address");
   if (f.recipient.gstStatus === "registered" && blank(f.recipient.gstin)) add("recipient_gstin");

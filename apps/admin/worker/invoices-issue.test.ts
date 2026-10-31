@@ -13,6 +13,7 @@ import {
   bumpSetting,
   codeOf,
   decideApproval,
+  FROZEN_SIGNATURE,
   farSession,
   getInvoice,
   invoiceCounter,
@@ -798,7 +799,7 @@ describe("the freeze and the milestone [ADM-INV-07, ADM-PRJ-02]", () => {
       principalPlace: "1 Example Road, Balurghat",
     });
     expect(issuer.bank.inr).toMatchObject({ bankName: "SAMPLE BANK", ifsc: "SAMP0000001" });
-    expect(issuer.signature).toBeNull();
+    expect(issuer.signature).toEqual(FROZEN_SIGNATURE);
     expect(issuer.sender).toMatchObject({ email: "billing@techaust.com" });
     expect(row?.snapshot_sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(JSON.parse(row?.computed ?? "{}").totalMinor).toBe(118_000);

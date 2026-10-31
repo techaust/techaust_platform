@@ -17,7 +17,17 @@ import type { InvoiceIssuerSnapshot, RecipientSnapshot } from "@techaust/db/issu
 import { buildInvoiceEnvelope } from "../../src/invoice-envelope.ts";
 import type { InvoiceEnvelope, InvoiceHeader } from "../../src/invoice-types.ts";
 import type { EnvLine } from "../../src/types.ts";
-import { OVERSEAS_RECIPIENT, SAMPLE_ARN, SAMPLE_SUPPLIER_GSTIN, WB_RECIPIENT } from "./invoice.ts";
+import {
+  hexOf,
+  OVERSEAS_RECIPIENT,
+  SAMPLE_ARN,
+  SAMPLE_SUPPLIER_GSTIN,
+  SIGNATURE_BYTES,
+  WB_RECIPIENT,
+} from "./invoice.ts";
+
+/** T4: where a note fixture's signature is stored (the jobs seed puts `SIGNATURE_BYTES` there). */
+export const NOTE_SIGNATURE_KEY = "settings/signature-0123456789abcdef.png";
 
 export const NOTE_FIXTURE_NAMES = [
   "credit_lines",
@@ -142,6 +152,8 @@ export async function buildNoteFixture(
     parentId?: string;
     number?: number;
     parentNumber?: string;
+    /** T4: seal the note with no signature (as one issued before the rule). */
+    unsigned?: boolean;
     /** rt1 F1: "settings" freezes no typed route (`exportMode` null), as an export issued on the settings' route does; the supply type still says it. */
     route?: "typed" | "settings";
     /** rt1 T2 / F4: the LUT a debit note seals for its own issue day's FY (`noteOf.lut`). */
@@ -324,7 +336,15 @@ export async function buildNoteFixture(
                 branch: "Sample branch",
               },
             },
-    signature: null,
+    // T4 (rt2): a note always carries the signature (Rule 53(1A), 08-C RA-22): the same made-up PNG as the "signed" invoice fixture. `unsigned`: a note issued
+    // before the rule (an older staging document), which the jobs Worker refuses.
+    signature: opts.unsigned
+      ? null
+      : {
+          key: NOTE_SIGNATURE_KEY,
+          sha256: await hexOf(SIGNATURE_BYTES),
+          mime: "image/png",
+        },
     reverseChargeText: "Tax payable on reverse charge: No",
     sender: { staffId: "stf_sample_1", name: "Sample Proprietor", email: "sender@example.test" },
   };

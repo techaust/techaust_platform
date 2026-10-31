@@ -20,6 +20,7 @@ import {
   validateFormat,
   validateStoredFormat,
 } from "../numbering.ts";
+import { isUdyamNumber, UDYAM_CATEGORIES, UDYAM_NUMBER_ERROR } from "../udyam.ts";
 
 /**
  * The brand logo files a document may use (ADM-SET-01), file names under `packages/ui/brand`. A fixed list: the PDF and the
@@ -94,6 +95,18 @@ export const signatureRef = z.strictObject({
 });
 export type SignatureRef = z.infer<typeof signatureRef>;
 
+/**
+ * T10 (rt2; ADM-SET-01): the Udyam registration, printed on tax invoices only (07-ZC line 6; owner, 2026-10-31). The owner's choice, not a legal requirement:
+ * Researched 2026-10-30, MSMED ss.15–16 (08-C RB-39(a)). The canonical form only (the form trims and upper-cases first, L5; `UDYAM_NUMBER_RE`).
+ * OPEN (08-C RB-39): is UDYAM-XX-00-0000000 the official format? The Udyam portal and the MSME notification were not read; this is the shape of the owner's
+ * own number and of 07-ZC line 4. The category is stored as a key (L3); its printed words are `@techaust/pdf/copy`'s.
+ * The number refines with core `isUdyamNumber`, the very check `isUdyam` makes (second review 5b: the shape lives in one place).
+ */
+export const udyamSettings = z.strictObject({
+  number: z.string().check(z.refine(isUdyamNumber, { error: UDYAM_NUMBER_ERROR })),
+  category: z.enum(UDYAM_CATEGORIES),
+});
+
 export const companySettings = z
   .strictObject({
     tradeName: text(1),
@@ -111,6 +124,8 @@ export const companySettings = z
     logoDark: z.enum(BRAND_LOGOS),
     /** ADM-SET-01, M4.4: the signature image (optional; absent reads as null). Set and cleared only by `PUT/DELETE /settings/signature`. */
     signature: z.optional(z.nullable(signatureRef)),
+    /** T10: the Udyam registration (optional; absent or null: not printed). Set by the company form's PUT and cleared only by an explicit `null` (L8): a PUT without the key keeps it. */
+    udyam: z.optional(z.nullable(udyamSettings)),
   })
   .check(
     z.refine((c) => c.gstin === null || c.gstin.startsWith(c.stateCode), {
@@ -531,6 +546,7 @@ export const SETTINGS_DEFAULTS: Settings = {
     logoLight: "logo-primary-color.svg",
     logoDark: "logo-primary-dark.svg",
     signature: null,
+    udyam: null,
   },
   tax: {
     defaultRateBp: 1_800,

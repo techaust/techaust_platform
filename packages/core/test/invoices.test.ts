@@ -150,6 +150,7 @@ describe("what stops an issue [ADM-INV-07, LD20; Rule 46]", () => {
     bank: { inr: true, swift: true },
     advance: false,
     b2cThresholdInrMinor: 5_000_000,
+    signatureSaved: true,
   };
   const codes = (f: IssueFacts) => issueBlockers(f).map((b) => b.code);
 

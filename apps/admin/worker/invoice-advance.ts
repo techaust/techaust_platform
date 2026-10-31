@@ -281,7 +281,11 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
     const format = ctx.settings.numbering[series];
     const numbering = sqlPrintfPattern(format);
     const recipient = recipientOf(ctx.client, ctx.contact);
-    const issuer = issuerOf(ctx.settings, ctx.bank, { id: u.id, name: u.name }, currency);
+    // T4 (L2): an invoice for a payment received always freezes the signature, whatever the checklist's switch says
+    const issuer = issuerOf(ctx.settings, ctx.bank, { id: u.id, name: u.name }, currency, {
+      type,
+      advance: true,
+    });
     const terms = ctx.newestTerms as TermsRef | null;
     const mode: ExportRoute = route ?? ctx.settings.tax.exportMode;
     // Decision 10: the newest extra export note, when one exists, is pinned with its text; its text must be the text its SHA-256 was taken from.

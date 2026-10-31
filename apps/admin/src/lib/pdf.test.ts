@@ -89,7 +89,8 @@ describe("the wording (07-P §3, §4)", () => {
     expect(PDF_COPY.done).toBe("The PDF is already made.");
     expect(SIGNATURE_COPY).toEqual({
       heading: "Signature",
-      hint: `Optional. Invoices you send electronically don't need a signature (GST Rule 46). If you add one, it prints above "Authorised signatory".`,
+      // 07-ZC line 2 (T4, approved 2026-10-31)
+      hint: `Credit notes, debit notes and invoices for a payment received always carry the signature. Other invoices you send electronically don't need one (GST Rule 46). If you add one, it prints above "Authorised signatory".`,
       upload: "Upload signature",
       replace: "Replace",
       remove: "Remove",

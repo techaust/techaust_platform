@@ -31,6 +31,7 @@ import {
   DISCOUNT_AFTER_SALE_FROM_SQL,
   fyTokenOfDateSql,
   LUT_FOR_FY_SQL,
+  signedIssuerSql,
   taxOnlyNoteExactSql,
 } from "./sql-rules.ts";
 
@@ -953,6 +954,28 @@ export function noteLutTriggerStatements(): string[] {
   ];
 }
 
+/**
+ * T4 (rt2): the document types `documents_signature_required` (0055) always requires the signature on, pinned so a later change of core `SIGNED_ALWAYS_TYPES`
+ * cannot move the bytes of 0055 (a db test compares the two).
+ */
+export const SIGNED_ALWAYS_TYPES_0055 = ["credit_note", "debit_note"] as const;
+
+/**
+ * T4 (rt2; a new trigger only, no table is rebuilt; the abort message starts with the trigger's name): `documents_signature_required`: a credit or debit note
+ * (Researched 2026-10-30, Rule 53(1A) CGST Rules (08-C RA-22)), and a tax or export invoice for a payment received (`header_extras.advance` an object, never a JSON null, like core's truthiness; Researched
+ * 2026-10-30, s.31(3)(d) CGST Act and Rule 50 CGST Rules (08-C RA-17), the safest reading), is issued only with a signature reference in its issuer block and no
+ * `signatory` key (`signedIssuerSql`). Fires only on draft to issued, so a note frozen before 0055 without a signature keeps every later ledger write. The twin of
+ * core `signatureRequired` and of the note and advance freeze WHEREs (`SIGNED_FREEZE_SQL`). OPEN (08-C RA-22): do Rules 50 and 53 carry Rule 46(q)'s
+ * electronic-issue proviso, and does a stored image meet "signature" on an electronic document? The safest reading is built.
+ */
+export function signatureTriggerStatements(): string[] {
+  const types = SIGNED_ALWAYS_TYPES_0055.map((t) => `'${t}'`).join(", ");
+  const mustSign = `(NEW.type IN (${types}) OR (NEW.type IN ('tax_invoice', 'export_invoice') AND json_type(NEW.header_extras, '$.advance') = 'object'))`;
+  return [
+    `CREATE TRIGGER \`documents_signature_required\` BEFORE UPDATE OF status ON \`documents\` WHEN OLD.status = 'draft' AND NEW.status = 'issued' AND ${mustSign} AND NOT ${signedIssuerSql("NEW.issuer")} BEGIN ${abort("documents_signature_required: a credit note, a debit note or an invoice for a payment received is issued with the signature")} END;`,
+  ];
+}
+
 /** The trigger sets, by the name the migration is created with (`drizzle-kit generate --custom --name <set>`). */
 export const TRIGGER_SETS = {
   triggers: { what: "integrity triggers (docs/05 §5.3)", statements: triggerStatements },
@@ -1026,6 +1049,10 @@ export const TRIGGER_SETS = {
   note_lut_triggers: {
     what: "rt1 T2: a debit note on an export under LUT is issued only with a LUT saved for the financial year of its own issue day",
     statements: noteLutTriggerStatements,
+  },
+  signature_triggers: {
+    what: "settle-08c T4: a credit note, a debit note and an invoice for a payment received are issued with the signature",
+    statements: signatureTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;

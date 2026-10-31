@@ -294,6 +294,8 @@ function Checklist(props: {
               </li>
             );
           const key = item.id === "bankDetails" || item.id === "signatory" ? item.id : null;
+          // T4 (07-ZC line 3): the signatory switch says which documents it reaches (notes and invoices for a payment received are always signed)
+          const scope = item.id === "signatory" ? INVT_COPY.signatoryScope : null;
           return (
             <li key={item.id} className="checklist__item checklist__item--switch">
               <span className="checklist__label">
@@ -301,11 +303,16 @@ function Checklist(props: {
                 <span className="checklist__house" id={`${labelId}-house`}>
                   {INVT_COPY.houseRule}
                 </span>
+                {scope && (
+                  <span className="checklist__scope" id={`${labelId}-scope`}>
+                    {scope}
+                  </span>
+                )}
               </span>
               <Switch
                 id={`f-checklist-${item.id}`}
                 labelledBy={labelId}
-                describedBy={`${labelId}-house`}
+                describedBy={scope ? `${labelId}-house ${labelId}-scope` : `${labelId}-house`}
                 checked={key ? props.values[key] : false}
                 disabled={props.readOnly || !item.available || key === null}
                 onChange={(on) => key && props.onChange(key, on)}

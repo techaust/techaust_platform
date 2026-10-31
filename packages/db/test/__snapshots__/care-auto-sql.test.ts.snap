@@ -24,6 +24,7 @@ exports[`the Owner's and the approval's issue SQL did not move [LD58] > a credit
          AND (SELECT count(*) FROM documents c WHERE c.parent_id = ?30 AND c.type = documents.type AND c.frozen_at IS NOT NULL) < 20
          AND (json_extract(documents.header_extras, '$.noteOf.reason.code') IS NOT 'discount_after_sale' OR ?6 >= '2026-11-01')
          AND (documents.type IS NOT 'debit_note' OR (json_extract(documents.header_extras, '$.noteOf.reason.code') IS NOT 'tax_charged_too_low' AND documents.taxable_minor IS NOT 0) OR (documents.taxable_minor IS 0 AND documents.round_off_minor IS 0 AND documents.total_minor IS documents.cgst_minor + documents.sgst_minor + documents.igst_minor AND coalesce(json_extract(documents.computed, '$.inr.roundOffMinor'), 0) IS 0))
+         AND (json_extract(?9, '$.signature.sha256') IS NOT NULL AND json_type(?9, '$.signatory') IS NULL) AND json_extract(?9, '$.signature.sha256') = (SELECT json_extract(cs.value, '$.signature.sha256') FROM settings cs WHERE cs.key = 'company')
        RETURNING number_display, number",
     "values": [
       "d1",

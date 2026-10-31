@@ -11,7 +11,7 @@ import { legacyLutFate, resolveSetting, SETTINGS_DEFAULTS } from "@techaust/core
 import { afterEach, describe, expect, it } from "vitest";
 import { LUT_FOR_FY_SQL } from "../src/issue.ts";
 import { noteLutTriggerStatements } from "../src/triggers.ts";
-import { all, first, rejects, run } from "./helpers.ts";
+import { all, first, rejects, run, SIGNED_ISSUER } from "./helpers.ts";
 import {
   creditedBySql,
   insertNoteDraft,
@@ -35,14 +35,18 @@ const setTax = (value: Record<string, unknown>) =>
     JSON.stringify(value),
   );
 
-/** A freeze written straight in, dated `issueDate` (the note freeze's own WHERE would refuse first; this proves the trigger alone). */
+/**
+ * A freeze written straight in, dated `issueDate` (the note freeze's own WHERE would refuse first; this proves the trigger alone). Signed (`SIGNED_ISSUER`), so
+ * the signature trigger `documents_signature_required` (0055, rt2 T4) passes and only the LUT trigger is under test.
+ */
 const rawFreeze = (id: string, issueDate: string | null, series = "debitNote") =>
   run(
-    "UPDATE documents SET status = 'issued', frozen_at = 9000, series = ?3, fy = ?2, number = 1, number_display = 'N/' || ?2 || '/1', issue_date = ?4, balance_minor = CASE WHEN type = 'credit_note' THEN 0 ELSE total_minor END, ims_status = CASE WHEN type = 'credit_note' THEN 'not_applicable' END WHERE id = ?1",
+    "UPDATE documents SET status = 'issued', frozen_at = 9000, series = ?3, fy = ?2, number = 1, number_display = 'N/' || ?2 || '/1', issue_date = ?4, balance_minor = CASE WHEN type = 'credit_note' THEN 0 ELSE total_minor END, ims_status = CASE WHEN type = 'credit_note' THEN 'not_applicable' END, issuer = ?5 WHERE id = ?1",
     id,
     nextFy(),
     series,
     issueDate,
+    SIGNED_ISSUER,
   );
 
 afterEach(async () => {

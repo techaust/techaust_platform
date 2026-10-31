@@ -18,6 +18,18 @@ html:has(.shell) {
   scroll-padding-top: calc(var(--topbar-h) + var(--space-4));
 }
 
+/* The same at the bottom while the "Unsaved changes" bar (SaveBar, fixed to the window's foot) is up: a field reached by Tab stops clear of the bar
+   (rt2 visual review 3). The bar's height plus a gap: one row from 48rem, text over buttons below it (the toasts clear it by the same measures). */
+html:has(.shell .savebar) {
+  scroll-padding-bottom: calc(var(--space-20) + var(--space-4));
+}
+
+@media (max-width: 47.99rem) {
+  html:has(.shell .savebar) {
+    scroll-padding-bottom: calc(var(--space-32) + var(--space-4));
+  }
+}
+
 body {
   margin: 0;
   min-height: 100dvh;
@@ -611,6 +623,16 @@ input[readonly] {
   margin-top: 0.125rem;
 }
 
+/* A notice that took the focus (a refusal in a dialog): the ring after a keyboard press, as for the refusal box. */
+.notice[tabindex="-1"] {
+  scroll-margin-top: var(--space-4);
+}
+
+.notice[tabindex="-1"]:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
 .notice--error {
   color: var(--color-danger);
 }
@@ -1137,6 +1159,12 @@ input[readonly] {
   color: var(--color-text);
   box-shadow: var(--elevation-2);
   overflow: auto;
+  /* What takes the focus, or is scrolled to, stops above the sticky actions (below), with a gap (WCAG 2.4.11, rt2 re-check A). Their height is
+     measured (components/dialog.tsx: one row, or stacked full width on phones, and a step's own buttons); until then, one row of them. */
+  scroll-padding-bottom: calc(
+    var(--dialog-actions-h, calc(var(--space-10) + var(--target-min))) +
+    var(--space-3)
+  );
 }
 
 .dialog[open] {

@@ -13,6 +13,7 @@ import {
   invoiceIssueStatements,
   type RecipientSnapshot,
 } from "@techaust/db/issue";
+import { withoutSignatureTrigger } from "./pdf-note-seed.ts";
 
 export type SeededInvoice = {
   id: string;
@@ -73,6 +74,13 @@ export type InvoiceSeedOptions = {
   bank?: boolean;
   /** FX-4 (A5 5): a proforma sealed with the GST estimate marker, as the issue route seals every proforma from FX-4 on (default: one sealed before it). */
   gstEstimate?: boolean;
+  /**
+   * T4 (rt2): a tax or export invoice for a payment received (`header.advance` sealed and frozen). Without `signature` it is an invoice issued before the rule (an
+   * older staging document), frozen past the 0055 trigger.
+   */
+  advance?: boolean;
+  /** T10 (rt2): the Udyam block the issuer froze (only a tax invoice is ever issued with one; a test may freeze one elsewhere to prove the refusal). */
+  udyam?: { number: string; category: "micro" | "small" | "medium" } | unknown;
 };
 
 /** Makes a client and a draft tax invoice, then issues it through the real issue statements. */
@@ -248,6 +256,7 @@ export async function seedIssuedInvoice(o: InvoiceSeedOptions = {}): Promise<See
       stateCode: "19",
       logo: "logo-primary-color.svg",
       principalPlace: "2 Sample Office Lane, Balurghat",
+      ...(o.udyam !== undefined ? { udyam: o.udyam as { number: string; category: "micro" } } : {}),
     },
     bank: isExport
       ? {
@@ -282,7 +291,7 @@ export async function seedIssuedInvoice(o: InvoiceSeedOptions = {}): Promise<See
   const issueDate = toIsoDate(issueInstant);
   const dueDate = "2999-01-01";
   // What the real issue route seals and freezes in `header_extras` (LD37): the endorsement, the LUT letter and the country; or the notice.
-  const extras: Pick<InvoiceHeaderExtras, "export" | "proforma"> = isExport
+  const typeExtras: Pick<InvoiceHeaderExtras, "export" | "proforma"> = isExport
     ? {
         export: {
           mode,
@@ -301,6 +310,20 @@ export async function seedIssuedInvoice(o: InvoiceSeedOptions = {}): Promise<See
           },
         }
       : {};
+  const extras: Pick<InvoiceHeaderExtras, "export" | "proforma" | "advance"> = {
+    ...typeExtras,
+    ...(o.advance
+      ? {
+          advance: {
+            proformaId: "doc_proforma_sample",
+            proformaNumber: "TH/PI/2627/0003",
+            proformaIssueDate: "2026-10-20",
+            receivedOn: issueDate,
+            receiptId: `rcp_sample_${n}`,
+          },
+        }
+      : {}),
+  };
   const seal = await invoiceSealOf({
     document: {
       type,
@@ -360,7 +383,9 @@ export async function seedIssuedInvoice(o: InvoiceSeedOptions = {}): Promise<See
     authority: { kind: "owner", sessionId },
     bell: { clientName: `Sample Invoice Client ${n}`, linkPrefix: "/invoices/" },
   });
-  await env.DB.batch([...batch.main, ...batch.postAudit]);
+  if (o.advance && !o.signature)
+    await withoutSignatureTrigger(() => env.DB.batch([...batch.main, ...batch.postAudit]));
+  else await env.DB.batch([...batch.main, ...batch.postAudit]);
   const row = await env.DB.prepare("SELECT number, number_display, fy FROM documents WHERE id = ?1")
     .bind(docId)
     .first<{ number: number; number_display: string; fy: string }>();

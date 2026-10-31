@@ -89,9 +89,12 @@ export type GstinResult =
   | { ok: true; gstin: string; stateCode: StateCode; state: string; pan: string; legacyState: boolean }
   | { ok: false; error: string };
 
-/** Normalise (trim, upper-case, drop spaces) and validate a GSTIN, deriving its state and PAN. */
+/** A typed GSTIN as it is read and saved: every space dropped (so it is trimmed too), upper case. The one normalisation; `validateGstin` reads through it. */
+export const normaliseGstin = (input: string): string => input.replace(/\s+/g, "").toUpperCase();
+
+/** Normalise (`normaliseGstin`) and validate a GSTIN, deriving its state and PAN. */
 export function validateGstin(input: string): GstinResult {
-  const gstin = input.replace(/\s+/g, "").toUpperCase();
+  const gstin = normaliseGstin(input);
   if (gstin.length !== 15) return { ok: false, error: "A GSTIN has 15 characters" };
   if (!SHAPE.test(gstin))
     return { ok: false, error: "That doesn't look like a GSTIN (e.g. 19ABCDE1234F1Z5)" };

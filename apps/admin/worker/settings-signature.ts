@@ -3,7 +3,11 @@
 // file an earlier document used; the reference lives in the company settings (`company.signature`; a row from before M4.4 reads as null).
 // Objects are never deleted here: replacing or removing the signature only changes the reference, so a document that already used the image
 // keeps it whatever M5.2 decides (orphan clean-up is a follow-up with the other R2 clean-up, M7.4).
-// It is printed only on invoices (from M5.2). Researched 2026-10-28, Rule 46(q) proviso CGST Rules (08-C RA-06): a signature is not required on an invoice issued electronically; the image is optional.
+// It is printed only on invoice-family documents (from M5.2). On a tax invoice, an export invoice and a proforma it follows the checklist's signatory switch
+// (Researched 2026-10-28, Rule 46(q) proviso CGST Rules (08-C RA-06): a signature is not required on an invoice issued electronically; the image is optional there).
+// Since rt2 (T4) a credit note, a debit note and a tax or export invoice for a payment received always carry it, whatever the switch says, and can't be issued
+// while no signature is saved here (`signature_missing`; Researched 2026-10-30, Rule 53(1A) CGST Rules (08-C RA-22); s.31(3)(d) CGST Act and Rule 50 CGST Rules
+// (08-C RA-17), the safest reading). Removing the signature therefore blocks those issues until a new one is uploaded.
 // Nothing here executes or renders the image: the type is decided by the first bytes (no SVG, no scripts), and the download is an
 // attachment with a sandbox CSP.
 // FX-3 (A6 1c): at most 800 by 400 pixels (core SIGNATURE_MAX_WIDTH and _HEIGHT), read from the PNG's IHDR, so the check costs no decoding.

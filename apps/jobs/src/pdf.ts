@@ -54,6 +54,7 @@ import {
   renderDocumentHtml,
   serializeEnvelope,
   serializeInvoiceEnvelope,
+  signatureMissing,
   toInvoiceView,
   toPdfView,
   verifyEnvelope,
@@ -96,6 +97,10 @@ export const BELL_COPY = {
   /** An invoice whose frozen signature image can't be used (missing, other bytes, oversized): 07-R §3. The fix is in Settings, not a developer. */
   invoiceSignature: (label: string) =>
     `The signature image couldn't be used for the PDF of ${label}, so the PDF wasn't made. Check the signature in Settings › Company.`,
+  /** A credit or debit note, or an invoice for a payment received, issued without the signature it must carry (older staging documents only): 07-ZC line 7
+   *  (L7, lead 2026-10-31). The document is frozen, so the fix is not in Settings: a developer looks. */
+  invoiceUnsigned: (label: string) =>
+    `The PDF of ${label} wasn't made because it was issued without the signature. Credit notes, debit notes and invoices for a payment received always carry it. A developer needs to look at it.`,
   /** FX-1 (A6 2): a document whose PDF failed on `SWEEP_MAX_FAILED_NIGHTS` nights; the nightly retry stops (kind `pdf.refused`). 07-Y item 26 (owner 2026-10-29). */
   stoppedNightly: (label: string) =>
     `The PDF of ${label} couldn't be made on 3 days, so the nightly retry has stopped. A developer needs to look at it.`,
@@ -338,6 +343,24 @@ async function renderInvoice(
     return "adopted";
   }
 
+  // T4 (rt2, L4): a credit or debit note, or an invoice for a payment received, is never rendered without the signature it must carry (Researched 2026-10-30, Rule 53(1A)
+  // CGST Rules (08-C RA-22); s.31(3)(d) CGST Act and Rule 50 CGST Rules (08-C RA-17)). Checked after the adoption above, so a PDF already stored stays; an older staging
+  // document issued before the rule is refused here (one bell, no retry: the frozen envelope would print the same page). The fix is not in Settings (the document is
+  // frozen), so the bell is its own line (07-ZC line 7, L7) with the invoice's page.
+  // The supplier copy of such a document whose recipient PDF is already stored (`pdf_sha256` set, made before the rule) is not refused (code review 1): it is
+  // the supplier's own record of a page that already exists, the same frozen envelope, so refusing it would only ring the bell at every ask and never store it.
+  if (signatureMissing(envelope) && !(copy === "supplier" && row.pdf_sha256 !== null)) {
+    logEvent("pdf.refused", {
+      stage: "render",
+      code: "signature_required",
+      family: "invoice",
+      type: envelope.type,
+    });
+    await env.DB.batch([
+      bell(env, "pdf.refused", "document", row.id, BELL_COPY.invoiceUnsigned(label), `/invoices/${row.id}`),
+    ]);
+    return "refused";
+  }
   const signature = await verifiedSignature(env, envelope);
   if (signature === "refused") {
     logEvent("pdf.refused", { stage: "render", code: "signature", family: "invoice" });

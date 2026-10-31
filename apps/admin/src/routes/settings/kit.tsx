@@ -36,6 +36,8 @@ export type GroupSpec<K extends JsonGroup, F> = {
   toForm: (value: Settings[K], meta: GroupMeta) => F;
   /** The form's own checks, in the order the fields appear; the value to save when there are none. */
   build: (form: F, doc: SettingsDoc<K>) => Built<K>;
+  /** What "unsaved changes" compares, when a field can't change the saved value (Company's category with no Udyam number). Default: the whole form. */
+  dirtyOf?: (form: F) => unknown;
 };
 
 /** What a control beside the form gets (the signature image on Company): it changes the same settings row on its own, so the form
@@ -120,7 +122,8 @@ function GroupFormBody<K extends JsonGroup, F>(props: {
   const [busy, setBusy] = useState(false);
   const [stale, setStale] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
-  const dirty = !readOnly && JSON.stringify(form) !== JSON.stringify(initial);
+  const dirtyKey = (f: F) => JSON.stringify(spec.dirtyOf ? spec.dirtyOf(f) : f);
+  const dirty = !readOnly && dirtyKey(form) !== dirtyKey(initial);
   const id = `form-${spec.group}`;
 
   const set = (patch: Partial<F>) => {

@@ -9,7 +9,7 @@
 // A draft left open (one per invoice and kind) is opened again here, with its request as it was saved. Every amount is the server's, through core.
 import { useEffect, useId, useRef, useState } from "react";
 import { RequestError, stepUpActive } from "../../api.ts";
-import { Modal } from "../../components/dialog.tsx";
+import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Pencil } from "../../components/icons.tsx";
 import { useLoad } from "../../components/states.tsx";
@@ -111,6 +111,8 @@ function NoteDialogBody(props: {
   const [closest, setClosest] = useState<number | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [blockers, setBlockers] = useState<NoteBlockerIn[]>([]);
+  // A refusal the server sent with no field to point at (its blocker lines, or the form's error) takes the focus (rt2 visual review 1).
+  const refusal = useRefusalFocus();
   const [step, setStep] = useState<"compose" | "confirm">("compose");
   const [saved, setSaved] = useState<NoteSaved | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -185,7 +187,8 @@ function NoteDialogBody(props: {
       else setFormError(text);
     } else setFormError(noteErrorText(e, kind, currency));
     setErrors(next);
-    focusFirst(next);
+    if (Object.keys(next).length > 0) focusFirst(next);
+    else refusal.show();
   }
 
   /** Create the draft, or save the open one, with this request; the answer is the note as the server worked it out. */
@@ -262,9 +265,17 @@ function NoteDialogBody(props: {
       props.onDone();
       props.onClose();
     } catch (e) {
+      // A wrong code is the code field's own error (as in the step-up dialog and the data tools): cleared, said under it, and focused.
+      if (e instanceof RequestError && e.code === "invalid_code") {
+        setCode("");
+        setCodeError(e.message);
+        document.getElementById(fieldId("code"))?.focus();
+        return;
+      }
       if (e instanceof RequestError && e.code === "issue_blocked" && e.extra.blockers?.length)
         setBlockers(e.extra.blockers);
       else setFormError(noteErrorText(e, kind, currency));
+      refusal.show();
     } finally {
       setBusy(false);
     }
@@ -470,7 +481,11 @@ function NoteDialogBody(props: {
           </FormField>
         )}
       </div>
-      {formError && <Notice tone="error">{formError}</Notice>}
+      {formError && (
+        <Notice tone="error" ref={refusal.ref}>
+          {formError}
+        </Notice>
+      )}
       <div className="dialog__actions">
         <button type="button" className="btn btn--secondary" onClick={props.onClose} disabled={busy}>
           {NOTE_COPY.cancel}
@@ -486,7 +501,7 @@ function NoteDialogBody(props: {
         {saved && <NotePreview kind={kind} parent={p} saved={saved} />}
         <p className="note-final">{NOTE_COPY.finalStatement}</p>
         {blockers.length > 0 && (
-          <div className="inv-issue__blocked">
+          <div className="inv-issue__blocked" role="alert" tabIndex={-1} ref={refusal.ref}>
             <p className="inv-issue__fix">{INV_COPY.fixFirst}</p>
             <NoteBlockerList blockers={blockers} kind={kind} currency={currency} />
           </div>
@@ -502,7 +517,11 @@ function NoteDialogBody(props: {
           error={codeError}
         />
       )}
-      {formError && <Notice tone="error">{formError}</Notice>}
+      {formError && (
+        <Notice tone="error" ref={refusal.ref}>
+          {formError}
+        </Notice>
+      )}
       <div className="dialog__actions">
         <button type="button" className="btn btn--secondary" onClick={props.onClose} disabled={busy}>
           {NOTE_COPY.cancel}

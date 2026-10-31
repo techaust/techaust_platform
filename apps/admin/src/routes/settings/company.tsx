@@ -2,7 +2,10 @@
 // valid GSTIN), the address and contact printed on documents, and the two logos, picked from the generated brand files
 // (lead decision L7 of M4.4: never uploaded). After the form, the signature image (M4.4), which is uploaded and saves on its own.
 // Changes apply to new documents only (GST fields: Researched 2026-10-28, Rule 46 CGST, 08-C RA-05).
-import { STATE_CODES, type StateCode, selectableStates, validateGstin } from "@techaust/core";
+// T10 (rt2): the Udyam registration number and enterprise category (07-ZC lines 4 and 5), beside the GST registration because both print on the tax invoice
+// under the supplier's name; the form always sends `udyam` (the block, or null for none: L8), so a later save never keeps a number that was cleared here.
+import { normaliseGstin, STATE_CODES, type StateCode, selectableStates, validateGstin } from "@techaust/core";
+import type { UdyamCategory } from "@techaust/core/invoices";
 import { BRAND_LOGOS, type Settings } from "@techaust/core/settings";
 import primaryBlack from "@techaust/ui/brand/logo-primary-black.svg?url";
 import primaryColor from "@techaust/ui/brand/logo-primary-color.svg?url";
@@ -18,6 +21,7 @@ import { useState } from "react";
 import { StatusPill } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
 import { type FieldErrors, fieldId, looksLikeEmail, orNull } from "../../lib/settings-form.ts";
+import { normaliseUdyam, UDYAM_FORM_COPY, UDYAM_OPTIONS, udyamCategoryOf, udyamOf } from "../../lib/udyam.ts";
 import { type Built, GroupForm, type GroupSpec } from "./kit.tsx";
 import { SignatureControl } from "./signature.tsx";
 
@@ -48,6 +52,8 @@ type Form = {
   documentsPhone: string;
   logoLight: Logo;
   logoDark: Logo;
+  udyamNumber: string;
+  udyamCategory: UdyamCategory;
 };
 
 const ID = {
@@ -62,6 +68,9 @@ const ID = {
   documentsPhone: fieldId("documentsPhone"),
   logoLight: fieldId("logoLight"),
   logoDark: fieldId("logoDark"),
+  // the schema's paths (`udyam.number`, `udyam.category`), so a refusal from the API lands on its field
+  udyamNumber: fieldId("udyam.number"),
+  udyamCategory: fieldId("udyam.category"),
 };
 
 const spec: GroupSpec<"company", Form> = {
@@ -80,6 +89,8 @@ const spec: GroupSpec<"company", Form> = {
     documentsPhone: v.documentsPhone ?? "",
     logoLight: v.logoLight,
     logoDark: v.logoDark,
+    udyamNumber: v.udyam?.number ?? "",
+    udyamCategory: udyamCategoryOf(v.udyam),
   }),
   build: (f): Built<"company"> => {
     const e: FieldErrors = {};
@@ -91,7 +102,9 @@ const spec: GroupSpec<"company", Form> = {
     if (!f.address.trim()) e[ID.address] = "Enter the address printed on documents.";
     if (!looksLikeEmail(f.documentsEmail))
       e[ID.documentsEmail] = "Enter an email address, like accounts@example.com.";
-    if (Object.keys(e).length || !g?.ok) return { errors: e };
+    const udyam = udyamOf(f.udyamNumber, f.udyamCategory);
+    if (!udyam.ok) e[ID.udyamNumber] = udyam.error;
+    if (Object.keys(e).length || !g?.ok || !udyam.ok) return { errors: e };
     const value: Settings["company"] = {
       tradeName: f.tradeName.trim(),
       legalName: f.legalName.trim(),
@@ -103,8 +116,21 @@ const spec: GroupSpec<"company", Form> = {
       documentsPhone: orNull(f.documentsPhone),
       logoLight: f.logoLight,
       logoDark: f.logoDark,
+      udyam: udyam.value,
     };
     return { value };
+  },
+  // Compared as they would be saved (rt2 re-check B): the GSTIN and the Udyam number are kept as typed until the field is left (second review 2), so a
+  // change of case or spacing alone is no change; without a number the category isn't saved (`udyamOf` gives null), so changing it alone is none either (4).
+  dirtyOf: (f) => {
+    const udyamNumber = normaliseUdyam(f.udyamNumber);
+    return {
+      ...f,
+      // core's one normalisation, the very one `validateGstin` reads, so the saved GSTIN is `g.gstin` of a valid one
+      gstin: normaliseGstin(f.gstin),
+      udyamNumber,
+      udyamCategory: udyamNumber === "" ? null : f.udyamCategory,
+    };
   },
 };
 
@@ -135,6 +161,11 @@ function Fields({
   const liveError = checked && gst && !gst.ok ? `${gst.error}.` : null;
   const lockedState = gst?.ok ? (gst.stateCode as StateCode) : null;
   const states = selectableStates();
+  // The Udyam number, like the GSTIN, is checked once the field is left (or the save is tried), never while it is typed.
+  const [udyamLeft, setUdyamLeft] = useState(false);
+  const udyamCheck = udyamOf(f.udyamNumber, f.udyamCategory);
+  const udyamLive = udyamLeft && !udyamCheck.ok ? udyamCheck.error : null;
+  const hasUdyam = normaliseUdyam(f.udyamNumber) !== "";
 
   return (
     <>
@@ -205,11 +236,17 @@ function Fields({
                 maxLength={18}
                 value={f.gstin}
                 onChange={(e) => {
-                  const v = e.target.value.toUpperCase();
+                  // Kept as typed, so the caret stays where it is (rt2 second review 2); the field shows capitals (`.field--gstin`), the check
+                  // reads any case, and leaving the field stores the capitals.
+                  const v = e.target.value;
                   set({ gstin: v });
                   setChecked(v.replace(/\s/g, "").length >= 15);
                 }}
-                onBlur={() => setChecked(true)}
+                onBlur={() => {
+                  const n = f.gstin.toUpperCase();
+                  if (n !== f.gstin) set({ gstin: n });
+                  setChecked(true);
+                }}
               />
             )}
           </FormField>
@@ -249,6 +286,56 @@ function Fields({
                 </select>
               )
             }
+          </FormField>
+        </div>
+        <div className="form-grid form-grid--udyam">
+          <FormField
+            id={ID.udyamNumber}
+            label={UDYAM_FORM_COPY.label}
+            className="field--gstin"
+            optional
+            hint={UDYAM_FORM_COPY.hint}
+            error={error(ID.udyamNumber) ?? udyamLive}
+          >
+            {(a) => (
+              <input
+                {...a}
+                autoComplete="off"
+                spellCheck={false}
+                autoCapitalize="characters"
+                maxLength={30}
+                value={f.udyamNumber}
+                onChange={(e) => {
+                  // As typed (the caret stays put, rt2 second review 2): shown in capitals by `.field--gstin`, stored in capitals on leaving.
+                  set({ udyamNumber: e.target.value });
+                  if (udyamLeft && e.target.value.trim() === "") setUdyamLeft(false);
+                }}
+                onBlur={() => {
+                  const n = normaliseUdyam(f.udyamNumber);
+                  if (n !== f.udyamNumber) set({ udyamNumber: n });
+                  setUdyamLeft(n !== "");
+                }}
+              />
+            )}
+          </FormField>
+          <FormField id={ID.udyamCategory} label={UDYAM_FORM_COPY.categoryLabel}>
+            {(a) => (
+              <select
+                {...a}
+                // A category belongs to a number: with none there is nothing to print it beside (rt2 second review 4).
+                disabled={!hasUdyam}
+                // Its own mark, not the fieldset's state: a save in flight disables the fieldset too, and the look must not change then (rt2 re-check E).
+                data-waiting={hasUdyam ? undefined : ""}
+                value={f.udyamCategory}
+                onChange={(e) => set({ udyamCategory: e.target.value as UdyamCategory })}
+              >
+                {UDYAM_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            )}
           </FormField>
         </div>
       </fieldset>

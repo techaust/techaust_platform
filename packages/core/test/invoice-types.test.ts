@@ -41,6 +41,8 @@ import {
   parseFxRate,
   proformaWarnAt,
   proformaWarnDate,
+  SIGNED_ALWAYS_TYPES,
+  signatureRequired,
   voidBlockers,
   weekMondayOf,
 } from "../src/invoices.ts";
@@ -511,6 +513,8 @@ describe("the mandatory-field checklist [ADM-INV-06, Q10, LD31]", () => {
       "fx_date_invalid",
       "fx_missing",
       "fx_same_day_exists",
+      // T4 (L1): keyed on the document, so the signatory switch can never lift it
+      "signature_missing",
       "type_not_allowed",
     ]);
   });
@@ -557,6 +561,7 @@ describe("what stops each kind of issue, one blocker per field [ADM-INV-06, -08,
     bank: { inr: true, swift: true },
     advance: false,
     b2cThresholdInrMinor: 5_000_000,
+    signatureSaved: true,
   };
   const overseas = {
     legalName: "Acme GmbH",
@@ -771,6 +776,14 @@ describe("what stops each kind of issue, one blocker per field [ADM-INV-06, -08,
       "swift_missing",
       true,
     ],
+    // T4 (rt2): an invoice for a payment received always carries the signature; no switch silences it
+    [
+      "the signature (an invoice for a payment received)",
+      ["advance_tax", "advance_export"],
+      (f) => ({ ...f, signatureSaved: false }),
+      "signature_missing",
+      false,
+    ],
   ];
   for (const [what, kinds, make, code, switchable] of rows) {
     for (const kind of kinds) {
@@ -895,6 +908,44 @@ describe("what stops each kind of issue, one blocker per field [ADM-INV-06, -08,
     expect(codes({ ...base("tax"), bank: { inr: true, swift: false } })).toEqual([]);
     expect(codes({ ...base("export"), bank: { inr: true, swift: false } })).toEqual(["swift_missing"]);
     expect(codes({ ...base("export"), bank: { inr: false, swift: true } })).toEqual([]);
+  });
+
+  it("T4: the signature blocks only an invoice for a payment received, whatever the signatory switch says [ADM-INV-06; 08-C RA-17]", () => {
+    const off: ChecklistSettings = { bankDetails: true, paymentLink: false, signatory: false };
+    for (const k of ["advance_tax", "advance_export"] as Kind[]) {
+      const f = { ...base(k), signatureSaved: false };
+      expect(codes(f), k).toEqual(["signature_missing"]);
+      expect(codes(f, off), k).toEqual(["signature_missing"]);
+      expect(codes(base(k), off), k).toEqual([]);
+    }
+    // a plain tax or export invoice, or a proforma, keeps the switch (Rule 46(q) proviso, RA-06): no signature is no blocker
+    for (const k of ["tax", "export", "proforma", "proforma_overseas"] as Kind[]) {
+      expect(codes({ ...base(k), signatureSaved: false }), k).toEqual([]);
+      expect(codes({ ...base(k), signatureSaved: false }, off), k).toEqual([]);
+    }
+    // its place in the stable order: after the supplier, before the recipient
+    expect(
+      codes({
+        ...base("advance_tax"),
+        signatureSaved: false,
+        supplier: { ...base("tax").supplier, stateCode: null },
+        recipient: { ...base("tax").recipient, legalName: null },
+      }),
+    ).toEqual(["supplier_state", "signature_missing", "recipient_legal_name"]);
+  });
+
+  it("T4: signatureRequired is keyed on the document: notes always, an advance tax or export invoice, nothing else", () => {
+    expect(SIGNED_ALWAYS_TYPES).toEqual(["credit_note", "debit_note"]);
+    for (const advance of [false, true]) {
+      expect(signatureRequired("credit_note", advance)).toBe(true);
+      expect(signatureRequired("debit_note", advance)).toBe(true);
+      expect(signatureRequired("proforma", advance)).toBe(false);
+      expect(signatureRequired("proposal", advance)).toBe(false);
+    }
+    expect(signatureRequired("tax_invoice", true)).toBe(true);
+    expect(signatureRequired("export_invoice", true)).toBe(true);
+    expect(signatureRequired("tax_invoice", false)).toBe(false);
+    expect(signatureRequired("export_invoice", false)).toBe(false);
   });
 
   it("the payment-link line never blocks: it is off and not available", () => {

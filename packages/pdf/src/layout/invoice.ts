@@ -180,14 +180,30 @@ function advanceHtml(view: InvoiceView): string {
   );
 }
 
+/**
+ * The supplier's lines, with the Udyam line (07-ZC line 6, T10) right under the "GSTIN … · State …" line: ONE text node in its own paragraph, never split
+ * into parts (the jobs gate `missingStatutoryLine` refuses the PDF otherwise). A view without a registration line puts it after the last line. Shared with the
+ * skeleton, so both layouts print it the same way.
+ */
+export function supplierLinesHtml(view: InvoiceView, line: (text: string) => string): string {
+  const { lines, registrationAt, udyam } = view.supplier;
+  const out = lines.map(line);
+  if (udyam !== null) {
+    const at = registrationAt >= 0 && registrationAt < lines.length ? registrationAt + 1 : lines.length;
+    out.splice(at, 0, p("party__line inv-udyam", udyam, ' data-testid="udyam"'));
+  }
+  return out.join("");
+}
+
 const fact = (term: string, value: string, cls = "") =>
   `<div${cls ? ` class="${cls}"` : ""}><dt>${esc(term)}</dt><dd>${esc(value)}</dd></div>`;
 
 function parties(view: InvoiceView): string {
   const R = C.parties;
-  const from = `<div class="party"><p class="label">${R.from}</p>${p("party__name", view.supplier.name)}${view.supplier.lines
-    .map((l) => partsLine("party__line", l))
-    .join("")}</div>`;
+  const from = `<div class="party"><p class="label">${R.from}</p>${p("party__name", view.supplier.name)}${supplierLinesHtml(
+    view,
+    (l) => partsLine("party__line", l),
+  )}</div>`;
 
   const r = view.recipient;
   const ids = [r.gstin ? fact(R.gstin, r.gstin) : "", r.state ? fact(R.state, r.state) : ""].join("");
@@ -465,6 +481,12 @@ ${notesBlock(view)}
 /**
  * What the invoice layout adds to the shared template CSS (./styles.ts), all under `.doc--tax-invoice` (the class every designed invoice carries).
  * Sizes, colours and fonts are the print tokens; the lengths are column widths and spacing on the 178 mm text width. Bold is 600 (the fonts stop there).
+ *
+ * The last rule is T10's (rt2; moved here from the skeleton's CSS, code review 6): the Udyam line (07-ZC line 6) is ONE text node, and Chromium breaks a line
+ * after any hyphen of "UDYAM-WB-00-0000001" (no CSS property stops it). 12em is wider than the number at its widest (11.4em, measured in Archivo for
+ * "UDYAM-WW-88-8888888") and narrower than "Udyam Registration No. UDYAM-" (14.7em), so the line always breaks at its spaces: "Udyam Registration No.",
+ * the number, "(Micro enterprise)". Only a tax invoice prints the line (`udyamPrintedOn`; the envelope check refuses it on any other type), and a tax invoice
+ * always takes this layout (`DESIGNED_INVOICE_TYPES`), so the rule is scoped like every other one here and the skeleton needs none.
  */
 export const TAX_INVOICE_CSS = `
 .doc--tax-invoice { font-size: var(--print-body); line-height: var(--print-body-leading); }
@@ -586,5 +608,8 @@ export const TAX_INVOICE_CSS = `
 .doc--tax-invoice .inv-sign__img { display: block; margin: 2mm 0 1.6mm auto; max-height: 16mm; max-width: 52mm; }
 .doc--tax-invoice .inv-sign__space { height: 14mm; }
 .doc--tax-invoice .inv-sign__role { margin: 0 0 0 auto; max-width: 52mm; padding-top: 1.2mm; border-top: 0.2mm solid var(--color-text); color: var(--color-text-muted); }
+
+/* the registration line under the GSTIN breaks only at its spaces, never after a hyphen of the number (12em) */
+.doc--tax-invoice .inv-udyam { max-width: 12em; overflow-wrap: normal; }
 
 `;

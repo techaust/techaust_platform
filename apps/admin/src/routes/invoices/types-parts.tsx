@@ -14,7 +14,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { RequestError, stepUpActive } from "../../api.ts";
 import { DateField, useUnreadDates } from "../../components/date-field.tsx";
-import { Modal } from "../../components/dialog.tsx";
+import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
 import { FormField, Switch } from "../../components/form.tsx";
 import { Alert, Check, Pencil, Receipt } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
@@ -685,6 +685,8 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
   const [errors, setErrors] = useState<AdvErrors>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // A refusal with no field to point at (the blocker lines, or the failure line) takes the focus (rt2 visual review 1).
+  const refusal = useRefusalFocus();
   const dates = useUnreadDates<"date">();
   const fxDates = useUnreadDates<"date">();
   const needsCode = !stepUpActive();
@@ -760,6 +762,13 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
         });
         return;
       }
+      // A wrong code is the code field's own error (as in the step-up dialog and the data tools): cleared, said under it, and focused.
+      if (e instanceof RequestError && e.code === "invalid_code") {
+        setCode("");
+        setCodeError(e.message);
+        document.getElementById("adv-code")?.focus();
+        return;
+      }
       // The server's blockers (the rate's date against the day the money came, among others): their own lines, the rate's under its field.
       const listed = e instanceof RequestError && e.code === "issue_blocked" ? (e.extra.blockers ?? []) : [];
       if (listed.length > 0) {
@@ -771,9 +780,12 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
           focusField("adv-fx-date");
         }
         setRefused(rest);
+        // the rate's own line keeps the focus on its field; the other lines take it in their box
+        if (!rateDate && rest.length > 0) refusal.show();
         return;
       }
       setFailure(invErrorText(e));
+      refusal.show();
     } finally {
       setBusy(false);
     }
@@ -904,7 +916,7 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
           </section>
         )}
         {refused.length > 0 && (
-          <div className="inv-issue__blocked" role="alert">
+          <div className="inv-issue__blocked" role="alert" tabIndex={-1} ref={refusal.ref}>
             <p className="inv-issue__fix">{INV_COPY.fixFirst}</p>
             <BlockerList
               blockers={refused}
@@ -926,7 +938,11 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
           error={codeError}
         />
       )}
-      {failure && <Notice tone="error">{failure}</Notice>}
+      {failure && (
+        <Notice tone="error" ref={refusal.ref}>
+          {failure}
+        </Notice>
+      )}
       <div className="dialog__actions">
         <button type="button" className="btn btn--secondary" onClick={props.onClose} disabled={busy}>
           {INVT_COPY.cancel}

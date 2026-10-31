@@ -191,6 +191,37 @@ export function SettingRow(props: {
   );
 }
 
+/** The gap kept between a focused field and the bar (`--space-4`). */
+const BAR_GAP_PX = 16;
+
+/**
+ * While the bar is up, a field that takes the focus below its top edge is scrolled up clear of it (WCAG 2.4.11; rt2 visual review 3). The page's
+ * `scroll-padding-bottom` (app.css) places a field scrolled in from off screen, but Chromium doesn't scroll a field that is already inside the
+ * window, even one under the fixed bar, so this measures after the browser's own scroll and moves the page the rest. Never past the top bar's
+ * padding (a field taller than the room keeps its top in view); dialogs (top layer) and anything outside the page's `main` are left alone.
+ */
+function useClearOfBar(bar: { readonly current: HTMLElement | null }, on: boolean) {
+  useEffect(() => {
+    if (!on) return;
+    function clear(e: FocusEvent) {
+      const t = e.target;
+      if (!(t instanceof Element) || !t.closest("main") || t.closest("dialog")) return;
+      requestAnimationFrame(() => {
+        const b = bar.current;
+        if (!b || b.contains(t) || document.activeElement !== t) return;
+        const box = t.getBoundingClientRect();
+        const over = box.bottom - (b.getBoundingClientRect().top - BAR_GAP_PX);
+        if (over <= 0) return;
+        const top = Number.parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+        const shift = Math.min(over, box.top - top);
+        if (shift > 0) window.scrollBy({ top: shift, behavior: "instant" });
+      });
+    }
+    document.addEventListener("focusin", clear);
+    return () => document.removeEventListener("focusin", clear);
+  }, [bar, on]);
+}
+
 /** The bar that appears while a form has unsaved changes; it stays at the bottom of the window. */
 export function SaveBar(props: {
   dirty: boolean;
@@ -199,9 +230,11 @@ export function SaveBar(props: {
   saveLabel?: string | undefined;
   form: string;
 }) {
+  const bar = useRef<HTMLElement>(null);
+  useClearOfBar(bar, props.dirty);
   if (!props.dirty) return null;
   return (
-    <section className="savebar" aria-label="Unsaved changes">
+    <section className="savebar" aria-label="Unsaved changes" ref={bar}>
       <p className="savebar__text">You have unsaved changes.</p>
       <div className="savebar__actions">
         <button type="button" className="btn btn--secondary" onClick={props.onDiscard} disabled={props.busy}>

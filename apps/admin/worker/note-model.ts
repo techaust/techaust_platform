@@ -651,6 +651,8 @@ export function blockersOfNote(a: {
         inr: a.bank.some((r) => r.kind === "INR"),
         swift: a.bank.some((r) => r.kind === "USD_SWIFT" && !!r.swift),
       },
+      // T4: a note always carries the signature (Researched 2026-10-30, Rule 53(1A) CGST Rules (08-C RA-22))
+      signatureSaved: a.settings.company.signature != null,
       ...(a.lut ? { lut: { needed: true, fy: a.lut.fy, saved: a.lut.lut !== null } } : {}),
     },
     a.settings.tax.invoiceChecklist,

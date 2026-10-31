@@ -6,9 +6,18 @@
 //   - header.document.termsRef and the footer notes agree, and sha256(notes) = termsRef.sha256
 //   - header.document.contentSha256 = core `contentHash` of the lines, the discount and the computed result (the issue route's own)
 //   - (M5.3) a credit or debit note carries `header.noteOf` (and no other type does), its kind is its type's, it takes one line per take, and a credit note has no due date
+//   - (T10) a Udyam block is only on a tax invoice, and has the sealed shape (`isSealedUdyam`: two non-blank strings, never today's format rule): anything
+//     else is not an envelope to print from
 // A signature image is checked separately (`verifySignatureBytes`): the envelope holds only its key, SHA-256 and mime (LD11).
 import { contentHash, type DraftContent } from "@techaust/core/documents";
-import { invoiceSnapshotSha256, isNoteType, noteKindOf, noteOfFromStored } from "@techaust/core/invoices";
+import {
+  invoiceSnapshotSha256,
+  isNoteType,
+  isSealedUdyam,
+  noteKindOf,
+  noteOfFromStored,
+  udyamPrintedOn,
+} from "@techaust/core/invoices";
 import type { ComputedDocument } from "@techaust/core/tax";
 import { sha256Hex } from "./hash.ts";
 import type { InvoiceEnvelope, InvoiceHeader, InvoiceIssuerSnap } from "./invoice-types.ts";
@@ -158,6 +167,10 @@ export function parseInvoiceEnvelope(text: string): InvoiceEnvelope | null {
     return null;
   if (i.signature !== null && !isObj(i.signature)) return null;
   if (i.signatory !== undefined && i.signatory !== false) return null;
+  // T10: a present Udyam block has the sealed shape (`{number, category}`, two non-blank strings of at most 40 units), else the text is not an envelope. Shape
+  // only, never the live `isUdyam` (final re-check): a later change to the format or the categories (OPEN (08-C RB-39)) must not refuse an invoice sealed
+  // before it; the seal hash protects its content.
+  if (i.company.udyam !== undefined && !isSealedUdyam(i.company.udyam)) return null;
   // M5.2: the optional header keys are absent on an M5.1 envelope; when present they must have their shape (a wrong shape is not an envelope).
   if (h.export !== undefined && !validExport(h.export)) return null;
   if (h.fx !== undefined && !validFx(h.fx)) return null;
@@ -265,6 +278,8 @@ export async function verifyInvoiceEnvelope(e: InvoiceEnvelope): Promise<Invoice
     // M5.3: a note has its request and no other type does; the request's kind and its lines are the note's own; a credit note has no due date, every other type has one
     !noteShapeOk(e) ||
     (h.document.dueDate === null) !== (e.type === "credit_note") ||
+    // T10: the Udyam line is printed on a tax invoice only (owner, 2026-10-31); a block on any other type was never issued that way
+    (h.issuer.company.udyam !== undefined && !udyamPrintedOn(e.type)) ||
     (ref === null) !== (s.terms === null) ||
     (ref !== null &&
       s.terms !== null &&
