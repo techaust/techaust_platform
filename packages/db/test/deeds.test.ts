@@ -21,7 +21,6 @@ import {
   deedEligibleSql,
   deedFactsSql,
   deedSchedulesStatement,
-  ERASE_DRAFT_DEEDS_SQL,
   finaliseDeedStatement,
   signDeedStatement,
 } from "../src/deeds.ts";
@@ -588,22 +587,28 @@ describe("deed_triggers (0062) [L4, L7]", () => {
   it("delete: only a draft of an anonymised client (L7); a final or signed deed stays", async () => {
     const fx = await draftDeed();
     await rejects(run("DELETE FROM deeds WHERE id = ?", fx.deed.id), /deeds_no_delete/);
+    // Anonymising the client deletes the draft (the trigger clients_anonymised_draft_deeds runs the allowed delete).
     await run("UPDATE clients SET anonymised_at = 9 WHERE id = ?", fx.clientId);
-    await run(ERASE_DRAFT_DEEDS_SQL, fx.clientId);
     expect(await deedOf(fx.projectId)).toBeNull();
 
     const kept = await draftDeed();
     await finalise(kept);
     await run("UPDATE clients SET anonymised_at = 9 WHERE id = ?", kept.clientId);
-    await run(ERASE_DRAFT_DEEDS_SQL, kept.clientId);
     expect((await deedOf(kept.projectId))?.status).toBe("final");
     await rejects(run("DELETE FROM deeds WHERE id = ?", kept.deed.id), /deeds_no_delete/);
   });
 
-  it("an anonymised client's draft is never finalised", async () => {
+  it("anonymising a client deletes its drafts in the same statement (clients_anonymised_draft_deeds); a draft is never finalised for an anonymised client", async () => {
     const fx = await draftDeed();
     await fillSchedules(fx.deed, fx.owner);
     await run("UPDATE clients SET anonymised_at = 9 WHERE id = ?", fx.clientId);
+    expect(await deedOf(fx.projectId)).toBeNull();
+    // The finalise trigger refuses it even if a draft were left (the delete trigger dropped for this check only).
+    const again = await draftDeed();
+    await fillSchedules(again.deed, again.owner);
+    await run("DROP TRIGGER clients_anonymised_draft_deeds");
+    await run("UPDATE clients SET anonymised_at = 9 WHERE id = ?", again.clientId);
+    fx.deed = again.deed;
     await rejects(
       run(
         "UPDATE deeds SET status = 'final', fy = '2627', number = 1, number_display = 'TH/DA/2627/0001', made_on = '2026-11-01', snapshot = '{}', snapshot_sha256 = 'x', finalised_at = 1, finalised_by = ?2 WHERE id = ?1",

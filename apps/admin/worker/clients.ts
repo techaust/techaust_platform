@@ -1438,15 +1438,10 @@ async function eraseBatch(
              AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = clients.id AND o.id <> ?1 AND o.anonymised_at IS NULL) AND ${g.sql(2)}`,
         )
         .bind(id, ...g.params),
-      // 3a. T11 (L7): the client's DRAFT deeds go once it reads as anonymised (step 3; the trigger `deeds_no_delete` allows nothing else). A final or signed
-      //     deed is kept like an invoice: the legal record of a transfer of rights (Researched 2026-10-31, Copyright Act s.19(1) (08-C RB-38(a)); Researched
-      //     2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11): data kept for a legal duty may be kept for it). Screens name its client "Anonymised client".
-      db
-        .prepare(
-          `DELETE FROM deeds WHERE status = 'draft' AND client_id = (SELECT client_id FROM contacts WHERE id = ?1)
-             AND EXISTS (SELECT 1 FROM clients dz WHERE dz.id = deeds.client_id AND dz.anonymised_at IS NOT NULL) AND ${g.sql(2)}`,
-        )
-        .bind(id, ...g.params),
+      //     T11 (L7): step 3 also deletes the client's DRAFT deeds, through the trigger `clients_anonymised_draft_deeds` (0062; no extra statement in this
+      //     batch). A final or signed deed is kept like an invoice: the legal record of a transfer of rights (Researched 2026-10-31, Copyright Act s.19(1)
+      //     (08-C RB-38(a)); Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11): data kept for a legal duty may be kept for it). Screens name
+      //     its client "Anonymised client".
       // 3b. M6.1 (early check 2, finding 4; L31): its payments' free text, once the client reads as anonymised (step 3, above; the triggers
       //     `payments_fixed` / `payments_status_flow` allow these three columns to become NULL only then): the entry's note, the Owner's decision note and
       //     the withdraw reason are words a person typed. Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11): data kept for a legal duty may

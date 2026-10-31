@@ -333,8 +333,7 @@ export function cancelDeedStatement(
     .bind(a.deedId, a.expectedUpdatedAt, a.now, a.sessionId, a.memberId, a.reason);
 }
 
-/** L7: the anonymise batch deletes the client's DRAFT deeds (`?1` the client), after the client is marked anonymised (`deeds_no_delete`). Final and signed stay. */
-export const ERASE_DRAFT_DEEDS_SQL = "DELETE FROM deeds WHERE client_id = ?1 AND status = 'draft'";
+/** L7: anonymising a client deletes its DRAFT deeds through the trigger `clients_anonymised_draft_deeds` (0062): no statement here. Final and signed stay. */
 
 /** The columns every deed read takes. */
 export const DEED_COLS =

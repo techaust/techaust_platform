@@ -1405,7 +1405,8 @@ export const DEED_SCHEDULE_COLUMNS_0062 = [
  *   6. `deeds_frozen`: once out of `draft`, the number, date, Schedules, snapshot, finaliser and the cancel facts never change, and a cancelled deed never changes;
  *   7. `deeds_set_once`: the unsigned PDF and the signed copy's columns are set once; the unsigned PDF only on a final or signed deed, the signed copy only in
  *      the move final → signed;
- *   8. `deeds_no_delete`: only a DRAFT deed of an anonymised client is deleted (L7: the erase batch); a final or signed deed is kept like an invoice.
+ *   8. `deeds_no_delete`: only a DRAFT deed of an anonymised client is deleted (L7); a final or signed deed is kept like an invoice;
+ *   9. `clients_anonymised_draft_deeds`: anonymising a client deletes its draft deeds in the same statement (L7; the erase batch stays within its budget).
  */
 export function deedTriggerStatements(): string[] {
   const named = (name: string, message: string) => abort(`${name}: ${message}`);
@@ -1414,12 +1415,12 @@ export function deedTriggerStatements(): string[] {
   const setOnce = (cols: readonly string[]) =>
     cols.map((c) => `(OLD.\`${c}\` IS NOT NULL AND NEW.\`${c}\` IS NOT OLD.\`${c}\`)`).join(" OR ");
   const quotes = QUOTE_DOCUMENT_TYPES.map((t) => `'${t}'`).join(", ");
-  const live = (client: string) =>
-    `NOT EXISTS (SELECT 1 FROM clients dz WHERE dz.id = ${client} AND dz.anonymised_at IS NOT NULL)`;
+  const gone = (client: string) =>
+    `EXISTS (SELECT 1 FROM clients dz WHERE dz.id = ${client} AND dz.anonymised_at IS NOT NULL)`;
   const insertBad = `NEW.status IS NOT 'draft' OR ${[...DEED_FROZEN_0062, ...DEED_SET_ONCE_0062].map((c) => `NEW.\`${c}\` IS NOT NULL`).join(" OR ")}
     OR NOT EXISTS (SELECT 1 FROM projects dp WHERE dp.id = NEW.project_id AND dp.client_id = NEW.client_id AND dp.source_document_id = NEW.source_document_id)
     OR NOT EXISTS (SELECT 1 FROM documents ds WHERE ds.id = NEW.source_document_id AND ds.client_id = NEW.client_id AND ds.type IN (${quotes}) AND ds.status = 'accepted' AND ds.frozen_at IS NOT NULL)
-    OR NOT ${live("NEW.client_id")}`;
+    OR ${gone("NEW.client_id")}`;
   const flowBad = `NEW.status IS NOT OLD.status AND NOT ((OLD.status = 'draft' AND NEW.status IN ('final', 'cancelled')) OR (OLD.status = 'final' AND NEW.status = 'signed'))`;
   const blank = DEED_SCHEDULE_COLUMNS_0062.map((c) => `trim(coalesce(NEW.\`${c}\`, '')) = ''`).join(" OR ");
   const frozenBad = `OLD.status = 'cancelled' OR (OLD.status IN ('final', 'signed') AND (${changed(DEED_FROZEN_0062)}))`;
@@ -1430,12 +1431,15 @@ export function deedTriggerStatements(): string[] {
   return [
     `CREATE TRIGGER \`deeds_insert\` BEFORE INSERT ON \`deeds\` WHEN ${insertBad} BEGIN ${named("deeds_insert", "a deed starts as a draft for a project of its client, naming the accepted proposal or estimate behind it, while the client is live")} END;`,
     `CREATE TRIGGER \`deeds_status_flow\` BEFORE UPDATE OF status ON \`deeds\` WHEN ${flowBad} BEGIN ${named("deeds_status_flow", "a deed moves from draft to final or cancelled, and from final to signed, never back")} END;`,
-    `CREATE TRIGGER \`deeds_finalise_ready\` BEFORE UPDATE OF status ON \`deeds\` WHEN OLD.status = 'draft' AND NEW.status = 'final' AND (${blank} OR NOT ${live("OLD.client_id")}) BEGIN ${named("deeds_finalise_ready", "a deed is finalised only with both Schedules filled in, while the client is live")} END;`,
-    `CREATE TRIGGER \`deeds_sign_ready\` BEFORE UPDATE OF status ON \`deeds\` WHEN OLD.status = 'final' AND NEW.status = 'signed' AND NOT ${live("OLD.client_id")} BEGIN ${named("deeds_sign_ready", "a signed copy is added only while the client is live")} END;`,
+    `CREATE TRIGGER \`deeds_finalise_ready\` BEFORE UPDATE OF status ON \`deeds\` WHEN OLD.status = 'draft' AND NEW.status = 'final' AND (${blank} OR ${gone("OLD.client_id")}) BEGIN ${named("deeds_finalise_ready", "a deed is finalised only with both Schedules filled in, while the client is live")} END;`,
+    `CREATE TRIGGER \`deeds_sign_ready\` BEFORE UPDATE OF status ON \`deeds\` WHEN OLD.status = 'final' AND NEW.status = 'signed' AND ${gone("OLD.client_id")} BEGIN ${named("deeds_sign_ready", "a signed copy is added only while the client is live")} END;`,
     `CREATE TRIGGER \`deeds_identity_fixed\` BEFORE UPDATE ON \`deeds\` WHEN ${changed(DEED_IDENTITY_0062)} BEGIN ${named("deeds_identity_fixed", "the parties and the accepted version of a deed never change")} END;`,
     `CREATE TRIGGER \`deeds_frozen\` BEFORE UPDATE ON \`deeds\` WHEN ${frozenBad} BEGIN ${named("deeds_frozen", "a final or signed deed keeps its number, Schedules and snapshot, and a cancelled deed never changes")} END;`,
     `CREATE TRIGGER \`deeds_set_once\` BEFORE UPDATE ON \`deeds\` WHEN ${setOnceBad} BEGIN ${named("deeds_set_once", "the unsigned PDF is set once on a final deed, and the signed copy once, when the deed is signed")} END;`,
-    `CREATE TRIGGER \`deeds_no_delete\` BEFORE DELETE ON \`deeds\` WHEN OLD.status IS NOT 'draft' OR ${live("OLD.client_id")} BEGIN ${named("deeds_no_delete", "only a draft deed of an anonymised client is deleted; a final or signed deed is kept")} END;`,
+    `CREATE TRIGGER \`deeds_no_delete\` BEFORE DELETE ON \`deeds\` WHEN OLD.status IS NOT 'draft' OR NOT ${gone("OLD.client_id")} BEGIN ${named("deeds_no_delete", "only a draft deed of an anonymised client is deleted; a final or signed deed is kept")} END;`,
+    // 9. L7: the moment a client is anonymised (the erase batch's step 3), its draft deeds go with it, in the same statement: no extra statement in the erase
+    //    batch, which is held to 45 D1 statements (T7's budget). Final and signed deeds stay (`deeds_no_delete` lets only drafts go, and only now).
+    "CREATE TRIGGER `clients_anonymised_draft_deeds` AFTER UPDATE OF anonymised_at ON `clients` WHEN OLD.anonymised_at IS NULL AND NEW.anonymised_at IS NOT NULL BEGIN DELETE FROM deeds WHERE client_id = NEW.id AND status = 'draft'; END;",
   ];
 }
 

@@ -156,6 +156,12 @@ export const ACTION_LABELS: Record<string, string> = {
   "payment.credit_release": PAY_AUDIT["payment.credit_release"],
   "care_invoice.draft": Y("drafted a care plan invoice"),
   "care_invoice.auto_issue_refused": Y("could not issue a care plan invoice automatically"),
+  // T11, the deed of assignment: the builder leaves the codes marked; the designer drafts the words in 07-ZJ (staff-only lines, approved by the lead).
+  "deed.draft": "[Placeholder] deed.draft",
+  "deed.edit": "[Placeholder] deed.edit",
+  "deed.finalise": "[Placeholder] deed.finalise",
+  "deed.sign": "[Placeholder] deed.sign",
+  "deed.cancel": "[Placeholder] deed.cancel",
 };
 
 /**
@@ -184,6 +190,8 @@ export const ACTION_GROUPS: { label: string; prefixes: readonly string[] }[] = [
   { label: "Proposals and estimates", prefixes: ["document.", "offer_link."] },
   { label: "Invoices", prefixes: ["invoice.", "care_invoice."] },
   { label: "Payments", prefixes: ["payment."] },
+  // T11: the words come from 07-ZJ (designer).
+  { label: "[Placeholder] deed", prefixes: ["deed."] },
   { label: "Reports", prefixes: ["report."] },
   { label: "Approvals", prefixes: ["approval."] },
   { label: "Client portal", prefixes: ["portal.", "doc_token."] },
@@ -224,6 +232,8 @@ export const ENTITY_LABELS: Record<string, string> = {
   document: "Documents",
   approval: "Approvals",
   payment: "Payments",
+  // T11: the words come from 07-ZJ (designer).
+  deed: "[Placeholder] deed",
   report: "Reports",
   audit_log: "Audit log",
 };
