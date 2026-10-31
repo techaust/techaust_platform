@@ -22,7 +22,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 
 ## Next
 1. **The owner approves M6.1 on staging** (the lead gives a click-by-click checklist: record a payment as Staff, confirm it as Owner with the code, TDS by certificate, an overpayment kept as credit, the payments register; nothing on the staging sample data is real).
-2. **L9 decided (owner, 2026-11-01):** jobs `minify: true` with uploaded source maps, webhook processing in the finance Worker (13); built as M6.2's first step.
+2. **L9 decided (owner, 2026-10-31):** jobs `minify: true` with uploaded source maps, webhook processing in the finance Worker (13); built as M6.2's first step.
 3. **M6.2 Razorpay** once M6.1 is approved and the owner has the Razorpay test account (runbook Part A); then M6.3 Stripe, M6.4 PayPal, M6.5; T11 (the deed) after M6.1's approval.
 4. **Build the `/orchestrate` skill** (owner, 2026-10-31; 13): the watcher in `tools/watch-cloud.mjs` with the lessons in CLAUDE.md "In a cloud session".
 5. **M7.1–M7.5**, the audit of M6–M7, then **Phase 7 all at once** (estimate on 2026-10-31: about 12–17 working days for M6, M7 and Phase 7, gateway live approval not included).
