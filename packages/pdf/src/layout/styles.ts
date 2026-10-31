@@ -10,6 +10,11 @@
 //   approximated: a proposal's `.sec__head` reserves 95 mm of empty padding under itself (taken back with a negative margin), so the
 //   heading moves to the next page when less than about 40 % of the 263 mm text height is left below it. Short sections near the end
 //   of a page therefore also move, as the rule asks; orphans and widows keep at least 3 lines together.
+// - T6: `.sec__head` also has `break-after: avoid` (terms v4 is about three times v3: an estimate's "Terms" heading fell to the foot of a
+//   page with its list overleaf), and the short acceptance section stays whole rather than leaving its box alone on the last page.
+// The explanations live here, not in the CSS: the string is bundled into the jobs Worker as written (its byte ceiling).
+// T6 (07-ZE line 3): `.replaces-note`, from version 2, sits under the Document facts in the totals note's small muted style, set off by a
+// hairline so it reads as a statement about the whole document rather than a fifth fact, wrapping within the column.
 import { PDF_SYMBOL } from "../generated/assets.ts";
 import type { PdfView } from "../types.ts";
 import { PDF_COPY as C } from "./copy.ts";
@@ -131,8 +136,6 @@ h1, h2, h3 { margin: 0; }
 .facts div { display: contents; }
 .facts dt { color: var(--color-text-muted); }
 .facts dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums lining-nums; white-space: nowrap; }
-/* T6 (07-ZE line 3): from version 2, which version this replaces, under the Document facts: the small muted note of the totals block, set
-   off by a hairline so it reads as a statement about the whole document rather than a fifth fact; it wraps within the column. */
 .replaces-note { margin: 2mm 0 0; padding-top: 1.6mm; border-top: 0.2mm solid var(--color-border); color: var(--color-text-muted); font-size: var(--print-small); line-height: 1.4; overflow-wrap: anywhere; }
 
 .doc-title {
@@ -159,10 +162,8 @@ h1, h2, h3 { margin: 0; }
   grid-template-columns: repeat(12, 1fr);
   column-gap: var(--print-gutter);
   break-inside: avoid;
-  /* T6: a heading never ends a page alone (terms v4 is about three times v3, so "Terms" fell to the foot of a page with its list overleaf) */
   break-after: avoid;
 }
-/* T6: the acceptance section is short; its heading, line and box stay on one page rather than leaving the box alone on the last one */
 .sec--acceptance { break-inside: avoid; }
 .sec__head h2 {
   grid-column: 1 / span 3;
