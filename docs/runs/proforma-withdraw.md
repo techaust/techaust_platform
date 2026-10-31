@@ -1,4 +1,4 @@
-Status: analyst drafting the brief (started 2026-10-31 12:03 IST)
+Status: lead reading; analyst brief next (session restarted 2026-10-31 13:05 IST, main 8d5b958 merged in)
 Tier: A
 Usage: _(one entry per agent run, from `node tools/model-audit.mjs`)_
 
@@ -34,6 +34,6 @@ Main (a5f9f92): admin API 618,422 (plan line 650,000), jobs 984,266 of 1,000,000
 ## Integration notes
 
 ## Follow-ups (for 12)
-- **Cloud setup script (found 2026-10-31 at this session's start):** the setup script stopped with "node -v says v24.22.1, not v24.22.2". Cause: the cloud image now ships `/opt/node24` as a real folder (Node 24.22.1), so `ln -sfn "/opt/${NODE_NAME}" /opt/node24` in `scripts/cloud-setup.sh` (line 57) puts the link inside that folder instead of replacing it, and the version check fails before the browser step. Fix: add `[ -L /opt/node24 ] || rm -rf /opt/node24` on the line before it, then paste the script into the environment's "Setup script" box again (owner). This session ran on the image's Node 24.22.1 (inside `engines` >= 24.19.0) and the lead installed the two Chromium builds by hand (`pnpm exec playwright install --with-deps chromium` from `apps/web`, and `npx @playwright/mcp@0.0.83 install-browser --no-shell chromium`, both into `/opt/ms-playwright`); `bash scripts/cloud-check.sh` then: all passed. Note: `npx -y playwright@1.64.1 install` picked up the image's own Playwright and installed revision 1243, not 1248; the repository's own binary is the reliable path.
+- **Fixed by #126.** ~~Cloud setup script (found 2026-10-31 at this session's start):~~ the setup script stopped with "node -v says v24.22.1, not v24.22.2". Cause: the cloud image now ships `/opt/node24` as a real folder (Node 24.22.1), so `ln -sfn "/opt/${NODE_NAME}" /opt/node24` in `scripts/cloud-setup.sh` (line 57) puts the link inside that folder instead of replacing it, and the version check fails before the browser step. Fix: add `[ -L /opt/node24 ] || rm -rf /opt/node24` on the line before it, then paste the script into the environment's "Setup script" box again (owner). This session ran on the image's Node 24.22.1 (inside `engines` >= 24.19.0) and the lead installed the two Chromium builds by hand (`pnpm exec playwright install --with-deps chromium` from `apps/web`, and `npx @playwright/mcp@0.0.83 install-browser --no-shell chromium`, both into `/opt/ms-playwright`); `bash scripts/cloud-check.sh` then: all passed. Note: `npx -y playwright@1.64.1 install` picked up the image's own Playwright and installed revision 1243, not 1248; the repository's own binary is the reliable path.
 
 ## Handover
