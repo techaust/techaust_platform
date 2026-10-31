@@ -121,7 +121,7 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
                 "**Website visitor**",
                 "IP address, browser and device details, pages visited (cookieless Cloudflare Web Analytics); Cloudflare Turnstile security signals",
                 "Run and secure the website; understand overall usage",
-                // Settled by the lead on the safest reading, 2026-10-30 (08-C RB-12): for the acceptance IP address and browser only, GDPR Art. 6(1)(f) for EU and UK persons and DPDP s.7(a) in India; the acceptance record is kept with the offer (RB-37 (b)).
+                // Settled by the lead on the safest reading, 2026-10-30 (08-C RB-12): the EU/UK basis is GDPR Art. 6(1)(f); in India DPDP s.7(a) with the Rule 6 log duty (security logs 13 months).
                 "India: provided voluntarily by using the site for that purpose (DPDP s.7(a)). EU/UK: legitimate interests",
               ],
               // Google Analytics rows: only while GA is on (site.ga4Id set).

@@ -2,7 +2,7 @@
 // word for word. Every line comes from approved copy (docs/07 5.3 and 5.5); no placeholders. Insert-only like the rest of the seed: a terms row the
 // owner has already saved as version 1 is never replaced, and a later version the owner writes is never touched.
 //
-// The versions in this file are superseded. Settled by the lead on the safest reading, 2026-10-30 (08-C RB-38): terms v4 adds the four clauses the owner chose (07-ZE, built in T6); ownership passes by a one-page deed of assignment on full payment, signed by the owner with Aadhaar eSign (07-ZE, T11); the MCIA check stays OPEN (08-C §5). GST at 18 %: Researched 2026-10-28 (08-C RA-16).
+// The versions in this file are superseded once T6 adds terms v4. Settled by the lead on the safest reading, 2026-10-30 (08-C RB-38): terms v4 adds the four clauses the owner chose (07-ZE, built in T6); ownership passes by a one-page deed of assignment on full payment, signed by the owner with Aadhaar eSign (07-ZE, T11); the MCIA check stays OPEN (08-C §5). GST at 18 %: Researched 2026-10-28 (08-C RA-16).
 // THE OWNER CONFIRMS: the warranty line (item 4, "fixed free for 30 days after launch"); docs/07 5.5 item 8 is still marked for the owner.
 export const PROPOSAL_TERMS_V1_OWNER_CONFIRMS = "warranty";
 

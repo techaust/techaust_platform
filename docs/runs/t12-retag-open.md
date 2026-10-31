@@ -202,6 +202,10 @@ Findings (the reviewer's wording, condensed):
 | L6 | low | §5 RA-31 and the "(no row yet)" lines | No part label; "(no row yet)" was inaccurate | **Fixed:** "RA-31 (issue deadline)"; "(not in its row yet)" |
 | L7 | low | web `legal-pages.ts:291` | The section title read as if it were the RB-27 reading | **Fixed:** the title comes first, then the tag and reading |
 
+**Re-check (reviewer, 2026-10-31, `0c2548e`): PASS.** All 9 fixes are correct, and M4 and L3 are accepted as follow-ups. Two new findings, both fixed by the lead:
+- **Medium:** web `legal-pages.ts:124`. The M1 wording had also been applied to the Website visitor row, where no acceptance happens. That line now names the visitor basis: GDPR Art. 6(1)(f), and DPDP s.7(a) with the Rule 6 log duty (security logs 13 months).
+- **Low:** db `seed/terms.ts:5` now says "superseded once T6 adds terms v4", since v3 is still the newest seeded version today.
+
 Note: M1's text suggested a bare "VERIFY WITH CA/LEGAL" mark; it was not written anywhere (the tag test forbids it).
 
 ## Integration notes
