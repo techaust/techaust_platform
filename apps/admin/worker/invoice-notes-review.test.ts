@@ -326,7 +326,7 @@ describe("a debit note's save and the preview (optional items)", () => {
 });
 
 describe("the finance audit list holds the money invoice actions only (the lead's answer, 2026-10-27)", () => {
-  it("is exactly issue, void, advance issue, the IMS answer and (M6.1) the bank's FEMA extension; the rest are ordinary work", () => {
+  it("is exactly issue, void, withdraw, advance issue, the IMS answer and (M6.1) the bank's FEMA extension; the rest are ordinary work", () => {
     const list = FINANCE_AUDIT_ACTIONS as readonly string[];
     expect(list.filter((a) => a.startsWith("invoice.")).sort()).toEqual([
       "invoice.advance_issue",
@@ -334,6 +334,8 @@ describe("the finance audit list holds the money invoice actions only (the lead'
       "invoice.issue",
       "invoice.realisation_extend",
       "invoice.void",
+      // ADM-INV-10 (added on purpose): a withdrawn proforma is a void of it
+      "invoice.withdraw",
     ]);
     for (const a of ["create", "update", "delete", "note_create", "service_completed", "pdf_retry"])
       expect(list).not.toContain(`invoice.${a}`);

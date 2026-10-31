@@ -1,6 +1,6 @@
 // The monthly Export Declaration Form (EDF) working list (M5.5a; ADM-REP-07, docs/08-A §8). Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 3(2) (08-C RB-03): under the
 // FEMA 2026 regulations an exporter of services gives the AD bank an EDF within 30 days from the end of the month of the
-// invoice; one EDF may cover all the exports of the month (08-C RB-03). OPEN (08-C RB-03): the bank's own form and channel. This is OUR list for the bank
+// invoice; one EDF may cover all the exports of the month (08-C RB-03). Settled by the lead on the safest reading, 2026-10-30 (08-C RB-03): "software" (FEMA 23(R)/2026-RB Reg. 2(1)(e)); one monthly EDF with the AD bank; never Reg. 3(2)(b). This is OUR list for the bank
 // conversation, not the bank's form. All payment rails are included (Q16). Export credit notes are not included (no 08-C row covers them).
 import { addDays, type CalendarDate, isValidDate } from "../dates.ts";
 import { lastDayOfMonth } from "./period.ts";

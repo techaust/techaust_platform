@@ -49,6 +49,7 @@ import {
   typeLabel,
   voidBlockedText,
   voidErrorText,
+  voidLockText,
   voidRefusalStalesPage,
   voidTitle,
 } from "./invoices.ts";
@@ -195,6 +196,8 @@ describe("07-R copy", () => {
       paid: "Paid",
       partly_credited: "Partly credited",
       credited: "Credited",
+      // ADM-INV-10: 07-ZF 8 (owner 2026-10-31)
+      withdrawn: "Withdrawn",
     });
   });
 
@@ -343,8 +346,9 @@ describe("errors", () => {
     expect(voidBlockedText(["viewed_by_client", "return_period_closed"])).toBe(
       INV_ERRORS.return_period_closed,
     );
+    // ADM-INV-10: 07-ZF 15 (owner 2026-10-31) replaced 07-Z §1's proforma line
     expect(voidBlockedText(["viewed_by_client"], "proforma")).toBe(
-      `${mark}The client has opened this proforma in the portal, so it can't be voided.`,
+      "The client has opened this proforma in the portal, so it can't be voided. Withdraw it instead.",
     );
     expect(voidBlockedText(["has_payment", "viewed_by_client"], "proforma")).toBe(
       INVT_COPY.proformaVoidBlocked,
@@ -354,7 +358,7 @@ describe("errors", () => {
     // the void dialog names the document's own type; other failures keep invErrorText's sentence
     const viewed = new RequestError(409, "viewed_by_client", "x");
     expect(voidErrorText(viewed, "proforma")).toBe(
-      `${mark}The client has opened this proforma in the portal, so it can't be voided.`,
+      "The client has opened this proforma in the portal, so it can't be voided. Withdraw it instead.",
     );
     expect(voidErrorText(viewed, "proforma")).not.toContain("credit note");
     expect(voidErrorText(viewed, "tax_invoice")).toBe(`${mark}${invoiceLine}`);
@@ -588,8 +592,9 @@ describe("M5.2 re-check: proforma wording and the advance rate date (07-S §8)",
   });
 
   it("a proforma's void refused for a reason other than a payment says it was emailed", () => {
+    // ADM-INV-10: 07-ZF 16 (owner 2026-10-31)
     expect(voidBlockedText(["emailed"], "proforma")).toBe(
-      "This proforma has been emailed to the client, so it can't be voided.",
+      "This proforma has been emailed to the client, so it can't be voided. Withdraw it instead.",
     );
   });
 });
@@ -611,5 +616,31 @@ describe("FX-4 review M1 (A5 5): a marked proforma's tax heads read as estimates
   it("the invoice editor and the invoice page pass the marker to TaxPreview, which names the heads by it", () => {
     for (const src of [editorSource, readSource]) expect(src).toMatch(/estimate=\{showsGstEstimate\(v\)\}/);
     expect(moneySource).toMatch(/props\.estimate \? taxHeadEstimate\(DOC_COPY\[k\]\) : DOC_COPY\[k\]/);
+  });
+});
+
+describe("re-check N1: an anonymised client's invoice says why it can't be voided or withdrawn", () => {
+  it("names the anonymised client before any blocker, so it never points to a Withdraw that isn't offered", () => {
+    const anon = INV_ERRORS.client_anonymised;
+    expect(voidLockText({ anonymised: true, codes: ["already_emailed"], type: "proforma" })).toBe(anon);
+    expect(voidLockText({ anonymised: true, codes: ["viewed_by_client"], type: "proforma" })).toBe(anon);
+    expect(voidLockText({ anonymised: true, codes: [], type: "tax_invoice" })).toBe(anon);
+    expect(anon).not.toContain("Withdraw");
+  });
+
+  it("is the blocker line for a live client", () => {
+    for (const [codes, type] of [
+      [["already_emailed"], "proforma"],
+      [["viewed_by_client"], "tax_invoice"],
+      [[], "tax_invoice"],
+    ] as const)
+      expect(voidLockText({ anonymised: false, codes, type })).toBe(voidBlockedText(codes, type));
+  });
+
+  it("is the line the invoice page shows", () => {
+    expect(readSource).toMatch(
+      /voidLockText\(\{ anonymised: v\.client\.anonymised, codes: v\.void\.blockers, type: v\.type \}\)/,
+    );
+    expect(readSource).not.toMatch(/voidBlockedText\(/);
   });
 });

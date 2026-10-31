@@ -127,6 +127,15 @@ function Parties({ view }: { view: PdfView }) {
   );
 }
 
+/**
+ * 07-ZE line 3 (T6): from version 2, right under the title, the one place on the screen that says which version this replaces (the PDF
+ * prints it under its Document facts; the Parties block here keeps to the facts, so the line is never shown twice). Null for version 1.
+ * Researched 2026-10-29, Contract Act s.6 (08-C RB-35); OPEN (08-C RB-35(b)): s.5 not read.
+ */
+function ReplacesLine({ view }: { view: PdfView }) {
+  return view.replacesNote ? <p className="cover__replaces">{view.replacesNote}</p> : null;
+}
+
 function Cover({ view }: { view: PdfView }) {
   const cover = view.sections.find((s) => s.kind === "cover");
   const title = view.documentTitle ?? view.docLabel;
@@ -137,6 +146,7 @@ function Cover({ view }: { view: PdfView }) {
       <PageTitle text={title} className="cover__title" id="doc-title">
         {title}
       </PageTitle>
+      <ReplacesLine view={view} />
       {/* One paragraph per line of the cover, as the PDF prints it (final sweep P5; core `coverLines`, one rule for both). */}
       {cover?.bodyMd.trim() && <Markdown source={coverLines(cover.bodyMd)} className="cover__lede" />}
       <p className="cover__for">
@@ -185,6 +195,7 @@ function EstimateHead({ view }: { view: PdfView }) {
       <PageTitle text={title} className="cover__title" id="doc-title">
         {title}
       </PageTitle>
+      <ReplacesLine view={view} />
       <p className="cover__for">
         {C.cover.preparedFor} <strong>{view.recipient.name}</strong>
       </p>

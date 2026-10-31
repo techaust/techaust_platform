@@ -22,19 +22,23 @@ import {
   one,
   staff,
   useFakes,
+  voidDoc,
 } from "./billing-fixtures.ts";
 
 useFakes();
 
 const NOW = Date.UTC(2026, 9, 26, 5, 0, 0);
 
-async function invoiceWithWaitingSend(over: Parameters<typeof mkDoc>[2] = {}) {
+async function invoiceWithWaitingSend(over: Parameters<typeof mkDoc>[2] & { voidAfterSend?: boolean } = {}) {
+  const { voidAfterSend, ...docOver } = over;
   const owner = await staff("owner");
-  const export_ = over.type === "export_invoice"; // an export invoice is for an overseas client (a trigger)
+  const export_ = docOver.type === "export_invoice"; // an export invoice is for an overseas client (a trigger)
   const clientId = await mkClient(export_ ? { currency: "USD" } : {});
   const contact = await mkContact(clientId);
-  const doc = await mkDoc(clientId, contact, export_ ? { ...over, currency: "USD" } : over);
+  const doc = await mkDoc(clientId, contact, export_ ? { ...docOver, currency: "USD" } : docOver);
   const send = await mkSend(doc, clientId, contact, { createdBy: owner.id, createdAt: NOW - 1_000 });
+  // ADM-INV-10 (0056 `document_sends_not_void`): a void document takes no send row; it is sent while issued, then voided.
+  if (voidAfterSend) await voidDoc(doc);
   return { owner, clientId, contact, doc, send };
 }
 
@@ -82,7 +86,7 @@ describe("LD56: an invoice send is never cancelled by the offer path", () => {
     const inv = await invoiceWithWaitingSend();
     const w2 = await invoiceWithWaitingSend({ type: "debit_note" });
     const unrendered = await invoiceWithWaitingSend({ rendered: false });
-    const voided = await invoiceWithWaitingSend({ status: "void" });
+    const voided = await invoiceWithWaitingSend({ voidAfterSend: true });
     const out = await processOfferSweep(makeEnv(), { v: 1, kind: "offer.sweep", asOf: NOW });
     const bodies = emailsQueued();
     expect(bodies.filter((b) => b.kind === "offer.send")).toEqual([]);

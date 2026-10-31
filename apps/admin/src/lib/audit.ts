@@ -5,6 +5,7 @@ import { formatIstDateTime, MASKED } from "@techaust/core";
 import { ROLE_LABELS } from "@techaust/core/permissions";
 import type { AuditEntry } from "../api.ts";
 import { Y } from "./copy-y.ts";
+import { WITHDRAW_COPY } from "./copy-zf.ts";
 import { PAY_AUDIT } from "./copy-zh.ts";
 
 /** Every action the API writes today, in words. Unknown ones read as their own name ("lead.created"). */
@@ -112,6 +113,9 @@ export const ACTION_LABELS: Record<string, string> = {
   // 07-Q words (DASH7, DASH14); the portal's offer actions are 07-Y below.
   "lead.purge": "deleted old leads",
   "document.expire": "marked a document as expired",
+  // T7 (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): one row per never-accepted offer whose personal details an anonymise erased.
+  // 07-ZG line 4 (owner-approved 2026-10-31).
+  "document.redact": "erased personal details from a proposal or estimate",
   // Lines 07 lacked: 07-Y, PENDING the owner, marked until approved (the same lower-case form, after the person's name).
   "document.resend": Y("sent a document again"),
   "document.links_revoke": Y("revoked a document's links"),
@@ -131,6 +135,8 @@ export const ACTION_LABELS: Record<string, string> = {
   "invoice.issue_auto": Y("issued a care plan invoice automatically"),
   "invoice.advance_issue": Y("issued a tax invoice for a payment received"),
   "invoice.void": Y("voided an invoice"),
+  // ADM-INV-10: 07-ZF 9 (owner 2026-10-31)
+  "invoice.withdraw": WITHDRAW_COPY.audit,
   "invoice.note_create": Y("drafted a credit or debit note"),
   "invoice.ims_status": Y("recorded a client's IMS response"),
   "invoice.service_completed": Y("set the date the service was completed"),

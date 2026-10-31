@@ -1,5 +1,5 @@
 // The invoice dialogs (M5.1, ADM-INV-03, -04, -07, ADM-APR-01, ADM-G-04 ConfirmDialog): issue (the owner, with the series preview, what still
-// stops it and a fresh code), request issue (Staff), void (the owner, a required reason and a fresh code) and delete a draft. Each says what will
+// stops it and a fresh code), request issue (Staff), void and withdraw (the owner, a required reason and a fresh code) and delete a draft. Each says what will
 // happen before the one button that does it; a refusal is said in 07-R's words and the dialog stays open. The number is never shown as if it
 // were known: the preview draws the series and an empty slot, because the number is taken only inside the issue batch.
 import { INVOICE_SERIES_OF, isInvoiceFlowType } from "@techaust/core/invoices";
@@ -12,6 +12,7 @@ import { KeepDates } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Alert } from "../../components/icons.tsx";
 import { CodeField, Notice } from "../../components/ui.tsx";
+import { WITHDRAW_COPY } from "../../lib/copy-zf.ts";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
 import {
   blockerLine,
@@ -28,6 +29,7 @@ import {
   voidErrorText,
   voidRefusalStalesPage,
   voidTitle,
+  withdrawErrorText,
 } from "../../lib/invoices.ts";
 import type { InvoiceBlocker, InvoiceView } from "../../lib/invoices-api.ts";
 import { withCode } from "../../lib/step-up.ts";
@@ -334,16 +336,29 @@ export function RequestIssueDialog(props: {
   );
 }
 
-/** Void (the owner, 07-R §4): it keeps its number, the reason is required and kept, a fresh code confirms it. */
-export function VoidDialog(props: {
+/** What a reason-and-code dialog says (the void's 07-R §4 and 07-ZA words, or the withdrawal's 07-ZF ones). */
+type ReasonDialogWords = {
+  title: string;
+  body: string;
+  reasonLabel: string;
+  reasonEmpty: string;
+  confirm: string;
+};
+
+/**
+ * The owner's take-back dialogs (void, M5.1; withdraw, ADM-INV-10): what happens, a required reason kept with the document, a fresh code when the
+ * step-up has lapsed, and the one danger button. A refusal is said under the fields and the dialog stays open; a refusal that made the page behind it
+ * stale (any 409) reloads the page once the dialog closes.
+ */
+function ReasonCodeDialog(props: {
   open: boolean;
-  number: string;
-  /** The document's type: a refusal names it (a proforma never gets the invoice's credit-note advice, FX-5). */
-  type?: string | undefined;
+  /** The fields' ids: `{idBase}-reason` and `{idBase}-code`. */
+  idBase: string;
+  words: ReasonDialogWords;
   onClose: () => void;
-  onVoid: (reason: string) => Promise<void>;
-  /** Called after `onClose` when a refusal made the page's data stale (a portal view landed meanwhile: FX-5 review L2), so the page reloads. */
-  onStale?: () => void;
+  onConfirm: (reason: string) => Promise<void>;
+  errorText: (e: unknown) => string;
+  onStale?: (() => void) | undefined;
 }) {
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState<string | null>(null);
@@ -353,6 +368,9 @@ export function VoidDialog(props: {
   const [busy, setBusy] = useState(false);
   const [stale, setStale] = useState(false);
   const needsCode = !stepUpActive();
+  const { words, idBase } = props;
+  const reasonId = `${idBase}-reason`;
+  const codeId = `${idBase}-code`;
 
   function close() {
     setReason("");
@@ -369,20 +387,20 @@ export function VoidDialog(props: {
     const r = reason.trim();
     const noReason = r === "";
     const noCode = needsCode && code.length !== 6;
-    setReasonError(noReason ? INV_COPY.voidReasonEmpty : null);
+    setReasonError(noReason ? words.reasonEmpty : null);
     setCodeError(noCode ? CODE_MISSING : null);
     if (noReason || noCode) {
-      document.getElementById(noReason ? "void-reason" : "void-code")?.focus();
+      document.getElementById(noReason ? reasonId : codeId)?.focus();
       return;
     }
     setError(null);
     setBusy(true);
     try {
-      await withCode(needsCode ? code : undefined, () => props.onVoid(r));
+      await withCode(needsCode ? code : undefined, () => props.onConfirm(r));
       setReason("");
       setCode("");
     } catch (e) {
-      setError(voidErrorText(e, props.type));
+      setError(props.errorText(e));
       if (voidRefusalStalesPage(e)) setStale(true);
     } finally {
       setBusy(false);
@@ -390,20 +408,10 @@ export function VoidDialog(props: {
   }
 
   return (
-    <Modal
-      open={props.open}
-      title={voidTitle(props.number, props.type)}
-      onClose={close}
-      busy={busy}
-      tone="danger"
-    >
+    <Modal open={props.open} title={words.title} onClose={close} busy={busy} tone="danger">
       <div className="dialog__body">
-        <p>{props.type === "proforma" ? INV_COPY.voidProformaBody : INV_COPY.voidBody}</p>
-        <FormField
-          id="void-reason"
-          label={props.type === "proforma" ? INV_COPY.voidProformaReason : INV_COPY.voidReason}
-          error={reasonError}
-        >
+        <p>{words.body}</p>
+        <FormField id={reasonId} label={words.reasonLabel} error={reasonError}>
           {(a) => (
             <textarea
               {...a}
@@ -420,7 +428,7 @@ export function VoidDialog(props: {
       </div>
       {needsCode && (
         <CodeField
-          id="void-code"
+          id={codeId}
           label="Authenticator code"
           hint="Enter the 6-digit code from your authenticator app to continue."
           value={code}
@@ -440,14 +448,72 @@ export function VoidDialog(props: {
           disabled={busy}
           aria-busy={busy || undefined}
         >
-          {busy
-            ? "Working…"
-            : props.type === "proforma"
-              ? INV_COPY.voidProformaConfirm
-              : INV_COPY.voidConfirm}
+          {busy ? "Working…" : words.confirm}
         </button>
       </div>
     </Modal>
+  );
+}
+
+/** Void (the owner, 07-R §4): it keeps its number, the reason is required and kept, a fresh code confirms it. */
+export function VoidDialog(props: {
+  open: boolean;
+  number: string;
+  /** The document's type: a refusal names it (a proforma never gets the invoice's credit-note advice, FX-5). */
+  type?: string | undefined;
+  onClose: () => void;
+  onVoid: (reason: string) => Promise<void>;
+  /** Called after `onClose` when a refusal made the page's data stale (a portal view landed meanwhile: FX-5 review L2), so the page reloads. */
+  onStale?: () => void;
+}) {
+  const proforma = props.type === "proforma";
+  return (
+    <ReasonCodeDialog
+      open={props.open}
+      idBase="void"
+      words={{
+        title: voidTitle(props.number, props.type),
+        body: proforma ? INV_COPY.voidProformaBody : INV_COPY.voidBody,
+        reasonLabel: proforma ? INV_COPY.voidProformaReason : INV_COPY.voidReason,
+        reasonEmpty: INV_COPY.voidReasonEmpty,
+        confirm: proforma ? INV_COPY.voidProformaConfirm : INV_COPY.voidConfirm,
+      }}
+      onClose={props.onClose}
+      onConfirm={props.onVoid}
+      errorText={(e) => voidErrorText(e, props.type)}
+      onStale={props.onStale}
+    />
+  );
+}
+
+/**
+ * Withdraw (the owner, ADM-INV-10; 07-ZF 2 to 5): a proforma the client has received is taken back instead of voided. It keeps its number and stays in
+ * the records; the reason is required and kept (07-ZA line 18's label); a fresh code confirms it. A refusal says 07-ZF's line (10 to 14) and reloads the
+ * page once the dialog closes, as the void's does.
+ */
+export function WithdrawDialog(props: {
+  open: boolean;
+  number: string;
+  onClose: () => void;
+  onWithdraw: (reason: string) => Promise<void>;
+  onStale?: () => void;
+}) {
+  return (
+    <ReasonCodeDialog
+      open={props.open}
+      idBase="withdraw"
+      words={{
+        title: WITHDRAW_COPY.title(props.number),
+        body: WITHDRAW_COPY.body,
+        reasonLabel: WITHDRAW_COPY.reasonLabel,
+        reasonEmpty: WITHDRAW_COPY.reasonEmpty,
+        confirm: WITHDRAW_COPY.confirm,
+      }}
+      onClose={props.onClose}
+      onConfirm={props.onWithdraw}
+      errorText={withdrawErrorText}
+      onStale={props.onStale}
+    />
   );
 }
 

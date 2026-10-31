@@ -22,6 +22,8 @@ export const FINANCE_AUDIT_ACTIONS = [
   // PDF re-request are not finance events (no role's activity list holds them today). Summaries hold ids, numbers, amounts and codes only.
   "invoice.issue",
   "invoice.void",
+  // ADM-INV-10: a delivered proforma withdrawn (a void of it through its own route; owner, 2026-10-30, docs/13).
+  "invoice.withdraw",
   "invoice.advance_issue",
   "invoice.ims_status",
   "payment.record",

@@ -259,6 +259,11 @@ export const documents = sqliteTable(
     ackDate: text("ack_date"),
     signedQr: text("signed_qr"),
     einvStatus: text("einv_status"),
+    /**
+     * T7: when the personal details in this never-accepted proposal or estimate were erased (a contact anonymised; Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)). Set once, by the
+     * anonymise batch only (triggers of 0058); the row then no longer reproduces `content_sha256` / `snapshot_sha256`, and its envelope and PDF are deleted.
+     */
+    redactedAt: integer("redacted_at"),
     createdBy: text("created_by").references(() => staffUsers.id),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -495,6 +500,8 @@ export const documentLines = sqliteTable(
     catalogueLine: text("catalogue_line"),
     /** M4.3: the second line shown in the portal view (at most 300 characters; the API enforces it). */
     detail: text("detail"),
+    /** T7: set once when the parent offer's personal details were erased (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)). */
+    redactedAt: integer("redacted_at"),
   },
   (t) => [
     uniqueIndex("document_lines_position").on(t.documentId, t.position),
@@ -515,6 +522,8 @@ export const documentSections = sqliteTable(
     hidden: flag("hidden"),
     title: text("title"),
     bodyMd: text("body_md"),
+    /** T7: set once when the parent offer's personal details were erased (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)). */
+    redactedAt: integer("redacted_at"),
   },
   (t) => [uniqueIndex("document_sections_position").on(t.documentId, t.position)],
 );
@@ -535,6 +544,8 @@ export const paymentSchedules = sqliteTable(
     /** M4.3: "what you get" (at most 300 characters; the API enforces it) and the target date of the timeline table (06 §7.4). */
     detail: text("detail"),
     targetDate: text("target_date"),
+    /** T7: set once when the parent offer's personal details were erased (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)). */
+    redactedAt: integer("redacted_at"),
   },
   (t) => [
     uniqueIndex("payment_schedules_position").on(t.documentId, t.position),

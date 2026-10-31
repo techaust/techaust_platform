@@ -123,6 +123,7 @@ export function OfferScreen(props: {
     total,
     status: page.acceptance ? "accepted" : doc.status,
     validUntil: view.validUntil,
+    validUntilDate: view.validUntilDate,
     acceptance: page.acceptance
       ? {
           typedName: page.acceptance.typedName,

@@ -1,5 +1,6 @@
 // No new bare "VERIFY WITH CA/LEGAL" tag (FX-3, A4 lead's addition; owner rule 8 of 2026-10-28): a tax or legal note in code says
-// `Researched <date>, <source> (08-C <ID>)` when the register settles it, or `OPEN (08-C <ID>): <question>` when it does not. This test scans
+// `Researched <date>, <source> (08-C <ID>)` when the register settles it, `Settled by the lead on the safest reading, <date> (08-C <ID>)` when the
+// lead settles it on the safest reading (owner rule 8, no CA or lawyer, 2026-10-30), or `OPEN (08-C <ID>): <question>` when it does not. This test scans
 // apps/, packages/, scripts/, tools/ and .github/ (code, styles, JSON and JSONC, Markdown, SQL, YAML and shell or PowerShell scripts; applied
 // migrations are never edited, so `packages/db/migrations/` is left out; FX-3 fix round, item 9; the wrangler `.jsonc` configs, whose comments
 // can carry a note, fix round 2, item G; FX-5: HTML, Python and `.example` files too, such as `index.html`, `measure-cmyk.py` and

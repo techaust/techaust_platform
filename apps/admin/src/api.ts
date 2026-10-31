@@ -1024,6 +1024,8 @@ type ApiErrorBody = {
   /** M5.1: 409 `already_issued` (the number it was issued as) and 409 `issue_blocked` (the blockers). */
   number?: unknown;
   blockers?: unknown;
+  /** M5.1 and ADM-INV-10: a refused void or withdraw (409) names every reason (codes) beside the first one's code. */
+  reasons?: unknown;
   /** M5.3: the note refusals' figures (`remaining`, `line`, `closestMinor`), the open draft (`draftId`), the last day (`date`). */
   remaining?: unknown;
   line?: unknown;
@@ -1065,6 +1067,8 @@ export class RequestError extends Error {
       termsDueDays?: { stated: number[]; dueDays: number };
       /** M6.1: the payment routes' `error.details`, its plain values only (`femaDue`, `latest`, `documentId`, `balanceMinor`, `receivedOn`). */
       details?: Record<string, string | number>;
+      /** ADM-INV-10: a refused void or withdraw (409) names every reason (codes), so the screen picks its own line (a proforma's void points to Withdraw). */
+      reasons?: string[];
     } = {},
   ) {
     super(message);
@@ -1203,6 +1207,7 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
       ...(typeof details.reason === "string" ? { reason: details.reason } : {}),
       ...(termsDueDays ? { termsDueDays } : {}),
       ...(Object.keys(plainDetails(details)).length > 0 ? { details: plainDetails(details) } : {}),
+      ...(Array.isArray(data.reasons) ? { reasons: strings(data.reasons) } : {}),
     },
   );
   if (signedIn && res.status === 401 && e.code === "unauthenticated") unauthenticatedHandler?.();

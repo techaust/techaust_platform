@@ -160,9 +160,9 @@ export type GstWarningCode =
 
 /**
  * What a person must enter by hand for one tax-only note (FX-4, full audit A5 1): the note, the recipient's GSTIN (null for an unregistered one), the section its row
- * is in, and each tax head with its amount, per rate and in total (INR minor units). OPEN (08-C RA-32): how is a tax-only debit note (taxable value nil, tax only)
- * reported in GSTR-1 Table 9B through the Offline Tool, and how does it flow to 3B Table 3? Our files carry a taxable value and a rate, no tax column, so the tax may
- * not come through on import (OPEN (08-C RA-23): untested); nothing here says how to file it, only what the files may leave out.
+ * is in, and each tax head with its amount, per rate and in total (INR minor units). Settled by the lead on the safest reading, 2026-10-30 (08-C RA-32): entered by hand in the GST portal's
+ * Table 9B, and 3B Table 3 checked before filing; whether the portal takes a nil-value row is unverified. Our files carry a taxable value and a rate, no tax column, so the tax may
+ * not come through on import (Settled by the lead on the safest reading, 2026-10-30 (08-C RA-23): a test import before the first GSTR-1; untested until then); nothing here says how to file it, only what the files may leave out.
  */
 export type ManualTaxEntry = {
   readonly docId: string;

@@ -182,6 +182,21 @@ describe("every ROUTES row has one owner", () => {
     expect(routesOf(createApp(mountFinance))).toEqual(FINANCE_ROWS.map(key).sort());
   });
 
+  it("no handler is mounted twice (early check B1: a router mounted twice registers its routes twice)", () => {
+    // A route's middleware and handler are separate entries, so the same path appears more than once; the same FUNCTION on the same path never should.
+    for (const app of [createApp(mountFront), createApp(mountApi)]) {
+      const seen = new Map<string, Set<unknown>>();
+      const twice: string[] = [];
+      for (const r of app.routes.filter((x) => x.method !== "ALL")) {
+        const fns = seen.get(key(r)) ?? new Set<unknown>();
+        if (fns.has(r.handler)) twice.push(key(r));
+        fns.add(r.handler);
+        seen.set(key(r), fns);
+      }
+      expect(twice).toEqual([]);
+    }
+  });
+
   it("the front entry answers every row (its own or a forwarder) and nothing else", () => {
     expect(routesOf(front)).toEqual(ROUTES.map(key).sort());
   });

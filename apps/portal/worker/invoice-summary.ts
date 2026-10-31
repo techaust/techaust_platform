@@ -1,9 +1,10 @@
 // What the client sees of an invoice, proforma, credit note or debit note (M5.4; POR-06, LD62; Researched 2026-10-28, s.34(3) CGST Act, Rule 53 (08-C RA-22)): a summary built from the FROZEN row of the document and its frozen lines, never from the
 // R2 envelope (the full document is the PDF, which this Worker streams but never builds) and never importing `@techaust/pdf` (a 40 KB module the portal does not carry). The same function answers the
 // emailed link (`/t/document`) and the signed-in routes (`/invoices/:id`), so the two can never disagree. Pure: no I/O.
-import { gstEstimateOfHeaderExtras, NOTES_MAX, noteOfFromStored } from "@techaust/core/invoices";
+import { gstEstimateOfHeaderExtras, issueDateOf, NOTES_MAX, noteOfFromStored } from "@techaust/core/invoices";
 import { formatMoney, money } from "@techaust/core/money";
 import { percentFromBp } from "@techaust/core/schedule-text";
+import { withdrawnSql } from "@techaust/db/sql-rules";
 
 /** 07-ZH line 18 (client-facing; approved by the owner, 2026-10-31): the summary row of the TDS the client deducted. */
 export const TDS_ROW_LABEL = "TDS deducted by you";
@@ -28,6 +29,28 @@ export const CLIENT_INVOICE_STATUSES = [
 const quoted = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(", ");
 export const TYPES_SQL = quoted(CLIENT_INVOICE_TYPES);
 export const STATUSES_SQL = quoted(CLIENT_INVOICE_STATUSES);
+
+/** A live document in an open status (the first half of `openOrWithdrawnSql`): the only state whose PDF is served. `d` is the documents alias. */
+export const openSql = (d: string) => `(${d}.voided_at IS NULL AND ${d}.status IN (${STATUSES_SQL}))`;
+/**
+ * ADM-INV-10 (owner, 2026-10-30, docs/13; Q3 of runs/proforma-withdraw): what a client may open: a live document in an open status, OR a withdrawn proforma
+ * (a void proforma that had reached the client, `withdrawnSql`), which the client sees as withdrawn: no amount due, no due date, no PDF, never the reason.
+ * Any other void document stays closed. `d` is the documents alias. A row with status `void` that passes this is therefore always a withdrawn proforma.
+ */
+export const openOrWithdrawnSql = (d: string) => `(${openSql(d)} OR ${withdrawnSql(d)})`;
+
+/** The 409 of a PDF asked for a withdrawn proforma (07-ZF 20, owner-approved 2026-10-31): the stored PDF still carries the bank details (Q3). */
+export const PDF_WITHDRAWN = {
+  code: "withdrawn",
+  message: "The PDF isn't available because this payment request was withdrawn.",
+} as const;
+
+/**
+ * A withdrawn proforma among the rows the predicate above let through: a void proforma (early check B2: the type is checked too, so a void row of
+ * another type, which the predicate never lets through, could never read as withdrawn).
+ */
+export const isWithdrawnRow = (r: { type: string; status: string }) =>
+  r.type === "proforma" && r.status === "void";
 /** The types that list their credit notes (final sweep P2): a tax invoice and an export invoice. A proforma or a note has none of its own. */
 export const CREDITABLE_TYPES = ["tax_invoice", "export_invoice"] as const;
 const CREDITABLE_SQL = quoted(CREDITABLE_TYPES);
@@ -44,7 +67,7 @@ export const SUMMARY_PARENT_JOIN =
  * invoice, only when one the client may open itself (frozen, not void, an open status and type: the list's own rule), so the page can link to it.
  */
 export const SUMMARY_COLS = `d.id, d.type, d.status, d.number_display, d.issue_date, d.due_date, d.currency, d.subtotal_minor, d.discount_minor, d.taxable_minor, d.cgst_minor, d.sgst_minor, d.igst_minor,
-    d.round_off_minor, d.total_minor, d.total_inr_minor, d.paid_minor, d.credited_minor, d.balance_minor, d.tds_minor, d.issuer, d.header_extras, d.pdf_r2_key, d.viewed_at,
+    d.round_off_minor, d.total_minor, d.total_inr_minor, d.paid_minor, d.credited_minor, d.balance_minor, d.tds_minor, d.issuer, d.header_extras, d.pdf_r2_key, d.viewed_at, d.voided_at,
     p.number_display AS parent_number,
     CASE WHEN d.type IN ('credit_note', 'debit_note') AND p.frozen_at IS NOT NULL AND p.voided_at IS NULL AND p.status IN (${STATUSES_SQL})
        AND p.type IN (${TYPES_SQL}) THEN p.id END AS parent_open_id`;
@@ -106,6 +129,8 @@ export type SummaryRow = {
   header_extras: string | null;
   pdf_r2_key: string | null;
   viewed_at: number | null;
+  /** ADM-INV-10: set only on a withdrawn proforma among the rows a client can read (`openOrWithdrawnSql`). */
+  voided_at: number | null;
   parent_number: string | null;
   parent_open_id: string | null;
 };
@@ -232,22 +257,31 @@ export function listItemOf(
     | "currency"
     | "total_minor"
     | "balance_minor"
+    | "voided_at"
   >,
 ) {
+  // ADM-INV-10 (Q3): a withdrawn proforma lists as withdrawn, with no amount due and no due date.
+  const withdrawn = isWithdrawnRow(r);
   return {
     id: r.id,
     type: r.type,
-    status: r.status,
+    status: withdrawn ? "withdrawn" : r.status,
     numberDisplay: r.number_display,
     issueDate: r.issue_date,
-    dueDate: r.due_date,
+    dueDate: withdrawn ? null : r.due_date,
     currency: r.currency,
     totalMinor: r.total_minor,
-    balanceMinor: r.balance_minor,
+    balanceMinor: withdrawn ? null : r.balance_minor,
     total: text(r.total_minor, r.currency),
-    balance: text(r.balance_minor, r.currency),
+    balance: withdrawn ? null : text(r.balance_minor, r.currency),
+    /** ADM-INV-10: the IST day it was withdrawn (07-ZF 19's {date}); null unless withdrawn. */
+    withdrawnOn: withdrawnOnOf(r),
   };
 }
+
+/** The IST day a withdrawn proforma was withdrawn; null on every other row. */
+const withdrawnOnOf = (r: { type: string; status: string; voided_at: number | null }) =>
+  isWithdrawnRow(r) && r.voided_at !== null ? issueDateOf(r.voided_at) : null;
 
 /**
  * The page's data. Money is given in minor units with the currency AND as text for the headline figures. A credit note has no due date and no balance (nothing is owed on it); a debit note's due date is its
@@ -255,13 +289,17 @@ export function listItemOf(
  */
 export function summaryOf(r: SummaryRow, lines: readonly LineRow[], creditNotes: readonly CreditNoteRow[]) {
   const isInvoice = (CREDITABLE_TYPES as readonly string[]).includes(r.type);
+  // ADM-INV-10 (owner, 2026-10-30, docs/13; Q3): a withdrawn proforma shows its details as withdrawn: no amount due, no due date, no PDF, never the reason.
+  const withdrawn = isWithdrawnRow(r);
   return {
     id: r.id,
     type: r.type,
-    status: r.status,
+    status: withdrawn ? "withdrawn" : r.status,
+    /** ADM-INV-10: the IST day it was withdrawn (07-ZF 19's {date}); null unless withdrawn. */
+    withdrawnOn: withdrawnOnOf(r),
     numberDisplay: r.number_display,
     issueDate: r.issue_date,
-    dueDate: r.due_date,
+    dueDate: withdrawn ? null : r.due_date,
     currency: r.currency,
     parentNumber: r.parent_number,
     /** Final sweep P15: a note's invoice, when the client may open it (same client, open status); null otherwise and on every other type. */
@@ -290,11 +328,11 @@ export function summaryOf(r: SummaryRow, lines: readonly LineRow[], creditNotes:
     creditedMinor: r.credited_minor,
     /** M6.1 (T8; Settled by the lead on the safest reading, 2026-10-30 (08-C RA-30)): the TDS the client deducted; it counts toward the balance. */
     tdsMinor: r.tds_minor,
-    /** The TDS row of the summary (07-ZH line 18, client-facing, approved by the owner 2026-10-31); null when no TDS is recorded. */
-    tdsRow: r.tds_minor > 0 ? { label: TDS_ROW_LABEL, amount: text(r.tds_minor, r.currency) } : null,
-    balanceMinor: r.balance_minor,
+    /** The TDS row of the summary (07-ZH line 18, client-facing, approved by the owner 2026-10-31); null when no TDS is recorded or the request was withdrawn. */
+    tdsRow: !withdrawn && r.tds_minor > 0 ? { label: TDS_ROW_LABEL, amount: text(r.tds_minor, r.currency) } : null,
+    balanceMinor: withdrawn ? null : r.balance_minor,
     total: text(r.total_minor, r.currency),
-    balance: text(r.balance_minor, r.currency),
+    balance: withdrawn ? null : text(r.balance_minor, r.currency),
     lines: lines.map((l) => ({
       position: l.position,
       description: l.description,
@@ -314,8 +352,10 @@ export function summaryOf(r: SummaryRow, lines: readonly LineRow[], creditNotes:
       igstMinor: l.igst_minor,
       lineTotalMinor: l.line_total_minor,
     })),
-    bank: r.type === "credit_note" ? null : bankOf(r.issuer, r.currency),
-    pdfReady: r.pdf_r2_key !== null,
+    // ADM-INV-10 (Q3 A, early check A2): no bank block on a withdrawn proforma, so nothing invites a payment. M6/M7.1 handoff: any payment field added here is null for a withdrawn proforma.
+    bank: r.type === "credit_note" || withdrawn ? null : bankOf(r.issuer, r.currency),
+    /** ADM-INV-10: never on a withdrawn proforma (the PDF routes answer 409 `withdrawn`). */
+    pdfReady: !withdrawn && r.pdf_r2_key !== null,
   };
 }
 

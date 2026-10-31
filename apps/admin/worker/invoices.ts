@@ -2,7 +2,7 @@
 // Issuing and the issue request are in invoice-issue.ts, the PDF in document-pdf.ts, the model in invoice-model.ts, the JSON in invoice-view.ts.
 // Every route is a row of ROUTES (guard.ts); every change is ONE batch through `mutate`. Audit rows hold ids, codes, numbers, totals; never a
 // line's description, a reason's text or a personal value. A rule is written into the statement that changes the row, never decided from a
-// read alone: when nothing was written, one read says why. Every rule is a researched default, rule by rule in 08-C section 1 (Rule 46, Rule 56(8), Q1, Q2, Q4); the void is OPEN (08-C RA-10).
+// read alone: when nothing was written, one read says why. Every rule is a researched default, rule by rule in 08-C section 1 (Rule 46, Rule 56(8), Q1, Q2, Q4); the void: Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): the owner's 2026-10-30 rule; such a void is reported as cancelled in Table 13.
 //
 // Never in a request (strict objects make it a 400): a number, a status, a hash, a type, `trustRates`, `targetTotalMinor`, a due date, a computed
 // value. The type comes from the client; the due date from the client's terms; the target of a milestone invoice from the milestone row.
@@ -26,6 +26,7 @@ import {
 } from "@techaust/core/invoices";
 import { bundleOf, LOAD_STATEMENTS, loadStatements, type TermsRef } from "@techaust/db/documents";
 import { paymentBlocksVoidSql, paymentPendingForSql, paymentRecordedSql } from "@techaust/db/ledger";
+import { withdrawnSql } from "@techaust/db/sql-rules";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
@@ -50,6 +51,7 @@ import {
   type BankRow,
   type ContactFacts,
   computeInvoice,
+  EMAILED_PROFORMA,
   EXPORT_DECLARATION_MISSING,
   EXPORT_DECLARATION_NOT_APPLICABLE,
   EXPORT_MODE_NOT_APPLICABLE,
@@ -99,6 +101,7 @@ import {
   isOverdue,
   MILESTONE_OF_SQL,
 } from "./invoice-view.ts";
+import { milestoneReleaseStmt, OWNER_STEP_UP_SQL, VOID_REFUSED, voidReasonIn } from "./invoice-void-rules.ts";
 import { type Direction, decodeCursor, keysetSql, pageOf } from "./keyset.ts";
 import {
   blockersOfNote,
@@ -152,12 +155,20 @@ const idText = z.string().check(z.minLength(1), z.maxLength(64));
  * A refused void (409), with the exact reasons (codes) riding along. 07-R: `already_void` for a void one, `return_period_closed` for a closed
  * month, FX-5 (owner decision 2026-10-30, 08-C RA-10): `viewed_by_client` once the client opened it in the portal (a proforma has its own words: it
  * has no credit note and stays until converted; lead, 2026-10-30); `void_not_allowed` for the rest. A payment, a credit or an issued child document is
- * the stronger reason, so with one of them the view is not the answer (`void_not_allowed`), as the screen's `voidBlockedText` ranks them (review L3).
+ * the stronger reason, so with one of them the view is not the answer (`void_not_allowed`), as the screen's `voidBlockedText` ranks them (review L3);
+ * so are M6.1's pending payment, recorded payment and TDS (L17, L32).
  */
 function voidRefused(c: Ctx, reasons: readonly VoidBlockerCode[], type: string) {
   const stronger = reasons.some(
-    (r) => r === "has_payment" || r === "has_credit" || r === "has_child_document",
+    (r) =>
+      r === "has_payment" ||
+      r === "has_credit" ||
+      r === "has_child_document" ||
+      r === "payment_pending" ||
+      r === "payment_recorded" ||
+      r === "tds_recorded",
   );
+  // ADM-INV-10 (owner, 2026-10-30, docs/13): a proforma that reached the client (opened or emailed) is withdrawn instead; its words point there (07-ZF 15, 16).
   const error = reasons.includes("already_void")
     ? ALREADY_VOID
     : reasons.includes("return_period_closed")
@@ -166,7 +177,9 @@ function voidRefused(c: Ctx, reasons: readonly VoidBlockerCode[], type: string) 
         ? type === "proforma"
           ? VIEWED_BY_CLIENT_PROFORMA
           : VIEWED_BY_CLIENT
-        : VOID_NOT_ALLOWED;
+        : reasons.includes("already_emailed") && !stronger && type === "proforma"
+          ? EMAILED_PROFORMA
+          : VOID_NOT_ALLOWED;
   return c.json({ error: { code: error.code, message: error.message }, reasons, request_id: c.var.rid }, 409);
 }
 
@@ -215,6 +228,8 @@ type ListRow = {
   ims_status: string | null;
   created_at: number;
   updated_at: number;
+  /** ADM-INV-10: 1 for a withdrawn proforma. */
+  withdrawn: number;
   approval_status: string | null;
   approval_sha: string | null;
 };
@@ -236,7 +251,9 @@ export const INVOICE_LIST_SQL = (f: {
       : "";
   const client = f.client ? ` AND d.client_id = ?${++at}` : "";
   const cursor = f.cursor ? ` AND ${keysetSql("d.created_at", "d.id", false, "after", at + 1).where}` : "";
+  // ADM-INV-10: `withdrawn`, a void proforma that had reached the client (`withdrawnSql`, review L4); its send lookup runs only for a void proforma's row.
   return `SELECT d.id, d.type, d.status, d.number_display, d.client_id, cl.code AS client_code, cl.display_name AS client_name, (cl.anonymised_at IS NOT NULL) AS client_gone, d.currency, d.total_minor, d.balance_minor, d.issue_date, d.due_date, d.content_sha256, d.frozen_at, d.pdf_sha256, d.ims_status, d.created_at, d.updated_at,
+     ${withdrawnSql("d")} AS withdrawn,
      (SELECT a.status FROM approvals a WHERE a.document_id = d.id AND a.kind = 'issue' ORDER BY a.created_at DESC, a.id DESC LIMIT 1) AS approval_status,
      (SELECT a.content_sha256 FROM approvals a WHERE a.document_id = d.id AND a.kind = 'issue' ORDER BY a.created_at DESC, a.id DESC LIMIT 1) AS approval_sha
    FROM documents d JOIN clients cl ON cl.id = d.client_id
@@ -260,6 +277,8 @@ const listRow = (r: ListRow, todayIso: string) => ({
   overdue: isOverdue(r, todayIso),
   pdf: r.frozen_at === null ? "none" : r.pdf_sha256 === null ? "pending" : "ready",
   imsStatus: r.ims_status,
+  /** ADM-INV-10: a void proforma that had reached the client (the screens show "Withdrawn"). */
+  withdrawn: r.withdrawn === 1,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
   // A waiting issue request is shown from the approvals row, never stored as a status; one for another content has expired.
@@ -327,11 +346,6 @@ export async function listInvoices(
 
 // ---- reading one -----------------------------------------------------------------------------------------------------------------------------
 
-/**
- * An invoice with everything a route needs besides it, in ONE D1 call: the bundle of `loadStatements`, its client and contact, the settings (with
- * their versions), the active bank rows, the newest invoice footer notes, its `issue` approvals, its milestone, and whether it was emailed or has
- * an issued child. A route that needs more reads passes those statements in `extra`; their results come back after the others.
- */
 /** M6.1 (L17; early check 2, finding 10): the void statement's own test of the same rule, on the row it updates (no allocation row, no pending payment asking for it). */
 const VOID_PAYMENT_SQL = paymentBlocksVoidSql("documents.id", "documents.client_id");
 
@@ -343,6 +357,24 @@ const CLIENT_OF_DOC = "(SELECT pd.client_id FROM documents pd WHERE pd.id = ?1)"
  */
 const PAYMENT_FACTS_SQL = `${paymentPendingForSql("?1", CLIENT_OF_DOC)} AS payment_pending, ${paymentRecordedSql("?1")} AS payment_recorded`;
 
+/**
+ * ?1 the document: whether it was emailed or has an issued child (the void codes), and who voided OR withdrew it. ADM-INV-10: any child (a draft too)
+ * and an advance receipt are the withdraw blockers of a proforma, so only a proforma's read looks them up (review note: every other type skips both;
+ * `withdrawBlockers` answers `not_proforma` for it whatever they say). No row (no document) reads as the defaults in `readInvoice`.
+ */
+export const INVOICE_FACTS_SQL = `SELECT EXISTS (SELECT 1 FROM document_sends s WHERE s.document_id = ?1) AS emailed,
+  EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = ?1 AND x.frozen_at IS NOT NULL) AS child,
+  CASE WHEN d.type = 'proforma' THEN EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = ?1) ELSE 0 END AS any_child,
+  CASE WHEN d.type = 'proforma' THEN EXISTS (SELECT 1 FROM advance_receipts r WHERE r.proforma_id = ?1) ELSE 0 END AS advance,
+  CASE WHEN d.status = 'void' THEN (SELECT u.name FROM audit_log a JOIN staff_users u ON u.id = a.actor_id WHERE a.entity_type = 'document' AND a.entity_id = ?1 AND a.action IN ('invoice.void', 'invoice.withdraw') ORDER BY a.at DESC LIMIT 1) END AS voided_by_name,
+  ${PAYMENT_FACTS_SQL}
+  FROM documents d WHERE d.id = ?1`;
+
+/**
+ * An invoice with everything a route needs besides it, in ONE D1 call: the bundle of `loadStatements`, its client and contact, the settings (with
+ * their versions), the active bank rows, the newest invoice footer notes, its `issue` approvals, its milestone, and whether it was emailed or has
+ * an issued child. A route that needs more reads passes those statements in `extra`; their results come back after the others.
+ */
 export async function readInvoice(
   c: { env: { DB: D1Database } },
   id: string,
@@ -366,11 +398,7 @@ export async function readInvoice(
     db.prepare(NEWEST_INVOICE_TERMS),
     db.prepare(ISSUE_APPROVALS_OF_SQL).bind(id),
     db.prepare(MILESTONE_OF_SQL).bind(id),
-    db
-      .prepare(
-        `SELECT EXISTS (SELECT 1 FROM document_sends s WHERE s.document_id = ?1) AS emailed, EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = ?1 AND x.frozen_at IS NOT NULL) AS child, CASE WHEN (SELECT status FROM documents WHERE id = ?1) = 'void' THEN (SELECT u.name FROM audit_log a JOIN staff_users u ON u.id = a.actor_id WHERE a.entity_type = 'document' AND a.entity_id = ?1 AND a.action = 'invoice.void' ORDER BY a.at DESC LIMIT 1) END AS voided_by_name, ${PAYMENT_FACTS_SQL}`,
-      )
-      .bind(id),
+    db.prepare(INVOICE_FACTS_SQL).bind(id),
     ...extra,
   ]);
   const bundle = bundleOf<TermsRef>(results.slice(0, LOAD_STATEMENTS));
@@ -382,12 +410,16 @@ export async function readInvoice(
   const facts = (factsR?.results[0] ?? {
     emailed: 0,
     child: 0,
+    any_child: 0,
+    advance: 0,
     voided_by_name: null,
     payment_pending: 0,
     payment_recorded: 0,
   }) as {
     emailed: number;
     child: number;
+    any_child: number;
+    advance: number;
     voided_by_name: string | null;
     payment_pending: number;
     payment_recorded: number;
@@ -410,7 +442,10 @@ export async function readInvoice(
     paymentPending: facts.payment_pending === 1,
     /** M6.1 (L17, L32): an allocation row names this document, one released or withdrawn since included (`paymentRecordedSql`). */
     paymentRecorded: facts.payment_recorded === 1,
-    /** The name of the member who voided it (from the `invoice.void` audit row; null when it is not void). */
+    /** ADM-INV-10: any document (draft or issued) names this one as its parent, and an advance receipt names it (the withdraw blockers). */
+    hasAnyChild: facts.any_child === 1,
+    hasAdvanceReceipt: facts.advance === 1,
+    /** The name of the member who voided or withdrew it (from the `invoice.void` / `invoice.withdraw` audit row; null when it is not void). */
     voidedByName: facts.voided_by_name,
     extra: results.slice(LOAD_STATEMENTS + 8),
   };
@@ -491,7 +526,8 @@ export const serviceCompletedBody = z.strictObject({
 
 export const voidBody = z.strictObject({
   expectedUpdatedAt: z.int(),
-  reason: z.string().check(z.trim(), z.minLength(1), z.maxLength(500)),
+  // Early check B3: the one reason field of void and withdraw (1 to WITHDRAW_REASON_MAX characters).
+  reason: voidReasonIn,
 });
 
 const deleteQuery = z.object({ expectedUpdatedAt: z.string().check(z.regex(/^\d{1,16}$/)) });
@@ -814,6 +850,8 @@ export const invoices = new Hono<AppEnv>()
         hasIssuedChild: ctx.hasIssuedChild,
         paymentPending: ctx.paymentPending,
         paymentRecorded: ctx.paymentRecorded,
+        hasAnyChild: ctx.hasAnyChild,
+        hasAdvanceReceipt: ctx.hasAdvanceReceipt,
         bank: ctx.bank,
         declaration: (ctx.extra[0]?.results[0] as TermsRef | undefined) ?? null,
         children: (ctx.extra[1]?.results ?? []) as ChildRow[],
@@ -1057,6 +1095,8 @@ export const invoices = new Hono<AppEnv>()
         hasIssuedChild: false,
         paymentPending: ctx.paymentPending,
         paymentRecorded: ctx.paymentRecorded,
+        hasAnyChild: false,
+        hasAdvanceReceipt: false,
         bank: ctx.bank,
         declaration: (ctx.extra[2]?.results[0] as TermsRef | undefined) ?? null,
         children: [],
@@ -1178,7 +1218,7 @@ export const invoices = new Hono<AppEnv>()
     return err(c, STALE_VERSION, 409);
   })
 
-  // ---- void (Q1, Q2, Q23, LD7; OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?): the owner, with a fresh code, before it was emailed or opened in the portal (FX-5, owner decision 2026-10-30), within the month of issue, and with no payment or credit; the number stays ----
+  // ---- void (Q1, Q2, Q23, LD7; Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): such a void is reported as cancelled in Table 13, anything else is corrected by a credit note): the owner, with a fresh code, before it was emailed or opened in the portal (FX-5, owner decision 2026-10-30), within the month of issue, and with no payment or credit; the number stays ----
   .post("/:id/void", param(idParam), body(voidBody), async (c) => {
     const { id } = c.req.valid("param");
     const f = c.req.valid("json");
@@ -1212,8 +1252,8 @@ export const invoices = new Hono<AppEnv>()
     // Every rule is in the statement: issued, nothing paid or credited, no issued child, never emailed, never opened by the client in the portal (FX-5, owner
     // decision 2026-10-30, 08-C RA-10: a view landing between the read and this write refuses it), still inside the IST month of issue (Q23), and the
     // owner's session with a live step-up.
+    // Early check B5: a trigger that refuses the batch (a send, a view, a payment or a status change landing in between) is explained by the re-read below.
     let done = false;
-    // M6.1 (L17): the trigger `documents_void_no_payment` is the database's copy of the WHERE's payment rules; should it ever fire, the answer is a 409 that says why.
     try {
       done = await mutate(c, {
         main: db
@@ -1226,7 +1266,7 @@ export const invoices = new Hono<AppEnv>()
              AND NOT EXISTS (SELECT 1 FROM document_sends s WHERE s.document_id = documents.id)
              AND viewed_at IS NULL
              AND (type = 'proforma' OR substr(issue_date, 1, 7) = ?6)
-             AND EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users o ON o.id = s.user_id WHERE s.id = ?5 AND s.revoked_at IS NULL AND s.idle_expires_at > ?3 AND s.abs_expires_at > ?3 AND s.step_up_until > ?3 AND o.role = 'owner' AND o.status = 'active')`,
+             AND ${OWNER_STEP_UP_SQL}`,
           )
           .bind(id, f.expectedUpdatedAt, t, f.reason, u.sessionId, today.slice(0, 7)),
         action: "invoice.void",
@@ -1240,13 +1280,9 @@ export const invoices = new Hono<AppEnv>()
           totalMinor: d.total_minor,
           reasonLength: f.reason.length,
         },
-        // The milestone this invoice was made from is free for a new invoice again: back to ready to bill when the work was delivered (the delivery time is kept), back to pending when it never was (an advance invoice on a pending milestone, LD12).
+        // The milestone this invoice was made from is free for a new invoice again (`milestoneReleaseStmt`, shared with withdraw).
         side: (g) => [
-          db
-            .prepare(
-              `UPDATE milestones SET status = CASE WHEN status <> 'invoiced' THEN status WHEN delivered_at IS NULL THEN 'pending' ELSE 'ready_to_bill' END, document_id = NULL, updated_at = ?2 WHERE document_id = ?1 AND ${g.sql(3)}`,
-            )
-            .bind(id, t, ...g.params),
+          milestoneReleaseStmt(db, g, id, t),
           // M5.3 (LD47): the open note drafts of a voided invoice go with it (a note can only be issued against a live invoice), with their issue requests and the bells about them:
           // each guarded on this void (the audit row), in the order the foreign keys need.
           db
@@ -1267,12 +1303,12 @@ export const invoices = new Hono<AppEnv>()
         ],
       });
     } catch (e) {
-      if (!refusedWith(e, /documents_void_no_payment/)) throw e;
+      if (!refusedWith(e, VOID_REFUSED)) throw e;
     }
     if (!done) {
       const again = await db
         .prepare(
-          `SELECT status, updated_at, viewed_at, tds_minor, ${PAYMENT_FACTS_SQL}, ${clientGoneSql("client_id")} AS gone, (SELECT step_up_until FROM staff_sessions WHERE id = ?2 AND revoked_at IS NULL) AS step_up, (SELECT idle_expires_at > ?3 AND abs_expires_at > ?3 FROM staff_sessions WHERE id = ?2 AND revoked_at IS NULL) AS session_live FROM documents WHERE id = ?1`,
+          `SELECT status, updated_at, viewed_at, tds_minor, EXISTS (SELECT 1 FROM document_sends s WHERE s.document_id = documents.id) AS emailed, ${PAYMENT_FACTS_SQL}, ${clientGoneSql("client_id")} AS gone, (SELECT step_up_until FROM staff_sessions WHERE id = ?2 AND revoked_at IS NULL) AS step_up, (SELECT idle_expires_at > ?3 AND abs_expires_at > ?3 FROM staff_sessions WHERE id = ?2 AND revoked_at IS NULL) AS session_live FROM documents WHERE id = ?1`,
         )
         .bind(id, u.sessionId, t)
         .first<{
@@ -1280,6 +1316,7 @@ export const invoices = new Hono<AppEnv>()
           updated_at: number;
           viewed_at: number | null;
           tds_minor: number;
+          emailed: number;
           payment_pending: number;
           payment_recorded: number;
           gone: number;
@@ -1297,12 +1334,14 @@ export const invoices = new Hono<AppEnv>()
           { code: "step_up_required", message: "Confirm with a fresh code from your authenticator first" },
           403,
         );
-      // FX-5: the client opened it in the portal between the read and the write (a view never moves `updated_at`), so it says why.
-      // M6.1 (L17): a payment or TDS recorded on it between the read and the write says so too.
+      // FX-5: the client opened it in the portal between the read and the write (a view never moves `updated_at`), so it says why; ADM-INV-10: and so
+      // does a send that landed in between (a send never moves `updated_at` either; a proforma's words then point to Withdraw). M6.1 (L17): a payment
+      // or TDS recorded on it between the read and the write says so too. In `voidBlockers` order.
       const late: VoidBlockerCode[] = [];
       if (again.payment_pending === 1) late.push("payment_pending");
       if (again.payment_recorded === 1) late.push("payment_recorded");
       if (again.tds_minor > 0) late.push("tds_recorded");
+      if (again.emailed === 1) late.push("already_emailed");
       if (again.viewed_at !== null) late.push("viewed_by_client");
       return voidRefused(c, late, d.type);
     }

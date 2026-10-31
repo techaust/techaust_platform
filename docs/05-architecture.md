@@ -295,6 +295,7 @@ techaust_platform/
 
 ### 5.3 Integrity rules enforced in the database
 - **Frozen documents:** a `BEFORE UPDATE` trigger on `documents` aborts if `OLD.frozen_at IS NOT NULL` and any content column changes. Only the ledger columns (`paid_minor`, `credited_minor`, `balance_minor`, `status`), `voided_at`/`void_reason` and e-invoice fields may change. A matching trigger blocks `document_lines` changes for frozen parents.
+- **Erasure in never-accepted offers (T7, migrations 0057–0058; 08-C RB-37):** the frozen trigger lets one move through: `redacted_at` moves forward on a frozen proposal or estimate that was never accepted, and only `recipient`, `title`, `decision_note` (→ NULL) and the child rows' text change (each child row stamped to its parent's `redacted_at`). A redacted offer takes no view, decision, PDF, snapshot key or acceptance; its kept hashes no longer match the redacted rows, and `redacted_at` plus one `document.redact` audit row per erasure say why.
 - **Append-only:** `audit_log`, `acceptances` and `catalogue_price_history` refuse UPDATE/DELETE (M1.3); `webhook_events.payload` follows in M6. The retention job's trigger-guarded deletion path is added with the retention milestone; until then nothing can delete these rows.
 - **Counters:** `doc_counters` rows can only move forward and can't be deleted (gap-free, never reused).
 - **Uniqueness:** `(series, fy, number)`, `(provider, event_id)`, `(provider, provider_payment_id)`, `(document_id)` on acceptances.

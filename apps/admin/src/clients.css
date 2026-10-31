@@ -466,6 +466,11 @@
   border-inline-start: 3px solid var(--color-danger);
 }
 
+/* A refusal's sentence sits flush in its notice (T7: the long 07-ZG line left a paragraph's margin under it); the button keeps its own gap. */
+.data-tool .notice p {
+  margin: 0;
+}
+
 .data-tool .notice .btn {
   margin-top: var(--space-2);
 }

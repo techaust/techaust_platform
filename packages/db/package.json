@@ -14,9 +14,11 @@
     "./lead-stage": "./src/lead-stage.ts",
     "./ledger": "./src/ledger.ts",
     "./log": "./src/log.ts",
+    "./offer-redaction": "./src/offer-redaction.ts",
     "./portal-shared": "./src/portal-shared.ts",
     "./realisation": "./src/realisation.ts",
     "./reports": "./src/reports.ts",
+    "./sql-rules": "./src/sql-rules.ts",
     "./catalogue": "./src/seed/catalogue.ts",
     "./seed-templates": "./src/seed/templates.ts"
   },

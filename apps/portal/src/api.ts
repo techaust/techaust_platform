@@ -197,7 +197,10 @@ const pub = { signedIn: false } as const;
 
 // ---- Invoices, payment requests and notes (M5.4; apps/portal/worker/invoices.ts, doc-token.ts, invoice-summary.ts) -----------------------------
 
-/** The documents a client can open (never a draft or a void one): the server's allow-list. */
+/**
+ * The documents a client can open (never a draft or a void one, except a withdrawn payment request: ADM-INV-10, `status: "withdrawn"`): the server's
+ * allow-list.
+ */
 export type InvoiceType = "proforma" | "tax_invoice" | "export_invoice" | "credit_note" | "debit_note";
 
 /** One row of GET /invoices (newest issued first). `total` and `balance` are formatted by the server through core; the minor units are for sorting only. */
@@ -211,9 +214,12 @@ export type InvoiceItem = {
   dueDate: string | null;
   currency: string;
   totalMinor: number;
-  balanceMinor: number;
+  /** ADM-INV-10: null on a withdrawn payment request (nothing is owed), as `balance` and `dueDate`. */
+  balanceMinor: number | null;
   total: string;
-  balance: string;
+  balance: string | null;
+  /** ADM-INV-10: the IST day a withdrawn payment request was withdrawn (`YYYY-MM-DD`); null otherwise. Absent from an older API. */
+  withdrawnOn?: string | null;
 };
 
 type Bank = {
@@ -297,13 +303,16 @@ export type InvoiceSummary = {
   /** M6.1 (T8): the TDS the client deducted (0 when none); `tdsRow` is the summary row, 07-ZH line 18 "TDS deducted by you", or null. */
   tdsMinor?: number;
   tdsRow?: { label: string; amount: string } | null;
-  balanceMinor: number;
+  /** ADM-INV-10: null on a withdrawn payment request (`status: "withdrawn"`): nothing is owed, so no amount due and no due date. */
+  balanceMinor: number | null;
   total: string;
-  balance: string;
+  balance: string | null;
+  /** ADM-INV-10: the IST day it was withdrawn (`YYYY-MM-DD`); null unless withdrawn. Absent from an older API. The staff's reason is never sent. */
+  withdrawnOn?: string | null;
   lines: InvoiceLine[];
-  /** The bank block printed on the document (none on a credit note). */
+  /** The bank block printed on the document (none on a credit note; never shown for a withdrawn payment request, ADM-INV-10). */
   bank: InvoiceBank | null;
-  /** The PDF exists (its download answers 409 `pdf_pending` until it does). */
+  /** The PDF exists (its download answers 409 `pdf_pending` until it does; false on a withdrawn payment request, whose PDF answers 409 `withdrawn`). */
   pdfReady: boolean;
 };
 

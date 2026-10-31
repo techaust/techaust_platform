@@ -30,6 +30,7 @@ import { nameOrLegal } from "@techaust/core/text";
 import {
   CONTACT_ON_ISSUED_DOCUMENT_SQL,
   deleteContactAccess,
+  HELD_LEAD_SQL,
   revokeContactAccess,
 } from "@techaust/db/contact-access";
 import { Hono } from "hono/tiny";
@@ -64,6 +65,14 @@ import {
 } from "./http.ts";
 import { INVOICE_TYPES_SQL } from "./invoice-consts.ts";
 import { type Direction, decodeCursor, encodeCursor, keysetSql, PREFIX_END, pageOf } from "./keyset.ts";
+import {
+  dropOfferObjects,
+  type RedactionPlan,
+  readRedactionPlan,
+  redactionGuard,
+  redactionStatements,
+  TOO_MANY_OFFERS,
+} from "./offer-redaction.ts";
 
 // ---- errors ----------------------------------------------------------------------------------------------------------
 
@@ -997,7 +1006,7 @@ export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?
   },
   // The client's notes and file records, only where the erase would delete them: the contact is an individual client's last live
   // contact (`LAST_LIVE_INDIVIDUAL`; the manifest lists these two parts only then, and the SQL repeats the condition). Metadata only:
-  // never the file bytes or the R2 key. OPEN (08-C RB-36): the Act asks for a summary; file bytes on request or never?
+  // never the file bytes or the R2 key. Settled by the lead on the safest reading, 2026-10-30 (08-C RB-36): the export lists the files; their contents on request; for EU and UK persons a full copy (GDPR Art. 15(3)) with others' data redacted, by hand.
   notes: {
     sql: (cur) =>
       `SELECT n.id, n.body_md AS body, n.visibility, (SELECT code FROM projects WHERE id = n.project_id) AS project_code, n.created_at FROM notes n WHERE n.client_id = ?3 AND ${LAST_LIVE_INDIVIDUAL("n.client_id")}${cur ? " AND n.id > ?5" : ""} ORDER BY n.id LIMIT 51`,
@@ -1013,10 +1022,7 @@ const LAST_CONTACT_PARTS = ["notes", "files"];
 /** The statements that anonymise (or delete) a person's leads: the lead this contact was made from (`leads.contact_id`, which survives an email change), or by the contact's current email at this client or at none. */
 const MATCHED_LEADS =
   "SELECT l.id FROM leads l WHERE l.contact_id = ?1 OR (l.contact_email = (SELECT email FROM contacts WHERE id = ?1) AND (l.client_id IS NULL OR l.client_id = (SELECT client_id FROM contacts WHERE id = ?1)))";
-const HELD_LEAD_SQL =
-  "EXISTS (SELECT 1 FROM leads l WHERE l.legal_hold = 1 AND (l.contact_id = c.id OR (l.contact_email = c.email AND (l.client_id IS NULL OR l.client_id = c.client_id))))";
 
-/** The client of contact `?1` is an individual and this contact is its last live one: the condition of the client's own erase (`col` is the row's client column). */
 /**
  * Lead decision (2026-10-31, 07-ZH line 22): a contact whose erase would anonymise its individual client (its last live contact) is refused while a payment
  * of that client waits for the Owner's check (`payments_pending`): the pending entry would otherwise lock with the client. `contact` is the contact's placeholder.
@@ -1025,6 +1031,7 @@ const PAYMENTS_PENDING_ON_LAST = (contact: string) =>
   `(EXISTS (SELECT 1 FROM clients pc WHERE pc.id = c.client_id AND pc.type = 'individual') AND NOT EXISTS (SELECT 1 FROM contacts po WHERE po.client_id = c.client_id AND po.id <> ${contact} AND po.anonymised_at IS NULL)
     AND EXISTS (SELECT 1 FROM payments pp INDEXED BY payments_client WHERE pp.client_id = c.client_id AND pp.status = 'pending_verification'))`;
 
+/** The client of contact `?1` is an individual and this contact is its last live one: the condition of the client's own erase (`col` is the row's client column). */
 const LAST_LIVE_INDIVIDUAL = (col: string) =>
   `${col} = (SELECT client_id FROM contacts WHERE id = ?1) AND EXISTS (SELECT 1 FROM clients cl WHERE cl.id = ${col} AND cl.type = 'individual') AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = ${col} AND o.id <> ?1 AND o.anonymised_at IS NULL)`;
 
@@ -1224,227 +1231,272 @@ export const contacts = new Hono<AppEnv>()
     return c.json(out);
   })
 
-  // ---- erase or anonymise (owner, step-up): ONE audit-first batch; nothing is read before it ----
+  // ---- erase or anonymise (owner, step-up): ONE audit-first batch. Erase reads nothing before it. Anonymise reads the never-accepted offers that
+  //      name the person first (T7, step 2e: D1 can't match whole words), and the batch proves that read is still true, else nothing is written and the
+  //      answer is 409 `stale_version` at once: no second read and batch, so every path stays within the D1 budget (review row 6; Settled by the lead
+  //      on the safest reading, 2026-10-30 (08-C RB-37)) ----
   .post("/:id/erase", param(idParam), body(eraseRequest), async (c) => {
     const { id } = c.req.valid("param");
     const { mode, reason } = c.req.valid("json");
-    const db = c.env.DB;
-    const t = Date.now();
-    const erase = mode === "erase";
-    const fileKeys: string[] = [];
-    const user = actor(c);
-    const who = requestInfo(c);
-    const done = await mutate(c, {
-      action: erase ? "contact.erase" : "contact.anonymise",
-      entityType: "client",
-      entityId: null,
-      // The only statement that returns rows is the files DELETE ... RETURNING r2_key: those objects are deleted after the batch.
-      onResults: (results) => {
-        for (const r of results)
-          for (const row of r.results as { r2_key?: string }[]) if (row.r2_key) fileKeys.push(row.r2_key);
-      },
-      // The row is written only while the contact is live, no legal hold stands on the contact, its client or a lead of theirs, and
-      // (erase only) the contact is on no issued document. Every following statement is guarded on this row.
-      auditFirst: (auditId, who) =>
-        auditRow(
-          db,
-          auditId,
-          who,
-          erase ? "contact.erase" : "contact.anonymise",
-          "c.client_id",
-          "json_object('contactId', c.id, 'mode', ?8, 'reason', ?9)",
-          `FROM contacts c JOIN clients cl ON cl.id = c.client_id
-           WHERE c.id = ?7 AND c.anonymised_at IS NULL AND c.legal_hold = 0 AND cl.legal_hold = 0 AND NOT ${HELD_LEAD_SQL}${erase ? ` AND NOT ${CONTACT_ON_ISSUED_DOCUMENT_SQL}` : ""}
-             AND NOT ${PAYMENTS_PENDING_ON_LAST("?7")}`,
-          [id, mode, reason],
-        ),
-      after: (g) => [
-        // 1. what the person wrote and what the bell shows about their leads (matched by the contact's email, before it changes)
-        db
-          .prepare(
-            `UPDATE lead_activities SET body = NULL WHERE lead_id IN (${MATCHED_LEADS}) AND body IS NOT NULL AND ${g.sql(2)}`,
-          )
-          .bind(id, ...g.params),
-        db
-          .prepare(
-            `DELETE FROM notifications WHERE entity_type = 'lead' AND entity_id IN (${MATCHED_LEADS}) AND ${g.sql(2)}`,
-          )
-          .bind(id, ...g.params),
-        db
-          .prepare(
-            `UPDATE leads SET contact_name = ?2, contact_email = ?3, contact_phone = NULL, contact_company = NULL, message = NULL, call_window = NULL, utm = NULL, source_page = NULL, referrer_host = NULL, next_action_note = NULL, consent = CASE WHEN consent IS NULL THEN NULL ELSE json_remove(consent, '$.ipHash') END, updated_at = ?4
-             WHERE id IN (${MATCHED_LEADS}) AND ${g.sql(5)}`,
-          )
-          .bind(id, ANONYMISED_CONTACT, anonymisedEmail(id), t, ...g.params),
-        // 2. sign-in access: sessions and links of this contact
-        ...deleteContactAccess(db, id, g),
-        // 2b. an individual client's notes and files go with its last live contact (owner, 2026-10-25; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11); a
-        //     business client's are never touched). The same conditions as step 3, in the same batch, before the contact changes.
-        //     The file rows come back (RETURNING) so their R2 objects can be deleted after the batch.
-        db
-          .prepare(`DELETE FROM notes WHERE ${LAST_LIVE_INDIVIDUAL("notes.client_id")} AND ${g.sql(2)}`)
-          .bind(id, ...g.params),
-        db
-          .prepare(
-            `DELETE FROM files WHERE ${LAST_LIVE_INDIVIDUAL("files.client_id")} AND ${g.sql(2)} RETURNING r2_key`,
-          )
-          .bind(id, ...g.params),
-        // 2b2. the notes of time entries on its projects and care plans (owner Q7, 2026-10-25; Researched 2026-10-28, Rule 34(2) CGST Rules (08-C RA-21)): a note can name the
-        //      person. Minutes, dates and who logged them stay (they back invoices and are staff records). Same conditions; a business
-        //      client's entries are never touched.
-        db.prepare(TIME_NOTE_CLEAR_SQL(g.sql(3))).bind(id, t, ...g.params),
-        // 2c. its projects keep only their codes, and their milestones become "Milestone 1, 2, ..." in order (owner, 2026-10-25;
-        //     free-text names can name the person; amounts, dates and statuses stay; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)). Same conditions.
-        db
-          .prepare(
-            `UPDATE milestones SET title = 'Milestone ' || (SELECT count(*) FROM milestones m2 WHERE m2.project_id = milestones.project_id AND m2.position <= milestones.position), updated_at = max(?2, updated_at + 1)
-             WHERE project_id IN (SELECT id FROM projects WHERE ${LAST_LIVE_INDIVIDUAL("projects.client_id")}) AND ${g.sql(3)}`,
-          )
-          .bind(id, t, ...g.params),
-        db
-          .prepare(
-            `UPDATE projects SET name = code, updated_at = max(?2, updated_at + 1) WHERE ${LAST_LIVE_INDIVIDUAL("projects.client_id")} AND ${g.sql(3)}`,
-          )
-          .bind(id, t, ...g.params),
-        // 2d. an individual's never-sent proposal and estimate drafts go with its last live contact (owner O-Q4, 2026-10-25; Researched 2026-10-29,
-        //     DPDP s.8(7), s.12(3) (08-C RB-37)). A sent version keeps its frozen copy (it is evidence of the offer and blocks the erase of the person
-        //     it names) (OPEN (08-C RB-37): may an unaccepted sent offer be kept against an erasure request, and for how long?).
-        //     The approvals of those drafts go first (they reference the document); a lead's link to a deleted draft is cleared by the
-        //     foreign key. Same conditions as step 3, in the same batch, before the contact changes.
-        //     The bell rows about those approvals go too, before the approvals do (their titles hold the draft's title). They go for EVERY approval of the
-        //     client's documents, issued invoices included (M5.1: an issue request's and an issued invoice's bell name the person); the approval rows stay.
-        //     The bell rows about any of the client's documents (a PDF that failed its check) go too, sent versions included: a bell is
-        //     not a record, and it names the document. Same conditions; a business client's bells stay.
-        db
-          .prepare(
-            `DELETE FROM notifications WHERE entity_type = 'document' AND entity_id IN (SELECT id FROM documents WHERE ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(2)}`,
-          )
-          .bind(id, ...g.params),
-        db
-          .prepare(
-            `DELETE FROM notifications WHERE entity_type = 'approval' AND entity_id IN (SELECT a.id FROM approvals a WHERE a.document_id IN (SELECT id FROM documents WHERE ${LAST_LIVE_INDIVIDUAL("documents.client_id")})) AND ${g.sql(2)}`,
-          )
-          .bind(id, ...g.params),
-        //     M5.1 (review 9; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11), DPDP): the individual's unissued INVOICE-family drafts go the same way (their line descriptions and milestone
-        //     titles can name the person), with the approvals asked for them. The milestone one of them was made from is freed first (it keeps its status and
-        //     amount; the draft is gone). An ISSUED invoice stays (the law keeps it), and so do its approvals, but the free text of an issue request (the
-        //     requester's reason, the owner's note) is cleared: it can name the person.
-        db
-          .prepare(
-            `UPDATE milestones SET document_id = NULL, updated_at = max(?2, updated_at + 1) WHERE document_id IN (SELECT id FROM documents WHERE type IN (${INVOICE_TYPES_SQL}) AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(3)}`,
-          )
-          .bind(id, t, ...g.params),
-        db
-          .prepare(
-            `UPDATE approvals SET reason = NULL, note = NULL WHERE kind = 'issue' AND document_id IN (SELECT id FROM documents WHERE frozen_at IS NOT NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(2)}`,
-          )
-          .bind(id, ...g.params),
-        // M5.4 (early check, finding 11): a care draft that goes keeps the record of its period (the job must never bill it again) but forgets the document, once.
-        db
-          .prepare(
-            `UPDATE care_invoices SET document_id = NULL WHERE document_id IN (SELECT id FROM documents WHERE type IN (${INVOICE_TYPES_SQL}) AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(2)}`,
-          )
-          .bind(id, ...g.params),
-        db
-          .prepare(
-            `DELETE FROM approvals WHERE document_id IN (SELECT id FROM documents WHERE type IN ('proposal', 'estimate', ${INVOICE_TYPES_SQL}) AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(2)}`,
-          )
-          .bind(id, ...g.params),
-        db
-          .prepare(
-            `DELETE FROM documents WHERE type IN ('proposal', 'estimate', ${INVOICE_TYPES_SQL}) AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")} AND ${g.sql(2)}`,
-          )
-          .bind(id, ...g.params),
-        // 3. an individual client's own record, when this is its last live contact (before the contact changes)
-        db
-          .prepare(
-            `UPDATE clients SET legal_name = ?2, display_name = ?2, billing_address = NULL, service_address = NULL, notes = NULL, tags = NULL, anonymised_at = ?3, updated_at = ?3
-             WHERE id = (SELECT client_id FROM contacts WHERE id = ?1) AND type = 'individual'
-               AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = clients.id AND o.id <> ?1 AND o.anonymised_at IS NULL) AND ${g.sql(4)}`,
-          )
-          .bind(id, ANONYMISED_CLIENT, t, ...g.params),
-        //    and its GSTIN, which holds the person's PAN: a registered one becomes unregistered (owner, 2026-10-25; issued
-        //    documents keep their own snapshot; Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28)). Its own statement, so the state trigger only meets
-        //    registered rows and an older client without a state still erases.
-        db
-          .prepare(
-            `UPDATE clients SET gstin = NULL, gst_status = 'unregistered'
-             WHERE id = (SELECT client_id FROM contacts WHERE id = ?1) AND type = 'individual' AND gst_status = 'registered'
-               AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = clients.id AND o.id <> ?1 AND o.anonymised_at IS NULL) AND ${g.sql(2)}`,
-          )
-          .bind(id, ...g.params),
-        // 3b. M6.1 (early check 2, finding 4; L31): its payments' free text and bells, once the client reads as anonymised (step 3, above; the trigger
-        //     `payments_fixed` / `payments_status_flow` allow these three columns to become NULL only then). The bells (`payment.verify`, `payment.decided`)
-        //     name the client; the entry's note, the Owner's decision note and the withdraw reason are words a person typed, and the `payment_verify` approval's
-        //     note copies the decision note. Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11): data kept for a legal duty may be used for it,
-        //     and the free text is not needed for it. Amounts, dates, references, proof and the TDS certificate stay untouched: they are tax records
-        //     (Researched 2026-10-28, s.36 CGST Act, Rules 56 and 57 (08-C RA-25)). Same conditions as step 3; a business client's are never touched.
-        db
-          .prepare(
-            `DELETE FROM notifications WHERE entity_type = 'payment' AND entity_id IN (SELECT id FROM payments WHERE ${LAST_LIVE_INDIVIDUAL("payments.client_id")}) AND ${g.sql(2)}`,
-          )
-          .bind(id, ...g.params),
-        db
-          .prepare(
-            `UPDATE approvals SET note = NULL WHERE kind = 'payment_verify' AND note IS NOT NULL AND payment_id IN (SELECT id FROM payments WHERE ${LAST_LIVE_INDIVIDUAL("payments.client_id")}) AND ${g.sql(2)}`,
-          )
-          .bind(id, ...g.params),
-        db
-          .prepare(
-            `UPDATE payments SET note = NULL, decision_note = NULL, withdraw_reason = NULL
-             WHERE (note IS NOT NULL OR decision_note IS NOT NULL OR withdraw_reason IS NOT NULL) AND ${LAST_LIVE_INDIVIDUAL("payments.client_id")}
-               AND EXISTS (SELECT 1 FROM clients pa WHERE pa.id = payments.client_id AND pa.anonymised_at IS NOT NULL) AND ${g.sql(2)}`,
-          )
-          .bind(id, ...g.params),
-        // 4. the contact itself. A business client's drafts may still be addressed to this contact: they lose the addressee first (a draft's
-        //    `contact_id` references the contact, and an erase deletes it), and the saved hash with it, so the draft is saved again with another
-        //    contact before it is sent or issued. An ANONYMISED contact does the same (M5.1 review 1: an invoice frozen with a contact the
-        //    draft's hash did not name could never get its PDF). A sent document names its contact, so that contact could not be erased at all.
-        //    A waiting or approved issue or discount request on such a draft expires first (it names the hash that is cleared next, and an expired request
-        //    never revives), and the draft's `updated_at` moves so a stale save is a 409 (M5.1 re-check, low 2).
-        //    One `approval.expire` audit row per request it expires (ids and the cause only), written BEFORE the update that changes the status (M5.1 L2).
-        db
-          .prepare(
-            `INSERT INTO audit_log (id, actor_type, actor_id, role, action, entity_type, entity_id, summary, ip, user_agent, request_id)
-             SELECT lower(hex(randomblob(16))), 'staff', ?3, ?4, 'approval.expire', 'approval', a.id,
-               json_object('approvalId', a.id, 'documentId', a.document_id, 'cause', 'contact_anonymised'), ?5, ?6, ?7
-             FROM approvals a WHERE a.status IN ('pending', 'approved') AND a.kind IN ('issue', 'discount')
-               AND a.document_id IN (SELECT id FROM documents WHERE contact_id = ?1 AND frozen_at IS NULL) AND ${g.sql(2)}`,
-          )
-          .bind(id, ...g.params, user.id, user.role, who.ip, who.ua, who.requestId),
-        db
-          .prepare(
-            `UPDATE approvals SET status = 'expired' WHERE status IN ('pending', 'approved') AND kind IN ('issue', 'discount') AND document_id IN (SELECT id FROM documents WHERE contact_id = ?1 AND frozen_at IS NULL) AND ${g.sql(2)}`,
-          )
-          .bind(id, ...g.params),
-        db
-          .prepare(
-            `UPDATE documents SET contact_id = NULL, content_sha256 = NULL, updated_at = max(updated_at + 1, ?2) WHERE contact_id = ?1 AND frozen_at IS NULL AND ${g.sql(3)}`,
-          )
-          .bind(id, t, ...g.params),
-        erase
-          ? db.prepare(`DELETE FROM contacts WHERE id = ?1 AND ${g.sql(2)}`).bind(id, ...g.params)
-          : db
-              .prepare(
-                `UPDATE contacts SET name = ?2, email = ?3, phone = NULL, title = NULL, is_primary = 0, is_billing = 0, portal_access = 0, can_see_finance = 0, marketing_consent = NULL, bounced_at = NULL, anonymised_at = ?4, updated_at = ?4 WHERE id = ?1 AND ${g.sql(5)}`,
-              )
-              .bind(id, ANONYMISED_CONTACT, anonymisedEmail(id), t, ...g.params),
-      ],
-    });
-    if (done) {
-      if (fileKeys.length) c.executionCtx.waitUntil(dropObjects(c.env, fileKeys, "client erased"));
-      return c.json({ ok: true, mode });
+    // T7 (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): erase mode redacts nothing (a frozen offer naming the person refuses the erase).
+    const plan = mode === "erase" ? null : await readRedactionPlan(c.env.DB, id);
+    if (plan) {
+      if (!plan.head) return err(c, NOT_FOUND, 404);
+      if (plan.head.anonymised_at !== null) return err(c, ANONYMISED, 409);
+      // A legal hold stops both modes, so it is answered before the offer cap (review row 2; the batch checks it again).
+      if (plan.head.held) return err(c, LEGAL_HOLD, 409);
+      if (plan.tooMany) return err(c, TOO_MANY_OFFERS, 409);
     }
-    // Nothing was written: say why.
-    const why = await c.env.DB.prepare(
-      `SELECT c.anonymised_at AS gone, (c.legal_hold = 1 OR cl.legal_hold = 1 OR ${HELD_LEAD_SQL}) AS held, ${CONTACT_ON_ISSUED_DOCUMENT_SQL} AS doc, ${PAYMENTS_PENDING_ON_LAST("?1")} AS pending FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1`,
-    )
-      .bind(id)
-      .first<{ gone: number | null; held: number; doc: number; pending: number }>();
-    if (!why) return err(c, NOT_FOUND, 404);
-    if (why.gone !== null) return err(c, ANONYMISED, 409);
-    if (why.held) return err(c, LEGAL_HOLD, 409);
-    if (erase && why.doc) return err(c, ON_ISSUED_DOCUMENT, 409);
-    if (why.pending) return err(c, PAYMENTS_PENDING, 409);
-    return err(c, NOT_AVAILABLE, 409);
+    return eraseBatch(c, id, mode, reason, plan);
   });
+
+/**
+ * The erase or anonymise batch, and its answer. Anonymise: when only the T7 read went out of date (the eligible offers, an offer's `redacted_at`, the
+ * contact, the last-live state or the client changed between the read and the batch) nothing was written and the answer is 409 `stale_version`.
+ */
+async function eraseBatch(
+  c: Ctx,
+  id: string,
+  mode: "erase" | "anonymise",
+  reason: string,
+  plan: RedactionPlan | null,
+): Promise<Response> {
+  const db = c.env.DB;
+  const t = Date.now();
+  const erase = mode === "erase";
+  const fileKeys: string[] = [];
+  const user = actor(c);
+  const who = requestInfo(c);
+  // T7: the read's conditions on the audit row (anonymise only; its placeholders follow ?9).
+  const fresh = plan ? redactionGuard(plan, 11) : null;
+  const done = await mutate(c, {
+    action: erase ? "contact.erase" : "contact.anonymise",
+    entityType: "client",
+    entityId: null,
+    // The only statement that returns rows is the files DELETE ... RETURNING r2_key: those objects are deleted after the batch.
+    onResults: (results) => {
+      for (const r of results)
+        for (const row of r.results as { r2_key?: string }[]) if (row.r2_key) fileKeys.push(row.r2_key);
+    },
+    // The row is written only while the contact is live, no legal hold stands on the contact, its client or a lead of theirs, and
+    // (erase only) the contact is on no issued document; (anonymise) the never-accepted offers naming them, the contact and its client are as read.
+    // Every following statement is guarded on this row.
+    auditFirst: (auditId, who) =>
+      auditRow(
+        db,
+        auditId,
+        who,
+        erase ? "contact.erase" : "contact.anonymise",
+        "c.client_id",
+        `json_object('contactId', c.id, 'mode', ?8, 'reason', ?9${fresh ? ", 'offers', CAST(?10 AS INTEGER)" : ""})`,
+        `FROM contacts c JOIN clients cl ON cl.id = c.client_id
+         WHERE c.id = ?7 AND c.anonymised_at IS NULL AND c.legal_hold = 0 AND cl.legal_hold = 0 AND NOT ${HELD_LEAD_SQL}${erase ? ` AND NOT ${CONTACT_ON_ISSUED_DOCUMENT_SQL}` : ""}
+           AND NOT ${PAYMENTS_PENDING_ON_LAST("?7")}${fresh ? ` AND ${fresh.sql}` : ""}`,
+        fresh && plan ? [id, mode, reason, plan.ids.length, ...fresh.params] : [id, mode, reason],
+      ),
+    after: (g, auditId) => [
+      // 1. what the person wrote and what the bell shows about their leads (matched by the contact's email, before it changes)
+      db
+        .prepare(
+          `UPDATE lead_activities SET body = NULL WHERE lead_id IN (${MATCHED_LEADS}) AND body IS NOT NULL AND ${g.sql(2)}`,
+        )
+        .bind(id, ...g.params),
+      db
+        .prepare(
+          `DELETE FROM notifications WHERE entity_type = 'lead' AND entity_id IN (${MATCHED_LEADS}) AND ${g.sql(2)}`,
+        )
+        .bind(id, ...g.params),
+      db
+        .prepare(
+          `UPDATE leads SET contact_name = ?2, contact_email = ?3, contact_phone = NULL, contact_company = NULL, message = NULL, call_window = NULL, utm = NULL, source_page = NULL, referrer_host = NULL, next_action_note = NULL, consent = CASE WHEN consent IS NULL THEN NULL ELSE json_remove(consent, '$.ipHash') END, updated_at = ?4
+           WHERE id IN (${MATCHED_LEADS}) AND ${g.sql(5)}`,
+        )
+        .bind(id, ANONYMISED_CONTACT, anonymisedEmail(id), t, ...g.params),
+      // 2. sign-in access: sessions and links of this contact
+      ...deleteContactAccess(db, id, g),
+      // 2b. an individual client's notes and files go with its last live contact (owner, 2026-10-25; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11); a
+      //     business client's are never touched). The same conditions as step 3, in the same batch, before the contact changes.
+      //     The file rows come back (RETURNING) so their R2 objects can be deleted after the batch.
+      db
+        .prepare(`DELETE FROM notes WHERE ${LAST_LIVE_INDIVIDUAL("notes.client_id")} AND ${g.sql(2)}`)
+        .bind(id, ...g.params),
+      db
+        .prepare(
+          `DELETE FROM files WHERE ${LAST_LIVE_INDIVIDUAL("files.client_id")} AND ${g.sql(2)} RETURNING r2_key`,
+        )
+        .bind(id, ...g.params),
+      // 2b2. the notes of time entries on its projects and care plans (owner Q7, 2026-10-25; Researched 2026-10-28, Rule 34(2) CGST Rules (08-C RA-21)): a note can name the
+      //      person. Minutes, dates and who logged them stay (they back invoices and are staff records). Same conditions; a business
+      //      client's entries are never touched.
+      db.prepare(TIME_NOTE_CLEAR_SQL(g.sql(3))).bind(id, t, ...g.params),
+      // 2c. its projects keep only their codes, and their milestones become "Milestone 1, 2, ..." in order (owner, 2026-10-25;
+      //     free-text names can name the person; amounts, dates and statuses stay; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)). Same conditions.
+      db
+        .prepare(
+          `UPDATE milestones SET title = 'Milestone ' || (SELECT count(*) FROM milestones m2 WHERE m2.project_id = milestones.project_id AND m2.position <= milestones.position), updated_at = max(?2, updated_at + 1)
+           WHERE project_id IN (SELECT id FROM projects WHERE ${LAST_LIVE_INDIVIDUAL("projects.client_id")}) AND ${g.sql(3)}`,
+        )
+        .bind(id, t, ...g.params),
+      db
+        .prepare(
+          `UPDATE projects SET name = code, updated_at = max(?2, updated_at + 1) WHERE ${LAST_LIVE_INDIVIDUAL("projects.client_id")} AND ${g.sql(3)}`,
+        )
+        .bind(id, t, ...g.params),
+      // 2d. an individual's never-sent proposal and estimate drafts go with its last live contact (owner O-Q4, 2026-10-25; Researched 2026-10-29,
+      //     DPDP s.8(7), s.12(3) (08-C RB-37)). A sent version keeps its frozen copy and blocks the erase of the person it names; on an anonymise, a
+      //     version that was never accepted loses the person's details in step 2e, and an accepted one stays whole (Settled by the lead on the safest
+      //     reading, 2026-10-30 (08-C RB-37)).
+      //     The approvals of those drafts go first (they reference the document); a lead's link to a deleted draft is cleared by the
+      //     foreign key. Same conditions as step 3, in the same batch, before the contact changes.
+      //     The bell rows about those approvals go too, before the approvals do (their titles hold the draft's title). They go for EVERY approval of the
+      //     client's documents, issued invoices included (M5.1: an issue request's and an issued invoice's bell name the person); the approval rows stay.
+      //     The bell rows about any of the client's documents (a PDF that failed its check) go too, sent versions included: a bell is
+      //     not a record, and it names the document. Same conditions; a business client's bells stay.
+      //     M6.1 (early check 2, finding 4; L31, L38): its payments' bells (`payment.verify`, `payment.decided`, which name the client) go in the same
+      //     statement, folded here to keep T7's budget of 45 D1 statements per request.
+      db
+        .prepare(
+          `DELETE FROM notifications WHERE ((entity_type = 'document' AND entity_id IN (SELECT id FROM documents WHERE ${LAST_LIVE_INDIVIDUAL("documents.client_id")}))
+             OR (entity_type = 'payment' AND entity_id IN (SELECT id FROM payments WHERE ${LAST_LIVE_INDIVIDUAL("payments.client_id")}))) AND ${g.sql(2)}`,
+        )
+        .bind(id, ...g.params),
+      db
+        .prepare(
+          `DELETE FROM notifications WHERE entity_type = 'approval' AND entity_id IN (SELECT a.id FROM approvals a WHERE a.document_id IN (SELECT id FROM documents WHERE ${LAST_LIVE_INDIVIDUAL("documents.client_id")})) AND ${g.sql(2)}`,
+        )
+        .bind(id, ...g.params),
+      //     M5.1 (review 9; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11), DPDP): the individual's unissued INVOICE-family drafts go the same way (their line descriptions and milestone
+      //     titles can name the person), with the approvals asked for them. The milestone one of them was made from is freed first (it keeps its status and
+      //     amount; the draft is gone). An ISSUED invoice stays (the law keeps it), and so do its approvals, but the free text of an issue request (the
+      //     requester's reason, the owner's note) is cleared: it can name the person. M6.1 (L31, L38): so is the note of a `payment_verify` approval (it
+      //     copies the Owner's decision note; such a row has no reason), folded into the same statement for T7's budget.
+      db
+        .prepare(
+          `UPDATE milestones SET document_id = NULL, updated_at = max(?2, updated_at + 1) WHERE document_id IN (SELECT id FROM documents WHERE type IN (${INVOICE_TYPES_SQL}) AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(3)}`,
+        )
+        .bind(id, t, ...g.params),
+      db
+        .prepare(
+          `UPDATE approvals SET reason = NULL, note = NULL WHERE ((kind = 'issue' AND document_id IN (SELECT id FROM documents WHERE frozen_at IS NOT NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}))
+             OR (kind = 'payment_verify' AND payment_id IN (SELECT id FROM payments WHERE ${LAST_LIVE_INDIVIDUAL("payments.client_id")}))) AND ${g.sql(2)}`,
+        )
+        .bind(id, ...g.params),
+      // M5.4 (early check, finding 11): a care draft that goes keeps the record of its period (the job must never bill it again) but forgets the document, once.
+      db
+        .prepare(
+          `UPDATE care_invoices SET document_id = NULL WHERE document_id IN (SELECT id FROM documents WHERE type IN (${INVOICE_TYPES_SQL}) AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(2)}`,
+        )
+        .bind(id, ...g.params),
+      db
+        .prepare(
+          `DELETE FROM approvals WHERE document_id IN (SELECT id FROM documents WHERE type IN ('proposal', 'estimate', ${INVOICE_TYPES_SQL}) AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(2)}`,
+        )
+        .bind(id, ...g.params),
+      db
+        .prepare(
+          `DELETE FROM documents WHERE type IN ('proposal', 'estimate', ${INVOICE_TYPES_SQL}) AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")} AND ${g.sql(2)}`,
+        )
+        .bind(id, ...g.params),
+      // 2e. (anonymise) T7: the personal details in the frozen copy of every proposal or estimate that was never accepted and names this person
+      //     (addressed to them, declined by them, or any offer of an individual client whose last live contact they are) are replaced, the decision note
+      //     cleared, its child rows marked, the offer withdrawn (sends cancelled, the group's links revoked when it is the newest version), its bells
+      //     deleted and its approvals' free text cleared; one `document.redact` audit row each (Settled by the lead on the safest reading, 2026-10-30
+      //     (08-C RB-37)). Before steps 3 and 4: the eligibility reads the live email and the last-live state. Accepted offers stay untouched.
+      ...(plan
+        ? redactionStatements(db, plan, g, {
+            contactId: id,
+            eraseAuditId: auditId,
+            t,
+            actor: { id: user.id, role: user.role },
+            ip: who.ip,
+            ua: who.ua,
+            requestId: who.requestId,
+          })
+        : []),
+      // 3. an individual client's own record, when this is its last live contact (before the contact changes)
+      db
+        .prepare(
+          `UPDATE clients SET legal_name = ?2, display_name = ?2, billing_address = NULL, service_address = NULL, notes = NULL, tags = NULL, anonymised_at = ?3, updated_at = ?3
+           WHERE id = (SELECT client_id FROM contacts WHERE id = ?1) AND type = 'individual'
+             AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = clients.id AND o.id <> ?1 AND o.anonymised_at IS NULL) AND ${g.sql(4)}`,
+        )
+        .bind(id, ANONYMISED_CLIENT, t, ...g.params),
+      //    and its GSTIN, which holds the person's PAN: a registered one becomes unregistered (owner, 2026-10-25; issued
+      //    documents keep their own snapshot; Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28)). Its own statement, so the state trigger only meets
+      //    registered rows and an older client without a state still erases.
+      db
+        .prepare(
+          `UPDATE clients SET gstin = NULL, gst_status = 'unregistered'
+           WHERE id = (SELECT client_id FROM contacts WHERE id = ?1) AND type = 'individual' AND gst_status = 'registered'
+             AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = clients.id AND o.id <> ?1 AND o.anonymised_at IS NULL) AND ${g.sql(2)}`,
+        )
+        .bind(id, ...g.params),
+      // 3b. M6.1 (early check 2, finding 4; L31): its payments' free text, once the client reads as anonymised (step 3, above; the triggers
+      //     `payments_fixed` / `payments_status_flow` allow these three columns to become NULL only then): the entry's note, the Owner's decision note and
+      //     the withdraw reason are words a person typed. Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11): data kept for a legal duty may
+      //     be used for it, and the free text is not needed for it. Amounts, dates, references, proof and the TDS certificate stay untouched: they are tax
+      //     records (Researched 2026-10-28, s.36 CGST Act, Rules 56 and 57 (08-C RA-25)). Same conditions as step 3; a business client's are never touched.
+      //     The bells and the `payment_verify` note went with the document bells and the issue-request notes (step 2d).
+      db
+        .prepare(
+          `UPDATE payments SET note = NULL, decision_note = NULL, withdraw_reason = NULL
+           WHERE (note IS NOT NULL OR decision_note IS NOT NULL OR withdraw_reason IS NOT NULL) AND ${LAST_LIVE_INDIVIDUAL("payments.client_id")}
+             AND EXISTS (SELECT 1 FROM clients pa WHERE pa.id = payments.client_id AND pa.anonymised_at IS NOT NULL) AND ${g.sql(2)}`,
+        )
+        .bind(id, ...g.params),
+      // 4. the contact itself. A business client's drafts may still be addressed to this contact: they lose the addressee first (a draft's
+      //    `contact_id` references the contact, and an erase deletes it), and the saved hash with it, so the draft is saved again with another
+      //    contact before it is sent or issued. An ANONYMISED contact does the same (M5.1 review 1: an invoice frozen with a contact the
+      //    draft's hash did not name could never get its PDF). A sent document names its contact, so that contact could not be erased at all.
+      //    A waiting or approved issue or discount request on such a draft expires first (it names the hash that is cleared next, and an expired request
+      //    never revives), and the draft's `updated_at` moves so a stale save is a 409 (M5.1 re-check, low 2).
+      //    One `approval.expire` audit row per request it expires (ids and the cause only), written BEFORE the update that changes the status (M5.1 L2).
+      db
+        .prepare(
+          `INSERT INTO audit_log (id, actor_type, actor_id, role, action, entity_type, entity_id, summary, ip, user_agent, request_id)
+           SELECT lower(hex(randomblob(16))), 'staff', ?3, ?4, 'approval.expire', 'approval', a.id,
+             json_object('approvalId', a.id, 'documentId', a.document_id, 'cause', 'contact_anonymised'), ?5, ?6, ?7
+           FROM approvals a WHERE a.status IN ('pending', 'approved') AND a.kind IN ('issue', 'discount')
+             AND a.document_id IN (SELECT id FROM documents WHERE contact_id = ?1 AND frozen_at IS NULL) AND ${g.sql(2)}`,
+        )
+        .bind(id, ...g.params, user.id, user.role, who.ip, who.ua, who.requestId),
+      db
+        .prepare(
+          `UPDATE approvals SET status = 'expired' WHERE status IN ('pending', 'approved') AND kind IN ('issue', 'discount') AND document_id IN (SELECT id FROM documents WHERE contact_id = ?1 AND frozen_at IS NULL) AND ${g.sql(2)}`,
+        )
+        .bind(id, ...g.params),
+      db
+        .prepare(
+          `UPDATE documents SET contact_id = NULL, content_sha256 = NULL, updated_at = max(updated_at + 1, ?2) WHERE contact_id = ?1 AND frozen_at IS NULL AND ${g.sql(3)}`,
+        )
+        .bind(id, t, ...g.params),
+      erase
+        ? db.prepare(`DELETE FROM contacts WHERE id = ?1 AND ${g.sql(2)}`).bind(id, ...g.params)
+        : db
+            .prepare(
+              `UPDATE contacts SET name = ?2, email = ?3, phone = NULL, title = NULL, is_primary = 0, is_billing = 0, portal_access = 0, can_see_finance = 0, marketing_consent = NULL, bounced_at = NULL, anonymised_at = ?4, updated_at = ?4 WHERE id = ?1 AND ${g.sql(5)}`,
+            )
+            .bind(id, ANONYMISED_CONTACT, anonymisedEmail(id), t, ...g.params),
+    ],
+  });
+  if (done) {
+    if (fileKeys.length) c.executionCtx.waitUntil(dropObjects(c.env.FILES, fileKeys, "client erased"));
+    // T7: the redacted offers' envelopes and PDFs go after the batch (write-once `DOCS`; a failed delete is logged by key for the M7.4 sweep).
+    if (plan?.keys.length) c.executionCtx.waitUntil(dropOfferObjects(c.env, plan.keys));
+    return c.json({ ok: true, mode });
+  }
+  // Nothing was written: say why.
+  const why = await c.env.DB.prepare(
+    `SELECT c.anonymised_at AS gone, (c.legal_hold = 1 OR cl.legal_hold = 1 OR ${HELD_LEAD_SQL}) AS held, ${CONTACT_ON_ISSUED_DOCUMENT_SQL} AS doc, ${PAYMENTS_PENDING_ON_LAST("?1")} AS pending FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1`,
+  )
+    .bind(id)
+    .first<{ gone: number | null; held: number; doc: number; pending: number }>();
+  if (!why) return err(c, NOT_FOUND, 404);
+  if (why.gone !== null) return err(c, ANONYMISED, 409);
+  if (why.held) return err(c, LEGAL_HOLD, 409);
+  if (erase && why.doc) return err(c, ON_ISSUED_DOCUMENT, 409);
+  // L25: a payment of the individual client waits for the Owner's check (07-ZH line 22).
+  if (why.pending) return err(c, PAYMENTS_PENDING, 409);
+  // Anonymise: what remains is the T7 read gone out of date (409 at once, nothing written).
+  return err(c, plan ? STALE_VERSION : NOT_AVAILABLE, 409);
+}

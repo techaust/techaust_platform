@@ -26,7 +26,19 @@ export const legal = validateLegal({
       },
     ],
   },
-  terms: draft01("First published draft."),
+  // T6, 07-ZE "Versions" (owner, 2026-10-31): Terms 0.2, word for word.
+  terms: {
+    version: "0.2",
+    effective: "2026-10-31",
+    changes: [
+      { version: "0.1", date: "2026-10-22", note: "First published draft." },
+      {
+        version: "0.2",
+        date: "2026-10-31",
+        note: "How to accept a proposal or estimate, and that a newer version replaces earlier ones; your rights as a consumer are not limited; arbitration for clients outside India.",
+      },
+    ],
+  },
   // 07-A §3, "Changes in 0.2 (2026-10-28)", word for word (08-C RB-07, RB-24, RA-03).
   "refund-policy": {
     version: "0.2",

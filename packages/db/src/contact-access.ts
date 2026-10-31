@@ -1,7 +1,7 @@
 // What ends a contact's client-portal access, and what keeps a contact from being erased (M3.3, ADM-CLI-02, ADM-CLI-05,
 // POR-01). They return prepared statements for the caller's own `db.batch()`, each written only while the caller's guard holds
 // (the request's audit row), so the access ends in the same batch as the change that asked for it. Researched 2026-10-29,
-// DPDP s.8(5), s.12(3), s.17(1)(a) (08-C RB-37), with its OPEN parts.
+// DPDP s.8(5), s.12(3), s.17(1)(a) (08-C RB-37); its open parts: Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37): accepted offers are kept as long as the tax records; for a never-accepted sent offer the person's data is erased in the frozen copy on request (T7; until then erase is refused).
 // Subpath export (`@techaust/db/contact-access`) so a Worker importing it doesn't pull in the Drizzle schema.
 import type { GuardSql } from "./log.ts";
 
@@ -17,6 +17,14 @@ import type { GuardSql } from "./log.ts";
  */
 export const CONTACT_ON_ISSUED_DOCUMENT_SQL =
   "(EXISTS (SELECT 1 FROM acceptances a WHERE a.contact_id = c.id) OR EXISTS (SELECT 1 FROM documents d2 WHERE d2.decided_contact_id = c.id) OR EXISTS (SELECT 1 FROM documents d WHERE d.client_id = c.client_id AND d.frozen_at IS NOT NULL AND (cl.type = 'individual' OR lower(json_extract(d.recipient, '$.email')) = c.email OR json_extract(d.recipient, '$.contactId') = c.id)))";
+
+/**
+ * A condition on `contacts c`: a lead of this person (made from the contact, or by its email at its client or at none) is under a legal hold, so the
+ * person can be neither erased nor anonymised (the erase route's audit-first row, its "why" read, and the T7 redaction read, which answers the hold
+ * before `too_many_offers`).
+ */
+export const HELD_LEAD_SQL =
+  "EXISTS (SELECT 1 FROM leads l WHERE l.legal_hold = 1 AND (l.contact_id = c.id OR (l.contact_email = c.email AND (l.client_id IS NULL OR l.client_id = c.client_id))))";
 
 /**
  * Portal access off, or a changed email: every live session of the contact is revoked, every unused sign-in link deleted, and (M4.5, docs/13

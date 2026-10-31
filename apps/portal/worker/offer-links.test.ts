@@ -344,3 +344,45 @@ describe("accepting and declining from the link [ADM-PROP-08]", () => {
     ).toBe("expired");
   });
 });
+
+// T7 (Q1 = A, owner 2026-10-31; Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): a link to a redacted offer opens nothing; an older version's
+// link whose newer version was redacted says "superseded", and that newer version is a 404. [POR-06, ADM-PROP-08]
+describe("links and a redacted offer", () => {
+  const redact = (id: string) =>
+    env.DB.prepare("UPDATE documents SET redacted_at = ?2 WHERE id = ?1").bind(id, Date.now()).run();
+
+  it("a live link to a redacted offer: open, PDF, accept and decline are 404 and nothing is decided", async () => {
+    const { offer, token } = await setup();
+    await redact(offer.id);
+    expect((await open(token)).status).toBe(404);
+    expect((await call("/t/offer/pdf", { body: { token, documentId: offer.id } })).status).toBe(404);
+    const accepted = await call("/t/offer/accept", {
+      body: { token, documentId: offer.id, typedName: "Linked Person", agree: true },
+    });
+    expect(accepted.status).toBe(404);
+    const declined = await call("/t/offer/decline", {
+      body: { token, documentId: offer.id, reason: "price" },
+    });
+    expect(declined.status).toBe(404);
+    expect(await countOf("acceptances", "document_id = ?", offer.id)).toBe(0);
+    expect(await one("SELECT status, decided_at FROM documents WHERE id = ?", offer.id)).toEqual({
+      status: "sent",
+      decided_at: null,
+    });
+  });
+
+  it("v1's link after v2 was redacted: v1 is superseded, v2 is a 404", async () => {
+    const { f, offer, token } = await setup();
+    const v2 = await mkOffer(f.a, { groupId: offer.groupId, version: 2, number: offer.number });
+    await redact(v2.id);
+    const onV1 = await call("/t/offer/accept", {
+      body: { token, documentId: offer.id, typedName: "Linked Person", agree: true },
+    });
+    expect(onV1.status).toBe(409);
+    expect(await codeOf(onV1)).toBe("superseded");
+    const onV2 = await call("/t/offer/accept", {
+      body: { token, documentId: v2.id, typedName: "Linked Person", agree: true },
+    });
+    expect(onV2.status).toBe(404);
+  });
+});

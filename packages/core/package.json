@@ -40,6 +40,7 @@
     "./numbering": "./src/numbering.ts",
     "./pdf-jobs": "./src/pdf-jobs.ts",
     "./permissions": "./src/permissions.ts",
+    "./redaction": "./src/redaction.ts",
     "./reply-templates": "./src/reply-templates.ts",
     "./settings": "./src/schemas/settings.ts",
     "./statement": "./src/statement.ts",

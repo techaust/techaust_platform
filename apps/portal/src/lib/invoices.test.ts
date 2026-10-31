@@ -3,12 +3,16 @@
 
 import { PROFORMA_PDF_COPY } from "@techaust/pdf/copy";
 import { describe, expect, it } from "vitest";
+import { RequestError } from "../api.ts";
 import { documentWord, INV } from "../copy-invoices.ts";
+import { WITHDRAWN_ZF } from "../copy-zf.ts";
+import routeSource from "../routes/invoices.tsx?raw";
 import {
   clientStatus,
   minusMoneyText,
   moneyText,
   noteReasonLines,
+  pdfFailure,
   qtyText,
   takeInvoiceToken,
   totalsRows,
@@ -88,6 +92,11 @@ describe("the client's status [POR-06]", () => {
     expect(clientStatus(d({ status: "converted", type: "proforma", balanceMinor: 50 }), today)).toBe("due");
     expect(clientStatus(d({ status: "void" }), today)).toBe("void");
     expect(clientStatus(d({ type: "credit_note", balanceMinor: 0, dueDate: null }), today)).toBeNull();
+  });
+  it("ADM-INV-10: a withdrawn payment request reads Withdrawn (its balance is null), never Paid", () => {
+    const w = { type: "proforma", status: "withdrawn", balanceMinor: null, dueDate: null };
+    expect(clientStatus(w, today)).toBe("withdrawn");
+    expect(clientStatus({ ...w, balanceMinor: 100, dueDate: "2026-11-01" }, today)).toBe("withdrawn");
   });
 });
 
@@ -176,5 +185,44 @@ describe("the invoice link's token (POR-06)", () => {
     expect(takeInvoiceToken({ pathname: "/o", search: "", hash: `#t=${token}` }, hist, store())).toBeNull();
     expect(takeInvoiceToken({ pathname: "/i", search: "", hash: "#t=short" }, hist, store())).toBeNull();
     expect(takeInvoiceToken({ pathname: "/i", search: "", hash: `#t=${token}` }, hist, null)).toBe(token);
+  });
+});
+
+describe("a PDF download that fails (ADM-INV-10, review L3) [POR-06]", () => {
+  const otherwise = () => "OTHER";
+  it("409 withdrawn: 07-ZF 20, word for word, and the page loads the document again (its withdrawn view)", () => {
+    const r = pdfFailure(new RequestError(409, "withdrawn", "withdrawn"), otherwise);
+    expect(r).toEqual({ text: WITHDRAWN_ZF.pdfRefused, reload: true });
+    expect(r.text).toBe("The PDF isn't available because this payment request was withdrawn.");
+  });
+  it("every other answer keeps the page as it is", () => {
+    expect(pdfFailure(new RequestError(409, "pdf_pending", "x"), otherwise)).toEqual({
+      text: INV.pdfNotReady,
+      reload: false,
+    });
+    expect(pdfFailure(new RequestError(404, "not_found", "x"), otherwise)).toEqual({
+      text: INV.linkEnded,
+      reload: false,
+    });
+    expect(pdfFailure(new RequestError(500, "server", "x"), otherwise)).toEqual({
+      text: "OTHER",
+      reload: false,
+    });
+    expect(pdfFailure(new TypeError("offline"), otherwise)).toEqual({ text: "OTHER", reload: false });
+  });
+});
+
+describe("re-check N2: another document starts without the last one's download message [POR-06]", () => {
+  it("clears the message when the page loads a different document, and keeps it on the in-place refresh (L3)", () => {
+    const effect = routeSource.slice(
+      routeSource.indexOf("alive.current = true;"),
+      routeSource.indexOf("[load, props.loadKey]"),
+    );
+    expect(effect).toMatch(/setPdfProblem\(null\);\s*load\(\);/);
+    const refresh = routeSource.slice(
+      routeSource.indexOf("const refresh = useCallback"),
+      routeSource.indexOf("}, [source]);", routeSource.indexOf("const refresh = useCallback")),
+    );
+    expect(refresh).not.toContain("setPdfProblem");
   });
 });

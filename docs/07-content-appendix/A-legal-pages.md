@@ -5,6 +5,7 @@
 | **Status** | **v0.3 (2026-10-28), researched.** Drafted without a lawyer, at the owner's request, from [08-B](../08-research-appendix/B-dpdp-legal.md) and checked against the research register [08-C](../08-research-appendix/C-research-register.md) (owner rule 8). Each legal point carries **(Researched, 08-C <ID>)** or **(OPEN, 08-C <ID>)**; the OPEN points are the lawyer's list (08-C §5). Not legal advice. |
 | **Changes in v0.2** | 2026-10-07: privacy §7a (EU/UK), backups, consent records kept 3 years, and the new §8 accessibility statement. |
 | **Changes in v0.3** | 2026-10-28 (08-C): complaints are resolved within one month (not "aim to") and you get a copy of your complaint as we recorded it; refunds may go to another account in your own name; the GST line on refunds names the time limit; new §9 notices on screens. Each changed page's version line and "Changes" section say so. |
+| **Changes in v0.4** | 2026-10-31 ([07-ZE](ZE-terms-offers-deed.md), owner-approved): how to accept, and newer versions replace older ones; consumer rights not limited; arbitration for overseas clients (Terms 0.2, built in T6). Deed of assignment on full payment (Delivery 0.2, 07-ZE line 16) waits for T11: it is published only once the deed can be made. |
 | **Placeholders** | `{{postal_address}}` (🟧 OWNER) · `{{effective_date}}` (set at launch) · `privacy@`/`security@` aliases (🟧 OWNER creates them in Zoho) |
 | **Identity rule** | Owner decision: legal pages name "TecHaust Technologies, a sole proprietorship based in Balurghat, West Bengal" and the Grievance Officer **Rupak Sarkar (Founder)**. **No GSTIN on the website.** |
 | **Website notice** | Each page shows "Version X · Effective {{date}}" and a short changelog at the bottom. |
@@ -128,6 +129,8 @@ We'll post changes here and update the date. For significant changes affecting c
 ---
 
 ## 2. Website terms of use (`/terms`)
+
+**Version 0.2 (2026-10-31):** §7, §10 and §12 as changed by [07-ZE](ZE-terms-offers-deed.md) lines 13, 14 and 15, with line 6 after §12 (the text lives there, word for word; the site is `apps/web/src/content/legal-pages.ts`). The items below are version 0.1.
 
 1. **About these terms.** These terms apply to your use of techaust.com and our client portal. The site is run by TecHaust Technologies, a sole proprietorship based at {{postal_address}}, India. By using the site, you agree to these terms.
 2. **Information, not an offer.** The site describes our services. Prices marked "from" are **indicative starting prices for the minimum scope described**. Every engagement is agreed in a **written proposal** (and, where used, a master services agreement). If anything on this site conflicts with your proposal or contract, the proposal or contract wins.

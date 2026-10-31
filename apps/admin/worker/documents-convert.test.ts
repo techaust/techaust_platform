@@ -1,6 +1,7 @@
 // Estimate -> invoice draft, the lead convert's full draft, and the privacy rules of a proposal [ADM-EST-02, ADM-LEAD-04, ADM-CLI-05, O-Q4].
 // Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17): the draft type for each advance mode, and what erasing or anonymising a person does to the offers addressed to them.
 import { env } from "cloudflare:workers";
+import { ANONYMISED_CLIENT } from "@techaust/core/clients";
 import { beforeAll, describe, expect, it } from "vitest";
 import { invoiceTypeFor } from "./document-convert.ts";
 import { putPaymentTerms } from "./test-catalogue.ts";
@@ -364,11 +365,11 @@ describe("the lead convert builds the full draft [ADM-LEAD-04; M3.2 convert uses
 });
 
 // ---------------------------------------------------------------------------------------------------------------
-describe("a sent offer and the people it names [ADM-CLI-05, O-Q4; OPEN (08-C RB-37)]", () => {
+describe("a sent offer and the people it names [ADM-CLI-05, O-Q4; Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)]", () => {
   const erase = (cookie: string, contactId: string, mode: "erase" | "anonymise") =>
     call(`/contacts/${contactId}/erase`, { cookie, body: { mode, reason: "requested" } });
 
-  it("a business contact named on a sent proposal, whose email changed since: erase is refused (409), anonymise works; the frozen copy stays", async () => {
+  it("a business contact named on a sent proposal, whose email changed since: erase is refused (409), anonymise works and redacts the never-accepted frozen copy (T7)", async () => {
     const o = await owner();
     const made = await mkDraft(o);
     const v = await getDoc(o, made.id);
@@ -386,14 +387,15 @@ describe("a sent offer and the people it names [ADM-CLI-05, O-Q4; OPEN (08-C RB-
       "SELECT recipient, status FROM documents WHERE id = ?",
       made.id,
     );
-    expect(JSON.parse(row?.recipient ?? "{}")).toMatchObject({
-      contactId: made.contactId,
-      contactName: "Asha Rao",
-    });
+    // T7 (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): never accepted, so the contact's details leave the frozen copy; the
+    // contact's id, the business and the status stay.
+    const recipient = JSON.parse(row?.recipient ?? "{}");
+    expect(recipient).toMatchObject({ contactId: made.contactId, contactName: ANONYMISED_CLIENT });
+    expect(recipient).not.toHaveProperty("email");
     expect(row?.status).toBe("sent");
   });
 
-  it("O-Q4: an individual's last contact erased: the never-sent drafts go (with their approvals), the sent version stays", async () => {
+  it("O-Q4: an individual's last contact erased: the never-sent drafts go (with their approvals), the sent version stays, redacted (T7)", async () => {
     const o = await owner();
     const client = await mkQuoteClient({ type: "individual" });
     const sold = await mkDraft(o, { clientId: client.clientId, contactId: client.contactId });
@@ -444,8 +446,11 @@ describe("a sent offer and the people it names [ADM-CLI-05, O-Q4; OPEN (08-C RB-
       await countOf("document_lines", "document_id IN (?, ?, ?)", draft.id, revision.id, estimate.id),
     ).toBe(0);
     expect(
-      await one("SELECT status, frozen_at IS NOT NULL AS frozen FROM documents WHERE id = ?", sold.id),
-    ).toEqual({ status: "sent", frozen: 1 });
+      await one(
+        "SELECT status, frozen_at IS NOT NULL AS frozen, redacted_at IS NOT NULL AS redacted FROM documents WHERE id = ?",
+        sold.id,
+      ),
+    ).toEqual({ status: "sent", frozen: 1, redacted: 1 }); // T7: the never-accepted sent version is redacted (08-C RB-37)
     expect(await one("SELECT proposal_id FROM leads WHERE id = ?", lead)).toEqual({ proposal_id: null });
   });
 

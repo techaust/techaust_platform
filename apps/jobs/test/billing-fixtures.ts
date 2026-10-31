@@ -302,6 +302,20 @@ export async function mkSend(
   return id;
 }
 
+/**
+ * Voids an issued document the way the void route does (status, `voided_at` and the reason together, 0038's pairing).
+ * ADM-INV-10 (0056 `document_sends_not_void`): a void invoice-family document takes no send row, so a fixture that
+ * needs "a send for a void document" issues, sends, then calls this.
+ */
+export async function voidDoc(doc: { id: string }) {
+  await run(
+    "UPDATE documents SET status = 'void', voided_at = 5, void_reason = 'x', updated_at = 7001 WHERE id = ?1",
+    doc.id,
+  );
+  const row = await one<{ status: string }>("SELECT status FROM documents WHERE id = ?1", doc.id);
+  if (row?.status !== "void") throw new Error("voidDoc: the document did not void");
+}
+
 export async function mkReminder(
   doc: { id: string },
   offset: number,

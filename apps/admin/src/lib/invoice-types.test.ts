@@ -1,7 +1,7 @@
 // The M5.2 screens' pure rules [ADM-INV-06, -08, -10, -18, ADM-SET-02, -03]: 07-S word for word, the seven new blocker lines and where each is fixed,
 // both lines when the ₹50,000 rule comes with an address blocker, the new badges, the rate as typed (core's parse), the advance checks, the LUT list
 // and the purpose code. Sample data only.
-import { INVOICE_CHECKLIST } from "@techaust/core/invoices";
+import { INVOICE_CHECKLIST, PROFORMA_NOTICE } from "@techaust/core/invoices";
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
 import {
@@ -31,6 +31,7 @@ import {
   lutsByYear,
   proformaDraftTitle,
   proformaLockedLine,
+  proformaNoticeOf,
   rateDateFollows,
   rateDayEarlier,
   splitAdvanceRefusal,
@@ -361,7 +362,8 @@ describe("the payment received against a proforma (Q9)", () => {
     expect([INVT_COPY.routeLut, INVT_COPY.routeIgst]).toEqual(["Under LUT, without IGST", "With IGST paid"]);
     expect(proformaDraftTitle("Sample Client (fake)")).toBe("Draft proforma for Sample Client (fake)");
     expect(proformaLockedLine("27 Oct 2026", "Asha (fake)")).toBe(
-      "Issued 27 Oct 2026 by Asha (fake). This proforma is locked. If it's wrong and it hasn't been emailed, opened by the client, paid or converted, void it and issue a new one.",
+      // ADM-INV-10: 07-ZF 17 (owner 2026-10-31) replaced the end of 07-ZA §10's line
+      "Issued 27 Oct 2026 by Asha (fake). This proforma is locked. If it's wrong and nothing has been paid or converted, void it if the client hasn't received it yet, or withdraw it if they have, then issue a new one.",
     );
     expect(invErrorText(new RequestError(409, "advance_supply_changed", "x"))).toBe(
       "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's details with your CA before recording the payment.",
@@ -417,5 +419,24 @@ describe("the purpose code", () => {
     expect(checkPurposeCode(" p0802 ")).toEqual({ ok: true, value: "P0802" });
     expect(checkPurposeCode("")).toEqual({ ok: true, value: null });
     expect(checkPurposeCode("P802").ok).toBe(false);
+  });
+});
+
+describe("the proforma panel's statutory line (ADM-INV-10, review L5)", () => {
+  const view = (status: string, notice: string | null = PROFORMA_NOTICE) => ({
+    status,
+    proforma: { notice },
+  });
+  it("an issued, part-paid or converted proforma keeps the line it was sealed with", () => {
+    for (const s of ["issued", "part_paid", "converted"])
+      expect(proformaNoticeOf(view(s))).toBe(PROFORMA_NOTICE);
+    expect(PROFORMA_NOTICE).toContain("A tax invoice will be issued when payment is received.");
+  });
+  it("a void proforma, withdrawn or voided, promises no tax invoice: no line, as on the portal", () => {
+    expect(proformaNoticeOf(view("void"))).toBeNull();
+  });
+  it("nothing sealed, nothing shown; not a proforma, nothing shown", () => {
+    expect(proformaNoticeOf(view("issued", null))).toBeNull();
+    expect(proformaNoticeOf({ status: "issued", proforma: null })).toBeNull();
   });
 });

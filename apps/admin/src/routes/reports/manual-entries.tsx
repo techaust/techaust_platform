@@ -1,4 +1,4 @@
-// FX-4 (full audit A5 1; early check L2, L3): the tax-only notes whose tax the GSTR-1 files leave out (08-C RA-32, RA-23, both OPEN). They are the
+// FX-4 (full audit A5 1; early check L2, L3): the tax-only notes whose tax the GSTR-1 files leave out (Settled by the lead on the safest reading, 2026-10-30 (08-C RA-32, RA-23): entered by hand in the GST portal's Table 9B; a test import of each CSV before the first GSTR-1). They are the
 // blocking warnings: the files are made, but they are not complete for filing until the person enters each note's tax by hand. Each note keeps the
 // builder's sentence (07-Y, marked) and gets a small ledger of what to enter, one row per GST rate (`manual.byRate`), with only the heads that carry tax
 // and a total row when there is more than one rate. Amounts come from core (`moneyText` through `Amount`); nothing here adds them up.

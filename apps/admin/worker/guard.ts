@@ -210,6 +210,8 @@ export const ROUTES: readonly RouteDef[] = [
   X("POST", "/invoices/:id/issue", "invoices.issue", { audit: "invoice.issue" }),
   X("POST", "/invoices/:id/issue-request", "invoices.draft", { audit: "approval.request" }),
   X("POST", "/invoices/:id/void", "invoices.void", { audit: "invoice.void" }),
+  // ADM-INV-10 (owner, 2026-10-30, docs/13): withdrawing a proforma the client has received (Owner, step-up; Q1).
+  X("POST", "/invoices/:id/withdraw", "invoices.withdraw", { audit: "invoice.withdraw" }),
   // M5.2: the day the service was completed (set once), and the tax invoice for money received against a proforma (Q9: Owner only, with a fresh code).
   X("POST", "/invoices/:id/service-completed", "invoices.draft", { audit: "invoice.service_completed" }),
   X("POST", "/invoices/:id/advance-invoice", "invoices.advance", { audit: "invoice.advance_issue" }),

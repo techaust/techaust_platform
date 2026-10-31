@@ -16,6 +16,7 @@ import {
 } from "@techaust/core/invoices";
 import { fyLabelOfToken } from "@techaust/core/pdf-jobs";
 import type { Currency } from "../api.ts";
+import { PROFORMA_LOCKED_END } from "./copy-zf.ts";
 import { dayText, moneyText } from "./documents.ts";
 import { moneyFrom } from "./settings-form.ts";
 
@@ -122,7 +123,16 @@ export const isHouseRule = (item: { id: string; houseRule?: boolean | undefined 
 export const proformaDraftTitle = (clientName: string) => `Draft proforma for ${clientName}`;
 /** 07-S §8: the issued proforma's locked banner. */
 export const proformaLockedLine = (date: string, name: string) =>
-  `Issued ${date} by ${name}. This proforma is locked. If it's wrong and it hasn't been emailed, opened by the client, paid or converted, void it and issue a new one.`;
+  `Issued ${date} by ${name}. This proforma is locked. ${PROFORMA_LOCKED_END}`;
+
+/**
+ * 07-ZA 15's statutory line on an issued proforma ("This is not a tax invoice. A tax invoice will be issued when payment is received."). A void
+ * proforma, withdrawn ones included, promises no tax invoice, so the panel leaves the line out, as the portal does (ADM-INV-10, review L5).
+ */
+export const proformaNoticeOf = (v: {
+  status: string;
+  proforma?: { notice: string | null } | null | undefined;
+}) => (v.status === "void" ? null : (v.proforma?.notice ?? null));
 
 /** 07-S §4 "Source" options, by the API's codes. */
 export const FX_SOURCE_LABELS: Record<FxSourceCode, string> = {

@@ -52,6 +52,8 @@ export type InvoiceListRow = {
   createdAt: number;
   updatedAt: number;
   approval: ApprovalState;
+  /** ADM-INV-10: a void proforma that had reached the client (withdrawn, not voided). Absent from an older API. */
+  withdrawn?: boolean;
 };
 
 export type InvoiceListQuery = {
@@ -201,7 +203,11 @@ export type InvoiceView = {
     reason: string | null;
     canVoid: boolean;
     blockers: (VoidBlockerCode | string)[];
+    /** ADM-INV-10: a void proforma that had reached the client was withdrawn (the name and reason above are the withdrawal's). Absent from an older API. */
+    withdrawn?: boolean;
   };
+  /** ADM-INV-10: only the Owner withdraws a proforma the client has received; the codes (core `WITHDRAW_BLOCKER_CODES`) say why not. Absent from an older API. */
+  withdraw?: { canWithdraw: boolean; blockers: string[] };
   pdf: { state: "none" | "pending" | "ready"; sha256: string | null; fingerprint: string | null };
   milestone: {
     id: string;
@@ -535,6 +541,18 @@ export const invoicesApi = {
       /** The milestone the invoice was made from, with the status the void left it in (M5.1 L3); null when there was none. */
       milestone?: { id: string; status: string } | null;
     }>(`/invoices/${enc(id)}/void`, { body: { expectedUpdatedAt, reason } }),
+  /** ADM-INV-10: withdraw a proforma the client has received (the Owner, with a fresh code); it keeps its number and stays in the records. */
+  withdraw: (id: string, expectedUpdatedAt: number, reason: string) =>
+    request<{
+      ok: true;
+      status: "void";
+      withdrawn: true;
+      number: string | null;
+      voidedAt: number;
+      updatedAt: number;
+      /** The milestone the proforma was made from, with the status the withdrawal left it in (as the void's); null when there was none. */
+      milestone: { id: string; status: string } | null;
+    }>(`/invoices/${enc(id)}/withdraw`, { body: { expectedUpdatedAt, reason } }),
   retryPdf: (id: string) =>
     request<{ ok: true; pdf: { state: "pending" } }>(`/invoices/${enc(id)}/pdf/retry`, { body: {} }),
   /** M5.4: email an issued document to 1 to 5 contacts with portal access (Owner and Staff, Q42). */

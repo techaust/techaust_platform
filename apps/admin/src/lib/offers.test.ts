@@ -21,7 +21,9 @@ import {
   offerErrorText,
   pdfNote,
   recipientChoices,
+  STAFF_REPLY_COPY,
   shortSha,
+  staffReplyText,
 } from "./offers.ts";
 
 const contact = (
@@ -152,7 +154,19 @@ describe("the email preview is the email packages/email sends", () => {
         expect(sent.text).toContain(EMAIL_PREVIEW.lead(kind, "Asha", base.valid_until));
         expect(sent.text).toContain(`${EMAIL_PREVIEW.facts.number}: ${base.number} v2`);
         expect(sent.text).toContain(`${EMAIL_PREVIEW.facts.total}: ${base.total}`);
-        expect(sent.text).toContain(`${EMAIL_PREVIEW.facts.validUntil}: ${base.valid_until}`);
+        expect(sent.text).toContain(
+          `${EMAIL_PREVIEW.facts.validUntil}: ${EMAIL_PREVIEW.validUntilValue(base.valid_until)}`,
+        );
+        // 07-ZE line 3 (T6): version 2's paragraph, right after the lead sentence
+        const replaces = EMAIL_PREVIEW.replaces(2);
+        expect(replaces).not.toBeNull();
+        expect(sent.text).toContain(`${EMAIL_PREVIEW.lead(kind, "Asha", base.valid_until)}\n\n${replaces}`);
+        const one = offerSent(
+          { ...base, kind, attached, version: "1" },
+          { assetBase: "https://a.example.test/" },
+        );
+        expect(EMAIL_PREVIEW.replaces(1)).toBeNull();
+        expect(one.text).not.toContain("This is version");
         expect(sent.text).toContain(`${EMAIL_PREVIEW.button}: ${base.url}`);
         expect(sent.text).toContain(attached === "1" ? EMAIL_PREVIEW.attached : EMAIL_PREVIEW.linked);
         expect(sent.text).toContain(EMAIL_PREVIEW.questions);
@@ -171,4 +185,78 @@ describe("the email preview is the email packages/email sends", () => {
       expect(sent.text).not.toContain(pdfNote(!attachPdfDefault));
     });
   }
+});
+
+describe("07-ZE in the preview (T6): (IST) on the validity date, the version line, the closing line", () => {
+  it("are 07-ZE's words", () => {
+    expect(EMAIL_PREVIEW.lead("proposal", "Asha", "30 Nov 2026")).toBe(
+      "Hi Asha, your proposal is ready, with the price and payment schedule. It's valid until 30 Nov 2026 (IST).",
+    );
+    expect(EMAIL_PREVIEW.validUntilValue("30 Nov 2026")).toBe("30 Nov 2026 (IST)");
+    // a draft without validity days: the lead prints "…" with no lone "(IST)" (review finding 2)
+    expect(EMAIL_PREVIEW.lead("estimate", "Asha", null)).toBe(
+      "Hi Asha, your estimate is ready. It covers the line items, price and payment terms, and it's valid until ….",
+    );
+    expect(EMAIL_PREVIEW.replaces(3)).toBe(
+      "This is version 3. It replaces version 2 and any earlier version, which can no longer be accepted.",
+    );
+    expect(EMAIL_PREVIEW.questions).toBe(
+      "Questions? Just reply to this email. To accept, use Review and accept: a reply by email isn't an acceptance.",
+    );
+  });
+});
+
+describe("the staff reply to an acceptance by email (07-ZE line 5; owner's Q2: A, 2026-10-31)", () => {
+  const doc = {
+    type: "proposal" as const,
+    status: "sent" as const,
+    number: "TH/PRP/2627/0001",
+    version: 2,
+    client: {
+      id: "c1",
+      code: "C0001",
+      name: "Sample client",
+      type: "business",
+      gstStatus: "registered",
+      stateCode: "19",
+      country: "IN",
+      currency: "INR" as const,
+      anonymised: false,
+    },
+    contact: { id: "k1", name: "  Asha  Rao ", email: "asha@example.test", anonymised: false },
+  };
+  const filled = (origin: string) =>
+    `Thank you, Asha. To accept TH/PRP/2627/0001 v2, please use the Review and accept button in our email, or sign in at ${origin}, and click Accept there. As our terms say, a reply by email isn't an acceptance, so we haven't treated it as one. If it has expired or we've sent a newer version, tell us and we'll send you the current one.`;
+
+  it("the box's labels are the owner's words, with no placeholder mark", () => {
+    expect(STAFF_REPLY_COPY).toEqual({ heading: "Client accepted by email?", copy: "Copy reply" });
+    expect(JSON.stringify(STAFF_REPLY_COPY)).not.toContain(PLACEHOLDER_TAG);
+  });
+
+  it("fills 07-ZE line 5 with the first name, the number, the version and the portal of this build", () => {
+    // the test build's constant is the local portal (vitest.config.ts, from wrangler.jsonc's top-level vars.PORTAL_ORIGIN)
+    expect(staffReplyText(doc)).toBe(filled("http://localhost:5174"));
+    expect(staffReplyText(doc, "https://portal.techaust.com")).toBe(filled("https://portal.techaust.com"));
+    expect(staffReplyText({ ...doc, type: "estimate", status: "viewed", version: 1 })).toContain(
+      "To accept TH/PRP/2627/0001 v1, please",
+    );
+    // past its last day: the reply's last sentence covers it
+    expect(staffReplyText({ ...doc, status: "expired" })).toBe(filled("http://localhost:5174"));
+  });
+
+  it("is null where the box isn't shown", () => {
+    for (const status of ["draft", "accepted", "rejected", "revised"] as const)
+      expect(staffReplyText({ ...doc, status })).toBeNull();
+    expect(staffReplyText({ ...doc, number: null })).toBeNull();
+    expect(staffReplyText({ ...doc, contact: null })).toBeNull();
+    expect(staffReplyText({ ...doc, contact: { ...doc.contact, anonymised: true } })).toBeNull();
+    expect(staffReplyText({ ...doc, client: { ...doc.client, anonymised: true } })).toBeNull();
+    expect(staffReplyText({ ...doc, contact: { ...doc.contact, name: "   " } })).toBeNull();
+    expect(staffReplyText(doc, "")).toBeNull();
+    // T7: an offer whose personal details were erased is withdrawn, so no reply points anyone to it
+    expect(staffReplyText({ ...doc, redactedAt: Date.UTC(2026, 9, 31) })).toBeNull();
+    expect(staffReplyText({ ...doc, redactedAt: null })).toBe(filled("http://localhost:5174"));
+    // an invoice-family type never gets it (the shape is shared with nothing else, but the guard is cheap)
+    expect(staffReplyText({ ...doc, type: "invoice" as unknown as "proposal" })).toBeNull();
+  });
 });

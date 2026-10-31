@@ -1,0 +1,415 @@
+# Run: T7, erase a person's data in the frozen copies of never-accepted offers
+Status: PR READY https://github.com/techaust/techaust_platform/pull/133
+Tier: A (deleting or anonymising data; docs/14 §2)
+Usage: lead claude-opus-5-5/high (cloud session t7-erasure); analyst claude-opus-5-5/high (brief draft; skills: tried `cloudflare:workers-best-practices` and `cloudflare:wrangler`, both "Unknown skill" in the cloud session although model-audit lists them; 5-h 8 % at 12:58 IST); builder claude-opus-5-5/high (agent-ac9b3fbc, layers to the Tier A stop point, 13:25–14:16 IST; same two skills tried, both unknown; 5-h 46 % at 13:46 IST); analyst claude-opus-5-5/high (agent-af81419a, early check; tried the two skills and `cloudflare:workers-profiling`, all unknown); builder claude-opus-5-5/high (agent-ab068a97, early-check fixes, 14:16–14:39 IST; same three skills tried, all unknown; 5-h 68 % at 14:16); designer claude-opus-5-5/high (agent-a51b4663, screens, 14:39–14:59 IST; tried `frontend-design:frontend-design`, unknown in the cloud session; 5-h 68 → 89 %); reviewer claude-opus-5-5/high (agent-af357840, code + visual, 15:13–15:37 IST; skills `code-review` loaded, `security-review` loaded but its git step failed (no `origin/HEAD`), its checks done by hand; its read-only helper general-purpose claude-opus-5-5/high (agent-ade1c022, skills none, allowed by docs/14 §9); 5-h 0 % at 15:13); builder claude-opus-5-5/high (agent-afc90d48, review fixes, 15:38–16:01 IST; three Cloudflare skills tried, unknown; 5-h 0 → 21 %); reviewer re-check claude-opus-5-5/high (agent-af357840 resumed, 16:01–16:10 IST; 5-h 21 → 34 %); reviewer re-check 2 claude-opus-5-5/high (agent-af357840 resumed, 16:37–16:50 IST; 5-h 34 %)
+
+**Task (main session, 2026-10-31):** 08-C RB-37(a), settled by the lead on the safest reading (2026-10-30, [settle-08c](settle-08c.md)): on an erasure request, erase the person's data in the frozen copy of every proposal or estimate that was **never accepted**; keep the number, status, dates and hash. Accepted offers and every invoice-family document stay untouched (financial records). Due before 13 May 2027 (DPDP core duties).
+
+Branch `feat/t7-offer-erasure` from `main` 8d5b958. Copy file: [07-ZG](../07-content-appendix/ZG-offer-erasure.md) (3 lines, approved by the owner 2026-10-31). Merges fourth (T12 → T6 → proforma withdraw → **T7** → M6.1).
+
+## Questions for the owner
+**Q1. An offer that is still open when the person it is addressed to asks to be erased.** Once their details are erased from an offer it can't safely be accepted any more: the acceptance is proved against the PDF, and the PDF is deleted. At a business client, other people at the company may also have the offer by email. Today a sent offer stays open until a new version replaces it (your rule of 2026-10-25); this would be the one exception.
+- **A. (Recommended)** The offer is withdrawn at once: it disappears from the client portal for everyone, nobody can accept or decline it, and it still expires on its normal date. If the deal goes on, you send a new version to another contact.
+- B. Refuse to anonymise the person while an open offer is addressed to them: you let it expire or send a new version to someone else first, then anonymise. Erasure can wait up to the offer's validity period.
+- C. Leave open offers alone and erase them automatically once they close (expire, are declined or replaced). Needs background work in the jobs Worker, which has little room left.
+
+**Copy 07-ZG lines 1–3** (staff-facing; [07-ZG](../07-content-appendix/ZG-offer-erasure.md)): approve as written (Recommended), or change a line.
+
+**Owner's answers (2026-10-31, through the main session):** Q1 **A** (an open offer is withdrawn at once when its addressee is anonymised: hidden from the portal for everyone, accept and decline refused, it still expires on its date). 07-ZG lines 1–3 **approved as written**; the code uses the real text (builder told at once).
+
+**Q2 (2026-10-31; answered: A, owner, 2026-10-31, through the main session).** The staff audit log needs a label for the new action `document.redact` (one row per offer whose personal details were erased); it shows "[Placeholder]" until approved. Proposed 07-ZG line 4: "erased personal details from a proposal or estimate".
+- **A. (Recommended)** As written (it matches "viewed a proposal or estimate" next to it).
+- B. "erased a person's details from an offer".
+
+## Brief
+Final version by the lead from the analyst's draft (2026-10-31). Lead changes to the draft are marked **(lead)**.
+
+**PRD IDs:** ADM-CLI-05 (data-subject tools), ADM-PROP-05 (frozen versions, with this one exception), ADM-PROP-08 and POR-05 (a redacted offer can't be accepted), JOB-PDF-01 (never rendered again), ADM-AUD-01, NFR-6.
+**Comment tag** on every new code comment about the rule: `Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)`. Never a bare VERIFY; never `OPEN (08-C RB-37)` for part (a) (part (b), keeping accepted offers, stays as it is).
+
+### Where a frozen offer holds a person's data (all four are erased)
+1. the `documents` row: `recipient` (JSON), `title`, `decision_note` (the person's own typed words);
+2. the child rows: `document_sections` (title, body_md, including the Acceptance text filled from `{{client.contact}}`), `document_lines` (description, detail), `payment_schedules` (label, detail);
+3. the R2 envelope in `DOCS` (`…-v<v>.json`);
+4. the R2 PDF in `DOCS` (`…-v<v>.pdf`).
+
+### Decisions (lead; for 13 when merged)
+- **L1 Per version.** Each version is judged on its own: a version never accepted itself (e.g. v1 "revised" while v2 was accepted) is redacted; the accepted version stays untouched.
+- **L2 Kept:** id, type, number and display, series, FY, version and group, status, every date (issue, valid until, sent, viewed, decided), amounts and `computed`, the terms pin, `contact_id`, `decided_contact_id`, `decision_reason` (a code), `content_sha256`, `snapshot_sha256`, `pdf_sha256`, the R2 key columns, `issuer`. **Erased:** the personal values in `recipient`, `title` and the child text columns; `decision_note` → NULL. **Deleted:** the envelope and the PDF objects. A decline keeps its fact, date, who (by id) and reason code (s.17(1)(a)).
+- **L3 Replacement:** values become core `ANONYMISED_CLIENT` ("Anonymised client", the one wording on frozen documents, 07-Q Q2), matched as whole words with `@techaust/core/text` `wholeWordPattern` (never hand-rolled), longest value first. Values: those the admin view redacts today, plus the contact's live name, email and phone; for an individual client's last live contact also the client's legal name, display name and GSTIN. Blank values and values under 2 characters are skipped (the view uses the same shared helper, so it agrees).
+- **L4 Erase eligibility unchanged:** `CONTACT_ON_ISSUED_DOCUMENT_SQL` still refuses `erase`; the redaction runs in `anonymise` mode, which leaves no personal data on the contact row. In erase mode nothing is redacted (a frozen offer naming the person already refuses the erase).
+- **L5 Cap:** at most 10 offers per anonymise request (the Free plan's 10 ms CPU); over it, 409 `too_many_offers` and nothing is written (07-ZG line 3). Chunking is a follow-up only if it ever happens.
+- **L6 No backfill:** there is no production data before launch; staging has only sample data.
+- **L7** The open question of row 233 (2026-10-26, "serving the existing PDF of an anonymised client") is answered for never-accepted offers: the PDF is deleted. It stays open for accepted offers.
+- **L8 (lead)** RB-37(a)'s settlement (13, 2026-10-30) replaces, for never-accepted offers only, the 2026-10-26 rows that kept "the stored snapshot untouched"; for accepted offers those rows stand (view-only redaction).
+
+### 1. Which documents (one helper, new `packages/db/src/offer-redaction.ts`, subpath export `@techaust/db/offer-redaction`)
+`REDACTABLE_OFFER_SQL(d, c, cl)` (`c` = the contact being anonymised, `cl` = its client):
+```sql
+d.client_id = c.client_id AND d.type IN ('proposal','estimate') AND d.frozen_at IS NOT NULL AND d.redacted_at IS NULL
+AND d.status NOT IN ('accepted','converted') AND NOT EXISTS (SELECT 1 FROM acceptances a WHERE a.document_id = d.id)
+AND ( json_extract(d.recipient,'$.contactId') = c.id OR lower(json_extract(d.recipient,'$.email')) = lower(c.email)
+      OR d.contact_id = c.id OR d.decided_contact_id = c.id
+      OR (cl.type = 'individual' AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = c.client_id AND o.id <> c.id AND o.anonymised_at IS NULL)) )
+```
+(Builder: check the real status names and the acceptance table name in the schema; the list above follows the analyst's reading: in scope sent, viewed, rejected, expired, revised; out: draft, accepted, converted, every invoice-family type.)
+
+| Scope | Recipient | Words taken out of the texts |
+|---|---|---|
+| **Client scope:** an individual client's last live contact | the whole recipient: `legalName`, `displayName`, `contactName` → "Anonymised client"; `gstin`, `address`, `deliveryAddress`, `email` removed (keys absent, never null) | the client's values and the contact's |
+| **Contact scope:** a business client's contact, or a non-last contact of an individual | only when `recipient.contactId = c.id` or the emails match: `contactName` → "Anonymised client", `email` removed; the business's own name, GSTIN and address stay (13, 2026-10-25) | that contact's values |
+| **Decliner only** (`decided_contact_id = c.id`, offer addressed to someone else) | untouched | that contact's values; `decision_note` → NULL |
+
+Kept in every scope: `country`, `clientType`, `gstStatus`, `stateCode`, `contactId`.
+
+**Open offers (Q1 = A, owner, 2026-10-31):** redaction withdraws the offer for everyone: the portal hides it; accept and decline are refused (SQL and trigger); its not-yet-queued sends are cancelled; if it is the newest frozen version of its group, the group's live offer links are revoked; its status is unchanged, so the expiry job still moves it to `expired` and a revision still moves it to `revised`.
+
+### 2. How the write is made (no read-then-write race)
+- D1 has no regex and SQLite can't express the Unicode whole-word boundary, so the **Worker computes** the redacted values from one read, then runs the existing audit-first anonymise batch.
+- Frozen content can't change between the read and the batch. What can change is guarded in the batch: the audit-first row of `contact.anonymise` is written only if, at batch time, the eligible id set equals the id set read, `contacts.updated_at` equals the value read, and (client scope) `clients.updated_at` equals the value read. Every later statement is guarded on that row (`g.sql`), as today.
+- On a mismatch nothing is written: the route answers 409 `stale_version` at once (**(lead, review row 6):** the retry was dropped to keep every path within D1's 50 queries per invocation; the dialog shows the existing stale message).
+- **Fixed statement count** whatever the number of offers, through `UPDATE … FROM json_each(?plan)` (the pattern in `apps/jobs/src/expire.ts`): documents 1; child text updates with the marks folded in 3 (**(lead, review row 6)**: was 3 + 3); `document.redact` audit rows 1; cancel sends 1; revoke links 1; bells 2; approvals' reason and note 1.
+- The new statements are step **2e** in `apps/admin/worker/clients.ts` `POST /:id/erase`, after step 2d and before step 3 (client) and 4 (contact), because eligibility reads the live email and the last-live condition. Replace the comment "nothing is read before it" and the RB-37 OPEN text at the step 2d comment (T12 may have retagged it; take T12's wording on merge).
+
+### 3. Core helper (new `packages/core/src/redaction.ts`, export `./redaction`; core keeps ≥ 90 % coverage)
+- `redactionValues({recipient, contact, client?, scope})` → trimmed, unique values, blank and < 2 characters skipped, longest first.
+- `redactRecipient(r, scope, contact)` → a new object.
+- `redactOffer({recipient, title, sections, lines, schedule}, values, scope, contact)` → `{recipient, title, sections, lines, schedule}` (changed rows only) plus `fields: string[]` (field names only, e.g. `recipient.contactName`, `sections.body_md`, `decision_note`, `pdf`, `envelope`).
+- Move `viewRecipient`, `redactionNames` and `redactor` from `apps/admin/worker/document-view.ts` onto this helper: one rule; the view of an accepted offer behaves exactly as today.
+
+### 4. Schema and triggers
+**Migration 0056** (drizzle-kit; `ALTER TABLE … ADD COLUMN` only, no rebuild): `redacted_at integer` on `documents`, `document_sections`, `document_lines`, `payment_schedules`.
+
+**Migration 0057** (`drizzle-kit generate --custom --name offer_redaction_triggers` + `scripts/write-triggers.ts offer_redaction_triggers`; new set `offerRedactionTriggerStatements()` in `packages/db/src/triggers.ts`). New pinned lists: `SET_ONCE_0057 = [...SET_ONCE_0050, "redacted_at"]` (and `redacted_at` in the live `SET_ONCE_AFTER_FREEZE`); `REDACTABLE_FROZEN_0057 = ["recipient","title"]`; `REDACTION_CLEARS_0057 = ["decision_note"]`; frozen columns = `FROZEN_COLUMNS_0047` (builder: confirm these are the newest pinned lists on main). The move **M** = `OLD.redacted_at IS NULL AND NEW.redacted_at IS NOT NULL AND OLD.type IN ('proposal','estimate')`.
+1. `DROP TRIGGER documents_frozen_update;` and recreate it (same name, same message "issued document is frozen") with a new generator `frozenUpdateTriggerRedactable(frozen, setOnce, redactable, clears)`: every frozen column `NEW.c IS NOT OLD.c`, except `recipient` and `title`: `(NEW.c IS NOT OLD.c AND NOT M)`; every set-once column `(OLD.c IS NOT NULL AND NEW.c IS NOT OLD.c)`, `decision_note` adds `AND NOT (M AND NEW.decision_note IS NULL)`. The coverage test (every frozen and set-once column named) keeps passing.
+2. `documents_redaction_scope` BEFORE UPDATE OF redacted_at WHEN `NEW.redacted_at IS NOT OLD.redacted_at AND (OLD.redacted_at IS NOT NULL OR OLD.frozen_at IS NULL OR OLD.type NOT IN ('proposal','estimate') OR OLD.status IN ('accepted','converted') OR NEW.status IS NOT OLD.status OR EXISTS (SELECT 1 FROM acceptances a WHERE a.document_id = OLD.id))`.
+3. `documents_redaction_insert` BEFORE INSERT WHEN `NEW.redacted_at IS NOT NULL`.
+4. `documents_redacted_fixed` BEFORE UPDATE WHEN `OLD.redacted_at IS NOT NULL AND ((NEW.status IS NOT OLD.status AND NEW.status NOT IN ('expired','revised')) OR` NULL → value on any of `snapshot_r2_key, pdf_r2_key, pdf_sha256, viewed_at, decided_at, decision_reason, decision_note, decided_contact_id)`: a redacted offer takes no new PDF, view or decision.
+5. `acceptances_redacted` BEFORE INSERT ON the acceptances table WHEN the document's `redacted_at IS NOT NULL`.
+6. Child tables: `DROP` and recreate `document_sections_frozen_update`, `document_lines_frozen_update`, `payment_schedules_frozen_update` (same names and messages) with WHEN `(parentFrozen(OLD) OR parentFrozen(NEW)) AND NOT (OLD.redacted_at IS NULL AND NEW.redacted_at IS NOT NULL AND (SELECT redacted_at FROM documents WHERE id = OLD.document_id) IS NOT NULL AND <every non-text column: NEW.x IS OLD.x>)`; non-text column lists pinned (`*_COLUMNS_0057`). Insert and delete triggers unchanged.
+
+Never edit an applied migration; never rebuild a referenced table (`scripts/check-migrations.mjs`).
+
+### 5. The kept hash stays explainable
+- `redacted_at` is the record that the rows no longer reproduce `content_sha256` and `snapshot_sha256`; one `document.redact` audit row per offer gives the field names, `snapshotSha12` and `pdfDeleted`.
+- Nothing ever verifies a redacted offer, so no `pdf.refused` or integrity bell can fire. Jobs (`apps/jobs/src/pdf.ts`): `processSnapshot` skips `"redacted"` before `envelopeOfBundle`; `DocumentRow` and `DOCUMENT_COLUMNS` (`packages/db/src/documents.ts`) gain `redacted_at`; `RENDER_ROW_SQL` gains a `redacted` flag and render and the supplier copy skip on it; `SWEEP_SQL` adds `AND documents.redacted_at IS NULL`; `processPdfDeadLetter` rings no bell for a redacted offer; the snapshot and settle UPDATEs add `AND redacted_at IS NULL`, and if a settle changes nothing because the offer was redacted mid-render, the object just stored is deleted.
+
+### 6. Audit (same batch)
+- The existing first row `contact.anonymise` (entity client): summary `json_object('contactId', …, 'mode', …, 'reason', …, 'offers', <count>)`; its WHERE gains the guards of §2.
+- After the documents UPDATE, one `INSERT … SELECT` writes a `document.redact` row per offer (entity `document`): `json_object('documentId', d.id, 'version', d.version, 'contactId', ?, 'eraseAuditId', ?, 'fields', json(<plan fields>), 'snapshotSha12', substr(d.snapshot_sha256,1,12), 'pdfDeleted', 1)` over `documents d JOIN json_each(?plan) … WHERE d.redacted_at = ?t AND g`.
+- Ids, counts and field names only; never names, emails or text (a test checks).
+
+### 7. Stored envelopes and PDFs (write-once R2 `DOCS`)
+- After a successful batch, delete both objects of each offer: the keys from `pdfKeys({type, fy, number, version})` (`.json`, `.pdf`) plus any different stored `snapshot_r2_key` / `pdf_r2_key` from the read (covers an envelope whose row update was lost). Retry once; on failure log ids and keys only (no personal data) and leave them to the M7.4 sweep (follow-up F2).
+- Make `dropObjects` (`apps/admin/worker/files.ts`) take the bucket, or add a small DOCS helper.
+- Nothing is ever rendered from the redacted copy (trigger 4 and the jobs guards).
+
+### 8. Afterwards
+- **Export:** the contact is anonymised, so 409 `contact_anonymised` as today; another contact's export never shows the redacted rows' old values.
+- **Admin document GET** (`document-view.ts`): adds `redactedAt`; `pdfOf` gains the state `"erased"`; the stored values are already redacted.
+- **PDF routes** (`document-pdf.ts`, `pdfRowSql` gains `redacted_at`): GET 410 `pdf_erased`, retry 409 `pdf_erased` (message 07-ZG line 2).
+- **Resend** (`document-links.ts`): adds `AND d.redacted_at IS NULL`; a redacted offer answers 409 `not_resendable` (existing copy). Revoke links still works.
+- **Revise:** allowed; the new version copies the redacted text, and the anonymised contact blocks sending until another contact is chosen (existing `contactGone`).
+- **Portal** (`apps/portal/worker/offer-sql.ts`): `d.redacted_at IS NULL` in `LIST_SQL`, `DOC_SQL`, `KEYS_SQL`, `VIEW_SQL`, `PRE_SQL`, `REREAD_SQL`, `ACCEPT_INSERT_SQL`, `DECLINE_UPDATE_SQL`: a redacted offer is a 404. A link to v1 whose newest version v2 was redacted answers "superseded", then v2 is 404 (kept).
+- **Emails:** a not-yet-queued `offer.send` is cancelled. An email already in `EMAIL_QUEUE` still goes (link-only once the PDF is gone): accepted limit (F3).
+- **Bells and activity:** document and approval bells for these offers are deleted; activity rows show the number only.
+
+### 9. Layers
+**Builder** (data → logic → API → jobs), on sub-branch `fix/t7-offer-erasure-b1` in its own worktree:
+- `packages/db`: `src/schema/documents.ts` (4 columns), migrations 0056 + 0057 (snapshots, journal), `src/triggers.ts`, `src/offer-redaction.ts` + export, `src/documents.ts`;
+- `packages/core`: `src/redaction.ts`, `./redaction` export, tests;
+- `apps/admin/worker`: `clients.ts`, new `offer-redaction.ts` (read and plan statements, exported SQL for EXPLAIN tests), `document-view.ts`, `document-pdf.ts`, `document-links.ts`, `files.ts`;
+- `apps/portal/worker/offer-sql.ts`;
+- `apps/jobs/src/pdf.ts`;
+- every new user-facing string uses the approved 07-ZG text word for word.
+
+**Tier A stop point:** all of the above committed, tested and pushed; then the analyst's early check before any screen.
+
+**Designer** (after GO), from the newest T7 branch: the admin offer read view banner (ZG-1); the PDF panel's "erased" state (ZG-2); the anonymise dialog's `too_many_offers` message (ZG-3); resend and retry hidden when `redactedAt` is set (`apps/admin/src/routes/documents/*`, `apps/admin/src/lib/offers.ts`); both themes, the usual widths, axe. No portal screen change. **(lead)** T6's "Client accepted by email?" box isn't on this branch; hiding it for a redacted offer is done when T7 takes `main` in after T6 merges (integration item).
+
+### 10. Tests (failure paths included)
+- **DB** (`packages/db/test/offer-redaction.test.ts` + the existing trigger coverage tests): the move passes on a sent proposal; every other frozen column (loop over `frozenDocumentColumns()` minus recipient and title) refuses even inside the move; recipient or title changed without the move refuses; a second redaction refuses; `redacted_at` can't change or clear; `decision_note` → another value refuses, → NULL passes; the scope trigger refuses each invoice-family type, a draft, accepted, converted, and sent-with-an-acceptance; insert with `redacted_at` refuses; after redaction: viewed, accepted and rejected refuse, expired and revised pass, a PDF or snapshot key refuses, an acceptance insert refuses; child tables: a text update needs the marker and a redacted parent, every non-text column refuses (loop), a second update refuses, insert and delete still refuse; EXPLAIN shows the eligibility read uses an index; the migration guard passes.
+- **Core:** individual, business and decliner-only scopes; whole words ("Ram" vs "Ramp-up", Indic combining marks); longest first; emails; blank and 1-character values skipped; idempotent; a fast-check property that no whole-word value survives.
+- **Admin** (`apps/admin/worker/offer-erasure.test.ts`): (1) individual, last contact: sent, viewed, declined-with-note, expired and revised offers redacted, every kept column byte-equal; (2) business: only that contact's offers; client name, GSTIN, address kept; another contact's offer untouched; (3) accepted and converted offers byte-identical, their R2 objects still there; (4) tax invoice, proforma, credit note untouched; (5) families: v1 (to A) revised + v2 accepted → v1 redacted, v2 untouched; v1 (to A) + v2 open to B → v1 redacted, B's links live; (6) an open offer to A also sent to B: B's waiting sends cancelled, group links revoked, portal 404 on list, view, accept, decline; (7) legal hold on contact, client or lead → 409, nothing changed, objects present; (8) envelope and PDF deleted, incl. the derived key when `snapshot_r2_key` is NULL; (9) audit summaries contain none of the person's values; (10) race (the hook used by the clients-data test "a document frozen after the request began…") → retry, then 409 `stale_version`, nothing written; (11) 11 offers → 409 `too_many_offers`; (12) erase mode unchanged (409 `on_issued_document`, nothing redacted); (13) export afterwards → 409; (14) GET shows `redactedAt` and pdf `erased`; PDF GET 410, retry 409, resend 409; (15) bells deleted, approvals' reason and note cleared. Update comments and assertions in `documents-anonymised*.test.ts` and `clients-data.test.ts` that describe "the stored snapshot stays byte-identical" for sent offers.
+- **Portal:** `offer-routes`, `offer-links`, `offer-fixes` cases for a redacted offer.
+- **Jobs:** snapshot of a redacted offer skipped (no object, no bell); render skipped; sweep excludes it; redacted mid-render → row unchanged, object deleted; dead letter → no bell.
+- **Runs**, each through `bash tools/heavy.sh --log <name> …`: `pnpm --filter @techaust/{core,db,admin,portal,jobs} test`; admin build (record API bytes; main 618,422, line 650,000; **stop and report if over 640,000**); jobs build (main 984,266; **stop if over 995,000**); portal build; finally `pnpm check`.
+
+### 11. Done when
+Analyst GO on the early check; designer screenshots; reviewer APPROVE with the visual review; every finding fixed or kept with a reason; `pnpm check` and `pnpm test` green at the branch tip; Worker bytes recorded; 08-C RB-37 and docs 04/05/08 lines updated by the lead.
+
+### 12. Out of scope
+Accepted offers and the invoice family; serving an anonymised client's accepted-offer PDF (row 233 stays open there); logs kept under Rule 8(3) (M7.4); emails already queued; free-text mentions in offers not addressed to, or declined by, the person; a backfill; chunking past the cap.
+
+### 13. Shared areas
+- **proforma-withdraw** will likely touch `schema/documents.ts`, `triggers.ts` (may recreate `documents_frozen_update` and extend the set-once lists), `documents.ts` (`DOCUMENT_COLUMNS`), migrations and `triggers.test.ts`. T7 merges after it: take out the unapplied 0056/0057, merge `main`, rebuild the pinned lists on proforma's newest lists, regenerate.
+- **T6:** `apps/admin/src/lib/offers.ts`, `offer-panels.tsx`, maybe `packages/core/package.json` exports. T7 doesn't touch `core/offers.ts`, `packages/email`, `packages/pdf` or the portal SPA copy.
+- **T12:** the RB-37 comments in `apps/admin/worker/clients.ts` (step 2d) and `packages/db/src/contact-access.ts`, and 08-C §5 (T7 edits only the RB-37 row).
+
+## Early check
+**Analyst, 2026-10-31, at c687cc9: CHANGE** (1 high, 3 medium, 4 low; ran `offer-redaction.test.ts` 18 passed and `offer-erasure.test.ts` 15 passed). Checked and sound: triggers (0057's `documents_frozen_update` equals 0050's except the four intended lines; child triggers equal 0001's plus the carve-out), the batch guard proves set equality, audit rows hold no personal data, R2 keys (D1) and deletion only after success, jobs (D12), portal and D13, D5 bounded to the plan's ids, bundle growth is T7's own code (nothing large pulled in).
+
+| # | Sev | Finding | Lead's triage |
+|---|---|---|---|
+| 1 | High | A frozen offer can be redacted only once (`redacted_at IS NULL` in eligibility and the triggers), so a second person's later erasure never reaches it (business: decliner then addressee; individual: first contact, then the last live contact, whose client's name stays) | **Fix:** redaction moves forward: eligibility drops `redacted_at IS NULL`; the move is `NEW.redacted_at > OLD.redacted_at` (never cleared, never backwards) on documents and children; tests for both sequences and for backwards/equal/clear refused. 0056/0057 are unapplied, so regenerate (no new migration) |
+| 2 | Med | Contact scope at an INDIVIDUAL client keeps the person's own name in `recipient.legalName`/`displayName` | **Fix:** in contact scope with `clientType = individual`, run the redactor over `legalName` and `displayName`; address and GSTIN stay until the client itself is anonymised (then finding 1 lets the client scope reach the offer); test |
+| 3 | Med | Whole-word matching is case-sensitive ("ASHA RAO", "Asha@Example.com" survive) | **Fix:** case-insensitive option on core `wholeWordPattern`, used by the stored redaction **and** the view of accepted offers (one rule; it only hides more); tests incl. mixed case, emails and an Indic name |
+| 4 | Med | The D3 guard paths are untested beyond "an extra offer appears" | **Fix:** four `beforeBatchHolding` cases (set shrinks; last-live flips; contact `updated_at`; client `updated_at`), each retry-then-success and twice → 409 `stale_version`, nothing written |
+| 5 | Low | A child row inserted with `redacted_at` set isn't refused | **Fix:** `*_redaction_insert` BEFORE INSERT triggers on the three child tables (new names); test |
+| 6 | Low | Missing tests: credit note untouched; portal `offer-fixes`; EXPLAIN of the three mark statements and the guard's subqueries | **Fix:** add them |
+| 7 | Low (optional) | jobs send processing doesn't check `redacted_at` | **Fix:** read it and refuse (defence in depth); test |
+| 8 | — | Merge items: main (T12) conflict in `clients.ts`; proforma-withdraw takes 0056 | Main (T12 only, no migrations) taken in by the lead before the main session's FYI that main comes in later (49dd653f, T7's comment kept); the next take-in waits for the main session's word after T6 and proforma withdraw. Renumbering to 0057/0058 waits for the main session's word after proforma merges (proforma doesn't touch T7's pinned lists) |
+| CPU | — | Cheap savings: cache the compiled regex per distinct value list; `push` instead of spreads in `byDoc` | **Fix** (cheap); F4 stays |
+
+## Builder report
+**Early check** (Tier A stop point; builder, 2026-10-31, branch `fix/t7-offer-erasure-b1`, tip after this report). No screens touched except one data line (see D14).
+
+**Skills:** `cloudflare:workers-best-practices` and `cloudflare:wrangler` were tried first; both answer "Unknown skill" in this cloud session (plugins don't load here), so none was loaded. No other skill in docs/14 §9 fits a data/logic/API task. Library behaviour was checked against the code and the running tests, not Context7 (not reachable here).
+
+**Files by layer**
+- Data (`packages/db`): `src/schema/documents.ts` (`redacted_at` on `documents`, `document_sections`, `document_lines`, `payment_schedules`); `src/triggers.ts` (`redacted_at` in the live set-once list; `SET_ONCE_0057`, `REDACTABLE_FROZEN_0057`, `REDACTION_CLEARS_0057`, `*_COLUMNS_0057`, `*_TEXT_0057`, `REDACTION_MOVE_SQL`, `offerRedactionTriggerStatements`, set `offer_redaction_triggers`); new `src/offer-redaction.ts` (`REDACTABLE_OFFER_SQL`, `LAST_LIVE_SQL`, `MAX_REDACTED_OFFERS` = 10) + export `@techaust/db/offer-redaction`; `src/documents.ts` (`redacted_at` in `DOCUMENT_COLUMNS` and `DocumentRow`); tests `test/offer-redaction.test.ts` (new), `test/migrations.test.ts`, `test/invoice-types.test.ts` (live set-once list).
+- Migrations: **0056_offer_redaction** (4 × `ALTER TABLE … ADD redacted_at integer`, no rebuild) and **0057_offer_redaction_triggers** (generated by `scripts/write-triggers.ts offer_redaction_triggers`), with snapshots and journal.
+- Logic (`packages/core`): new `src/redaction.ts` (`offerScope`, `redactionValues`, `redactRecipient`, `redactOffer`; `viewRecipient`, `redactionNames`, `redactor` moved here from the admin Worker), export `./redaction`, test `test/redaction.test.ts` (fast-check property included).
+- API (`apps/admin/worker`): new `offer-redaction.ts` (the read, the guard, the 13 statements, exported SQL); `clients.ts` (erase route: read, guard, step 2e, one retry, 409 `too_many_offers` / `stale_version`, R2 delete after the batch; step 2d comment retagged); `document-view.ts` (`redactedAt`, `pdfOf` state `erased`, helpers imported from core); `invoice-view.ts` (import); `document-pdf.ts` (`PDF_ERASED`, GET 410, retry 409); `document-links.ts` (resend refuses a redacted offer); `files.ts` (`dropObjects(bucket, …)`, retried once); tests `offer-erasure.test.ts` (new), `documents-convert.test.ts`, comment-only updates in `documents-anonymised*.test.ts`, `clients-data.test.ts`; `apps/admin/src/lib/audit.ts` (one label, D14).
+- Portal: `apps/portal/worker/offer-sql.ts`; tests in `offer-routes.test.ts`, `offer-links.test.ts`.
+- Jobs: `apps/jobs/src/pdf.ts`; test `test/pdf-redacted.test.ts` (new).
+
+**Differences from the brief (and why)**
+- D1 `pdfKeys` is in `@techaust/core/pdf-jobs`, not db, and `documents.fy` holds the token (`2627`), so the derived keys use `fyLabelOfToken` first. The stored `snapshot_r2_key` / `pdf_r2_key` are added when present.
+- D2 Status names, the `acceptances` table and the newest pinned lists (`FROZEN_COLUMNS_0047`, `SET_ONCE_0050`) are as the brief read them. `converted` can't be reached by a quote through `documents_status_flow` today; the db test covers it with a directly inserted converted estimate.
+- D3 The batch guard also checks the **last-live state** (`(cl.type = 'individual' AND last live) = <read>`), besides the eligible set, `contacts.updated_at` and (client scope) `clients.updated_at`: a contact added or anonymised between the read and the batch would change the scope (client vs contact) without changing either `updated_at`.
+- D4 `decision_note` goes to NULL on **every** redacted offer (L2 "Erased: decision_note → NULL"), not only in the decliner-only scope of the table; the reason code, date and decider id stay.
+- D5 Sends: every send of a redacted offer **that holds no link yet** is cancelled (the rule the "Revoke links" route already uses). This is a superset of "not-yet-queued": a send queued but not yet processed is stopped too, because jobs mints a link only while `cancelled_at` is NULL. An email whose link was already minted still goes (F3).
+- D6 Values in client scope also include the recipient snapshot's own GSTIN (it is removed from the recipient anyway; a text mention holds the PAN).
+- D7 Scope is decided by a new core `offerScope`; "addressed to the contact" also counts `documents.contact_id = c.id` (matches `REDACTABLE_OFFER_SQL`). `redactRecipient(r, scope)` takes no contact (unused). `redactOffer` takes `decisionNote` in its input and its `fields` always end with `envelope`, `pdf`.
+- D8 Erase mode reads nothing and adds no statement (as today). In anonymise mode with no eligible offer the 13 statements are left out, but the guard still proves the set is empty at batch time.
+- D9 The read is one batch of 5 statements (contact and client; offers, at most 11; sections; lines; schedule). Each `document.redact` row's id is a Worker `uuidv7` carried in the plan.
+- D10 Messages use the owner-approved 07-ZG text (lead's message, 2026-10-31), not "[Placeholder]": `pdf_erased` "The PDF was deleted when the personal details were erased." (`document-pdf.ts`), `too_many_offers` line 3 (`offer-redaction.ts`). Line 1 is the designer's; no constant added.
+- D11 Trigger `acceptances_redacted`'s message is "…erased is never accepted" (the apostrophe of "can't" broke the SQL string literal of `RAISE`).
+- D12 Jobs: the snapshot step also guards its row update (`AND redacted_at IS NULL`) and deletes an envelope stored while the offer was being redacted (the brief named this for the settle only); `processRender` checks the redacted flag before its "already done" branch, so a redacted offer that had a PDF never wakes a send. The supplier-copy skip is kept for completeness (a proposal has no supplier copy).
+- D13 Portal: `LATEST_SQL`, `CERT_KEY_SQL`, `HAS_ACCEPTANCE_SQL` unchanged (the superseded rule; accepted offers are never redacted).
+- D14 `apps/admin/src/lib/audit.ts` gains `"document.redact": "[Placeholder]"`: the admin test `audit-labels.test.ts` fails without a label for every written action, and 07-ZG has no line for it. This is the only `apps/admin/src` change.
+
+**Commands and results** (heavy ones through `tools/heavy.sh`)
+- `pnpm --filter @techaust/db test`: 36 files, **533 passed** (first run: 1 failed, the migration list; fixed).
+- `pnpm --filter @techaust/core test`: 92 files, **1878 passed**; coverage statements 99.02 %, branches 97.98 %, functions 98.54 %, lines 99.15 %.
+- `pnpm --filter @techaust/admin test`: 121 files, **3508 passed** (first run: 2 failed, `documents-convert` and `audit-labels`; fixed).
+- `pnpm --filter @techaust/portal test`: 25 files, **655 passed**. `pnpm --filter @techaust/jobs test`: 34 files, **555 passed**.
+- `pnpm --filter @techaust/admin typecheck`: exit 0.
+- Builds: admin front **99,271** bytes (limit 150,000); admin API **629,427** bytes (main 618,422, +11,005; under the 640,000 stop line); portal **100,916** (limit 120,000); jobs **985,464** (main 984,266, +1,198; under the 995,000 stop line). Startup fastest of 7: admin 13.3 ms, admin API 79.8 ms, portal 12.5 ms, jobs 74.5 ms.
+- `node scripts/check-migrations.mjs`: ok (58 migrations, none rebuilds a referenced table).
+- `pnpm check`: first run failed (biome format of the drizzle-written `_journal.json` and the 0056/0057 snapshots); after `biome format` on those three files, **exit 0** (lint, typecheck, guards, migration guard).
+- EXPLAIN (in `offer-erasure.test.ts`, `offer-redaction.test.ts`): every read and write statement searches by an index (`documents_client_type_status`, `acceptances_document`, `contacts_client_email`, the child tables' `*_position`, `document_sends_document`, `offer_links_group`/`offer_links_send`, `notifications_entity`, `approvals_document`); the only scan is the bound `json_each` list.
+- No dev server was started.
+
+**Not verified**
+- CPU of a 10-offer anonymise on staging (F4); no staging access here.
+- An R2 delete that fails twice (only the log line by key is written; not forced in a test).
+- The screens (designer), and the T6 "Client accepted by email?" box (integration item).
+
+**Open questions**
+- Q-B1 (owner, copy): the activity label for `document.redact` (now "[Placeholder]"). Suggested line: "erased the personal details in a document".
+- Q-B2 (lead): D5, cancelling a queued-but-unprocessed send as well; keep (recommended, fewer emails to a withdrawn offer) or narrow to `queued_at IS NULL`?
+- F1 (backups leaving out proposals and estimates) still stands before Phase 7.
+
+## Builder report (early-check fixes)
+**Builder, 2026-10-31, branch `fix/t7-offer-erasure-b2` from `origin/feat/t7-offer-erasure` 1ef9a6a3** (cloud session; commits 86a479a5, 6385caf6, ee6d03ba and this report). Every **Fix** row of the triage is done; row 8 (renumbering) is not mine: migrations stay 0056/0057. No screen touched (one admin label, below).
+
+**Skills:** tried `cloudflare:workers-best-practices`, `cloudflare:wrangler` and `cloudflare:workers-profiling` first; all three answer "Unknown skill" in this cloud session, so none loaded. No other skill in docs/14 §9 fits data, logic and API work. Context7 not reachable here; behaviour was checked against the code and the running tests.
+
+**Per finding**
+1. **Redaction moves forward** (high). `packages/db/src/offer-redaction.ts`: `REDACTABLE_OFFER_SQL` drops `d.redacted_at IS NULL` (an already-redacted offer is eligible again; the cap of 10 counts it). `packages/db/src/triggers.ts`: new `REDACTION_FORWARD_SQL` (`NEW.redacted_at IS NOT NULL AND (OLD.redacted_at IS NULL OR NEW.redacted_at > OLD.redacted_at)`, never NULL, so `NOT (move)` can't hide a change); `REDACTION_MOVE_SQL` = type check + forward; new pinned `REDACTION_FORWARD_0057 = ["redacted_at"]`: in `documents_frozen_update` `redacted_at` is still named with the set-once columns but may move forward inside the move (cleared, backwards, or the same time with new text all refuse); `documents_redaction_scope` refuses anything but a forward move (message now "...erased, and the erasure time only moves forward"); child `*_frozen_update` (same names and messages) allow a row's `redacted_at` to move forward to **exactly its parent's** with only its text changed. Admin `apps/admin/worker/offer-redaction.ts`: the read takes each offer's `redacted_at`; the batch stamps `max(now, newest read + 1)`; the documents UPDATE adds `documents.redacted_at IS NOT ?2`, the text and mark UPDATEs use `redacted_at IS NOT ?2` with the parent `= ?2`; one `document.redact` audit row per offer each time. **Added (consequence of 1):** the guard also proves each offer's `redacted_at` is as read (`plan.stamps`, `NOT EXISTS ... json_each ... d.redacted_at IS NOT <read>`): a second erasure landing between the read and the batch would otherwise let this batch write text computed before it. Tests: db `offer-redaction.test.ts` ("redacted_at never clears or goes backwards, and an equal one rewrites nothing", "a later erasure moves the redaction forward...", child "marker equal to the redacted parent's ... never cleared or backwards", eligibility picks an already-redacted offer, the pinned-list test names the carve-outs in `SET_ONCE_0057`); admin `offer-erasure.test.ts` "a later erasure reaches an offer already redacted": business decliner then addressee, individual first contact then last live contact (client scope, client anonymised), cap counting 10 redacted + 1 new = 409.
+2. **Individual client, contact scope** (med). Core `redactRecipient(r, scope, {individual, redact})` / `redactOffer(..., {individual, redact})`: in contact scope at an individual client the redactor runs over `legalName` and `displayName`; address and GSTIN stay. `individual` = the frozen `clientType`, else the live client's (`cl.type AS client_type` added to the head read). A display name that isn't one of the contact's values (e.g. "Asha" vs "Asha Rao") stays until client scope reaches it. Tests: core "contact at an INDIVIDUAL client...", "contact at a BUSINESS client: the business's names stay...", "individual, contact scope (not the last live contact)..."; admin individual sequence (first step).
+3. **Case** (med). `packages/core/src/text.ts` `wholeWordPattern(texts, {ignoreCase})` (default unchanged, so `document-save.ts`'s contact rename is as before); core `redactor` uses `ignoreCase: true`, so both the stored redaction and the view of accepted offers (`document-view.ts` uses the same `redactor`). Tests: core `text.test.ts` (default case-sensitive; ignore-case with mixed case, an email, Élodie, an Indic name), `redaction.test.ts` ("ignores case...", the view's redactor, the fast-check property now with mixed-case text and an ignore-case check); admin "ignores case: an upper-case name and a mixed-case email...".
+4. **Guard paths** (med). Admin `offer-erasure.test.ts`, five `beforeBatchHolding` races, each "once: read again and redact (200)" and "twice: 409 `stale_version`, nothing written": the eligible set shrinks (an offer accepted), the last-live state flips (another contact anonymised, then a new one added), the contact's `updated_at`, the client's `updated_at` (client scope), and an offer's `redacted_at` moved by another erasure (the new stamp guard).
+5. **Child inserts** (low). New triggers `document_sections_redaction_insert`, `document_lines_redaction_insert`, `payment_schedules_redaction_insert` (BEFORE INSERT WHEN `NEW.redacted_at IS NOT NULL`, message starts with the trigger name) in the 0057 set. Test: db "a child row is never inserted already redacted (a draft's too)"; "every trigger 0057 creates is installed exactly as generated" now checks all 11 by name.
+6. **Missing tests** (low). Admin: a credit note on an issued invoice (both naming the person, same individual client) stays byte-identical; EXPLAIN of the three mark statements (`SEARCH <table> USING INDEX`) and of the guard's subqueries inside the audit row's FROM (`documents_client_type_status`, no table scan). Portal `offer-fixes.test.ts` "an offer erased by an anonymise (T7)": a decline by link is 404 and moves no lead; an erasure between the accept's read and its batch leaves no acceptance, audit row or lead move (404); v1 revised by a rendered v2 that was erased: neither listed, neither PDF downloads.
+7. **Jobs send** (low). `apps/jobs/src/offers.ts`: `SEND_READ` reads `d.redacted_at` and refuses (`why: "redacted"`, the row marked not sent); the link INSERT joins the document only while `redacted_at IS NULL`, so an erasure between the read and the batch emails nothing. Test `apps/jobs/test/offers.test.ts` "refuses an offer whose personal details were erased..." (before the read, a redelivery of a send that holds a link, and the race).
+- **CPU row.** `readRedactionPlan` compiles one redactor per distinct value list (a per-request `Map`, never kept across requests since it holds names) and passes it through `redactOffer`'s `redact` option; `byDoc` pushes instead of spreading.
+- **Coordinator's message (owner, 2026-10-31):** `apps/admin/src/lib/audit.ts` `"document.redact": "erased personal details from a proposal or estimate"` (07-ZG line 4, plain string like the approved `document.expire` next to it). `docs/07-content-appendix/ZG-offer-erasure.md` still says line 4 "waits for the owner": the lead updates it.
+
+**Regenerated migration:** `0057_offer_redaction_triggers` removed with its snapshot and journal entry, then `drizzle-kit generate --custom --name offer_redaction_triggers` + `node scripts/write-triggers.ts offer_redaction_triggers` (`packages/db`), journal and snapshot formatted with biome. 0056 unchanged. The set now has 11 `CREATE TRIGGER`s (the 8 before + 3 child insert triggers); recreated triggers keep their names and messages.
+
+**Commands and results** (heavy ones through `tools/heavy.sh`)
+- `pnpm --filter @techaust/db test`: 36 files, **535 passed**.
+- `pnpm --filter @techaust/core test`: 92 files, **1884 passed**; coverage statements 99.02 %, branches 97.97 %, functions 98.54 %, lines 99.15 %.
+- `pnpm --filter @techaust/admin test`: 121 files, **3522 passed**.
+- `pnpm --filter @techaust/portal test`: 25 files, **658 passed**. `pnpm --filter @techaust/jobs test`: 34 files, **556 passed**.
+- Builds: admin front **99,271** bytes (limit 150,000); admin API **630,285** (first T7 build 629,427, +858; under the 640,000 stop line); portal **100,916** (limit 120,000); jobs **985,650** (first T7 build 985,464, +186; under 995,000). Startup fastest of 7: admin 13.6 ms, admin API 71.3 ms, portal 14.6 ms, jobs 83.6 ms.
+- `pnpm check` (once, at the end): **exit 0** (lint, typecheck, guards, migration guard: 58 migrations, none rebuilds a referenced table).
+- Single-file runs while working: db 4 files 122 passed; admin `offer-erasure` 29 passed; core redaction + text 28 passed; jobs `offers` 45 passed; portal `offer-fixes` 13 passed. No dev server was started.
+
+**Differences from the triage (and why)**
+- The guard gained a per-offer `redacted_at` check (finding 1's consequence, above) and a fifth race test for it.
+- A child row's forward move must equal its parent's `redacted_at` (stricter than "greater than the old value"), so a child can't be stamped with a time its parent never had.
+- The batch's time is `max(now, newest redacted_at read + 1)`, so two erasures in the same millisecond (or a clock behind an earlier stamp) still move forward instead of failing the batch.
+- `documents_redaction_scope`'s message changed ("once" no longer true); it is a new trigger of the unapplied 0057, not a recreated one.
+
+**Not verified**
+- CPU of a 10-offer anonymise on staging (F4; no staging here). The per-request regex cache is unmeasured beyond the build's startup reading.
+- The screens (designer): the dialog and banner don't yet know an offer can be redacted twice (the banner date is the newest erasure).
+
+**Open questions**
+- None blocking. For the lead: update 07-ZG's status line for line 4, and (13) the rule "a redacted offer is redacted again when a later erasure names another person; each erasure writes its own `document.redact` row".
+
+## Re-check
+**Reviewer, 2026-10-31, at 8de58193: APPROVE**, no new findings. Rows 2–7 verified point by point (the 2-statement read, the child UPDATEs stamping every row to the parent's `redacted_at` with text changed only where planned, triggers and migrations unchanged, the counting proxy counting batch members and the session, step-up, touch and access-log statements, the stale path writing nothing, ≤ 45 on every path; `HELD_LEAD_SQL` byte-identical after the move; the jobs bell guard). Re-ran db 535, admin 3,528, jobs 557, all passed. Live: the erased view (banner, PDF panel, only "Revoke links" and "Make new version", axe 0) and a normal offer unchanged. Not verified live: the dialog's `stale_version` message (shown through the existing `errorText` path with the existing API message). Screenshots `.logs/shots/t7-recheck-*.png`.
+
+## Integration notes (final)
+- Branch tip checks by the lead (through `tools/heavy.sh`): **`pnpm check` exit 0** (migration guard: 58 migrations, none rebuilds a referenced table); **`pnpm test` exit 0**: auth 135, ui 471 (2 skipped), core 1,884, email 130, db 535, pdf 376, web 714 (17 skipped: no `apps/web/dist` in this checkout), portal 658, jobs 557, admin 3,528.
+- **Migrations (renumbered after proforma withdraw: now 0057 and 0058, see below):** `0056_offer_redaction` (ADD COLUMN `redacted_at` on `documents`, `document_sections`, `document_lines`, `payment_schedules`) and `0057_offer_redaction_triggers` (recreates `documents_frozen_update`, `document_sections_frozen_update`, `document_lines_frozen_update`, `payment_schedules_frozen_update`; new `documents_redaction_scope`, `documents_redaction_insert`, `documents_redacted_fixed`, `acceptances_redacted`, `document_sections_redaction_insert`, `document_lines_redaction_insert`, `payment_schedules_redaction_insert`). proforma-withdraw also takes 0056: T7 becomes 0057/0058 when the main session says to take `main` in (take out the unapplied pair, merge, regenerate; proforma doesn't touch T7's pinned lists, per the early check).
+- **Worker bytes** (reviewer's and builder's fresh builds): admin front 99,271; **admin API 629,939** (main 618,422, +11,517; plan line 650,000); portal 100,916; **jobs 985,884** (main 984,266, +1,618; of 1,000,000).
+- `main` (T12) was taken in once by the lead (49dd653f).
+- Docs: 04 (ADM-CLI-05, ADM-PROP-05 acceptance lines), 05 §5.3 (the erasure move), 08 §backups (F1 note), 08-C RB-37 (part (a) text and App column). The main session adds a CLAUDE.md line if it wants one.
+- **Integration item at the T6 merge:** hide T6's "Client accepted by email?" box when `redactedAt` is set.
+
+## Re-check 2 (the integration with main)
+**Reviewer, 2026-10-31, at a7281e61: APPROVE**, nothing to fix. 0057/0058 have the same SHA-256 as the old 0056/0057; main's 0056 and earlier untouched; journal and snapshot chain consistent (0056 → 0057 → 0058; 0057's snapshot differs from 0056's only by the four `redacted_at` columns); migration guard ok (59). 0058's freeze trigger never refuses more than 0050's (its only additions relax for quotes or refuse only redacted rows), so only the order of messages changes where two triggers both refuse: `VOID_REFUSED` (`/void`, `/withdraw`) still sees its own messages, the routes that map "issued document is frozen" already expected it, portal and jobs map none; the widened proforma test is justified. T6 (#130) added no acceptance, decline, send, view or render path; the staff reply box hides for an erased offer. Re-ran db 558 and admin 3,584, passed.
+
+## Integration notes (main taken in, 2026-10-31, on the main session's word)
+- The main session (16:2x IST): proforma withdraw (#132) merged after T6 (#130); T7 merges fourth.
+- Done by the lead, CLAUDE.md "migration order": T7's unapplied 0056/0057 (SQL, snapshots, journal entries) taken out (the migrations folder then equal to `main` at 8d5b958), `origin/main` merged (8a531355; conflicts: `triggers.ts` (both sides added a trigger set: proforma's kept first), `migrations.test.ts`, 08-C (RB-37 ours, RB-38 T6's)), then regenerated: **`0057_offer_redaction`** (`drizzle-kit generate --name offer_redaction`) and **`0058_offer_redaction_triggers`** (`--custom` + `scripts/write-triggers.ts`). Both are byte-identical to the earlier 0056/0057. T7's pinned lists renamed `*_0057` → `*_0058` (tests and comments too). Proforma's 0056 adds triggers only (no column, no change to `documents_frozen_update`, `FROZEN_COLUMNS_0047`, `SET_ONCE_0050` or `DOCUMENT_COLUMNS`), so T7's lists needed no change; the main session's note about "proforma's withdraw columns" doesn't apply (it has none).
+- **Trigger order (found by the full run):** 0058 creates `documents_frozen_update` again, and SQLite runs the newest trigger first, so where it and an older trigger both refuse a write, its message now comes first. Only `proforma-withdraw.test.ts` met it (clearing a void proforma's `viewed_at`, a test-only write both triggers refuse); its expectation now accepts either message (3cc9693b). No route depends on it: `/void` and `/withdraw` map trigger messages (`VOID_REFUSED`), but the frozen trigger allows every column they write. (0050 set the same precedent when it recreated the trigger.)
+- **T6 box:** `staffReplyText` returns null for an offer with `redactedAt` (the "Client accepted by email?" box hides; a01a24af, test in `offers.test.ts`).
+- Checks at 3cc9693b (lead, `tools/heavy.sh`): **`pnpm check` exit 0** (migration guard: 59 migrations); **`pnpm test` exit 0**: auth 135, ui 471 (2 skipped), core 1,902, email 132, db 558, pdf 378, web 722 (17 skipped: no `apps/web/dist`), portal 678, jobs 557, admin 3,584.
+- **Worker bytes** (fresh builds after the merge): admin front 99,391; **admin API 636,202** (main ~624,685 per the main session: T7 adds about 11,500; plan line 650,000); **jobs 988,003** (main 986,412; of 1,000,000, stop line 995,000).
+
+## Integration notes (early-check fixes)
+Merged `fix/t7-offer-erasure-b2` (10db1e94) into the task branch with no conflict. The lead did not re-run the suites at the merge; the reviewer's run and the final `pnpm check` + `pnpm test` cover it. No separate analyst re-check: the reviewer checks the regenerated 0057 in full (lead).
+
+## Designer report
+**Designer, 2026-10-31, branch `fix/t7-offer-erasure-d1` from `origin/feat/t7-offer-erasure` 9f6c4a4a** (cloud session; commits c6d6ca88, d918d42e and this report). Admin SPA only; no worker, portal or copy-file change.
+
+**Skills:** `frontend-design:frontend-design` was tried first and answers "Unknown skill" (plugins don't load in this cloud session), so none loaded; the direction follows docs/06 and the existing admin parts (the `Notice` component, the PDF panel's sheet glyph, the data-tools refusal path). `dataviz` doesn't apply (no chart or tile).
+
+**What changed on screen**
+- **Read view of an erased offer** (`routes/documents/read.tsx`): an info `Notice` (existing component, info tone, `role="status"`) between the facts strip and the page, 07-ZG line 1 with `{date}` = `redactedAt` through `formatIstDay` (the formatter of the strip's "Sent" date). Same place as the invoice's locked banner.
+- **PDF panel** (`routes/documents/pdf-panel.tsx`, `lib/pdf.ts`): new phase `erased`; the heading is 07-ZG line 2; no download, no "Try again", no polling. The sheet glyph is drawn empty (no rule, no lines; `documents.css`), no warning colour: a fact, not a fault.
+- **Actions:** `canResend` (`lib/offers.ts`) is false once `redactedAt` is set, so "Send again" is gone; the PDF's `canRetry` is false too. "Revoke links" and "Make new version" stay (brief §8). The resend dialog and the PDF retry are the only places in `apps/admin/src` offering those actions (the lists offer neither).
+- **Erase or anonymise dialog** (`routes/clients/data-tools.tsx`): 409 `too_many_offers` goes down the existing refusal path (`blocked`, `Notice tone="error"`, `role="alert"`, like `legal_hold` and `on_issued_document`) with 07-ZG line 3; "Anonymise contact" stays off until the mode changes. `clients.css`: the refusal sentence sits flush in its notice (a paragraph margin left a gap under the long line; the same for all three refusals).
+- **Types** (`lib/documents-api.ts`): `DocumentView.redactedAt?: number | null`; `PdfState.state` gains `"erased"`.
+- **Copy** (`lib/copy-zg.ts`, new): lines 1–3 word for word (`erasedBanner`, `PDF_ERASED_LINE`, `TOO_MANY_OFFERS_LINE`) and `isErased`; a test proves lines 2 and 3 equal the API's `PDF_ERASED` and `TOO_MANY_OFFERS` messages.
+
+**Files:** `apps/admin/src/lib/copy-zg.ts` (new), `apps/admin/src/lib/copy-zg.test.ts` (new), `apps/admin/src/lib/documents-api.ts`, `apps/admin/src/lib/offers.ts`, `apps/admin/src/lib/pdf.ts`, `apps/admin/src/routes/documents/read.tsx`, `apps/admin/src/routes/documents/pdf-panel.tsx`, `apps/admin/src/routes/clients/data-tools.tsx`, `apps/admin/src/documents.css`, `apps/admin/src/clients.css`, this run file.
+
+**Local data (how it was made):** `pnpm dev:secrets`, `pnpm db:migrate:local` (0056, 0057 applied), `pnpm db:seed:local`, `pnpm portal:sample`; a scratch script (not committed) invited a throwaway sample Owner (`designer-t7-…@example.test`) in the local D1 and enrolled it over the local API as `apps/admin/e2e/global-setup.ts` does. Through the **real API**: a proposal drafted and sent to Sample Client A's `finance.a@example.test`, then that contact anonymised (`POST /contacts/:id/erase`, anonymise: 200, offer redacted); a second proposal sent to `team.a@example.test` (the normal one); 11 proposals sent to Sample Client B's `team.b@example.test` (over the cap). **One SQL write:** the normal offer's `pdf_sha256` set to a sample hash so its panel shows "PDF ready" (no jobs Worker ran locally). Empty sections were filled with "Sample text for the designer's check, prepared for {contact}. Not a real proposal." (sample data, not product copy).
+
+**Screenshots** (`.logs/shots/`, git-ignored)
+- `t7-erased-1280-light.png`, `t7-erased-1280-dark.png`: the erased offer, full page: banner, empty-sheet PDF panel, Emails with only "Revoke links", "Make new version", the sheet with "Anonymised client" in the texts.
+- `t7-erased-1280-light-top.png`, `t7-erased-1280-dark-top.png`: the same, first screen.
+- `t7-erased-390-light.png`, `t7-erased-390-dark.png` (+ `-top`): narrow; the banner wraps to three lines, the PDF line to two, no overflow.
+- `t7-erased-1280-os-dark-app-light.png`, `t7-erased-1280-os-light-app-dark.png`: in-app theme against the OS theme; the in-app choice wins.
+- `t7-normal-1280-light.png`, `t7-normal-1280-dark.png`: a normal sent offer, unchanged: no banner, "PDF ready" with fingerprint and "Download PDF", "Send again", "Revoke links".
+- `t7-too-many-offers-1280-light.png`, `t7-too-many-offers-390-dark.png`: the dialog's refusal with 07-ZG line 3, "Anonymise contact" disabled.
+
+**Checks**
+- axe (wcag2a/aa, 21a/aa, 22aa, best-practice): erased view light **0 violations**, dark **0**, in-app dark on OS light **0**; too_many_offers dialog **0**.
+- Read in the browser: erased view banner "Personal details erased on 31 Oct 2026. The number, status, dates and amounts are kept.", PDF panel "The PDF was deleted when the personal details were erased.", Send again, Try again and download **absent**, Revoke links **present**; normal offer: no banner, Send again and download present; dialog: alert text = line 3, confirm `disabled`.
+- Keyboard (erased, 1280 light, 40 Tabs): skip link, nav, search, bell, account, breadcrumb, client link, Revoke links, Make new version, the two scrollable tables, back to the top; every stop has the 2 px focus outline; no trap.
+- Console: no errors on the read views; on the dialog only the browser's "Failed to load resource: 409 (Conflict)" for the expected refusal.
+
+**Commands and results**
+- `pnpm --filter @techaust/admin exec vitest run src/lib/copy-zg.test.ts src/lib/pdf.test.ts src/lib/offers.test.ts`: 3 files, **34 passed**.
+- `bash tools/heavy.sh --log t7-d-typecheck pnpm --filter @techaust/admin typecheck`: **exit 0**.
+- `bash tools/heavy.sh --log t7-d-admin-test pnpm --filter @techaust/admin test`: **122 files, 3529 passed**.
+- `pnpm exec biome check <changed files>`: clean (two formatted with `--write` first).
+- `bash tools/heavy.sh --log lint pnpm lint` (final, once): **exit 0**, 1378 files, 10 warnings and 8 infos, all in files this run didn't touch (`apps/admin/worker/reports.test.ts`, `apps/web/src/lib/catalogue.ts`, `packages/core/src/public-text.ts`, `packages/pdf/test/*`).
+- The admin dev server (offset 0) was stopped before this report.
+
+**Text not from 07-ZG:** none; no `[Placeholder]`.
+
+**Not verified / notes**
+- The `playwright` MCP browser couldn't start (it looks for Chromium 1247 under `/opt/pw-browsers`, which has only 1243). Installing a browser needs the owner's go-ahead, so the screenshots, axe and the keyboard pass ran from a scratch script with the repo's own `@playwright/test` 1.64.1 and `@axe-core/playwright` on the already-present `/opt/ms-playwright` Chromium 1248.
+- The admin package has no DOM component tests; the screens are covered by source-pattern tests (the `pdf.test.ts` pattern) plus the pure rules.
+- Seen, not changed (not T7 screens): an erased offer's Emails row shows "–" and "Not sent" (the API cancels the anonymised contact's unsent send and has no name or email left to show); the Erase or anonymise dialog's title scrolls out of view at the top when its body scrolls (existing `Modal` behaviour with a long contact name).
+- The T6 "Client accepted by email?" box isn't on this branch (integration item, brief §9).
+
+## Integration notes (screens)
+Merged `fix/t7-offer-erasure-d1` (068a976b) with no conflict; screenshots copied to the main checkout's `.logs/shots/t7-*.png` (14 files). The lead checked `t7-erased-1280-light-top.png`: banner, erased PDF panel, only "Revoke links" under Emails.
+
+## Review
+**Reviewer, 2026-10-31, at f8632a26 (+ the 07-ZG word fix): APPROVE**, 1 medium and 6 low. Tests (through heavy.sh): db 535, core 1,884 (coverage 99.02 % statements), admin 3,529, portal 658, jobs 556, all passed. Fresh builds: admin front 99,271, admin API 630,285, jobs 985,650 bytes. Visual: the erased offer at 1280 and 390, light and dark, in-app theme against the OS theme both ways, reduced motion, keyboard pass, axe 0 violations everywhere; text exactly 07-ZG; the too_many_offers refusal writes nothing; a normal offer unchanged. The MCP browser couldn't start (Chromium path, see Follow-ups); `@playwright/test` + `@axe-core/playwright` from a scratch script instead. Screenshots `.logs/shots/t7-review-*.png`. Verified sound: 0057 against 0050/0001 (only the intended lines differ), the batch guard and every statement guarded, permissions unchanged, every portal and jobs path.
+
+| # | Sev | Finding | Lead's triage |
+|---|---|---|---|
+| 1 | Med | The 10-offer cap counts every never-accepted version (already-redacted ones too), so an individual client with many revisions can never have its last contact anonymised, and no "in parts" path exists | **Kept as a follow-up (F5) with a reason:** a parts path is its own design (route or script, and the owner-approved 07-ZG line 3 flow); the case can't arise before launch (no production data; staging has samples), and it must exist before 13 May 2027 |
+| 2 | Low | `too_many_offers` is answered before a legal hold | **Fix:** read the holds in the redaction read and answer `legal_hold` first; test |
+| 3 | Low | jobs `processOfferDecided` doesn't check `redacted_at` (re-inserts the decline bell, emails staff about a withdrawn offer) | **Fix:** select it and return "ignored"; test |
+| 4 | Low | `'offers', ?10` stored as REAL (`1.0`) | **Fix:** `CAST(?10 AS INTEGER)`; test asserts an integer |
+| 5 | Low | `pdfDeleted` is always 1 | **Fix:** `d.pdf_sha256 IS NOT NULL`; test |
+| 6 | Low (not verified) | About 47 D1 statements per anonymise, about 93 on a stale retry; D1 Free allows **50 queries per invocation** (docs/05-research-appendix A row 7; whether batch statements count one by one is unproven) | **Fix (lead, raised):** assume they count one by one. Measure the real count per invocation in a test (a counting wrapper on `env.DB`, guard and session reads included) and bring every path, the stale one included, to **≤ 45**: drop the in-route retry (409 `stale_version` at once; the SPA's existing stale handling shows it), fold the reads into fewer statements and the three child "mark" statements into the text updates where possible; pin the budget with a test. Staging proof stays with F4 |
+| 7 | Low | A leftover bare block in `eraseOnce`; `read.tsx` recomputes "erased" instead of `isErased` | **Fix** |
+
+## Builder report (review fixes)
+**Builder, 2026-10-31, branch `fix/t7-offer-erasure-b3` from `origin/feat/t7-offer-erasure` 24a0e8fa** (cloud session; commits 3bc3f4a8, 8d6a59d1 and this report). Rows 2–7 fixed; row 1 not built (F5). No migration or trigger changed (0056/0057 untouched).
+
+**Skills:** tried `cloudflare:workers-best-practices`, `cloudflare:wrangler` and `cloudflare:workers-profiling` first; all three answer "Unknown skill" in this cloud session, so none loaded. No other docs/14 §9 skill fits. Context7 not reachable; behaviour checked against the code and the running tests.
+
+**Per row**
+- **2 (hold before the cap).** The redaction read carries `held` (`c.legal_hold OR cl.legal_hold OR HELD_LEAD_SQL`); the route answers 404, `contact_anonymised`, then `legal_hold`, then `too_many_offers`, before any batch. `HELD_LEAD_SQL` moved from `clients.ts` to `@techaust/db/contact-access` (shared by the route's audit row, its "why" read and the redaction read). Test: `offer-erasure.test.ts` "a legal hold is answered before too_many_offers" (contact, client and lead holds, 11 offers each: 409 `legal_hold`, no audit row, nothing redacted).
+- **3 (jobs decided).** `apps/jobs/src/offers.ts` `processOfferDecided` reads `d.redacted_at` and returns `"ignored"` (`why: "redacted"`); the bell `INSERT` also refuses an erased offer, so an erasure between the read and the bell writes nothing. Test: `apps/jobs/test/offers.test.ts` "an offer whose personal details were erased (T7, review row 3)…" (no bell, no staff email; the race: no bell).
+- **4 (offers as INTEGER).** `'offers', CAST(?10 AS INTEGER)` in the anonymise row. Test: the audit test asserts `json_type(summary, '$.offers') = 'integer'`.
+- **5 (pdfDeleted).** `'pdfDeleted', d.pdf_sha256 IS NOT NULL`. Test: "pdfDeleted is 1 only for an offer that had a PDF" (fixture option `pdf: false`).
+- **6 (D1 budget).** No in-route retry: a stale read answers 409 `stale_version` at once, nothing written. The read is 2 statements (`REDACTION_READ_SQL.offers`: contact, client and each eligible offer in one `LEFT JOIN`, one row even with no offer; `.children`: the three child tables in one `UNION ALL`). The three "mark" statements are folded into the child text UPDATEs: the plan lists EVERY child row (`{id}` unchanged, `{id, c: 1, …text}` changed) and one `UPDATE … FROM json_each` per table sets the text only where `c = 1` and stamps every row; the child triggers are unchanged (forward move to exactly the parent's time, only text changed). Step 2e is now 10 statements. Tests: new describe "D1 statements per request (review row 6)" wraps `env.DB` with a counting proxy (first/run/all/raw count 1, a batch counts each statement), with the session's touch forced due (the worst case, asserted written) and asserts ≤ 45 on every path; the race tests now expect an immediate 409 with nothing written and a next request that succeeds; EXPLAIN covers the two reads and the three folded child statements (`SEARCH <table> USING INDEX`).
+- **SPA check for row 6:** the Erase or anonymise dialog (`routes/clients/data-tools.tsx`) sends any code other than `on_issued_document`, `legal_hold`, `too_many_offers` and `invalid_code` to `setFailure(errorText(e))`, an error `Notice` with the API's own message, the existing `STALE_VERSION` text "Someone else changed this record. Reload it and try again" (`worker/http.ts`, used by every stale route since M3). The route already answered it after the second try, so no new text.
+- **7.** The bare block in `eraseOnce` is gone (now `eraseBatch`, returns a `Response`); `read.tsx` uses `isErased(v)` (source-pattern test `copy-zg.test.ts` updated).
+
+**D1 statements per invocation** (one erase request, auth, step-up, touch and access-log statements included)
+
+| Path | Before (touch not due) | After (touch due, the worst case) |
+|---|---|---|
+| anonymise, 10 eligible offers | 47 | **42** |
+| anonymise, no offer | 34 | **32** |
+| erase | 29 | **30** |
+| erase refused (legal hold; on an issued document) | 31 | **32** |
+| anonymise, legal hold | 7 with 11 offers (answered `too_many_offers`); with 1–10 offers about 49, counted from the code, not measured (session 1, read 5, batch 41, "why" 1, exit row 1) | **5** |
+| anonymise, too_many_offers | 7 | **5** |
+| anonymise, stale (race before the batch) | 96 (read and batch twice) | **44** |
+
+The "before" figures were measured without the session touch; a due touch adds 1 to each. Worst after: 44 (stale path: session 1, read 2, batch 39 with the touch, "why" 1, exit access row 1). If more room is ever wanted: the two bell DELETEs could be one statement (−1).
+
+**Commands and results** (heavy ones through `tools/heavy.sh`)
+- `pnpm --filter @techaust/db test`: 36 files, **535 passed**.
+- `pnpm --filter @techaust/core test`: 92 files, **1884 passed**; statements 99.02 %.
+- `pnpm --filter @techaust/admin test`: 122 files, **3528 passed** (−6 retry tests merged into the immediate-409 ones, +2 row tests, +3 counting tests).
+- `pnpm --filter @techaust/portal test`: 25 files, **658 passed**. `pnpm --filter @techaust/jobs test`: 34 files, **557 passed**.
+- `pnpm --filter @techaust/admin typecheck`, `pnpm --filter @techaust/jobs typecheck`: exit 0.
+- Builds: admin front **99,271** bytes; admin API **629,939** (was 630,285, −346; under 640,000); portal **100,916**; jobs **985,884** (was 985,650, +234; under 995,000). Startup fastest of 7: admin 13.3 ms, admin API 66.0 ms, portal 13.6 ms, jobs 75.6 ms.
+- `pnpm check` (once, at the end): **exit 0**; lint 1378 files, 10 warnings, all in files this run didn't touch; migration guard ok (58).
+- While working: `offer-erasure.test.ts` 28 passed; with `clients-data` and `documents-anonymised` 56 passed; jobs `offers.test.ts` 46 passed; `copy-zg.test.ts` 7 passed. No dev server started.
+
+**Differences from the triage**
+- Row 3: besides the read, the bell `INSERT` refuses an erased offer (an erasure between the read and the bell). A staff decline email already queued in that window still goes (the same accepted limit as F3).
+- Row 5: `pdfDeleted` is 1 for any offer with a `pdf_sha256`, a second redaction of an offer whose PDF the first one deleted included (exactly the triage's expression).
+- Row 6: the counting test forces the session touch, so every count is the worst case; `HELD_LEAD_SQL` moved to `@techaust/db/contact-access` for row 2.
+
+**Not verified**
+- Whether D1 counts batch statements one by one (assumed, as the triage says); staging proof stays with F4.
+- CPU of the folded statements at 10 offers on staging (F4).
+
+**Open questions**
+- None blocking. For the lead: the brief's §2 ("the route reads again and retries once") and §2's statement list (3 mark statements) now differ from the code; 13 could record "a stale anonymise answers 409 `stale_version` at once (no retry), every erase path ≤ 45 D1 statements".
+
+## Integration notes
+
+## Lead decisions (for 13)
+- 2026-10-31, Lead (review triage): a stale anonymise answers 409 `stale_version` at once (no in-route retry); every erase and anonymise path stays at or under 45 D1 statements per invocation, pinned by a counting test (D1 Free: 50 queries per invocation, assumed to count batch statements one by one); `pdfDeleted` in `document.redact` means the offer had a PDF, which is gone after this erasure; the more-than-10-offers "in parts" path is follow-up F5.
+- 2026-10-31, Lead (fix builder's differences, accepted): each erasure writes its own `document.redact` row; the batch also guards each offer's `redacted_at` as read; the stamp is `max(now, newest read + 1)`; a child row's stamp equals its parent's.
+- 2026-10-31, **Owner** (T7 Q2): 07-ZG line 4 approved word for word: the audit label of `document.redact` is "erased personal details from a proposal or estimate". Applied: `apps/admin/src/lib/audit.ts`.
+- 2026-10-31, Lead (early-check triage): a never-accepted offer's redaction can run again when a later erasure names another person on it (`redacted_at` only moves forward); whole-word redaction ignores case, in the stored copy and in the view of accepted offers; an individual client's own name in the recipient block is redacted when its matching contact is anonymised, the rest of its details when the client itself is.
+- 2026-10-31, Lead (builder's Q-B2): erasing details from an open offer cancels every send of it that has no link yet, queued-but-unprocessed ones included (the "Revoke links" rule), so no email goes out about a withdrawn offer. The builder's other differences from the brief (D1–D14 in the Builder report) are accepted, subject to the early check.
+- 2026-10-31, **Owner** (T7 Q1): when a never-accepted open offer's addressee is anonymised, the offer is withdrawn at once: hidden from the portal for everyone, accept and decline refused, it still expires on its date; the one exception to "a sent offer stays open until the next version" (2026-10-25). Applied: `apps/portal/worker/offer-sql.ts`, trigger `acceptances_redacted`, `apps/admin/worker/clients.ts`.
+- 2026-10-31, **Owner**: 07-ZG lines 1–3 approved word for word ([07-ZG](../07-content-appendix/ZG-offer-erasure.md)).
+- 2026-10-31, Lead (analyst's draft): T7 design L1–L8 above (per-version scope; what is kept and erased; "Anonymised client" by whole words, values under 2 characters skipped; erase eligibility unchanged, redaction in anonymise mode; cap 10 offers per request; no backfill; never-accepted offers' PDFs deleted; RB-37(a) supersedes the 2026-10-26 "stored snapshot untouched" rows for never-accepted offers only).
+
+## Follow-ups (for 12)
+- **Cloud setup:** the `playwright` MCP server looks for Chromium 1247 under `/opt/pw-browsers` (which holds 1243), while `cloud-check.sh` reports it in `/opt/ms-playwright`; the T7 designer had to use `@playwright/test` from a scratch script instead. Check the MCP server's `PLAYWRIGHT_BROWSERS_PATH` (main session; setup script change needs the owner's paste).
+- **After an anonymise** (existing, not T7): the offer's Emails row for the anonymised contact shows "–" and "Not sent" though it was sent; the Erase or anonymise dialog's title scrolls away in a long body (existing `Modal`).
+- **F1 (before Phase 7):** the 10-year monthly finance backup exports the whole `documents` table; it must leave out proposals and estimates (or redacted rows), or backups keep erased data.
+- **F2 (M7.4):** the R2 sweep deletes any envelope or PDF a failed delete left behind.
+- **F3 (optional):** mark the person's still-`queued` `email_log` rows skipped in the batch (check the `email_log` triggers first).
+- **F5 (before 13 May 2027, Phase 7 checklist):** a supported way to anonymise a person named on more than 10 never-accepted offer versions (review finding 1): an owner-only parts path or a runbook script, matching 07-ZG line 3.
+- **F4:** a staging cold CPU reading of anonymise with the 10-offer fixture (`docs/runbooks/cpu-baseline.md`).
+
+## Handover
+(lead, 2026-10-31, 16:55 IST) **PR READY: [#133](https://github.com/techaust/techaust_platform/pull/133)** from `feat/t7-offer-erasure`. `main` (T6, proforma withdraw) is in, migrations renumbered to 0057/0058, re-check 2 APPROVE, `pnpm check` and `pnpm test` green. Next: the main session turns on auto-merge and Auto-fix; this session stays open for merge, renumbering or CI fixes on the same branch. The lead decisions and follow-ups F1–F5 above go to 13 and 12.

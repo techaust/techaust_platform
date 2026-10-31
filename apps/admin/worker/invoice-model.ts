@@ -12,6 +12,7 @@ import {
   PROFORMA_NOTICE,
   signatureRequired,
   udyamPrintedOn,
+  type WithdrawBlockerCode,
 } from "@techaust/core/invoices";
 import { milestoneTotals } from "@techaust/core/projects";
 import { percentFromBp } from "@techaust/core/schedule-text";
@@ -86,7 +87,7 @@ export const MILESTONE_NO_AMOUNT = e("milestone_no_amount", "That milestone has 
 export const MILESTONE_EXCLUSIVE = e("milestone_exclusive", "Choose a milestone or services, not both");
 export const VOID_NOT_ALLOWED = e("void_not_allowed", "This invoice can't be voided");
 export const ALREADY_VOID = e("already_void", "This invoice is already void");
-/** Q23 (OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?): the lead's line, 07-R's wording pending the owner's approval. */
+/** Q23 (Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): the owner's 2026-10-30 rule; such a void is reported as cancelled in Table 13, anything else is corrected by a credit note): the lead's line, 07-R's wording pending the owner's approval. */
 export const RETURN_PERIOD_CLOSED = e(
   "return_period_closed",
   "This invoice's GST return period has ended, so it can't be voided. Use a credit note instead.",
@@ -99,11 +100,40 @@ export const VIEWED_BY_CLIENT = e(
   "viewed_by_client",
   "The client has opened this invoice in the portal, so it can't be voided. Use a credit note instead.",
 );
-/** The same refusal for a proforma: it has no credit note, so it stays until converted (lead, 2026-10-30, docs/13; 07-Z §1's proforma line). */
+/**
+ * The same refusal for a proforma: it has no credit note, so it is withdrawn instead (owner, 2026-10-30, docs/13; 07-ZF 15, owner-approved 2026-10-31,
+ * replacing 07-Z §1's proforma line).
+ */
 export const VIEWED_BY_CLIENT_PROFORMA = e(
   "viewed_by_client",
-  "The client has opened this proforma in the portal, so it can't be voided.",
+  "The client has opened this proforma in the portal, so it can't be voided. Withdraw it instead.",
 );
+/** A proforma emailed to the client (a send row, no view yet): withdrawn, not voided (07-ZF 16). The code stays the void's own refusal; `reasons` carry `already_emailed`. */
+export const EMAILED_PROFORMA = e(
+  "void_not_allowed",
+  "This proforma has been emailed to the client, so it can't be voided. Withdraw it instead.",
+);
+
+// ---- withdraw a delivered proforma (ADM-INV-10; owner, 2026-10-30, docs/13): the API's words are 07-ZF's, owner-approved 2026-10-31 ----------------
+/** 07-ZF 14: anything but an issued proforma (another type, a draft, or a void proforma that never reached the client). */
+const ONLY_ISSUED_PROFORMA = "Only an issued proforma can be withdrawn.";
+export const WITHDRAW_PROFORMA_ONLY = e("withdraw_proforma_only", ONLY_ISSUED_PROFORMA);
+/** One error per withdraw blocker code (core `WITHDRAW_BLOCKER_CODES`); the route answers the first code's. */
+export const WITHDRAW_ERRORS = {
+  not_proforma: WITHDRAW_PROFORMA_ONLY,
+  already_withdrawn: e("already_withdrawn", "This proforma is already withdrawn."),
+  already_void: e("already_void", ONLY_ISSUED_PROFORMA),
+  not_issued: e("not_issued", ONLY_ISSUED_PROFORMA),
+  proforma_converted: e(
+    "proforma_converted",
+    "This proforma can't be withdrawn because an invoice has been made from it.",
+  ),
+  proforma_paid: e(
+    "proforma_paid",
+    "This proforma can't be withdrawn because a payment has been recorded against it.",
+  ),
+  not_delivered: e("not_delivered", "This proforma hasn't reached the client yet, so void it instead."),
+} as const satisfies Record<WithdrawBlockerCode, ApiError>;
 export const INVOICE_APPROVAL_EXPIRED = e(
   "approval_expired",
   "The invoice changed after the request, so the request expired",
@@ -619,7 +649,7 @@ export const advanceLineDescription = (proformaNumber: string) =>
  * engine computed it under (`export_lut` gives `lut`, `export_igst` gives `igst_paid`), NEVER the live Settings, which may have moved since the
  * proforma was issued (the proforma said 0 % under LUT; the invoice for the money must not turn into an IGST split because the setting changed).
  * A proforma that was not an export has no route (null). Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19): one LUT per FY, furnished before the first export of that FY.
- * OPEN (08-C RA-19, Q37): must the tax invoice for a payment received after the LUT lapsed charge IGST, or does the earlier FY's LUT cover it? The code refuses the LUT route and lets the Owner choose.
+ * Settled by the lead on the safest reading, 2026-10-30 (08-C RA-19, Q37): the LUT route is refused when the receipt day's FY has no saved LUT; the Owner saves the new LUT first or issues with IGST (owner, 2026-10-28).
  */
 export function proformaRouteOf(
   exportMode: string | null,

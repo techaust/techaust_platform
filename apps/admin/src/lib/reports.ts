@@ -59,7 +59,7 @@ export const GST_COPY = {
   done: (n: number) => (n === 1 ? "1 document checked. No errors." : `${n} documents checked. No errors.`),
   /**
    * FX-4 (full audit A5 1; 07-Y, PENDING): said instead of `done` while a blocking warning is present (a tax-only note whose tax the files leave out), so the panel never
-   * says "No errors" then. OPEN (08-C RA-32): how such a note is reported in Table 9B.
+   * says "No errors" then. Settled by the lead on the safest reading, 2026-10-30 (08-C RA-32): such a note is entered by hand in the GST portal's Table 9B, and 3B Table 3 checked before filing; whether the portal takes a nil-value row is unverified.
    */
   doneManual: (n: number, k: number) =>
     Y(
@@ -89,7 +89,7 @@ export const GST_COPY = {
   download: (section: string) => `Download ${section} CSV`,
   downloadAll: "Download all (ZIP)",
   verify: (version: string) =>
-    // OPEN (08-C RA-23 Q17): the offline tool's layout is the CA's to confirm.
+    // Settled by the lead on the safest reading, 2026-10-30 (08-C RA-23, Q17): a test import of each CSV before the first GSTR-1 (owner duty); until then the files are untested and every column unverified.
     `Made with layout ${version} for the GSTR-1 offline tool. Layouts change; before your first upload, test-import one file with your CA.`,
   /**
    * The column words of the totals panel and the 3B table: "Taxable value", "Table" and "Place of supply" are 07-V §3's CSV headers; the GST portal's own
@@ -227,7 +227,7 @@ export function gstWarningText(
     case "hsn_description_missing":
       return `SAC ${facts.sac ?? ""} has no description in our list; the file leaves it blank.`;
     case "before_fema_2026":
-      // OPEN (08-C RB-02): which period applies to an invoice raised before 1 October 2026.
+      // Settled by the lead on the safest reading, 2026-10-30 (08-C RB-02): 9 months from the invoice date; ask the bank for an extension if that has passed.
       return "Issued before 1 October 2026: a different realisation period may apply. Ask your bank or CA.";
     case "tax_only_note_manual":
       return taxOnlyNoteText(w);
@@ -236,9 +236,9 @@ export function gstWarningText(
 
 /**
  * FX-4 (full audit A5 1; 07-Y, PENDING): a tax-only note's blocking warning, naming the note, the recipient's GSTIN and each tax head with its amount to enter by hand.
- * OPEN (08-C RA-32): how is a tax-only debit note (taxable value nil, tax only) reported in GSTR-1 Table 9B through the Offline Tool, and how does it flow to 3B Table 3?
- * The line names what the files may leave out (OPEN (08-C RA-23): the Offline Tool import is untested, so it says "may not come through", never "would be nil") and
- * sends the question to the CA; it never says how to file it.
+ * Settled by the lead on the safest reading, 2026-10-30 (08-C RA-32): a tax-only debit note is entered by hand in the GST portal's Table 9B, and 3B Table 3 checked before filing; whether the portal takes a nil-value row is unverified.
+ * The line names what the files may leave out (Settled by the lead on the safest reading, 2026-10-30 (08-C RA-23): a test import of each CSV before the first GSTR-1 (owner duty); until then the import is untested, so it says "may not come through", never "would be nil") and
+ * the copy still sends the question to the CA (a T12 follow-up for new copy); it never says how to file it.
  */
 export function taxOnlyNoteText(w: GstWarning): string {
   const m = w.manual;
@@ -471,12 +471,12 @@ export const REALISATION_COPY = {
     stage: "Stage",
     dueBy: "Due by",
   },
-  // OPEN (08-C RB-02).
+  // Settled by the lead on the safest reading, 2026-10-30 (08-C RB-02): 9 months from the invoice date; ask the bank for an extension if that has passed.
   beforeFema: "Issued before 1 October 2026: a different realisation period may apply.",
   // Researched 2026-10-28, Rule 96A CGST (08-C RA-20).
   igstNote:
     "Exports where IGST was charged show only the FEMA dates; the 12 months and 15 days GST date applies to exports under your LUT.",
-  // Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-04); the proof document is OPEN (RB-05).
+  // Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-04); the proof document: Settled by the lead on the safest reading, 2026-10-30 (08-C RB-05): keep the bank advice or e-FIRA; for a PA-CB, the settlement report mapped to the invoice.
   extensionNote:
     "If your bank extended a date, you can record it with the proof of payment in the payments update.",
   empty: "No export invoices are waiting for payment.",
