@@ -5,6 +5,7 @@ import { istDate, toIsoDate } from "@techaust/core/dates";
 import { formatMoney, money, negate } from "@techaust/core/money";
 import type { InvoiceSummary } from "../api.ts";
 import { INV } from "../copy-invoices.ts";
+import { WITHDRAWN_ZF } from "../copy-zf.ts";
 
 /** An amount of the document's currency, as core formats it (₹23,600.00, $1,200.00). */
 export const moneyText = (minor: number, currency: string) =>
@@ -22,24 +23,30 @@ export function qtyText(qtyMilli: number): string {
   return `${qtyMilli < 0 ? "-" : ""}${whole}${frac === "" ? "" : `.${frac}`}`;
 }
 
-/** 07-U §3's five statuses; a credit note owes nothing, so it has none of its own. */
-export type ClientInvoiceStatus = "due" | "overdue" | "paid" | "credited" | "void" | null;
+/** 07-U §3's five statuses, and a withdrawn payment request (ADM-INV-10, 07-ZF 18); a credit note owes nothing, so it has none of its own. */
+export type ClientInvoiceStatus = "due" | "overdue" | "paid" | "credited" | "void" | "withdrawn" | null;
 
 /** Today in IST as `YYYY-MM-DD` (the due dates are IST days). */
 export const todayIst = (now = Date.now()): string => toIsoDate(istDate(now));
 
 export function clientStatus(
-  d: { type: string; status: string; balanceMinor: number; dueDate: string | null },
+  d: { type: string; status: string; balanceMinor: number | null; dueDate: string | null },
   today: string,
 ): ClientInvoiceStatus {
+  if (d.status === "withdrawn") return "withdrawn";
   if (d.status === "void") return "void";
   if (d.type === "credit_note") return null;
-  if (d.balanceMinor > 0) return d.dueDate !== null && d.dueDate < today ? "overdue" : "due";
+  if (d.balanceMinor !== null && d.balanceMinor > 0)
+    return d.dueDate !== null && d.dueDate < today ? "overdue" : "due";
   if (d.status === "credited") return "credited";
   return "paid";
 }
 
-export const statusLabel = (s: Exclude<ClientInvoiceStatus, null>) => INV.status[s];
+export const statusLabel = (s: Exclude<ClientInvoiceStatus, null>) =>
+  s === "withdrawn" ? WITHDRAWN_ZF.status : INV.status[s];
+
+/** ADM-INV-10: a payment request TecHaust withdrew after the client received it (the server's `status`). */
+export const isWithdrawnDoc = (d: { status: string }) => d.status === "withdrawn";
 
 /**
  * A note's frozen reason as its PDF prints it (07-T §1, `packages/pdf/src/layout/invoice.ts`): "Reason: {label}", with the words typed for it on a line

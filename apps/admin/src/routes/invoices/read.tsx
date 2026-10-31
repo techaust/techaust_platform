@@ -3,15 +3,18 @@
 // as frozen. Nothing here can change the invoice except the void, which keeps the number and the record (Rule 56(8); whether a never-delivered invoice
 // may be reported as cancelled is OPEN, 08-C RA-10). Step 5 (Q11): the Owner and the Accountant download the stored DUPLICATE FOR SUPPLIER copy under
 // the PDF (07-R §7), never sent to a client.
+// ADM-INV-10 (owner 2026-10-30, docs/13): a proforma the client has received (emailed or opened) is withdrawn, not voided: the Owner's "Withdraw proforma"
+// takes the void's place in the More menu, and a withdrawn proforma reads "Withdrawn" with 07-ZF 7's banner (who, when, why) in place of the void's.
 // M5.3: an issued tax or export invoice has its notes section (the deadline, its credit and debit notes, the balance after them, the actions that open the
 // note dialog); an issued note says what it is against and why, the client's IMS answer on a credit note, its lines against the invoice's and its totals.
 import type { Role } from "@techaust/core/permissions";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { PageHeader } from "../../components/display.tsx";
-import { Ban, Download, FolderKanban, Lock } from "../../components/icons.tsx";
+import { Archive, Ban, Download, FolderKanban, Lock } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { allowed } from "../../lib/access.ts";
+import { WITHDRAW_COPY } from "../../lib/copy-zf.ts";
 import { dayText, discountSources, formatIstDay } from "../../lib/documents.ts";
 import type { ViewLine } from "../../lib/documents-api.ts";
 import { sendState } from "../../lib/invoice-send.ts";
@@ -44,7 +47,7 @@ import type { InvoiceWithNotes, NoteKind } from "../../lib/notes-api.ts";
 import { PDF_COPY } from "../../lib/pdf.ts";
 import { LinesTable, TaxPreview } from "../documents/money.tsx";
 import { PdfPanel, type PdfSource, type PdfWords, useMailAfterPdf } from "../documents/pdf-panel.tsx";
-import { VoidDialog } from "./dialogs.tsx";
+import { VoidDialog, WithdrawDialog } from "./dialogs.tsx";
 import { NoteDialog } from "./note-dialog.tsx";
 import {
   AgainstInvoice,
@@ -161,6 +164,7 @@ function SupplierCopy({
 export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload: () => void; role: Role }) {
   const toast = useToast();
   const [voiding, setVoiding] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
   const [noting, setNoting] = useState<NoteKind | null>(null);
   // M5.4: the send dialog, and the "Resume reminders" offer after a send that left them paused (early check finding 5).
   const [sending, setSending] = useState(false);
@@ -187,8 +191,9 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
     v.pdf?.state === "ready" && (v.sends ?? []).some((r) => sendState({ ...r, pdfReady: true }) === "queued"),
     reload,
   );
-  const badge = badgeOf(v);
   const isVoid = v.status === "void";
+  const withdrawn = isVoid && v.void.withdrawn === true;
+  const badge = badgeOf({ status: v.status, overdue: v.overdue, withdrawn });
   const isNote = isNoteView(v);
   const kind = isNote ? noteKindOfView(v) : null;
   const ownerVoids = allowed(role, "invoices.void");
@@ -200,12 +205,16 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
         : voidBlockedText(v.void.blockers, v.type)
       : null;
   const title = v.number ?? draftTitle(v.client.name, v.type);
-  const showMore = v.frozen && ownerVoids && !isVoid && v.void.canVoid;
-  // FX-5 re-check, finding 1: closing the void dialog hands focus back to More, but the reload after a void (or after a refusal because the client
-  // opened it) removes More, whose only item is Void. Focus would fall to the page; it goes to the title instead.
+  const canVoidNow = v.frozen && ownerVoids && !isVoid && v.void.canVoid;
+  // ADM-INV-10: the server's flag (the Owner, a delivered proforma, nothing paid, nothing made from it); Void and Withdraw never both apply.
+  const canWithdrawNow = v.frozen && !isVoid && v.type === "proforma" && v.withdraw?.canWithdraw === true;
+  const showMore = canVoidNow || canWithdrawNow;
+  // FX-5 re-check, finding 1: closing the void (or withdraw) dialog hands focus back to More, but the reload after it (or after a refusal because the
+  // client opened it) removes More, whose only item it was. Focus would fall to the page; it goes to the title instead.
+  const takingBack = voiding || withdrawing;
   const wasVoiding = useRef(false);
   useEffect(() => {
-    if (voiding) {
+    if (takingBack) {
       wasVoiding.current = true;
       return;
     }
@@ -214,7 +223,7 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
     const active = document.activeElement;
     if (!active || active === document.body || !active.isConnected)
       document.querySelector<HTMLElement>("#main h1")?.focus();
-  }, [voiding, showMore]);
+  }, [takingBack, showMore]);
 
   return (
     <>
@@ -224,7 +233,7 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
         status={<InvoiceBadge badge={badge} />}
         lede={v.frozen ? undefined : INV_COPY.draftLede}
         more={
-          showMore
+          canVoidNow
             ? [
                 {
                   // The action keeps one name from the menu to the dialog's button (07-ZA item 9 for a proforma).
@@ -234,7 +243,17 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
                   onSelect: () => setVoiding(true),
                 },
               ]
-            : undefined
+            : canWithdrawNow
+              ? [
+                  {
+                    // 07-ZF 1 and 5: one name from the menu to the dialog's button.
+                    label: WITHDRAW_COPY.button,
+                    icon: <Archive size={16} />,
+                    tone: "danger",
+                    onSelect: () => setWithdrawing(true),
+                  },
+                ]
+              : undefined
         }
       />
       <dl className="client-strip doc-strip inv-strip">
@@ -287,11 +306,11 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
 
       {v.frozen && (
         <div className="notice notice--info inv-lock" role="status">
-          {isVoid ? <Ban size={20} /> : <Lock size={20} />}
+          {withdrawn ? <Archive size={20} /> : isVoid ? <Ban size={20} /> : <Lock size={20} />}
           <div>
             {isVoid && v.void.voidedAt !== null && (
               <p className="inv-lock__void">
-                {voidedLine(
+                {(withdrawn ? WITHDRAW_COPY.banner : voidedLine)(
                   formatIstDay(v.void.voidedAt),
                   v.void.voidedByName || UNKNOWN,
                   v.void.reason ?? "",
@@ -478,6 +497,23 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
             // The void answers with the milestone's new status (M5.1 L3): the toast says where it went, with no extra read.
             const line = milestoneBackLine(r.milestone?.status ?? null);
             if (line) toast("success", line);
+          }}
+        />
+      )}
+      {v.number && v.type === "proforma" && (
+        <WithdrawDialog
+          open={withdrawing}
+          number={v.number}
+          onClose={() => setWithdrawing(false)}
+          onStale={reload}
+          onWithdraw={async (reason) => {
+            const r = await invoicesApi.withdraw(v.id, v.updatedAt, reason);
+            setWithdrawing(false);
+            reload();
+            // 07-ZF 6, then the milestone's line as after a void (the withdrawal frees it the same way, L4).
+            const line = milestoneBackLine(r.milestone?.status ?? null);
+            const number = r.number ?? v.number ?? "";
+            toast("success", line ? `${WITHDRAW_COPY.toast(number)} ${line}` : WITHDRAW_COPY.toast(number));
           }}
         />
       )}

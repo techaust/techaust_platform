@@ -7,6 +7,7 @@ import type { InvoiceItem, InvoiceSummary } from "../api.ts";
 import { RTable } from "../components/document/rtable.tsx";
 import {
   Alert,
+  Archive,
   ArrowRight,
   CheckCircle,
   Clock,
@@ -17,9 +18,11 @@ import {
 } from "../components/icons.tsx";
 import { PageTitle } from "../components/shell/portal-shell.tsx";
 import { INV } from "../copy-invoices.ts";
+import { WITHDRAWN_ZF } from "../copy-zf.ts";
 import {
   type ClientInvoiceStatus,
   clientStatus,
+  isWithdrawnDoc,
   minusMoneyText,
   moneyText,
   noteReasonLines,
@@ -37,6 +40,8 @@ const LOOK = {
   paid: { tone: "success", Icon: CheckCircle },
   credited: { tone: "muted", Icon: CheckCircle },
   void: { tone: "muted", Icon: XCircle },
+  // ADM-INV-10: taken back, kept on record; muted as Void, told from it by its icon and its word.
+  withdrawn: { tone: "muted", Icon: Archive },
 } as const;
 
 /** 07-U §3's status, icon and words (never colour alone); a credit note has none. */
@@ -114,7 +119,8 @@ export function InvoicesScreen(props: { items: InvoiceItem[]; more?: ReactNode; 
               key: "balance",
               label: INV.cols.balance,
               num: true,
-              cell: (d) => (d.type === "credit_note" ? "–" : d.balance),
+              // a withdrawn payment request owes nothing (ADM-INV-10): no balance, a dash as a credit note's
+              cell: (d) => (d.type === "credit_note" || d.balance === null ? "–" : d.balance),
             },
             {
               key: "status",
@@ -182,7 +188,8 @@ function BankBlock({ bank }: { bank: NonNullable<InvoiceSummary["bank"]> }) {
 
 /**
  * One document: its number as the heading, the summary slip (issued, due, total and the balance due as the page's one large figure), Download PDF,
- * how to pay while something is owed, then the lines and totals as on the PDF.
+ * how to pay while something is owed, then the lines and totals as on the PDF. ADM-INV-10 (owner 2026-10-31, Q3): a withdrawn payment request says so
+ * first (07-ZF 19) and keeps its details, with no amount due, no due date, no PDF and no way to pay (the stored PDF still carries the bank details).
  */
 export function InvoicePage(props: {
   doc: InvoiceSummary;
@@ -201,7 +208,8 @@ export function InvoicePage(props: {
   const d = props.doc;
   const status = clientStatus(d, todayIst(props.now));
   const credit = d.type === "credit_note";
-  const owed = !credit && d.balanceMinor > 0 && d.status !== "void";
+  const withdrawn = isWithdrawnDoc(d);
+  const owed = !credit && !withdrawn && d.balanceMinor !== null && d.balanceMinor > 0 && d.status !== "void";
   const number = d.numberDisplay ?? "–";
   const reason = noteReasonLines(d.noteReason);
   // 07-ZA item 11: what credit notes took off, by their numbers (final sweep P2).
@@ -238,8 +246,17 @@ export function InvoicePage(props: {
           </div>
         )}
       </header>
+      {withdrawn && (
+        <div className="notice notice--info inv-doc__withdrawn" role="note">
+          <Archive size={20} />
+          <p>{WITHDRAWN_ZF.banner(d.withdrawnOn ? dateText(d.withdrawnOn) : "")}</p>
+        </div>
+      )}
       {props.notices}
-      {d.type === "proforma" && <p className="sheet-notice inv-doc__notice">{INV.proformaNotice}</p>}
+      {/* 07-ZA item 15's "A tax invoice will be issued when payment is received." would contradict 07-ZF 19 on a withdrawn request: not shown there. */}
+      {d.type === "proforma" && !withdrawn && (
+        <p className="sheet-notice inv-doc__notice">{INV.proformaNotice}</p>
+      )}
 
       <section className="inv-slip" aria-label={number}>
         <p className="inv-slip__dates">
@@ -268,30 +285,32 @@ export function InvoicePage(props: {
               <dd>{moneyText(d.creditedMinor, d.currency)}</dd>
             </div>
           )}
-          {!credit && (
+          {!credit && !withdrawn && d.balance !== null && (
             <div className="inv-slip__balance">
               <dt>{INV.balanceDue}</dt>
               <dd>{d.balance}</dd>
             </div>
           )}
         </dl>
-        <div className="inv-slip__actions">
-          <button
-            type="button"
-            className="btn btn--primary"
-            onClick={props.onPdf}
-            disabled={props.downloading}
-            aria-busy={props.downloading || undefined}
-          >
-            <Download size={20} />
-            {INV.downloadPdf}
-          </button>
-          {(props.pdfProblem || !d.pdfReady) && (
-            <p className="inv-slip__note" role="status">
-              {props.pdfProblem ?? INV.pdfNotReady}
-            </p>
-          )}
-        </div>
+        {!withdrawn && (
+          <div className="inv-slip__actions">
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={props.onPdf}
+              disabled={props.downloading}
+              aria-busy={props.downloading || undefined}
+            >
+              <Download size={20} />
+              {INV.downloadPdf}
+            </button>
+            {(props.pdfProblem || !d.pdfReady) && (
+              <p className="inv-slip__note" role="status">
+                {props.pdfProblem ?? INV.pdfNotReady}
+              </p>
+            )}
+          </div>
+        )}
       </section>
 
       {owed && d.bank && (

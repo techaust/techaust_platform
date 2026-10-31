@@ -59,7 +59,7 @@ type Base = Omit<InvoiceSummary, "total" | "balance">;
 const finish = (b: Base): InvoiceSummary => ({
   ...b,
   total: moneyText(b.totals.totalMinor, b.currency),
-  balance: moneyText(b.balanceMinor, b.currency),
+  balance: b.balanceMinor === null ? null : moneyText(b.balanceMinor, b.currency),
 });
 const totals = (t: Partial<InvoiceSummary["totals"]> & { taxableMinor: number; totalMinor: number }) => ({
   subtotalMinor: t.taxableMinor,
@@ -330,6 +330,33 @@ export const SAMPLE_INVOICES: InvoiceSummary[] = [
     bank: INR_BANK,
     pdfReady: true,
   }),
+  finish({
+    // ADM-INV-10 (07-ZF 18, 19): a payment request withdrawn after the client received it: no amount due, no due date, no PDF, no bank block, and
+    // never the staff's reason (the API sends none of them).
+    id: "pro-withdrawn",
+    type: "proforma",
+    status: "withdrawn",
+    withdrawnOn: day(-2),
+    numberDisplay: "TH/PRO/2627/0003",
+    issueDate: day(-9),
+    dueDate: null,
+    currency: "INR",
+    parentNumber: null,
+    gstEstimate: true,
+    totals: totals({ taxableMinor: 400_000, cgstMinor: 36_000, sgstMinor: 36_000, totalMinor: 472_000 }),
+    paidMinor: 0,
+    creditedMinor: 0,
+    balanceMinor: null,
+    lines: [
+      line(1, "Advance for the booking form (sample)", 1000, "project", 400_000, 400_000, {
+        cgst: 36_000,
+        sgst: 36_000,
+        rateBp: 1800,
+      }),
+    ],
+    bank: null,
+    pdfReady: false,
+  }),
 ];
 
 const itemOf = (d: InvoiceSummary): InvoiceItem => ({
@@ -344,6 +371,7 @@ const itemOf = (d: InvoiceSummary): InvoiceItem => ({
   balanceMinor: d.balanceMinor,
   total: d.total,
   balance: d.balance,
+  withdrawnOn: d.withdrawnOn ?? null,
 });
 
 /** The invoice link tokens of the sample: 43 characters; the first letter picks the case. */
@@ -351,6 +379,7 @@ export const SAMPLE_INVOICE_TOKENS = {
   invoice: `I${"a".repeat(42)}`,
   proforma: `P${"a".repeat(42)}`,
   credit: `C${"a".repeat(42)}`,
+  withdrawn: `W${"a".repeat(42)}`,
   ended: `Z${"a".repeat(42)}`,
 };
 
@@ -361,7 +390,9 @@ const ofToken = (t: string) =>
       ? SAMPLE_INVOICES[2]
       : t.startsWith("C")
         ? SAMPLE_INVOICES[4]
-        : undefined;
+        : t.startsWith("W")
+          ? SAMPLE_INVOICES.find((x) => x.id === "pro-withdrawn")
+          : undefined;
 
 type Json = (status: number, body: unknown) => Response;
 type Err = (status: number, code: string) => Response;
@@ -381,14 +412,24 @@ export function answerInvoices(
   if (m) {
     const d = SAMPLE_INVOICES.find((x) => x.id === decodeURIComponent(m[1] ?? ""));
     if (!d || empty) return h.error(404, "not_found");
-    if (m[2]) return d.pdfReady ? h.pdf(file(d)) : h.error(409, "pdf_pending");
+    if (m[2])
+      return d.status === "withdrawn"
+        ? h.error(409, "withdrawn")
+        : d.pdfReady
+          ? h.pdf(file(d))
+          : h.error(409, "pdf_pending");
     return h.json(200, { document: d });
   }
   const t = /^\/t\/document(\/pdf)?$/.exec(path);
   if (t) {
     const d = ofToken(String(body.token ?? ""));
     if (!d) return h.error(404, "not_found");
-    if (t[1]) return d.pdfReady ? h.pdf(file(d)) : h.error(409, "pdf_pending");
+    if (t[1])
+      return d.status === "withdrawn"
+        ? h.error(409, "withdrawn")
+        : d.pdfReady
+          ? h.pdf(file(d))
+          : h.error(409, "pdf_pending");
     return h.json(200, { document: d });
   }
   return null;
