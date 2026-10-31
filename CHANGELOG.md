@@ -2,6 +2,10 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-31 [#130](https://github.com/techaust/techaust_platform/pull/130) feat(terms): offer wording, proposal terms v4 and website Terms 0.2 [ADM-SET-08, ADM-PROP-07, ADM-EST-01, POR-04, WEB-LEGAL]
+- 2026-10-31 [#129](https://github.com/techaust/techaust_platform/pull/129) docs(08-c): retag settled OPEN comments and rewrite 08-C §5 [T12]
+- 2026-10-31 [#128](https://github.com/techaust/techaust_platform/pull/128) docs: parallel run restarted; T6 Q1 and Q2 answered by the owner
+- 2026-10-31 [#127](https://github.com/techaust/techaust_platform/pull/127) docs: parallel cloud task sessions (owner, 2026-10-31); end of day
 - 2026-10-31 [#126](https://github.com/techaust/techaust_platform/pull/126) fix(cloud): install Node in /opt/techaust-node, clear of the image's /opt/node24
 - 2026-10-31 [#125](https://github.com/techaust/techaust_platform/pull/125) docs: T6 and T11 wording approved (07-ZE: offer wording, proposal terms v4, legal pages 0.2, the deed of assignment; Q1-Q4); launch all at once (owner); end of day 2026-10-31 (status, run-file handovers, CLAUDE.md)
 - 2026-10-31 [#124](https://github.com/techaust/techaust_platform/pull/124) feat(invoices): signature always on notes and advance invoices, Udyam number on tax invoices [ADM-INV-01, ADM-INV-06, ADM-INV-07, ADM-SET-01]
