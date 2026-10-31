@@ -47,6 +47,8 @@ export const MUTABLE_AFTER_FREEZE = [
   "einv_status",
   // M5.3 (LD46): the client's IMS response to a credit note; the triggers of 0042 allow only the moves of `canSetImsStatus`.
   "ims_status",
+  // M6.1 (T8, L8): the TDS the ledger recompute sums from confirmed `tds` payments; tied by `documents_ledger_identity` (0057) and `documents_tds_bounds`.
+  "tds_minor",
   "updated_at",
 ] as const;
 
