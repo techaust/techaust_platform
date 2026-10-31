@@ -64,6 +64,7 @@ import {
 } from "./http.ts";
 import { INVOICE_TYPES_SQL } from "./invoice-consts.ts";
 import { type Direction, decodeCursor, encodeCursor, keysetSql, PREFIX_END, pageOf } from "./keyset.ts";
+import { PAYMENTS_PENDING } from "./payment-messages.ts";
 
 // ---- errors ----------------------------------------------------------------------------------------------------------
 
@@ -1012,6 +1013,14 @@ const HELD_LEAD_SQL =
   "EXISTS (SELECT 1 FROM leads l WHERE l.legal_hold = 1 AND (l.contact_id = c.id OR (l.contact_email = c.email AND (l.client_id IS NULL OR l.client_id = c.client_id))))";
 
 /** The client of contact `?1` is an individual and this contact is its last live one: the condition of the client's own erase (`col` is the row's client column). */
+/**
+ * Lead decision (2026-10-31, 07-ZH line 22): a contact whose erase would anonymise its individual client (its last live contact) is refused while a payment
+ * of that client waits for the Owner's check (`payments_pending`): the pending entry would otherwise lock with the client. `contact` is the contact's placeholder.
+ */
+const PAYMENTS_PENDING_ON_LAST = (contact: string) =>
+  `(EXISTS (SELECT 1 FROM clients pc WHERE pc.id = c.client_id AND pc.type = 'individual') AND NOT EXISTS (SELECT 1 FROM contacts po WHERE po.client_id = c.client_id AND po.id <> ${contact} AND po.anonymised_at IS NULL)
+    AND EXISTS (SELECT 1 FROM payments pp INDEXED BY payments_client WHERE pp.client_id = c.client_id AND pp.status = 'pending_verification'))`;
+
 const LAST_LIVE_INDIVIDUAL = (col: string) =>
   `${col} = (SELECT client_id FROM contacts WHERE id = ?1) AND EXISTS (SELECT 1 FROM clients cl WHERE cl.id = ${col} AND cl.type = 'individual') AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = ${col} AND o.id <> ?1 AND o.anonymised_at IS NULL)`;
 
@@ -1241,7 +1250,8 @@ export const contacts = new Hono<AppEnv>()
           "c.client_id",
           "json_object('contactId', c.id, 'mode', ?8, 'reason', ?9)",
           `FROM contacts c JOIN clients cl ON cl.id = c.client_id
-           WHERE c.id = ?7 AND c.anonymised_at IS NULL AND c.legal_hold = 0 AND cl.legal_hold = 0 AND NOT ${HELD_LEAD_SQL}${erase ? ` AND NOT ${CONTACT_ON_ISSUED_DOCUMENT_SQL}` : ""}`,
+           WHERE c.id = ?7 AND c.anonymised_at IS NULL AND c.legal_hold = 0 AND cl.legal_hold = 0 AND NOT ${HELD_LEAD_SQL}${erase ? ` AND NOT ${CONTACT_ON_ISSUED_DOCUMENT_SQL}` : ""}
+             AND NOT ${PAYMENTS_PENDING_ON_LAST("?7")}`,
           [id, mode, reason],
         ),
       after: (g) => [
@@ -1400,13 +1410,14 @@ export const contacts = new Hono<AppEnv>()
     }
     // Nothing was written: say why.
     const why = await c.env.DB.prepare(
-      `SELECT c.anonymised_at AS gone, (c.legal_hold = 1 OR cl.legal_hold = 1 OR ${HELD_LEAD_SQL}) AS held, ${CONTACT_ON_ISSUED_DOCUMENT_SQL} AS doc FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1`,
+      `SELECT c.anonymised_at AS gone, (c.legal_hold = 1 OR cl.legal_hold = 1 OR ${HELD_LEAD_SQL}) AS held, ${CONTACT_ON_ISSUED_DOCUMENT_SQL} AS doc, ${PAYMENTS_PENDING_ON_LAST("?1")} AS pending FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1`,
     )
       .bind(id)
-      .first<{ gone: number | null; held: number; doc: number }>();
+      .first<{ gone: number | null; held: number; doc: number; pending: number }>();
     if (!why) return err(c, NOT_FOUND, 404);
     if (why.gone !== null) return err(c, ANONYMISED, 409);
     if (why.held) return err(c, LEGAL_HOLD, 409);
     if (erase && why.doc) return err(c, ON_ISSUED_DOCUMENT, 409);
+    if (why.pending) return err(c, PAYMENTS_PENDING, 409);
     return err(c, NOT_AVAILABLE, 409);
   });

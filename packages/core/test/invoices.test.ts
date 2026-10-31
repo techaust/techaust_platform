@@ -359,6 +359,8 @@ describe("void [Q1, LD7]", () => {
       issueDate: fc.option(fc.constantFrom("2026-09-30", "2026-10-01", "2026-10-31"), { nil: null }),
       today: fc.constantFrom("2026-10-15", "2026-11-01"),
       type: fc.constantFrom("tax_invoice", "export_invoice", "proforma"),
+      tdsMinor: fc.nat(1_000),
+      paymentPending: fc.boolean(),
     });
     fc.assert(
       fc.property(facts, (f) => {

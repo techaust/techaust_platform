@@ -677,7 +677,7 @@ describe("the back-fill of the advance receipts (L4, 0057 step 0)", () => {
       ),
     ).toEqual([{ id: `pal_${rid}`, document_id: inv, amount_minor: 118_000, kind: "allocate" }]);
     const before = await docRow(inv);
-    await recompute({ paymentId: `pay_${rid}` });
+    await recompute({ paymentIds: [`pay_${rid}`] });
     const after = await docRow(inv);
     expect(after).toMatchObject({
       paid_minor: before?.paid_minor,
@@ -685,7 +685,7 @@ describe("the back-fill of the advance receipts (L4, 0057 step 0)", () => {
       status: "paid",
       tds_minor: 0,
     });
-    await result({ paymentId: `pay_${rid}` });
+    await result({ paymentIds: [`pay_${rid}`] });
     await run(fillPayments);
     await run(fillAllocations);
     expect(await all("SELECT id FROM payments WHERE advance_receipt_id = ?", rid)).toHaveLength(1);

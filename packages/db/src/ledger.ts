@@ -258,7 +258,7 @@ export function verifyPaymentStatement(
 /** The pending `payment_verify` approval follows the decision (approved or rejected), and the requester gets a bell (kind `payment.decided`), both guarded. */
 export function decideApprovalStatements(
   db: D1Database,
-  a: { paymentId: string; decidedBy: string; now: number; note: string | null; bell: Bell },
+  a: { paymentId: string; decidedBy: string | null; now: number; note: string | null; bell: Bell },
   g: GuardSql,
 ): D1PreparedStatement[] {
   const g1 = guarded(g, 4);

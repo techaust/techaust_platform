@@ -28,6 +28,7 @@ import {
   type TermsRaw,
   type UsageRaw,
 } from "@techaust/db/care";
+import { COLLECTED_SQL, PENDING_PAYMENTS_COUNT_SQL } from "@techaust/db/ledger";
 import {
   EXPORT_NEXT_SQL,
   EXPORT_STAGE_COUNTS_SQL,
@@ -145,7 +146,7 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
   }
   if (tiles.has("pipelineValue")) add("pipeline", db.prepare(PIPELINE_SQL).bind(today));
   // M5.5b (LD80): the finance tile is live, in this same batch: invoiced (this financial year and this month), what clients owe and what is overdue, the proformas
-  // that wait for payment, and the export invoices nearing a deadline. "Collected" and "payments to verify" arrive with payments (M6).
+  // that wait for payment, and the export invoices nearing a deadline. M6.1: "Collected" and the Owner's "Payments to check" are live too.
   const fy = fyOfDate(todayDate);
   const fyFrom = `${fy.startYear}-04-01`;
   const fyTo = `${fy.startYear + 1}-03-31`;
@@ -160,6 +161,11 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
       db.prepare(SETTINGS_TAX_SQL),
       db.prepare(EXPORT_STAGE_COUNTS_SQL).bind(today),
       db.prepare(EXPORT_NEXT_SQL).bind(today),
+      // M6.1 (07-ZH line 16): collected this IST month and this FY, by currency (confirmed payments only, `payments_confirmed`); and, for the Owner, how
+      // many payments wait for a check (`payments_pending`, the partial index only).
+      db.prepare(COLLECTED_SQL).bind(monthFrom, today),
+      db.prepare(COLLECTED_SQL).bind(fyFrom, fyTo),
+      ...(me.role === "owner" ? [db.prepare(PENDING_PAYMENTS_COUNT_SQL)] : []),
     );
   }
   if (tiles.has("projects")) {
@@ -362,8 +368,24 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
             })),
           }
         : { available: false, reason: "settings_invalid" },
-      collected: { available: false, arrivesWith: "payments" },
-      paymentsToVerify: { available: false, arrivesWith: "payments" },
+      collected: {
+        available: true,
+        month: rows<{ currency: string; collected: number; n: number }>("finance", 7).map((r) => ({
+          currency: r.currency,
+          collectedMinor: r.collected,
+          count: r.n,
+        })),
+        fy: rows<{ currency: string; collected: number; n: number }>("finance", 8).map((r) => ({
+          currency: r.currency,
+          collectedMinor: r.collected,
+          count: r.n,
+        })),
+      },
+      // The Owner's tile only (the check is the Owner's): Staff and the Accountant get no figure, not a zero.
+      paymentsToVerify:
+        me.role === "owner"
+          ? { available: true, count: count("finance", 9) }
+          : { available: false, reason: "owner_only" },
     };
   }
   if (tiles.has("projects")) {

@@ -294,6 +294,9 @@ export type InvoiceSummary = {
   };
   paidMinor: number;
   creditedMinor: number;
+  /** M6.1 (T8): the TDS the client deducted (0 when none); `tdsRow` is the summary row, 07-ZH line 18 "TDS deducted by you", or null. */
+  tdsMinor?: number;
+  tdsRow?: { label: string; amount: string } | null;
   balanceMinor: number;
   total: string;
   balance: string;

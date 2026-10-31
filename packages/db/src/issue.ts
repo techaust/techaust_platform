@@ -12,7 +12,13 @@
 // succeed, and a number would have been burned. Unguarded, a stale or refused send aborts as a whole (counter, lead, audit: nothing).
 // A later version (version > 1) of a proposal or estimate takes no number: it copies series, FY, number and display from version 1.
 import { INVOICE_FLOW_TYPES, NOTE_PARENT_LIVE_STATUSES, REMINDER_TYPES } from "@techaust/core/invoices";
-import { allocationStatements, ledgerResultStatement, recomputeStatement } from "./ledger.ts";
+import {
+  allocationStatements,
+  type Bell,
+  decideApprovalStatements,
+  ledgerResultStatement,
+  recomputeStatement,
+} from "./ledger.ts";
 import type {
   InvoiceBankBlock,
   InvoiceIssuerSnapshot,
@@ -630,6 +636,11 @@ export type AdvanceIssueArgs = Omit<InvoiceIssueArgs, "authority" | "bell" | "ex
    * Owner), links it to the receipt and approves its `payment_verify` approval. Absent: the batch records a new confirmed payment `pay_<receiptId>`.
    */
   paymentId?: string | null;
+  /**
+   * Early check A7: with `paymentId`, the requester's bell (07-ZH line 6, "Your payment of {amount} from {client} was confirmed.", words supplied by the route)
+   * rings through `decideApprovalStatements`, as a confirm from the Payments list does. Absent: the approval is approved with no bell.
+   */
+  decidedBell?: Bell | null;
   /** M6.1: the mode of the new payment (NEFT, UPI, ...), or null; ignored when `paymentId` is given (the pending row keeps its own). */
   mode?: string | null;
   /** The hash of the new invoice's draft content (the row is inserted with it, and the freeze checks it). */
@@ -826,13 +837,21 @@ function advancePaymentStatements(db: D1Database, a: AdvanceIssueArgs): D1Prepar
             a.receivedOn,
             ...receiptMade.params,
           ),
-        db
-          .prepare(
-            `UPDATE approvals SET status = 'approved', decided_by = ?2, decided_at = ?3
+        ...(a.decidedBell
+          ? decideApprovalStatements(
+              db,
+              { paymentId, decidedBy: a.issuedBy, now: a.now, note: null, bell: a.decidedBell },
+              receiptMade,
+            )
+          : [
+              db
+                .prepare(
+                  `UPDATE approvals SET status = 'approved', decided_by = ?2, decided_at = ?3
              WHERE payment_id = ?1 AND kind = 'payment_verify' AND status = 'pending'
                AND EXISTS (SELECT 1 FROM payments p WHERE p.id = ?1 AND p.status = 'confirmed' AND p.advance_receipt_id = ?4)`,
-          )
-          .bind(paymentId, a.issuedBy, a.now, a.receiptId),
+                )
+                .bind(paymentId, a.issuedBy, a.now, a.receiptId),
+            ]),
       ]
     : [
         db

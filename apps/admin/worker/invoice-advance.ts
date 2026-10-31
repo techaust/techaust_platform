@@ -23,6 +23,7 @@ import {
   normaliseReference,
   parseFxRate,
 } from "@techaust/core/invoices";
+import { PAYMENT_MODES } from "@techaust/core/ledger";
 import { maxNumber, sqlPrintfPattern } from "@techaust/core/numbering";
 import { lutsOf } from "@techaust/core/tax";
 import { headerExtrasJson, invoiceSealOf, type TermsRef } from "@techaust/db/documents";
@@ -81,6 +82,7 @@ import {
   todayOf,
 } from "./invoice-model.ts";
 import { fxIn, readInvoice } from "./invoices.ts";
+import { bellDecided, PAYMENT_MISMATCH, PAYMENT_NOT_PENDING, paymentLink } from "./payment-messages.ts";
 import { CLIENT_GONE, lineRows, NUMBERING_CHANGED } from "./quote-model.ts";
 
 export const advanceBody = z.strictObject({
@@ -99,11 +101,18 @@ export const advanceBody = z.strictObject({
    * (`advance_lut_missing`); `igst` charges IGST at 18 % and prints the 07-S section 9 line. Only for an overseas client.
    */
   route: z.optional(z.enum(["lut", "igst"])),
+  /**
+   * M6.1 (L5; 07-ZH line 12): "Confirm by issuing the tax invoice": the pending payment Staff recorded against this proforma. The batch flips it to confirmed and
+   * puts it on the new invoice; it must be a pending `payment` of the proforma's client and currency, of exactly `amountMinor`, received on `receivedOn`.
+   */
+  paymentId: z.optional(z.string().check(z.minLength(1), z.maxLength(64))),
+  /** M6.1: how a new payment was made (NEFT, RTGS, IMPS, UPI, SWIFT); ignored with `paymentId` (the pending entry keeps its own). */
+  mode: z.optional(z.enum(PAYMENT_MODES)),
 });
 
 /** What a refused advance batch looks like when it comes back as an error. */
 const ADVANCE_REFUSED =
-  /issue did not freeze|not an issuable draft|UNIQUE constraint failed: (documents|advance_receipts)\.|documents_(invoice|parent|void|ledger|advance_lut)|advance_receipts_/;
+  /issue did not freeze|not an issuable draft|UNIQUE constraint failed: (documents|advance_receipts)\.|documents_(invoice|parent|void|ledger|advance_lut|tds)|advance_receipts_|payment_allocations_|ledger_result_check|payments_|approvals_payment/;
 
 const istMonthOf = (iso: string) => iso.slice(0, 7);
 
@@ -126,6 +135,12 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
         .bind(id, norm ?? ""),
       // Decision 10: an export invoice for money received pins the newest extra export note, as any export invoice does.
       db.prepare(NEWEST_EXPORT_DECLARATION),
+      // M6.1: the pending payment this confirms, when one is named.
+      db
+        .prepare(
+          "SELECT p.id, p.kind, p.status, p.client_id, p.currency, p.amount_minor, p.received_on, p.recorded_by, c.display_name AS client_name FROM payments p JOIN clients c ON c.id = p.client_id WHERE p.id = ?1",
+        )
+        .bind(f.paymentId ?? ""),
     ]);
     // (2) 404 unless a proforma
     if (!ctx) return err(c, NOT_FOUND, 404);
@@ -144,6 +159,32 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
     if (ctx.client.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
     // (5b) the supply the proforma was sealed with must still be the client's (Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)): nothing is written when it is not
     if (proformaSupplyChanged(d.computed, ctx.client.gst_status)) return err(c, ADVANCE_SUPPLY_CHANGED, 409);
+    // (5c) M6.1 (L5): the pending payment named must be the money this invoice is for: a pending `payment` of this client and currency, of this amount and day.
+    const pending = ctx.extra[2]?.results[0] as
+      | {
+          id: string;
+          kind: string;
+          status: string;
+          client_id: string;
+          currency: string;
+          amount_minor: number;
+          received_on: string;
+          recorded_by: string | null;
+          client_name: string;
+        }
+      | undefined;
+    if (f.paymentId !== undefined) {
+      if (!pending) return err(c, NOT_FOUND, 404);
+      if (pending.status !== "pending_verification") return err(c, PAYMENT_NOT_PENDING, 409);
+      if (
+        pending.kind !== "payment" ||
+        pending.client_id !== d.client_id ||
+        pending.currency !== d.currency ||
+        pending.amount_minor !== f.amountMinor ||
+        pending.received_on !== f.receivedOn
+      )
+        return err(c, PAYMENT_MISMATCH, 409);
+    }
     // (6) the amount against what is left
     if (f.amountMinor > d.balance_minor) return err(c, ADVANCE_EXCEEDS_BALANCE, 409);
     // (7) the day the money arrived: not before the proforma was issued, not in the future (IST); an earlier month only warns (Q27)
@@ -367,6 +408,22 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       receivedOn: f.receivedOn,
       referenceNorm: norm,
       receiptId,
+      paymentId: f.paymentId ?? null,
+      mode: f.paymentId === undefined ? (f.mode ?? null) : null,
+      // Early check A7: the requester's bell (07-ZH line 6) when this confirms a Staff member's pending entry.
+      decidedBell:
+        f.paymentId !== undefined && pending
+          ? {
+              title: bellDecided(
+                "confirmed",
+                pending.amount_minor,
+                pending.currency,
+                pending.client_name,
+                "",
+              ),
+              link: paymentLink(pending.id),
+            }
+          : null,
       contentSha256: computation.hash,
       expected,
       draft: {
@@ -426,6 +483,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
           currency,
           receiptId,
           receivedOn: f.receivedOn,
+          ...(f.paymentId !== undefined ? { paymentId: f.paymentId } : {}),
           ...(inrExport ? { inrExportConfirmed: true } : {}),
           ...(warnings.length ? { warnings } : {}),
         },
@@ -445,6 +503,14 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
             rid: c.var.rid,
           }),
         );
+    }
+    if (!done && f.paymentId !== undefined) {
+      // M6.1: the pending entry was decided meanwhile (another confirm, or a parallel invoice for it): nothing was made.
+      const p = await db
+        .prepare("SELECT status FROM payments WHERE id = ?1")
+        .bind(f.paymentId)
+        .first<{ status: string }>();
+      if (p && p.status !== "pending_verification") return err(c, PAYMENT_NOT_PENDING, 409);
     }
     if (!done)
       return explain(c, id, {

@@ -34,6 +34,7 @@ const base = (over: Partial<SqlRow> = {}): SqlRow => ({
   purpose_code: null,
   ims_status: null,
   rates: "[]",
+  extended_to: null,
   ...over,
 });
 
