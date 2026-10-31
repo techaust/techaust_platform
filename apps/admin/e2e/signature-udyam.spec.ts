@@ -423,7 +423,7 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
     await expect(page.locator(".savebar")).toHaveCount(0);
 
     // a save in flight disables the whole form, and the waiting category keeps its look all the while (re-check E: it flashed the read-only look).
-    // The change is a trailing space on the trade name, which the save trims away, so the stored profile is the same.
+    // The change is a trailing space on the trade name, which the save trims away: the server answers "no change" and the stored profile stays.
     const category = page.getByLabel("Enterprise category");
     const look = (el: Element) => {
       const s = getComputedStyle(el);
@@ -445,12 +445,14 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
       },
     );
     await page.getByRole("button", { name: "Save changes" }).click();
-    await expect(page.locator("fieldset.settings-form__body")).toBeDisabled();
+    await expect(page.locator("fieldset.settings-form__body")).toHaveAttribute("disabled", "");
     expect(await category.evaluate(look)).toBe(waiting);
     release();
-    await expect(page.getByText("Company profile saved. New documents use it from now on.")).toBeVisible();
+    await expect(page.getByText("No change: these settings were already saved.")).toBeVisible();
+    await expect(page.locator("fieldset.settings-form__body")).not.toHaveAttribute("disabled");
     expect(await category.evaluate(look)).toBe(waiting);
     await page.unrouteAll();
+    await page.getByRole("button", { name: "Discard" }).click();
   });
 
   test("Settings › Company: keyboard order and visible focus through the Udyam fields", async ({ page }) => {
@@ -627,7 +629,7 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
     }
   });
 
-  test("dialogs: a focused code field and its wrong-code line stay clear of the sticky actions, at 390 and 768 px [ADM-AUTH-08, ADM-INV-07]", async ({
+  test("dialogs: a focused code field and its wrong-code line stay clear of the sticky actions, at 390, 768 and 1280 px [ADM-AUTH-08, ADM-INV-07]", async ({
     page,
   }) => {
     // The SPA is told no step-up is active, so every dialog asks for a code, and every code is refused in the browser (400 `invalid_code`, as the
