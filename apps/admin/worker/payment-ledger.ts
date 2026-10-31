@@ -40,8 +40,8 @@ import {
   allocationExceedsBalance,
   EXCEEDS_CREDIT,
   EXCEEDS_EXCESS,
-  EXTENSION_NOT_LATER,
-  EXTENSION_TOO_FAR,
+  extensionNotLater,
+  extensionTooFar,
   LEDGER_CHANGED,
   LETTER_ALREADY_SET,
   NOT_AN_EXPORT_INVOICE,
@@ -493,10 +493,10 @@ export const invoiceLedger = new Hono<AppEnv>()
     if (d.gone === 1) return err(c, CLIENT_GONE, 409);
     // Later than the current FEMA date (earlier extensions included), and within the bound (L23.7).
     if (d.fema_due !== null && f.extendedTo <= d.fema_due)
-      return err(c, EXTENSION_NOT_LATER, 409, { femaDue: d.fema_due });
+      return err(c, extensionNotLater(d.fema_due), 409, { femaDue: d.fema_due });
     const issued = parseIsoDate(d.issue_date) as NonNullable<ReturnType<typeof parseIsoDate>>;
     const limit = toIsoDate(addDays(issued, EXTENSION_MAX_DAYS));
-    if (f.extendedTo > limit) return err(c, EXTENSION_TOO_FAR, 409, { latest: limit });
+    if (f.extendedTo > limit) return err(c, extensionTooFar(limit), 409, { latest: limit });
     const extensionId = uuidv7();
     const now = Date.now();
     let done = false;
@@ -528,7 +528,7 @@ export const invoiceLedger = new Hono<AppEnv>()
       if (again.status === "void" || again.voided_at !== null) return err(c, INVOICE_VOID, 409);
       if (again.gone === 1) return err(c, CLIENT_GONE, 409);
       if (again.fema_due !== null && f.extendedTo <= again.fema_due)
-        return err(c, EXTENSION_NOT_LATER, 409, { femaDue: again.fema_due });
+        return err(c, extensionNotLater(again.fema_due), 409, { femaDue: again.fema_due });
       return (await sessionRefusal(c, false)) ?? err(c, STALE_VERSION, 409);
     }
     return c.json({ ok: true, id: extensionId, documentId: id, extendedTo: f.extendedTo }, 201);

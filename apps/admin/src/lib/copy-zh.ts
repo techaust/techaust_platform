@@ -3,7 +3,7 @@
 // audit log's labels (line 49) don't load the payment screens' words.
 
 /** Lines 23 onwards of 07-ZH: false until the lead (staff-only lines, owner's delegation) approves them. */
-export const APPROVED_07ZH_NEW = false;
+export const APPROVED_07ZH_NEW = true;
 export const PLACEHOLDER_MARK = "[Placeholder]";
 /** A 07-ZH line from 23 as the screen shows it: marked until approved. */
 export const ZH = (line: string): string => (APPROVED_07ZH_NEW ? line : `${PLACEHOLDER_MARK} ${line}`);
