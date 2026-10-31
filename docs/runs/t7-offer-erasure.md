@@ -1,7 +1,7 @@
 # Run: T7, erase a person's data in the frozen copies of never-accepted offers
-Status: WAITING ON OWNER (07-ZG line 4, an audit label; not blocking); analyst early check running (builder done at 72f193c)
+Status: WAITING ON OWNER (Q2, an audit label; not blocking); early check CHANGE, fix builder running (branch fix/t7-offer-erasure-b2)
 Tier: A (deleting or anonymising data; docs/14 §2)
-Usage: lead claude-opus-5-5/high (cloud session t7-erasure); analyst claude-opus-5-5/high (brief draft; skills: tried `cloudflare:workers-best-practices` and `cloudflare:wrangler`, both "Unknown skill" in the cloud session although model-audit lists them; 5-h 8 % at 12:58 IST); builder claude-opus-5-5/high (agent-ac9b3fbc, layers to the Tier A stop point, 13:25–14:16 IST; same two skills tried, both unknown; 5-h 46 % at 13:46 IST)
+Usage: lead claude-opus-5-5/high (cloud session t7-erasure); analyst claude-opus-5-5/high (brief draft; skills: tried `cloudflare:workers-best-practices` and `cloudflare:wrangler`, both "Unknown skill" in the cloud session although model-audit lists them; 5-h 8 % at 12:58 IST); builder claude-opus-5-5/high (agent-ac9b3fbc, layers to the Tier A stop point, 13:25–14:16 IST; same two skills tried, both unknown; 5-h 46 % at 13:46 IST); analyst claude-opus-5-5/high (agent-af81419a, early check; tried the two skills and `cloudflare:workers-profiling`, all unknown)
 
 **Task (main session, 2026-10-31):** 08-C RB-37(a), settled by the lead on the safest reading (2026-10-30, [settle-08c](settle-08c.md)): on an erasure request, erase the person's data in the frozen copy of every proposal or estimate that was **never accepted**; keep the number, status, dates and hash. Accepted offers and every invoice-family document stay untouched (financial records). Due before 13 May 2027 (DPDP core duties).
 
@@ -147,6 +147,19 @@ Accepted offers and the invoice family; serving an anonymised client's accepted-
 - **T12:** the RB-37 comments in `apps/admin/worker/clients.ts` (step 2d) and `packages/db/src/contact-access.ts`, and 08-C §5 (T7 edits only the RB-37 row).
 
 ## Early check
+**Analyst, 2026-10-31, at c687cc9: CHANGE** (1 high, 3 medium, 4 low; ran `offer-redaction.test.ts` 18 passed and `offer-erasure.test.ts` 15 passed). Checked and sound: triggers (0057's `documents_frozen_update` equals 0050's except the four intended lines; child triggers equal 0001's plus the carve-out), the batch guard proves set equality, audit rows hold no personal data, R2 keys (D1) and deletion only after success, jobs (D12), portal and D13, D5 bounded to the plan's ids, bundle growth is T7's own code (nothing large pulled in).
+
+| # | Sev | Finding | Lead's triage |
+|---|---|---|---|
+| 1 | High | A frozen offer can be redacted only once (`redacted_at IS NULL` in eligibility and the triggers), so a second person's later erasure never reaches it (business: decliner then addressee; individual: first contact, then the last live contact, whose client's name stays) | **Fix:** redaction moves forward: eligibility drops `redacted_at IS NULL`; the move is `NEW.redacted_at > OLD.redacted_at` (never cleared, never backwards) on documents and children; tests for both sequences and for backwards/equal/clear refused. 0056/0057 are unapplied, so regenerate (no new migration) |
+| 2 | Med | Contact scope at an INDIVIDUAL client keeps the person's own name in `recipient.legalName`/`displayName` | **Fix:** in contact scope with `clientType = individual`, run the redactor over `legalName` and `displayName`; address and GSTIN stay until the client itself is anonymised (then finding 1 lets the client scope reach the offer); test |
+| 3 | Med | Whole-word matching is case-sensitive ("ASHA RAO", "Asha@Example.com" survive) | **Fix:** case-insensitive option on core `wholeWordPattern`, used by the stored redaction **and** the view of accepted offers (one rule; it only hides more); tests incl. mixed case, emails and an Indic name |
+| 4 | Med | The D3 guard paths are untested beyond "an extra offer appears" | **Fix:** four `beforeBatchHolding` cases (set shrinks; last-live flips; contact `updated_at`; client `updated_at`), each retry-then-success and twice → 409 `stale_version`, nothing written |
+| 5 | Low | A child row inserted with `redacted_at` set isn't refused | **Fix:** `*_redaction_insert` BEFORE INSERT triggers on the three child tables (new names); test |
+| 6 | Low | Missing tests: credit note untouched; portal `offer-fixes`; EXPLAIN of the three mark statements and the guard's subqueries | **Fix:** add them |
+| 7 | Low (optional) | jobs send processing doesn't check `redacted_at` | **Fix:** read it and refuse (defence in depth); test |
+| 8 | — | Merge items: main (T12) conflict in `clients.ts`; proforma-withdraw takes 0056 | Main taken in by the lead (49dd653f, T7's comment kept). Renumbering to 0057/0058 waits for the main session's word after proforma merges (proforma doesn't touch T7's pinned lists) |
+| CPU | — | Cheap savings: cache the compiled regex per distinct value list; `push` instead of spreads in `byDoc` | **Fix** (cheap); F4 stays |
 
 ## Builder report
 **Early check** (Tier A stop point; builder, 2026-10-31, branch `fix/t7-offer-erasure-b1`, tip after this report). No screens touched except one data line (see D14).
@@ -206,6 +219,7 @@ Accepted offers and the invoice family; serving an anonymised client's accepted-
 ## Integration notes
 
 ## Lead decisions (for 13)
+- 2026-10-31, Lead (early-check triage): a never-accepted offer's redaction can run again when a later erasure names another person on it (`redacted_at` only moves forward); whole-word redaction ignores case, in the stored copy and in the view of accepted offers; an individual client's own name in the recipient block is redacted when its matching contact is anonymised, the rest of its details when the client itself is.
 - 2026-10-31, Lead (builder's Q-B2): erasing details from an open offer cancels every send of it that has no link yet, queued-but-unprocessed ones included (the "Revoke links" rule), so no email goes out about a withdrawn offer. The builder's other differences from the brief (D1–D14 in the Builder report) are accepted, subject to the early check.
 - 2026-10-31, **Owner** (T7 Q1): when a never-accepted open offer's addressee is anonymised, the offer is withdrawn at once: hidden from the portal for everyone, accept and decline refused, it still expires on its date; the one exception to "a sent offer stays open until the next version" (2026-10-25). Applied: `apps/portal/worker/offer-sql.ts`, trigger `acceptances_redacted`, `apps/admin/worker/clients.ts`.
 - 2026-10-31, **Owner**: 07-ZG lines 1–3 approved word for word ([07-ZG](../07-content-appendix/ZG-offer-erasure.md)).
