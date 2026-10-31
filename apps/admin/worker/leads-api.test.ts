@@ -4,7 +4,7 @@
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core/ids";
 import { deleteAfter } from "@techaust/core/lead-lifecycle";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { SEARCH_PLAN_SQL } from "./leads.ts";
 import { mkItem } from "./test-catalogue.ts";
 import { call, captureQueue, countOf, one, rows, sessionFor, withEnv } from "./test-helpers.ts";
@@ -775,20 +775,28 @@ describe("PATCH /leads/:id [ADM-LEAD-03]", () => {
     );
     expect(await json(same)).toMatchObject({ ok: true, changed: false, updatedAt: lead.updated_at });
     expect(await countOf("lead_activities", "lead_id = ?", lead.id)).toBe(0);
-    // two saves from the same page: the second finds the page changed
-    const a = await send(
-      `/leads/${lead.id}`,
-      "PATCH",
-      { expectedUpdatedAt: lead.updated_at, phone: "+91 3" },
-      s.cookie,
-    );
-    const b = await send(
-      `/leads/${lead.id}`,
-      "PATCH",
-      { expectedUpdatedAt: lead.updated_at, phone: "+91 4" },
-      s.cookie,
-    );
-    expect([a.status, b.status]).toEqual([200, 409]);
+    // two saves from the same page: the second finds the page changed. The clock is pinned one and two milliseconds past the lead's
+    // `updated_at` (test-hardening 1b): workerd's clock does not move between calls without I/O, so all three writes could share one
+    // millisecond, and the first save would then write the very `updated_at` the second one expects ([200, 200]; see the run file).
+    try {
+      vi.useFakeTimers({ toFake: ["Date"], now: lead.updated_at + 1 });
+      const a = await send(
+        `/leads/${lead.id}`,
+        "PATCH",
+        { expectedUpdatedAt: lead.updated_at, phone: "+91 3" },
+        s.cookie,
+      );
+      vi.setSystemTime(lead.updated_at + 2);
+      const b = await send(
+        `/leads/${lead.id}`,
+        "PATCH",
+        { expectedUpdatedAt: lead.updated_at, phone: "+91 4" },
+        s.cookie,
+      );
+      expect([a.status, b.status]).toEqual([200, 409]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("an owner must be an active member who can read leads (not an accountant)", async () => {
