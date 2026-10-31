@@ -139,6 +139,29 @@ describe("0055 documents_signature_required [T4; ADM-INV-06; 08-C RA-17, RA-22]"
     }
   });
 
+  it("an advance is a `header_extras.advance` OBJECT, like core's truthiness: a JSON null or a scalar is no advance (code review 2)", async () => {
+    const t = await first<{ sql: string }>(
+      "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'documents_signature_required'",
+    );
+    expect(t?.sql).toContain("json_type(NEW.header_extras, '$.advance') = 'object'");
+    expect(t?.sql).not.toContain("json_type(NEW.header_extras, '$.advance') IS NOT NULL");
+    for (const [type, overseas, series] of [
+      ["tax_invoice", false, "invoice"],
+      ["export_invoice", true, "export"],
+    ] as const) {
+      // no advance: unsigned, they still issue (the plain invoice keeps the switch)
+      for (const extras of [{ advance: null }, { advance: "2026-11-01" }, { advance: 1 }, { advance: [] }]) {
+        const id = await mkDraft(type, overseas);
+        await rawFreeze(id, series, UNSIGNED, JSON.stringify(extras));
+        expect(await status(id), `${type} ${JSON.stringify(extras)}`).toBe("issued");
+      }
+      // an object, even an empty one, is an advance: refused unsigned
+      const id = await mkDraft(type, overseas);
+      await rejects(rawFreeze(id, series, UNSIGNED, JSON.stringify({ advance: {} })), TRIGGER);
+      expect(await status(id)).toBe("draft");
+    }
+  });
+
   it("a note frozen before 0055 without a signature keeps every later write: the trigger judges only the move from draft to issued", async () => {
     const p = await parentInvoice();
     const old = await insertNoteDraft(p, "credit", sampleCredit(p, [[0, 10_000]]));
