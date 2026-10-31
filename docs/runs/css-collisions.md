@@ -187,3 +187,11 @@ Before the fix, the busy chosen half had **no** fill (1:1 against the unchosen h
 **Placeholder text:** none. No copy changed.
 
 **Open questions:** none.
+
+### Re-check of fix round 1 (lead, 2026-11-01): **APPROVE**
+Tier C with no critical or high finding, so the lead re-checked instead of a second reviewer run. Diff `fe26c746..e86e357d` read in full: the disabled rule now sits before the chosen rule (same specificity, so a busy chosen half keeps fill and bar), the bar is `box-shadow: inset 0 -2px 0 var(--color-text)` (no size change), a forced-colours fallback (Highlight/HighlightText), findings 2–5 as asked. Screenshots checked by eye at 3× (`.logs/css-collisions/fix1/after-3x/`): Quarter chosen in light, the busy state in dark. The designer's measured bar contrast 12.48–16.28:1 against the unchosen half; axe 0 in 7 runs; `pnpm check` green; admin tests 3,808/3,809 with one unrelated timeout passing alone. Model audit: designer Opus 5.5 / high with `frontend-design`.
+
+## Integration notes
+- Squash-merged through its own PR with auto-merge after CI; `main` merged in first.
+- Lead decisions (13): GST Files keeps the 20 px bottom margin `reports.css` declares; the forced-colours fallback stays.
+- Follow-ups (12): the other switch screens (invoice new, notes, types, leads convert, milestones, project notes, gateways, client data tools) weren't photographed after the bar (same single rule); real Windows high contrast not checked; the portal `.back` has no screenshot (needs a client sign-in); while busy, the muted text on the chosen fill is 4.36:1 in dark (disabled controls are exempt from WCAG contrast).
