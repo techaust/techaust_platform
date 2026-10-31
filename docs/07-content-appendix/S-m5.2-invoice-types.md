@@ -81,7 +81,7 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 | fx_date_invalid | "Use the rate published on {invoice date}. If none was published that day, use the last one published before it, at most {days} days earlier." (Researched, 08-C RA-21; replaces the earlier line, lead 2026-10-28) |
 | fx_same_day_exists (new) | "A rate was published on {invoice date}, so use that day's rate." |
 | advance_date_invalid | "The date received can't be before the proforma's date or in the future." |
-| advance_previous_period (warning) | "This payment arrived in an earlier month. The GST on it belongs to that month's return: check with your CA." (Researched, 08-C RA-17) |
+| advance_previous_period (warning) | "This payment arrived in an earlier month. The GST on it belongs to that month's return: check with your CA." (Researched, 08-C RA-17) **Replaced on 2026-11-01 by [07-ZK](ZK-ca-wording.md) line 8; kept for history only.** |
 | already_set (service date) | "The service completion date is already set and can't be changed." |
 | service_date_future | "The service completion date can't be in the future." |
 | service_date_not_applicable / export_mode_not_applicable / export_declaration_not_applicable | "This doesn't apply to this type of invoice." |
@@ -108,7 +108,7 @@ _Drafted by the lead on 2026-10-27 from approved facts:
 | Issued proforma, locked banner | "Issued {date} by {name}. This proforma is locked. If it's wrong and nothing has been paid, void it and issue a new one." (Researched, 08-C RA-17: a proforma is not a tax document) |
 | Proforma, issue dialog statement | "This proforma will get the next number in its series and can't be edited afterwards. It is not a tax invoice." |
 | Proforma, void not allowed | "This proforma can't be voided because a payment has been recorded against it." |
-| Advance, client's GST status changed since the proforma (`advance_supply_changed`) | "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's details with your CA before recording the payment." (Researched, 08-C RA-12: a cautious product rule) |
+| Advance, client's GST status changed since the proforma (`advance_supply_changed`) | "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's details with your CA before recording the payment." (Researched, 08-C RA-12: a cautious product rule) **Replaced on 2026-11-01 by [07-ZK](ZK-ca-wording.md) line 9; kept for history only.** |
 | Proforma draft, under the title | "Drafts can be edited. Issuing gives the next proforma number and locks it." |
 | Proforma, issue heading, dialog title and button | "Issue proforma" |
 | Proforma, issued toast | "Proforma {number} issued." |

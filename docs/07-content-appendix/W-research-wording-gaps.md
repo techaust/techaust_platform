@@ -32,8 +32,8 @@ _The designer of the research and wording task found these lines on screens with
 
 ## 4. The researched-default note (admin `VerifyNote`; replaces the visible "VERIFY WITH CA/LEGAL" tag)
 - Tag: "Researched default" (both kinds); accessible name "Researched default"
-- Settings pages text: "These defaults follow official sources, researched on 28 October 2026. Questions the sources don't settle are on the list for your {CA | CA and lawyer}."
-- Settings › Terms text: unchanged ("The wording of these blocks is yours and your lawyer's. …")
+- Settings pages text: "These defaults follow official sources, researched on 28 October 2026. Questions the sources don't settle are on the list for your {CA | CA and lawyer}." **Replaced on 2026-11-01 by [07-ZK](ZK-ca-wording.md) line 12; kept for history only.**
+- Settings › Terms text: unchanged ("The wording of these blocks is yours and your lawyer's. …") **Replaced on 2026-11-01 by [07-ZK](ZK-ca-wording.md) line 11; kept for history only.**
 - Client forms and GST exports: their existing texts unchanged.
 
 ## 5. Lead answers to the designer's questions (2026-10-28)

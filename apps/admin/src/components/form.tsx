@@ -257,13 +257,13 @@ export function SaveBar(props: {
 /** 07-W §4: the tag and the accessible name of the researched-default note. */
 export const RESEARCHED_DEFAULT = "Researched default";
 
-/** 07-W §4, Settings pages: whose list holds the questions the sources don't settle. */
-export const researchedSettingsText = (legal: boolean) =>
-  `These defaults follow official sources, researched on 28 October 2026. Questions the sources don't settle are on the list for your ${legal ? "CA and lawyer" : "CA"}.`;
+/** 07-ZK line 12 (approved 2026-11-01; replaces 07-W §4's text): one text for every settings page that carries the researched-default note. */
+export const researchedSettingsText = () =>
+  "These defaults follow official sources, researched on 28 October 2026. Where the sources leave a question open, the default takes the safest reading.";
 
 /**
- * Tax and legal settings carry this (CLAUDE.md hard rule 8): the defaults are researched from official sources (08-C), and what they don't settle is on
- * the CA's or lawyer's list. One tag for both kinds (07-W §4); the text says whose list.
+ * Tax and legal settings carry this (CLAUDE.md hard rule 8): the defaults are researched from official sources (08-C), and a question the sources leave
+ * open is settled by the lead on the safest reading or kept OPEN in 08-C §5. One tag for every kind (07-W §4).
  */
 export function VerifyNote({ children }: { children: ReactNode }) {
   return (

@@ -64,6 +64,7 @@ The text after each number is my recommendation. `{…}` is filled in by the app
 16. **The warning card:** "{number} ({GSTIN or "unregistered client"}) is a debit note that adds tax only. The files show it with a taxable value of 0.00 and no tax column, so its tax may not come through on import. Enter by hand: {the table of tax per rate}. Ask your CA how to report it in Table 9B."
     - For a credit note: "is a credit note that reduces tax only".
     - For a B2C note the last sentence is "Ask your CA how to report it."
+    - **Replaced on 2026-11-01 by [07-ZK](ZK-ca-wording.md) lines 5–7** (the card's last two sentences, the B2C ending and the fallback card); kept for history only.
 17. **Statement:** "Debit note against {number}".
 18. **Notes on an invoice:** "Balance due: {balance} (after 1 credit note)" / "(after {n} credit notes)".
 19. **Totals:**
