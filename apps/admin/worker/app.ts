@@ -20,6 +20,18 @@ export function nextRequestNumber() {
   return { iso: isolateId, n: ++isolateRequests }; // taken before the request runs, so concurrent requests get distinct numbers
 }
 
+/**
+ * M6.2 CPU diagnosis (lead decision 4, 2026-11-01): the patterns this isolate has answered, so a log line can say "first run here" (`f: 1`) and the staging CPU
+ * gate reads first runs directly. Keys are route PATTERNS (`GET /api/v1/invoices/:id`), forwards (`fwd GET ...`) and RPC methods (`rpc processEvent`): never a
+ * raw path, an id or anything personal. Bounded (the route table is finite; at most 512 keys are remembered).
+ */
+const answered = new Set<string>();
+export function firstRun(key: string): 1 | undefined {
+  if (answered.has(key)) return undefined;
+  if (answered.size < 512) answered.add(key);
+  return 1;
+}
+
 export type App = Hono<AppEnv, Record<string, never>, "/api">;
 
 /**
@@ -40,8 +52,9 @@ export function createApp(mount: (app: App) => void, before?: (app: App) => void
   );
 
   // One diagnostic line per /api request, to tell cold isolates from busy ones in Workers Logs. Exactly these keys
-  // [NFR-6]: the route PATTERN (or "other"), the status, the request ID (`cf-ray` or random), a random per-isolate ID
-  // and this isolate's request count. No email, IP, user agent, account ID, token or cookie.
+  // [NFR-6]: the route PATTERN (or "other"), the status, the request ID (`cf-ray` or random), a random per-isolate ID,
+  // this isolate's request count, and (M6.2) `f: 1` only on the first request of that pattern in this isolate. No email,
+  // IP, user agent, account ID, token or cookie.
 
   // The outermost middleware: request ID and facts, the route's table row, the exit log line, and the request's
   // access-log row [NFR-9] unless the handler already wrote it inside its own batch.
@@ -105,6 +118,7 @@ export function createApp(mount: (app: App) => void, before?: (app: App) => void
           rid: c.var.rid,
           iso,
           n,
+          f: firstRun(`${c.req.method} ${row?.path ?? "other"}`),
         }),
       );
     }),

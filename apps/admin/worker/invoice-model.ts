@@ -16,7 +16,7 @@ import {
 } from "@techaust/core/invoices";
 import { milestoneTotals } from "@techaust/core/projects";
 import { percentFromBp } from "@techaust/core/schedule-text";
-import { resolveSetting, type Settings } from "@techaust/core/settings";
+import type { Settings } from "@techaust/core/settings";
 import {
   type ComputedDocument,
   computeDocument,
@@ -55,6 +55,7 @@ import {
   taxInputOf,
   type Warning,
 } from "./quote-model.ts";
+import { cachedSetting } from "./settings-cache.ts";
 import { mergeByRate } from "./start-project-plan.ts";
 
 // ---- errors --------------------------------------------------------------------------------------------------------------------------
@@ -195,7 +196,7 @@ export function readInvoiceSettings(rows: readonly SettingRow[]): InvoiceSetting
   const email = by.get("email");
   return {
     ...readSettings(rows),
-    email: resolveSetting("email", email ? JSON.parse(email.value) : undefined),
+    email: cachedSetting("email", email),
     versions: {
       numbering: by.get("numbering")?.version ?? null,
       company: by.get("company")?.version ?? null,

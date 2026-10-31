@@ -6,7 +6,7 @@
 // row; side statements guarded on that audit row AND on the main row this very batch wrote; `ledger_result` last and never guarded. A main statement that matches
 // nothing writes nothing at all, and the caller re-reads to explain why (a duplicate, a link no longer live, a document no longer payable: the review path).
 //
-// Nothing here stores a raw webhook body, a payer's email, phone, UPI address or card detail (L8; ADM-PAY-12; Researched 2026-10-28, RBI PA Directions 2025,
+// Nothing here stores a raw webhook body, a payer's email, phone, UPI address or card detail (L8; ADM-PAY-12; Settled by the lead on the safest reading, 2026-11-01 (08-C RB-40); Researched 2026-10-28, RBI PA Directions 2025,
 // Annex 1 2.1 (08-C RB-07)): `facts` are whitelists the caller builds (core `eventFacts`).
 import { ledgerResultStatement, recomputeStatement } from "./ledger.ts";
 import type { GuardSql } from "./log.ts";
@@ -229,9 +229,8 @@ export type GatewayPaymentArgs = {
   feeMinor: number;
   feeTaxMinor: number | null;
   /**
-   * The IST day of the payment's `created_at` (L11): the brief's safest reading of s.13(2) CGST Act, explanation (the earlier of the book entry and the bank
-   * credit), so the payment's own day, never the later settlement day. No 08-C row yet: the lead adds it (run file, "New, to add to 08-C"), then this note takes
-   * its tag.
+   * The IST day of the payment's `created_at` (L11): s.13(2) CGST Act, explanation (the earlier of the book entry and the bank credit), so the payment's own day,
+   * never the later settlement day. Settled by the lead on the safest reading, 2026-11-01 (08-C RA-37).
    */
   receivedOn: string;
   /** Core `methodToMode` of Razorpay's method. */
@@ -436,7 +435,7 @@ export type ReviewItemArgs = {
   clientId: string | null;
   amountMinor: number | null;
   currency: "INR" | "USD" | null;
-  /** Whitelisted facts only (L8). */
+  /** Whitelisted facts only (L8; 08-C RB-40). */
   facts: GatewayFacts | null;
   now: number;
 };

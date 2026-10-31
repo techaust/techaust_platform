@@ -136,7 +136,7 @@ export const RAZORPAY_EVENT_TYPES: Readonly<Record<string, ProviderEventType>> =
   "payment_link.cancelled": "checkout.cancelled",
 };
 
-/** A verified, parsed Razorpay event: the provider event, plus the whitelisted facts the hook may store (L8). */
+/** A verified, parsed Razorpay event: the provider event, plus the whitelisted facts the hook may store (L8; Settled by the lead on the safest reading, 2026-11-01 (08-C RB-40)). */
 export type RazorpayEvent = ProviderEvent & {
   /** Razorpay's event name as sent (≤ 64). */
   readonly name: string;
@@ -153,7 +153,7 @@ const INVALID: ParsedEvent = Object.freeze({ ok: false, code: "invalid_event" } 
 /**
  * A VERIFIED webhook body (already `JSON.parse`d) to an event, else `invalid_event`. `eventId` is the hook's (the header or `fallbackEventId`). The four link events
  * need the link's id and a positive safe amount in INR or USD, and the two paid events the payment's id and amount too; any other event name is `other` (the hook
- * stores it as `ignored`). Reads only the whitelisted fields: never an email, phone, UPI address or card detail (L8; ADM-PAY-12).
+ * stores it as `ignored`). Reads only the whitelisted fields: never an email, phone, UPI address or card detail (L8; ADM-PAY-12; Settled by the lead on the safest reading, 2026-11-01 (08-C RB-40)).
  */
 export function parseRazorpayEvent(obj: unknown, eventId: string): ParsedEvent {
   if (!isObj(obj) || typeof eventId !== "string" || eventId === "" || eventId.length > PROVIDER_REF_MAX)
@@ -230,7 +230,7 @@ export function parseRazorpayEvent(obj: unknown, eventId: string): ParsedEvent {
   };
 }
 
-/** The whitelisted facts of an event, as `webhook_events.facts` stores them (L8): ids, amount, currency, method and account. Nothing personal. */
+/** The whitelisted facts of an event, as `webhook_events.facts` stores them (L8; 08-C RB-40): ids, amount, currency, method and account. Nothing personal. */
 export function eventFacts(e: RazorpayEvent): Record<string, string | number> {
   const f: Record<string, string | number> = { event: e.name };
   if (e.checkoutRef) f.linkId = e.checkoutRef;
@@ -293,7 +293,7 @@ export function readRazorpayLink(obj: unknown): RazorpayLink | null {
   };
 }
 
-/** A payment as Razorpay's `GET /v1/payments/{id}` answers it (whitelisted fields only; L8), else null. */
+/** A payment as Razorpay's `GET /v1/payments/{id}` answers it (whitelisted fields only; L8; 08-C RB-40), else null. */
 export function readRazorpayPayment(obj: unknown): PaymentStatusReport | null {
   if (!isObj(obj)) return null;
   const id = str(obj.id, PAYMENT_ID);

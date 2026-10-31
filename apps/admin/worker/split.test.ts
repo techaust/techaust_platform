@@ -495,7 +495,16 @@ describe("a binding failure", () => {
     expect(logs).toHaveBeenCalledTimes(1);
     const line = JSON.parse(String(logs.mock.calls[0]?.[0]));
     // M6.1 stage A: `w` names the Worker that answered ("api" or "finance").
-    expect(Object.keys(line).sort()).toEqual(["ev", "iso", "n", "r", "rid", "s", "w"]);
+    // M6.2 (CPU diagnosis, lead decision 4): `f: 1` only on the isolate's first forward of the row.
+    expect(
+      Object.keys(line)
+        .filter((k) => k !== "f")
+        .sort(),
+    ).toEqual(["ev", "iso", "n", "r", "rid", "s", "w"]);
+    if ("f" in line) expect(line.f).toBe(1);
+    logs.mockClear();
+    await run(front, requestFor(leadsRow, { cookie: o.cookie }), withEnv(env, { ADMIN_API: stub }));
+    expect(JSON.parse(String(logs.mock.calls[0]?.[0]))).not.toHaveProperty("f");
     expect(line).toMatchObject({ ev: "fwd", r: "/api/v1/leads", w: "api", s: 200 });
   });
 

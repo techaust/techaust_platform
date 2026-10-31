@@ -9,11 +9,19 @@
 // a time, a period or an amount from the caller (a message can only say WHICH plan or draft).
 import { WorkerEntrypoint } from "cloudflare:workers";
 import type { BillingJobsApi, DraftCareResult, IssueCareResult } from "@techaust/core/care-billing";
-import { createApp } from "./app.ts";
+import { createApp, firstRun } from "./app.ts";
 import { draftCarePlan, issueCareDraft } from "./care-billing.ts";
+import { ROUTES } from "./guard.ts";
 import { mountFinance } from "./routes-finance.ts";
+import { warmRouter } from "./warm-router.ts";
 
-export default createApp(mountFinance) satisfies ExportedHandler<Env>;
+const app = createApp(mountFinance);
+// M6.2 CPU diagnosis (lead decision 1): the rows this Worker answers, matched while the module loads (not exported: a named export of an entry is an entrypoint).
+warmRouter(
+  app,
+  ROUTES.filter((r) => r.on === "finance"),
+);
+export default app satisfies ExportedHandler<Env>;
 
 const id = (v: unknown): string => {
   if (typeof v !== "string" || v.length === 0 || v.length > 64)
@@ -40,7 +48,10 @@ export class BillingJobs extends WorkerEntrypoint<Env> implements BillingJobsApi
 }
 
 let isolateCalls = 0;
+/** One id-only line per RPC call: the method, the result code, this isolate's call count and (M6.2, CPU diagnosis lead decision 4) `f: 1` on the method's first call here. */
 function rpcLog(method: string, result: string): void {
   isolateCalls++;
-  console.log(JSON.stringify({ ev: "rpc", m: method, r: result, n: isolateCalls }));
+  console.log(
+    JSON.stringify({ ev: "rpc", m: method, r: result, n: isolateCalls, f: firstRun(`rpc ${method}`) }),
+  );
 }

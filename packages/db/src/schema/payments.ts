@@ -208,7 +208,7 @@ export const realisationExtensions = sqliteTable(
 // ---- M6.2: online payments through a gateway (Razorpay in test mode; ADM-PAY-01, -02, -07, JOB-HOOK-01..03; run file docs/runs/m6.2-razorpay.md A) -------------
 // CREATE TABLE only (0063). As in M6.1 (L3), the enumeration columns have no CHECK: the triggers of `gateway_triggers` (0064) hold them, so M6.3/M6.4 widen a list
 // with a trigger swap, never a rebuild of a table other tables reference. Nothing here stores a raw webhook body, a payer's email, phone, UPI address or card
-// detail (L8; ADM-PAY-12; Researched 2026-10-28, RBI PA Directions 2025, Annex 1 2.1 (08-C RB-07)): `facts` is a whitelist the code builds.
+// detail (L8; ADM-PAY-12; Settled by the lead on the safest reading, 2026-11-01 (08-C RB-40); Researched 2026-10-28, RBI PA Directions 2025, Annex 1 2.1 (08-C RB-07)): `facts` is a whitelist the code builds.
 
 export const GATEWAY_PROVIDERS = ["razorpay"] as const;
 export const WEBHOOK_EVENT_STATUSES = ["received", "processed", "ignored", "needs_review", "failed"] as const;
@@ -270,7 +270,7 @@ export const webhookEvents = sqliteTable(
     processedAt: integer("processed_at"),
     /** A short code of what processing did (`processed`, `unknown_link`, ...). */
     outcome: text("outcome"),
-    /** Whitelisted facts only, as JSON (link id, payment id, amount, currency, method, account id; L8). */
+    /** Whitelisted facts only, as JSON (link id, payment id, amount, currency, method, account id; L8; 08-C RB-40). */
     facts: text("facts"),
   },
   (t) => [
@@ -360,7 +360,7 @@ export const reviewItems = sqliteTable(
     clientId: text("client_id").references(() => clients.id),
     amountMinor: integer("amount_minor"),
     currency: text("currency"),
-    /** Whitelisted facts only, as JSON (L8). */
+    /** Whitelisted facts only, as JSON (L8; 08-C RB-40). */
     facts: text("facts"),
     createdAt: createdAt(),
     resolvedBy: text("resolved_by").references(() => staffUsers.id),
