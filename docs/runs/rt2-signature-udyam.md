@@ -536,3 +536,39 @@ Outside the fix diff: **medium** `packages/pdf/src/invoice-envelope.ts:170` chec
 **Lead triage:** fix now (builder): the envelope check for sealed Udyam blocks becomes shape-only (non-empty strings within a length bound; the category any non-empty string), with a test that an older sealed block still parses after the live rule changes; export core's GSTIN normaliser and use it in `company.tsx`. Follow-ups: the `Field` effect key; a BEFORE INSERT signature trigger; inner spaces in a pasted Udyam number; one shared must-be-signed list; F (the issue dialog's wrong-code notice and a shared `invalid_code` helper); the save bar after a "No change" save.
 
 ### Last fixes
+#### Builder (Opus 5.5 high, 2026-10-31), branch `fix/rt2-last`
+**Skills:** `cloudflare:workers-best-practices` (no Worker config or binding touched; it confirmed the change needs only the existing tests, typecheck and the bundle budgets), `cloudflare:wrangler` (no config change; used only to confirm `pnpm check`'s `wrangler types` and the jobs dry-run build are the checks to run).
+
+**1 (medium), a sealed Udyam block is read by its shape only**
+- `packages/core/src/udyam.ts`: new `SealedUdyam` type (`{number: string, category: string}`), `SEALED_UDYAM_MAX = 40` and `isSealedUdyam`. It checks exactly the two keys, each a non-blank string of at most 40 UTF-16 units. It never uses `UDYAM_NUMBER_RE` or `UDYAM_CATEGORIES`. `isUdyam` is documented as live inputs only.
+- `packages/pdf/src/invoice-envelope.ts`: `parseInvoiceEnvelope` uses `isSealedUdyam` (comment cites OPEN (08-C RB-39)). The rule "a Udyam block on a type other than the tax invoice is a mismatch" in `verifyInvoiceEnvelope` is unchanged.
+- `packages/pdf/src/layout/copy.ts`: `UDYAM_COPY.line(number, category: string)` prints line 5's words for a known key. It checks own keys only, so "constructor" and "toString" are not categories. Any other sealed category prints as stored.
+- `packages/pdf/src/invoice-types.ts` and `packages/db/src/schema/documents.ts`: the frozen `company.udyam` is typed `SealedUdyam`. Writers still freeze the live, valid `Udyam`.
+- Live inputs keep the strict rule: the settings schema, `isUdyam` and the company form are unchanged.
+- Tests:
+  - core `settings.test.ts`: older or other shapes that `isUdyam` refuses are sealed blocks. Wrong shapes are refused: not an object, a missing or extra key, a non-string, empty, blank, 41 units. Exactly 40 units passes.
+  - pdf `signature-udyam.test.ts`: four blocks the live rule refuses (a longer number format, the category "tiny", lower case with "Large", "constructor") parse, verify, view, render as one text node and pass `missingStatutoryLine`. A changed value without a reseal still fails `snapshot_hash`. The malformed-block test now covers wrong shapes: empty, blank, too long, a number as a number, the category as a number, an extra or missing key, `{}`, null, a string. The 40-unit bound passes. Copy test: an unknown category and "toString" print as stored.
+  - jobs `pdf-signature-udyam.test.ts`: an invoice sealed with `UDYAM-WB-001-00123456` / "tiny" renders with the real layout and prints its line once. There is no bell. Wrong shapes (empty, 41 units, a numeric category) and a block on a proforma are refused before Browser Run.
+
+**2 (low), core's GSTIN normaliser**
+- `packages/core/src/gstin.ts` exports `normaliseGstin`, and `validateGstin` reads through it. `apps/admin/src/routes/settings/company.tsx` imports it from `@techaust/core`; its private copy is removed.
+- Test: core `gstin.test.ts` (a fixed case plus a fast-check property: any spacing or case of a valid GSTIN normalises to exactly `validateGstin(...).gstin`).
+
+**Commands** (logs in `.logs/` of the worktree)
+- `pnpm exec biome check` on the 11 changed files: clean.
+- Focused: pdf `signature-udyam` 14 passed; core `settings` + `gstin` 43 passed; jobs `pdf-signature-udyam` 11 passed.
+- `bash tools/heavy.sh --log rt2last-test pnpm test`: exit 1. Every package passed except admin (1 failed of 3,493): auth 135, ui 471 (+2 skipped), core 1,861, email 130, db 514, pdf 376, web 714 (+17 skipped), jobs 549, portal 651.
+  - The one failure was a 5,000 ms timeout in `worker/time.test.ts` "week totals equal the sum of the entries". It is unrelated: time logs, untouched. The queue had reported free memory under 512 MB during the run.
+  - Re-run `bash tools/heavy.sh --log rt2last-admin-test pnpm --filter @techaust/admin test`: **120 files, 3,493 passed**, exit 0.
+- `bash tools/heavy.sh --log rt2last-check pnpm check`: exit 0. That covers lint (1,367 files, 10 warnings and 8 infos, none in changed files), typecheck in every package, the binding, config, header and migration guards (56 migrations).
+- `bash tools/heavy.sh --log rt2last-build-jobs pnpm --filter @techaust/jobs build`: exit 0. Jobs bundle **984,266 bytes** (limit 1,000,000), startup 53.8 ms.
+- `bash tools/heavy.sh --log rt2last-build-admin pnpm --filter @techaust/admin build`: exit 0. Admin front **99,271 bytes** (limit 150,000), startup 10.4 ms. Admin API **618,422 bytes** (limit 800,000), startup 67.1 ms.
+- No dev server started. No hosted service touched.
+
+**Not verified / notes**
+- The full `pnpm test` did not finish green in one pass: admin needed a second run after the timeout above.
+- Layout, outside this fix: the tax invoice CSS `.inv-udyam { max-width: 12em }` was sized for the canonical 19-character number. A sealed number longer than about 12em (possible only under a future format) would break at a hyphen or overflow. The gate still passes, because the text node is whole. That is the designer's call, if RB-39 ever changes the format.
+- The jobs bundle is 15,734 bytes under its 1,000,000 ceiling.
+
+**Open questions:** none.
+Usage: builder claude-opus-5-5/high (skills workers-best-practices, wrangler).
