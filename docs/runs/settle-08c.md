@@ -79,3 +79,6 @@ Also found in code, outside §5: which day's FX rate a USD debit note uses (`app
 ## Handover (lead, 2026-10-31)
 Recorded in #119. Waiting on the owner: the GSTR-1 frequency (for T1's dates); the AWS bucket and key for T5 (script to come). Next: the tasks T1–T12 after the final sweep, Tier A ones with an analyst brief and early check; T12 rewrites 08-C §5 with the new tag.
 Usage: analyst claude-opus-5-5/high (agent-a605f8e9…, workers-best-practices).
+
+## T6 and T11 wording approved (lead, 2026-10-31)
+The owner approved all 20 lines and Q1–Q4 as recommended: [07-ZE](../07-content-appendix/ZE-terms-offers-deed.md). T6 can be briefed; its first step is the MCIA check (fees, Kolkata seat). T11 needs M6.1's "fully paid" for the automatic deed; until then the owner makes it by hand.
