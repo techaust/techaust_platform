@@ -57,7 +57,8 @@ export async function loadOpenRows(
     seen.add(r.id);
     rows.push(r);
   }
-  return { rows: rows.slice(0, cap), capped: capped || rows.length > cap };
+  // sorted before the cut, so a capped list keeps the earliest due across all three statuses (second re-check low 1)
+  return { rows: byDueDate(rows).slice(0, cap), capped: capped || rows.length > cap };
 }
 
 /** The open documents a payment can go on (or a TDS entry, or credit), in due-date order, with whether the read stopped at the cap. */

@@ -778,12 +778,6 @@
 }
 
 /* the open invoices didn't load in Record a payment: the error and its retry, inside the allocation fieldset (visual review finding 7) */
-.pay-alloc__failed {
-  display: grid;
-  justify-items: start;
-  gap: var(--space-2);
-}
-
 /* an extension row without its letter: on its own line under the extension, the words and the Owner's action, wrapping when narrow */
 .pay-real__list .pay-real__letter {
   display: flex;
