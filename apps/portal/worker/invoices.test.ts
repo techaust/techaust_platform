@@ -115,6 +115,36 @@ describe("the list [POR-06]", () => {
   });
 });
 
+describe("M6.1: the TDS row (07-ZH line 18; T8, 08-C RA-30) [POR-06]", () => {
+  it("my invoice with TDS recorded carries 'TDS deducted by you'; one without has no row; another organisation's is still the same 404", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.a.finance);
+    const withTds = await mk(f.a.id, { status: "partially_paid" });
+    // the ledger's stored figures, as the recompute leaves them after a confirmed TDS entry of 11,800
+    await env.DB.prepare("UPDATE documents SET tds_minor = 11800, balance_minor = 106200 WHERE id = ?")
+      .bind(withTds)
+      .run();
+    const doc = (await bodyOf(await call(`/invoices/${withTds}`, { cookie: s.cookie }))).document as {
+      tdsMinor: number;
+      tdsRow: { label: string; amount: string } | null;
+      balanceMinor: number;
+    };
+    expect(doc.tdsMinor).toBe(11_800);
+    expect(doc.tdsRow).toEqual({ label: "TDS deducted by you", amount: "₹118.00" });
+    expect(doc.balanceMinor).toBe(106_200);
+    const plain = (await bodyOf(await call(`/invoices/${await mk(f.a.id)}`, { cookie: s.cookie })))
+      .document as {
+      tdsRow: unknown;
+    };
+    expect(plain.tdsRow).toBeNull();
+    const theirs = await mk(f.b.id);
+    await env.DB.prepare("UPDATE documents SET tds_minor = 100, balance_minor = 117900 WHERE id = ?")
+      .bind(theirs)
+      .run();
+    expect((await call(`/invoices/${theirs}`, { cookie: s.cookie })).status).toBe(404);
+  });
+});
+
 describe("one invoice and its PDF [POR-06]", () => {
   it("serves the summary of my own invoice, records the first view once; another organisation's, a draft and a void one are the same 404", async () => {
     const f = await fixtures();

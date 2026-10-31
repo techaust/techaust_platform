@@ -50,8 +50,12 @@ const EXPECTED: Record<Exclude<Action, "proposals.send">, string> = {
   "invoices.supplierCopy": "A--A", // Q11 (owner 2026-10-28): Owner and Accountant read the stored DUPLICATE FOR SUPPLIER copy
   "clients.careAutoIssue": "S---", // M5.4 (Q43, LD58): only the Owner, with a fresh code, turns the automatic issue on
   "payments.read": "AA-A",
-  "payments.record": "AP--",
-  "payments.verify": "A---",
+  "payments.record": "SP--", // owner 2026-10-31 (M6.1 Q2): the Owner records with a fresh code; Staff's entry waits for the Owner
+  "payments.verify": "S---", // owner 2026-10-31 (M6.1 Q2): confirming or rejecting needs a fresh code
+  "payments.withdraw": "S---", // M6.1 (L7): the Owner only, with a fresh code
+  "payments.applyCredit": "S---", // M6.1 (L13): the Owner only, with a fresh code
+  "payments.attachProof": "AA--", // M6.1 (L11): Owner and Staff add a proof or a certificate number once
+  "realisation.extend": "A---", // M6.1 (L14, Q60): the Owner only
   "refunds.read": "A--A",
   "refunds.issue": "S---",
   "dashboard.read": "AAAA", // M3.5: every role; the handler keeps only the tiles the role may see

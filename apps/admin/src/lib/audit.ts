@@ -6,6 +6,7 @@ import { ROLE_LABELS } from "@techaust/core/permissions";
 import type { AuditEntry } from "../api.ts";
 import { Y } from "./copy-y.ts";
 import { WITHDRAW_COPY } from "./copy-zf.ts";
+import { PAY_AUDIT } from "./copy-zh.ts";
 
 /** Every action the API writes today, in words. Unknown ones read as their own name ("lead.created"). */
 /** A label by its own key only: a free-form value such as "constructor" never reads an inherited property. */
@@ -144,6 +145,15 @@ export const ACTION_LABELS: Record<string, string> = {
   "invoice.pdf_retry": Y("asked for an invoice's PDF again"),
   "invoice.reminders_pause": Y("paused payment reminders"),
   "invoice.reminders_resume": Y("resumed payment reminders"),
+  // M6.1 payments: 07-ZH line 49 (the designer's words, marked until approved: lib/payments.ts).
+  "invoice.realisation_extend": PAY_AUDIT["invoice.realisation_extend"],
+  "payment.record": PAY_AUDIT["payment.record"],
+  "payment.verify": PAY_AUDIT["payment.verify"],
+  "payment.withdraw": PAY_AUDIT["payment.withdraw"],
+  "payment.proof": PAY_AUDIT["payment.proof"],
+  "payment.tds_certificate": PAY_AUDIT["payment.tds_certificate"],
+  "payment.credit_apply": PAY_AUDIT["payment.credit_apply"],
+  "payment.credit_release": PAY_AUDIT["payment.credit_release"],
   "care_invoice.draft": Y("drafted a care plan invoice"),
   "care_invoice.auto_issue_refused": Y("could not issue a care plan invoice automatically"),
 };
@@ -173,6 +183,7 @@ export const ACTION_GROUPS: { label: string; prefixes: readonly string[] }[] = [
   { label: "Templates", prefixes: ["template."] },
   { label: "Proposals and estimates", prefixes: ["document.", "offer_link."] },
   { label: "Invoices", prefixes: ["invoice.", "care_invoice."] },
+  { label: "Payments", prefixes: ["payment."] },
   { label: "Reports", prefixes: ["report."] },
   { label: "Approvals", prefixes: ["approval."] },
   { label: "Client portal", prefixes: ["portal.", "doc_token."] },
@@ -212,6 +223,7 @@ export const ENTITY_LABELS: Record<string, string> = {
   time_log: "Time",
   document: "Documents",
   approval: "Approvals",
+  payment: "Payments",
   report: "Reports",
   audit_log: "Audit log",
 };

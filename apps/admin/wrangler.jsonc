@@ -54,8 +54,12 @@
     }
   ],
   // The admin API Worker (M5.0, docs/13 2026-10-27): every route except sign-in, the member's account and staff management is answered
-  // there (apps/admin/wrangler.api.jsonc; no public URL). Not inherited by environments, so each env lists it too.
-  "services": [{ "binding": "ADMIN_API", "service": "techaust-platform-admin-api" }],
+  // there (apps/admin/wrangler.api.jsonc; no public URL). The admin finance Worker (M6.1 stage A): invoices, statements, reports, approvals
+  // and the dashboard (apps/admin/wrangler.finance.jsonc; no public URL). Not inherited by environments, so each env lists both too.
+  "services": [
+    { "binding": "ADMIN_API", "service": "techaust-platform-admin-api" },
+    { "binding": "ADMIN_FINANCE", "service": "techaust-platform-admin-finance" }
+  ],
   // Private file vault (M3.4, ADM-PRJ-04): uploads and downloads go through this Worker only (no public bucket, no signed
   // URLs). Local dev and tests use Miniflare's R2. Production has no bucket until Phase 7 (owner approval).
   "r2_buckets": [
@@ -95,7 +99,10 @@
       "secrets": {
         "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"]
       },
-      "services": [{ "binding": "ADMIN_API", "service": "techaust-platform-admin-api-staging" }],
+      "services": [
+        { "binding": "ADMIN_API", "service": "techaust-platform-admin-api-staging" },
+        { "binding": "ADMIN_FINANCE", "service": "techaust-platform-admin-finance-staging" }
+      ],
       "queues": {
         "producers": [
           { "binding": "EMAIL_QUEUE", "queue": "techaust-staging-email" },
@@ -130,7 +137,10 @@
       "secrets": {
         "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"]
       },
-      "services": [{ "binding": "ADMIN_API", "service": "techaust-platform-admin-api" }],
+      "services": [
+        { "binding": "ADMIN_API", "service": "techaust-platform-admin-api" },
+        { "binding": "ADMIN_FINANCE", "service": "techaust-platform-admin-finance" }
+      ],
       // No R2 bucket (FILES) in production until Phase 7.
       // Production: NO invocation logs from day one (they carry the client IP, user agent and location of every staff
       // request, which the append-only access log already holds for security). Console logs stay on.

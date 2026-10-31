@@ -579,10 +579,17 @@ export type FileView = {
   createdAt: number;
 };
 /** FX-3: one currency of a project's billed figure (worker/figures.ts `ProjectBilled`); minor units, tax included. */
-export type ProjectBilled = { currency: Currency; billedMinor: number; creditedMinor: number };
+export type ProjectBilled = {
+  currency: Currency;
+  billedMinor: number;
+  creditedMinor: number;
+  /** M6.1 (07-ZH line 17 "Paid"): money on the project's debit documents, from the ledger; and the TDS on them. */
+  paidMinor: number;
+  tdsMinor: number;
+};
 /**
  * FX-3 (ADM-CLI-03): one currency of a client's Overview figures (worker/figures.ts `ClientFigures`); minor units, tax included. Billed is the statement's
- * debit column over all time, the balance its closing balance today; "collected" arrives with payments (M6) and is not sent.
+ * debit column over all time, the balance what it owes now. M6.1: collected, credit held, TDS and the excess; the statement closes at balance − excess − credit.
  */
 export type ClientFigures = {
   currency: Currency;
@@ -591,6 +598,14 @@ export type ClientFigures = {
   balanceMinor: number;
   overdueMinor: number;
   overdueCount: number;
+  /** M6.1: TDS recorded on its debit documents. */
+  tdsMinor: number;
+  /** M6.1: settled above what its debit documents owe (paid + credited + TDS − total, where positive). */
+  excessMinor: number;
+  /** M6.1 (07-ZH line 17 "Collected"): its confirmed payments, all time. */
+  collectedMinor: number;
+  /** M6.1 (07-ZH line 10 "Credit held"): what those payments hold unallocated. */
+  creditMinor: number;
 };
 export type ClientFinance =
   | { available: true; asOf: string; currencies: ClientFigures[] }
@@ -951,8 +966,18 @@ export type FinanceTile = {
         }[];
       }
     | { available: false; reason: string };
-  collected: { available: false; arrivesWith: string };
-  paymentsToVerify: { available: false; arrivesWith: string };
+  /** M6.1 (07-ZH line 16 "Collected this month"): confirmed payments this IST month and this FY, by currency. */
+  collected:
+    | {
+        available: true;
+        month: { currency: Currency; collectedMinor: number; count: number }[];
+        fy: { currency: Currency; collectedMinor: number; count: number }[];
+      }
+    | { available: false; arrivesWith: string };
+  /** M6.1 (07-ZH line 16 "Payments to check"): the Owner's count; another role gets `owner_only`. */
+  paymentsToVerify:
+    | { available: true; count: number }
+    | { available: false; arrivesWith?: string; reason?: string };
 };
 export const isFinanceTile = (t: DashboardTiles["finance"]): t is FinanceTile =>
   t !== undefined && "invoiced" in t;
@@ -960,7 +985,7 @@ export const isFinanceTile = (t: DashboardTiles["finance"]): t is FinanceTile =>
 /** One line of a statement (M5.5b): core `StatementEntry`. */
 export type StatementEntryView = {
   id: string;
-  kind: "tax_invoice" | "export_invoice" | "debit_note" | "credit_note" | "receipt";
+  kind: "tax_invoice" | "export_invoice" | "debit_note" | "credit_note" | "receipt" | "tds";
   date: string;
   number: string;
   /** A credit note's invoice number (07-V §6 "Credit note against {number}"); null for every other kind. */
@@ -1040,6 +1065,8 @@ export class RequestError extends Error {
       reason?: string;
       /** FX-5: 400 `terms_due_days_mismatch`, the days the terms state that differ (`stated`) and Settings › Payment terms' days (`dueDays`). */
       termsDueDays?: { stated: number[]; dueDays: number };
+      /** M6.1: the payment routes' `error.details`, its plain values only (`femaDue`, `latest`, `documentId`, `balanceMinor`, `receivedOn`). */
+      details?: Record<string, string | number>;
       /** ADM-INV-10: a refused void or withdraw (409) names every reason (codes), so the screen picks its own line (a proforma's void points to Withdraw). */
       reasons?: string[];
     } = {},
@@ -1179,12 +1206,34 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
       ...(fy !== undefined ? { fy } : {}),
       ...(typeof details.reason === "string" ? { reason: details.reason } : {}),
       ...(termsDueDays ? { termsDueDays } : {}),
+      ...(Object.keys(plainDetails(details)).length > 0 ? { details: plainDetails(details) } : {}),
       ...(Array.isArray(data.reasons) ? { reasons: strings(data.reasons) } : {}),
     },
   );
   if (signedIn && res.status === 401 && e.code === "unauthenticated") unauthenticatedHandler?.();
   throw error;
 }
+
+/** M6.1: the payment routes' `error.details` keys the screens read (string or number values only; nothing else is copied). */
+const PAYMENT_DETAIL_KEYS = [
+  "femaDue",
+  "latest",
+  "documentId",
+  "balanceMinor",
+  "excessMinor",
+  "releasableMinor",
+  "receivedOn",
+  "clientCode",
+  "clientName",
+  "paymentId",
+] as const;
+const plainDetails = (d: Record<string, unknown>): Record<string, string | number> =>
+  Object.fromEntries(
+    PAYMENT_DETAIL_KEYS.flatMap((k) => {
+      const v = d[k];
+      return typeof v === "string" || typeof v === "number" ? [[k, v] as const] : [];
+    }),
+  );
 
 const strings = (xs: unknown[]): string[] => xs.filter((x): x is string => typeof x === "string");
 
@@ -1718,5 +1767,366 @@ export function hashPassword(req: HashRequest): Promise<{ hash: string; ms: numb
       reject(new Error("Hashing failed"));
     };
     worker.postMessage(req);
+  });
+}
+
+// ---- payments, TDS, credit and FEMA extensions (M6.1; ADM-PAY-05, ADM-PAY-06, ADM-INV-16, ADM-INV-17, Q60) -----------------------------------------------
+// The finance Worker's routes (worker/payments.ts, worker/payment-ledger.ts, worker/reports.ts). Recording or confirming a payment, withdrawing it and using
+// credit need a fresh code (`request` asks for it on 403 `step_up_required`). The screens' words are 07-ZH's; the API's codes are listed with each call.
+
+export type PaymentKind = "payment" | "tds";
+export type PaymentStatus = "pending_verification" | "confirmed" | "rejected" | "withdrawn";
+export type PaymentMode = "neft" | "rtgs" | "imps" | "upi" | "swift";
+export type AllocationAsk = { documentId: string; amountMinor: number };
+
+/** One payment entry (worker/payments.ts `paymentView`); never the R2 key of its proof. */
+export type PaymentView = {
+  id: string;
+  clientId: string;
+  clientCode: string;
+  clientName: string;
+  clientGone: boolean;
+  kind: PaymentKind;
+  provider: string;
+  status: PaymentStatus;
+  currency: Currency;
+  amountMinor: number;
+  chargesMinor: number;
+  receivedOn: string;
+  mode: PaymentMode | null;
+  reference: string | null;
+  inrReceivedMinor: number | null;
+  requestedAllocations: AllocationAsk[];
+  /** 07-ZH line 8 "Certificate awaited" while `certificateAwaited`. */
+  tds: {
+    section: string | null;
+    rateBp: number | null;
+    certificateNo: string | null;
+    certificateOn: string | null;
+    certificateAwaited: boolean;
+  } | null;
+  proof: {
+    kind: string | null;
+    ref: string | null;
+    hasFile: boolean;
+    mime: string | null;
+    sha256: string | null;
+  } | null;
+  advanceReceiptId: string | null;
+  note: string | null;
+  recordedBy: string | null;
+  recordedByName: string | null;
+  recordedAt: number;
+  verifiedBy: string | null;
+  verifiedByName: string | null;
+  verifiedAt: number | null;
+  decisionNote: string | null;
+  withdrawnBy: string | null;
+  withdrawnAt: number | null;
+  withdrawReason: string | null;
+};
+
+export type PaymentAllocationView = {
+  id: string;
+  documentId: string;
+  number: string | null;
+  type: string;
+  kind: "allocate" | "release";
+  amountMinor: number;
+  createdAt: number;
+};
+
+/** RA-17 (L13): money from a month before the invoice's month (07-ZH line 10's warning; `month` is `YYYY-MM`). Never a block. */
+export type ReceiptWarning = { code: "received_in_earlier_month"; documentId: string; month: string };
+
+export type RecordPaymentInput = {
+  /** A UUIDv7 picked once per dialog (the idempotency key: the same id again is 409 `already_recorded`). */
+  id: string;
+  clientId: string;
+  kind: PaymentKind;
+  currency: Currency;
+  amountMinor: number;
+  receivedOn: string;
+  /** Required for money received; none for TDS. */
+  mode?: PaymentMode | null;
+  /** Required for money received (`reference_invalid` when it doesn't normalise). */
+  reference?: string;
+  chargesMinor?: number;
+  inrReceivedMinor?: number;
+  allocations?: AllocationAsk[];
+  tds?: { section: string; rateBp: number; certificateNo?: string; certificateOn?: string };
+  note?: string;
+  /** After 409 `reference_seen` (07-ZH line 13), when it is a different payment. */
+  confirmDuplicate?: boolean;
+};
+
+export type RecordPaymentAnswer = {
+  ok: true;
+  id: string;
+  status: "confirmed" | "pending_verification";
+  allocations: AllocationAsk[];
+  requestedAllocations: AllocationAsk[];
+  /** 07-ZH line 9: kept as the client's credit (the Owner's entry only; null for a pending one). */
+  unallocatedMinor: number | null;
+  approvalId?: string;
+  warnings: ReceiptWarning[];
+};
+
+/** The invoice's Payments panel (07-ZH line 1, and line 14 on an export invoice). */
+export type InvoicePaymentsPanel = {
+  documentId: string;
+  type: string;
+  status: string;
+  currency: Currency;
+  updatedAt: number;
+  totalMinor: number;
+  paidMinor: number;
+  tdsMinor: number;
+  creditedMinor: number;
+  balanceMinor: number;
+  excessMinor: number;
+  /** What "Move excess to credit" may move: the excess less its TDS part (code review finding 1). */
+  releasableMinor: number;
+  payments: {
+    paymentId: string;
+    kind: PaymentKind;
+    status: PaymentStatus;
+    receivedOn: string;
+    mode: PaymentMode | null;
+    reference: string | null;
+    currency: Currency;
+    amountMinor: number;
+    heldMinor: number;
+    tds: {
+      section: string | null;
+      rateBp: number | null;
+      certificateNo: string | null;
+      certificateAwaited: boolean;
+    } | null;
+    hasProof: boolean;
+  }[];
+  pending: {
+    paymentId: string;
+    kind: PaymentKind;
+    receivedOn: string;
+    mode: PaymentMode | null;
+    reference: string | null;
+    currency: Currency;
+    amountMinor: number;
+    askedMinor: number;
+    recordedBy: string | null;
+    recordedAt: number;
+  }[];
+  credits: { currency: Currency; creditMinor: number }[];
+  realisation: {
+    femaStandard: string;
+    femaDue: string;
+    gstDue: string;
+    stage: string;
+    extensions: {
+      id: string;
+      extendedTo: string;
+      bankRef: string;
+      hasLetter: boolean;
+      recordedBy: string | null;
+      recordedByName: string | null;
+      createdAt: number;
+    }[];
+  } | null;
+};
+
+export type ClientCredit = {
+  clientId: string;
+  anonymised: boolean;
+  credits: { currency: Currency; creditMinor: number }[];
+  sources: { paymentId: string; receivedOn: string; availableMinor: number }[];
+};
+
+/** One row of the payments and TDS register (07-ZH line 20). */
+export type PaymentsRegisterRow = {
+  id: string;
+  kind: PaymentKind;
+  receivedOn: string;
+  currency: Currency;
+  amountMinor: number;
+  chargesMinor: number;
+  mode: PaymentMode | null;
+  reference: string | null;
+  inrReceivedMinor: number | null;
+  tds: {
+    section: string | null;
+    rateBp: number | null;
+    certificateNo: string | null;
+    certificateOn: string | null;
+    certificateAwaited: boolean;
+  } | null;
+  proof: { kind: string; ref: string | null } | null;
+  client: { id: string; code: string; name: string };
+  allocations: { documentId: string; number: string | null; kind: string; amountMinor: number }[];
+};
+
+/** One payment item of the approvals queue (`GET /approvals?kind=payment`); decided only through `paymentsApi.verify`. */
+export type PaymentApprovalItem = {
+  id: string;
+  kind: "payment";
+  state: string;
+  createdAt: number;
+  decidedAt: number | null;
+  note: string | null;
+  requestedBy: string;
+  requesterName: string | null;
+  decidedBy: string | null;
+  deciderName: string | null;
+  payment: {
+    id: string;
+    kind: PaymentKind;
+    status: PaymentStatus;
+    currency: Currency;
+    amountMinor: number;
+    receivedOn: string;
+    clientId: string;
+    clientCode: string;
+    clientName: string;
+  };
+};
+
+const pid = (id: string) => encodeURIComponent(id);
+
+export const paymentsApi = {
+  /** The list: `status` uses the matching index (pending: oldest first, the Owner's "Payments to check"); `client`, `from`, `to` filter; `after` pages. */
+  list: (f: { status?: PaymentStatus; client?: string; from?: string; to?: string; after?: string } = {}) =>
+    request<{ payments: PaymentView[]; next: string | null }>(`/payments${qs(f)}`),
+  get: (id: string) =>
+    request<{ payment: PaymentView; allocations: PaymentAllocationView[] }>(`/payments/${pid(id)}`),
+  /**
+   * Record (07-ZH line 2). The Owner's entry is confirmed now (fresh code); a Staff member's waits for the Owner (line 3). Codes: `already_recorded`,
+   * `reference_seen` (details `receivedOn`, `clientCode`, `clientName`), `reference_invalid`, `received_on_future`, `currency_mismatch`, `tds_not_allowed`,
+   * `use_advance_invoice`, `allocation_exceeds_balance` (details `documentId`, `balanceMinor`), `exceeds_payment`, `not_payable`, `client_anonymised`.
+   */
+  record: (input: RecordPaymentInput) => request<RecordPaymentAnswer>("/payments", { body: input }),
+  /** The Owner's check (07-ZH line 4). A reject needs `note` ("Why it is rejected"). Codes: `payment_not_pending`, `use_advance_invoice`, `stale_version`. */
+  verify: (
+    id: string,
+    body: {
+      decision: "confirm" | "reject";
+      note?: string;
+      allocations?: AllocationAsk[];
+      expectedRecordedAt: number;
+    },
+  ) =>
+    request<{
+      ok: true;
+      id: string;
+      status: "confirmed" | "rejected";
+      allocations: AllocationAsk[];
+      unallocatedMinor: number | null;
+      warnings: ReceiptWarning[];
+    }>(`/payments/${pid(id)}/verify`, { body }),
+  /** Withdraw a confirmed entry made in error (Owner, fresh code). Codes: `payment_not_confirmed`, `payment_advance_backed`. */
+  withdraw: (id: string, reason: string) =>
+    request<{ ok: true; id: string; status: "withdrawn" }>(`/payments/${pid(id)}/withdraw`, {
+      body: { reason },
+    }),
+  /** The Form 16A number and date, set once (`certificate_already_set`). */
+  tdsCertificate: (id: string, certificateNo: string, certificateOn: string) =>
+    request<{ ok: true; id: string; certificateNo: string; certificateOn: string }>(
+      `/payments/${pid(id)}/tds-certificate`,
+      {
+        body: { certificateNo, certificateOn },
+      },
+    ),
+  /** The proof's download: a plain same-origin GET with the session cookie (an attachment). */
+  proofHref: (id: string) => `/api/v1/payments/${pid(id)}/proof`,
+  clientCredit: (clientId: string) => request<ClientCredit>(`/clients/${pid(clientId)}/credit`),
+  /** "Use credit on this invoice" (07-ZH line 10; Owner, fresh code). Codes: `allocation_exceeds_balance`, `exceeds_credit`, `stale_version`. */
+  applyCredit: (
+    clientId: string,
+    body: { documentId: string; amountMinor: number; expectedUpdatedAt: number },
+  ) =>
+    request<{
+      ok: true;
+      documentId: string;
+      updatedAt: number;
+      allocations: { paymentId: string; amountMinor: number }[];
+      warnings: ReceiptWarning[];
+    }>(`/clients/${pid(clientId)}/credit/apply`, { body }),
+  /** "Move excess to credit" (07-ZH line 11; Owner, fresh code). Codes: `exceeds_excess`, `stale_version`. */
+  releaseExcess: (documentId: string, body: { amountMinor: number; expectedUpdatedAt: number }) =>
+    request<{
+      ok: true;
+      documentId: string;
+      updatedAt: number;
+      releases: { paymentId: string; amountMinor: number }[];
+    }>(`/invoices/${pid(documentId)}/credit/release`, { body }),
+  invoicePanel: (documentId: string) =>
+    request<InvoicePaymentsPanel>(`/invoices/${pid(documentId)}/payments`),
+  /** "Bank extended the date" (07-ZH line 14; Owner). Codes: `extension_not_later` (details `femaDue`), `extension_too_far`, `not_an_export_invoice`. */
+  extendRealisation: (documentId: string, body: { extendedTo: string; bankRef: string }) =>
+    request<{ ok: true; id: string; documentId: string; extendedTo: string }>(
+      `/invoices/${pid(documentId)}/realisation-extensions`,
+      { body },
+    ),
+  /** The payments and TDS register of one FY (07-ZH line 20; `fy` like "2627"). */
+  register: (fy: string, after?: string) =>
+    request<{ fy: string; from: string; to: string; rows: PaymentsRegisterRow[]; next: string | null }>(
+      `/reports/payments${qs({ fy, after })}`,
+    ),
+  /** The approvals queue's payment items. */
+  approvals: (f: { status?: string; id?: string; after?: string } = {}) =>
+    request<{ approvals: PaymentApprovalItem[]; next: string | null }>(
+      `/approvals${qs({ kind: "payment", ...f })}`,
+    ),
+};
+
+/**
+ * Upload a payment's proof (L10, L11; PDF, JPEG or PNG, at most 5 MB; set once) or a FEMA extension's bank letter, as a raw body with the file vault's
+ * headers plus the proof's type and reference. Codes: `file_too_large`, `file_type_not_allowed`, `file_type_mismatch`, `proof_already_set`,
+ * `letter_already_set`, `checksum_mismatch`.
+ */
+export function uploadPaymentDoc(
+  target:
+    | { proofOf: string; kind: string; ref?: string }
+    | { letterOf: { documentId: string; extensionId: string } },
+  file: File,
+  sha256: string,
+  onProgress: (sent: number, total: number) => void,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>> {
+  const path =
+    "proofOf" in target
+      ? `/api/v1/payments/${pid(target.proofOf)}/proof`
+      : `/api/v1/invoices/${pid(target.letterOf.documentId)}/realisation-extensions/${pid(target.letterOf.extensionId)}/letter`;
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", path);
+    xhr.withCredentials = true;
+    for (const [k, v] of Object.entries(uploadHeaders(file.name, sha256))) xhr.setRequestHeader(k, v);
+    if ("proofOf" in target) {
+      xhr.setRequestHeader("X-Proof-Kind", encodeURIComponent(target.kind));
+      if (target.ref) xhr.setRequestHeader("X-Proof-Ref", encodeURIComponent(target.ref));
+    }
+    xhr.upload.onprogress = (e) => onProgress(e.loaded, e.lengthComputable ? e.total : file.size);
+    xhr.onload = () => {
+      let data: (Record<string, unknown> & ApiErrorBody) | null = null;
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {
+        data = null;
+      }
+      if (xhr.status >= 200 && xhr.status < 300 && data) return resolve(data);
+      const e = answerError(data);
+      if (xhr.status === 401 && e.code === "unauthenticated") unauthenticatedHandler?.();
+      reject(new RequestError(xhr.status, e.code, e.message, data?.request_id ?? null));
+    };
+    xhr.onerror = () => reject(new RequestError(0, "network", NETWORK));
+    xhr.onabort = () => reject(new RequestError(0, "aborted", "Cancelled"));
+    if (signal) {
+      if (signal.aborted) {
+        reject(new RequestError(0, "aborted", "Cancelled"));
+        return;
+      }
+      signal.addEventListener("abort", () => xhr.abort(), { once: true });
+    }
+    xhr.send(file);
   });
 }

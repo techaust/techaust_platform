@@ -179,15 +179,22 @@ describe("the statements bind exactly the placeholders they use [M5.2]", () => {
     // before the audit row: the draft, ten lines, the guard, the counter row, the take, the freeze (LAST, so the audit row follows its `changes()`)
     expect(s.main.length).toBe(1 + 10 + 1 + 2 + 1);
     expect((s.main as unknown as Rec[]).at(-1)?.sql).toContain("UPDATE documents SET series");
-    // after it: issue_result (unguarded), the receipt, the proforma, the milestone, the invoice paid
-    expect(s.postAudit.length).toBe(5);
+    // after it: issue_result (unguarded), the receipt, the proforma, the milestone, then M6.1's ledger part: the payment, its allocation, the recompute and
+    // ledger_result (unguarded, last)
+    expect(s.postAudit.length).toBe(8);
+    expect((s.postAudit as unknown as Rec[]).at(-1)?.sql).toContain("INSERT INTO ledger_result");
+    expect((s.postAudit as unknown as Rec[]).at(-1)?.sql).not.toMatch(/advance_receipts|audit_log|frozen_at/); // unguarded
     expect((s.postAudit as unknown as Rec[])[0]?.sql).toContain("INSERT INTO issue_result");
     expect((s.postAudit as unknown as Rec[])[0]?.sql).not.toContain("WHERE");
     for (const r of out) expect(r.values.length, r.sql.slice(0, 60)).toBe(highest(r.sql));
     const freeze = (s.main as unknown as Rec[]).at(-1);
-    // amount, proforma and its stamp are the last three values of the freeze
-    // amount, proforma and its stamp, then the FY of the LUT (Q37), are the last four values of the freeze
-    expect(freeze?.values.slice(-4)).toEqual([1180, "p1", 5, "2627"]);
+    // amount, proforma and its stamp, then the FY of the LUT (Q37), then M6.1's payment guards (early check 2, findings 1 and 2: the pending entry, the day
+    // it arrived, the reference and the confirmed-past switch) are the last eight values of the freeze
+    expect(freeze?.values.slice(-8)).toEqual([1180, "p1", 5, "2627", null, "2026-10-27", "UTR1", 0]);
+    expect(freeze?.sql).toContain(
+      "(?34 IS NULL OR EXISTS (SELECT 1 FROM payments pp WHERE pp.id = ?34 AND pp.status = 'pending_verification'",
+    );
+    expect(freeze?.sql).toContain("pr.reference_norm = ?36");
     expect(freeze?.sql).toContain("(?33 IS NULL OR EXISTS");
     expect(freeze?.sql).toContain("total_minor = ?30"); // M5.3: the tail starts at ?30 (?29 is the IMS status)
     expect(freeze?.sql).toContain("p.balance_minor >= ?30");

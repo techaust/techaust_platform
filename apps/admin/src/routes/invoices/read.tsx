@@ -7,6 +7,7 @@
 // takes the void's place in the More menu, and a withdrawn proforma reads "Withdrawn" with 07-ZF 7's banner (who, when, why) in place of the void's.
 // M5.3: an issued tax or export invoice has its notes section (the deadline, its credit and debit notes, the balance after them, the actions that open the
 // note dialog); an issued note says what it is against and why, the client's IMS answer on a credit note, its lines against the invoice's and its totals.
+import { PAYABLE_TYPES } from "@techaust/core/ledger";
 import type { Role } from "@techaust/core/permissions";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
@@ -47,6 +48,7 @@ import type { InvoiceWithNotes, NoteKind } from "../../lib/notes-api.ts";
 import { PDF_COPY } from "../../lib/pdf.ts";
 import { LinesTable, TaxPreview } from "../documents/money.tsx";
 import { PdfPanel, type PdfSource, type PdfWords, useMailAfterPdf } from "../documents/pdf-panel.tsx";
+import { PaymentsPanel } from "../payments/panel.tsx";
 import { VoidDialog, WithdrawDialog } from "./dialogs.tsx";
 import { NoteDialog } from "./note-dialog.tsx";
 import {
@@ -68,7 +70,16 @@ import {
   type SendableView,
   sentToast,
 } from "./send-parts.tsx";
-import { AdvanceOrigin, ExportFacts, ProformaPanel, ServiceDateSetOnce } from "./types-parts.tsx";
+import {
+  AdvanceOrigin,
+  ExportFacts,
+  ProformaPanel,
+  ProformaPayments,
+  ServiceDateSetOnce,
+} from "./types-parts.tsx";
+
+/** M6.1: the documents a payment goes on (core `PAYABLE_TYPES`). */
+const PAYABLE: readonly string[] = PAYABLE_TYPES;
 
 const PDF_WORDS: PdfWords = {
   // 07-R has no heading for a ready PDF: the approved 07-P one stands in (it says the same thing).
@@ -387,7 +398,15 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
           {v.care && <CareOrigin care={v.care} canOpenPlan={allowed(role, "carePlans.read")} />}
           <AdvanceOrigin view={v} />
           {v.frozen && v.type === "proforma" && <ProformaPanel view={v} onIssued={reload} />}
+          {/* M6.1: a proforma's entries waiting for the Owner's check (07-ZH line 12) */}
+          {v.frozen && v.type === "proforma" && v.status !== "void" && allowed(role, "payments.read") && (
+            <ProformaPayments view={v} role={role} onIssued={reload} />
+          )}
           {v.frozen && <ExportFacts view={v} />}
+          {/* M6.1 (07-ZH line 1): the ledger of an issued tax invoice, export invoice or debit note */}
+          {v.frozen && PAYABLE.includes(v.type) && allowed(role, "payments.read") && (
+            <PaymentsPanel view={v} role={role} onChanged={reload} />
+          )}
           {isNote && <NoteFacts view={v} />}
           {isNote && <ImsPanel view={v} onSaved={reload} />}
           {v.frozen && !isNote && <NotesPanel view={v} role={role} onIssue={setNoting} />}

@@ -6,7 +6,9 @@
 //   gstDue  = max(issue date + 12 months, femaDue) + 15 days (Rule 96A), a stage only for an export under LUT (Q53);
 //   both are the LAST allowed day: overdue is the day after, "approaching" starts `approachingDays` before.
 // The months and days are SQL expressions given by the caller (a bound `?3`, or a subquery on the settings row), never pasted values.
-// No FEMA extension exists before M6.1 (Q60): the standard date is the only one.
+// M6.1 (Q60, L14): the AD bank may extend the FEMA period (`realisation_extensions`, append-only); the FEMA date is then the later of the standard date and the
+// latest `extended_to` of the invoice, and the GST date follows it (Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-04); Rule 96A(1)(b) CGST Rules
+// (08-C RA-20)). The twin is core `realisationDates` with `extendedTo`.
 
 /** The SQL expressions (usually `?n` placeholders) of the rule parameters and of today (IST, ISO date text). */
 export type RealisationSql = {
@@ -32,9 +34,17 @@ export const SCAN_BINDS: RealisationSql = Object.freeze({
 export const addMonthsClampedSql = (date: string, months: string): string =>
   `min(date(${date}, '+' || ${months} || ' months'), date(${date}, 'start of month', '+' || (${months} + 1) || ' months', '-1 day'))`;
 
-/** The FEMA due date of an export invoice row `alias` (columns `issue_date` and `currency`). */
-export const femaDueSql = (alias: string, p: RealisationSql): string =>
+/** The standard FEMA due date of an export invoice row `alias` (columns `issue_date` and `currency`), before any extension. */
+export const femaStandardSql = (alias: string, p: RealisationSql): string =>
   `CASE WHEN ${alias}.currency = 'INR' THEN ${addMonthsClampedSql(`${alias}.issue_date`, p.inrMonths)} ELSE ${addMonthsClampedSql(`${alias}.issue_date`, p.foreignMonths)} END`;
+
+/**
+ * The FEMA due date of an export invoice row `alias` (columns `id`, `issue_date` and `currency`): the later of the standard date and the latest extension the
+ * bank granted (a correlated `max` over `realisation_extensions_document (document_id, extended_to)`, one index seek; '' when there is none, which every
+ * ISO date is after). SQLite's two-argument `max` is NULL when either is NULL, hence the `coalesce`.
+ */
+export const femaDueSql = (alias: string, p: RealisationSql): string =>
+  `max(${femaStandardSql(alias, p)}, coalesce((SELECT max(x.extended_to) FROM realisation_extensions x WHERE x.document_id = ${alias}.id), ''))`;
 
 /** The GST due date (Rule 96A) of the same row: the later of 12 months and the FEMA date, plus the extra days. Worked out for every export (the CSV shows it); the STAGE uses it for LUT exports only. */
 export const gstDueSql = (alias: string, p: RealisationSql): string =>
@@ -56,6 +66,19 @@ export const stageSql = (alias: string, p: RealisationSql): string => {
     WHEN ${p.today} >= date(${fema}, '-' || ${p.approachingDays} || ' days') THEN 'fema_approaching'
     ELSE 'ok' END`;
 };
+
+/**
+ * Every stage `stageSql` can give, in its order (core `RealisationStage`; a db test pins the list to the `THEN` literals of `stageSql` and to core's type). The
+ * dashboard's stage counts (`EXPORT_STAGE_COUNTS_SQL`) have one column per stage in this list.
+ */
+export const EXPORT_STAGES = [
+  "realised",
+  "gst_overdue",
+  "gst_approaching",
+  "fema_overdue",
+  "fema_approaching",
+  "ok",
+] as const;
 
 /** The four stages that ring a bell and send an email (the others are quiet). */
 export const ALERT_STAGES = ["fema_approaching", "fema_overdue", "gst_approaching", "gst_overdue"] as const;

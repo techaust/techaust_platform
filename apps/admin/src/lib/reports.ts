@@ -25,7 +25,7 @@ const docs = (n: number) => `${n} ${n === 1 ? "document" : "documents"}`;
 
 // ---- 07-V §1 navigation ------------------------------------------------------------------------------------------------------------------------
 
-export type ReportKey = "gst" | "sales-register" | "edf" | "realisation";
+export type ReportKey = "gst" | "sales-register" | "edf" | "realisation" | "payments";
 
 /** The four reports, in 07-V §1's order, with their address under /reports. */
 export const REPORTS: readonly { key: ReportKey; path: string; label: string }[] = [
@@ -33,6 +33,8 @@ export const REPORTS: readonly { key: ReportKey; path: string; label: string }[]
   { key: "sales-register", path: "/reports/sales-register", label: "Sales register" },
   { key: "edf", path: "/reports/edf", label: "EDF list" },
   { key: "realisation", path: "/reports/realisation", label: "Export realisation" },
+  // M6.1 (07-ZH line 20, approved by the owner 2026-10-31).
+  { key: "payments", path: "/reports/payments", label: "Payments and TDS register" },
 ];
 
 export const REPORTS_COPY = {
@@ -595,6 +597,9 @@ export function statementKindText(kind: StatementKind, againstNumber?: string | 
       return againstNumber ? `Credit note against ${againstNumber}` : "Credit note";
     case "receipt":
       return "Payment received";
+    // M6.1 (07-ZH line 19, approved by the owner 2026-10-31): the tax the client deducted at source.
+    case "tds":
+      return "TDS deducted";
   }
 }
 
@@ -647,6 +652,7 @@ export const statementCsvLabels = (
     debit_note: statementCsvDebitNoteLabel(entries),
     credit_note: statementCsvCreditNoteLabel(entries),
     receipt: statementKindText("receipt"),
+    tds: statementKindText("tds"),
   } satisfies Record<StatementKind, string>,
 });
 

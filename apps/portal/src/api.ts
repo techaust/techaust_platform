@@ -300,6 +300,9 @@ export type InvoiceSummary = {
   };
   paidMinor: number;
   creditedMinor: number;
+  /** M6.1 (T8): the TDS the client deducted (0 when none); `tdsRow` is the summary row, 07-ZH line 18 "TDS deducted by you", or null. */
+  tdsMinor?: number;
+  tdsRow?: { label: string; amount: string } | null;
   /** ADM-INV-10: null on a withdrawn payment request (`status: "withdrawn"`): nothing is owed, so no amount due and no due date. */
   balanceMinor: number | null;
   total: string;

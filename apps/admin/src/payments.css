@@ -1,0 +1,791 @@
+/* M6.1 The payment screens (ADM-PAY-05, ADM-PAY-06, ADM-INV-16, ADM-INV-17; Q60). Tokens only.
+   One device, borrowed from the accounts they serve: the Payments panel's figures are a ledger's column (label left, amount right, tabular), every row
+   on a hairline, and the balance stands on a thin rule with the double rule under it, as the reports' totals do. An entry is a ledger line: the date in
+   tabular figures, the reference in the document numbers' face, one chip for its state. Nothing else is decorated; verdigris stays on buttons and links. */
+
+/* ---------- the panel ---------- */
+
+.pay-panel {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.pay-panel > .lead-panel__head,
+.pay-panel > .lead-panel__title {
+  margin: 0;
+}
+
+.pay-panel .lead-panel__head {
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.pay-panel__actions,
+.pay-credit__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.pay-panel__lede {
+  margin: calc(-1 * var(--space-2)) 0 0;
+  max-width: 68ch;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.pay-panel__loading {
+  display: grid;
+  gap: var(--space-3);
+}
+
+/* the figures: a ledger's column, at most 28rem wide so the amounts sit near their labels on a wide screen */
+.pay-figures {
+  display: grid;
+  max-width: 28rem;
+  margin: 0;
+}
+
+.pay-figures__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.pay-figures dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.pay-figures dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-align: end;
+  white-space: nowrap;
+}
+
+/* the balance: a thin rule above and the double rule below, in the display face */
+.pay-figures__total {
+  margin-top: -1px;
+  border-top: 1px solid var(--color-text);
+  border-bottom: 3px double var(--color-text);
+  padding: var(--space-3) 0;
+}
+
+.pay-figures__total dt {
+  color: var(--color-text);
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+
+.pay-figures__total dd {
+  font-family: var(--font-display);
+  font-stretch: var(--font-display--stretch);
+  font-size: var(--text-h4);
+  line-height: var(--text-h4--line-height);
+  font-weight: 560;
+}
+
+.pay-figures__excess {
+  border-bottom: 0;
+}
+
+/* ---------- credit held ---------- */
+
+.pay-credit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+}
+
+.pay-credit__held {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.pay-credit__held .icon {
+  color: var(--color-text-muted);
+}
+
+/* ---------- entries (ledger lines) ---------- */
+
+.pay-sub {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-text-muted);
+}
+
+.pay-lines {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.pay-lines th,
+.pay-lines td {
+  padding: var(--space-3) var(--space-3) var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+  text-align: start;
+  /* baseline, so every cell's first line sits on the date link's line (the link is a 44 px block, its words centred in it) */
+  vertical-align: baseline;
+}
+
+.pay-lines thead th {
+  padding-top: 0;
+  color: var(--color-text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.pay-lines tbody th {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.pay-lines .spill,
+.pay-lines__nowrap {
+  white-space: nowrap;
+}
+
+.pay-lines .num {
+  text-align: end;
+  white-space: nowrap;
+}
+
+.pay-lines tr > :last-child {
+  padding-right: 0;
+}
+
+.pay-lines tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.pay-lines__meta {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.pay-tds {
+  display: grid;
+}
+
+.pay-await {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+}
+
+.pay-await .btn--text {
+  min-height: var(--target-min);
+}
+
+/* "Certificate awaited": a quiet tag with its icon (a reminder, not a status colour) */
+.pay-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0.0625rem var(--space-2);
+  border: 1px dashed var(--color-border-control);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.pay-badge .icon {
+  color: var(--color-text-muted);
+}
+
+.pay-proof-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--target-min);
+}
+
+.pay-panel__empty {
+  padding: var(--space-2) 0;
+}
+
+/* below md the entries stack: each row a block, each cell with its label */
+@media (max-width: 47.99rem) {
+  .pay-lines thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .pay-lines,
+  .pay-lines tbody,
+  .pay-lines tr,
+  .pay-lines th,
+  .pay-lines td {
+    display: block;
+  }
+
+  .pay-lines tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    /* the amount sits on the date link's line (the link is a 44 px block) */
+    align-items: baseline;
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .pay-lines tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .pay-lines th,
+  .pay-lines td {
+    padding: 0;
+    border: 0;
+  }
+
+  .pay-lines td.num {
+    grid-column: 2;
+    grid-row: 1;
+    font-weight: 600;
+  }
+
+  .pay-lines td[data-label]:not(.num) {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 8.5rem minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+
+  .pay-lines td[data-label]:not(.num)::before {
+    content: attr(data-label);
+    color: var(--color-text-muted);
+  }
+
+  /* the status chip and the other values keep their own width in the stacked rows (visual review, low) */
+  .pay-lines td[data-label]:not(.num) > * {
+    justify-self: start;
+  }
+}
+
+/* ---------- waiting for the Owner's check ---------- */
+
+.pay-waiting__list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pay-waiting__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.pay-waiting__row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.pay-waiting__what {
+  display: grid;
+  min-width: 0;
+}
+
+.pay-waiting__amount {
+  text-align: end;
+  font-weight: 600;
+}
+
+/* below md the chip and the action take their own rows under the date and amount, so a long chip never runs under the button */
+.pay-waiting__row > .spill,
+.pay-waiting__go {
+  grid-column: 1 / -1;
+  justify-self: start;
+  white-space: normal;
+}
+
+@media (min-width: 48rem) {
+  .pay-waiting__row {
+    grid-template-columns: minmax(0, 1fr) auto auto auto;
+  }
+
+  .pay-waiting__row > .spill,
+  .pay-waiting__go {
+    grid-column: auto;
+    white-space: nowrap;
+  }
+}
+
+/* ---------- export realisation ---------- */
+
+.pay-real {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.pay-real__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.pay-real__head .pay-sub {
+  margin: 0;
+}
+
+.pay-real__ext-h {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.pay-real__list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+
+/* ---------- forms and dialogs ---------- */
+
+/* the record and confirm dialogs carry a table: a little wider than the default dialog */
+.dialog--pay {
+  width: min(100% - 2rem, 40rem);
+}
+
+.pay-form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.pay-form > p {
+  margin: 0;
+}
+
+.pay-form .field {
+  scroll-margin-bottom: var(--space-24);
+}
+
+.pay-form__lede {
+  max-width: 60ch;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.pay-form .form-intro {
+  margin: 0;
+}
+
+.pay-form__rate {
+  max-width: 8rem;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.pay-form__fixed {
+  background: var(--color-surface-alt);
+}
+
+.pay-form .form-section {
+  margin: 0;
+}
+
+.pay-line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: start;
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-sm);
+}
+
+.pay-line .icon {
+  margin-top: 0.125rem;
+  color: var(--color-info);
+}
+
+/* a reference already recorded (07-ZH line 13): a question, drawn as the warning rule of the issue dialog's choices */
+.pay-seen {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-inline-start: 3px solid var(--color-warning);
+  background: var(--color-surface-alt);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.pay-seen:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.pay-seen > .icon {
+  color: var(--color-warning);
+}
+
+.pay-seen p,
+.pay-seen__body p {
+  margin: 0;
+}
+
+.pay-seen__body {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+}
+
+/* the file picker: the native control kept (it names the file and works with every input method), sized as a target */
+.file-pick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.file-pick .file-pick__input {
+  width: auto;
+  max-width: 100%;
+  min-height: var(--target-min);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.pay-proof {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.file-pick__input::file-selector-button {
+  min-height: var(--target-min);
+  margin-inline-end: var(--space-3);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-btn-secondary-fg);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.file-pick__chosen {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.file-pick__face {
+  display: none;
+}
+
+/* the allocation table */
+.pay-alloc {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.alloc {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.alloc > * > tr > th,
+.alloc > * > tr > td {
+  padding: var(--space-2) var(--space-3) var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+  text-align: start;
+  vertical-align: middle;
+}
+
+.alloc thead th {
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.alloc tr > :last-child {
+  padding-right: 0;
+}
+
+.alloc .num {
+  text-align: end;
+  white-space: nowrap;
+}
+
+.alloc__doc {
+  display: grid;
+}
+
+.alloc__meta {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.alloc__cell {
+  width: 11rem;
+}
+
+.alloc__in {
+  justify-content: flex-end;
+}
+
+.alloc__in input {
+  width: 8rem;
+}
+
+.alloc__cell .field-error {
+  justify-content: flex-end;
+  text-align: start;
+}
+
+.alloc__none {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.alloc--loading {
+  display: grid;
+  gap: var(--space-2);
+}
+
+@media (max-width: 29.99rem) {
+  .alloc thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .alloc,
+  .alloc tbody,
+  .alloc tr,
+  .alloc th,
+  .alloc td {
+    display: block;
+  }
+
+  .alloc tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-2);
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .alloc > * > tr > th,
+  .alloc > * > tr > td {
+    padding: 0;
+    border: 0;
+  }
+
+  .alloc__cell {
+    grid-column: 1 / -1;
+    width: auto;
+  }
+
+  .alloc__in {
+    justify-content: flex-start;
+  }
+
+  .alloc__cell .field-error {
+    justify-content: flex-start;
+  }
+}
+
+/* ---------- the list and an entry ---------- */
+
+.pay-row__title {
+  display: grid;
+}
+
+/* Every link to a payment entry (the panel's dates, the list, Approvals › Payments, the register's TDS table): a 44 px block (visual review finding 1),
+   centred on its line like the other row links (inv-name__link, client-name__link). */
+.pay-row__link {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--target-min);
+  font-weight: 600;
+}
+
+.pay-row__acts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+
+.pay-range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.pay-range .field {
+  margin: 0;
+}
+
+.pay-entry {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.pay-entry__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-4);
+}
+
+.pay-entry__amount {
+  font-family: var(--font-display);
+  font-stretch: var(--font-display--stretch);
+  font-size: var(--text-h3);
+  line-height: var(--text-h3--line-height);
+  font-weight: 560;
+}
+
+.pay-puton__list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pay-puton__list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.pay-puton__list li:last-child {
+  border-bottom: 0;
+}
+
+.pay-puton__list a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+}
+
+.pay-lines__code {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.pay-table .dtable__table td,
+.pay-table .dtable__table th {
+  vertical-align: middle;
+}
+
+/* where a client's credit comes from, oldest first (the order Use credit takes it in) */
+.pay-sources {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+
+.pay-sources li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.pay-sources li:last-child {
+  border-bottom: 0;
+}
+
+/* The payment lists never push the page sideways: a table wider than its box scrolls inside it (the DataTable makes the box a named, focusable
+   region when it does), at every width from md up, and a long status chip may wrap. */
+@media (min-width: 48rem) {
+  .pay-table .dtable {
+    overflow-x: auto;
+  }
+
+  /* a sticky header inside a box that scrolls sideways would float over the rows */
+  .pay-table .dtable__table thead th {
+    position: static;
+  }
+}
+
+.pay-table .spill {
+  white-space: normal;
+}
+
+/* the entry ("Payment · NEFT") stays on one line in the table; a phone's card lets it wrap */
+.pay-table .dtable__table .pay-row__entry {
+  white-space: nowrap;
+}
+
+/* Record a payment from Payments: the search and the client each take the whole row, so a long name and its code read in full (visual review, low) */
+.pay-client {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.pay-client .field {
+  margin: 0;
+}
+
+/* line 10's RA-17 warning before a submit: the reference warning's box, said politely (visual review finding 6) */
+.pay-warn p {
+  margin: 0;
+}
+
+/* the open invoices didn't load in Record a payment: the error and its retry, inside the allocation fieldset (visual review finding 7) */
+/* an extension row without its letter: on its own line under the extension, the words and the Owner's action, wrapping when narrow */
+.pay-real__list .pay-real__letter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pay-real__letter .btn--text {
+  min-block-size: var(--target-min);
+}

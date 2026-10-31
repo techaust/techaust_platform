@@ -12,6 +12,13 @@
 // succeed, and a number would have been burned. Unguarded, a stale or refused send aborts as a whole (counter, lead, audit: nothing).
 // A later version (version > 1) of a proposal or estimate takes no number: it copies series, FY, number and display from version 1.
 import { INVOICE_FLOW_TYPES, NOTE_PARENT_LIVE_STATUSES, REMINDER_TYPES } from "@techaust/core/invoices";
+import {
+  allocationStatements,
+  type Bell,
+  decideApprovalStatements,
+  ledgerResultStatement,
+  recomputeStatement,
+} from "./ledger.ts";
 import type {
   InvoiceBankBlock,
   InvoiceIssuerSnapshot,
@@ -23,6 +30,7 @@ import {
   DISCOUNT_AFTER_SALE_FROM_SQL,
   fyTokenOfDateSql,
   LUT_FOR_FY_SQL,
+  ledgerStatusCaseSql,
   signedIssuerSql,
   taxOnlyNoteExactSql,
 } from "./sql-rules.ts";
@@ -566,12 +574,14 @@ export function invoiceIssueStatements(db: D1Database, a: InvoiceIssueArgs): Sen
       // notes in one millisecond must not leave the stamp a stale draft read. A debit note moves nothing on its invoice (LD42).
       // FX-1 (A0 4): ONE statement writes the credited total, the balance and the status together, from the same recomputed sum (`s.credited`), so the row is never
       // seen half written: the trigger `documents_ledger_identity` (0050) checks balance = max(0, total - paid - credited) on every write of the ledger.
+      // M6.1 (T8, ADM-INV-16): the TDS on the invoice settles it too: balance = max(0, total - paid - credited - tds) (0060's identity) and the status CASE is core
+      // `ledgerStatusOf(total, paid, credited, tds)`'s twin (`ledgerStatusCaseSql`, settled = paid + tds).
       ...(a.note && a.note.kind === "credit"
         ? [
             db
               .prepare(
-                `UPDATE documents SET credited_minor = s.credited, balance_minor = max(0, total_minor - paid_minor - s.credited),
-                   status = CASE WHEN s.credited >= total_minor THEN 'credited' WHEN paid_minor > 0 AND total_minor - paid_minor - s.credited <= 0 THEN 'paid' WHEN paid_minor > 0 THEN 'partially_paid' WHEN s.credited > 0 THEN 'partially_credited' ELSE 'issued' END,
+                `UPDATE documents SET credited_minor = s.credited, balance_minor = max(0, total_minor - paid_minor - s.credited - tds_minor),
+                   status = ${ledgerStatusCaseSql("total_minor", "(paid_minor + tds_minor)", "s.credited")},
                    updated_at = max(?2, updated_at + 1)
                  FROM (SELECT coalesce(sum(c.total_minor), 0) AS credited FROM documents c WHERE c.parent_id = ?3 AND c.type = 'credit_note' AND c.frozen_at IS NOT NULL AND c.status <> 'void') AS s
                  WHERE documents.id = ?3 AND ${FROZEN_BY_THIS_BATCH}`,
@@ -622,6 +632,24 @@ export type AdvanceIssueArgs = Omit<InvoiceIssueArgs, "authority" | "bell" | "ex
   referenceNorm: string;
   /** The `advance_receipts` row's id (also sealed in the invoice header). */
   receiptId: string;
+  /**
+   * M6.1 (L4, L5; 08-C RA-17): a PENDING payment Staff recorded against the proforma, confirmed by this batch ("Confirm by issuing the tax invoice"): it must be a
+   * pending `payment` of the proforma's client and currency, of exactly `amountMinor`, received on `receivedOn`; the batch flips it to confirmed (by the issuing
+   * Owner), links it to the receipt and approves its `payment_verify` approval. Absent: the batch records a new confirmed payment `pay_<receiptId>`.
+   */
+  paymentId?: string | null;
+  /**
+   * L12 (early check 2, finding 1): the Owner confirmed past a bank reference already on a pending or confirmed payment. Absent or false: such a reference
+   * freezes nothing (the route answers 409 `reference_seen`). Ignored with `paymentId` (that entry carries the reference itself).
+   */
+  confirmDuplicate?: boolean;
+  /**
+   * Early check A7: with `paymentId`, the requester's bell (07-ZH line 6, "Your payment of {amount} from {client} was confirmed.", words supplied by the route)
+   * rings through `decideApprovalStatements`, as a confirm from the Payments list does. Absent: the approval is approved with no bell.
+   */
+  decidedBell?: Bell | null;
+  /** M6.1: the mode of the new payment (NEFT, UPI, ...), or null; ignored when `paymentId` is given (the pending row keeps its own). */
+  mode?: string | null;
   /** The hash of the new invoice's draft content (the row is inserted with it, and the freeze checks it). */
   contentSha256: string;
   expected: Omit<InvoiceIssueArgs["expected"], "updatedAt" | "contentSha256">;
@@ -731,8 +759,23 @@ export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): Sen
       where: ` AND total_minor = ?30
          AND EXISTS (SELECT 1 FROM documents p WHERE p.id = ?31 AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.status IN ('issued', 'converted') AND p.updated_at = ?32 AND p.balance_minor >= ?30 AND p.client_id = documents.client_id AND p.currency = documents.currency)
          AND (?33 IS NULL OR ${LUT_FOR_FY_SQL.replaceAll("?FY", "?33")})
+         AND (?34 IS NULL OR EXISTS (SELECT 1 FROM payments pp WHERE pp.id = ?34 AND pp.status = 'pending_verification' AND pp.kind = 'payment' AND pp.amount_minor = ?30
+           AND pp.received_on = ?35 AND pp.client_id = documents.client_id AND pp.currency = documents.currency))
+         AND (?34 IS NOT NULL OR ?36 IS NULL OR ?37 = 1 OR NOT EXISTS (SELECT 1 FROM payments pr INDEXED BY payments_reference WHERE pr.reference_norm = ?36 AND pr.status IN ('pending_verification', 'confirmed')))
          AND ${SIGNED_FREEZE_SQL}`,
-      binds: [a.amountMinor, a.proformaId, a.expectedProformaUpdatedAt, a.lutFy ?? null],
+      // Early check 2, finding 2: with `paymentId`, the pending entry is still the money read (pending, a payment, this amount, day, client and currency) at the
+      // freeze itself, so a confirm, reject or withdraw landing between the read and the batch freezes nothing. Finding 1 (L12): without it, a reference
+      // already on a pending or confirmed payment freezes nothing unless the Owner confirmed past it (`confirmDuplicate`), as `recordPaymentStatement` holds.
+      binds: [
+        a.amountMinor,
+        a.proformaId,
+        a.expectedProformaUpdatedAt,
+        a.lutFy ?? null,
+        a.paymentId ?? null,
+        a.receivedOn,
+        a.referenceNorm,
+        a.confirmDuplicate === true ? 1 : 0,
+      ],
     },
   );
   return {
@@ -778,14 +821,107 @@ export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): Sen
              AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?1 AND n.status = 'issued' AND n.frozen_at = ?3)`,
         )
         .bind(a.documentId, a.proformaId, a.now),
-      // The new invoice is paid: nothing is left to chase.
-      db
-        .prepare(
-          `UPDATE documents SET status = 'paid', paid_minor = total_minor, balance_minor = 0 WHERE id = ?1 AND status = 'issued' AND frozen_at = ?2`,
-        )
-        .bind(a.documentId, a.now),
+      // M6.1 (L4): the money is a confirmed payment on the ledger, put whole onto the new invoice; the recompute then makes it paid (nothing is left to chase) and
+      // the post-condition checks the sums. Every step is guarded on the receipt row, which exists only when this batch froze the invoice.
+      ...advancePaymentStatements(db, a),
     ],
   };
+}
+
+/**
+ * The advance batch's ledger part (M6.1, L4, L5): a new confirmed `manual` payment `pay_<receiptId>` (or the pending payment `paymentId` flipped to confirmed by
+ * the issuing Owner, with its approval approved), one `allocate` row `pal_<receiptId>` of the whole amount onto the new invoice, the recompute of the invoice and
+ * `ledger_result` (unguarded). The ids follow the back-fill's (0060), so an advance looks the same whether it was made before M6.1 or after.
+ */
+function advancePaymentStatements(db: D1Database, a: AdvanceIssueArgs): D1PreparedStatement[] {
+  const paymentId = a.paymentId ?? `pay_${a.receiptId}`;
+  const receiptMade: { sql: (at: number) => string; params: readonly unknown[] } = {
+    sql: (at) =>
+      `EXISTS (SELECT 1 FROM advance_receipts ar WHERE ar.id = ?${at} AND ar.created_at = ?${at + 1})`,
+    params: [a.receiptId, a.now],
+  };
+  const payment = a.paymentId
+    ? [
+        db
+          .prepare(
+            `UPDATE payments SET status = 'confirmed', verified_by = ?3, verified_at = ?4, advance_receipt_id = ?5
+             WHERE id = ?1 AND status = 'pending_verification' AND kind = 'payment' AND amount_minor = ?6 AND received_on = ?7
+               AND client_id = (SELECT d.client_id FROM documents d WHERE d.id = ?2) AND currency = (SELECT d.currency FROM documents d WHERE d.id = ?2)
+               AND ${receiptMade.sql(8)}`,
+          )
+          .bind(
+            paymentId,
+            a.documentId,
+            a.issuedBy,
+            a.now,
+            a.receiptId,
+            a.amountMinor,
+            a.receivedOn,
+            ...receiptMade.params,
+          ),
+        ...(a.decidedBell
+          ? decideApprovalStatements(
+              db,
+              { paymentId, decidedBy: a.issuedBy, now: a.now, note: null, bell: a.decidedBell },
+              receiptMade,
+            )
+          : [
+              db
+                .prepare(
+                  `UPDATE approvals SET status = 'approved', decided_by = ?2, decided_at = ?3
+             WHERE payment_id = ?1 AND kind = 'payment_verify' AND status = 'pending'
+               AND EXISTS (SELECT 1 FROM payments p WHERE p.id = ?1 AND p.status = 'confirmed' AND p.advance_receipt_id = ?4)`,
+                )
+                .bind(paymentId, a.issuedBy, a.now, a.receiptId),
+            ]),
+      ]
+    : [
+        db
+          .prepare(
+            `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, charges_minor, received_on, mode, reference_norm, advance_receipt_id,
+               recorded_by, recorded_at, verified_by, verified_at)
+             SELECT ?1, d.client_id, 'payment', 'manual', 'confirmed', d.currency, ?3, 0, ?4, ?5, ?6, ?7, ?8, ?9, ?8, ?9 FROM documents d WHERE d.id = ?2 AND ${receiptMade.sql(10)}`,
+          )
+          .bind(
+            paymentId,
+            a.documentId,
+            a.amountMinor,
+            a.receivedOn,
+            a.mode ?? null,
+            a.referenceNorm,
+            a.receiptId,
+            a.issuedBy,
+            a.now,
+            ...receiptMade.params,
+          ),
+      ];
+  // Early check 2, finding 2: the allocation goes on only when the payment is the one this receipt made confirmed (a new `pay_` row, or the pending entry the
+  // UPDATE above just flipped): a payment confirmed some other way meanwhile is never put on the new invoice.
+  const paymentOfReceipt: { sql: (at: number) => string; params: readonly unknown[] } = {
+    sql: (at) =>
+      `${receiptMade.sql(at)} AND EXISTS (SELECT 1 FROM payments pr WHERE pr.id = ?${at + 2} AND pr.advance_receipt_id = ?${at})`,
+    params: [...receiptMade.params, paymentId],
+  };
+  return [
+    ...payment,
+    ...allocationStatements(
+      db,
+      [
+        {
+          id: `pal_${a.receiptId}`,
+          paymentId,
+          documentId: a.documentId,
+          amountMinor: a.amountMinor,
+          kind: "allocate",
+        },
+      ],
+      a.issuedBy,
+      a.now,
+      paymentOfReceipt,
+    ),
+    recomputeStatement(db, { paymentIds: [paymentId], documentIds: [a.documentId] }, a.now, receiptMade),
+    ledgerResultStatement(db, { paymentIds: [paymentId], documentIds: [a.documentId] }),
+  ];
 }
 
 // ---- a credit or debit note draft (M5.3, LD38; M6 reuses it for "refund → credit note draft") -------------------------------------------------------------

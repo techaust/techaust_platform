@@ -1,5 +1,5 @@
 // The recurring care-plan invoice, in the admin API Worker (M5.4; ADM-CARE-02, ADM-INV-12, LD57, LD58, LD59, LD66; Researched 2026-10-28, s.31(5) CGST Act (08-C RA-24) for every tax rule). The jobs Worker cannot build or issue an
-// invoice (the model reads settings through zod, and jobs stays free of it), so it calls two methods of the `BillingJobs` entrypoint (`api.ts`), each with its own clock (no `now` and no period
+// invoice (the model reads settings through zod, and jobs stays free of it), so it calls two methods of the `BillingJobs` entrypoint (`finance.ts`, the finance Worker since M6.1), each with its own clock (no `now` and no period
 // come from the caller):
 //   draftCarePlan({planId})      works out the plan's current period and writes the draft, the record of the period and the plan's `last_billed_period` in ONE batch;
 //   issueCareDraft({documentId}) issues a draft the job made, with NO session: the `care_auto` authority (packages/db/src/issue.ts) is the Owner's earlier choices read back inside the freeze.

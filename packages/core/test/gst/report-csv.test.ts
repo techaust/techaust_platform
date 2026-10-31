@@ -48,6 +48,7 @@ const LABELS: StatementLabels = {
     export_invoice: "Export invoice (test label)",
     debit_note: "Debit note (test label)",
     credit_note: "Credit note (test label)",
+    tds: "TDS (test label)",
     receipt: "Payment received (test label)",
   },
 };

@@ -105,31 +105,39 @@ jobs:
         name: Build the website (staging, no token)
         run: pnpm --filter @techaust/web run build:staging
       # The deploy order (full audit A6 8, owner's yes 2026-10-30), one Worker per step: the admin API first (the admin front binds it as
-      # ADMIN_API, and jobs binds its BillingJobs entrypoint as ADMIN_JOBS), then the admin front, the portal, jobs and the website.
+      # ADMIN_API), then the admin finance Worker (M6.1, owner's yes 2026-10-31: the front binds it as ADMIN_FINANCE, and jobs binds its
+      # BillingJobs entrypoint as ADMIN_JOBS), then the admin front, the portal, jobs and the website.
       # A failed step stops the job, so no Worker is deployed after a failed one. After each app, a health check through Cloudflare
       # Access with the deploy-check service token (scripts/staging-health.mjs; `staging-deploy-check`, a Service Auth policy on all
       # four staging apps, owner 2026-10-30; docs/runbooks/access-staging.md Part 4).
       - if: steps.creds.outputs.ready == 'true'
-        name: Deploy 1 of 5, the admin API Worker (staging)
+        name: Deploy 1 of 6, the admin API Worker (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm --filter @techaust/admin run deploy:staging:api
       - if: steps.creds.outputs.ready == 'true'
-        name: Deploy 2 of 5, the admin front Worker (staging)
+        name: Deploy 2 of 6, the admin finance Worker (staging)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm --filter @techaust/admin run deploy:staging:finance
+      - if: steps.creds.outputs.ready == 'true'
+        name: Deploy 3 of 6, the admin front Worker (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm --filter @techaust/admin run deploy:staging:front
-      # The front's /api/v1/health, and a signed-out /api/v1/dashboard answered 401 by the API Worker through the binding (not 502).
+      # The front's /api/v1/health; a signed-out /api/v1/leads answered 401 by the API Worker and a signed-out /api/v1/dashboard answered
+      # 401 by the finance Worker, each through its binding (not 502).
       - if: steps.creds.outputs.ready == 'true'
-        name: Health check, the admin front and API Workers (staging)
+        name: Health check, the admin front, API and finance Workers (staging)
         env:
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_SECRET }}
         run: node scripts/staging-health.mjs admin
       - if: steps.creds.outputs.ready == 'true'
-        name: Deploy 3 of 5, the portal Worker (staging)
+        name: Deploy 4 of 6, the portal Worker (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -141,7 +149,7 @@ jobs:
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_SECRET }}
         run: node scripts/staging-health.mjs portal
       - if: steps.creds.outputs.ready == 'true'
-        name: Deploy 4 of 5, the jobs Worker (staging)
+        name: Deploy 5 of 6, the jobs Worker (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -153,7 +161,7 @@ jobs:
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_SECRET }}
         run: node scripts/staging-health.mjs jobs
       - if: steps.creds.outputs.ready == 'true'
-        name: Deploy 5 of 5, the website Worker (staging)
+        name: Deploy 6 of 6, the website Worker (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

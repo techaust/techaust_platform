@@ -21,7 +21,13 @@ import { cssString, TEMPLATE_CSS } from "./styles.ts";
 const DOCUMENT_CSP = "default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'";
 
 /** What a line of the statement is. */
-export type StatementLineKind = "tax_invoice" | "export_invoice" | "debit_note" | "credit_note" | "receipt";
+export type StatementLineKind =
+  | "tax_invoice"
+  | "export_invoice"
+  | "debit_note"
+  | "credit_note"
+  | "receipt"
+  | "tds";
 
 /**
  * What the layout prints, every value already formatted (dates as the PDFs write them, amounts with their currency sign). The jobs Worker's view

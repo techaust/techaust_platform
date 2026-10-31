@@ -14,6 +14,7 @@ import {
 } from "./offer-redaction.ts";
 import { insert, mkClient, mkContact, mkLead } from "./test-clients.ts";
 import { call, countOf, one, rows, sessionFor, type TestSession, withDb } from "./test-helpers.ts";
+import { recordBody, recorded, verify } from "./test-payments.ts";
 import { beforeBatchHolding, getDoc, type J, json, mkDraft, mkTerms, sendDoc } from "./test-quotes.ts";
 import { addDoc, line } from "./test-reports.ts";
 
@@ -1105,8 +1106,11 @@ describe("D1 statements per request (review row 6) [NFR-6]", () => {
     expect(res.status, `${name}: ${await res.clone().text()}`).toBe(want.status);
     if (want.code) expect(await code(res), name).toBe(want.code);
     // at the fix (session touch due): anonymise with 10 offers 42, with none 32; erase 30; erase refused 32; anonymise refused by a hold or the cap 5;
-    // the stale path 44 (it was 96 with the in-route retry)
+    // the stale path 44 (it was 96 with the in-route retry). M6.1 (L38) adds one statement to the batch (the payments' free text; the payment bells and
+    // the payment_verify note are folded into existing statements), so every count is printed and held to the budget.
+    console.log(`D1 statements, ${name}: ${s.count()} (budget ${BUDGET})`);
     expect(s.count(), name).toBeLessThanOrEqual(BUDGET);
+    return s.count();
   }
 
   /** The request with the session's touch due (one more statement in the batch: the worst case). */
@@ -1121,6 +1125,55 @@ describe("D1 statements per request (review row 6) [NFR-6]", () => {
     expect(await countOf("staff_sessions", "id = ? AND last_seen_at > 0", o.sessionId)).toBe(1);
     return res;
   };
+
+  it("anonymise refused: payments_pending (M6.1, L25): an individual's last live contact while a payment waits for the Owner's check; 409, nothing written", async () => {
+    const o = await owner();
+    const staff = await sessionFor("staff");
+    const client = await mkClient({ type: "individual", legal_name: "Asha Rao", display_name: "Asha" });
+    const a = await person(client, "Asha Rao");
+    for (let i = 0; i < 10; i++) await offer(client, a, { status: i % 2 ? "viewed" : "rejected" });
+    const waiting = await recorded(staff, recordBody(client, 1_000));
+    expect(waiting.status).toBe("pending_verification");
+    const before = await one("SELECT * FROM contacts WHERE id = ?", a.id);
+    await measure(
+      "anonymise refused, payments_pending (10 offers)",
+      (e) => request(o, a.id, "anonymise", e),
+      {
+        status: 409,
+        code: "payments_pending",
+      },
+    );
+    // erase mode too (a person on no offer: one on a frozen offer is answered on_issued_document first)
+    const solo = await mkClient({ type: "individual", legal_name: "Bo Sen", display_name: "Bo" });
+    const b = await person(solo, "Bo Sen");
+    await recorded(staff, recordBody(solo, 1_000));
+    await measure("erase refused, payments_pending", (e) => request(o, b.id, "erase", e), {
+      status: 409,
+      code: "payments_pending",
+    });
+    expect(await countOf("contacts", "id = ?", b.id)).toBe(1);
+    const refused = await anonymise(o.cookie, a.id);
+    expect((await json(refused)).error).toEqual({
+      code: "payments_pending",
+      message: "This client has payments waiting for the owner's check. Confirm or reject them first.",
+    });
+    expect(await one("SELECT * FROM contacts WHERE id = ?", a.id)).toEqual(before);
+    expect(await countOf("documents", "client_id = ? AND redacted_at IS NOT NULL", client)).toBe(0);
+    expect(await countOf("clients", "id = ? AND anonymised_at IS NOT NULL", client)).toBe(0);
+    expect(
+      await countOf(
+        "audit_log",
+        "action IN ('contact.anonymise', 'contact.erase', 'document.redact') AND summary LIKE ?",
+        `%${a.id}%`,
+      ),
+    ).toBe(0);
+    // once the Owner rejects it, the same anonymise goes through, within the budget
+    expect((await verify(o, waiting.id, "reject", { note: "Not in the bank statement" })).status).toBe(200);
+    await measure("anonymise after the reject (10 offers)", (e) => request(o, a.id, "anonymise", e), {
+      status: 200,
+    });
+    expect(await countOf("clients", "id = ? AND anonymised_at IS NOT NULL", client)).toBe(1);
+  });
 
   it("anonymise with 10 eligible offers (the worst case), and with none", async () => {
     const o = await owner();

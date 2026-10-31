@@ -3,12 +3,17 @@
 import { env } from "cloudflare:workers";
 import { addDays, fyOfDate, parseIsoDate, toIsoDate } from "@techaust/core/dates";
 import { issueDateOf } from "@techaust/core/invoices";
+import { COLLECTED_SQL, COLLECTED_TILE_SQL, PENDING_PAYMENTS_COUNT_SQL } from "@techaust/db/ledger";
 import {
   EXPORT_NEXT_SQL,
+  EXPORT_STAGE_COUNTS_GROUPED_SQL,
   EXPORT_STAGE_COUNTS_SQL,
+  INVOICED_GROUPED_SQL,
   INVOICED_SQL,
   OVERDUE_OLDEST_SQL,
+  OWED_GROUPED_SQL,
   OWED_SQL,
+  PROFORMAS_AWAITING_GROUPED_SQL,
   PROFORMAS_AWAITING_SQL,
 } from "@techaust/db/reports";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -177,8 +182,21 @@ describe("the finance figures against a known fixture", () => {
       [feo.id, "fema_overdue"],
     ]);
     expect(f.exports.next.some((r: J) => r.id === fresh.id)).toBe(false);
-    expect(f.collected).toEqual({ available: false, arrivesWith: "payments" });
-    expect(f.paymentsToVerify).toEqual({ available: false, arrivesWith: "payments" });
+    // M6.1 (07-ZH line 16): live from the ledger, the twin of `COLLECTED_SQL` and `PENDING_PAYMENTS_COUNT_SQL` on the same database.
+    const fyTo = `${fy.startYear + 1}-03-31`;
+    const collected = async (from: string, to: string) =>
+      (
+        await env.DB.prepare(COLLECTED_SQL)
+          .bind(from, to)
+          .all<{ currency: string; collected: number; n: number }>()
+      ).results.map((r) => ({ currency: r.currency, collectedMinor: r.collected, count: r.n }));
+    expect(f.collected).toEqual({
+      available: true,
+      month: await collected(monthFrom, today),
+      fy: await collected(fyFrom, fyTo),
+    });
+    const pending = await env.DB.prepare(PENDING_PAYMENTS_COUNT_SQL).first<{ n: number }>();
+    expect(f.paymentsToVerify).toEqual({ available: true, count: pending?.n ?? 0 });
   });
 
   it("overdue flips at IST midnight: the due date is the last day to pay", async () => {
@@ -236,28 +254,143 @@ describe("what the finance statements read", () => {
     }
     for (let i = 0; i < 100; i++)
       await addDoc({ clientId: usd, currency: "USD", issueDate: plus(-(i % 60)), dueDate: plus(9) });
+    // M6.1 (early check 2, finding 6): one confirmed payment per issued invoice, received on its issue day (all in this FY, half of them this month), each
+    // paying half so every invoice stays open (the worst case for the owed figures too), plus a few entries waiting for the Owner's check.
+    const o = await sessionFor("owner");
+    const staff = await sessionFor("staff");
+    await env.DB.prepare(
+      `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, recorded_by, recorded_at, verified_by, verified_at)
+       SELECT 'ps-' || d.id, d.client_id, 'payment', 'manual', 'confirmed', d.currency, d.total_minor / 2, d.issue_date, 'neft', ?1, 1, ?1, 1
+       FROM documents d WHERE d.client_id IN (?2, ?3)`,
+    )
+      .bind(o.id, inr, usd)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO payment_allocations (id, payment_id, document_id, amount_minor, kind, created_by, created_at)
+       SELECT 'pa-' || d.id, 'ps-' || d.id, d.id, d.total_minor / 2, 'allocate', ?1, 1 FROM documents d WHERE d.client_id IN (?2, ?3)`,
+    )
+      .bind(o.id, inr, usd)
+      .run();
+    await env.DB.prepare(
+      `UPDATE documents SET paid_minor = total_minor / 2, balance_minor = total_minor - total_minor / 2, status = 'partially_paid' WHERE client_id IN (?1, ?2)`,
+    )
+      .bind(inr, usd)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, recorded_by, recorded_at)
+       SELECT 'pw-' || d.id, d.client_id, 'payment', 'manual', 'pending_verification', d.currency, 100, d.issue_date, 'neft', ?1, 2
+       FROM documents d WHERE d.client_id = ?2 LIMIT 20`,
+    )
+      .bind(staff.id, inr)
+      .run();
+    expect(
+      await env.DB.prepare(
+        "SELECT count(*) AS n FROM payments WHERE status = 'confirmed' AND id LIKE 'ps-%'",
+      ).first(),
+    ).toEqual({ n: 2_000 });
     const db = env.DB;
     const month = `${today.slice(0, 7)}-01`;
+    const fyTo = `${Number(fyFrom.slice(0, 4)) + 1}-03-31`;
     const stmts = [
-      db.prepare(INVOICED_SQL).bind(fyFrom, `${Number(fyFrom.slice(0, 4)) + 1}-03-31`, month),
+      db.prepare(INVOICED_SQL).bind(fyFrom, fyTo, month),
       db.prepare(OWED_SQL).bind(today),
       db.prepare(OVERDUE_OLDEST_SQL).bind(today),
       db.prepare(PROFORMAS_AWAITING_SQL),
       db.prepare(EXPORT_STAGE_COUNTS_SQL).bind(today),
       db.prepare(EXPORT_NEXT_SQL).bind(today),
+      // M6.1: the dashboard's ledger reads, as `dashboard.ts` binds them
+      db.prepare(COLLECTED_TILE_SQL).bind(fyFrom, fyTo, month, today),
+      db.prepare(PENDING_PAYMENTS_COUNT_SQL),
     ];
     const results = await db.batch(stmts);
-    const reads = results.map((r) => r.meta.rows_read as number);
-    // Measured at 2,000 documents, all of them open and issued this financial year (the worst case): an index entry and its row each count, so the invoiced and the
-    // owed figures read about two rows a document each, and the oldest overdue, the proformas and the exports read almost nothing. The target, restated by the
-    // lead after the early check (2026-10-28), is at most 9,000 rows at 2,000 documents (8,441 measured at the start of M5.5b; no covering index: it cannot cover the
-    // invoiced figure and adds rows written; no snapshot: LD80, the figure stays live). A regression test, so a new statement or a lost index fails here.
+    const all = results.map((r) => r.meta.rows_read as number);
+    const reads = all.slice(0, 6);
+    const ledger = all.slice(6);
+    // Measured at 2,000 documents, all of them open and issued this financial year, each with one confirmed payment, and 20 payments waiting (the worst case).
+    // L33 (M6.1): every finance figure is one pass with no GROUP BY b-tree (D1 counts each row a temporary b-tree takes in and gives back, and a covering
+    // index does not help: it counts index entries). Measured 2026-10-31, before and after:
+    //   invoiced 4,000 -> 2,002, owed 4,003 -> 2,005, oldest overdue 19, proformas 2, export stages 228 -> 115, next exports 115, Collected 2,004,
+    //   payments to check 20: 10,391 -> 6,282 in all (this test alone; with the file's earlier fixtures in the same database, 6,354).
+    // The target (lead, 2026-10-28, restated for M6.1 by L33) is at most 9,000 rows at 2,000 documents for the whole finance tile, the ledger reads included.
+    // No snapshot (LD80: the figures stay live). A regression test, so a new statement, a lost index or a GROUP BY that comes back fails here.
     expect(
-      reads.reduce((a, b) => a + b, 0),
-      JSON.stringify(reads),
+      all.reduce((a, b) => a + b, 0),
+      JSON.stringify(all),
     ).toBeLessThanOrEqual(9_000);
+    expect(reads[0], `invoiced: one row a document (${JSON.stringify(all)})`).toBeLessThanOrEqual(2_000 + 30);
+    expect(reads[1], `owed: one row a document (${JSON.stringify(all)})`).toBeLessThanOrEqual(2_000 + 30);
     expect(reads[2], "the oldest overdue reads a handful of rows, not every overdue one").toBeLessThanOrEqual(
       30,
     );
+    // the 100 USD exports, each read once (with its settings and extension seeks), never twice through a b-tree (228 grouped)
+    expect(reads[4], `export stages: one row an export (${JSON.stringify(all)})`).toBeLessThanOrEqual(
+      100 + 30,
+    );
+    // M6.1 (early check 2, finding 6): "Collected" reads one row per payment of the FY in one pass, and the Owner's count one row per waiting entry.
+    expect(ledger[0], JSON.stringify(all)).toBeLessThanOrEqual(2_000 + 10);
+    expect(ledger[1], JSON.stringify(all)).toBeLessThanOrEqual(20 + 5);
+    // L33: the one-pass figures give exactly what their grouped twins give on this fixture
+    for (const [i, twinSql, binds] of [
+      [0, INVOICED_GROUPED_SQL, [fyFrom, fyTo, month]],
+      [1, OWED_GROUPED_SQL, [today]],
+      [3, PROFORMAS_AWAITING_GROUPED_SQL, []],
+      [4, EXPORT_STAGE_COUNTS_GROUPED_SQL, [today]],
+    ] as const) {
+      expect(results[i]?.results, String(i)).toEqual(
+        (
+          await db
+            .prepare(twinSql)
+            .bind(...binds)
+            .all()
+        ).results,
+      );
+    }
+    expect((results[0]?.results ?? []).length, "both currencies invoiced").toBe(2);
+    expect((results[4]?.results ?? []).length, "the exports sit in some stage").toBeGreaterThan(0);
+    const financePlans = await Promise.all(
+      [
+        db.prepare(`EXPLAIN QUERY PLAN ${INVOICED_SQL}`).bind(fyFrom, fyTo, month),
+        db.prepare(`EXPLAIN QUERY PLAN ${OWED_SQL}`).bind(today),
+        db.prepare(`EXPLAIN QUERY PLAN ${PROFORMAS_AWAITING_SQL}`),
+        db.prepare(`EXPLAIN QUERY PLAN ${EXPORT_STAGE_COUNTS_SQL}`).bind(today),
+      ].map(async (s) =>
+        ((await s.all<{ detail: string }>()).results ?? []).map((r) => r.detail).join(" | "),
+      ),
+    );
+    for (const p of financePlans) expect(p).not.toContain("GROUP BY");
+    const plans = await Promise.all(
+      [
+        db.prepare(`EXPLAIN QUERY PLAN ${COLLECTED_TILE_SQL}`).bind(fyFrom, fyTo, month, today),
+        db.prepare(`EXPLAIN QUERY PLAN ${PENDING_PAYMENTS_COUNT_SQL}`),
+      ].map(async (s) =>
+        ((await s.all<{ detail: string }>()).results ?? []).map((r) => r.detail).join(" | "),
+      ),
+    );
+    expect(plans[0]).toContain("payments_confirmed");
+    expect(plans[0]).not.toContain("GROUP BY");
+    expect(plans[1]).toContain("payments_pending");
+    // the tile equals its grouped twin over each range
+    const twin = async (from: string, to: string) =>
+      (
+        await db
+          .prepare(COLLECTED_SQL)
+          .bind(from, to)
+          .all<{ currency: string; collected: number; n: number }>()
+      ).results;
+    const tile = (results[6]?.results ?? []) as {
+      currency: string;
+      fy_collected: number;
+      fy_n: number;
+      month_collected: number;
+      month_n: number;
+    }[];
+    expect(tile.map((r) => ({ currency: r.currency, collected: r.fy_collected, n: r.fy_n }))).toEqual(
+      await twin(fyFrom, fyTo),
+    );
+    expect(
+      tile
+        .filter((r) => r.month_n > 0)
+        .map((r) => ({ currency: r.currency, collected: r.month_collected, n: r.month_n })),
+    ).toEqual(await twin(month, today));
   }, 180_000);
 });

@@ -30,7 +30,13 @@ import {
 import {
   DISCOUNT_AFTER_SALE_FROM_SQL,
   fyTokenOfDateSql,
+  LEDGER_STATUSES_SQL,
   LUT_FOR_FY_SQL,
+  ledgerStatusCaseSql,
+  livePaidSql,
+  liveTdsSql,
+  PAYABLE_TYPES_SQL,
+  paymentNetSql,
   signedIssuerSql,
   taxOnlyNoteExactSql,
 } from "./sql-rules.ts";
@@ -47,6 +53,8 @@ export const MUTABLE_AFTER_FREEZE = [
   "einv_status",
   // M5.3 (LD46): the client's IMS response to a credit note; the triggers of 0042 allow only the moves of `canSetImsStatus`.
   "ims_status",
+  // M6.1 (T8, L8): the TDS the ledger recompute sums from confirmed `tds` payments; tied by `documents_ledger_identity` (0060) and `documents_tds_bounds`.
+  "tds_minor",
   "updated_at",
 ] as const;
 
@@ -1173,6 +1181,174 @@ export function offerRedactionTriggerStatements(): string[] {
   ];
 }
 
+/** M6.1: the document types `documents_ledger_identity` covers as 0060 recreates it: the same as 0050's (pinned, so a later list cannot move the bytes of 0060). */
+export const LEDGER_IDENTITY_TYPES_0060 = LEDGER_IDENTITY_TYPES_0050;
+/** M6.1 (L3): the values the payment triggers of 0060 accept, pinned (M6.2 to M6.5 widen them in their own migrations; a db test compares them with the schema's lists). */
+export const PAYMENT_KINDS_0060 = ["payment", "tds"] as const;
+export const PAYMENT_PROVIDERS_0060 = ["manual"] as const;
+export const PAYMENT_STATUSES_0060 = ["pending_verification", "confirmed", "rejected", "withdrawn"] as const;
+export const PAYMENT_MODES_0060 = ["neft", "rtgs", "imps", "upi", "swift"] as const;
+export const PROOF_MIME_TYPES_0060 = ["application/pdf", "image/jpeg", "image/png"] as const;
+
+/**
+ * The ledger (M6.1; ADM-PAY-05, ADM-PAY-06, ADM-INV-02, ADM-INV-09, ADM-INV-16, ADM-APR-01, Q60; run file A.5; new tables' triggers, recreated and new `documents`
+ * triggers and one view: no table is rebuilt). Every abort message starts with the trigger's name so the API can map it. The API's statements (`ledger.ts`) hold the
+ * same rules in their WHERE first; these hold whatever writes to the tables. In this order:
+ *   0. the back-fill (L4), before any trigger on the new tables exists, idempotent: one confirmed `manual` payment (`pay_` + the receipt id, no mode, the owner who
+ *      recorded the receipt as recorder and verifier) and one `allocate` row (`pal_` + the receipt id) onto the advance tax invoice for each `advance_receipts`
+ *      row. The advance invoice's stored `paid_minor` already equals the receipt (M5.2), so the recompute leaves it unchanged (a db test proves it);
+ *   1. `payments_values_insert` / `_update`: the enumerations (L3);
+ *   2. `payments_insert_state`: a payment is inserted as `pending_verification` with no decision, or as `confirmed` by an active Owner who is both recorder and
+ *      verifier; never withdrawn; a manual entry names its recorder;
+ *   3. `payments_tds_rules`: a TDS row has a section and a rate of 1 to 10000 bp, no mode, is in INR and its client is in India; a payment row has no TDS
+ *      fields (T8, L8; Settled by the lead on the safest reading, 2026-10-30 (08-C RA-30));
+ *   4. `payments_fixed`: everything is frozen except the set-once columns (the proof, the TDS certificate (a TDS row only), the advance receipt (only with the
+ *      confirm move)) and the columns of a status move; `note` changes only to NULL once the client is anonymised (the erase, L31);
+ *   5. `payments_status_flow`: pending moves once to confirmed or rejected, decided by an active Owner with the time; confirmed moves once to withdrawn, by an
+ *      active Owner, with the time and a reason (L7); the decision and withdraw columns change only with their move (core `canMovePayment` is the twin),
+ *      except that `decision_note` and `withdraw_reason` change to NULL, with no move, once the client is anonymised (the erase, L31; 08-C RB-11, RA-25);
+ *   6. `payments_no_delete`;
+ *   7. `payment_allocations_no_update` / `_no_delete` (append-only) and `payment_allocations_kind`;
+ *   8. `payment_allocations_bounds`: the payment is confirmed, of the document's client and currency; the document is a frozen, not void tax invoice, export
+ *      invoice or debit note (never a proforma, L5, or a credit note); a TDS row only allocates, onto an INR tax invoice or debit note; `allocate` is at most the
+ *      document's balance worked out from the allocation rows themselves (so two rows in one batch cannot both take the same balance) and the payment never gives
+ *      more than its amount; `release` is at most the document's excess and what this payment holds on it;
+ *   9. `ledger_result` (a view, INSERT INSTEAD OF, the `issue_result` pattern, NOT guarded on the audit row): aborts unless each payment listed (`payment_ids`, a JSON array) that is a confirmed TDS payment is allocated
+ *      exactly once and in full, each payment's net allocations are at most its amount, and every document listed has paid, TDS, balance and status equal to the
+ *      recompute from the allocation rows;
+ *  10. `documents_ledger_identity` dropped and created again: `tds_minor` >= 0 too, and `balance = max(0, total - paid - credited - tds)`, for 0050's types;
+ *  11. `documents_tds_bounds_insert` / `_update`: `tds_minor` is never negative, and above zero only on an INR tax invoice or debit note (L8);
+ *  12. `documents_void_no_payment`: no void with TDS, with any allocation row (one released since included), or while a PENDING payment asks for
+ *      the document (L17; core `voidBlockers` `payment_pending` and `tds_recorded` are the twin);
+ *  13. `approvals_payment_verify_insert`: a `payment_verify` approval names an existing pending payment and no document; `approvals_payment_fixed`: its payment
+ *      never changes (the partial unique index `approvals_payment_pending` is in 0059: one pending verification per payment).
+ *  14. `realisation_extensions_scope_insert`: an extension (Q60, L14) is for a frozen, not void export invoice, to a day after its issue and after any earlier
+ *      extension of it (Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-04)); `realisation_extensions_fixed`: append-only, the letter set once;
+ *      `realisation_extensions_no_delete`.
+ */
+export function paymentTriggerStatements(): string[] {
+  const named = (name: string, message: string) => abort(`${name}: ${message}`);
+  const q = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(", ");
+  const changed = (cols: readonly string[]) =>
+    cols.map((c) => `NEW.\`${c}\` IS NOT OLD.\`${c}\``).join(" OR ");
+  const setOnce = (cols: readonly string[]) =>
+    cols.map((c) => `(OLD.\`${c}\` IS NOT NULL AND NEW.\`${c}\` IS NOT OLD.\`${c}\`)`).join(" OR ");
+  const owner = (who: string) =>
+    `EXISTS (SELECT 1 FROM staff_users ou WHERE ou.id = ${who} AND ou.role = 'owner' AND ou.status = 'active')`;
+  const valuesBad = `NEW.kind NOT IN (${q(PAYMENT_KINDS_0060)}) OR NEW.provider NOT IN (${q(PAYMENT_PROVIDERS_0060)}) OR NEW.status NOT IN (${q(PAYMENT_STATUSES_0060)}) OR (NEW.mode IS NOT NULL AND NEW.mode NOT IN (${q(PAYMENT_MODES_0060)})) OR (NEW.proof_mime IS NOT NULL AND NEW.proof_mime NOT IN (${q(PROOF_MIME_TYPES_0060)}))`;
+  const valuesMsg = "a payment has a known kind, provider, status, mode and proof type";
+  const insertBad = `NOT ((NEW.status = 'pending_verification' AND NEW.verified_by IS NULL AND NEW.verified_at IS NULL AND NEW.decision_note IS NULL) OR (NEW.status = 'confirmed' AND NEW.verified_at IS NOT NULL AND NEW.verified_by IS NEW.recorded_by AND ${owner("NEW.verified_by")})) OR NEW.withdrawn_by IS NOT NULL OR NEW.withdrawn_at IS NOT NULL OR NEW.withdraw_reason IS NOT NULL OR (NEW.provider = 'manual' AND NEW.recorded_by IS NULL)`;
+  const tdsBad =
+    "(NEW.kind = 'tds' AND (NEW.tds_section IS NULL OR trim(NEW.tds_section) = '' OR NEW.tds_rate_bp IS NULL OR NEW.tds_rate_bp < 1 OR NEW.tds_rate_bp > 10000 OR NEW.mode IS NOT NULL OR NEW.currency IS NOT 'INR' OR NOT EXISTS (SELECT 1 FROM clients tc WHERE tc.id = NEW.client_id AND tc.country = 'IN' AND tc.gst_status <> 'overseas'))) OR (NEW.kind IS NOT 'tds' AND (NEW.tds_section IS NOT NULL OR NEW.tds_rate_bp IS NOT NULL OR NEW.tds_certificate_no IS NOT NULL OR NEW.tds_certificate_on IS NOT NULL))";
+  const frozenCols = [
+    "id",
+    "client_id",
+    "kind",
+    "provider",
+    "currency",
+    "amount_minor",
+    "charges_minor",
+    "received_on",
+    "mode",
+    "reference_norm",
+    "inr_received_minor",
+    "requested_allocations",
+    "tds_section",
+    "tds_rate_bp",
+    "recorded_by",
+    "recorded_at",
+  ] as const;
+  const onceCols = [
+    "proof_kind",
+    "proof_ref",
+    "proof_r2_key",
+    "proof_sha256",
+    "proof_mime",
+    "tds_certificate_no",
+    "tds_certificate_on",
+    "advance_receipt_id",
+  ] as const;
+  const confirming = "OLD.status = 'pending_verification' AND NEW.status = 'confirmed'";
+  // Early check 2, finding 4 (L31): erasing an individual client clears the payment's free text (`note`, `decision_note`, `withdraw_reason`: words a person
+  // typed, which can name them) once the client reads as anonymised, and only to NULL, with no status move. Amounts, references, proof and the TDS certificate
+  // never change: they are tax records (Researched 2026-10-28, s.36 CGST Act, Rules 56 and 57 (08-C RA-25)). Researched 2026-10-28, DPDP Act s.8(7) and
+  // s.12(3) (08-C RB-11): data kept for a legal duty may be used for it; the free text is not needed for it.
+  const erasingText = (col: string) =>
+    `(NEW.\`${col}\` IS NULL AND NEW.status IS OLD.status AND EXISTS (SELECT 1 FROM clients ec WHERE ec.id = OLD.client_id AND ec.anonymised_at IS NOT NULL))`;
+  const fixedBad = `${changed(frozenCols)} OR (NEW.\`note\` IS NOT OLD.\`note\` AND NOT ${erasingText("note")}) OR ${setOnce(onceCols)} OR (NEW.advance_receipt_id IS NOT OLD.advance_receipt_id AND NOT (${confirming})) OR ((NEW.tds_certificate_no IS NOT OLD.tds_certificate_no OR NEW.tds_certificate_on IS NOT OLD.tds_certificate_on) AND OLD.kind IS NOT 'tds')`;
+  const deciding = "OLD.status = 'pending_verification' AND NEW.status IN ('confirmed', 'rejected')";
+  const withdrawing = "OLD.status = 'confirmed' AND NEW.status = 'withdrawn'";
+  const flowBad = `(NEW.status IS NOT OLD.status AND NOT ((${deciding}) OR (${withdrawing})))
+    OR ((${deciding}) AND (NEW.verified_at IS NULL OR NOT ${owner("NEW.verified_by")}))
+    OR ((${withdrawing}) AND (NEW.withdrawn_at IS NULL OR NEW.withdraw_reason IS NULL OR trim(NEW.withdraw_reason) = '' OR NOT ${owner("NEW.withdrawn_by")}))
+    OR ((${changed(["verified_by", "verified_at"])}) AND NOT (${deciding}))
+    OR (NEW.decision_note IS NOT OLD.decision_note AND NOT (${deciding}) AND NOT ${erasingText("decision_note")})
+    OR ((${changed(["withdrawn_by", "withdrawn_at"])}) AND NOT (${withdrawing}))
+    OR (NEW.withdraw_reason IS NOT OLD.withdraw_reason AND NOT (${withdrawing}) AND NOT ${erasingText("withdraw_reason")})`;
+  // The allocation bound, with the document `d` and the payment `p` of the new row in scope.
+  const docBalance = `d.total_minor - d.credited_minor - ${livePaidSql("d.id")} - ${liveTdsSql("d.id")}`;
+  const docExcess = `${livePaidSql("d.id")} + d.credited_minor + ${liveTdsSql("d.id")} - d.total_minor`;
+  const boundOk = `p.status = 'confirmed' AND d.client_id = p.client_id AND d.currency = p.currency AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.type IN ${PAYABLE_TYPES_SQL}
+      AND (p.kind = 'payment' OR (p.kind = 'tds' AND NEW.kind = 'allocate' AND d.type IN ('tax_invoice', 'debit_note') AND d.currency = 'INR'))
+      AND CASE NEW.kind
+        WHEN 'allocate' THEN NEW.amount_minor <= ${docBalance} AND ${paymentNetSql("p.id")} + NEW.amount_minor <= p.amount_minor
+        ELSE NEW.amount_minor <= ${docExcess} AND NEW.amount_minor <= ${paymentNetSql("p.id", "d.id")} END`;
+  const boundBad = `NOT EXISTS (SELECT 1 FROM payments p JOIN documents d ON d.id = NEW.document_id WHERE p.id = NEW.payment_id AND ${boundOk})`;
+  // The post-condition: the payment (if any) and every document listed.
+  const resultPaymentBad = `EXISTS (SELECT 1 FROM json_each(NEW.payment_ids) pj JOIN payments p ON p.id = pj.value WHERE p.status = 'confirmed' AND (${paymentNetSql("p.id")} > p.amount_minor OR (p.kind = 'tds' AND NOT ((SELECT count(*) FROM payment_allocations t WHERE t.payment_id = p.id) = 1 AND (SELECT sum(t.amount_minor) FROM payment_allocations t WHERE t.payment_id = p.id AND t.kind = 'allocate') = p.amount_minor))))`;
+  const paid = livePaidSql("d.id");
+  const tds = liveTdsSql("d.id");
+  const resultDocBad = `EXISTS (SELECT 1 FROM json_each(NEW.document_ids) j JOIN documents d ON d.id = j.value WHERE d.type IN ${PAYABLE_TYPES_SQL} AND d.frozen_at IS NOT NULL AND (d.paid_minor IS NOT ${paid} OR d.tds_minor IS NOT ${tds} OR d.balance_minor IS NOT max(0, d.total_minor - ${paid} - d.credited_minor - ${tds}) OR (d.status IN ${LEDGER_STATUSES_SQL} AND d.status IS NOT ${ledgerStatusCaseSql("d.total_minor", `(${paid} + ${tds})`, "d.credited_minor")})))`;
+  const ledgerTypes = q(LEDGER_IDENTITY_TYPES_0060);
+  const identityBad = `NEW.frozen_at IS NOT NULL AND NEW.type IN (${ledgerTypes}) AND (NEW.paid_minor IS NULL OR NEW.paid_minor < 0 OR NEW.tds_minor IS NULL OR NEW.tds_minor < 0 OR NEW.balance_minor IS NOT max(0, NEW.total_minor - NEW.paid_minor - NEW.credited_minor - NEW.tds_minor))`;
+  const tdsBoundsBad =
+    "NEW.tds_minor IS NULL OR NEW.tds_minor < 0 OR (NEW.tds_minor > 0 AND NOT (NEW.type IN ('tax_invoice', 'debit_note') AND NEW.currency = 'INR'))";
+  const tdsBoundsMsg = "TDS is never negative, and only an INR tax invoice or debit note carries it";
+  const voidBad =
+    "NEW.status = 'void' AND OLD.status <> 'void' AND (OLD.tds_minor > 0 OR EXISTS (SELECT 1 FROM payment_allocations va WHERE va.document_id = OLD.id) OR EXISTS (SELECT 1 FROM payments vp, json_each(vp.requested_allocations) vj WHERE vp.client_id = OLD.client_id AND vp.status = 'pending_verification' AND vp.requested_allocations IS NOT NULL AND json_extract(vj.value, '$.documentId') = OLD.id))";
+  const approvalBad =
+    "NEW.kind = 'payment_verify' AND (NEW.document_id IS NOT NULL OR NEW.payment_id IS NULL OR NOT EXISTS (SELECT 1 FROM payments ap WHERE ap.id = NEW.payment_id AND ap.status = 'pending_verification'))";
+  const extensionBad = `NOT EXISTS (SELECT 1 FROM documents ed WHERE ed.id = NEW.document_id AND ed.type = 'export_invoice' AND ed.frozen_at IS NOT NULL AND ed.status <> 'void' AND ed.issue_date IS NOT NULL AND NEW.extended_to > ed.issue_date) OR NEW.extended_to <= coalesce((SELECT max(ex.extended_to) FROM realisation_extensions ex WHERE ex.document_id = NEW.document_id), '') OR (NEW.letter_mime IS NOT NULL AND NEW.letter_mime NOT IN (${q(PROOF_MIME_TYPES_0060)}))`;
+  const extensionFixed = `${changed(["id", "document_id", "extended_to", "bank_ref", "recorded_by", "created_at"])} OR ${setOnce(["letter_r2_key", "letter_sha256", "letter_mime"])} OR (NEW.letter_mime IS NOT NULL AND NEW.letter_mime NOT IN (${q(PROOF_MIME_TYPES_0060)}))`;
+  return [
+    // 0. the back-fill (before the triggers below exist)
+    "INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, charges_minor, received_on, mode, reference_norm, advance_receipt_id, recorded_by, recorded_at, verified_by, verified_at) SELECT 'pay_' || r.id, r.client_id, 'payment', 'manual', 'confirmed', r.currency, r.amount_minor, 0, r.received_on, NULL, r.reference_norm, r.id, r.created_by, r.created_at, r.created_by, r.created_at FROM advance_receipts r WHERE NOT EXISTS (SELECT 1 FROM payments x WHERE x.advance_receipt_id = r.id);",
+    "INSERT INTO payment_allocations (id, payment_id, document_id, amount_minor, kind, created_by, created_at) SELECT 'pal_' || r.id, 'pay_' || r.id, r.invoice_id, r.amount_minor, 'allocate', r.created_by, r.created_at FROM advance_receipts r WHERE EXISTS (SELECT 1 FROM payments x WHERE x.id = 'pay_' || r.id) AND NOT EXISTS (SELECT 1 FROM payment_allocations y WHERE y.id = 'pal_' || r.id);",
+    // 1-6. payments
+    `CREATE TRIGGER \`payments_values_insert\` BEFORE INSERT ON \`payments\` WHEN ${valuesBad} BEGIN ${named("payments_values_insert", valuesMsg)} END;`,
+    `CREATE TRIGGER \`payments_values_update\` BEFORE UPDATE OF kind, provider, status, mode, proof_mime ON \`payments\` WHEN ${valuesBad} BEGIN ${named("payments_values_update", valuesMsg)} END;`,
+    `CREATE TRIGGER \`payments_insert_state\` BEFORE INSERT ON \`payments\` WHEN ${insertBad} BEGIN ${named("payments_insert_state", "a payment starts pending with no decision, or confirmed by an active Owner who recorded it; never withdrawn")} END;`,
+    `CREATE TRIGGER \`payments_tds_rules\` BEFORE INSERT ON \`payments\` WHEN ${tdsBad} BEGIN ${named("payments_tds_rules", "a TDS entry has a section and a rate, no mode, is in INR for a client in India; a payment has no TDS fields")} END;`,
+    `CREATE TRIGGER \`payments_fixed\` BEFORE UPDATE ON \`payments\` WHEN ${fixedBad} BEGIN ${named("payments_fixed", "a payment never changes; its proof, its TDS certificate and its advance receipt are set once")} END;`,
+    `CREATE TRIGGER \`payments_status_flow\` BEFORE UPDATE ON \`payments\` WHEN ${flowBad} BEGIN ${named("payments_status_flow", "a pending payment is confirmed or rejected once by the Owner; a confirmed one is withdrawn once by the Owner, with a reason")} END;`,
+    `CREATE TRIGGER \`payments_no_delete\` BEFORE DELETE ON \`payments\` BEGIN ${named("payments_no_delete", "a payment is never deleted")} END;`,
+    // 7-8. allocations
+    `CREATE TRIGGER \`payment_allocations_no_update\` BEFORE UPDATE ON \`payment_allocations\` BEGIN ${named("payment_allocations_no_update", "payment_allocations is append-only")} END;`,
+    `CREATE TRIGGER \`payment_allocations_no_delete\` BEFORE DELETE ON \`payment_allocations\` BEGIN ${named("payment_allocations_no_delete", "payment_allocations is append-only")} END;`,
+    `CREATE TRIGGER \`payment_allocations_kind\` BEFORE INSERT ON \`payment_allocations\` WHEN NEW.kind NOT IN ('allocate', 'release') BEGIN ${named("payment_allocations_kind", "an allocation allocates or releases")} END;`,
+    `CREATE TRIGGER \`payment_allocations_bounds\` BEFORE INSERT ON \`payment_allocations\` WHEN ${boundBad} BEGIN ${named("payment_allocations_bounds", "a confirmed payment goes onto an issued, live invoice or debit note of its client and currency, never above the balance or the payment; a release takes back no more than the excess it holds")} END;`,
+    // 9. the post-condition
+    "CREATE VIEW `ledger_result` AS SELECT NULL AS payment_ids, NULL AS document_ids;",
+    `CREATE TRIGGER \`ledger_result_check\` INSTEAD OF INSERT ON \`ledger_result\` WHEN ${resultPaymentBad} OR ${resultDocBad} BEGIN ${named("ledger_result_check", "the ledger does not add up after this change")} END;`,
+    // 10-12. documents
+    "DROP TRIGGER `documents_ledger_identity`;",
+    `CREATE TRIGGER \`documents_ledger_identity\` BEFORE UPDATE OF paid_minor, credited_minor, balance_minor, tds_minor, frozen_at ON \`documents\` WHEN ${identityBad} BEGIN ${named("documents_ledger_identity", "an issued document owes its total less what was paid, credited and deducted as TDS, never less than zero, and nothing paid or deducted is negative")} END;`,
+    `CREATE TRIGGER \`documents_tds_bounds_insert\` BEFORE INSERT ON \`documents\` WHEN ${tdsBoundsBad} BEGIN ${named("documents_tds_bounds_insert", tdsBoundsMsg)} END;`,
+    `CREATE TRIGGER \`documents_tds_bounds_update\` BEFORE UPDATE OF tds_minor, type, currency ON \`documents\` WHEN ${tdsBoundsBad} BEGIN ${named("documents_tds_bounds_update", tdsBoundsMsg)} END;`,
+    `CREATE TRIGGER \`documents_void_no_payment\` BEFORE UPDATE OF status ON \`documents\` WHEN ${voidBad} BEGIN ${named("documents_void_no_payment", "a document with a payment on it, a payment waiting for it, or TDS is never voided; a credit note corrects it")} END;`,
+    // 13. approvals
+    `CREATE TRIGGER \`approvals_payment_verify_insert\` BEFORE INSERT ON \`approvals\` WHEN ${approvalBad} BEGIN ${named("approvals_payment_verify_insert", "a payment check names a pending payment and no document")} END;`,
+    `CREATE TRIGGER \`approvals_payment_fixed\` BEFORE UPDATE OF payment_id ON \`approvals\` WHEN NEW.payment_id IS NOT OLD.payment_id BEGIN ${named("approvals_payment_fixed", "the payment of an approval never changes")} END;`,
+    // 14. realisation extensions
+    `CREATE TRIGGER \`realisation_extensions_scope_insert\` BEFORE INSERT ON \`realisation_extensions\` WHEN ${extensionBad} BEGIN ${named("realisation_extensions_scope_insert", "an extension is for an issued, not void export invoice, to a day after its issue and after any earlier extension, with a known letter type")} END;`,
+    `CREATE TRIGGER \`realisation_extensions_fixed\` BEFORE UPDATE ON \`realisation_extensions\` WHEN ${extensionFixed} BEGIN ${named("realisation_extensions_fixed", "an extension never changes; its letter is set once")} END;`,
+    `CREATE TRIGGER \`realisation_extensions_no_delete\` BEFORE DELETE ON \`realisation_extensions\` BEGIN ${named("realisation_extensions_no_delete", "an extension is never deleted")} END;`,
+    // 15. the client's currency is locked by a payment too (L42; the API's billing WHERE holds the same rule, code review low 6): a pending or confirmed
+    // payment is in the client's currency, and its credit could never be used in another.
+    `CREATE TRIGGER \`clients_currency_locked_payments\` BEFORE UPDATE OF currency ON \`clients\` WHEN NEW.currency IS NOT OLD.currency AND EXISTS (SELECT 1 FROM payments WHERE client_id = OLD.id AND status IN ('pending_verification', 'confirmed')) BEGIN ${named("clients_currency_locked_payments", "currency is locked: the client has a payment")} END;`,
+  ];
+}
+
 /** The trigger sets, by the name the migration is created with (`drizzle-kit generate --custom --name <set>`). */
 export const TRIGGER_SETS = {
   triggers: { what: "integrity triggers (docs/05 §5.3)", statements: triggerStatements },
@@ -1258,6 +1434,10 @@ export const TRIGGER_SETS = {
   offer_redaction_triggers: {
     what: "T7 (08-C RB-37): the personal details of a never-accepted proposal or estimate are erased, with its child rows, again when a later erasure names another person on it; a redacted offer takes no PDF, view or decision",
     statements: offerRedactionTriggerStatements,
+  },
+  payment_triggers: {
+    what: "M6.1 ledger: the advance receipts back-filled as payments, payment and allocation rules, the ledger post-condition, the ledger identity with TDS, TDS bounds, no void with a payment, payment approvals",
+    statements: paymentTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;

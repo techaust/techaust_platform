@@ -3,12 +3,22 @@
 // the SPA all import it as `@techaust/core/statement`).
 // What a statement lists before online payments exist (M6; Q58, Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28)):
 //   debits   tax invoices, export invoices and debit notes (not voided);
-//   credits  credit notes, and the advance payments recorded against proformas (`advance_receipts`, Q9);
+//   credits  credit notes, and the advance payments recorded against proformas (`advance_receipts`, Q9); from M6.1 every confirmed payment (a `receipt`
+//            line) and every TDS entry (a `tds` line), the advance receipts having been back-filled as payments (L4);
 // and NOT proformas (not a tax document; their payment shows through the tax invoice, so nothing counts twice, LD22). The closing
-// balance of a statement made today equals the sum of `balance_minor` of the client's open debit documents (the ledger).
+// balance of a statement made today equals the ledger's: Σ `balance_minor` of the client's debit documents (what it owes), minus what was settled above
+// what they owe (the excess: paid + credited + TDS − total, where positive), minus the client's credit (what its confirmed payments hold unallocated); the
+// database's `STATEMENT_LEDGER_SQL`, twin-tested with `CLIENT_FIGURES_SQL` (M6.1, early check A4).
 
 /** The kinds of line on a statement. */
-export type StatementKind = "tax_invoice" | "export_invoice" | "debit_note" | "credit_note" | "receipt";
+/** M6.1 (T8, 07-ZH line 19): `tds` is the tax the client deducted at source (a credit, like a receipt). */
+export type StatementKind =
+  | "tax_invoice"
+  | "export_invoice"
+  | "debit_note"
+  | "credit_note"
+  | "receipt"
+  | "tds";
 
 /** The document types that add to what the client owes (a credit note and a receipt reduce it). */
 export const STATEMENT_DEBIT_TYPES = ["tax_invoice", "export_invoice", "debit_note"] as const;
@@ -45,7 +55,12 @@ export type StatementResult =
     }
   | { readonly ok: false; readonly code: "amount_invalid" | "amount_out_of_range" };
 
-const isDebit = (kind: StatementKind): boolean => kind !== "credit_note" && kind !== "receipt";
+/**
+ * Only the debit document types add; every other line is a credit. M6.1 (T8): the database also gives `tds` lines (tax the client deducted, dated by its
+ * advice), which are credits like a receipt (`StatementKind` "tds", labelled "TDS deducted", 07-ZH line 19), so this test is by membership, never by listing
+ * the credits.
+ */
+const isDebit = (kind: string): boolean => (STATEMENT_DEBIT_TYPES as readonly string[]).includes(kind);
 
 const back = (value: bigint): number | null => {
   const n = Number(value);

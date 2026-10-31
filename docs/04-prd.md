@@ -478,7 +478,12 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | Record the client's IMS answer to a credit note (`invoices.ims`; M5.3, s.34(2) proviso, 08-C RA-04) | ✅ | — | — | — |
 | Send an issued invoice or note, send again, revoke its links, pause its reminders (`invoices.send`; M5.4) | 📤 | 📤 | — | — |
 | Turn on the automatic issue of a client's monthly care invoice (`clients.careAutoIssue`; M5.4, LD58; turning it off is `clients.finance.write`) | ✅ (step-up) | — | — | — |
-| Record manual payment | ✅ (confirmed) | ✏️ → ⏳ pending verification | — | 👁 |
+| Record manual payment (`payments.record`; owner, 2026-10-31, M6.1 Q2) | ✅ (step-up; confirmed) | ✏️ → ⏳ pending verification | — | 👁 |
+| Confirm or reject a payment Staff recorded (`payments.verify`; owner, 2026-10-31, M6.1 Q2) | ✅ (step-up) | — | — | — |
+| Withdraw a confirmed payment made in error, with a reason (`payments.withdraw`; M6.1, L7) | ✅ (step-up) | — | — | — |
+| Use a client's credit on an invoice, or move an invoice's excess to credit (`payments.applyCredit`; M6.1, L13) | ✅ (step-up) | — | — | — |
+| Add a payment's proof file or its TDS certificate number, once (`payments.attachProof`; M6.1, L11, OPEN 08-C RB-05) | ✅ | ✅ | — | — |
+| Record the bank's extension of an export's realisation date (`realisation.extend`; M6.1, L14, Q60, 08-C RB-04, RA-20) | ✅ | — | — | — |
 | Refunds | ✅ (step-up) | — | — | 👁 |
 | Reports | ✅ | Projects, time, care plans | Pipeline only | ✅ finance + exports |
 | GST/CA exports | ✅ (step-up) | — | — | ✅ (step-up) |

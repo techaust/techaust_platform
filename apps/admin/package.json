@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "node ../../scripts/dev.mjs admin",
-    "build": "vite build && node ../../scripts/check-spa-headers.mjs admin && node ../../scripts/worker-budget.mjs admin && node ../../scripts/worker-budget.mjs adminApi",
+    "build": "vite build && node ../../scripts/check-spa-headers.mjs admin && node ../../scripts/worker-budget.mjs admin && node ../../scripts/worker-budget.mjs adminApi && node ../../scripts/worker-budget.mjs adminFinance",
     "typecheck": "wrangler types --env staging && tsc -p tsconfig.json && tsc -p tsconfig.worker.json",
     "test": "vitest run",
     "build:staging": "CLOUDFLARE_ENV=staging vite build && node ../../scripts/check-spa-headers.mjs admin",
     "deploy:staging:api": "node ../../scripts/check-staging-build.mjs admin-api && wrangler deploy --config dist/techaust_platform_admin_api/wrangler.json",
+    "deploy:staging:finance": "node ../../scripts/check-staging-build.mjs admin-finance && wrangler deploy --config dist/techaust_platform_admin_finance/wrangler.json",
     "deploy:staging:front": "node ../../scripts/check-staging-build.mjs admin && wrangler deploy",
     "types": "wrangler types --env staging",
     "e2e": "playwright test"

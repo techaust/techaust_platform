@@ -63,7 +63,7 @@ import {
   STALE_VERSION,
   text,
 } from "./http.ts";
-import { INVOICE_TYPES_SQL } from "./invoice-model.ts";
+import { INVOICE_TYPES_SQL } from "./invoice-consts.ts";
 import { type Direction, decodeCursor, encodeCursor, keysetSql, PREFIX_END, pageOf } from "./keyset.ts";
 import {
   dropOfferObjects,
@@ -78,7 +78,7 @@ import {
 
 const CURRENCY_LOCKED: ApiError = {
   code: "currency_locked",
-  message: "The currency can't change once this client has an invoice.",
+  message: "The currency can't change once this client has an invoice or a payment.",
 };
 const TYPE_LOCKED: ApiError = { code: "type_locked", message: CLIENT_TYPE_LOCKED_MESSAGE };
 const GSTIN_IN_USE: ApiError = { code: "gstin_in_use", message: "A client with that GSTIN already exists" };
@@ -104,6 +104,11 @@ const ON_ISSUED_DOCUMENT: ApiError = {
   message: "This person is on an issued document, so they can't be erased. Anonymise them instead",
 };
 const NOT_AVAILABLE: ApiError = { code: "conflict", message: "Nothing was changed. Reload and try again" };
+/** Lead decision (2026-10-31): 07-ZH line 22, word for word (lead-approved, staff-only). Kept here, not imported, so the API Worker carries no payment code. */
+const PAYMENTS_PENDING: ApiError = {
+  code: "payments_pending",
+  message: "This client has payments waiting for the owner's check. Confirm or reject them first.",
+};
 
 // ---- rows and views ---------------------------------------------------------------------------------------------------
 
@@ -493,11 +498,18 @@ const listClients = async (c: Ctx, f: z.infer<typeof listQuery>) => {
   return c.json({ clients: page.items.map((r) => clientView(r, role)), next: page.next, prev: page.prev });
 };
 
-/** The unlock check: an invoice-family document of any status. */
-const HAS_INVOICE_SQL = `EXISTS (SELECT 1 FROM documents WHERE client_id = c.id AND type IN (${INVOICE_FAMILY_SQL}))`;
+/**
+ * The currency lock: an invoice-family document of any status, or (M6.1 code review finding 6) a payment pending or confirmed, since a payment's currency is
+ * the client's (L23.4) and its credit is held in it. A rejected or withdrawn entry holds nothing, so it does not lock.
+ */
+const LIVE_PAYMENT_OF = (client: string) =>
+  `EXISTS (SELECT 1 FROM payments WHERE client_id = ${client} AND status IN ('pending_verification', 'confirmed'))`;
+/** The unlock check (GET): the lock above, read for the screen. */
+const HAS_INVOICE_SQL = `(EXISTS (SELECT 1 FROM documents WHERE client_id = c.id AND type IN (${INVOICE_FAMILY_SQL})) OR ${LIVE_PAYMENT_OF("c.id")})`;
 const NO_FROZEN_DOC_SQL =
   "NOT EXISTS (SELECT 1 FROM documents WHERE client_id = ?1 AND frozen_at IS NOT NULL)";
-const NO_INVOICE_SQL = `NOT EXISTS (SELECT 1 FROM documents WHERE client_id = ?1 AND type IN (${INVOICE_FAMILY_SQL}))`;
+/** The lock in the billing write's WHERE (the same 409 `currency_locked` for an invoice or a payment). */
+const NO_INVOICE_SQL = `NOT EXISTS (SELECT 1 FROM documents WHERE client_id = ?1 AND type IN (${INVOICE_FAMILY_SQL})) AND NOT ${LIVE_PAYMENT_OF("?1")}`;
 
 const clientExists = async (c: Ctx, id: string) =>
   (await c.env.DB.prepare("SELECT 1 AS x FROM clients WHERE id = ?1").bind(id).first()) !== null;
@@ -1018,6 +1030,14 @@ const LAST_CONTACT_PARTS = ["notes", "files"];
 const MATCHED_LEADS =
   "SELECT l.id FROM leads l WHERE l.contact_id = ?1 OR (l.contact_email = (SELECT email FROM contacts WHERE id = ?1) AND (l.client_id IS NULL OR l.client_id = (SELECT client_id FROM contacts WHERE id = ?1)))";
 
+/**
+ * Lead decision (2026-10-31, 07-ZH line 22): a contact whose erase would anonymise its individual client (its last live contact) is refused while a payment
+ * of that client waits for the Owner's check (`payments_pending`): the pending entry would otherwise lock with the client. `contact` is the contact's placeholder.
+ */
+const PAYMENTS_PENDING_ON_LAST = (contact: string) =>
+  `(EXISTS (SELECT 1 FROM clients pc WHERE pc.id = c.client_id AND pc.type = 'individual') AND NOT EXISTS (SELECT 1 FROM contacts po WHERE po.client_id = c.client_id AND po.id <> ${contact} AND po.anonymised_at IS NULL)
+    AND EXISTS (SELECT 1 FROM payments pp INDEXED BY payments_client WHERE pp.client_id = c.client_id AND pp.status = 'pending_verification'))`;
+
 /** The client of contact `?1` is an individual and this contact is its last live one: the condition of the client's own erase (`col` is the row's client column). */
 const LAST_LIVE_INDIVIDUAL = (col: string) =>
   `${col} = (SELECT client_id FROM contacts WHERE id = ?1) AND EXISTS (SELECT 1 FROM clients cl WHERE cl.id = ${col} AND cl.type = 'individual') AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = ${col} AND o.id <> ?1 AND o.anonymised_at IS NULL)`;
@@ -1277,7 +1297,8 @@ async function eraseBatch(
         "c.client_id",
         `json_object('contactId', c.id, 'mode', ?8, 'reason', ?9${fresh ? ", 'offers', CAST(?10 AS INTEGER)" : ""})`,
         `FROM contacts c JOIN clients cl ON cl.id = c.client_id
-         WHERE c.id = ?7 AND c.anonymised_at IS NULL AND c.legal_hold = 0 AND cl.legal_hold = 0 AND NOT ${HELD_LEAD_SQL}${erase ? ` AND NOT ${CONTACT_ON_ISSUED_DOCUMENT_SQL}` : ""}${fresh ? ` AND ${fresh.sql}` : ""}`,
+         WHERE c.id = ?7 AND c.anonymised_at IS NULL AND c.legal_hold = 0 AND cl.legal_hold = 0 AND NOT ${HELD_LEAD_SQL}${erase ? ` AND NOT ${CONTACT_ON_ISSUED_DOCUMENT_SQL}` : ""}
+           AND NOT ${PAYMENTS_PENDING_ON_LAST("?7")}${fresh ? ` AND ${fresh.sql}` : ""}`,
         fresh && plan ? [id, mode, reason, plan.ids.length, ...fresh.params] : [id, mode, reason],
       ),
     after: (g, auditId) => [
@@ -1338,9 +1359,12 @@ async function eraseBatch(
       //     client's documents, issued invoices included (M5.1: an issue request's and an issued invoice's bell name the person); the approval rows stay.
       //     The bell rows about any of the client's documents (a PDF that failed its check) go too, sent versions included: a bell is
       //     not a record, and it names the document. Same conditions; a business client's bells stay.
+      //     M6.1 (early check 2, finding 4; L31, L38): its payments' bells (`payment.verify`, `payment.decided`, which name the client) go in the same
+      //     statement, folded here to keep T7's budget of 45 D1 statements per request.
       db
         .prepare(
-          `DELETE FROM notifications WHERE entity_type = 'document' AND entity_id IN (SELECT id FROM documents WHERE ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(2)}`,
+          `DELETE FROM notifications WHERE ((entity_type = 'document' AND entity_id IN (SELECT id FROM documents WHERE ${LAST_LIVE_INDIVIDUAL("documents.client_id")}))
+             OR (entity_type = 'payment' AND entity_id IN (SELECT id FROM payments WHERE ${LAST_LIVE_INDIVIDUAL("payments.client_id")}))) AND ${g.sql(2)}`,
         )
         .bind(id, ...g.params),
       db
@@ -1351,7 +1375,8 @@ async function eraseBatch(
       //     M5.1 (review 9; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11), DPDP): the individual's unissued INVOICE-family drafts go the same way (their line descriptions and milestone
       //     titles can name the person), with the approvals asked for them. The milestone one of them was made from is freed first (it keeps its status and
       //     amount; the draft is gone). An ISSUED invoice stays (the law keeps it), and so do its approvals, but the free text of an issue request (the
-      //     requester's reason, the owner's note) is cleared: it can name the person.
+      //     requester's reason, the owner's note) is cleared: it can name the person. M6.1 (L31, L38): so is the note of a `payment_verify` approval (it
+      //     copies the Owner's decision note; such a row has no reason), folded into the same statement for T7's budget.
       db
         .prepare(
           `UPDATE milestones SET document_id = NULL, updated_at = max(?2, updated_at + 1) WHERE document_id IN (SELECT id FROM documents WHERE type IN (${INVOICE_TYPES_SQL}) AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(3)}`,
@@ -1359,7 +1384,8 @@ async function eraseBatch(
         .bind(id, t, ...g.params),
       db
         .prepare(
-          `UPDATE approvals SET reason = NULL, note = NULL WHERE kind = 'issue' AND document_id IN (SELECT id FROM documents WHERE frozen_at IS NOT NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}) AND ${g.sql(2)}`,
+          `UPDATE approvals SET reason = NULL, note = NULL WHERE ((kind = 'issue' AND document_id IN (SELECT id FROM documents WHERE frozen_at IS NOT NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")}))
+             OR (kind = 'payment_verify' AND payment_id IN (SELECT id FROM payments WHERE ${LAST_LIVE_INDIVIDUAL("payments.client_id")}))) AND ${g.sql(2)}`,
         )
         .bind(id, ...g.params),
       // M5.4 (early check, finding 11): a care draft that goes keeps the record of its period (the job must never bill it again) but forgets the document, once.
@@ -1412,6 +1438,19 @@ async function eraseBatch(
              AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = clients.id AND o.id <> ?1 AND o.anonymised_at IS NULL) AND ${g.sql(2)}`,
         )
         .bind(id, ...g.params),
+      // 3b. M6.1 (early check 2, finding 4; L31): its payments' free text, once the client reads as anonymised (step 3, above; the triggers
+      //     `payments_fixed` / `payments_status_flow` allow these three columns to become NULL only then): the entry's note, the Owner's decision note and
+      //     the withdraw reason are words a person typed. Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11): data kept for a legal duty may
+      //     be used for it, and the free text is not needed for it. Amounts, dates, references, proof and the TDS certificate stay untouched: they are tax
+      //     records (Researched 2026-10-28, s.36 CGST Act, Rules 56 and 57 (08-C RA-25)). Same conditions as step 3; a business client's are never touched.
+      //     The bells and the `payment_verify` note went with the document bells and the issue-request notes (step 2d).
+      db
+        .prepare(
+          `UPDATE payments SET note = NULL, decision_note = NULL, withdraw_reason = NULL
+           WHERE (note IS NOT NULL OR decision_note IS NOT NULL OR withdraw_reason IS NOT NULL) AND ${LAST_LIVE_INDIVIDUAL("payments.client_id")}
+             AND EXISTS (SELECT 1 FROM clients pa WHERE pa.id = payments.client_id AND pa.anonymised_at IS NOT NULL) AND ${g.sql(2)}`,
+        )
+        .bind(id, ...g.params),
       // 4. the contact itself. A business client's drafts may still be addressed to this contact: they lose the addressee first (a draft's
       //    `contact_id` references the contact, and an erase deletes it), and the saved hash with it, so the draft is saved again with another
       //    contact before it is sent or issued. An ANONYMISED contact does the same (M5.1 review 1: an invoice frozen with a contact the
@@ -1455,14 +1494,16 @@ async function eraseBatch(
   }
   // Nothing was written: say why.
   const why = await c.env.DB.prepare(
-    `SELECT c.anonymised_at AS gone, (c.legal_hold = 1 OR cl.legal_hold = 1 OR ${HELD_LEAD_SQL}) AS held, ${CONTACT_ON_ISSUED_DOCUMENT_SQL} AS doc FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1`,
+    `SELECT c.anonymised_at AS gone, (c.legal_hold = 1 OR cl.legal_hold = 1 OR ${HELD_LEAD_SQL}) AS held, ${CONTACT_ON_ISSUED_DOCUMENT_SQL} AS doc, ${PAYMENTS_PENDING_ON_LAST("?1")} AS pending FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1`,
   )
     .bind(id)
-    .first<{ gone: number | null; held: number; doc: number }>();
+    .first<{ gone: number | null; held: number; doc: number; pending: number }>();
   if (!why) return err(c, NOT_FOUND, 404);
   if (why.gone !== null) return err(c, ANONYMISED, 409);
   if (why.held) return err(c, LEGAL_HOLD, 409);
   if (erase && why.doc) return err(c, ON_ISSUED_DOCUMENT, 409);
+  // L25: a payment of the individual client waits for the Owner's check (07-ZH line 22).
+  if (why.pending) return err(c, PAYMENTS_PENDING, 409);
   // Anonymise: what remains is the T7 read gone out of date (409 at once, nothing written).
   return err(c, plan ? STALE_VERSION : NOT_AVAILABLE, 409);
 }

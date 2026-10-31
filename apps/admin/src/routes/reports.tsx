@@ -13,6 +13,7 @@ import { REPORTS_COPY, type ReportKey } from "../lib/reports.ts";
 import { useUser } from "../session.tsx";
 import { EdfReport } from "./reports/edf.tsx";
 import { GstExports } from "./reports/gst.tsx";
+import { PaymentsRegister } from "./reports/payments.tsx";
 import { RealisationReport } from "./reports/realisation.tsx";
 import { SalesRegister } from "./reports/sales-register.tsx";
 
@@ -30,6 +31,7 @@ export function Component() {
     "sales-register": <SalesRegister />,
     edf: <EdfReport />,
     realisation: <RealisationReport />,
+    payments: <PaymentsRegister />,
   };
   if (!Object.hasOwn(screens, report)) return <NotFound />;
   return screens[report as ReportKey];

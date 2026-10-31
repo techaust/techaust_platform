@@ -487,26 +487,11 @@ export const creditAllowed = (issueDate: string, d: CreditDeadline): boolean =>
 
 // ---- the ledger of the parent (LD41) ---------------------------------------------------------------------------------------------------------------
 
-/** The status an issued invoice has for these figures: the twin of the CASE the issue batch writes (a test compares them). */
-export function ledgerStatusOf(
-  totalMinor: number,
-  paidMinor: number,
-  creditedMinor: number,
-): "issued" | "partially_paid" | "paid" | "partially_credited" | "credited" {
-  if (creditedMinor >= totalMinor) return "credited";
-  if (paidMinor > 0 && totalMinor - paidMinor - creditedMinor <= 0) return "paid";
-  if (paidMinor > 0) return "partially_paid";
-  if (creditedMinor > 0) return "partially_credited";
-  return "issued";
-}
-
-/** What is still to pay: never below zero (a credit above what was owed is a refund, not a negative balance). */
-export const balanceOf = (totalMinor: number, paidMinor: number, creditedMinor: number): number =>
-  Math.max(0, totalMinor - paidMinor - creditedMinor);
-
-/** What the client is owed back: paid and credited together above the total. Derived, display only (M6 records the refund). */
-export const refundDueOf = (totalMinor: number, paidMinor: number, creditedMinor: number): number =>
-  Math.max(0, paidMinor + creditedMinor - totalMinor);
+/**
+ * M6.1: the status, the balance and the excess of an issued invoice moved to `ledger.ts` (`@techaust/core/ledger`), where they take the TDS as a fourth figure
+ * (default 0, so a caller written for M5.3 keeps its meaning). Re-exported here so `@techaust/core/invoices` keeps them.
+ */
+export { balanceOf, ledgerStatusOf, refundDueOf } from "./ledger.ts";
 
 // ---- the credit that fits an amount typed GST included (LD44) --------------------------------------------------------------------------------
 

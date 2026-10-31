@@ -2,7 +2,7 @@
 // one on the Free plan, so each request schema of the new routes parses one made-up sample while the isolate starts, not inside the first
 // request. Pure of `env`, nothing stored or logged; the count of samples that parsed is returned so a test notices a sample that a schema
 // change has made invalid.
-import { decideBody, requestBody } from "./approvals.ts";
+import { requestBody } from "./approval-requests.ts";
 import { convertBody } from "./document-convert.ts";
 import { resendBody } from "./document-links.ts";
 import { patchBody } from "./document-save.ts";
@@ -26,7 +26,6 @@ export function warmDocuments(): number {
       resendBody.safeParse({ contactIds: ["c"] }).success,
       startBody.safeParse({ expectedUpdatedAt: 1 }).success,
       requestBody.safeParse({ expectedUpdatedAt: 1, reason: "r" }).success,
-      decideBody.safeParse({ decision: "approve", note: "n" }).success,
       convertBody.safeParse({ to: "invoice" }).success,
       convertBody.safeParse({ to: "care_plan", startDate: "2026-11-01", billingDay: 1 }).success,
       listQuery.safeParse({ type: "proposal", limit: "25" }).success,

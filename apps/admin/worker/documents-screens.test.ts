@@ -2,7 +2,8 @@
 // and the decider's name, the document view names who requested and who decided, and the bell speaks 07-O's words ("Approval needed:
 // {title} v{version}", "{Approved/Rejected}: {title} v{version}").
 import { beforeAll, describe, expect, it } from "vitest";
-import { bellDecidedTitle, bellRequestTitle } from "./approvals.ts";
+import { bellRequestTitle } from "./approval-requests.ts";
+import { bellDecidedTitle } from "./approvals.ts";
 import { putPaymentTerms } from "./test-catalogue.ts";
 import { call, one, sessionFor } from "./test-helpers.ts";
 import { discount, getDoc, type J, json, mkDraft, mkTerms, patchDoc } from "./test-quotes.ts";

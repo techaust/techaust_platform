@@ -39,7 +39,10 @@ const SCREENS: [string, string][] = [
   ["/invoices?sample=on", "M5.4 Invoices (list)"],
   ["/invoices?sample=empty", "M5.4 Invoices, none yet"],
   ["/invoices/inv-due?sample=on", "M5.4 Invoice, due"],
-  ["/invoices/inv-overdue?sample=on", "M5.4 Invoice, overdue, part paid, with line discounts (IGST)"],
+  [
+    "/invoices/inv-overdue?sample=on",
+    "M5.4 Invoice, overdue, part paid, TDS deducted (M6.1), with line discounts (IGST)",
+  ],
   ["/invoices/pro-due?sample=on", "M5.4 Payment request (proforma), PDF not ready, GST as an estimate"],
   ["/invoices/pro-old?sample=on", "FX-4 Payment request sealed before FX-4 (no estimate marker)"],
   ["/invoices/pro-withdrawn?sample=on", "ADM-INV-10 Payment request withdrawn (no amount due, no PDF)"],

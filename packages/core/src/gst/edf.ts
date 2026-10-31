@@ -112,7 +112,13 @@ export function edfRows(
       const extension = Object.hasOwn(extensions, row.id) ? extensions[row.id] : undefined;
       // the shared input check and `before_fema_2026` warning of the realisation report
       const dates = checkedDueDates(
-        { invoiceDate: row.issueDate, currency: row.currency, supplyType: row.supplyType, extension },
+        {
+          invoiceDate: row.issueDate,
+          currency: row.currency,
+          supplyType: row.supplyType,
+          extension,
+          extendedTo: row.extendedTo ?? undefined,
+        },
         rules,
         at,
       );

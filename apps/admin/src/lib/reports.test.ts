@@ -298,7 +298,9 @@ describe("statement words", () => {
       `${M}Credit note against TH/INV/2627/0003`,
     );
     expect(statementKindText("credit_note")).toBe(`${M}Credit note`);
-    expect(Object.keys(statementCsvLabels().kinds)).toHaveLength(5);
+    // M6.1 (07-ZH line 19, approved): the tax the client deducted at source.
+    expect(statementKindText("tds")).toBe(`${M}TDS deducted`);
+    expect(Object.keys(statementCsvLabels().kinds)).toHaveLength(6);
   });
 
   it("the Details cell of a credit note names the invoice the API sent (review 2)", () => {

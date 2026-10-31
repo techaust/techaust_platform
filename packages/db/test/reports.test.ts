@@ -143,7 +143,7 @@ describe("EXPLAIN: every report statement uses an index", () => {
     }
   });
 
-  it("the statement reads `documents_client_issued` and `advance_receipts_client_received`", async () => {
+  it("the statement reads `documents_client_issued` and (M6.1, the ledger's payments) `payments_client`", async () => {
     const cursor = { sk: "2026-10-05|1", id: "x" };
     for (const [sql, binds] of [
       [STATEMENT_PAGE_SQL(false), statementPageBinds("c", "INR", "2026-04-01", "2027-03-31")],
@@ -155,7 +155,7 @@ describe("EXPLAIN: every report statement uses an index", () => {
     ] as const) {
       const p = await plan(sql, ...binds);
       expect(p).toMatch(/USING INDEX documents_client_issued/);
-      expect(p).toMatch(/USING (COVERING )?INDEX advance_receipts_client_received/);
+      expect(p).toMatch(/USING (COVERING )?INDEX payments_client/);
       expect(scansTable(p), p).toBe(false);
     }
   });
@@ -227,7 +227,7 @@ describe("EXPLAIN: every report statement uses an index", () => {
       /SEARCH d USING INDEX documents_client_issued \(client_id=\? AND issue_date>\? AND issue_date<\?\)/,
     );
     expect(st).toMatch(
-      /SEARCH r USING (COVERING )?INDEX advance_receipts_client_received \(client_id=\? AND received_on>\? AND received_on<\?\)/,
+      /SEARCH r USING (COVERING )?INDEX payments_client \(client_id=\? AND currency=\? AND received_on>\? AND received_on<\?\)/,
     );
     const before = await plan(
       STATEMENT_BALANCE_BEFORE_SQL(true),

@@ -29,6 +29,7 @@ export const milestoneReleaseStmt = (db: D1Database, g: SideGuard, documentId: s
 
 /**
  * The triggers that may refuse a void or a withdrawal when something lands between the read and the write (a send, a view, a payment, a child, a status
- * change): 0038's flow and pairing, 0056's proforma rule and its re-created viewed rule. Each route then explains the refusal with its own re-read.
+ * change): 0038's flow and pairing, 0056's proforma rule and its re-created viewed rule, and M6.1's `documents_void_no_payment` (0060). Each route then explains the refusal with its own re-read.
  */
-export const VOID_REFUSED = /documents_(proforma_withdraw|viewed_no_void|invoice_status_flow|void_pairing)/;
+export const VOID_REFUSED =
+  /documents_(proforma_withdraw|viewed_no_void|invoice_status_flow|void_pairing|void_no_payment)/;

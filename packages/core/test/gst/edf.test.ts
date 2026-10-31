@@ -54,6 +54,15 @@ describe("edfRows", () => {
     expect(r.ok && r.value.map((x) => x.id)).toEqual(["b", "a", "c"]);
   });
 
+  it("M6.1 (Q60, early check A3): a row's own extendedTo moves its FEMA date", () => {
+    const r = edfRows(
+      [exp("a", d(2026, 11, 3), { id: "a", override: { extendedTo: d(2028, 1, 31) } })],
+      2026,
+      11,
+    );
+    expect(r.ok && r.value[0]?.femaDue).toEqual(d(2028, 1, 31));
+  });
+
   it("the boundary days belong to the month", () => {
     const register = [exp("first", d(2026, 11, 1)), exp("last", d(2026, 11, 30))];
     const r = edfRows(register, 2026, 11);

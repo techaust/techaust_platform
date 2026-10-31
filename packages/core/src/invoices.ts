@@ -11,6 +11,7 @@ import { addDays, fyOf, istDate, parseIsoDate, toIsoDate } from "./dates.ts";
 import { type ExportRoute, type Lut, lutFor } from "./export-invoice.ts";
 import { fxDateVerdict } from "./fx.ts";
 import { canonicalJson, sha256Hex } from "./hash.ts";
+import { LEDGER_STATUSES } from "./ledger.ts";
 import type { NoteOf } from "./notes.ts";
 import type { Series } from "./numbering.ts";
 
@@ -55,14 +56,8 @@ export const INVOICE_SERIES_OF: Readonly<Record<InvoiceFlowType, Series>> = {
   debit_note: "debitNote",
 };
 
-/** The statuses of an issued document that the ledger (M5.3, M6) moves between. */
-export const LEDGER_STATUSES = [
-  "issued",
-  "partially_paid",
-  "paid",
-  "partially_credited",
-  "credited",
-] as const;
+/** The statuses of an issued document that the ledger (M5.3, M6) moves between: one list, in `ledger.ts` (M6.1), re-exported here. */
+export { LEDGER_STATUSES };
 
 // ---- the status flow ---------------------------------------------------------------------------------------------------------------
 
@@ -499,6 +494,11 @@ export const VOID_BLOCKER_CODES = [
   "already_emailed",
   "viewed_by_client",
   "return_period_closed",
+  // M6.1 (L17, L32): a payment waits for the Owner's check against it (`payment_pending`); a payment was ever put on it, one released or withdrawn since
+  // included (`payment_recorded`); TDS is recorded on it.
+  "payment_pending",
+  "payment_recorded",
+  "tds_recorded",
 ] as const;
 export type VoidBlockerCode = (typeof VOID_BLOCKER_CODES)[number];
 
@@ -519,6 +519,18 @@ export type VoidFacts = {
   readonly today: string;
   /** M5.2 (LD28): a proforma is not a tax document, so the month rule of Q23 does not apply to it (Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): same IST month, not for a proforma). Absent: any other type. */
   readonly type?: string;
+  /**
+   * M6.1 (L17; the twin of the trigger `documents_void_no_payment` and of the void statement's WHERE): TDS recorded on the document (`documents.tds_minor`).
+   * Required, so no caller can forget it (stage B2 passes it from every void path).
+   */
+  readonly tdsMinor: number;
+  /** M6.1 (L17, L32): a PENDING payment asks for this document (`payments.requested_allocations`). */
+  readonly paymentPending: boolean;
+  /**
+   * M6.1 (L17, L32): an allocation row names this document, even one released or withdrawn since (`paymentRecordedSql` in `@techaust/db/ledger`). Required,
+   * so no caller can forget it.
+   */
+  readonly paymentRecorded: boolean;
 };
 
 /**
@@ -538,6 +550,9 @@ export function voidBlockers(f: VoidFacts): VoidBlockerCode[] {
   if (!(LEDGER_STATUSES as readonly string[]).includes(f.status)) out.push("not_issued");
   if (f.paidMinor > 0) out.push("has_payment");
   if (f.creditedMinor > 0) out.push("has_credit");
+  if (f.paymentPending === true) out.push("payment_pending");
+  if (f.paymentRecorded === true) out.push("payment_recorded");
+  if (f.tdsMinor > 0) out.push("tds_recorded");
   if (f.hasIssuedChild) out.push("has_child_document");
   if (f.emailed) out.push("already_emailed");
   if (f.viewed) out.push("viewed_by_client");
@@ -556,6 +571,7 @@ export const WITHDRAW_BLOCKER_CODES = [
   "not_issued",
   "proforma_converted",
   "proforma_paid",
+  "payment_pending",
   "not_delivered",
 ] as const;
 export type WithdrawBlockerCode = (typeof WITHDRAW_BLOCKER_CODES)[number];
@@ -576,6 +592,11 @@ export type WithdrawFacts = {
   readonly emailed: boolean;
   /** The client opened it in the portal (`viewed_at` set). */
   readonly viewed: boolean;
+  /**
+   * M6.1 (L37): a PENDING payment of its client asks for it (the payment's requested allocation names it). Withdrawing it would void the proforma under
+   * the payment, so the entry is confirmed or rejected first (the withdraw statement's WHERE and the trigger `documents_void_no_payment` hold it too).
+   */
+  readonly paymentPending: boolean;
 };
 
 /**
@@ -604,6 +625,7 @@ export function withdrawBlockers(f: WithdrawFacts): WithdrawBlockerCode[] {
     out.push("not_issued");
   if (f.status === "converted" || f.hasChildDocument) out.push("proforma_converted");
   if (f.paidMinor > 0 || f.creditedMinor > 0 || f.hasAdvanceReceipt) out.push("proforma_paid");
+  if (f.paymentPending) out.push("payment_pending");
   if (!delivered) out.push("not_delivered");
   return out;
 }

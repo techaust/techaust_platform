@@ -141,13 +141,14 @@ export const CREDIT_DATA_DAMAGED = e(
   "credit_shape_mismatch",
   "This credit note doesn't match its invoice any more. Start again from the invoice.",
 );
-export const ANNUAL_RETURN_FUTURE = e("annual_return_future", "The filing date can't be in the future.");
+// In note-consts.ts (M6.1 stage A), so Settings in the admin API Worker can use it without this module.
+export { ANNUAL_RETURN_FUTURE } from "./note-consts.ts";
 
 // ---- what is read about the invoice a note is against -------------------------------------------------------------------------------------------
 
 const NOTES_SQL = "'credit_note', 'debit_note'";
 const PARENT_COLS =
-  "id, type, status, client_id, project_id, currency, fy, number_display, issue_date, supply_type, place_of_supply_code, export_mode, fx_rate_micros, fx_date, fx_source, fx_no_rate_day, total_minor, total_inr_minor, paid_minor, credited_minor, balance_minor, updated_at, service_completed_on, header_extras, frozen_at, computed, recipient";
+  "id, type, status, client_id, project_id, currency, fy, number_display, issue_date, supply_type, place_of_supply_code, export_mode, fx_rate_micros, fx_date, fx_source, fx_no_rate_day, total_minor, total_inr_minor, paid_minor, credited_minor, balance_minor, tds_minor, updated_at, service_completed_on, header_extras, frozen_at, computed, recipient";
 const PARENT_LINE_COLS = "position, description, detail, sac, unit, gst_rate_bp";
 
 export type ParentRow = {
@@ -173,6 +174,8 @@ export type ParentRow = {
   paid_minor: number;
   credited_minor: number;
   balance_minor: number;
+  /** M6.1 (T8): the TDS recorded on the parent; a credit note moves the balance with it in view (08-C RA-30). */
+  tds_minor: number;
   updated_at: number;
   service_completed_on: string | null;
   header_extras: string | null;

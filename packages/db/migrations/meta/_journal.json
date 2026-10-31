@@ -414,6 +414,20 @@
       "when": 1793443792008,
       "tag": "0058_offer_redaction_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "6",
+      "when": 1793449062170,
+      "tag": "0059_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "6",
+      "when": 1793449067818,
+      "tag": "0060_payment_triggers",
+      "breakpoints": true
     }
   ]
 }

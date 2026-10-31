@@ -75,6 +75,11 @@ export type RegisterRow = {
    * reads it (a credit note in cdnr is deducted only once accepted); GSTR-1 ignores it.
    */
   readonly imsStatus?: string | null;
+  /**
+   * M6.1 (Q60, L14): an export invoice's latest AD-bank extension of its FEMA period (`realisation_extensions`, the SQL `extended_to`); null or left out: none.
+   * The realisation and EDF rows pass it to `realisationDates` (Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-04); Rule 96A(1)(b) (08-C RA-20)).
+   */
+  readonly extendedTo?: CalendarDate | null;
 };
 
 /**

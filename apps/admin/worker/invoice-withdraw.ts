@@ -9,9 +9,10 @@
 // The order of the checks (the brief's): one lean read; 404; another type is 409 `withdraw_proforma_only`; the blockers (409, the first code's words,
 // every code in `reasons`); `stale_version`; `client_anonymised`; then ONE batch whose UPDATE carries every rule, the audit row (ids, number, amount, the
 // reason's length and how it was delivered; never the reason's text) and the milestone's release (L4). When nothing was written, one read says why; a
-// trigger refusal (0038, 0053/0056) is explained the same way, never a 500.
+// trigger refusal (0038, 0053/0056, 0060) is explained the same way, never a 500.
 
 import { withdrawBlockers } from "@techaust/core/invoices";
+import { paymentPendingForSql } from "@techaust/db/ledger";
 import { proformaDeliveredSql } from "@techaust/db/sql-rules";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
@@ -40,13 +41,15 @@ export const withdrawBody = z.strictObject({
 /**
  * Everything the route decides on, in ONE statement (each part one index lookup): the document (an invoice-flow type, else no row), whether its client is
  * anonymised, whether it was emailed, whether any document (draft or issued) names it as its parent, whether an advance receipt names it, and its milestone.
+ * M6.1 (L37): and whether a PENDING payment of its client asks for it (`payment_pending`, a seek of `payments_client`).
  */
 const FACTS_SQL = `SELECT d.id, d.type, d.status, d.frozen_at, d.updated_at, d.paid_minor, d.credited_minor, d.viewed_at, d.number_display, d.total_minor,
      ${clientGoneSql("d.client_id")} AS gone,
      EXISTS (SELECT 1 FROM document_sends s WHERE s.document_id = d.id) AS emailed,
      EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = d.id) AS child,
      EXISTS (SELECT 1 FROM advance_receipts r WHERE r.proforma_id = d.id) AS advance,
-     (SELECT m.id FROM milestones m WHERE m.document_id = d.id) AS milestone_id
+     (SELECT m.id FROM milestones m WHERE m.document_id = d.id) AS milestone_id,
+     ${paymentPendingForSql("d.id", "d.client_id")} AS payment_pending
    FROM documents d WHERE d.id = ?1 AND d.type IN (${INVOICE_TYPES_SQL})`;
 
 type Facts = {
@@ -65,6 +68,7 @@ type Facts = {
   child: number;
   advance: number;
   milestone_id: string | null;
+  payment_pending: number;
 };
 
 const blockersOf = (f: Facts) =>
@@ -77,6 +81,7 @@ const blockersOf = (f: Facts) =>
     hasAdvanceReceipt: f.advance === 1,
     emailed: f.emailed === 1,
     viewed: f.viewed_at !== null,
+    paymentPending: f.payment_pending === 1,
   });
 
 /** A refused withdraw (409): the first code's words (07-ZF), every code in `reasons`. */
@@ -139,8 +144,8 @@ export const invoiceWithdraw = new Hono<AppEnv>().post(
     if (d.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
     if (d.gone === 1) return err(c, CLIENT_GONE, 409);
     // (5) ONE batch. Every rule is in the statement: an issued, frozen proforma of a live client, nothing paid or credited, nothing made from it (a draft
-    // included), no payment received against it, delivered (emailed or opened), and the owner's session with a live step-up. The trigger
-    // `documents_proforma_withdraw` (0056) holds the same rules for any writer.
+    // included), no payment received against it, no pending payment asking for it (M6.1, L37), delivered (emailed or opened), and the owner's session
+    // with a live step-up. The triggers `documents_proforma_withdraw` (0056) and `documents_void_no_payment` (0060) hold the same rules for any writer.
     const t = Math.max(Date.now(), d.updated_at + 1);
     let done = false;
     try {
@@ -152,6 +157,7 @@ export const invoiceWithdraw = new Hono<AppEnv>().post(
                AND paid_minor = 0 AND credited_minor = 0 AND NOT ${clientGoneSql("client_id")}
                AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = documents.id)
                AND NOT EXISTS (SELECT 1 FROM advance_receipts r WHERE r.proforma_id = documents.id)
+               AND NOT ${paymentPendingForSql("documents.id", "documents.client_id")}
                AND ${proformaDeliveredSql("documents")}
                AND ${OWNER_STEP_UP_SQL}`,
           )

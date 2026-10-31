@@ -118,6 +118,8 @@ export function registerRowOf(r: RegisterSqlRow): RegisterApiRow {
     purposeCode: r.purpose_code,
     // rt1 T3: the credit note's IMS answer as stored (null for every other document); only the 3B helper reads it.
     imsStatus: r.ims_status,
+    // M6.1 (Q60, L14): the latest AD-bank extension of an export invoice's FEMA period (null when none): the realisation and EDF rows use it.
+    extendedTo: r.extended_to === null || r.extended_to === undefined ? null : parseIsoDate(r.extended_to),
     series: r.series as RegisterApiRow["series"],
     fy: r.fy,
     seq: r.seq,

@@ -193,6 +193,13 @@ export const documents = sqliteTable(
     paidMinor: integer("paid_minor").notNull().default(0),
     creditedMinor: integer("credited_minor").notNull().default(0),
     balanceMinor: integer("balance_minor").notNull().default(0),
+    /**
+     * M6.1 (T8, L8, L19; ADM-INV-16): tax the client deducted at source and told us about, summed from its confirmed `tds` payments by the ledger recompute. It
+     * reduces the balance (`balance = max(0, total - paid - credited - tds)`); the invoice and its GST stay at full value (Settled by the lead on the safest reading,
+     * 2026-10-30 (08-C RA-30)). Only an INR tax invoice or debit note carries one (trigger `documents_tds_bounds`). Added with ALTER TABLE only, no CHECK
+     * (`documents` is referenced); mutable after the freeze, like the other ledger columns.
+     */
+    tdsMinor: integer("tds_minor").notNull().default(0),
     termsVersionId: text("terms_version_id").references(() => termsVersions.id),
     snapshotR2Key: text("snapshot_r2_key"),
     snapshotSha256: text("snapshot_sha256"),
@@ -701,6 +708,10 @@ export const approvals = sqliteTable(
     index("approvals_kind_created").on(t.kind, t.createdAt, t.id),
     // M4.3: one pending request per document and kind (a second request for the same version is a 409).
     uniqueIndex("approvals_document_pending").on(t.documentId, t.kind).where(sql`${t.status} = 'pending'`),
+    // M6.1 (ADM-APR-01, ADM-PAY-05): one pending verification per payment (a Staff entry waits for the Owner once).
+    uniqueIndex("approvals_payment_pending")
+      .on(t.paymentId)
+      .where(sql`${t.status} = 'pending' and ${t.kind} = 'payment_verify'`),
     check("approvals_kind", oneOf(t.kind, APPROVAL_KINDS)),
     check("approvals_status", oneOf(t.status, APPROVAL_STATUSES)),
   ],

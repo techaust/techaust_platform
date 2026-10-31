@@ -3,7 +3,9 @@
 // behind Cloudflare Access (A6 8). Runs in Node; nothing here talks to Cloudflare.
 import { describe, expect, it } from "vitest";
 import {
+  ADMIN_AUX_TARGETS,
   builtConfigProblems,
+  problemsFor,
   stagingNameOf,
   webPagesProblems,
 } from "../../../scripts/check-staging-build.mjs";
@@ -26,6 +28,14 @@ describe("check-staging-build [A1-5]", () => {
     expect(webPagesProblems([], "S", "T").join()).toMatch(/no built pages/);
     expect(webPagesProblems(['<div data-sitekey="T">'], "S", "T")).toHaveLength(2);
     expect(webPagesProblems(['<div data-sitekey="S">', "T"], "S", "T").join()).toMatch(/TEST/);
+  });
+
+  it("knows the admin API and finance Workers (M6.1 stage A): their own configs and built dirs, and no other target", () => {
+    expect(ADMIN_AUX_TARGETS).toEqual({
+      "admin-api": { config: "wrangler.api.jsonc", dist: "techaust_platform_admin_api" },
+      "admin-finance": { config: "wrangler.finance.jsonc", dist: "techaust_platform_admin_finance" },
+    });
+    expect(problemsFor("admin-billing")).toEqual(["unknown target admin-billing"]);
   });
 });
 
@@ -69,10 +79,11 @@ describe("staging-health judge [A6-8]", () => {
     expect(judge(health, answer(200))).toMatch(/not a JSON answer/);
   });
 
-  it("knows every staging Worker with a URL, and admin proves the API Worker through the binding", () => {
+  it("knows every staging Worker with a URL, and admin proves its API and finance Workers through their bindings (M6.1)", () => {
     expect(Object.keys(CHECKS).sort()).toEqual(["admin", "jobs", "portal", "web"]);
     expect(CHECKS.admin.map((c) => [c.path, c.status])).toEqual([
       ["/api/v1/health", 200],
+      ["/api/v1/leads", 401],
       ["/api/v1/dashboard", 401],
     ]);
     expect(urlOf("jobs")).toBe(
@@ -127,7 +138,7 @@ describe("staging-health checkApp [A6-8]", () => {
     expect(failures).toEqual(["web /api/geo: request failed: TypeError"]);
   });
 
-  it("checks both admin paths, and refuses an unknown app", async () => {
+  it("checks the three admin paths (front, API, finance), and refuses an unknown app", async () => {
     const urls: string[] = [];
     const failures = await checkApp("admin", {
       ...quiet,
@@ -139,7 +150,11 @@ describe("staging-health checkApp [A6-8]", () => {
       },
     });
     expect(failures).toEqual([]);
-    expect(urls.map((u) => new URL(u).pathname)).toEqual(["/api/v1/health", "/api/v1/dashboard"]);
+    expect(urls.map((u) => new URL(u).pathname)).toEqual([
+      "/api/v1/health",
+      "/api/v1/leads",
+      "/api/v1/dashboard",
+    ]);
     expect(await checkApp("nope", quiet)).toEqual(["unknown app nope"]);
   });
 });

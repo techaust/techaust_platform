@@ -28,6 +28,13 @@ export const FINANCE_AUDIT_ACTIONS = [
   "invoice.ims_status",
   "payment.record",
   "payment.verify",
+  // M6.1 (run file C): the other ledger moves: a confirmed entry withdrawn (L7), credit used or an excess moved to credit (L2, L13), a TDS certificate
+  // (L19) and the AD bank's FEMA extension (Q60, L14). Attaching a proof file moves no money and is not a finance event.
+  "payment.withdraw",
+  "payment.credit_apply",
+  "payment.credit_release",
+  "payment.tds_certificate",
+  "invoice.realisation_extend",
   "refund.issue",
   "export.gst",
   // M5.5b (LD86): a page of the GST and CA register (rows and range only, never row contents) and a client's statement PDF (the range, currency and the

@@ -737,13 +737,17 @@ describe("the tax invoice for money received [Q9, LD22; Researched 2026-10-28, s
     expect(await counterOf("invoice", w.fy)).toBeNull();
   });
 
-  it("the same reference twice: the second aborts on the unique key, no number is burned, nothing is written", async () => {
+  it("the same reference twice: the second freezes nothing (the reference is on a payment, finding 1), and confirmed past it aborts on the unique key; no number is burned, nothing is written", async () => {
     const w = await world();
     const first1 = await advanceArgs(w, { referenceNorm: "UTR-SAME" }, 18_000);
     await runAdvance(first1);
     const counter = await counterOf("invoice", w.fy);
     const before = await proformaState(w.proformaId);
-    const again = await advanceArgs(w, { referenceNorm: "UTR-SAME" }, 18_000);
+    await rejects(
+      runAdvance(await advanceArgs(w, { referenceNorm: "UTR-SAME" }, 18_000)),
+      /issue did not freeze/,
+    );
+    const again = await advanceArgs(w, { referenceNorm: "UTR-SAME", confirmDuplicate: true }, 18_000);
     await rejects(
       runAdvance(again),
       /UNIQUE constraint failed: advance_receipts\.proforma_id, advance_receipts\.reference_norm/,
@@ -902,7 +906,8 @@ describe("the tax invoice for money received [Q9, LD22; Researched 2026-10-28, s
         "UPDATE documents SET status = 'void', voided_at = 1, void_reason = 'x' WHERE id = ?",
         a.documentId,
       ),
-      /documents_invoice_status_flow|documents_void_pairing/,
+      // M6.1 (L17): the paid invoice carries the advance's allocation, which `documents_void_no_payment` (0060) refuses as well
+      /documents_invoice_status_flow|documents_void_pairing|documents_void_no_payment/,
     );
   });
 });
@@ -1292,5 +1297,166 @@ describe("PROFORMA_TAX_INVOICE_DUE_SQL [ADM-INV-10]", () => {
     );
     expect(next.map((r) => r.milestone_id)[0]).toBe(later);
     expect(page.length).toBeLessThanOrEqual(50);
+  });
+});
+
+describe("M6.1: the advance batch writes the money onto the ledger [L4, L5; 08-C RA-17]", () => {
+  it("a new confirmed payment pay_<receipt> and its allocation pal_<receipt> onto the new invoice; the recompute makes it paid", async () => {
+    const w = await world();
+    const a = await advanceArgs(w, { mode: "upi" }, 59_000);
+    await runAdvance(a);
+    expect(
+      await first(
+        "SELECT id, client_id, kind, status, amount_minor, received_on, mode, reference_norm, advance_receipt_id, recorded_by, verified_by FROM payments WHERE advance_receipt_id = ?",
+        a.receiptId,
+      ),
+    ).toEqual({
+      id: `pay_${a.receiptId}`,
+      client_id: w.clientId,
+      kind: "payment",
+      status: "confirmed",
+      amount_minor: 59_000,
+      received_on: "2026-10-27",
+      mode: "upi",
+      reference_norm: a.referenceNorm,
+      advance_receipt_id: a.receiptId,
+      recorded_by: w.ownerId,
+      verified_by: w.ownerId,
+    });
+    expect(
+      await all(
+        "SELECT id, document_id, amount_minor, kind FROM payment_allocations WHERE payment_id = ?",
+        `pay_${a.receiptId}`,
+      ),
+    ).toEqual([
+      { id: `pal_${a.receiptId}`, document_id: a.documentId, amount_minor: 59_000, kind: "allocate" },
+    ]);
+    expect(
+      await first(
+        "SELECT status, paid_minor, tds_minor, balance_minor FROM documents WHERE id = ?",
+        a.documentId,
+      ),
+    ).toEqual({ status: "paid", paid_minor: 59_000, tds_minor: 0, balance_minor: 0 });
+    // the proforma's paid amount stays as M5.2 writes it (never recomputed: no allocation can name a proforma)
+    expect(await proformaState(w.proformaId)).toMatchObject({
+      status: "converted",
+      paid_minor: 59_000,
+      balance_minor: 59_000,
+    });
+  });
+
+  it("a pending payment Staff recorded against the proforma is confirmed by the batch, linked to the receipt, and its approval approved", async () => {
+    const w = await world();
+    const staff = uuidv7();
+    await run(
+      "INSERT INTO staff_users (id, email, name, role, status) VALUES (?1, ?2, 'Staff', 'staff', 'active')",
+      staff,
+      `${staff}@example.com`,
+    );
+    const pid = uuidv7();
+    await run(
+      "INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, requested_allocations, recorded_by, recorded_at) VALUES (?1, ?2, 'payment', 'manual', 'pending_verification', 'INR', 59000, '2026-10-27', 'neft', ?3, ?4, 1)",
+      pid,
+      w.clientId,
+      JSON.stringify([{ documentId: w.proformaId, amountMinor: 59_000 }]),
+      staff,
+    );
+    await run(
+      "INSERT INTO approvals (id, kind, payment_id, requested_by, content_sha256) VALUES (?1, 'payment_verify', ?2, ?3, 'h')",
+      uuidv7(),
+      pid,
+      staff,
+    );
+    // the proforma cannot be voided while the payment waits for it (L17)
+    await rejects(
+      run(
+        "UPDATE documents SET status = 'void', voided_at = 1, void_reason = 'x' WHERE id = ?",
+        w.proformaId,
+      ),
+      /documents_void_no_payment/,
+    );
+    // not the payment's amount: the freeze itself refuses (early check 2, finding 2), the payment stays pending, nothing is written
+    const wrong = await advanceArgs(w, { paymentId: pid }, 50_000);
+    await rejects(runAdvance(wrong), /issue did not freeze/);
+    expect(await first("SELECT status FROM payments WHERE id = ?", pid)).toEqual({
+      status: "pending_verification",
+    });
+    expect(await first("SELECT id FROM documents WHERE id = ?", wrong.documentId)).toBeNull();
+    const a = await advanceArgs(w, { paymentId: pid }, 59_000);
+    await runAdvance(a);
+    expect(
+      await first("SELECT status, verified_by, advance_receipt_id, mode FROM payments WHERE id = ?", pid),
+    ).toEqual({
+      status: "confirmed",
+      verified_by: w.ownerId,
+      advance_receipt_id: a.receiptId,
+      mode: "neft",
+    });
+    expect(await first("SELECT status, decided_by FROM approvals WHERE payment_id = ?", pid)).toEqual({
+      status: "approved",
+      decided_by: w.ownerId,
+    });
+    expect(
+      await all("SELECT document_id, amount_minor FROM payment_allocations WHERE payment_id = ?", pid),
+    ).toEqual([{ document_id: a.documentId, amount_minor: 59_000 }]);
+    expect(await first("SELECT status, balance_minor FROM documents WHERE id = ?", a.documentId)).toEqual({
+      status: "paid",
+      balance_minor: 0,
+    });
+  });
+
+  it("early check 2, finding 2: the pending entry confirmed elsewhere between the read and the batch (allocations: []) freezes nothing and writes no receipt", async () => {
+    const w = await world();
+    const staff = uuidv7();
+    await run(
+      "INSERT INTO staff_users (id, email, name, role, status) VALUES (?1, ?2, 'Staff', 'staff', 'active')",
+      staff,
+      `${staff}@example.com`,
+    );
+    const pid = uuidv7();
+    await run(
+      "INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, requested_allocations, recorded_by, recorded_at) VALUES (?1, ?2, 'payment', 'manual', 'pending_verification', 'INR', 59000, '2026-10-27', 'neft', ?3, ?4, 1)",
+      pid,
+      w.clientId,
+      JSON.stringify([{ documentId: w.proformaId, amountMinor: 59_000 }]),
+      staff,
+    );
+    // the route read the entry as pending and built the batch ...
+    const a = await advanceArgs(w, { paymentId: pid }, 59_000);
+    // ... then the Owner confirmed it from the Payments list with no allocation (kept as credit, withdrawable)
+    await run(
+      "UPDATE payments SET status = 'confirmed', verified_by = ?2, verified_at = 2 WHERE id = ?1",
+      pid,
+      w.ownerId,
+    );
+    await rejects(runAdvance(a), /issue did not freeze/);
+    expect(await first("SELECT id FROM documents WHERE id = ?", a.documentId)).toBeNull();
+    expect(await first("SELECT id FROM advance_receipts WHERE id = ?", a.receiptId)).toBeNull();
+    expect(await all("SELECT id FROM payment_allocations WHERE payment_id = ?", pid)).toEqual([]);
+    expect(await first("SELECT status, advance_receipt_id FROM payments WHERE id = ?", pid)).toEqual({
+      status: "confirmed",
+      advance_receipt_id: null,
+    });
+    expect(await proformaState(w.proformaId)).toMatchObject({ paid_minor: 0 });
+  });
+
+  it("early check 2, finding 1: without paymentId, a reference already on a pending or confirmed payment freezes nothing unless confirmed past", async () => {
+    const w = await world();
+    const seen = `UTRSEEN${++seq}`;
+    await run(
+      "INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, reference_norm, recorded_by, recorded_at, verified_by, verified_at) VALUES (?1, ?2, 'payment', 'manual', 'confirmed', 'INR', 100, '2026-10-27', 'neft', ?3, ?4, 1, ?4, 1)",
+      uuidv7(),
+      w.clientId,
+      seen,
+      w.ownerId,
+    );
+    const a = await advanceArgs(w, { referenceNorm: seen }, 59_000);
+    await rejects(runAdvance(a), /issue did not freeze/);
+    expect(await first("SELECT id FROM documents WHERE id = ?", a.documentId)).toBeNull();
+    const b = await advanceArgs(w, { referenceNorm: seen, confirmDuplicate: true }, 59_000);
+    await runAdvance(b);
+    expect(await first("SELECT status FROM documents WHERE id = ?", b.documentId)).toEqual({
+      status: "paid",
+    });
   });
 });

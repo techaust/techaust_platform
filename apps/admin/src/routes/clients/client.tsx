@@ -244,7 +244,10 @@ function IdentityStrip({ data, finance }: { data: ClientPage; finance: boolean }
     <span key="c" className="strip-currency">
       <span className="docno">{c.currency}</span>
       {finance && data.currencyLocked && (
-        <span className="strip-lock" title="The currency can't change once this client has an invoice.">
+        <span
+          className="strip-lock"
+          title="The currency can't change once this client has an invoice or a payment."
+        >
           <Lock size={16} />
           <span>Locked</span>
         </span>

@@ -145,15 +145,15 @@ describe("statementViewSha256", () => {
   });
 
   it("the layout id is part of the hash: the same view under another layout id would be another object", async () => {
-    expect(STATEMENT_LAYOUT_ID).toBe("statement-1");
+    expect(STATEMENT_LAYOUT_ID).toBe("statement-2");
     const v = statementView(input());
     const content = v;
     const { canonicalJson, sha256Hex } = await import("../src/hash.ts");
     expect(await statementViewSha256(v)).toBe(
-      await sha256Hex(canonicalJson({ layout: "statement-1", ...content })),
+      await sha256Hex(canonicalJson({ layout: "statement-2", ...content })),
     );
     expect(await statementViewSha256(v)).not.toBe(
-      await sha256Hex(canonicalJson({ layout: "statement-2", ...content })),
+      await sha256Hex(canonicalJson({ layout: "statement-1", ...content })),
     );
   });
 });
@@ -174,5 +174,40 @@ describe("the page the designer's layout makes from the view", () => {
   it("a settled statement has no amount due line", () => {
     const html = renderStatementHtml(statementView(input({ closingMinor: 0 })));
     expect(html).not.toContain('data-testid="amount-due"');
+  });
+
+  it("M6.1 (07-ZH line 19; early check A1): a receipt with no number (SQL gives '', never NULL) and a TDS line, which reads 'TDS deducted'", () => {
+    const view = statementView(
+      input({
+        entries: [
+          {
+            kind: "receipt",
+            date: "2026-10-06",
+            number: "",
+            amountMinor: 5_000_00,
+            debitMinor: 0,
+            creditMinor: 5_000_00,
+            balanceMinor: 0,
+          },
+          {
+            kind: "tds",
+            date: "2026-10-07",
+            number: "TH/INV/2627/0001",
+            amountMinor: 1_000_00,
+            debitMinor: 0,
+            creditMinor: 1_000_00,
+            balanceMinor: -1_000_00,
+          },
+        ],
+        debitMinor: 0,
+        creditMinor: 6_000_00,
+        closingMinor: -1_000_00,
+      }),
+    );
+    const body = renderStatementHtml(view).replace(/<style>[\s\S]*?<\/style>/, "");
+    expect(body).toContain("Payment received");
+    expect(body).toContain("TDS deducted");
+    expect(body).not.toContain("null");
+    expect((body.match(/data-testid="entry"/g) ?? []).length).toBe(2);
   });
 });

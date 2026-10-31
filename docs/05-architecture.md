@@ -276,7 +276,7 @@ techaust_platform/
 | `payments` | id, document_id, client_id, provider (`razorpay`/`stripe`/`paypal`/`manual`), kind (`payment`/`refund`/`tds`/`credit_applied`), status (`pending`/`pending_verification`/`confirmed`/`failed`/`reversed`), amount_minor, currency, amount_inr_minor, fee_minor, provider_payment_id, provider_order_id, utr, mode, paid_at, recorded_by, verified_by, verified_at, proof_file_id, **fira_ref, fira_file_id**, receipt_document_id, tds_section, notes · unique(provider, provider_payment_id) |
 | `checkout_sessions` | id, document_id, provider, provider_ref, amount_minor, currency, status, url, expires_at, created_by (staff/contact/token) |
 | `webhook_events` | id, provider, event_id, type, received_at, processed_at, status (`received`/`processed`/`ignored`/`needs_review`/`failed`), error, payload_r2_key · **unique(provider, event_id)** |
-| `client_credits` | id, client_id, currency, amount_minor, source_payment_id, applied_document_id, status |
+| `payment_allocations` | id, payment_id, document_id, amount_minor, kind (`allocate`/`release`), created_by, created_at · append-only. **No `client_credits` table (M6.1, L2):** a client's credit is derived per currency from its confirmed payments minus their net allocations. TDS is held in `documents.tds_minor`; payment proofs and bank letters are stored write-once in the private R2 `DOCS` (L10) |
 | `settlements` | id, provider, settlement_id, amount_minor, fees_minor, settled_at, matched (Razorpay recon, ADM-PAY-10) |
 
 **Email, ops and compliance**
@@ -518,7 +518,7 @@ Client (portal or token page)        portal Worker                     Razorpay 
 **Rules:**
 - **Nothing is marked paid on a browser redirect.**
 - Amounts are compared to the expected session amount; any mismatch goes to "Needs review".
-- Overpayments → `client_credits`.
+- Overpayments are held as the client's credit (M6.1, L2): derived per currency from confirmed payments minus their net allocations, never a table of its own; "Use credit" and "Move excess to credit" move it with allocation rows. TDS is `documents.tds_minor`; proofs go in `DOCS`.
 - Refunds (Owner only): provider refund API → `payments(kind=refund)` → a credit-note draft for the Owner to issue.
 - `PAYMENTS_LIVE_ALLOWED=false` forces test keys/modes in every environment until the Phase 7 approval.
 

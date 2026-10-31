@@ -4,6 +4,7 @@
 import { env as realEnv } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
 import { STATEMENT_PDF_MAX_ENTRIES } from "@techaust/core/statement";
+import { recomputeStatement } from "@techaust/db/ledger";
 import { describe, expect, it } from "vitest";
 import { stubPdf } from "../src/browser.ts";
 import worker from "../src/index.ts";
@@ -24,7 +25,19 @@ import {
   processStatementPdf,
   STATEMENT_BELL_COPY,
 } from "../src/statement-pdf.ts";
-import { all, fakes, logs, makeEnv, mkClient, mkDoc, one, run, staff, useFakes } from "./billing-fixtures.ts";
+import {
+  all,
+  db,
+  fakes,
+  logs,
+  makeEnv,
+  mkClient,
+  mkDoc,
+  one,
+  run,
+  staff,
+  useFakes,
+} from "./billing-fixtures.ts";
 
 useFakes();
 
@@ -206,6 +219,49 @@ describe("the statement PDF: read, view, content hash, render, store once", () =
     const html = b.pages[0] as string;
     expect(html).toContain(dn.numberDisplay);
     expect(html).toContain(`Debit note against ${inv.numberDisplay}`);
+  });
+
+  it("M6.1 (07-ZH line 19): a confirmed payment prints 'Payment received' and a TDS entry 'TDS deducted'; a payment with no number prints no 'null'", async () => {
+    const owner = await staff("owner");
+    const clientId = await mkClient();
+    await run("UPDATE clients SET country = 'IN', gst_status = 'unregistered' WHERE id = ?1", clientId);
+    const inv = await mkDoc(clientId, null, { issueDate: "2026-10-05", total: 118_000, balance: 118_000 });
+    const pay = uuidv7();
+    const tds = uuidv7();
+    await run(
+      `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, reference_norm, recorded_by, recorded_at, verified_by, verified_at)
+       VALUES (?1, ?2, 'payment', 'manual', 'confirmed', 'INR', 50000, '2026-10-10', 'neft', NULL, ?3, 1, ?3, 1)`,
+      pay,
+      clientId,
+      owner.id,
+    );
+    await run(
+      `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, tds_section, tds_rate_bp, recorded_by, recorded_at, verified_by, verified_at)
+       VALUES (?1, ?2, 'tds', 'manual', 'confirmed', 'INR', 11800, '2026-10-12', 'as advised', 1000, ?3, 1, ?3, 1)`,
+      tds,
+      clientId,
+      owner.id,
+    );
+    for (const [p, amount] of [
+      [pay, 50_000],
+      [tds, 11_800],
+    ] as const)
+      await run(
+        "INSERT INTO payment_allocations (id, payment_id, document_id, amount_minor, kind, created_by, created_at) VALUES (?1, ?2, ?3, ?4, 'allocate', ?5, 1)",
+        uuidv7(),
+        p,
+        inv.id,
+        amount,
+        owner.id,
+      );
+    await recomputeStatement(db, { paymentIds: [pay, tds] }, NOW).run();
+    const row = await mkStatement(clientId, owner.id);
+    const b = browser();
+    expect(await processStatementPdf(mkEnv(b), message(row.id), NOW, clock)).toBe("rendered");
+    const html = (b.pages[0] as string).replace(/<style>[\s\S]*?<\/style>/, "");
+    expect(html).toContain("Payment received");
+    expect(html).toContain("TDS deducted");
+    expect(html).not.toContain("null");
   });
 
   it("the same data asked for again on the same IST day is ADOPTED: no second render, the same object, the same view hash", async () => {

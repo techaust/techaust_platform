@@ -177,6 +177,8 @@ export const PROD_CONFIGS = [
   { app: "web", file: "wrangler.jsonc", turnstile: true },
   { app: "admin", file: "wrangler.jsonc", turnstile: true },
   { app: "admin", file: "wrangler.api.jsonc", turnstile: false },
+  // M6.1 stage A: the admin finance Worker (same queues as the front, no widget).
+  { app: "admin", file: "wrangler.finance.jsonc", turnstile: false },
   { app: "portal", file: "wrangler.jsonc", turnstile: true },
   { app: "jobs", file: "wrangler.jsonc", turnstile: false },
 ];

@@ -5,7 +5,6 @@ import { uuidv7 } from "@techaust/core/ids";
 import {
   EXPORT_ENDORSEMENT,
   type ExportRoute,
-  INVOICE_FLOW_TYPES,
   type IssueBlocker,
   type IssueFacts,
   issueBlockers,
@@ -74,7 +73,6 @@ export const CONTACT_ANONYMISED = e(
   "contact_anonymised",
   "This draft's contact has been anonymised. Choose another contact, then save the draft.",
 );
-export const SERIES_FULL = e("series_full", "This numbering series has no numbers left this year");
 export const ISSUE_APPROVAL_REQUIRED = e(
   "approval_required",
   "Issuing an invoice needs the owner's approval",
@@ -134,6 +132,11 @@ export const WITHDRAW_ERRORS = {
     "proforma_paid",
     "This proforma can't be withdrawn because a payment has been recorded against it.",
   ),
+  // M6.1 (L37): 07-ZH line 46, the words of line 21 reused (lead, 2026-10-31, owner's delegation; staff-only).
+  payment_pending: e(
+    "payment_pending",
+    "A payment recorded on it is waiting for the owner's check. Reject it first.",
+  ),
   not_delivered: e("not_delivered", "This proforma hasn't reached the client yet, so void it instead."),
 } as const satisfies Record<WithdrawBlockerCode, ApiError>;
 export const INVOICE_APPROVAL_EXPIRED = e(
@@ -143,8 +146,8 @@ export const INVOICE_APPROVAL_EXPIRED = e(
 
 // ---- constants -----------------------------------------------------------------------------------------------------------------------
 
-/** The types the invoice routes read: the invoice flow (a receipt or a voucher has no screen before M6). */
-export const INVOICE_TYPES_SQL = INVOICE_FLOW_TYPES.map((t) => `'${t}'`).join(", ");
+// `INVOICE_TYPES_SQL` and `SERIES_FULL` live in invoice-consts.ts (M6.1 stage A), so the admin API Worker can use them without this module.
+export { INVOICE_TYPES_SQL, SERIES_FULL } from "./invoice-consts.ts";
 
 // ---- settings, bank, terms ----------------------------------------------------------------------------------------------------------------
 

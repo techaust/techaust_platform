@@ -9,6 +9,7 @@ import { DataTable } from "../../components/data-table.tsx";
 import { EmptyState, StatusPill } from "../../components/display.tsx";
 import { CheckCircle } from "../../components/icons.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
+import { PAY_UI } from "../../lib/payments.ts";
 import {
   byUrgency,
   dateText,
@@ -156,7 +157,7 @@ export function RealisationReport() {
         {list.state === "ready" && list.data.ok && (
           <div className="report-notes">
             <p className="hint report-note">{REALISATION_COPY.igstNote}</p>
-            <p className="hint report-note">{REALISATION_COPY.extensionNote}</p>
+            <p className="hint report-note">{PAY_UI.extensionNote}</p>
           </div>
         )}
       </div>

@@ -119,8 +119,8 @@ exports[`the Owner's and the approval's issue SQL did not move [LD58] > a credit
     ],
   },
   {
-    "sql": "UPDATE documents SET credited_minor = s.credited, balance_minor = max(0, total_minor - paid_minor - s.credited),
-                   status = CASE WHEN s.credited >= total_minor THEN 'credited' WHEN paid_minor > 0 AND total_minor - paid_minor - s.credited <= 0 THEN 'paid' WHEN paid_minor > 0 THEN 'partially_paid' WHEN s.credited > 0 THEN 'partially_credited' ELSE 'issued' END,
+    "sql": "UPDATE documents SET credited_minor = s.credited, balance_minor = max(0, total_minor - paid_minor - s.credited - tds_minor),
+                   status = CASE WHEN s.credited >= total_minor THEN 'credited' WHEN (paid_minor + tds_minor) > 0 AND total_minor - (paid_minor + tds_minor) - s.credited <= 0 THEN 'paid' WHEN (paid_minor + tds_minor) > 0 THEN 'partially_paid' WHEN s.credited > 0 THEN 'partially_credited' ELSE 'issued' END,
                    updated_at = max(?2, updated_at + 1)
                  FROM (SELECT coalesce(sum(c.total_minor), 0) AS credited FROM documents c WHERE c.parent_id = ?3 AND c.type = 'credit_note' AND c.frozen_at IS NOT NULL AND c.status <> 'void') AS s
                  WHERE documents.id = ?3 AND EXISTS (SELECT 1 FROM documents n WHERE n.id = ?1 AND n.status = 'issued' AND n.frozen_at = ?2)",

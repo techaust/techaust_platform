@@ -684,3 +684,9 @@
   align-items: baseline;
   gap: var(--space-2);
 }
+
+/* M6.1: the Overview's "Use credit on this invoice" sits under the figures, before the statement link */
+.acct__credit-btn {
+  justify-self: start;
+  margin-top: var(--space-3);
+}

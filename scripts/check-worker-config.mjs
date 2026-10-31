@@ -1,11 +1,15 @@
 // Guard: Version/Preview URLs skip Cloudflare Access, so every Worker config must switch them off at the top level
 // and in `env.staging` and `env.production` (audit 2026-10-22, M1; docs/runbooks/access-staging.md). Also the admin API Worker's
-// config against the front's (M5.0), the jobs crons and binding (M5.4, FX-1), and Workers Traces on staging only (full audit A6 9).
+// config against the front's (M5.0; the finance Worker's too since M6.1 stage A), the jobs crons and binding (M5.4, FX-1), and Workers
+// Traces on staging only (full audit A6 9).
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 export const APPS = ["admin", "portal", "web", "jobs"];
+
+/** The admin Workers behind the front (no public URL, the front's resources): the API (M5.0) and finance (M6.1 stage A) configs in apps/admin. */
+export const ADMIN_AUX_CONFIGS = ["wrangler.api.jsonc", "wrangler.finance.jsonc"];
 
 /** wrangler.jsonc to a value: drops comments and trailing commas, leaving string contents alone. */
 export function parseJsonc(text) {
@@ -94,15 +98,30 @@ export function apiConfigProblems(api, front) {
   return problems;
 }
 
-/** The front must bind ADMIN_API in all three scopes, to the API config's Worker name for that scope. */
-export function frontServiceProblems(front, api) {
+/**
+ * The front must bind each auxiliary admin Worker in all three scopes, to that config's Worker name for the scope: ADMIN_API to the API
+ * config (M5.0) and, when `finance` is given, ADMIN_FINANCE to the finance config (M6.1 stage A). The API and finance names must differ,
+ * and neither binding names an entrypoint (the front calls the default `fetch`; `BillingJobs` is for the jobs Worker only).
+ */
+export function frontServiceProblems(front, api, finance) {
   const problems = [];
+  const targets = [["ADMIN_API", api], ...(finance ? [["ADMIN_FINANCE", finance]] : [])];
   for (const [scope, c] of SCOPES(front)) {
-    const want = SCOPES(api).find(([n]) => n === scope)?.[1]?.name;
-    const got = (c?.services ?? []).find((x) => x.binding === "ADMIN_API");
-    if (!got) problems.push(`${scope}: the ADMIN_API service binding is missing`);
-    else if (got.service !== want)
-      problems.push(`${scope}: ADMIN_API points at ${got.service}, expected ${want}`);
+    for (const [binding, config] of targets) {
+      const want = SCOPES(config).find(([n]) => n === scope)?.[1]?.name;
+      const got = (c?.services ?? []).find((x) => x.binding === binding);
+      if (!got) problems.push(`${scope}: the ${binding} service binding is missing`);
+      else {
+        if (got.service !== want)
+          problems.push(`${scope}: ${binding} points at ${got.service}, expected ${want}`);
+        if (got.entrypoint !== undefined) problems.push(`${scope}: ${binding} must not name an entrypoint`);
+      }
+    }
+    if (finance) {
+      const a = SCOPES(api).find(([n]) => n === scope)?.[1]?.name;
+      const f = SCOPES(finance).find(([n]) => n === scope)?.[1]?.name;
+      if (a && a === f) problems.push(`${scope}: the API and finance Workers must have different names`);
+    }
   }
   return problems;
 }
@@ -111,12 +130,12 @@ export function frontServiceProblems(front, api) {
 export const JOBS_CRONS = ["0 22 * * *", "30 * * * *"];
 
 /**
- * The jobs Worker's M5.4 wiring (LD57, LD61): in the top level and in `env.staging` both crons and the ADMIN_JOBS service binding to the admin API Worker's `BillingJobs` entrypoint
- * (the API config's Worker name for that scope); in `env.production` NEITHER (production has no D1, queues or admin API until Phase 7, and a production binding to a Worker that
+ * The jobs Worker's M5.4 wiring (LD57, LD61): in the top level and in `env.staging` both crons and the ADMIN_JOBS service binding to the `BillingJobs` entrypoint of
+ * `target`, the admin Worker that exports it (the finance config since M6.1 stage A, the API config before; that config's Worker name for the scope); in `env.production` NEITHER (production has no D1, queues or admin API until Phase 7, and a production binding to a Worker that
  * does not exist would fail the deploy). Empty = passes. FX-1 (A6 3): `triggers` IS inherited by an environment that omits it (wrangler's `EnvironmentInheritable`),
  * so production must state `"triggers": { "crons": [] }`, present and empty; with no `triggers` there it would run the top level's crons.
  */
-export function jobsConfigProblems(jobs, api) {
+export function jobsConfigProblems(jobs, target) {
   const problems = [];
   for (const [scope, c] of SCOPES(jobs)) {
     if (!c) {
@@ -136,7 +155,7 @@ export function jobsConfigProblems(jobs, api) {
     }
     if (crons !== JSON.stringify(JOBS_CRONS))
       problems.push(`${scope}: crons must be exactly ${JSON.stringify(JOBS_CRONS)}`);
-    const want = SCOPES(api).find(([n]) => n === scope)?.[1]?.name;
+    const want = SCOPES(target).find(([n]) => n === scope)?.[1]?.name;
     if (!bound) problems.push(`${scope}: the ADMIN_JOBS service binding is missing`);
     else {
       if (bound.service !== want)
@@ -206,24 +225,34 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
     }
   }
   const read = (p) => parseJsonc(readFileSync(new URL(`../apps/${p}`, import.meta.url), "utf8"));
-  const api = read("admin/wrangler.api.jsonc");
-  const missingApi = missingPreviewOff(api);
-  if (missingApi.length > 0) {
-    console.error(
-      `apps/admin/wrangler.api.jsonc: "preview_urls": false is missing at ${missingApi.join(", ")}`,
-    );
-    failed = true;
-  }
   const front = read("admin/wrangler.jsonc");
-  for (const p of [...apiConfigProblems(api, front), ...frontServiceProblems(front, api)]) {
+  const aux = Object.fromEntries(ADMIN_AUX_CONFIGS.map((f) => [f, read(`admin/${f}`)]));
+  for (const [file, config] of Object.entries(aux)) {
+    const missing = missingPreviewOff(config);
+    if (missing.length > 0) {
+      console.error(`apps/admin/${file}: "preview_urls": false is missing at ${missing.join(", ")}`);
+      failed = true;
+    }
+    for (const p of apiConfigProblems(config, front)) {
+      console.error(`apps/admin/${file}: ${p}`);
+      failed = true;
+    }
+  }
+  const api = aux["wrangler.api.jsonc"];
+  const finance = aux["wrangler.finance.jsonc"];
+  for (const p of frontServiceProblems(front, api, finance)) {
     console.error(`apps/admin: ${p}`);
     failed = true;
   }
-  for (const p of jobsConfigProblems(read("jobs/wrangler.jsonc"), api)) {
+  // M6.1 stage A: `BillingJobs` is exported by the finance Worker.
+  for (const p of jobsConfigProblems(read("jobs/wrangler.jsonc"), finance)) {
     console.error(`apps/jobs: ${p}`);
     failed = true;
   }
-  for (const file of [...APPS.map((a) => `${a}/wrangler.jsonc`), "admin/wrangler.api.jsonc"]) {
+  for (const file of [
+    ...APPS.map((a) => `${a}/wrangler.jsonc`),
+    ...ADMIN_AUX_CONFIGS.map((f) => `admin/${f}`),
+  ]) {
     for (const p of observabilityProblems(read(file))) {
       console.error(`apps/${file}: ${p}`);
       failed = true;
@@ -231,6 +260,6 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
   }
   if (failed) process.exit(1);
   console.log(
-    "worker config guard: ok (preview_urls is false everywhere; the admin API Worker has no public URL; traces on staging only)",
+    "worker config guard: ok (preview_urls is false everywhere; the admin API and finance Workers have no public URL; traces on staging only)",
   );
 }

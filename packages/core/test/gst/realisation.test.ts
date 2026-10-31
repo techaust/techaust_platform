@@ -359,6 +359,28 @@ describe("realisationRows", () => {
     expect(proto.ok && proto.value[0]?.stage).toBe("fema_overdue");
   });
 
+  it("M6.1 (Q60, early check A3): a register row's own extendedTo moves its FEMA date, and the GST date follows; never earlier than the standard date", () => {
+    const later = [
+      exp("a", d(2026, 11, 3), { currency: "USD", outstandingMinor: 1000, extendedTo: d(2028, 6, 30) }),
+    ];
+    const r = realisationRows(later, today);
+    expect(r.ok && [r.value[0]?.stage, r.value[0]?.femaDue, r.value[0]?.gstDue]).toEqual([
+      "ok",
+      d(2028, 6, 30),
+      d(2028, 7, 15),
+    ]);
+    const earlier = [
+      exp("a", d(2026, 11, 3), { currency: "USD", outstandingMinor: 1000, extendedTo: d(2027, 1, 1) }),
+    ];
+    const e = realisationRows(earlier, today);
+    expect(e.ok && [e.value[0]?.stage, e.value[0]?.femaDue]).toEqual(["fema_overdue", d(2027, 8, 3)]);
+    const none = realisationRows(
+      [exp("a", d(2026, 11, 3), { currency: "USD", outstandingMinor: 1000, extendedTo: null })],
+      today,
+    );
+    expect(none.ok && none.value[0]?.femaDue).toEqual(d(2027, 8, 3));
+  });
+
   it("carries the before-2026 warning with the invoice's id", () => {
     const r = realisationRows([exp("old", d(2026, 5, 31), { currency: "USD" })], today);
     expect(r.ok && r.warnings).toEqual([{ code: "before_fema_2026", path: ["old"] }]);

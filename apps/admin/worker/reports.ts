@@ -6,6 +6,8 @@ import { addDays, daysBetween, fyOfDate, istDate, parseIsoDate, toIsoDate } from
 import { b2clThresholdFromStoredTax, realisationParamsFromStoredTax } from "@techaust/core/invoices";
 import {
   EDF_MONTH_SQL,
+  PAYMENTS_REGISTER_SQL,
+  type PaymentsRegisterRow,
   REALISATION_PAGE_SQL,
   REGISTER_PAGE_SQL,
   REPORT_PAGE_SIZE,
@@ -80,6 +82,8 @@ function pageOf(rows: readonly RegisterSqlRow[]) {
 const registerQuery = z.object({ from: isoDate, to: isoDate, after: afterQuery });
 const edfQuery = z.object({ month: z.string().check(z.regex(/^\d{4}-(0[1-9]|1[0-2])$/)), after: afterQuery });
 const realisationQuery = z.object({ show: z.optional(z.enum(["open", "all"])), after: afterQuery });
+/** M6.1: one FY by its token (`2627` for 2026-27, as `issueFyOf` writes it). */
+const paymentsRegisterQuery = z.object({ fy: z.string().check(z.regex(/^\d{4}$/)), after: afterQuery });
 
 export const reports = new Hono<AppEnv>()
   // The register of a range (one financial year, at most 366 days): every issued tax invoice, export invoice, credit note and debit note, voided ones included
@@ -173,4 +177,72 @@ export const reports = new Hono<AppEnv>()
       meta: metaOf(todayIst(), s.state, s.threshold, s.rules),
       next,
     });
+  })
+
+  // M6.1 (07-ZH line 20): the payments and TDS register of one FY (`fy` the FY's token, e.g. 2627 for 2026-27): the confirmed payments received in it, money and
+  // TDS alike, keyset pages of at most 50 (`after` = the last row's received day and id). The SPA builds the CSV and puts the TDS rows apart for Form 26AS and
+  // AIS matching. Pending, rejected and withdrawn entries are not in it (L23.6: they stay in the /payments list with their status).
+  .get("/payments", query(paymentsRegisterQuery), async (c) => {
+    const q = c.req.valid("query");
+    const startYear = 2000 + Number(q.fy.slice(0, 2));
+    if (Number(q.fy.slice(2)) !== (startYear + 1) % 100) return err(c, PERIOD_INVALID, 400);
+    const cursor = cursorOf(q.after);
+    if (cursor === "bad") return err(c, BAD_REQUEST, 400);
+    const from = `${startYear}-04-01`;
+    const to = `${startYear + 1}-03-31`;
+    const { results } = await c.env.DB.prepare(PAYMENTS_REGISTER_SQL(cursor !== null))
+      .bind(from, to, ...(cursor ? [cursor.d, cursor.id] : []))
+      .all<PaymentsRegisterRow>();
+    const page = results.slice(0, REPORT_PAGE_SIZE);
+    const last = page.at(-1);
+    return c.json({
+      fy: q.fy,
+      from,
+      to,
+      rows: page.map((r) => ({
+        id: r.id,
+        kind: r.kind,
+        receivedOn: r.received_on,
+        currency: r.currency,
+        amountMinor: r.amount_minor,
+        chargesMinor: r.charges_minor,
+        mode: r.mode,
+        reference: r.reference_norm,
+        inrReceivedMinor: r.inr_received_minor,
+        tds:
+          r.kind === "tds"
+            ? {
+                section: r.tds_section,
+                rateBp: r.tds_rate_bp,
+                certificateNo: r.tds_certificate_no,
+                certificateOn: r.tds_certificate_on,
+                certificateAwaited: r.tds_certificate_no === null,
+              }
+            : null,
+        proof: r.proof_kind === null ? null : { kind: r.proof_kind, ref: r.proof_ref },
+        client: { id: r.client_id, code: r.client_code, name: r.client_name },
+        allocations: parseAllocations(r.allocations),
+      })),
+      next:
+        results.length > REPORT_PAGE_SIZE && last ? encodeCursor({ k: last.received_on, id: last.id }) : null,
+    });
   });
+
+/** The register row's allocations (JSON from SQL); a damaged value is an empty list, never a guess. */
+function parseAllocations(text: string | null) {
+  try {
+    const v = JSON.parse(text ?? "[]") as unknown;
+    return Array.isArray(v)
+      ? (v as { documentId: string; number: string | null; kind: string; amountMinor: number }[]).map(
+          (a) => ({
+            documentId: a.documentId,
+            number: a.number,
+            kind: a.kind,
+            amountMinor: a.amountMinor,
+          }),
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}

@@ -33,6 +33,7 @@ import {
 import { mkProforma, putTax, todayIso } from "./test-invoice-types.ts";
 import { issueBodyOf, issueInvoice, mkInvoice, mkInvoiceClient, putCompany } from "./test-invoices.ts";
 import { issueCredit, mkIssuedInvoice, mkRegisteredClient, stampOf } from "./test-notes.ts";
+import { paymentRow, putDoc, recordBody, recorded, tdsBody } from "./test-payments.ts";
 import { mkFile, mkMilestone, mkNote, mkProject, PDF_BYTES, upload } from "./test-projects.ts";
 import { discount, mkDraft, mkQuoteClient, mkService, mkTerms, sendBodyOf, sendDoc } from "./test-quotes.ts";
 import { addDoc, mkReportClient } from "./test-reports.ts";
@@ -1092,6 +1093,107 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       const clientId = await mkReportClient();
       await addDoc({ clientId, issueDate: "2026-10-05" });
       return run(s, `/clients/${clientId}/statement/pdf`, { body: { from: "2026-10-01", to: "2026-10-31" } });
+    },
+    // M6.1 (added on purpose): the payment routes.
+    "POST /api/v1/payments": async () => {
+      const s = await owner();
+      const clientId = await mkReportClient();
+      const inv = await addDoc({ clientId, issueDate: "2026-10-05" });
+      return run(s, "/payments", {
+        body: recordBody(clientId, 50_000, [{ documentId: inv.id, amountMinor: 50_000 }]),
+      });
+    },
+    "POST /api/v1/payments/:id/verify": async () => {
+      const s = await owner();
+      const staff = await sessionFor("staff");
+      const clientId = await mkReportClient();
+      const made = await recorded(staff, recordBody(clientId, 10_000));
+      const row = await paymentRow(made.id);
+      return run(s, `/payments/${made.id}/verify`, {
+        body: { decision: "confirm", expectedRecordedAt: row.recorded_at },
+      });
+    },
+    "POST /api/v1/payments/:id/withdraw": async () => {
+      const s = await owner();
+      const clientId = await mkReportClient();
+      const made = await recorded(s, recordBody(clientId, 10_000));
+      return run(s, `/payments/${made.id}/withdraw`, { body: { reason: "Entered twice" } });
+    },
+    "PUT /api/v1/payments/:id/proof": async () => {
+      const s = await owner();
+      const clientId = await mkReportClient();
+      const made = await recorded(s, recordBody(clientId, 10_000));
+      const rid = `ray-${crypto.randomUUID()}`;
+      const res = await putDoc(`/payments/${made.id}/proof`, PDF_BYTES, {
+        cookie: s.cookie,
+        headers: { ...headers(rid), "X-Proof-Kind": "Bank%20advice" },
+      });
+      return { res, rid, actor: s };
+    },
+    "POST /api/v1/payments/:id/tds-certificate": async () => {
+      const s = await owner();
+      const clientId = await mkReportClient();
+      const inv = await addDoc({ clientId, issueDate: "2026-10-05" });
+      const made = await recorded(s, tdsBody(clientId, inv.id, 10_000));
+      return run(s, `/payments/${made.id}/tds-certificate`, {
+        body: { certificateNo: "RBAC16A", certificateOn: todayIso() },
+      });
+    },
+    "POST /api/v1/clients/:id/credit/apply": async () => {
+      const s = await owner();
+      const clientId = await mkReportClient();
+      const inv = await addDoc({ clientId, issueDate: "2026-10-05" });
+      await recorded(s, recordBody(clientId, 20_000));
+      const row = await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?", inv.id);
+      return run(s, `/clients/${clientId}/credit/apply`, {
+        body: { documentId: inv.id, amountMinor: 20_000, expectedUpdatedAt: row?.updated_at },
+      });
+    },
+    "POST /api/v1/invoices/:id/credit/release": async () => {
+      const s = await owner();
+      const clientId = await mkReportClient();
+      const inv = await addDoc({ clientId, issueDate: "2026-10-05" });
+      await recorded(
+        s,
+        recordBody(clientId, inv.computed.totalMinor, [
+          { documentId: inv.id, amountMinor: inv.computed.totalMinor },
+        ]),
+      );
+      // a credit note of 10,000 after the payment: an excess of 10,000 on the invoice
+      await env.DB.prepare(
+        "UPDATE documents SET credited_minor = 10000, status = 'paid', balance_minor = 0, updated_at = updated_at + 1 WHERE id = ?",
+      )
+        .bind(inv.id)
+        .run();
+      const row = await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?", inv.id);
+      return run(s, `/invoices/${inv.id}/credit/release`, {
+        body: { amountMinor: 10_000, expectedUpdatedAt: row?.updated_at },
+      });
+    },
+    "POST /api/v1/invoices/:id/realisation-extensions": async () => {
+      const s = await owner();
+      const clientId = await mkReportClient("USD");
+      const inv = await addDoc({ clientId, currency: "USD", issueDate: "2026-10-05" });
+      return run(s, `/invoices/${inv.id}/realisation-extensions`, {
+        body: { extendedTo: "2028-01-31", bankRef: "AD-BANK-1" },
+      });
+    },
+    "PUT /api/v1/invoices/:id/realisation-extensions/:eid/letter": async () => {
+      const s = await owner();
+      const clientId = await mkReportClient("USD");
+      const inv = await addDoc({ clientId, currency: "USD", issueDate: "2026-10-05" });
+      const ext = await call(`/invoices/${inv.id}/realisation-extensions`, {
+        cookie: s.cookie,
+        body: { extendedTo: "2028-01-31", bankRef: "AD-BANK-2" },
+      });
+      const { id } = (await ext.json()) as { id: string };
+      const rid = `ray-${crypto.randomUUID()}`;
+      const res = await putDoc(`/invoices/${inv.id}/realisation-extensions/${id}/letter`, PDF_BYTES, {
+        cookie: s.cookie,
+        name: "letter.pdf",
+        headers: headers(rid),
+      });
+      return { res, rid, actor: s };
     },
   };
 

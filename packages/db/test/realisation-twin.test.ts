@@ -73,7 +73,7 @@ describe("femaDue and gstDue, for every issue date of four years", () => {
         const rows = await all<{ issue_date: string; fema: string; gst: string }>(
           `WITH RECURSIVE n(x) AS (SELECT '2026-01-01' UNION ALL SELECT date(x, '+1 day') FROM n WHERE x < '2029-12-31')
            SELECT t.issue_date, ${femaDueSql("t", P)} AS fema, ${gstDueSql("t", P)} AS gst
-           FROM (SELECT x AS issue_date, ?7 AS currency, '2026-01-01' AS today FROM n) t ORDER BY t.issue_date`,
+           FROM (SELECT NULL AS id, x AS issue_date, ?7 AS currency, '2026-01-01' AS today FROM n) t ORDER BY t.issue_date`,
           0,
           ...ruleBinds(rules),
           currency,
@@ -159,7 +159,7 @@ describe("the stage, on the days around every due and approaching date", () => {
           const chunk = cases.slice(at, at + 1_200);
           const got = await all<{ i: number; stage: string }>(
             `SELECT t.i, ${stageSql("t", P)} AS stage
-             FROM (SELECT j.key AS i, json_extract(j.value, '$.d') AS issue_date, json_extract(j.value, '$.t') AS today, json_extract(j.value, '$.bal') AS balance_minor, ?7 AS currency, ?8 AS supply_type
+             FROM (SELECT NULL AS id, j.key AS i, json_extract(j.value, '$.d') AS issue_date, json_extract(j.value, '$.t') AS today, json_extract(j.value, '$.bal') AS balance_minor, ?7 AS currency, ?8 AS supply_type
                    FROM json_each(?1) j) t ORDER BY t.i`,
             JSON.stringify(chunk),
             ...ruleBinds(rules),
@@ -194,7 +194,7 @@ describe("the settings expressions the dashboard uses", () => {
     await putTax({ realisation: { warnMonths: 6, inrMonths: 18, escalateMonths: 24, escalateExtraDays: 0 } });
     const p = settingsBinds("t.today");
     const rows = await all<{ fema: string; gst: string }>(
-      `SELECT ${femaDueSql("t", p)} AS fema, ${gstDueSql("t", p)} AS gst FROM (SELECT '2026-11-03' AS issue_date, 'USD' AS currency, '2027-01-01' AS today) t`,
+      `SELECT ${femaDueSql("t", p)} AS fema, ${gstDueSql("t", p)} AS gst FROM (SELECT NULL AS id, '2026-11-03' AS issue_date, 'USD' AS currency, '2027-01-01' AS today) t`,
     );
     const core = realisationDates(
       { invoiceDate: date("2026-11-03"), currency: "USD", supplyType: "export_lut" },
@@ -217,7 +217,7 @@ describe("the settings expressions the dashboard uses", () => {
       settingsRules.value,
     );
     const inrSql = await all<{ fema: string }>(
-      `SELECT ${femaDueSql("t", p)} AS fema FROM (SELECT '2026-11-03' AS issue_date, 'INR' AS currency, '2027-01-01' AS today) t`,
+      `SELECT ${femaDueSql("t", p)} AS fema FROM (SELECT NULL AS id, '2026-11-03' AS issue_date, 'INR' AS currency, '2027-01-01' AS today) t`,
     );
     expect(inrSql[0]?.fema).toBe("2028-05-03");
     expect(inrSql[0]?.fema).toBe(iso((inrCore.ok && inrCore.value.femaDue) as CalendarDate));
@@ -225,7 +225,7 @@ describe("the settings expressions the dashboard uses", () => {
     await putTax({});
     const d = await all<{ fema: string; femaInr: string }>(
       `SELECT ${femaDueSql("a", p)} AS fema, ${femaDueSql("b", p)} AS femaInr
-       FROM (SELECT '2026-11-03' AS issue_date, 'USD' AS currency) a, (SELECT '2026-11-03' AS issue_date, 'INR' AS currency) b, (SELECT '2027-01-01' AS today) t`,
+       FROM (SELECT NULL AS id, '2026-11-03' AS issue_date, 'USD' AS currency) a, (SELECT NULL AS id, '2026-11-03' AS issue_date, 'INR' AS currency) b, (SELECT '2027-01-01' AS today) t`,
     );
     expect(d[0]).toEqual({ fema: "2027-08-03", femaInr: "2027-11-03" });
   });
@@ -279,7 +279,7 @@ describe("the alert scan's bound on the issue date never hides an export that is
         const got = await all<{ i: number; stage_in: number; bound_in: number }>(
           `SELECT t.i, (${stageSql("t", P)}) IN (${ALERT_STAGE_LIST}) AS stage_in,
                   t.issue_date < date(t.today, '+' || (?6 + 31) || ' days', '-' || ?7 || ' months') AS bound_in
-           FROM (SELECT j.key AS i, json_extract(j.value, '$.d') AS issue_date, json_extract(j.value, '$.t') AS today, json_extract(j.value, '$.cur') AS currency,
+           FROM (SELECT NULL AS id, j.key AS i, json_extract(j.value, '$.d') AS issue_date, json_extract(j.value, '$.t') AS today, json_extract(j.value, '$.cur') AS currency,
                         json_extract(j.value, '$.sup') AS supply_type, 1000 AS balance_minor FROM json_each(?1) j) t`,
           JSON.stringify(chunk),
           ...ruleBinds(rules),

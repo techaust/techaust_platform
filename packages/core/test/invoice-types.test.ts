@@ -985,6 +985,9 @@ describe("void: a proforma has no return period [LD28]", () => {
     viewed: false,
     issueDate: "2026-10-05",
     today: "2027-01-31",
+    tdsMinor: 0,
+    paymentPending: false,
+    paymentRecorded: false,
   };
   it("another type is closed after the month, a proforma is not; its other rules stand", () => {
     expect(voidBlockers(base)).toEqual(["return_period_closed"]);

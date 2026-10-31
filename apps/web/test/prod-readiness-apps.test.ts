@@ -126,9 +126,11 @@ describe("production Worker configs", () => {
     for (const app of ["web", "admin", "portal"])
       expect(text).toContain(`apps/${app}/wrangler.jsonc: env.production.vars.TURNSTILE_SITE_KEY is empty`);
     expect(text).not.toContain("apps/admin/wrangler.api.jsonc: env.production.vars.TURNSTILE_SITE_KEY");
+    expect(text).not.toContain("apps/admin/wrangler.finance.jsonc: env.production.vars.TURNSTILE_SITE_KEY");
     for (const where of [
       "admin/wrangler.jsonc",
       "admin/wrangler.api.jsonc",
+      "admin/wrangler.finance.jsonc",
       "portal/wrangler.jsonc",
       "jobs/wrangler.jsonc",
     ]) {

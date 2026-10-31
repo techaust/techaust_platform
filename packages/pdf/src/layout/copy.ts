@@ -220,6 +220,8 @@ export const STATEMENT_PDF_COPY = {
     /** 07-V §6 "Credit note against {number}": with the invoice's number when the view has it. */
     credit_note: (againstNumber: string) => `Credit note against ${againstNumber}`,
     receipt: "Payment received",
+    /** M6.1 (07-ZH line 19, approved by the owner 2026-10-31): the tax the client deducted at source. */
+    tds: "TDS deducted",
   },
   amountDue: (closing: string) => `Amount due: ${closing}`,
   questions: (email: string) => `Questions about this statement? Write to ${email}.`,

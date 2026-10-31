@@ -4,13 +4,20 @@
 // overdue, billed to date and the credit notes follow as quiet rows, right-aligned in tabular figures. Overdue money carries the
 // warning icon and its count in words, never colour alone. "Collected" arrives with payments (M6) and says so (07-V's line).
 // Amounts are formatted by core (`moneyText`); nothing is added up here.
+
 import type { ClientFigures, ProjectBilled } from "../../api.ts";
 import { api } from "../../api.ts";
 import { AlertTriangle, Receipt, RefreshCw } from "../../components/icons.tsx";
 import { useLoad } from "../../components/states.tsx";
+import { useToast } from "../../components/toast.tsx";
+import { allowed } from "../../lib/access.ts";
 import { Y } from "../../lib/copy-y.ts";
+import { PAY_COPY, PAY_UI } from "../../lib/payments.ts";
 import { moneyText } from "../../lib/projects.ts";
 import { FINANCE_COPY } from "../../lib/reports.ts";
+import { useUser } from "../../session.tsx";
+import { ClientCreditDialog } from "../payments/client-credit.tsx";
+import { useDialogState } from "../payments/parts.tsx";
 
 /** 07-Y (FX-3): the figure labels 07-V's dashboard tiles didn't have. */
 export const FIGURES_COPY = {
@@ -85,6 +92,21 @@ function CurrencyFigures({ f, many }: { f: ClientFigures; many: boolean }) {
           </dd>
         </div>
       )}
+      {/* M6.1 (07-ZH line 17): confirmed payments, all time; (line 10) what they hold unallocated as the client's credit */}
+      <div className="acct__row">
+        <dt>{PAY_COPY.collected}</dt>
+        <dd>
+          <Amount minor={f.collectedMinor} currency={f.currency} />
+        </dd>
+      </div>
+      {f.creditMinor > 0 && (
+        <div className="acct__row acct__row--credit">
+          <dt>{PAY_COPY.creditHeld}</dt>
+          <dd>
+            <Amount minor={f.creditMinor} currency={f.currency} />
+          </dd>
+        </div>
+      )}
     </dl>
   );
   // With two currencies each is its own labelled group under its code; with one the code adds nothing (the amounts carry the symbol).
@@ -101,8 +123,16 @@ function CurrencyFigures({ f, many }: { f: ClientFigures; many: boolean }) {
 }
 
 /** The client Overview's figures panel (finance roles; not shown for an anonymised client). */
-export function ClientFiguresPanel(props: { clientId: string; onStatement: () => void }) {
+export function ClientFiguresPanel(props: {
+  clientId: string;
+  clientName?: string;
+  onStatement: () => void;
+}) {
+  const user = useUser();
   const finance = useLoad(() => api.clientFinance(props.clientId), props.clientId);
+  const [using, setUsingState] = useDialogState<true>("acct-h");
+  const setUsing = (on: boolean) => setUsingState(on ? true : null);
+  const toast = useToast();
   if (finance.state === "ready" && !finance.data.available) return null;
   const rows = finance.state === "ready" && finance.data.available ? finance.data.currencies : [];
   return (
@@ -142,7 +172,26 @@ export function ClientFiguresPanel(props: { clientId: string; onStatement: () =>
           {rows.map((f) => (
             <CurrencyFigures key={f.currency} f={f} many={rows.length > 1} />
           ))}
-          <p className="acct__foot">{FINANCE_COPY.collectedArrives}</p>
+          {allowed(user.role, "payments.applyCredit") && rows.some((f) => f.creditMinor > 0) && (
+            <button
+              type="button"
+              className="btn btn--secondary acct__credit-btn"
+              onClick={() => setUsing(true)}
+            >
+              {PAY_UI.useCreditShort}
+            </button>
+          )}
+          {using && (
+            <ClientCreditDialog
+              clientId={props.clientId}
+              onClose={() => setUsing(false)}
+              onDone={(text) => {
+                setUsing(false);
+                toast("success", text);
+                finance.reload(true);
+              }}
+            />
+          )}
           <button type="button" className="btn btn--text panel-link" onClick={props.onStatement}>
             <Receipt size={16} />
             {FIGURES_COPY.openStatement}
@@ -180,6 +229,18 @@ export function ProjectBilledFacts({ billed }: { billed: ProjectBilled[] }) {
             </span>
           ))}
           <span className="acct__sub">{FIGURES_COPY.billedHint}</span>
+        </dd>
+      </div>
+      {/* M6.1 (07-ZH line 17): what has been paid on the project's invoices and debit notes */}
+      <div>
+        <dt>{PAY_COPY.projectPaid}</dt>
+        <dd className="acct__stack">
+          {billed.map((b) => (
+            <span key={b.currency} className="acct__line">
+              <Amount minor={b.paidMinor} currency={b.currency} />
+              {many && <span className="acct__code docno">{b.currency}</span>}
+            </span>
+          ))}
         </dd>
       </div>
       {billed.some((b) => b.creditedMinor > 0) && (

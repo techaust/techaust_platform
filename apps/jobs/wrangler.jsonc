@@ -41,11 +41,11 @@
   // `triggers` IS inherited by an environment that does not set its own (wrangler `EnvironmentInheritable`), so every environment states its crons: staging
   // the same two, production an empty list until Phase 7 (scripts/check-worker-config.mjs requires exactly that; A6 3).
   "triggers": { "crons": ["0 22 * * *", "30 * * * *"] },
-  // The admin API's named entrypoint `BillingJobs` (M5.4, LD57): the care-plan drafting and the automatic issue run THERE (they need the admin code), and this Worker calls them
-  // over RPC. Deploy order: the admin API Worker first (a jobs deploy whose entrypoint does not exist yet fails), so the entrypoint exists before the first call; until it does a
-  // call is an error and the queue message is retried (every call is idempotent). Not inherited.
+  // The admin finance Worker's named entrypoint `BillingJobs` (M5.4, LD57; in the admin API Worker until M6.1 stage A): the care-plan drafting and the automatic issue run THERE
+  // (they need the admin code), and this Worker calls them over RPC. Deploy order: the admin finance Worker first (a jobs deploy whose entrypoint does not exist yet fails), so the
+  // entrypoint exists before the first call; until it does a call is an error and the queue message is retried (every call is idempotent). Not inherited.
   "services": [
-    { "binding": "ADMIN_JOBS", "service": "techaust-platform-admin-api", "entrypoint": "BillingJobs" }
+    { "binding": "ADMIN_JOBS", "service": "techaust-platform-admin-finance", "entrypoint": "BillingJobs" }
   ],
   // SES keys: names only; values come from `wrangler secret put` (docs/runbooks/ses-and-turnstile.md). Not inherited.
   "secrets": { "required": ["SES_ACCESS_KEY_ID", "SES_SECRET_ACCESS_KEY"] },
@@ -145,7 +145,7 @@
       "services": [
         {
           "binding": "ADMIN_JOBS",
-          "service": "techaust-platform-admin-api-staging",
+          "service": "techaust-platform-admin-finance-staging",
           "entrypoint": "BillingJobs"
         }
       ],

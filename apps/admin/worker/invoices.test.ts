@@ -609,6 +609,11 @@ describe("the route table", () => {
       "POST /api/v1/invoices/:id/reminders/pause invoices.send invoice.reminders_pause",
       "POST /api/v1/invoices/:id/reminders/resume invoices.send invoice.reminders_resume",
       "GET /api/v1/clients/:id/invoices invoices.read -",
+      // M6.1 (added on purpose): an invoice's Payments panel, its excess to credit, and the bank's FEMA extensions with their letter
+      "GET /api/v1/invoices/:id/payments payments.read -",
+      "POST /api/v1/invoices/:id/credit/release payments.applyCredit payment.credit_release",
+      "POST /api/v1/invoices/:id/realisation-extensions realisation.extend invoice.realisation_extend",
+      "PUT /api/v1/invoices/:id/realisation-extensions/:eid/letter realisation.extend invoice.realisation_extend",
     ]);
     expect(ROUTES.find((r) => r.path === "/api/v1/invoices/:id" && r.method === "PATCH")?.body).toBe(
       "document",

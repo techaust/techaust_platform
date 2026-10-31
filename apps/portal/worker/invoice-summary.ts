@@ -6,6 +6,8 @@ import { formatMoney, money } from "@techaust/core/money";
 import { percentFromBp } from "@techaust/core/schedule-text";
 import { withdrawnSql } from "@techaust/db/sql-rules";
 
+/** 07-ZH line 18 (client-facing; approved by the owner, 2026-10-31): the summary row of the TDS the client deducted. */
+export const TDS_ROW_LABEL = "TDS deducted by you";
 /** The types a client can open: the whole invoice family except a receipt (M6). */
 export const CLIENT_INVOICE_TYPES = [
   "proforma",
@@ -65,7 +67,7 @@ export const SUMMARY_PARENT_JOIN =
  * invoice, only when one the client may open itself (frozen, not void, an open status and type: the list's own rule), so the page can link to it.
  */
 export const SUMMARY_COLS = `d.id, d.type, d.status, d.number_display, d.issue_date, d.due_date, d.currency, d.subtotal_minor, d.discount_minor, d.taxable_minor, d.cgst_minor, d.sgst_minor, d.igst_minor,
-    d.round_off_minor, d.total_minor, d.total_inr_minor, d.paid_minor, d.credited_minor, d.balance_minor, d.issuer, d.header_extras, d.pdf_r2_key, d.viewed_at, d.voided_at,
+    d.round_off_minor, d.total_minor, d.total_inr_minor, d.paid_minor, d.credited_minor, d.balance_minor, d.tds_minor, d.issuer, d.header_extras, d.pdf_r2_key, d.viewed_at, d.voided_at,
     p.number_display AS parent_number,
     CASE WHEN d.type IN ('credit_note', 'debit_note') AND p.frozen_at IS NOT NULL AND p.voided_at IS NULL AND p.status IN (${STATUSES_SQL})
        AND p.type IN (${TYPES_SQL}) THEN p.id END AS parent_open_id`;
@@ -119,6 +121,8 @@ export type SummaryRow = {
   total_inr_minor: number | null;
   paid_minor: number;
   credited_minor: number;
+  /** M6.1 (T8): the TDS the client deducted, recorded on the ledger (0 when none). */
+  tds_minor: number;
   balance_minor: number;
   issuer: string | null;
   /** The frozen header keys (LD37); read only for a proforma's GST estimate marker (FX-4, A5 5). */
@@ -322,6 +326,11 @@ export function summaryOf(r: SummaryRow, lines: readonly LineRow[], creditNotes:
     },
     paidMinor: r.paid_minor,
     creditedMinor: r.credited_minor,
+    /** M6.1 (T8; Settled by the lead on the safest reading, 2026-10-30 (08-C RA-30)): the TDS the client deducted; it counts toward the balance. */
+    tdsMinor: r.tds_minor,
+    /** The TDS row of the summary (07-ZH line 18, client-facing, approved by the owner 2026-10-31); null when no TDS is recorded or the request was withdrawn. */
+    tdsRow:
+      !withdrawn && r.tds_minor > 0 ? { label: TDS_ROW_LABEL, amount: text(r.tds_minor, r.currency) } : null,
     balanceMinor: withdrawn ? null : r.balance_minor,
     total: text(r.total_minor, r.currency),
     balance: withdrawn ? null : text(r.balance_minor, r.currency),

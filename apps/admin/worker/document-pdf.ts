@@ -10,7 +10,7 @@ import { clientGoneSql } from "./anonymised.ts";
 import { type ApiError, type AppEnv, type Ctx, err, mutate, NOT_FOUND } from "./context.ts";
 import { enqueuePdf, enqueueSupplierPdfOnce } from "./document-events.ts";
 import { body, idParam, param } from "./http.ts";
-import { INVOICE_TYPES_SQL } from "./invoice-model.ts";
+import { INVOICE_TYPES_SQL } from "./invoice-consts.ts";
 import { CLIENT_GONE } from "./quote-model.ts";
 
 export const PDF_PENDING: ApiError = {

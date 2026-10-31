@@ -28,6 +28,7 @@ import {
   PROFORMA_NOTICE,
   proformaWarnAt,
   proformaWarnDate,
+  refundDueOf,
   voidBlockers,
   withdrawBlockers,
 } from "@techaust/core/invoices";
@@ -105,6 +106,10 @@ export type InvoiceViewInput = {
   /** A `document_sends` row exists (the Q1 void rule), and an issued document names this one as its parent. */
   emailed: boolean;
   hasIssuedChild: boolean;
+  /** M6.1 (L17): a PENDING payment asks for this document (the void blockers). */
+  paymentPending: boolean;
+  /** M6.1 (L17, L32): an allocation row names this document (the void blockers). */
+  paymentRecorded: boolean;
   /** ADM-INV-10: any document (draft or issued) names this one as its parent, and an advance receipt names it (the withdraw blockers). */
   hasAnyChild: boolean;
   hasAdvanceReceipt: boolean;
@@ -229,6 +234,9 @@ export function invoiceView(i: InvoiceViewInput) {
     issueDate: d.issue_date,
     today: todayIso,
     type: d.type,
+    tdsMinor: d.tds_minor,
+    paymentPending: i.paymentPending,
+    paymentRecorded: i.paymentRecorded,
   });
   // ADM-INV-10 (owner, 2026-10-30, docs/13): a proforma the client has received is withdrawn instead of voided; the codes say why not.
   const withdrawReasons = withdrawBlockers({
@@ -240,6 +248,7 @@ export function invoiceView(i: InvoiceViewInput) {
     hasAdvanceReceipt: i.hasAdvanceReceipt,
     emailed: i.emailed,
     viewed: d.viewed_at !== null,
+    paymentPending: i.paymentPending,
   });
   const withdrawn = isWithdrawn({
     type: d.type,
@@ -345,6 +354,10 @@ export function invoiceView(i: InvoiceViewInput) {
     paidMinor: d.paid_minor,
     creditedMinor: d.credited_minor,
     balanceMinor: d.balance_minor,
+    /** M6.1 (T8, 07-ZH line 1 "TDS deducted by the client"): TDS recorded on the ledger; it settles the balance, the invoice and its GST stay at full value. */
+    tdsMinor: d.tds_minor,
+    /** M6.1 (07-ZH line 1 "Paid above what it owes"): paid + credited + TDS above the total (derived). */
+    excessMinor: refundDueOf(d.total_minor, d.paid_minor, d.credited_minor, d.tds_minor),
     overdue: isOverdue(d, todayIso),
     errors: !frozen && computation ? computation.errors : [],
     warnings: !frozen && computation ? computation.warnings : [],

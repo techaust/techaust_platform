@@ -119,7 +119,10 @@ export const SAMPLE_INVOICES: InvoiceSummary[] = [
     }),
     paidMinor: 2_000_000,
     creditedMinor: 0,
-    balanceMinor: 3_310_000,
+    // M6.1 (T8): the client deducted TDS, shown in 07-ZH line 18's words (sample figures, as the server sends them)
+    tdsMinor: 450_000,
+    tdsRow: { label: "TDS deducted by you", amount: moneyText(450_000, "INR") },
+    balanceMinor: 2_860_000,
     // final sweep P3: one line with a percent discount, one with an amount, as the PDF prints them
     lines: [
       {

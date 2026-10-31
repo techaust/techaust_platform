@@ -36,7 +36,8 @@ describe("the route table", () => {
     for (const [method, path, access] of want) {
       const r = ROUTES.find((x) => x.method === method && x.path === path);
       expect(r?.access, `${method} ${path}`).toBe(access);
-      expect(r?.on, `${method} ${path} is an API route`).toBeUndefined();
+      // M6.1 stage A: answered by the finance Worker (was the API Worker; changed on purpose).
+      expect(r?.on, `${method} ${path} is a finance route`).toBe("finance");
     }
     expect(ROUTES.find((r) => r.path === "/api/v1/reports/registers")?.audit).toBe("report.export");
     expect(ROUTES.find((r) => r.path === "/api/v1/clients/:id/statement/pdf")?.audit).toBe(

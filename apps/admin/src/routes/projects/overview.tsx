@@ -36,7 +36,6 @@ import {
   totalsWarning,
   typeName,
 } from "../../lib/projects.ts";
-import { FINANCE_COPY } from "../../lib/reports.ts";
 import { useUser } from "../../session.tsx";
 import { ProjectBilledFacts } from "../clients/figures.tsx";
 import { Fact } from "../clients/overview.tsx";
@@ -91,9 +90,6 @@ export function Overview(props: {
               )}
             </Fact>
           </dl>
-          {props.data.figures.billed?.available && (
-            <p className="acct__foot">{FINANCE_COPY.collectedArrives}</p>
-          )}
         </section>
         <section className="lead-panel" aria-labelledby="linked-h">
           <h2 id="linked-h" className="lead-panel__title">

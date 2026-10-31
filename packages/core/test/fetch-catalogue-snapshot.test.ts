@@ -129,7 +129,7 @@ describe("the workflows (read, not run)", () => {
     expect(
       at("node scripts/fetch-catalogue-snapshot.mjs --out apps/web/catalogue-snapshot.json"),
     ).toBeGreaterThan(at("Migrate and seed staging D1"));
-    expect(at("name: Deploy 1 of 5, the admin API Worker (staging)")).toBeGreaterThan(
+    expect(at("name: Deploy 1 of 6, the admin API Worker (staging)")).toBeGreaterThan(
       at("fetch-catalogue-snapshot.mjs"),
     );
   });
