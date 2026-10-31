@@ -58,6 +58,7 @@ Shown only once the deed is signed; nothing for a draft, final or cancelled deed
     - Schedule 2's explicit none: button "None", and the hint "If there are none, choose None: a blank field can't be finalised."
     - Save: "Save Schedules"; saved: "Schedules saved."; unsaved: the existing unsaved-changes guard words.
     - A blank field when finalising: "Fill in this field, or choose None." (Schedule 2) / "Fill in this field." (Schedule 1).
+    - A field longer than the database takes: "Use at most {n} characters."
 20. Read the deed: heading "Read the deed"; on a draft: "This is how the deed reads today. Its values are fixed when you finalise it."; when it can't be filled yet: "The deed can be read once these are fixed:".
 21. What stops a finalise (value problems):
     - `company_principal_place_missing`: "Add the principal place of business in Settings › Company."
@@ -67,9 +68,9 @@ Shown only once the deed is signed; nothing for a draft, final or cancelled deed
     - `made_on_invalid`: "Today's date couldn't be read. Reload the page and try again."
 22. Finalise: button "Finalise deed"; dialog title "Finalise the deed"; body "This gives the deed its number, fixes its text and makes the PDF. A final deed can't be changed or cancelled."; confirm "Finalise deed"; done: "Deed {number} finalised. The PDF is being made."
 23. The unsigned PDF: heading "Unsigned PDF"; "Download unsigned PDF"; the Owner's retry "Make the PDF again"; `pdf_done`: "This deed already has its PDF."
-24. Upload the signed copy: heading "Upload the signed copy"; fields "Signed PDF" (hint "The PDF your eSign provider gave you, up to 10 MB."), "eSign date", "eSign time (IST)" (hint "24-hour, as the provider shows it, for example 14:05."), "Transaction ID" (hint "As the provider shows it."); button "Upload signed deed"; errors "Choose the signed PDF.", "Enter the time as HH:MM, for example 14:05.", "Enter the transaction ID."; done: "Signed deed uploaded. The client's portal contacts are being emailed."
+24. Upload the signed copy: heading "Upload the signed copy"; fields "Signed PDF" (hint "The PDF your eSign provider gave you, up to 10 MB."), "eSign date", "eSign time (IST)" (hint "24-hour, as the provider shows it, for example 14:05."), "Transaction ID" (hint "As the provider shows it."); button "Upload signed deed"; errors "Choose the signed PDF.", "Enter the eSign date.", "Enter the time as HH:MM, for example 14:05.", "Enter the transaction ID."; done: "Signed deed uploaded. The client's portal contacts are being emailed."
 25. The signed copy: heading "Signed copy"; "Download signed PDF"; "Signed with Aadhaar eSign on {date and time IST}" (as line 5); "Transaction ID {id}"; "Uploaded by {name} on {date}"; "Finalised by {name} on {date}".
-26. Cancel: button "Cancel draft"; dialog title "Cancel the draft deed"; body "The draft stays in this project's history with your reason. Check again can prepare a new one."; field "Reason"; confirm "Cancel draft"; done "Draft deed cancelled."
+26. Cancel: button "Cancel draft"; dialog title "Cancel the draft deed"; body "The draft stays in this project's history with your reason. Check again can prepare a new one."; field "Reason" (empty: "Enter a reason for cancelling."); confirm "Cancel draft"; done "Draft deed cancelled."
 27. Check again: button "Check again"; a draft made: "Draft deed prepared."; none made: "The project doesn't qualify for a deed yet." (the blockers then show why).
 28. A final or signed deed whose project is no longer paid in full: "This project is no longer paid in full. The deed hasn't changed; check the project's payments."
 29. History: heading "Cancelled drafts"; each row "Cancelled on {date} by {name}" and the reason below it.

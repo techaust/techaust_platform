@@ -1,0 +1,746 @@
+/* The project's Deed tab (T11; routes/projects/deed.tsx). Flat surfaces and hairlines as the other project panels (leads.css, clients.css); every class here
+   starts with "deed-" and has this one owner file (scripts/css-collisions.mjs). The one bold element is the head's three-step rail: square nodes cut at 45° on
+   their top right, the mark's own cut (docs/06 §1.2), ink once a step is done, verdigris at the step the deed is on, an outline for what is still to come;
+   every state is also said in words (the step's label and aria-current), never by colour alone. Tokens only. */
+
+.deed-tab {
+  display: grid;
+  gap: var(--space-4);
+}
+
+/* ---- the head ---- */
+.deed-head {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.deed-head__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.deed-head__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-stretch: var(--font-display--stretch);
+  font-size: var(--text-h4);
+  line-height: var(--text-h4--line-height);
+  font-weight: 560;
+}
+
+.deed-head__number {
+  margin-inline-start: auto;
+  font-size: var(--text-body);
+}
+
+.deed-head__lede {
+  margin: 0;
+  max-width: 65ch;
+}
+
+.deed-head .notice {
+  margin: 0;
+}
+
+.deed-warn {
+  color: var(--color-warning);
+}
+
+.deed-rail {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  max-width: 36rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deed-rail__step {
+  position: relative;
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* the line from one node to the next: drawn by each step but the last, from its node's right edge */
+.deed-rail__step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: calc(0.4375rem - 1px);
+  left: 1.25rem;
+  right: var(--space-2);
+  height: 2px;
+  background: var(--color-border-control);
+}
+
+.deed-rail__step--done:not(:last-child)::after {
+  background: var(--color-text);
+}
+
+.deed-rail__node {
+  position: relative;
+  width: 0.875rem;
+  height: 0.875rem;
+  background: var(--color-border-control);
+  clip-path: polygon(0 0, 62% 0, 100% 38%, 100% 100%, 0 100%);
+}
+
+/* an outline node: the control colour shows as a 2 px frame around the panel's own surface (clip-path cuts a border, so the frame is two layers) */
+.deed-rail__node::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  background: var(--color-surface);
+  clip-path: polygon(0 0, 55% 0, 100% 45%, 100% 100%, 0 100%);
+}
+
+.deed-rail__step--done .deed-rail__node {
+  background: var(--color-text);
+}
+
+.deed-rail__step--here .deed-rail__node {
+  background: var(--color-accent-decor);
+}
+
+.deed-rail__step--done .deed-rail__node::after,
+.deed-rail__step--here .deed-rail__node::after {
+  content: none;
+}
+
+.deed-rail__step--stopped .deed-rail__node {
+  background: var(--color-text-muted);
+}
+
+.deed-rail__step--stopped .deed-rail__node::after {
+  content: none;
+}
+
+.deed-rail__label {
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  color: var(--color-text-muted);
+}
+
+.deed-rail__step--here .deed-rail__label,
+.deed-rail__step--done .deed-rail__label {
+  color: var(--color-text);
+}
+
+.deed-rail__step--here .deed-rail__label {
+  font-weight: 600;
+}
+
+.deed-rail__step--stopped .deed-rail__label {
+  text-decoration: line-through;
+}
+
+/* ---- lists of reasons (why not yet, what stops a finalise) ---- */
+.deed-reasons {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  list-style: none;
+}
+
+.deed-reasons li {
+  position: relative;
+  padding-inline-start: var(--space-5);
+}
+
+.deed-reasons li::before {
+  content: "";
+  position: absolute;
+  top: 0.55em;
+  left: 0.25rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  background: var(--color-warning);
+  clip-path: polygon(0 0, 62% 0, 100% 38%, 100% 100%, 0 100%);
+}
+
+.deed-reasons--tight {
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+/* ---- paid in full ---- */
+.deed-paid__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.deed-paid__top .lead-panel__title {
+  margin: 0;
+}
+
+.deed-figures {
+  display: grid;
+  max-width: 30rem;
+  margin: 0 0 var(--space-6);
+}
+
+.deed-figures__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.deed-figures dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.deed-figures dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-align: end;
+  white-space: nowrap;
+}
+
+.deed-figures__row--sum {
+  border-bottom-color: var(--color-text);
+}
+
+.deed-figures__row--sum dt,
+.deed-figures__row--total dt {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+.deed-figures__row--total {
+  border-bottom: 3px double var(--color-text);
+}
+
+.deed-figures__row--total dd {
+  font-family: var(--font-display);
+  font-stretch: var(--font-display--stretch);
+  font-size: var(--text-h4);
+  line-height: var(--text-h4--line-height);
+  font-weight: 560;
+}
+
+/* a read-only Schedule: the label above its text */
+.deed-figures__row--text {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.deed-figures__row--text dd {
+  text-align: start;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.deed-sub {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  font-weight: 600;
+}
+
+.deed-docs {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.deed-docs th,
+.deed-docs td {
+  padding: var(--space-2) var(--space-2);
+  text-align: start;
+  vertical-align: top;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.deed-docs th:first-child,
+.deed-docs td:first-child {
+  padding-inline-start: 0;
+}
+
+.deed-docs th:last-child,
+.deed-docs td:last-child {
+  padding-inline-end: 0;
+}
+
+.deed-docs thead th {
+  color: var(--color-text-muted);
+  font-weight: 600;
+  border-bottom-color: var(--color-text);
+  vertical-align: bottom;
+}
+
+.deed-docs .num {
+  text-align: end;
+  white-space: nowrap;
+}
+
+.deed-docs tbody th {
+  font-weight: 400;
+}
+
+.deed-docs__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  font-weight: 560;
+}
+
+.deed-docs__type {
+  display: block;
+  color: var(--color-text-muted);
+}
+
+.deed-docs__other td {
+  color: var(--color-text-muted);
+}
+
+.deed-paid__note {
+  margin: var(--space-3) 0 0;
+}
+
+/* below 40rem the table reads as one card per invoice: the number, then each figure with its label */
+@media (max-width: 39.99rem) {
+  .deed-docs thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .deed-docs,
+  .deed-docs tbody,
+  .deed-docs tr,
+  .deed-docs th,
+  .deed-docs td {
+    display: block;
+  }
+
+  .deed-docs tr {
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .deed-docs th,
+  .deed-docs td {
+    padding: 0;
+    border: 0;
+  }
+
+  .deed-docs td {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-1) 0;
+  }
+
+  .deed-docs td::before {
+    content: attr(data-label);
+    color: var(--color-text-muted);
+  }
+}
+
+/* ---- the Schedules ---- */
+.deed-sched__all {
+  margin: 0 0 var(--space-5);
+}
+
+.deed-sched__set {
+  min-width: 0;
+  margin: 0 0 var(--space-6);
+  padding: 0;
+  border: 0;
+}
+
+.deed-sched__legend {
+  display: block;
+  width: 100%;
+  margin: 0 0 var(--space-4);
+  padding: 0 0 var(--space-2);
+  border-bottom: 1px solid var(--color-text);
+  font-family: var(--font-display);
+  font-stretch: var(--font-display--stretch);
+  font-size: var(--text-h4);
+  line-height: var(--text-h4--line-height);
+  font-weight: 560;
+}
+
+.deed-sched__none-hint {
+  margin: calc(-1 * var(--space-2)) 0 var(--space-4);
+}
+
+.deed-sched__second {
+  margin-top: var(--space-6);
+}
+
+.deed-with-none {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-2);
+}
+
+@media (max-width: 29.99rem) {
+  .deed-with-none {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+  }
+}
+
+.deed-none[aria-pressed="true"] {
+  border-color: var(--color-text);
+  background: var(--color-fill-subtle);
+}
+
+.deed-dates__label {
+  font-weight: 560;
+}
+
+.deed-dates__kept {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-alt);
+  border-radius: var(--radius-sm);
+}
+
+.deed-dates__list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deed-dates__row {
+  display: grid;
+  grid-template-columns: minmax(0, 18rem) auto;
+  align-items: start;
+  gap: var(--space-2);
+}
+
+.deed-dates__add {
+  justify-self: start;
+  min-height: var(--target-min);
+}
+
+.deed-sched__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ---- read the deed: 07-ZE's text set like the PDF, on a sheet ---- */
+.deed-read__summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--target-min);
+  cursor: pointer;
+  list-style: none;
+}
+
+.deed-read__summary::-webkit-details-marker {
+  display: none;
+}
+
+.deed-read__summary::after {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-inline-start: auto;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.deed-read__details[open] > .deed-read__summary::after {
+  transform: rotate(225deg);
+}
+
+.deed-read__summary:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.deed-read__title {
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  font-weight: 600;
+}
+
+.deed-read__note {
+  margin: var(--space-2) 0 var(--space-4);
+}
+
+.deed-read__cannot {
+  margin: var(--space-4) 0 var(--space-2);
+}
+
+.deed-sheet {
+  max-width: 46rem;
+  margin-top: var(--space-4);
+  padding: var(--space-8) var(--space-8) var(--space-6);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-top: 3px solid var(--color-accent-decor);
+  border-radius: var(--radius-sm);
+}
+
+@media (max-width: 39.99rem) {
+  .deed-sheet {
+    padding: var(--space-5) var(--space-4);
+  }
+}
+
+:where(.deed-sheet) p {
+  margin: 0;
+}
+
+.deed-sheet__title {
+  font-family: var(--font-display);
+  font-stretch: var(--font-display--stretch);
+  font-size: var(--text-h3);
+  line-height: var(--text-h3--line-height);
+  font-weight: 560;
+  text-wrap: balance;
+}
+
+.deed-sheet__number {
+  margin-top: var(--space-1);
+}
+
+.deed-sheet__parties {
+  margin: var(--space-5) 0 0;
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--color-border);
+  overflow-wrap: anywhere;
+}
+
+.deed-sheet__parties strong,
+.deed-sheet__clause strong {
+  font-weight: 600;
+}
+
+.deed-sheet__clauses {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-5) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deed-sheet__clause {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+}
+
+.deed-sheet__n {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.deed-sheet__sign {
+  margin: var(--space-6) 0 0;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+  font-weight: 560;
+}
+
+.deed-sheet__sched {
+  margin-top: var(--space-6);
+}
+
+.deed-sheet__sched-title {
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-text);
+  font-family: var(--font-display);
+  font-stretch: var(--font-display--stretch);
+  font-weight: 560;
+}
+
+.deed-sheet__value {
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.deed-sheet__footer {
+  margin-top: var(--space-6);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+/* ---- the actions, the record, the history ---- */
+.deed-actions {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.deed-actions .lead-panel__title {
+  margin: 0;
+}
+
+.deed-actions form {
+  display: grid;
+}
+
+.deed-actions .field {
+  margin-bottom: var(--space-4);
+}
+
+.deed-actions .deed-reasons {
+  margin: 0;
+}
+
+.deed-actions__said {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.deed-actions__said:empty {
+  display: none;
+}
+
+.deed-actions__cancel {
+  justify-self: start;
+  min-height: var(--target-min);
+  color: var(--color-danger);
+}
+
+.deed-actions__second {
+  justify-self: start;
+  min-height: var(--target-min);
+}
+
+.deed-time {
+  max-width: 9rem;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+.deed-file__input {
+  padding: var(--space-2);
+}
+
+.deed-file__chosen {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  min-width: 0;
+}
+
+.deed-file__name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.deed-esign {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.deed-esign dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.deed-esign dd {
+  margin: 0;
+}
+
+.deed-esign__on {
+  font-weight: 560;
+}
+
+.deed-esign__txn {
+  overflow-wrap: anywhere;
+}
+
+.deed-esign__line {
+  margin: 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.deed-record__lines {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.deed-record__sha {
+  margin: var(--space-3) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.deed-history__list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deed-history__row {
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.deed-history__row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.deed-history__when {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  color: var(--color-text-muted);
+}
+
+.deed-history__why {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.deed-dates {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+}
+
+.deed-dates__label {
+  padding: 0;
+}
+
+.deed-dates__hint {
+  margin: 0 0 var(--space-1);
+}

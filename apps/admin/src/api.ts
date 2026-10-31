@@ -15,6 +15,7 @@ import type { Role } from "@techaust/core/permissions";
 import type { Settings, SignatureRef } from "@techaust/core/settings";
 import type { TermsBlockId } from "@techaust/core/terms";
 import type { HashRequest, HashResponse } from "./hash.worker.ts";
+import type { DeedPage } from "./lib/deeds.ts";
 import type { CarePlanBilling } from "./lib/invoice-send.ts";
 
 export type User = { name: string; email: string; role: Role };
@@ -2127,6 +2128,77 @@ export function uploadPaymentDoc(
       }
       signal.addEventListener("abort", () => xhr.abort(), { once: true });
     }
+    xhr.send(file);
+  });
+}
+
+/**
+ * T11, the deed of assignment (apps/admin/worker/deeds.ts; ADM-PRJ-04). Writes carry the `updatedAt` the screen loaded (`stale_version` otherwise); finalise and
+ * the signed upload need a fresh step-up (the screen asks for the code first). Downloads are plain same-origin links (an attachment).
+ */
+export const deedsApi = {
+  get: (projectId: string) => request<DeedPage>(`/projects/${pid(projectId)}/deed`),
+  /** "Check again" (Owner): `created` says whether a draft was made; the page as it is now comes with it. */
+  recheck: (projectId: string) =>
+    request<DeedPage & { created: boolean }>(`/projects/${pid(projectId)}/deed/recheck`, { body: {} }),
+  saveSchedules: (
+    deedId: string,
+    body: { expectedUpdatedAt: number } & Partial<Record<"deliverables" | "location" | "deliveredDates" | "tools" | "thirdParty", string | null>>,
+  ) =>
+    request<{ ok: true; updatedAt: number; blankSchedules: string[] }>(`/deeds/${pid(deedId)}/schedules`, {
+      method: "PUT",
+      body,
+    }),
+  finalise: (deedId: string, expectedUpdatedAt: number) =>
+    request<{ ok: true; status: "final"; number: string | null; updatedAt: number }>(
+      `/deeds/${pid(deedId)}/finalise`,
+      { body: { expectedUpdatedAt } },
+    ),
+  cancel: (deedId: string, expectedUpdatedAt: number, reason: string) =>
+    request<{ ok: true; status: "cancelled"; updatedAt: number }>(`/deeds/${pid(deedId)}/cancel`, {
+      body: { expectedUpdatedAt, reason },
+    }),
+  renderPdf: (deedId: string) =>
+    request<{ ok: true; pdf: { state: "pending" } }>(`/deeds/${pid(deedId)}/pdf/render`, { body: {} }),
+  unsignedHref: (deedId: string) => `/api/v1/deeds/${pid(deedId)}/pdf/unsigned`,
+  signedHref: (deedId: string) => `/api/v1/deeds/${pid(deedId)}/pdf/signed`,
+};
+
+/**
+ * Upload the signed deed (Owner, fresh step-up; L4): the raw PDF with the file vault's headers, the `updatedAt` the screen loaded, and the eSign moment
+ * ("YYYY-MM-DDTHH:mm[:ss]", IST) and transaction ID as the provider shows them, URI-encoded. Codes: `file_too_large`, `file_type_not_allowed`, `esign_invalid`,
+ * `deed_not_final`, `stale_version`, `checksum_mismatch`, `step_up_required`.
+ */
+export function uploadSignedDeed(
+  deedId: string,
+  file: File,
+  sha256: string,
+  meta: { expectedUpdatedAt: number; esignAt: string; esignTxn: string },
+  onProgress: (sent: number, total: number) => void,
+): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", `/api/v1/deeds/${pid(deedId)}/signed`);
+    xhr.withCredentials = true;
+    for (const [k, v] of Object.entries(uploadHeaders(file.name, sha256))) xhr.setRequestHeader(k, v);
+    xhr.setRequestHeader("X-Expected-Updated-At", String(meta.expectedUpdatedAt));
+    xhr.setRequestHeader("X-Esign-At", encodeURIComponent(meta.esignAt));
+    xhr.setRequestHeader("X-Esign-Txn", encodeURIComponent(meta.esignTxn));
+    xhr.upload.onprogress = (e) => onProgress(e.loaded, e.lengthComputable ? e.total : file.size);
+    xhr.onload = () => {
+      let data: (Record<string, unknown> & ApiErrorBody) | null = null;
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {
+        data = null;
+      }
+      if (xhr.status >= 200 && xhr.status < 300 && data) return resolve(data);
+      const e = answerError(data);
+      if (xhr.status === 401 && e.code === "unauthenticated") unauthenticatedHandler?.();
+      reject(new RequestError(xhr.status, e.code, e.message, data?.request_id ?? null));
+    };
+    xhr.onerror = () => reject(new RequestError(0, "network", NETWORK));
+    xhr.onabort = () => reject(new RequestError(0, "aborted", "Cancelled"));
     xhr.send(file);
   });
 }
