@@ -127,6 +127,8 @@ describe("a valid link opens exactly one document [POR-06]", () => {
         "total",
         "totals",
         "type",
+        // ADM-INV-10: the day a proforma was withdrawn (null here)
+        "withdrawnOn",
       ].sort(),
     );
     expect(body.document).toMatchObject({
