@@ -1956,6 +1956,13 @@ a.pdf-panel__action:hover {
   border-top: 1px solid var(--color-border);
 }
 
+/* T6: on a phone the label column narrows so "15 Nov 2026 (IST)" (07-ZE line 1) stays on one line. */
+@media (max-width: 29.99rem) {
+  .sendd__facts > div {
+    grid-template-columns: 5rem minmax(0, 1fr);
+  }
+}
+
 .sendd__facts dt {
   color: var(--color-text-muted);
 }
