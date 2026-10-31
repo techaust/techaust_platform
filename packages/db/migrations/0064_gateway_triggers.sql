@@ -48,6 +48,12 @@ CREATE TRIGGER `checkout_sessions_fixed` BEFORE UPDATE ON `checkout_sessions` WH
 --> statement-breakpoint
 CREATE TRIGGER `checkout_sessions_no_delete` BEFORE DELETE ON `checkout_sessions` BEGIN SELECT RAISE(ABORT, 'checkout_sessions_no_delete: a checkout is never deleted'); END;
 --> statement-breakpoint
+CREATE TRIGGER `checkout_sessions_unlink_token` BEFORE DELETE ON `doc_access_tokens` BEGIN UPDATE checkout_sessions SET contact_id = NULL, doc_token_id = NULL WHERE doc_token_id = OLD.token_hash; END;
+--> statement-breakpoint
+CREATE TRIGGER `checkout_sessions_unlink_contact` BEFORE DELETE ON `contacts` BEGIN UPDATE checkout_sessions SET contact_id = NULL, doc_token_id = NULL WHERE contact_id = OLD.id; END;
+--> statement-breakpoint
+CREATE TRIGGER `review_items_erase_notes` AFTER UPDATE OF anonymised_at ON `clients` WHEN NEW.anonymised_at IS NOT NULL AND OLD.anonymised_at IS NULL BEGIN UPDATE review_items SET note = NULL WHERE client_id = NEW.id AND note IS NOT NULL; END;
+--> statement-breakpoint
 CREATE TRIGGER `webhook_events_values_insert` BEFORE INSERT ON `webhook_events` WHEN NEW.provider NOT IN ('razorpay') OR NEW.status NOT IN ('received', 'processed', 'ignored', 'needs_review', 'failed') OR NEW.status NOT IN ('received', 'ignored') OR NEW.attempts IS NOT 0 BEGIN SELECT RAISE(ABORT, 'webhook_events_values_insert: an event arrives received or ignored, from a known provider, with no attempts yet'); END;
 --> statement-breakpoint
 CREATE TRIGGER `webhook_events_values_update` BEFORE UPDATE OF provider, status ON `webhook_events` WHEN NEW.provider NOT IN ('razorpay') OR NEW.status NOT IN ('received', 'processed', 'ignored', 'needs_review', 'failed') BEGIN SELECT RAISE(ABORT, 'webhook_events_values_update: an event has a known provider and status'); END;

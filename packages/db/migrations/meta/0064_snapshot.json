@@ -1,6 +1,6 @@
 {
-  "id": "deb63590-5312-4796-bc45-3ef18d71cb11",
-  "prevId": "85708d7c-320a-4ae2-a1b3-c3e894951de1",
+  "id": "908f2df4-b757-4a9b-b12c-8b134e567f4a",
+  "prevId": "2c609e9a-3cb5-4a4b-9f36-fef24a0e2d1a",
   "version": "6",
   "dialect": "sqlite",
   "tables": {
@@ -6338,6 +6338,12 @@
         "checkout_sessions_contact": {
           "name": "checkout_sessions_contact",
           "columns": ["contact_id"],
+          "isUnique": false
+        },
+        "checkout_sessions_token": {
+          "name": "checkout_sessions_token",
+          "columns": ["doc_token_id"],
+          "where": "\"checkout_sessions\".\"doc_token_id\" is not null",
           "isUnique": false
         }
       },

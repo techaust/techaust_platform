@@ -31,10 +31,14 @@ export const ROUTES: readonly RouteDef[] = [
   // A document link (POR-06): the token is in the body, never in the path or query.
   R("POST", "/t/document", "public", { audit: "doc_token.use" }),
   R("POST", "/t/document/pdf", "public"),
+  // M6.2 (POR-06): Pay now from an emailed link; the token is in the body, a failed one counts like any other.
+  R("POST", "/t/document/pay", "public", { audit: "payment.link_create" }),
   // Invoices, proformas, credit and debit notes (M5.4, POR-06, Q49): the signed-in contact's, finance-only (anyone else gets the plain 404). Each query is scoped to the session's organisation.
   R("GET", "/invoices", "finance"),
   R("GET", "/invoices/:id", "finance"),
   R("GET", "/invoices/:id/pdf", "finance"),
+  // M6.2 (POR-06): Pay now (the finance Worker makes the link over RPC and writes the audit row, actor the contact).
+  R("POST", "/invoices/:id/pay", "finance", { audit: "payment.link_create" }),
   // Proposals and estimates (M4.5, POR-04, POR-05): the signed-in contact's offers. Each query is scoped to the session's organisation.
   R("GET", "/offers", "session"),
   R("GET", "/offers/:id", "session"),

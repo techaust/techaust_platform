@@ -1460,12 +1460,13 @@ const MANUAL_ONLY_0064 = ["neft", "rtgs", "imps", "swift"] as const;
  *   6. `checkout_sessions_*`: the enumerations; a checkout starts `creating` with the actor of its source (a portal contact, a document link's token, or a member);
  *      creating → live (with its link id and short URL) | failed, live → paid | expired | cancelled | stale, stale → paid | expired | cancelled; paid only with its payment;
  *      the money and the document never change, the contact and its token are only cleared together (an erased contact, `deleteContactAccess`), the link id and
- *      URL are set once, the expiry only with the move to live; never deleted;
+ *      URL are set once, the expiry only with the move to live; never deleted; `checkout_sessions_unlink_token` / `_unlink_contact` do that clearing when a
+ *      document link's token row or the contact row is deleted (early check 1, finding 1; no extra statement in the erase batch);
  *   7. `webhook_events_*`: the enumerations; an event arrives `received` (or `ignored`: a type we do not handle); received → processed | ignored | needs_review | failed,
  *      failed → received (a retry by the Owner); its identity and facts never change and its attempts never go down; never deleted;
  *   8. `review_items_*`: the enumerations; an item starts open with no decision; open → resolved once, by an active Owner, with the time and a resolution; its facts never
  *      change; its note is written with the resolve and may later become NULL only once the client is anonymised (as 0060 for payment notes, L31; Researched 2026-10-28,
- *      DPDP Act s.8(7) and s.12(3) (08-C RB-11)); never deleted.
+ *      DPDP Act s.8(7) and s.12(3) (08-C RB-11)), which `review_items_erase_notes` does in the statement that anonymises the client; never deleted.
  */
 export function gatewayTriggerStatements(): string[] {
   const named = (name: string, message: string) => abort(`${name}: ${message}`);
@@ -1586,6 +1587,14 @@ export function gatewayTriggerStatements(): string[] {
     `CREATE TRIGGER \`checkout_sessions_status_flow\` BEFORE UPDATE ON \`checkout_sessions\` WHEN ${checkoutFlowBad} BEGIN ${named("checkout_sessions_status_flow", "a checkout goes creating to live or failed, live to paid, expired, cancelled or stale, stale to paid, expired or cancelled; live has its link, paid has its payment, set once")} END;`,
     `CREATE TRIGGER \`checkout_sessions_fixed\` BEFORE UPDATE ON \`checkout_sessions\` WHEN ${checkoutFixedBad} BEGIN ${named("checkout_sessions_fixed", "a checkout keeps its document, client, amount and source; its contact and token are only cleared together, when the contact is erased; its link and payment are set once and its expiry only when it goes live")} END;`,
     `CREATE TRIGGER \`checkout_sessions_no_delete\` BEFORE DELETE ON \`checkout_sessions\` BEGIN ${named("checkout_sessions_no_delete", "a checkout is never deleted")} END;`,
+    // Early check 1, finding 1: the erase and anonymise of a contact unlink its checkouts in the statements that delete its rows (no extra statement in the
+    // anonymise batch, which is at T7's cap of 45): a document link's token row going clears the checkouts made through it, the contact row going (the erase)
+    // clears every checkout naming the contact. The checkout keeps its document, amount, status and payment (`checkout_sessions_fixed` allows exactly this move).
+    "CREATE TRIGGER `checkout_sessions_unlink_token` BEFORE DELETE ON `doc_access_tokens` BEGIN UPDATE checkout_sessions SET contact_id = NULL, doc_token_id = NULL WHERE doc_token_id = OLD.token_hash; END;",
+    "CREATE TRIGGER `checkout_sessions_unlink_contact` BEFORE DELETE ON `contacts` BEGIN UPDATE checkout_sessions SET contact_id = NULL, doc_token_id = NULL WHERE contact_id = OLD.id; END;",
+    // Early check 1, "For B2" 9: once a client is anonymised its review items' notes are cleared, in the statement that anonymises it (the erase batch is at T7's
+    // cap of 45; `review_items_status_flow` allows exactly this move; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)).
+    "CREATE TRIGGER `review_items_erase_notes` AFTER UPDATE OF anonymised_at ON `clients` WHEN NEW.anonymised_at IS NOT NULL AND OLD.anonymised_at IS NULL BEGIN UPDATE review_items SET note = NULL WHERE client_id = NEW.id AND note IS NOT NULL; END;",
     // 7. webhook_events
     `CREATE TRIGGER \`webhook_events_values_insert\` BEFORE INSERT ON \`webhook_events\` WHEN ${eventValuesBad} OR NEW.status NOT IN ('received', 'ignored') OR NEW.attempts IS NOT 0 BEGIN ${named("webhook_events_values_insert", "an event arrives received or ignored, from a known provider, with no attempts yet")} END;`,
     `CREATE TRIGGER \`webhook_events_values_update\` BEFORE UPDATE OF provider, status ON \`webhook_events\` WHEN ${eventValuesBad} BEGIN ${named("webhook_events_values_update", "an event has a known provider and status")} END;`,

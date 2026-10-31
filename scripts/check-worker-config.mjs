@@ -62,8 +62,9 @@ const queueKeys = (c) => (c?.queues?.producers ?? []).map((b) => `${b.binding}:$
  * level (no workers.dev, no routes, no preview URLs), no assets, no previews block, no secrets, and the same D1, R2 and queue
  * resources as the front in each scope. Empty = passes.
  */
-export function apiConfigProblems(api, front) {
+export function apiConfigProblems(api, front, opts = {}) {
   const problems = [];
+  const ownVars = new Set(opts.ownVars ?? []);
   if (api.compatibility_date !== front.compatibility_date)
     problems.push("(top level): compatibility_date differs from the front's");
   if (JSON.stringify(api.compatibility_flags ?? []) !== JSON.stringify(front.compatibility_flags ?? []))
@@ -75,13 +76,21 @@ export function apiConfigProblems(api, front) {
     }
     if (c.workers_dev !== false) problems.push(`${scope}: workers_dev must be false`);
     if (c.preview_urls !== false) problems.push(`${scope}: preview_urls must be false`);
-    for (const key of ["routes", "route", "assets", "previews", "secrets"]) {
+    for (const key of ["routes", "route", "assets", "previews", ...(opts.secrets ? [] : ["secrets"])]) {
       if (c[key] !== undefined) problems.push(`${scope}: ${key} is not allowed on the API Worker`);
+    }
+    // M6.2 (L1): the finance Worker holds the Razorpay key pair (no public URL: the safest home). Exactly these names, and none in production until Phase 7.
+    if (opts.secrets) {
+      const want = scope === "env.production" ? [] : [...opts.secrets].sort();
+      const got = [...(c.secrets?.required ?? [])].sort();
+      if (JSON.stringify(got) !== JSON.stringify(want))
+        problems.push(`${scope}: secrets.required must be exactly ${JSON.stringify(want)}`);
     }
     const f = SCOPES(front).find(([n]) => n === scope)?.[1];
     // A name equal to the front's would deploy the API bundle over the front and point the binding at itself.
     if (!c.name || c.name === f?.name) problems.push(`${scope}: name must differ from the front's`);
     for (const [k, v] of Object.entries(c.vars ?? {})) {
+      if (ownVars.has(k)) continue;
       if (f?.vars?.[k] !== v) problems.push(`${scope}: var ${k} differs from the front's`);
     }
     for (const [key, fn] of Object.entries(bindingKey)) {
@@ -121,6 +130,66 @@ export function frontServiceProblems(front, api, finance) {
       const a = SCOPES(api).find(([n]) => n === scope)?.[1]?.name;
       const f = SCOPES(finance).find(([n]) => n === scope)?.[1]?.name;
       if (a && a === f) problems.push(`${scope}: the API and finance Workers must have different names`);
+    }
+  }
+  return problems;
+}
+
+/** M6.2: the finance Worker's own vars and secrets (L1, L16; apiConfigProblems' options for wrangler.finance.jsonc). */
+export const FINANCE_OPTS = {
+  ownVars: ["PORTAL_URL", "GATEWAY_TRANSPORT"],
+  secrets: ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"],
+};
+
+/**
+ * M6.2 (run file F): the gateway wiring in every scope. The top level and `env.staging`: jobs binds `ADMIN_GATEWAY` to the finance Worker's `GatewayEvents` and
+ * requires `RAZORPAY_WEBHOOK_SECRET`; the portal binds `ADMIN_PAY` to its `PortalPayments` and holds no Razorpay secret; the finance Worker's
+ * `GATEWAY_TRANSPORT` is "stub" at the top level (local) and "razorpay" on staging, with its `PORTAL_URL`. `env.production`: none of it until Phase 7.
+ * `PAYMENTS_LIVE_ALLOWED`, wherever a config sets it, is exactly "false" (CLAUDE.md rule 7). Empty = passes.
+ */
+export function gatewayConfigProblems(jobs, portal, finance, others = []) {
+  const problems = [];
+  const bindingOf = (c, b) => (c?.services ?? []).find((x) => x.binding === b);
+  for (const [scope, j] of SCOPES(jobs)) {
+    const p = SCOPES(portal).find(([n]) => n === scope)?.[1];
+    const f = SCOPES(finance).find(([n]) => n === scope)?.[1];
+    const prod = scope === "env.production";
+    for (const [who, c, binding, entrypoint] of [
+      ["jobs", j, "ADMIN_GATEWAY", "GatewayEvents"],
+      ["portal", p, "ADMIN_PAY", "PortalPayments"],
+    ]) {
+      const got = bindingOf(c, binding);
+      if (prod) {
+        if (got) problems.push(`${scope}: ${who} has no ${binding} until Phase 7`);
+        continue;
+      }
+      if (!got) problems.push(`${scope}: ${who}'s ${binding} service binding is missing`);
+      else {
+        if (got.service !== f?.name)
+          problems.push(`${scope}: ${who}'s ${binding} points at ${got.service}, expected ${f?.name}`);
+        if (got.entrypoint !== entrypoint)
+          problems.push(`${scope}: ${who}'s ${binding} must name the entrypoint ${entrypoint}`);
+      }
+    }
+    const jobsSecrets = j?.secrets?.required ?? [];
+    if (!prod && !jobsSecrets.includes("RAZORPAY_WEBHOOK_SECRET"))
+      problems.push(`${scope}: jobs must require the secret RAZORPAY_WEBHOOK_SECRET`);
+    if (jobsSecrets.some((n) => n.startsWith("RAZORPAY_KEY")))
+      problems.push(`${scope}: jobs must not hold the Razorpay key pair (finance only, L1)`);
+    if ((p?.secrets?.required ?? []).some((n) => n.startsWith("RAZORPAY")))
+      problems.push(`${scope}: the portal holds no Razorpay secret`);
+    const transport = f?.vars?.GATEWAY_TRANSPORT;
+    const wantTransport = scope === "(top level)" ? "stub" : scope === "env.staging" ? "razorpay" : undefined;
+    if (transport !== wantTransport)
+      problems.push(`${scope}: finance GATEWAY_TRANSPORT must be ${wantTransport ?? "unset"}`);
+    if (!prod && !f?.vars?.PORTAL_URL)
+      problems.push(`${scope}: finance needs PORTAL_URL (Razorpay's return page)`);
+  }
+  for (const [file, c] of [["jobs", jobs], ["portal", portal], ["finance", finance], ...others]) {
+    for (const [scope, x] of SCOPES(c)) {
+      const v = x?.vars?.PAYMENTS_LIVE_ALLOWED;
+      if (v !== undefined && v !== "false")
+        problems.push(`${file} ${scope}: PAYMENTS_LIVE_ALLOWED must be "false"`);
     }
   }
   return problems;
@@ -250,7 +319,7 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
       console.error(`apps/admin/${file}: "preview_urls": false is missing at ${missing.join(", ")}`);
       failed = true;
     }
-    for (const p of apiConfigProblems(config, front)) {
+    for (const p of apiConfigProblems(config, front, file === "wrangler.finance.jsonc" ? FINANCE_OPTS : {})) {
       console.error(`apps/admin/${file}: ${p}`);
       failed = true;
     }
@@ -264,6 +333,13 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
   // M6.1 stage A: `BillingJobs` is exported by the finance Worker.
   for (const p of jobsConfigProblems(read("jobs/wrangler.jsonc"), finance)) {
     console.error(`apps/jobs: ${p}`);
+    failed = true;
+  }
+  for (const p of gatewayConfigProblems(read("jobs/wrangler.jsonc"), read("portal/wrangler.jsonc"), finance, [
+    ["admin", front],
+    ["admin api", api],
+  ])) {
+    console.error(`apps: ${p}`);
     failed = true;
   }
   for (const p of jobsBuildProblems(read("jobs/wrangler.jsonc"))) {

@@ -10,7 +10,7 @@
 // Annex 1 2.1 (08-C RB-07)): `facts` are whitelists the caller builds (core `eventFacts`).
 import { ledgerResultStatement, recomputeStatement } from "./ledger.ts";
 import type { GuardSql } from "./log.ts";
-import { livePaidSql, liveTdsSql, paymentNetSql } from "./sql-rules.ts";
+import { livePaidSql, liveTdsSql, onlinePayableSql, paymentNetSql } from "./sql-rules.ts";
 
 export type { GuardSql };
 
@@ -41,16 +41,8 @@ function ownerBells(
 
 // ---- what may be paid online, in SQL (the twin of core `payableOnline`) -------------------------------------------------------------------------------
 
-/**
- * Document `d` of client `k` (aliases) can be paid online now: a tax invoice, debit note or proforma; in INR; issued and not void (a withdrawn proforma is a void
- * one); of a live client in India that is not overseas (owner, 2026-11-01, Q3 A; OPEN (08-C RB-01): does a USD invoice paid through a PA-CB that credits us in INR
- * count as "settled in INR"?); with at least ₹1 due (Razorpay's minimum); a proforma issued or converted (early check 1, finding 5) with its balance in whole rupees
- * (LD28). A db test holds it to core `payableOnline`.
- */
-export const onlinePayableSql = (d: string, k: string): string =>
-  `(${d}.type IN ('tax_invoice', 'debit_note', 'proforma') AND ${d}.currency = 'INR' AND ${d}.frozen_at IS NOT NULL AND ${d}.status <> 'void'
-    AND ${k}.anonymised_at IS NULL AND ${k}.country = 'IN' AND ${k}.gst_status <> 'overseas'
-    AND ${d}.balance_minor >= 100 AND (${d}.type <> 'proforma' OR (${d}.status IN ('issued', 'converted') AND ${d}.balance_minor % 100 = 0)))`;
+// `onlinePayableSql` lives in `sql-rules.ts` (the portal's summary reads it without this module) and is re-exported here.
+export { onlinePayableSql };
 
 /** What document `d` still owes from the allocation rows themselves (the trigger `payment_allocations_bounds`' own figure, so the two can never disagree). */
 const liveBalanceSql = (d: string) =>
@@ -487,12 +479,15 @@ export function reviewBellStatement(
 
 /**
  * The "Needs review" list: the items of status `?3` (`open` or `resolved`) oldest first, keyset `(created_at, id)` with `?1`/`?2` (the first page binds -1 and ''),
- * at most 51 (one more than a page). One seek of `review_items_status`.
+ * at most 51 (one more than a page), optionally of one kind (`?4`, null: every kind). One seek of `review_items_status`; the client's name (or null once
+ * anonymised: the screen shows "Anonymised client") and the document's number and type by primary key, for the list's columns.
  */
 export const REVIEW_ITEMS_SQL = `SELECT r.id, r.source, r.provider, r.kind, r.status, r.webhook_event_id, r.payment_id, r.document_id, r.client_id, r.amount_minor, r.currency, r.facts,
-     r.created_at, r.resolved_by, r.resolved_at, r.resolution, r.note
+     r.created_at, r.resolved_by, r.resolved_at, r.resolution, r.note,
+     CASE WHEN k.anonymised_at IS NULL THEN k.display_name END AS client_name, d.number_display AS document_number, d.type AS document_type
    FROM review_items r INDEXED BY review_items_status
-   WHERE r.status = ?3 AND (r.created_at > ?1 OR (r.created_at = ?1 AND r.id > ?2))
+   LEFT JOIN clients k ON k.id = r.client_id LEFT JOIN documents d ON d.id = r.document_id
+   WHERE r.status = ?3 AND (r.created_at > ?1 OR (r.created_at = ?1 AND r.id > ?2)) AND (?4 IS NULL OR r.kind = ?4)
    ORDER BY r.created_at, r.id LIMIT 51`;
 
 /** How many items wait (the nav count; one range of `review_items_status`). */
@@ -553,3 +548,117 @@ export function gatewayDeadLetterStatements(db: D1Database, a: DeadLetterArgs): 
   out.push(reviewBellStatement(db, { reviewId: a.reviewId, title: a.bell.title, link: a.bell.link }));
   return out;
 }
+
+// ---- webhook events (stage B2: the jobs hook writes them, the finance Worker processes them) --------------------------------------------------------------
+
+/**
+ * The hook's write (JOB-HOOK-02): one row per provider and event id, `ON CONFLICT DO NOTHING` (a redelivery writes nothing). `?1` row id, `?2` provider, `?3` the
+ * event id, `?4` its type, `?5` now, `?6` `received` or `ignored` (a type we do not handle), `?7` the whitelisted facts (JSON, L8; 08-C RB-40).
+ */
+export const WEBHOOK_EVENT_INSERT_SQL = `INSERT INTO webhook_events (id, provider, event_id, event_type, received_at, status, attempts, facts)
+   VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7) ON CONFLICT (provider, event_id) DO NOTHING`;
+
+/** The row of a provider's event id, after the insert (in the same batch): new, or the earlier one with its status. */
+export const WEBHOOK_EVENT_STATE_SQL =
+  "SELECT id, status FROM webhook_events INDEXED BY webhook_events_provider_event WHERE provider = ?1 AND event_id = ?2";
+
+/** One stored event (`?1` row id), as `processEvent` reads it. */
+export const WEBHOOK_EVENT_READ_SQL =
+  "SELECT id, provider, event_id, event_type, status, attempts, facts, received_at FROM webhook_events WHERE id = ?1";
+
+/** A processing try is counted (`attempts` never goes down; trigger `webhook_events_status_flow`), only while the event still waits. */
+export function webhookEventAttemptStatement(db: D1Database, id: string): D1PreparedStatement {
+  return db
+    .prepare("UPDATE webhook_events SET attempts = attempts + 1 WHERE id = ?1 AND status = 'received'")
+    .bind(id);
+}
+
+/** A waiting event ends: `processed`, `ignored` or `needs_review`, with its outcome code (`?1` id, `?2` status, `?3` now, `?4` outcome), guarded when `g` is given. */
+export function webhookEventMoveStatement(
+  db: D1Database,
+  a: { id: string; status: "processed" | "ignored" | "needs_review"; outcome: string; now: number },
+  g?: GuardSql,
+): D1PreparedStatement {
+  const gs = guarded(g, 4);
+  return db
+    .prepare(
+      `UPDATE webhook_events SET status = ?2, processed_at = ?3, outcome = ?4 WHERE id = ?1 AND status = 'received'${gs.sql}`,
+    )
+    .bind(a.id, a.status, a.now, a.outcome, ...gs.params);
+}
+
+/** At most this many stuck events are queued again by one sweep, each at most this many tries (run file D). */
+export const SWEEP_LIMIT = 20;
+export const SWEEP_MAX_ATTEMPTS = 10;
+export const SWEEP_AFTER_MS = 15 * 60_000;
+
+/** The sweep's read: events still `received` 15 minutes after they arrived (`?1` = now − 15 minutes), fewer than 10 tries, oldest first, at most 20 (the partial index only). */
+export const STUCK_EVENTS_SQL = `SELECT e.id FROM webhook_events e INDEXED BY webhook_events_received
+   WHERE e.status = 'received' AND e.received_at < ?1 AND e.attempts < ${SWEEP_MAX_ATTEMPTS}
+   ORDER BY e.received_at, e.id LIMIT ${SWEEP_LIMIT}`;
+
+/** The newest event a gateway processed (Settings › Gateways, "Last verified webhook"): one seek of the unique index's provider prefix. */
+export const LAST_VERIFIED_EVENT_SQL =
+  "SELECT max(received_at) AS at FROM webhook_events INDEXED BY webhook_events_provider_event WHERE provider = ?1";
+
+// ---- the signature-failure counter (L14) -------------------------------------------------------------------------------------------------------------------
+
+/** One counter row per clock-hour window, never per address (RB-12 OPEN: no address is kept). */
+export const HOOK_FAILURE_WINDOW_MS = 3_600_000;
+/** The owners are told once a window reaches this many failures. */
+export const HOOK_FAILURE_ALERT_AT = 5;
+
+/** The window key of `now` for a provider: `<provider>:sig:<window start>`. */
+export const hookFailureKey = (provider: string, now: number): string =>
+  `${provider}:sig:${now - (now % HOOK_FAILURE_WINDOW_MS)}`;
+
+/**
+ * One failure counted (L14): an upsert that never goes past `HOOK_FAILURES_MAX` (the `WHERE count < 50` of the upsert; at the cap nothing is written), then the
+ * owners' bell once the window reaches 5 (`INSERT OR IGNORE`: one per owner and window; the words are the caller's, 07-ZI line 22). `?1` key, `?2` window start.
+ */
+export function hookFailureStatements(
+  db: D1Database,
+  a: { key: string; windowStart: number; bellTitle: string; bellLink: string },
+): D1PreparedStatement[] {
+  return [
+    db
+      .prepare(
+        `INSERT INTO hook_failures (key, window_start, count) VALUES (?1, ?2, 1)
+         ON CONFLICT (key) DO UPDATE SET count = count + 1 WHERE count < 50`,
+      )
+      .bind(a.key, a.windowStart),
+    db
+      .prepare(
+        `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
+         SELECT 'n_' || lower(hex(randomblob(16))), o.id, 'payment.hook_signature', 'hook_window', ?1, ?2, ?3 FROM staff_users o
+         WHERE o.role = 'owner' AND o.status = 'active' AND (SELECT count FROM hook_failures WHERE key = ?1) >= ${HOOK_FAILURE_ALERT_AT}`,
+      )
+      .bind(a.key, a.bellTitle, a.bellLink),
+  ];
+}
+
+// ---- review items: resolve, and the erase ------------------------------------------------------------------------------------------------------------------
+
+/**
+ * The Owner resolves an open item (`?1` id, `?2` member, `?3` now, `?4` resolution, `?5` note or null): only while open (trigger `review_items_status_flow`
+ * holds the Owner and the once). Guarded when `g` is given (normally the confirm or retry batch's own audit row).
+ */
+export function reviewResolveStatement(
+  db: D1Database,
+  a: { id: string; by: string; now: number; resolution: string; note: string | null },
+  g?: GuardSql,
+): D1PreparedStatement {
+  const gs = guarded(g, 5);
+  return db
+    .prepare(
+      `UPDATE review_items SET status = 'resolved', resolved_by = ?2, resolved_at = ?3, resolution = ?4, note = ?5 WHERE id = ?1 AND status = 'open'${gs.sql}`,
+    )
+    .bind(a.id, a.by, a.now, a.resolution, a.note, ...gs.params);
+}
+
+/** One review item (`?1`). */
+export const REVIEW_ITEM_READ_SQL = `SELECT r.id, r.source, r.provider, r.kind, r.status, r.webhook_event_id, r.payment_id, r.document_id, r.client_id, r.amount_minor,
+     r.currency, r.facts, r.created_at, r.resolved_by, r.resolved_at, r.resolution, r.note
+   FROM review_items r WHERE r.id = ?1`;
+
+// The erase of a client clears its review items' notes by the 0064 trigger `review_items_erase_notes` (early check 1, "For B2" 9): no statement here.

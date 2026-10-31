@@ -32,6 +32,11 @@
   // tokens are random and need no key. TURNSTILE_SECRET is the secret of the widget above (local: `pnpm dev:secrets`
   // writes the always-pass test secret). Not inherited by environments, so each env lists them too.
   "secrets": { "required": ["PORTAL_KEY_PEPPER", "TURNSTILE_SECRET"] },
+  // M6.2 (POR-06, L1): Pay now asks the admin finance Worker's `PortalPayments` entrypoint for a Razorpay link over RPC; the portal holds no gateway key.
+  // Not inherited; production has none until Phase 7.
+  "services": [
+    { "binding": "ADMIN_PAY", "service": "techaust-platform-admin-finance", "entrypoint": "PortalPayments" }
+  ],
   // Email queue (producer, M2.4b): sign-in links go to the jobs Worker's email consumer. Production has no queue until
   // Phase 7 (owner approval).
   // M4.5: PDF_QUEUE asks the jobs Worker for the acceptance certificate. DOCS (R2, read only here) serves the frozen proposal
@@ -80,6 +85,13 @@
         "WEBSITE_ORIGIN": "https://techaust-platform-web-staging.techaust-technologies-153.workers.dev"
       },
       "secrets": { "required": ["PORTAL_KEY_PEPPER", "TURNSTILE_SECRET"] },
+      "services": [
+        {
+          "binding": "ADMIN_PAY",
+          "service": "techaust-platform-admin-finance-staging",
+          "entrypoint": "PortalPayments"
+        }
+      ],
       "queues": {
         "producers": [
           { "binding": "EMAIL_QUEUE", "queue": "techaust-staging-email" },

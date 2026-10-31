@@ -6,6 +6,7 @@ import {
   careBillMessage,
   careIssueMessage,
   careScanMessage,
+  type GatewaySweepMessage,
   type ReportMessage,
   reminderScanMessage,
 } from "@techaust/core";
@@ -39,7 +40,9 @@ const inWindow = (hour: number, first: number) => hour >= first && hour <= first
  * at 10:00 and 11:00), and at 09:00 IST only the export realisation scan (M5.5b, LD76) and, on IST days 5 to 7, the EDF reminder for the PREVIOUS month (January's tick
  * names December of the year before). Pure: no D1 read, nothing but the scheduled time.
  */
-export function hourlyMessages(scheduledTime: number): (BillingMessage | ReportMessage)[] {
+export function hourlyMessages(
+  scheduledTime: number,
+): (BillingMessage | ReportMessage | GatewaySweepMessage)[] {
   const hour = istHourOf(scheduledTime);
   const today = istDate(scheduledTime);
   const edf: ReportMessage[] =
@@ -70,6 +73,8 @@ export function hourlyMessages(scheduledTime: number): (BillingMessage | ReportM
     ...(hour === ALERTS_HOUR_IST ? [{ v: 1, kind: "realisation.scan" } satisfies ReportMessage] : []),
     ...edf,
     { kind: "reminder.scan", after: null },
+    // M6.2 (run file D): one gateway sweep every hour (the consumer re-queues events stuck in `received`).
+    { kind: "gateway.sweep", asOf: scheduledTime },
   ];
 }
 

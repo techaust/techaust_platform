@@ -606,7 +606,7 @@ describe("recordGatewayPaymentStatements [ADM-PAY-02, -06, -07, JOB-HOOK-02, L5,
     expect(
       (await first<{ status: string }>("SELECT status FROM webhook_events WHERE id = ?", w.eventId))?.status,
     ).toBe("needs_review");
-    const open = await all<{ kind: string }>(REVIEW_ITEMS_SQL, -1, "", "open");
+    const open = await all<{ kind: string }>(REVIEW_ITEMS_SQL, -1, "", "open", null);
     expect(open.map((r) => r.kind)).toContain("amount_mismatch");
   });
 

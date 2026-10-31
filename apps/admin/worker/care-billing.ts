@@ -153,7 +153,7 @@ const CONTACTS_ORDER = "anonymised_at IS NULL ORDER BY is_billing DESC, is_prima
 /** The live contacts of the client of a plan (`?1` the plan id), billing first. */
 const CONTACTS_OF_PLAN_SQL = `SELECT ${CONTACTS_COLS} WHERE client_id = (SELECT client_id FROM care_plans WHERE id = ?1) AND ${CONTACTS_ORDER}`;
 /** The live contacts of the client of a document (`?1` the document id), billing first. */
-const CONTACTS_OF_DOC_SQL = `SELECT ${CONTACTS_COLS} WHERE client_id = (SELECT client_id FROM documents WHERE id = ?1) AND ${CONTACTS_ORDER}`;
+export const CONTACTS_OF_DOC_SQL = `SELECT ${CONTACTS_COLS} WHERE client_id = (SELECT client_id FROM documents WHERE id = ?1) AND ${CONTACTS_ORDER}`;
 const CATALOGUE_SQL =
   "SELECT id, code, sac, gst_rate_bp FROM catalogue_items WHERE code IN ('S16', 'S17', 'S18')";
 
@@ -165,7 +165,7 @@ type PlanFacts = {
   toggle_by: string | null;
   toggle_by_owner: number;
 };
-type ContactRow = {
+export type ContactRow = {
   id: string;
   name: string;
   email: string;
@@ -179,7 +179,7 @@ type ContactRow = {
 type CatalogueRow = { id: string; code: string; sac: string | null; gst_rate_bp: number | null };
 
 /** The billing contacts that can be emailed (portal access on), at most 5: the recipients of an automatic send. */
-const recipientsOf = (contacts: readonly ContactRow[]) =>
+export const recipientsOf = (contacts: readonly ContactRow[]) =>
   contacts
     .filter(
       (k) =>

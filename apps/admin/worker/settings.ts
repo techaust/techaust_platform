@@ -38,7 +38,6 @@ import { type Action, decide } from "@techaust/core/permissions";
 import {
   BRAND_LOGOS,
   foldLegacyLut,
-  GATEWAY_SECRETS,
   GATEWAYS,
   legacyLutFate,
   numberingClashMessage,
@@ -251,16 +250,9 @@ const numberingEnvelope = z.object({
 /** Live mode is allowed only once the owner's go-live sets the deploy-time variable (ADM-SET-06, Phase 7). The type is the literal from wrangler.jsonc, so compare as text. */
 const liveAllowed = (env: Env) => (env.PAYMENTS_LIVE_ALLOWED as string) === "true";
 
-type GatewayStatus = Record<(typeof GATEWAYS)[number], { configured: boolean; missing: readonly string[] }>;
-/** Which Worker secrets exist, by name (a value is never read out or returned). */
-const gatewayStatus = (env: Env): GatewayStatus => {
-  const has = (name: string) => Boolean((env as unknown as Record<string, unknown>)[name]);
-  const one = (g: (typeof GATEWAYS)[number]) => {
-    const missing = GATEWAY_SECRETS[g].filter((name) => !has(name));
-    return { configured: missing.length === 0, missing };
-  };
-  return { razorpay: one("razorpay"), stripe: one("stripe"), paypal: one("paypal") };
-};
+// M6.2 (L15): this Worker no longer says whether a gateway's keys are set. The key pair lives on the finance Worker and the webhook secret on the jobs Worker,
+// so only the finance Worker's `GET /api/v1/payments/gateways` reads the keys (by name) and the last verified webhook. The secret names per Worker are
+// `FINANCE_GATEWAY_SECRETS` (finance) and the jobs config's `secrets.required` (scripts/check-worker-config.mjs keeps them in step).
 
 type CounterRow = { series: string; next_no: number };
 const counters = async (db: D1Database, fy: string) =>
@@ -433,9 +425,8 @@ export const settings = new Hono<AppEnv>()
     }
     if (can("settings.manage")) {
       row("payment_terms", "payment_terms");
-      const status = gatewayStatus(c.env);
-      const open = GATEWAYS.filter((g) => !status[g].configured).length;
-      row("gateways", "gateways", open ? [`${open} of ${GATEWAYS.length} gateways have no keys yet`] : []);
+      // M6.2 (L15): the keys are the finance Worker's to report (`GET /payments/gateways`); this list no longer guesses from its own Worker's secrets.
+      row("gateways", "gateways");
       row("email", "email");
       groups.push({ group: "terms", version: null, updatedAt: null, attention: [] });
       row("retention", "retention");
@@ -562,7 +553,8 @@ export const settings = new Hono<AppEnv>()
       version: row?.version ?? 0,
       updatedAt: row?.updatedAt ?? null,
       value: resolveSetting("gateways", row?.value),
-      meta: { status: gatewayStatus(c.env), liveAllowed: liveAllowed(c.env) },
+      // M6.2 (L15): no key status here (the finance Worker's `GET /payments/gateways` reports it).
+      meta: { liveAllowed: liveAllowed(c.env) },
     });
   })
 

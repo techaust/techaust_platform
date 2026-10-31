@@ -34,6 +34,7 @@ CREATE UNIQUE INDEX `checkout_sessions_provider_link` ON `checkout_sessions` (`p
 CREATE INDEX `checkout_sessions_client` ON `checkout_sessions` (`client_id`,`created_at`);--> statement-breakpoint
 CREATE INDEX `checkout_sessions_document` ON `checkout_sessions` (`document_id`,`created_at`);--> statement-breakpoint
 CREATE INDEX `checkout_sessions_contact` ON `checkout_sessions` (`contact_id`);--> statement-breakpoint
+CREATE INDEX `checkout_sessions_token` ON `checkout_sessions` (`doc_token_id`) WHERE "checkout_sessions"."doc_token_id" is not null;--> statement-breakpoint
 CREATE TABLE `hook_failures` (
 	`key` text PRIMARY KEY NOT NULL,
 	`window_start` integer NOT NULL,

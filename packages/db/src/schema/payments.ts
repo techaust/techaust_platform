@@ -333,6 +333,8 @@ export const checkoutSessions = sqliteTable(
     index("checkout_sessions_document").on(t.documentId, t.createdAt),
     // Early check 1, finding 1: the erase and anonymise of a contact unlink its checkouts (`deleteContactAccess`).
     index("checkout_sessions_contact").on(t.contactId),
+    // ... and the token delete's trigger finds a link's checkouts by the token (0064 `checkout_sessions_unlink_token`).
+    index("checkout_sessions_token").on(t.docTokenId).where(sql`${t.docTokenId} is not null`),
     check("checkout_sessions_currency", oneOf(t.currency, CURRENCY_CODES)),
     check("checkout_sessions_amount", sql`${t.amountMinor} > 0`),
     check(

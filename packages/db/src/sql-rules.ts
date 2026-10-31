@@ -93,3 +93,14 @@ export const paymentNetSql = (payment: string, doc?: string): string =>
  */
 export const ledgerStatusCaseSql = (total: string, settled: string, credited: string): string =>
   `CASE WHEN ${credited} >= ${total} THEN 'credited' WHEN ${settled} > 0 AND ${total} - ${settled} - ${credited} <= 0 THEN 'paid' WHEN ${settled} > 0 THEN 'partially_paid' WHEN ${credited} > 0 THEN 'partially_credited' ELSE 'issued' END`;
+
+/**
+ * M6.2: document `d` of client `k` (aliases) can be paid online now (the twin of core `payableOnline` in `@techaust/core/online-pay`): a tax invoice, debit note or
+ * proforma; in INR; issued and not void (a withdrawn proforma is a void one); of a live client in India that is not overseas (owner, 2026-11-01, Q3 A; OPEN (08-C
+ * RB-01): does a USD invoice paid through a PA-CB that credits us in INR count as "settled in INR"?); with at least ₹1 due (Razorpay's minimum); a proforma issued
+ * or converted (early check 1, finding 5) with its balance in whole rupees (LD28). A db test holds it to core `payableOnline`.
+ */
+export const onlinePayableSql = (d: string, k: string): string =>
+  `(${d}.type IN ('tax_invoice', 'debit_note', 'proforma') AND ${d}.currency = 'INR' AND ${d}.frozen_at IS NOT NULL AND ${d}.status <> 'void'
+    AND ${k}.anonymised_at IS NULL AND ${k}.country = 'IN' AND ${k}.gst_status <> 'overseas'
+    AND ${d}.balance_minor >= 100 AND (${d}.type <> 'proforma' OR (${d}.status IN ('issued', 'converted') AND ${d}.balance_minor % 100 = 0)))`;

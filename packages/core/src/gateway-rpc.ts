@@ -160,3 +160,33 @@ export function isCreateLinkArgs(v: unknown): v is CreateLinkArgs {
     (PAY_RETURN_TO as readonly unknown[]).includes(v.returnTo)
   );
 }
+
+// ---- the link URL the portal sends the browser to ------------------------------------------------------------------------------------------------------
+
+/** The hosts each gateway's hosted page may be on (Razorpay: the same list as `RAZORPAY_LINK_HOSTS` in `@techaust/core/razorpay`; a test compares them). */
+export const GATEWAY_LINK_HOSTS: Readonly<Record<RpcGateway, readonly string[]>> = {
+  razorpay: ["rzp.io", "razorpay.com"],
+};
+/** The longest link URL a checkout row holds (`CHECKOUT_SHORT_URL_MAX` in the db schema). */
+export const GATEWAY_LINK_URL_MAX = 5000;
+
+/**
+ * Whether `v` is an https URL on one of `provider`'s own hosts (or a subdomain), with no credentials: the portal answers 502 for anything else, so a wrong
+ * answer can never send a client's browser to another site. Kept here (not in `@techaust/core/razorpay`) so the portal carries only this small check.
+ */
+export function isGatewayLinkUrl(provider: RpcGateway, v: unknown): boolean {
+  if (typeof v !== "string" || v.length > GATEWAY_LINK_URL_MAX) return false;
+  const hosts = GATEWAY_LINK_HOSTS[provider];
+  if (!hosts) return false;
+  try {
+    const u = new URL(v);
+    return (
+      u.protocol === "https:" &&
+      !u.username &&
+      !u.password &&
+      hosts.some((h) => u.hostname === h || u.hostname.endsWith(`.${h}`))
+    );
+  } catch {
+    return false;
+  }
+}

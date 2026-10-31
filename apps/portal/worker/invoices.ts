@@ -10,6 +10,9 @@ import {
   LINES_SQL,
   type LineRow,
   listItemOf,
+  ONLINE_SQL,
+  type OnlineRow,
+  onlineOf,
   openOrWithdrawnSql,
   PDF_WITHDRAWN,
   SUMMARY_COLS,
@@ -22,7 +25,9 @@ import {
 } from "./invoice-summary.ts";
 import { bound, streamPdf } from "./offer-core.ts";
 import { pdfFileName } from "./offer-sql.ts";
+import { createLink, payAnswer, payBody, refreshForClient } from "./pay.ts";
 import { scope } from "./scope.ts";
+import { json } from "./validate.ts";
 
 /** The list's query string: `limit` (1 to 50) and the cursor from the previous page (`issue date:id`). */
 const LIMIT = /^\d{1,2}$/;
@@ -70,21 +75,42 @@ export const invoices = new Hono<AppEnv>()
     // FX-5 (08-C RA-10): the first view is written FIRST, in the batch that reads what the answer shows, never after the answer (a void landing
     // between a 200 and a background write would pass, and a failed background write would lose the view). The access row and the session touch stay
     // in the background (index.ts).
-    const [, doc, lines, credits] = await c.env.DB.batch([
-      bound(c.env.DB, VIEW_SQL, [s.clientId, id, Date.now()]),
+    // M6.2 (run file E): `?refresh=1` (the Processing state after 20 s) asks the finance Worker for the link's status first, at most once a minute there.
+    if (c.req.query("refresh") === "1")
+      await refreshForClient(c.env, { clientId: s.clientId, documentId: id });
+    const now = Date.now();
+    const [, doc, lines, credits, online] = await c.env.DB.batch([
+      bound(c.env.DB, VIEW_SQL, [s.clientId, id, now]),
       bound(c.env.DB, ONE_SQL, [s.clientId, id]),
       bound(c.env.DB, LINES_SQL, [s.clientId, id]),
       bound(c.env.DB, CREDIT_NOTES_SQL, [s.clientId, id]),
+      bound(c.env.DB, ONLINE_SQL, [s.clientId, id, now]),
     ]);
     const row = doc?.results[0] as SummaryRow | undefined;
     if (!row) return err(c, NOT_FOUND, 404);
     return c.json({
-      document: summaryOf(
-        row,
-        (lines?.results ?? []) as LineRow[],
-        (credits?.results ?? []) as CreditNoteRow[],
-      ),
+      document: {
+        ...summaryOf(row, (lines?.results ?? []) as LineRow[], (credits?.results ?? []) as CreditNoteRow[]),
+        ...onlineOf(online?.results[0] as OnlineRow | undefined),
+      },
     });
+  })
+  // M6.2 (POR-06): Pay now. CSRF and the finance-only guard ran before this; the client is the session's, and the finance Worker re-checks everything.
+  .post("/:id/pay", json(payBody), async (c) => {
+    const s = scope(c);
+    const id = idOf(c);
+    if (!id) return err(c, NOT_FOUND, 404);
+    const { amountMinor } = c.req.valid("json");
+    const r = await createLink(c.env, {
+      provider: "razorpay",
+      clientId: s.clientId,
+      contactId: s.contactId,
+      tokenHash: null,
+      documentId: id,
+      amountMinor,
+      returnTo: "invoice",
+    });
+    return payAnswer(c, r);
   })
   .get("/:id/pdf", async (c) => {
     const s = scope(c);

@@ -3,6 +3,7 @@
 // after its queue's `max_retries` (5; the email queue 10, FX-1) the queue moves it to the dead-letter queue (wrangler.jsonc).
 import {
   isBillingKind,
+  isGatewayKind,
   isInvoiceExpansionKind,
   isOfferExpansionKind,
   isPurgeMessage,
@@ -16,6 +17,7 @@ import { isStatsKind, isStatsMessage } from "@techaust/core/stats";
 import { processBilling, processBillingDeadLetter } from "./billing.ts";
 import { CLAIM_TIMEOUT_MS, processDeadLetter, processEmail } from "./email.ts";
 import { logExpireDeadLetter, processExpire, skipExpire } from "./expire.ts";
+import { processGateway, processGatewayDeadLetter } from "./gateway.ts";
 import { processInvoiceSend } from "./invoice-send.ts";
 import { processLead } from "./leads.ts";
 import { logEvent, noteInvocation } from "./log.ts";
@@ -101,6 +103,10 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         // M5.5b: a realisation scan, an EDF reminder or a statement purge that ran out of tries is only logged: the next daily run lists the same work again (the bells and the email log make a repeat harmless).
         logEvent("report.dead_letter", { queue, kind: message.body.kind });
         message.ack();
+      } else if (isDlq && isGatewayKind(message.body)) {
+        // M6.2: an event or an automatic tax invoice that ran out of tries: the event failed, a `dead_letter` review item, the owners' bell (once).
+        await processGatewayDeadLetter(env, message.body);
+        message.ack();
       } else if (isDlq && isBillingKind(message.body)) {
         // M5.4: a care bill or issue that ran out of tries rings the owners' bell (once per plan per IST day); the scans and the daily alerts are listed again by the next run.
         await processBillingDeadLetter(env, message.body);
@@ -108,6 +114,11 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
       } else if (isDlq) {
         if (await processDeadLetter(env, queue, message.body)) message.ack();
         else message.retry({ delaySeconds: dlqRetryDelay(message.attempts) });
+      } else if (queue.endsWith("-leads") && isGatewayKind(message.body)) {
+        // M6.2 (L9): the gateway family rides the leads queue and is routed first, so a body of it (valid or not) can never become a lead.
+        const verdict = await processGateway(env, message.body, message.attempts);
+        if (verdict === "ack") message.ack();
+        else message.retry({ delaySeconds: verdict.retry });
       } else if (queue.endsWith("-leads") && isPurgeScanMessage(message.body)) {
         await enqueueDue(env, message.body.asOf, message.body.cursor);
         message.ack();

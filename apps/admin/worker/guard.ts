@@ -232,6 +232,14 @@ export const ROUTES: readonly RouteDef[] = [
   // M6.1 (ADM-PAY-01, -05, -06, ADM-INV-16, -17, Q60; run file C): manual payments and TDS. Recording or confirming needs the Owner's fresh code (owner, Q2
   // A, 2026-10-31); a Staff member's entry waits for the Owner (`payments.record` is "approval" for Staff: the handler records it as pending). Withdrawing and
   // using credit are the Owner's with a fresh code; a proof or a TDS certificate is added by the Owner or Staff; a FEMA extension is the Owner's.
+  // M6.2 (Razorpay, run file C): payment links, "Needs review" and the gateways' status. Static paths before `/payments/:id` (the finance router registers them first).
+  X("POST", "/invoices/:id/payment-link", "payments.link", { audit: "payment.link_create" }),
+  X("POST", "/invoices/:id/payment-link/cancel", "payments.link", { audit: "payment.link_cancel" }),
+  X("POST", "/payments/links/:id/refresh", "payments.link"),
+  X("GET", "/payments/review", "payments.read"),
+  X("POST", "/payments/review/:id/resolve", "payments.review", { audit: "payment.review_resolve" }),
+  X("POST", "/payments/review/:id/retry", "payments.review", { audit: "payment.review_retry" }),
+  X("GET", "/payments/gateways", "settings.manage"),
   X("GET", "/payments", "payments.read"),
   X("POST", "/payments", "payments.record", { audit: "payment.record" }),
   X("GET", "/payments/:id", "payments.read"),

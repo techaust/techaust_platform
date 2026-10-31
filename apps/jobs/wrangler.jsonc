@@ -48,11 +48,18 @@
   // The admin finance Worker's named entrypoint `BillingJobs` (M5.4, LD57; in the admin API Worker until M6.1 stage A): the care-plan drafting and the automatic issue run THERE
   // (they need the admin code), and this Worker calls them over RPC. Deploy order: the admin finance Worker first (a jobs deploy whose entrypoint does not exist yet fails), so the
   // entrypoint exists before the first call; until it does a call is an error and the queue message is retried (every call is idempotent). Not inherited.
+  // M6.2: `ADMIN_GATEWAY`, the finance Worker's `GatewayEvents` entrypoint (the webhook events and the automatic tax invoice of a proforma paid online).
   "services": [
-    { "binding": "ADMIN_JOBS", "service": "techaust-platform-admin-finance", "entrypoint": "BillingJobs" }
+    { "binding": "ADMIN_JOBS", "service": "techaust-platform-admin-finance", "entrypoint": "BillingJobs" },
+    {
+      "binding": "ADMIN_GATEWAY",
+      "service": "techaust-platform-admin-finance",
+      "entrypoint": "GatewayEvents"
+    }
   ],
-  // SES keys: names only; values come from `wrangler secret put` (docs/runbooks/ses-and-turnstile.md). Not inherited.
-  "secrets": { "required": ["SES_ACCESS_KEY_ID", "SES_SECRET_ACCESS_KEY"] },
+  // SES keys and (M6.2, L1) the Razorpay webhook secret: names only; values come from `wrangler secret put` (docs/runbooks/ses-and-turnstile.md;
+  // tools/set-gateway-keys.ps1 -Gateway razorpay-webhook). RAZORPAY_WEBHOOK_SECRET_PREVIOUS is optional (a rotation) and so not required. Not inherited.
+  "secrets": { "required": ["SES_ACCESS_KEY_ID", "SES_SECRET_ACCESS_KEY", "RAZORPAY_WEBHOOK_SECRET"] },
   // D1 (docs/05 §5). Migrations live in packages/db; local dev and tests use a local database.
   "d1_databases": [
     {
@@ -151,9 +158,14 @@
           "binding": "ADMIN_JOBS",
           "service": "techaust-platform-admin-finance-staging",
           "entrypoint": "BillingJobs"
+        },
+        {
+          "binding": "ADMIN_GATEWAY",
+          "service": "techaust-platform-admin-finance-staging",
+          "entrypoint": "GatewayEvents"
         }
       ],
-      "secrets": { "required": ["SES_ACCESS_KEY_ID", "SES_SECRET_ACCESS_KEY"] },
+      "secrets": { "required": ["SES_ACCESS_KEY_ID", "SES_SECRET_ACCESS_KEY", "RAZORPAY_WEBHOOK_SECRET"] },
       "d1_databases": [
         {
           "binding": "DB",

@@ -224,6 +224,10 @@ export const ENTITY_LABELS: Record<string, string> = {
   document: "Documents",
   approval: "Approvals",
   payment: "Payments",
+  // M6.2 (staff words, lead under the owner's delegation; 07-ZI S19).
+  review_item: "Needs review",
+  checkout_session: "Payment links",
+  webhook_event: "Payment webhooks",
   report: "Reports",
   audit_log: "Audit log",
 };

@@ -4,7 +4,7 @@
 import { gstEstimateOfHeaderExtras, issueDateOf, NOTES_MAX, noteOfFromStored } from "@techaust/core/invoices";
 import { formatMoney, money } from "@techaust/core/money";
 import { percentFromBp } from "@techaust/core/schedule-text";
-import { withdrawnSql } from "@techaust/db/sql-rules";
+import { onlinePayableSql, withdrawnSql } from "@techaust/db/sql-rules";
 
 /** 07-ZH line 18 (client-facing; approved by the owner, 2026-10-31): the summary row of the TDS the client deducted. */
 export const TDS_ROW_LABEL = "TDS deducted by you";
@@ -361,3 +361,55 @@ export function summaryOf(r: SummaryRow, lines: readonly LineRow[], creditNotes:
 }
 
 export type InvoiceSummary = ReturnType<typeof summaryOf>;
+
+// ---- M6.2: Pay now (POR-06; run file E) ------------------------------------------------------------------------------------------------------------
+
+/**
+ * What the page needs for Pay now, every query bound to the client (`?1` client, `?2` document, `?3` now): whether the document can be paid online now
+ * (`onlinePayableSql`, the SQL twin of core `payableOnline`; a domestic INR client only, owner Q3 A), the open link (amount and expiry), the last payment received
+ * online for it (amount and when), and whether a proforma has an online payment waiting for its tax invoice. Read in the same batch as the summary.
+ */
+export const ONLINE_SQL = `SELECT ${onlinePayableSql("d", "k")} AS pay_online, d.type,
+     (SELECT c.amount_minor FROM checkout_sessions c INDEXED BY checkout_sessions_open WHERE c.document_id = d.id AND c.status = 'live' AND c.client_id = ?1 AND c.expires_at > ?3) AS open_amount,
+     (SELECT c.expires_at FROM checkout_sessions c INDEXED BY checkout_sessions_open WHERE c.document_id = d.id AND c.status = 'live' AND c.client_id = ?1 AND c.expires_at > ?3) AS open_expires,
+     (SELECT p.amount_minor || ':' || p.recorded_at FROM payments p JOIN checkout_sessions c ON c.id = p.checkout_id
+        WHERE c.document_id = d.id AND p.client_id = ?1 AND p.provider = 'razorpay' AND p.status IN ('confirmed', 'pending_verification') ORDER BY p.recorded_at DESC LIMIT 1) AS last_paid,
+     EXISTS (SELECT 1 FROM payments p JOIN checkout_sessions c ON c.id = p.checkout_id
+        WHERE c.document_id = d.id AND p.client_id = ?1 AND p.provider = 'razorpay' AND p.status = 'pending_verification' AND d.type = 'proforma') AS proforma_pending
+   FROM documents d JOIN clients k ON k.id = d.client_id WHERE d.client_id = ?1 AND d.id = ?2`;
+
+export type OnlineRow = {
+  pay_online: number;
+  type: string;
+  open_amount: number | null;
+  open_expires: number | null;
+  last_paid: string | null;
+  proforma_pending: number;
+};
+
+/** The page's Pay now block (no ids of Razorpay's, nothing about the payer). */
+export function onlineOf(r: OnlineRow | undefined) {
+  if (!r)
+    return {
+      payOnline: false,
+      wholeRupees: false,
+      online: { open: null, lastPaid: null, proformaPending: false },
+    };
+  const [amount, at] = (r.last_paid ?? "").split(":").map(Number);
+  return {
+    payOnline: r.pay_online === 1,
+    /** A proforma is paid in whole rupees (LD28; 07-ZI line 7). */
+    wholeRupees: r.type === "proforma",
+    online: {
+      open:
+        r.open_amount !== null && r.open_expires !== null
+          ? { amountMinor: r.open_amount, expiresAt: r.open_expires }
+          : null,
+      lastPaid:
+        r.last_paid && Number.isSafeInteger(amount) && Number.isSafeInteger(at)
+          ? { amountMinor: amount as number, at: at as number }
+          : null,
+      proformaPending: r.proforma_pending === 1,
+    },
+  };
+}

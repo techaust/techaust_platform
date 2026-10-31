@@ -49,6 +49,7 @@ import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { type AppEnv, actor, BAD_REQUEST, type Ctx, err, mutate, NOT_FOUND } from "./context.ts";
 import { docDownload, dropDoc, extOfMime, streamToDocs, uploadHead } from "./docs-upload.ts";
+import { GATEWAY_PAYMENT, GATEWAY_REFUND_NEEDED } from "./gateway/messages.ts";
 import { body, idParam, isUnique, param, query, refusedWith, STALE_VERSION } from "./http.ts";
 import { decodeCursor, encodeCursor } from "./keyset.ts";
 import {
@@ -714,6 +715,8 @@ export const payments = new Hono<AppEnv>()
     if (row.recorded_at !== f.expectedRecordedAt) return err(c, STALE_VERSION, 409);
     if (row.client_gone === 1) return err(c, CLIENT_GONE, 409);
     const decision = f.decision === "confirm" ? ("confirmed" as const) : ("rejected" as const);
+    // M6.2 (L7): a gateway payment is never rejected here: the money is at Razorpay and goes back by a refund (M6.5).
+    if (decision === "rejected" && row.provider !== "manual") return err(c, GATEWAY_REFUND_NEEDED, 409);
     if (decision === "rejected" && f.note === undefined) return err(c, REJECT_REASON_REQUIRED, 400);
     const requested = f.allocations ?? parseRequested(row.requested_allocations);
     let rows: AllocationRow[] = [];
@@ -773,6 +776,16 @@ export const payments = new Hono<AppEnv>()
             ? [
                 ...allocationStatements(db, rows, u.id, now, g),
                 recomputeStatement(db, { paymentIds: [id] }, now, g),
+                // M6.2: a Razorpay payment the Owner confirms here (a mismatch it accepted) settles its open review items.
+                ...(row.provider !== "manual"
+                  ? [
+                      db
+                        .prepare(
+                          `UPDATE review_items SET status = 'resolved', resolved_by = ?2, resolved_at = ?3, resolution = 'confirmed' WHERE payment_id = ?1 AND status = 'open' AND ${g.sql(4)}`,
+                        )
+                        .bind(id, u.id, now, ...g.params),
+                    ]
+                  : []),
               ]
             : []),
           ...decideApprovalStatements(
@@ -837,6 +850,8 @@ export const payments = new Hono<AppEnv>()
     const row = await db.prepare(PAYMENT_READ_SQL).bind(id).first<PaymentRow>();
     if (!row) return err(c, NOT_FOUND, 404);
     if (row.status !== "confirmed") return err(c, PAYMENT_NOT_CONFIRMED, 409);
+    // M6.2 (L7): a gateway payment is never withdrawn (refunds are M6.5).
+    if (row.provider !== "manual") return err(c, GATEWAY_PAYMENT, 409);
     // L23.2: a payment that stands for an M5.2 advance receipt has a tax invoice issued on it; a credit note is the correction.
     if (row.advance_receipt_id !== null) return err(c, PAYMENT_ADVANCE_BACKED, 409);
     if (row.client_gone === 1) return err(c, CLIENT_GONE, 409);

@@ -79,7 +79,7 @@ export async function verifyRazorpaySignature(
   // is accepted for callers that already hold the exact text.
   let body: Uint8Array<ArrayBuffer>;
   if (rawBody instanceof Uint8Array) body = new Uint8Array(rawBody);
-  else if (typeof rawBody === "string") body = enc.encode(rawBody);
+  else if (typeof rawBody === "string") body = new Uint8Array(enc.encode(rawBody));
   else return false;
   for (const secret of secrets) {
     if (typeof secret !== "string" || secret === "") continue;

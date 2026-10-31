@@ -7,11 +7,19 @@ import {
   WARM_SAMPLES,
   warmBillingMessages,
   warmConsumerMessages,
+  warmGatewayMessages,
   warmLabels,
   warmOfferMessages,
   warmReportMessages,
 } from "@techaust/core";
 import { canonicalJson } from "@techaust/core/hash";
+import {
+  eventFacts,
+  fallbackEventId,
+  parseRazorpayEvent,
+  razorpayEventIdOf,
+  verifyRazorpaySignature,
+} from "@techaust/core/razorpay";
 import { type StatementKind, statementEntries } from "@techaust/core/statement";
 import { renderEmail } from "@techaust/email";
 import {
@@ -284,6 +292,8 @@ export function warmConsumers(): number {
   warmOfferMessages();
   // M5.4: the invoice send, reminder, care, alert and reminder-scan messages (schemas built at start-up, not in the first message).
   warmBillingMessages();
+  // M6.2: the three gateway messages of the leads queue.
+  warmGatewayMessages();
   try {
     renderCertificateHtml(
       buildCertificateView({
@@ -313,4 +323,45 @@ export function warmConsumers(): number {
     // never stop a Worker from starting
   }
   return parsed + rendered + statementOk;
+}
+
+/**
+ * M6.2 (CPU diagnosis, lead decision 3): the Razorpay webhook's first run, paid at start-up: an HMAC key imported and a signature made with a MADE-UP secret
+ * over a sample body, the constant-time verify, the event-id reader and the fallback hash, one parse of a sample event and its whitelisted facts. Nothing is
+ * stored, sent or logged; the real secret's key is imported on the first webhook and then kept per isolate. Returns the steps that succeeded (5; `warm.test.ts`).
+ */
+export async function warmRazorpayHook(): Promise<number> {
+  let ok = 0;
+  try {
+    const secret = "warm-up-secret-not-a-real-one";
+    const body = JSON.stringify({
+      entity: "event",
+      event: "payment_link.paid",
+      created_at: 1_790_000_000,
+      payload: {
+        payment_link: { entity: { id: "plink_WARMUP0000001", amount: 100, currency: "INR", status: "paid" } },
+        payment: { entity: { id: "pay_WARMUP0000001", amount: 100, currency: "INR", method: "upi" } },
+      },
+    });
+    const enc = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw",
+      enc.encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const sig = [...new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(body)))]
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    ok++;
+    if (await verifyRazorpaySignature(enc.encode(body), sig, [secret])) ok++;
+    if (razorpayEventIdOf("evt_WARMUP0000001") !== null) ok++;
+    if ((await fallbackEventId(body)).startsWith("sha256:")) ok++;
+    const parsed = parseRazorpayEvent(JSON.parse(body), "evt_WARMUP0000001");
+    if (parsed.ok && Object.keys(eventFacts(parsed.value)).length > 0) ok++;
+  } catch {
+    // never stop a Worker from starting
+  }
+  return ok;
 }

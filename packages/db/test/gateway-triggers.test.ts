@@ -595,6 +595,17 @@ describe("checkout sessions [ADM-PAY-02, L3, L4]", () => {
       params: [owner],
     };
     await env.DB.batch(deleteContactAccess(env.DB, contactId, g));
+    // The anonymise path stops here: the token rows are gone, so the link's checkout is unlinked (trigger `checkout_sessions_unlink_token`); the portal one keeps
+    // the (anonymised) contact row's id until the erase deletes the contact.
+    expect(
+      await first("SELECT contact_id, doc_token_id FROM checkout_sessions WHERE id = ?1", linkCo),
+    ).toEqual({
+      contact_id: null,
+      doc_token_id: null,
+    });
+    expect(await first("SELECT contact_id FROM checkout_sessions WHERE id = ?1", id)).toEqual({
+      contact_id: contactId,
+    });
     await run("DELETE FROM contacts WHERE id = ?1", contactId);
     type Row = {
       id: string;
@@ -772,6 +783,11 @@ describe("review items [ADM-PAY-07, L7, L8]", () => {
     // The note is cleared only once the client is anonymised (the erase, L31).
     await rejects(run("UPDATE review_items SET note = NULL WHERE id = ?1", id), /review_items_status_flow/);
     await run("UPDATE clients SET anonymised_at = ?2 WHERE id = ?1", clientId, T);
+    // "For B2" 9: the anonymising statement itself cleared it (trigger `review_items_erase_notes`): no extra statement in the erase batch.
+    expect(await first("SELECT note, status FROM review_items WHERE id = ?1", id)).toEqual({
+      note: null,
+      status: "resolved",
+    });
     await run("UPDATE review_items SET note = NULL WHERE id = ?1", id);
     await rejects(run("DELETE FROM review_items WHERE id = ?1", id), /review_items_no_delete/);
   });
