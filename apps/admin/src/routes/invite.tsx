@@ -27,7 +27,7 @@ type Invite = Awaited<ReturnType<typeof api.inviteStart>>;
 type Enrolment = Awaited<ReturnType<typeof api.inviteFinish>>;
 type Step = "details" | "app" | "codes";
 
-/** 07-A §9 (staff enrolment; OPEN, 08-C RB-18: whether a staff member's written consent is needed first): what is kept of the password and the app. */
+/** 07-A §9 (staff enrolment; Settled by the lead on the safest reading, 2026-10-30 (08-C RB-18): emailed consent before enrolling anyone but the owner (practice, no code; until 13 May 2027)): what is kept of the password and the app. */
 const ENROLMENT_NOTICE =
   "Your password is stored only as a protected hash, and your authenticator secret is encrypted. We use them only to secure your account.";
 

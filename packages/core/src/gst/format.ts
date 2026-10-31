@@ -1,5 +1,5 @@
 // Number and date text for the export files (M5.5a): amounts with two decimals, rates without trailing zeros, dates as
-// dd-Mmm-yyyy. No floats: everything goes through integers and bigint. OPEN (08-C RA-23): the GSTN Offline Tool formats are
+// dd-Mmm-yyyy. No floats: everything goes through integers and bigint. Settled by the lead on the safest reading, 2026-10-30 (08-C RA-23): a test import before the first GSTR-1; until then the GSTN Offline Tool formats are
 // unverified (written from memory; GSTN advisories of June 2025 through secondary reports); the owner or CA imports a sample before filing.
 import type { CalendarDate } from "../dates.ts";
 
