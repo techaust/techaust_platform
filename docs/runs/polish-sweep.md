@@ -57,7 +57,7 @@ Skills: `frontend-design:frontend-design` first (report if it can't load in the 
 - **For the main session (staff-only copy, owner's delegation):** approve [07-ZL](../07-content-appendix/ZL-polish-sweep.md) lines 1–3 (recommended: as written). Until then the lines show "[Placeholder]". _2026-11-01 02:55, main session: "staff-only copy is approved by the main session under the owner's delegation" (general); the lead still needs an explicit "07-ZL 1–3 approved" (or changes) before switching `APPROVED_07ZL` on._
 
 ## Usage readings
-- USAGE 17 at 2026-11-01T02:40+05:30 (first); USAGE 20 at 2026-11-01T02:55+05:30.
+- USAGE 17 at 2026-11-01T02:40+05:30 (first); USAGE 20 at 2026-11-01T02:55+05:30; USAGE 62 at 2026-11-01T03:21+05:30 (window resets 06:10 IST).
 
 ## Lead decisions (for 13)
 - 2026-11-01, Lead: item 6 (`zod/mini` on the form pages) is dropped from the polish sweep: it needs the shared form schemas rewritten (the task's condition). Applied: this run file.
