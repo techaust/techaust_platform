@@ -120,6 +120,8 @@ const spec: GroupSpec<"company", Form> = {
     };
     return { value };
   },
+  // Without a number the category isn't saved (`udyamOf` gives null), so changing it alone is no change (rt2 second review 4).
+  dirtyOf: (f) => (normaliseUdyam(f.udyamNumber) === "" ? { ...f, udyamCategory: null } : f),
 };
 
 export function CompanyProfile() {
@@ -153,6 +155,7 @@ function Fields({
   const [udyamLeft, setUdyamLeft] = useState(false);
   const udyamCheck = udyamOf(f.udyamNumber, f.udyamCategory);
   const udyamLive = udyamLeft && !udyamCheck.ok ? udyamCheck.error : null;
+  const hasUdyam = normaliseUdyam(f.udyamNumber) !== "";
 
   return (
     <>
@@ -223,11 +226,17 @@ function Fields({
                 maxLength={18}
                 value={f.gstin}
                 onChange={(e) => {
-                  const v = e.target.value.toUpperCase();
+                  // Kept as typed, so the caret stays where it is (rt2 second review 2); the field shows capitals (`.field--gstin`), the check
+                  // reads any case, and leaving the field stores the capitals.
+                  const v = e.target.value;
                   set({ gstin: v });
                   setChecked(v.replace(/\s/g, "").length >= 15);
                 }}
-                onBlur={() => setChecked(true)}
+                onBlur={() => {
+                  const n = f.gstin.toUpperCase();
+                  if (n !== f.gstin) set({ gstin: n });
+                  setChecked(true);
+                }}
               />
             )}
           </FormField>
@@ -287,7 +296,8 @@ function Fields({
                 maxLength={30}
                 value={f.udyamNumber}
                 onChange={(e) => {
-                  set({ udyamNumber: e.target.value.toUpperCase() });
+                  // As typed (the caret stays put, rt2 second review 2): shown in capitals by `.field--gstin`, stored in capitals on leaving.
+                  set({ udyamNumber: e.target.value });
                   if (udyamLeft && e.target.value.trim() === "") setUdyamLeft(false);
                 }}
                 onBlur={() => {
@@ -302,6 +312,8 @@ function Fields({
             {(a) => (
               <select
                 {...a}
+                // A category belongs to a number: with none there is nothing to print it beside (rt2 second review 4).
+                disabled={!hasUdyam}
                 value={f.udyamCategory}
                 onChange={(e) => set({ udyamCategory: e.target.value as UdyamCategory })}
               >

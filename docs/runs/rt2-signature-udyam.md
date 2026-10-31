@@ -408,3 +408,54 @@ Builder, Opus 5.5 high, 2026-10-31. Branch `fix/rt2-second` from `origin/task/rt
 
 **Open questions:** none.
 Usage: builder claude-opus-5-5/high (skills workers-best-practices, wrangler).
+
+#### Designer (Opus 5.5 high, 2026-10-31): fixes 2, 3 and 4, branch `design/rt2-second`
+**Skills:** `frontend-design:frontend-design` was loaded first. It kept the change inside docs/06 (no new look) and set the one visual choice made here: the waiting category select looks like the existing read-only values (sunken `surface-alt` ground, dashed edge, muted text), not the browser's grey. No other skill in docs/14 §9 fits: there is no copy, data, Worker, PDF or brand work.
+
+**Fixes**
+- **2 (medium)** `apps/admin/src/routes/settings/company.tsx`: the GSTIN and Udyam fields keep what is typed in `onChange`. Nothing is upper-cased there, so React never rewrites the value and the caret stays put. Leaving the field upper-cases the value (Udyam also trims it, as before). The existing `.field--gstin input { text-transform: uppercase }` shows capitals on screen. The saved value stays canonical (`validateGstin` → `g.gstin`, `udyamOf` → `normaliseUdyam`).
+- **3 (low)** `note-dialog.tsx` (`confirm`) and `types-parts.tsx` (the advance dialog's `issue`): on `invalid_code` the code is cleared, the existing `WRONG_CODE` line shows as the code field's own error (`aria-invalid`, described by it), and that field takes the focus. `data-tools.tsx` and the step-up dialog already work this way. Every other error still goes through `refusal.show()`.
+- **4 (low)** `company.tsx`: the "Enterprise category" select is disabled while the number is empty. 07-ZC has no hint for it, so there is no new copy; the number's own hint sits beside it. `GroupSpec` (`settings/kit.tsx`) gains an optional `dirtyOf`. Company's version leaves the category out when there is no number, so changing the category and then clearing the number is not an unsaved change. `shell.css` styles the disabled select only while the form itself is open; a read-only role keeps its full-contrast values (screens.css).
+
+**Files:** `apps/admin/src/routes/settings/company.tsx`, `apps/admin/src/routes/settings/kit.tsx`, `apps/admin/src/routes/invoices/note-dialog.tsx`, `apps/admin/src/routes/invoices/types-parts.tsx`, `apps/admin/src/shell.css`, `apps/admin/e2e/signature-udyam.spec.ts`.
+
+**e2e added and changed** (`signature-udyam.spec.ts`):
+- A new test types two lower-case letters inside a filled Udyam number. It checks the caret at 8, then 9, the value as typed, capitals after leaving, and no error.
+- The same test retypes the GSTIN's PAN letters in lower case over a selection. It checks the caret at 7, that the field still shows "Valid", that leaving brings back the saved GSTIN, and that no save bar appears.
+- A category change followed by clearing the number leaves no save bar.
+- The empty state checks that the category is disabled and that the computed `text-transform` is `uppercase`.
+- The keyboard test checks that Tab skips the category with no number and reaches it with one.
+
+**Commands**
+- `pnpm exec biome check` on the six files: clean.
+- `bash tools/heavy.sh --log rt2s-admin-typecheck pnpm --filter @techaust/admin typecheck`: exit 0.
+- `E2E_SAMPLE=1 TECHAUST_PORT_OFFSET=0 … playwright test e2e/signature-udyam.spec.ts` (log `rt2s-e2e-sig`): 7 passed. Then `e2e/rt1-screens.spec.ts` (log `rt2s-e2e-rt1`): 7 passed.
+- `bash tools/heavy.sh --log rt2s-admin-test pnpm --filter @techaust/admin test`: 120 files, 3,493 tests passed.
+- `bash tools/heavy.sh --log rt2s-lint pnpm lint` (once, as the final check): exit 0, with 10 warnings and 8 infos, all in files this fix didn't touch.
+- Live pass: a scratch Playwright script on the admin dev server, signed in with the e2e Owner's session, on local sample data. (The MCP browser didn't accept the session cookie.)
+  - Settings › Company at 390, 1024 and 1280, both in-app themes, each against the opposite OS theme:
+    - the category is disabled when the number is empty;
+    - Tab goes from the number to the address (the category is skipped);
+    - typing "wb" at position 6 keeps the caret at 8;
+    - Tab stores capitals and lands on the category, now enabled;
+    - every stop has a visible focus ring;
+    - axe found 0 violations in all 12 states.
+  - Wrong code "000000" in the debit-note dialog and the advance dialog, at 1280 light and 390 dark:
+    - entered only after the step-up had lapsed, and only once the code field was confirmed present, so nothing could issue;
+    - focus moved to the code field and its value was cleared;
+    - the field has `aria-invalid="true"` with the WRONG_CODE line under it, and no refusal box appears;
+    - axe 0 violations;
+    - four wrong codes in all (the lockout comes at ten).
+  - No console errors. Dev server stopped.
+
+**Screenshots** in `.logs/rt2-second-fix/` (git-ignored):
+- `company-{empty,error,filled}-{1280,390}-{light,dark}.png`: the e2e's Company states: empty with the category disabled, the refused short number, the saved number.
+- `note-blocker-*`, `note-dialog-refused-*`, `advance-blocker-*`, `tax-signatory-*` (1280 and 390, both themes): the spec's unchanged states, re-shot.
+- `live-empty-{390,1024,1280}-{light,dark}.png`: the Udyam row with no number and the category disabled.
+- `live-typing-*.png`: lower case typed in the middle, shown in capitals, caret kept, save bar up.
+- `live-left-*.png`: after Tab, the number stored in capitals and the focus on the now-enabled category.
+- `live-note-wrong-code-{1280-light,390-dark}.png`, `live-advance-wrong-code-{1280-light,390-dark}.png`: the wrong-code error under its field, with the focus ring on the field.
+
+**Not verified / notes:** no screen reader pass. The invoice issue dialog (`dialogs.tsx`) still shows a wrong code in its general error notice. That is outside this finding's scope; a candidate follow-up for consistency. No placeholder text and no copy added. `packages/*` and `apps/portal/*` untouched.
+
+**Open questions:** none.

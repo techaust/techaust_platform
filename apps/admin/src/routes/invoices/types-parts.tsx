@@ -762,6 +762,13 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
         });
         return;
       }
+      // A wrong code is the code field's own error (as in the step-up dialog and the data tools): cleared, said under it, and focused.
+      if (e instanceof RequestError && e.code === "invalid_code") {
+        setCode("");
+        setCodeError(e.message);
+        document.getElementById("adv-code")?.focus();
+        return;
+      }
       // The server's blockers (the rate's date against the day the money came, among others): their own lines, the rate's under its field.
       const listed = e instanceof RequestError && e.code === "issue_blocked" ? (e.extra.blockers ?? []) : [];
       if (listed.length > 0) {

@@ -265,6 +265,13 @@ function NoteDialogBody(props: {
       props.onDone();
       props.onClose();
     } catch (e) {
+      // A wrong code is the code field's own error (as in the step-up dialog and the data tools): cleared, said under it, and focused.
+      if (e instanceof RequestError && e.code === "invalid_code") {
+        setCode("");
+        setCodeError(e.message);
+        document.getElementById(fieldId("code"))?.focus();
+        return;
+      }
       if (e instanceof RequestError && e.code === "issue_blocked" && e.extra.blockers?.length)
         setBlockers(e.extra.blockers);
       else setFormError(noteErrorText(e, kind, currency));
