@@ -6,6 +6,7 @@
 // T6 (07-ZE lines 1, 3, 4 and 5, approved 2026-10-31): the preview's "(IST)", version line and closing line, and the staff reply to an acceptance
 // by email, all from @techaust/core/offers (the words the email, the PDF and the portal use).
 import {
+  firstNameOf,
   OFFER_EMAIL_CLOSING,
   offerReplacesLine,
   staffAcceptReply,
@@ -153,11 +154,12 @@ export const EMAIL_PREVIEW = {
   from: "TecHaust Technologies, hello@techaust.com",
   subject: (kind: string, title: string, number: string, version: number) =>
     `${kind === "estimate" ? "Estimate" : "Proposal"}: ${title} (${number} v${version})`,
-  lead: (kind: string, firstName: string, validUntil: string) =>
+  /** `validUntil` null (a draft without validity days) prints "…" without "(IST)". */
+  lead: (kind: string, firstName: string, validUntil: string | null) =>
     kind === "estimate"
-      ? `Hi ${firstName}, your estimate is ready. It covers the line items, price and payment terms, and it's valid until ${validityDateIst(validUntil)}.`
+      ? `Hi ${firstName}, your estimate is ready. It covers the line items, price and payment terms, and it's valid until ${validUntil ? validityDateIst(validUntil) : "…"}.`
       : // 07-Y item 14 (owner 2026-10-29)
-        `Hi ${firstName}, your proposal is ready, with the price and payment schedule. It's valid until ${validityDateIst(validUntil)}.`,
+        `Hi ${firstName}, your proposal is ready, with the price and payment schedule. It's valid until ${validUntil ? validityDateIst(validUntil) : "…"}.`,
   /** 07-ZE line 3, the paragraph after the lead sentence; null for version 1. */
   replaces: (version: number): string | null => offerReplacesLine(version),
   facts: { number: "Number", total: "Total", validUntil: "Valid until" },
@@ -192,7 +194,7 @@ export function staffReplyText(doc: StaffReplyDoc, portalOrigin: string = PORTAL
   if (doc.type !== "proposal" && doc.type !== "estimate") return null;
   if (!STAFF_REPLY_STATUSES.has(doc.status) || !doc.number) return null;
   if (doc.client.anonymised || !doc.contact || doc.contact.anonymised) return null;
-  const firstName = doc.contact.name.trim().split(/\s+/)[0] ?? "";
+  const firstName = firstNameOf(doc.contact.name);
   if (firstName === "" || portalOrigin === "") return null;
   return staffAcceptReply({ firstName, number: doc.number, version: doc.version, portalLink: portalOrigin });
 }

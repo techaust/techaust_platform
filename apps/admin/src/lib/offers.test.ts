@@ -193,6 +193,10 @@ describe("07-ZE in the preview (T6): (IST) on the validity date, the version lin
       "Hi Asha, your proposal is ready, with the price and payment schedule. It's valid until 30 Nov 2026 (IST).",
     );
     expect(EMAIL_PREVIEW.validUntilValue("30 Nov 2026")).toBe("30 Nov 2026 (IST)");
+    // a draft without validity days: the lead prints "…" with no lone "(IST)" (review finding 2)
+    expect(EMAIL_PREVIEW.lead("estimate", "Asha", null)).toBe(
+      "Hi Asha, your estimate is ready. It covers the line items, price and payment terms, and it's valid until ….",
+    );
     expect(EMAIL_PREVIEW.replaces(3)).toBe(
       "This is version 3. It replaces version 2 and any earlier version, which can no longer be accepted.",
     );

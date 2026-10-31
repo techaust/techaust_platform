@@ -10,6 +10,7 @@ import {
   DECLINE_NOTE_MAX,
   DECLINE_REASONS,
   effectiveOfferStatus,
+  firstNameOf,
   headRatesBp,
   isDeclineReason,
   mintOfferToken,
@@ -294,5 +295,15 @@ describe("07-ZE offer lines (T6) [ADM-PROP-07, ADM-EST-01, POR-04]", () => {
     ).toBe(
       "Thank you, Asha. To accept TH/PRP/2627/0001 v2, please use the Review and accept button in our email, or sign in at https://portal.techaust.com, and click Accept there. As our terms say, a reply by email isn't an acceptance, so we haven't treated it as one. If it has expired or we've sent a newer version, tell us and we'll send you the current one.",
     );
+  });
+});
+
+describe("firstNameOf (one helper for the offer emails, the send preview and the staff reply)", () => {
+  it("is the first word of the name, and empty for a blank name", () => {
+    expect(firstNameOf("Asha Rao")).toBe("Asha");
+    expect(firstNameOf("  Ravi\tKumar  Das ")).toBe("Ravi");
+    expect(firstNameOf("Asha")).toBe("Asha");
+    expect(firstNameOf("")).toBe("");
+    expect(firstNameOf("   ")).toBe("");
   });
 });

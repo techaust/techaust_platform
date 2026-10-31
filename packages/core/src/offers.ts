@@ -192,6 +192,9 @@ export function offerReplacesLine(version: number | string): string | null {
   return `This is version ${n}. It replaces version ${n - 1} and any earlier version, which can no longer be accepted.`;
 }
 
+/** A contact's first name as the offer emails and the staff reply greet them: the first word of the name; "" for a blank name. */
+export const firstNameOf = (name: string): string => name.trim().split(/\s+/)[0] ?? "";
+
 /**
  * 07-ZE line 4: the closing line of the proposal and estimate email (it replaced "Questions? Just reply to this email."). Researched
  * 2026-10-31, Contract Act s.7(2) (08-C RB-35): the offer prescribes the manner of acceptance.

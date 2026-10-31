@@ -112,6 +112,8 @@ export function toPdfView(
   const cur = computed.currency;
   const m = (n: number): string => formatMoney(money(n, cur));
   const docLabel = envelope.type === "proposal" ? "Proposal" : "Estimate";
+  const validUntilDate = dateOf(header.document.validUntil);
+  const validUntilIst = validityDateIst(validUntilDate);
 
   const lines: ViewLine[] = s.lines.map((l, i) => {
     const c = computed.lines[i] as ComputedDocument["lines"][number];
@@ -202,9 +204,9 @@ export function toPdfView(
     // T6, 07-ZE line 1: a proposal's or estimate's validity date says "(IST)" (OPEN (08-C RB-35(a)) answered by naming IST); this view is
     // only ever a proposal's or an estimate's (the proforma's "Valid until" is invoice-view.ts's and has none). `validUntilDate` is the bare
     // date, for a line that adds "(IST)" itself (07-ZE line 2, the portal's expired notice).
-    validUntil: validityDateIst(dateOf(header.document.validUntil)),
-    validUntilDate: dateOf(header.document.validUntil),
-    validityNote: `Valid until ${validityDateIst(dateOf(header.document.validUntil))}`,
+    validUntil: validUntilIst,
+    validUntilDate,
+    validityNote: `Valid until ${validUntilIst}`,
     // 07-ZE line 3, under the validity note, from version 2 (Researched 2026-10-29, Contract Act s.6 (08-C RB-35); OPEN (08-C RB-35(b)): s.5
     // not read).
     replacesNote: offerReplacesLine(envelope.version),
