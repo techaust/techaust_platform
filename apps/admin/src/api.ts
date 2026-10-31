@@ -1209,12 +1209,24 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
   throw error;
 }
 
-/** The string and number values of an error's `details` (nested objects are left out). */
+/** M6.1: the payment routes' `error.details` keys the screens read (string or number values only; nothing else is copied). */
+const PAYMENT_DETAIL_KEYS = [
+  "femaDue",
+  "latest",
+  "documentId",
+  "balanceMinor",
+  "excessMinor",
+  "receivedOn",
+  "clientCode",
+  "clientName",
+  "paymentId",
+] as const;
 const plainDetails = (d: Record<string, unknown>): Record<string, string | number> =>
   Object.fromEntries(
-    Object.entries(d).filter(
-      (e): e is [string, string | number] => typeof e[1] === "string" || typeof e[1] === "number",
-    ),
+    PAYMENT_DETAIL_KEYS.flatMap((k) => {
+      const v = d[k];
+      return typeof v === "string" || typeof v === "number" ? [[k, v] as const] : [];
+    }),
   );
 
 const strings = (xs: unknown[]): string[] => xs.filter((x): x is string => typeof x === "string");

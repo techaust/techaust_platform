@@ -362,10 +362,11 @@ function RecordBody(props: {
         refusal.show();
         return;
       }
-      if (e instanceof RequestError && e.code === "already_recorded") {
-        // the same dialog's entry reached the server before (an answer lost on the way): it is recorded, so the dialog closes as done
-        setFailure(payErrorText(e));
-        refusal.show();
+      // A refusal that names one invoice (`details.documentId`: over its balance, a proforma that must take the whole payment) is that row's error.
+      const rowId = e instanceof RequestError ? e.extra.details?.documentId : undefined;
+      if (typeof rowId === "string" && docs?.some((d) => d.id === rowId)) {
+        setAllocErrors({ [rowId]: payErrorText(e) });
+        requestAnimationFrame(() => document.getElementById(`pay-alloc-${rowId}`)?.focus());
         return;
       }
       setFailure(payErrorText(e));
