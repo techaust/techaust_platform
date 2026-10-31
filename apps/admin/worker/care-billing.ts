@@ -401,10 +401,11 @@ export async function draftCarePlan(
   let drafted = false;
   await mutateSystem(env, {
     main: [
-      // 1. the period is claimed: `last_billed_period` moves forward (a second call for the period changes nothing, and so nothing below is written)
+      // 1. the period is claimed: `last_billed_period` moves forward (a second call for the period changes nothing, and so nothing below is written). Not for a client
+      //    anonymised since the read (the draft's own guard would refuse, and the period would be marked billed with a `care_invoices` row naming no document).
       db
         .prepare(
-          "UPDATE care_plans SET last_billed_period = ?2 WHERE id = ?1 AND status = 'active' AND (last_billed_period IS NULL OR last_billed_period < ?2)",
+          "UPDATE care_plans SET last_billed_period = ?2 WHERE id = ?1 AND status = 'active' AND (last_billed_period IS NULL OR last_billed_period < ?2) AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = care_plans.client_id AND z.anonymised_at IS NOT NULL)",
         )
         .bind(args.planId, period.start),
       // 2. the record of it, only if 1 changed a row

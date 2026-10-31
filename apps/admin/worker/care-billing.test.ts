@@ -252,6 +252,48 @@ describe("draftCarePlan: one draft per plan and period [ADM-CARE-02, LD59]", () 
     expect(await docsOf(w.planId)).toEqual([]);
   });
 
+  it("a client anonymised between the read and the write: nothing is written (the period is not marked billed, no record, no draft, no audit row) and the answer is 'changed' (test-hardening item 5 #4)", async () => {
+    const w = await world();
+    clock(at("2026-11-05"));
+    const before = await one<{ last_billed_period: string | null }>(
+      "SELECT last_billed_period FROM care_plans WHERE id = ?",
+      w.planId,
+    );
+    const drafts = await one("SELECT count(*) AS n FROM audit_log WHERE action = 'care_invoice.draft'");
+    let batches = 0;
+    const racing = new Proxy(env.DB, {
+      get(target, key) {
+        if (key === "batch")
+          return async (stmts: D1PreparedStatement[]) => {
+            batches++;
+            // the second batch is the write (the first is the read)
+            if (batches === 2)
+              await target
+                .prepare("UPDATE clients SET anonymised_at = ?2 WHERE id = ?1")
+                .bind(w.clientId, Date.now())
+                .run();
+            return target.batch(stmts);
+          };
+        const v = Reflect.get(target, key);
+        return typeof v === "function" ? v.bind(target) : v;
+      },
+    });
+    const r = await draft(w, { ...env, DB: racing } as Env);
+    expect(r).toMatchObject({ result: "skipped", why: "changed" });
+    expect(batches).toBe(2); // the read and the write (an `already_billed` answer would read again)
+    expect(
+      await one<{ last_billed_period: string | null }>(
+        "SELECT last_billed_period FROM care_plans WHERE id = ?",
+        w.planId,
+      ),
+    ).toEqual(before);
+    expect(await rows("SELECT document_id FROM care_invoices WHERE care_plan_id = ?", w.planId)).toEqual([]);
+    expect(await docsOf(w.planId)).toEqual([]);
+    expect(await one("SELECT count(*) AS n FROM audit_log WHERE action = 'care_invoice.draft'")).toEqual(
+      drafts,
+    );
+  });
+
   it("not billed: a plan that has not started, one paused or cancelled at the period start; a plan that starts today is billed in full for its first, clamped period", async () => {
     const future = await world({ start: "2026-12-01" });
     clock(at("2026-11-05"));
