@@ -1,8 +1,8 @@
 # Run: T6, the offer wording, proposal terms v4 and website Terms 0.2
 
-Status: review APPROVE; lows fixed (7c5bc59); re-check and full checks next
+Status: PR opening (review APPROVE, re-check PASS, check and test green)
 Tier: B
-Usage: lead claude-opus-5-5/high (cloud session t6-terms); builder claude-opus-5-5/high (skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, unavailable in cloud; 5-h 8 % at start, reading of 12:58); analyst claude-opus-5-5/high (skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:workers-profiling, unavailable in cloud; 5-h 8 %, reading of 12:58); designer claude-opus-5-5/high (skills tried: frontend-design:frontend-design, unavailable in cloud; docs/06 followed; 5-h 8 %, reading of 12:58); reviewer claude-opus-5-5/high (skills: code-review loaded; security-review failed to load, no origin/HEAD; 5-h 46 %, reading of 13:46)
+Usage: lead claude-opus-5-5/high (cloud session t6-terms); builder claude-opus-5-5/high (skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, unavailable in cloud; 5-h 8 % at start, reading of 12:58); analyst claude-opus-5-5/high (skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:workers-profiling, unavailable in cloud; 5-h 8 %, reading of 12:58); designer claude-opus-5-5/high (skills tried: frontend-design:frontend-design, unavailable in cloud; docs/06 followed; 5-h 8 %, reading of 12:58); reviewer claude-opus-5-5/high (skills: code-review loaded; security-review failed to load, no origin/HEAD; 5-h 46 %, reading of 13:46; re-check at 5-h 68 %, reading of 14:16)
 
 **Source:** [settle-08c](settle-08c.md) task T6; wording [07-ZE](../07-content-appendix/ZE-terms-offers-deed.md) (approved by the owner, 2026-10-31: 20 lines, Q1–Q4). Cloud session `t6-terms`, branch `feat/t6-terms-offers`, controlled by the main session on the owner's PC. Merge order today: T12, **T6**, proforma withdraw, T7, M6.1.
 
@@ -205,3 +205,5 @@ Designer (Opus 5.5, high; cloud session, the only browser agent, port offset 0),
 - **Staff-reply box (possible follow-ups):** hide it on `expired` offers and steer staff to a revision; a recipient picker when the reply came from another recipient (reviewer lows 3 and 4, kept).
 - **Terms page at 360 px:** the Changes table wraps "31 October 2026" onto three lines; readable (designer).
 - **Cloud clone:** `security-review` needs `origin/HEAD` (`git remote set-head origin main`); a cloud session's clone lacks it.
+- **First-word helper (reviewer re-check, older than T6):** six hand-written splits outside the offer path could use core `firstNameOf`: `apps/admin/src/routes/invoices/send-parts.tsx:112`, `apps/admin/worker/leads.ts:836`, `apps/admin/worker/email-fixtures.ts:45`, `apps/jobs/src/invoice-mail.ts:46`, `apps/jobs/src/leads.ts:93`, `apps/jobs/src/staff-alerts.ts:94`; three don't trim first, so a name with a leading space greets "Hi ," (joins the M3.4 "one shared first-word helper" follow-up).
+- **Staging after merge:** terms v4 lands on staging only if staging's newest proposal terms row is the seeded v3 and Payment terms is 7 days; drafts pinned to v3 then show the existing "newer terms" notice.
