@@ -955,6 +955,19 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
         body: { expectedUpdatedAt: row?.updated_at, reason: "Issued in error" },
       });
     },
+    // ADM-INV-10 (added on purpose): withdrawing a proforma the client has opened.
+    "POST /api/v1/invoices/:id/withdraw": async () => {
+      const s = await owner();
+      await putCompany();
+      const pf = await mkProforma(s);
+      expect((await issueInvoice(s, pf.id)).status).toBe(200);
+      await env.DB.prepare("UPDATE documents SET viewed_at = ?2 WHERE id = ?1").bind(pf.id, Date.now()).run();
+      const row = await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?", pf.id);
+      return run(s, `/invoices/${pf.id}/withdraw`, {
+        method: "POST",
+        body: { expectedUpdatedAt: row?.updated_at, reason: "Sent in error" },
+      });
+    },
     // M5.2 (added on purpose): the two new audited routes.
     "POST /api/v1/invoices/:id/service-completed": async () => {
       const s = await owner();

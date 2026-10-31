@@ -21,6 +21,7 @@ import {
   isNoteType,
   issueDateOf,
   issueFyOf,
+  isWithdrawn,
   lutFor,
   lutReminder,
   type NoteBlocker,
@@ -28,6 +29,7 @@ import {
   proformaWarnAt,
   proformaWarnDate,
   voidBlockers,
+  withdrawBlockers,
 } from "@techaust/core/invoices";
 import type { Series } from "@techaust/core/numbering";
 import { decide, type Role } from "@techaust/core/permissions";
@@ -102,11 +104,14 @@ export type InvoiceViewInput = {
   /** A `document_sends` row exists (the Q1 void rule), and an issued document names this one as its parent. */
   emailed: boolean;
   hasIssuedChild: boolean;
+  /** ADM-INV-10: any document (draft or issued) names this one as its parent, and an advance receipt names it (the withdraw blockers). */
+  hasAnyChild: boolean;
+  hasAdvanceReceipt: boolean;
   /** M5.2: the active bank rows (the blockers), the newest extra export note and the documents made from this one. */
   bank: readonly BankRow[];
   declaration: TermsRef | null;
   children: readonly ChildRow[];
-  /** Who voided it (the `invoice.void` audit row's actor); null for an invoice that is not void. */
+  /** Who voided or withdrew it (the `invoice.void` or `invoice.withdraw` audit row's actor); null for an invoice that is not void. */
   voidedByName?: string | null;
   now: number;
   /** M5.3: the notes of an issued tax or export invoice, and what a credit or debit note adds (`note-view.ts`); the blockers of a note draft are the NOTE blockers. */
@@ -223,6 +228,23 @@ export function invoiceView(i: InvoiceViewInput) {
     issueDate: d.issue_date,
     today: todayIso,
     type: d.type,
+  });
+  // ADM-INV-10 (owner, 2026-10-30, docs/13): a proforma the client has received is withdrawn instead of voided; the codes say why not.
+  const withdrawReasons = withdrawBlockers({
+    type: d.type,
+    status: d.status,
+    paidMinor: d.paid_minor,
+    creditedMinor: d.credited_minor,
+    hasChildDocument: i.hasAnyChild,
+    hasAdvanceReceipt: i.hasAdvanceReceipt,
+    emailed: i.emailed,
+    viewed: d.viewed_at !== null,
+  });
+  const withdrawn = isWithdrawn({
+    type: d.type,
+    status: d.status,
+    emailed: i.emailed,
+    viewed: d.viewed_at !== null,
   });
   const clientDays = client.payment_terms_days;
   const dueDays = clientDays ?? settings.paymentTerms.dueDays;
@@ -347,9 +369,19 @@ export function invoiceView(i: InvoiceViewInput) {
       voidedByName: d.voided_at === null ? null : (i.voidedByName ?? null),
       reason: d.void_reason,
       /** Only the owner voids; the codes say why not (empty: it can be voided now). */
-      // A note is never voided (Q31; `note_not_voidable`).
-      canVoid: decide(i.role, "invoices.void") !== "deny" && voidReasons.length === 0 && !isNote,
+      // A note is never voided (Q31; `note_not_voidable`). An anonymised client locks every write (`anonymised.ts`; review L2): never offered.
+      canVoid:
+        decide(i.role, "invoices.void") !== "deny" && voidReasons.length === 0 && !isNote && !clientGone,
       blockers: isNote ? (["note_not_voidable"] as string[]) : voidReasons,
+      /** ADM-INV-10: a void proforma that had reached the client: it was withdrawn (the reason and the name above are the withdrawal's). */
+      withdrawn,
+    },
+    /** ADM-INV-10: only the Owner withdraws a proforma the client has received; the codes (core `WITHDRAW_BLOCKER_CODES`) say why not. */
+    withdraw: {
+      // An anonymised client locks every write (the route answers `client_anonymised`; review L2): never offered.
+      canWithdraw:
+        decide(i.role, "invoices.withdraw") !== "deny" && withdrawReasons.length === 0 && !clientGone,
+      blockers: withdrawReasons,
     },
     pdf: pdfOf(d),
     milestone: i.milestone

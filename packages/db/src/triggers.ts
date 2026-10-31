@@ -928,6 +928,8 @@ export const VIEWED_NO_VOID_TYPES_0053 = ["proforma", "tax_invoice", "export_inv
  * FX-5 (full audit A0 3; owner decision 2026-10-30, docs/13; 08-C RA-10; a new trigger only, no table is rebuilt; the abort message starts with the
  * trigger's name): `documents_viewed_no_void`: a proforma, tax or export invoice the client has opened in the portal (`viewed_at` set) is never
  * voided; a credit note corrects an invoice, a delivered proforma stays until converted (lead, 2026-10-30). The twin of core `voidBlockers` (`viewed_by_client`) and of the void route's `viewed_at IS NULL`.
+ * Replaced in 0056 (`proformaWithdrawTriggerStatements`) for tax and export invoices only: a delivered proforma is withdrawn (owner, 2026-10-30, docs/13). This
+ * function still writes 0053's bytes.
  */
 export function voidViewTriggerStatements(): string[] {
   const types = VIEWED_NO_VOID_TYPES_0053.map((t) => `'${t}'`).join(", ");
@@ -973,6 +975,40 @@ export function signatureTriggerStatements(): string[] {
   const mustSign = `(NEW.type IN (${types}) OR (NEW.type IN ('tax_invoice', 'export_invoice') AND json_type(NEW.header_extras, '$.advance') = 'object'))`;
   return [
     `CREATE TRIGGER \`documents_signature_required\` BEFORE UPDATE OF status ON \`documents\` WHEN OLD.status = 'draft' AND NEW.status = 'issued' AND ${mustSign} AND NOT ${signedIssuerSql("NEW.issuer")} BEGIN ${abort("documents_signature_required: a credit note, a debit note or an invoice for a payment received is issued with the signature")} END;`,
+  ];
+}
+
+/**
+ * ADM-INV-10: the document types `documents_viewed_no_void` covers from 0056 on: a tax or export invoice the client has opened is never voided (a credit
+ * note corrects it); a proforma left the list because a delivered one is withdrawn (`documents_proforma_withdraw`). Pinned so a later type cannot move the
+ * bytes of 0056 (0053 keeps `VIEWED_NO_VOID_TYPES_0053`).
+ */
+export const VIEWED_NO_VOID_TYPES_0056 = ["tax_invoice", "export_invoice"] as const;
+/** The invoice-family types whose void facts 0056 freezes (no view, no send after the void). */
+export const VOID_FACT_TYPES_0056 = ["proforma", "tax_invoice", "export_invoice"] as const;
+/** The withdraw (and void) reason's longest length in 0056, pinned: core `WITHDRAW_REASON_MAX` (a db test compares the two). */
+export const WITHDRAW_REASON_MAX_0056 = 500;
+
+/**
+ * ADM-INV-10 (owner, 2026-10-30, docs/13; runs/proforma-withdraw L1, L5; triggers only, no table is rebuilt; every abort message starts with its
+ * trigger's name). A proforma is not a tax document (Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-17, RA-28)), so a delivered one may be
+ * taken back (withdrawn: a void of a proforma that was emailed or opened, `withdrawnSql`) while nothing was paid or made from it:
+ * - `documents_viewed_no_void` dropped and created again for tax and export invoices only (0053 is never edited; precedent 0047, 0050);
+ * - `documents_proforma_withdraw`: a proforma moves to void only from `issued`, with nothing paid or credited, no advance receipt, no child document
+ *   (draft or issued) and a reason of 1 to 500 characters (both the void and the withdraw route; the twin of core `withdrawBlockers` and of the routes' WHEREs);
+ * - `documents_void_no_view`: a void proforma, tax or export invoice never gains or changes `viewed_at` (so "withdrawn" stays what it was at the void);
+ * - `document_sends_not_void`: no send row for a void proforma, tax or export invoice (offers are untouched).
+ */
+export function proformaWithdrawTriggerStatements(): string[] {
+  const viewedTypes = VIEWED_NO_VOID_TYPES_0056.map((t) => `'${t}'`).join(", ");
+  const factTypes = VOID_FACT_TYPES_0056.map((t) => `'${t}'`).join(", ");
+  const withdrawBad = `(OLD.status <> 'issued' OR OLD.paid_minor <> 0 OR OLD.credited_minor <> 0 OR EXISTS (SELECT 1 FROM advance_receipts r WHERE r.proforma_id = OLD.id) OR EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = OLD.id) OR NEW.void_reason IS NULL OR length(trim(NEW.void_reason)) = 0 OR length(NEW.void_reason) > ${WITHDRAW_REASON_MAX_0056})`;
+  return [
+    "DROP TRIGGER `documents_viewed_no_void`;",
+    `CREATE TRIGGER \`documents_viewed_no_void\` BEFORE UPDATE OF status ON \`documents\` WHEN NEW.status = 'void' AND OLD.status <> 'void' AND OLD.viewed_at IS NOT NULL AND OLD.type IN (${viewedTypes}) BEGIN ${abort("documents_viewed_no_void: a document the client has opened in the portal is never voided; a credit note corrects it")} END;`,
+    `CREATE TRIGGER \`documents_proforma_withdraw\` BEFORE UPDATE OF status ON \`documents\` WHEN NEW.status = 'void' AND OLD.status <> 'void' AND OLD.type = 'proforma' AND ${withdrawBad} BEGIN ${abort("documents_proforma_withdraw: a proforma is voided or withdrawn only while issued, with nothing paid or credited, no payment received, nothing made from it, and a reason")} END;`,
+    `CREATE TRIGGER \`documents_void_no_view\` BEFORE UPDATE OF viewed_at ON \`documents\` WHEN OLD.status = 'void' AND NEW.viewed_at IS NOT OLD.viewed_at AND OLD.type IN (${factTypes}) BEGIN ${abort("documents_void_no_view: the portal view of a void document is never set or changed")} END;`,
+    `CREATE TRIGGER \`document_sends_not_void\` BEFORE INSERT ON \`document_sends\` WHEN EXISTS (SELECT 1 FROM documents d WHERE d.id = NEW.document_id AND d.type IN (${factTypes}) AND (d.status = 'void' OR d.voided_at IS NOT NULL)) BEGIN ${abort("document_sends_not_void: a void document is never sent")} END;`,
   ];
 }
 
@@ -1053,6 +1089,10 @@ export const TRIGGER_SETS = {
   signature_triggers: {
     what: "settle-08c T4: a credit note, a debit note and an invoice for a payment received are issued with the signature",
     statements: signatureTriggerStatements,
+  },
+  proforma_withdraw_triggers: {
+    what: "proforma withdraw (ADM-INV-10, owner decision 2026-10-30): the view rule for tax and export invoices only, a proforma's void rules, no view or send after a void",
+    statements: proformaWithdrawTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;

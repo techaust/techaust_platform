@@ -27,6 +27,7 @@ import {
   run,
   staff,
   useFakes,
+  voidDoc,
 } from "./billing-fixtures.ts";
 
 useFakes();
@@ -330,7 +331,9 @@ describe("refusals: acknowledged, nothing minted, nothing queued, the row marked
   });
 
   it("a void document and an anonymised client", async () => {
-    const voided = await world({ doc: { status: "void" } });
+    // ADM-INV-10 (0056): a void document takes no send row, so it is issued, sent, then voided (a void after the send was queued).
+    const voided = await world();
+    await voidDoc(voided.doc);
     await refused(voided);
     const gone = await world();
     await run("UPDATE clients SET anonymised_at = 9 WHERE id = ?1", gone.clientId);

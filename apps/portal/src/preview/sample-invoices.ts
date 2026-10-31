@@ -59,7 +59,7 @@ type Base = Omit<InvoiceSummary, "total" | "balance">;
 const finish = (b: Base): InvoiceSummary => ({
   ...b,
   total: moneyText(b.totals.totalMinor, b.currency),
-  balance: moneyText(b.balanceMinor, b.currency),
+  balance: b.balanceMinor === null ? null : moneyText(b.balanceMinor, b.currency),
 });
 const totals = (t: Partial<InvoiceSummary["totals"]> & { taxableMinor: number; totalMinor: number }) => ({
   subtotalMinor: t.taxableMinor,
@@ -330,6 +330,38 @@ export const SAMPLE_INVOICES: InvoiceSummary[] = [
     bank: INR_BANK,
     pdfReady: true,
   }),
+  finish({
+    // ADM-INV-10 (07-ZF 18, 19): a payment request withdrawn after the client received it: no amount due, no due date, no PDF, no bank block, and
+    // never the staff's reason (the API sends none of them).
+    id: "pro-withdrawn",
+    type: "proforma",
+    status: "withdrawn",
+    withdrawnOn: day(-2),
+    numberDisplay: "TH/PRO/2627/0003",
+    issueDate: day(-9),
+    dueDate: null,
+    currency: "INR",
+    parentNumber: null,
+    gstEstimate: true,
+    totals: totals({
+      taxableMinor: 9_000_000,
+      cgstMinor: 810_000,
+      sgstMinor: 810_000,
+      totalMinor: 10_620_000,
+    }),
+    paidMinor: 0,
+    creditedMinor: 0,
+    balanceMinor: null,
+    lines: [
+      line(1, "Advance for the booking form (sample)", 1000, "project", 9_000_000, 9_000_000, {
+        cgst: 810_000,
+        sgst: 810_000,
+        rateBp: 1800,
+      }),
+    ],
+    bank: null,
+    pdfReady: false,
+  }),
 ];
 
 const itemOf = (d: InvoiceSummary): InvoiceItem => ({
@@ -344,6 +376,7 @@ const itemOf = (d: InvoiceSummary): InvoiceItem => ({
   balanceMinor: d.balanceMinor,
   total: d.total,
   balance: d.balance,
+  withdrawnOn: d.withdrawnOn ?? null,
 });
 
 /** The invoice link tokens of the sample: 43 characters; the first letter picks the case. */
@@ -351,6 +384,7 @@ export const SAMPLE_INVOICE_TOKENS = {
   invoice: `I${"a".repeat(42)}`,
   proforma: `P${"a".repeat(42)}`,
   credit: `C${"a".repeat(42)}`,
+  withdrawn: `W${"a".repeat(42)}`,
   ended: `Z${"a".repeat(42)}`,
 };
 
@@ -361,7 +395,31 @@ const ofToken = (t: string) =>
       ? SAMPLE_INVOICES[2]
       : t.startsWith("C")
         ? SAMPLE_INVOICES[4]
-        : undefined;
+        : t.startsWith("W")
+          ? SAMPLE_INVOICES.find((x) => x.id === "pro-withdrawn")
+          : undefined;
+
+/**
+ * Review L3: a payment request withdrawn while its page is open. It reads as due until its PDF is asked for; that answer is 409 `withdrawn`, and from
+ * then on (until the tab reloads) the page's reload finds it withdrawn. Not in the list.
+ */
+let raceWithdrawn = false;
+const raceDoc = (): InvoiceSummary => {
+  const base = SAMPLE_INVOICES.find((x) => x.id === "pro-withdrawn") as InvoiceSummary;
+  return raceWithdrawn
+    ? { ...base, id: "pro-race", numberDisplay: "TH/PRO/2627/0004" }
+    : finish({
+        ...base,
+        id: "pro-race",
+        numberDisplay: "TH/PRO/2627/0004",
+        status: "issued",
+        withdrawnOn: null,
+        dueDate: day(5),
+        balanceMinor: base.totals.totalMinor,
+        bank: INR_BANK,
+        pdfReady: true,
+      });
+};
 
 type Json = (status: number, body: unknown) => Response;
 type Err = (status: number, code: string) => Response;
@@ -378,17 +436,32 @@ export function answerInvoices(
   if (method === "GET" && /^\/invoices(\?|$)/.test(path))
     return h.json(200, { invoices: empty ? [] : SAMPLE_INVOICES.map(itemOf), next: null });
   const m = /^\/invoices\/([^/?]+)(\/pdf)?$/.exec(path);
+  if (m && m[1] === "pro-race" && !empty) {
+    if (!m[2]) return h.json(200, { document: raceDoc() });
+    raceWithdrawn = true;
+    return h.error(409, "withdrawn");
+  }
   if (m) {
     const d = SAMPLE_INVOICES.find((x) => x.id === decodeURIComponent(m[1] ?? ""));
     if (!d || empty) return h.error(404, "not_found");
-    if (m[2]) return d.pdfReady ? h.pdf(file(d)) : h.error(409, "pdf_pending");
+    if (m[2])
+      return d.status === "withdrawn"
+        ? h.error(409, "withdrawn")
+        : d.pdfReady
+          ? h.pdf(file(d))
+          : h.error(409, "pdf_pending");
     return h.json(200, { document: d });
   }
   const t = /^\/t\/document(\/pdf)?$/.exec(path);
   if (t) {
     const d = ofToken(String(body.token ?? ""));
     if (!d) return h.error(404, "not_found");
-    if (t[1]) return d.pdfReady ? h.pdf(file(d)) : h.error(409, "pdf_pending");
+    if (t[1])
+      return d.status === "withdrawn"
+        ? h.error(409, "withdrawn")
+        : d.pdfReady
+          ? h.pdf(file(d))
+          : h.error(409, "pdf_pending");
     return h.json(200, { document: d });
   }
   return null;

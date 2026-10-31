@@ -2086,6 +2086,40 @@ textarea[aria-invalid="true"] {
   vertical-align: middle;
 }
 
+/*
+ * Seven columns that never wrap (the number, two dates, two amounts, the status pill) need about 47rem once a row has a six-figure amount and the
+ * "Withdrawn" pill (review M1, ADM-INV-10): cards until the sheet is clearly wider than that, as the lines table does, so a tablet held upright
+ * never scrolls sideways. The table comes back on a laptop.
+ */
+@container sheet (max-width: 51.99rem) {
+  .inv-table .rtable__wide {
+    display: none;
+  }
+
+  .inv-table .rtable__cards {
+    display: block;
+  }
+}
+
+/* A tablet's card is wide: its six facts sit in a 3 × 2 grid, label over value, so the eye never crosses the sheet for one figure. */
+@container sheet (min-width: 34rem) and (max-width: 51.99rem) {
+  .inv-table .rcard dl {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-3) var(--space-6);
+  }
+
+  .inv-table .rcard :where(dl) > div {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: var(--space-1);
+  }
+
+  .inv-table .rcard dd {
+    text-align: start;
+  }
+}
+
 /* One document: the number is the heading, set in tabular figures (it is a reference people copy). */
 .inv-doc__head {
   display: grid;

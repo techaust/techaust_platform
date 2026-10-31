@@ -16,10 +16,15 @@ import {
   issueBlockers,
   issueDateOf,
   issueFyOf,
+  isWithdrawn,
   LEDGER_STATUSES,
   MILESTONE_BILLABLE_SQL,
   milestoneBillableRule,
   voidBlockers,
+  WITHDRAW_BLOCKER_CODES,
+  WITHDRAW_REASON_MAX,
+  type WithdrawFacts,
+  withdrawBlockers,
 } from "../src/invoices.ts";
 
 describe("which types can be issued [ADM-INV-01, LD2]", () => {
@@ -541,5 +546,153 @@ describe("which milestone an invoice may be drafted from (re-check A)", () => {
   it("its SQL twin names is_advance and no position", () => {
     expect(MILESTONE_BILLABLE_SQL).toContain("is_advance = 1");
     expect(MILESTONE_BILLABLE_SQL).not.toContain("position");
+  });
+});
+
+// ADM-INV-10 (owner, 2026-10-30, docs/13; runs/proforma-withdraw L1, L2): a proforma the client has received is withdrawn, never voided; one not yet
+// delivered is voided, never withdrawn. Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-17, RA-28): a proforma is not a tax document.
+describe("withdraw a delivered proforma [ADM-INV-10]", () => {
+  const base: WithdrawFacts = {
+    type: "proforma",
+    status: "issued",
+    paidMinor: 0,
+    creditedMinor: 0,
+    hasChildDocument: false,
+    hasAdvanceReceipt: false,
+    emailed: true,
+    viewed: false,
+  };
+  it("refuses first: anything but a proforma, whatever else holds", () => {
+    for (const type of ["tax_invoice", "export_invoice", "credit_note", "debit_note", "proposal"])
+      for (const status of ["issued", "void", "draft", "paid"])
+        expect(withdrawBlockers({ ...base, type, status, paidMinor: 5, emailed: false })).toEqual([
+          "not_proforma",
+        ]);
+  });
+  it("a void proforma: already withdrawn when it had been delivered, already void when not; nothing else", () => {
+    expect(withdrawBlockers({ ...base, status: "void" })).toEqual(["already_withdrawn"]);
+    expect(withdrawBlockers({ ...base, status: "void", emailed: false, viewed: true })).toEqual([
+      "already_withdrawn",
+    ]);
+    expect(
+      withdrawBlockers({ ...base, status: "void", emailed: false, paidMinor: 5, hasChildDocument: true }),
+    ).toEqual(["already_void"]);
+  });
+  it("each other reason has its code, in the list's order", () => {
+    expect(withdrawBlockers({ ...base, status: "draft", emailed: false })).toEqual([
+      "not_issued",
+      "not_delivered",
+    ]);
+    expect(withdrawBlockers({ ...base, status: "converted" })).toEqual(["proforma_converted"]);
+    expect(withdrawBlockers({ ...base, hasChildDocument: true })).toEqual(["proforma_converted"]);
+    expect(withdrawBlockers({ ...base, paidMinor: 1 })).toEqual(["proforma_paid"]);
+    expect(withdrawBlockers({ ...base, creditedMinor: 1 })).toEqual(["proforma_paid"]);
+    expect(withdrawBlockers({ ...base, hasAdvanceReceipt: true })).toEqual(["proforma_paid"]);
+    expect(withdrawBlockers({ ...base, emailed: false })).toEqual(["not_delivered"]);
+    expect(withdrawBlockers({ ...base, status: "partially_paid", paidMinor: 5 })).toEqual(["proforma_paid"]);
+    expect(
+      withdrawBlockers({
+        ...base,
+        status: "converted",
+        paidMinor: 5,
+        hasAdvanceReceipt: true,
+        hasChildDocument: true,
+        emailed: false,
+      }),
+    ).toEqual(["proforma_converted", "proforma_paid", "not_delivered"]);
+    expect(withdrawBlockers({ ...base, status: "weird", emailed: false })).toEqual([
+      "not_issued",
+      "not_delivered",
+    ]);
+  });
+  it("an issued, unpaid, childless proforma that was emailed, opened, or both can be withdrawn", () => {
+    expect(withdrawBlockers(base)).toEqual([]);
+    expect(withdrawBlockers({ ...base, emailed: false, viewed: true })).toEqual([]);
+    expect(withdrawBlockers({ ...base, viewed: true })).toEqual([]);
+  });
+  it("the codes are exactly the list (a code a screen does not know fails here)", () => {
+    expect(WITHDRAW_BLOCKER_CODES).toEqual([
+      "not_proforma",
+      "already_withdrawn",
+      "already_void",
+      "not_issued",
+      "proforma_converted",
+      "proforma_paid",
+      "not_delivered",
+    ]);
+    expect(WITHDRAW_REASON_MAX).toBe(500);
+  });
+  it("void and withdraw never overlap: for an issued, unpaid, childless proforma exactly one is open, by delivery", () => {
+    fc.assert(
+      fc.property(
+        fc.boolean(),
+        fc.boolean(),
+        fc.constantFrom("2026-04-01", "2026-10-05"),
+        (emailed, viewed, issueDate) => {
+          const v = voidBlockers({
+            type: "proforma",
+            status: "issued",
+            paidMinor: 0,
+            creditedMinor: 0,
+            hasIssuedChild: false,
+            emailed,
+            viewed,
+            issueDate,
+            today: "2026-10-31",
+          });
+          const w = withdrawBlockers({ ...base, emailed, viewed });
+          expect((v.length === 0) !== (w.length === 0)).toBe(true);
+          expect(w.length === 0).toBe(emailed || viewed);
+        },
+      ),
+    );
+  });
+  it("whatever the facts, the codes come in the list's order, never twice, and none means a delivered, issued, unpaid proforma", () => {
+    fc.assert(
+      fc.property(
+        fc.record({
+          type: fc.constantFrom("proforma", "tax_invoice", "export_invoice", "credit_note"),
+          status: fc.constantFrom(
+            "draft",
+            "issued",
+            "partially_paid",
+            "paid",
+            "converted",
+            "void",
+            "credited",
+          ),
+          paidMinor: fc.nat(3),
+          creditedMinor: fc.nat(3),
+          hasChildDocument: fc.boolean(),
+          hasAdvanceReceipt: fc.boolean(),
+          emailed: fc.boolean(),
+          viewed: fc.boolean(),
+        }),
+        (f) => {
+          const out = withdrawBlockers(f);
+          const at = out.map((c) => WITHDRAW_BLOCKER_CODES.indexOf(c));
+          expect([...at].sort((a, b) => a - b)).toEqual(at);
+          expect(new Set(out).size).toBe(out.length);
+          expect(out.length === 0).toBe(
+            f.type === "proforma" &&
+              (LEDGER_STATUSES as readonly string[]).includes(f.status) &&
+              f.paidMinor === 0 &&
+              f.creditedMinor === 0 &&
+              !f.hasChildDocument &&
+              !f.hasAdvanceReceipt &&
+              (f.emailed || f.viewed),
+          );
+        },
+      ),
+    );
+  });
+  it("isWithdrawn: a void proforma that was emailed or opened, and nothing else", () => {
+    for (const type of ["proforma", "tax_invoice", "export_invoice"])
+      for (const status of ["issued", "void", "converted"])
+        for (const emailed of [false, true])
+          for (const viewed of [false, true])
+            expect(isWithdrawn({ type, status, emailed, viewed })).toBe(
+              type === "proforma" && status === "void" && (emailed || viewed),
+            );
   });
 });

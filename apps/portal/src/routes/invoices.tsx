@@ -11,7 +11,7 @@ import { PageTitle, TokenShell } from "../components/shell/portal-shell.tsx";
 import { COPY } from "../copy.ts";
 import { N } from "../copy-documents.ts";
 import { INV } from "../copy-invoices.ts";
-import { capturedInvoiceToken, invoicePdfName } from "../lib/invoices.ts";
+import { capturedInvoiceToken, invoicePdfName, pdfFailure } from "../lib/invoices.ts";
 import { saveDownload } from "../lib/offers.ts";
 import { MoreButton, NotFoundScreen, ScreenSkeleton } from "../screens/home.tsx";
 import { InvoicePage, InvoicesScreen } from "../screens/invoices.tsx";
@@ -53,9 +53,22 @@ function DocumentScreen(props: {
     }
   }, [source]);
 
+  // The document again without the loading screen (review L3): the page swaps its view in place and keeps the download's message; a failed
+  // reload keeps the page as it was, and the message says why.
+  const refresh = useCallback(async () => {
+    try {
+      const r = await source.load();
+      if (alive.current) setState({ phase: "ready", doc: r.document });
+    } catch {
+      /* the page stays; its message stands */
+    }
+  }, [source]);
+
   useEffect(() => {
     alive.current = true;
     void props.loadKey;
+    // Re-check N2: another document (a note's parent link) starts without the previous one's download message; `refresh()` keeps it (L3).
+    setPdfProblem(null);
     load();
     return () => {
       alive.current = false;
@@ -78,19 +91,18 @@ function DocumentScreen(props: {
       onPdf={async () => {
         setDownloading(true);
         setPdfProblem(null);
+        let reload = false;
         try {
           saveDownload(await source.pdf(), invoicePdfName(doc.numberDisplay));
         } catch (e) {
-          setPdfProblem(
-            e instanceof RequestError && e.code === "pdf_pending"
-              ? INV.pdfNotReady
-              : e instanceof RequestError && e.status === 404
-                ? INV.linkEnded
-                : problemText(e),
-          );
+          // ADM-INV-10: withdrawn while the page was open: 07-ZF 20, then the withdrawn view (review L3)
+          const failed = pdfFailure(e, problemText);
+          setPdfProblem(failed.text);
+          reload = failed.reload;
         } finally {
           setDownloading(false);
         }
+        if (reload) await refresh();
       }}
     />
   );

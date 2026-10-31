@@ -592,6 +592,8 @@ describe("the route table", () => {
       "POST /api/v1/invoices/:id/issue invoices.issue invoice.issue",
       "POST /api/v1/invoices/:id/issue-request invoices.draft approval.request",
       "POST /api/v1/invoices/:id/void invoices.void invoice.void",
+      // ADM-INV-10 (added on purpose): withdrawing a delivered proforma
+      "POST /api/v1/invoices/:id/withdraw invoices.withdraw invoice.withdraw",
       "POST /api/v1/invoices/:id/service-completed invoices.draft invoice.service_completed",
       "POST /api/v1/invoices/:id/advance-invoice invoices.advance invoice.advance_issue",
       // M5.3 (added on purpose): the note drafts and the IMS answer
