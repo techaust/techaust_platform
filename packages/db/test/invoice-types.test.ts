@@ -893,7 +893,8 @@ describe("the tax invoice for money received [Q9, LD22; Researched 2026-10-28, s
         "UPDATE documents SET status = 'void', voided_at = 1, void_reason = 'x' WHERE id = ?",
         w.proformaId,
       ),
-      /documents_invoice_status_flow|documents_void_pairing/,
+      // ADM-INV-10: 0056's `documents_proforma_withdraw` (converted, paid, a receipt and a child) may fire first
+      /documents_invoice_status_flow|documents_void_pairing|documents_proforma_withdraw/,
     );
     await rejects(
       run(

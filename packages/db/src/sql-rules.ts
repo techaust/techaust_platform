@@ -42,3 +42,18 @@ export const signedIssuerSql = (issuer: string): string =>
  */
 export const fyTokenOfDateSql = (date: string): string =>
   `(CASE WHEN CAST(substr(${date}, 6, 2) AS INTEGER) >= 4 THEN substr(${date}, 3, 2) || printf('%02d', (CAST(substr(${date}, 3, 2) AS INTEGER) + 1) % 100) ELSE printf('%02d', (CAST(substr(${date}, 3, 2) AS INTEGER) + 99) % 100) || substr(${date}, 3, 2) END)`;
+
+/**
+ * ADM-INV-10 (owner, 2026-10-30, docs/13; runs/proforma-withdraw L1): the document `a` (a table alias or `NEW`/`OLD`) reached the client: it was opened
+ * in the portal (`viewed_at`) or emailed (any `document_sends` row). The withdraw route's freeze WHERE and the readers of a withdrawn proforma use it.
+ */
+export const proformaDeliveredSql = (a: string): string =>
+  `(${a}.viewed_at IS NOT NULL OR EXISTS (SELECT 1 FROM document_sends s WHERE s.document_id = ${a}.id))`;
+
+/**
+ * A withdrawn proforma: a void proforma that had reached the client (the twin of core `isWithdrawn`; a db test compares the two). Unambiguous because
+ * a delivered proforma reaches `void` only through the withdraw route (the void route refuses a send row or a view, and so does trigger
+ * `documents_viewed_no_void`); triggers `documents_void_no_view` and `document_sends_not_void` (0056) keep the facts from changing after the void.
+ */
+export const withdrawnSql = (a: string): string =>
+  `(${a}.type = 'proforma' AND ${a}.status = 'void' AND ${proformaDeliveredSql(a)})`;
