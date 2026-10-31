@@ -1,4 +1,4 @@
-Status: WAITING ON OWNER (Q1–Q4; build continues on the defaults); builder running (started 13:18 IST)
+Status: builder running (started 13:18 IST); owner answered Q1–Q4 (2026-10-31), 07-ZF approved
 Tier: A
 Usage: analyst (brief draft) claude-opus-5-5/high, skills: none available (no Cloudflare plugin in the cloud); 5-h 8 % at start
 
@@ -83,7 +83,7 @@ Any client email (Q2), a stamp on the write-once PDF, any change to void of tax/
 Builder: core, db, admin and portal tests green through `tools/heavy.sh`, `pnpm check` green, budgets under ceilings, committed and pushed, stopped for the early check. Designer: screens with screenshots under `[Placeholder]`. Review APPROVE, findings fixed, re-check; 07-ZF approved by the owner and `APPROVED_07ZF` on before the PR; run file filled.
 
 ## Questions for the owner
-Asked 2026-10-31 (through the main session). The build uses the recommended answer until you reply.
+Asked 2026-10-31 (through the main session). **Answered by the owner 2026-10-31 (relayed by the main session): Q1 A, Q2 A, Q3 A, Q4 A (07-ZF lines 1–20 approved as drafted; line 21 dropped, as Q2 = A).**
 
 **Q1. Who may withdraw a proforma?** Your rule says "staff may take back". Voiding today is Owner-only with a fresh authenticator code.
 - A) **Owner only, with a fresh code, the same as voiding (Recommended).**
@@ -104,6 +104,10 @@ Asked 2026-10-31 (through the main session). The build uses the recommended answ
 - B) Approve with changes (name the line numbers and the new words).
 
 ## Lead decisions (for 13)
+- **Owner, 2026-10-31 (Q1 A):** only the Owner withdraws a proforma, with a fresh authenticator code, the same as voiding (`invoices.withdraw: { owner: "step-up" }`).
+- **Owner, 2026-10-31 (Q2 A):** no email to the client on a withdrawal; the portal and the emailed link show "Withdrawn" and its reminders stop; no new template.
+- **Owner, 2026-10-31 (Q3 A):** the client sees the withdrawn payment request's details with the "Withdrawn" banner, no amount due, no PDF download, and not the staff's reason.
+- **Owner, 2026-10-31 (Q4 A):** 07-ZF lines 1–20 approved as drafted; line 21 (the email) dropped; `APPROVED_07ZF` on.
 - **L1 (2026-10-31):** a withdrawal is a `void` of a delivered proforma through its own route (`POST /api/v1/invoices/:id/withdraw`), permission `invoices.withdraw` and audit action `invoice.withdraw`; "withdrawn" = a void proforma that was emailed or viewed, derived in SQL (`withdrawnSql`) and kept stable by triggers; no new status or column (a status value needs a `documents` rebuild, forbidden; a column would re-create `documents_frozen_update`).
 - **L2:** void and withdraw are exclusive by delivery: an undelivered proforma is voided, a delivered one is withdrawn.
 - **L3:** links and sends are left alone (no token revoked, no send cancelled): the emailed link opens a "Withdrawn" page, not a 404; reminders stop through the existing claim.

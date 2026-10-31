@@ -1,6 +1,6 @@
 # 07-ZF: withdraw a proforma the client has seen
 
-Status: **PENDING the owner** (drafted by the lead from the analyst's draft, 2026-10-31). Change a line here first, then in the code. Until approved, each line shows "[Placeholder]" (`APPROVED_07ZF`). Lines in `{braces}` are filled in by the screen. The portal calls a proforma a "payment request" (07-U §1).
+Status: **APPROVED by the owner, 2026-10-31** (lines 1–20 as drafted; line 21 dropped, since no email is sent: Q2 = A). Change a line here first, then in the code. The switch `APPROVED_07ZF` is on. Lines in `{braces}` are filled in by the screen. The portal calls a proforma a "payment request" (07-U §1).
 
 ## Admin (staff)
 1. Button: "Withdraw proforma"
@@ -25,6 +25,6 @@ Status: **PENDING the owner** (drafted by the lead from the analyst's draft, 202
 18. List status: "Withdrawn"
 19. Page banner: "This payment request was withdrawn on {date}. You don't need to pay it."
 20. PDF refused: "The PDF isn't available because this payment request was withdrawn."
-21. Only if Q2 = B (an email): subject "Payment request {number} withdrawn"; body "We've withdrawn payment request {number} dated {date}. You don't need to pay it. If you have any questions, reply to this email."
+21. ~~Only if Q2 = B (an email)~~ **Dropped (owner, 2026-10-31: no email).** Was: subject "Payment request {number} withdrawn"; body "We've withdrawn payment request {number} dated {date}. You don't need to pay it. If you have any questions, reply to this email."
 
 Checked against the banned-phrase list (07 §1.3): none used; no "&", no arrow characters.
