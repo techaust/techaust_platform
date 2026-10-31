@@ -4,7 +4,7 @@
 // face the document numbers use, and one chip for its state (icon and words, never colour alone; docs/06 §5.5).
 import "../invoices/parts.tsx";
 import "../../payments.css";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { PaymentStatus } from "../../api.ts";
 import { RequestError, stepUpActive } from "../../api.ts";
 import { StatusPill } from "../../components/display.tsx";
@@ -22,6 +22,32 @@ import {
   STATUS_LABELS,
   STATUS_PILLS,
 } from "../../lib/payments.ts";
+
+/**
+ * Which dialog is open, for a screen that mounts its dialogs only while open: focus goes back to the control that opened one when it closes (WCAG 2.4.3;
+ * an unmounted <dialog> can't hand it back itself), or to `fallbackId` when that control is gone after the change it made.
+ */
+export function useDialogState<T>(fallbackId: string) {
+  const [value, setValue] = useState<T | null>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const set = useCallback(
+    (next: T | null) => {
+      if (next !== null) {
+        const a = document.activeElement;
+        opener.current = a instanceof HTMLElement && a !== document.body ? a : null;
+      } else {
+        const back = opener.current;
+        requestAnimationFrame(() => {
+          if (back?.isConnected) back.focus();
+          else document.getElementById(fallbackId)?.focus();
+        });
+      }
+      setValue(next);
+    },
+    [fallbackId],
+  );
+  return [value, set] as const;
+}
 
 export const CODE_MISSING = "Enter the 6-digit code from your authenticator app.";
 

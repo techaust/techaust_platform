@@ -5,7 +5,6 @@
 // warning icon and its count in words, never colour alone. "Collected" arrives with payments (M6) and says so (07-V's line).
 // Amounts are formatted by core (`moneyText`); nothing is added up here.
 
-import { useState } from "react";
 import type { ClientFigures, ProjectBilled } from "../../api.ts";
 import { api } from "../../api.ts";
 import { AlertTriangle, Receipt, RefreshCw } from "../../components/icons.tsx";
@@ -18,6 +17,7 @@ import { moneyText } from "../../lib/projects.ts";
 import { FINANCE_COPY } from "../../lib/reports.ts";
 import { useUser } from "../../session.tsx";
 import { ClientCreditDialog } from "../payments/client-credit.tsx";
+import { useDialogState } from "../payments/parts.tsx";
 
 /** 07-Y (FX-3): the figure labels 07-V's dashboard tiles didn't have. */
 export const FIGURES_COPY = {
@@ -130,7 +130,8 @@ export function ClientFiguresPanel(props: {
 }) {
   const user = useUser();
   const finance = useLoad(() => api.clientFinance(props.clientId), props.clientId);
-  const [using, setUsing] = useState(false);
+  const [using, setUsingState] = useDialogState<true>("acct-h");
+  const setUsing = (on: boolean) => setUsingState(on ? true : null);
   const toast = useToast();
   if (finance.state === "ready" && !finance.data.available) return null;
   const rows = finance.state === "ready" && finance.data.available ? finance.data.currencies : [];

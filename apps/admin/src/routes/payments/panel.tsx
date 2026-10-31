@@ -41,7 +41,7 @@ import {
 } from "../../lib/payments.ts";
 import { bpToPercent, moneyFrom } from "../../lib/settings-form.ts";
 import { withCode } from "../../lib/step-up.ts";
-import { day, FilePick, PaymentPill, useCodeSlot } from "./parts.tsx";
+import { day, FilePick, PaymentPill, useCodeSlot, useDialogState } from "./parts.tsx";
 import { RecordPaymentDialog } from "./record-dialog.tsx";
 
 type Panel = InvoicePaymentsPanel;
@@ -113,7 +113,7 @@ export function PaymentsPanel(props: {
 
 function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onChanged: () => void }) {
   const { view: v, panel: p, role } = props;
-  const [dialog, setDialog] = useState<Dialog>(null);
+  const [dialog, setDialog] = useDialogState<NonNullable<Dialog>>("pay-h");
   const toast = useToast();
   const live = v.status !== "void" && !v.client.anonymised && PAYABLE.includes(v.type);
   const canRecord = live && allowed(role, "payments.record") && p.balanceMinor > 0;
@@ -136,7 +136,7 @@ function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onCha
   return (
     <section className="lead-panel pay-panel" aria-labelledby="pay-h">
       <div className="lead-panel__head">
-        <h2 id="pay-h" className="lead-panel__title">
+        <h2 id="pay-h" className="lead-panel__title" tabIndex={-1}>
           {PAY_COPY.heading}
         </h2>
         {(canRecord || tdsOk) && (

@@ -48,7 +48,14 @@ import { bpToPercent } from "../lib/settings-form.ts";
 import { withCode } from "../lib/step-up.ts";
 import { useUser } from "../session.tsx";
 import { CertificateDialog, paymentHref } from "./payments/panel.tsx";
-import { AllocationTable, day, FilePick, PaymentPill, useCodeSlot } from "./payments/parts.tsx";
+import {
+  AllocationTable,
+  day,
+  FilePick,
+  PaymentPill,
+  useCodeSlot,
+  useDialogState,
+} from "./payments/parts.tsx";
 import { RecordPaymentDialog } from "./payments/record-dialog.tsx";
 
 export function Component() {
@@ -76,7 +83,7 @@ function Payments({ role }: { role: Role }) {
   const client = params.get("client") ?? undefined;
   const from = params.get("from") ?? "";
   const to = params.get("to") ?? "";
-  const [recording, setRecording] = useState<"payment" | "tds" | null>(null);
+  const [recording, setRecording] = useDialogState<"payment" | "tds">("main");
   const waiting = useLoad(
     () => (owner ? paymentsApi.list({ status: "pending_verification" }) : Promise.resolve(null)),
     `${owner}`,
@@ -189,9 +196,16 @@ function PaymentList(props: {
   const list = useLoad(() => paymentsApi.list(q), JSON.stringify(q));
   const [more, setMore] = useState<PaymentView[]>([]);
   const [after, setAfter] = useState<string | null>(null);
-  const [open, setOpen] = useState<{ id: string; act?: "confirm" | "reject" } | null>(
-    props.linked ? { id: props.linked } : null,
-  );
+  const [open, setOpenState] = useDialogState<{ id: string; act?: "confirm" | "reject" }>("main");
+  const setOpen = setOpenState;
+  // a bell's or the approvals queue's link opens that entry once the list is drawn
+  const linkedOpened = useRef(false);
+  useEffect(() => {
+    if (props.linked && !linkedOpened.current) {
+      linkedOpened.current = true;
+      setOpen({ id: props.linked });
+    }
+  }, [props.linked, setOpen]);
   const rows = [...(list.data?.payments ?? []), ...more];
   const next = more.length ? after : (list.data?.next ?? null);
   const filtered =
