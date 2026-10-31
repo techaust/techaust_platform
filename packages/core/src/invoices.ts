@@ -6,7 +6,8 @@
 //     test proves both agree move by move),
 //   - the blockers: what stops an issue (the statutory list of LD20, as the configurable checklist of ADM-INV-06: `INVOICE_CHECKLIST`),
 //   - the void rule of Q1, the due date, the IST day and FY of an issue, and the Table 13 summary of the documents issued.
-// The export endorsement, the LUT helpers, the proforma notice and the exchange-rate helpers (`export-invoice.ts`, `fx.ts`) are exported from here.
+// The export endorsement, the LUT helpers, the proforma notice and the exchange-rate helpers (`export-invoice.ts`, `fx.ts`) and the realisation bounds
+// (`realisation-bounds.ts`) are exported from here.
 import { addDays, fyOf, istDate, parseIsoDate, toIsoDate } from "./dates.ts";
 import { type ExportRoute, type Lut, lutFor } from "./export-invoice.ts";
 import { fxDateVerdict } from "./fx.ts";
@@ -18,6 +19,7 @@ import type { Series } from "./numbering.ts";
 export * from "./export-invoice.ts";
 export * from "./fx.ts";
 export * from "./notes.ts";
+export * from "./realisation-bounds.ts";
 export * from "./reminders.ts";
 export * from "./udyam.ts";
 

@@ -2,6 +2,14 @@
 // a value the Settings page can save must never make every report route answer 409 settings_invalid.
 import { describe, expect, it } from "vitest";
 import { realisationParamsFromStoredTax } from "../src/export-invoice.ts";
+import { DEFAULT_REALISATION_RULES, rulesAreValid } from "../src/gst/realisation.ts";
+import * as invoices from "../src/invoices.ts";
+import {
+  REALISATION_MAX_DAYS,
+  REALISATION_MAX_MONTHS,
+  REALISATION_MIN_DAYS,
+  REALISATION_MIN_MONTHS,
+} from "../src/realisation-bounds.ts";
 import { SETTINGS_DEFAULTS, taxSettings } from "../src/schemas/settings.ts";
 
 const stored = () => structuredClone(SETTINGS_DEFAULTS.tax) as Record<string, unknown>;
@@ -51,5 +59,39 @@ describe("the schema's bounds equal the reader's", () => {
       expect(realisationParamsFromStoredTax({ realisation })).toMatchObject({ ok: true, femaMonthsInr: v });
     }
     expect(schemaOk({ ...base, inrMonths: 121 })).toBe(false);
+  });
+});
+
+describe("the bounds are held once (test-hardening item 3)", () => {
+  it("are 1 to 1,200 months and 0 to 36,500 days, exported through @techaust/core/invoices", () => {
+    expect([
+      REALISATION_MIN_MONTHS,
+      REALISATION_MAX_MONTHS,
+      REALISATION_MIN_DAYS,
+      REALISATION_MAX_DAYS,
+    ]).toEqual([1, 1200, 0, 36_500]);
+    expect([
+      invoices.REALISATION_MIN_MONTHS,
+      invoices.REALISATION_MAX_MONTHS,
+      invoices.REALISATION_MIN_DAYS,
+      invoices.REALISATION_MAX_DAYS,
+    ]).toEqual([1, 1200, 0, 36_500]);
+  });
+
+  it("the GST core's rule check takes exactly the same edges", () => {
+    const valid = (patch: Partial<typeof DEFAULT_REALISATION_RULES>) =>
+      rulesAreValid({ ...DEFAULT_REALISATION_RULES, ...patch });
+    for (const key of ["femaMonthsForeign", "femaMonthsInr", "gstMonths"] as const) {
+      expect(
+        [0, 1, 1200, 1201].map((v) => valid({ [key]: v })),
+        key,
+      ).toEqual([false, true, true, false]);
+    }
+    for (const key of ["gstExtraDays", "approachingDays"] as const) {
+      expect(
+        [-1, 0, 36_500, 36_501].map((v) => valid({ [key]: v })),
+        key,
+      ).toEqual([false, true, true, false]);
+    }
   });
 });

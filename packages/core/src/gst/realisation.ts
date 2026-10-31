@@ -6,6 +6,12 @@
 // Both dates are the LAST ALLOWED day ("overdue" starts the day after); a month that is too short is clamped to its last
 // day (31 May + 9 months = 28 or 29 February). Pure: `today` is always passed in.
 import { addDays, type CalendarDate, isValidDate } from "../dates.ts";
+import {
+  REALISATION_MAX_DAYS,
+  REALISATION_MAX_MONTHS,
+  REALISATION_MIN_DAYS,
+  REALISATION_MIN_MONTHS,
+} from "../realisation-bounds.ts";
 import { addMonthsClamped } from "./period.ts";
 import {
   type Currency,
@@ -58,11 +64,11 @@ export type RealisationSettings = {
 };
 
 export const rulesAreValid = (r: RealisationRules): boolean =>
-  isIntBetween(r.femaMonthsForeign, 1, 1200) &&
-  isIntBetween(r.femaMonthsInr, 1, 1200) &&
-  isIntBetween(r.gstMonths, 1, 1200) &&
-  isIntBetween(r.gstExtraDays, 0, 36_500) &&
-  isIntBetween(r.approachingDays, 0, 36_500) &&
+  isIntBetween(r.femaMonthsForeign, REALISATION_MIN_MONTHS, REALISATION_MAX_MONTHS) &&
+  isIntBetween(r.femaMonthsInr, REALISATION_MIN_MONTHS, REALISATION_MAX_MONTHS) &&
+  isIntBetween(r.gstMonths, REALISATION_MIN_MONTHS, REALISATION_MAX_MONTHS) &&
+  isIntBetween(r.gstExtraDays, REALISATION_MIN_DAYS, REALISATION_MAX_DAYS) &&
+  isIntBetween(r.approachingDays, REALISATION_MIN_DAYS, REALISATION_MAX_DAYS) &&
   isValidDate(r.rulesFrom);
 
 /** The rules from the settings: `warnMonths` is the FEMA period, `escalateMonths` and `escalateExtraDays` the GST one. */
