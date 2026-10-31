@@ -380,7 +380,7 @@ export const paymentTermsSettings = z
     razorpayMinPartialInrMinor: minor,
     /**
      * The website's liability cap (INR minor), printed on /terms (M2.3 follow-up, 07-A section 2 item 10). One source: apps/web reads
-     * it from SETTINGS_DEFAULTS. Settled by the lead on the safest reading, 2026-10-30 (08-C RB-23): the ₹10,000 cap stays, with a consumer carve-out on the website and proposal terms (07-ZE; built in T6).
+     * it from SETTINGS_DEFAULTS. OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only: is a ₹10,000 website-use cap enforceable against a consumer? (the cap and the consumer carve-out: wording approved in 07-ZE, built in T6)
      */
     websiteLiabilityCapInrMinor: minor,
   })
@@ -598,7 +598,7 @@ export const SETTINGS_DEFAULTS: Settings = {
     // The default part-payment floor (docs/04 ADM-SET-05): INR 10,000. Researched 2026-10-29, Razorpay first_min_partial_amount (08-C RB-39): a
     // commercial default, no regulatory floor.
     razorpayMinPartialInrMinor: 10_000_00,
-    // Settled by the lead on the safest reading, 2026-10-30 (08-C RB-23): the ₹10,000 cap stays, with a consumer carve-out (07-ZE; built in T6). INR 10,000 is the figure the site printed before this setting existed.
+    // OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only: is a ₹10,000 website-use cap enforceable against a consumer? INR 10,000 is the figure the site printed before this setting existed.
     websiteLiabilityCapInrMinor: 1_000_000,
   },
   retention: { leadsMonths: 12, emailLogMonths: 13, securityLogMonths: 13, financialYears: 10 },

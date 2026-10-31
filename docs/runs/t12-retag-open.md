@@ -1,4 +1,4 @@
-Status: PR READY https://github.com/techaust/techaust_platform/pull/129
+Status: main session's send-back fixed; checks running
 Tier: C (comments and one register section; no logic, no copy)
 Usage: builder claude-opus-5-5/high, 2026-10-31 07:37Z, skills: none (flagged by model-audit; none of docs/14 §9 fits a comment-only retag, and the cloudflare skills don't load in a cloud session; lead accepts); reviewer claude-opus-5-5/high, 2026-10-31, skills: code-review (its read-only helper on Opus 5.5); 5-h reading 8 % at 12:58 IST
 
@@ -208,12 +208,22 @@ Findings (the reviewer's wording, condensed):
 
 Note: M1's text suggested a bare "VERIFY WITH CA/LEGAL" mark; it was not written anywhere (the tag test forbids it).
 
+## Main session review (2026-10-31): SEND BACK, fixed
+The main session reviewed PR #129 and found that the owner-approved [07-ZE](../07-content-appendix/ZE-terms-offers-deed.md) (2026-10-31; Status line and "Tags for code comments") keeps **RB-21, RB-23, RB-35 and RB-38 (c)** OPEN because their sources were not read in full. 07-ZE is the owner's newer decision, so it overrides settle-08c's table for those items. Fixes (lead):
+- **RB-23:** 6 comments back to `OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only`, keeping a note that the wording is approved in 07-ZE and built in T6 (`payment-terms.tsx:1`, web `legal-pages.ts:48`, `:476`, `:493`, core `schemas/settings.ts:383`, `:601`). The test title `settings.test.ts:338` is restored to main's text, so that file no longer differs from main.
+- **RB-38:** the deed part is now `Researched 2026-10-31, Copyright Act s.19(1) (08-C RB-38(a))`, as 07-ZE line 16 says (`seed/terms.ts:5`, `:23`, `:47`; `settings/terms.tsx:1`). The four clauses are `OPEN (08-C RB-38(c)): commercial choices, no statute read`. No `Settled by the lead` tag on RB-23 or RB-38 remains.
+- **RB-35:** no code tag had been retagged. §5 now lists (a) and (b) as OPEN.
+- **08-C §5:** RB-21 (whole item, with the lead's practice as the "meanwhile" note), RB-23, RB-35 (a), RB-35 (b) and RB-38 (c) moved to "Still OPEN". RB-38 (a) stays in the settled table, marked "Researched 2026-10-31, Copyright Act s.19(1)". The RB-38 (MCIA) line is gone: the owner kept the Kolkata seat after T6's check (MCIA Rules r.30.1; docs/13, 2026-10-31), and that is noted under RB-38 (c). The intro now states the rule: a row settled only in part keeps its open part OPEN.
+- `origin/main` (#128) merged in.
+- **Flag for the main session:** every other settled tag still rests on the settle-08c table (2026-10-30), because most of those 08-C rows still read "OPEN" and T12 may not edit rows. Items: RA-04 (Q38), RA-10, RA-19 (Q37), RA-21 (Q24), RA-23, RA-32, RA-33, RA-34, RB-02, RB-03, RB-05, RB-12, RB-18, RB-27, RB-36, RB-37. 07-ZE doesn't cover them. If "settled" should mean "the row says so", these would revert too; say so and I will revert them.
+
 ## Integration notes
 - `fix/t12-retag-r1` was fast-forwarded into the branch. The review fixes and re-check fixes were made by the lead (comments and §5 only).
 - At 656db58: `bash tools/heavy.sh --log check pnpm check` exited 0. `bash tools/heavy.sh --log test pnpm test` exited 0: 389 test files, 8,894 tests passed and 19 skipped (admin 3,493, core 1,861, web 714, portal 651, jobs 549, db 514, ui 471, pdf 376, auth 135, email 130).
 - Migrations: none. Worker bytes: not re-measured; the change is comments only (main: admin API 618,422, jobs 984,266).
 
 ## Lead decisions (for 13)
+- 2026-10-31, Lead (T12, after the main session's review): where the owner-approved 07-ZE keeps an item OPEN (RB-21, RB-23, RB-35, RB-38 (c)), that overrides settle-08c's lead-settled reading; a row settled only in part keeps its open part OPEN in code and in 08-C §5.
 - 2026-10-31, Lead (T12): the settled tag uses the settle-08c date 2026-10-30, and the reading comes from the settle-08c table because the 08-C rows may not be edited in T12 (T6 and T7 edit them). Questions added to rows on 2026-10-31 by rt1 and rt2 (RA-04 3B period, RA-22 proviso, RA-31 IFF, RB-39 Udyam format) stay OPEN.
 - 2026-10-31, Lead (T12): a test title carrying a stale tag gets its tag text retagged (a label; no assertion changes).
 

@@ -1,4 +1,4 @@
-// Payment terms (ADM-SET-05; Researched 2026-10-29, commercial settings, MSMED ss.15-16 (08-C RB-39); the liability cap: Settled by the lead on the safest reading, 2026-10-30 (08-C RB-23): the ₹10,000 cap stays, with a consumer carve-out (07-ZE; built in T6)): due days, proposal validity, the small-job threshold in both
+// Payment terms (ADM-SET-05; Researched 2026-10-29, commercial settings, MSMED ss.15-16 (08-C RB-39); the liability cap OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only (the ₹10,000 cap and the consumer carve-out: wording approved in 07-ZE, built in T6)): due days, proposal validity, the small-job threshold in both
 // currencies, the Razorpay part-payment floor, the website's liability cap, reminder offsets and their sending window,
 // and the build schedule (which must add up to 100 %). Amounts are typed in rupees or dollars and stored in minor units
 // through @techaust/core; percentages are stored in basis points. How advances are documented lives under Tax.

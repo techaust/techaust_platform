@@ -45,7 +45,7 @@ const BILLING = mail("billing@techaust.com");
 const SECURITY = mail("security@techaust.com");
 
 /**
- * 07-A §2 item 10: the website liability cap (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-23): the ₹10,000 cap stays, with a consumer carve-out; 07-ZE, built in T6). Not a catalogue price, so not a {{price}} token:
+ * 07-A §2 item 10: the website liability cap (OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only; the ₹10,000 cap and the consumer carve-out: wording approved in 07-ZE, built in T6). Not a catalogue price, so not a {{price}} token:
  * an integer amount in paise, formatted by @techaust/core like every amount on the site (never typed as text).
  */
 const WEBSITE_LIABILITY_CAP = displayAmount(
@@ -473,7 +473,7 @@ const terms: LegalDoc = {
       title: "Liability",
       blocks: [
         {
-          // Settled by the lead on the safest reading, 2026-10-30 (08-C RB-23): the ₹10,000 cap stays, with a consumer carve-out on the website and proposal terms (07-ZE lines 6, 14, 15; built in T6).
+          // OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only: whether a ₹10,000 website-use cap is enforceable against a consumer (the cap and the consumer carve-out: wording approved in 07-ZE lines 6, 14, 15, built in T6).
           p: `To the extent the law allows, we aren’t liable for indirect or consequential losses from using this website, and our total liability for use of the website is limited to ${WEBSITE_LIABILITY_CAP}. Liability for services is governed by your proposal or contract. Nothing here limits liability that can’t be limited by law, such as liability for fraud.`,
         },
       ],
@@ -490,7 +490,7 @@ const terms: LegalDoc = {
       title: "Law and courts",
       blocks: [
         {
-          // Settled by the lead on the safest reading, 2026-10-30 (08-C RB-23): Balurghat kept, with a consumer carve-out on the website and proposal terms (07-ZE; built in T6); arbitration for client contracts goes in the MSA.
+          // OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only: Balurghat kept, with a consumer carve-out (wording approved in 07-ZE, built in T6); arbitration for client contracts goes in the MSA.
           p: "These terms are governed by the laws of India. The courts at **Balurghat, Dakshin Dinajpur, West Bengal** have exclusive jurisdiction, subject to any dispute-resolution clause in a signed contract.",
         },
       ],

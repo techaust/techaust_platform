@@ -335,7 +335,7 @@ describe("M3.1 settings fields", () => {
     expect(S.email.safeParse({ ...e, bccOwner: { nope: true } }).success).toBe(false);
   });
 
-  it("the liability cap default is the figure the website printed before (INR 10,000; Settled by the lead on the safest reading, 2026-10-30 (08-C RB-23))", () => {
+  it("the liability cap default is the figure the website printed before (INR 10,000; OPEN (08-C RB-23): is it enforceable against a consumer?)", () => {
     expect(SETTINGS_DEFAULTS.payment_terms.websiteLiabilityCapInrMinor).toBe(1_000_000);
     expect(SETTINGS_DEFAULTS.payment_terms.razorpayMinPartialInrMinor).toBe(1_000_000);
   });
