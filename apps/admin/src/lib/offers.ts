@@ -184,17 +184,20 @@ export const STAFF_REPLY_COPY = {
 /** The statuses whose version the box shows on: sent and still open, or past its last day (the reply's last sentence covers expiry). */
 const STAFF_REPLY_STATUSES: ReadonlySet<string> = new Set(["sent", "viewed", "expired"]);
 
-type StaffReplyDoc = Pick<DocumentView, "type" | "status" | "number" | "version" | "client" | "contact">;
+type StaffReplyDoc = Pick<DocumentView, "type" | "status" | "number" | "version" | "client" | "contact" | "redactedAt">;
 
 /**
  * 07-ZE line 5 filled for a sent proposal or estimate: the addressed contact's first name, the number, the version and the portal of this
  * environment (`__PORTAL_ORIGIN__`, scripts/website-origin.mjs). Null where the box isn't shown: a draft, an accepted, declined or replaced
- * version, no number yet, an erased client or contact, or no contact name to greet. Researched 2026-10-31, Contract Act s.7(2) (08-C RB-35).
+ * version, no number yet, an erased client or contact, an offer whose personal details were erased (T7), or no contact name to greet. Researched 2026-10-31, Contract Act s.7(2) (08-C RB-35).
  */
 export function staffReplyText(doc: StaffReplyDoc, portalOrigin: string = PORTAL_ORIGIN): string | null {
   if (doc.type !== "proposal" && doc.type !== "estimate") return null;
   if (!STAFF_REPLY_STATUSES.has(doc.status) || !doc.number) return null;
   if (doc.client.anonymised || !doc.contact || doc.contact.anonymised) return null;
+  // T7: an offer whose personal details were erased is withdrawn (owner Q1, 2026-10-31), so no reply sends anyone to accept it (Settled by the lead on the
+  // safest reading, 2026-10-30 (08-C RB-37)).
+  if (doc.redactedAt) return null;
   const firstName = firstNameOf(doc.contact.name);
   if (firstName === "" || portalOrigin === "") return null;
   return staffAcceptReply({ firstName, number: doc.number, version: doc.version, portalLink: portalOrigin });
