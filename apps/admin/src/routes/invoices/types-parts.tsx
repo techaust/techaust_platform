@@ -39,6 +39,7 @@ import {
   fyLabel,
   INVT_COPY,
   lutLine,
+  proformaNoticeOf,
   rateDateFollows,
   rateDayEarlier,
   splitAdvanceRefusal,
@@ -566,6 +567,9 @@ export function ProformaPanel(props: { view: InvoiceView; onIssued: () => void }
   const late = p.warnAt !== null && Date.now() >= p.warnAt && v.number;
   // The client's GST details changed after the proforma (review 2, 6): the server would refuse, so the action is shown disabled with the reason.
   const supplyChanged = p.advanceSupplyChanged === true;
+  const notice = proformaNoticeOf(v);
+  // A void or withdrawn proforma with nothing of its own left to show has no panel (its banner above says what happened).
+  if (v.status === "void" && !late && p.children.length === 0 && !p.canAdvance) return null;
   return (
     <section className="lead-panel inv-proforma" aria-labelledby="inv-pf-h">
       <div className="lead-panel__head">
@@ -591,7 +595,7 @@ export function ProformaPanel(props: { view: InvoiceView; onIssued: () => void }
           <span>{INVT_COPY.advanceSupplyChanged}</span>
         </p>
       )}
-      {p.notice && <StatutoryBand line={p.notice} />}
+      {notice && <StatutoryBand line={notice} />}
       {late && (
         <p className="approval-line" data-state="expired">
           <Alert size={16} />

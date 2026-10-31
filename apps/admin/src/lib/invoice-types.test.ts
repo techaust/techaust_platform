@@ -1,7 +1,7 @@
 // The M5.2 screens' pure rules [ADM-INV-06, -08, -10, -18, ADM-SET-02, -03]: 07-S word for word, the seven new blocker lines and where each is fixed,
 // both lines when the ₹50,000 rule comes with an address blocker, the new badges, the rate as typed (core's parse), the advance checks, the LUT list
 // and the purpose code. Sample data only.
-import { INVOICE_CHECKLIST } from "@techaust/core/invoices";
+import { INVOICE_CHECKLIST, PROFORMA_NOTICE } from "@techaust/core/invoices";
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
 import {
@@ -31,6 +31,7 @@ import {
   lutsByYear,
   proformaDraftTitle,
   proformaLockedLine,
+  proformaNoticeOf,
   rateDateFollows,
   rateDayEarlier,
   splitAdvanceRefusal,
@@ -418,5 +419,24 @@ describe("the purpose code", () => {
     expect(checkPurposeCode(" p0802 ")).toEqual({ ok: true, value: "P0802" });
     expect(checkPurposeCode("")).toEqual({ ok: true, value: null });
     expect(checkPurposeCode("P802").ok).toBe(false);
+  });
+});
+
+describe("the proforma panel's statutory line (ADM-INV-10, review L5)", () => {
+  const view = (status: string, notice: string | null = PROFORMA_NOTICE) => ({
+    status,
+    proforma: { notice },
+  });
+  it("an issued, part-paid or converted proforma keeps the line it was sealed with", () => {
+    for (const s of ["issued", "part_paid", "converted"])
+      expect(proformaNoticeOf(view(s))).toBe(PROFORMA_NOTICE);
+    expect(PROFORMA_NOTICE).toContain("A tax invoice will be issued when payment is received.");
+  });
+  it("a void proforma, withdrawn or voided, promises no tax invoice: no line, as on the portal", () => {
+    expect(proformaNoticeOf(view("void"))).toBeNull();
+  });
+  it("nothing sealed, nothing shown; not a proforma, nothing shown", () => {
+    expect(proformaNoticeOf(view("issued", null))).toBeNull();
+    expect(proformaNoticeOf({ status: "issued", proforma: null })).toBeNull();
   });
 });
