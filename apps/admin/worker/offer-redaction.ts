@@ -320,10 +320,12 @@ export const REDACTION_WRITE_SQL = {
   /**
    * Q1 = A (owner, 2026-10-31): the offer is withdrawn for everyone: every send not yet holding a link is cancelled (the jobs Worker mints none then).
    * "No link" means "never emailed" only while the person's own links still exist, so this runs BEFORE step 2 deletes them (`redactionCancelStatements`);
-   * run after, it stamped their emailed sends cancelled too and the Emails row read "Not sent" (polish sweep 5a).
+   * run after, it stamped their emailed sends cancelled too and the Emails row read "Not sent" (polish sweep 5a). A co-recipient's links may already be
+   * gone (an earlier erase or anonymise of THEM deleted them), so only a send never queued (`queued_at IS NULL`, still waiting for the PDF) is cancelled
+   * here; a queued send without a link is the jobs Worker's: it refuses a redacted offer and marks the send not sent itself (polish sweep review 1).
    */
   cancelSends: (g: string) =>
-    `UPDATE document_sends SET cancelled_at = ?2 WHERE cancelled_at IS NULL AND document_id IN ${PLAN_IDS} AND NOT EXISTS (SELECT 1 FROM offer_links l WHERE l.send_id = document_sends.id) AND ${g}`,
+    `UPDATE document_sends SET cancelled_at = ?2 WHERE cancelled_at IS NULL AND queued_at IS NULL AND document_id IN ${PLAN_IDS} AND NOT EXISTS (SELECT 1 FROM offer_links l WHERE l.send_id = document_sends.id) AND ${g}`,
   /** ... and when it is the newest frozen version of its group, every live link of the group is revoked (an older version's links stay with the newer one). */
   revokeLinks: (g: string) =>
     `UPDATE offer_links SET revoked_at = ?2 WHERE revoked_at IS NULL AND version_group_id IN (SELECT d.version_group_id FROM documents d WHERE d.id IN ${PLAN_IDS} AND NOT EXISTS (SELECT 1 FROM documents n WHERE n.version_group_id = d.version_group_id AND n.version > d.version AND n.frozen_at IS NOT NULL)) AND ${g}`,

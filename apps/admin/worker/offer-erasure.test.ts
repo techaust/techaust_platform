@@ -694,6 +694,8 @@ describe("the read and the batch (no race)", () => {
       ),
     ).toBe(0);
     expect(await countOf("contacts", "id = ? AND anonymised_at IS NULL", a.id)).toBe(1);
+    // step 2a (the cancel) runs early in the batch: a refusal leaves every send of the client as it was (polish sweep review 6)
+    expect(await countOf("document_sends", "client_id = ? AND cancelled_at IS NOT NULL", client)).toBe(0);
   }
 
   /** Runs `change` just before the anonymise batch, the first `times` times. */
@@ -1335,6 +1337,48 @@ describe("the Emails row after an anonymise (polish sweep 5a) [ADM-CLI-05, ADM-P
     const view = await getDoc(o, made.id);
     expect(view.delivery[0]).toMatchObject({ state: "queued", contactName: ANONYMISED_CONTACT, email: null });
     expectNoPersonalData(view.delivery, name, email);
+  });
+
+  it("a co-recipient emailed, then anonymised first (links gone), then the addressee anonymised: the co-recipient's send is not cancelled (review 1)", async () => {
+    const { o, made, sendId, email } = await sentToAsha();
+    await linked(made, sendId, email);
+    // a second recipient, emailed (queued and linked), then anonymised on their own: their links go, the offer is not in their plan
+    const bo = await person(made.clientId, "Bo Sen");
+    const boSend = uuidv7();
+    const staff = (await one<{ id: string }>("SELECT id FROM staff_users LIMIT 1"))?.id;
+    await insert("document_sends", {
+      id: boSend,
+      document_id: made.id,
+      version_group_id: made.id,
+      client_id: made.clientId,
+      contact_id: bo.id,
+      email: bo.email,
+      attach_pdf: 0,
+      kind: "send",
+      created_by: staff,
+    });
+    await env.DB.prepare("UPDATE document_sends SET queued_at = ? WHERE id = ?")
+      .bind(Date.now(), boSend)
+      .run();
+    await insert("offer_links", {
+      token_hash: `h-${uuidv7()}`,
+      send_id: boSend,
+      document_id: made.id,
+      version_group_id: made.id,
+      client_id: made.clientId,
+      contact_id: bo.id,
+      email: bo.email,
+      purpose: "offer",
+      expires_at: Date.now() + 86_400_000,
+    });
+    expect((await anonymise(o.cookie, bo.id)).status).toBe(200);
+    expect(await countOf("offer_links", "send_id = ?", boSend)).toBe(0);
+    expect(await cancelledAt(boSend)).toBeNull();
+    // now the addressee: the offer is redacted, and Bo's emailed send (no link left) is still not cancelled
+    expect((await anonymise(o.cookie, made.contactId)).status).toBe(200);
+    expect((await getDoc(o, made.id)).redactedAt).toEqual(expect.any(Number));
+    expect(await cancelledAt(boSend)).toBeNull();
+    expect(await cancelledAt(sendId)).toBeNull();
   });
 
   it("still waiting for the PDF, then anonymised: the send is cancelled and reads Not sent, with no name or address", async () => {
