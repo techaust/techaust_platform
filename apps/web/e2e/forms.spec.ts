@@ -34,7 +34,41 @@ async function reach(page: Page, target: Locator, direction: "Tab" | "Shift+Tab"
 /** Types into the focused field the way a person does. */
 const type = (page: Page, text: string) => page.keyboard.type(text, { delay: 5 });
 
+/**
+ * Waits for what a submit needs before Enter is pressed (test-hardening 1a; the 40 s timeout on main, 2026-10-31): the page script has taken the
+ * form over (`data-ready`), and the Turnstile widget has its token (Turnstile writes it into the hidden `cf-turnstile-response` input in the
+ * widget's box). The script waits at most 20 s for a token and then shows the generic error without posting, so an Enter pressed while the widget
+ * was still loading from challenges.cloudflare.com could end on /contact, never /thanks. Waiting only, no input: the keyboard rule holds.
+ */
+async function readyToSubmit(page: Page, kind: "contact" | "quote") {
+  const form = page.locator(`form[data-form="${kind}"]`);
+  await expect(form).toHaveAttribute("data-ready", "");
+  await expect(
+    form.locator('[data-turnstile] input[name="cf-turnstile-response"]'),
+    "Turnstile gave no token (is https://challenges.cloudflare.com reachable from the browser?)",
+  ).toHaveValue(/\S/, { timeout: 30_000 });
+}
+
+/**
+ * Presses Enter on the focused submit button and waits for the form's POST, so a refusal names its status (429: the address limit; 400/403:
+ * Turnstile or the schema) instead of a bare URL timeout; then waits for /thanks.
+ */
+async function submitAndLand(page: Page, kind: "contact" | "quote") {
+  const posted = page.waitForResponse(
+    (r) => r.request().method() === "POST" && new URL(r.url()).pathname === `/api/forms/${kind}`,
+    { timeout: 40_000 },
+  );
+  await page.keyboard.press("Enter");
+  const res = await posted;
+  // the body is read only on a refusal: after a 200 the page navigates at once and the body may be gone
+  if (res.status() !== 200)
+    expect(res.status(), `POST /api/forms/${kind}: ${await res.text().catch(() => "")}`).toBe(200);
+  await page.waitForURL(/\/thanks\?ref=/, { timeout: 20_000 });
+}
+
 test("the contact form is reachable and submittable by keyboard", async ({ page }) => {
+  // the waits below (a Turnstile token, the POST, then /thanks) can add up past the file's 60 s on a slow first load
+  test.setTimeout(90_000);
   await prepare(page);
   await page.goto("/contact");
   // Reachable: Tab from the top of the page gets to the first field without a mouse.
@@ -48,8 +82,8 @@ test("the contact form is reachable and submittable by keyboard", async ({ page 
   await reach(page, page.locator("#f-email"), "Shift+Tab");
   await reach(page, page.locator("#f-message"));
   await reach(page, page.locator("[data-submit]"));
-  await page.keyboard.press("Enter");
-  await page.waitForURL(/\/thanks\?ref=/, { timeout: 40_000 });
+  await readyToSubmit(page, "contact");
+  await submitAndLand(page, "contact");
   await expect(page.locator("h1")).toBeVisible();
 });
 
@@ -67,6 +101,7 @@ test("an invalid contact form shows the error summary and puts focus on it, with
 });
 
 test("the quote form runs through its four steps and submits by keyboard", async ({ page }) => {
+  test.setTimeout(90_000); // as the contact form's test
   await prepare(page);
   await page.goto("/get-a-quote");
   const next = (n: number) => page.locator(`[data-qstep="${n}"] [data-next]`);
@@ -100,6 +135,6 @@ test("the quote form runs through its four steps and submits by keyboard", async
   await page.keyboard.type("India");
   await expect(page.locator("#q-country")).toHaveValue("IN");
   await reach(page, page.locator("[data-submit]"));
-  await page.keyboard.press("Enter");
-  await page.waitForURL(/\/thanks\?ref=/, { timeout: 40_000 });
+  await readyToSubmit(page, "quote");
+  await submitAndLand(page, "quote");
 });
