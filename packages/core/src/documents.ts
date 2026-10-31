@@ -1,6 +1,6 @@
 // Proposals and estimates, pure (M4.3; ADM-PROP-01..07, ADM-EST-01, ADM-APR-01/02, docs/04 §5.11, §5.12, §5.15). No I/O, no zod, no floats.
 // One code path serves both types. The discount threshold is the owner's commercial rule (Q-P3-2), not a legal item. Validity: Researched
-// 2026-10-29, Contract Act s.6(2) (08-C RB-35); a sent proposal kept as evidence: OPEN (08-C RB-37); M4.3 items 1-12: 08-C §7.
+// 2026-10-29, Contract Act s.6(2) (08-C RB-35); a sent proposal kept as evidence: Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37): accepted offers are kept as long as the tax records; a never-accepted one has the person's data erased in its frozen copy on request (T7; until then it is kept and erase is refused); M4.3 items 1-12: 08-C §7.
 //
 //   - sections (the caps and the three that are always present),
 //   - the status flow (the twin of the `documents_status_flow` trigger),

@@ -67,7 +67,7 @@ export const NOTE_COPY = {
   // §9 (Researched 2026-10-28, 08-C RA-02, RA-04).
   discountAfterSaleHint:
     "For a discount agreed after the invoice. Your GST is reduced only once a registered client reverses the matching input tax credit.",
-  // §5 (Researched 2026-10-28, 08-C RA-04; what a rejection means for the balance is OPEN, RA-04)
+  // §5 (Researched 2026-10-28, 08-C RA-04; what a rejection means for the balance: Settled by the lead on the safest reading, 2026-10-30 (08-C RA-04): the note stays and the client's balance stays reduced; GST is reduced only once a registered client accepts it in IMS; a debit note if the credit was not due)
   imsLabel: "Client's response in IMS",
   imsHint:
     "For a GST-registered client, your GST is reduced only once they accept the credit note in the GST portal's Invoice Management System. Update this from the portal.",

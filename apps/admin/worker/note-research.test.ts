@@ -154,7 +154,7 @@ describe("the debit note 'Tax charged too low' [Q35, RA-22]", () => {
     expect(parts && (await invoiceSealOf(parts)).snapshotSha256).toBe(bundle.document.snapshot_sha256);
   });
 
-  it("FX-4 (A5 11; OPEN 08-C RA-33): Rs 18.02 of tax is never rounded: the preview, the issued row and the computed document carry 18.02 with no round-off", async () => {
+  it("FX-4 (A5 11; Settled by the lead on the safest reading, 2026-10-30 (08-C RA-33)): Rs 18.02 of tax is never rounded: the preview, the issued row and the computed document carry 18.02 with no round-off", async () => {
     const o = await farSession("owner");
     const inv = await mkIssuedInvoice(o, { prices: [100_000] });
     const b = await json(await draftDebit(o, inv.id, taxOnly(1_802)));

@@ -60,7 +60,7 @@ describe("a tax-only debit note in GSTR-1", () => {
     const hsn = r.value.hsnB2b.find((h) => h.sac === "998314");
     expect(hsn).toMatchObject({ taxableMinor: 1_000_000, cgstMinor: 99_000, sgstMinor: 99_000 });
     expect(r.value.totals.overall.valueMinor).toBe(1_000_000 + 180_000 + 18_000);
-    // FX-4 (A5 1): the cdnr file has no tax column, so the note's tax is named for entry by hand (OPEN 08-C RA-32)
+    // FX-4 (A5 1): the cdnr file has no tax column, so the note's tax is named for entry by hand (Settled by the lead on the safest reading, 2026-10-30 (08-C RA-32): entered by hand in the GST portal's Table 9B)
     expect(r.warnings.filter((w) => w.code === "tax_only_note_manual")).toHaveLength(1);
   });
 
@@ -95,7 +95,7 @@ describe("a tax-only debit note in GSTR-1", () => {
   });
 });
 
-// FX-4 (full audit A5 1; OPEN 08-C RA-32): the files carry a taxable value and a rate, no tax column, so a tax-only note's tax would import as nil. `gstr1Sections`
+// FX-4 (full audit A5 1; Settled by the lead on the safest reading, 2026-10-30 (08-C RA-32)): the files carry a taxable value and a rate, no tax column, so a tax-only note's tax would import as nil. `gstr1Sections`
 // returns one BLOCKING warning per such note, naming the note, the recipient's GSTIN and each tax head with its amount, worked out here BY HAND.
 describe("a tax-only note is a blocking warning with what to enter by hand", () => {
   // An inter-state invoice to a registered client in Maharashtra: 18 % of 500,000 = 90,000 IGST.

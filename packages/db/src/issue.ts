@@ -457,7 +457,7 @@ function freezeStatement(
  * `updated_at`, its `credited_minor`, the last day a credit note may be dated, the day the annual return was filed). The invoice is still the frozen, live
  * tax or export invoice that was read, of this client and currency; a credit note fits inside what is left of it (the total only: the trigger of 0042 holds
  * each tax head) and is dated (`?6`, the issue day) on or before the last day and strictly before the day the return was filed; and fewer than 20 notes of
- * this kind are issued on it. A tax-only debit note has no round-off: its total is exactly its tax (FX-4, `taxOnlyNoteExactSql`; OPEN 08-C RA-33). A debit note on an
+ * this kind are issued on it. A tax-only debit note has no round-off: its total is exactly its tax (FX-4, `taxOnlyNoteExactSql`; Settled by the lead on the safest reading, 2026-10-30 (08-C RA-33)). A debit note on an
  * export under LUT needs a LUT with an ARN saved for the FY of its own issue day `?6` (rt1 T2; Researched 2026-10-30, Rule 96A(1) CGST Rules, Notification 37/2017-CT
  * (08-C RA-19, Q39); the twin of the trigger `documents_debit_note_lut_fy`, 0054). The last day a credit note may be dated is the caller's `lastDay` (rt1 T1: the end of
  * the latest return period before the return deadline, core `creditNoteDeadline`). Everything is in the statement, so a refusal writes nothing.

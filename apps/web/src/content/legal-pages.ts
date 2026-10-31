@@ -45,7 +45,7 @@ const BILLING = mail("billing@techaust.com");
 const SECURITY = mail("security@techaust.com");
 
 /**
- * 07-A §2 item 10: the website liability cap (OPEN, 08-C RB-23). Not a catalogue price, so not a {{price}} token:
+ * 07-A §2 item 10: the website liability cap (OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only; the ₹10,000 cap and the consumer carve-out: wording approved in 07-ZE, built in T6). Not a catalogue price, so not a {{price}} token:
  * an integer amount in paise, formatted by @techaust/core like every amount on the site (never typed as text).
  */
 const WEBSITE_LIABILITY_CAP = displayAmount(
@@ -121,7 +121,7 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
                 "**Website visitor**",
                 "IP address, browser and device details, pages visited (cookieless Cloudflare Web Analytics); Cloudflare Turnstile security signals",
                 "Run and secure the website; understand overall usage",
-                // OPEN (08-C RB-12): the EU/UK basis.
+                // Settled by the lead on the safest reading, 2026-10-30 (08-C RB-12): the EU/UK basis is GDPR Art. 6(1)(f); in India DPDP s.7(a) with the Rule 6 log duty (security logs 13 months).
                 "India: provided voluntarily by using the site for that purpose (DPDP s.7(a)). EU/UK: legitimate interests",
               ],
               // Google Analytics rows: only while GA is on (site.ga4Id set).
@@ -151,7 +151,7 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
                 "**Client contact**",
                 "Name, title, work email, phone, portal sign-in activity, messages and files you share, proposal acceptance details (typed name, time, IP address, browser), billing details (company name, address, GSTIN), payment status and references",
                 "Deliver services, give portal access, invoice, collect payment, keep records",
-                // OPEN (08-C RB-12): the EU/UK basis.
+                // Settled by the lead on the safest reading, 2026-10-30 (08-C RB-12): for the acceptance IP address and browser only, GDPR Art. 6(1)(f) for EU and UK persons and DPDP s.7(a) in India; the acceptance record is kept with the offer (RB-37 (b)).
                 "India: provided voluntarily for that purpose (DPDP s.7(a)); **legal obligation** for tax records. EU/UK: contract; **legal obligation** for tax records",
               ],
               [
@@ -288,7 +288,7 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
       ],
     },
     {
-      // OPEN (08-C RB-27): the GDPR / UK GDPR section as a whole (07-A heading of §7a).
+      // The GDPR / UK GDPR section as a whole (07-A heading of §7a). Settled by the lead on the safest reading, 2026-10-30 (08-C RB-27): a representative is appointed before the first EU or UK client (owner's choice).
       id: "eu-uk",
       num: "7a",
       title: "If you are in the EU or UK",
@@ -299,7 +299,7 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
             "**Extra rights under the GDPR / UK GDPR:** you can also ask us to **restrict** how we use your data, to give it to you in a **portable** format, and you can **object** to our use of it based on legitimate interests, and to direct marketing at any time.",
             "**Our legitimate interests** (where the table above says so): keeping the website secure and free of abuse, replying to business enquiries, and keeping proper business records.",
             "**Automated decisions:** we don’t make decisions about you by purely automated means.",
-            // OPEN (08-C RB-27): whether a representative is needed for our level of activity.
+            // Settled by the lead on the safest reading, 2026-10-30 (08-C RB-27): a representative is appointed before the first EU or UK client (owner's choice).
             "**Representative:** we haven’t appointed a representative in the EU or UK.",
             "**Transfers:** see section 4.",
           ],
@@ -476,8 +476,7 @@ const terms: LegalDoc = {
       title: "Liability",
       blocks: [
         {
-          // OPEN (08-C RB-23): whether a ₹10,000 website-use cap is enforceable against a consumer (the cap stays, 07-ZE line 14). The consumer
-          // carve-out (T6, 07-ZE line 14, owner 2026-10-31): OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only.
+          // OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only: whether a ₹10,000 website-use cap is enforceable against a consumer (the cap and the consumer carve-out: wording approved in 07-ZE lines 6, 14, 15, built in T6).
           p: `To the extent the law allows, we aren’t liable for indirect or consequential losses from using this website, and our total liability for use of the website is limited to ${WEBSITE_LIABILITY_CAP}. Liability for services is governed by your proposal or contract. Nothing here limits liability that can’t be limited by law, such as liability for fraud, or your rights under the Consumer Protection Act, 2019 (see Law and courts).`,
         },
       ],
@@ -494,9 +493,9 @@ const terms: LegalDoc = {
       title: "Law and courts",
       blocks: [
         {
-          // T6, 07-ZE line 15 (owner, 2026-10-31): Balurghat kept; the accepted proposal or estimate (proposal terms v4 item 10) provides for
-          // arbitration for clients outside India. OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only; the arbitration
-          // itself: OPEN (08-C RB-38(c)): commercial choices, no statute read.
+          // OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only: Balurghat kept, with a consumer carve-out (07-ZE lines 6 and 15,
+          // owner 2026-10-31, built in T6); the accepted proposal or estimate (proposal terms v4 item 10) provides for arbitration for clients
+          // outside India: OPEN (08-C RB-38(c)): commercial choices, no statute read.
           p: "These terms are governed by the laws of India. The courts at **Balurghat, Dakshin Dinajpur, West Bengal** have exclusive jurisdiction, except where your accepted proposal, estimate or signed contract says otherwise (for clients outside India, it provides for arbitration).",
         },
         {
