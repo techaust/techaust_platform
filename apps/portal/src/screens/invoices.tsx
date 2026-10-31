@@ -58,6 +58,9 @@ export function InvoiceStatusPill({ status }: { status: ClientInvoiceStatus }) {
 
 export const invoiceHref = (id: string) => `/invoices/${encodeURIComponent(id)}`;
 
+/** The button that was pressed has gone: focus moves to the line that says why, so it is read out and the keyboard has a place to start. */
+const focusOnShow = (el: HTMLElement | null) => el?.focus();
+
 /** The organisation's invoices, payment requests and notes, newest first (a table from md up, a card per document on phones). */
 export function InvoicesScreen(props: { items: InvoiceItem[]; more?: ReactNode; now?: number }) {
   const today = todayIst(props.now);
@@ -292,6 +295,12 @@ export function InvoicePage(props: {
             </div>
           )}
         </dl>
+        {/* Withdrawn while the page was open (review L3): the reloaded page keeps the download's answer, 07-ZF 20, where the button was. */}
+        {withdrawn && props.pdfProblem && (
+          <p className="inv-slip__note" role="status" tabIndex={-1} ref={focusOnShow}>
+            {props.pdfProblem}
+          </p>
+        )}
         {!withdrawn && (
           <div className="inv-slip__actions">
             <button

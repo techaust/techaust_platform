@@ -3,7 +3,7 @@
 // server's status, balance and due date, never computed from amounts.
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { formatMoney, money, negate } from "@techaust/core/money";
-import type { InvoiceSummary } from "../api.ts";
+import { type InvoiceSummary, RequestError } from "../api.ts";
 import { INV } from "../copy-invoices.ts";
 import { WITHDRAWN_ZF } from "../copy-zf.ts";
 
@@ -143,3 +143,16 @@ export const capturedInvoiceToken = () => invoiceToken;
 /** `TH/INV/2627/0007` → `TH-INV-2627-0007.pdf` (only when the server sends no name). */
 export const invoicePdfName = (numberDisplay: string | null) =>
   `${(numberDisplay ?? "invoice").replaceAll("/", "-")}.pdf`;
+
+/**
+ * What a failed PDF download says, and whether the page must load the document again. A 409 `withdrawn` means the payment request was withdrawn
+ * while the page was open (ADM-INV-10, 07-ZF 20): the page reloads so it shows the withdrawn view (no balance, no bank details, no PDF button)
+ * under that line (review L3). `otherwise` words any other failure (the load-problem text).
+ */
+export function pdfFailure(e: unknown, otherwise: (e: unknown) => string): { text: string; reload: boolean } {
+  if (e instanceof RequestError && e.code === "pdf_pending") return { text: INV.pdfNotReady, reload: false };
+  if (e instanceof RequestError && e.code === "withdrawn")
+    return { text: WITHDRAWN_ZF.pdfRefused, reload: true };
+  if (e instanceof RequestError && e.status === 404) return { text: INV.linkEnded, reload: false };
+  return { text: otherwise(e), reload: false };
+}

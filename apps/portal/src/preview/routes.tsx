@@ -43,6 +43,7 @@ const SCREENS: [string, string][] = [
   ["/invoices/pro-due?sample=on", "M5.4 Payment request (proforma), PDF not ready, GST as an estimate"],
   ["/invoices/pro-old?sample=on", "FX-4 Payment request sealed before FX-4 (no estimate marker)"],
   ["/invoices/pro-withdrawn?sample=on", "ADM-INV-10 Payment request withdrawn (no amount due, no PDF)"],
+  ["/invoices/pro-race?sample=on", "ADM-INV-10 Payment request withdrawn while open (press Download PDF)"],
   ["/invoices/dn-due?sample=on", "M5.4 Debit note, its invoice linked, a reason with words typed"],
   ["/invoices/cn-1?sample=on", "M5.4 Credit note, its invoice linked, its reason"],
   ["/invoices/inv-paid?sample=on", "M5.4 Invoice, paid and credited (Credited row)"],
