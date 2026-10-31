@@ -32,8 +32,10 @@ export {
   DISCOUNT_AFTER_SALE_FROM_SQL,
   fyTokenOfDateSql,
   LUT_FOR_FY_SQL,
+  proformaDeliveredSql,
   signedIssuerSql,
   taxOnlyNoteExactSql,
+  withdrawnSql,
 } from "./sql-rules.ts";
 /** The two frozen blocks of a sent document, for a caller that builds them (type only: nothing of the schema reaches a Worker bundle). */
 export type { InvoiceBankBlock, InvoiceIssuerSnapshot, InvoiceSwiftBlock, IssuerSnapshot, RecipientSnapshot };

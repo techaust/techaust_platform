@@ -31,6 +31,7 @@ import { INVOICE_FLOW_TYPES, isInvoiceFlowType } from "@techaust/core/invoices";
 import {
   ATTACHMENT_KEY,
   confirmationLinkExpiry,
+  firstNameOf,
   mintOfferToken,
   offerLinkExpiry,
   offerLinkUrl,
@@ -63,7 +64,6 @@ const percentText = (bp: number) => {
     .replace(/0+$/, "");
   return frac ? `${Math.trunc(bp / 100)}.${frac}` : String(Math.trunc(bp / 100));
 };
-const first = (name: string) => name.trim().split(/\s+/)[0] ?? name;
 const adminBase = (env: Env) => env.ADMIN_URL.replace(/\/+$/, "");
 const fileName = (numberDisplay: string, version: number) =>
   `${numberDisplay.replace(/[^A-Za-z0-9.-]+/g, "-").replace(/^-+|-+$/g, "") || "document"}-v${version}.pdf`;
@@ -201,7 +201,7 @@ export async function processOfferSend(
     template: "offer.sent",
     to: row.contact_email,
     data: {
-      first_name: first(row.contact_name ?? ""),
+      first_name: firstNameOf(row.contact_name ?? ""),
       kind: row.type,
       title: row.title ?? "",
       number,

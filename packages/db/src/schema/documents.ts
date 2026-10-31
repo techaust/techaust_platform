@@ -254,7 +254,7 @@ export const documents = sqliteTable(
     einvStatus: text("einv_status"),
     /**
      * T7: when the personal details in this never-accepted proposal or estimate were erased (a contact anonymised; Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)). Set once, by the
-     * anonymise batch only (triggers of 0057); the row then no longer reproduces `content_sha256` / `snapshot_sha256`, and its envelope and PDF are deleted.
+     * anonymise batch only (triggers of 0058); the row then no longer reproduces `content_sha256` / `snapshot_sha256`, and its envelope and PDF are deleted.
      */
     redactedAt: integer("redacted_at"),
     createdBy: text("created_by").references(() => staffUsers.id),

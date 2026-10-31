@@ -5,6 +5,7 @@ import { formatIstDateTime, MASKED } from "@techaust/core";
 import { ROLE_LABELS } from "@techaust/core/permissions";
 import type { AuditEntry } from "../api.ts";
 import { Y } from "./copy-y.ts";
+import { WITHDRAW_COPY } from "./copy-zf.ts";
 
 /** Every action the API writes today, in words. Unknown ones read as their own name ("lead.created"). */
 /** A label by its own key only: a free-form value such as "constructor" never reads an inherited property. */
@@ -133,6 +134,8 @@ export const ACTION_LABELS: Record<string, string> = {
   "invoice.issue_auto": Y("issued a care plan invoice automatically"),
   "invoice.advance_issue": Y("issued a tax invoice for a payment received"),
   "invoice.void": Y("voided an invoice"),
+  // ADM-INV-10: 07-ZF 9 (owner 2026-10-31)
+  "invoice.withdraw": WITHDRAW_COPY.audit,
   "invoice.note_create": Y("drafted a credit or debit note"),
   "invoice.ims_status": Y("recorded a client's IMS response"),
   "invoice.service_completed": Y("set the date the service was completed"),

@@ -1,4 +1,4 @@
-// T7 (08-C RB-37(a); Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): the triggers of migration 0057. A never-accepted, frozen proposal or
+// T7 (08-C RB-37(a); Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): the triggers of migration 0058. A never-accepted, frozen proposal or
 // estimate may have its personal values rewritten only inside the redaction move (`redacted_at` set, or moved forward by a later erasure of another person
 // named on it; never cleared or backwards); every other frozen column stays fixed, a redacted offer takes no PDF, view or decision, and its child rows change
 // only their text, with their parent's redaction. [ADM-PROP-05, ADM-PROP-08, ADM-CLI-05]
@@ -10,18 +10,18 @@ import { LAST_LIVE_SQL, MAX_REDACTED_OFFERS, REDACTABLE_OFFER_SQL } from "../src
 import { documentLines, documentSections, paymentSchedules } from "../src/schema/documents.ts";
 import {
   frozenDocumentColumns,
-  LINE_COLUMNS_0057,
-  LINE_TEXT_0057,
+  LINE_COLUMNS_0058,
+  LINE_TEXT_0058,
   offerRedactionTriggerStatements,
-  REDACTABLE_FROZEN_0057,
-  REDACTION_CLEARS_0057,
-  REDACTION_FORWARD_0057,
-  SCHEDULE_COLUMNS_0057,
-  SCHEDULE_TEXT_0057,
-  SECTION_COLUMNS_0057,
-  SECTION_TEXT_0057,
+  REDACTABLE_FROZEN_0058,
+  REDACTION_CLEARS_0058,
+  REDACTION_FORWARD_0058,
+  SCHEDULE_COLUMNS_0058,
+  SCHEDULE_TEXT_0058,
+  SECTION_COLUMNS_0058,
+  SECTION_TEXT_0058,
   SET_ONCE_0050,
-  SET_ONCE_0057,
+  SET_ONCE_0058,
   SET_ONCE_AFTER_FREEZE,
 } from "../src/triggers.ts";
 import { all, first, insertClient, rejects, run } from "./helpers.ts";
@@ -91,29 +91,29 @@ async function frozenRow(type: string, status: string, over: Record<string, unkn
   return id;
 }
 
-describe("the pinned lists of 0057", () => {
-  it("SET_ONCE_0057 is 0050's plus redacted_at, which is the live list; the frozen columns are unchanged", () => {
-    expect([...SET_ONCE_0057]).toEqual([...SET_ONCE_0050, "redacted_at"]);
-    expect([...SET_ONCE_0057]).toEqual([...SET_ONCE_AFTER_FREEZE]);
+describe("the pinned lists of 0058", () => {
+  it("SET_ONCE_0058 is 0050's plus redacted_at, which is the live list; the frozen columns are unchanged", () => {
+    expect([...SET_ONCE_0058]).toEqual([...SET_ONCE_0050, "redacted_at"]);
+    expect([...SET_ONCE_0058]).toEqual([...SET_ONCE_AFTER_FREEZE]);
     expect(frozenDocumentColumns()).not.toContain("redacted_at");
-    for (const c of REDACTABLE_FROZEN_0057) expect(frozenDocumentColumns()).toContain(c);
+    for (const c of REDACTABLE_FROZEN_0058) expect(frozenDocumentColumns()).toContain(c);
     // the columns with a carve-out are still set-once columns, so the coverage test still names them
-    for (const c of [...REDACTION_CLEARS_0057, ...REDACTION_FORWARD_0057]) expect(SET_ONCE_0057).toContain(c);
+    for (const c of [...REDACTION_CLEARS_0058, ...REDACTION_FORWARD_0058]) expect(SET_ONCE_0058).toContain(c);
     expect(MAX_REDACTED_OFFERS).toBe(10);
   });
 
   it("each child table's kept columns and text columns are every column but redacted_at, once", () => {
     for (const [table, keep, text] of [
-      [documentSections, SECTION_COLUMNS_0057, SECTION_TEXT_0057],
-      [documentLines, LINE_COLUMNS_0057, LINE_TEXT_0057],
-      [paymentSchedules, SCHEDULE_COLUMNS_0057, SCHEDULE_TEXT_0057],
+      [documentSections, SECTION_COLUMNS_0058, SECTION_TEXT_0058],
+      [documentLines, LINE_COLUMNS_0058, LINE_TEXT_0058],
+      [paymentSchedules, SCHEDULE_COLUMNS_0058, SCHEDULE_TEXT_0058],
     ] as const) {
       const live = Object.values(getTableColumns(table)).map((c) => c.name);
       expect([...keep, ...text, "redacted_at"].sort()).toEqual([...live].sort());
     }
   });
 
-  it("every trigger 0057 creates is installed exactly as generated (the recreated freeze triggers and the new ones)", async () => {
+  it("every trigger 0058 creates is installed exactly as generated (the recreated freeze triggers and the new ones)", async () => {
     const wanted = offerRedactionTriggerStatements().filter((w) => w.startsWith("CREATE TRIGGER"));
     const names = wanted.map((w) => /^CREATE TRIGGER `([^`]+)`/.exec(w)?.[1]);
     expect(names).toEqual([
@@ -139,7 +139,7 @@ describe("the pinned lists of 0057", () => {
   });
 });
 
-describe("documents: the redaction move (0057, 1-3)", () => {
+describe("documents: the redaction move (0058, 1-3)", () => {
   it("passes on a sent proposal: recipient, title, decision note to NULL and redacted_at, with every other column byte-equal", async () => {
     const q = await sentOffer();
     const before = await rowOf(q.id);
@@ -156,7 +156,7 @@ describe("documents: the redaction move (0057, 1-3)", () => {
   it("every other frozen column refuses, even inside the move", async () => {
     const q = await sentOffer();
     for (const c of frozenDocumentColumns().filter(
-      (x) => !(REDACTABLE_FROZEN_0057 as readonly string[]).includes(x),
+      (x) => !(REDACTABLE_FROZEN_0058 as readonly string[]).includes(x),
     )) {
       await rejects(
         run(
@@ -321,7 +321,7 @@ describe("documents: the redaction move (0057, 1-3)", () => {
   });
 });
 
-describe("documents: after the redaction (0057, 4-5)", () => {
+describe("documents: after the redaction (0058, 4-5)", () => {
   it("viewed, accepted and rejected refuse; expired and revised pass", async () => {
     for (const to of ["viewed", "accepted", "rejected"]) {
       const q = await sentOffer();
@@ -377,11 +377,11 @@ describe("documents: after the redaction (0057, 4-5)", () => {
   });
 });
 
-describe("child rows (0057, 6)", () => {
+describe("child rows (0058, 6)", () => {
   const tables = [
-    ["document_sections", SECTION_COLUMNS_0057, "body_md = 'Accepted by Anonymised client'"],
-    ["document_lines", LINE_COLUMNS_0057, "description = 'Site for Anonymised client'"],
-    ["payment_schedules", SCHEDULE_COLUMNS_0057, "label = 'Anonymised client advance'"],
+    ["document_sections", SECTION_COLUMNS_0058, "body_md = 'Accepted by Anonymised client'"],
+    ["document_lines", LINE_COLUMNS_0058, "description = 'Site for Anonymised client'"],
+    ["payment_schedules", SCHEDULE_COLUMNS_0058, "label = 'Anonymised client advance'"],
   ] as const;
   const MSG = /of an issued document cannot change/;
 
@@ -547,8 +547,8 @@ describe("REDACTABLE_OFFER_SQL", () => {
   });
 });
 
-it("0056 adds the four columns with ALTER TABLE only (no table is rebuilt)", () => {
-  const sql = (env.TEST_MIGRATIONS.find((m) => m.name === "0056_offer_redaction.sql")?.queries ?? []).join(
+it("0057 adds the four columns with ALTER TABLE only (no table is rebuilt)", () => {
+  const sql = (env.TEST_MIGRATIONS.find((m) => m.name === "0057_offer_redaction.sql")?.queries ?? []).join(
     "\n",
   );
   expect(sql).not.toMatch(/DROP TABLE|__new_/);

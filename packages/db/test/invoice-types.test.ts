@@ -382,7 +382,7 @@ describe("migrations 0039 and 0040 [LD35]", () => {
     expect([...FROZEN_COLUMNS_0040, "fx_no_rate_day"]).toEqual([...FROZEN_COLUMNS_0047]);
     // FX-1 (A0 5): 0050 recreates the trigger with the four e-invoice fields set once; that is the live list today.
     expect([...SET_ONCE_0050]).toEqual([...SET_ONCE_0040, "irn", "ack_no", "ack_date", "signed_qr"]);
-    // T7 (08-C RB-37): 0057 recreates it with `redacted_at` (never cleared, only forward); that is the live list today.
+    // T7 (08-C RB-37): 0058 recreates it with `redacted_at` (never cleared, only forward); that is the live list today.
     expect([...SET_ONCE_0050, "redacted_at"]).toEqual([...SET_ONCE_AFTER_FREEZE]);
   });
 
@@ -894,7 +894,8 @@ describe("the tax invoice for money received [Q9, LD22; Researched 2026-10-28, s
         "UPDATE documents SET status = 'void', voided_at = 1, void_reason = 'x' WHERE id = ?",
         w.proformaId,
       ),
-      /documents_invoice_status_flow|documents_void_pairing/,
+      // ADM-INV-10: 0056's `documents_proforma_withdraw` (converted, paid, a receipt and a child) may fire first
+      /documents_invoice_status_flow|documents_void_pairing|documents_proforma_withdraw/,
     );
     await rejects(
       run(

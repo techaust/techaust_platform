@@ -10,6 +10,7 @@ import {
   literal,
   proposalTermsV2Select,
   proposalTermsV3Select,
+  proposalTermsV4Select,
   seedSql,
   seedStatements,
 } from "../src/seed/index.ts";
@@ -21,6 +22,8 @@ import {
   PROPOSAL_TERMS_V2_SHA256,
   PROPOSAL_TERMS_V3,
   PROPOSAL_TERMS_V3_SHA256,
+  PROPOSAL_TERMS_V4,
+  PROPOSAL_TERMS_V4_SHA256,
 } from "../src/seed/terms.ts";
 import { all, first, run } from "./helpers.ts";
 
@@ -148,20 +151,23 @@ describe("seed [ADM-CAT-01]", () => {
     expect(v1?.body_md).toBe(PROPOSAL_TERMS_V1);
     expect(v1?.sha256).toBe(await sha256Hex(PROPOSAL_TERMS_V1));
     expect(PROPOSAL_TERMS_V1_SHA256).toBe(await sha256Hex(PROPOSAL_TERMS_V1));
-    // FX-5: version 2 (07-Y items 1 and 2) follows it, then version 3 (07-ZA item 14), each once, however often the seed runs
+    // FX-5: version 2 (07-Y items 1 and 2) follows it, then version 3 (07-ZA item 14), then version 4 (07-ZE, T6), each once, however often
+    // the seed runs
     const seeded = [
       { version: 1, sha256: PROPOSAL_TERMS_V1_SHA256 },
       { version: 2, sha256: PROPOSAL_TERMS_V2_SHA256 },
       { version: 3, sha256: PROPOSAL_TERMS_V3_SHA256 },
+      { version: 4, sha256: PROPOSAL_TERMS_V4_SHA256 },
     ];
     const proposalTerms = () =>
       all("SELECT version, sha256 FROM terms_versions WHERE kind = 'proposal' ORDER BY version");
     expect(await proposalTerms()).toEqual(seeded);
     await seed();
     expect(await proposalTerms()).toEqual(seeded);
-    // once versions 2 and 3 are there, their SELECTs yield nothing on their own (no reliance on the unique index: review L1)
+    // once versions 2 to 4 are there, their SELECTs yield nothing on their own (no reliance on the unique index: review L1)
     expect(await all(proposalTermsV2Select())).toEqual([]);
     expect(await all(proposalTermsV3Select())).toEqual([]);
+    expect(await all(proposalTermsV4Select())).toEqual([]);
     // six numbered terms, no placeholders, the warranty line is the one the owner still has to confirm
     expect(PROPOSAL_TERMS_V1.split("\n\n")).toHaveLength(6);
     expect(PROPOSAL_TERMS_V1).not.toMatch(/\{\{/);
@@ -169,9 +175,9 @@ describe("seed [ADM-CAT-01]", () => {
       "4. **Warranty.** Defects in what we delivered are fixed free for 30 days after launch.",
     );
     expect(PROPOSAL_TERMS_V1_OWNER_CONFIRMS).toBe("warranty");
-    // the owner writes version 4; the seed leaves it, and does not add anything
+    // the owner writes version 5; the seed leaves it, and does not add anything
     await run(
-      "INSERT INTO terms_versions (id, kind, version, body_md, sha256) VALUES ('owner-terms-4', 'proposal', 4, 'Owner text', 'h4')",
+      "INSERT INTO terms_versions (id, kind, version, body_md, sha256) VALUES ('owner-terms-5', 'proposal', 5, 'Owner text', 'h5')",
     );
     await seed();
     expect(
@@ -180,7 +186,8 @@ describe("seed [ADM-CAT-01]", () => {
       { version: 1, body_md: PROPOSAL_TERMS_V1 },
       { version: 2, body_md: PROPOSAL_TERMS_V2 },
       { version: 3, body_md: PROPOSAL_TERMS_V3 },
-      { version: 4, body_md: "Owner text" },
+      { version: 4, body_md: PROPOSAL_TERMS_V4 },
+      { version: 5, body_md: "Owner text" },
     ]);
   });
 

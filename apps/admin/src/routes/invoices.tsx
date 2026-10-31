@@ -12,7 +12,6 @@ import { allowed } from "../lib/access.ts";
 import {
   BADGE_LABELS,
   BADGES,
-  type Badge,
   INV_COPY,
   INV_NO_MATCH,
   INVOICE_TYPES,
@@ -36,7 +35,9 @@ export function Component() {
 /** 07-R's empty line: its first sentence as the title (no full stop, as every empty state), the rest beneath. */
 const EMPTY = splitSentences(INV_COPY.empty);
 
-const isBadge = (v: string | null): v is Badge => BADGES.includes(v as Badge);
+/** The status filter's badges ("Withdrawn" is a badge, not a filter: the Void filter lists it, ADM-INV-10). */
+type FilterBadge = (typeof BADGES)[number];
+const isBadge = (v: string | null): v is FilterBadge => (BADGES as readonly (string | null)[]).includes(v);
 const isType = (v: string | null): v is InvoiceType => INVOICE_TYPES.includes(v as InvoiceType);
 
 function InvoiceList() {

@@ -21,7 +21,7 @@ describe("the proposal", () => {
     expect(count(html, "<h1")).toBe(1);
     expect(html).toContain('<h1 class="cover__title">Sample proposal for short-intra-inr</h1>');
     expect(html).toContain('Prepared for</span> <span class="cover__client">Sample Client</span>');
-    for (const fact of ["26 Oct 26", "Version 2", "Valid until 10 Nov 26", "TH/PRP/2627/0003"])
+    for (const fact of ["26 Oct 26", "Version 2", "Valid until 10 Nov 26 (IST)", "TH/PRP/2627/0003"])
       expect(html).toContain(`<li>${fact}</li>`);
     expect(html).toContain("Your contact at TecHaust: Sample Proprietor, sender@example.test");
   });
@@ -88,9 +88,24 @@ describe("the header blocks (07-P §1)", () => {
     );
     expect(html).toContain("<dt>No.</dt><dd>TH/PRP/2627/0003 v2</dd>");
     expect(html).toContain("<dt>Date</dt><dd>26 Oct 26</dd>");
-    expect(html).toContain("<dt>Valid until</dt><dd>10 Nov 26</dd>");
+    expect(html).toContain("<dt>Valid until</dt><dd>10 Nov 26 (IST)</dd>");
     expect(html).toContain("<dt>Currency</dt><dd>INR</dd>");
     expect(html).toContain("Place of supply: West Bengal (19)");
+  });
+
+  it("07-ZE line 3 (T6): version 2 says which version it replaces, directly under the validity facts; version 1 doesn't", async () => {
+    const html = await bodyOf("short-intra-inr");
+    const line =
+      "This is version 2. It replaces version 1 and any earlier version, which can no longer be accepted.";
+    expect(html).toContain(
+      `<dt>Currency</dt><dd>INR</dd></div></dl><p class="note replaces-note">${line}</p></div>`,
+    );
+    expect(html.split(line)).toHaveLength(2);
+    const one = await bodyOf("long-inter-inr");
+    expect(one).not.toContain("replaces-note");
+    expect(one).not.toContain("This is version");
+    // (IST) on the validity date only: the facts and the cover, never the issue date
+    expect(html.match(/\(IST\)/g)).toHaveLength(2);
   });
 
   it("keeps the parts of a registration line together: it wraps only at the separator", async () => {

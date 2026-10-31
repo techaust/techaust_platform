@@ -447,7 +447,10 @@ const terms: LegalDoc = {
       title: "Client portal",
       blocks: [
         {
-          p: "Access is for authorised contacts of our clients. Keep sign-in links private and don’t forward them. You’re responsible for files you upload: you confirm you have the right to share them and that they contain no malware. **Accepting a proposal in the portal (typing your name and clicking Accept) forms a binding agreement** on the terms of that proposal, and we keep a record of it (name, email, time, IP address, browser and a fingerprint of the document).",
+          // T6, 07-ZE line 13 (owner, 2026-10-31) after "…a fingerprint of the document).": Researched 2026-10-31, Contract Act s.7(2) (08-C
+          // RB-35); its last sentence answers OPEN (08-C RB-35(a)) by naming IST; "the earlier ones can no longer be accepted": Researched
+          // 2026-10-29, Contract Act s.6 (08-C RB-35); OPEN (08-C RB-35(b)): s.5 not read.
+          p: "Access is for authorised contacts of our clients. Keep sign-in links private and don’t forward them. You’re responsible for files you upload: you confirm you have the right to share them and that they contain no malware. **Accepting a proposal in the portal (typing your name and clicking Accept) forms a binding agreement** on the terms of that proposal, and we keep a record of it (name, email, time, IP address, browser and a fingerprint of the document). Accept in the portal is the only way to accept a proposal or estimate; a reply by email isn’t an acceptance. When we send a newer version, the earlier ones can no longer be accepted. Validity dates end at midnight India Standard Time (IST).",
         },
       ],
     },
@@ -474,7 +477,7 @@ const terms: LegalDoc = {
       blocks: [
         {
           // OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only: whether a ₹10,000 website-use cap is enforceable against a consumer (the cap and the consumer carve-out: wording approved in 07-ZE lines 6, 14, 15, built in T6).
-          p: `To the extent the law allows, we aren’t liable for indirect or consequential losses from using this website, and our total liability for use of the website is limited to ${WEBSITE_LIABILITY_CAP}. Liability for services is governed by your proposal or contract. Nothing here limits liability that can’t be limited by law, such as liability for fraud.`,
+          p: `To the extent the law allows, we aren’t liable for indirect or consequential losses from using this website, and our total liability for use of the website is limited to ${WEBSITE_LIABILITY_CAP}. Liability for services is governed by your proposal or contract. Nothing here limits liability that can’t be limited by law, such as liability for fraud, or your rights under the Consumer Protection Act, 2019 (see Law and courts).`,
         },
       ],
     },
@@ -490,8 +493,14 @@ const terms: LegalDoc = {
       title: "Law and courts",
       blocks: [
         {
-          // OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only: Balurghat kept, with a consumer carve-out (wording approved in 07-ZE, built in T6); arbitration for client contracts goes in the MSA.
-          p: "These terms are governed by the laws of India. The courts at **Balurghat, Dakshin Dinajpur, West Bengal** have exclusive jurisdiction, subject to any dispute-resolution clause in a signed contract.",
+          // OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only: Balurghat kept, with a consumer carve-out (07-ZE lines 6 and 15,
+          // owner 2026-10-31, built in T6); the accepted proposal or estimate (proposal terms v4 item 10) provides for arbitration for clients
+          // outside India: OPEN (08-C RB-38(c)): commercial choices, no statute read.
+          p: "These terms are governed by the laws of India. The courts at **Balurghat, Dakshin Dinajpur, West Bengal** have exclusive jurisdiction, except where your accepted proposal, estimate or signed contract says otherwise (for clients outside India, it provides for arbitration).",
+        },
+        {
+          // 07-ZE line 6 follows it as its own paragraph. OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only.
+          p: "If you are a consumer under the Consumer Protection Act, 2019, nothing in these terms limits your rights under that Act, including where you may bring a complaint.",
         },
       ],
     },

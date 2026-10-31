@@ -14,8 +14,9 @@ describe("07-Z lines [FX-5]", () => {
     expect(VOID_VIEWED_COPY.invoice).toBe(
       `${mark}The client has opened this invoice in the portal, so it can't be voided. Use a credit note instead.`,
     );
+    // ADM-INV-10: 07-ZF 15 (owner 2026-10-31) replaced the proforma line: a proforma the client opened is withdrawn instead (copy-zf.test.ts).
     expect(VOID_VIEWED_COPY.proforma).toBe(
-      `${mark}The client has opened this proforma in the portal, so it can't be voided.`,
+      "The client has opened this proforma in the portal, so it can't be voided. Withdraw it instead.",
     );
   });
 

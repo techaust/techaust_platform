@@ -2,6 +2,8 @@
 // the "[Placeholder] " mark before the recommended words until the owner approves the page; then `APPROVED_07Z` turns true and the marks go
 // (the 07-X and 07-Y pattern, copy-x.ts and copy-y.ts). Its own module, so a screen marks its line without loading another screen's words.
 
+import { VOID_DELIVERED_PROFORMA } from "./copy-zf.ts";
+
 export const APPROVED_07Z = true;
 export const PLACEHOLDER_MARK = "[Placeholder]";
 /** A 07-Z line as the screen shows it: marked until the owner approves 07-Z. */
@@ -12,7 +14,8 @@ export const VOID_VIEWED_COPY = {
   invoice: Z(
     "The client has opened this invoice in the portal, so it can't be voided. Use a credit note instead.",
   ),
-  proforma: Z("The client has opened this proforma in the portal, so it can't be voided."),
+  // ADM-INV-10: 07-ZF 15 (owner 2026-10-31) replaces 07-Z §1's proforma line: a proforma the client opened is withdrawn instead.
+  proforma: VOID_DELIVERED_PROFORMA.viewed,
 } as const;
 
 const daysText = (days: readonly number[]) =>
