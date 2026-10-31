@@ -1,5 +1,5 @@
 # Run: five tasks in parallel cloud sessions (2026-10-31)
-Status: open (the five sessions stopped in setup; restart after #126 and the owner's paste)
+Status: running (restarted 2026-10-31 ~13:00 IST from the main session)
 Tier: by task (below)
 Usage: lead claude-opus-5-5/high (this plan, the five starts, #126; `node tools/model-audit.mjs`); no agent ran. 5-h 3 % at the start.
 
@@ -155,3 +155,15 @@ Next, in order:
 2. The owner pastes the new `scripts/cloud-setup.sh` from `main` into the `techaust_platform` environment (runbook Part 2, step 6) and archives the five failed sessions.
 3. "Start the day" on the PC: read usage, then start the five sessions again with `start_session` (target cloud, environment `techaust_platform`), each prompt = the shared rules + its task, as above, with the day's first `USAGE <pct> at <ISO time>` in place of the 2026-10-31 reading. Check that each passes setup and runs on Opus 5.5 (its first `git push` and run file show on GitHub).
 4. Then control them as Part 4 says: "check the cloud sessions" → read run files → one question batch → answers by message; merge order T12 → T6 → proforma withdraw → T7 → M6.1.
+
+## Restart (main session, 2026-10-31 ~13:00 IST)
+- **Correction to the integration note above:** two of the first five sessions got past setup by hand (they moved the image's `/opt/node24` aside) and pushed work: `t6-terms` (the MCIA check in 08-C RB-38, the brief, Q1 and Q2) and `proforma-withdraw` (the run file only). The other three pushed nothing.
+- #126 merged; the owner pasted the new setup script and archived the first five sessions.
+- Restarted with the shared rules and the prompts above (first reading `USAGE 8 at 2026-10-31T12:58+05:30`): task ids `task_ed913c4d` (t12-retag), `task_f2e11d4c` (t6-terms, continues its branch), `task_e9d1f5f0` (proforma-withdraw, continues its branch), `task_37313f60` (t7-erasure), `task_949683ff` (m6-1-ledger). Each prompt also names the files it shares with the others (08-C §5 only in T12; separate migrations and new trigger names for proforma and T7; admin API bytes add up).
+- **Owner's answers sent to t6-terms with its prompt:** Q1 A (keep MCIA, Kolkata), Q2 A (the admin box; labels "Client accepted by email?" and "Copy reply" approved).
+- **Check-ins:** a session-only schedule in the main session every 30 minutes (:13 and :43) reads the run files, answers what the record settles, re-prompts a session silent for 40+ minutes, and brings the owner one batch of questions.
+
+## Orchestrator log (main session)
+| Time (IST) | Session | Question or event | Answer or action | Basis |
+|---|---|---|---|---|
+| 2026-10-31 13:00 | t6-terms | Q1, Q2 | Owner: A, A (sent in the prompt) | 13-decisions |
