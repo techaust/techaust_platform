@@ -456,7 +456,7 @@
   font-weight: 400;
 }
 
-.rledger.ledger--3b tbody th {
+.rledger.rledger--3b tbody th {
   /* on a phone the box scrolls sideways anyway: a row's name keeps a readable measure instead of one word a line (rt1 visual pass) */
   min-width: 11rem;
   max-width: 24rem;
