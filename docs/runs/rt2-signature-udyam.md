@@ -1,6 +1,6 @@
 # Run: rt2, the signature always on notes and advance invoices (T4) and the Udyam number on tax invoices (T10)
 
-Status: merging
+Status: merging (PR #124)
 Tier: A
 Usage: analyst claude-opus-5-5/high (agent-a6087809…, brief draft; skills workers-best-practices, wrangler, workers-profiling)
 
