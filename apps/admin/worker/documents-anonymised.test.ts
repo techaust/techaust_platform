@@ -3,8 +3,8 @@
 // was sent, byte for byte, as evidence of the offer.
 import { env } from "cloudflare:workers";
 import { ANONYMISED_CLIENT } from "@techaust/core/clients";
+import { viewRecipient } from "@techaust/core/redaction";
 import { beforeAll, describe, expect, it } from "vitest";
-import { viewRecipient } from "./document-view.ts";
 import { putPaymentTerms } from "./test-catalogue.ts";
 import { one, sessionFor } from "./test-helpers.ts";
 import { getDoc, json, mkDraft, mkTerms, sendDoc } from "./test-quotes.ts";

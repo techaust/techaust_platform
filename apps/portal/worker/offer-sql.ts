@@ -4,6 +4,10 @@
 // Researched 2026-10-28, BSA 2023 s.63(4) (08-C RB-19): accepting by a typed name and a ticked box, and the evidence recorded (docs/runs/m4.5-send-accept.md §4).
 import { clipHeader } from "@techaust/db/log";
 
+// T7 (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): an offer whose personal details were erased (`redacted_at` set) is withdrawn
+// for everyone: the list, the view, the downloads, the first view, the accept and the decline never find it (a 404), and the database refuses its
+// acceptance too (`acceptances_redacted`). The newest-version checks are unchanged: a link to v1 whose v2 was redacted still answers `superseded`.
+
 /** The statuses a client may see. A `converted` estimate is shown as accepted (lead decision, 2026-10-26: conversion is internal to TecHaust); drafts are never shown. */
 export const CLIENT_STATUSES = [
   "sent",
@@ -30,10 +34,10 @@ const NEWEST_RENDERED =
   "NOT EXISTS (SELECT 1 FROM documents n WHERE n.version_group_id = d.version_group_id AND n.version > d.version AND n.frozen_at IS NOT NULL AND n.pdf_sha256 IS NOT NULL)";
 
 /** ?1 client, ?2 now (cursor: sent_at), ?3 cursor id, ?4 limit. A page of the latest rendered version of each offer, newest first. */
-export const LIST_SQL = `SELECT d.id, d.type, d.title, d.number_display, d.version, d.status, d.valid_until, d.total_minor, d.currency, d.decided_at, d.sent_at FROM documents d WHERE d.client_id = ?1 AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.pdf_sha256 IS NOT NULL AND d.status IN (${STATUSES_SQL}) AND ${NEWEST_RENDERED} AND (?2 IS NULL OR d.sent_at < ?2 OR (d.sent_at = ?2 AND d.id < ?3)) ORDER BY d.sent_at DESC, d.id DESC LIMIT ?4`;
+export const LIST_SQL = `SELECT d.id, d.type, d.title, d.number_display, d.version, d.status, d.valid_until, d.total_minor, d.currency, d.decided_at, d.sent_at FROM documents d WHERE d.client_id = ?1 AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.redacted_at IS NULL AND d.pdf_sha256 IS NOT NULL AND d.status IN (${STATUSES_SQL}) AND ${NEWEST_RENDERED} AND (?2 IS NULL OR d.sent_at < ?2 OR (d.sent_at = ?2 AND d.id < ?3)) ORDER BY d.sent_at DESC, d.id DESC LIMIT ?4`;
 
 /** ?2 document id. The document of this organisation, as the portal may show it (a sent, rendered or decided offer). */
-export const DOC_SQL = `SELECT d.id, d.type, d.status, d.version, d.title, d.number_display, d.valid_until, d.version_group_id, d.snapshot_r2_key, d.pdf_r2_key, d.pdf_sha256, d.decided_at, d.decision_reason, d.decision_note, dc.name AS decided_by FROM documents d LEFT JOIN contacts dc ON dc.id = d.decided_contact_id AND dc.client_id = d.client_id WHERE d.id = ?2 AND d.client_id = ?1 AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.status IN (${STATUSES_SQL})`;
+export const DOC_SQL = `SELECT d.id, d.type, d.status, d.version, d.title, d.number_display, d.valid_until, d.version_group_id, d.snapshot_r2_key, d.pdf_r2_key, d.pdf_sha256, d.decided_at, d.decision_reason, d.decision_note, dc.name AS decided_by FROM documents d LEFT JOIN contacts dc ON dc.id = d.decided_contact_id AND dc.client_id = d.client_id WHERE d.id = ?2 AND d.client_id = ?1 AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.redacted_at IS NULL AND d.status IN (${STATUSES_SQL})`;
 
 /** ?2 document id. The acceptance record (never the IP or the user agent: they are the owner's evidence). */
 export const ACCEPTANCE_SQL =
@@ -51,7 +55,7 @@ export const LATEST_SQL =
  * ?2 document id. The key a PDF download streams: the latest rendered version of the offer, or the accepted one (POR-05); an older, revised
  * version is a 404 (M4.5 fix L8).
  */
-export const KEYS_SQL = `SELECT d.pdf_r2_key, d.number_display, d.version, d.status FROM documents d WHERE d.id = ?2 AND d.client_id = ?1 AND (?3 IS NULL OR d.version_group_id = ?3) AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.status IN (${STATUSES_SQL}) AND (d.status IN ('accepted', 'converted') OR ${NEWEST_RENDERED})`;
+export const KEYS_SQL = `SELECT d.pdf_r2_key, d.number_display, d.version, d.status FROM documents d WHERE d.id = ?2 AND d.client_id = ?1 AND (?3 IS NULL OR d.version_group_id = ?3) AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.redacted_at IS NULL AND d.status IN (${STATUSES_SQL}) AND (d.status IN ('accepted', 'converted') OR ${NEWEST_RENDERED})`;
 /** ?2 document id. The certificate key of an accepted offer. */
 export const CERT_KEY_SQL = `SELECT c.r2_key, d.number_display, d.version FROM acceptance_certificates c JOIN acceptances a ON a.id = c.acceptance_id JOIN documents d ON d.id = a.document_id WHERE d.client_id = ?1 AND a.document_id = ?2 AND (?3 IS NULL OR d.version_group_id = ?3) AND d.type IN ${QUOTES}`;
 /** ?2 document id, ?3 the link's group (null on a session). Whether the offer has an acceptance (the certificate may be pending). */
@@ -59,14 +63,14 @@ export const HAS_ACCEPTANCE_SQL =
   "SELECT 1 AS yes FROM acceptances a JOIN documents d ON d.id = a.document_id WHERE d.client_id = ?1 AND a.document_id = ?2 AND (?3 IS NULL OR d.version_group_id = ?3)";
 
 /** ?2 document id, ?3 the link's group (null on a session), ?4 the contact (the name a decline shows): the offer's group and version, before a decision (the lead rule needs the group). */
-export const PRE_SQL = `SELECT d.version_group_id, d.version, (SELECT c.name FROM contacts c WHERE c.id = ?4 AND c.client_id = ?1) AS contact_name FROM documents d WHERE d.id = ?2 AND d.client_id = ?1 AND (?3 IS NULL OR d.version_group_id = ?3) AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL`;
+export const PRE_SQL = `SELECT d.version_group_id, d.version, (SELECT c.name FROM contacts c WHERE c.id = ?4 AND c.client_id = ?1) AS contact_name FROM documents d WHERE d.id = ?2 AND d.client_id = ?1 AND (?3 IS NULL OR d.version_group_id = ?3) AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.redacted_at IS NULL`;
 
 /**
  * The first view: sent becomes viewed, once. ?1 client, ?2 document, ?3 now, ?4 today (IST). An offer past its last valid day reads as expired
  * and is not marked viewed (M4.5 fix L9). The audit row follows it directly, guarded by `changes()`, so a second view writes nothing.
  */
 export const VIEW_SQL =
-  "UPDATE documents SET status = 'viewed', viewed_at = ?3 WHERE id = ?2 AND client_id = ?1 AND status = 'sent' AND viewed_at IS NULL AND pdf_sha256 IS NOT NULL AND valid_until >= ?4 AND type IN ('proposal', 'estimate')";
+  "UPDATE documents SET status = 'viewed', viewed_at = ?3 WHERE id = ?2 AND client_id = ?1 AND status = 'sent' AND viewed_at IS NULL AND pdf_sha256 IS NOT NULL AND valid_until >= ?4 AND type IN ('proposal', 'estimate') AND redacted_at IS NULL";
 
 /** The same live link, by its hash (?LINK): this offer, this contact, an offer link, not revoked, not expired. */
 const linkLive = (link: string, now: string, doc: string, contact: string) =>
@@ -91,7 +95,7 @@ const contactLive = (client: string, contact: string) =>
  * ?10 ip, ?11 user agent, ?12 country, ?13 via. The address comes from the contact row, never from the request. RETURNING gives
  * the answer without a second read.
  */
-export const ACCEPT_INSERT_SQL = `INSERT INTO acceptances (id, document_id, contact_id, session_id, typed_name, email, accepted_at, ip, user_agent, country, pdf_sha256, terms_version_id, certificate_r2_key, via, offer_link_hash, snapshot_sha256) SELECT ?7, d.id, c.id, ?8, ?9, c.email, ?4, ?10, ?11, ?12, d.pdf_sha256, d.terms_version_id, substr(d.pdf_r2_key, 1, length(d.pdf_r2_key) - 4) || '-certificate.pdf', ?13, ?6, d.snapshot_sha256 FROM documents d JOIN contacts c ON c.id = ?3 AND c.client_id = d.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL WHERE d.id = ?2 AND d.client_id = ?1 AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.status IN ('sent', 'viewed') AND d.pdf_sha256 IS NOT NULL AND d.pdf_r2_key IS NOT NULL AND d.valid_until >= ?5 AND ${NEWEST} AND NOT EXISTS (SELECT 1 FROM documents g WHERE g.version_group_id = d.version_group_id AND g.status IN ('accepted', 'converted')) AND (?6 IS NULL OR ${linkLive("?6", "?4", "d", "c.id")}) RETURNING email, accepted_at, pdf_sha256`;
+export const ACCEPT_INSERT_SQL = `INSERT INTO acceptances (id, document_id, contact_id, session_id, typed_name, email, accepted_at, ip, user_agent, country, pdf_sha256, terms_version_id, certificate_r2_key, via, offer_link_hash, snapshot_sha256) SELECT ?7, d.id, c.id, ?8, ?9, c.email, ?4, ?10, ?11, ?12, d.pdf_sha256, d.terms_version_id, substr(d.pdf_r2_key, 1, length(d.pdf_r2_key) - 4) || '-certificate.pdf', ?13, ?6, d.snapshot_sha256 FROM documents d JOIN contacts c ON c.id = ?3 AND c.client_id = d.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL WHERE d.id = ?2 AND d.client_id = ?1 AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.redacted_at IS NULL AND d.status IN ('sent', 'viewed') AND d.pdf_sha256 IS NOT NULL AND d.pdf_r2_key IS NOT NULL AND d.valid_until >= ?5 AND ${NEWEST} AND NOT EXISTS (SELECT 1 FROM documents g WHERE g.version_group_id = d.version_group_id AND g.status IN ('accepted', 'converted')) AND (?6 IS NULL OR ${linkLive("?6", "?4", "d", "c.id")}) RETURNING email, accepted_at, pdf_sha256`;
 
 /** Statement 2: the document follows its acceptance row. ?1 client, ?2 document, ?3 contact, ?4 now, ?7 acceptance id. */
 export const ACCEPT_UPDATE_SQL =
@@ -104,7 +108,7 @@ export const ACCEPT_AUDIT_SQL = `INSERT INTO audit_log (id, actor_type, actor_id
  * A decline: one conditional UPDATE. ?1 client, ?2 document, ?3 contact, ?4 now, ?5 today, ?6 link hash (null on a session),
  * ?7 reason code, ?8 note (null). The decision columns are set once (trigger); a second decline matches nothing.
  */
-export const DECLINE_UPDATE_SQL = `UPDATE documents AS d SET status = 'rejected', decided_at = ?4, decision_reason = ?7, decision_note = ?8, decided_contact_id = ?3 WHERE d.id = ?2 AND d.client_id = ?1 AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.status IN ('sent', 'viewed') AND d.pdf_sha256 IS NOT NULL AND d.valid_until >= ?5 AND ${NEWEST} AND ${contactLive("?1", "?3")} AND (?6 IS NULL OR ${linkLive("?6", "?4", "d", "?3")})`;
+export const DECLINE_UPDATE_SQL = `UPDATE documents AS d SET status = 'rejected', decided_at = ?4, decision_reason = ?7, decision_note = ?8, decided_contact_id = ?3 WHERE d.id = ?2 AND d.client_id = ?1 AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.redacted_at IS NULL AND d.status IN ('sent', 'viewed') AND d.pdf_sha256 IS NOT NULL AND d.valid_until >= ?5 AND ${NEWEST} AND ${contactLive("?1", "?3")} AND (?6 IS NULL OR ${linkLive("?6", "?4", "d", "?3")})`;
 
 /** The decline's audit row, directly after the UPDATE (guarded by `changes()`): the reason CODE, never the note. ?1 client, ?2 document, ?3 contact, ?7 reason, ?9 via, ?10 ip, ?11 ua, ?14 audit id, ?15 request id. */
 export const DECLINE_AUDIT_SQL = `INSERT INTO audit_log (id, actor_type, actor_id, role, action, entity_type, entity_id, summary, ip, user_agent, request_id) SELECT ?14, 'contact', ?3, NULL, 'document.decline', 'document', d.id, json_object('documentId', d.id, 'version', d.version, 'reason', ?7, 'via', ?9), ?10, ?11, ?15 FROM documents d WHERE d.id = ?2 AND d.client_id = ?1 AND changes() > 0`;
@@ -119,7 +123,7 @@ const NEWEST_ABOVE_ID =
  * `latest_pdf` its PDF hash: null while that version is still being rendered (FX-3, A4 9: `newer_version_pending`, not a `superseded` that
  * would point at a page the portal cannot show yet). Both come from one row `l`, found by one lookup (FX-3 fix round, item 7).
  */
-export const REREAD_SQL = `SELECT d.status, d.pdf_sha256, d.valid_until, l.id AS latest_id, l.pdf_sha256 AS latest_pdf, a.typed_name, a.email AS a_email, a.accepted_at, a.contact_id AS a_contact, a.pdf_sha256 AS a_sha FROM documents d LEFT JOIN documents l ON l.id = ${NEWEST_ABOVE_ID} LEFT JOIN acceptances a ON a.document_id = d.id WHERE d.id = ?2 AND d.client_id = ?1 AND (?3 IS NULL OR d.version_group_id = ?3) AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL`;
+export const REREAD_SQL = `SELECT d.status, d.pdf_sha256, d.valid_until, l.id AS latest_id, l.pdf_sha256 AS latest_pdf, a.typed_name, a.email AS a_email, a.accepted_at, a.contact_id AS a_contact, a.pdf_sha256 AS a_sha FROM documents d LEFT JOIN documents l ON l.id = ${NEWEST_ABOVE_ID} LEFT JOIN acceptances a ON a.document_id = d.id WHERE d.id = ?2 AND d.client_id = ?1 AND (?3 IS NULL OR d.version_group_id = ?3) AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.redacted_at IS NULL`;
 
 export type Reread = {
   status: string;

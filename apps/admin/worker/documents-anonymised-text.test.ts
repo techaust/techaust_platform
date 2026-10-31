@@ -4,9 +4,9 @@
 // section titles and the document title; the stored rows and their hash stay as sent, byte for byte.
 import { env } from "cloudflare:workers";
 import { ANONYMISED_CLIENT } from "@techaust/core/clients";
+import { redactionNames, redactor, viewRecipient } from "@techaust/core/redaction";
 import { seedStatements } from "@techaust/db";
 import { beforeAll, describe, expect, it } from "vitest";
-import { redactionNames, redactor, viewRecipient } from "./document-view.ts";
 import { putPaymentTerms } from "./test-catalogue.ts";
 import { rows, sessionFor } from "./test-helpers.ts";
 import {

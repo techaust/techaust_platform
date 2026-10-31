@@ -141,13 +141,15 @@ export const documentLinks = new Hono<AppEnv>()
     const attach = form.attachPdf ?? cl.attach_pdf === 1;
     const rows = shape.ids.map((contactId) => ({ id: uuidv7(), contactId }));
     // One statement writes every row or none: the document is open and the newest, and the count of valid recipients equals the list.
+    // T7: an offer whose personal details were erased is withdrawn: never sent again (409 `not_resendable`; Settled by the lead on the safest reading,
+    // 2026-10-30 (08-C RB-37)).
     const done = await mutate(c, {
       main: db
         .prepare(
           `INSERT INTO document_sends (id, document_id, version_group_id, client_id, contact_id, email, attach_pdf, kind, queued_at, created_by, created_at)
            SELECT json_extract(j.value, '$.id'), d.id, d.version_group_id, d.client_id, c.id, lower(c.email), ?3, 'resend', NULL, ?4, ?5
            FROM documents d JOIN json_each(?2) j JOIN contacts c ON c.id = json_extract(j.value, '$.contactId') AND c.client_id = d.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL
-           WHERE d.id = ?1 AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.status IN ('sent', 'viewed') AND d.valid_until >= ?6 AND ${NEWEST}
+           WHERE d.id = ?1 AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.redacted_at IS NULL AND d.status IN ('sent', 'viewed') AND d.valid_until >= ?6 AND ${NEWEST}
            AND NOT ${clientGoneSql("d.client_id")}
            AND (SELECT count(*) FROM contacts c2 WHERE c2.client_id = d.client_id AND c2.portal_access = 1 AND c2.anonymised_at IS NULL AND c2.id IN (SELECT json_extract(value, '$.contactId') FROM json_each(?2))) = json_array_length(?2)`,
         )

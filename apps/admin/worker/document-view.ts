@@ -4,10 +4,10 @@
 import { ANONYMISED_CLIENT } from "@techaust/core/clients";
 import type { CalendarDate } from "@techaust/core/dates";
 import { approvalState, catalogueGuard, type GuardLine } from "@techaust/core/documents";
+import { redactionNames, redactor, viewRecipient } from "@techaust/core/redaction";
 import type { ComputedDocument } from "@techaust/core/tax";
-import { nameOrLegal, wholeWordPattern } from "@techaust/core/text";
+import { nameOrLegal } from "@techaust/core/text";
 import type { DocumentBundle, TermsRef, TermsView } from "@techaust/db/documents";
-import type { RecipientSnapshot } from "@techaust/db/issue";
 import {
   type Blocker,
   type ClientRow,
@@ -23,54 +23,10 @@ import {
 import { type CatalogueGap, catalogueGaps, type ServiceFacts, servicesOf } from "./service-fill.ts";
 
 // What the staff view shows in place of the name of a client or contact whose personal details were removed is core's ANONYMISED_CLIENT
-// (owner, 2026-10-26; Researched 2026-10-28, BSA 2023 s.63(4) (08-C RB-19)). Only the VIEW changes: the frozen snapshot in the database stays as it was sent, as evidence.
-
-/**
- * A sent version's recipient block as the staff view shows it. When the client was anonymised, every personal field (names, email, GSTIN,
- * address) is replaced; when only the contact was, the contact's name and email are (the business named on the offer is not personal).
- * What is not personal stays: the country, the client type, the GST status, the state, and the contact's id.
- */
-export function viewRecipient(r: RecipientSnapshot, clientGone: boolean, contactGone: boolean) {
-  if (!clientGone && !contactGone) return r;
-  // A contact is on the snapshot only if it names one (an email alone never adds a contact line to the view).
-  const hasContact = r.contactId !== undefined || r.contactName !== undefined;
-  const contact = hasContact ? { email: null, contactName: ANONYMISED_CLIENT } : { email: null };
-  if (!clientGone) return { ...r, ...contact, anonymised: true };
-  return {
-    ...r,
-    legalName: ANONYMISED_CLIENT,
-    displayName: ANONYMISED_CLIENT,
-    gstin: null,
-    address: null,
-    ...contact,
-    anonymised: true,
-  };
-}
-
-/**
- * The personal values of a frozen recipient that the view must also take out of the document's own text (owner, 2026-10-26;
- * Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)): the templates write the client name and the contact into the sections at draft time (`{{client.name}}`,
- * `{{client.contact}}`), and that text is frozen at send. Client gone: the legal name, display name, contact name and email. Only
- * the contact gone: the contact's name and email (the business named on the offer is not personal). Blank values are skipped.
- */
-export function redactionNames(r: RecipientSnapshot, clientGone: boolean, contactGone: boolean): string[] {
-  const values: (string | null | undefined)[] = [];
-  if (clientGone) values.push(r.legalName, r.displayName);
-  if (clientGone || contactGone) values.push(r.contactName, r.email);
-  return [...new Set(values.map((v) => v?.trim() ?? "").filter((v) => v !== ""))];
-}
-
-/**
- * Builds the function that replaces every exact occurrence of the given names with `ANONYMISED_CLIENT`, in one pass, longest name first
- * (so a name that holds another is replaced whole, and the label is never searched again), only where it stands as a whole word: a
- * client named "Ram" leaves "Ramp-up" alone. VIEW ONLY: the stored text is not touched.
- * Staff-typed free text that only mentions a person in other words is not redacted (owner, 2026-10-26, Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)).
- */
-export function redactor(names: string[]): (text: string | null) => string | null {
-  if (names.length === 0) return (text) => text;
-  const re = wholeWordPattern(names);
-  return (text: string | null) => (text === null ? null : text.replace(re, ANONYMISED_CLIENT));
-}
+// (owner, 2026-10-26; Researched 2026-10-28, BSA 2023 s.63(4) (08-C RB-19)). For an ACCEPTED offer only the VIEW changes: the frozen snapshot stays as it was
+// sent, as evidence. A never-accepted offer's stored copy was redacted when the person was anonymised (T7; Settled by the lead on the safest reading,
+// 2026-10-30 (08-C RB-37)); the view applies the same rule again, which changes nothing. `viewRecipient`, `redactionNames` and `redactor` live in
+// `@techaust/core/redaction` (one rule for the view and the stored redaction).
 
 export type ContactFacts = { id: string; name: string; email: string; anonymised_at: number | null };
 
@@ -130,15 +86,22 @@ const approvalOf = (bundle: DocumentBundle<TermsRef>, contentSha256: string | nu
 
 /**
  * The PDF of this version (M4.4): `none` for a draft, `pending` once sent until the jobs Worker has stored it, `ready` after. `sha256` is the
- * SHA-256 of the file (acceptance evidence, M4.5); `fingerprint` is its first 12 hex characters, for the screen.
+ * SHA-256 of the file (acceptance evidence, M4.5); `fingerprint` is its first 12 hex characters, for the screen. T7: `erased` once the offer's personal
+ * details were erased: its PDF was deleted (the hash is kept; Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)).
  */
-export const pdfOf = (d: { frozen_at: number | null; pdf_sha256: string | null }) => ({
+export const pdfOf = (d: {
+  frozen_at: number | null;
+  pdf_sha256: string | null;
+  redacted_at?: number | null;
+}) => ({
   state:
     d.frozen_at === null
       ? ("none" as const)
-      : d.pdf_sha256 === null
-        ? ("pending" as const)
-        : ("ready" as const),
+      : (d.redacted_at ?? null) !== null
+        ? ("erased" as const)
+        : d.pdf_sha256 === null
+          ? ("pending" as const)
+          : ("ready" as const),
   sha256: d.pdf_sha256,
   fingerprint: d.pdf_sha256 === null ? null : d.pdf_sha256.slice(0, 12),
 });
@@ -247,6 +210,8 @@ export async function documentView(i: ViewInput) {
     updatedAt: d.updated_at,
     contentSha256: d.content_sha256,
     frozen,
+    /** T7: when the personal details of this never-accepted offer were erased (the screen's banner, 07-ZG line 1); null otherwise. */
+    redactedAt: d.redacted_at ?? null,
     client: {
       id: client.id,
       code: client.code,

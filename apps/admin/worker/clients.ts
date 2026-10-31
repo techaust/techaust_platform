@@ -64,6 +64,14 @@ import {
 } from "./http.ts";
 import { INVOICE_TYPES_SQL } from "./invoice-model.ts";
 import { type Direction, decodeCursor, encodeCursor, keysetSql, PREFIX_END, pageOf } from "./keyset.ts";
+import {
+  dropOfferObjects,
+  type RedactionPlan,
+  readRedactionPlan,
+  redactionGuard,
+  redactionStatements,
+  TOO_MANY_OFFERS,
+} from "./offer-redaction.ts";
 
 // ---- errors ----------------------------------------------------------------------------------------------------------
 
@@ -1211,16 +1219,47 @@ export const contacts = new Hono<AppEnv>()
     return c.json(out);
   })
 
-  // ---- erase or anonymise (owner, step-up): ONE audit-first batch; nothing is read before it ----
+  // ---- erase or anonymise (owner, step-up): ONE audit-first batch. Erase reads nothing before it. Anonymise reads the never-accepted offers that
+  //      name the person first (T7, step 2e: D1 can't match whole words), and the batch proves that read is still true, else nothing is written and the
+  //      read and the batch run once more (then 409 `stale_version`) ----
   .post("/:id/erase", param(idParam), body(eraseRequest), async (c) => {
     const { id } = c.req.valid("param");
     const { mode, reason } = c.req.valid("json");
+    const erase = mode === "erase";
+    for (let round = 0; round < 2; round++) {
+      // T7 (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): erase mode redacts nothing (a frozen offer naming the person refuses the erase).
+      const plan = erase ? null : await readRedactionPlan(c.env.DB, id);
+      if (plan) {
+        if (!plan.head) return err(c, NOT_FOUND, 404);
+        if (plan.head.anonymised_at !== null) return err(c, ANONYMISED, 409);
+        if (plan.tooMany) return err(c, TOO_MANY_OFFERS, 409);
+      }
+      const answer = await eraseOnce(c, id, mode, reason, plan);
+      if (answer !== "stale") return answer;
+    }
+    return err(c, STALE_VERSION, 409);
+  });
+
+/**
+ * One try of the erase or anonymise batch. Answers the response, or `"stale"` when only the T7 read went out of date (anonymise: the eligible offers, the
+ * contact, the last-live state or the client changed between the read and the batch; nothing was written).
+ */
+async function eraseOnce(
+  c: Ctx,
+  id: string,
+  mode: "erase" | "anonymise",
+  reason: string,
+  plan: RedactionPlan | null,
+): Promise<Response | "stale"> {
+  {
     const db = c.env.DB;
     const t = Date.now();
     const erase = mode === "erase";
     const fileKeys: string[] = [];
     const user = actor(c);
     const who = requestInfo(c);
+    // T7: the read's conditions on the audit row (anonymise only; its placeholders follow ?9).
+    const fresh = plan ? redactionGuard(plan, 11) : null;
     const done = await mutate(c, {
       action: erase ? "contact.erase" : "contact.anonymise",
       entityType: "client",
@@ -1231,7 +1270,8 @@ export const contacts = new Hono<AppEnv>()
           for (const row of r.results as { r2_key?: string }[]) if (row.r2_key) fileKeys.push(row.r2_key);
       },
       // The row is written only while the contact is live, no legal hold stands on the contact, its client or a lead of theirs, and
-      // (erase only) the contact is on no issued document. Every following statement is guarded on this row.
+      // (erase only) the contact is on no issued document; (anonymise) the never-accepted offers naming them, the contact and its client are as read.
+      // Every following statement is guarded on this row.
       auditFirst: (auditId, who) =>
         auditRow(
           db,
@@ -1239,12 +1279,12 @@ export const contacts = new Hono<AppEnv>()
           who,
           erase ? "contact.erase" : "contact.anonymise",
           "c.client_id",
-          "json_object('contactId', c.id, 'mode', ?8, 'reason', ?9)",
+          `json_object('contactId', c.id, 'mode', ?8, 'reason', ?9${fresh ? ", 'offers', ?10" : ""})`,
           `FROM contacts c JOIN clients cl ON cl.id = c.client_id
-           WHERE c.id = ?7 AND c.anonymised_at IS NULL AND c.legal_hold = 0 AND cl.legal_hold = 0 AND NOT ${HELD_LEAD_SQL}${erase ? ` AND NOT ${CONTACT_ON_ISSUED_DOCUMENT_SQL}` : ""}`,
-          [id, mode, reason],
+           WHERE c.id = ?7 AND c.anonymised_at IS NULL AND c.legal_hold = 0 AND cl.legal_hold = 0 AND NOT ${HELD_LEAD_SQL}${erase ? ` AND NOT ${CONTACT_ON_ISSUED_DOCUMENT_SQL}` : ""}${fresh ? ` AND ${fresh.sql}` : ""}`,
+          fresh && plan ? [id, mode, reason, plan.ids.length, ...fresh.params] : [id, mode, reason],
         ),
-      after: (g) => [
+      after: (g, auditId) => [
         // 1. what the person wrote and what the bell shows about their leads (matched by the contact's email, before it changes)
         db
           .prepare(
@@ -1293,8 +1333,9 @@ export const contacts = new Hono<AppEnv>()
           )
           .bind(id, t, ...g.params),
         // 2d. an individual's never-sent proposal and estimate drafts go with its last live contact (owner O-Q4, 2026-10-25; Researched 2026-10-29,
-        //     DPDP s.8(7), s.12(3) (08-C RB-37)). A sent version keeps its frozen copy (it is evidence of the offer and blocks the erase of the person
-        //     it names) (OPEN (08-C RB-37): may an unaccepted sent offer be kept against an erasure request, and for how long?).
+        //     DPDP s.8(7), s.12(3) (08-C RB-37)). A sent version keeps its frozen copy and blocks the erase of the person it names; on an anonymise, a
+        //     version that was never accepted loses the person's details in step 2e, and an accepted one stays whole (Settled by the lead on the safest
+        //     reading, 2026-10-30 (08-C RB-37)).
         //     The approvals of those drafts go first (they reference the document); a lead's link to a deleted draft is cleared by the
         //     foreign key. Same conditions as step 3, in the same batch, before the contact changes.
         //     The bell rows about those approvals go too, before the approvals do (their titles hold the draft's title). They go for EVERY approval of the
@@ -1341,6 +1382,22 @@ export const contacts = new Hono<AppEnv>()
             `DELETE FROM documents WHERE type IN ('proposal', 'estimate', ${INVOICE_TYPES_SQL}) AND frozen_at IS NULL AND ${LAST_LIVE_INDIVIDUAL("documents.client_id")} AND ${g.sql(2)}`,
           )
           .bind(id, ...g.params),
+        // 2e. (anonymise) T7: the personal details in the frozen copy of every proposal or estimate that was never accepted and names this person
+        //     (addressed to them, declined by them, or any offer of an individual client whose last live contact they are) are replaced, the decision note
+        //     cleared, its child rows marked, the offer withdrawn (sends cancelled, the group's links revoked when it is the newest version), its bells
+        //     deleted and its approvals' free text cleared; one `document.redact` audit row each (Settled by the lead on the safest reading, 2026-10-30
+        //     (08-C RB-37)). Before steps 3 and 4: the eligibility reads the live email and the last-live state. Accepted offers stay untouched.
+        ...(plan
+          ? redactionStatements(db, plan, g, {
+              contactId: id,
+              eraseAuditId: auditId,
+              t,
+              actor: { id: user.id, role: user.role },
+              ip: who.ip,
+              ua: who.ua,
+              requestId: who.requestId,
+            })
+          : []),
         // 3. an individual client's own record, when this is its last live contact (before the contact changes)
         db
           .prepare(
@@ -1395,7 +1452,9 @@ export const contacts = new Hono<AppEnv>()
       ],
     });
     if (done) {
-      if (fileKeys.length) c.executionCtx.waitUntil(dropObjects(c.env, fileKeys, "client erased"));
+      if (fileKeys.length) c.executionCtx.waitUntil(dropObjects(c.env.FILES, fileKeys, "client erased"));
+      // T7: the redacted offers' envelopes and PDFs go after the batch (write-once `DOCS`; a failed delete is logged by key for the M7.4 sweep).
+      if (plan?.keys.length) c.executionCtx.waitUntil(dropOfferObjects(c.env, plan.keys));
       return c.json({ ok: true, mode });
     }
     // Nothing was written: say why.
@@ -1408,5 +1467,7 @@ export const contacts = new Hono<AppEnv>()
     if (why.gone !== null) return err(c, ANONYMISED, 409);
     if (why.held) return err(c, LEGAL_HOLD, 409);
     if (erase && why.doc) return err(c, ON_ISSUED_DOCUMENT, 409);
-    return err(c, NOT_AVAILABLE, 409);
-  });
+    // Anonymise: what remains is the T7 read gone out of date (read again once).
+    return plan ? "stale" : err(c, NOT_AVAILABLE, 409);
+  }
+}
