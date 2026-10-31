@@ -1161,6 +1161,18 @@ html:has(.mmenu[open]) {
   font-weight: 600;
 }
 
+/* T6 (07-ZE line 3): which version this one replaces, said once, right under the title, at body size beside a verdigris hairline: a fact
+   about the document, quieter than the title and plainer than a notice. */
+.cover__replaces {
+  max-width: var(--container-prose);
+  margin: 0 0 var(--space-6);
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--color-accent-decor);
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  text-wrap: pretty;
+}
+
 .facts {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));

@@ -100,8 +100,7 @@ export const N = {
   preparing: "A new version is being prepared. We'll email you when it's ready.",
   superseded: (kind: string, n: number | string) =>
     `There's a newer version of this ${kind}. You're seeing version ${n}, the latest.`,
-  expired: (kind: string, on: string) =>
-    `This ${kind} expired on ${on}. Reply to our email or contact us if you'd still like to go ahead.`,
+  // The expired notice is 07-ZE line 2, `offerExpiredNotice` in @techaust/core/offers (T6): one source with the "(IST)" it names.
   token:
     "You opened this from an email link. You can review and accept it here, or sign in to see everything we've sent you.",
   signIn: "Sign in",

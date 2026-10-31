@@ -131,6 +131,9 @@ h1, h2, h3 { margin: 0; }
 .facts div { display: contents; }
 .facts dt { color: var(--color-text-muted); }
 .facts dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums lining-nums; white-space: nowrap; }
+/* T6 (07-ZE line 3): from version 2, which version this replaces, under the Document facts: the small muted note of the totals block, set
+   off by a hairline so it reads as a statement about the whole document rather than a fifth fact; it wraps within the column. */
+.replaces-note { margin: 2mm 0 0; padding-top: 1.6mm; border-top: 0.2mm solid var(--color-border); color: var(--color-text-muted); font-size: var(--print-small); line-height: 1.4; overflow-wrap: anywhere; }
 
 .doc-title {
   font-family: var(--font-display);
@@ -156,7 +159,11 @@ h1, h2, h3 { margin: 0; }
   grid-template-columns: repeat(12, 1fr);
   column-gap: var(--print-gutter);
   break-inside: avoid;
+  /* T6: a heading never ends a page alone (terms v4 is about three times v3, so "Terms" fell to the foot of a page with its list overleaf) */
+  break-after: avoid;
 }
+/* T6: the acceptance section is short; its heading, line and box stay on one page rather than leaving the box alone on the last one */
+.sec--acceptance { break-inside: avoid; }
 .sec__head h2 {
   grid-column: 1 / span 3;
   font-family: var(--font-display);

@@ -1,6 +1,8 @@
 // Home (POR-04) and the proposals-and-estimates list (POR-05), with the sections a later milestone builds (invoices M5 to M7, projects
 // and the profile M7.1) as calm "coming soon" panels. A card per document awaiting a decision: what it is, its title, number and
-// version, total and validity, and one "View" action. Words: the brief, copy.ts and 07-N §1 (PENDING the owner's approval).
+// version, total and validity, and one "View" action. Words: the brief, copy.ts and 07-N §1 (PENDING the owner's approval). T6 (07-ZE line 1):
+// a validity date says "(IST)" (`validityDateIst`); a decision's date and time are already IST-labelled and stay as they are.
+import { validityDateIst } from "@techaust/core/offers";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import type { OfferItem } from "../api.ts";
@@ -41,7 +43,7 @@ export function DocCard(props: { doc: OfferItem; href: string }) {
         {doc.validUntil && (
           <div>
             <dt>{WORDS.doc.validUntil}</dt>
-            <dd className="nowrap">{dateText(doc.validUntil)}</dd>
+            <dd className="nowrap">{validityDateIst(dateText(doc.validUntil))}</dd>
           </div>
         )}
       </dl>
@@ -216,7 +218,7 @@ export function DocumentsScreen(props: {
                   <span className="drow__status">
                     <StatusPill status={d.status} />
                     <span className="drow__when">
-                      {d.decidedAt ? formatIstDateTime(d.decidedAt) : dateText(d.validUntil)}
+                      {d.decidedAt ? formatIstDateTime(d.decidedAt) : validityDateIst(dateText(d.validUntil))}
                     </span>
                   </span>
                   <span className="drow__total">{d.total}</span>
