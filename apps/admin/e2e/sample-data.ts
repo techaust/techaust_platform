@@ -11,6 +11,7 @@
 // Rows the API has no route for (bank accounts, clients, projects, time, care plans) are written straight to the table, as the Worker tests do.
 import { createHmac, randomUUID } from "node:crypto";
 import { deflateSync } from "node:zlib";
+import { rgbaPng } from "../../../packages/testing/src/png.ts";
 
 type Call = (
   path: string,
@@ -80,36 +81,8 @@ export function sampleSignaturePng(): Uint8Array {
       px.set([0x14, 0x23, 0x1f, 255], o);
     }
   }
-  const raw = new Uint8Array(h * (w * 4 + 1));
-  for (let y = 0; y < h; y++) raw.set(px.subarray(y * w * 4, (y + 1) * w * 4), y * (w * 4 + 1) + 1);
-  const crcTable = Array.from({ length: 256 }, (_, n) => {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    return c >>> 0;
-  });
-  const crc = (b: Uint8Array) => {
-    let c = 0xffffffff;
-    for (const x of b) c = (crcTable[(c ^ x) & 0xff] as number) ^ (c >>> 8);
-    return (c ^ 0xffffffff) >>> 0;
-  };
-  const u32 = (n: number) => Uint8Array.of(n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255);
-  const chunk = (type: string, data: Uint8Array) => {
-    const body = new Uint8Array([...new TextEncoder().encode(type), ...data]);
-    return [...u32(data.length), ...body, ...u32(crc(body))];
-  };
-  return new Uint8Array([
-    0x89,
-    0x50,
-    0x4e,
-    0x47,
-    0x0d,
-    0x0a,
-    0x1a,
-    0x0a,
-    ...chunk("IHDR", new Uint8Array([...u32(w), ...u32(h), 8, 6, 0, 0, 0])),
-    ...chunk("IDAT", new Uint8Array(deflateSync(raw))),
-    ...chunk("IEND", new Uint8Array()),
-  ]);
+  // the shared test encoder (test-hardening 4c; the bytes are unchanged, pinned by packages/testing/test/png.test.ts)
+  return rgbaPng(w, h, px, (raw) => deflateSync(raw));
 }
 
 function must(what: string, res: { status: number; data: J }, ok = [200, 201]) {
