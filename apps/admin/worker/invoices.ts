@@ -2,7 +2,7 @@
 // Issuing and the issue request are in invoice-issue.ts, the PDF in document-pdf.ts, the model in invoice-model.ts, the JSON in invoice-view.ts.
 // Every route is a row of ROUTES (guard.ts); every change is ONE batch through `mutate`. Audit rows hold ids, codes, numbers, totals; never a
 // line's description, a reason's text or a personal value. A rule is written into the statement that changes the row, never decided from a
-// read alone: when nothing was written, one read says why. Every rule is a researched default, rule by rule in 08-C section 1 (Rule 46, Rule 56(8), Q1, Q2, Q4); the void is OPEN (08-C RA-10).
+// read alone: when nothing was written, one read says why. Every rule is a researched default, rule by rule in 08-C section 1 (Rule 46, Rule 56(8), Q1, Q2, Q4); the void: Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): the owner's 2026-10-30 rule; such a void is reported as cancelled in Table 13.
 //
 // Never in a request (strict objects make it a 400): a number, a status, a hash, a type, `trustRates`, `targetTotalMinor`, a due date, a computed
 // value. The type comes from the client; the due date from the client's terms; the target of a milestone invoice from the milestone row.
@@ -25,7 +25,7 @@ import {
   voidBlockers,
 } from "@techaust/core/invoices";
 import { bundleOf, LOAD_STATEMENTS, loadStatements, type TermsRef } from "@techaust/db/documents";
-import { proformaDeliveredSql } from "@techaust/db/sql-rules";
+import { withdrawnSql } from "@techaust/db/sql-rules";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
@@ -243,9 +243,9 @@ export const INVOICE_LIST_SQL = (f: {
       : "";
   const client = f.client ? ` AND d.client_id = ?${++at}` : "";
   const cursor = f.cursor ? ` AND ${keysetSql("d.created_at", "d.id", false, "after", at + 1).where}` : "";
-  // ADM-INV-10: `withdrawn`, a void proforma that had reached the client (`withdrawnSql`); the send lookup runs only for a void proforma's row.
+  // ADM-INV-10: `withdrawn`, a void proforma that had reached the client (`withdrawnSql`, review L4); its send lookup runs only for a void proforma's row.
   return `SELECT d.id, d.type, d.status, d.number_display, d.client_id, cl.code AS client_code, cl.display_name AS client_name, (cl.anonymised_at IS NOT NULL) AS client_gone, d.currency, d.total_minor, d.balance_minor, d.issue_date, d.due_date, d.content_sha256, d.frozen_at, d.pdf_sha256, d.ims_status, d.created_at, d.updated_at,
-     CASE WHEN d.type = 'proforma' AND d.status = 'void' THEN ${proformaDeliveredSql("d")} ELSE 0 END AS withdrawn,
+     ${withdrawnSql("d")} AS withdrawn,
      (SELECT a.status FROM approvals a WHERE a.document_id = d.id AND a.kind = 'issue' ORDER BY a.created_at DESC, a.id DESC LIMIT 1) AS approval_status,
      (SELECT a.content_sha256 FROM approvals a WHERE a.document_id = d.id AND a.kind = 'issue' ORDER BY a.created_at DESC, a.id DESC LIMIT 1) AS approval_sha
    FROM documents d JOIN clients cl ON cl.id = d.client_id
@@ -339,6 +339,18 @@ export async function listInvoices(
 // ---- reading one -----------------------------------------------------------------------------------------------------------------------------
 
 /**
+ * ?1 the document: whether it was emailed or has an issued child (the void codes), and who voided OR withdrew it. ADM-INV-10: any child (a draft too)
+ * and an advance receipt are the withdraw blockers of a proforma, so only a proforma's read looks them up (review note: every other type skips both;
+ * `withdrawBlockers` answers `not_proforma` for it whatever they say). No row (no document) reads as the defaults in `readInvoice`.
+ */
+export const INVOICE_FACTS_SQL = `SELECT EXISTS (SELECT 1 FROM document_sends s WHERE s.document_id = ?1) AS emailed,
+  EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = ?1 AND x.frozen_at IS NOT NULL) AS child,
+  CASE WHEN d.type = 'proforma' THEN EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = ?1) ELSE 0 END AS any_child,
+  CASE WHEN d.type = 'proforma' THEN EXISTS (SELECT 1 FROM advance_receipts r WHERE r.proforma_id = ?1) ELSE 0 END AS advance,
+  CASE WHEN d.status = 'void' THEN (SELECT u.name FROM audit_log a JOIN staff_users u ON u.id = a.actor_id WHERE a.entity_type = 'document' AND a.entity_id = ?1 AND a.action IN ('invoice.void', 'invoice.withdraw') ORDER BY a.at DESC LIMIT 1) END AS voided_by_name
+  FROM documents d WHERE d.id = ?1`;
+
+/**
  * An invoice with everything a route needs besides it, in ONE D1 call: the bundle of `loadStatements`, its client and contact, the settings (with
  * their versions), the active bank rows, the newest invoice footer notes, its `issue` approvals, its milestone, and whether it was emailed or has
  * an issued child. A route that needs more reads passes those statements in `extra`; their results come back after the others.
@@ -366,12 +378,7 @@ export async function readInvoice(
     db.prepare(NEWEST_INVOICE_TERMS),
     db.prepare(ISSUE_APPROVALS_OF_SQL).bind(id),
     db.prepare(MILESTONE_OF_SQL).bind(id),
-    db
-      .prepare(
-        // ADM-INV-10: any child (a draft too) and an advance receipt (the withdraw blockers), and who voided OR withdrew it.
-        "SELECT EXISTS (SELECT 1 FROM document_sends s WHERE s.document_id = ?1) AS emailed, EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = ?1 AND x.frozen_at IS NOT NULL) AS child, EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = ?1) AS any_child, EXISTS (SELECT 1 FROM advance_receipts r WHERE r.proforma_id = ?1) AS advance, CASE WHEN (SELECT status FROM documents WHERE id = ?1) = 'void' THEN (SELECT u.name FROM audit_log a JOIN staff_users u ON u.id = a.actor_id WHERE a.entity_type = 'document' AND a.entity_id = ?1 AND a.action IN ('invoice.void', 'invoice.withdraw') ORDER BY a.at DESC LIMIT 1) END AS voided_by_name",
-      )
-      .bind(id),
+    db.prepare(INVOICE_FACTS_SQL).bind(id),
     ...extra,
   ]);
   const bundle = bundleOf<TermsRef>(results.slice(0, LOAD_STATEMENTS));
@@ -1179,7 +1186,7 @@ export const invoices = new Hono<AppEnv>()
     return err(c, STALE_VERSION, 409);
   })
 
-  // ---- void (Q1, Q2, Q23, LD7; OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?): the owner, with a fresh code, before it was emailed or opened in the portal (FX-5, owner decision 2026-10-30), within the month of issue, and with no payment or credit; the number stays ----
+  // ---- void (Q1, Q2, Q23, LD7; Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): such a void is reported as cancelled in Table 13, anything else is corrected by a credit note): the owner, with a fresh code, before it was emailed or opened in the portal (FX-5, owner decision 2026-10-30), within the month of issue, and with no payment or credit; the number stays ----
   .post("/:id/void", param(idParam), body(voidBody), async (c) => {
     const { id } = c.req.valid("param");
     const f = c.req.valid("json");

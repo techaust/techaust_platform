@@ -164,8 +164,14 @@ export type PdfView = {
   statusText: string;
   notice: string | null;
   issueDate: string;
+  /** The validity date with "(IST)" (07-ZE line 1), as the facts and the cover print it. */
   validUntil: string;
+  /** The same date without "(IST)", for a line that adds it itself (07-ZE line 2). */
+  validUntilDate: string;
+  /** "Valid until {date} (IST)". */
   validityNote: string;
+  /** 07-ZE line 3 for version 2 onwards ("This is version 2. It replaces version 1 …"); null for version 1. */
+  replacesNote: string | null;
   logo: string;
   supplier: { name: string; lines: string[] };
   recipient: { name: string; attention: string | null; lines: string[] };

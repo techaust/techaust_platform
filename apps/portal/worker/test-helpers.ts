@@ -126,6 +126,25 @@ export function barrierDb(base: D1Database, n: number): D1Database {
   });
 }
 
+/**
+ * `base`, except that `before` runs (on `base`) just before the n-th `batch` call is sent: a write that lands between two batches of one request
+ * (review L1 of runs/proforma-withdraw). Every other call goes straight through.
+ */
+export function beforeBatch(base: D1Database, n: number, before: () => Promise<unknown>): D1Database {
+  let batches = 0;
+  return new Proxy(base, {
+    get(t, k) {
+      if (k === "batch")
+        return async (stmts: D1PreparedStatement[]) => {
+          if (++batches === n) await before();
+          return t.batch(stmts);
+        };
+      const v = Reflect.get(t, k);
+      return typeof v === "function" ? v.bind(t) : v;
+    },
+  });
+}
+
 // ---- requests ------------------------------------------------------------------------------------------------
 
 let ipSeq = 0;

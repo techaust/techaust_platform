@@ -3,7 +3,10 @@
 // verdigris button with the plain address under it, light and dark), each with its plain-text twin.
 // Words: 07 §8 (subjects and core sentences, "Review and accept" per docs/13), 07-O (approval emails name the document by title and
 // version) and 07-N §4 (the fact labels, the PDF note, `next_step` and the TecHaust-side body; PENDING the owner's approval). A line that
-// 07-N doesn't have is in 07-Q (approved 2026-10-26). Every variable is escaped before it reaches HTML.
+// 07-N doesn't have is in 07-Q (approved 2026-10-26). Every variable is escaped before it reaches HTML. T6 (07-ZE lines 1, 3 and 4, approved
+// 2026-10-31): the validity date says "(IST)", version 2 onwards says which version it replaces, and the closing line says how to accept; the
+// words come from @techaust/core/offers, shared with the PDF, the portal and the admin preview.
+import { OFFER_EMAIL_CLOSING, offerReplacesLine, validityDateIst } from "@techaust/core/offers";
 import { headerValue } from "./headers.ts";
 import { type LayoutOptions, type Para, para, type Rendered, securityEmail } from "./templates.ts";
 
@@ -40,22 +43,27 @@ export function offerSent(d: OfferSentData, opts: LayoutOptions): Rendered {
     `${estimate ? "Estimate" : "Proposal"}: ${d.title} (${d.number} v${d.version})`,
   );
   // 07-Y item 14 (owner 2026-10-29): the proposal's line no longer says it covers scope and timeline (those sections can be hidden); the
-  // estimate's line is unchanged.
+  // estimate's line is unchanged. 07-ZE line 1: the date says "(IST)" here and in the facts (OPEN (08-C RB-35(a)) answered by naming IST).
+  const validUntil = validityDateIst(d.valid_until);
   const lead = estimate
-    ? `Hi ${d.first_name}, your estimate is ready. It covers the line items, price and payment terms, and it's valid until ${d.valid_until}.`
-    : `Hi ${d.first_name}, your proposal is ready, with the price and payment schedule. It's valid until ${d.valid_until}.`;
+    ? `Hi ${d.first_name}, your estimate is ready. It covers the line items, price and payment terms, and it's valid until ${validUntil}.`
+    : `Hi ${d.first_name}, your proposal is ready, with the price and payment schedule. It's valid until ${validUntil}.`;
   const rows: [string, string][] = [
     ["Number", `${d.number} v${d.version}`],
     ["Total", d.total],
-    ["Valid until", d.valid_until],
+    ["Valid until", validUntil],
   ];
+  // 07-ZE line 3, right after the first paragraph, from version 2 (Researched 2026-10-29, Contract Act s.6 (08-C RB-35); OPEN (08-C
+  // RB-35(b)): s.5 not read).
+  const replaces = offerReplacesLine(d.version);
   return securityEmail(subject, opts, {
-    before: [para(lead)],
+    before: replaces ? [para(lead), para(replaces)] : [para(lead)],
     facts: { rows, text: rows.map(([k, v]) => `${k}: ${v}`).join("\n") },
     action: { label: "Review and accept", url: d.url },
     after: [
       para(d.attached === "1" ? PDF_NOTE.attached : PDF_NOTE.linked),
-      para("Questions? Just reply to this email."),
+      // 07-ZE line 4 (Researched 2026-10-31, Contract Act s.7(2) (08-C RB-35)).
+      para(OFFER_EMAIL_CLOSING),
     ],
     actionFirst: true,
   });

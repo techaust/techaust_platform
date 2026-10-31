@@ -12,12 +12,20 @@ import {
   PROPOSAL_TERMS_V2_SHA256,
   PROPOSAL_TERMS_V3,
   PROPOSAL_TERMS_V3_SHA256,
+  PROPOSAL_TERMS_V4_SHA256,
 } from "../src/seed/terms.ts";
 import { all, first, run } from "./helpers.ts";
 import { mkQuote, send } from "./quotes.ts";
 
 const seed = () => env.DB.batch(seedStatements().map((s) => env.DB.prepare(s)));
-/** Everything the seed writes except version 3: a database whose newest proposal terms are the seeded version 2. */
+/** Everything the seed writes except version 4 (T6; seed-terms-v4.test.ts): this file is about version 3 becoming the newest. */
+const seedUpToV3 = () =>
+  env.DB.batch(
+    seedStatements()
+      .filter((s) => !s.includes(PROPOSAL_TERMS_V4_SHA256))
+      .map((s) => env.DB.prepare(s)),
+  );
+/** Everything the seed writes except versions 3 and 4 (version 4's statement names version 3's hash too): a database whose newest proposal terms are the seeded version 2. */
 const seedWithoutV3 = () =>
   env.DB.batch(
     seedStatements()
@@ -71,8 +79,8 @@ describe("seed: proposal terms version 3 (07-ZA item 14) [ADM-SET-08]", () => {
     // the due-days guard on its own: newest is the seeded version 2, version 3's hash absent
     await setDueDays(14);
     expect(await all(proposalTermsV3Select())).toEqual([]);
-    await seed();
-    await seed();
+    await seedUpToV3();
+    await seedUpToV3();
     expect(await proposalTerms()).toEqual(V1_V2);
     await setDueDays(7);
 
@@ -100,8 +108,8 @@ describe("seed: proposal terms version 3 (07-ZA item 14) [ADM-SET-08]", () => {
       body_md: PROPOSAL_TERMS_V2,
     });
 
-    await seed();
-    await seed();
+    await seedUpToV3();
+    await seedUpToV3();
     expect(await proposalTerms()).toEqual([...V1_V2, { version: 3, sha256: PROPOSAL_TERMS_V3_SHA256 }]);
     expect(await first("SELECT body_md FROM terms_versions WHERE kind = 'proposal' AND version = 3")).toEqual(
       { body_md: PROPOSAL_TERMS_V3 },

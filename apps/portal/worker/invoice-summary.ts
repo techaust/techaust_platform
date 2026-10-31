@@ -28,13 +28,14 @@ const quoted = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(", ");
 export const TYPES_SQL = quoted(CLIENT_INVOICE_TYPES);
 export const STATUSES_SQL = quoted(CLIENT_INVOICE_STATUSES);
 
+/** A live document in an open status (the first half of `openOrWithdrawnSql`): the only state whose PDF is served. `d` is the documents alias. */
+export const openSql = (d: string) => `(${d}.voided_at IS NULL AND ${d}.status IN (${STATUSES_SQL}))`;
 /**
  * ADM-INV-10 (owner, 2026-10-30, docs/13; Q3 of runs/proforma-withdraw): what a client may open: a live document in an open status, OR a withdrawn proforma
  * (a void proforma that had reached the client, `withdrawnSql`), which the client sees as withdrawn: no amount due, no due date, no PDF, never the reason.
  * Any other void document stays closed. `d` is the documents alias. A row with status `void` that passes this is therefore always a withdrawn proforma.
  */
-export const openOrWithdrawnSql = (d: string) =>
-  `((${d}.voided_at IS NULL AND ${d}.status IN (${STATUSES_SQL})) OR ${withdrawnSql(d)})`;
+export const openOrWithdrawnSql = (d: string) => `(${openSql(d)} OR ${withdrawnSql(d)})`;
 
 /** The 409 of a PDF asked for a withdrawn proforma (07-ZF 20, owner-approved 2026-10-31): the stored PDF still carries the bank details (Q3). */
 export const PDF_WITHDRAWN = {

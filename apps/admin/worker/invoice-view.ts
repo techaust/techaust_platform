@@ -369,15 +369,18 @@ export function invoiceView(i: InvoiceViewInput) {
       voidedByName: d.voided_at === null ? null : (i.voidedByName ?? null),
       reason: d.void_reason,
       /** Only the owner voids; the codes say why not (empty: it can be voided now). */
-      // A note is never voided (Q31; `note_not_voidable`).
-      canVoid: decide(i.role, "invoices.void") !== "deny" && voidReasons.length === 0 && !isNote,
+      // A note is never voided (Q31; `note_not_voidable`). An anonymised client locks every write (`anonymised.ts`; review L2): never offered.
+      canVoid:
+        decide(i.role, "invoices.void") !== "deny" && voidReasons.length === 0 && !isNote && !clientGone,
       blockers: isNote ? (["note_not_voidable"] as string[]) : voidReasons,
       /** ADM-INV-10: a void proforma that had reached the client: it was withdrawn (the reason and the name above are the withdrawal's). */
       withdrawn,
     },
     /** ADM-INV-10: only the Owner withdraws a proforma the client has received; the codes (core `WITHDRAW_BLOCKER_CODES`) say why not. */
     withdraw: {
-      canWithdraw: decide(i.role, "invoices.withdraw") !== "deny" && withdrawReasons.length === 0,
+      // An anonymised client locks every write (the route answers `client_anonymised`; review L2): never offered.
+      canWithdraw:
+        decide(i.role, "invoices.withdraw") !== "deny" && withdrawReasons.length === 0 && !clientGone,
       blockers: withdrawReasons,
     },
     pdf: pdfOf(d),

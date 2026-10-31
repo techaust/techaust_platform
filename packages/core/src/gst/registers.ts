@@ -1,7 +1,7 @@
 // The sales register and the output-tax summary (M5.5b, LD71, LD83; ADM-REP-04, ADM-REP-06): working reports for the owner and the
 // CA, built from the same register rows as GSTR-1 so their totals can be compared with it. Pure and deterministic; a bad row fails
 // the whole report (the same checks as `gstr1Sections`). A credit note is negative, a debit note positive. A voided document appears
-// in the sales register only, as "cancelled" with zero amounts, and nowhere in the output tax. Every rule is OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?.
+// in the sales register only, as "cancelled" with zero amounts, and nowhere in the output tax. Every rule: Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): a void under the owner's 2026-10-30 rule is reported as cancelled in Table 13; anything else is corrected by a credit note.
 import { isValidDate } from "../dates.ts";
 import type { StateCode } from "../gstin.ts";
 import { SERIES } from "../numbering.ts";

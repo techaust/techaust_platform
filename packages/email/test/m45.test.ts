@@ -23,20 +23,50 @@ describe("offer.sent [ADM-PROP-07, ADM-MAIL-01]", () => {
     expect(r.from).toEqual(SENDERS.hello);
     expect(r.replyTo).toBe("hello@techaust.com");
     expect(r.text).toContain(
-      "Hi Asha, your proposal is ready, with the price and payment schedule. It's valid until 30 Nov 2026.",
+      "Hi Asha, your proposal is ready, with the price and payment schedule. It's valid until 30 Nov 2026 (IST).",
     );
     expect(r.text).toContain("Review and accept: https://portal.example.test/o#t=abc");
-    expect(r.text).toContain("Questions? Just reply to this email.");
+    expect(r.text).toContain(
+      "Questions? Just reply to this email. To accept, use Review and accept: a reply by email isn't an acceptance.",
+    );
     expect(r.html).toContain("Review and accept");
   });
   it("estimate: its own subject and sentence", () => {
     const r = renderEmail("offer.sent", { ...sent, kind: "estimate" }, opts);
     expect(r.subject).toBe("Estimate: Website rebuild (TH/PRP/2627/0001 v2)");
     expect(r.text).toContain("your estimate is ready. It covers the line items, price and payment terms,");
+    expect(r.text).toContain("and it's valid until 30 Nov 2026 (IST).");
+  });
+  it("07-ZE line 3 (T6): version 2 onwards says which version it replaces, right after the first paragraph; version 1 doesn't", () => {
+    const line =
+      "This is version 2. It replaces version 1 and any earlier version, which can no longer be accepted.";
+    for (const kind of ["proposal", "estimate"]) {
+      const r = renderEmail("offer.sent", { ...sent, kind }, opts);
+      expect(r.text).toContain(line);
+      // the lead sentence, then the line, then the facts
+      expect(r.text.indexOf("(IST).")).toBeLessThan(r.text.indexOf(line));
+      expect(r.text.indexOf(line)).toBeLessThan(r.text.indexOf("Number:"));
+      expect(r.html).toContain(line);
+      const one = renderEmail("offer.sent", { ...sent, kind, version: "1" }, opts);
+      expect(one.text).not.toContain("This is version");
+      expect(one.html).not.toContain("This is version");
+    }
+    expect(renderEmail("offer.sent", { ...sent, version: "7" }, opts).text).toContain(
+      "This is version 7. It replaces version 6 and any earlier version, which can no longer be accepted.",
+    );
+  });
+  it("07-ZE lines 1 and 4 (T6): (IST) on the validity date only, and the closing line in the HTML too", () => {
+    const r = renderEmail("offer.sent", sent, opts);
+    expect(r.text.match(/\(IST\)/g)).toHaveLength(2);
+    expect(r.html).toContain("30 Nov 2026 (IST)");
+    expect(r.html).toContain("a reply by email isn&#39;t an acceptance");
+    expect(r.text).not.toMatch(/Questions\? Just reply to this email\.\n/);
   });
   it("07-N section 4: the facts, then the button, then the PDF note (attached or on the same page)", () => {
     const r = renderEmail("offer.sent", sent, opts);
-    expect(r.text).toContain("Number: TH/PRP/2627/0001 v2\nTotal: ₹1,00,000.00\nValid until: 30 Nov 2026");
+    expect(r.text).toContain(
+      "Number: TH/PRP/2627/0001 v2\nTotal: ₹1,00,000.00\nValid until: 30 Nov 2026 (IST)",
+    );
     expect(r.text).toContain("The PDF is attached.");
     expect(r.text.indexOf("Review and accept:")).toBeLessThan(r.text.indexOf("The PDF is attached."));
     expect(r.text.indexOf("The PDF is attached.")).toBeLessThan(r.text.indexOf("Questions?"));

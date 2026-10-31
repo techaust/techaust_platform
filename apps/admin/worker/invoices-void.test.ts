@@ -1,4 +1,4 @@
-// Voiding an invoice [ADM-INV-03, ADM-INV-07, Q1, Q2, LD7; OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?, Rule 56(8), GSTR-1 Table 13]: the Owner only, with a fresh code, before the
+// Voiding an invoice [ADM-INV-03, ADM-INV-07, Q1, Q2, LD7; Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): such a void is reported as cancelled in Table 13, anything else is corrected by a credit note; Rule 56(8), GSTR-1 Table 13]: the Owner only, with a fresh code, before the
 // invoice was emailed and with no payment, credit or issued child; the number and the record stay. Plus the status flow in the database and the
 // Table 13 summary of what was issued.
 import { env } from "cloudflare:workers";
@@ -291,7 +291,7 @@ describe("void [Q1, Q2, LD7]", () => {
   });
 });
 
-describe("a void only inside the IST calendar month of issue [Q23, OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?: the GST return period]", () => {
+describe("a void only inside the IST calendar month of issue [Q23, Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): the GST return period]", () => {
   it("the last millisecond of the month still voids; the next millisecond is 409 return_period_closed and nothing is written", async () => {
     const o = await farSession();
     const c = await mkInvoiceClient();

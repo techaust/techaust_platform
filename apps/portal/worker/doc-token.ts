@@ -40,6 +40,7 @@ import {
   LINES_SQL,
   type LineRow,
   openOrWithdrawnSql,
+  openSql,
   PDF_WITHDRAWN,
   SUMMARY_COLS,
   SUMMARY_PARENT_JOIN,
@@ -66,6 +67,14 @@ export const DOC_READ = `SELECT ${SUMMARY_COLS}, t.contact_id AS link_contact_id
   JOIN clients cl ON cl.id = t.client_id AND cl.anonymised_at IS NULL
   ${SUMMARY_PARENT_JOIN}
   WHERE t.token_hash = ?1 AND t.revoked_at IS NULL AND t.expires_at > ?2 AND t.purpose = 'view_pay' AND d.frozen_at IS NOT NULL AND ${openOrWithdrawnSql("d")} AND d.type IN (${TYPES_SQL})`;
+
+/**
+ * ?1 client, ?2 document: the document's state NOW, read in the batch that writes the PDF view (review L1). `open()` read the row in an earlier batch, so a
+ * withdrawal or a void landing between the two would otherwise still serve the PDF. `open` = the PDF may be served; `readable` without `open` = withdrawn.
+ */
+export const PDF_STATE_SQL = `SELECT d.type, d.status, ${openSql("d")} AS open, ${openOrWithdrawnSql("d")} AS readable
+  FROM documents d WHERE d.client_id = ?1 AND d.id = ?2`;
+type PdfState = { type: string; status: string; open: number; readable: number };
 
 type Found = SummaryRow & { link_contact_id: string; link_client_id: string };
 type Opened = { doc: Found; failKey: string };
@@ -144,10 +153,23 @@ export const docToken = new Hono<AppEnv>()
       return err(c, PDF_WITHDRAWN, 409);
     }
     c.set("accessDone", true);
-    await db.batch([
+    // Review L1: the state is read again in the batch that writes the view, and the access row of a served (or pending) PDF is written only while the
+    // document is still open (the same `openSql` as the check below). A withdrawal or a void that landed after `open()` answers as the document now is,
+    // without reading R2: 409 `withdrawn` for a withdrawn proforma, else the 404. The link was valid when checked, so neither counts toward `p:fail:`.
+    const [state] = await db.batch([
+      db.prepare(PDF_STATE_SQL).bind(doc.link_client_id, doc.id),
       db.prepare(VIEW_PDF_SQL).bind(doc.link_client_id, doc.id, Date.now()),
-      accessStmt(db, accessEntry(c, doc.pdf_r2_key ? 200 : 409, doc.link_contact_id)),
+      accessStmt(db, accessEntry(c, doc.pdf_r2_key ? 200 : 409, doc.link_contact_id), {
+        sql: (at) => `EXISTS (SELECT 1 FROM documents d WHERE d.id = ?${at} AND ${openSql("d")})`,
+        params: [doc.id],
+      }),
     ]);
+    const now = state?.results[0] as PdfState | undefined;
+    if (!now?.open) {
+      const withdrawn = !!now?.readable && isWithdrawnRow(now);
+      await db.batch([accessStmt(db, accessEntry(c, withdrawn ? 409 : 404, doc.link_contact_id))]);
+      return withdrawn ? err(c, PDF_WITHDRAWN, 409) : err(c, NOT_FOUND, 404);
+    }
     if (!doc.pdf_r2_key)
       return c.json(
         {

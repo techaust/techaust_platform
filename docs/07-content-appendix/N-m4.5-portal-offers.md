@@ -24,7 +24,7 @@ _Drafted by the lead on 2026-10-26 from approved facts:
 | Labels | "In scope" · "Out of scope" · "Date" · "Your contact at TecHaust" · "Amount in words" · "Contents" · "Document sections" |
 | A newer version is still being prepared | "A new version is being prepared. We'll email you when it's ready." |
 | Superseded notice | "There's a newer version of this {proposal/estimate}. You're seeing version {n}, the latest." |
-| Expired notice | "This {proposal/estimate} expired on {date}. Reply to our email or contact us if you'd still like to go ahead." |
+| Expired notice | "This {proposal/estimate} expired on {date}. Reply to our email or contact us if you'd still like to go ahead." Replaced by [07-ZE](ZE-terms-offers-deed.md) line 2 (T6, owner 2026-10-31). |
 | Single-document link notice | "You opened this from an email link. You can review and accept it here, or sign in to see everything we've sent you." · button "Sign in" |
 | PDF still being made | "The PDF is being prepared. Check back in a minute." |
 
