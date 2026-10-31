@@ -3,10 +3,9 @@
 import { Link } from "react-router";
 import { type PaymentApprovalItem, paymentsApi } from "../../api.ts";
 import { type Column, DataTable } from "../../components/data-table.tsx";
-import { EmptyState, When } from "../../components/display.tsx";
+import { EmptyState } from "../../components/display.tsx";
 import { ClipboardCheck, Search } from "../../components/icons.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
-import { DOC_COPY } from "../../lib/documents.ts";
 import { amountText, PAY_COPY, PAY_UI } from "../../lib/payments.ts";
 import { paymentHref } from "./panel.tsx";
 import { day, PaymentPill } from "./parts.tsx";
@@ -44,7 +43,6 @@ export function PaymentApprovals(props: { owner: boolean; state: string | null }
     },
     { key: "by", header: PAY_UI.recordedBy, cell: (r) => <span>{r.requesterName ?? ""}</span> },
     { key: "at", header: PAY_UI.colStatus, cell: (r) => <PaymentPill status={r.payment.status} /> },
-    { key: "when", header: DOC_COPY.colRequested, cell: (r) => <When ms={r.createdAt} /> },
   ];
   if (list.state === "failed") return <LoadFailed error={list.error} onRetry={() => list.reload()} />;
   return (

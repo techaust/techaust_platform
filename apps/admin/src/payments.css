@@ -313,9 +313,23 @@
   font-weight: 600;
 }
 
+/* below md the chip and the action take their own rows under the date and amount, so a long chip never runs under the button */
+.pay-waiting__row > .spill,
+.pay-waiting__go {
+  grid-column: 1 / -1;
+  justify-self: start;
+  white-space: normal;
+}
+
 @media (min-width: 48rem) {
   .pay-waiting__row {
     grid-template-columns: minmax(0, 1fr) auto auto auto;
+  }
+
+  .pay-waiting__row > .spill,
+  .pay-waiting__go {
+    grid-column: auto;
+    white-space: nowrap;
   }
 }
 
@@ -719,8 +733,18 @@
   .pay-table .dtable {
     overflow-x: auto;
   }
+
+  /* a sticky header inside a box that scrolls sideways would float over the rows */
+  .pay-table .dtable__table thead th {
+    position: static;
+  }
 }
 
 .pay-table .spill {
   white-space: normal;
+}
+
+/* the entry ("Payment · NEFT") stays on one line in the table; a phone's card lets it wrap */
+.pay-table .dtable__table .pay-row__entry {
+  white-space: nowrap;
 }

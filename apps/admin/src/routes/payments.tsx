@@ -236,7 +236,7 @@ function PaymentList(props: {
       key: "entry",
       header: PAY_UI.colKind,
       cell: (r) => (
-        <span className="pay-lines__nowrap">
+        <span className="pay-row__entry">
           {r.kind === "tds" ? PAY_UI.kindTds : `${PAY_UI.kindPayment} · ${r.mode ? MODE_LABELS[r.mode] : ""}`}
         </span>
       ),
