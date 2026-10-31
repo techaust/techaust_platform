@@ -64,7 +64,6 @@ import {
 } from "./http.ts";
 import { INVOICE_TYPES_SQL } from "./invoice-consts.ts";
 import { type Direction, decodeCursor, encodeCursor, keysetSql, PREFIX_END, pageOf } from "./keyset.ts";
-import { PAYMENTS_PENDING } from "./payment-messages.ts";
 
 // ---- errors ----------------------------------------------------------------------------------------------------------
 
@@ -96,6 +95,11 @@ const ON_ISSUED_DOCUMENT: ApiError = {
   message: "This person is on an issued document, so they can't be erased. Anonymise them instead",
 };
 const NOT_AVAILABLE: ApiError = { code: "conflict", message: "Nothing was changed. Reload and try again" };
+/** Lead decision (2026-10-31): 07-ZH line 22, word for word (lead-approved, staff-only). Kept here, not imported, so the API Worker carries no payment code. */
+const PAYMENTS_PENDING: ApiError = {
+  code: "payments_pending",
+  message: "This client has payments waiting for the owner's check. Confirm or reject them first.",
+};
 
 // ---- rows and views ---------------------------------------------------------------------------------------------------
 

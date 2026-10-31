@@ -55,11 +55,6 @@ export const REFERENCE_INVALID = e(
   "reference_invalid",
   "Enter the payment reference: letters, digits, / and -, up to 60 characters",
 );
-/** Lead decision (2026-10-31): 07-ZH line 22 (lead-approved, staff-only), anonymising a client while a payment of its waits for the owner. */
-export const PAYMENTS_PENDING = e(
-  "payments_pending",
-  "This client has payments waiting for the owner's check. Confirm or reject them first.",
-);
 
 // ---- codes 07-ZH has no line for (marked) -----------------------------------------------------------------------------------------------------------------
 
