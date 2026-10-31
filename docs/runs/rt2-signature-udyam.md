@@ -527,3 +527,12 @@ Designer, Opus 5.5 high, 2026-10-31. Branch `design/rt2-dialog-fix` from `origin
 
 **Open questions:** none.
 Usage: designer claude-opus-5-5/high (skills frontend-design).
+
+### Final re-check (reviewer, Opus 5.5 high, 2026-10-31, live browser): APPROVE, condensed by the lead
+Admin 3,493; `pnpm check` exit 0; e2e `signature-udyam` 8 and `rt1-screens` 7 passed. Live: 9 dialogs (note, advance, invoice issue, step-up, Log time, Invite, Numbering, "Sign out everywhere?", Add contact) at 390×844 and 768×1024 in both theme pairs (36 states): no focused control under the actions on any Tab or Shift+Tab stop; `--dialog-actions-h` follows the actions (132 → 184 px) and resizes; wrong and short codes keep focus and the error line clear; observers cleaned up on close; axe 0; no app console errors. Screenshots `.logs/shots/rt2-final/`.
+Low (fix diff): `ui.tsx:116` the `Field` scroll effect doesn't re-run for the same error text twice (no harm reproduced); `company.tsx:77` `normaliseGstin` copies core's private normalisation.
+Outside the fix diff: **medium** `packages/pdf/src/invoice-envelope.ts:170` checks sealed envelopes with the live `isUdyam`, so a later change to the Udyam format or categories (OPEN 08-C RB-39) would refuse every older sealed invoice; low: the signature trigger fires only on UPDATE (rows inserted as issued skip it; only tests do that); `normaliseUdyam` keeps inner spaces; the must-be-signed rule written in four places.
+
+**Lead triage:** fix now (builder): the envelope check for sealed Udyam blocks becomes shape-only (non-empty strings within a length bound; the category any non-empty string), with a test that an older sealed block still parses after the live rule changes; export core's GSTIN normaliser and use it in `company.tsx`. Follow-ups: the `Field` effect key; a BEFORE INSERT signature trigger; inner spaces in a pasted Udyam number; one shared must-be-signed list; F (the issue dialog's wrong-code notice and a shared `invalid_code` helper); the save bar after a "No change" save.
+
+### Last fixes
