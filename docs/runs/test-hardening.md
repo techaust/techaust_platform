@@ -1,6 +1,6 @@
-Status: builder r1 running; item 5 checked (4 real defects, fixed in builder r2 after r1)
+Status: r1 merged (5602464); analyst early check of r1 and builder r2 (item 5 fixes) running
 Tier: B
-Usage: (filled in as agents finish; models and efforts from `node tools/model-audit.mjs`)
+Usage: analyst (item 5) claude-opus-5-5/high, skills: code-review (+ its read-only general-purpose helper claude-opus-5-5/high); 5-h 17 → 62 % (shared window, four sessions) · builder r1 claude-opus-5-5/high, skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:turnstile-spin (not installed in the cloud); 5-h 17 → 62 %
 
 # Test and guard hardening (cloud session "test-hardening")
 
@@ -60,6 +60,7 @@ _Pasted by the lead from the analyst's reply (Opus 5.5 high, read-only, 2026-11-
 ### Builder r2 brief (branch `fix/test-hardening-r2` from `origin/fix/test-hardening` after r1 is merged; starts when r1 reports)
 The four verified defects of "Item 5" (#1–#4, fixes as in its table, each with its test), plus:
 - the admin revoke's cancel subquery `t.send_id = document_sends.id` (admin `invoice-send.ts` revoke, and the offer twin in `document-links.ts` if it has the same shape) gains `t.document_id = ?1 AND` so it uses `doc_access_tokens_document`; fix the stale comments named in Item 5 (`invoice-send.ts:210-211`, `care-billing.ts:501`, `:515`, `document-links.ts:91`);
+- `apps/portal/src/components/decision/decline-dialog.tsx:13` (or wherever `NOTE_MAX = 500` sits) reads core `DECLINE_NOTE_MAX` (r1's note);
 - the six hand-written first-word splits (`send-parts.tsx:112`, admin `leads.ts:836`, `email-fixtures.ts:45`, jobs `invoice-mail.ts:46`, `leads.ts:93`, `staff-alerts.ts:94`) use core `firstNameOf`; output unchanged (the existing email/preview tests must pass untouched); watch the portal/jobs bytes.
 Same rules as r1 (out-of-bounds list, no migration, no wording change, heavy queue). Done: each fix committed with its test, `pnpm check` and `pnpm test` green, Worker bytes, report under "Builder report r2".
 
