@@ -15,7 +15,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 - **Verified today:** the rt2 integration at 32f788d8: `pnpm check` exit 0 and `pnpm test` all green (auth 135, ui 471, core 1,861, email 130, db 514, pdf 376, web 714, portal 651, jobs 549, admin 3,493); both browser test sets and axe passed in the reviews; CI and the staging deploy of #124 (a703bf56) green. Workers: admin front 99,271, admin API 618,422, jobs **984,266 of 1,000,000** bytes.
 
 ## In progress
-- **[#126](https://github.com/techaust/techaust_platform/pull/126)** (the cloud setup fix) merges itself once CI passes (auto-merge on; Auto-fix is the owner's switch in its PR bar, the app refused it here).
+- **[#126](https://github.com/techaust/techaust_platform/pull/126)** (the cloud setup fix) merged at 12:21 IST; main's CI and the staging deploy follow.
 - **This record** (docs PR of today's second end of day) merges itself once CI passes.
 - No agent is running. No cloud session is running (all five stopped in setup).
 
@@ -31,7 +31,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 **Usage now:** 5-hour window 3 %. Gate: new agents at or under 95 %; this PC at most 2 agents, 1 using a browser.
 
 ## Waits on the owner
-- **Now, after #126 merges:** paste the new setup script into the `techaust_platform` environment (claude.ai/code › environment › gear › Setup script; copy the Raw file from `main`; [runbook](runbooks/cloud-sessions.md) Part 2, step 6), and archive the five failed cloud sessions. Then "start the day" here.
+- **Now (#126 has merged):** paste the new setup script into the `techaust_platform` environment (claude.ai/code › environment › gear › Setup script; copy the Raw file from `main`; [runbook](runbooks/cloud-sessions.md) Part 2, step 6), and archive the five failed cloud sessions. Then "start the day" here.
 - **Start early (outside waiting times, so launch day doesn't slip; the lead gives click-by-click steps when each comes up):**
   - **SES production access** (AWS › SES › Account dashboard › Request production access) and a production IAM user, so emails reach any address;
   - **the AWS backup bucket** (and for T5 the S3 bucket in Mumbai), with the lead's script; sign the AWS MCP in to the TecHaust account first (it is on another account today);
