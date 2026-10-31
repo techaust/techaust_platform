@@ -12,6 +12,12 @@ import { StatusPill } from "../components/status-pill.tsx";
 import { N, PENDING, WORDS } from "../copy-documents.ts";
 import { dateText, formatIstDateTime, titleOf } from "../lib/offers.ts";
 
+/**
+ * A validity date with its "(IST)" (07-ZE line 1). The date's own spaces don't break, so on a narrow card only "(IST)" can move to the next
+ * line, never half the date.
+ */
+const validityText = (iso: string | null) => validityDateIst(dateText(iso).replaceAll(" ", "\u00a0"));
+
 export function DocCard(props: { doc: OfferItem; href: string }) {
   const { doc } = props;
   const titleId = `card-${doc.id}`;
@@ -43,7 +49,7 @@ export function DocCard(props: { doc: OfferItem; href: string }) {
         {doc.validUntil && (
           <div>
             <dt>{WORDS.doc.validUntil}</dt>
-            <dd className="nowrap">{validityDateIst(dateText(doc.validUntil))}</dd>
+            <dd>{validityText(doc.validUntil)}</dd>
           </div>
         )}
       </dl>
@@ -218,7 +224,7 @@ export function DocumentsScreen(props: {
                   <span className="drow__status">
                     <StatusPill status={d.status} />
                     <span className="drow__when">
-                      {d.decidedAt ? formatIstDateTime(d.decidedAt) : validityDateIst(dateText(d.validUntil))}
+                      {d.decidedAt ? formatIstDateTime(d.decidedAt) : validityText(d.validUntil)}
                     </span>
                   </span>
                   <span className="drow__total">{d.total}</span>
