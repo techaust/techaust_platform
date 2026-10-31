@@ -318,6 +318,56 @@ Merged `fix/t7-offer-erasure-d1` (068a976b) with no conflict; screenshots copied
 | 6 | Low (not verified) | About 47 D1 statements per anonymise, about 93 on a stale retry; D1 Free allows **50 queries per invocation** (docs/05-research-appendix A row 7; whether batch statements count one by one is unproven) | **Fix (lead, raised):** assume they count one by one. Measure the real count per invocation in a test (a counting wrapper on `env.DB`, guard and session reads included) and bring every path, the stale one included, to **≤ 45**: drop the in-route retry (409 `stale_version` at once; the SPA's existing stale handling shows it), fold the reads into fewer statements and the three child "mark" statements into the text updates where possible; pin the budget with a test. Staging proof stays with F4 |
 | 7 | Low | A leftover bare block in `eraseOnce`; `read.tsx` recomputes "erased" instead of `isErased` | **Fix** |
 
+## Builder report (review fixes)
+**Builder, 2026-10-31, branch `fix/t7-offer-erasure-b3` from `origin/feat/t7-offer-erasure` 24a0e8fa** (cloud session; commits 3bc3f4a8, 8d6a59d1 and this report). Rows 2–7 fixed; row 1 not built (F5). No migration or trigger changed (0056/0057 untouched).
+
+**Skills:** tried `cloudflare:workers-best-practices`, `cloudflare:wrangler` and `cloudflare:workers-profiling` first; all three answer "Unknown skill" in this cloud session, so none loaded. No other docs/14 §9 skill fits. Context7 not reachable; behaviour checked against the code and the running tests.
+
+**Per row**
+- **2 (hold before the cap).** The redaction read carries `held` (`c.legal_hold OR cl.legal_hold OR HELD_LEAD_SQL`); the route answers 404, `contact_anonymised`, then `legal_hold`, then `too_many_offers`, before any batch. `HELD_LEAD_SQL` moved from `clients.ts` to `@techaust/db/contact-access` (shared by the route's audit row, its "why" read and the redaction read). Test: `offer-erasure.test.ts` "a legal hold is answered before too_many_offers" (contact, client and lead holds, 11 offers each: 409 `legal_hold`, no audit row, nothing redacted).
+- **3 (jobs decided).** `apps/jobs/src/offers.ts` `processOfferDecided` reads `d.redacted_at` and returns `"ignored"` (`why: "redacted"`); the bell `INSERT` also refuses an erased offer, so an erasure between the read and the bell writes nothing. Test: `apps/jobs/test/offers.test.ts` "an offer whose personal details were erased (T7, review row 3)…" (no bell, no staff email; the race: no bell).
+- **4 (offers as INTEGER).** `'offers', CAST(?10 AS INTEGER)` in the anonymise row. Test: the audit test asserts `json_type(summary, '$.offers') = 'integer'`.
+- **5 (pdfDeleted).** `'pdfDeleted', d.pdf_sha256 IS NOT NULL`. Test: "pdfDeleted is 1 only for an offer that had a PDF" (fixture option `pdf: false`).
+- **6 (D1 budget).** No in-route retry: a stale read answers 409 `stale_version` at once, nothing written. The read is 2 statements (`REDACTION_READ_SQL.offers`: contact, client and each eligible offer in one `LEFT JOIN`, one row even with no offer; `.children`: the three child tables in one `UNION ALL`). The three "mark" statements are folded into the child text UPDATEs: the plan lists EVERY child row (`{id}` unchanged, `{id, c: 1, …text}` changed) and one `UPDATE … FROM json_each` per table sets the text only where `c = 1` and stamps every row; the child triggers are unchanged (forward move to exactly the parent's time, only text changed). Step 2e is now 10 statements. Tests: new describe "D1 statements per request (review row 6)" wraps `env.DB` with a counting proxy (first/run/all/raw count 1, a batch counts each statement), with the session's touch forced due (the worst case, asserted written) and asserts ≤ 45 on every path; the race tests now expect an immediate 409 with nothing written and a next request that succeeds; EXPLAIN covers the two reads and the three folded child statements (`SEARCH <table> USING INDEX`).
+- **SPA check for row 6:** the Erase or anonymise dialog (`routes/clients/data-tools.tsx`) sends any code other than `on_issued_document`, `legal_hold`, `too_many_offers` and `invalid_code` to `setFailure(errorText(e))`, an error `Notice` with the API's own message, the existing `STALE_VERSION` text "Someone else changed this record. Reload it and try again" (`worker/http.ts`, used by every stale route since M3). The route already answered it after the second try, so no new text.
+- **7.** The bare block in `eraseOnce` is gone (now `eraseBatch`, returns a `Response`); `read.tsx` uses `isErased(v)` (source-pattern test `copy-zg.test.ts` updated).
+
+**D1 statements per invocation** (one erase request, auth, step-up, touch and access-log statements included)
+
+| Path | Before (touch not due) | After (touch due, the worst case) |
+|---|---|---|
+| anonymise, 10 eligible offers | 47 | **42** |
+| anonymise, no offer | 34 | **32** |
+| erase | 29 | **30** |
+| erase refused (legal hold; on an issued document) | 31 | **32** |
+| anonymise, legal hold | 7 with 11 offers (answered `too_many_offers`); with 1–10 offers about 49, counted from the code, not measured (session 1, read 5, batch 41, "why" 1, exit row 1) | **5** |
+| anonymise, too_many_offers | 7 | **5** |
+| anonymise, stale (race before the batch) | 96 (read and batch twice) | **44** |
+
+The "before" figures were measured without the session touch; a due touch adds 1 to each. Worst after: 44 (stale path: session 1, read 2, batch 39 with the touch, "why" 1, exit access row 1). If more room is ever wanted: the two bell DELETEs could be one statement (−1).
+
+**Commands and results** (heavy ones through `tools/heavy.sh`)
+- `pnpm --filter @techaust/db test`: 36 files, **535 passed**.
+- `pnpm --filter @techaust/core test`: 92 files, **1884 passed**; statements 99.02 %.
+- `pnpm --filter @techaust/admin test`: 122 files, **3528 passed** (−6 retry tests merged into the immediate-409 ones, +2 row tests, +3 counting tests).
+- `pnpm --filter @techaust/portal test`: 25 files, **658 passed**. `pnpm --filter @techaust/jobs test`: 34 files, **557 passed**.
+- `pnpm --filter @techaust/admin typecheck`, `pnpm --filter @techaust/jobs typecheck`: exit 0.
+- Builds: admin front **99,271** bytes; admin API **629,939** (was 630,285, −346; under 640,000); portal **100,916**; jobs **985,884** (was 985,650, +234; under 995,000). Startup fastest of 7: admin 13.3 ms, admin API 66.0 ms, portal 13.6 ms, jobs 75.6 ms.
+- `pnpm check` (once, at the end): **exit 0**; lint 1378 files, 10 warnings, all in files this run didn't touch; migration guard ok (58).
+- While working: `offer-erasure.test.ts` 28 passed; with `clients-data` and `documents-anonymised` 56 passed; jobs `offers.test.ts` 46 passed; `copy-zg.test.ts` 7 passed. No dev server started.
+
+**Differences from the triage**
+- Row 3: besides the read, the bell `INSERT` refuses an erased offer (an erasure between the read and the bell). A staff decline email already queued in that window still goes (the same accepted limit as F3).
+- Row 5: `pdfDeleted` is 1 for any offer with a `pdf_sha256`, a second redaction of an offer whose PDF the first one deleted included (exactly the triage's expression).
+- Row 6: the counting test forces the session touch, so every count is the worst case; `HELD_LEAD_SQL` moved to `@techaust/db/contact-access` for row 2.
+
+**Not verified**
+- Whether D1 counts batch statements one by one (assumed, as the triage says); staging proof stays with F4.
+- CPU of the folded statements at 10 offers on staging (F4).
+
+**Open questions**
+- None blocking. For the lead: the brief's §2 ("the route reads again and retries once") and §2's statement list (3 mark statements) now differ from the code; 13 could record "a stale anonymise answers 409 `stale_version` at once (no retry), every erase path ≤ 45 D1 statements".
+
 ## Integration notes
 
 ## Lead decisions (for 13)
