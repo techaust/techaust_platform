@@ -261,7 +261,7 @@ The base is 16 px; display sizes are fluid between 360 px and 1280 px viewports.
 
 ### 5.1 Shared rules (all components)
 - **Targets ≥ 44 × 44 px** (WCAG 2.5.8 needs 24 px; we choose 44 px).
-- **Visible focus** on every interactive element: `outline: 2px solid var(--color-focus); outline-offset: 2px`. Never `outline: none` without a replacement (fixes audit M-5).
+- **Visible focus** on every interactive element: `outline: 2px solid var(--color-focus); outline-offset: 2px`. Never `outline: none` without a replacement (fixes audit M-5). The website draws the ring with `--focus-width` (2.4 px, `apps/web/src/styles/global.css`): Chromium rounds an outline down to whole device pixels, so a 2 px outline measured 1.6 px at 125 % display scale; 2.4 px renders at least 2 px at 100, 125, 150 and 200 % (1.82 px at 110 %; polish sweep, 2026-11-01).
 - **Disabled controls** keep ≥ 3:1 for the label and show why they're disabled (a tooltip or helper text) where useful.
 - **States documented for each:** default, hover, focus-visible, active, disabled, loading, error, and selected where relevant.
 - **ARIA patterns** follow the WAI-ARIA Authoring Practices exactly (menus, tabs, dialogs, comboboxes); no half-implemented patterns (fixes audit L-4).

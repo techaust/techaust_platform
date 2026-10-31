@@ -1,6 +1,6 @@
 # Polish sweep (admin and website follow-ups)
 
-Status: designer running (builder merged)
+Status: reviewer starting (builder and designer merged)
 Tier: C
 Usage: builder b1 claude-opus-5-5/high (model-audit; skills attempted `cloudflare:workers-best-practices`, `cloudflare:wrangler`, both "Unknown skill" in the cloud), 5-h 17 → 20 %; designer d1 claude-opus-5-5/high (skills: frontend-design:frontend-design per model-audit), started at 5-h 17 %.
 
@@ -60,6 +60,7 @@ Skills: `frontend-design:frontend-design` first (report if it can't load in the 
 - USAGE 17 at 2026-11-01T02:40+05:30 (first); USAGE 20 at 2026-11-01T02:55+05:30; USAGE 62 at 2026-11-01T03:21+05:30 (window resets 06:10 IST).
 
 ## Lead decisions (for 13)
+- 2026-11-01, Lead: the website focus ring is 2.4 px (`--focus-width`) so it renders at least 2 px at 100/125/150/200 % display scale (Chromium rounds outlines down to device pixels); 110 % stays 1.82 px (2.75 px would thicken it everywhere else). Applied: `apps/web/src/styles/global.css`, docs/06 §5 "Visible focus" line.
 - 2026-11-01, Lead: item 6 (`zod/mini` on the form pages) is dropped from the polish sweep: it needs the shared form schemas rewritten (the task's condition). Applied: this run file.
 - 2026-11-01, Lead: the first usage reading (USAGE 17 at 2026-11-01T02:40+05:30) carries a time ~27 minutes after the session's clock (02:13 IST); `agent-slots.mjs` accepted it; noted, not corrected.
 
@@ -170,5 +171,6 @@ Designer (Opus 5.5, high), 2026-11-01. Branch `fix/polish-sweep-d1` from `origin
 
 ## Integration notes (lead)
 - 2026-11-01: merged `fix/polish-sweep-b1` (9da1599) into `fix/polish-sweep` as 2826a4b; builder worktree removed, local branches deleted. Lead read the diff: the cancel of never-linked sends now runs before `deleteContactAccess` (step 2a), same SQL and guard; `DELIVERY_SQL` adds `removed` and the row reads "Removed contact" (core `ANONYMISED_CONTACT`, existing words), no address. The reviewer checks the guard order (the anonymise audit row exists before 2a) and the statement count.
+- 2026-11-01: merged `fix/polish-sweep-d1` (b2932ce) as the next merge commit; designer worktree removed, screenshots copied to `.logs/shots/polish-d1/` (130 files). Designer Q1 (110 % ring): keep 2.4 px, docs/06 line added (Lead decision). Designer Q2 (same-name people in the week grid's Person column and the phone day list): goes into the fix round with the review findings.
 - The two screen wiring lines (dashboard `activityText(a.action, a.docType)`, audit `entryActionText(e)`) and the bell's `BELL_OVER_NINE` were sent to the designer.
 - Builder's open point (existing, T7 F3 in 12): an anonymise that lands while the offer email is already queued still emails the real address a dead link; the jobs email consumer check stays with T7 F3. Sends wrongly cancelled on staging before this fix keep their stamp (set once).
