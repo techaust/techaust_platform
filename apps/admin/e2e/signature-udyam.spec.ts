@@ -1,7 +1,8 @@
 // rt2 (T4, T10; ADM-SET-01, ADM-INV-06, ADM-INV-07): the screens of the signature rule and the Udyam number, against the admin's own dev server and the local
 // database (run with E2E_SAMPLE=1 so the sample company, clients and invoices exist; see playwright.config.ts). Signed in as global-setup's throwaway Owner.
 //   - Settings › Company: the Udyam number and category through FormField (07-ZC lines 4 and 5), the error on leaving the field, the save (the key is always
-//     sent: L8), the signature hint (line 2); keyboard order and visible focus.
+//     sent: L8), the signature hint (line 2); keyboard order and visible focus. Typing inside a filled Udyam number or GSTIN keeps the caret (kept as
+//     typed, shown in capitals, stored in capitals on leaving: second review 2); the category waits for a number and never makes the form dirty alone (4).
 //   - Settings › Tax: the signatory switch's added line (line 3), in the switch's accessible description.
 //   - With no signature saved: a draft debit note lists `signature_missing` (line 1) with "Settings › Company" as a link; its note dialog and the advance
 //     dialog of an issued proforma are refused by the server with the same line and link, in a `role="alert"` box that takes the focus (visual review 1).
@@ -201,6 +202,8 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
       await expect(number).toHaveValue("");
       await expect(page.getByText("Printed on tax invoices. Leave it empty to leave it off.")).toBeVisible();
       await expect(category).toHaveValue("micro");
+      // with no number the category waits for one (second review 4): it can't change, so it can't make the form dirty
+      await expect(category).toBeDisabled();
       await expect(category.locator("option")).toHaveText([
         "Micro enterprise",
         "Small enterprise",
@@ -211,9 +214,11 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
       await number.evaluate((el) => el.scrollIntoView({ block: "center" }));
       await shot(page, `company-empty-${tag}`);
 
-      // typed in lower case with spaces, one digit short: trimmed and upper-cased as it goes, refused once the field is left
+      // typed in lower case with spaces, one digit short: kept as typed (shown in capitals), trimmed and upper-cased once the field is left, and refused
       await number.fill(" udyam-wb-00-000001 ");
-      await expect(number).toHaveValue(" UDYAM-WB-00-000001 ");
+      await expect(number).toHaveValue(" udyam-wb-00-000001 ");
+      await expect(number).toHaveCSS("text-transform", "uppercase");
+      await expect(category).toBeEnabled();
       await expect(page.getByText(ERROR)).toHaveCount(0);
       await category.focus();
       await expect(number).toHaveValue("UDYAM-WB-00-000001");
@@ -225,8 +230,9 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
       await shot(page, `company-error-${tag}`, false);
       // emptied again: no error (an empty number leaves the line off)
       await number.fill("");
-      await category.focus();
+      await number.blur();
       await expect(page.getByText(ERROR)).toHaveCount(0);
+      await expect(category).toBeDisabled();
       // (the form is back to what was saved, so there is nothing to discard: the bar has gone)
       await expect(page.getByRole("button", { name: "Discard" })).toHaveCount(0);
     });
@@ -283,10 +289,60 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
     expect((await api(page, "GET", "/settings/groups/company")).body.value.udyam ?? null).toBeNull();
   });
 
+  test("Settings › Company: typing inside a filled number keeps the caret, and leaving the field stores capitals [ADM-SET-01]", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/settings/company");
+    await settled(page);
+    const caret = (el: HTMLInputElement) => [el.selectionStart, el.selectionEnd];
+
+    // the Udyam number, its state letters missing: two lower-case letters typed in the middle (second review 2: the caret used to jump to the end)
+    const number = page.getByLabel("Udyam registration number");
+    await number.fill("UDYAM--00-0000001");
+    await number.press("Home");
+    for (let i = 0; i < 6; i++) await number.press("ArrowRight");
+    await number.pressSequentially("wb");
+    expect(await number.evaluate(caret)).toEqual([8, 8]);
+    await expect(number).toHaveValue("UDYAM-wb-00-0000001");
+    await number.pressSequentially("x");
+    expect(await number.evaluate(caret)).toEqual([9, 9]);
+    await number.press("Backspace");
+    await number.blur();
+    await expect(number).toHaveValue("UDYAM-WB-00-0000001");
+    await expect(page.getByText(ERROR)).toHaveCount(0);
+    // a category change, then the number cleared: nothing would be saved, so nothing is unsaved (second review 4)
+    await page.getByLabel("Enterprise category").selectOption("medium");
+    await number.fill("");
+    await number.blur();
+    await expect(page.getByLabel("Enterprise category")).toBeDisabled();
+    await expect(page.locator(".savebar")).toHaveCount(0);
+
+    // the GSTIN: its PAN letters retyped in lower case over a selection keep the caret after them; leaving the field gives the saved GSTIN back
+    const gstin = page.getByLabel("GSTIN");
+    const saved = await gstin.inputValue();
+    await gstin.press("Home");
+    for (let i = 0; i < 2; i++) await gstin.press("ArrowRight");
+    for (let i = 0; i < 5; i++) await gstin.press("Shift+ArrowRight");
+    await gstin.pressSequentially(saved.slice(2, 7).toLowerCase());
+    expect(await gstin.evaluate(caret)).toEqual([7, 7]);
+    await expect(gstin).toHaveValue(saved.slice(0, 2) + saved.slice(2, 7).toLowerCase() + saved.slice(7));
+    await expect(page.locator(".field--gstin").first().getByText("Valid", { exact: true })).toBeVisible();
+    await gstin.blur();
+    await expect(gstin).toHaveValue(saved);
+    await expect(page.locator(".savebar")).toHaveCount(0);
+  });
+
   test("Settings › Company: keyboard order and visible focus through the Udyam fields", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto("/settings/company");
     await settled(page);
+    // with no number the category is skipped (disabled); with one it is the next stop
+    await page.getByLabel("State and code").focus();
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => document.activeElement?.id)).not.toBe("f-udyam-category");
+    await page.getByLabel("Udyam registration number").fill("UDYAM-WB-00-0000001");
     await page.getByLabel("State and code").focus();
     const seen: string[] = [];
     for (let i = 0; i < 4; i++) {
@@ -300,6 +356,7 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
       expect(f.ring, `visible focus on #${f.id}`).toBe(true);
     }
     expect(seen.slice(0, 2)).toEqual(["f-udyam-number", "f-udyam-category"]);
+    await page.getByRole("button", { name: "Discard" }).click();
   });
 
   test("Settings: a field reached by Tab stops clear of the Unsaved changes bar, on every page that has it", async ({

@@ -2266,6 +2266,17 @@ input[readonly] {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
 }
 
+/* The category waits for a number (rt2 second review 4): drawn like a read-only value (sunken ground, dashed edge), not the browser's grey, and
+   only while the form itself is open; a read-only role's disabled form keeps its full-contrast values (screens.css). */
+.settings-form__body:not(:disabled) .form-grid--udyam select:disabled {
+  background: var(--color-surface-alt);
+  border-style: dashed;
+  color: var(--color-text-muted);
+  -webkit-text-fill-color: var(--color-text-muted);
+  opacity: 1;
+  cursor: not-allowed;
+}
+
 /* A settings row goes side by side by the width of its own list, not the window's (rt1 review 3): at 768 px the menu and the settings menu leave
    the list a phone's width, and a window query gave the words a column of about 80 px (one word a line). Stacked, the hint reads at full width
    above its control; side by side, the words keep at least 16rem and the control 14rem to 22rem. The export invoice's note switch is a `setting`
