@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
 import auditSource from "./audit.ts?raw";
 import { APPROVED_07ZH_NEW, PAY_AUDIT, PLACEHOLDER_MARK, ZH } from "./copy-zh.ts";
-import { voidBlockedText, voidErrorText } from "./invoices.ts";
+import { voidBlockedText, voidErrorText, withdrawErrorText } from "./invoices.ts";
 import {
   autoFill,
   earlierMonthLine,
@@ -136,6 +136,12 @@ describe("the void blockers of M6.1", () => {
     expect(voidBlockedText(["payment_recorded"], "tax_invoice")).toBe(VOID_PAYMENT_RECORDED);
     expect(voidBlockedText(["payment_pending"], "proforma")).toBe(VOID_PAYMENT_PENDING);
     expect(voidErrorText(err("payment_recorded"), "tax_invoice")).toBe(VOID_PAYMENT_RECORDED);
+  });
+  it("L37: a refused withdrawal with a waiting payment says line 46 (line 21's words)", () => {
+    expect(withdrawErrorText(err("payment_pending"))).toBe(VOID_PAYMENT_PENDING);
+    expect(VOID_PAYMENT_PENDING).toBe(
+      "A payment recorded on it is waiting for the owner's check. Reject it first.",
+    );
   });
 });
 
