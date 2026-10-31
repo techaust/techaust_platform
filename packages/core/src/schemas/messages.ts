@@ -268,7 +268,7 @@ export const isReportKind = (body: unknown): body is { kind: ReportMessage["kind
   REPORT_KINDS.includes((body as { kind: ReportMessage["kind"] }).kind);
 
 // ---- M6.2 gateway messages on the `leads` queue (L9: the existing queue, no new hosted queue; one unit of work each; the hourly tick only enqueues the sweep) ----
-/** `gateway.event`: process one stored, verified webhook event (the admin finance Worker's `processRazorpayEvent`). Its id only: the event row holds the rest. */
+/** `gateway.event`: process one stored, verified webhook event (the admin finance Worker's `processEvent`). Its id only: the event row holds the rest. */
 export const gatewayEventMessage = z.object({ kind: z.literal("gateway.event"), eventId: id64 });
 /** `gateway.advance`: issue the tax invoice for one proforma payment received online (`issueGatewayAdvance`; L6, its own message). */
 export const gatewayAdvanceMessage = z.object({ kind: z.literal("gateway.advance"), paymentId: id64 });

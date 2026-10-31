@@ -20,6 +20,8 @@ import {
   judgeRazorpayPayment,
   keyModeOf,
   LINK_LIFETIME_MS,
+  type LinkDocumentType,
+  linkDescriptionOf,
   linkRequestOf,
   methodToMode,
   parseRazorpayEvent,
@@ -108,6 +110,37 @@ describe("verifyRazorpaySignature [JOB-HOOK-01]", () => {
     expect(await verifyRazorpaySignature(body, sig, ["", undefined])).toBe(false);
     expect(await verifyRazorpaySignature(body, 42 as never, [SECRET])).toBe(false);
     expect(await verifyRazorpaySignature(null as never, sig, [SECRET])).toBe(false);
+  });
+
+  it("verifies the raw bytes as received (early check 1, finding 14), and the same text as a string", async () => {
+    const sig = await sign(body, SECRET);
+    expect(await verifyRazorpaySignature(enc.encode(body), sig, [SECRET])).toBe(true);
+    // A byte sequence that is not valid UTF-8: a decode-then-encode round trip would change it; the bytes are verified as they are.
+    const raw = new Uint8Array([...enc.encode('{"a":"'), 0xff, 0xfe, ...enc.encode('"}')]);
+    const key = await crypto.subtle.importKey(
+      "raw",
+      enc.encode(SECRET),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const rawSig = [...new Uint8Array(await crypto.subtle.sign("HMAC", key, raw))]
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    expect(await verifyRazorpaySignature(raw, rawSig, [SECRET])).toBe(true);
+    expect(await verifyRazorpaySignature(new TextDecoder().decode(raw), rawSig, [SECRET])).toBe(false);
+  });
+
+  it("imports each secret's key once per isolate (CPU diagnosis, lead decision 5)", async () => {
+    const sig = await sign(body, "a-fresh-secret-for-the-cache");
+    const spy = vi.spyOn(crypto.subtle, "importKey");
+    try {
+      for (let i = 0; i < 3; i++)
+        expect(await verifyRazorpaySignature(body, sig, ["a-fresh-secret-for-the-cache"])).toBe(true);
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("compares through crypto.subtle.verify (constant time), never as text", async () => {
@@ -266,7 +299,8 @@ describe("parseRazorpayEvent [JOB-HOOK-01, L8]", () => {
     for (const body of [null, [], "x", 1, { created_at: 1 }])
       expect(parseRazorpayEvent(body, "e").ok).toBe(false);
     expect(parseRazorpayEvent(event("payment_link.paid"), "").ok).toBe(false);
-    expect(parseRazorpayEvent(event("payment_link.paid"), "e".repeat(65)).ok).toBe(false);
+    expect(parseRazorpayEvent(event("payment_link.paid"), "e".repeat(255)).ok).toBe(true);
+    expect(parseRazorpayEvent(event("payment_link.paid"), "e".repeat(256)).ok).toBe(false);
   });
 
   it("the facts are a whitelist: ids, amount, currency, method, account; never the payer's email, phone or UPI address", () => {
@@ -390,7 +424,9 @@ describe("judgeRazorpayPayment [ADM-PAY-02, ADR 0008]", () => {
   it.each([
     ["reference_mismatch", { link: { providerRef: "plink_Other" } }],
     ["reference_mismatch", { link: { referenceId: "someone-else" } }],
-    ["not_captured", { payment: { state: "pending" } }],
+    ["payment_pending", { payment: { state: "pending" } }],
+    ["not_captured", { payment: { state: "failed" } }],
+    ["not_captured", { payment: { state: "refunded" } }],
     ["payment_not_on_link", { link: { payments: [] } }],
     ["order_mismatch", { payment: { orderRef: "order_T2" } }],
     ["currency_mismatch", { payment: { currency: "USD" } }],
@@ -410,6 +446,7 @@ describe("judgeRazorpayPayment [ADM-PAY-02, ADR 0008]", () => {
         "amount_mismatch",
         "currency_mismatch",
         "not_captured",
+        "payment_pending",
         "order_mismatch",
         "partial_payment",
         "payment_not_on_link",
@@ -423,6 +460,7 @@ describe("linkRequestOf [ADM-PAY-02, L2, L3, L10]", () => {
   const now = 1_793_000_000_000;
   const base = {
     checkoutId: "01900000-0000-7000-8000-000000000001",
+    documentType: "tax_invoice" as LinkDocumentType,
     amountMinor: 118_000,
     documentNumber: "TH/INV/2627/0001",
     documentId: "01900000-0000-7000-8000-0000000000aa",
@@ -457,6 +495,17 @@ describe("linkRequestOf [ADM-PAY-02, L2, L3, L10]", () => {
     }
   });
 
+  it("describes the link by document type, word for word (07-ZI lines 17 to 19; owner, early check 1 Q4)", () => {
+    const desc = (documentType: LinkDocumentType, documentNumber: string) => {
+      const r = linkRequestOf({ ...base, documentType, documentNumber });
+      return r.ok ? r.body.description : null;
+    };
+    expect(desc("tax_invoice", "TH/INV/2627/0001")).toBe("Invoice TH/INV/2627/0001");
+    expect(desc("proforma", "TH/PF/2627/0002")).toBe("Proforma TH/PF/2627/0002");
+    expect(desc("debit_note", "TH/DN/2627/0003")).toBe("Debit note TH/DN/2627/0003");
+    expect(linkDescriptionOf("proforma", "X")).toBe("Proforma X");
+  });
+
   it("rounds the expiry down to whole seconds", () => {
     const r = linkRequestOf({ ...base, expiresAt: now + LINK_LIFETIME_MS + 999 });
     expect(r.ok && r.body.expire_by).toBe((now + LINK_LIFETIME_MS) / 1000);
@@ -475,6 +524,8 @@ describe("linkRequestOf [ADM-PAY-02, L2, L3, L10]", () => {
     ["callback_invalid", { callbackUrl: "https://portal.example.test/pay/return?t=secret-token" }],
     ["callback_invalid", { callbackUrl: "https://portal.example.test/pay/return#t=secret-token" }],
     ["callback_invalid", { callbackUrl: "not a url" }],
+    ["type_invalid", { documentType: "export_invoice" as LinkDocumentType }],
+    ["type_invalid", { documentType: "toString" as LinkDocumentType }],
   ] as const)("refuses %s", (code, over) => {
     expect(linkRequestOf({ ...base, ...over })).toEqual({ ok: false, code });
   });
@@ -503,7 +554,7 @@ describe("short URL hosts, methods, references", () => {
       "https://user:pass@rzp.io/i/abc",
       "javascript:alert(1)",
       42,
-      `https://rzp.io/${"a".repeat(200)}`,
+      `https://rzp.io/${"a".repeat(5000)}`,
     ])
       expect(isRazorpayShortUrl(bad), String(bad)).toBe(false);
   });

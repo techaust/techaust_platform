@@ -243,10 +243,15 @@ export const REVIEW_KINDS = [
   "proforma_overpaid",
   "client_gone",
 ] as const;
-/** Razorpay's event ids are short; the fallback is `sha256:` and the body's SHA-256 in base64url (50 characters). */
-export const WEBHOOK_EVENT_ID_MAX = 64;
-export const CHECKOUT_SHORT_URL_MAX = 200;
-export const PROVIDER_REF_MAX = 64;
+/**
+ * Provider references are generic (lead, 2026-11-01, M6.3/M6.4 briefs session): up to 255 characters, so a Stripe Checkout Session id (66 in Stripe's fixture, 5000
+ * in its OpenAPI, 255 as Stripe advises) or a PayPal id fits without a rebuild of a referenced table later. Razorpay's ids are short; its fallback event id is
+ * `sha256:` and the body's SHA-256 in base64url (50 characters).
+ */
+export const WEBHOOK_EVENT_ID_MAX = 255;
+/** A hosted checkout's URL (Stripe's can be long); `https://` only, and the portal keeps a host allow-list per provider. */
+export const CHECKOUT_SHORT_URL_MAX = 5000;
+export const PROVIDER_REF_MAX = 255;
 export const REVIEW_NOTE_MAX = 500;
 /** The cap of the signature-failure counter per window (L14). */
 export const HOOK_FAILURES_MAX = 50;
@@ -298,9 +303,9 @@ export const checkoutSessions = sqliteTable(
     clientId: text("client_id")
       .notNull()
       .references(() => clients.id),
-    /** The signed-in contact who asked (portal), else NULL. */
+    /** The contact who asked: signed in (`portal`) or the contact the emailed link is bound to (`link`); NULL for `staff`, and once the contact is erased or anonymised. */
     contactId: text("contact_id").references(() => contacts.id),
-    /** The emailed document link's token hash the request came through (`link`), else NULL. */
+    /** The emailed document link's token hash the request came through (`link`), else NULL; cleared with the contact (the token row is deleted then). */
     docTokenId: text("doc_token_id").references(() => docAccessTokens.tokenHash),
     /** The member who made it from admin (`staff`), else NULL. */
     createdBy: text("created_by").references(() => staffUsers.id),
@@ -326,6 +331,8 @@ export const checkoutSessions = sqliteTable(
     // A client's links by time (the 10-an-hour limit) and a document's links (its panel, the stale move).
     index("checkout_sessions_client").on(t.clientId, t.createdAt),
     index("checkout_sessions_document").on(t.documentId, t.createdAt),
+    // Early check 1, finding 1: the erase and anonymise of a contact unlink its checkouts (`deleteContactAccess`).
+    index("checkout_sessions_contact").on(t.contactId),
     check("checkout_sessions_currency", oneOf(t.currency, CURRENCY_CODES)),
     check("checkout_sessions_amount", sql`${t.amountMinor} > 0`),
     check(
@@ -362,8 +369,6 @@ export const reviewItems = sqliteTable(
     note: text("note"),
   },
   (t) => [
-    // The "Needs review" list: only the open items.
-    index("review_items_open").on(t.createdAt, t.id).where(sql`${t.status} = 'open'`),
     // One item of a kind per event, whichever retry writes it (INSERT OR IGNORE).
     uniqueIndex("review_items_event_kind")
       .on(t.webhookEventId, t.kind)
@@ -371,6 +376,10 @@ export const reviewItems = sqliteTable(
     index("review_items_payment").on(t.paymentId),
     // The erase (an anonymised client's review notes are cleared).
     index("review_items_client").on(t.clientId),
+    // The "Needs review" list by status, oldest first (open by default, resolved on request; early check 1, "For B2" 11), and the open count.
+    index("review_items_status").on(t.status, t.createdAt, t.id),
+    // Early check 1, finding 10: a document's review items (its Payments panel; every foreign key indexed).
+    index("review_items_document").on(t.documentId),
     check("review_items_amount", sql`${t.amountMinor} is null or ${t.amountMinor} > 0`),
     check("review_items_currency", sql`${t.currency} is null or ${oneOf(t.currency, CURRENCY_CODES)}`),
     check(

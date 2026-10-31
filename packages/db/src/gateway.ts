@@ -44,12 +44,13 @@ function ownerBells(
 /**
  * Document `d` of client `k` (aliases) can be paid online now: a tax invoice, debit note or proforma; in INR; issued and not void (a withdrawn proforma is a void
  * one); of a live client in India that is not overseas (owner, 2026-11-01, Q3 A; OPEN (08-C RB-01): does a USD invoice paid through a PA-CB that credits us in INR
- * count as "settled in INR"?); with at least ₹1 due (Razorpay's minimum); a proforma's balance in whole rupees (LD28). A db test holds it to core `payableOnline`.
+ * count as "settled in INR"?); with at least ₹1 due (Razorpay's minimum); a proforma issued or converted (early check 1, finding 5) with its balance in whole rupees
+ * (LD28). A db test holds it to core `payableOnline`.
  */
 export const onlinePayableSql = (d: string, k: string): string =>
   `(${d}.type IN ('tax_invoice', 'debit_note', 'proforma') AND ${d}.currency = 'INR' AND ${d}.frozen_at IS NOT NULL AND ${d}.status <> 'void'
     AND ${k}.anonymised_at IS NULL AND ${k}.country = 'IN' AND ${k}.gst_status <> 'overseas'
-    AND ${d}.balance_minor >= 100 AND (${d}.type <> 'proforma' OR ${d}.balance_minor % 100 = 0))`;
+    AND ${d}.balance_minor >= 100 AND (${d}.type <> 'proforma' OR (${d}.status IN ('issued', 'converted') AND ${d}.balance_minor % 100 = 0)))`;
 
 /** What document `d` still owes from the allocation rows themselves (the trigger `payment_allocations_bounds`' own figure, so the two can never disagree). */
 const liveBalanceSql = (d: string) =>
@@ -85,7 +86,7 @@ export type CheckoutCreateArgs = {
 /**
  * The `creating` row, written BEFORE Razorpay is called (run file C, "row first"): the unique index `checkout_sessions_open` serialises two clicks (the loser's
  * INSERT fails on it: 409 `link_in_progress`). Every check is in the WHERE (a refusal inserts nothing; the caller explains it from a read): the document is the
- * client's and payable online (`onlinePayableSql`); the amount is at most its balance, at least the floor or the balance if lower, and whole rupees on a proforma
+ * client's and payable online (`onlinePayableSql`); the amount is at most its balance, at least the floor (never under ₹1) or the balance if lower, and whole rupees on a proforma
  * (core `payAmountVerdict`); the client made fewer than `LINKS_PER_CLIENT_HOUR` links in the last hour; and the actor of the source may pay it: a signed-in contact
  * of the client with portal access who can see finance; an emailed link, live, unrevoked, for this document, bound to that contact whose address still matches; or
  * an active Owner or Staff member. `?1`..`?12`.
@@ -99,7 +100,7 @@ export function checkoutCreateStatement(db: D1Database, a: CheckoutCreateArgs): 
        SELECT ?1, ?2, d.id, d.client_id, ?4, ?5, ?6, ?7, d.currency, ?8, 'creating', ?9, ?10, ?10
        FROM documents d JOIN clients k ON k.id = d.client_id
        WHERE d.id = ?3 AND d.client_id = ?11 AND ${onlinePayableSql("d", "k")}
-         AND ?8 <= d.balance_minor AND ?8 >= min(?12, d.balance_minor) AND (d.type <> 'proforma' OR ?8 % 100 = 0)
+         AND ?8 <= d.balance_minor AND ?8 >= min(max(?12, 100), d.balance_minor) AND (d.type <> 'proforma' OR ?8 % 100 = 0)
          AND (SELECT count(*) FROM checkout_sessions r WHERE r.client_id = d.client_id AND r.created_at > ?10 - 3600000) < ${LINKS_PER_CLIENT_HOUR}
          AND CASE ?7
            WHEN 'portal' THEN ?5 IS NULL AND ?6 IS NULL AND EXISTS (SELECT 1 FROM contacts c WHERE c.id = ?4 AND ${contactOk("c")})
@@ -259,6 +260,11 @@ export type GatewayPaymentStatements = {
   side: D1PreparedStatement[];
   /** `ledger_result`, last and unguarded, for a confirmed payment; empty for a pending one. */
   last: D1PreparedStatement[];
+  /**
+   * The side statements' own guard (the caller's audit row AND this batch's payment row; early check 1, finding 9): a caller appends its own statements after `side`
+   * and before `last` with it (T11's `deedDraftStatements` after the recompute).
+   */
+  guard: GuardSql;
 };
 
 /**
@@ -277,6 +283,9 @@ export function recordGatewayPaymentStatements(
   g?: GuardSql,
 ): GatewayPaymentStatements {
   const confirmed = a.status === "confirmed";
+  // Early check 1, finding 7: a confirmed payment is always put on its document (a confirmed row with no allocation would be credit written without a payable check).
+  if (confirmed && !a.allocate)
+    throw new TypeError("recordGatewayPaymentStatements: a confirmed payment needs `allocate`");
   const docPayable = `EXISTS (SELECT 1 FROM documents d WHERE d.id = c.document_id AND d.type IN ('tax_invoice', 'debit_note') AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.currency = 'INR')
          AND k.country = 'IN' AND k.gst_status <> 'overseas'`;
   const main = db
@@ -290,7 +299,8 @@ export function recordGatewayPaymentStatements(
          AND k.anonymised_at IS NULL AND k.currency = c.currency
          AND NOT EXISTS (SELECT 1 FROM payments x WHERE x.id = ?1)
          AND NOT EXISTS (SELECT 1 FROM payments y INDEXED BY payments_provider_ref WHERE y.provider = ?2 AND y.provider_payment_id = ?11)
-         AND (?19 = 0 OR (${docPayable}))`,
+         AND (?19 = 0 OR (${docPayable}))
+         AND (?3 <> 'confirmed' OR ?19 = 1)`,
     )
     .bind(
       a.paymentId,
@@ -405,6 +415,7 @@ export function recordGatewayPaymentStatements(
   return {
     main,
     side,
+    guard: gm,
     last: confirmed
       ? [ledgerResultStatement(db, { paymentIds: [a.paymentId], documentIds: [a.documentId] })]
       : [],
@@ -475,15 +486,19 @@ export function reviewBellStatement(
   );
 }
 
-/** The "Needs review" list: open items oldest first, keyset `(created_at, id)` with `?1`/`?2` (the first page binds -1 and ''), at most 51 (one more than a page). */
-export const OPEN_REVIEW_ITEMS_SQL = `SELECT r.id, r.source, r.provider, r.kind, r.webhook_event_id, r.payment_id, r.document_id, r.client_id, r.amount_minor, r.currency, r.facts, r.created_at
-   FROM review_items r INDEXED BY review_items_open
-   WHERE r.status = 'open' AND (r.created_at > ?1 OR (r.created_at = ?1 AND r.id > ?2))
+/**
+ * The "Needs review" list: the items of status `?3` (`open` or `resolved`) oldest first, keyset `(created_at, id)` with `?1`/`?2` (the first page binds -1 and ''),
+ * at most 51 (one more than a page). One seek of `review_items_status`.
+ */
+export const REVIEW_ITEMS_SQL = `SELECT r.id, r.source, r.provider, r.kind, r.status, r.webhook_event_id, r.payment_id, r.document_id, r.client_id, r.amount_minor, r.currency, r.facts,
+     r.created_at, r.resolved_by, r.resolved_at, r.resolution, r.note
+   FROM review_items r INDEXED BY review_items_status
+   WHERE r.status = ?3 AND (r.created_at > ?1 OR (r.created_at = ?1 AND r.id > ?2))
    ORDER BY r.created_at, r.id LIMIT 51`;
 
-/** How many items wait (the nav count; the partial index only). */
+/** How many items wait (the nav count; one range of `review_items_status`). */
 export const OPEN_REVIEW_COUNT_SQL =
-  "SELECT count(*) AS n FROM review_items r INDEXED BY review_items_open WHERE r.status = 'open'";
+  "SELECT count(*) AS n FROM review_items r INDEXED BY review_items_status WHERE r.status = 'open'";
 
 // ---- dead letters ---------------------------------------------------------------------------------------------------------------------------------------
 

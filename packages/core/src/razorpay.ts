@@ -29,6 +29,30 @@ export const RAZORPAY_LINK_HOSTS = ["rzp.io", "razorpay.com"] as const;
 
 const enc = new TextEncoder();
 const HEX64 = /^[0-9a-fA-F]{64}$/;
+/** The longest event id or provider reference a row holds (`webhook_events.event_id`, `PROVIDER_REF_MAX` in the db schema: generic, 255). */
+export const PROVIDER_REF_MAX = 255;
+/** The longest link URL a checkout row holds (`CHECKOUT_SHORT_URL_MAX` in the db schema). */
+export const SHORT_URL_MAX = 5000;
+
+/**
+ * The imported HMAC keys, per isolate, by secret (CPU diagnosis, lead decision 5: a key is imported once, not per webhook). At most a handful of entries (the current
+ * and the previous webhook secret, plus the warm-up's made-up one); the map is cleared if it ever grows past 8, so a rotated secret never pins memory.
+ */
+type HmacKey = Awaited<ReturnType<typeof crypto.subtle.importKey>>;
+const hmacKeys = new Map<string, Promise<HmacKey>>();
+function hmacKey(secret: string): Promise<HmacKey> {
+  let k = hmacKeys.get(secret);
+  if (!k) {
+    if (hmacKeys.size >= 8) hmacKeys.clear();
+    k = crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [
+      "verify",
+    ]);
+    // A failed import is not kept (the next call tries again).
+    k.catch(() => hmacKeys.delete(secret));
+    hmacKeys.set(secret, k);
+  }
+  return k;
+}
 
 /** A hex string of exactly 64 characters to its 32 bytes, else null (decoded first, so a malformed header never reaches the comparison). */
 function hex32(sig: string): Uint8Array<ArrayBuffer> | null {
@@ -45,22 +69,21 @@ function hex32(sig: string): Uint8Array<ArrayBuffer> | null {
  * secrets are skipped; no secret at all never verifies.
  */
 export async function verifyRazorpaySignature(
-  rawBody: string,
+  rawBody: Uint8Array | string,
   sigHex: string,
   secrets: readonly (string | null | undefined)[],
 ): Promise<boolean> {
   const sig = typeof sigHex === "string" ? hex32(sigHex) : null;
-  if (!sig || typeof rawBody !== "string") return false;
-  const body = enc.encode(rawBody);
+  if (!sig) return false;
+  // Early check 1, finding 14: the hook passes the raw BYTES it received (never a decoded and re-encoded text, which could change a malformed sequence); a string
+  // is accepted for callers that already hold the exact text.
+  let body: Uint8Array<ArrayBuffer>;
+  if (rawBody instanceof Uint8Array) body = new Uint8Array(rawBody);
+  else if (typeof rawBody === "string") body = enc.encode(rawBody);
+  else return false;
   for (const secret of secrets) {
     if (typeof secret !== "string" || secret === "") continue;
-    const key = await crypto.subtle.importKey(
-      "raw",
-      enc.encode(secret),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["verify"],
-    );
+    const key = await hmacKey(secret);
     if (await crypto.subtle.verify("HMAC", key, sig, body)) return true;
   }
   return false;
@@ -133,7 +156,8 @@ const INVALID: ParsedEvent = Object.freeze({ ok: false, code: "invalid_event" } 
  * stores it as `ignored`). Reads only the whitelisted fields: never an email, phone, UPI address or card detail (L8; ADM-PAY-12).
  */
 export function parseRazorpayEvent(obj: unknown, eventId: string): ParsedEvent {
-  if (!isObj(obj) || typeof eventId !== "string" || eventId === "" || eventId.length > 64) return INVALID;
+  if (!isObj(obj) || typeof eventId !== "string" || eventId === "" || eventId.length > PROVIDER_REF_MAX)
+    return INVALID;
   const name = obj.event;
   if (typeof name !== "string" || name === "" || name.length > 64) return INVALID;
   const occurredAt = secondsToMs(obj.created_at);
@@ -252,7 +276,8 @@ export function readRazorpayLink(obj: unknown): RazorpayLink | null {
       });
     }
   } else if (list !== null && list !== undefined) return null;
-  const shortUrl = typeof obj.short_url === "string" && obj.short_url.length <= 200 ? obj.short_url : null;
+  const shortUrl =
+    typeof obj.short_url === "string" && obj.short_url.length <= SHORT_URL_MAX ? obj.short_url : null;
   const expire = secondsToMs(obj.expire_by);
   return {
     providerRef: id,
@@ -301,6 +326,9 @@ export function readRazorpayPayment(obj: unknown): PaymentStatusReport | null {
 // ---- the judge: does the re-fetched payment settle this checkout? -----------------------------------------------------------------------------------
 
 export const JUDGE_VERDICTS = [
+  // Early check 1, finding 6: Razorpay has not settled the payment yet (`created` or `authorized`): try again later. A failed or refunded payment is `not_captured`
+  // and goes to the Owner at once.
+  "payment_pending",
   "not_captured",
   "amount_mismatch",
   "currency_mismatch",
@@ -333,6 +361,7 @@ export function judgeRazorpayPayment(
   const no = (verdict: JudgeVerdict) => ({ ok: false, verdict }) as const;
   if (link.providerRef !== checkout.providerLinkId || link.referenceId !== checkout.id)
     return no("reference_mismatch");
+  if (payment.state === "pending") return no("payment_pending");
   if (payment.state !== "captured") return no("not_captured");
   if (!link.payments.some((p) => p.paymentRef === payment.providerRef)) return no("payment_not_on_link");
   if (link.orderRef !== null && payment.orderRef !== link.orderRef) return no("order_mismatch");
@@ -354,8 +383,22 @@ export const LINK_MAX_AHEAD_MS = 180 * 86_400_000;
 export const RAZORPAY_MIN_AMOUNT_MINOR = 100;
 const NOTE_MAX = 255;
 
+/** The document types a link may be for, and the words Razorpay's page shows for each (owner, 2026-11-01, early check 1 Q4; 07-ZI lines 17 to 19). */
+export const LINK_DESCRIPTION_WORDS = {
+  tax_invoice: "Invoice",
+  proforma: "Proforma",
+  debit_note: "Debit note",
+} as const;
+export type LinkDocumentType = keyof typeof LINK_DESCRIPTION_WORDS;
+
+/** What Razorpay's payment page shows: "Invoice {number}", "Proforma {number}" or "Debit note {number}" (07-ZI lines 17 to 19, word for word). */
+export const linkDescriptionOf = (type: LinkDocumentType, documentNumber: string): string =>
+  `${LINK_DESCRIPTION_WORDS[type]} ${documentNumber}`;
+
 export type LinkRequestInput = {
   readonly checkoutId: string;
+  /** The document's type: the page's description by type (07-ZI 17 to 19). */
+  readonly documentType: LinkDocumentType;
   readonly amountMinor: number;
   readonly documentNumber: string;
   readonly documentId: string;
@@ -387,13 +430,14 @@ export const LINK_REQUEST_REFUSALS = [
   "reference_invalid",
   "note_too_long",
   "callback_invalid",
+  "type_invalid",
 ] as const;
 export type LinkRequestRefusal = (typeof LINK_REQUEST_REFUSALS)[number];
 
 /**
  * The payment link we ask Razorpay for (L2, L3, L10): a fixed amount (`accept_partial: false`: the client picks a part in the portal), no Razorpay customer, no SMS
  * or email from Razorpay, no reminders, our checkout id as `reference_id` (Razorpay wants it unique per link and at most 40 characters) and in `notes` with the
- * document id (each note at most 255 characters, at most 15 notes), the description "Invoice {number}", `expire_by` in Unix seconds 15 minutes to 6 months ahead,
+ * document id (each note at most 255 characters, at most 15 notes), the description by document type (07-ZI 17 to 19), `expire_by` in Unix seconds 15 minutes to 6 months ahead,
  * at least 100 paise, and the callback (an https URL with no query: the portal's return page, which never carries a token). `callback_method` "get" goes with
  * `callback_url` (Razorpay's create-link parameters; not checked against a live call: tests never call Razorpay).
  */
@@ -409,6 +453,7 @@ export function linkRequestOf(
   const ahead = i.expiresAt - i.now;
   if (ahead < LINK_MIN_AHEAD_MS || ahead > LINK_MAX_AHEAD_MS) return no("expiry_out_of_bounds");
   if (!REFERENCE.test(i.checkoutId)) return no("reference_invalid");
+  if (!Object.hasOwn(LINK_DESCRIPTION_WORDS, i.documentType)) return no("type_invalid");
   if (
     i.documentId.length < 1 ||
     i.documentId.length > NOTE_MAX ||
@@ -433,7 +478,7 @@ export function linkRequestOf(
       amount: i.amountMinor,
       currency: "INR",
       accept_partial: false,
-      description: `Invoice ${i.documentNumber}`,
+      description: linkDescriptionOf(i.documentType, i.documentNumber),
       reference_id: i.checkoutId,
       // Whole seconds, rounded down (expiresAt is a positive safe integer, so truncation is the floor).
       expire_by: Math.trunc(i.expiresAt / 1000),
@@ -448,7 +493,7 @@ export function linkRequestOf(
 
 /** Whether a link's `short_url` is on Razorpay's own hosts over https (the portal answers 502 otherwise). */
 export function isRazorpayShortUrl(v: unknown): boolean {
-  if (typeof v !== "string" || v.length > 200) return false;
+  if (typeof v !== "string" || v.length > SHORT_URL_MAX) return false;
   try {
     const u = new URL(v);
     return (

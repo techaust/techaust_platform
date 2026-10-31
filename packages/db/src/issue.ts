@@ -617,9 +617,13 @@ export type AdvanceLine = {
  * Who issues the tax invoice for a payment received (M6.2, L6): the Owner with a live step-up (M5.2), or the system for a Razorpay payment received against a
  * proforma (`gateway_auto`: the pending gateway payment `paymentId`, its paid checkout `checkoutId`, and `onBehalfOf`, the proforma's issuing Owner).
  */
-export type AdvanceAuthority =
-  | { kind: "owner"; sessionId: string }
-  | { kind: "gateway_auto"; paymentId: string; checkoutId: string; onBehalfOf: string };
+export type AdvanceAuthority = { kind: "owner"; sessionId: string } | GatewayAutoAuthority;
+export type GatewayAutoAuthority = {
+  kind: "gateway_auto";
+  paymentId: string;
+  checkoutId: string;
+  onBehalfOf: string;
+};
 
 /**
  * The authority of an automatic tax invoice for a Razorpay payment received against a proforma (M6.2, L5, L6; PRD ADM-INV-10, Q-P3-3), in the freeze WHERE (the
@@ -646,74 +650,76 @@ export const GATEWAY_AUTO_SQL = `EXISTS (SELECT 1 FROM payments gp
       AND gk.country = 'IN' AND gk.gst_status <> 'overseas')
   AND documents.type = 'tax_invoice' AND documents.currency = 'INR' AND documents.created_by IS NULL`;
 
-export type AdvanceIssueArgs = Omit<InvoiceIssueArgs, "authority" | "bell" | "expected" | "type"> & {
-  /** The new invoice's type: an export invoice for an overseas client, else a tax invoice. */
-  type: "tax_invoice" | "export_invoice";
-  /** The proforma the money was received against, and the `updated_at` it was read at (a changed proforma refuses the batch). */
-  proformaId: string;
-  expectedProformaUpdatedAt: number;
-  /** The Owner's session whose live step-up the freeze checks (the `owner` authority, the default). Ignored with `authority: gateway_auto`. */
-  sessionId?: string;
-  /**
-   * M6.2 (L6): who issues. Absent or `owner`: the Owner's session, as M5.2. `gateway_auto`: the system issues the tax invoice for a Razorpay payment received
-   * against a proforma, with no session: `GATEWAY_AUTO_SQL` holds the authority in the freeze WHERE, `issued_by` and every member column of the batch are NULL, and
-   * the receipt's `created_by` (NOT NULL) is `onBehalfOf`, the active Owner who issued the proforma.
-   */
-  authority?: AdvanceAuthority;
-  amountMinor: number;
-  /**
-   * Q37 (owner 2026-10-28): the FY token ("2627") of the receipt day, set only when this is an export invoice on the LUT route; the freeze then needs a LUT with
-   * an ARN saved for that FY in the `tax` setting at the issue instant (`advance_lut_missing`). Null on every other advance invoice.
-   */
-  lutFy?: string | null;
-  /** ISO date the money arrived, and `normaliseReference` of its bank or gateway reference (the idempotency key with the proforma). */
-  receivedOn: string;
-  referenceNorm: string;
-  /** The `advance_receipts` row's id (also sealed in the invoice header). */
-  receiptId: string;
-  /**
-   * M6.1 (L4, L5; 08-C RA-17): a PENDING payment Staff recorded against the proforma, confirmed by this batch ("Confirm by issuing the tax invoice"): it must be a
-   * pending `payment` of the proforma's client and currency, of exactly `amountMinor`, received on `receivedOn`; the batch flips it to confirmed (by the issuing
-   * Owner), links it to the receipt and approves its `payment_verify` approval. Absent: the batch records a new confirmed payment `pay_<receiptId>`.
-   */
-  paymentId?: string | null;
-  /**
-   * L12 (early check 2, finding 1): the Owner confirmed past a bank reference already on a pending or confirmed payment. Absent or false: such a reference
-   * freezes nothing (the route answers 409 `reference_seen`). Ignored with `paymentId` (that entry carries the reference itself).
-   */
-  confirmDuplicate?: boolean;
-  /**
-   * Early check A7: with `paymentId`, the requester's bell (07-ZH line 6, "Your payment of {amount} from {client} was confirmed.", words supplied by the route)
-   * rings through `decideApprovalStatements`, as a confirm from the Payments list does. Absent: the approval is approved with no bell.
-   */
-  decidedBell?: Bell | null;
-  /** M6.1: the mode of the new payment (NEFT, UPI, ...), or null; ignored when `paymentId` is given (the pending row keeps its own). */
-  mode?: string | null;
-  /** The hash of the new invoice's draft content (the row is inserted with it, and the freeze checks it). */
-  contentSha256: string;
-  expected: Omit<InvoiceIssueArgs["expected"], "updatedAt" | "contentSha256">;
-  /** The draft the batch inserts before it freezes it: the columns a save writes, and the lines. */
-  draft: {
-    clientId: string;
-    projectId: string | null;
-    contactId: string | null;
-    currency: string;
-    exportMode: string | null;
-    fx: { rateMicros: number; date: string; source: string; noRateDay?: string } | null;
-    subtotalMinor: number;
-    discountMinor: number;
-    taxableMinor: number;
-    cgstMinor: number;
-    sgstMinor: number;
-    igstMinor: number;
-    roundOffMinor: number;
-    totalMinor: number;
-    totalInrMinor: number | null;
-    supplyType: string;
-    placeOfSupplyCode: string;
-    lines: readonly AdvanceLine[];
+/**
+ * Who issues, as the arguments carry it (early check 1, finding 8): the Owner's path REQUIRES the session whose live step-up the freeze checks; the system path
+ * (`gateway_auto`, M6.2 L6) has none: `GATEWAY_AUTO_SQL` holds the authority in the freeze WHERE, `issued_by` and every member column of the batch are NULL, and
+ * the receipt's `created_by` (NOT NULL) is `onBehalfOf`, the active Owner who issued the proforma.
+ */
+export type AdvanceIssuer =
+  | { sessionId: string; authority?: { kind: "owner"; sessionId: string } }
+  | { sessionId?: undefined; authority: GatewayAutoAuthority };
+
+export type AdvanceIssueArgs = Omit<InvoiceIssueArgs, "authority" | "bell" | "expected" | "type"> &
+  AdvanceIssuer & {
+    /** The new invoice's type: an export invoice for an overseas client, else a tax invoice. */
+    type: "tax_invoice" | "export_invoice";
+    /** The proforma the money was received against, and the `updated_at` it was read at (a changed proforma refuses the batch). */
+    proformaId: string;
+    expectedProformaUpdatedAt: number;
+    amountMinor: number;
+    /**
+     * Q37 (owner 2026-10-28): the FY token ("2627") of the receipt day, set only when this is an export invoice on the LUT route; the freeze then needs a LUT with
+     * an ARN saved for that FY in the `tax` setting at the issue instant (`advance_lut_missing`). Null on every other advance invoice.
+     */
+    lutFy?: string | null;
+    /** ISO date the money arrived, and `normaliseReference` of its bank or gateway reference (the idempotency key with the proforma). */
+    receivedOn: string;
+    referenceNorm: string;
+    /** The `advance_receipts` row's id (also sealed in the invoice header). */
+    receiptId: string;
+    /**
+     * M6.1 (L4, L5; 08-C RA-17): a PENDING payment Staff recorded against the proforma, confirmed by this batch ("Confirm by issuing the tax invoice"): it must be a
+     * pending `payment` of the proforma's client and currency, of exactly `amountMinor`, received on `receivedOn`; the batch flips it to confirmed (by the issuing
+     * Owner), links it to the receipt and approves its `payment_verify` approval. Absent: the batch records a new confirmed payment `pay_<receiptId>`.
+     */
+    paymentId?: string | null;
+    /**
+     * L12 (early check 2, finding 1): the Owner confirmed past a bank reference already on a pending or confirmed payment. Absent or false: such a reference
+     * freezes nothing (the route answers 409 `reference_seen`). Ignored with `paymentId` (that entry carries the reference itself).
+     */
+    confirmDuplicate?: boolean;
+    /**
+     * Early check A7: with `paymentId`, the requester's bell (07-ZH line 6, "Your payment of {amount} from {client} was confirmed.", words supplied by the route)
+     * rings through `decideApprovalStatements`, as a confirm from the Payments list does. Absent: the approval is approved with no bell.
+     */
+    decidedBell?: Bell | null;
+    /** M6.1: the mode of the new payment (NEFT, UPI, ...), or null; ignored when `paymentId` is given (the pending row keeps its own). */
+    mode?: string | null;
+    /** The hash of the new invoice's draft content (the row is inserted with it, and the freeze checks it). */
+    contentSha256: string;
+    expected: Omit<InvoiceIssueArgs["expected"], "updatedAt" | "contentSha256">;
+    /** The draft the batch inserts before it freezes it: the columns a save writes, and the lines. */
+    draft: {
+      clientId: string;
+      projectId: string | null;
+      contactId: string | null;
+      currency: string;
+      exportMode: string | null;
+      fx: { rateMicros: number; date: string; source: string; noRateDay?: string } | null;
+      subtotalMinor: number;
+      discountMinor: number;
+      taxableMinor: number;
+      cgstMinor: number;
+      sgstMinor: number;
+      igstMinor: number;
+      roundOffMinor: number;
+      totalMinor: number;
+      totalInrMinor: number | null;
+      supplyType: string;
+      placeOfSupplyCode: string;
+      lines: readonly AdvanceLine[];
+    };
   };
-};
 
 /**
  * The advance batch (the only place M5 writes a paid amount, LD22): in ONE batch, INSERT the new invoice as a draft (its parent is the proforma) with
@@ -729,11 +735,11 @@ export type AdvanceIssueArgs = Omit<InvoiceIssueArgs, "authority" | "bell" | "ex
 export function advanceIssueStatements(db: D1Database, args: AdvanceIssueArgs): SendStatements {
   // M6.2 (L6): with `gateway_auto` the batch runs with no member: `issued_by`, the draft's author, the payment's verifier and the allocation's author are NULL, the
   // pending payment is the authority's, and only the receipt names a member (its `created_by` is NOT NULL): the proforma's issuing Owner, held by GATEWAY_AUTO_SQL.
-  const auth: AdvanceAuthority = args.authority ?? { kind: "owner", sessionId: args.sessionId ?? "" };
-  const gateway = auth.kind === "gateway_auto" ? auth : null;
+  const gateway = args.authority?.kind === "gateway_auto" ? args.authority : null;
   const a: AdvanceIssueArgs = gateway
     ? { ...args, issuedBy: null, paymentId: gateway.paymentId, decidedBell: null, confirmDuplicate: false }
     : args;
+  const ownerSession = gateway ? "" : (args.sessionId ?? "");
   const receiptCreatedBy = gateway ? gateway.onBehalfOf : a.issuedBy;
   const d = a.draft;
   const insert = db
@@ -805,7 +811,7 @@ export function advanceIssueStatements(db: D1Database, args: AdvanceIssueArgs): 
     base,
     gateway
       ? { sql: GATEWAY_AUTO_SQL, bind: gateway.paymentId }
-      : { sql: OWNER_AUTHORITY_SQL, bind: (auth as { sessionId: string }).sessionId },
+      : { sql: OWNER_AUTHORITY_SQL, bind: ownerSession },
     {
       where: ` AND total_minor = ?30
          AND EXISTS (SELECT 1 FROM documents p WHERE p.id = ?31 AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.status IN ('issued', 'converted') AND p.updated_at = ?32 AND p.balance_minor >= ?30 AND p.client_id = documents.client_id AND p.currency = documents.currency)

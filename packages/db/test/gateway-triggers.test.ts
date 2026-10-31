@@ -5,6 +5,7 @@
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
 import { describe, expect, it } from "vitest";
+import { deleteContactAccess } from "../src/contact-access.ts";
 import {
   CHECKOUT_SOURCES,
   CHECKOUT_STATUSES,
@@ -226,6 +227,33 @@ describe("gateway payments: shape, insert state, moves, unique id [ADM-PAY-02, -
     await gwPay(clientId, co, { mode: "netbanking" });
     await gwPay(clientId, co, { status: "pending_verification", mode: "card" });
     await rejects(gwPay(clientId, co, { mode: "cheque" }), /payments_values_insert/);
+    // Early check 1, finding 2: a bank mode is not a Razorpay method.
+    await rejects(gwPay(clientId, co, { mode: "neft" }), /payments_gateway_shape/);
+    await rejects(gwPay(clientId, co, { mode: "swift" }), /payments_gateway_shape/);
+  });
+
+  it("a manual entry keeps 0060's five modes: a gateway method is refused on it (early check 1, finding 2)", async () => {
+    const { owner, clientId } = await setup();
+    const ins = (mode: string | null) =>
+      run(
+        `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, recorded_by, recorded_at, verified_by, verified_at)
+         VALUES (?1, ?2, 'payment', 'manual', 'confirmed', 'INR', 1000, '2026-10-28', ?3, ?4, ?5, ?4, ?5)`,
+        uuidv7(),
+        clientId,
+        mode,
+        owner,
+        T,
+      );
+    for (const mode of ["neft", "rtgs", "imps", "upi", "swift", null]) await ins(mode);
+    for (const mode of ["card", "netbanking", "wallet", "emi", "paylater", "other"])
+      await rejects(ins(mode), /payments_gateway_shape/);
+  });
+
+  it("a gateway payment only from a client in India that is not overseas (early check 1, finding 13; owner Q3 A)", async () => {
+    const { clientId, contactId, inv } = await setup();
+    const co = await checkout(inv, clientId, contactId);
+    const overseas = await mkClientRow({ currency: "USD" });
+    await rejects(gwPay(overseas, co), /payments_gateway_shape/);
   });
 
   it("refuses a gateway payment with a member, without its gateway id, checkout or re-fetch, or confirmed by a member at insert", async () => {
@@ -249,7 +277,7 @@ describe("gateway payments: shape, insert state, moves, unique id [ADM-PAY-02, -
     const co = await checkout(inv, clientId, contactId);
     await rejects(gwPay(clientId, co, { mode: null }), /payments_gateway_shape/);
     await rejects(gwPay(clientId, co, { ref: null }), /payments_gateway_shape/);
-    await rejects(gwPay(clientId, co, { providerPaymentId: "x".repeat(65) }), /payments_gateway_shape/);
+    await rejects(gwPay(clientId, co, { providerPaymentId: "x".repeat(256) }), /payments_gateway_shape/);
     await rejects(gwPay(clientId, co, { currency: "USD" }), /payments_gateway_shape/);
     await rejects(gwPay(clientId, co, { kind: "tds", mode: null }), /payments_(gateway_shape|tds_rules)/);
   });
@@ -311,13 +339,46 @@ describe("gateway payments: shape, insert state, moves, unique id [ADM-PAY-02, -
     const receipt = uuidv7();
     await run(
       `INSERT INTO advance_receipts (id, proforma_id, invoice_id, client_id, currency, amount_minor, received_on, reference_norm, created_by, created_at)
-       VALUES (?1, ?2, ?3, ?4, 'INR', 118000, '2026-10-28', 'PAYREF1', ?5, ?6)`,
+       VALUES (?1, ?2, ?3, ?4, 'INR', 118000, '2026-10-28', ?7, ?5, ?6)`,
       receipt,
       proforma,
       advanceInvoice,
       clientId,
       owner,
       T,
+      bySystem.slice(4).toUpperCase(),
+    );
+    // Early check 1, finding 3: a receipt that is not this payment's own (another reference, or written at another instant) is refused.
+    const proforma2 = await mkIssued(clientId, { type: "proforma" });
+    const otherInvoice = await mkIssued(clientId, { parentId: proforma2 });
+    const otherReceipt = uuidv7();
+    await run(
+      `INSERT INTO advance_receipts (id, proforma_id, invoice_id, client_id, currency, amount_minor, received_on, reference_norm, created_by, created_at)
+       VALUES (?1, ?2, ?3, ?4, 'INR', 118000, '2026-10-28', 'SOMEOTHERREF', ?5, ?6)`,
+      otherReceipt,
+      proforma2,
+      otherInvoice,
+      clientId,
+      owner,
+      T,
+    );
+    await rejects(
+      run(
+        "UPDATE payments SET status = 'confirmed', verified_at = ?2, advance_receipt_id = ?3 WHERE id = ?1",
+        bySystem,
+        T,
+        otherReceipt,
+      ),
+      /payments_status_flow/,
+    );
+    await rejects(
+      run(
+        "UPDATE payments SET status = 'confirmed', verified_at = ?2, advance_receipt_id = ?3 WHERE id = ?1",
+        bySystem,
+        T + 1,
+        receipt,
+      ),
+      /payments_status_flow/,
     );
     await run(
       "UPDATE payments SET status = 'confirmed', verified_at = ?2, advance_receipt_id = ?3 WHERE id = ?1",
@@ -386,6 +447,27 @@ describe("checkout sessions [ADM-PAY-02, L3, L4]", () => {
     await rejects(ins("portal", null, null), /checkout_sessions_insert_state/);
     await rejects(ins("staff", null, null), /checkout_sessions_insert_state/);
     await rejects(ins("link", null, null), /checkout_sessions_insert_state/);
+    // Early check 1, finding 11: an emailed link's checkout names its token AND the contact the link is bound to.
+    const token = `h${uuidv7().replaceAll("-", "")}`;
+    await run(
+      "INSERT INTO doc_access_tokens (token_hash, document_id, purpose, expires_at, contact_id, client_id, email) VALUES (?1, ?2, 'view_pay', 9999999999999, ?3, ?4, 'a@example.test')",
+      token,
+      inv,
+      contactId,
+      clientId,
+    );
+    await rejects(
+      run(
+        `INSERT INTO checkout_sessions (id, provider, document_id, client_id, contact_id, doc_token_id, source, currency, amount_minor, status, expires_at, updated_at)
+         VALUES (?1, 'razorpay', ?2, ?3, NULL, ?4, 'link', 'INR', 1000, 'creating', ?5, ?5)`,
+        uuidv7(),
+        inv,
+        clientId,
+        token,
+        T,
+      ),
+      /checkout_sessions_insert_state/,
+    );
     await rejects(ins("portal", contactId, null, "live"), /checkout_sessions_insert_state/);
     await rejects(ins("email", contactId, null), /checkout_sessions_(values_insert|insert_state)/);
     await ins("staff", null, owner);
@@ -467,6 +549,89 @@ describe("checkout sessions [ADM-PAY-02, L3, L4]", () => {
     await rejects(run("DELETE FROM checkout_sessions WHERE id = ?1", id), /checkout_sessions_no_delete/);
   });
 
+  it("the contact and token are only cleared together, never set back; the erase of a contact goes through (early check 1, finding 1)", async () => {
+    const { owner, clientId, contactId, inv } = await setup();
+    const id = await checkout(inv, clientId, contactId, { status: "live" });
+    const other = await mkContact(clientId);
+    await rejects(
+      run("UPDATE checkout_sessions SET contact_id = ?2 WHERE id = ?1", id, other),
+      /checkout_sessions_fixed/,
+    );
+    // A link checkout (token bound to the contact) on a second document, paid.
+    const inv2 = await mkIssued(clientId);
+    const token = `h${uuidv7().replaceAll("-", "")}`;
+    await run(
+      "INSERT INTO doc_access_tokens (token_hash, document_id, purpose, expires_at, contact_id, client_id, email) VALUES (?1, ?2, 'view_pay', 9999999999999, ?3, ?4, 'a@example.test')",
+      token,
+      inv2,
+      contactId,
+      clientId,
+    );
+    const linkCo = uuidv7();
+    await run(
+      `INSERT INTO checkout_sessions (id, provider, document_id, client_id, contact_id, doc_token_id, source, currency, amount_minor, status, expires_at, created_at, updated_at)
+       VALUES (?1, 'razorpay', ?2, ?3, ?4, ?5, 'link', 'INR', 118000, 'creating', ?6, ?7, ?7)`,
+      linkCo,
+      inv2,
+      clientId,
+      contactId,
+      token,
+      T + 7 * 86_400_000,
+      T,
+    );
+    await run(
+      "UPDATE checkout_sessions SET status = 'live', provider_link_id = 'plink_LINKCO1', short_url = 'https://rzp.io/i/l', updated_at = updated_at + 1 WHERE id = ?1",
+      linkCo,
+    );
+    const pay = await gwPay(clientId, linkCo, { id: "rzp_pay_LINKCO1", providerPaymentId: "pay_LINKCO1" });
+    await run(
+      "UPDATE checkout_sessions SET status = 'paid', paid_payment_id = ?2, updated_at = updated_at + 1 WHERE id = ?1",
+      linkCo,
+      pay,
+    );
+    // The erase (the guard stands for the erase's audit row), then the contact row itself goes.
+    const g = {
+      sql: (at: number) => `EXISTS (SELECT 1 FROM staff_users WHERE id = ?${at})`,
+      params: [owner],
+    };
+    await env.DB.batch(deleteContactAccess(env.DB, contactId, g));
+    await run("DELETE FROM contacts WHERE id = ?1", contactId);
+    type Row = {
+      id: string;
+      contact_id: string | null;
+      doc_token_id: string | null;
+      status: string;
+      amount_minor: number;
+      paid_payment_id: string | null;
+      document_id: string;
+    };
+    const rows = await all<Row>(
+      "SELECT id, contact_id, doc_token_id, status, amount_minor, paid_payment_id, document_id FROM checkout_sessions WHERE id IN (?1, ?2)",
+      id,
+      linkCo,
+    );
+    expect(rows.find((r) => r.id === id)).toMatchObject({
+      contact_id: null,
+      doc_token_id: null,
+      status: "live",
+      amount_minor: 118000,
+      document_id: inv,
+    });
+    expect(rows.find((r) => r.id === linkCo)).toMatchObject({
+      contact_id: null,
+      doc_token_id: null,
+      status: "paid",
+      amount_minor: 118000,
+      paid_payment_id: pay,
+      document_id: inv2,
+    });
+    // Never set back.
+    await rejects(
+      run("UPDATE checkout_sessions SET contact_id = ?2 WHERE id = ?1", id, other),
+      /checkout_sessions_fixed/,
+    );
+  });
+
   it("one checkout per Razorpay link id", async () => {
     const { clientId, contactId } = await setup();
     const a = await checkout(await mkIssued(clientId), clientId, contactId);
@@ -499,7 +664,7 @@ describe("webhook events [JOB-HOOK-01, -02]", () => {
     await ins("evt_B", "ignored");
     await rejects(ins("evt_C", "processed"), /webhook_events_values_insert/);
     await rejects(ins("evt_D", "received", 3), /webhook_events_values_insert/);
-    await rejects(ins("x".repeat(65)), /CHECK constraint failed: webhook_events_event_id/);
+    await rejects(ins("x".repeat(256)), /CHECK constraint failed: webhook_events_event_id/);
   });
 
   it("received → processed | ignored | needs_review | failed, failed → received; facts and identity frozen; attempts never go down; never deleted", async () => {
@@ -645,7 +810,7 @@ describe("the new indexes are used (EXPLAIN QUERY PLAN)", () => {
     [
       "SELECT id FROM review_items WHERE status = 'open' AND (created_at > ?1 OR (created_at = ?1 AND id > ?2)) ORDER BY created_at, id LIMIT 51",
       [0, ""],
-      "review_items_open",
+      "review_items_status",
     ],
     ["SELECT id FROM review_items WHERE payment_id = ?1", ["p"], "review_items_payment"],
     ["SELECT id FROM review_items WHERE client_id = ?1", ["c"], "review_items_client"],

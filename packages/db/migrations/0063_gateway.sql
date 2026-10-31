@@ -25,14 +25,15 @@ CREATE TABLE `checkout_sessions` (
 	FOREIGN KEY (`paid_payment_id`) REFERENCES `payments`(`id`) ON UPDATE no action ON DELETE no action,
 	CONSTRAINT "checkout_sessions_currency" CHECK("checkout_sessions"."currency" in ('INR', 'USD')),
 	CONSTRAINT "checkout_sessions_amount" CHECK("checkout_sessions"."amount_minor" > 0),
-	CONSTRAINT "checkout_sessions_provider_link_length" CHECK("checkout_sessions"."provider_link_id" is null or length("checkout_sessions"."provider_link_id") between 1 and 64),
-	CONSTRAINT "checkout_sessions_short_url" CHECK("checkout_sessions"."short_url" is null or (length("checkout_sessions"."short_url") between 1 and 200 and "checkout_sessions"."short_url" like 'https://%'))
+	CONSTRAINT "checkout_sessions_provider_link_length" CHECK("checkout_sessions"."provider_link_id" is null or length("checkout_sessions"."provider_link_id") between 1 and 255),
+	CONSTRAINT "checkout_sessions_short_url" CHECK("checkout_sessions"."short_url" is null or (length("checkout_sessions"."short_url") between 1 and 5000 and "checkout_sessions"."short_url" like 'https://%'))
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `checkout_sessions_open` ON `checkout_sessions` (`document_id`) WHERE "checkout_sessions"."status" in ('creating', 'live');--> statement-breakpoint
 CREATE UNIQUE INDEX `checkout_sessions_provider_link` ON `checkout_sessions` (`provider`,`provider_link_id`) WHERE "checkout_sessions"."provider_link_id" is not null;--> statement-breakpoint
 CREATE INDEX `checkout_sessions_client` ON `checkout_sessions` (`client_id`,`created_at`);--> statement-breakpoint
 CREATE INDEX `checkout_sessions_document` ON `checkout_sessions` (`document_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `checkout_sessions_contact` ON `checkout_sessions` (`contact_id`);--> statement-breakpoint
 CREATE TABLE `hook_failures` (
 	`key` text PRIMARY KEY NOT NULL,
 	`window_start` integer NOT NULL,
@@ -69,10 +70,11 @@ CREATE TABLE `review_items` (
 	CONSTRAINT "review_items_note_length" CHECK("review_items"."note" is null or length("review_items"."note") <= 500)
 );
 --> statement-breakpoint
-CREATE INDEX `review_items_open` ON `review_items` (`created_at`,`id`) WHERE "review_items"."status" = 'open';--> statement-breakpoint
 CREATE UNIQUE INDEX `review_items_event_kind` ON `review_items` (`webhook_event_id`,`kind`) WHERE "review_items"."webhook_event_id" is not null;--> statement-breakpoint
 CREATE INDEX `review_items_payment` ON `review_items` (`payment_id`);--> statement-breakpoint
 CREATE INDEX `review_items_client` ON `review_items` (`client_id`);--> statement-breakpoint
+CREATE INDEX `review_items_status` ON `review_items` (`status`,`created_at`,`id`);--> statement-breakpoint
+CREATE INDEX `review_items_document` ON `review_items` (`document_id`);--> statement-breakpoint
 CREATE TABLE `webhook_events` (
 	`id` text PRIMARY KEY NOT NULL,
 	`provider` text NOT NULL,
@@ -84,7 +86,7 @@ CREATE TABLE `webhook_events` (
 	`processed_at` integer,
 	`outcome` text,
 	`facts` text,
-	CONSTRAINT "webhook_events_event_id" CHECK(length("webhook_events"."event_id") between 1 and 64),
+	CONSTRAINT "webhook_events_event_id" CHECK(length("webhook_events"."event_id") between 1 and 255),
 	CONSTRAINT "webhook_events_event_type" CHECK(length("webhook_events"."event_type") between 1 and 64),
 	CONSTRAINT "webhook_events_attempts" CHECK("webhook_events"."attempts" >= 0),
 	CONSTRAINT "webhook_events_outcome" CHECK("webhook_events"."outcome" is null or length("webhook_events"."outcome") between 1 and 64),

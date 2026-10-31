@@ -55,6 +55,8 @@ describe("payableOnline [POR-06, Q3 A]", () => {
     ["nothing_due", { balanceMinor: -5 }, {}],
     ["below_gateway_minimum", { balanceMinor: 99 }, {}],
     ["target_not_whole_unit", { type: "proforma", balanceMinor: 118_050 }, {}],
+    // Early check 1, finding 5: a frozen proforma that is neither issued nor converted (a status the flow should never give it) is not payable.
+    ["not_issued", { type: "proforma", status: "paid" }, {}],
   ] as const)("refuses %s", (reason, d, c) => {
     expect(payableOnline({ ...doc, ...d }, { ...client, ...c })).toEqual({
       ok: false,
@@ -97,6 +99,17 @@ describe("payAmountVerdict [07-ZI lines 4 to 7, RB-39]", () => {
     expect(payAmountVerdict({ ...f, amountMinor: 0 })).toMatchObject({ code: "amount_below_minimum" });
     expect(payAmountVerdict({ ...f, amountMinor: 1.5 })).toMatchObject({ code: "amount_below_minimum" });
     expect(onlineMinimumOf(1_000_000, 300_000)).toBe(300_000);
+    // Early check 1, finding 4: a floor under ₹1 (or 0) never lets 1 to 99 paise through.
+    expect(onlineMinimumOf(0, 300_000)).toBe(100);
+    expect(onlineMinimumOf(50, 300_000)).toBe(100);
+    expect(onlineMinimumOf(0, 100)).toBe(100);
+    expect(
+      payAmountVerdict({ amountMinor: 99, balanceMinor: 300_000, floorMinor: 0, wholeRupees: false }),
+    ).toEqual({
+      ok: false,
+      code: "amount_below_minimum",
+      minimumMinor: 100,
+    });
   });
 
   it("agrees with the rule restated, for any amounts", () => {
@@ -104,11 +117,11 @@ describe("payAmountVerdict [07-ZI lines 4 to 7, RB-39]", () => {
       fc.property(
         fc.integer({ min: -10, max: 20_000_000 }),
         fc.integer({ min: 1, max: 20_000_000 }),
-        fc.integer({ min: 100, max: 5_000_000 }),
+        fc.integer({ min: 0, max: 5_000_000 }),
         fc.boolean(),
         (amountMinor, balanceMinor, floorMinor, wholeRupees) => {
           const v = payAmountVerdict({ amountMinor, balanceMinor, floorMinor, wholeRupees });
-          const min = Math.min(floorMinor, balanceMinor);
+          const min = Math.min(Math.max(floorMinor, 100), balanceMinor);
           const ok =
             amountMinor > 0 &&
             amountMinor <= balanceMinor &&

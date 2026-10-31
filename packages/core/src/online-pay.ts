@@ -59,15 +59,21 @@ export function payableOnline(
   if (!doc.frozen) return no("not_issued");
   if (doc.withdrawn) return no("withdrawn");
   if (doc.status === "void") return no("void");
+  // Early check 1, finding 5: a proforma is paid only while issued or converted (the SQL twin holds the same).
+  if (doc.type === "proforma" && doc.status !== "issued" && doc.status !== "converted")
+    return no("not_issued");
   if (!Number.isSafeInteger(doc.balanceMinor) || doc.balanceMinor <= 0) return no("nothing_due");
   if (doc.balanceMinor < GATEWAY_MIN_MINOR) return no("below_gateway_minimum");
   if (doc.type === "proforma" && doc.balanceMinor % 100 !== 0) return no("target_not_whole_unit");
   return { ok: true };
 }
 
-/** The smallest amount a client may pay online: the part-payment floor (Settings › Payment terms, `razorpayMinPartialInrMinor`) or the whole balance if lower. */
+/**
+ * The smallest amount a client may pay online: the part-payment floor (Settings › Payment terms, `razorpayMinPartialInrMinor`), never under Razorpay's ₹1 (early
+ * check 1, finding 4: a floor of 0 must not let 1 to 99 paise through), or the whole balance if lower.
+ */
 export const onlineMinimumOf = (floorMinor: number, balanceMinor: number): number =>
-  Math.min(floorMinor, balanceMinor);
+  Math.min(Math.max(floorMinor, GATEWAY_MIN_MINOR), balanceMinor);
 
 export type PayAmountVerdict =
   | { readonly ok: true }

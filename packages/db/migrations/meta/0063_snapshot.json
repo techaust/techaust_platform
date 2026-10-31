@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a98e8ed1-1ad0-4f1f-a169-d0946c0c94c0",
+  "id": "85708d7c-320a-4ae2-a1b3-c3e894951de1",
   "prevId": "e117f75e-841c-4acb-90cb-4d5c4b9b9323",
   "tables": {
     "catalogue_items": {
@@ -6334,6 +6334,11 @@
           "name": "checkout_sessions_document",
           "columns": ["document_id", "created_at"],
           "isUnique": false
+        },
+        "checkout_sessions_contact": {
+          "name": "checkout_sessions_contact",
+          "columns": ["contact_id"],
+          "isUnique": false
         }
       },
       "foreignKeys": {
@@ -6405,11 +6410,11 @@
         },
         "checkout_sessions_provider_link_length": {
           "name": "checkout_sessions_provider_link_length",
-          "value": "\"checkout_sessions\".\"provider_link_id\" is null or length(\"checkout_sessions\".\"provider_link_id\") between 1 and 64"
+          "value": "\"checkout_sessions\".\"provider_link_id\" is null or length(\"checkout_sessions\".\"provider_link_id\") between 1 and 255"
         },
         "checkout_sessions_short_url": {
           "name": "checkout_sessions_short_url",
-          "value": "\"checkout_sessions\".\"short_url\" is null or (length(\"checkout_sessions\".\"short_url\") between 1 and 200 and \"checkout_sessions\".\"short_url\" like 'https://%')"
+          "value": "\"checkout_sessions\".\"short_url\" is null or (length(\"checkout_sessions\".\"short_url\") between 1 and 5000 and \"checkout_sessions\".\"short_url\" like 'https://%')"
         }
       }
     },
@@ -7194,12 +7199,6 @@
         }
       },
       "indexes": {
-        "review_items_open": {
-          "name": "review_items_open",
-          "columns": ["created_at", "id"],
-          "isUnique": false,
-          "where": "\"review_items\".\"status\" = 'open'"
-        },
         "review_items_event_kind": {
           "name": "review_items_event_kind",
           "columns": ["webhook_event_id", "kind"],
@@ -7214,6 +7213,16 @@
         "review_items_client": {
           "name": "review_items_client",
           "columns": ["client_id"],
+          "isUnique": false
+        },
+        "review_items_status": {
+          "name": "review_items_status",
+          "columns": ["status", "created_at", "id"],
+          "isUnique": false
+        },
+        "review_items_document": {
+          "name": "review_items_document",
+          "columns": ["document_id"],
           "isUnique": false
         }
       },
@@ -7379,7 +7388,7 @@
       "checkConstraints": {
         "webhook_events_event_id": {
           "name": "webhook_events_event_id",
-          "value": "length(\"webhook_events\".\"event_id\") between 1 and 64"
+          "value": "length(\"webhook_events\".\"event_id\") between 1 and 255"
         },
         "webhook_events_event_type": {
           "name": "webhook_events_event_type",

@@ -63,7 +63,7 @@ export function revokeContactAccess(
 /**
  * Erase or anonymise: the contact's sessions and sign-in links (used or not) are deleted outright, and (M4.5) so are their offer links (each
  * holds the person's address); the `document_sends` rows they were sent as keep existing without a contact or an address (the trigger allows
- * only that change), so the history "this offer was sent to N people" stays true.
+ * only that change), so the history "this offer was sent to N people" stays true. M6.2: their checkouts keep existing without a contact or a token.
  */
 export function deleteContactAccess(db: D1Database, contactId: string, g: GuardSql): D1PreparedStatement[] {
   return [
@@ -74,6 +74,13 @@ export function deleteContactAccess(db: D1Database, contactId: string, g: GuardS
       .prepare(`DELETE FROM magic_link_tokens WHERE contact_id = ?1 AND ${g.sql(2)}`)
       .bind(contactId, ...g.params),
     db.prepare(`DELETE FROM offer_links WHERE contact_id = ?1 AND ${g.sql(2)}`).bind(contactId, ...g.params),
+    // M6.2 (early check 1, finding 1): their payment links' checkouts keep the document, amount, status and payment but lose the contact and the token (before the
+    // token rows go: the checkout's foreign key would refuse the delete). The trigger `checkout_sessions_fixed` allows only this move.
+    db
+      .prepare(
+        `UPDATE checkout_sessions SET contact_id = NULL, doc_token_id = NULL WHERE contact_id = ?1 AND ${g.sql(2)}`,
+      )
+      .bind(contactId, ...g.params),
     // M5.4: and their invoice links (each holds the person's address).
     db
       .prepare(`DELETE FROM doc_access_tokens WHERE contact_id = ?1 AND ${g.sql(2)}`)

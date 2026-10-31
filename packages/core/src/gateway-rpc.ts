@@ -7,6 +7,14 @@
 /** An id that may cross an RPC boundary: a string of 1 to 64 characters. */
 export const isRpcId = (v: unknown): v is string => typeof v === "string" && v.length >= 1 && v.length <= 64;
 
+/**
+ * The gateways the entrypoints know (lead, 2026-11-01, M6.3/M6.4 briefs session: generic names, so M6.3 and M6.4 extend instead of copying). M6.2 implements
+ * Razorpay only; Stripe and PayPal join this list in their own milestones.
+ */
+export const RPC_GATEWAYS = ["razorpay"] as const;
+export type RpcGateway = (typeof RPC_GATEWAYS)[number];
+export const isRpcGateway = (v: unknown): v is RpcGateway => (RPC_GATEWAYS as readonly unknown[]).includes(v);
+
 // ---- GatewayEvents (jobs → finance) -------------------------------------------------------------------------------------------------------------------
 
 export const PROCESS_EVENT_RESULTS = ["processed", "ignored", "needs_review", "duplicate", "retry"] as const;
@@ -26,7 +34,8 @@ export type IssueAdvanceResult = {
 };
 
 export interface GatewayEventsApi {
-  processRazorpayEvent(args: { eventId: string }): Promise<ProcessEventResult>;
+  /** One stored, verified webhook event (`webhook_events.id`), dispatched by the row's own `provider` (Razorpay only in M6.2). */
+  processEvent(args: { eventId: string }): Promise<ProcessEventResult>;
   issueGatewayAdvance(args: { paymentId: string }): Promise<IssueAdvanceResult>;
 }
 
@@ -55,6 +64,8 @@ export const PAY_RETURN_TO = ["invoice", "pay_return"] as const;
 export type PayReturnTo = (typeof PAY_RETURN_TO)[number];
 
 export type CreateLinkArgs = {
+  /** The gateway to make the link with (Razorpay only in M6.2). */
+  readonly provider: RpcGateway;
   readonly clientId: string;
   /** The signed-in contact (portal session), or null for an emailed document link. */
   readonly contactId: string | null;
@@ -131,12 +142,13 @@ export function isRefreshResult(v: unknown): v is RefreshResult {
   return isObj(v) && (REFRESH_RESULTS as readonly unknown[]).includes(v.result);
 }
 
-/** The arguments of `createLink` are well formed (ids, a positive safe amount, exactly one of contact or token, a known return page). */
+/** The arguments of `createLink` are well formed (a known gateway, ids, a positive safe amount, exactly one of contact or token, a known return page). */
 export function isCreateLinkArgs(v: unknown): v is CreateLinkArgs {
   if (!isObj(v)) return false;
   const contact = v.contactId === null ? null : isRpcId(v.contactId) ? v.contactId : undefined;
   const token = v.tokenHash === null ? null : isRpcId(v.tokenHash) ? v.tokenHash : undefined;
   return (
+    isRpcGateway(v.provider) &&
     isRpcId(v.clientId) &&
     isRpcId(v.documentId) &&
     contact !== undefined &&

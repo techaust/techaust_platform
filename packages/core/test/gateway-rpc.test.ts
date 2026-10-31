@@ -29,7 +29,7 @@ describe("isRpcId", () => {
 });
 
 describe("GatewayEvents answers", () => {
-  it("processRazorpayEvent: a known result, and `next` only as a gateway.advance with an id", () => {
+  it("processEvent: a known result, and `next` only as a gateway.advance with an id", () => {
     for (const result of ["processed", "ignored", "needs_review", "duplicate", "retry"])
       expect(isProcessEventResult({ result })).toBe(true);
     expect(
@@ -64,6 +64,7 @@ describe("GatewayEvents answers", () => {
 
 describe("PortalPayments arguments and answers", () => {
   const args = {
+    provider: "razorpay",
     clientId: "c1",
     contactId: "k1",
     tokenHash: null,
@@ -85,6 +86,8 @@ describe("PortalPayments arguments and answers", () => {
       { ...args, returnTo: "https://evil.test" },
       { ...args, documentId: "" },
       { ...args, contactId: 5 },
+      { ...args, provider: "stripe" },
+      { ...args, provider: undefined },
     ])
       expect(isCreateLinkArgs(bad), JSON.stringify(bad)).toBe(false);
     expect(isCreateLinkArgs(null)).toBe(false);

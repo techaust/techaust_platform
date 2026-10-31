@@ -17,8 +17,8 @@ import {
   type GatewayPaymentArgs,
   gatewayDeadLetterStatements,
   OPEN_CHECKOUT_SQL,
-  OPEN_REVIEW_ITEMS_SQL,
   onlinePayableSql,
+  REVIEW_ITEMS_SQL,
   recordGatewayPaymentStatements,
   reviewItemStatement,
 } from "../src/gateway.ts";
@@ -358,6 +358,15 @@ describe("checkoutCreateStatement: row first, every guard in its WHERE [ADM-PAY-
       const d = await mkIssued(clientId, o);
       expect((await create({ documentId: d, clientId, contactId })).meta.changes, JSON.stringify(o)).toBe(0);
     }
+    // Early check 1, finding 4: a floor of 0 never lets 1 to 99 paise through.
+    const small = await mkIssued(clientId);
+    expect(
+      (await create({ documentId: small, clientId, contactId, amountMinor: 99, floorMinor: 0 })).meta.changes,
+    ).toBe(0);
+    expect(
+      (await create({ documentId: small, clientId, contactId, amountMinor: 100, floorMinor: 0 })).meta
+        .changes,
+    ).toBe(1);
     const overseas = await mkClient({ country: "AE", gst_status: "overseas", state_code: null });
     const od = await mkIssued(overseas, { type: "proforma" });
     expect(
@@ -597,7 +606,7 @@ describe("recordGatewayPaymentStatements [ADM-PAY-02, -06, -07, JOB-HOOK-02, L5,
     expect(
       (await first<{ status: string }>("SELECT status FROM webhook_events WHERE id = ?", w.eventId))?.status,
     ).toBe("needs_review");
-    const open = await all<{ kind: string }>(OPEN_REVIEW_ITEMS_SQL, -1, "");
+    const open = await all<{ kind: string }>(REVIEW_ITEMS_SQL, -1, "", "open");
     expect(open.map((r) => r.kind)).toContain("amount_mismatch");
   });
 
@@ -629,6 +638,28 @@ describe("recordGatewayPaymentStatements [ADM-PAY-02, -06, -07, JOB-HOOK-02, L5,
     ).toBe(true);
     for (const w of [a1, a2])
       expect(await first("SELECT id FROM payments WHERE checkout_id = ?", w.checkoutId)).toBeNull();
+  });
+
+  it("refuses a confirmed payment with no allocation, in code and in SQL (early check 1, finding 7)", async () => {
+    const w = await invoiceWorld();
+    expect(() => recordGatewayPaymentStatements(db(), { ...payArgs(w), allocate: null })).toThrow(/allocate/);
+  });
+
+  it("returns its own guard so a caller can append after the recompute (early check 1, finding 9)", async () => {
+    const w = await invoiceWorld();
+    const a = payArgs(w);
+    const auditId = uuidv7();
+    const s = recordGatewayPaymentStatements(db(), a, guardSql({ auditId }));
+    const audit = db()
+      .prepare(
+        "INSERT INTO audit_log (id, actor_type, actor_id, role, action, entity_type, entity_id) SELECT ?1, 'webhook', NULL, NULL, 'payment.gateway', 'payment', ?2 WHERE changes() > 0",
+      )
+      .bind(auditId, a.paymentId);
+    const probe = db()
+      .prepare(`SELECT 1 AS hit WHERE ${s.guard.sql(1)}`)
+      .bind(...s.guard.params);
+    const res = await db().batch([s.main, audit, ...s.side, probe, ...s.last]);
+    expect(res[res.length - 1 - s.last.length]?.results).toEqual([{ hit: 1 }]);
   });
 
   it("the batch stays small (D1 Free: 50 statements; the RPC budget 45)", () => {
@@ -746,6 +777,8 @@ describe("onlinePayableSql is the twin of core payableOnline", () => {
     [{ type: "proforma", status: "converted", balance: 59_000 }, {}],
     [{ type: "proforma" }, {}],
     [{ type: "proforma", balance: 118_050 }, {}],
+    // Early check 1, finding 5: a frozen proforma neither issued nor converted is not payable.
+    [{ type: "proforma", status: "paid" }, {}],
     [{ status: "void" }, {}],
     [{ status: "paid", balance: 0 }, {}],
     [{ balance: 99 }, {}],
@@ -992,7 +1025,7 @@ async function gatewayAdvanceArgs(
       ],
     },
     ...over,
-  };
+  } as AdvanceIssueArgs;
 }
 
 const runAdvance = (a: AdvanceIssueArgs) => {
