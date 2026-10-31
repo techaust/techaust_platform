@@ -325,11 +325,27 @@ describe("accessibility statement version (07-A §8)", () => {
       { version: "0.2", date: "2026-10-22", note: "First published version." },
     ]);
     // 07-A v0.3 (2026-10-28) moved the privacy notice and the refund policy to 0.2; T6 (07-ZE, 2026-10-31) the website terms; the rest stay
-    // at 0.1 (Delivery 0.2 waits for T11).
+    // at 0.1, but Delivery, which T11 (07-ZE line 16) moved to 0.2 with the deed.
     expect(legal.privacy.version).toBe("0.2");
     expect(legal["refund-policy"].version).toBe("0.2");
     expect(legal.terms.version).toBe("0.2");
-    expect(legal["delivery-policy"].version).toBe("0.1");
+    expect(legal["delivery-policy"].version).toBe("0.2");
+  });
+});
+
+describe("delivery policy 0.2 (07-ZE line 16 and 'Versions'; T11) [WEB-LEGAL]", () => {
+  it("item 5 is line 16 word for word, and the version line and Changes entry are 07-ZE's", () => {
+    const items = (legalPages["delivery-policy"]?.blocks ?? []).flatMap((b) =>
+      "ol" in b ? b.ol.map((i) => i.text) : [],
+    );
+    expect(items[4]).toBe(
+      "**Access and ownership:** on full payment, we assign the copyright in the work to you as your proposal or estimate states, and sign a deed of assignment.",
+    );
+    expect(legal["delivery-policy"].changes.at(-1)).toEqual({
+      version: "0.2",
+      date: "2026-11-01",
+      note: "On full payment we sign a deed assigning the copyright to you.",
+    });
   });
 });
 

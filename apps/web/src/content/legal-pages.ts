@@ -596,7 +596,8 @@ const delivery: LegalDoc = {
           text: "**Acceptance:** each milestone is reviewed by you, as described in our [Refunds and cancellations](/refund-policy) policy.",
         },
         {
-          text: "**Access and ownership:** on full payment, ownership of the deliverables passes to you as stated in your proposal.",
+          // T11, 07-ZE line 16 (owner-approved 2026-10-31), published with the deed (Delivery 0.2). Researched 2026-10-31, Copyright Act s.19(1) (08-C RB-38(a)).
+          text: "**Access and ownership:** on full payment, we assign the copyright in the work to you as your proposal or estimate states, and sign a deed of assignment.",
         },
         { text: `**Questions:** ${CONTACT}.` },
       ],
