@@ -164,7 +164,7 @@ function Approvals() {
   const queue = probing ? (
     <div aria-busy="true" />
   ) : kind === "payment" ? (
-    <PaymentApprovals owner={owner} state={state} />
+    <PaymentApprovals key={state ?? "all"} owner={owner} state={state} />
   ) : kind === "issue" ? (
     <IssueQueue
       owner={owner}

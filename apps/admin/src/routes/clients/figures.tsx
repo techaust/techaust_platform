@@ -12,7 +12,7 @@ import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { allowed } from "../../lib/access.ts";
 import { Y } from "../../lib/copy-y.ts";
-import { PAY_COPY } from "../../lib/payments.ts";
+import { PAY_COPY, PAY_UI } from "../../lib/payments.ts";
 import { moneyText } from "../../lib/projects.ts";
 import { FINANCE_COPY } from "../../lib/reports.ts";
 import { useUser } from "../../session.tsx";
@@ -178,7 +178,7 @@ export function ClientFiguresPanel(props: {
               className="btn btn--secondary acct__credit-btn"
               onClick={() => setUsing(true)}
             >
-              {PAY_COPY.useCredit}
+              {PAY_UI.useCreditShort}
             </button>
           )}
           {using && (

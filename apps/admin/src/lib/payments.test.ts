@@ -9,7 +9,10 @@ import { voidBlockedText, voidErrorText, withdrawErrorText } from "./invoices.ts
 import {
   autoFill,
   earlierMonthLine,
+  earlierMonthOf,
   fyChoices,
+  keptAsCreditLine,
+  leftoverLine,
   monthText,
   openDocsOf,
   overpaymentLine,
@@ -92,6 +95,21 @@ describe("07-ZH lines 23 onwards carry the mark until approved", () => {
   it("the audit log reads the eight actions from line 26", () => {
     expect(Object.keys(PAY_AUDIT)).toHaveLength(8);
     for (const k of Object.keys(PAY_AUDIT)) expect(auditSource).toContain(`"${k}": PAY_AUDIT["${k}"]`);
+  });
+});
+
+describe("07-ZH lines 47–49 (visual review fixes, staff-only drafts)", () => {
+  it("are the drafted words, marked like every line from 23", () => {
+    expect(keptAsCreditLine("₹2,000.00", "Riverside Traders")).toBe(
+      mark("₹2,000.00 is kept as Riverside Traders's credit."),
+    );
+    expect([PAY_UI.attachLetter, PAY_UI.letterSaved, PAY_UI.useCreditShort]).toEqual([
+      mark("Attach the bank's letter"),
+      mark("Letter attached."),
+      mark("Use credit"),
+    ]);
+    // line 10's button words stay where an invoice is in context
+    expect(PAY_COPY.useCredit).toBe("Use credit on this invoice");
   });
 });
 
@@ -197,6 +215,48 @@ describe("the allocation table", () => {
       expect(r.errors.b).toBe(PAY_UI.allocMore);
       expect(r.errors.a).toBeTruthy();
     }
+  });
+  it("a row whose document isn't listed (the previous client's) is skipped, never sent", () => {
+    const r = readAllocations(
+      [
+        { documentId: "gone", text: "999999" },
+        { documentId: "b", text: "500" },
+      ],
+      docs,
+      1_000_00,
+      "INR",
+    );
+    expect(r).toEqual({
+      ok: true,
+      allocations: [{ documentId: "b", amountMinor: 500_00 }],
+      leftMinor: 500_00,
+      over: false,
+    });
+  });
+  it("line 9 only for a real overpayment; a deliberate split reads line 47 (visual review finding 2)", () => {
+    // the listed invoices owe 52,200 together
+    expect(leftoverLine(8_800_00, 60_000_00, docs, "INR", "Riverside Traders")).toEqual({
+      kind: "over",
+      text: overpaymentLine("₹8,800.00", "Riverside Traders"),
+    });
+    // 10,000 paid, 8,000 put on an invoice that owes more: kept as credit, never "more than this invoice owes"
+    expect(leftoverLine(2_000_00, 10_000_00, docs, "INR", "Riverside Traders")).toEqual({
+      kind: "kept",
+      text: keptAsCreditLine("₹2,000.00", "Riverside Traders"),
+    });
+    // exactly what they owe together, one left empty on purpose: still a split
+    expect(leftoverLine(1_000_00, 52_200_00, docs, "INR", "R")?.kind).toBe("kept");
+    // nothing left, no amount yet, or no invoice listed (line 31 already says it): no line
+    expect(leftoverLine(0, 10_000_00, docs, "INR", "R")).toBeNull();
+    expect(leftoverLine(null, null, docs, "INR", "R")).toBeNull();
+    expect(leftoverLine(5_00, 5_00, [], "INR", "R")).toBeNull();
+  });
+  it("line 10's warning before a submit: money from a month before an invoice's issue month (RA-17, core's rule)", () => {
+    expect(earlierMonthOf("2026-09-30", ["2026-10-01"])).toBe("2026-09");
+    expect(earlierMonthOf("2026-10-01", ["2026-10-31", "2026-09-02"])).toBeNull();
+    expect(earlierMonthOf("2026-09-15", [null, undefined, "2026-09-01", "2026-11-03"])).toBe("2026-09");
+    expect(earlierMonthOf(undefined, ["2026-10-01"])).toBeNull();
+    expect(earlierMonthOf("2026-09-15", [])).toBeNull();
   });
   it("more put on invoices than paid is `over`", () => {
     const r = readAllocations([{ documentId: "a", text: "500" }], docs, 100_00, "INR");

@@ -9,13 +9,14 @@ import type { PaymentStatus } from "../../api.ts";
 import { RequestError, stepUpActive } from "../../api.ts";
 import { StatusPill } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
-import { Upload, X } from "../../components/icons.tsx";
+import { Alert, Upload, X } from "../../components/icons.tsx";
 import { CodeField, FieldError } from "../../components/ui.tsx";
 import { dayText } from "../../lib/documents.ts";
 import { typeLabel } from "../../lib/invoices.ts";
 import {
   type AllocRow,
   amountText,
+  earlierMonthLine,
   type OpenDoc,
   PAY_COPY,
   PAY_UI,
@@ -57,6 +58,20 @@ export function PaymentPill({ status }: { status: PaymentStatus }) {
     <StatusPill tone={p.tone} icon={p.icon} outline={p.outline}>
       {STATUS_LABELS[status]}
     </StatusPill>
+  );
+}
+
+/**
+ * Line 10's RA-17 warning, shown before the submit and kept while the dialog is open (visual review finding 6): the reference warning's box (a warning rule
+ * and icon, never colour alone), said politely when it appears. Never a block; the server answers the same warning after the write.
+ */
+export function EarlierMonthWarning({ month }: { month: string | null }) {
+  if (!month) return null;
+  return (
+    <div className="pay-seen pay-warn" role="status">
+      <Alert size={20} />
+      <p>{earlierMonthLine(month)}</p>
+    </div>
   );
 }
 

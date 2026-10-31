@@ -5,7 +5,7 @@
 // shows only the entries waiting for it and "Confirm by issuing the tax invoice" (line 12, L5), which opens the advance dialog with the payment.
 // Figures come from GET /invoices/:id/payments and are formatted by core; nothing is added up here.
 import type { Role } from "@techaust/core/permissions";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { Link } from "react-router";
 import {
   type InvoicePaymentsPanel,
@@ -30,6 +30,7 @@ import {
   amountText,
   creditHeldLine,
   earlierMonthLine,
+  earlierMonthOf,
   MODE_LABELS,
   moveExcessLine,
   PAY_COPY,
@@ -41,11 +42,19 @@ import {
 } from "../../lib/payments.ts";
 import { bpToPercent, moneyFrom } from "../../lib/settings-form.ts";
 import { withCode } from "../../lib/step-up.ts";
-import { day, FilePick, PaymentPill, useCodeSlot, useDialogState } from "./parts.tsx";
+import { day, EarlierMonthWarning, FilePick, PaymentPill, useCodeSlot, useDialogState } from "./parts.tsx";
 import { RecordPaymentDialog } from "./record-dialog.tsx";
 
 type Panel = InvoicePaymentsPanel;
-type Dialog = "record" | "tds" | "credit" | "excess" | "extend" | { certificate: string } | null;
+type Dialog =
+  | "record"
+  | "tds"
+  | "credit"
+  | "excess"
+  | "extend"
+  | { certificate: string }
+  | { letter: string }
+  | null;
 
 const PAYABLE = ["tax_invoice", "export_invoice", "debit_note"];
 /** 07-V §5's title (approved), kept here so the panel doesn't load the reports' words. */
@@ -134,6 +143,15 @@ function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onCha
     props.onChanged();
   };
   const cur = p.currency;
+  // Visual review (low): one `from` object per invoice and balance, so the dialog's open invoices aren't read again on every render.
+  const from = useMemo(
+    () => ({ id: v.id, number: v.number, type: v.type, balanceMinor: p.balanceMinor, currency: v.currency }),
+    [v.id, v.number, v.type, v.currency, p.balanceMinor],
+  );
+  const client = useMemo(
+    () => ({ id: v.client.id, name: v.client.name, currency: v.currency }),
+    [v.client.id, v.client.name, v.currency],
+  );
   return (
     <section className="lead-panel pay-panel" aria-labelledby="pay-h">
       <div className="lead-panel__head">
@@ -218,6 +236,7 @@ function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onCha
           realisation={p.realisation}
           canExtend={allowed(role, "realisation.extend") && live}
           onExtend={() => setDialog("extend")}
+          onLetter={(extensionId) => setDialog({ letter: extensionId })}
         />
       )}
 
@@ -226,14 +245,8 @@ function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onCha
           open
           kind={dialog === "tds" ? "tds" : "payment"}
           role={role}
-          client={{ id: v.client.id, name: v.client.name, currency: v.currency }}
-          from={{
-            id: v.id,
-            number: v.number,
-            type: v.type,
-            balanceMinor: p.balanceMinor,
-            currency: v.currency,
-          }}
+          client={client}
+          from={from}
           onClose={() => setDialog(null)}
           onDone={() => {
             setDialog(null);
@@ -244,6 +257,7 @@ function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onCha
       {dialog === "credit" && (
         <CreditDialog
           clientId={v.client.id}
+          issueDate={v.issueDate}
           panel={p}
           credit={credit}
           onClose={() => setDialog(null)}
@@ -261,7 +275,15 @@ function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onCha
           onDone={(t) => done(t)}
         />
       )}
-      {dialog && typeof dialog === "object" && (
+      {dialog && typeof dialog === "object" && "letter" in dialog && (
+        <LetterDialog
+          documentId={v.id}
+          extensionId={dialog.letter}
+          onClose={() => setDialog(null)}
+          onDone={() => done(PAY_UI.letterSaved)}
+        />
+      )}
+      {dialog && typeof dialog === "object" && "certificate" in dialog && (
         <CertificateDialog
           paymentId={dialog.certificate}
           onClose={() => setDialog(null)}
@@ -301,7 +323,9 @@ function Entries(props: { panel: Panel; canCert: boolean; onCertificate: (paymen
         {rows.map((r) => (
           <tr key={r.paymentId}>
             <th scope="row" className="tnum">
-              <Link to={paymentHref(r.paymentId)}>{day(r.receivedOn)}</Link>
+              <Link to={paymentHref(r.paymentId)} className="pay-row__link">
+                {day(r.receivedOn)}
+              </Link>
             </th>
             <td data-label={PAY_COPY.mode}>
               {r.kind === "tds" ? (
@@ -381,7 +405,7 @@ function Waiting({ panel, role }: { panel: Panel; role: Role }) {
         {panel.pending.map((w) => (
           <li key={w.paymentId} className="pay-waiting__row">
             <span className="pay-waiting__what">
-              <Link to={paymentHref(w.paymentId)} className="tnum">
+              <Link to={paymentHref(w.paymentId)} className="tnum pay-row__link">
                 {day(w.receivedOn)}
               </Link>
               <span className="pay-lines__meta">
@@ -422,7 +446,7 @@ function ProformaPayments(props: {
         {p.pending.map((w) => (
           <li key={w.paymentId} className="pay-waiting__row pay-waiting__row--proforma">
             <span className="pay-waiting__what">
-              <Link to={paymentHref(w.paymentId)} className="tnum">
+              <Link to={paymentHref(w.paymentId)} className="tnum pay-row__link">
                 {day(w.receivedOn)}
               </Link>
               <span className="pay-lines__meta">
@@ -452,6 +476,7 @@ function Realisation(props: {
   realisation: NonNullable<Panel["realisation"]>;
   canExtend: boolean;
   onExtend: () => void;
+  onLetter: (extensionId: string) => void;
 }) {
   const r = props.realisation;
   return (
@@ -483,7 +508,20 @@ function Realisation(props: {
             {r.extensions.map((x) => (
               <li key={x.id}>
                 <span>{PAY_UI.extensionRow(day(x.extendedTo), x.bankRef)}</span>
-                <span className="pay-lines__meta">{x.hasLetter ? PAY_COPY.bankLetter : PAY_UI.noLetter}</span>
+                {x.hasLetter || !props.canExtend ? (
+                  <span className="pay-lines__meta">
+                    {x.hasLetter ? PAY_COPY.bankLetter : PAY_UI.noLetter}
+                  </span>
+                ) : (
+                  // Visual review finding 9: a letter that came after the extension was saved is attached here (line 48).
+                  <span className="pay-real__letter">
+                    <span className="pay-lines__meta">{PAY_UI.noLetter}</span>
+                    <button type="button" className="btn btn--text" onClick={() => props.onLetter(x.id)}>
+                      {PAY_UI.attachLetter}
+                      <span className="visually-hidden">{` ${PAY_UI.extensionRow(day(x.extendedTo), x.bankRef)}`}</span>
+                    </button>
+                  </span>
+                )}
               </li>
             ))}
           </ul>
@@ -590,6 +628,7 @@ function AmountDialog(props: {
 /** "Use credit on this invoice" (line 10; Owner, fresh code): first in, first out from the client's credit; the RA-17 warning comes back with the result. */
 function CreditDialog(props: {
   clientId: string;
+  issueDate: string | null;
   panel: Panel;
   credit: number;
   onClose: () => void;
@@ -597,10 +636,15 @@ function CreditDialog(props: {
 }) {
   const p = props.panel;
   const most = Math.min(props.credit, p.balanceMinor);
+  // Visual review finding 6: first in, first out, so the oldest source is always used first; its month against the invoice's warns before the submit.
+  const sources = useLoad(() => paymentsApi.clientCredit(props.clientId), props.clientId);
+  const oldest = sources.state === "ready" ? sources.data.sources[0]?.receivedOn : undefined;
+  const month = earlierMonthOf(oldest, [props.issueDate]);
   return (
     <AmountDialog
       title={PAY_COPY.useCredit}
       lede={creditHeldLine(amountText(props.credit, p.currency))}
+      extra={<EarlierMonthWarning month={month} />}
       label={PAY_UI.amountToUse}
       initialMinor={most}
       maxMinor={most}
@@ -744,6 +788,78 @@ function ExtendDialog(props: {
           </button>
           <button type="submit" className="btn btn--primary" disabled={busy} aria-busy={busy || undefined}>
             {busy ? "Working…" : PAY_COPY.extend}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** "Attach the bank's letter" (line 48; Owner): the letter of an extension saved without one, through the extension's upload route (set once). */
+function LetterDialog(props: {
+  documentId: string;
+  extensionId: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const refusal = useRefusalFocus();
+  async function submit() {
+    if (!file) {
+      setError(PAY_UI.proofFileHint);
+      document.getElementById("pay-letter-file")?.focus();
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    setFailure(null);
+    try {
+      await uploadPaymentDoc(
+        { letterOf: { documentId: props.documentId, extensionId: props.extensionId } },
+        file,
+        await sha256Hex(file),
+        () => {},
+      );
+      props.onDone();
+    } catch (err) {
+      setFailure(payErrorText(err));
+      refusal.show();
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Modal open title={PAY_UI.attachLetter} onClose={props.onClose} busy={busy}>
+      <form
+        noValidate
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        <div className="dialog__body pay-form">
+          <FilePick
+            id="pay-letter-file"
+            label={PAY_COPY.bankLetter}
+            file={file}
+            onFile={setFile}
+            error={error}
+          />
+        </div>
+        {failure && (
+          <Notice tone="error" ref={refusal.ref}>
+            {failure}
+          </Notice>
+        )}
+        <div className="dialog__actions">
+          <button type="button" className="btn btn--secondary" onClick={props.onClose} disabled={busy}>
+            {INV_COPY.cancel}
+          </button>
+          <button type="submit" className="btn btn--primary" disabled={busy} aria-busy={busy || undefined}>
+            {busy ? "Working…" : PAY_UI.attachLetter}
           </button>
         </div>
       </form>

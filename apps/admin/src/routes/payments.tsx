@@ -33,9 +33,10 @@ import {
   type AllocRow,
   amountText,
   earlierMonthLine,
+  earlierMonthOf,
+  leftoverLine,
   MODE_LABELS,
   type OpenDoc,
-  overpaymentLine,
   PAY_COPY,
   PAY_ERRORS,
   PAY_UI,
@@ -51,6 +52,7 @@ import { CertificateDialog, paymentHref } from "./payments/panel.tsx";
 import {
   AllocationTable,
   day,
+  EarlierMonthWarning,
   FilePick,
   PaymentPill,
   useCodeSlot,
@@ -84,6 +86,8 @@ function Payments({ role }: { role: Role }) {
   const from = params.get("from") ?? "";
   const to = params.get("to") ?? "";
   const [recording, setRecording] = useDialogState<"payment" | "tds">("main");
+  // Visual review finding 4: a payment recorded here reloads the list in place (the first page again, quietly).
+  const [refresh, setRefresh] = useState(0);
   const waiting = useLoad(
     () => (owner ? paymentsApi.list({ status: "pending_verification" }) : Promise.resolve(null)),
     `${owner}`,
@@ -118,6 +122,8 @@ function Payments({ role }: { role: Role }) {
       filters={tab === "all"}
       onFilter={set}
       linked={linked}
+      refresh={refresh}
+      linkSearch={params.toString()}
       onLinkedDone={() =>
         linked && navigate({ pathname: "/payments", search: params.toString() }, { replace: true })
       }
@@ -147,7 +153,10 @@ function Payments({ role }: { role: Role }) {
             { key: "all", label: PAY_UI.allPayments },
           ]}
           selected={tab}
-          onSelect={(k) => set({ tab: k === "all" ? "all" : null, status: null })}
+          // Visual review finding 3: the other tab's filters never carry over (the check tab has none; its badge and its list must agree).
+          onSelect={(k) =>
+            set({ tab: k === "all" ? "all" : null, status: null, client: null, from: null, to: null })
+          }
         >
           {list}
         </Tabs>
@@ -164,7 +173,7 @@ function Payments({ role }: { role: Role }) {
           onDone={() => {
             setRecording(null);
             waiting.reload(true);
-            set({ _: String(Date.now()) });
+            setRefresh((n) => n + 1);
           }}
         />
       )}
@@ -182,6 +191,10 @@ function PaymentList(props: {
   filters: boolean;
   onFilter: (patch: Record<string, string | null>) => void;
   linked: string | undefined;
+  /** Bumped after a payment is recorded on this page: the list reloads its first page. */
+  refresh: number;
+  /** The page's filters, carried into an entry's link so closing it comes back to the same tab and filters (visual review, low). */
+  linkSearch: string;
   onLinkedDone: () => void;
   onChanged: () => void;
 }) {
@@ -206,6 +219,16 @@ function PaymentList(props: {
       setOpen({ id: props.linked });
     }
   }, [props.linked, setOpen]);
+  const reload = list.reload;
+  const firstRefresh = useRef(props.refresh);
+  useEffect(() => {
+    if (props.refresh === firstRefresh.current) return;
+    firstRefresh.current = props.refresh;
+    setMore([]);
+    setAfter(null);
+    reload(true);
+  }, [props.refresh, reload]);
+  const entryHref = (id: string) => `${paymentHref(id)}${props.linkSearch ? `?${props.linkSearch}` : ""}`;
   const rows = [...(list.data?.payments ?? []), ...more];
   const next = more.length ? after : (list.data?.next ?? null);
   const filtered =
@@ -217,7 +240,7 @@ function PaymentList(props: {
       header: PAY_COPY.dateReceived,
       card: "title",
       cell: (r) => (
-        <Link to={paymentHref(r.id)} className="tnum pay-row__link">
+        <Link to={entryHref(r.id)} className="tnum pay-row__link">
           {day(r.receivedOn)}
         </Link>
       ),
@@ -780,6 +803,7 @@ function ConfirmStep(props: { payment: PaymentView; onBack: () => void; onDone: 
             currency: d.currency,
             balanceMinor: d.balanceMinor,
             dueDate: d.dueDate,
+            issueDate: d.issueDate,
           }));
         if (live) setDocs(open);
       })
@@ -789,23 +813,35 @@ function ConfirmStep(props: { payment: PaymentView; onBack: () => void; onDone: 
     };
   }, [p.clientId, p.requestedAllocations]);
   const plan = docs ? readAllocations(rows, docs, p.amountMinor, cur) : null;
-  const left = plan?.ok && plan.leftMinor !== null && plan.leftMinor > 0 ? plan.leftMinor : null;
+  const leftover =
+    docs && plan?.ok ? leftoverLine(plan.leftMinor, p.amountMinor, docs, cur, p.clientName) : null;
+  // Line 10's warning before the confirm (visual review finding 6): an invoice it goes on was issued in a later month than the money arrived.
+  const month =
+    docs && plan?.ok
+      ? earlierMonthOf(
+          p.receivedOn,
+          plan.allocations.map((a) => docs.find((d) => d.id === a.documentId)?.issueDate),
+        )
+      : null;
 
   async function submit() {
     if (!plan) return;
+    // Visual review finding 5: every attempt starts clean; the rows first, then the code, then the sum.
+    setFailure(null);
     if (!plan.ok) {
       setErrors(plan.errors);
+      const firstRow = Object.keys(plan.errors)[0];
+      if (firstRow) document.getElementById(`pay-confirm-${firstRow}`)?.focus();
       return;
     }
+    setErrors({});
+    if (!code.ready()) return;
     if (plan.over) {
       setFailure(PAY_ERRORS.exceeds_payment);
       refusal.show();
       return;
     }
-    setErrors({});
-    if (!code.ready()) return;
     setBusy(true);
-    setFailure(null);
     try {
       const r = await withCode(code.code, () =>
         paymentsApi.verify(p.id, {
@@ -873,13 +909,14 @@ function ConfirmStep(props: { payment: PaymentView; onBack: () => void; onDone: 
             symbol={cur === "INR" ? "₹" : "$"}
             loading={docs === null}
           />
-          {left !== null && (
-            <p className="pay-line" role="status">
+          {leftover && (
+            <p className="pay-line" role="status" data-kind={leftover.kind}>
               <FileText size={16} />
-              <span>{overpaymentLine(amountText(left, cur), p.clientName)}</span>
+              <span>{leftover.text}</span>
             </p>
           )}
         </fieldset>
+        <EarlierMonthWarning month={month} />
       </div>
       {code.field}
       {failure && (

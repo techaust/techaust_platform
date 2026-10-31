@@ -7,6 +7,7 @@
 // empty states and dialogs); each one shows the "[Placeholder]" mark until it is approved, then `APPROVED_07ZH_NEW` turns true and the marks go (the
 // 07-X, 07-Y and 07-Z pattern). A 07-S, 07-R or 07-V line that already says the thing is reused and says where it comes from.
 // Money is formatted and added only through core; nothing here adds up an amount by hand. Pure, so the words and rules are tested without a browser.
+import { receiptMonthWarning } from "@techaust/core/ledger";
 import { type Currency, compare, formatMoney, money, subtract, sum } from "@techaust/core/money";
 import type { PaymentMode, PaymentStatus } from "../api.ts";
 import { RequestError } from "../api.ts";
@@ -98,6 +99,9 @@ export const VOID_PAYMENT_PENDING =
 /** Line 9, the overpayment line. */
 export const overpaymentLine = (amount: string, client: string) =>
   `${amount} is more than this invoice owes. It is kept as ${client}'s credit.`;
+/** Line 47 (visual review finding 2): what is left of a payment deliberately split short of what the listed invoices owe (line 9 is a real overpayment). */
+export const keptAsCreditLine = (amount: string, client: string) =>
+  ZH(`${amount} is kept as ${client}'s credit.`);
 /** Line 10. */
 export const creditHeldLine = (amount: string) => `Credit held: ${amount}`;
 /** Line 10's warning (RA-17, L13): `month` is "YYYY-MM", said as "October 2026". */
@@ -317,6 +321,11 @@ export const PAY_UI = {
   recordAgain: ZH("Record it again"),
   // 34 the client search on Payments
   searchClients: ZH("Search clients"),
+  // 48 (visual review finding 9) an extension saved without the bank's letter: the action, its dialog's title and button, and its toast
+  attachLetter: ZH("Attach the bank's letter"),
+  letterSaved: ZH("Letter attached."),
+  // 49 (visual review finding 10) the client Overview's button and dialog, where no invoice is in context yet (line 10's words stay on an invoice)
+  useCreditShort: ZH("Use credit"),
 } as const;
 
 /** Line 44: the register's CSV header (one file; TDS rows carry their certificate columns, for Form 26AS and AIS matching). */
@@ -378,6 +387,8 @@ export type OpenDoc = {
   currency: Currency;
   balanceMinor: number;
   dueDate: string | null;
+  /** The issue day, for line 10's warning before a submit (RA-17); absent when the screen doesn't know it. */
+  issueDate?: string | null;
 };
 
 export type AllocRow = { documentId: string; text: string };
@@ -400,11 +411,13 @@ export function readAllocations(
   const allocations: { documentId: string; amountMinor: number }[] = [];
   for (const r of rows) {
     if (r.text.trim() === "") continue;
-    const m = moneyFrom(r.text, currency);
     const d = docs.find((x) => x.id === r.documentId);
+    // Visual review finding 8: a row whose document isn't listed (another client's, before the client changed) is never sent.
+    if (!d) continue;
+    const m = moneyFrom(r.text, currency);
     if (!m.ok) errors[r.documentId] = m.error;
     else if (m.minor === 0) continue;
-    else if (d && compare(money(m.minor, currency), money(d.balanceMinor, currency)) > 0)
+    else if (compare(money(m.minor, currency), money(d.balanceMinor, currency)) > 0)
       errors[r.documentId] = PAY_UI.allocMore;
     else allocations.push({ documentId: r.documentId, amountMinor: m.minor });
   }
@@ -416,6 +429,43 @@ export function readAllocations(
   );
   const left = subtract(money(amountMinor, currency), put);
   return { ok: true, allocations, leftMinor: left.amount, over: left.amount < 0 };
+}
+
+/**
+ * The line under the allocation table for what is left of the payment (visual review finding 2): line 9 only when the payment is more than every listed
+ * invoice owes together (a real overpayment); a deliberate split short of that reads line 47. Nothing when nothing is left, or when no invoice is listed (line
+ * 31's empty line already says the whole amount is kept). Core money only.
+ */
+export function leftoverLine(
+  leftMinor: number | null,
+  amountMinor: number | null,
+  docs: readonly OpenDoc[],
+  currency: Currency,
+  client: string,
+): { kind: "over" | "kept"; text: string } | null {
+  if (leftMinor === null || leftMinor <= 0 || amountMinor === null || docs.length === 0) return null;
+  const owed = sum(
+    docs.filter((d) => d.currency === currency).map((d) => money(d.balanceMinor, currency)),
+    currency,
+  );
+  const amount = amountText(leftMinor, currency);
+  return compare(money(amountMinor, currency), owed) > 0
+    ? { kind: "over", text: overpaymentLine(amount, client) }
+    : { kind: "kept", text: keptAsCreditLine(amount, client) };
+}
+
+/**
+ * Line 10's warning before a submit (visual review finding 6; RA-17, L13): the month the money arrived when it is earlier than the month of any invoice it
+ * goes on, by core's rule (the server answers the same warning after the write); null otherwise. `receivedOn` and the issue days are ISO IST days.
+ */
+export function earlierMonthOf(
+  receivedOn: string | null | undefined,
+  issueDates: readonly (string | null | undefined)[],
+): string | null {
+  if (!receivedOn || !/^\d{4}-\d{2}/.test(receivedOn)) return null;
+  return issueDates.some((d) => typeof d === "string" && receiptMonthWarning(receivedOn, d) !== null)
+    ? receivedOn.slice(0, 7)
+    : null;
 }
 
 /** The amount the row of the invoice the dialog was opened from follows (until edited): the payment, at most that invoice's balance. */
@@ -446,6 +496,7 @@ export function openDocsOf(
     currency: Currency;
     balanceMinor: number;
     dueDate: string | null;
+    issueDate?: string | null;
   }[],
   opts: { kind: "payment" | "tds"; proformas: boolean },
 ): OpenDoc[] {
@@ -476,6 +527,7 @@ export function openDocsOf(
       currency: r.currency,
       balanceMinor: r.balanceMinor,
       dueDate: r.dueDate,
+      issueDate: r.issueDate ?? null,
     }));
 }
 

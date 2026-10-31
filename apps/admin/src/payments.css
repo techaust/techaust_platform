@@ -141,7 +141,8 @@
   padding: var(--space-3) var(--space-3) var(--space-3) 0;
   border-bottom: 1px solid var(--color-border);
   text-align: start;
-  vertical-align: top;
+  /* baseline, so every cell's first line sits on the date link's line (the link is a 44 px block, its words centred in it) */
+  vertical-align: baseline;
 }
 
 .pay-lines thead th {
@@ -246,6 +247,8 @@
   .pay-lines tr {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
+    /* the amount sits on the date link's line (the link is a 44 px block) */
+    align-items: baseline;
     gap: var(--space-1) var(--space-3);
     padding: var(--space-3) 0;
     border-bottom: 1px solid var(--color-border);
@@ -277,6 +280,11 @@
   .pay-lines td[data-label]:not(.num)::before {
     content: attr(data-label);
     color: var(--color-text-muted);
+  }
+
+  /* the status chip and the other values keep their own width in the stacked rows (visual review, low) */
+  .pay-lines td[data-label]:not(.num) > * {
+    justify-self: start;
   }
 }
 
@@ -628,7 +636,12 @@
   display: grid;
 }
 
+/* Every link to a payment entry (the panel's dates, the list, Approvals › Payments, the register's TDS table): a 44 px block (visual review finding 1),
+   centred on its line like the other row links (inv-name__link, client-name__link). */
 .pay-row__link {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--target-min);
   font-weight: 600;
 }
 
@@ -747,4 +760,38 @@
 /* the entry ("Payment · NEFT") stays on one line in the table; a phone's card lets it wrap */
 .pay-table .dtable__table .pay-row__entry {
   white-space: nowrap;
+}
+
+/* Record a payment from Payments: the search and the client each take the whole row, so a long name and its code read in full (visual review, low) */
+.pay-client {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.pay-client .field {
+  margin: 0;
+}
+
+/* line 10's RA-17 warning before a submit: the reference warning's box, said politely (visual review finding 6) */
+.pay-warn p {
+  margin: 0;
+}
+
+/* the open invoices didn't load in Record a payment: the error and its retry, inside the allocation fieldset (visual review finding 7) */
+.pay-alloc__failed {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+}
+
+/* an extension row without its letter: on its own line under the extension, the words and the Owner's action, wrapping when narrow */
+.pay-real__list .pay-real__letter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pay-real__letter .btn--text {
+  min-block-size: var(--target-min);
 }
