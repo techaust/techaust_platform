@@ -1,8 +1,8 @@
 # Run: T6, the offer wording, proposal terms v4 and website Terms 0.2
 
-Status: designer running (analyst GO); main (T12, #129) merged in at 909f7e6
+Status: reviewer running (designer merged)
 Tier: B
-Usage: lead claude-opus-5-5/high (cloud session t6-terms); builder claude-opus-5-5/high (skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, unavailable in cloud; 5-h 8 % at start, reading of 12:58); analyst claude-opus-5-5/high (skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:workers-profiling, unavailable in cloud; 5-h 8 %, reading of 12:58)
+Usage: lead claude-opus-5-5/high (cloud session t6-terms); builder claude-opus-5-5/high (skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, unavailable in cloud; 5-h 8 % at start, reading of 12:58); analyst claude-opus-5-5/high (skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:workers-profiling, unavailable in cloud; 5-h 8 %, reading of 12:58); designer claude-opus-5-5/high (skills tried: frontend-design:frontend-design, unavailable in cloud; docs/06 followed; 5-h 8 %, reading of 12:58)
 
 **Source:** [settle-08c](settle-08c.md) task T6; wording [07-ZE](../07-content-appendix/ZE-terms-offers-deed.md) (approved by the owner, 2026-10-31: 20 lines, Q1–Q4). Cloud session `t6-terms`, branch `feat/t6-terms-offers`, controlled by the main session on the owner's PC. Merge order today: T12, **T6**, proforma withdraw, T7, M6.1.
 
