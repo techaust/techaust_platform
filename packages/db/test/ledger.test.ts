@@ -39,7 +39,9 @@ import {
 } from "../src/ledger.ts";
 import { femaDueSql, gstDueSql, SCAN_BINDS } from "../src/realisation.ts";
 import {
+  CLIENT_FIGURES_SQL,
   PAYMENTS_REGISTER_SQL,
+  PROJECT_BILLED_SQL,
   STATEMENT_LEDGER_SQL,
   STATEMENT_TOTALS_SQL,
   statementTotalsBinds,
@@ -1224,7 +1226,65 @@ describe("the statement's closing balance is its ledger check, with payments, TD
     expect(JSON.parse(mine?.allocations ?? "[]")).toEqual([
       expect.objectContaining({ documentId: inv, kind: "allocate", amountMinor: 118_000 }),
     ]);
-    expect(reg.every((r) => r.id !== undefined)).toBe(true);
+    expect(reg.some((r) => r.id === p)).toBe(true);
+    // the client's figures: 120000 collected, 2000 of it held as credit; the pending 7 counts nowhere
+    expect(await first(CLIENT_FIGURES_SQL, clientId, "2026-10-31")).toMatchObject({
+      currency: "INR",
+      billed: 118_000,
+      balance: 0,
+      tds: 0,
+      collected: 120_000,
+      credit: 2_000,
+    });
+    // a project's paid and TDS
+    const projectId = uuidv7();
+    await run(
+      "INSERT INTO projects (id, code, client_id, name, currency) VALUES (?1, ?2, ?3, 'P', 'INR')",
+      projectId,
+      `PRJ-L-${next()}`,
+      clientId,
+    );
+    const pdoc = uuidv7();
+    const n = next();
+    await run(
+      `INSERT INTO documents (id, type, status, client_id, project_id, currency, series, fy, number, number_display, frozen_at, issue_date, due_date, total_minor, balance_minor)
+       VALUES (?1, 'tax_invoice', 'issued', ?2, ?3, 'INR', 'inv-l', '9999', ?4, ?5, 1000, '2026-10-28', '2026-11-04', 10000, 10000)`,
+      pdoc,
+      clientId,
+      projectId,
+      n,
+      `L/${n}`,
+    );
+    const t = await pay(clientId, owner, { kind: "tds", amount: 1_000 });
+    await alloc(p, pdoc, 2_000);
+    await alloc(t, pdoc, 1_000);
+    await recompute({ documentIds: [pdoc] });
+    expect(await first(PROJECT_BILLED_SQL, projectId)).toMatchObject({
+      billed: 10_000,
+      paid: 2_000,
+      tds: 1_000,
+    });
+    expect(await first(CLIENT_FIGURES_SQL, clientId, "2026-10-31")).toMatchObject({
+      collected: 120_000,
+      credit: 0,
+      tds: 1_000,
+    });
+  });
+
+  it("the client's figures read its own documents once: the payment aggregates run once, never per document (rows read, as FX-3)", async () => {
+    const owner = await mkMember("owner");
+    const clientId = await mkClientRow();
+    for (let i = 0; i < 60; i++) await mkIssued(clientId);
+    await pay(clientId, owner, { amount: 10 });
+    const res = await db().prepare(CLIENT_FIGURES_SQL).bind(clientId, "2026-10-31").all();
+    // 60 documents through the index (two rows each), the client row, and a handful of payment rows: never 60 more per aggregate
+    expect(res.meta.rows_read).toBeLessThanOrEqual(2 * 60 + 10);
+    const p = (
+      await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${CLIENT_FIGURES_SQL}`, clientId, "2026-10-31")
+    )
+      .map((r) => r.detail)
+      .join("\n");
+    expect(p).not.toMatch(/CORRELATED/);
   });
 });
 

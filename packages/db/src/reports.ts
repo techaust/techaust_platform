@@ -363,12 +363,22 @@ export const EXPORT_NEXT_SQL = (() => {
 // fix round, item 7; a plain NOT EXISTS guard is checked per index entry). The admin answers `available: false` from the client row read in the same batch.
 
 /**
+ * M6.1: the client's (`?1`) confirmed payments by currency, as one JSON object (`{"INR": n}`): a scalar subquery that does not depend on the outer row, so SQLite
+ * runs it once per statement (never once per document), a seek of `payments_client`; and what those payments hold net on documents, the same way (the
+ * allocations read by payment). The client's credit is the first less the second (L2).
+ */
+const COLLECTED_BY_CURRENCY = `(SELECT json_group_object(x.cur, x.amount) FROM (SELECT cp.currency AS cur, sum(cp.amount_minor) AS amount FROM payments cp INDEXED BY payments_client
+       WHERE cp.client_id = ?1 AND cp.status = 'confirmed' AND cp.kind = 'payment' GROUP BY cp.currency) x)`;
+const ALLOCATED_BY_CURRENCY = `(SELECT json_group_object(y.cur, y.net) FROM (SELECT ap.currency AS cur, sum(CASE aa.kind WHEN 'allocate' THEN aa.amount_minor ELSE -aa.amount_minor END) AS net
+       FROM payments ap INDEXED BY payments_client JOIN payment_allocations aa INDEXED BY payment_allocations_payment ON aa.payment_id = ap.id
+       WHERE ap.client_id = ?1 AND ap.status = 'confirmed' AND ap.kind = 'payment' GROUP BY ap.currency) y)`;
+
+/**
  * A client's figures by currency (`?1` the client, `?2` today, IST): billed, credited, the balance (Σ `balance_minor` of its open debit documents: what a
  * statement made today closes at, `STATEMENT_LEDGER_SQL` for every currency at once) and the part of it past its due date (strictly before today, as
  * `OWED_SQL`). One read of `documents_client_issued` by the client: the rows read are the client's issued GST documents and nothing else. No rows for
  * an anonymised client (its row only is read). M6.1: `tds` (TDS recorded on its debit documents), `collected` (its confirmed payments in the currency) and
- * `credit` (what they hold unallocated), from two aggregates of the client's payments (a seek of `payments_client`, the allocations by payment) joined by
- * currency, never a subquery run per document. A currency with payments and no issued document has no row (a client
+ * `credit` (what they hold unallocated), from two aggregates of the client's payments (`COLLECTED_BY_CURRENCY`, `ALLOCATED_BY_CURRENCY`), each run once. A currency with payments and no issued document has no row (a client
  * has one currency, M3.3).
  */
 export const CLIENT_FIGURES_SQL = `SELECT d.currency,
@@ -378,13 +388,9 @@ export const CLIENT_FIGURES_SQL = `SELECT d.currency,
        coalesce(sum(CASE WHEN d.type IN ${DEBIT_KINDS} AND d.balance_minor > 0 AND d.due_date < ?2 THEN d.balance_minor END), 0) AS overdue,
        count(CASE WHEN d.type IN ${DEBIT_KINDS} AND d.balance_minor > 0 AND d.due_date < ?2 THEN 1 END) AS overdue_n,
        coalesce(sum(CASE WHEN d.type IN ${DEBIT_KINDS} THEN d.tds_minor END), 0) AS tds,
-       coalesce(max(pc.collected), 0) AS collected, coalesce(max(pc.collected), 0) - coalesce(max(pa.net), 0) AS credit
+       coalesce(json_extract(${COLLECTED_BY_CURRENCY}, '$.' || d.currency), 0) AS collected,
+       coalesce(json_extract(${COLLECTED_BY_CURRENCY}, '$.' || d.currency), 0) - coalesce(json_extract(${ALLOCATED_BY_CURRENCY}, '$.' || d.currency), 0) AS credit
    FROM documents d INDEXED BY documents_client_issued
-     LEFT JOIN (SELECT cp.currency AS cur, sum(cp.amount_minor) AS collected FROM payments cp INDEXED BY payments_client
-                WHERE cp.client_id = ?1 AND cp.status = 'confirmed' AND cp.kind = 'payment' GROUP BY cp.currency) pc ON pc.cur = d.currency
-     LEFT JOIN (SELECT ap.currency AS cur, sum(CASE aa.kind WHEN 'allocate' THEN aa.amount_minor ELSE -aa.amount_minor END) AS net
-                FROM payments ap INDEXED BY payments_client JOIN payment_allocations aa ON aa.payment_id = ap.id
-                WHERE ap.client_id = ?1 AND ap.status = 'confirmed' AND ap.kind = 'payment' GROUP BY ap.currency) pa ON pa.cur = d.currency
    WHERE d.client_id = (SELECT z.id FROM clients z WHERE z.id = ?1 AND z.anonymised_at IS NULL) AND ${ISSUED_GST} AND d.voided_at IS NULL AND d.status <> 'void'
    GROUP BY d.currency ORDER BY d.currency`;
 
