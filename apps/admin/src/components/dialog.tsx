@@ -35,6 +35,38 @@ export function Modal(props: {
     }
   }, [open]);
 
+  // The sticky actions cover the dialog's last lines while it scrolls, so the dialog keeps what takes focus (or is scrolled to) above them: its
+  // `scroll-padding-bottom` is their real height (app.css), which changes with the width (stacked full width on phones), the number of buttons and a
+  // step's own actions. WCAG 2.4.11 (rt2 re-check A).
+  useEffect(() => {
+    const d = ref.current;
+    if (!open || !d) return;
+    let actions: HTMLElement | null = null;
+    const size = () => d.style.setProperty("--dialog-actions-h", `${actions?.offsetHeight ?? 0}px`);
+    const sizes = new ResizeObserver(size);
+    const pick = () => {
+      const all = d.querySelectorAll<HTMLElement>(".dialog__actions");
+      const next = all[all.length - 1] ?? null;
+      if (next === actions) return;
+      if (actions) sizes.unobserve(actions);
+      actions = next;
+      if (actions) sizes.observe(actions, { box: "border-box" });
+      size();
+      // showModal() (or a new step) focused a control before the height was known: bring it clear of the actions now.
+      const focused = document.activeElement;
+      if (focused instanceof HTMLElement && focused !== d && d.contains(focused))
+        focused.scrollIntoView({ block: "nearest" });
+    };
+    const steps = new MutationObserver(pick);
+    steps.observe(d, { childList: true, subtree: true });
+    pick();
+    return () => {
+      steps.disconnect();
+      sizes.disconnect();
+      d.style.removeProperty("--dialog-actions-h");
+    };
+  }, [open]);
+
   return (
     <dialog
       ref={ref}

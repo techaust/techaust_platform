@@ -1159,6 +1159,12 @@ input[readonly] {
   color: var(--color-text);
   box-shadow: var(--elevation-2);
   overflow: auto;
+  /* What takes the focus, or is scrolled to, stops above the sticky actions (below), with a gap (WCAG 2.4.11, rt2 re-check A). Their height is
+     measured (components/dialog.tsx: one row, or stacked full width on phones, and a step's own buttons); until then, one row of them. */
+  scroll-padding-bottom: calc(
+    var(--dialog-actions-h, calc(var(--space-10) + var(--target-min))) +
+    var(--space-3)
+  );
 }
 
 .dialog[open] {

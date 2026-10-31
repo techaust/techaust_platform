@@ -73,6 +73,9 @@ const ID = {
   udyamCategory: fieldId("udyam.category"),
 };
 
+/** The GSTIN as it is saved: what `validateGstin` reads (no spaces, capitals), so `g.gstin` of a valid one. */
+const normaliseGstin = (typed: string): string => typed.replace(/\s+/g, "").toUpperCase();
+
 const spec: GroupSpec<"company", Form> = {
   group: "company",
   what: "the company profile",
@@ -120,8 +123,17 @@ const spec: GroupSpec<"company", Form> = {
     };
     return { value };
   },
-  // Without a number the category isn't saved (`udyamOf` gives null), so changing it alone is no change (rt2 second review 4).
-  dirtyOf: (f) => (normaliseUdyam(f.udyamNumber) === "" ? { ...f, udyamCategory: null } : f),
+  // Compared as they would be saved (rt2 re-check B): the GSTIN and the Udyam number are kept as typed until the field is left (second review 2), so a
+  // change of case or spacing alone is no change; without a number the category isn't saved (`udyamOf` gives null), so changing it alone is none either (4).
+  dirtyOf: (f) => {
+    const udyamNumber = normaliseUdyam(f.udyamNumber);
+    return {
+      ...f,
+      gstin: normaliseGstin(f.gstin),
+      udyamNumber,
+      udyamCategory: udyamNumber === "" ? null : f.udyamCategory,
+    };
+  },
 };
 
 export function CompanyProfile() {
@@ -314,6 +326,8 @@ function Fields({
                 {...a}
                 // A category belongs to a number: with none there is nothing to print it beside (rt2 second review 4).
                 disabled={!hasUdyam}
+                // Its own mark, not the fieldset's state: a save in flight disables the fieldset too, and the look must not change then (rt2 re-check E).
+                data-waiting={hasUdyam ? undefined : ""}
                 value={f.udyamCategory}
                 onChange={(e) => set({ udyamCategory: e.target.value as UdyamCategory })}
               >

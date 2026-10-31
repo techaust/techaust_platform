@@ -7,6 +7,9 @@ import { api, errorText, onStepUpRequired, RequestError } from "../api.ts";
 import { WRONG_CODE } from "../lib/step-up.ts";
 import { StepUpPrompt } from "./step-up-auth.tsx";
 
+/** The prompt's one field (`StepUpPrompt`, id `step-up-code`). */
+const codeField = () => document.getElementById("step-up-code");
+
 export function StepUpDialog({ onConfirmed }: { onConfirmed?: (until: number) => void }) {
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState("");
@@ -39,6 +42,7 @@ export function StepUpDialog({ onConfirmed }: { onConfirmed?: (until: number) =>
     e.preventDefault();
     if (code.length !== 6) {
       setError("Enter the 6-digit code from your authenticator app.");
+      codeField()?.focus();
       return;
     }
     setBusy(true);
@@ -50,6 +54,9 @@ export function StepUpDialog({ onConfirmed }: { onConfirmed?: (until: number) =>
     } catch (err) {
       setCode("");
       setError(err instanceof RequestError && err.code === "invalid_code" ? WRONG_CODE : errorText(err));
+      // The error is the code field's own line: the field takes the focus (the pressed button was disabled while busy, so focus would fall to
+      // <body>; WCAG 2.4.3), and the field brings its line into view above the actions (rt2 re-check A).
+      codeField()?.focus();
     } finally {
       setBusy(false);
     }

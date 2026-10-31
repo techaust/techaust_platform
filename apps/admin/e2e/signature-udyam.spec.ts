@@ -8,11 +8,14 @@
 //     dialog of an issued proforma are refused by the server with the same line and link, in a `role="alert"` box that takes the focus (visual review 1).
 //   - The saved full number fits its field at every width, and at 1024 with the side menu open or closed (visual review 2); a field reached by Tab
 //     stops clear of the "Unsaved changes" bar (visual review 3).
+//   - The code field of the note, advance, invoice issue and step-up dialogs, reached by the keyboard and after a wrong code (the field focused, its
+//     line under it), is never under the dialog's sticky actions (WCAG 2.4.11; re-check A), at 390×844, 768 and 1280. A case-only GSTIN change is no
+//     unsaved change (B); a save in flight leaves the waiting category's look alone (E).
 // axe (WCAG 2.2 AA) on every state, both in-app themes against the opposite OS theme, at 1280 and 390 px; no console errors. With RT2_SHOTS=<absolute folder>
 // each state is also saved as a screenshot (for the designer's review; never committed). Sample data only; the signature is put back at the end.
 import { readFileSync } from "node:fs";
 import AxeBuilder from "@axe-core/playwright";
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import { ORIGIN } from "../playwright.config.ts";
 import { sampleSignaturePng, totpAt } from "./sample-data.ts";
 
@@ -110,6 +113,88 @@ async function refusalHasFocus(page: Page, line: string) {
   expect(await box.evaluate((el) => getComputedStyle(el).outlineStyle)).not.toBe("none");
 }
 
+/** WRONG_CODE (apps/admin/src/lib/step-up.ts): the line under a code field the server refused. */
+const WRONG_CODE =
+  "That code didn't work. It may be the one you signed in with, which can't be used again. Wait for the next code and enter it.";
+
+/** Two frames: the browser's own scroll after a focus, then anything measured after a frame (the dialog's actions). */
+const frames = (page: Page) =>
+  page.evaluate(() => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok))));
+
+/**
+ * The element is drawn on top at its middle and just inside its top and bottom edges: nothing covers it, the dialog's sticky actions least of all
+ * (WCAG 2.4.11 Focus Not Obscured; rt2 re-check A).
+ */
+async function unobscured(el: Locator, what: string) {
+  await frames(el.page());
+  const misses = await el.evaluate((node) => {
+    const b = node.getBoundingClientRect();
+    const x = b.left + b.width / 2;
+    return [b.top + 2, b.top + b.height / 2, b.bottom - 2].flatMap((y) => {
+      const hit = document.elementFromPoint(x, y);
+      if (hit && node.contains(hit)) return [];
+      const by = !hit
+        ? "nothing: outside the window"
+        : hit.closest(".dialog__actions")
+          ? "the dialog's actions"
+          : `${hit.tagName.toLowerCase()}.${hit.className}`;
+      return [`at ${Math.round(y)}px (window ${window.innerHeight}px) ${by}`];
+    });
+  });
+  expect(misses, `${what}: ${misses.join("; ")}`).toEqual([]);
+}
+
+/**
+ * Reached by the keyboard, with the dialog back at its top each time: Shift+Tab from the first action button, and Tab from the control before the
+ * field when there is one (the focus put there without scrolling). The field must show whole both ways.
+ */
+async function tabbedTo(field: Locator, what: string) {
+  for (const way of ["Shift+Tab", "Tab"] as const) {
+    const from = await field.evaluate(placeFocus, way);
+    if (way === "Shift+Tab") expect(from, `${what}: the dialog's actions`).toBe(true);
+    if (!from) continue;
+    await field.page().keyboard.press(way);
+    await expect(field).toBeFocused();
+    await unobscured(field, `${what}, reached by ${way}`);
+  }
+}
+
+/** In the page: the dialog scrolled to its top, and the focus (without a scroll) where the next key press starts. False when there is no such place. */
+function placeFocus(input: Element, way: "Shift+Tab" | "Tab"): boolean {
+  const d = input.closest("dialog");
+  if (!d) return false;
+  d.scrollTop = 0;
+  if (way === "Shift+Tab") {
+    const first = d.querySelector<HTMLElement>(".dialog__actions button:not([disabled])");
+    first?.focus({ preventScroll: true });
+    return first != null;
+  }
+  const stops = [
+    ...d.querySelectorAll<HTMLElement>(
+      "a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])",
+    ),
+  ].filter(
+    (e) =>
+      e.getClientRects().length > 0 && (!(e instanceof HTMLInputElement) || e.type !== "radio" || e.checked),
+  );
+  const prev = stops[stops.indexOf(input as HTMLElement) - 1];
+  prev?.focus({ preventScroll: true });
+  return prev !== undefined;
+}
+
+/** A wrong code: refused (by the test's route), the field cleared and focused, its line under it; the field and the line both show whole. */
+async function wrongCode(field: Locator, submit: Locator, what: string) {
+  await field.fill("123456");
+  await submit.press("Enter");
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue("");
+  await expect(field).toHaveAttribute("aria-invalid", "true");
+  const line = field.page().locator(`[id="${await field.getAttribute("id")}-error"]`);
+  await expect(line).toHaveText(WRONG_CODE);
+  await unobscured(field, `${what}, after a wrong code: the code field`);
+  await unobscured(line, `${what}, after a wrong code: its error line`);
+}
+
 /** The Settings pages whose form shows the "Unsaved changes" bar (SaveBar through `GroupForm`, and Gateways). */
 const BAR_PAGES = ["company", "tax", "payment-terms", "gateways", "email", "retention", "flags"] as const;
 const FIELD =
@@ -180,11 +265,14 @@ async function each(page: Page, run: (tag: string) => Promise<void>) {
 test.describe("rt2: the signature rule and the Udyam number on screen", () => {
   test.describe.configure({ mode: "serial", timeout: 5 * 60_000 });
   const consoleErrors: string[] = [];
+  /** The wrong-code test answers its step-ups with a 400 on purpose; anywhere else a 400 is a fault. */
+  let refusingCodes = false;
 
   test.beforeEach(async ({ page }) => {
     page.on("console", (m) => {
       // Chromium logs every non-2xx answer as a console error: the advance dialog's 409 `issue_blocked` is the refusal this spec provokes on purpose
       if (m.type() !== "error" || m.text().includes("responded with a status of 409 (Conflict)")) return;
+      if (refusingCodes && m.text().includes("responded with a status of 400 (Bad Request)")) return;
       consoleErrors.push(`${page.url()}: ${m.text()}`);
     });
     page.on("pageerror", (e) => consoleErrors.push(`${page.url()}: ${e.message}`));
@@ -328,9 +416,41 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
     expect(await gstin.evaluate(caret)).toEqual([7, 7]);
     await expect(gstin).toHaveValue(saved.slice(0, 2) + saved.slice(2, 7).toLowerCase() + saved.slice(7));
     await expect(page.locator(".field--gstin").first().getByText("Valid", { exact: true })).toBeVisible();
+    // still in lower case, it is the saved GSTIN: no unsaved change, even before the field is left (re-check B)
+    await expect(page.locator(".savebar")).toHaveCount(0);
     await gstin.blur();
     await expect(gstin).toHaveValue(saved);
     await expect(page.locator(".savebar")).toHaveCount(0);
+
+    // a save in flight disables the whole form, and the waiting category keeps its look all the while (re-check E: it flashed the read-only look).
+    // The change is a trailing space on the trade name, which the save trims away, so the stored profile is the same.
+    const category = page.getByLabel("Enterprise category");
+    const look = (el: Element) => {
+      const s = getComputedStyle(el);
+      return [s.backgroundColor, s.borderTopStyle, s.color].join(" ");
+    };
+    const waiting = await category.evaluate(look);
+    const trade = page.getByLabel("Trade name");
+    await trade.press("End");
+    await trade.pressSequentially(" ");
+    let release = () => {};
+    const held = new Promise<void>((ok) => {
+      release = ok;
+    });
+    await page.route(
+      (u) => u.pathname === "/api/v1/settings/groups/company",
+      async (route) => {
+        if (route.request().method() === "PUT") await held;
+        await route.continue();
+      },
+    );
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.locator("fieldset.settings-form__body")).toBeDisabled();
+    expect(await category.evaluate(look)).toBe(waiting);
+    release();
+    await expect(page.getByText("Company profile saved. New documents use it from now on.")).toBeVisible();
+    expect(await category.evaluate(look)).toBe(waiting);
+    await page.unrouteAll();
   });
 
   test("Settings › Company: keyboard order and visible focus through the Udyam fields", async ({ page }) => {
@@ -341,7 +461,7 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
     await page.getByLabel("State and code").focus();
     await page.keyboard.press("Tab");
     await page.keyboard.press("Tab");
-    expect(await page.evaluate(() => document.activeElement?.id)).not.toBe("f-udyam-category");
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe("f-address");
     await page.getByLabel("Udyam registration number").fill("UDYAM-WB-00-0000001");
     await page.getByLabel("State and code").focus();
     const seen: string[] = [];
@@ -504,6 +624,147 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
         headers: { ...headers, "Content-Type": "application/octet-stream" },
       });
       expect(res.status()).toBe(200);
+    }
+  });
+
+  test("dialogs: a focused code field and its wrong-code line stay clear of the sticky actions, at 390 and 768 px [ADM-AUTH-08, ADM-INV-07]", async ({
+    page,
+  }) => {
+    // The SPA is told no step-up is active, so every dialog asks for a code, and every code is refused in the browser (400 `invalid_code`, as the
+    // server answers): nothing is issued and the account's wrong-code count never moves.
+    await page.route(
+      (u) => u.pathname === "/api/v1/auth/me",
+      async (route) => {
+        const res = await route.fetch();
+        const body = (await res.json()) as J;
+        await route.fulfill({ response: res, json: { ...body, stepUpUntil: null } });
+      },
+    );
+    await page.route(
+      (u) => u.pathname === "/api/v1/auth/step-up",
+      (route) =>
+        route.fulfill({
+          status: 400,
+          json: { error: { code: "invalid_code", message: "That code didn't work. Wait for the next one." } },
+        }),
+    );
+    refusingCodes = true;
+
+    const invoices = ((await api(page, "GET", "/invoices")).body.invoices ?? []) as J[];
+    const debit = invoices.find((i) => i.type === "debit_note" && i.status === "draft");
+    expect(debit, "the sample data's draft debit note").toBeTruthy();
+    const taxInvoice = invoices.find(
+      (i) => i.type === "tax_invoice" && i.status !== "void" && i.status !== "draft",
+    );
+    expect(taxInvoice, "an issued tax invoice of the sample data").toBeTruthy();
+    const cat = await api(page, "GET", "/catalogue");
+    const service = (cat.body.items as J[]).find((i) => i.active !== false && i.priceInrMinor);
+    /** A draft for the sample INR client, made once and reused by later runs (the local database only). */
+    const draftOf = async (kind: "invoice" | "proforma") => {
+      const type = kind === "invoice" ? "tax_invoice" : "proforma";
+      const found = invoices.find(
+        (i) => i.type === type && i.status === "draft" && i.clientId === taxInvoice?.clientId,
+      );
+      if (found) return found.id as string;
+      const made = await api(page, "POST", "/invoices", {
+        clientId: taxInvoice?.clientId,
+        kind,
+        services: [{ catalogueItemId: service?.id }],
+      });
+      expect([200, 201], JSON.stringify(made.body)).toContain(made.status);
+      return made.body.id as string;
+    };
+    let proforma = invoices.find(
+      (i) => i.type === "proforma" && i.status === "issued" && i.clientId === taxInvoice?.clientId,
+    )?.id as string | undefined;
+    if (!proforma) {
+      proforma = await draftOf("proforma");
+      const pf = await api(page, "GET", `/invoices/${proforma}`);
+      const issued = await api(page, "POST", `/invoices/${proforma}/issue`, {
+        expectedUpdatedAt: pf.body.updatedAt,
+        expectedContentSha256: pf.body.contentSha256,
+      });
+      expect(issued.status, JSON.stringify(issued.body)).toBe(200);
+    }
+    const draftInvoice = await draftOf("invoice");
+
+    // the phone the review measured, a tablet and a desktop; each in-app theme against the opposite OS theme
+    for (const [width, height] of [
+      [390, 844],
+      [768, 1024],
+      [1280, 900],
+    ] as const)
+      for (const theme of THEMES) {
+        const at = `${width}x${height}-${theme}`;
+        await page.setViewportSize({ width, height });
+        await page.addInitScript((t) => localStorage.setItem("ta-admin-theme", t), theme);
+        await page.emulateMedia({
+          colorScheme: theme === "light" ? "dark" : "light",
+          reducedMotion: "reduce",
+        });
+        await codeDialogs(at);
+      }
+    refusingCodes = false;
+
+    async function codeDialogs(at: string) {
+      // the debit note's dialog, at its last step
+      await page.goto(`/invoices/${encodeURIComponent(debit?.id)}`);
+      await settled(page);
+      await page.getByRole("button", { name: "Issue debit note" }).click();
+      const note = page.getByRole("dialog");
+      await note.getByRole("button", { name: "Issue debit note" }).click();
+      await expect(note.locator(".note-final")).toBeVisible();
+      const noteCode = note.getByLabel("Authenticator code");
+      await tabbedTo(noteCode, `note dialog ${at}`);
+      await wrongCode(noteCode, note.getByRole("button", { name: "Issue debit note" }), `note dialog ${at}`);
+      await axe(page, `note dialog wrong code ${at}`);
+      await shot(page, `wrong-code-note-${at}`, false);
+      await page.keyboard.press("Escape");
+      await expect(note).toHaveCount(0);
+
+      // the issued proforma's advance dialog
+      await page.goto(`/invoices/${encodeURIComponent(proforma)}`);
+      await settled(page);
+      await page.getByRole("button", { name: "Issue tax invoice for payment received" }).first().click();
+      const advance = page.getByRole("dialog");
+      await advance.getByLabel("Amount received").fill("100");
+      await advance.getByLabel("Payment reference").fill("SAMPLE-UTR-0001");
+      const advanceCode = advance.getByLabel("Authenticator code");
+      await tabbedTo(advanceCode, `advance dialog ${at}`);
+      await wrongCode(
+        advanceCode,
+        advance.getByRole("button", { name: "Issue tax invoice for payment received" }),
+        `advance dialog ${at}`,
+      );
+      await axe(page, `advance dialog wrong code ${at}`);
+      await shot(page, `wrong-code-advance-${at}`, false);
+      await page.keyboard.press("Escape");
+      await expect(advance).toHaveCount(0);
+
+      // a draft tax invoice's issue dialog: its code field by Tab (a wrong code there still shows in the dialog's notice: follow-up F)
+      await page.goto(`/invoices/${encodeURIComponent(draftInvoice)}`);
+      await settled(page);
+      await page.getByRole("button", { name: "Issue invoice", exact: true }).click();
+      const issue = page.getByRole("dialog");
+      await tabbedTo(issue.getByLabel("Authenticator code"), `issue dialog ${at}`);
+      await axe(page, `issue dialog ${at}`);
+      await shot(page, `tab-code-issue-${at}`, false);
+      await page.keyboard.press("Escape");
+      await expect(issue).toHaveCount(0);
+
+      // the step-up dialog (Settings › Bank details asks for it before its fields unlock): the code field on opening and after a wrong code
+      await page.goto("/settings/bank");
+      await settled(page);
+      await page.getByRole("button", { name: /bank details$/ }).click();
+      const stepUp = page.getByRole("dialog", { name: "Confirm it's you" });
+      const stepUpCode = stepUp.getByLabel("Authenticator code");
+      await expect(stepUpCode).toBeFocused();
+      await unobscured(stepUpCode, `step-up dialog ${at}, on opening`);
+      await wrongCode(stepUpCode, stepUp.getByRole("button", { name: "Confirm" }), `step-up dialog ${at}`);
+      await axe(page, `step-up dialog wrong code ${at}`);
+      await shot(page, `wrong-code-step-up-${at}`, false);
+      await page.keyboard.press("Escape");
+      await expect(stepUp).toHaveCount(0);
     }
   });
 

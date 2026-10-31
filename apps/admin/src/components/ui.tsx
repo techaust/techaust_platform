@@ -108,8 +108,16 @@ export function Field(props: {
   const describedBy = [props.hint ? `${props.id}-hint` : null, props.error ? `${props.id}-error` : null]
     .filter(Boolean)
     .join(" ");
+  // An error drawn under the field that has the focus (a wrong step-up code: the field is focused, then its line appears) brings the whole field,
+  // the line included, into view: inside a dialog that is above its sticky actions (the dialog's scroll padding; rt2 re-check A, WCAG 2.4.11).
+  const box = useRef<HTMLDivElement>(null);
+  const { error } = props;
+  useEffect(() => {
+    const el = box.current;
+    if (error && el?.contains(document.activeElement)) el.scrollIntoView({ block: "nearest" });
+  }, [error]);
   return (
-    <div className={props.className ? `field ${props.className}` : "field"}>
+    <div ref={box} className={props.className ? `field ${props.className}` : "field"}>
       <label htmlFor={props.id}>{props.label}</label>
       {props.hint && (
         <p className="hint" id={`${props.id}-hint`}>

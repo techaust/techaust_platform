@@ -1,11 +1,11 @@
 // The Udyam registration in Settings › Company (T10, rt2; ADM-SET-01): the words of 07-ZC lines 4 and 5 (APPROVED by the owner, 2026-10-31) and the pure rule
 // the form follows. The form trims and upper-cases what is typed (L5) and always sends the key (L8): the block, or null to leave the line off. The shape is
-// core's (`UDYAM_NUMBER_RE`, the same one the settings schema holds); the category words are the PDF's own (`@techaust/pdf/copy`, L3), so the select and the
+// core's (`isUdyamNumber`, the same check the settings schema refines with); the category words are the PDF's own (`@techaust/pdf/copy`, L3), so the select and the
 // printed line never differ. Printing it is the owner's choice, not a legal requirement: Researched 2026-10-30, MSMED ss.15–16 (08-C RB-39(a)).
 import {
+  isUdyamNumber,
   UDYAM_CATEGORIES,
   UDYAM_NUMBER_ERROR,
-  UDYAM_NUMBER_RE,
   type Udyam,
   type UdyamCategory,
 } from "@techaust/core/invoices";
@@ -38,7 +38,7 @@ export function udyamOf(
 ): { ok: true; value: Udyam | null } | { ok: false; error: string } {
   const number = normaliseUdyam(typed);
   if (number === "") return { ok: true, value: null };
-  if (!UDYAM_NUMBER_RE.test(number)) return { ok: false, error: UDYAM_FORM_COPY.error };
+  if (!isUdyamNumber(number)) return { ok: false, error: UDYAM_FORM_COPY.error };
   return { ok: true, value: { number, category } };
 }
 
