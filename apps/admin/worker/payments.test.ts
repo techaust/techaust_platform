@@ -4,7 +4,7 @@
 import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkClient, mkContact } from "./test-clients.ts";
-import { call, NOON_IST_MID_FY, one, pinClock, rows, sessionFor } from "./test-helpers.ts";
+import { call, NOON_IST_MID_FY, one, pinClock, rows, sessionFor, withDb } from "./test-helpers.ts";
 import { currentFy, mkProforma, todayIso } from "./test-invoice-types.ts";
 import { codeOf, issueInvoice, type J, json, putBank, putCompany, voidInvoice } from "./test-invoices.ts";
 import { issueCredit, mkIssuedInvoice } from "./test-notes.ts";
@@ -332,25 +332,25 @@ describe("a payment on a proforma [L5, 07-ZH line 12]", () => {
         message: "A payment on a proforma is confirmed by issuing the tax invoice for the payment received.",
       },
     });
-    const made = await recorded(
-      staff,
-      recordBody(clientId, total, [{ documentId: pf.id, amountMinor: total }]),
-    );
+    const staffBody = recordBody(clientId, total, [{ documentId: pf.id, amountMinor: total }]);
+    const made = await recorded(staff, staffBody);
     expect(await codeOf(await verify(o, made.id, "confirm"))).toBe("use_advance_invoice");
     const stamp = (await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?", pf.id))
       ?.updated_at;
-    const advance = (amount: number, paymentId: string) =>
+    const advance = (amount: number, paymentId: string, reference = staffBody.reference) =>
       call(`/invoices/${pf.id}/advance-invoice`, {
         cookie: o.cookie,
         body: {
           expectedProformaUpdatedAt: stamp,
           amountMinor: amount,
           receivedOn: today(),
-          reference: ref(),
+          reference,
           paymentId,
         },
       });
     expect(await codeOf(await advance(total - 1, made.id))).toBe("payment_mismatch");
+    // early check 2, finding 7: the reference typed must be the entry's own
+    expect(await codeOf(await advance(total, made.id, ref()))).toBe("payment_mismatch");
     const both = await Promise.all([advance(total, made.id), advance(total, made.id)]);
     expect(both.map((r) => r.status).sort()).toEqual([201, 409]);
     const invoices = await rows<{ id: string }>(
@@ -678,5 +678,378 @@ describe("reads that follow the ledger [07-ZH lines 16, 17, 19, 20, 21]", () => 
         message: "This client has payments waiting for the owner's check. Confirm or reject them first.",
       },
     });
+  });
+});
+
+// ---- early check 2 (stage B2), findings 1 to 12 ------------------------------------------------------------------------------------------------------
+
+/**
+ * `env` whose DB runs `hook` just before its `n`th batch: a change landing between a route's read and its write (the route's own reads are batch 1 when it
+ * reads with a batch, so its write is batch 2; a route that reads with `first` writes in batch 1).
+ */
+function raceBefore(n: number, hook: () => Promise<unknown>): Env {
+  let i = 0;
+  const real = env.DB;
+  const db = new Proxy(real, {
+    get(t, k) {
+      if (k === "batch")
+        return async (stmts: D1PreparedStatement[]) => {
+          if (++i === n) await hook();
+          return t.batch(stmts);
+        };
+      const v = Reflect.get(t, k);
+      return typeof v === "function" ? v.bind(t) : v;
+    },
+  });
+  return withDb(db);
+}
+
+/** An issued proforma of a client of its own, with its total. */
+async function issuedProforma(o: Awaited<ReturnType<typeof owner>>) {
+  await putBank();
+  const pf = await mkProforma(o);
+  expect((await issueInvoice(o, pf.id)).status).toBe(200);
+  const row = (await one<{ client_id: string; total_minor: number; updated_at: number }>(
+    "SELECT client_id, total_minor, updated_at FROM documents WHERE id = ?",
+    pf.id,
+  )) as { client_id: string; total_minor: number; updated_at: number };
+  return { id: pf.id, clientId: row.client_id, total: row.total_minor, stamp: row.updated_at };
+}
+
+const advanceCall = (
+  o: { cookie: string },
+  pf: { id: string; stamp: number },
+  body: Record<string, unknown>,
+  e?: Env,
+) =>
+  call(
+    `/invoices/${pf.id}/advance-invoice`,
+    { cookie: o.cookie, body: { expectedProformaUpdatedAt: pf.stamp, receivedOn: today(), ...body } },
+    e,
+  );
+
+describe("early check 2: the advance and the payment entries [L5, L12; 07-ZH lines 12, 13]", () => {
+  it("finding 1: an advance without paymentId refuses a reference already seen (409 reference_seen), naming the pending entry that asks for this proforma; confirmDuplicate goes past it", async () => {
+    const o = await owner();
+    const staff = await sessionFor("staff");
+    const pf = await issuedProforma(o);
+    const staffBody = recordBody(pf.clientId, pf.total, [{ documentId: pf.id, amountMinor: pf.total }]);
+    const made = await recorded(staff, staffBody);
+    const res = await advanceCall(o, pf, { amountMinor: pf.total, reference: staffBody.reference });
+    expect(res.status).toBe(409);
+    const b = await json(res);
+    expect(b.error.code).toBe("reference_seen");
+    expect(b.error.message).toMatch(
+      /^This bank reference was already recorded on \d{2} \w{3} \d{4} for .+\. Record it again only if it is a different payment\.$/,
+    );
+    expect(b.error.details).toMatchObject({ receivedOn: today(), paymentId: made.id });
+    // another client's confirmed payment with the reference: refused too, with no paymentId to offer
+    const other = await mkReportClient();
+    const r2 = ref();
+    await recorded(o, recordBody(other, 1_000, [], { reference: r2 }));
+    const res2 = await advanceCall(o, pf, { amountMinor: pf.total, reference: r2 });
+    expect(await codeOf(res2.clone())).toBe("reference_seen");
+    expect((await json(res2)).error.details.paymentId).toBeUndefined();
+    expect(
+      await rows("SELECT id FROM documents WHERE parent_id = ? AND frozen_at IS NOT NULL", pf.id),
+    ).toHaveLength(0);
+    const ok = await advanceCall(o, pf, { amountMinor: pf.total, reference: r2, confirmDuplicate: true });
+    expect(ok.status, await ok.clone().text()).toBe(201);
+  });
+
+  it("finding 2: the pending entry confirmed from the Payments list between the read and the batch: nothing is frozen, no receipt, 409 payment_not_pending", async () => {
+    const o = await owner();
+    const staff = await sessionFor("staff");
+    const pf = await issuedProforma(o);
+    const staffBody = recordBody(pf.clientId, pf.total, [{ documentId: pf.id, amountMinor: pf.total }]);
+    const made = await recorded(staff, staffBody);
+    const race = raceBefore(2, () =>
+      env.DB.prepare(
+        "UPDATE payments SET status = 'confirmed', verified_by = ?2, verified_at = ?3 WHERE id = ?1",
+      )
+        .bind(made.id, o.id, Date.now())
+        .run(),
+    );
+    const res = await advanceCall(
+      o,
+      pf,
+      { amountMinor: pf.total, reference: staffBody.reference, paymentId: made.id },
+      race,
+    );
+    expect(res.status, await res.clone().text()).toBe(409);
+    expect(await codeOf(res)).toBe("payment_not_pending");
+    expect(
+      await rows("SELECT id FROM documents WHERE parent_id = ? AND type = 'tax_invoice'", pf.id),
+    ).toHaveLength(0);
+    expect(await rows("SELECT id FROM advance_receipts WHERE proforma_id = ?", pf.id)).toHaveLength(0);
+    expect(await rows("SELECT id FROM payment_allocations WHERE payment_id = ?", made.id)).toHaveLength(0);
+    expect((await paymentRow(made.id)).advance_receipt_id).toBeNull();
+  });
+
+  it("finding 3: a proforma ask is the only allocation and the whole amount, else 409 proforma_ask_whole with nothing written", async () => {
+    const o = await owner();
+    const staff = await sessionFor("staff");
+    const pf = await issuedProforma(o);
+    const inv = await addDoc({ clientId: pf.clientId, issueDate: "2026-10-05" });
+    const split = recordBody(pf.clientId, pf.total + 1_000, [
+      { documentId: pf.id, amountMinor: pf.total },
+      { documentId: inv.id, amountMinor: 1_000 },
+    ]);
+    const part = recordBody(pf.clientId, pf.total, [{ documentId: pf.id, amountMinor: pf.total - 1 }]);
+    for (const body of [split, part]) {
+      const res = await record(staff, body);
+      expect(res.status).toBe(409);
+      const b = await json(res);
+      expect(b.error.code).toBe("proforma_ask_whole");
+      expect(b.error.details).toEqual({ documentId: pf.id });
+      expect(await one("SELECT id FROM payments WHERE id = ?", body.id)).toBeNull();
+    }
+    expect(
+      (await record(staff, recordBody(pf.clientId, pf.total, [{ documentId: pf.id, amountMinor: pf.total }])))
+        .status,
+    ).toBe(201);
+  });
+});
+
+describe("early check 2: erase, stamps, refusals and void blockers [L31, L32; 08-C RB-11, RA-25]", () => {
+  it("finding 4: erasing an individual's last contact deletes the payment bells and clears the payments' and the check's free text; amounts and references stay", async () => {
+    const o = await owner();
+    const staff = await sessionFor("staff");
+    const clientId = await mkClient({ type: "individual" });
+    const contact = await mkContact(clientId, { is_primary: 1 });
+    const asked = recordBody(clientId, 1_000, [], { note: "Paid from a relative's account" });
+    const p1 = await recorded(staff, asked);
+    expect((await verify(o, p1.id, "reject", { note: "The advice names another person" })).status).toBe(200);
+    const confirmedBody = recordBody(clientId, 2_000, [], { note: "Cash deposit by a named person" });
+    const p2 = await recorded(o, confirmedBody);
+    expect(
+      (
+        await call(`/payments/${p2.id}/withdraw`, {
+          cookie: o.cookie,
+          body: { reason: "Entered for the wrong person" },
+        })
+      ).status,
+    ).toBe(200);
+    const bells = () =>
+      rows(
+        "SELECT id FROM notifications WHERE entity_type = 'payment' AND entity_id IN (?, ?)",
+        p1.id,
+        p2.id,
+      );
+    expect((await bells()).length).toBeGreaterThan(0);
+    expect(
+      (await one<{ note: string | null }>("SELECT note FROM approvals WHERE payment_id = ?", p1.id))?.note,
+    ).toBe("The advice names another person");
+    const res = await call(`/contacts/${contact.id}/erase`, {
+      cookie: o.cookie,
+      body: { mode: "anonymise", reason: "requested" },
+    });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await bells()).toEqual([]);
+    expect(await one("SELECT note FROM approvals WHERE payment_id = ?", p1.id)).toEqual({ note: null });
+    for (const [id, amount, body] of [
+      [p1.id, 1_000, asked],
+      [p2.id, 2_000, confirmedBody],
+    ] as const) {
+      const row = await paymentRow(id);
+      expect(row).toMatchObject({
+        note: null,
+        decision_note: null,
+        withdraw_reason: null,
+        amount_minor: amount,
+      });
+      expect(row.reference_norm).toBe(String(body.reference).toUpperCase());
+    }
+    expect((await paymentRow(p1.id)).status).toBe("rejected");
+    expect((await paymentRow(p2.id)).status).toBe("withdrawn");
+  });
+
+  it("finding 4: a business client's contact erase leaves its payments' text alone", async () => {
+    const o = await owner();
+    const clientId = await mkClient({ type: "business" });
+    const contact = await mkContact(clientId, { is_primary: 1 });
+    await mkContact(clientId);
+    const p = await recorded(o, recordBody(clientId, 1_000, [], { note: "Kept: a business client" }));
+    const res = await call(`/contacts/${contact.id}/erase`, {
+      cookie: o.cookie,
+      body: { mode: "anonymise", reason: "requested" },
+    });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect((await paymentRow(p.id)).note).toBe("Kept: a business client");
+  });
+
+  it("finding 5: apply and release answer the document's stored updated_at (the recompute moves it after the claim)", async () => {
+    const o = await owner();
+    const { clientId, inv } = await invoiceFor();
+    await recorded(o, recordBody(clientId, 20_000));
+    const applied = await json(
+      await call(`/clients/${clientId}/credit/apply`, {
+        cookie: o.cookie,
+        body: {
+          documentId: inv.id,
+          amountMinor: 5_000,
+          expectedUpdatedAt: (await ledgerOf(inv.id)).updated_at,
+        },
+      }),
+    );
+    expect(applied.updatedAt).toBe((await ledgerOf(inv.id)).updated_at);
+    // the answer's stamp is good for the next save
+    const second = await call(`/clients/${clientId}/credit/apply`, {
+      cookie: o.cookie,
+      body: { documentId: inv.id, amountMinor: 1_000, expectedUpdatedAt: applied.updatedAt },
+    });
+    expect(second.status, await second.clone().text()).toBe(200);
+    await recorded(o, recordBody(clientId, TOTAL, [{ documentId: inv.id, amountMinor: TOTAL - 6_000 }]));
+    await env.DB.prepare(
+      "UPDATE documents SET credited_minor = 3000, updated_at = updated_at + 1 WHERE id = ?",
+    )
+      .bind(inv.id)
+      .run();
+    const released = await json(
+      await call(`/invoices/${inv.id}/credit/release`, {
+        cookie: o.cookie,
+        body: { amountMinor: 3_000, expectedUpdatedAt: (await ledgerOf(inv.id)).updated_at },
+      }),
+    );
+    expect(released.updatedAt).toBe((await ledgerOf(inv.id)).updated_at);
+  });
+
+  it("finding 8: an extension refused after the read says why (a later one landed, the invoice was voided), never a bare 401", async () => {
+    pinClock(NOON_IST_MID_FY);
+    const o = await owner();
+    const clientId = await mkReportClient("USD");
+    const inv = await addDoc({ clientId, currency: "USD", issueDate: "2025-12-01" });
+    const extend = (extendedTo: string, e?: Env) =>
+      call(
+        `/invoices/${inv.id}/realisation-extensions`,
+        { cookie: o.cookie, body: { extendedTo, bankRef: "AD-1" } },
+        e,
+      );
+    const later = raceBefore(1, () =>
+      env.DB.prepare(
+        "INSERT INTO realisation_extensions (id, document_id, extended_to, bank_ref, recorded_by, created_at) VALUES (?1, ?2, '2027-12-31', 'AD-0', ?3, 1)",
+      )
+        .bind(`x-${inv.id}`, inv.id, o.id)
+        .run(),
+    );
+    const r1 = await extend("2027-06-30", later);
+    expect(r1.status).toBe(409);
+    expect(await json(r1)).toMatchObject({
+      error: { code: "extension_not_later", details: { femaDue: "2027-12-31" } },
+    });
+    const voided = raceBefore(1, () =>
+      env.DB.prepare("UPDATE documents SET status = 'void', voided_at = 9, void_reason = 'x' WHERE id = ?1")
+        .bind(inv.id)
+        .run(),
+    );
+    const r2 = await extend("2028-06-30", voided);
+    expect(r2.status).toBe(409);
+    expect(await codeOf(r2)).toBe("invoice_void");
+  });
+
+  it("finding 12: the letter route: set once, a wrong type refused, an anonymised client refused", async () => {
+    pinClock(NOON_IST_MID_FY);
+    const o = await owner();
+    const clientId = await mkReportClient("USD");
+    const inv = await addDoc({ clientId, currency: "USD", issueDate: "2025-12-01" });
+    const ext = async (extendedTo: string) =>
+      (
+        await json(
+          await call(`/invoices/${inv.id}/realisation-extensions`, {
+            cookie: o.cookie,
+            body: { extendedTo, bankRef: "AD-L" },
+          }),
+        )
+      ).id as string;
+    const e1 = await ext("2027-06-30");
+    const path = (eid: string) => `/invoices/${inv.id}/realisation-extensions/${eid}/letter`;
+    expect((await putDoc(path(e1), PDF_BYTES, { cookie: o.cookie, name: "letter.txt" })).status).toBe(415);
+    expect(await codeOf(await putDoc(path(e1), PDF_BYTES, { cookie: o.cookie, name: "letter.png" }))).toBe(
+      "file_type_mismatch",
+    );
+    const ok = await putDoc(path(e1), PDF_BYTES, { cookie: o.cookie, name: "letter.pdf" });
+    expect(ok.status, await ok.clone().text()).toBe(200);
+    expect(await codeOf(await putDoc(path(e1), PNG_BYTES, { cookie: o.cookie, name: "letter.png" }))).toBe(
+      "letter_already_set",
+    );
+    const e2 = await ext("2027-12-31");
+    await env.DB.prepare("UPDATE clients SET anonymised_at = 1 WHERE id = ?").bind(clientId).run();
+    const gone = await putDoc(path(e2), PDF_BYTES, { cookie: o.cookie, name: "letter.pdf" });
+    expect(gone.status).toBe(409);
+    expect(await codeOf(gone)).toBe("client_anonymised");
+    expect(await one("SELECT letter_r2_key FROM realisation_extensions WHERE id = ?", e2)).toEqual({
+      letter_r2_key: null,
+    });
+  });
+
+  it("finding 9: an allocation is payment_recorded, a waiting entry payment_pending (L32)", async () => {
+    const o = await owner();
+    await putBank();
+    const staff = await sessionFor("staff");
+    const a = await mkIssuedInvoice(o, { prices: [100_000] });
+    const made = await recorded(o, recordBody(a.clientId, 1_000, [{ documentId: a.id, amountMinor: 1_000 }]));
+    await call(`/payments/${made.id}/withdraw`, { cookie: o.cookie, body: { reason: "Entered twice" } });
+    const ra = await voidInvoice(o, a.id);
+    expect(ra.status).toBe(409);
+    const reasons = (await json(ra)).reasons;
+    expect(reasons).toContain("payment_recorded");
+    expect(reasons).not.toContain("payment_pending");
+    const view = await json(await call(`/invoices/${a.id}`, { cookie: o.cookie }));
+    expect(view.void.blockers).toContain("payment_recorded");
+    const b = await mkIssuedInvoice(o, { prices: [100_000] });
+    await recorded(staff, recordBody(b.clientId, 1_000, [{ documentId: b.id, amountMinor: 1_000 }]));
+    const rb = (await json(await voidInvoice(o, b.id))).reasons;
+    expect(rb).toContain("payment_pending");
+    expect(rb).not.toContain("payment_recorded");
+  });
+});
+
+describe("early check 2, finding 12: races", () => {
+  it("two parallel 'Use credit' calls on two invoices drawing on one source: one 200, one 409; the payment never gives more than its amount", async () => {
+    const o = await owner();
+    const clientId = await mkReportClient();
+    const a = await addDoc({ clientId, issueDate: "2026-10-05" });
+    const b = await addDoc({ clientId, issueDate: "2026-10-05" });
+    const src = await recorded(o, recordBody(clientId, 10_000));
+    const apply = async (documentId: string) =>
+      call(`/clients/${clientId}/credit/apply`, {
+        cookie: o.cookie,
+        body: { documentId, amountMinor: 8_000, expectedUpdatedAt: (await ledgerOf(documentId)).updated_at },
+      });
+    const both = await Promise.all([apply(a.id), apply(b.id)]);
+    expect(both.map((r) => r.status).sort()).toEqual([200, 409]);
+    const refused = both.find((r) => r.status === 409) as Response;
+    expect(["ledger_changed", "exceeds_credit"]).toContain(await codeOf(refused));
+    const net = await one<{ net: number }>(
+      "SELECT coalesce(sum(CASE kind WHEN 'allocate' THEN amount_minor ELSE -amount_minor END), 0) AS net FROM payment_allocations WHERE payment_id = ?",
+      src.id,
+    );
+    expect(net?.net).toBe(8_000);
+    const credit = await json(await call(`/clients/${clientId}/credit`, { cookie: o.cookie }));
+    expect(credit.credits).toEqual([{ currency: "INR", creditMinor: 2_000 }]);
+  });
+
+  it("a parallel void and confirm on one invoice: exactly one wins", async () => {
+    const o = await owner();
+    await putBank();
+    const staff = await sessionFor("staff");
+    const x = await mkIssuedInvoice(o, { prices: [100_000] });
+    const made = await recorded(staff, recordBody(x.clientId, 1_000));
+    const [v, c] = await Promise.all([
+      voidInvoice(o, x.id),
+      verify(o, made.id, "confirm", { allocations: [{ documentId: x.id, amountMinor: 1_000 }] }),
+    ]);
+    expect([v.status, c.status].sort()).toEqual([200, 409]);
+    const doc = await one<{ status: string }>("SELECT status FROM documents WHERE id = ?", x.id);
+    const held = await rows("SELECT id FROM payment_allocations WHERE document_id = ?", x.id);
+    if (v.status === 200) {
+      expect(doc?.status).toBe("void");
+      expect(held).toHaveLength(0);
+      expect((await paymentRow(made.id)).status).toBe("pending_verification");
+    } else {
+      expect(doc?.status).not.toBe("void");
+      expect(held).toHaveLength(1);
+      expect((await json(v)).reasons).toContain("payment_recorded");
+    }
   });
 });

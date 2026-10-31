@@ -19,8 +19,8 @@ const PINNED_MS = Date.parse("2025-09-01T06:30:00Z"); // 12:00 IST
 const NOW = String(PINNED_MS);
 /** The same instant as SQL text (UTC), for the fixture's `date(…)` calls. */
 const SQL_NOW = "'2025-09-01 06:30:00'";
-// M6.1: +20 for the three ledger reads of the finance tile (collected this month and this FY through `payments_confirmed`, the Owner's pending count
-// through `payments_pending`); on this fixture they read a handful of rows each.
+// M6.1: +20 for the ledger reads of the finance tile ("Collected" this FY and this month in one pass through `payments_confirmed`, the Owner's pending
+// count through `payments_pending`); on this fixture they read one row per seeded payment (early check 2, finding 6).
 const ROWS_READ_LIMIT = 6_320;
 const WORST_CASE_LIMIT = 8_000;
 /** Set to true to print the per-statement numbers (the test then fails on purpose, which is the only way vitest shows them). */
@@ -63,6 +63,20 @@ async function fixture() {
   await run(`WITH RECURSIVE p(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM p WHERE i < 50), d(k) AS (SELECT 0 UNION ALL SELECT k + 1 FROM d WHERE k < 59)
     INSERT INTO time_logs (id, user_id, work_date, minutes, care_plan_id, billable, created_at, updated_at)
     SELECT 'tl-' || p.i || '-' || d.k, 'st-stress', date(${SQL_NOW}, '+5 hours', '+30 minutes', '-' || d.k || ' days'), 15, 'cp-' || p.i, 1, ${NOW}, ${NOW} FROM p, d`);
+  // M6.1 (early check 2, finding 6): the ledger tiles read real rows here too: 5 confirmed payments in this FY (one on the pinned day, so the month has
+  // one) and 3 waiting for the Owner's check (one row read each). This fixture has no invoices; the 2,000-document case (one payment per invoice) is in
+  // dashboard-finance.test.ts, where "Collected" is measured at one row per payment of the FY.
+  await run(
+    "INSERT INTO staff_users (id, email, name, role, status) VALUES ('ow-stress', 'owner-stress@example.test', 'Stress Owner', 'owner', 'active')",
+  );
+  await run(`${RECURSIVE(5)}
+    INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, reference_norm, recorded_by, recorded_at, verified_by, verified_at)
+    SELECT 'pc-' || i, 'cl-stress', 'payment', 'manual', 'confirmed', 'INR', 100000 + i, date(${SQL_NOW}, '-' || ((i - 1) * 15) || ' days'), 'neft', 'UTRSTRESS' || i,
+           'ow-stress', ${NOW} - i * 1000, 'ow-stress', ${NOW} - i * 1000 FROM n`);
+  await run(`${RECURSIVE(3)}
+    INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, reference_norm, recorded_by, recorded_at)
+    SELECT 'pp-' || i, 'cl-stress', 'payment', 'manual', 'pending_verification', 'INR', 5000 + i, date(${SQL_NOW}, '-' || i || ' days'), 'upi', 'UTRSTRESSP' || i,
+           'st-stress', ${NOW} - i * 1000 FROM n`);
   await run(`${RECURSIVE(5_000)}
     INSERT INTO audit_log (id, actor_type, actor_id, role, action, entity_type, entity_id, at)
     SELECT 'au-' || i, 'staff', 'st-stress', 'staff',

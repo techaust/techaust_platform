@@ -491,8 +491,10 @@ export const VOID_BLOCKER_CODES = [
   "already_emailed",
   "viewed_by_client",
   "return_period_closed",
-  // M6.1 (L17): a payment waits for the Owner's check against it, or a payment was ever put on it; TDS is recorded on it.
+  // M6.1 (L17, L32): a payment waits for the Owner's check against it (`payment_pending`); a payment was ever put on it, one released or withdrawn since
+  // included (`payment_recorded`); TDS is recorded on it.
   "payment_pending",
+  "payment_recorded",
   "tds_recorded",
 ] as const;
 export type VoidBlockerCode = (typeof VOID_BLOCKER_CODES)[number];
@@ -519,8 +521,13 @@ export type VoidFacts = {
    * Required, so no caller can forget it (stage B2 passes it from every void path).
    */
   readonly tdsMinor: number;
-  /** M6.1 (L17): a PENDING payment asks for this document (`payments.requested_allocations`), or an allocation row names it (even one released since). */
+  /** M6.1 (L17, L32): a PENDING payment asks for this document (`payments.requested_allocations`). */
   readonly paymentPending: boolean;
+  /**
+   * M6.1 (L17, L32): an allocation row names this document, even one released or withdrawn since (`paymentRecordedSql` in `@techaust/db/ledger`). Required,
+   * so no caller can forget it.
+   */
+  readonly paymentRecorded: boolean;
 };
 
 /**
@@ -539,6 +546,7 @@ export function voidBlockers(f: VoidFacts): VoidBlockerCode[] {
   if (f.paidMinor > 0) out.push("has_payment");
   if (f.creditedMinor > 0) out.push("has_credit");
   if (f.paymentPending === true) out.push("payment_pending");
+  if (f.paymentRecorded === true) out.push("payment_recorded");
   if (f.tdsMinor > 0) out.push("tds_recorded");
   if (f.hasIssuedChild) out.push("has_child_document");
   if (f.emailed) out.push("already_emailed");

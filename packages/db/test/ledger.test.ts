@@ -499,13 +499,14 @@ describe("the ledger identity with TDS, the TDS bounds, and no void with a payme
       requested: JSON.stringify([{ documentId: c, amountMinor: 100 }]),
     });
     await rejects(voidIt(c), /documents_void_no_payment/);
-    expect((await first<{ pending: number }>(PAYMENT_ASKS_FOR_DOCUMENT_SQL, c, clientId))?.pending).toBe(1);
+    expect(await first(PAYMENT_ASKS_FOR_DOCUMENT_SQL, c, clientId)).toEqual({ pending: 1, recorded: 0 });
+    expect(await first(PAYMENT_ASKS_FOR_DOCUMENT_SQL, b, clientId)).toEqual({ pending: 0, recorded: 1 });
     await run(
       "UPDATE payments SET status = 'rejected', verified_by = ?2, verified_at = 1 WHERE id = ?1",
       asked,
       owner,
     );
-    expect((await first<{ pending: number }>(PAYMENT_ASKS_FOR_DOCUMENT_SQL, c, clientId))?.pending).toBe(0);
+    expect(await first(PAYMENT_ASKS_FOR_DOCUMENT_SQL, c, clientId)).toEqual({ pending: 0, recorded: 0 });
     await voidIt(c);
   });
 

@@ -1006,9 +1006,10 @@ export const PROOF_MIME_TYPES_0057 = ["application/pdf", "image/jpeg", "image/pn
  *   3. `payments_tds_rules`: a TDS row has a section and a rate of 1 to 10000 bp, no mode, is in INR and its client is in India; a payment row has no TDS
  *      fields (T8, L8; Settled by the lead on the safest reading, 2026-10-30 (08-C RA-30));
  *   4. `payments_fixed`: everything is frozen except the set-once columns (the proof, the TDS certificate (a TDS row only), the advance receipt (only with the
- *      confirm move)) and the columns of a status move;
+ *      confirm move)) and the columns of a status move; `note` changes only to NULL once the client is anonymised (the erase, L31);
  *   5. `payments_status_flow`: pending moves once to confirmed or rejected, decided by an active Owner with the time; confirmed moves once to withdrawn, by an
- *      active Owner, with the time and a reason (L7); the decision and withdraw columns change only with their move (core `canMovePayment` is the twin);
+ *      active Owner, with the time and a reason (L7); the decision and withdraw columns change only with their move (core `canMovePayment` is the twin),
+ *      except that `decision_note` and `withdraw_reason` change to NULL, with no move, once the client is anonymised (the erase, L31; 08-C RB-11, RA-25);
  *   6. `payments_no_delete`;
  *   7. `payment_allocations_no_update` / `_no_delete` (append-only) and `payment_allocations_kind`;
  *   8. `payment_allocations_bounds`: the payment is confirmed, of the document's client and currency; the document is a frozen, not void tax invoice, export
@@ -1057,7 +1058,6 @@ export function paymentTriggerStatements(): string[] {
     "requested_allocations",
     "tds_section",
     "tds_rate_bp",
-    "note",
     "recorded_by",
     "recorded_at",
   ] as const;
@@ -1072,14 +1072,22 @@ export function paymentTriggerStatements(): string[] {
     "advance_receipt_id",
   ] as const;
   const confirming = "OLD.status = 'pending_verification' AND NEW.status = 'confirmed'";
-  const fixedBad = `${changed(frozenCols)} OR ${setOnce(onceCols)} OR (NEW.advance_receipt_id IS NOT OLD.advance_receipt_id AND NOT (${confirming})) OR ((NEW.tds_certificate_no IS NOT OLD.tds_certificate_no OR NEW.tds_certificate_on IS NOT OLD.tds_certificate_on) AND OLD.kind IS NOT 'tds')`;
+  // Early check 2, finding 4 (L31): erasing an individual client clears the payment's free text (`note`, `decision_note`, `withdraw_reason`: words a person
+  // typed, which can name them) once the client reads as anonymised, and only to NULL, with no status move. Amounts, references, proof and the TDS certificate
+  // never change: they are tax records (Researched 2026-10-28, s.36 CGST Act, Rules 56 and 57 (08-C RA-25)). Researched 2026-10-28, DPDP Act s.8(7) and
+  // s.12(3) (08-C RB-11): data kept for a legal duty may be used for it; the free text is not needed for it.
+  const erasingText = (col: string) =>
+    `(NEW.\`${col}\` IS NULL AND NEW.status IS OLD.status AND EXISTS (SELECT 1 FROM clients ec WHERE ec.id = OLD.client_id AND ec.anonymised_at IS NOT NULL))`;
+  const fixedBad = `${changed(frozenCols)} OR (NEW.\`note\` IS NOT OLD.\`note\` AND NOT ${erasingText("note")}) OR ${setOnce(onceCols)} OR (NEW.advance_receipt_id IS NOT OLD.advance_receipt_id AND NOT (${confirming})) OR ((NEW.tds_certificate_no IS NOT OLD.tds_certificate_no OR NEW.tds_certificate_on IS NOT OLD.tds_certificate_on) AND OLD.kind IS NOT 'tds')`;
   const deciding = "OLD.status = 'pending_verification' AND NEW.status IN ('confirmed', 'rejected')";
   const withdrawing = "OLD.status = 'confirmed' AND NEW.status = 'withdrawn'";
   const flowBad = `(NEW.status IS NOT OLD.status AND NOT ((${deciding}) OR (${withdrawing})))
     OR ((${deciding}) AND (NEW.verified_at IS NULL OR NOT ${owner("NEW.verified_by")}))
     OR ((${withdrawing}) AND (NEW.withdrawn_at IS NULL OR NEW.withdraw_reason IS NULL OR trim(NEW.withdraw_reason) = '' OR NOT ${owner("NEW.withdrawn_by")}))
-    OR ((${changed(["verified_by", "verified_at", "decision_note"])}) AND NOT (${deciding}))
-    OR ((${changed(["withdrawn_by", "withdrawn_at", "withdraw_reason"])}) AND NOT (${withdrawing}))`;
+    OR ((${changed(["verified_by", "verified_at"])}) AND NOT (${deciding}))
+    OR (NEW.decision_note IS NOT OLD.decision_note AND NOT (${deciding}) AND NOT ${erasingText("decision_note")})
+    OR ((${changed(["withdrawn_by", "withdrawn_at"])}) AND NOT (${withdrawing}))
+    OR (NEW.withdraw_reason IS NOT OLD.withdraw_reason AND NOT (${withdrawing}) AND NOT ${erasingText("withdraw_reason")})`;
   // The allocation bound, with the document `d` and the payment `p` of the new row in scope.
   const docBalance = `d.total_minor - d.credited_minor - ${livePaidSql("d.id")} - ${liveTdsSql("d.id")}`;
   const docExcess = `${livePaidSql("d.id")} + d.credited_minor + ${liveTdsSql("d.id")} - d.total_minor`;
