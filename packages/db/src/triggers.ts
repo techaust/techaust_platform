@@ -1443,7 +1443,7 @@ const GATEWAY_REF_MAX_0062 = 64;
  *      id, its checkout and the instant it was re-fetched (ADR 0008), and starts either pending with no decision or confirmed by the gateway (no member, `verified_at` set:
  *      L5, a verified and re-fetched gateway payment confirms without an Owner step, ADM-PAY-03, -07); never withdrawn;
  *   3. `payments_gateway_shape` (new): a manual entry carries no gateway column; a gateway payment is money received (`payment`, never TDS) in INR (owner, 2026-11-01, Q3 A:
- *      domestic INR clients only; Researched 2026-10-28 (08-C RB-07), OPEN (08-C RB-01): cross-border receipts through an aggregator), with a mode and a reference, and its
+ *      domestic INR clients only; OPEN (08-C RB-01): does a USD invoice paid through a PA-CB that credits us in INR count as "settled in INR"?), with a mode and a reference, and its
  *      fee tax is never negative;
  *   4. `payments_fixed` recreated: 0060's rule over `PAYMENT_FROZEN_0062` (the gateway columns never change);
  *   5. `payments_status_flow` recreated: 0060's flow, plus: a gateway payment is never rejected or withdrawn (refunds are M6.5, L7); a pending gateway payment is

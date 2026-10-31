@@ -1,5 +1,6 @@
 // Payment providers, pure (M6.1; ADM-PAY-01, ADR 0008). Types, one guard and the manual provider only: no gateway code and no `fetch` (the gateways come in M6.2 to
-// M6.4, each implementing `PaymentProvider` and passing `checkProviderContract`). Sandbox only until the owner's go-live (`PAYMENTS_LIVE_ALLOWED=false`, CLAUDE.md
+// M6.4, each implementing `PaymentProvider` and passing `checkProviderContract`; M6.2 widened the interface for Razorpay's payment links: a checkout is a link with
+// its own id, it can be fetched and cancelled, and its events carry the link and the payment). Sandbox only until the owner's go-live (`PAYMENTS_LIVE_ALLOWED=false`, CLAUDE.md
 // rule 7): `liveModeAllowed` refuses a live mode while the flag is not exactly true. Nothing is ever marked paid on a redirect: a checkout's return proves
 // nothing, only a verified webhook or a status fetch does (ADR 0008), and the ledger moves only through a confirmed payment row.
 
@@ -31,14 +32,18 @@ export type ProviderResult<T> =
   | { readonly ok: false; readonly code: ProviderErrorCode };
 
 export type CheckoutRequest = {
-  /** The payment row's id (a UUIDv7): the provider's idempotency key and the reference its events carry back. */
-  readonly paymentId: string;
+  /** The `checkout_sessions` row's id (a UUIDv7, M6.2 L3): the provider's reference for the checkout (Razorpay's `reference_id`, unique per link). */
+  readonly checkoutId: string;
   readonly clientId: string;
   readonly documentId: string;
   readonly currency: "INR" | "USD";
   readonly amountMinor: number;
-  /** Where the browser returns to; reaching it proves nothing (ADR 0008). */
-  readonly returnUrl: string;
+  /** What the gateway's page shows (Razorpay: "Invoice {number}"). */
+  readonly description: string;
+  /** When the checkout stops taking money (UTC ms). */
+  readonly expiresAt: number;
+  /** Where the browser returns to; reaching it proves nothing (ADR 0008), so it never carries a token. */
+  readonly callbackUrl: string;
 };
 export type Checkout = {
   readonly providerRef: string;
@@ -53,15 +58,26 @@ export const PROVIDER_EVENT_TYPES = [
   "payment.captured",
   "payment.failed",
   "refund.processed",
+  // M6.2: a checkout (a Razorpay payment link) was paid, partly paid, expired or cancelled.
+  "checkout.paid",
+  "checkout.partially_paid",
+  "checkout.expired",
+  "checkout.cancelled",
   "other",
 ] as const;
 export type ProviderEventType = (typeof PROVIDER_EVENT_TYPES)[number];
 export type ProviderEvent = {
-  /** The provider's event id: the idempotency key of `webhook_events` (M6.2). */
+  /** The provider's event id: the key of `webhook_events` (M6.2; not the real idempotency key when the provider does not sign it: the payment id is). */
   readonly id: string;
   readonly type: ProviderEventType;
+  /** The payment's reference when the event names one, else the checkout's. */
   readonly providerRef: string;
+  /** M6.2: the checkout (link) the event is about, or null. */
+  readonly checkoutRef: string | null;
+  /** M6.2: the payment the event is about, or null (an expired or cancelled checkout has none). */
+  readonly paymentRef: string | null;
   readonly currency: "INR" | "USD";
+  /** The payment's amount (or the checkout's, for an event with no payment); 0 only for an event type we do not handle (`other`). */
   readonly amountMinor: number;
   readonly occurredAt: number;
 };
@@ -72,6 +88,34 @@ export type PaymentStatusReport = {
   readonly state: ProviderPaymentState;
   readonly currency: "INR" | "USD";
   readonly amountMinor: number;
+  /** M6.2: the payment method as the provider names it (Razorpay: upi, card, netbanking, ...), or null. */
+  readonly method: string | null;
+  /** M6.2: the provider's fee and the tax on it, as it reports them (absorbed, never billed: 08-C RA-29), or null when not reported. */
+  readonly feeMinor: number | null;
+  readonly feeTaxMinor: number | null;
+  /** M6.2: when the payment was made (UTC ms). */
+  readonly createdAt: number;
+  /** M6.2: the provider's order the payment belongs to, or null. */
+  readonly orderRef: string | null;
+};
+
+export type CheckoutState = "created" | "partially_paid" | "paid" | "expired" | "cancelled";
+/** M6.2: a checkout (payment link) as the provider reports it when fetched. */
+export type CheckoutStatusReport = {
+  readonly providerRef: string;
+  /** Our reference the checkout was made with (the `checkout_sessions` id). */
+  readonly referenceId: string | null;
+  readonly state: CheckoutState;
+  readonly currency: "INR" | "USD";
+  readonly amountMinor: number;
+  readonly amountPaidMinor: number;
+  readonly orderRef: string | null;
+  /** The payments made through it, as the provider lists them. */
+  readonly payments: readonly {
+    readonly paymentRef: string;
+    readonly amountMinor: number;
+    readonly status: string;
+  }[];
 };
 
 export type RefundRequest = {
@@ -91,6 +135,10 @@ export interface PaymentProvider {
   /** Reads a VERIFIED webhook's event; a body it does not understand is `invalid_event`. */
   parseEvent(input: WebhookInput): ProviderResult<ProviderEvent>;
   fetchStatus(providerRef: string): Promise<ProviderResult<PaymentStatusReport>>;
+  /** M6.2: the checkout as the provider holds it now (a status fetch, which ADR 0008 allows). */
+  fetchCheckout(providerRef: string): Promise<ProviderResult<CheckoutStatusReport>>;
+  /** M6.2: stops a checkout taking money (a replaced or stale link). */
+  cancelCheckout(providerRef: string): Promise<ProviderResult<true>>;
   refund(req: RefundRequest): Promise<ProviderResult<{ readonly refundRef: string }>>;
 }
 
@@ -106,6 +154,8 @@ export const manualProvider: PaymentProvider = Object.freeze({
   verifyWebhook: async () => UNSUPPORTED,
   parseEvent: () => UNSUPPORTED,
   fetchStatus: async () => UNSUPPORTED,
+  fetchCheckout: async () => UNSUPPORTED,
+  cancelCheckout: async () => UNSUPPORTED,
   refund: async () => UNSUPPORTED,
 });
 
@@ -132,7 +182,8 @@ export type ContractOptions = {
 /**
  * The provider contract, as a list of failures (empty: it passes): a name; a known mode or none; a live mode only where `liveModeAllowed` lets it; every
  * method answers a `ProviderResult` and never throws; a webhook with no body and no headers never verifies and never parses; a provider that verifies
- * `validWebhook` parses it into an event with a safe, positive amount; and while live mode is not allowed, a live provider refuses a checkout.
+ * `validWebhook` parses it into an event with a safe, positive amount; and while live mode is not allowed, a live provider refuses a checkout and (M6.2) every
+ * other call that would reach its API (status, checkout fetch, cancel, refund).
  */
 export async function checkProviderContract(p: PaymentProvider, opts: ContractOptions): Promise<string[]> {
   const out: string[] = [];
@@ -150,18 +201,20 @@ export async function checkProviderContract(p: PaymentProvider, opts: ContractOp
   };
   const empty: WebhookInput = { rawBody: "", headers: {} };
   const sample: CheckoutRequest = {
-    paymentId: "00000000-0000-7000-8000-000000000000",
+    checkoutId: "00000000-0000-7000-8000-000000000000",
     clientId: "contract-client",
     documentId: "contract-document",
     currency: "INR",
     amountMinor: 100,
-    returnUrl: "https://example.invalid/return",
+    description: "Contract",
+    expiresAt: 4_102_444_800_000,
+    callbackUrl: "https://example.invalid/return",
   };
+  const liveBlocked = p.mode === "live" && !liveModeAllowed("live", opts.liveAllowed);
   const checkout = (await call("createCheckout", () =>
     p.createCheckout(sample),
   )) as ProviderResult<Checkout> | null;
-  if (p.mode === "live" && !liveModeAllowed("live", opts.liveAllowed) && checkout?.ok === true)
-    out.push("createCheckout: live mode ran while it is not allowed");
+  if (liveBlocked && checkout?.ok === true) out.push("createCheckout: live mode ran while it is not allowed");
   const verified = (await call("verifyWebhook(empty)", () =>
     p.verifyWebhook(empty),
   )) as ProviderResult<true> | null;
@@ -170,10 +223,19 @@ export async function checkProviderContract(p: PaymentProvider, opts: ContractOp
     p.parseEvent(empty),
   )) as ProviderResult<ProviderEvent> | null;
   if (parsed?.ok === true) out.push("parseEvent(empty): parsed an empty webhook");
-  await call("fetchStatus", () => p.fetchStatus("contract-ref"));
-  await call("refund", () =>
-    p.refund({ providerRef: "contract-ref", currency: "INR", amountMinor: 100, reason: "contract" }),
-  );
+  const network: [string, () => unknown][] = [
+    ["fetchStatus", () => p.fetchStatus("contract-ref")],
+    ["fetchCheckout", () => p.fetchCheckout("contract-ref")],
+    ["cancelCheckout", () => p.cancelCheckout("contract-ref")],
+    [
+      "refund",
+      () => p.refund({ providerRef: "contract-ref", currency: "INR", amountMinor: 100, reason: "contract" }),
+    ],
+  ];
+  for (const [what, f] of network) {
+    const r = (await call(what, f)) as ProviderResult<unknown> | null;
+    if (liveBlocked && r?.ok === true) out.push(`${what}: live mode ran while it is not allowed`);
+  }
   if (opts.validWebhook) {
     const hook = opts.validWebhook;
     const ok = (await call("verifyWebhook(valid)", () =>

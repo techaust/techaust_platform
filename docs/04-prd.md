@@ -484,6 +484,8 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | Use a client's credit on an invoice, or move an invoice's excess to credit (`payments.applyCredit`; M6.1, L13) | ✅ (step-up) | — | — | — |
 | Add a payment's proof file or its TDS certificate number, once (`payments.attachProof`; M6.1, L11, OPEN 08-C RB-05) | ✅ | ✅ | — | — |
 | Record the bank's extension of an export's realisation date (`realisation.extend`; M6.1, L14, Q60, 08-C RB-04, RA-20) | ✅ | — | — | — |
+| Create, cancel or refresh a Razorpay payment link for an issued invoice or proforma (`payments.link`; M6.2, L2 to L4; no money moves until a verified, re-fetched payment) | ✅ | ✅ | — | — |
+| Resolve or retry a gateway payment in "Needs review" (`payments.review`; M6.2, L7; the list itself is `payments.read`) | ✅ | — | — | — |
 | Refunds | ✅ (step-up) | — | — | 👁 |
 | Reports | ✅ | Projects, time, care plans | Pipeline only | ✅ finance + exports |
 | GST/CA exports | ✅ (step-up) | — | — | ✅ (step-up) |

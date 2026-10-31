@@ -42,6 +42,10 @@ const MONEY_FILES = [
   "src/ledger.ts",
   "src/payments.ts",
   "src/schemas/payments.ts",
+  // M6.2: Razorpay, the online payment rules and the gateway RPC contracts
+  "src/razorpay.ts",
+  "src/online-pay.ts",
+  "src/gateway-rpc.ts",
   "src/export-invoice.ts",
   "src/fx.ts",
   "src/schedule-text.ts",
