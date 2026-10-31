@@ -1,5 +1,5 @@
 # Run: T7, erase a person's data in the frozen copies of never-accepted offers
-Status: analyst drafting the brief
+Status: analyst drafting the brief (started 13:08 IST)
 Tier: A (deleting or anonymising data; docs/14 §2)
 Usage: lead claude-opus-5-5/high (cloud session t7-erasure; 5-h 8 % at 2026-10-31T12:58+05:30, main session's reading)
 
