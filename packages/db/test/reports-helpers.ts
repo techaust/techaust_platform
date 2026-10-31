@@ -1,7 +1,9 @@
 // Helpers for the M5.5b database tests: issued (frozen) documents of every reportable kind with a real computed document, inserted as the freeze leaves
 // them (like `parentInvoice` in note-helpers.ts), and client, receipt and settings rows. All names, GSTINs and amounts are invented test data.
+import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
 import { type ComputedDocument, computeDocument, type LineInput } from "@techaust/core/tax";
+import { recomputeStatement } from "../src/ledger.ts";
 import { run } from "./helpers.ts";
 import { CTX, DATE, line, mkClient, mkOwner, nextFy } from "./note-helpers.ts";
 
@@ -178,6 +180,31 @@ export async function addReceipt(o: {
     `REF-${id.slice(-8)}`,
     o.ownerId,
   );
+  // M6.1 (L4): the advance batch writes the money onto the ledger too: a confirmed payment `pay_<receipt>` and its allocation `pal_<receipt>` onto the invoice
+  // (the ids of the back-fill and of `advanceIssueStatements`), then the recompute, so the invoice's stored figures are the ledger's.
+  const now = Date.now();
+  await run(
+    "INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, reference_norm, advance_receipt_id, recorded_by, recorded_at, verified_by, verified_at) VALUES (?1, ?2, 'payment', 'manual', 'confirmed', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?8, ?9)",
+    `pay_${id}`,
+    o.clientId,
+    o.currency,
+    o.amountMinor,
+    o.receivedOn,
+    `REF-${id.slice(-8)}`,
+    id,
+    o.ownerId,
+    now,
+  );
+  await run(
+    "INSERT INTO payment_allocations (id, payment_id, document_id, amount_minor, kind, created_by, created_at) VALUES (?1, ?2, ?3, ?4, 'allocate', ?5, ?6)",
+    `pal_${id}`,
+    `pay_${id}`,
+    o.invoiceId,
+    o.amountMinor,
+    o.ownerId,
+    now,
+  );
+  await recomputeStatement(env.DB, { paymentId: `pay_${id}` }, now).run();
   return id;
 }
 

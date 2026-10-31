@@ -183,7 +183,7 @@ describe("the statements bind exactly the placeholders they use [M5.2]", () => {
     // ledger_result (unguarded, last)
     expect(s.postAudit.length).toBe(8);
     expect((s.postAudit as unknown as Rec[]).at(-1)?.sql).toContain("INSERT INTO ledger_result");
-    expect((s.postAudit as unknown as Rec[]).at(-1)?.sql).not.toContain("WHERE");
+    expect((s.postAudit as unknown as Rec[]).at(-1)?.sql).not.toMatch(/advance_receipts|audit_log|frozen_at/); // unguarded
     expect((s.postAudit as unknown as Rec[])[0]?.sql).toContain("INSERT INTO issue_result");
     expect((s.postAudit as unknown as Rec[])[0]?.sql).not.toContain("WHERE");
     for (const r of out) expect(r.values.length, r.sql.slice(0, 60)).toBe(highest(r.sql));
