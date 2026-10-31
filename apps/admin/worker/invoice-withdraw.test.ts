@@ -3,7 +3,9 @@
 // the reason is stored, one audit row holds its length only, the milestone is freed, links and sends are left alone. An undelivered proforma is voided
 // instead; a tax or export invoice never. Failure paths first. Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-17, RA-28).
 import { env } from "cloudflare:workers";
+import { withdrawnSql } from "@techaust/db/sql-rules";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { INVOICE_FACTS_SQL, INVOICE_LIST_SQL } from "./invoices.ts";
 import { insert, mkContact } from "./test-clients.ts";
 import { call, one, rows, sessionFor } from "./test-helpers.ts";
 import {
@@ -30,6 +32,7 @@ import {
   putCompany,
   voidInvoice,
 } from "./test-invoices.ts";
+import { draftCredit, mkIssuedInvoice } from "./test-notes.ts";
 import { beforeBatchHolding } from "./test-quotes.ts";
 
 const owner = () => sessionFor("owner", { stepUp: true });
@@ -514,6 +517,23 @@ describe("withdrawn [ADM-INV-10, ADM-INV-02, ADM-AUD-01]", () => {
     });
   });
 
+  it("review L2: an anonymised client is offered neither Withdraw nor Void (the routes refuse client_anonymised)", async () => {
+    const o = await owner();
+    const pf = await delivered(o, "viewed");
+    const quiet = await issuedProforma(o);
+    expect((await getInvoice(o, pf.id)).withdraw.canWithdraw).toBe(true);
+    expect((await getInvoice(o, quiet.id)).void.canVoid).toBe(true);
+    await env.DB.prepare("UPDATE clients SET anonymised_at = 3 WHERE id IN (?1, ?2)")
+      .bind(pf.clientId, quiet.clientId)
+      .run();
+    expect((await getInvoice(o, pf.id)).withdraw).toEqual({ canWithdraw: false, blockers: [] });
+    expect((await getInvoice(o, quiet.id)).void).toMatchObject({ canVoid: false, blockers: [] });
+    expect((await getInvoice(o, quiet.id)).withdraw).toEqual({
+      canWithdraw: false,
+      blockers: ["not_delivered"],
+    });
+  });
+
   it("the list and the client's tab mark it withdrawn; an undelivered void proforma is not; the dashboard's proformas awaiting leave it out", async () => {
     const o = await owner();
     const pf = await delivered(o, "emailed");
@@ -549,5 +569,49 @@ describe("withdrawn [ADM-INV-10, ADM-INV-02, ADM-AUD-01]", () => {
     const live = await mkInvoice(o);
     const list = await call(`/invoices?clientId=${live.clientId}`, { cookie: o.cookie });
     expect(((await json(list)).invoices as J[]).every((r) => r.withdrawn === false)).toBe(true);
+  });
+});
+
+describe("the reads use the shared rule and look up the withdraw facts for a proforma only [ADM-INV-10, review L4 and note]", () => {
+  it("the list's withdrawn flag is `withdrawnSql`, not a hand-written copy", () => {
+    for (const status of ["plain", "overdue", null] as const)
+      for (const client of [true, false])
+        expect(INVOICE_LIST_SQL({ status, client, cursor: false })).toContain(
+          `${withdrawnSql("d")} AS withdrawn`,
+        );
+  });
+  it("any child and an advance receipt are read for a proforma only; a tax invoice with a draft credit note reads neither, and still answers not_proforma", async () => {
+    const o = await owner();
+    const facts = (id: string) =>
+      one<{ emailed: number; child: number; any_child: number; advance: number }>(INVOICE_FACTS_SQL, id);
+    // a tax invoice with a draft child (a credit note): the child lookup is skipped (the issued-child lookup the void needs still runs)
+    const inv = await mkIssuedInvoice(o);
+    const note = await draftCredit(o, inv.id, { mode: "full" });
+    expect(note.status, await note.clone().text()).toBe(201);
+    expect(await facts(inv.id)).toMatchObject({ child: 0, any_child: 0, advance: 0 });
+    expect((await getInvoice(o, inv.id)).withdraw).toEqual({
+      canWithdraw: false,
+      blockers: ["not_proforma"],
+    });
+    // a converted proforma: both are read
+    const pf = await delivered(o, "viewed");
+    const adv = await call(`/invoices/${pf.id}/advance-invoice`, {
+      cookie: o.cookie,
+      body: {
+        expectedProformaUpdatedAt: await stamp(pf.id),
+        amountMinor: 59_000,
+        receivedOn: todayIso(),
+        reference: `UTR WD facts ${Date.now()}`,
+      },
+    });
+    expect(adv.status, await adv.clone().text()).toBe(201);
+    expect(await facts(pf.id)).toMatchObject({ child: 1, any_child: 1, advance: 1 });
+    // the gate covers both lookups
+    expect(INVOICE_FACTS_SQL).toMatch(
+      /CASE WHEN d\.type = 'proforma' THEN EXISTS \(SELECT 1 FROM documents x WHERE x\.parent_id = \?1\) ELSE 0 END AS any_child/,
+    );
+    expect(INVOICE_FACTS_SQL).toMatch(
+      /CASE WHEN d\.type = 'proforma' THEN EXISTS \(SELECT 1 FROM advance_receipts r WHERE r\.proforma_id = \?1\) ELSE 0 END AS advance/,
+    );
   });
 });
