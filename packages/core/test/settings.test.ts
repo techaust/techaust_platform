@@ -15,7 +15,13 @@ import {
   SETTINGS_SCHEMAS,
   type SeededSettingKey,
 } from "../src/schemas/settings.ts";
-import { isUdyam, UDYAM_CATEGORIES, UDYAM_NUMBER_RE, udyamPrintedOn } from "../src/udyam.ts";
+import {
+  isUdyam,
+  UDYAM_CATEGORIES,
+  UDYAM_NUMBER_ERROR,
+  UDYAM_NUMBER_RE,
+  udyamPrintedOn,
+} from "../src/udyam.ts";
 
 describe("settings defaults (docs/08 §7.1, researched in 08-C)", () => {
   it.each(Object.keys(SETTINGS_SCHEMAS) as SeededSettingKey[])("%s validates against its schema", (key) => {
@@ -198,6 +204,8 @@ describe("T10: the Udyam registration (ADM-SET-01; 07-ZC lines 4-5; 08-C RB-39)"
       expect(udyam(bad).success, bad).toBe(false);
     const r = udyam("udyam-wb-01-0012345");
     expect(!r.success && r.error.issues[0]?.message).toBe("Enter the number as UDYAM-XX-00-0000000.");
+    // 07-ZC line 4 lives once, in core (code review 5): the schema answers with that very constant
+    expect(UDYAM_NUMBER_ERROR).toBe("Enter the number as UDYAM-XX-00-0000000.");
     expect(udyam("UDYAM-WB-01-0012345", "large").success).toBe(false);
     expect(company({ udyam: { number: "UDYAM-WB-01-0012345", category: "micro", extra: 1 } }).success).toBe(
       false,

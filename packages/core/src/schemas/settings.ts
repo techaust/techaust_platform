@@ -20,7 +20,7 @@ import {
   validateFormat,
   validateStoredFormat,
 } from "../numbering.ts";
-import { UDYAM_CATEGORIES, UDYAM_NUMBER_RE } from "../udyam.ts";
+import { UDYAM_CATEGORIES, UDYAM_NUMBER_ERROR, UDYAM_NUMBER_RE } from "../udyam.ts";
 
 /**
  * The brand logo files a document may use (ADM-SET-01), file names under `packages/ui/brand`. A fixed list: the PDF and the
@@ -102,7 +102,7 @@ export type SignatureRef = z.infer<typeof signatureRef>;
  * own number and of 07-ZC line 4. The category is stored as a key (L3); its printed words are `@techaust/pdf/copy`'s.
  */
 export const udyamSettings = z.strictObject({
-  number: z.string().check(z.regex(UDYAM_NUMBER_RE, { error: "Enter the number as UDYAM-XX-00-0000000." })),
+  number: z.string().check(z.regex(UDYAM_NUMBER_RE, { error: UDYAM_NUMBER_ERROR })),
   category: z.enum(UDYAM_CATEGORIES),
 });
 

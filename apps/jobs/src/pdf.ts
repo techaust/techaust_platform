@@ -347,7 +347,9 @@ async function renderInvoice(
   // CGST Rules (08-C RA-22); s.31(3)(d) CGST Act and Rule 50 CGST Rules (08-C RA-17)). Checked after the adoption above, so a PDF already stored stays; an older staging
   // document issued before the rule is refused here (one bell, no retry: the frozen envelope would print the same page). The fix is not in Settings (the document is
   // frozen), so the bell is its own line (07-ZC line 7, L7) with the invoice's page.
-  if (signatureMissing(envelope)) {
+  // The supplier copy of such a document whose recipient PDF is already stored (`pdf_sha256` set, made before the rule) is not refused (code review 1): it is
+  // the supplier's own record of a page that already exists, the same frozen envelope, so refusing it would only ring the bell at every ask and never store it.
+  if (signatureMissing(envelope) && !(copy === "supplier" && row.pdf_sha256 !== null)) {
     logEvent("pdf.refused", {
       stage: "render",
       code: "signature_required",

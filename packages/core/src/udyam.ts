@@ -10,6 +10,9 @@
  */
 export const UDYAM_NUMBER_RE = /^UDYAM-[A-Z]{2}-\d{2}-\d{7}$/;
 
+/** 07-ZC line 4, the error for a number of any other shape (APPROVED by the owner, 2026-10-31): one text for the settings schema and the company form (code review 5). */
+export const UDYAM_NUMBER_ERROR = "Enter the number as UDYAM-XX-00-0000000.";
+
 /** The enterprise categories (L3): stored as a key, printed as the words of `@techaust/pdf/copy` (07-ZC line 5). Default `micro` (owner, 2026-10-29: a micro enterprise). */
 export const UDYAM_CATEGORIES = ["micro", "small", "medium"] as const;
 export type UdyamCategory = (typeof UDYAM_CATEGORIES)[number];

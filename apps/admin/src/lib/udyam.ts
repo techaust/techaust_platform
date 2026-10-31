@@ -2,14 +2,21 @@
 // the form follows. The form trims and upper-cases what is typed (L5) and always sends the key (L8): the block, or null to leave the line off. The shape is
 // core's (`UDYAM_NUMBER_RE`, the same one the settings schema holds); the category words are the PDF's own (`@techaust/pdf/copy`, L3), so the select and the
 // printed line never differ. Printing it is the owner's choice, not a legal requirement: Researched 2026-10-30, MSMED ss.15–16 (08-C RB-39(a)).
-import { UDYAM_CATEGORIES, UDYAM_NUMBER_RE, type Udyam, type UdyamCategory } from "@techaust/core/invoices";
+import {
+  UDYAM_CATEGORIES,
+  UDYAM_NUMBER_ERROR,
+  UDYAM_NUMBER_RE,
+  type Udyam,
+  type UdyamCategory,
+} from "@techaust/core/invoices";
 import { UDYAM_COPY } from "@techaust/pdf/copy";
 
 /** 07-ZC line 4 (the number) and line 5 (the category). */
 export const UDYAM_FORM_COPY = {
   label: "Udyam registration number",
   hint: "Printed on tax invoices. Leave it empty to leave it off.",
-  error: "Enter the number as UDYAM-XX-00-0000000.",
+  /** Core's, the very text the settings schema answers with (code review 5). */
+  error: UDYAM_NUMBER_ERROR,
   categoryLabel: "Enterprise category",
 } as const;
 

@@ -14,7 +14,7 @@ import { missingStatutoryLine, requiresSignature, signatureMissing } from "../sr
 import type { InvoiceEnvelope, InvoiceView } from "../src/invoice-types.ts";
 import { toInvoiceView } from "../src/invoice-view.ts";
 import { UDYAM_COPY } from "../src/layout/copy.ts";
-import { supplierLinesHtml } from "../src/layout/invoice.ts";
+import { supplierLinesHtml, TAX_INVOICE_CSS } from "../src/layout/invoice.ts";
 import { invoiceBody } from "../src/layout/invoice-skeleton.ts";
 import { renderDocumentHtml } from "../src/render.ts";
 import { DEFAULT_VIEW_CONFIG } from "../src/view.ts";
@@ -171,8 +171,14 @@ describe("the view and the gate [T10]", () => {
       expect(from.indexOf(LINE), name).toBeGreaterThan(after);
       expect(from.indexOf(LINE), name).toBeLessThan(from.indexOf("billing@example.test"));
       expect(from, name).toContain(`<p class="party__line inv-udyam" data-testid="udyam">${LINE}</p>`);
-      // the line breaks only at its spaces, never after a hyphen of the number (the measured 12em, both layouts)
-      expect(html, name).toContain(".doc--invoice .inv-udyam { max-width: 12em; overflow-wrap: normal; }");
+      // the line breaks only at its spaces, never after a hyphen of the number (the measured 12em), a rule of the tax invoice layout's own CSS (code review 6)
+      expect(TAX_INVOICE_CSS).toContain(
+        ".doc--tax-invoice .inv-udyam { max-width: 12em; overflow-wrap: normal; }",
+      );
+      expect(html, name).toContain(
+        ".doc--tax-invoice .inv-udyam { max-width: 12em; overflow-wrap: normal; }",
+      );
+      expect(html, name).not.toContain(".doc--invoice .inv-udyam");
     }
   });
 
