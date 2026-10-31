@@ -3,7 +3,7 @@
 // their 07-Q words. Pure, so the words are tested without a browser.
 import { isInvoiceFlowType } from "@techaust/core/invoices";
 import type { DashboardTiles } from "../api.ts";
-import { ACTION_LABELS } from "./audit.ts";
+import { ACTION_LABELS, actionText } from "./audit.ts";
 import { DOC_PENDING } from "./documents.ts";
 import { FINANCE_COPY } from "./reports.ts";
 
@@ -62,9 +62,12 @@ export const ACTIVITY_PENDING: Record<string, string> = {
   "approval.expire": "marked an approval as expired",
 };
 
-/** An action in words: the audit log's approved label, its 07-Q words, or its own name. */
-export function activityText(action: string): string {
-  if (Object.hasOwn(ACTION_LABELS, action)) return ACTION_LABELS[action] as string;
+/**
+ * An action in words: the audit log's approved label (an issued credit or debit note named as a note from the row's `docType`, 07-ZL 1, 2), its 07-Q
+ * words, or its own name.
+ */
+export function activityText(action: string, docType?: string | null): string {
+  if (Object.hasOwn(ACTION_LABELS, action)) return actionText(action, docType);
   if (Object.hasOwn(ACTIVITY_PENDING, action)) return ACTIVITY_PENDING[action] as string;
   return action;
 }
