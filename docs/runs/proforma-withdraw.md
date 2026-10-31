@@ -1,6 +1,6 @@
-Status: builder running (started 13:18 IST); owner answered Q1–Q4 (2026-10-31), 07-ZF approved
+Status: analyst early check running (started 13:53 IST); owner answered Q1–Q4, 07-ZF approved
 Tier: A
-Usage: analyst (brief draft) claude-opus-5-5/high, skills: none available (no Cloudflare plugin in the cloud); 5-h 8 % at start
+Usage: analyst (brief draft) claude-opus-5-5/high, skills: none available (no Cloudflare plugin in the cloud); 5-h 8 % at start · builder r1 claude-opus-5-5/high, skills: none (same reason; flagged by model-audit); 5-h 8 → 46 % (reading 13:46)
 
 # Withdraw a proforma the client has seen (cloud session "proforma-withdraw")
 
@@ -116,14 +116,26 @@ Asked 2026-10-31 (through the main session). **Answered by the owner 2026-10-31 
 - **L6:** no jobs change, no PDF change, no new list filter; 08-C basis RA-17/RA-28 (no new row); RA-10's §1 "Our rule" text is updated after T12 merges.
 
 ## Migrations added
-- 0056 `proforma_withdraw_triggers` (planned; triggers only)
+- 0056 `proforma_withdraw_triggers` (triggers only: re-creates `documents_viewed_no_void` for tax/export invoices; adds `documents_proforma_withdraw`, `documents_void_no_view`, `document_sends_not_void`)
 
 ## Worker bytes
+Branch (builder r1, c0b71b2): admin front 99,391; admin API **625,014** (+6,592; plan line 650,000); portal 103,476 of 120,000; jobs **984,407** of 1,000,000 (+141: the jobs bundle carries `permissions.ts`). Startup (fastest of 7): front 11.0 ms, API 55.9 ms, portal 10.2 ms, jobs 60.2 ms.
 Main (a5f9f92): admin API 618,422 (plan line 650,000), jobs 984,266 of 1,000,000.
 
 ## Early check
 
 ## Builder report
+Builder (round 1, branch `build/proforma-withdraw-r1`, head c0b71b2, merged into the task branch by the lead as 10b4f02; worktree removed, logs in `.logs/proforma-withdraw/`).
+- **Step 0 gate passed:** no path leaves a draft child of a proforma (`advanceIssueStatements` inserts and freezes the child in one batch; note drafts take only tax/export parents; other inserts write no `parent_id`).
+- **Commits:** 6f82ba0 core (withdraw blockers, `isWithdrawn`, `invoices.withdraw`, `invoice.withdraw`); a1b2856 db (0056, `withdrawnSql`, `proformaDeliveredSql`, subpath `./sql-rules`); fb65502 admin (`POST /invoices/:id/withdraw`, read and list flags, void refusals point a delivered proforma to Withdraw); 48c6111 portal (withdrawn view, no balance/due/PDF/reason); c0b71b2 a shorter permission comment (jobs carries it).
+- **Results (tools/heavy.sh):** core 91 files / 1,873 tests (coverage 99.05 % statements, 98.13 % branches); db 36 / 531; admin 121 / 3,524; portal 26 / 658; `pnpm check` exit 0 (migration guard: 57 migrations, no rebuild); `pnpm lint` exit 0 (10 warnings, 8 infos, all in untouched files).
+- **Existing tests changed:** `billing-sql.test.ts` (the void fixture sends while issued, then voids: 0056 refuses a send row on a void document); `invoices.test.ts` and `invoice-types.test.ts` (refusal regex also accepts `documents_proforma_withdraw`, which fires before 0038's flow trigger); `void-view.test.ts`, `migrations.test.ts`, `invoices-void.test.ts` (07-ZF 15 words), route table, `rbac.test.ts`, `invoice-notes-review.test.ts`, `invoices-cpu.test.ts` (warm count 19), portal `doc-token.test.ts` (`withdrawnOn` key).
+- **API words:** the approved 07-ZF words directly. An emailed proforma's refused void keeps the code `void_not_allowed` (the SPA keys on it) with 07-ZF 16 and `reasons: ["already_emailed"]`; `already_void` and `not_issued` use 07-ZF 14. `apps/admin/src/lib/audit.ts` got `"invoice.withdraw": "withdrew a proforma"` (07-ZF 9; the audit-labels test needs it).
+- **Refusal order** after a no-op batch: 401, stale, anonymised, 403 `forbidden` (no longer an active owner), 403 `step_up_required`, the withdraw codes, else 409 stale; a matching trigger abort goes through the same read (tested with a temporary trigger).
+- **Not testable alone:** the advance-receipt clause of the trigger (`advance_receipts_scope_insert` needs a frozen child, which trips the child clause first); a cross-client token can't be minted (`doc_access_tokens_bound_insert`), so the portal test asserts that refusal plus 404 scoping.
+- **Not verified:** two "Network connection lost" uncaught-exception lines in the admin test log (suite exit 0; not compared with main).
+- **Open:** the portal summary still returns the frozen `bank` block for a withdrawn proforma (lead: to be nulled by the API, Q3's reason; see the early check). The portal SPA's types (`apps/portal/src/api.ts`) and the admin SPA's `copy-z.ts`/`voidErrorText` are the designer's.
+- **Skills:** none (the Cloudflare skills aren't installed in this cloud session; supabase is Postgres-only).
 
 ## Designer report
 
