@@ -637,6 +637,11 @@ export type AdvanceIssueArgs = Omit<InvoiceIssueArgs, "authority" | "bell" | "ex
    */
   paymentId?: string | null;
   /**
+   * L12 (early check 2, finding 1): the Owner confirmed past a bank reference already on a pending or confirmed payment. Absent or false: such a reference
+   * freezes nothing (the route answers 409 `reference_seen`). Ignored with `paymentId` (that entry carries the reference itself).
+   */
+  confirmDuplicate?: boolean;
+  /**
    * Early check A7: with `paymentId`, the requester's bell (07-ZH line 6, "Your payment of {amount} from {client} was confirmed.", words supplied by the route)
    * rings through `decideApprovalStatements`, as a confirm from the Payments list does. Absent: the approval is approved with no bell.
    */
@@ -752,8 +757,23 @@ export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): Sen
       where: ` AND total_minor = ?30
          AND EXISTS (SELECT 1 FROM documents p WHERE p.id = ?31 AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.status IN ('issued', 'converted') AND p.updated_at = ?32 AND p.balance_minor >= ?30 AND p.client_id = documents.client_id AND p.currency = documents.currency)
          AND (?33 IS NULL OR ${LUT_FOR_FY_SQL.replaceAll("?FY", "?33")})
+         AND (?34 IS NULL OR EXISTS (SELECT 1 FROM payments pp WHERE pp.id = ?34 AND pp.status = 'pending_verification' AND pp.kind = 'payment' AND pp.amount_minor = ?30
+           AND pp.received_on = ?35 AND pp.client_id = documents.client_id AND pp.currency = documents.currency))
+         AND (?34 IS NOT NULL OR ?36 IS NULL OR ?37 = 1 OR NOT EXISTS (SELECT 1 FROM payments pr INDEXED BY payments_reference WHERE pr.reference_norm = ?36 AND pr.status IN ('pending_verification', 'confirmed')))
          AND ${SIGNED_FREEZE_SQL}`,
-      binds: [a.amountMinor, a.proformaId, a.expectedProformaUpdatedAt, a.lutFy ?? null],
+      // Early check 2, finding 2: with `paymentId`, the pending entry is still the money read (pending, a payment, this amount, day, client and currency) at the
+      // freeze itself, so a confirm, reject or withdraw landing between the read and the batch freezes nothing. Finding 1 (L12): without it, a reference
+      // already on a pending or confirmed payment freezes nothing unless the Owner confirmed past it (`confirmDuplicate`), as `recordPaymentStatement` holds.
+      binds: [
+        a.amountMinor,
+        a.proformaId,
+        a.expectedProformaUpdatedAt,
+        a.lutFy ?? null,
+        a.paymentId ?? null,
+        a.receivedOn,
+        a.referenceNorm,
+        a.confirmDuplicate === true ? 1 : 0,
+      ],
     },
   );
   return {
@@ -873,6 +893,13 @@ function advancePaymentStatements(db: D1Database, a: AdvanceIssueArgs): D1Prepar
             ...receiptMade.params,
           ),
       ];
+  // Early check 2, finding 2: the allocation goes on only when the payment is the one this receipt made confirmed (a new `pay_` row, or the pending entry the
+  // UPDATE above just flipped): a payment confirmed some other way meanwhile is never put on the new invoice.
+  const paymentOfReceipt: { sql: (at: number) => string; params: readonly unknown[] } = {
+    sql: (at) =>
+      `${receiptMade.sql(at)} AND EXISTS (SELECT 1 FROM payments pr WHERE pr.id = ?${at + 2} AND pr.advance_receipt_id = ?${at})`,
+    params: [...receiptMade.params, paymentId],
+  };
   return [
     ...payment,
     ...allocationStatements(
@@ -888,7 +915,7 @@ function advancePaymentStatements(db: D1Database, a: AdvanceIssueArgs): D1Prepar
       ],
       a.issuedBy,
       a.now,
-      receiptMade,
+      paymentOfReceipt,
     ),
     recomputeStatement(db, { paymentIds: [paymentId], documentIds: [a.documentId] }, a.now, receiptMade),
     ledgerResultStatement(db, { paymentIds: [paymentId], documentIds: [a.documentId] }),

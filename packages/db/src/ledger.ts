@@ -440,9 +440,16 @@ export const PAYMENT_REFERENCE_SEEN_SQL = `SELECT p.id, p.received_on, p.client_
    FROM payments p INDEXED BY payments_reference JOIN clients c ON c.id = p.client_id
    WHERE p.reference_norm = ?1 AND p.status IN ('pending_verification', 'confirmed') ORDER BY p.received_on DESC, p.id DESC LIMIT 1`;
 
-/** A client's credit by currency (`?1` the client): confirmed `payment` rows' amount minus what they hold net. One seek of `payments_client`. */
-export const CLIENT_CREDIT_SQL = `SELECT p.currency, coalesce(sum(p.amount_minor - ${paymentNetSql("p.id")}), 0) AS credit
-   FROM payments p INDEXED BY payments_client WHERE p.client_id = ?1 AND p.status = 'confirmed' AND p.kind = 'payment' GROUP BY p.currency ORDER BY p.currency`;
+/**
+ * A client's credit by currency (`client` an SQL expression for the client's id): confirmed `payment` rows' amount minus what they hold net. One seek of
+ * `payments_client`. Early check 2, finding 10: a builder, so a caller keyed by something else (the Payments panel, by the document) never edits this SQL's text.
+ */
+export const clientCreditSql = (client: string): string =>
+  `SELECT p.currency, coalesce(sum(p.amount_minor - ${paymentNetSql("p.id")}), 0) AS credit
+   FROM payments p INDEXED BY payments_client WHERE p.client_id = ${client} AND p.status = 'confirmed' AND p.kind = 'payment' GROUP BY p.currency ORDER BY p.currency`;
+
+/** A client's credit by currency (`?1` the client). */
+export const CLIENT_CREDIT_SQL = clientCreditSql("?1");
 
 /** Where credit comes from (`?1` client, `?2` currency): confirmed payments holding something unallocated, first in first out (core `creditSources`), at most 50. */
 export const CREDIT_SOURCES_SQL = `SELECT p.id, p.received_on, p.amount_minor, ${paymentNetSql("p.id")} AS net
@@ -469,12 +476,30 @@ export const PENDING_PAYMENTS_COUNT_SQL =
   "SELECT count(*) AS n FROM payments p INDEXED BY payments_pending WHERE p.status = 'pending_verification'";
 
 /**
- * L17 (the void facts): whether a PENDING payment asks for document `?1` (of client `?2`), or any allocation row names it. The twin of the trigger
- * `documents_void_no_payment` and of core `voidBlockers` (`payment_pending`).
+ * L17, L32 (the void rules): an allocation row names the document `doc` (an SQL expression), one released or withdrawn since included. Core `voidBlockers`
+ * `payment_recorded`; one seek of `payment_allocations_document`.
  */
-export const PAYMENT_ASKS_FOR_DOCUMENT_SQL = `SELECT (EXISTS (SELECT 1 FROM payment_allocations va INDEXED BY payment_allocations_document WHERE va.document_id = ?1)
-       OR EXISTS (SELECT 1 FROM payments vp INDEXED BY payments_client, json_each(vp.requested_allocations) vj WHERE vp.client_id = ?2 AND vp.status = 'pending_verification'
-                  AND vp.requested_allocations IS NOT NULL AND json_extract(vj.value, '$.documentId') = ?1)) AS pending`;
+export const paymentRecordedSql = (doc: string): string =>
+  `EXISTS (SELECT 1 FROM payment_allocations va INDEXED BY payment_allocations_document WHERE va.document_id = ${doc})`;
+
+/**
+ * L17 (the void rules): a PENDING payment of the client `client` asks for the document `doc` (both SQL expressions) in its requested allocations. Core
+ * `voidBlockers` `payment_pending`; a seek of `payments_client`.
+ */
+export const paymentPendingForSql = (doc: string, client: string): string =>
+  `EXISTS (SELECT 1 FROM payments vp INDEXED BY payments_client, json_each(vp.requested_allocations) vj WHERE vp.client_id = ${client} AND vp.status = 'pending_verification'
+     AND vp.requested_allocations IS NOT NULL AND json_extract(vj.value, '$.documentId') = ${doc})`;
+
+/**
+ * L17 (early check 2, finding 10): the payment test of the void statement's WHERE, `NOT ${paymentBlocksVoidSql(...)}`: an allocation row names the document,
+ * or a pending payment of its client asks for it. The twin of the trigger `documents_void_no_payment` (which also refuses TDS, as the WHERE's `tds_minor = 0`
+ * does) and of core `voidBlockers` (`payment_recorded`, `payment_pending`). `doc` and `client` are SQL expressions (`documents.id`, `documents.client_id`).
+ */
+export const paymentBlocksVoidSql = (doc: string, client: string): string =>
+  `(${paymentRecordedSql(doc)} OR ${paymentPendingForSql(doc, client)})`;
+
+/** L17, L32 (the void facts): for document `?1` of client `?2`, whether a PENDING payment asks for it (`pending`) and whether an allocation row names it (`recorded`). */
+export const PAYMENT_ASKS_FOR_DOCUMENT_SQL = `SELECT ${paymentPendingForSql("?1", "?2")} AS pending, ${paymentRecordedSql("?1")} AS recorded`;
 
 /** "Collected": confirmed `payment` rows by currency received from `?1` to `?2` (ISO, inclusive), read through `payments_confirmed`. */
 export const COLLECTED_SQL = `SELECT p.currency, coalesce(sum(p.amount_minor), 0) AS collected, count(*) AS n

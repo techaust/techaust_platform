@@ -295,6 +295,7 @@ describe("void [Q1, LD7]", () => {
     today: "2026-10-31",
     tdsMinor: 0,
     paymentPending: false,
+    paymentRecorded: false,
   };
   it("an unsent, unpaid, uncredited issued invoice can be voided", () => {
     expect(voidBlockers(base)).toEqual([]);
@@ -361,6 +362,7 @@ describe("void [Q1, LD7]", () => {
       type: fc.constantFrom("tax_invoice", "export_invoice", "proforma"),
       tdsMinor: fc.nat(1_000),
       paymentPending: fc.boolean(),
+      paymentRecorded: fc.boolean(),
     });
     fc.assert(
       fc.property(facts, (f) => {
