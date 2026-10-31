@@ -228,6 +228,89 @@ _Builder r1 (Opus 5.5 high, cloud session, 2026-11-01). Branch `fix/test-hardeni
 ### Open questions
 None.
 
+## Builder report r2
+_Builder r2 (Opus 5.5 high, cloud session, 2026-11-01). Branch `fix/test-hardening-r2` from `origin/fix/test-hardening` 9b26707; f4ef3fa (the early check) merged in before this report. Scope: Item 5 #1–#4, the r2 brief's extras, and the lead's message (early check M1, L1–L3, stale-check E)._
+
+**Skills.** Tried `cloudflare:workers-best-practices`: "Unknown skill" (Cloudflare skills don't load in cloud sessions), so `cloudflare:wrangler` was not tried (same plugin). `code-review` and `security-review` belong to the reviewer. No Context7 in this agent; nothing here needed library docs beyond the code itself.
+
+### Per fix
+Every fix's test was run against the code **without** the fix (the source file reverted, the test kept) and failed as stated; then the fix went back and it passed.
+
+**#1 No live link after "Revoke links" for a send that already had one (75589bf).**
+- jobs `invoice-send.ts` `LINK_SQL` gains `AND NOT EXISTS (SELECT 1 FROM doc_access_tokens r WHERE r.document_id = d.id AND r.send_id = s.id AND r.revoked_at IS NOT NULL)` (no new `?n`); jobs `offers.ts` the same on `offer_links` (`r.send_id = s.id`, index `offer_links_send`). The existing refusal path then marks the send not sent.
+- admin `invoice-send.ts`: the revoke's cancel is now `cancelUnlinkedSendsSql(guard)` with `t.document_id = ?1 AND t.send_id = …` (same `?1`, same arity), so it SEARCHes `doc_access_tokens_document`. Comments fixed: admin `invoice-send.ts` revoke, `document-links.ts` revoke and `OPEN_LATEST` (the stale `?2 today`), and the jobs headers.
+- Tests: jobs `invoice-send.test.ts` (queue fails after the mint → revoke → retry is `refused`, no email, no live token, `cancelled_at` set; a redelivery after a sent email and a revoke mints no live link; another send of the same document still goes), jobs `offers.test.ts` (the first two for offers), admin `invoice-send.test.ts` (EXPLAIN QUERY PLAN: `SEARCH t USING INDEX doc_access_tokens_document`, no SCAN).
+- Without the fix: invoice and offer tests "expected 'queued' to be 'refused'" (2 + 2); the EXPLAIN test failed with the plan lacking the index search.
+
+**#2 A reminder claim given back after a revoke goes back paused (ddb1480).**
+- jobs `reminders.ts` `GIVE_BACK_SQL` also sets `skipped_reason = 'paused'` when a link of the document was revoked at or after the claim (`revoked_at >= ?2`) **or** one of this claim's own links was revoked (`token_hash IN json_each(?3)`, `?3` the claim's hashes). The second arm catches a revoke whose clock read came before the claim's but whose batch committed after it. `reminders_fixed` (0044) allows both moves in one UPDATE (proven by the test).
+- Tests (`reminders.test.ts`, beside the queue-down give-back test): both orderings → the row is `{sent_at: null, skipped_reason: 'paused'}`, the redelivery is `already`, nothing queued; a link revoked **before** the claim leaves the give-back waiting.
+- Without the fix: both ordering tests failed; with only the time arm, the "slow revoke" case failed.
+
+**#3 A care invoice whose PDF request failed is retried (8b70ee4).**
+- admin `care-billing.ts`: `requestPdf` throws `PDF_QUEUE_UNREACHABLE` when `enqueuePdf` returns false, so `care.issue` is retried; the `already_issued` branch asks again for a care invoice (system-made, frozen, not void) with no `pdf_sha256`. The false comment is corrected.
+- Test (`care-billing.test.ts`): queue down → the call rejects, the invoice is frozen; the retry answers `already_issued` and enqueues one `pdf.snapshot`; still down → throws again; once the PDF exists, a redelivery enqueues nothing.
+- Without the fix: "promise resolved { result: 'issued' } instead of rejecting"; with the throw but without the re-ask: "expected [] to deeply equal [Array(1)]".
+
+**#4 A care period is not marked billed for a client anonymised mid-draft (0330b2a).**
+- admin `care-billing.ts` statement 1 gains `AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = care_plans.client_id AND z.anonymised_at IS NOT NULL)`; statement 2 already hangs on `changes()`.
+- Test (`care-billing.test.ts`, a DB proxy anonymising the client before the write batch): `skipped`/`changed`, `last_billed_period` unchanged, no `care_invoices` row, no document, no `care_invoice.draft` audit row.
+- Without the fix: "expected { result: 'already_billed' } to match { result: 'skipped', why: 'changed' }".
+
+**Decline note limit (d2bef81).** `decline-dialog.tsx` imports core `DECLINE_NOTE_MAX` for `maxLength` (same 500). A refactor: no test can fail without it; typecheck and the portal tests pass.
+
+**First-name splits (ece69e8).** The six splits (`send-parts.tsx`, admin `leads.ts`, `email-fixtures.ts`, jobs `invoice-mail.ts` `firstName`, `leads.ts`, `staff-alerts.ts`) call `firstNameOf` from `@techaust/core/offers`, which both Worker bundles already contained. Output unchanged; the existing email and preview tests pass untouched.
+
+**Lead's message:**
+- **A / M1 (1c17126):** `issued(2)` has its own owner again (the `as` parameter is gone); the named owner only sends.
+- **B / L1 (ea2f615):** the bounds comment says "through `@techaust/core/invoices`; the GST core imports the file directly". No gst export.
+- **C / L2 (5666c45, 4936f04):** the admin e2e PNG is pinned (679 bytes, SHA-256 `289eba305785b8213befc0c32b9b534cf3b8a96063f97ba81153e1922798b0ce`) in `apps/admin/worker/e2e-sample-signature.test.ts`. The worker tsconfig has no Node types, so the drawing moved into `apps/admin/e2e/sample-signature.ts` (no Node imports; the caller passes the deflate): `sample-data.ts` passes Node's `deflateSync`, the test passes `CompressionStream("deflate")`. Both give the pinned bytes (Node checked by hand, workerd by the test); a one-byte colour change fails the pin. The PDF fixture comment names `packages/pdf/test/sample-signature.test.ts`.
+- **D / L3 (4c68e9d):** both assertions carry the message "… if Node or its zlib changed (not the drawing or the encoder), check the PDF visual baselines, then re-pin".
+- **E / stale check (1c8fa09), production change approved by the lead:**
+  - house pattern `Math.max(Date.now(), expected + 1)` at admin `leads.ts` (lead save), `catalogue.ts` (item save), `clients.ts` (client save, billing save, contact save) and `settings.ts` (bank: `(existing?.updated_at ?? 0) + 1`).
+  - billing: `now` is the real clock for `stepUpActive` and for the in-SQL authority, which now binds it as its own parameter `?${setVals.length + 5}` after the session id (`?${setVals.length + 4}`), instead of `?3`.
+  - contact: only the main statement and the answer use the new `version`; the consent stamp, the other primary's reset and `revokeContactAccess` keep the real `t`.
+  - Tests: each pins `Date` to the row's stored `updated_at` → the first save answers `updatedAt = stored + 1`, the second from the same page is 409 `stale_version` (leads beside r1's test; catalogue; clients ×4 including turning the automatic issue on with step-up; settings bank). Without the fixes all 7 failed; with them 249 tests in the 7 related files pass (care-billing and care included).
+
+### Files changed
+- **jobs:** `src/invoice-send.ts`, `src/offers.ts`, `src/reminders.ts`, `src/invoice-mail.ts`, `src/leads.ts`, `src/staff-alerts.ts`; tests `invoice-send`, `offers`, `reminders`.
+- **admin worker:** `invoice-send.ts`, `document-links.ts`, `care-billing.ts`, `leads.ts`, `email-fixtures.ts`, `catalogue.ts`, `clients.ts`, `settings.ts`; tests `invoice-send`, `care-billing`, `leads-api`, `catalogue`, `clients`, `settings`, `e2e-sample-signature` (new).
+- **admin SPA and e2e:** `src/routes/invoices/send-parts.tsx`; `e2e/sample-data.ts`, `e2e/sample-signature.ts` (new).
+- **portal:** `src/components/decision/decline-dialog.tsx`.
+- **core:** `src/realisation-bounds.ts` (comment). **pdf:** `test/fixtures/invoice-layout.ts` (comment), `test/sample-signature.test.ts`.
+- No migration, workflow, wording change or out-of-bounds file.
+
+### Commands and results
+- While working: single test files in jobs, admin and pdf; `pnpm exec biome check <changed files>` before each commit; each fails-without run as above.
+- `bash tools/heavy.sh --log r2-admin-tc pnpm --filter @techaust/admin typecheck`: exit 0 (after the first `pnpm check` failed on the pin test importing `sample-data.ts`, fixed by 4936f04).
+- `bash tools/heavy.sh --log r2-check pnpm check`: **exit 0**. Lint checked 1,445 files, no fixes (10 warnings and 8 infos, all in files this run didn't touch); typecheck and every guard passed.
+- `bash tools/heavy.sh --log r2-test pnpm test`: **exit 0. 9,520 passed, 19 skipped, 0 failed**: testing 4, auth 135, ui 471 (+2 skipped), core 1,956, email 132, db 623, pdf 380, web 750 (+17 skipped: no `apps/web/dist` yet in this worktree), portal 680, jobs 568, admin 3,821.
+- `bash tools/heavy.sh --log r2-web-test pnpm --filter @techaust/web test` after the build: 767 passed.
+- `bash tools/heavy.sh --log r2-build pnpm build`: exit 0. **Worker bytes** (r1 in brackets):
+
+| Worker | Bytes | Limit | Startup (fastest of 7) |
+|---|---|---|---|
+| admin front | 100,839 (100,839) | 150,000 | 14.4 ms |
+| admin API | 438,280 (438,064) | 800,000 | 53.2 ms |
+| admin finance | 508,291 (507,948) | 800,000 | 47.4 ms |
+| portal | 104,589 (104,589) | 120,000 | 13.3 ms |
+| jobs | 668,343 (667,889) | 1,000,000 | 114.8 ms |
+
+- `bash tools/heavy.sh --log r2-lint pnpm lint` (whole repository, once, the final check): exit 0, 1,445 files, no fixes (the same 10 warnings and 8 infos in untouched files).
+- No dev server was started.
+
+### Not verified
+- The revoke races of #1 and #2 are simulated in tests (the revoke's statements run by hand at the right moment); the real two-Worker interleaving was not exercised.
+- `CompressionStream("deflate")` matching Node's `deflateSync` holds for this drawing on today's workerd; the pin says what to check if it ever drifts.
+- The first-name refactor relies on stored names being trimmed (Item 5's evidence); `email-fixtures.ts` and jobs `leads.ts` did not trim before and `firstNameOf` does, which changes nothing for trimmed input.
+
+### For the lead
+- **#1 edge, not changed:** a plain redelivery of an `invoice.send`/`offer.send` that had already emailed, arriving after "Revoke links", is now refused and marks the send not sent, so its row reads "Cancelled" instead of "Sent". This is the existing behaviour of every other refusal path (lost access, void) on a redelivery; it needs a lost acknowledgement and a revoke in between. Keeping it "Sent" would need `markNotSent` to skip a send with an `email_log` row (a small change, not made without a decision).
+- **#2 edge:** a "Resume reminders" between the revoke and the failed `sendBatch` doesn't reach the claimed row, so it comes back paused and needs a second resume.
+
+### Open questions
+None.
+
 ## Early check (analyst)
 _Pasted by the lead from the analyst's reply (Opus 5.5 high, read-only, 2026-11-01). Range `474ec9c..9b26707` without docs/runs._
 
