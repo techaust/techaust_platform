@@ -597,6 +597,7 @@ function RecordBody(props: {
                 )}
               </fieldset>
             )}
+            <EarlierMonthWarning month={month} />
             <div className="pay-proof">
               <FilePick
                 id="pay-file"
@@ -683,7 +684,7 @@ function RecordBody(props: {
           )}
         </FormField>
         {tds && client && docsFailed && <DocsFailed onRetry={() => setDocsTry((n) => n + 1)} />}
-        <EarlierMonthWarning month={month} />
+        {tds && <EarlierMonthWarning month={month} />}
         {!owner && (
           <p className="approval-line" data-state="pending">
             <Alert size={16} />

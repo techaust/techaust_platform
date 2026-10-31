@@ -141,7 +141,8 @@
   padding: var(--space-3) var(--space-3) var(--space-3) 0;
   border-bottom: 1px solid var(--color-border);
   text-align: start;
-  vertical-align: top;
+  /* baseline, so every cell's first line sits on the date link's line (the link is a 44 px block, its words centred in it) */
+  vertical-align: baseline;
 }
 
 .pay-lines thead th {
@@ -246,6 +247,8 @@
   .pay-lines tr {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
+    /* the amount sits on the date link's line (the link is a 44 px block) */
+    align-items: baseline;
     gap: var(--space-1) var(--space-3);
     padding: var(--space-3) 0;
     border-bottom: 1px solid var(--color-border);
@@ -781,9 +784,9 @@
   gap: var(--space-2);
 }
 
-/* an extension row without its letter: the words and the Owner's action on one line, wrapping when narrow */
+/* an extension row without its letter: on its own line under the extension, the words and the Owner's action, wrapping when narrow */
 .pay-real__list .pay-real__letter {
-  display: inline-flex;
+  display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
