@@ -1,5 +1,5 @@
 # Run: T7, erase a person's data in the frozen copies of never-accepted offers
-Status: WAITING ON OWNER (Q1, 07-ZG lines 1–3); builder running on the recommended answers
+Status: WAITING ON OWNER (Q1, 07-ZG lines 1–3); builder running on the recommended answers (started 13:25 IST, branch fix/t7-offer-erasure-b1)
 Tier: A (deleting or anonymising data; docs/14 §2)
 Usage: lead claude-opus-5-5/high (cloud session t7-erasure); analyst claude-opus-5-5/high (brief draft; skills: tried `cloudflare:workers-best-practices` and `cloudflare:wrangler`, both "Unknown skill" in the cloud session although model-audit lists them; 5-h 8 % at 12:58 IST, no newer reading)
 
