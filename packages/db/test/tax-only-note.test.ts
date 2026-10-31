@@ -1,4 +1,4 @@
-// FX-4 (full audit A5 11; ADM-INV-11; OPEN 08-C RA-33): a tax-only debit note ("Tax charged too low", Researched 2026-10-28, s.34(3) CGST Act (08-C RA-22)) is never
+// FX-4 (full audit A5 11; ADM-INV-11; Settled by the lead on the safest reading, 2026-10-30 (08-C RA-33)): a tax-only debit note ("Tax charged too low", Researched 2026-10-28, s.34(3) CGST Act (08-C RA-22)) is never
 // rounded: its total is exactly its tax. Held in three places from one SQL text (`taxOnlyNoteExactSql`): core `taxOnlyDebitNote` (the engine), the note freeze's
 // WHERE (`noteIssueTail`) and the trigger `documents_tax_only_note_exact` (0052, a new trigger only: no table is rebuilt).
 import { type ComputedDocument, taxOnlyDebitNote } from "@techaust/core/tax";

@@ -514,16 +514,16 @@ export type VoidFacts = {
   /** The invoice's issue date (IST day) and today's IST day: Q23 lets a void happen only inside the calendar month of issue. */
   readonly issueDate: string | null;
   readonly today: string;
-  /** M5.2 (LD28): a proforma is not a tax document, so the month rule of Q23 does not apply to it (OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?). Absent: any other type. */
+  /** M5.2 (LD28): a proforma is not a tax document, so the month rule of Q23 does not apply to it (Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): same IST month, not for a proforma). Absent: any other type. */
   readonly type?: string;
 };
 
 /**
- * Q1 (OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?, 08-A §4): an issued invoice can be voided only while it has not been emailed to the client and has no payment and no
+ * Q1 (Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): such a void is reported as cancelled in Table 13; 08-A §4): an issued invoice can be voided only while it has not been emailed to the client and has no payment and no
  * credit or debit note; after that, a credit note is the correction. Q23: and only within the IST calendar month of issue (the GST return period of
  * an invoice is the month of its date), after which a credit note is the correction too; a proforma has no return period (LD28). FX-5 (owner decision
  * 2026-10-30, docs/13; 08-C RA-10): and only while the client has not opened it in the portal (`viewed_by_client`), a proforma included. The number stays and
- * the record stays (Rule 56(8)). Codes only. OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note? (the batch page offers both forms of the Q23 rule).
+ * the record stays (Rule 56(8)). Codes only. Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): the owner's 2026-10-30 rule; such a void is reported as cancelled in Table 13, anything else is corrected by a credit note (the batch page offers both forms of the Q23 rule).
  */
 export function voidBlockers(f: VoidFacts): VoidBlockerCode[] {
   if (f.status === "void") return ["already_void"];
@@ -564,7 +564,7 @@ export type IssuedSummary = {
 };
 
 /**
- * Per series and FY: the first and last number issued, how many, how many were cancelled (voided) and the net (OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?, 08-A §4:
+ * Per series and FY: the first and last number issued, how many, how many were cancelled (voided) and the net (Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): a void under the owner's 2026-10-30 rule is reported as cancelled in Table 13; 08-A §4:
  * Table 13 lists each document nature with from and to, total, cancelled and net issued). Input order does not matter; the result is sorted
  * by series, then FY.
  */

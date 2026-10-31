@@ -1,7 +1,7 @@
 // An issued invoice (M5.1, ADM-INV-02, -03, -07), and a draft for a role that only reads it: the number as the page's title (set in tabular
 // figures, struck through once void: it keeps its number), the locked banner, the PDF, the void action for the owner, and the lines and totals
 // as frozen. Nothing here can change the invoice except the void, which keeps the number and the record (Rule 56(8); whether a never-delivered invoice
-// may be reported as cancelled is OPEN, 08-C RA-10). Step 5 (Q11): the Owner and the Accountant download the stored DUPLICATE FOR SUPPLIER copy under
+// may be reported as cancelled: Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): the owner's 2026-10-30 rule; such a void is reported as cancelled in Table 13). Step 5 (Q11): the Owner and the Accountant download the stored DUPLICATE FOR SUPPLIER copy under
 // the PDF (07-R §7), never sent to a client.
 // M5.3: an issued tax or export invoice has its notes section (the deadline, its credit and debit notes, the balance after them, the actions that open the
 // note dialog); an issued note says what it is against and why, the client's IMS answer on a credit note, its lines against the invoice's and its totals.

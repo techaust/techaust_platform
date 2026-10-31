@@ -3,7 +3,7 @@
 // with the accepted PDF and the acceptance certificate. Or decline with a reason (decline-dialog.tsx). An expired version, or one whose
 // newer version is still being prepared, can't be accepted. After a decision focus moves to the result, so a screen-reader user hears
 // what happened. Words: 07-N §3 (approved with 07-Q, 2026-10-26); the binding sentence 07-A §7; the record notice 07-A §9 (Researched 2026-10-28,
-// 08-C RB-19; the ground for recording the IP address and browser is OPEN, RB-12).
+// 08-C RB-19; the ground for recording the IP address and browser: Settled by the lead on the safest reading, 2026-10-30 (08-C RB-12): DPDP s.7(a) with the Rule 6 log duty; GDPR Art. 6(1)(f) for EU and UK persons; the acceptance record is kept with the offer, RB-37 (b)).
 // FX-3 (A4 1, 2, 8): once the form has been checked, each error follows the field as it changes (never on blur), so the
 // line can't vanish under the pointer between pressing and releasing Accept; the whole agreement row is the checkbox's
 // label (44 px); the number in the confirmation never breaks.
