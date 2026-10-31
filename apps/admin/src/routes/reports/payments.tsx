@@ -131,7 +131,7 @@ function Results({ rows, fy }: { rows: PaymentsRegisterRow[]; fy: string }) {
           </p>
         ) : (
           <WideList className="rledger-scroll" label={PAY_UI.awaitingHeading}>
-            <table className="rledger rledger--plain">
+            <table className="rledger">
               <caption className="visually-hidden">{PAY_UI.awaitingHeading}</caption>
               <thead>
                 <tr>

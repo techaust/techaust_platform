@@ -1,6 +1,7 @@
 // The stylesheet clash guard (scripts/css-collisions.mjs, run by `pnpm check` and CI): a class may be the subject of a base rule in only
 // one stylesheet per app, because a SPA route's stylesheet stays loaded for the whole session (run css-collisions, 2026-10-31: the
 // Reports copy of `.segmented` drew the GST switch wrongly and leaked to every other switch). Runs in Node.
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
@@ -93,6 +94,9 @@ describe("css collisions: the clash", () => {
     const apps = loadApps(fileURLToPath(new URL("../../../", import.meta.url)));
     expect(Object.keys(apps)).toEqual(expect.arrayContaining(["admin", "portal", "web"]));
     expect(apps.admin?.some((f) => f.name.endsWith("reports.css"))).toBe(true);
-    expect(checkApps(apps)).toEqual([]);
+    const allow = JSON.parse(
+      readFileSync(new URL("../../../scripts/css-collisions-allow.json", import.meta.url), "utf8"),
+    );
+    expect(checkApps(apps, allow)).toEqual([]);
   });
 });

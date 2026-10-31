@@ -12,9 +12,16 @@
 //
 // The scan covers every `.css` under `apps/<app>/src` (Astro's scoped <style> blocks are not stylesheets and are not scanned). A small
 // self-test runs first, so a broken detector can't pass silently.
+//
+// Two limits, on purpose (review of css-collisions, 2026-11-01: stricter versions flag 17 descendant and 5 compound rules that are
+// intentional local adjustments):
+// 1. A rule in a second file that styles only inside another file's component (`.segmented__opt span`, with no base rule for
+//    `.segmented__opt` in that file) is a descendant rule, so it is not caught. Review such rules by hand.
+// 2. Keys are exact class sets: `.x.y` and `.x` are different keys, so a compound rule in one file and the plain base rule in another
+//    are not reported as a clash.
 import { readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, relative, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** The CSS with comments removed (strings kept). */
 function stripComments(css) {
@@ -243,7 +250,7 @@ export function loadApps(root) {
   return apps;
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
   const root = fileURLToPath(new URL("../", import.meta.url));
   const failures = selfTest();
   const apps = loadApps(root);

@@ -296,7 +296,7 @@ function GstResults({ result, period, threshold }: { result: Ok; period: PeriodC
 
       <ReportBlock id="gst-docs" title={GST_COPY.table13Heading} hidden={result.checked === 0}>
         <WideList className="rledger-scroll" label={GST_COPY.table13Heading}>
-          <table className="rledger rledger--plain">
+          <table className="rledger">
             <caption className="visually-hidden">{GST_COPY.table13Heading}</caption>
             <thead>
               <tr>
@@ -402,7 +402,7 @@ function Gstr3bTable({ lines, held }: { lines: Ok["gstr3b"]; held: Ok["imsHeld"]
   );
   return (
     <WideList className="rledger-scroll" label={GST_COPY.gstr3bHeading}>
-      <table className="rledger rledger--plain rledger--3b">
+      <table className="rledger rledger--3b">
         <caption className="visually-hidden">{GST_COPY.gstr3bHeading}</caption>
         <thead>
           <tr>
