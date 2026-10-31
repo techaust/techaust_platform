@@ -48,7 +48,7 @@ import { AddressFields, type Tax, TaxFields, taxFieldErrors } from "./parts.tsx"
 export const ATTACH_PDF_HINT =
   "Emails to this client carry a link to each document. Turn this on to attach the PDF as well.";
 
-export const CURRENCY_LOCKED_LINE = "The currency can't change once this client has an invoice.";
+export const CURRENCY_LOCKED_LINE = "The currency can't change once this client has an invoice or a payment.";
 
 type Errors = Record<string, string>;
 

@@ -251,7 +251,7 @@ describe("billing, the GST identity and the currency lock [ADM-CLI-01]", () => {
     expect(await bodyOf(res)).toEqual({
       error: {
         code: "currency_locked",
-        message: "The currency can't change once this client has an invoice.",
+        message: "The currency can't change once this client has an invoice or a payment.",
       },
     });
     expect((await one("SELECT currency FROM clients WHERE id = ?", id))?.currency).toBe("INR");

@@ -78,7 +78,7 @@ import {
 
 const CURRENCY_LOCKED: ApiError = {
   code: "currency_locked",
-  message: "The currency can't change once this client has an invoice.",
+  message: "The currency can't change once this client has an invoice or a payment.",
 };
 const TYPE_LOCKED: ApiError = { code: "type_locked", message: CLIENT_TYPE_LOCKED_MESSAGE };
 const GSTIN_IN_USE: ApiError = { code: "gstin_in_use", message: "A client with that GSTIN already exists" };

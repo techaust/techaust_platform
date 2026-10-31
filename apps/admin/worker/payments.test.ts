@@ -1288,7 +1288,7 @@ describe("code review fixes [ADM-PAY-06, ADM-INV-16, ADM-CLI-03]", () => {
     expect(await json(refused)).toMatchObject({
       error: {
         code: "currency_locked",
-        message: "The currency can't change once this client has an invoice.",
+        message: "The currency can't change once this client has an invoice or a payment.",
       },
     });
     expect((await json(await call(`/clients/${clientId}`, { cookie: o.cookie }))).currencyLocked).toBe(true);

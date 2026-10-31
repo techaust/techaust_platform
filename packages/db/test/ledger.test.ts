@@ -1485,6 +1485,15 @@ describe("code review finding 3: Use credit draws on the whole credit in one rea
       /payment_allocations_bounds/,
     );
     expect(await all("SELECT id FROM payment_allocations WHERE document_id = ?1", inv)).toHaveLength(before);
+    // two rows of the same payment in the same statement are checked against each other (re-check low 8): 200 + 200 on a 300 payment is refused whole
+    const inv2 = await mkIssued(clientId);
+    const c = await pay(clientId, owner, { amount: 300 });
+    const row2 = (amountMinor: number) => ({ ...row(c, amountMinor), documentId: inv2 });
+    await rejects(
+      allocationsInsertStatement(db(), [row2(200), row2(200)], owner, T).run(),
+      /payment_allocations_bounds/,
+    );
+    expect(await all("SELECT id FROM payment_allocations WHERE payment_id = ?1", c)).toHaveLength(0);
     // an empty list writes nothing
     await allocationsInsertStatement(db(), [], owner, T).run();
     expect(await all("SELECT id FROM payment_allocations WHERE document_id = ?1", inv)).toHaveLength(before);
