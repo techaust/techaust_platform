@@ -18,7 +18,7 @@ import { Notice } from "../components/ui.tsx";
 import { allowed } from "../lib/access.ts";
 import { careErrorText, dayText, hoursText } from "../lib/care.ts";
 import { Y } from "../lib/copy-y.ts";
-import { personLabel, personLabels } from "../lib/people.ts";
+import { personLabel, personLabels, sharedNameEmail } from "../lib/people.ts";
 import {
   dayHead,
   lockState,
@@ -252,6 +252,7 @@ function TimeScreen() {
           filters={filters}
           viewer={viewer}
           showPeople={readAll && !person}
+          people={people.data?.people ?? []}
           onEdit={(entry) => setEditing({ entry, override: lockState(entry, viewer) === "override" })}
           onDelete={setDeleting}
         />
@@ -502,6 +503,8 @@ function Entries(props: {
   filters: { userId?: string | undefined; projectId?: string; carePlanId?: string };
   viewer: { canWriteOwn: boolean; canWriteAny: boolean };
   showPeople: boolean;
+  /** Everyone who logs time (GET /time/people): two people with one name are told apart by their work email. */
+  people: readonly { id: string; name: string; email: string }[];
   onEdit: (e: TimeEntry) => void;
   onDelete: (e: TimeEntry) => void;
 }) {
@@ -547,9 +550,17 @@ function Entries(props: {
           {
             key: "who",
             header: "Person",
-            cell: (e: TimeEntry) => (
-              <span className="entry-person">{e.userName ?? "A former staff member"}</span>
-            ),
+            // Two people with one name look alike in this column, so each also shows their work email on a quiet second line (the
+            // `personLabels` rule of the menus, as "Log time for" echoes the chosen person's; polish sweep 1c, final sweep A20).
+            cell: (e: TimeEntry) => {
+              const email = e.userName ? sharedNameEmail(props.people, e.userId) : null;
+              return (
+                <span className="entry-person">
+                  {e.userName ?? "A former staff member"}
+                  {email && <span className="entry-person__email">{email}</span>}
+                </span>
+              );
+            },
           },
         ]
       : []),
