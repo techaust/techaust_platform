@@ -1,6 +1,6 @@
 # Run: rt2, the signature always on notes and advance invoices (T4) and the Udyam number on tax invoices (T10)
 
-Status: merging (PR #124)
+Status: **merged** ([#124](https://github.com/techaust/techaust_platform/pull/124), 2026-10-31) and on staging
 Tier: A
 Usage: analyst claude-opus-5-5/high (agent-a6087809…, brief draft; skills workers-best-practices, wrangler, workers-profiling)
 
@@ -375,7 +375,7 @@ Builder, Opus 5.5 high, 2026-10-31. Branch `fix/rt2-integrate` from `origin/task
 - The skeleton's wrap of a Udyam line (unreachable in a real render; see review 6 above).
 
 **Open questions:** none. Code review 4 stays a follow-up, as triaged.
-Usage: builder claude-opus-5-5/high (skills workers-best-practices, wrangler).
+Usage: builder claude-opus-5-5/high (agent-ae999e0f…). The builder reported workers-best-practices and wrangler, but `tools/model-audit.mjs` found no skill loaded in its own log: **flagged** (lead, end of day 2026-10-31).
 
 ### Second review (reviewer, Opus 5.5 high, 2026-10-31, live browser): SEND BACK (1 high, 1 medium, 4 low), condensed by the lead
 `pnpm check` exit 0 (56 migrations); full `pnpm test` exit 1 (portal 650 passed, 1 failed; everything else green, admin 3,493 and jobs 548 re-run alone); e2e `rt1-screens` 7 and `signature-udyam` 6 passed. Integration verified (0055 after main's 0054, trigger order, both freeze clauses, rt1 tests signed, `= 'object'` clause, fixes 1/3/5/6). Live: both refusal dialogs and rt1's `debit_lut_missing` by keyboard (focus on the alert, ring, Tab stays in the dialog), the Udyam row at 768/1024/1920 with the menu open and closed, the save bar; axe 0. Screenshots `.logs/shots/rt2-second-review/`.
@@ -579,3 +579,6 @@ Usage: builder claude-opus-5-5/high (skills workers-best-practices, wrangler).
 - **Record:** 08-C RA-17, RA-22, RB-39; 04 ADM-SET-01, ADM-INV-06; 13 (owner's two choices, L1–L11, the dialog rules); CLAUDE.md house-rules line; 07-ZC lines 1–7.
 - **Follow-ups:** the invoice issue dialog's wrong-code notice and one shared `invalid_code` helper; a BEFORE INSERT signature trigger; inner spaces in a pasted Udyam number; one shared must-be-signed list; the `Field` scroll effect key; the save bar after a "No change" save; show known blockers on a dialog's confirm step before step-up; fresh visual baselines (invoice-udyam, advance, note fixtures); the duplicate PNG builder in `apps/admin/e2e/sample-data.ts`; the `.inv-udyam` 12em rule if the Udyam format ever changes.
 - **Not verified:** staging (after merge), NVDA, Browser Run renders of the Udyam line and the signed notes.
+
+## Handover (lead, end of day 2026-10-31)
+Done: merged as #124 (a703bf56) and deployed to staging (CI and the staging deploy green). The lead's side worktree, the leftover reviewer folder `rt2-review-fix` (no commits of its own; its three unsaved edits were an early draft of code the merged version replaced) and both local branches removed with the owner's yes. Next: nothing in this task; follow-ups in the integration notes and `docs/12-status.md`; the jobs bundle decision (L9) comes before M6.2. Not verified: NVDA, Browser Run renders of the Udyam line and the signed notes.

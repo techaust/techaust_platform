@@ -1,6 +1,6 @@
 # Run: rt1, the credit-note deadline by filing frequency (T1), the LUT of a debit note's FY (T2), and IMS in the 3B helper (T3)
 
-Status: merging (PR #123)
+Status: **merged** ([#123](https://github.com/techaust/techaust_platform/pull/123), 2026-10-31) and on staging
 Tier: A
 Usage: analyst claude-opus-5-5/high (agent-ac4e091f…, brief draft; skills workers-best-practices, wrangler)
 
@@ -339,3 +339,6 @@ Usage: builder claude-opus-5-5/high (skills workers-best-practices, wrangler).
 - **Follow-ups:** (1) a migration that folds any legacy `tax.lut` into the list and drops the key, **before production** (re-check 4); (2) the 3B helper's IMS status per period (OPEN RA-04, review 4); (3) an optional "IFF filed" setting (OPEN RA-31, review 5); (4) show known blockers on a dialog's confirm step before step-up (with rt2); (5) the draft row's 44 px inline link line gap (cosmetic, M5.3).
 - **Owner duty (record):** file the October IFF by 13 November when an October credit note relies on it.
 - **Not verified:** staging (deploys after merge), a screen reader, Browser Run renders of the LUT line on notes.
+
+## Handover (lead, end of day 2026-10-31)
+Done: merged as #123 and deployed to staging (CI and the staging deploy green). Worktrees and branches removed. Next: nothing in this task; its follow-ups are in the integration notes above and in `docs/12-status.md` (the legacy `tax.lut` fold is due **before production**). Not verified: a screen reader, Browser Run renders of the LUT line on notes.
