@@ -36,13 +36,14 @@ const type = (page: Page, text: string) => page.keyboard.type(text, { delay: 5 }
 
 /**
  * Waits for what a submit needs before Enter is pressed (test-hardening 1a; the 40 s timeout on main, 2026-10-31): the page script has taken the
- * form over (`data-ready`), and the Turnstile widget has its token (Turnstile writes it into the hidden `cf-turnstile-response` input in the
+ * form over (it sets `novalidate` first, in the same run that adds its submit handler: the HTML has none, and the contact form has no other
+ * marker), and the Turnstile widget has its token (Turnstile writes it into the hidden `cf-turnstile-response` input in the
  * widget's box). The script waits at most 20 s for a token and then shows the generic error without posting, so an Enter pressed while the widget
  * was still loading from challenges.cloudflare.com could end on /contact, never /thanks. Waiting only, no input: the keyboard rule holds.
  */
 async function readyToSubmit(page: Page, kind: "contact" | "quote") {
   const form = page.locator(`form[data-form="${kind}"]`);
-  await expect(form).toHaveAttribute("data-ready", "");
+  await expect(form).toHaveAttribute("novalidate", "");
   await expect(
     form.locator('[data-turnstile] input[name="cf-turnstile-response"]'),
     "Turnstile gave no token (is https://challenges.cloudflare.com reachable from the browser?)",
