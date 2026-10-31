@@ -79,7 +79,10 @@ function parties(view: PdfView): string {
   )}</span></p><dl class="facts">${fact(C.document.number, `${view.numberDisplay} v${view.version}`)}${fact(
     C.document.date,
     view.issueDate,
-  )}${fact(C.document.validUntil, view.validUntil)}${fact(C.document.currency, view.currency)}</dl></div>`;
+  )}${fact(C.document.validUntil, view.validUntil)}${fact(C.document.currency, view.currency)}</dl>${
+    // 07-ZE line 3 (T6), directly under the validity facts in the note style; version 1 has none
+    view.replacesNote ? p("note replaces-note", view.replacesNote) : ""
+  }</div>`;
   return `<section class="parties" aria-label="${esc(view.docLabel)}">${from}${to}${doc}</section>`;
 }
 

@@ -162,3 +162,56 @@ export function headRatesBp(row: Pick<SummaryRow, "effectiveRateBp">, supplyType
   }
   return { cgstBp: 0, sgstBp: 0, igstBp: rate };
 }
+
+// ---- 07-ZE section A: the offer lines shared by the email, the PDF, the portal and the admin (T6; approved by the owner, 2026-10-31) ----
+// One source for each line, so the email, the PDF, the portal and the admin preview never word it differently. Never on a proforma, a due date
+// or a staff list screen (07-ZE line 1).
+
+/**
+ * 07-ZE line 1: a proposal's or estimate's validity date with its time zone, "15 Nov 2026 (IST)". `date` is already formatted by the caller
+ * (short on the PDF, long on screen); an empty date stays empty, so no lone "(IST)" is printed. OPEN (08-C RB-35(a)) answered by naming IST:
+ * the validity ends at midnight India Standard Time, whoever reads it.
+ */
+export const validityDateIst = (date: string): string => (date.trim() === "" ? "" : `${date} (IST)`);
+
+/**
+ * 07-ZE line 2: the portal's notice once a proposal or estimate has expired (`date` its last valid day, formatted, without "(IST)": the line
+ * adds it). OPEN (08-C RB-35(a)) answered by naming IST.
+ */
+export const offerExpiredNotice = (kind: string, date: string): string =>
+  `This ${kind === "estimate" ? "estimate" : "proposal"} expired at the end of ${date} (IST). Reply to our email or contact us if you'd still like to go ahead.`;
+
+/**
+ * 07-ZE line 3: from version 2 onwards (PDF under the validity note, email after the first paragraph, portal under the title); null for
+ * version 1 or a value that is not a whole version number. A revision is made only from the newest sent version, so `version − 1` is the
+ * version the client last received. Researched 2026-10-29, Contract Act s.6 (08-C RB-35); OPEN (08-C RB-35(b)): s.5 not read.
+ */
+export function offerReplacesLine(version: number | string): string | null {
+  const n = typeof version === "string" && /^\d+$/.test(version) ? Number(version) : version;
+  if (typeof n !== "number" || !Number.isSafeInteger(n) || n < 2) return null;
+  return `This is version ${n}. It replaces version ${n - 1} and any earlier version, which can no longer be accepted.`;
+}
+
+/**
+ * 07-ZE line 4: the closing line of the proposal and estimate email (it replaced "Questions? Just reply to this email."). Researched
+ * 2026-10-31, Contract Act s.7(2) (08-C RB-35): the offer prescribes the manner of acceptance.
+ */
+export const OFFER_EMAIL_CLOSING =
+  "Questions? Just reply to this email. To accept, use Review and accept: a reply by email isn't an acceptance.";
+
+export type StaffAcceptReplyFields = {
+  /** The client contact's first name. */
+  firstName: string;
+  /** The document number as printed ("TH/PRP/2627/0001"). */
+  number: string;
+  version: number;
+  /** The portal address the client signs in at. */
+  portalLink: string;
+};
+
+/**
+ * 07-ZE line 5: the reply staff send, the same working day, when a client "accepts" a proposal or estimate by email. Filled here, sent by a
+ * person (nothing is sent automatically). Researched 2026-10-31, Contract Act s.7(2) (08-C RB-35).
+ */
+export const staffAcceptReply = (f: StaffAcceptReplyFields): string =>
+  `Thank you, ${f.firstName}. To accept ${f.number} v${f.version}, please use the Review and accept button in our email, or sign in at ${f.portalLink}, and click Accept there. As our terms say, a reply by email isn't an acceptance, so we haven't treated it as one. If it has expired or we've sent a newer version, tell us and we'll send you the current one.`;

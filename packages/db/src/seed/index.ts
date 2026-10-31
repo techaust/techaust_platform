@@ -19,10 +19,12 @@ import {
   PROPOSAL_TERMS_V2_SHA256,
   PROPOSAL_TERMS_V3,
   PROPOSAL_TERMS_V3_SHA256,
+  PROPOSAL_TERMS_V4,
+  PROPOSAL_TERMS_V4_SHA256,
 } from "./terms.ts";
 
 /** Bump when the seed's content changes (recorded nowhere else; it documents intent in reviews). */
-export const SEED_VERSION = 4;
+export const SEED_VERSION = 5;
 
 type Value = string | number | boolean | null | object;
 
@@ -93,6 +95,19 @@ export const proposalTermsV3Select = (): string =>
     afterSha256: PROPOSAL_TERMS_V2_SHA256,
   });
 
+/**
+ * T6 (07-ZE lines 6 to 12, owner 2026-10-31): the fourth proposal terms (validity and acceptance, ending the work, confidentiality, liability,
+ * law and disputes, the consumer line), after the seeded version 3.
+ */
+export const proposalTermsV4Select = (): string =>
+  nextProposalTermsSelect({
+    id: "terms:proposal:ze-t6-v4",
+    body: PROPOSAL_TERMS_V4,
+    sha256: PROPOSAL_TERMS_V4_SHA256,
+    afterId: "terms:proposal:za14-proposal-or-estimate",
+    afterSha256: PROPOSAL_TERMS_V3_SHA256,
+  });
+
 const insertTermsFrom = (select: string) =>
   `INSERT INTO \`terms_versions\` (\`id\`, \`kind\`, \`version\`, \`body_md\`, \`sha256\`) ${select} ON CONFLICT DO NOTHING;`;
 
@@ -131,7 +146,8 @@ export function seedStatements(): string[] {
     }),
   );
   // The first proposal terms (07-O section 2). A terms row the owner already saved as version 1 makes this a no-op. Then the second (FX-5)
-  // and the third (07-ZA item 14), in this order: one batch runs them in turn, so a fresh database ends with versions 1, 2 and 3.
+  // the third (07-ZA item 14) and the fourth (07-ZE, T6), in this order: one batch runs them in turn, so a fresh database ends with versions
+  // 1 to 4.
   const terms = [
     insert("terms_versions", {
       id: stableId("terms:proposal:1"),
@@ -142,6 +158,7 @@ export function seedStatements(): string[] {
     }),
     insertTermsFrom(proposalTermsV2Select()),
     insertTermsFrom(proposalTermsV3Select()),
+    insertTermsFrom(proposalTermsV4Select()),
   ];
   return [...settings, ...catalogue, ...templates, ...terms];
 }

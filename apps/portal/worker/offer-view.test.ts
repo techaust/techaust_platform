@@ -41,9 +41,14 @@ describe("the offer page shows the PDF's own view [POR-05]", () => {
     const f = await fixtures();
     const { o } = await realOffer(f);
     const res = await call(`/offers/${o.id}`, { cookie: await sign(f.a.finance) });
-    const { view } = (await bodyOf(res)) as { view: { issueDate: string; validUntil: string } };
+    const { view } = (await bodyOf(res)) as {
+      view: { issueDate: string; validUntil: string; validUntilDate: string; validityNote: string };
+    };
     expect(view.issueDate).toMatch(/^\d{2} [A-Z][a-z]{2} \d{4}$/);
-    expect(view.validUntil).toMatch(/^\d{2} [A-Z][a-z]{2} \d{4}$/);
+    // T6, 07-ZE line 1: the validity date says (IST); the bare date is there for a line that adds it itself (line 2)
+    expect(view.validUntil).toMatch(/^\d{2} [A-Z][a-z]{2} \d{4} \(IST\)$/);
+    expect(view.validUntilDate).toMatch(/^\d{2} [A-Z][a-z]{2} \d{4}$/);
+    expect(view.validityNote).toBe(`Valid until ${view.validUntil}`);
   });
 
   it("a link opens the same view; the stored extras never reach the client (a key scan of the whole response)", async () => {

@@ -14,9 +14,14 @@ import {
   isDeclineReason,
   mintOfferToken,
   normaliseTypedName,
+  OFFER_EMAIL_CLOSING,
+  offerExpiredNotice,
   offerLinkExpiry,
   offerLinkUrl,
+  offerReplacesLine,
+  staffAcceptReply,
   todayIst,
+  validityDateIst,
 } from "../src/offers.ts";
 import { pdfKeys } from "../src/pdf-jobs.ts";
 import { scheduleWhen } from "../src/schedule-text.ts";
@@ -235,5 +240,59 @@ describe("scheduleWhen", () => {
     expect(scheduleWhen({ label: "Start", pctBp: 4000, trigger: "on_accept" })).toBe("on acceptance");
     expect(scheduleWhen({ label: "End", pctBp: 4000, trigger: "delivery" })).toBe("on delivery");
     expect(scheduleWhen({ label: "Midpoint", pctBp: 4000, trigger: "milestone" })).toBe("at the midpoint");
+  });
+});
+
+describe("07-ZE offer lines (T6) [ADM-PROP-07, ADM-EST-01, POR-04]", () => {
+  it("line 1: a validity date gets (IST); an empty one stays empty", () => {
+    expect(validityDateIst("15 Nov 2026")).toBe("15 Nov 2026 (IST)");
+    expect(validityDateIst("15 Nov 26")).toBe("15 Nov 26 (IST)");
+    expect(validityDateIst("")).toBe("");
+    expect(validityDateIst("  ")).toBe("");
+  });
+
+  it("line 2: the expired notice names the kind and the last day in IST", () => {
+    expect(offerExpiredNotice("proposal", "15 Nov 2026")).toBe(
+      "This proposal expired at the end of 15 Nov 2026 (IST). Reply to our email or contact us if you'd still like to go ahead.",
+    );
+    expect(offerExpiredNotice("estimate", "15 Nov 2026")).toBe(
+      "This estimate expired at the end of 15 Nov 2026 (IST). Reply to our email or contact us if you'd still like to go ahead.",
+    );
+    // anything that is not an estimate reads as a proposal (the only other offer kind)
+    expect(offerExpiredNotice("other", "1 Dec 2026")).toMatch(/^This proposal expired/);
+  });
+
+  it("line 3: from version 2, the replaced version is n − 1; null for version 1 and for non-versions", () => {
+    expect(offerReplacesLine(1)).toBeNull();
+    expect(offerReplacesLine(2)).toBe(
+      "This is version 2. It replaces version 1 and any earlier version, which can no longer be accepted.",
+    );
+    expect(offerReplacesLine(12)).toBe(
+      "This is version 12. It replaces version 11 and any earlier version, which can no longer be accepted.",
+    );
+    expect(offerReplacesLine("3")).toBe(
+      "This is version 3. It replaces version 2 and any earlier version, which can no longer be accepted.",
+    );
+    for (const bad of [0, -2, 2.5, Number.NaN, "1", "", "v2", "2.0"])
+      expect(offerReplacesLine(bad)).toBeNull();
+  });
+
+  it("line 4: the email's closing line", () => {
+    expect(OFFER_EMAIL_CLOSING).toBe(
+      "Questions? Just reply to this email. To accept, use Review and accept: a reply by email isn't an acceptance.",
+    );
+  });
+
+  it("line 5: the staff reply, filled", () => {
+    expect(
+      staffAcceptReply({
+        firstName: "Asha",
+        number: "TH/PRP/2627/0001",
+        version: 2,
+        portalLink: "https://portal.techaust.com",
+      }),
+    ).toBe(
+      "Thank you, Asha. To accept TH/PRP/2627/0001 v2, please use the Review and accept button in our email, or sign in at https://portal.techaust.com, and click Accept there. As our terms say, a reply by email isn't an acceptance, so we haven't treated it as one. If it has expired or we've sent a newer version, tell us and we'll send you the current one.",
+    );
   });
 });

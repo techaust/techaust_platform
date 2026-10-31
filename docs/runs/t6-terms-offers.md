@@ -67,3 +67,48 @@ Analyst GO; designer screenshots; reviewer APPROVE with a live visual review; ev
 
 ## Follow-ups (for 12)
 - **Cloud setup script (lead, 2026-10-31): fixed by #126** (Node in /opt/techaust-node). the environment's setup script failed (`node -v says v24.22.1, not v24.22.2`): the image now ships `/opt/node24` as a real directory, so `ln -sfn /opt/node-v24.22.2-linux-x64 /opt/node24` makes a link inside it and Node stays 24.22.1; the browser step never ran. Fixed by hand in this session (moved the image's directory aside, linked 24.22.2, installed both Chromiums). Fix for `scripts/cloud-setup.sh` and the pasted environment script: before the `ln -sfn` line, add `[ -d /opt/node24 ] && [ ! -L /opt/node24 ] && mv /opt/node24 "/opt/node24.image.$(date +%s)"`. The owner pastes the corrected script into the environment's settings.
+
+## Builder report
+Builder (Opus 5.5, high; cloud session), 2026-10-31, branch `fix/t6-terms-build` from `origin/feat/t6-terms-offers` (4166570). No migration, no schema, no route, no snapshot/seal/hash format change. Wording only from 07-ZE, word for word.
+
+**Skills:** `cloudflare:workers-best-practices` and `cloudflare:wrangler` were tried first (step 6 touches wrangler vars) and are **not available** in this cloud session ("Unknown skill": plugins don't load here). No other skill in docs/14 §9 fits builder work on copy, seed and build plumbing (`frontend-design` is the designer's; `code-review`/`security-review` are the reviewer's).
+
+**Files by layer**
+1. Seed (step 1): `packages/db/src/seed/terms.ts` (`PROPOSAL_TERMS_V4` + `_SHA256` e180ddb4…46fe; items 1–5 of v3, then 07-ZE lines 7, 8, 9 + 10, 11, 12, then line 6; tags per the brief), `packages/db/src/seed/index.ts` (`proposalTermsV4Select()` through `nextProposalTermsSelect`, id `terms:proposal:ze-t6-v4`, after `terms:proposal:za14-proposal-or-estimate` + `PROPOSAL_TERMS_V3_SHA256`; inserted after v3; `SEED_VERSION` 5). Tests: new `packages/db/test/seed-terms-v4.test.ts` (the text is checked against 07-ZE itself via `?raw`: items 1–5 equal v3, items 6–10 and the consumer line equal 07-ZE lines 7–12 and 6; the hash recomputes; due days still only [7]; at 14 days nothing is added; at 7 it is added once; a document pinned to v3 keeps v3; an owner's newer row, and an owner row repeating v3's text, are never followed), `seed.test.ts` (v4 in the seeded list; the owner row is now version 5), `seed-terms-v3.test.ts` (seeds up to v3 only where it checks v3 becoming newest), `test/env.d.ts` (`*?raw`). No code counts terms items or reads item 6 by title (searched).
+2. Core (step 2): `packages/core/src/offers.ts`: `validityDateIst(date)` (line 1; an empty date stays empty), `offerExpiredNotice(kind, date)` (line 2), `offerReplacesLine(version)` (line 3; null for v1 and non-versions), `OFFER_EMAIL_CLOSING` (line 4), `staffAcceptReply({firstName, number, version, portalLink})` (line 5). Tests in `packages/core/test/offers.test.ts`.
+3. Email (step 3): `packages/email/src/offers.ts` `offerSent`: "(IST)" on the lead sentence and the "Valid until" fact; the line-3 paragraph right after the first paragraph for version ≥ 2; line 4 replaces the old closing (HTML and text). Tests in `packages/email/test/m45.test.ts`.
+4. PDF data (step 4): `packages/pdf/src/view.ts` + `types.ts`: `validUntil` and `validityNote` with "(IST)", a new `validUntilDate` (the bare date, for line 2) and `replacesNote` (line 3, null for v1). This view is proposals and estimates only; the proforma's `Valid until` (`invoice-view.ts`, `layout/copy.ts:156`) is untouched. `layout/document.ts`: `replacesNote` as `<p class="note replaces-note">` directly under the Document facts (the PDF prints no separate validity-note line; the facts block holds "Valid until"). Tests: `test/view.test.ts`, `test/layout.test.ts`. Visual baselines not touched (designer).
+5. Website (step 5): `apps/web/src/content/legal-pages.ts` §7 (+ line 13), §10 (line 14; ₹10,000 cap kept), §12 (line 15) + line 6 as its own paragraph; RB-23, RB-35 and RB-38(c) tags. `apps/web/src/content/legal.ts`: terms 0.2, effective "2026-10-31", changes 0.1 and 0.2 (07-ZE's note word for word). Tests: `apps/web/test/content-m23.test.ts`.
+6. Admin plumbing (step 6): `apps/admin/wrangler.jsonc` `vars.PORTAL_ORIGIN` (local `http://localhost:5174`, staging the portal staging Worker, production `https://portal.techaust.com`; front only, not the API Worker); `scripts/website-origin.mjs` (generic `originVarOf`, plus `portalOriginOf`, `portalOriginForApp`); `apps/admin/vite.config.ts` and `vitest.config.ts` define `__PORTAL_ORIGIN__` (port offset applied in dev); `apps/admin/src/portal-origin.d.ts`, `apps/admin/src/lib/portal-origin.ts`. `apps/admin/src/lib/offers.ts`: `STAFF_REPLY_COPY` {heading "Client accepted by email?", copy "Copy reply"} (owner-approved, real text), `staffReplyText(doc, portalOrigin = PORTAL_ORIGIN)`, `EMAIL_PREVIEW.lead` with "(IST)", new `EMAIL_PREVIEW.validUntilValue(date)` and `EMAIL_PREVIEW.replaces(version)`, `EMAIL_PREVIEW.questions` = line 4. No API change: `GET /documents/:id` already returns `contact.name` (the frozen recipient on a sent version). Tests: `apps/admin/src/lib/offers.test.ts`, `apps/web/test/admin-portal-origin.test.ts`. `scripts/check-worker-config.mjs` needed no change (it compares only the API's vars to the front's).
+7. Docs (step 7): 07-O new "§2e" pointer to 07-ZE; 07-A "Changes in v0.4" row (Delivery 0.2 waits for T11) and a v0.2 pointer under §2.
+- Also `apps/portal/worker/offer-view.test.ts` (the view's `validUntil` now ends in "(IST)").
+
+**Commands and results** (heavy ones through `tools/heavy.sh`, logs in `.logs/t6-*.log`)
+- `pnpm --filter @techaust/core test`: 91 files, 1,866 tests passed; coverage 99.07 % statements, 98.15 % branches.
+- `pnpm --filter @techaust/db test`: 36 files, 518 passed.
+- `pnpm --filter @techaust/email exec vitest run`: 11 files, 132 passed.
+- `pnpm --filter @techaust/pdf test`: 21 files, 378 passed (after updating 4 assertions for "(IST)").
+- `pnpm --filter @techaust/web build`, then `test`: 37 files, 739 passed; the built `dist/terms.html` shows "Version 0.2 · Effective 31 October 2026"; `node scripts/web-content-lint.mjs` ok.
+- `pnpm --filter @techaust/portal test`: first run 1 failure (offer-view: `validUntil` now has "(IST)"), test updated, that file re-run 6/6 passed; the other 24 files passed in the first run (650 tests).
+- `pnpm --filter @techaust/admin test`: 120 files, 3,497 passed.
+- `pnpm --filter @techaust/jobs test`: 33 files, 549 passed.
+- `node scripts/check-worker-config.mjs`: ok.
+- `pnpm typecheck`: exit 0.
+- `pnpm lint` (once, final): exit 0; 10 warnings and 8 infos, all in files this task didn't touch.
+
+**Worker bytes:** jobs **985,956** (main 984,266; +1,690; ceiling 1,000,000, stop line 995,000), admin API **618,422** (unchanged), admin front 99,271, portal **101,065**.
+
+**Not verified**
+- No screen, PDF render, email screenshot or browser check (the designer's step). The send dialog JSX (`apps/admin/src/routes/documents/send-dialog.tsx`) is not changed: the lead sentence and the closing line update by themselves through `EMAIL_PREVIEW`, but the "Valid until" fact (line 249, `props.validUntil`) and the version-2 paragraph need the designer to use `EMAIL_PREVIEW.validUntilValue(...)` and `EMAIL_PREVIEW.replaces(props.version)`.
+- The portal still passes `view.validUntil` (now with "(IST)") to its old expired notice (`apps/portal/src/routes/offer.tsx:125` → `N.expired`), so until the designer swaps in core `offerExpiredNotice(kind, view.validUntilDate)` it reads "expired on 10 Nov 2026 (IST)". The portal card and list dates and the line-3 line under the title are the designer's (`offerReplacesLine`).
+- The PDF `.note` style may be scoped to the totals block; the `replaces-note` placement and look are for the designer's visual check.
+- No staging build (`CLOUDFLARE_ENV=staging`) of admin was run; the staging origin is covered by `admin-portal-origin.test.ts` reading the real config.
+- `pnpm check` as a whole was not run (lint ran once as required; typecheck, the worker-config guard and the content lint ran separately; no migration changed).
+
+**Decisions taken (builder, routine)**
+- The staff reply's `{portal link}` is the full portal origin (`https://portal.techaust.com`), clickable when pasted into an email; the PDF's acceptance box keeps its host-only form.
+- `staffReplyText` returns null (box hidden) unless the version is a proposal or estimate with status sent, viewed or expired, has a number, neither client nor contact is anonymised, and the contact has a name; the first name is the first word of the frozen contact's name (as the email does).
+
+**Open questions (for the lead)**
+1. The designer's "copy to clipboard with a toast" needs a toast line 07-ZE lacks. `CopyButton` in `apps/admin/src/components/ui.tsx` already says "Copied" / "Copied to the clipboard" (existing words); if a different line is wanted, it is a copy question.
+2. Should the box also show on a `revised` (replaced) version? Built as no (sent, viewed, expired only); the reply's last sentence covers a newer version when staff answer from the newest one.
