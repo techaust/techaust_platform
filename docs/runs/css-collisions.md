@@ -121,3 +121,69 @@ Checked and dismissed: `.report .tnum` specificity (no conflicting `white-space`
 **Owner's decision (2026-11-01):** the chosen half of every switch gets a clear mark: keep its fill, add a **2 px ink bar along its bottom edge** (`--color-text`, inset so the control's size doesn't change), at least 3:1 against the unchosen half, in both themes **and while busy/disabled** (the chosen half keeps its mark and fill when the control is disabled; the rule order in `shell.css` fixed so `:checked` wins over `:disabled`). It applies to every `.segmented` and the theme picker (`.theme-pick__opt`), which share the rule.
 
 **Designer, in one round:** finding 1 as the owner decided; findings 2, 3 (header comment), 4 and 5. Screenshots before/after of the GST switch (Quarter chosen, Month chosen, busy), Clients › New and the theme picker, light and dark, 1280 and 390, in `.logs/css-collisions/fix1/`; measure and report the bar's contrast against the unchosen half in both themes; axe on GST and one other switch screen. Then `pnpm check` and the admin tests through `bash tools/heavy.sh`. Your own branch from `origin/fix/css-collisions` (e.g. `fix/css-collisions-fix1`); append "Designer report (fix round 1)" below.
+
+## Designer report (fix round 1)
+Branch `fix/css-collisions-fix1` (from `origin/fix/css-collisions`). Commits: `d2a1598f` (the switch mark and the four review fixes), and this report. Opus 5.5, high.
+
+**Skills loaded:** `frontend-design:frontend-design` (first step). It kept the change to the one mark the owner chose and nothing else on the control. It also set the quality floor: the size stays the same, the focus ring stays readable next to the bar, and forced colours have a fallback. `dataviz`: not loaded, because there is no chart or stat tile. No other docs/14 §9 row fits a CSS and guard fix.
+
+**What changed**
+- **Finding 1 (owner's decision)**, `apps/admin/src/shell.css`, the rule that `.segmented__opt` and `.theme-pick__opt` share:
+  - The chosen half keeps its `--color-selection` fill and weight 600, and gains `box-shadow: inset 0 -2px 0 var(--color-text)`. That is a 2 px ink bar along the bottom edge. It is inset, so the halves keep their size (measured 44 px high, equal widths, before and after). The container's `overflow: hidden` rounds the bar's outer corner with the control.
+  - The `:has(input:disabled)` rule now comes **before** the `:has(input:checked)` rule. Both have the same specificity, so while the control is busy the chosen half keeps its fill and bar. The text stays muted and the cursor stays `not-allowed`, and the unchosen half stays on surface-alt.
+  - **Forced colours** (Windows high contrast) drop shadows and fills, so there the chosen half takes `Highlight` / `HighlightText` (`forced-color-adjust: none`). The website's currency toggle already uses `Highlight` in the same way.
+- **Finding 2**, `apps/web/test/css-collisions.test.ts`: the repository scan reads `scripts/css-collisions-allow.json` and passes it to `checkApps`.
+- **Finding 3**, `scripts/css-collisions.mjs`: the header now states both limits. (1) A descendant rule that styles inside another file's component isn't caught. (2) `.x.y` and `.x` are different keys. It also gives the reason: stricter versions flag 17 descendant and 5 compound rules that are intentional.
+- **Finding 4**, the same script: the run-as-script check is now `pathToFileURL(resolve(process.argv[1])).href === import.meta.url`, as in `check-worker-config.mjs`. Checked from the repo root, from `apps/` with a relative path, and with a lower-case drive letter. It ran every time.
+- **Finding 5**: `rledger--plain` is removed from `routes/reports/{gst,manual-entries,payments,sales-register}.tsx`. No CSS or e2e locator used it.
+
+**Measured contrast** (computed colours in the page, WCAG relative luminance):
+| | Light | Dark |
+|---|---|---|
+| Bar (`--color-text`) against the unchosen half, GST and Clients › New (`--color-bg`) | **15.15:1** | **15.19:1** |
+| Bar against the unchosen half, theme picker (menu surface) | 16.28:1 | 12.48:1 |
+| Bar against the unchosen half while busy (surface-alt) | 14.04:1 | 14.41:1 |
+| Bar against the chosen fill | 13.19:1 | 8.21:1 |
+| Fill against the unchosen half (unchanged) | 1.15:1 | 1.85:1 |
+| Chosen text against the fill | 13.19:1 | 8.21:1 |
+| Chosen text against the fill while busy (muted; WCAG exempts inactive controls) | 6.16:1 | 4.36:1 |
+
+Before the fix, the busy chosen half had **no** fill (1:1 against the unchosen half; `before/03-*`), which reproduces the reviewer's finding.
+
+**Screenshots** (in `D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\.claude\worktrees\agent-acbf4b5c3552c778a\.logs\css-collisions\fix1\`). Three folders: `before/` (the old rule), `after/` (1×) and `after-3x/` (the same shots at device scale 3, so the 2 px bar can be judged). Every name exists in light and dark at 1280 and 390, e.g. `01-gst-quarter-dark-390.png`.
+- `01-gst-quarter-*`: the GST switch with Quarter chosen (the default). `01-gst-quarter-page-*-1280` is the whole page.
+- `02-gst-month-focus-*`: Month chosen by keyboard (ArrowRight), with the focus ring inside the chosen half. The bar shows just below it.
+- `02b-gst-month-*`: Month chosen, without focus.
+- `03-gst-busy-*`: "Make files" pressed and the register request held, so the switch is disabled. Quarter keeps its fill and bar.
+- `04-clients-new-switch-*`: Clients › New, the Type switch. `04-clients-new-page-*` is the whole viewport.
+- `05-theme-picker-*`: the account menu's theme picker (Light chosen in light, Dark chosen in dark).
+- `after/06-gst-forced-colors-1280.png`: forced colours (emulated). The chosen half is drawn in the system highlight.
+- `before/report.json`, `after/report.json`, `after-3x/report.json`: the raw measurements, axe, keyboard and console results. In `before/report.json` the `bar` column is a measuring artefact (a transparent pseudo-element read as black). The before rule has no bar (`box-shadow: none`).
+
+**axe** (wcag2a, wcag2aa, wcag21a, wcag21aa, wcag22aa) after the fix:
+- Reports › GST exports: light and dark, 1280 and 390.
+- Clients › New: light at 1280 and 390, dark at 390.
+- **0 violations in all 7 runs** (also 0 before the fix).
+
+**Keyboard:** Tab reaches the GST switch in 6 presses from the top, and ArrowRight picks Month (all four sizes). Focus is visible, with no trap.
+
+**Console:** the only errors are 4 `net::ERR_FAILED` lines, one per run, from my own test harness. It aborts the held register request after the busy screenshot. There are no app errors.
+
+**Commands and results**
+- `pnpm install --frozen-lockfile --offline`: ok.
+- Local data: `pnpm dev:secrets`, `pnpm db:migrate:local`, `pnpm db:seed:local` and `pnpm portal:sample`, then the admin e2e global setup alone with `E2E_SAMPLE=1` (a temporary runner file, deleted, never committed). All local, labelled sample data.
+- Dev server: `TECHAUST_PORT_OFFSET=0 node scripts/dev.mjs admin`. Stopped afterwards (the process tree was killed). The screenshots came from a Playwright script in my scratchpad, using the app's own `@playwright/test` and `@axe-core/playwright`. The browser was closed at the end of each run.
+- `node scripts/css-collisions.mjs`: ok (22 stylesheets in 4 apps).
+- `pnpm --filter @techaust/web exec vitest run --project node test/css-collisions.test.ts`: 7/7 passed.
+- `pnpm exec biome check` on the 7 changed files: ok after `biome format` on the test file.
+- `bash tools/heavy.sh --log cssfix1-admin-test pnpm --filter @techaust/admin test`: 3,808 of 3,809 passed. The one failure was a 5 s timeout in `worker/dashboard-stress.test.ts`, a Worker row-count test with no CSS involved. Re-run alone (`cssfix1-admin-dash`): 3/3 passed.
+- `bash tools/heavy.sh --log cssfix1-check pnpm check` (the one whole-repo lint): exit 0, every guard ok including "css collisions: ok".
+
+**Not verified**
+- **The other `.segmented` screens:** Invoices › New, its notes and types, leads convert, project milestones and notes, settings gateways and the client data tools weren't photographed in this round. They use the same single shared rule, which was checked on GST, Clients › New and the theme picker.
+- **Real Windows high contrast:** forced colours were checked only through Playwright's emulation.
+- The admin e2e suite and the builds: not run (no TSX logic changed, only one unused class name dropped).
+
+**Placeholder text:** none. No copy changed.
+
+**Open questions:** none.
