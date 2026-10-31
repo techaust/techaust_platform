@@ -67,7 +67,7 @@ export const withdrawnSql = (a: string): string =>
   `(${a}.type = 'proforma' AND ${a}.status = 'void' AND ${proformaDeliveredSql(a)})`;
 
 // ---- the ledger (M6.1; ADM-PAY-06, ADM-INV-16; run file A.5, A.6) -------------------------------------------------------------------------------------------
-// Shared by the trigger set `payment_triggers` (0057) and the statements of `ledger.ts`, so the bound checks, the post-condition and the recompute sum the same way.
+// Shared by the trigger set `payment_triggers` (0060) and the statements of `ledger.ts`, so the bound checks, the post-condition and the recompute sum the same way.
 // Only CONFIRMED payments count: a pending, rejected or withdrawn payment's allocation rows (a withdrawn one keeps its history) are ignored by every sum.
 
 /** The document types a payment is put on (core `PAYABLE_TYPES`; a test compares them): never a proforma or a credit note. */

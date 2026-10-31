@@ -53,7 +53,7 @@ export const MUTABLE_AFTER_FREEZE = [
   "einv_status",
   // M5.3 (LD46): the client's IMS response to a credit note; the triggers of 0042 allow only the moves of `canSetImsStatus`.
   "ims_status",
-  // M6.1 (T8, L8): the TDS the ledger recompute sums from confirmed `tds` payments; tied by `documents_ledger_identity` (0057) and `documents_tds_bounds`.
+  // M6.1 (T8, L8): the TDS the ledger recompute sums from confirmed `tds` payments; tied by `documents_ledger_identity` (0060) and `documents_tds_bounds`.
   "tds_minor",
   "updated_at",
 ] as const;
@@ -1181,14 +1181,14 @@ export function offerRedactionTriggerStatements(): string[] {
   ];
 }
 
-/** M6.1: the document types `documents_ledger_identity` covers as 0057 recreates it: the same as 0050's (pinned, so a later list cannot move the bytes of 0057). */
-export const LEDGER_IDENTITY_TYPES_0057 = LEDGER_IDENTITY_TYPES_0050;
-/** M6.1 (L3): the values the payment triggers of 0057 accept, pinned (M6.2 to M6.5 widen them in their own migrations; a db test compares them with the schema's lists). */
-export const PAYMENT_KINDS_0057 = ["payment", "tds"] as const;
-export const PAYMENT_PROVIDERS_0057 = ["manual"] as const;
-export const PAYMENT_STATUSES_0057 = ["pending_verification", "confirmed", "rejected", "withdrawn"] as const;
-export const PAYMENT_MODES_0057 = ["neft", "rtgs", "imps", "upi", "swift"] as const;
-export const PROOF_MIME_TYPES_0057 = ["application/pdf", "image/jpeg", "image/png"] as const;
+/** M6.1: the document types `documents_ledger_identity` covers as 0060 recreates it: the same as 0050's (pinned, so a later list cannot move the bytes of 0060). */
+export const LEDGER_IDENTITY_TYPES_0060 = LEDGER_IDENTITY_TYPES_0050;
+/** M6.1 (L3): the values the payment triggers of 0060 accept, pinned (M6.2 to M6.5 widen them in their own migrations; a db test compares them with the schema's lists). */
+export const PAYMENT_KINDS_0060 = ["payment", "tds"] as const;
+export const PAYMENT_PROVIDERS_0060 = ["manual"] as const;
+export const PAYMENT_STATUSES_0060 = ["pending_verification", "confirmed", "rejected", "withdrawn"] as const;
+export const PAYMENT_MODES_0060 = ["neft", "rtgs", "imps", "upi", "swift"] as const;
+export const PROOF_MIME_TYPES_0060 = ["application/pdf", "image/jpeg", "image/png"] as const;
 
 /**
  * The ledger (M6.1; ADM-PAY-05, ADM-PAY-06, ADM-INV-02, ADM-INV-09, ADM-INV-16, ADM-APR-01, Q60; run file A.5; new tables' triggers, recreated and new `documents`
@@ -1221,7 +1221,7 @@ export const PROOF_MIME_TYPES_0057 = ["application/pdf", "image/jpeg", "image/pn
  *  12. `documents_void_no_payment`: no void with TDS, with any allocation row (one released since included), or while a PENDING payment asks for
  *      the document (L17; core `voidBlockers` `payment_pending` and `tds_recorded` are the twin);
  *  13. `approvals_payment_verify_insert`: a `payment_verify` approval names an existing pending payment and no document; `approvals_payment_fixed`: its payment
- *      never changes (the partial unique index `approvals_payment_pending` is in 0056: one pending verification per payment).
+ *      never changes (the partial unique index `approvals_payment_pending` is in 0059: one pending verification per payment).
  *  14. `realisation_extensions_scope_insert`: an extension (Q60, L14) is for a frozen, not void export invoice, to a day after its issue and after any earlier
  *      extension of it (Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-04)); `realisation_extensions_fixed`: append-only, the letter set once;
  *      `realisation_extensions_no_delete`.
@@ -1235,7 +1235,7 @@ export function paymentTriggerStatements(): string[] {
     cols.map((c) => `(OLD.\`${c}\` IS NOT NULL AND NEW.\`${c}\` IS NOT OLD.\`${c}\`)`).join(" OR ");
   const owner = (who: string) =>
     `EXISTS (SELECT 1 FROM staff_users ou WHERE ou.id = ${who} AND ou.role = 'owner' AND ou.status = 'active')`;
-  const valuesBad = `NEW.kind NOT IN (${q(PAYMENT_KINDS_0057)}) OR NEW.provider NOT IN (${q(PAYMENT_PROVIDERS_0057)}) OR NEW.status NOT IN (${q(PAYMENT_STATUSES_0057)}) OR (NEW.mode IS NOT NULL AND NEW.mode NOT IN (${q(PAYMENT_MODES_0057)})) OR (NEW.proof_mime IS NOT NULL AND NEW.proof_mime NOT IN (${q(PROOF_MIME_TYPES_0057)}))`;
+  const valuesBad = `NEW.kind NOT IN (${q(PAYMENT_KINDS_0060)}) OR NEW.provider NOT IN (${q(PAYMENT_PROVIDERS_0060)}) OR NEW.status NOT IN (${q(PAYMENT_STATUSES_0060)}) OR (NEW.mode IS NOT NULL AND NEW.mode NOT IN (${q(PAYMENT_MODES_0060)})) OR (NEW.proof_mime IS NOT NULL AND NEW.proof_mime NOT IN (${q(PROOF_MIME_TYPES_0060)}))`;
   const valuesMsg = "a payment has a known kind, provider, status, mode and proof type";
   const insertBad = `NOT ((NEW.status = 'pending_verification' AND NEW.verified_by IS NULL AND NEW.verified_at IS NULL AND NEW.decision_note IS NULL) OR (NEW.status = 'confirmed' AND NEW.verified_at IS NOT NULL AND NEW.verified_by IS NEW.recorded_by AND ${owner("NEW.verified_by")})) OR NEW.withdrawn_by IS NOT NULL OR NEW.withdrawn_at IS NOT NULL OR NEW.withdraw_reason IS NOT NULL OR (NEW.provider = 'manual' AND NEW.recorded_by IS NULL)`;
   const tdsBad =
@@ -1299,7 +1299,7 @@ export function paymentTriggerStatements(): string[] {
   const paid = livePaidSql("d.id");
   const tds = liveTdsSql("d.id");
   const resultDocBad = `EXISTS (SELECT 1 FROM json_each(NEW.document_ids) j JOIN documents d ON d.id = j.value WHERE d.type IN ${PAYABLE_TYPES_SQL} AND d.frozen_at IS NOT NULL AND (d.paid_minor IS NOT ${paid} OR d.tds_minor IS NOT ${tds} OR d.balance_minor IS NOT max(0, d.total_minor - ${paid} - d.credited_minor - ${tds}) OR (d.status IN ${LEDGER_STATUSES_SQL} AND d.status IS NOT ${ledgerStatusCaseSql("d.total_minor", `(${paid} + ${tds})`, "d.credited_minor")})))`;
-  const ledgerTypes = q(LEDGER_IDENTITY_TYPES_0057);
+  const ledgerTypes = q(LEDGER_IDENTITY_TYPES_0060);
   const identityBad = `NEW.frozen_at IS NOT NULL AND NEW.type IN (${ledgerTypes}) AND (NEW.paid_minor IS NULL OR NEW.paid_minor < 0 OR NEW.tds_minor IS NULL OR NEW.tds_minor < 0 OR NEW.balance_minor IS NOT max(0, NEW.total_minor - NEW.paid_minor - NEW.credited_minor - NEW.tds_minor))`;
   const tdsBoundsBad =
     "NEW.tds_minor IS NULL OR NEW.tds_minor < 0 OR (NEW.tds_minor > 0 AND NOT (NEW.type IN ('tax_invoice', 'debit_note') AND NEW.currency = 'INR'))";
@@ -1308,8 +1308,8 @@ export function paymentTriggerStatements(): string[] {
     "NEW.status = 'void' AND OLD.status <> 'void' AND (OLD.tds_minor > 0 OR EXISTS (SELECT 1 FROM payment_allocations va WHERE va.document_id = OLD.id) OR EXISTS (SELECT 1 FROM payments vp, json_each(vp.requested_allocations) vj WHERE vp.client_id = OLD.client_id AND vp.status = 'pending_verification' AND vp.requested_allocations IS NOT NULL AND json_extract(vj.value, '$.documentId') = OLD.id))";
   const approvalBad =
     "NEW.kind = 'payment_verify' AND (NEW.document_id IS NOT NULL OR NEW.payment_id IS NULL OR NOT EXISTS (SELECT 1 FROM payments ap WHERE ap.id = NEW.payment_id AND ap.status = 'pending_verification'))";
-  const extensionBad = `NOT EXISTS (SELECT 1 FROM documents ed WHERE ed.id = NEW.document_id AND ed.type = 'export_invoice' AND ed.frozen_at IS NOT NULL AND ed.status <> 'void' AND ed.issue_date IS NOT NULL AND NEW.extended_to > ed.issue_date) OR NEW.extended_to <= coalesce((SELECT max(ex.extended_to) FROM realisation_extensions ex WHERE ex.document_id = NEW.document_id), '') OR (NEW.letter_mime IS NOT NULL AND NEW.letter_mime NOT IN (${q(PROOF_MIME_TYPES_0057)}))`;
-  const extensionFixed = `${changed(["id", "document_id", "extended_to", "bank_ref", "recorded_by", "created_at"])} OR ${setOnce(["letter_r2_key", "letter_sha256", "letter_mime"])} OR (NEW.letter_mime IS NOT NULL AND NEW.letter_mime NOT IN (${q(PROOF_MIME_TYPES_0057)}))`;
+  const extensionBad = `NOT EXISTS (SELECT 1 FROM documents ed WHERE ed.id = NEW.document_id AND ed.type = 'export_invoice' AND ed.frozen_at IS NOT NULL AND ed.status <> 'void' AND ed.issue_date IS NOT NULL AND NEW.extended_to > ed.issue_date) OR NEW.extended_to <= coalesce((SELECT max(ex.extended_to) FROM realisation_extensions ex WHERE ex.document_id = NEW.document_id), '') OR (NEW.letter_mime IS NOT NULL AND NEW.letter_mime NOT IN (${q(PROOF_MIME_TYPES_0060)}))`;
+  const extensionFixed = `${changed(["id", "document_id", "extended_to", "bank_ref", "recorded_by", "created_at"])} OR ${setOnce(["letter_r2_key", "letter_sha256", "letter_mime"])} OR (NEW.letter_mime IS NOT NULL AND NEW.letter_mime NOT IN (${q(PROOF_MIME_TYPES_0060)}))`;
   return [
     // 0. the back-fill (before the triggers below exist)
     "INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, charges_minor, received_on, mode, reference_norm, advance_receipt_id, recorded_by, recorded_at, verified_by, verified_at) SELECT 'pay_' || r.id, r.client_id, 'payment', 'manual', 'confirmed', r.currency, r.amount_minor, 0, r.received_on, NULL, r.reference_norm, r.id, r.created_by, r.created_at, r.created_by, r.created_at FROM advance_receipts r WHERE NOT EXISTS (SELECT 1 FROM payments x WHERE x.advance_receipt_id = r.id);",

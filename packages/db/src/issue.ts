@@ -574,7 +574,7 @@ export function invoiceIssueStatements(db: D1Database, a: InvoiceIssueArgs): Sen
       // notes in one millisecond must not leave the stamp a stale draft read. A debit note moves nothing on its invoice (LD42).
       // FX-1 (A0 4): ONE statement writes the credited total, the balance and the status together, from the same recomputed sum (`s.credited`), so the row is never
       // seen half written: the trigger `documents_ledger_identity` (0050) checks balance = max(0, total - paid - credited) on every write of the ledger.
-      // M6.1 (T8, ADM-INV-16): the TDS on the invoice settles it too: balance = max(0, total - paid - credited - tds) (0057's identity) and the status CASE is core
+      // M6.1 (T8, ADM-INV-16): the TDS on the invoice settles it too: balance = max(0, total - paid - credited - tds) (0060's identity) and the status CASE is core
       // `ledgerStatusOf(total, paid, credited, tds)`'s twin (`ledgerStatusCaseSql`, settled = paid + tds).
       ...(a.note && a.note.kind === "credit"
         ? [
@@ -831,7 +831,7 @@ export function advanceIssueStatements(db: D1Database, a: AdvanceIssueArgs): Sen
 /**
  * The advance batch's ledger part (M6.1, L4, L5): a new confirmed `manual` payment `pay_<receiptId>` (or the pending payment `paymentId` flipped to confirmed by
  * the issuing Owner, with its approval approved), one `allocate` row `pal_<receiptId>` of the whole amount onto the new invoice, the recompute of the invoice and
- * `ledger_result` (unguarded). The ids follow the back-fill's (0057), so an advance looks the same whether it was made before M6.1 or after.
+ * `ledger_result` (unguarded). The ids follow the back-fill's (0060), so an advance looks the same whether it was made before M6.1 or after.
  */
 function advancePaymentStatements(db: D1Database, a: AdvanceIssueArgs): D1PreparedStatement[] {
   const paymentId = a.paymentId ?? `pay_${a.receiptId}`;

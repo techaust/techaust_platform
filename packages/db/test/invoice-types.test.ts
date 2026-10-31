@@ -906,7 +906,7 @@ describe("the tax invoice for money received [Q9, LD22; Researched 2026-10-28, s
         "UPDATE documents SET status = 'void', voided_at = 1, void_reason = 'x' WHERE id = ?",
         a.documentId,
       ),
-      // M6.1 (L17): the paid invoice carries the advance's allocation, which `documents_void_no_payment` (0057) refuses as well
+      // M6.1 (L17): the paid invoice carries the advance's allocation, which `documents_void_no_payment` (0060) refuses as well
       /documents_invoice_status_flow|documents_void_pairing|documents_void_no_payment/,
     );
   });

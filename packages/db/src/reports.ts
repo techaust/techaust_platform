@@ -157,7 +157,7 @@ const DEBIT_KINDS = "('tax_invoice', 'export_invoice', 'debit_note')";
 
 /**
  * The lines of a client's statement as one source `u(id, kind, date, ord, number, amount, sk)`: the debit documents and credit notes (issued, not voided,
- * the client's, in the currency), and from M6.1 the CONFIRMED payments of the ledger (L4: the advance receipts of Q9 were back-filled as payments, 0057): a
+ * the client's, in the currency), and from M6.1 the CONFIRMED payments of the ledger (L4: the advance receipts of Q9 were back-filled as payments, 0060): a
  * `receipt` line for money received (its full amount, dated by the day it arrived; the number is the tax invoice an advance paid, else the bank reference, else '' (never NULL: the PDF escapes it)) and
  * a `tds` line for tax the client deducted (T8; dated by its advice; the number is the invoice it is on). A pending, rejected or withdrawn payment is never a line.
  * `ord` orders one day: 1 a debit document, 2 a credit note, 3 a receipt, 4 a TDS line; `sk` is `date|ord`, the keyset key with `id`. Proformas are not here

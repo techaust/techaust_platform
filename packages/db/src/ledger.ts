@@ -23,7 +23,7 @@ import {
 } from "./sql-rules.ts";
 
 export type { GuardSql };
-/** The shared SQL of the ledger rules (also used by the triggers of 0057). */
+/** The shared SQL of the ledger rules (also used by the triggers of 0060). */
 export {
   LEDGER_STATUSES_SQL,
   ledgerStatusCaseSql,

@@ -1,4 +1,4 @@
-// The ledger in the database (M6.1; ADM-PAY-05, ADM-PAY-06, ADM-INV-02, ADM-INV-09, ADM-INV-16, ADM-APR-01, Q60; run file A and F): migrations 0056 and 0057,
+// The ledger in the database (M6.1; ADM-PAY-05, ADM-PAY-06, ADM-INV-02, ADM-INV-09, ADM-INV-16, ADM-APR-01, Q60; run file A and F): migrations 0059 and 0060,
 // every trigger bound and status move, the post-condition, the back-fill, the twins of core (the status CASE, the FEMA date with an extension, the statement's
 // closing balance), the statement builders of `ledger.ts` and EXPLAIN plans for the new indexes. Raw SQL where a trigger is the subject; the real builders where
 // a write path is. All names and amounts are invented test data.
@@ -56,11 +56,11 @@ import {
 } from "../src/schema/payments.ts";
 import {
   MUTABLE_AFTER_FREEZE,
-  PAYMENT_KINDS_0057,
-  PAYMENT_MODES_0057,
-  PAYMENT_PROVIDERS_0057,
-  PAYMENT_STATUSES_0057,
-  PROOF_MIME_TYPES_0057,
+  PAYMENT_KINDS_0060,
+  PAYMENT_MODES_0060,
+  PAYMENT_PROVIDERS_0060,
+  PAYMENT_STATUSES_0060,
+  PROOF_MIME_TYPES_0060,
   paymentTriggerStatements,
 } from "../src/triggers.ts";
 import { mkClientRow, mkContact, mkIssued, mkMember, mkReminder, mkSend, next } from "./billing-helpers.ts";
@@ -169,24 +169,24 @@ async function setup() {
 
 // ---- migrations --------------------------------------------------------------------------------------------------------------------------------------
 
-describe("0056 and 0057: no rebuild, the pinned lists, the freeze coverage [run file A]", () => {
-  it("0056 only creates tables and indexes and adds a column: no DROP, no copy, no rebuild", () => {
-    const m = env.TEST_MIGRATIONS.find((x) => x.name === "0056_payments.sql");
+describe("0059 and 0060: no rebuild, the pinned lists, the freeze coverage [run file A]", () => {
+  it("0059 only creates tables and indexes and adds a column: no DROP, no copy, no rebuild", () => {
+    const m = env.TEST_MIGRATIONS.find((x) => x.name === "0059_payments.sql");
     expect(m).toBeDefined();
     for (const q of (m?.queries ?? []).map((x) => x.replace(/^(\s|--> statement-breakpoint)+/, "")))
       expect(q.trim(), q.slice(0, 60)).toMatch(
         /^(CREATE TABLE|CREATE INDEX|CREATE UNIQUE INDEX|ALTER TABLE `documents` ADD `tds_minor`)/,
       );
-    const all0056 = (m?.queries ?? []).join("\n");
-    expect(all0056).not.toMatch(/DROP TABLE|__new_|INSERT INTO/);
+    const all0059 = (m?.queries ?? []).join("\n");
+    expect(all0059).not.toMatch(/DROP TABLE|__new_|INSERT INTO/);
   });
 
-  it("the trigger lists of 0057 are the schema's lists today, and tds_minor is a ledger column that may change after the freeze", () => {
-    expect(PAYMENT_KINDS_0057).toEqual(PAYMENT_KINDS);
-    expect(PAYMENT_PROVIDERS_0057).toEqual(PAYMENT_PROVIDERS);
-    expect(PAYMENT_STATUSES_0057).toEqual(PAYMENT_STATUSES);
-    expect(PAYMENT_MODES_0057).toEqual(PAYMENT_MODES);
-    expect(PROOF_MIME_TYPES_0057).toEqual(PROOF_MIME_TYPES);
+  it("the trigger lists of 0060 are the schema's lists today, and tds_minor is a ledger column that may change after the freeze", () => {
+    expect(PAYMENT_KINDS_0060).toEqual(PAYMENT_KINDS);
+    expect(PAYMENT_PROVIDERS_0060).toEqual(PAYMENT_PROVIDERS);
+    expect(PAYMENT_STATUSES_0060).toEqual(PAYMENT_STATUSES);
+    expect(PAYMENT_MODES_0060).toEqual(PAYMENT_MODES);
+    expect(PROOF_MIME_TYPES_0060).toEqual(PROOF_MIME_TYPES);
     expect(ALLOCATION_KINDS).toEqual(["allocate", "release"]);
     expect(MUTABLE_AFTER_FREEZE).toContain("tds_minor");
     expect(PAYABLE_TYPES_SQL).toBe(`(${PAYABLE_TYPES.map((t) => `'${t}'`).join(", ")})`);
@@ -628,7 +628,7 @@ describe("the recompute and ledger_result [run file A.5, A.6]", () => {
 
 // ---- the back-fill ----------------------------------------------------------------------------------------------------------------------------------
 
-describe("the back-fill of the advance receipts (L4, 0057 step 0)", () => {
+describe("the back-fill of the advance receipts (L4, 0060 step 0)", () => {
   it("one confirmed payment and one allocation per receipt; the recompute leaves the advance invoice's paid amount unchanged; running it again adds nothing", async () => {
     const owner = await mkMember("owner");
     const clientId = await mkClientRow();
