@@ -441,6 +441,80 @@ describe("reminder.send: a failure after the claim gives it back, before the ema
     expect(await send(id, dueAtOf(0) + 1000)).toBe("already"); // a redelivery sends nothing
   });
 
+  // Item 5 #2: "Revoke links" commits after the claim and before `sendBatch` (it revokes the claim's links and pauses only the WAITING rows, so it skips the claimed one), then
+  // `sendBatch` fails. The give-back must leave the row paused, not waiting, or the retry emails fresh live links after the revoke. The sends already had links, so the revoke
+  // cancels none of them; the simulation below runs only its other two statements.
+  const revokeThenFail = (docId: string, revokedAt: number) =>
+    makeEnv({
+      EMAIL_QUEUE: {
+        send: async () => {
+          throw new Error("queue down");
+        },
+        sendBatch: async () => {
+          await run(
+            "UPDATE doc_access_tokens SET revoked_at = ?2 WHERE document_id = ?1 AND revoked_at IS NULL",
+            docId,
+            revokedAt,
+          );
+          await run(
+            "UPDATE reminders SET skipped_reason = 'paused' WHERE document_id = ?1 AND sent_at IS NULL AND skipped_reason IS NULL",
+            docId,
+          );
+          throw new Error("queue down");
+        },
+      },
+    });
+
+  it.each([
+    ["at or after the claim's time", 1000],
+    [
+      "by a revoke whose clock read was before the claim's (a slow request): one of the claim's own links is revoked",
+      -1000,
+    ],
+  ])(
+    "the links were revoked between the claim and a failed sendBatch (%s): the claim goes back PAUSED and the redelivery sends nothing",
+    async (_, shift) => {
+      const w = await world();
+      const id = w.rows.get(0) as string;
+      const claimAt = dueAtOf(0);
+      await expect(send(id, claimAt, revokeThenFail(w.doc.id, claimAt + shift))).rejects.toThrow(
+        "queue down",
+      );
+      expect(await row(id)).toEqual({ sent_at: null, skipped_reason: "paused", email_log_id: null });
+      expect(await send(id, claimAt + 60_000)).toBe("already");
+      expect(queued()).toEqual([]);
+      expect((await tokens(w.doc.id)).every((t) => t.revoked_at !== null)).toBe(true);
+    },
+  );
+
+  it("a link of the document revoked BEFORE the claim (an older revoke, then a new send) does not pause the give-back", async () => {
+    const w = await world();
+    const id = w.rows.get(0) as string;
+    const claimAt = dueAtOf(0);
+    await run(
+      "INSERT INTO doc_access_tokens (token_hash, document_id, purpose, expires_at, revoked_at, contact_id, client_id, email, send_id) VALUES (?1, ?2, 'view_pay', ?3, ?4, ?5, ?6, ?7, NULL)",
+      `old-${id}`,
+      w.doc.id,
+      claimAt + 86_400_000,
+      claimAt - 1000,
+      w.contacts[0]?.id,
+      w.clientId,
+      w.contacts[0]?.email.toLowerCase(),
+    );
+    const down = makeEnv({
+      EMAIL_QUEUE: {
+        send: async () => {
+          throw new Error("queue down");
+        },
+        sendBatch: async () => {
+          throw new Error("queue down");
+        },
+      },
+    });
+    await expect(send(id, claimAt, down)).rejects.toThrow("queue down");
+    expect(await row(id)).toEqual({ sent_at: null, skipped_reason: null, email_log_id: null });
+  });
+
   it("everyone lost access between the read and the claim: the claim goes back and nobody is written to", async () => {
     const w = await world();
     const id = w.rows.get(0) as string;

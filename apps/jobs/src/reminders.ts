@@ -6,7 +6,7 @@
 //     Inside it, ONE batch claims the row (`REMINDER_CLAIM_SQL`: every stop rule is in that statement), supersedes the earlier due offsets of the same document and mints one personal link
 //     per live recipient (at most 5). Only then are the emails queued (`sendBatch`, entity = the reminder), and the first one's log id is written to the row.
 //   A claim that is refused is judged by `skipReasonOf` (the claim's twin) and a final reason is written to the row, so the scan never reads it again.
-//   A failure AFTER the claim and BEFORE the emails are queued gives the claim back (`sent_at` NULL again, only while this claim still holds and no email is recorded). Once `sendBatch` has
+//   A failure AFTER the claim and BEFORE the emails are queued gives the claim back (`sent_at` NULL again, only while this claim still holds and no email is recorded; paused instead of waiting when the links were revoked after the claim). Once `sendBatch` has
 //   succeeded nothing is given back: the emails are deduplicated by `email_log` (template, reminder, address), so even a redelivery after an ambiguous failure sends once.
 import { type EmailMessage, reminderSendMessage } from "@techaust/core";
 import {
@@ -93,9 +93,16 @@ const REMINDER_LINK_SQL = `INSERT INTO doc_access_tokens (token_hash, document_i
     JOIN contacts c ON c.id = ?4 AND c.client_id = d.client_id AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL
   WHERE r.id = ?3 AND r.sent_at = ?5 AND r.email_log_id IS NULL`;
 
-/** Gives the claim back: only while this very claim still holds and no email is recorded (the trigger allows exactly that move). */
-const GIVE_BACK_SQL =
-  "UPDATE reminders SET sent_at = NULL WHERE id = ?1 AND sent_at = ?2 AND email_log_id IS NULL";
+/**
+ * Gives the claim back: only while this very claim still holds and no email is recorded (the trigger allows exactly that move). When the links were revoked after the claim
+ * ("Revoke links" pauses only the WAITING reminders, so it skipped this claimed one), the row goes back paused, not waiting, so no fresh link is emailed after the revoke
+ * (`reminders_fixed`, 0044, allows `sent_at` to NULL and `skipped_reason` NULL to 'paused' in one UPDATE). "After the claim": a link of the document revoked at or after the
+ * claim's time, or one of the links this claim minted revoked. `?1` reminder id, `?2` the claim's time, `?3` the JSON array of this claim's token hashes.
+ */
+const GIVE_BACK_SQL = `UPDATE reminders SET sent_at = NULL,
+    skipped_reason = CASE WHEN EXISTS (SELECT 1 FROM doc_access_tokens t WHERE t.document_id = reminders.document_id AND t.revoked_at IS NOT NULL
+      AND (t.revoked_at >= ?2 OR t.token_hash IN (SELECT value FROM json_each(?3)))) THEN 'paused' ELSE skipped_reason END
+  WHERE id = ?1 AND sent_at = ?2 AND email_log_id IS NULL`;
 
 type ReminderRow = DocFacts & {
   id: string;
@@ -182,7 +189,7 @@ export async function processReminderSend(
   const linked = minted.filter((_, i) => results[2 + i]?.meta.changes === 1);
   if (linked.length === 0) {
     // Everyone lost access between the read and the claim: nobody to write to. Give the claim back (the stop rule then decides next time).
-    await giveBack(env, reminderId, now);
+    await giveBack(env, reminderId, now, []);
     logEvent("reminder_send.no_recipient");
     return "no_recipient";
   }
@@ -204,8 +211,14 @@ export async function processReminderSend(
   try {
     await env.EMAIL_QUEUE.sendBatch(messages.map((m) => ({ body: m })));
   } catch (e) {
-    // Not queued (or not known to be): give the claim back so the redelivery can send. Safe even if the queue did take them: the email is deduplicated.
-    await giveBack(env, reminderId, now);
+    // Not queued (or not known to be): give the claim back so the redelivery can send (paused instead when the links were revoked meanwhile). Safe even if the
+    // queue did take them: the email is deduplicated.
+    await giveBack(
+      env,
+      reminderId,
+      now,
+      linked.map((m) => m.hash),
+    );
     throw e;
   }
   // After a successful sendBatch nothing is given back. The first email's log id is the row's reference (the other recipients' rows share its entity).
@@ -219,9 +232,14 @@ export async function processReminderSend(
   return "sent";
 }
 
-async function giveBack(env: Env, reminderId: string, claimedAt: number): Promise<void> {
+async function giveBack(
+  env: Env,
+  reminderId: string,
+  claimedAt: number,
+  hashes: readonly string[],
+): Promise<void> {
   await env.DB.prepare(GIVE_BACK_SQL)
-    .bind(reminderId, claimedAt)
+    .bind(reminderId, claimedAt, JSON.stringify(hashes))
     .run()
     .catch(() => logEvent("reminder_send.give_back_failed"));
 }
