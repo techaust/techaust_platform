@@ -473,3 +473,57 @@ Reviewer, Opus 5.5 high, 2026-10-31, live browser: **SEND BACK (1 high, 5 low)**
 **Lead triage:** fix A–E now (designer); F stays a follow-up. A third look (re-check of the fix diff) follows because A is high.
 
 ### Dialog and form fixes (A–E)
+Designer, Opus 5.5 high, 2026-10-31. Branch `design/rt2-dialog-fix` from `origin/task/rt2-signature-udyam` (7523aead), commits `feb61d2c` (fixes), `06430c23` (e2e) and this report. Only `apps/admin/**` and this run file changed; `packages/*`, the portal and hosted services untouched.
+
+**Skills:** `frontend-design:frontend-design` loaded first. It kept every change inside docs/06 (no new look); the one visual decision is that a dialog keeps a small gap (`--space-3`) between a focused control and the hairline over its actions, so the field never sits flush against the buttons. No other docs/14 §9 skill fits (no copy, data, Worker, chart, PDF or brand work).
+
+**Fixes**
+- **A (high, WCAG 2.4.11)**
+  - `components/dialog.tsx` (`Modal`, used by every admin dialog): a `ResizeObserver` measures the dialog's last `.dialog__actions`. The height changes with one row against stacked full width under 30rem, the number of buttons and a step's own actions (the note dialog's last step has three stacked buttons on a phone). A `MutationObserver` re-picks the actions when a step changes. The height is set as `--dialog-actions-h` on the dialog. Once measured, a control that `showModal()` focused before the height was known is brought clear.
+  - `app.css` `.dialog`: `scroll-padding-bottom: calc(var(--dialog-actions-h, <one row>) + var(--space-3))`. Focus scrolls (Tab, Shift+Tab, `.focus()`) and `scrollIntoView` now stop above the actions.
+  - `components/ui.tsx` `Field` (under `CodeField`): when an error appears under the field that has the focus, the whole field and its line scroll into view (`block: "nearest"`, inside the padding). This matters after a wrong code: the dialogs focus the field before React draws its line.
+  - `components/step-up-dialog.tsx`: found during the check. After a wrong code the step-up dialog left the focus on `<body>`, because the pressed Confirm button was disabled while busy (WCAG 2.4.3). The code field now takes the focus after any error, as in the note, advance and data-tools dialogs.
+- **B** `routes/settings/company.tsx` `dirtyOf` compares values as they would be saved:
+  - the GSTIN with no spaces and in capitals (the same as `validateGstin`);
+  - `normaliseUdyam` for the number;
+  - the category null when there is no number.
+  A case-only GSTIN change no longer shows the save bar.
+- **C** `lib/udyam.ts` checks the number with core `isUdyamNumber` (no longer `UDYAM_NUMBER_RE`).
+- **D** `e2e/signature-udyam.spec.ts`: the keyboard test asserts the focus `.toBe("f-address")`.
+- **E** `shell.css`: the waiting category's look is keyed on the select's own `data-waiting` (set in `company.tsx` while there is no number), not on `:not(:disabled)` of the fieldset. A save in flight disables the fieldset but no longer switches the select to the full-contrast read-only look.
+
+**e2e** (`apps/admin/e2e/signature-udyam.spec.ts`)
+- **New test: "dialogs: a focused code field and its wrong-code line stay clear of the sticky actions"**
+  - Covers the debit note's last step, the proforma's advance dialog, a draft tax invoice's issue dialog, and the step-up dialog (opened from Settings › Bank details).
+  - Runs at 390×844, 768×1024 and 1280×900, with each in-app theme against the opposite OS theme.
+  - The browser route reports no active step-up and answers every code with 400 `invalid_code`. Nothing is issued, and the account's wrong-code count never moves.
+  - Each code field is reached by Shift+Tab from the first action button, and by Tab from the control before it where there is one, starting with the dialog at its top. A wrong code is then entered, except in the issue dialog (F).
+  - Asserted after a wrong code: the field is focused and cleared, `aria-invalid` is set, and its WRONG_CODE line is shown.
+  - `elementFromPoint` at the middle and just inside the top and bottom edges hits the code field and its error line. A failure names the actions if they cover the point. axe also runs on every state.
+  - **Proven against the bug:** with the `scroll-padding-bottom` line turned off, the test fails at once ("note dialog 390x844, reached by Shift+Tab: at 717px … the dialog's actions").
+- **Caret test, B:** with the PAN letters still in lower case, there is no save bar.
+- **Caret test, E:** a save is held in flight by a route. The fieldset is disabled, and the waiting category's background, border style and colour stay the same during and after the save.
+
+**Commands** (logs in `.logs/` of the worktree)
+- `pnpm exec biome check` on the 8 changed files: clean.
+- `E2E_SAMPLE=1 TECHAUST_PORT_OFFSET=0 RT2_ALL_WIDTHS=1 RT2_SHOTS=… bash tools/heavy.sh --log rt2d-e2e-sig … playwright test e2e/signature-udyam.spec.ts`: **8 passed**. This covers every state at 390, 768, 1024, 1280 and 1920, both theme pairs, axe 0, and no console errors.
+- `… --log rt2d-e2e-rt1 … playwright test e2e/rt1-screens.spec.ts`: **7 passed**.
+- `bash tools/heavy.sh --log rt2d-admin-typecheck pnpm --filter @techaust/admin typecheck`: exit 0.
+- `bash tools/heavy.sh --log rt2d-admin-test pnpm --filter @techaust/admin test`: 120 files, **3,493 passed**.
+- `bash tools/heavy.sh --log rt2d-lint pnpm lint` (once, the final check): exit 0. It reports 10 warnings and 8 infos, all in files this fix didn't touch.
+- The e2e's own dev server stopped with the run. No server is left on 5173.
+
+**Screenshots** in `.logs/rt2-dialog-fix/` of the worktree (git-ignored):
+- `wrong-code-{note,advance,step-up}-{390x844,768x1024,1280x900}-{light,dark}.png`: the code field focused and its error line, both clear of the actions. At 390 the note dialog's three stacked buttons sit under the line with the gap.
+- `tab-code-issue-*-{light,dark}.png`: the issue dialog's code field reached by the keyboard, above Cancel and Issue invoice.
+- `company-{empty,error,filled}-*`, `note-blocker-*`, `note-dialog-refused-*`, `advance-blocker-*`, `tax-signatory-*` (390, 768, 1024, 1280, 1920, both themes): the spec's other states, unchanged.
+
+**Not verified / notes**
+- No screen-reader pass.
+- Only the four named dialogs were checked live. The fix is in `Modal`, so every admin dialog gets it, but the others were not opened.
+- Unchanged and still a follow-up (F): a wrong code in the invoice issue dialog (`dialogs.tsx`) still goes to its general notice, not to the code field. That notice isn't focused, so the dialog doesn't scroll to it.
+- Observed, not changed (outside A–E): when a settings save is answered "No change" (for example after only a trailing space was added to the trade name), the "Unsaved changes" bar stays up, because the form keeps the typed text. Candidate follow-up: compare trimmed values in `GroupForm`'s dirty check, or take the form back from the saved document after a "No change" answer.
+- No copy added and no placeholder text.
+
+**Open questions:** none.
+Usage: designer claude-opus-5-5/high (skills frontend-design).
