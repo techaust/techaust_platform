@@ -459,3 +459,7 @@ Usage: builder claude-opus-5-5/high (skills workers-best-practices, wrangler).
 **Not verified / notes:** no screen reader pass. The invoice issue dialog (`dialogs.tsx`) still shows a wrong code in its general error notice. That is outside this finding's scope; a candidate follow-up for consistency. No placeholder text and no copy added. `packages/*` and `apps/portal/*` untouched.
 
 **Open questions:** none.
+
+**Lead after the second-review fixes (2026-10-31):** both branches merged (`fix/rt2-second` d05d9557, `design/rt2-second` f218cfa5). `apps/admin/src/lib/udyam.ts` still tests core's shared `UDYAM_NUMBER_RE` directly (the same constant `isUdyamNumber` uses, so no drift). Follow-ups: the invoice issue dialog (`dialogs.tsx`) still shows a wrong step-up code in its general notice (move it to the code field like the note and advance dialogs); the duplicate hand-written PNG builder in `apps/admin/e2e/sample-data.ts`.
+
+### Re-check (second review fixes)
