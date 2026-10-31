@@ -281,6 +281,27 @@ describe("realisation.scan: each stage rings once", () => {
     expect(alertEmails().map((e) => e.data.stage)).toEqual(["fema_overdue"]);
   });
 
+  it("M6.1 (Q60, L14; 08-C RB-04, RA-20): the AD bank's extension moves the FEMA date and the GST date follows: no alert inside the extended period, overdue after it", async () => {
+    const [owner] = await owners();
+    if (!owner) throw new Error("owner");
+    const ex = await mkExport("2026-11-03"); // standard femaDue 2027-08-03
+    await run(
+      "INSERT INTO realisation_extensions (id, document_id, extended_to, bank_ref, recorded_by, created_at) VALUES (?1, ?2, '2028-02-29', 'AD-REF-1', ?3, 1)",
+      uuidv7(),
+      ex.id,
+      owner.id,
+    );
+    // past the standard FEMA and GST dates, but inside the extension (GST date: 29 Feb 2028 + 15 days = 15 Mar 2028)
+    await scan(tick("2027-11-19"));
+    expect(await bellsOf(ex.id)).toEqual([]);
+    expect(alertEmails()).toEqual([]);
+    // the day after the extended GST date: GST overdue, with the extended dates in the email
+    await scan(tick("2028-03-16"));
+    expect((await bellsOf(ex.id)).map((b) => b.kind)).toEqual(["export.gst_overdue"]);
+    const mail = alertEmails().find((e) => e.data.stage === "gst_overdue");
+    expect(JSON.stringify(mail?.data)).toContain("2028");
+  });
+
   it("issue dates at the end of a month: 31 May + 9 months is 29 February 2028; 29 February 2028 + 9 months is 29 November 2028", async () => {
     await owners();
     const may = await mkExport("2027-05-31"); // femaDue 2028-02-29: approaching from 2028-01-30

@@ -5,6 +5,7 @@ import { addDays, fromIst, parseIsoDate } from "@techaust/core/dates";
 import { INVOICE_EMAIL_DATA } from "@techaust/core/invoice-email";
 import { INVOICE_LINK_DAYS } from "@techaust/core/offers";
 import { REMINDER_DUE_SQL } from "@techaust/db/billing";
+import { recomputeStatement } from "@techaust/db/ledger";
 import { beforeEach, describe, expect, it } from "vitest";
 import { emailLogId } from "../src/email.ts";
 import { processReminderScan, processReminderSend } from "../src/reminders.ts";
@@ -256,6 +257,35 @@ describe("reminder.send: every stop rule is in the claim, and a final reason is 
           "UPDATE documents SET status = 'paid', paid_minor = total_minor, balance_minor = 0 WHERE id = ?1",
           w.doc.id,
         ).then(() => undefined),
+      "paid",
+    ],
+    [
+      // M6.1 (ADM-PAY-06): the real ledger: a confirmed payment put whole on the invoice, then the recompute (the API's batch, here by its own statements)
+      "paid by a confirmed payment on the ledger (M6.1)",
+      async (w) => {
+        const total = (
+          await one<{ total_minor: number }>("SELECT total_minor FROM documents WHERE id = ?1", w.doc.id)
+        )?.total_minor as number;
+        const pid = uuidv7();
+        await run(
+          `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, reference_norm, recorded_by, recorded_at, verified_by, verified_at)
+           SELECT ?1, client_id, 'payment', 'manual', 'confirmed', currency, ?2, '2026-10-28', 'neft', ?3, ?4, 1, ?4, 1 FROM documents WHERE id = ?5`,
+          pid,
+          total,
+          `UTR${pid.slice(-8).toUpperCase()}`,
+          w.owner.id,
+          w.doc.id,
+        );
+        await run(
+          "INSERT INTO payment_allocations (id, payment_id, document_id, amount_minor, kind, created_by, created_at) VALUES (?1, ?2, ?3, ?4, 'allocate', ?5, 1)",
+          uuidv7(),
+          pid,
+          w.doc.id,
+          total,
+          w.owner.id,
+        );
+        await recomputeStatement(db, { paymentIds: [pid] }, Date.now()).run();
+      },
       "paid",
     ],
     [
