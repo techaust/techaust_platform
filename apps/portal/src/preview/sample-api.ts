@@ -8,7 +8,7 @@
 // GSTINs are the repo's made-up samples.
 import { type Envelope, toPdfView } from "@techaust/pdf/view";
 import { buildFixture, type FixtureName } from "../../../../packages/pdf/test/fixtures/index.ts";
-import type { OfferItem, OfferPage, OfferStatus } from "../api.ts";
+import type { OfferItem, OfferPage, OfferStatus, SignedDeed } from "../api.ts";
 import { answerInvoices } from "./sample-invoices.ts";
 
 const KEY = "ta.sample-api";
@@ -179,6 +179,23 @@ const error = (status: number, code: string, extra: Record<string, unknown> = {}
   json(status, { error: { code, message: code }, request_id: "sample-request", ...extra });
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** T11: the sample organisation's one signed deed, on "Accepted by you" (sample-accepted). Made-up number, moment and transaction ID. */
+const SAMPLE_DEEDS: SignedDeed[] = [
+  {
+    id: "sample-deed",
+    number: "TH/DA/2627/0001",
+    sourceDocumentId: "sample-accepted",
+    offer: { type: "proposal", number: "TH/PRP/2627/0004", version: 1 },
+    esignAt: Date.UTC(2026, 10, 3, 8, 35),
+    esignMoment: "03 Nov 2026, 14:05 IST",
+    esignTxn: "SAMPLE-ESIGN-7F3K-29QD",
+    signatureLine:
+      "Signed by the assignor with an Aadhaar-based electronic signature (eSign): Rupak Sarkar, sole proprietor, TecHaust Technologies · 03 Nov 2026, 14:05 IST · SAMPLE-ESIGN-7F3K-29QD.",
+    signedAt: Date.UTC(2026, 10, 3, 9, 0),
+    size: 245_812,
+  },
+];
+
 function pdf(name: string) {
   // Not a real PDF: a labelled text file under a .pdf name, so the download path can be tried.
   return new Response(new Blob(["Preview: sample data. This stands in for the PDF; nothing was rendered."]), {
@@ -237,6 +254,13 @@ async function answer(
     }
     if (body.documentId !== found.doc.id) return error(404, "not_found");
     return act(found.doc, t[1], body, null);
+  }
+  // T11: the signed deed of the sample accepted proposal (sample values; the eSign moment and transaction ID are made up)
+  if (path === "/deeds" && method === "GET") return json(200, { deeds: empty ? [] : SAMPLE_DEEDS });
+  if (path === "/deeds/pdf") {
+    const d = empty ? undefined : SAMPLE_DEEDS.find((x) => x.id === body.id);
+    if (!d) return error(404, "not_found");
+    return pdf(`${d.number.replaceAll("/", "-")}-signed.pdf`);
   }
   // M5.4: invoices, payment requests and notes (signed in and by link)
   const inv = answerInvoices(path, method, body, empty, { json, error, pdf });
