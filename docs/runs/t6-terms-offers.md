@@ -54,7 +54,7 @@ Copied by the lead from the analyst's reply. Read-only; ran the diff, a v3/v4/07
 - **Tags:** as the brief; two accurate extras (terms item 6 RB-35(a); legal §12 RB-38(c)).
 - **Bytes:** jobs 985,956 (+1,690; unused core lines tree-shaken); 9,044 left before the 995,000 stop line: T7 and M6.1 should watch it.
 - **L1 (low):** the admin vitest define and the web origin test passed `undefined`, which falls back to `CLOUDFLARE_ENV`; failed under `CLOUDFLARE_ENV=staging`. **Fixed by the lead** (pass `""`); both files re-run green with `CLOUDFLARE_ENV=staging` (19 and 5 tests).
-- **L2 (optional):** a direct seed test: an owner row as version 4 after v3, seed twice, the owner's row stays newest and no row has the v4 hash. Goes to the fix round.
+- **L2 (optional):** a direct seed test: an owner row as version 4 after v3, seed twice, the owner's row stays newest and no row has the v4 hash. **Done by the lead:** `packages/db/test/seed-terms-v4-owner.test.ts` (with the v4 file: 5 tests passed).
 - **L3:** CLAUDE.md and the environments runbook should mention admin `vars.PORTAL_ORIGIN` / `__PORTAL_ORIGIN__` (follow-up for the main session).
 - **For the designer:** send dialog (validity fact, line 3 after the lead, the closing line's `muted` style, "… (IST)" without a date); the staff-reply box; portal expired notices in `decision-panel.tsx:171` and `document-page.tsx:122` via `offerExpiredNotice(kind, view.validUntilDate)`; card and list dates (`home.tsx`); line 3 under the title next to the superseded notice, once per screen; `.replaces-note` has no style in the facts column (`styles.ts:211`); the cover's validity and v4 page breaks; baselines.
 
