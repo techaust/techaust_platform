@@ -1107,7 +1107,10 @@ describe("the automatic advance: GATEWAY_AUTO_SQL [ADM-INV-10, L5, L6; 08-C RA-1
 
   it("refuses with no signature on the issuer block, with settings changed since the read, and for a client overseas", async () => {
     const w = await advanceWorld();
-    await rejects(runAdvance(await gatewayAdvanceArgs(w, { issuer: issuer("system") })), /issue did not freeze/);
+    await rejects(
+      runAdvance(await gatewayAdvanceArgs(w, { issuer: issuer("system") })),
+      /issue did not freeze/,
+    );
     const a = await gatewayAdvanceArgs(w);
     await run("UPDATE settings SET version = version + 1 WHERE key = 'company'");
     await rejects(runAdvance(a), /issue did not freeze/);
