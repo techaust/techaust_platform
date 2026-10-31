@@ -37,12 +37,18 @@ import {
 import { type DocumentView, documentsApi, type ViewLine } from "../../lib/documents-api.ts";
 import { convertedToInvoice } from "../../lib/invoices.ts";
 import { invoicesApi } from "../../lib/invoices-api.ts";
-import { canResend, OFFER_COPY } from "../../lib/offers.ts";
+import { canResend, OFFER_COPY, staffReplyText } from "../../lib/offers.ts";
 import { PDF_COPY } from "../../lib/pdf.ts";
 import { useUser } from "../../session.tsx";
 import { CareDialog, InvoiceDialog, ReviseDialog } from "./dialogs.tsx";
 import { LinesTable, ScheduleTable, SectionBody, TaxPreview } from "./money.tsx";
-import { AcceptancePanel, DeclinePanel, DeliveryPanel, StartProjectPanel } from "./offer-panels.tsx";
+import {
+  AcceptancePanel,
+  DeclinePanel,
+  DeliveryPanel,
+  StaffReplyPanel,
+  StartProjectPanel,
+} from "./offer-panels.tsx";
 import { crumbsFor, DocPill, docHref } from "./parts.tsx";
 import { PdfPanel, useMailAfterPdf } from "./pdf-panel.tsx";
 import { SendDialog } from "./send-dialog.tsx";
@@ -97,6 +103,8 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
   );
   const canCare = convertible && allowed(user.role, "carePlans.write");
   const hasMonthly = v.lines.some((l) => l.unit === "month");
+  // 07-ZE line 5: the reply to an acceptance by email, for the roles that write to clients about offers (they hold proposals.send).
+  const staffReply = allowed(user.role, "proposals.send") ? staffReplyText(v) : null;
   const number = v.number ?? titleOf(v.title);
   // 07-Q Q8: an Acceptance section with no text shows no heading until there is an acceptance or a decline to show.
   const decided = Boolean(v.acceptance) || v.decision?.status === "rejected";
@@ -215,6 +223,7 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
               onRevoked={reload}
             />
           )}
+          {staffReply && <StaffReplyPanel text={staffReply} />}
           {(canRevise || canInvoice || canCare || newer || converted) && (
             <section className="lead-panel send-panel" aria-labelledby="next-h">
               <h2 id="next-h" className="lead-panel__title">

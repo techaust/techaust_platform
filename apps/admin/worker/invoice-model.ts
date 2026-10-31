@@ -89,7 +89,7 @@ export const MILESTONE_NO_AMOUNT = e("milestone_no_amount", "That milestone has 
 export const MILESTONE_EXCLUSIVE = e("milestone_exclusive", "Choose a milestone or services, not both");
 export const VOID_NOT_ALLOWED = e("void_not_allowed", "This invoice can't be voided");
 export const ALREADY_VOID = e("already_void", "This invoice is already void");
-/** Q23 (OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?): the lead's line, 07-R's wording pending the owner's approval. */
+/** Q23 (Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): the owner's 2026-10-30 rule; such a void is reported as cancelled in Table 13, anything else is corrected by a credit note): the lead's line, 07-R's wording pending the owner's approval. */
 export const RETURN_PERIOD_CLOSED = e(
   "return_period_closed",
   "This invoice's GST return period has ended, so it can't be voided. Use a credit note instead.",
@@ -651,7 +651,7 @@ export const advanceLineDescription = (proformaNumber: string) =>
  * engine computed it under (`export_lut` gives `lut`, `export_igst` gives `igst_paid`), NEVER the live Settings, which may have moved since the
  * proforma was issued (the proforma said 0 % under LUT; the invoice for the money must not turn into an IGST split because the setting changed).
  * A proforma that was not an export has no route (null). Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19): one LUT per FY, furnished before the first export of that FY.
- * OPEN (08-C RA-19, Q37): must the tax invoice for a payment received after the LUT lapsed charge IGST, or does the earlier FY's LUT cover it? The code refuses the LUT route and lets the Owner choose.
+ * Settled by the lead on the safest reading, 2026-10-30 (08-C RA-19, Q37): the LUT route is refused when the receipt day's FY has no saved LUT; the Owner saves the new LUT first or issues with IGST (owner, 2026-10-28).
  */
 export function proformaRouteOf(
   exportMode: string | null,

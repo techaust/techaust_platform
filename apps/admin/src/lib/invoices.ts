@@ -144,7 +144,7 @@ export const INV_COPY = {
   pdfFailed: "The PDF couldn't be made. Try again.",
   pdfTryAgain: "Try again",
   voidButton: "Void invoice",
-  // OPEN (08-C RA-10): whether a never-delivered invoice may be reported as cancelled.
+  // Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): the owner's 2026-10-30 rule (same IST month, not emailed, not opened in the portal, no payment or note, number kept); such a void is reported as cancelled in Table 13, anything else is corrected by a credit note.
   voidBody:
     "Voiding cancels this invoice. It keeps its number, which is reported as cancelled in your GST return. You can only void an invoice in the month it was issued, before it has been emailed, opened by the client in the portal, paid or corrected by a credit or debit note; after that, use a credit note.",
   // 07-ZA item 9 (owner 2026-10-30): a proforma's own void dialog.
@@ -531,7 +531,7 @@ export const INV_ERRORS = {
   void_not_allowed:
     "This invoice can't be voided: it has been emailed, paid or corrected. Use a credit note instead.",
   already_void: "This invoice is already void.",
-  // OPEN (08-C RA-10).
+  // Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): a void only in the same IST month; anything else is corrected by a credit note.
   return_period_closed:
     "This invoice's GST return period has ended, so it can't be voided. Use a credit note instead.",
   // FX-5 (owner decision 2026-10-30, 08-C RA-10): 07-Z §1, pending the owner.

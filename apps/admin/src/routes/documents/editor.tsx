@@ -570,7 +570,7 @@ export function DraftEditor({ view, reload }: { view: DocumentView; reload: () =
         open={dialog === "send"}
         mode="send"
         type={view.type}
-        number={view.number ?? null}
+        number={view.number ?? latestFrozen?.number ?? null}
         title={title}
         version={view.version}
         totalMinor={f.totals?.totalMinor ?? null}

@@ -4,7 +4,7 @@
 //   shown as written;
 // - PENDING: lines 07-N didn't have, approved word for word in 07-Q (POR1 to POR4), shown without a tag (the name keeps the
 //   history of where they came from).
-// English (India/UK spelling), "and" never "&", no banned phrases (07 §1.3). Acceptance and evidence wording: Researched 2026-10-28, 08-C RB-19, RB-20 (the ground for recording the IP address and browser is OPEN, RB-12).
+// English (India/UK spelling), "and" never "&", no banned phrases (07 §1.3). Acceptance and evidence wording: Researched 2026-10-28, 08-C RB-19, RB-20 (the ground for recording the IP address and browser: Settled by the lead on the safest reading, 2026-10-30 (08-C RB-12): DPDP s.7(a) with the Rule 6 log duty; GDPR Art. 6(1)(f) for EU and UK persons; the acceptance record is kept with the offer, RB-37 (b)).
 import type { OfferKind, OfferStatus } from "./api.ts";
 import { COPY } from "./copy.ts";
 
@@ -100,8 +100,7 @@ export const N = {
   preparing: "A new version is being prepared. We'll email you when it's ready.",
   superseded: (kind: string, n: number | string) =>
     `There's a newer version of this ${kind}. You're seeing version ${n}, the latest.`,
-  expired: (kind: string, on: string) =>
-    `This ${kind} expired on ${on}. Reply to our email or contact us if you'd still like to go ahead.`,
+  // The expired notice is 07-ZE line 2, `offerExpiredNotice` in @techaust/core/offers (T6): one source with the "(IST)" it names.
   token:
     "You opened this from an email link. You can review and accept it here, or sign in to see everything we've sent you.",
   signIn: "Sign in",
@@ -180,7 +179,7 @@ export const PENDING = {
 
 /**
  * 07-A §9 (2026-10-28, from 08-C): the short notices at the point where data is collected. The lawful ground for recording the IP address and browser
- * is OPEN (08-C RB-12); the evidence an acceptance keeps is Researched 2026-10-28, BSA 2023 s.63(4) (08-C RB-19).
+ * is settled (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-12): DPDP s.7(a) with the Rule 6 log duty; GDPR Art. 6(1)(f) for EU and UK persons; the acceptance record is kept with the offer, RB-37 (b)); the evidence an acceptance keeps is Researched 2026-10-28, BSA 2023 s.63(4) (08-C RB-19).
  */
 export const NOTICES = {
   /** Above the Accept button of the confirmation step. */

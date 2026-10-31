@@ -57,6 +57,9 @@ Seeded as the next version of the proposal terms (`PROPOSAL_TERMS_V3`), only whi
 3. **Ownership.** "On full payment, we assign to you all copyright in the work we make under this proposal or estimate, worldwide and for its full term; the assignment does not lapse if unused. Our pre-existing tools and third-party or open-source parts are licensed to you, not assigned. We keep the right to reuse general know-how."
 6. **Validity.** "This proposal or estimate is valid until the date shown on it."
 
+### 2e. Proposal terms, fourth version (T6; owner-approved 2026-10-31, [07-ZE](ZE-terms-offers-deed.md) lines 6 to 12, docs/13; 08-C RB-23, RB-35, RB-38)
+Seeded as the next version (`PROPOSAL_TERMS_V4`), only while the newest proposal terms row is the seeded third version (by its id and text) and Payment terms says 7 days; terms the owner saved are never followed or replaced, and documents already sent keep the version they pinned. Items 1 to 5 are the third version's word for word; item 6 "Validity and acceptance" and items 7 to 10 (Ending the work, Confidentiality, Liability, Law and disputes), then the consumer line, are 07-ZE lines 7 to 12 and 6, word for word (the text is kept there only, not copied here).
+
 ## 3. Editor (staff)
 | Where | Copy |
 |---|---|

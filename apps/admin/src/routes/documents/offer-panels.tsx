@@ -2,6 +2,7 @@
 // (the IP address and browser for the owner only, LD8), a decline with the client's reason, "Start project" for an accepted proposal
 // with the figures the route will write, and the emails: who each went to and how far it got, "Send again" and "Revoke links".
 // Everything shown is the API's (GET /documents/:id); the start-project figures come from the same plan function as the route.
+// T6 (07-ZE line 5; owner's Q2 answer, 2026-10-31): the staff reply to a client who "accepted" by email, filled and ready to copy.
 // Researched 2026-10-28: the acceptance evidence (BSA 2023 s.63, 08-C RB-19) and the first-instalment draft type (s.13(2), s.31 CGST, 08-C RA-17).
 import { formatIstDateTime } from "@techaust/core/dates";
 import { type ReactNode, useState } from "react";
@@ -9,9 +10,9 @@ import { Link } from "react-router";
 import type { Currency } from "../../api.ts";
 import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
 import { StatusPill } from "../../components/display.tsx";
-import { Ban, CheckCircle, Download, FolderKanban, Send } from "../../components/icons.tsx";
+import { Ban, CheckCircle, Download, FolderKanban, Mail, Send } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
-import { Notice } from "../../components/ui.tsx";
+import { CopyButton, Notice } from "../../components/ui.tsx";
 import { moneyText } from "../../lib/documents.ts";
 import { certificateHref, documentsApi } from "../../lib/documents-api.ts";
 import {
@@ -26,6 +27,7 @@ import {
   OFFER_ERRORS,
   OFFER_PENDING,
   reasonText,
+  STAFF_REPLY_COPY,
   type StartProjectInfo,
   shortSha,
 } from "../../lib/offers.ts";
@@ -301,6 +303,24 @@ export function DeliveryPanel(props: {
       >
         <p>{OFFER_PENDING.revokeBody}</p>
       </ConfirmDialog>
+    </section>
+  );
+}
+
+/**
+ * 07-ZE line 5 (owner's Q2 answer, 2026-10-31): the reply staff paste into their own email when a client "accepts" by email. The text is
+ * `staffReplyText(doc)`, filled and read-only (selectable, so a person can copy part of it); the button is the shared `CopyButton`, whose
+ * "Copied" and its spoken status are the feedback (lead decision: no new toast line). Nothing is sent from here.
+ */
+export function StaffReplyPanel(props: { text: string }) {
+  return (
+    <section className="lead-panel offer-panel staff-reply" aria-labelledby="reply-h">
+      <h2 id="reply-h" className="lead-panel__title offer-panel__title">
+        <Mail size={20} />
+        {STAFF_REPLY_COPY.heading}
+      </h2>
+      <p className="staff-reply__text">{props.text}</p>
+      <CopyButton text={props.text} label={STAFF_REPLY_COPY.copy} className="btn btn--secondary btn--block" />
     </section>
   );
 }

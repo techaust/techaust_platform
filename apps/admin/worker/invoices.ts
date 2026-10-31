@@ -2,7 +2,7 @@
 // Issuing and the issue request are in invoice-issue.ts, the PDF in document-pdf.ts, the model in invoice-model.ts, the JSON in invoice-view.ts.
 // Every route is a row of ROUTES (guard.ts); every change is ONE batch through `mutate`. Audit rows hold ids, codes, numbers, totals; never a
 // line's description, a reason's text or a personal value. A rule is written into the statement that changes the row, never decided from a
-// read alone: when nothing was written, one read says why. Every rule is a researched default, rule by rule in 08-C section 1 (Rule 46, Rule 56(8), Q1, Q2, Q4); the void is OPEN (08-C RA-10).
+// read alone: when nothing was written, one read says why. Every rule is a researched default, rule by rule in 08-C section 1 (Rule 46, Rule 56(8), Q1, Q2, Q4); the void: Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): the owner's 2026-10-30 rule; such a void is reported as cancelled in Table 13.
 //
 // Never in a request (strict objects make it a 400): a number, a status, a hash, a type, `trustRates`, `targetTotalMinor`, a due date, a computed
 // value. The type comes from the client; the due date from the client's terms; the target of a milestone invoice from the milestone row.
@@ -1186,7 +1186,7 @@ export const invoices = new Hono<AppEnv>()
     return err(c, STALE_VERSION, 409);
   })
 
-  // ---- void (Q1, Q2, Q23, LD7; OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?): the owner, with a fresh code, before it was emailed or opened in the portal (FX-5, owner decision 2026-10-30), within the month of issue, and with no payment or credit; the number stays ----
+  // ---- void (Q1, Q2, Q23, LD7; Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): such a void is reported as cancelled in Table 13, anything else is corrected by a credit note): the owner, with a fresh code, before it was emailed or opened in the portal (FX-5, owner decision 2026-10-30), within the month of issue, and with no payment or credit; the number stays ----
   .post("/:id/void", param(idParam), body(voidBody), async (c) => {
     const { id } = c.req.valid("param");
     const f = c.req.valid("json");

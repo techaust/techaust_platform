@@ -37,7 +37,13 @@ describe("toPdfView", () => {
     expect(v.versionLabel).toBe("Version 2");
     expect(v.statusText).toBe("Sent");
     expect(v.issueDate).toBe("26 Oct 26");
-    expect(v.validUntil).toBe("10 Nov 26");
+    // T6, 07-ZE lines 1 and 3: the validity date says (IST); version 2 says which version it replaces
+    expect(v.validUntil).toBe("10 Nov 26 (IST)");
+    expect(v.validUntilDate).toBe("10 Nov 26");
+    expect(v.validityNote).toBe("Valid until 10 Nov 26 (IST)");
+    expect(v.replacesNote).toBe(
+      "This is version 2. It replaces version 1 and any earlier version, which can no longer be accepted.",
+    );
     expect(v.version).toBe("2");
     expect(v.portalLink).toBe("portal.techaust.com");
     expect(v.integrity).toBe(
@@ -45,6 +51,12 @@ describe("toPdfView", () => {
     );
     expect(v.footer.sender).toBe("hello@techaust.com");
     expect(v.notice).toBeNull();
+  });
+
+  it("07-ZE line 3 (T6): version 1 has no replaces note", async () => {
+    const { envelope } = await buildFixture("long-inter-inr");
+    expect(envelope.version).toBe(1);
+    expect(toPdfView(envelope).replacesNote).toBeNull();
   });
 
   it("formats money from the computed result, in the Indian system for INR", async () => {
@@ -193,9 +205,10 @@ describe("format helpers", () => {
     const { envelope } = await buildFixture("short-intra-inr");
     const v = toPdfView(envelope, undefined, { longDates: true });
     expect(v.issueDate).toBe("26 Oct 2026");
-    expect(v.validUntil).toBe("10 Nov 2026");
-    expect(v.validityNote).toBe("Valid until 10 Nov 2026");
-    expect(toPdfView(envelope).validUntil).toBe("10 Nov 26");
+    expect(v.validUntil).toBe("10 Nov 2026 (IST)");
+    expect(v.validUntilDate).toBe("10 Nov 2026");
+    expect(v.validityNote).toBe("Valid until 10 Nov 2026 (IST)");
+    expect(toPdfView(envelope).validUntil).toBe("10 Nov 26 (IST)");
   });
   it("countryName names a country and keeps an unknown code", () => {
     expect(countryName("IN")).toBe("India");

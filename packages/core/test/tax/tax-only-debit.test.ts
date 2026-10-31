@@ -71,7 +71,7 @@ describe("taxOnlyDebitNote", () => {
     ]);
     expect(d.lines.every((l) => l.taxableMinor === 0 && l.cgstMinor === 0 && l.sgstMinor === 0)).toBe(true);
     expect(d.igstMinor).toBe(20_501);
-    // FX-4 (full audit A5 11; OPEN 08-C RA-33): never rounded, so the total is the tax itself (it used to round down to 20,500, below the tax it declares)
+    // FX-4 (full audit A5 11; Settled by the lead on the safest reading, 2026-10-30 (08-C RA-33)): never rounded, so the total is the tax itself (it used to round down to 20,500, below the tax it declares)
     expect(d.totalMinor).toBe(20_501);
     expect(d.roundOffMinor).toBe(0);
   });

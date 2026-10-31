@@ -1,4 +1,4 @@
-// The Table 13 adapter [ADM-REP-04; M5.5b, LD73; OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?]: register rows -> M5.1's `documentsIssuedSummary` -> `docsIssuedInputs` -> `docsRows`.
+// The Table 13 adapter [ADM-REP-04; M5.5b, LD73; Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): a void under the owner's 2026-10-30 rule is reported as cancelled in Table 13]: register rows -> M5.1's `documentsIssuedSummary` -> `docsIssuedInputs` -> `docsRows`.
 // The type-level tests pin the interfaces the adapter depends on: `tsc` covers this folder (the package's tsconfig includes `test`), so a change to
 // `IssuedSummary`, `IssuedRow` or `RegisterRow` that breaks the contract fails the core typecheck.
 import { describe, expect, expectTypeOf, it } from "vitest";
