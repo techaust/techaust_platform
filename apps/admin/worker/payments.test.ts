@@ -882,6 +882,62 @@ describe("early check 2: erase, stamps, refusals and void blockers [L31, L32; 08
     expect((await paymentRow(p2.id)).status).toBe("withdrawn");
   });
 
+  it("L38: after the fold into T7's statements, one erase still clears both kinds of bell and both kinds of approval note; another client's stay", async () => {
+    const o = await owner();
+    const staff = await sessionFor("staff");
+    const clientId = await mkClient({ type: "individual" });
+    const contact = await mkContact(clientId, { is_primary: 1 });
+    const inv = await addDoc({ clientId, issueDate: "2026-10-05" });
+    const p = await recorded(staff, recordBody(clientId, 1_000, [], { note: "Paid by a named relative" }));
+    expect((await verify(o, p.id, "reject", { note: "The advice names another person" })).status).toBe(200);
+    // the other arm of each folded statement: a bell about the issued invoice, and an issue request on it with its reason and note
+    const docBell = `nt-${crypto.randomUUID()}`;
+    await env.DB.prepare(
+      "INSERT INTO notifications (id, user_id, kind, entity_type, entity_id, title, link) VALUES (?1, ?2, 'pdf.failed', 'document', ?3, 'A bell naming the client', '/x')",
+    )
+      .bind(docBell, o.id, inv.id)
+      .run();
+    const issueAsk = `ap-${crypto.randomUUID()}`;
+    await env.DB.prepare(
+      "INSERT INTO approvals (id, kind, document_id, requested_by, reason, content_sha256, status, decided_by, decided_at, note) VALUES (?1, 'issue', ?2, ?3, 'For the named client', 'h', 'approved', ?4, 1, 'Fine for the named client')",
+    )
+      .bind(issueAsk, inv.id, staff.id, o.id)
+      .run();
+    // another individual client's bell and check note are untouched
+    const otherClient = await mkClient({ type: "individual" });
+    await mkContact(otherClient, { is_primary: 1 });
+    const q = await recorded(staff, recordBody(otherClient, 1_000));
+    expect((await verify(o, q.id, "reject", { note: "Kept: another client" })).status).toBe(200);
+    const res = await call(`/contacts/${contact.id}/erase`, {
+      cookie: o.cookie,
+      body: { mode: "anonymise", reason: "requested" },
+    });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(
+      await rows(
+        "SELECT id FROM notifications WHERE (entity_type = 'payment' AND entity_id = ?) OR id = ?",
+        p.id,
+        docBell,
+      ),
+    ).toEqual([]);
+    expect(await one("SELECT reason, note FROM approvals WHERE payment_id = ?", p.id)).toEqual({
+      reason: null,
+      note: null,
+    });
+    expect(await one("SELECT reason, note FROM approvals WHERE id = ?", issueAsk)).toEqual({
+      reason: null,
+      note: null,
+    });
+    expect(await paymentRow(p.id)).toMatchObject({ note: null, decision_note: null, amount_minor: 1_000 });
+    expect(
+      (await rows("SELECT id FROM notifications WHERE entity_type = 'payment' AND entity_id = ?", q.id))
+        .length,
+    ).toBeGreaterThan(0);
+    expect(await one("SELECT note FROM approvals WHERE payment_id = ?", q.id)).toEqual({
+      note: "Kept: another client",
+    });
+  });
+
   it("finding 4: a business client's contact erase leaves its payments' text alone", async () => {
     const o = await owner();
     const clientId = await mkClient({ type: "business" });

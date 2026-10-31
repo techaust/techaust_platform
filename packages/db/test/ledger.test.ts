@@ -510,6 +510,35 @@ describe("the ledger identity with TDS, the TDS bounds, and no void with a payme
     await voidIt(c);
   });
 
+  it("a delivered proforma is never withdrawn (voided) while a pending payment asks for it; after a reject it is (L37, ADM-INV-10)", async () => {
+    const { owner, clientId } = await setup();
+    const staff = await mkMember("staff");
+    const withdraw = (id: string) =>
+      run("UPDATE documents SET status = 'void', voided_at = 2, void_reason = 'withdrawn' WHERE id = ?", id);
+    const pf = await mkIssued(clientId, { type: "proforma" });
+    await mkSend(pf, clientId, null, { createdBy: owner }); // delivered: emailed
+    await run("UPDATE documents SET viewed_at = 1 WHERE id = ?", pf); // and opened
+    const asked = await pay(clientId, staff, {
+      status: "pending_verification",
+      requested: JSON.stringify([{ documentId: pf, amountMinor: 100 }]),
+    });
+    await rejects(withdraw(pf), /documents_void_no_payment/);
+    expect((await docRow(pf))?.status).toBe("issued");
+    // another client's pending payment naming the same id asks nothing of this proforma (the trigger reads the document's own client)
+    const other = await mkClientRow();
+    await pay(other, staff, {
+      status: "pending_verification",
+      requested: JSON.stringify([{ documentId: pf, amountMinor: 100 }]),
+    });
+    await run(
+      "UPDATE payments SET status = 'rejected', verified_by = ?2, verified_at = 1 WHERE id = ?1",
+      asked,
+      owner,
+    );
+    await withdraw(pf);
+    expect((await docRow(pf))?.status).toBe("void");
+  });
+
   it("a payment_verify approval names a pending payment and no document; its payment never changes", async () => {
     const { owner, clientId, inv } = await setup();
     const staff = await mkMember("staff");

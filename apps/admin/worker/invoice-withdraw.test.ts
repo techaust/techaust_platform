@@ -7,7 +7,7 @@ import { withdrawnSql } from "@techaust/db/sql-rules";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { INVOICE_FACTS_SQL, INVOICE_LIST_SQL } from "./invoices.ts";
 import { insert, mkContact } from "./test-clients.ts";
-import { call, one, rows, sessionFor } from "./test-helpers.ts";
+import { call, one, rows, sessionFor, type TestSession } from "./test-helpers.ts";
 import {
   currentFy,
   lutOf,
@@ -33,6 +33,7 @@ import {
   voidInvoice,
 } from "./test-invoices.ts";
 import { draftCredit, mkIssuedInvoice } from "./test-notes.ts";
+import { recordBody, recorded, verify } from "./test-payments.ts";
 import { beforeBatchHolding } from "./test-quotes.ts";
 
 const owner = () => sessionFor("owner", { stepUp: true });
@@ -113,6 +114,18 @@ async function delivered(
   if (how !== "viewed") await email(pf.id, s.id);
   if (how !== "emailed") await view(pf.id);
   return pf;
+}
+
+/** M6.1 (L37): a Staff member's payment entry that asks for the whole proforma; it waits for the Owner's check (pending). */
+async function askFor(staff: TestSession, pf: { id: string; clientId: string }) {
+  const total = (await one<{ total_minor: number }>("SELECT total_minor FROM documents WHERE id = ?", pf.id))
+    ?.total_minor as number;
+  const made = await recorded(
+    staff,
+    recordBody(pf.clientId, total, [{ documentId: pf.id, amountMinor: total }]),
+  );
+  expect(made.status).toBe("pending_verification");
+  return made;
 }
 
 const refusal = async (res: Response) => {
@@ -353,6 +366,63 @@ describe("refused: what can't be withdrawn [ADM-INV-10]", () => {
     expect((await refusal(res)).code).toBe("proforma_paid");
     expect(await invoiceRow(pf.id)).toMatchObject({ status: "issued", voided_at: null });
     expect(await auditCount("invoice.withdraw", pf.id)).toBe(0);
+  });
+
+  // M6.1 (L37): a Staff member's payment entry waiting for the Owner's check that asks for the proforma blocks its withdrawal until it is decided.
+  it("a pending payment asking for a viewed proforma: 409 payment_pending in 07-ZH line 46's words, nothing written; after a reject, 200", async () => {
+    const o = await owner();
+    const staff = await sessionFor("staff");
+    const pf = await delivered(o, "viewed");
+    const made = await askFor(staff, pf);
+    const before = await invoiceRow(pf.id);
+    const r = await refusal(await withdraw(o, pf.id));
+    expect(r).toEqual({
+      code: "payment_pending",
+      message: "A payment recorded on it is waiting for the owner's check. Reject it first.",
+      reasons: ["payment_pending"],
+    });
+    expect(await invoiceRow(pf.id)).toEqual(before);
+    expect(await auditCount("invoice.withdraw", pf.id)).toBe(0);
+    const rejected = await verify(o, made.id, "reject", { note: "Not in the bank statement" });
+    expect(rejected.status, await rejected.clone().text()).toBe(200);
+    const ok = await withdraw(o, pf.id);
+    expect(ok.status, await ok.clone().text()).toBe(200);
+    expect(await invoiceRow(pf.id)).toMatchObject({ status: "void" });
+    expect(await auditCount("invoice.withdraw", pf.id)).toBe(1);
+  });
+
+  it("a pending payment asking for it that lands between the read and the write: 409 payment_pending, never a 500, nothing written", async () => {
+    const o = await owner();
+    const staff = await sessionFor("staff");
+    const pf = await delivered(o, "both");
+    const res = await withdraw(
+      o,
+      pf.id,
+      "Sent in error",
+      beforeBatchHolding("SET status = 'void'", async () => {
+        await askFor(staff, pf);
+      }),
+    );
+    const r = await refusal(res);
+    expect(r.code).toBe("payment_pending");
+    expect(r.reasons).toEqual(["payment_pending"]);
+    expect(await invoiceRow(pf.id)).toMatchObject({ status: "issued", voided_at: null });
+    expect(await auditCount("invoice.withdraw", pf.id)).toBe(0);
+  });
+
+  it("the read offers no Withdraw while a payment asks for it (canWithdraw false, payment_pending); the void of an emailed proforma names it first", async () => {
+    const o = await owner();
+    const staff = await sessionFor("staff");
+    const pf = await delivered(o, "emailed");
+    await askFor(staff, pf);
+    const v = await getInvoice(o, pf.id);
+    expect(v.withdraw).toEqual({ canWithdraw: false, blockers: ["payment_pending"] });
+    const voided = await refusal(await voidInvoice(o, pf.id));
+    expect(voided.reasons[0]).toBe("payment_pending");
+    expect(voided.reasons).toEqual(["payment_pending", "already_emailed"]);
+    expect(voided.code).toBe("void_not_allowed");
+    expect(await invoiceRow(pf.id)).toMatchObject({ status: "issued" });
+    expect(await auditCount("invoice.void", pf.id)).toBe(0);
   });
 
   it("a trigger refusal is explained (409), never a 500, and writes no audit row", async () => {
