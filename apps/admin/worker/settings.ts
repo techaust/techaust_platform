@@ -278,7 +278,9 @@ const issuedSeries = async (db: D1Database, fy: string): Promise<Set<string>> =>
   const marks = names.map((_, i) => `?${i + 2}`).join(", ");
   const { results } = await db
     .prepare(
-      `SELECT DISTINCT series FROM documents WHERE fy = ?1 AND series IN (${marks}) AND number IS NOT NULL`,
+      // T11 (L1): a finalised deed locks the `deed` series the same way (deeds live in their own table).
+      `SELECT DISTINCT series FROM documents WHERE fy = ?1 AND series IN (${marks}) AND number IS NOT NULL
+       UNION SELECT 'deed' FROM deeds WHERE fy = ?1 AND number IS NOT NULL`,
     )
     .bind(fy, ...names)
     .all<{ series: string }>();

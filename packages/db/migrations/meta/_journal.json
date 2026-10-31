@@ -428,6 +428,20 @@
       "when": 1793449067818,
       "tag": "0060_payment_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "6",
+      "when": 1793471697279,
+      "tag": "0061_deeds",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "6",
+      "when": 1793471744771,
+      "tag": "0062_deed_triggers",
+      "breakpoints": true
     }
   ]
 }
