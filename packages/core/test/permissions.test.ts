@@ -43,6 +43,7 @@ const EXPECTED: Record<Exclude<Action, "proposals.send">, string> = {
   "invoices.draft": "AA--",
   "invoices.issue": "SP--",
   "invoices.void": "S---", // M5.1 (Q2): the Owner only, with a fresh code
+  "invoices.withdraw": "S---", // ADM-INV-10 (owner 2026-10-31, Q1 of runs/proforma-withdraw): the Owner only, with a fresh code, as voiding
   "invoices.advance": "S---", // M5.2 (LD22, LD34): the Owner only, with a fresh code
   "invoices.ims": "A---", // M5.3 (Q36): the Owner only (no fresh code: it changes no money)
   "invoices.send": "AA--", // M5.4 (Q42): Owner and Staff send, resend, revoke links and pause reminders

@@ -8,6 +8,7 @@ import { computeDocument, creditNote } from "@techaust/core/tax";
 import { advanceBody } from "./invoice-advance.ts";
 import { issueBody, issueRequestBody } from "./invoice-issue.ts";
 import { creditNoteBody, debitNoteBody, imsBody } from "./invoice-notes.ts";
+import { withdrawBody } from "./invoice-withdraw.ts";
 import { createBody, listQuery, patchBody, serviceCompletedBody, voidBody } from "./invoices.ts";
 
 export function warmInvoices(): number {
@@ -53,6 +54,8 @@ export function warmInvoices(): number {
       }).success,
       issueRequestBody.safeParse({ expectedUpdatedAt: 1, reason: "r" }).success,
       voidBody.safeParse({ expectedUpdatedAt: 1, reason: "Duplicate" }).success,
+      // ADM-INV-10: the withdraw body
+      withdrawBody.safeParse({ expectedUpdatedAt: 1, reason: "Sent in error" }).success,
       listQuery.safeParse({ type: "tax_invoice", status: "overdue", limit: "25" }).success,
       // M5.3: the note routes' bodies, the note part of a save, the IMS answer and the IMS list filter.
       creditNoteBody.safeParse({

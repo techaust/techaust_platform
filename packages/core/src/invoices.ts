@@ -79,6 +79,9 @@ export type InvoiceMove = {
  * Every move an invoice-family document's status can make. `void` and `converted` are terminal; anything not listed is refused:
  *   draft -> issued; issued -> void (only while unsettled); one ledger status -> another (M5.3 and M6 move them);
  *   a proforma that was issued (or part or fully paid) -> converted (M5.2 uses it).
+ * A proforma the client has received (emailed or opened) reaches `void` only by being withdrawn (`withdrawBlockers`; owner, 2026-10-30, docs/13; L1 of
+ * runs/proforma-withdraw), the same move in this list: no new status (Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-17, RA-28): a proforma
+ * is not a tax document, so taking it back needs no credit note).
  * The SQL trigger is generated from this list (`packages/db/src/triggers.ts`).
  */
 export const INVOICE_STATUS_FLOW: readonly InvoiceMove[] = [
@@ -524,6 +527,8 @@ export type VoidFacts = {
  * an invoice is the month of its date), after which a credit note is the correction too; a proforma has no return period (LD28). FX-5 (owner decision
  * 2026-10-30, docs/13; 08-C RA-10): and only while the client has not opened it in the portal (`viewed_by_client`), a proforma included. The number stays and
  * the record stays (Rule 56(8)). Codes only. OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note? (the batch page offers both forms of the Q23 rule).
+ * A proforma the client has received (emailed or opened) is not voided but withdrawn (`withdrawBlockers`; owner, 2026-10-30, docs/13), instead of staying
+ * until converted; this function's answer for it is unchanged (`already_emailed` / `viewed_by_client`), and the two are exclusive by delivery.
  */
 export function voidBlockers(f: VoidFacts): VoidBlockerCode[] {
   if (f.status === "void") return ["already_void"];
@@ -538,6 +543,68 @@ export function voidBlockers(f: VoidFacts): VoidBlockerCode[] {
   if (f.viewed) out.push("viewed_by_client");
   if (f.type !== "proforma" && f.issueDate !== null && f.issueDate.slice(0, 7) !== f.today.slice(0, 7))
     out.push("return_period_closed");
+  return out;
+}
+
+// ---- withdraw a delivered proforma (ADM-INV-10; owner, 2026-10-30, docs/13; L1 to L6 of runs/proforma-withdraw) ------------------------------
+
+/** Why a proforma can't be withdrawn, in the order a screen ranks them. */
+export const WITHDRAW_BLOCKER_CODES = [
+  "not_proforma",
+  "already_withdrawn",
+  "already_void",
+  "not_issued",
+  "proforma_converted",
+  "proforma_paid",
+  "not_delivered",
+] as const;
+export type WithdrawBlockerCode = (typeof WITHDRAW_BLOCKER_CODES)[number];
+
+/** The reason's longest length (the void's too): the route's body and the trigger `documents_proforma_withdraw` (0056) hold the same number. */
+export const WITHDRAW_REASON_MAX = 500;
+
+export type WithdrawFacts = {
+  readonly type: string;
+  readonly status: string;
+  readonly paidMinor: number;
+  readonly creditedMinor: number;
+  /** Any document (draft or issued) names this one as its parent: an invoice was made from it. */
+  readonly hasChildDocument: boolean;
+  /** An `advance_receipts` row names it: money was received against it. */
+  readonly hasAdvanceReceipt: boolean;
+  /** A `document_sends` row exists (it was emailed). */
+  readonly emailed: boolean;
+  /** The client opened it in the portal (`viewed_at` set). */
+  readonly viewed: boolean;
+};
+
+/**
+ * A withdrawn proforma: a void proforma that had reached the client (emailed or opened in the portal). The twin of `withdrawnSql` in
+ * `@techaust/db/sql-rules`. Unambiguous because a delivered proforma is never voided (`voidBlockers`, trigger 0056) except by withdrawing it.
+ */
+export const isWithdrawn = (f: {
+  readonly type: string;
+  readonly status: string;
+  readonly emailed: boolean;
+  readonly viewed: boolean;
+}): boolean => f.type === "proforma" && f.status === "void" && (f.emailed || f.viewed);
+
+/**
+ * Owner, 2026-10-30 (docs/13): staff may take back a proforma the client has received (emailed or opened in the portal) while nothing has been paid
+ * against it and no invoice has been made from it, with a reason; it keeps its number, stays in the records, and the client sees it as withdrawn. A
+ * proforma is not a tax document (Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-17, RA-28)), so no credit note and no Table 13 row follow.
+ * A proforma not yet delivered is voided instead (`voidBlockers`): the two are exclusive by delivery. Codes only, in `WITHDRAW_BLOCKER_CODES` order.
+ */
+export function withdrawBlockers(f: WithdrawFacts): WithdrawBlockerCode[] {
+  if (f.type !== "proforma") return ["not_proforma"];
+  const delivered = f.emailed || f.viewed;
+  if (f.status === "void") return [delivered ? "already_withdrawn" : "already_void"];
+  const out: WithdrawBlockerCode[] = [];
+  if (f.status !== "converted" && !(LEDGER_STATUSES as readonly string[]).includes(f.status))
+    out.push("not_issued");
+  if (f.status === "converted" || f.hasChildDocument) out.push("proforma_converted");
+  if (f.paidMinor > 0 || f.creditedMinor > 0 || f.hasAdvanceReceipt) out.push("proforma_paid");
+  if (!delivered) out.push("not_delivered");
   return out;
 }
 

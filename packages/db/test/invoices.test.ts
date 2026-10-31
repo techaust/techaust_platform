@@ -111,9 +111,10 @@ describe("the status flow trigger agrees with core canMoveInvoiceStatus, move by
             await run(sql, to, id);
           } catch (e) {
             allowed = false;
-            // every refusal names a trigger: the flow, or (from a void row) the void pairing
+            // every refusal names a trigger: the flow, or (from a void row) the void pairing; a proforma's move into void from anything but issued is also
+            // `documents_proforma_withdraw` (0056, ADM-INV-10), which may fire first
             expect(String(e) + String((e as Error).cause), `${type} ${from} to ${to}`).toMatch(
-              /documents_invoice_status_flow|documents_void_pairing|issued document is frozen|documents_note_no_void|documents_credit_note_ims_required/,
+              /documents_invoice_status_flow|documents_void_pairing|issued document is frozen|documents_note_no_void|documents_credit_note_ims_required|documents_proforma_withdraw/,
             );
           }
           expect(allowed, `${type}: ${from} to ${to}`).toBe(

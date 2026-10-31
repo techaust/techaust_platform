@@ -5,6 +5,7 @@
 // the client the link was made for, and the client must not be anonymised. Turning access off, changing the address, anonymising the person or the client, revoking the link, voiding the invoice or the link
 // expiring ends it at once. What opens: an invoice, proforma, credit note or debit note in a status of `CLIENT_INVOICE_STATUSES` (invoice-summary.ts) (never a draft, a pending approval or a void one). Every other outcome is the
 // same 404, and counts toward the address's `p:fail:` counter like a failed sign-in link; a blocked address gets a 429 and writes nothing.
+// ADM-INV-10 (owner, 2026-10-30, docs/13): a withdrawn proforma (`openOrWithdrawnSql`) still opens, as withdrawn (a valid link, no failure counted); its PDF is a 409.
 //
 // Under the owner's Q1 = A a document-link use is a sign-in event: a valid use writes one `doc_token.use` audit row (actor type `contact`, the contact the link is bound to; the entity is the document), an
 // access row, and sets `documents.viewed_at` once (the first view, before the answer; the PDF too); a failed one writes the counter and an access row.
@@ -35,9 +36,11 @@ import {
   CLIENT_INVOICE_TYPES,
   CREDIT_NOTES_SQL,
   type CreditNoteRow,
+  isWithdrawnRow,
   LINES_SQL,
   type LineRow,
-  STATUSES_SQL,
+  openOrWithdrawnSql,
+  PDF_WITHDRAWN,
   SUMMARY_COLS,
   SUMMARY_PARENT_JOIN,
   type SummaryRow,
@@ -62,7 +65,7 @@ export const DOC_READ = `SELECT ${SUMMARY_COLS}, t.contact_id AS link_contact_id
   JOIN contacts c ON c.id = t.contact_id AND c.client_id = t.client_id AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL AND lower(c.email) = t.email
   JOIN clients cl ON cl.id = t.client_id AND cl.anonymised_at IS NULL
   ${SUMMARY_PARENT_JOIN}
-  WHERE t.token_hash = ?1 AND t.revoked_at IS NULL AND t.expires_at > ?2 AND t.purpose = 'view_pay' AND d.voided_at IS NULL AND d.frozen_at IS NOT NULL AND d.status IN (${STATUSES_SQL}) AND d.type IN (${TYPES_SQL})`;
+  WHERE t.token_hash = ?1 AND t.revoked_at IS NULL AND t.expires_at > ?2 AND t.purpose = 'view_pay' AND d.frozen_at IS NOT NULL AND ${openOrWithdrawnSql("d")} AND d.type IN (${TYPES_SQL})`;
 
 type Found = SummaryRow & { link_contact_id: string; link_client_id: string };
 type Opened = { doc: Found; failKey: string };
@@ -134,6 +137,12 @@ export const docToken = new Hono<AppEnv>()
     if (o instanceof Response) return o;
     const { doc } = o;
     const db = c.env.DB;
+    // ADM-INV-10 (Q3): a withdrawn proforma's link opens its summary, never its PDF (R2 is not read). A valid link, so no `p:fail:` count; the access row only.
+    if (isWithdrawnRow(doc)) {
+      c.set("accessDone", true);
+      await db.batch([accessStmt(db, accessEntry(c, 409, doc.link_contact_id))]);
+      return err(c, PDF_WITHDRAWN, 409);
+    }
     c.set("accessDone", true);
     await db.batch([
       db.prepare(VIEW_PDF_SQL).bind(doc.link_client_id, doc.id, Date.now()),

@@ -256,9 +256,11 @@ describe("REMINDER_DUE_SQL and the claim [ADM-INV-13, LD60]", () => {
     const owner = await mkMember();
     const parentId =
       o.type === "credit_note" || o.type === "debit_note" ? await mkIssued(clientId) : undefined;
+    // ADM-INV-10 (0056 `document_sends_not_void`): a void document gets no send row, so a void one is sent while issued and voided after.
+    const voided = o.status === "void";
     const documentId = await mkIssued(clientId, {
       type: o.type,
-      status: o.status,
+      status: voided ? "issued" : o.status,
       balance: o.balance,
       ...(parentId ? { parentId } : {}),
     });
@@ -271,6 +273,11 @@ describe("REMINDER_DUE_SQL and the claim [ADM-INV-13, LD60]", () => {
       });
       await mkSend(documentId, clientId, contact, { createdBy: owner, cancelled: r === "cancelled" });
     }
+    if (voided)
+      await run(
+        "UPDATE documents SET status = 'void', voided_at = 5, void_reason = 'x' WHERE id = ?",
+        documentId,
+      );
     if (o.anonymised) await run("UPDATE clients SET anonymised_at = 5 WHERE id = ?", clientId);
     return { documentId, clientId };
   }

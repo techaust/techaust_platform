@@ -16,6 +16,7 @@
     "./portal-shared": "./src/portal-shared.ts",
     "./realisation": "./src/realisation.ts",
     "./reports": "./src/reports.ts",
+    "./sql-rules": "./src/sql-rules.ts",
     "./catalogue": "./src/seed/catalogue.ts",
     "./seed-templates": "./src/seed/templates.ts"
   },
