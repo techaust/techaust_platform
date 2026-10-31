@@ -63,7 +63,7 @@ export const SET_ONCE_0001 = [
  * Columns that may be filled in once after freezing, today. M4.3 adds the portal's reads and the client's decision (M4.5 writes
  * them): each can be set once, then never changed. M5.2 adds `service_completed_on` (LD29: set once, through `invoices.draft`). FX-1 (A0 5, ADM-INV-14) adds the
  * four e-invoice fields the IRP answers with (`irn`, `ack_no`, `ack_date`, `signed_qr`): recorded once, never edited. Migration 0032 holds the list as it was
- * before: `SET_ONCE_0032`.
+ * before: `SET_ONCE_0032`. T7 adds `redacted_at` (migration 0057: `SET_ONCE_0057`).
  */
 export const SET_ONCE_AFTER_FREEZE = [
   ...SET_ONCE_0001,
@@ -77,6 +77,8 @@ export const SET_ONCE_AFTER_FREEZE = [
   "ack_no",
   "ack_date",
   "signed_qr",
+  // T7: the erasure of a never-accepted offer's personal details is recorded once (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)).
+  "redacted_at",
 ] as const;
 
 /** The set-once list exactly as migration 0032 installed it (pinned, LD35: a later column must not move the bytes of 0032). */
@@ -976,6 +978,144 @@ export function signatureTriggerStatements(): string[] {
   ];
 }
 
+/**
+ * T7: the set-once columns as migration 0057 installs them: 0050's plus `redacted_at` (pinned like the lists before it). Settled by the lead on the safest
+ * reading, 2026-10-30 (08-C RB-37).
+ */
+export const SET_ONCE_0057 = [...SET_ONCE_0050, "redacted_at"] as const;
+/** T7: the frozen columns of a proposal or estimate that the redaction move may rewrite (their personal values are replaced; pinned for 0057). */
+export const REDACTABLE_FROZEN_0057 = ["recipient", "title"] as const;
+/** T7: the set-once columns the redaction move may clear to NULL (the person's own typed words; pinned for 0057). */
+export const REDACTION_CLEARS_0057 = ["decision_note"] as const;
+/**
+ * T7: the columns of each child table that a redaction never changes: every column but the text that can hold a person's details and `redacted_at` (pinned
+ * for 0057; a db test compares them with the live schema).
+ */
+export const SECTION_COLUMNS_0057 = ["id", "document_id", "kind", "position", "hidden"] as const;
+export const LINE_COLUMNS_0057 = [
+  "id",
+  "document_id",
+  "position",
+  "catalogue_item_id",
+  "sac",
+  "qty_milli",
+  "unit",
+  "rate_minor",
+  "discount_kind",
+  "discount_value",
+  "taxable_minor",
+  "gst_rate_bp",
+  "cgst_minor",
+  "sgst_minor",
+  "igst_minor",
+  "line_total_minor",
+  "catalogue_rate_minor",
+  "catalogue_line",
+] as const;
+export const SCHEDULE_COLUMNS_0057 = [
+  "id",
+  "document_id",
+  "position",
+  "trigger",
+  "pct_bp",
+  "amount_minor",
+  "milestone_id",
+  "target_date",
+] as const;
+/** T7: the text columns a redaction rewrites in each child table (the complement of the lists above, without `redacted_at`). */
+export const SECTION_TEXT_0057 = ["title", "body_md"] as const;
+export const LINE_TEXT_0057 = ["description", "detail"] as const;
+export const SCHEDULE_TEXT_0057 = ["label", "detail"] as const;
+
+/** T7: the one move that may rewrite a frozen offer's personal values: `redacted_at` set for the first time on a proposal or estimate. */
+export const REDACTION_MOVE_SQL =
+  "OLD.redacted_at IS NULL AND NEW.redacted_at IS NOT NULL AND OLD.type IN ('proposal', 'estimate')";
+
+/**
+ * T7: the freeze trigger of `documents` with the redaction move: every frozen column is fixed, except the `redactable` ones, which change only inside the move;
+ * every set-once column is set once, and a `clears` column may also go to NULL inside the move. Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37).
+ */
+const frozenUpdateTriggerRedactable = (
+  frozen: readonly string[],
+  setOnceList: readonly string[],
+  redactable: readonly string[],
+  clears: readonly string[],
+) => {
+  const move = `(${REDACTION_MOVE_SQL})`;
+  const changed = frozen.map((c) =>
+    redactable.includes(c)
+      ? `(NEW.\`${c}\` IS NOT OLD.\`${c}\` AND NOT ${move})`
+      : `NEW.\`${c}\` IS NOT OLD.\`${c}\``,
+  );
+  const setOnce = setOnceList.map((c) =>
+    clears.includes(c)
+      ? `(OLD.\`${c}\` IS NOT NULL AND NEW.\`${c}\` IS NOT OLD.\`${c}\` AND NOT (${move} AND NEW.\`${c}\` IS NULL))`
+      : `(OLD.\`${c}\` IS NOT NULL AND NEW.\`${c}\` IS NOT OLD.\`${c}\`)`,
+  );
+  return `CREATE TRIGGER \`documents_frozen_update\` BEFORE UPDATE ON \`documents\` WHEN OLD.frozen_at IS NOT NULL AND (\n  ${[...changed, ...setOnce].join("\n  OR ")}\n) BEGIN ${abort("issued document is frozen")} END;`;
+};
+
+/**
+ * T7: a child table's freeze trigger with the redaction move: a row of a frozen document never changes, except once, when its parent has just been redacted,
+ * by setting its own `redacted_at` with every column of `keep` unchanged (only its text may change). Same name and message as 0001's.
+ */
+const childFrozenUpdateRedactable = (table: string, keep: readonly string[]) => {
+  const parentFrozen = (ref: "NEW" | "OLD") =>
+    `(SELECT frozen_at FROM documents WHERE id = ${ref}.document_id) IS NOT NULL`;
+  const same = keep.map((c) => `NEW.\`${c}\` IS OLD.\`${c}\``).join(" AND ");
+  const move = `OLD.redacted_at IS NULL AND NEW.redacted_at IS NOT NULL AND (SELECT redacted_at FROM documents WHERE id = OLD.document_id) IS NOT NULL AND ${same}`;
+  return [
+    `DROP TRIGGER \`${table}_frozen_update\`;`,
+    `CREATE TRIGGER \`${table}_frozen_update\` BEFORE UPDATE ON \`${table}\` WHEN (${parentFrozen("OLD")} OR ${parentFrozen("NEW")}) AND NOT (${move}) BEGIN ${abort(`${table} of an issued document cannot change`)} END;`,
+  ];
+};
+
+/**
+ * T7 (08-C RB-37(a); Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): on an erasure request the personal details in the frozen copy of a
+ * proposal or estimate that was never accepted are erased; the number, status, dates, amounts and hashes stay. New and recreated triggers only, no table is
+ * rebuilt; each new abort message starts with its trigger's name:
+ *   1. `documents_frozen_update` dropped and created again over 0047's columns and `SET_ONCE_0057`: `recipient` and `title` change only inside the redaction
+ *      move, `decision_note` may go to NULL inside it, `redacted_at` is set once;
+ *   2. `documents_redaction_scope`: only a frozen proposal or estimate that is not accepted or converted and has no acceptance row is redacted, once, with no
+ *      status change in the same write;
+ *   3. `documents_redaction_insert`: no row is inserted already redacted;
+ *   4. `documents_redacted_fixed`: a redacted offer only expires or is revised; it takes no new envelope, PDF, view or decision;
+ *   5. `acceptances_redacted`: a redacted offer is never accepted;
+ *   6. the child tables' `*_frozen_update` dropped and created again: a row changes once, with its parent's redaction, and only its text.
+ */
+export function offerRedactionTriggerStatements(): string[] {
+  const quotes = QUOTE_DOCUMENT_TYPES.map((t) => `'${t}'`).join(", ");
+  const named = (name: string, message: string) => abort(`${name}: ${message}`);
+  const scopeBad = `NEW.redacted_at IS NOT OLD.redacted_at AND (OLD.redacted_at IS NOT NULL OR OLD.frozen_at IS NULL OR OLD.type NOT IN (${quotes}) OR OLD.status IN ('accepted', 'converted') OR NEW.status IS NOT OLD.status OR EXISTS (SELECT 1 FROM acceptances a WHERE a.document_id = OLD.id))`;
+  const takesNothing = [
+    "snapshot_r2_key",
+    "pdf_r2_key",
+    "pdf_sha256",
+    "viewed_at",
+    "decided_at",
+    "decision_reason",
+    "decision_note",
+    "decided_contact_id",
+  ].map((c) => `(OLD.\`${c}\` IS NULL AND NEW.\`${c}\` IS NOT NULL)`);
+  const fixedBad = `OLD.redacted_at IS NOT NULL AND ((NEW.status IS NOT OLD.status AND NEW.status NOT IN ('expired', 'revised')) OR ${takesNothing.join(" OR ")})`;
+  return [
+    "DROP TRIGGER `documents_frozen_update`;",
+    frozenUpdateTriggerRedactable(
+      FROZEN_COLUMNS_0047,
+      SET_ONCE_0057,
+      REDACTABLE_FROZEN_0057,
+      REDACTION_CLEARS_0057,
+    ),
+    `CREATE TRIGGER \`documents_redaction_scope\` BEFORE UPDATE OF redacted_at ON \`documents\` WHEN ${scopeBad} BEGIN ${named("documents_redaction_scope", "only a sent proposal or estimate that was never accepted has its personal details erased, once")} END;`,
+    `CREATE TRIGGER \`documents_redaction_insert\` BEFORE INSERT ON \`documents\` WHEN NEW.redacted_at IS NOT NULL BEGIN ${named("documents_redaction_insert", "a document is never created already erased")} END;`,
+    `CREATE TRIGGER \`documents_redacted_fixed\` BEFORE UPDATE ON \`documents\` WHEN ${fixedBad} BEGIN ${named("documents_redacted_fixed", "an offer whose personal details were erased only expires or is revised; it takes no new PDF, view or decision")} END;`,
+    `CREATE TRIGGER \`acceptances_redacted\` BEFORE INSERT ON \`acceptances\` WHEN (SELECT redacted_at FROM documents WHERE id = NEW.document_id) IS NOT NULL BEGIN ${named("acceptances_redacted", "an offer whose personal details were erased is never accepted")} END;`,
+    ...childFrozenUpdateRedactable("document_sections", SECTION_COLUMNS_0057),
+    ...childFrozenUpdateRedactable("document_lines", LINE_COLUMNS_0057),
+    ...childFrozenUpdateRedactable("payment_schedules", SCHEDULE_COLUMNS_0057),
+  ];
+}
+
 /** The trigger sets, by the name the migration is created with (`drizzle-kit generate --custom --name <set>`). */
 export const TRIGGER_SETS = {
   triggers: { what: "integrity triggers (docs/05 §5.3)", statements: triggerStatements },
@@ -1053,6 +1193,10 @@ export const TRIGGER_SETS = {
   signature_triggers: {
     what: "settle-08c T4: a credit note, a debit note and an invoice for a payment received are issued with the signature",
     statements: signatureTriggerStatements,
+  },
+  offer_redaction_triggers: {
+    what: "T7 (08-C RB-37): the personal details of a never-accepted proposal or estimate are erased once, with its child rows; a redacted offer takes no PDF, view or decision",
+    statements: offerRedactionTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;

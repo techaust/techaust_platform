@@ -82,6 +82,11 @@ export type DocumentRow = {
   decision_reason: string | null;
   decision_note: string | null;
   decided_contact_id: string | null;
+  /**
+   * T7: when the personal details of this never-accepted offer were erased (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)); null otherwise.
+   * A redacted row no longer reproduces its hashes and is never verified, rendered or accepted. Absent on a row read before this existed.
+   */
+  redacted_at?: number | null;
   created_by: string | null;
   created_at: number;
   updated_at: number;
@@ -180,7 +185,7 @@ export type DocumentBundle<T extends TermsRef = TermsRow> = {
 };
 
 const DOCUMENT_COLUMNS =
-  "id, type, status, client_id, version_group_id, version, series, fy, number, number_display, currency, issue_date, due_date, parent_id, paid_minor, credited_minor, balance_minor, voided_at, void_reason, fx_rate_micros, fx_date, fx_source, fx_no_rate_day, service_completed_on, export_declaration_id, header_extras, ims_status, valid_until, supply_type, place_of_supply_code, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor, total_minor, terms_version_id, snapshot_r2_key, snapshot_sha256, pdf_r2_key, pdf_sha256, frozen_at, issued_by, title, contact_id, validity_days, discount_kind, discount_value, export_mode, content_sha256, catalogue_reference_minor, source_document_id, source_step, sent_at, viewed_at, decided_at, decision_reason, decision_note, decided_contact_id, created_by, created_at, updated_at, recipient, issuer, computed";
+  "id, type, status, client_id, version_group_id, version, series, fy, number, number_display, currency, issue_date, due_date, parent_id, paid_minor, credited_minor, balance_minor, voided_at, void_reason, fx_rate_micros, fx_date, fx_source, fx_no_rate_day, service_completed_on, export_declaration_id, header_extras, ims_status, valid_until, supply_type, place_of_supply_code, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor, total_minor, terms_version_id, snapshot_r2_key, snapshot_sha256, pdf_r2_key, pdf_sha256, frozen_at, issued_by, title, contact_id, validity_days, discount_kind, discount_value, export_mode, content_sha256, catalogue_reference_minor, source_document_id, source_step, sent_at, viewed_at, decided_at, decision_reason, decision_note, decided_contact_id, redacted_at, created_by, created_at, updated_at, recipient, issuer, computed";
 
 /** The statements of `loadDocument`, exported so a test can EXPLAIN each one. */
 export const LOAD_DOCUMENT_SQL = {

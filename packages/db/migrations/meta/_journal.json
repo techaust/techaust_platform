@@ -393,6 +393,20 @@
       "when": 1793404742311,
       "tag": "0055_signature_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "6",
+      "when": 1793433475137,
+      "tag": "0056_offer_redaction",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "6",
+      "when": 1793433563476,
+      "tag": "0057_offer_redaction_triggers",
+      "breakpoints": true
     }
   ]
 }
