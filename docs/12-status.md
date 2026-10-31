@@ -1,53 +1,56 @@
 # 12: Status
 
-_Replaced (never appended) at the end of every session. Last updated: **2026-10-31, 02:00** (IST)._
+_Replaced (never appended) at the end of every session. Last updated: **2026-10-31, 11:15** (IST)._
 
 ## Done
-- **Phases 1–5, M1 (foundation), M2 (public website), M3.1–M3.5, M4.1–M4.5:** all approved by the owner (latest: the M3.4–M4.5 batch, 2026-10-26, PR #93). Details live in the run files under [runs/](runs/) and in [13-decisions.md](13-decisions.md).
-- **The M5 batch (M5.0–M5.5)** built, reviewed and on staging (PRs #95–#101, #103), with the research and wording task (#104) and the owner's M5 findings (#106). Waits for the owner's "approved".
-- **The full audit of M1–M5: complete** (owner's order, 2026-10-29; [run file](runs/full-audit-m1-m5.md)). Seven areas audited; every finding fixed in FX-1 to FX-5 ([#107](https://github.com/techaust/techaust_platform/pull/107), [#108](https://github.com/techaust/techaust_platform/pull/108), [#110](https://github.com/techaust/techaust_platform/pull/110), [#113](https://github.com/techaust/techaust_platform/pull/113), [#116](https://github.com/techaust/techaust_platform/pull/116)); the final sweep of the website, admin and portal and its fixes ([#120](https://github.com/techaust/techaust_platform/pull/120); [run file](runs/final-sweep.md)). Every fix task went through a review, its fixes and a re-check.
-  - **FX-5:** research tags, 07-X/07-Y wording, Bengali and Devanagari PDF fallback fonts, and the owner's rule that an invoice the client has opened can't be voided (trigger 0053; the portal records the view in the read's own batch).
-  - **Final sweep:** website reflow at 320 px; admin layouts at tablet widths, 44 px targets, unique landmarks, server errors never shown as "offline", activity rows with working links; portal load-failure pages, Paid, Credited and discount rows, a note's invoice link and reason; the 07-ZA copy (owner-approved 1–20) and 07-ZB; proposal terms version 3 ("this proposal or estimate").
-- **Workflow changes (owner's yes, 2026-10-30; [#118](https://github.com/techaust/techaust_platform/pull/118); [run file](runs/audit-workflows.md)):** a dependency audit in CI; builds without the Cloudflare token; five deploys in a fixed order with an Access health check after each (the new `staging-deploy-check` token); Workers Traces on staging; zod 4.6.6. The first deploy on it passed every step.
-- **Cloud sessions setup ([#115](https://github.com/techaust/techaust_platform/pull/115); [run file](runs/cloud-1-sessions.md)):** the cloud command guard (four review rounds), dev ports per session, the REST PR helper. Not yet used in a real cloud session.
-- **No CA or lawyer (owner, 2026-10-30):** every OPEN item in the research register settled on the safest reading, with the owner's choices ([#119](https://github.com/techaust/techaust_platform/pull/119); [run file](runs/settle-08c.md)); CLAUDE.md rule 8 updated.
-- **Verified 2026-10-30/31:** `pnpm check` and every package's tests pass (core 1,827, pdf 352, portal 651, admin 3,452, db 491, web 714, jobs 531; timeouts only under load, each passing alone); e2e web 212, portal 9, admin 6/6 with sample data (`E2E_SAMPLE=1`); axe 0 on every checked screen; Workers within budget (portal 100,589; admin front 99,271; admin API 615,441; jobs 978,987 bytes).
+- **Phases 1–5, M1 (foundation), M2 (public website), M3, M4 and the M5 batch (M5.0–M5.5):** all approved by the owner (M5 on 2026-10-31, [#122](https://github.com/techaust/techaust_platform/pull/122)). Details live in the run files under [runs/](runs/) and in [13-decisions.md](13-decisions.md).
+- **The full audit of M1–M5** (2026-10-29/30, [#106](https://github.com/techaust/techaust_platform/pull/106)–[#120](https://github.com/techaust/techaust_platform/pull/120); [run file](runs/full-audit-m1-m5.md), [final sweep](runs/final-sweep.md)), the workflow changes ([#118](https://github.com/techaust/techaust_platform/pull/118)), the cloud sessions setup ([#115](https://github.com/techaust/techaust_platform/pull/115)) and the research register settled without a CA or lawyer ([#119](https://github.com/techaust/techaust_platform/pull/119); [run file](runs/settle-08c.md)).
+- **Today (2026-10-31):**
+  - **T1–T3** ([#123](https://github.com/techaust/techaust_platform/pull/123); [run file](runs/rt1-notes-rules.md)): the credit-note deadline by GSTR-1 filing frequency (TecHaust files quarterly, QRMP), the LUT of a debit note's own FY (trigger 0054), IMS in the 3B helper (layout v2). Copy 07-ZD approved by the owner.
+  - **T4 + T10** ([#124](https://github.com/techaust/techaust_platform/pull/124); [run file](runs/rt2-signature-udyam.md)): the signature always on credit and debit notes and invoices for a payment received (trigger 0055, jobs refusal), the Udyam number on tax invoices (Settings › Company), accessible admin dialogs (refusals read out, focus kept clear of the sticky buttons). Copy 07-ZC approved by the owner.
+  - **The T6 and T11 wording** approved by the owner: 20 lines and Q1–Q4 ([07-ZE](07-content-appendix/ZE-terms-offers-deed.md); #125).
+  - **Launch all at once** (owner): no early website cut-over; everything goes live together after M6, M7 and Phase 7 (estimate: about 12–17 working days, 3–4 weeks, gateway live approval not included; [09-roadmap](09-roadmap.md)).
+  - **Cloud sessions work:** the owner saved the cloud environment and a real cloud session passed "check cloud setup"; it was closed (work stays on this PC).
+- **Verified today:** the rt2 integration at 32f788d8: `pnpm check` exit 0 and `pnpm test` all green (auth 135, ui 471, core 1,861, email 130, db 514, pdf 376, web 714, portal 651, jobs 549, admin 3,493); both browser test sets and axe passed in the reviews; CI and the staging deploy of #124 (a703bf56) green. Workers: admin front 99,271, admin API 618,422, jobs **984,266 of 1,000,000** bytes.
 
 ## In progress
-- Nothing is being built. No agent is running. The staging deploy of #120 follows main's CI (it adds proposal terms version 3 where staging's newest terms are the seeded version 2); the next session checks it.
+- Nothing is being built. No agent is running. PR #125 (the 07-ZE wording, the launch decision and this record) merges itself once CI passes.
 
-## Next (when work resumes)
-1. **Check #120's staging deploy** (all five deploys and health checks green).
-2. **The owner checks staging and says "approved" for the M5 batch** (see "Waits on the owner").
-3. **Research tasks from [settle-08c](runs/settle-08c.md)**, Tier A ones with an analyst brief and early check: T1 credit-note cutoff one month earlier (needs the GSTR-1 frequency), T2 the LUT of a debit note's FY, T3 the 3B helper nets a credit note only once IMS-accepted, T4 signature always on notes and advance invoices, T10 the Udyam number on tax invoices, T7 erasure in never-accepted offers (before 13 May 2027), T6 terms and offer copy with the four new clauses (copy to the owner), T11 the deed of assignment for Aadhaar eSign, T5 the CERT-In log copy to S3 Mumbai (after the owner's AWS setup), T12 retag and rewrite 08-C §5.
-4. **Withdraw a proforma the client has seen** (owner's yes, 2026-10-30; Tier A; new copy to the owner).
-5. **After approval: M6.1** (payments, sandbox only), with T8 (TDS by certificate) and the planned third admin Worker (admin API at 615,441 bytes; plan before 650,000).
+## Next (when work resumes; say "continue" in a new conversation)
+1. **T6** (Tier B/C; [07-ZE](07-content-appendix/ZE-terms-offers-deed.md)): first the MCIA check (its fee schedule, and whether its rules allow a Kolkata seat; if either fails, 07-ZE line 12 goes back to the owner), then the brief, the build (offer wording, proposal terms v4, website Terms 0.2; Delivery 0.2 waits for T11), the review.
+2. **T7** erasure in never-accepted offers (Tier A, before 13 May 2027).
+3. **Withdraw a proforma the client has seen** (owner's yes, 2026-10-30; Tier A; new copy to the owner).
+4. **T12** retag the OPEN comments and rewrite 08-C §5.
+5. **M6 Payments** (sandbox only): M6.1 with T8 (TDS by certificate) and the third admin Worker plan (admin API at 618,422; plan before 650,000), then T11 (the deed, needs "fully paid"); decide L9 (jobs minify, a separate payment-webhook Worker or a measured ceiling) **before M6.2**; M6.2–M6.5.
+6. **M7** (M7.1–M7.5), an audit of M6–M7, then **Phase 7 all at once** (L1–L11). T5 (CERT-In log copy to S3 Mumbai) once the owner's AWS is set up.
 
-**Usage now:** 5-hour window about 40 %. Gate: new agents at or under 95 %; this PC at most 2 agents, 1 using a browser.
+**Usage now:** 5-hour window 2 %. Gate: new agents at or under 95 %; this PC at most 2 agents, 1 using a browser.
 
 ## Waits on the owner
-- **Your GSTR-1 frequency** (monthly or quarterly): gst.gov.in › Login › Services › Returns › Opt-in for Quarterly Return.
-- **M5 staging check and approval:** sign in to the staging admin; open Dashboard, Leads and a lead; a client, a proposal and its PDF; in a project, upload and download a file; save one Settings page; try an invoice, a credit note and the Settings › Tax checklist; sign out. Then "done" with any findings, or "approved".
+- **Start early (outside waiting times, so launch day doesn't slip; the lead gives click-by-click steps when each comes up):**
+  - **SES production access** (AWS › SES › Account dashboard › Request production access) and a production IAM user, so emails reach any address;
+  - **the AWS backup bucket** (and for T5 the S3 bucket in Mumbai), with the lead's script; sign the AWS MCP in to the TecHaust account first (it is on another account today);
+  - **Razorpay, Stripe and PayPal** accounts and their **test keys** (M6.2–M6.4); live approval can take days to weeks, and Razorpay may want the legal pages live on techaust.com first;
+  - **website inputs:** a new headshot, bio facts, the email aliases (hello, billing, no-reply, security, privacy), the launch date; also the company LinkedIn page URL, WhatsApp Business number, Cal.com link, 2–3 case-study briefs, one social handle per platform, the 3 blog drafts.
 - **Dated duties** (your own actions; steps in [settle-08c](runs/settle-08c.md)):
+  - **by 13 November:** file the October IFF if an October credit note relies on it (otherwise the note moves into the Oct–Dec GSTR-1, filed after 30 November);
   - **before the next export invoice:** file the FY 2026-27 LUT and save its ARN in Settings › Tax;
-  - **by 30 November:** the October EDF to your bank, if any export invoice was raised in October; ask the bank the questions in settle-08c (EDF format, purpose code, IEC, closure up to ₹10 lakh, PA-CB proof);
-  - **monthly:** reverse charge on foreign services, by spreadsheet;
-  - **every April:** the turnover check;
-  - **once:** the Offline Tool test import before the first real GSTR-1; the CERT-In point of contact (the lead confirms the format first); the trademark search (classes 9, 35, 42).
-- **For T5:** an AWS S3 bucket in Mumbai and an access key, with the lead's script (when the task starts).
-- **Staging data for invoicing:** the real company profile (legal name, GSTIN, address), clearly labelled sample bank details, the Udyam number (in Settings, never in code).
+  - **by 30 November:** the October EDF to your bank, if any export invoice was raised in October; ask the bank the questions in settle-08c;
+  - **monthly:** reverse charge on foreign services, by spreadsheet; **every April:** the turnover check;
+  - **once:** the Offline Tool test import before the first real GSTR-1; the CERT-In point of contact; the trademark search (classes 9, 35, 42).
+- **Staging data for invoicing:** the real company profile (legal name, GSTIN, address), clearly labelled sample bank details, the Udyam number and category (Settings › Company), the signature image (Settings › Company; needed for any credit or debit note or advance invoice).
 - **Zoho:** confirm the `billing@` alias (invoice emails and statements); also `hello` and `no-reply`.
 - **Catalogue › Publish on staging** (if not done yet).
-- **When TecHaust's AWS is needed:** sign the AWS MCP in to the TecHaust account (it is on another account today).
-- **For the website:** a new headshot; bio facts; the company LinkedIn page URL; WhatsApp Business number; Cal.com link; 2–3 case-study briefs; one social handle per platform; the 3 blog drafts; the postal address checked against the GST certificate; before production, the security@ and privacy@ aliases.
 - **Renewals:** the staging SES key `techaust-ses-sender-staging` by **2027-01-21**; Access tokens `staging-cpu-benchmark` by 2027-10-17 and `staging-deploy-check` by 2027-10-30.
 - **Not blocking:** upload the social kit; "since 2019" against the GST registration date; wallpapers; printed brand proof and Pantone; business-card phone number; Argon2id timing on a phone; a one-off lawyer review of the deed of assignment someday.
 - **Model menu:** Opus 5.5, high, for every conversation.
 
 ## Open follow-ups
+- **Model audit (2026-10-31):** the rt2 integration builder (agent-ae999e0f) loaded no skill though it reported two; recorded in its run file.
+- **rt1 ([run file](runs/rt1-notes-rules.md)):** (1) a migration that folds any legacy `tax.lut` into the list and drops the key, **before production**; (2) the 3B helper's IMS status per period (OPEN RA-04); (3) an optional "IFF filed" setting (OPEN RA-31); (4) show known blockers on a dialog's confirm step before step-up; (5) the draft row's 44 px inline link line gap (cosmetic).
+- **rt2 ([run file](runs/rt2-signature-udyam.md)):** the invoice issue dialog's wrong-code notice and one shared `invalid_code` helper; a BEFORE INSERT signature trigger; inner spaces in a pasted Udyam number; one shared must-be-signed list; the `Field` scroll effect key; the save bar after a "No change" save; fresh visual baselines (invoice-udyam, advance, note fixtures); the duplicate PNG builder in `apps/admin/e2e/sample-data.ts`; the `.inv-udyam` 12em rule if the Udyam format ever changes; not verified: NVDA, Browser Run renders of the Udyam line and the signed notes.
 - **Final sweep (2026-10-31, [run file](runs/final-sweep.md)):** the week grid's "1 h 45 min" wraps at 1280 with the menu open; the activity feed's label for a credit or debit note issue; same-name people in the Time Entries table; the website focus outline 1.6 px against docs/06's 2 px.
 - **Workflows (2026-10-30, [run file](runs/audit-workflows.md)):** allow-list entries bound to a version or path; a separate deploy job; a web `/api/health`; trace size and query-string redaction after a week (by 2026-11-06); the zod allow-list entry expires 2026-11-13 (astro update).
-- **Cloud sessions:** the first real cloud session runs "check cloud setup" ([runbook](runbooks/cloud-sessions.md) Part 3).
 - **Research (2026-10-30, [run file](runs/settle-08c.md)):** still OPEN: RB-06 (purpose code, a bank fact), RB-21 (West Bengal stamp rate), RB-22(b) (read G.S.R. 789(E) before 1 Jan 2027), RA-34 (the GSTIN check test before Phase 7); also the FX day of a USD debit note, the IGST-route endorsement wording, the LUT ARN format.
 - **M5 (2026-10-28, run files):**
   - a longer timeout for the M5.4 test "each send names the staff member…" in `apps/admin/worker/invoice-send.test.ts` (times out under a full parallel run);
@@ -55,7 +58,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
   - check the code-review helper's 10 M5.4 candidates (it reviewed `main` by mistake) against `main`;
   - a CI job for Linux PDF visual baselines (workflow change: owner's yes);
   - FEMA extensions (M6.1, Q60); refunds, the payment register and "collected" figures (M6);
-  - the admin API is at 587,821 bytes: plan the third admin Worker before it passes 650,000 (likely during M6);
+  - the admin API is at 618,422 bytes: plan the third admin Worker before it passes 650,000 (M6.1);
   - not verified for M5: staging CPU of the admin routes (no traffic yet), a real Browser Run render of the invoice, note and statement PDFs, `Intl.DisplayNames` on the deployed runtime, NVDA, real mail clients for the invoice and statement emails.
 - **Batch review fixes (2026-10-26, [run file](runs/batch-review-fixes.md)):** not verified: NVDA on the new date field and its button names, the native calendar popup; the staging rename reported 7 changes for 6 rows (likely a trigger; not checked).
 - **M4.5 (2026-10-26, [run file](runs/m4.5-send-accept.md)):** refill `{{client.contact}}` when a draft's contact changes; one shared list of the 07-N §3 decline reasons in `@techaust/core` (now in admin, portal and jobs); an optional "record Viewed only after a real interaction"; not verified: real mail clients, the certificate on Browser Run (Bengali and Hindi names may fall back to a system font), NVDA, the date-field focus ring in Firefox and Safari.

@@ -174,3 +174,5 @@ P5 ─▶ M1.1 ─▶ M1.2 ─▶ M1.3 ─▶ M1.4 🚦 ─▶ M1.5 ─▶ M1.6
 ```
 
 The website (M2) can be reviewed and launched **before** the admin is finished, if you want an earlier cut-over. The lead form then writes to D1 and emails you, and leads are viewable from M3.2. This is an option to decide at the M2 review.
+
+**Decided 2026-10-31 (owner): everything goes live at once.** The website is not cut over early; the old `techaust-web` stays on techaust.com until Phase 7 (L8), after M6, M7 and the launch steps (the lead's estimate on 2026-10-31: about 12–17 working days, 3–4 weeks, gateway live approval not included). Owner tasks with outside waiting times start early, in parallel with the build: SES production access, the AWS backup bucket, the gateway accounts and test keys, the website inputs.
