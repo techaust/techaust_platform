@@ -167,3 +167,14 @@ Next, in order:
 | Time (IST) | Session | Question or event | Answer or action | Basis |
 |---|---|---|---|---|
 | 2026-10-31 13:00 | t6-terms | Q1, Q2 | Owner: A, A (sent in the prompt) | 13-decisions |
+| 2026-10-31 13:18 | proforma-withdraw | Q1–Q4 (who withdraws, email, client view, 07-ZF) | Owner: A, A, A, A (sent) | AskUserQuestion |
+| 2026-10-31 13:20 | main session | the watcher (one-minute GitHub poll of the task branches' Status lines) replaces the 30-minute poll; the heartbeat only re-arms it and sends usage | Owner's concern about lost time |
+| 2026-10-31 13:30 | t7-erasure | Q1 (an open offer at anonymise), 07-ZG lines 1–3 | Owner: A, approved (sent) | AskUserQuestion |
+| 2026-10-31 13:40 | m6-1-ledger | Q1 (deploy step, workflow change), Q2 (step-up for payments), Q3 (07-ZH) | Owner: A, A, A (sent) | AskUserQuestion |
+| 2026-10-31 13:45 | t12-retag | PR #129 | SEND BACK: RB-23, RB-35, RB-38(c) retagged as settled though 07-ZE keeps them OPEN; branch behind main | 07-ZE line 42, 08-C RB-23 |
+| 2026-10-31 13:55 | t12-retag | PR #129 fixed | Re-checked; auto-merge on; merged | |
+| 2026-10-31 14:15 | t6-terms | T12 merged | Take main in; keep T12's tags | merge order |
+| 2026-10-31 14:20 | t7-erasure | Q2 (audit label, 07-ZG line 4) | Owner: A (sent) | AskUserQuestion |
+| 2026-10-31 15:15 | t6-terms | PR #130 (ready since ~14:42; the watcher missed it: it marked a push seen before reading it, fixed) | Reviewed (APPROVE, CI green, no migration or workflow change, jobs 985,956); merged | |
+| 2026-10-31 15:15 | proforma-withdraw | T6 merged | Take main in after the current fixes | merge order |
+| 2026-10-31 15:40 | main session | MCIA re-check on the PC | 08-C RB-38 corrected (2017 schedule, no halving, plus taxes) | mcia.org.in |

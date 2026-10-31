@@ -1,57 +1,50 @@
 # 12: Status
 
-_Replaced (never appended) at the end of every session. Last updated: **2026-10-31, 12:15** (IST)._
+_Replaced (never appended) at the end of every session. Last updated: **2026-10-31, 15:45** (IST)._
 
 ## Done
 - **Phases 1–5, M1 (foundation), M2 (public website), M3, M4 and the M5 batch (M5.0–M5.5):** all approved by the owner (M5 on 2026-10-31, [#122](https://github.com/techaust/techaust_platform/pull/122)). Details live in the run files under [runs/](runs/) and in [13-decisions.md](13-decisions.md).
-- **The full audit of M1–M5** (2026-10-29/30, [#106](https://github.com/techaust/techaust_platform/pull/106)–[#120](https://github.com/techaust/techaust_platform/pull/120); [run file](runs/full-audit-m1-m5.md), [final sweep](runs/final-sweep.md)), the workflow changes ([#118](https://github.com/techaust/techaust_platform/pull/118)), the cloud sessions setup ([#115](https://github.com/techaust/techaust_platform/pull/115)) and the research register settled without a CA or lawyer ([#119](https://github.com/techaust/techaust_platform/pull/119); [run file](runs/settle-08c.md)).
+- **The full audit of M1–M5** (2026-10-29/30, [#106](https://github.com/techaust/techaust_platform/pull/106)–[#120](https://github.com/techaust/techaust_platform/pull/120)), the workflow changes ([#118](https://github.com/techaust/techaust_platform/pull/118)), the cloud sessions setup ([#115](https://github.com/techaust/techaust_platform/pull/115)) and the research register settled without a CA or lawyer ([#119](https://github.com/techaust/techaust_platform/pull/119)).
 - **Today (2026-10-31):**
-  - **T1–T3** ([#123](https://github.com/techaust/techaust_platform/pull/123); [run file](runs/rt1-notes-rules.md)): the credit-note deadline by GSTR-1 filing frequency (TecHaust files quarterly, QRMP), the LUT of a debit note's own FY (trigger 0054), IMS in the 3B helper (layout v2). Copy 07-ZD approved by the owner.
-  - **T4 + T10** ([#124](https://github.com/techaust/techaust_platform/pull/124); [run file](runs/rt2-signature-udyam.md)): the signature always on credit and debit notes and invoices for a payment received (trigger 0055, jobs refusal), the Udyam number on tax invoices (Settings › Company), accessible admin dialogs (refusals read out, focus kept clear of the sticky buttons). Copy 07-ZC approved by the owner.
-  - **The T6 and T11 wording** approved by the owner: 20 lines and Q1–Q4 ([07-ZE](07-content-appendix/ZE-terms-offers-deed.md); #125).
-  - **Launch all at once** (owner): no early website cut-over; everything goes live together after M6, M7 and Phase 7 (estimate: about 12–17 working days, 3–4 weeks, gateway live approval not included; [09-roadmap](09-roadmap.md)).
-  - **Parallel task sessions** (owner): every pending, unblocked task runs as its own cloud session, controlled by a main session on this PC; at most 2 agents per session; questions come through the main session. The plan, shared rules and five prompts: [runs/cloud-parallel-2026-10-31](runs/cloud-parallel-2026-10-31.md); the protocol: [runbook Part 4](runbooks/cloud-sessions.md), CLAUDE.md, docs/14 §5.
-  - **The five sessions were started and all stopped in setup** ("node -v says v24.22.1, not v24.22.2": the cloud image now has its own Node in `/opt/node24`). Fixed in [#126](https://github.com/techaust/techaust_platform/pull/126) (Node in `/opt/techaust-node`); not yet run on a real cloud machine.
-- **Verified today:** the rt2 integration at 32f788d8: `pnpm check` exit 0 and `pnpm test` all green (auth 135, ui 471, core 1,861, email 130, db 514, pdf 376, web 714, portal 651, jobs 549, admin 3,493); both browser test sets and axe passed in the reviews; CI and the staging deploy of #124 (a703bf56) green. Workers: admin front 99,271, admin API 618,422, jobs **984,266 of 1,000,000** bytes.
+  - **T1–T3** ([#123](https://github.com/techaust/techaust_platform/pull/123)) and **T4 + T10** ([#124](https://github.com/techaust/techaust_platform/pull/124)); the T6/T11 wording 07-ZE approved ([#125](https://github.com/techaust/techaust_platform/pull/125)); launch all at once (owner).
+  - **Parallel cloud sessions:** the cloud setup fix ([#126](https://github.com/techaust/techaust_platform/pull/126)); the five task sessions restarted from this PC's main session at ~13:00 IST ([run file](runs/cloud-parallel-2026-10-31.md)), watched by a one-minute GitHub watcher plus a 30-minute heartbeat.
+  - **T12** ([#129](https://github.com/techaust/techaust_platform/pull/129); [run file](runs/t12-retag-open.md)): settled OPEN tags retagged, 08-C §5 rewritten; sent back once by the main session (RB-23, RB-35, RB-38(c) stay OPEN as 07-ZE says).
+  - **T6** ([#130](https://github.com/techaust/techaust_platform/pull/130); [run file](runs/t6-terms-offers.md)): "(IST)" on offer validity, "replaces version N", acceptance only by the button, proposal terms v4, website Terms 0.2, the admin "Client accepted by email?" box. Reviewer APPROVE; CI green; jobs Worker 985,956 bytes. Delivery 0.2 waits for T11.
+  - **MCIA re-checked on this PC:** seat and amounts confirmed; two facts corrected in 08-C RB-38 (the fee schedule dates from 15 January 2017; no fee halving on the expedited track; fees are plus taxes).
+  - **Owner's answers today:** T6 Q1–Q2, proforma withdraw Q1–Q4 (07-ZF approved), T7 Q1–Q2 (07-ZG approved), M6.1 Q1–Q3 (the deploy step for a third admin Worker, step-up for payments, 07-ZH approved); the `/orchestrate` skill plan (13).
 
 ## In progress
-- **[#126](https://github.com/techaust/techaust_platform/pull/126)** (the cloud setup fix) merged at 12:21 IST; main's CI and the staging deploy follow.
-- **This record** (docs PR of today's second end of day) merges itself once CI passes.
-- No agent is running. No cloud session is running (all five stopped in setup).
+- **Three cloud sessions** (environment `techaust_platform`; merge order proforma withdraw → T7 → M6.1):
+  - **proforma withdraw** (`feat/proforma-withdraw`, Tier A): reviewer APPROVE; fixing its findings; told to take `main` in; merges next.
+  - **T7** (`feat/t7-offer-erasure`, Tier A): designer done; reviewer running.
+  - **M6.1** (`feat/m6.1-ledger-payments`, Tier A, milestone): the third admin Worker split (stage A) and ledger data and core (B1) built; the API (B2) and early-check fixes running, then the second early check. Merges last; then the owner approves it on staging.
+- **This record** (docs PR) merges itself once CI passes.
 
-## Next (when work resumes; say "start the day" in a new conversation)
-0. **Restart the five parallel cloud sessions** once #126 has merged and the owner has pasted the new setup script ([handover](runs/cloud-parallel-2026-10-31.md)): T12, T6, withdraw a seen proforma, T7, M6.1 (items 1–5 below), each from the prompt in that file, merge order T12 → T6 → proforma → T7 → M6.1. Then "check the cloud sessions" to control them.
-1. **T6** (Tier B/C; [07-ZE](07-content-appendix/ZE-terms-offers-deed.md)): first the MCIA check (its fee schedule, and whether its rules allow a Kolkata seat; if either fails, 07-ZE line 12 goes back to the owner), then the brief, the build (offer wording, proposal terms v4, website Terms 0.2; Delivery 0.2 waits for T11), the review.
-2. **T7** erasure in never-accepted offers (Tier A, before 13 May 2027).
-3. **Withdraw a proforma the client has seen** (owner's yes, 2026-10-30; Tier A; new copy to the owner).
-4. **T12** retag the OPEN comments and rewrite 08-C §5.
-5. **M6 Payments** (sandbox only): M6.1 with T8 (TDS by certificate) and the third admin Worker plan (admin API at 618,422; plan before 650,000), then T11 (the deed, needs "fully paid"); decide L9 (jobs minify, a separate payment-webhook Worker or a measured ceiling) **before M6.2**; M6.2–M6.5.
-6. **M7** (M7.1–M7.5), an audit of M6–M7, then **Phase 7 all at once** (L1–L11). T5 (CERT-In log copy to S3 Mumbai) once the owner's AWS is set up.
+## Next
+1. Merge the three in order as each PR is ready (the main session reviews each, turns on auto-merge, tells the next branch to take `main` in and renumber migrations). The jobs Worker has ~9,000 bytes left below the 995,000 stop line: check T7's and M6.1's numbers at review.
+2. **M6.1 on staging:** the owner checks it and says "approved" before M6.2.
+3. Build the **`/orchestrate` skill** (owner, 2026-10-31) after the three merge.
+4. **T11** (the deed; needs M6.1's "fully paid"); decide **L9** before M6.2 (M6.1's analyst writes the recommendation); **M6.2–M6.5** (gateway test keys needed); **M7**; the audit of M6–M7; **Phase 7 all at once**. T5 once the owner's AWS is set up.
 
-**Usage now:** 5-hour window 3 %. Gate: new agents at or under 95 %; this PC at most 2 agents, 1 using a browser.
+**Usage now:** 5-hour window ~5 % (reset 15:10 IST). Gate: new agents at or under 95 %; at most 2 agents per cloud session.
 
 ## Waits on the owner
-- **Now (#126 has merged):** paste the new setup script into the `techaust_platform` environment (claude.ai/code › environment › gear › Setup script; copy the Raw file from `main`; [runbook](runbooks/cloud-sessions.md) Part 2, step 6), and archive the five failed cloud sessions. Then "start the day" here.
-- **Start early (outside waiting times, so launch day doesn't slip; the lead gives click-by-click steps when each comes up):**
-  - **SES production access** (AWS › SES › Account dashboard › Request production access) and a production IAM user, so emails reach any address;
-  - **the AWS backup bucket** (and for T5 the S3 bucket in Mumbai), with the lead's script; sign the AWS MCP in to the TecHaust account first (it is on another account today);
-  - **Razorpay, Stripe and PayPal** accounts and their **test keys** (M6.2–M6.4); live approval can take days to weeks, and Razorpay may want the legal pages live on techaust.com first;
-  - **website inputs:** a new headshot, bio facts, the email aliases (hello, billing, no-reply, security, privacy), the launch date; also the company LinkedIn page URL, WhatsApp Business number, Cal.com link, 2–3 case-study briefs, one social handle per platform, the 3 blog drafts.
-- **Dated duties** (your own actions; steps in [settle-08c](runs/settle-08c.md)):
-  - **by 13 November:** file the October IFF if an October credit note relies on it (otherwise the note moves into the Oct–Dec GSTR-1, filed after 30 November);
-  - **before the next export invoice:** file the FY 2026-27 LUT and save its ARN in Settings › Tax;
-  - **by 30 November:** the October EDF to your bank, if any export invoice was raised in October; ask the bank the questions in settle-08c;
-  - **monthly:** reverse charge on foreign services, by spreadsheet; **every April:** the turnover check;
-  - **once:** the Offline Tool test import before the first real GSTR-1; the CERT-In point of contact; the trademark search (classes 9, 35, 42).
-- **Staging data for invoicing:** the real company profile (legal name, GSTIN, address), clearly labelled sample bank details, the Udyam number and category (Settings › Company), the signature image (Settings › Company; needed for any credit or debit note or advance invoice).
-- **Zoho:** confirm the `billing@` alias (invoice emails and statements); also `hello` and `no-reply`.
-- **Catalogue › Publish on staging** (if not done yet).
+- **Now:** archive the T12 and T6 cloud sessions (sidebar › right-click › Archive); keep this main conversation open in the Code tab while the sessions run (the watcher and heartbeat live in it).
+- **Start early (so launch day doesn't slip; the lead gives click-by-click steps when each comes up):**
+  - **Razorpay, Stripe and PayPal** test accounts and **test keys** (M6.2–M6.4); live approval can take days to weeks;
+  - **SES production access** and a production IAM user; **the AWS backup bucket** (and for T5 the S3 bucket in Mumbai); sign the AWS MCP in to the TecHaust account first;
+  - **website inputs:** a new headshot, bio facts, the email aliases (hello, billing, no-reply, security, privacy), the launch date; the company LinkedIn page URL, WhatsApp Business number, Cal.com link, 2–3 case-study briefs, one social handle per platform, the 3 blog drafts.
+- **Dated duties** (steps in [settle-08c](runs/settle-08c.md)): **by 13 November** the October IFF if an October credit note relies on it; **before the next export invoice** the FY 2026-27 LUT (ARN in Settings › Tax); **by 30 November** the October EDF if any export invoice was raised in October; **monthly** reverse charge on foreign services; **every April** the turnover check; **once** the Offline Tool test import, the CERT-In point of contact, the trademark search (classes 9, 35, 42).
+- **Staging data for invoicing:** the real company profile, labelled sample bank details, the Udyam number and category, the signature image (Settings › Company).
+- **Zoho:** confirm the `billing@`, `hello` and `no-reply` aliases. **Catalogue › Publish on staging** (if not done yet).
 - **Renewals:** the staging SES key `techaust-ses-sender-staging` by **2027-01-21**; Access tokens `staging-cpu-benchmark` by 2027-10-17 and `staging-deploy-check` by 2027-10-30.
 - **Not blocking:** upload the social kit; "since 2019" against the GST registration date; wallpapers; printed brand proof and Pantone; business-card phone number; Argon2id timing on a phone; a one-off lawyer review of the deed of assignment someday.
 - **Model menu:** Opus 5.5, high, for every conversation.
 
 ## Open follow-ups
-- **Parallel task sessions (2026-10-31, [run file](runs/cloud-parallel-2026-10-31.md)):** `tools/agent-slots.mjs` doesn't hold the 2-agents-per-session cap of parallel runs yet (the prompt does); the #126 fix is unverified on a real cloud machine.
+- **T12 ([run file](runs/t12-retag-open.md)):** copy that still says "Ask your bank or CA" or "with your CA" (admin `reports.ts` ~91, ~224, ~229, ~243, ~256, ~473) and the "list for your CA and lawyer" hints (admin `worker/settings.ts:131-133`, `:634`, `src/api.ts:81`, `components/form.tsx:262`, web `legal-pages.ts:3`; tests pin them): new owner-approved copy; 08-C header lines 7 and 9 (the tag list, the stale CA/lawyer line); 08-C §6 the PA-CB realisation note (RB-01); RA-21 (a note's rate day) still OPEN; the privacy notice's EU/UK legitimate-interests cell (RB-12, legal pages v0.4).
+- **T6 ([run file](runs/t6-terms-offers.md)):** a recipient picker for the staff reply (it greets the document's contact); the box on `expired` offers; offers sent before T6 show "(IST)" and line 3 in the portal but not in their stored PDF (kept); the admin `PORTAL_ORIGIN` config test lives in `apps/web/test` (CLAUDE.md mention); not verified: the real portal offer page and queued email (need jobs and Browser Run), a staging admin build. Lines 6, 9, 11, 12, 14, 15 rest on OPEN items (RB-23, RB-38(c)).
+- **Parallel task sessions (2026-10-31):** the watcher counts only task-branch pushes (a builder pushing to a `fix/*` sub-branch looks quiet: fold into `/orchestrate`); Auto-fix can't be turned on from the main session for PRs a cloud session opened (the owner can, from the PR bar); `tools/agent-slots.mjs` doesn't hold the 2-agents-per-session cap of parallel runs (the prompt does).
 - **Model audit (2026-10-31):** the rt2 integration builder (agent-ae999e0f) loaded no skill though it reported two; recorded in its run file.
 - **rt1 ([run file](runs/rt1-notes-rules.md)):** (1) a migration that folds any legacy `tax.lut` into the list and drops the key, **before production**; (2) the 3B helper's IMS status per period (OPEN RA-04); (3) an optional "IFF filed" setting (OPEN RA-31); (4) show known blockers on a dialog's confirm step before step-up; (5) the draft row's 44 px inline link line gap (cosmetic).
 - **rt2 ([run file](runs/rt2-signature-udyam.md)):** the invoice issue dialog's wrong-code notice and one shared `invalid_code` helper; a BEFORE INSERT signature trigger; inner spaces in a pasted Udyam number; one shared must-be-signed list; the `Field` scroll effect key; the save bar after a "No change" save; fresh visual baselines (invoice-udyam, advance, note fixtures); the duplicate PNG builder in `apps/admin/e2e/sample-data.ts`; the `.inv-udyam` 12em rule if the Udyam format ever changes; not verified: NVDA, Browser Run renders of the Udyam line and the signed notes.
