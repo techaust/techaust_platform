@@ -6,6 +6,7 @@
 // `registerRatesOf`, proved by test), summed in INR (the line values on an INR document, the `inr` view of each line on a USD one).
 import {
   ALERT_STAGE_LIST,
+  EXPORT_STAGES,
   femaDueSql,
   gstDueSql,
   type RealisationSql,
@@ -13,7 +14,7 @@ import {
   settingsBinds,
   stageSql,
 } from "./realisation.ts";
-import { paymentNetSql } from "./sql-rules.ts";
+import { paymentNetSql, SQL_CURRENCIES } from "./sql-rules.ts";
 
 /**
  * Rows in one report page (keyset, the admin lists' rule): every page statement reads one more (`LIMIT REPORT_PAGE_SIZE + 1`) to know whether another page exists. One
@@ -285,11 +286,92 @@ const OPEN_STATUSES = "('issued', 'partially_paid', 'partially_credited')";
 const DEBIT_DOCS = "('tax_invoice', 'export_invoice', 'debit_note')";
 
 /**
+ * The dashboard's one-pass figures (L33; early check 2, finding 6 of M6.1): D1 counts every row a temporary GROUP BY b-tree takes in and gives back, which
+ * doubled what a grouped figure read (measured at 2,000 documents: 4,000 for the invoiced figure, 4,003 for the owed one). Each figure below is instead ONE
+ * aggregate row with a column set per currency (`SQL_CURRENCIES`) or per stage (`EXPORT_STAGES`), turned into the grouped rows afterwards by a join with
+ * the list's constant rows (alias `cur` or `st`), the zero rows dropped. Same rows, same columns, same order as the grouped statement each one replaces:
+ * those are kept below as `*_GROUPED_SQL`, the reference twins the tests hold them equal to (never run by a Worker).
+ */
+const currencyRows = `SELECT column1 AS currency FROM (VALUES ${SQL_CURRENCIES.map((c) => `('${c}')`).join(", ")})`;
+/** The column `<col>_<currency>` of the aggregate row `t` for the currency row `cur`. */
+const pickCurrency = (col: string): string =>
+  `CASE cur.currency ${SQL_CURRENCIES.map((c) => `WHEN '${c}' THEN t.${col}_${c}`).join(" ")} END`;
+/** One aggregate row `t` (the `cols` of each currency, over `from`) turned into one row per currency whose `count` column is above zero, by currency. */
+const byCurrency = (cols: (c: string) => string[], select: string, from: string, count: string): string =>
+  `SELECT cur.currency, ${select}
+   FROM (SELECT ${SQL_CURRENCIES.flatMap(cols).join(",\n       ")}
+         ${from}) t
+   JOIN (${currencyRows}) cur
+   WHERE ${pickCurrency(count)} > 0 ORDER BY cur.currency`;
+
+/** A credit note's amounts count negative. */
+const signed = (col: string): string => `CASE d.type WHEN 'credit_note' THEN -d.${col} ELSE d.${col} END`;
+/** The INR value of the taxable amount of a document in currency `c`: the amount itself in INR, a USD document's `computed.inr` (NULL when it lacks it). */
+const inrTaxableOf = (c: string): string =>
+  c === "INR" ? "d.taxable_minor" : "json_extract(d.computed, '$.inr.taxableMinor')";
+
+/**
  * Invoiced in the financial year `?1` to `?2` and in the month from `?3` (to `?2`'s month: the caller passes the month's first day), by currency. Credit
  * notes count negative; voided documents and proformas never. `taxable` is before GST, `total` with it, `inr_taxable` the INR value of the taxable amount
- * (a USD document's `computed.inr`); NULL when a USD document lacks it, never zero.
+ * (a USD document's `computed.inr`); NULL when a USD document lacks it, never zero. One pass over the FY's entries of `documents_issued_on`, no GROUP BY
+ * (L33): one row read per document. The twin of `INVOICED_GROUPED_SQL`.
  */
-export const INVOICED_SQL = `SELECT d.currency,
+export const INVOICED_SQL = /* @__PURE__ */ (() => {
+  const sgn = "CASE d.type WHEN 'credit_note' THEN -1 ELSE 1 END";
+  const cols = (c: string): string[] => {
+    const is = `d.currency = '${c}'`;
+    const month = `${is} AND d.issue_date >= ?3`;
+    const inr = inrTaxableOf(c);
+    return [
+      `count(CASE WHEN ${is} THEN 1 END) AS fyd_${c}`,
+      `sum(CASE WHEN ${is} THEN ${signed("taxable_minor")} END) AS fyt_${c}`,
+      `sum(CASE WHEN ${is} THEN ${signed("total_minor")} END) AS fyg_${c}`,
+      `count(CASE WHEN ${is} THEN ${inr} END) AS fyic_${c}`,
+      `sum(CASE WHEN ${is} THEN ${sgn} * ${inr} END) AS fyi_${c}`,
+      `count(CASE WHEN ${month} THEN 1 END) AS md_${c}`,
+      `coalesce(sum(CASE WHEN ${month} THEN ${signed("taxable_minor")} END), 0) AS mt_${c}`,
+      `coalesce(sum(CASE WHEN ${month} THEN ${signed("total_minor")} END), 0) AS mg_${c}`,
+      `count(CASE WHEN ${month} THEN ${inr} END) AS mic_${c}`,
+      `coalesce(sum(CASE WHEN ${month} THEN ${sgn} * ${inr} END), 0) AS mi_${c}`,
+    ];
+  };
+  const select = `${pickCurrency("fyd")} AS fy_documents, ${pickCurrency("fyt")} AS fy_taxable, ${pickCurrency("fyg")} AS fy_total,
+       CASE WHEN ${pickCurrency("fyic")} < ${pickCurrency("fyd")} THEN NULL ELSE ${pickCurrency("fyi")} END AS fy_inr_taxable,
+       ${pickCurrency("md")} AS month_documents, ${pickCurrency("mt")} AS month_taxable, ${pickCurrency("mg")} AS month_total,
+       CASE WHEN ${pickCurrency("mic")} < ${pickCurrency("md")} THEN NULL ELSE ${pickCurrency("mi")} END AS month_inr_taxable`;
+  return byCurrency(
+    cols,
+    select,
+    `FROM documents d INDEXED BY documents_issued_on
+         WHERE ${ISSUED_GST} AND d.voided_at IS NULL AND d.issue_date >= ?1 AND d.issue_date <= ?2`,
+    "fyd",
+  );
+})();
+
+/**
+ * What clients owe, and how much of it is overdue, by currency, in ONE read (`?1` today, IST): the open tax invoices, export invoices and debit notes with a balance
+ * (count and amount, tax included), and of those the ones past their due date. The due date is the last day to pay, so overdue is strictly before today.
+ * One pass over the open statuses of `documents_status_due`, no GROUP BY (L33). The twin of `OWED_GROUPED_SQL`.
+ */
+export const OWED_SQL = /* @__PURE__ */ (() =>
+  byCurrency(
+    (c) => {
+      const is = `d.currency = '${c}'`;
+      return [
+        `count(CASE WHEN ${is} THEN 1 END) AS n_${c}`,
+        `sum(CASE WHEN ${is} THEN d.balance_minor END) AS b_${c}`,
+        `sum(CASE WHEN ${is} THEN CASE WHEN d.due_date < ?1 THEN 1 ELSE 0 END END) AS on_${c}`,
+        `sum(CASE WHEN ${is} THEN CASE WHEN d.due_date < ?1 THEN d.balance_minor ELSE 0 END END) AS ob_${c}`,
+      ];
+    },
+    `${pickCurrency("n")} AS n, ${pickCurrency("b")} AS balance, ${pickCurrency("on")} AS overdue_n, ${pickCurrency("ob")} AS overdue_balance`,
+    `FROM documents d INDEXED BY documents_status_due
+         WHERE d.status IN ${OPEN_STATUSES} AND d.type IN ${DEBIT_DOCS} AND d.balance_minor > 0 AND d.voided_at IS NULL`,
+    "n",
+  ))();
+
+/** The reference twin of `INVOICED_SQL` (tests only): the grouped statement of M5.5b. */
+export const INVOICED_GROUPED_SQL = `SELECT d.currency,
        count(*) AS fy_documents,
        sum(CASE d.type WHEN 'credit_note' THEN -d.taxable_minor ELSE d.taxable_minor END) AS fy_taxable,
        sum(CASE d.type WHEN 'credit_note' THEN -d.total_minor ELSE d.total_minor END) AS fy_total,
@@ -304,11 +386,8 @@ export const INVOICED_SQL = `SELECT d.currency,
    WHERE ${ISSUED_GST} AND d.voided_at IS NULL AND d.issue_date >= ?1 AND d.issue_date <= ?2
    GROUP BY d.currency ORDER BY d.currency`;
 
-/**
- * What clients owe, and how much of it is overdue, by currency, in ONE read (`?1` today, IST): the open tax invoices, export invoices and debit notes with a balance
- * (count and amount, tax included), and of those the ones past their due date. The due date is the last day to pay, so overdue is strictly before today.
- */
-export const OWED_SQL = `SELECT d.currency, count(*) AS n, sum(d.balance_minor) AS balance,
+/** The reference twin of `OWED_SQL` (tests only): the grouped statement of M5.5b. */
+export const OWED_GROUPED_SQL = `SELECT d.currency, count(*) AS n, sum(d.balance_minor) AS balance,
        sum(CASE WHEN d.due_date < ?1 THEN 1 ELSE 0 END) AS overdue_n, sum(CASE WHEN d.due_date < ?1 THEN d.balance_minor ELSE 0 END) AS overdue_balance
    FROM documents d INDEXED BY documents_status_due
    WHERE d.status IN ${OPEN_STATUSES} AND d.type IN ${DEBIT_DOCS} AND d.balance_minor > 0 AND d.voided_at IS NULL
@@ -330,21 +409,51 @@ export const OVERDUE_OLDEST_SQL = `SELECT o.id, o.number_display, o.due_date, o.
  * one. The only way a proforma becomes `converted` is a Q9 advance (`advanceIssueStatements`): it adds the amount to `paid_minor` and takes it off
  * `balance_minor`, so `converted` with `paid_minor > 0 AND balance_minor > 0` is a proforma paid in part whose remainder is still owed, and a fully
  * advanced one has `balance_minor = 0` and counts nowhere (its money is on the Q9 tax invoices: no double count, LD22). Read through the type and status
- * index, so a ledger of invoices is never scanned.
+ * index, so a ledger of invoices is never scanned. One pass, no GROUP BY (L33). The twin of `PROFORMAS_AWAITING_GROUPED_SQL`.
  */
-export const PROFORMAS_AWAITING_SQL = `SELECT d.currency, count(*) AS n, sum(d.balance_minor) AS balance FROM documents d INDEXED BY documents_type_status_created
+const PROFORMAS_AWAITING_FROM = `FROM documents d INDEXED BY documents_type_status_created
    WHERE d.type = 'proforma' AND d.status IN ('issued', 'converted') AND d.balance_minor > 0 AND (d.status = 'issued' OR d.paid_minor > 0)
-     AND d.voided_at IS NULL AND d.frozen_at IS NOT NULL
+     AND d.voided_at IS NULL AND d.frozen_at IS NOT NULL`;
+export const PROFORMAS_AWAITING_SQL = /* @__PURE__ */ (() =>
+  byCurrency(
+    (c) => [
+      `count(CASE WHEN d.currency = '${c}' THEN 1 END) AS n_${c}`,
+      `sum(CASE WHEN d.currency = '${c}' THEN d.balance_minor END) AS b_${c}`,
+    ],
+    `${pickCurrency("n")} AS n, ${pickCurrency("b")} AS balance`,
+    PROFORMAS_AWAITING_FROM,
+    "n",
+  ))();
+/** The reference twin of `PROFORMAS_AWAITING_SQL` (tests only): the grouped statement of M5.5b. */
+export const PROFORMAS_AWAITING_GROUPED_SQL = `SELECT d.currency, count(*) AS n, sum(d.balance_minor) AS balance ${PROFORMAS_AWAITING_FROM}
    GROUP BY d.currency ORDER BY d.currency`;
 
 /** The `tax` settings row, read in the same batch so the export statements below can be checked against it (`realisationParamsFromStoredTax`). */
 export const SETTINGS_TAX_SQL = "SELECT s.value FROM settings s WHERE s.key = 'tax'";
 
-/** How many open exports are in each stage today (`?1` today, IST), the rule values being the `tax` row's own. */
-export const EXPORT_STAGE_COUNTS_SQL = `SELECT ${stageSql("d", settingsBinds("?1"))} AS stage, count(*) AS n
+/**
+ * How many open exports are in each stage today (`?1` today, IST), the rule values being the `tax` row's own: one row per stage that has any, by stage.
+ * The stage of each export is worked out once, in a subquery that `LIMIT -1` keeps from being flattened into the aggregate (flattened, the stage expression,
+ * with its correlated extension seeks, would be copied into every stage's column); the counts are one aggregate row with a column per stage
+ * (`EXPORT_STAGES`), no GROUP BY (L33). The twin of `EXPORT_STAGE_COUNTS_GROUPED_SQL`.
+ */
+export const EXPORT_STAGE_COUNTS_SQL = /* @__PURE__ */ (() => {
+  const stageRows = `SELECT column1 AS stage FROM (VALUES ${EXPORT_STAGES.map((s) => `('${s}')`).join(", ")})`;
+  const pick = `CASE st.stage ${EXPORT_STAGES.map((s) => `WHEN '${s}' THEN t.n_${s}`).join(" ")} END`;
+  return `SELECT st.stage, ${pick} AS n
+   FROM (SELECT ${EXPORT_STAGES.map((s) => `count(CASE x.stage WHEN '${s}' THEN 1 END) AS n_${s}`).join(", ")}
+         FROM (SELECT ${stageSql("d", settingsBinds("?1"))} AS stage
+               FROM documents d INDEXED BY documents_export_issued
+               WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND d.balance_minor > 0 LIMIT -1) x) t
+   JOIN (${stageRows}) st
+   WHERE ${pick} > 0 ORDER BY st.stage`;
+})();
+/** The reference twin of `EXPORT_STAGE_COUNTS_SQL` (tests only): the grouped statement of M5.5b. */
+export const EXPORT_STAGE_COUNTS_GROUPED_SQL =
+  /* @__PURE__ */ (() => `SELECT ${stageSql("d", settingsBinds("?1"))} AS stage, count(*) AS n
    FROM documents d INDEXED BY documents_export_issued
    WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND d.balance_minor > 0
-   GROUP BY stage`;
+   GROUP BY stage`)();
 
 /** The five exports nearest a deadline: in one of the four alert stages, the earliest deadline of the stage first (an overdue one before one that is approaching). */
 export const EXPORT_NEXT_SQL = (() => {

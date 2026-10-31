@@ -19,6 +19,7 @@ import {
   liveTdsSql,
   PAYABLE_TYPES_SQL,
   paymentNetSql,
+  SQL_CURRENCIES,
 } from "./sql-rules.ts";
 
 export type { GuardSql };
@@ -508,8 +509,8 @@ export const COLLECTED_SQL = `SELECT p.currency, coalesce(sum(p.amount_minor), 0
    FROM payments p INDEXED BY payments_confirmed WHERE p.status = 'confirmed' AND p.kind = 'payment' AND p.received_on >= ?1 AND p.received_on <= ?2
    GROUP BY p.currency ORDER BY p.currency`;
 
-/** The currencies a payment can be in (the schema's `CURRENCY_CODES`; a db test pins the two together). */
-export const COLLECTED_CURRENCIES = ["INR", "USD"] as const;
+/** The currencies a payment can be in (`SQL_CURRENCIES`, the schema's `CURRENCY_CODES`; a db test pins the two together). */
+export const COLLECTED_CURRENCIES = SQL_CURRENCIES;
 
 const collectedPick = (prefix: string) =>
   `CASE c.currency ${COLLECTED_CURRENCIES.map((c) => `WHEN '${c}' THEN t.${prefix}_${c}`).join(" ")} END`;
