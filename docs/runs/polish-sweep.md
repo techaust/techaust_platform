@@ -2,7 +2,7 @@
 
 Status: builder and designer running
 Tier: C
-Usage: (none yet)
+Usage: builder (b1) and designer (d1) started 2026-11-01 ~02:20 IST at USAGE 17 (reading 2026-11-01T02:40+05:30); model and effort filled in from `node tools/model-audit.mjs` before the review.
 
 Session: polish-sweep (cloud). Branch: `fix/polish-sweep`. Copy file: `docs/07-content-appendix/ZL-polish-sweep.md` (only if a new user-facing line is needed).
 
