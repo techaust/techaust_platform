@@ -56,9 +56,10 @@ describe("an erased offer", () => {
   });
 
   it("the read view shows the banner from `redactedAt` in the screen's day format, and takes away the retry; Revoke links stays", () => {
-    expect(readSource).toMatch(/const erasedAt = v\.redactedAt \?\? null;/);
+    // one rule for "erased" (`isErased`, the same as canResend's; review row 7)
+    expect(readSource).toMatch(/const erased = isErased\(v\);/);
     expect(readSource).toMatch(
-      /\{erasedAt !== null && \(?\s*<Notice tone="info">\s*\{erasedBanner\(formatIstDay\(erasedAt\)\)\}/,
+      /\{erased && \(?\s*<Notice tone="info">\s*\{erasedBanner\(formatIstDay\(v\.redactedAt as number\)\)\}/,
     );
     expect(readSource).toMatch(/canRetry=\{[^}]*&& !erased\}/);
     // "Send again" follows canResend, which reads `redactedAt` from the view; the delivery panel (and its "Revoke links") is still drawn

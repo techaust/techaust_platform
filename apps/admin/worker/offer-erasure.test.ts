@@ -13,7 +13,7 @@ import {
   redactionGuard,
 } from "./offer-redaction.ts";
 import { insert, mkClient, mkContact, mkLead } from "./test-clients.ts";
-import { call, countOf, one, rows, sessionFor } from "./test-helpers.ts";
+import { call, countOf, one, rows, sessionFor, type TestSession, withDb } from "./test-helpers.ts";
 import { beforeBatchHolding, getDoc, type J, json, mkDraft, mkTerms, sendDoc } from "./test-quotes.ts";
 import { addDoc, line } from "./test-reports.ts";
 
@@ -57,6 +57,8 @@ async function offer(
     recipient?: Record<string, unknown>;
     decider?: Person;
     snapshotKey?: boolean;
+    /** false: no PDF was ever made (no key, no hash, no object). */
+    pdf?: boolean;
     texts?: string;
   } = {},
 ): Promise<Offer> {
@@ -140,13 +142,13 @@ async function offer(
       `T7/${number}`,
       JSON.stringify(recipient),
       `${"ab".repeat(32)}`,
-      keys.pdf,
-      "cd".repeat(32),
+      opts.pdf === false ? null : keys.pdf,
+      opts.pdf === false ? null : "cd".repeat(32),
       opts.snapshotKey === false ? null : keys.snapshot,
     )
     .run();
   await env.DOCS.put(keys.snapshot, `{"envelope":"${who}"}`);
-  await env.DOCS.put(keys.pdf, new Uint8Array([37, 80, 68, 70]));
+  if (opts.pdf !== false) await env.DOCS.put(keys.pdf, new Uint8Array([37, 80, 68, 70]));
   const s = opts.status ?? "sent";
   if (s === "viewed")
     await env.DB.prepare("UPDATE documents SET status = 'viewed', viewed_at = 1 WHERE id = ?").bind(id).run();
@@ -590,6 +592,22 @@ describe("refusals write nothing", () => {
     }
   });
 
+  it("a legal hold is answered before too_many_offers (review row 2): 409 legal_hold, nothing written", async () => {
+    const o = await owner();
+    for (const where of ["contact", "client", "lead"] as const) {
+      const client = await mkClient(where === "client" ? { legal_hold: 1 } : {});
+      const a = await person(client, "Asha Rao", where === "contact" ? { legal_hold: 1 } : {});
+      if (where === "lead") await mkLead(a.email, { legal_hold: 1 });
+      for (let i = 0; i < 11; i++) await offer(client, a);
+      const audits = await countOf("audit_log");
+      const res = await anonymise(o.cookie, a.id);
+      expect(res.status, where).toBe(409);
+      expect(await code(res), where).toBe("legal_hold");
+      expect(await countOf("audit_log"), where).toBe(audits);
+      expect(await countOf("documents", "client_id = ? AND redacted_at IS NOT NULL", client), where).toBe(0);
+    }
+  });
+
   it("more than 10 offers: 409 too_many_offers with the approved line, nothing written", async () => {
     const o = await owner();
     const client = await mkClient();
@@ -637,26 +655,19 @@ describe("the read and the batch (no race)", () => {
     });
   };
 
-  it("an offer frozen between the read and the batch: nothing is written, the route reads again and redacts both", async () => {
+  it("an offer frozen between the read and the batch: 409 stale_version at once, nothing written; the next request redacts both", async () => {
     const o = await owner();
     const client = await mkClient();
     const a = await person(client, "Asha Rao");
     await offer(client, a);
     const res = await anonymise(o.cookie, a.id, racing(client, a, 1));
-    expect(res.status, await res.clone().text()).toBe(200);
-    expect(await countOf("documents", "client_id = ? AND redacted_at IS NOT NULL", client)).toBe(2);
-    expect(await countOf("audit_log", "action = 'contact.anonymise' AND entity_id = ?", client)).toBe(1);
-  });
-
-  it("twice: 409 stale_version and nothing written", async () => {
-    const o = await owner();
-    const client = await mkClient();
-    const a = await person(client, "Asha Rao");
-    await offer(client, a);
-    const res = await anonymise(o.cookie, a.id, racing(client, a, 2));
-    expect(res.status).toBe(409);
+    expect(res.status, await res.clone().text()).toBe(409);
     expect(await code(res)).toBe("stale_version");
     await expectNothingWritten(client, a);
+    // no retry inside the request (D1 budget, review row 6): the owner's next try reads the new set and redacts both
+    expect((await anonymise(o.cookie, a.id)).status).toBe(200);
+    expect(await countOf("documents", "client_id = ? AND redacted_at IS NOT NULL", client)).toBe(2);
+    expect(await countOf("audit_log", "action = 'contact.anonymise' AND entity_id = ?", client)).toBe(1);
   });
 
   /** Nothing of the anonymise is in the database: no redaction, no audit row, the contact still live. */
@@ -689,8 +700,8 @@ describe("the read and the batch (no race)", () => {
 
   /**
    * Each part of the guard on its own (early check finding 4): the eligible set shrinks, the last-live state flips, the contact's `updated_at` moves, the
-   * client's `updated_at` moves (client scope), or an offer is redacted again by another erasure. Once: the route reads again and succeeds. Twice: 409
-   * `stale_version` and nothing is written.
+   * client's `updated_at` moves (client scope), or an offer is redacted again by another erasure. The request answers 409 `stale_version` at once and
+   * writes nothing (no retry inside it: the D1 budget, review row 6); the next request reads again and succeeds.
    */
   type Race = {
     name: string;
@@ -797,23 +808,19 @@ describe("the read and the batch (no race)", () => {
   ];
 
   for (const race of races) {
-    it(`${race.name}: once, read again and redact`, async () => {
+    it(`${race.name}: 409 stale_version at once and nothing written; the next request redacts`, async () => {
       const o = await owner();
       const r = await race.setup();
       const res = await anonymise(o.cookie, r.a.id, holding(1, r.change));
-      expect(res.status, await res.clone().text()).toBe(200);
+      expect(res.status, await res.clone().text()).toBe(409);
+      expect(await code(res)).toBe("stale_version");
+      await expectNothingWritten(r.client, r.a);
+      const next = await anonymise(o.cookie, r.a.id);
+      expect(next.status, await next.clone().text()).toBe(200);
       expect(await countOf("audit_log", "action = 'contact.anonymise' AND entity_id = ?", r.client)).toBe(1);
       expect(await countOf("contacts", "id = ? AND anonymised_at IS NOT NULL", r.a.id)).toBe(1);
       expect(await countOf("documents", "client_id = ? AND redacted_at > 100", r.client)).toBeGreaterThan(0);
       await r.after?.();
-    });
-    it(`${race.name}: twice, 409 stale_version and nothing written`, async () => {
-      const o = await owner();
-      const r = await race.setup();
-      const res = await anonymise(o.cookie, r.a.id, holding(2, r.change));
-      expect(res.status, await res.clone().text()).toBe(409);
-      expect(await code(res)).toBe("stale_version");
-      await expectNothingWritten(r.client, r.a);
     });
   }
 
@@ -835,6 +842,12 @@ describe("the read and the batch (no race)", () => {
       .map((r) => r.detail)
       .join(" | ");
     expect(docs).toMatch(/documents_client_type_status/);
+    // the children's read searches each child table by its document index
+    const kids = (await rows<{ detail: string }>(`EXPLAIN QUERY PLAN ${REDACTION_READ_SQL.children}`, "x"))
+      .map((r) => r.detail)
+      .join(" | ");
+    for (const table of ["document_sections", "document_lines", "payment_schedules"])
+      expect(kids, table).toMatch(new RegExp(`SEARCH ${table} USING (COVERING )?INDEX`));
     const g = "1";
     for (const name of [
       "documents",
@@ -858,13 +871,16 @@ describe("the read and the batch (no race)", () => {
         .join(" | ");
       expect(plan, name).not.toMatch(/SCAN (?!j VIRTUAL|json_each VIRTUAL)/);
     }
-    // the three "mark the rest" statements search each child table by its document index
-    for (const table of ["document_sections", "document_lines", "payment_schedules"] as const) {
-      const sql = REDACTION_WRITE_SQL.mark(table, g);
+    // the three child statements (the text and the stamp in one, review row 6) find each row by its id
+    for (const [name, table] of [
+      ["sectionsText", "document_sections"],
+      ["linesText", "document_lines"],
+      ["scheduleText", "payment_schedules"],
+    ] as const) {
+      const sql = REDACTION_WRITE_SQL[name](g);
       const plan = (await rows<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, ...placeholders(sql)))
         .map((r) => r.detail)
         .join(" | ");
-      expect(plan, table).not.toMatch(/SCAN (?!j VIRTUAL|json_each VIRTUAL)/);
       expect(plan, table).toMatch(new RegExp(`SEARCH ${table} USING (COVERING )?INDEX`));
     }
     // the guard's subqueries, inside the audit-first row's FROM (the eligible count, the set, the stamps, the last-live state)
@@ -948,6 +964,13 @@ describe("audit, bells and approvals", () => {
       ]),
     );
     expect(JSON.parse(erase?.summary as string).offers).toBe(1);
+    // review row 4: the count is stored as an integer, never as a REAL 1.0
+    expect(
+      await one(
+        "SELECT json_type(summary, '$.offers') AS t, json_extract(summary, '$.offers') AS n FROM audit_log WHERE id = ?",
+        erase?.id,
+      ),
+    ).toEqual({ t: "integer", n: 1 });
     const all = JSON.stringify(
       await rows("SELECT summary FROM audit_log WHERE entity_id IN (?, ?)", m.id, client),
     );
@@ -958,6 +981,24 @@ describe("audit, bells and approvals", () => {
       note: null,
       status: "approved",
     });
+  });
+
+  it("pdfDeleted is 1 only for an offer that had a PDF (review row 5)", async () => {
+    const o = await owner();
+    const client = await mkClient();
+    const a = await person(client, "Asha Rao");
+    const withPdf = await offer(client, a);
+    const without = await offer(client, a, { pdf: false });
+    expect((await anonymise(o.cookie, a.id)).status).toBe(200);
+    const flag = async (id: string) =>
+      (
+        await one<{ t: string; n: number }>(
+          "SELECT json_type(summary, '$.pdfDeleted') AS t, json_extract(summary, '$.pdfDeleted') AS n FROM audit_log WHERE action = 'document.redact' AND entity_id = ?",
+          id,
+        )
+      )?.n;
+    expect(await flag(withPdf.id)).toBe(1);
+    expect(await flag(without.id)).toBe(0);
   });
 });
 
@@ -1005,5 +1046,144 @@ describe("afterwards", () => {
     expect(await code(exp)).toBe("contact_anonymised");
     // revoking links still works
     expect((await call(`/documents/${m.id}/links/revoke`, { cookie: o.cookie, body: {} })).status).toBe(200);
+  });
+});
+
+describe("D1 statements per request (review row 6) [NFR-6]", () => {
+  // D1 on the Free plan allows 50 queries per Worker invocation (docs/05-research-appendix A row 7). Every statement of a batch is counted as one, and the
+  // session, step-up and access-log statements are counted too. Every path of the erase route stays at or under 45 (Settled by the lead on the safest
+  // reading, 2026-10-30 (08-C RB-37)).
+  const BUDGET = 45;
+
+  /** `env` whose DB counts every statement it runs (a batch counts each of its statements); `before` runs before every batch holding `marker`. */
+  function statements(hold?: { marker: string; before: () => Promise<void> }) {
+    let n = 0;
+    class S {
+      constructor(
+        readonly real: D1PreparedStatement,
+        readonly sql: string,
+      ) {}
+      bind(...v: unknown[]) {
+        return new S(this.real.bind(...v), this.sql);
+      }
+      first(...a: unknown[]) {
+        n++;
+        return (this.real.first as (...x: unknown[]) => Promise<unknown>)(...a);
+      }
+      run() {
+        n++;
+        return this.real.run();
+      }
+      all() {
+        n++;
+        return this.real.all();
+      }
+      raw(...a: unknown[]) {
+        n++;
+        return (this.real.raw as (...x: unknown[]) => Promise<unknown>)(...a);
+      }
+    }
+    const db = {
+      prepare: (q: string) => new S(env.DB.prepare(q), q),
+      batch: async (stmts: S[]) => {
+        n += stmts.length;
+        if (hold && stmts.some((s) => s.sql.includes(hold.marker))) await hold.before();
+        return env.DB.batch(stmts.map((s) => s.real));
+      },
+    } as unknown as D1Database;
+    return { env: withDb(db), count: () => n };
+  }
+
+  async function measure(
+    name: string,
+    run: (e: Env) => Promise<Response>,
+    want: { status: number; code?: string },
+    hold?: { marker: string; before: () => Promise<void> },
+  ) {
+    const s = statements(hold);
+    const res = await run(s.env);
+    expect(res.status, `${name}: ${await res.clone().text()}`).toBe(want.status);
+    if (want.code) expect(await code(res), name).toBe(want.code);
+    // at the fix (session touch due): anonymise with 10 offers 42, with none 32; erase 30; erase refused 32; anonymise refused by a hold or the cap 5;
+    // the stale path 44 (it was 96 with the in-route retry)
+    expect(s.count(), name).toBeLessThanOrEqual(BUDGET);
+  }
+
+  /** The request with the session's touch due (one more statement in the batch: the worst case). */
+  const request = async (o: TestSession, id: string, mode: "erase" | "anonymise", e: Env) => {
+    await env.DB.prepare("UPDATE staff_sessions SET last_seen_at = 0 WHERE id = ?").bind(o.sessionId).run();
+    const res = await call(
+      `/contacts/${id}/erase`,
+      { cookie: o.cookie, body: { mode, reason: "requested" } },
+      e,
+    );
+    // the touch was written (and so counted)
+    expect(await countOf("staff_sessions", "id = ? AND last_seen_at > 0", o.sessionId)).toBe(1);
+    return res;
+  };
+
+  it("anonymise with 10 eligible offers (the worst case), and with none", async () => {
+    const o = await owner();
+    const client = await mkClient({ type: "individual", legal_name: "Asha Rao", display_name: "Asha" });
+    const a = await person(client, "Asha Rao");
+    for (let i = 0; i < 10; i++) await offer(client, a, { status: i % 2 ? "viewed" : "rejected" });
+    await measure("anonymise, 10 offers", (e) => request(o, a.id, "anonymise", e), { status: 200 });
+    expect(await countOf("documents", "client_id = ? AND redacted_at IS NOT NULL", client)).toBe(10);
+    const other = await mkClient();
+    const b = await person(other, "Bo Sen");
+    await measure("anonymise, no offer", (e) => request(o, b.id, "anonymise", e), { status: 200 });
+  });
+
+  it("erase mode: success, a legal hold, and a person on an issued document", async () => {
+    const o = await owner();
+    const client = await mkClient();
+    const a = await person(client, "Asha Rao");
+    await measure("erase", (e) => request(o, a.id, "erase", e), { status: 200 });
+    const b = await person(client, "Bo Sen", { legal_hold: 1 });
+    await measure("erase, legal hold", (e) => request(o, b.id, "erase", e), {
+      status: 409,
+      code: "legal_hold",
+    });
+    const d = await person(client, "Cy Sen");
+    await offer(client, d);
+    await measure("erase, on an issued document", (e) => request(o, d.id, "erase", e), {
+      status: 409,
+      code: "on_issued_document",
+    });
+  });
+
+  it("anonymise refusals: a legal hold, too_many_offers, and the stale path (a race between the read and the batch)", async () => {
+    const o = await owner();
+    const client = await mkClient();
+    const held = await person(client, "Asha Rao", { legal_hold: 1 });
+    for (let i = 0; i < 11; i++) await offer(client, held);
+    await measure("anonymise, legal hold (and 11 offers)", (e) => request(o, held.id, "anonymise", e), {
+      status: 409,
+      code: "legal_hold",
+    });
+    const many = await person(client, "Bo Sen");
+    for (let i = 0; i < 11; i++) await offer(client, many);
+    await measure("anonymise, too_many_offers", (e) => request(o, many.id, "anonymise", e), {
+      status: 409,
+      code: "too_many_offers",
+    });
+    // nine eligible offers (one of ten accepted); just before EVERY anonymise batch another offer to the person is frozen
+    const racer = await person(client, "Cy Sen");
+    const first = await offer(client, racer, { status: "viewed" });
+    for (let i = 0; i < 9; i++) await offer(client, racer, { status: "viewed" });
+    await env.DB.prepare("UPDATE documents SET status = 'accepted', decided_at = 3 WHERE id = ?")
+      .bind(first.id)
+      .run();
+    await measure(
+      "anonymise, stale",
+      (e) => request(o, racer.id, "anonymise", e),
+      { status: 409, code: "stale_version" },
+      {
+        marker: "contact.anonymise",
+        before: async () => {
+          await offer(client, racer);
+        },
+      },
+    );
   });
 });

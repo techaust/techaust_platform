@@ -438,6 +438,39 @@ describe("offer.decided: the bell [ADM-PROP-08, ADM-PROP-10]", () => {
       }),
     ).toBe("invalid");
   });
+  it("an offer whose personal details were erased (T7, review row 3): 'ignored', no bell, no staff email; erased after the read: no bell", async () => {
+    const w = await world({ status: "rejected" });
+    await run("UPDATE documents SET redacted_at = ?2 WHERE id = ?1", w.doc, NOW);
+    const msg = { kind: "offer.decided", documentId: w.doc, decision: "declined" };
+    expect(await processOfferDecided(makeEnv(), msg)).toBe("ignored");
+    expect(await all("SELECT 1 FROM notifications WHERE entity_id = ?", w.doc)).toEqual([]);
+    expect(queued).toEqual([]);
+    // erased between the read and the bell: the bell statement finds the offer erased and writes nothing
+    const racing = await world({ status: "rejected" });
+    let first = true;
+    const db = {
+      prepare: (sql: string) => {
+        const real = realEnv.DB.prepare(sql);
+        if (!sql.startsWith("INSERT OR IGNORE INTO notifications")) return real;
+        return {
+          bind: (...v: unknown[]) => {
+            const bound = real.bind(...v);
+            return {
+              run: async () => {
+                if (first) {
+                  first = false;
+                  await run("UPDATE documents SET redacted_at = ?2 WHERE id = ?1", racing.doc, NOW);
+                }
+                return bound.run();
+              },
+            };
+          },
+        };
+      },
+    };
+    await processOfferDecided(makeEnv({ DB: db }), { ...msg, documentId: racing.doc });
+    expect(await all("SELECT 1 FROM notifications WHERE entity_id = ?", racing.doc)).toEqual([]);
+  });
   it("a decline also emails the sender and each active owner once, in 07-N's words; an accepted offer emails nobody here", async () => {
     const w = await world({ status: "rejected" });
     const second = await staff("owner");

@@ -230,7 +230,7 @@ export async function processOfferDecided(env: OfferEnv, body: unknown): Promise
   }
   const { documentId, decision } = parsed.data;
   const doc = (await env.DB.prepare(
-    "SELECT d.id, d.status, d.title, d.version, d.issuer, d.number_display, d.decision_reason, d.decision_note, c.name AS decided_name FROM documents d LEFT JOIN contacts c ON c.id = d.decided_contact_id WHERE d.id = ?1 AND d.type IN ('proposal', 'estimate')",
+    "SELECT d.id, d.status, d.title, d.version, d.issuer, d.number_display, d.decision_reason, d.decision_note, d.redacted_at, c.name AS decided_name FROM documents d LEFT JOIN contacts c ON c.id = d.decided_contact_id WHERE d.id = ?1 AND d.type IN ('proposal', 'estimate')",
   )
     .bind(documentId)
     .first()) as {
@@ -242,11 +242,18 @@ export async function processOfferDecided(env: OfferEnv, body: unknown): Promise
     number_display: string | null;
     decision_reason: string | null;
     decision_note: string | null;
+    redacted_at: number | null;
     decided_name: string | null;
   } | null;
   if (!doc) {
     logEvent("offer_decided.missing");
     return "missing";
+  }
+  // T7 (review row 3; Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): an offer whose personal details were erased is withdrawn,
+  // so a late or redelivered decision rings no bell and emails no one about it (the anonymise batch deleted its bells).
+  if (doc.redacted_at !== null) {
+    logEvent("offer_decided.ignored", { decision, why: "redacted" });
+    return "ignored";
   }
   // The message names the decision; the row must agree, so a stray message never invents a bell.
   if (doc.status !== (decision === "accepted" ? "accepted" : "rejected")) {
@@ -261,7 +268,7 @@ export async function processOfferDecided(env: OfferEnv, body: unknown): Promise
   await env.DB.prepare(
     `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
      SELECT 'n_' || lower(hex(randomblob(16))), u.id, ?1, 'document', ?2, ?3, ?4 FROM staff_users u
-     WHERE u.status = 'active' AND (u.role = 'owner' OR u.id = ?5)`,
+     WHERE u.status = 'active' AND (u.role = 'owner' OR u.id = ?5) AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.id = ?2 AND d.redacted_at IS NOT NULL)`,
   )
     .bind(`offer.${decision}`, documentId, title, `/documents/${documentId}`, senderId)
     .run();
