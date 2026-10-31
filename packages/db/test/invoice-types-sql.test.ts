@@ -188,9 +188,13 @@ describe("the statements bind exactly the placeholders they use [M5.2]", () => {
     expect((s.postAudit as unknown as Rec[])[0]?.sql).not.toContain("WHERE");
     for (const r of out) expect(r.values.length, r.sql.slice(0, 60)).toBe(highest(r.sql));
     const freeze = (s.main as unknown as Rec[]).at(-1);
-    // amount, proforma and its stamp are the last three values of the freeze
-    // amount, proforma and its stamp, then the FY of the LUT (Q37), are the last four values of the freeze
-    expect(freeze?.values.slice(-4)).toEqual([1180, "p1", 5, "2627"]);
+    // amount, proforma and its stamp, then the FY of the LUT (Q37), then M6.1's payment guards (early check 2, findings 1 and 2: the pending entry, the day
+    // it arrived, the reference and the confirmed-past switch) are the last eight values of the freeze
+    expect(freeze?.values.slice(-8)).toEqual([1180, "p1", 5, "2627", null, "2026-10-27", "UTR1", 0]);
+    expect(freeze?.sql).toContain(
+      "(?34 IS NULL OR EXISTS (SELECT 1 FROM payments pp WHERE pp.id = ?34 AND pp.status = 'pending_verification'",
+    );
+    expect(freeze?.sql).toContain("pr.reference_norm = ?36");
     expect(freeze?.sql).toContain("(?33 IS NULL OR EXISTS");
     expect(freeze?.sql).toContain("total_minor = ?30"); // M5.3: the tail starts at ?30 (?29 is the IMS status)
     expect(freeze?.sql).toContain("p.balance_minor >= ?30");
