@@ -343,14 +343,19 @@ export const SAMPLE_INVOICES: InvoiceSummary[] = [
     currency: "INR",
     parentNumber: null,
     gstEstimate: true,
-    totals: totals({ taxableMinor: 400_000, cgstMinor: 36_000, sgstMinor: 36_000, totalMinor: 472_000 }),
+    totals: totals({
+      taxableMinor: 9_000_000,
+      cgstMinor: 810_000,
+      sgstMinor: 810_000,
+      totalMinor: 10_620_000,
+    }),
     paidMinor: 0,
     creditedMinor: 0,
     balanceMinor: null,
     lines: [
-      line(1, "Advance for the booking form (sample)", 1000, "project", 400_000, 400_000, {
-        cgst: 36_000,
-        sgst: 36_000,
+      line(1, "Advance for the booking form (sample)", 1000, "project", 9_000_000, 9_000_000, {
+        cgst: 810_000,
+        sgst: 810_000,
         rateBp: 1800,
       }),
     ],
@@ -394,6 +399,28 @@ const ofToken = (t: string) =>
           ? SAMPLE_INVOICES.find((x) => x.id === "pro-withdrawn")
           : undefined;
 
+/**
+ * Review L3: a payment request withdrawn while its page is open. It reads as due until its PDF is asked for; that answer is 409 `withdrawn`, and from
+ * then on (until the tab reloads) the page's reload finds it withdrawn. Not in the list.
+ */
+let raceWithdrawn = false;
+const raceDoc = (): InvoiceSummary => {
+  const base = SAMPLE_INVOICES.find((x) => x.id === "pro-withdrawn") as InvoiceSummary;
+  return raceWithdrawn
+    ? { ...base, id: "pro-race", numberDisplay: "TH/PRO/2627/0004" }
+    : finish({
+        ...base,
+        id: "pro-race",
+        numberDisplay: "TH/PRO/2627/0004",
+        status: "issued",
+        withdrawnOn: null,
+        dueDate: day(5),
+        balanceMinor: base.totals.totalMinor,
+        bank: INR_BANK,
+        pdfReady: true,
+      });
+};
+
 type Json = (status: number, body: unknown) => Response;
 type Err = (status: number, code: string) => Response;
 
@@ -409,6 +436,11 @@ export function answerInvoices(
   if (method === "GET" && /^\/invoices(\?|$)/.test(path))
     return h.json(200, { invoices: empty ? [] : SAMPLE_INVOICES.map(itemOf), next: null });
   const m = /^\/invoices\/([^/?]+)(\/pdf)?$/.exec(path);
+  if (m && m[1] === "pro-race" && !empty) {
+    if (!m[2]) return h.json(200, { document: raceDoc() });
+    raceWithdrawn = true;
+    return h.error(409, "withdrawn");
+  }
   if (m) {
     const d = SAMPLE_INVOICES.find((x) => x.id === decodeURIComponent(m[1] ?? ""));
     if (!d || empty) return h.error(404, "not_found");

@@ -3,12 +3,15 @@
 
 import { PROFORMA_PDF_COPY } from "@techaust/pdf/copy";
 import { describe, expect, it } from "vitest";
+import { RequestError } from "../api.ts";
 import { documentWord, INV } from "../copy-invoices.ts";
+import { WITHDRAWN_ZF } from "../copy-zf.ts";
 import {
   clientStatus,
   minusMoneyText,
   moneyText,
   noteReasonLines,
+  pdfFailure,
   qtyText,
   takeInvoiceToken,
   totalsRows,
@@ -181,5 +184,29 @@ describe("the invoice link's token (POR-06)", () => {
     expect(takeInvoiceToken({ pathname: "/o", search: "", hash: `#t=${token}` }, hist, store())).toBeNull();
     expect(takeInvoiceToken({ pathname: "/i", search: "", hash: "#t=short" }, hist, store())).toBeNull();
     expect(takeInvoiceToken({ pathname: "/i", search: "", hash: `#t=${token}` }, hist, null)).toBe(token);
+  });
+});
+
+describe("a PDF download that fails (ADM-INV-10, review L3) [POR-06]", () => {
+  const otherwise = () => "OTHER";
+  it("409 withdrawn: 07-ZF 20, word for word, and the page loads the document again (its withdrawn view)", () => {
+    const r = pdfFailure(new RequestError(409, "withdrawn", "withdrawn"), otherwise);
+    expect(r).toEqual({ text: WITHDRAWN_ZF.pdfRefused, reload: true });
+    expect(r.text).toBe("The PDF isn't available because this payment request was withdrawn.");
+  });
+  it("every other answer keeps the page as it is", () => {
+    expect(pdfFailure(new RequestError(409, "pdf_pending", "x"), otherwise)).toEqual({
+      text: INV.pdfNotReady,
+      reload: false,
+    });
+    expect(pdfFailure(new RequestError(404, "not_found", "x"), otherwise)).toEqual({
+      text: INV.linkEnded,
+      reload: false,
+    });
+    expect(pdfFailure(new RequestError(500, "server", "x"), otherwise)).toEqual({
+      text: "OTHER",
+      reload: false,
+    });
+    expect(pdfFailure(new TypeError("offline"), otherwise)).toEqual({ text: "OTHER", reload: false });
   });
 });
