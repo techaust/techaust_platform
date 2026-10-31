@@ -248,6 +248,23 @@ function udyamCategoryWords(category: string): string {
   return Object.hasOwn(words, category) ? (words[category] ?? category) : category;
 }
 
+/**
+ * T11: the deed of assignment's own fixed words (07-ZJ, docs/07-content-appendix/ZJ-t11-deed.md). Every sentence of the deed is core `deedText`'s (07-ZE). The
+ * Schedule labels are 07-ZJ line 2 (client-facing): `labels` stays null until the lead approves them, so the PDF prints the values without labels and no
+ * "[Placeholder]" mark is ever stored in a write-once PDF.
+ */
+export const APPROVED_07ZJ_PDF_LABELS: boolean = false;
+const DEED_SCHEDULE_LABELS = {
+  deliverables: "Deliverables",
+  location: "Where it was delivered",
+  deliveredDates: "Delivered on",
+  tools: "Pre-existing tools",
+  thirdParty: "Third-party and open-source parts",
+} as const;
+export const DEED_PDF_COPY: { labels: typeof DEED_SCHEDULE_LABELS | null } = {
+  labels: APPROVED_07ZJ_PDF_LABELS ? DEED_SCHEDULE_LABELS : null,
+};
+
 /** The line under the title of a tax or export invoice issued for a payment received against a proforma (07-S §8, Q9; PENDING approval). */
 export const advanceLine = (
   proformaNumber: string,

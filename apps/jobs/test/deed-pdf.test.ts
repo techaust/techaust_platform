@@ -1,6 +1,6 @@
 // T11 in the jobs Worker (run file docs/runs/t11-deed.md, L4, L5; 08-C RB-38(a), RB-21; POR-05): the `pdf.deed` consumer (render once, write-once in DOCS, the
-// row set once, an object already stored adopted, a tampered snapshot refused with the owners' bell, a draft, an erased client and the placeholder layout outside
-// local skipped, the queue routing) and the `deed.signed` expansion (one email per live portal contact, sent once per deed and person). Browser Run is a fake
+// row set once, an object already stored adopted, a tampered snapshot refused with the owners' bell, a draft and an erased client skipped, staging rendered
+// once the designed layout replaced the placeholder, the queue routing) and the `deed.signed` expansion (one email per live portal contact, sent once per deed and person). Browser Run is a fake
 // binding. All names, numbers and amounts are invented test data.
 import { env as realEnv } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
@@ -176,7 +176,7 @@ describe("pdf.deed [T11 L4]", () => {
     ]);
   });
 
-  it("skips a draft, an unknown deed, an erased client's deed, and (while the layout is the placeholder) any environment but local", async () => {
+  it("skips a draft, an unknown deed and an erased client's deed", async () => {
     const b = browser();
     const draft = await mkDeed({ status: "draft" });
     expect(await processDeedPdf(mkEnv(b), msg(draft.id), NOW, clock)).toBe("skipped");
@@ -184,11 +184,17 @@ describe("pdf.deed [T11 L4]", () => {
     const gone = await mkDeed();
     await run("UPDATE clients SET anonymised_at = 9 WHERE id = ?", gone.clientId);
     expect(await processDeedPdf(mkEnv(b), msg(gone.id), NOW, clock)).toBe("skipped");
+    expect(b.pages).toHaveLength(0);
+  });
+
+  it("renders on staging too, now that the layout is the designed one (DEED_LAYOUT_PLACEHOLDER is false)", async () => {
+    const b = browser();
     const staging = await mkDeed();
     expect(await processDeedPdf(mkEnv(b, { ENVIRONMENT: "staging" }), msg(staging.id), NOW, clock)).toBe(
-      "skipped",
+      "rendered",
     );
-    expect(b.pages).toHaveLength(0);
+    expect(b.pages).toHaveLength(1);
+    expect(b.pages[0]).not.toContain("[Placeholder]");
   });
 
   it("the PDF queue routes pdf.deed to its consumer and acknowledges it", async () => {
