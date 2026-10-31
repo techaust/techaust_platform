@@ -42,8 +42,12 @@ export const PDF_WITHDRAWN = {
   message: "The PDF isn't available because this payment request was withdrawn.",
 } as const;
 
-/** A row the predicate above let through with status `void` is a withdrawn proforma. */
-export const isWithdrawnRow = (r: { status: string }) => r.status === "void";
+/**
+ * A withdrawn proforma among the rows the predicate above let through: a void proforma (early check B2: the type is checked too, so a void row of
+ * another type, which the predicate never lets through, could never read as withdrawn).
+ */
+export const isWithdrawnRow = (r: { type: string; status: string }) =>
+  r.type === "proforma" && r.status === "void";
 /** The types that list their credit notes (final sweep P2): a tax invoice and an export invoice. A proforma or a note has none of its own. */
 export const CREDITABLE_TYPES = ["tax_invoice", "export_invoice"] as const;
 const CREDITABLE_SQL = quoted(CREDITABLE_TYPES);
@@ -271,7 +275,7 @@ export function listItemOf(
 }
 
 /** The IST day a withdrawn proforma was withdrawn; null on every other row. */
-const withdrawnOnOf = (r: { status: string; voided_at: number | null }) =>
+const withdrawnOnOf = (r: { type: string; status: string; voided_at: number | null }) =>
   isWithdrawnRow(r) && r.voided_at !== null ? issueDateOf(r.voided_at) : null;
 
 /**
@@ -339,7 +343,8 @@ export function summaryOf(r: SummaryRow, lines: readonly LineRow[], creditNotes:
       igstMinor: l.igst_minor,
       lineTotalMinor: l.line_total_minor,
     })),
-    bank: r.type === "credit_note" ? null : bankOf(r.issuer, r.currency),
+    // ADM-INV-10 (Q3 A, early check A2): no bank block on a withdrawn proforma, so nothing invites a payment. M6/M7.1 handoff: any payment field added here is null for a withdrawn proforma.
+    bank: r.type === "credit_note" || withdrawn ? null : bankOf(r.issuer, r.currency),
     /** ADM-INV-10: never on a withdrawn proforma (the PDF routes answer 409 `withdrawn`). */
     pdfReady: !withdrawn && r.pdf_r2_key !== null,
   };
