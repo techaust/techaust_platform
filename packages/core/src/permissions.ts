@@ -91,6 +91,9 @@ const MATRIX = {
   "invoices.issue": { owner: "step-up", staff: "approval" },
   // M5.1 (Q2, OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?): only the Owner voids an issued invoice, with a fresh code; Staff cannot request a void.
   "invoices.void": { owner: "step-up" },
+  // Withdrawing a proforma the client has received (ADM-INV-10; owner, 2026-10-30, docs/13): the Owner only, with a fresh code, the same as voiding (owner,
+  // 2026-10-31, Q1 of runs/proforma-withdraw). A new docs/04 §9 row.
+  "invoices.withdraw": { owner: "step-up" },
   // M5.2 (LD22, Q9): the tax invoice made for money received against a proforma: the Owner only, with a fresh code. A new docs/04 §9 row.
   "invoices.advance": { owner: "step-up" },
   // M5.3 (Q36, LD46; Researched 2026-10-28, s.34(2) proviso CGST Act (08-C RA-04)): recording the client's answer to a credit note in the GST portal's IMS: the Owner only (no fresh code: it changes no money).
