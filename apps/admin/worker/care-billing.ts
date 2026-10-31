@@ -512,8 +512,12 @@ export async function draftCarePlan(
 /**
  * Issues a care draft the billing job made, with no session. Refuses (an answer, with the owners' bell) when the draft is not eligible or the freeze refuses it; the draft is then left exactly as it
  * was for a person to look at. When it issues, in the SAME batch: the freeze with the number, `issue_result`, the sends to the client's billing contacts with portal access (kind `auto`, written
- * by the Owner who turned the toggle on) with their reminders, and the owners' bell. The PDF is requested after (awaited: the jobs Worker retries a message that fails).
+ * by the Owner who turned the toggle on) with their reminders, and the owners' bell. The PDF is requested after; `enqueuePdf` never throws, so a queue it could not reach is
+ * thrown here (`PDF_QUEUE_UNREACHABLE`), the `care.issue` message is retried, and the retry, finding the invoice issued and its PDF still missing, asks again. Without that the
+ * `auto` sends would wait for the nightly sweep (about a day late) while the bell already says "issued and emailed".
  */
+export const PDF_QUEUE_UNREACHABLE = "care_issue_pdf_queue_unreachable";
+
 export async function issueCareDraft(env: CareEnv, args: { documentId: string }): Promise<IssueCareResult> {
   const db = env.DB;
   const ctx = await readInvoice({ env }, args.documentId, [
@@ -523,12 +527,16 @@ export async function issueCareDraft(env: CareEnv, args: { documentId: string })
   if (!ctx) return { result: "not_found", reasons: [] };
   const d = ctx.bundle.document;
   const care = ctx.extra[0]?.results[0] as CareOf | undefined;
-  if (d.frozen_at !== null || d.status !== "draft")
+  if (d.frozen_at !== null || d.status !== "draft") {
+    // A retry of a message whose PDF request failed after the issue: ask again while the care invoice has no PDF (a repeat ask is harmless: the PDF is written once).
+    if (care && d.created_by === null && d.frozen_at !== null && d.status !== "void" && d.pdf_sha256 === null)
+      await requestPdf(env, d.id);
     return {
       result: "already_issued",
       reasons: [],
       ...(d.number_display ? { number: d.number_display } : {}),
     };
+  }
   if (!care || d.created_by !== null || (d.type !== "tax_invoice" && d.type !== "export_invoice"))
     return { result: "not_found", reasons: [] };
   const contacts = (ctx.extra[1]?.results ?? []) as ContactRow[];
@@ -756,13 +764,18 @@ export async function issueCareDraft(env: CareEnv, args: { documentId: string })
       };
     return refuse(["freeze_refused"]);
   }
-  await enqueuePdf(env, d.id, "send");
+  await requestPdf(env, d.id);
   return {
     result: "issued",
     ...(issued?.number_display ? { number: issued.number_display } : {}),
     reasons: [],
     notEmailed: sentRows === 0,
   };
+}
+
+/** The care invoice's PDF request: a queue that could not be reached is an error, so the `care.issue` message is retried (see `issueCareDraft`). */
+async function requestPdf(env: CareEnv, documentId: string): Promise<void> {
+  if (!(await enqueuePdf(env, documentId, "send"))) throw new Error(PDF_QUEUE_UNREACHABLE);
 }
 
 // The invoice view and its callers import these from here.
