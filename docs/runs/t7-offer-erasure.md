@@ -1,7 +1,7 @@
 # Run: T7, erase a person's data in the frozen copies of never-accepted offers
-Status: designer running (screens for 07-ZG 1–3); early-check fixes merged; all owner questions answered
+Status: designer done and merged; reviewer next (starts after the 15:10 IST usage reset)
 Tier: A (deleting or anonymising data; docs/14 §2)
-Usage: lead claude-opus-5-5/high (cloud session t7-erasure); analyst claude-opus-5-5/high (brief draft; skills: tried `cloudflare:workers-best-practices` and `cloudflare:wrangler`, both "Unknown skill" in the cloud session although model-audit lists them; 5-h 8 % at 12:58 IST); builder claude-opus-5-5/high (agent-ac9b3fbc, layers to the Tier A stop point, 13:25–14:16 IST; same two skills tried, both unknown; 5-h 46 % at 13:46 IST); analyst claude-opus-5-5/high (agent-af81419a, early check; tried the two skills and `cloudflare:workers-profiling`, all unknown); builder claude-opus-5-5/high (agent-ab068a97, early-check fixes, 14:16–14:39 IST; same three skills tried, all unknown; 5-h 68 % at 14:16)
+Usage: lead claude-opus-5-5/high (cloud session t7-erasure); analyst claude-opus-5-5/high (brief draft; skills: tried `cloudflare:workers-best-practices` and `cloudflare:wrangler`, both "Unknown skill" in the cloud session although model-audit lists them; 5-h 8 % at 12:58 IST); builder claude-opus-5-5/high (agent-ac9b3fbc, layers to the Tier A stop point, 13:25–14:16 IST; same two skills tried, both unknown; 5-h 46 % at 13:46 IST); analyst claude-opus-5-5/high (agent-af81419a, early check; tried the two skills and `cloudflare:workers-profiling`, all unknown); builder claude-opus-5-5/high (agent-ab068a97, early-check fixes, 14:16–14:39 IST; same three skills tried, all unknown; 5-h 68 % at 14:16); designer claude-opus-5-5/high (agent-a51b4663, screens, 14:39–14:59 IST; tried `frontend-design:frontend-design`, unknown in the cloud session; 5-h 68 → 89 %)
 
 **Task (main session, 2026-10-31):** 08-C RB-37(a), settled by the lead on the safest reading (2026-10-30, [settle-08c](settle-08c.md)): on an erasure request, erase the person's data in the frozen copy of every proposal or estimate that was **never accepted**; keep the number, status, dates and hash. Accepted offers and every invoice-family document stay untouched (financial records). Due before 13 May 2027 (DPDP core duties).
 
@@ -302,6 +302,9 @@ Merged `fix/t7-offer-erasure-b2` (10db1e94) into the task branch with no conflic
 - Seen, not changed (not T7 screens): an erased offer's Emails row shows "–" and "Not sent" (the API cancels the anonymised contact's unsent send and has no name or email left to show); the Erase or anonymise dialog's title scrolls out of view at the top when its body scrolls (existing `Modal` behaviour with a long contact name).
 - The T6 "Client accepted by email?" box isn't on this branch (integration item, brief §9).
 
+## Integration notes (screens)
+Merged `fix/t7-offer-erasure-d1` (068a976b) with no conflict; screenshots copied to the main checkout's `.logs/shots/t7-*.png` (14 files). The lead checked `t7-erased-1280-light-top.png`: banner, erased PDF panel, only "Revoke links" under Emails.
+
 ## Review
 
 ## Integration notes
@@ -316,6 +319,8 @@ Merged `fix/t7-offer-erasure-b2` (10db1e94) into the task branch with no conflic
 - 2026-10-31, Lead (analyst's draft): T7 design L1–L8 above (per-version scope; what is kept and erased; "Anonymised client" by whole words, values under 2 characters skipped; erase eligibility unchanged, redaction in anonymise mode; cap 10 offers per request; no backfill; never-accepted offers' PDFs deleted; RB-37(a) supersedes the 2026-10-26 "stored snapshot untouched" rows for never-accepted offers only).
 
 ## Follow-ups (for 12)
+- **Cloud setup:** the `playwright` MCP server looks for Chromium 1247 under `/opt/pw-browsers` (which holds 1243), while `cloud-check.sh` reports it in `/opt/ms-playwright`; the T7 designer had to use `@playwright/test` from a scratch script instead. Check the MCP server's `PLAYWRIGHT_BROWSERS_PATH` (main session; setup script change needs the owner's paste).
+- **After an anonymise** (existing, not T7): the offer's Emails row for the anonymised contact shows "–" and "Not sent" though it was sent; the Erase or anonymise dialog's title scrolls away in a long body (existing `Modal`).
 - **F1 (before Phase 7):** the 10-year monthly finance backup exports the whole `documents` table; it must leave out proposals and estimates (or redacted rows), or backups keep erased data.
 - **F2 (M7.4):** the R2 sweep deletes any envelope or PDF a failed delete left behind.
 - **F3 (optional):** mark the person's still-`queued` `email_log` rows skipped in the batch (check the `email_log` triggers first).
