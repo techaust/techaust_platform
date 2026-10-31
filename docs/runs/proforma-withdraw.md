@@ -1,4 +1,4 @@
-Status: analyst drafting the brief
+Status: analyst drafting the brief (started 2026-10-31 12:03 IST)
 Tier: A
 Usage: _(one entry per agent run, from `node tools/model-audit.mjs`)_
 
