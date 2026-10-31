@@ -68,12 +68,16 @@ describe("GET /dashboard: tiles by role [ADM-DASH-01]", () => {
     expect((await call("/dashboard")).status).toBe(401);
   });
 
-  it("the finance tile is live (M5.5b: dashboard-finance.test.ts); collected figures and payments to verify wait for payments (M6)", async () => {
+  it("the finance tile is live (M5.5b: dashboard-finance.test.ts); collected figures and, for the Owner only, payments to check are live (M6.1)", async () => {
     const o = await dash((await sessionFor("owner")).cookie);
     expect(o.tiles.finance.invoiced).toBeDefined();
-    expect(o.tiles.finance.collected).toEqual({ available: false, arrivesWith: "payments" });
-    expect(o.tiles.finance.paymentsToVerify).toEqual({ available: false, arrivesWith: "payments" });
+    expect(o.tiles.finance.collected.available).toBe(true);
+    expect(o.tiles.finance.paymentsToVerify.available).toBe(true);
+    expect(typeof o.tiles.finance.paymentsToVerify.count).toBe("number");
     expect(o.tiles.finance.available).toBeUndefined();
+    const a = await dash((await sessionFor("accountant")).cookie);
+    expect(a.tiles.finance.collected.available).toBe(true);
+    expect(a.tiles.finance.paymentsToVerify).toEqual({ available: false, reason: "owner_only" });
   });
 
   it("no role sees the audit summary, the address or the user agent; Sales sees no finance, care or billing action", async () => {

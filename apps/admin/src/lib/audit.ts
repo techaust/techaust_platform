@@ -138,6 +138,15 @@ export const ACTION_LABELS: Record<string, string> = {
   "invoice.pdf_retry": Y("asked for an invoice's PDF again"),
   "invoice.reminders_pause": Y("paused payment reminders"),
   "invoice.reminders_resume": Y("resumed payment reminders"),
+  // M6.1 payments (07-ZH has no audit words: marked until the owner approves them).
+  "invoice.realisation_extend": Y("recorded the bank's extension of a realisation date"),
+  "payment.record": Y("recorded a payment"),
+  "payment.verify": Y("checked a payment"),
+  "payment.withdraw": Y("withdrew a payment"),
+  "payment.proof": Y("attached a payment's proof"),
+  "payment.tds_certificate": Y("recorded a TDS certificate"),
+  "payment.credit_apply": Y("used a client's credit on an invoice"),
+  "payment.credit_release": Y("moved an invoice's excess to the client's credit"),
   "care_invoice.draft": Y("drafted a care plan invoice"),
   "care_invoice.auto_issue_refused": Y("could not issue a care plan invoice automatically"),
 };
@@ -167,6 +176,7 @@ export const ACTION_GROUPS: { label: string; prefixes: readonly string[] }[] = [
   { label: "Templates", prefixes: ["template."] },
   { label: "Proposals and estimates", prefixes: ["document.", "offer_link."] },
   { label: "Invoices", prefixes: ["invoice.", "care_invoice."] },
+  { label: "Payments", prefixes: ["payment."] },
   { label: "Reports", prefixes: ["report."] },
   { label: "Approvals", prefixes: ["approval."] },
   { label: "Client portal", prefixes: ["portal.", "doc_token."] },
@@ -206,6 +216,7 @@ export const ENTITY_LABELS: Record<string, string> = {
   time_log: "Time",
   document: "Documents",
   approval: "Approvals",
+  payment: "Payments",
   report: "Reports",
   audit_log: "Audit log",
 };

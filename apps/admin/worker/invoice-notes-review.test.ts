@@ -326,12 +326,13 @@ describe("a debit note's save and the preview (optional items)", () => {
 });
 
 describe("the finance audit list holds the money invoice actions only (the lead's answer, 2026-10-27)", () => {
-  it("is exactly issue, void, advance issue and the IMS answer; the rest are ordinary work", () => {
+  it("is exactly issue, void, advance issue, the IMS answer and (M6.1) the bank's FEMA extension; the rest are ordinary work", () => {
     const list = FINANCE_AUDIT_ACTIONS as readonly string[];
     expect(list.filter((a) => a.startsWith("invoice.")).sort()).toEqual([
       "invoice.advance_issue",
       "invoice.ims_status",
       "invoice.issue",
+      "invoice.realisation_extend",
       "invoice.void",
     ]);
     for (const a of ["create", "update", "delete", "note_create", "service_completed", "pdf_retry"])

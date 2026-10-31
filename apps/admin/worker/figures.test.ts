@@ -113,11 +113,14 @@ describe("GET /clients/:id/finance: the Overview figures [ADM-CLI-03]", () => {
           // the invoice due in May (after its credit note) and the debit note due in July; the invoice due today is not overdue
           overdueMinor: overdue.computed.totalMinor - cn.computed.totalMinor + dn.computed.totalMinor,
           overdueCount: 2,
+          // M6.1 (07-ZH line 17): collected is the confirmed payments (the advance receipt, back-filled as a payment); nothing is held as credit.
+          tdsMinor: 0,
+          excessMinor: 0,
+          collectedMinor: adv.computed.totalMinor,
+          creditMinor: 0,
         },
       ],
     });
-    // "collected" waits for payments (M6): not sent at all, never a 0
-    expect(JSON.stringify(f)).not.toMatch(/collected|paid/i);
   });
 
   it("twin of the statement: billed is its debit column, credited its credit notes, the balance its closing balance today", async () => {
@@ -149,6 +152,10 @@ describe("GET /clients/:id/finance: the Overview figures [ADM-CLI-03]", () => {
         balanceMinor: a.computed.totalMinor + b.computed.totalMinor,
         overdueMinor: a.computed.totalMinor,
         overdueCount: 1,
+        tdsMinor: 0,
+        excessMinor: 0,
+        collectedMinor: 0,
+        creditMinor: 0,
       },
     ]);
     const s = await statement(o.cookie, c, "USD");
@@ -248,10 +255,13 @@ describe("GET /projects/:id: the billed figure [ADM-PRJ-05]", () => {
           currency: "INR",
           billedMinor: inv.computed.totalMinor + dn.computed.totalMinor,
           creditedMinor: cn.computed.totalMinor,
+          // M6.1 (07-ZH line 17 "Paid"): nothing paid on this project yet.
+          paidMinor: 0,
+          tdsMinor: 0,
         },
       ],
     });
-    // "paid" waits for payments (M6): not sent at all
+    // the billed figure carries paid; no separate key
     expect(Object.keys(res.figures).sort()).toEqual(["billed", "hours"]);
   });
 

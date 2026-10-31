@@ -19,7 +19,9 @@ const PINNED_MS = Date.parse("2025-09-01T06:30:00Z"); // 12:00 IST
 const NOW = String(PINNED_MS);
 /** The same instant as SQL text (UTC), for the fixture's `date(…)` calls. */
 const SQL_NOW = "'2025-09-01 06:30:00'";
-const ROWS_READ_LIMIT = 6_300;
+// M6.1: +20 for the three ledger reads of the finance tile (collected this month and this FY through `payments_confirmed`, the Owner's pending count
+// through `payments_pending`); on this fixture they read a handful of rows each.
+const ROWS_READ_LIMIT = 6_320;
 const WORST_CASE_LIMIT = 8_000;
 /** Set to true to print the per-statement numbers (the test then fails on purpose, which is the only way vitest shows them). */
 const SHOW_REPORT = false;

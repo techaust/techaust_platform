@@ -148,8 +148,9 @@ describe("every ROUTES row has one owner", () => {
 
   it("the table has front, API and finance rows, and no row is two of them", () => {
     expect(FRONT_ROWS.length).toBe(24);
-    expect(FINANCE_ROWS.length).toBe(30);
-    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 30);
+    // M6.1 (added on purpose): 15 payment rows (payments, a client's credit, an invoice's panel, credit release, FEMA extensions, the payments register).
+    expect(FINANCE_ROWS.length).toBe(45);
+    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 45);
     expect(new Set([...FRONT_ROWS, ...API_ROWS, ...FINANCE_ROWS].map(key)).size).toBe(ROUTES.length);
   });
 
@@ -160,9 +161,9 @@ describe("every ROUTES row has one owner", () => {
     for (const r of FORWARDED_ROWS) expect(r.path).not.toMatch(/^\/api\/v1\/(health|auth|users)(\/|$)/);
   });
 
-  it("the finance rows are invoices, a client's invoices and statement, reports, approvals and the dashboard (Plan 1)", () => {
+  it("the finance rows are invoices, a client's invoices, statement and credit, reports, approvals, the dashboard and (M6.1) payments (Plan 1)", () => {
     const FINANCE =
-      /^\/api\/v1\/(invoices(\/|$)|clients\/:id\/invoices$|clients\/:id\/statement(\/|$)|reports\/|approvals(\/|$)|dashboard$)/;
+      /^\/api\/v1\/(invoices(\/|$)|clients\/:id\/invoices$|clients\/:id\/statement(\/|$)|clients\/:id\/credit(\/|$)|payments(\/|$)|reports\/|approvals(\/|$)|dashboard$)/;
     for (const r of FINANCE_ROWS) expect(r.path, key(r)).toMatch(FINANCE);
     // The other way: no API row matches, so a finance route can't be left behind in the API Worker.
     for (const r of API_ROWS) expect(r.path, key(r)).not.toMatch(FINANCE);

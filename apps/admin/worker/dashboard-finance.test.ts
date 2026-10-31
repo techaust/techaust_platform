@@ -3,6 +3,7 @@
 import { env } from "cloudflare:workers";
 import { addDays, fyOfDate, parseIsoDate, toIsoDate } from "@techaust/core/dates";
 import { issueDateOf } from "@techaust/core/invoices";
+import { COLLECTED_SQL, PENDING_PAYMENTS_COUNT_SQL } from "@techaust/db/ledger";
 import {
   EXPORT_NEXT_SQL,
   EXPORT_STAGE_COUNTS_SQL,
@@ -177,8 +178,21 @@ describe("the finance figures against a known fixture", () => {
       [feo.id, "fema_overdue"],
     ]);
     expect(f.exports.next.some((r: J) => r.id === fresh.id)).toBe(false);
-    expect(f.collected).toEqual({ available: false, arrivesWith: "payments" });
-    expect(f.paymentsToVerify).toEqual({ available: false, arrivesWith: "payments" });
+    // M6.1 (07-ZH line 16): live from the ledger, the twin of `COLLECTED_SQL` and `PENDING_PAYMENTS_COUNT_SQL` on the same database.
+    const fyTo = `${fy.startYear + 1}-03-31`;
+    const collected = async (from: string, to: string) =>
+      (
+        await env.DB.prepare(COLLECTED_SQL)
+          .bind(from, to)
+          .all<{ currency: string; collected: number; n: number }>()
+      ).results.map((r) => ({ currency: r.currency, collectedMinor: r.collected, count: r.n }));
+    expect(f.collected).toEqual({
+      available: true,
+      month: await collected(monthFrom, today),
+      fy: await collected(fyFrom, fyTo),
+    });
+    const pending = await env.DB.prepare(PENDING_PAYMENTS_COUNT_SQL).first<{ n: number }>();
+    expect(f.paymentsToVerify).toEqual({ available: true, count: pending?.n ?? 0 });
   });
 
   it("overdue flips at IST midnight: the due date is the last day to pay", async () => {
