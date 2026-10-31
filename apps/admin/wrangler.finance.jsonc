@@ -1,0 +1,96 @@
+{
+  // The admin finance Worker (M6.1 stage A, ADM-PAY-01; the third admin Worker, docs/runs/m6.1-ledger-payments.md Plan 1): the ROUTES rows
+  // marked `on: "finance"` (invoices and notes, a client's invoices and statement, reports, approvals, the dashboard) and the `BillingJobs`
+  // entrypoint the jobs Worker binds as ADMIN_JOBS. It has NO public URL at any level (no workers.dev, no routes, no preview URLs): it is
+  // reachable only through the front's `ADMIN_FINANCE` service binding and the jobs Worker's ADMIN_JOBS, and it re-authenticates every
+  // request from the session cookie the front forwards untouched. It holds no secrets and no sign-in code. Bindings use the front's names
+  // and ids in each scope; CI guard: scripts/check-worker-config.mjs. Production has vars only until Phase 7 (owner approval).
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "techaust-platform-admin-finance",
+  "main": "worker/finance.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": true, "redact_query_string": true },
+  "vars": {
+    "ENVIRONMENT": "local",
+    "PAYMENTS_LIVE_ALLOWED": "false",
+    "LEAD_PURGE_MODE": "dry_run"
+  },
+  "queues": {
+    "producers": [
+      { "binding": "EMAIL_QUEUE", "queue": "techaust-local-email" },
+      { "binding": "PDF_QUEUE", "queue": "techaust-local-pdf" }
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "techaust-local",
+      "database_id": "local",
+      "migrations_dir": "../../packages/db/migrations"
+    }
+  ],
+  "r2_buckets": [
+    { "binding": "FILES", "bucket_name": "techaust-local-files" },
+    { "binding": "DOCS", "bucket_name": "techaust-local-docs" }
+  ],
+  "env": {
+    "staging": {
+      "name": "techaust-platform-admin-finance-staging",
+      // Workers Traces on STAGING only (full audit A6 9, owner's yes 2026-10-30); production keeps its own block below, without traces.
+      // Logs stay as before: on, invocation logs on, not sampled (the CPU benchmarks need every request, docs/13 2026-10-22).
+      // Traces: 10 % of invocations (head sampling). Free plan, Cloudflare docs read 2026-10-30: traces are kept 7 days; from
+      // 2026-12-01 logs and traces share the account's Observability allowance of 0.5 GB ingested a day, and ingestion stops for the
+      // rest of the day when it is used up. Same rate on every staging Worker (scripts/check-worker-config.mjs); headroom in
+      // docs/runbooks/cpu-baseline.md ("Traces").
+      "observability": {
+        "enabled": true,
+        "redact_query_string": true,
+        "logs": { "enabled": true, "invocation_logs": true },
+        "traces": { "enabled": true, "head_sampling_rate": 0.1 }
+      },
+      "workers_dev": false,
+      "preview_urls": false,
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "PAYMENTS_LIVE_ALLOWED": "false",
+        "LEAD_PURGE_MODE": "dry_run"
+      },
+      "queues": {
+        "producers": [
+          { "binding": "EMAIL_QUEUE", "queue": "techaust-staging-email" },
+          { "binding": "PDF_QUEUE", "queue": "techaust-staging-pdf" }
+        ]
+      },
+      "r2_buckets": [
+        { "binding": "FILES", "bucket_name": "techaust-staging-files" },
+        { "binding": "DOCS", "bucket_name": "techaust-staging-docs" }
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "techaust-staging",
+          "database_id": "879c63dd-fedd-4710-9b13-21d8804879a9",
+          "migrations_dir": "../../packages/db/migrations"
+        }
+      ]
+    },
+    "production": {
+      "name": "techaust-platform-admin-finance",
+      "workers_dev": false,
+      "preview_urls": false,
+      "vars": {
+        "ENVIRONMENT": "production",
+        "PAYMENTS_LIVE_ALLOWED": "false"
+      },
+      // As the front: NO invocation logs in production from day one. Console logs stay on.
+      "observability": {
+        "enabled": true,
+        "redact_query_string": true,
+        "logs": { "enabled": true, "invocation_logs": false }
+      }
+    }
+  }
+}

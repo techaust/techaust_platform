@@ -34,20 +34,40 @@ const SIGN_IN_TABLES = {
   re: /auth_attempts|totp_secret_enc|pw_hmac|PASSWORD_PEPPER|SALT_PEPPER|TOTP_ENC_KEY|SESSION_HMAC_KEY|TURNSTILE_SECRET/,
 };
 
+// The invoice chain lives in the admin finance Worker only (M6.1 stage A, ADM-PAY-01; docs/runs/m6.1-ledger-payments.md Plan 1). These are error lines
+// of apps/admin/worker/invoice-model.ts, which every invoice route imports; string contents survive minification, so an API bundle that holds them has
+// imported the invoice code again (an import cut undone: `document-warm.ts` naming approvals.ts, or `settings.ts` naming note-model.ts).
+export const INVOICE_CODE = {
+  name: "the invoice code (the admin finance Worker only, M6.1)",
+  re: /This kind of invoice can't be issued yet|The owner issues an invoice directly/,
+};
+
 export const BUDGETS = {
   // M5.0 (docs/13, 2026-10-27): the admin Worker is split in two. The front serves the SPA, sign-in, the member's account and staff
   // management and forwards every other route; measured 2026-10-27 at about 97 KB (esbuild), ceiling 150,000. The API Worker answers
-  // the other routes (about 384 KB); its ceiling 800,000 leaves room for M5 to M7. A third Worker is planned when it passes 650,000
-  // bytes or its cold reading passes 7 ms.
+  // the other routes (about 384 KB); its ceiling 800,000 leaves room for M5 to M7. A third Worker was planned for when it passed 650,000
+  // bytes or its cold reading 7 ms; M6.1 crossed that line, so the third Worker (finance) is built in M6.1 stage A (adminFinance below).
   admin: {
     file: "apps/admin/dist/techaust_platform_admin/index.js",
     maxBytes: 150_000,
     maxStartupMs: 200,
     forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS, GST_CORE],
   },
+  // M6.1 stage A: the invoice, statement, report, approval-queue and dashboard routes moved to the finance Worker, so the API bundle
+  // must not hold the invoice code (INVOICE_CODE).
   adminApi: {
     file: "apps/admin/dist/techaust_platform_admin_api/index.js",
     maxBytes: 800_000,
+    maxStartupMs: 200,
+    forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS, SIGN_IN_TABLES, GST_CORE, INVOICE_CODE],
+  },
+  // M6.1 stage A (ADM-PAY-01): the third admin Worker, the invoice chain and the BillingJobs entrypoint. Ceiling 800,000 as the API's; its plan line
+  // is 650,000 bytes (`planBytes`: a fourth Worker or another cut is planned when it passes that, or when its cold reading passes 7 ms; the build
+  // prints a note then, it does not fail).
+  adminFinance: {
+    file: "apps/admin/dist/techaust_platform_admin_finance/index.js",
+    maxBytes: 800_000,
+    planBytes: 650_000,
     maxStartupMs: 200,
     forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS, SIGN_IN_TABLES, GST_CORE],
   },
@@ -130,6 +150,12 @@ export function measureStartup(code, runs = 7) {
   return Math.min(...times);
 }
 
+/** The note a bundle past its plan line gets (a budget with `planBytes`), else null. A note, never a failure: the ceiling is `maxBytes`. */
+export function planNote(size, budget) {
+  if (budget.planBytes === undefined || size <= budget.planBytes) return null;
+  return `the Worker bundle is ${size} bytes, past its plan line of ${budget.planBytes}: plan the next split (docs/runbooks/cpu-baseline.md)`;
+}
+
 /** Problems with a measured bundle against its budget (empty when it passes). */
 export function checkBundle({ size, text, startupMs }, budget) {
   const problems = [];
@@ -170,6 +196,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     console.error(`${app} bundle check failed:\n- ${problems.join("\n- ")}`);
     process.exit(1);
   }
+  const note = planNote(size, budget);
+  if (note) console.warn(`${app} bundle note: ${note}`);
   console.log(
     `${app} bundle ok: ${size} bytes (limit ${budget.maxBytes}), startup ${startupMs.toFixed(1)} ms fastest of 7 (limit ${budget.maxStartupMs}), no forbidden modules`,
   );

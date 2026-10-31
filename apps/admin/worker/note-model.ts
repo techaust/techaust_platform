@@ -141,7 +141,8 @@ export const CREDIT_DATA_DAMAGED = e(
   "credit_shape_mismatch",
   "This credit note doesn't match its invoice any more. Start again from the invoice.",
 );
-export const ANNUAL_RETURN_FUTURE = e("annual_return_future", "The filing date can't be in the future.");
+// In note-consts.ts (M6.1 stage A), so Settings in the admin API Worker can use it without this module.
+export { ANNUAL_RETURN_FUTURE } from "./note-consts.ts";
 
 // ---- what is read about the invoice a note is against -------------------------------------------------------------------------------------------
 

@@ -16,11 +16,12 @@ import { siteKeyForApp } from "../../scripts/turnstile-site-key.mjs";
 export default defineConfig(async ({ command }) => ({
   define: { __TURNSTILE_SITE_KEY__: JSON.stringify(siteKeyForApp(new URL("./", import.meta.url))) },
   // M5.0: the API Worker runs next to the front in dev and is built with it (`auxiliaryWorkers`); the front reaches it through ADMIN_API.
+  // M6.1 stage A: the finance Worker likewise, reached through ADMIN_FINANCE.
   plugins: [
     react(),
     cloudflare({
       persistState: { path: "../../.wrangler/state" },
-      auxiliaryWorkers: [{ configPath: "./wrangler.api.jsonc" }],
+      auxiliaryWorkers: [{ configPath: "./wrangler.api.jsonc" }, { configPath: "./wrangler.finance.jsonc" }],
       inspectorPort: command === "serve" ? await freeInspectorPort("admin", portOffset()) : undefined,
     }),
   ],
@@ -30,5 +31,6 @@ export default defineConfig(async ({ command }) => ({
     client: { build: { assetsInlineLimit: 0 } },
     techaust_platform_admin: { build: { minify: true } },
     techaust_platform_admin_api: { build: { minify: true } },
+    techaust_platform_admin_finance: { build: { minify: true } },
   },
 }));

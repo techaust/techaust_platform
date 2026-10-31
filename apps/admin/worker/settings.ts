@@ -75,7 +75,7 @@ import {
 import { sampleData, TEMPLATE_NAMES } from "./email-fixtures.ts";
 import { param } from "./http.ts";
 import { queueEmail } from "./mail.ts";
-import { ANNUAL_RETURN_FUTURE } from "./note-model.ts";
+import { ANNUAL_RETURN_FUTURE } from "./note-consts.ts";
 
 /** 07-S §3: the hint of a statutory checklist item. */
 const CHECKLIST_STATUTORY = {

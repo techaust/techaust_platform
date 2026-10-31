@@ -12,9 +12,12 @@ export default defineConfig(async () => ({
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
-        // The pool has no API Worker: the binding is a stub that answers 502. The existing tests call the combined app (worker/test-app.ts)
-        // and split.test.ts passes its own stubs through `env`.
-        serviceBindings: { ADMIN_API: () => new Response("no api worker in the test pool", { status: 502 }) },
+        // The pool has no API or finance Worker: each binding is a stub that answers 502. The existing tests call the combined app
+        // (worker/test-app.ts) and split.test.ts passes its own stubs through `env`.
+        serviceBindings: {
+          ADMIN_API: () => new Response("no api worker in the test pool", { status: 502 }),
+          ADMIN_FINANCE: () => new Response("no finance worker in the test pool", { status: 502 }),
+        },
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations(join(import.meta.dirname, "../../packages/db/migrations")),
           PASSWORD_PEPPER: TEST_KEY(1),

@@ -1,4 +1,4 @@
-// A change made by the system, with nobody signed in (M5.4, LD57, LD58): the recurring care invoices run in the admin API Worker behind the `BillingJobs` entrypoint, called by
+// A change made by the system, with nobody signed in (M5.4, LD57, LD58): the recurring care invoices run in the admin finance Worker (the admin API Worker before M6.1) behind the `BillingJobs` entrypoint, called by
 // the jobs Worker. `mutateSystem` is `mutate` (context.ts) without a request: ONE D1 batch = the conditional statements, then an audit row written only if the last of them
 // changed a row (actor type `system`, actor NULL, no role, no address), then the side statements (each guarded on that audit row). There is no access-log row: it records a
 // request, and there is none. The audit row is the record of what the system did and why (ids, codes, totals; never a name or an address).

@@ -22,7 +22,7 @@ import { checkRecipientIds, invalidRecipients } from "./document-links.ts";
 import { customLinesOf } from "./document-view.ts";
 import { readContext } from "./documents.ts";
 import { body, idParam, param, refusedWith, STALE_VERSION } from "./http.ts";
-import { SERIES_FULL } from "./invoice-model.ts";
+import { SERIES_FULL } from "./invoice-consts.ts";
 import {
   ALREADY_ACCEPTED,
   APPROVAL_REQUIRED,

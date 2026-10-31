@@ -20,7 +20,7 @@ type Opts = {
   audit?: string;
   log?: boolean | "refusals";
   body?: "upload" | "large" | "document";
-  on?: "front";
+  on?: "front" | "finance";
 };
 const R = (
   method: RouteDef["method"],
@@ -31,6 +31,9 @@ const R = (
 
 /** A row the front Worker answers itself (sign-in and staff management hold the secrets; M5.0). */
 const F = (...a: Parameters<typeof R>): RouteDef => R(a[0], a[1], a[2], { ...a[3], on: "front" });
+
+/** A row the finance Worker answers (M6.1 stage A, ADM-PAY-01): invoices and notes, a client's invoices and statement, reports, approvals, the dashboard. */
+const X = (...a: Parameters<typeof R>): RouteDef => R(a[0], a[1], a[2], { ...a[3], on: "finance" });
 
 export const ROUTES: readonly RouteDef[] = [
   F("GET", "/health", "public", { log: false }),
@@ -98,10 +101,10 @@ export const ROUTES: readonly RouteDef[] = [
   R("PATCH", "/clients/:id", "clients.write", { audit: "client.update" }),
   R("PATCH", "/clients/:id/billing", "clients.finance.write", { audit: "client.billing_update" }),
   R("GET", "/clients/:id/finance", "clients.finance.read"),
-  R("GET", "/clients/:id/statement", "clients.finance.read"),
+  X("GET", "/clients/:id/statement", "clients.finance.read"),
   // M5.5b (LD79): the statement as a PDF made on request (a cache row, then the jobs Worker) and streamed back. Anyone who sees the finance tab (Q59).
-  R("POST", "/clients/:id/statement/pdf", "clients.finance.read", { audit: "client.statement_pdf" }),
-  R("GET", "/clients/:id/statement/pdf/:sid", "clients.finance.read"),
+  X("POST", "/clients/:id/statement/pdf", "clients.finance.read", { audit: "client.statement_pdf" }),
+  X("GET", "/clients/:id/statement/pdf/:sid", "clients.finance.read"),
   R("GET", "/clients/:id/activity", "clients.read"),
   R("GET", "/clients/:id/contacts", "clients.read"),
   R("POST", "/clients/:id/contacts", "clients.write", { audit: "contact.create" }),
@@ -151,12 +154,12 @@ export const ROUTES: readonly RouteDef[] = [
   R("POST", "/time", "time.writeOwn", { audit: "time.create" }),
   R("PATCH", "/time/:id", "time.writeOwn", { audit: "time.update" }),
   R("DELETE", "/time/:id", "time.writeOwn", { audit: "time.delete" }),
-  R("GET", "/dashboard", "dashboard.read"),
+  X("GET", "/dashboard", "dashboard.read"),
   // Reports (M5.5b, LD71, LD74): the register page of the GST and CA exports (a fresh step-up on every page: `exports.gst`; one audit row per page), the EDF month and the
   // export realisation list (Owner and Accountant, `reports.finance`, Q56).
-  R("GET", "/reports/registers", "exports.gst", { audit: "report.export" }),
-  R("GET", "/reports/edf", "reports.finance"),
-  R("GET", "/reports/realisation", "reports.finance"),
+  X("GET", "/reports/registers", "exports.gst", { audit: "report.export" }),
+  X("GET", "/reports/edf", "reports.finance"),
+  X("GET", "/reports/realisation", "reports.finance"),
   // Catalogue, templates and publishing (M4.1, ADM-CAT-01..05). Static paths (`snapshots`, `publish`) are declared before `:id`.
   R("GET", "/catalogue", "catalogue.read"),
   R("GET", "/catalogue/snapshots", "catalogue.read"),
@@ -197,34 +200,34 @@ export const ROUTES: readonly RouteDef[] = [
   // Invoices (M5.1, ADM-INV-01..04, -07, ADM-PRJ-02, LD1): their own prefix, because the permissions differ from proposals and a row has one action.
   // Static paths come before `/:id`. Only the Owner issues (a fresh code at the guard); a Staff member's issue is a request (`approval.request`);
   // voiding is `invoices.void` (Owner, step-up). Sales reads no invoice at all. A save is up to 96 KB (`body: "document"`).
-  R("GET", "/invoices", "invoices.read"),
-  R("POST", "/invoices", "invoices.draft", { audit: "invoice.create" }),
-  R("GET", "/invoices/:id", "invoices.read"),
-  R("PATCH", "/invoices/:id", "invoices.draft", { audit: "invoice.update", body: "document" }),
-  R("DELETE", "/invoices/:id", "invoices.draft", { audit: "invoice.delete" }),
-  R("POST", "/invoices/:id/issue", "invoices.issue", { audit: "invoice.issue" }),
-  R("POST", "/invoices/:id/issue-request", "invoices.draft", { audit: "approval.request" }),
-  R("POST", "/invoices/:id/void", "invoices.void", { audit: "invoice.void" }),
+  X("GET", "/invoices", "invoices.read"),
+  X("POST", "/invoices", "invoices.draft", { audit: "invoice.create" }),
+  X("GET", "/invoices/:id", "invoices.read"),
+  X("PATCH", "/invoices/:id", "invoices.draft", { audit: "invoice.update", body: "document" }),
+  X("DELETE", "/invoices/:id", "invoices.draft", { audit: "invoice.delete" }),
+  X("POST", "/invoices/:id/issue", "invoices.issue", { audit: "invoice.issue" }),
+  X("POST", "/invoices/:id/issue-request", "invoices.draft", { audit: "approval.request" }),
+  X("POST", "/invoices/:id/void", "invoices.void", { audit: "invoice.void" }),
   // M5.2: the day the service was completed (set once), and the tax invoice for money received against a proforma (Q9: Owner only, with a fresh code).
-  R("POST", "/invoices/:id/service-completed", "invoices.draft", { audit: "invoice.service_completed" }),
-  R("POST", "/invoices/:id/advance-invoice", "invoices.advance", { audit: "invoice.advance_issue" }),
+  X("POST", "/invoices/:id/service-completed", "invoices.draft", { audit: "invoice.service_completed" }),
+  X("POST", "/invoices/:id/advance-invoice", "invoices.advance", { audit: "invoice.advance_issue" }),
   // M5.3 (ADM-INV-11): the draft of a credit or debit note against an issued invoice (a Staff member drafts and asks, the Owner issues: the same issue, request and approve
   // routes as an invoice), and the client's IMS answer on a credit note (Q36: the Owner, no fresh code: it changes no money).
-  R("POST", "/invoices/:id/credit-note", "invoices.draft", { audit: "invoice.note_create" }),
-  R("POST", "/invoices/:id/debit-note", "invoices.draft", { audit: "invoice.note_create" }),
-  R("POST", "/invoices/:id/ims-status", "invoices.ims", { audit: "invoice.ims_status" }),
-  R("GET", "/invoices/:id/pdf", "invoices.read"),
-  R("GET", "/invoices/:id/pdf/supplier", "invoices.supplierCopy"),
-  R("POST", "/invoices/:id/pdf/retry", "invoices.draft", { audit: "invoice.pdf_retry" }),
+  X("POST", "/invoices/:id/credit-note", "invoices.draft", { audit: "invoice.note_create" }),
+  X("POST", "/invoices/:id/debit-note", "invoices.draft", { audit: "invoice.note_create" }),
+  X("POST", "/invoices/:id/ims-status", "invoices.ims", { audit: "invoice.ims_status" }),
+  X("GET", "/invoices/:id/pdf", "invoices.read"),
+  X("GET", "/invoices/:id/pdf/supplier", "invoices.supplierCopy"),
+  X("POST", "/invoices/:id/pdf/retry", "invoices.draft", { audit: "invoice.pdf_retry" }),
   // M5.4 (ADM-INV-15, ADM-INV-13, POR-06): send an issued invoice (Owner and Staff, Q42), revoke its links, pause or resume its reminders.
-  R("POST", "/invoices/:id/send", "invoices.send", { audit: "invoice.send" }),
-  R("POST", "/invoices/:id/links/revoke", "invoices.send", { audit: "invoice.links_revoke" }),
-  R("POST", "/invoices/:id/reminders/pause", "invoices.send", { audit: "invoice.reminders_pause" }),
-  R("POST", "/invoices/:id/reminders/resume", "invoices.send", { audit: "invoice.reminders_resume" }),
-  R("GET", "/clients/:id/invoices", "invoices.read"),
+  X("POST", "/invoices/:id/send", "invoices.send", { audit: "invoice.send" }),
+  X("POST", "/invoices/:id/links/revoke", "invoices.send", { audit: "invoice.links_revoke" }),
+  X("POST", "/invoices/:id/reminders/pause", "invoices.send", { audit: "invoice.reminders_pause" }),
+  X("POST", "/invoices/:id/reminders/resume", "invoices.send", { audit: "invoice.reminders_resume" }),
+  X("GET", "/clients/:id/invoices", "invoices.read"),
   // The owner's approval queue. Staff and Sales read only their own requests (the handler filters); only the owner decides.
-  R("GET", "/approvals", "approvals.readOwn"),
-  R("POST", "/approvals/:id/decide", "approvals.decide", { audit: "approval.decide" }),
+  X("GET", "/approvals", "approvals.readOwn"),
+  X("POST", "/approvals/:id/decide", "approvals.decide", { audit: "approval.decide" }),
   // The bell, the global search and the audit viewer (M3.1, ADM-G-09, ADM-G-05, ADM-AUD-02).
   R("GET", "/notifications", "notifications.own"),
   R("POST", "/notifications/read-all", "notifications.own", { audit: "notification.read_all" }),

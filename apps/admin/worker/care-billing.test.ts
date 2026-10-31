@@ -5,7 +5,7 @@ import { CARE_LINE_WORDS, type CareLineWords } from "@techaust/core/care-billing
 import { toIst } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { BillingJobs } from "./api.ts";
+import { BillingJobs } from "./finance.ts";
 import { draftCarePlan, issueCareDraft } from "./care-billing.ts";
 import { mkPlan } from "./test-care.ts";
 import { mkItem } from "./test-catalogue.ts";

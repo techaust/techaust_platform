@@ -62,7 +62,7 @@ import {
   STALE_VERSION,
   text,
 } from "./http.ts";
-import { INVOICE_TYPES_SQL } from "./invoice-model.ts";
+import { INVOICE_TYPES_SQL } from "./invoice-consts.ts";
 import { type Direction, decodeCursor, encodeCursor, keysetSql, PREFIX_END, pageOf } from "./keyset.ts";
 
 // ---- errors ----------------------------------------------------------------------------------------------------------
