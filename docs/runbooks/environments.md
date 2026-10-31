@@ -39,6 +39,8 @@ Deploys happen automatically when a PR is merged to `main` (`.github/workflows/d
 4. With the token, one Worker per step, in this order: **the admin API** (`deploy:staging:api`), **the admin finance Worker** (`deploy:staging:finance`, from M6.1), **the admin front** (`deploy:staging:front`), **the portal**, **jobs** (`wrangler deploy --env staging`; it bundles its own code) and **the website**. A failed step stops the job, so nothing deploys after a failed Worker. Each deploy script first runs `scripts/check-staging-build.mjs`: a plain `vite build` names the **production** Worker (the top level of `wrangler.jsonc`), so a non-staging build is refused before `wrangler deploy` runs; for the website it checks that the pages carry env.staging's Turnstile key.
 5. After each app (the admin's three Workers together, then the portal, jobs and the website): its health check (below). Before the first deploy, the job checks the deploy-check token is set, so a missing token stops it before anything is uploaded.
 
+If a staging deploy stops between step 1 (admin API) and step 5 (jobs), re-run it: care billing's calls fail until jobs is deployed against the finance Worker. (The steps are the workflow's deploy steps "1 of 6" to "5 of 6" in item 4, not the items of this list.)
+
 Limit of the step split (A1 5): a step without the token can't read it, but steps share the runner, so a malicious package in a build step could still leave files or `GITHUB_ENV` entries behind for a later step. The stronger form (a separate deploy job that receives the built files and installs only wrangler) is a possible follow-up, not built.
 
 ### Health checks after a deploy (A6 8)
