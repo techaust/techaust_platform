@@ -1,5 +1,7 @@
 // The portal's offer helpers [POR-04, POR-05, POR-06, ADM-PROP-08, ADM-PROP-10]: the offer link's token (taken from the fragment, never
 // left in the address), the list's split, the 07-N words of every API error, and the API client's shapes (the token only in a body).
+
+import { DECLINE_REASONS } from "@techaust/core/offers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fileNameOf, type OfferItem, offerLinkApi, offersApi, RequestError } from "../api.ts";
 import { COPY } from "../copy.ts";
@@ -188,5 +190,18 @@ describe("the API client", () => {
     );
     const err = await offerLinkApi.pdf(TOKEN, "doc-1").catch((x: unknown) => x);
     expect((err as RequestError).code).toBe("pdf_pending");
+  });
+});
+
+describe("the decline reasons' words (07-N §3; test-hardening 6)", () => {
+  it("are core's list, word for word as before, in the order the dialog lists them", () => {
+    expect(N.reasons).toEqual({
+      price: "The price doesn't fit our budget",
+      timing: "The timing doesn't work for us",
+      other_option: "We've chosen another option",
+      not_needed: "We've decided not to go ahead",
+      other: "Other",
+    });
+    expect(Object.keys(N.reasons)).toEqual([...DECLINE_REASONS]);
   });
 });

@@ -31,6 +31,7 @@ import { INVOICE_FLOW_TYPES, isInvoiceFlowType } from "@techaust/core/invoices";
 import {
   ATTACHMENT_KEY,
   confirmationLinkExpiry,
+  DECLINE_REASON_LABELS,
   firstNameOf,
   mintOfferToken,
   offerLinkExpiry,
@@ -49,14 +50,8 @@ export type OfferDecidedResult = "noted" | "missing" | "ignored" | "invalid";
 export type OfferAcceptedResult = "queued" | "missing" | "certificate_missing" | "none" | "invalid";
 export type ApprovalNotifyResult = "queued" | "missing" | "none" | "ignored" | "invalid";
 
-/** 07-N §3's words for a decline's reason codes (the portal and admin show the same). */
-const DECLINE_WORDS: Record<string, string> = {
-  price: "The price doesn't fit our budget",
-  timing: "The timing doesn't work for us",
-  other_option: "We've chosen another option",
-  not_needed: "We've decided not to go ahead",
-  other: "Other",
-};
+/** 07-N §3's words for a decline's reason codes: core's `DECLINE_REASON_LABELS`, the list the portal and admin show. */
+const DECLINE_WORDS: Readonly<Record<string, string>> = DECLINE_REASON_LABELS;
 /** Basis points as a percentage ("12.5", "15"), as the admin shows them. */
 const percentText = (bp: number) => {
   const frac = String(bp % 100)

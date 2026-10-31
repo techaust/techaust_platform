@@ -1,5 +1,6 @@
 // Lead life cycle rules shared by the admin and jobs Workers (M3.2, ADM-LEAD-02, -04, -05, FRM-04). Pure: no I/O.
 // Retention and DPDP items: Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11).
+import type { DeclineReason } from "./offers.ts";
 import { SETTINGS_DEFAULTS } from "./schemas/settings.ts";
 
 export const LEAD_STAGES = ["new", "qualified", "proposal_sent", "won", "lost"] as const;
@@ -49,7 +50,7 @@ export const LOST_REASON_OF_DECLINE = {
   other_option: "competitor",
   not_needed: "scope_fit",
   other: "other",
-} as const satisfies Record<string, LostReason>;
+} as const satisfies Record<DeclineReason, LostReason>;
 
 /**
  * What a proposal event does to a lead's stage (M4.2 and M4.3 call this, or `proposalEventStatements` in `@techaust/db/lead-stage`
