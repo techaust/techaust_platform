@@ -463,3 +463,13 @@ Usage: builder claude-opus-5-5/high (skills workers-best-practices, wrangler).
 **Lead after the second-review fixes (2026-10-31):** both branches merged (`fix/rt2-second` d05d9557, `design/rt2-second` f218cfa5). `apps/admin/src/lib/udyam.ts` still tests core's shared `UDYAM_NUMBER_RE` directly (the same constant `isUdyamNumber` uses, so no drift). Follow-ups: the invoice issue dialog (`dialogs.tsx`) still shows a wrong step-up code in its general notice (move it to the code field like the note and advance dialogs); the duplicate hand-written PNG builder in `apps/admin/e2e/sample-data.ts`.
 
 ### Re-check (second review fixes)
+Reviewer, Opus 5.5 high, 2026-10-31, live browser: **SEND BACK (1 high, 5 low)**, condensed by the lead. `pnpm check` exit 0; **full `pnpm test` exit 0** (auth 135, ui 471, core 1,859, email 130, db 514, pdf 375, web 714, portal 651, jobs 548, admin 3,493); e2e `signature-udyam` 7 and `rt1-screens` 7 passed. Second-review fixes 1, 2, 3, 4, 5b, 5c verified (live at 390 and 1280, both theme pairs, axe 0). Screenshots `.logs/shots/rt2-recheck/`.
+- **A, high (older, main)** `apps/admin/src/app.css:1152` `.dialog` has no `scroll-padding-bottom` for the sticky `.dialog__actions` (`:1200`): at 390×844 a focused code field and its error sit under the buttons after a wrong code (also on a plain Tab), WCAG 2.4.11. Fix: `scroll-padding-bottom` equal to the actions' height per breakpoint (or a ResizeObserver variable); e2e at 390×844 that the code field and its error line are hit-testable.
+- **B, low** `company.tsx:124` `dirtyOf` compares raw text: a case-only GSTIN change shows the save bar; compare saved values (GSTIN without spaces in capitals, `normaliseUdyam`, category null without a number).
+- **C, low** `apps/admin/src/lib/udyam.ts:41` use `isUdyamNumber`.
+- **D, low** `signature-udyam.spec.ts:344` assert focus `.toBe("f-address")`.
+- **E, low** `shell.css:2271` the disabled-category style flickers while a save is in flight.
+- **F, low (listed)** `dialogs.tsx` wrong-code notice; `invalid_code` handling copied in four places (a shared helper in `lib/step-up.ts`).
+**Lead triage:** fix A–E now (designer); F stays a follow-up. A third look (re-check of the fix diff) follows because A is high.
+
+### Dialog and form fixes (A–E)
