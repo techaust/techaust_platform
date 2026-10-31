@@ -64,7 +64,168 @@ The four verified defects of "Item 5" (#1–#4, fixes as in its table, each with
 Same rules as r1 (out-of-bounds list, no migration, no wording change, heavy queue). Done: each fix committed with its test, `pnpm check` and `pnpm test` green, Worker bytes, report under "Builder report r2".
 
 ## Builder report r1
-(pending)
+_Builder r1 (Opus 5.5 high, cloud session, 2026-11-01). Branch `fix/test-hardening-r1`. It was cut from ca682a9 and has 3d24fd4 merged in (the lead's Item 5 and r2 brief, docs only)._
+
+**Skills.** I tried to load `cloudflare:workers-best-practices`, `cloudflare:wrangler` and `cloudflare:turnstile-spin`. None loaded ("Unknown skill"), because Cloudflare skills don't load in cloud sessions. `cloudflare:cloudflare` was not tried, since it is the same plugin. `code-review` and `security-review` belong to the reviewer. Context7 tools were not available in this agent (there is no ToolSearch). The Turnstile behaviour that item 1a relies on (the hidden `cf-turnstile-response` input) was therefore taken from the code and from a stubbed run.
+
+### Per item
+**1a. Web e2e `forms.spec.ts`, the contact form (83b97d3, d6d553f)**
+- **Cause, reproduced here.** The page script (`apps/web/src/scripts/forms.ts` `getToken`) waits at most 20 s for a Turnstile token. After that it shows the generic error and does not post. The test pressed Enter as soon as the button had focus.
+- **The reproduction.** I added a temporary spec (deleted, never committed) with a Turnstile stub whose token arrives after 25 s:
+  - with the old test: "after 40052 ms: TIMEOUT page.waitForURL: Timeout 40000ms exceeded.; POSTs: []" and the generic status line. This is main's failure exactly.
+  - with the new wait: "token after 25336 ms; POST answered 400". The 400 is only because the Worker's siteverify can't resolve challenges.cloudflare.com here.
+- **Not a page bug.** The 20 s cap is designed; production is unchanged.
+- **The fix, in the test only.** A new `readyToSubmit` waits for two things:
+  - the script to take over the form. Its first act is `form.noValidate = true`, in the same run that adds the submit handler, and the HTML has no `novalidate`. `data-ready` is set on the quote form only.
+  - the widget's hidden `cf-turnstile-response` input to hold a value, with a 30 s limit and a message that names challenges.cloudflare.com.
+- **The submit.** A new `submitAndLand` waits for the POST, so a refusal shows its status, then waits for /thanks.
+- The quote test has the same pattern and got the same two waits. Both submitting tests have `test.setTimeout(90_000)` (commented). Keyboard only; still two submissions.
+- **The three runs** (`th-web-e2e-run1`, `-run2`, `-run3`, back to back): each gave **209 passed, 1 failed, 2 did not run** (5.1, 5.1 and 5.0 min).
+  - The one failure is always the contact test, on the new wait: "Turnstile gave no token (is https://challenges.cloudflare.com reachable from the browser?)". The rest of that serial file did not run.
+  - The reason is this session's network: curl to challenges.cloudflare.com gets "CONNECT tunnel failed, response 403", and workerd's siteverify gets "DNS lookup failed". **So the form tests can't pass in any cloud session, before or after this change.** They need a PC or CI run.
+
+**1b. Admin `leads-api.test.ts` "a stale page is a 409…" (8f62105)**
+- The two saves now run under a fake `Date`: the first at `lead.updated_at + 1`, the second at `+ 2`, restored in `finally` (the `TA_TEST_CLOCK` shift stays intact).
+- **Proof of the cause:** with both saves pinned at `lead.updated_at`, the test fails with `expected [200, 200] to deeply equal [200, 409]`, the flake exactly. With the fix: 33/33 pass.
+- **Production has the same weakness. Not changed, by the brief.** See "For the analyst" 1.
+
+**2. Slow tests (8249f69).** Single-file times, before and after:
+
+| Test | Before | After | What changed |
+|---|---|---|---|
+| portal `scope.test.ts` "the spy sees the schema's client_id tables" | 65 ms | 3 ms | `tablesWithClientId` (`worker/test-helpers.ts`) is one statement (`EXISTS … pragma_table_info(m.name)`) instead of about 80 round trips |
+| the same file's 27 SQL-spy route tests (same helper) | 65 to 75 ms each | about 14 ms each | |
+| admin `dashboard-stress` "reads at most 6,300 rows…" | 349 / 399 ms (fixture included) | 186 / 241 ms | the 6,700-row fixture moved into `beforeAll` |
+| admin `dashboard-stress` "local CPU proxy" | 216 / 247 ms | 213 / 301 ms | none (inherently heavy) |
+| admin `invoice-send` "each send names the staff member…" | 41 ms | 40 / 49 ms | the named owner issues and sends (one session, not two) |
+
+- **Portal cross-check:** a temporary test (deleted) compared the old per-table list with the new one. They are equal.
+- **dashboard-stress:** the hook and all three tests carry a commented 30 s limit (`HEAVY_MS`).
+- **invoice-send:** its cost is the issue chain the test needs. There was nothing more to cut without changing what it proves, so it has no extra timeout.
+- **Honest note:** the 5 s timeouts came from CPU starvation under `pnpm -r test`. One green `pnpm test` (below) does not prove the flake is gone.
+
+**3. Realisation bounds (dd8141b)**
+- New `packages/core/src/realisation-bounds.ts` holds `REALISATION_MIN_MONTHS` 1, `REALISATION_MAX_MONTHS` 1200, `REALISATION_MIN_DAYS` 0 and `REALISATION_MAX_DAYS` 36_500. It has no imports and is exported through `@techaust/core/invoices`.
+- Readers now using it:
+  - `schemas/settings.ts`
+  - `export-invoice.ts` `realisationParamsFromStoredTax`
+  - `gst/realisation.ts` `rulesAreValid`, including `approachingDays`
+  - the admin SPA `src/lib/tax-settings.ts`, which held its own copy
+- Messages are unchanged and still pinned by `reports.test.ts`.
+- `inrMonths` keeps its own 1 to 120 in the schema and the form (the reader keeps 1 to 1,200 as before).
+- `packages/db/src/realisation.ts` has no copy.
+- The GST structure test's allow-list gains `../realisation-bounds.ts`.
+- New tests pin the constants, the re-export and the edges of `rulesAreValid`.
+
+**4a. One must-be-signed list (76e898a)**
+- `SIGNED_ALWAYS_TYPES`, a new `SIGNED_ADVANCE_TYPES` (`tax_invoice`, `export_invoice`) and `signatureRequired` moved to `packages/core/src/signature-rule.ts`, still exported through `@techaust/core/invoices`.
+- Readers:
+  - core's note blockers now ask `signatureRequired(noteTypeOf(kind), false)` instead of assuming "a note always".
+  - admin `invoice-model.ts` `issuerOf` and `@techaust/pdf` `requiresSignature`, which jobs `pdf.ts` uses through `signatureMissing`, already used core.
+  - `db/src/sql-rules.ts` `signedIssuerSql` holds no type list.
+- **Out of bounds, listed:**
+  - `db/src/triggers.ts` holds the pinned `SIGNED_ALWAYS_TYPES_0055` and the literal advance pair of the 0055 trigger. `signature-triggers.test.ts` now also pins that advance clause to `SIGNED_ADVANCE_TYPES`.
+  - `db/src/issue.ts` holds **no type list**. It applies `SIGNED_FREEZE_SQL` by code path (the note and advance freezes), and the "note freeze WHERE holds the signature" tests cover that SQL. No test can prove that `issue.ts` picks its paths from core's list, because the choice is structural.
+
+**4b. Inner spaces in a pasted Udyam number (2a3a47e)**
+- Core `normaliseUdyamNumber` (`udyam.ts`): `typed.replace(/\s+/gu, "").toUpperCase()`. It drops spaces, tabs, newlines, U+00A0 and the other Unicode spaces.
+- The admin form's `normaliseUdyam` is now core's; `company.tsx` is untouched. The shape check and its error are unchanged.
+- Tests (core `settings.test.ts`, admin `udyam.test.ts`):
+  - "UDYAM - WB - 01 - 0012345", a tab, U+00A0, a thin space and an ideographic space all normalise and pass the shape check.
+  - a blank paste becomes "".
+  - other wrong shapes stay wrong.
+
+**4c. The duplicate PNG builder (8a54dbf)**
+- The encoder copied in `apps/admin/e2e/sample-data.ts` and `packages/pdf/test/fixtures/invoice-layout.ts` is now `packages/testing/src/png.ts`: pure, no Node imports, and the caller passes its own `deflate`.
+- Both import it by relative path, like `csrf-corpus.ts`. No workspace dependency was added, so the lockfile is unchanged. `packages/testing/tsconfig.json` gains `allowImportingTsExtensions`.
+- The drawings stay where they were.
+- **Bytes unchanged** (SHA-256 before and after):
+  - admin e2e: `289eba30…98b0ce`, 679 bytes.
+  - PDF fixture: `5fe5e20a…052217`, 896 bytes, now pinned by `packages/pdf/test/sample-signature.test.ts`.
+- New encoder tests in `packages/testing/test/png.test.ts`.
+
+**6. Decline reasons (7727681)**
+- `DECLINE_REASON_LABELS` in `@techaust/core/offers` holds the 07-N §3 words, word for word, in the order of `DECLINE_REASONS`, typed `satisfies Record<DeclineReason, string>`.
+- Readers:
+  - admin `src/lib/offer-words.ts` (`reasonText`)
+  - portal `src/copy-documents.ts` (`N.reasons`; the dialog component is untouched)
+  - jobs `src/offers.ts` (`DECLINE_WORDS`)
+- `LOST_REASON_OF_DECLINE` is now typed `satisfies Record<DeclineReason, LostReason>`.
+- **No message schema change.** `schemas/messages.ts` carries no reason (`offer.decided` sends only the id and the decision). Admin `documents.ts` and `audit.ts` hold no copy.
+- **Labels pinned** in core, admin and portal tests. Jobs' decline test already pins one.
+- **Portal Worker: 104,589 bytes, the same as main.**
+
+### Files changed
+- **core:**
+  - `src/realisation-bounds.ts` (new), `src/signature-rule.ts` (new)
+  - `src/schemas/settings.ts`, `src/export-invoice.ts`, `src/gst/realisation.ts`, `src/invoices.ts`, `src/notes.ts`, `src/udyam.ts`, `src/offers.ts`, `src/lead-lifecycle.ts`
+  - tests: `realisation-bounds`, `gst/structure`, `invoice-types`, `settings`, `offers`
+- **db:** `test/signature-triggers.test.ts`
+- **pdf:** `test/fixtures/invoice-layout.ts`, `test/sample-signature.test.ts` (new)
+- **testing:** `src/png.ts` (new), `test/png.test.ts` (new), `tsconfig.json`
+- **admin:**
+  - `src/lib/tax-settings.ts`, `src/lib/udyam.ts`, `src/lib/udyam.test.ts`, `src/lib/offer-words.ts`, `src/lib/offers.test.ts`
+  - `worker/leads-api.test.ts`, `worker/dashboard-stress.test.ts`, `worker/invoice-send.test.ts`
+  - `e2e/sample-data.ts`
+- **portal:** `src/copy-documents.ts`, `src/lib/offers.test.ts`, `worker/test-helpers.ts`
+- **jobs:** `src/offers.ts`
+- **web:** `e2e/forms.spec.ts`
+- No migration, workflow, wording change or out-of-bounds file.
+
+### Commands and results
+- **While working:** single test files for core, admin, portal, jobs, db (`signature-triggers`), pdf and testing; `pnpm exec biome check <changed files>` at each commit. All green.
+- `bash tools/heavy.sh --log th-web-build pnpm --filter @techaust/web build`: exit 0.
+- **Web e2e** (`th-web-e2e-1`, `th-web-forms`, `th-web-repro`, then `th-web-e2e-run1` to `-run3`): as under 1a, 209 passed on every full run.
+- `bash tools/heavy.sh --log th-build pnpm build`: exit 0. **Worker bytes:**
+
+| Worker | Bytes | Limit | Startup (fastest of 7) |
+|---|---|---|---|
+| admin front | 100,839 | 150,000 | 12.3 ms |
+| admin API | 438,064 | 800,000 | 47.9 ms |
+| admin finance | 507,948 | 800,000 | 47.9 ms |
+| portal | 104,589 | 120,000 | 11.7 ms |
+| jobs | 667,889 | 1,000,000 | 72.5 ms |
+
+- `bash tools/heavy.sh --log th-test pnpm test`: exit 0. **9,518 passed, 2 skipped, 0 failed.**
+
+| Package | Passed |
+|---|---|
+| testing | 4 |
+| auth | 135 |
+| ui | 471 (+2 skipped) |
+| core | 1,956 (coverage gate passed) |
+| email | 132 |
+| db | 623 |
+| pdf | 380 |
+| web | 767 |
+| portal | 680 |
+| jobs | 560 |
+| admin | 3,810 |
+
+- `bash tools/heavy.sh --log th-check pnpm check`: exit 0, the final full check. Lint checked 1,443 files with no fixes; typecheck and every guard passed.
+- Every dev server was stopped by Playwright. Only the session's own `playwright-mcp` remains.
+
+### Not verified
+- **The form submissions of 1a in a session that reaches Cloudflare.** Here the new wait is proven only against a stub. Run the web e2e on the PC or in CI (after `pnpm --filter @techaust/web build`).
+- That item 2 removes the timeouts under a starved full run. One `pnpm test` passed with no timeout; the flake can't be forced.
+- Worker bytes against main, except the portal (unchanged at 104,589).
+- The merge commit 0dffdec has git's default message, without the footer. It was pushed before I noticed, and fixing it would need a force-push.
+
+### For the analyst
+1. **Production has the same-millisecond weakness of 1b.**
+   - Where: `apps/admin/worker/leads.ts:721` (`const t = Date.now()`) and `:727` (`… updated_at = ?3 … WHERE id = ?1 AND updated_at = ?2`).
+   - A save in the same millisecond as the row's previous write rewrites the same `updated_at`, so a second save from that stale page also passes. A clock behind the stored value can move `updated_at` backwards.
+   - The existing safe pattern is `Math.max(Date.now(), row.updated_at + 1)` or SQL `max(?t, updated_at + 1)` (`document-write.ts:52`, `care.ts:539`, `document-send.ts:127`).
+   - A heuristic scan finds the same plain `Date.now()` stale check in these places. I did not verify them one by one:
+     - `catalogue.ts:518`
+     - `clients.ts:668`, `:779`, `:1133`
+     - `invoice-notes.ts:579`
+     - `notes.ts:159`
+     - `settings.ts:972`
+2. **`apps/portal/src/components/decision/decline-dialog.tsx:13`** keeps its own `NOTE_MAX = 500` (core `DECLINE_NOTE_MAX`). It is a component (the designer's) and not the reasons list, so I left it.
+
+### Open questions
+None.
 
 ## Early check (analyst)
 (pending)
