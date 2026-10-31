@@ -1,6 +1,7 @@
 // T7 (08-C RB-37(a); Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): the triggers of migration 0057. A never-accepted, frozen proposal or
-// estimate may have its personal values rewritten ONCE, inside the redaction move (`redacted_at` set); every other frozen column stays fixed, a redacted offer
-// takes no PDF, view or decision, and its child rows change only their text, once, with it. [ADM-PROP-05, ADM-PROP-08, ADM-CLI-05]
+// estimate may have its personal values rewritten only inside the redaction move (`redacted_at` set, or moved forward by a later erasure of another person
+// named on it; never cleared or backwards); every other frozen column stays fixed, a redacted offer takes no PDF, view or decision, and its child rows change
+// only their text, with their parent's redaction. [ADM-PROP-05, ADM-PROP-08, ADM-CLI-05]
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
 import { getTableColumns } from "drizzle-orm";
@@ -13,6 +14,8 @@ import {
   LINE_TEXT_0057,
   offerRedactionTriggerStatements,
   REDACTABLE_FROZEN_0057,
+  REDACTION_CLEARS_0057,
+  REDACTION_FORWARD_0057,
   SCHEDULE_COLUMNS_0057,
   SCHEDULE_TEXT_0057,
   SECTION_COLUMNS_0057,
@@ -94,6 +97,8 @@ describe("the pinned lists of 0057", () => {
     expect([...SET_ONCE_0057]).toEqual([...SET_ONCE_AFTER_FREEZE]);
     expect(frozenDocumentColumns()).not.toContain("redacted_at");
     for (const c of REDACTABLE_FROZEN_0057) expect(frozenDocumentColumns()).toContain(c);
+    // the columns with a carve-out are still set-once columns, so the coverage test still names them
+    for (const c of [...REDACTION_CLEARS_0057, ...REDACTION_FORWARD_0057]) expect(SET_ONCE_0057).toContain(c);
     expect(MAX_REDACTED_OFFERS).toBe(10);
   });
 
@@ -108,14 +113,28 @@ describe("the pinned lists of 0057", () => {
     }
   });
 
-  it("the installed child triggers are the ones 0057 generates", async () => {
-    const wanted = offerRedactionTriggerStatements();
-    for (const t of ["document_sections", "document_lines", "payment_schedules", "documents"]) {
+  it("every trigger 0057 creates is installed exactly as generated (the recreated freeze triggers and the new ones)", async () => {
+    const wanted = offerRedactionTriggerStatements().filter((w) => w.startsWith("CREATE TRIGGER"));
+    const names = wanted.map((w) => /^CREATE TRIGGER `([^`]+)`/.exec(w)?.[1]);
+    expect(names).toEqual([
+      "documents_frozen_update",
+      "documents_redaction_scope",
+      "documents_redaction_insert",
+      "documents_redacted_fixed",
+      "acceptances_redacted",
+      "document_sections_frozen_update",
+      "document_sections_redaction_insert",
+      "document_lines_frozen_update",
+      "document_lines_redaction_insert",
+      "payment_schedules_frozen_update",
+      "payment_schedules_redaction_insert",
+    ]);
+    for (const [i, w] of wanted.entries()) {
       const installed = await first<{ sql: string }>(
         "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?",
-        `${t}_frozen_update`,
+        names[i],
       );
-      expect(wanted.some((w) => w.replace(/;$/, "").trim() === installed?.sql.trim())).toBe(true);
+      expect(installed?.sql.trim(), names[i]).toBe(w.replace(/;$/, "").trim());
     }
   });
 });
@@ -150,24 +169,61 @@ describe("documents: the redaction move (0057, 1-3)", () => {
     expect((await rowOf(q.id))?.redacted_at).toBeNull();
   });
 
-  it("recipient or title changed without the move refuses; so does a second redaction, a changed or cleared redacted_at", async () => {
+  it("recipient or title changed without the move refuses; redacted_at never clears or goes backwards, and an equal one rewrites nothing", async () => {
     const q = await sentOffer();
     await rejects(run("UPDATE documents SET recipient = '{}' WHERE id = ?", q.id), FROZEN);
     await rejects(run("UPDATE documents SET title = 'x' WHERE id = ?", q.id), FROZEN);
     await run(REDACT, q.id, 5);
+    // backwards, cleared, or the same time with new text: refused
     await rejects(
-      run("UPDATE documents SET title = 'again', redacted_at = 6 WHERE id = ?", q.id),
+      run("UPDATE documents SET title = 'back', redacted_at = 4 WHERE id = ?", q.id),
       /frozen|documents_redaction_scope/,
     );
     await rejects(
-      run("UPDATE documents SET redacted_at = 6 WHERE id = ?", q.id),
+      run("UPDATE documents SET redacted_at = 4 WHERE id = ?", q.id),
       /frozen|documents_redaction_scope/,
     );
     await rejects(
       run("UPDATE documents SET redacted_at = NULL WHERE id = ?", q.id),
       /frozen|documents_redaction_scope/,
     );
+    await rejects(run("UPDATE documents SET title = 'same', redacted_at = 5 WHERE id = ?", q.id), FROZEN);
     await rejects(run("UPDATE documents SET title = 'later' WHERE id = ?", q.id), FROZEN);
+    expect((await rowOf(q.id))?.redacted_at).toBe(5);
+  });
+
+  it("a later erasure moves the redaction forward: the text may change again, every other frozen column still refuses", async () => {
+    const q = await sentOffer();
+    await run(
+      "UPDATE documents SET status = 'rejected', decided_at = 9, decision_reason = 'price', decision_note = 'B says no' WHERE id = ?",
+      q.id,
+    );
+    await run("UPDATE documents SET decision_note = NULL, redacted_at = 5 WHERE id = ?", q.id);
+    await run(REDACT, q.id, 6);
+    const r = await rowOf(q.id);
+    expect(r?.redacted_at).toBe(6);
+    expect(r?.title).toBe("Website for Anonymised client");
+    expect(r?.status).toBe("rejected");
+    expect(r?.decision_reason).toBe("price");
+    expect(r?.decided_at).toBe(9);
+    for (const c of ["total_minor", "number", "snapshot_sha256", "content_sha256", "sent_at"])
+      await rejects(
+        run(
+          `UPDATE documents SET \`${c}\` = coalesce(\`${c}\` || 'x', 'x'), redacted_at = 7 WHERE id = ?`,
+          q.id,
+        ),
+        FROZEN,
+      );
+    // a later move never records a decision note again, nor changes the status
+    await rejects(
+      run("UPDATE documents SET decision_note = 'again', redacted_at = 8 WHERE id = ?", q.id),
+      /frozen|documents_redacted_fixed/,
+    );
+    await rejects(
+      run("UPDATE documents SET status = 'expired', redacted_at = 8 WHERE id = ?", q.id),
+      /documents_redaction_scope/,
+    );
+    expect((await rowOf(q.id))?.redacted_at).toBe(6);
   });
 
   it("a decline's note: another value refuses inside the move, NULL passes; outside the move NULL refuses", async () => {
@@ -329,7 +385,7 @@ describe("child rows (0057, 6)", () => {
   ] as const;
   const MSG = /of an issued document cannot change/;
 
-  it("a text update needs the marker and a redacted parent; then once, and never another column", async () => {
+  it("a text update needs the marker equal to the redacted parent's; never another column; never cleared or backwards", async () => {
     for (const [table, keep, text] of tables) {
       const q = await sentOffer();
       // parent not redacted: refused with or without the marker
@@ -348,11 +404,20 @@ describe("child rows (0057, 6)", () => {
           /cannot change|FOREIGN KEY|constraint/,
         );
       }
+      // a marker other than the parent's refuses
+      await rejects(run(`UPDATE ${table} SET ${text}, redacted_at = 1 WHERE document_id = ?`, q.id), MSG);
+      await rejects(run(`UPDATE ${table} SET ${text}, redacted_at = 3 WHERE document_id = ?`, q.id), MSG);
       await run(`UPDATE ${table} SET ${text}, redacted_at = 2 WHERE document_id = ?`, q.id);
-      // a second update refuses (text, the marker, or clearing it)
+      // a second update at the same time refuses (text, a marker past the parent's, or clearing it)
       await rejects(run(`UPDATE ${table} SET ${text} WHERE document_id = ?`, q.id), MSG);
       await rejects(run(`UPDATE ${table} SET redacted_at = 3 WHERE document_id = ?`, q.id), MSG);
       await rejects(run(`UPDATE ${table} SET redacted_at = NULL WHERE document_id = ?`, q.id), MSG);
+      // the parent moves forward (a later erasure): the row follows to exactly the parent's time, never back
+      await run(REDACT, q.id, 4);
+      await rejects(run(`UPDATE ${table} SET redacted_at = 3 WHERE document_id = ?`, q.id), MSG);
+      await rejects(run(`UPDATE ${table} SET redacted_at = 5 WHERE document_id = ?`, q.id), MSG);
+      await run(`UPDATE ${table} SET ${text}, redacted_at = 4 WHERE document_id = ?`, q.id);
+      await rejects(run(`UPDATE ${table} SET redacted_at = 2 WHERE document_id = ?`, q.id), MSG);
       // insert and delete are unchanged
       await rejects(run(`DELETE FROM ${table} WHERE document_id = ?`, q.id), MSG);
     }
@@ -372,6 +437,31 @@ describe("child rows (0057, 6)", () => {
           )
         )?.n,
       ).toBe(1);
+  });
+
+  it("a child row is never inserted already redacted (a draft's too)", async () => {
+    const q = await mkQuote();
+    for (const [table, sql] of [
+      [
+        "document_sections",
+        "INSERT INTO document_sections (id, document_id, kind, position, title, redacted_at) VALUES (?1, ?2, 'scope', 7, 'x', 1)",
+      ],
+      [
+        "document_lines",
+        "INSERT INTO document_lines (id, document_id, position, description, qty_milli, unit, rate_minor, taxable_minor, line_total_minor, redacted_at) VALUES (?1, ?2, 7, 'x', 1000, 'fixed', 100, 100, 100, 1)",
+      ],
+      [
+        "payment_schedules",
+        "INSERT INTO payment_schedules (id, document_id, position, label, trigger, pct_bp, amount_minor, redacted_at) VALUES (?1, ?2, 7, 'x', 'on_accept', 10000, 100, 1)",
+      ],
+    ] as const)
+      await rejects(run(sql, uuidv7(), q.id), new RegExp(`${table}_redaction_insert`));
+    // without the marker the same rows go in
+    await run(
+      "INSERT INTO document_sections (id, document_id, kind, position, title) VALUES (?1, ?2, 'scope', 8, 'x')",
+      uuidv7(),
+      q.id,
+    );
   });
 
   it("a draft's child rows stay free (the trigger only guards frozen parents)", async () => {
@@ -450,6 +540,9 @@ describe("REDACTABLE_OFFER_SQL", () => {
     expect(ind.ids).toEqual(
       [ind.docs.byId, ind.docs.byEmail, ind.docs.byContactId, ind.docs.declinedByA, ind.docs.toB].sort(),
     );
+    // an offer already redacted for someone else is still picked (a later erasure redacts it again)
+    await run("UPDATE documents SET redacted_at = 3 WHERE id = ?", ind.docs.toB);
+    expect((await all<{ id: string }>(READ, ind.a)).map((x) => x.id)).toContain(ind.docs.toB);
     expect(LAST_LIVE_SQL("c")).toContain("o.anonymised_at IS NULL");
   });
 });
