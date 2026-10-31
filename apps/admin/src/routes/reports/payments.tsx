@@ -151,7 +151,9 @@ function Results({ rows, fy }: { rows: PaymentsRegisterRow[]; fy: string }) {
                 {awaiting.map((r) => (
                   <tr key={r.id}>
                     <th scope="row" className="tnum">
-                      <Link to={paymentHref(r.id)}>{day(r.receivedOn)}</Link>
+                      <Link to={paymentHref(r.id)} className="pay-row__link">
+                        {day(r.receivedOn)}
+                      </Link>
                     </th>
                     <td>
                       {r.client.name} <span className="docno">{r.client.code}</span>

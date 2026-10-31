@@ -1,20 +1,39 @@
 // The approvals queue's payment items (M6.1; ADM-APR-01, L18): the entries Staff recorded, waiting for the Owner's check or already checked. A payment is
 // never decided here (`/approvals/:id/decide` answers `use_payment_verify`): each row opens the entry on Payments, where the Owner confirms or rejects it.
+import { useState } from "react";
 import { Link } from "react-router";
 import { type PaymentApprovalItem, paymentsApi } from "../../api.ts";
 import { type Column, DataTable } from "../../components/data-table.tsx";
 import { EmptyState } from "../../components/display.tsx";
 import { ClipboardCheck, Search } from "../../components/icons.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
-import { amountText, PAY_COPY, PAY_UI } from "../../lib/payments.ts";
+import { useToast } from "../../components/toast.tsx";
+import { amountText, PAY_COPY, PAY_UI, payErrorText } from "../../lib/payments.ts";
 import { paymentHref } from "./panel.tsx";
 import { day, PaymentPill } from "./parts.tsx";
 
 export function PaymentApprovals(props: { owner: boolean; state: string | null }) {
-  const list = useLoad(
-    () => paymentsApi.approvals(props.state ? { status: props.state } : {}),
-    props.state ?? "all",
-  );
+  const filter = props.state ? { status: props.state } : {};
+  const list = useLoad(() => paymentsApi.approvals(filter), props.state ?? "all");
+  // Visual review (low): the queue follows `next` with line 36's "Show more payments", as /payments does.
+  const [more, setMore] = useState<PaymentApprovalItem[]>([]);
+  const [after, setAfter] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const toast = useToast();
+  const next = more.length ? after : list.state === "ready" ? list.data.next : null;
+  async function showMore() {
+    if (!next) return;
+    setLoadingMore(true);
+    try {
+      const r = await paymentsApi.approvals({ ...filter, after: next });
+      setMore((m) => [...m, ...r.approvals.filter((a) => !m.some((x) => x.id === a.id))]);
+      setAfter(r.next);
+    } catch (e) {
+      toast("error", payErrorText(e));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
   const columns: Column<PaymentApprovalItem>[] = [
     {
       key: "date",
@@ -50,7 +69,7 @@ export function PaymentApprovals(props: { owner: boolean; state: string | null }
       <DataTable
         caption={PAY_COPY.toCheck}
         columns={columns}
-        rows={list.data?.approvals ?? []}
+        rows={[...(list.data?.approvals ?? []), ...more]}
         rowKey={(r) => r.id}
         loading={list.state === "loading"}
         skeletonRows={3}
@@ -74,6 +93,17 @@ export function PaymentApprovals(props: { owner: boolean; state: string | null }
           </EmptyState>
         }
       />
+      {next && (
+        <button
+          type="button"
+          className="btn btn--secondary notes__more"
+          onClick={() => void showMore()}
+          disabled={loadingMore}
+          aria-busy={loadingMore || undefined}
+        >
+          {loadingMore ? "Loading…" : PAY_UI.showMore}
+        </button>
+      )}
     </div>
   );
 }

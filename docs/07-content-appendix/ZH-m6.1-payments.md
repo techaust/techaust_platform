@@ -86,4 +86,12 @@ None of these is client-facing. Until they are approved the screens show each on
 45. Reports › Export realisation, the note that replaces 07-V §5's "If your bank extended a date, you can record it with the proof of payment in the payments update.": "If your bank extended a date, record it on the export invoice's page: Bank extended the date."
 46. Withdraw blocker `payment_pending` on a proforma (main's proforma withdraw, L37): the words of line 21, reused: "A payment recorded on it is waiting for the owner's check. Reject it first." (Lead, 2026-10-31, owner's delegation.)
 
+## Lines 47–49: staff-only drafts from the visual review fixes (designer, 2026-10-31; for the lead's approval under the owner's delegation)
+
+All three are staff-only (admin screens), none client-facing. They are used in the code without a "[Placeholder]" mark because `APPROVED_07ZH_NEW` is on; change the words here first if the lead changes them.
+
+47. Record a payment and the Owner's Confirm step, under the allocation table, when part of the payment is deliberately left off the listed invoices while they still owe more (line 9 stays for a real overpayment: the payment is more than every listed invoice owes together): "{amount} is kept as {client}'s credit."
+48. Invoice › Payments panel, an extension by the bank saved without its letter: button, dialog title and dialog button "Attach the bank's letter"; toast "Letter attached." (the field is line 14's "Bank's letter").
+49. Client › Overview, where no invoice is in context yet: button, dialog title and dialog button "Use credit" (line 10's "Use credit on this invoice" stays on an invoice's Payments panel).
+
 Two approved lines the screens no longer show, because M6.1 made them untrue (the constants stay, their tests pin the approved words): 07-V §6 statement note "Only payments recorded against payment requests are listed until online payments arrive." and 07-V §10 / 07-Y foot line "Collected figures and payments waiting for checks arrive with payments." (shown now only if the API withholds the payment tiles). Line 17 replaces "Collected figures arrive with payments." on the client Overview and a project.

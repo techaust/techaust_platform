@@ -21,7 +21,7 @@ import {
 import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
 import { FormField } from "../../components/form.tsx";
-import { Alert, Info } from "../../components/icons.tsx";
+import { Alert, Info, RefreshCw } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { dateError } from "../../lib/date-field.ts";
@@ -33,11 +33,12 @@ import {
   amountText,
   autoFill,
   earlierMonthLine,
+  earlierMonthOf,
+  leftoverLine,
   MODE_LABELS,
   MODES,
   type OpenDoc,
   openDocsOf,
-  overpaymentLine,
   PAY_COPY,
   PAY_ERRORS,
   PAY_UI,
@@ -47,7 +48,7 @@ import {
 } from "../../lib/payments.ts";
 import { moneyFrom, percentToBp } from "../../lib/settings-form.ts";
 import { withCode } from "../../lib/step-up.ts";
-import { AllocationTable, FilePick, useCodeSlot } from "./parts.tsx";
+import { AllocationTable, EarlierMonthWarning, FilePick, useCodeSlot } from "./parts.tsx";
 
 /** The client the entry is for (fixed when the dialog opens from an invoice or a client; picked on /payments). */
 export type PayClient = { id: string; name: string; currency: Currency };
@@ -175,13 +176,18 @@ function RecordBody(props: {
   const toast = useToast();
 
   const [docs, setDocs] = useState<OpenDoc[] | null>(null);
+  // Visual review finding 7: a failed read is its own state (an error with a retry), never "no open invoices", and the entry can't be sent without it.
+  const [docsFailed, setDocsFailed] = useState(false);
+  const [docsTry, setDocsTry] = useState(0);
   useEffect(() => {
+    setDocsFailed(false);
     if (!client) {
       setDocs(null);
       return;
     }
     let live = true;
     setDocs(null);
+    void docsTry;
     loadOpen(client.id)
       .then((list) => {
         if (!live) return;
@@ -192,11 +198,12 @@ function RecordBody(props: {
           open.unshift({ ...from, dueDate: null });
         setDocs(open);
       })
-      .catch(() => live && setDocs([]));
+      .catch(() => live && setDocsFailed(true));
     return () => {
       live = false;
     };
-  }, [client, props.kind, props.from, owner]);
+  }, [client, props.kind, props.from, owner, docsTry]);
+  const docsWaiting = client !== null && (docs === null || docsFailed);
 
   const parsed = useMemo(() => {
     const m = moneyFrom(form.amount, currency);
@@ -212,7 +219,29 @@ function RecordBody(props: {
         ]
       : rows;
   const plan = docs ? readAllocations(shownRows, docs, parsed, currency) : null;
-  const left = plan?.ok && plan.leftMinor !== null && plan.leftMinor > 0 ? plan.leftMinor : null;
+  const leftover =
+    docs && plan?.ok && client ? leftoverLine(plan.leftMinor, parsed, docs, currency, client.name) : null;
+  // Line 10's warning before the submit (visual review finding 6): the money arrived in a month before an invoice it goes on was issued.
+  const month =
+    docs && form.date
+      ? earlierMonthOf(
+          form.date,
+          tds
+            ? [docs.find((d) => d.id === form.invoice)?.issueDate]
+            : plan?.ok
+              ? plan.allocations.map((a) => docs.find((d) => d.id === a.documentId)?.issueDate)
+              : [],
+        )
+      : null;
+
+  /** Visual review finding 8: another client's rows and TDS invoice never follow a change of client. */
+  function pickClient(c: PayClient | null) {
+    if (c?.id === client?.id) return;
+    setClient(c);
+    setRows([]);
+    setAllocErrors({});
+    setForm((f) => ({ ...f, invoice: props.from?.id ?? "" }));
+  }
 
   function setRow(documentId: string, text: string) {
     if (documentId === props.from?.id && autoRow) {
@@ -317,6 +346,7 @@ function RecordBody(props: {
   }
 
   async function submit() {
+    if (docsWaiting) return;
     const c = check();
     if (!c.ok) return;
     if (!code.ready()) return;
@@ -389,7 +419,7 @@ function RecordBody(props: {
       <div className="dialog__body pay-form">
         {tds && <p className="pay-form__lede">{PAY_COPY.tdsHint}</p>}
         <p className="hint form-intro">All fields are needed unless marked optional.</p>
-        {!props.client && <ClientPick value={client} onPick={setClient} error={errors.client} />}
+        {!props.client && <ClientPick value={client} onPick={pickClient} error={errors.client} />}
         {tds && (
           <FormField
             id="pay-invoice"
@@ -407,7 +437,7 @@ function RecordBody(props: {
                   disabled={docs === null}
                   onChange={(e) => setForm({ ...form, invoice: e.target.value })}
                 >
-                  <option value="">{docs === null ? "Loading…" : ""}</option>
+                  <option value="">{docs === null && !docsFailed && client ? "Loading…" : ""}</option>
                   {tdsDocs.map((d) => (
                     <option key={d.id} value={d.id}>
                       {`${d.number ?? ""} · ${INV_COPY.colBalance} ${amountText(d.balanceMinor, d.currency)}`}
@@ -543,20 +573,26 @@ function RecordBody(props: {
             {client && (
               <fieldset className="form-section pay-alloc">
                 <legend>{PAY_UI.allocHeading}</legend>
-                {docs !== null && docs.length > 0 && <p className="hint">{PAY_UI.allocHint}</p>}
-                <AllocationTable
-                  docs={docs ?? []}
-                  rows={shownRows}
-                  onRow={setRow}
-                  errors={allocErrors}
-                  idPrefix="pay-alloc"
-                  symbol={sym}
-                  loading={docs === null}
-                />
-                {left !== null && client && (
-                  <p className="pay-line" role="status">
+                {docsFailed ? (
+                  <DocsFailed onRetry={() => setDocsTry((n) => n + 1)} />
+                ) : (
+                  <>
+                    {docs !== null && docs.length > 0 && <p className="hint">{PAY_UI.allocHint}</p>}
+                    <AllocationTable
+                      docs={docs ?? []}
+                      rows={shownRows}
+                      onRow={setRow}
+                      errors={allocErrors}
+                      idPrefix="pay-alloc"
+                      symbol={sym}
+                      loading={docs === null}
+                    />
+                  </>
+                )}
+                {leftover && (
+                  <p className="pay-line" role="status" data-kind={leftover.kind}>
                     <Info size={16} />
-                    <span>{overpaymentLine(amountText(left, currency), client.name)}</span>
+                    <span>{leftover.text}</span>
                   </p>
                 )}
               </fieldset>
@@ -646,6 +682,8 @@ function RecordBody(props: {
             />
           )}
         </FormField>
+        {tds && client && docsFailed && <DocsFailed onRetry={() => setDocsTry((n) => n + 1)} />}
+        <EarlierMonthWarning month={month} />
         {!owner && (
           <p className="approval-line" data-state="pending">
             <Alert size={16} />
@@ -669,7 +707,12 @@ function RecordBody(props: {
         <button type="button" className="btn btn--secondary" onClick={props.onClose} disabled={busy}>
           {INV_COPY.cancel}
         </button>
-        <button type="submit" className="btn btn--primary" disabled={busy} aria-busy={busy || undefined}>
+        <button
+          type="submit"
+          className="btn btn--primary"
+          disabled={busy || docsWaiting}
+          aria-busy={busy || (client !== null && docs === null && !docsFailed) || undefined}
+        >
           {busy ? "Working…" : seen ? PAY_UI.recordAgain : tds ? PAY_UI.recordTds : PAY_COPY.recordTitle}
         </button>
       </div>
@@ -677,7 +720,23 @@ function RecordBody(props: {
   );
 }
 
-/** The client picker of /payments: a search over the client list (the first 50 matches), one select. */
+/** The open invoices didn't load: the shared words of a failed read (states.tsx, panel.tsx) and a retry, in place of the table. */
+function DocsFailed({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="pay-alloc__failed">
+      <p className="panel-empty" role="alert">
+        <RefreshCw size={20} />
+        <span>This didn't load. Try again in a moment.</span>
+      </p>
+      <button type="button" className="btn btn--secondary" onClick={onRetry}>
+        <RefreshCw size={20} />
+        Try again
+      </button>
+    </div>
+  );
+}
+
+/** The client picker of /payments: a search over the client list (the first 50 matches), one select; each on its own row, so a name and code read in full. */
 function ClientPick(props: {
   value: PayClient | null;
   onPick: (c: PayClient | null) => void;
@@ -699,7 +758,7 @@ function ClientPick(props: {
     };
   }, [q]);
   return (
-    <div className="form-grid">
+    <div className="pay-client">
       <FormField id="pay-client-q" label={PAY_UI.searchClients} optional>
         {(a) => (
           <input {...a} type="search" autoComplete="off" value={q} onChange={(e) => setQ(e.target.value)} />

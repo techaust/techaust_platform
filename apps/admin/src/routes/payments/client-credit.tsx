@@ -1,5 +1,6 @@
-// "Use credit on this invoice" from the client's Overview (07-ZH line 10; ADM-PAY-06; Owner, fresh code): where the credit comes from (first in, first out,
-// L13), the invoice it goes on and the amount. The RA-17 warning comes back with the result and is said in the toast (line 10's warning, never a block).
+// "Use credit" from the client's Overview (07-ZH line 49, line 10's button words where no invoice is in context yet; ADM-PAY-06; Owner, fresh code): where
+// the credit comes from (first in, first out, L13), the invoice it goes on and the amount. Line 10's RA-17 warning shows in the dialog as soon as the picked
+// invoice is from a later month than the oldest credit (visual review finding 6), and the server's answer is said in the toast too (never a block).
 import { useEffect, useState } from "react";
 import { type ClientCredit, type Currency, paymentsApi } from "../../api.ts";
 import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
@@ -12,9 +13,9 @@ import {
   amountText,
   creditHeldLine,
   earlierMonthLine,
+  earlierMonthOf,
   type OpenDoc,
   openDocsOf,
-  PAY_COPY,
   PAY_ERRORS,
   PAY_UI,
   payErrorText,
@@ -22,7 +23,7 @@ import {
 } from "../../lib/payments.ts";
 import { moneyFrom } from "../../lib/settings-form.ts";
 import { withCode } from "../../lib/step-up.ts";
-import { day, useCodeSlot } from "./parts.tsx";
+import { day, EarlierMonthWarning, useCodeSlot } from "./parts.tsx";
 
 type Doc = OpenDoc & { updatedAt: number };
 
@@ -98,6 +99,8 @@ export function ClientCreditDialog(props: {
   const currency: Currency = held?.currency ?? "INR";
   const picked = docs?.find((d) => d.id === doc) ?? null;
   const hasMore = Object.keys(more).length > 0;
+  // first in, first out: the oldest source is always drawn first, so its month decides line 10's warning
+  const month = picked ? earlierMonthOf(credit?.sources[0]?.receivedOn, [picked.issueDate]) : null;
 
   async function showMore() {
     setLoadingMore(true);
@@ -157,7 +160,7 @@ export function ClientCreditDialog(props: {
   }
 
   return (
-    <Modal open title={PAY_COPY.useCredit} onClose={props.onClose} busy={busy} className="dialog--pay">
+    <Modal open title={PAY_UI.useCreditShort} onClose={props.onClose} busy={busy} className="dialog--pay">
       <form
         noValidate
         onSubmit={(e) => {
@@ -204,6 +207,7 @@ export function ClientCreditDialog(props: {
               {loadingMore ? "Loading…" : "Show more"}
             </button>
           )}
+          <EarlierMonthWarning month={month} />
           <FormField id="pay-credit-amount" label={PAY_UI.amountToUse} error={errors.amount}>
             {(a) => (
               <div className="money-in">
@@ -230,7 +234,7 @@ export function ClientCreditDialog(props: {
             {INV_COPY.cancel}
           </button>
           <button type="submit" className="btn btn--primary" disabled={busy} aria-busy={busy || undefined}>
-            {busy ? "Working…" : PAY_COPY.useCredit}
+            {busy ? "Working…" : PAY_UI.useCreditShort}
           </button>
         </div>
       </form>
