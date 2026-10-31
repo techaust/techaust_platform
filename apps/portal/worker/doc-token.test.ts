@@ -4,12 +4,23 @@ import { env } from "cloudflare:workers";
 import { docTokenStmt, newDocToken, PORTAL_FAIL_LIMIT, portalFailKey, tokenHash } from "@techaust/auth";
 import { uuidv7 } from "@techaust/core";
 import { schema } from "@techaust/db";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DOC_READ, VIEW_PAY_TYPES } from "./doc-token.ts";
 import { type FxContact, fixtures } from "./fixtures.ts";
 import { ROUTES } from "./guard.ts";
 import { CLIENT_INVOICE_STATUSES } from "./invoice-summary.ts";
-import { attemptsRow, bodyOf, call, counting, countOf, one, rows, writes } from "./test-helpers.ts";
+import {
+  attemptsRow,
+  beforeBatch,
+  bodyOf,
+  call,
+  counting,
+  countOf,
+  one,
+  rows,
+  withDb,
+  writes,
+} from "./test-helpers.ts";
 
 const NOT_FOUND = { error: { code: "not_found", message: "Not found" } };
 const use = (token: string, init: { ip?: string | null; headers?: Record<string, string> } = {}) =>
@@ -709,6 +720,40 @@ describe("the PDF behind the link [POR-06, M4.5 headers]", () => {
     const other = await frozenDoc(f.a.id, "tax_invoice", { pdfKey: key });
     expect((await usePdf(`${token}x`)).status).toBe(404);
     expect(await viewedAt(other)).toBeNull();
+  });
+  it("review L1: a tax invoice voided after the link was checked is the 404, read again in the batch of the view; R2 not read, no view, not counted", async () => {
+    const f = await fixtures();
+    const key = `docs/tax_invoice/2026-27/${9000 + ++seq}-v1.pdf`;
+    await env.DOCS.put(key, "%PDF-1.4 raced");
+    const doc = await frozenDoc(f.a.id, "tax_invoice", { pdfKey: key });
+    const token = await link(f.a.finance, doc);
+    const ip = "192.0.2.84";
+    const voidIt = () =>
+      env.DB.prepare(
+        "UPDATE documents SET status = 'void', voided_at = ?1, void_reason = 'test' WHERE id = ?2",
+      )
+        .bind(Date.now(), doc)
+        .run();
+    const get = vi.spyOn(env.DOCS, "get");
+    try {
+      const res = await call(
+        "/t/document/pdf",
+        { body: { token }, ip, headers: { "cf-ray": "ray-doc-l1" } },
+        withDb(beforeBatch(env.DB, 2, voidIt)),
+      );
+      expect(res.status).toBe(404);
+      expect(await bodyOf(res)).toEqual(NOT_FOUND);
+      expect(get).not.toHaveBeenCalled();
+    } finally {
+      get.mockRestore();
+    }
+    expect(
+      (await one<{ v: number | null }>("SELECT viewed_at AS v FROM documents WHERE id = ?", doc))?.v ?? null,
+    ).toBeNull();
+    expect(await rows("SELECT status FROM access_log WHERE request_id = 'ray-doc-l1'")).toEqual([
+      { status: 404 },
+    ]);
+    expect(await attemptsRow(await portalFailKey(env.PORTAL_KEY_PEPPER, ip))).toBeNull();
   });
   it("a bad link is the same 404 and counts", async () => {
     const ip = "192.0.2.83";

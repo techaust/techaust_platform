@@ -8,7 +8,17 @@ import { issueDateOf } from "@techaust/core/invoices";
 import { describe, expect, it, vi } from "vitest";
 import { type FxContact, fixtures } from "./fixtures.ts";
 import { isWithdrawnRow } from "./invoice-summary.ts";
-import { attemptsRow, bodyOf, call, nextIp, one, sessionFor } from "./test-helpers.ts";
+import {
+  attemptsRow,
+  beforeBatch,
+  bodyOf,
+  call,
+  nextIp,
+  one,
+  rows,
+  sessionFor,
+  withDb,
+} from "./test-helpers.ts";
 
 const REASON = "Owner reason text never shown";
 /** The frozen issuer's bank block (sample values): a live proforma shows it; a withdrawn one never does (Q3 A, early check A2). */
@@ -163,6 +173,75 @@ describe("the PDF of a withdrawn proforma is never served [ADM-INV-10, Q3]", () 
       get.mockRestore();
     }
     expect(await viewedAt(pf.id)).toBeNull();
+  });
+});
+
+describe("a withdrawal or a void landing while the emailed link opens the PDF [ADM-INV-10, POR-06, review L1]", () => {
+  let raced = 0;
+  /** The link's PDF route, with `change` run between its two batches (after the link was checked, before the batch that writes the view). */
+  async function racedPdf(contact: FxContact, documentId: string, change: () => Promise<unknown>) {
+    const token = await link(contact, documentId);
+    const ip = nextIp();
+    const rid = `ray-l1-${++raced}`;
+    const get = vi.spyOn(env.DOCS, "get");
+    try {
+      const res = await call(
+        "/t/document/pdf",
+        { body: { token }, ip, headers: { "cf-ray": rid } },
+        withDb(beforeBatch(env.DB, 2, change)),
+      );
+      return { res, text: await res.text(), r2Reads: get.mock.calls.length, ip, rid };
+    } finally {
+      get.mockRestore();
+    }
+  }
+  const voidNow = (id: string) => () =>
+    env.DB.prepare(
+      "UPDATE documents SET status = 'void', voided_at = ?2, void_reason = ?3, updated_at = ?2 WHERE id = ?1",
+    )
+      .bind(id, Date.now(), REASON)
+      .run();
+  const failures = async (ip: string) =>
+    (await attemptsRow(await portalFailKey(env.PORTAL_KEY_PEPPER, ip)))?.failures ?? 0;
+  const accessRows = (rid: string) =>
+    rows("SELECT actor_id, status FROM access_log WHERE request_id = ?", rid);
+
+  it("withdrawn in the gap: 409 withdrawn in 07-ZF 20's words, R2 not read, no view, one 409 access row, no failure counted", async () => {
+    const f = await fixtures();
+    const pf = await proforma(f.a.id, { delivered: "emailed", voided: false });
+    const r = await racedPdf(f.a.finance, pf.id, voidNow(pf.id));
+    expect(r.res.status).toBe(409);
+    expect(JSON.parse(r.text)).toMatchObject({
+      error: {
+        code: "withdrawn",
+        message: "The PDF isn't available because this payment request was withdrawn.",
+      },
+    });
+    expect(r.r2Reads).toBe(0);
+    expect(await viewedAt(pf.id)).toBeNull();
+    expect(await accessRows(r.rid)).toEqual([{ actor_id: f.a.finance.id, status: 409 }]);
+    expect(await failures(r.ip)).toBe(0);
+  });
+  it("voided in the gap (a proforma that never reached the client, so not withdrawn): the 404, R2 not read, one 404 access row, no failure counted", async () => {
+    const f = await fixtures();
+    const pf = await proforma(f.a.id, { delivered: "none", voided: false });
+    const r = await racedPdf(f.a.finance, pf.id, voidNow(pf.id));
+    expect(r.res.status).toBe(404);
+    expect(JSON.parse(r.text)).toMatchObject({ error: { code: "not_found", message: "Not found" } });
+    expect(r.r2Reads).toBe(0);
+    expect(await viewedAt(pf.id)).toBeNull();
+    expect(await accessRows(r.rid)).toEqual([{ actor_id: f.a.finance.id, status: 404 }]);
+    expect(await failures(r.ip)).toBe(0);
+  });
+  it("nothing changes in the gap: the PDF is served, the view written, one 200 access row", async () => {
+    const f = await fixtures();
+    const pf = await proforma(f.a.id, { delivered: "emailed", voided: false });
+    const r = await racedPdf(f.a.finance, pf.id, async () => {});
+    expect(r.res.status).toBe(200);
+    expect(r.text).toBe("%PDF-1.4 proforma with bank details");
+    expect(r.r2Reads).toBe(1);
+    expect(await viewedAt(pf.id)).not.toBeNull();
+    expect(await accessRows(r.rid)).toEqual([{ actor_id: f.a.finance.id, status: 200 }]);
   });
 });
 
