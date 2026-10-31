@@ -1,4 +1,4 @@
-Status: lead reading; analyst brief next (session restarted 2026-10-31 13:05 IST, main 8d5b958 merged in)
+Status: analyst drafting the brief (started 2026-10-31 13:10 IST)
 Tier: A
 Usage: _(one entry per agent run, from `node tools/model-audit.mjs`)_
 
