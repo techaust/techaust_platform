@@ -46,16 +46,7 @@ import {
 } from "@techaust/db/ledger";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
-import {
-  type ApiError,
-  type AppEnv,
-  actor,
-  BAD_REQUEST,
-  type Ctx,
-  err,
-  mutate,
-  NOT_FOUND,
-} from "./context.ts";
+import { type AppEnv, actor, BAD_REQUEST, type Ctx, err, mutate, NOT_FOUND } from "./context.ts";
 import { docDownload, dropDoc, extOfMime, streamToDocs, uploadHead } from "./docs-upload.ts";
 import { body, idParam, param, query, refusedWith, STALE_VERSION } from "./http.ts";
 import { decodeCursor, encodeCursor } from "./keyset.ts";
@@ -379,7 +370,7 @@ async function sessionRefusal(c: Ctx, needsStepUp: boolean): Promise<Response | 
   )
     .bind(u.sessionId, t)
     .first<{ live: number; step_up_until: number | null }>();
-  if (!s || s.live !== 1) return err(c, { code: "unauthenticated", message: "Sign in" }, 401);
+  if (s?.live !== 1) return err(c, { code: "unauthenticated", message: "Sign in" }, 401);
   if (needsStepUp && (s.step_up_until === null || s.step_up_until <= t))
     return err(
       c,

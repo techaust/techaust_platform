@@ -12,7 +12,13 @@
 
 /** The kinds of line on a statement. */
 /** M6.1 (T8, 07-ZH line 19): `tds` is the tax the client deducted at source (a credit, like a receipt). */
-export type StatementKind = "tax_invoice" | "export_invoice" | "debit_note" | "credit_note" | "receipt" | "tds";
+export type StatementKind =
+  | "tax_invoice"
+  | "export_invoice"
+  | "debit_note"
+  | "credit_note"
+  | "receipt"
+  | "tds";
 
 /** The document types that add to what the client owes (a credit note and a receipt reduce it). */
 export const STATEMENT_DEBIT_TYPES = ["tax_invoice", "export_invoice", "debit_note"] as const;

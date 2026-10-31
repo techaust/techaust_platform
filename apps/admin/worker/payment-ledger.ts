@@ -97,7 +97,7 @@ async function sessionRefusal(c: Ctx): Promise<Response | null> {
   )
     .bind(u.sessionId, t)
     .first<{ live: number; step_up_until: number | null }>();
-  if (!s || s.live !== 1) return err(c, { code: "unauthenticated", message: "Sign in" }, 401);
+  if (s?.live !== 1) return err(c, { code: "unauthenticated", message: "Sign in" }, 401);
   if (s.step_up_until === null || s.step_up_until <= t)
     return err(
       c,
