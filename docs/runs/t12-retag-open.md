@@ -1,6 +1,6 @@
-Status: builder running (code comments); lead rewriting 08-C §5
+Status: reviewer running
 Tier: C (comments and one register section; no logic, no copy)
-Usage: (filled from `node tools/model-audit.mjs` after each agent run)
+Usage: builder claude-opus-5-5/high, 2026-10-31 07:37Z, skills: none (flagged by model-audit; none of docs/14 §9 fits a comment-only retag, and the cloudflare skills don't load in a cloud session; lead accepts); 5-h reading 8 % at 12:58 IST
 
 # T12: retag the settled OPEN comments and rewrite 08-C §5
 
@@ -174,6 +174,8 @@ Builder (Opus 5.5, high), branch `fix/t12-retag-r1` from `origin/chore/t12-retag
 **Open questions:** none.
 
 ## Lead: 08-C §5
+Rewritten by the lead (commit 0eb3d81): §5 is now "Where the OPEN items stand", in three parts. **Settled by the lead on the safest reading, 2026-10-30** is a table with the reading, where it stands on main (built, which task, or owner duty) and the residual risk. **Still OPEN** holds RB-06, RB-21 (rate) and RB-22(b); the questions rt1 and rt2 raised on 2026-10-31 (RA-04 3B period, RA-22 proviso, RA-31 IFF); RB-38 (MCIA, checked first in T6); RB-39 (format); and three found in code with no row yet (RA-21 note rate day, RA-18 IGST endorsement, RA-19 ARN format). **Watch** lists RA-01, RB-08, RB-16, RB-33 and RB-39(b). No row in §1 or §2 was changed. §5 says that where a row still reads OPEN for a settled item, §5 is current.
+Lead check of the builder's diff: merged `fix/t12-retag-r1` 5ca2907 by fast-forward. Every non-doc +/- line is a comment except the 5 test titles listed in the builder report. The readings match the brief's table.
 
 ## Review
 
@@ -184,6 +186,10 @@ Builder (Opus 5.5, high), branch `fix/t12-retag-r1` from `origin/chore/t12-retag
 - 2026-10-31, Lead (T12): a test title carrying a stale tag gets its tag text retagged (a label; no assertion changes).
 
 ## Follow-ups (for 12)
+- **Copy (owner approval):** `apps/admin/src/lib/reports.ts` (the RB-02 line at ~229 and ~473) still says "a different realisation period may apply. Ask your bank or CA.", though RB-02 is settled at 9 months from the invoice date. The RA-23 line at ~91 says "test-import one file with your CA", though the owner has no CA and the test import is the owner's duty. Both are copy, so T12 leaves them.
+- **08-C header (main session or the next task that touches 08-C rows):** line 9's tag list names two tags. It should also name `Settled by the lead on the safest reading, <date> (08-C <ID>)`. Line 7 ("The OPEN rows are the list for the CA and the lawyer") is stale since 2026-10-30. Both lines sit outside §5, which is all T12 may edit.
+- **T6, when it changes row RB-38:** update §5's "Still OPEN" RB-38 (MCIA) line and the RB-38 (c) residual column. **T7, if it changes RB-37:** update §5's RB-37 (a) line.
+- RA-21 (note rate day): settle-08c leans towards the note's own date, but the code uses the invoice's rate. Still OPEN; to be decided in a later task with a source.
 
 ## Questions for the owner
 None.
