@@ -1,6 +1,6 @@
 # 12: Status
 
-_Replaced (never appended) at the end of every session. Last updated: **2026-10-31, 11:15** (IST)._
+_Replaced (never appended) at the end of every session. Last updated: **2026-10-31, 12:15** (IST)._
 
 ## Done
 - **Phases 1–5, M1 (foundation), M2 (public website), M3, M4 and the M5 batch (M5.0–M5.5):** all approved by the owner (M5 on 2026-10-31, [#122](https://github.com/techaust/techaust_platform/pull/122)). Details live in the run files under [runs/](runs/) and in [13-decisions.md](13-decisions.md).
@@ -10,13 +10,17 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
   - **T4 + T10** ([#124](https://github.com/techaust/techaust_platform/pull/124); [run file](runs/rt2-signature-udyam.md)): the signature always on credit and debit notes and invoices for a payment received (trigger 0055, jobs refusal), the Udyam number on tax invoices (Settings › Company), accessible admin dialogs (refusals read out, focus kept clear of the sticky buttons). Copy 07-ZC approved by the owner.
   - **The T6 and T11 wording** approved by the owner: 20 lines and Q1–Q4 ([07-ZE](07-content-appendix/ZE-terms-offers-deed.md); #125).
   - **Launch all at once** (owner): no early website cut-over; everything goes live together after M6, M7 and Phase 7 (estimate: about 12–17 working days, 3–4 weeks, gateway live approval not included; [09-roadmap](09-roadmap.md)).
-  - **Cloud sessions work:** the owner saved the cloud environment and a real cloud session passed "check cloud setup"; it was closed (work stays on this PC).
+  - **Parallel task sessions** (owner): every pending, unblocked task runs as its own cloud session, controlled by a main session on this PC; at most 2 agents per session; questions come through the main session. The plan, shared rules and five prompts: [runs/cloud-parallel-2026-10-31](runs/cloud-parallel-2026-10-31.md); the protocol: [runbook Part 4](runbooks/cloud-sessions.md), CLAUDE.md, docs/14 §5.
+  - **The five sessions were started and all stopped in setup** ("node -v says v24.22.1, not v24.22.2": the cloud image now has its own Node in `/opt/node24`). Fixed in [#126](https://github.com/techaust/techaust_platform/pull/126) (Node in `/opt/techaust-node`); not yet run on a real cloud machine.
 - **Verified today:** the rt2 integration at 32f788d8: `pnpm check` exit 0 and `pnpm test` all green (auth 135, ui 471, core 1,861, email 130, db 514, pdf 376, web 714, portal 651, jobs 549, admin 3,493); both browser test sets and axe passed in the reviews; CI and the staging deploy of #124 (a703bf56) green. Workers: admin front 99,271, admin API 618,422, jobs **984,266 of 1,000,000** bytes.
 
 ## In progress
-- Nothing is being built. No agent is running. PR #125 (the 07-ZE wording, the launch decision and this record) merges itself once CI passes.
+- **[#126](https://github.com/techaust/techaust_platform/pull/126)** (the cloud setup fix) merges itself once CI passes (auto-merge on; Auto-fix is the owner's switch in its PR bar, the app refused it here).
+- **This record** (docs PR of today's second end of day) merges itself once CI passes.
+- No agent is running. No cloud session is running (all five stopped in setup).
 
-## Next (when work resumes; say "continue" in a new conversation)
+## Next (when work resumes; say "start the day" in a new conversation)
+0. **Restart the five parallel cloud sessions** once #126 has merged and the owner has pasted the new setup script ([handover](runs/cloud-parallel-2026-10-31.md)): T12, T6, withdraw a seen proforma, T7, M6.1 (items 1–5 below), each from the prompt in that file, merge order T12 → T6 → proforma → T7 → M6.1. Then "check the cloud sessions" to control them.
 1. **T6** (Tier B/C; [07-ZE](07-content-appendix/ZE-terms-offers-deed.md)): first the MCIA check (its fee schedule, and whether its rules allow a Kolkata seat; if either fails, 07-ZE line 12 goes back to the owner), then the brief, the build (offer wording, proposal terms v4, website Terms 0.2; Delivery 0.2 waits for T11), the review.
 2. **T7** erasure in never-accepted offers (Tier A, before 13 May 2027).
 3. **Withdraw a proforma the client has seen** (owner's yes, 2026-10-30; Tier A; new copy to the owner).
@@ -24,9 +28,10 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 5. **M6 Payments** (sandbox only): M6.1 with T8 (TDS by certificate) and the third admin Worker plan (admin API at 618,422; plan before 650,000), then T11 (the deed, needs "fully paid"); decide L9 (jobs minify, a separate payment-webhook Worker or a measured ceiling) **before M6.2**; M6.2–M6.5.
 6. **M7** (M7.1–M7.5), an audit of M6–M7, then **Phase 7 all at once** (L1–L11). T5 (CERT-In log copy to S3 Mumbai) once the owner's AWS is set up.
 
-**Usage now:** 5-hour window 2 %. Gate: new agents at or under 95 %; this PC at most 2 agents, 1 using a browser.
+**Usage now:** 5-hour window 3 %. Gate: new agents at or under 95 %; this PC at most 2 agents, 1 using a browser.
 
 ## Waits on the owner
+- **Now, after #126 merges:** paste the new setup script into the `techaust_platform` environment (claude.ai/code › environment › gear › Setup script; copy the Raw file from `main`; [runbook](runbooks/cloud-sessions.md) Part 2, step 6), and archive the five failed cloud sessions. Then "start the day" here.
 - **Start early (outside waiting times, so launch day doesn't slip; the lead gives click-by-click steps when each comes up):**
   - **SES production access** (AWS › SES › Account dashboard › Request production access) and a production IAM user, so emails reach any address;
   - **the AWS backup bucket** (and for T5 the S3 bucket in Mumbai), with the lead's script; sign the AWS MCP in to the TecHaust account first (it is on another account today);
@@ -46,6 +51,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 - **Model menu:** Opus 5.5, high, for every conversation.
 
 ## Open follow-ups
+- **Parallel task sessions (2026-10-31, [run file](runs/cloud-parallel-2026-10-31.md)):** `tools/agent-slots.mjs` doesn't hold the 2-agents-per-session cap of parallel runs yet (the prompt does); the #126 fix is unverified on a real cloud machine.
 - **Model audit (2026-10-31):** the rt2 integration builder (agent-ae999e0f) loaded no skill though it reported two; recorded in its run file.
 - **rt1 ([run file](runs/rt1-notes-rules.md)):** (1) a migration that folds any legacy `tax.lut` into the list and drops the key, **before production**; (2) the 3B helper's IMS status per period (OPEN RA-04); (3) an optional "IFF filed" setting (OPEN RA-31); (4) show known blockers on a dialog's confirm step before step-up; (5) the draft row's 44 px inline link line gap (cosmetic).
 - **rt2 ([run file](runs/rt2-signature-udyam.md)):** the invoice issue dialog's wrong-code notice and one shared `invalid_code` helper; a BEFORE INSERT signature trigger; inner spaces in a pasted Udyam number; one shared must-be-signed list; the `Field` scroll effect key; the save bar after a "No change" save; fresh visual baselines (invoice-udyam, advance, note fixtures); the duplicate PNG builder in `apps/admin/e2e/sample-data.ts`; the `.inv-udyam` 12em rule if the Udyam format ever changes; not verified: NVDA, Browser Run renders of the Udyam line and the signed notes.
