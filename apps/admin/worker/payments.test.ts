@@ -1155,3 +1155,191 @@ describe("early check 2, finding 12: races", () => {
     }
   });
 });
+
+describe("code review fixes [ADM-PAY-06, ADM-INV-16, ADM-CLI-03]", () => {
+  /** `env` whose DB counts every statement it runs (each statement of a batch counts one, as on D1 Free's 50 queries per invocation). */
+  function statements() {
+    let n = 0;
+    const real = new WeakMap<object, D1PreparedStatement>();
+    const counted = (t: D1PreparedStatement): D1PreparedStatement => {
+      const p = new Proxy(t, {
+        get(target, k) {
+          if (k === "bind") return (...v: unknown[]) => counted(target.bind(...v));
+          if (k === "first" || k === "run" || k === "all" || k === "raw")
+            return (...a: unknown[]) => {
+              n++;
+              return (Reflect.get(target, k) as (...x: unknown[]) => unknown).apply(target, a);
+            };
+          return Reflect.get(target, k);
+        },
+      });
+      real.set(p, t);
+      return p;
+    };
+    const db = {
+      prepare: (q: string) => counted(env.DB.prepare(q)),
+      batch: (stmts: D1PreparedStatement[]) => {
+        n += stmts.length;
+        return env.DB.batch(stmts.map((s) => real.get(s) ?? s));
+      },
+    } as unknown as D1Database;
+    return { env: withDb(db), count: () => n };
+  }
+
+  it("finding 1: the TDS part of an excess is not releasable (paid 90 % + TDS 10 %, then a full credit note): releasableMinor is the paid part, more is 409", async () => {
+    const o = await owner();
+    const { clientId, inv } = await invoiceFor();
+    const tds = 11_800; // 10 % of 118,000
+    const paid = TOTAL - tds;
+    await recorded(o, recordBody(clientId, paid, [{ documentId: inv.id, amountMinor: paid }]));
+    await recorded(o, tdsBody(clientId, inv.id, tds));
+    // the credit note of the whole invoice (its parent's credited figure, as the M5.3 batch leaves it)
+    await env.DB.prepare(
+      "UPDATE documents SET credited_minor = ?2, updated_at = updated_at + 1 WHERE id = ?1",
+    )
+      .bind(inv.id, TOTAL)
+      .run();
+    const panel = await json(await call(`/invoices/${inv.id}/payments`, { cookie: o.cookie }));
+    expect(panel).toMatchObject({ excessMinor: TOTAL, releasableMinor: paid });
+    const release = async (amountMinor: number) =>
+      call(`/invoices/${inv.id}/credit/release`, {
+        cookie: o.cookie,
+        body: { amountMinor, expectedUpdatedAt: (await ledgerOf(inv.id)).updated_at },
+      });
+    const over = await release(TOTAL);
+    expect(over.status).toBe(409);
+    expect(await json(over)).toMatchObject({
+      error: { code: "exceeds_excess", details: { excessMinor: TOTAL, releasableMinor: paid } },
+    });
+    const ok = await release(paid);
+    expect(ok.status, await ok.clone().text()).toBe(200);
+    expect(await ledgerOf(inv.id)).toMatchObject({ paid_minor: 0, tds_minor: tds });
+    // the TDS stays on the invoice as refund due (08-C RA-30 follow-up); nothing more can move
+    const after = await json(await call(`/invoices/${inv.id}/payments`, { cookie: o.cookie }));
+    expect(after).toMatchObject({ excessMinor: tds, releasableMinor: 0 });
+    const credit = await json(await call(`/clients/${clientId}/credit`, { cookie: o.cookie }));
+    expect(credit.credits).toEqual([{ currency: "INR", creditMinor: paid }]);
+  });
+
+  it("finding 3: Use credit can draw on the whole credit, past the 50 sources listed, in a bounded number of D1 statements", async () => {
+    const o = await owner();
+    const { clientId, inv } = await invoiceFor();
+    const n = 55;
+    for (let i = 0; i < n; i++) await recorded(o, recordBody(clientId, 100));
+    const listed = await json(await call(`/clients/${clientId}/credit`, { cookie: o.cookie }));
+    expect(listed.credits).toEqual([{ currency: "INR", creditMinor: n * 100 }]);
+    expect(listed.sources).toHaveLength(50);
+    const apply = async (amountMinor: number, e?: Env) =>
+      call(
+        `/clients/${clientId}/credit/apply`,
+        {
+          cookie: o.cookie,
+          body: { documentId: inv.id, amountMinor, expectedUpdatedAt: (await ledgerOf(inv.id)).updated_at },
+        },
+        e,
+      );
+    expect(await codeOf(await apply(n * 100 + 1))).toBe("exceeds_credit");
+    const s = statements();
+    const res = await apply(n * 100, s.env);
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect((await json(res)).allocations).toHaveLength(n);
+    // one statement writes every allocation row, so the count does not grow with the sources (10 at the fix): far inside D1 Free's 50 queries per
+    // invocation (T7's budget of 45)
+    console.log(`D1 statements, Use credit over ${n} sources: ${s.count()}`);
+    expect(s.count()).toBeLessThanOrEqual(20);
+    expect(await ledgerOf(inv.id)).toMatchObject({ paid_minor: n * 100, balance_minor: TOTAL - n * 100 });
+    const empty = await json(await call(`/clients/${clientId}/credit`, { cookie: o.cookie }));
+    expect(empty.credits).toEqual([{ currency: "INR", creditMinor: 0 }]);
+    expect(empty.sources).toEqual([]);
+  });
+
+  it("finding 3: the draw takes only the oldest sources that cover the amount (first in, first out)", async () => {
+    const o = await owner();
+    const { clientId, inv } = await invoiceFor();
+    const old = await recorded(o, recordBody(clientId, 300, [], { receivedOn: "2026-10-01" }));
+    const mid = await recorded(o, recordBody(clientId, 300, [], { receivedOn: "2026-10-02" }));
+    await recorded(o, recordBody(clientId, 300, [], { receivedOn: "2026-10-03" }));
+    const res = await call(`/clients/${clientId}/credit/apply`, {
+      cookie: o.cookie,
+      body: { documentId: inv.id, amountMinor: 450, expectedUpdatedAt: (await ledgerOf(inv.id)).updated_at },
+    });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect((await json(res)).allocations).toEqual([
+      { paymentId: old.id, amountMinor: 300 },
+      { paymentId: mid.id, amountMinor: 150 },
+    ]);
+  });
+
+  it("finding 6: a pending or confirmed payment locks the client's currency (409 currency_locked); rejected and withdrawn ones do not", async () => {
+    const o = await owner();
+    const clientId = await mkReportClient();
+    const patchCurrency = async (currency: "INR" | "USD") => {
+      const page = await json(await call(`/clients/${clientId}`, { cookie: o.cookie }));
+      return call(`/clients/${clientId}/billing`, {
+        method: "PATCH",
+        cookie: o.cookie,
+        body: { expectedUpdatedAt: page.client.updatedAt, currency },
+      });
+    };
+    const staff = await sessionFor("staff");
+    const pending = await recorded(staff, recordBody(clientId, 500));
+    const refused = await patchCurrency("USD");
+    expect(refused.status).toBe(409);
+    expect(await json(refused)).toMatchObject({
+      error: {
+        code: "currency_locked",
+        message: "The currency can't change once this client has an invoice.",
+      },
+    });
+    expect((await json(await call(`/clients/${clientId}`, { cookie: o.cookie }))).currencyLocked).toBe(true);
+    expect((await verify(o, pending.id, "reject", { note: "Not ours" })).status).toBe(200);
+    const confirmed = await recorded(o, recordBody(clientId, 700));
+    expect(await codeOf(await patchCurrency("USD"))).toBe("currency_locked");
+    const withdrawn = await call(`/payments/${confirmed.id}/withdraw`, {
+      cookie: o.cookie,
+      body: { reason: "Entered for the wrong client" },
+    });
+    expect(withdrawn.status, await withdrawn.clone().text()).toBe(200);
+    // only rejected and withdrawn entries are left: they hold nothing, so the currency can change
+    expect((await json(await call(`/clients/${clientId}`, { cookie: o.cookie }))).currencyLocked).toBe(false);
+    expect((await patchCurrency("USD")).status).toBe(200);
+    expect(
+      (await one<{ currency: string }>("SELECT currency FROM clients WHERE id = ?", clientId))?.currency,
+    ).toBe("USD");
+  });
+
+  it("finding 7: a client with payments and no issued document shows Collected and Credit held; one row once a document exists", async () => {
+    const o = await owner();
+    const clientId = await mkReportClient();
+    const staff = await sessionFor("staff");
+    await recorded(o, recordBody(clientId, 2_500));
+    await recorded(staff, recordBody(clientId, 9)); // pending: counts nowhere
+    const fin = await json(await call(`/clients/${clientId}/finance`, { cookie: o.cookie }));
+    expect(fin.currencies).toEqual([
+      {
+        currency: "INR",
+        billedMinor: 0,
+        creditedMinor: 0,
+        balanceMinor: 0,
+        overdueMinor: 0,
+        overdueCount: 0,
+        tdsMinor: 0,
+        excessMinor: 0,
+        collectedMinor: 2_500,
+        creditMinor: 2_500,
+      },
+    ]);
+    // once a document is issued, the figures come from the documents' row (one row, never two)
+    await addDoc({ clientId, issueDate: "2026-10-05" });
+    const both = await json(await call(`/clients/${clientId}/finance`, { cookie: o.cookie }));
+    expect(both.currencies).toHaveLength(1);
+    expect(both.currencies[0]).toMatchObject({
+      billedMinor: TOTAL,
+      collectedMinor: 2_500,
+      creditMinor: 2_500,
+    });
+    // a client with no payments and no documents still has none
+    const bare = await mkReportClient();
+    expect((await json(await call(`/clients/${bare}/finance`, { cookie: o.cookie }))).currencies).toEqual([]);
+  });
+});
