@@ -1,6 +1,6 @@
 # Run: rt2, the signature always on notes and advance invoices (T4) and the Udyam number on tax invoices (T10)
 
-Status: open
+Status: merging
 Tier: A
 Usage: analyst claude-opus-5-5/high (agent-a6087809…, brief draft; skills workers-best-practices, wrangler, workers-profiling)
 
@@ -572,3 +572,10 @@ Outside the fix diff: **medium** `packages/pdf/src/invoice-envelope.ts:170` chec
 
 **Open questions:** none.
 Usage: builder claude-opus-5-5/high (skills workers-best-practices, wrangler).
+
+## Integration notes (lead, 2026-10-31)
+- **Path:** build → early check GO (F1–F5) → designer → code review APPROVE (6 low) → visual review SEND BACK (1 high) → fixes → integration after rt1 (#123): 0054 taken out and regenerated as **0055** → second review SEND BACK (1 high: an unsigned portal test freeze) → fixes → re-check SEND BACK (1 high, older: dialog scroll padding) → fixes → final re-check APPROVE → last fixes (sealed Udyam shape-only; core GSTIN normaliser), verified by the lead from the diff.
+- **Full checks at 32f788d8 (lead, `tools/heavy.sh`):** `pnpm check` exit 0 (56 migrations, none rebuilds); `pnpm test` all green: auth 135, ui 471 (+2), core 1,861, email 130, db 514, pdf 376, web 714 (+17), portal 651, jobs 549, admin 3,493. Budgets (builder, `fix/rt2-last`): admin front 99,271; admin API 618,422; jobs **984,266 of 1,000,000** (L9 before M6.2).
+- **Record:** 08-C RA-17, RA-22, RB-39; 04 ADM-SET-01, ADM-INV-06; 13 (owner's two choices, L1–L11, the dialog rules); CLAUDE.md house-rules line; 07-ZC lines 1–7.
+- **Follow-ups:** the invoice issue dialog's wrong-code notice and one shared `invalid_code` helper; a BEFORE INSERT signature trigger; inner spaces in a pasted Udyam number; one shared must-be-signed list; the `Field` scroll effect key; the save bar after a "No change" save; show known blockers on a dialog's confirm step before step-up; fresh visual baselines (invoice-udyam, advance, note fixtures); the duplicate PNG builder in `apps/admin/e2e/sample-data.ts`; the `.inv-udyam` 12em rule if the Udyam format ever changes.
+- **Not verified:** staging (after merge), NVDA, Browser Run renders of the Udyam line and the signed notes.
