@@ -113,3 +113,19 @@ The GET answer (for the designer): `{project, clientAnonymised, eligibility {eli
 8. **Copy for 07-ZJ:** the bell title is `[Placeholder] ` + project code; the audit labels, the deed action group and record type are `[Placeholder] <code>`; the refusal messages in `apps/admin/worker/deeds.ts` are plain staff lines written by the builder for the lead's approval.
 9. **Downloads for an anonymised client's final or signed deed** stay open to Owner, Staff and Accountant (a legal record, like the invoice PDFs). Confirm.
 10. **docs/04 §9** needs the six `deeds.*` rows (the lead's file).
+
+## Lead triage of the builder's open questions (2026-11-01)
+**Owner's answers (2026-11-01):**
+1. **A credit note given as a discount:** the client still gets a deed once everything owed is paid. The target is the accepted total **minus credit notes** on the project's live invoices; eligibility = every live invoice-family document settled (balance 0) and the money allocated reaching that net target. The deed's "paid in full" amount is the amount actually paid.
+2. **After a cancelled draft:** the Owner's "Check again" can prepare a fresh draft if the project still qualifies; the cancelled one stays in history with its reason (the unique-per-project rule becomes one *open* deed per project: unique partial index over `status IN ('draft','final','signed')`, a new migration or the T11 one before it is applied anywhere).
+8. **An anonymised client's final and signed deed PDFs** stay downloadable by Owner, Staff and Accountant, like invoices (as built).
+
+**Lead decisions:**
+3. The signed PDF is stored write-once in `DOCS` (L4), not the file vault: the vault allows deletion and isn't write-once. 07-ZE Q4's "uploads the signed PDF to the file vault" meant "uploads it into the system"; the owner's intent (upload, keep, show to the client) is met. Record row in 13.
+4. `{supplier_address}` = the GST principal place of business (`principalPlace`), the address registered against the GSTIN printed beside it; `{client_reg}` = the client's GSTIN only (no other registration is held); dates as `formatDate` ("01 Nov 2026"), the house style on documents.
+5. The unsigned PDF's signature sentence: the designer sets the punctuation in 07-ZJ (the approved 07-ZE sentence ends in a full stop once the eSign details follow; on the unsigned PDF end it at "TecHaust Technologies." with the space below).
+6. The Accountant loses `deeds.view` (a deed isn't a finance record and the Accountant can't open project pages); Owner and Staff keep it.
+7. Copy: every `[Placeholder]` line (the bell title, audit labels, action group, record type, staff refusal messages) goes into 07-ZJ, drafted by the designer; staff-only lines approved by the lead under the owner's delegation, client-facing ones (the portal deed section and the `deed.signed` email) by the owner.
+9. docs/04 §9: the lead adds the `deeds.*` rows at integration (Owner and Staff view; Owner and Staff edit Schedules; Owner finalise and upload with step-up, cancel, recheck).
+
+**Next:** the analyst's early check on `14eda8cf`; then a builder round for items 1, 2, 4, 6, any early-check changes, and the jobs part (`pdf.deed`, `deed.signed`; `main` now has #138, so merge `origin/main` first); then the designer (PDF layout, screens, 07-ZJ).
