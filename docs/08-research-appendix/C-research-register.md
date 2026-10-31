@@ -140,7 +140,7 @@ Code comments carry `Settled by the lead on the safest reading, 2026-10-30 (08-C
 | RA-16 | 998313 for care plans by default; 998316 only for plans that are mainly hosting or infrastructure [08-A; secondary] | Built | HSN summary only |
 | RA-17 | A tax invoice for a payment received serves as the s.31(3)(d) document ("or any other document"), with every Rule 50 particular including the signature [08-C; the proviso unverified] | Built (rt2, T4) | Low |
 | RA-19 (Q37) | The LUT route is refused when the receipt day's FY has no saved LUT; the Owner saves the new LUT first or issues with IGST (owner, 2026-10-28) [Rule 96A(1)] | Built | None |
-| RA-19 (Q39) | A debit note on an LUT export needs the LUT of its own FY; no IGST alternative [Rule 96A(1), Notification 37/2017-CT] | Built (rt1, T2; 0054) | Stricter, harmless |
+| RA-19 (Q39) | A debit note on an LUT export needs the LUT of its own FY; no IGST alternative (rt1 narrowed settle-08c's "or IGST": a note follows its parent's route) [Rule 96A(1), Notification 37/2017-CT] | Built (rt1, T2; 0054) | Stricter, harmless |
 | RA-20 | Exports under LUT; never claim a refund before realisation; repay with interest if one was paid [secondary, unverified] | Nothing to build | None while no refund is claimed |
 | RA-21 (Q24) | That day's rate, or an earlier one only with the dated "no rate that day" statement [Rule 34(2)] | Built (0046–0047) | None |
 | RA-23 (Q17) | A test import of each CSV into the Offline Tool before the first GSTR-1; until then every column is unverified | Owner duty (§6) | None after the test |
@@ -148,12 +148,12 @@ Code comments carry `Settled by the lead on the safest reading, 2026-10-30 (08-C
 | RA-26 (G-19) | Reverse-charge IGST on every foreign business service billed without an Indian GSTIN; a self-invoice within 30 days; GSTR-3B 3.1(d) in cash, ITC in 4(A)(2) [unverified, secondary] | Owner: a monthly spreadsheet with the lead's steps; no app feature | Interest and penalty if missed |
 | RA-29 | GST on the gateway's MDR is taxable; give the gateway our GSTIN; ITC only when it shows in GSTR-2B [unverified] | At M6 gateway onboarding | None |
 | RA-30 (G-17) | The client picks the TDS section and rate; record the certificate's amount; invoice and GST at full value; reconcile with 26AS and AIS [secondary] | T8, inside M6.1 | Chasing certificates |
-| RA-31 | A previous-FY credit note is declared in a return filed by the cutoff, so it is issued by the last return-period end before it (quarterly filer: 31 October for registered clients through IFF, 30 September for others) [08-C, s.34(2); Rule 59] | Built (rt1, T1; `tax.gstr1Frequency` quarterly, owner 2026-10-31) | Stricter than GSTN practice |
+| RA-31 (issue deadline) | A previous-FY credit note is declared in a return filed by the cutoff, so it is issued by the last return-period end before it (quarterly filer: 31 October for registered clients through IFF, 30 September for others) [08-C, s.34(2); Rule 59] | Built (rt1, T1; `tax.gstr1Frequency` quarterly, owner 2026-10-31) | Stricter than GSTN practice |
 | RA-32 | A tax-only debit note is entered by hand in the GST portal's Table 9B, and 3B Table 3 is checked before filing | Built (the blocking warning `tax_only_note_manual`) | Whether the portal takes a nil-value row is unverified |
 | RA-33 | A tax-only debit note is never rounded: round-off 0, the total is its tax | Built (0052; the trigger is permanent) | None |
 | RA-34 | The secondary-sourced mod-36 check, tested locally against the owner's own GSTIN and two vendors' before Phase 7 (a scratch test, never committed) | Lead, before Phase 7 | None |
 | RB-01 | 9 months unless the invoice is in INR; a USD invoice credited in INR through a PA-CB keeps 9 months [read] | Built | None |
-| RB-02 | An export invoice raised before 1 Oct 2026: 9 months from its date; ask the bank for an extension if that has passed [read] | Tags only | None |
+| RB-02 | An export invoice raised before 1 Oct 2026: 9 months from its date; ask the bank for an extension if that has passed [read] | Tags only (the engine's 12 months for an INR invoice can't apply: an invoice is dated on its issue day, so none in the app predates 1 Oct 2026) | None |
 | RB-03 | Our work is "software" (FEMA 23(R)/2026-RB Reg. 2(1)(e)); one monthly EDF with the AD bank; never Reg. 3(2)(b) [read] | Built; owner: the monthly EDF | None |
 | RB-05 | Keep the bank advice or e-FIRA; for a PA-CB, the settlement report mapped to the invoice; confirm with the bank [read] | M6.1 | None |
 | RB-12 | DPDP s.7(a) with the Rule 6 log duty, kept 13 months; GDPR Art. 6(1)(f) for EU and UK persons [08-B; unverified today] | Tags only | MeitY guidance may change |
@@ -185,9 +185,9 @@ Code comments carry `Settled by the lead on the safest reading, 2026-10-30 (08-C
 | RA-31 (raised 2026-10-31, rt1) | Does IFF carry only supplies to registered persons, and from which day can a period's return be filed? | Raised after the settling | Owner duty: file the October IFF by 13 November when an October credit note relies on it |
 | RB-38 (MCIA) | The MCIA fee schedule, and whether the MCIA Rules allow a Kolkata seat | Checked first in T6 | If either fails, 07-ZE line 12 goes back to the owner |
 | RB-39 (format) | Is UDYAM-XX-00-0000000 the official format? | The Udyam portal and the MSME notification not read | Sealed blocks are checked for shape only |
-| RA-21 (notes; no row yet) | Which day's rate does a credit or debit note on a USD export use? | Found in code; no source read | The invoice's rate (`apps/admin/src/lib/notes.ts`) |
-| RA-18 (no row yet) | The IGST-route endorsement wording after "… ON PAYMENT OF INTEGRATED TAX" | Found in code; verified only up to there (08-A) | `packages/core/src/export-invoice.ts` |
-| RA-19 (no row yet) | The format of an LUT's ARN | Found in code | Only 1 to 30 letters and digits are checked |
+| RA-21 (notes; not in its row yet) | Which day's rate does a credit or debit note on a USD export use? | Found in code; no source read | The invoice's rate (`apps/admin/src/lib/notes.ts`) |
+| RA-18 (not in its row yet) | The IGST-route endorsement wording after "… ON PAYMENT OF INTEGRATED TAX" | Found in code; verified only up to there (08-A) | `packages/core/src/export-invoice.ts` |
+| RA-19 (ARN; not in its row yet) | The format of an LUT's ARN | Found in code | Only 1 to 30 letters and digits are checked |
 
 ### Watch (no question yet)
 RA-01 (the IMS pending-period rule and the s.2(6)(v) and s.13(3)(a) IGST changes, when notified), RB-08 (any amendment of DPDP Rule 1), RB-16 (any s.16(1) notification), RB-33 (the final RPwD (Amendment) Rules 2026), RB-39 (b) (the MSMED (Amendment) Act 2026's commencement).

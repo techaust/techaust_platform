@@ -1,4 +1,4 @@
-// The CSV files of M5.5b [ADM-REP-04, ADM-REP-06, ADM-CLI-04; LD83; every column UNVERIFIED, Settled by the lead on the safest reading, 2026-10-30 (08-C RA-23): a test import before the first GSTR-1]: golden CSVs of the sales
+// The CSV files of M5.5b [ADM-REP-04, ADM-REP-06, ADM-CLI-04; LD83; every column UNVERIFIED, Settled by the lead on the safest reading, 2026-10-30 (08-C RA-23): a test import before the first GSTR-1, which covers only the GSTR-1 files, not these]: golden CSVs of the sales
 // register, the output tax, the GSTR-3B summary and the statement over the golden fixture, no bare LF, formula defence on text only,
 // and the layout versions are known and frozen.
 import { describe, expect, it } from "vitest";

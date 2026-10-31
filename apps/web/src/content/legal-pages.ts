@@ -121,7 +121,7 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
                 "**Website visitor**",
                 "IP address, browser and device details, pages visited (cookieless Cloudflare Web Analytics); Cloudflare Turnstile security signals",
                 "Run and secure the website; understand overall usage",
-                // Settled by the lead on the safest reading, 2026-10-30 (08-C RB-12): the EU/UK basis is GDPR Art. 6(1)(f); in India DPDP s.7(a) with the Rule 6 log duty, kept 13 months.
+                // Settled by the lead on the safest reading, 2026-10-30 (08-C RB-12): for the acceptance IP address and browser only, GDPR Art. 6(1)(f) for EU and UK persons and DPDP s.7(a) in India; the acceptance record is kept with the offer (RB-37 (b)).
                 "India: provided voluntarily by using the site for that purpose (DPDP s.7(a)). EU/UK: legitimate interests",
               ],
               // Google Analytics rows: only while GA is on (site.ga4Id set).
@@ -151,7 +151,7 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
                 "**Client contact**",
                 "Name, title, work email, phone, portal sign-in activity, messages and files you share, proposal acceptance details (typed name, time, IP address, browser), billing details (company name, address, GSTIN), payment status and references",
                 "Deliver services, give portal access, invoice, collect payment, keep records",
-                // Settled by the lead on the safest reading, 2026-10-30 (08-C RB-12): the EU/UK basis is GDPR Art. 6(1)(f); in India DPDP s.7(a) with the Rule 6 log duty, kept 13 months.
+                // Settled by the lead on the safest reading, 2026-10-30 (08-C RB-12): for the acceptance IP address and browser only, GDPR Art. 6(1)(f) for EU and UK persons and DPDP s.7(a) in India; the acceptance record is kept with the offer (RB-37 (b)).
                 "India: provided voluntarily for that purpose (DPDP s.7(a)); **legal obligation** for tax records. EU/UK: contract; **legal obligation** for tax records",
               ],
               [
@@ -288,7 +288,7 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
       ],
     },
     {
-      // Settled by the lead on the safest reading, 2026-10-30 (08-C RB-27): the GDPR / UK GDPR section as a whole (07-A heading of §7a); a representative is appointed before the first EU or UK client (owner's choice).
+      // The GDPR / UK GDPR section as a whole (07-A heading of §7a). Settled by the lead on the safest reading, 2026-10-30 (08-C RB-27): a representative is appointed before the first EU or UK client (owner's choice).
       id: "eu-uk",
       num: "7a",
       title: "If you are in the EU or UK",

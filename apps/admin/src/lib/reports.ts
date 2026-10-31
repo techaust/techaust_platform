@@ -236,7 +236,7 @@ export function gstWarningText(
  * FX-4 (full audit A5 1; 07-Y, PENDING): a tax-only note's blocking warning, naming the note, the recipient's GSTIN and each tax head with its amount to enter by hand.
  * Settled by the lead on the safest reading, 2026-10-30 (08-C RA-32): a tax-only debit note is entered by hand in the GST portal's Table 9B, and 3B Table 3 checked before filing; whether the portal takes a nil-value row is unverified.
  * The line names what the files may leave out (Settled by the lead on the safest reading, 2026-10-30 (08-C RA-23): a test import of each CSV before the first GSTR-1 (owner duty); until then the import is untested, so it says "may not come through", never "would be nil") and
- * sends the question to the CA; it never says how to file it.
+ * the copy still sends the question to the CA (a T12 follow-up for new copy); it never says how to file it.
  */
 export function taxOnlyNoteText(w: GstWarning): string {
   const m = w.manual;

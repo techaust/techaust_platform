@@ -1,6 +1,6 @@
-Status: reviewer running
+Status: fixes done; re-check and full checks running
 Tier: C (comments and one register section; no logic, no copy)
-Usage: builder claude-opus-5-5/high, 2026-10-31 07:37Z, skills: none (flagged by model-audit; none of docs/14 §9 fits a comment-only retag, and the cloudflare skills don't load in a cloud session; lead accepts); 5-h reading 8 % at 12:58 IST
+Usage: builder claude-opus-5-5/high, 2026-10-31 07:37Z, skills: none (flagged by model-audit; none of docs/14 §9 fits a comment-only retag, and the cloudflare skills don't load in a cloud session; lead accepts); reviewer claude-opus-5-5/high, 2026-10-31, skills: code-review (its read-only helper on Opus 5.5); 5-h reading 8 % at 12:58 IST
 
 # T12: retag the settled OPEN comments and rewrite 08-C §5
 
@@ -178,6 +178,31 @@ Rewritten by the lead (commit 0eb3d81): §5 is now "Where the OPEN items stand",
 Lead check of the builder's diff: merged `fix/t12-retag-r1` 5ca2907 by fast-forward. Every non-doc +/- line is a comment except the 5 test titles listed in the builder report. The readings match the brief's table.
 
 ## Review
+**Reviewer (Opus 5.5 high, 2026-10-31): APPROVE.** No critical or high findings; 4 medium, 7 low. What it confirmed:
+- only comments changed, plus 5 test titles where only the tag text changed;
+- the readings match settle-08c;
+- no settled item is still tagged OPEN, and every stays-OPEN tag is unchanged byte for byte;
+- the §5 claims are true on main (migrations 0046–0048 and 0052–0054, `creditNoteDeadline`, `tax_only_note_manual`, the T-numbers);
+- only §5 of 08-C changed;
+- biome is clean on 49 files, and `verify-tags.test.ts` passed 3/3.
+
+Findings (the reviewer's wording, condensed):
+
+| # | Sev | Where | Finding | Lead's triage |
+|---|---|---|---|---|
+| M1 | medium | web `legal-pages.ts:154` | The RB-12 comment read as the EU/UK basis for the whole Client contact row, which prints "contract; legal obligation" | **Fixed:** limited to the acceptance IP address and browser. Whether the row's EU/UK cell should name legitimate interests is a follow-up for T6 (legal pages v0.4) |
+| M2 | medium | db `seed/terms.ts:5`, admin `settings/terms.tsx:1` | The comment over terms v1 read as if v1–v3 were the settled RB-38 terms | **Fixed:** says the versions in that file are superseded, v4 comes in T6, the deed in T11, MCIA stays OPEN; terms.tsx says "built in T6" |
+| M3 | medium | portal `decision-panel.tsx:6`, `copy-documents.ts:7`, `:183` | "kept 13 months" is the security-log retention; acceptance evidence is kept with the offer | **Fixed:** "13 months" removed; the comment now says the acceptance record is kept with the offer (RB-37 (b)) |
+| M4 | medium | admin `worker/settings.ts:131-133`, `:634`; `src/api.ts:81`; `components/form.tsx:262`; web `legal-pages.ts:3` | `meta.verify` and the Settings hint still point to "08-C §5: CA / lawyer" lists, which §5 no longer has; tests pin the strings | **Kept, with a reason:** this is API meta, copy and tests, outside T12's comment-only scope (and other sessions are editing nearby). Listed as a follow-up: point to "08-C §5" and get new owner-approved copy |
+| L1 | low | §5 RB-02; admin `reports.ts:228`, `:472` | The engine gives a pre-October INR invoice 12 months; that case can't occur | **Fixed in §5:** the engine's 12 months can't apply, because no invoice in the app predates 1 Oct 2026 |
+| L2 | low | admin `reports.ts:239` (copy at `:224`, `:243`, `:256`) | The comment gives the settled route, then says it sends the question to the CA | **Fixed:** the comment says the copy still sends it to the CA (follow-up). The three copy lines are added to the copy follow-up |
+| L3 | low | 08-C §6 vs §5 RB-01 | §6 says "12 if invoiced or settled in INR"; §5 says a PA-CB INR credit keeps 9 | **Kept, with a reason:** §6 is outside the §5-only scope. Listed as a follow-up |
+| L4 | low | core `gst/summary.ts:3`, `test/gst/report-csv.test.ts:1` | The RA-23 test import doesn't cover the 3B mapping or these CSVs | **Fixed:** both comments now say so |
+| L5 | low | §5 RA-19 (Q39) | settle-08c said "LUT or IGST"; rt1 narrowed it | **Fixed:** the row says rt1 narrowed it (a note follows its parent's route) |
+| L6 | low | §5 RA-31 and the "(no row yet)" lines | No part label; "(no row yet)" was inaccurate | **Fixed:** "RA-31 (issue deadline)"; "(not in its row yet)" |
+| L7 | low | web `legal-pages.ts:291` | The section title read as if it were the RB-27 reading | **Fixed:** the title comes first, then the tag and reading |
+
+Note: M1's text suggested a bare "VERIFY WITH CA/LEGAL" mark; it was not written anywhere (the tag test forbids it).
 
 ## Integration notes
 
@@ -189,6 +214,10 @@ Lead check of the builder's diff: merged `fix/t12-retag-r1` 5ca2907 by fast-forw
 - **Copy (owner approval):** `apps/admin/src/lib/reports.ts` (the RB-02 line at ~229 and ~473) still says "a different realisation period may apply. Ask your bank or CA.", though RB-02 is settled at 9 months from the invoice date. The RA-23 line at ~91 says "test-import one file with your CA", though the owner has no CA and the test import is the owner's duty. Both are copy, so T12 leaves them.
 - **08-C header (main session or the next task that touches 08-C rows):** line 9's tag list names two tags. It should also name `Settled by the lead on the safest reading, <date> (08-C <ID>)`. Line 7 ("The OPEN rows are the list for the CA and the lawyer") is stale since 2026-10-30. Both lines sit outside §5, which is all T12 may edit.
 - **T6, when it changes row RB-38:** update §5's "Still OPEN" RB-38 (MCIA) line and the RB-38 (c) residual column. **T7, if it changes RB-37:** update §5's RB-37 (a) line.
+- **Copy and API meta (M4):** admin `worker/settings.ts:131-133`, `:634` (`meta.verify` "08-C §5: CA" / "CA and lawyer"), `src/api.ts:81`, `components/form.tsx:262` (the "on the list for your CA and lawyer" hint) and web `legal-pages.ts:3` point to lists §5 no longer has. Point them to "08-C §5" and get new owner-approved copy; `settings.test.ts:121`, `:123` and `:901` pin the strings.
+- **Copy (L2):** admin `reports.ts:224`, `:243`, `:256` say "Ask your CA how to report it (in Table 9B)". RA-32 is settled (entered by hand in Table 9B), and the owner has no CA.
+- **T6 (M1):** in legal pages v0.4, decide whether the privacy notice's Client contact row should name legitimate interests (GDPR Art. 6(1)(f)) in its EU/UK cell for the acceptance IP address and browser (08-C RB-12).
+- **08-C §6 (L3):** the realisation line should add "(a USD invoice credited in INR through a PA-CB: 9 months; RB-01)", to match §5.
 - RA-21 (note rate day): settle-08c leans towards the note's own date, but the code uses the invoice's rate. Still OPEN; to be decided in a later task with a source.
 
 ## Questions for the owner
