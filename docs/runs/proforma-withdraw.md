@@ -1,6 +1,6 @@
 Status: review APPROVE; fixes running (builder r3: L1, L2, L4; designer r2: M1, L3, L5)
 Tier: A
-Usage: analyst (brief draft) claude-opus-5-5/high, skills: none available (no Cloudflare plugin in the cloud); 5-h 8 % at start · builder r1 claude-opus-5-5/high, skills: none (same reason; flagged by model-audit); 5-h 8 → 46 % (reading 13:46) · analyst (early check) claude-opus-5-5/high, skills: code-review (+ its read-only helper); 5-h 46 % · designer r1 claude-opus-5-5/high, skills: frontend-design:frontend-design (attempted; not installed in the cloud); 5-h 46 → 68 % · builder r2 claude-opus-5-5/high, skills: none (flagged; Cloudflare skills not installed); 5-h 46 → 68 % · reviewer claude-opus-5-5/high, skills: code-review (+ helper), security-review failed to load (no origin/HEAD); 5-h 68 → 89 %
+Usage: analyst (brief draft) claude-opus-5-5/high, skills: none available (no Cloudflare plugin in the cloud); 5-h 8 % at start · builder r1 claude-opus-5-5/high, skills: none (same reason; flagged by model-audit); 5-h 8 → 46 % (reading 13:46) · analyst (early check) claude-opus-5-5/high, skills: code-review (+ its read-only helper); 5-h 46 % · designer r1 claude-opus-5-5/high, skills: frontend-design:frontend-design (attempted; not installed in the cloud); 5-h 46 → 68 % · builder r2 claude-opus-5-5/high, skills: none (flagged; Cloudflare skills not installed); 5-h 46 → 68 % · reviewer claude-opus-5-5/high, skills: code-review (+ helper), security-review failed to load (no origin/HEAD); 5-h 68 → 89 % · builder r3 claude-opus-5-5/high, skills: none (flagged; Cloudflare skills not installed); 5-h 89 %
 
 # Withdraw a proforma the client has seen (cloud session "proforma-withdraw")
 
@@ -119,7 +119,8 @@ Asked 2026-10-31 (through the main session). **Answered by the owner 2026-10-31 
 - 0056 `proforma_withdraw_triggers` (triggers only: re-creates `documents_viewed_no_void` for tax/export invoices; adds `documents_proforma_withdraw`, `documents_void_no_view`, `document_sends_not_void`)
 
 ## Worker bytes
-Branch after builder r2 (37427e8): admin front 99,391; admin API **624,565**; portal 103,500; jobs **984,407** (startup: API 55.1 ms, jobs 54.1 ms).
+Branch after builder r3 (df4286d): admin API **624,685**, portal **103,937** (others unchanged).
+Builder r2 (37427e8): admin front 99,391; admin API **624,565**; portal 103,500; jobs **984,407** (startup: API 55.1 ms, jobs 54.1 ms).
 Builder r1 (c0b71b2): admin front 99,391; admin API **625,014** (+6,592; plan line 650,000); portal 103,476 of 120,000; jobs **984,407** of 1,000,000 (+141: the jobs bundle carries `permissions.ts`). Startup (fastest of 7): front 11.0 ms, API 55.9 ms, portal 10.2 ms, jobs 60.2 ms.
 Main (a5f9f92): admin API 618,422 (plan line 650,000), jobs 984,266 of 1,000,000.
 
@@ -160,6 +161,14 @@ Builder (round 2, branch `fix/proforma-withdraw-early-check` from 0c89aae; no SP
 - **Worker bytes (builds):** admin front 99,391; admin API **624,565** (−449 against r1's 625,014; plan line 650,000); portal 103,500 of 120,000 (+24); jobs 984,407 of 1,000,000 (unchanged from r1). Startup (fastest of 7): front 11.9 ms, API 55.1 ms, portal 8.9 ms, jobs 54.1 ms.
 - **Not verified:** the two "Network connection lost" lines are still in the admin log (the vault's truncated-upload test, per the early check); core tests not rerun (no core change).
 - **Skills:** none (the Cloudflare skills of docs/14 §9 aren't installed in this cloud session; supabase skills are Postgres-only, not D1).
+
+### Builder report, round 3 (review fixes L1, L2, L4, the readInvoice note)
+Branch `fix/proforma-withdraw-review-code`, head df4286d (b09b346 L1; df4286d L2, L4, note), merged by the lead. Every new failing case checked to fail without its fix (portal 3, admin 3).
+- **L1:** the emailed-link `/document/pdf` re-reads the document (`PDF_STATE_SQL`) inside the batch that writes the view; the normal access row is guarded on `openSql`; a withdrawal or void landing in the gap answers 409 `withdrawn` (withdrawn proforma) or 404 (any other now-void document), no R2 read, no view, one access row, no `p:fail:` count (lead: accepted, the link was valid when checked and the race can't be used to guess tokens). The signed-in route reads and serves in one batch (no gap; unchanged). `openSql` split out of `openOrWithdrawnSql` (same SQL text). Covers the same gap for a voided tax invoice.
+- **L2:** `void.canVoid` and `withdraw.canWithdraw` false for an anonymised client.
+- **L4:** the list uses `${withdrawnSql("d")} AS withdrawn`.
+- **Note:** `INVOICE_FACTS_SQL` gates `any_child` and `advance` on `d.type = 'proforma'`.
+- **Results (heavy.sh):** portal 27 / 668; admin 122 / 3,539; admin and portal builds exit 0; `pnpm check` exit 0 (1,377 files; migration guard 57, no rebuild). Bytes: admin API **624,685**, portal **103,937**, admin front 99,391. Jobs, db, core not rerun (unchanged).
 
 ## Designer report
 Designer (round 1, branch `design/proforma-withdraw-r1`, head cc360a3, merged by the lead as 492065d; worktree removed; 66 screenshots copied to `.logs/proforma-withdraw/screens/`).
