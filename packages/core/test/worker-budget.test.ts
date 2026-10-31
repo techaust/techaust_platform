@@ -121,6 +121,14 @@ describe("the jobs budget (M4.4)", () => {
     expect(checkBundle({ ...ok, text }, BUDGETS.portal)[0]).toMatch(/PDF font data/);
   });
 
+  it("still finds the PDF fonts in a minified bundle, where the constant's name is gone (L9)", () => {
+    const text = 'const a="@font-face{src:url(data:font/woff2;base64,d09GMgAB)}";';
+    expect(checkBundle({ ...ok, text }, jobs)).toEqual([]);
+    expect(checkBundle({ ...ok, text }, BUDGETS.admin)[0]).toMatch(/PDF font data/);
+    expect(checkBundle({ ...ok, text }, BUDGETS.adminFinance)[0]).toMatch(/PDF font data/);
+    expect(checkBundle({ ...ok, text }, BUDGETS.portal)[0]).toMatch(/PDF font data/);
+  });
+
   it("forbids pdf-lib and puppeteer, and has the same startup ceiling", () => {
     expect(checkBundle({ ...ok, text: "new PDFDocument()" }, jobs)[0]).toMatch(/pdf-lib/);
     expect(checkBundle({ ...ok, text: 'import "@cloudflare/puppeteer"' }, jobs)[0]).toMatch(/puppeteer/);

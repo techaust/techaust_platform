@@ -18,7 +18,9 @@ const CLASSIC_ZOD = {
 };
 const PDF_LIB = { name: "pdf-lib (PDFs are rendered in the jobs Worker)", re: /PDFDocument|pdf-lib/ };
 const PUPPETEER = { name: "@cloudflare/puppeteer (jobs Worker only)", re: /@cloudflare\/puppeteer/ };
-const PDF_FONTS = { name: "PDF font data (jobs Worker only)", re: /TECHAUST_PDF_FONT_DATA/ };
+// L9 (2026-10-31): the constant's name is renamed by minification (the admin and portal bundles always were minified, jobs is from L9), so
+// the inline woff2 data URIs, which survive it, are matched too.
+const PDF_FONTS = { name: "PDF font data (jobs Worker only)", re: /TECHAUST_PDF_FONT_DATA|data:font\/woff2;base64/ };
 
 // The GST and report core is for the admin SPA only (M5.5a, M5.5b, LD16): its layout ids and column names are string constants that survive minification, so a bundle that
 // contains it has imported it. The Workers get the same figures from SQL (`@techaust/db/reports`) and the no-zod readers in `@techaust/core/invoices`.
