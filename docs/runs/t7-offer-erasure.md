@@ -1,7 +1,7 @@
 # Run: T7, erase a person's data in the frozen copies of never-accepted offers
-Status: reviewer running (code + visual)
+Status: review APPROVE (1 medium, 6 low); fix builder running (branch fix/t7-offer-erasure-b3), then the re-check
 Tier: A (deleting or anonymising data; docs/14 §2)
-Usage: lead claude-opus-5-5/high (cloud session t7-erasure); analyst claude-opus-5-5/high (brief draft; skills: tried `cloudflare:workers-best-practices` and `cloudflare:wrangler`, both "Unknown skill" in the cloud session although model-audit lists them; 5-h 8 % at 12:58 IST); builder claude-opus-5-5/high (agent-ac9b3fbc, layers to the Tier A stop point, 13:25–14:16 IST; same two skills tried, both unknown; 5-h 46 % at 13:46 IST); analyst claude-opus-5-5/high (agent-af81419a, early check; tried the two skills and `cloudflare:workers-profiling`, all unknown); builder claude-opus-5-5/high (agent-ab068a97, early-check fixes, 14:16–14:39 IST; same three skills tried, all unknown; 5-h 68 % at 14:16); designer claude-opus-5-5/high (agent-a51b4663, screens, 14:39–14:59 IST; tried `frontend-design:frontend-design`, unknown in the cloud session; 5-h 68 → 89 %)
+Usage: lead claude-opus-5-5/high (cloud session t7-erasure); analyst claude-opus-5-5/high (brief draft; skills: tried `cloudflare:workers-best-practices` and `cloudflare:wrangler`, both "Unknown skill" in the cloud session although model-audit lists them; 5-h 8 % at 12:58 IST); builder claude-opus-5-5/high (agent-ac9b3fbc, layers to the Tier A stop point, 13:25–14:16 IST; same two skills tried, both unknown; 5-h 46 % at 13:46 IST); analyst claude-opus-5-5/high (agent-af81419a, early check; tried the two skills and `cloudflare:workers-profiling`, all unknown); builder claude-opus-5-5/high (agent-ab068a97, early-check fixes, 14:16–14:39 IST; same three skills tried, all unknown; 5-h 68 % at 14:16); designer claude-opus-5-5/high (agent-a51b4663, screens, 14:39–14:59 IST; tried `frontend-design:frontend-design`, unknown in the cloud session; 5-h 68 → 89 %); reviewer claude-opus-5-5/high (agent-af357840, code + visual, 15:13–15:37 IST; skills `code-review` loaded, `security-review` loaded but its git step failed (no `origin/HEAD`), its checks done by hand; its read-only helper general-purpose claude-opus-5-5/high (agent-ade1c022, skills none, allowed by docs/14 §9); 5-h 0 % at 15:13)
 
 **Task (main session, 2026-10-31):** 08-C RB-37(a), settled by the lead on the safest reading (2026-10-30, [settle-08c](settle-08c.md)): on an erasure request, erase the person's data in the frozen copy of every proposal or estimate that was **never accepted**; keep the number, status, dates and hash. Accepted offers and every invoice-family document stay untouched (financial records). Due before 13 May 2027 (DPDP core duties).
 
@@ -306,6 +306,17 @@ Merged `fix/t7-offer-erasure-b2` (10db1e94) into the task branch with no conflic
 Merged `fix/t7-offer-erasure-d1` (068a976b) with no conflict; screenshots copied to the main checkout's `.logs/shots/t7-*.png` (14 files). The lead checked `t7-erased-1280-light-top.png`: banner, erased PDF panel, only "Revoke links" under Emails.
 
 ## Review
+**Reviewer, 2026-10-31, at f8632a26 (+ the 07-ZG word fix): APPROVE**, 1 medium and 6 low. Tests (through heavy.sh): db 535, core 1,884 (coverage 99.02 % statements), admin 3,529, portal 658, jobs 556, all passed. Fresh builds: admin front 99,271, admin API 630,285, jobs 985,650 bytes. Visual: the erased offer at 1280 and 390, light and dark, in-app theme against the OS theme both ways, reduced motion, keyboard pass, axe 0 violations everywhere; text exactly 07-ZG; the too_many_offers refusal writes nothing; a normal offer unchanged. The MCP browser couldn't start (Chromium path, see Follow-ups); `@playwright/test` + `@axe-core/playwright` from a scratch script instead. Screenshots `.logs/shots/t7-review-*.png`. Verified sound: 0057 against 0050/0001 (only the intended lines differ), the batch guard and every statement guarded, permissions unchanged, every portal and jobs path.
+
+| # | Sev | Finding | Lead's triage |
+|---|---|---|---|
+| 1 | Med | The 10-offer cap counts every never-accepted version (already-redacted ones too), so an individual client with many revisions can never have its last contact anonymised, and no "in parts" path exists | **Kept as a follow-up (F5) with a reason:** a parts path is its own design (route or script, and the owner-approved 07-ZG line 3 flow); the case can't arise before launch (no production data; staging has samples), and it must exist before 13 May 2027 |
+| 2 | Low | `too_many_offers` is answered before a legal hold | **Fix:** read the holds in the redaction read and answer `legal_hold` first; test |
+| 3 | Low | jobs `processOfferDecided` doesn't check `redacted_at` (re-inserts the decline bell, emails staff about a withdrawn offer) | **Fix:** select it and return "ignored"; test |
+| 4 | Low | `'offers', ?10` stored as REAL (`1.0`) | **Fix:** `CAST(?10 AS INTEGER)`; test asserts an integer |
+| 5 | Low | `pdfDeleted` is always 1 | **Fix:** `d.pdf_sha256 IS NOT NULL`; test |
+| 6 | Low (not verified) | About 47 D1 statements per anonymise, about 93 on a stale retry; D1 Free allows **50 queries per invocation** (docs/05-research-appendix A row 7; whether batch statements count one by one is unproven) | **Fix (lead, raised):** assume they count one by one. Measure the real count per invocation in a test (a counting wrapper on `env.DB`, guard and session reads included) and bring every path, the stale one included, to **≤ 45**: drop the in-route retry (409 `stale_version` at once; the SPA's existing stale handling shows it), fold the reads into fewer statements and the three child "mark" statements into the text updates where possible; pin the budget with a test. Staging proof stays with F4 |
+| 7 | Low | A leftover bare block in `eraseOnce`; `read.tsx` recomputes "erased" instead of `isErased` | **Fix** |
 
 ## Integration notes
 
@@ -324,6 +335,7 @@ Merged `fix/t7-offer-erasure-d1` (068a976b) with no conflict; screenshots copied
 - **F1 (before Phase 7):** the 10-year monthly finance backup exports the whole `documents` table; it must leave out proposals and estimates (or redacted rows), or backups keep erased data.
 - **F2 (M7.4):** the R2 sweep deletes any envelope or PDF a failed delete left behind.
 - **F3 (optional):** mark the person's still-`queued` `email_log` rows skipped in the batch (check the `email_log` triggers first).
+- **F5 (before 13 May 2027, Phase 7 checklist):** a supported way to anonymise a person named on more than 10 never-accepted offer versions (review finding 1): an owner-only parts path or a runbook script, matching 07-ZG line 3.
 - **F4:** a staging cold CPU reading of anonymise with the 10-offer fixture (`docs/runbooks/cpu-baseline.md`).
 
 ## Handover
