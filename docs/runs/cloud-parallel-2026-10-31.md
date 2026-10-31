@@ -1,7 +1,7 @@
 # Run: five tasks in parallel cloud sessions (2026-10-31)
-Status: running (restarted 2026-10-31 ~13:00 IST from the main session)
+Status: done (all five merged by 21:40 IST; M6.1 awaits the owner's approval on staging)
 Tier: by task (below)
-Usage: lead claude-opus-5-5/high (this plan, the five starts, #126; `node tools/model-audit.mjs`); no agent ran. 5-h 3 % at the start.
+Usage: main session claude-opus-5-5/high (plan, starts, supervision, reviews, record; `node tools/model-audit.mjs`: all runs within the plan); the cloud sessions' agents are recorded in their own run files (all Opus 5.5 at high; runs with no skill flagged because Cloudflare skills don't load in cloud sessions). 5-h 3 % at the start.
 
 **Owner's request (2026-10-31):** start every pending task at once in cloud sessions; the local session is the main session that controls them all.
 
@@ -178,3 +178,17 @@ Next, in order:
 | 2026-10-31 15:15 | t6-terms | PR #130 (ready since ~14:42; the watcher missed it: it marked a push seen before reading it, fixed) | Reviewed (APPROVE, CI green, no migration or workflow change, jobs 985,956); merged | |
 | 2026-10-31 15:15 | proforma-withdraw | T6 merged | Take main in after the current fixes | merge order |
 | 2026-10-31 15:40 | main session | MCIA re-check on the PC | 08-C RB-38 corrected (2017 schedule, no halving, plus taxes) | mcia.org.in |
+| 2026-10-31 16:20 | t7-erasure | proforma merged (#132) | take main in, renumber 0057/0058, rebuild the trigger lists on proforma's | merge order |
+| 2026-10-31 16:30 | main session | 11 orphaned watcher processes found (T6 and T7 PR READY reached the main session ~30 minutes late) | all stopped; the watcher now exits when a newer copy starts | Windows process tree |
+| 2026-10-31 17:15 | t7-erasure | PR #133 | reviewed (re-check 2 APPROVE, 0057/0058, trigger lists merged, admin API 629,939, jobs 985,884, CI green); merged | |
+| 2026-10-31 17:15 | m6-1-ledger | T7 merged | take main in, renumber from 0059, carry the withdraw and erase changes into the right Worker | merge order |
+| 2026-10-31 19:05 | main (CI) | the web e2e `forms.spec.ts:37` timed out once after #134 (docs only) | re-run passed: flaky | |
+| 2026-10-31 20:00 | m6-1-ledger | re-check SEND BACK (high: Confirm silently dropped a requested allocation) | the session fixed it; second re-check APPROVE | review loop |
+| 2026-10-31 21:35 | m6-1-ledger | PR #135 | reviewed (APPROVE, 0059/0060, the deploy-staging.yml diff = the owner's Q1, finance Worker no public URL, PAYMENTS_LIVE_ALLOWED false, jobs 994,592); branch updated; merged | |
+
+## Handover (main session, 2026-10-31, 22:00 IST)
+Where it stands: all five tasks merged (T12 #129, T6 #130, proforma withdraw #132, T7 #133, M6.1 #135); every owner question answered and recorded in 13; the record updated (12, 13, CHANGELOG, CLAUDE.md). M6.1's staging deploy (f0d10f5d, run 41219354758, the finance Worker's first) passed all six steps and health checks at 22:00 IST.
+
+Next:
+1. The owner approves M6.1 on staging (checklist from the lead); the L9 question to the owner before M6.2.
+2. Build the `/orchestrate` skill with this run's lessons (CLAUDE.md "In a cloud session"; 13).
