@@ -121,6 +121,22 @@ describe("the jobs budget (M4.4)", () => {
     expect(checkBundle({ ...ok, text }, BUDGETS.portal)[0]).toMatch(/PDF font data/);
   });
 
+  it("checks the bundle's inputs from the metafile, which survive minification (L9)", () => {
+    expect(
+      checkBundle({ ...ok, text: "", inputs: ["src/index.ts", "../../packages/core/src/money.ts"] }, jobs),
+    ).toEqual([]);
+    for (const [input, name] of [
+      ["../../node_modules/.pnpm/pdf-lib@1.17.1/node_modules/pdf-lib/es/index.js", /pdf-lib/],
+      [
+        "../../node_modules/.pnpm/@cloudflare+puppeteer@1.0.0/node_modules/@cloudflare/puppeteer/lib/esm/index.js",
+        /puppeteer/,
+      ],
+      ["..\\..\\packages\\core\\src\\gst\\index.ts", /gst/],
+    ] as const) {
+      expect(checkBundle({ ...ok, text: "", inputs: [input] }, jobs)[0]).toMatch(name);
+    }
+  });
+
   it("still finds the PDF fonts in a minified bundle, where the constant's name is gone (L9)", () => {
     const text = 'const a="@font-face{src:url(data:font/woff2;base64,d09GMgAB)}";';
     expect(checkBundle({ ...ok, text }, jobs)).toEqual([]);

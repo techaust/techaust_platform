@@ -20,7 +20,10 @@ const PDF_LIB = { name: "pdf-lib (PDFs are rendered in the jobs Worker)", re: /P
 const PUPPETEER = { name: "@cloudflare/puppeteer (jobs Worker only)", re: /@cloudflare\/puppeteer/ };
 // L9 (2026-10-31): the constant's name is renamed by minification (the admin and portal bundles always were minified, jobs is from L9), so
 // the inline woff2 data URIs, which survive it, are matched too.
-const PDF_FONTS = { name: "PDF font data (jobs Worker only)", re: /TECHAUST_PDF_FONT_DATA|data:font\/woff2;base64/ };
+const PDF_FONTS = {
+  name: "PDF font data (jobs Worker only)",
+  re: /TECHAUST_PDF_FONT_DATA|data:font\/woff2;base64/,
+};
 
 // The GST and report core is for the admin SPA only (M5.5a, M5.5b, LD16): its layout ids and column names are string constants that survive minification, so a bundle that
 // contains it has imported it. The Workers get the same figures from SQL (`@techaust/db/reports`) and the no-zod readers in `@techaust/core/invoices`.
@@ -90,6 +93,14 @@ export const BUDGETS = {
     maxBytes: 1_000_000,
     maxStartupMs: 200,
     forbidden: [PDF_LIB, PUPPETEER, GST_CORE],
+    // L9 (2026-10-31): minification drops the `// node_modules/...` path comments the text markers above matched on, so the
+    // bundle's inputs are checked too, from the build's metafile (`wrangler deploy --dry-run --metafile`).
+    metafile: "apps/jobs/dist/bundle-meta.json",
+    forbiddenInputs: [
+      { name: "pdf-lib (PDFs are rendered with Browser Run)", re: /node_modules\/(?:.*\/)?pdf-lib\// },
+      { name: "@cloudflare/puppeteer", re: /@cloudflare[+/]puppeteer/ },
+      { name: "@techaust/core/gst (SPA only, LD16)", re: /packages\/core\/src\/gst\// },
+    ],
   },
 };
 
@@ -159,7 +170,7 @@ export function planNote(size, budget) {
 }
 
 /** Problems with a measured bundle against its budget (empty when it passes). */
-export function checkBundle({ size, text, startupMs }, budget) {
+export function checkBundle({ size, text, startupMs, inputs = [] }, budget) {
   const problems = [];
   if (size > budget.maxBytes)
     problems.push(`the Worker bundle is ${size} bytes; the limit is ${budget.maxBytes}`);
@@ -170,6 +181,10 @@ export function checkBundle({ size, text, startupMs }, budget) {
   for (const f of budget.forbidden) {
     const m = f.re.exec(text);
     if (m) problems.push(`${f.name} is in the Worker bundle (${m[0]})`);
+  }
+  for (const f of budget.forbiddenInputs ?? []) {
+    const hit = inputs.find((i) => f.re.test(i.replaceAll("\\", "/")));
+    if (hit) problems.push(`${f.name} is an input of the Worker bundle (${hit})`);
   }
   return problems;
 }
@@ -193,7 +208,25 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     );
     process.exit(1);
   }
-  const problems = checkBundle({ size, text, startupMs }, budget);
+  let inputs = [];
+  if (budget.metafile) {
+    try {
+      const meta = JSON.parse(
+        readFileSync(fileURLToPath(new URL(`../${budget.metafile}`, import.meta.url)), "utf8"),
+      );
+      inputs = Object.keys(meta.inputs ?? {});
+    } catch (e) {
+      console.error(`${app} bundle check failed:
+- the build's metafile ${budget.metafile} could not be read (build with --metafile): ${e.message}`);
+      process.exit(1);
+    }
+    if (inputs.length === 0) {
+      console.error(`${app} bundle check failed:
+- the build's metafile ${budget.metafile} lists no inputs`);
+      process.exit(1);
+    }
+  }
+  const problems = checkBundle({ size, text, startupMs, inputs }, budget);
   if (problems.length) {
     console.error(`${app} bundle check failed:\n- ${problems.join("\n- ")}`);
     process.exit(1);
