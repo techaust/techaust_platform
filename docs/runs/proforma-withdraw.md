@@ -1,4 +1,4 @@
-Status: review APPROVE; fixes running (builder r3: L1, L2, L4; designer r2: M1, L3, L5)
+Status: main (T12, T6) merged in and green; designer r2 (M1, L3, L5) finishing; then the reviewer's re-check
 Tier: A
 Usage: analyst (brief draft) claude-opus-5-5/high, skills: none available (no Cloudflare plugin in the cloud); 5-h 8 % at start · builder r1 claude-opus-5-5/high, skills: none (same reason; flagged by model-audit); 5-h 8 → 46 % (reading 13:46) · analyst (early check) claude-opus-5-5/high, skills: code-review (+ its read-only helper); 5-h 46 % · designer r1 claude-opus-5-5/high, skills: frontend-design:frontend-design (attempted; not installed in the cloud); 5-h 46 → 68 % · builder r2 claude-opus-5-5/high, skills: none (flagged; Cloudflare skills not installed); 5-h 46 → 68 % · reviewer claude-opus-5-5/high, skills: code-review (+ helper), security-review failed to load (no origin/HEAD); 5-h 68 → 89 % · builder r3 claude-opus-5-5/high, skills: none (flagged; Cloudflare skills not installed); 5-h 89 %
 
@@ -119,6 +119,7 @@ Asked 2026-10-31 (through the main session). **Answered by the owner 2026-10-31 
 - 0056 `proforma_withdraw_triggers` (triggers only: re-creates `documents_viewed_no_void` for tax/export invoices; adds `documents_proforma_withdraw`, `documents_void_no_view`, `document_sends_not_void`)
 
 ## Worker bytes
+After main merged in (e32dfa3): jobs **986,412** (main 985,956; +456; stop line 995,000).
 Branch after builder r3 (df4286d): admin API **624,685**, portal **103,937** (others unchanged).
 Builder r2 (37427e8): admin front 99,391; admin API **624,565**; portal 103,500; jobs **984,407** (startup: API 55.1 ms, jobs 54.1 ms).
 Builder r1 (c0b71b2): admin front 99,391; admin API **625,014** (+6,592; plan line 650,000); portal 103,476 of 120,000; jobs **984,407** of 1,000,000 (+141: the jobs bundle carries `permissions.ts`). Startup (fastest of 7): front 11.0 ms, API 55.9 ms, portal 10.2 ms, jobs 60.2 ms.
@@ -193,6 +194,7 @@ Reviewer, 2026-10-31, on 094c8ce (diff 8d5b958..HEAD): **APPROVE** (no critical 
 - **Notes:** `readInvoice`'s two extra EXISTS run on every invoice read (`invoices.ts:372`) → builder r3 gates them on `type = 'proforma'`. `explain()` partly repeats the void re-read: kept (lead: the two re-reads answer different code sets; sharing would couple them for little gain).
 
 ## Integration notes
+- **Main taken in (2026-10-31, 15:2x IST; main session's go):** `origin/main` (T12 #129, T6 #130) merged into the task branch as 33ad7c4; one conflict, a comment in `packages/core/src/invoices.ts` (`voidBlockers`: T12's settled RA-10 tag kept, our two withdrawal lines added). No new migration on main (0055 newest), so 0056 keeps its number. Then 08-C RA-10 §1 updated (e32dfa3). On e32dfa3 (heavy.sh): `pnpm check` exit 0 (migration guard 57, no rebuild); core 91 / 1,879; db 38 / 537; jobs 33 / 549; portal 27 / 668; admin 122 / 3,543. Jobs bundle **986,412** (main 985,956, +456; stop line 995,000), startup 60.5 ms.
 
 ## Follow-ups (for 12)
 - ~~08-C RA-10 (review L6)~~ **done by the lead** after taking main (T12, T6) in: RA-10's §1 rule and code columns now name the withdrawal (§5 untouched).
