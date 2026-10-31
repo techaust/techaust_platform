@@ -1,6 +1,6 @@
 # Run: T11, the deed of assignment of copyright
 
-Status: builder round 2 done on `feat/t11-deed-r2` (early-check fixes, triage 4, (c), the view, the jobs part); designer next (PDF layout, screens, email words, 07-ZJ)
+Status: WAITING ON LEAD (07-ZJ): the designer's draft of every new line is in [07-ZJ](../07-content-appendix/ZJ-t11-deed.md); the designer keeps building on `feat/t11-deed-design` with `[Placeholder]` marks until the lead answers
 Tier: B
 Usage:
 
