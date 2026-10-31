@@ -66,6 +66,113 @@ Where a row itself already records the item as settled by research (RA-19 Q39: "
 
 ## Builder report
 
+Builder (Opus 5.5, high), branch `fix/t12-retag-r1` from `origin/chore/t12-retag-open` (ade4025, then rebased onto 0eb3d81, the lead's 08-C §5 commit, which touches no file of mine).
+
+**Skills:** none loaded. The docs/14 §9 skills cover Worker code, screens, Cloudflare platform features, SES, CPU budgets and reviews; a comment-only retag fits none of them (and the `cloudflare:*` skills are not available in this cloud session anyway).
+
+**What changed:** 78 tag lines in 49 files, plus the `verify-tags.test.ts` header (step 5). The only non-comment lines changed are 5 test titles, and only their tag text (`reports.test.ts:695`, `documents-convert.test.ts:367`, `invoices-void.test.ts:291`, `note-research.test.ts:157`, `settings.test.ts:338`). In titles I wrote only the tag, with no reading (the old titles carried a bare tag or a question; a reading would make the label longer). Each reading comes from the mapping table only; multi-line tags kept their line breaks (`triggers.ts:886-887`, `:913-914`, `totals.ts:55-56`, `credit.ts:380-381`, `sections.ts:440-441`, `types.ts:158-159`, `seed/terms.ts:47-48`).
+
+| file:line | ID | old tag (short) | new tag (short) |
+|---|---|---|---|
+| apps/admin/src/lib/clients.ts:4 | RB-36, RB-37 | "with their OPEN parts" | Settled (RB-36, RB-37): files listed, contents on request; accepted offers kept as long as tax records; never-accepted erased in frozen copy (T7) |
+| apps/admin/src/lib/invoices.ts:146 | RA-10 | OPEN: never-delivered invoice reported as cancelled? | Settled: owner's 2026-10-30 rule; such a void cancelled in Table 13, else credit note |
+| apps/admin/src/lib/invoices.ts:516 | RA-10 | OPEN (08-C RA-10). | Settled: void only in the same IST month; else credit note |
+| apps/admin/src/lib/notes.ts:70 | RA-04 (Q38) | "is OPEN, RA-04" | Settled: note stays, balance stays reduced; GST reduced once accepted in IMS; debit note if credit not due |
+| apps/admin/src/lib/reports.test.ts:695 (title) | RA-32 | OPEN 08-C RA-32 | Settled (08-C RA-32), tag only |
+| apps/admin/src/lib/reports.ts:60 | RA-32 | OPEN: how reported in 9B | Settled: by hand in Table 9B, 3B Table 3 checked; nil-value row unverified |
+| apps/admin/src/lib/reports.ts:90 | RA-23 (Q17) | OPEN: layout the CA's to confirm | Settled (RA-23, Q17): test import of each CSV before first GSTR-1; untested until then |
+| apps/admin/src/lib/reports.ts:228 | RB-02 | OPEN: which period before 1 Oct 2026 | Settled: 9 months from invoice date; ask bank for extension |
+| apps/admin/src/lib/reports.ts:237 | RA-32 | OPEN: 9B / 3B question | Settled: by hand in Table 9B, 3B Table 3 checked; nil-value row unverified |
+| apps/admin/src/lib/reports.ts:238 | RA-23 | OPEN: import untested | Settled: test import before first GSTR-1; "may not come through" explanation kept |
+| apps/admin/src/lib/reports.ts:472 | RB-02 | OPEN (08-C RB-02). | Settled: 9 months from invoice date; ask bank for extension |
+| apps/admin/src/lib/reports.ts:477 | RB-05 | "is OPEN (RB-05)" | Settled: bank advice or e-FIRA; PA-CB settlement report mapped to the invoice |
+| apps/admin/src/routes/invoices/read.tsx:4 | RA-10 | "is OPEN, 08-C RA-10" | Settled: owner's 2026-10-30 rule; cancelled in Table 13 |
+| apps/admin/src/routes/settings/payment-terms.tsx:1 | RB-23 | "liability cap OPEN" | Settled: ₹10,000 cap stays, consumer carve-out (07-ZE; T6) |
+| apps/admin/src/routes/settings/terms.tsx:1 | RB-38 (c) | OPEN: proposal terms text | Settled: owner chose the four clauses (07-ZE, terms v4); RA-18, RB-24 references untouched |
+| apps/admin/src/routes/reports/manual-entries.tsx:1 | RA-32, RA-23 | "both OPEN" | Settled (RA-32, RA-23): by hand in Table 9B; test import before first GSTR-1 |
+| apps/admin/src/routes/invite.tsx:30 | RB-18 | "OPEN, 08-C RB-18": consent needed first? | Settled: emailed consent before enrolling anyone but the owner (practice; until 13 May 2027) |
+| apps/admin/worker/clients.ts:995 | RB-36 | OPEN: file bytes on request or never? | Settled: files listed, contents on request; GDPR Art. 15(3) full copy, redacted, by hand |
+| apps/admin/worker/clients.ts:1297 | RB-37 (a) | OPEN: unaccepted sent offer kept? | Settled: erased in frozen copy on request, number/status/dates/hash kept (T7); until T7 kept, erase refused |
+| apps/admin/worker/documents-convert.test.ts:367 (title) | RB-37 | OPEN (08-C RB-37) | Settled (08-C RB-37), tag only |
+| apps/admin/worker/invoice-model.ts:91 | RA-10 | OPEN: Table 13 question | Settled: owner's rule; cancelled in Table 13, else credit note |
+| apps/admin/worker/invoice-model.ts:624 | RA-19 (Q37) | OPEN: LUT lapsed, IGST? | Settled (RA-19, Q37): LUT route refused without receipt-FY LUT; save new LUT or IGST (owner, 2026-10-28) |
+| apps/admin/worker/invoices.ts:5 | RA-10 | "the void is OPEN" | Settled: owner's rule; cancelled in Table 13 |
+| apps/admin/worker/invoices.ts:1153 | RA-10 | OPEN: Table 13 question | Settled: cancelled in Table 13, else credit note |
+| apps/admin/worker/invoices-void.test.ts:1 | RA-10 | OPEN: Table 13 question | Settled: cancelled in Table 13, else credit note |
+| apps/admin/worker/invoices-void.test.ts:291 (title) | RA-10 | OPEN + question | Settled (08-C RA-10), tag only (": the GST return period" kept) |
+| apps/admin/worker/note-research.test.ts:157 (title) | RA-33 | OPEN 08-C RA-33 | Settled (08-C RA-33), tag only |
+| apps/jobs/src/lut-check.ts:1 | RA-19 (Q37, Q39) | OPEN: cases after a lapse the CA's call | Settled (RA-19, Q37, Q39): receipt-FY LUT or IGST; debit note needs its own FY's LUT, no IGST alternative |
+| apps/web/src/content/legal-pages.ts:48 | RB-23 | "(OPEN, 08-C RB-23)" | Settled: ₹10,000 cap stays, consumer carve-out (07-ZE; T6) |
+| apps/web/src/content/legal-pages.ts:124 | RB-12 | OPEN: EU/UK basis | Settled: GDPR Art. 6(1)(f); India DPDP s.7(a), Rule 6, 13 months |
+| apps/web/src/content/legal-pages.ts:154 | RB-12 | OPEN: EU/UK basis | same as :124 |
+| apps/web/src/content/legal-pages.ts:291 | RB-27 | OPEN: GDPR section as a whole | Settled: section kept; representative before first EU or UK client |
+| apps/web/src/content/legal-pages.ts:302 | RB-27 | OPEN: representative needed? | Settled: representative before first EU or UK client (owner's choice) |
+| apps/web/src/content/legal-pages.ts:476 | RB-23 | OPEN: cap against a consumer? | Settled: ₹10,000 cap stays, carve-out (07-ZE lines 6, 14, 15; T6) |
+| apps/web/src/content/legal-pages.ts:493 | RB-23 | OPEN: Balurghat or Kolkata | Settled: Balurghat kept, consumer carve-out (07-ZE; T6); MSA arbitration note kept |
+| apps/portal/src/components/decision/decision-panel.tsx:6 | RB-12 | "is OPEN, RB-12" | Settled: DPDP s.7(a), Rule 6, 13 months; GDPR Art. 6(1)(f) |
+| apps/portal/src/copy-documents.ts:7 | RB-12 | "is OPEN, RB-12" | same |
+| apps/portal/src/copy-documents.ts:183 | RB-12 | "is OPEN (08-C RB-12)" | "is settled (Settled ... (08-C RB-12): ...)" |
+| packages/core/src/documents.ts:3 | RB-37 (a, b) | OPEN (08-C RB-37) | Settled: accepted kept as long as tax records; never-accepted erased in frozen copy (T7; until then kept) |
+| packages/core/src/fx.ts:34 | RA-21 (Q24) | OPEN: 4 days older when rate exists? | Settled (RA-21, Q24): that day's rate, or earlier only with the dated statement |
+| packages/core/src/gst/docs.ts:3 | RA-10 | OPEN: Table 13 question | Settled: owner's rule void cancelled in Table 13, else credit note |
+| packages/core/src/gst/edf.ts:3 | RB-03 | OPEN: bank's form and channel | Settled: "software" (Reg. 2(1)(e)); monthly EDF with AD bank; never Reg. 3(2)(b) |
+| packages/core/src/gst/format.ts:2 | RA-23 | OPEN: formats unverified | Settled: test import before first GSTR-1; "until then ... unverified" kept |
+| packages/core/src/gst/layouts.ts:3 | RA-23 | OPEN: CSVs import cleanly? | Settled: test import of each CSV; untested, every column unverified until then |
+| packages/core/src/gst/registers.ts:4 | RA-10 | "Every rule is OPEN" | "Every rule: Settled ...": cancelled in Table 13, else credit note |
+| packages/core/src/gst/sections.ts:438 | RA-23 | OPEN: what tax on import? | Settled: test import of each CSV; "Untested ... would under-report it" kept |
+| packages/core/src/gst/sections.ts:440 | RA-32 | OPEN: 9B / 3B question | Settled: by hand in Table 9B, 3B Table 3 checked; nil-value row unverified |
+| packages/core/src/gst/summary.ts:3 | RA-23 | "(OPEN, 08-C RA-23" | Settled: test import of each CSV ("The mapping is unverified" kept) |
+| packages/core/src/gst/types.ts:158 | RA-32 | OPEN: 9B / 3B question | Settled: by hand in Table 9B, 3B Table 3 checked; nil-value row unverified |
+| packages/core/src/gst/types.ts:160 | RA-23 | OPEN: untested | Settled: test import before first GSTR-1; untested until then ("may not come through" kept) |
+| packages/core/src/invoices.ts:517 | RA-10 | OPEN: Table 13 question | Settled: same IST month, not for a proforma |
+| packages/core/src/invoices.ts:522 | RA-10 | OPEN: Table 13 question | Settled: cancelled in Table 13 |
+| packages/core/src/invoices.ts:526 | RA-10 | OPEN: Table 13 question | Settled: owner's rule; cancelled in Table 13, else credit note |
+| packages/core/src/invoices.ts:567 | RA-10 | OPEN: Table 13 question | Settled: owner's rule void cancelled in Table 13 |
+| packages/core/src/permissions.ts:92 | RA-10 | OPEN: Table 13 question | Settled: cancelled in Table 13, else credit note |
+| packages/core/src/schemas/settings.ts:54 | RA-34 | OPEN: no official text found | Settled: secondary-sourced mod-36, local scratch test before Phase 7, never committed |
+| packages/core/src/schemas/settings.ts:383 | RB-23 | OPEN: cap against a consumer? | Settled: ₹10,000 cap stays, carve-out (07-ZE; T6) |
+| packages/core/src/schemas/settings.ts:601 | RB-23 | OPEN: cap against a consumer? | Settled: ₹10,000 cap stays, carve-out (07-ZE; T6) |
+| packages/core/src/tax/credit.ts:325 | RA-33 | "OPEN 08-C RA-33" | Settled (08-C RA-33) |
+| packages/core/src/tax/credit.ts:380 | RA-33 | OPEN: rounded, which direction? | Settled: never rounded, round-off 0, total is its tax |
+| packages/core/src/tax/totals.ts:55 | RA-33 | OPEN: rounded, which direction? | Settled: never rounded, round-off 0, total is its tax |
+| packages/core/test/gst/docs-issued.test.ts:1 | RA-10 | OPEN: Table 13 question | Settled: owner's rule void cancelled in Table 13 |
+| packages/core/test/gst/docs.test.ts:1 | RA-10 | OPEN: Table 13 question | Settled: owner's rule void cancelled in Table 13 |
+| packages/core/test/gst/layouts.test.ts:3 | RA-23 | "OPEN, 08-C RA-23": CA's import | Settled: test import of each CSV before first GSTR-1 (owner duty) |
+| packages/core/test/gst/report-csv.test.ts:1 | RA-23 | OPEN (08-C RA-23) | Settled: test import before first GSTR-1 |
+| packages/core/test/gst/tax-only-debit.test.ts:63 | RA-32 | OPEN 08-C RA-32 | Settled: by hand in Table 9B |
+| packages/core/test/gst/tax-only-debit.test.ts:98 | RA-32 | OPEN 08-C RA-32 | Settled (08-C RA-32) |
+| packages/core/test/settings.test.ts:338 (title) | RB-23 | OPEN + question | Settled (08-C RB-23), tag only |
+| packages/core/test/tax/tax-only-debit.test.ts:74 | RA-33 | OPEN 08-C RA-33 | Settled (08-C RA-33) |
+| packages/core/test/verify-tags.test.ts:2-3 | (header) | two tag forms | third form `Settled by the lead on the safest reading, <date> (08-C <ID>)` added (step 5) |
+| packages/db/src/contact-access.ts:4 | RB-37 (a, b) | "with its OPEN parts" | Settled: accepted kept as long as tax records; never-accepted erased in frozen copy (T7) |
+| packages/db/src/issue.ts:460 | RA-33 | OPEN 08-C RA-33 | Settled (08-C RA-33) |
+| packages/db/src/seed/terms.ts:5 | RB-38 (a, c) | OPEN: text, Ownership, GST line | Settled: four clauses (07-ZE, terms v4); deed on full payment, Aadhaar eSign (07-ZE, T11) |
+| packages/db/src/seed/terms.ts:23 | RB-38 (a) | OPEN: lawyer's final assignment wording | Settled: one-page deed, Aadhaar eSign (07-ZE, T11; lawyer review of the deed wise) |
+| packages/db/src/seed/terms.ts:47-48 | RB-38 (a) | OPEN: lawyer's wording (lead settles it) | same as :23 |
+| packages/db/src/sql-rules.ts:24 | RA-33 | OPEN: rounded, which direction? | Settled: never rounded, round-off 0, total is its tax |
+| packages/db/src/triggers.ts:886-887 | RA-19 (Q37) | OPEN: FY X LUT covers FY X+1 receipt? | Settled (RA-19, Q37): refused without receipt-FY LUT; save new LUT or IGST |
+| packages/db/src/triggers.ts:913-914 | RA-33 | OPEN: rounded, which direction? | Settled: never rounded, round-off 0, total is its tax |
+| packages/db/test/tax-only-note.test.ts:1 | RA-33 | OPEN 08-C RA-33 | Settled (08-C RA-33) |
+
+**Count by ID** (78 tag lines; `clients.ts:4` and `manual-entries.tsx:1` name two IDs each): RA-04 1, RA-10 17, RA-19 3, RA-21 1, RA-23 10, RA-32 8, RA-33 9, RA-34 1, RB-02 2, RB-03 1, RB-05 1, RB-12 5, RB-18 1, RB-23 7, RB-27 2, RB-36 2, RB-37 5, RB-38 4.
+
+**OPEN hits left** (re-grep `grep -rnE "OPEN" apps packages scripts tools .github | grep -E "08-C|R[AB]-[0-9]"`, skipping node_modules, dist, packages/db/migrations):
+- stays OPEN per the mapping: RA-21 notes (`apps/admin/src/lib/notes.ts:105`); RB-06 (`apps/admin/worker/settings.ts:889`, `packages/db/src/schema/settings.ts:49`, `packages/db/src/schema/documents.ts:115`, `packages/core/src/export-invoice.ts:371`, `packages/pdf/src/invoice-types.ts:17`); RB-39 format (`apps/jobs/test/pdf-signature-udyam.test.ts:195`, `packages/core/src/schemas/settings.ts:101`, `packages/core/src/udyam.ts:8`, `:51`, `packages/core/test/settings.test.ts:259`, `packages/pdf/src/invoice-envelope.ts:171`, `packages/pdf/src/layout/copy.ts:233`, `packages/pdf/test/signature-udyam.test.ts:93`); RA-22 (`packages/db/src/issue.ts:350`, `packages/db/src/triggers.ts:968`, `packages/core/src/notes.ts:309`, `packages/core/src/invoices.ts:331`); RA-31 (`packages/core/src/notes.ts:392`); RA-19 ARN (`packages/core/src/schemas/settings.ts:146`, `packages/core/src/export-invoice.ts:175`); RA-18 (`packages/core/src/export-invoice.ts:17`); RA-04 3B period (`packages/core/src/gst/summary.ts:10`); RB-16 watch (`apps/web/src/content/legal-pages.ts:215`).
+- excluded by step 3: `legal-pages.ts:3-4` (describes 07-A's notes), `:701` (07-A quote, RB-33 watch); the generic "Researched … or OPEN per 08-C" lines (`apps/admin/src/lib/notes.ts:6`, `tax-settings.ts:1`, `invoice-types.ts:4`, `reports.ts:7`, `routes/settings/tax.tsx:1`, `apps/web/src/content/legal.ts:3`, the six `apps/web/src/pages/*.astro` headers); `verify-tags.test.ts:3` (the header naming the `OPEN` form).
+- the other OPEN hits are code names (`OPEN`, `OPEN_IT`, `OPEN_STAGES`, `OPEN_STATUSES`, …) and font licence text, not tags.
+
+**Commands and results**
+- `pnpm install --frozen-lockfile --offline`: done (no version change).
+- `pnpm exec biome check <the 49 changed files>`: "Checked 49 files … No fixes applied" (clean); again on the two files I re-edited: clean.
+- `bash tools/heavy.sh --log t12-core-test pnpm --filter @techaust/core test`: exit 0, 91 files, 1861 tests passed; coverage 99.04 % statements, 98.12 % branches.
+- `git diff -U0 HEAD`, every +/- line read: every changed line is a comment line except the 5 test titles listed above, where only the tag text changed. None of the retitled tests uses snapshots.
+
+**Not verified:** the admin, db, jobs, portal, web and pdf test suites were not run (comments and 5 test-title labels only; core holds `verify-tags.test.ts`, which passed). The whole-repo `pnpm lint` was not run (the lead's brief asked for changed-file lint only).
+
+**For the lead (not changed: copy, outside this brief):** two copy strings still read as if the item were open, now that the comment above them is settled: `apps/admin/src/lib/reports.ts:229` and `:473` ("a different realisation period may apply. Ask your bank or CA.", RB-02 settled as 9 months from the invoice date), and `apps/admin/src/lib/reports.ts:91` ("test-import one file with your CA", RA-23: the owner's duty now that there is no CA). Same for `apps/web/src/content/legal-pages.ts:303` ("we haven't appointed a representative", consistent with RB-27 until the first EU or UK client, so no change needed). Copy decisions are the owner's or the lead's.
+
+**Open questions:** none.
+
 ## Lead: 08-C §5
 
 ## Review

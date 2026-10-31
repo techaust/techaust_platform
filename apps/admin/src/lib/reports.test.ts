@@ -692,7 +692,7 @@ describe("files from register rows (core does every sum)", () => {
     expect(part.ok && part.imsHeld).toBeNull();
   });
 
-  it("FX-4 (A5 1; OPEN 08-C RA-32): a tax-only debit note is a blocking warning first in the list; the panel is not complete and never says No errors", () => {
+  it("FX-4 (A5 1; Settled by the lead on the safest reading, 2026-10-30 (08-C RA-32)): a tax-only debit note is a blocking warning first in the list; the panel is not complete and never says No errors", () => {
     const inv = row({ id: "d1", number: "TH/INV/2627/0001", issueDate: { year: 2026, month: 7, day: 5 } });
     const note = row({
       id: "n1",

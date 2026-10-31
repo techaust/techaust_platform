@@ -1,6 +1,6 @@
 // GSTR-1 Table 13, documents issued (M5.5a; ADM-REP-04). Table 13 is built by interface only: the caller (M5.5b's adapter over
 // M5.1's summary) passes one `DocsIssuedInput` per series and number range; nothing here reads documents or counters. The
-// "net issued" figure (total less cancelled) is left to the Offline Tool (UNVERIFIED). OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?.
+// "net issued" figure (total less cancelled) is left to the Offline Tool (UNVERIFIED). Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): a void under the owner's 2026-10-30 rule is reported as cancelled in Table 13; anything else is corrected by a credit note.
 import { SERIES } from "../numbering.ts";
 import {
   type DocsIssuedInput,

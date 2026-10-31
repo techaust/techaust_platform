@@ -51,7 +51,7 @@ const intBetween = (min: number, max?: number) =>
 const text = (min: number, max?: number) =>
   z.string().check(z.minLength(min), ...(max === undefined ? [] : [z.maxLength(max)]));
 
-/** A GSTIN, normalised (trim, upper case, no spaces) and checked: shape, known state, check character (state codes Researched 2026-10-29 (08-C RA-34); the check-character algorithm OPEN (08-C RA-34): no official text found). */
+/** A GSTIN, normalised (trim, upper case, no spaces) and checked: shape, known state, check character (state codes Researched 2026-10-29 (08-C RA-34); the check-character algorithm: Settled by the lead on the safest reading, 2026-10-30 (08-C RA-34): the secondary-sourced mod-36 algorithm, tested locally against the owner's own GSTIN and two vendors' before Phase 7 (a scratch test, never committed)). */
 const gstin = z.pipe(
   z.string({ error: "Enter the GSTIN" }),
   z.transform((value, ctx) => {
@@ -380,7 +380,7 @@ export const paymentTermsSettings = z
     razorpayMinPartialInrMinor: minor,
     /**
      * The website's liability cap (INR minor), printed on /terms (M2.3 follow-up, 07-A section 2 item 10). One source: apps/web reads
-     * it from SETTINGS_DEFAULTS. OPEN (08-C RB-23): is a ₹10,000 website-use cap enforceable against a consumer?
+     * it from SETTINGS_DEFAULTS. Settled by the lead on the safest reading, 2026-10-30 (08-C RB-23): the ₹10,000 cap stays, with a consumer carve-out on the website and proposal terms (07-ZE; built in T6).
      */
     websiteLiabilityCapInrMinor: minor,
   })
@@ -598,7 +598,7 @@ export const SETTINGS_DEFAULTS: Settings = {
     // The default part-payment floor (docs/04 ADM-SET-05): INR 10,000. Researched 2026-10-29, Razorpay first_min_partial_amount (08-C RB-39): a
     // commercial default, no regulatory floor.
     razorpayMinPartialInrMinor: 10_000_00,
-    // OPEN (08-C RB-23): is a ₹10,000 website-use cap enforceable against a consumer? INR 10,000 is the figure the site printed before this setting existed.
+    // Settled by the lead on the safest reading, 2026-10-30 (08-C RB-23): the ₹10,000 cap stays, with a consumer carve-out (07-ZE; built in T6). INR 10,000 is the figure the site printed before this setting existed.
     websiteLiabilityCapInrMinor: 1_000_000,
   },
   retention: { leadsMonths: 12, emailLogMonths: 13, securityLogMonths: 13, financialYears: 10 },

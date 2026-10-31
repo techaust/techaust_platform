@@ -992,7 +992,7 @@ export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?
   },
   // The client's notes and file records, only where the erase would delete them: the contact is an individual client's last live
   // contact (`LAST_LIVE_INDIVIDUAL`; the manifest lists these two parts only then, and the SQL repeats the condition). Metadata only:
-  // never the file bytes or the R2 key. OPEN (08-C RB-36): the Act asks for a summary; file bytes on request or never?
+  // never the file bytes or the R2 key. Settled by the lead on the safest reading, 2026-10-30 (08-C RB-36): the export lists the files; their contents on request; for EU and UK persons a full copy (GDPR Art. 15(3)) with others' data redacted, by hand.
   notes: {
     sql: (cur) =>
       `SELECT n.id, n.body_md AS body, n.visibility, (SELECT code FROM projects WHERE id = n.project_id) AS project_code, n.created_at FROM notes n WHERE n.client_id = ?3 AND ${LAST_LIVE_INDIVIDUAL("n.client_id")}${cur ? " AND n.id > ?5" : ""} ORDER BY n.id LIMIT 51`,
@@ -1294,7 +1294,7 @@ export const contacts = new Hono<AppEnv>()
           .bind(id, t, ...g.params),
         // 2d. an individual's never-sent proposal and estimate drafts go with its last live contact (owner O-Q4, 2026-10-25; Researched 2026-10-29,
         //     DPDP s.8(7), s.12(3) (08-C RB-37)). A sent version keeps its frozen copy (it is evidence of the offer and blocks the erase of the person
-        //     it names) (OPEN (08-C RB-37): may an unaccepted sent offer be kept against an erasure request, and for how long?).
+        //     it names) (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37): on request the person's data is erased in the frozen copy, keeping number, status, dates and hash (T7, before 13 May 2027); until T7 the offer is kept and erase is refused).
         //     The approvals of those drafts go first (they reference the document); a lead's link to a deleted draft is cleared by the
         //     foreign key. Same conditions as step 3, in the same batch, before the contact changes.
         //     The bell rows about those approvals go too, before the approvals do (their titles hold the draft's title). They go for EVERY approval of the

@@ -89,7 +89,7 @@ const MATRIX = {
   "invoices.read": { owner: "allow", staff: "allow", accountant: "allow" },
   "invoices.draft": { owner: "allow", staff: "allow" },
   "invoices.issue": { owner: "step-up", staff: "approval" },
-  // M5.1 (Q2, OPEN (08-C RA-10): may a tax invoice issued in error and never delivered be shown as cancelled in GSTR-1 Table 13 with no credit note?): only the Owner voids an issued invoice, with a fresh code; Staff cannot request a void.
+  // M5.1 (Q2, Settled by the lead on the safest reading, 2026-10-30 (08-C RA-10): such a void is reported as cancelled in Table 13, anything else is corrected by a credit note): only the Owner voids an issued invoice, with a fresh code; Staff cannot request a void.
   "invoices.void": { owner: "step-up" },
   // M5.2 (LD22, Q9): the tax invoice made for money received against a proforma: the Owner only, with a fresh code. A new docs/04 §9 row.
   "invoices.advance": { owner: "step-up" },
