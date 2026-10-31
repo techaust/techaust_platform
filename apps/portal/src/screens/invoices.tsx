@@ -249,7 +249,7 @@ export function InvoicePage(props: {
       {withdrawn && (
         <div className="notice notice--info inv-doc__withdrawn" role="note">
           <Archive size={20} />
-          <p>{WITHDRAWN_ZF.banner(d.withdrawnOn ? dateText(d.withdrawnOn) : "")}</p>
+          <div>{WITHDRAWN_ZF.banner(d.withdrawnOn ? dateText(d.withdrawnOn) : "")}</div>
         </div>
       )}
       {props.notices}
