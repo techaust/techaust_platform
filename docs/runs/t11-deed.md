@@ -1,6 +1,6 @@
 # Run: T11, the deed of assignment of copyright
 
-Status: WAITING ON LEAD (07-ZJ): the designer's draft of every new line is in [07-ZJ](../07-content-appendix/ZJ-t11-deed.md); the designer keeps building on `feat/t11-deed-design` with `[Placeholder]` marks until the lead answers
+Status: designer running on `feat/t11-deed-design` (07-ZJ approved by the lead, 2026-11-01)
 Tier: B
 Usage:
 

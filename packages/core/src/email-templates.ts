@@ -35,8 +35,8 @@ export const EMAIL_TEMPLATES = [
   // four stages (the stage is in its data; ADM-REP-07, Q54). The words are 07-V's; the designer builds them (a plain stub until then, LD88).
   "edf.reminder",
   "realisation.alert",
-  // T11: the signed deed of assignment is in the client's portal (to its portal contacts). The words come from 07-ZJ (client-facing: the owner approves);
-  // until then the template prints `[Placeholder]` lines.
+  // T11: the signed deed of assignment is in the client's portal (to its portal contacts). Words: 07-ZJ lines 8 to 11 (approved by the lead under the
+  // owner's delegation, 2026-11-01).
   "deed.signed",
 ] as const;
 export type EmailTemplate = (typeof EMAIL_TEMPLATES)[number];

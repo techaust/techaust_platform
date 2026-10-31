@@ -32,8 +32,8 @@ export const TEMPLATE_NAMES: Record<EmailTemplate, string> = {
   // M5.5b (names as the Settings list shows them; the words are 07-V's)
   "edf.reminder": "EDF reminder (team)",
   "realisation.alert": "Export realisation alert (team)",
-  // T11: 07-ZJ line 12 (marked until the lead approves 07-ZJ).
-  "deed.signed": "[Placeholder] Signed deed ready (client)",
+  // T11: 07-ZJ line 12 (approved by the lead under the owner's delegation, 2026-11-01).
+  "deed.signed": "Signed deed ready (client)",
 };
 
 const SAMPLE = "https://example.test/sample";

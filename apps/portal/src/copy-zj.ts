@@ -3,7 +3,8 @@
 // 07-ZJ to the lead, 2026-11-01); then `APPROVED_07ZJ` turns true and the marks go (the copy-zf.ts pattern). The admin's twin is apps/admin/src/lib/copy-zj.ts.
 // The card appears only for a SIGNED deed (the API lists no other).
 
-export const APPROVED_07ZJ: boolean = false;
+// APPROVED by the lead under the owner's delegation, 2026-11-01.
+export const APPROVED_07ZJ: boolean = true;
 const ZJ = (line: string): string => (APPROVED_07ZJ ? line : `[Placeholder] ${line}`);
 
 export const DEED_ZJ = {

@@ -253,7 +253,8 @@ function udyamCategoryWords(category: string): string {
  * Schedule labels are 07-ZJ line 2 (client-facing): `labels` stays null until the lead approves them, so the PDF prints the values without labels and no
  * "[Placeholder]" mark is ever stored in a write-once PDF.
  */
-export const APPROVED_07ZJ_PDF_LABELS: boolean = false;
+// Line 2 APPROVED by the lead under the owner's delegation, 2026-11-01.
+export const APPROVED_07ZJ_PDF_LABELS: boolean = true;
 const DEED_SCHEDULE_LABELS = {
   deliverables: "Deliverables",
   location: "Where it was delivered",

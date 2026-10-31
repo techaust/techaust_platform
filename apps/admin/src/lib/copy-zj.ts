@@ -3,8 +3,8 @@
 // (the 07-ZH pattern). The deed's own text is 07-ZE's and comes from the server (core `deedText`); nothing of it is written here. Its own small module, so the
 // audit log's labels (line 33) don't load the deed screen's words.
 
-/** 07-ZJ: false until the lead approves the page. */
-export const APPROVED_07ZJ: boolean = false;
+/** 07-ZJ: APPROVED by the lead under the owner's delegation, 2026-11-01. */
+export const APPROVED_07ZJ: boolean = true;
 export const PLACEHOLDER_MARK = "[Placeholder]";
 /** A 07-ZJ line as the screen shows it: marked until approved. */
 export const ZJ = (line: string): string => (APPROVED_07ZJ ? line : `${PLACEHOLDER_MARK} ${line}`);

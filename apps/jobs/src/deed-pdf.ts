@@ -54,8 +54,9 @@ type DeedRow = {
   client_gone: number;
 };
 
-/** The owners' bell when a deed's sealed values fail their check: the words come from 07-ZJ (a staff line; the designer drafts it). */
-export const DEED_REFUSED_BELL = (number: string) => `[Placeholder] pdf.refused ${number}`;
+/** The owners' bell when a deed's sealed values fail their check: 07-ZJ line 32 (approved by the lead under the owner's delegation, 2026-11-01). */
+export const DEED_REFUSED_BELL = (number: string) =>
+  `The PDF of deed ${number} didn't match its saved copy, so it wasn't made. A developer needs to look at it.`;
 
 const REFUSED_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
   SELECT 'n_' || lower(hex(randomblob(16))), u.id, 'pdf.refused', 'deed', ?1, ?2, ?3 FROM staff_users u WHERE u.status = 'active' AND u.role = 'owner'`;

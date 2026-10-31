@@ -267,7 +267,8 @@ describe("deedDraftStatements: L2 and L3 [RB-38(a), ADM-PRJ-04]", () => {
       d?.id,
     );
     expect(bells.map((b) => b.user_id).sort()).toEqual([fx.owner, second].sort());
-    expect(bells[0]?.title).toMatch(/^\[Placeholder\] PRJ-/);
+    // 07-ZJ line 31 (approved 2026-11-01)
+    expect(bells[0]?.title).toMatch(/^Draft deed ready for PRJ-.*: fill in the Schedules\.$/);
     expect(bells[0]?.link).toBe(`/projects/${fx.projectId}`);
     const audit = await all<{ actor_type: string; summary: string }>(
       "SELECT actor_type, summary FROM audit_log WHERE action = 'deed.draft' AND entity_id = ?",

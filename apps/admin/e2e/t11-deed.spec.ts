@@ -27,7 +27,8 @@ const VIEWS: readonly View[] = [
 type J = Record<string, any>;
 
 async function settled(page: Page) {
-  await page.waitForLoadState("networkidle");
+  // Not "networkidle": on this loaded PC the dev server's background requests sometimes kept it from ever settling (two 10-minute timeouts).
+  await expect(page.locator(".deed-head")).toBeVisible({ timeout: 60_000 });
   await expect(page.locator(".skeleton, [aria-busy='true']")).toHaveCount(0);
   await page.evaluate(() => document.fonts.ready);
 }

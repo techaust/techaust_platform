@@ -29,8 +29,8 @@ export const DEED_SIGNED_KEYS = [
   "url",
 ] as const satisfies readonly (keyof DeedSignedData)[];
 
-/** 07-ZJ lines 8 to 11: false until the lead approves them. */
-export const APPROVED_07ZJ_EMAIL: boolean = false;
+/** 07-ZJ lines 8 to 11: APPROVED by the lead under the owner's delegation, 2026-11-01. */
+export const APPROVED_07ZJ_EMAIL: boolean = true;
 const ZJ = (line: string): string => (APPROVED_07ZJ_EMAIL ? line : `[Placeholder] ${line}`);
 
 /** "proposal" or "estimate" as the sentence says it (anything else reads as "proposal": the API only sends these two). */

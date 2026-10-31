@@ -112,11 +112,11 @@ const TARGET_PROJECTS = `SELECT ?1 AS id WHERE ?1 IS NOT NULL
    UNION SELECT td.project_id FROM documents td WHERE td.project_id IS NOT NULL AND td.id IN (
      SELECT value FROM json_each(?2) UNION SELECT document_id FROM payment_allocations WHERE payment_id IN (SELECT value FROM json_each(?3)))`;
 
-/** The words of the Owner's bell: supplied by the caller from 07-ZJ (nothing here invents copy); the project's code follows the title. */
-export type DeedBell = { readonly title: string };
+/** The words of the Owner's bell around the project's code: `before` {code} `after`. */
+export type DeedBell = { readonly before: string; readonly after: string };
 
-/** The default bell title while 07-ZJ is not approved (CLAUDE.md: a line missing from 07 shows `[Placeholder]`). */
-export const DEED_BELL_PLACEHOLDER = "[Placeholder] ";
+/** 07-ZJ line 31 (approved by the lead under the owner's delegation, 2026-11-01): "Draft deed ready for {project code}: fill in the Schedules." */
+export const DEED_BELL: DeedBell = { before: "Draft deed ready for ", after: ": fill in the Schedules." };
 
 const guarded = (g: GuardSql | undefined, used: number): { sql: string; params: readonly unknown[] } =>
   g ? { sql: ` AND ${g.sql(used + 1)}`, params: g.params } : { sql: "", params: [] };
@@ -141,7 +141,8 @@ export function deedDraftStatements(
   ];
   const g1 = guarded(g, 4);
   const g2 = guarded(g, 4);
-  const g3 = guarded(g, 5);
+  const g3 = guarded(g, 6);
+  const bell = a.bell ?? DEED_BELL;
   const made = `FROM deeds d JOIN projects p ON p.id = d.project_id WHERE d.project_id IN (${TARGET_PROJECTS}) AND d.created_at = ?4 AND d.status = 'draft'`;
   return [
     db
@@ -163,10 +164,10 @@ export function deedDraftStatements(
     db
       .prepare(
         `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
-         SELECT 'n_' || lower(hex(randomblob(16))), o.id, 'deed.draft', 'deed', d.id, ?5 || p.code, '/projects/' || p.id
+         SELECT 'n_' || lower(hex(randomblob(16))), o.id, 'deed.draft', 'deed', d.id, ?5 || p.code || ?6, '/projects/' || p.id
          ${made.replace("FROM deeds d JOIN projects p ON p.id = d.project_id", "FROM deeds d JOIN projects p ON p.id = d.project_id JOIN staff_users o ON o.role = 'owner' AND o.status = 'active'")}${g3.sql}`,
       )
-      .bind(...target, a.now, a.bell?.title ?? DEED_BELL_PLACEHOLDER, ...g3.params),
+      .bind(...target, a.now, bell.before, bell.after, ...g3.params),
   ];
 }
 

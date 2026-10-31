@@ -1,6 +1,6 @@
 # 07-ZJ: the deed of assignment's screens, bells and email (T11)
 
-Status: **PENDING the lead's approval** (designer's draft, 2026-11-01). The owner delegated every line here to the lead (owner, 2026-11-01, "You approve them"); staff lines are the lead's under the standing delegation. Change a line here first, then in the code. Lines in `{braces}` are filled in by the screen, the email or the PDF. Until approved, the admin and the portal show each line after a "[Placeholder]" mark (`APPROVED_07ZJ` in `apps/admin/src/lib/copy-zj.ts` and `apps/portal/src/copy-zj.ts`; one switch each removes every mark). The deed's own text is 07-ZE's, word for word, and is not repeated here. No line claims a lawyer reviewed anything.
+Status: **APPROVED by the lead under the owner's delegation, 2026-11-01** (all 33 lines as written, line 2's Schedule labels included; client lines under the owner's delegation of 2026-11-01, "You approve them"; staff lines under the standing delegation). `APPROVED_07ZJ` (admin and portal), `APPROVED_07ZJ_EMAIL` and `APPROVED_07ZJ_PDF_LABELS` are on. Change a line here first, then in the code. Lines in `{braces}` are filled in by the screen, the email or the PDF. The deed's own text is 07-ZE's, word for word, and is not repeated here. No line claims a lawyer reviewed anything.
 
 **(C)** = a client reads it (portal, email, PDF). **(S)** = staff only (admin, bells, audit log). Every line is "Recommended: as written" unless it says otherwise.
 
