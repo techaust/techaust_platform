@@ -54,6 +54,7 @@ Tests that pin them: `apps/admin/src/lib/reports.test.ts:96`, `:733`, `:771`, `:
 - **Answer (2026-11-01, relayed by the main session):** (a). All 13 lines approved as recommended (line 9 the long form, line 12 without the extra sentence), §F agreed. Approved by the lead under the owner's delegation (owner, 2026-11-01: "You approve them" for 07-ZK); the main session checked lines 4, 5–7, 8 and 10 against 08-C (§5 RB-02 and RA-32, RA-15, 07-ZH line 10).
 
 ## Lead decisions (for 13)
+- 2026-11-01: 07-ZK line 8 (the earlier-month payment line) is not shown on the LUT route of an export, whose IGST is nil (s.16(3)(a) IGST Act, 08-C RA-18): the line's "add it … with interest" would send the owner to pay tax that isn't due. The server's `advance_previous_period` warning and its audit row stay (ca-wording review 1).
 - 2026-11-01: website lines that name the visitor's own CA or lawyer, the S3 catalogue line and the Flags "legal partner" hint stay (07-ZK §F): they don't tell the owner to ask anyone.
 - 2026-11-01: `meta.verify` for the settings groups and the terms list becomes one value, `"08-C §5"`, and the "Researched default" note has one text (07-ZK line 12, approved 2026-11-01).
 - 2026-11-01: 08-C header lines 3, 7 and 9 corrected (no CA or lawyer list; the third tag named).
@@ -63,7 +64,26 @@ Tests that pin them: `apps/admin/src/lib/reports.test.ts:96`, `:733`, `:771`, `:
 - **08-C RA-32 for B2CS:** RA-32 settles Table 9B for registered and B2CL notes; a tax-only note in the B2CS file has no settled route (07-ZK line 6 names no table).
 - **Website, About › team** (`apps/web/src/content/company.ts:152`, 07 §466): "We bring in trusted specialists, such as security testers and legal partners, when a project needs them." Not a "your CA" line, so outside this task; the owner may want to confirm it is still true now that there is no lawyer.
 - **Reports › Export realisation** `REALISATION_COPY.beforeFema` (`apps/admin/src/lib/reports.ts:475`, 07-V §11): "Issued before 1 October 2026: a different realisation period may apply." Names no CA, so outside 07-ZK, but it now disagrees with 07-ZK line 4 (RB-02 settled: 9 months from the invoice date). New copy needs approval; in practice no app invoice predates 1 October 2026 (08-C §5 RB-02).
+- **07-ZK line 9 (review 6):** add "void or withdraw this one" so the client doesn't see two open proformas (copy approval needed; model 07-ZF 17).
+- **Settings › Terms (review 5):** the "Researched default" tag over the "wording is yours" note; a plain notice or another tag needs copy approval.
+- **08-C rows RA-10 and RA-36 (review 9):** still "OPEN (CA)" in their rows, against the header and §5; re-tag in rule 8's form.
 - `apps/admin/worker/care.ts:10` comment "To check with the CA (no 08-C row yet)": a research item without an 08-C row (comment only).
+
+## Review (reviewer, 2026-11-01; copied by the lead)
+**APPROVE** at bbb940c. No critical or high; 2 medium, 8 low. All 13 07-ZK lines word for word in every listed place (line 9's three copies identical); no other screen text changed; `meta.verify` "08-C §5" and nothing else in `settings.ts`; no banned phrases; the 08-C §5 anchor resolves. Commands: admin `reports.test.ts` + `invoice-types.test.ts` 78 passed; core `verify-tags.test.ts` 3 passed; admin `worker/settings.test.ts` 47 passed; admin typecheck exit 0. Visual (plugin Playwright, offset 0, a fresh local DB, a local sample owner): Settings › Tax (note, E-invoicing hint wraps to 3 lines cleanly), Settings › Terms, Settings › Payment terms, Data retention, Reports › GST exports (intro, and the layout note after "Make files"), 1280 and 390 px, light and dark; no overflow (scrollWidth 390). Screenshots copied to `.logs/ca-wording/` (git-ignored). Not verified on screen: line 13 (Staff and Sales only), lines 3–9 (no local documents; tests cover them); no 768 px, keyboard or axe pass (no controls changed). Skills: `code-review` (its first run reviewed main's last commit and was discarded; the second reviewed `origin/main...HEAD`).
+
+| # | Sev. | Finding | Triage (lead) |
+|---|---|---|---|
+| 1 | medium | `advance_previous_period` fires on the LUT route too; line 8 ("add it to the next one with interest") would send the owner to pay IGST and interest that aren't due on a zero-rated export | **Fixed (lead):** `previousPeriodShown` in `apps/admin/src/lib/invoice-types.ts` hides the line in the dialog and the toast when the proforma is `export_lut` and IGST wasn't chosen (s.16(3)(a) IGST Act, 08-C RA-18); the server's warning and audit row unchanged (existing tests). No new copy |
+| 2 | medium | The replaced lines in 07-V, 07-S, 07-W, 07-Y aren't marked | **Fixed:** each carries "Replaced on 2026-11-01 by 07-ZK line N; kept for history only" (07-T's precedent) |
+| 3 | low | 07-ZK line 8 said "07-ZH line 10, word for word"; only its second sentence is | **Fixed** in 07-ZK |
+| 4 | low | The E-invoicing hint states a researched rule with no tag | **Fixed:** `Researched 2026-10-28, … (08-C RA-15)` comment above the row |
+| 5 | low | Settings › Terms keeps the "Researched default" tag over a note that makes no research claim | **Kept:** the seeded blocks are researched defaults (07-ZE, 08-C RB-38); a different tag is new copy. Listed as a follow-up |
+| 6 | low | Line 9 doesn't say to void or withdraw the old proforma, so the client could see two open proformas | **Follow-up:** new copy (07-ZF 17's "void it … or withdraw it …, then issue a new one" is the model); needs approval |
+| 7 | low | The new test checks only the reports lines | **Fixed:** a raw-source scan of every admin `src` and `worker` file (tests excluded) for "your CA", "CA and lawyer", "your lawyer" |
+| 8 | low | `REALISATION_COPY.beforeFema` disagrees with line 4 | Already a follow-up |
+| 9 | low | 08-C RA-10 and RA-36 rows still say "OPEN (CA)" | **Follow-up** (rows outside this task) |
+| 10 | low | Comment-only edits in `copy-zd.ts`, `legal-pages.ts` | Accepted earlier; no screen text |
 
 ## Integration notes (lead)
 - 2026-11-01: `fix/ca-wording-b1` (4b68b9d) merged into `fix/ca-wording` (merge commit, no conflicts); the lead read the whole diff against 07-ZK (every line word for word; the three copies of line 9 identical). The builder's extra comment edit in `apps/admin/src/lib/copy-zd.ts:3` (the 07-T history now says "sent the owner to a CA") accepted: history kept, grep clean. Worktree removed, branches deleted.

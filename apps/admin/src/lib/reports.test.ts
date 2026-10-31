@@ -141,6 +141,26 @@ describe("07-V is approved word for word", () => {
 });
 
 describe("07-ZK (approved 2026-11-01): no line sends the owner to a CA or a lawyer", () => {
+  it('no admin source outside the tests says "your CA", "CA and lawyer" or "your lawyer" (review 7: every 07-ZK place, the Worker\'s too)', () => {
+    const sources = {
+      ...(import.meta.glob(["../**/*.{ts,tsx}", "!../**/*.test.{ts,tsx}"], {
+        query: "?raw",
+        import: "default",
+        eager: true,
+      }) as Record<string, string>),
+      ...(import.meta.glob(["../../worker/**/*.ts", "!../../worker/**/*.test.ts"], {
+        query: "?raw",
+        import: "default",
+        eager: true,
+      }) as Record<string, string>),
+    };
+    expect(Object.keys(sources).length).toBeGreaterThan(100);
+    const hits = Object.entries(sources)
+      .filter(([, text]) => /your CA\b|CA and lawyer|your lawyer/.test(text))
+      .map(([path]) => path);
+    expect(hits).toEqual([]);
+  });
+
   it("the GST export lines, the tax-only note card and the researched-default note name neither", () => {
     const manual = {
       docId: "n",

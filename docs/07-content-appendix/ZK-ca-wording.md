@@ -43,7 +43,7 @@ Status: **APPROVED by the lead under the owner's delegation, 2026-11-01** (owner
 
 ## C. Invoices: a payment received on a proforma (Owner)
 
-8. **Warning: the payment arrived in an earlier month** (`INVT_COPY.previousPeriod`: shown in the dialog and after "issued" in the toast; 07-S §8 `advance_previous_period`). 08-C RA-17: the GST on it belongs to that month (interest under s.50). The new line is the owner-approved 07-ZH line 10, word for word, so the two screens say the same thing.
+8. **Warning: the payment arrived in an earlier month** (`INVT_COPY.previousPeriod`: shown in the dialog and after "issued" in the toast; 07-S §8 `advance_previous_period`). 08-C RA-17: the GST on it belongs to that month (interest under s.50). Its second sentence is the owner-approved 07-ZH line 10's, word for word, so the two screens say the same thing. Not shown on the LUT route (no IGST, so nothing to add with interest; ca-wording review 1, a lead decision, no new copy).
    - Old: "This payment arrived in an earlier month. The GST on it belongs to that month's return: check with your CA."
    - **New (Recommended):** "This payment arrived in an earlier month. GST on it was due in that month's return; if that return is filed, add it to the next one with interest."
 

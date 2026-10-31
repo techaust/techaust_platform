@@ -226,6 +226,17 @@ export const amount = (minor: number, currency: Currency) => moneyText(minor, cu
 export const arrivedEarlierMonth = (receivedOn: string, todayIso: string) =>
   /^\d{4}-\d{2}/.test(receivedOn) && receivedOn.slice(0, 7) < todayIso.slice(0, 7);
 
+/**
+ * Whether the earlier-month line (07-ZK line 8, "… add it to the next one with interest") is shown: never on the LUT route, whose export carries no IGST,
+ * so there is no tax or interest to add (Researched 2026-10-28, s.16(3)(a) IGST Act (08-C RA-18); ca-wording review 1). The route is the proforma's
+ * (`export_lut`) unless the Owner chose IGST for this payment; the server's `advance_previous_period` warning and its audit row are unchanged.
+ */
+export const previousPeriodShown = (
+  earlier: boolean,
+  proformaSupplyType: string | null | undefined,
+  igstChosen: boolean,
+) => earlier && !(proformaSupplyType === "export_lut" && !igstChosen);
+
 // ---- the exchange rate (Q7, Q24) ---------------------------------------------------------------------------------------------------------------------
 
 /** `noRate`: the Owner states no rate was published on the invoice's day, so an earlier day's rate may be used (contract `noRateThatDay`, S §8). */
