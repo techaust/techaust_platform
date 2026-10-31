@@ -4,6 +4,7 @@
 import type { Role } from "@techaust/core/permissions";
 import { useEffect, useId } from "react";
 import { Link } from "react-router";
+import { BELL_OVER_NINE } from "../../lib/copy-zl.ts";
 import { ROLE_LABELS, relative } from "../../lib/format.ts";
 import { setTheme, THEME_LABELS, THEME_PREFS, useTheme } from "../../lib/theme.ts";
 import { Bell, ChevronDown, LogOut, Monitor, Moon, Sun, User as UserIcon } from "../icons.tsx";
@@ -17,6 +18,13 @@ export type Notification = {
   href: string;
   unread: boolean;
 };
+
+/**
+ * The bell's name says what its badge shows (WCAG 2.5.3 Label in Name, axe `label-content-name-mismatch`): the exact count up to 9, "9+" over 9
+ * (07-ZL line 3), and no count when nothing is unread.
+ */
+export const bellName = (unread: number): string =>
+  unread > 9 ? BELL_OVER_NINE : unread > 0 ? `Notifications, ${unread} unread` : "Notifications";
 
 export function NotificationBell(props: {
   items: Notification[];
@@ -47,7 +55,7 @@ export function NotificationBell(props: {
         aria-expanded={p.open}
         aria-controls={panelId}
         onClick={p.toggle}
-        aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"}
+        aria-label={bellName(unread)}
       >
         <Bell />
         {unread > 0 && (
