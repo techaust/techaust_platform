@@ -1343,6 +1343,9 @@ export function paymentTriggerStatements(): string[] {
     `CREATE TRIGGER \`realisation_extensions_scope_insert\` BEFORE INSERT ON \`realisation_extensions\` WHEN ${extensionBad} BEGIN ${named("realisation_extensions_scope_insert", "an extension is for an issued, not void export invoice, to a day after its issue and after any earlier extension, with a known letter type")} END;`,
     `CREATE TRIGGER \`realisation_extensions_fixed\` BEFORE UPDATE ON \`realisation_extensions\` WHEN ${extensionFixed} BEGIN ${named("realisation_extensions_fixed", "an extension never changes; its letter is set once")} END;`,
     `CREATE TRIGGER \`realisation_extensions_no_delete\` BEFORE DELETE ON \`realisation_extensions\` BEGIN ${named("realisation_extensions_no_delete", "an extension is never deleted")} END;`,
+    // 15. the client's currency is locked by a payment too (L42; the API's billing WHERE holds the same rule, code review low 6): a pending or confirmed
+    // payment is in the client's currency, and its credit could never be used in another.
+    `CREATE TRIGGER \`clients_currency_locked_payments\` BEFORE UPDATE OF currency ON \`clients\` WHEN NEW.currency IS NOT OLD.currency AND EXISTS (SELECT 1 FROM payments WHERE client_id = OLD.id AND status IN ('pending_verification', 'confirmed')) BEGIN ${named("clients_currency_locked_payments", "currency is locked: the client has a payment")} END;`,
   ];
 }
 

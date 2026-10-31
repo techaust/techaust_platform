@@ -336,6 +336,30 @@ describe("payments: values, insert state, TDS rules, frozen columns, status move
 
 // ---- allocations -------------------------------------------------------------------------------------------------------------------------------------
 
+describe("clients_currency_locked_payments: a payment locks the client's currency (L42)", () => {
+  it("a pending or confirmed payment refuses a currency change; a client with no payment may change it", async () => {
+    const owner = await mkMember("owner");
+    const staff = await mkMember("staff");
+    const waiting = await mkClientRow();
+    await pay(waiting, staff, { status: "pending_verification" });
+    await rejects(
+      run("UPDATE clients SET currency = 'USD' WHERE id = ?", waiting),
+      /clients_currency_locked_payments/,
+    );
+    const confirmed = await mkClientRow();
+    await pay(confirmed, owner);
+    await rejects(
+      run("UPDATE clients SET currency = 'USD' WHERE id = ?", confirmed),
+      /clients_currency_locked_payments/,
+    );
+    const bare = await mkClientRow();
+    await run("UPDATE clients SET currency = 'USD' WHERE id = ?", bare);
+    expect(
+      (await first<{ currency: string }>("SELECT currency FROM clients WHERE id = ?", bare))?.currency,
+    ).toBe("USD");
+  });
+});
+
 describe("payment_allocations: append-only and every bound [ADM-PAY-06, L5, L6, L8]", () => {
   it("append-only, two kinds only", async () => {
     const { owner, clientId, inv } = await setup();
