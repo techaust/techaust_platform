@@ -81,17 +81,11 @@ export const payments = sqliteTable(
     // A client's payments in a currency by the day the money arrived (the statement, the credit balance, the client's figures).
     index("payments_client").on(t.clientId, t.currency, t.receivedOn, t.id),
     // The Owner's "Payments to check" list and the dashboard tile: only the pending rows are in it.
-    index("payments_pending")
-      .on(t.recordedAt, t.id)
-      .where(sql`${t.status} = 'pending_verification'`),
+    index("payments_pending").on(t.recordedAt, t.id).where(sql`${t.status} = 'pending_verification'`),
     // The payments register and "collected": only the confirmed rows.
-    index("payments_confirmed")
-      .on(t.receivedOn, t.id)
-      .where(sql`${t.status} = 'confirmed'`),
+    index("payments_confirmed").on(t.receivedOn, t.id).where(sql`${t.status} = 'confirmed'`),
     // The duplicate-reference check (L12).
-    index("payments_reference")
-      .on(t.referenceNorm)
-      .where(sql`${t.referenceNorm} is not null`),
+    index("payments_reference").on(t.referenceNorm).where(sql`${t.referenceNorm} is not null`),
     uniqueIndex("payments_advance_receipt")
       .on(t.advanceReceiptId)
       .where(sql`${t.advanceReceiptId} is not null`),
