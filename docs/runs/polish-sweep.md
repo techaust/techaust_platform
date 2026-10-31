@@ -7,7 +7,7 @@ Usage: (none yet)
 Session: polish-sweep (cloud). Branch: `fix/polish-sweep`. Copy file: `docs/07-content-appendix/ZL-polish-sweep.md` (only if a new user-facing line is needed).
 
 ## Brief
-**Tier C** (screens built from existing parts, plus two small API/logic fixes). PRD IDs: ADM-DASH-01 (activity feed), ADM-TIME-01 (time), ADM-INV-03/ADM-INV-05 (issue and note dialogs), ADM-SET-01 (settings save bar), ADM-CLI-05 (anonymise), WEB-A11Y (website focus). Use the closest real IDs from docs/04 in commits; the lead fixes them at integration if wrong.
+**Tier C** (screens built from existing parts, plus two small API/logic fixes). PRD IDs: ADM-DASH-01 (activity feed), ADM-TIME-01 (time), ADM-INV-03/ADM-INV-05 (issue and note dialogs), ADM-SET-01 (settings save bar), ADM-CLI-05 (anonymise), WEB-G-16 (website focus). Use the closest real IDs from docs/04 in commits; the lead fixes them at integration if wrong.
 
 **Checked on main (474ec9c, 2026-11-01) before briefing:**
 | # | Item | Still there? | Owner |
