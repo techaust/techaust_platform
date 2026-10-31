@@ -1,6 +1,6 @@
 Status: builder running (07-ZK approved)
 Tier: C (copy lines and the tests that pin them; no logic, no migrations)
-Usage: lead claude-opus-5-5/high (no agent started yet; 5-h reading 17 % at 2026-11-01T02:40+05:30)
+Usage: lead claude-opus-5-5/high; builder b1 started 2026-11-01 (5-h reading 20 % at 02:55 IST; model and effort from model-audit after it reports)
 
 # ca-wording: replace the lines that send the owner to "your CA" or "your CA and lawyer"
 
