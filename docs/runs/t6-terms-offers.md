@@ -1,8 +1,8 @@
 # Run: T6, the offer wording, proposal terms v4 and website Terms 0.2
 
-Status: builder running (Q1, Q2 answered 2026-10-31)
+Status: analyst early check running
 Tier: B
-Usage: lead claude-opus-5-5/high (cloud session t6-terms)
+Usage: lead claude-opus-5-5/high (cloud session t6-terms); builder claude-opus-5-5/high (skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, unavailable in cloud; 5-h 8 % at start, reading of 12:58)
 
 **Source:** [settle-08c](settle-08c.md) task T6; wording [07-ZE](../07-content-appendix/ZE-terms-offers-deed.md) (approved by the owner, 2026-10-31: 20 lines, Q1–Q4). Cloud session `t6-terms`, branch `feat/t6-terms-offers`, controlled by the main session on the owner's PC. Merge order today: T12, **T6**, proforma withdraw, T7, M6.1.
 
@@ -64,6 +64,9 @@ Analyst GO; designer screenshots; reviewer APPROVE with a live visual review; ev
 ## Lead decisions (for 13)
 - 2026-10-31 | After the MCIA check (fees recorded in 08-C RB-38(c)), arbitration for clients outside India stays under the MCIA Rules seated in Kolkata, wording of 07-ZE line 12 unchanged (Q1: A) | Owner | 07-ZE line 12, proposal terms v4 item 10, 08-C RB-38
 - 2026-10-31 | The staff reply to an acceptance by email (07-ZE line 5) is a box on a sent proposal or estimate in admin with a copy button; heading "Client accepted by email?", button "Copy reply" (Q2: A) | Owner | `apps/admin` offer panels, run file t6-terms-offers
+
+- 2026-10-31 | The admin staff-reply box copies with the existing `CopyButton` ("Copied" / "Copied to the clipboard", already approved copy), no new toast line; the box shows only on a sent, viewed or expired proposal or estimate, never on a replaced (`revised`) version, which can't be accepted | Lead | `apps/admin/src/lib/offers.ts` `staffReplyText`
+- 2026-10-31 | The admin front Worker gets `vars.PORTAL_ORIGIN` (local, staging, `https://portal.techaust.com` per docs/05) baked into the SPA as `__PORTAL_ORIGIN__`, following the portal's `__WEBSITE_ORIGIN__` pattern | Lead | `apps/admin/wrangler.jsonc`, `scripts/website-origin.mjs`
 
 ## Follow-ups (for 12)
 - **Cloud setup script (lead, 2026-10-31): fixed by #126** (Node in /opt/techaust-node). the environment's setup script failed (`node -v says v24.22.1, not v24.22.2`): the image now ships `/opt/node24` as a real directory, so `ln -sfn /opt/node-v24.22.2-linux-x64 /opt/node24` makes a link inside it and Node stays 24.22.1; the browser step never ran. Fixed by hand in this session (moved the image's directory aside, linked 24.22.2, installed both Chromiums). Fix for `scripts/cloud-setup.sh` and the pasted environment script: before the `ln -sfn` line, add `[ -d /opt/node24 ] && [ ! -L /opt/node24 ] && mv /opt/node24 "/opt/node24.image.$(date +%s)"`. The owner pastes the corrected script into the environment's settings.
