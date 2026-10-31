@@ -1,8 +1,8 @@
 # Polish sweep (admin and website follow-ups)
 
-Status: reviewer starting (builder and designer merged)
+Status: reviewer running (code + visual) on 64c065f
 Tier: C
-Usage: builder b1 claude-opus-5-5/high (model-audit; skills attempted `cloudflare:workers-best-practices`, `cloudflare:wrangler`, both "Unknown skill" in the cloud), 5-h 17 → 20 %; designer d1 claude-opus-5-5/high (skills: frontend-design:frontend-design per model-audit), started at 5-h 17 %.
+Usage: builder b1 claude-opus-5-5/high (model-audit; skills attempted `cloudflare:workers-best-practices`, `cloudflare:wrangler`, both "Unknown skill" in the cloud), 5-h 17 → 20 %; designer d1 claude-opus-5-5/high (skills: frontend-design:frontend-design per model-audit), started at 5-h 17 %; frontend-design attempted, "Unknown skill" in the cloud (designer report). Reviewer started at 5-h 62 % (USAGE 62 at 03:21).
 
 Session: polish-sweep (cloud). Branch: `fix/polish-sweep`. Copy file: `docs/07-content-appendix/ZL-polish-sweep.md` (only if a new user-facing line is needed).
 
