@@ -207,3 +207,63 @@ describe("an expired offer is not marked viewed (L9) [POR-05]", () => {
     );
   });
 });
+
+// T7 early check finding 6 (Q1 = A, owner 2026-10-31; Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): the fixes above hold for an offer
+// whose personal details were erased: a decline by link moves no lead, an erasure that lands between the accept's read and its batch leaves nothing, and a
+// group whose newest rendered version was erased shows neither version. [POR-04, POR-05, ADM-PROP-08, ADM-LEAD-02]
+describe("an offer erased by an anonymise (T7)", () => {
+  const redact = (id: string) =>
+    env.DB.prepare("UPDATE documents SET redacted_at = ?2 WHERE id = ?1").bind(id, Date.now()).run();
+
+  it("a decline by link is a 404 and moves no lead", async () => {
+    const f = await fixtures();
+    const o = await mkOffer(f.a, { contactId: f.a.finance.id });
+    const lead = await leadFor(o.groupId, f.a.id, "proposal_sent");
+    const token = await mkLink(o, f.a.finance);
+    await redact(o.id);
+    const res = await call("/t/offer/decline", { body: { token, documentId: o.id, reason: "price" } });
+    expect(res.status).toBe(404);
+    expect(await leadOf(lead)).toEqual({ stage: "proposal_sent", lost_reason: null });
+    expect(await one("SELECT status, decided_at, decision_reason FROM documents WHERE id = ?", o.id)).toEqual(
+      { status: "sent", decided_at: null, decision_reason: null },
+    );
+  });
+
+  it("erased between the accept's read and its batch: a 404, no acceptance, no audit row, no lead move", async () => {
+    const f = await fixtures();
+    const o = await mkOffer(f.a);
+    const lead = await leadFor(o.groupId, f.a.id, "proposal_sent");
+    const erasing = withEnv(env, {
+      DB: {
+        prepare: (sql: string) => env.DB.prepare(sql),
+        batch: async (stmts: D1PreparedStatement[]) => {
+          await redact(o.id);
+          return env.DB.batch(stmts);
+        },
+      },
+    });
+    const res = await accept(o.id, await sign(f.a.finance), erasing);
+    expect(res.status).toBe(404);
+    expect(await countOf("acceptances", "document_id = ?", o.id)).toBe(0);
+    expect(await countOf("audit_log", "action = 'document.accept' AND entity_id = ?", o.id)).toBe(0);
+    expect((await one<{ status: string }>("SELECT status FROM documents WHERE id = ?", o.id))?.status).toBe(
+      "sent",
+    );
+    expect(await leadOf(lead)).toEqual({ stage: "proposal_sent", lost_reason: null });
+  });
+
+  it("v1 revised by a rendered v2 that was erased: neither is listed, neither PDF downloads", async () => {
+    const f = await fixtures();
+    const cookie = await sign(f.a.finance);
+    const v1 = await mkOffer(f.a, { status: "revised" });
+    const v2 = await mkOffer(f.a, { groupId: v1.groupId, version: 2, number: v1.number });
+    await redact(v2.id);
+    const ids = (
+      (await (await call("/offers", { cookie })).json()) as { offers: { id: string }[] }
+    ).offers.map((x) => x.id);
+    expect(ids).not.toContain(v1.id);
+    expect(ids).not.toContain(v2.id);
+    expect((await call(`/offers/${v1.id}/pdf`, { cookie })).status).toBe(404);
+    expect((await call(`/offers/${v2.id}/pdf`, { cookie })).status).toBe(404);
+  });
+});

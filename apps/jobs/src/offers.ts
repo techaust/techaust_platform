@@ -86,7 +86,7 @@ const issuerOf = (json: string | null): { senderId: string | null; senderName: s
 // ---- offer.send ---------------------------------------------------------------------------------------------------------------
 
 const SEND_READ =
-  "SELECT s.id, s.document_id, s.version_group_id, s.client_id, s.contact_id, s.attach_pdf, s.queued_at, s.cancelled_at, d.status, d.valid_until, d.type, d.title, d.number_display, d.version, d.total_minor, d.currency, d.pdf_sha256, d.pdf_r2_key, d.issuer, c.id AS live_contact, c.name AS contact_name, lower(c.email) AS contact_email FROM document_sends s JOIN documents d ON d.id = s.document_id LEFT JOIN contacts c ON c.id = s.contact_id AND c.client_id = s.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL WHERE s.id = ?1";
+  "SELECT s.id, s.document_id, s.version_group_id, s.client_id, s.contact_id, s.attach_pdf, s.queued_at, s.cancelled_at, d.status, d.valid_until, d.type, d.title, d.number_display, d.version, d.total_minor, d.currency, d.pdf_sha256, d.pdf_r2_key, d.issuer, d.redacted_at, c.id AS live_contact, c.name AS contact_name, lower(c.email) AS contact_email FROM document_sends s JOIN documents d ON d.id = s.document_id LEFT JOIN contacts c ON c.id = s.contact_id AND c.client_id = s.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL WHERE s.id = ?1";
 
 type SendRow = {
   id: string;
@@ -108,6 +108,7 @@ type SendRow = {
   pdf_sha256: string | null;
   pdf_r2_key: string | null;
   issuer: string | null;
+  redacted_at: number | null;
   live_contact: string | null;
   contact_name: string | null;
   contact_email: string | null;
@@ -143,9 +144,12 @@ export async function processOfferSend(
     return "invalid";
   }
   // Refused (acknowledged): links were revoked, the person lost access or was removed, or the offer is not open any more. The row is marked
-  // cancelled, so the offer page shows "not sent" instead of "queued" forever (a send that was already cancelled stays as it is).
+  // cancelled, so the offer page shows "not sent" instead of "queued" forever (a send that was already cancelled stays as it is). T7 (Q1 = A, owner
+  // 2026-10-31; Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): an offer whose personal details were erased is withdrawn, so it is
+  // never emailed (the anonymise batch already cancels its sends without a link; this also stops a redelivery of one that has a link).
   if (
     row.cancelled_at !== null ||
+    row.redacted_at !== null ||
     !row.live_contact ||
     !row.contact_email ||
     !["sent", "viewed"].includes(row.status) ||
@@ -153,7 +157,14 @@ export async function processOfferSend(
     row.valid_until === null
   ) {
     logEvent("offer_send.refused", {
-      why: row.cancelled_at !== null ? "cancelled" : !row.live_contact ? "contact" : "document",
+      why:
+        row.cancelled_at !== null
+          ? "cancelled"
+          : row.redacted_at !== null
+            ? "redacted"
+            : !row.live_contact
+              ? "contact"
+              : "document",
     });
     if (row.cancelled_at === null) await markNotSent(env, sendId, now);
     return "refused";
@@ -163,12 +174,14 @@ export async function processOfferSend(
     return "pdf_missing";
   }
   const { token, hash } = await mintOfferToken();
-  // One batch: the link (only while the contact is still live and the send is not cancelled) and the row's queued stamp (set once).
+  // One batch: the link (only while the contact is still live, the send is not cancelled and the offer was not erased in between) and the row's queued
+  // stamp (set once).
   const [linked] = await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO offer_links (token_hash, send_id, document_id, version_group_id, client_id, contact_id, email, purpose, expires_at, created_at)
        SELECT ?1, s.id, s.document_id, s.version_group_id, s.client_id, c.id, lower(c.email), 'offer', ?3, ?4
        FROM document_sends s JOIN contacts c ON c.id = s.contact_id AND c.client_id = s.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL
+       JOIN documents d ON d.id = s.document_id AND d.redacted_at IS NULL
        WHERE s.id = ?2 AND s.cancelled_at IS NULL`,
     ).bind(hash, sendId, offerLinkExpiry(row.valid_until), now),
     env.DB.prepare("UPDATE document_sends SET queued_at = coalesce(queued_at, ?2) WHERE id = ?1").bind(
