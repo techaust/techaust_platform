@@ -79,7 +79,9 @@ export async function processDeedPdf(
   if (row.unsigned_r2_key !== null) return skip("done");
   if (row.status !== "final" && row.status !== "signed") return skip("not_final");
   if (row.client_gone === 1) return skip("client_gone");
-  if (DEED_LAYOUT_PLACEHOLDER && env.ENVIRONMENT !== "local") return skip("layout_placeholder");
+  // The generated Env types ENVIRONMENT from the staging config ("staging"); the local config says "local" (browser.ts reads it the same way).
+  const environment: string = env.ENVIRONMENT;
+  if (DEED_LAYOUT_PLACEHOLDER && environment !== "local") return skip("layout_placeholder");
 
   // The seal: the stored text must hash to the sealed SHA-256 and read back as a deed snapshot; the number must be there. Anything else is refused, once.
   const snapshot = parseDeedSnapshot(row.snapshot);

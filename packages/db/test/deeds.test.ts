@@ -750,8 +750,12 @@ describe("the Owner's and Staff's moves [L1, L4]", () => {
     const d = await draftDeed(fx);
     // A credit note lands in between (still eligible: the target drops with it), but the seal was read before it.
     const moved = await finalise(d, {
-      beforeBatch: () =>
-        run("UPDATE documents SET credited_minor = 10000, updated_at = updated_at + 1 WHERE id = ?", inv),
+      beforeBatch: async () => {
+        await run(
+          "UPDATE documents SET credited_minor = 10000, updated_at = updated_at + 1 WHERE id = ?",
+          inv,
+        );
+      },
     });
     expect(moved.changed).toBe(0);
     expect(moved.row?.status).toBe("draft");
