@@ -271,9 +271,12 @@ export function paymentListSql(f: {
     key = "received_on";
   } else if (f.status === "pending_verification") {
     from = "payments p INDEXED BY payments_pending";
+    // A partial index is usable only when the query states its WHERE as a literal; the bound `p.status = ?` below stays as well.
+    where.push("p.status = 'pending_verification'");
     key = "recorded_at";
   } else if (f.status === "confirmed") {
     from = "payments p INDEXED BY payments_confirmed";
+    where.push("p.status = 'confirmed'");
     key = "received_on";
   } else {
     from = "payments p";

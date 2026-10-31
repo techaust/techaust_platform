@@ -104,6 +104,24 @@ describe("who may record and check [ADM-PAY-05; owner Q2 A]", () => {
     expect((await paymentRow(bare.id)).requested_allocations).toBeNull();
   });
 
+  it("the list filters by status through the partial indexes (pending and confirmed answer 200)", async () => {
+    const o = await owner();
+    const staff = await sessionFor("staff", { name: "Mira Staff" });
+    const { clientId, inv } = await invoiceFor();
+    const waiting = await recorded(staff, recordBody(clientId, 1_000));
+    const done = await recorded(o, recordBody(clientId, 2_000, [{ documentId: inv.id, amountMinor: 2_000 }]));
+    const pending = await call("/payments?status=pending_verification", { cookie: o.cookie });
+    expect(pending.status).toBe(200);
+    const p = (await json(pending)) as { payments: { id: string }[] };
+    expect(p.payments.map((x) => x.id)).toContain(waiting.id);
+    expect(p.payments.map((x) => x.id)).not.toContain(done.id);
+    const confirmed = await call("/payments?status=confirmed", { cookie: o.cookie });
+    expect(confirmed.status).toBe(200);
+    const c = (await json(confirmed)) as { payments: { id: string }[] };
+    expect(c.payments.map((x) => x.id)).toContain(done.id);
+    expect(c.payments.map((x) => x.id)).not.toContain(waiting.id);
+  });
+
   it("Sales gets 403 on every payment route; the Accountant reads and gets 403 on every write", async () => {
     const sales = await sessionFor("sales", { stepUp: true });
     const acc = await sessionFor("accountant", { stepUp: true });
