@@ -42,3 +42,31 @@ export const signedIssuerSql = (issuer: string): string =>
  */
 export const fyTokenOfDateSql = (date: string): string =>
   `(CASE WHEN CAST(substr(${date}, 6, 2) AS INTEGER) >= 4 THEN substr(${date}, 3, 2) || printf('%02d', (CAST(substr(${date}, 3, 2) AS INTEGER) + 1) % 100) ELSE printf('%02d', (CAST(substr(${date}, 3, 2) AS INTEGER) + 99) % 100) || substr(${date}, 3, 2) END)`;
+
+// ---- the ledger (M6.1; ADM-PAY-06, ADM-INV-16; run file A.5, A.6) -------------------------------------------------------------------------------------------
+// Shared by the trigger set `payment_triggers` (0057) and the statements of `ledger.ts`, so the bound checks, the post-condition and the recompute sum the same way.
+// Only CONFIRMED payments count: a pending, rejected or withdrawn payment's allocation rows (a withdrawn one keeps its history) are ignored by every sum.
+
+/** The document types a payment is put on (core `PAYABLE_TYPES`; a test compares them): never a proforma or a credit note. */
+export const PAYABLE_TYPES_SQL = "('tax_invoice', 'export_invoice', 'debit_note')";
+/** The statuses the ledger moves an issued document between (core `LEDGER_STATUSES`). */
+export const LEDGER_STATUSES_SQL = "('issued', 'partially_paid', 'paid', 'partially_credited', 'credited')";
+
+/** What confirmed `payment` rows hold on document `doc` (an SQL expression): Σ allocate − Σ release. */
+export const livePaidSql = (doc: string): string =>
+  `(SELECT coalesce(sum(CASE lpa.kind WHEN 'allocate' THEN lpa.amount_minor ELSE -lpa.amount_minor END), 0) FROM payment_allocations lpa JOIN payments lpp ON lpp.id = lpa.payment_id WHERE lpa.document_id = ${doc} AND lpp.status = 'confirmed' AND lpp.kind = 'payment')`;
+
+/** The TDS confirmed `tds` rows put on document `doc`: Σ allocate (a TDS row is never released). */
+export const liveTdsSql = (doc: string): string =>
+  `(SELECT coalesce(sum(lta.amount_minor), 0) FROM payment_allocations lta JOIN payments ltp ON ltp.id = lta.payment_id WHERE lta.document_id = ${doc} AND ltp.status = 'confirmed' AND ltp.kind = 'tds' AND lta.kind = 'allocate')`;
+
+/** What payment `payment` holds net (Σ allocate − Σ release), on every document or on document `doc` only. */
+export const paymentNetSql = (payment: string, doc?: string): string =>
+  `(SELECT coalesce(sum(CASE pna.kind WHEN 'allocate' THEN pna.amount_minor ELSE -pna.amount_minor END), 0) FROM payment_allocations pna WHERE pna.payment_id = ${payment}${doc === undefined ? "" : ` AND pna.document_id = ${doc}`})`;
+
+/**
+ * The status of an issued document for these figures (SQL expressions): the twin of core `ledgerStatusOf(total, paid, credited, tds)` with `settled` = paid + TDS
+ * (a db test compares them over a table of figures).
+ */
+export const ledgerStatusCaseSql = (total: string, settled: string, credited: string): string =>
+  `CASE WHEN ${credited} >= ${total} THEN 'credited' WHEN ${settled} > 0 AND ${total} - ${settled} - ${credited} <= 0 THEN 'paid' WHEN ${settled} > 0 THEN 'partially_paid' WHEN ${credited} > 0 THEN 'partially_credited' ELSE 'issued' END`;
