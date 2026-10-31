@@ -5,62 +5,28 @@ import { useEffect, useState } from "react";
 import { type ClientCredit, type Currency, paymentsApi } from "../../api.ts";
 import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
 import { FormField } from "../../components/form.tsx";
+import { LoadFailed } from "../../components/states.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
 import { INV_COPY } from "../../lib/invoices.ts";
-import { invoicesApi } from "../../lib/invoices-api.ts";
+import { loadOpenDocs, OPEN_DOCS_CAP } from "../../lib/open-docs.ts";
 import {
   amountText,
   creditHeldLine,
   earlierMonthLine,
   earlierMonthOf,
   type OpenDoc,
-  openDocsOf,
   PAY_ERRORS,
   PAY_UI,
   payErrorText,
   plainAmount,
+  showingFirstLine,
 } from "../../lib/payments.ts";
 import { moneyFrom } from "../../lib/settings-form.ts";
 import { withCode } from "../../lib/step-up.ts";
 import { day, EarlierMonthWarning, useCodeSlot } from "./parts.tsx";
 
 type Doc = OpenDoc & { updatedAt: number };
-
-/** The open invoice statuses credit can go on, each read as its own keyset list. */
-const OPEN_STATUSES = ["issued", "partially_paid", "partially_credited"] as const;
-type OpenStatus = (typeof OPEN_STATUSES)[number];
-/** Where each status's list continues (code review finding 4: older open invoices behind the first 50 can be picked through "Show more"). */
-type Cursors = Partial<Record<OpenStatus, string>>;
-
-/** One more page of every status that has one (all of them on the first call), as open documents with their stamps, and where each continues. */
-async function openDocsPage(
-  clientId: string,
-  after: Cursors | null,
-): Promise<{ docs: Doc[]; next: Cursors }> {
-  const statuses = after === null ? OPEN_STATUSES : OPEN_STATUSES.filter((s) => after[s] !== undefined);
-  const pages = await Promise.all(
-    statuses.map((status) =>
-      invoicesApi.list({
-        clientId,
-        status,
-        limit: "50",
-        ...(after?.[status] ? { after: after[status] } : {}),
-      }),
-    ),
-  );
-  const rows = pages.flatMap((p) => p.invoices);
-  const next: Cursors = {};
-  statuses.forEach((status, i) => {
-    const n = pages[i]?.next;
-    if (n) next[status] = n;
-  });
-  const docs = openDocsOf(rows, { kind: "payment", proformas: false }).map((d) => ({
-    ...d,
-    updatedAt: rows.find((r) => r.id === d.id)?.updatedAt ?? 0,
-  }));
-  return { docs, next };
-}
 
 export function ClientCreditDialog(props: {
   clientId: string;
@@ -69,8 +35,11 @@ export function ClientCreditDialog(props: {
 }) {
   const [credit, setCredit] = useState<ClientCredit | null>(null);
   const [docs, setDocs] = useState<Doc[] | null>(null);
-  const [more, setMore] = useState<Cursors>({});
-  const [loadingMore, setLoadingMore] = useState(false);
+  // Re-check findings 5 and 7: every open document (the shared paged loader, up to its cap), in due-date order, so no "Show more" is needed.
+  const [capped, setCapped] = useState(false);
+  // Re-check finding 4: a failed read is the failed-load state with "Try again", never an empty picker.
+  const [docsFailed, setDocsFailed] = useState<unknown>(null);
+  const [docsTry, setDocsTry] = useState(0);
   const [doc, setDoc] = useState("");
   const [text, setText] = useState("");
   const [errors, setErrors] = useState<{ doc?: string; amount?: string }>({});
@@ -84,39 +53,31 @@ export function ClientCreditDialog(props: {
       .clientCredit(props.clientId)
       .then((c) => live && setCredit(c))
       .catch((e) => live && setFailure(payErrorText(e)));
-    openDocsPage(props.clientId, null)
-      .then((page) => {
-        if (!live) return;
-        setDocs(page.docs);
-        setMore(page.next);
-      })
-      .catch(() => live && setDocs([]));
     return () => {
       live = false;
     };
   }, [props.clientId]);
+  useEffect(() => {
+    let live = true;
+    void docsTry;
+    setDocs(null);
+    setDocsFailed(null);
+    loadOpenDocs(props.clientId, { kind: "payment", proformas: false })
+      .then((page) => {
+        if (!live) return;
+        setDocs(page.docs);
+        setCapped(page.capped);
+      })
+      .catch((e: unknown) => live && setDocsFailed(e ?? new Error("failed")));
+    return () => {
+      live = false;
+    };
+  }, [props.clientId, docsTry]);
   const held = credit?.credits[0];
   const currency: Currency = held?.currency ?? "INR";
   const picked = docs?.find((d) => d.id === doc) ?? null;
-  const hasMore = Object.keys(more).length > 0;
   // first in, first out: the oldest source is always drawn first, so its month decides line 10's warning
   const month = picked ? earlierMonthOf(credit?.sources[0]?.receivedOn, [picked.issueDate]) : null;
-
-  async function showMore() {
-    setLoadingMore(true);
-    try {
-      const page = await openDocsPage(props.clientId, more);
-      setDocs((was) => {
-        const seen = new Set((was ?? []).map((d) => d.id));
-        return [...(was ?? []), ...page.docs.filter((d) => !seen.has(d.id))];
-      });
-      setMore(page.next);
-    } catch (e) {
-      setFailure(payErrorText(e));
-    } finally {
-      setLoadingMore(false);
-    }
-  }
 
   function pick(id: string) {
     setDoc(id);
@@ -184,28 +145,26 @@ export function ClientCreditDialog(props: {
               ))}
             </ul>
           )}
-          <FormField id="pay-credit-doc" label={PAY_UI.allocInvoice} error={errors.doc}>
-            {(a) => (
-              <select {...a} value={doc} disabled={docs === null} onChange={(e) => pick(e.target.value)}>
-                <option value="">{docs === null ? "Loading…" : ""}</option>
-                {(docs ?? []).map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {`${d.number ?? ""} · ${INV_COPY.colBalance} ${amountText(d.balanceMinor, d.currency)}`}
-                  </option>
-                ))}
-              </select>
-            )}
-          </FormField>
-          {hasMore && (
-            <button
-              type="button"
-              className="btn btn--secondary"
-              onClick={() => void showMore()}
-              disabled={busy || loadingMore}
-              aria-busy={loadingMore || undefined}
+          {docsFailed !== null ? (
+            <LoadFailed error={docsFailed} onRetry={() => setDocsTry((n) => n + 1)} headingLevel={3} />
+          ) : (
+            <FormField
+              id="pay-credit-doc"
+              label={PAY_UI.allocInvoice}
+              error={errors.doc}
+              {...(capped ? { hint: showingFirstLine(OPEN_DOCS_CAP) } : {})}
             >
-              {loadingMore ? "Loading…" : "Show more"}
-            </button>
+              {(a) => (
+                <select {...a} value={doc} disabled={docs === null} onChange={(e) => pick(e.target.value)}>
+                  <option value="">{docs === null ? "Loading…" : ""}</option>
+                  {(docs ?? []).map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {`${d.number ?? ""} · ${INV_COPY.colBalance} ${amountText(d.balanceMinor, d.currency)}`}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </FormField>
           )}
           <EarlierMonthWarning month={month} />
           <FormField id="pay-credit-amount" label={PAY_UI.amountToUse} error={errors.amount}>
@@ -233,7 +192,12 @@ export function ClientCreditDialog(props: {
           <button type="button" className="btn btn--secondary" onClick={props.onClose} disabled={busy}>
             {INV_COPY.cancel}
           </button>
-          <button type="submit" className="btn btn--primary" disabled={busy} aria-busy={busy || undefined}>
+          <button
+            type="submit"
+            className="btn btn--primary"
+            disabled={busy || docs === null}
+            aria-busy={busy || (docs === null && docsFailed === null) || undefined}
+          >
             {busy ? "Working…" : PAY_UI.useCreditShort}
           </button>
         </div>

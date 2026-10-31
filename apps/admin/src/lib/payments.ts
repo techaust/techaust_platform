@@ -7,7 +7,7 @@
 // empty states and dialogs); each one shows the "[Placeholder]" mark until it is approved, then `APPROVED_07ZH_NEW` turns true and the marks go (the
 // 07-X, 07-Y and 07-Z pattern). A 07-S, 07-R or 07-V line that already says the thing is reused and says where it comes from.
 // Money is formatted and added only through core; nothing here adds up an amount by hand. Pure, so the words and rules are tested without a browser.
-import { receiptMonthWarning } from "@techaust/core/ledger";
+import { LEDGER_STATUSES, PAYABLE_TYPES, receiptMonthWarning, TDS_TYPES } from "@techaust/core/ledger";
 import { type Currency, compare, formatMoney, money, subtract, sum } from "@techaust/core/money";
 import type { PaymentMode, PaymentStatus } from "../api.ts";
 import { RequestError } from "../api.ts";
@@ -102,6 +102,8 @@ export const overpaymentLine = (amount: string, client: string) =>
 /** Line 47 (visual review finding 2): what is left of a payment deliberately split short of what the listed invoices owe (line 9 is a real overpayment). */
 export const keptAsCreditLine = (amount: string, client: string) =>
   ZH(`${amount} is kept as ${client}'s credit.`);
+/** 07-M's line for a truncated list (approved; dashboard.ts says it too), when the open documents' read stops at its cap (re-check finding 5). */
+export const showingFirstLine = (n: number) => `Showing the first ${n}.`;
 /** Line 10. */
 export const creditHeldLine = (amount: string) => `Credit held: ${amount}`;
 /** Line 10's warning (RA-17, L13): `month` is "YYYY-MM", said as "October 2026". */
@@ -324,6 +326,8 @@ export const PAY_UI = {
   // 48 (visual review finding 9) an extension saved without the bank's letter: the action, its dialog's title and button, and its toast
   attachLetter: ZH("Attach the bank's letter"),
   letterSaved: ZH("Letter attached."),
+  // 50 (re-check finding 2) the letter dialog without a file chosen
+  letterMissing: ZH("Choose the bank's letter."),
   // 49 (visual review finding 10) the client Overview's button and dialog, where no invoice is in context yet (line 10's words stay on an invoice)
   useCreditShort: ZH("Use credit"),
 } as const;
@@ -393,12 +397,17 @@ export type OpenDoc = {
 
 export type AllocRow = { documentId: string; text: string };
 
-/** What the allocation table reads: each row's amount, or an error for the row; and what is left of the payment (core money, never by hand). */
+/**
+ * What the allocation table reads: each row's amount, or an error for the row; and what is left of the payment (core money, never by hand).
+ * Re-check finding 1: a row with an amount is never skipped. A row whose document isn't listed is the row's error: `refused` gives the reason the screen found
+ * (the Confirm step's asked-for document that can't take the payment), else line 23's `not_payable`. Only an empty or zero row is left out.
+ */
 export function readAllocations(
   rows: readonly AllocRow[],
   docs: readonly OpenDoc[],
   amountMinor: number | null,
   currency: Currency,
+  refused: Readonly<Record<string, string>> = {},
 ):
   | {
       ok: true;
@@ -412,11 +421,10 @@ export function readAllocations(
   for (const r of rows) {
     if (r.text.trim() === "") continue;
     const d = docs.find((x) => x.id === r.documentId);
-    // Visual review finding 8: a row whose document isn't listed (another client's, before the client changed) is never sent.
-    if (!d) continue;
     const m = moneyFrom(r.text, currency);
     if (!m.ok) errors[r.documentId] = m.error;
     else if (m.minor === 0) continue;
+    else if (!d) errors[r.documentId] = refused[r.documentId] ?? PAY_ERRORS.not_payable;
     else if (compare(money(m.minor, currency), money(d.balanceMinor, currency)) > 0)
       errors[r.documentId] = PAY_UI.allocMore;
     else allocations.push({ documentId: r.documentId, amountMinor: m.minor });
@@ -429,6 +437,13 @@ export function readAllocations(
   );
   const left = subtract(money(amountMinor, currency), put);
   return { ok: true, allocations, leftMinor: left.amount, over: left.amount < 0 };
+}
+
+/** The refused rows that still hold an amount: while any does, Confirm stays disabled (re-check finding 1; the Owner clears the row to remove it, line 31). */
+export function blockingRefusals(rows: readonly AllocRow[], refused: readonly { id: string }[]): string[] {
+  return refused
+    .filter((x) => (rows.find((r) => r.documentId === x.id)?.text.trim() ?? "") !== "")
+    .map((x) => x.id);
 }
 
 /**
@@ -500,12 +515,10 @@ export function openDocsOf(
   }[],
   opts: { kind: "payment" | "tds"; proformas: boolean },
 ): OpenDoc[] {
-  const types =
-    opts.kind === "tds"
-      ? ["tax_invoice", "debit_note"]
-      : ["tax_invoice", "export_invoice", "debit_note", ...(opts.proformas ? ["proforma"] : [])];
+  const types: readonly string[] =
+    opts.kind === "tds" ? TDS_TYPES : [...PAYABLE_TYPES, ...(opts.proformas ? ["proforma"] : [])];
   const seen = new Set<string>();
-  return rows
+  const docs = rows
     .filter(
       (r) =>
         types.includes(r.type) &&
@@ -529,6 +542,63 @@ export function openDocsOf(
       dueDate: r.dueDate,
       issueDate: r.issueDate ?? null,
     }));
+  return byDueDate(docs);
+}
+
+/** Due-date order (re-check finding 7): the earliest due first, then the ones without a due date; ties keep their order (stable sort). */
+export function byDueDate<T extends Pick<OpenDoc, "dueDate">>(docs: readonly T[]): T[] {
+  return [...docs].sort((a, b) =>
+    a.dueDate === b.dueDate
+      ? 0
+      : a.dueDate === null
+        ? 1
+        : b.dueDate === null
+          ? -1
+          : a.dueDate < b.dueDate
+            ? -1
+            : 1,
+  );
+}
+
+/**
+ * A document Staff asked for, read by id because the open lists didn't return it (re-check finding 1): a row when it can still take this payment (issued,
+ * a type a payment goes on, this client and currency, a balance left), else the reason it can't, in line 23's and line 31's words.
+ */
+export function askedDocOf(
+  v: {
+    id: string;
+    type: string;
+    status: string;
+    number: string | null;
+    currency: Currency;
+    balanceMinor: number;
+    dueDate: string | null;
+    issueDate: string | null;
+    client: { id: string };
+  },
+  payment: { clientId: string; currency: Currency },
+): { ok: true; doc: OpenDoc } | { ok: false; error: string } {
+  if (
+    v.number === null ||
+    !(PAYABLE_TYPES as readonly string[]).includes(v.type) ||
+    !(LEDGER_STATUSES as readonly string[]).includes(v.status)
+  )
+    return { ok: false, error: PAY_ERRORS.not_payable };
+  if (v.client.id !== payment.clientId) return { ok: false, error: PAY_ERRORS.client_mismatch };
+  if (v.currency !== payment.currency) return { ok: false, error: PAY_ERRORS.currency_mismatch };
+  if (v.balanceMinor <= 0) return { ok: false, error: PAY_UI.allocMore };
+  return {
+    ok: true,
+    doc: {
+      id: v.id,
+      number: v.number,
+      type: v.type,
+      currency: v.currency,
+      balanceMinor: v.balanceMinor,
+      dueDate: v.dueDate,
+      issueDate: v.issueDate,
+    },
+  };
 }
 
 // ---- the register CSV -----------------------------------------------------------------------------------------------------------------------------------

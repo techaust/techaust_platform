@@ -7,6 +7,7 @@
 // takes the void's place in the More menu, and a withdrawn proforma reads "Withdrawn" with 07-ZF 7's banner (who, when, why) in place of the void's.
 // M5.3: an issued tax or export invoice has its notes section (the deadline, its credit and debit notes, the balance after them, the actions that open the
 // note dialog); an issued note says what it is against and why, the client's IMS answer on a credit note, its lines against the invoice's and its totals.
+import { PAYABLE_TYPES } from "@techaust/core/ledger";
 import type { Role } from "@techaust/core/permissions";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
@@ -78,7 +79,7 @@ import {
 } from "./types-parts.tsx";
 
 /** M6.1: the documents a payment goes on (core `PAYABLE_TYPES`). */
-const PAYABLE_TYPES: readonly string[] = ["tax_invoice", "export_invoice", "debit_note"];
+const PAYABLE: readonly string[] = PAYABLE_TYPES;
 
 const PDF_WORDS: PdfWords = {
   // 07-R has no heading for a ready PDF: the approved 07-P one stands in (it says the same thing).
@@ -403,7 +404,7 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
           )}
           {v.frozen && <ExportFacts view={v} />}
           {/* M6.1 (07-ZH line 1): the ledger of an issued tax invoice, export invoice or debit note */}
-          {v.frozen && PAYABLE_TYPES.includes(v.type) && allowed(role, "payments.read") && (
+          {v.frozen && PAYABLE.includes(v.type) && allowed(role, "payments.read") && (
             <PaymentsPanel view={v} role={role} onChanged={reload} />
           )}
           {isNote && <NoteFacts view={v} />}
