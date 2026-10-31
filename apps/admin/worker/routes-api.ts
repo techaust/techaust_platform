@@ -20,6 +20,7 @@ import { invoiceAdvance } from "./invoice-advance.ts";
 import { invoiceIssue } from "./invoice-issue.ts";
 import { invoiceNotes } from "./invoice-notes.ts";
 import { invoiceSend } from "./invoice-send.ts";
+import { invoiceWithdraw } from "./invoice-withdraw.ts";
 import { invoices } from "./invoices.ts";
 import { leads } from "./leads.ts";
 import { notes } from "./notes.ts";
@@ -60,6 +61,8 @@ export function mountApi(app: App) {
   app.route("/v1/invoices", invoices);
   app.route("/v1/invoices", invoiceIssue);
   app.route("/v1/invoices", invoiceAdvance);
+  app.route("/v1/invoices", invoiceWithdraw);
+  app.route("/v1/invoices", invoiceWithdraw);
   app.route("/v1/invoices", invoiceNotes);
   app.route("/v1/invoices", invoiceSend);
   app.route("/v1/invoices", invoicePdf);

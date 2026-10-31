@@ -25,6 +25,7 @@ import {
   voidBlockers,
 } from "@techaust/core/invoices";
 import { bundleOf, LOAD_STATEMENTS, loadStatements, type TermsRef } from "@techaust/db/documents";
+import { proformaDeliveredSql } from "@techaust/db/sql-rules";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
@@ -49,6 +50,7 @@ import {
   type BankRow,
   type ContactFacts,
   computeInvoice,
+  EMAILED_PROFORMA,
   EXPORT_DECLARATION_MISSING,
   EXPORT_DECLARATION_NOT_APPLICABLE,
   EXPORT_MODE_NOT_APPLICABLE,
@@ -157,6 +159,7 @@ function voidRefused(c: Ctx, reasons: readonly VoidBlockerCode[], type: string) 
   const stronger = reasons.some(
     (r) => r === "has_payment" || r === "has_credit" || r === "has_child_document",
   );
+  // ADM-INV-10 (owner, 2026-10-30, docs/13): a proforma that reached the client (opened or emailed) is withdrawn instead; its words point there (07-ZF 15, 16).
   const error = reasons.includes("already_void")
     ? ALREADY_VOID
     : reasons.includes("return_period_closed")
@@ -165,7 +168,9 @@ function voidRefused(c: Ctx, reasons: readonly VoidBlockerCode[], type: string) 
         ? type === "proforma"
           ? VIEWED_BY_CLIENT_PROFORMA
           : VIEWED_BY_CLIENT
-        : VOID_NOT_ALLOWED;
+        : reasons.includes("already_emailed") && !stronger && type === "proforma"
+          ? EMAILED_PROFORMA
+          : VOID_NOT_ALLOWED;
   return c.json({ error: { code: error.code, message: error.message }, reasons, request_id: c.var.rid }, 409);
 }
 
@@ -214,6 +219,8 @@ type ListRow = {
   ims_status: string | null;
   created_at: number;
   updated_at: number;
+  /** ADM-INV-10: 1 for a withdrawn proforma. */
+  withdrawn: number;
   approval_status: string | null;
   approval_sha: string | null;
 };
@@ -235,7 +242,9 @@ export const INVOICE_LIST_SQL = (f: {
       : "";
   const client = f.client ? ` AND d.client_id = ?${++at}` : "";
   const cursor = f.cursor ? ` AND ${keysetSql("d.created_at", "d.id", false, "after", at + 1).where}` : "";
+  // ADM-INV-10: `withdrawn`, a void proforma that had reached the client (`withdrawnSql`); the send lookup runs only for a void proforma's row.
   return `SELECT d.id, d.type, d.status, d.number_display, d.client_id, cl.code AS client_code, cl.display_name AS client_name, (cl.anonymised_at IS NOT NULL) AS client_gone, d.currency, d.total_minor, d.balance_minor, d.issue_date, d.due_date, d.content_sha256, d.frozen_at, d.pdf_sha256, d.ims_status, d.created_at, d.updated_at,
+     CASE WHEN d.type = 'proforma' AND d.status = 'void' THEN ${proformaDeliveredSql("d")} ELSE 0 END AS withdrawn,
      (SELECT a.status FROM approvals a WHERE a.document_id = d.id AND a.kind = 'issue' ORDER BY a.created_at DESC, a.id DESC LIMIT 1) AS approval_status,
      (SELECT a.content_sha256 FROM approvals a WHERE a.document_id = d.id AND a.kind = 'issue' ORDER BY a.created_at DESC, a.id DESC LIMIT 1) AS approval_sha
    FROM documents d JOIN clients cl ON cl.id = d.client_id
@@ -259,6 +268,8 @@ const listRow = (r: ListRow, todayIso: string) => ({
   overdue: isOverdue(r, todayIso),
   pdf: r.frozen_at === null ? "none" : r.pdf_sha256 === null ? "pending" : "ready",
   imsStatus: r.ims_status,
+  /** ADM-INV-10: a void proforma that had reached the client (the screens show "Withdrawn"). */
+  withdrawn: r.withdrawn === 1,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
   // A waiting issue request is shown from the approvals row, never stored as a status; one for another content has expired.
@@ -356,7 +367,8 @@ export async function readInvoice(
     db.prepare(MILESTONE_OF_SQL).bind(id),
     db
       .prepare(
-        "SELECT EXISTS (SELECT 1 FROM document_sends s WHERE s.document_id = ?1) AS emailed, EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = ?1 AND x.frozen_at IS NOT NULL) AS child, CASE WHEN (SELECT status FROM documents WHERE id = ?1) = 'void' THEN (SELECT u.name FROM audit_log a JOIN staff_users u ON u.id = a.actor_id WHERE a.entity_type = 'document' AND a.entity_id = ?1 AND a.action = 'invoice.void' ORDER BY a.at DESC LIMIT 1) END AS voided_by_name",
+        // ADM-INV-10: any child (a draft too) and an advance receipt (the withdraw blockers), and who voided OR withdrew it.
+        "SELECT EXISTS (SELECT 1 FROM document_sends s WHERE s.document_id = ?1) AS emailed, EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = ?1 AND x.frozen_at IS NOT NULL) AS child, EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = ?1) AS any_child, EXISTS (SELECT 1 FROM advance_receipts r WHERE r.proforma_id = ?1) AS advance, CASE WHEN (SELECT status FROM documents WHERE id = ?1) = 'void' THEN (SELECT u.name FROM audit_log a JOIN staff_users u ON u.id = a.actor_id WHERE a.entity_type = 'document' AND a.entity_id = ?1 AND a.action IN ('invoice.void', 'invoice.withdraw') ORDER BY a.at DESC LIMIT 1) END AS voided_by_name",
       )
       .bind(id),
     ...extra,
@@ -367,9 +379,17 @@ export async function readInvoice(
     results.slice(LOAD_STATEMENTS);
   const client = clientR?.results[0] as ClientRow | undefined;
   if (!client) return null;
-  const facts = (factsR?.results[0] ?? { emailed: 0, child: 0, voided_by_name: null }) as {
+  const facts = (factsR?.results[0] ?? {
+    emailed: 0,
+    child: 0,
+    any_child: 0,
+    advance: 0,
+    voided_by_name: null,
+  }) as {
     emailed: number;
     child: number;
+    any_child: number;
+    advance: number;
     voided_by_name: string | null;
   };
   return {
@@ -386,7 +406,10 @@ export async function readInvoice(
     milestone: (milestoneR?.results[0] as MilestoneFacts | undefined) ?? null,
     emailed: facts.emailed === 1,
     hasIssuedChild: facts.child === 1,
-    /** The name of the member who voided it (from the `invoice.void` audit row; null when it is not void). */
+    /** ADM-INV-10: any document (draft or issued) names this one as its parent, and an advance receipt names it (the withdraw blockers). */
+    hasAnyChild: facts.any_child === 1,
+    hasAdvanceReceipt: facts.advance === 1,
+    /** The name of the member who voided or withdrew it (from the `invoice.void` / `invoice.withdraw` audit row; null when it is not void). */
     voidedByName: facts.voided_by_name,
     extra: results.slice(LOAD_STATEMENTS + 8),
   };
@@ -788,6 +811,8 @@ export const invoices = new Hono<AppEnv>()
         milestone: ctx.milestone,
         emailed: ctx.emailed,
         hasIssuedChild: ctx.hasIssuedChild,
+        hasAnyChild: ctx.hasAnyChild,
+        hasAdvanceReceipt: ctx.hasAdvanceReceipt,
         bank: ctx.bank,
         declaration: (ctx.extra[0]?.results[0] as TermsRef | undefined) ?? null,
         children: (ctx.extra[1]?.results ?? []) as ChildRow[],
@@ -1029,6 +1054,8 @@ export const invoices = new Hono<AppEnv>()
         milestone: ctx.milestone,
         emailed: false,
         hasIssuedChild: false,
+        hasAnyChild: false,
+        hasAdvanceReceipt: false,
         bank: ctx.bank,
         declaration: (ctx.extra[2]?.results[0] as TermsRef | undefined) ?? null,
         children: [],
@@ -1234,13 +1261,14 @@ export const invoices = new Hono<AppEnv>()
     if (!done) {
       const again = await db
         .prepare(
-          `SELECT status, updated_at, viewed_at, ${clientGoneSql("client_id")} AS gone, (SELECT step_up_until FROM staff_sessions WHERE id = ?2 AND revoked_at IS NULL) AS step_up, (SELECT idle_expires_at > ?3 AND abs_expires_at > ?3 FROM staff_sessions WHERE id = ?2 AND revoked_at IS NULL) AS session_live FROM documents WHERE id = ?1`,
+          `SELECT status, updated_at, viewed_at, EXISTS (SELECT 1 FROM document_sends s WHERE s.document_id = documents.id) AS emailed, ${clientGoneSql("client_id")} AS gone, (SELECT step_up_until FROM staff_sessions WHERE id = ?2 AND revoked_at IS NULL) AS step_up, (SELECT idle_expires_at > ?3 AND abs_expires_at > ?3 FROM staff_sessions WHERE id = ?2 AND revoked_at IS NULL) AS session_live FROM documents WHERE id = ?1`,
         )
         .bind(id, u.sessionId, t)
         .first<{
           status: string;
           updated_at: number;
           viewed_at: number | null;
+          emailed: number;
           gone: number;
           step_up: number | null;
           session_live: number | null;
@@ -1256,8 +1284,12 @@ export const invoices = new Hono<AppEnv>()
           { code: "step_up_required", message: "Confirm with a fresh code from your authenticator first" },
           403,
         );
-      // FX-5: the client opened it in the portal between the read and the write (a view never moves `updated_at`), so it says why.
-      return voidRefused(c, again.viewed_at !== null ? ["viewed_by_client"] : [], d.type);
+      // FX-5: the client opened it in the portal between the read and the write (a view never moves `updated_at`), so it says why; ADM-INV-10: and so
+      // does a send that landed in between (a send never moves `updated_at` either; a proforma's words then point to Withdraw).
+      const late: VoidBlockerCode[] = [];
+      if (again.emailed === 1) late.push("already_emailed");
+      if (again.viewed_at !== null) late.push("viewed_by_client");
+      return voidRefused(c, late, d.type);
     }
     // The milestone's new status for the toast ("back to Pending" or "back to Ready to bill"): read after the write, by the id the invoice was made
     // from (the void cleared the link). Null when the invoice had no milestone.

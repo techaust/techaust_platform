@@ -130,6 +130,8 @@ export const ACTION_LABELS: Record<string, string> = {
   "invoice.issue_auto": Y("issued a care plan invoice automatically"),
   "invoice.advance_issue": Y("issued a tax invoice for a payment received"),
   "invoice.void": Y("voided an invoice"),
+  // ADM-INV-10: 07-ZF 9 (owner-approved 2026-10-31); the builder added it so the label test passes with the new ROUTES row (the designer may move it to ZF()).
+  "invoice.withdraw": "withdrew a proforma",
   "invoice.note_create": Y("drafted a credit or debit note"),
   "invoice.ims_status": Y("recorded a client's IMS response"),
   "invoice.service_completed": Y("set the date the service was completed"),

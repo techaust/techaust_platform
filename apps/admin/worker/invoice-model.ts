@@ -13,6 +13,7 @@ import {
   PROFORMA_NOTICE,
   signatureRequired,
   udyamPrintedOn,
+  type WithdrawBlockerCode,
 } from "@techaust/core/invoices";
 import { milestoneTotals } from "@techaust/core/projects";
 import { percentFromBp } from "@techaust/core/schedule-text";
@@ -101,11 +102,40 @@ export const VIEWED_BY_CLIENT = e(
   "viewed_by_client",
   "The client has opened this invoice in the portal, so it can't be voided. Use a credit note instead.",
 );
-/** The same refusal for a proforma: it has no credit note, so it stays until converted (lead, 2026-10-30, docs/13; 07-Z §1's proforma line). */
+/**
+ * The same refusal for a proforma: it has no credit note, so it is withdrawn instead (owner, 2026-10-30, docs/13; 07-ZF 15, owner-approved 2026-10-31,
+ * replacing 07-Z §1's proforma line).
+ */
 export const VIEWED_BY_CLIENT_PROFORMA = e(
   "viewed_by_client",
-  "The client has opened this proforma in the portal, so it can't be voided.",
+  "The client has opened this proforma in the portal, so it can't be voided. Withdraw it instead.",
 );
+/** A proforma emailed to the client (a send row, no view yet): withdrawn, not voided (07-ZF 16). The code stays the void's own refusal; `reasons` carry `already_emailed`. */
+export const EMAILED_PROFORMA = e(
+  "void_not_allowed",
+  "This proforma has been emailed to the client, so it can't be voided. Withdraw it instead.",
+);
+
+// ---- withdraw a delivered proforma (ADM-INV-10; owner, 2026-10-30, docs/13): the API's words are 07-ZF's, owner-approved 2026-10-31 ----------------
+/** 07-ZF 14: anything but an issued proforma (another type, a draft, or a void proforma that never reached the client). */
+const ONLY_ISSUED_PROFORMA = "Only an issued proforma can be withdrawn.";
+export const WITHDRAW_PROFORMA_ONLY = e("withdraw_proforma_only", ONLY_ISSUED_PROFORMA);
+/** One error per withdraw blocker code (core `WITHDRAW_BLOCKER_CODES`); the route answers the first code's. */
+export const WITHDRAW_ERRORS = {
+  not_proforma: WITHDRAW_PROFORMA_ONLY,
+  already_withdrawn: e("already_withdrawn", "This proforma is already withdrawn."),
+  already_void: e("already_void", ONLY_ISSUED_PROFORMA),
+  not_issued: e("not_issued", ONLY_ISSUED_PROFORMA),
+  proforma_converted: e(
+    "proforma_converted",
+    "This proforma can't be withdrawn because an invoice has been made from it.",
+  ),
+  proforma_paid: e(
+    "proforma_paid",
+    "This proforma can't be withdrawn because a payment has been recorded against it.",
+  ),
+  not_delivered: e("not_delivered", "This proforma hasn't reached the client yet, so void it instead."),
+} as const satisfies Record<WithdrawBlockerCode, ApiError>;
 export const INVOICE_APPROVAL_EXPIRED = e(
   "approval_expired",
   "The invoice changed after the request, so the request expired",

@@ -465,7 +465,7 @@ describe("a document the client opened in the portal is never voided [FX-5, A0 3
     ).rejects.toThrow(/documents_viewed_no_void/);
   });
 
-  it("a viewed proforma: 409 viewed_by_client and the proforma's own line (no credit note: it stays until converted; lead, 2026-10-30); nothing written", async () => {
+  it("a viewed proforma: 409 viewed_by_client and the proforma's own line (no credit note: it is withdrawn instead, owner 2026-10-30, ADM-INV-10); nothing written", async () => {
     const o = await owner();
     const pf = await mkProforma(o);
     expect((await issueInvoice(o, pf.id)).status).toBe(200);
@@ -476,9 +476,9 @@ describe("a document the client opened in the portal is never voided [FX-5, A0 3
     const body = await json(res);
     expect(body.error.code).toBe("viewed_by_client");
     expect(body.reasons).toEqual(["viewed_by_client"]);
-    // the API's words are the proforma's (07-Z §1), never the invoice's credit-note advice; the screen's line is pinned in src/lib/invoices.test.ts
+    // the API's words are the proforma's (07-ZF 15, replacing 07-Z §1's), never the invoice's credit-note advice; the screen's line is pinned in src/lib/invoices.test.ts
     expect(body.error.message).toBe(
-      "The client has opened this proforma in the portal, so it can't be voided.",
+      "The client has opened this proforma in the portal, so it can't be voided. Withdraw it instead.",
     );
     expect(await invoiceRow(pf.id)).toEqual(before);
     expect(await auditCount("invoice.void", pf.id)).toBe(0);
