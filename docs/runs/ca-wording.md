@@ -1,6 +1,6 @@
 Status: reviewer running
 Tier: C (copy lines and the tests that pin them; no logic, no migrations)
-Usage: lead claude-opus-5-5/high, skills: none (no §9 row fits copy work); builder b1 claude-opus-5-5/high 2026-10-31T20:59Z, skills: none (flagged by model-audit: the cloudflare skills don't load in a cloud session and the change is string values only; lead accepts); 5-h reading 20 % at 02:55 IST
+Usage: lead claude-opus-5-5/high, skills: none (no §9 row fits copy work); builder b1 claude-opus-5-5/high 2026-10-31T20:59Z, skills: none (flagged by model-audit: the cloudflare skills don't load in a cloud session and the change is string values only; lead accepts); 5-h reading 20 % at 02:55 IST; reviewer claude-opus-5-5/high 2026-11-01, skills: code-review (its read-only helper on Opus 5.5); 5-h reading 62 % at 03:21 IST
 
 # ca-wording: replace the lines that send the owner to "your CA" or "your CA and lawyer"
 
@@ -87,6 +87,9 @@ Tests that pin them: `apps/admin/src/lib/reports.test.ts:96`, `:733`, `:771`, `:
 
 ## Integration notes (lead)
 - 2026-11-01: `fix/ca-wording-b1` (4b68b9d) merged into `fix/ca-wording` (merge commit, no conflicts); the lead read the whole diff against 07-ZK (every line word for word; the three copies of line 9 identical). The builder's extra comment edit in `apps/admin/src/lib/copy-zd.ts:3` (the 07-T history now says "sent the owner to a CA") accepted: history kept, grep clean. Worktree removed, branches deleted.
+- 2026-11-01: review triage fixed by the lead directly (small, coupled; b0d3ef7): findings 1, 2, 3, 4, 7; 5 kept, 6 and 9 follow-ups, 8 already one. No critical or high finding, so no second review.
+- **Checks on b0d3ef7** (`origin/main` 474ec9c unchanged, nothing to merge): `bash tools/heavy.sh --log check pnpm check` exit 0 (lint, typecheck, every guard); `bash tools/heavy.sh --log test pnpm test` exit 0: auth 135, ui 471 (+2 skipped), core 1,952, email 132, db 623, pdf 379, web 750 (+17 skipped), portal 679, jobs 560, admin 3,812 (126 files).
+- **Worker bytes** (`pnpm --filter @techaust/admin build`): admin front 100,839 (main 100,839), admin API 438,003 (main 438,052), admin finance 507,904 (main 507,872); startup 11.8 / 45.9 / 49.1 ms. Portal and jobs: no files changed (main: 104,589 and 667,870).
 
 ## Handover
 - 2026-11-01: inventory done, 07-ZK drafted, Q1 written. Next: the owner's answer to Q1 (through the main session), then the builder per the brief.
