@@ -20,6 +20,7 @@ import {
   allocationStatements,
   CLIENT_CREDIT_SQL,
   CREDIT_SOURCES_SQL,
+  clientCreditSql,
   creditClaimStatement,
   DOCUMENT_HOLDINGS_SQL,
   extensionLetterStatement,
@@ -48,6 +49,7 @@ import {
 } from "./payment-messages.ts";
 import { LEDGER_REFUSED } from "./payments.ts";
 import { CLIENT_GONE } from "./quote-model.ts";
+import { sessionRefusal } from "./session-refusal.ts";
 
 /**
  * L23.7: an extension is held within core's existing realisation bound, the 36,500-day upper bound of the realisation rules (`rulesAreValid` in
@@ -88,25 +90,6 @@ const isPayable = (d: DocRow) => PAYABLE.includes(d.type) && d.frozen_at !== nul
 
 type SourceRow = { id: string; received_on: string; amount_minor: number; net: number };
 
-/** The session state behind a refused claim: signed out (401) or no fresh code (403); else null. */
-async function sessionRefusal(c: Ctx): Promise<Response | null> {
-  const u = actor(c);
-  const t = Date.now();
-  const s = await c.env.DB.prepare(
-    "SELECT (idle_expires_at > ?2 AND abs_expires_at > ?2) AS live, step_up_until FROM staff_sessions WHERE id = ?1 AND revoked_at IS NULL",
-  )
-    .bind(u.sessionId, t)
-    .first<{ live: number; step_up_until: number | null }>();
-  if (s?.live !== 1) return err(c, { code: "unauthenticated", message: "Sign in" }, 401);
-  if (s.step_up_until === null || s.step_up_until <= t)
-    return err(
-      c,
-      { code: "step_up_required", message: "Confirm with a fresh code from your authenticator first" },
-      403,
-    );
-  return null;
-}
-
 /** After a refused claim: the document as it is now says why (stale, void, anonymised), else the session does. */
 async function claimRefusal(c: Ctx, documentId: string, expectedUpdatedAt: number): Promise<Response> {
   const d = await c.env.DB.prepare(DOC_SQL).bind(documentId).first<DocRow>();
@@ -114,7 +97,18 @@ async function claimRefusal(c: Ctx, documentId: string, expectedUpdatedAt: numbe
   if (d.updated_at !== expectedUpdatedAt) return err(c, STALE_VERSION, 409);
   if (d.status === "void") return err(c, INVOICE_VOID, 409);
   if (d.gone === 1) return err(c, CLIENT_GONE, 409);
-  return (await sessionRefusal(c)) ?? err(c, LEDGER_CHANGED, 409);
+  return (await sessionRefusal(c, true)) ?? err(c, LEDGER_CHANGED, 409);
+}
+
+/**
+ * Early check 2, finding 5: the document's `updated_at` as the batch left it (the recompute moves it again after the claim, so `now` is not what is stored).
+ * The screen's next save sends it as `expectedUpdatedAt`.
+ */
+async function storedUpdatedAt(c: Ctx, documentId: string): Promise<number | null> {
+  const r = await c.env.DB.prepare("SELECT updated_at FROM documents WHERE id = ?1")
+    .bind(documentId)
+    .first<{ updated_at: number }>();
+  return r?.updated_at ?? null;
 }
 
 const creditView = (rows: readonly { currency: string; credit: number }[]) =>
@@ -236,7 +230,7 @@ export const clientCredit = new Hono<AppEnv>()
     return c.json({
       ok: true,
       documentId: d.id,
-      updatedAt: now,
+      updatedAt: (await storedUpdatedAt(c, d.id)) ?? now,
       allocations: rows.map((r) => ({ paymentId: r.paymentId, amountMinor: r.amountMinor })),
       warnings,
     });
@@ -263,11 +257,8 @@ type HoldingRow = {
 /** The client of the document `?1`, as a scalar subquery (the panel's client-scoped reads ride in the same batch). */
 const CLIENT_OF_DOCUMENT = "(SELECT cd.client_id FROM documents cd WHERE cd.id = ?1)";
 
-/** The client's credit by currency, for the document `?1` (`CLIENT_CREDIT_SQL` keyed by the document's client). */
-export const CREDIT_OF_DOCUMENT_CLIENT_SQL = CLIENT_CREDIT_SQL.replace(
-  "p.client_id = ?1",
-  `p.client_id = ${CLIENT_OF_DOCUMENT}`,
-);
+/** The client's credit by currency, for the document `?1` (`clientCreditSql` keyed by the document's client; early check 2, finding 10: no text edits). */
+export const CREDIT_OF_DOCUMENT_CLIENT_SQL = clientCreditSql(CLIENT_OF_DOCUMENT);
 
 /** The payments waiting for the Owner that ask for this document (`?1`, of its own client): what Staff recorded against it (L6). */
 export const PENDING_FOR_DOCUMENT_SQL = `SELECT p.id, p.kind, p.received_on, p.mode, p.reference_norm, p.currency, p.amount_minor, p.recorded_by, p.recorded_at,
@@ -483,7 +474,7 @@ export const invoiceLedger = new Hono<AppEnv>()
     return c.json({
       ok: true,
       documentId: d.id,
-      updatedAt: now,
+      updatedAt: (await storedUpdatedAt(c, d.id)) ?? now,
       releases: rows.map((r) => ({ paymentId: r.paymentId, amountMinor: r.amountMinor })),
     });
   })
@@ -531,13 +522,14 @@ export const invoiceLedger = new Hono<AppEnv>()
       if (!refusedWith(e, /realisation_extensions_scope_insert/)) throw e;
     }
     if (!done) {
+      // Early check 2, finding 8: what changed says why (void, anonymised, a later extension landed first), then the session; a bare 401 only for the session.
       const again = await db.prepare(DOC_SQL).bind(id).first<DocRow>();
       if (!again) return err(c, NOT_FOUND, 404);
-      if (again.status === "void") return err(c, INVOICE_VOID, 409);
+      if (again.status === "void" || again.voided_at !== null) return err(c, INVOICE_VOID, 409);
       if (again.gone === 1) return err(c, CLIENT_GONE, 409);
       if (again.fema_due !== null && f.extendedTo <= again.fema_due)
         return err(c, EXTENSION_NOT_LATER, 409, { femaDue: again.fema_due });
-      return err(c, { code: "unauthenticated", message: "Sign in" }, 401);
+      return (await sessionRefusal(c, false)) ?? err(c, STALE_VERSION, 409);
     }
     return c.json({ ok: true, id: extensionId, documentId: id, extendedTo: f.extendedTo }, 201);
   })
@@ -589,14 +581,19 @@ export const invoiceLedger = new Hono<AppEnv>()
         throw e;
       }
       if (!done) {
+        // Early check 2, finding 8: the letter set meanwhile or an anonymised client (the statement's own conditions) says why; then the session; else a reload.
         const again = await db
-          .prepare("SELECT letter_r2_key FROM realisation_extensions WHERE id = ?1")
-          .bind(eid)
-          .first<{ letter_r2_key: string | null }>();
+          .prepare(
+            `SELECT x.letter_r2_key, ${clientGoneSql("d.client_id")} AS gone FROM realisation_extensions x JOIN documents d ON d.id = x.document_id WHERE x.id = ?1 AND x.document_id = ?2`,
+          )
+          .bind(eid, id)
+          .first<{ letter_r2_key: string | null; gone: number }>();
         if (stored.created && again?.letter_r2_key !== stored.key)
           await dropDoc(c.env, stored.key, "row not written");
-        if (again?.letter_r2_key) return err(c, LETTER_ALREADY_SET, 409);
-        return err(c, { code: "unauthenticated", message: "Sign in" }, 401);
+        if (!again) return err(c, NOT_FOUND, 404);
+        if (again.letter_r2_key) return err(c, LETTER_ALREADY_SET, 409);
+        if (again.gone === 1) return err(c, CLIENT_GONE, 409);
+        return (await sessionRefusal(c, false)) ?? err(c, STALE_VERSION, 409);
       }
       return c.json({ ok: true, id: eid, documentId: id, letter: { mime: stored.mime, sha256: head.sha } });
     },

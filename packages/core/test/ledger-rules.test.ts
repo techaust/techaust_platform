@@ -11,7 +11,7 @@ import {
 } from "../src/gst/index.ts";
 import { voidBlockers } from "../src/invoices.ts";
 
-describe("voidBlockers: a payment waiting, an allocation, or TDS refuses a void (L17)", () => {
+describe("voidBlockers: a payment waiting, an allocation, or TDS refuses a void (L17, L32)", () => {
   const base = {
     status: "issued",
     paidMinor: 0,
@@ -23,12 +23,19 @@ describe("voidBlockers: a payment waiting, an allocation, or TDS refuses a void 
     today: "2026-10-31",
     tdsMinor: 0,
     paymentPending: false,
+    paymentRecorded: false,
   };
   it("each has its code, and none when neither is there", () => {
     expect(voidBlockers(base)).toEqual([]);
     expect(voidBlockers({ ...base, paymentPending: true })).toEqual(["payment_pending"]);
+    expect(voidBlockers({ ...base, paymentRecorded: true })).toEqual(["payment_recorded"]);
     expect(voidBlockers({ ...base, tdsMinor: 10 })).toEqual(["tds_recorded"]);
-    expect(voidBlockers({ ...base, paymentPending: false, tdsMinor: 0 })).toEqual([]);
+    expect(voidBlockers({ ...base, paymentPending: false, paymentRecorded: false, tdsMinor: 0 })).toEqual([]);
+    // L32: a waiting payment and an allocation (one released since included) are told apart
+    expect(voidBlockers({ ...base, paymentPending: true, paymentRecorded: true })).toEqual([
+      "payment_pending",
+      "payment_recorded",
+    ]);
     expect(voidBlockers({ ...base, status: "partially_paid", tdsMinor: 10, paidMinor: 5 })).toEqual([
       "has_payment",
       "tds_recorded",

@@ -7,14 +7,21 @@ import { parseIsoDate, toIsoDate } from "@techaust/core/dates";
 import { DEFAULT_REALISATION_RULES, realisationDates } from "@techaust/core/gst";
 import { describe, expect, it } from "vitest";
 import {
+  COLLECTED_CURRENCIES,
+  COLLECTED_SQL,
+  COLLECTED_TILE_SQL,
   extensionLetterStatement,
   ledgerResultStatement,
   PAYMENT_ASKS_FOR_DOCUMENT_SQL,
+  paymentBlocksVoidSql,
+  paymentPendingForSql,
+  paymentRecordedSql,
   recomputeStatement,
   recordPaymentStatement,
 } from "../src/ledger.ts";
 import { femaDueSql, gstDueSql, SCAN_BINDS } from "../src/realisation.ts";
 import { REALISATION_PAGE_SQL, REGISTER_PAGE_SQL, STATEMENT_PAGE_SQL } from "../src/reports.ts";
+import { CURRENCY_CODES } from "../src/schema/common.ts";
 import { mkClientRow, mkIssued, mkMember, next } from "./billing-helpers.ts";
 import { first, rejects, run } from "./helpers.ts";
 
@@ -86,8 +93,9 @@ const alloc = (paymentId: string, documentId: string, amount: number) =>
   );
 const voidIt = (id: string) =>
   run("UPDATE documents SET status = 'void', voided_at = 1, void_reason = 'x' WHERE id = ?", id);
+/** The void facts (L17, L32): a pending payment asks for the document, and an allocation row names it, as two separate answers. */
 const asks = async (doc: string, client: string) =>
-  (await first<{ pending: number }>(PAYMENT_ASKS_FOR_DOCUMENT_SQL, doc, client))?.pending;
+  await first<{ pending: number; recorded: number }>(PAYMENT_ASKS_FOR_DOCUMENT_SQL, doc, client);
 
 describe("A2: only a PENDING request blocks a void; allocation rows always do", () => {
   it("a payment that asked for A but was confirmed onto B no longer blocks voiding A; a withdrawn one's request does not either; a pending one does", async () => {
@@ -102,7 +110,7 @@ describe("A2: only a PENDING request blocks a void; allocation rows always do", 
       amount: 100,
       requested: JSON.stringify([{ documentId: a, amountMinor: 100 }]),
     });
-    expect(await asks(a, clientId)).toBe(1);
+    expect(await asks(a, clientId)).toEqual({ pending: 1, recorded: 0 });
     await rejects(voidIt(a), /documents_void_no_payment/);
     await run(
       "UPDATE payments SET status = 'confirmed', verified_by = ?2, verified_at = 1 WHERE id = ?1",
@@ -111,7 +119,7 @@ describe("A2: only a PENDING request blocks a void; allocation rows always do", 
     );
     await alloc(p, b, 100);
     await recomputeStatement(env.DB, { paymentIds: [p] }, Date.now()).run();
-    expect(await asks(a, clientId)).toBe(0);
+    expect(await asks(a, clientId)).toEqual({ pending: 0, recorded: 0 });
     await voidIt(a);
     // B holds an allocation row: refused, also after the payment is withdrawn (the row stays).
     await rejects(voidIt(b), /documents_void_no_payment/);
@@ -121,7 +129,7 @@ describe("A2: only a PENDING request blocks a void; allocation rows always do", 
       owner,
     );
     await recomputeStatement(env.DB, { paymentIds: [p] }, Date.now()).run();
-    expect(await asks(b, clientId)).toBe(1);
+    expect(await asks(b, clientId)).toEqual({ pending: 0, recorded: 1 });
     await rejects(voidIt(b), /documents_void_no_payment/);
     // A withdrawn payment's request (it asked for C, was confirmed with no allocation, then withdrawn) blocks nothing.
     const c = await mkIssued(clientId);
@@ -140,7 +148,7 @@ describe("A2: only a PENDING request blocks a void; allocation rows always do", 
       q,
       owner,
     );
-    expect(await asks(c, clientId)).toBe(0);
+    expect(await asks(c, clientId)).toEqual({ pending: 0, recorded: 0 });
     await voidIt(c);
   });
 });
@@ -300,5 +308,165 @@ describe("A5, A6, A8", () => {
     await recomputeStatement(env.DB, { paymentIds: [p1, t] }, Date.now()).run();
     await ledgerResultStatement(env.DB, { paymentIds: [p1] }).run();
     await rejects(ledgerResultStatement(env.DB, { paymentIds: [p1, t] }).run(), /ledger_result_check/);
+  });
+});
+
+describe("early check 2 (stage B2): the void fragment as a builder, and the erase of a payment's free text", () => {
+  it("finding 10: paymentBlocksVoidSql runs on its own, for a document and its client as SQL expressions, and agrees with the facts read", async () => {
+    const owner = await mkMember("owner");
+    const staff = await mkMember("staff");
+    const clientId = await mkClientRow();
+    const free = await mkIssued(clientId);
+    const held = await mkIssued(clientId);
+    const asked = await mkIssued(clientId);
+    const p = await pay(clientId, owner, { amount: 100 });
+    await alloc(p, held, 100);
+    await pay(clientId, staff, {
+      status: "pending_verification",
+      amount: 100,
+      requested: JSON.stringify([{ documentId: asked, amountMinor: 100 }]),
+    });
+    const blocks = async (doc: string) =>
+      await first<{ b: number; recorded: number; pending: number }>(
+        `SELECT ${paymentBlocksVoidSql("d.id", "d.client_id")} AS b, ${paymentRecordedSql("d.id")} AS recorded, ${paymentPendingForSql("d.id", "d.client_id")} AS pending FROM documents d WHERE d.id = ?1`,
+        doc,
+      );
+    expect(await blocks(free)).toEqual({ b: 0, recorded: 0, pending: 0 });
+    expect(await blocks(held)).toEqual({ b: 1, recorded: 1, pending: 0 });
+    expect(await blocks(asked)).toEqual({ b: 1, recorded: 0, pending: 1 });
+    // as the void statement uses it: the row it updates, `documents.id` / `documents.client_id`
+    const voidStmt = (doc: string) =>
+      run(
+        `UPDATE documents SET status = 'void', voided_at = 1, void_reason = 'x' WHERE id = ?1 AND NOT ${paymentBlocksVoidSql("documents.id", "documents.client_id")}`,
+        doc,
+      );
+    for (const doc of [held, asked]) {
+      await voidStmt(doc);
+      expect(
+        (await first<{ status: string }>("SELECT status FROM documents WHERE id = ?", doc))?.status,
+      ).toBe("issued");
+    }
+    await voidStmt(free);
+    expect((await first<{ status: string }>("SELECT status FROM documents WHERE id = ?", free))?.status).toBe(
+      "void",
+    );
+    // the facts read gives the same two answers apart (L32)
+    expect(await asks(held, clientId)).toEqual({ pending: 0, recorded: 1 });
+    expect(await asks(asked, clientId)).toEqual({ pending: 1, recorded: 0 });
+  });
+
+  it("finding 4: note, decision_note and withdraw_reason become NULL only once the client is anonymised; nothing else changes then either", async () => {
+    const owner = await mkMember("owner");
+    const clientId = await mkClientRow();
+    const p = await pay(clientId, owner, { amount: 700, ref: "UTRERASE1" });
+    await rejects(run("UPDATE payments SET note = 'typed later' WHERE id = ?", p), /payments_fixed/);
+    const noted = uuidv7();
+    await run(
+      `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, reference_norm, note, recorded_by, recorded_at, verified_by, verified_at)
+       VALUES (?1, ?2, 'payment', 'manual', 'confirmed', 'INR', 300, '2026-10-28', 'neft', 'UTRERASE2', 'paid by a named relative', ?3, ?4, ?3, ?4)`,
+      noted,
+      clientId,
+      owner,
+      T,
+    );
+    await run(
+      "UPDATE payments SET status = 'withdrawn', withdrawn_by = ?2, withdrawn_at = 2, withdraw_reason = 'entered for the wrong person' WHERE id = ?1",
+      p,
+      owner,
+    );
+    // a live client: the free text is frozen like everything else
+    await rejects(run("UPDATE payments SET withdraw_reason = NULL WHERE id = ?", p), /payments_status_flow/);
+    await rejects(run("UPDATE payments SET note = NULL WHERE id = ?", noted), /payments_fixed/);
+    await run("UPDATE clients SET anonymised_at = 5 WHERE id = ?", clientId);
+    // anonymised: only to NULL, never to other words, never with a status move, and money and references stay frozen
+    await rejects(
+      run("UPDATE payments SET withdraw_reason = 'other words' WHERE id = ?", p),
+      /payments_status_flow/,
+    );
+    await rejects(run("UPDATE payments SET note = 'other words' WHERE id = ?", p), /payments_fixed/);
+    await rejects(run("UPDATE payments SET amount_minor = 1 WHERE id = ?", p), /payments_fixed/);
+    await rejects(run("UPDATE payments SET reference_norm = NULL WHERE id = ?", p), /payments_fixed/);
+    await run(
+      "UPDATE payments SET note = NULL, decision_note = NULL, withdraw_reason = NULL WHERE id = ?",
+      p,
+    );
+    await run("UPDATE payments SET note = NULL WHERE id = ?", noted);
+    expect(await first("SELECT note, amount_minor FROM payments WHERE id = ?", noted)).toEqual({
+      note: null,
+      amount_minor: 300,
+    });
+    expect(
+      await first(
+        "SELECT status, amount_minor, reference_norm, note, decision_note, withdraw_reason FROM payments WHERE id = ?",
+        p,
+      ),
+    ).toEqual({
+      status: "withdrawn",
+      amount_minor: 700,
+      reference_norm: "UTRERASE1",
+      note: null,
+      decision_note: null,
+      withdraw_reason: null,
+    });
+  });
+});
+
+describe("early check 2, finding 6: the Collected tile in one pass", () => {
+  it("names every currency a payment can be in, and equals the grouped twin over the FY and the month, with no GROUP BY b-tree", async () => {
+    expect([...COLLECTED_CURRENCIES]).toEqual([...CURRENCY_CODES]);
+    const owner = await mkMember("owner");
+    const inr = await mkClientRow();
+    const usd = await mkClientRow({ currency: "USD" });
+    const ids: string[] = [];
+    for (const [client, currency, amount, day] of [
+      [inr, "INR", 1_000, "2031-04-02"],
+      [inr, "INR", 2_000, "2031-10-03"],
+      [usd, "USD", 300, "2031-09-30"],
+      [usd, "USD", 400, "2032-03-31"],
+    ] as const) {
+      const id = uuidv7();
+      ids.push(id);
+      await run(
+        `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, reference_norm, recorded_by, recorded_at, verified_by, verified_at)
+         VALUES (?1, ?2, 'payment', 'manual', 'confirmed', ?3, ?4, ?5, 'neft', NULL, ?6, ?7, ?6, ?7)`,
+        id,
+        client,
+        currency,
+        amount,
+        day,
+        owner,
+        T,
+      );
+    }
+    const tile = await env.DB.prepare(COLLECTED_TILE_SQL)
+      .bind("2031-04-01", "2032-03-31", "2031-10-01", "2031-10-31")
+      .all();
+    expect(tile.results).toEqual([
+      { currency: "INR", fy_collected: 3_000, fy_n: 2, month_collected: 2_000, month_n: 1 },
+      { currency: "USD", fy_collected: 700, fy_n: 2, month_collected: 0, month_n: 0 },
+    ]);
+    const twin = await env.DB.prepare(COLLECTED_SQL).bind("2031-04-01", "2032-03-31").all();
+    expect(twin.results).toEqual([
+      { currency: "INR", collected: 3_000, n: 2 },
+      { currency: "USD", collected: 700, n: 2 },
+    ]);
+    // a FY with no payment: no row at all (as the grouped twin)
+    expect(
+      (
+        await env.DB.prepare(COLLECTED_TILE_SQL)
+          .bind("2040-04-01", "2041-03-31", "2040-10-01", "2040-10-31")
+          .all()
+      ).results,
+    ).toEqual([]);
+    const plan = (
+      await env.DB.prepare(`EXPLAIN QUERY PLAN ${COLLECTED_TILE_SQL}`)
+        .bind("2031-04-01", "2032-03-31", "2031-10-01", "2031-10-31")
+        .all<{ detail: string }>()
+    ).results
+      .map((r) => r.detail)
+      .join(" | ");
+    expect(plan).toContain("payments_confirmed");
+    expect(plan).not.toContain("GROUP BY");
+    expect(ids).toHaveLength(4);
   });
 });

@@ -28,6 +28,7 @@ import { maxNumber, sqlPrintfPattern } from "@techaust/core/numbering";
 import { lutsOf } from "@techaust/core/tax";
 import { headerExtrasJson, invoiceSealOf, type TermsRef } from "@techaust/db/documents";
 import { advanceIssueStatements } from "@techaust/db/issue";
+import { PAYMENT_REFERENCE_SEEN_SQL } from "@techaust/db/ledger";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
@@ -82,7 +83,13 @@ import {
   todayOf,
 } from "./invoice-model.ts";
 import { fxIn, readInvoice } from "./invoices.ts";
-import { bellDecided, PAYMENT_MISMATCH, PAYMENT_NOT_PENDING, paymentLink } from "./payment-messages.ts";
+import {
+  bellDecided,
+  PAYMENT_MISMATCH,
+  PAYMENT_NOT_PENDING,
+  paymentLink,
+  referenceSeen,
+} from "./payment-messages.ts";
 import { CLIENT_GONE, lineRows, NUMBERING_CHANGED } from "./quote-model.ts";
 
 export const advanceBody = z.strictObject({
@@ -108,6 +115,11 @@ export const advanceBody = z.strictObject({
   paymentId: z.optional(z.string().check(z.minLength(1), z.maxLength(64))),
   /** M6.1: how a new payment was made (NEFT, RTGS, IMPS, UPI, SWIFT); ignored with `paymentId` (the pending entry keeps its own). */
   mode: z.optional(z.enum(PAYMENT_MODES)),
+  /**
+   * M6.1 (L12; early check 2, finding 1): the Owner confirmed past a bank reference already on a pending or confirmed payment (07-ZH line 13, `reference_seen`).
+   * Ignored with `paymentId` (that entry carries the reference itself).
+   */
+  confirmDuplicate: z.optional(z.boolean()),
 });
 
 /** What a refused advance batch looks like when it comes back as an error. */
@@ -138,9 +150,13 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       // M6.1: the pending payment this confirms, when one is named.
       db
         .prepare(
-          "SELECT p.id, p.kind, p.status, p.client_id, p.currency, p.amount_minor, p.received_on, p.recorded_by, c.display_name AS client_name FROM payments p JOIN clients c ON c.id = p.client_id WHERE p.id = ?1",
+          "SELECT p.id, p.kind, p.status, p.client_id, p.currency, p.amount_minor, p.received_on, p.reference_norm, p.recorded_by, c.display_name AS client_name FROM payments p JOIN clients c ON c.id = p.client_id WHERE p.id = ?1",
         )
         .bind(f.paymentId ?? ""),
+      // Early check 2, finding 1 (L12): the newest pending or confirmed payment with this reference, and a pending entry of this client asking for this
+      // proforma with it (the one "Confirm by issuing the tax invoice" would use).
+      db.prepare(PAYMENT_REFERENCE_SEEN_SQL).bind(norm ?? ""),
+      db.prepare(PENDING_ASK_FOR_PROFORMA_SQL).bind(norm ?? "", id),
     ]);
     // (2) 404 unless a proforma
     if (!ctx) return err(c, NOT_FOUND, 404);
@@ -169,6 +185,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
           currency: string;
           amount_minor: number;
           received_on: string;
+          reference_norm: string | null;
           recorded_by: string | null;
           client_name: string;
         }
@@ -176,14 +193,24 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
     if (f.paymentId !== undefined) {
       if (!pending) return err(c, NOT_FOUND, 404);
       if (pending.status !== "pending_verification") return err(c, PAYMENT_NOT_PENDING, 409);
+      // Early check 2, finding 7: the reference typed is the entry's own too (both in their normal form).
       if (
         pending.kind !== "payment" ||
         pending.client_id !== d.client_id ||
         pending.currency !== d.currency ||
         pending.amount_minor !== f.amountMinor ||
-        pending.received_on !== f.receivedOn
+        pending.received_on !== f.receivedOn ||
+        pending.reference_norm !== norm
       )
         return err(c, PAYMENT_MISMATCH, 409);
+    } else if (f.confirmDuplicate !== true) {
+      // (5d) Early check 2, finding 1 (L12; 07-ZH line 13): a reference already on a pending or confirmed payment is a soft 409 the Owner can confirm past.
+      // The freeze's WHERE holds the same rule, so a payment recorded meanwhile refuses the batch too.
+      const seen = ctx.extra[3]?.results[0] as SeenRow | undefined;
+      if (seen) {
+        const ask = ctx.extra[4]?.results[0] as { id: string } | undefined;
+        return refusedSeen(c, seen, ask?.id ?? null);
+      }
     }
     // (6) the amount against what is left
     if (f.amountMinor > d.balance_minor) return err(c, ADVANCE_EXCEEDS_BALANCE, 409);
@@ -409,6 +436,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       referenceNorm: norm,
       receiptId,
       paymentId: f.paymentId ?? null,
+      confirmDuplicate: f.paymentId === undefined && f.confirmDuplicate === true,
       mode: f.paymentId === undefined ? (f.mode ?? null) : null,
       // Early check A7: the requester's bell (07-ZH line 6) when this confirms a Staff member's pending entry.
       decidedBell:
@@ -517,6 +545,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
         series,
         fy,
         norm,
+        checkSeen: f.paymentId === undefined && f.confirmDuplicate !== true,
         amountMinor: f.amountMinor,
         expectedProformaUpdatedAt: d.updated_at,
         maxNumber: maxNumber(format),
@@ -548,6 +577,33 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
   },
 );
 
+/** A pending entry of the proforma's client with this reference (`?1`, normalised) that asks for the proforma `?2`: the one the Owner should confirm instead. */
+const PENDING_ASK_FOR_PROFORMA_SQL = `SELECT p.id FROM payments p INDEXED BY payments_reference, json_each(p.requested_allocations) j
+   WHERE p.reference_norm = ?1 AND p.status = 'pending_verification' AND p.requested_allocations IS NOT NULL
+     AND p.client_id = (SELECT d.client_id FROM documents d WHERE d.id = ?2) AND json_extract(j.value, '$.documentId') = ?2
+   ORDER BY p.recorded_at, p.id LIMIT 1`;
+
+type SeenRow = {
+  id: string;
+  received_on: string;
+  client_id: string;
+  client_code: string;
+  client_name: string;
+};
+
+/**
+ * 409 `reference_seen` (07-ZH line 13, L12) with the day and the client of the payment that has this reference; `details.paymentId` names a pending entry of
+ * this client asking for this proforma, so the screen can offer "Confirm by issuing the tax invoice" with it (07-ZH line 12).
+ */
+function refusedSeen(c: Ctx, seen: SeenRow, pendingAskId: string | null) {
+  return err(c, referenceSeen(seen.received_on, seen.client_name), 409, {
+    receivedOn: seen.received_on,
+    clientCode: seen.client_code,
+    clientName: seen.client_name,
+    ...(pendingAskId !== null ? { paymentId: pendingAskId } : {}),
+  });
+}
+
 /** The payment reference was already used for this proforma: 409 with the number of the invoice it made (the natural idempotency of Q9). */
 function refusedReference(c: Ctx, number: string) {
   return c.json(
@@ -564,6 +620,8 @@ type Expectations = {
   series: string;
   fy: string;
   norm: string;
+  /** No `paymentId` and no `confirmDuplicate`: the freeze also refused a reference already on a pending or confirmed payment (finding 1). */
+  checkSeen: boolean;
   amountMinor: number;
   expectedProformaUpdatedAt: number;
   maxNumber: number;
@@ -584,6 +642,7 @@ async function explain(c: Ctx, proformaId: string, x: Expectations) {
   const row = await c.env.DB.prepare(
     `SELECT p.status, p.frozen_at, p.updated_at, p.balance_minor, p.client_id, cl.updated_at AS client_updated_at, ${clientGoneSql("p.client_id")} AS gone,
        (SELECT i.number_display FROM advance_receipts r JOIN documents i ON i.id = r.invoice_id WHERE r.proforma_id = p.id AND r.reference_norm = ?2) AS used_number,
+       EXISTS (SELECT 1 FROM payments pr INDEXED BY payments_reference WHERE pr.reference_norm = ?2 AND pr.status IN ('pending_verification', 'confirmed')) AS seen,
        (SELECT version FROM settings WHERE key = 'numbering') AS numbering_v,
        (SELECT version FROM settings WHERE key = 'company') AS company_v,
        (SELECT version FROM settings WHERE key = 'tax') AS tax_v,
@@ -606,6 +665,7 @@ async function explain(c: Ctx, proformaId: string, x: Expectations) {
       client_updated_at: number;
       gone: number;
       used_number: string | null;
+      seen: number;
       numbering_v: number | null;
       company_v: number | null;
       tax_v: number | null;
@@ -621,6 +681,14 @@ async function explain(c: Ctx, proformaId: string, x: Expectations) {
   // A session that ended between the read and the batch (idle, absolute limit, revoked): the freeze refused it, and the answer is to sign in again (review 13).
   if (row.session_live !== 1) return err(c, UNAUTHENTICATED, 401);
   if (row.used_number !== null) return refusedReference(c, row.used_number);
+  if (x.checkSeen && row.seen === 1) {
+    const [seenR, askR] = await c.env.DB.batch([
+      c.env.DB.prepare(PAYMENT_REFERENCE_SEEN_SQL).bind(x.norm),
+      c.env.DB.prepare(PENDING_ASK_FOR_PROFORMA_SQL).bind(x.norm, proformaId),
+    ]);
+    const seen = seenR?.results[0] as SeenRow | undefined;
+    if (seen) return refusedSeen(c, seen, (askR?.results[0] as { id: string } | undefined)?.id ?? null);
+  }
   if (row.frozen_at === null || (row.status !== "issued" && row.status !== "converted"))
     return err(c, PROFORMA_NOT_ISSUED, 409);
   if (row.updated_at !== x.expectedProformaUpdatedAt) return err(c, STALE_VERSION, 409);

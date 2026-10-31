@@ -440,9 +440,17 @@ export const PAYMENT_REFERENCE_SEEN_SQL = `SELECT p.id, p.received_on, p.client_
    FROM payments p INDEXED BY payments_reference JOIN clients c ON c.id = p.client_id
    WHERE p.reference_norm = ?1 AND p.status IN ('pending_verification', 'confirmed') ORDER BY p.received_on DESC, p.id DESC LIMIT 1`;
 
-/** A client's credit by currency (`?1` the client): confirmed `payment` rows' amount minus what they hold net. One seek of `payments_client`. */
-export const CLIENT_CREDIT_SQL = `SELECT p.currency, coalesce(sum(p.amount_minor - ${paymentNetSql("p.id")}), 0) AS credit
-   FROM payments p INDEXED BY payments_client WHERE p.client_id = ?1 AND p.status = 'confirmed' AND p.kind = 'payment' GROUP BY p.currency ORDER BY p.currency`;
+/**
+ * A client's credit by currency (`client` an SQL expression for the client's id): confirmed `payment` rows' amount minus what they hold net. One seek of
+ * `payments_client`. Early check 2, finding 10: a builder, so a caller keyed by something else (the Payments panel, by the document) never edits this SQL's text.
+ */
+export const clientCreditSql = (client: string): string =>
+  `SELECT p.currency, coalesce(sum(p.amount_minor - ${paymentNetSql("p.id")}), 0) AS credit
+   FROM payments p INDEXED BY payments_client WHERE p.client_id = ${client} AND p.status = 'confirmed' AND p.kind = 'payment' GROUP BY p.currency ORDER BY p.currency`;
+
+/** A client's credit by currency (`?1` the client). */
+// Built by a call, so marked pure: a Worker that imports this module without the name (the admin API, through `issue.ts`) drops it from its bundle.
+export const CLIENT_CREDIT_SQL = /* @__PURE__ */ clientCreditSql("?1");
 
 /** Where credit comes from (`?1` client, `?2` currency): confirmed payments holding something unallocated, first in first out (core `creditSources`), at most 50. */
 export const CREDIT_SOURCES_SQL = `SELECT p.id, p.received_on, p.amount_minor, ${paymentNetSql("p.id")} AS net
@@ -469,14 +477,60 @@ export const PENDING_PAYMENTS_COUNT_SQL =
   "SELECT count(*) AS n FROM payments p INDEXED BY payments_pending WHERE p.status = 'pending_verification'";
 
 /**
- * L17 (the void facts): whether a PENDING payment asks for document `?1` (of client `?2`), or any allocation row names it. The twin of the trigger
- * `documents_void_no_payment` and of core `voidBlockers` (`payment_pending`).
+ * L17, L32 (the void rules): an allocation row names the document `doc` (an SQL expression), one released or withdrawn since included. Core `voidBlockers`
+ * `payment_recorded`; one seek of `payment_allocations_document`.
  */
-export const PAYMENT_ASKS_FOR_DOCUMENT_SQL = `SELECT (EXISTS (SELECT 1 FROM payment_allocations va INDEXED BY payment_allocations_document WHERE va.document_id = ?1)
-       OR EXISTS (SELECT 1 FROM payments vp INDEXED BY payments_client, json_each(vp.requested_allocations) vj WHERE vp.client_id = ?2 AND vp.status = 'pending_verification'
-                  AND vp.requested_allocations IS NOT NULL AND json_extract(vj.value, '$.documentId') = ?1)) AS pending`;
+export const paymentRecordedSql = (doc: string): string =>
+  `EXISTS (SELECT 1 FROM payment_allocations va INDEXED BY payment_allocations_document WHERE va.document_id = ${doc})`;
 
-/** "Collected": confirmed `payment` rows by currency received from `?1` to `?2` (ISO, inclusive), read through `payments_confirmed`. */
+/**
+ * L17 (the void rules): a PENDING payment of the client `client` asks for the document `doc` (both SQL expressions) in its requested allocations. Core
+ * `voidBlockers` `payment_pending`; a seek of `payments_client`.
+ */
+export const paymentPendingForSql = (doc: string, client: string): string =>
+  `EXISTS (SELECT 1 FROM payments vp INDEXED BY payments_client, json_each(vp.requested_allocations) vj WHERE vp.client_id = ${client} AND vp.status = 'pending_verification'
+     AND vp.requested_allocations IS NOT NULL AND json_extract(vj.value, '$.documentId') = ${doc})`;
+
+/**
+ * L17 (early check 2, finding 10): the payment test of the void statement's WHERE, `NOT ${paymentBlocksVoidSql(...)}`: an allocation row names the document,
+ * or a pending payment of its client asks for it. The twin of the trigger `documents_void_no_payment` (which also refuses TDS, as the WHERE's `tds_minor = 0`
+ * does) and of core `voidBlockers` (`payment_recorded`, `payment_pending`). `doc` and `client` are SQL expressions (`documents.id`, `documents.client_id`).
+ */
+export const paymentBlocksVoidSql = (doc: string, client: string): string =>
+  `(${paymentRecordedSql(doc)} OR ${paymentPendingForSql(doc, client)})`;
+
+/** L17, L32 (the void facts): for document `?1` of client `?2`, whether a PENDING payment asks for it (`pending`) and whether an allocation row names it (`recorded`). */
+export const PAYMENT_ASKS_FOR_DOCUMENT_SQL = /* @__PURE__ */ (() =>
+  `SELECT ${paymentPendingForSql("?1", "?2")} AS pending, ${paymentRecordedSql("?1")} AS recorded`)();
+
+/** "Collected": confirmed `payment` rows by currency received from `?1` to `?2` (ISO, inclusive), read through `payments_confirmed` (the reference twin of the tile). */
 export const COLLECTED_SQL = `SELECT p.currency, coalesce(sum(p.amount_minor), 0) AS collected, count(*) AS n
    FROM payments p INDEXED BY payments_confirmed WHERE p.status = 'confirmed' AND p.kind = 'payment' AND p.received_on >= ?1 AND p.received_on <= ?2
    GROUP BY p.currency ORDER BY p.currency`;
+
+/** The currencies a payment can be in (the schema's `CURRENCY_CODES`; a db test pins the two together). */
+export const COLLECTED_CURRENCIES = ["INR", "USD"] as const;
+
+const collectedPick = (prefix: string) =>
+  `CASE c.currency ${COLLECTED_CURRENCIES.map((c) => `WHEN '${c}' THEN t.${prefix}_${c}`).join(" ")} END`;
+
+/**
+ * The dashboard's "Collected" tile (07-ZH line 16; early check 2, finding 6): this FY (`?1` to `?2`) and this IST month (`?3` to `?4`) in ONE pass over the
+ * FY's confirmed `payment` rows, one row per currency that has any (`fy_collected`, `fy_n`, `month_collected`, `month_n`). No GROUP BY: D1 counts every row
+ * a temporary GROUP BY b-tree takes in and gives back, which doubled the reads (measured: 2,000 for 1,000 payments grouped, 1,000 flat); the sums per currency
+ * are columns of one aggregate row, turned into rows afterwards. Equal to `COLLECTED_SQL` over each range (a test holds the twins together).
+ */
+export const COLLECTED_TILE_SQL = /* @__PURE__ */ (() => {
+  const cols = COLLECTED_CURRENCIES.flatMap((c) => [
+    `coalesce(sum(CASE WHEN p.currency = '${c}' THEN p.amount_minor END), 0) AS fy_${c}`,
+    `count(CASE WHEN p.currency = '${c}' THEN 1 END) AS fyn_${c}`,
+    `coalesce(sum(CASE WHEN p.currency = '${c}' AND p.received_on >= ?3 AND p.received_on <= ?4 THEN p.amount_minor END), 0) AS m_${c}`,
+    `count(CASE WHEN p.currency = '${c}' AND p.received_on >= ?3 AND p.received_on <= ?4 THEN 1 END) AS mn_${c}`,
+  ]).join(", ");
+  return `SELECT c.currency, ${collectedPick("fy")} AS fy_collected, ${collectedPick("fyn")} AS fy_n,
+       ${collectedPick("m")} AS month_collected, ${collectedPick("mn")} AS month_n
+   FROM (SELECT ${cols}
+         FROM payments p INDEXED BY payments_confirmed WHERE p.status = 'confirmed' AND p.kind = 'payment' AND p.received_on >= ?1 AND p.received_on <= ?2) t
+   JOIN (${COLLECTED_CURRENCIES.map((c) => `SELECT '${c}' AS currency`).join(" UNION ALL ")}) c
+   WHERE ${collectedPick("fyn")} > 0 ORDER BY c.currency`;
+})();
