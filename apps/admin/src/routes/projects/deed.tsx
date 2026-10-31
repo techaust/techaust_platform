@@ -143,6 +143,7 @@ function DeedView({ page, reload }: { page: DeedPage; reload: () => void }) {
   const [stale, setStale] = useState(false);
   const [dirty, setDirty] = useState(false);
   const onStale = () => setStale(true);
+  const live = stage === "draft" || stage === "final" || stage === "signed";
   return (
     <div className="deed-tab">
       <UnsavedChangesGuard dirty={dirty && !stale} what="the deed's Schedules" />
@@ -169,14 +170,17 @@ function DeedView({ page, reload }: { page: DeedPage; reload: () => void }) {
               onDirty={setDirty}
             />
           )}
-          {(stage === "draft" || stage === "final" || stage === "signed") && d && <ReadTheDeed deed={d} />}
-          <PaidPanel page={page} />
+          {live && d && <ReadTheDeed deed={d} />}
+          {!live && <PaidPanel page={page} />}
         </div>
-        <aside className="lead-page__side" aria-label={C.heading}>
+        {/* With a live deed the side column holds what to do next, then the record and "Paid in full": on a phone the actions come straight after the
+            form or the deed, before the figures. */}
+        <div className="lead-page__side">
           <ActionsPanel page={page} stage={stage} reload={reload} onStale={onStale} />
           {d && (stage === "final" || stage === "signed") && <RecordPanel deed={d} />}
+          {live && <PaidPanel page={page} />}
           {page.history.length > 0 && <HistoryPanel page={page} />}
-        </aside>
+        </div>
       </div>
     </div>
   );
@@ -254,81 +258,91 @@ function PaidPanel({ page }: { page: DeedPage }) {
           ))}
         </ul>
       )}
-      <dl className="deed-figures">
-        <div className="deed-figures__row">
-          <dt>{C.paid.accepted(kind)}</dt>
-          <dd>{deedMoney(e.acceptedTotalMinor, e.currency)}</dd>
-        </div>
-        {e.creditedMinor > 0 && (
+      {/* Without an accepted proposal or estimate there is no total to measure against: the figures would all be dashes. */}
+      {e.acceptedTotalMinor !== null && (
+        <dl className="deed-figures">
           <div className="deed-figures__row">
-            <dt>{C.paid.credited}</dt>
-            <dd>{deedMoney(-e.creditedMinor, e.currency)}</dd>
+            <dt>{C.paid.accepted(kind)}</dt>
+            <dd>{deedMoney(e.acceptedTotalMinor, e.currency)}</dd>
           </div>
-        )}
-        <div className="deed-figures__row deed-figures__row--sum">
-          <dt>{C.paid.owed}</dt>
-          <dd>{deedMoney(e.targetMinor, e.currency)}</dd>
-        </div>
-        <div className="deed-figures__row">
-          <dt>{C.paid.settled}</dt>
-          <dd>{deedMoney(e.settledMinor, e.currency)}</dd>
-        </div>
-        <div className="deed-figures__row deed-figures__row--total">
-          <dt>{C.paid.short}</dt>
-          <dd>{deedMoney(e.shortfallMinor, e.currency)}</dd>
-        </div>
-      </dl>
-      <h3 className="deed-sub">{C.docs.heading}</h3>
-      {page.documents.length === 0 ? (
-        <p className="panel-empty">{C.blockers.no_invoices}</p>
-      ) : (
-        <table className="deed-docs">
-          <caption className="visually-hidden">{C.docs.heading}</caption>
-          <thead>
-            <tr>
-              <th scope="col">{C.docs.invoice}</th>
-              <th scope="col" className="num">
-                {C.docs.total}
-              </th>
-              <th scope="col" className="num">
-                {C.docs.paid}
-              </th>
-              <th scope="col" className="num">
-                {C.docs.credited}
-              </th>
-              <th scope="col" className="num">
-                {C.docs.balance}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {page.documents.map((doc) => (
-              <tr key={doc.id} className={doc.counted ? undefined : "deed-docs__other"}>
-                <th scope="row">
-                  <Link to={`/invoices/${encodeURIComponent(doc.id)}`} className="docno deed-docs__link">
-                    {doc.number ?? doc.id}
-                  </Link>
-                  <span className="deed-docs__type">{typeLabel(doc.type)}</span>
-                  {!doc.counted && <span className="deed-docs__type">{C.docs.notCounted(doc.currency)}</span>}
-                </th>
-                <td className="num tnum" data-label={C.docs.total}>
-                  {deedMoney(doc.totalMinor, doc.currency)}
-                </td>
-                <td className="num tnum" data-label={C.docs.paid}>
-                  {deedMoney(doc.settledMinor, doc.currency)}
-                </td>
-                <td className="num tnum" data-label={C.docs.credited}>
-                  {deedMoney(doc.creditedMinor, doc.currency)}
-                </td>
-                <td className="num tnum" data-label={C.docs.balance}>
-                  {deedMoney(doc.balanceMinor, doc.currency)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+          {e.creditedMinor > 0 && (
+            <div className="deed-figures__row">
+              <dt>{C.paid.credited}</dt>
+              <dd>{deedMoney(-e.creditedMinor, e.currency)}</dd>
+            </div>
+          )}
+          <div className="deed-figures__row deed-figures__row--sum">
+            <dt>{C.paid.owed}</dt>
+            <dd>{deedMoney(e.targetMinor, e.currency)}</dd>
+          </div>
+          <div className="deed-figures__row">
+            <dt>{C.paid.settled}</dt>
+            <dd>{deedMoney(e.settledMinor, e.currency)}</dd>
+          </div>
+          <div className="deed-figures__row deed-figures__row--total">
+            <dt>{C.paid.short}</dt>
+            <dd>{deedMoney(e.shortfallMinor, e.currency)}</dd>
+          </div>
+        </dl>
       )}
-      <p className="hint deed-paid__note">{C.docs.note}</p>
+      {/* With no invoice, the reasons above already say so ("No issued invoice is linked…"): the table's part is left out rather than said twice. */}
+      {(page.documents.length > 0 || !(showLines && e.blockers.includes("no_invoices"))) && (
+        <>
+          <h3 className="deed-sub">{C.docs.heading}</h3>
+          {page.documents.length === 0 ? (
+            <p className="panel-empty">{C.blockers.no_invoices}</p>
+          ) : (
+            <table className="deed-docs">
+              <caption className="visually-hidden">{C.docs.heading}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">{C.docs.invoice}</th>
+                  <th scope="col" className="num">
+                    {C.docs.total}
+                  </th>
+                  <th scope="col" className="num">
+                    {C.docs.paid}
+                  </th>
+                  <th scope="col" className="num">
+                    {C.docs.credited}
+                  </th>
+                  <th scope="col" className="num">
+                    {C.docs.balance}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {page.documents.map((doc) => (
+                  <tr key={doc.id} className={doc.counted ? undefined : "deed-docs__other"}>
+                    <th scope="row">
+                      <Link to={`/invoices/${encodeURIComponent(doc.id)}`} className="docno deed-docs__link">
+                        {doc.number ?? doc.id}
+                      </Link>
+                      <span className="deed-docs__type">{typeLabel(doc.type)}</span>
+                      {!doc.counted && (
+                        <span className="deed-docs__type">{C.docs.notCounted(doc.currency)}</span>
+                      )}
+                    </th>
+                    <td className="num tnum" data-label={C.docs.total}>
+                      {deedMoney(doc.totalMinor, doc.currency)}
+                    </td>
+                    <td className="num tnum" data-label={C.docs.paid}>
+                      {deedMoney(doc.settledMinor, doc.currency)}
+                    </td>
+                    <td className="num tnum" data-label={C.docs.credited}>
+                      {deedMoney(doc.creditedMinor, doc.currency)}
+                    </td>
+                    <td className="num tnum" data-label={C.docs.balance}>
+                      {deedMoney(doc.balanceMinor, doc.currency)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p className="hint deed-paid__note">{C.docs.note}</p>
+        </>
+      )}
     </section>
   );
 }
@@ -588,9 +602,17 @@ function SchedulesRead({ deed }: { deed: DeedRecord }) {
 
 function ReadTheDeed({ deed }: { deed: DeedRecord }) {
   const problems = deed.preview && !deed.preview.ok ? problemLines(deed.preview.problems) : [];
+  // A final or signed deed opens on wide screens (the deed beside its actions, as the portal shows a document); a draft, and every phone, starts closed so
+  // the form and the actions come first. Decided once, when the tab opens; the person's own toggling wins after that.
+  const [open] = useState(
+    () =>
+      deed.status !== "draft" &&
+      typeof window !== "undefined" &&
+      window.matchMedia("(min-width: 64rem)").matches,
+  );
   return (
     <section className="lead-panel deed-read" aria-labelledby="deed-read-h">
-      <details className="deed-read__details">
+      <details className="deed-read__details" open={open || undefined}>
         <summary className="deed-read__summary">
           <FileText size={20} />
           <h2 id="deed-read-h" className="deed-read__title">
@@ -1115,7 +1137,7 @@ function RecordPanel({ deed }: { deed: DeedRecord }) {
   const sha = deed.sealed?.sha256;
   if (lines.length === 0 && !sha) return null;
   return (
-    <section className="lead-panel deed-record" aria-label={C.heading}>
+    <section className="lead-panel deed-record">
       <ul className="deed-record__lines">{lines}</ul>
       {sha && (
         <p className="deed-record__sha">

@@ -168,6 +168,11 @@
 }
 
 /* ---- paid in full ---- */
+/* the invoices table follows the panel's own width (the main column is narrow beside the actions at 1280 px), not the window's */
+.deed-paid {
+  container: deed-paid / inline-size;
+}
+
 .deed-paid__top {
   display: flex;
   flex-wrap: wrap;
@@ -311,7 +316,7 @@
 }
 
 /* below 40rem the table reads as one card per invoice: the number, then each figure with its label */
-@media (max-width: 39.99rem) {
+@container deed-paid (max-width: 40rem) {
   .deed-docs thead {
     position: absolute;
     width: 1px;
@@ -634,7 +639,25 @@
 }
 
 .deed-file__input {
-  padding: var(--space-2);
+  padding: var(--space-1);
+}
+
+/* the browser's own "Choose file" button, drawn as a secondary button in both themes */
+.deed-file__input::file-selector-button {
+  min-height: calc(var(--target-min) - var(--space-3));
+  margin-inline-end: var(--space-3);
+  padding: 0 var(--space-3);
+  font: inherit;
+  font-weight: 560;
+  color: var(--color-btn-secondary-fg);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.deed-file__input:hover::file-selector-button {
+  border-color: var(--color-text);
 }
 
 .deed-file__chosen {
