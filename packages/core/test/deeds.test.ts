@@ -636,7 +636,7 @@ describe("the eSign moment and the R2 keys", () => {
   });
 
   it("the keys", () => {
-    expect(deedUnsignedKey("deed_1")).toBe("deeds/deed_1/unsigned.pdf");
+    expect(deedUnsignedKey("deed_1", "cd")).toBe("deeds/deed_1/unsigned-cd.pdf");
     expect(deedSignedKey("deed_1", "ab")).toBe("deeds/deed_1/signed-ab.pdf");
   });
 });

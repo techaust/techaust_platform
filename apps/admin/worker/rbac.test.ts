@@ -1225,6 +1225,12 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       const res = await putSigned(s, f.deedId, PDF_BYTES, { headers: headers(rid) });
       return { res, rid, actor: s };
     },
+    "POST /api/v1/deeds/:id/pdf/render": async () => {
+      const s = await owner();
+      await putCompany();
+      const f = await finalisedDeed(s);
+      return run(s, `/deeds/${f.deedId}/pdf/render`, { body: {} });
+    },
     "POST /api/v1/deeds/:id/cancel": async () => {
       const s = await owner();
       await putCompany();

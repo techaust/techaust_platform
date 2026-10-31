@@ -18,7 +18,7 @@ import {
   putSigned,
   SCHEDULES,
 } from "./test-deeds.ts";
-import { call, countOf, one, sessionFor, type TestSession } from "./test-helpers.ts";
+import { call, captureQueue, countOf, one, sessionFor, type TestSession, withEnv } from "./test-helpers.ts";
 import { codeOf, type J, json, putCompany, voidInvoice } from "./test-invoices.ts";
 import { record, recordBody, recorded, today, verify } from "./test-payments.ts";
 import { PDF_BYTES, PNG_BYTES } from "./test-projects.ts";
@@ -396,6 +396,67 @@ describe("the signed copy [L4, L5]", () => {
     const unsigned = await call(`/deeds/${f.deedId}/pdf/unsigned`, { cookie: o.cookie });
     expect(unsigned.status).toBe(404);
     expect(await codeOf(unsigned)).toBe("pdf_not_ready");
+  });
+});
+
+describe("the jobs Worker's messages after the batch [L4]", () => {
+  /** `env` whose PDF_QUEUE and EMAIL_QUEUE record what is sent. */
+  const queues = () => {
+    const pdf: unknown[] = [];
+    const email = captureQueue();
+    return {
+      pdf,
+      email: email.sent,
+      env: withEnv(email.env, {
+        PDF_QUEUE: { send: async (m: unknown) => void pdf.push(m), sendBatch: async () => undefined },
+      }),
+    };
+  };
+
+  it("finalise puts pdf.deed on the PDF queue (ids only); the signed upload puts deed.signed on the email queue", async () => {
+    const o = await owner();
+    const f = await draftDeed(o);
+    await putSchedules(o, f.deedId);
+    const q = queues();
+    const res = await call(
+      `/deeds/${f.deedId}/finalise`,
+      { cookie: o.cookie, body: { expectedUpdatedAt: await deedStamp(f.deedId) } },
+      q.env,
+    );
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(q.pdf).toEqual([{ v: 1, kind: "pdf.deed", deedId: f.deedId, hop: 0 }]);
+    expect(q.email).toEqual([]);
+    const signed = await putSigned(o, f.deedId, PDF_BYTES, { e: q.env });
+    expect(signed.status, await signed.clone().text()).toBe(200);
+    expect(q.email).toEqual([{ kind: "deed.signed", deedId: f.deedId }]);
+    // A refused upload (already signed) queues nothing more.
+    expect((await putSigned(o, f.deedId, PDF_BYTES, { e: q.env })).status).toBe(409);
+    expect(q.email).toHaveLength(1);
+  });
+
+  it("render again: the Owner only, a final deed with no PDF of a live client; audited; asks the jobs Worker once per call", async () => {
+    const o = await owner();
+    const draft = await draftDeed(o);
+    const render = (s: TestSession, id: string, e?: Env) =>
+      call(`/deeds/${id}/pdf/render`, { cookie: s.cookie, body: {} }, e);
+    expect(await codeOf(await render(o, draft.deedId))).toBe("deed_not_final");
+    const f = await finalisedDeed(o);
+    expect((await render(await sessionFor("staff"), f.deedId)).status).toBe(403);
+    const q = queues();
+    const res = await render(o, f.deedId, q.env);
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await json(res)).toEqual({ ok: true, pdf: { state: "pending" } });
+    expect(q.pdf).toEqual([{ v: 1, kind: "pdf.deed", deedId: f.deedId, hop: 0 }]);
+    expect(await countOf("audit_log", "action = 'deed.pdf_retry' AND entity_id = ?", f.deedId)).toBe(1);
+    expect((await json(await getDeed(o, f.projectId))).can.renderPdf).toBe(true);
+    // Once the jobs Worker has stored it: 409 pdf_done, and the panel offers no render.
+    await env.DB.prepare(
+      "UPDATE deeds SET unsigned_r2_key = 'deeds/x/unsigned-y.pdf', unsigned_sha256 = 'z' WHERE id = ?",
+    )
+      .bind(f.deedId)
+      .run();
+    expect(await codeOf(await render(o, f.deedId))).toBe("pdf_done");
+    expect((await json(await getDeed(o, f.projectId))).can.renderPdf).toBe(false);
   });
 });
 

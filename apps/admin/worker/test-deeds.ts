@@ -163,10 +163,12 @@ export async function putSigned(
     length?: string;
     expected?: number;
     headers?: Record<string, string>;
+    e?: Env;
   } = {},
 ) {
   return putDoc(`/deeds/${deedId}/signed`, bytes, {
     cookie: s.cookie,
+    ...(o.e ? { e: o.e } : {}),
     name: o.name ?? "signed.pdf",
     ...(o.length ? { length: o.length } : {}),
     headers: {

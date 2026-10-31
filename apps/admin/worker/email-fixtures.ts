@@ -32,6 +32,8 @@ export const TEMPLATE_NAMES: Record<EmailTemplate, string> = {
   // M5.5b (names as the Settings list shows them; the words are 07-V's)
   "edf.reminder": "EDF reminder (team)",
   "realisation.alert": "Export realisation alert (team)",
+  // T11: the name comes from 07-ZJ (a staff line; the designer drafts it).
+  "deed.signed": "[Placeholder] deed.signed",
 };
 
 const SAMPLE = "https://example.test/sample";
@@ -190,6 +192,15 @@ export function sampleData(
         count: "3",
         due_date: "30 Nov 2026",
         link: SAMPLE,
+      };
+    case "deed.signed":
+      return {
+        first_name,
+        number: "TH/DA/2627/0001",
+        offer_type: "proposal",
+        offer_number: "TH/PRP/2627/0001",
+        offer_version: "1",
+        url: SAMPLE,
       };
     case "realisation.alert":
       return {

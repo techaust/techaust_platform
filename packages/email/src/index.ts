@@ -9,6 +9,7 @@ import {
   lutReminder,
   reminderSent,
 } from "./billing.ts";
+import { deedSigned } from "./deeds.ts";
 import { staffApprovalIssueDecided, staffApprovalIssueRequested } from "./invoices.ts";
 import {
   approvalDecided,
@@ -35,6 +36,7 @@ import {
 } from "./templates.ts";
 
 export * from "./billing.ts";
+export * from "./deeds.ts";
 export * from "./headers.ts";
 export * from "./invoices.ts";
 export * from "./offers.ts";
@@ -308,6 +310,22 @@ function renderTemplate(
       };
     case "lead.reply":
       return { ...hello, ...leadReply({ subject: get("subject"), body: get("body") }, opts) };
+    case "deed.signed":
+      // T11: a placeholder until 07-ZJ (the sender follows the offer emails: the client's proposal or estimate came from hello@).
+      return {
+        ...hello,
+        ...deedSigned(
+          {
+            first_name: get("first_name"),
+            number: get("number"),
+            offer_type: get("offer_type"),
+            offer_number: get("offer_number"),
+            offer_version: get("offer_version"),
+            url: get("url"),
+          },
+          opts,
+        ),
+      };
     case "offer.sent":
       return {
         ...hello,

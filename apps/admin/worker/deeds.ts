@@ -3,7 +3,9 @@
 // sealed values), the signed copy (Owner, fresh code: a PDF streamed write-once into the private R2 `DOCS`, never the file vault), cancel a draft, check a project
 // again, and the two downloads. Every change is ONE batch through `mutate` with every rule in the main statement's WHERE (`@techaust/db/deeds`); a read only
 // explains a refusal. Audit rows hold ids, numbers and codes, never a Schedule's words or a client's name.
-// Not built here (the jobs part, after the jobs Worker's minify is on main): the `pdf.deed` render of the unsigned PDF and the `deed.signed` email.
+// After the batch (round 2): the finalise and the Owner's "render again" put `pdf.deed` on PDF_QUEUE (the jobs Worker renders the unsigned PDF write-once), and
+// the signed upload puts `deed.signed` on EMAIL_QUEUE (the jobs Worker emails the client's portal contacts). Ids only.
+import type { DeedSignedMessage } from "@techaust/core";
 import { ANONYMISED_CLIENT } from "@techaust/core/clients";
 import { fyOfDate, istDate, parseIsoDate, toIsoDate } from "@techaust/core/dates";
 import {
@@ -24,6 +26,7 @@ import {
   settledOf,
 } from "@techaust/core/deeds";
 import { maxNumber, sqlPrintfPattern } from "@techaust/core/numbering";
+import type { PdfDeedMessage } from "@techaust/core/pdf-jobs";
 import { decide } from "@techaust/core/permissions";
 import { resolveSetting } from "@techaust/core/settings";
 import {
@@ -490,6 +493,44 @@ async function explain(
 const fileName = (number: string | null, suffix: string) =>
   `${(number ?? "deed").replaceAll("/", "-")}${suffix}.pdf`;
 
+// ---- after the batch: the jobs Worker's two messages (ids only; never thrown, a failure is logged and the Owner's "render again" or the panel covers it) ----
+
+/** Asks the jobs Worker for the deed's unsigned PDF (`pdf.deed`; the consumer is idempotent: a stored PDF is adopted, never rendered twice). */
+export async function enqueueDeedPdf(env: Pick<Env, "PDF_QUEUE">, deedId: string): Promise<boolean> {
+  try {
+    await env.PDF_QUEUE.send({ v: 1, kind: "pdf.deed", deedId, hop: 0 } satisfies PdfDeedMessage);
+    return true;
+  } catch (e) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        message: "deed pdf enqueue failed",
+        cause: e instanceof Error ? e.name : "unknown",
+      }),
+    );
+    return false;
+  }
+}
+
+/** Tells the jobs Worker the signed deed is in the portal (`deed.signed`): it emails the client's portal contacts, once per deed and person. */
+export async function enqueueDeedSigned(env: Pick<Env, "EMAIL_QUEUE">, deedId: string): Promise<boolean> {
+  try {
+    await env.EMAIL_QUEUE.send({ kind: "deed.signed", deedId } satisfies DeedSignedMessage);
+    return true;
+  } catch (e) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        message: "deed signed enqueue failed",
+        cause: e instanceof Error ? e.name : "unknown",
+      }),
+    );
+    return false;
+  }
+}
+
+const PDF_DONE: ApiError = { code: "pdf_done", message: "This deed already has its PDF" };
+
 // ---- the routes ------------------------------------------------------------------------------------------------------------------------------------------
 
 /** Under `/v1/projects`: the project's deed, and "Check again". */
@@ -643,6 +684,8 @@ export const deeds = new Hono<AppEnv>()
       if (counter && counter.next_no > maxNumber(format)) return err(c, SERIES_FULL, 409);
       return err(c, SETTINGS_CHANGED, 409);
     }
+    // L4: the unsigned PDF is rendered by the jobs Worker, after the batch has committed.
+    c.executionCtx.waitUntil(enqueueDeedPdf(c.env, id));
     return c.json({
       ok: true,
       status: "final",
@@ -716,6 +759,8 @@ export const deeds = new Hono<AppEnv>()
         await dropDoc(c.env, stored.key, "row not written");
       return explain(c, id, expected, "final", true);
     }
+    // L4: the client's portal contacts get the short email (07-ZJ), after the batch has committed.
+    c.executionCtx.waitUntil(enqueueDeedSigned(c.env, id));
     return c.json({
       ok: true,
       status: "signed",
@@ -751,6 +796,29 @@ export const deeds = new Hono<AppEnv>()
     });
     if (!done) return explain(c, id, f.expectedUpdatedAt, "draft", false);
     return c.json({ ok: true, status: "cancelled", updatedAt: now });
+  })
+
+  // The Owner asks for the unsigned PDF again (the render failed, or the message was lost): only a final or signed deed with no PDF yet, of a live client (no PDF
+  // work for an erased client). The jobs consumer is idempotent, so a repeated request never makes a second PDF.
+  .post("/:id/pdf/render", param(idParam), body(recheckBody), async (c) => {
+    const { id } = c.req.valid("param");
+    const row = await deedRow(c, id);
+    if (!row) return err(c, NOT_FOUND, 404);
+    if (row.status !== "final" && row.status !== "signed") return err(c, DEED_NOT_FINAL, 409);
+    if (row.unsigned_r2_key !== null) return err(c, PDF_DONE, 409);
+    const gone = await c.env.DB.prepare("SELECT anonymised_at FROM clients WHERE id = ?1")
+      .bind(row.client_id)
+      .first<{ anonymised_at: number | null }>();
+    if (gone?.anonymised_at != null) return err(c, CLIENT_GONE, 409);
+    const done = await mutate(c, {
+      action: "deed.pdf_retry",
+      entityType: "deed",
+      entityId: id,
+      summary: { deedId: id, projectId: row.project_id, number: row.number_display },
+    });
+    if (!done) return err(c, NOT_FOUND, 404);
+    c.executionCtx.waitUntil(enqueueDeedPdf(c.env, id));
+    return c.json({ ok: true, pdf: { state: "pending" } });
   })
 
   .get("/:id/pdf/unsigned", param(idParam), async (c) => {

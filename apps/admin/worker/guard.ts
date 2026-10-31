@@ -136,6 +136,7 @@ export const ROUTES: readonly RouteDef[] = [
   R("POST", "/deeds/:id/finalise", "deeds.finalise", { audit: "deed.finalise" }),
   R("PUT", "/deeds/:id/signed", "deeds.uploadSigned", { audit: "deed.sign", body: "upload" }),
   R("POST", "/deeds/:id/cancel", "deeds.cancel", { audit: "deed.cancel" }),
+  R("POST", "/deeds/:id/pdf/render", "deeds.renderPdf", { audit: "deed.pdf_retry" }),
   R("GET", "/deeds/:id/pdf/unsigned", "deeds.view"),
   R("GET", "/deeds/:id/pdf/signed", "deeds.view"),
   R("GET", "/clients/:id/projects", "projects.read"),

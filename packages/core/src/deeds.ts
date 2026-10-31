@@ -629,7 +629,11 @@ export function parseEsignMoment(
   return utc;
 }
 
-/** The R2 key of a deed's PDFs in the private `DOCS` bucket (write-once; the signed copy's key carries its SHA-256). */
-export const deedUnsignedKey = (deedId: string): string => `deeds/${deedId}/unsigned.pdf`;
+/**
+ * The R2 keys of a deed's PDFs in the private `DOCS` bucket (write-once). The unsigned PDF's key carries the sealed snapshot's SHA-256, so two renders of the
+ * same deed land on the same object (the second adopts the first) and a key never names other values; the signed copy's key carries its own SHA-256.
+ */
+export const deedUnsignedKey = (deedId: string, snapshotSha256: string): string =>
+  `deeds/${deedId}/unsigned-${snapshotSha256}.pdf`;
 export const deedSignedKey = (deedId: string, sha256: string): string =>
   `deeds/${deedId}/signed-${sha256}.pdf`;

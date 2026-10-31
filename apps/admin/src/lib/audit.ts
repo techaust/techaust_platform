@@ -163,6 +163,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "deed.finalise": "[Placeholder] deed.finalise",
   "deed.sign": "[Placeholder] deed.sign",
   "deed.cancel": "[Placeholder] deed.cancel",
+  "deed.pdf_retry": "[Placeholder] deed.pdf_retry",
 };
 
 /**
