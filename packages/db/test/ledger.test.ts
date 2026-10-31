@@ -481,7 +481,7 @@ describe("the ledger identity with TDS, the TDS bounds, and no void with a payme
     );
   });
 
-  it("void is refused with TDS, with an allocation (even one released since) and while a payment that was not rejected asks for the document", async () => {
+  it("void is refused with TDS, with an allocation (even one released since) and while a pending payment asks for the document", async () => {
     const { owner, clientId } = await setup();
     const voidIt = (id: string) =>
       run("UPDATE documents SET status = 'void', voided_at = 1, void_reason = 'x' WHERE id = ?", id);
