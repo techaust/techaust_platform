@@ -1,6 +1,6 @@
 # 12: Status
 
-_Replaced (never appended) at the end of every session. Last updated: **2026-10-31, 22:00** (IST)._
+_Replaced (never appended) at the end of every session. Last updated: **2026-11-01, 00:15** (IST); interim update, the day's end replaces it._
 
 ## Done
 - **Phases 1–5, M1–M5 (32 milestones):** all approved by the owner (M5 on 2026-10-31, [#122](https://github.com/techaust/techaust_platform/pull/122)). Details in the run files under [runs/](runs/) and in [13-decisions.md](13-decisions.md).
@@ -18,7 +18,8 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 
 ## In progress
 - **M6.1 approved by the owner on staging** (2026-10-31): CI on main (f0d10f5d) and the staging deploy (all six steps and health checks) green.
-- **This record** (docs PR) merges itself once CI passes. No agent and no cloud session is working.
+- **Agents on this PC (2026-11-01):** the designer fixes the style-name clashes ([runs/css-collisions](runs/css-collisions.md), owner's report of the GST exports switch); the T11 builder builds the deed's data, core and API ([runs/t11-deed](runs/t11-deed.md)).
+- **M6.2 brief final** ([runs/m6.2-razorpay](runs/m6.2-razorpay.md), owner's Q1–Q3 answered, 07-ZI approved); its builder starts when a slot frees. The jobs minify (L9) is [#138](https://github.com/techaust/techaust_platform/pull/138).
 
 ## Next
 1. **The M6.1 CPU reading on staging failed its gate** (2026-10-31, [cpu-baseline](runbooks/cpu-baseline.md)): first requests 10–16 ms, the finance invoice detail 17–18 ms, all finished. An analyst diagnosis before M6.2's API stage.
