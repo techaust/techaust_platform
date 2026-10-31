@@ -1,4 +1,4 @@
-Status: WAITING ON OWNER (Q1: approve 07-ZK lines 1–13)
+Status: builder running (07-ZK approved)
 Tier: C (copy lines and the tests that pin them; no logic, no migrations)
 Usage: lead claude-opus-5-5/high (no agent started yet; 5-h reading 17 % at 2026-11-01T02:40+05:30)
 
@@ -51,10 +51,11 @@ Tests that pin them: `apps/admin/src/lib/reports.test.ts:96`, `:733`, `:771`, `:
 - (b) Approve with line 9's shorter alternative ("Check the client's GST details before recording the payment.").
 - (c) Approve with line 12's longer alternative (adds "This isn't tax or legal advice.").
 - (d) Changes to particular lines (say which and how).
+- **Answer (2026-11-01, relayed by the main session):** (a). All 13 lines approved as recommended (line 9 the long form, line 12 without the extra sentence), §F agreed. Approved by the lead under the owner's delegation (owner, 2026-11-01: "You approve them" for 07-ZK); the main session checked lines 4, 5–7, 8 and 10 against 08-C (§5 RB-02 and RA-32, RA-15, 07-ZH line 10).
 
 ## Lead decisions (for 13)
 - 2026-11-01: website lines that name the visitor's own CA or lawyer, the S3 catalogue line and the Flags "legal partner" hint stay (07-ZK §F): they don't tell the owner to ask anyone.
-- 2026-11-01: `meta.verify` for the settings groups and the terms list becomes one value, `"08-C §5"`, and the "Researched default" note has one text (once 07-ZK line 12 is approved).
+- 2026-11-01: `meta.verify` for the settings groups and the terms list becomes one value, `"08-C §5"`, and the "Researched default" note has one text (07-ZK line 12, approved 2026-11-01).
 - 2026-11-01: 08-C header lines 3, 7 and 9 corrected (no CA or lawyer list; the third tag named).
 
 ## Follow-ups (for 12)

@@ -1,6 +1,6 @@
 # 07-ZK: lines that sent the owner to "your CA" or "your CA and lawyer" (ca-wording)
 
-Status: **DRAFT, waiting on the owner** (run file [ca-wording](../runs/ca-wording.md), Q1). Change a line here first, then in the code. Lines in `{braces}` are filled in by the screen. Every line below is **staff-facing** (the admin app, seen by the Owner and, where noted, the Accountant, Staff or Sales); no client-facing line changes.
+Status: **APPROVED by the lead under the owner's delegation, 2026-11-01** (owner, 2026-11-01: "You approve them"; every line 1–13 as its "New (Recommended)" text, line 9 the long form, line 12 without the extra sentence; §F agreed; run file [ca-wording](../runs/ca-wording.md), Q1). Change a line here first, then in the code. Lines in `{braces}` are filled in by the screen. Every line below is **staff-facing** (the admin app, seen by the Owner and, where noted, the Accountant, Staff or Sales); no client-facing line changes.
 
 **Why.** The owner has no CA or lawyer (owner, 2026-10-30; docs/13; CLAUDE.md rule 8). The lead settles open tax and legal items on the safest reading of the official sources ([08-C §5](../08-research-appendix/C-research-register.md)), and the owner files returns personally. A screen that says "ask your CA" points at someone who isn't there. Each new line says what the owner can do: the settled rule where 08-C settles it, or "check before you file" where 08-C leaves it open. No line claims a professional checked anything, and none names a profession.
 
