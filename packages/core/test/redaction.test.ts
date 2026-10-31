@@ -159,6 +159,38 @@ describe("redactRecipient", () => {
     const noName = redactRecipient({ legalName: "L", country: "IN", email: "x@example.test" }, "contact");
     expect(noName).toEqual({ legalName: "L", country: "IN" });
   });
+  it("contact at an INDIVIDUAL client: the person's values also leave the legal and display names; the address and GSTIN stay", () => {
+    const values = redactionValues({ recipient: individual, contact, scope: "contact" });
+    const r = redactRecipient(individual, "contact", { redact: redactor(values) });
+    expect(r.legalName).toBe(AC);
+    // the display name "Asha" is not one of the contact's values (the live client still holds it): it goes when the client is anonymised
+    expect(r.displayName).toBe("Asha");
+    expect(r.contactName).toBe(AC);
+    expect(r).not.toHaveProperty("email");
+    expect(r.gstin).toBe("19ABCDE1234F1Z5");
+    expect(r.address).toEqual({ line1: "1 Park Street", city: "Kolkata" });
+    // a name that only holds the person's name keeps the rest; no display name stays absent
+    const family = redactRecipient(
+      { legalName: "ASHA RAO and family", country: "IN", clientType: "individual" },
+      "contact",
+      { redact: redactor(["Asha Rao"]) },
+    );
+    expect(family).toEqual({ legalName: `${AC} and family`, country: "IN", clientType: "individual" });
+    // the frozen client type decides unless the caller says otherwise (an older snapshot without it)
+    const old = { legalName: "Asha Rao", country: "IN" };
+    expect(redactRecipient(old, "contact", { redact: redactor(["Asha Rao"]) }).legalName).toBe("Asha Rao");
+    expect(
+      redactRecipient(old, "contact", { redact: redactor(["Asha Rao"]), individual: true }).legalName,
+    ).toBe(AC);
+    // without a redactor the names are left as they are
+    expect(redactRecipient(individual, "contact").legalName).toBe("Asha Rao");
+  });
+  it("contact at a BUSINESS client: the business's names stay even when they hold the person's name", () => {
+    const named = { ...business, legalName: "Asha Rao Studio LLP", displayName: "Asha Rao Studio" };
+    const r = redactRecipient(named, "contact", { redact: redactor(["Asha Rao"]) });
+    expect(r.legalName).toBe("Asha Rao Studio LLP");
+    expect(r.displayName).toBe("Asha Rao Studio");
+  });
   it("decliner: a copy, unchanged", () => {
     const r = redactRecipient(business, "decliner");
     expect(r).toEqual(business);
@@ -205,6 +237,59 @@ describe("redactOffer", () => {
     expect(out.lines).toEqual([{ id: "l1", description: "Pages for Acme Studio", detail: `Call ${AC}` }]);
     expect(out.fields).toContain("recipient.contactName");
     expect(out.fields).not.toContain("recipient.legalName");
+  });
+
+  it("individual, contact scope (not the last live contact): the client's own names lose the person's name, its address and GSTIN stay", () => {
+    const values = redactionValues({ recipient: individual, contact, scope: "contact" });
+    const out = redactOffer(offer(individual), values, "contact");
+    expect(out.recipient?.legalName).toBe(AC);
+    expect(out.recipient?.displayName).toBe("Asha");
+    expect(out.recipient?.gstin).toBe("19ABCDE1234F1Z5");
+    expect(out.recipient?.address).toEqual({ line1: "1 Park Street", city: "Kolkata" });
+    expect(out.fields).toContain("recipient.legalName");
+    expect(out.fields).not.toContain("recipient.displayName");
+    expect(out.fields).not.toContain("recipient.gstin");
+    // the caller's own type wins over the frozen one, and its compiled redactor is used
+    let calls = 0;
+    const compiled = redactor(values);
+    const counted = (t: string | null) => {
+      calls++;
+      return compiled(t);
+    };
+    const asBusiness = redactOffer(offer(individual), values, "contact", {
+      individual: false,
+      redact: counted,
+    });
+    expect(asBusiness.recipient?.legalName).toBe("Asha Rao");
+    expect(calls).toBeGreaterThan(0);
+  });
+
+  it("ignores case: upper-case names and mixed-case emails go, in the texts and the recipient's names", () => {
+    const values = redactionValues({ recipient: individual, contact, scope: "contact" });
+    const out = redactOffer(
+      offer(
+        { ...individual, legalName: "ASHA RAO" },
+        {
+          title: "WEBSITE FOR ASHA RAO",
+          sections: [
+            { id: "s", title: "asha rao", bodyMd: "Mail Asha@Example.TEST or ASHA@EXAMPLE.TEST; राम stays" },
+          ],
+          lines: [],
+          schedule: [],
+        },
+      ),
+      values,
+      "contact",
+    );
+    expect(out.recipient?.legalName).toBe(AC);
+    expect(out.title).toBe(`WEBSITE FOR ${AC}`);
+    expect(out.sections).toEqual([{ id: "s", title: AC, bodyMd: `Mail ${AC} or ${AC}; राम stays` }]);
+    const indic = redactOffer(
+      offer(null, { title: "राम and रामा", sections: [], lines: [], schedule: [] }),
+      ["राम"],
+      "decliner",
+    );
+    expect(indic.title).toBe(`${AC} and रामा`);
   });
 
   it("decliner only: the recipient is untouched, the texts lose the decliner's values and the note goes", () => {
@@ -257,13 +342,20 @@ describe("redactOffer", () => {
     expect(twice.fields).toEqual(["envelope", "pdf"]);
   });
 
-  it("property: no value survives as a whole word in any redacted text", () => {
-    // letters outside "Anonymised client", so the label itself can never be a value
+  it("property: no value survives as a whole word, in any case, in any redacted text", () => {
+    // letters outside "Anonymised client" in either case, so the label itself can never be a value
     const word = fc.stringMatching(/^[bfghjkpqruvwxz]{2,8}$/);
+    // a text part: a word in any mix of cases, or a separator
+    const part = fc.oneof(
+      fc
+        .tuple(word, fc.array(fc.boolean(), { minLength: 8, maxLength: 8 }))
+        .map(([w, up]) => [...w].map((ch, i) => (up[i] ? ch.toUpperCase() : ch)).join("")),
+      fc.constantFrom(" ", ", ", "-", ". ", "'s "),
+    );
     fc.assert(
       fc.property(
         fc.array(word, { minLength: 1, maxLength: 4 }),
-        fc.array(fc.oneof(word, fc.constantFrom(" ", ", ", "-", ". ", "'s ")), { maxLength: 30 }),
+        fc.array(part, { maxLength: 30 }),
         (values, parts) => {
           const text = parts.join("");
           const out = redactOffer(
@@ -277,7 +369,7 @@ describe("redactOffer", () => {
             "decliner",
           );
           for (const t of [out.title, out.sections[0]?.title ?? text, out.sections[0]?.bodyMd ?? text])
-            expect(wholeWordPattern(values).test(t ?? "")).toBe(false);
+            expect(wholeWordPattern(values, { ignoreCase: true }).test(t ?? "")).toBe(false);
         },
       ),
     );
@@ -301,5 +393,9 @@ describe("the view helpers (moved from the admin Worker; one rule)", () => {
     expect(redactionNames({ legalName: "A", displayName: "Bo", country: "IN" }, true, false)).toEqual(["Bo"]);
     expect(redactor([])("x")).toBe("x");
     expect(redactor(["Bo"])(null)).toBeNull();
+  });
+  it("the view's redactor ignores case too (one rule with the stored redaction)", () => {
+    const redact = redactor(redactionNames(business, false, true));
+    expect(redact("ASHA RAO wrote to asha@example.test")).toBe(`${AC} wrote to ${AC}`);
   });
 });

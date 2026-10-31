@@ -22,6 +22,17 @@ describe("wholeWordPattern", () => {
   it("escapes the names", () => {
     expect("a.b and axb".replace(wholeWordPattern(["a.b"]), "X")).toBe("X and axb");
   });
+  it("is case-sensitive by default; ignoreCase matches any case, still whole words only", () => {
+    expect("ASHA RAO and Asha Rao".replace(wholeWordPattern(["Asha Rao"]), "X")).toBe("ASHA RAO and X");
+    const re = wholeWordPattern(["Asha Rao", "asha@example.test"], { ignoreCase: true });
+    expect("ASHA RAO, asha rao, Asha@Example.TEST and ASHA RAOS".replace(re, "X")).toBe(
+      "X, X, X and ASHA RAOS",
+    );
+    expect("Élodie ÉLODIE élodies".replace(wholeWordPattern(["élodie"], { ignoreCase: true }), "X")).toBe(
+      "X X élodies",
+    );
+    expect("राम और रामा".replace(wholeWordPattern(["राम"], { ignoreCase: true }), "X")).toBe("X और रामा");
+  });
 });
 
 describe("CONTACT_TOKEN_RE", () => {
