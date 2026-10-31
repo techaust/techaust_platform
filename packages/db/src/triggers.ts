@@ -885,8 +885,8 @@ export const LEDGER_IDENTITY_TYPES_0050 = [
  *      (Researched 2026-10-28, s.15(3)(b) and s.34(1) CGST Act as amended by ss.153-154 Finance Act 2026, Notification 03/2026-CT (08-C RA-02)); the twin of
  *      core `reasonInForce` and of the note freeze's WHERE (`noteIssueTail`);
  *   5. `documents_advance_lut_fy`: a tax invoice for a payment received (`header_extras.advance`) that is an export invoice on the LUT route is issued only while
- *      a LUT with an ARN is saved for the FY of the RECEIPT day (Researched 2026-10-28, Rule 96A(1) CGST Rules, s.13(2) CGST Act (08-C RA-19, Q37); OPEN (08-C
- *      RA-19): does the FY X LUT cover a payment received in FY X+1 before the new LUT is filed? The safe side is held: it does not); the twin of core
+ *      a LUT with an ARN is saved for the FY of the RECEIPT day (Researched 2026-10-28, Rule 96A(1) CGST Rules, s.13(2) CGST Act (08-C RA-19, Q37); Settled by the lead on the safest reading, 2026-10-30 (08-C
+ *      RA-19, Q37): the LUT route is refused when the receipt day's FY has no saved LUT; the Owner saves the new LUT first or issues with IGST); the twin of core
  *      `advanceRouteFor` and of the advance freeze's WHERE (`LUT_FOR_FY_SQL` with the receipt FY).
  */
 export function ledgerTriggerStatements(): string[] {
@@ -912,8 +912,8 @@ export function ledgerTriggerStatements(): string[] {
 /**
  * FX-4 (full audit A5 11; a new trigger only, no table is rebuilt; the abort message starts with the trigger's name): `documents_tax_only_note_exact`: a tax-only debit
  * note (the reason "Tax charged too low", or a taxable value of nil) is issued with no round-off, its total exactly its tax, in its currency and its INR view. The twin
- * of core `taxOnlyDebitNote` (never rounded) and of the note freeze's WHERE (`noteIssueTail`), all three from `taxOnlyNoteExactSql`. OPEN (08-C RA-33): may a
- * tax-only debit note's total be rounded to the nearest rupee, and in which direction? Not rounding (the engine's "none" mode) invents no direction and never puts
+ * of core `taxOnlyDebitNote` (never rounded) and of the note freeze's WHERE (`noteIssueTail`), all three from `taxOnlyNoteExactSql`. Settled by the lead on the safest reading, 2026-10-30 (08-C RA-33): never
+ * rounded: round-off 0, the total is its tax. Not rounding (the engine's "none" mode) invents no direction and never puts
  * the total below the tax.
  */
 export function taxOnlyNoteTriggerStatements(): string[] {

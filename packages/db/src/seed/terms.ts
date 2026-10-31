@@ -2,7 +2,7 @@
 // word for word. Every line comes from approved copy (docs/07 5.3 and 5.5); no placeholders. Insert-only like the rest of the seed: a terms row the
 // owner has already saved as version 1 is never replaced, and a later version the owner writes is never touched.
 //
-// OPEN (08-C RB-38): the text, Ownership (Copyright Act s.19) and the GST line; GST at 18 %: Researched 2026-10-28 (08-C RA-16).
+// The versions in this file are superseded once T6 adds terms v4, whose four new clauses (07-ZE) are OPEN (08-C RB-38(c)): commercial choices, no statute read. Ownership passes by a one-page deed of assignment on full payment, signed by the owner with Aadhaar eSign (07-ZE line 16, T11): Researched 2026-10-31, Copyright Act s.19(1) (08-C RB-38(a)). GST at 18 %: Researched 2026-10-28 (08-C RA-16).
 // THE OWNER CONFIRMS: the warranty line (item 4, "fixed free for 30 days after launch"); docs/07 5.5 item 8 is still marked for the owner.
 export const PROPOSAL_TERMS_V1_OWNER_CONFIRMS = "warranty";
 
@@ -20,7 +20,7 @@ export const PROPOSAL_TERMS_V1_SHA256 = "b22d7bddec58c7f45a0cc3997e387e5c292ffc3
 
 /**
  * The second seeded proposal terms (FX-5; 07-Y items 1 and 2, approved by the owner on 2026-10-29, docs/13): version 1 with the owner's interim
- * Ownership clause (Researched 2026-10-29, Copyright Act ss.17, 19 (08-C RB-38); OPEN (08-C RB-38): the lawyer's final assignment wording) and the
+ * Ownership clause (Researched 2026-10-29, Copyright Act ss.17, 19 (08-C RB-38); Researched 2026-10-31, Copyright Act s.19(1) (08-C RB-38(a)): a one-page deed of assignment on full payment, signed by the owner with Aadhaar eSign (07-ZE line 16, T11; a one-off lawyer review of the deed is wise)) and the
  * GST line that no longer says "for Indian clients" (IGST can fall on an overseas client too; 08-C RB-38, RA-16, RA-18). Every other line is
  * version 1's, word for word. Documents already sent keep the version they pinned. The seed adds it as the NEXT version of the proposal terms,
  * once (by its SHA-256), only while the newest proposal terms row is the seeded version 1 (FX-5 review M2); an owner's later version is never
@@ -44,8 +44,8 @@ export const PROPOSAL_TERMS_V2_SHA256 = "7493354ab0e8dd4ae1a1f748c555d65f057d8c7
  * valid" becomes "This proposal or estimate is valid" in Validity (item 6). Every other word is version 2's. Documents already sent keep the
  * version they pinned. The seed adds it as the NEXT version, once, only while the newest proposal terms row is the seeded version 2; an
  * owner's own later version is never followed. The Ownership and GST lines are version 2's word for word, with its tags: Researched
- * 2026-10-29, Copyright Act ss.17, 19 (08-C RB-38); OPEN (08-C RB-38): the lawyer's final assignment wording (the lead settles it on the safest
- * reading under the owner's 2026-10-30 no-CA decision, docs/13).
+ * 2026-10-29, Copyright Act ss.17, 19 (08-C RB-38); Researched 2026-10-31, Copyright Act s.19(1) (08-C RB-38(a)): a one-page deed of assignment
+ * on full payment, signed by the owner with Aadhaar eSign (07-ZE line 16, T11; a one-off lawyer review of the deed is wise).
  */
 export const PROPOSAL_TERMS_V3 = [
   "1. **Scope and price.** The price covers the written scope. If you want something new, we quote it before doing it, and you decide. We don't bill for our own estimating mistakes.",

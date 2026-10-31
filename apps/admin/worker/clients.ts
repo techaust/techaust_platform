@@ -1000,7 +1000,7 @@ export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?
   },
   // The client's notes and file records, only where the erase would delete them: the contact is an individual client's last live
   // contact (`LAST_LIVE_INDIVIDUAL`; the manifest lists these two parts only then, and the SQL repeats the condition). Metadata only:
-  // never the file bytes or the R2 key. OPEN (08-C RB-36): the Act asks for a summary; file bytes on request or never?
+  // never the file bytes or the R2 key. Settled by the lead on the safest reading, 2026-10-30 (08-C RB-36): the export lists the files; their contents on request; for EU and UK persons a full copy (GDPR Art. 15(3)) with others' data redacted, by hand.
   notes: {
     sql: (cur) =>
       `SELECT n.id, n.body_md AS body, n.visibility, (SELECT code FROM projects WHERE id = n.project_id) AS project_code, n.created_at FROM notes n WHERE n.client_id = ?3 AND ${LAST_LIVE_INDIVIDUAL("n.client_id")}${cur ? " AND n.id > ?5" : ""} ORDER BY n.id LIMIT 51`,
