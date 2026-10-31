@@ -1,4 +1,4 @@
-Status: main session's send-back fixed; checks running
+Status: PR READY https://github.com/techaust/techaust_platform/pull/129
 Tier: C (comments and one register section; no logic, no copy)
 Usage: builder claude-opus-5-5/high, 2026-10-31 07:37Z, skills: none (flagged by model-audit; none of docs/14 §9 fits a comment-only retag, and the cloudflare skills don't load in a cloud session; lead accepts); reviewer claude-opus-5-5/high, 2026-10-31, skills: code-review (its read-only helper on Opus 5.5); 5-h reading 8 % at 12:58 IST
 
@@ -215,6 +215,7 @@ The main session reviewed PR #129 and found that the owner-approved [07-ZE](../0
 - **RB-35:** no code tag had been retagged. §5 now lists (a) and (b) as OPEN.
 - **08-C §5:** RB-21 (whole item, with the lead's practice as the "meanwhile" note), RB-23, RB-35 (a), RB-35 (b) and RB-38 (c) moved to "Still OPEN". RB-38 (a) stays in the settled table, marked "Researched 2026-10-31, Copyright Act s.19(1)". The RB-38 (MCIA) line is gone: the owner kept the Kolkata seat after T6's check (MCIA Rules r.30.1; docs/13, 2026-10-31), and that is noted under RB-38 (c). The intro now states the rule: a row settled only in part keeps its open part OPEN.
 - `origin/main` (#128) merged in.
+- Checks at 03cbe0b: `bash tools/heavy.sh --log t12-core pnpm --filter @techaust/core test` exit 0 (91 files, 1,861 tests, verify-tags included); `bash tools/heavy.sh --log check pnpm check` exit 0. The full `pnpm test` last ran at 656db58 (8,894 passed); since then only comments and main's docs-only #128 have changed.
 - **Flag for the main session:** every other settled tag still rests on the settle-08c table (2026-10-30), because most of those 08-C rows still read "OPEN" and T12 may not edit rows. Items: RA-04 (Q38), RA-10, RA-19 (Q37), RA-21 (Q24), RA-23, RA-32, RA-33, RA-34, RB-02, RB-03, RB-05, RB-12, RB-18, RB-27, RB-36, RB-37. 07-ZE doesn't cover them. If "settled" should mean "the row says so", these would revert too; say so and I will revert them.
 
 ## Integration notes
