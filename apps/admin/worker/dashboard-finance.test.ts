@@ -6,10 +6,14 @@ import { issueDateOf } from "@techaust/core/invoices";
 import { COLLECTED_SQL, COLLECTED_TILE_SQL, PENDING_PAYMENTS_COUNT_SQL } from "@techaust/db/ledger";
 import {
   EXPORT_NEXT_SQL,
+  EXPORT_STAGE_COUNTS_GROUPED_SQL,
   EXPORT_STAGE_COUNTS_SQL,
+  INVOICED_GROUPED_SQL,
   INVOICED_SQL,
   OVERDUE_OLDEST_SQL,
+  OWED_GROUPED_SQL,
   OWED_SQL,
+  PROFORMAS_AWAITING_GROUPED_SQL,
   PROFORMAS_AWAITING_SQL,
 } from "@techaust/db/reports";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -288,7 +292,7 @@ describe("what the finance statements read", () => {
     const month = `${today.slice(0, 7)}-01`;
     const fyTo = `${Number(fyFrom.slice(0, 4)) + 1}-03-31`;
     const stmts = [
-      db.prepare(INVOICED_SQL).bind(fyFrom, `${Number(fyFrom.slice(0, 4)) + 1}-03-31`, month),
+      db.prepare(INVOICED_SQL).bind(fyFrom, fyTo, month),
       db.prepare(OWED_SQL).bind(today),
       db.prepare(OVERDUE_OLDEST_SQL).bind(today),
       db.prepare(PROFORMAS_AWAITING_SQL),
@@ -302,24 +306,58 @@ describe("what the finance statements read", () => {
     const all = results.map((r) => r.meta.rows_read as number);
     const reads = all.slice(0, 6);
     const ledger = all.slice(6);
-    // Measured at 2,000 documents, all of them open and issued this financial year (the worst case): an index entry and its row each count, so the invoiced and the
-    // owed figures read about two rows a document each, and the oldest overdue, the proformas and the exports read almost nothing. The target, restated by the
-    // lead after the early check (2026-10-28), is at most 9,000 rows at 2,000 documents (8,441 measured at the start of M5.5b; no covering index: it cannot cover the
-    // invoiced figure and adds rows written; no snapshot: LD80, the figure stays live). A regression test, so a new statement or a lost index fails here.
+    // Measured at 2,000 documents, all of them open and issued this financial year, each with one confirmed payment, and 20 payments waiting (the worst case).
+    // L33 (M6.1): every finance figure is one pass with no GROUP BY b-tree (D1 counts each row a temporary b-tree takes in and gives back, and a covering
+    // index does not help: it counts index entries). Measured 2026-10-31, before and after:
+    //   invoiced 4,000 -> 2,002, owed 4,003 -> 2,005, oldest overdue 19, proformas 2, export stages 228 -> 115, next exports 115, Collected 2,004,
+    //   payments to check 20: 10,391 -> 6,282 in all (this test alone; with the file's earlier fixtures in the same database, 6,354).
+    // The target (lead, 2026-10-28, restated for M6.1 by L33) is at most 9,000 rows at 2,000 documents for the whole finance tile, the ledger reads included.
+    // No snapshot (LD80: the figures stay live). A regression test, so a new statement, a lost index or a GROUP BY that comes back fails here.
     expect(
-      reads.reduce((a, b) => a + b, 0),
-      JSON.stringify(reads),
+      all.reduce((a, b) => a + b, 0),
+      JSON.stringify(all),
     ).toBeLessThanOrEqual(9_000);
+    expect(reads[0], `invoiced: one row a document (${JSON.stringify(all)})`).toBeLessThanOrEqual(2_000 + 30);
+    expect(reads[1], `owed: one row a document (${JSON.stringify(all)})`).toBeLessThanOrEqual(2_000 + 30);
     expect(reads[2], "the oldest overdue reads a handful of rows, not every overdue one").toBeLessThanOrEqual(
       30,
     );
-    // M6.1 (early check 2, finding 6): with one confirmed payment per invoice (2,000 in this FY) and 20 waiting, "Collected" reads one row per payment of the
-    // FY in one pass (no GROUP BY b-tree, which doubled it: 1,960 + 4,000 rows for the month and the FY as two grouped statements), and the Owner's count
-    // one row per waiting entry. Measured 2,004 + 20 (2026-10-31). With the six statements above (8,367) the tile reads 10,391 rows at this worst case:
-    // above the 9,000 target, so the run file asks the lead (no snapshot under LD80, and the covering index the early check suggested does not lower D1's
-    // count: D1 counts index entries, not table lookups).
+    // the 100 USD exports, each read once (with its settings and extension seeks), never twice through a b-tree (228 grouped)
+    expect(reads[4], `export stages: one row an export (${JSON.stringify(all)})`).toBeLessThanOrEqual(
+      100 + 30,
+    );
+    // M6.1 (early check 2, finding 6): "Collected" reads one row per payment of the FY in one pass, and the Owner's count one row per waiting entry.
     expect(ledger[0], JSON.stringify(all)).toBeLessThanOrEqual(2_000 + 10);
     expect(ledger[1], JSON.stringify(all)).toBeLessThanOrEqual(20 + 5);
+    // L33: the one-pass figures give exactly what their grouped twins give on this fixture
+    for (const [i, twinSql, binds] of [
+      [0, INVOICED_GROUPED_SQL, [fyFrom, fyTo, month]],
+      [1, OWED_GROUPED_SQL, [today]],
+      [3, PROFORMAS_AWAITING_GROUPED_SQL, []],
+      [4, EXPORT_STAGE_COUNTS_GROUPED_SQL, [today]],
+    ] as const) {
+      expect(results[i]?.results, String(i)).toEqual(
+        (
+          await db
+            .prepare(twinSql)
+            .bind(...binds)
+            .all()
+        ).results,
+      );
+    }
+    expect((results[0]?.results ?? []).length, "both currencies invoiced").toBe(2);
+    expect((results[4]?.results ?? []).length, "the exports sit in some stage").toBeGreaterThan(0);
+    const financePlans = await Promise.all(
+      [
+        db.prepare(`EXPLAIN QUERY PLAN ${INVOICED_SQL}`).bind(fyFrom, fyTo, month),
+        db.prepare(`EXPLAIN QUERY PLAN ${OWED_SQL}`).bind(today),
+        db.prepare(`EXPLAIN QUERY PLAN ${PROFORMAS_AWAITING_SQL}`),
+        db.prepare(`EXPLAIN QUERY PLAN ${EXPORT_STAGE_COUNTS_SQL}`).bind(today),
+      ].map(async (s) =>
+        ((await s.all<{ detail: string }>()).results ?? []).map((r) => r.detail).join(" | "),
+      ),
+    );
+    for (const p of financePlans) expect(p).not.toContain("GROUP BY");
     const plans = await Promise.all(
       [
         db.prepare(`EXPLAIN QUERY PLAN ${COLLECTED_TILE_SQL}`).bind(fyFrom, fyTo, month, today),

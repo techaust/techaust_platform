@@ -1,6 +1,14 @@
 // Pure SQL text of the tax rules that both the issue statements (`issue.ts`, a Worker module) and the generated triggers (`triggers.ts`, also read by the
 // Node-only script `scripts/write-triggers.ts`) use. No D1 types and no imports, so either side can take it. `issue.ts` re-exports every name.
 
+/**
+ * The currencies a document or a payment can be in: the schema's `CURRENCY_CODES` (the CHECK constraints `documents_currency`, `payments_currency`), kept here
+ * as plain text so Worker SQL needs no drizzle import. The dashboard's one-pass figures (`INVOICED_SQL`, `OWED_SQL`, `PROFORMAS_AWAITING_SQL`, the ledger's
+ * `COLLECTED_TILE_SQL`) have one column set per currency in this list, so a db test pins it to `CURRENCY_CODES` and to the installed CHECK constraints: a new
+ * currency added to one and not the other fails there, never silently drops its row.
+ */
+export const SQL_CURRENCIES = ["INR", "USD"] as const;
+
 /** The first IST day a credit note for "Discount after sale" may be dated (core `DISCOUNT_AFTER_SALE_FROM`: a test compares the two; Researched 2026-10-28, 08-C RA-02). */
 export const DISCOUNT_AFTER_SALE_FROM_SQL = "2026-11-01";
 

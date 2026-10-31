@@ -67,6 +67,19 @@ export const stageSql = (alias: string, p: RealisationSql): string => {
     ELSE 'ok' END`;
 };
 
+/**
+ * Every stage `stageSql` can give, in its order (core `RealisationStage`; a db test pins the list to the `THEN` literals of `stageSql` and to core's type). The
+ * dashboard's stage counts (`EXPORT_STAGE_COUNTS_SQL`) have one column per stage in this list.
+ */
+export const EXPORT_STAGES = [
+  "realised",
+  "gst_overdue",
+  "gst_approaching",
+  "fema_overdue",
+  "fema_approaching",
+  "ok",
+] as const;
+
 /** The four stages that ring a bell and send an email (the others are quiet). */
 export const ALERT_STAGES = ["fema_approaching", "fema_overdue", "gst_approaching", "gst_overdue"] as const;
 export type AlertStage = (typeof ALERT_STAGES)[number];
