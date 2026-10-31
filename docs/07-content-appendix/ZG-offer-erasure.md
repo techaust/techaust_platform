@@ -1,6 +1,6 @@
 # 07-ZG: erasing a person's details from never-accepted offers (T7)
 
-Status: lines 1–3 **APPROVED by the owner, 2026-10-31** (as drafted); line 4 waits for the owner. Change a line here first, then in the code. Lines in `{braces}` are filled in by the screen. All three lines are staff-facing (admin only); the portal gets no new wording, because an erased offer simply disappears from it.
+Status: **APPROVED by the owner, 2026-10-31** (lines 1–3 and line 4, all as drafted). Change a line here first, then in the code. Lines in `{braces}` are filled in by the screen. All three lines are staff-facing (admin only); the portal gets no new wording, because an erased offer simply disappears from it.
 
 Context: when you anonymise a person (Clients › contact › Erase or anonymise), every proposal or estimate that was sent to them but **never accepted** loses their name, email and address, and its PDF is deleted (08-C RB-37(a)). The number, status, dates and amounts stay. Accepted offers and every invoice stay exactly as they are.
 
@@ -13,5 +13,5 @@ Context: when you anonymise a person (Clients › contact › Erase or anonymise
 
 The existing anonymise confirmation (07-J) stays as it is: it already says the details are removed "wherever we can" and that issued invoices and acceptances keep what the law requires.
 
-4. Admin, the audit log's label for the new action `document.redact` (added 2026-10-31, **waiting for the owner**; "[Placeholder]" until approved): "erased personal details from a proposal or estimate"
+4. Admin, the audit log's label for the new action `document.redact` (added 2026-10-31, approved by the owner 2026-10-31): "erased personal details from a proposal or estimate"
    - **Recommended: as written.** (It sits next to "viewed a proposal or estimate".)
