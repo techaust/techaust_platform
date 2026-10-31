@@ -31,7 +31,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 ## Waits on the owner
 - **Now:** archive the T12 and T6 cloud sessions (sidebar › right-click › Archive); keep this main conversation open in the Code tab while the sessions run (the watcher and heartbeat live in it).
 - **Start early (so launch day doesn't slip; the lead gives click-by-click steps when each comes up):**
-  - **Razorpay, Stripe and PayPal** test accounts and **test keys** (M6.2–M6.4); live approval can take days to weeks;
+  - **Razorpay, Stripe and PayPal** test accounts: [payment-gateways runbook](runbooks/payment-gateways.md) Part A now (the keys themselves at each milestone, Part B); live approval can take days to weeks;
   - **SES production access** and a production IAM user; **the AWS backup bucket** (and for T5 the S3 bucket in Mumbai); sign the AWS MCP in to the TecHaust account first;
   - **website inputs:** a new headshot, bio facts, the email aliases (hello, billing, no-reply, security, privacy), the launch date; the company LinkedIn page URL, WhatsApp Business number, Cal.com link, 2–3 case-study briefs, one social handle per platform, the 3 blog drafts.
 - **Dated duties** (steps in [settle-08c](runs/settle-08c.md)): **by 13 November** the October IFF if an October credit note relies on it; **before the next export invoice** the FY 2026-27 LUT (ARN in Settings › Tax); **by 30 November** the October EDF if any export invoice was raised in October; **monthly** reverse charge on foreign services; **every April** the turnover check; **once** the Offline Tool test import, the CERT-In point of contact, the trademark search (classes 9, 35, 42).
