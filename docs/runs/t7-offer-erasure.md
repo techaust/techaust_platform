@@ -1,7 +1,7 @@
 # Run: T7, erase a person's data in the frozen copies of never-accepted offers
-Status: early check CHANGE, fix builder running (branch fix/t7-offer-erasure-b2); all owner questions answered (Q1, Q2, 07-ZG 1–4)
+Status: designer running (screens for 07-ZG 1–3); early-check fixes merged; all owner questions answered
 Tier: A (deleting or anonymising data; docs/14 §2)
-Usage: lead claude-opus-5-5/high (cloud session t7-erasure); analyst claude-opus-5-5/high (brief draft; skills: tried `cloudflare:workers-best-practices` and `cloudflare:wrangler`, both "Unknown skill" in the cloud session although model-audit lists them; 5-h 8 % at 12:58 IST); builder claude-opus-5-5/high (agent-ac9b3fbc, layers to the Tier A stop point, 13:25–14:16 IST; same two skills tried, both unknown; 5-h 46 % at 13:46 IST); analyst claude-opus-5-5/high (agent-af81419a, early check; tried the two skills and `cloudflare:workers-profiling`, all unknown)
+Usage: lead claude-opus-5-5/high (cloud session t7-erasure); analyst claude-opus-5-5/high (brief draft; skills: tried `cloudflare:workers-best-practices` and `cloudflare:wrangler`, both "Unknown skill" in the cloud session although model-audit lists them; 5-h 8 % at 12:58 IST); builder claude-opus-5-5/high (agent-ac9b3fbc, layers to the Tier A stop point, 13:25–14:16 IST; same two skills tried, both unknown; 5-h 46 % at 13:46 IST); analyst claude-opus-5-5/high (agent-af81419a, early check; tried the two skills and `cloudflare:workers-profiling`, all unknown); builder claude-opus-5-5/high (agent-ab068a97, early-check fixes, 14:16–14:39 IST; same three skills tried, all unknown; 5-h 68 % at 14:16)
 
 **Task (main session, 2026-10-31):** 08-C RB-37(a), settled by the lead on the safest reading (2026-10-30, [settle-08c](settle-08c.md)): on an erasure request, erase the person's data in the frozen copy of every proposal or estimate that was **never accepted**; keep the number, status, dates and hash. Accepted offers and every invoice-family document stay untouched (financial records). Due before 13 May 2027 (DPDP core duties).
 
@@ -252,6 +252,9 @@ Accepted offers and the invoice family; serving an anonymised client's accepted-
 **Open questions**
 - None blocking. For the lead: update 07-ZG's status line for line 4, and (13) the rule "a redacted offer is redacted again when a later erasure names another person; each erasure writes its own `document.redact` row".
 
+## Integration notes (early-check fixes)
+Merged `fix/t7-offer-erasure-b2` (10db1e94) into the task branch with no conflict. The lead did not re-run the suites at the merge; the reviewer's run and the final `pnpm check` + `pnpm test` cover it. No separate analyst re-check: the reviewer checks the regenerated 0057 in full (lead).
+
 ## Designer report
 
 ## Review
@@ -259,6 +262,7 @@ Accepted offers and the invoice family; serving an anonymised client's accepted-
 ## Integration notes
 
 ## Lead decisions (for 13)
+- 2026-10-31, Lead (fix builder's differences, accepted): each erasure writes its own `document.redact` row; the batch also guards each offer's `redacted_at` as read; the stamp is `max(now, newest read + 1)`; a child row's stamp equals its parent's.
 - 2026-10-31, **Owner** (T7 Q2): 07-ZG line 4 approved word for word: the audit label of `document.redact` is "erased personal details from a proposal or estimate". Applied: `apps/admin/src/lib/audit.ts`.
 - 2026-10-31, Lead (early-check triage): a never-accepted offer's redaction can run again when a later erasure names another person on it (`redacted_at` only moves forward); whole-word redaction ignores case, in the stored copy and in the view of accepted offers; an individual client's own name in the recipient block is redacted when its matching contact is anonymised, the rest of its details when the client itself is.
 - 2026-10-31, Lead (builder's Q-B2): erasing details from an open offer cancels every send of it that has no link yet, queued-but-unprocessed ones included (the "Revoke links" rule), so no email goes out about a withdrawn offer. The builder's other differences from the brief (D1–D14 in the Builder report) are accepted, subject to the early check.
