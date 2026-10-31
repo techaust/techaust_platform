@@ -1,4 +1,4 @@
-Status: fixes done; re-check and full checks running
+Status: PR opening
 Tier: C (comments and one register section; no logic, no copy)
 Usage: builder claude-opus-5-5/high, 2026-10-31 07:37Z, skills: none (flagged by model-audit; none of docs/14 §9 fits a comment-only retag, and the cloudflare skills don't load in a cloud session; lead accepts); reviewer claude-opus-5-5/high, 2026-10-31, skills: code-review (its read-only helper on Opus 5.5); 5-h reading 8 % at 12:58 IST
 
@@ -209,6 +209,9 @@ Findings (the reviewer's wording, condensed):
 Note: M1's text suggested a bare "VERIFY WITH CA/LEGAL" mark; it was not written anywhere (the tag test forbids it).
 
 ## Integration notes
+- `fix/t12-retag-r1` was fast-forwarded into the branch. The review fixes and re-check fixes were made by the lead (comments and §5 only).
+- At 656db58: `bash tools/heavy.sh --log check pnpm check` exited 0. `bash tools/heavy.sh --log test pnpm test` exited 0: 389 test files, 8,894 tests passed and 19 skipped (admin 3,493, core 1,861, web 714, portal 651, jobs 549, db 514, ui 471, pdf 376, auth 135, email 130).
+- Migrations: none. Worker bytes: not re-measured; the change is comments only (main: admin API 618,422, jobs 984,266).
 
 ## Lead decisions (for 13)
 - 2026-10-31, Lead (T12): the settled tag uses the settle-08c date 2026-10-30, and the reading comes from the settle-08c table because the 08-C rows may not be edited in T12 (T6 and T7 edit them). Questions added to rows on 2026-10-31 by rt1 and rt2 (RA-04 3B period, RA-22 proviso, RA-31 IFF, RB-39 Udyam format) stay OPEN.
