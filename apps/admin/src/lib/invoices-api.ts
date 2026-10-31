@@ -584,6 +584,12 @@ export type AdvanceInput = {
   confirmInrExport?: true;
   /** Step 5 contract (Q37): the route of this payment's invoice; omitted = the proforma's. `igst` on an LUT proforma issues it with IGST 18 %. */
   route?: "lut" | "igst";
+  /** M6.1 (L5, 07-ZH line 12): the pending entry Staff recorded, confirmed by this invoice (same amount, day and reference). */
+  paymentId?: string;
+  /** M6.1: how a new payment was made; ignored with `paymentId`. */
+  mode?: "neft" | "rtgs" | "imps" | "upi" | "swift";
+  /** M6.1: after 409 `reference_seen` (07-ZH line 13), when it is a different payment. */
+  confirmDuplicate?: true;
 };
 
 /** The rate a person enters (07-S §4); `noRateThatDay` (step 5 contract, S §8) says no rate was published on the document's own day. */

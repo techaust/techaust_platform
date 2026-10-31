@@ -1063,6 +1063,8 @@ export class RequestError extends Error {
       reason?: string;
       /** FX-5: 400 `terms_due_days_mismatch`, the days the terms state that differ (`stated`) and Settings › Payment terms' days (`dueDays`). */
       termsDueDays?: { stated: number[]; dueDays: number };
+      /** M6.1: the payment routes' `error.details`, its plain values only (`femaDue`, `latest`, `documentId`, `balanceMinor`, `receivedOn`). */
+      details?: Record<string, string | number>;
     } = {},
   ) {
     super(message);
@@ -1200,11 +1202,20 @@ async function send<T>(path: string, { method, body, raw, signedIn = true }: Opt
       ...(fy !== undefined ? { fy } : {}),
       ...(typeof details.reason === "string" ? { reason: details.reason } : {}),
       ...(termsDueDays ? { termsDueDays } : {}),
+      ...(Object.keys(plainDetails(details)).length > 0 ? { details: plainDetails(details) } : {}),
     },
   );
   if (signedIn && res.status === 401 && e.code === "unauthenticated") unauthenticatedHandler?.();
   throw error;
 }
+
+/** The string and number values of an error's `details` (nested objects are left out). */
+const plainDetails = (d: Record<string, unknown>): Record<string, string | number> =>
+  Object.fromEntries(
+    Object.entries(d).filter(
+      (e): e is [string, string | number] => typeof e[1] === "string" || typeof e[1] === "number",
+    ),
+  );
 
 const strings = (xs: unknown[]): string[] => xs.filter((x): x is string => typeof x === "string");
 

@@ -47,6 +47,7 @@ import type {
   InvoiceType,
   InvoiceView,
 } from "./invoices-api.ts";
+import { VOID_PAYMENT_PENDING, VOID_PAYMENT_RECORDED } from "./payments.ts";
 import { bpToPercent, moneyInput } from "./settings-form.ts";
 
 export { moneyText };
@@ -574,6 +575,10 @@ export const invMapped = (e: unknown): unknown =>
 export function voidBlockedText(codes: readonly string[], type?: string): string | null {
   if (codes.length === 0) return null;
   if (codes.includes("already_void")) return INV_ERRORS.already_void;
+  // M6.1: a payment waiting for the owner's check (07-ZH line 21, approved) says so first: rejecting it is the way on, for an invoice or a proforma.
+  if (codes.includes("payment_pending")) return VOID_PAYMENT_PENDING;
+  // M6.1 (second early check): a payment put on the invoice, even one withdrawn later (07-ZH line 77, marked until approved).
+  if (codes.includes("payment_recorded") && type !== "proforma") return VOID_PAYMENT_RECORDED;
   // A proforma has no credit note and no return period (LD28): what stops its void is a payment recorded against it, or (from M5.4) that it was
   // emailed (07-S §8).
   // FX-5 (owner decision 2026-10-30, 08-C RA-10): a document the client opened in the portal says so, unless a payment, a credit or an issued child
@@ -599,6 +604,8 @@ export function voidBlockedText(codes: readonly string[], type?: string): string
  * document's own (07-Z §1), so a proforma never shows the invoice's "Use a credit note instead."
  */
 export function voidErrorText(e: unknown, type?: string): string {
+  if (e instanceof RequestError && (e.code === "payment_pending" || e.code === "payment_recorded"))
+    return voidBlockedText([e.code], type) ?? invErrorText(e);
   if (e instanceof RequestError && e.code === "viewed_by_client")
     return voidBlockedText([e.code], type) ?? invErrorText(e);
   // A proforma refused for a payment or a converted invoice (the server ranks those above a view): its own line, never the invoice's credit note

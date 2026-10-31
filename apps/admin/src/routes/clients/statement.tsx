@@ -282,7 +282,8 @@ export function StatementTab(props: {
                   header: C.document,
                   card: "title",
                   cell: (r) =>
-                    r.kind === "receipt" ? (
+                    // a payment or a TDS line is not a document (M6.1): its number is plain text, never an invoice link
+                    r.kind === "receipt" || r.kind === "tds" ? (
                       <span className="docno">{r.number}</span>
                     ) : (
                       <Link to={documentHref(r.id)} className="docno report-doclink">
@@ -326,7 +327,6 @@ export function StatementTab(props: {
           {page.state === "ready" && (
             <div className="report-notes">
               <p className="hint report-note">{STATEMENT_COPY.proformasNote}</p>
-              <p className="hint report-note">{STATEMENT_COPY.paymentsNote}</p>
             </div>
           )}
 

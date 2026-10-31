@@ -9,10 +9,11 @@
 // the words in semibold, word for word as frozen); the screens show the same band in the same words, so what the Owner reads here is what the client
 // will read. Everything else stays in the existing panels, facts and dialogs.
 import { issueDateOf } from "@techaust/core/invoices";
+import type { Role } from "@techaust/core/permissions";
 import { TERMS_BLOCKS } from "@techaust/core/terms";
 import { useState } from "react";
 import { Link } from "react-router";
-import { RequestError, stepUpActive } from "../../api.ts";
+import { paymentsApi, RequestError, stepUpActive } from "../../api.ts";
 import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
 import { FormField, Switch } from "../../components/form.tsx";
@@ -46,7 +47,9 @@ import {
 } from "../../lib/invoice-types.ts";
 import { blockerLine, INV_COPY, invErrorText, issuedToast, typeLabel, UNKNOWN } from "../../lib/invoices.ts";
 import { type InvoiceBlocker, type InvoiceView, invoicesApi } from "../../lib/invoices-api.ts";
+import { PAY_COPY, PAY_UI, payErrorText, plainAmount } from "../../lib/payments.ts";
 import { withCode } from "../../lib/step-up.ts";
+import { PaymentsPanel } from "../payments/panel.tsx";
 import { BlockerList } from "./dialogs.tsx";
 import { invoiceHref } from "./parts.tsx";
 
@@ -558,10 +561,12 @@ export function AdvanceOrigin({ view }: { view: InvoiceView }) {
 // ---- the proforma (read) ----------------------------------------------------------------------------------------------------------------------------
 
 /** An issued proforma: its notice, what has come in and what is left, the tax invoices issued from it, the 25-day warning, and the Owner's action. */
-export function ProformaPanel(props: { view: InvoiceView; onIssued: () => void }) {
+export function ProformaPanel(props: { view: InvoiceView; onIssued: () => void; role?: Role | undefined }) {
   const v = props.view;
   const p = v.proforma;
   const [open, setOpen] = useState(false);
+  // M6.1 (L5, 07-ZH line 12): the waiting entry the Owner confirms by issuing the tax invoice for it.
+  const [prefill, setPrefill] = useState<AdvancePrefill | null>(null);
   if (!p) return null;
   const late = p.warnAt !== null && Date.now() >= p.warnAt && v.number;
   // The client's GST details changed after the proforma (review 2, 6): the server would refuse, so the action is shown disabled with the reason.
@@ -576,7 +581,10 @@ export function ProformaPanel(props: { view: InvoiceView; onIssued: () => void }
           <button
             type="button"
             className="btn btn--primary"
-            onClick={() => setOpen(true)}
+            onClick={() => {
+              setPrefill(null);
+              setOpen(true);
+            }}
             disabled={supplyChanged}
             aria-describedby={supplyChanged ? "inv-pf-supply" : undefined}
           >
@@ -628,6 +636,7 @@ export function ProformaPanel(props: { view: InvoiceView; onIssued: () => void }
         <AdvanceDialog
           open={open}
           view={v}
+          prefill={prefill}
           onClose={() => setOpen(false)}
           onIssued={() => {
             setOpen(false);
@@ -639,6 +648,55 @@ export function ProformaPanel(props: { view: InvoiceView; onIssued: () => void }
   );
 }
 
+/** M6.1 (L5, 07-ZH line 12): a proforma's waiting entries under its panel; "Confirm by issuing the tax invoice" opens the advance dialog with the entry. */
+export function ProformaPayments(props: { view: InvoiceView; role: Role; onIssued: () => void }) {
+  const v = props.view;
+  const p = v.proforma;
+  const [prefill, setPrefill] = useState<AdvancePrefill | null>(null);
+  if (!p) return null;
+  const can = p.canAdvance && p.advanceSupplyChanged !== true;
+  return (
+    <>
+      <PaymentsPanel
+        view={v}
+        role={props.role}
+        onChanged={props.onIssued}
+        onConfirmByAdvance={
+          can
+            ? (w) =>
+                setPrefill({
+                  paymentId: w.paymentId,
+                  amountMinor: w.amountMinor,
+                  receivedOn: w.receivedOn,
+                  reference: w.reference ?? "",
+                })
+            : undefined
+        }
+      />
+      {can && (
+        <AdvanceDialog
+          open={prefill !== null}
+          view={v}
+          prefill={prefill}
+          onClose={() => setPrefill(null)}
+          onIssued={() => {
+            setPrefill(null);
+            props.onIssued();
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+/** M6.1: a waiting entry the advance dialog confirms (its amount, day and reference are the entry's, read-only). */
+export type AdvancePrefill = {
+  paymentId: string;
+  amountMinor: number;
+  receivedOn: string;
+  reference: string;
+};
+
 /**
  * "Issue tax invoice for payment received" (07-S §6, Q9; the Owner, with a fresh code): the amount, the day and the bank's reference; a USD proforma also
  * takes the rate of the day the money came, and an INR export the explicit "Issue in INR". The server issues the invoice, already paid.
@@ -646,6 +704,7 @@ export function ProformaPanel(props: { view: InvoiceView; onIssued: () => void }
 export function AdvanceDialog(props: {
   open: boolean;
   view: InvoiceView;
+  prefill?: AdvancePrefill | null | undefined;
   onClose: () => void;
   onIssued: () => void;
 }) {
@@ -663,14 +722,32 @@ export function AdvanceDialog(props: {
 
 type AdvErrors = AdvanceErrors;
 
-function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: () => void }) {
+function AdvanceBody(props: {
+  view: InvoiceView;
+  prefill?: AdvancePrefill | null | undefined;
+  onClose: () => void;
+  onIssued: () => void;
+}) {
   const v = props.view;
   const p = v.proforma;
   const today = todayIso();
   const usd = v.currency === "USD";
   // Q8: the server's own answer when it sends one (review 2, 6); else the client on screen (an older API).
   const inrExport = p?.advanceNeedsInrConfirm ?? (v.client.gstStatus === "overseas" && v.currency === "INR");
-  const [form, setForm] = useState({ amount: "", date: today, reference: "" });
+  // M6.1 (L5): confirming a waiting entry, whose amount, day and reference are fixed (the server checks they match: `payment_mismatch`).
+  const [prefill, setPrefill] = useState<AdvancePrefill | null>(props.prefill ?? null);
+  const fixed = prefill !== null;
+  const [form, setForm] = useState(() =>
+    props.prefill
+      ? {
+          amount: plainAmount(props.prefill.amountMinor, v.currency),
+          date: props.prefill.receivedOn,
+          reference: props.prefill.reference,
+        }
+      : { amount: "", date: today, reference: "" },
+  );
+  // M6.1 (07-ZH line 13): a bank reference already recorded; with a waiting entry of it, the way on is to confirm that entry.
+  const [seen, setSeen] = useState<{ text: string; paymentId: string | null } | null>(null);
   const [fx, setFx] = useState<FxForm>(() => fxFormOf(null, today));
   // The rate is for the day the money came (Q9): its date follows "Date received" until the Owner picks one of its own (review 2, 1).
   const [fxDateOwn, setFxDateOwn] = useState(false);
@@ -734,6 +811,8 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
           ...(f?.ok ? { fx: f.value } : {}),
           ...(confirmInr ? { confirmInrExport: true as const } : {}),
           ...(igst ? { route: "igst" as const } : {}),
+          ...(prefill ? { paymentId: prefill.paymentId } : {}),
+          ...(seen && !seen.paymentId ? { confirmDuplicate: true as const } : {}),
         }),
       );
       // Q27: a payment from an earlier month is a warning, said with the result.
@@ -748,6 +827,13 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
       // The server asks for the INR yes the screen didn't know it needed (the client changed): ask it here, issue on the next press.
       if (e instanceof RequestError && e.code === "export_currency_confirm" && !confirmInr) {
         setConfirmInr(true);
+        return;
+      }
+      // M6.1 (07-ZH line 13): the reference was recorded before; a waiting entry of it can be confirmed here instead.
+      if (e instanceof RequestError && e.code === "reference_seen" && !prefill) {
+        const pid = e.extra.details?.paymentId;
+        setSeen({ text: payErrorText(e), paymentId: typeof pid === "string" ? pid : null });
+        refusal.show();
         return;
       }
       // Q37: no LUT for the payment's year; the choice is drawn and takes the focus (S §9).
@@ -784,7 +870,29 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
         if (!rateDate && rest.length > 0) refusal.show();
         return;
       }
-      setFailure(invErrorText(e));
+      setFailure(
+        e instanceof RequestError && (e.code === "payment_not_pending" || e.code === "payment_mismatch")
+          ? payErrorText(e)
+          : invErrorText(e),
+      );
+      refusal.show();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** The waiting entry named by a seen reference: read it, then the form takes its amount, day and reference (read-only). */
+  async function takeSeenPayment(paymentId: string) {
+    setBusy(true);
+    try {
+      const r = await paymentsApi.get(paymentId);
+      const pay = r.payment;
+      const reference = pay.reference ?? form.reference;
+      setPrefill({ paymentId, amountMinor: pay.amountMinor, receivedOn: pay.receivedOn, reference });
+      setForm({ amount: plainAmount(pay.amountMinor, v.currency), date: pay.receivedOn, reference });
+      setSeen(null);
+    } catch (e) {
+      setFailure(payErrorText(e));
       refusal.show();
     } finally {
       setBusy(false);
@@ -810,7 +918,7 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
       }}
     >
       <div className="dialog__body inv-advance">
-        <p>{INVT_COPY.advanceBody}</p>
+        <p>{fixed ? PAY_COPY.proformaLine : INVT_COPY.advanceBody}</p>
         <dl className="inv-facts">
           <div>
             <dt>{INV_COPY.colBalance}</dt>
@@ -826,6 +934,7 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
                   {...a}
                   inputMode="decimal"
                   autoComplete="off"
+                  readOnly={fixed}
                   value={form.amount}
                   onChange={(e) => setForm({ ...form, amount: e.target.value })}
                 />
@@ -833,16 +942,20 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
             )}
           </FormField>
           <FormField id="adv-date" label={INVT_COPY.dateReceived} error={errors.date}>
-            {(a) => (
-              <DateField
-                {...a}
-                {...dates.bind("date")}
-                value={form.date}
-                min={v.issueDate ?? undefined}
-                max={today}
-                onChange={setReceived}
-              />
-            )}
+            {(a) =>
+              fixed ? (
+                <input {...a} readOnly value={day(form.date)} className="tnum" />
+              ) : (
+                <DateField
+                  {...a}
+                  {...dates.bind("date")}
+                  value={form.date}
+                  min={v.issueDate ?? undefined}
+                  max={today}
+                  onChange={setReceived}
+                />
+              )
+            }
           </FormField>
         </div>
         <FormField id="adv-ref" label={INVT_COPY.paymentReference} error={errors.reference}>
@@ -852,8 +965,12 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
               maxLength={80}
               autoComplete="off"
               spellCheck={false}
+              readOnly={fixed}
               value={form.reference}
-              onChange={(e) => setForm({ ...form, reference: e.target.value })}
+              onChange={(e) => {
+                setForm({ ...form, reference: e.target.value });
+                setSeen(null);
+              }}
             />
           )}
         </FormField>
@@ -927,6 +1044,24 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
           </div>
         )}
         {confirmInr && <Notice tone="info">{INVT_COPY.inrConfirm}</Notice>}
+        {seen && (
+          <div className="pay-seen" role="alert" tabIndex={-1} ref={refusal.ref}>
+            <Alert size={20} />
+            <div className="pay-seen__body">
+              <p>{seen.text}</p>
+              {seen.paymentId && (
+                <button
+                  type="button"
+                  className="btn btn--secondary"
+                  disabled={busy}
+                  onClick={() => void takeSeenPayment(seen.paymentId as string)}
+                >
+                  {PAY_UI.confirmByIssuing}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
       {needsCode && (
         <CodeField
@@ -948,7 +1083,13 @@ function AdvanceBody(props: { view: InvoiceView; onClose: () => void; onIssued: 
           {INVT_COPY.cancel}
         </button>
         <button type="submit" className="btn btn--primary" disabled={busy} aria-busy={busy || undefined}>
-          {busy ? "Working…" : confirmInr ? INVT_COPY.issueInInr : INVT_COPY.advanceAction}
+          {busy
+            ? "Working…"
+            : confirmInr
+              ? INVT_COPY.issueInInr
+              : seen && !seen.paymentId
+                ? PAY_UI.recordAgain
+                : INVT_COPY.advanceAction}
         </button>
       </div>
     </form>
