@@ -60,14 +60,23 @@ export const REFERENCE_INVALID = e(
 // ---- 07-ZH lines 23–24 (lead, owner's delegation) -----------------------------------------------------------------------------------------------------------------
 
 export const ALREADY_RECORDED = e("already_recorded", "This payment is already recorded.");
-export const USE_PAYMENT_VERIFY = e("use_payment_verify", "Check this payment from Payments, not from Approvals.");
+export const USE_PAYMENT_VERIFY = e(
+  "use_payment_verify",
+  "Check this payment from Payments, not from Approvals.",
+);
 export const PAYMENT_NOT_CONFIRMED = e("payment_not_confirmed", "Only a confirmed payment can be withdrawn.");
-export const PAYMENT_ADVANCE_BACKED = e("payment_advance_backed", "A tax invoice was issued for this payment, so it can't be withdrawn. Correct it with a credit note.");
+export const PAYMENT_ADVANCE_BACKED = e(
+  "payment_advance_backed",
+  "A tax invoice was issued for this payment, so it can't be withdrawn. Correct it with a credit note.",
+);
 export const RECEIVED_ON_FUTURE = e("received_on_future", "The date received can't be after today.");
 export const CURRENCY_MISMATCH = e("currency_mismatch", "A payment must be in the client's currency.");
 export const CLIENT_MISMATCH = e("client_mismatch", "That invoice belongs to another client.");
 export const NOT_PAYABLE = e("not_payable", "A payment can go only on an issued invoice or debit note.");
-export const EXCEEDS_PAYMENT = e("exceeds_payment", "The amounts put on invoices add up to more than the payment.");
+export const EXCEEDS_PAYMENT = e(
+  "exceeds_payment",
+  "The amounts put on invoices add up to more than the payment.",
+);
 export const TDS_NOT_WHOLE = e("tds_not_whole", "A TDS amount goes on one invoice, in full.");
 export const TOO_MANY = e("too_many", "A payment can go on at most 10 invoices.");
 export const EXCEEDS_CREDIT = e("exceeds_credit", "This is more than the client's credit.");
@@ -77,18 +86,33 @@ export const NOT_TDS = e("not_tds", "Only a TDS entry has a certificate.");
 export const CERTIFICATE_ALREADY_SET = e("certificate_already_set", "The certificate is already recorded.");
 export const PROOF_ALREADY_SET = e("proof_already_set", "A proof is already attached to this payment.");
 export const LETTER_ALREADY_SET = e("letter_already_set", "The bank's letter is already attached.");
-export const PAYMENT_CLOSED = e("payment_closed", "This payment was rejected or withdrawn, so it can't change.");
-export const NOT_AN_EXPORT_INVOICE = e("not_an_export_invoice", "Only an issued export invoice has a realisation date.");
+export const PAYMENT_CLOSED = e(
+  "payment_closed",
+  "This payment was rejected or withdrawn, so it can't change.",
+);
+export const NOT_AN_EXPORT_INVOICE = e(
+  "not_an_export_invoice",
+  "Only an issued export invoice has a realisation date.",
+);
 /** 07-ZH line 24, with the current FEMA date. */
 export const extensionNotLater = (femaDue: string): ApiError =>
   e("extension_not_later", `The new last date must be after ${dayText(femaDue)}.`);
 /** 07-ZH line 24, with the latest allowed date. */
 export const extensionTooFar = (latest: string): ApiError =>
   e("extension_too_far", `The new last date can't be after ${dayText(latest)}.`);
-export const PAYMENT_MISMATCH = e("payment_mismatch", "The amount or date doesn't match the payment being confirmed.");
+export const PAYMENT_MISMATCH = e(
+  "payment_mismatch",
+  "The amount or date doesn't match the payment being confirmed.",
+);
 /** Early check 2, finding 3: `proforma_ask_whole` (07-ZH from line 23, the designer's draft): a payment asked for a proforma goes whole onto that one proforma. */
-export const PROFORMA_ASK_WHOLE = e("proforma_ask_whole", "A payment for a proforma goes on that proforma alone, in full.");
-export const LEDGER_CHANGED = e("ledger_changed", "The invoice's payments changed in the meantime. Reload and try again.");
+export const PROFORMA_ASK_WHOLE = e(
+  "proforma_ask_whole",
+  "A payment for a proforma goes on that proforma alone, in full.",
+);
+export const LEDGER_CHANGED = e(
+  "ledger_changed",
+  "The invoice's payments changed in the meantime. Reload and try again.",
+);
 // Proof and letter files (L10): PDF, JPEG or PNG, at most 5 MB, sniffed as the file vault does.
 export const PROOF_TOO_LARGE = e("file_too_large", "The file is larger than 5 MB.");
 export const PROOF_TYPE_NOT_ALLOWED = e("file_type_not_allowed", "Attach a PDF, JPEG or PNG file.");

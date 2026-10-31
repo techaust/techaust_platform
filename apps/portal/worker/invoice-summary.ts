@@ -329,7 +329,8 @@ export function summaryOf(r: SummaryRow, lines: readonly LineRow[], creditNotes:
     /** M6.1 (T8; Settled by the lead on the safest reading, 2026-10-30 (08-C RA-30)): the TDS the client deducted; it counts toward the balance. */
     tdsMinor: r.tds_minor,
     /** The TDS row of the summary (07-ZH line 18, client-facing, approved by the owner 2026-10-31); null when no TDS is recorded or the request was withdrawn. */
-    tdsRow: !withdrawn && r.tds_minor > 0 ? { label: TDS_ROW_LABEL, amount: text(r.tds_minor, r.currency) } : null,
+    tdsRow:
+      !withdrawn && r.tds_minor > 0 ? { label: TDS_ROW_LABEL, amount: text(r.tds_minor, r.currency) } : null,
     balanceMinor: withdrawn ? null : r.balance_minor,
     total: text(r.total_minor, r.currency),
     balance: withdrawn ? null : text(r.balance_minor, r.currency),
