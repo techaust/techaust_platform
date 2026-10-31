@@ -14,7 +14,7 @@ import { FormField } from "../../components/form.tsx";
 import { Pencil } from "../../components/icons.tsx";
 import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
-import { CodeField, FieldError, Notice } from "../../components/ui.tsx";
+import { CodeField, FieldError, Notice, useFieldError } from "../../components/ui.tsx";
 import { lineColumns } from "../../lib/documents.ts";
 import { INV_COPY, moneyText } from "../../lib/invoices.ts";
 import { invoicesApi } from "../../lib/invoices-api.ts";
@@ -52,7 +52,7 @@ import {
   notesApi,
 } from "../../lib/notes-api.ts";
 import { moneyInput } from "../../lib/settings-form.ts";
-import { withCode } from "../../lib/step-up.ts";
+import { isWrongCode, withCode } from "../../lib/step-up.ts";
 import { NoteBlockerList, NoteTotals } from "./notes-parts.tsx";
 
 const CODE_MISSING = "Enter the 6-digit code from your authenticator app.";
@@ -117,7 +117,7 @@ function NoteDialogBody(props: {
   const [saved, setSaved] = useState<NoteSaved | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [code, setCode] = useState("");
-  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeError, setCodeError, codeErrorKey] = useFieldError();
   const [busy, setBusyState] = useState(false);
   const needsCode = !stepUpActive();
   const asks = p.issue.decision === "approval";
@@ -230,8 +230,15 @@ function NoteDialogBody(props: {
     setBusy(true);
     try {
       const s = await save(built.fields);
+      // What still stops the issue, as the note's own view says it now (the draft page's list, polish sweep 2a): shown on the confirm step before
+      // any code is asked, so nobody types a code only to be refused. A view that can't be read leaves the list to the server's 409, as before.
+      const known = await invoicesApi.get(s.id).then(
+        (v) => v.blockers,
+        () => [],
+      );
       setSaved(s);
       setDraft({ id: s.id, updatedAt: s.updatedAt });
+      setBlockers(known);
       setStep("confirm");
       props.onStep();
     } catch (e) {
@@ -242,7 +249,7 @@ function NoteDialogBody(props: {
   }
 
   async function confirm() {
-    if (!saved) return;
+    if (!saved || blockers.length > 0) return;
     if (!asks && needsCode && code.length !== 6) {
       setCodeError(CODE_MISSING);
       document.getElementById(fieldId("code"))?.focus();
@@ -266,7 +273,7 @@ function NoteDialogBody(props: {
       props.onClose();
     } catch (e) {
       // A wrong code is the code field's own error (as in the step-up dialog and the data tools): cleared, said under it, and focused.
-      if (e instanceof RequestError && e.code === "invalid_code") {
+      if (isWrongCode(e)) {
         setCode("");
         setCodeError(e.message);
         document.getElementById(fieldId("code"))?.focus();
@@ -291,6 +298,7 @@ function NoteDialogBody(props: {
     );
 
   const primary = asks ? NOTE_COPY.requestIssue : issueLabel(kind);
+  const blocked = blockers.length > 0;
   const taxOnly = isTaxOnly(kind, form.reasonCode);
   const reason = (
     <FormField
@@ -507,7 +515,8 @@ function NoteDialogBody(props: {
           </div>
         )}
       </div>
-      {!asks && needsCode && (
+      {/* No code is asked while something still stops the issue: it couldn't be used (the invoice's issue dialog does the same). */}
+      {!asks && needsCode && !blocked && (
         <CodeField
           id={fieldId("code")}
           label="Authenticator code"
@@ -515,6 +524,7 @@ function NoteDialogBody(props: {
           value={code}
           onChange={setCode}
           error={codeError}
+          errorKey={codeErrorKey}
         />
       )}
       {formError && (
@@ -545,7 +555,7 @@ function NoteDialogBody(props: {
           type="button"
           className="btn btn--primary"
           onClick={() => void confirm()}
-          disabled={busy}
+          disabled={busy || blocked}
           aria-busy={busy || undefined}
         >
           {busy ? "Working…" : asks ? INV_COPY.sendRequest : issueLabel(kind)}

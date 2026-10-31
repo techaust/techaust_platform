@@ -24,7 +24,7 @@ import { Modal } from "../../components/dialog.tsx";
 import { VerifyNote } from "../../components/form.tsx";
 import { Download } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
-import { CodeField, FieldError, Notice } from "../../components/ui.tsx";
+import { CodeField, FieldError, Notice, useFieldError } from "../../components/ui.tsx";
 import {
   ERASE_REASON_LABELS,
   ERASE_REASONS,
@@ -35,7 +35,7 @@ import {
 import { TOO_MANY_OFFERS_LINE } from "../../lib/copy-zg.ts";
 import { sentence } from "../../lib/format.ts";
 import { lastContactLine } from "../../lib/projects.ts";
-import { withCode } from "../../lib/step-up.ts";
+import { isWrongCode, withCode } from "../../lib/step-up.ts";
 
 /** 07-J (approved), word for word. */
 export const EXPORT_EXPLAINER =
@@ -62,7 +62,7 @@ export function ExportDialog(props: { contact: ContactView | null; onClose: () =
   const c = props.contact;
   const [state, setState] = useState<ExportState>({ step: "ready" });
   const [code, setCode] = useState("");
-  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeError, setCodeError, codeErrorKey] = useFieldError();
   const [shown, setShown] = useState<string | null>(null);
   const cancelled = useRef(false);
   if ((c?.id ?? null) !== shown) {
@@ -121,7 +121,7 @@ export function ExportDialog(props: { contact: ContactView | null; onClose: () =
       setState({ step: "done", url: blobUrl, name, rows });
       download(blobUrl, name);
     } catch (e) {
-      if (e instanceof RequestError && e.code === "invalid_code") {
+      if (isWrongCode(e)) {
         setCode("");
         setCodeError(e.message);
         setState({ step: "ready" });
@@ -152,6 +152,7 @@ export function ExportDialog(props: { contact: ContactView | null; onClose: () =
             value={code}
             onChange={setCode}
             error={codeError}
+            errorKey={codeErrorKey}
           />
         )}
         {p && (
@@ -236,7 +237,7 @@ export function EraseDialog(props: {
   const [reason, setReason] = useState<string | null>(null);
   const [reasonMissing, setReasonMissing] = useState(false);
   const [code, setCode] = useState("");
-  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeError, setCodeError, codeErrorKey] = useFieldError();
   const [blocked, setBlocked] = useState<{ code: string; text: string } | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -288,7 +289,7 @@ export function EraseDialog(props: {
           code: e.code,
           text: e.code === "too_many_offers" ? TOO_MANY_OFFERS_LINE : sentence(e.message),
         });
-      } else if (e instanceof RequestError && e.code === "invalid_code") {
+      } else if (isWrongCode(e)) {
         setCode("");
         setCodeError(e.message);
         document.getElementById("erase-code")?.focus();
@@ -382,6 +383,7 @@ export function EraseDialog(props: {
             value={code}
             onChange={setCode}
             error={codeError}
+            errorKey={codeErrorKey}
           />
         )}
         {failure && <Notice tone="error">{failure}</Notice>}
