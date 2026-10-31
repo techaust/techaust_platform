@@ -107,9 +107,12 @@ After each batch PR deploys to staging, read `$workers.cpuTimeMs` of the first (
 
 | Worker | Bundle (local build) | Startup (local probe, fastest of 7) | Cold reading on staging |
 |---|---|---|---|
-| admin front | 99,435 bytes (M6.1 stage A) | 13.7 ms | _to be measured after the first staging deploy_ |
-| admin API | 420,289 bytes (M6.1 stage A; 618,422 on main before the split) | 54.6 ms | _to be measured after the first staging deploy_ |
-| admin finance (new) | 431,070 bytes (M6.1 stage A) | 48.0 ms | _to be measured after the first staging deploy: `/api/v1/dashboard`, `/api/v1/invoices`, a `care.bill` RPC_ |
+| admin front | 99,435 bytes (M6.1 stage A) | 13.7 ms | **10–14 ms** cold (2026-10-31: `/auth/me` 12, `/auth/salt` 10, `/auth/login` 14, `/auth/totp` 11); `/users` 11 warm |
+| admin API | 420,289 bytes (M6.1 stage A; 618,422 on main before the split) | 54.6 ms | **15 ms** cold (`/notifications`), then 6–10 ms (`/settings` 9, `/notifications` 10, `/leads/assignees` 8) |
+| admin finance (new) | 431,070 bytes (M6.1 stage A) | 48.0 ms | **16 ms** cold (`/dashboard`); `/invoices/:id` **18** and **17** (two isolates), 7 later; `POST /payments` 13; no `care.bill` RPC yet |
+
+### M6.1 reading (lead, 2026-10-31, Workers Logs read-only, the owner's approval session 17:51–18:06 UTC): **gate not met**
+147 admin requests in 3 hours, every outcome `ok` (none stopped for CPU), median 1 ms (front), 3 ms (API), 5 ms (finance). Over the "≤ 7 ms, none above 10" line: the first requests on each Worker (front auth 10–14, API 15, finance dashboard 16) and the finance invoice detail (18 and 17 on two isolates, 7 on a warm one), `POST /payments` 13. M1.5's fix had brought first requests to 3–7 ms on a 79 KB front; the front is now 100,839 bytes. Cloudflare let every one finish, which it doesn't promise. **Follow-up:** an analyst diagnosis (startup work that runs on the first request, the invoice detail's statements, `ledger_result_check`) before M6.2's API stage adds webhook processing to the finance Worker.
 
 ## Traces (staging only, full audit A6 9, owner's yes 2026-10-30)
 **What is on.** Every staging Worker (web, admin front, admin API, admin finance since M6.1, portal, jobs) has Workers Traces on at a head sampling rate of **0.1** (about 1 invocation in 10 is traced, decided when it arrives), in `env.staging.observability` of its `wrangler*.jsonc`. Logs are unchanged: on, invocation logs on, not sampled, so the CPU readings above still come from every request. Production has no traces and no invocation logs. `scripts/check-worker-config.mjs` (in `pnpm check` and CI) keeps it that way: traces off at the top level and in production, the rate exactly 0.1 on staging, and the admin Workers alike (three since M6.1).
