@@ -1,8 +1,8 @@
 # Polish sweep (admin and website follow-ups)
 
-Status: builder and designer running
+Status: designer running (builder merged)
 Tier: C
-Usage: builder (b1) and designer (d1) started 2026-11-01 ~02:20 IST at USAGE 17 (reading 2026-11-01T02:40+05:30); model and effort filled in from `node tools/model-audit.mjs` before the review.
+Usage: builder b1 claude-opus-5-5/high (model-audit; skills attempted `cloudflare:workers-best-practices`, `cloudflare:wrangler`, both "Unknown skill" in the cloud), 5-h 17 → 20 %; designer d1 claude-opus-5-5/high (skills: frontend-design:frontend-design per model-audit), started at 5-h 17 %.
 
 Session: polish-sweep (cloud). Branch: `fix/polish-sweep`. Copy file: `docs/07-content-appendix/ZL-polish-sweep.md` (only if a new user-facing line is needed).
 
@@ -120,3 +120,8 @@ Builder `b1`, sub-branch `fix/polish-sweep-b1` (from `origin/fix/polish-sweep` a
 **Open questions / observations (not changed, outside this brief):**
 - If the anonymise lands while a send's email is already in `EMAIL_QUEUE` (link written, email not yet sent), the email consumer still sends it to the address in the message. Its link is already deleted, so the email is a dead link to someone who was just anonymised. This was true before and is unchanged here. A check in the email consumer for `offer.sent` (skip when the send's contact was cleared) would close it. That is a jobs change, for the lead to decide.
 - Sends wrongly cancelled on staging before this fix keep their `cancelled_at`, because the trigger allows it to be set only once. They show the right state whenever their `email_log` row exists. No data repair is proposed (staging has sample data only).
+
+## Integration notes (lead)
+- 2026-11-01: merged `fix/polish-sweep-b1` (9da1599) into `fix/polish-sweep` as 2826a4b; builder worktree removed, local branches deleted. Lead read the diff: the cancel of never-linked sends now runs before `deleteContactAccess` (step 2a), same SQL and guard; `DELIVERY_SQL` adds `removed` and the row reads "Removed contact" (core `ANONYMISED_CONTACT`, existing words), no address. The reviewer checks the guard order (the anonymise audit row exists before 2a) and the statement count.
+- The two screen wiring lines (dashboard `activityText(a.action, a.docType)`, audit `entryActionText(e)`) and the bell's `BELL_OVER_NINE` were sent to the designer.
+- Builder's open point (existing, T7 F3 in 12): an anonymise that lands while the offer email is already queued still emails the real address a dead link; the jobs email consumer check stays with T7 F3. Sends wrongly cancelled on staging before this fix keep their stamp (set once).
