@@ -184,7 +184,10 @@ export const STAFF_REPLY_COPY = {
 /** The statuses whose version the box shows on: sent and still open, or past its last day (the reply's last sentence covers expiry). */
 const STAFF_REPLY_STATUSES: ReadonlySet<string> = new Set(["sent", "viewed", "expired"]);
 
-type StaffReplyDoc = Pick<DocumentView, "type" | "status" | "number" | "version" | "client" | "contact" | "redactedAt">;
+type StaffReplyDoc = Pick<
+  DocumentView,
+  "type" | "status" | "number" | "version" | "client" | "contact" | "redactedAt"
+>;
 
 /**
  * 07-ZE line 5 filled for a sent proposal or estimate: the addressed contact's first name, the number, the version and the portal of this
