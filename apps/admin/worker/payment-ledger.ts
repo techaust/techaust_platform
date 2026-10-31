@@ -508,22 +508,28 @@ export const invoiceLedger = new Hono<AppEnv>()
     if (f.extendedTo > limit) return err(c, EXTENSION_TOO_FAR, 409, { latest: limit });
     const extensionId = uuidv7();
     const now = Date.now();
-    const done = await mutate(c, {
-      main: realisationExtensionStatement(db, {
-        id: extensionId,
-        documentId: id,
-        extendedTo: f.extendedTo,
-        bankRef: f.bankRef,
-        recordedBy: u.id,
-        now,
-        sessionId: u.sessionId,
-      }),
-      action: "invoice.realisation_extend",
-      entityType: "document",
-      entityId: id,
-      summary: { documentId: id, extensionId, extendedTo: f.extendedTo, previousFemaDue: d.fema_due },
-      status: 201,
-    });
+    let done = false;
+    // The trigger `realisation_extensions_scope_insert` holds the same rule as the WHERE (later than any earlier extension); a race that reaches it is a 409.
+    try {
+      done = await mutate(c, {
+        main: realisationExtensionStatement(db, {
+          id: extensionId,
+          documentId: id,
+          extendedTo: f.extendedTo,
+          bankRef: f.bankRef,
+          recordedBy: u.id,
+          now,
+          sessionId: u.sessionId,
+        }),
+        action: "invoice.realisation_extend",
+        entityType: "document",
+        entityId: id,
+        summary: { documentId: id, extensionId, extendedTo: f.extendedTo, previousFemaDue: d.fema_due },
+        status: 201,
+      });
+    } catch (e) {
+      if (!refusedWith(e, /realisation_extensions_scope_insert/)) throw e;
+    }
     if (!done) {
       const again = await db.prepare(DOC_SQL).bind(id).first<DocRow>();
       if (!again) return err(c, NOT_FOUND, 404);

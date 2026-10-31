@@ -48,7 +48,7 @@ import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { type AppEnv, actor, BAD_REQUEST, type Ctx, err, mutate, NOT_FOUND } from "./context.ts";
 import { docDownload, dropDoc, extOfMime, streamToDocs, uploadHead } from "./docs-upload.ts";
-import { body, idParam, param, query, refusedWith, STALE_VERSION } from "./http.ts";
+import { body, idParam, isUnique, param, query, refusedWith, STALE_VERSION } from "./http.ts";
 import { decodeCursor, encodeCursor } from "./keyset.ts";
 import {
   ALREADY_RECORDED,
@@ -658,6 +658,9 @@ export const payments = new Hono<AppEnv>()
               ),
       });
     } catch (e) {
+      // One pending check per payment (`approvals_payment_pending`): a repeat of this id that slipped past the read is the same entry.
+      if (isUnique(e, "approvals\\.payment_id") || isUnique(e, "payments\\.id"))
+        return err(c, ALREADY_RECORDED, 409);
       if (!refusedWith(e, LEDGER_REFUSED)) throw e;
       return explainPlan(c, { ...f, requested: onInvoices });
     }
