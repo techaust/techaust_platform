@@ -20,8 +20,13 @@ Status: **client lines C1–C16 APPROVED by the owner, 2026-11-01** (as drafted)
 15. "Thank you. If your payment went through, it will show on the invoice within a few minutes. Open the link in our email again to see it."
 16. "Paid online on {date}; tax invoice to follow"
 
+### Razorpay payment page description (owner, 2026-11-01, early check 1 Q4)
+17. "Invoice {number}" (a tax invoice)
+18. "Proforma {number}"
+19. "Debit note {number}"
+
 ## Staff lines (admin; lead under delegation)
-17. "Payment link", "Create payment link", "Copy link", "Cancel link", "Expires {date}"; chips "Live", "Paid", "Expired", "Cancelled", "Replaced"
+S17. "Payment link", "Create payment link", "Copy link", "Cancel link", "Expires {date}"; chips "Live", "Paid", "Expired", "Cancelled", "Replaced"
 18. "Razorpay · {method} · {payment id}" / "Fee {amount} (absorbed)"
 19. "Needs review" / "Nothing needs review."
 20. Review reasons:
