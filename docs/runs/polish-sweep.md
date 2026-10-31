@@ -57,7 +57,7 @@ Skills: `frontend-design:frontend-design` first (report if it can't load in the 
 - **For the main session (staff-only copy, owner's delegation):** approve [07-ZL](../07-content-appendix/ZL-polish-sweep.md) lines 1–3 (recommended: as written). Until then the lines show "[Placeholder]". _2026-11-01 02:55, main session: "staff-only copy is approved by the main session under the owner's delegation" (general); the lead still needs an explicit "07-ZL 1–3 approved" (or changes) before switching `APPROVED_07ZL` on._
 
 ## Usage readings
-- USAGE 17 at 2026-11-01T02:40+05:30 (first); USAGE 20 at 2026-11-01T02:55+05:30; USAGE 62 at 2026-11-01T03:21+05:30 (window resets 06:10 IST).
+- USAGE 17 at 2026-11-01T02:40+05:30 (first); USAGE 20 at 2026-11-01T02:55+05:30; USAGE 62 at 2026-11-01T03:21+05:30 (window resets 06:10 IST); USAGE 88 at 2026-11-01T04:00+05:30 with the main session's hold: no new agent until after 06:10 IST (running agents finish).
 
 ## Lead decisions (for 13)
 - 2026-11-01, Lead: the website focus ring is 2.4 px (`--focus-width`) so it renders at least 2 px at 100/125/150/200 % display scale (Chromium rounds outlines down to device pixels); 110 % stays 1.82 px (2.75 px would thicken it everywhere else). Applied: `apps/web/src/styles/global.css`, docs/06 §5 "Visible focus" line.
