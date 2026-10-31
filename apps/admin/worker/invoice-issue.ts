@@ -25,6 +25,7 @@ import {
 } from "@techaust/core/invoices";
 import { maxNumber, sqlPrintfPattern } from "@techaust/core/numbering";
 import { decide } from "@techaust/core/permissions";
+import { deedDraftStatements } from "@techaust/db/deeds";
 import { headerExtrasJson, invoiceSealOf, type TermsRef } from "@techaust/db/documents";
 import { invoiceIssueStatements } from "@techaust/db/issue";
 import { auditStmt } from "@techaust/db/log";
@@ -393,6 +394,11 @@ export async function issueInvoice(c: Ctx, p: IssueParams): Promise<Response> {
                   ]
                 : []),
             ]
+          : []),
+        // T11 (L3; 08-C RB-38(a)): a credit note can bring its invoice's project to "fully paid" (an over-invoiced amount corrected): its draft deed is made
+        // here, after the parent's recompute above, guarded on the audit row.
+        ...(note && d.type === "credit_note"
+          ? deedDraftStatements(db, { target: { documentIds: [note.p.row.id] }, now }, _g)
           : []),
       ],
     });
