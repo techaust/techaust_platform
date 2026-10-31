@@ -190,5 +190,5 @@ Next, in order:
 Where it stands: all five tasks merged (T12 #129, T6 #130, proforma withdraw #132, T7 #133, M6.1 #135); every owner question answered and recorded in 13; the record updated (12, 13, CHANGELOG, CLAUDE.md). M6.1's staging deploy (f0d10f5d, run 41219354758, the finance Worker's first) passed all six steps and health checks at 22:00 IST.
 
 Next:
-2. The owner approves M6.1 on staging (checklist from the lead); the L9 question to the owner before M6.2.
-3. Build the `/orchestrate` skill with this run's lessons (CLAUDE.md "In a cloud session"; 13).
+1. The owner approves M6.1 on staging (checklist from the lead); the L9 question to the owner before M6.2.
+2. Build the `/orchestrate` skill with this run's lessons (CLAUDE.md "In a cloud session"; 13).
