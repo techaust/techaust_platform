@@ -13,6 +13,10 @@
   "preview_urls": false,
   // Workers Logs: query strings are removed from logged URLs (owner decision 2026-10-21, all four Workers).
   "observability": { "enabled": true, "redact_query_string": true },
+  // L9 (owner, 2026-10-31): minified like the admin and portal Workers (about a third smaller), with source maps uploaded so Workers
+  // Logs can show readable stack traces. Top-level keys, inherited by env.staging and env.production.
+  "minify": true,
+  "upload_source_maps": true,
   // Local values. EMAIL_TRANSPORT=log: nothing is sent, nothing personal is printed. ADMIN_URL: the "Open in admin" link
   // in the lead alert (the admin home until the lead screens arrive in M3).
   "vars": {

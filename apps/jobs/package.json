@@ -7,7 +7,7 @@
     "dev": "node ../../scripts/dev.mjs jobs",
     "typecheck": "wrangler types --env staging && tsc -p tsconfig.json",
     "test": "vitest run",
-    "build": "wrangler deploy --dry-run --outdir dist && node ../../scripts/worker-budget.mjs jobs",
+    "build": "wrangler deploy --dry-run --outdir dist --metafile && node ../../scripts/worker-budget.mjs jobs",
     "deploy:staging": "wrangler deploy --env staging",
     "types": "wrangler types --env staging"
   },
