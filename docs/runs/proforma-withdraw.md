@@ -1,6 +1,6 @@
-Status: builder round 2 (early-check fixes) and designer running; owner answered Q1–Q4, 07-ZF approved
+Status: reviewer next (builder r2 and designer r1 merged); owner answered Q1–Q4, 07-ZF approved
 Tier: A
-Usage: analyst (brief draft) claude-opus-5-5/high, skills: none available (no Cloudflare plugin in the cloud); 5-h 8 % at start · builder r1 claude-opus-5-5/high, skills: none (same reason; flagged by model-audit); 5-h 8 → 46 % (reading 13:46) · analyst (early check) claude-opus-5-5/high, skills: code-review (+ its read-only helper); 5-h 46 % · designer r1 (started 5-h 46 %)
+Usage: analyst (brief draft) claude-opus-5-5/high, skills: none available (no Cloudflare plugin in the cloud); 5-h 8 % at start · builder r1 claude-opus-5-5/high, skills: none (same reason; flagged by model-audit); 5-h 8 → 46 % (reading 13:46) · analyst (early check) claude-opus-5-5/high, skills: code-review (+ its read-only helper); 5-h 46 % · designer r1 claude-opus-5-5/high, skills: frontend-design:frontend-design (attempted; not installed in the cloud); 5-h 46 → 68 % · builder r2 claude-opus-5-5/high, skills: none (flagged; Cloudflare skills not installed); 5-h 46 → 68 %
 
 # Withdraw a proforma the client has seen (cloud session "proforma-withdraw")
 
@@ -119,7 +119,8 @@ Asked 2026-10-31 (through the main session). **Answered by the owner 2026-10-31 
 - 0056 `proforma_withdraw_triggers` (triggers only: re-creates `documents_viewed_no_void` for tax/export invoices; adds `documents_proforma_withdraw`, `documents_void_no_view`, `document_sends_not_void`)
 
 ## Worker bytes
-Branch (builder r1, c0b71b2): admin front 99,391; admin API **625,014** (+6,592; plan line 650,000); portal 103,476 of 120,000; jobs **984,407** of 1,000,000 (+141: the jobs bundle carries `permissions.ts`). Startup (fastest of 7): front 11.0 ms, API 55.9 ms, portal 10.2 ms, jobs 60.2 ms.
+Branch after builder r2 (37427e8): admin front 99,391; admin API **624,565**; portal 103,500; jobs **984,407** (startup: API 55.1 ms, jobs 54.1 ms).
+Builder r1 (c0b71b2): admin front 99,391; admin API **625,014** (+6,592; plan line 650,000); portal 103,476 of 120,000; jobs **984,407** of 1,000,000 (+141: the jobs bundle carries `permissions.ts`). Startup (fastest of 7): front 11.0 ms, API 55.9 ms, portal 10.2 ms, jobs 60.2 ms.
 Main (a5f9f92): admin API 618,422 (plan line 650,000), jobs 984,266 of 1,000,000.
 
 ## Early check
@@ -161,12 +162,23 @@ Builder (round 2, branch `fix/proforma-withdraw-early-check` from 0c89aae; no SP
 - **Skills:** none (the Cloudflare skills of docs/14 §9 aren't installed in this cloud session; supabase skills are Postgres-only, not D1).
 
 ## Designer report
+Designer (round 1, branch `design/proforma-withdraw-r1`, head cc360a3, merged by the lead as 492065d; worktree removed; 66 screenshots copied to `.logs/proforma-withdraw/screens/`).
+- **Skills:** `frontend-design:frontend-design` tried first: not available in this cloud session ("Unknown skill"; model-audit records the attempt); worked from docs/06 §5.4–5.5 and the existing void screens. `dataviz` not applicable.
+- **Commits:** b90d16f the screens; d26e8ce the portal withdrawn `clientStatus` test; cc360a3 the portal banner uses the notices' markup.
+- **Admin:** `lib/copy-zf.ts` (`APPROVED_07ZF = true`, lines 1–17; `copy-zf.test.ts` reads the 07-ZF file and compares word for word); `copy-z.ts` proforma line = 07-ZF 15; `lib/invoices.ts` Withdrawn badge (muted, archive icon; not in the filter list), `voidBlockedText`/`voidErrorText` 07-ZF 15/16, `withdrawErrorText`; `lib/invoice-types.ts` locked line ends with 07-ZF 17; `lib/invoices-api.ts` flags and `withdraw`; `lib/audit.ts` through `WITHDRAW_COPY.audit`; `api.ts` parses `reasons`; `routes/invoices/dialogs.tsx` a shared `ReasonCodeDialog` with `VoidDialog` and `WithdrawDialog`; `routes/invoices/read.tsx` More › "Withdraw proforma", toast 07-ZF 6 + milestone line, refusal reloads, 07-ZF 7 banner, focus to the h1.
+- **Portal:** `copy-zf.ts` lines 18–20 (+ test); `api.ts` nullable balance/due, `withdrawnOn`; `lib/invoices.ts` `withdrawn` status before any balance check (D1 fixed); `screens/invoices.tsx` list pill and "–" balance, page banner 07-ZF 19, no balance row, no PDF button, no bank block (signed in and the emailed link `/i#t=…`); `routes/invoices.tsx` a 409 `withdrawn` PDF shows 07-ZF 20; dev-only preview sample.
+- **Results (heavy.sh):** admin 122 files / 3,532 tests; portal 27 / 662; both typechecks, `pnpm lint`, `pnpm check` exit 0. Browser: 58 axe checks with nothing at moderate or above, no sideways scroll, 360/768/1280, both themes, in-app theme against the OS theme, keyboard order and focus return.
+- **Browser note:** the `.mcp.json` Playwright server couldn't start (it looked for Chromium in `/opt/pw-browsers/chromium-1247`, which isn't there); the designer used the repo's `@playwright/test` 1.64.1 and `@axe-core/playwright` with Chromium in `/opt/ms-playwright` through a git-ignored script. Nothing installed.
+- **Not verified:** 07-ZF 20 on screen (reachable only in a race; unit-tested); the toast's milestone line (no sample from a milestone); the refactored void dialog of an undelivered proforma not screenshotted (same ids and words, tests pass); the admin e2e sweep not run.
+- **Lead decisions on the designer's questions:** (1) the 07-ZA 15 statutory line is hidden on a withdrawn payment request (it promises a tax invoice on payment, which contradicts "You don't need to pay it"; no PDF is served): kept; (2) "Waiting for the PDF" on a proforma withdrawn before its PDF exists: rare, follow-up; (3) the Void filter also lists withdrawn proformas, each with its badge (no new filter, as briefed): kept; (4) 07-Z §1's proforma line now points to 07-ZF 15 (lead edit).
 
 ## Review
 
 ## Integration notes
 
 ## Follow-ups (for 12)
+- **Cloud browser:** the `.mcp.json` Playwright MCP server looked for Chromium in `/opt/pw-browsers/chromium-1247` while the setup script installs it in `/opt/ms-playwright` (`cloud-check.sh` reports it there); the designer fell back to `@playwright/test`. Check how the MCP server gets `PLAYWRIGHT_BROWSERS_PATH` (setup script or `.mcp.json`).
+- **Admin Emails panel:** a proforma withdrawn before its PDF exists keeps "Waiting for the PDF…" until jobs skips the send; a "won't be sent" line needs new copy (rare).
 - **Staging data check (needs the owner's yes, read-only):** any proforma on staging that was viewed in the portal and then voided before FX-5 (2026-10-28 to 30) now reads as "withdrawn" and reappears in that client's portal. Test data only; check before Phase 7 if wanted.
 - **M6/M7.1 handoff:** M6.1's migration adds "no payment row" to both proforma statements (void, withdraw) and to `documents_proforma_withdraw`; any payment field added to the portal summary is null for a withdrawn proforma.
 - **Admin API bytes:** 625,014 after this task (about 25 KB under the 650,000 plan line), for M6.1's third-Worker plan.

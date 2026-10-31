@@ -15,7 +15,7 @@ The text after each number is the recommendation. Staff-facing (admin) unless ma
 An invoice or proforma the client has opened in the portal can no longer be voided. These lines say why, on the invoice's page and in the void dialog.
 
 1. Invoice: "The client has opened this invoice in the portal, so it can't be voided. Use a credit note instead."
-2. Proforma: "The client has opened this proforma in the portal, so it can't be voided."
+2. Proforma: "The client has opened this proforma in the portal, so it can't be voided." **Replaced by [07-ZF](ZF-proforma-withdraw.md) line 15 (owner, 2026-10-31), which adds "Withdraw it instead."**
 
 ## 2. Proposal terms and the due days (full audit C4)
 The proposal terms are one text shared by every proposal, so the number of days to pay that they state must be the one in Settings › Payment terms. Saving terms with another number is refused; changing the setting first is allowed, and Settings › Payment terms then says the terms disagree. `{days}` is "7 days" (or "1 day"; two numbers are joined with "and").
