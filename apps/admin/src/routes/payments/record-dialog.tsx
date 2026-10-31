@@ -560,15 +560,14 @@ function RecordBody(props: {
                 )}
               </fieldset>
             )}
-            <fieldset className="form-section pay-proof">
-              <legend>
-                {PAY_COPY.proof}
-                <span className="field__optional"> (optional)</span>
-              </legend>
-              {currency === "USD" && <p className="hint">{PAY_COPY.exportProofHint}</p>}
+            <div className="pay-proof">
               <FilePick
                 id="pay-file"
                 label={PAY_COPY.proof}
+                optional
+                {...(currency === "USD"
+                  ? { hint: `${PAY_COPY.exportProofHint} ${PAY_UI.proofFileHint}` }
+                  : {})}
                 file={file}
                 onFile={setFile}
                 error={errors.file}
@@ -605,7 +604,7 @@ function RecordBody(props: {
                   </FormField>
                 </div>
               )}
-            </fieldset>
+            </div>
           </>
         )}
         {tds && (

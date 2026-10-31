@@ -5,6 +5,7 @@ import { formatIstDateTime, MASKED } from "@techaust/core";
 import { ROLE_LABELS } from "@techaust/core/permissions";
 import type { AuditEntry } from "../api.ts";
 import { Y } from "./copy-y.ts";
+import { PAY_AUDIT } from "./copy-zh.ts";
 
 /** Every action the API writes today, in words. Unknown ones read as their own name ("lead.created"). */
 /** A label by its own key only: a free-form value such as "constructor" never reads an inherited property. */
@@ -138,15 +139,15 @@ export const ACTION_LABELS: Record<string, string> = {
   "invoice.pdf_retry": Y("asked for an invoice's PDF again"),
   "invoice.reminders_pause": Y("paused payment reminders"),
   "invoice.reminders_resume": Y("resumed payment reminders"),
-  // M6.1 payments (07-ZH has no audit words: marked until the owner approves them).
-  "invoice.realisation_extend": Y("recorded the bank's extension of a realisation date"),
-  "payment.record": Y("recorded a payment"),
-  "payment.verify": Y("checked a payment"),
-  "payment.withdraw": Y("withdrew a payment"),
-  "payment.proof": Y("attached a payment's proof"),
-  "payment.tds_certificate": Y("recorded a TDS certificate"),
-  "payment.credit_apply": Y("used a client's credit on an invoice"),
-  "payment.credit_release": Y("moved an invoice's excess to the client's credit"),
+  // M6.1 payments: 07-ZH line 49 (the designer's words, marked until approved: lib/payments.ts).
+  "invoice.realisation_extend": PAY_AUDIT["invoice.realisation_extend"],
+  "payment.record": PAY_AUDIT["payment.record"],
+  "payment.verify": PAY_AUDIT["payment.verify"],
+  "payment.withdraw": PAY_AUDIT["payment.withdraw"],
+  "payment.proof": PAY_AUDIT["payment.proof"],
+  "payment.tds_certificate": PAY_AUDIT["payment.tds_certificate"],
+  "payment.credit_apply": PAY_AUDIT["payment.credit_apply"],
+  "payment.credit_release": PAY_AUDIT["payment.credit_release"],
   "care_invoice.draft": Y("drafted a care plan invoice"),
   "care_invoice.auto_issue_refused": Y("could not issue a care plan invoice automatically"),
 };

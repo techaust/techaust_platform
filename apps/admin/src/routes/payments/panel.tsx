@@ -39,7 +39,7 @@ import {
   plainAmount,
   todayIst,
 } from "../../lib/payments.ts";
-import { moneyFrom } from "../../lib/settings-form.ts";
+import { bpToPercent, moneyFrom } from "../../lib/settings-form.ts";
 import { withCode } from "../../lib/step-up.ts";
 import { day, FilePick, PaymentPill, useCodeSlot } from "./parts.tsx";
 import { RecordPaymentDialog } from "./record-dialog.tsx";
@@ -307,7 +307,7 @@ function Entries(props: { panel: Panel; canCert: boolean; onCertificate: (paymen
                   {r.tds?.section && (
                     <span className="pay-lines__meta">
                       {r.tds.section}
-                      {r.tds.rateBp !== null ? ` · ${(r.tds.rateBp / 100).toString()} %` : ""}
+                      {r.tds.rateBp !== null ? ` · ${bpToPercent(r.tds.rateBp)}\u00a0%` : ""}
                     </span>
                   )}
                 </span>
@@ -358,7 +358,7 @@ function Entries(props: { panel: Panel; canCert: boolean; onCertificate: (paymen
                   {PAY_UI.openProof}
                 </a>
               ) : (
-                <span className="pay-lines__meta">{PAY_UI.noProof}</span>
+                <span className="pay-lines__meta pay-lines__nowrap">{PAY_UI.noProof}</span>
               )}
             </td>
           </tr>

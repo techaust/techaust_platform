@@ -7,6 +7,7 @@
 import "./documents/parts.tsx";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { paymentsApi } from "../api.ts";
 import { type Column, DataTable, FilterBar } from "../components/data-table.tsx";
 import { Modal } from "../components/dialog.tsx";
 import { EmptyState, PageHeader, When } from "../components/display.tsx";
@@ -35,9 +36,11 @@ import {
 import { type ApprovalRow, type ApprovalState, documentsApi } from "../lib/documents-api.ts";
 import { INV_COPY } from "../lib/invoices.ts";
 import { invoicesApi } from "../lib/invoices-api.ts";
+import { PAY_COPY } from "../lib/payments.ts";
 import { useUser } from "../session.tsx";
 import { ApprovalPill, docHref } from "./documents/parts.tsx";
 import { IssueQueue } from "./invoices/issue-queue.tsx";
+import { PaymentApprovals } from "./payments/approvals-tab.tsx";
 
 export function Component() {
   const user = useUser();
@@ -46,7 +49,7 @@ export function Component() {
   return <Approvals />;
 }
 
-type QueueKind = "discount" | "issue";
+type QueueKind = "discount" | "issue" | "payment";
 
 /** The page: the heading, the kind of request (discounts; and, for the roles that read invoices, issue requests, M5.1), the status filter. */
 function Approvals() {
@@ -57,7 +60,10 @@ function Approvals() {
   const invoices = allowed(user.role, "invoices.read");
   const [params, setParams] = useSearchParams();
   const kindP = params.get("kind");
-  const urlKind: QueueKind = invoices && kindP === "issue" ? "issue" : "discount";
+  // M6.1 (ADM-APR-01): the payment items, for the roles that read payments; decided on Payments (L18).
+  const payments = allowed(user.role, "payments.read");
+  const urlKind: QueueKind =
+    invoices && kindP === "issue" ? "issue" : payments && kindP === "payment" ? "payment" : "discount";
   // The owner starts on what waits for them; a bell link shows every state, so the request is on the page whatever happened to it.
   const stateP = params.get("state");
   const state = stateP === "all" ? null : isState(stateP) ? stateP : owner && !linked ? "pending" : null;
@@ -82,6 +88,7 @@ function Approvals() {
         ? Promise.all([
             documentsApi.approvals({ status: "pending", limit: "50" }),
             invoicesApi.issueApprovals({ status: "pending", limit: "50" }),
+            payments ? paymentsApi.approvals({ status: "pending" }) : Promise.resolve(null),
           ])
         : Promise.resolve(null),
     String(invoices),
@@ -90,12 +97,13 @@ function Approvals() {
     r ? { n: r.approvals.length, more: r.next !== null } : null;
   const discountWaiting = counts.state === "ready" ? waiting(counts.data?.[0]) : null;
   const issueWaiting = counts.state === "ready" ? waiting(counts.data?.[1]) : null;
+  const paymentWaiting = counts.state === "ready" ? waiting(counts.data?.[2] ?? undefined) : null;
   const switchTo = useCallback(
     (k: QueueKind) =>
       setParams(
         (p) => {
           const n = new URLSearchParams(p);
-          if (k === "issue") n.set("kind", "issue");
+          if (k === "issue" || k === "payment") n.set("kind", k);
           else n.delete("kind");
           return n;
         },
@@ -115,7 +123,10 @@ function Approvals() {
   }, [linked, kindP, discountWaiting, issueWaiting, switchTo]);
   const onLinkedDone = () => {
     if (linked)
-      navigate({ pathname: "/approvals", search: kind === "issue" ? "?kind=issue" : "" }, { replace: true });
+      navigate(
+        { pathname: "/approvals", search: kind === "discount" ? "" : `?kind=${kind}` },
+        { replace: true },
+      );
   };
 
   const filters = (
@@ -143,7 +154,7 @@ function Approvals() {
         )
       }
       onClear={() =>
-        setParams(new URLSearchParams(kind === "issue" ? { state: "all", kind } : { state: "all" }), {
+        setParams(new URLSearchParams(kind !== "discount" ? { state: "all", kind } : { state: "all" }), {
           replace: true,
         })
       }
@@ -152,6 +163,8 @@ function Approvals() {
   );
   const queue = probing ? (
     <div aria-busy="true" />
+  ) : kind === "payment" ? (
+    <PaymentApprovals owner={owner} state={state} />
   ) : kind === "issue" ? (
     <IssueQueue
       owner={owner}
@@ -180,6 +193,9 @@ function Approvals() {
           tabs={[
             { key: "discount", label: DOC_COPY.colDiscount, badge: pendingBadge(discountWaiting) },
             { key: "issue", label: INV_COPY.kindIssue, badge: pendingBadge(issueWaiting) },
+            ...(payments
+              ? [{ key: "payment" as const, label: PAY_COPY.heading, badge: pendingBadge(paymentWaiting) }]
+              : []),
           ]}
           selected={kind}
           onSelect={switchTo}

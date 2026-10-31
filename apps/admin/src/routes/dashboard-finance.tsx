@@ -11,6 +11,7 @@ import { StatusPill } from "../components/display.tsx";
 import { AlertTriangle, CheckCircle, Clock, FileText, Receipt, Wallet } from "../components/icons.tsx";
 import { DASH_COPY } from "../lib/dashboard.ts";
 import { moneyText } from "../lib/documents.ts";
+import { PAY_COPY, PAY_UI } from "../lib/payments.ts";
 import {
   documentHref,
   FINANCE_COPY as F,
@@ -145,11 +146,69 @@ export function FinanceTiles({ tile }: { tile: FinanceTile }) {
           {null}
         </FinTile>
       )}
-      <p className="panel-empty fin-arrives">
-        <Wallet size={20} />
-        <span>{DASH_COPY.footLine}</span>
-      </p>
+      {tile.collected.available ? (
+        <CollectedTile collected={tile.collected} />
+      ) : (
+        <p className="panel-empty fin-arrives">
+          <Wallet size={20} />
+          <span>{DASH_COPY.footLine}</span>
+        </p>
+      )}
+      {tile.paymentsToVerify.available && <ToCheckTile count={tile.paymentsToVerify.count} />}
     </div>
+  );
+}
+
+/**
+ * M6.1 (07-ZH line 16): "Collected this month", confirmed payments received this IST month, one figure per currency (rupees and dollars are never added
+ * together), the count under it and this financial year beside it, as the Invoiced tile reads.
+ */
+function CollectedTile({ collected }: { collected: Extract<FinanceTile["collected"], { available: true }> }) {
+  const fy = new Map(collected.fy.map((r) => [r.currency, r]));
+  const many = collected.month.length > 1;
+  return (
+    <FinTile
+      id="fin-collected"
+      title={PAY_COPY.collectedMonth}
+      empty={collected.month.length === 0}
+      emptyText={PAY_UI.noneCollected}
+      icon={<Wallet size={20} />}
+      link={{ to: "/payments?tab=all&status=confirmed", text: PAY_COPY.heading }}
+    >
+      <ul className="fin-figures">
+        {collected.month.map((r) => {
+          const y = fy.get(r.currency);
+          return (
+            <li key={r.currency} className="fin-figure">
+              <Money minor={r.collectedMinor} currency={r.currency} showCode={many} size="lg" />
+              <span className="fin-figure__sub">{PAY_UI.paymentsCount(r.count)}</span>
+              {y && (
+                <span className="fin-figure__sub">{`${F.thisFy}: ${moneyText(y.collectedMinor, r.currency)}`}</span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </FinTile>
+  );
+}
+
+/** M6.1 (07-ZH line 16; the Owner only): "Payments to check", the entries Staff recorded that wait for the Owner, with the way to them. */
+function ToCheckTile({ count }: { count: number }) {
+  return (
+    <FinTile
+      id="fin-to-check"
+      title={PAY_COPY.toCheck}
+      empty={count === 0}
+      emptyText={PAY_UI.nothingToCheck}
+      icon={<CheckCircle size={20} />}
+      link={{ to: "/payments", text: PAY_UI.openToCheck }}
+      className="fin-tile--check"
+    >
+      <p className="fin-figure">
+        <span className="fin-money__value fin-money--lg tnum">{count}</span>
+      </p>
+    </FinTile>
   );
 }
 

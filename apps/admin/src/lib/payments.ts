@@ -11,14 +11,11 @@ import { type Currency, compare, formatMoney, money, subtract, sum } from "@tech
 import type { PaymentMode, PaymentStatus } from "../api.ts";
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
+import { ZH } from "./copy-zh.ts";
 import { dayText, docErrorText } from "./documents.ts";
 import { bpToPercent, moneyFrom } from "./settings-form.ts";
 
-/** Lines 23 onwards of 07-ZH: false until the lead (staff-only lines, owner's delegation) approves them. */
-export const APPROVED_07ZH_NEW = false;
-export const PLACEHOLDER_MARK = "[Placeholder]";
-/** A 07-ZH line from 23 as the screen shows it: marked until approved. */
-export const ZH = (line: string): string => (APPROVED_07ZH_NEW ? line : `${PLACEHOLDER_MARK} ${line}`);
+export { APPROVED_07ZH_NEW, PAY_AUDIT, PLACEHOLDER_MARK, ZH } from "./copy-zh.ts";
 
 export const amountText = (minor: number, currency: Currency) => formatMoney(money(minor, currency));
 const day = (iso: string | null | undefined) => (iso ? (dayText(iso) ?? iso) : "");
@@ -62,7 +59,8 @@ export const PAY_COPY = {
     "The invoice and its GST stay at full value. Enter the section, rate and amount exactly as the client's certificate shows them.",
   // line 8
   certificateAwaited: "Certificate awaited",
-  // line 10
+  // line 10 (the label is the line's words before its amount)
+  creditHeld: "Credit held",
   useCredit: "Use credit on this invoice",
   // line 12
   proformaLine: "A payment on a proforma is confirmed by issuing the tax invoice for the payment received.",
@@ -173,19 +171,6 @@ export const VOID_PAYMENT_RECORDED = ZH(
 export const extensionNotLater = (date: string) => ZH(`The new last date must be after ${date}.`);
 /** Line 48: `extension_too_far`, with the latest date allowed. */
 export const extensionTooFar = (date: string) => ZH(`The new last date can't be after ${date}.`);
-
-/** Line 49: the audit log's words for the eight new actions and the record type (lib/audit.ts reads them). */
-export const PAY_AUDIT = {
-  "invoice.realisation_extend": ZH("recorded the bank's extension of a realisation date"),
-  "payment.record": ZH("recorded a payment"),
-  "payment.verify": ZH("checked a payment"),
-  "payment.withdraw": ZH("withdrew a payment"),
-  "payment.proof": ZH("attached a payment's proof"),
-  "payment.tds_certificate": ZH("recorded a TDS certificate"),
-  "payment.credit_apply": ZH("used a client's credit on an invoice"),
-  "payment.credit_release": ZH("moved an invoice's excess to the client's credit"),
-  record: ZH("Payments"),
-} as const;
 
 /** Line 50: the status chip of an entry (docs/06 §5.5: pending verification is Warning with its own icon; never colour alone). */
 export const STATUS_LABELS: Record<PaymentStatus, string> = {
@@ -298,6 +283,7 @@ export const PAY_UI = {
   amountToMove: ZH("Amount to move"),
   fromPayment: (date: string) => ZH(`From the payment received on ${date}`),
   noCredit: ZH("No credit held."),
+  creditInvoiceMissing: ZH("Pick the invoice the credit goes on."),
   // 66 export realisation
   femaDate: ZH("FEMA date"),
   gstDate: ZH("GST date"),
@@ -311,7 +297,6 @@ export const PAY_UI = {
   // 67 proforma
   confirmByIssuing: ZH("Confirm by issuing the tax invoice"),
   // 68 dashboard
-  toCheckCount: (n: number) => ZH(n === 1 ? "1 payment to check" : `${n} payments to check`),
   paymentsCount: (n: number) => ZH(n === 1 ? "1 payment" : `${n} payments`),
   noneCollected: ZH("Nothing collected this month."),
   nothingToCheck: ZH("Nothing to check."),
@@ -331,8 +316,6 @@ export const PAY_UI = {
   extensionNote: ZH(
     "If your bank extended a date, record it on the export invoice's page: Bank extended the date.",
   ),
-  // 71 the record button on Payments and a client
-  recordPayment: ZH("Record payment"),
   // 73 the record form's own checks
   modeMissing: ZH("Pick how it was paid."),
   // 74 the submit button once a seen reference was explained (line 13)
@@ -486,7 +469,11 @@ export function openDocsOf(
         r.balanceMinor > 0 &&
         (opts.kind !== "tds" || r.currency === "INR"),
     )
-    .filter((r) => (seen.has(r.id) ? false : (seen.add(r.id), true)))
+    .filter((r) => {
+      if (seen.has(r.id)) return false;
+      seen.add(r.id);
+      return true;
+    })
     .map((r) => ({
       id: r.id,
       number: r.number,

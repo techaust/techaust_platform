@@ -126,7 +126,7 @@ function Payments({ role }: { role: Role }) {
           canRecord ? (
             <button type="button" className="btn btn--primary" onClick={() => setRecording("payment")}>
               <Plus size={20} />
-              {PAY_UI.recordPayment}
+              {PAY_COPY.recordTitle}
             </button>
           ) : undefined
         }
@@ -203,13 +203,18 @@ function PaymentList(props: {
       header: PAY_COPY.dateReceived,
       card: "title",
       cell: (r) => (
-        <span className="pay-row__title">
-          <Link to={paymentHref(r.id)} className="tnum pay-row__link">
-            {day(r.receivedOn)}
-          </Link>
-          <span className="pay-lines__meta">
-            {r.clientName} <span className="docno">{r.clientCode}</span>
-          </span>
+        <Link to={paymentHref(r.id)} className="tnum pay-row__link">
+          {day(r.receivedOn)}
+        </Link>
+      ),
+    },
+    {
+      key: "client",
+      header: PAY_UI.colClient,
+      width: "26%",
+      cell: (r) => (
+        <span className="pay-row__client">
+          <span>{r.clientName}</span> <span className="docno pay-lines__code">{r.clientCode}</span>
         </span>
       ),
     },
@@ -217,9 +222,8 @@ function PaymentList(props: {
       key: "entry",
       header: PAY_UI.colKind,
       cell: (r) => (
-        <span>
-          {r.kind === "tds" ? PAY_UI.kindTds : PAY_UI.kindPayment}
-          {r.mode && <span className="pay-lines__meta">{MODE_LABELS[r.mode]}</span>}
+        <span className="pay-lines__nowrap">
+          {r.kind === "tds" ? PAY_UI.kindTds : `${PAY_UI.kindPayment} · ${r.mode ? MODE_LABELS[r.mode] : ""}`}
         </span>
       ),
     },
@@ -241,21 +245,23 @@ function PaymentList(props: {
       key: "amount",
       header: PAY_UI.colAmount,
       align: "end",
-      cell: (r) => <span className="tnum">{amountText(r.amountMinor, r.currency)}</span>,
+      cell: (r) => <span className="tnum pay-lines__nowrap">{amountText(r.amountMinor, r.currency)}</span>,
     },
-    {
-      key: "by",
-      header: PAY_UI.recordedBy,
-      cell: (r) => (
-        <span>
-          {r.recordedByName ?? ""}
-          <span className="pay-lines__meta">
-            <When ms={r.recordedAt} inline />
-          </span>
-        </span>
-      ),
-    },
-    { key: "status", header: PAY_UI.colStatus, cell: (r) => <PaymentPill status={r.status} /> },
+    ...(props.tab === "check"
+      ? [
+          {
+            key: "by",
+            header: PAY_UI.recordedBy,
+            cell: (r: PaymentView) => <span>{r.recordedByName ?? ""}</span>,
+          },
+        ]
+      : [
+          {
+            key: "status",
+            header: PAY_UI.colStatus,
+            cell: (r: PaymentView) => <PaymentPill status={r.status} />,
+          },
+        ]),
   ];
 
   const emptyTitle =
@@ -306,7 +312,7 @@ function PaymentList(props: {
       {list.state === "failed" ? (
         <LoadFailed error={list.error} onRetry={() => list.reload()} />
       ) : (
-        <div className="pay-table">
+        <div className="clients-table pay-table">
           <DataTable
             caption={props.tab === "check" ? PAY_COPY.toCheck : PAY_COPY.heading}
             columns={columns}
