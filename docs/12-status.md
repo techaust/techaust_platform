@@ -23,7 +23,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 ## Next
 1. **Take the M6.1 staging CPU baseline** (the finance Worker's cold reading, `ledger_result_check`, the payment reads; `docs/runbooks/cpu-baseline.md`).
 2. **L9 decided (owner, 2026-10-31):** jobs `minify: true` with uploaded source maps, webhook processing in the finance Worker (13); built as M6.2's first step.
-3. **M6.2 Razorpay** (Tier A) once the owner has the Razorpay test account (runbook Part A); its first step is the jobs minify (L9). Then M6.3 Stripe (the owner's existing verified account, 13), M6.4 PayPal, M6.5. **T11 (the deed)** can start now.
+3. **M6.2 Razorpay** (Tier A; the owner's Razorpay, Stripe and PayPal accounts are ready, 2026-10-31); its first step is the jobs minify (L9). Then M6.3 Stripe (the owner's existing verified account, 13), M6.4 PayPal, M6.5. **T11 (the deed)** can start now.
 4. **Build the `/orchestrate` skill** (owner, 2026-10-31; 13): the watcher in `tools/watch-cloud.mjs` with the lessons in CLAUDE.md "In a cloud session".
 5. **M7.1–M7.5**, the audit of M6–M7, then **Phase 7 all at once** (estimate on 2026-10-31: about 12–17 working days for M6, M7 and Phase 7, gateway live approval not included).
 
@@ -31,8 +31,8 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-10-
 
 ## Waits on the owner
 - **Now:** archive the five cloud sessions of today's run (T12, T6, proforma withdraw, T7; M6.1 once staging is confirmed) and this main conversation once the record PR has merged.
-- **Next:** the Razorpay test account (runbook Part A), and in the existing Stripe account check the legal name, PAN and GSTIN (runbook Part A, Stripe step 1).
-- **Payment gateways:** Part A of the [runbook](runbooks/payment-gateways.md) (Razorpay, Stripe, PayPal test accounts, about 30–60 minutes); the keys themselves at each milestone (Part B).
+- **Next:** the Stripe check (legal name, PAN and GSTIN are TecHaust's; runbook Part A, Stripe step 1).
+- **Payment gateways:** Part A done (owner, 2026-10-31: Razorpay, the existing verified Stripe account, PayPal; the new Stripe account closed). The keys at each milestone (Part B), with the lead's command.
 - **Start early (the lead gives click-by-click steps when each comes up):** SES production access and a production IAM user; the AWS backup bucket (and for T5 the S3 bucket in Mumbai), after signing the AWS MCP in to the TecHaust account; website inputs (headshot, bio facts, the email aliases, the launch date, the company LinkedIn page, WhatsApp Business number, Cal.com link, 2–3 case-study briefs, one social handle per platform, the 3 blog drafts).
 - **Dated duties** (steps in [settle-08c](runs/settle-08c.md)): **by 13 November** the October IFF if an October credit note relies on it; **before the next export invoice** the FY 2026-27 LUT (ARN in Settings › Tax); **by 30 November** the October EDF if any export invoice was raised in October; **monthly** reverse charge on foreign services; **every April** the turnover check; **once** the Offline Tool test import, the CERT-In point of contact, the trademark search (classes 9, 35, 42).
 - **Staging data for invoicing:** the real company profile, labelled sample bank details, the Udyam number and category, the signature image (Settings › Company).
