@@ -62,7 +62,6 @@ export function mountApi(app: App) {
   app.route("/v1/invoices", invoiceIssue);
   app.route("/v1/invoices", invoiceAdvance);
   app.route("/v1/invoices", invoiceWithdraw);
-  app.route("/v1/invoices", invoiceWithdraw);
   app.route("/v1/invoices", invoiceNotes);
   app.route("/v1/invoices", invoiceSend);
   app.route("/v1/invoices", invoicePdf);
