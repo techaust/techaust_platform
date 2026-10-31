@@ -228,8 +228,9 @@ export type GatewayPaymentArgs = {
   feeMinor: number;
   feeTaxMinor: number | null;
   /**
-   * The IST day of the payment's `created_at` (L11). Settled by the lead on the safest reading, 2026-11-01 (run file "New, to add to 08-C"): the earlier of the
-   * book entry and the bank credit (s.13(2) CGST Act, explanation), so the payment's own day, never the later settlement day.
+   * The IST day of the payment's `created_at` (L11): the brief's safest reading of s.13(2) CGST Act, explanation (the earlier of the book entry and the bank
+   * credit), so the payment's own day, never the later settlement day. No 08-C row yet: the lead adds it (run file, "New, to add to 08-C"), then this note takes
+   * its tag.
    */
   receivedOn: string;
   /** Core `methodToMode` of Razorpay's method. */
