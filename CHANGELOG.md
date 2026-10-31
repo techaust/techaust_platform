@@ -2,6 +2,11 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-10-31 [#135](https://github.com/techaust/techaust_platform/pull/135) feat(payments): ledger and manual payments, TDS by certificate, third admin Worker [ADM-PAY-01, ADM-PAY-05, ADM-PAY-06, ADM-INV-16]
+- 2026-10-31 [#134](https://github.com/techaust/techaust_platform/pull/134) docs(runbooks): payment gateway test accounts and a hidden-input key script [ADM-PAY-01]
+- 2026-10-31 [#133](https://github.com/techaust/techaust_platform/pull/133) feat(clients): erase a person's data in never-accepted offers [RB-37, ADM-CLI-05, ADM-PROP-05, ADM-PROP-08, POR-05]
+- 2026-10-31 [#132](https://github.com/techaust/techaust_platform/pull/132) feat(invoices): withdraw a proforma the client has received [ADM-INV-10, ADM-INV-02, POR-06]
+- 2026-10-31 [#131](https://github.com/techaust/techaust_platform/pull/131) docs: T12 and T6 merged; owner answers (proforma withdraw, T7, M6.1); MCIA re-checked
 - 2026-10-31 [#130](https://github.com/techaust/techaust_platform/pull/130) feat(terms): offer wording, proposal terms v4 and website Terms 0.2 [ADM-SET-08, ADM-PROP-07, ADM-EST-01, POR-04, WEB-LEGAL]
 - 2026-10-31 [#129](https://github.com/techaust/techaust_platform/pull/129) docs(08-c): retag settled OPEN comments and rewrite 08-C §5 [T12]
 - 2026-10-31 [#128](https://github.com/techaust/techaust_platform/pull/128) docs: parallel run restarted; T6 Q1 and Q2 answered by the owner
