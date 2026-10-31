@@ -1,6 +1,6 @@
 # Polish sweep (admin and website follow-ups)
 
-Status: reviewer running (code + visual) on 64c065f
+Status: review APPROVE (2 medium, 7 low); lead fixed 1, 4, 6; designer fix round waits for 06:10 IST (main session's hold)
 Tier: C
 Usage: builder b1 claude-opus-5-5/high (model-audit; skills attempted `cloudflare:workers-best-practices`, `cloudflare:wrangler`, both "Unknown skill" in the cloud), 5-h 17 → 20 %; designer d1 claude-opus-5-5/high (skills: frontend-design:frontend-design per model-audit), started at 5-h 17 %; frontend-design attempted, "Unknown skill" in the cloud (designer report). Reviewer started at 5-h 62 % (USAGE 62 at 03:21).
 
@@ -65,6 +65,8 @@ Skills: `frontend-design:frontend-design` first (report if it can't load in the 
 - 2026-11-01, Lead: the first usage reading (USAGE 17 at 2026-11-01T02:40+05:30) carries a time ~27 minutes after the session's clock (02:13 IST); `agent-slots.mjs` accepted it; noted, not corrected.
 
 ## Follow-ups (for 12)
+- Admin and portal focus rings: 24 `outline: 2px` rules render 1.6 px at 125 % display scale; move `--focus-width` (2.4 px) into `packages/ui` tokens and use it in all three apps (polish-sweep review 7).
+- The note dialog's blockers come from a second request after each save; return them in the save response (review 8).
 - M2.5's `zod/mini` on `/contact` and `/get-a-quote` (~20 KB gzipped): still needs the shared schemas `packages/core/src/schemas/{fields,forms}.ts` rewritten in the mini API (web and jobs Workers); not done here (no shared-schema change in this task).
 
 ## Builder report
@@ -168,6 +170,26 @@ Designer (Opus 5.5, high), 2026-11-01. Branch `fix/polish-sweep-d1` from `origin
 **Questions:**
 1. The focus ring at 110 % display scale stays 1.82 px; 2.75 px would fix it but draws 2.5 to 2.7 px on every 150 % and 200 % screen. Recommended: keep 2.4 px. docs/06 §5.1 still says `outline: 2px`; should the lead add one line there saying the website draws it with `--focus-width` (2.4 px) so it never renders under 2 px?
 2. The week grid's Person column (and the phone's day list) has the same same-name ambiguity as Entries; the brief named Entries only, so it is unchanged. Recommended: the same quiet email line there, in a later task.
+
+## Review (reviewer, Opus 5.5 high, 2026-11-01, on ce663f0): APPROVE, copied by the lead
+No critical or high findings; 2 medium, 7 low. Checked: 5a's guard holds at step 2a (`mutate` writes the anonymise audit row through `auditFirst` before every `after` statement), a refused anonymise changes no row, the statement count is unchanged (9 + 1 = 10, cap of 10 offers, the 45-statement tests pass), no erased name or email in the Emails row, the jobs Worker never re-mints a deleted link; 07-ZL 1–3 word for word, `APPROVED_07ZL = false` shows "[Placeholder]" as expected, the CSV uses `entryActionText`; the e2e spec weakened no assertion; out-of-scope areas untouched (`.segmented`, the deed panel, `payments/panel.tsx`; `payments/parts.tsx` only the one check). Security review: nothing at confidence ≥ 8.
+1. **medium** `apps/admin/worker/offer-redaction.ts:326` `cancelSends` treats "no link" as "never emailed", but an earlier erase or anonymise of a co-recipient deletes their links: anonymising the addressee later stamps the co-recipient's emailed send cancelled ("Not sent" once its `email_log` row is purged or before it is written). Fix: `AND queued_at IS NULL`, plus a co-recipient test.
+2. **medium (pre-existing, outside the 3a list)** `routes/invoices/issue-queue.tsx:278` (the Owner's approve dialog) and `components/confirm-dialog.tsx:62` (every `stepUp` ConfirmDialog) put a wrong code in the general notice, not cleared or focused, focus falls to `<body>` (WCAG 2.4.3). Fix: the 3a pattern plus `useFieldError`.
+3. **low** Time › Entries at 1280 with the menu open (`care.css:647`, `time.tsx:556`): the Person column is ~130 px and a long email breaks at its hyphen into 4–5 lines. Fix: a `min-width` on `.entry-person` while an email shows, or keep the local part unbroken (`<wbr>` only before "@").
+4. **low** the invoice sends list (`worker/invoice-send.ts:294`, `send-parts.tsx:361`) shows "–" for an anonymised contact. Fix: the same "Removed contact" mapping.
+5. **low** Entries tells same-name people apart only within `GET /time/people` (active staff): a disabled member who shares a name with an active one shows the bare name on both. Fix: compare among the entries' own users too.
+6. **low** `offer-erasure.test.ts:684` `expectNothingWritten` doesn't check `document_sends.cancelled_at` after a refused anonymise (step 2a moved earlier).
+7. **low (follow-up)** admin and portal still draw `outline: 2px` in 24 places (1.6 px at 125 %); `--focus-width` is a raw value in `apps/web/src/styles/global.css:23`, not a `packages/ui` token.
+8. **low** `note-dialog.tsx:235` makes a second finance request after each note save to read `blockers` (falls back to the 409 path on failure). Option: return the blockers in the save response.
+9. **low** `lib/invoices.ts:583`, `lib/payments.ts:379` still test `invalid_code` inline.
+Designer's question 2: yes, the same email line in the week grid's Person column and the phone day list in this round, with its own minimum width at 1280 (durations are `nowrap`), together with 5.
+Commands (through heavy.sh): admin typecheck exit 0; admin test 128 files, 3,822 passed; web build exit 0 (`check-web-dist: ok`, worker dry run); web test 39 files, 767 passed; content lint ok; `E2E_SAMPLE=1` `signature-udyam.spec.ts` 8 passed (3.3 min). Visual (`@playwright/test` Chromium; the MCP browser found no Chromium at `/opt/pw-browsers`): dashboard, audit log, Time, notes ledger, Erase or anonymise at 390 and 1280, both in-app themes against the opposite OS theme, reduced motion: axe 0 and no sideways scroll on all 36 checks, no console errors; website /, /contact, /get-a-quote, /services/web-development at zoom 1, 1.25, 1.5, 2: every ring ≥ 2 px. Shots: `.logs/shots/polish-review/`. Not verified: a real 125 % Windows display, Firefox, Safari, a debit note in the feed (unit-tested), the original 1a data, a screen reader, `pnpm check`, repo-wide lint, the Worker byte rebuild. Skills: `code-review` (its read-only helper), `security-review` (inline analysis); `git remote set-head origin main` run for it.
+
+**Lead triage (2026-11-01):**
+- Fixed by the lead now (small, worker-only): **1** (`queued_at IS NULL` in `cancelSends`, comment; a co-recipient test that failed before the fix and passes after), **4** (`sendsView`: `contact_id IS NULL` reads `ANONYMISED_CONTACT`, no address; unit tests), **6** (`expectNothingWritten` checks no send of the client is cancelled). Commit eb0e708; `offer-erasure` + `invoice-send` 57 passed.
+- Designer fix round (after 06:10 IST, the main session's hold): **2**, **3**, **5**, and question 2 (week grid Person column and phone day list).
+- Kept: **7** follow-up (admin and portal rings and a `packages/ui` focus-width token: a system-wide token change across three apps with drift-tested outputs, wider than item 1d); **8** (one extra read in one dialog, with a safe fallback; returning blockers from the save changes a finance API contract: follow-up); **9** (those helpers map `step_up_cancelled` and `invalid_code` both to the message, not a wrong-code test; `lib/payments.ts` sits beside M6.2's work).
+- A narrow re-check follows the designer round.
 
 ## Integration notes (lead)
 - 2026-11-01: merged `fix/polish-sweep-b1` (9da1599) into `fix/polish-sweep` as 2826a4b; builder worktree removed, local branches deleted. Lead read the diff: the cancel of never-linked sends now runs before `deleteContactAccess` (step 2a), same SQL and guard; `DELIVERY_SQL` adds `removed` and the row reads "Removed contact" (core `ANONYMISED_CONTACT`, existing words), no address. The reviewer checks the guard order (the anonymise audit row exists before 2a) and the statement count.
