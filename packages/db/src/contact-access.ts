@@ -19,6 +19,14 @@ export const CONTACT_ON_ISSUED_DOCUMENT_SQL =
   "(EXISTS (SELECT 1 FROM acceptances a WHERE a.contact_id = c.id) OR EXISTS (SELECT 1 FROM documents d2 WHERE d2.decided_contact_id = c.id) OR EXISTS (SELECT 1 FROM documents d WHERE d.client_id = c.client_id AND d.frozen_at IS NOT NULL AND (cl.type = 'individual' OR lower(json_extract(d.recipient, '$.email')) = c.email OR json_extract(d.recipient, '$.contactId') = c.id)))";
 
 /**
+ * A condition on `contacts c`: a lead of this person (made from the contact, or by its email at its client or at none) is under a legal hold, so the
+ * person can be neither erased nor anonymised (the erase route's audit-first row, its "why" read, and the T7 redaction read, which answers the hold
+ * before `too_many_offers`).
+ */
+export const HELD_LEAD_SQL =
+  "EXISTS (SELECT 1 FROM leads l WHERE l.legal_hold = 1 AND (l.contact_id = c.id OR (l.contact_email = c.email AND (l.client_id IS NULL OR l.client_id = c.client_id))))";
+
+/**
  * Portal access off, or a changed email: every live session of the contact is revoked, every unused sign-in link deleted, and (M4.5, docs/13
  * row 192) every live offer link of the contact revoked. (Turning access back on does not revive a revoked session or link: a revoked
  * one stays revoked, and the person is sent a new link by a new send.)

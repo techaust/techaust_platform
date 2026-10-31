@@ -16,7 +16,7 @@ import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
 import { TIER_LABELS } from "../../lib/care.ts";
-import { erasedBanner } from "../../lib/copy-zg.ts";
+import { erasedBanner, isErased } from "../../lib/copy-zg.ts";
 import {
   CONVERTED_TO_INVOICE,
   careOfLines,
@@ -76,9 +76,8 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
     reload,
   );
   const accepted = v.versions.some((x) => x.status === "accepted");
-  // T7: when the personal details were erased (the newest erasure), or null.
-  const erasedAt = v.redactedAt ?? null;
-  const erased = erasedAt !== null;
+  // T7: whether the personal details were erased (`redactedAt`, the newest erasure, is then the banner's date).
+  const erased = isErased(v);
   const newer = v.versions.filter((x) => x.version > v.version).at(-1);
   const latestSent = Math.max(
     0,
@@ -181,7 +180,7 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
         )}
       </dl>
 
-      {erasedAt !== null && <Notice tone="info">{erasedBanner(formatIstDay(erasedAt))}</Notice>}
+      {erased && <Notice tone="info">{erasedBanner(formatIstDay(v.redactedAt as number))}</Notice>}
 
       <div className="doc-page doc-page--read">
         <div className="doc-page__send">
