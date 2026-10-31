@@ -45,12 +45,18 @@ export const PDF_SLOW_AFTER_MS = 5 * 60_000;
 /** How often a waiting screen asks again (only while it waits, and never past the 5 minutes). */
 export const PDF_POLL_MS = 10_000;
 
-export type PdfPhase = "none" | "ready" | "making" | "slow";
+/** `erased` (T7): the PDF of an offer whose personal details were erased was deleted; the panel says so (07-ZG line 2) and offers no action. */
+export type PdfPhase = "none" | "ready" | "making" | "slow" | "erased";
 
 /** What the panel shows: `since` is when the wait began (the send, or the last "Try again"), `now` the clock. */
-export function pdfPhase(state: "none" | "pending" | "ready", since: number | null, now: number): PdfPhase {
+export function pdfPhase(
+  state: "none" | "pending" | "ready" | "erased",
+  since: number | null,
+  now: number,
+): PdfPhase {
   if (state === "none") return "none";
   if (state === "ready") return "ready";
+  if (state === "erased") return "erased";
   return since !== null && now - since < PDF_SLOW_AFTER_MS ? "making" : "slow";
 }
 

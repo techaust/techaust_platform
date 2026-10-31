@@ -256,6 +256,51 @@ Accepted offers and the invoice family; serving an anonymised client's accepted-
 Merged `fix/t7-offer-erasure-b2` (10db1e94) into the task branch with no conflict. The lead did not re-run the suites at the merge; the reviewer's run and the final `pnpm check` + `pnpm test` cover it. No separate analyst re-check: the reviewer checks the regenerated 0057 in full (lead).
 
 ## Designer report
+**Designer, 2026-10-31, branch `fix/t7-offer-erasure-d1` from `origin/feat/t7-offer-erasure` 9f6c4a4a** (cloud session; commits c6d6ca88, d918d42e and this report). Admin SPA only; no worker, portal or copy-file change.
+
+**Skills:** `frontend-design:frontend-design` was tried first and answers "Unknown skill" (plugins don't load in this cloud session), so none loaded; the direction follows docs/06 and the existing admin parts (the `Notice` component, the PDF panel's sheet glyph, the data-tools refusal path). `dataviz` doesn't apply (no chart or tile).
+
+**What changed on screen**
+- **Read view of an erased offer** (`routes/documents/read.tsx`): an info `Notice` (existing component, info tone, `role="status"`) between the facts strip and the page, 07-ZG line 1 with `{date}` = `redactedAt` through `formatIstDay` (the formatter of the strip's "Sent" date). Same place as the invoice's locked banner.
+- **PDF panel** (`routes/documents/pdf-panel.tsx`, `lib/pdf.ts`): new phase `erased`; the heading is 07-ZG line 2; no download, no "Try again", no polling. The sheet glyph is drawn empty (no rule, no lines; `documents.css`), no warning colour: a fact, not a fault.
+- **Actions:** `canResend` (`lib/offers.ts`) is false once `redactedAt` is set, so "Send again" is gone; the PDF's `canRetry` is false too. "Revoke links" and "Make new version" stay (brief §8). The resend dialog and the PDF retry are the only places in `apps/admin/src` offering those actions (the lists offer neither).
+- **Erase or anonymise dialog** (`routes/clients/data-tools.tsx`): 409 `too_many_offers` goes down the existing refusal path (`blocked`, `Notice tone="error"`, `role="alert"`, like `legal_hold` and `on_issued_document`) with 07-ZG line 3; "Anonymise contact" stays off until the mode changes. `clients.css`: the refusal sentence sits flush in its notice (a paragraph margin left a gap under the long line; the same for all three refusals).
+- **Types** (`lib/documents-api.ts`): `DocumentView.redactedAt?: number | null`; `PdfState.state` gains `"erased"`.
+- **Copy** (`lib/copy-zg.ts`, new): lines 1–3 word for word (`erasedBanner`, `PDF_ERASED_LINE`, `TOO_MANY_OFFERS_LINE`) and `isErased`; a test proves lines 2 and 3 equal the API's `PDF_ERASED` and `TOO_MANY_OFFERS` messages.
+
+**Files:** `apps/admin/src/lib/copy-zg.ts` (new), `apps/admin/src/lib/copy-zg.test.ts` (new), `apps/admin/src/lib/documents-api.ts`, `apps/admin/src/lib/offers.ts`, `apps/admin/src/lib/pdf.ts`, `apps/admin/src/routes/documents/read.tsx`, `apps/admin/src/routes/documents/pdf-panel.tsx`, `apps/admin/src/routes/clients/data-tools.tsx`, `apps/admin/src/documents.css`, `apps/admin/src/clients.css`, this run file.
+
+**Local data (how it was made):** `pnpm dev:secrets`, `pnpm db:migrate:local` (0056, 0057 applied), `pnpm db:seed:local`, `pnpm portal:sample`; a scratch script (not committed) invited a throwaway sample Owner (`designer-t7-…@example.test`) in the local D1 and enrolled it over the local API as `apps/admin/e2e/global-setup.ts` does. Through the **real API**: a proposal drafted and sent to Sample Client A's `finance.a@example.test`, then that contact anonymised (`POST /contacts/:id/erase`, anonymise: 200, offer redacted); a second proposal sent to `team.a@example.test` (the normal one); 11 proposals sent to Sample Client B's `team.b@example.test` (over the cap). **One SQL write:** the normal offer's `pdf_sha256` set to a sample hash so its panel shows "PDF ready" (no jobs Worker ran locally). Empty sections were filled with "Sample text for the designer's check, prepared for {contact}. Not a real proposal." (sample data, not product copy).
+
+**Screenshots** (`.logs/shots/`, git-ignored)
+- `t7-erased-1280-light.png`, `t7-erased-1280-dark.png`: the erased offer, full page: banner, empty-sheet PDF panel, Emails with only "Revoke links", "Make new version", the sheet with "Anonymised client" in the texts.
+- `t7-erased-1280-light-top.png`, `t7-erased-1280-dark-top.png`: the same, first screen.
+- `t7-erased-390-light.png`, `t7-erased-390-dark.png` (+ `-top`): narrow; the banner wraps to three lines, the PDF line to two, no overflow.
+- `t7-erased-1280-os-dark-app-light.png`, `t7-erased-1280-os-light-app-dark.png`: in-app theme against the OS theme; the in-app choice wins.
+- `t7-normal-1280-light.png`, `t7-normal-1280-dark.png`: a normal sent offer, unchanged: no banner, "PDF ready" with fingerprint and "Download PDF", "Send again", "Revoke links".
+- `t7-too-many-offers-1280-light.png`, `t7-too-many-offers-390-dark.png`: the dialog's refusal with 07-ZG line 3, "Anonymise contact" disabled.
+
+**Checks**
+- axe (wcag2a/aa, 21a/aa, 22aa, best-practice): erased view light **0 violations**, dark **0**, in-app dark on OS light **0**; too_many_offers dialog **0**.
+- Read in the browser: erased view banner "Personal details erased on 31 Oct 2026. The number, status, dates and amounts are kept.", PDF panel "The PDF was deleted when the personal details were erased.", Send again, Try again and download **absent**, Revoke links **present**; normal offer: no banner, Send again and download present; dialog: alert text = line 3, confirm `disabled`.
+- Keyboard (erased, 1280 light, 40 Tabs): skip link, nav, search, bell, account, breadcrumb, client link, Revoke links, Make new version, the two scrollable tables, back to the top; every stop has the 2 px focus outline; no trap.
+- Console: no errors on the read views; on the dialog only the browser's "Failed to load resource: 409 (Conflict)" for the expected refusal.
+
+**Commands and results**
+- `pnpm --filter @techaust/admin exec vitest run src/lib/copy-zg.test.ts src/lib/pdf.test.ts src/lib/offers.test.ts`: 3 files, **34 passed**.
+- `bash tools/heavy.sh --log t7-d-typecheck pnpm --filter @techaust/admin typecheck`: **exit 0**.
+- `bash tools/heavy.sh --log t7-d-admin-test pnpm --filter @techaust/admin test`: **122 files, 3529 passed**.
+- `pnpm exec biome check <changed files>`: clean (two formatted with `--write` first).
+- `bash tools/heavy.sh --log lint pnpm lint` (final, once): **exit 0**, 1378 files, 10 warnings and 8 infos, all in files this run didn't touch (`apps/admin/worker/reports.test.ts`, `apps/web/src/lib/catalogue.ts`, `packages/core/src/public-text.ts`, `packages/pdf/test/*`).
+- The admin dev server (offset 0) was stopped before this report.
+
+**Text not from 07-ZG:** none; no `[Placeholder]`.
+
+**Not verified / notes**
+- The `playwright` MCP browser couldn't start (it looks for Chromium 1247 under `/opt/pw-browsers`, which has only 1243). Installing a browser needs the owner's go-ahead, so the screenshots, axe and the keyboard pass ran from a scratch script with the repo's own `@playwright/test` 1.64.1 and `@axe-core/playwright` on the already-present `/opt/ms-playwright` Chromium 1248.
+- The admin package has no DOM component tests; the screens are covered by source-pattern tests (the `pdf.test.ts` pattern) plus the pure rules.
+- Seen, not changed (not T7 screens): an erased offer's Emails row shows "–" and "Not sent" (the API cancels the anonymised contact's unsent send and has no name or email left to show); the Erase or anonymise dialog's title scrolls out of view at the top when its body scrolls (existing `Modal` behaviour with a long contact name).
+- The T6 "Client accepted by email?" box isn't on this branch (integration item, brief §9).
 
 ## Review
 
