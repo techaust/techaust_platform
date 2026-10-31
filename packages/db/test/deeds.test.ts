@@ -4,6 +4,12 @@
 // invented test data.
 import { env } from "cloudflare:workers";
 import { defaultFormat, maxNumber, sqlPrintfPattern, uuidv7 } from "@techaust/core";
+import {
+  DEED_SCHEDULE_LIMITS as DEED_SCHEDULE_LIMITS_CORE,
+  type DeedDocFact,
+  deedEligibility,
+  isLivePayable,
+} from "@techaust/core/deeds";
 import { describe, expect, it } from "vitest";
 import {
   cancelDeedStatement,
@@ -12,6 +18,7 @@ import {
   deedCounterRowStatement,
   deedCounterTakeStatement,
   deedDraftStatements,
+  deedEligibleSql,
   deedFactsSql,
   deedSchedulesStatement,
   ERASE_DRAFT_DEEDS_SQL,
@@ -20,7 +27,7 @@ import {
 } from "../src/deeds.ts";
 import { recomputeStatement } from "../src/ledger.ts";
 import type { GuardSql } from "../src/log.ts";
-import { DEED_STATUSES } from "../src/schema/deeds.ts";
+import { DEED_STATUSES, DEED_SCHEDULE_LIMITS as SCHEDULE_LIMITS_DB } from "../src/schema/deeds.ts";
 import { DEED_FROZEN_0062, DEED_SET_ONCE_0062 } from "../src/triggers.ts";
 import { mkClientRow, mkMember, next } from "./billing-helpers.ts";
 import { all, first, rejects, run } from "./helpers.ts";
@@ -723,5 +730,90 @@ describe("the Owner's and Staff's moves [L1, L4]", () => {
       "s",
     );
     expect(portal.map((p) => p.detail).join("\n")).toMatch(/deeds_client_source/);
+  });
+});
+
+// ---- the twin of core (L2) --------------------------------------------------------------------------------------------------------------------------------
+
+describe("deedEligibleSql and deedFactsSql are core deedEligibility's twin [L2]", () => {
+  it("the Schedule limits are core's", () => {
+    expect(SCHEDULE_LIMITS_DB).toEqual(DEED_SCHEDULE_LIMITS_CORE);
+  });
+
+  it("over 40 random projects (seeded), SQL and core agree on eligibility, the settled sum and the counts", async () => {
+    let seed = 20261101;
+    const rnd = (n: number) => {
+      seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+      return seed % n;
+    };
+    // An INR client in India: tax invoices (an export invoice needs an overseas client: the USD test covers it), debit notes, proformas, credit notes.
+    const types = ["tax_invoice", "tax_invoice", "debit_note", "proforma", "credit_note"] as const;
+    const seen = { yes: 0, no: 0 };
+    for (let k = 0; k < 40; k++) {
+      // Half the projects have a small accepted total, so a fully paid invoice can reach it (both outcomes are exercised).
+      const total = rnd(2) === 0 ? 5_000 + rnd(10_000) : 50_000 + rnd(100_000);
+      const fx = await mkProject({ total, status: rnd(5) === 0 ? "active" : "completed" });
+      const docs: DeedDocFact[] = [];
+      let parent: string | null = null;
+      const n = 1 + rnd(3);
+      for (let j = 0; j < n; j++) {
+        const type = types[rnd(types.length)] as (typeof types)[number];
+        const t = 10_000 + rnd(90_000);
+        const paid = rnd(2) === 0 ? t : rnd(3) === 0 ? 0 : rnd(t + 1);
+        const credited = rnd(4) === 0 ? rnd(Math.max(1, t - paid) + 1) : 0;
+        const tds =
+          type === "tax_invoice" && rnd(5) === 0 ? Math.min(t - Math.min(t, paid + credited), rnd(5_000)) : 0;
+        const voided = paid === 0 && credited === 0 && tds === 0 && rnd(6) === 0;
+        const needsParent = type === "credit_note" || type === "debit_note";
+        if (needsParent && parent === null) continue;
+        const id = await mkDoc(fx.clientId, fx.projectId, {
+          type,
+          total: t,
+          paid: type === "credit_note" ? 0 : paid,
+          credited: type === "credit_note" ? 0 : credited,
+          tds,
+          voided,
+          parentId: needsParent ? parent : null,
+        });
+        if (type === "tax_invoice" && !voided) parent = id;
+        const row = await first<DeedDocFact>(
+          "SELECT type, frozen_at IS NOT NULL AS frozen, status, currency, total_minor AS totalMinor, paid_minor AS paidMinor, credited_minor AS creditedMinor, tds_minor AS tdsMinor, balance_minor AS balanceMinor, care_plan_id IS NOT NULL AS carePlan FROM documents WHERE id = ?",
+          id,
+        );
+        if (row) docs.push({ ...row, frozen: Boolean(row.frozen), carePlan: Boolean(row.carePlan) });
+      }
+      const status =
+        (await first<{ status: string }>("SELECT status FROM projects WHERE id = ?", fx.projectId))?.status ??
+        "";
+      const core = deedEligibility({
+        projectStatus: status,
+        source: {
+          type: "proposal",
+          status: "accepted",
+          frozen: true,
+          sameClient: true,
+          currency: "INR",
+          totalMinor: total,
+        },
+        clientAnonymised: false,
+        carePlanFromSource: false,
+        documents: docs,
+      });
+      const sqlRow = await first<{ ok: number }>(
+        `SELECT ${deedEligibleSql("p")} AS ok FROM projects p WHERE p.id = ?1`,
+        fx.projectId,
+      );
+      const facts = await first<{ settled: number; payables: number; unpaid: number }>(
+        deedFactsSql("?1"),
+        fx.projectId,
+      );
+      expect(Boolean(sqlRow?.ok), `case ${k}`).toBe(core.eligible);
+      seen[core.eligible ? "yes" : "no"]++;
+      expect(facts?.settled, `case ${k}`).toBe(core.settledMinor);
+      expect(facts?.payables).toBe(docs.filter(isLivePayable).length);
+      expect(facts?.unpaid).toBe(docs.filter((d) => isLivePayable(d) && d.balanceMinor !== 0).length);
+    }
+    expect(seen.yes, "some random projects are eligible").toBeGreaterThan(0);
+    expect(seen.no).toBeGreaterThan(0);
   });
 });
