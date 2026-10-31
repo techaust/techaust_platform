@@ -195,7 +195,7 @@ Reviewer, 2026-10-31, on 094c8ce (diff 8d5b958..HEAD): **APPROVE** (no critical 
 ## Integration notes
 
 ## Follow-ups (for 12)
-- **08-C RA-10 (review L6):** its §1 "Our rule" text still says a delivered proforma stays until converted; the lead updates it to the owner's withdraw rule once T12 (which retags RA-10's OPEN text) has merged and this branch takes `main` in.
+- ~~08-C RA-10 (review L6)~~ **done by the lead** after taking main (T12, T6) in: RA-10's §1 rule and code columns now name the withdrawal (§5 untouched).
 - **Cloud browser:** the `.mcp.json` Playwright MCP server looked for Chromium in `/opt/pw-browsers/chromium-1247` while the setup script installs it in `/opt/ms-playwright` (`cloud-check.sh` reports it there); the designer fell back to `@playwright/test`. Check how the MCP server gets `PLAYWRIGHT_BROWSERS_PATH` (setup script or `.mcp.json`).
 - **Admin Emails panel:** a proforma withdrawn before its PDF exists keeps "Waiting for the PDF…" until jobs skips the send; a "won't be sent" line needs new copy (rare).
 - **Staging data check (needs the owner's yes, read-only):** any proforma on staging that was viewed in the portal and then voided before FX-5 (2026-10-28 to 30) now reads as "withdrawn" and reappears in that client's portal. Test data only; check before Phase 7 if wanted.
