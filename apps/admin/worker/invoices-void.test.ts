@@ -2,9 +2,12 @@
 // invoice was emailed and with no payment, credit or issued child; the number and the record stay. Plus the status flow in the database and the
 // Table 13 summary of what was issued.
 import { env } from "cloudflare:workers";
-import { documentsIssuedSummary } from "@techaust/core/invoices";
+import { documentsIssuedSummary, WITHDRAW_REASON_MAX } from "@techaust/core/invoices";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ISSUED_DOCUMENTS_SQL } from "./invoice-model.ts";
+import { voidReasonIn } from "./invoice-void-rules.ts";
+import { withdrawBody } from "./invoice-withdraw.ts";
+import { voidBody } from "./invoices.ts";
 import { insert } from "./test-clients.ts";
 import { call, countOf, one, rows, sessionFor } from "./test-helpers.ts";
 import { mkProforma } from "./test-invoice-types.ts";
@@ -568,5 +571,58 @@ describe("a document the client opened in the portal is never voided [FX-5, A0 3
     expect(await auditCount("invoice.void", inv.id)).toBe(0);
     const v = await getInvoice(o, inv.id);
     expect(v.void.blockers).toEqual(["viewed_by_client", "return_period_closed"]);
+  });
+});
+
+describe("void and withdraw share their rules [ADM-INV-02, ADM-INV-10; early check B3 to B5]", () => {
+  it("one reason field bounded by WITHDRAW_REASON_MAX: both bodies use it, 500 characters pass and 501 fail", () => {
+    expect(voidBody.shape.reason).toBe(voidReasonIn);
+    expect(withdrawBody.shape.reason).toBe(voidReasonIn);
+    expect(WITHDRAW_REASON_MAX).toBe(500);
+    for (const schema of [voidBody, withdrawBody]) {
+      const ok = (reason: string) => schema.safeParse({ expectedUpdatedAt: 1, reason }).success;
+      expect(ok("x".repeat(WITHDRAW_REASON_MAX))).toBe(true);
+      expect(ok("x".repeat(WITHDRAW_REASON_MAX + 1))).toBe(false);
+      expect(ok("   ")).toBe(false);
+    }
+  });
+
+  it("a trigger refusal of the void batch (0038's flow and pairing, 0056's proforma and viewed rules) is a 409 from the re-read, never a 500; nothing written, no audit row", async () => {
+    const o = await owner();
+    for (const name of [
+      "documents_proforma_withdraw",
+      "documents_viewed_no_void",
+      "documents_invoice_status_flow",
+      "documents_void_pairing",
+    ]) {
+      const inv = await issued(o);
+      const before = await invoiceRow(inv.id);
+      await env.DB.prepare(
+        `CREATE TRIGGER test_void_abort BEFORE UPDATE OF status ON documents WHEN NEW.id = '${inv.id}' BEGIN SELECT RAISE(ABORT, '${name}: test'); END`,
+      ).run();
+      try {
+        const res = await voidInvoice(o, inv.id);
+        expect(res.status, `${name}: ${await res.clone().text()}`).toBe(409);
+        expect(await codeOf(res), name).toBe("void_not_allowed");
+      } finally {
+        await env.DB.prepare("DROP TRIGGER test_void_abort").run();
+      }
+      expect(await invoiceRow(inv.id), name).toEqual(before);
+      expect(await auditCount("invoice.void", inv.id), name).toBe(0);
+    }
+  });
+
+  it("another database error is not swallowed (the mapping covers those four triggers only)", async () => {
+    const o = await owner();
+    const inv = await issued(o);
+    await env.DB.prepare(
+      `CREATE TRIGGER test_void_abort BEFORE UPDATE OF status ON documents WHEN NEW.id = '${inv.id}' BEGIN SELECT RAISE(ABORT, 'some_other_rule: test'); END`,
+    ).run();
+    try {
+      expect((await voidInvoice(o, inv.id)).status).toBe(500);
+    } finally {
+      await env.DB.prepare("DROP TRIGGER test_void_abort").run();
+    }
+    expect(await invoiceRow(inv.id)).toMatchObject({ status: "issued" });
   });
 });

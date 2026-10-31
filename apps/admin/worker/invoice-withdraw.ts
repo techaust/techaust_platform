@@ -11,7 +11,7 @@
 // reason's length and how it was delivered; never the reason's text) and the milestone's release (L4). When nothing was written, one read says why; a
 // trigger refusal (0038, 0053/0056) is explained the same way, never a 500.
 
-import { WITHDRAW_REASON_MAX, withdrawBlockers } from "@techaust/core/invoices";
+import { withdrawBlockers } from "@techaust/core/invoices";
 import { proformaDeliveredSql } from "@techaust/db/sql-rules";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
@@ -29,19 +29,13 @@ import {
 } from "./context.ts";
 import { body, idParam, param, refusedWith, STALE_VERSION } from "./http.ts";
 import { INVOICE_TYPES_SQL, WITHDRAW_ERRORS, WITHDRAW_PROFORMA_ONLY } from "./invoice-model.ts";
+import { milestoneReleaseStmt, OWNER_STEP_UP_SQL, VOID_REFUSED, voidReasonIn } from "./invoice-void-rules.ts";
 import { CLIENT_GONE } from "./quote-model.ts";
 
 export const withdrawBody = z.strictObject({
   expectedUpdatedAt: z.int(),
-  reason: z.string().check(z.trim(), z.minLength(1), z.maxLength(WITHDRAW_REASON_MAX)),
+  reason: voidReasonIn,
 });
-
-/** The triggers that may refuse the withdraw batch (a send, a payment or a child landing between the read and the write): explained, never a 500. */
-const WITHDRAW_REFUSED = /documents_(proforma_withdraw|invoice_status_flow|void_pairing|viewed_no_void)/;
-
-/** The owner's session with a live step-up at `?3`, its id at `?5` (the void route's condition, word for word). */
-const OWNER_STEP_UP_SQL =
-  "EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users o ON o.id = s.user_id WHERE s.id = ?5 AND s.revoked_at IS NULL AND s.idle_expires_at > ?3 AND s.abs_expires_at > ?3 AND s.step_up_until > ?3 AND o.role = 'owner' AND o.status = 'active')";
 
 /**
  * Everything the route decides on, in ONE statement (each part one index lookup): the document (an invoice-flow type, else no row), whether its client is
@@ -174,18 +168,11 @@ export const invoiceWithdraw = new Hono<AppEnv>().post(
           reasonLength: f.reason.length,
           delivered: deliveredOf(d),
         },
-        // L4: the milestone this proforma was made from is free for a new invoice again, as on a void (back to ready to bill when the work was delivered,
-        // back to pending when it never was).
-        side: (g) => [
-          db
-            .prepare(
-              `UPDATE milestones SET status = CASE WHEN status <> 'invoiced' THEN status WHEN delivered_at IS NULL THEN 'pending' ELSE 'ready_to_bill' END, document_id = NULL, updated_at = ?2 WHERE document_id = ?1 AND ${g.sql(3)}`,
-            )
-            .bind(id, t, ...g.params),
-        ],
+        // L4: the milestone this proforma was made from is free for a new invoice again, as on a void (the same statement).
+        side: (g) => [milestoneReleaseStmt(db, g, id, t)],
       });
     } catch (e) {
-      if (!refusedWith(e, WITHDRAW_REFUSED)) throw e;
+      if (!refusedWith(e, VOID_REFUSED)) throw e;
     }
     // (6, 7) nothing written, or a trigger refused it: one read says why
     if (!done) return explain(c, id, f.expectedUpdatedAt, t);

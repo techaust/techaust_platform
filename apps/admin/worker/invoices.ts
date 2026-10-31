@@ -100,6 +100,7 @@ import {
   isOverdue,
   MILESTONE_OF_SQL,
 } from "./invoice-view.ts";
+import { milestoneReleaseStmt, OWNER_STEP_UP_SQL, VOID_REFUSED, voidReasonIn } from "./invoice-void-rules.ts";
 import { type Direction, decodeCursor, keysetSql, pageOf } from "./keyset.ts";
 import {
   blockersOfNote,
@@ -490,7 +491,8 @@ export const serviceCompletedBody = z.strictObject({
 
 export const voidBody = z.strictObject({
   expectedUpdatedAt: z.int(),
-  reason: z.string().check(z.trim(), z.minLength(1), z.maxLength(500)),
+  // Early check B3: the one reason field of void and withdraw (1 to WITHDRAW_REASON_MAX characters).
+  reason: voidReasonIn,
 });
 
 const deleteQuery = z.object({ expectedUpdatedAt: z.string().check(z.regex(/^\d{1,16}$/)) });
@@ -1208,56 +1210,58 @@ export const invoices = new Hono<AppEnv>()
     // Every rule is in the statement: issued, nothing paid or credited, no issued child, never emailed, never opened by the client in the portal (FX-5, owner
     // decision 2026-10-30, 08-C RA-10: a view landing between the read and this write refuses it), still inside the IST month of issue (Q23), and the
     // owner's session with a live step-up.
-    const done = await mutate(c, {
-      main: db
-        .prepare(
-          `UPDATE documents SET status = 'void', voided_at = ?3, void_reason = ?4, updated_at = ?3
+    // Early check B5: a trigger that refuses the batch (a send, a view, a payment or a status change landing in between) is explained by the re-read below.
+    let done = false;
+    try {
+      done = await mutate(c, {
+        main: db
+          .prepare(
+            `UPDATE documents SET status = 'void', voided_at = ?3, void_reason = ?4, updated_at = ?3
            WHERE id = ?1 AND updated_at = ?2 AND status = 'issued' AND frozen_at IS NOT NULL AND type IN (${INVOICE_TYPES_SQL})
              AND paid_minor = 0 AND credited_minor = 0 AND NOT ${clientGoneSql("client_id")}
              AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = documents.id AND x.frozen_at IS NOT NULL)
              AND NOT EXISTS (SELECT 1 FROM document_sends s WHERE s.document_id = documents.id)
              AND viewed_at IS NULL
              AND (type = 'proforma' OR substr(issue_date, 1, 7) = ?6)
-             AND EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users o ON o.id = s.user_id WHERE s.id = ?5 AND s.revoked_at IS NULL AND s.idle_expires_at > ?3 AND s.abs_expires_at > ?3 AND s.step_up_until > ?3 AND o.role = 'owner' AND o.status = 'active')`,
-        )
-        .bind(id, f.expectedUpdatedAt, t, f.reason, u.sessionId, today.slice(0, 7)),
-      action: "invoice.void",
-      entityType: "document",
-      entityId: id,
-      // The reason's text is the owner's own words and stays in the document row; the audit row holds only its length.
-      summary: {
-        documentId: id,
-        number: d.number_display,
-        type: d.type,
-        totalMinor: d.total_minor,
-        reasonLength: f.reason.length,
-      },
-      // The milestone this invoice was made from is free for a new invoice again: back to ready to bill when the work was delivered (the delivery time is kept), back to pending when it never was (an advance invoice on a pending milestone, LD12).
-      side: (g) => [
-        db
-          .prepare(
-            `UPDATE milestones SET status = CASE WHEN status <> 'invoiced' THEN status WHEN delivered_at IS NULL THEN 'pending' ELSE 'ready_to_bill' END, document_id = NULL, updated_at = ?2 WHERE document_id = ?1 AND ${g.sql(3)}`,
+             AND ${OWNER_STEP_UP_SQL}`,
           )
-          .bind(id, t, ...g.params),
-        // M5.3 (LD47): the open note drafts of a voided invoice go with it (a note can only be issued against a live invoice), with their issue requests and the bells about them:
-        // each guarded on this void (the audit row), in the order the foreign keys need.
-        db
-          .prepare(
-            `DELETE FROM notifications WHERE entity_type = 'approval' AND entity_id IN (SELECT a.id FROM approvals a JOIN documents n ON n.id = a.document_id WHERE n.parent_id = ?1 AND n.type IN ('credit_note', 'debit_note') AND n.frozen_at IS NULL) AND ${g.sql(2)}`,
-          )
-          .bind(id, ...g.params),
-        db
-          .prepare(
-            `DELETE FROM approvals WHERE document_id IN (SELECT n.id FROM documents n WHERE n.parent_id = ?1 AND n.type IN ('credit_note', 'debit_note') AND n.frozen_at IS NULL) AND ${g.sql(2)}`,
-          )
-          .bind(id, ...g.params),
-        db
-          .prepare(
-            `DELETE FROM documents WHERE parent_id = ?1 AND type IN ('credit_note', 'debit_note') AND frozen_at IS NULL AND ${g.sql(2)}`,
-          )
-          .bind(id, ...g.params),
-      ],
-    });
+          .bind(id, f.expectedUpdatedAt, t, f.reason, u.sessionId, today.slice(0, 7)),
+        action: "invoice.void",
+        entityType: "document",
+        entityId: id,
+        // The reason's text is the owner's own words and stays in the document row; the audit row holds only its length.
+        summary: {
+          documentId: id,
+          number: d.number_display,
+          type: d.type,
+          totalMinor: d.total_minor,
+          reasonLength: f.reason.length,
+        },
+        // The milestone this invoice was made from is free for a new invoice again (`milestoneReleaseStmt`, shared with withdraw).
+        side: (g) => [
+          milestoneReleaseStmt(db, g, id, t),
+          // M5.3 (LD47): the open note drafts of a voided invoice go with it (a note can only be issued against a live invoice), with their issue requests and the bells about them:
+          // each guarded on this void (the audit row), in the order the foreign keys need.
+          db
+            .prepare(
+              `DELETE FROM notifications WHERE entity_type = 'approval' AND entity_id IN (SELECT a.id FROM approvals a JOIN documents n ON n.id = a.document_id WHERE n.parent_id = ?1 AND n.type IN ('credit_note', 'debit_note') AND n.frozen_at IS NULL) AND ${g.sql(2)}`,
+            )
+            .bind(id, ...g.params),
+          db
+            .prepare(
+              `DELETE FROM approvals WHERE document_id IN (SELECT n.id FROM documents n WHERE n.parent_id = ?1 AND n.type IN ('credit_note', 'debit_note') AND n.frozen_at IS NULL) AND ${g.sql(2)}`,
+            )
+            .bind(id, ...g.params),
+          db
+            .prepare(
+              `DELETE FROM documents WHERE parent_id = ?1 AND type IN ('credit_note', 'debit_note') AND frozen_at IS NULL AND ${g.sql(2)}`,
+            )
+            .bind(id, ...g.params),
+        ],
+      });
+    } catch (e) {
+      if (!refusedWith(e, VOID_REFUSED)) throw e;
+    }
     if (!done) {
       const again = await db
         .prepare(
