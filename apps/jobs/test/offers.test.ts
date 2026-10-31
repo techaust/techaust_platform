@@ -298,6 +298,43 @@ describe("offer.send: one recipient, the link and the email [ADM-PROP-07]", () =
     expect(queued).toHaveLength(1);
   });
 
+  // T7 early check finding 7 (Q1 = A, owner 2026-10-31; Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)). [ADM-PROP-07, ADM-CLI-05]
+  it("refuses an offer whose personal details were erased: before the read (a redelivery too) and between the read and the link", async () => {
+    const redact = (w: World) => run("UPDATE documents SET redacted_at = ?2 WHERE id = ?1", w.doc, NOW);
+    // erased before the read: refused, the row marked not sent, no link, nothing queued
+    const before = await world();
+    await redact(before);
+    expect(await processOfferSend(makeEnv(), sendMsg(before), NOW)).toBe("refused");
+    expect(await all("SELECT 1 FROM offer_links WHERE send_id = ?", before.send)).toEqual([]);
+    expect(
+      (
+        await one<{ cancelled_at: number | null }>(
+          "SELECT cancelled_at FROM document_sends WHERE id = ?",
+          before.send,
+        )
+      )?.cancelled_at,
+    ).toBe(NOW);
+    // a redelivery of a send that already holds a link (the anonymise batch leaves such a send alone): no second link, no second email
+    const again = await world();
+    expect(await processOfferSend(makeEnv(), sendMsg(again), NOW)).toBe("queued");
+    queued.length = 0;
+    await redact(again);
+    expect(await processOfferSend(makeEnv(), sendMsg(again), NOW + 1000)).toBe("refused");
+    expect(await all("SELECT 1 FROM offer_links WHERE send_id = ?", again.send)).toHaveLength(1);
+    // erased between the read and the batch: the link statement finds nothing, so nothing is emailed
+    const racing = await world();
+    const db = {
+      prepare: (sql: string) => realEnv.DB.prepare(sql),
+      batch: async (stmts: D1PreparedStatement[]) => {
+        await redact(racing);
+        return realEnv.DB.batch(stmts);
+      },
+    };
+    expect(await processOfferSend(makeEnv({ DB: db }), sendMsg(racing), NOW)).toBe("refused");
+    expect(await all("SELECT 1 FROM offer_links WHERE send_id = ?", racing.send)).toEqual([]);
+    expect(queued).toEqual([]);
+  });
+
   it("waits while the PDF is missing: 'pdf_missing', nothing written, nothing queued", async () => {
     const w = await world({ rendered: false });
     expect(await processOfferSend(makeEnv(), sendMsg(w), NOW)).toBe("pdf_missing");

@@ -1,7 +1,7 @@
 // Taking a person's details out of a frozen offer: the staff VIEW of an anonymised client's or contact's sent version (M4.3, owner 2026-10-26), and the STORED
 // redaction of a never-accepted proposal or estimate when the person is anonymised (T7; Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)). One
 // rule for both: the values are trimmed, blank and one-character values are skipped, and each is replaced by `ANONYMISED_CLIENT` only where it stands as a whole
-// word (`wholeWordPattern`), longest first, in one pass. Pure.
+// word (`wholeWordPattern`), in any case ("ASHA RAO", "Asha@Example.test"), longest first, in one pass. Pure.
 import { ANONYMISED_CLIENT } from "./clients.ts";
 import { wholeWordPattern } from "./text.ts";
 
@@ -70,15 +70,19 @@ export function redactionNames(r: RedactableRecipient, clientGone: boolean, cont
   return cleanValues(values);
 }
 
+/** A compiled redactor: the text with every value replaced (null stays null). */
+export type Redact = (text: string | null) => string | null;
+
 /**
- * Builds the function that replaces every exact occurrence of the given values with `ANONYMISED_CLIENT`, in one pass, longest first (so a value that holds
+ * Builds the function that replaces every occurrence of the given values with `ANONYMISED_CLIENT`, in one pass, longest first (so a value that holds
  * another is replaced whole, and the label is never searched again), only where it stands as a whole word: a client named "Ram" leaves "Ramp-up" alone.
- * Staff-typed free text that only mentions a person in other words is not redacted (owner, 2026-10-26, Researched 2026-10-28, DPDP Act s.8(7) and s.12(3)
- * (08-C RB-11)).
+ * Case is ignored ("ASHA RAO", "Asha@Example.test"): it only ever hides more, in the stored redaction and in the view of an accepted offer alike (T7,
+ * Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)). Staff-typed free text that only mentions a person in other words is not redacted
+ * (owner, 2026-10-26, Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)).
  */
-export function redactor(names: readonly string[]): (text: string | null) => string | null {
+export function redactor(names: readonly string[]): Redact {
   if (names.length === 0) return (text) => text;
-  const re = wholeWordPattern(names);
+  const re = wholeWordPattern(names, { ignoreCase: true });
   return (text: string | null) => (text === null ? null : text.replace(re, ANONYMISED_CLIENT));
 }
 
@@ -144,16 +148,44 @@ export function redactionValues(i: {
   return cleanValues(values).sort((a, b) => b.length - a.length);
 }
 
+/** How one offer is redacted beyond its scope (T7). */
+export type RedactionOptions = {
+  /**
+   * The offer's client is an individual (the frozen `clientType`, else the live client's): in contact scope its own legal and display names are the person's
+   * name, so the values are taken out of them too; its address and GSTIN stay until the client itself is anonymised (client scope). Default: the frozen
+   * `clientType` is "individual".
+   */
+  individual?: boolean;
+  /** The compiled redactor for these values (a caller redacting many offers with the same values compiles it once). */
+  redact?: Redact;
+};
+
 /**
  * The stored recipient after the redaction, as a new object. `client`: the legal, display and contact names become `ANONYMISED_CLIENT` (a missing display or
  * contact name stays missing); the GSTIN, the addresses and the email are removed (keys absent, never null). `contact`: the contact name becomes
- * `ANONYMISED_CLIENT`, the email is removed. `decliner`: unchanged. Always kept: country, client type, GST status, state code and contact id.
+ * `ANONYMISED_CLIENT`, the email is removed, and for an individual client (`individual`) the person's values are also taken out of the legal and display
+ * names by `redact` (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)). `decliner`: unchanged. Always kept: country, client type, GST
+ * status, state code and contact id.
  */
-export function redactRecipient<R extends RedactableRecipient>(r: R, scope: RedactionScope): R {
+export function redactRecipient<R extends RedactableRecipient>(
+  r: R,
+  scope: RedactionScope,
+  options: { individual?: boolean; redact?: Redact } = {},
+): R {
   if (scope === "decliner") return { ...r };
   const { email: _email, ...noEmail } = r;
   const named = r.contactName !== undefined ? { contactName: ANONYMISED_CLIENT } : {};
-  if (scope === "contact") return { ...noEmail, ...named } as R;
+  if (scope === "contact") {
+    const redact = options.redact;
+    if (!(options.individual ?? r.clientType === "individual") || !redact)
+      return { ...noEmail, ...named } as R;
+    return {
+      ...noEmail,
+      legalName: redact(r.legalName) ?? r.legalName,
+      ...(r.displayName !== undefined ? { displayName: redact(r.displayName) ?? r.displayName } : {}),
+      ...named,
+    } as R;
+  }
   const { gstin: _g, address: _a, deliveryAddress: _d, ...rest } = noEmail;
   return {
     ...rest,
@@ -184,7 +216,8 @@ export type OfferRedaction<R extends RedactableRecipient = RedactableRecipient> 
 };
 
 /**
- * Redacts one offer (T7; Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): the recipient by scope, every text by `values` as whole words,
+ * Redacts one offer (T7; Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): the recipient by scope (`options.individual`: an individual
+ * client's own names in contact scope too), every text by `values` as whole words in any case (`options.redact`: the same values, compiled once),
  * the decision note cleared (the person's own typed words; the reason code stays). `fields` lists what changed (`recipient.<key>`, `title`, `sections.title`,
  * `sections.body_md`, `lines.description`, `lines.detail`, `schedule.label`, `schedule.detail`, `decision_note`) and always ends with `envelope` and `pdf`: the
  * stored objects of every redacted offer are deleted. Idempotent: redacting the result again changes nothing.
@@ -193,10 +226,16 @@ export function redactOffer<R extends RedactableRecipient>(
   o: OfferText<R>,
   values: readonly string[],
   scope: RedactionScope,
+  options: RedactionOptions = {},
 ): OfferRedaction<R> {
-  const redact = redactor(values);
+  const redact = options.redact ?? redactor(values);
   const fields = new Set<string>();
-  const recipient = o.recipient ? redactRecipient(o.recipient, scope) : null;
+  const recipient = o.recipient
+    ? redactRecipient(o.recipient, scope, {
+        redact,
+        ...(options.individual !== undefined ? { individual: options.individual } : {}),
+      })
+    : null;
   if (o.recipient && recipient) {
     const before = o.recipient as Record<string, unknown>;
     const after = recipient as Record<string, unknown>;

@@ -4,13 +4,21 @@
 //
 // How it is written (no read-then-write race): D1 has no regular expressions, so the Worker reads the offers ONCE (one batch), works the redacted values
 // out with core's one rule (`@techaust/core/redaction`), and adds a fixed number of statements to the anonymise batch (`UPDATE ... FROM json_each(?plan)`,
-// whatever the number of offers). The batch's audit-first row is written only while the eligible set, the contact's `updated_at`, the last-live state and
-// (client scope) the client's `updated_at` are what was read (`redactionGuard`), and every statement here is guarded on that row; a mismatch writes nothing
-// and the route reads again once. Audit rows hold ids, counts and field NAMES only.
+// whatever the number of offers). The batch's audit-first row is written only while the eligible set, each offer's `redacted_at`, the contact's `updated_at`,
+// the last-live state and (client scope) the client's `updated_at` are what was read (`redactionGuard`), and every statement here is guarded on that row; a
+// mismatch writes nothing and the route reads again once. An offer already redacted for another person is redacted again (its `redacted_at` moves forward,
+// never back). Audit rows hold ids, counts and field NAMES only.
 
 import { uuidv7 } from "@techaust/core/ids";
 import { fyLabelOfToken, pdfKeys } from "@techaust/core/pdf-jobs";
-import { type OfferText, offerScope, redactionValues, redactOffer } from "@techaust/core/redaction";
+import {
+  type OfferText,
+  offerScope,
+  type Redact,
+  redactionValues,
+  redactOffer,
+  redactor,
+} from "@techaust/core/redaction";
 import type { RecipientSnapshot } from "@techaust/db/issue";
 import type { GuardSql } from "@techaust/db/log";
 import { LAST_LIVE_SQL, MAX_REDACTED_OFFERS, REDACTABLE_OFFER_SQL } from "@techaust/db/offer-redaction";
@@ -31,8 +39,8 @@ const OFFER_IDS = `SELECT d.id ${FROM_CONTACT} JOIN documents d ON ${ELIGIBLE} W
 
 /** The read before the batch, one statement per part (exported so a test can EXPLAIN each one). `?1` the contact. */
 export const REDACTION_READ_SQL = {
-  head: `SELECT c.id, c.name, c.email, c.phone, c.updated_at AS contact_updated_at, c.anonymised_at, cl.legal_name, cl.display_name, cl.gstin, cl.updated_at AS client_updated_at, (cl.type = 'individual' AND ${LAST_LIVE_SQL("c")}) AS last_live ${FROM_CONTACT} WHERE c.id = ?1`,
-  offers: `SELECT d.id, d.type, d.fy, d.number, d.version, d.recipient, d.title, d.decision_note, d.contact_id, d.snapshot_r2_key, d.pdf_r2_key ${FROM_CONTACT} JOIN documents d ON ${ELIGIBLE} WHERE c.id = ?1 ORDER BY d.id LIMIT ${MAX_REDACTED_OFFERS + 1}`,
+  head: `SELECT c.id, c.name, c.email, c.phone, c.updated_at AS contact_updated_at, c.anonymised_at, cl.type AS client_type, cl.legal_name, cl.display_name, cl.gstin, cl.updated_at AS client_updated_at, (cl.type = 'individual' AND ${LAST_LIVE_SQL("c")}) AS last_live ${FROM_CONTACT} WHERE c.id = ?1`,
+  offers: `SELECT d.id, d.type, d.fy, d.number, d.version, d.recipient, d.title, d.decision_note, d.contact_id, d.snapshot_r2_key, d.pdf_r2_key, d.redacted_at ${FROM_CONTACT} JOIN documents d ON ${ELIGIBLE} WHERE c.id = ?1 ORDER BY d.id LIMIT ${MAX_REDACTED_OFFERS + 1}`,
   sections: `SELECT id, document_id, title, body_md FROM document_sections WHERE document_id IN (${OFFER_IDS})`,
   lines: `SELECT id, document_id, description, detail FROM document_lines WHERE document_id IN (${OFFER_IDS})`,
   schedule: `SELECT id, document_id, label, detail FROM payment_schedules WHERE document_id IN (${OFFER_IDS})`,
@@ -45,6 +53,7 @@ type Head = {
   phone: string | null;
   contact_updated_at: number;
   anonymised_at: number | null;
+  client_type: string;
   legal_name: string | null;
   display_name: string | null;
   gstin: string | null;
@@ -63,6 +72,7 @@ type OfferRow = {
   contact_id: string | null;
   snapshot_r2_key: string | null;
   pdf_r2_key: string | null;
+  redacted_at: number | null;
 };
 type Child = { id: string; document_id: string };
 
@@ -74,6 +84,10 @@ export type RedactionPlan = {
   tooMany: boolean;
   /** The eligible ids as read (the guard proves the batch sees the same set). */
   ids: string[];
+  /** `[[id, redacted_at as read], ...]`: the guard proves no offer was redacted again between the read and the batch (its text would be stale). */
+  stamps: string;
+  /** The earliest time this redaction may be stamped with: one past the newest `redacted_at` read (it only moves forward), else 0. */
+  after: number;
   /** `[{id, a (audit id), r? (new recipient), t? (new title), f (field names)}]`. */
   docs: string;
   sections: string;
@@ -99,6 +113,8 @@ export async function readRedactionPlan(db: D1Database, contactId: string): Prom
     head,
     tooMany: false,
     ids: [],
+    stamps: "[]",
+    after: 0,
     docs: "[]",
     sections: "[]",
     lines: "[]",
@@ -109,7 +125,11 @@ export async function readRedactionPlan(db: D1Database, contactId: string): Prom
   if (offers.length > MAX_REDACTED_OFFERS) return { ...empty, tooMany: true };
   const byDoc = <T extends Child>(rows: T[]) => {
     const m = new Map<string, T[]>();
-    for (const r of rows) m.set(r.document_id, [...(m.get(r.document_id) ?? []), r]);
+    for (const r of rows) {
+      const list = m.get(r.document_id);
+      if (list) list.push(r);
+      else m.set(r.document_id, [r]);
+    }
     return m;
   };
   const sections = byDoc((s?.results ?? []) as (Child & { title: string | null; body_md: string | null })[]);
@@ -122,6 +142,17 @@ export async function readRedactionPlan(db: D1Database, contactId: string): Prom
   const lineRows: unknown[] = [];
   const scheduleRows: unknown[] = [];
   const keys = new Set<string>();
+  // One compiled pattern per distinct value list (most offers of one person share it); per request only, never kept across requests (it holds names).
+  const compiled = new Map<string, Redact>();
+  const redactorOf = (values: string[]) => {
+    const key = values.join("\u0000");
+    let r = compiled.get(key);
+    if (!r) {
+      r = redactor(values);
+      compiled.set(key, r);
+    }
+    return r;
+  };
   for (const d of offers) {
     const recipient = d.recipient === null ? null : (JSON.parse(d.recipient) as RecipientSnapshot);
     const scope = offerScope({
@@ -139,7 +170,12 @@ export async function readRedactionPlan(db: D1Database, contactId: string): Prom
       lines: (lines.get(d.id) ?? []).map((x) => ({ id: x.id, description: x.description, detail: x.detail })),
       schedule: (schedule.get(d.id) ?? []).map((x) => ({ id: x.id, label: x.label, detail: x.detail })),
     };
-    const out = redactOffer(text, values, scope);
+    // T7 finding 2 (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): at an individual client the recipient's own names are the person's
+    // name, so contact scope takes their values out of them too (the frozen client type, else the live one).
+    const out = redactOffer(text, values, scope, {
+      individual: (recipient?.clientType ?? head.client_type) === "individual",
+      redact: redactorOf(values),
+    });
     docs.push({
       id: d.id,
       a: uuidv7(),
@@ -169,6 +205,8 @@ export async function readRedactionPlan(db: D1Database, contactId: string): Prom
     head,
     tooMany: false,
     ids: offers.map((d) => d.id),
+    stamps: JSON.stringify(offers.map((d) => [d.id, d.redacted_at])),
+    after: offers.reduce((m, d) => Math.max(m, (d.redacted_at ?? -1) + 1), 0),
     docs: JSON.stringify(docs),
     sections: JSON.stringify(sectionRows),
     lines: JSON.stringify(lineRows),
@@ -179,7 +217,8 @@ export async function readRedactionPlan(db: D1Database, contactId: string): Prom
 
 /**
  * The conditions the anonymise audit-first row adds (its FROM is `contacts c JOIN clients cl`; placeholders from `at`): the eligible set at batch time is
- * exactly the set read, the contact's `updated_at` and the last-live state are as read, and in client scope the client's `updated_at` is too.
+ * exactly the set read, no offer of it was redacted again since (its `redacted_at` is as read), the contact's `updated_at` and the last-live state are as
+ * read, and in client scope the client's `updated_at` is too.
  */
 export function redactionGuard(plan: RedactionPlan, at: number): { sql: string; params: unknown[] } {
   const head = plan.head as Head;
@@ -190,6 +229,7 @@ export function redactionGuard(plan: RedactionPlan, at: number): { sql: string; 
       `c.updated_at = ?${at + 2}`,
       `(cl.type = 'individual' AND ${LAST_LIVE_SQL("c")}) = ?${at + 3}`,
       `(?${at + 3} = 0 OR cl.updated_at = ?${at + 4})`,
+      `NOT EXISTS (SELECT 1 FROM json_each(?${at + 5}) j JOIN documents d ON d.id = json_extract(j.value, '$[0]') WHERE d.redacted_at IS NOT json_extract(j.value, '$[1]'))`,
     ].join(" AND "),
     params: [
       plan.ids.length,
@@ -197,6 +237,7 @@ export function redactionGuard(plan: RedactionPlan, at: number): { sql: string; 
       head.contact_updated_at,
       head.last_live,
       head.client_updated_at,
+      plan.stamps,
     ],
   };
 }
@@ -206,13 +247,16 @@ const PLAN_IDS = "(SELECT json_extract(value, '$.id') FROM json_each(?1))";
 
 /** Step 2e's statements (exported so a test can EXPLAIN them). `?1` the plan (or the child rows), `?2` the time; the guard follows. */
 export const REDACTION_WRITE_SQL = {
-  /** The offers: recipient and title as planned, the decision note cleared, `redacted_at` set. The eligibility is checked again (`?3` the contact). */
+  /**
+   * The offers: recipient and title as planned, the decision note cleared, `redacted_at` set or moved forward (`?2` is past every value read). The
+   * eligibility is checked again (`?3` the contact).
+   */
   documents: (g: string) =>
     `UPDATE documents SET recipient = CASE WHEN json_type(j.value, '$.r') = 'object' THEN json_extract(j.value, '$.r') ELSE documents.recipient END,
        title = CASE WHEN json_type(j.value, '$.t') = 'text' THEN json_extract(j.value, '$.t') ELSE documents.title END,
        decision_note = NULL, redacted_at = ?2, updated_at = max(documents.updated_at + 1, ?2)
      FROM json_each(?1) j
-     WHERE documents.id = json_extract(j.value, '$.id') AND EXISTS (SELECT 1 FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?3 AND ${REDACTABLE_OFFER_SQL("documents", "c", "cl")}) AND ${g}`,
+     WHERE documents.id = json_extract(j.value, '$.id') AND documents.redacted_at IS NOT ?2 AND EXISTS (SELECT 1 FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?3 AND ${REDACTABLE_OFFER_SQL("documents", "c", "cl")}) AND ${g}`,
   /** One `document.redact` row per offer redacted in this batch (`?3` actor, `?4` role, `?5` contact, `?6` the anonymise audit id, `?7` ip, `?8` ua, `?9` request). */
   audit: (g: string) =>
     `INSERT INTO audit_log (id, actor_type, actor_id, role, action, entity_type, entity_id, summary, ip, user_agent, request_id)
@@ -222,16 +266,16 @@ export const REDACTION_WRITE_SQL = {
      FROM json_each(?1) j JOIN documents d ON d.id = json_extract(j.value, '$.id') WHERE d.redacted_at = ?2 AND ${g}`,
   sectionsText: (g: string) =>
     `UPDATE document_sections SET title = json_extract(j.value, '$.title'), body_md = json_extract(j.value, '$.bodyMd'), redacted_at = ?2
-     FROM json_each(?1) j WHERE document_sections.id = json_extract(j.value, '$.id') AND document_sections.redacted_at IS NULL AND (SELECT redacted_at FROM documents WHERE id = document_sections.document_id) = ?2 AND ${g}`,
+     FROM json_each(?1) j WHERE document_sections.id = json_extract(j.value, '$.id') AND document_sections.redacted_at IS NOT ?2 AND (SELECT redacted_at FROM documents WHERE id = document_sections.document_id) = ?2 AND ${g}`,
   linesText: (g: string) =>
     `UPDATE document_lines SET description = json_extract(j.value, '$.description'), detail = json_extract(j.value, '$.detail'), redacted_at = ?2
-     FROM json_each(?1) j WHERE document_lines.id = json_extract(j.value, '$.id') AND document_lines.redacted_at IS NULL AND (SELECT redacted_at FROM documents WHERE id = document_lines.document_id) = ?2 AND ${g}`,
+     FROM json_each(?1) j WHERE document_lines.id = json_extract(j.value, '$.id') AND document_lines.redacted_at IS NOT ?2 AND (SELECT redacted_at FROM documents WHERE id = document_lines.document_id) = ?2 AND ${g}`,
   scheduleText: (g: string) =>
     `UPDATE payment_schedules SET label = json_extract(j.value, '$.label'), detail = json_extract(j.value, '$.detail'), redacted_at = ?2
-     FROM json_each(?1) j WHERE payment_schedules.id = json_extract(j.value, '$.id') AND payment_schedules.redacted_at IS NULL AND (SELECT redacted_at FROM documents WHERE id = payment_schedules.document_id) = ?2 AND ${g}`,
-  /** The child rows whose text held nothing personal are marked too, so every row of a redacted offer says so (`?1` the plan). */
+     FROM json_each(?1) j WHERE payment_schedules.id = json_extract(j.value, '$.id') AND payment_schedules.redacted_at IS NOT ?2 AND (SELECT redacted_at FROM documents WHERE id = payment_schedules.document_id) = ?2 AND ${g}`,
+  /** The child rows whose text held nothing personal (this time) are marked too, so every row of a redacted offer carries its time (`?1` the plan). */
   mark: (table: "document_sections" | "document_lines" | "payment_schedules", g: string) =>
-    `UPDATE ${table} SET redacted_at = ?2 WHERE document_id IN ${PLAN_IDS} AND redacted_at IS NULL AND (SELECT redacted_at FROM documents WHERE id = ${table}.document_id) = ?2 AND ${g}`,
+    `UPDATE ${table} SET redacted_at = ?2 WHERE document_id IN ${PLAN_IDS} AND redacted_at IS NOT ?2 AND (SELECT redacted_at FROM documents WHERE id = ${table}.document_id) = ?2 AND ${g}`,
   /** Q1 = A (owner, 2026-10-31): the offer is withdrawn for everyone: every send not yet holding a link is cancelled (the jobs Worker mints none then). */
   cancelSends: (g: string) =>
     `UPDATE document_sends SET cancelled_at = ?2 WHERE cancelled_at IS NULL AND document_id IN ${PLAN_IDS} AND NOT EXISTS (SELECT 1 FROM offer_links l WHERE l.send_id = document_sends.id) AND ${g}`,
@@ -265,7 +309,8 @@ export function redactionStatements(
 ): D1PreparedStatement[] {
   if (plan.ids.length === 0) return [];
   const w = REDACTION_WRITE_SQL;
-  const t = ctx.t;
+  // `redacted_at` only moves forward: past every value read (two erasures in the same millisecond, or a clock behind an earlier one).
+  const t = Math.max(ctx.t, plan.after);
   const at2 = (sql: (g: string) => string, json: string) =>
     db.prepare(sql(g.sql(3))).bind(json, t, ...g.params);
   return [

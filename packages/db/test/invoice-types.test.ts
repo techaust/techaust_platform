@@ -382,7 +382,7 @@ describe("migrations 0039 and 0040 [LD35]", () => {
     expect([...FROZEN_COLUMNS_0040, "fx_no_rate_day"]).toEqual([...FROZEN_COLUMNS_0047]);
     // FX-1 (A0 5): 0050 recreates the trigger with the four e-invoice fields set once; that is the live list today.
     expect([...SET_ONCE_0050]).toEqual([...SET_ONCE_0040, "irn", "ack_no", "ack_date", "signed_qr"]);
-    // T7 (08-C RB-37): 0057 recreates it with `redacted_at` set once; that is the live list today.
+    // T7 (08-C RB-37): 0057 recreates it with `redacted_at` (never cleared, only forward); that is the live list today.
     expect([...SET_ONCE_0050, "redacted_at"]).toEqual([...SET_ONCE_AFTER_FREEZE]);
   });
 

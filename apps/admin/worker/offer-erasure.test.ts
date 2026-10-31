@@ -6,10 +6,16 @@ import { ANONYMISED_CLIENT } from "@techaust/core/clients";
 import { uuidv7 } from "@techaust/core/ids";
 import { pdfKeys } from "@techaust/core/pdf-jobs";
 import { describe, expect, it } from "vitest";
-import { REDACTION_READ_SQL, REDACTION_WRITE_SQL } from "./offer-redaction.ts";
+import {
+  REDACTION_READ_SQL,
+  REDACTION_WRITE_SQL,
+  type RedactionPlan,
+  redactionGuard,
+} from "./offer-redaction.ts";
 import { insert, mkClient, mkContact, mkLead } from "./test-clients.ts";
 import { call, countOf, one, rows, sessionFor } from "./test-helpers.ts";
 import { beforeBatchHolding, getDoc, type J, json, mkDraft, mkTerms, sendDoc } from "./test-quotes.ts";
+import { addDoc, line } from "./test-reports.ts";
 
 const AC = ANONYMISED_CLIENT;
 const owner = () => sessionFor("owner", { stepUp: true });
@@ -290,8 +296,122 @@ describe("business client [ADM-CLI-05]", () => {
   });
 });
 
+describe("a later erasure reaches an offer already redacted (early check finding 1) [ADM-CLI-05]", () => {
+  const redactRows = (id: string) =>
+    rows<{ summary: string }>(
+      "SELECT summary FROM audit_log WHERE action = 'document.redact' AND entity_id = ?",
+      id,
+    );
+
+  it("business: the decliner first, then the addressee: the offer is redacted again, its time moves forward", async () => {
+    const o = await owner();
+    const client = await mkClient();
+    const asha = await person(client, "Asha Rao");
+    const bo = await person(client, "Bo Sen");
+    const m = await offer(client, bo, { status: "rejected", decider: asha, texts: "Bo Sen and Asha Rao" });
+    const before = await docRow(m.id);
+    expect((await anonymise(o.cookie, asha.id)).status).toBe(200);
+    const first = await docRow(m.id);
+    expect(first?.title).toBe(`Website for Bo Sen and ${AC}`);
+    expect(JSON.parse(first?.recipient as string).contactName).toBe("Bo Sen");
+    const res = await anonymise(o.cookie, bo.id);
+    expect(res.status, await res.clone().text()).toBe(200);
+    await expectRedacted(m.id, before, ["Asha Rao", asha.email, asha.phone, "Bo Sen", bo.email, bo.phone]);
+    const second = await docRow(m.id);
+    expect(second?.redacted_at as number).toBeGreaterThan(first?.redacted_at as number);
+    expect(second?.title).toBe(`Website for ${AC} and ${AC}`);
+    const r = JSON.parse(second?.recipient as string);
+    expect(r.contactName).toBe(AC);
+    expect(r).not.toHaveProperty("email");
+    expect(r.legalName).toBe("Acme Studio Pvt Ltd");
+    // one audit row per erasure, each with names only
+    const audits = await redactRows(m.id);
+    expect(audits).toHaveLength(2);
+    for (const s of ["Asha Rao", "Bo Sen", asha.email, bo.email])
+      expect(JSON.stringify(audits)).not.toContain(s);
+  });
+
+  it("individual: a first contact (contact scope, its own name leaves the client's names), then the last live contact (client scope)", async () => {
+    const o = await owner();
+    const client = await mkClient({
+      type: "individual",
+      legal_name: "Asha Rao",
+      display_name: "Asha Rao",
+      gstin: null,
+    });
+    const asha = await person(client, "Asha Rao");
+    const ravi = await person(client, "Ravi Rao");
+    const recipient = {
+      legalName: "Asha Rao",
+      displayName: "Asha Rao",
+      email: asha.email,
+      country: "IN",
+      contactId: asha.id,
+      contactName: asha.name,
+      clientType: "individual",
+      gstStatus: "unregistered",
+      address: { line1: "1 Park Street" },
+    };
+    const m = await offer(client, asha, { recipient });
+    const before = await docRow(m.id);
+    expect((await anonymise(o.cookie, asha.id)).status).toBe(200);
+    // finding 2: contact scope at an individual client takes the person's name out of the client's own names; the address stays (the client is live)
+    const first = JSON.parse((await docRow(m.id))?.recipient as string);
+    expect(first).toMatchObject({
+      legalName: AC,
+      displayName: AC,
+      contactName: AC,
+      address: { line1: "1 Park Street" },
+    });
+    expect(first).not.toHaveProperty("email");
+    expect(await countOf("clients", "id = ? AND anonymised_at IS NULL", client)).toBe(1);
+    // the last live contact goes: the client goes, and the offer (addressed to the first) is redacted again in client scope
+    expect((await anonymise(o.cookie, ravi.id)).status).toBe(200);
+    await expectRedacted(m.id, before, ["Asha Rao", asha.email, asha.phone, "1 Park Street"]);
+    expect(JSON.parse((await docRow(m.id))?.recipient as string)).toEqual({
+      legalName: AC,
+      displayName: AC,
+      country: "IN",
+      contactId: asha.id,
+      contactName: AC,
+      clientType: "individual",
+      gstStatus: "unregistered",
+    });
+    expect(await redactRows(m.id)).toHaveLength(2);
+    expect(await countOf("clients", "id = ? AND anonymised_at IS NOT NULL", client)).toBe(1);
+  });
+
+  it("the cap counts offers already redacted: 10 of them plus one new is 409 too_many_offers", async () => {
+    const o = await owner();
+    const client = await mkClient();
+    const a = await person(client, "Asha Rao");
+    const b = await person(client, "Bo Sen");
+    const made: Offer[] = [];
+    for (let i = 0; i < 10; i++)
+      made.push(await offer(client, b, { status: "rejected", decider: a, texts: "Bo Sen and Asha Rao" }));
+    expect((await anonymise(o.cookie, a.id)).status).toBe(200);
+    await offer(client, b);
+    const res = await anonymise(o.cookie, b.id);
+    expect(res.status).toBe(409);
+    expect(await code(res)).toBe("too_many_offers");
+    expect(await countOf("contacts", "id = ? AND anonymised_at IS NULL", b.id)).toBe(1);
+  });
+
+  it("ignores case: an upper-case name and a mixed-case email in the texts go too (early check finding 3)", async () => {
+    const o = await owner();
+    const client = await mkClient();
+    const a = await person(client, "Asha Rao", { email: `asha.${uuidv7()}@example.test` });
+    const shout = `ASHA RAO <${a.email.toUpperCase()}>`;
+    const m = await offer(client, a, { texts: shout });
+    expect((await anonymise(o.cookie, a.id)).status).toBe(200);
+    expect((await docRow(m.id))?.title).toBe(`Website for ${AC} <${AC}>`);
+    const text = await textOf(m.id);
+    for (const s of ["ASHA RAO", a.email.toUpperCase(), a.email]) expect(text).not.toContain(s);
+  });
+});
+
 describe("what is never touched", () => {
-  it("accepted and converted offers stay byte-identical with their R2 objects; so do a tax invoice and a proforma naming the person", async () => {
+  it("accepted and converted offers stay byte-identical with their R2 objects; so do a tax invoice, a proforma and a credit note naming the person", async () => {
     const o = await owner();
     const client = await mkClient({ type: "individual", legal_name: "Ravi Das", display_name: "Ravi Das" });
     const ravi = await person(client, "Ravi Das");
@@ -337,6 +457,32 @@ describe("what is never touched", () => {
       });
       invoices.push(id);
     }
+    // a credit note on an issued invoice, both naming the person (the client scope reaches every document of the client but the invoice family)
+    const named = {
+      title: "For Ravi Das",
+      recipient: JSON.stringify({
+        legalName: "Ravi Das",
+        country: "IN",
+        contactId: ravi.id,
+        email: ravi.email,
+      }),
+    };
+    const parent = await addDoc({
+      clientId: client,
+      issueDate: "2026-10-25",
+      lines: [line(1_000_00)],
+      over: named,
+    });
+    const credit = await addDoc({
+      type: "credit_note",
+      clientId: client,
+      issueDate: "2026-10-25",
+      parentId: parent.id,
+      lines: [line(100_00)],
+      dueDate: null,
+      over: named,
+    });
+    invoices.push(parent.id, credit.id);
     const before = await Promise.all([accepted.id, converted, ...invoices].map(whole));
     expect((await anonymise(o.cookie, ravi.id)).status).toBe(200);
     expect(await Promise.all([accepted.id, converted, ...invoices].map(whole))).toEqual(before);
@@ -510,7 +656,14 @@ describe("the read and the batch (no race)", () => {
     const res = await anonymise(o.cookie, a.id, racing(client, a, 2));
     expect(res.status).toBe(409);
     expect(await code(res)).toBe("stale_version");
-    expect(await countOf("documents", "client_id = ? AND redacted_at IS NOT NULL", client)).toBe(0);
+    await expectNothingWritten(client, a);
+  });
+
+  /** Nothing of the anonymise is in the database: no redaction, no audit row, the contact still live. */
+  async function expectNothingWritten(client: string, a: Person) {
+    expect(
+      await countOf("documents", "client_id = ? AND redacted_at IS NOT NULL AND redacted_at > 100", client),
+    ).toBe(0);
     expect(
       await countOf(
         "audit_log",
@@ -520,7 +673,149 @@ describe("the read and the batch (no race)", () => {
       ),
     ).toBe(0);
     expect(await countOf("contacts", "id = ? AND anonymised_at IS NULL", a.id)).toBe(1);
-  });
+  }
+
+  /** Runs `change` just before the anonymise batch, the first `times` times. */
+  const holding = (times: number, change: (n: number) => Promise<void>) => {
+    let n = 0;
+    return beforeBatchHolding("contact.anonymise", async () => {
+      if (n < times) await change(n++);
+    });
+  };
+  const exec = (sql: string, ...args: unknown[]) =>
+    env.DB.prepare(sql)
+      .bind(...args)
+      .run();
+
+  /**
+   * Each part of the guard on its own (early check finding 4): the eligible set shrinks, the last-live state flips, the contact's `updated_at` moves, the
+   * client's `updated_at` moves (client scope), or an offer is redacted again by another erasure. Once: the route reads again and succeeds. Twice: 409
+   * `stale_version` and nothing is written.
+   */
+  type Race = {
+    name: string;
+    setup: () => Promise<{
+      client: string;
+      a: Person;
+      change: (n: number) => Promise<void>;
+      after?: () => Promise<void>;
+    }>;
+  };
+  const races: Race[] = [
+    {
+      name: "the eligible set shrinks (an offer is accepted)",
+      setup: async () => {
+        const client = await mkClient();
+        const a = await person(client, "Asha Rao");
+        await offer(client, a);
+        const gone = [await offer(client, a), await offer(client, a)];
+        return {
+          client,
+          a,
+          change: (n) =>
+            exec("UPDATE documents SET status = 'accepted', decided_at = 3 WHERE id = ?", gone[n]?.id).then(
+              () => {},
+            ),
+          after: async () => {
+            // the one accepted between the read and the batch is never redacted
+            expect((await docRow(gone[0]?.id as string))?.redacted_at).toBeNull();
+          },
+        };
+      },
+    },
+    {
+      name: "the last-live state flips (another contact of an individual is anonymised, then a new one added)",
+      setup: async () => {
+        const client = await mkClient({
+          type: "individual",
+          legal_name: "Asha Rao",
+          display_name: "Asha Rao",
+        });
+        const a = await person(client, "Asha Rao");
+        const b = await person(client, "Bo Rao");
+        await offer(client, a, {
+          recipient: { legalName: "Asha Rao", country: "IN", contactId: a.id, clientType: "individual" },
+        });
+        return {
+          client,
+          a,
+          change: async (n) => {
+            if (n === 0) await exec("UPDATE contacts SET anonymised_at = 5 WHERE id = ?", b.id);
+            else await person(client, "Cy Rao");
+          },
+        };
+      },
+    },
+    {
+      name: "the contact's updated_at moves",
+      setup: async () => {
+        const client = await mkClient();
+        const a = await person(client, "Asha Rao");
+        await offer(client, a);
+        return {
+          client,
+          a,
+          change: () =>
+            exec("UPDATE contacts SET updated_at = updated_at + 1 WHERE id = ?", a.id).then(() => {}),
+        };
+      },
+    },
+    {
+      name: "the client's updated_at moves (client scope)",
+      setup: async () => {
+        const client = await mkClient({
+          type: "individual",
+          legal_name: "Asha Rao",
+          display_name: "Asha Rao",
+        });
+        const a = await person(client, "Asha Rao");
+        await offer(client, a, {
+          recipient: { legalName: "Asha Rao", country: "IN", contactId: a.id, clientType: "individual" },
+        });
+        return {
+          client,
+          a,
+          change: () =>
+            exec("UPDATE clients SET updated_at = updated_at + 1 WHERE id = ?", client).then(() => {}),
+        };
+      },
+    },
+    {
+      name: "an offer is redacted again by another erasure (its redacted_at moves)",
+      setup: async () => {
+        const client = await mkClient();
+        const a = await person(client, "Asha Rao");
+        const m = await offer(client, a);
+        return {
+          client,
+          a,
+          change: (n) =>
+            exec("UPDATE documents SET redacted_at = ? WHERE id = ?", 10 + n, m.id).then(() => {}),
+        };
+      },
+    },
+  ];
+
+  for (const race of races) {
+    it(`${race.name}: once, read again and redact`, async () => {
+      const o = await owner();
+      const r = await race.setup();
+      const res = await anonymise(o.cookie, r.a.id, holding(1, r.change));
+      expect(res.status, await res.clone().text()).toBe(200);
+      expect(await countOf("audit_log", "action = 'contact.anonymise' AND entity_id = ?", r.client)).toBe(1);
+      expect(await countOf("contacts", "id = ? AND anonymised_at IS NOT NULL", r.a.id)).toBe(1);
+      expect(await countOf("documents", "client_id = ? AND redacted_at > 100", r.client)).toBeGreaterThan(0);
+      await r.after?.();
+    });
+    it(`${race.name}: twice, 409 stale_version and nothing written`, async () => {
+      const o = await owner();
+      const r = await race.setup();
+      const res = await anonymise(o.cookie, r.a.id, holding(2, r.change));
+      expect(res.status, await res.clone().text()).toBe(409);
+      expect(await code(res)).toBe("stale_version");
+      await expectNothingWritten(r.client, r.a);
+    });
+  }
 
   /** Values for every `?n` of a statement (the JSON list first). */
   const placeholders = (sql: string) =>
@@ -563,6 +858,28 @@ describe("the read and the batch (no race)", () => {
         .join(" | ");
       expect(plan, name).not.toMatch(/SCAN (?!j VIRTUAL|json_each VIRTUAL)/);
     }
+    // the three "mark the rest" statements search each child table by its document index
+    for (const table of ["document_sections", "document_lines", "payment_schedules"] as const) {
+      const sql = REDACTION_WRITE_SQL.mark(table, g);
+      const plan = (await rows<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, ...placeholders(sql)))
+        .map((r) => r.detail)
+        .join(" | ");
+      expect(plan, table).not.toMatch(/SCAN (?!j VIRTUAL|json_each VIRTUAL)/);
+      expect(plan, table).toMatch(new RegExp(`SEARCH ${table} USING (COVERING )?INDEX`));
+    }
+    // the guard's subqueries, inside the audit-first row's FROM (the eligible count, the set, the stamps, the last-live state)
+    const fakePlan = {
+      head: { contact_updated_at: 1, last_live: 1, client_updated_at: 1 },
+      ids: ["x"],
+      stamps: '[["x", null]]',
+    } as unknown as RedactionPlan;
+    const guard = redactionGuard(fakePlan, 2);
+    const sql = `SELECT 1 FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1 AND ${guard.sql}`;
+    const plan = (await rows<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, "x", ...guard.params))
+      .map((r) => r.detail)
+      .join(" | ");
+    expect(plan).not.toMatch(/SCAN (?!j VIRTUAL|json_each VIRTUAL)/);
+    expect(plan).toMatch(/documents_client_type_status/);
   });
 });
 
