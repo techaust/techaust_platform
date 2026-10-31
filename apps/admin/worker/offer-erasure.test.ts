@@ -2,7 +2,7 @@
 // proposal or estimate that was never accepted and names them; accepted offers and the invoice family stay byte-identical. [ADM-CLI-05, ADM-PROP-05, ADM-PROP-08,
 // JOB-PDF-01, ADM-AUD-01]
 import { env } from "cloudflare:workers";
-import { ANONYMISED_CLIENT } from "@techaust/core/clients";
+import { ANONYMISED_CLIENT, ANONYMISED_CONTACT } from "@techaust/core/clients";
 import { uuidv7 } from "@techaust/core/ids";
 import { pdfKeys } from "@techaust/core/pdf-jobs";
 import { describe, expect, it } from "vitest";
@@ -15,7 +15,16 @@ import {
 import { insert, mkClient, mkContact, mkLead } from "./test-clients.ts";
 import { call, countOf, one, rows, sessionFor, type TestSession, withDb } from "./test-helpers.ts";
 import { recordBody, recorded, verify } from "./test-payments.ts";
-import { beforeBatchHolding, getDoc, type J, json, mkDraft, mkTerms, sendDoc } from "./test-quotes.ts";
+import {
+  beforeBatchHolding,
+  getDoc,
+  type J,
+  json,
+  type Made,
+  mkDraft,
+  mkTerms,
+  sendDoc,
+} from "./test-quotes.ts";
 import { addDoc, line } from "./test-reports.ts";
 
 const AC = ANONYMISED_CLIENT;
@@ -1238,5 +1247,107 @@ describe("D1 statements per request (review row 6) [NFR-6]", () => {
         },
       },
     );
+  });
+});
+
+describe("the Emails row after an anonymise (polish sweep 5a) [ADM-CLI-05, ADM-PROP-08]", () => {
+  // The anonymise batch deletes the person's links (step 2) and then cancelled the offer's sends that had no link (step 2e), so it also stamped an
+  // EMAILED send cancelled (its link had just gone): until its `email_log` row existed (or if it never would), the row read "Not sent" for an email
+  // that went. The cancel now runs before the links are deleted. The row names the person "Removed contact" (core ANONYMISED_CONTACT), never their
+  // name or address.
+  async function sentToAsha() {
+    const o = await owner();
+    await mkTerms();
+    const made = await mkDraft(o);
+    const sent = await sendDoc(o, made.id, (await getDoc(o, made.id)).updatedAt);
+    expect(sent.status, await sent.clone().text()).toBe(200);
+    const sendId = (await getDoc(o, made.id)).delivery[0].id as string;
+    const person = await one<{ name: string; email: string }>(
+      "SELECT name, email FROM contacts WHERE id = ?",
+      made.contactId,
+    );
+    return { o, made, sendId, name: person?.name ?? "", email: person?.email ?? "" };
+  }
+  /** What the jobs Worker writes when it emails a send: the link (bound to the send) and the queued stamp. */
+  async function linked(made: Made, sendId: string, email: string) {
+    await env.DB.prepare("UPDATE document_sends SET queued_at = ? WHERE id = ?")
+      .bind(Date.now(), sendId)
+      .run();
+    await insert("offer_links", {
+      token_hash: `h-${uuidv7()}`,
+      send_id: sendId,
+      document_id: made.id,
+      version_group_id: made.id,
+      client_id: made.clientId,
+      contact_id: made.contactId,
+      email,
+      purpose: "offer",
+      expires_at: Date.now() + 86_400_000,
+    });
+  }
+  const cancelledAt = async (sendId: string) =>
+    (
+      await one<{ cancelled_at: number | null }>(
+        "SELECT cancelled_at FROM document_sends WHERE id = ?",
+        sendId,
+      )
+    )?.cancelled_at;
+  const expectNoPersonalData = (delivery: unknown, name: string, email: string) => {
+    const text = JSON.stringify(delivery);
+    expect(name.length).toBeGreaterThan(0);
+    expect(text).not.toContain(name);
+    expect(text).not.toContain(email);
+  };
+
+  it("emailed, then anonymised: the row keeps its delivery state (Sent, later Delivered) and says Removed contact, with no name or address", async () => {
+    const { o, made, sendId, name, email } = await sentToAsha();
+    await linked(made, sendId, email);
+    await insert("email_log", {
+      id: uuidv7(),
+      to_email: email,
+      template: "offer.sent",
+      entity_type: "document_send",
+      entity_id: sendId,
+      status: "sent",
+    });
+    expect((await anonymise(o.cookie, made.contactId)).status).toBe(200);
+    expect(await cancelledAt(sendId)).toBeNull();
+    const view = await getDoc(o, made.id);
+    expect(view.redactedAt).toEqual(expect.any(Number));
+    expect(view.delivery).toHaveLength(1);
+    expect(view.delivery[0]).toMatchObject({
+      id: sendId,
+      state: "sent",
+      contactName: ANONYMISED_CONTACT,
+      email: null,
+    });
+    expectNoPersonalData(view.delivery, name, email);
+    // a later delivery event still shows
+    await env.DB.prepare("UPDATE email_log SET status = 'delivered' WHERE entity_id = ?").bind(sendId).run();
+    expect((await getDoc(o, made.id)).delivery[0].state).toBe("delivered");
+  });
+
+  it("emailed but not yet logged, then anonymised: the send is not cancelled (Queued until the email log says more)", async () => {
+    const { o, made, sendId, name, email } = await sentToAsha();
+    await linked(made, sendId, email);
+    expect((await anonymise(o.cookie, made.contactId)).status).toBe(200);
+    expect(await cancelledAt(sendId)).toBeNull();
+    const view = await getDoc(o, made.id);
+    expect(view.delivery[0]).toMatchObject({ state: "queued", contactName: ANONYMISED_CONTACT, email: null });
+    expectNoPersonalData(view.delivery, name, email);
+  });
+
+  it("still waiting for the PDF, then anonymised: the send is cancelled and reads Not sent, with no name or address", async () => {
+    const { o, made, sendId, name, email } = await sentToAsha();
+    expect((await getDoc(o, made.id)).delivery[0].state).toBe("waiting_pdf");
+    expect((await anonymise(o.cookie, made.contactId)).status).toBe(200);
+    expect(await cancelledAt(sendId)).not.toBeNull();
+    const view = await getDoc(o, made.id);
+    expect(view.delivery[0]).toMatchObject({
+      state: "not_sent",
+      contactName: ANONYMISED_CONTACT,
+      email: null,
+    });
+    expectNoPersonalData(view.delivery, name, email);
   });
 });
