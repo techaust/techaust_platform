@@ -433,7 +433,7 @@ export const SETTINGS_TAX_SQL = "SELECT s.value FROM settings s WHERE s.key = 't
 
 /**
  * How many open exports are in each stage today (`?1` today, IST), the rule values being the `tax` row's own: one row per stage that has any, by stage.
- * The stage of each export is worked out once, in a subquery that `LIMIT -1` keeps from being flattened into the aggregate (flattened, the stage expression,
+ * The stage of each export is worked out once, in a subquery (`sg`) that `LIMIT -1` keeps from being flattened into the aggregate (flattened, the stage expression,
  * with its correlated extension seeks, would be copied into every stage's column); the counts are one aggregate row with a column per stage
  * (`EXPORT_STAGES`), no GROUP BY (L33). The twin of `EXPORT_STAGE_COUNTS_GROUPED_SQL`.
  */
@@ -441,10 +441,10 @@ export const EXPORT_STAGE_COUNTS_SQL = /* @__PURE__ */ (() => {
   const stageRows = `SELECT column1 AS stage FROM (VALUES ${EXPORT_STAGES.map((s) => `('${s}')`).join(", ")})`;
   const pick = `CASE st.stage ${EXPORT_STAGES.map((s) => `WHEN '${s}' THEN t.n_${s}`).join(" ")} END`;
   return `SELECT st.stage, ${pick} AS n
-   FROM (SELECT ${EXPORT_STAGES.map((s) => `count(CASE x.stage WHEN '${s}' THEN 1 END) AS n_${s}`).join(", ")}
+   FROM (SELECT ${EXPORT_STAGES.map((s) => `count(CASE sg.stage WHEN '${s}' THEN 1 END) AS n_${s}`).join(", ")}
          FROM (SELECT ${stageSql("d", settingsBinds("?1"))} AS stage
                FROM documents d INDEXED BY documents_export_issued
-               WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND d.balance_minor > 0 LIMIT -1) x) t
+               WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND d.balance_minor > 0 LIMIT -1) sg) t
    JOIN (${stageRows}) st
    WHERE ${pick} > 0 ORDER BY st.stage`;
 })();
