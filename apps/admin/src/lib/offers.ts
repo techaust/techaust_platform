@@ -4,6 +4,7 @@
 // (approved with 07-Q) and, where 07-N had no line, `OFFER_PENDING` (its 07-Q words, no tag).
 // Pure, so the copy and the rules are tested without a browser. Money is formatted only, never worked out.
 import { RequestError } from "../api.ts";
+import { isErased } from "./copy-zg.ts";
 import { docErrorText } from "./documents.ts";
 import { REASON_LABEL, reasonText } from "./offer-words.ts";
 
@@ -303,8 +304,14 @@ export function recipientChoices<
   return { choices: [...can, ...cannot], ticked: ticked.slice(0, MAX_RECIPIENTS) };
 }
 
-/** Whether the version can be sent again: the latest sent version, still open (sent or viewed, not past its last day). */
-export const canResend = (v: { status: string; validUntil: string | null }, today: string, latest: boolean) =>
+/** Whether the version can be sent again: the latest sent version, still open (sent or viewed, not past its last day), its personal details not erased. */
+export const canResend = (
+  v: { status: string; validUntil: string | null; redactedAt?: number | null | undefined },
+  today: string,
+  latest: boolean,
+) =>
   latest &&
+  // T7: an offer whose personal details were erased is withdrawn and never sent again (the API answers 409 `not_resendable`).
+  !isErased(v) &&
   (v.status === "sent" || v.status === "viewed") &&
   (v.validUntil === null || v.validUntil >= today);

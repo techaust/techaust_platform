@@ -1784,6 +1784,12 @@ a.pdf-panel__action:hover {
   background: var(--color-warning);
 }
 
+/* Erased (T7): the sheet stays as an outline with nothing on it, because the PDF was deleted with the personal details. No warning colour:
+   the heading states a fact, not a fault. */
+.pdf-panel[data-phase="erased"] .pdf-glyph > span {
+  visibility: hidden;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .pdf-panel[data-phase="making"] .pdf-glyph > span {
     /* Three there-and-back cycles (six runs of an alternating animation), then still: no pulsing for minutes (WCAG 2.2.2). */

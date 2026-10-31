@@ -235,12 +235,18 @@ export type DocumentViewBase = {
   issuer?: IssuerView | null;
   /** An accepted estimate that was converted: what it became. */
   convertedTo?: { kind: "invoice" | "care_plan"; id: string } | null;
-  /** The PDF of this version (M4.4): none for a draft, pending once sent until the jobs Worker has made it, then ready. */
+  /** The PDF of this version (M4.4): none for a draft, pending once sent until the jobs Worker has made it, then ready; erased (T7) once deleted. */
   pdf?: PdfState;
+  /**
+   * T7 (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): when the personal details of this never-accepted offer were erased
+   * (the newest erasure, UTC ms); null otherwise, absent from an API before T7. Its PDF is then `erased`, and it is never sent again.
+   */
+  redactedAt?: number | null;
 };
 
 export type PdfState = {
-  state: "none" | "pending" | "ready";
+  /** `erased` only on a proposal or estimate whose personal details were erased (T7): the PDF was deleted and is never made again. */
+  state: "none" | "pending" | "ready" | "erased";
   sha256: string | null;
   /** The first 12 hex characters of the PDF's SHA-256. */
   fingerprint: string | null;
