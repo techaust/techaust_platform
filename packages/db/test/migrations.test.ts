@@ -8,7 +8,7 @@ const tables = (Object.values(schema) as unknown[]).filter((v): v is SQLiteTable
 
 describe("migrations apply cleanly to a fresh D1", () => {
   it("creates every table in the Drizzle schema, with every column", async () => {
-    expect(tables.length).toBe(55); // FX-1: pdf_failures (0051); M6.1: payments, payment_allocations, realisation_extensions (0059)
+    expect(tables.length).toBe(59); // FX-1: pdf_failures (0051); M6.1: payments, payment_allocations, realisation_extensions (0059); M6.2: webhook_events, checkout_sessions, review_items, hook_failures (0061)
     for (const table of tables) {
       const { name, columns } = getTableConfig(table);
       const live = await all<{ name: string }>(`SELECT name FROM pragma_table_info(?)`, name);
@@ -80,6 +80,8 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0058_offer_redaction_triggers.sql",
       "0059_payments.sql",
       "0060_payment_triggers.sql",
+      "0061_gateway.sql",
+      "0062_gateway_triggers.sql",
     ]);
   });
 

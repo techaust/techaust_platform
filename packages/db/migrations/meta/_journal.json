@@ -428,6 +428,20 @@
       "when": 1793449067818,
       "tag": "0060_payment_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "6",
+      "when": 1793476709122,
+      "tag": "0061_gateway",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "6",
+      "when": 1793476847902,
+      "tag": "0062_gateway_triggers",
+      "breakpoints": true
     }
   ]
 }

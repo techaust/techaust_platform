@@ -8,17 +8,37 @@
 // milestone widens a list with a trigger swap, never a rebuild of a table other tables reference. The member columns are nullable for the same reason (a gateway
 // payment of M6.2 has no member behind it); the triggers require them for a manual entry.
 import { sql } from "drizzle-orm";
-import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import {
+  type AnySQLiteColumn,
+  check,
+  index,
+  integer,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 import { CURRENCY_CODES, createdAt, currency, id, oneOf } from "./common.ts";
-import { clients } from "./crm.ts";
+import { clients, contacts } from "./crm.ts";
 import { advanceReceipts, documents } from "./documents.ts";
-import { staffUsers } from "./identity.ts";
+import { docAccessTokens, staffUsers } from "./identity.ts";
 
-/** The values the triggers accept today (L3; M6.2 to M6.5 widen them in their own trigger migrations). */
+/** The values the triggers accept today (L3; M6.2 to M6.5 widen them in their own trigger migrations: M6.2's `gateway_triggers` adds Razorpay and its methods). */
 export const PAYMENT_KINDS = ["payment", "tds"] as const;
-export const PAYMENT_PROVIDERS = ["manual"] as const;
+export const PAYMENT_PROVIDERS = ["manual", "razorpay"] as const;
 export const PAYMENT_STATUSES = ["pending_verification", "confirmed", "rejected", "withdrawn"] as const;
-export const PAYMENT_MODES = ["neft", "rtgs", "imps", "upi", "swift"] as const;
+export const PAYMENT_MODES = [
+  "neft",
+  "rtgs",
+  "imps",
+  "upi",
+  "swift",
+  "card",
+  "netbanking",
+  "wallet",
+  "emi",
+  "paylater",
+  "other",
+] as const;
 export const ALLOCATION_KINDS = ["allocate", "release"] as const;
 /** Proofs and bank letters (L10): PDF, JPEG or PNG, sniffed by signature as the file vault does, stored write-once in the private R2 `DOCS`. */
 export const PROOF_MIME_TYPES = ["application/pdf", "image/jpeg", "image/png"] as const;
@@ -76,8 +96,23 @@ export const payments = sqliteTable(
     withdrawnBy: text("withdrawn_by").references(() => staffUsers.id),
     withdrawnAt: integer("withdrawn_at"),
     withdrawReason: text("withdraw_reason"),
+    // M6.2 (ADD COLUMN only, 0061; their rules are triggers of `gateway_triggers`, never a CHECK here, which would make drizzle-kit rebuild a referenced table):
+    /** The gateway's own payment id (Razorpay's `pay_...`); with `provider`, unique: the real idempotency key of a gateway payment (JOB-HOOK-02). */
+    providerPaymentId: text("provider_payment_id"),
+    /** The checkout (payment link) the money came through. */
+    checkoutId: text("checkout_id").references((): AnySQLiteColumn => checkoutSessions.id),
+    /** Razorpay's `tax` on its fee, as Razorpay reports it (`charges_minor` holds its `fee`; both absorbed, never billed: 08-C RA-29). */
+    feeTaxMinor: integer("fee_tax_minor"),
+    /** When the payment and its link were re-fetched from the gateway's API before the row was written (ADR 0008: the webhook alone proves nothing). */
+    refetchedAt: integer("refetched_at"),
+    /** The verified webhook event that led to the row (NULL when a status refresh found it). */
+    webhookEventId: text("webhook_event_id").references((): AnySQLiteColumn => webhookEvents.id),
   },
   (t) => [
+    // M6.2: one row per gateway payment, whichever event or refresh brings it (a replay with a new event id still finds this key).
+    uniqueIndex("payments_provider_ref")
+      .on(t.provider, t.providerPaymentId)
+      .where(sql`${t.providerPaymentId} is not null`),
     // A client's payments in a currency by the day the money arrived (the statement, the credit balance, the client's figures).
     index("payments_client").on(t.clientId, t.currency, t.receivedOn, t.id),
     // The Owner's "Payments to check" list and the dashboard tile: only the pending rows are in it.
@@ -168,4 +203,194 @@ export const realisationExtensions = sqliteTable(
       sql`length(${t.bankRef}) between 1 and ${sql.raw(String(BANK_REF_MAX))}`,
     ),
   ],
+);
+
+// ---- M6.2: online payments through a gateway (Razorpay in test mode; ADM-PAY-01, -02, -07, JOB-HOOK-01..03; run file docs/runs/m6.2-razorpay.md A) -------------
+// CREATE TABLE only (0061). As in M6.1 (L3), the enumeration columns have no CHECK: the triggers of `gateway_triggers` (0062) hold them, so M6.3/M6.4 widen a list
+// with a trigger swap, never a rebuild of a table other tables reference. Nothing here stores a raw webhook body, a payer's email, phone, UPI address or card
+// detail (L8; ADM-PAY-12; Researched 2026-10-28, RBI payment aggregator directions (08-C RB-07)): `facts` is a whitelist the code builds.
+
+export const GATEWAY_PROVIDERS = ["razorpay"] as const;
+export const WEBHOOK_EVENT_STATUSES = ["received", "processed", "ignored", "needs_review", "failed"] as const;
+export const CHECKOUT_SOURCES = ["portal", "link", "staff"] as const;
+export const CHECKOUT_STATUSES = [
+  "creating",
+  "live",
+  "paid",
+  "expired",
+  "cancelled",
+  "stale",
+  "failed",
+] as const;
+export const REVIEW_SOURCES = ["webhook", "dlq", "refresh"] as const;
+export const REVIEW_STATUSES = ["open", "resolved"] as const;
+export const REVIEW_RESOLUTIONS = ["confirmed", "advance_issued", "left_as_credit", "dismissed"] as const;
+/** The reasons a gateway payment waits for the Owner (07-ZI line 20; core `REVIEW_KINDS` in `@techaust/core/online-pay` is the twin, a db test compares them). */
+export const REVIEW_KINDS = [
+  "amount_mismatch",
+  "currency_mismatch",
+  "reference_mismatch",
+  "order_mismatch",
+  "payment_not_on_link",
+  "not_captured",
+  "partial_payment",
+  "unknown_link",
+  "document_not_payable",
+  "advance_blocked",
+  "refetch_failed",
+  "dead_letter",
+  "overpaid",
+  "proforma_overpaid",
+  "client_gone",
+] as const;
+/** Razorpay's event ids are short; the fallback is `sha256:` and the body's SHA-256 in base64url (50 characters). */
+export const WEBHOOK_EVENT_ID_MAX = 64;
+export const CHECKOUT_SHORT_URL_MAX = 200;
+export const PROVIDER_REF_MAX = 64;
+export const REVIEW_NOTE_MAX = 500;
+/** The cap of the signature-failure counter per window (L14). */
+export const HOOK_FAILURES_MAX = 50;
+
+export const webhookEvents = sqliteTable(
+  "webhook_events",
+  {
+    id: id(),
+    provider: text("provider").notNull(),
+    /** Razorpay's `x-razorpay-event-id` header, else `sha256:` of the body. Not signed, so not the real idempotency key (`payments_provider_ref` is). */
+    eventId: text("event_id").notNull(),
+    eventType: text("event_type").notNull(),
+    receivedAt: integer("received_at").notNull(),
+    status: text("status").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    processedAt: integer("processed_at"),
+    /** A short code of what processing did (`processed`, `unknown_link`, ...). */
+    outcome: text("outcome"),
+    /** Whitelisted facts only, as JSON (link id, payment id, amount, currency, method, account id; L8). */
+    facts: text("facts"),
+  },
+  (t) => [
+    uniqueIndex("webhook_events_provider_event").on(t.provider, t.eventId),
+    // The sweep (15 minutes stuck in `received`) reads only these rows.
+    index("webhook_events_received").on(t.receivedAt, t.id).where(sql`${t.status} = 'received'`),
+    check(
+      "webhook_events_event_id",
+      sql`length(${t.eventId}) between 1 and ${sql.raw(String(WEBHOOK_EVENT_ID_MAX))}`,
+    ),
+    check("webhook_events_event_type", sql`length(${t.eventType}) between 1 and 64`),
+    check("webhook_events_attempts", sql`${t.attempts} >= 0`),
+    check("webhook_events_outcome", sql`${t.outcome} is null or length(${t.outcome}) between 1 and 64`),
+    check(
+      "webhook_events_facts",
+      sql`${t.facts} is null or (json_valid(${t.facts}) and json_type(${t.facts}) = 'object' and length(${t.facts}) <= 2000)`,
+    ),
+  ],
+);
+
+export const checkoutSessions = sqliteTable(
+  "checkout_sessions",
+  {
+    /** A UUIDv7: Razorpay's `reference_id` (unique per link, L3) and `notes.checkout_id`. */
+    id: id(),
+    provider: text("provider").notNull(),
+    documentId: text("document_id")
+      .notNull()
+      .references(() => documents.id),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => clients.id),
+    /** The signed-in contact who asked (portal), else NULL. */
+    contactId: text("contact_id").references(() => contacts.id),
+    /** The emailed document link's token hash the request came through (`link`), else NULL. */
+    docTokenId: text("doc_token_id").references(() => docAccessTokens.tokenHash),
+    /** The member who made it from admin (`staff`), else NULL. */
+    createdBy: text("created_by").references(() => staffUsers.id),
+    source: text("source").notNull(),
+    currency: currency(),
+    amountMinor: integer("amount_minor").notNull(),
+    status: text("status").notNull(),
+    providerLinkId: text("provider_link_id"),
+    shortUrl: text("short_url"),
+    expiresAt: integer("expires_at").notNull(),
+    createdAt: createdAt(),
+    updatedAt: integer("updated_at").notNull(),
+    /** The last status re-fetch (at most one a minute, in the statement's WHERE). */
+    lastRefreshAt: integer("last_refresh_at"),
+    paidPaymentId: text("paid_payment_id").references((): AnySQLiteColumn => payments.id),
+  },
+  (t) => [
+    // L4: one open link per document; two clicks at once serialise here (the loser's INSERT fails: 409 `link_in_progress`).
+    uniqueIndex("checkout_sessions_open").on(t.documentId).where(sql`${t.status} in ('creating', 'live')`),
+    uniqueIndex("checkout_sessions_provider_link")
+      .on(t.provider, t.providerLinkId)
+      .where(sql`${t.providerLinkId} is not null`),
+    // A client's links by time (the 10-an-hour limit) and a document's links (its panel, the stale move).
+    index("checkout_sessions_client").on(t.clientId, t.createdAt),
+    index("checkout_sessions_document").on(t.documentId, t.createdAt),
+    check("checkout_sessions_currency", oneOf(t.currency, CURRENCY_CODES)),
+    check("checkout_sessions_amount", sql`${t.amountMinor} > 0`),
+    check(
+      "checkout_sessions_provider_link_length",
+      sql`${t.providerLinkId} is null or length(${t.providerLinkId}) between 1 and ${sql.raw(String(PROVIDER_REF_MAX))}`,
+    ),
+    check(
+      "checkout_sessions_short_url",
+      sql`${t.shortUrl} is null or (length(${t.shortUrl}) between 1 and ${sql.raw(String(CHECKOUT_SHORT_URL_MAX))} and ${t.shortUrl} like 'https://%')`,
+    ),
+  ],
+);
+
+export const reviewItems = sqliteTable(
+  "review_items",
+  {
+    id: id(),
+    source: text("source").notNull(),
+    provider: text("provider").notNull(),
+    kind: text("kind").notNull(),
+    status: text("status").notNull(),
+    webhookEventId: text("webhook_event_id").references(() => webhookEvents.id),
+    paymentId: text("payment_id").references(() => payments.id),
+    documentId: text("document_id").references(() => documents.id),
+    clientId: text("client_id").references(() => clients.id),
+    amountMinor: integer("amount_minor"),
+    currency: text("currency"),
+    /** Whitelisted facts only, as JSON (L8). */
+    facts: text("facts"),
+    createdAt: createdAt(),
+    resolvedBy: text("resolved_by").references(() => staffUsers.id),
+    resolvedAt: integer("resolved_at"),
+    resolution: text("resolution"),
+    note: text("note"),
+  },
+  (t) => [
+    // The "Needs review" list: only the open items.
+    index("review_items_open").on(t.createdAt, t.id).where(sql`${t.status} = 'open'`),
+    // One item of a kind per event, whichever retry writes it (INSERT OR IGNORE).
+    uniqueIndex("review_items_event_kind")
+      .on(t.webhookEventId, t.kind)
+      .where(sql`${t.webhookEventId} is not null`),
+    index("review_items_payment").on(t.paymentId),
+    // The erase (an anonymised client's review notes are cleared).
+    index("review_items_client").on(t.clientId),
+    check("review_items_amount", sql`${t.amountMinor} is null or ${t.amountMinor} > 0`),
+    check("review_items_currency", sql`${t.currency} is null or ${oneOf(t.currency, CURRENCY_CODES)}`),
+    check(
+      "review_items_facts",
+      sql`${t.facts} is null or (json_valid(${t.facts}) and json_type(${t.facts}) = 'object' and length(${t.facts}) <= 2000)`,
+    ),
+    check(
+      "review_items_note_length",
+      sql`${t.note} is null or length(${t.note}) <= ${sql.raw(String(REVIEW_NOTE_MAX))}`,
+    ),
+  ],
+);
+
+/** The webhook signature-failure counter (L14): one row per window key, capped at `HOOK_FAILURES_MAX` by the statement's WHERE. */
+export const hookFailures = sqliteTable(
+  "hook_failures",
+  {
+    key: text("key").primaryKey(),
+    windowStart: integer("window_start").notNull(),
+    count: integer("count").notNull().default(0),
+  },
+  (t) => [check("hook_failures_count", sql`${t.count} between 0 and ${sql.raw(String(HOOK_FAILURES_MAX))}`)],
 );
