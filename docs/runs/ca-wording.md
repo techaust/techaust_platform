@@ -66,3 +66,32 @@ Tests that pin them: `apps/admin/src/lib/reports.test.ts:96`, `:733`, `:771`, `:
 
 ## Handover
 - 2026-11-01: inventory done, 07-ZK drafted, Q1 written. Next: the owner's answer to Q1 (through the main session), then the builder per the brief.
+
+## Builder report (b1, 2026-11-01; branch `fix/ca-wording-b1`)
+
+**Skills (docs/14 §9):** none loaded. The row for Worker code names `cloudflare:workers-best-practices` and `cloudflare:wrangler`, but no Cloudflare plugin loads in a cloud session (neither skill is in this session's list); the only Worker change is string values in `settings.ts` and `invoice-model.ts`, with no binding, route or runtime behaviour touched. `frontend-design` is the designer's (no layout changed); `code-review` is the reviewer's.
+
+**Files changed** (07-ZK lines 1–13, word for word):
+- `apps/admin/src/lib/reports.ts`: `GST_COPY.lede` (1), `GST_COPY.verify` (2), `gstWarningText` `b2cs_negative_net` (3) and `before_fema_2026` (4), `taxOnlyNoteText` (5, 6, 7; `Y(...)` kept; new sentence order "Enter it by hand {in Table 9B on the GST portal | on the GST portal}: {heads}. Then check GSTR-3B Table 3 before you file."); its doc comment no longer says the copy sends the question to the CA (08-C tags kept).
+- `apps/admin/src/lib/invoice-types.ts` `previousPeriod` (8), `advanceSupplyChanged` (9); `apps/admin/src/lib/invoices.ts` `advance_supply_changed` (9); `apps/admin/worker/invoice-model.ts` `ADVANCE_SUPPLY_CHANGED` (9): the three copies of line 9 are identical.
+- `apps/admin/src/routes/settings/tax.tsx` E-invoicing hint (10); `apps/admin/src/routes/settings/terms.tsx` VerifyNote (11).
+- `apps/admin/src/components/form.tsx`: `researchedSettingsText()` takes no argument and returns line 12; `VerifyNote` JSDoc fixed. `apps/admin/src/routes/settings/kit.tsx`: called without the regex, comment fixed. `apps/admin/worker/settings.ts`: only the `VERIFY` values (tax, payment_terms, retention → `"08-C §5"`), the terms list's `meta.verify` → `"08-C §5"`, and the comment above the map. `apps/admin/src/api.ts`: the `verify` field's comment.
+- `apps/admin/src/components/shell/nav.tsx` Reports `arrives.what` (13).
+- `apps/web/src/content/legal-pages.ts` lines 2–4: comment only (OPEN points settled by the lead on the safest reading or still OPEN in 08-C §5; no CA or lawyer, owner 2026-10-30; a one-off lawyer review stays optional). No page text changed.
+- `apps/admin/src/lib/copy-zd.ts` line 3, comment only: `"Talk to your CA"` → `sent the owner to a CA`, so the brief's grep returns nothing (the comment still says what the old lines did).
+- Tests: `apps/admin/src/lib/reports.test.ts` (the pinned lines at the old ~96, ~733, ~771, ~792, ~809 updated word for word; one new `describe` "07-ZK (approved 2026-11-01): no line sends the owner to a CA or a lawyer" checks lede, verify, both warnings, all three card forms and `researchedSettingsText()` against `/\bCA\b|lawyer/` and pins lines 1, 3, 4, 7, 12), `apps/admin/src/lib/invoice-types.test.ts` (line 9), `apps/admin/worker/settings.test.ts` (title no longer says "the CA's"; `meta.verify` expected `"08-C §5"` for tax, retention and the terms list).
+
+**Commands and results:**
+- `pnpm install --frozen-lockfile --offline`: exit 0.
+- `pnpm --filter @techaust/admin exec vitest run src/lib/reports.test.ts src/lib/invoice-types.test.ts`: 2 files, 78 tests passed.
+- `bash tools/heavy.sh --log ca-b1-settings-test pnpm --filter @techaust/admin exec vitest run worker/settings.test.ts`: exit 0, 47 tests passed.
+- `pnpm --filter @techaust/core exec vitest run test/verify-tags.test.ts`: 3 tests passed.
+- `pnpm exec biome check <15 changed files>`: 3 format-only findings, fixed with `--write`; `copy-zd.ts` clean.
+- `bash tools/heavy.sh --log ca-b1-check pnpm check`: exit 0 (biome "Checked 1438 files … No fixes applied", typecheck of every package, every guard ok). This was the one whole-repository lint.
+- `grep -rn -E "your CA|CA and lawyer|your lawyer's|ask your bank or CA" apps/admin --include=*.ts --include=*.tsx`: no matches (exit 1).
+- No dev server started.
+
+**Not verified:** the full `pnpm test` and the e2e suites (not run; the lead runs `pnpm test`); the screens were not looked at (the reviewer's visual check). The `copy-zd.ts` comment edit came after `pnpm check` (comment only; biome-checked on its own).
+
+**Open points for the lead:**
+- `REALISATION_COPY.beforeFema` (`apps/admin/src/lib/reports.ts`, Reports › Export realisation, 07-V §11) still reads "Issued before 1 October 2026: a different realisation period may apply." It names no CA, so it is outside 07-ZK, but it now differs from line 4's settled wording ("the 9 months run from the invoice date") on the GST exports warning. A possible follow-up for copy.
