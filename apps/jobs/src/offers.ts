@@ -40,7 +40,7 @@ import {
   todayIst,
 } from "@techaust/core/offers";
 import type { OfferSweepMessage, PdfCertificateMessage } from "@techaust/core/pdf-jobs";
-import { portalBase } from "./billing-shared.ts";
+import { markNotSent, portalBase } from "./billing-shared.ts";
 import { logEvent } from "./log.ts";
 
 /** The jobs Env (PORTAL_URL arrived with M4.4 phase 2). */
@@ -109,15 +109,6 @@ type SendRow = {
   contact_name: string | null;
   contact_email: string | null;
 };
-
-// A send whose email already has its log row (the email consumer took it: sent, delivered or failed) keeps that state: a redelivery refused after "Revoke links"
-// must not relabel an email that went as "Cancelled" (test-hardening, lead decision 2026-11-01). `email_log_entity` index.
-const MARK_NOT_SENT_SQL = `UPDATE document_sends SET cancelled_at = ?2 WHERE id = ?1 AND cancelled_at IS NULL
-  AND NOT EXISTS (SELECT 1 FROM email_log e WHERE e.entity_type = 'document_send' AND e.entity_id = document_sends.id)`;
-/** Marks a send as never going out (set once, by the trigger's rule); the offer page then shows `not_sent`. */
-async function markNotSent(env: OfferEnv, sendId: string, now: number): Promise<void> {
-  await env.DB.prepare(MARK_NOT_SENT_SQL).bind(sendId, now).run();
-}
 
 export async function processOfferSend(
   env: OfferEnv,
