@@ -70,8 +70,9 @@ export function organizationNode(s: SiteSlice = site): LdNode {
     url: ORIGIN,
     logo: { "@type": "ImageObject", url: `${ORIGIN}${LOGO_PATH}` },
     email: s.email,
-    // The company phone in Google's form (E.164, "+919883023931"; owner, 2026-11-01), only while the site shows it.
-    ...(s.phone.display ? { telephone: s.phone.dial } : {}),
+    // The company phone in Google's form (E.164, "+919883023931"; owner, 2026-11-01), only while the site shows it
+    // (test/company-phone.test.ts: `dial` is empty exactly when `display` is).
+    ...(s.phone.dial ? { telephone: s.phone.dial } : {}),
     ...(address ? { address } : {}),
     areaServed: ORG_IDENTITY.areaServed.map((a) => ({ ...a })),
     naics: ORG_IDENTITY.naics,

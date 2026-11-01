@@ -34,8 +34,8 @@ export function countries(): { code: string; name: string }[] {
 }
 
 /**
- * "Best time for a call" (07 §5.9): the windows and the text sent are in @techaust/core; the page adds the visitor's own
- * clock beside each window.
+ * "Best time for a call" (07 §5.9): the windows and the text sent (`value`, always IST) are in @techaust/core; the page
+ * shows each window's label in the visitor's own clock only (components/Hours.astro, scripts/local-time.ts).
  */
 export function callWindows(): { value: string; from?: number; to?: number }[] {
   return [

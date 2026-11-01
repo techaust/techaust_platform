@@ -237,14 +237,13 @@ const countryOptions = [
             </div>
             <ChoiceGroup name="callWindow" legend={q.contact.callWindow} cols={{ sm: 2, md: 2 }}>
               {
-                callWindows().map((w) => (
-                  <Choice
-                    name="callWindow"
-                    value={w.value}
-                    label={w.value}
-                    window={w.from === undefined ? undefined : { from: w.from, to: w.to ?? 0 }}
-                  />
-                ))
+                callWindows().map((w) =>
+                  w.from === undefined ? (
+                    <Choice name="callWindow" value={w.value} label={w.value} />
+                  ) : (
+                    <Choice name="callWindow" value={w.value} window={{ from: w.from, to: w.to ?? 0 }} />
+                  ),
+                )
               }
             </ChoiceGroup>
             <FormEnd submit={q.submit} consent={q.consent} id="quote">
