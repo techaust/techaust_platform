@@ -621,14 +621,15 @@ export const STUCK_EVENTS_SQL = `SELECT e.id FROM webhook_events e INDEXED BY we
 
 /**
  * Payment `p` is a proforma's Razorpay payment still waiting for its automatic tax invoice (L6): pending with its requested allocation, no advance receipt yet, its
- * checkout known, and no open `advance_blocked` or `dead_letter` item (the Owner was told and decides; "Try again" or "Confirm by issuing"). Whoever meets such a
- * payment (a duplicate event, the portal's refresh, the hourly sweep) asks for `gateway.advance` again, so the tax invoice is never lost when one `next` was not sent
- * (RA-17: GST on an advance is due on receipt). The open-item check is one seek of `review_items_payment`.
+ * checkout known, and no `advance_blocked` or `dead_letter` item, open or not (the Owner was told and decides; "Try again" or "Confirm by issuing"). Whoever meets
+ * such a payment (a duplicate event, the portal's refresh, the hourly sweep) asks for `gateway.advance` again, so the tax invoice is never lost when one `next` was
+ * not sent (RA-17: GST on an advance is due on receipt). M6.2 review finding 3: an item the Owner dismissed or resolved still counts, so a blocked advance is never
+ * tried (and its item and bell written) again every hour; only the Owner's own acts issue it from then on. The item check is one seek of `review_items_payment`.
  */
 export const advanceWaitingSql = (p: string): string =>
   `(${p}.provider = 'razorpay' AND ${p}.kind = 'payment' AND ${p}.status = 'pending_verification' AND ${p}.requested_allocations IS NOT NULL
      AND ${p}.advance_receipt_id IS NULL AND ${p}.checkout_id IS NOT NULL
-     AND NOT EXISTS (SELECT 1 FROM review_items wx INDEXED BY review_items_payment WHERE wx.payment_id = ${p}.id AND wx.status = 'open' AND wx.kind IN ('advance_blocked', 'dead_letter')))`;
+     AND NOT EXISTS (SELECT 1 FROM review_items wx INDEXED BY review_items_payment WHERE wx.payment_id = ${p}.id AND wx.kind IN ('advance_blocked', 'dead_letter')))`;
 
 /**
  * The payment of an event that is no longer `received` (`?1` the event row) when it still waits for its tax invoice: a redelivered `gateway.event` whose first

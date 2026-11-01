@@ -5,6 +5,7 @@
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core/ids";
 import { REMINDER_CLAIM_SQL } from "@techaust/db/billing";
+import { STUCK_ADVANCES_SQL } from "@techaust/db/gateway";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { issueGatewayAdvance } from "./gateway/advance.ts";
 import { setStubTransport, stubFetch, stubIdsOf } from "./gateway/config.ts";
@@ -231,6 +232,43 @@ describe("finding 2: the automatic tax invoice is never lost [ADM-INV-10; 08-C R
     await env.DB.prepare("UPDATE staff_users SET status = 'active' WHERE id = ?1").bind(o.id).run();
     expect(await processEvent(env, ev)).toEqual({ result: "duplicate" });
     expect(await processEvent(env, await eventRow(l.linkId, l.paymentId))).toEqual({ result: "duplicate" });
+  });
+
+  it("review finding 3: once the Owner dismisses a blocked advance, the sweep, a duplicate event and a refresh never try it again (no new item, no new bell)", async () => {
+    const { o, paymentId, l } = await paidProforma();
+    await env.DB.prepare("UPDATE staff_users SET status = 'deactivated' WHERE id = ?1").bind(o.id).run();
+    expect((await issueGatewayAdvance(env, paymentId)).result).toBe("blocked");
+    await env.DB.prepare("UPDATE staff_users SET status = 'active' WHERE id = ?1").bind(o.id).run();
+    const item = await one<{ id: string }>(
+      "SELECT id FROM review_items WHERE payment_id = ?1 AND kind = 'advance_blocked'",
+      paymentId,
+    );
+    const dismissed = await call(`/payments/review/${item?.id}/resolve`, {
+      cookie: o.cookie,
+      body: { resolution: "dismissed", note: "Will issue by hand" },
+    });
+    expect(dismissed.status, await dismissed.clone().text()).toBe(200);
+    const bells = async () =>
+      (
+        await one<{ n: number }>(
+          "SELECT count(*) AS n FROM notifications WHERE kind = 'payment.review' AND entity_type = 'review_item'",
+        )
+      )?.n;
+    const before = await bells();
+    // The hourly sweep's read, twice (an hour later, then two), finds nothing to queue.
+    for (const later of [3_600_000, 7_200_000])
+      expect(
+        (
+          await env.DB.prepare(STUCK_ADVANCES_SQL)
+            .bind(Date.now() + later)
+            .all<{ id: string }>()
+        ).results.map((r) => r.id),
+      ).not.toContain(paymentId);
+    // A redelivered event answers duplicate with no `next`.
+    expect(await processEvent(env, await eventRow(l.linkId, l.paymentId))).toEqual({ result: "duplicate" });
+    expect(await reviewKindsOf("payment_id", paymentId)).toEqual(["advance_blocked"]);
+    expect(await bells()).toBe(before);
+    expect((await paymentOf(l.paymentId))?.status).toBe("pending_verification");
   });
 
   it('"Try again" on a refetch_failed item of a proforma\'s link records the payment and queues the advance; the item stays open until the payment is confirmed', async () => {
