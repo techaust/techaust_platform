@@ -2,6 +2,9 @@
 // that came in online and still wait (S18), and what on this document waits in "Needs review" (S19, S20). One device: the link card is a counterfoil, a slip
 // with a perforated line between what the link asks for and the link itself, because that is what it is: the part of the invoice the client tears off and pays.
 // Figures are the server's, formatted by core; nothing here adds up an amount.
+// M6.3 Stripe (run file G1; ADM-PAY-01, ADM-INV-17): a USD document has no staff-made link (L7), so its slip is "Card payments" (07-ZM S13): the same slip
+// with no perforation, because there is nothing to tear off: the status of the client's last card page, its expiry, and "Copy portal link". A Stripe payment
+// reads S14's line with the INR Stripe credited and its fee as facts, and its proof slot (S15).
 import { formatIstMoment } from "@techaust/core/dates";
 import type { Role } from "@techaust/core/permissions";
 import { useId, useState } from "react";
@@ -18,16 +21,27 @@ import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
 import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
 import { StatusPill } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
-import { Alert, Copy, CreditCard, Plus } from "../../components/icons.tsx";
+import { Alert, Clock, Copy, CreditCard, FileText, Plus } from "../../components/icons.tsx";
 import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
-import { GW, GW_UI, gwErrorText, itemReason, LINK_CHIPS, linkHint, razorpayLine } from "../../lib/gateway.ts";
+import { CARD_ZM } from "../../lib/copy-zm.ts";
+import {
+  GW,
+  GW_UI,
+  gatewayLine,
+  gwErrorText,
+  itemReason,
+  LINK_CHIPS,
+  linkHint,
+  portalInvoiceUrl,
+  stripeFacts,
+} from "../../lib/gateway.ts";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
 import { INV_COPY } from "../../lib/invoices.ts";
 import type { InvoiceView } from "../../lib/invoices-api.ts";
-import { amountText, plainAmount } from "../../lib/payments.ts";
+import { amountText, PAY_UI, plainAmount } from "../../lib/payments.ts";
 import { moneyFrom } from "../../lib/settings-form.ts";
 import { day, PaymentPill } from "./parts.tsx";
 
@@ -55,21 +69,86 @@ export function linkable(v: InvoiceView, role: Role): boolean {
   );
 }
 
+/** The types a client pays by card on a USD document (M6.3, core's Stripe row: an export invoice, its debit note, a proforma). */
+const CARD_TYPES: readonly string[] = ["export_invoice", "debit_note", "proforma"];
+
+/**
+ * Whether this document is one a client can pay by card (M6.3; the server re-checks everything): an issued USD export invoice, debit note or proforma of a client
+ * outside India, not void or erased. Staff never make its link (L7); the slip only says where the client pays and copies the portal link.
+ */
+export function cardable(v: InvoiceView): boolean {
+  return (
+    CARD_TYPES.includes(v.type) &&
+    v.currency === "USD" &&
+    v.status !== "void" &&
+    v.status !== "draft" &&
+    !v.client.anonymised &&
+    (v.client.country !== "IN" || v.client.gstStatus === "overseas")
+  );
+}
+
+/** A Razorpay link (the Payment link card), or a Stripe card page (the Card payments slip); an older API sends no provider: Razorpay. */
+const isStripe = (l: PaymentLinkRow) => l.provider === "stripe";
+
 /** The gateway row of a payment on this document, when it came in online. */
 export const gatewayOf = (panel: Panel, paymentId: string): GatewayPaymentRow | undefined =>
   panel.gateway?.payments.find((g) => g.paymentId === paymentId);
 
-/** "Paid online" with S18's line and the fee under it, for an entry that came through Razorpay. */
+/**
+ * "Paid online" with the gateway's line under it: Razorpay's S18 and its fee; Stripe's S14, then (M6.3, L10) the INR Stripe credited with the rate it implies
+ * ("not the GST rate") and Stripe's fee with its GST, as facts.
+ */
 export function OnlineMode({ row }: { row: GatewayPaymentRow }) {
+  const facts = stripeFacts(row);
   return (
     <span className="pay-online">
       <span className="pay-online__what">
         <CreditCard size={16} />
         {GW_UI.paidOnline}
       </span>
-      <span className="pay-lines__meta break">{razorpayLine(row.mode, row.providerPaymentId)}</span>
-      {row.feeMinor > 0 && (
+      {/* a Stripe id is long and the row's Payment ID column shows it already: S14's first two parts here */}
+      <span className="pay-lines__meta break">
+        {gatewayLine(row.provider, row.mode, row.provider === "stripe" ? null : row.providerPaymentId)}
+      </span>
+      {row.provider !== "stripe" && row.feeMinor > 0 && (
         <span className="pay-lines__meta">{GW.feeAbsorbed(amountText(row.feeMinor, "INR"))}</span>
+      )}
+      {facts.map((f) => (
+        <span key={f} className="pay-lines__meta pay-online__fact">
+          {f}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/**
+ * The proof slot of a Stripe payment (M6.3, S15; L11): the proof once attached, else "Proof awaited" (the quiet tag of "Certificate awaited") with "Attach
+ * proof" for a role that may attach one. Razorpay's own record stays its proof (M6.2).
+ */
+export function CardProof(props: {
+  paymentId: string;
+  hasProof: boolean;
+  canAttach: boolean;
+  onAttach: (paymentId: string) => void;
+}) {
+  if (props.hasProof)
+    return (
+      <a href={paymentsApi.proofHref(props.paymentId)} className="pay-proof-link">
+        <FileText size={16} />
+        {PAY_UI.openProof}
+      </a>
+    );
+  return (
+    <span className="pay-await">
+      <span className="pay-badge">
+        <Clock size={16} />
+        {CARD_ZM.proofAwaited}
+      </span>
+      {props.canAttach && (
+        <button type="button" className="btn btn--text" onClick={() => props.onAttach(props.paymentId)}>
+          {PAY_UI.attachProof}
+        </button>
       )}
     </span>
   );
@@ -113,7 +192,13 @@ export function DocReviewNotice({ items, count }: { items: ReviewItem[]; count: 
 }
 
 /** The payments that came in online and wait for the Owner's check (a mismatch, a document no longer payable): each opens on Payments. */
-export function OnlineWaiting({ rows }: { rows: GatewayPaymentRow[] }) {
+export function OnlineWaiting({
+  rows,
+  currency,
+}: {
+  rows: GatewayPaymentRow[];
+  currency: Panel["currency"];
+}) {
   if (rows.length === 0) return null;
   return (
     <div className="pay-waiting">
@@ -125,13 +210,15 @@ export function OnlineWaiting({ rows }: { rows: GatewayPaymentRow[] }) {
               <Link to={paymentHref(w.paymentId)} className="tnum pay-row__link">
                 {day(w.receivedOn)}
               </Link>
-              <span className="pay-lines__meta break">{razorpayLine(w.mode, w.providerPaymentId)}</span>
+              <span className="pay-lines__meta break">
+                {gatewayLine(w.provider, w.mode, w.providerPaymentId)}
+              </span>
             </span>
-            <span className="tnum pay-waiting__amount">{amountText(w.amountMinor, "INR")}</span>
+            <span className="tnum pay-waiting__amount">{amountText(w.amountMinor, currency)}</span>
             <PaymentPill status={w.status} />
             <Link to={paymentHref(w.paymentId)} className="btn btn--secondary pay-waiting__go">
               {GW.openPayment}
-              <span className="visually-hidden">{` ${day(w.receivedOn)} ${amountText(w.amountMinor, "INR")}`}</span>
+              <span className="visually-hidden">{` ${day(w.receivedOn)} ${amountText(w.amountMinor, currency)}`}</span>
             </Link>
           </li>
         ))}
@@ -149,7 +236,8 @@ export function LinkCard(props: { view: InvoiceView; panel: Panel; role: Role; o
   const toast = useToast();
   const [dialog, setDialog] = useState<"create" | "cancel" | null>(null);
   const headId = useId();
-  const links = p.gateway?.links ?? [];
+  // M6.3: Stripe's card pages are the Card payments slip's (no staff link, L7)
+  const links = (p.gateway?.links ?? []).filter((l) => !isStripe(l));
   const can = linkable(v, role);
   if (!p.gateway || (!can && links.length === 0)) return null;
   const live = links.find((l) => l.status === "live" && l.shortUrl) ?? null;
@@ -278,6 +366,64 @@ export function LinkCard(props: { view: InvoiceView; panel: Panel; role: Role; o
             <span className="pay-lines__meta">{expiresText(live.expiresAt)}</span>
           </p>
         </ConfirmDialog>
+      )}
+    </section>
+  );
+}
+
+/**
+ * "Card payments" (M6.3, 07-ZM S13): on a USD document, where the client pays by card from the portal or the emailed invoice link. No link is made or copied
+ * here (each card page lasts an hour, L7): the slip says so, shows the status of the client's last card page (its chip, amount and expiry while it is open),
+ * and copies the client's portal page for the invoice. Shown while the document can be paid by card, or once it has had a card page.
+ */
+export function CardPayments(props: { view: InvoiceView; panel: Panel }) {
+  const { view: v, panel: p } = props;
+  const toast = useToast();
+  const headId = useId();
+  const sessions = (p.gateway?.links ?? []).filter(isStripe);
+  const can = cardable(v);
+  if (!p.gateway || (!can && sessions.length === 0)) return null;
+  // The server lists them newest first; the open one, if any, is the one that matters.
+  const last = sessions.find((l) => l.status === "live" || l.status === "creating") ?? sessions[0] ?? null;
+  // The portal link is worth sending only while something can still be paid (a converted proforma or a settled invoice has nothing left to pay).
+  const portal = can && v.status !== "converted" && p.balanceMinor > 0 ? portalInvoiceUrl(v.id) : null;
+
+  async function copy(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast("success", GW_UI.linkCopied);
+    } catch {
+      toast("error", GW_UI.copyFailed);
+    }
+  }
+
+  return (
+    <section className="pay-link pay-link--card" aria-labelledby={headId}>
+      <div className="pay-link__head">
+        <h3 id={headId} className="pay-link__title">
+          <CreditCard size={20} />
+          {CARD_ZM.cardTitle}
+        </h3>
+        {last && <LinkChip status={last.status} />}
+      </div>
+      <p className="pay-link__body">{CARD_ZM.cardBody}</p>
+      {last && (
+        <div className="pay-link__ask">
+          <span className="pay-link__amount pay-link__amount--sm tnum">
+            {amountText(last.amountMinor, "USD")}
+          </span>
+          <span className="pay-lines__meta tnum">
+            {last.status === "live" ? expiresText(last.expiresAt) : formatIstMoment(last.createdAt)}
+          </span>
+        </div>
+      )}
+      {portal && (
+        <div className="pay-link__acts">
+          <button type="button" className="btn btn--secondary" onClick={() => void copy(portal)}>
+            <Copy size={20} />
+            {CARD_ZM.copyPortalLink}
+          </button>
+        </div>
       )}
     </section>
   );

@@ -1,12 +1,16 @@
 // Payment terms (ADM-SET-05; Researched 2026-10-29, commercial settings, MSMED ss.15-16 (08-C RB-39); the liability cap OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only (the ₹10,000 cap and the consumer carve-out: wording approved in 07-ZE, built in T6)): due days, proposal validity, the small-job threshold in both
 // currencies, the Razorpay part-payment floor, the website's liability cap, reminder offsets and their sending window,
 // and the build schedule (which must add up to 100 %). Amounts are typed in rupees or dollars and stored in minor units
-// through @techaust/core; percentages are stored in basis points. How advances are documented lives under Tax.
+// through @techaust/core; percentages are stored in basis points. How advances are documented lives under Tax. M6.3 (07-ZM S18; Q2 A, L9): the smallest card
+// part-payment and the largest card payment on a USD document, in dollars, with the ₹25 lakh line under the second (Researched 2026-10-28, RBI PA Directions
+// 2025 ¶11(d); lead, 2026-11-02 (08-C RB-07)).
 import type { Settings } from "@techaust/core/settings";
 import { Link } from "react-router";
 import { NumberUnit, SettingRow } from "../../components/form.tsx";
 import { AlertTriangle, Plus, X } from "../../components/icons.tsx";
 import { TERMS_DUE_DAYS_COPY } from "../../lib/copy-z.ts";
+import { CARD_ZM } from "../../lib/copy-zm.ts";
+import { INVT_COPY } from "../../lib/invoice-types.ts";
 import {
   bpToPercent,
   type FieldErrors,
@@ -28,6 +32,8 @@ type Form = {
   smallInr: string;
   smallUsd: string;
   razorpayMin: string;
+  usdMin: string;
+  usdMax: string;
   cap: string;
   reminders: Reminder[];
   fromHour: string;
@@ -87,6 +93,8 @@ const spec: GroupSpec<"payment_terms", Form> = {
     smallInr: moneyInput(v.smallJobThreshold.INR, "INR"),
     smallUsd: moneyInput(v.smallJobThreshold.USD, "USD"),
     razorpayMin: moneyInput(v.razorpayMinPartialInrMinor, "INR"),
+    usdMin: moneyInput(v.onlineMinPartialUsdMinor, "USD"),
+    usdMax: moneyInput(v.overseasOnlineMaxUsdMinor, "USD"),
     cap: moneyInput(v.websiteLiabilityCapInrMinor, "INR"),
     reminders: v.reminderOffsetsDays.map((d) => ({
       uid: rowId(),
@@ -110,6 +118,13 @@ const spec: GroupSpec<"payment_terms", Form> = {
     if (!usd.ok) e["f-smallJobThreshold-USD"] = `Small-job threshold in dollars: ${usd.error}`;
     const rz = moneyFrom(f.razorpayMin, "INR");
     if (!rz.ok) e["f-razorpayMinPartialInrMinor"] = `Smallest part-payment: ${rz.error}`;
+    const usdMin = moneyFrom(f.usdMin, "USD");
+    if (!usdMin.ok) e["f-onlineMinPartialUsdMinor"] = `${CARD_ZM.floorLabel}: ${usdMin.error}`;
+    const usdMax = moneyFrom(f.usdMax, "USD");
+    if (!usdMax.ok) e["f-overseasOnlineMaxUsdMinor"] = `${CARD_ZM.maximumLabel}: ${usdMax.error}`;
+    // the schema's own floor: the largest card payment is at least one cent
+    else if (usdMax.minor < 1)
+      e["f-overseasOnlineMaxUsdMinor"] = `${CARD_ZM.maximumLabel}: ${INVT_COPY.amountZero}`;
     const cap = moneyFrom(f.cap, "INR");
     if (!cap.ok) e["f-websiteLiabilityCapInrMinor"] = `Website liability cap: ${cap.error}`;
     const offsets: number[] = [];
@@ -133,7 +148,17 @@ const spec: GroupSpec<"payment_terms", Form> = {
     if (f.schedule.length === 0) e["f-buildSchedule"] = "Keep at least one instalment.";
     else if (total !== null && total !== 10_000)
       e["f-buildSchedule"] = `The instalments add up to ${bpToPercent(total)} %. Make them add up to 100 %.`;
-    if (Object.keys(e).length || due === null || validity === null || !inr.ok || !usd.ok || !rz.ok || !cap.ok)
+    if (
+      Object.keys(e).length ||
+      due === null ||
+      validity === null ||
+      !inr.ok ||
+      !usd.ok ||
+      !rz.ok ||
+      !usdMin.ok ||
+      !usdMax.ok ||
+      !cap.ok
+    )
       return { errors: e };
     const value: Terms = {
       ...doc.value,
@@ -141,6 +166,8 @@ const spec: GroupSpec<"payment_terms", Form> = {
       proposalValidityDays: validity,
       smallJobThreshold: { INR: inr.minor, USD: usd.minor },
       razorpayMinPartialInrMinor: rz.minor,
+      onlineMinPartialUsdMinor: usdMin.minor,
+      overseasOnlineMaxUsdMinor: usdMax.minor,
       websiteLiabilityCapInrMinor: cap.minor,
       reminderOffsetsDays: [...new Set(offsets)].sort((a, b) => a - b),
       reminderWindowIst: { fromHour: from, toHour: to },
@@ -248,6 +275,33 @@ export function PaymentTerms() {
                   onChange={(razorpayMin) => set({ razorpayMin })}
                 />
                 <RowError id="f-razorpayMinPartialInrMinor" error={error("f-razorpayMinPartialInrMinor")} />
+              </SettingRow>
+              <SettingRow id="pt-usd-min" label={CARD_ZM.floorLabel} labelFor="f-onlineMinPartialUsdMinor">
+                <MoneyIn
+                  a11y={ctl("f-onlineMinPartialUsdMinor", error("f-onlineMinPartialUsdMinor"))}
+                  currency="USD"
+                  value={f.usdMin}
+                  onChange={(usdMin) => set({ usdMin })}
+                />
+                <RowError id="f-onlineMinPartialUsdMinor" error={error("f-onlineMinPartialUsdMinor")} />
+              </SettingRow>
+              <SettingRow
+                id="pt-usd-max"
+                label={CARD_ZM.maximumLabel}
+                labelFor="f-overseasOnlineMaxUsdMinor"
+                description={CARD_ZM.maximumHint}
+              >
+                <MoneyIn
+                  a11y={ctl(
+                    "f-overseasOnlineMaxUsdMinor",
+                    error("f-overseasOnlineMaxUsdMinor"),
+                    "pt-usd-max-desc",
+                  )}
+                  currency="USD"
+                  value={f.usdMax}
+                  onChange={(usdMax) => set({ usdMax })}
+                />
+                <RowError id="f-overseasOnlineMaxUsdMinor" error={error("f-overseasOnlineMaxUsdMinor")} />
               </SettingRow>
               <SettingRow
                 id="pt-cap"

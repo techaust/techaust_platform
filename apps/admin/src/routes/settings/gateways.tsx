@@ -2,6 +2,8 @@
 // Keys are never typed here: they are Worker secrets. M6.2 (L15): the key pair lives on the admin finance Worker, so the status comes from its
 // `GET /api/v1/payments/gateways` (names only, never a value); the mode is the settings row, saved here. Live stays locked until the owner's go-live
 // (PAYMENTS_LIVE_ALLOWED, Phase 7); the API refuses it too (409 `live_locked`). A change needs a fresh step-up (gateways.manage), which the API asks for on save.
+// M6.3 (run file G3): Stripe's row says the kind of its key (L3: only a restricted test key is used while payments aren't live; any other is refused before a
+// call) and its last verified webhook.
 import { GATEWAYS, type Gateway, type Settings } from "@techaust/core/settings";
 import { type FormEvent, useState } from "react";
 import {
@@ -14,11 +16,12 @@ import {
 } from "../../api.ts";
 import { StatusPill, When } from "../../components/display.tsx";
 import { SaveBar } from "../../components/form.tsx";
-import { Lock } from "../../components/icons.tsx";
+import { Alert, Lock } from "../../components/icons.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { UnsavedChangesGuard } from "../../components/unsaved.tsx";
+import { ZM_DRAFTS } from "../../lib/copy-zm.ts";
 import { GW, GW_UI } from "../../lib/gateway.ts";
 import { FormSkeleton, StaleNotice } from "./kit.tsx";
 
@@ -123,10 +126,18 @@ function GatewayForm({
                   <div className="gateway__keys">
                     <dt className="muted">{GW.keys}</dt>
                     <dd>
-                      {s?.keys.configured ? (
-                        <StatusPill tone="success" icon="check">
-                          {GW.keysConfigured}
-                        </StatusPill>
+                      {s?.keys.configured && s.keyKind === "refused" ? (
+                        // M6.3 (L3): set, but not a restricted key: refused before any call, so not "Configured"
+                        <StripeKeyKind kind="refused" />
+                      ) : s?.keys.configured ? (
+                        <>
+                          <StatusPill tone="success" icon="check">
+                            {GW.keysConfigured}
+                          </StatusPill>
+                          {(s.keyKind === "restricted_test" || s.keyKind === "restricted_live") && (
+                            <StripeKeyKind kind={s.keyKind} />
+                          )}
+                        </>
                       ) : (
                         <span className="gateway__missing">
                           <StatusPill tone="warning" icon="clock">
@@ -141,7 +152,7 @@ function GatewayForm({
                       )}
                     </dd>
                   </div>
-                  {g === "razorpay" && (
+                  {(g === "razorpay" || g === "stripe") && (
                     <div className="gateway__keys">
                       <dt className="muted">{GW.lastWebhook}</dt>
                       <dd>
@@ -162,5 +173,22 @@ function GatewayForm({
       <SaveBar dirty={dirty} busy={busy} form="gateways-form" onDiscard={() => setValue(doc.value)} />
       <UnsavedChangesGuard dirty={dirty && !busy} what="the gateway modes" />
     </>
+  );
+}
+
+/** M6.3 (L3): what the Stripe key is. A restricted test key is the one in use; a live one waits for go-live; any other key is refused before a call. */
+function StripeKeyKind({ kind }: { kind: "restricted_test" | "restricted_live" | "refused" }) {
+  return kind === "restricted_test" ? (
+    <span className="gateway__kind">{ZM_DRAFTS.keyRestrictedTest}</span>
+  ) : kind === "restricted_live" ? (
+    <span className="gateway__kind">
+      <Lock size={16} />
+      {ZM_DRAFTS.keyRestrictedLive}
+    </span>
+  ) : (
+    <span className="gateway__kind gateway__kind--refused">
+      <Alert size={16} />
+      <span className="gateway__kind-text">{ZM_DRAFTS.keyRefused}</span>
+    </span>
   );
 }

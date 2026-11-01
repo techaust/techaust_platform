@@ -11,7 +11,7 @@
 import { issueDateOf } from "@techaust/core/invoices";
 import type { Role } from "@techaust/core/permissions";
 import { TERMS_BLOCKS } from "@techaust/core/terms";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { paymentsApi, RequestError, stepUpActive } from "../../api.ts";
 import { DateField, useUnreadDates } from "../../components/date-field.tsx";
@@ -21,7 +21,7 @@ import { Alert, Check, Pencil, Receipt } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { CodeField, Notice, useFieldError } from "../../components/ui.tsx";
 import { dateError } from "../../lib/date-field.ts";
-import { razorpayLine } from "../../lib/gateway.ts";
+import { advanceBlockerLine, gatewayLine } from "../../lib/gateway.ts";
 import {
   type AdvanceErrors,
   advanceFocus,
@@ -674,9 +674,15 @@ export function ProformaPayments(props: { view: InvoiceView; role: Role; onIssue
                   paymentId: w.paymentId,
                   amountMinor: w.amountMinor,
                   receivedOn: w.receivedOn,
-                  // M6.2: an online payment's reference is its `reference_norm` (`PAY-…`), read-only; the raw Razorpay id stands beside it
+                  // M6.2: an online payment's reference is its `reference_norm` (`PAY-…`), read-only; the raw gateway id stands beside it
                   reference: w.reference ?? "",
-                  online: online ? { mode: online.mode, providerPaymentId: online.providerPaymentId } : null,
+                  online: online
+                    ? {
+                        provider: online.provider,
+                        mode: online.mode,
+                        providerPaymentId: online.providerPaymentId,
+                      }
+                    : null,
                 })
             : undefined
         }
@@ -703,8 +709,11 @@ export type AdvancePrefill = {
   amountMinor: number;
   receivedOn: string;
   reference: string;
-  /** M6.2: a Razorpay payment (07-ZI S18's line beside the reference). */
-  online?: { mode: string | null; providerPaymentId: string | null } | null;
+  /**
+   * M6.2: a Razorpay payment (07-ZI S18's line beside the reference). M6.3: a Stripe payment (S14's line), whose tax invoice waits for the rate of the day the
+   * money arrived (S16, `fx_rate_needed`): the rate field is empty and takes the focus.
+   */
+  online?: { provider?: string; mode: string | null; providerPaymentId: string | null } | null;
 };
 
 /**
@@ -758,7 +767,16 @@ function AdvanceBody(props: {
   );
   // M6.1 (07-ZH line 13): a bank reference already recorded; with a waiting entry of it, the way on is to confirm that entry.
   const [seen, setSeen] = useState<{ text: string; paymentId: string | null } | null>(null);
-  const [fx, setFx] = useState<FxForm>(() => fxFormOf(null, today));
+  // The rate's date starts at the day the money came (a waiting entry's own day; Q9), never today's, so the rate typed is that day's.
+  const [fx, setFx] = useState<FxForm>(() => fxFormOf(null, props.prefill?.receivedOn ?? today));
+  // M6.3 (Q1 A, S16): a card payment's tax invoice waits only for the rate: the field is empty, the blocker says so above it, and the field takes the focus
+  // once the dialog has opened (after its own first focus).
+  const cardRate = usd && props.prefill?.online?.provider === "stripe";
+  useEffect(() => {
+    if (!cardRate) return;
+    const f = requestAnimationFrame(() => document.getElementById("adv-fx-rate")?.focus());
+    return () => cancelAnimationFrame(f);
+  }, [cardRate]);
   // The rate is for the day the money came (Q9): its date follows "Date received" until the Owner picks one of its own (review 2, 1).
   const [fxDateOwn, setFxDateOwn] = useState(false);
   const [confirmInr, setConfirmInr] = useState(false);
@@ -976,7 +994,11 @@ function AdvanceBody(props: {
           status={
             prefill?.online ? (
               <span className="docno break">
-                {razorpayLine(prefill.online.mode, prefill.online.providerPaymentId)}
+                {gatewayLine(
+                  prefill.online.provider ?? "razorpay",
+                  prefill.online.mode,
+                  prefill.online.providerPaymentId,
+                )}
               </span>
             ) : undefined
           }
@@ -1006,6 +1028,13 @@ function AdvanceBody(props: {
           <fieldset className="form-section inv-advance__fx">
             <legend>{INVT_COPY.fxTitle}</legend>
             <p className="hint">{fxBody(day(form.date))}</p>
+            {cardRate && fx.rate.trim() === "" && (
+              // the dialog's own "still to do" line (as its earlier-month line), not an error: nothing was typed wrong yet
+              <p className="approval-line" data-state="pending" id="adv-fx-needed">
+                <Alert size={16} />
+                <span>{advanceBlockerLine("fx_rate_needed")}</span>
+              </p>
+            )}
             <FxFields
               prefix="adv-fx"
               form={fx}

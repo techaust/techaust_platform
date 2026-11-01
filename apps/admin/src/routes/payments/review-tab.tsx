@@ -15,12 +15,14 @@ import { LoadFailed, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
+import { ZM_DRAFTS } from "../../lib/copy-zm.ts";
 import {
   advanceBlockerLine,
   allowedResolutions,
   canRetry,
   GW,
   GW_UI,
+  gatewayName,
   gwErrorText,
   itemReason,
   RESOLUTION_LABELS,
@@ -114,6 +116,12 @@ export function ReviewList(props: {
       header: GW_UI.colArrived,
       card: "title",
       cell: (r) => <When ms={r.created_at} />,
+    },
+    {
+      // M6.3 (run file G2): which gateway the item is about (Stripe or Razorpay), a proper name
+      key: "gateway",
+      header: ZM_DRAFTS.colGateway,
+      cell: (r) => <span className="pay-lines__nowrap">{gatewayName(r.provider)}</span>,
     },
     {
       key: "reason",

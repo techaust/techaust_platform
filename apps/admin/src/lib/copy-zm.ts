@@ -32,3 +32,19 @@ export const CARD_ZM = {
     "RBI limits a payment aggregator's export payment to ₹25 lakh per transaction. We keep card payments under it too: keep this below ₹25 lakh at today's rate.",
   ),
 } as const;
+
+/**
+ * Designer's drafts for the lead (M6.3, 2026-11-02; staff-only): words the placed screens need that 07-ZM doesn't have. Marked with the "[Placeholder]" sign
+ * until the lead approves them (`APPROVED_ZM_DRAFTS`, its own switch, so approving S13 to S19 never approves these by accident). Listed in the run file's
+ * designer report.
+ */
+export const APPROVED_ZM_DRAFTS = false;
+const DRAFT = (line: string): string => (APPROVED_ZM_DRAFTS ? line : `${PLACEHOLDER_MARK} ${line}`);
+export const ZM_DRAFTS = {
+  /** "Needs review": the column naming the item's gateway (run file G2). */
+  colGateway: DRAFT("Gateway"),
+  /** Settings › Gateways, the Stripe key's kind (L3: only a restricted test key is used while payments are not live). */
+  keyRestrictedTest: DRAFT("Restricted test key"),
+  keyRestrictedLive: DRAFT("Restricted live key. It isn't used until go-live."),
+  keyRefused: DRAFT("Not a restricted key, so it is refused. Card payments stay off until it is replaced."),
+} as const;

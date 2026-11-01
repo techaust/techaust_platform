@@ -954,6 +954,35 @@
   display: inline;
 }
 
+/* ---------- M6.3 Stripe (run file G1) ----------
+   "Card payments" is the same slip with no perforation: there is nothing to tear off, because staff never make or copy a card page (L7). Its title carries the
+   card mark; the last card page's amount and expiry sit where the counterfoil's ask does, one size down. */
+.pay-link__title:has(> .icon) {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pay-link__title > .icon {
+  color: var(--color-text-muted);
+}
+
+.pay-link__body {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--color-text-muted);
+}
+
+.pay-link__amount--sm {
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+}
+
+/* a Stripe payment's INR facts under S14's line: the same quiet meta lines, each one fact */
+.pay-online__fact {
+  max-width: 48ch;
+}
+
 /* what on this document waits in Needs review: the warning rule of the reference question, its reasons as a short list */
 .pay-review-note,
 .pay-blocked {

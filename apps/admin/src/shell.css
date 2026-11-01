@@ -2816,6 +2816,25 @@ input[readonly] {
   overflow-wrap: break-word;
 }
 
+/* M6.3: the Stripe key's kind beside "Configured" (a restricted test key), or in its place when the key is refused (L3) */
+.gateway__kind {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-text-muted);
+  overflow-wrap: break-word;
+}
+
+/* the icon takes the danger colour, the words stay the text colour */
+.gateway__kind--refused {
+  color: var(--color-danger);
+  font-weight: 500;
+}
+
+.gateway__kind-text {
+  color: var(--color-text);
+}
+
 .versioned-list {
   display: grid;
   gap: var(--space-3);

@@ -7,14 +7,7 @@ import "../payments.css";
 import type { Role } from "@techaust/core/permissions";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import {
-  type AllocationAsk,
-  type PaymentStatus,
-  type PaymentView,
-  paymentsApi,
-  sha256Hex,
-  uploadPaymentDoc,
-} from "../api.ts";
+import { type AllocationAsk, type PaymentStatus, type PaymentView, paymentsApi } from "../api.ts";
 import { type Column, DataTable, FilterBar } from "../components/data-table.tsx";
 import { DateField } from "../components/date-field.tsx";
 import { Modal, useRefusalFocus } from "../components/dialog.tsx";
@@ -26,8 +19,9 @@ import { Tabs } from "../components/tabs.tsx";
 import { useToast } from "../components/toast.tsx";
 import { Notice } from "../components/ui.tsx";
 import { allowed } from "../lib/access.ts";
+import { CARD_ZM } from "../lib/copy-zm.ts";
 import { pendingBadge } from "../lib/documents.ts";
-import { GW, GW_UI, REVIEW_CHANGED, razorpayLine } from "../lib/gateway.ts";
+import { GW, GW_UI, gatewayLine, gatewayName, REVIEW_CHANGED } from "../lib/gateway.ts";
 import { INV_COPY, typeLabel } from "../lib/invoices.ts";
 import { invoicesApi } from "../lib/invoices-api.ts";
 import { confirmDocsOf, OPEN_DOCS_CAP } from "../lib/open-docs.ts";
@@ -56,11 +50,11 @@ import {
   AllocationTable,
   day,
   EarlierMonthWarning,
-  FilePick,
   PaymentPill,
   useCodeSlot,
   useDialogState,
 } from "./payments/parts.tsx";
+import { ProofForm } from "./payments/proof-form.tsx";
 import { RecordPaymentDialog } from "./payments/record-dialog.tsx";
 import { ReviewList } from "./payments/review-tab.tsx";
 
@@ -84,7 +78,7 @@ function Payments({ role }: { role: Role }) {
     ? "all"
     : params.get("tab") === "review"
       ? "review"
-      : params.get("tab") !== "all" && !params.get("status")
+      : params.get("tab") !== "all" && !params.get("status") && !params.get("proof")
         ? "check"
         : "all";
   const status =
@@ -94,6 +88,8 @@ function Payments({ role }: { role: Role }) {
         ? (params.get("status") as PaymentStatus)
         : null;
   const client = params.get("client") ?? undefined;
+  // M6.3 (07-ZM S15): the card payments whose proof is awaited
+  const proof = tab === "all" && params.get("proof") === "awaited";
   const from = params.get("from") ?? "";
   const to = params.get("to") ?? "";
   const [recording, setRecording] = useDialogState<"payment" | "tds">("main");
@@ -144,10 +140,11 @@ function Payments({ role }: { role: Role }) {
       />
     ) : (
       <PaymentList
-        key={`${tab}:${status ?? ""}:${client ?? ""}:${from}:${to}`}
+        key={`${tab}:${status ?? ""}:${client ?? ""}:${from}:${to}:${proof}`}
         tab={tab}
         role={role}
         status={status}
+        proof={proof}
         client={client}
         from={from}
         to={to}
@@ -188,7 +185,14 @@ function Payments({ role }: { role: Role }) {
           selected={tab}
           // Visual review finding 3: the other tab's filters never carry over (the check tab has none; its badge and its list must agree).
           onSelect={(k) =>
-            set({ tab: k === "check" ? null : k, status: null, client: null, from: null, to: null })
+            set({
+              tab: k === "check" ? null : k,
+              status: null,
+              client: null,
+              from: null,
+              to: null,
+              proof: null,
+            })
           }
         >
           {list}
@@ -218,6 +222,8 @@ function PaymentList(props: {
   tab: Tab;
   role: Role;
   status: PaymentStatus | null;
+  /** M6.3 (07-ZM S15): only the card payments whose proof is awaited (`?proof=awaited`). */
+  proof: boolean;
   client: string | undefined;
   from: string;
   to: string;
@@ -238,6 +244,7 @@ function PaymentList(props: {
     ...(props.client ? { client: props.client } : {}),
     ...(props.from ? { from: props.from } : {}),
     ...(props.to ? { to: props.to } : {}),
+    ...(props.proof ? { proof: "awaited" as const } : {}),
   };
   const list = useLoad(() => paymentsApi.list(q), JSON.stringify(q));
   const [more, setMore] = useState<PaymentView[]>([]);
@@ -284,7 +291,11 @@ function PaymentList(props: {
     }
   }
   const filtered =
-    props.status !== null || props.client !== undefined || props.from !== "" || props.to !== "";
+    props.status !== null ||
+    props.proof ||
+    props.client !== undefined ||
+    props.from !== "" ||
+    props.to !== "";
 
   const columns: Column<PaymentView>[] = [
     {
@@ -315,7 +326,7 @@ function PaymentList(props: {
           {r.kind === "tds"
             ? PAY_UI.kindTds
             : r.provider !== "manual"
-              ? razorpayLine(r.mode, null)
+              ? gatewayLine(r.provider, r.mode, null)
               : `${PAY_UI.kindPayment} · ${r.mode ? MODE_LABELS[r.mode] : ""}`}
         </span>
       ),
@@ -371,9 +382,21 @@ function PaymentList(props: {
               selected: props.status ? [props.status] : [],
               options: STATUSES.map((s) => ({ value: s, label: STATUS_LABELS[s] })),
             },
+            {
+              key: "proof",
+              label: PAY_COPY.proof,
+              selected: props.proof ? ["awaited"] : [],
+              options: [{ value: "awaited", label: CARD_ZM.proofAwaited }],
+            },
           ]}
-          onToggle={(_, v) => props.onFilter({ status: props.status === v ? null : v, tab: "all" })}
-          onClear={() => props.onFilter({ status: null, client: null, from: null, to: null, tab: "all" })}
+          onToggle={(g, v) =>
+            g === "proof"
+              ? props.onFilter({ proof: props.proof ? null : "awaited", tab: "all" })
+              : props.onFilter({ status: props.status === v ? null : v, tab: "all" })
+          }
+          onClear={() =>
+            props.onFilter({ status: null, proof: null, client: null, from: null, to: null, tab: "all" })
+          }
           extra={
             <div className="pay-range">
               <FormField id="pay-from" label={PAY_UI.from} optional>
@@ -569,7 +592,7 @@ function EntryDialog(props: {
           onDone={props.onChanged}
         />
       ) : (
-        <ProofStep payment={entry.data.payment} onBack={() => setStep("view")} onDone={props.onChanged} />
+        <ProofForm payment={entry.data.payment} onBack={() => setStep("view")} onDone={props.onChanged} />
       )}
     </Modal>
   );
@@ -585,10 +608,12 @@ function EntryView(props: {
   const cur = p.currency;
   const owner = allowed(props.role, "payments.verify");
   const pending = p.status === "pending_verification";
-  // M6.2 (L7): a Razorpay payment is never rejected or withdrawn here (the money goes back by a refund, M6.5), and Razorpay is its own proof.
+  // M6.2 (L7): a gateway payment is never rejected or withdrawn here (the money goes back by a refund, M6.5), and Razorpay is its own proof. M6.3 (L11, 07-ZM
+  // S15): a Stripe payment takes a proof (Stripe's payment advice or the bank's e-FIRA).
   const online = p.provider !== "manual";
+  const card = p.provider === "stripe";
   const canProof =
-    !online &&
+    (!online || card) &&
     allowed(props.role, "payments.attachProof") &&
     p.kind === "payment" &&
     !p.proof?.hasFile &&
@@ -649,7 +674,7 @@ function EntryView(props: {
                   {online ? (
                     <>
                       {GW_UI.paidOnline}
-                      <span className="pay-lines__meta">{razorpayLine(p.mode, null)}</span>
+                      <span className="pay-lines__meta">{gatewayLine(p.provider, p.mode, null)}</span>
                     </>
                   ) : p.mode ? (
                     MODE_LABELS[p.mode]
@@ -707,7 +732,7 @@ function EntryView(props: {
               </div>
             </>
           )}
-          {p.kind === "payment" && !online && (
+          {p.kind === "payment" && (!online || card) && (
             <div>
               <dt>{PAY_COPY.proof}</dt>
               <dd>
@@ -716,6 +741,8 @@ function EntryView(props: {
                     <FileText size={16} />
                     {[p.proof.kind, p.proof.ref].filter(Boolean).join(" · ") || PAY_UI.openProof}
                   </a>
+                ) : card ? (
+                  <span className="pay-badge">{CARD_ZM.proofAwaited}</span>
                 ) : (
                   <span className="pay-lines__meta">{PAY_UI.noProof}</span>
                 )}
@@ -725,7 +752,7 @@ function EntryView(props: {
           <div>
             <dt>{PAY_UI.recordedBy}</dt>
             <dd>
-              {p.recordedByName ?? (online ? "Razorpay" : "")} <When ms={p.recordedAt} inline />
+              {p.recordedByName ?? (online ? gatewayName(p.provider) : "")} <When ms={p.recordedAt} inline />
             </dd>
           </div>
           {p.verifiedAt !== null && p.status !== "pending_verification" && (
@@ -1095,106 +1122,6 @@ function ReasonStep(props: {
         </button>
         <button type="submit" className="btn btn--danger" disabled={busy} aria-busy={busy || undefined}>
           {busy ? "Working…" : reject ? PAY_COPY.reject : PAY_UI.withdraw}
-        </button>
-      </div>
-    </form>
-  );
-}
-
-/** Attach a proof to an entry that has none (L11: set once, later). */
-function ProofStep(props: { payment: PaymentView; onBack: () => void; onDone: (t: string) => void }) {
-  const p = props.payment;
-  const [file, setFile] = useState<File | null>(null);
-  const [kind, setKind] = useState("");
-  const [ref, setRef] = useState("");
-  const [errors, setErrors] = useState<{ file?: string; kind?: string }>({});
-  const [failure, setFailure] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const refusal = useRefusalFocus();
-  async function submit() {
-    const e = {
-      ...(file ? {} : { file: PAY_UI.proofFileHint }),
-      ...(kind.trim() ? {} : { kind: PAY_UI.proofKindMissing }),
-    };
-    setErrors(e);
-    if (e.file || e.kind || !file) {
-      document.getElementById(e.file ? "pay-proof-file" : "pay-proof-kind1")?.focus();
-      return;
-    }
-    setBusy(true);
-    setFailure(null);
-    try {
-      await uploadPaymentDoc(
-        { proofOf: p.id, kind: kind.trim(), ...(ref.trim() ? { ref: ref.trim() } : {}) },
-        file,
-        await sha256Hex(file),
-        () => {},
-      );
-      props.onDone(PAY_UI.proofSaved);
-    } catch (err) {
-      setFailure(payErrorText(err));
-      refusal.show();
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <form
-      noValidate
-      onSubmit={(e) => {
-        e.preventDefault();
-        void submit();
-      }}
-    >
-      <div className="dialog__body pay-form">
-        {p.currency === "USD" && <p className="hint">{PAY_COPY.exportProofHint}</p>}
-        <FilePick
-          id="pay-proof-file"
-          label={PAY_COPY.proof}
-          file={file}
-          onFile={setFile}
-          error={errors.file}
-        />
-        <FormField
-          id="pay-proof-kind1"
-          label={PAY_COPY.proofKind}
-          hint={PAY_COPY.proofKindHint}
-          error={errors.kind}
-        >
-          {(a) => (
-            <input
-              {...a}
-              maxLength={60}
-              autoComplete="off"
-              value={kind}
-              onChange={(e) => setKind(e.target.value)}
-            />
-          )}
-        </FormField>
-        <FormField id="pay-proof-ref1" label={PAY_COPY.proofRef} optional>
-          {(a) => (
-            <input
-              {...a}
-              maxLength={80}
-              autoComplete="off"
-              spellCheck={false}
-              value={ref}
-              onChange={(e) => setRef(e.target.value)}
-            />
-          )}
-        </FormField>
-      </div>
-      {failure && (
-        <Notice tone="error" ref={refusal.ref}>
-          {failure}
-        </Notice>
-      )}
-      <div className="dialog__actions">
-        <button type="button" className="btn btn--secondary" onClick={props.onBack} disabled={busy}>
-          {INV_COPY.cancel}
-        </button>
-        <button type="submit" className="btn btn--primary" disabled={busy} aria-busy={busy || undefined}>
-          {busy ? "Working…" : PAY_UI.attachProof}
         </button>
       </div>
     </form>
