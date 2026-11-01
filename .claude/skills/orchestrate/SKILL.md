@@ -32,7 +32,7 @@ One AskUserQuestion batch (up to 4 questions, the recommendation first, "(Recomm
 2. Start each with `start_session` (target cloud, environment `techaust_platform`, prompt = shared rules + task). Record the session ids, the time and `main`'s short sha in the run file.
 3. Within about 10 minutes, check each pushed its branch and run file (`git ls-remote origin refs/heads/<branch>`) and runs on Opus 5.5 (its run file's first lines; a session that stopped in setup shows `[setup] FAILED: …`: archive it and fix the setup first).
 4. **Arm the watcher** with the Monitor tool: `node tools/watch-cloud.mjs --run .logs/orchestrate/run.json` (add `--action-only` when usage is over 60 %, a lead choice: only lines that need you). It prints one line per event and exits when every task is PR READY or merged. It keeps what it has seen in `.logs/orchestrate/watch.state.json`, so a re-armed copy reports only what changed since. Only the newest copy runs: starting a new one makes the old one exit within seconds, so re-arming is always safe (the Windows lesson of 2026-10-31: expired Monitors left 11 orphaned watchers and PR READY arrived 30 minutes late).
-5. **Heartbeat:** a session-only schedule every 30 minutes that (a) reads the usage and sends it (step 6), (b) re-arms the watcher (step 4.4), (c) runs `node tools/watch-cloud.mjs status --run .logs/orchestrate/run.json` and acts on anything the watcher should have reported.
+5. **Heartbeat:** a session-only schedule every 30 minutes that (a) reads the usage and sends it (step 6), (b) re-arms the watcher (step 4.4), (c) runs `node tools/watch-cloud.mjs status --run .logs/orchestrate/run.json` and compares each row's class with the orchestrator log: any PR READY, WAITING, BLOCKED, FAIL or SENT BACK row not logged yet is handled now (an expired Monitor's copy may have printed it to nowhere and saved it as seen, so the re-armed copy stays silent about it).
 
 ## 5. React to the watcher's lines
 Each line is `HH:MM IST <session> <KIND> <detail>`; lines ending in `ACTION` need you now.
@@ -47,7 +47,7 @@ Each line is `HH:MM IST <session> <KIND> <detail>`; lines ending in `ACTION` nee
 | `QUIET` | (never for a session waiting on the owner or PR READY) 45 minutes with no push on the branch or its sub-branches: send the session "Status?" with the newest usage reading; if it stays quiet 30 minutes more, tell the owner (it may have hit a limit or stalled). |
 | `GONE` | The branch was deleted (normally after its merge). |
 | `WATCHER git failing` | Check the network on the PC; the watcher retries by itself. |
-| `ALL DONE` | Every task is PR READY or merged: finish reviews and merges, then step 9. |
+| `ALL DONE` | Every task is PR READY or merged: finish reviews and merges, then step 9. A re-armed copy prints it again at each heartbeat: a repeat needs nothing. |
 
 `status` prints the same facts as one table, for "check the cloud sessions".
 

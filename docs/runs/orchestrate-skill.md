@@ -1,8 +1,8 @@
 # Run: the `/orchestrate` skill and the cloud watcher
 
-Status: re-check running (review 1 fixes merged)
+Status: checks running (re-check APPROVE)
 Tier: C
-Usage: lead claude-opus-5-5/high (cloud session orchestrate-skill); builder claude-opus-5-5/high (model-audit; skills: none — no docs/14 §9 row fits a plain Node CLI, flagged by the audit for that reason): 5-h 5 → ? %; reviewer: below. Reading at the start: USAGE 5 at 2026-11-01T11:15+05:30.
+Usage: lead claude-opus-5-5/high (cloud session orchestrate-skill); builder claude-opus-5-5/high (model-audit; skills: none — no docs/14 §9 row fits a plain Node CLI, flagged by the audit for that reason): 5-h 5 → ? %; reviewer claude-opus-5-5/high (skills: code-review; its helper general-purpose claude-opus-5-5/high, read-only) review 1 + re-check; fix builder claude-opus-5-5/high (skills: none, same reason). 5-h readings: only the start reading (5 % at 11:15 IST) was received during the run. Reading at the start: USAGE 5 at 2026-11-01T11:15+05:30.
 
 Owner's request: docs/13 row 2026-10-31 "`/orchestrate`: a project skill …" and the 2026-11-01 usage-pacing row; docs/12 "Next" item 4. Built as a cloud session controlled from the PC (2026-11-01).
 
@@ -150,6 +150,14 @@ Skills: `code-review` (10 candidates, each verified); `security-review` not load
 
 **Triage (lead):** all fixed. 2 and 8 by the lead (labels → "Lead, 2026-11-01", step 1.3, the 60 % threshold as a lead decision, CHANGELOG line; SKILL.md §5 also says QUIET never fires for WAITING or PR READY). 1, 3–7 by a fix builder on `fix/orchestrate-skill-r1`. A re-check follows (finding 1 was high).
 
+### Re-check (reviewer, 2026-11-01): APPROVE
+All eight review-1 findings fixed, no regressions (diff 118c43b..d84c1b7d). Ran: watcher tests 104/104, Biome clean, a real watch → stop → second watch over the saved state → stop against origin (the second copy printed only its start line; the state file byte-identical; no temp file or process left). The builder's two unverified edges accepted: a failed rename on Windows retries on every changed tick and can only repeat lines on a later re-arm; the takeover race can repeat one tick's lines, never lose one.
+New:
+1. **Medium** — an orphaned copy (an expired Monitor on Windows, still holding the token) can print an event to nowhere and save it as seen; the re-armed copy then stays silent, so only the heartbeat's `status` table shows it. Fix: SKILL.md 4.5(c) compares each row's class with the orchestrator log and handles any unlogged action row.
+2. **Low** — ALL DONE prints again at each re-arm once every task is done. Fix (optional): say in SKILL.md §5 that a repeat needs nothing.
+
+**Triage (lead):** both fixed in SKILL.md as suggested (doc-only, so no further re-check). A watcher start line listing tasks already in an action class stays a follow-up.
+
 ## Integration notes
 (lead)
 
@@ -168,6 +176,7 @@ Skills: `code-review` (10 candidates, each verified); `security-review` not load
 
 ## Follow-ups (for 12)
 - Closed by this task (remove from 12 "Parallel task sessions (2026-10-31)"): "the watcher counts only task-branch pushes" (the watcher counts `fix/<name>-*`).
+- The watcher could print, at start, one ACTION line listing tasks already in an action class (re-check medium 1 belt-and-braces; the heartbeat's `status` comparison covers it now). Not verified on Windows: the watcher itself (Git Bash + Node 24 + Monitor), the state-file rename there.
 - Still open: `tools/agent-slots.mjs` doesn't hold the per-session 2-agent cap or the 85 % pacing line of parallel runs (the shared rules do); Auto-fix for PRs a cloud session opened (the owner turns it on from the PR bar).
 
 ## Questions for the owner
