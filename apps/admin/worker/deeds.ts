@@ -741,6 +741,8 @@ export const deeds = new Hono<AppEnv>()
       if (!now2.eligible) return err(c, DEED_NOT_ELIGIBLE, 409, { blockers: now2.blockers });
       // Early check 7: a payment, a credit note or a void moved a document of the project since the read: the figures to seal changed. Read again.
       if (again.stamp.n !== b.stamp.n || again.stamp.at !== b.stamp.at) return err(c, STALE_VERSION, 409);
+      // Review L1: the client record (name, address, GSTIN) was saved since the read: the parties to seal changed. Read again.
+      if ((again.client?.updated_at ?? 0) !== (b.client?.updated_at ?? 0)) return err(c, STALE_VERSION, 409);
       const counter = await c.env.DB.prepare(
         "SELECT next_no FROM doc_counters WHERE series = 'deed' AND fy = ?1",
       )

@@ -18,7 +18,16 @@ import {
   putSigned,
   SCHEDULES,
 } from "./test-deeds.ts";
-import { call, captureQueue, countOf, one, sessionFor, type TestSession, withEnv } from "./test-helpers.ts";
+import {
+  call,
+  captureQueue,
+  countOf,
+  one,
+  sessionFor,
+  type TestSession,
+  withDb,
+  withEnv,
+} from "./test-helpers.ts";
 import { codeOf, type J, json, putCompany, voidInvoice } from "./test-invoices.ts";
 import { record, recordBody, recorded, today, verify } from "./test-payments.ts";
 import { PDF_BYTES, PNG_BYTES } from "./test-projects.ts";
@@ -339,6 +348,45 @@ describe("finalise [L1, L4, L6]", () => {
     expect(parties).toContain(
       "trading as TecHaust Technologies, 1 Example Road, Balurghat, West Bengal 733101, GSTIN ",
     );
+  });
+
+  it("review L1: a client edit between the read and the batch refuses the finalise as stale_version (not a settings change); nothing is numbered", async () => {
+    const o = await owner();
+    const f = await draftDeed(o);
+    await putSchedules(o, f.deedId);
+    // The Worker's own checks pass; just before the batch that finalises runs, someone saves the client record.
+    let finalising = false;
+    const racing = {
+      prepare: (q: string) => {
+        if (q.includes("UPDATE deeds SET status = 'final'")) finalising = true;
+        return env.DB.prepare(q);
+      },
+      batch: async (stmts: D1PreparedStatement[]) => {
+        if (finalising) {
+          finalising = false;
+          await env.DB.prepare(
+            "UPDATE clients SET legal_name = 'Renamed Traders', updated_at = updated_at + 1 WHERE id = ?1",
+          )
+            .bind(f.clientId)
+            .run();
+        }
+        return env.DB.batch(stmts);
+      },
+    } as unknown as D1Database;
+    const res = await call(
+      `/deeds/${f.deedId}/finalise`,
+      { cookie: o.cookie, body: { expectedUpdatedAt: await deedStamp(f.deedId) } },
+      withDb(racing),
+    );
+    expect(res.status).toBe(409);
+    expect(await codeOf(res)).toBe("stale_version");
+    expect(await deedRowOf(f.projectId)).toMatchObject({ status: "draft", number: null });
+    // Read again: the new name is sealed.
+    expect((await finaliseDeed(o, f.deedId)).status).toBe(200);
+    const parties = ((await json(await getDeed(o, f.projectId))).deed.text.parties as J[])
+      .map((r) => r.text)
+      .join("");
+    expect(parties).toContain("Renamed Traders");
   });
 });
 
