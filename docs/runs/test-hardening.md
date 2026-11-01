@@ -1,6 +1,6 @@
-Status: review APPROVE (5 lows: L1, L4, L5 fixed; L2 kept; L3 follow-up); re-check running
+Status: re-check PASS; F1/F5 fixed (ed4011e); final merge of main and checks running
 Tier: B
-Usage: analyst (item 5) claude-opus-5-5/high, skills: code-review (+ its read-only general-purpose helper claude-opus-5-5/high); 5-h 17 → 62 % (shared window, four sessions) · builder r1 claude-opus-5-5/high, skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:turnstile-spin (not installed in the cloud); 5-h 17 → 62 % · analyst (early check r1) claude-opus-5-5/high, skills: code-review (+ read-only helper); 5-h 62 % · builder r2 claude-opus-5-5/high, skills tried: cloudflare:workers-best-practices (not installed in the cloud); 5-h 62 → 88 % · reviewer claude-opus-5-5/high, skills: code-review (+ read-only helper), security-review (by hand); 5-h reset 06:10 → reading not yet posted
+Usage: analyst (item 5) claude-opus-5-5/high, skills: code-review (+ its read-only general-purpose helper claude-opus-5-5/high); 5-h 17 → 62 % (shared window, four sessions) · builder r1 claude-opus-5-5/high, skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:turnstile-spin (not installed in the cloud); 5-h 17 → 62 % · analyst (early check r1) claude-opus-5-5/high, skills: code-review (+ read-only helper); 5-h 62 % · builder r2 claude-opus-5-5/high, skills tried: cloudflare:workers-best-practices (not installed in the cloud); 5-h 62 → 88 % · reviewer claude-opus-5-5/high, skills: code-review (+ read-only helper), security-review (by hand); 5-h reset 06:10 → reading not yet posted · reviewer re-check claude-opus-5-5/high, skills: code-review (+ read-only helper)
 
 # Test and guard hardening (cloud session "test-hardening")
 
@@ -347,7 +347,17 @@ _Pasted by the lead from the reviewer's reply (Opus 5.5 high, 2026-11-01). Revie
 **Lead triage (2026-11-01):** L1 fixed (5879f00: the give-back pauses only when no live link of the document is left; the no-recipient path gives back plainly; two tests, both fail without the fix); L4 fixed (54a5bb0: a `care.issue` dead letter for a frozen invoice only logs; test fails without the fix); L5 fixed (fcbc8e1: one `markNotSent` in `billing-shared.ts`); L2 kept (lead decision below); L3 stays a follow-up. Jobs typecheck and suite green (573). Re-check requested.
 
 ## Re-check
-(pending)
+_Pasted by the lead from the reviewer's reply (Opus 5.5 high, 2026-11-01), range `6d25c9e..aa9b1bc -- apps/`._
+
+**PASS.** L1, L4, L5 fixed and their tests discriminate (by reading the SQL); L2 decision reasonable. New lows:
+- **F1** jobs `reminders.ts:196-201`: the plain give-back on the no-recipient path loses item-5 #2's protection when "Revoke links" commits between the claim and the give-back (a claim with a recipient but no link written: someone outside the read's `LIMIT 5`, or access appearing between read and batch); the next scan then emails a fresh live link. Fix: the same `giveBack(…, [])` with the L1 SQL (its live-link arm already keeps one contact's lost access from pausing); split the test.
+- **F2** (follow-up) token state can't tell "Revoke links" from one contact's email change: a one-contact document whose contact changes email ends paused; "Revoke links" then "Send again" with the new link minted before a give-back sends that reminder back waiting while its siblings stay paused. A precise marker with no migration exists: the `invoice.links_revoke` audit row (same batch, `audit_log_entity` index); the same could make L2 precise.
+- **F3** (follow-up) jobs `care-billing.ts:86-98`: with the PDF queue down through every `care.issue` retry, owners now get no bell (the "issued and emailed" bell already rang; `auto` sends wait ~21.5 h for the sweep); a truthful "issued, emailing delayed" bell needs new approved copy. No test pins that an existing unfrozen draft still rings (the test uses a missing id).
+- **F4** (cosmetic) the `frozen_at` read is one extra D1 round trip on dead letters only; could fold into `FAILED_BELL_SQL` as `NOT EXISTS`.
+- **F5** stale comments `reminders.ts:9` and `:197`.
+- **Ran:** jobs suite 573 passed; jobs build 668,792 bytes, startup 56.7 ms; jobs typecheck. **Skills:** `code-review` (helper on the range, 8 candidates checked); `security-review` not loaded (three small fixes, revoke/pause SQL checked by hand); no screens.
+
+**Lead (2026-11-01):** F1 and F5 fixed in ed4011e as prescribed (both paths share `giveBack`; the no-recipient test split into "a live link remains → waiting" and "every link revoked → paused"; the paused case fails on 5879f00, checked). F2, F3, F4 are follow-ups. No new critical or high finding, so no further review round (docs/14 §2); the F1 fix is the re-checker's own prescription.
 
 ## Integration notes
 - 2026-11-01 03:47 IST, lead on b9e226b (r1 + r2 + lead fix 60bcb5c): `bash tools/heavy.sh --log th-lead-check pnpm check` exit 0; `bash tools/heavy.sh --log th-lead-test pnpm test` exit 0: testing 4, auth 135, ui 471 (+2 skipped), core 1,956, email 132, db 623, pdf 380, web 750 (+17 skipped, no dist), portal 680, jobs 570, admin 3,821. Before review; the final run follows the review and a merge of main.
@@ -368,6 +378,8 @@ _Pasted by the lead from the reviewer's reply (Opus 5.5 high, 2026-11-01). Revie
 - **issue.ts / triggers.ts** (out of bounds in this run): `issue.ts` has no type list (it applies `SIGNED_FREEZE_SQL` per path), so no test ties the path choice to core's `signatureRequired`; the 0055 trigger copies stay pinned by `signature-triggers.test.ts`.
 - **An email still on `EMAIL_QUEUE` when its send is cancelled** (no log row yet): the email consumer doesn't check `cancelled_at`, so it can still go (with a revoked, dead link) while the send reads Cancelled; pre-existing, rare (queue failure plus a revoke within seconds).
 - **Resume between a revoke and a failed reminder send** (item 5 #2): the claimed reminder comes back paused and needs a second Resume (builder r2, accepted).
+- **Reminder give-back precision (re-check F2):** tell "Revoke links" from one contact's email change by the `invoice.links_revoke` audit row (no migration) in the give-back and in the send's revoked-link check (L2); today a one-contact document whose contact changes email ends "missed while paused", and "Revoke links" then "Send again" can return one claimed reminder to waiting while its siblings stay paused.
+- **Care issue with the PDF queue down (re-check F3, F4):** after every retry fails, owners get no bell (the "issued and emailed" bell already rang; the `auto` sends wait ~21.5 h for the sweep); a truthful "issued, emailing delayed" bell needs approved copy. A test that an unfrozen care draft still rings (jobs tests have no draft fixture); the `frozen_at` read could fold into `FAILED_BELL_SQL`.
 - **Merge commit 0dffdec** (builder r1) carries git's default message without the co-author footer; left as is (fixing it needs a force-push).
 
 ## Questions for the owner
