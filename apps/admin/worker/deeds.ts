@@ -14,6 +14,7 @@ import {
   type DeedDocFact,
   type DeedSchedules,
   type DeedSnapshot,
+  type DeedText,
   deedSignatureLine,
   deedSnapshotJson,
   deedSnapshotOf,
@@ -28,6 +29,13 @@ import {
 import { maxNumber, sqlPrintfPattern } from "@techaust/core/numbering";
 import type { PdfDeedMessage } from "@techaust/core/pdf-jobs";
 import { decide } from "@techaust/core/permissions";
+import {
+  MIN_REDACTION_LENGTH,
+  type Redact,
+  type RedactableRecipient,
+  redactionNames,
+  redactor,
+} from "@techaust/core/redaction";
 import { resolveSetting } from "@techaust/core/settings";
 import {
   cancelDeedStatement,
@@ -129,8 +137,9 @@ const PROJECT_SQL =
   "SELECT p.id, p.code, p.status, p.client_id, p.source_document_id FROM projects p WHERE p.id = ?1";
 const CLIENT_SQL =
   "SELECT c.legal_name, c.billing_address, c.gstin, c.anonymised_at, c.updated_at FROM clients c WHERE c.id = (SELECT client_id FROM projects WHERE id = ?1)";
+/** The accepted version, with its frozen recipient (review M6: the names an anonymised client's Schedules are redacted of, view-only). */
 const SOURCE_SQL =
-  "SELECT s.type, s.number_display, s.version, s.decided_at, s.currency, s.total_minor FROM documents s WHERE s.id = (SELECT source_document_id FROM projects WHERE id = ?1)";
+  "SELECT s.type, s.number_display, s.version, s.decided_at, s.currency, s.total_minor, s.recipient FROM documents s WHERE s.id = (SELECT source_document_id FROM projects WHERE id = ?1)";
 /** The project's live payable documents (L2's set; `documents_project`), at most 200: a project has a handful. */
 const DOCS_SQL = `SELECT d.id, d.type, d.frozen_at IS NOT NULL AS frozen, d.status, d.currency, d.total_minor, d.paid_minor, d.credited_minor, d.tds_minor, d.balance_minor,
     d.care_plan_id IS NOT NULL AS care_plan, d.number_display
@@ -165,6 +174,8 @@ type SourceRow = {
   decided_at: number | null;
   currency: string;
   total_minor: number;
+  /** The frozen recipient block (JSON) of the accepted version. */
+  recipient: string | null;
 };
 type DocRow = {
   id: string;
@@ -366,6 +377,59 @@ function valuesNow(b: Bundle, deed: DeedRow, madeOn: string) {
 const forScreen = (s: DeedSnapshot, anonymised: boolean): DeedSnapshot =>
   anonymised ? { ...s, client: { legalName: ANONYMISED_CLIENT, address: null, reg: null } } : s;
 
+/**
+ * Review M6: the names an anonymised client's Schedules are redacted of, in the VIEW only (the seal, the stored Schedules and the PDFs never change), by the
+ * offers' rule (`redactor`: whole words, any case, longest first; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)): the deed snapshot's legal
+ * name, address and GSTIN, and the accepted version's frozen recipient (legal and display names, contact name and email). Staff typed the Schedules while
+ * the client was live, so they can name it. A live client: no redaction.
+ */
+function deedRedactor(
+  anonymised: boolean,
+  snapshot: DeedSnapshot | null,
+  recipientJson: string | null,
+): Redact {
+  if (!anonymised) return (text) => text;
+  let recipient: RedactableRecipient | null = null;
+  try {
+    const r = recipientJson === null ? null : (JSON.parse(recipientJson) as unknown);
+    if (r !== null && typeof r === "object" && typeof (r as { legalName?: unknown }).legalName === "string")
+      recipient = r as RedactableRecipient;
+  } catch {
+    recipient = null;
+  }
+  const names = [
+    ...(snapshot
+      ? [snapshot.client.legalName, snapshot.client.address ?? "", snapshot.client.reg ?? ""]
+      : []),
+    ...(recipient ? redactionNames(recipient, true, true) : []),
+  ];
+  return redactor(names.map((n) => n.trim()).filter((n) => n.length >= MIN_REDACTION_LENGTH));
+}
+
+/** The Schedules as an anonymised client's screen shows them (`redact` from `deedRedactor`). */
+const redactSchedules = (s: DeedSchedules, redact: Redact): DeedSchedules => ({
+  deliverables: redact(s.deliverables),
+  location: redact(s.location),
+  deliveredDates: redact(s.deliveredDates),
+  tools: redact(s.tools),
+  thirdParty: redact(s.thirdParty),
+});
+
+const redactText = (t: DeedText, redact: Redact): DeedText => ({
+  ...t,
+  schedule1: {
+    ...t.schedule1,
+    deliverables: redact(t.schedule1.deliverables) ?? "",
+    location: redact(t.schedule1.location) ?? "",
+    deliveredDates: redact(t.schedule1.deliveredDates) ?? "",
+  },
+  schedule2: {
+    ...t.schedule2,
+    tools: redact(t.schedule2.tools) ?? "",
+    thirdParty: redact(t.schedule2.thirdParty) ?? "",
+  },
+});
+
 const todayIso = (now = Date.now()) => toIsoDate(istDate(now));
 
 function deedView(c: Ctx, b: Bundle) {
@@ -380,14 +444,15 @@ function deedView(c: Ctx, b: Bundle) {
     const preview = d.status === "draft" ? valuesNow(b, d, todayIso()).result : null;
     const snapshot = sealed ?? (preview?.ok ? preview.snapshot : null);
     const number = d.number_display ?? "";
-    const text = snapshot ? deedText(forScreen(snapshot, anonymised), number) : null;
+    const redact = deedRedactor(anonymised, snapshot, b.source?.recipient ?? null);
+    const text = snapshot ? redactText(deedText(forScreen(snapshot, anonymised), number), redact) : null;
     deed = {
       id: d.id,
       status: d.status,
       number: d.number_display,
       fy: d.fy,
       madeOn: d.made_on,
-      schedules: schedulesOf(d),
+      schedules: redactSchedules(schedulesOf(d), redact),
       blankSchedules: blankSchedules(schedulesOf(d)),
       /** A draft's values are recomputed on every read (L6); `problems` names what is missing before it can be finalised. */
       preview: preview

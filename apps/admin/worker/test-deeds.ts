@@ -26,7 +26,13 @@ export type DeedSetup = {
 
 /** A client, an ACCEPTED proposal of `total`, a project made from it (status `status`), and one issued invoice of DEED_TOTAL on the project. */
 export async function mkDeedProject(
-  o: { status?: string; total?: number; clientOver?: Record<string, unknown> } = {},
+  o: {
+    status?: string;
+    total?: number;
+    clientOver?: Record<string, unknown>;
+    /** The accepted version's frozen recipient block (review M6). */
+    recipient?: Record<string, unknown>;
+  } = {},
 ): Promise<DeedSetup> {
   const clientId = await mkReportClient("INR", o.clientOver ?? {});
   const proposalId = uuidv7();
@@ -51,6 +57,7 @@ export async function mkDeedProject(
     content_sha256: "c".repeat(64),
     snapshot_sha256: "s".repeat(64),
     updated_at: 1_000,
+    ...(o.recipient ? { recipient: JSON.stringify(o.recipient) } : {}),
   });
   const project = await mkProject(clientId, { source_document_id: proposalId, status: o.status ?? "active" });
   const inv = await addDoc({ clientId, issueDate: "2026-10-05", over: { project_id: project.id } });

@@ -525,4 +525,48 @@ describe("erase (L7)", () => {
     expect(parties).not.toContain("Asha Rao");
     expect(view.can.uploadSigned).toBe(false);
   });
+
+  it("review M6: an anonymised client's names are taken out of the Schedules on screen by whole words; the stored Schedules and the seal never change", async () => {
+    const o = await owner();
+    const f = await mkDeedProject({
+      status: "completed",
+      clientOver: { type: "individual", legal_name: "Asha Rao", display_name: "Rao Designs" },
+      recipient: {
+        legalName: "Asha Rao",
+        displayName: "Rao Designs",
+        contactName: "Asha Rao",
+        email: "asha.rao@example.test",
+        country: "IN",
+      },
+    });
+    const person = await mkContact(f.clientId, { name: "Asha Rao", is_primary: 1 });
+    await payAll(o, f.clientId, f.inv.id);
+    const d = (await deedRowOf(f.projectId)) as { id: string };
+    const typed = {
+      deliverables: "Rao Designs website and the brochure Asha Rao asked for",
+      location: "Shared with ASHA.RAO@example.test; Raopur office copy",
+    };
+    expect((await putSchedules(o, d.id, typed)).status).toBe(200);
+    expect((await finaliseDeed(o, d.id)).status).toBe(200);
+    // While the client is live, the screen shows the Schedules as typed.
+    const live = await json(await getDeed(o, f.projectId));
+    expect(live.deed.schedules.deliverables).toBe(typed.deliverables);
+    const before = (await deedRowOf(f.projectId)) as Record<string, unknown>;
+
+    expect((await erase(o, person.id)).status).toBe(200);
+    const view = await json(await getDeed(o, f.projectId));
+    const deliverables = "Anonymised client website and the brochure Anonymised client asked for";
+    // Whole words only: "Raopur" stays; the email goes in any case.
+    const location = "Shared with Anonymised client; Raopur office copy";
+    expect(view.deed.schedules).toMatchObject({ deliverables, location, tools: SCHEDULES.tools });
+    expect(view.deed.text.schedule1).toMatchObject({ deliverables, location });
+    expect(view.deed.text.schedule2.thirdParty).toBe(SCHEDULES.thirdParty);
+    expect(JSON.stringify(view.deed)).not.toMatch(/Asha|Rao Designs|asha\.rao/i);
+    // The stored row (Schedules, snapshot and its seal) is untouched.
+    const after = (await deedRowOf(f.projectId)) as Record<string, unknown>;
+    for (const k of ["sched_deliverables", "sched_location", "snapshot", "snapshot_sha256"])
+      expect(after[k], k).toEqual(before[k]);
+    expect(after.sched_deliverables).toBe(typed.deliverables);
+    expect(view.deed.sealed).toEqual({ ok: true, sha256: before.snapshot_sha256 });
+  });
 });
