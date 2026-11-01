@@ -267,6 +267,12 @@ describe("the start-up dry run [CPU warm-up (b)1]", () => {
     expect(new Date().toISOString()).not.toBe("1970-01-01T00:00:00.000Z");
   });
 
+  it("the finance answer book keeps one row per answer: its bundle's headroom is for M6.3 (lead decision 9)", () => {
+    const answers = Object.values(FINANCE_WARM.rows).flat();
+    expect(answers.length).toBeGreaterThan(0);
+    expect(answers.filter((a) => a.r.length > 1)).toEqual([]);
+  });
+
   it("the made-up env's gateway transport is unset, so no gateway call can be made (early check finding 5)", () => {
     expect(transportOf(warmEnv({}))).toBe("unset");
   });
