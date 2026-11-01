@@ -1,6 +1,6 @@
-Status: builder started 2026-11-01 (branch `feat/cpu-warmup`)
+Status: early check CHANGE (small); fix round next
 Tier: B (Workers; docs/14 §2)
-Usage:
+Usage: builder claude-opus-5-5/high (workers-profiling, workers-best-practices, wrangler; 5-h 19 % at start); analyst early check claude-opus-5-5/high (workers-profiling, workers-best-practices, wrangler; 5-h 10 % at start)
 
 # CPU warm-up of the hot request paths (2026-11-01)
 
@@ -131,3 +131,29 @@ Startup readings swung with the shared machine's load (the same finance bundle r
 3. Finance is at 622,420 bytes, 27,580 under its 650,000 plan line, mostly fixture rows.
 
 Usage: builder claude-opus-5-5/high (workers-profiling, workers-best-practices, wrangler).
+
+## Early check (analyst claude-opus-5-5/high, 2026-11-02; copied by the lead)
+**Verdict: CHANGE (small).** The method (a second `createApp(..., { warm: true })` dry run over generated fixtures) is **sound and accepted**: in real local workerd 1.20261001.1 the three dry runs gave exactly the pinned statuses (finance 6/9, API 5/5, front 9/10), the whole async chain finished during start-up (`Date.now()` still 0, zero `console` calls), and under `wrangler dev` the first real requests logged `n:1, f:1` (no counter or first-run mark moved); forwarding, 401, 404 and trailing slash correct. No shared mutable state reaches a real request (every cache keyed by its full input); fixtures hold made-up data only; the sign-in keys stay in the front bundle. Front catch-all sound (same target per row, first match in table order, forwarders before CSRF and the guard, 404 for undeclared paths). Invoice detail: one batch of 32 statements (1 query instead of 2). Bytes as the builder's.
+1. **Medium:** the dry run adds 50–130 ms of start-up (`wrangler check startup`, local: front 25–27 → 68–80, API 71–84 → 54–101, finance 55–67 → 110–191, once 239), and `scripts/worker-budget.mjs:161` times only the synchronous part, so the ≤ 200 ms gate can't see it. The refused `getRandomValues` calls (TOTP, the three writes) cost 30–55 ms each Worker and warm nothing beyond the code before the id draw. The hard limit is 1 s (a deploy over it is refused, error 10021). Fix: (a) the budget times the microtask drain too; (b) record Cloudflare's `startup_time_ms` from the staging deploy log before and after, in `cpu-baseline.md`; (c) if it's expensive there too, stop those calls.
+2. **Medium:** a stale fixture doesn't always fail loudly (`warm-routes.ts:61`: a statement missing from the answer book gets `[]`, so a list or the dashboard still answers 200 cold). Fix: `warmDb` records misses; the test asserts zero misses for every read (the writes' cut-off statements excepted) and ≥ 1 row per list call; document `node scripts/cpu-probe.mjs --write-fixtures` in `cpu-baseline.md` (CLAUDE.md "Worker budget": the lead).
+3. **Low:** HEAD on a forwarded GET row now gets the front's 404 (`forward.ts:74`; Hono dispatches HEAD through GET but `c.req.method` stays `"HEAD"`). Fix: map HEAD to GET in `forwardRowOf`, and a HEAD case through `front.fetch` in `split.test.ts`.
+4. **Low:** start-up failure handling: the no-op `waitUntil` drops promises uncaught; `warmStart` has no outer catch; `createApp(..., {warm:true})` and `forwardTable(ROUTES)` run synchronously at top level (a sync throw stops start-up). Fix: `waitUntil: (p) => { Promise.resolve(p).catch(() => {}); }`, `warmStart(...).catch(() => 0)` at each site, build the warm app inside a `try` helper.
+5. **Low:** `warm-routes.ts:129` says the gateway transport is "the local stub"; with `ENVIRONMENT: "warm"` it is `"unset"` (any gateway path answers 503). Correct the comment.
+6. **Low:** the fixture writer splits secret-looking values into 6-character pieces (`scripts/cpu-probe.mjs:809–821`), which hides them from gitleaks and from review.
+7. **Low:** `warm-routes.test.ts:47` fakes `Date.now` but not `new Date()`: use `vi.useFakeTimers({ toFake: ["Date"] })` with `setSystemTime(0)`.
+8. **Nit:** `index.ts:22` warms a second `TrieRouter`, not the one `forwardRoutes` builds; warm the real one.
+**Open questions:** (1) the warm app over fixtures: yes, with 1, 2 and 4 fixed; (2) a warm-only id source near money paths: **no** (random values allowed brought the writes only to 4.8/4.8/5.7 ms); if writes still read above 7 ms on staging, warm the pure statement builders after the id directly with fixed made-up ids; (3) finance at 622,420 of the 650,000 plan line: acceptable; set the merge order with M6.3.
+**Not verified:** `startup_time_ms` on Cloudflare; whether start-up CPU is billed to the first request (UNCONFIRMED; the record argues against it); HEAD on main (code reading); gitleaks itself.
+
+## Lead decisions on the early check (2026-11-02)
+- **Method accepted** (open question 1: yes). **No warm-only id source** (question 2: no).
+- **Fix round (builder), all eight findings:**
+  1. (a) `scripts/worker-budget.mjs` times the evaluation **plus the microtask drain** (or awaits a promise the entry exposes to the probe only), with a test; (c) **stop the four refused-random-value calls** (front TOTP; finance issue, PATCH, advance) before the id draw only if a cheap, money-path-free way exists (e.g. warm those handlers' pure parts or the statement builders after the id with fixed made-up ids, never through `mutate`); otherwise **drop those four calls** from the dry run. Report start-up per Worker from `wrangler check startup` (3 runs each) before and after. (b) is the lead's after deploy.
+  2. As the finding: misses recorded, zero misses asserted for reads, ≥ 1 row per list call; `--write-fixtures` documented in `docs/runbooks/cpu-baseline.md`.
+  3. HEAD → GET in `forwardRowOf`, with a HEAD case through `front.fetch`.
+  4. As the finding.
+  5. Correct the comment.
+  6. **Remove the 6-character splitting.** Fixture values under secret-looking keys are written as plain literals, and a reviewed gitleaks **path** allow-list covers `apps/admin/worker/warm-fixtures/` only: a `.gitleaks.toml` that extends the default rules (`[extend] useDefault = true`) and allow-lists that one path, with a comment giving the reason; plus a test that every credential-shaped fixture value verifies only under the test keys (`TEST_KEY` values) and never under any other. CI keeps `./gitleaks git .`; check it picks up `.gitleaks.toml` at the repo root (gitleaks reads it by default) and say so.
+  7. and 8. As the findings.
+  9. **Finance headroom for M6.3:** keep **one row per statement** in the finance fixture where more rows warm nothing new, and report the new finance bytes. Merge order: **this task merges before M6.3**; M6.3 takes `main` in afterwards and reports finance bytes against the 650,000 plan line.
+- The lead adds `--write-fixtures` to CLAUDE.md's "Worker budget" paragraph at the end of the day.
