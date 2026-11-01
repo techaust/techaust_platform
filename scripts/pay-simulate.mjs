@@ -10,11 +10,9 @@ import { createHmac, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { devPort, portOffset } from "./dev-ports.mjs";
 
-const args = Object.fromEntries(
-  process.argv
-    .slice(2)
-    .reduce((acc, a, i, all) => (a.startsWith("--") ? [...acc, [a.slice(2), all[i + 1]]] : acc), []),
-);
+const args = {};
+const argv = process.argv.slice(2);
+for (let i = 0; i < argv.length; i++) if (argv[i].startsWith("--")) args[argv[i].slice(2)] = argv[i + 1];
 const checkout = String(args.checkout ?? "");
 const amount = Number(args.amount);
 const event = String(args.event ?? "paid");

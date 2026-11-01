@@ -475,33 +475,6 @@ export const invoiceLedger = new Hono<AppEnv>()
         })),
         openReviewCount: (reviewR?.results[0] as { n: number } | undefined)?.n ?? 0,
       },
-      // M6.2 (run file G1): "Paid online" rows (method, Razorpay's payment id, the fee absorbed), the payment links, and the open review items.
-      gateway: {
-        payments: ((gwPayR?.results ?? []) as GatewayPaymentRow[]).map((r) => ({
-          paymentId: r.id,
-          provider: r.provider,
-          status: r.status,
-          providerPaymentId: r.provider_payment_id,
-          mode: r.mode,
-          reference: r.reference_norm,
-          receivedOn: r.received_on,
-          amountMinor: r.amount_minor,
-          feeMinor: r.charges_minor,
-          feeTaxMinor: r.fee_tax_minor,
-          proformaPending: r.status === "pending_verification" && r.requested_allocations !== null,
-        })),
-        links: ((linksR?.results ?? []) as LinkRow[]).map((l) => ({
-          checkoutId: l.id,
-          status: l.status,
-          source: l.source,
-          amountMinor: l.amount_minor,
-          shortUrl: l.status === "live" ? l.short_url : null,
-          expiresAt: l.expires_at,
-          createdAt: l.created_at,
-          paidPaymentId: l.paid_payment_id,
-        })),
-        openReviewCount: (reviewR?.results[0] as { n: number } | undefined)?.n ?? 0,
-      },
       realisation:
         d.type === "export_invoice" && real
           ? {
