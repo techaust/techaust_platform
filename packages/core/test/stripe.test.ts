@@ -2,6 +2,8 @@
 // future timestamps), the event reader and its whitelisted facts, the session request, the re-fetched session reader, the judge, the payment-row mapping and the
 // restricted-key guard. No test calls Stripe: the bodies are fixtures shaped like Stripe's `fixtures3.json`. All names and amounts are invented test data.
 import { createHash, createHmac } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { uuidv7 } from "../src/ids.ts";
 import { PROVIDER_EVENT_TYPES } from "../src/payments.ts";
@@ -774,5 +776,15 @@ describe("the key guard [ADM-PAY-11, L3, CLAUDE.md rule 7]", () => {
 
   it("the API version is pinned", () => {
     expect(STRIPE_API_VERSION).toMatch(/^\d{4}-\d{2}-\d{2}\.[a-z]+$/);
+  });
+
+  it("the key script and the runbook's H3 step name the same pinned version (early check 2, finding 8)", () => {
+    const repo = join(import.meta.dirname, "..", "..", "..");
+    const ps1 = readFileSync(join(repo, "tools", "set-gateway-keys.ps1"), "utf8");
+    expect([...ps1.matchAll(/"Stripe-Version" = "([^"]+)"/g)].map((m) => m[1])).toEqual([STRIPE_API_VERSION]);
+    const runbook = readFileSync(join(repo, "docs", "runbooks", "payment-gateways.md"), "utf8");
+    const h3 = runbook.split("\n").filter((l) => l.includes("**Stripe webhook (M6.3, H3):**"));
+    expect(h3).toHaveLength(1);
+    expect(h3[0]).toContain(`with API version **${STRIPE_API_VERSION}**`);
   });
 });

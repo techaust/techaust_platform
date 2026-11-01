@@ -71,15 +71,25 @@ switch ($Gateway) {
     # The key must be restricted: Customers stays None, so this must be refused (403).
     $customers = $null
     try { Invoke-RestMethod -Uri "https://api.stripe.com/v1/customers?limit=1" -Headers $h | Out-Null; $customers = 200 }
-    catch { $customers = [int]$_.Exception.Response.StatusCode }
+    catch { $customers = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 } }
+    # No answer at all (status 0: no network, a proxy, a timeout) proves nothing either way (early check 2, finding 8).
+    if ($customers -eq 0) { Stop-With "Stripe didn't answer GET /v1/customers (no response); check the internet connection and run the script again" }
     if ($customers -ne 403) { Stop-With "Stripe let this key read Customers (status $customers): set Customers to None and every other permission not listed to None" }
     # A create-then-expire probe proves "Checkout Sessions: Write" and whatever an inline price_data session needs. Its events carry no techaust marks, so the
-    # webhook writes nothing for them.
-    $exp = [DateTimeOffset]::UtcNow.AddMinutes(31).ToUnixTimeSeconds()
+    # webhook writes nothing for them. It lives 60 minutes, as the Worker's sessions do (L4); 31 sat too close to Stripe's 30-minute minimum (finding 8).
+    $exp = [DateTimeOffset]::UtcNow.AddMinutes(60).ToUnixTimeSeconds()
     $form = "mode=payment&line_items[0][price_data][currency]=usd&line_items[0][price_data][unit_amount]=50&line_items[0][price_data][product_data][name]=Key%20check&line_items[0][quantity]=1&metadata[app]=techaust-keycheck&expires_at=$exp&success_url=https%3A%2F%2Fexample.com%2Fok&allowed_payment_method_types[0]=card"
     try { $s = Invoke-RestMethod -Method Post -Uri "https://api.stripe.com/v1/checkout/sessions" -Headers $h -ContentType "application/x-www-form-urlencoded" -Body $form }
     catch { Stop-With "Stripe refused to create a test Checkout Session: add `"Checkout Sessions: Write`" to the key" }
     if ($s.livemode -ne $false) { Stop-With "Stripe made a live session with this key" }
+    # The Worker's own re-fetch (apps/admin/worker/gateway/stripe.ts fetchSession): the session with its payment intent, latest charge and balance transaction
+    # expanded. An unpaid session has no payment intent yet, so this proves the request and the version are accepted, not every expansion's permission; the first
+    # staging payment proves the rest (run file "Vendor facts", expansion permissions).
+    try { Invoke-RestMethod -Uri "https://api.stripe.com/v1/checkout/sessions/$($s.id)?expand%5B%5D=payment_intent.latest_charge.balance_transaction" -Headers $h | Out-Null }
+    catch {
+      try { Invoke-RestMethod -Method Post -Uri "https://api.stripe.com/v1/checkout/sessions/$($s.id)/expire" -Headers $h | Out-Null } catch { }
+      Stop-With "Stripe refused to read the test Checkout Session with its payment expanded: check the key has every permission the runbook lists (Part B, H2)"
+    }
     try { Invoke-RestMethod -Method Post -Uri "https://api.stripe.com/v1/checkout/sessions/$($s.id)/expire" -Headers $h | Out-Null }
     catch { Stop-With "Stripe refused to expire the test Checkout Session: add `"Checkout Sessions: Write`" to the key" }
     $secrets["STRIPE_SECRET_KEY"] = $key
