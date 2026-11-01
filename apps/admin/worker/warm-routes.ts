@@ -55,13 +55,28 @@ export function unpack(v: unknown): unknown {
 const sameParams = (a: readonly unknown[], b: readonly unknown[]) =>
   a.length === b.length && a.every((v, i) => v === b[i]);
 
-/** A made-up D1 over the answer book: reads get the recorded rows (those recorded for the same parameters, else the first), writes report one row changed. */
-export function warmDb(book: WarmRows): D1Database {
+/**
+ * What the made-up D1 saw of one statement (tests only, early check 2): its SQL, whether it reads, whether the answer book held it (a read it does not hold
+ * is a MISS: a stale fixture, answered with no rows), and how many rows it answered.
+ */
+export type WarmStatementSeen = {
+  readonly sql: string;
+  readonly read: boolean;
+  readonly hit: boolean;
+  readonly rows: number;
+};
+
+/**
+ * A made-up D1 over the answer book: reads get the recorded rows (those recorded for the same parameters, else the first), writes report one row changed.
+ * `observe` (tests): called once per statement answered, so a test can fail a stale fixture (a read missing from the book) instead of a quiet empty answer.
+ */
+export function warmDb(book: WarmRows, observe?: (seen: WarmStatementSeen) => void): D1Database {
   const answer = (sql: string, params: readonly unknown[]) => {
     const entries = book[sqlKey(sql)];
     const hit = entries?.find((e) => e.p !== undefined && sameParams(e.p, params)) ?? entries?.[0];
     const write = !/^\s*(SELECT|WITH)\b/i.test(sql);
     const rows = (hit?.r ?? []) as Record<string, unknown>[];
+    observe?.({ sql, read: !write, hit: hit !== undefined, rows: rows.length });
     const changes = hit ? hit.c : write ? 1 : 0;
     return {
       success: true as const,
@@ -90,9 +105,10 @@ export function warmDb(book: WarmRows): D1Database {
       all: async () => answer(sql, params),
       run: async () => answer(sql, params),
       raw: async (options?: { columnNames?: boolean }) => {
-        const rows = answer(sql, params).results.map((r) => (Array.isArray(r) ? r : Object.values(r)));
+        const results = answer(sql, params).results;
+        const rows = results.map((r) => (Array.isArray(r) ? r : Object.values(r)));
         if (!options?.columnNames) return rows;
-        const first = answer(sql, params).results[0];
+        const first = results[0];
         return [first && !Array.isArray(first) ? Object.keys(first) : [], ...rows];
       },
     };
@@ -128,9 +144,13 @@ const answers = { fetch: async () => new Response(null, { status: 200 }) };
  * adds a Worker's own made-up values (the front's sign-in keys, warm-front.ts: the API and finance bundles must never name them). `ENVIRONMENT` is "warm" so
  * nothing of the real environments' rules applies; the gateway transport is the local stub (no Razorpay call can be made from here).
  */
-export function warmEnv(book: WarmRows, extra: Readonly<Record<string, string>> = {}): Env {
+export function warmEnv(
+  book: WarmRows,
+  extra: Readonly<Record<string, string>> = {},
+  observe?: (seen: WarmStatementSeen) => void,
+): Env {
   const env = {
-    DB: warmDb(book),
+    DB: warmDb(book, observe),
     EMAIL_QUEUE: drop,
     PDF_QUEUE: drop,
     LEADS_QUEUE: drop,

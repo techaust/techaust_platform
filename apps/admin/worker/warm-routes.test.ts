@@ -13,7 +13,15 @@ import { API_WARM } from "./warm-fixtures/api.ts";
 import { FINANCE_WARM } from "./warm-fixtures/finance.ts";
 import { FRONT_WARM } from "./warm-fixtures/front.ts";
 import { FRONT_WARM_SECRETS } from "./warm-front.ts";
-import { sqlKey, type WarmCall, type WarmFixture, warmDb, warmEnv, warmRoutes } from "./warm-routes.ts";
+import {
+  sqlKey,
+  type WarmCall,
+  type WarmFixture,
+  type WarmStatementSeen,
+  warmDb,
+  warmEnv,
+  warmRoutes,
+} from "./warm-routes.ts";
 
 const REFUSED = "Disallowed operation called within global scope (test)";
 /** How many refused operations were asked for (each one cost workerd about 12 ms of start-up, fix round decision 1c: the dry runs ask for none). */
@@ -61,17 +69,38 @@ async function atGlobalScope<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-/** One Worker's dry run under the global-scope rules: its count, and each call's status (0: it stopped on a refused operation). */
+const callName = (call: WarmCall) =>
+  `${call.method} ${call.path.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/g, ":id")}`;
+
+/**
+ * One Worker's dry run under the global-scope rules: its count, each call's status (0: it stopped on a refused operation), the refused operations asked
+ * for, and every statement each call put to the made-up D1 (early check 2).
+ */
 async function dryRun(app: ReturnType<typeof createApp>, fixture: WarmFixture, extra = {}) {
   const statuses: string[] = [];
+  const statements: Record<string, WarmStatementSeen[]> = {};
+  let current: WarmStatementSeen[] = [];
   const before = refusals;
+  const env = warmEnv(fixture.rows, extra, (seen) => current.push(seen));
   const count = await atGlobalScope(() =>
-    warmRoutes(app, warmEnv(fixture.rows, extra), fixture.calls, (call: WarmCall, status: number) =>
-      statuses.push(`${call.method} ${call.path.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/g, ":id")} ${status}`),
-    ),
+    warmRoutes(app, env, fixture.calls, (call: WarmCall, status: number) => {
+      statuses.push(`${callName(call)} ${status}`);
+      statements[callName(call)] = current;
+      current = [];
+    }),
   );
-  return { count, statuses, refused: refusals - before };
+  return { count, statuses, refused: refusals - before, statements };
 }
+
+/** The reads of a dry run that the answer book does not hold (a stale fixture: answered with no rows, the route's code then runs on nothing). */
+const missesOf = (statements: Record<string, WarmStatementSeen[]>) =>
+  Object.entries(statements).flatMap(([call, list]) =>
+    list.filter((s) => s.read && !s.hit).map((s) => `${call}: ${s.sql.slice(0, 80)}`),
+  );
+
+/** The rows the list statement of a call answered: the read whose SQL matches `table` and answered the most rows. */
+const listRows = (statements: Record<string, WarmStatementSeen[]>, call: string, table: RegExp) =>
+  Math.max(0, ...(statements[call] ?? []).filter((s) => s.read && table.test(s.sql)).map((s) => s.rows));
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -161,6 +190,35 @@ describe("the start-up dry run [CPU warm-up (b)1]", () => {
     expect(firstRun("fwd GET /api/v1/invoices/:id")).toBe(1);
   });
 
+  // Early check 2: a fixture gone stale (a hot route's SQL changed and `node scripts/cpu-probe.mjs --write-fixtures` was not re-run) must fail here, not
+  // leave a dry run answering 200 on nothing. Every read of every call is in the answer book, and every list call's list answers rows.
+  it("the answer books hold every read of every call, and every list has rows", async () => {
+    const finance = await dryRun(createApp(mountFinance, undefined, { warm: true }), FINANCE_WARM);
+    const api = await dryRun(createApp(mountApi, undefined, { warm: true }), API_WARM);
+    const front = await dryRun(
+      createApp(mountFront, (a) => forwardRoutes(a, ROUTES, true), { warm: true }),
+      FRONT_WARM,
+      FRONT_WARM_SECRETS,
+    );
+    expect(missesOf(finance.statements)).toEqual([]);
+    expect(missesOf(api.statements)).toEqual([]);
+    expect(missesOf(front.statements)).toEqual([]);
+    // Every call that reads put at least one statement to the D1 (a call that stopped before its reads would warm nothing of its own).
+    for (const r of [finance, api])
+      for (const [call, list] of Object.entries(r.statements))
+        expect(list.filter((s) => s.read).length, call).toBeGreaterThan(0);
+    const lists: [Record<string, WarmStatementSeen[]>, string, RegExp][] = [
+      [finance.statements, "GET /invoices", /\bFROM documents\b/],
+      [finance.statements, "GET /payments/review", /\bFROM review_items\b/],
+      [finance.statements, "GET /approvals", /\bFROM approvals\b/],
+      [api.statements, "GET /notifications", /\bFROM notifications WHERE user_id = \?1(?! AND read_at)/],
+      [api.statements, "GET /clients", /\bFROM clients\b/],
+      [api.statements, "GET /leads", /\bFROM leads\b/],
+    ];
+    for (const [statements, call, table] of lists)
+      expect(listRows(statements, call, table), call).toBeGreaterThanOrEqual(1);
+  });
+
   it("never throws, even when every read fails", async () => {
     const broken = warmEnv({});
     Object.defineProperty(broken, "DB", { value: null });
@@ -188,6 +246,23 @@ describe("the made-up D1 [CPU warm-up (b)1]", () => {
     expect(await db.prepare(sql).bind("a").raw({ columnNames: true })).toEqual([
       ["id", "name"],
       ["a", "Sample A"],
+    ]);
+  });
+
+  it("tells the observer each statement it answered, and which reads the book did not hold (early check 2)", async () => {
+    const seen: WarmStatementSeen[] = [];
+    const watched = warmDb({ [sqlKey(sql)]: [{ r: [{ id: "a", name: "Sample A" }], c: 0 }] }, (s) =>
+      seen.push(s),
+    );
+    await watched.prepare(sql).bind("a").first();
+    await watched.prepare("SELECT 1 AS stale").all();
+    await watched.batch([watched.prepare("UPDATE t SET name = ?1").bind("x")]);
+    await watched.prepare(sql).raw();
+    expect(seen.map((s) => [s.read, s.hit, s.rows])).toEqual([
+      [true, true, 1],
+      [true, false, 0],
+      [false, false, 0],
+      [true, true, 1],
     ]);
   });
 

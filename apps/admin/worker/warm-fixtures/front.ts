@@ -9,22 +9,22 @@ export const FRONT_WARM: WarmFixture = {
   calls: [
     { method: "GET", path: "/health" },
     { method: "GET", path: "/auth/me" },
-    { method: "POST", path: "/auth/salt", body: { email: "probe-mvydk7u2@example.test" } },
+    { method: "POST", path: "/auth/salt", body: { email: "probe-mvydrv69@example.test" } },
     {
       method: "POST",
       path: "/auth/login",
       body: {
-        email: "probe-mvydk7u2@example.test",
-        clientHash: "4pfZFAB7ALaNNPWWqjJyzWP69gduAhVtAK8GiHBlF4M",
+        email: "probe-mvydrv69@example.test",
+        clientHash: "PvWy6vTsq-KLpTwHIGlnaOJL4HfaQOZTV4o8ZScIFko",
       },
     },
-    { method: "GET", path: "/invoices/01a19921-cbc8-71e7-af39-ba3b7ec3f1f1" },
+    { method: "GET", path: "/invoices/01a19927-3d6b-70e1-9882-fb1eee978da5" },
     {
       method: "POST",
-      path: "/invoices/01a19921-cca8-775b-863e-70efdcd249d5/issue",
+      path: "/invoices/01a19927-3e49-70f2-a84d-ee74f6c6cdfb/issue",
       body: {
-        expectedUpdatedAt: 1793570491560,
-        expectedContentSha256: "cda2615179c1f3c2d3ae3a758377e21d32061783b2e309cf6ac698bf9597e9e8",
+        expectedUpdatedAt: 1793570848329,
+        expectedContentSha256: "3e0dedd2dade6cf503a95e0dc8c633cbb738b4db4f43570ff5960b69fe58e0e7",
       },
     },
     { method: "GET", path: "/notifications" },
@@ -37,14 +37,14 @@ export const FRONT_WARM: WarmFixture = {
       {
         r: [
           {
-            last_seen_at: 1793570492651,
-            idle_expires_at: 1793574092651,
-            abs_expires_at: 1794175290881,
+            last_seen_at: 1793570849332,
+            idle_expires_at: 1793574449332,
+            abs_expires_at: 1794175647740,
             revoked_at: null,
-            step_up_until: 1793572292651,
-            id: "01a19921-c9e3-7e0c-981e-22444e3fb84d",
+            step_up_until: 1793572649332,
+            id: "01a19927-3be2-7e3a-b1ea-6343de007063",
             name: "Probe Owner (sample)",
-            email: "probe-mvydk7u2@example.test",
+            email: "probe-mvydrv69@example.test",
             role: "owner",
           },
         ],
@@ -54,7 +54,7 @@ export const FRONT_WARM: WarmFixture = {
     "2ca61060": [
       {
         r: [
-          { status: "active", pw_salt: "DRyv2E_vMD3u_LS3P4iE_Q", pw_params: '{"v":1,"m":19456,"t":2,"p":1}' },
+          { status: "active", pw_salt: "p0tSAu6m1SCuFaUJYvO_GQ", pw_params: '{"v":1,"m":19456,"t":2,"p":1}' },
         ],
         c: 0,
       },
@@ -65,12 +65,12 @@ export const FRONT_WARM: WarmFixture = {
       {
         r: [
           {
-            id: "01a19921-c9e3-7e0c-981e-22444e3fb84d",
+            id: "01a19927-3be2-7e3a-b1ea-6343de007063",
             status: "active",
             role: "owner",
-            pw_salt: "DRyv2E_vMD3u_LS3P4iE_Q",
-            pw_hmac: "UaSCIs_-JIPLo70uG-LXIJU-_Z8YT9Lcw0UgQLVCA0Y",
-            totp_enabled_at: 1793570490871,
+            pw_salt: "p0tSAu6m1SCuFaUJYvO_GQ",
+            pw_hmac: "DfIOyhz4VXg390FpyEqyJPV4o9bC7v17SH8MovdR7C0",
+            totp_enabled_at: 1793570847733,
           },
         ],
         c: 0,

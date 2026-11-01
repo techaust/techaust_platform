@@ -448,6 +448,20 @@ async function seed(dir, extra) {
       return r;
     },
   });
+  // One made-up pending discount request on the first sample document, so the approval queue's default list has a row to shape (early check 2).
+  const asked = raw.prepare("SELECT id, content_sha256 FROM documents ORDER BY created_at, id LIMIT 1").get();
+  raw
+    .prepare(
+      "INSERT INTO approvals (id, kind, document_id, requested_by, reason, content_sha256, created_at) VALUES (?, 'discount', ?, ?, ?, ?, ?)",
+    )
+    .run(
+      randomUUID(),
+      asked.id,
+      owner,
+      "A made-up request for the local CPU probe.",
+      asked.content_sha256,
+      Date.now(),
+    );
   const inr = raw.prepare("SELECT id FROM clients WHERE code = 'X0001'").get().id;
   raw
     .prepare("UPDATE contacts SET portal_access = 1, can_see_finance = 1, is_billing = 1 WHERE client_id = ?")
