@@ -1,8 +1,8 @@
 # Polish sweep (admin and website follow-ups)
 
-Status: re-check APPROVE; lead fixing its small items, then the final checks and the PR
+Status: final checks green; opening the PR
 Tier: C
-Usage: builder b1 claude-opus-5-5/high (model-audit; skills attempted `cloudflare:workers-best-practices`, `cloudflare:wrangler`, both "Unknown skill" in the cloud), 5-h 17 → 20 %; designer d1 claude-opus-5-5/high (skills: frontend-design:frontend-design per model-audit), started at 5-h 17 %; frontend-design attempted, "Unknown skill" in the cloud (designer report). Reviewer started at 5-h 62 % (USAGE 62 at 03:21).
+Usage: builder b1 claude-opus-5-5/high (skills attempted `cloudflare:workers-best-practices`, `cloudflare:wrangler`, "Unknown skill" in the cloud), 5-h 17 → 20 %; designer d1 claude-opus-5-5/high (`frontend-design` attempted, "Unknown skill" then), started at 17 %; reviewer claude-opus-5-5/high (`code-review`, `security-review`) + its read-only `general-purpose` helper claude-opus-5-5/high, started at 62 %; designer d2 claude-opus-5-5/high (`frontend-design:frontend-design` loaded), started after the 06:10 reset (last reading 88 at 04:00); re-check reviewer claude-opus-5-5/high (`code-review`, `security-review`) + its helper claude-opus-5-5/high. All from `node tools/model-audit.mjs 2026-10-31`: all runs within the plan.
 
 Session: polish-sweep (cloud). Branch: `fix/polish-sweep`. Copy file: `docs/07-content-appendix/ZL-polish-sweep.md` (only if a new user-facing line is needed).
 
@@ -257,3 +257,8 @@ Designer (Opus 5.5, high), 2026-11-01. Branch `fix/polish-sweep-d2` from `origin
 **Questions:**
 1. Review 5 needs `user_email` on the entries and week-group rows (`apps/admin/worker/time-logs.ts`, `TimeEntry`/`TimeWeekGroup`). Recommended: a builder adds the field (one subquery each, as `user_name` already does), then a small designer change compares names among the rows' own users. Or keep it as a follow-up.
 2. Should an extremely long local part (over ~20 characters) be allowed to break inside in a table, so the boxes at 1280 with the menu open never scroll? Recommended: no, keep it whole (real staff addresses are short, and the box scrolls only for that row's column).
+- 2026-11-01: lead fixes d9b4c36 checked: admin typecheck exit 0, `offer-erasure.test.ts` 33 passed, `E2E_SAMPLE=1` `signature-udyam.spec.ts` 8 passed (3.8 min). origin/main had not moved since d945655.
+- **Final checks on aae5f15 (branch tip, main merged), through heavy.sh:** `pnpm check` exit 0 (every guard ok; lint infos only, pre-existing). `pnpm test` exit 0: auth 135; ui 471 (+2 skipped); core 1,952; email 132; db 623; pdf 379; web 750 (+17 skipped); portal 679; jobs 560; admin 3,828 (128 files). `pnpm build` exit 0.
+- **Worker bytes (main → branch):** admin front 100,839 → 100,839; admin API 438,052 → 438,248; admin finance 507,872 → 508,042; portal 104,589 → 104,589; jobs 667,870 → 667,870 (startup fastest of 7: admin front 11.9 ms, API 44.3, finance 43.7, portal 12.2, jobs 66.2).
+- **07-ZL** still DRAFT (`APPROVED_07ZL = false`): the three staff lines show "[Placeholder]" until the main session approves them; flipping is one line in `apps/admin/src/lib/copy-zl.ts` plus the status line of the 07-ZL file.
+- **Not verified:** Firefox, Safari, a screen reader, a real 125 % Windows display (zoom emulation only), staging, the original 1a wrap data, a debit note in the feed (unit-tested), the jobs dead-letter path for a redacted offer's queued send.
