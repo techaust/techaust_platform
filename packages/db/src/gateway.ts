@@ -195,6 +195,13 @@ export const DOCUMENT_CHECKOUTS_SQL = `SELECT ${CHECKOUT_COLS} FROM checkout_ses
 export const CLIENT_LINKS_SINCE_SQL =
   "SELECT count(*) AS n FROM checkout_sessions r INDEXED BY checkout_sessions_client WHERE r.client_id = ?1 AND r.created_at > ?2";
 
+/**
+ * The same count for the client of document `?1` (a staff link names no client: the document does), read with the document BEFORE any link is cancelled (early
+ * check 2, finding 10). One seek of `checkout_sessions_client` under a primary-key read.
+ */
+export const DOCUMENT_CLIENT_LINKS_SINCE_SQL =
+  "SELECT count(*) AS n FROM checkout_sessions r INDEXED BY checkout_sessions_client WHERE r.client_id = (SELECT d.client_id FROM documents d WHERE d.id = ?1) AND r.created_at > ?2";
+
 // ---- a gateway payment (the webhook or a status refresh, after the re-fetch) ---------------------------------------------------------------------------
 
 export type GatewayFacts = Readonly<Record<string, string | number>>;

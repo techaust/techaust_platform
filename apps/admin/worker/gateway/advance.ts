@@ -58,6 +58,11 @@ type PendingRow = {
 const PENDING_SQL = `SELECT p.id, p.provider, p.kind, p.status, p.client_id, p.currency, p.amount_minor, p.received_on, p.reference_norm, p.requested_allocations,
      p.checkout_id, p.advance_receipt_id, i.number_display AS invoice_number
    FROM payments p LEFT JOIN advance_receipts r ON r.id = p.advance_receipt_id LEFT JOIN documents i ON i.id = r.invoice_id WHERE p.id = ?1`;
+/** `PENDING_SQL` with the proforma's current stamp (`?2`), read once after a refused freeze. */
+const AFTER_REFUSAL_SQL = PENDING_SQL.replace(
+  "i.number_display AS invoice_number",
+  "i.number_display AS invoice_number, (SELECT pf.updated_at FROM documents pf WHERE pf.id = ?2) AS proforma_updated_at",
+);
 const OWNER_ACTIVE_SQL =
   "SELECT 1 AS ok FROM staff_users WHERE id = ?1 AND role = 'owner' AND status = 'active'";
 
@@ -426,14 +431,14 @@ async function tryAdvance(env: AdvanceEnv, paymentId: string, lastTry: boolean):
       throw e;
   }
   if (!done) {
-    const after = await db.prepare(PENDING_SQL).bind(paymentId).first<PendingRow>();
+    // Why it was refused, in ONE statement (the payment and the proforma's stamp): every statement counts on this, the worst path (early check 2, finding 1).
+    const after = await db
+      .prepare(AFTER_REFUSAL_SQL)
+      .bind(paymentId, proformaId)
+      .first<PendingRow & { proforma_updated_at: number | null }>();
     if (after?.status === "confirmed" && after.advance_receipt_id)
       return { result: "already_issued", ...(after.invoice_number ? { number: after.invoice_number } : {}) };
-    const nowProforma = await db
-      .prepare("SELECT updated_at FROM documents WHERE id = ?1")
-      .bind(proformaId)
-      .first<{ updated_at: number }>();
-    if (nowProforma && nowProforma.updated_at !== d.updated_at && !lastTry) return { result: "retry" };
+    if (after && after.proforma_updated_at !== d.updated_at && !lastTry) return { result: "retry" };
     return blocked(env, p, proformaId, ["freeze_refused"]);
   }
   await enqueuePdf(env, invoiceId, "send");

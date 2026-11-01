@@ -7,6 +7,13 @@ import { uuidv7 } from "@techaust/core";
 import { describe, expect, it } from "vitest";
 import { deleteContactAccess } from "../src/contact-access.ts";
 import {
+  DOCUMENT_CLIENT_LINKS_SINCE_SQL,
+  EVENT_ADVANCE_WAITING_SQL,
+  RESOLUTION_ALLOWED_SQL,
+  reviewResolveStatement,
+  STUCK_ADVANCES_SQL,
+} from "../src/gateway.ts";
+import {
   CHECKOUT_SOURCES,
   CHECKOUT_STATUSES,
   GATEWAY_PROVIDERS,
@@ -837,5 +844,61 @@ describe("the new indexes are used (EXPLAIN QUERY PLAN)", () => {
     ],
   ] as const)("%s uses its index", async (sql, binds, index) => {
     expect(await plan(sql, ...binds)).toContain(index);
+  });
+
+  // Early check 2 (findings 2, 5, 10, 12): the statements added in fix round 2 read through indexes only, never a scan of a whole table.
+  it.each([
+    [
+      "the sweep's waiting payments (STUCK_ADVANCES_SQL)",
+      STUCK_ADVANCES_SQL,
+      [T],
+      ["payments_pending", "review_items_payment"],
+    ],
+    [
+      "an event's waiting payment (EVENT_ADVANCE_WAITING_SQL)",
+      EVENT_ADVANCE_WAITING_SQL,
+      ["e"],
+      ["review_items_payment"],
+    ],
+    [
+      "a document's client's links in the hour (DOCUMENT_CLIENT_LINKS_SINCE_SQL)",
+      DOCUMENT_CLIENT_LINKS_SINCE_SQL,
+      ["d", T],
+      ["checkout_sessions_client"],
+    ],
+  ] as const)("%s uses its indexes", async (_name, sql, binds, indexes) => {
+    const p = await plan(sql, ...binds);
+    for (const index of indexes) expect(p, p).toContain(index);
+    expect(p, p).not.toMatch(/SCAN (payments|review_items|checkout_sessions|webhook_events)\b(?! USING)/);
+  });
+
+  it("the guarded resolve and the once-per-link review insert read through indexes (RESOLUTION_ALLOWED_SQL, onceOpenForLink)", async () => {
+    const st = reviewResolveStatement(env.DB, {
+      id: "r",
+      by: "o",
+      now: T,
+      resolution: "confirmed",
+      note: null,
+    });
+    const resolve = await plan(
+      "UPDATE review_items SET status = 'resolved', resolved_by = ?2, resolved_at = ?3, resolution = ?4, note = ?5 WHERE id = ?1 AND status = 'open' AND (" +
+        RESOLUTION_ALLOWED_SQL +
+        ")",
+      "r",
+      "o",
+      T,
+      "confirmed",
+      null,
+    );
+    expect(st).toBeDefined();
+    expect(resolve, resolve).toContain("payments_provider_ref");
+    expect(resolve, resolve).toContain("checkout_sessions_provider_link");
+    expect(resolve, resolve).not.toMatch(/SCAN (payments|checkout_sessions)\b(?! USING)/);
+    const insert = await plan(
+      `SELECT 1 FROM review_items ox INDEXED BY review_items_status WHERE ox.status = 'open' AND ox.kind = ?1 AND ox.provider = 'razorpay' AND json_extract(ox.facts, '$.linkId') = ?2`,
+      "unknown_link",
+      "plink_x",
+    );
+    expect(insert).toContain("review_items_status");
   });
 });

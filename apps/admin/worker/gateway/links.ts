@@ -21,6 +21,7 @@ import {
   checkoutFailStatement,
   checkoutLiveStatement,
   checkoutRefreshClaimStatement,
+  DOCUMENT_CLIENT_LINKS_SINCE_SQL,
   LINKS_PER_CLIENT_HOUR,
   OPEN_CHECKOUT_SQL,
 } from "@techaust/db/gateway";
@@ -129,7 +130,7 @@ export async function makeLink(env: GatewayEnv, a: MakeLinkArgs, now = Date.now(
     actorRead,
     db.prepare(OPEN_CHECKOUT_SQL).bind(a.documentId),
     db.prepare(TERMS_SQL),
-    db.prepare(CLIENT_LINKS_SINCE_SQL).bind(a.clientId ?? "", now - 3_600_000),
+    db.prepare(DOCUMENT_CLIENT_LINKS_SINCE_SQL).bind(a.documentId, now - 3_600_000),
     db.prepare("SELECT value, version FROM settings WHERE key = 'gateways'"),
   ]);
   const doc = ofDoc(docR);

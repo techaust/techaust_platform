@@ -26,7 +26,7 @@ import {
 } from "./test-gateway.ts";
 import { call, one, rows, withEnv } from "./test-helpers.ts";
 import { putSwiftBank, putTax } from "./test-invoice-types.ts";
-import { json, putBank, putCompany } from "./test-invoices.ts";
+import { issueInvoice, json, mkInvoice, putBank, putCompany } from "./test-invoices.ts";
 import { recordBody, recorded, verify } from "./test-payments.ts";
 
 beforeEach(async () => {
@@ -370,18 +370,40 @@ describe("findings 10 to 13: links", () => {
   it("the hourly limit is checked before the open link is cancelled (10)", async () => {
     const o = await owner();
     const inv = await issued(o);
+    // Razorpay holds this link only 20 minutes more, so the same amount would replace it (cancel first, then a new link)
+    stub((path, method, body) =>
+      method === "POST" && path === "/v1/payment_links"
+        ? Response.json({
+            id: stubIdsOf((body as { reference_id: string }).reference_id, inv.total).linkId,
+            status: "created",
+            currency: "INR",
+            amount: inv.total,
+            amount_paid: 0,
+            reference_id: (body as { reference_id: string }).reference_id,
+            short_url: "https://rzp.io/i/soon",
+            expire_by: nowSec() + 20 * 60,
+            payments: null,
+          })
+        : null,
+    );
     const first = await linkFor(o, inv);
+    // nine more links for this client in the last hour (on another of its invoices, each failed before the next), so ten in all
+    const other = await mkInvoice(o, { clientId: inv.clientId, contactId: inv.contactId });
+    expect((await issueInvoice(o, other.id)).status).toBe(200);
     const now = Date.now();
-    for (let i = 0; i < 10; i++)
+    for (let i = 0; i < 9; i++) {
+      const id = uuidv7();
       await env.DB.prepare(
         "INSERT INTO checkout_sessions (id, provider, document_id, client_id, created_by, source, currency, amount_minor, status, expires_at, created_at, updated_at) VALUES (?1, 'razorpay', ?2, ?3, ?4, 'staff', 'INR', 100, 'creating', ?5, ?6, ?6)",
       )
-        .bind(uuidv7(), (await issued(o)).id, inv.clientId, o.id, now + 86_400_000, now - 1000)
-        .run()
-        .catch(() => undefined);
+        .bind(id, other.id, inv.clientId, o.id, now + 86_400_000, now - 1000)
+        .run();
+      await env.DB.prepare("UPDATE checkout_sessions SET status = 'failed' WHERE id = ?1").bind(id).run();
+    }
+    // the limit answers before anything is cancelled
     stub();
-    const res = await staffLink(o, inv.id, inv.total - 100, inv.updatedAt);
-    expect(res.status).toBe(429);
+    const res = await staffLink(o, inv.id, inv.total, inv.updatedAt);
+    expect(res.status, await res.clone().text()).toBe(429);
     expect(calls.some((c) => c.path.endsWith("/cancel"))).toBe(false);
     expect(await checkoutStatus(first.checkoutId)).toBe("live");
   });
@@ -722,12 +744,12 @@ describe("finding 6: the section-H paths early check 2 found missing", () => {
   });
 
   it('"Confirm by issuing the tax invoice" with paymentId on a Razorpay payment the system couldn\'t issue for', async () => {
-    const { o, pf, l, paymentId } = await paidProforma();
+    const { o, pf, paymentId } = await paidProforma();
     await env.DB.prepare("UPDATE staff_users SET status = 'deactivated' WHERE id = ?1").bind(o.id).run();
     expect((await issueGatewayAdvance(env, paymentId)).result).toBe("blocked");
     await env.DB.prepare("UPDATE staff_users SET status = 'active' WHERE id = ?1").bind(o.id).run();
-    const p = await one<{ received_on: string; amount_minor: number }>(
-      "SELECT received_on, amount_minor FROM payments WHERE id = ?1",
+    const p = await one<{ received_on: string; amount_minor: number; reference_norm: string }>(
+      "SELECT received_on, amount_minor, reference_norm FROM payments WHERE id = ?1",
       paymentId,
     );
     const doc = await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?1", pf.id);
@@ -737,7 +759,8 @@ describe("finding 6: the section-H paths early check 2 found missing", () => {
         expectedProformaUpdatedAt: doc?.updated_at,
         amountMinor: p?.amount_minor,
         receivedOn: p?.received_on,
-        reference: l.paymentId,
+        // the screen prefills the stored form of Razorpay's payment id (early check 2, "For the designer")
+        reference: p?.reference_norm,
         paymentId,
       },
     });
