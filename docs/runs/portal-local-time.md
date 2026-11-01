@@ -1,6 +1,6 @@
-Status: designer started 2026-11-01 (branch `feat/portal-local-time`)
+Status: designer done; review next
 Tier: C
-Usage:
+Usage: designer claude-opus-5-5/high (frontend-design:frontend-design)
 
 # Portal times in the client's own time zone (2026-11-01)
 
@@ -88,3 +88,14 @@ Examples for 25 Oct 2026 06:12 UTC (11:42 IST):
 4. Zone names follow the website's locale rule rather than the brief's `en-IN`. Confirm (Recommended: one rule across website and portal).
 
 Usage: designer claude-opus-5-5/high (skills: frontend-design:frontend-design). `node tools/model-audit.mjs` finds no logs from inside the agent's worktree; the lead reads it from the main checkout.
+
+## Lead decisions on the designer's questions (2026-11-01)
+1. **A +05:30 clock outside India shows "IST"** (e.g. Asia/Colombo): kept. One rule across the website and portal (13, 2026-11-01); the time is right.
+2. **"Paid online on {date}" stays the IST date:** kept. The owner's rule keeps dates alone in Indian dates, and it matches the tax invoice's date.
+3. **The deed's sealed `signatureLine` keeps "IST":** kept. It is the document's own sealed wording and isn't shown on screen.
+4. **Zone names follow the website's rule** (the browser's first English locale, else en-US; "GMT+0" as "GMT"; offset when no short name) over the brief's `en-IN`: accepted, so the website and portal read the same.
+- **Bytes:** 115,860 of 120,000 is what the base builds to (no Worker source changed); the 115,225 in 12 predates M6.2's final code.
+- Screenshots copied to `.logs/portal-local-time/` in the main checkout (30).
+
+## Integration notes (lead, 2026-11-01)
+- `feat/portal-local-time-design` fast-forwarded into `feat/portal-local-time`; `main` (#153, docs only) merged in: `13` and the M6.3 run file taken from `main` (a superset), this run file kept from the branch (the diff to `main` only adds the designer's section). Next: the reviewer (code and visual).
