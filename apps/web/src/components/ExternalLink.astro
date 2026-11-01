@@ -3,6 +3,12 @@
 // a visible arrow icon and, for screen readers, "(opens in a new tab)" (WCAG technique G201). `noopener noreferrer`
 // keeps the new page from reaching back to this one. scripts/web-dist-checks.mjs fails the build on any external
 // link without all three, so every link off techaust.com goes through this component.
+//
+// A text label keeps its last word and the arrow together (a `nowrap` tail), so a link that wraps, such as the
+// /thanks WhatsApp sentence on a phone, ends "reference. ↗" instead of leaving the arrow alone at the column's edge
+// (company-phone review 1). The label is one inline box, so a parent that makes the link a flex box (a button, the
+// footer, the contact panel) still lays it out as one piece. A label with markup (the footer's icon and word) keeps
+// the plain layout: the parent's flex gap spaces it, and it never wraps.
 import { shell } from "../content/shell";
 import Icon from "./Icon.astro";
 
@@ -14,8 +20,33 @@ interface Props {
 }
 
 const { href, class: cls, iconSize = 16 } = Astro.props;
+
+// Astro escapes slot text, so a label without "<" is plain text (entities hold no spaces). Split at the last ASCII
+// space only: a no-break space the copy chose stays inside its word group.
+const html = (await Astro.slots.render("default")).trim();
+const split = html.includes("<") ? undefined : /^(?:([\s\S]*?)[ \t\r\n]+)?([^ \t\r\n]+)$/.exec(html);
+const head = split?.[1] ?? "";
+const last = split?.[2] ?? "";
 ---
 
-<a href={href} class:list={["ext-link", cls]} target="_blank" rel="noopener noreferrer"
-  ><slot /><span class="visually-hidden"> {shell.newTab}</span><Icon name="arrow-up-right" size={iconSize} /></a
->
+{
+  split ? (
+    <a href={href} class:list={["ext-link", cls]} target="_blank" rel="noopener noreferrer"
+      ><span class="ext-link__label"
+        ><Fragment set:html={head ? `${head} ` : ""} /><span class="ext-link__tail"
+          ><Fragment set:html={last} /><span class="visually-hidden"> {shell.newTab}</span><Icon
+            name="arrow-up-right"
+            size={iconSize}
+          /></span
+        ></span
+      ></a
+    >
+  ) : (
+    <a href={href} class:list={["ext-link", "ext-link--flex", cls]} target="_blank" rel="noopener noreferrer"
+      ><Fragment set:html={html} /><span class="visually-hidden"> {shell.newTab}</span><Icon
+        name="arrow-up-right"
+        size={iconSize}
+      /></a
+    >
+  )
+}

@@ -2,7 +2,8 @@
 // SiteFooter (07 §2.2, WEB-G-04): brand line, Services · Industries · Company · Help, the contact block, LinkedIn,
 // the legal row with ©. Never a GSTIN, the proprietor's name or @techaustsocial (WEB-G-04). Ink in both themes, with
 // the mark tone-on-tone bleeding off the corner (docs/06 §4.3): the one large brand moment of the shell.
-// Items whose config value is empty are hidden; preview pages pass `placeholders` to show labelled placeholders.
+// Items whose config value is empty are hidden (the phone, WhatsApp and LinkedIn lines); preview pages pass
+// `placeholders` to show a labelled placeholder for the one still empty, the LinkedIn company page.
 import { site } from "../config/site";
 import { contactPage } from "../content/forms";
 import { draft, shell } from "../content/shell";
@@ -273,6 +274,7 @@ const columns = [
 
   .site-footer__social :global(a) {
     gap: var(--space-2);
+    --ext-link-gap: var(--space-2);
   }
 
   .site-footer__nav {
