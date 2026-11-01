@@ -46,7 +46,7 @@ export const REPORTS_COPY = {
 
 export const GST_COPY = {
   title: "GST exports",
-  lede: "Files for your GSTR-1 and GSTR-3B, made from the invoices and notes issued in the period. Check them with your CA before you file.",
+  lede: "Files for your GSTR-1 and GSTR-3B, made from the invoices and notes issued in the period. Check the figures before you file.",
   period: "Period",
   month: "Month",
   quarter: "Quarter",
@@ -90,7 +90,7 @@ export const GST_COPY = {
   downloadAll: "Download all (ZIP)",
   verify: (version: string) =>
     // Settled by the lead on the safest reading, 2026-10-30 (08-C RA-23, Q17): a test import of each CSV before the first GSTR-1 (owner duty); until then the files are untested and every column unverified.
-    `Made with layout ${version} for the GSTR-1 offline tool. Layouts change; before your first upload, test-import one file with your CA.`,
+    `Made with layout ${version} for the GSTR-1 offline tool. Layouts change; before your first upload, test-import each file into the offline tool and check what it shows.`,
   /**
    * The column words of the totals panel and the 3B table: "Taxable value", "Table" and "Place of supply" are 07-V §3's CSV headers; the GST portal's own
    * names are kept (07-V's rule); "Section" and "Documents" are not in 07-V.
@@ -223,12 +223,12 @@ export function gstWarningText(
 ): string {
   switch (w.code) {
     case "b2cs_negative_net":
-      return `B2CS for ${facts.state ?? ""} and ${facts.rate ?? ""} comes to below zero after credit notes. Check with your CA how to report it.`;
+      return `B2CS for ${facts.state ?? ""} and ${facts.rate ?? ""} comes to below zero after credit notes. Check how this row shows on the GST portal before you file.`;
     case "hsn_description_missing":
       return `SAC ${facts.sac ?? ""} has no description in our list; the file leaves it blank.`;
     case "before_fema_2026":
       // Settled by the lead on the safest reading, 2026-10-30 (08-C RB-02): 9 months from the invoice date; ask the bank for an extension if that has passed.
-      return "Issued before 1 October 2026: a different realisation period may apply. Ask your bank or CA.";
+      return "Issued before 1 October 2026: the 9 months run from the invoice date. If they have passed, ask your bank for an extension.";
     case "tax_only_note_manual":
       return taxOnlyNoteText(w);
   }
@@ -238,11 +238,15 @@ export function gstWarningText(
  * FX-4 (full audit A5 1; 07-Y, PENDING): a tax-only note's blocking warning, naming the note, the recipient's GSTIN and each tax head with its amount to enter by hand.
  * Settled by the lead on the safest reading, 2026-10-30 (08-C RA-32): a tax-only debit note is entered by hand in the GST portal's Table 9B, and 3B Table 3 checked before filing; whether the portal takes a nil-value row is unverified.
  * The line names what the files may leave out (Settled by the lead on the safest reading, 2026-10-30 (08-C RA-23): a test import of each CSV before the first GSTR-1 (owner duty); until then the import is untested, so it says "may not come through", never "would be nil") and
- * the copy still sends the question to the CA (a T12 follow-up for new copy); it never says how to file it.
+ * the card says where to enter it (07-ZK lines 5 to 7, approved 2026-11-01): Table 9B for a registered or B2CL note, the GST portal without a table for a B2CS note (08-C RA-32 names
+ * no table for it), then a GSTR-3B Table 3 check before filing.
  */
 export function taxOnlyNoteText(w: GstWarning): string {
   const m = w.manual;
-  if (!m) return Y("A tax-only note's tax is not in the files. Ask your CA how to report it.");
+  if (!m)
+    return Y(
+      "A tax-only note's tax is not in the files. Enter it by hand on the GST portal, then check GSTR-3B Table 3 before you file.",
+    );
   const heads = [
     m.igstMinor > 0 ? `IGST ${inr(m.igstMinor)}` : null,
     m.cgstMinor > 0 ? `CGST ${inr(m.cgstMinor)}` : null,
@@ -254,10 +258,9 @@ export function taxOnlyNoteText(w: GstWarning): string {
     m.kind === "credit_note"
       ? "is a credit note that reduces tax only"
       : "is a debit note that adds tax only";
-  const ask =
-    m.section === "b2cs" ? "Ask your CA how to report it." : "Ask your CA how to report it in Table 9B.";
+  const where = m.section === "b2cs" ? "on the GST portal" : "in Table 9B on the GST portal";
   return Y(
-    `${m.number} (${who}) ${what}. The files show it with a taxable value of 0.00 and no tax column, so its tax may not come through on import. Enter by hand: ${heads.join(", ")}. ${ask}`,
+    `${m.number} (${who}) ${what}. The files show it with a taxable value of 0.00 and no tax column, so its tax may not come through on import. Enter it by hand ${where}: ${heads.join(", ")}. Then check GSTR-3B Table 3 before you file.`,
   );
 }
 

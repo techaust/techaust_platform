@@ -40,6 +40,7 @@ import {
   fyLabel,
   INVT_COPY,
   lutLine,
+  previousPeriodShown,
   proformaNoticeOf,
   rateDateFollows,
   rateDayEarlier,
@@ -773,7 +774,8 @@ function AdvanceBody(props: {
   const needsCode = !stepUpActive();
   const toast = useToast();
   if (!p) return null;
-  const earlier = arrivedEarlierMonth(form.date, today);
+  // 07-ZK line 8 is not shown on the LUT route (no IGST, so nothing to add with interest).
+  const earlier = previousPeriodShown(arrivedEarlierMonth(form.date, today), v.supply?.type, igst);
 
   async function issue() {
     const c = checkAdvance(form, v.currency, p?.balanceMinor ?? 0);
@@ -822,7 +824,7 @@ function AdvanceBody(props: {
       // Q27: a payment from an earlier month is a warning, said with the result.
       toast(
         "success",
-        r.warnings.includes("advance_previous_period")
+        previousPeriodShown(r.warnings.includes("advance_previous_period"), v.supply?.type, igst)
           ? `${issuedToast(r.number)} ${INVT_COPY.previousPeriod}`
           : issuedToast(r.number),
       );
