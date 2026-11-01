@@ -137,7 +137,9 @@ a:hover {
   white-space: nowrap;
 }
 
+/* inline-block: the reset sets every svg to block, which would put the arrow on a line of its own. */
 .ext-link__tail > .icon {
+  display: inline-block;
   margin-inline-start: var(--ext-link-gap);
   vertical-align: middle;
 }
