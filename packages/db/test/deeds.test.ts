@@ -626,7 +626,7 @@ describe("deed_triggers (0062) [L4, L7]", () => {
       now: Date.now() + 1,
       sessionId,
       memberId,
-      r2Key: `deeds/${fx.deed.id}/signed-${"a".repeat(64)}.pdf`,
+      r2Key: `deeds/${fx.deed.id}/signed-${"a".repeat(64)}`,
       sha256: "a".repeat(64),
       size: 1234,
       esignAt: T,

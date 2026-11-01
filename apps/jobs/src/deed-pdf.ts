@@ -10,12 +10,13 @@
 //       M4.4 error table (`failed`: rate and quota delay and re-send with `hop`; anything else throws and the queue retries, then the dead letter logs it);
 //   (5) put once, then ONE batch: `unsigned_r2_key` and `unsigned_sha256` set only `WHERE unsigned_r2_key IS NULL` on a final or signed deed with the same seal
 //       (the trigger `deeds_set_once` holds it too), and the render counted. `updated_at` is not moved: the Owner's open upload form stays current.
-// While the PDF layout is the builder's placeholder (`DEED_LAYOUT_PLACEHOLDER`), deeds are rendered only when ENVIRONMENT is "local": nothing placeholder is ever
-// stored write-once on staging or production.
+// The guard `DEED_LAYOUT_PLACEHOLDER` (now false: the designed layout `deed-v1`) kept the builder's placeholder layout to ENVIRONMENT "local", so nothing
+// placeholder was ever stored write-once on staging or production; it stays for any later placeholder.
 //
 // `deed.signed` (EMAIL_QUEUE; ids only): the admin API sends it after the sign batch. One batch reads the signed deed, its accepted version and the client's live
 // portal contacts (at most `DEED_MAIL_MAX`); one `deed.signed` email per contact is queued (`email_log` id = template + deed + recipient, so a redelivery sends
-// nothing twice). Staging sends only to `EMAIL_ALLOWED_RECIPIENTS` (the email consumer). The words are a placeholder until 07-ZJ is approved.
+// nothing twice). Only contacts who can see finance (owner, 2026-11-01, review M4). Staging sends only to `EMAIL_ALLOWED_RECIPIENTS` (the email consumer). The
+// words are 07-ZJ lines 8 to 11.
 // No personal data in a log line or a bell title: ids, numbers, codes.
 import { type DeedSignedMessage, deedSignedMessage, type EmailMessage } from "@techaust/core";
 import { deedText, deedUnsignedKey, parseDeedSnapshot } from "@techaust/core/deeds";
@@ -155,8 +156,10 @@ export const DEED_MAIL_MAX = 20;
 export const DEED_SIGNED_SQL = `SELECT d.id, d.status, d.number_display, d.source_document_id, s.type AS offer_type, s.number_display AS offer_number, s.version AS offer_version,
     EXISTS (SELECT 1 FROM clients c WHERE c.id = d.client_id AND c.anonymised_at IS NOT NULL) AS client_gone
   FROM deeds d JOIN documents s ON s.id = d.source_document_id AND s.client_id = d.client_id WHERE d.id = ?1`;
-/** The client's live portal contacts (the people who can see the deed in the portal). */
-/** The client's live contacts with portal access AND "can see finance" (owner, 2026-11-01, review M4: a deed names the invoices and the amount paid; the invoices' rule, M5.4). */
+/**
+ * The client's live contacts with portal access AND "can see finance", the people who see the deed in the portal (owner, 2026-11-01, review M4: a deed names
+ * the invoices and the amount paid; the invoices' rule, M5.4).
+ */
 export const DEED_CONTACTS_SQL = `SELECT c.name, lower(c.email) AS email FROM contacts c
   WHERE c.client_id = (SELECT client_id FROM deeds WHERE id = ?1) AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL
   ORDER BY c.is_primary DESC, c.created_at, c.id LIMIT ${DEED_MAIL_MAX}`;

@@ -268,7 +268,7 @@ export function warmConsumers(): number {
       opts,
     );
     rendered++;
-    // T11: the signed-deed message (its schema built at start-up) and its email (a placeholder until 07-ZJ)
+    // T11: the signed-deed message (its schema built at start-up) and its email (07-ZJ lines 8 to 11)
     if (deedSignedMessage.safeParse({ kind: "deed.signed", deedId: "deed_warm" }).success) parsed++;
     renderEmail(
       "deed.signed",

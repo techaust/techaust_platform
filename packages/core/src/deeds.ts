@@ -630,10 +630,9 @@ export function parseEsignMoment(
 }
 
 /**
- * The R2 keys of a deed's PDFs in the private `DOCS` bucket (write-once). The unsigned PDF's key carries the sealed snapshot's SHA-256, so two renders of the
- * same deed land on the same object (the second adopts the first) and a key never names other values; the signed copy's key carries its own SHA-256.
+ * The R2 key of a deed's unsigned PDF in the private `DOCS` bucket (write-once). It carries the sealed snapshot's SHA-256, so two renders of the same deed land
+ * on the same object (the second adopts the first) and a key never names other values. The signed copy's key is the admin upload's own,
+ * `deeds/<id>/signed-<sha256>` (`streamToDocs` in `apps/admin/worker/docs-upload.ts`; review L3: no second definition here).
  */
 export const deedUnsignedKey = (deedId: string, snapshotSha256: string): string =>
   `deeds/${deedId}/unsigned-${snapshotSha256}.pdf`;
-export const deedSignedKey = (deedId: string, sha256: string): string =>
-  `deeds/${deedId}/signed-${sha256}.pdf`;

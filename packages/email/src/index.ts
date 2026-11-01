@@ -311,7 +311,8 @@ function renderTemplate(
     case "lead.reply":
       return { ...hello, ...leadReply({ subject: get("subject"), body: get("body") }, opts) };
     case "deed.signed":
-      // T11: a placeholder until 07-ZJ (the sender follows the offer emails: the client's proposal or estimate came from hello@).
+      // T11: 07-ZJ lines 8 to 11 (approved by the lead under the owner's delegation, 2026-11-01); the sender follows the offer emails (the client's proposal
+      // or estimate came from hello@).
       return {
         ...hello,
         ...deedSigned(

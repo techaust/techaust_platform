@@ -21,7 +21,6 @@ import {
   deedFactsOf,
   deedOneLine,
   deedSignatureLine,
-  deedSignedKey,
   deedSnapshotJson,
   deedSnapshotOf,
   deedSnapshotSha256,
@@ -635,8 +634,7 @@ describe("the eSign moment and the R2 keys", () => {
       expect(parseEsignMoment(bad, { nowUtcMs: now, notBeforeUtcMs: finalised }), bad).toBeNull();
   });
 
-  it("the keys", () => {
+  it("the unsigned PDF's key", () => {
     expect(deedUnsignedKey("deed_1", "cd")).toBe("deeds/deed_1/unsigned-cd.pdf");
-    expect(deedSignedKey("deed_1", "ab")).toBe("deeds/deed_1/signed-ab.pdf");
   });
 });

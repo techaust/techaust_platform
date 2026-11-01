@@ -4,7 +4,7 @@
 // again, and the two downloads. Every change is ONE batch through `mutate` with every rule in the main statement's WHERE (`@techaust/db/deeds`); a read only
 // explains a refusal. Audit rows hold ids, numbers and codes, never a Schedule's words or a client's name.
 // After the batch (round 2): the finalise and the Owner's "render again" put `pdf.deed` on PDF_QUEUE (the jobs Worker renders the unsigned PDF write-once), and
-// the signed upload puts `deed.signed` on EMAIL_QUEUE (the jobs Worker emails the client's portal contacts). Ids only.
+// the signed upload puts `deed.signed` on EMAIL_QUEUE (the jobs Worker emails the client's portal contacts who can see finance). Ids only.
 import type { DeedSignedMessage } from "@techaust/core";
 import { ANONYMISED_CLIENT } from "@techaust/core/clients";
 import { fyOfDate, istDate, parseIsoDate, toIsoDate } from "@techaust/core/dates";
@@ -577,7 +577,7 @@ export async function enqueueDeedPdf(env: Pick<Env, "PDF_QUEUE">, deedId: string
   }
 }
 
-/** Tells the jobs Worker the signed deed is in the portal (`deed.signed`): it emails the client's portal contacts, once per deed and person. */
+/** Tells the jobs Worker the signed deed is in the portal (`deed.signed`): it emails the client's portal contacts who can see finance, once per deed and person. */
 export async function enqueueDeedSigned(env: Pick<Env, "EMAIL_QUEUE">, deedId: string): Promise<boolean> {
   try {
     await env.EMAIL_QUEUE.send({ kind: "deed.signed", deedId } satisfies DeedSignedMessage);
@@ -826,7 +826,7 @@ export const deeds = new Hono<AppEnv>()
         await dropDoc(c.env, stored.key, "row not written");
       return explain(c, id, expected, "final", true);
     }
-    // L4: the client's portal contacts get the short email (07-ZJ), after the batch has committed.
+    // L4: the client's portal contacts who can see finance get the short email (07-ZJ), after the batch has committed.
     c.executionCtx.waitUntil(enqueueDeedSigned(c.env, id));
     return c.json({
       ok: true,
