@@ -29,3 +29,31 @@ This task is the analyst's separate items (b)1–(b)4. After it deploys, the own
 
 ## After the build
 Analyst's early check → reviewer (code; no screens) → fixes → PR (auto-merge) → staging → the owner's short session (sign in, dashboard, three invoices, a payments panel, the list, approvals, settings, clients, notifications; again after 3 minutes) → the lead reads first runs by `f:1` (pass ≤ 7 ms first, none above 10) → the owner's Workers Paid plan decision.
+
+## Probe baseline (builder, 2026-11-02, before any change; code `112b5c34`)
+`bash tools/heavy.sh --log warm-probe-base2 node scripts/cpu-probe.mjs --runs 7 --later 4` on this PC (Node 24.19.0, Windows), local builds (`vite build`, jobs `wrangler deploy --dry-run`). Milliseconds of wall time minus SQLite time, `waitUntil` included; "first" = the first call of that route in a fresh process after start-up, median of 7 processes; "later" = the median of the next 4 calls. Forwarded rows: `fwd …` is the front's share with a target that answers at once; the answering Worker's own row is listed separately (the staging gate adds them). The floor (`GET /health`, no session) is the middleware chain's own first run.
+
+| Case | Worker | First (median of 7) | First min-max | Later (median) | Status | D1 statements (first) |
+|---|---|---|---|---|---|---|
+| GET /health | front | 3.1 | 2.0-3.7 | 0.2 | 200 | 0 |
+| GET /auth/me | front | 4.6 | 3.8-4.9 | 0.9 | 200 | 2 |
+| POST /auth/totp | front | 8.1 | 6.7-15.8 | 2.3 | 200 | 10 |
+| fwd GET /invoices/:id | front | 1.3 | 1.0-1.9 | 0.1 | 200 | 0 |
+| fwd POST /invoices/:id/issue | front | 1.3 | 1.2-1.8 | 0.2 | 200 | 0 |
+| fwd GET /notifications | front | 1.5 | 1.1-1.6 | 0.1 | 200 | 0 |
+| fwd GET /leads | front | 1.4 | 1.2-1.8 | 0.2 | 200 | 0 |
+| fwd GET /dashboard | front | 1.5 | 1.1-1.7 | 0.2 | 200 | 0 |
+| POST /invoices/:id/issue | finance | 10.9 | 9.4-12.6 | 2.2 | 200 | 33 |
+| GET /invoices/:id | finance | 8.9 | 8.0-11.3 | 1.8 | 200 | 26 |
+| GET /invoices/:id/payments | finance | 4.6 | 3.9-5.4 | 1.2 | 200 | 12 |
+| PATCH /invoices/:id | finance | 12.7 | 10.0-19.7 | 2.5 | 200 | 24 |
+| POST /invoices/:id/advance-invoice | finance | 13.7 | 10.2-15.9 | 2.6 | 201 | 40 |
+| GET /dashboard | finance | 7.1 | 5.3-8.8 | 1.6 | 200 | 25 |
+| GET /invoices | finance | 4.3 | 4.0-5.2 | 1.2 | 200 | 7 |
+| GET /payments/review | finance | 3.3 | 3.1-4.5 | 1.0 | 200 | 4 |
+| GET /notifications | api | 3.9 | 3.8-4.4 | 1.1 | 200 | 4 |
+| GET /leads | api | 4.4 | 3.8-8.2 | 1.2 | 200 | 3 |
+| rpc GatewayEvents.processEvent | finance | 6.5 | 4.7-13.1 | 1.4 | 200 | 21 |
+| jobs POST /razorpay | jobs | 3.5 | 3.4-4.5 | 0.9 | 200 | 2 |
+
+Reading: the analyst's harness read the invoice detail at 8.0 ms first, this one 8.9; staging read 16 (×1.8), the issue 17 vs 10.9 (×1.6), the PATCH 12 vs 12.7 (×1.0). Against this probe the staging factor looks nearer ×1–1.8 than ×2.3–3.4, so ≤ 2.5 ms local is a conservative target.
