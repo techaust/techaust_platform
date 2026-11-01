@@ -69,7 +69,7 @@ export async function usdClient() {
   return c;
 }
 
-let seq = Math.floor(Date.now() / 1000) % 100_000;
+let seq = 0;
 
 /** An issued USD document written straight in (export invoice by default), USD 500 with its balance. */
 export async function usdDoc(

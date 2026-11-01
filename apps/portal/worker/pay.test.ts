@@ -298,29 +298,56 @@ describe("Pay by card on a USD document [POR-06, M6.3]", () => {
     reused: false,
   };
   let usdNo = 9000;
-  /** A USD export invoice of a client, written straight in (issued, USD 500 due). */
-  async function usdDoc(clientId: string) {
-    const id = crypto.randomUUID();
+  /** An overseas USD client with a finance contact who may use the portal, and one issued USD export invoice of it (USD 500 due), written straight in. */
+  async function usdOrg() {
+    const clientId = crypto.randomUUID();
     const n = ++usdNo;
+    await env.DB.prepare(
+      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES (?1, ?2, 'Overseas Buyer Inc', 'Overseas Buyer', 'business', 'US', 'overseas', NULL, 'USD')",
+    )
+      .bind(clientId, `US${n}`)
+      .run();
+    const contact = {
+      id: crypto.randomUUID(),
+      clientId,
+      email: `finance-us${n}@example.test`,
+      name: "Finance of US",
+      finance: true,
+    };
+    await env.DB.prepare(
+      "INSERT INTO contacts (id, client_id, name, email, portal_access, can_see_finance) VALUES (?1, ?2, ?3, ?4, 1, 1)",
+    )
+      .bind(contact.id, clientId, contact.name, contact.email)
+      .run();
+    const id = crypto.randomUUID();
     await env.DB.prepare(
       "INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, subtotal_minor, taxable_minor, total_minor, balance_minor) VALUES (?1, 'export_invoice', 'issued', ?2, 'USD', 'export', '2627', ?3, ?4, ?5, 50000, 50000, 50000, 50000)",
     )
       .bind(id, clientId, n, `TH/EXP/2627/${n}`, Date.now() - 1000)
       .run();
-    return id;
+    return { contact, id };
   }
 
   it("picks Stripe by the currency (or the provider asked), checks Stripe's own host, and answers url and provider", async () => {
     const f = await fixtures();
-    const s = await sessionFor(f.a.finance);
-    const id = await usdDoc(f.a.id);
+    const { contact, id } = await usdOrg();
+    const s = await sessionFor(contact);
+    const sa = await sessionFor(f.a.finance);
     const seen: Args[] = [];
-    const pay = (answer: unknown, body: Args = { amountMinor: 50000 }, docId = id) =>
-      call(`/invoices/${docId}/pay`, { cookie: s.cookie, body }, payEnv(answer, seen));
+    const pay = (answer: unknown, body: Args = { amountMinor: 50000 }, docId = id, cookie = s.cookie) =>
+      call(`/invoices/${docId}/pay`, { cookie, body }, payEnv(answer, seen));
     const res = await pay(STRIPE_LINK);
     expect(res.status, await res.clone().text()).toBe(200);
     expect(await res.json()).toMatchObject({ ok: true, provider: "stripe", url: STRIPE_LINK.url });
     expect(seen[0]).toMatchObject({ provider: "stripe", documentId: id, returnTo: "invoice" });
+    // the summary's block, from the real SQL: Stripe's rule, the USD floor and maximum (defaults), cents allowed
+    const sum = await call(`/invoices/${id}`, { cookie: s.cookie }, payEnv(STRIPE_LINK));
+    expect(((await sum.json()) as { document: Record<string, unknown> }).document).toMatchObject({
+      payOnline: true,
+      provider: "stripe",
+      wholeRupees: false,
+      online: { minimumMinor: 10_000, maximumMinor: 2_500_000, paymentPending: false },
+    });
     // a Razorpay host for a Stripe payment, or Stripe's own site, is never sent to the browser
     for (const url of [
       "https://rzp.io/i/x",
@@ -330,14 +357,13 @@ describe("Pay by card on a USD document [POR-06, M6.3]", () => {
       expect((await pay({ ...STRIPE_LINK, url })).status, url).toBe(502);
     // the provider asked wins (the finance Worker re-checks it)
     seen.length = 0;
-    await pay(STRIPE_LINK, { amountMinor: 118000, provider: "stripe" }, f.a.docs.issued);
+    await pay(STRIPE_LINK, { amountMinor: 118000, provider: "stripe" }, f.a.docs.issued, sa.cookie);
     expect(seen[0]).toMatchObject({ provider: "stripe" });
   });
 
   it("the refusals in the client's words: C4 for a payment waiting, C6 for the maximum, dollars en-US", async () => {
-    const f = await fixtures();
-    const s = await sessionFor(f.a.finance);
-    const id = await usdDoc(f.a.id);
+    const { contact, id } = await usdOrg();
+    const s = await sessionFor(contact);
     const at = (answer: unknown) =>
       call(`/invoices/${id}/pay`, { cookie: s.cookie, body: { amountMinor: 50000 } }, payEnv(answer));
     const waiting = await at({ ok: false, error: "payment_processing" });
@@ -360,15 +386,14 @@ describe("Pay by card on a USD document [POR-06, M6.3]", () => {
   });
 
   it("the emailed link picks Stripe from the open document; the token only in the body", async () => {
-    const f = await fixtures();
-    const id = await usdDoc(f.a.id);
+    const { contact, id } = await usdOrg();
     const { token, stmt } = await docTokenStmt(env.DB, {
       documentId: id,
       purpose: "view_pay",
       expiresAt: Date.now() + 86_400_000,
-      contactId: f.a.finance.id,
-      clientId: f.a.id,
-      email: f.a.finance.email,
+      contactId: contact.id,
+      clientId: contact.clientId,
+      email: contact.email,
       sendId: null,
     });
     await stmt.run();

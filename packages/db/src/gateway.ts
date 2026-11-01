@@ -252,7 +252,8 @@ export const STALE_LIVE_CHECKOUTS_SQL = `SELECT c.id, c.provider FROM checkout_s
 
 // ---- a gateway payment (the webhook or a status refresh, after the re-fetch) ---------------------------------------------------------------------------
 
-export type GatewayFacts = Readonly<Record<string, string | number>>;
+/** Whitelisted facts: ids, codes and amounts (M6.3: also a list of codes, the `advance_blocked` item's `blockers`, as `gateway/advance.ts` stores them). */
+export type GatewayFacts = Readonly<Record<string, string | number | readonly string[]>>;
 
 export type GatewayPaymentArgs = {
   provider: GatewayProvider;

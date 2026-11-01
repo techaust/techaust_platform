@@ -498,7 +498,7 @@ describe("a USD proforma paid by card waits for the Owner [Q1 A, ADM-INV-10; 08-
       p?.id,
     );
     expect(item).toMatchObject({ kind: "advance_blocked", provider: "stripe", currency: "USD" });
-    expect(JSON.parse(item?.facts ?? "{}")).toMatchObject({ blocker: "fx_rate_needed" });
+    expect(JSON.parse(item?.facts ?? "{}")).toMatchObject({ blockers: ["fx_rate_needed"] });
     expect(await eventOf(ev)).toEqual({ status: "processed", outcome: "proforma_pending" });
     // no automatic tax invoice: never the system's gateway_auto, and never a second card payment meanwhile
     expect(await rows("SELECT id FROM documents WHERE parent_id = ?1", made.id)).toEqual([]);

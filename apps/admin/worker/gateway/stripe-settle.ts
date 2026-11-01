@@ -234,7 +234,7 @@ async function recordPending(
           currency: "USD",
           // The proforma's item names its blocker code (`fx_rate_needed`, S16), as the screen and "Try again" read it.
           facts: reviewFactsOf(
-            kind === "advance_blocked" ? { ...facts, blocker: "fx_rate_needed" } : facts,
+            kind === "advance_blocked" ? { ...facts, blockers: ["fx_rate_needed"] } : facts,
             reasonFacts,
           ),
           now: a.now,

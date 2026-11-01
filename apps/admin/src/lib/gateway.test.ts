@@ -8,6 +8,7 @@ import {
   ADVANCE_OTHER_CHECK,
   advanceBlockersText,
 } from "../../worker/gateway/reasons.ts";
+import stripeSettleSource from "../../worker/gateway/stripe-settle.ts?raw";
 import { advanceBlockerLine, itemReason } from "./gateway.ts";
 
 const inr = (m: number) => formatMoney(money(m, "INR"));
@@ -19,7 +20,10 @@ describe("the gateway advance's blockers in words [ADM-INV-10]", () => {
     const codes = [...advanceSource.matchAll(/blocked\(env, p, [^,]+, \["([a-z_]+)"\]\)/g)].map(
       (m) => m[1] as string,
     );
-    expect(new Set(codes)).toEqual(new Set(Object.keys(ADVANCE_BLOCKER_WORDS)));
+    // M6.3: a USD proforma paid by card is blocked by the finance Worker's Stripe path with `fx_rate_needed` (S16).
+    const stripe = [...stripeSettleSource.matchAll(/blockers: \["([a-z_]+)"\]/g)].map((m) => m[1] as string);
+    expect(stripe).toEqual(["fx_rate_needed"]);
+    expect(new Set([...codes, ...stripe])).toEqual(new Set(Object.keys(ADVANCE_BLOCKER_WORDS)));
   });
   it("the list, the banner and the bell read words; an invoice check keeps its own line (the bell, its general words)", () => {
     const reason = itemReason({
