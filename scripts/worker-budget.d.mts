@@ -18,7 +18,12 @@ export const BUDGETS: {
   portal: Budget;
   jobs: Budget;
 };
-export function measureStartup(code: string, runs?: number): number;
+/** The name of the start-up probe's collector in the sandbox's global scope (CPU warm-up fix round, early check 1a). */
+export const STARTUP_PROBE: "__techaustStartupProbe";
+/** How long the probe waits for an entry's start-up work to settle before it fails the bundle. */
+export const SETTLE_LIMIT_MS: number;
+/** Compile + evaluation + the start-up work handed to the probe, under workerd's global-scope rules; the fastest of `runs`. */
+export function measureStartup(code: string, runs?: number): Promise<number>;
 export function planNote(size: number, budget: Budget): string | null;
 export function checkBundle(
   bundle: { size: number; text: string; startupMs: number; inputs?: string[] },
