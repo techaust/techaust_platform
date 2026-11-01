@@ -1,8 +1,8 @@
 # Run: the `/orchestrate` skill and the cloud watcher
 
-Status: builder running (watcher); lead writing the skill
+Status: reviewer running
 Tier: C
-Usage: lead claude-opus-5-5/high (cloud session orchestrate-skill); agents below as they run. Reading at the start: USAGE 5 at 2026-11-01T11:15+05:30.
+Usage: lead claude-opus-5-5/high (cloud session orchestrate-skill); builder claude-opus-5-5/high (model-audit; skills: none — no docs/14 §9 row fits a plain Node CLI, flagged by the audit for that reason): 5-h 5 → ? %; reviewer: below. Reading at the start: USAGE 5 at 2026-11-01T11:15+05:30.
 
 Owner's request: docs/13 row 2026-10-31 "`/orchestrate`: a project skill …" and the 2026-11-01 usage-pacing row; docs/12 "Next" item 4. Built as a cloud session controlled from the PC (2026-11-01).
 
