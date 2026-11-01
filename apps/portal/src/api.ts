@@ -170,7 +170,7 @@ export type SignedDeed = {
   sourceDocumentId: string;
   offer: { type: string; number: string | null; version: number };
   esignAt: number;
-  /** "03 Nov 2026, 14:05 IST", written by the server. */
+  /** "03 Nov 2026, 14:05 IST", written by the server (the screen writes `esignAt` in the client's own clock, lib/local-time.ts). */
   esignMoment: string;
   esignTxn: string;
   signatureLine: string;

@@ -11,7 +11,8 @@ import { offerExpiredNotice } from "@techaust/core/offers";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import type { OfferKind, OfferStatus } from "../../api.ts";
 import { N, NOTICES, WORDS } from "../../copy-documents.ts";
-import { formatIstDateTime, kindWord } from "../../lib/offers.ts";
+import { localDateTime } from "../../lib/local-time.ts";
+import { kindWord } from "../../lib/offers.ts";
 import { ConfirmDialog } from "../dialog.tsx";
 import { Alert, CheckCircle, Clock, Download, Lock, XCircle } from "../icons.tsx";
 import { FieldError } from "../ui.tsx";
@@ -86,7 +87,7 @@ export function DecisionPanel(props: DecisionProps) {
           </div>
           <div>
             <dt>{N.fields.when}</dt>
-            <dd>{formatIstDateTime(a.acceptedAt)}</dd>
+            <dd>{localDateTime(a.acceptedAt)}</dd>
           </div>
           <div>
             <dt>{WORDS.doc.version}</dt>
@@ -149,7 +150,7 @@ export function DecisionPanel(props: DecisionProps) {
           {d?.at && (
             <div>
               <dt>{N.fields.when}</dt>
-              <dd>{formatIstDateTime(d.at)}</dd>
+              <dd>{localDateTime(d.at)}</dd>
             </div>
           )}
           {reason && (

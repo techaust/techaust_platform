@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import { deedsApi, type SignedDeed } from "../../api.ts";
 import { DEED_ZJ } from "../../copy-zj.ts";
+import { localDateTime } from "../../lib/local-time.ts";
 import { saveDownload } from "../../lib/offers.ts";
 import { Alert, Download } from "../icons.tsx";
 
@@ -57,7 +58,9 @@ export function SignedDeedCard({ documentId }: { documentId: string }) {
         </div>
         <div>
           <dt className="visually-hidden">{DEED_ZJ.heading}</dt>
-          <dd className="deedcard__value deedcard__value--plain">{DEED_ZJ.signedOn(deed.esignMoment)}</dd>
+          <dd className="deedcard__value deedcard__value--plain">
+            {DEED_ZJ.signedOn(localDateTime(deed.esignAt))}
+          </dd>
         </div>
         <div>
           <dt className="deedcard__label">{DEED_ZJ.txn}</dt>

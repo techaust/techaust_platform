@@ -11,7 +11,8 @@ import { DocumentPaper, sheetSections } from "../components/document/document-pa
 import { Alert, ArrowLeft, ArrowRight, Clock, Download, Info } from "../components/icons.tsx";
 import { StatusPill } from "../components/status-pill.tsx";
 import { N, WORDS } from "../copy-documents.ts";
-import { formatIstDateTime, kindWord } from "../lib/offers.ts";
+import { localDateTime } from "../lib/local-time.ts";
+import { kindWord } from "../lib/offers.ts";
 
 function Aside(props: { view: PdfView; d: DecisionProps; onDownload: () => void; extra?: ReactNode }) {
   const { view } = props;
@@ -32,7 +33,7 @@ function Aside(props: { view: PdfView; d: DecisionProps; onDownload: () => void;
           {m.acceptance ? (
             <>
               {WORDS.status.accepted}{" "}
-              <strong className="nowrap">{formatIstDateTime(m.acceptance.acceptedAt)}</strong>
+              <strong className="nowrap">{localDateTime(m.acceptance.acceptedAt)}</strong>
             </>
           ) : (
             <>
