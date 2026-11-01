@@ -24,6 +24,7 @@ import {
 } from "../src/gateway.ts";
 import { type AdvanceIssueArgs, advanceIssueStatements, invoiceIssueStatements } from "../src/issue.ts";
 import { guardSql } from "../src/log.ts";
+import { proformaOnlinePendingSql } from "../src/sql-rules.ts";
 import { all, first, rejects, run, signedCompany, TEST_SIGNATURE } from "./helpers.ts";
 
 let seq = 0;
@@ -549,6 +550,79 @@ describe("recordGatewayPaymentStatements [ADM-PAY-02, -06, -07, JOB-HOOK-02, L5,
     expect(await checkoutRow(co.id)).toMatchObject({ status: "paid", paid_payment_id: a.paymentId });
     expect(await first("SELECT id FROM payment_allocations WHERE payment_id = ?", a.paymentId)).toBeNull();
     expect((await docRow(proforma))?.paid_minor).toBe(0);
+  });
+
+  it("review finding 10: proformaOnlinePendingSql counts only a pending payment with its requested allocation (overpaid or mismatched money has none)", async () => {
+    await mkMember("owner");
+    const clientId = await mkClient();
+    const contactId = await mkContact(clientId);
+    const pendingOf = async (doc: string) =>
+      (
+        await first<{ v: number }>(
+          `SELECT ${proformaOnlinePendingSql("d", "?2")} AS v FROM documents d WHERE d.id = ?1`,
+          doc,
+          clientId,
+        )
+      )?.v;
+    // Money with no requested allocation (a proforma overpaid, a mismatch): no tax invoice follows it automatically.
+    const over = await mkIssued(clientId, { type: "proforma" });
+    const co1 = await liveCheckout(over, clientId, contactId, 59_000);
+    expect(
+      await writePayment(
+        payArgs(
+          { clientId, documentId: over, checkoutId: co1.id, eventId: null },
+          {
+            status: "pending_verification",
+            amountMinor: 70_000,
+            allocate: null,
+            requestedAllocations: null,
+            checkoutPaid: "if_open",
+            staleOthers: false,
+          },
+        ),
+      ),
+    ).toBe(true);
+    expect(await pendingOf(over)).toBe(0);
+    // Its link is paid all the same (review finding 2), so it can't be reused or block a new link.
+    expect((await checkoutRow(co1.id))?.status).toBe("paid");
+    // A proforma's payment with its requested allocation: waiting for its tax invoice.
+    const waiting = await mkIssued(clientId, { type: "proforma" });
+    const co2 = await liveCheckout(waiting, clientId, contactId, 59_000);
+    expect(
+      await writePayment(
+        payArgs(
+          { clientId, documentId: waiting, checkoutId: co2.id, eventId: null },
+          {
+            status: "pending_verification",
+            amountMinor: 59_000,
+            allocate: null,
+            requestedAllocations: [{ documentId: waiting, amountMinor: 59_000 }],
+            staleOthers: false,
+          },
+        ),
+      ),
+    ).toBe(true);
+    expect(await pendingOf(waiting)).toBe(1);
+  });
+
+  it("review finding 2: checkoutPaid if_open writes the payment even when the link already ended, and leaves the ended link as it was", async () => {
+    const w = await invoiceWorld();
+    await run(
+      "UPDATE checkout_sessions SET status = 'cancelled', updated_at = updated_at + 1 WHERE id = ?",
+      w.checkoutId,
+    );
+    const a = payArgs(w, {
+      status: "pending_verification",
+      amountMinor: 117_000,
+      allocate: null,
+      checkoutPaid: "if_open",
+      staleOthers: false,
+    });
+    expect(await writePayment(a)).toBe(true);
+    expect(
+      (await first<{ status: string }>("SELECT status FROM payments WHERE id = ?", a.paymentId))?.status,
+    ).toBe("pending_verification");
+    expect(await checkoutRow(w.checkoutId)).toMatchObject({ status: "cancelled", paid_payment_id: null });
   });
 
   it("a mismatch: recorded pending with a review item, the balance unchanged, the link left as it was", async () => {

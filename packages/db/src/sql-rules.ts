@@ -104,3 +104,12 @@ export const onlinePayableSql = (d: string, k: string): string =>
   `(${d}.type IN ('tax_invoice', 'debit_note', 'proforma') AND ${d}.currency = 'INR' AND ${d}.frozen_at IS NOT NULL AND ${d}.status <> 'void'
     AND ${k}.anonymised_at IS NULL AND ${k}.country = 'IN' AND ${k}.gst_status <> 'overseas'
     AND ${d}.balance_minor >= 100 AND (${d}.type <> 'proforma' OR (${d}.status IN ('issued', 'converted') AND ${d}.balance_minor % 100 = 0)))`;
+
+/**
+ * M6.2 (review finding 10): proforma `d` has an online payment of client `client` (SQL expressions) waiting for its automatic tax invoice: a pending Razorpay payment
+ * through one of its links WITH its requested allocation. A mismatch or an overpaid proforma's money has none, so no tax invoice follows it automatically and the
+ * portal must not say "tax invoice to follow" (07-ZI line 16) or hide Pay now for it. The portal's Pay now block reads it; a db test holds it.
+ */
+export const proformaOnlinePendingSql = (d: string, client: string): string =>
+  `EXISTS (SELECT 1 FROM payments p JOIN checkout_sessions c ON c.id = p.checkout_id
+        WHERE c.document_id = ${d}.id AND p.client_id = ${client} AND p.provider = 'razorpay' AND p.status = 'pending_verification' AND p.requested_allocations IS NOT NULL AND ${d}.type = 'proforma')`;

@@ -5,7 +5,7 @@ import { gstEstimateOfHeaderExtras, issueDateOf, NOTES_MAX, noteOfFromStored } f
 import { formatMoney, money } from "@techaust/core/money";
 import { onlineMinimumOf, storedFloorOf } from "@techaust/core/online-pay";
 import { percentFromBp } from "@techaust/core/schedule-text";
-import { onlinePayableSql, withdrawnSql } from "@techaust/db/sql-rules";
+import { onlinePayableSql, proformaOnlinePendingSql, withdrawnSql } from "@techaust/db/sql-rules";
 
 /** 07-ZH line 18 (client-facing; approved by the owner, 2026-10-31): the summary row of the TDS the client deducted. */
 export const TDS_ROW_LABEL = "TDS deducted by you";
@@ -368,7 +368,8 @@ export type InvoiceSummary = ReturnType<typeof summaryOf>;
 /**
  * What the page needs for Pay now, every query bound to the client (`?1` client, `?2` document, `?3` now): whether the document can be paid online now
  * (`onlinePayableSql`, the SQL twin of core `payableOnline`; a domestic INR client only, owner Q3 A), the open link (amount and expiry), the last payment received
- * online for it (amount and when), and whether a proforma has an online payment waiting for its tax invoice. Read in the same batch as the summary. Fix round 3
+ * online for it (amount and when), and whether a proforma has an online payment waiting for its tax invoice (`proformaOnlinePendingSql`: only one with its
+ * requested allocation, review finding 10). Read in the same batch as the summary. Fix round 3
  * item 1: the balance and the part-payment floor (Settings › Payment terms, read as stored: the portal carries no settings schema; core `storedFloorOf`).
  */
 export const ONLINE_SQL = `SELECT ${onlinePayableSql("d", "k")} AS pay_online, d.type, d.balance_minor AS balance,
@@ -377,8 +378,7 @@ export const ONLINE_SQL = `SELECT ${onlinePayableSql("d", "k")} AS pay_online, d
      (SELECT c.expires_at FROM checkout_sessions c WHERE c.document_id = d.id AND c.status = 'live' AND c.client_id = ?1 AND c.expires_at > ?3) AS open_expires,
      (SELECT p.amount_minor || ':' || p.recorded_at FROM payments p JOIN checkout_sessions c ON c.id = p.checkout_id
         WHERE c.document_id = d.id AND p.client_id = ?1 AND p.provider = 'razorpay' AND p.status IN ('confirmed', 'pending_verification') ORDER BY p.recorded_at DESC LIMIT 1) AS last_paid,
-     EXISTS (SELECT 1 FROM payments p JOIN checkout_sessions c ON c.id = p.checkout_id
-        WHERE c.document_id = d.id AND p.client_id = ?1 AND p.provider = 'razorpay' AND p.status = 'pending_verification' AND d.type = 'proforma') AS proforma_pending
+     ${proformaOnlinePendingSql("d", "?1")} AS proforma_pending
    FROM documents d JOIN clients k ON k.id = d.client_id WHERE d.client_id = ?1 AND d.id = ?2`;
 
 export type OnlineRow = {
