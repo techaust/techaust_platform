@@ -422,6 +422,18 @@ async function seed(dir, extra) {
         },
       }),
     );
+  // Two bells for the made-up Owner (one read), so the notifications list has rows to shape (the warm fixture's list must not be empty; early check 2).
+  const owner = raw.prepare("SELECT id FROM staff_users WHERE email = ?").get(email).id;
+  const bells = raw
+    .prepare("SELECT id, contact_name AS name FROM leads ORDER BY created_at, id LIMIT 2")
+    .all();
+  for (const [i, l] of bells.entries()) {
+    raw
+      .prepare(
+        "INSERT INTO notifications (id, user_id, kind, entity_type, entity_id, title, link, read_at, created_at) VALUES (?, ?, 'lead.new', 'lead', ?, ?, ?, ?, ?)",
+      )
+      .run(randomUUID(), owner, l.id, `New lead: ${l.name}`, `/leads/${l.id}`, i === 0 ? null : now, now + i);
+  }
 
   // The e2e sample set (settings, signature, bank accounts, two clients, a project, time, a care plan, five invoice-family documents).
   const made = [];
@@ -586,7 +598,9 @@ export const CASES = {
       cookie: m.device,
     }),
   },
-  "POST /auth/totp": { worker: "front", totp: true },
+  // Not in the start-up dry run (`warm: false`, fix round decision 1c): the session it starts needs random values, which global scope refuses, and each refusal
+  // cost workerd about 12 ms of start-up (wrangler check startup, 2026-11-02); a wrong code would draw one too (its access row's id).
+  "POST /auth/totp": { worker: "front", totp: true, warm: false },
   "fwd GET /invoices/:id": {
     worker: "front",
     call: (m) => ({ path: `/invoices/${m.detail}`, cookie: m.cookie }),
@@ -602,8 +616,11 @@ export const CASES = {
   "fwd GET /notifications": { worker: "front", call: (m) => ({ path: "/notifications", cookie: m.cookie }) },
   "fwd GET /leads": { worker: "front", call: (m) => ({ path: "/leads", cookie: m.cookie }) },
   "fwd GET /dashboard": { worker: "front", call: (m) => ({ path: "/dashboard", cookie: m.cookie }) },
+  // The dry run sends a content hash that is not the draft's (`warmBody`, fix round decision 1c): the route reads, recomputes the invoice through the tax engine
+  // and answers 409 `content_changed` before its first new id, so no random value is asked for at start-up. Only the reads before its first write are kept.
   "POST /invoices/:id/issue": {
-    stopsAtNewId: true,
+    readsOnly: true,
+    warmBody: (body) => ({ ...body, expectedContentSha256: "0".repeat(64) }),
     worker: "finance",
     call: (m, i) => ({
       path: `/invoices/${m.issueDrafts[i].id}/issue`,
@@ -619,8 +636,9 @@ export const CASES = {
     worker: "finance",
     call: (m) => ({ path: `/invoices/${m.detail}/payments`, cookie: m.cookie }),
   },
+  // Not in the start-up dry run (`warm: false`, fix round decision 1c): it reaches its first new id with no refusal on the way, and global scope refuses it.
   "PATCH /invoices/:id": {
-    stopsAtNewId: true,
+    warm: false,
     worker: "finance",
     call: (m, i) => ({
       path: `/invoices/${m.patchDrafts[i].id}`,
@@ -629,8 +647,9 @@ export const CASES = {
       body: m.patchDrafts[i].body,
     }),
   },
+  // Not in the start-up dry run (`warm: false`, fix round decision 1c): as PATCH.
   "POST /invoices/:id/advance-invoice": {
-    stopsAtNewId: true,
+    warm: false,
     worker: "finance",
     call: (m, i) => ({
       path: `/invoices/${m.proformas[i].id}/advance-invoice`,
@@ -805,27 +824,18 @@ export function sqlKey(sql) {
   return h.toString(16).padStart(8, "0");
 }
 
-/** Keys whose values a secret scanner reads as a credential (the generic rule's keywords, and the sign-in columns). */
-const SECRET_LIKE = /secret|hmac|hash|token|key|salt|challenge|password|passwd|pw_|auth|api|access/i;
 /**
- * Every made-up value under a secret-looking key, as `{ $j: [pieces of 6] }` (warm-routes.ts `unpack` joins them back at start-up): CI's secret scan (every
- * commit) flags a long random literal next to such a key, even a made-up one. Ids, numbers and short values stay as they are.
+ * How many recorded rows an answer keeps, per Worker. Finance keeps ONE (lead decision 9, 2026-11-02: its bundle's headroom under the 650,000 plan line is
+ * for M6.3; a second row of the same shape runs the same code); the front and the API keep two.
  */
-function packSecrets(v, key = "") {
-  if (Array.isArray(v)) return v.map((x) => packSecrets(x, key));
-  if (v && typeof v === "object")
-    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, packSecrets(x, k)]));
-  if (typeof v === "string" && v.length >= 10 && SECRET_LIKE.test(key) && !/^[0-9a-f-]{36}$/.test(v))
-    return { $j: v.match(/.{1,6}/gs) };
-  return v;
-}
+const ROWS_KEPT = { front: 2, api: 2, finance: 1 };
 
 const FIXTURE_NAMES = { front: "FRONT_WARM", api: "API_WARM", finance: "FINANCE_WARM" };
 /**
  * `--write-fixtures` (CPU warm-up (b)1): each admin Worker's start-up dry run replays its hot routes on made-up rows. This captures, for every HTTP case of the
  * front, API and finance Workers, the request and every D1 statement of its first call on the probe's sample set (made-up: "(sample)" names, @example.test
  * addresses, the e2e sample values), and writes apps/admin/worker/warm-fixtures/<worker>.ts: the calls in case order and the answer book (SQL key -> parameters,
- * up to 3 rows, rows changed). Re-run it after a hot route's SQL or columns change (the warm-up tests then pin the new counts).
+ * up to ROWS_KEPT rows, rows changed). Re-run it after a hot route's SQL or columns change (the warm-up tests then pin the new counts).
  */
 function writeFixtures(work, seedDir) {
   const out = {
@@ -834,7 +844,7 @@ function writeFixtures(work, seedDir) {
     finance: { calls: [], rows: {} },
   };
   for (const [name, c] of Object.entries(CASES)) {
-    if (!out[c.worker] || c.rpc || c.hook) continue;
+    if (!out[c.worker] || c.rpc || c.hook || c.warm === false) continue;
     const runDir = join(work, "run");
     freshCopy(seedDir, runDir);
     const args = ["--case", runDir, name, "0"];
@@ -844,19 +854,20 @@ function writeFixtures(work, seedDir) {
     const cap = JSON.parse(readFileSync(file, "utf8"));
     console.log(`  ${name}: ${cap.status}, ${cap.statements.length} statements`);
     const call = { method: cap.request.method, path: cap.request.path };
-    if (cap.request.body !== undefined) call.body = packSecrets(cap.request.body);
+    if (cap.request.body !== undefined)
+      call.body = c.warmBody ? c.warmBody(cap.request.body) : cap.request.body;
     out[c.worker].calls.push(call);
-    // A write marked `stopsAtNewId` stops at its first new id in the dry run (global scope refuses random values), before its batch: only the reads before
-    // its first write statement are ever consulted, so the rest are left out (the bundle stays small). Every other call keeps all its statements.
+    // A call marked `readsOnly` answers in the dry run before its first write (its `warmBody` makes it refuse): only the reads before its first write
+    // statement are ever consulted, so the rest are left out (the bundle stays small). Every other call keeps all its statements.
     const reads = /^\s*(SELECT|WITH)\s/i;
-    const firstWrite = c.stopsAtNewId ? cap.statements.findIndex((st) => !reads.test(st.sql)) : -1;
+    const firstWrite = c.readsOnly ? cap.statements.findIndex((st) => !reads.test(st.sql)) : -1;
     const kept = firstWrite === -1 ? cap.statements : cap.statements.slice(0, firstWrite);
     for (const st of kept) {
       // The access-log row is never written by a warm app; the rest are the route's own statements.
       if (/^\s*INSERT INTO access_log /i.test(st.sql)) continue;
       // A draft's stored tax result is never read (bundleOf parses `computed` only for a frozen document): left out to keep the bundle small.
       const rowsOf = st.rows
-        .slice(0, 2)
+        .slice(0, ROWS_KEPT[c.worker])
         .map((r) =>
           r && !Array.isArray(r) && r.frozen_at === null && "computed" in r ? { ...r, computed: null } : r,
         );
@@ -865,7 +876,7 @@ function writeFixtures(work, seedDir) {
       const list = out[c.worker].rows[key];
       const p = st.params;
       if (list.some((e) => JSON.stringify(e.p) === JSON.stringify(p))) continue;
-      list.push({ p, r: packSecrets(rowsOf), c: st.changes });
+      list.push({ p, r: rowsOf, c: st.changes });
     }
   }
   // The parameters an entry was recorded for matter only when one statement has several entries (warm-routes.ts `warmDb`): dropped otherwise.
@@ -881,6 +892,8 @@ function writeFixtures(work, seedDir) {
       `// GENERATED by \`node scripts/cpu-probe.mjs --write-fixtures\` (CPU warm-up (b)1, docs/runs/cpu-warmup.md): do not edit by hand. The ${worker} Worker's
 // start-up dry run (warm-routes.ts): its hot routes' requests and the rows they read, captured from the probe's MADE-UP sample set (the e2e sample values:
 // "(sample)" names, @example.test addresses, SAMPLE bank values; secrets and keys are the admin tests' made-up test values). No real or personal data.
+// Credential-shaped values (the front's sign-in rows) were made under the admin tests' TEST_KEY values only (warm-fixtures.test.ts); this folder is the one
+// path .gitleaks.toml allows.
 import type { WarmFixture } from "../warm-routes.ts";
 
 export const ${name}: WarmFixture = ${JSON.stringify(data)};

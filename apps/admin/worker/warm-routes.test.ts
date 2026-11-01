@@ -16,7 +16,10 @@ import { FRONT_WARM_SECRETS } from "./warm-front.ts";
 import { sqlKey, type WarmCall, type WarmFixture, warmDb, warmEnv, warmRoutes } from "./warm-routes.ts";
 
 const REFUSED = "Disallowed operation called within global scope (test)";
+/** How many refused operations were asked for (each one cost workerd about 12 ms of start-up, fix round decision 1c: the dry runs ask for none). */
+let refusals = 0;
 const refuse = () => {
+  refusals++;
   throw new Error(REFUSED);
 };
 
@@ -61,33 +64,44 @@ async function atGlobalScope<T>(fn: () => Promise<T>): Promise<T> {
 /** One Worker's dry run under the global-scope rules: its count, and each call's status (0: it stopped on a refused operation). */
 async function dryRun(app: ReturnType<typeof createApp>, fixture: WarmFixture, extra = {}) {
   const statuses: string[] = [];
+  const before = refusals;
   const count = await atGlobalScope(() =>
     warmRoutes(app, warmEnv(fixture.rows, extra), fixture.calls, (call: WarmCall, status: number) =>
       statuses.push(`${call.method} ${call.path.replace(/[0-9a-f]{8}-[0-9a-f-]{27}/g, ":id")} ${status}`),
     ),
   );
-  return { count, statuses };
+  return { count, statuses, refused: refusals - before };
 }
 
 afterEach(() => vi.restoreAllMocks());
 
 describe("the start-up dry run [CPU warm-up (b)1]", () => {
   it("the finance Worker's hot routes answer on the made-up rows", async () => {
+    // What the warm `c.json` serialises (it answers without a body): the issue call's 409 must be `content_changed`, the refusal AFTER the recompute.
+    const stringify = JSON.stringify;
+    const codes: string[] = [];
+    vi.spyOn(JSON, "stringify").mockImplementation((value: unknown, ...rest: unknown[]) => {
+      const code = (value as { error?: { code?: unknown } } | null)?.error?.code;
+      if (typeof code === "string") codes.push(code);
+      return stringify(value, ...(rest as [undefined, undefined]));
+    });
     const r = await dryRun(createApp(mountFinance, undefined, { warm: true }), FINANCE_WARM);
+    expect(codes).toEqual(["content_changed"]);
     expect(r.statuses).toMatchInlineSnapshot(`
       [
-        "POST /invoices/:id/issue 500",
+        "POST /invoices/:id/issue 409",
         "GET /invoices/:id 200",
         "GET /invoices/:id/payments 200",
-        "PATCH /invoices/:id 500",
-        "POST /invoices/:id/advance-invoice 500",
         "GET /dashboard 200",
         "GET /invoices 200",
         "GET /payments/review 200",
         "GET /approvals 200",
       ]
     `);
-    expect(r.count).toBe(6); // the three writes stop at their first new id (global scope refuses random values)
+    // Fix round decision 1c: the issue call carries a content hash that is not the draft's, so it reads, recomputes the invoice and answers 409
+    // `content_changed` before its first new id; PATCH and the advance invoice are not dry-run (they would reach a new id). No refused operation at all.
+    expect(r.count).toBe(6);
+    expect(r.refused).toBe(0);
   });
 
   it("the API Worker's hot routes answer on the made-up rows", async () => {
@@ -102,6 +116,7 @@ describe("the start-up dry run [CPU warm-up (b)1]", () => {
       ]
     `);
     expect(r.count).toBe(5);
+    expect(r.refused).toBe(0);
   });
 
   it("the front Worker's sign-in, account and forwarded routes answer on the made-up rows", async () => {
@@ -116,7 +131,6 @@ describe("the start-up dry run [CPU warm-up (b)1]", () => {
         "GET /auth/me 200",
         "POST /auth/salt 200",
         "POST /auth/login 200",
-        "POST /auth/totp 500",
         "GET /invoices/:id 200",
         "POST /invoices/:id/issue 200",
         "GET /notifications 200",
@@ -124,7 +138,9 @@ describe("the start-up dry run [CPU warm-up (b)1]", () => {
         "GET /dashboard 200",
       ]
     `);
-    expect(r.count).toBe(9); // the TOTP check stops at the new session's random token
+    // Fix round decision 1c: no TOTP call (the session it starts, and a refusal's access row, need random values). No refused operation at all.
+    expect(r.count).toBe(9);
+    expect(r.refused).toBe(0);
   });
 
   it("leaves no trace: no log line, no request counted, no first-run mark", async () => {

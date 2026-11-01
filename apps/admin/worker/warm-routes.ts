@@ -190,6 +190,22 @@ export async function warmRoutes(
   return answered;
 }
 
+/**
+ * The start-up probe's collector (scripts/worker-budget.mjs `STARTUP_PROBE`, CPU warm-up fix round, early check 1a): the probe puts a function by this name
+ * in its sandbox's global scope and waits for what it is handed, so the budget times the dry run's microtasks as well as the module's evaluation. Workerd
+ * has no such global, so in a deployed Worker this reads one missing property and does nothing.
+ */
+const STARTUP_PROBE = "__techaustStartupProbe";
+/** Hands an entry's start-up work to the budget's start-up probe, when one is listening; never throws. */
+export function exposeToStartupProbe(work: Promise<unknown>): void {
+  try {
+    const collect = (globalThis as Record<string, unknown>)[STARTUP_PROBE];
+    if (typeof collect === "function") collect(work);
+  } catch {
+    // never stop a Worker from starting
+  }
+}
+
 /** How many passes an entry's start-up makes over its calls: V8 compiles on the first, and the next ones warm the inline caches further. */
 export const WARM_ROUNDS = 1;
 

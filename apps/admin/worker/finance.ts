@@ -29,7 +29,7 @@ import { ROUTES } from "./guard.ts";
 import { mountFinance } from "./routes-finance.ts";
 import { FINANCE_WARM } from "./warm-fixtures/finance.ts";
 import { warmRouter } from "./warm-router.ts";
-import { warmStart } from "./warm-routes.ts";
+import { exposeToStartupProbe, warmStart } from "./warm-routes.ts";
 
 const app = createApp(mountFinance);
 // M6.2 CPU diagnosis (lead decision 1): the rows this Worker answers, matched while the module loads (not exported: a named export of an entry is an entrypoint).
@@ -38,7 +38,7 @@ warmRouter(
   ROUTES.filter((r) => r.on === "finance"),
 );
 // CPU warm-up (b)1: the hot routes dry-run on made-up rows while the module loads (warm-routes.ts); never throws, stores and logs nothing.
-void warmStart(createApp(mountFinance, undefined, { warm: true }), FINANCE_WARM);
+exposeToStartupProbe(warmStart(createApp(mountFinance, undefined, { warm: true }), FINANCE_WARM));
 export default app satisfies ExportedHandler<Env>;
 
 const id = (v: unknown): string => {

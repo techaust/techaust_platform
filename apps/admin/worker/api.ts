@@ -6,7 +6,7 @@ import { ROUTES } from "./guard.ts";
 import { mountApi } from "./routes-api.ts";
 import { API_WARM } from "./warm-fixtures/api.ts";
 import { warmRouter } from "./warm-router.ts";
-import { warmStart } from "./warm-routes.ts";
+import { exposeToStartupProbe, warmStart } from "./warm-routes.ts";
 
 const app = createApp(mountApi);
 // M6.2 CPU diagnosis (lead decision 1): the rows this Worker answers, matched while the module loads.
@@ -15,5 +15,5 @@ warmRouter(
   ROUTES.filter((r) => r.on === undefined),
 );
 // CPU warm-up (b)1: the hot routes dry-run on made-up rows while the module loads (warm-routes.ts); never throws, stores and logs nothing.
-void warmStart(createApp(mountApi, undefined, { warm: true }), API_WARM);
+exposeToStartupProbe(warmStart(createApp(mountApi, undefined, { warm: true }), API_WARM));
 export default app satisfies ExportedHandler<Env>;

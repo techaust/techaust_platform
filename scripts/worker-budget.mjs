@@ -2,7 +2,8 @@
 // check-portal-bundle.mjs). Bytes are not what costs metered CPU: a Worker's startup (compile + top-level evaluation) runs
 // before the request, and the Free plan's 10 ms meters the request path. So the guard checks three things:
 //   - a byte ceiling (well under the 3 MB compressed Worker limit),
-//   - a startup budget: the fastest of compile + top-level evaluation in a fresh `node:vm` context (a local proxy, not workerd),
+//   - a startup budget: the fastest of compile + top-level evaluation + the start-up work an entry hands to the probe, in a fresh `node:vm` context
+//     under workerd's global-scope rules (a local proxy, not workerd),
 //   - forbidden modules: classic zod (~150 KB), and PDF code that belongs only in the jobs Worker.
 // The real gate stays the staging cold reading per milestone (docs/runbooks/cpu-baseline.md). Pure helpers are exported for
 // packages/core/test/worker-budget.test.ts; `node scripts/worker-budget.mjs <app>` runs the check after `vite build`.
@@ -105,11 +106,76 @@ export const BUDGETS = {
 };
 
 /**
- * The fastest compile + top-level evaluation time (ms) of a bundle over fresh `vm` contexts. The fastest run is the code's own cost;
- * slower runs measure how busy the machine is (a loaded PC read 98 ms for a bundle whose idle runs read 65), so the median made
- * the guard flaky (lead, 2026-10-25).
+ * The name of the start-up probe's collector in the sandbox's global scope. An entry hands its start-up work to it (apps/admin/worker/warm-routes.ts
+ * `exposeToStartupProbe`, CPU warm-up fix round, early check 1a): workerd has no such global, so there the call does nothing.
  */
-export function measureStartup(code, runs = 7) {
+export const STARTUP_PROBE = "__techaustStartupProbe";
+/** How long the probe waits for an entry's start-up work to settle before it fails the bundle (a dry run that never ends would hang a real start-up). */
+export const SETTLE_LIMIT_MS = 5_000;
+
+const REFUSED =
+  "Disallowed operation called within global scope (worker-budget: workerd's global-scope rule)";
+const refuse = () => {
+  throw new Error(REFUSED);
+};
+/**
+ * The sandbox's globals under workerd's global-scope rules (the set scripts/cpu-probe-runtime.mjs `underGlobalScopeRules` emulates, checked in local workerd
+ * 1.20261001.1 on 2026-11-02): a Response or Request WITH a body, `Response.json`, random values, timers and `fetch` throw; a bodiless Response or Request,
+ * Headers, WebCrypto's `subtle` and microtasks are allowed. So a start-up dry run stops here where it stops in workerd, and its cost is what is timed.
+ */
+function globalScopeSandbox(collect) {
+  const RealResponse = Response;
+  const RealRequest = Request;
+  return {
+    crypto: { subtle: globalThis.crypto.subtle, getRandomValues: refuse, randomUUID: refuse },
+    TextEncoder,
+    TextDecoder,
+    URL,
+    URLSearchParams,
+    Response: class Response extends RealResponse {
+      constructor(body, init) {
+        if (body !== null && body !== undefined) refuse();
+        super(body, init);
+      }
+      static json() {
+        return refuse();
+      }
+    },
+    Request: class Request extends RealRequest {
+      constructor(input, init) {
+        if (init?.body !== null && init?.body !== undefined) refuse();
+        super(input, init);
+      }
+    },
+    Headers,
+    console: { log() {}, error() {}, warn() {} },
+    performance,
+    setTimeout: refuse,
+    setInterval: refuse,
+    clearTimeout,
+    fetch: refuse,
+    Promise,
+    structuredClone,
+    atob,
+    btoa,
+    ReadableStream,
+    TransformStream,
+    WritableStream,
+    [STARTUP_PROBE]: collect,
+  };
+}
+
+/** Workerd's clock reads 0 during start-up: `Date.now()` and `new Date()` in the sandbox do too (run before the timed part). */
+const FROZEN_CLOCK = `{ const D = Date; globalThis.Date = class Date extends D { constructor(...a) { super(...(a.length ? a : [0])); } static now() { return 0; } }; }`;
+
+/**
+ * The fastest start-up time (ms) of a bundle over fresh `vm` contexts: compile + top-level evaluation, PLUS the start-up work the entry hands to the probe
+ * (CPU warm-up fix round, early check 1a: the admin Workers' dry runs run on as microtasks after the module has evaluated, still inside workerd's start-up,
+ * and a synchronous timing missed them). The fastest run is the code's own cost; slower runs measure how busy the machine is (a loaded PC read 98 ms for a
+ * bundle whose idle runs read 65), so the median made the guard flaky (lead, 2026-10-25). Wall time, so Node's WebCrypto thread pool is counted too: an
+ * upper bound of the CPU. Throws when the bundle throws at evaluation or its start-up work does not settle within SETTLE_LIMIT_MS.
+ */
+export async function measureStartup(code, runs = 7) {
   // The export list ends the code; a trailing license comment (the jobs bundle has one) may follow it, and since L9 (jobs minified with
   // uploaded source maps) a `//# sourceMappingURL=` line, on its own line or straight after the list on the same line.
   // M5.4: the admin API Worker exports the named entrypoint `BillingJobs` (a `WorkerEntrypoint` subclass), so its bundle starts with
@@ -135,33 +201,32 @@ export function measureStartup(code, runs = 7) {
     });
   const times = [];
   for (let i = 0; i < runs; i++) {
-    const context = vm.createContext({
-      crypto: globalThis.crypto,
-      TextEncoder,
-      TextDecoder,
-      URL,
-      URLSearchParams,
-      Response,
-      Request,
-      Headers,
-      console: { log() {}, error() {}, warn() {} },
-      performance,
-      setTimeout,
-      clearTimeout,
-      Promise,
-      structuredClone,
-      atob,
-      btoa,
-      ReadableStream,
-      TransformStream,
-      WritableStream,
-    });
+    const pending = [];
+    const context = vm.createContext(globalScopeSandbox((p) => pending.push(p)));
+    new vm.Script(FROZEN_CLOCK, { filename: `budget-clock-${i}.js` }).runInContext(context);
     const start = process.hrtime.bigint();
     // A unique trailing comment defeats V8's compilation cache, so each run compiles from scratch.
     new vm.Script(`${src}\n//${i}-${start}`, { filename: `budget-${i}.js` }).runInContext(context);
+    if (pending.length > 0) await settled(pending);
     times.push(Number(process.hrtime.bigint() - start) / 1e6);
   }
   return Math.min(...times);
+}
+
+/** Waits for every promise an entry handed to the probe (a rejection counts as settled: the entry swallows its own); throws past SETTLE_LIMIT_MS. */
+async function settled(pending) {
+  let timer;
+  const limit = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`the start-up work did not settle within ${SETTLE_LIMIT_MS} ms`)),
+      SETTLE_LIMIT_MS,
+    );
+  });
+  try {
+    await Promise.race([Promise.allSettled(pending), limit]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** The note a bundle past its plan line gets (a budget with `planBytes`), else null. A note, never a failure: the ceiling is `maxBytes`. */
@@ -177,7 +242,7 @@ export function checkBundle({ size, text, startupMs, inputs = [] }, budget) {
     problems.push(`the Worker bundle is ${size} bytes; the limit is ${budget.maxBytes}`);
   if (startupMs > budget.maxStartupMs)
     problems.push(
-      `startup is ${startupMs.toFixed(1)} ms (fastest of 7, local); the limit is ${budget.maxStartupMs} ms`,
+      `startup is ${startupMs.toFixed(1)} ms (fastest of 7, local, start-up work included); the limit is ${budget.maxStartupMs} ms`,
     );
   for (const f of budget.forbidden) {
     const m = f.re.exec(text);
@@ -202,7 +267,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const text = readFileSync(file, "utf8");
   let startupMs;
   try {
-    startupMs = measureStartup(text);
+    startupMs = await measureStartup(text);
   } catch (e) {
     console.error(
       `${app} bundle check failed:\n- the bundle did not evaluate in the startup probe: ${e.message}`,
@@ -235,6 +300,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const note = planNote(size, budget);
   if (note) console.warn(`${app} bundle note: ${note}`);
   console.log(
-    `${app} bundle ok: ${size} bytes (limit ${budget.maxBytes}), startup ${startupMs.toFixed(1)} ms fastest of 7 (limit ${budget.maxStartupMs}), no forbidden modules`,
+    `${app} bundle ok: ${size} bytes (limit ${budget.maxBytes}), startup ${startupMs.toFixed(1)} ms fastest of 7, start-up work included (limit ${budget.maxStartupMs}), no forbidden modules`,
   );
 }
