@@ -1094,6 +1094,66 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       await addDoc({ clientId, issueDate: "2026-10-05" });
       return run(s, `/clients/${clientId}/statement/pdf`, { body: { from: "2026-10-01", to: "2026-10-31" } });
     },
+    // M6.2 (added on purpose): payment links and Needs review (the local Razorpay simulator answers; no test calls Razorpay).
+    "POST /api/v1/invoices/:id/payment-link": async () => {
+      const s = await owner();
+      await putCompany();
+      const inv = await mkIssuedInvoice(s);
+      const d = await env.DB.prepare("SELECT updated_at, total_minor FROM documents WHERE id = ?1")
+        .bind(inv.id)
+        .first<{ updated_at: number; total_minor: number }>();
+      return run(s, `/invoices/${inv.id}/payment-link`, {
+        body: { amountMinor: d?.total_minor, expectedUpdatedAt: d?.updated_at },
+      });
+    },
+    "POST /api/v1/invoices/:id/payment-link/cancel": async () => {
+      const s = await owner();
+      await putCompany();
+      const inv = await mkIssuedInvoice(s);
+      const d = await env.DB.prepare("SELECT updated_at, total_minor FROM documents WHERE id = ?1")
+        .bind(inv.id)
+        .first<{ updated_at: number; total_minor: number }>();
+      const made = await call(`/invoices/${inv.id}/payment-link`, {
+        cookie: s.cookie,
+        body: { amountMinor: d?.total_minor, expectedUpdatedAt: d?.updated_at },
+      });
+      const { checkoutId } = (await made.json()) as { checkoutId: string };
+      return run(s, `/invoices/${inv.id}/payment-link/cancel`, { body: { checkoutId } });
+    },
+    "POST /api/v1/payments/review/:id/resolve": async () => {
+      const s = await owner();
+      const id = uuidv7();
+      await env.DB.prepare(
+        "INSERT INTO review_items (id, source, provider, kind, status, created_at) VALUES (?1, 'webhook', 'razorpay', 'unknown_link', 'open', ?2)",
+      )
+        .bind(id, Date.now())
+        .run();
+      return run(s, `/payments/review/${id}/resolve`, { body: { resolution: "dismissed", note: null } });
+    },
+    "POST /api/v1/payments/review/:id/retry": async () => {
+      const s = await owner();
+      await putCompany();
+      const inv = await mkIssuedInvoice(s);
+      const d = await env.DB.prepare("SELECT updated_at, total_minor FROM documents WHERE id = ?1")
+        .bind(inv.id)
+        .first<{ updated_at: number; total_minor: number }>();
+      await call(`/invoices/${inv.id}/payment-link`, {
+        cookie: s.cookie,
+        body: { amountMinor: d?.total_minor, expectedUpdatedAt: d?.updated_at },
+      });
+      const link = await env.DB.prepare(
+        "SELECT provider_link_id FROM checkout_sessions WHERE document_id = ?1",
+      )
+        .bind(inv.id)
+        .first<{ provider_link_id: string }>();
+      const id = uuidv7();
+      await env.DB.prepare(
+        "INSERT INTO review_items (id, source, provider, kind, status, facts, created_at) VALUES (?1, 'webhook', 'razorpay', 'refetch_failed', 'open', ?2, ?3)",
+      )
+        .bind(id, JSON.stringify({ linkId: link?.provider_link_id }), Date.now())
+        .run();
+      return run(s, `/payments/review/${id}/retry`, { body: {} });
+    },
     // M6.1 (added on purpose): the payment routes.
     "POST /api/v1/payments": async () => {
       const s = await owner();

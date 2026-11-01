@@ -152,7 +152,7 @@ describe("every ROUTES row has one owner", () => {
     // main's proforma withdraw (ADM-INV-10) joins them as an invoice route.
     // M6.2: seven gateway rows (payment links, Needs review, the gateways' status).
     expect(FINANCE_ROWS.length).toBe(53);
-    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 46);
+    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 53);
     expect(new Set([...FRONT_ROWS, ...API_ROWS, ...FINANCE_ROWS].map(key)).size).toBe(ROUTES.length);
   });
 

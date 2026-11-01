@@ -609,6 +609,9 @@ describe("the route table", () => {
       "POST /api/v1/invoices/:id/reminders/pause invoices.send invoice.reminders_pause",
       "POST /api/v1/invoices/:id/reminders/resume invoices.send invoice.reminders_resume",
       "GET /api/v1/clients/:id/invoices invoices.read -",
+      // M6.2 (added on purpose): a Razorpay payment link, and its cancel
+      "POST /api/v1/invoices/:id/payment-link payments.link payment.link_create",
+      "POST /api/v1/invoices/:id/payment-link/cancel payments.link payment.link_cancel",
       // M6.1 (added on purpose): an invoice's Payments panel, its excess to credit, and the bank's FEMA extensions with their letter
       "GET /api/v1/invoices/:id/payments payments.read -",
       "POST /api/v1/invoices/:id/credit/release payments.applyCredit payment.credit_release",
