@@ -96,6 +96,12 @@ const og = new URL(
         }
       })(document.documentElement);
     </script>
+    {/* The hours (footer, contact, forms, care plans) in the visitor's own clock (owner, 2026-11-01). In the head so
+        the small module is fetched alongside the stylesheet and runs as soon as the page is parsed, before the first
+        paint where it can, so the rewritten hours don't move the text below them (layout shift). */}
+    <script>
+      import "../scripts/local-time";
+    </script>
   </head>
   <body>
     <a class="skip-link" href="#main">{draft.skipLink}</a>
@@ -112,8 +118,6 @@ const og = new URL(
 <script>
   // First-touch attribution for the forms (FRM-06): UTM parameters and an outside referrer, sessionStorage only.
   import "../scripts/attribution";
-  // The hours (footer, contact, forms, care plans) in the visitor's own clock (owner, 2026-11-01).
-  import "../scripts/local-time";
 </script>
 
 <style is:global>

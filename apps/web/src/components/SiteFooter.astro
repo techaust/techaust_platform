@@ -251,10 +251,11 @@ const columns = [
 
   /* The hours sit under the phone and WhatsApp links as a quiet second line, aligned with the link text (as on the
      contact page), outside the link so a long local time ("Sun–Fri, 21:30–05:30 next day PDT") never stretches it.
-     20px is the icon (Icon.astro's default size). */
+     20px is the icon (Icon.astro's default size). It starts below the link's 44 px box, so the focus ring never
+     crosses it, and leaves more room under it than above, so it reads with its own link. */
   .site-footer__contact :global(.site-footer__hours) {
     display: block;
-    margin-block: calc(-1 * var(--space-2)) var(--space-1);
+    margin-block: 0 var(--space-3);
     padding-inline-start: calc(20px + var(--space-3));
     font-size: var(--text-sm);
     line-height: var(--text-sm--line-height);

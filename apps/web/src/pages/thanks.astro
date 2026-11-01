@@ -112,6 +112,20 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     white-space: nowrap;
   }
 
+  /* With JavaScript (html.js, set by the head script before the first paint) the reference line and the WhatsApp line
+     under it keep their place while still hidden, so showing them moves nothing below (layout shift); the empty
+     reference holds the code's line height. scripts/thanks.ts removes both when the URL has no valid reference.
+     Without JavaScript they stay out (`hidden`). */
+  :global(.js) .thanks__body > [hidden][data-ref-line],
+  :global(.js) .thanks__body > [hidden][data-ref-only] {
+    display: block;
+    visibility: hidden;
+  }
+
+  .thanks__code:empty::before {
+    content: "\200b";
+  }
+
   .thanks__call {
     margin-block-start: var(--space-4);
   }
