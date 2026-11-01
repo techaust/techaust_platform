@@ -18,10 +18,13 @@
 //    ordinary text, so nobody mistakes it for the address.
 // 7. Short joined runs never break inside: a range of short words or times ("Mon–Sat,", "10:00–19:00") and an "e-" word
 //    ("e-invoicing", "e-way"), so a line never ends on "(Mon–" or "GST e-" (final sweep W6).
+// 8. The working hours ({{hours}}) through Hours.astro: IST as written, the visitor's own clock once the page runs
+//    (owner, 2026-11-01).
 import { shared } from "../content/shared";
 import { draft } from "../content/shell";
 import { displayAmount } from "../lib/prices";
 import { POSTAL_ADDRESS_PLACEHOLDER, type PricePart, parseTokens } from "../lib/tokens";
+import Hours from "./Hours.astro";
 import Icon from "./Icon.astro";
 
 interface Props {
@@ -39,7 +42,8 @@ type Bit =
   | { kind: "arrow"; char: "→" | "↔"; bold: boolean }
   | { kind: "link"; label: string; href: string; bold: boolean }
   | { kind: "pending"; value: string }
-  | { kind: "code"; value: string };
+  | { kind: "code"; value: string }
+  | { kind: "hours" };
 const LINK = /\[([^\]]+)\]\(([^)\s]+)\)/g;
 /** Item 7: the runs kept on one line (a capture group, so `split` keeps them). */
 const KEEP = /((?<![\p{L}\d])[\p{L}\d:]{1,5}–[\p{L}\d:]{1,5}(?![\p{L}\d]),?|(?<![\p{L}\d-])e-\p{L}+)/u;
@@ -50,6 +54,10 @@ let bold = false;
 for (const p of parseTokens(text)) {
   if (p.kind === "price") {
     parts.push(p);
+    continue;
+  }
+  if (p.kind === "hours") {
+    parts.push({ kind: "hours" });
     continue;
   }
   if (p.text === POSTAL_ADDRESS_PLACEHOLDER) {
@@ -115,6 +123,8 @@ const modes: (Mode | null)[] = priced ? ["both", "inr", "usd"] : [null];
             )
           ) : p.kind === "code" ? (
             <code class="copy__code">{p.value}</code>
+          ) : p.kind === "hours" ? (
+            <Hours />
           ) : p.kind === "pending" ? (
             <span class="copy__pending">{p.value}</span>
           ) : p.kind === "arrow" ? (

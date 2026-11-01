@@ -5,7 +5,8 @@
 // field; "Back" keeps every answer. Without JavaScript all four steps show as one long form, with the owner's note above
 // the button (2026-10-23). `?service=Sx` pre-selects a service; `type=pilot` and `plan=<tier>` (07 §2.3) are carried in
 // hidden fields. The budget bands follow the currency switch (INR or USD), their amounts formatted by @techaust/core.
-// "Best time for a call" is in IST, with the visitor's own time beside each window (filled in by the script).
+// "Best time for a call": each window in the visitor's own clock, one time only (IST in India and without scripts;
+// owner, 2026-11-01); the value sent is always the IST window.
 import "../styles/page.css";
 import "../styles/forms.css";
 import CurrencyNote from "../components/CurrencyNote.astro";
@@ -62,7 +63,6 @@ const countryOptions = [
         data-msg-generic={formUi.generic}
         data-msg-rate={formUi.rateLimited}
         data-msg-nojs={noJsNote}
-        data-msg-yourtime={q.contact.yourTime}
         data-msg-step={formUi.stepOf}
       >
         <ErrorSummary id="quote-errors" />
@@ -237,15 +237,13 @@ const countryOptions = [
             </div>
             <ChoiceGroup name="callWindow" legend={q.contact.callWindow} cols={{ sm: 2, md: 2 }}>
               {
-                callWindows().map((w) => (
-                  <Choice
-                    name="callWindow"
-                    value={w.value}
-                    label={w.value}
-                    sub=""
-                    data={w.from === undefined ? {} : { from: w.from, to: w.to ?? 0 }}
-                  />
-                ))
+                callWindows().map((w) =>
+                  w.from === undefined ? (
+                    <Choice name="callWindow" value={w.value} label={w.value} />
+                  ) : (
+                    <Choice name="callWindow" value={w.value} window={{ from: w.from, to: w.to ?? 0 }} />
+                  ),
+                )
               }
             </ChoiceGroup>
             <FormEnd submit={q.submit} consent={q.consent} id="quote">

@@ -2,14 +2,29 @@
 // hides what depends on it. The values marked OWNER are pending owner inputs (docs/07 §9); they stay empty until the
 // owner gives them, and the preview pages show labelled placeholders in their place, never invented values.
 // Phase 2 of M2.1 (builder) finalises this file; the shell only reads it.
+// With its extension: astro.config.mjs loads this file through Node itself (lib/quotable-build.ts).
+import { type IstWindow, istText } from "../scripts/call-time.ts";
+
+/**
+ * The working hours (07 §2.4, owner Phase 4): Mon–Sat, 10:00–19:00 IST, the one source for every rendering. The server
+ * writes them in IST (`site.hours`); the page shows them in the visitor's own clock (components/Hours.astro,
+ * scripts/local-time.ts; owner, 2026-11-01).
+ */
+export const HOURS: IstWindow = { from: 600, to: 1140, days: [1, 6] };
 
 export const site = {
   name: "TecHaust Technologies",
   email: "contact@techaust.com",
   locality: "Balurghat, West Bengal, India",
-  hours: "Mon–Sat, 10:00–19:00 IST",
-  /** OWNER: WhatsApp business number in international form without "+" (e.g. 91…). Empty = hidden (WEB-G-18). */
-  whatsapp: "",
+  /** "Mon–Sat, 10:00–19:00 IST", from HOURS. */
+  hours: istText(HOURS),
+  /** WhatsApp business number in international form without "+" (owner, 2026-11-01). Empty = hidden (WEB-G-18). */
+  whatsapp: "919883023931",
+  /**
+   * The company phone (owner, 2026-11-01; the same number as WhatsApp): `display` as it is written everywhere
+   * ("+91 98830 23931"), `dial` for the `tel:` link (E.164, no spaces). An empty `display` hides the line (WEB-G-18).
+   */
+  phone: { display: "+91 98830 23931", dial: "+919883023931" } as { display: string; dial: string },
   /** OWNER: LinkedIn company page URL. Empty = hidden. */
   linkedinCompany: "",
   /** OWNER: founder's LinkedIn URL. Empty = hidden. */

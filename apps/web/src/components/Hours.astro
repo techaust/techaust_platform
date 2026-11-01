@@ -1,0 +1,34 @@
+---
+// Hours: an IST window as text (owner, 2026-11-01; docs/07 §1 "Times"). The server writes it in IST ("Mon–Sat,
+// 10:00–19:00 IST"), which visitors in India and visitors without JavaScript read; scripts/local-time.ts rewrites it in
+// the visitor's own clock, one time only ("Sun–Fri, 20:30–05:30 next day PST"). The window's minutes and days ride on
+// data attributes, so the script needs nothing else. Lines break only between the runs of `textRuns` (never inside
+// "Mon–Sat," or "10:00–19:00"). Default: the working hours (site.ts HOURS).
+import { HOURS } from "../config/site";
+import { type IstWindow, istWindow, textRuns } from "../scripts/call-time";
+
+interface Props {
+  window?: IstWindow;
+  class?: string;
+}
+
+// `rest` carries the caller's style scope (data-astro-cid-…), so a parent's scoped class reaches this element.
+const { window: w = HOURS, class: cls, ...rest } = Astro.props;
+const runs = textRuns(istWindow(w));
+---
+
+<span
+  {...rest}
+  class:list={["hours", cls]}
+  data-hours
+  data-from={w.from}
+  data-to={w.to}
+  data-days={w.days ? w.days.join("-") : undefined}
+>{runs.map((r, i) => <>{i > 0 && " "}<span class="hours__run">{r}</span></>)}</span>
+
+<style>
+  /* The script builds the same runs, outside this file's style scope. */
+  .hours :global(.hours__run) {
+    white-space: nowrap;
+  }
+</style>
