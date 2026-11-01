@@ -468,6 +468,26 @@ describe("judgeRazorpayPayment [ADM-PAY-02, ADR 0008]", () => {
     expect(judgeRazorpayPayment(checkout, l, p)).toEqual({ ok: false, verdict });
   });
 
+  it("review finding 7: the payment's state is judged before the reference (a failed or unsettled payment on a mismatched link is never a pending row)", () => {
+    const other = { ...link, referenceId: "someone-else" } as CheckoutStatusReport;
+    expect(judgeRazorpayPayment(checkout, other, { ...payment, state: "failed" })).toEqual({
+      ok: false,
+      verdict: "not_captured",
+    });
+    expect(judgeRazorpayPayment(checkout, other, { ...payment, state: "refunded" })).toEqual({
+      ok: false,
+      verdict: "not_captured",
+    });
+    expect(judgeRazorpayPayment(checkout, other, { ...payment, state: "pending" })).toEqual({
+      ok: false,
+      verdict: "payment_pending",
+    });
+    expect(judgeRazorpayPayment(checkout, other, payment)).toEqual({
+      ok: false,
+      verdict: "reference_mismatch",
+    });
+  });
+
   it("every verdict is reachable and listed", () => {
     expect([...JUDGE_VERDICTS].sort()).toEqual(
       [

@@ -362,8 +362,9 @@ export type CheckoutFacts = {
 };
 
 /**
- * Whether the payment and link re-fetched from Razorpay's API (never the webhook's copy: ADR 0008) settle `checkout` exactly, in this order: the link is ours (its id
- * and our reference); the payment is captured; it is one of the link's payments; it belongs to the link's order (when the link names one); the currency; the amount.
+ * Whether the payment and link re-fetched from Razorpay's API (never the webhook's copy: ADR 0008) settle `checkout` exactly, in this order: the payment is
+ * captured (M6.2 review finding 7: its state comes first, so a failed, refunded or unsettled payment is never a confirmable row, whatever else differs); the link is
+ * ours (its id and our reference); it is one of the link's payments; it belongs to the link's order (when the link names one); the currency; the amount.
  * A link only partly paid, or a payment for less than the link while the link says partly paid, is `partial_payment` (links are made with `accept_partial: false`, L2,
  * so this should not happen; it goes to the Owner). Anything else that differs is a mismatch the Owner reviews; nothing here moves money.
  */
@@ -373,10 +374,10 @@ export function judgeRazorpayPayment(
   payment: PaymentStatusReport,
 ): { readonly ok: true } | { readonly ok: false; readonly verdict: JudgeVerdict } {
   const no = (verdict: JudgeVerdict) => ({ ok: false, verdict }) as const;
-  if (link.providerRef !== checkout.providerLinkId || link.referenceId !== checkout.id)
-    return no("reference_mismatch");
   if (payment.state === "pending") return no("payment_pending");
   if (payment.state !== "captured") return no("not_captured");
+  if (link.providerRef !== checkout.providerLinkId || link.referenceId !== checkout.id)
+    return no("reference_mismatch");
   if (!link.payments.some((p) => p.paymentRef === payment.providerRef)) return no("payment_not_on_link");
   if (link.orderRef !== null && payment.orderRef !== link.orderRef) return no("order_mismatch");
   if (payment.currency !== checkout.currency || link.currency !== checkout.currency)
