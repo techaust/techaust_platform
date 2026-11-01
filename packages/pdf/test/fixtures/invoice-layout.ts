@@ -25,6 +25,7 @@ import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
 import { type ComputedDocument, computeDocument, type LineInput } from "@techaust/core/tax";
 import { invoiceSealOf } from "@techaust/db/documents";
 import type { InvoiceIssuerSnapshot, RecipientSnapshot } from "@techaust/db/issue";
+import { rgbaPng } from "../../../testing/src/png.ts";
 import { sha256Hex } from "../../src/hash.ts";
 import { buildInvoiceEnvelope } from "../../src/invoice-envelope.ts";
 import type { InvoiceEnvelope, InvoiceHeader, VerifiedSignature } from "../../src/invoice-types.ts";
@@ -427,22 +428,6 @@ const SPECS: Record<InvoiceLayoutFixture, Spec> = {
 
 // ---- a drawn sample signature (a made-up stroke, not anyone's signature) ------------------------------------------------------------
 
-const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
-  let c = n;
-  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-  return c >>> 0;
-});
-const crc32 = (bytes: Uint8Array) => {
-  let c = 0xffffffff;
-  for (const b of bytes) c = (CRC_TABLE[(c ^ b) & 0xff] as number) ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
-};
-const u32 = (n: number) => Uint8Array.of(n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255);
-function chunk(type: string, data: Uint8Array): Uint8Array {
-  const body = new Uint8Array([...new TextEncoder().encode(type), ...data]);
-  return new Uint8Array([...u32(data.length), ...body, ...u32(crc32(body))]);
-}
-
 /** A 360 × 108 RGBA PNG of an ink stroke on transparent: deterministic, so the screenshots stay stable. */
 function sampleSignaturePng(): Uint8Array {
   const w = 360;
@@ -466,25 +451,8 @@ function sampleSignaturePng(): Uint8Array {
     dot(x, y, 2);
   }
   for (let t = 0; t <= 1; t += 0.001) dot(60 + t * 250, 88 - t * 6, 1);
-  const raw = new Uint8Array(h * (w * 4 + 1));
-  for (let y = 0; y < h; y++) {
-    raw[y * (w * 4 + 1)] = 0;
-    raw.set(px.subarray(y * w * 4, (y + 1) * w * 4), y * (w * 4 + 1) + 1);
-  }
-  const ihdr = new Uint8Array([...u32(w), ...u32(h), 8, 6, 0, 0, 0]);
-  return new Uint8Array([
-    0x89,
-    0x50,
-    0x4e,
-    0x47,
-    0x0d,
-    0x0a,
-    0x1a,
-    0x0a,
-    ...chunk("IHDR", ihdr),
-    ...chunk("IDAT", new Uint8Array(deflateSync(raw, { level: 9 }))),
-    ...chunk("IEND", new Uint8Array()),
-  ]);
+  // the shared test encoder (test-hardening 4c; the bytes are unchanged, pinned by packages/pdf/test/sample-signature.test.ts)
+  return rgbaPng(w, h, px, (raw) => deflateSync(raw, { level: 9 }));
 }
 
 export const SAMPLE_SIGNATURE_PNG = sampleSignaturePng();

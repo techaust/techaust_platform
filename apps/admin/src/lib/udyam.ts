@@ -1,9 +1,10 @@
 // The Udyam registration in Settings › Company (T10, rt2; ADM-SET-01): the words of 07-ZC lines 4 and 5 (APPROVED by the owner, 2026-10-31) and the pure rule
-// the form follows. The form trims and upper-cases what is typed (L5) and always sends the key (L8): the block, or null to leave the line off. The shape is
+// the form follows. The form drops every space (ends and inside) and upper-cases what is typed (L5; core `normaliseUdyamNumber`) and always sends the key (L8): the block, or null to leave the line off. The shape is
 // core's (`isUdyamNumber`, the same check the settings schema refines with); the category words are the PDF's own (`@techaust/pdf/copy`, L3), so the select and the
 // printed line never differ. Printing it is the owner's choice, not a legal requirement: Researched 2026-10-30, MSMED ss.15–16 (08-C RB-39(a)).
 import {
   isUdyamNumber,
+  normaliseUdyamNumber,
   UDYAM_CATEGORIES,
   UDYAM_NUMBER_ERROR,
   type Udyam,
@@ -28,8 +29,8 @@ export const UDYAM_OPTIONS: readonly { value: UdyamCategory; label: string }[] =
   }),
 );
 
-/** What is typed, as the form sends it: trimmed and in capitals. */
-export const normaliseUdyam = (typed: string): string => typed.trim().toUpperCase();
+/** What is typed, as the form sends it: core's `normaliseUdyamNumber` (no whitespace anywhere, in capitals). */
+export const normaliseUdyam = normaliseUdyamNumber;
 
 /** The form's two fields → the stored value: null when the number is empty (no line), the block when it has the canonical shape, else 07-ZC's error. */
 export function udyamOf(

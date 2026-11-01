@@ -7,6 +7,7 @@
 // Idempotency: the lead's id is derived from the message (ref as first made + submittedAt + ipHash), so a redelivery is
 // found by id even after a reference clash gave the lead a different `ref`. Counting happens in the same transaction as
 // the insert, so a retry of a message that already made its lead never counts again.
+
 import {
   budgetBandLabel,
   type Currency,
@@ -25,6 +26,7 @@ import {
   TOOL_LABELS,
   uuidv7,
 } from "@techaust/core";
+import { firstNameOf } from "@techaust/core/offers";
 import { CATALOGUE } from "@techaust/db/catalogue";
 import { countStatements, limitKeys, withinLimitsSql } from "./form-limits.ts";
 import { logEvent } from "./log.ts";
@@ -90,7 +92,7 @@ function emailsFor(env: Env, m: LeadMessage, ref: string): EmailMessage[] {
       template: "lead.acknowledgement",
       to: m.payload.email,
       data: {
-        first_name: m.payload.name.split(/\s+/)[0] ?? m.payload.name,
+        first_name: firstNameOf(m.payload.name),
         service_name: data.service_name ?? "",
         ref,
         cal_link: "",

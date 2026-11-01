@@ -5,7 +5,8 @@
 //
 //   offer.send     one recipient (a `document_sends` row): refuses when the contact lost access, the offer is not open any more or past its last
 //                  valid day; waits (returns "pdf_missing", the message is retried) while the PDF does not exist; else mints the link and queues the
-//                  email (with the PDF attached when the row says so). A redelivery mints another link and never revokes the first.
+//                  email (with the PDF attached when the row says so). A redelivery mints another link and never revokes the first; after "Revoke links"
+//                  (which cancels only the sends without a link) a send with a revoked link of its own mints nothing and is marked not sent.
 //   offer.decided  the bell for the sender and the active owners (accepted or declined); nothing for the client.
 //   offer.accepted the confirmation emails, once the certificate exists: to the accepting contact (with a confirmation link) and to TecHaust.
 //   approval.notify the M4.3 approval emails: requested to the active owners, decided to the requester.
@@ -31,6 +32,7 @@ import { INVOICE_FLOW_TYPES, isInvoiceFlowType } from "@techaust/core/invoices";
 import {
   ATTACHMENT_KEY,
   confirmationLinkExpiry,
+  DECLINE_REASON_LABELS,
   firstNameOf,
   mintOfferToken,
   offerLinkExpiry,
@@ -38,7 +40,7 @@ import {
   todayIst,
 } from "@techaust/core/offers";
 import type { OfferSweepMessage, PdfCertificateMessage } from "@techaust/core/pdf-jobs";
-import { portalBase } from "./billing-shared.ts";
+import { markNotSent, portalBase } from "./billing-shared.ts";
 import { logEvent } from "./log.ts";
 
 /** The jobs Env (PORTAL_URL arrived with M4.4 phase 2). */
@@ -49,14 +51,8 @@ export type OfferDecidedResult = "noted" | "missing" | "ignored" | "invalid";
 export type OfferAcceptedResult = "queued" | "missing" | "certificate_missing" | "none" | "invalid";
 export type ApprovalNotifyResult = "queued" | "missing" | "none" | "ignored" | "invalid";
 
-/** 07-N §3's words for a decline's reason codes (the portal and admin show the same). */
-const DECLINE_WORDS: Record<string, string> = {
-  price: "The price doesn't fit our budget",
-  timing: "The timing doesn't work for us",
-  other_option: "We've chosen another option",
-  not_needed: "We've decided not to go ahead",
-  other: "Other",
-};
+/** 07-N §3's words for a decline's reason codes: core's `DECLINE_REASON_LABELS`, the list the portal and admin show. */
+const DECLINE_WORDS: Readonly<Record<string, string>> = DECLINE_REASON_LABELS;
 /** Basis points as a percentage ("12.5", "15"), as the admin shows them. */
 const percentText = (bp: number) => {
   const frac = String(bp % 100)
@@ -114,13 +110,6 @@ type SendRow = {
   contact_email: string | null;
 };
 
-/** Marks a send as never going out (set once, by the trigger's rule); the offer page then shows `not_sent`. */
-async function markNotSent(env: OfferEnv, sendId: string, now: number): Promise<void> {
-  await env.DB.prepare("UPDATE document_sends SET cancelled_at = ?2 WHERE id = ?1 AND cancelled_at IS NULL")
-    .bind(sendId, now)
-    .run();
-}
-
 export async function processOfferSend(
   env: OfferEnv,
   body: unknown,
@@ -174,22 +163,24 @@ export async function processOfferSend(
     return "pdf_missing";
   }
   const { token, hash } = await mintOfferToken();
-  // One batch: the link (only while the contact is still live, the send is not cancelled and the offer was not erased in between) and the row's queued
-  // stamp (set once).
+  // One batch: the link (only while the contact is still live, the send is not cancelled, no link of this send was revoked and the offer was not erased
+  // in between) and the row's queued stamp (set once). The revoke cancels only the sends without a link, so a retry after an email queue failure, or a
+  // redelivery, would otherwise mint a live link after it.
   const [linked] = await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO offer_links (token_hash, send_id, document_id, version_group_id, client_id, contact_id, email, purpose, expires_at, created_at)
        SELECT ?1, s.id, s.document_id, s.version_group_id, s.client_id, c.id, lower(c.email), 'offer', ?3, ?4
        FROM document_sends s JOIN contacts c ON c.id = s.contact_id AND c.client_id = s.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL
        JOIN documents d ON d.id = s.document_id AND d.redacted_at IS NULL
-       WHERE s.id = ?2 AND s.cancelled_at IS NULL`,
+       WHERE s.id = ?2 AND s.cancelled_at IS NULL
+         AND NOT EXISTS (SELECT 1 FROM offer_links r WHERE r.send_id = s.id AND r.revoked_at IS NOT NULL)`,
     ).bind(hash, sendId, offerLinkExpiry(row.valid_until), now),
     env.DB.prepare("UPDATE document_sends SET queued_at = coalesce(queued_at, ?2) WHERE id = ?1").bind(
       sendId,
       now,
     ),
   ]);
-  // Nothing is emailed unless the link row exists: a contact who lost access, or links revoked, between the read and the write.
+  // Nothing is emailed unless the link row exists: a contact who lost access, or links revoked (before the read or after it), between the read and the write.
   if (linked?.meta.changes !== 1) {
     logEvent("offer_send.refused", { why: "link_not_written" });
     await markNotSent(env, sendId, now);

@@ -399,6 +399,84 @@ describe("the PDF and redeliveries", () => {
   });
 });
 
+/** What "Revoke links" does to the links (admin `invoice-send.ts`): every live link of the document is revoked; a send that has a link is NOT cancelled. */
+const revokeLinks = (docId: string, t: number) =>
+  run("UPDATE doc_access_tokens SET revoked_at = ?2 WHERE document_id = ?1 AND revoked_at IS NULL", docId, t);
+const throwingQueue = {
+  send: async () => {
+    throw new Error("queue down");
+  },
+  sendBatch: async () => {
+    throw new Error("queue down");
+  },
+};
+
+describe("a revoke between a failed queue send and its retry (item 5 #1) [ADM-INV-15, POR-06]", () => {
+  it("the link was minted, the email queue failed, the links were revoked: the retry mints no live link, emails nothing and marks the send not sent", async () => {
+    const w = await world();
+    await expect(processInvoiceSend(makeEnv({ EMAIL_QUEUE: throwingQueue }), msg(w), NOW)).rejects.toThrow(
+      "queue down",
+    );
+    expect(await tokens(w.doc.id)).toHaveLength(1);
+    expect((await sendRow(w.send))?.cancelled_at).toBeNull();
+    await revokeLinks(w.doc.id, NOW + 10);
+    expect(await processInvoiceSend(makeEnv(), msg(w), NOW + 60_000)).toBe("refused");
+    expect(queuedEmails()).toEqual([]);
+    const rows = await tokens(w.doc.id);
+    expect(rows).toHaveLength(1);
+    expect(rows.every((r) => r.revoked_at !== null)).toBe(true);
+    expect((await sendRow(w.send))?.cancelled_at).toBe(NOW + 60_000);
+  });
+
+  it("a plain redelivery after a successful send and a revoke mints no live link (no '1 live link' after the revoke)", async () => {
+    const w = await world();
+    expect(await processInvoiceSend(makeEnv(), msg(w), NOW)).toBe("queued");
+    await revokeLinks(w.doc.id, NOW + 10);
+    expect(await processInvoiceSend(makeEnv(), msg(w), NOW + 1000)).toBe("refused");
+    const live = await all(
+      "SELECT 1 FROM doc_access_tokens WHERE document_id = ?1 AND revoked_at IS NULL",
+      w.doc.id,
+    );
+    expect(live).toEqual([]);
+    expect(queuedEmails()).toHaveLength(1); // only the first, before the revoke
+  });
+
+  it("a redelivery refused after a revoke keeps an emailed send's state: the log row exists, so the send is never marked cancelled", async () => {
+    const w = await world();
+    expect(await processInvoiceSend(makeEnv(), msg(w), NOW)).toBe("queued");
+    // What the email consumer writes once it takes the email (status as after SES accepted it).
+    await run(
+      "INSERT INTO email_log (id, to_email, template, entity_type, entity_id, status, created_at, updated_at) VALUES (?1, 'a@example.test', 'invoice.sent', 'document_send', ?2, 'sent', ?3, ?3)",
+      uuidv7(),
+      w.send,
+      NOW + 5,
+    );
+    await revokeLinks(w.doc.id, NOW + 10);
+    expect(await processInvoiceSend(makeEnv(), msg(w), NOW + 1000)).toBe("refused");
+    expect((await sendRow(w.send))?.cancelled_at).toBeNull();
+    expect(queuedEmails()).toHaveLength(1);
+  });
+
+  it("another send of the same document whose link was never revoked still goes (the rule is per send)", async () => {
+    const w = await world();
+    await processInvoiceSend(makeEnv(), msg(w), NOW);
+    await revokeLinks(w.doc.id, NOW + 10);
+    const second = await mkSend(w.doc, w.clientId, w.contact, {
+      createdBy: w.owner.id,
+      kind: "resend",
+      attach: false,
+    });
+    expect(await processInvoiceSend(makeEnv(), { kind: "invoice.send", sendId: second }, NOW + 1000)).toBe(
+      "queued",
+    );
+    const live = await all<{ send_id: string }>(
+      "SELECT send_id FROM doc_access_tokens WHERE document_id = ?1 AND revoked_at IS NULL",
+      w.doc.id,
+    );
+    expect(live).toEqual([{ send_id: second }]);
+  });
+});
+
 describe("through the queue consumer", () => {
   const consume = async (body: unknown, attempts = 1) => {
     const out: string[] = [];

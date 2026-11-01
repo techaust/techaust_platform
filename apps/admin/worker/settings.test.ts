@@ -675,6 +675,30 @@ describe("bank details: masked everywhere [ADM-SET-02, ADM-G-06]", () => {
     expect((await putBank("/settings/bank/EUR", o.cookie, body())).status).toBe(404);
   });
 
+  it("a save in the same millisecond as the row's last write moves updated_at past it, so a second save from that form is 409 (test-hardening E) [ADM-SET-02]", async () => {
+    await reset();
+    const o = await owner();
+    expect((await putBank("/settings/bank/INR", o.cookie, body())).status).toBe(200);
+    const loaded = (await json(await call("/settings/bank", { cookie: o.cookie }))).accounts[0]
+      .updatedAt as number;
+    try {
+      vi.useFakeTimers({ toFake: ["Date"], now: loaded });
+      const first = await putBank("/settings/bank/INR", o.cookie, {
+        ...body({ bankName: "First editor" }),
+        expectedUpdatedAt: loaded,
+      });
+      expect(await json(first)).toMatchObject({ ok: true, changed: true, updatedAt: loaded + 1 });
+      const second = await putBank("/settings/bank/INR", o.cookie, {
+        ...body({ bankName: "Second editor" }),
+        expectedUpdatedAt: loaded,
+      });
+      expect(second.status).toBe(409);
+      expect((await json(second)).error.code).toBe("stale_version");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("a stale save is refused: two forms loaded from the same row, the second save is 409 and changes nothing [ADM-SET-02]", async () => {
     await reset();
     const o = await owner();

@@ -89,6 +89,8 @@ describe("src/gst: pure and deterministic", () => {
       "../gstin.ts",
       "../numbering.ts",
       "../tax/types.ts",
+      // constants only, no imports of its own (test-hardening item 3: the realisation bounds held once)
+      "../realisation-bounds.ts",
       // types only (checked below): the summary and statement shapes
       "../invoices.ts",
       "../statement.ts",

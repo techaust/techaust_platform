@@ -5,7 +5,7 @@ import { CARE_LINE_WORDS, type CareLineWords } from "@techaust/core/care-billing
 import { toIst } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { draftCarePlan, issueCareDraft } from "./care-billing.ts";
+import { draftCarePlan, issueCareDraft, PDF_QUEUE_UNREACHABLE } from "./care-billing.ts";
 import { BillingJobs } from "./finance.ts";
 import { mkPlan } from "./test-care.ts";
 import { mkItem } from "./test-catalogue.ts";
@@ -252,6 +252,48 @@ describe("draftCarePlan: one draft per plan and period [ADM-CARE-02, LD59]", () 
     expect(await docsOf(w.planId)).toEqual([]);
   });
 
+  it("a client anonymised between the read and the write: nothing is written (the period is not marked billed, no record, no draft, no audit row) and the answer is 'changed' (test-hardening item 5 #4)", async () => {
+    const w = await world();
+    clock(at("2026-11-05"));
+    const before = await one<{ last_billed_period: string | null }>(
+      "SELECT last_billed_period FROM care_plans WHERE id = ?",
+      w.planId,
+    );
+    const drafts = await one("SELECT count(*) AS n FROM audit_log WHERE action = 'care_invoice.draft'");
+    let batches = 0;
+    const racing = new Proxy(env.DB, {
+      get(target, key) {
+        if (key === "batch")
+          return async (stmts: D1PreparedStatement[]) => {
+            batches++;
+            // the second batch is the write (the first is the read)
+            if (batches === 2)
+              await target
+                .prepare("UPDATE clients SET anonymised_at = ?2 WHERE id = ?1")
+                .bind(w.clientId, Date.now())
+                .run();
+            return target.batch(stmts);
+          };
+        const v = Reflect.get(target, key);
+        return typeof v === "function" ? v.bind(target) : v;
+      },
+    });
+    const r = await draft(w, { ...env, DB: racing } as Env);
+    expect(r).toMatchObject({ result: "skipped", why: "changed" });
+    expect(batches).toBe(2); // the read and the write (an `already_billed` answer would read again)
+    expect(
+      await one<{ last_billed_period: string | null }>(
+        "SELECT last_billed_period FROM care_plans WHERE id = ?",
+        w.planId,
+      ),
+    ).toEqual(before);
+    expect(await rows("SELECT document_id FROM care_invoices WHERE care_plan_id = ?", w.planId)).toEqual([]);
+    expect(await docsOf(w.planId)).toEqual([]);
+    expect(await one("SELECT count(*) AS n FROM audit_log WHERE action = 'care_invoice.draft'")).toEqual(
+      drafts,
+    );
+  });
+
   it("not billed: a plan that has not started, one paused or cancelled at the period start; a plan that starts today is billed in full for its first, clamped period", async () => {
     const future = await world({ start: "2026-12-01" });
     clock(at("2026-11-05"));
@@ -476,6 +518,49 @@ describe("issueCareDraft: the system issues only what the Owner authorised [LD58
       number: r.number,
     });
     expect(await rows("SELECT id FROM document_sends WHERE document_id = ?", d.documentId)).toHaveLength(1);
+  });
+
+  it("the PDF queue can't be reached after the issue: the call throws so care.issue is retried, and the retry (already issued, no PDF) asks again (test-hardening item 5 #3)", async () => {
+    const w = await world();
+    clock(at("2026-11-05"));
+    const d = await draft(w);
+    const down = withEnv(env, {
+      PDF_QUEUE: {
+        send: async () => {
+          throw new Error("queue down");
+        },
+        sendBatch: async () => undefined,
+      },
+    });
+    await expect(issueCareDraft(down, { documentId: d.documentId as string })).rejects.toThrow(
+      PDF_QUEUE_UNREACHABLE,
+    );
+    // the issue itself committed: the invoice is frozen and its auto send is waiting for the PDF
+    const issued = await one<{ frozen_at: number | null; number_display: string | null }>(
+      "SELECT frozen_at, number_display FROM documents WHERE id = ?",
+      d.documentId,
+    );
+    expect(issued?.frozen_at).not.toBeNull();
+    // the retry: already issued, the PDF is asked for again
+    const q = pdfQueue();
+    expect(await issueCareDraft(q.env, { documentId: d.documentId as string })).toMatchObject({
+      result: "already_issued",
+      number: issued?.number_display,
+    });
+    expect(q.sent).toEqual([{ v: 1, kind: "pdf.snapshot", documentId: d.documentId, reason: "send" }]);
+    // a retry while the queue is still down throws again (so the message keeps retrying)
+    await expect(issueCareDraft(down, { documentId: d.documentId as string })).rejects.toThrow(
+      PDF_QUEUE_UNREACHABLE,
+    );
+    // once the PDF exists, a redelivery asks for nothing
+    await env.DB.prepare("UPDATE documents SET pdf_sha256 = ?2, pdf_r2_key = ?3 WHERE id = ?1")
+      .bind(d.documentId, "a".repeat(64), `invoices/${d.documentId}.pdf`)
+      .run();
+    const q2 = pdfQueue();
+    expect(await issueCareDraft(q2.env, { documentId: d.documentId as string })).toMatchObject({
+      result: "already_issued",
+    });
+    expect(q2.sent).toEqual([]);
   });
 
   it("a billing contact who may not see finance is nobody to email: issued, notEmailed, no sends, no reminders [POR-03, review H1]", async () => {

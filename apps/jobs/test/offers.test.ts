@@ -1255,6 +1255,67 @@ describe("revoked links stop the sends (M1) [ADM-PROP-07]", () => {
   });
 });
 
+describe("a revoke between a failed queue send and its retry (test-hardening item 5 #1) [ADM-PROP-07]", () => {
+  // What "Revoke links" does (admin `document-links.ts`): every live link of the offer is revoked; a send that already has a link is NOT cancelled.
+  const revoke = (w: World, t: number) =>
+    run(
+      "UPDATE offer_links SET revoked_at = ?2 WHERE version_group_id = ?1 AND revoked_at IS NULL",
+      w.doc,
+      t,
+    );
+  const live = (w: World) =>
+    all("SELECT 1 FROM offer_links WHERE send_id = ? AND revoked_at IS NULL", w.send);
+  const cancelledAt = async (w: World) =>
+    (
+      await one<{ cancelled_at: number | null }>(
+        "SELECT cancelled_at FROM document_sends WHERE id = ?",
+        w.send,
+      )
+    )?.cancelled_at;
+
+  it("the link was minted, the email queue failed, the links were revoked: the retry mints no live link, emails nothing and marks the send not sent", async () => {
+    const w = await world();
+    const failing = makeEnv({
+      EMAIL_QUEUE: {
+        send: async () => {
+          throw new Error("queue down");
+        },
+      },
+    });
+    await expect(processOfferSend(failing, sendMsg(w), NOW)).rejects.toThrow("queue down");
+    expect(await live(w)).toHaveLength(1);
+    expect(await cancelledAt(w)).toBeNull();
+    await revoke(w, NOW + 10);
+    expect(await processOfferSend(makeEnv(), sendMsg(w), NOW + 60_000)).toBe("refused");
+    expect(queued).toEqual([]);
+    expect(await live(w)).toEqual([]);
+    expect(await cancelledAt(w)).toBe(NOW + 60_000);
+  });
+
+  it("a redelivery refused after a revoke keeps an emailed send's state: the log row exists, so the send is never marked cancelled", async () => {
+    const w = await world();
+    expect(await processOfferSend(makeEnv(), sendMsg(w), NOW)).toBe("queued");
+    await run(
+      "INSERT INTO email_log (id, to_email, template, entity_type, entity_id, status, created_at, updated_at) VALUES (?1, 'a@example.test', 'proposal.sent', 'document_send', ?2, 'sent', ?3, ?3)",
+      uuidv7(),
+      w.send,
+      NOW + 5,
+    );
+    await revoke(w, NOW + 10);
+    expect(await processOfferSend(makeEnv(), sendMsg(w), NOW + 1000)).toBe("refused");
+    expect(await cancelledAt(w)).toBeNull();
+  });
+
+  it("a plain redelivery after a successful send and a revoke mints no live link", async () => {
+    const w = await world();
+    expect(await processOfferSend(makeEnv(), sendMsg(w), NOW)).toBe("queued");
+    await revoke(w, NOW + 10);
+    expect(await processOfferSend(makeEnv(), sendMsg(w), NOW + 1000)).toBe("refused");
+    expect(await live(w)).toEqual([]);
+    expect(queued).toHaveLength(1); // only the first, before the revoke
+  });
+});
+
 describe("the email goes only when the link row was written (L3) [ADM-PROP-07]", () => {
   it("a contact who loses access between the read and the write gets no email and no link; the row is marked not sent", async () => {
     const w = await world();
