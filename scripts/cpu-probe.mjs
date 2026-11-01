@@ -847,6 +847,21 @@ const ROWS_KEPT = { front: 2, api: 2, finance: 1 };
 
 const FIXTURE_NAMES = { front: "FRONT_WARM", api: "API_WARM", finance: "FINANCE_WARM" };
 /**
+ * Review finding 2: the expiry columns the fixtures hold (a session's idle and absolute expiry, its step-up window, any `*_expires_at`) are written as this
+ * far-future instant (2100-01-01T00:00:00Z), never as the capture time plus an offset, so the dry run's signed-in calls answer whatever the clock reads (0 in
+ * workerd's start-up today) and the fixtures never go stale with time. apps/admin/worker/warm-routes.test.ts holds the same value.
+ */
+export const WARM_FAR_FUTURE_MS = Date.UTC(2100, 0, 1);
+const EXPIRY_COLUMN = /(?:^|_)expires_at$|^step_up_until$/;
+/** A captured row with its expiry columns moved to WARM_FAR_FUTURE_MS (a number only: a null expiry stays null). */
+export function farFutureExpiries(row) {
+  if (!row || Array.isArray(row) || typeof row !== "object") return row;
+  const out = { ...row };
+  for (const [k, v] of Object.entries(out))
+    if (EXPIRY_COLUMN.test(k) && typeof v === "number") out[k] = WARM_FAR_FUTURE_MS;
+  return out;
+}
+/**
  * `--write-fixtures` (CPU warm-up (b)1): each admin Worker's start-up dry run replays its hot routes on made-up rows. This captures, for every HTTP case of the
  * front, API and finance Workers, the request and every D1 statement of its first call on the probe's sample set (made-up: "(sample)" names, @example.test
  * addresses, the e2e sample values), and writes apps/admin/worker/warm-fixtures/<worker>.ts: the calls in case order and the answer book (SQL key -> parameters,
@@ -885,7 +900,8 @@ function writeFixtures(work, seedDir) {
         .slice(0, ROWS_KEPT[c.worker])
         .map((r) =>
           r && !Array.isArray(r) && r.frozen_at === null && "computed" in r ? { ...r, computed: null } : r,
-        );
+        )
+        .map(farFutureExpiries);
       const key = sqlKey(st.sql);
       out[c.worker].rows[key] ??= [];
       const list = out[c.worker].rows[key];
