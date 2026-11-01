@@ -26,6 +26,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -140,7 +141,42 @@ async function warmNode() {
   crypto.getRandomValues(new Uint8Array(8));
   new URL("http://localhost/a/b?c=d").searchParams.get("c");
   new TextDecoder().decode(new TextEncoder().encode("x"));
+  // Node's fetch classes are JavaScript (undici), workerd's are native: a throwaway Hono app (its OWN copy from node_modules, so none of the bundle's
+  // functions are compiled by it) drives the Headers, Request and Response paths a Hono answer takes, so their first-use cost isn't charged to the Worker.
+  const { Hono } = await import(pathToFileURL(adminRequire.resolve("hono/tiny")).href);
+  const { secureHeaders } = await import(pathToFileURL(adminRequire.resolve("hono/secure-headers")).href);
+  const app = new Hono().basePath("/api");
+  app.use(secureHeaders({ strictTransportSecurity: "max-age=1", permissionsPolicy: { camera: [] } }));
+  app.use(async (c, next) => {
+    c.req.header("cookie");
+    c.req.header("origin");
+    await next();
+    c.header("Cache-Control", "no-store");
+  });
+  app.get("/a/:id", (c) => c.json({ id: c.req.param("id"), list: [1, 2] }));
+  app.post("/a/:id", async (c) => {
+    const body = await c.req.json();
+    c.header("Set-Cookie", "x=y; Path=/; HttpOnly");
+    return c.json({ body }, 201);
+  });
+  app.notFound((c) => c.json({ error: "nf" }, 404));
+  for (let i = 0; i < 3; i++) {
+    for (const r of [
+      new Request("http://localhost/api/a/1", { headers: { Cookie: "a=b", Origin: "http://localhost" } }),
+      new Request("http://localhost/api/a/2", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Content-Length": "7", Origin: "http://localhost" },
+        body: '{"a":1}',
+      }),
+      new Request("http://localhost/api/none"),
+    ]) {
+      const res = await app.fetch(r, {}, { waitUntil() {}, passThroughOnException() {} });
+      res.headers.getSetCookie();
+      await res.text();
+    }
+  }
 }
+const adminRequire = createRequire(at("apps/admin/package.json"));
 
 let nodeWarm;
 async function loadWorker(worker) {
