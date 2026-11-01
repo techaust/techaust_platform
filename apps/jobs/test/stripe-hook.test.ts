@@ -6,7 +6,7 @@
 import { exports, env as realEnv } from "cloudflare:workers";
 import { stripeTestHeader } from "@techaust/core/stripe";
 import { describe, expect, it } from "vitest";
-import { processGateway } from "../src/gateway.ts";
+import { DEAD_LETTER_BELL_STRIPE, processGateway, processGatewayDeadLetter } from "../src/gateway.ts";
 import { HOOK_MAX_BYTES } from "../src/hooks/shared.ts";
 import { BELL_SIGNATURES_STRIPE, stripeHook } from "../src/hooks/stripe.ts";
 import { handleQueue } from "../src/queue.ts";
@@ -239,6 +239,7 @@ describe("POST /stripe [JOB-HOOK-01..03, L5]", () => {
   });
 
   it("the previous secret is accepted during a rotation; an unreadable signed body is 400 invalid_event, not counted", async () => {
+    const before = await failures();
     const e = eventBody();
     const res = await signed(e.body, {
       secret: OTHER,
@@ -248,7 +249,7 @@ describe("POST /stripe [JOB-HOOK-01..03, L5]", () => {
     const bad = await signed('{"id":"evt_x"}');
     expect(bad.status).toBe(400);
     expect(((await bad.json()) as { error: { code: string } }).error.code).toBe("invalid_event");
-    expect(await failures()).toBe(0);
+    expect(await failures()).toBe(before);
   });
 
   it("a queue failure: 500 with the row kept", async () => {
@@ -367,5 +368,41 @@ describe("gateway.refresh and the sweep [L13, F4]", () => {
       ),
     ).toBe(true);
     expect(logs.join("\n")).toContain("refreshes");
+  });
+});
+
+describe("a Stripe event's dead letter [run file D]", () => {
+  it("the event failed with one dead_letter item, and the owners' bell names Stripe", async () => {
+    await staff("owner");
+    const id = `dlq-stripe-${Date.now()}`;
+    await realEnv.DB.prepare(
+      "INSERT INTO webhook_events (id, provider, event_id, event_type, received_at, status, attempts, facts) VALUES (?1, 'stripe', ?2, 'checkout.session.completed', ?3, 'received', 0, ?4)",
+    )
+      .bind(
+        id,
+        `evt_${id.replace(/-/g, "")}`,
+        Date.now(),
+        JSON.stringify({ linkId: "cs_test_DLQ1", checkoutId: "x" }),
+      )
+      .run();
+    await processGatewayDeadLetter(makeEnv(), { kind: "gateway.event", eventId: id } as never);
+    expect(
+      await realEnv.DB.prepare("SELECT status FROM webhook_events WHERE id = ?1").bind(id).first(),
+    ).toEqual({
+      status: "failed",
+    });
+    const item = await realEnv.DB.prepare(
+      "SELECT id, provider FROM review_items WHERE webhook_event_id = ?1 AND kind = 'dead_letter'",
+    )
+      .bind(id)
+      .first<{ id: string; provider: string }>();
+    expect(item?.provider).toBe("stripe");
+    expect(
+      (
+        await realEnv.DB.prepare("SELECT title FROM notifications WHERE entity_id = ?1 LIMIT 1")
+          .bind(item?.id)
+          .first<{ title: string }>()
+      )?.title,
+    ).toBe(DEAD_LETTER_BELL_STRIPE);
   });
 });

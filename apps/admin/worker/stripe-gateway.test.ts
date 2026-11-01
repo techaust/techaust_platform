@@ -525,6 +525,13 @@ describe("a USD proforma paid by card waits for the Owner [Q1 A, ADM-INV-10; 08-
     expect(res.status, await res.clone().text()).toBe(201);
     expect((await json(res)).type).toBe("export_invoice");
     expect((await stripePaymentOf(piOf(sessionId)))?.status).toBe("confirmed");
+    // the same batch resolves its fx_rate_needed item
+    expect(
+      await one<{ status: string; resolution: string }>(
+        "SELECT status, resolution FROM review_items WHERE payment_id = ?1",
+        p?.id,
+      ),
+    ).toEqual({ status: "resolved", resolution: "advance_issued" });
   });
 });
 

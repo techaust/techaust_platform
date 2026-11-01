@@ -28,6 +28,9 @@ import { logEvent } from "./log.ts";
 /** The bell of a dead-lettered gateway message (07-ZI S20 and S22: "A payment needs review: {reason}."; staff words, lead under the owner's delegation). */
 export const DEAD_LETTER_BELL =
   "A payment needs review: Razorpay couldn't be reached to confirm this payment. Try again.";
+/** M6.3: the same bell for a Stripe event (07-ZM S19). */
+export const DEAD_LETTER_BELL_STRIPE =
+  "A payment needs review: Stripe couldn't be reached to confirm this payment. Try again.";
 export const REVIEW_LINK = "/payments?tab=review";
 
 /** A `gateway.advance` is tried at most this many times for a proforma that changed meanwhile (early check 2, finding 1). */
@@ -114,16 +117,21 @@ export async function processGatewayDeadLetter(
   const bell = { title: DEAD_LETTER_BELL, link: REVIEW_LINK };
   if (body.kind === "gateway.event") {
     const m = gatewayEventMessage.safeParse(body);
-    if (m.success)
+    if (m.success) {
+      // M6.3: the bell names the event's own gateway (07-ZM S19: the M6.2 line with the gateway's name).
+      const row = await env.DB.prepare("SELECT provider FROM webhook_events WHERE id = ?1")
+        .bind(m.data.eventId)
+        .first<{ provider: string }>();
       await env.DB.batch(
         gatewayDeadLetterStatements(env.DB, {
           kind: "event",
           eventId: m.data.eventId,
           reviewId: uuidv7(),
           now,
-          bell,
+          bell: row?.provider === "stripe" ? { title: DEAD_LETTER_BELL_STRIPE, link: REVIEW_LINK } : bell,
         }),
       );
+    }
   } else if (body.kind === "gateway.advance") {
     const m = gatewayAdvanceMessage.safeParse(body);
     if (m.success)

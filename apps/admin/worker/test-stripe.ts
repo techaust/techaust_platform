@@ -74,7 +74,7 @@ let seq = Math.floor(Date.now() / 1000) % 100_000;
 /** An issued USD document written straight in (export invoice by default), USD 500 with its balance. */
 export async function usdDoc(
   clientId: string,
-  o: { type?: string; currency?: "USD" | "INR"; total?: number; balance?: number } = {},
+  o: { type?: string | undefined; currency?: "USD" | "INR"; total?: number; balance?: number } = {},
 ): Promise<string> {
   const id = uuidv7();
   const n = ++seq;
