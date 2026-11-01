@@ -44,7 +44,53 @@ Owner's request: docs/13 row 2026-10-31 "`/orchestrate`: a project skill …" an
 **Out of scope:** any change to `tools/watch.sh`, `agent-slots.mjs` (the per-session 2-agent cap stays a follow-up), workflows, CLAUDE.md, the record (12, 13, CHANGELOG), `.claude/settings.json`, agents.
 
 ## Builder report
-(builder)
+Builder (claude-opus-5-5, high), 2026-11-01, sub-branch `fix/orchestrate-skill-watcher` from `origin/feat/orchestrate-skill` (fast-forwarded to 873cfc2 before the first commit; separate files from the lead's).
+
+**Skills.** None loaded: no row of docs/14 §9 fits a plain Node CLI with Node tests. The Cloudflare rows (`workers-best-practices`, `wrangler`, `workers-profiling`) cover Worker code, bindings and CPU budgets, none of which this touches (and they aren't installed in this cloud session). `orchestrate` (added mid-run by the lead) is the main session's run procedure, not a build skill; I read its §4/§5 instead to check the watcher's flags, lines and exit rules against it (they match). `simplify`/`code-review` belong to the review step.
+
+**Files.**
+- `tools/watch-cloud.mjs` (new): the watcher to the brief's contract. Exports `parseRun`, `isRefName`, `parseLsRemote`, `parseStatus`, `classify`, `ACTION_KINDS`, `initialState`, `isDone`, `quietCheck`, `diffTask`, `formatIst`, `formatEvent`, `tokenPathFor`, `writeToken`, `checkToken`, `removeToken`, `Superseded`, `spawnGit`, `readHead`, `createWatcher` (`tick`, `run`, `allDone`, `states`; injected `git`, `now`, `sleep`, `out`, `err`), `statusTable`, `parseArgs`, `main`, `DEFAULTS`.
+- `apps/web/test/watch-cloud.test.ts` (new): 69 tests (Node project), git always faked except two CLI runs (`stop`, and the bad run file that exits 2 before any git call, with an empty `PATH`).
+- this run file (this section).
+
+**Engineering choices inside the brief** (for the reviewer; none is an owner decision):
+1. Git calls are `execFile("git", [...])` (no shell), a 30 s timeout, `windowsHide`, `GIT_TERMINAL_PROMPT=0` (a credential prompt would otherwise hang until the timeout). The remote must be a plain remote name (`[A-Za-z0-9][A-Za-z0-9._-]*`) and branches can't start with `-`, so nothing in the run file can be read by git as an option; `ls-tree` takes the path after `--`.
+2. A failed `git show <sha>:<runFile>` is told apart from "file not at that commit" by `git ls-tree --name-only <sha> -- <runFile>` (empty answer = `(no run file yet)`); a timeout or any other failure leaves the head unseen. The committer time comes from `git show -s --format=%ct <sha>`. So a changed head costs fetch + show + show -s (+ ls-tree only when the show failed); an unchanged tick is one ls-remote.
+3. A run file with no Status line in its first 40 lines shows `(no Status line)` (class working).
+4. Status texts in lines are cut at 120 characters (`…`), keeping a PR URL that the cut would lose, so a line stays short.
+5. `QUIET` is not printed for a task that is done (PR READY or merged): it has already asked for the main session or needs nothing. It is printed for WAITING/BLOCKED/FAIL/SENT-BACK tasks.
+6. At the first tick, sub-branches already on the remote print `SUB-PUSH` (like the first `STATUS`) but don't re-arm the quiet timer, which starts from the task tip's committer time, so a silent session is still reported on time. A task branch that appears later counts as a push.
+7. A failed `ls-remote` skips the whole tick (no false `GONE`); a failed fetch/show for one task doesn't stop the other tasks in that tick.
+8. `WATCHER …` and `ALL DONE` lines carry the `HH:MM IST` prefix like the event lines. With `--action-only`, `WATCHER git back` is filtered (it doesn't end in ` ACTION`), as the brief's rule says.
+9. Errors at start (bad or unreadable run file, bad option) print one line on **stdout** and exit 2, so a Monitor shows them; `superseded, exiting` goes to stderr as the brief says. `status` exits 1 with one line if `ls-remote` fails (the brief only covers success).
+10. `stop` needs only the run file's directory (it removes `<dir>/watch.token`; it doesn't read or validate the run file). Nothing is written beyond the token; a refused start writes no token.
+
+**Commands and results.**
+- `pnpm install --frozen-lockfile --offline`: done (worktree had no links).
+- `pnpm --filter @techaust/web exec vitest run test/watch-cloud.test.ts`: 1 file, **69 passed** (≈0.9 s).
+- `pnpm exec biome check tools/watch-cloud.mjs apps/web/test/watch-cloud.test.ts`: clean (after `--write` formatting).
+- `bash tools/heavy.sh --log orchestrate-watcher-lint pnpm lint`: exit 0, 1451 files; 10 warnings and 8 infos, all in files this task didn't touch (`apps/admin/worker/reports.test.ts`, `apps/web/src/lib/catalogue.ts`, `packages/core/src/public-text.ts`, `packages/pdf/test/*`); none in the two new files.
+- Manual `status` against the real `origin`, temp run file = `.claude/skills/orchestrate/templates/run.example.json` (task `orchestrate-skill`), 0.8 s, exit 0:
+  ```
+  task               branch                  head     push age  class    status                                             sub-branches
+  orchestrate-skill  feat/orchestrate-skill  873cfc2  3 min     working  builder running (watcher); lead writing the skill  fix/orchestrate-skill-watcher@5095e0d
+  ```
+- Manual `watch --run <temp> --interval 10`, started 06:05:09 UTC; `stop --run <temp>` from a second shell at 06:05:47 printed `watch-cloud: stop sent`; the watcher exited 0 by 06:05:52 (within 5 s). stdout:
+  ```
+  11:35 IST watch-cloud: watching 1 task(s) every 10 s, quiet after 45 min
+  11:35 IST orchestrate-skill SUB-PUSH fix/orchestrate-skill-watcher 5095e0d
+  11:35 IST orchestrate-skill STATUS builder running (watcher); lead writing the skill
+  ```
+  stderr: `watch-cloud: superseded, exiting`. No watcher process left afterwards.
+
+**Not verified.**
+- Windows (Git Bash + Node 24 under the Monitor tool): only run on Linux. The code uses `path`, `execFile` with `windowsHide` and no POSIX-only calls; whether an orphaned copy on Windows really exits relies on its node process still running its sleep loop (it checks the token every 5 s), which the Linux run and the tests show but Windows didn't.
+- A git call already in flight when the token changes finishes (up to the 30 s timeout) before the copy exits; the 5 s promise holds while sleeping, which is where the watcher spends nearly all its time.
+- A live takeover by a second `watch` copy (covered by the unit test with a real token file in a temp dir, not run by hand).
+- The `QUIET`, `GONE`, `WATCHER` and `ALL DONE` lines against the real remote (unit-tested only).
+- `pnpm check` / typecheck: not run (out of my brief; the test file isn't in any tsconfig `include`, like `agent-slots.test.ts`).
+
+**Open questions.** None for the owner. For the lead: choices 5 (no QUIET for a done task) and 9 (start errors on stdout) are the two a reviewer might want otherwise.
 
 ## Review
 (lead copies the reviewer's reply here)
