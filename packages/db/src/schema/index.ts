@@ -4,6 +4,7 @@ export * from "./catalogue.ts";
 export * from "./common.ts";
 export * from "./compliance.ts";
 export * from "./crm.ts";
+export * from "./deeds.ts";
 export * from "./documents.ts";
 export * from "./email.ts";
 export * from "./identity.ts";

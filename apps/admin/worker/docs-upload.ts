@@ -13,6 +13,22 @@ export const DOC_UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
 /** L10: PDF, JPEG or PNG (the `payments` triggers hold the same MIME list). */
 const ALLOWED = new Set(["pdf", "jpg", "jpeg", "png"]);
 
+/** What one kind of upload accepts: the largest size, the file extensions, and the refusals to answer with. */
+export type UploadRules = {
+  readonly maxBytes: number;
+  readonly allowed: ReadonlySet<string>;
+  readonly tooLarge: ApiError;
+  readonly typeNotAllowed: ApiError;
+};
+
+/** Proofs and bank letters (L10). T11 adds the signed deed (a PDF of at most 10 MB, its own rules in deeds.ts). */
+export const PROOF_RULES: UploadRules = {
+  maxBytes: DOC_UPLOAD_MAX_BYTES,
+  allowed: ALLOWED,
+  tooLarge: PROOF_TOO_LARGE,
+  typeNotAllowed: PROOF_TYPE_NOT_ALLOWED,
+};
+
 const LENGTH_REQUIRED: ApiError = { code: "length_required", message: "The file's length is required" };
 const EMPTY_FILE: ApiError = { code: "empty_file", message: "The file is empty" };
 const TYPE_MISMATCH: ApiError = { code: "file_type_mismatch", message: "The file isn't what its name says" };
@@ -26,12 +42,12 @@ const LENGTH_MISMATCH: ApiError = {
 export type UploadHead = { len: number; ext: string; sha: string };
 
 /** The headers of an upload (`Content-Length`, `X-File-Name`, `X-File-Sha256`), or the refusal to answer with. */
-export function uploadHead(c: Ctx): UploadHead | Response {
+export function uploadHead(c: Ctx, rules: UploadRules = PROOF_RULES): UploadHead | Response {
   const declared = c.req.header("Content-Length");
   if (declared === undefined) return err(c, LENGTH_REQUIRED, 411);
   if (!/^\d{1,12}$/.test(declared)) return err(c, BAD_REQUEST, 400);
   const len = Number(declared);
-  if (len > DOC_UPLOAD_MAX_BYTES) return err(c, PROOF_TOO_LARGE, 413);
+  if (len > rules.maxBytes) return err(c, rules.tooLarge, 413);
   if (len === 0) return err(c, EMPTY_FILE, 400);
   const rawName = c.req.header("X-File-Name");
   const sha = c.req.header("X-File-Sha256")?.toLowerCase();
@@ -44,7 +60,7 @@ export function uploadHead(c: Ctx): UploadHead | Response {
     return err(c, BAD_REQUEST, 400);
   }
   const ext = extOf(name);
-  if (!ALLOWED.has(ext)) return err(c, PROOF_TYPE_NOT_ALLOWED, 415);
+  if (!rules.allowed.has(ext)) return err(c, rules.typeNotAllowed, 415);
   if (!c.req.raw.body) return err(c, EMPTY_FILE, 400);
   return { len, ext, sha };
 }
@@ -66,7 +82,12 @@ export type Stored = { key: string; mime: string; created: boolean };
  * Sniffs and streams the body into `DOCS` at `<keyPrefix>-<sha256>`, write-once. Returns the stored object, or the refusal to answer with (nothing is left
  * behind on a refusal: an object this call created is deleted again).
  */
-export async function streamToDocs(c: Ctx, head: UploadHead, keyPrefix: string): Promise<Stored | Response> {
+export async function streamToDocs(
+  c: Ctx,
+  head: UploadHead,
+  keyPrefix: string,
+  rules: UploadRules = PROOF_RULES,
+): Promise<Stored | Response> {
   const { len, ext, sha } = head;
   const stream = c.req.raw.body as ReadableStream<Uint8Array>;
   const reader = stream.getReader();
@@ -95,7 +116,12 @@ export async function streamToDocs(c: Ctx, head: UploadHead, keyPrefix: string):
   if (!sniffed.ok)
     return sniffed.reason === "empty"
       ? refuse(EMPTY_FILE, 400)
-      : refuse(sniffed.reason === "type_not_allowed" ? PROOF_TYPE_NOT_ALLOWED : TYPE_MISMATCH, 415);
+      : refuse(
+          sniffed.reason === "type_not_allowed" || !rules.allowed.has(ext)
+            ? rules.typeNotAllowed
+            : TYPE_MISMATCH,
+          415,
+        );
 
   const key = `${keyPrefix}-${sha}`;
   // The same bytes already stored under this key (a retry after a lost answer): nothing to write, the row step decides.

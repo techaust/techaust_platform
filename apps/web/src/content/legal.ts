@@ -52,7 +52,19 @@ export const legal = validateLegal({
       },
     ],
   },
-  "delivery-policy": draft01("First published draft."),
+  // T11, 07-ZE "Versions" (owner, 2026-10-31): Delivery 0.2 with line 16, published once the deed can be made.
+  "delivery-policy": {
+    version: "0.2",
+    effective: "2026-11-01",
+    changes: [
+      { version: "0.1", date: "2026-10-22", note: "First published draft." },
+      {
+        version: "0.2",
+        date: "2026-11-01",
+        note: "On full payment we sign a deed assigning the copyright to you.",
+      },
+    ],
+  },
   cookies: draft01("First published draft."),
   // 07-A §8 labels the accessibility statement Version 0.2, with one change entry.
   accessibility: {

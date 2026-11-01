@@ -5,9 +5,11 @@ import { uuidv7 } from "../src/ids.ts";
 import { generateLeadRef, LEAD_REF } from "../src/lead-ref.ts";
 import {
   approvalNotifyMessage,
+  deedSignedMessage,
   EMAIL_TEMPLATES,
   emailMessage,
   formMeta,
+  isDeedExpansionKind,
   isOfferExpansionKind,
   leadMessage,
   offerAcceptedMessage,
@@ -130,6 +132,7 @@ describe("M2.4b messages [POR-01, ADM-AUTH-09, ADM-MAIL-01]", () => {
       "lut.reminder",
       "edf.reminder",
       "realisation.alert",
+      "deed.signed",
     ]);
     for (const template of EMAIL_TEMPLATES)
       expect(
@@ -267,5 +270,21 @@ describe("M4.5 messages [ADM-PROP-07, ADM-PROP-08]", () => {
     ]) {
       expect(isOfferExpansionKind(body), JSON.stringify(body)).toBe(false);
     }
+  });
+});
+
+describe("T11 deed messages [RB-38(a), POR-05]", () => {
+  it("deed.signed carries the deed id only; the family guard catches a malformed body", () => {
+    expect(
+      deedSignedMessage.parse({ kind: "deed.signed", deedId: "deed_ab12", to: "x@example.com" }),
+    ).toEqual({
+      kind: "deed.signed",
+      deedId: "deed_ab12",
+    });
+    expect(deedSignedMessage.safeParse({ kind: "deed.signed", deedId: "" }).success).toBe(false);
+    expect(deedSignedMessage.safeParse({ kind: "deed.signed", deedId: "x".repeat(65) }).success).toBe(false);
+    expect(isDeedExpansionKind({ kind: "deed.signed", deedId: 5 })).toBe(true);
+    expect(isDeedExpansionKind({ kind: "offer.send" })).toBe(false);
+    expect(isDeedExpansionKind(null)).toBe(false);
   });
 });

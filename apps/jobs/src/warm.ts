@@ -3,6 +3,7 @@
 // that into isolate start-up instead of the first queue message (the one the Free plan's 10 ms CPU limit applies to).
 // Nothing is sent, stored or logged; the sample values are made up.
 import {
+  deedSignedMessage,
   describeUserAgent,
   WARM_SAMPLES,
   warmBillingMessages,
@@ -78,9 +79,9 @@ export function warmStatement(count = 3): number {
   }
 }
 
-/** Returns the parses and renders that succeeded (33 today, counted in `warm.test.ts`), so a test notices a warm-up that silently stopped working. */
+/** Returns the parses and renders that succeeded (35 today, counted in `warm.test.ts`), so a test notices a warm-up that silently stopped working. */
 export function warmConsumers(): number {
-  const parsed = warmConsumerMessages() + warmReportMessages();
+  let parsed = warmConsumerMessages() + warmReportMessages();
   warmLabels();
   let rendered = 0;
   let statementOk = 0;
@@ -263,6 +264,21 @@ export function warmConsumers(): number {
         count: "2",
         due_date: "30 Nov 2026",
         link: "https://warm-up.invalid/reports/edf",
+      },
+      opts,
+    );
+    rendered++;
+    // T11: the signed-deed message (its schema built at start-up) and its email (07-ZJ lines 8 to 11)
+    if (deedSignedMessage.safeParse({ kind: "deed.signed", deedId: "deed_warm" }).success) parsed++;
+    renderEmail(
+      "deed.signed",
+      {
+        first_name: "Warm",
+        number: "TH/DA/2627/0001",
+        offer_type: "proposal",
+        offer_number: "TH/PRP/2627/0001",
+        offer_version: "1",
+        url: "https://warm-up.invalid/proposals/x",
       },
       opts,
     );

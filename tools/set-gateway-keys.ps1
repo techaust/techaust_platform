@@ -3,8 +3,10 @@
 # straight to Cloudflare with `wrangler secret put --env staging`. They are never shown, saved or copied.
 # Uses your own `wrangler login`. The lead gives you the exact line, for example:
 #   powershell -ExecutionPolicy Bypass -File "D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\tools\set-gateway-keys.ps1" -Gateway razorpay -Configs "apps\jobs\wrangler.jsonc"
+# M6.2: `-Gateway razorpay-webhook` makes the Razorpay WEBHOOK secret instead (32 random bytes as hex), stores it as RAZORPAY_WEBHOOK_SECRET on the named
+# configs (the jobs Worker: "apps\jobs\wrangler.jsonc") and puts it on the clipboard, to paste into Razorpay's webhook Secret box at once. It is never shown.
 param(
-  [Parameter(Mandatory = $true)][ValidateSet("razorpay", "stripe", "paypal")][string]$Gateway,
+  [Parameter(Mandatory = $true)][ValidateSet("razorpay", "razorpay-webhook", "stripe", "paypal")][string]$Gateway,
   # Wrangler config files (relative to the repository) of the staging Workers that need these keys.
   [Parameter(Mandatory = $true)][string[]]$Configs
 )
@@ -38,6 +40,12 @@ switch ($Gateway) {
     catch { Stop-With "Razorpay refused this key pair (check you copied both from Test Mode)" }
     $secrets["RAZORPAY_KEY_ID"] = $id
     $secrets["RAZORPAY_KEY_SECRET"] = $secret
+  }
+  "razorpay-webhook" {
+    # 32 random bytes from the system's cryptographic generator, as 64 hex characters.
+    $bytes = New-Object byte[] 32
+    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    $secrets["RAZORPAY_WEBHOOK_SECRET"] = -join ($bytes | ForEach-Object { $_.ToString("x2") })
   }
   "stripe" {
     $key = Read-Hidden "Stripe sandbox secret key (starts sk_test_ or rk_test_)"
@@ -88,8 +96,13 @@ try {
       $stored += "$name@$c"
     }
   }
+  if ($Gateway -eq "razorpay-webhook") { Set-Clipboard -Value $secrets["RAZORPAY_WEBHOOK_SECRET"] }
 } finally {
   foreach ($k in @($secrets.Keys)) { $secrets[$k] = $null }
   $id = $null; $secret = $null; $key = $null
 }
-Write-Host "RESULT: $Gateway test keys checked and stored on staging: $($stored -join ', ')"
+if ($Gateway -eq "razorpay-webhook") {
+  Write-Host "RESULT: razorpay-webhook secret made and stored on staging: $($stored -join ', '); it is on your clipboard, paste it into Razorpay's webhook Secret box now"
+} else {
+  Write-Host "RESULT: $Gateway test keys checked and stored on staging: $($stored -join ', ')"
+}

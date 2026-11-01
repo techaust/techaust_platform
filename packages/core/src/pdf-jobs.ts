@@ -30,6 +30,13 @@ export type PdfStatementMessage = { v: 1; kind: "pdf.statement"; statementId: st
  */
 export type PdfSupplierMessage = { v: 1; kind: "pdf.supplier"; documentId: string; hop: number };
 
+/**
+ * T11 (L4): the unsigned PDF of one FINAL deed of assignment, from the admin API after the finalise batch (and the Owner's "render again"). One unit of work: the
+ * consumer reads the row, refuses a snapshot whose SHA-256 is not the sealed one, renders the deed's text and stores it write-once in `DOCS`. Ids only. `hop` counts
+ * pacing re-sends like `pdf.render`'s.
+ */
+export type PdfDeedMessage = { v: 1; kind: "pdf.deed"; deedId: string; hop: number };
+
 export type PdfMessage =
   | PdfSnapshotMessage
   | PdfRenderMessage
@@ -37,6 +44,7 @@ export type PdfMessage =
   | PdfCertificateMessage
   | PdfStatementMessage
   | PdfSupplierMessage
+  | PdfDeedMessage
   | OfferSweepMessage;
 
 /** The invoice-family types that have a supplier copy (Rule 48(2): the services invoice and, by Rule 53, the notes; never a proforma, which is no tax invoice). */
@@ -67,6 +75,14 @@ export function isPdfMessage(body: unknown): body is PdfMessage {
     case "pdf.supplier":
       return (
         isId(body.documentId) &&
+        typeof body.hop === "number" &&
+        Number.isInteger(body.hop) &&
+        body.hop >= 0 &&
+        body.hop <= PDF_MAX_HOPS
+      );
+    case "pdf.deed":
+      return (
+        isId(body.deedId) &&
         typeof body.hop === "number" &&
         Number.isInteger(body.hop) &&
         body.hop >= 0 &&

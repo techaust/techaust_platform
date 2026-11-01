@@ -161,6 +161,31 @@ export type OfferSuperseded = { superseded: { latestId: string | null; version: 
 
 export type AcceptRecord = { typedName: string; email: string; acceptedAt: number; fingerprint: string };
 
+// ---- Signed deeds of assignment (T11; apps/portal/worker/deeds.ts) ---------------------------------------------------------------
+
+/** One signed deed of the organisation: shown on its accepted proposal or estimate's page (`sourceDocumentId`). The server lists signed deeds only. */
+export type SignedDeed = {
+  id: string;
+  number: string;
+  sourceDocumentId: string;
+  offer: { type: string; number: string | null; version: number };
+  esignAt: number;
+  /** "03 Nov 2026, 14:05 IST", written by the server. */
+  esignMoment: string;
+  esignTxn: string;
+  signatureLine: string;
+  signedAt: number;
+  size: number;
+};
+
+export const deedsApi = {
+  /** The signed deeds of one accepted version (review L2); finance contacts only (owner, 2026-11-01): anyone else gets the plain 404. */
+  list: (documentId: string) =>
+    send<{ deeds: SignedDeed[] }>(`/deeds?document=${encodeURIComponent(documentId)}`, {}),
+  /** The signed PDF; the deed is named in the request body, never in the address. */
+  pdf: (id: string) => download("/deeds/pdf", { id }, true),
+};
+
 export const offersApi = {
   list: (after?: string) =>
     send<{ offers: OfferItem[]; next: string | null }>(

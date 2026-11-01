@@ -7,6 +7,7 @@ import type { AuditEntry } from "../api.ts";
 import { Y } from "./copy-y.ts";
 import { WITHDRAW_COPY } from "./copy-zf.ts";
 import { PAY_AUDIT } from "./copy-zh.ts";
+import { DEED_AUDIT, DEED_AUDIT_GROUP, DEED_RECORD_TYPE } from "./copy-zj.ts";
 import { NOTE_ISSUED } from "./copy-zl.ts";
 
 /** Every action the API writes today, in words. Unknown ones read as their own name ("lead.created"). */
@@ -157,6 +158,8 @@ export const ACTION_LABELS: Record<string, string> = {
   "payment.credit_release": PAY_AUDIT["payment.credit_release"],
   "care_invoice.draft": Y("drafted a care plan invoice"),
   "care_invoice.auto_issue_refused": Y("could not issue a care plan invoice automatically"),
+  // T11, the deed of assignment: 07-ZJ line 33 (staff-only; marked until the lead approves it).
+  ...DEED_AUDIT,
 };
 
 /**
@@ -185,6 +188,8 @@ export const ACTION_GROUPS: { label: string; prefixes: readonly string[] }[] = [
   { label: "Proposals and estimates", prefixes: ["document.", "offer_link."] },
   { label: "Invoices", prefixes: ["invoice.", "care_invoice."] },
   { label: "Payments", prefixes: ["payment."] },
+  // T11: 07-ZJ line 33.
+  { label: DEED_AUDIT_GROUP, prefixes: ["deed."] },
   { label: "Reports", prefixes: ["report."] },
   { label: "Approvals", prefixes: ["approval."] },
   { label: "Client portal", prefixes: ["portal.", "doc_token."] },
@@ -225,6 +230,8 @@ export const ENTITY_LABELS: Record<string, string> = {
   document: "Documents",
   approval: "Approvals",
   payment: "Payments",
+  // T11: 07-ZJ line 33.
+  deed: DEED_RECORD_TYPE,
   report: "Reports",
   audit_log: "Audit log",
 };
