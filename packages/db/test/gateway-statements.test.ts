@@ -872,7 +872,7 @@ describe("onlinePayableSql is the twin of core payableOnline", () => {
       gst_status: string;
       anon: number;
     }>(
-      `SELECT ${onlinePayableSql("d", "k")} AS ok, d.type, d.currency, d.status, d.balance_minor, k.country, k.gst_status, k.anonymised_at IS NOT NULL AS anon
+      `SELECT ${onlinePayableSql("d", "k", "razorpay")} AS ok, d.type, d.currency, d.status, d.balance_minor, k.country, k.gst_status, k.anonymised_at IS NOT NULL AS anon
        FROM documents d JOIN clients k ON k.id = d.client_id WHERE d.id = ?`,
       id,
     );
@@ -887,6 +887,7 @@ describe("onlinePayableSql is the twin of core payableOnline", () => {
         balanceMinor: row.balance_minor,
       },
       { country: row.country, gstStatus: row.gst_status, anonymised: row.anon === 1 },
+      "razorpay",
     );
     expect(row.ok === 1).toBe(core.ok);
   });

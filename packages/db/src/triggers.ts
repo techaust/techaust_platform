@@ -1566,6 +1566,101 @@ const MANUAL_ONLY_0064 = ["neft", "rtgs", "imps", "swift"] as const;
  *      DPDP Act s.8(7) and s.12(3) (08-C RB-11)), which `review_items_erase_notes` does in the statement that anonymises the client; never deleted.
  */
 export function gatewayTriggerStatements(): string[] {
+  const p = gatewayTriggerParts("0064");
+  return [
+    // 1-5. payments
+    "DROP TRIGGER `payments_values_insert`;",
+    p.payments_values_insert,
+    "DROP TRIGGER `payments_values_update`;",
+    p.payments_values_update,
+    "DROP TRIGGER `payments_insert_state`;",
+    p.payments_insert_state,
+    p.payments_gateway_shape,
+    "DROP TRIGGER `payments_fixed`;",
+    p.payments_fixed,
+    "DROP TRIGGER `payments_status_flow`;",
+    p.payments_status_flow,
+    // 6. checkout_sessions
+    p.checkout_sessions_values_insert,
+    p.checkout_sessions_values_update,
+    p.checkout_sessions_insert_state,
+    p.checkout_sessions_status_flow,
+    p.checkout_sessions_fixed,
+    p.checkout_sessions_no_delete,
+    // Early check 1, finding 1: the erase and anonymise of a contact unlink its checkouts in the statements that delete its rows (no extra statement in the
+    // anonymise batch, which is at T7's cap of 45): a document link's token row going clears the checkouts made through it, the contact row going (the erase)
+    // clears every checkout naming the contact. The checkout keeps its document, amount, status and payment (`checkout_sessions_fixed` allows exactly this move).
+    p.checkout_sessions_unlink_token,
+    p.checkout_sessions_unlink_contact,
+    // Early check 1, "For B2" 9: once a client is anonymised its review items' notes are cleared, in the statement that anonymises it (the erase batch is at T7's
+    // cap of 45; `review_items_status_flow` allows exactly this move; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)).
+    p.review_items_erase_notes,
+    // 7. webhook_events
+    p.webhook_events_values_insert,
+    p.webhook_events_values_update,
+    p.webhook_events_fixed,
+    p.webhook_events_status_flow,
+    p.webhook_events_no_delete,
+    // 8. review_items
+    p.review_items_values_insert,
+    p.review_items_values_update,
+    p.review_items_fixed,
+    p.review_items_status_flow,
+    p.review_items_no_delete,
+  ];
+}
+
+/** M6.3: the values the payment and gateway triggers of 0066 accept, pinned (a db test compares them with the schema's lists today; M6.4 widens them with PayPal). */
+export const PAYMENT_PROVIDERS_0066 = ["manual", "razorpay", "stripe"] as const;
+export const GATEWAY_PROVIDERS_0066 = ["razorpay", "stripe"] as const;
+/** The modes of a Stripe payment (core `stripeModeOf`): a card, or anything else Stripe takes. Both are already in 0064's mode list. */
+export const STRIPE_MODES_0066 = ["card", "other"] as const;
+/** The gateways whose pending payment the system may confirm with its own advance receipt (`gateway_auto`): Razorpay only (M6.3 Q1 A: a USD proforma waits for the Owner). */
+export const GATEWAY_AUTO_PROVIDERS_0066 = ["razorpay"] as const;
+/** The columns `payments_fixed` freezes as 0066 recreates it: 0064's list plus M6.3's INR fee columns (pinned). */
+export const PAYMENT_FROZEN_0066 = [
+  ...PAYMENT_FROZEN_0064,
+  "gateway_fee_inr_minor",
+  "gateway_fee_tax_inr_minor",
+] as const;
+/** The triggers 0066 drops and creates again, in this order (nothing else is touched; no table is rebuilt). */
+export const STRIPE_RECREATED_0066 = [
+  "payments_values_insert",
+  "payments_values_update",
+  "payments_insert_state",
+  "payments_gateway_shape",
+  "payments_fixed",
+  "payments_status_flow",
+  "checkout_sessions_values_insert",
+  "checkout_sessions_values_update",
+  "checkout_sessions_status_flow",
+  "webhook_events_values_insert",
+  "webhook_events_values_update",
+  "review_items_values_insert",
+  "review_items_values_update",
+] as const;
+
+/**
+ * M6.3 Stripe in test mode (ADM-PAY-01, -03, -07, ADM-INV-10, JOB-HOOK-01..03; run file docs/runs/m6.3-stripe.md A): the trigger set `stripe_triggers`. No table is
+ * rebuilt: the triggers in `STRIPE_RECREATED_0066` are dropped and created again from the same builder as 0064 (`gatewayTriggerParts`) with the provider lists of
+ * 0066 (L14: M6.4 regenerates them with PayPal). What changes, trigger by trigger:
+ *   - `payments_values_*`, `payments_insert_state`, `checkout_sessions_values_*`, `webhook_events_values_*`, `review_items_values_*`: the provider may be `stripe`
+ *     (review kinds unchanged: no new review kind);
+ *   - `payments_gateway_shape`, per provider: manual as 0064 and both INR fee columns NULL; Razorpay exactly as 0064 and both INR fee columns NULL; Stripe: money
+ *     received (`payment`) in USD, mode `card` or `other`, a reference, a gateway payment id of 1 to 255 characters, `charges_minor` 0 and `fee_tax_minor` NULL
+ *     (its fee is INR, never in a USD column: L10), `gateway_fee_inr_minor` NULL or ≥ 0, `gateway_fee_tax_inr_minor` NULL or between 0 and the fee;
+ *   - `payments_fixed`: the two INR fee columns are frozen too;
+ *   - `payments_status_flow`: a gateway payment (Stripe included) is never rejected or withdrawn; the system's own confirm (`gateway_auto`) stays Razorpay's only
+ *     (Q1 A: a USD proforma's payment waits for the Owner, who confirms it with the day's rate: Researched 2026-10-28, Rule 34 CGST Rules (08-C RA-21));
+ *   - `checkout_sessions_status_flow`: also live → failed and stale → failed (an asynchronous card payment that failed; PayPal's declined capture can reuse it).
+ */
+export function stripeTriggerStatements(): string[] {
+  const p = gatewayTriggerParts("0066");
+  return STRIPE_RECREATED_0066.flatMap((name) => [`DROP TRIGGER \`${name}\`;`, p[name]]);
+}
+
+/** The gateway triggers as one migration of the `gateway_triggers` family creates them (0064 Razorpay, 0066 Stripe), by name. */
+function gatewayTriggerParts(v: "0064" | "0066") {
   const named = (name: string, message: string) => abort(`${name}: ${message}`);
   const q = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(", ");
   const changed = (cols: readonly string[]) =>
@@ -1574,12 +1669,15 @@ export function gatewayTriggerStatements(): string[] {
     cols.map((c) => `(OLD.\`${c}\` IS NOT NULL AND NEW.\`${c}\` IS NOT OLD.\`${c}\`)`).join(" OR ");
   const owner = (who: string) =>
     `EXISTS (SELECT 1 FROM staff_users ou WHERE ou.id = ${who} AND ou.role = 'owner' AND ou.status = 'active')`;
+  const v66 = v === "0066";
+  const gatewayProviders: readonly string[] = v66 ? GATEWAY_PROVIDERS_0066 : GATEWAY_PROVIDERS_0064;
+  const paymentProviders: readonly string[] = v66 ? PAYMENT_PROVIDERS_0066 : PAYMENT_PROVIDERS_0064;
   // A gateway payment, by its provider (never "not manual": an unknown provider must fall through to `payments_values_insert`'s message).
-  const gateway = (row: "NEW" | "OLD") => `${row}.provider IN (${q(GATEWAY_PROVIDERS_0064)})`;
+  const gateway = (row: "NEW" | "OLD") => `${row}.provider IN (${q(gatewayProviders)})`;
   const anonymised = (client: string) =>
     `EXISTS (SELECT 1 FROM clients ec WHERE ec.id = ${client} AND ec.anonymised_at IS NOT NULL)`;
   // 1. payments: the values
-  const valuesBad = `NEW.kind NOT IN (${q(PAYMENT_KINDS_0060)}) OR NEW.provider NOT IN (${q(PAYMENT_PROVIDERS_0064)}) OR NEW.status NOT IN (${q(PAYMENT_STATUSES_0060)}) OR (NEW.mode IS NOT NULL AND NEW.mode NOT IN (${q(PAYMENT_MODES_0064)})) OR (NEW.proof_mime IS NOT NULL AND NEW.proof_mime NOT IN (${q(PROOF_MIME_TYPES_0060)}))`;
+  const valuesBad = `NEW.kind NOT IN (${q(PAYMENT_KINDS_0060)}) OR NEW.provider NOT IN (${q(paymentProviders)}) OR NEW.status NOT IN (${q(PAYMENT_STATUSES_0060)}) OR (NEW.mode IS NOT NULL AND NEW.mode NOT IN (${q(PAYMENT_MODES_0064)})) OR (NEW.proof_mime IS NOT NULL AND NEW.proof_mime NOT IN (${q(PROOF_MIME_TYPES_0060)}))`;
   const valuesMsg = "a payment has a known kind, provider, status, mode and proof type";
   // 2. payments: the insert state
   const pendingOk =
@@ -1590,9 +1688,23 @@ export function gatewayTriggerStatements(): string[] {
   // 3. payments: the gateway shape
   // Early check 1: a manual entry keeps 0060's five modes (finding 2); a Razorpay payment one of its methods, from a client in India that is not overseas (finding 13,
   // owner 2026-11-01 Q3 A at the database layer).
-  const shapeBad = `(NEW.provider = 'manual' AND (NEW.provider_payment_id IS NOT NULL OR NEW.checkout_id IS NOT NULL OR NEW.fee_tax_minor IS NOT NULL OR NEW.refetched_at IS NOT NULL OR NEW.webhook_event_id IS NOT NULL OR NEW.mode IN (${q(RAZORPAY_ONLY_0064)})))
-    OR (${gateway("NEW")} AND (NEW.kind IS NOT 'payment' OR NEW.currency IS NOT 'INR' OR NEW.mode IS NULL OR NEW.mode IN (${q(MANUAL_ONLY_0064)}) OR NEW.reference_norm IS NULL OR length(NEW.provider_payment_id) NOT BETWEEN 1 AND ${GATEWAY_REF_MAX_0064} OR (NEW.fee_tax_minor IS NOT NULL AND NEW.fee_tax_minor < 0) OR NEW.inr_received_minor IS NOT NULL
-      OR NOT EXISTS (SELECT 1 FROM clients gk WHERE gk.id = NEW.client_id AND gk.country = 'IN' AND gk.gst_status <> 'overseas')))`;
+  const razorpayShape = `NEW.kind IS NOT 'payment' OR NEW.currency IS NOT 'INR' OR NEW.mode IS NULL OR NEW.mode IN (${q(MANUAL_ONLY_0064)}) OR NEW.reference_norm IS NULL OR length(NEW.provider_payment_id) NOT BETWEEN 1 AND ${GATEWAY_REF_MAX_0064} OR (NEW.fee_tax_minor IS NOT NULL AND NEW.fee_tax_minor < 0) OR NEW.inr_received_minor IS NOT NULL
+      OR NOT EXISTS (SELECT 1 FROM clients gk WHERE gk.id = NEW.client_id AND gk.country = 'IN' AND gk.gst_status <> 'overseas')`;
+  const manualShape = `NEW.provider_payment_id IS NOT NULL OR NEW.checkout_id IS NOT NULL OR NEW.fee_tax_minor IS NOT NULL OR NEW.refetched_at IS NOT NULL OR NEW.webhook_event_id IS NOT NULL OR NEW.mode IN (${q(RAZORPAY_ONLY_0064)})`;
+  const noInrFee = "NEW.gateway_fee_inr_minor IS NOT NULL OR NEW.gateway_fee_tax_inr_minor IS NOT NULL";
+  // M6.3: a Stripe payment is USD money received by card (or another Stripe method), its fee in the INR columns only (L10).
+  const stripeShape = `NEW.kind IS NOT 'payment' OR NEW.currency IS NOT 'USD' OR NEW.mode IS NULL OR NEW.mode NOT IN (${q(STRIPE_MODES_0066)}) OR NEW.reference_norm IS NULL OR length(NEW.provider_payment_id) NOT BETWEEN 1 AND ${GATEWAY_REF_MAX_0064}
+      OR NEW.charges_minor IS NOT 0 OR NEW.fee_tax_minor IS NOT NULL OR (NEW.gateway_fee_inr_minor IS NOT NULL AND NEW.gateway_fee_inr_minor < 0)
+      OR (NEW.gateway_fee_tax_inr_minor IS NOT NULL AND (NEW.gateway_fee_tax_inr_minor < 0 OR NEW.gateway_fee_inr_minor IS NULL OR NEW.gateway_fee_tax_inr_minor > NEW.gateway_fee_inr_minor))`;
+  const shapeBad = v66
+    ? `(NEW.provider = 'manual' AND (${manualShape} OR ${noInrFee}))
+    OR (NEW.provider = 'razorpay' AND (${razorpayShape} OR ${noInrFee}))
+    OR (NEW.provider = 'stripe' AND (${stripeShape}))`
+    : `(NEW.provider = 'manual' AND (${manualShape}))
+    OR (${gateway("NEW")} AND (${razorpayShape}))`;
+  const shapeMsg = v66
+    ? "a manual payment has no gateway fields and a bank mode; a Razorpay payment is money received in INR from a client in India, with a gateway mode, a reference and a gateway payment id; a Stripe payment is money received in USD by card or another Stripe method, with a reference, a gateway payment id and its fee in the INR columns only"
+    : "a manual payment has no gateway fields and a bank mode; a gateway payment is money received in INR from a client in India, with a gateway mode, a reference and a gateway payment id";
   // 4. payments: fixed (0060's rule over the longer frozen list)
   const onceCols = [
     "proof_kind",
@@ -1607,12 +1719,14 @@ export function gatewayTriggerStatements(): string[] {
   const confirming = "OLD.status = 'pending_verification' AND NEW.status = 'confirmed'";
   const erasingText = (col: string) =>
     `(NEW.\`${col}\` IS NULL AND NEW.status IS OLD.status AND ${anonymised("OLD.client_id")})`;
-  const fixedBad = `${changed(PAYMENT_FROZEN_0064)} OR (NEW.\`note\` IS NOT OLD.\`note\` AND NOT ${erasingText("note")}) OR ${setOnce(onceCols)} OR (NEW.advance_receipt_id IS NOT OLD.advance_receipt_id AND NOT (${confirming})) OR ((NEW.tds_certificate_no IS NOT OLD.tds_certificate_no OR NEW.tds_certificate_on IS NOT OLD.tds_certificate_on) AND OLD.kind IS NOT 'tds')`;
+  const fixedBad = `${changed(v66 ? PAYMENT_FROZEN_0066 : PAYMENT_FROZEN_0064)} OR (NEW.\`note\` IS NOT OLD.\`note\` AND NOT ${erasingText("note")}) OR ${setOnce(onceCols)} OR (NEW.advance_receipt_id IS NOT OLD.advance_receipt_id AND NOT (${confirming})) OR ((NEW.tds_certificate_no IS NOT OLD.tds_certificate_no OR NEW.tds_certificate_on IS NOT OLD.tds_certificate_on) AND OLD.kind IS NOT 'tds')`;
   // 5. payments: the status flow
   const deciding = "OLD.status = 'pending_verification' AND NEW.status IN ('confirmed', 'rejected')";
   const withdrawing = "OLD.status = 'confirmed' AND NEW.status = 'withdrawn'";
   // Early check 1, finding 3: the receipt is this payment's own (client, currency, amount, day, reference, and written at the confirm's instant).
-  const gatewayAuto = `(${gateway("OLD")} AND NEW.status = 'confirmed' AND NEW.verified_by IS NULL AND OLD.advance_receipt_id IS NULL AND NEW.advance_receipt_id IS NOT NULL
+  // M6.3 (0066): the system's own confirm stays Razorpay's only (Q1 A); 0064 named every gateway, which was Razorpay alone.
+  const autoProvider = v66 ? `OLD.provider IN (${q(GATEWAY_AUTO_PROVIDERS_0066)})` : gateway("OLD");
+  const gatewayAuto = `(${autoProvider} AND NEW.status = 'confirmed' AND NEW.verified_by IS NULL AND OLD.advance_receipt_id IS NULL AND NEW.advance_receipt_id IS NOT NULL
       AND EXISTS (SELECT 1 FROM advance_receipts gar WHERE gar.id = NEW.advance_receipt_id AND gar.client_id = OLD.client_id AND gar.currency = OLD.currency AND gar.amount_minor = OLD.amount_minor
         AND gar.received_on = OLD.received_on AND gar.reference_norm IS OLD.reference_norm AND gar.created_at = NEW.verified_at))`;
   const flowBad = `(NEW.status IS NOT OLD.status AND NOT ((${deciding}) OR (${withdrawing})))
@@ -1624,13 +1738,15 @@ export function gatewayTriggerStatements(): string[] {
     OR ((${changed(["withdrawn_by", "withdrawn_at"])}) AND NOT (${withdrawing}))
     OR (NEW.withdraw_reason IS NOT OLD.withdraw_reason AND NOT (${withdrawing}) AND NOT ${erasingText("withdraw_reason")})`;
   // 6. checkout_sessions
-  const checkoutValuesBad = `NEW.provider NOT IN (${q(GATEWAY_PROVIDERS_0064)}) OR NEW.source NOT IN (${q(CHECKOUT_SOURCES_0064)}) OR NEW.status NOT IN (${q(CHECKOUT_STATUSES_0064)})`;
+  const checkoutValuesBad = `NEW.provider NOT IN (${q(gatewayProviders)}) OR NEW.source NOT IN (${q(CHECKOUT_SOURCES_0064)}) OR NEW.status NOT IN (${q(CHECKOUT_STATUSES_0064)})`;
   const checkoutValuesMsg = "a checkout has a known provider, source and status";
   const checkoutInsertBad =
     "NEW.status IS NOT 'creating' OR NEW.paid_payment_id IS NOT NULL OR NEW.provider_link_id IS NOT NULL OR NEW.short_url IS NOT NULL OR NEW.last_refresh_at IS NOT NULL OR NOT ((NEW.source = 'portal' AND NEW.contact_id IS NOT NULL AND NEW.doc_token_id IS NULL AND NEW.created_by IS NULL) OR (NEW.source = 'link' AND NEW.doc_token_id IS NOT NULL AND NEW.contact_id IS NOT NULL AND NEW.created_by IS NULL) OR (NEW.source = 'staff' AND NEW.created_by IS NOT NULL AND NEW.contact_id IS NULL AND NEW.doc_token_id IS NULL))";
   const checkoutMove = (from: string, to: readonly string[]) =>
     `(OLD.status = '${from}' AND NEW.status IN (${q(to)}))`;
-  const checkoutFlowBad = `(NEW.status IS NOT OLD.status AND NOT (${checkoutMove("creating", ["live", "failed"])} OR ${checkoutMove("live", ["paid", "expired", "cancelled", "stale"])} OR ${checkoutMove("stale", ["paid", "expired", "cancelled"])}))
+  // M6.3 (0066): a live or stale checkout may also fail (an asynchronous card payment that failed: Stripe's `checkout.session.async_payment_failed`).
+  const ends = v66 ? ["failed"] : [];
+  const checkoutFlowBad = `(NEW.status IS NOT OLD.status AND NOT (${checkoutMove("creating", ["live", "failed"])} OR ${checkoutMove("live", ["paid", "expired", "cancelled", "stale", ...ends])} OR ${checkoutMove("stale", ["paid", "expired", "cancelled", ...ends])}))
     OR (NEW.status = 'live' AND (NEW.provider_link_id IS NULL OR NEW.short_url IS NULL))
     OR (NEW.status = 'paid' AND NEW.paid_payment_id IS NULL)
     OR (NEW.paid_payment_id IS NOT OLD.paid_payment_id AND NOT (NEW.status = 'paid' AND OLD.status IN ('live', 'stale') AND OLD.paid_payment_id IS NULL))`;
@@ -1640,10 +1756,10 @@ export function gatewayTriggerStatements(): string[] {
   const checkoutFixedBad = `${changed(["id", "provider", "document_id", "client_id", "created_by", "source", "currency", "amount_minor", "created_at"])}
     OR ((NEW.contact_id IS NOT OLD.contact_id OR NEW.doc_token_id IS NOT OLD.doc_token_id) AND NOT ${unlinking}) OR ${setOnce(["provider_link_id", "short_url", "paid_payment_id"])} OR (NEW.expires_at IS NOT OLD.expires_at AND NOT (OLD.status = 'creating' AND NEW.status = 'live')) OR NEW.updated_at < OLD.updated_at`;
   // 7. webhook_events
-  const eventValuesBad = `NEW.provider NOT IN (${q(GATEWAY_PROVIDERS_0064)}) OR NEW.status NOT IN (${q(WEBHOOK_EVENT_STATUSES_0064)})`;
+  const eventValuesBad = `NEW.provider NOT IN (${q(gatewayProviders)}) OR NEW.status NOT IN (${q(WEBHOOK_EVENT_STATUSES_0064)})`;
   const eventFlowBad = `(NEW.status IS NOT OLD.status AND NOT ((OLD.status = 'received' AND NEW.status IN ('processed', 'ignored', 'needs_review', 'failed')) OR (OLD.status = 'failed' AND NEW.status = 'received'))) OR NEW.attempts < OLD.attempts`;
   // 8. review_items
-  const reviewValuesBad = `NEW.source NOT IN (${q(REVIEW_SOURCES_0064)}) OR NEW.provider NOT IN (${q(GATEWAY_PROVIDERS_0064)}) OR NEW.kind NOT IN (${q(REVIEW_KINDS_0064)}) OR NEW.status NOT IN ('open', 'resolved') OR (NEW.resolution IS NOT NULL AND NEW.resolution NOT IN (${q(REVIEW_RESOLUTIONS_0064)}))`;
+  const reviewValuesBad = `NEW.source NOT IN (${q(REVIEW_SOURCES_0064)}) OR NEW.provider NOT IN (${q(gatewayProviders)}) OR NEW.kind NOT IN (${q(REVIEW_KINDS_0064)}) OR NEW.status NOT IN ('open', 'resolved') OR (NEW.resolution IS NOT NULL AND NEW.resolution NOT IN (${q(REVIEW_RESOLUTIONS_0064)}))`;
   const reviewValuesMsg = "a review item has a known source, provider, kind, status and resolution";
   const resolving = "OLD.status = 'open' AND NEW.status = 'resolved'";
   const reviewFlowBad = `(NEW.status IS NOT OLD.status AND NOT (${resolving}))
@@ -1664,47 +1780,46 @@ export function gatewayTriggerStatements(): string[] {
     "facts",
     "created_at",
   ]);
-  return [
+  const checkoutFlowMsg = v66
+    ? "a checkout goes creating to live or failed, live to paid, expired, cancelled, stale or failed, stale to paid, expired, cancelled or failed; live has its link, paid has its payment, set once"
+    : "a checkout goes creating to live or failed, live to paid, expired, cancelled or stale, stale to paid, expired or cancelled; live has its link, paid has its payment, set once";
+  const statusFlowMsg = v66
+    ? "a pending payment is confirmed or rejected once by the Owner, or a Razorpay payment confirmed by the system with its tax invoice; a confirmed one is withdrawn once by the Owner, with a reason; a gateway payment is never rejected or withdrawn"
+    : "a pending payment is confirmed or rejected once by the Owner, or a gateway payment confirmed by the system with its tax invoice; a confirmed one is withdrawn once by the Owner, with a reason; a gateway payment is never rejected or withdrawn";
+  return {
     // 1-5. payments
-    "DROP TRIGGER `payments_values_insert`;",
-    `CREATE TRIGGER \`payments_values_insert\` BEFORE INSERT ON \`payments\` WHEN ${valuesBad} BEGIN ${named("payments_values_insert", valuesMsg)} END;`,
-    "DROP TRIGGER `payments_values_update`;",
-    `CREATE TRIGGER \`payments_values_update\` BEFORE UPDATE OF kind, provider, status, mode, proof_mime ON \`payments\` WHEN ${valuesBad} BEGIN ${named("payments_values_update", valuesMsg)} END;`,
-    "DROP TRIGGER `payments_insert_state`;",
-    `CREATE TRIGGER \`payments_insert_state\` BEFORE INSERT ON \`payments\` WHEN ${insertBad} BEGIN ${named("payments_insert_state", "a manual payment starts pending with no decision, or confirmed by an active Owner who recorded it; a gateway payment has no member, names its gateway payment, checkout and re-fetch, and starts pending or confirmed by the gateway; never withdrawn")} END;`,
-    `CREATE TRIGGER \`payments_gateway_shape\` BEFORE INSERT ON \`payments\` WHEN ${shapeBad} BEGIN ${named("payments_gateway_shape", "a manual payment has no gateway fields and a bank mode; a gateway payment is money received in INR from a client in India, with a gateway mode, a reference and a gateway payment id")} END;`,
-    "DROP TRIGGER `payments_fixed`;",
-    `CREATE TRIGGER \`payments_fixed\` BEFORE UPDATE ON \`payments\` WHEN ${fixedBad} BEGIN ${named("payments_fixed", "a payment never changes; its proof, its TDS certificate and its advance receipt are set once")} END;`,
-    "DROP TRIGGER `payments_status_flow`;",
-    `CREATE TRIGGER \`payments_status_flow\` BEFORE UPDATE ON \`payments\` WHEN ${flowBad} BEGIN ${named("payments_status_flow", "a pending payment is confirmed or rejected once by the Owner, or a gateway payment confirmed by the system with its tax invoice; a confirmed one is withdrawn once by the Owner, with a reason; a gateway payment is never rejected or withdrawn")} END;`,
+    payments_values_insert: `CREATE TRIGGER \`payments_values_insert\` BEFORE INSERT ON \`payments\` WHEN ${valuesBad} BEGIN ${named("payments_values_insert", valuesMsg)} END;`,
+    payments_values_update: `CREATE TRIGGER \`payments_values_update\` BEFORE UPDATE OF kind, provider, status, mode, proof_mime ON \`payments\` WHEN ${valuesBad} BEGIN ${named("payments_values_update", valuesMsg)} END;`,
+    payments_insert_state: `CREATE TRIGGER \`payments_insert_state\` BEFORE INSERT ON \`payments\` WHEN ${insertBad} BEGIN ${named("payments_insert_state", "a manual payment starts pending with no decision, or confirmed by an active Owner who recorded it; a gateway payment has no member, names its gateway payment, checkout and re-fetch, and starts pending or confirmed by the gateway; never withdrawn")} END;`,
+    payments_gateway_shape: `CREATE TRIGGER \`payments_gateway_shape\` BEFORE INSERT ON \`payments\` WHEN ${shapeBad} BEGIN ${named("payments_gateway_shape", shapeMsg)} END;`,
+    payments_fixed: `CREATE TRIGGER \`payments_fixed\` BEFORE UPDATE ON \`payments\` WHEN ${fixedBad} BEGIN ${named("payments_fixed", "a payment never changes; its proof, its TDS certificate and its advance receipt are set once")} END;`,
+    payments_status_flow: `CREATE TRIGGER \`payments_status_flow\` BEFORE UPDATE ON \`payments\` WHEN ${flowBad} BEGIN ${named("payments_status_flow", statusFlowMsg)} END;`,
     // 6. checkout_sessions
-    `CREATE TRIGGER \`checkout_sessions_values_insert\` BEFORE INSERT ON \`checkout_sessions\` WHEN ${checkoutValuesBad} BEGIN ${named("checkout_sessions_values_insert", checkoutValuesMsg)} END;`,
-    `CREATE TRIGGER \`checkout_sessions_values_update\` BEFORE UPDATE OF provider, source, status ON \`checkout_sessions\` WHEN ${checkoutValuesBad} BEGIN ${named("checkout_sessions_values_update", checkoutValuesMsg)} END;`,
-    `CREATE TRIGGER \`checkout_sessions_insert_state\` BEFORE INSERT ON \`checkout_sessions\` WHEN ${checkoutInsertBad} BEGIN ${named("checkout_sessions_insert_state", "a checkout starts creating, with no link yet, made by the contact, the document link and its contact, or the member of its source")} END;`,
-    `CREATE TRIGGER \`checkout_sessions_status_flow\` BEFORE UPDATE ON \`checkout_sessions\` WHEN ${checkoutFlowBad} BEGIN ${named("checkout_sessions_status_flow", "a checkout goes creating to live or failed, live to paid, expired, cancelled or stale, stale to paid, expired or cancelled; live has its link, paid has its payment, set once")} END;`,
-    `CREATE TRIGGER \`checkout_sessions_fixed\` BEFORE UPDATE ON \`checkout_sessions\` WHEN ${checkoutFixedBad} BEGIN ${named("checkout_sessions_fixed", "a checkout keeps its document, client, amount and source; its contact and token are only cleared together, when the contact is erased; its link and payment are set once and its expiry only when it goes live")} END;`,
-    `CREATE TRIGGER \`checkout_sessions_no_delete\` BEFORE DELETE ON \`checkout_sessions\` BEGIN ${named("checkout_sessions_no_delete", "a checkout is never deleted")} END;`,
-    // Early check 1, finding 1: the erase and anonymise of a contact unlink its checkouts in the statements that delete its rows (no extra statement in the
-    // anonymise batch, which is at T7's cap of 45): a document link's token row going clears the checkouts made through it, the contact row going (the erase)
-    // clears every checkout naming the contact. The checkout keeps its document, amount, status and payment (`checkout_sessions_fixed` allows exactly this move).
-    "CREATE TRIGGER `checkout_sessions_unlink_token` BEFORE DELETE ON `doc_access_tokens` BEGIN UPDATE checkout_sessions SET contact_id = NULL, doc_token_id = NULL WHERE doc_token_id = OLD.token_hash; END;",
-    "CREATE TRIGGER `checkout_sessions_unlink_contact` BEFORE DELETE ON `contacts` BEGIN UPDATE checkout_sessions SET contact_id = NULL, doc_token_id = NULL WHERE contact_id = OLD.id; END;",
-    // Early check 1, "For B2" 9: once a client is anonymised its review items' notes are cleared, in the statement that anonymises it (the erase batch is at T7's
-    // cap of 45; `review_items_status_flow` allows exactly this move; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)).
-    "CREATE TRIGGER `review_items_erase_notes` AFTER UPDATE OF anonymised_at ON `clients` WHEN NEW.anonymised_at IS NOT NULL AND OLD.anonymised_at IS NULL BEGIN UPDATE review_items SET note = NULL WHERE client_id = NEW.id AND note IS NOT NULL; END;",
+    checkout_sessions_values_insert: `CREATE TRIGGER \`checkout_sessions_values_insert\` BEFORE INSERT ON \`checkout_sessions\` WHEN ${checkoutValuesBad} BEGIN ${named("checkout_sessions_values_insert", checkoutValuesMsg)} END;`,
+    checkout_sessions_values_update: `CREATE TRIGGER \`checkout_sessions_values_update\` BEFORE UPDATE OF provider, source, status ON \`checkout_sessions\` WHEN ${checkoutValuesBad} BEGIN ${named("checkout_sessions_values_update", checkoutValuesMsg)} END;`,
+    checkout_sessions_insert_state: `CREATE TRIGGER \`checkout_sessions_insert_state\` BEFORE INSERT ON \`checkout_sessions\` WHEN ${checkoutInsertBad} BEGIN ${named("checkout_sessions_insert_state", "a checkout starts creating, with no link yet, made by the contact, the document link and its contact, or the member of its source")} END;`,
+    checkout_sessions_status_flow: `CREATE TRIGGER \`checkout_sessions_status_flow\` BEFORE UPDATE ON \`checkout_sessions\` WHEN ${checkoutFlowBad} BEGIN ${named("checkout_sessions_status_flow", checkoutFlowMsg)} END;`,
+    checkout_sessions_fixed: `CREATE TRIGGER \`checkout_sessions_fixed\` BEFORE UPDATE ON \`checkout_sessions\` WHEN ${checkoutFixedBad} BEGIN ${named("checkout_sessions_fixed", "a checkout keeps its document, client, amount and source; its contact and token are only cleared together, when the contact is erased; its link and payment are set once and its expiry only when it goes live")} END;`,
+    checkout_sessions_no_delete: `CREATE TRIGGER \`checkout_sessions_no_delete\` BEFORE DELETE ON \`checkout_sessions\` BEGIN ${named("checkout_sessions_no_delete", "a checkout is never deleted")} END;`,
+    checkout_sessions_unlink_token:
+      "CREATE TRIGGER `checkout_sessions_unlink_token` BEFORE DELETE ON `doc_access_tokens` BEGIN UPDATE checkout_sessions SET contact_id = NULL, doc_token_id = NULL WHERE doc_token_id = OLD.token_hash; END;",
+    checkout_sessions_unlink_contact:
+      "CREATE TRIGGER `checkout_sessions_unlink_contact` BEFORE DELETE ON `contacts` BEGIN UPDATE checkout_sessions SET contact_id = NULL, doc_token_id = NULL WHERE contact_id = OLD.id; END;",
+    review_items_erase_notes:
+      "CREATE TRIGGER `review_items_erase_notes` AFTER UPDATE OF anonymised_at ON `clients` WHEN NEW.anonymised_at IS NOT NULL AND OLD.anonymised_at IS NULL BEGIN UPDATE review_items SET note = NULL WHERE client_id = NEW.id AND note IS NOT NULL; END;",
     // 7. webhook_events
-    `CREATE TRIGGER \`webhook_events_values_insert\` BEFORE INSERT ON \`webhook_events\` WHEN ${eventValuesBad} OR NEW.status NOT IN ('received', 'ignored') OR NEW.attempts IS NOT 0 BEGIN ${named("webhook_events_values_insert", "an event arrives received or ignored, from a known provider, with no attempts yet")} END;`,
-    `CREATE TRIGGER \`webhook_events_values_update\` BEFORE UPDATE OF provider, status ON \`webhook_events\` WHEN ${eventValuesBad} BEGIN ${named("webhook_events_values_update", "an event has a known provider and status")} END;`,
-    `CREATE TRIGGER \`webhook_events_fixed\` BEFORE UPDATE ON \`webhook_events\` WHEN ${changed(["id", "provider", "event_id", "event_type", "received_at", "facts"])} BEGIN ${named("webhook_events_fixed", "an event keeps its provider, id, type, arrival and facts")} END;`,
-    `CREATE TRIGGER \`webhook_events_status_flow\` BEFORE UPDATE ON \`webhook_events\` WHEN ${eventFlowBad} BEGIN ${named("webhook_events_status_flow", "an event goes received to processed, ignored, needs_review or failed, and failed back to received; its attempts never go down")} END;`,
-    `CREATE TRIGGER \`webhook_events_no_delete\` BEFORE DELETE ON \`webhook_events\` BEGIN ${named("webhook_events_no_delete", "an event is never deleted")} END;`,
+    webhook_events_values_insert: `CREATE TRIGGER \`webhook_events_values_insert\` BEFORE INSERT ON \`webhook_events\` WHEN ${eventValuesBad} OR NEW.status NOT IN ('received', 'ignored') OR NEW.attempts IS NOT 0 BEGIN ${named("webhook_events_values_insert", "an event arrives received or ignored, from a known provider, with no attempts yet")} END;`,
+    webhook_events_values_update: `CREATE TRIGGER \`webhook_events_values_update\` BEFORE UPDATE OF provider, status ON \`webhook_events\` WHEN ${eventValuesBad} BEGIN ${named("webhook_events_values_update", "an event has a known provider and status")} END;`,
+    webhook_events_fixed: `CREATE TRIGGER \`webhook_events_fixed\` BEFORE UPDATE ON \`webhook_events\` WHEN ${changed(["id", "provider", "event_id", "event_type", "received_at", "facts"])} BEGIN ${named("webhook_events_fixed", "an event keeps its provider, id, type, arrival and facts")} END;`,
+    webhook_events_status_flow: `CREATE TRIGGER \`webhook_events_status_flow\` BEFORE UPDATE ON \`webhook_events\` WHEN ${eventFlowBad} BEGIN ${named("webhook_events_status_flow", "an event goes received to processed, ignored, needs_review or failed, and failed back to received; its attempts never go down")} END;`,
+    webhook_events_no_delete: `CREATE TRIGGER \`webhook_events_no_delete\` BEFORE DELETE ON \`webhook_events\` BEGIN ${named("webhook_events_no_delete", "an event is never deleted")} END;`,
     // 8. review_items
-    `CREATE TRIGGER \`review_items_values_insert\` BEFORE INSERT ON \`review_items\` WHEN ${reviewValuesBad} OR NEW.status IS NOT 'open' OR NEW.resolved_by IS NOT NULL OR NEW.resolved_at IS NOT NULL OR NEW.resolution IS NOT NULL OR NEW.note IS NOT NULL BEGIN ${named("review_items_values_insert", "a review item starts open with no decision, of a known source, provider and kind")} END;`,
-    `CREATE TRIGGER \`review_items_values_update\` BEFORE UPDATE OF source, provider, kind, status, resolution ON \`review_items\` WHEN ${reviewValuesBad} BEGIN ${named("review_items_values_update", reviewValuesMsg)} END;`,
-    `CREATE TRIGGER \`review_items_fixed\` BEFORE UPDATE ON \`review_items\` WHEN ${reviewFixedBad} BEGIN ${named("review_items_fixed", "a review item keeps what it is about and its facts")} END;`,
-    `CREATE TRIGGER \`review_items_status_flow\` BEFORE UPDATE ON \`review_items\` WHEN ${reviewFlowBad} BEGIN ${named("review_items_status_flow", "a review item is resolved once by the Owner, with a resolution; its note is written then, and cleared only once the client is anonymised")} END;`,
-    `CREATE TRIGGER \`review_items_no_delete\` BEFORE DELETE ON \`review_items\` BEGIN ${named("review_items_no_delete", "a review item is never deleted")} END;`,
-  ];
+    review_items_values_insert: `CREATE TRIGGER \`review_items_values_insert\` BEFORE INSERT ON \`review_items\` WHEN ${reviewValuesBad} OR NEW.status IS NOT 'open' OR NEW.resolved_by IS NOT NULL OR NEW.resolved_at IS NOT NULL OR NEW.resolution IS NOT NULL OR NEW.note IS NOT NULL BEGIN ${named("review_items_values_insert", "a review item starts open with no decision, of a known source, provider and kind")} END;`,
+    review_items_values_update: `CREATE TRIGGER \`review_items_values_update\` BEFORE UPDATE OF source, provider, kind, status, resolution ON \`review_items\` WHEN ${reviewValuesBad} BEGIN ${named("review_items_values_update", reviewValuesMsg)} END;`,
+    review_items_fixed: `CREATE TRIGGER \`review_items_fixed\` BEFORE UPDATE ON \`review_items\` WHEN ${reviewFixedBad} BEGIN ${named("review_items_fixed", "a review item keeps what it is about and its facts")} END;`,
+    review_items_status_flow: `CREATE TRIGGER \`review_items_status_flow\` BEFORE UPDATE ON \`review_items\` WHEN ${reviewFlowBad} BEGIN ${named("review_items_status_flow", "a review item is resolved once by the Owner, with a resolution; its note is written then, and cleared only once the client is anonymised")} END;`,
+    review_items_no_delete: `CREATE TRIGGER \`review_items_no_delete\` BEFORE DELETE ON \`review_items\` BEGIN ${named("review_items_no_delete", "a review item is never deleted")} END;`,
+  } as const;
 }
 
 /** The trigger sets, by the name the migration is created with (`drizzle-kit generate --custom --name <set>`). */
@@ -1804,6 +1919,10 @@ export const TRIGGER_SETS = {
   gateway_triggers: {
     what: "M6.2 Razorpay: gateway payments in the payment triggers (values, insert state, shape, frozen columns, the gateway_auto confirm), checkout, webhook event and review item rules",
     statements: gatewayTriggerStatements,
+  },
+  stripe_triggers: {
+    what: "M6.3 Stripe: the provider lists of the payment and gateway triggers, the Stripe payment shape with its INR fee columns, those columns frozen, the system's confirm kept to Razorpay, and live or stale checkouts may fail",
+    statements: stripeTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;

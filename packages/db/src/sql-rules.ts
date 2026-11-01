@@ -99,11 +99,57 @@ export const ledgerStatusCaseSql = (total: string, settled: string, credited: st
  * proforma; in INR; issued and not void (a withdrawn proforma is a void one); of a live client in India that is not overseas (owner, 2026-11-01, Q3 A; OPEN (08-C
  * RB-01): does a USD invoice paid through a PA-CB that credits us in INR count as "settled in INR"?); with at least ₹1 due (Razorpay's minimum); a proforma issued
  * or converted (early check 1, finding 5) with its balance in whole rupees (LD28). A db test holds it to core `payableOnline`.
+ * M6.3: by `provider`'s row of the rule table (`ONLINE_RULES_SQL`; Stripe: an export invoice, debit note or proforma in USD of an overseas client, at least 50
+ * cents, cents allowed), and for every provider no gateway payment still waiting on it (`gatewayPaymentPendingSql`, core `payment_pending`).
  */
-export const onlinePayableSql = (d: string, k: string): string =>
-  `(${d}.type IN ('tax_invoice', 'debit_note', 'proforma') AND ${d}.currency = 'INR' AND ${d}.frozen_at IS NOT NULL AND ${d}.status <> 'void'
-    AND ${k}.anonymised_at IS NULL AND ${k}.country = 'IN' AND ${k}.gst_status <> 'overseas'
-    AND ${d}.balance_minor >= 100 AND (${d}.type <> 'proforma' OR (${d}.status IN ('issued', 'converted') AND ${d}.balance_minor % 100 = 0)))`;
+export const onlinePayableSql = (d: string, k: string, provider: OnlineProviderSql): string => {
+  const r = ONLINE_RULES_SQL[provider];
+  const whole = r.wholeUnitsOnProforma ? ` AND ${d}.balance_minor % 100 = 0` : "";
+  return `(${d}.type IN (${r.types.map((t) => `'${t}'`).join(", ")}) AND ${d}.currency = '${r.currency}' AND ${d}.frozen_at IS NOT NULL AND ${d}.status <> 'void'
+    AND ${k}.anonymised_at IS NULL AND ${clientSideSql(k, r.clients)}
+    AND ${d}.balance_minor >= ${r.minMinor} AND (${d}.type <> 'proforma' OR (${d}.status IN ('issued', 'converted')${whole}))
+    AND NOT ${gatewayPaymentPendingSql(d)})`;
+};
+
+/**
+ * M6.3: the rule table of core `ONLINE_RULES` (`@techaust/core/online-pay`) as plain values, so this module keeps no imports (a db test holds the two equal). One row
+ * per gateway (L14): its currency, whose documents (`domestic`: in India and not overseas; `overseas`: exactly the complement), the types, the gateway's minimum and
+ * whether a proforma is paid in whole units. M6.4 adds PayPal.
+ */
+export const ONLINE_RULES_SQL = {
+  razorpay: {
+    currency: "INR",
+    clients: "domestic",
+    types: ["tax_invoice", "debit_note", "proforma"],
+    minMinor: 100,
+    wholeUnitsOnProforma: true,
+  },
+  stripe: {
+    currency: "USD",
+    clients: "overseas",
+    types: ["export_invoice", "debit_note", "proforma"],
+    minMinor: 50,
+    wholeUnitsOnProforma: false,
+  },
+} as const;
+export type OnlineProviderSql = keyof typeof ONLINE_RULES_SQL;
+
+/** Client `k` (alias) is on the gateway's side: `domestic` (in India and not overseas) or `overseas` (`country <> 'IN' OR gst_status = 'overseas'`). */
+export const clientSideSql = (k: string, side: "domestic" | "overseas"): string =>
+  side === "domestic"
+    ? `${k}.country = 'IN' AND ${k}.gst_status <> 'overseas'`
+    : `(${k}.country <> 'IN' OR ${k}.gst_status = 'overseas')`;
+
+/**
+ * M6.3 (generic, every gateway; reviewer X1; core `payableOnline`'s `payment_pending`): document `d` (alias) has a gateway payment still waiting: a
+ * `pending_verification` payment through one of its checkouts whose `requested_allocations` name it (a paid USD proforma waiting for the Owner, Q1 A; a Razorpay
+ * proforma waiting for its automatic tax invoice). A mismatch's pending money has no requested allocation and does not count (the M6.2 rule of
+ * `proformaOnlinePendingSql`). Seeks of `checkout_sessions_document` and `payments_checkout`.
+ */
+export const gatewayPaymentPendingSql = (d: string): string =>
+  `EXISTS (SELECT 1 FROM checkout_sessions gpc INDEXED BY checkout_sessions_document JOIN payments gpp ON gpp.checkout_id = gpc.id
+     WHERE gpc.document_id = ${d}.id AND gpp.status = 'pending_verification' AND gpp.requested_allocations IS NOT NULL
+       AND EXISTS (SELECT 1 FROM json_each(gpp.requested_allocations) gpj WHERE json_extract(gpj.value, '$.documentId') = ${d}.id))`;
 
 /**
  * M6.2 (review finding 10): proforma `d` has an online payment of client `client` (SQL expressions) waiting for its automatic tax invoice: a pending Razorpay payment

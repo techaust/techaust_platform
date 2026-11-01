@@ -372,7 +372,7 @@ export type InvoiceSummary = ReturnType<typeof summaryOf>;
  * requested allocation, review finding 10). Read in the same batch as the summary. Fix round 3
  * item 1: the balance and the part-payment floor (Settings › Payment terms, read as stored: the portal carries no settings schema; core `storedFloorOf`).
  */
-export const ONLINE_SQL = `SELECT ${onlinePayableSql("d", "k")} AS pay_online, d.type, d.balance_minor AS balance,
+export const ONLINE_SQL = `SELECT ${onlinePayableSql("d", "k", "razorpay")} AS pay_online, d.type, d.balance_minor AS balance,
      (SELECT CASE WHEN NOT json_valid(s.value) THEN -1 WHEN json_type(s.value, '$.razorpayMinPartialInrMinor') IS NULL THEN NULL
         WHEN json_type(s.value, '$.razorpayMinPartialInrMinor') = 'integer' THEN json_extract(s.value, '$.razorpayMinPartialInrMinor') ELSE -1 END
       FROM settings s WHERE s.key = 'payment_terms') AS floor,

@@ -10,7 +10,15 @@
 // Annex 1 2.1 (08-C RB-07)): `facts` are whitelists the caller builds (core `eventFacts`).
 import { ledgerResultStatement, recomputeStatement } from "./ledger.ts";
 import type { GuardSql } from "./log.ts";
-import { livePaidSql, liveTdsSql, onlinePayableSql, paymentNetSql } from "./sql-rules.ts";
+import {
+  clientSideSql,
+  livePaidSql,
+  liveTdsSql,
+  ONLINE_RULES_SQL,
+  type OnlineProviderSql,
+  onlinePayableSql,
+  paymentNetSql,
+} from "./sql-rules.ts";
 
 export type { GuardSql };
 
@@ -55,10 +63,13 @@ export const LINKS_PER_CLIENT_HOUR = 10;
 /** A link's status is re-fetched at most once a minute (`refreshForClient`). */
 export const REFRESH_SPACING_MS = 60_000;
 
+/** The gateways these statements serve (M6.2 Razorpay, M6.3 Stripe; the rows of `ONLINE_RULES_SQL`). */
+export type GatewayProvider = OnlineProviderSql;
+
 export type CheckoutCreateArgs = {
-  /** A UUIDv7: the row and Razorpay's `reference_id`. */
+  /** A UUIDv7: the row, Razorpay's `reference_id`, Stripe's `client_reference_id` and `Idempotency-Key`. */
   id: string;
-  provider: "razorpay";
+  provider: GatewayProvider;
   documentId: string;
   clientId: string;
   source: "portal" | "link" | "staff";
@@ -69,8 +80,10 @@ export type CheckoutCreateArgs = {
   /** `staff`: the member. */
   createdBy: string | null;
   amountMinor: number;
-  /** The part-payment floor read from Settings › Payment terms (`razorpayMinPartialInrMinor`). */
+  /** The part-payment floor read from Settings › Payment terms (`razorpayMinPartialInrMinor`; M6.3 Stripe: `onlineMinPartialUsdMinor`). */
   floorMinor: number;
+  /** M6.3: the most one online payment may be (`overseasOnlineMaxUsdMinor` for Stripe, L9), or null: no maximum (Razorpay). */
+  maxMinor?: number | null;
   expiresAt: number;
   now: number;
 };
@@ -81,18 +94,23 @@ export type CheckoutCreateArgs = {
  * client's and payable online (`onlinePayableSql`); the amount is at most its balance, at least the floor (never under ₹1) or the balance if lower, and whole rupees on a proforma
  * (core `payAmountVerdict`); the client made fewer than `LINKS_PER_CLIENT_HOUR` links in the last hour; and the actor of the source may pay it: a signed-in contact
  * of the client with portal access who can see finance; an emailed link, live, unrevoked, for this document, bound to that contact whose address still matches; or
- * an active Owner or Staff member. `?1`..`?12`.
+ * an active Owner or Staff member. M6.3: the provider's row of the rule table (`onlinePayableSql(d, k, provider)`, which also refuses a document with a gateway
+ * payment still waiting), the online maximum (`?13`, NULL: none; core `payAmountVerdict`'s `maxMinor`), whole units on a proforma only where the provider's row
+ * says so. `?1`..`?13`.
  */
 export function checkoutCreateStatement(db: D1Database, a: CheckoutCreateArgs): D1PreparedStatement {
   const contactOk = (c: string) =>
     `${c}.client_id = d.client_id AND ${c}.portal_access = 1 AND ${c}.can_see_finance = 1 AND ${c}.anonymised_at IS NULL`;
+  const whole = ONLINE_RULES_SQL[a.provider].wholeUnitsOnProforma
+    ? " AND (d.type <> 'proforma' OR ?8 % 100 = 0)"
+    : "";
   return db
     .prepare(
       `INSERT INTO checkout_sessions (id, provider, document_id, client_id, contact_id, doc_token_id, created_by, source, currency, amount_minor, status, expires_at, created_at, updated_at)
        SELECT ?1, ?2, d.id, d.client_id, ?4, ?5, ?6, ?7, d.currency, ?8, 'creating', ?9, ?10, ?10
        FROM documents d JOIN clients k ON k.id = d.client_id
-       WHERE d.id = ?3 AND d.client_id = ?11 AND ${onlinePayableSql("d", "k")}
-         AND ?8 <= d.balance_minor AND ?8 >= min(max(?12, 100), d.balance_minor) AND (d.type <> 'proforma' OR ?8 % 100 = 0)
+       WHERE d.id = ?3 AND d.client_id = ?11 AND ${onlinePayableSql("d", "k", a.provider)}
+         AND ?8 <= d.balance_minor AND (?13 IS NULL OR ?8 <= ?13) AND ?8 >= min(max(?12, 100), d.balance_minor)${whole}
          AND (SELECT count(*) FROM checkout_sessions r WHERE r.client_id = d.client_id AND r.created_at > ?10 - 3600000) < ${LINKS_PER_CLIENT_HOUR}
          AND CASE ?7
            WHEN 'portal' THEN ?5 IS NULL AND ?6 IS NULL AND EXISTS (SELECT 1 FROM contacts c WHERE c.id = ?4 AND ${contactOk("c")})
@@ -115,6 +133,7 @@ export function checkoutCreateStatement(db: D1Database, a: CheckoutCreateArgs): 
       a.now,
       a.clientId,
       a.floorMinor,
+      a.maxMinor ?? null,
     );
 }
 
@@ -131,13 +150,24 @@ export function checkoutLiveStatement(
     .bind(a.id, a.providerLinkId, a.shortUrl, a.expiresAt, a.now);
 }
 
-/** `creating` → `failed` when Razorpay refused or could not be reached (502 `gateway_error`): the document is free for another link at once. */
-export function checkoutFailStatement(db: D1Database, a: { id: string; now: number }): D1PreparedStatement {
+/**
+ * A checkout fails. `from: "creating"` (the default): the gateway refused or could not be reached (502 `gateway_error`); the document is free for another link at
+ * once. M6.3 `from: "open"`: a live or stale checkout whose asynchronous payment failed (Stripe's `checkout.session.async_payment_failed`; trigger
+ * `checkout_sessions_status_flow` of 0066), guarded when `g` is given. Each path matches only its own states, so a create failure never ends a row that went live
+ * meanwhile.
+ */
+export function checkoutFailStatement(
+  db: D1Database,
+  a: { id: string; now: number; from?: "creating" | "open" },
+  g?: GuardSql,
+): D1PreparedStatement {
+  const gs = guarded(g, 2);
+  const from = a.from === "open" ? "status IN ('live', 'stale')" : "status = 'creating'";
   return db
     .prepare(
-      "UPDATE checkout_sessions SET status = 'failed', updated_at = max(?2, updated_at + 1) WHERE id = ?1 AND status = 'creating'",
+      `UPDATE checkout_sessions SET status = 'failed', updated_at = max(?2, updated_at + 1) WHERE id = ?1 AND ${from}${gs.sql}`,
     )
-    .bind(a.id, a.now);
+    .bind(a.id, a.now, ...gs.params);
 }
 
 /**
@@ -205,15 +235,28 @@ export const CLIENT_LINKS_SINCE_SQL =
 export const DOCUMENT_CLIENT_LINKS_SINCE_SQL =
   "SELECT count(*) AS n FROM checkout_sessions r INDEXED BY checkout_sessions_client WHERE r.client_id = (SELECT d.client_id FROM documents d WHERE d.id = ?1) AND r.created_at > ?2";
 
+/** M6.3 (L13): at most this many live checkouts past their expiry are refreshed by one hourly sweep, each at least this long after its expiry and last refresh. */
+export const STALE_LIVE_LIMIT = 10;
+export const STALE_LIVE_AFTER_MS = 15 * 60_000;
+
+/**
+ * M6.3 (L6, L13): the sweep's third read: live checkouts whose expiry passed 15 minutes ago (`?1` = now − 15 minutes) and that were not refreshed since then, oldest
+ * expiry first, at most 10. Only Stripe's word ends such a row (`refreshCheckout`), never our clock. Through the partial index `checkout_sessions_open` (only
+ * `creating` and `live` rows are in it: a handful).
+ */
+export const STALE_LIVE_CHECKOUTS_SQL = `SELECT c.id, c.provider FROM checkout_sessions c INDEXED BY checkout_sessions_open
+   WHERE c.status IN ('creating', 'live') AND c.status = 'live' AND c.expires_at < ?1 AND (c.last_refresh_at IS NULL OR c.last_refresh_at < ?1)
+   ORDER BY c.expires_at, c.id LIMIT ${STALE_LIVE_LIMIT}`;
+
 // ---- a gateway payment (the webhook or a status refresh, after the re-fetch) ---------------------------------------------------------------------------
 
 export type GatewayFacts = Readonly<Record<string, string | number>>;
 
 export type GatewayPaymentArgs = {
-  provider: "razorpay";
-  /** Razorpay's payment id (`pay_...`). */
+  provider: GatewayProvider;
+  /** The gateway's payment id (Razorpay's `pay_...`, Stripe's payment intent `pi_...`). */
   providerPaymentId: string;
-  /** `payments.id`: `rzp_` and the payment id (core `razorpayPaymentRowId`). */
+  /** `payments.id`: `rzp_` or `stp_` and the payment id (core `razorpayPaymentRowId`, `stripePaymentRowId`). */
   paymentId: string;
   checkoutId: string;
   clientId: string;
@@ -227,9 +270,19 @@ export type GatewayPaymentArgs = {
    */
   status: "confirmed" | "pending_verification";
   amountMinor: number;
-  /** Razorpay's `fee` and `tax` as reported (absorbed: Researched 2026-10-28, NPCI FAQ of 15 Sep 2026 (08-C RA-29)); a missing fee is stored as 0. */
+  /**
+   * Razorpay's `fee` and `tax` as reported (absorbed: Researched 2026-10-28, NPCI FAQ of 15 Sep 2026 (08-C RA-29)); a missing fee is stored as 0. Stripe: 0 and
+   * null (its fee is INR: the INR columns below; trigger `payments_gateway_shape` of 0066).
+   */
   feeMinor: number;
   feeTaxMinor: number | null;
+  /**
+   * M6.3 (L10, core `inrFactsOf`): a Stripe payment's INR facts when its balance transaction is in INR: the gross (`inr_received_minor`), Stripe's fee and the tax in
+   * it, INR paise; null otherwise and always for Razorpay. Missing: null.
+   */
+  inrReceivedMinor?: number | null;
+  gatewayFeeInrMinor?: number | null;
+  gatewayFeeTaxInrMinor?: number | null;
   /**
    * The IST day of the payment's `created_at` (L11): s.13(2) CGST Act, explanation (the earlier of the book entry and the bank credit), so the payment's own day,
    * never the later settlement day. Settled by the lead on the safest reading, 2026-11-01 (08-C RA-37).
@@ -276,7 +329,9 @@ export type GatewayPaymentStatements = {
  * One gateway payment in ONE batch (run file C, steps 6 to 8). `main` inserts the payment only while: no row has this id or this gateway payment id (a replay with
  * a new event id inserts nothing: JOB-HOOK-02); the checkout is this client's and document's, through this provider, and still live or stale when the payment is
  * confirmed or the checkout is to be paid; the client is live and in the checkout's currency; and, when the payment is put on the document, the document is still a
- * frozen, not void INR tax invoice or debit note of a domestic client. The triggers hold the row's shape (`payments_insert_state`, `payments_gateway_shape`).
+ * frozen, not void document of a type, currency and client side the provider's row of the rule table puts money on directly (M6.3: Razorpay an INR tax invoice or
+ * debit note of a domestic client; Stripe a USD export invoice or debit note of an overseas client). The triggers hold the row's shape (`payments_insert_state`,
+ * `payments_gateway_shape`; M6.3 the INR fee columns, `?20`..`?22`).
  * Then, guarded on the caller's audit row `g` and on this batch's row: the allocation (`INSERT ... SELECT min(amount, live balance)`, nothing when nothing is due),
  * the recompute, the `overpaid` review item when the payment holds an excess (as client credit, ADM-PAY-06; Settled by the lead on the safest reading, 2026-10-31
  * (08-C RA-36): credit held is an advance), the checkout to `paid`, the document's other live links to `stale`, the event's move, the owners' bells; and
@@ -291,13 +346,22 @@ export function recordGatewayPaymentStatements(
   // Early check 1, finding 7: a confirmed payment is always put on its document (a confirmed row with no allocation would be credit written without a payable check).
   if (confirmed && !a.allocate)
     throw new TypeError("recordGatewayPaymentStatements: a confirmed payment needs `allocate`");
-  const docPayable = `EXISTS (SELECT 1 FROM documents d WHERE d.id = c.document_id AND d.type IN ('tax_invoice', 'debit_note') AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.currency = 'INR')
-         AND k.country = 'IN' AND k.gst_status <> 'overseas'`;
+  // M6.3: from the provider's row of the rule table, never a hard-coded INR test: the types a payment is put on directly (a proforma's money waits for its tax
+  // invoice: never allocated here), the currency and the client's side (Razorpay: INR, domestic; Stripe: USD, overseas).
+  const rule = ONLINE_RULES_SQL[a.provider];
+  const direct = rule.types
+    .filter((t) => t !== "proforma")
+    .map((t) => `'${t}'`)
+    .join(", ");
+  const docPayable = `EXISTS (SELECT 1 FROM documents d WHERE d.id = c.document_id AND d.type IN (${direct}) AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.currency = '${rule.currency}')
+         AND ${clientSideSql("k", rule.clients)}`;
   const main = db
     .prepare(
       `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, charges_minor, received_on, mode, reference_norm, requested_allocations,
-         recorded_by, recorded_at, verified_by, verified_at, provider_payment_id, checkout_id, fee_tax_minor, refetched_at, webhook_event_id)
-       SELECT ?1, c.client_id, 'payment', ?2, ?3, c.currency, ?4, ?5, ?6, ?7, ?8, ?9, NULL, ?10, NULL, CASE ?3 WHEN 'confirmed' THEN ?10 END, ?11, c.id, ?12, ?13, ?14
+         recorded_by, recorded_at, verified_by, verified_at, provider_payment_id, checkout_id, fee_tax_minor, refetched_at, webhook_event_id,
+         inr_received_minor, gateway_fee_inr_minor, gateway_fee_tax_inr_minor)
+       SELECT ?1, c.client_id, 'payment', ?2, ?3, c.currency, ?4, ?5, ?6, ?7, ?8, ?9, NULL, ?10, NULL, CASE ?3 WHEN 'confirmed' THEN ?10 END, ?11, c.id, ?12, ?13, ?14,
+         ?20, ?21, ?22
        FROM checkout_sessions c JOIN clients k ON k.id = c.client_id
        WHERE c.id = ?15 AND c.provider = ?2 AND c.client_id = ?16 AND c.document_id = ?17
          AND (?18 = 0 OR c.status IN ('live', 'stale'))
@@ -327,6 +391,9 @@ export function recordGatewayPaymentStatements(
       a.documentId,
       confirmed || a.checkoutPaid === true ? 1 : 0,
       a.allocate ? 1 : 0,
+      a.inrReceivedMinor ?? null,
+      a.gatewayFeeInrMinor ?? null,
+      a.gatewayFeeTaxInrMinor ?? null,
     );
   // This batch wrote the payment: its id with this batch's instant.
   const made: GuardSql = {
@@ -432,7 +499,7 @@ export function recordGatewayPaymentStatements(
 export type ReviewItemArgs = {
   id: string;
   source: "webhook" | "dlq" | "refresh";
-  provider: "razorpay";
+  provider: GatewayProvider;
   /** One of core `REVIEW_KINDS` (the 0064 triggers hold the list). */
   kind: string;
   webhookEventId: string | null;

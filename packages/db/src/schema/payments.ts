@@ -22,9 +22,12 @@ import { clients, contacts } from "./crm.ts";
 import { advanceReceipts, documents } from "./documents.ts";
 import { docAccessTokens, staffUsers } from "./identity.ts";
 
-/** The values the triggers accept today (L3; M6.2 to M6.5 widen them in their own trigger migrations: M6.2's `gateway_triggers` adds Razorpay and its methods). */
+/**
+ * The values the triggers accept today (L3; M6.2 to M6.5 widen them in their own trigger migrations: M6.2's `gateway_triggers` adds Razorpay and its methods, M6.3's
+ * `stripe_triggers` adds Stripe, whose modes are `card` and `other`).
+ */
 export const PAYMENT_KINDS = ["payment", "tds"] as const;
-export const PAYMENT_PROVIDERS = ["manual", "razorpay"] as const;
+export const PAYMENT_PROVIDERS = ["manual", "razorpay", "stripe"] as const;
 export const PAYMENT_STATUSES = ["pending_verification", "confirmed", "rejected", "withdrawn"] as const;
 export const PAYMENT_MODES = [
   "neft",
@@ -107,6 +110,12 @@ export const payments = sqliteTable(
     refetchedAt: integer("refetched_at"),
     /** The verified webhook event that led to the row (NULL when a status refresh found it). */
     webhookEventId: text("webhook_event_id").references((): AnySQLiteColumn => webhookEvents.id),
+    // M6.3 (ADD COLUMN only, 0065; held by `stripe_triggers`, never a CHECK here). Stripe settles in INR while the payment is in USD, and `charges_minor` /
+    // `fee_tax_minor` are in the payment's own currency (the payments register prints them so), so Stripe's fee never goes there (L10):
+    /** Stripe's balance-transaction `fee`, INR paise, absorbed, never billed (Researched 2026-10-28, NPCI FAQ of 15 Sep 2026 (08-C RA-29)); NULL unless in INR. */
+    gatewayFeeInrMinor: integer("gateway_fee_inr_minor"),
+    /** The tax in that fee (Σ `fee_details` of type `tax`), INR paise; NULL unless in INR. OPEN (08-C RA-29): is GST charged on the MDR and invoiced to our GSTIN? */
+    gatewayFeeTaxInrMinor: integer("gateway_fee_tax_inr_minor"),
   },
   (t) => [
     // M6.2: one row per gateway payment, whichever event or refresh brings it (a replay with a new event id still finds this key).
@@ -115,6 +124,13 @@ export const payments = sqliteTable(
       .where(sql`${t.providerPaymentId} is not null`),
     // M6.2: a document's online payments through its links (the Payments panel, the portal's Pay now block).
     index("payments_checkout").on(t.checkoutId).where(sql`${t.checkoutId} is not null`),
+    // M6.3 (L11, ADM-INV-17): the "Proof awaited" filter: a card or PayPal receipt (M6.4) with no proof file yet, pending or confirmed, by the day the money arrived.
+    // Proof of realisation: Settled by the lead on the safest reading, 2026-10-30 (08-C RB-05): keep the bank advice or e-FIRA; for a PA-CB, the settlement report.
+    index("payments_proof_awaited")
+      .on(t.receivedOn, t.id)
+      .where(
+        sql`${t.provider} in ('stripe', 'paypal') and ${t.proofR2Key} is null and ${t.status} in ('pending_verification', 'confirmed')`,
+      ),
     // A client's payments in a currency by the day the money arrived (the statement, the credit balance, the client's figures).
     index("payments_client").on(t.clientId, t.currency, t.receivedOn, t.id),
     // The Owner's "Payments to check" list and the dashboard tile: only the pending rows are in it.
@@ -212,7 +228,8 @@ export const realisationExtensions = sqliteTable(
 // with a trigger swap, never a rebuild of a table other tables reference. Nothing here stores a raw webhook body, a payer's email, phone, UPI address or card
 // detail (L8; ADM-PAY-12; Settled by the lead on the safest reading, 2026-11-01 (08-C RB-40); Researched 2026-10-28, RBI PA Directions 2025, Annex 1 2.1 (08-C RB-07)): `facts` is a whitelist the code builds.
 
-export const GATEWAY_PROVIDERS = ["razorpay"] as const;
+/** M6.2 Razorpay; M6.3 Stripe (`stripe_triggers`, 0066). */
+export const GATEWAY_PROVIDERS = ["razorpay", "stripe"] as const;
 export const WEBHOOK_EVENT_STATUSES = ["received", "processed", "ignored", "needs_review", "failed"] as const;
 export const CHECKOUT_SOURCES = ["portal", "link", "staff"] as const;
 export const CHECKOUT_STATUSES = [

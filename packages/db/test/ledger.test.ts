@@ -65,6 +65,7 @@ import {
   PAYMENT_MODES_0064,
   PAYMENT_PROVIDERS_0060,
   PAYMENT_PROVIDERS_0064,
+  PAYMENT_PROVIDERS_0066,
   PAYMENT_STATUSES_0060,
   PROOF_MIME_TYPES_0060,
   paymentTriggerStatements,
@@ -187,10 +188,11 @@ describe("0059 and 0060: no rebuild, the pinned lists, the freeze coverage [run 
     expect(all0059).not.toMatch(/DROP TABLE|__new_|INSERT INTO/);
   });
 
-  it("the trigger lists of 0060 are the schema's lists today (M6.2's 0064 widened the providers and modes), and tds_minor is a ledger column that may change after the freeze", () => {
+  it("the trigger lists of 0060 are the schema's lists today (M6.2's 0064 widened the providers and modes, M6.3's 0066 the providers), and tds_minor is a ledger column that may change after the freeze", () => {
     expect(PAYMENT_KINDS_0060).toEqual(PAYMENT_KINDS);
     expect(PAYMENT_PROVIDERS_0060).toEqual(["manual"]);
-    expect(PAYMENT_PROVIDERS_0064).toEqual(PAYMENT_PROVIDERS);
+    expect(PAYMENT_PROVIDERS_0064).toEqual(["manual", "razorpay"]);
+    expect(PAYMENT_PROVIDERS_0066).toEqual(PAYMENT_PROVIDERS);
     expect(PAYMENT_STATUSES_0060).toEqual(PAYMENT_STATUSES);
     expect(PAYMENT_MODES_0060).toEqual(["neft", "rtgs", "imps", "upi", "swift"]);
     expect(PAYMENT_MODES_0064).toEqual(PAYMENT_MODES);
@@ -218,7 +220,7 @@ describe("0059 and 0060: no rebuild, the pinned lists, the freeze coverage [run 
 describe("payments: values, insert state, TDS rules, frozen columns, status moves [ADM-PAY-05, L3, L7, L8]", () => {
   it("the enumerations are held by triggers (no CHECK): an unknown kind, provider, status, mode or proof type is refused", async () => {
     const { owner, clientId } = await setup();
-    for (const bad of [{ kind: "gift" }, { provider: "stripe" }, { mode: "cash" }])
+    for (const bad of [{ kind: "gift" }, { provider: "cheque_gateway" }, { mode: "cash" }])
       await rejects(pay(clientId, owner, bad), /payments_values_insert/);
     // an unknown status: the insert-state rule (it fires first) or the value rule refuses it
     await rejects(pay(clientId, owner, { status: "lost" }), /payments_values_insert|payments_insert_state/);

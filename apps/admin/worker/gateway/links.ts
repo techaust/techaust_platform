@@ -365,6 +365,7 @@ export async function makeLink(env: GatewayEnv, a: MakeLinkArgs, now = Date.now(
         createdBy: a.actor.kind === "staff" ? a.actor.memberId : null,
         amountMinor: a.amountMinor,
         floorMinor,
+        maxMinor: null,
         expiresAt,
         now,
       }).run()
