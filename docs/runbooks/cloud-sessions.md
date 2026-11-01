@@ -72,7 +72,7 @@ The pending tasks can run side by side, one cloud session each, while one sessio
 3. **It talks through its run file:** a `Status:` line, "Questions for the owner" (multiple choice, recommendation first) and new copy in its own 07 appendix. It pushes often and carries on with unblocked work. It ends its turn only with "WAITING ON OWNER: <name>" or "PR READY: <url>".
 4. **The main session:**
    - watches the run files' `Status:` lines with `node tools/watch-cloud.mjs` in a Monitor (cloud sessions can't message back), and prints one table with `node tools/watch-cloud.mjs status` when the owner says **"check the cloud sessions"**;
-   - paces usage: a run starts right after a 5-hour reset, at most two cloud sessions beside this PC's agents, no new agents over 85 % (owner, 2026-11-01);
+   - paces usage: a run starts right after a 5-hour reset, at most two cloud sessions beside this PC's agents, no new agents over 85 % (Lead, 2026-11-01; the owner's gate stays 95 %);
    - brings the owner every question in one batch, and sends answers and usage readings (`USAGE <pct> at <ISO time>`) as messages;
    - turns on auto-merge and Auto-fix in the planned merge order, and tells the next branch to take `main` in (renumbering unapplied migrations) before it merges;
    - alone edits 12, 13, CHANGELOG, CLAUDE.md and memory, from each run file's "Lead decisions (for 13)" and "Follow-ups (for 12)".

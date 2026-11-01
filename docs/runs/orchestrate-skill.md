@@ -1,6 +1,6 @@
 # Run: the `/orchestrate` skill and the cloud watcher
 
-Status: reviewer running
+Status: fixes running (review 1 SEND BACK: 1 high, 1 medium, 6 low)
 Tier: C
 Usage: lead claude-opus-5-5/high (cloud session orchestrate-skill); builder claude-opus-5-5/high (model-audit; skills: none — no docs/14 §9 row fits a plain Node CLI, flagged by the audit for that reason): 5-h 5 → ? %; reviewer: below. Reading at the start: USAGE 5 at 2026-11-01T11:15+05:30.
 
@@ -93,7 +93,18 @@ Builder (claude-opus-5-5, high), 2026-11-01, sub-branch `fix/orchestrate-skill-w
 **Open questions.** None for the owner. For the lead: choices 5 (no QUIET for a done task) and 9 (start errors on stdout) are the two a reviewer might want otherwise.
 
 ## Review
-(lead copies the reviewer's reply here)
+### Review 1 (reviewer, 2026-11-01): SEND BACK
+Skills: `code-review` (10 candidates, each verified); `security-review` not loaded (local CLI, no auth or public surface), the injection check done by hand. Ran: the watcher tests (69 passed), Biome clean, a real `status` and a short real `watch` + `stop` (exited within 7 s, no process left).
+1. **High** — a re-armed watcher starts from empty state (`tools/watch-cloud.mjs:438` etc.; SKILL.md 4.5): (a) every heartbeat re-announces pending WAITING / PR-READY ACTION lines; (b) QUIET fires for an active session whose builder pushes only `fix/<name>-*` (first-tick sub-branches don't re-arm the timer, which starts from the task tip's commit time); (c) a branch merged and deleted before a re-arm never counts as done, so ALL DONE never prints. Fix: persist per-task state in `<run dir>/watch.state.json`, written only while holding the token; with no saved state start the quiet timer from the newest commit among the tip and its sub-branches; treat an absent branch with saved state as done; tests for all three.
+2. **Medium** — the 85 % pacing rule labelled the owner's; docs/13 records it as the Lead's (SKILL.md:20, runbook Part 4, proposed CLAUDE.md item 3).
+3. **Low** — overlapping sub-branch prefixes (`pay` and `pay-links`): `fix/pay-links-r1` counts for both. Fix: longest matching prefix wins (or reject overlaps); test.
+4. **Low** — classification by substring with PR READY first: "SENT BACK … (was PR READY …)" → pr-ready; "done with builder" → merged; "Fail-safe review" → fail; "abandoned" → working. Fix: match class keywords at the start; `merged`/`abandoned` done; tests.
+5. **Low** — QUIET fires for a WAITING session (it ends its turn by rule). Fix: skip while waiting.
+6. **Low** — `ls-tree` resolves from the cwd, `show <sha>:<path>` from the root: use `--full-tree`; reject `.` path parts.
+7. **Low** — the header says nothing but the token is written; fetch writes FETCH_HEAD and remote refs.
+8. **Low** — shared-rules.md:6 points at "step 2" (it is 1.3); the 60 % `--action-only` threshold has no record row; SKILL.md §9 omits CHANGELOG.
+
+**Triage (lead):** all fixed. 2 and 8 by the lead (labels → "Lead, 2026-11-01", step 1.3, the 60 % threshold as a lead decision, CHANGELOG line; SKILL.md §5 also says QUIET never fires for WAITING or PR READY). 1, 3–7 by a fix builder on `fix/orchestrate-skill-r1`. A re-check follows (finding 1 was high).
 
 ## Integration notes
 (lead)
@@ -101,12 +112,14 @@ Builder (claude-opus-5-5, high), 2026-11-01, sub-branch `fix/orchestrate-skill-w
 ## Lead decisions (for 13)
 - (lead, 2026-11-01) The skill and its templates are written by the lead (they restate the record); the builder builds only the watcher and its tests, in parallel on separate files.
 - (lead, 2026-11-01) `status`, `resume` and `stop` from the 2026-10-31 row are skill arguments (`/orchestrate status|resume|stop`); the watcher itself has `watch`, `status` and `stop` (resume = re-arm the watcher and resume agents, a skill step).
+- (lead, 2026-11-01) The skill recommends the watcher's `--action-only` once the 5-hour bar is over 60 % (fewer wake-ups of the main session).
+- (lead, 2026-11-01) Review triage: the watcher persists its state in `<run dir>/watch.state.json` (written only by the copy holding the token), replacing the brief's "state lives in memory", so a heartbeat re-arm reports only real changes (review finding 1).
 - (lead, 2026-11-01) The watcher prints a line on every Status change (the task's wording), and lines that need the main session end with ` ACTION`; `--action-only` prints only those, for a quieter Monitor.
 
 ## Proposed CLAUDE.md text
 1. In "In a cloud session" → "Parallel task sessions", replace the first bullet's tail "from the shared prompt in [runs/cloud-parallel-2026-10-31.md](docs/runs/cloud-parallel-2026-10-31.md)." with: "with the **`/orchestrate` skill** (`.claude/skills/orchestrate/`: choosing tasks, the shared rules and prompt templates, the watcher, the PR review checklist, merge order, the record, resume after a limit)."
 2. Replace the "Cloud sessions can't message back. The main session watches …" bullet's watcher sentence with: "The main session runs `node tools/watch-cloud.mjs --run .logs/orchestrate/run.json` in a Monitor (one line per Status change, PR READY, WAITING ON, BLOCKED/FAIL, sub-branch push `fix/<name>-*`, quiet 45 minutes; only the newest copy runs, so a re-arm by the 30-minute heartbeat never leaves an orphan; `status` prints one table, `stop` ends it)."
-3. Add a bullet: "**Pacing** (owner, 2026-11-01): a run starts right after a 5-hour reset, with at most two cloud sessions beside the PC's agents; no new agent anywhere over 85 %; after a limit stop, `/orchestrate resume` resumes the PC's agents by SendMessage and re-arms the watcher."
+3. Add a bullet: "**Pacing** (Lead, 2026-11-01; the owner's gate stays 95 %): a run starts right after a 5-hour reset, with at most two cloud sessions beside the PC's agents; no new agent anywhere over 85 %; after a limit stop, `/orchestrate resume` resumes the PC's agents by SendMessage and re-arms the watcher."
 (docs/14 §9 gains the skill row and runbook Part 4 points at the skill in this PR; neither is a main-session-only file.)
 
 ## Follow-ups (for 12)
