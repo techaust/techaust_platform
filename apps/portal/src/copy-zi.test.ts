@@ -51,7 +51,10 @@ describe("the part amount [POR-06]", () => {
     expect(partAmount("0", a)).toEqual({ ok: false, error: PAY_ZI.between("₹10,000.00", "₹59,000.00") });
     expect(partAmount("9,999.99", a)).toEqual({ ok: false, error: PAY_ZI.atLeast("₹10,000.00") });
     expect(partAmount("59,000.01", a)).toEqual({ ok: false, error: PAY_ZI.tooMuch("₹59,000.00") });
-    expect(partAmount("12,500.50", { ...a, wholeRupees: true })).toEqual({ ok: false, error: PAY_ZI.wholeRupees });
+    expect(partAmount("12,500.50", { ...a, wholeRupees: true })).toEqual({
+      ok: false,
+      error: PAY_ZI.wholeRupees,
+    });
     expect(partAmount("12,500", { ...a, wholeRupees: true })).toEqual({ ok: true, minor: 12_500_00 });
   });
 });
