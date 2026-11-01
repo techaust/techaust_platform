@@ -1,4 +1,4 @@
-Status: check and test green on b9e226b (9,522 passed); reviewer starts after 06:10 IST (main session hold)
+Status: main merged (6d25c9e: #141, #142); reviewer running
 Tier: B
 Usage: analyst (item 5) claude-opus-5-5/high, skills: code-review (+ its read-only general-purpose helper claude-opus-5-5/high); 5-h 17 → 62 % (shared window, four sessions) · builder r1 claude-opus-5-5/high, skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:turnstile-spin (not installed in the cloud); 5-h 17 → 62 % · analyst (early check r1) claude-opus-5-5/high, skills: code-review (+ read-only helper); 5-h 62 % · builder r2 claude-opus-5-5/high, skills tried: cloudflare:workers-best-practices (not installed in the cloud); 5-h 62 → 88 %
 
