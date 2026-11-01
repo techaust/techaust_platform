@@ -33,6 +33,7 @@ const SITE = {
   locality: "Balurghat, West Bengal, India",
   postalAddress: "Pirozpur, Balurghat, Dakshin Dinajpur, West Bengal 733133",
   linkedinCompany: "",
+  phone: { display: "+91 98830 23931", dial: "+919883023931" },
 };
 
 describe("organization and website nodes", () => {
@@ -42,6 +43,9 @@ describe("organization and website nodes", () => {
     expect(o["@id"]).toBe("https://techaust.com/#org");
     expect(o.logo.url).toBe("https://techaust.com/brand/logo-email-color@2x.png");
     expect(o.email).toBe("contact@techaust.com");
+    // Google's form of the company phone; no telephone while the site hides the phone line.
+    expect(o.telephone).toBe("+919883023931");
+    expect(organizationNode({ ...SITE, phone: { display: "", dial: "" } })).not.toHaveProperty("telephone");
     expect(o.address).toEqual({
       "@type": "PostalAddress",
       streetAddress: "Pirozpur, Balurghat, Dakshin Dinajpur",

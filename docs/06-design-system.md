@@ -68,8 +68,8 @@ Mixed case is deliberate: it keeps "Haust" readable.
 - **Social media kit** (`social/<platform>/`): profile pictures, covers and banners at each platform's recommended size (plus `@2x` where accepted), Instagram highlight covers and post templates, a transparent lockup for directory sites, and a plain-English `README.md`, made by `pnpm --filter @techaust/ui build:social` (sizes and safe zones in `src/brand/social.ts`).
 - **Print** (`print/`): vector PDFs in CMYK with all text outlined (§1.6):
   - `logo-primary-cmyk.pdf` and `-on-dark.pdf`
-  - `business-card.pdf`: 3.5 × 2 in, 3 mm bleed, with trim and bleed boxes
-  - `letterhead-a4.pdf`
+  - `business-card.pdf`: 3.5 × 2 in, 3 mm bleed, with trim and bleed boxes; the contact block (email, phone +91 98830 23931, website, place) right-aligned, its last two lines on the name's and the role's lines
+  - `letterhead-a4.pdf`: footer items (name, place, email, phone, website) spread across the 178 mm measure with equal gaps
 
 ### 1.6 Print colour
 CMYK values come from a real ICC profile, not a formula. `scripts/measure-cmyk.py` searches the CMYK space with LittleCMS against SWOP coated (Microsoft `RSWOP.icm`), with total ink ≤ 300 %. The results are in `tokens/print-cmyk.json`.
@@ -85,7 +85,7 @@ CMYK values come from a real ICC profile, not a formula. `scripts/measure-cmyk.p
 - approve a printed proof against the hex colours
 - for premium stationery, ask the printer to match verdigris to a **Pantone Solid Coated** swatch from a physical guide, then record the number here
 
-**Owner action:** confirm the phone/WhatsApp number for the business card (it is left off until then).
+**Owner action (done 2026-11-01):** the phone/WhatsApp number +91 98830 23931 is confirmed and printed on the business card and the letterhead.
 
 ### 1.7 Personality → design principles
 
@@ -466,7 +466,7 @@ Headings are Archivo Expanded; body text is Archivo 10 pt / 14 pt; each section 
 3. **Fonts (§3):** Archivo (Expanded for display, Normal for text) + IBM Plex Mono (code).
 4. **Signature detail:** the diagonal cut, used sparingly.
 5. **PDF layouts (§7):** A4, the header structure, and the per-document blocks.
-6. **Print (§1.6):** the CMYK starting values; Pantone matching and the business-card phone number are owner actions.
+6. **Print (§1.6):** the CMYK starting values; Pantone matching is an owner action (the business-card phone number was given on 2026-11-01).
 
 ---
 

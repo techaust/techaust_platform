@@ -78,10 +78,12 @@ const og = new URL(
     <meta name="color-scheme" content="light dark" />
     {rss && <link rel="alternate" type="application/rss+xml" title="TecHaust Technologies: Blog" href="/rss.xml" />}
     {/* First paint in the right theme and currency (< 1 KB; hashed in the CSP, WEB-G-12). A stored choice (ta_currency)
-        wins over the cached /api/geo answer (ta_geo, 30 days, set by scripts/currency.ts); else INR. */}
+        wins over the cached /api/geo answer (ta_geo, 30 days, set by scripts/currency.ts); else INR. "has-ref": the
+        URL carries a lead reference, so /thanks keeps room for its reference lines (thanks.astro; none on a bookmark). */}
     <script is:inline>
       (function (d) {
         d.classList.add("js");
+        if (/[?&]ref=[^&]/.test(location.search)) d.classList.add("has-ref");
         try {
           var t = localStorage.getItem("ta_theme");
           if (t === "light" || t === "dark") d.dataset.theme = t;
@@ -95,6 +97,12 @@ const og = new URL(
           d.dataset.currency = "inr";
         }
       })(document.documentElement);
+    </script>
+    {/* The hours (footer, contact, forms, care plans) in the visitor's own clock (owner, 2026-11-01). In the head so
+        the small module is fetched alongside the stylesheet and runs as soon as the page is parsed, before the first
+        paint where it can, so the rewritten hours don't move the text below them (layout shift). */}
+    <script>
+      import "../scripts/local-time";
     </script>
   </head>
   <body>

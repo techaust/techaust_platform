@@ -119,11 +119,29 @@ a:hover {
   flex: none;
 }
 
-/* ExternalLink.astro: the text and its trailing arrow on one line, centred. Before .btn, so a button keeps its own. */
+/* ExternalLink.astro. A text label flows like the text around it and may wrap, but its last word and the arrow never
+   part (__tail). A label with markup (--flex: the footer's icon and word) sets its pieces in one centred row. The gap
+   before the arrow is --ext-link-gap (a button and the footer's LinkedIn set their own). Before .btn, so a button
+   keeps its own display. */
 .ext-link {
+  --ext-link-gap: var(--space-1);
+}
+
+.ext-link--flex {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--ext-link-gap);
+}
+
+.ext-link__tail {
+  white-space: nowrap;
+}
+
+/* inline-block: the reset sets every svg to block, which would put the arrow on a line of its own. */
+.ext-link__tail > .icon {
+  display: inline-block;
+  margin-inline-start: var(--ext-link-gap);
+  vertical-align: middle;
 }
 
 /* Theme-dependent artwork (the two logo versions): the active theme shows one. */
@@ -269,6 +287,7 @@ a:hover {
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
+  --ext-link-gap: var(--space-2);
   min-height: var(--target-min);
   padding: 0 var(--space-5);
   border: 1px solid transparent;

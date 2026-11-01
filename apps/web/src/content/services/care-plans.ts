@@ -40,7 +40,8 @@ export const carePlans: ServiceContent = {
       { label: "DevOps / CI and security review", cells: [false, false, true] },
       { label: "Fractional-CTO advisory", cells: [false, false, true] },
       {
-        label: "**Response time** (business hours, Mon–Sat 10:00–19:00 IST)",
+        // The hours from site.ts through {{hours}}, in the visitor's own clock (owner, 2026-11-01; 07 §4.14).
+        label: "**Response time** (business hours, {{hours}})",
         cells: ["**2 business days**", "**1 business day**", "**4 business hours** for critical issues"],
       },
     ],
@@ -61,7 +62,7 @@ export const carePlans: ServiceContent = {
     },
     {
       q: "Do you offer out-of-hours cover?",
-      a: "Response times are in business hours (Mon–Sat, 10:00–19:00 IST). Out-of-hours cover can be quoted separately.",
+      a: "Response times are in business hours ({{hours}}). Out-of-hours cover can be quoted separately.",
     },
     {
       q: "What happens to unused hours?",
