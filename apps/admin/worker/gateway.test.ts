@@ -5,13 +5,16 @@
 // answers (worker/gateway/config.ts), swapped per test where Razorpay must answer otherwise.
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core/ids";
+import { formatMoney, money } from "@techaust/core/money";
 import { checkProviderContract } from "@techaust/core/payments";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { itemReason } from "../src/lib/gateway.ts";
 import { issueGatewayAdvance } from "./gateway/advance.ts";
 import { setStubTransport, stubFetch } from "./gateway/config.ts";
 import { processEvent } from "./gateway/events.ts";
 import { createLinkFor, refreshForClient } from "./gateway/links.ts";
 import { razorpayApi, razorpayProvider } from "./gateway/razorpay.ts";
+import { reviewFactsOf } from "./gateway/settle.ts";
 import { GATEWAY_WARM_STEPS, warmGateway } from "./gateway/warm.ts";
 import {
   calls,
@@ -322,6 +325,28 @@ describe("processEvent: the webhook after the re-fetch [ADM-PAY-02, -06, -07, JO
     expect(
       (await one<{ kind: string }>("SELECT kind FROM review_items WHERE webhook_event_id = ?1", ev))?.kind,
     ).toBe("amount_mismatch");
+    // Fix round 3 item 2: the item keeps the link's amount, so "Needs review" names it; still only the whitelist (ids, amounts, currency, method).
+    const item = await one<{ facts: string }>(
+      "SELECT facts FROM review_items WHERE webhook_event_id = ?1",
+      ev,
+    );
+    const facts = JSON.parse(item?.facts ?? "{}") as Record<string, unknown>;
+    expect(facts).toEqual({
+      linkId: l.linkId,
+      paymentId: l.paymentId,
+      amountMinor: inv.total - 100,
+      currency: "INR",
+      method: "card",
+      expectedMinor: inv.total,
+    });
+    const list = await call("/payments/review", { cookie: o.cookie });
+    const listed = (
+      (await json(list)) as { items: { kind: string; facts: Record<string, unknown> }[] }
+    ).items.find((i) => i.kind === "amount_mismatch" && i.facts?.paymentId === l.paymentId);
+    expect(listed?.facts).toEqual(facts);
+    expect(itemReason({ kind: "amount_mismatch", facts, amount_minor: inv.total - 100 })).toBe(
+      `The amount paid (${formatMoney(money(inv.total - 100, "INR"))}) doesn't match the link (${formatMoney(money(inv.total, "INR"))}).`,
+    );
     // The Owner can't reject or (later) withdraw a Razorpay payment here: refunds are M6.5.
     const p = await paymentOf(l.paymentId);
     const rec = await one<{ recorded_at: number }>("SELECT recorded_at FROM payments WHERE id = ?1", p?.id);
@@ -409,6 +434,25 @@ describe("processEvent: the webhook after the re-fetch [ADM-PAY-02, -06, -07, JO
       expect(
         (await one<{ kind: string }>("SELECT kind FROM review_items WHERE webhook_event_id = ?1", ev))?.kind,
       ).toBe("document_not_payable");
+      // Fix round 3 item 2: the reason code is kept (codes only), and the list reads it in words.
+      const facts = JSON.parse(
+        (await one<{ facts: string }>("SELECT facts FROM review_items WHERE webhook_event_id = ?1", ev))
+          ?.facts ?? "{}",
+      ) as Record<string, unknown>;
+      expect(facts.reason).toBe("void");
+      expect(Object.keys(facts).sort()).toEqual(
+        [
+          "amountMinor",
+          "currency",
+          "linkId",
+          "paymentId",
+          "reason",
+          ...(facts.method ? ["method"] : []),
+        ].sort(),
+      );
+      expect(itemReason({ kind: "document_not_payable", facts, amount_minor: inv.total })).toContain(
+        "(it was voided)",
+      );
     } else expect(r.result).toBe("processed");
   });
 
@@ -629,5 +673,20 @@ describe("routes per role, the review list, the provider contract", () => {
 describe("the start-up warm-up [CPU diagnosis, lead decision 3]", () => {
   it("runs every step of the gateway code once, with made-up values", () => {
     expect(warmGateway()).toBe(GATEWAY_WARM_STEPS);
+  });
+});
+
+describe("review facts [fix round 3 item 2; L8, 08-C RB-40]", () => {
+  it("add only a reason code and an expected amount to the whitelist", () => {
+    const base = { linkId: "plink_X", paymentId: "pay_X", amountMinor: 100, currency: "INR" };
+    expect(reviewFactsOf(base, { reason: "nothing_due", expectedMinor: 500, paidMinor: 100 })).toEqual({
+      ...base,
+      reason: "nothing_due",
+      expectedMinor: 500,
+    });
+    expect(reviewFactsOf(base, {})).toEqual(base);
+    // Anything but a short code, or an amount that isn't a whole number, is dropped.
+    expect(reviewFactsOf(base, { reason: "a@b.example", expectedMinor: 1.5 })).toEqual(base);
+    expect(reviewFactsOf(base, { reason: "x".repeat(41), expectedMinor: null })).toEqual(base);
   });
 });

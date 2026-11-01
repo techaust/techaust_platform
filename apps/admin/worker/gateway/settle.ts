@@ -39,7 +39,7 @@ import {
 import { type GuardSql, guardSql } from "@techaust/db/log";
 import { withdrawnSql } from "@techaust/db/sql-rules";
 import { mutateSystem } from "../system.ts";
-import { bellNeedsReview, bellPaidOnline, reviewReason } from "./messages.ts";
+import { bellNeedsReview, bellPaidOnline, type ReasonFacts, reviewReason } from "./messages.ts";
 import type { RazorpayApi, RzpFailure } from "./razorpay.ts";
 
 export type GatewayEnv = { DB: D1Database };
@@ -122,6 +122,16 @@ const factsOf = (linkId: string, p: PaymentStatusReport | null, paymentRef: stri
   ...(paymentRef ? { paymentId: paymentRef } : {}),
   ...(p ? { amountMinor: p.amountMinor, currency: p.currency } : {}),
   ...(p?.method ? { method: p.method } : {}),
+});
+
+/**
+ * Fix round 3 item 2: a review item also keeps the reason code (`document_not_payable`) and the link's amount (`amount_mismatch`) that S20 names, so "Needs
+ * review" reads them as the bell does. Codes and amounts only, nothing about the payer (L8; Settled by the lead on the safest reading, 2026-11-01 (08-C RB-40)).
+ */
+export const reviewFactsOf = (facts: GatewayFacts, r: ReasonFacts): GatewayFacts => ({
+  ...facts,
+  ...(typeof r.reason === "string" && /^[a-z_]{1,40}$/.test(r.reason) ? { reason: r.reason } : {}),
+  ...(Number.isSafeInteger(r.expectedMinor) ? { expectedMinor: r.expectedMinor as number } : {}),
 });
 
 /** The event's id when the news came from one. */
@@ -217,7 +227,7 @@ async function recordPendingWithReview(
   checkout: CheckoutRow,
   p: PaymentStatusReport,
   kind: string,
-  reasonFacts: Parameters<typeof reviewReason>[1],
+  reasonFacts: ReasonFacts,
   facts: GatewayFacts,
 ): Promise<boolean> {
   const auditId = uuidv7();
@@ -276,7 +286,7 @@ async function recordPendingWithReview(
           clientId: checkout.client_id,
           amountMinor: f.amountMinor,
           currency: "INR",
-          facts,
+          facts: reviewFactsOf(facts, reasonFacts),
           now: a.now,
         },
         s.guard,
