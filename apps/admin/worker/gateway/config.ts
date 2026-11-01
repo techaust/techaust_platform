@@ -1,6 +1,7 @@
-// The gateway's configuration in the admin finance Worker (M6.2, L1, L16; run file F). The Razorpay key pair is a finance-only Worker secret (`RAZORPAY_KEY_ID`,
-// `RAZORPAY_KEY_SECRET`; names only in `.dev.vars.example`), the transport a var: `GATEWAY_TRANSPORT` "razorpay" calls Razorpay's API (staging), "stub" answers
-// locally with a deterministic simulator and is refused anywhere but `ENVIRONMENT` "local" (like `PDF_RENDERER`). The three admin Workers share one generated `Env`
+// The gateway's configuration in the admin finance Worker (M6.2, L1, L16; M6.3 L3; run file F). The Razorpay key pair and the Stripe restricted key are finance-only
+// Worker secrets (`RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `STRIPE_SECRET_KEY`; names only in `.dev.vars.example`), the transport a var: `GATEWAY_TRANSPORT` "api"
+// calls each gateway's own API (staging; M6.2's "razorpay" is still read and means Razorpay's API only), "stub" answers locally with a deterministic simulator and
+// is refused anywhere but `ENVIRONMENT` "local" (like `PDF_RENDERER`). The three admin Workers share one generated `Env`
 // (from the front's config), so these names are read at run time by name, each checked to be a string, never cast.
 import { cachedSetting } from "../settings-cache.ts";
 import { type RazorpayApi, razorpayApi } from "./razorpay.ts";

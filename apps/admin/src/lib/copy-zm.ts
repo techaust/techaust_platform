@@ -26,7 +26,9 @@ export const CARD_ZM = {
   /** S18: Settings › Payment terms, the two USD fields (Owner only). */
   floorLabel: ZM("Smallest part-payment by card (USD)"),
   maximumLabel: ZM("Largest card payment (USD)"),
+  // Early check 2, finding 3 (lead under delegation, 2026-11-02): the ₹25 lakh cap binds a payment aggregator (PA-CB); Stripe is not one, so for card payments it
+  // is our safest setting, not a legal limit (Researched 2026-10-28, RBI PA Directions 2025 ¶11(d); lead, 2026-11-02 (08-C RB-07)).
   maximumHint: ZM(
-    "The RBI limit for an export payment through a gateway is ₹25 lakh per transaction. Keep this below it at today's rate.",
+    "RBI limits a payment aggregator's export payment to ₹25 lakh per transaction. We keep card payments under it too: keep this below ₹25 lakh at today's rate.",
   ),
 } as const;

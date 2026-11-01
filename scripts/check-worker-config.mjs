@@ -149,9 +149,9 @@ export const FINANCE_OPTS = {
 
 /**
  * M6.2 (run file F): the gateway wiring in every scope. The top level and `env.staging`: jobs binds `ADMIN_GATEWAY` to the finance Worker's `GatewayEvents` and
- * requires `RAZORPAY_WEBHOOK_SECRET`; the portal binds `ADMIN_PAY` to its `PortalPayments` and holds no Razorpay secret; the finance Worker's
- * `GATEWAY_TRANSPORT` is "stub" at the top level (local) and "razorpay" on staging, with its `PORTAL_URL` and a `LEADS_QUEUE` producer onto the jobs Worker's
- * leads queue. `env.production`: none of it until Phase 7.
+ * requires `RAZORPAY_WEBHOOK_SECRET` (M6.3: and `STRIPE_WEBHOOK_SECRET`); the portal binds `ADMIN_PAY` to its `PortalPayments` and holds no gateway secret; the
+ * finance Worker's `GATEWAY_TRANSPORT` is "stub" at the top level (local) and "api" on staging (M6.3: each gateway's own API; M6.2's "razorpay" is no longer
+ * accepted there), with its `PORTAL_URL` and a `LEADS_QUEUE` producer onto the jobs Worker's leads queue. `env.production`: none of it until Phase 7.
  * `PAYMENTS_LIVE_ALLOWED`, wherever a config sets it, is exactly "false" (CLAUDE.md rule 7). Empty = passes.
  */
 export function gatewayConfigProblems(jobs, portal, finance, others = []) {

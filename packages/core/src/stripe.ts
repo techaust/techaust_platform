@@ -30,7 +30,7 @@ export const STRIPE_API_ORIGIN = "https://api.stripe.com";
  */
 export const STRIPE_API_VERSION = "2026-09-30.endive";
 
-/** Stripe's smallest USD charge, 50 cents (V19, UNCONFIRMED: the first staging payment and B2's re-read decide; the portal's floor of USD 100 is far above it). */
+/** Stripe's smallest USD charge, 50 cents (V19, CONFIRMED by B2's re-read of docs.stripe.com/currencies, 2026-11-02; the portal's floor of USD 100 is far above it). */
 export const STRIPE_MIN_AMOUNT_MINOR = 50;
 
 /**
@@ -289,7 +289,7 @@ export function stripeEventFacts(e: StripeEvent): Record<string, string | number
 export const SESSION_LIFETIME_MS = 60 * 60_000;
 export const SESSION_MIN_AHEAD_MS = 30 * 60_000;
 export const SESSION_MAX_AHEAD_MS = 24 * 3_600_000;
-/** The card-statement suffix (C11, owner's approval pending under Q4) and the name on Stripe's page (C12, the same). */
+/** The card-statement suffix (C11) and the name on Stripe's page (C12), both approved by the owner on 2026-11-01 (Q4 A; 07-ZM). */
 export const STATEMENT_SUFFIX = "TECHAUST";
 export const DISPLAY_NAME = "TecHaust Technologies";
 /** Stripe's bounds (V1): the payment description ≤ 1000, the suffix ≤ 22. The line-item name is held to 250 here (a document label is short). */

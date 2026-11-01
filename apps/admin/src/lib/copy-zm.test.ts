@@ -58,6 +58,15 @@ describe("07-ZM staff lines [M6.3]", () => {
       NOT_PAYABLE_WORDS.payment_pending,
       NOT_PAYABLE_WORDS.use_portal,
     ]).toEqual(s19("`document_not_payable` reasons"));
+    // open question 4 of early check 2: the gateway-neutral words replace 07-ZI's "less than ₹1" (the page quotes the old words first, then the new)
+    expect(s19("`document_not_payable` reason `below_gateway_minimum`").at(-1)).toBe(
+      NOT_PAYABLE_WORDS.below_gateway_minimum,
+    );
+    expect(NOT_PAYABLE_WORDS.below_gateway_minimum).not.toContain("₹");
+    // finding 2: the not_export_receipt line names the tax consequence (08-C RA-38)
+    expect(NOT_EXPORT_RECEIPT_LINE).toContain("export receipt under the LUT");
+    // finding 9: no `stripe_permission` API message is drafted any more (the review line above stays)
+    expect(zmPage).not.toContain("- `stripe_permission` (409)");
     // the M6.2 lines name the item's own gateway and currency
     expect(reviewReason("refetch_failed", { provider: "stripe" })).toBe(
       "Stripe couldn't be reached to confirm this payment. Try again.",

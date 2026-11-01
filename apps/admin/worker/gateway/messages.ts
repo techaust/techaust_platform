@@ -72,7 +72,7 @@ export const GATEWAY_PAYMENT = e(
 );
 export const NOT_RETRYABLE = e("not_retryable", "This item can't be tried again. Resolve it instead.");
 
-// ---- M6.3 S19: the API messages of the new codes (builder's drafts, 2026-11-02, marked for the lead in 07-ZM) -----------------------------------------------------
+// ---- M6.3 S19: the API messages of the new codes (07-ZM; approved by the lead, 2026-11-02) ---------------------------------------------------------------------
 
 /** 409 `payment_processing`: a gateway payment on the document still waits (core `payment_pending`), or Stripe's session was found complete. */
 export const PAYMENT_PROCESSING = e(
@@ -92,11 +92,6 @@ export const USE_PORTAL = e(
 );
 /** 502 `gateway_error` for Stripe (the Razorpay line names Razorpay). */
 export const STRIPE_GATEWAY_ERROR = e("gateway_error", "Stripe couldn't be reached. Try again.");
-/** 409 `stripe_permission`: Stripe refused the re-fetch for the restricted key's permissions (401 or 403). */
-export const STRIPE_PERMISSION = e(
-  "stripe_permission",
-  "Stripe refused the request for our key's permissions. Check the restricted key in Stripe, then try again.",
-);
 /** The verify and withdraw refusals for a Stripe payment (M6.2's lines name Razorpay). */
 export const STRIPE_REFUND_NEEDED = e(
   "gateway_refund_needed",

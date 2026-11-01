@@ -23,8 +23,8 @@ const gatewayName = (provider: string | null | undefined) => (provider === "stri
 
 /**
  * `document_not_payable`'s `{reason}` in words (designer's draft, 2026-11-01, for the lead): core `NOT_PAYABLE_REASONS` and the race fallback "changed". An
- * unknown code reads as "it changed", never as the code. M6.3 B2 (builder's drafts, marked for the lead in 07-ZM S19): the four reasons core gained for Stripe,
- * and `use_portal` (L7: no staff link for a card payment).
+ * unknown code reads as "it changed", never as the code. M6.3 B2 (07-ZM S19, approved by the lead 2026-11-02): the four reasons core gained for Stripe, and
+ * `use_portal` (L7: no staff link for a card payment).
  */
 export const NOT_PAYABLE_WORDS: Record<NotPayableReason | "changed" | "use_portal", string> = {
   type_not_payable: "this kind of document isn't paid online",
@@ -35,7 +35,8 @@ export const NOT_PAYABLE_WORDS: Record<NotPayableReason | "changed" | "use_porta
   void: "it was voided",
   withdrawn: "it was withdrawn",
   nothing_due: "nothing was due on it",
-  below_gateway_minimum: "less than ₹1 was due on it",
+  // Early check 2, open question 4 (lead under delegation, 2026-11-02; 07-ZM S19 notes the change against 07-ZI): gateway-neutral, since Stripe's minimum is USD 0.50.
+  below_gateway_minimum: "less than the smallest amount the gateway takes was due on it",
   target_not_whole_unit: "its balance isn't in whole rupees",
   client_domestic: "the client is in India",
   not_usd: "it isn't in US dollars",
@@ -94,12 +95,13 @@ export const NO_PAYMENT_LISTED_LINE =
   "Razorpay shows the link as paid but lists no payment yet. Try again in a few minutes.";
 
 /**
- * M6.3 S19 (builder's draft, 2026-11-02, marked for the lead in 07-ZM): `not_export_receipt`, a USD card payment whose card was issued in India (or whose country
- * Stripe did not give) is not an export receipt (Settled by the lead on the safest reading, 2026-11-02 (08-C RA-38)).
+ * M6.3 S19 (lead under delegation, early check 2, finding 2; 07-ZM): `not_export_receipt`, a USD card payment whose card was issued in India (or whose country
+ * Stripe did not give) is not an inflow of foreign exchange, so it is never an export receipt under the LUT: the line says the tax consequence (Settled by the lead
+ * on the safest reading, 2026-11-02 (08-C RA-38)).
  */
 export const NOT_EXPORT_RECEIPT_LINE =
-  "The card was issued in India (or Stripe didn't say where), so this isn't money received from abroad. Check it with the client before deciding.";
-/** M6.3 S19 (builder's draft for the lead): a `refetch_failed` item whose re-fetch Stripe refused for the key's permissions (`facts.reason: "stripe_permission"`). */
+  "The card was issued in India, or Stripe didn't say where, so this payment doesn't count as money received from abroad and can't be treated as an export receipt under the LUT. Check with the client before confirming it or issuing a tax invoice for it.";
+/** M6.3 S19 (approved by the lead, 2026-11-02): a `refetch_failed` item whose re-fetch Stripe refused for the key's permissions (`facts.reason: "stripe_permission"`). */
 export const STRIPE_PERMISSION_LINE =
   "Stripe refused to show this payment to our key. Check the restricted key's permissions, then try again.";
 
