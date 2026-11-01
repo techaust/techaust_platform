@@ -156,6 +156,8 @@ export const gatewayPaymentPendingSql = (d: string): string =>
  * through one of its links WITH its requested allocation. A mismatch or an overpaid proforma's money has none, so no tax invoice follows it automatically and the
  * portal must not say "tax invoice to follow" (07-ZI line 16) or hide Pay now for it. The portal's Pay now block reads it; a db test holds it.
  */
+// M6.3 (early check 1, "What B2 must not forget" 6): any gateway's payment, not only Razorpay's: a USD proforma paid by card waits for the Owner's tax invoice
+// (C8 "Paid by card on {date}; invoice to follow"; Q1 A).
 export const proformaOnlinePendingSql = (d: string, client: string): string =>
   `EXISTS (SELECT 1 FROM payments p JOIN checkout_sessions c ON c.id = p.checkout_id
-        WHERE c.document_id = ${d}.id AND p.client_id = ${client} AND p.provider = 'razorpay' AND p.status = 'pending_verification' AND p.requested_allocations IS NOT NULL AND ${d}.type = 'proforma')`;
+        WHERE c.document_id = ${d}.id AND p.client_id = ${client} AND p.provider <> 'manual' AND p.status = 'pending_verification' AND p.requested_allocations IS NOT NULL AND ${d}.type = 'proforma')`;

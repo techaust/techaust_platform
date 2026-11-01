@@ -3,9 +3,19 @@
 // emailed link (`/t/document`) and the signed-in routes (`/invoices/:id`), so the two can never disagree. Pure: no I/O.
 import { gstEstimateOfHeaderExtras, issueDateOf, NOTES_MAX, noteOfFromStored } from "@techaust/core/invoices";
 import { formatMoney, money } from "@techaust/core/money";
-import { onlineMinimumOf, storedFloorOf } from "@techaust/core/online-pay";
+import {
+  DEFAULT_ONLINE_MAX_USD_MINOR,
+  DEFAULT_USD_PART_FLOOR_MINOR,
+  onlineMinimumOf,
+  storedFloorOf,
+} from "@techaust/core/online-pay";
 import { percentFromBp } from "@techaust/core/schedule-text";
-import { onlinePayableSql, proformaOnlinePendingSql, withdrawnSql } from "@techaust/db/sql-rules";
+import {
+  gatewayPaymentPendingSql,
+  onlinePayableSql,
+  proformaOnlinePendingSql,
+  withdrawnSql,
+} from "@techaust/db/sql-rules";
 
 /** 07-ZH line 18 (client-facing; approved by the owner, 2026-10-31): the summary row of the TDS the client deducted. */
 export const TDS_ROW_LABEL = "TDS deducted by you";
@@ -372,42 +382,78 @@ export type InvoiceSummary = ReturnType<typeof summaryOf>;
  * requested allocation, review finding 10). Read in the same batch as the summary. Fix round 3
  * item 1: the balance and the part-payment floor (Settings › Payment terms, read as stored: the portal carries no settings schema; core `storedFloorOf`).
  */
-export const ONLINE_SQL = `SELECT ${onlinePayableSql("d", "k", "razorpay")} AS pay_online, d.type, d.balance_minor AS balance,
-     (SELECT CASE WHEN NOT json_valid(s.value) THEN -1 WHEN json_type(s.value, '$.razorpayMinPartialInrMinor') IS NULL THEN NULL
-        WHEN json_type(s.value, '$.razorpayMinPartialInrMinor') = 'integer' THEN json_extract(s.value, '$.razorpayMinPartialInrMinor') ELSE -1 END
-      FROM settings s WHERE s.key = 'payment_terms') AS floor,
+/** A whole number setting read as stored (`json_extract`): NULL when never saved (the default applies), -1 when unreadable. */
+const storedIntSql = (key: string) =>
+  `(SELECT CASE WHEN NOT json_valid(s.value) THEN -1 WHEN json_type(s.value, '$.${key}') IS NULL THEN NULL
+      WHEN json_type(s.value, '$.${key}') = 'integer' THEN json_extract(s.value, '$.${key}') ELSE -1 END
+    FROM settings s WHERE s.key = 'payment_terms')`;
+
+// M6.3 ("What B2 must not forget" 7; run file E): per currency, the gateway's own row of the rule table (Stripe for USD, Razorpay for INR), its part-payment
+// floor (`onlineMinPartialUsdMinor` / `razorpayMinPartialInrMinor`) and, for USD, the online maximum (`overseasOnlineMaxUsdMinor`, L9); any gateway's last
+// payment; and whether a gateway payment still waits on the document (`payment_pending`: Pay hidden, C4 shown).
+export const ONLINE_SQL = `SELECT CASE WHEN d.currency = 'USD' THEN ${onlinePayableSql("d", "k", "stripe")} ELSE ${onlinePayableSql("d", "k", "razorpay")} END AS pay_online,
+     d.type, d.currency, d.balance_minor AS balance,
+     CASE WHEN d.currency = 'USD' THEN ${storedIntSql("onlineMinPartialUsdMinor")} ELSE ${storedIntSql("razorpayMinPartialInrMinor")} END AS floor,
+     CASE WHEN d.currency = 'USD' THEN ${storedIntSql("overseasOnlineMaxUsdMinor")} END AS maximum,
      (SELECT c.amount_minor FROM checkout_sessions c WHERE c.document_id = d.id AND c.status = 'live' AND c.client_id = ?1 AND c.expires_at > ?3) AS open_amount,
      (SELECT c.expires_at FROM checkout_sessions c WHERE c.document_id = d.id AND c.status = 'live' AND c.client_id = ?1 AND c.expires_at > ?3) AS open_expires,
      (SELECT p.amount_minor || ':' || p.recorded_at FROM payments p JOIN checkout_sessions c ON c.id = p.checkout_id
-        WHERE c.document_id = d.id AND p.client_id = ?1 AND p.provider = 'razorpay' AND p.status IN ('confirmed', 'pending_verification') ORDER BY p.recorded_at DESC LIMIT 1) AS last_paid,
-     ${proformaOnlinePendingSql("d", "?1")} AS proforma_pending
+        WHERE c.document_id = d.id AND p.client_id = ?1 AND p.provider <> 'manual' AND p.status IN ('confirmed', 'pending_verification') ORDER BY p.recorded_at DESC LIMIT 1) AS last_paid,
+     ${proformaOnlinePendingSql("d", "?1")} AS proforma_pending,
+     ${gatewayPaymentPendingSql("d")} AS payment_pending
    FROM documents d JOIN clients k ON k.id = d.client_id WHERE d.client_id = ?1 AND d.id = ?2`;
 
 export type OnlineRow = {
   pay_online: number;
   type: string;
+  currency?: string;
   balance: number;
   floor: unknown;
+  maximum?: unknown;
   open_amount: number | null;
   open_expires: number | null;
   last_paid: string | null;
   proforma_pending: number;
+  payment_pending?: number;
 };
 
-/** The page's Pay now block (no ids of Razorpay's, nothing about the payer). */
+/** The page's Pay now block (no ids of a gateway's, nothing about the payer). */
 export function onlineOf(r: OnlineRow | undefined) {
   if (!r)
     return {
       payOnline: false,
+      provider: null,
       wholeRupees: false,
-      online: { open: null, lastPaid: null, proformaPending: false, minimumMinor: null },
+      online: {
+        open: null,
+        lastPaid: null,
+        proformaPending: false,
+        paymentPending: false,
+        minimumMinor: null,
+        maximumMinor: null,
+      },
     };
   const [amount, at] = (r.last_paid ?? "").split(":").map(Number);
-  const floor = storedFloorOf(r.floor);
+  const usd = r.currency === "USD";
+  // The USD floor's default when the group was never saved is USD 100 (Q2 A); unreadable reads as null (the full amount only).
+  const floor = usd
+    ? r.floor === null || r.floor === undefined
+      ? DEFAULT_USD_PART_FLOOR_MINOR
+      : storedFloorOf(r.floor)
+    : storedFloorOf(r.floor);
+  const maximum = usd
+    ? r.maximum === null || r.maximum === undefined
+      ? DEFAULT_ONLINE_MAX_USD_MINOR
+      : Number.isSafeInteger(r.maximum) && (r.maximum as number) >= 1
+        ? (r.maximum as number)
+        : null
+    : null;
   return {
-    payOnline: r.pay_online === 1,
-    /** A proforma is paid in whole rupees (LD28; 07-ZI line 7). */
-    wholeRupees: r.type === "proforma",
+    payOnline: r.pay_online === 1 && r.payment_pending !== 1,
+    /** M6.3: the gateway of the document's currency ("Pay by card" through Stripe for USD; "Pay now" through Razorpay for INR). */
+    provider: usd ? ("stripe" as const) : ("razorpay" as const),
+    /** A Razorpay proforma is paid in whole rupees (LD28; 07-ZI line 7); Stripe takes cents. */
+    wholeRupees: !usd && r.type === "proforma",
     online: {
       open:
         r.open_amount !== null && r.open_expires !== null
@@ -418,12 +464,16 @@ export function onlineOf(r: OnlineRow | undefined) {
           ? { amountMinor: amount as number, at: at as number }
           : null,
       proformaPending: r.proforma_pending === 1,
+      /** M6.3 (core `payment_pending`): a gateway payment still waits on the document: Pay is hidden and C4 (or 07-ZI line 13) shows. */
+      paymentPending: r.payment_pending === 1,
       /**
        * Fix round 3 item 1 (07-ZI lines 4 to 7): the smallest amount the client may pay, by the rule the finance Worker's `payAmountVerdict` enforces (core
        * `onlineMinimumOf`: the floor, never under ₹1, or the whole balance if lower; then only the full amount is offered). Null when the document can't be paid
        * online or the floor can't be read (the full amount only).
        */
       minimumMinor: r.pay_online === 1 && floor !== null ? onlineMinimumOf(floor, r.balance) : null,
+      /** M6.3 (L9, C6): the most one card payment may be (USD), or null (INR: no maximum). */
+      maximumMinor: maximum,
     },
   };
 }

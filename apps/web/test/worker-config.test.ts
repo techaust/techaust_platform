@@ -389,9 +389,10 @@ describe("M6.2 gateway wiring (run file F)", () => {
     expect(guard.gatewayConfigProblems(j, p, f)).toEqual([
       "(top level): portal's ADMIN_PAY must name the entrypoint PortalPayments",
       "(top level): jobs must require the secret RAZORPAY_WEBHOOK_SECRET",
-      "(top level): jobs must not hold the Razorpay key pair (finance only, L1)",
+      "(top level): jobs must require the secret STRIPE_WEBHOOK_SECRET",
+      "(top level): jobs must not hold a gateway's API key (finance only, L1, L3)",
       "env.staging: jobs's ADMIN_GATEWAY service binding is missing",
-      "env.staging: finance GATEWAY_TRANSPORT must be razorpay",
+      "env.staging: finance GATEWAY_TRANSPORT must be api",
       "env.production: jobs has no ADMIN_GATEWAY until Phase 7",
       'finance (top level): PAYMENTS_LIVE_ALLOWED must be "false"',
     ]);
@@ -417,13 +418,24 @@ describe("M6.2 gateway wiring (run file F)", () => {
     ]);
   });
 
-  it("finance's secrets are exactly the key pair, and none in production", () => {
+  it("finance's secrets are exactly the key pair and (M6.3) the Stripe restricted key, and none in production", () => {
     const f = structuredClone(finance);
     f.env.staging.secrets = { required: ["RAZORPAY_KEY_ID"] };
     f.env.production.secrets = { required: ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"] };
     expect(guard.apiConfigProblems(f, front, guard.FINANCE_OPTS)).toEqual([
-      'env.staging: secrets.required must be exactly ["RAZORPAY_KEY_ID","RAZORPAY_KEY_SECRET"]',
+      'env.staging: secrets.required must be exactly ["RAZORPAY_KEY_ID","RAZORPAY_KEY_SECRET","STRIPE_SECRET_KEY"]',
       "env.production: secrets.required must be exactly []",
+    ]);
+  });
+
+  it("M6.3: the Stripe webhook secret is the jobs Worker's only; the portal holds no Stripe secret", () => {
+    const f = structuredClone(finance);
+    f.env.staging.secrets = { required: [...f.env.staging.secrets.required, "STRIPE_WEBHOOK_SECRET"] };
+    const p = structuredClone(portal);
+    p.secrets = { required: ["STRIPE_SECRET_KEY"] };
+    expect(guard.gatewayConfigProblems(jobs, p, f)).toEqual([
+      "(top level): the portal holds no gateway secret",
+      "env.staging: the Stripe webhook secret is the jobs Worker's, never finance's",
     ]);
   });
 });

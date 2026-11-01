@@ -7,10 +7,17 @@
 //     payments still waiting for their tax invoice 15 minutes after they were recorded, queued again.
 // A message that runs out of tries on the dead-letter queue writes `gatewayDeadLetterStatements`: the event `failed` with a `dead_letter` item, or a `dead_letter`
 // item for the pending payment, and the owners' bell.
-import { gatewayAdvanceMessage, gatewayEventMessage, gatewaySweepMessage } from "@techaust/core";
+import {
+  gatewayAdvanceMessage,
+  gatewayEventMessage,
+  gatewayRefreshMessage,
+  gatewaySweepMessage,
+} from "@techaust/core";
 import { uuidv7 } from "@techaust/core/ids";
 import {
   gatewayDeadLetterStatements,
+  STALE_LIVE_AFTER_MS,
+  STALE_LIVE_CHECKOUTS_SQL,
   STUCK_ADVANCES_SQL,
   STUCK_EVENTS_SQL,
   SWEEP_AFTER_MS,
@@ -60,22 +67,34 @@ export async function processGateway(
       if (r.result === "retry" && !lastTry) return { retry: gatewayRetryDelay(attempts) };
       return "ack";
     }
+    case "gateway.refresh": {
+      // M6.3 (L13, L14): one checkout past its expiry re-fetched from its gateway; only the gateway's word ends it (L6). A `retry` comes back later.
+      const m = gatewayRefreshMessage.safeParse(body);
+      if (!m.success) return skip(body.kind);
+      const r = await adminGateway(env).refreshCheckout({ checkoutId: m.data.checkoutId });
+      logEvent("gateway.refresh", { r: r.result });
+      return r.result === "retry" ? { retry: gatewayRetryDelay(attempts) } : "ack";
+    }
     default: {
       const m = gatewaySweepMessage.safeParse(body);
       if (!m.success) return skip(body.kind);
       // Events still `received`, and (early check 2, finding 2) proforma payments still waiting for their tax invoice: a lost `next` is found within the hour.
-      const [events, advances] = await env.DB.batch([
+      // M6.3 (L13): and up to 10 live Stripe sessions 15 minutes past their expiry, each refreshed by its own `gateway.refresh` (one unit of work per message).
+      const [events, advances, stale] = await env.DB.batch([
         env.DB.prepare(STUCK_EVENTS_SQL).bind(now - SWEEP_AFTER_MS),
         env.DB.prepare(STUCK_ADVANCES_SQL).bind(now - SWEEP_AFTER_MS),
+        env.DB.prepare(STALE_LIVE_CHECKOUTS_SQL).bind(now - STALE_LIVE_AFTER_MS),
       ]);
       const ev = (events?.results ?? []) as { id: string }[];
       const adv = (advances?.results ?? []) as { id: string }[];
+      const old = (stale?.results ?? []) as { id: string }[];
       const out = [
         ...ev.map((r) => ({ body: { kind: "gateway.event", eventId: r.id } })),
         ...adv.map((r) => ({ body: { kind: "gateway.advance", paymentId: r.id } })),
+        ...old.map((r) => ({ body: { kind: "gateway.refresh", checkoutId: r.id } })),
       ];
       if (out.length > 0) await env.LEADS_QUEUE.sendBatch(out);
-      logEvent("gateway.sweep", { count: ev.length, advances: adv.length });
+      logEvent("gateway.sweep", { count: ev.length, advances: adv.length, refreshes: old.length });
       return "ack";
     }
   }

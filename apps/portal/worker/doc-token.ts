@@ -55,7 +55,7 @@ import {
 } from "./invoice-summary.ts";
 import { streamPdf } from "./offer-core.ts";
 import { pdfFileName } from "./offer-sql.ts";
-import { createLink, payAnswer, payTokenBody } from "./pay.ts";
+import { createLink, payAnswer, payTokenBody, providerOf } from "./pay.ts";
 import { json } from "./validate.ts";
 
 /** Document types a link may open: the whole invoice family (LD62; a receipt is M6). */
@@ -147,11 +147,13 @@ export const docToken = new Hono<AppEnv>()
   // goes to the finance Worker, which re-checks it (live, unrevoked, for this document, bound to its live contact) and makes the link with Razorpay's return page
   // `pay/return` (no token in any URL).
   .post("/document/pay", json(payTokenBody), async (c) => {
-    const { token, amountMinor } = c.req.valid("json");
+    const { token, amountMinor, provider: asked } = c.req.valid("json");
     const o = await open(c, token);
     if (o instanceof Response) return o;
+    // M6.3: the gateway the document's currency allows (the open read already holds it), unless the request names one.
+    const provider = providerOf(o.doc.currency, asked);
     const r = await createLink(c.env, {
-      provider: "razorpay",
+      provider,
       clientId: o.doc.link_client_id,
       contactId: null,
       tokenHash: await tokenHash(token),
@@ -159,7 +161,7 @@ export const docToken = new Hono<AppEnv>()
       amountMinor,
       returnTo: "pay_return",
     });
-    return payAnswer(c, r);
+    return payAnswer(c, r, provider);
   })
   // The PDF behind the link (the same open and the same counter). The headers are those of the offer PDF: an attachment, never rendered, never cached, never sniffed.
   // Opening it is a view too (FX-5, 08-C RA-10; parity with the signed-in PDF): the first view and the access row in one batch, before the answer.

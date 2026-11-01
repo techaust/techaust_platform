@@ -4,3 +4,6 @@ SES_SECRET_ACCESS_KEY=
 # M6.2: the Razorpay webhook secret (a local fake from `pnpm dev:secrets`; staging: tools/set-gateway-keys.ps1 -Gateway razorpay-webhook). RAZORPAY_WEBHOOK_SECRET_PREVIOUS is optional (a rotation).
 RAZORPAY_WEBHOOK_SECRET=
 # RAZORPAY_WEBHOOK_SECRET_PREVIOUS=
+# M6.3: the Stripe webhook signing secret (a local fake from `pnpm dev:secrets`; staging: tools/set-gateway-keys.ps1 -Gateway stripe-webhook). STRIPE_WEBHOOK_SECRET_PREVIOUS is optional (a rotation).
+STRIPE_WEBHOOK_SECRET=
+# STRIPE_WEBHOOK_SECRET_PREVIOUS=

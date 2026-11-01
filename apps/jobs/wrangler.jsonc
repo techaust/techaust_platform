@@ -58,8 +58,16 @@
     }
   ],
   // SES keys and (M6.2, L1) the Razorpay webhook secret: names only; values come from `wrangler secret put` (docs/runbooks/ses-and-turnstile.md;
-  // tools/set-gateway-keys.ps1 -Gateway razorpay-webhook). RAZORPAY_WEBHOOK_SECRET_PREVIOUS is optional (a rotation) and so not required. Not inherited.
-  "secrets": { "required": ["SES_ACCESS_KEY_ID", "SES_SECRET_ACCESS_KEY", "RAZORPAY_WEBHOOK_SECRET"] },
+  // tools/set-gateway-keys.ps1 -Gateway razorpay-webhook). RAZORPAY_WEBHOOK_SECRET_PREVIOUS is optional (a rotation) and so not required. M6.3: the Stripe
+  // webhook signing secret (`-Gateway stripe-webhook`); STRIPE_WEBHOOK_SECRET_PREVIOUS is optional too. Not inherited.
+  "secrets": {
+    "required": [
+      "SES_ACCESS_KEY_ID",
+      "SES_SECRET_ACCESS_KEY",
+      "RAZORPAY_WEBHOOK_SECRET",
+      "STRIPE_WEBHOOK_SECRET"
+    ]
+  },
   // D1 (docs/05 §5). Migrations live in packages/db; local dev and tests use a local database.
   "d1_databases": [
     {
@@ -165,7 +173,14 @@
           "entrypoint": "GatewayEvents"
         }
       ],
-      "secrets": { "required": ["SES_ACCESS_KEY_ID", "SES_SECRET_ACCESS_KEY", "RAZORPAY_WEBHOOK_SECRET"] },
+      "secrets": {
+        "required": [
+          "SES_ACCESS_KEY_ID",
+          "SES_SECRET_ACCESS_KEY",
+          "RAZORPAY_WEBHOOK_SECRET",
+          "STRIPE_WEBHOOK_SECRET"
+        ]
+      },
       "d1_databases": [
         {
           "binding": "DB",

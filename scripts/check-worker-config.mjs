@@ -143,7 +143,8 @@ export function frontServiceProblems(front, api, finance) {
 export const FINANCE_OPTS = {
   ownVars: ["PORTAL_URL", "GATEWAY_TRANSPORT"],
   ownQueues: ["LEADS_QUEUE"],
-  secrets: ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"],
+  // M6.3 (L3): the Stripe restricted key, finance only.
+  secrets: ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "STRIPE_SECRET_KEY"],
 };
 
 /**
@@ -178,14 +179,19 @@ export function gatewayConfigProblems(jobs, portal, finance, others = []) {
       }
     }
     const jobsSecrets = j?.secrets?.required ?? [];
-    if (!prod && !jobsSecrets.includes("RAZORPAY_WEBHOOK_SECRET"))
-      problems.push(`${scope}: jobs must require the secret RAZORPAY_WEBHOOK_SECRET`);
-    if (jobsSecrets.some((n) => n.startsWith("RAZORPAY_KEY")))
-      problems.push(`${scope}: jobs must not hold the Razorpay key pair (finance only, L1)`);
-    if ((p?.secrets?.required ?? []).some((n) => n.startsWith("RAZORPAY")))
-      problems.push(`${scope}: the portal holds no Razorpay secret`);
+    // M6.3: and the Stripe webhook signing secret; the restricted key stays on the finance Worker.
+    for (const name of ["RAZORPAY_WEBHOOK_SECRET", "STRIPE_WEBHOOK_SECRET"])
+      if (!prod && !jobsSecrets.includes(name))
+        problems.push(`${scope}: jobs must require the secret ${name}`);
+    if (jobsSecrets.some((n) => n.startsWith("RAZORPAY_KEY") || n === "STRIPE_SECRET_KEY"))
+      problems.push(`${scope}: jobs must not hold a gateway's API key (finance only, L1, L3)`);
+    if ((p?.secrets?.required ?? []).some((n) => n.startsWith("RAZORPAY") || n.startsWith("STRIPE")))
+      problems.push(`${scope}: the portal holds no gateway secret`);
+    if ((f?.secrets?.required ?? []).some((n) => n.startsWith("STRIPE_WEBHOOK")))
+      problems.push(`${scope}: the Stripe webhook secret is the jobs Worker's, never finance's`);
     const transport = f?.vars?.GATEWAY_TRANSPORT;
-    const wantTransport = scope === "(top level)" ? "stub" : scope === "env.staging" ? "razorpay" : undefined;
+    // M6.3: staging's transport is "api" (every gateway's own API; M6.2 named it "razorpay").
+    const wantTransport = scope === "(top level)" ? "stub" : scope === "env.staging" ? "api" : undefined;
     if (transport !== wantTransport)
       problems.push(`${scope}: finance GATEWAY_TRANSPORT must be ${wantTransport ?? "unset"}`);
     if (!prod && !f?.vars?.PORTAL_URL)

@@ -31,61 +31,16 @@ import {
   WEBHOOK_EVENT_STATE_SQL,
 } from "@techaust/db/gateway";
 import { logEvent } from "../log.ts";
+import { answer, strictUtf8 as decoder, HOOK_MAX_BYTES, readCapped, refuse, secretOf } from "./shared.ts";
 
-/** The body cap (run file D): Razorpay's link events are a few KiB. */
-export const HOOK_MAX_BYTES = 64 * 1024;
+export { HOOK_MAX_BYTES };
+
 const SIG = /^[0-9a-fA-F]{64}$/;
 /** The owners' bell at the fifth failure in a window (07-ZI S22; staff words approved by the lead under the owner's delegation). */
 export const BELL_SIGNATURES =
   "Razorpay webhook signatures failed 5 times in an hour. Check the webhook secret.";
 
 type HookEnv = { DB: D1Database; LEADS_QUEUE: Queue };
-
-const answer = (status: number, body: unknown) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      "Content-Type": "application/json",
-      "Cache-Control": "no-store",
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
-const refuse = (status: number, code: string) => answer(status, { error: { code } });
-
-/** A secret by name: its text, or undefined when unset (the previous secret is optional, so it is read by name, never typed). */
-const secretOf = (env: object, name: string): string | undefined => {
-  const v: unknown = Reflect.get(env, name);
-  return typeof v === "string" && v !== "" ? v : undefined;
-};
-
-/** The body as raw bytes, streamed and cut at `max` (null: too large). A declared length above the cap is refused before reading. */
-async function readCapped(req: Request, max: number): Promise<Uint8Array | null> {
-  const declared = Number(req.headers.get("content-length") ?? Number.NaN);
-  if (declared > max) return null;
-  if (!req.body) return new Uint8Array(0);
-  const reader = req.body.getReader();
-  const parts: Uint8Array[] = [];
-  let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > max) {
-      await reader.cancel();
-      return null;
-    }
-    parts.push(value);
-  }
-  const out = new Uint8Array(size);
-  let at = 0;
-  for (const p of parts) {
-    out.set(p, at);
-    at += p.byteLength;
-  }
-  return out;
-}
-
-const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
 /** Whether this isolate answered a webhook yet (the `f: 1` first-run marker of the staging CPU gate; CPU diagnosis lead decision 4). */
 let answeredOnce = false;
