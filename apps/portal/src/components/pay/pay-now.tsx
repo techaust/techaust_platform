@@ -17,6 +17,8 @@ type Props = {
   /** The smallest part payment; null while the server doesn't send it (then only the full amount is offered). */
   minimumMinor: number | null;
   wholeRupees: boolean;
+  /** When the newest online payment the page shows was received (null: none), remembered at the press (review finding 5). */
+  lastPaidAt: number | null;
   /** Makes the link (the session's route or the emailed link's). */
   pay: (amountMinor: number) => Promise<PayLink>;
   /** Leaves for Razorpay (the page's `location.assign`; a test passes its own). */
@@ -74,7 +76,7 @@ function AmountForm(props: Props & { onCancel: () => void }) {
       const link = await props.pay(amountMinor);
       // The server checked the address; the browser checks again before it leaves (a wrong answer never sends a client elsewhere).
       if (!isRazorpayUrl(link.shortUrl)) throw new RequestError(502, "gateway_error", PAY_ZI.unavailable);
-      rememberPay(props.documentId, amountMinor);
+      rememberPay(props.documentId, amountMinor, props.lastPaidAt);
       (props.leave ?? ((u: string) => window.location.assign(u)))(link.shortUrl);
       // the page is leaving: the button stays busy
     } catch (e) {

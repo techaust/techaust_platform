@@ -75,27 +75,41 @@ export const _setReturned = (id: string | null) => {
 
 const KEY = "ta.pay";
 
+/** What this tab remembers of a press of "Continue to Razorpay": the document, the amount, when, and the newest online payment the page showed then. */
+export type PayPress = { amountMinor: number; at: number; seenAt: number | null };
+
 /**
- * When "Continue to Razorpay" was pressed, for which document and how much (this tab only; no token, nothing about the payer). The Processing state counts a
- * payment received after this moment as this one.
+ * When "Continue to Razorpay" was pressed, for which document and how much, and the time of the newest online payment the page showed then (`seenAt`, null when
+ * it showed none), in this tab only (no token, nothing about the payer). The Processing state counts only a payment newer than `seenAt` as this one (review
+ * finding 5: an earlier payment is never "the one just made").
  */
-export function rememberPay(documentId: string, amountMinor: number, at = Date.now()): void {
+export function rememberPay(
+  documentId: string,
+  amountMinor: number,
+  seenAt: number | null,
+  at = Date.now(),
+): void {
   try {
-    sessionStorage.setItem(KEY, JSON.stringify({ documentId, amountMinor, at }));
+    sessionStorage.setItem(KEY, JSON.stringify({ documentId, amountMinor, at, seenAt }));
   } catch {
-    // Private mode: the Processing state falls back to the last half hour.
+    // Private mode: no press is remembered, so the Processing state ends on 07-ZI line 13 (never "received").
   }
 }
 
-export function recalledPay(documentId: string): { amountMinor: number; at: number } | null {
+export function recalledPay(documentId: string): PayPress | null {
   try {
     const v = JSON.parse(sessionStorage.getItem(KEY) ?? "null") as {
       documentId?: unknown;
       amountMinor?: unknown;
       at?: unknown;
+      seenAt?: unknown;
     } | null;
-    return v && v.documentId === documentId && typeof v.at === "number" && typeof v.amountMinor === "number"
-      ? { amountMinor: v.amountMinor, at: v.at }
+    return v &&
+      v.documentId === documentId &&
+      typeof v.at === "number" &&
+      typeof v.amountMinor === "number" &&
+      (v.seenAt === null || typeof v.seenAt === "number")
+      ? { amountMinor: v.amountMinor, at: v.at, seenAt: v.seenAt }
       : null;
   } catch {
     return null;
@@ -110,19 +124,22 @@ export const forgetPay = () => {
   }
 };
 
-/** Without a remembered press, a payment received in the last half hour counts as the one the client just made. */
-export const RECENT_MS = 30 * 60_000;
 /** Processing asks every 3 s for up to a minute, and once at 20 s asks the server to check with Razorpay (`?refresh=1`; run file E). */
 export const POLL_MS = 3_000;
 export const POLL_FOR_MS = 60_000;
 export const REFRESH_AT_MS = 20_000;
 
-/** The payment received online that this return is about, if the page shows one yet. */
-export function receivedSince(
+/**
+ * The payment received online that this return is about, if the page shows one yet (review finding 5): only with a press remembered in this tab, and only a
+ * payment newer than the newest one the page showed at the press (any, when it showed none). Without a remembered press nothing counts: the Processing state
+ * ends on 07-ZI line 13, never "received" for a payment made earlier.
+ */
+export function receivedAfter(
   lastPaid: { amountMinor: number; at: number } | null | undefined,
-  since: number,
+  press: Pick<PayPress, "seenAt"> | null,
 ): { amountMinor: number; at: number } | null {
-  return lastPaid && lastPaid.at >= since ? lastPaid : null;
+  if (!press || !lastPaid) return null;
+  return press.seenAt === null || lastPaid.at > press.seenAt ? lastPaid : null;
 }
 
 /** An instant as the IST day (`YYYY-MM-DD`), for line 16's date. */

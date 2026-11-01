@@ -26,10 +26,9 @@ import {
   forgetPay,
   POLL_FOR_MS,
   POLL_MS,
-  RECENT_MS,
   REFRESH_AT_MS,
   recalledPay,
-  receivedSince,
+  receivedAfter,
   takePayReturn,
 } from "../lib/pay.ts";
 import { MoreButton, NotFoundScreen, ScreenSkeleton } from "../screens/home.tsx";
@@ -90,19 +89,15 @@ function DocumentScreen(props: {
   }, [source]);
 
   // M6.2 (run file G5): back from Razorpay, the page asks every 3 s for up to a minute, once at 20 s with the server checking Razorpay (`?refresh=1`), until
-  // it shows a payment received since "Continue to Razorpay" was pressed (this tab), or else one received in the last half hour. Never marked paid here.
+  // it shows a payment newer than the newest one it showed when "Continue to Razorpay" was pressed in this tab (review finding 5). Without a remembered press
+  // it ends on 07-ZI line 13, never "received". Never marked paid here.
   const [payState, setPayState] = useState<PayPhase | null>(props.returned ? { phase: "checking" } : null);
   const docId = state.phase === "ready" ? state.doc.id : null;
-  const since = useMemo(() => {
-    if (!props.returned || !docId) return 0;
-    const r = recalledPay(docId);
-    // the server's clock, not this one, stamps the payment: a few minutes' allowance either way
-    return r ? r.at - 5 * 60_000 : Date.now() - RECENT_MS;
-  }, [props.returned, docId]);
+  const press = useMemo(() => (props.returned && docId ? recalledPay(docId) : null), [props.returned, docId]);
   const checking = payState?.phase === "checking";
   useEffect(() => {
     if (!checking || state.phase !== "ready") return;
-    const got = receivedSince(state.doc.online?.lastPaid, since);
+    const got = receivedAfter(state.doc.online?.lastPaid, press);
     if (got) {
       setPayState({
         phase: "received",
@@ -111,7 +106,7 @@ function DocumentScreen(props: {
       });
       forgetPay();
     }
-  }, [checking, state, since]);
+  }, [checking, state, press]);
   useEffect(() => {
     if (!checking) return;
     const started = Date.now();
@@ -175,6 +170,7 @@ function DocumentScreen(props: {
             balanceMinor={doc.balanceMinor as number}
             minimumMinor={doc.online?.minimumMinor ?? null}
             wholeRupees={doc.wholeRupees === true}
+            lastPaidAt={doc.online?.lastPaid?.at ?? null}
             pay={source.pay}
           />
         ) : null

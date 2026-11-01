@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import ziPage from "../../../docs/07-content-appendix/ZI-m6.2-razorpay.md?raw";
 import { PAY_ZI } from "./copy-zi.ts";
-import { isRazorpayUrl, partAmount, receivedSince } from "./lib/pay.ts";
+import { forgetPay, isRazorpayUrl, partAmount, recalledPay, receivedAfter, rememberPay } from "./lib/pay.ts";
 
 /** The quoted lines of 07-ZI's numbered client line `n` (before the staff section). */
 function quoted(n: number): string[] {
@@ -68,9 +68,43 @@ describe("leaving for Razorpay and coming back [ADM-PAY-02]", () => {
     expect(isRazorpayUrl("https://user:pw@rzp.io/i/abc")).toBe(false);
     expect(isRazorpayUrl("javascript:alert(1)")).toBe(false);
   });
-  it("counts only a payment received since the press", () => {
-    expect(receivedSince(null, 100)).toBeNull();
-    expect(receivedSince({ amountMinor: 5, at: 99 }, 100)).toBeNull();
-    expect(receivedSince({ amountMinor: 5, at: 100 }, 100)).toEqual({ amountMinor: 5, at: 100 });
+  it("review finding 5: counts only a payment newer than the newest one the page showed at the press", () => {
+    const earlier = { amountMinor: 2_000_000, at: 1_000 };
+    // The page showed an earlier payment at the press: that one is never "the one just made"; a newer one is.
+    expect(receivedAfter(earlier, { seenAt: 1_000 })).toBeNull();
+    expect(receivedAfter({ amountMinor: 50_000, at: 1_001 }, { seenAt: 1_000 })).toEqual({
+      amountMinor: 50_000,
+      at: 1_001,
+    });
+    // It showed none: any payment now shown is new.
+    expect(receivedAfter(earlier, { seenAt: null })).toEqual(earlier);
+    expect(receivedAfter(null, { seenAt: null })).toBeNull();
+  });
+  it("review finding 5: with no press remembered in this tab, nothing counts (the page ends on line 13, never received)", () => {
+    expect(receivedAfter({ amountMinor: 2_000_000, at: Date.now() }, null)).toBeNull();
+    expect(receivedAfter(undefined, null)).toBeNull();
+  });
+  it("the press is remembered with what the page showed, for its own document only; an older entry without it is no press", () => {
+    const store = new Map<string, string>();
+    const g = globalThis as { sessionStorage?: unknown };
+    const had = g.sessionStorage;
+    g.sessionStorage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    };
+    try {
+      rememberPay("doc-1", 50_000, 1_000, 2_000);
+      expect(recalledPay("doc-1")).toEqual({ amountMinor: 50_000, at: 2_000, seenAt: 1_000 });
+      expect(recalledPay("doc-2")).toBeNull();
+      rememberPay("doc-1", 50_000, null, 2_000);
+      expect(recalledPay("doc-1")).toEqual({ amountMinor: 50_000, at: 2_000, seenAt: null });
+      store.set("ta.pay", JSON.stringify({ documentId: "doc-1", amountMinor: 50_000, at: 2_000 }));
+      expect(recalledPay("doc-1")).toBeNull();
+      forgetPay();
+      expect(recalledPay("doc-1")).toBeNull();
+    } finally {
+      g.sessionStorage = had;
+    }
   });
 });
