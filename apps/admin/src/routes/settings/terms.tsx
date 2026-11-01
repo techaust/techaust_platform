@@ -49,8 +49,8 @@ export function DocumentTerms() {
   return (
     <>
       <VerifyNote>
-        The wording of these blocks is yours and your lawyer's. Confirm it with your CA and a lawyer before
-        documents carry it.
+        The wording of these blocks is yours. Documents print it word for word, so read a change through
+        before you save it.
       </VerifyNote>
       <p className="hint">
         Each document keeps the version it was made with. Saving a block makes a new version; earlier

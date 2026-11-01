@@ -116,11 +116,11 @@ describe("overview and reading [ADM-SET-01..10]", () => {
     }
   });
 
-  it("tax and retention point to their 08-C §5 list (the CA's; the CA's and the lawyer's); retention says what is not built yet", async () => {
+  it("tax and retention point to 08-C §5 (07-ZK line 12: one pointer, no list named); retention says what is not built yet", async () => {
     const o = await owner();
-    expect((await json(await call(GROUP("tax"), { cookie: o.cookie }))).meta.verify).toBe("08-C §5: CA");
+    expect((await json(await call(GROUP("tax"), { cookie: o.cookie }))).meta.verify).toBe("08-C §5");
     const r = await json(await call(GROUP("retention"), { cookie: o.cookie }));
-    expect(r.meta.verify).toBe("08-C §5: CA and lawyer");
+    expect(r.meta.verify).toBe("08-C §5");
     expect(r.meta.notes).toMatch(/M7\.4/);
   });
 });
@@ -922,7 +922,7 @@ describe("document terms: versioned, append-only [ADM-SET-08]", () => {
       "export_declaration",
       "refund_link",
     ]);
-    expect(list.meta.verify).toBe("08-C §5: CA and lawyer");
+    expect(list.meta.verify).toBe("08-C §5");
     const byName = Object.fromEntries(list.blocks.map((b: J) => [b.block, b.current]));
     expect(byName.proposal_terms).toMatchObject({ version: 1, usedBy: 2 });
     expect(byName.standard_terms).toMatchObject({ version: 2, usedBy: null });
