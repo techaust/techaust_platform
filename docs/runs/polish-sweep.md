@@ -1,6 +1,6 @@
 # Polish sweep (admin and website follow-ups)
 
-Status: review APPROVE (2 medium, 7 low); lead fixed 1, 4, 6; designer fix round waits for 06:10 IST (main session's hold)
+Status: designer fix round running (review 2, 3, 5, week grid same-name line)
 Tier: C
 Usage: builder b1 claude-opus-5-5/high (model-audit; skills attempted `cloudflare:workers-best-practices`, `cloudflare:wrangler`, both "Unknown skill" in the cloud), 5-h 17 → 20 %; designer d1 claude-opus-5-5/high (skills: frontend-design:frontend-design per model-audit), started at 5-h 17 %; frontend-design attempted, "Unknown skill" in the cloud (designer report). Reviewer started at 5-h 62 % (USAGE 62 at 03:21).
 
@@ -191,6 +191,7 @@ Commands (through heavy.sh): admin typecheck exit 0; admin test 128 files, 3,822
 - Kept: **7** follow-up (admin and portal rings and a `packages/ui` focus-width token: a system-wide token change across three apps with drift-tested outputs, wider than item 1d); **8** (one extra read in one dialog, with a safe fallback; returning blockers from the save changes a finance API contract: follow-up); **9** (those helpers map `step_up_cancelled` and `invalid_code` both to the message, not a wrong-code test; `lib/payments.ts` sits beside M6.2's work).
 - A narrow re-check follows the designer round.
 - `bash tools/heavy.sh --log check pnpm check` on b80caa7: exit 0 (lint infos only, pre-existing; every guard ok). A reminder is set for 06:12 IST to start the designer round.
+- 2026-11-01 06:13 IST: merged origin/main (#141, #142; clean) as d945655. Designer fix round d2 started (agent-slots: yes, reading USAGE 88 at 04:00, over 2 hours old, so one agent at a time; the window reset at 06:10).
 
 ## Integration notes (lead)
 - 2026-11-01: merged `fix/polish-sweep-b1` (9da1599) into `fix/polish-sweep` as 2826a4b; builder worktree removed, local branches deleted. Lead read the diff: the cancel of never-linked sends now runs before `deleteContactAccess` (step 2a), same SQL and guard; `DELIVERY_SQL` adds `removed` and the row reads "Removed contact" (core `ANONYMISED_CONTACT`, existing words), no address. The reviewer checks the guard order (the anonymise audit row exists before 2a) and the statement count.
