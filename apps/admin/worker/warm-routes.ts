@@ -142,7 +142,9 @@ const answers = { fetch: async () => new Response(null, { status: 200 }) };
 /**
  * The made-up env of a dry run: the answer book's D1, bindings that drop everything, the local vars and the finance Worker's made-up test key pair; `extra`
  * adds a Worker's own made-up values (the front's sign-in keys, warm-front.ts: the API and finance bundles must never name them). `ENVIRONMENT` is "warm" so
- * nothing of the real environments' rules applies; the gateway transport is the local stub (no Razorpay call can be made from here).
+ * nothing of the real environments' rules applies. The gateway transport is "unset" (gateway/config.ts `transportOf` allows "stub" only when ENVIRONMENT is
+ * "local"), so any gateway path in a dry run answers 503 `gateway_unavailable` and no Razorpay call can be made from here; no hot route of the dry run
+ * reaches one. `observe` (tests): see warmDb.
  */
 export function warmEnv(
   book: WarmRows,

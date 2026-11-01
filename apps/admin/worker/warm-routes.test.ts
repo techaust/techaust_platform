@@ -6,6 +6,7 @@ import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, firstRun, nextRequestNumber } from "./app.ts";
 import { forwardRoutes } from "./forward.ts";
+import { transportOf } from "./gateway/config.ts";
 import { ROUTES } from "./guard.ts";
 import { mountApi } from "./routes-api.ts";
 import { mountFinance } from "./routes-finance.ts";
@@ -253,6 +254,10 @@ describe("the start-up dry run [CPU warm-up (b)1]", () => {
     ]);
     expect(count).toBe(1);
     expect(rejected).toHaveBeenCalledWith(1);
+  });
+
+  it("the made-up env's gateway transport is unset, so no gateway call can be made (early check finding 5)", () => {
+    expect(transportOf(warmEnv({}))).toBe("unset");
   });
 
   it("never throws, even when every read fails", async () => {
