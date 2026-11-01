@@ -227,7 +227,7 @@ describe("the inline head script (first paint, WEB-G-06)", () => {
   const built = existsSync(`${webDir}/dist/404.html`);
   const now = Date.now();
 
-  function run(store: Record<string, string>) {
+  function run(store: Record<string, string>, search = "") {
     const code = c.inlineScripts(readFileSync(`${webDir}/dist/404.html`, "utf8"))[0] as string;
     const classes: string[] = [];
     const root = {
@@ -235,9 +235,24 @@ describe("the inline head script (first paint, WEB-G-06)", () => {
       dataset: {} as Record<string, string>,
     };
     const localStorage = { getItem: (k: string) => store[k] ?? null };
-    vm.runInNewContext(code.replace("(document.documentElement)", "(root)"), { root, localStorage, Date });
+    const location = { search };
+    vm.runInNewContext(code.replace("(document.documentElement)", "(root)"), {
+      root,
+      localStorage,
+      location,
+      Date,
+    });
     return { dataset: root.dataset, classes };
   }
+
+  // /thanks keeps room for its reference lines only when the URL carries one (company-phone review finding 4).
+  it.skipIf(!built)("marks a URL that carries a lead reference", () => {
+    expect(run({}, "?ref=L-7K3QM").classes).toContain("has-ref");
+    expect(run({}, "?x=1&ref=L-7K3QM").classes).toContain("has-ref");
+    expect(run({}).classes).not.toContain("has-ref");
+    expect(run({}, "?ref=").classes).not.toContain("has-ref");
+    expect(run({}, "?pref=L-7K3QM").classes).not.toContain("has-ref");
+  });
 
   it.skipIf(!built)("defaults to rupees with no stored value", () => {
     expect(run({}).dataset.currency).toBe("inr");
