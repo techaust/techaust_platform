@@ -102,6 +102,12 @@ export const MODES: readonly PaymentMode[] = ["neft", "rtgs", "imps", "upi", "sw
 /** Line 21, the void blocker `payment_pending`. */
 export const VOID_PAYMENT_PENDING =
   "A payment recorded on it is waiting for the owner's check. Reject it first.";
+/**
+ * M6.2 (fix round 3 item 3; the lead under the standing delegation, 2026-11-01): the void and withdraw blocker `payment_pending_gateway`, a pending Razorpay
+ * payment (it can't be rejected). The Worker's `VOID_GATEWAY_PENDING_LINE` is the same words (a test pins the two).
+ */
+export const VOID_GATEWAY_PENDING =
+  'A Razorpay payment on it is waiting for its tax invoice. Issue it with "Confirm by issuing the tax invoice", or resolve it in Needs review.';
 
 /** Line 9, the overpayment line. */
 export const overpaymentLine = (amount: string, client: string) =>

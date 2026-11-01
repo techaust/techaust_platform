@@ -23,12 +23,18 @@ describe("voidBlockers: a payment waiting, an allocation, or TDS refuses a void 
     today: "2026-10-31",
     tdsMinor: 0,
     paymentPending: false,
+    paymentPendingGateway: false,
     paymentRecorded: false,
   };
   it("each has its code, and none when neither is there", () => {
     expect(voidBlockers(base)).toEqual([]);
     expect(voidBlockers({ ...base, paymentPending: true })).toEqual(["payment_pending"]);
     expect(voidBlockers({ ...base, paymentRecorded: true })).toEqual(["payment_recorded"]);
+    // M6.2 (fix round 3 item 3): a pending Razorpay payment has its own code (it can't be rejected), a manual one keeps M6.1's
+    expect(voidBlockers({ ...base, paymentPendingGateway: true })).toEqual(["payment_pending_gateway"]);
+    expect(
+      voidBlockers({ ...base, type: "proforma", paymentPending: true, paymentPendingGateway: true }),
+    ).toEqual(["payment_pending", "payment_pending_gateway"]);
     expect(voidBlockers({ ...base, tdsMinor: 10 })).toEqual(["tds_recorded"]);
     expect(voidBlockers({ ...base, paymentPending: false, paymentRecorded: false, tdsMinor: 0 })).toEqual([]);
     // L32: a waiting payment and an allocation (one released since included) are told apart

@@ -44,6 +44,7 @@ import type {
   RecipientSnapshot,
 } from "@techaust/db/issue";
 import type { ApiError } from "./context.ts";
+import { VOID_GATEWAY_PENDING_LINE } from "./payment-messages.ts";
 import {
   type ClientRow,
   discountOf,
@@ -138,6 +139,8 @@ export const WITHDRAW_ERRORS = {
     "payment_pending",
     "A payment recorded on it is waiting for the owner's check. Reject it first.",
   ),
+  // M6.2 (fix round 3 item 3): a pending Razorpay payment can't be rejected (lead, 2026-11-01, standing delegation; staff-only).
+  payment_pending_gateway: e("payment_pending_gateway", VOID_GATEWAY_PENDING_LINE),
   not_delivered: e("not_delivered", "This proforma hasn't reached the client yet, so void it instead."),
 } as const satisfies Record<WithdrawBlockerCode, ApiError>;
 export const INVOICE_APPROVAL_EXPIRED = e(

@@ -8,14 +8,15 @@ import { uuidv7 } from "@techaust/core/ids";
 import { formatMoney, money } from "@techaust/core/money";
 import { checkProviderContract } from "@techaust/core/payments";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { itemReason } from "../src/lib/gateway.ts";
 import { issueGatewayAdvance } from "./gateway/advance.ts";
 import { setStubTransport, stubFetch } from "./gateway/config.ts";
 import { processEvent } from "./gateway/events.ts";
 import { createLinkFor, refreshForClient } from "./gateway/links.ts";
 import { razorpayApi, razorpayProvider } from "./gateway/razorpay.ts";
+import { reviewReason } from "./gateway/reasons.ts";
 import { reviewFactsOf } from "./gateway/settle.ts";
 import { GATEWAY_WARM_STEPS, warmGateway } from "./gateway/warm.ts";
+import { VOID_GATEWAY_PENDING_LINE } from "./payment-messages.ts";
 import {
   calls,
   countingEnv,
@@ -29,7 +30,7 @@ import {
 } from "./test-gateway.ts";
 import { call, one, rows, sessionFor, withEnv } from "./test-helpers.ts";
 import { putSwiftBank, putTax } from "./test-invoice-types.ts";
-import { json, putBank, putCompany } from "./test-invoices.ts";
+import { json, putBank, putCompany, voidInvoice } from "./test-invoices.ts";
 
 beforeEach(async () => {
   await putCompany();
@@ -344,7 +345,13 @@ describe("processEvent: the webhook after the re-fetch [ADM-PAY-02, -06, -07, JO
       (await json(list)) as { items: { kind: string; facts: Record<string, unknown> }[] }
     ).items.find((i) => i.kind === "amount_mismatch" && i.facts?.paymentId === l.paymentId);
     expect(listed?.facts).toEqual(facts);
-    expect(itemReason({ kind: "amount_mismatch", facts, amount_minor: inv.total - 100 })).toBe(
+    // The Worker's bell and the list read one copy of S20 (`gateway/reasons.ts`); the list's mapping of these facts is tested in `src/lib/gateway.test.ts`.
+    expect(
+      reviewReason("amount_mismatch", {
+        paidMinor: inv.total - 100,
+        expectedMinor: facts.expectedMinor as number,
+      }),
+    ).toBe(
       `The amount paid (${formatMoney(money(inv.total - 100, "INR"))}) doesn't match the link (${formatMoney(money(inv.total, "INR"))}).`,
     );
     // The Owner can't reject or (later) withdraw a Razorpay payment here: refunds are M6.5.
@@ -450,9 +457,7 @@ describe("processEvent: the webhook after the re-fetch [ADM-PAY-02, -06, -07, JO
           ...(facts.method ? ["method"] : []),
         ].sort(),
       );
-      expect(itemReason({ kind: "document_not_payable", facts, amount_minor: inv.total })).toContain(
-        "(it was voided)",
-      );
+      // The list's words for these facts: `src/lib/gateway.test.ts` (itemReason).
     } else expect(r.result).toBe("processed");
   });
 
@@ -571,6 +576,43 @@ describe("a proforma paid online: the automatic tax invoice [ADM-INV-10, L5, L6,
         )?.kind,
       ).toBe("advance_blocked");
     }
+  });
+
+  it("fix round 3 item 3: a pending Razorpay payment is its own void and withdraw blocker (payment_pending_gateway), never M6.1's manual one", async () => {
+    const o = await owner();
+    const pf = await issued(o, "proforma");
+    const l = await linkFor(o, pf);
+    const r = await processEvent(env, await eventRow(l.linkId, l.paymentId));
+    expect(r).toMatchObject({ result: "processed", next: { kind: "gateway.advance" } });
+    expect((await paymentOf(l.paymentId))?.status).toBe("pending_verification");
+    const view = (await json(await call(`/invoices/${pf.id}`, { cookie: o.cookie }))) as {
+      void: { blockers: string[] };
+      withdraw: { blockers: string[] };
+    };
+    expect(view.void.blockers).toContain("payment_pending_gateway");
+    expect(view.void.blockers).not.toContain("payment_pending");
+    expect(view.withdraw.blockers).toContain("payment_pending_gateway");
+    expect(view.withdraw.blockers).not.toContain("payment_pending");
+    const refused = await voidInvoice(o, pf.id);
+    expect(refused.status).toBe(409);
+    const body = (await json(refused)) as { error: { code: string }; reasons: string[] };
+    expect(body.reasons).toContain("payment_pending_gateway");
+    expect(body.reasons).not.toContain("payment_pending");
+    expect(body.error.code).toBe("void_not_allowed");
+    // Delivered (opened in the portal), it is withdrawn instead: the withdrawal names the gateway code, in the lead's words.
+    await env.DB.prepare("UPDATE documents SET viewed_at = ?2 WHERE id = ?1 AND viewed_at IS NULL")
+      .bind(pf.id, Date.now())
+      .run();
+    const stamp = await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?1", pf.id);
+    const w = await call(`/invoices/${pf.id}/withdraw`, {
+      cookie: o.cookie,
+      body: { expectedUpdatedAt: stamp?.updated_at, reason: "Sent to the wrong client" },
+    });
+    expect(w.status).toBe(409);
+    expect(await json(w)).toMatchObject({
+      error: { code: "payment_pending_gateway", message: VOID_GATEWAY_PENDING_LINE },
+      reasons: ["payment_pending_gateway"],
+    });
   });
 });
 

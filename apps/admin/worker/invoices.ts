@@ -166,6 +166,7 @@ function voidRefused(c: Ctx, reasons: readonly VoidBlockerCode[], type: string) 
       r === "has_credit" ||
       r === "has_child_document" ||
       r === "payment_pending" ||
+      r === "payment_pending_gateway" ||
       r === "payment_recorded" ||
       r === "tds_recorded",
   );
@@ -353,10 +354,11 @@ const VOID_PAYMENT_SQL = paymentBlocksVoidSql("documents.id", "documents.client_
 /** The client of the document `?1`, as a scalar subquery (the void facts read). */
 const CLIENT_OF_DOC = "(SELECT pd.client_id FROM documents pd WHERE pd.id = ?1)";
 /**
- * L17, L32 (the void facts, `?1` the document): `payment_pending` (a pending payment of its client asks for it) and `payment_recorded` (an allocation row names
- * it), two columns of the facts read and of the re-read after a refused void.
+ * L17, L32 (the void facts, `?1` the document): `payment_pending` (a pending manual payment of its client asks for it), `gateway_pending` (a pending Razorpay
+ * payment does: M6.2 fix round 3 item 3, its own blocker) and `payment_recorded` (an allocation row names it), columns of the facts read and of the re-read
+ * after a refused void.
  */
-const PAYMENT_FACTS_SQL = `${paymentPendingForSql("?1", CLIENT_OF_DOC)} AS payment_pending, ${paymentRecordedSql("?1")} AS payment_recorded`;
+const PAYMENT_FACTS_SQL = `${paymentPendingForSql("?1", CLIENT_OF_DOC, "manual")} AS payment_pending, ${paymentPendingForSql("?1", CLIENT_OF_DOC, "gateway")} AS gateway_pending, ${paymentRecordedSql("?1")} AS payment_recorded`;
 
 /**
  * ?1 the document: whether it was emailed or has an issued child (the void codes), and who voided OR withdrew it. ADM-INV-10: any child (a draft too)
@@ -415,6 +417,7 @@ export async function readInvoice(
     advance: 0,
     voided_by_name: null,
     payment_pending: 0,
+    gateway_pending: 0,
     payment_recorded: 0,
   }) as {
     emailed: number;
@@ -423,6 +426,7 @@ export async function readInvoice(
     advance: number;
     voided_by_name: string | null;
     payment_pending: number;
+    gateway_pending: number;
     payment_recorded: number;
   };
   return {
@@ -441,6 +445,8 @@ export async function readInvoice(
     hasIssuedChild: facts.child === 1,
     /** M6.1 (L17): a PENDING payment asks for this document (`paymentPendingForSql`). */
     paymentPending: facts.payment_pending === 1,
+    /** M6.2 (fix round 3 item 3): a PENDING Razorpay payment asks for this document (`paymentPendingForSql(…, "gateway")`). */
+    paymentPendingGateway: facts.gateway_pending === 1,
     /** M6.1 (L17, L32): an allocation row names this document, one released or withdrawn since included (`paymentRecordedSql`). */
     paymentRecorded: facts.payment_recorded === 1,
     /** ADM-INV-10: any document (draft or issued) names this one as its parent, and an advance receipt names it (the withdraw blockers). */
@@ -850,6 +856,7 @@ export const invoices = new Hono<AppEnv>()
         emailed: ctx.emailed,
         hasIssuedChild: ctx.hasIssuedChild,
         paymentPending: ctx.paymentPending,
+        paymentPendingGateway: ctx.paymentPendingGateway,
         paymentRecorded: ctx.paymentRecorded,
         hasAnyChild: ctx.hasAnyChild,
         hasAdvanceReceipt: ctx.hasAdvanceReceipt,
@@ -1095,6 +1102,7 @@ export const invoices = new Hono<AppEnv>()
         emailed: false,
         hasIssuedChild: false,
         paymentPending: ctx.paymentPending,
+        paymentPendingGateway: ctx.paymentPendingGateway,
         paymentRecorded: ctx.paymentRecorded,
         hasAnyChild: false,
         hasAdvanceReceipt: false,
@@ -1244,6 +1252,7 @@ export const invoices = new Hono<AppEnv>()
       type: d.type,
       tdsMinor: d.tds_minor,
       paymentPending: ctx.paymentPending,
+      paymentPendingGateway: ctx.paymentPendingGateway,
       paymentRecorded: ctx.paymentRecorded,
     });
     if (reasons.length > 0) return voidRefused(c, reasons, d.type);
@@ -1322,6 +1331,7 @@ export const invoices = new Hono<AppEnv>()
           tds_minor: number;
           emailed: number;
           payment_pending: number;
+          gateway_pending: number;
           payment_recorded: number;
           gone: number;
           step_up: number | null;
@@ -1343,6 +1353,7 @@ export const invoices = new Hono<AppEnv>()
       // or TDS recorded on it between the read and the write says so too. In `voidBlockers` order.
       const late: VoidBlockerCode[] = [];
       if (again.payment_pending === 1) late.push("payment_pending");
+      if (again.gateway_pending === 1) late.push("payment_pending_gateway");
       if (again.payment_recorded === 1) late.push("payment_recorded");
       if (again.tds_minor > 0) late.push("tds_recorded");
       if (again.emailed === 1) late.push("already_emailed");

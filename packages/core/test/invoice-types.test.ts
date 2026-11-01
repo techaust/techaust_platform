@@ -989,6 +989,7 @@ describe("void: a proforma has no return period [LD28]", () => {
     today: "2027-01-31",
     tdsMinor: 0,
     paymentPending: false,
+    paymentPendingGateway: false,
     paymentRecorded: false,
   };
   it("another type is closed after the month, a proforma is not; its other rules stand", () => {

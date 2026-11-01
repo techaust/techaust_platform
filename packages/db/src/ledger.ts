@@ -542,11 +542,13 @@ export const paymentRecordedSql = (doc: string): string =>
 
 /**
  * L17 (the void rules): a PENDING payment of the client `client` asks for the document `doc` (both SQL expressions) in its requested allocations. Core
- * `voidBlockers` `payment_pending`; a seek of `payments_client`.
+ * `voidBlockers` `payment_pending`; a seek of `payments_client`. M6.2 fix round 3 item 3: `only` narrows it to a manual entry (`manual`: core
+ * `payment_pending`, the Owner rejects it) or a gateway payment (`gateway`: core `payment_pending_gateway`, which can't be rejected: its tax invoice is issued, or
+ * it is resolved in Needs review); without it, any pending payment (the void and withdraw WHEREs, the trigger's twin).
  */
-export const paymentPendingForSql = (doc: string, client: string): string =>
+export const paymentPendingForSql = (doc: string, client: string, only?: "manual" | "gateway"): string =>
   `EXISTS (SELECT 1 FROM payments vp INDEXED BY payments_client, json_each(vp.requested_allocations) vj WHERE vp.client_id = ${client} AND vp.status = 'pending_verification'
-     AND vp.requested_allocations IS NOT NULL AND json_extract(vj.value, '$.documentId') = ${doc})`;
+     AND vp.requested_allocations IS NOT NULL AND json_extract(vj.value, '$.documentId') = ${doc}${only === "manual" ? " AND vp.provider = 'manual'" : only === "gateway" ? " AND vp.provider <> 'manual'" : ""})`;
 
 /**
  * L17 (early check 2, finding 10): the payment test of the void statement's WHERE, `NOT ${paymentBlocksVoidSql(...)}`: an allocation row names the document,
