@@ -9,6 +9,7 @@
 // Who is told: new device and 2FA change -> the member (active or just invited). Lockout -> the member (active or invited)
 // and every active owner, each address once; a deactivated member gets none, an owner's copy still goes. Lockout emails
 // are at most one per person per clock hour (UTC): the entity is `<user id>:<hour>`, and the alert row of a second lock stays.
+
 import {
   countryName,
   describeUserAgent,
@@ -16,6 +17,7 @@ import {
   formatIstDateTime,
   staffAlertMessage,
 } from "@techaust/core";
+import { firstNameOf } from "@techaust/core/offers";
 import { primeSesSigning } from "@techaust/email";
 import { logEvent } from "./log.ts";
 
@@ -91,7 +93,7 @@ export async function processStaffAlert(env: Env, body: unknown): Promise<StaffA
     return "ignored";
   }
   const time = formatIstDateTime(row.at);
-  const who = (m: Member) => ({ name: m.name, first_name: m.name.trim().split(/\s+/)[0] ?? m.name });
+  const who = (m: Member) => ({ name: m.name, first_name: firstNameOf(m.name) });
   // The member's own emails also carry their role: it picks 07-G's "Not you?" line (an owner gets the owner line, since
   // "Contact the owner" can't help them; everyone else the member line). The owners' lockout copy has no such line.
   const reader = (m: Member) => ({ ...who(m), role: m.role });

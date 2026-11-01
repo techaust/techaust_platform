@@ -389,19 +389,15 @@ export function spyConsole(): Spy {
 
 // ---- the SQL spy --------------------------------------------------------------------------------------------------
 
-/** Tables that have a `client_id` column, from the live schema (so a new table is covered without editing the test). */
+/**
+ * Tables that have a `client_id` column, from the live schema (so a new table is covered without editing the test). One statement (test-hardening 2):
+ * it used to be one `pragma_table_info` round trip per table (about 80), which a full parallel run stretched past the 5 s test timeout.
+ */
 export async function tablesWithClientId() {
   const all = await env.DB.prepare(
-    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'd1_%'",
+    "SELECT m.name FROM sqlite_master m WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite_%' AND m.name NOT LIKE '_cf_%' AND m.name NOT LIKE 'd1_%' AND EXISTS (SELECT 1 FROM pragma_table_info(m.name) p WHERE p.name = 'client_id')",
   ).all<{ name: string }>();
-  const out: string[] = [];
-  for (const t of all.results) {
-    const cols = await env.DB.prepare("SELECT name FROM pragma_table_info(?)")
-      .bind(t.name)
-      .all<{ name: string }>();
-    if (cols.results.some((c) => c.name === "client_id")) out.push(t.name);
-  }
-  return out;
+  return all.results.map((t) => t.name);
 }
 
 /**

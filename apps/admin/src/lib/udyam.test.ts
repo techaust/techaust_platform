@@ -57,6 +57,20 @@ describe("udyamOf [L5, L8]", () => {
     });
   });
 
+  it("drops inner spaces, tabs and non-breaking spaces of a pasted number before the check (test-hardening 4b)", () => {
+    for (const pasted of [
+      "UDYAM - WB - 01 - 0012345",
+      "UDYAM-WB-01-\t0012345",
+      "UDYAM-WB-01-\u00a00012345",
+    ]) {
+      expect(normaliseUdyam(pasted)).toBe("UDYAM-WB-01-0012345");
+      expect(udyamOf(pasted, "micro")).toEqual({
+        ok: true,
+        value: { number: "UDYAM-WB-01-0012345", category: "micro" },
+      });
+    }
+  });
+
   it("refuses any other shape with 07-ZC's error", () => {
     for (const bad of [
       "UDYAM-WB-01-001234",

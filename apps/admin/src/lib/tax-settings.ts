@@ -2,7 +2,13 @@
 // the round trip is tested without a browser (routes/settings/tax.tsx draws the fields). Every stored value a field shows comes back as the person left
 // it, and every stored value the page has no field for is kept as stored (`...doc.value`): a save never resets a setting to its default (M5.5b early
 // check H2: the B2CL threshold and the INR realisation period, LD77).
-import { issueDateOf } from "@techaust/core/invoices";
+import {
+  issueDateOf,
+  REALISATION_MAX_DAYS,
+  REALISATION_MAX_MONTHS,
+  REALISATION_MIN_DAYS,
+  REALISATION_MIN_MONTHS,
+} from "@techaust/core/invoices";
 import type { Settings } from "@techaust/core/settings";
 import type { SettingsDoc } from "../api.ts";
 import type { Built } from "../routes/settings/kit.tsx";
@@ -22,9 +28,7 @@ export const CATEGORIES: { key: Category; label: string }[] = [
   { key: "run", label: "Run" },
 ];
 
-/** The reports' own bounds on the realisation periods (core `realisationRulesOf` and the stored-settings reader). */
-export const REALISATION_MAX_MONTHS = 1200;
-export const REALISATION_MAX_DAYS = 36_500;
+/** The words of the realisation bounds; the bounds themselves are core's (`REALISATION_*` in `@techaust/core/invoices`, read by the schema, the stored-settings reader and `realisationRulesOf`). */
 export const REALISATION_ERRORS = {
   warnMonths: "Enter the months before the warning, from 1 to 1,200.",
   escalateMonths: "Enter the months before escalating, from 1 to 1,200.",
@@ -156,13 +160,13 @@ export function buildTax(f: TaxForm, doc: Pick<SettingsDoc<"tax">, "value">, now
   if (!f.reverseChargeText.trim()) e["f-reverseChargeText"] = "Enter the reverse-charge line.";
   // The realisation periods are bounded as the reports read them (core: 1 to 1,200 months, 0 to 36,500 days), so a saved value never stops the
   // reports with `settings_invalid` (M5.5b review 4). The bounded words are not in 07 (batch Q69): 07-W §3.
-  const warn = intIn(f.warnMonths, 1, REALISATION_MAX_MONTHS);
+  const warn = intIn(f.warnMonths, REALISATION_MIN_MONTHS, REALISATION_MAX_MONTHS);
   if (warn === null) e["f-realisation-warnMonths"] = REALISATION_ERRORS.warnMonths;
   const inrMonths = intIn(f.inrMonths, 1, 120);
   if (inrMonths === null) e["f-realisation-inrMonths"] = TAX_FIELDS_COPY.inrMonthsError;
-  const esc = intIn(f.escalateMonths, 1, REALISATION_MAX_MONTHS);
+  const esc = intIn(f.escalateMonths, REALISATION_MIN_MONTHS, REALISATION_MAX_MONTHS);
   if (esc === null) e["f-realisation-escalateMonths"] = REALISATION_ERRORS.escalateMonths;
-  const extra = intIn(f.escalateExtraDays, 0, REALISATION_MAX_DAYS);
+  const extra = intIn(f.escalateExtraDays, REALISATION_MIN_DAYS, REALISATION_MAX_DAYS);
   if (extra === null) e["f-realisation-escalateExtraDays"] = REALISATION_ERRORS.escalateExtraDays;
   if (
     Object.keys(e).length ||

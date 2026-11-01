@@ -5,9 +5,21 @@ import { addDays, fromIst, istDate, parseIsoDate, toIsoDate } from "./dates.ts";
 import { pdfKeys } from "./pdf-jobs.ts";
 import type { SummaryRow } from "./tax/types.ts";
 
-/** The reason codes of a decline. The words are the owner's (07-N); only the codes are fixed here. */
+/** The reason codes of a decline, in the order the portal lists them. Their words are `DECLINE_REASON_LABELS`. */
 export const DECLINE_REASONS = ["price", "timing", "other_option", "not_needed", "other"] as const;
 export type DeclineReason = (typeof DECLINE_REASONS)[number];
+
+/**
+ * 07-N §3 (approved by the owner with 07-Q, 2026-10-26), word for word: the words of each decline reason, held once (test-hardening item 6) for the portal's
+ * decline dialog and record, the admin's document and lead pages, and the jobs Worker's bells. Keys in the order of `DECLINE_REASONS` (a test pins both).
+ */
+export const DECLINE_REASON_LABELS = {
+  price: "The price doesn't fit our budget",
+  timing: "The timing doesn't work for us",
+  other_option: "We've chosen another option",
+  not_needed: "We've decided not to go ahead",
+  other: "Other",
+} as const satisfies Record<DeclineReason, string>;
 export const isDeclineReason = (v: unknown): v is DeclineReason =>
   typeof v === "string" && (DECLINE_REASONS as readonly string[]).includes(v);
 

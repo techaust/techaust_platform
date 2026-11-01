@@ -14,7 +14,7 @@ import {
   processCareIssue,
   processCareScan,
 } from "../src/care-billing.ts";
-import { all, fakes, logs, makeEnv, mkClient, one, run, staff, useFakes } from "./billing-fixtures.ts";
+import { all, fakes, logs, makeEnv, mkClient, mkDoc, one, run, staff, useFakes } from "./billing-fixtures.ts";
 
 useFakes();
 
@@ -244,6 +244,14 @@ describe("a care message that ran out of tries", () => {
     await processCareDeadLetter(makeEnv(), { kind: "care.bill", planId: "no-such-plan" }, NOW);
     const plain = (await bells("care.billing_failed")).find((r) => r.entity_id.startsWith("no-such-plan"));
     expect(plain?.title).toBe("A care invoice couldn't be drafted. Open the care plan to see why.");
+  });
+
+  it("a care.issue dead letter for an invoice that WAS issued (only its PDF request failed) rings no 'could not be issued' bell (review L4)", async () => {
+    await run("DELETE FROM notifications WHERE kind = 'care.billing_failed'");
+    await staff("owner");
+    const doc = await mkDoc(await mkClient(), null, { rendered: false });
+    await processCareDeadLetter(makeEnv(), { kind: "care.issue", documentId: doc.id }, NOW);
+    expect(await bells("care.billing_failed")).toEqual([]);
   });
 
   it("a care.issue dead letter links the draft; the scans and the alerts only log (the next run lists the same work), through the leads dead-letter queue", async () => {

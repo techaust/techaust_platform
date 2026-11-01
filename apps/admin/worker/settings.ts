@@ -964,7 +964,8 @@ async function saveBank(c: Ctx, kind: "INR" | "USD_SWIFT") {
   // `updatedAt` goes back so the screen sends it with its next save of this block (review re-check L-b).
   if (existing && !Object.keys(diff).length)
     return c.json({ ok: true, changed: false, updatedAt: existing.updated_at });
-  const t = Date.now();
+  // Strictly after the version this save was made from (as `document-write.ts`), so a second save from the same stale page is 409 even in the same millisecond (test-hardening E).
+  const t = Math.max(Date.now(), (existing?.updated_at ?? 0) + 1);
   const id = existing?.id ?? uuidv7();
   const main = existing
     ? db
