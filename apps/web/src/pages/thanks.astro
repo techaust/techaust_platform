@@ -112,12 +112,12 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     white-space: nowrap;
   }
 
-  /* With JavaScript (html.js, set by the head script before the first paint) the reference line and the WhatsApp line
-     under it keep their place while still hidden, so showing them moves nothing below (layout shift); the empty
-     reference holds the code's line height. scripts/thanks.ts removes both when the URL has no valid reference.
-     Without JavaScript they stay out (`hidden`). */
-  :global(.js) .thanks__body > [hidden][data-ref-line],
-  :global(.js) .thanks__body > [hidden][data-ref-only] {
+  /* When the URL carries a reference (html.has-ref, set by the head script before the first paint) the reference line
+     and the WhatsApp line under it keep their place while still hidden, so showing them moves nothing below (layout
+     shift); the empty reference holds the code's line height. Without a reference (a bookmark) or without JavaScript
+     they take no room (`hidden`), so no gap is left; scripts/thanks.ts removes them when the reference is not valid. */
+  :global(.has-ref) .thanks__body > [hidden][data-ref-line],
+  :global(.has-ref) .thanks__body > [hidden][data-ref-only] {
     display: block;
     visibility: hidden;
   }

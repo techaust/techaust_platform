@@ -1,7 +1,7 @@
 // /thanks (07 §5.10, FRM-07): show the lead reference from `?ref=` only when it has the reference shape; anything else
 // leaves the page as built (the text without a reference). textContent only: nothing from the URL becomes markup.
-// The reference line and the WhatsApp line keep their place while hidden (thanks.astro, so showing them shifts
-// nothing); without a valid reference they are removed.
+// While the URL carries a reference the reference line and the WhatsApp line keep their place while hidden
+// (thanks.astro, html.has-ref, so showing them shifts nothing); without a valid reference they are removed.
 import { LEAD_REF } from "@techaust/core";
 
 const ref = new URLSearchParams(location.search).get("ref") ?? "";

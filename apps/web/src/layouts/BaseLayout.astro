@@ -78,10 +78,12 @@ const og = new URL(
     <meta name="color-scheme" content="light dark" />
     {rss && <link rel="alternate" type="application/rss+xml" title="TecHaust Technologies: Blog" href="/rss.xml" />}
     {/* First paint in the right theme and currency (< 1 KB; hashed in the CSP, WEB-G-12). A stored choice (ta_currency)
-        wins over the cached /api/geo answer (ta_geo, 30 days, set by scripts/currency.ts); else INR. */}
+        wins over the cached /api/geo answer (ta_geo, 30 days, set by scripts/currency.ts); else INR. "has-ref": the
+        URL carries a lead reference, so /thanks keeps room for its reference lines (thanks.astro; none on a bookmark). */}
     <script is:inline>
       (function (d) {
         d.classList.add("js");
+        if (/[?&]ref=[^&]/.test(location.search)) d.classList.add("has-ref");
         try {
           var t = localStorage.getItem("ta_theme");
           if (t === "light" || t === "dark") d.dataset.theme = t;
