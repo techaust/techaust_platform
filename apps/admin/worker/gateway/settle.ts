@@ -458,7 +458,16 @@ export async function settlePayment(
     link.payments.find((p) => p.status === "captured")?.paymentRef ??
     link.payments[0]?.paymentRef ??
     null;
-  if (!paymentRef) return { result: "ignored" };
+  // Review finding 9: a paid link with no payment to settle (none named, none listed) is not swept ten times and then left `received`: the event moves to
+  // `needs_review` with a `refetch_failed` item for the link, whose "Try again" asks Razorpay again (one open item per link on a refresh).
+  if (!paymentRef)
+    return reviewOnly(
+      env,
+      a,
+      "refetch_failed",
+      { documentId: checkout.document_id, clientId: checkout.client_id, amountMinor: null },
+      factsOf(a.linkId, null, null),
+    );
   // "For B2" 2: the same Razorpay payment again (a duplicate delivery, a replay under a new event id, a refresh after the webhook): the event is processed, nothing else.
   const seen = await db.prepare(PAYMENT_SEEN_SQL).bind("razorpay", paymentRef).first<Seen>();
   if (seen) {

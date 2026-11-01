@@ -343,6 +343,20 @@ describe("findings 3 and 4: nothing verified is dropped; a failed or refunded pa
     expect((await reviewItemOf(ev))?.kind).toBe("unreadable_event");
   });
 
+  it("review finding 9: a paid link with no payment to settle moves its event to needs_review with a refetch_failed item, never left received", async () => {
+    const o = await owner();
+    const inv = await issued(o);
+    const l = await linkFor(o, inv);
+    stub((path) =>
+      path === `/v1/payment_links/${l.linkId}` ? linkJson(l, inv.total, { payments: [] }) : null,
+    );
+    const ev = await eventRow(l.linkId, null);
+    expect(await processEvent(env, ev)).toEqual({ result: "needs_review" });
+    expect(await eventOf(ev)).toEqual({ status: "needs_review", outcome: "refetch_failed" });
+    expect((await reviewItemOf(ev))?.kind).toBe("refetch_failed");
+    expect(await paymentOf(l.paymentId)).toBeNull();
+  });
+
   it("not_captured (failed or refunded): the review item only, no payment row the Owner could confirm", async () => {
     const o = await owner();
     const inv = await issued(o);
