@@ -174,7 +174,7 @@ describe("pdf.deed [T11 L4]", () => {
     expect(bells).toEqual([
       {
         title: `The PDF of deed ${d.number} didn't match its saved copy, so it wasn't made. A developer needs to look at it.`,
-        link: `/projects/${d.projectId}`,
+        link: `/projects/${d.projectId}?tab=deed`,
       },
     ]);
   });

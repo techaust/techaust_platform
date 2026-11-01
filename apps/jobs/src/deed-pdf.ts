@@ -97,7 +97,7 @@ export async function processDeedPdf(
       env.DB.prepare(REFUSED_BELL_SQL).bind(
         row.id,
         DEED_REFUSED_BELL(row.number_display ?? "Untitled"),
-        `/projects/${row.project_id}`,
+        `/projects/${row.project_id}?tab=deed`,
       ),
     ]);
     logEvent("pdf.refused", { stage: "render", code: "deed_seal", family: "deed" });

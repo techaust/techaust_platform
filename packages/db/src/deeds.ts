@@ -164,7 +164,7 @@ export function deedDraftStatements(
     db
       .prepare(
         `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
-         SELECT 'n_' || lower(hex(randomblob(16))), o.id, 'deed.draft', 'deed', d.id, ?5 || p.code || ?6, '/projects/' || p.id
+         SELECT 'n_' || lower(hex(randomblob(16))), o.id, 'deed.draft', 'deed', d.id, ?5 || p.code || ?6, '/projects/' || p.id || '?tab=deed'
          ${made.replace("FROM deeds d JOIN projects p ON p.id = d.project_id", "FROM deeds d JOIN projects p ON p.id = d.project_id JOIN staff_users o ON o.role = 'owner' AND o.status = 'active'")}${g3.sql}`,
       )
       .bind(...target, a.now, bell.before, bell.after, ...g3.params),
