@@ -28,7 +28,8 @@ export function forwardTable(routes: readonly RouteDef[]): TrieRouter<RouteDef> 
 /**
  * The row a request is forwarded for: the first forwarded row, in table order, whose pattern matches the method and the full path; undefined: none. One
  * trailing slash is allowed, as the per-row PatternRouter routes allowed it (`/api/v1/settings/` was the settings row): no row pattern ends with a slash, so
- * such a path is looked up without it (split.test.ts compares the two on every row's paths).
+ * such a path is looked up without it (split.test.ts compares the two on every row's paths). A HEAD request is looked up as a GET (early check finding 3): Hono
+ * dispatches HEAD through the GET routes but leaves `c.req.method` "HEAD", so the per-row routes forwarded it for a GET row, and so does the table.
  */
 export function forwardRowOf(
   table: TrieRouter<RouteDef>,
@@ -36,7 +37,7 @@ export function forwardRowOf(
   path: string,
 ): RouteDef | undefined {
   const bare = path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
-  const [matches] = table.match(method, bare);
+  const [matches] = table.match(method === "HEAD" ? "GET" : method, bare);
   return matches[0]?.[0];
 }
 

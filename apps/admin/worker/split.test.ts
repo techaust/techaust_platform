@@ -338,6 +338,50 @@ describe("forwarding fidelity: the front passes the request on untouched", () =>
     }
     expect(stub.fetch).not.toHaveBeenCalled();
   });
+
+  it("a HEAD request for a forwarded GET row is forwarded as a HEAD to the same Worker; a HEAD with no GET row is the front's 404 (early check finding 3)", async () => {
+    const o = await sess("owner", true);
+    const gets = FORWARDED_ROWS.filter((r) => r.method === "GET");
+    expect(gets.length).toBeGreaterThan(0);
+    for (const row of gets) {
+      const seen: string[] = [];
+      const stub = {
+        fetch: async (r: Request) => {
+          seen.push(`${r.method} ${new URL(r.url).pathname}`);
+          return new Response("from the stub", { status: 207, headers: { "X-Stub": "1" } });
+        },
+      };
+      const other = { fetch: vi.fn(async () => new Response("wrong worker", { status: 418 })) };
+      const bindings =
+        bindingOf(row) === "ADMIN_FINANCE"
+          ? { ADMIN_FINANCE: stub, ADMIN_API: other }
+          : { ADMIN_API: stub, ADMIN_FINANCE: other };
+      const { path } = sampleRequest(row);
+      const res = await run(
+        front,
+        new Request(`${ORIGIN}/api/v1${path}`, { method: "HEAD", headers: jsonHeaders(o.cookie) }),
+        withEnv(env, bindings),
+      );
+      expect(other.fetch, key(row)).not.toHaveBeenCalled();
+      expect(seen, key(row)).toEqual([`HEAD ${new URL(`${ORIGIN}/api/v1${path}`).pathname}`]);
+      expect(res.status, key(row)).toBe(207);
+      expect(res.headers.get("X-Stub"), key(row)).toBe("1");
+      expect(await res.text(), key(row)).toBe("");
+    }
+    const stub = { fetch: vi.fn(async () => new Response("no")) };
+    const getPaths = new Set(gets.map((r) => samplePath(r.path)));
+    const postOnly = FORWARDED_ROWS.find((r) => r.method === "POST" && !getPaths.has(samplePath(r.path)));
+    expect(postOnly).toBeDefined();
+    for (const path of ["/api/v1/not-a-route", samplePath(postOnly?.path ?? "/api/v1/none")]) {
+      const res = await run(
+        front,
+        new Request(`${ORIGIN}${path}`, { method: "HEAD", headers: jsonHeaders(o.cookie) }),
+        withEnv(env, { ADMIN_API: stub, ADMIN_FINANCE: stub }),
+      );
+      expect(res.status, path).toBe(404);
+    }
+    expect(stub.fetch).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------------------------------------------
