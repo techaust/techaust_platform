@@ -13,10 +13,12 @@ import { LoadingCard } from "./components/ui.tsx";
 import { captureInvoiceToken, INVOICE_LINK_PATH } from "./lib/invoices.ts";
 import { CALLBACK_PATH, captureLinkToken } from "./lib/link.ts";
 import { captureOfferToken, OFFER_LINK_PATH } from "./lib/offers.ts";
+import { capturePayReturn, PAY_RETURN_PATH } from "./lib/pay.ts";
 import { Callback } from "./routes/callback.tsx";
 import { InvoiceLinkRoute, InvoiceRoute, InvoicesRoute } from "./routes/invoices.tsx";
 import { Failed, NotFound } from "./routes/not-found.tsx";
 import { OfferLinkRoute } from "./routes/offer-link.tsx";
+import { PayReturnRoute } from "./routes/pay-return.tsx";
 import {
   HomeRoute,
   MissingRoute,
@@ -33,6 +35,8 @@ captureLinkToken();
 captureOfferToken();
 // M5.4: an invoice link's token (`/i#t=…`), the same way.
 captureInvoiceToken();
+// M6.2: back from Razorpay, its query (`razorpay_payment_id`, `razorpay_signature`, …) leaves the address and history at once and is never read or forwarded.
+capturePayReturn();
 // A new link opened in a tab already on the callback path changes only the fragment, so the page doesn't reload:
 // reload it, which takes and strips the new token above. The same for a second offer link opened in the same tab.
 window.addEventListener("hashchange", () => {
@@ -73,6 +77,8 @@ const router = createBrowserRouter([
   { path: CALLBACK_PATH, element: <Callback />, errorElement: <Failed /> },
   { path: OFFER_LINK_PATH, element: <OfferLinkRoute />, errorElement: <Failed /> },
   { path: INVOICE_LINK_PATH, element: <InvoiceLinkRoute />, errorElement: <Failed /> },
+  // M6.2: Razorpay's return page for emailed and staff links, signed out (no /me).
+  { path: PAY_RETURN_PATH, element: <PayReturnRoute />, errorElement: <Failed /> },
   {
     path: "/",
     HydrateFallback: LoadingCard,

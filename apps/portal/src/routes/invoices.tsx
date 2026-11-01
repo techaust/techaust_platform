@@ -4,15 +4,34 @@
 // "Page not found" for the signed-in routes, as the API answers.
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
-import { type InvoiceItem, type InvoiceSummary, invoiceLinkApi, invoicesApi, RequestError } from "../api.ts";
+import {
+  type InvoiceItem,
+  type InvoiceSummary,
+  invoiceLinkApi,
+  invoicesApi,
+  type PayLink,
+  RequestError,
+} from "../api.ts";
 import { LogIn } from "../components/icons.tsx";
 import { LoadProblemScreen, problemText } from "../components/load-problem.tsx";
+import { PayNow } from "../components/pay/pay-now.tsx";
+import { type PayPhase, PayStatus } from "../components/pay/pay-status.tsx";
 import { PageTitle, TokenShell } from "../components/shell/portal-shell.tsx";
 import { COPY } from "../copy.ts";
 import { N } from "../copy-documents.ts";
 import { INV } from "../copy-invoices.ts";
 import { capturedInvoiceToken, invoicePdfName, pdfFailure } from "../lib/invoices.ts";
 import { saveDownload } from "../lib/offers.ts";
+import {
+  forgetPay,
+  POLL_FOR_MS,
+  POLL_MS,
+  RECENT_MS,
+  REFRESH_AT_MS,
+  recalledPay,
+  receivedSince,
+  takePayReturn,
+} from "../lib/pay.ts";
 import { MoreButton, NotFoundScreen, ScreenSkeleton } from "../screens/home.tsx";
 import { InvoicePage, InvoicesScreen } from "../screens/invoices.tsx";
 import { useMe } from "../session.tsx";
@@ -20,6 +39,10 @@ import { useMe } from "../session.tsx";
 type Source = {
   load: () => Promise<{ document: InvoiceSummary }>;
   pdf: () => ReturnType<typeof invoicesApi.pdf>;
+  /** M6.2: makes a Razorpay link for this document (Pay now). */
+  pay: (amountMinor: number) => Promise<PayLink>;
+  /** M6.2: the document again, the server checking the open link with Razorpay first (signed in only). */
+  refresh?: () => Promise<{ document: InvoiceSummary }>;
 };
 
 type State =
@@ -34,6 +57,8 @@ function DocumentScreen(props: {
   /** The emailed link: a 404 is "this link no longer works" (not "page not found"), with the way to sign in. */
   link: boolean;
   notices?: ReactNode;
+  /** M6.2: this page load came back from Razorpay (signed in: `/invoices/:id?pay=return`, the query already stripped). */
+  returned?: boolean;
 }) {
   const { source } = props;
   const [state, setState] = useState<State>({ phase: "loading" });
@@ -64,6 +89,58 @@ function DocumentScreen(props: {
     }
   }, [source]);
 
+  // M6.2 (run file G5): back from Razorpay, the page asks every 3 s for up to a minute, once at 20 s with the server checking Razorpay (`?refresh=1`), until
+  // it shows a payment received since "Continue to Razorpay" was pressed (this tab), or else one received in the last half hour. Never marked paid here.
+  const [payState, setPayState] = useState<PayPhase | null>(props.returned ? { phase: "checking" } : null);
+  const docId = state.phase === "ready" ? state.doc.id : null;
+  const since = useMemo(() => {
+    if (!props.returned || !docId) return 0;
+    const r = recalledPay(docId);
+    // the server's clock, not this one, stamps the payment: a few minutes' allowance either way
+    return r ? r.at - 5 * 60_000 : Date.now() - RECENT_MS;
+  }, [props.returned, docId]);
+  const checking = payState?.phase === "checking";
+  useEffect(() => {
+    if (!checking || state.phase !== "ready") return;
+    const got = receivedSince(state.doc.online?.lastPaid, since);
+    if (got) {
+      setPayState({
+        phase: "received",
+        amountMinor: got.amountMinor,
+        proforma: state.doc.type === "proforma",
+      });
+      forgetPay();
+    }
+  }, [checking, state, since]);
+  useEffect(() => {
+    if (!checking) return;
+    const started = Date.now();
+    let refreshed = false;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      if (stopped) return;
+      const late = Date.now() - started >= REFRESH_AT_MS;
+      try {
+        const ask = late && !refreshed && source.refresh ? source.refresh : source.load;
+        if (ask === source.refresh) refreshed = true;
+        const r = await ask();
+        if (!stopped && alive.current) setState({ phase: "ready", doc: r.document });
+      } catch {
+        /* the page stays; the next ask may answer */
+      }
+      if (stopped) return;
+      if (Date.now() - started >= POLL_FOR_MS)
+        setPayState((p) => (p?.phase === "checking" ? { phase: "not_yet" } : p));
+      else timer = setTimeout(tick, POLL_MS);
+    };
+    timer = setTimeout(tick, POLL_MS);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [checking, source]);
+
   useEffect(() => {
     alive.current = true;
     void props.loadKey;
@@ -81,8 +158,26 @@ function DocumentScreen(props: {
   if (state.phase === "failed")
     return <LoadProblemScreen title={INV.title} error={state.error} onRetry={load} />;
   const doc = state.doc;
+  const canPay =
+    doc.payOnline === true &&
+    !doc.online?.proformaPending &&
+    doc.balanceMinor !== null &&
+    doc.balanceMinor > 0 &&
+    !checking;
   return (
     <InvoicePage
+      pay={
+        canPay ? (
+          <PayNow
+            documentId={doc.id}
+            balanceMinor={doc.balanceMinor as number}
+            minimumMinor={doc.online?.minimumMinor ?? null}
+            wholeRupees={doc.wholeRupees === true}
+            pay={source.pay}
+          />
+        ) : null
+      }
+      payStatus={payState ? <PayStatus state={payState} /> : null}
       linkParent={!props.link}
       doc={doc}
       notices={props.notices}
@@ -130,7 +225,14 @@ function LinkEnded() {
 export function InvoiceLinkRoute() {
   const token = capturedInvoiceToken();
   const source = useMemo<Source | null>(
-    () => (token ? { load: () => invoiceLinkApi.open(token), pdf: () => invoiceLinkApi.pdf(token) } : null),
+    () =>
+      token
+        ? {
+            load: () => invoiceLinkApi.open(token),
+            pdf: () => invoiceLinkApi.pdf(token),
+            pay: (amountMinor: number) => invoiceLinkApi.pay(token, amountMinor),
+          }
+        : null,
     [token],
   );
   return (
@@ -164,11 +266,18 @@ export function InvoiceRoute() {
   const me = useMe();
   const { id = "" } = useParams();
   const source = useMemo<Source>(
-    () => ({ load: () => invoicesApi.get(id), pdf: () => invoicesApi.pdf(id) }),
+    () => ({
+      load: () => invoicesApi.get(id),
+      pdf: () => invoicesApi.pdf(id),
+      pay: (amountMinor: number) => invoicesApi.pay(id, amountMinor),
+      refresh: () => invoicesApi.getRefreshed(id),
+    }),
     [id],
   );
+  // M6.2: read once per page load (main.tsx took it from the address before the first render).
+  const [returned] = useState(() => takePayReturn(id));
   if (!me.canSeeFinance) return <NotFoundScreen homeHref="/" />;
-  return <DocumentScreen source={source} loadKey={id} link={false} />;
+  return <DocumentScreen source={source} loadKey={id} link={false} returned={returned} />;
 }
 
 /** The organisation's invoices, page by page (50 a page). */

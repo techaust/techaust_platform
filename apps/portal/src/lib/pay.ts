@@ -1,0 +1,129 @@
+// Pay now in the portal (M6.2; POR-06, ADM-PAY-02, ADM-PAY-12; run file E, G5, G6): the pure rules of the amount dialog, the return from Razorpay and the
+// Processing state. The server decides everything again (the finance Worker's `createLink`); these checks only save a round trip and say it in 07-ZI's words.
+// Amounts are minor units read and compared through core (`parseMoney`, `compare`); nothing here adds money up.
+import { istDate, toIsoDate } from "@techaust/core/dates";
+import { compare, formatMoney, money, parseMoney } from "@techaust/core/money";
+import { PAY_ZI } from "../copy-zi.ts";
+
+export const inr = (minor: number) => formatMoney(money(minor, "INR"));
+
+/** The part amount as typed (en-IN, "12,500" or "₹12,500.50") against the minimum and the balance; the error is 07-ZI line 5, 6 or 7. */
+export function partAmount(
+  text: string,
+  a: { minimumMinor: number; balanceMinor: number; wholeRupees: boolean },
+): { ok: true; minor: number } | { ok: false; error: string } {
+  const r = parseMoney(text, "INR");
+  if (!r.ok || r.value.amount <= 0)
+    return { ok: false, error: PAY_ZI.between(inr(a.minimumMinor), inr(a.balanceMinor)) };
+  const m = r.value;
+  if (compare(m, money(a.balanceMinor, "INR")) > 0)
+    return { ok: false, error: PAY_ZI.tooMuch(inr(a.balanceMinor)) };
+  if (compare(m, money(a.minimumMinor, "INR")) < 0)
+    return { ok: false, error: PAY_ZI.atLeast(inr(a.minimumMinor)) };
+  if (a.wholeRupees && m.amount % 100 !== 0) return { ok: false, error: PAY_ZI.wholeRupees };
+  return { ok: true, minor: m.amount };
+}
+
+/** Razorpay's own hosts over https (the server checks the same before answering; the browser checks again before it leaves). */
+export function isRazorpayUrl(v: string): boolean {
+  try {
+    const u = new URL(v);
+    return (
+      u.protocol === "https:" &&
+      !u.username &&
+      !u.password &&
+      ["rzp.io", "razorpay.com"].some((h) => u.hostname === h || u.hostname.endsWith(`.${h}`))
+    );
+  } catch {
+    return false;
+  }
+}
+
+// ---- back from Razorpay ---------------------------------------------------------------------------------------------------------------------------------
+
+/** The signed-out return page (the emailed link's and a staff link's `callback_url`). */
+export const PAY_RETURN_PATH = "/pay/return";
+
+let returnedTo: string | null = null;
+
+/**
+ * FIRST, before anything renders (main.tsx): Razorpay sends the browser back with its own query (`razorpay_payment_id`, `razorpay_signature`, …). Strip it from the
+ * address bar and history at once, never read or forward it (ADR 0008: nothing is marked paid on a redirect), and remember only that this page is a return:
+ * `/invoices/:id?pay=return` (signed in) keeps the invoice's id for the Processing state; `/pay/return` keeps nothing.
+ */
+export function capturePayReturn(loc: Pick<Location, "pathname" | "search" | "hash"> = location): void {
+  if (!loc.search) return;
+  const invoice = /^\/invoices\/([^/]+)$/.exec(loc.pathname);
+  const isReturn = new URLSearchParams(loc.search).get("pay") === "return";
+  if (loc.pathname === PAY_RETURN_PATH || (invoice && isReturn)) {
+    history.replaceState(history.state, "", loc.pathname);
+    if (invoice && isReturn) returnedTo = decodeURIComponent(invoice[1] as string);
+  }
+}
+
+/** Whether this page load came back from Razorpay for this invoice (read once: a later visit to the same page is not a return). */
+export function takePayReturn(documentId: string): boolean {
+  if (returnedTo !== documentId) return false;
+  returnedTo = null;
+  return true;
+}
+
+/** Test-only. */
+export const _setReturned = (id: string | null) => {
+  returnedTo = id;
+};
+
+const KEY = "ta.pay";
+
+/**
+ * When "Continue to Razorpay" was pressed, for which document and how much (this tab only; no token, nothing about the payer). The Processing state counts a
+ * payment received after this moment as this one.
+ */
+export function rememberPay(documentId: string, amountMinor: number, at = Date.now()): void {
+  try {
+    sessionStorage.setItem(KEY, JSON.stringify({ documentId, amountMinor, at }));
+  } catch {
+    // Private mode: the Processing state falls back to the last half hour.
+  }
+}
+
+export function recalledPay(documentId: string): { amountMinor: number; at: number } | null {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(KEY) ?? "null") as {
+      documentId?: unknown;
+      amountMinor?: unknown;
+      at?: unknown;
+    } | null;
+    return v && v.documentId === documentId && typeof v.at === "number" && typeof v.amountMinor === "number"
+      ? { amountMinor: v.amountMinor, at: v.at }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export const forgetPay = () => {
+  try {
+    sessionStorage.removeItem(KEY);
+  } catch {
+    /* nothing kept */
+  }
+};
+
+/** Without a remembered press, a payment received in the last half hour counts as the one the client just made. */
+export const RECENT_MS = 30 * 60_000;
+/** Processing asks every 3 s for up to a minute, and once at 20 s asks the server to check with Razorpay (`?refresh=1`; run file E). */
+export const POLL_MS = 3_000;
+export const POLL_FOR_MS = 60_000;
+export const REFRESH_AT_MS = 20_000;
+
+/** The payment received online that this return is about, if the page shows one yet. */
+export function receivedSince(
+  lastPaid: { amountMinor: number; at: number } | null | undefined,
+  since: number,
+): { amountMinor: number; at: number } | null {
+  return lastPaid && lastPaid.at >= since ? lastPaid : null;
+}
+
+/** An instant as the IST day (`YYYY-MM-DD`), for line 16's date. */
+export const istDayOf = (ms: number) => toIsoDate(istDate(ms));

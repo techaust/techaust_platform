@@ -19,6 +19,7 @@ import {
 import { PageTitle } from "../components/shell/portal-shell.tsx";
 import { INV } from "../copy-invoices.ts";
 import { WITHDRAWN_ZF } from "../copy-zf.ts";
+import { PAY_ZI } from "../copy-zi.ts";
 import {
   type ClientInvoiceStatus,
   clientStatus,
@@ -33,6 +34,7 @@ import {
   typeLabel,
 } from "../lib/invoices.ts";
 import { dateText } from "../lib/offers.ts";
+import { istDayOf } from "../lib/pay.ts";
 
 const LOOK = {
   due: { tone: "info", Icon: Clock },
@@ -207,6 +209,10 @@ export function InvoicePage(props: {
    */
   linkParent?: boolean;
   now?: number;
+  /** M6.2 (POR-06): Pay now, when the document can be paid online (the slip's first action; Download PDF steps back to secondary). */
+  pay?: ReactNode;
+  /** M6.2: back from Razorpay, the Processing state and its end (above the slip). */
+  payStatus?: ReactNode;
 }) {
   const d = props.doc;
   const status = clientStatus(d, todayIst(props.now));
@@ -256,6 +262,7 @@ export function InvoicePage(props: {
         </div>
       )}
       {props.notices}
+      {props.payStatus}
       {/* 07-ZA item 15's "A tax invoice will be issued when payment is received." would contradict 07-ZF 19 on a withdrawn request: not shown there. */}
       {d.type === "proforma" && !withdrawn && (
         <p className="sheet-notice inv-doc__notice">{INV.proformaNotice}</p>
@@ -302,6 +309,13 @@ export function InvoicePage(props: {
             </div>
           )}
         </dl>
+        {/* M6.2 (07-ZI line 16): a proforma's online payment waits for its tax invoice; said with its date, under the figures. */}
+        {d.type === "proforma" && !withdrawn && d.online?.proformaPending && d.online.lastPaid && (
+          <p className="inv-slip__paid">
+            <Clock size={16} />
+            <span>{PAY_ZI.proformaPaid(dateText(istDayOf(d.online.lastPaid.at)))}</span>
+          </p>
+        )}
         {/* Withdrawn while the page was open (review L3): the reloaded page keeps the download's answer, 07-ZF 20, where the button was. */}
         {withdrawn && props.pdfProblem && (
           <p className="inv-slip__note" role="status" tabIndex={-1} ref={focusOnShow}>
@@ -310,9 +324,10 @@ export function InvoicePage(props: {
         )}
         {!withdrawn && (
           <div className="inv-slip__actions">
+            {props.pay}
             <button
               type="button"
-              className="btn btn--primary"
+              className={props.pay ? "btn btn--secondary" : "btn btn--primary"}
               onClick={props.onPdf}
               disabled={props.downloading}
               aria-busy={props.downloading || undefined}
