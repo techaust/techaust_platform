@@ -12,6 +12,7 @@ import type { IssueAdvanceResult } from "@techaust/core/gateway-rpc";
 import { uuidv7 } from "@techaust/core/ids";
 import { INVOICE_SERIES_OF, issueDateOf, issueFyOf } from "@techaust/core/invoices";
 import { maxNumber, sqlPrintfPattern } from "@techaust/core/numbering";
+import { deedDraftStatements } from "@techaust/db/deeds";
 import { headerExtrasJson, invoiceSealOf, type TermsRef } from "@techaust/db/documents";
 import { advanceIssueStatements, invoiceSendStatements } from "@techaust/db/issue";
 import type { GuardSql } from "@techaust/db/log";
@@ -406,9 +407,11 @@ async function tryAdvance(env: AdvanceEnv, paymentId: string, lastTry: boolean):
         // `review_items_status_flow` needs an Owner; the act is the system's): said here so the log never reads as that Owner's own decision.
         reviewItemsResolvedBy: "onBehalfOf",
       },
-      // T11 (merge order): `deedDraftStatements(db, { documentIds: [invoiceId] }, guardSql({ auditId }))` goes after `batch.postAudit` (its recompute).
+      // T11 (L3; 08-C RB-38(a)): the money of the advance can complete a project's full payment: its draft deed is made after `batch.postAudit` (the
+      // ledger part with its recompute), guarded on this batch's audit row, as "Confirm by issuing" does (invoice-advance.ts).
       side: (g) => [
         ...batch.postAudit,
+        ...deedDraftStatements(db, { target: { documentIds: [invoiceId] }, now }, g),
         ...sends,
         issuedBell(db, { documentId: invoiceId, client: ctx.client.display_name, earlierMonth }, g),
         // The payment's open review items (a dead letter, an earlier block) are settled by this issue: a system act recorded under the Owner it is issued on

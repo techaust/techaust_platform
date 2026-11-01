@@ -753,18 +753,26 @@ describe("finding 6: the section-H paths early check 2 found missing", () => {
       paymentId,
     );
     const doc = await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?1", pf.id);
-    const res = await call(`/invoices/${pf.id}/advance-invoice`, {
-      cookie: o.cookie,
-      body: {
-        expectedProformaUpdatedAt: doc?.updated_at,
-        amountMinor: p?.amount_minor,
-        receivedOn: p?.received_on,
-        // the screen prefills the stored form of Razorpay's payment id (early check 2, "For the designer")
-        reference: p?.reference_norm,
-        paymentId,
+    const counted = countingEnv();
+    const res = await call(
+      `/invoices/${pf.id}/advance-invoice`,
+      {
+        cookie: o.cookie,
+        body: {
+          expectedProformaUpdatedAt: doc?.updated_at,
+          amountMinor: p?.amount_minor,
+          receivedOn: p?.received_on,
+          // the screen prefills the stored form of Razorpay's payment id (early check 2, "For the designer")
+          reference: p?.reference_norm,
+          paymentId,
+        },
       },
-    });
+      counted.env,
+    );
     expect(res.status, await res.clone().text()).toBeLessThan(300);
+    // T11 merge: the deed hook (+3) and the review resolve (+1) ride this batch; the whole request stays within 45.
+    console.log(`D1 statements, "Confirm by issuing" with paymentId (Razorpay row): ${counted.counter.n}`);
+    expect(counted.counter.n).toBeLessThanOrEqual(45);
     const after = await one<{ status: string; verified_by: string; advance_receipt_id: string | null }>(
       "SELECT status, verified_by, advance_receipt_id FROM payments WHERE id = ?1",
       paymentId,

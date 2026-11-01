@@ -23,6 +23,7 @@ import {
   razorpayPaymentRowId,
   razorpayReferenceNorm,
 } from "@techaust/core/razorpay";
+import { deedDraftStatements } from "@techaust/db/deeds";
 import {
   advanceWaitingSql,
   CHECKOUT_BY_LINK_SQL,
@@ -624,8 +625,13 @@ export async function settlePayment(
         documentId: checkout.document_id,
         amountMinor: f.amountMinor,
       },
-      // T11 (merge order): `deedDraftStatements(db, { documentIds: [checkout.document_id] }, s.guard)` goes here, after `s.side` (the recompute) and before `s.last`.
-      side: () => [...s.side, ...s.last],
+      // T11 (L3; 08-C RB-38(a)): the confirmed payment can complete a project's full payment: its draft deed is made after `s.side` (the recompute), guarded
+      // on the audit row and this batch's payment row (`s.guard`), and before `s.last` (`ledger_result`, unguarded). None in the pending batches (no money moved).
+      side: () => [
+        ...s.side,
+        ...deedDraftStatements(db, { target: { documentIds: [checkout.document_id] }, now: a.now }, s.guard),
+        ...s.last,
+      ],
     });
   } catch (e) {
     // A ledger post-condition refused the batch (a credit note landed meanwhile): nothing was written; the money goes to the Owner below.
