@@ -240,7 +240,12 @@ function TimeScreen() {
             <Skeleton width="70%" />
           </div>
         ) : (
-          <Timesheet data={sheet.data} today={today} showPeople={showPeople} />
+          <Timesheet
+            data={sheet.data}
+            today={today}
+            showPeople={showPeople}
+            people={people.data?.people ?? []}
+          />
         )}
       </section>
 
@@ -347,13 +352,44 @@ function TargetCell({ row }: { row: SheetRow }) {
   );
 }
 
-function Timesheet({ data, today, showPeople }: { data: TimeWeek; today: string; showPeople: boolean }) {
+/**
+ * A work email on a quiet line under a name, shown only for two people with one name (`sharedNameEmail`). Its two parts are kept whole and
+ * the line breaks only before the "@" (polish sweep review 3: a hyphen in the address used to break it into four or five lines).
+ */
+function SharedEmail({ email, className }: { email: string | null; className: string }) {
+  if (!email) return null;
+  const at = email.indexOf("@");
+  if (at <= 0) return <span className={`${className} email-line`}>{email}</span>;
+  return (
+    <span className={`${className} email-line`}>
+      <span>{email.slice(0, at)}</span>
+      <wbr />
+      <span>{email.slice(at)}</span>
+    </span>
+  );
+}
+
+function Timesheet({
+  data,
+  today,
+  showPeople,
+  people,
+}: {
+  data: TimeWeek;
+  today: string;
+  showPeople: boolean;
+  /** Everyone who logs time (GET /time/people): two people with one name are told apart by their work email (designer question 2). */
+  people: readonly { id: string; name: string; email: string }[];
+}) {
   const days = weekDays(data.week.start);
   const rows = sheetRows(data.groups);
   const totals = new Map(data.dayTotals.map((d) => [d.workDate, d]));
   const billable = data.dayTotals.reduce((n, d) => n + d.billableMinutes, 0);
   // Its own name: the panel around it is already "Week of …" (axe landmark-unique).
   const [sheetRef, sheetRegion] = useScrollRegion<HTMLDivElement>(SHEET_REGION);
+  // The person's email when someone else has the same name, as in the Entries table below (a former member, with no name, never gets one).
+  const emailOf = (r: { userId: string; userName: string | null }) =>
+    r.userName ? sharedNameEmail(people, r.userId) : null;
   // An empty week is one quiet line inside the week's panel (never a card in a card); the Entries panel is left out then.
   if (data.totalMinutes === 0)
     return (
@@ -405,7 +441,12 @@ function Timesheet({ data, today, showPeople }: { data: TimeWeek; today: string;
           <tbody>
             {rows.map((r) => (
               <tr key={r.key}>
-                {showPeople && <td className="sheet__person">{r.userName ?? "A former staff member"}</td>}
+                {showPeople && (
+                  <td className="sheet__person">
+                    {r.userName ?? "A former staff member"}
+                    <SharedEmail email={emailOf(r)} className="sheet__email" />
+                  </td>
+                )}
                 <th scope="row">
                   <TargetCell row={r} />
                 </th>
@@ -479,7 +520,10 @@ function Timesheet({ data, today, showPeople }: { data: TimeWeek; today: string;
                       <span>
                         <TargetCell row={r} />
                         {showPeople && (
-                          <span className="sheet-day__who">{r.userName ?? "A former staff member"}</span>
+                          <span className="sheet-day__who">
+                            {r.userName ?? "A former staff member"}
+                            <SharedEmail email={emailOf(r)} className="sheet-day__email" />
+                          </span>
                         )}
                       </span>
                       <span className="tnum">{hoursText(r.days[d] ?? 0)}</span>
@@ -557,14 +601,7 @@ function Entries(props: {
               return (
                 <span className="entry-person">
                   {e.userName ?? "A former staff member"}
-                  {email && (
-                    <span className="entry-person__email">
-                      {/* the line breaks before the "@" rather than inside a word */}
-                      {email.slice(0, email.indexOf("@"))}
-                      <wbr />
-                      {email.slice(email.indexOf("@"))}
-                    </span>
-                  )}
+                  <SharedEmail email={email} className="entry-person__email" />
                 </span>
               );
             },
