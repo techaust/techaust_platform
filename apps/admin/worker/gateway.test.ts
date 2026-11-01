@@ -30,7 +30,7 @@ import {
   stub,
 } from "./test-gateway.ts";
 import { call, one, rows, sessionFor, withEnv } from "./test-helpers.ts";
-import { putSwiftBank, putTax } from "./test-invoice-types.ts";
+import { putSwiftBank, putTax, todayIso } from "./test-invoice-types.ts";
 import { json, putBank, putCompany, voidInvoice } from "./test-invoices.ts";
 
 beforeEach(async () => {
@@ -528,7 +528,7 @@ describe("processEvent: the webhook after the re-fetch [ADM-PAY-02, -06, -07, JO
       amountMinor: h.total - 100,
       feeMinor: 0,
       feeTaxMinor: 0,
-      receivedOn: new Date().toISOString().slice(0, 10),
+      receivedOn: todayIso(),
       mode: "upi",
       referenceNorm: lh.paymentId.replace("_", "-").toUpperCase(),
       refetchedAt: Date.now(),
