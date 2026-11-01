@@ -12,8 +12,9 @@ export const DEED_ZJ = {
   heading: ZJ("Deed of assignment"),
   /** Line 4: the lead line. */
   lead: ZJ("We've signed the deed that assigns the copyright in this work to you."),
-  /** Line 5: the facts; `moment` in the client's own clock ("03 Nov 2026, 08:35 GMT"; lib/local-time.ts). */
+  /** Line 5: the facts. */
   number: ZJ("Deed number"),
+  /** `moment` is in the client's own clock ("03 Nov 2026, 08:35 GMT"; lib/local-time.ts). */
   signedOn: (moment: string) => ZJ(`Signed with Aadhaar eSign on ${moment}`),
   txn: ZJ("Transaction ID"),
   /** Line 6: the button. */

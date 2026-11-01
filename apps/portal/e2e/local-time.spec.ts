@@ -112,11 +112,21 @@ for (const z of ZONES) {
 
         // Proposals and estimates: decided rows carry the local moment; a row without a decision keeps its validity "(IST)".
         await page.goto("/proposals?sample=on");
-        const whens = page.locator(".drow__when");
-        await expect(whens.first()).toBeVisible();
-        for (const t of await whens.allTextContents()) {
-          expect(t.trim()).toMatch(/\(IST\)$/.test(t.trim()) ? /\(IST\)$/ : moment(z.zones));
+        // The expectation follows the row's status, so a decided row that fell back to its validity text fails.
+        const rows = page.locator(".drow__status");
+        await expect(rows.first()).toBeVisible();
+        let decided = 0;
+        for (const row of await rows.all()) {
+          const when = ((await row.locator(".drow__when").textContent()) ?? "").trim();
+          const status = ((await row.textContent()) ?? "").replace(when, "");
+          if (/accepted|declined/i.test(status)) {
+            decided += 1;
+            expect(when).toMatch(moment(z.zones));
+          } else {
+            expect(when).toMatch(/\(IST\)$/);
+          }
         }
+        expect(decided).toBeGreaterThan(0);
         await shot(page, `list-${tag}`);
         await axe(page, `list ${tag}`);
       }

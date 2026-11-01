@@ -119,7 +119,7 @@ After each batch PR deploys to staging, read `$workers.cpuTimeMs` of the first (
 
 ### M6.2 reading (lead, 2026-11-01, Workers Logs read-only, the owner's approval session 17:22–17:30 UTC): **gate not met (same pattern as M6.1)**
 222 staging invocations in 3 hours, every outcome `ok` (none stopped for CPU); 19 above 7 ms, 8 above 10. Two sandbox payments: an invoice paid through a staff link, and a proforma paid through a link that went to Needs review (`gateway.advance` `blocked`) and was issued by the Owner from "Confirm by issuing" (`POST …/advance-invoice` 11 ms).
-- **The webhook path is inside the gate:** jobs `POST /razorpay` 6, 3, 8, 6 ms (JOB-HOOK-03 asks ≤ 5 p99: two of four above it); the finance `GatewayEvents` RPC 9, 8, 7; the `gateway.event` consumer 1, 1; `POST …/payment-link` 8 and 6.
+- **The webhook path stays under 10 ms but not all under 7:** jobs `POST /razorpay` 6, 3, 8, 6 ms (JOB-HOOK-03 asks ≤ 5 p99: three of four above it); the finance `GatewayEvents` RPC 9, 8, 7; the `gateway.event` consumer 1, 1; `POST …/payment-link` 8 and 6.
 - **First requests per isolate are over:** finance `POST …/issue` 17 (then 6), `GET /invoices/:id` 16 (then 3–6), `PATCH /invoices/:id` 12 (then 8), `GET …/payments` 14 once; front `POST /auth/totp` 11; API `/notifications` 10, `/leads` 10. Warm requests are 0–6 ms.
 - **PDF renders** (`pdf.rendered`, Browser Run): 22, 12 and 10 ms CPU (11–12 s wall); `pdf.snapshot` 10 and 6.
 - **Follow-up:** the bigger warm-up task (12 "Next"), then a re-measure; the owner decides the Workers Paid plan before launch.

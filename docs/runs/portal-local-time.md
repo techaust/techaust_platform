@@ -1,6 +1,6 @@
-Status: designer done; review next
+Status: reviewed (APPROVE), lows 1 and 3 fixed; PR open
 Tier: C
-Usage: designer claude-opus-5-5/high (frontend-design:frontend-design)
+Usage: designer claude-opus-5-5/high (frontend-design:frontend-design); reviewer claude-opus-5-5/high (code-review at high, frontend-design:frontend-design); 5-h 8 % at the reviewer's start
 
 # Portal times in the client's own time zone (2026-11-01)
 
@@ -99,3 +99,21 @@ Usage: designer claude-opus-5-5/high (skills: frontend-design:frontend-design). 
 
 ## Integration notes (lead, 2026-11-01)
 - `feat/portal-local-time-design` fast-forwarded into `feat/portal-local-time`; `main` (#153, docs only) merged in: `13` and the M6.3 run file taken from `main` (a superset), this run file kept from the branch (the diff to `main` only adds the designer's section). Next: the reviewer (code and visual).
+
+## Review (reviewer claude-opus-5-5/high, 2026-11-01; copied by the lead, the reviewer changes no files)
+**APPROVE** (`origin/feat/portal-local-time` @ `74660563`): no critical, high or medium finding; four lows.
+1. low, `apps/portal/e2e/local-time.spec.ts:123-125`: the list check accepted any row ending in "(IST)", so a decided row that fell back to its validity text would pass. Choose the expectation by the row's status.
+2. low, `apps/portal/src/lib/local-time.ts:24-28, 61-70, 91-94`: the zone-name rule (`gmtName`, the +05:30 IST check, "GMT+0" as "GMT", the locale choice) is a copy of `apps/web/src/scripts/call-time.ts:80-142`; the two can drift. Move the pure rule into `@techaust/core/dates` and import it in both apps.
+3. low, `apps/portal/src/copy-zj.ts:15`: the moment comment sat above `number`, not `signedOn`.
+4. low: no test exercises the emailed-link view `/o` in another zone (covered by construction: the same `DecisionPanel`).
+
+**Verified:** grep for every IST/zone path in `apps/portal/src` (no time of day left in IST on screen; dates alone stay IST); Node runs of the helper on London's two clock-change edges, Lord Howe, Chatham, Kiritimati, Colombo, UTC, Etc/GMT+12, en-IN in London, an invalid locale, seconds, the legacy alias Asia/Calcutta; no hydration or no-script case (client-rendered SPA); unit 22 passed, e2e 16 passed (axe 0, 44 px), build 115,860 bytes, startup 16.0 ms; live: the accepted page at 390 light and the list at 1280 dark in IST, wrapping only between date and time, keyboard order, no console errors. **Not verified:** Firefox, Safari, screen readers, `/o` in another zone, a live London or LA pass in the MCP browser (covered by the e2e screenshots), full `pnpm check` and full portal tests (the designer ran both).
+**Outside this task:** `cpu-baseline.md` said "two of four above" 5 ms for the hook (three of four) and called the webhook path "inside the gate" with 8 and 9 ms readings.
+
+## Review triage (lead, 2026-11-01)
+- **1 fixed:** the list check follows each row's status (Accepted or Declined must show a local time, any other row its "(IST)" validity) and needs at least one decided row.
+- **3 fixed:** the comment moved to `signedOn`.
+- **2 kept as a follow-up** (for 12): one shared zone-name rule in `@techaust/core/dates` for the website and portal; it touches the website's call-time script, outside this task.
+- **4 kept as a follow-up** (for 12): one `/o` e2e assertion in London, with M7.1's portal work; covered by construction today.
+- **Outside:** the cpu-baseline line corrected ("three of four"; the path is under 10 ms but not all under 7).
+- **Checks after the fixes:** `playwright test e2e/local-time.spec.ts` 4 passed (India, London, Los Angeles, Tokyo); portal typecheck exit 0; biome clean on the changed files.
