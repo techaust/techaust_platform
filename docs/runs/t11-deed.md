@@ -1,6 +1,6 @@
 # Run: T11, the deed of assignment of copyright
 
-Status: designer running on `feat/t11-deed-design` (07-ZJ approved by the lead, 2026-11-01)
+Status: designer done on `feat/t11-deed-design` (07-ZJ approved by the lead, 2026-11-01); reviewer next
 Tier: B
 Usage:
 
@@ -234,3 +234,58 @@ Your own branch `feat/t11-deed-design` from `origin/feat/t11-deed` (merge `origi
 4. **The `deed.signed` email** template (`packages/email`, the house email style, both clients' dark modes as the others).
 5. **07-ZJ** (`docs/07-content-appendix/ZJ-t11-deed.md`): every new line (admin panel, portal section, email subject/body/button, bells including the deed `pdf.refused`, audit labels `deed.recheck` and `deed.pdf_retry`, `pdf_done`, the `nothing_paid` and other blockers, refusal messages), numbered, marked (C) client or (S) staff, each with your recommendation; no banned phrases (07 §1.3); never claim a lawyer reviewed anything. Then set the run file's Status to "WAITING ON LEAD (07-ZJ)" and keep building with `[Placeholder]` until the lead's answer arrives.
 6. Screenshots in `.logs/t11-deed/` (both themes, 1280 and 390, the PDF pages), axe results, `pnpm check` and the affected tests through `bash tools/heavy.sh`. Append "Designer report" and push.
+
+## Designer report
+
+Branch `feat/t11-deed-design` (from `origin/feat/t11-deed`; `origin/main` merged first: already up to date), pushed. Nothing hosted touched; every dev server the runs started was stopped by Playwright (no listener on 5173/5174/4321/8787 at the end); the browser closed after each run.
+
+### Skills loaded
+- `frontend-design:frontend-design` (loaded first): set the direction inside docs/06 and the brand rules. The PDF reads as an instrument, not a form (hanging clause numbers, one lede paragraph for the parties, nothing decorative); the one bold element on each surface is the mark's 45° cut: the signature space's top-right corner tick on the PDF, the square nodes of the admin's three-step rail (draft, final, signed: a real sequence, so a stepped rail is earned), the small verdigris mark on the portal's deed card. It also made me drop a caption planned inside the signature space (new client words inside a write-once PDF) and keep labels sentence case, no eyebrows.
+- `dataviz`: not loaded; no chart, stat tile or dashboard here ("Paid in full" is a ledger column, the payments panel's pattern).
+- No other docs/14 §9 row applies to this designer run (no Worker config, Cloudflare feature, SES or IAM change).
+
+### Commits
+`8b9c68d0` 07-ZJ draft · `b02d0f5a` PDF layout · `aff4ea32` admin Deed tab · `e8c08943` formatting · `16cee0b4` portal and email · `848b9834` website Delivery 0.2 · `503d6b0a` admin tests and layout · `4365b698` 07-ZJ approved, marks off, bells · `8d616148` Schedule labels, browser checks · `40a4b129` portal CSS lint.
+
+### What was built
+1. **PDF** (`packages/pdf/src/layout/deed.ts`; `DEED_LAYOUT_PLACEHOLDER = false`; layout id `deed-v1`): A4 in the house system (logo over the verdigris rule, Archivo Expanded title, 12-column grid, house footer with the symbol, the 07-P line and "TH/DA/… Page X of Y"). 07-ZE's text word for word from core `deedText`; the title's " · " is set as a line break before "No. …" (the metadata `<title>` keeps the whole line). Clause numbers hang in column 1; the signature sentence ends "TecHaust Technologies." (07-ZJ line 1) over an empty 84 × 32 mm space marked only by corner ticks (L5); Schedules with 07-ZJ line 2's labels, typed line breaks kept; the stamp-duty line last. The deed proper fits page 1 in every fixture (long name and address, four invoices, USD); the Schedules run to page 2, a heading never alone. Grayscale-safe; text ≥ 4.5:1. The jobs guard stays but is off, so staging renders deeds (jobs test updated).
+2. **Admin, the project's Deed tab** (`routes/projects/deed.tsx`, `deeds.css`, `lib/deeds.ts`, `lib/copy-zj.ts`; tab only with `deeds.view`): head (heading, state chip, number, the rail, the next-step line, anonymised notice, not-fully-paid warning); no deed or only cancelled drafts: "Paid in full" (accepted total, credit notes, owed, paid incl. TDS, still to pay; the blockers as reasons; invoices counted with links, cards when the panel is narrow) and "Check again"; draft: the Schedules form (`FormField`, one `DateField` per delivery with add/remove, explicit "None" for Schedule 2, error summary, unsaved guard, 409 → stale notice), "Read the deed" (the would-be text, or the value problems), Finalise (`ConfirmDialog` with the code slot) and Cancel (reason required); final: unsigned PDF (download / "Making the PDF…" / "Make the PDF again"), the signed upload (PDF, eSign date via `DateField`, HH:MM IST, transaction ID; fields checked before the code is asked, then `ensureStepUp`, SHA-256, raw upload with the API's headers), the record (finalised by, fingerprint); signed: eSign facts, both downloads, the full signature line; cancelled drafts (≤ 10). On a phone the actions follow the form or the deed, before the figures; on wide screens a final or signed deed opens beside its actions. Audit labels, group and record type are line 33; Settings › Email names the template "Signed deed ready (client)".
+3. **Portal** (`components/document/signed-deed.tsx`, `copy-zj.ts`, `portal.css`, `api.ts` `deedsApi`; via `OfferScreen`/`DocumentPage`, signed-in route only): a second card under the summary of the accepted version, signed deeds only: heading, lead line, deed number, "Signed with Aadhaar eSign on {moment}", transaction ID, "Download signed deed" (id in the request body), a failure line. Nothing on the emailed link's view. The preview's sample API answers `/deeds` for "Accepted by you".
+4. **Email** (`packages/email/src/deeds.ts`): lines 8–11 in the house layout (subject as heading, facts, "Open in the portal" with the plain link in the text twin, closing line), both dark modes; in `/preview/email`.
+5. **07-ZJ**: 33 lines, (C)/(S), with recommendations; **APPROVED by the lead under the owner's delegation, 2026-11-01**; `APPROVED_07ZJ` (admin, portal), `APPROVED_07ZJ_EMAIL`, `APPROVED_07ZJ_PDF_LABELS` on. The bells use lines 31 and 32 (`packages/db/src/deeds.ts` `DEED_BELL`, the project code between its two parts; `apps/jobs/src/deed-pdf.ts` `DEED_REFUSED_BELL`), tests updated.
+6. **Website** (the original brief's screens list): Delivery 0.2 with 07-ZE line 16 word for word, version and change note (effective 2026-11-01); 07-A's v0.4 row updated; a web test pins it.
+
+### Files
+- PDF: `packages/pdf/src/layout/deed.ts`, `layout/copy.ts`, `scripts/proof.ts` (`deeds` mode), `test/deed-layout.test.ts`, `test/fixtures/deed.ts` (new), `visual/deeds.spec.ts` (new).
+- Admin: `src/routes/projects/deed.tsx` (new), `project.tsx`, `src/deeds.css` (new), `src/lib/deeds.ts`, `deeds.test.ts`, `copy-zj.ts` (new), `src/lib/audit.ts`, `src/api.ts` (`deedsApi`, `uploadSignedDeed`), `worker/email-fixtures.ts`, `e2e/t11-deed.spec.ts` (new).
+- Portal: `src/components/document/signed-deed.tsx`, `src/copy-zj.ts` (new), `src/api.ts`, `src/portal.css`, `src/screens/document-page.tsx`, `src/routes/offer.tsx`, `src/routes/portal.tsx`, `src/preview/sample-api.ts`, `src/preview/routes.tsx`, `e2e/t11-deed.spec.ts` (new).
+- Email: `packages/email/src/deeds.ts`, `test/deeds.test.ts`; `packages/core/src/email-templates.ts` (comment). Bells: `packages/db/src/deeds.ts`, `packages/db/test/deeds.test.ts`, `apps/jobs/src/deed-pdf.ts`, `apps/jobs/test/deed-pdf.test.ts`. Web: `apps/web/src/content/legal.ts`, `legal-pages.ts`, `apps/web/test/content-m23.test.ts`. Docs: `docs/07-content-appendix/ZJ-t11-deed.md` (new), `A-legal-pages.md`, this file.
+
+### Screenshots (`.logs/t11-deed/`; admin states at 1280 and 390, light and dark, in-app theme against the opposite OS theme)
+- `pdf/deed-{short-inr,long-inr,usd}.pdf` (page 1 the deed, page 2 the labelled Schedules and the stamp line) and `.png` (print HTML).
+- `admin/deed-waiting-*`: the sample project's REAL answer. `deed-qualifies-SIMULATED-*`: paid, no deed, Check again. `deed-draft-blank-SIMULATED-*`: empty form, Finalise off with its reason. `deed-draft-filled-SIMULATED-*`: filled form, the deed on its sheet. `deed-draft-form-filling-SIMULATED-1280-light`: None pressed, a date typed. `deed-finalise-dialog-SIMULATED-{1280-light,390-dark}`: code slot. `deed-cancel-dialog-SIMULATED-1280-light`: reason error. `deed-final-making-SIMULATED-*`: PDF being made, Make again, upload form, record. `deed-final-not-fully-paid-SIMULATED-*`: the warning. `deed-upload-errors-SIMULATED-{1280-light,390-dark}`: upload checks. `deed-signed-SIMULATED-*`: signed copy, eSign facts. `deed-cancelled-SIMULATED-*`: history and Check again.
+- `portal/portal-deed-{1280,390}-{light,dark}` and `portal-deed-card-*`: "Accepted by you" with the card (sample-data bar on each). `portal/email-deed-signed-{light,dark}`: the email.
+
+### Axe and keyboard
+- Admin `e2e/t11-deed.spec.ts`: 11 passed; axe (WCAG 2.2 AA + best practice; moderate and up fail) 0 on every state, width, theme and both dialogs; draft form Tab order checked with a visible ring; no console error. Fixed on the way: a duplicate landmark name (side column `aside` named like the head).
+- Portal `e2e/t11-deed.spec.ts`: 3 passed; axe 0 at 1280/390 both schemes (the preview's sample-data bar, which sits before the skip link and isn't in a build, is removed after the shots and before the check); button ≥ 44 px; download sends `{id}` in the body and saves `TH-DA-2627-0001-signed.pdf`; keyboard focus ring; no card on an unaccepted version.
+- PDF `visual/deeds.spec.ts`: 10 passed (data: URLs only, faces loaded, ₹ in Archivo, 2 pages, title, Archivo only, grayscale ≥ 4.5:1).
+
+### Commands and results
+- `tools/heavy.sh --log t11d-check pnpm check` (the one whole-repo lint): exit 0; biome 1,469 files, 0 errors, 13 warnings: 3 mine (`portal.css` deed card, descending specificity) fixed afterwards by class selectors (`biome check` on both files clean), 10 pre-existing. Typecheck all packages ok; bindings, content lint, worker config, SPA headers, migrations (63), CSS collisions: ok.
+- Tests (heavy.sh): db `deeds` 25; jobs `deed-pdf` + `warm` 11; pdf full 387; email full 135; admin `worker/deeds`, `worker/rbac`, `src/lib/**` 1,585; portal full 692; core `deed-hooks` + `deeds` 26; web `content-m23` 34: all passed.
+- Worker budgets (builds): jobs **685,170** / 1,000,000 (679,348 with the placeholder; startup 66.6 ms on a loaded PC); admin front 101,695, API 476,463, finance 512,857, portal 106,400: within ceilings, no forbidden modules.
+- Local setup only: `pnpm install --frozen-lockfile --offline`, `pnpm dev:secrets`, `pnpm db:migrate:local`, `pnpm db:seed:local`.
+
+### Not verified
+- No real Browser Run render (local Chromium prints the same HTML); staging now renders deeds: worth one look at a staging deed PDF.
+- Every admin state but "waiting" is the deed API answered in the browser (SIMULATED): the sample data has no completed, fully paid project from an accepted proposal; the real write round trips rest on the builder's route tests.
+- The email in real clients (Outlook, Gmail dark) not checked; the house layout is unchanged.
+- The admin spec waits for the panel, not `networkidle` (on this loaded PC the dev server twice kept a page from settling for 10 minutes).
+
+### Placeholder lines left
+None in T11's screens, email, bells or PDF. The builder's refusal messages (07-ZJ line 30) show as written.
+
+### Open questions
+1. The preview's sample deed names offer TH/PRP/2627/0004 v1 while the sample accepted page is TH/PRP/2627/0003 v2 (preview data only; the card doesn't print the offer).
+2. Delivery 0.2's `effective` is the literal 2026-11-01; the lead sets it to the launch day with the others before production.
