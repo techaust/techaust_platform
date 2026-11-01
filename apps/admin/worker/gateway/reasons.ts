@@ -70,6 +70,14 @@ export const advanceBlockersText = (codes: readonly string[]): string | null => 
   return words.length ? words.join("; ") : null;
 };
 
+/**
+ * M6.2 fix round 4, low 3 (staff words, the lead under the standing delegation, 2026-11-01): a `refetch_failed` item for a link Razorpay marks paid while it lists
+ * no payment (`facts.reason: "no_payment_listed"`): Razorpay was reached, so the line doesn't say it couldn't be. Also the "Try again" route's 409 while it still
+ * lists none.
+ */
+export const NO_PAYMENT_LISTED_LINE =
+  "Razorpay shows the link as paid but lists no payment yet. Try again in a few minutes.";
+
 /** One line per review kind (07-ZI S20; the five the designer drafts are drafted here in the same style). */
 export function reviewReason(kind: string, f: ReasonFacts = {}): string {
   switch (kind) {
@@ -82,6 +90,9 @@ export function reviewReason(kind: string, f: ReasonFacts = {}): string {
     case "advance_blocked":
       return `The tax invoice for this payment couldn't be issued automatically: ${f.blocker ?? "a check failed"}. Issue it from the proforma.`;
     case "refetch_failed":
+      return f.reason === "no_payment_listed"
+        ? NO_PAYMENT_LISTED_LINE
+        : "Razorpay couldn't be reached to confirm this payment. Try again.";
     case "dead_letter":
       return "Razorpay couldn't be reached to confirm this payment. Try again.";
     // Settled by the lead on the safest reading, 2026-10-31 (08-C RA-36): credit held is treated as an advance (s.13(2) CGST Act), so GST on it was due in the

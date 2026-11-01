@@ -208,6 +208,7 @@ const GATEWAY_CODES = new Set([
   "gateway_unavailable",
   "live_not_allowed",
   "gateway_error",
+  "no_payment_listed",
   "gateway_refund_needed",
   "gateway_payment",
   "not_retryable",

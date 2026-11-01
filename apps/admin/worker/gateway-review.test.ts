@@ -12,6 +12,7 @@ import { setStubTransport, stubFetch, stubIdsOf } from "./gateway/config.ts";
 import { processEvent } from "./gateway/events.ts";
 import { createLinkFor, refreshForClient } from "./gateway/links.ts";
 import { razorpayApi } from "./gateway/razorpay.ts";
+import { NO_PAYMENT_LISTED_LINE } from "./gateway/reasons.ts";
 import {
   calls,
   countingEnv,
@@ -365,6 +366,53 @@ describe("findings 3 and 4: nothing verified is dropped; a failed or refunded pa
       result: "retry",
     });
     expect(await reviewKindsOf("document_id", other.id)).toEqual([]);
+  });
+
+  it('fix round 4, low 3: the item stores no_payment_listed with its own words; "Try again" answers 409 with them while Razorpay lists none, then records the payment', async () => {
+    const o = await owner();
+    const inv = await issued(o);
+    const l = await linkFor(o, inv);
+    stub((path) =>
+      path === `/v1/payment_links/${l.linkId}` ? linkJson(l, inv.total, { payments: [] }) : null,
+    );
+    const ev = await eventRow(l.linkId, null);
+    expect(await processEvent(env, ev)).toEqual({ result: "needs_review" });
+    const item = await one<{ id: string; kind: string; facts: string }>(
+      "SELECT id, kind, facts FROM review_items WHERE webhook_event_id = ?1",
+      ev,
+    );
+    expect(item?.kind).toBe("refetch_failed");
+    expect(JSON.parse(item?.facts ?? "{}")).toEqual({ linkId: l.linkId, reason: "no_payment_listed" });
+    // The bell says the same words (Razorpay was reached: never "couldn't be reached").
+    const bell = await one<{ title: string }>(
+      "SELECT title FROM notifications WHERE kind = 'payment.review' AND entity_type = 'review_item' AND entity_id = ?1 LIMIT 1",
+      item?.id,
+    );
+    expect(bell?.title).toBe(`A payment needs review: ${NO_PAYMENT_LISTED_LINE}`);
+    // "Try again" while Razorpay still lists no payment: 409 with the lead's words, not 502 gateway_error; nothing written, the item stays open.
+    const again = await call(`/payments/review/${item?.id}/retry`, { cookie: o.cookie, body: {} });
+    expect(again.status, await again.clone().text()).toBe(409);
+    expect((await json(again)).error).toMatchObject({
+      code: "no_payment_listed",
+      message: NO_PAYMENT_LISTED_LINE,
+    });
+    expect(await paymentOf(l.paymentId)).toBeNull();
+    expect(
+      (await one<{ status: string }>("SELECT status FROM review_items WHERE id = ?1", item?.id))?.status,
+    ).toBe("open");
+    // Razorpay unreachable is still 502 gateway_error.
+    stub((path) => (path.startsWith("/v1/payment_links/") ? new Response("down", { status: 503 }) : null));
+    const down = await call(`/payments/review/${item?.id}/retry`, { cookie: o.cookie, body: {} });
+    expect(down.status).toBe(502);
+    expect((await json(down)).error.code).toBe("gateway_error");
+    // Once Razorpay lists the payment, "Try again" records it and resolves the item.
+    stub();
+    const ok = await call(`/payments/review/${item?.id}/retry`, { cookie: o.cookie, body: {} });
+    expect(ok.status, await ok.clone().text()).toBe(200);
+    expect((await paymentOf(l.paymentId))?.status).toBe("confirmed");
+    expect(
+      (await one<{ status: string }>("SELECT status FROM review_items WHERE id = ?1", item?.id))?.status,
+    ).toBe("resolved");
   });
 
   it("not_captured (failed or refunded): the review item only, no payment row the Owner could confirm", async () => {

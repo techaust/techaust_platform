@@ -3,6 +3,7 @@
 // (L8): the client's display name, the amount and the document number only, as every other bell.
 import type { ApiError } from "../context.ts";
 import { amountText } from "../payment-messages.ts";
+import { NO_PAYMENT_LISTED_LINE } from "./reasons.ts";
 
 const e = (code: string, message: string): ApiError => ({ code, message });
 
@@ -22,6 +23,7 @@ export const BELL_SIGNATURES =
 export {
   ADVANCE_BLOCKER_WORDS,
   advanceBlockersText,
+  NO_PAYMENT_LISTED_LINE,
   NOT_PAYABLE_WORDS,
   notPayableWords,
   type ReasonFacts,
@@ -49,6 +51,8 @@ export const TOO_MANY_LINKS = e(
 export const GATEWAY_UNAVAILABLE = e("gateway_unavailable", "Online payment isn't set up right now.");
 export const LIVE_NOT_ALLOWED = e("live_not_allowed", "Live payments aren't switched on yet.");
 export const GATEWAY_ERROR = e("gateway_error", "Razorpay couldn't be reached. Try again.");
+/** Fix round 4, low 3: "Try again" on a link Razorpay marks paid while it still lists no payment (Razorpay was reached: 409, never 502 `gateway_error`). */
+export const NO_PAYMENT_LISTED = e("no_payment_listed", NO_PAYMENT_LISTED_LINE);
 export const GATEWAY_REFUND_NEEDED = e(
   "gateway_refund_needed",
   "A Razorpay payment can't be rejected here. It needs a refund through Razorpay.",

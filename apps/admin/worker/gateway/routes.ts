@@ -31,6 +31,7 @@ import {
   LINK_IN_PROGRESS,
   LINK_NOT_LIVE,
   LIVE_NOT_ALLOWED,
+  NO_PAYMENT_LISTED,
   NOT_PAYABLE_ONLINE,
   NOT_RETRYABLE,
   RESOLUTION_NOT_ALLOWED,
@@ -273,7 +274,9 @@ export const gatewayPayments = new Hono<AppEnv>()
         summary: { reviewId: id, result: r.result },
       });
     }
-    if (r.result === "retry") return err(c, GATEWAY_ERROR, 502);
+    // Fix round 4, low 3: Razorpay answered but still lists no payment on the paid link: 409 with its words; only an unreachable Razorpay is 502.
+    if (r.result === "retry")
+      return r.noPaymentListed ? err(c, NO_PAYMENT_LISTED, 409) : err(c, GATEWAY_ERROR, 502);
     return c.json({ ok: true, result: r.result });
   })
   .get("/gateways", async (c) => {

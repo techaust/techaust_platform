@@ -185,7 +185,14 @@ export async function reviewOnly(
       ),
       reviewBellStatement(
         env.DB,
-        { reviewId, title: bellNeedsReview(reviewReason(kind)), link: REVIEW_LINK },
+        {
+          reviewId,
+          // The fact `reason` picks the line where a kind has more than one (fix round 4, low 3: `refetch_failed`'s `no_payment_listed`).
+          title: bellNeedsReview(
+            reviewReason(kind, { reason: typeof facts.reason === "string" ? facts.reason : null }),
+          ),
+          link: REVIEW_LINK,
+        },
         g,
       ),
       ...(eventId
@@ -422,6 +429,13 @@ export async function endCheckout(
 }
 
 /**
+ * What `settlePayment` answers: the RPC result, plus (fix round 4, low 3) `noPaymentListed` on a refresh's `retry` for a link Razorpay marks paid while it lists
+ * no payment, so the Owner's "Try again" answers 409 with words rather than 502 `gateway_error` (Razorpay was reached). Callers that answer over RPC map the
+ * result and never pass the flag on.
+ */
+export type SettleResult = ProcessEventResult & { readonly noPaymentListed?: true };
+
+/**
  * Re-fetch, judge and record one payment on a link (the run file's steps 3 to 8). `cancelStale` is called after a confirmed batch with the links that went stale, so
  * the caller cancels them at Razorpay (best effort).
  */
@@ -429,7 +443,7 @@ export async function settlePayment(
   env: GatewayEnv,
   a: SettleArgs,
   cancelStale?: (links: readonly { id: string; linkId: string }[]) => Promise<void>,
-): Promise<ProcessEventResult> {
+): Promise<SettleResult> {
   const db = env.DB;
   // (4) the link from Razorpay's API, never the webhook's copy (the live guard runs inside the client, before any fetch)
   const linkR = await a.api.fetchLink(a.linkId);
@@ -462,14 +476,15 @@ export async function settlePayment(
   // Review finding 9: a paid link with no payment to settle (none named, none listed) is not swept ten times and then left `received`: the event moves to
   // `needs_review` with a `refetch_failed` item for the link, whose "Try again" asks Razorpay again. A refresh (the portal's poll) only tries again later:
   // Razorpay may list the payment a moment after it marks the link paid, and a poll must not bell the owners for that.
-  if (!paymentRef && a.cause.kind === "refresh") return { result: "retry" };
+  // Fix round 4, low 3: the item says why (`no_payment_listed`: Razorpay was reached and listed none), and a refresh's `retry` carries the same flag.
+  if (!paymentRef && a.cause.kind === "refresh") return { result: "retry", noPaymentListed: true };
   if (!paymentRef)
     return reviewOnly(
       env,
       a,
       "refetch_failed",
       { documentId: checkout.document_id, clientId: checkout.client_id, amountMinor: null },
-      factsOf(a.linkId, null, null),
+      { ...factsOf(a.linkId, null, null), reason: "no_payment_listed" },
     );
   // "For B2" 2: the same Razorpay payment again (a duplicate delivery, a replay under a new event id, a refresh after the webhook): the event is processed, nothing else.
   const seen = await db.prepare(PAYMENT_SEEN_SQL).bind("razorpay", paymentRef).first<Seen>();
