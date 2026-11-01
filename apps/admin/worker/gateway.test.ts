@@ -9,7 +9,7 @@ import { formatMoney, money } from "@techaust/core/money";
 import { checkProviderContract } from "@techaust/core/payments";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { issueGatewayAdvance } from "./gateway/advance.ts";
-import { setStubTransport, stubFetch } from "./gateway/config.ts";
+import { setStubTransport, stubFetch, stubIdsOf } from "./gateway/config.ts";
 import { processEvent } from "./gateway/events.ts";
 import { createLinkFor, refreshForClient } from "./gateway/links.ts";
 import { razorpayApi, razorpayProvider } from "./gateway/razorpay.ts";
@@ -860,6 +860,85 @@ describe("routes per role, the review list, the provider contract", () => {
     expect((await issueGatewayAdvance(e, r.next?.paymentId as string)).result).toBe("issued");
     console.log(`D1 statements, issueGatewayAdvance: ${counter.n}`);
     expect(counter.n).toBeLessThanOrEqual(45);
+  });
+
+  it("review finding 6: refreshForClient confirming an invoice payment, and createLink's worst paths (adopt then replace; a refused cancel that settles), within 45", async () => {
+    const o = await owner();
+    const { env: e, counter } = countingEnv();
+    // The portal's refresh that finds the link paid and confirms the payment (with T11's deed hook in the batch).
+    const inv = await issued(o);
+    await linkFor(o, inv);
+    counter.n = 0;
+    expect((await refreshForClient(e, { clientId: inv.clientId, documentId: inv.id })).result).toBe(
+      "processed",
+    );
+    console.log(`D1 statements, refreshForClient (confirming): ${counter.n}`);
+    expect(counter.n).toBeLessThanOrEqual(45);
+    // A part-payment floor of ₹1, so a second amount replaces an open link.
+    await env.DB.prepare(
+      "INSERT INTO settings (key, value) VALUES ('payment_terms', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value, version = settings.version + 1",
+    )
+      .bind(JSON.stringify({ razorpayMinPartialInrMinor: 100 }))
+      .run();
+    const args = (d: { id: string; clientId: string; contactId: string }) => ({
+      provider: "razorpay" as const,
+      clientId: d.clientId,
+      contactId: d.contactId,
+      tokenHash: null,
+      documentId: d.id,
+      amountMinor: 50_000,
+      returnTo: "invoice" as const,
+    });
+    try {
+      // A stuck `creating` row adopted from Razorpay, then cancelled and replaced by the new amount.
+      const a = await issued(o);
+      const stuckId = uuidv7();
+      const now = Date.now();
+      await env.DB.prepare(
+        "INSERT INTO checkout_sessions (id, provider, document_id, client_id, created_by, source, currency, amount_minor, status, expires_at, created_at, updated_at) VALUES (?1, 'razorpay', ?2, ?3, ?4, 'staff', 'INR', ?5, 'creating', ?6, ?7, ?7)",
+      )
+        .bind(stuckId, a.id, a.clientId, o.id, a.total, now + 7 * 86_400_000, now - 3 * 60_000)
+        .run();
+      const stuck = stubIdsOf(stuckId, a.total);
+      stub((path, method) =>
+        method === "GET" && path === "/v1/payment_links"
+          ? Response.json({
+              payment_links: [
+                {
+                  id: stuck.linkId,
+                  status: "created",
+                  currency: "INR",
+                  amount: a.total,
+                  amount_paid: 0,
+                  reference_id: stuckId,
+                  short_url: "https://rzp.io/i/stuck",
+                  expire_by: Math.floor(Date.now() / 1000) + 7 * 86_400,
+                  payments: null,
+                },
+              ],
+            })
+          : null,
+      );
+      counter.n = 0;
+      const adopted = await createLinkFor(e, args(a));
+      expect(adopted.ok, JSON.stringify(adopted)).toBe(true);
+      console.log(`D1 statements, createLink (adopt, cancel and replace): ${counter.n}`);
+      expect(counter.n).toBeLessThanOrEqual(45);
+      // A new amount whose old link Razorpay won't cancel because it was paid: the money is settled (confirmed) inside createLink.
+      const b = await issued(o);
+      await linkFor(o, b);
+      stub((path, method) =>
+        method === "POST" && path.endsWith("/cancel")
+          ? Response.json({ error: { code: "BAD_REQUEST_ERROR" } }, { status: 400 })
+          : null,
+      );
+      counter.n = 0;
+      expect(await createLinkFor(e, args(b))).toMatchObject({ ok: false, error: "not_payable_online" });
+      console.log(`D1 statements, createLink (refused cancel, settled): ${counter.n}`);
+      expect(counter.n).toBeLessThanOrEqual(45);
+    } finally {
+      await env.DB.prepare("DELETE FROM settings WHERE key = 'payment_terms'").run();
+    }
   });
 });
 
