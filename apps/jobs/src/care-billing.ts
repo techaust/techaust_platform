@@ -83,6 +83,19 @@ export async function processCareDeadLetter(
   body: { kind: "care.bill"; planId: string } | { kind: "care.issue"; documentId: string },
   now = Date.now(),
 ): Promise<void> {
+  // An issue whose invoice is already frozen failed only at its PDF request (admin `care-billing.ts` throws so the issue is retried): the invoice WAS issued, so the
+  // "could not be issued" bell would be false. The 03:30 IST sweep asks for the PDF again (review L4).
+  if (body.kind === "care.issue") {
+    const issued = await env.DB.prepare(
+      "SELECT 1 AS issued FROM documents WHERE id = ?1 AND frozen_at IS NOT NULL",
+    )
+      .bind(body.documentId)
+      .first<{ issued: number }>();
+    if (issued) {
+      logEvent("care.dead_letter_issued", { kind: body.kind });
+      return;
+    }
+  }
   const day = todayIst(now);
   const [entityType, id, link] =
     body.kind === "care.bill"

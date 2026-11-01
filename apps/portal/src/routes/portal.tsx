@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router";
 import { api, type OfferItem, offersApi, RequestError } from "../api.ts";
+import { SignedDeedCard } from "../components/document/signed-deed.tsx";
 import { LoadProblemScreen } from "../components/load-problem.tsx";
 import { type NavKey, PortalShell } from "../components/shell/portal-shell.tsx";
 import { LoadingCard } from "../components/ui.tsx";
@@ -197,9 +198,14 @@ export function ProposalRoute() {
       me={me.contact}
       replaced={replaced}
       onSuperseded={onSuperseded}
+      asideExtra={me.canSeeFinance ? signedDeedOf : undefined}
     />
   );
 }
+
+/** T11: the signed deed under an accepted version's summary (signed in only: the emailed link never shows it; finance contacts only, owner 2026-11-01). */
+const signedDeedOf = (documentId: string, accepted: boolean) =>
+  accepted ? <SignedDeedCard key={documentId} documentId={documentId} /> : null;
 
 export function SoonRoute({ section }: { section: "projects" | "profile" }) {
   return <SoonScreen section={section} />;

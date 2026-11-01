@@ -28,6 +28,19 @@ describe("the supplier copy (Q11, owner 2026-10-28)", () => {
       expect(isPdfMessage(bad), JSON.stringify(bad)).toBe(false);
   });
 
+  it("pdf.deed (T11) is a message of the PDF family, with a deed id and a bounded hop", () => {
+    expect(isPdfMessage({ v: 1, kind: "pdf.deed", deedId: "deed_1", hop: 0 })).toBe(true);
+    expect(isPdfMessage({ v: 1, kind: "pdf.deed", deedId: "deed_1", hop: PDF_MAX_HOPS })).toBe(true);
+    expect(isPdfKind({ v: 1, kind: "pdf.deed" })).toBe(true);
+    for (const bad of [
+      { v: 1, kind: "pdf.deed", deedId: "", hop: 0 },
+      { v: 1, kind: "pdf.deed", deedId: "x".repeat(65), hop: 0 },
+      { v: 1, kind: "pdf.deed", deedId: "deed_1", hop: PDF_MAX_HOPS + 1 },
+      { v: 1, kind: "pdf.deed", documentId: "deed_1", hop: 0 },
+    ])
+      expect(isPdfMessage(bad), JSON.stringify(bad)).toBe(false);
+  });
+
   it("the key is the original's own stem with -supplier, never the original's key; the same checks as pdfKeys", () => {
     const input = { type: "tax_invoice", fy: "2026-27", number: 12, version: 1 };
     expect(supplierPdfKey(input)).toBe("docs/tax_invoice/2026-27/0012-v1-supplier.pdf");

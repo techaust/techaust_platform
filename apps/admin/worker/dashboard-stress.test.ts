@@ -25,6 +25,13 @@ const ROWS_READ_LIMIT = 6_320;
 const WORST_CASE_LIMIT = 8_000;
 /** Set to true to print the per-statement numbers (the test then fails on purpose, which is the only way vitest shows them). */
 const SHOW_REPORT = false;
+/**
+ * test-hardening 2: these tests are heavy by design (a 6,700-row fixture, then the dashboard per role with an EXPLAIN of every statement, and 24
+ * timed requests), so they and the fixture hook get an explicit limit instead of vitest's 5 s (10 s for a hook). Alone they take well under a
+ * second; a full parallel `pnpm test` (every package's pool on the same cores) stretched them past 5 s. 30 s is a ceiling for a starved machine,
+ * not a performance target: the rows-read limits and the staging CPU reading are the targets.
+ */
+const HEAVY_MS = 30_000;
 
 const run = (sql: string) => env.DB.prepare(sql).run();
 const RECURSIVE = (n: number) =>
@@ -123,13 +130,17 @@ function recording(): { db: D1Database; seen: Seen[]; rowsRead: () => number } {
 }
 
 describe("GET /dashboard on the stress fixture", () => {
-  beforeAll(() => {
+  // The fixture is built once, before the measuring test, so the test's own time is the dashboard's (the tests read it in order: the
+  // first adds the worst-case terms last, which the later two don't depend on).
+  beforeAll(async () => {
     pinClock(PINNED_MS);
-  });
+    await fixture();
+  }, HEAVY_MS);
   afterAll(() => vi.useRealTimers());
 
-  it("reads at most 6,300 rows per call for every role on the worst day, every statement from an index", async () => {
-    await fixture();
+  it("reads at most 6,300 rows per call for every role on the worst day, every statement from an index", {
+    timeout: HEAVY_MS,
+  }, async () => {
     const roles = ["owner", "staff", "sales", "accountant"] as const;
     const report: string[] = [];
     for (const role of roles) {
@@ -173,7 +184,9 @@ describe("GET /dashboard on the stress fixture", () => {
     if (SHOW_REPORT) throw new Error(["DASHBOARD STRESS", ...report].join("\n"));
   });
 
-  it("the care-plan burn of 50 plans equals the plan page for a sample, and nothing is dropped", async () => {
+  it("the care-plan burn of 50 plans equals the plan page for a sample, and nothing is dropped", {
+    timeout: HEAVY_MS,
+  }, async () => {
     const s = await longSession("owner");
     const body = (await (await call("/dashboard", { cookie: s.cookie })).json()) as {
       tiles: {
@@ -196,7 +209,9 @@ describe("GET /dashboard on the stress fixture", () => {
     }
   });
 
-  it("local CPU proxy: wall time of the dashboard, a plan page, a time entry and the plan list", async () => {
+  it("local CPU proxy: wall time of the dashboard, a plan page, a time entry and the plan list", {
+    timeout: HEAVY_MS,
+  }, async () => {
     const s = await longSession("owner");
     const timed = async (name: string, f: () => Promise<Response>) => {
       await f(); // the first call warms the isolate

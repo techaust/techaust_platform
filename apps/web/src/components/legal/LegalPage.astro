@@ -212,7 +212,7 @@ const hasChanges = sections.some((s) => s.id === "changes");
 
   /* The list scrolls on its own (overflow), which would clip an outside ring: draw it inside. */
   .toc__list a:focus-visible {
-    outline-offset: -2px;
+    outline-offset: calc(-1 * var(--focus-width));
     border-radius: var(--radius-sm);
   }
 

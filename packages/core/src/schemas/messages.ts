@@ -181,12 +181,30 @@ export const isInvoiceExpansionKind = (body: unknown): body is { kind: InvoiceEx
   body !== null &&
   INVOICE_EXPANSION_KINDS.includes((body as { kind: InvoiceExpansionMessage["kind"] }).kind);
 
+/**
+ * T11 (L4): the signed deed of assignment is in the client's portal. The admin API puts ONLY the deed's id here, after the sign batch; the jobs Worker reads the
+ * signed deed and the client's portal contacts and queues one `deed.signed` email to each (one `email_log` claim per deed and recipient). Deed ids are made in SQL
+ * (`deed_<hex>`), so the id is a bounded string, not a UUID.
+ */
+export const deedSignedMessage = z.object({
+  kind: z.literal("deed.signed"),
+  deedId: z.string().min(1).max(64),
+});
+export type DeedSignedMessage = z.infer<typeof deedSignedMessage>;
+export const DEED_EXPANSION_KINDS = ["deed.signed"] as const;
+/** True for a body of the T11 deed family (valid or not), so a malformed one is never handed to the ordinary email consumer. */
+export const isDeedExpansionKind = (body: unknown): body is { kind: DeedSignedMessage["kind"] } =>
+  typeof body === "object" &&
+  body !== null &&
+  DEED_EXPANSION_KINDS.includes((body as { kind: DeedSignedMessage["kind"] }).kind);
+
 /** What the `email` queue carries: an email to send, or a message to expand into emails. */
 export type EmailQueueMessage =
   | EmailMessage
   | StaffAlertMessage
   | OfferExpansionMessage
-  | InvoiceExpansionMessage;
+  | InvoiceExpansionMessage
+  | DeedSignedMessage;
 
 // ---- M5.4 billing messages on the `leads` queue (the jobs Worker's general work queue; the cron only enqueues) -----------------------------------------------------------
 // One unit of work per message (Free plan). Ids and cursors only: no clock, no period, no amount (`draftCarePlan` and `issueCareDraft` use their own).

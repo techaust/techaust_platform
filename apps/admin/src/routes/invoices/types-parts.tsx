@@ -19,7 +19,7 @@ import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
 import { FormField, Switch } from "../../components/form.tsx";
 import { Alert, Check, Pencil, Receipt } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
-import { CodeField, Notice } from "../../components/ui.tsx";
+import { CodeField, Notice, useFieldError } from "../../components/ui.tsx";
 import { dateError } from "../../lib/date-field.ts";
 import { razorpayLine } from "../../lib/gateway.ts";
 import {
@@ -41,6 +41,7 @@ import {
   fyLabel,
   INVT_COPY,
   lutLine,
+  previousPeriodShown,
   proformaNoticeOf,
   rateDateFollows,
   rateDayEarlier,
@@ -50,7 +51,7 @@ import {
 import { blockerLine, INV_COPY, invErrorText, issuedToast, typeLabel, UNKNOWN } from "../../lib/invoices.ts";
 import { type InvoiceBlocker, type InvoiceView, invoicesApi } from "../../lib/invoices-api.ts";
 import { PAY_COPY, PAY_UI, payErrorText, plainAmount } from "../../lib/payments.ts";
-import { withCode } from "../../lib/step-up.ts";
+import { isWrongCode, withCode } from "../../lib/step-up.ts";
 import { PaymentsPanel } from "../payments/panel.tsx";
 import { BlockerList } from "./dialogs.tsx";
 import { invoiceHref } from "./parts.tsx";
@@ -767,7 +768,7 @@ function AdvanceBody(props: {
   // What the server refused with: its blocker lines (409 `issue_blocked`), drawn as the issue dialog draws them.
   const [refused, setRefused] = useState<InvoiceBlocker[]>([]);
   const [code, setCode] = useState("");
-  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeError, setCodeError, codeErrorKey] = useFieldError();
   const [errors, setErrors] = useState<AdvErrors>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -778,7 +779,8 @@ function AdvanceBody(props: {
   const needsCode = !stepUpActive();
   const toast = useToast();
   if (!p) return null;
-  const earlier = arrivedEarlierMonth(form.date, today);
+  // 07-ZK line 8 is not shown on the LUT route (no IGST, so nothing to add with interest).
+  const earlier = previousPeriodShown(arrivedEarlierMonth(form.date, today), v.supply?.type, igst);
 
   async function issue() {
     const c = checkAdvance(form, v.currency, p?.balanceMinor ?? 0);
@@ -827,7 +829,7 @@ function AdvanceBody(props: {
       // Q27: a payment from an earlier month is a warning, said with the result.
       toast(
         "success",
-        r.warnings.includes("advance_previous_period")
+        previousPeriodShown(r.warnings.includes("advance_previous_period"), v.supply?.type, igst)
           ? `${issuedToast(r.number)} ${INVT_COPY.previousPeriod}`
           : issuedToast(r.number),
       );
@@ -858,7 +860,7 @@ function AdvanceBody(props: {
         return;
       }
       // A wrong code is the code field's own error (as in the step-up dialog and the data tools): cleared, said under it, and focused.
-      if (e instanceof RequestError && e.code === "invalid_code") {
+      if (isWrongCode(e)) {
         setCode("");
         setCodeError(e.message);
         document.getElementById("adv-code")?.focus();
@@ -1091,6 +1093,7 @@ function AdvanceBody(props: {
           value={code}
           onChange={setCode}
           error={codeError}
+          errorKey={codeErrorKey}
         />
       )}
       {failure && (

@@ -19,7 +19,7 @@ _Drafted by the lead on 2026-10-28 from approved facts:
 
 ## 2. GST exports (Owner, Accountant; a fresh code on every export)
 - Title: "GST exports"
-- Lede: "Files for your GSTR-1 and GSTR-3B, made from the invoices and notes issued in the period. Check them with your CA before you file."
+- Lede: "Files for your GSTR-1 and GSTR-3B, made from the invoices and notes issued in the period. Check them with your CA before you file." **Replaced on 2026-11-01 by [07-ZK](ZK-ca-wording.md) line 1; kept for history only.**
 - Period picker label: "Period"; options "Month" and "Quarter"; default hint: "The last complete quarter is selected."
 - "This period has not ended. The files will change if you issue more documents before it ends."
 - Button: "Make files"
@@ -36,7 +36,7 @@ _Drafted by the lead on 2026-10-28 from approved facts:
   - "3.2 Inter-state supplies to unregistered persons, by place of supply"
 - Table 13 preview heading: "Documents issued"; columns "Series", "From", "To", "Total", "Cancelled"
 - Downloads: "Download {section} CSV"; "Download all (ZIP)"
-- Layout note (under the downloads): "Made with layout {version} for the GSTR-1 offline tool. Layouts change; before your first upload, test-import one file with your CA." (OPEN, 08-C RA-23 Q17)
+- Layout note (under the downloads): "Made with layout {version} for the GSTR-1 offline tool. Layouts change; before your first upload, test-import one file with your CA." (OPEN, 08-C RA-23 Q17) **Replaced on 2026-11-01 by [07-ZK](ZK-ca-wording.md) line 2; kept for history only.**
 
 ### 2.1 Error messages (one per code)
 | Code | Message |
@@ -73,9 +73,9 @@ _Drafted by the lead on 2026-10-28 from approved facts:
 ### 2.2 Warnings
 | Code | Message |
 |---|---|
-| `b2cs_negative_net` | "B2CS for {state} and {rate} comes to below zero after credit notes. Check with your CA how to report it." |
+| `b2cs_negative_net` | "B2CS for {state} and {rate} comes to below zero after credit notes. Check with your CA how to report it." **Replaced on 2026-11-01 by [07-ZK](ZK-ca-wording.md) line 3; kept for history only.** |
 | `hsn_description_missing` | "SAC {code} has no description in our list; the file leaves it blank." |
-| `before_fema_2026` | "Issued before 1 October 2026: a different realisation period may apply. Ask your bank or CA." (OPEN, 08-C RB-02) |
+| `before_fema_2026` | "Issued before 1 October 2026: a different realisation period may apply. Ask your bank or CA." (OPEN, 08-C RB-02) **Replaced on 2026-11-01 by [07-ZK](ZK-ca-wording.md) line 4; kept for history only.** |
 
 ## 3. Sales register and output tax (Owner, Accountant)
 - Title: "Sales register"

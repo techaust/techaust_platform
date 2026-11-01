@@ -1,6 +1,7 @@
 // The legal pages and the security policy (WEB-LEGAL, WEB-SEC): docs/07-content-appendix/A-legal-pages.md v0.3 (2026-10-28) §1–§6 and
-// §8, word for word. Every page is drafted without a lawyer and checked against the research register (08-C, owner rule 8); the
-// optional lawyer review of the OPEN points (08-C §5) is the owner's decision before launch. The "(Researched, 08-C …)" and
+// §8, word for word. Every page is drafted without a lawyer and checked against the research register (08-C, owner rule 8); there is
+// no CA or lawyer (owner, 2026-10-30), so each OPEN point is settled by the lead on the safest reading or stays OPEN in 08-C §5,
+// and a one-off lawyer review stays optional. The "(Researched, 08-C …)" and
 // "(OPEN, 08-C …)" notes 07-A writes inline stay out of the pages and are kept here as comments next to the text they qualify.
 //
 // Typesetting only: curly apostrophes and quotes; e-mail addresses written as Markdown links to themselves (mailto) so
@@ -596,7 +597,8 @@ const delivery: LegalDoc = {
           text: "**Acceptance:** each milestone is reviewed by you, as described in our [Refunds and cancellations](/refund-policy) policy.",
         },
         {
-          text: "**Access and ownership:** on full payment, ownership of the deliverables passes to you as stated in your proposal.",
+          // T11, 07-ZE line 16 (owner-approved 2026-10-31), published with the deed (Delivery 0.2). Researched 2026-10-31, Copyright Act s.19(1) (08-C RB-38(a)).
+          text: "**Access and ownership:** on full payment, we assign the copyright in the work to you as your proposal or estimate states, and sign a deed of assignment.",
         },
         { text: `**Questions:** ${CONTACT}.` },
       ],

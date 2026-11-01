@@ -6,7 +6,8 @@
 //     test proves both agree move by move),
 //   - the blockers: what stops an issue (the statutory list of LD20, as the configurable checklist of ADM-INV-06: `INVOICE_CHECKLIST`),
 //   - the void rule of Q1, the due date, the IST day and FY of an issue, and the Table 13 summary of the documents issued.
-// The export endorsement, the LUT helpers, the proforma notice and the exchange-rate helpers (`export-invoice.ts`, `fx.ts`) are exported from here.
+// The export endorsement, the LUT helpers, the proforma notice and the exchange-rate helpers (`export-invoice.ts`, `fx.ts`) and the realisation bounds
+// (`realisation-bounds.ts`) are exported from here.
 import { addDays, fyOf, istDate, parseIsoDate, toIsoDate } from "./dates.ts";
 import { type ExportRoute, type Lut, lutFor } from "./export-invoice.ts";
 import { fxDateVerdict } from "./fx.ts";
@@ -14,11 +15,14 @@ import { canonicalJson, sha256Hex } from "./hash.ts";
 import { LEDGER_STATUSES } from "./ledger.ts";
 import type { NoteOf } from "./notes.ts";
 import type { Series } from "./numbering.ts";
+import { signatureRequired } from "./signature-rule.ts";
 
 export * from "./export-invoice.ts";
 export * from "./fx.ts";
 export * from "./notes.ts";
+export * from "./realisation-bounds.ts";
 export * from "./reminders.ts";
+export * from "./signature-rule.ts";
 export * from "./udyam.ts";
 
 // ---- types -------------------------------------------------------------------------------------------------------------------------
@@ -322,24 +326,7 @@ export function checklistItemOn(item: ChecklistItem, s: ChecklistSettings): bool
   return true;
 }
 
-// ---- the signature (T4, rt2; L1: keyed on the document, never on the checklist) --------------------------------------------------------------------------------
-
-/**
- * The types that always carry the signature, whatever the checklist's signatory switch says: a credit or debit note (Researched 2026-10-30, Rule 53(1A) CGST Rules
- * (08-C RA-22)). OPEN (08-C RA-22): do Rules 50 and 53 carry Rule 46(q)'s electronic-issue proviso, and does a stored image meet "signature" on an electronic document?
- * The safest reading is built (no CA is engaged): the signature is required. A DSC is out of scope. Pinned by a db test to the 0055 trigger's list.
- */
-export const SIGNED_ALWAYS_TYPES = ["credit_note", "debit_note"] as const;
-
-/**
- * Whether a document must be issued with the signature: a credit or debit note, or a tax or export invoice for a payment received (`header_extras.advance`; Researched
- * 2026-10-30, s.31(3)(d) CGST Act and Rule 50 CGST Rules (08-C RA-17), the safest reading, docs/13 2026-10-30). Every other invoice keeps the Owner's signatory switch
- * (Researched 2026-10-28, Rule 46(q) proviso CGST Rules (08-C RA-06)). The twin of db `signedIssuerSql` in the freeze WHERE and of the trigger `documents_signature_required`.
- */
-export function signatureRequired(type: string, isAdvance: boolean): boolean {
-  if ((SIGNED_ALWAYS_TYPES as readonly string[]).includes(type)) return true;
-  return isAdvance && (type === "tax_invoice" || type === "export_invoice");
-}
+// The signature (T4, rt2): `signatureRequired`, `SIGNED_ALWAYS_TYPES` and `SIGNED_ADVANCE_TYPES` live in `signature-rule.ts` (exported from here).
 
 export type IssueFacts = {
   readonly type: string;

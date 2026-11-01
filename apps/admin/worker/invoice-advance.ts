@@ -26,6 +26,7 @@ import {
 import { PAYMENT_MODES } from "@techaust/core/ledger";
 import { maxNumber, sqlPrintfPattern } from "@techaust/core/numbering";
 import { lutsOf } from "@techaust/core/tax";
+import { deedDraftStatements } from "@techaust/db/deeds";
 import { headerExtrasJson, invoiceSealOf, type TermsRef } from "@techaust/db/documents";
 import { advanceIssueStatements } from "@techaust/db/issue";
 import { PAYMENT_REFERENCE_SEEN_SQL } from "@techaust/db/ledger";
@@ -515,8 +516,11 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
           ...(inrExport ? { inrExportConfirmed: true } : {}),
           ...(warnings.length ? { warnings } : {}),
         },
+        // T11 (L3; 08-C RB-38(a)): the money of an advance can complete a project's full payment: its draft deed is made after the ledger part, guarded on
+        // the audit row (the advance batch is an M6.1 ledger batch).
         side: (g) => [
           ...batch.postAudit,
+          ...deedDraftStatements(db, { target: { documentIds: [invoiceId] }, now }, g),
           // M6.2: "Confirm by issuing the tax invoice" for a gateway payment settles its open review items (an `advance_blocked` or `dead_letter` item) in the
           // same batch, by the Owner who issued, once the payment is confirmed with its advance receipt (RESOLUTION_ALLOWED_SQL's `advance_issued` rule).
           ...(f.paymentId !== undefined

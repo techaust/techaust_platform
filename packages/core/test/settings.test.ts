@@ -19,6 +19,7 @@ import {
   isSealedUdyam,
   isUdyam,
   isUdyamNumber,
+  normaliseUdyamNumber,
   SEALED_UDYAM_MAX,
   UDYAM_CATEGORIES,
   UDYAM_NUMBER_ERROR,
@@ -178,6 +179,28 @@ describe("T10: the Udyam registration (ADM-SET-01; 07-ZC lines 4-5; 08-C RB-39)"
     const { udyam: _drop, ...without } = SETTINGS_DEFAULTS.company;
     expect(SETTINGS_SCHEMAS.company.safeParse(without).success).toBe(true);
     expect(resolveSetting("company", without).udyam).toBeNull();
+  });
+
+  it("normaliseUdyamNumber drops every inner and outer space, tab and non-breaking space, then upper-cases (test-hardening 4b)", () => {
+    const canonical = "UDYAM-WB-01-0012345";
+    for (const pasted of [
+      canonical,
+      "  udyam-wb-01-0012345 ",
+      "UDYAM - WB - 01 - 0012345",
+      "UDYAM-WB-01-\t0012345",
+      "\tUDYAM-WB\t-01-0012345\n",
+      "UDYAM-WB-01-\u00a00012345",
+      "\u00a0UDYAM\u00a0-\u00a0WB-01-0012345\u00a0",
+      "udyam\u2009-wb-01-0012345\u3000",
+    ]) {
+      const n = normaliseUdyamNumber(pasted);
+      expect(n, JSON.stringify(pasted)).toBe(canonical);
+      expect(isUdyamNumber(n)).toBe(true);
+    }
+    // only whitespace is dropped: another wrong shape stays wrong, and blank stays blank
+    expect(normaliseUdyamNumber(" \t\u00a0 ")).toBe("");
+    expect(isUdyamNumber(normaliseUdyamNumber("UDYAM_WB-01-0012345"))).toBe(false);
+    expect(isUdyamNumber(normaliseUdyamNumber("UDYAM-WB-01-001234 5 6"))).toBe(false);
   });
 
   it("accepts the canonical form with each category", () => {

@@ -24,6 +24,7 @@ import {
   type VoidBlockerCode,
   voidBlockers,
 } from "@techaust/core/invoices";
+import { deedDraftStatements } from "@techaust/db/deeds";
 import { bundleOf, LOAD_STATEMENTS, loadStatements, type TermsRef } from "@techaust/db/documents";
 import { paymentBlocksVoidSql, paymentPendingForSql, paymentRecordedSql } from "@techaust/db/ledger";
 import { withdrawnSql } from "@techaust/db/sql-rules";
@@ -1300,6 +1301,9 @@ export const invoices = new Hono<AppEnv>()
               `DELETE FROM documents WHERE parent_id = ?1 AND type IN ('credit_note', 'debit_note') AND frozen_at IS NULL AND ${g.sql(2)}`,
             )
             .bind(id, ...g.params),
+          // T11 (L3, early check 4; 08-C RB-38(a)): voiding the only unpaid live invoice of a completed, otherwise paid project (a duplicate) completes its full
+          // payment: its draft deed, after the void, guarded on the audit row.
+          ...deedDraftStatements(db, { target: { documentIds: [id] }, now: t }, g),
         ],
       });
     } catch (e) {

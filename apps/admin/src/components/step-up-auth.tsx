@@ -13,6 +13,8 @@ export function StepUpPrompt(props: {
   onCancel: () => void;
   busy?: boolean | undefined;
   error?: string | null | undefined;
+  /** Changes each time `error` is said, even in the same words (`useFieldError`). */
+  errorKey?: number | undefined;
   intro?: ReactNode | undefined;
 }) {
   return (
@@ -32,6 +34,7 @@ export function StepUpPrompt(props: {
             value={props.code}
             onChange={props.onCode}
             error={props.error}
+            errorKey={props.errorKey}
             autoFocus
           />
         </div>

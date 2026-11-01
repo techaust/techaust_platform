@@ -1,9 +1,11 @@
 // What both client emails about an issued document (`invoice.send`, `reminder.send`) are built from (M5.4; ADM-INV-15, ADM-INV-13; the keys are the contract `INVOICE_EMAIL_DATA` in
 // `@techaust/core/invoice-email`, the designer's templates read them). Pure of I/O: rows in, strings out. No address, no name and no amount is ever logged here. Every value is a string,
 // money and dates already formatted for a person.
+
 import { formatDate, formatMoney, money, parseIsoDate } from "@techaust/core";
 import { noteReasonWords } from "@techaust/core/invoice-email";
 import type { InvoiceFlowType } from "@techaust/core/invoices";
+import { firstNameOf } from "@techaust/core/offers";
 
 /** The template of the first email about a document, by its type (tax and export invoices share one). */
 export const SEND_TEMPLATE = {
@@ -41,10 +43,7 @@ const dateText = (iso: string | null): string => {
 };
 export const moneyText = (minor: number, currency: string): string =>
   formatMoney(money(minor, currency === "USD" ? "USD" : "INR"));
-export const firstName = (name: string | null): string => {
-  const n = (name ?? "").trim();
-  return n.split(/\s+/)[0] ?? n;
-};
+export const firstName = (name: string | null): string => firstNameOf(name ?? "");
 
 /** The sender's display name in the frozen issuer (the company's trade name for an automatic send), or "". */
 export function senderNameOf(issuerJson: string | null): string {

@@ -103,6 +103,11 @@ code {
   overflow-wrap: anywhere;
 }
 
+/* Figures that line up in a column (amounts, dates, counts). Shared by every screen; the reports add nowrap in their own scope. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -1150,17 +1155,23 @@ input[readonly] {
 /* ---------- Dialogs ---------- */
 
 .dialog {
+  --dialog-pad: var(--space-6);
   width: min(100% - 2rem, 30rem);
   max-height: calc(100dvh - 2rem);
-  padding: var(--space-6);
+  padding: var(--dialog-pad);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-surface-raised);
   color: var(--color-text);
   box-shadow: var(--elevation-2);
   overflow: auto;
-  /* What takes the focus, or is scrolled to, stops above the sticky actions (below), with a gap (WCAG 2.4.11, rt2 re-check A). Their height is
-     measured (components/dialog.tsx: one row, or stacked full width on phones, and a step's own buttons); until then, one row of them. */
+  /* What takes the focus, or is scrolled to, stops below the sticky title and above the sticky actions (below), with a gap (WCAG 2.4.11, rt2
+     re-check A). Both heights are measured (components/dialog.tsx: a title on one line or several; the actions in one row, or stacked full
+     width on phones, and a step's own buttons); until then, one line of title and one row of actions. */
+  scroll-padding-top: calc(
+    var(--dialog-title-h, calc(var(--space-6) + var(--space-3) + var(--space-8))) +
+    var(--space-3)
+  );
   scroll-padding-bottom: calc(
     var(--dialog-actions-h, calc(var(--space-10) + var(--target-min))) +
     var(--space-3)
@@ -1188,14 +1199,26 @@ input[readonly] {
   }
 }
 
+/* The title stays at the dialog's top edge while a long body scrolls under it (polish sweep 5b), the actions' pattern mirrored: it reaches the
+   dialog's edges and pads itself back, on the raised surface, so nothing shows through. At rest it sits exactly where it did (space-6 above,
+   space-4 below); once the body scrolls, a hairline rule separates it (`data-scrolled`, set by components/dialog.tsx). */
 .dialog__title {
+  position: sticky;
+  top: calc(-1 * var(--dialog-pad));
+  z-index: 1;
+  margin: calc(-1 * var(--dialog-pad)) calc(-1 * var(--dialog-pad)) var(--space-1);
+  padding: var(--dialog-pad) var(--dialog-pad) var(--space-3);
+  background: var(--color-surface-raised);
   font-size: var(--text-h4);
-  margin-bottom: var(--space-4);
   overflow-wrap: anywhere;
 }
 
 .dialog--danger .dialog__title {
   color: var(--color-text);
+}
+
+.dialog[data-scrolled] .dialog__title {
+  box-shadow: 0 1px 0 var(--color-border);
 }
 
 .dialog__body > :last-child {
@@ -1220,7 +1243,7 @@ input[readonly] {
 
 @media (max-width: 29.99rem) {
   .dialog {
-    padding: var(--space-5);
+    --dialog-pad: var(--space-5);
   }
 
   .dialog__actions {

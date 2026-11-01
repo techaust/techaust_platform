@@ -16,6 +16,13 @@ export const UDYAM_NUMBER_RE = /^UDYAM-[A-Z]{2}-\d{2}-\d{7}$/;
  */
 export const isUdyamNumber = (n: unknown): n is string => typeof n === "string" && UDYAM_NUMBER_RE.test(n);
 
+/**
+ * What is typed or pasted, as the form sends it (L5; test-hardening 4b): every whitespace character dropped, the ends and the inside alike (a space, a tab, a
+ * non-breaking space U+00A0 and the other Unicode spaces of `\s`), then upper case. So "udyam - wb - 01 - 0012345" pasted from a certificate reads
+ * "UDYAM-WB-01-0012345" before the shape check. Input cleaning only: the shape check (`isUdyamNumber`) and its error are unchanged.
+ */
+export const normaliseUdyamNumber = (typed: string): string => typed.replace(/\s+/gu, "").toUpperCase();
+
 /** 07-ZC line 4, the error for a number of any other shape (APPROVED by the owner, 2026-10-31): one text for the settings schema and the company form (code review 5). */
 export const UDYAM_NUMBER_ERROR = "Enter the number as UDYAM-XX-00-0000000.";
 

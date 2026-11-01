@@ -69,6 +69,7 @@ import {
   dropOfferObjects,
   type RedactionPlan,
   readRedactionPlan,
+  redactionCancelStatements,
   redactionGuard,
   redactionStatements,
   TOO_MANY_OFFERS,
@@ -656,7 +657,8 @@ export const clients = new Hono<AppEnv>()
         w[2] !== undefined && w[2] !== (row as unknown as Record<string, unknown>)[w[1]],
     );
     if (!changes.length) return c.json({ ok: true, changed: false, updatedAt: row.updated_at });
-    const t = Date.now();
+    // Strictly after the version this save was made from (as `document-write.ts`), so a second save from the same stale page is 409 even in the same millisecond (test-hardening E).
+    const t = Math.max(Date.now(), f.expectedUpdatedAt + 1);
     // The type decides which erase rules apply, so once an issued (frozen) document exists it is fixed: the condition is part
     // of the write, like the currency lock (an individual client cannot be turned into a business to make a contact erasable).
     const typeChanges = changes.some(([name]) => name === "type");
@@ -750,7 +752,9 @@ export const clients = new Hono<AppEnv>()
     );
     if (!changes.length) return c.json({ ok: true, changed: false, updatedAt: row.updated_at, warnings });
 
-    const t = Date.now();
+    // The clock for the step-up checks, and the new version: Strictly after the version this save was made from (as `document-write.ts`), so a second save from the same stale page is 409 even in the same millisecond (test-hardening E).
+    const now = Date.now();
+    const t = Math.max(now, f.expectedUpdatedAt + 1);
     const u = actor(c);
     // M5.4 (Q43, LD58): turning the automatic issue ON is the Owner's, with a fresh code, and names that Owner on the client (`care_auto_issue_by`); turning it OFF clears the name and Staff may.
     const toggled = changes.find(([k]) => k === "careAutoIssue");
@@ -758,7 +762,7 @@ export const clients = new Hono<AppEnv>()
     if (turningOn) {
       const d = decide(u.role, "clients.careAutoIssue");
       if (d === "deny") return err(c, OWNER_ONLY, 403);
-      if (d === "step-up" && !stepUpActive(u.stepUpUntil, t)) return err(c, STEP_UP_REQUIRED, 403);
+      if (d === "step-up" && !stepUpActive(u.stepUpUntil, now)) return err(c, STEP_UP_REQUIRED, 403);
     }
     const currencyChanges = changes.some(([k]) => k === "currency");
     const setCols = changes.map(([k]) => snake(k));
@@ -768,8 +772,9 @@ export const clients = new Hono<AppEnv>()
       setVals.push(turningOn ? u.id : null);
     }
     // Turning on is also checked INSIDE the write: the session still has a live fresh code and its member is an active Owner (the trigger of 0044 backs it with the named member).
+    // The session's times are compared with the real clock (`now`, its own parameter after the session id), never with the bumped version `t` (`?3`).
     const authority = turningOn
-      ? ` AND EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users o ON o.id = s.user_id WHERE s.id = ?${setVals.length + 4} AND s.revoked_at IS NULL AND s.idle_expires_at > ?3 AND s.abs_expires_at > ?3 AND s.step_up_until > ?3 AND o.role = 'owner' AND o.status = 'active')`
+      ? ` AND EXISTS (SELECT 1 FROM staff_sessions s JOIN staff_users o ON o.id = s.user_id WHERE s.id = ?${setVals.length + 4} AND s.revoked_at IS NULL AND s.idle_expires_at > ?${setVals.length + 5} AND s.abs_expires_at > ?${setVals.length + 5} AND s.step_up_until > ?${setVals.length + 5} AND o.role = 'owner' AND o.status = 'active')`
       : "";
     let done: boolean;
     try {
@@ -778,7 +783,7 @@ export const clients = new Hono<AppEnv>()
           .prepare(
             `UPDATE clients SET ${setCols.map((col, i) => `${col} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2 AND anonymised_at IS NULL${currencyChanges ? ` AND ${NO_INVOICE_SQL}` : ""}${authority}`,
           )
-          .bind(id, f.expectedUpdatedAt, t, ...setVals, ...(turningOn ? [u.sessionId] : [])),
+          .bind(id, f.expectedUpdatedAt, t, ...setVals, ...(turningOn ? [u.sessionId, now] : [])),
         action: "client.billing_update",
         entityType: "client",
         entityId: id,
@@ -1074,6 +1079,9 @@ export const contacts = new Hono<AppEnv>()
     else if (f.marketingConsent === false && consent?.granted)
       consentJson = JSON.stringify({ ...consent, granted: false, withdrawnAt: t });
     const flag = (v: boolean | undefined) => (v === undefined ? undefined : v ? 1 : 0);
+    // The contact's new version (the main statement only; the consent stamp, the other primary's reset and the access stamps keep the real clock `t`).
+    // Strictly after the version this save was made from (as `document-write.ts`), so a second save from the same stale page is 409 even in the same millisecond (test-hardening E).
+    const version = Math.max(t, f.expectedUpdatedAt + 1);
     const wanted: [string, string, string | number | null | undefined][] = [
       ["name", "name", f.name],
       ["email", "email", email],
@@ -1132,7 +1140,7 @@ export const contacts = new Hono<AppEnv>()
             .prepare(
               `UPDATE contacts SET ${changes.map(([, col], i) => `${col} = ?${i + 4}`).join(", ")}, updated_at = ?3 WHERE id = ?1 AND updated_at = ?2 AND ${g.sql(changes.length + 4)}`,
             )
-            .bind(id, f.expectedUpdatedAt, t, ...changes.map((ch) => ch[2]), ...g.params),
+            .bind(id, f.expectedUpdatedAt, version, ...changes.map((ch) => ch[2]), ...g.params),
           ...(endsAccess ? revokeContactAccess(db, id, t, g) : []),
         ],
       });
@@ -1142,7 +1150,7 @@ export const contacts = new Hono<AppEnv>()
       if (refusedWith(e, /anonymised contact/)) return err(c, ANONYMISED, 409);
       throw e;
     }
-    if (done) return c.json({ ok: true, changed: true, updatedAt: t });
+    if (done) return c.json({ ok: true, changed: true, updatedAt: version });
     const again = await db
       .prepare("SELECT updated_at, anonymised_at FROM contacts WHERE id = ?1")
       .bind(id)
@@ -1319,6 +1327,9 @@ async function eraseBatch(
            WHERE id IN (${MATCHED_LEADS}) AND ${g.sql(5)}`,
         )
         .bind(id, ANONYMISED_CONTACT, anonymisedEmail(id), t, ...g.params),
+      // 2a. (anonymise) T7, the first statement of step 2e: the redacted offers' sends that never got a link are cancelled, BEFORE this contact's links
+      //     are deleted below: after, "no link" also matched their emailed sends and the Emails row read "Not sent" (polish sweep 5a).
+      ...(plan ? redactionCancelStatements(db, plan, g, t) : []),
       // 2. sign-in access: sessions and links of this contact
       ...deleteContactAccess(db, id, g),
       // 2b. an individual client's notes and files go with its last live contact (owner, 2026-10-25; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11); a
@@ -1406,7 +1417,7 @@ async function eraseBatch(
         .bind(id, ...g.params),
       // 2e. (anonymise) T7: the personal details in the frozen copy of every proposal or estimate that was never accepted and names this person
       //     (addressed to them, declined by them, or any offer of an individual client whose last live contact they are) are replaced, the decision note
-      //     cleared, its child rows marked, the offer withdrawn (sends cancelled, the group's links revoked when it is the newest version), its bells
+      //     cleared, its child rows marked, the offer withdrawn (sends cancelled in step 2a, the group's links revoked when it is the newest version), its bells
       //     deleted and its approvals' free text cleared; one `document.redact` audit row each (Settled by the lead on the safest reading, 2026-10-30
       //     (08-C RB-37)). Before steps 3 and 4: the eligibility reads the live email and the last-live state. Accepted offers stay untouched.
       ...(plan
@@ -1438,6 +1449,10 @@ async function eraseBatch(
              AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = clients.id AND o.id <> ?1 AND o.anonymised_at IS NULL) AND ${g.sql(2)}`,
         )
         .bind(id, ...g.params),
+      //     T11 (L7): step 3 also deletes the client's DRAFT deeds, through the trigger `clients_anonymised_draft_deeds` (0062; no extra statement in this
+      //     batch). A final or signed deed is kept like an invoice: the legal record of a transfer of rights (Researched 2026-10-31, Copyright Act s.19(1)
+      //     (08-C RB-38(a)); Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11): data kept for a legal duty may be kept for it). Screens name
+      //     its client "Anonymised client".
       // 3b. M6.1 (early check 2, finding 4; L31): its payments' free text, once the client reads as anonymised (step 3, above; the triggers
       //     `payments_fixed` / `payments_status_flow` allow these three columns to become NULL only then): the entry's note, the Owner's decision note and
       //     the withdraw reason are words a person typed. Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11): data kept for a legal duty may

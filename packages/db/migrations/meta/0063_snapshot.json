@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "8fb45d5e-862f-4ed8-a61c-c26618049331",
-  "prevId": "e117f75e-841c-4acb-90cb-4d5c4b9b9323",
+  "id": "d8665a29-fe2b-42de-9324-23fcb31061d3",
+  "prevId": "4462a04a-bc66-4956-a02f-8e70aa0ccbc1",
   "tables": {
     "catalogue_items": {
       "name": "catalogue_items",
@@ -2840,6 +2840,401 @@
         "time_logs_minutes": {
           "name": "time_logs_minutes",
           "value": "\"time_logs\".\"minutes\" between 15 and 1440 and \"time_logs\".\"minutes\" % 15 = 0"
+        }
+      }
+    },
+    "deeds": {
+      "name": "deeds",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_document_id": {
+          "name": "source_document_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'draft'"
+        },
+        "fy": {
+          "name": "fy",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "number": {
+          "name": "number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "number_display": {
+          "name": "number_display",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "made_on": {
+          "name": "made_on",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sched_deliverables": {
+          "name": "sched_deliverables",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sched_location": {
+          "name": "sched_location",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sched_delivered_dates": {
+          "name": "sched_delivered_dates",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sched_tools": {
+          "name": "sched_tools",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sched_third_party": {
+          "name": "sched_third_party",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "snapshot": {
+          "name": "snapshot",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "snapshot_sha256": {
+          "name": "snapshot_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "unsigned_r2_key": {
+          "name": "unsigned_r2_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "unsigned_sha256": {
+          "name": "unsigned_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "signed_r2_key": {
+          "name": "signed_r2_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "signed_sha256": {
+          "name": "signed_sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "signed_size": {
+          "name": "signed_size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "esign_at": {
+          "name": "esign_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "esign_txn": {
+          "name": "esign_txn",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "finalised_at": {
+          "name": "finalised_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "finalised_by": {
+          "name": "finalised_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "signed_at": {
+          "name": "signed_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "signed_by": {
+          "name": "signed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cancelled_at": {
+          "name": "cancelled_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cancelled_by": {
+          "name": "cancelled_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cancel_reason": {
+          "name": "cancel_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(cast(unixepoch('subsec') * 1000 as integer))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(cast(unixepoch('subsec') * 1000 as integer))"
+        }
+      },
+      "indexes": {
+        "deeds_project_open": {
+          "name": "deeds_project_open",
+          "columns": ["project_id"],
+          "isUnique": true,
+          "where": "\"deeds\".\"status\" in ('draft', 'final', 'signed')"
+        },
+        "deeds_project_created": {
+          "name": "deeds_project_created",
+          "columns": ["project_id", "created_at"],
+          "isUnique": false
+        },
+        "deeds_fy_number": {
+          "name": "deeds_fy_number",
+          "columns": ["fy", "number"],
+          "isUnique": true,
+          "where": "\"deeds\".\"number\" is not null"
+        },
+        "deeds_number_display": {
+          "name": "deeds_number_display",
+          "columns": ["number_display"],
+          "isUnique": true,
+          "where": "\"deeds\".\"number_display\" is not null"
+        },
+        "deeds_client_source": {
+          "name": "deeds_client_source",
+          "columns": ["client_id", "source_document_id"],
+          "isUnique": false
+        },
+        "deeds_source": {
+          "name": "deeds_source",
+          "columns": ["source_document_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "deeds_client_id_clients_id_fk": {
+          "name": "deeds_client_id_clients_id_fk",
+          "tableFrom": "deeds",
+          "tableTo": "clients",
+          "columnsFrom": ["client_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "deeds_project_id_projects_id_fk": {
+          "name": "deeds_project_id_projects_id_fk",
+          "tableFrom": "deeds",
+          "tableTo": "projects",
+          "columnsFrom": ["project_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "deeds_source_document_id_documents_id_fk": {
+          "name": "deeds_source_document_id_documents_id_fk",
+          "tableFrom": "deeds",
+          "tableTo": "documents",
+          "columnsFrom": ["source_document_id"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "deeds_finalised_by_staff_users_id_fk": {
+          "name": "deeds_finalised_by_staff_users_id_fk",
+          "tableFrom": "deeds",
+          "tableTo": "staff_users",
+          "columnsFrom": ["finalised_by"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "deeds_signed_by_staff_users_id_fk": {
+          "name": "deeds_signed_by_staff_users_id_fk",
+          "tableFrom": "deeds",
+          "tableTo": "staff_users",
+          "columnsFrom": ["signed_by"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "deeds_cancelled_by_staff_users_id_fk": {
+          "name": "deeds_cancelled_by_staff_users_id_fk",
+          "tableFrom": "deeds",
+          "tableTo": "staff_users",
+          "columnsFrom": ["cancelled_by"],
+          "columnsTo": ["id"],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "deeds_status": {
+          "name": "deeds_status",
+          "value": "\"deeds\".\"status\" in ('draft', 'final', 'signed', 'cancelled')"
+        },
+        "deeds_number_length": {
+          "name": "deeds_number_length",
+          "value": "\"deeds\".\"number_display\" is null or length(\"deeds\".\"number_display\") <= 16"
+        },
+        "deeds_fy": {
+          "name": "deeds_fy",
+          "value": "\"deeds\".\"fy\" is null or \"deeds\".\"fy\" glob '[0-9][0-9][0-9][0-9]'"
+        },
+        "deeds_made_on": {
+          "name": "deeds_made_on",
+          "value": "\"deeds\".\"made_on\" is null or date(\"deeds\".\"made_on\") IS \"deeds\".\"made_on\""
+        },
+        "deeds_finalised": {
+          "name": "deeds_finalised",
+          "value": "(\"deeds\".\"status\" in ('final', 'signed')) = (\"deeds\".\"number\" is not null and \"deeds\".\"number_display\" is not null and \"deeds\".\"fy\" is not null and \"deeds\".\"made_on\" is not null and \"deeds\".\"snapshot\" is not null and \"deeds\".\"snapshot_sha256\" is not null and \"deeds\".\"finalised_at\" is not null and \"deeds\".\"finalised_by\" is not null)"
+        },
+        "deeds_signed": {
+          "name": "deeds_signed",
+          "value": "(\"deeds\".\"status\" = 'signed') = (\"deeds\".\"signed_r2_key\" is not null and \"deeds\".\"signed_sha256\" is not null and \"deeds\".\"signed_size\" is not null and \"deeds\".\"esign_at\" is not null and \"deeds\".\"esign_txn\" is not null and \"deeds\".\"signed_at\" is not null and \"deeds\".\"signed_by\" is not null)"
+        },
+        "deeds_cancelled": {
+          "name": "deeds_cancelled",
+          "value": "(\"deeds\".\"status\" = 'cancelled') = (\"deeds\".\"cancelled_at\" is not null and \"deeds\".\"cancelled_by\" is not null and \"deeds\".\"cancel_reason\" is not null)"
+        },
+        "deeds_unsigned_pair": {
+          "name": "deeds_unsigned_pair",
+          "value": "(\"deeds\".\"unsigned_r2_key\" is null) = (\"deeds\".\"unsigned_sha256\" is null)"
+        },
+        "deeds_signed_size": {
+          "name": "deeds_signed_size",
+          "value": "\"deeds\".\"signed_size\" is null or \"deeds\".\"signed_size\" between 1 and 10485760"
+        },
+        "deeds_esign_txn": {
+          "name": "deeds_esign_txn",
+          "value": "\"deeds\".\"esign_txn\" is null or length(trim(\"deeds\".\"esign_txn\")) between 1 and 100"
+        },
+        "deeds_cancel_reason": {
+          "name": "deeds_cancel_reason",
+          "value": "\"deeds\".\"cancel_reason\" is null or length(trim(\"deeds\".\"cancel_reason\")) between 1 and 500"
+        },
+        "deeds_sched_deliverables": {
+          "name": "deeds_sched_deliverables",
+          "value": "\"deeds\".\"sched_deliverables\" is null or length(\"deeds\".\"sched_deliverables\") <= 4000"
+        },
+        "deeds_sched_location": {
+          "name": "deeds_sched_location",
+          "value": "\"deeds\".\"sched_location\" is null or length(\"deeds\".\"sched_location\") <= 500"
+        },
+        "deeds_sched_delivered_dates": {
+          "name": "deeds_sched_delivered_dates",
+          "value": "\"deeds\".\"sched_delivered_dates\" is null or length(\"deeds\".\"sched_delivered_dates\") <= 500"
+        },
+        "deeds_sched_tools": {
+          "name": "deeds_sched_tools",
+          "value": "\"deeds\".\"sched_tools\" is null or length(\"deeds\".\"sched_tools\") <= 2000"
+        },
+        "deeds_sched_third_party": {
+          "name": "deeds_sched_third_party",
+          "value": "\"deeds\".\"sched_third_party\" is null or length(\"deeds\".\"sched_third_party\") <= 4000"
+        },
+        "deeds_snapshot_json": {
+          "name": "deeds_snapshot_json",
+          "value": "\"deeds\".\"snapshot\" is null or json_valid(\"deeds\".\"snapshot\")"
         }
       }
     },

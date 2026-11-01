@@ -1,6 +1,7 @@
 // Decline with a reason (ADM-PROP-10): step 1 picks a reason (four plus "Other", which then needs a few words), step 2 confirms. The
 // reason is required; the note is optional unless "Other" is picked. Focus moves to the step's title on each step, and back to the
 // Decline button if the dialog is cancelled. The codes are core's `DECLINE_REASONS`; the words are 07-N §3 (PENDING the owner's approval).
+import { DECLINE_NOTE_MAX } from "@techaust/core/offers";
 import { type FormEvent, useId, useRef, useState } from "react";
 import { N, WORDS } from "../../copy-documents.ts";
 import { Modal } from "../dialog.tsx";
@@ -9,8 +10,6 @@ import { FieldError, Notice } from "../ui.tsx";
 export type DeclineReason = keyof typeof N.reasons;
 /** In the order of `DECLINE_REASONS` (@techaust/core/offers). */
 const REASONS = Object.keys(N.reasons) as DeclineReason[];
-/** `DECLINE_NOTE_MAX` (@techaust/core/offers). */
-const NOTE_MAX = 500;
 
 export function DeclineDialog(props: {
   open: boolean;
@@ -123,7 +122,7 @@ export function DeclineDialog(props: {
               id={noteId}
               value={note}
               rows={3}
-              maxLength={NOTE_MAX}
+              maxLength={DECLINE_NOTE_MAX}
               onChange={(e) => setNote(e.target.value)}
               onBlur={() => isOther && noteError && note.trim() && setNoteError(null)}
               aria-invalid={noteError ? true : undefined}

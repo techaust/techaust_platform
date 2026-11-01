@@ -1,6 +1,6 @@
 // 07-ZD (docs/07-content-appendix/ZD-notes-deadline-lut-ims.md), APPROVED by the owner on 2026-10-31, word for word: the credit-note deadline by GSTR-1
 // filing frequency (T1), the debit note's LUT (T2) and IMS in the 3B helper (T3) [ADM-INV-11, ADM-INV-18, ADM-REP-04, ADM-SET-03]. Staff-facing. These
-// lines replace the 07-T §4 banner lines that named "30 November" and "Talk to your CA". A `{brace}` of 07-ZD is a parameter here. Where a count or a
+// lines replace the 07-T §4 banner lines that named "30 November" and sent the owner to a CA. A `{brace}` of 07-ZD is a parameter here. Where a count or a
 // number of days is 1, the line is said in its singular, as the admin's other counted lines are (07-T's deadline line, the notes' balance line).
 // Pure, so the words are tested without a browser.
 

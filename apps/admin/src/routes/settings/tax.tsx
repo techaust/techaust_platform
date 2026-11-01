@@ -483,10 +483,11 @@ export function TaxSettings({ readOnly }: { readOnly: boolean }) {
 
           <h2 className="settings-sub">Documents and alerts</h2>
           <div className="settings-rows">
+            {/* 07-ZK line 10. Researched 2026-10-28, Notification 10/2023-CT and PIB PRID 2320934 (08-C RA-15); the April check is the owner's duty (08-C §6). */}
             <SettingRow
               id="tax-einv"
               label="E-invoicing"
-              description="Off unless your turnover reaches the e-invoicing threshold. Ask your CA."
+              description="Leave this off while your turnover (all GST registrations under your PAN) has stayed at ₹5 crore or less in every financial year since 2017-18. Check it each April."
             >
               <Switch
                 id="f-eInvoicing"

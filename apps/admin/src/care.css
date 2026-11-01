@@ -474,8 +474,11 @@
   vertical-align: middle;
 }
 
+/* A duration is one unit: "1 h 45 min" never breaks across lines (polish sweep 1a; at 1280 beside the open menu it did). The table's
+   minimum below holds every day at its widest duration, and its box scrolls sideways before the page would. */
 .sheet .num {
   text-align: end;
+  white-space: nowrap;
 }
 
 .sheet thead th {
@@ -486,6 +489,13 @@
 
 .sheet tbody th {
   font-weight: 400;
+}
+
+/* The Person column keeps a readable width of its own, as in Entries (a name on one or two lines, never a word per line), and never
+   less than a shared name's email local part (designer question 2). At 1280 beside the open menu it fits beside the seven days and
+   their one-line durations with no scroll in the grid's box; narrower, the box scrolls sideways before the page would. */
+.sheet__person {
+  min-width: 7.5rem;
 }
 
 .sheet [data-today] {
@@ -588,6 +598,30 @@
   color: var(--color-text-muted);
 }
 
+/* A shared name's email (`SharedEmail` in time.tsx: Entries, the week grid and the phone's day list). Its local part and its "@domain" are
+   each one unit, with a break only between them (polish sweep review 3: the address used to break at its hyphens into four or five lines).
+   Each part is an inline box no wider than its line, so on a phone a part longer than the whole line still breaks inside rather than
+   overflowing; in a table the parts never break, so they set the Person column's minimum. */
+.email-line > span {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.sheet .email-line > span,
+.entries-table .dtable__table .email-line > span {
+  white-space: nowrap;
+}
+
+/* The week grid's and the day list's email line: quiet, at the size of the grid's own second lines ("Project", "Care plan"). */
+.sheet__email,
+.sheet-day__email {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+}
+
 .entries-lock {
   margin: 0 0 var(--space-2);
   font-size: var(--text-sm);
@@ -635,10 +669,20 @@
 
 /* In the table (final sweep review 2): a person's name keeps a readable width (a first and last name on one or two lines, not a
    word per line); a project's code is one unit (never broken at its hyphen); a care plan's label wraps between its words. The note
-   is the column that takes the wrap; the table gives it the most room left, up to 40ch. */
+   is the column that takes the wrap; the table gives it the most room left, up to 40ch. While a shared name shows its email, the Person
+   column's minimum is the wider of 7.5rem and the address's local part, which never breaks (`.email-line` below; polish sweep review 3).
+   A fixed wider minimum (9.5rem: the name on one line) pushed the table 26 px past its box at 1280 beside the open menu, so it isn't used. */
 .entries-table .dtable__table .entry-person {
   display: block;
   min-width: 7.5rem;
+}
+
+/* Two people with one name: the work email on a quiet second line, as under "Log time for" (polish sweep 1c). */
+.entry-person__email {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
 }
 
 .entries-table .dtable__table .entry-target {

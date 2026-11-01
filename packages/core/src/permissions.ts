@@ -128,6 +128,17 @@ const MATRIX = {
   // M6.1 (L14, Q60): recording the AD bank's extension of an export's realisation date (Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-04): the AD
   // bank extends; Rule 96A(1)(b) CGST Rules (08-C RA-20): the GST date follows): the Owner only. A new docs/04 §9 row.
   "realisation.extend": { owner: "allow" },
+  // T11 (L8; run file docs/runs/t11-deed.md): the deed of assignment of copyright (Researched 2026-10-31, Copyright Act s.19(1) (08-C RB-38(a))). Owner and Staff
+  // read it and fill its Schedules (owner, 2026-11-01: a deed isn't a finance record, and the Accountant can't open project pages); only the Owner finalises
+  // (number and seal) and uploads the signed copy, each with a fresh code, cancels a draft, asks the system to check a project again, and asks for the unsigned
+  // PDF to be rendered again. New docs/04 §9 rows.
+  "deeds.view": { owner: "allow", staff: "allow" },
+  "deeds.editSchedules": { owner: "allow", staff: "allow" },
+  "deeds.finalise": { owner: "step-up" },
+  "deeds.uploadSigned": { owner: "step-up" },
+  "deeds.cancel": { owner: "allow" },
+  "deeds.recheck": { owner: "allow" },
+  "deeds.renderPdf": { owner: "allow" },
   // Refunds
   "refunds.read": { owner: "allow", accountant: "allow" },
   "refunds.issue": { owner: "step-up" },

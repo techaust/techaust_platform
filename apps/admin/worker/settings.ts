@@ -124,12 +124,12 @@ const READ_ACTION: Record<Generic, Action> = {
   retention: "settings.manage",
   flags: "settings.manage",
 };
-// Which list in 08-C §5 holds a group's open questions (FX-3: a pointer, never a bare "VERIFY WITH" tag). The SPA shows the researched-settings note
-// when it is present and names the lawyer when it says so (settings/kit.tsx).
+// Where a group's open questions are settled or kept OPEN: 08-C §5 (FX-3: a pointer, never a bare "VERIFY WITH" tag). The SPA shows the researched-settings
+// note, one text for every group, when it is present (settings/kit.tsx; 07-ZK line 12).
 const VERIFY: Partial<Record<Generic | "gateways", string>> = {
-  tax: "08-C §5: CA",
-  payment_terms: "08-C §5: CA and lawyer",
-  retention: "08-C §5: CA and lawyer",
+  tax: "08-C §5",
+  payment_terms: "08-C §5",
+  retention: "08-C §5",
 };
 
 const groupParam = z.object({ group: z.enum(GENERIC) });
@@ -270,7 +270,9 @@ const issuedSeries = async (db: D1Database, fy: string): Promise<Set<string>> =>
   const marks = names.map((_, i) => `?${i + 2}`).join(", ");
   const { results } = await db
     .prepare(
-      `SELECT DISTINCT series FROM documents WHERE fy = ?1 AND series IN (${marks}) AND number IS NOT NULL`,
+      // T11 (L1): a finalised deed locks the `deed` series the same way (deeds live in their own table).
+      `SELECT DISTINCT series FROM documents WHERE fy = ?1 AND series IN (${marks}) AND number IS NOT NULL
+       UNION SELECT 'deed' FROM deeds WHERE fy = ?1 AND number IS NOT NULL`,
     )
     .bind(fy, ...names)
     .all<{ series: string }>();
@@ -623,7 +625,7 @@ export const settings = new Hono<AppEnv>()
         };
       }),
       meta: {
-        verify: "08-C §5: CA and lawyer",
+        verify: "08-C §5",
         usedByNote:
           "Used-by counts exist for proposal terms and invoice footer notes; the other blocks are not yet recorded on documents.",
       },
@@ -832,7 +834,8 @@ async function saveNumbering(c: Ctx, raw: unknown) {
       ];
       if (!changed.length) return undefined;
       return {
-        sql: `NOT EXISTS (SELECT 1 FROM documents d WHERE d.fy = ?6 AND d.number IS NOT NULL AND d.series IN (${changed.map((_, i) => `?${i + 7}`).join(", ")}))`,
+        // T11 (review M1): a numbered deed locks the `deed` series too (deeds live in their own table, as `issuedSeries` reads them).
+        sql: `NOT EXISTS (SELECT 1 FROM documents d WHERE d.fy = ?6 AND d.number IS NOT NULL AND d.series IN (${changed.map((_, i) => `?${i + 7}`).join(", ")})) AND NOT EXISTS (SELECT 1 FROM deeds dd WHERE dd.fy = ?6 AND dd.number IS NOT NULL AND 'deed' IN (${changed.map((_, i) => `?${i + 7}`).join(", ")}))`,
         params: [fy, ...changed],
         refused: async () => {
           const now = await issuedSeries(c.env.DB, fy);
@@ -856,7 +859,7 @@ async function saveNumbering(c: Ctx, raw: unknown) {
             side: (g) =>
               effective.map(([s, n]) =>
                 c.env.DB.prepare(
-                  `INSERT INTO doc_counters (series, fy, next_no) SELECT ?1, ?2, ?3 WHERE ${g.sql(4)} AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.series = ?1 AND d.fy = ?2 AND d.number IS NOT NULL) ON CONFLICT(series, fy) DO UPDATE SET next_no = excluded.next_no WHERE excluded.next_no >= doc_counters.next_no`,
+                  `INSERT INTO doc_counters (series, fy, next_no) SELECT ?1, ?2, ?3 WHERE ${g.sql(4)} AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.series = ?1 AND d.fy = ?2 AND d.number IS NOT NULL) AND NOT EXISTS (SELECT 1 FROM deeds dd WHERE ?1 = 'deed' AND dd.fy = ?2 AND dd.number IS NOT NULL) ON CONFLICT(series, fy) DO UPDATE SET next_no = excluded.next_no WHERE excluded.next_no >= doc_counters.next_no`,
                 ).bind(s, fy, n, ...g.params),
               ),
           },
@@ -956,7 +959,8 @@ async function saveBank(c: Ctx, kind: "INR" | "USD_SWIFT") {
   // `updatedAt` goes back so the screen sends it with its next save of this block (review re-check L-b).
   if (existing && !Object.keys(diff).length)
     return c.json({ ok: true, changed: false, updatedAt: existing.updated_at });
-  const t = Date.now();
+  // Strictly after the version this save was made from (as `document-write.ts`), so a second save from the same stale page is 409 even in the same millisecond (test-hardening E).
+  const t = Math.max(Date.now(), (existing?.updated_at ?? 0) + 1);
   const id = existing?.id ?? uuidv7();
   const main = existing
     ? db

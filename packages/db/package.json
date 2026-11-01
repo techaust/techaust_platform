@@ -9,6 +9,7 @@
     "./billing": "./src/billing.ts",
     "./care": "./src/care.ts",
     "./contact-access": "./src/contact-access.ts",
+    "./deeds": "./src/deeds.ts",
     "./documents": "./src/documents.ts",
     "./gateway": "./src/gateway.ts",
     "./issue": "./src/issue.ts",

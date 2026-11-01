@@ -3,6 +3,7 @@
 // after its queue's `max_retries` (5; the email queue 10, FX-1) the queue moves it to the dead-letter queue (wrangler.jsonc).
 import {
   isBillingKind,
+  isDeedExpansionKind,
   isGatewayKind,
   isInvoiceExpansionKind,
   isOfferExpansionKind,
@@ -15,6 +16,7 @@ import { isLutCheckKind, isLutCheckMessage } from "@techaust/core/invoices";
 import { isPdfKind, isPdfMessage } from "@techaust/core/pdf-jobs";
 import { isStatsKind, isStatsMessage } from "@techaust/core/stats";
 import { processBilling, processBillingDeadLetter } from "./billing.ts";
+import { processDeedPdf, processDeedSigned } from "./deed-pdf.ts";
 import { CLAIM_TIMEOUT_MS, processDeadLetter, processEmail } from "./email.ts";
 import { logExpireDeadLetter, processExpire, skipExpire } from "./expire.ts";
 import { processGateway, processGatewayDeadLetter } from "./gateway.ts";
@@ -67,6 +69,10 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
           await processStatementDeadLetter(env, message.body);
         else await processPdfDeadLetter(env, message.body);
         message.ack();
+      } else if (queue.endsWith("-pdf") && isPdfMessage(message.body) && message.body.kind === "pdf.deed") {
+        // T11: a deed's unsigned PDF (seal check, adopt or render, store once). Before the other PDF kinds (deed-pdf.ts imports pdf.ts).
+        await processDeedPdf(env, message.body);
+        message.ack();
       } else if (
         queue.endsWith("-pdf") &&
         isPdfMessage(message.body) &&
@@ -82,6 +88,10 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
       } else if (isDlq && (isPurgeMessage(message.body) || isPurgeScanMessage(message.body))) {
         // A clean-up message that ran out of tries: the next daily run enqueues the lead again, so no alert and no retry.
         logEvent("lead.purge_dead_letter", { queue });
+        message.ack();
+      } else if (isDlq && isDeedExpansionKind(message.body)) {
+        // T11: a signed-deed email expansion that ran out of tries: logged (the deed itself is signed and in the portal; the email is the only thing missing).
+        logEvent("deed.signed_dead_letter", { queue });
         message.ack();
       } else if (isDlq && isOfferExpansionKind(message.body) && message.body.kind === "offer.decided") {
         // A bell that ran out of tries: the decision itself is stored and shows on the proposal page, so no alert and no retry.
@@ -160,6 +170,10 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
       } else if (queue.endsWith("-email") && isStaffAlert(message.body)) {
         // Expanded into ordinary emails; an alert that cannot be read or has no row is acknowledged (a retry cannot help).
         await processStaffAlert(env, message.body);
+        message.ack();
+      } else if (queue.endsWith("-email") && isDeedExpansionKind(message.body)) {
+        // T11: the signed deed is in the portal: one email per portal contact. A body of this family (valid or not) is never sent as an email.
+        await processDeedSigned(env, message.body);
         message.ack();
       } else if (queue.endsWith("-email") && isOfferExpansionKind(message.body)) {
         // M4.5: expanded into ordinary emails and bells before the generic path, so a body of this family (valid or not) is never sent as an email.

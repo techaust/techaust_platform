@@ -28,6 +28,7 @@ import {
   type OfferSweepMessage,
   PDF_MAX_HOPS,
   type PdfCertificateMessage,
+  type PdfDeedMessage,
   type PdfRenderMessage,
   type PdfSnapshotMessage,
   type PdfStatementMessage,
@@ -664,7 +665,7 @@ export async function processRender(
 /** A render that did not give a PDF: delay (rate, quota) or throw (anything a retry might fix). */
 export async function failed(
   env: Env,
-  msg: PdfRenderMessage | PdfCertificateMessage | PdfStatementMessage | PdfSupplierMessage,
+  msg: PdfRenderMessage | PdfCertificateMessage | PdfStatementMessage | PdfSupplierMessage | PdfDeedMessage,
   result: Exclude<Awaited<ReturnType<typeof renderPaced>>, { ok: true }>,
   now: number,
 ): Promise<"delayed"> {
@@ -852,6 +853,8 @@ export async function processPdf(
   else if (body.kind === "offer.sweep") await processOfferSweep(env, body);
   // M5.5b: a statement PDF is routed by `handleQueue` to `statement-pdf.ts` before it reaches here (that file imports this one); a message that does arrive is acknowledged and logged.
   else if (body.kind === "pdf.statement") logEvent("pdf.statement_misrouted");
+  // T11: a deed's PDF is routed by `handleQueue` to `deed-pdf.ts` the same way (that file imports this one).
+  else if (body.kind === "pdf.deed") logEvent("pdf.deed_misrouted");
   else await processSweep(env, body);
 }
 

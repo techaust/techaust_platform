@@ -46,6 +46,8 @@ const MONEY_FILES = [
   "src/razorpay.ts",
   "src/online-pay.ts",
   "src/gateway-rpc.ts",
+  // T11: the deed of assignment (L2's sums, the amount it prints)
+  "src/deeds.ts",
   "src/export-invoice.ts",
   "src/fx.ts",
   "src/schedule-text.ts",

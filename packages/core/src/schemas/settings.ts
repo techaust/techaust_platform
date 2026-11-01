@@ -20,6 +20,12 @@ import {
   validateFormat,
   validateStoredFormat,
 } from "../numbering.ts";
+import {
+  REALISATION_MAX_DAYS,
+  REALISATION_MAX_MONTHS,
+  REALISATION_MIN_DAYS,
+  REALISATION_MIN_MONTHS,
+} from "../realisation-bounds.ts";
 import { isUdyamNumber, UDYAM_CATEGORIES, UDYAM_NUMBER_ERROR } from "../udyam.ts";
 
 /**
@@ -290,11 +296,11 @@ export const taxSettings = z.object({
   b2cDetailsThresholdInrMinor: minor,
   /** G-12: export realisation warnings (FEMA). */
   realisation: z.object({
-    warnMonths: intBetween(1, 1200),
+    warnMonths: intBetween(REALISATION_MIN_MONTHS, REALISATION_MAX_MONTHS),
     /** Q15 (M5.5b; Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-01), FEMA 2026): months to realise an export invoice in INR; a stored row without it reads 12. */
     inrMonths: z.prefault(intBetween(1, 120), 12),
-    escalateMonths: intBetween(1, 1200),
-    escalateExtraDays: intBetween(0, 36_500),
+    escalateMonths: intBetween(REALISATION_MIN_MONTHS, REALISATION_MAX_MONTHS),
+    escalateExtraDays: intBetween(REALISATION_MIN_DAYS, REALISATION_MAX_DAYS),
   }),
   /**
    * Q18 (M5.5b; Researched 2026-10-28, Rule 59(4) CGST Rules, Notification 12/2024-CT (08-C RA-13), Notification 12/2024): an inter-state invoice to an unregistered client above this INR amount

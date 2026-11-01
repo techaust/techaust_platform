@@ -8,6 +8,7 @@ import {
   checkDecline,
   confirmationLinkExpiry,
   DECLINE_NOTE_MAX,
+  DECLINE_REASON_LABELS,
   DECLINE_REASONS,
   effectiveOfferStatus,
   firstNameOf,
@@ -68,6 +69,19 @@ describe("normaliseTypedName", () => {
     expect(
       normaliseTypedName(`${String.fromCodePoint(0x915)}${zwnj}${String.fromCodePoint(0x937)} Rao`).ok,
     ).toBe(true);
+  });
+});
+
+describe("DECLINE_REASON_LABELS (07-N §3; test-hardening 6)", () => {
+  it("holds 07-N §3's words for every code, word for word, in the order of DECLINE_REASONS", () => {
+    expect(DECLINE_REASON_LABELS).toEqual({
+      price: "The price doesn't fit our budget",
+      timing: "The timing doesn't work for us",
+      other_option: "We've chosen another option",
+      not_needed: "We've decided not to go ahead",
+      other: "Other",
+    });
+    expect(Object.keys(DECLINE_REASON_LABELS)).toEqual([...DECLINE_REASONS]);
   });
 });
 

@@ -151,6 +151,7 @@ Every run, the lead's and every agent's, loads **every skill that fits its task*
 | SES email, IAM users and policies (M2.4, M7.2) | `aws-messaging-and-streaming` (routes to SES), `aws-iam` (named `aws-core:…` before the Team plan) |
 | Every review (reviewer) | `code-review` (as the review recipe, findings verified by the reviewer); also `security-review` for Tier A, auth, payments, webhooks and anything public-facing |
 | Starting and ending a day (lead) | `start-session`, `end-session` |
+| Running pending tasks as parallel cloud sessions from the PC (main session) | `orchestrate` |
 | A page or report for the owner to view or share (lead) | `artifact-design` |
 
 Analyst and reviewer agents have the Skill tool for this. If a new skill appears that fits a task better, the lead adds it here (a Lead row in 13).

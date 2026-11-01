@@ -19,6 +19,7 @@ import {
   toIsoDate,
 } from "./dates.ts";
 import type { ChecklistSettings } from "./invoices.ts";
+import { signatureRequired } from "./signature-rule.ts";
 import {
   type ComputedDocument,
   type CreditedLine,
@@ -308,7 +309,8 @@ export function noteBlockers(f: NoteFacts, checklist: Pick<ChecklistSettings, "b
   if (blank(f.supplier.stateCode)) out.push({ code: "supplier_state" });
   // T4 (L1): keyed on the document, never on the checklist. OPEN (08-C RA-22): do Rules 50 and 53 carry Rule 46(q)'s electronic-issue proviso, and does a stored
   // image meet "signature" on an electronic document? The safest reading is built: required.
-  if (!f.signatureSaved) out.push({ code: "signature_missing" });
+  if (signatureRequired(noteTypeOf(f.kind), false) && !f.signatureSaved)
+    out.push({ code: "signature_missing" });
   const live = isLiveParentStatus(f.parent.status);
   if (f.parent.status === "void") out.push({ code: "parent_void" });
   else if (f.parent.status === "credited") {

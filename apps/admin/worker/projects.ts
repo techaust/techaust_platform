@@ -13,6 +13,7 @@ import {
   PROJECT_STATUSES,
   type ProjectStatus,
 } from "@techaust/core/projects";
+import { deedDraftStatements } from "@techaust/db/deeds";
 import type { ProjectBilledRow } from "@techaust/db/reports";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
@@ -32,6 +33,7 @@ import {
   err,
   mutate,
   NOT_FOUND,
+  type SideGuard,
 } from "./context.ts";
 import { projectBilledOf, projectBilledStatement } from "./figures.ts";
 import { type FileRow, fileListQuery, fileView, listFiles, uploadFile } from "./files.ts";
@@ -514,6 +516,11 @@ export const projects = new Hono<AppEnv>()
       entityType: "project",
       entityId: id,
       summary: { projectId: id, projectCode: row.code, from: row.status, to },
+      // T11 (L3; 08-C RB-38(a)): completing a project whose accepted proposal or estimate is already paid in full makes its draft deed and rings the Owner's
+      // bell in this same batch, guarded on the audit row (a refused move makes nothing).
+      ...(to === "completed"
+        ? { side: (g: SideGuard) => deedDraftStatements(c.env.DB, { target: { projectId: id }, now: t }, g) }
+        : {}),
     });
     if (done) return c.json({ ok: true, status: to, updatedAt: t });
     // Nothing written: the client is anonymised, someone else edited the project (stale), or its status moved first.

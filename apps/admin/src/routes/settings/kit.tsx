@@ -153,6 +153,9 @@ function GroupFormBody<K extends JsonGroup, F>(props: {
     try {
       const r = await api.saveSettingsGroup(spec.group, version, built.value, built.extra);
       toast("success", r.changed ? spec.savedText : "No change: these settings were already saved.");
+      // "No change" (only a trailing space, say, which the server trims): the saved values are the ones this form was read from, and the version
+      // stays, so the form is not read again (it is keyed by the version). Take the form back to them, so "Unsaved changes" goes (rt2, polish 3c).
+      if (!r.changed) setForm(initial);
       props.reload();
     } catch (err) {
       if (err instanceof RequestError && (err.code === "stale_version" || err.code === "version_clash")) {
@@ -175,8 +178,8 @@ function GroupFormBody<K extends JsonGroup, F>(props: {
     <>
       {stale && <StaleNotice onReload={props.reload} />}
       {verify && (
-        // The meta string names whose list holds the open questions (the CA's, or the CA's and a lawyer's).
-        <VerifyNote>{researchedSettingsText(/legal|lawyer/i.test(verify))}</VerifyNote>
+        // The meta string points to 08-C §5; the note has one text for every group (07-ZK line 12).
+        <VerifyNote>{researchedSettingsText()}</VerifyNote>
       )}
       {props.intro}
       {readOnly && <Notice tone="info">You can read these settings. Only the owner can change them.</Notice>}

@@ -8,7 +8,18 @@ import { env } from "cloudflare:workers";
 import { deleteAfter, gstinCheckChar, SETTINGS_DEFAULTS } from "@techaust/core";
 import { fyOf } from "@techaust/core/dates";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { bodyOf, call, captureQueue, countOf, one, rows, sessionFor } from "./test-helpers.ts";
+import { draftDeed, finaliseDeed, putSchedules } from "./test-deeds.ts";
+import {
+  bodyOf,
+  call,
+  captureQueue,
+  countOf,
+  one,
+  rows,
+  sessionFor,
+  type TestSession,
+} from "./test-helpers.ts";
+import { putCompany } from "./test-invoices.ts";
 
 // biome-ignore lint/suspicious/noExplicitAny: response bodies in tests are read loosely
 type J = Record<string, any>;
@@ -116,11 +127,11 @@ describe("overview and reading [ADM-SET-01..10]", () => {
     }
   });
 
-  it("tax and retention point to their 08-C §5 list (the CA's; the CA's and the lawyer's); retention says what is not built yet", async () => {
+  it("tax and retention point to 08-C §5 (07-ZK line 12: one pointer, no list named); retention says what is not built yet", async () => {
     const o = await owner();
-    expect((await json(await call(GROUP("tax"), { cookie: o.cookie }))).meta.verify).toBe("08-C §5: CA");
+    expect((await json(await call(GROUP("tax"), { cookie: o.cookie }))).meta.verify).toBe("08-C §5");
     const r = await json(await call(GROUP("retention"), { cookie: o.cookie }));
-    expect(r.meta.verify).toBe("08-C §5: CA and lawyer");
+    expect(r.meta.verify).toBe("08-C §5");
     expect(r.meta.notes).toMatch(/M7\.4/);
   });
 });
@@ -694,6 +705,30 @@ describe("bank details: masked everywhere [ADM-SET-02, ADM-G-06]", () => {
     expect((await putBank("/settings/bank/EUR", o.cookie, body())).status).toBe(404);
   });
 
+  it("a save in the same millisecond as the row's last write moves updated_at past it, so a second save from that form is 409 (test-hardening E) [ADM-SET-02]", async () => {
+    await reset();
+    const o = await owner();
+    expect((await putBank("/settings/bank/INR", o.cookie, body())).status).toBe(200);
+    const loaded = (await json(await call("/settings/bank", { cookie: o.cookie }))).accounts[0]
+      .updatedAt as number;
+    try {
+      vi.useFakeTimers({ toFake: ["Date"], now: loaded });
+      const first = await putBank("/settings/bank/INR", o.cookie, {
+        ...body({ bankName: "First editor" }),
+        expectedUpdatedAt: loaded,
+      });
+      expect(await json(first)).toMatchObject({ ok: true, changed: true, updatedAt: loaded + 1 });
+      const second = await putBank("/settings/bank/INR", o.cookie, {
+        ...body({ bankName: "Second editor" }),
+        expectedUpdatedAt: loaded,
+      });
+      expect(second.status).toBe(409);
+      expect((await json(second)).error.code).toBe("stale_version");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("a stale save is refused: two forms loaded from the same row, the second save is 409 and changes nothing [ADM-SET-02]", async () => {
     await reset();
     const o = await owner();
@@ -917,7 +952,7 @@ describe("document terms: versioned, append-only [ADM-SET-08]", () => {
       "export_declaration",
       "refund_link",
     ]);
-    expect(list.meta.verify).toBe("08-C §5: CA and lawyer");
+    expect(list.meta.verify).toBe("08-C §5");
     const byName = Object.fromEntries(list.blocks.map((b: J) => [b.block, b.current]));
     expect(byName.proposal_terms).toMatchObject({ version: 1, usedBy: 2 });
     expect(byName.standard_terms).toMatchObject({ version: 2, usedBy: null });
@@ -1076,6 +1111,67 @@ describe("numbering is guarded inside the write (L-d) [ADM-SET-03]", () => {
     ).toBe(3);
     expect(await countOf("audit_log", "action = 'settings.numbering.update'")).toBe(before);
     expect((await counter("receiptVoucher"))?.next_no).toBe(start);
+  });
+
+  // T11 review M1: a deed numbered between the check and the write locks the `deed` series too (deeds live in their own table). These run last in the
+  // file's numbering tests: once a deed is numbered this FY the series stays locked.
+  /** An `env` whose DB finalises the draft deed `deedId` just before the save's one batch runs (the Worker's own checks have already passed). */
+  const racingDeed = (s: TestSession, deedId: string) => {
+    const racing = {
+      prepare: (q: string) => env.DB.prepare(q),
+      batch: async (stmts: D1PreparedStatement[]) => {
+        const res = await finaliseDeed(s, deedId);
+        expect(res.status, await res.clone().text()).toBe(200);
+        return env.DB.batch(stmts);
+      },
+    } as unknown as D1Database;
+    return new Proxy(env, { get: (t, k) => (k === "DB" ? racing : Reflect.get(t, k)) }) as Env;
+  };
+
+  it("a deed finalised between the check and the write stops a change of the deed format and next number (409 series_in_use, nothing written) [ADM-SET-03, RB-38(a)]", async () => {
+    await putCompany();
+    await clear("numbering");
+    await store("numbering", SETTINGS_DEFAULTS.numbering, 1);
+    const o = await owner();
+    const d = await draftDeed(o);
+    expect((await putSchedules(o, d.deedId)).status).toBe(200);
+    const value = { ...SETTINGS_DEFAULTS.numbering, deed: { template: "TH/DE/{FY}/{N}", padding: 4 } };
+    const res = await call(
+      GROUP("numbering"),
+      { method: "PUT", body: { version: 1, value, nextNumbers: { deed: 40 } }, cookie: o.cookie },
+      racingDeed(o, d.deedId),
+    );
+    expect(res.status).toBe(409);
+    const body = await json(res);
+    expect(body.error.code).toBe("series_in_use");
+    expect(body.series).toEqual(["deed"]);
+    const stored = await one<{ version: number; value: string }>(
+      "SELECT version, value FROM settings WHERE key = 'numbering'",
+    );
+    expect(stored?.version).toBe(1);
+    expect(JSON.parse(stored?.value ?? "{}").deed).toEqual(SETTINGS_DEFAULTS.numbering.deed);
+    // The finalise took its number and moved the counter one on; the save's 40 was never written.
+    const deed = await one<{ status: string; number: number }>(
+      "SELECT status, number FROM deeds WHERE id = ?",
+      d.deedId,
+    );
+    expect(deed).toMatchObject({ status: "final" });
+    expect((await counter("deed"))?.next_no).toBe((deed?.number ?? 0) + 1);
+  });
+
+  it("once a deed is numbered this FY, a later save of a deed next number is refused before the write [ADM-SET-03, RB-38(a)]", async () => {
+    // The deed series is locked by the test above (a numbered deed this FY): the Worker's own read answers first.
+    const before = (await counter("deed"))?.next_no;
+    expect(before).toBeGreaterThan(1);
+    const o = await owner();
+    const res = await put(GROUP("numbering"), o.cookie, {
+      version: 1,
+      value: SETTINGS_DEFAULTS.numbering,
+      nextNumbers: { deed: (before ?? 1) + 5 },
+    });
+    expect(res.status).toBe(409);
+    expect((await json(res)).error.code).toBe("series_in_use");
+    expect((await counter("deed"))?.next_no).toBe(before);
   });
 });
 
