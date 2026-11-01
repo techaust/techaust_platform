@@ -1,12 +1,14 @@
 // The Worker budget guard (scripts/worker-budget.mjs, run by the admin and portal builds): a bundle fails on its byte ceiling,
 // its startup budget (compile + top-level evaluation, a local proxy) or a forbidden module (classic zod, PDF code).
 import { describe, expect, it } from "vitest";
+import { NO_NETWORK, refuseNetwork, underGlobalScopeRules } from "../../../scripts/cpu-probe-runtime.mjs";
 import {
   BUDGETS,
   checkBundle,
   measureStartup,
   SETTLE_LIMIT_MS,
   STARTUP_PROBE,
+  startupDate,
 } from "../../../scripts/worker-budget.mjs";
 
 const admin = BUDGETS.admin;
@@ -165,6 +167,58 @@ export { work as default };`;
 if (Date.now() !== 0 || new Date().getTime() !== 0) throw new Error("clock");
 export {};`;
     expect(await measureStartup(code, 1)).toBeGreaterThanOrEqual(0);
+  });
+
+  it("its Date reads like workerd's: Date() without new is a string, new Date(x) unchanged, instanceof and statics kept (review finding 5)", async () => {
+    const code = `const s = Date();
+if (typeof s !== "string" || s !== new Date(0).toString()) throw new Error("Date() " + s);
+if (new Date(86400000).getTime() !== 86400000 || new Date(2026, 0, 1).getFullYear() !== 2026) throw new Error("args");
+if (!(new Date() instanceof Date) || Date.UTC(1970, 0, 2) !== 86400000 || Date.parse("1970-01-02T00:00:00Z") !== 86400000) throw new Error("statics");
+class Later extends Date {}
+if (!(new Later() instanceof Later) || new Later().getTime() !== 0) throw new Error("subclass");
+export {};`;
+    expect(await measureStartup(code, 1)).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("startupDate, the clock both start-up emulations share (review findings 5 and 6)", () => {
+  const D = startupDate(Date);
+  it("reads 0 with no argument and is unchanged with one", () => {
+    expect(D.now()).toBe(0);
+    expect(new D().getTime()).toBe(0);
+    expect(new D(5).getTime()).toBe(5);
+    expect(new D("1970-01-01T00:00:01Z").getTime()).toBe(1000);
+  });
+  it("called without new, answers the string of the 0 instant", () => {
+    expect((D as unknown as () => string)()).toBe(new Date(0).toString());
+  });
+  it("keeps instanceof, the statics and subclassing", () => {
+    expect(new D()).toBeInstanceOf(Date);
+    expect(new Date(1)).toBeInstanceOf(D);
+    expect(D.UTC(1970, 0, 1, 0, 0, 1)).toBe(1000);
+    class Later extends D {}
+    expect(new Later()).toBeInstanceOf(Later);
+    expect(new Later().getTime()).toBe(0);
+  });
+});
+
+describe("the probe's global-scope rules (scripts/cpu-probe-runtime.mjs, review findings 6 and 10)", () => {
+  it("new Date() reads 0 under the rules, and the real clock is back afterwards", async () => {
+    const seen = await underGlobalScopeRules(async () => [Date.now(), new Date().toISOString()], 0);
+    expect(seen).toEqual([0, "1970-01-01T00:00:00.000Z"]);
+    expect(Date.now()).toBeGreaterThan(0);
+    expect(new Date().toISOString()).not.toBe("1970-01-01T00:00:00.000Z");
+  });
+  it("refuseNetwork makes fetch refuse for good: during and after the rules", async () => {
+    const real = globalThis.fetch;
+    try {
+      refuseNetwork();
+      await expect(fetch("https://example.test")).rejects.toThrow(NO_NETWORK);
+      await underGlobalScopeRules(async () => null, 0);
+      await expect(fetch("https://example.test")).rejects.toThrow(NO_NETWORK);
+    } finally {
+      globalThis.fetch = real;
+    }
   });
 });
 

@@ -40,6 +40,7 @@ import {
   queueStub,
   r2In,
   rateLimitStub,
+  refuseNetwork,
   underGlobalScopeRules,
 } from "./cpu-probe-runtime.mjs";
 import { createInviteStatements } from "./create-invite-sql.mjs";
@@ -1054,6 +1055,8 @@ async function main() {
 
 const argv = process.argv.slice(2);
 if (process.argv[1] && resolve(process.argv[1]) === here) {
+  // Review finding 10: a child process (seed, case, challenge) loads Worker bundles; `fetch` refuses for its whole run, not only during a bundle's start-up.
+  if (["--seed", "--case", "--challenge"].includes(argv[0])) refuseNetwork();
   if (argv[0] === "--seed") await seed(argv[1], Number(argv[2]));
   else if (argv[0] === "--case") await runCase(argv[1], argv[2], Number(argv[3]), argv[4]);
   else if (argv[0] === "--challenge") await makeChallenge(argv[1]);

@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { registerHooks } from "node:module";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { startupDate } from "./worker-budget.mjs";
 
 /** Milliseconds spent inside SQLite since the last reset (the probe subtracts them: on Workers the query runs in D1, not in the Worker's CPU). */
 export const dbClock = { ms: 0, statements: 0, capture: null };
@@ -290,9 +291,22 @@ const REFUSED = "Disallowed operation called within global scope (cpu-probe: wor
 const refuse = () => {
   throw new Error(REFUSED);
 };
+
+export const NO_NETWORK =
+  "cpu-probe: no network from a probe process (review finding 10); nothing may reach a hosted service";
+/**
+ * Refuses `fetch` for the rest of this process (review finding 10): every probe child (seed, case, challenge) calls it first, so no bundle path, stand-in or
+ * library can reach a hosted service, before, during or after a bundle's start-up. `underGlobalScopeRules` saves and restores this refusal, never the real
+ * `fetch`. A call answers a rejected promise, as a failed `fetch` does.
+ */
+export function refuseNetwork() {
+  globalThis.fetch = async () => {
+    throw new Error(NO_NETWORK);
+  };
+}
 /**
  * Runs `load` (a Worker module's import and its start-up) under workerd's global-scope rules, checked in local workerd 1.20261001.1 on 2026-11-02: a Response or
- * a Request WITH a body, `Response.json`, random values, timers and `fetch` are refused, and `Date.now()` reads 0. A bodiless Response or Request, Headers,
+ * a Request WITH a body, `Response.json`, random values, timers and `fetch` are refused, and `Date.now()` and `new Date()` read 0. A bodiless Response or Request, Headers,
  * WebCrypto's `subtle`, Intl and microtasks are allowed. Then lets the start-up's async chain finish (Node's WebCrypto answers on its thread pool; workerd's
  * within the start-up) before restoring the real globals, so a warm-up that would fail at real start-up fails here too.
  */
@@ -303,7 +317,7 @@ export async function underGlobalScopeRules(load, settleMs = 150) {
     setTimeout: globalThis.setTimeout,
     setInterval: globalThis.setInterval,
     fetch: globalThis.fetch,
-    now: Date.now,
+    Date: globalThis.Date,
   };
   const RealResponse = saved.Response;
   const RealRequest = saved.Request;
@@ -325,7 +339,8 @@ export async function underGlobalScopeRules(load, settleMs = 150) {
   globalThis.setTimeout = refuse;
   globalThis.setInterval = refuse;
   globalThis.fetch = refuse;
-  Date.now = () => 0;
+  // Review finding 6: `new Date()` reads 0 too, not only `Date.now()` (the same stand-in as the budget's sandbox, scripts/worker-budget.mjs).
+  globalThis.Date = startupDate(saved.Date);
   crypto.getRandomValues = refuse;
   crypto.randomUUID = refuse;
   try {
@@ -339,7 +354,7 @@ export async function underGlobalScopeRules(load, settleMs = 150) {
     globalThis.setTimeout = saved.setTimeout;
     globalThis.setInterval = saved.setInterval;
     globalThis.fetch = saved.fetch;
-    Date.now = saved.now;
+    globalThis.Date = saved.Date;
     delete crypto.getRandomValues;
     delete crypto.randomUUID;
   }

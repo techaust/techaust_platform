@@ -35,3 +35,9 @@ export function queueStub(): {
 };
 export function rateLimitStub(): { limit(o: unknown): Promise<{ success: boolean }> };
 export function installWorkersStandIns(): void;
+/** The error text of a refused `fetch` in a probe process (review finding 10). */
+export const NO_NETWORK: string;
+/** Refuses `fetch` for the rest of this process (every probe child calls it first; review finding 10). */
+export function refuseNetwork(): void;
+/** Runs `load` under workerd's global-scope rules, then lets its async chain settle for `settleMs` before restoring the real globals. */
+export function underGlobalScopeRules<T>(load: () => Promise<T>, settleMs?: number): Promise<T>;
