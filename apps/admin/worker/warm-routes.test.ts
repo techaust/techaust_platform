@@ -4,7 +4,7 @@
 // call early shows up. The dry run never throws, writes nothing anywhere, logs nothing, counts no request and sets no first-run mark.
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createApp, firstRun, nextRequestNumber } from "./app.ts";
+import { createApp, firstRun, nextRequestNumber, requestFacts } from "./app.ts";
 import { forwardRoutes } from "./forward.ts";
 import { transportOf } from "./gateway/config.ts";
 import { ROUTES } from "./guard.ts";
@@ -177,11 +177,14 @@ describe("the start-up dry run [CPU warm-up (b)1]", () => {
     expect(r.refused).toBe(0);
   });
 
-  it("leaves no trace: no log line, no request counted, no first-run mark", async () => {
+  it("leaves no trace: no log line, no request counted, no first-run mark (all three Workers)", async () => {
     const log = vi.spyOn(console, "log");
     const error = vi.spyOn(console, "error");
+    const warn = vi.spyOn(console, "warn");
     const before = nextRequestNumber().n;
     await dryRun(createApp(mountFinance, undefined, { warm: true }), FINANCE_WARM);
+    // Review finding 7: the API Worker's dry run too, so a handler's own console line in any hot route fails here.
+    await dryRun(createApp(mountApi, undefined, { warm: true }), API_WARM);
     await dryRun(
       createApp(mountFront, (a) => forwardRoutes(a, ROUTES, true), { warm: true }),
       FRONT_WARM,
@@ -189,10 +192,23 @@ describe("the start-up dry run [CPU warm-up (b)1]", () => {
     );
     expect(log).not.toHaveBeenCalled();
     expect(error).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
     expect(nextRequestNumber().n).toBe(before + 1);
     // Keys no real request of this file has answered: still a first run after the dry run went through them.
     expect(firstRun("GET /api/v1/invoices/:id")).toBe(1);
     expect(firstRun("fwd GET /api/v1/invoices/:id")).toBe(1);
+    expect(firstRun("GET /api/v1/clients/:id")).toBe(1);
+  });
+
+  it("one helper gives the app and the forwarder their request facts; a warm one moves no counter and draws nothing (review finding 8)", () => {
+    const n0 = nextRequestNumber().n;
+    expect(requestFacts(true, undefined)).toEqual({ iso: "warm", n: 0, rid: "warm" });
+    expect(requestFacts(true, "ray-1")).toEqual({ iso: "warm", n: 0, rid: "ray-1" });
+    const real = requestFacts(false, "ray-2");
+    expect(real.n).toBe(n0 + 1);
+    expect(real.rid).toBe("ray-2");
+    expect(real.iso).not.toBe("warm");
+    expect(requestFacts(false, undefined).rid).toMatch(/^[0-9a-f]{16}$/);
   });
 
   // Early check 2: a fixture gone stale (a hot route's SQL changed and `node scripts/cpu-probe.mjs --write-fixtures` was not re-run) must fail here, not
@@ -275,6 +291,9 @@ describe("the start-up dry run [CPU warm-up (b)1]", () => {
 
   it("the made-up env's gateway transport is unset, so no gateway call can be made (early check finding 5)", () => {
     expect(transportOf(warmEnv({}))).toBe("unset");
+    // Review finding 4: unset because the made-up env never names a transport, not only because ENVIRONMENT is "warm".
+    expect("GATEWAY_TRANSPORT" in warmEnv({})).toBe(false);
+    expect(transportOf({ ...warmEnv({}), ENVIRONMENT: "local" })).toBe("unset");
   });
 
   it("never throws, even when every read fails", async () => {
