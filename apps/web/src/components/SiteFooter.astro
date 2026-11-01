@@ -4,9 +4,11 @@
 // the mark tone-on-tone bleeding off the corner (docs/06 §4.3): the one large brand moment of the shell.
 // Items whose config value is empty are hidden; preview pages pass `placeholders` to show labelled placeholders.
 import { site } from "../config/site";
+import { contactPage } from "../content/forms";
 import { draft, shell } from "../content/shell";
 import CurrencyToggle from "./CurrencyToggle.astro";
 import ExternalLink from "./ExternalLink.astro";
+import Hours from "./Hours.astro";
 import Icon from "./Icon.astro";
 import Logo from "./Logo.astro";
 import Placeholder from "./Placeholder.astro";
@@ -20,6 +22,8 @@ const f = shell.footer;
 const c = f.columns;
 const year = new Date().getFullYear();
 const wa = site.whatsapp ? `https://wa.me/${site.whatsapp}` : "";
+/** "Phone" (owner, 2026-11-01): the icon says it on screen, this says it to assistive technology. */
+const phoneLabel = contactPage.panel.phone;
 // No empty list when neither LinkedIn URL is set (the build today).
 const showSocial = placeholders || Boolean(site.linkedinCompany);
 const columns = [
@@ -43,21 +47,28 @@ const columns = [
           </a>
         </li>
         {
-          wa ? (
+          site.phone.display && (
+            <li>
+              <a href={`tel:${site.phone.dial}`}>
+                <Icon name="phone" />
+                <span>
+                  <span class="visually-hidden">{phoneLabel} </span>
+                  <span class="site-footer__number">{site.phone.display}</span>
+                </span>
+              </a>
+              <Hours class="site-footer__hours" />
+            </li>
+          )
+        }
+        {
+          wa && (
             <li>
               <ExternalLink href={wa}>
                 <Icon name="message" />
-                <span>
-                  {f.whatsapp} <span class="site-footer__hours">({site.hours})</span>
-                </span>
+                <span>{f.whatsapp}</span>
               </ExternalLink>
+              <Hours class="site-footer__hours" />
             </li>
-          ) : (
-            placeholders && (
-              <li>
-                <Placeholder what="WhatsApp number, shown with the hours (Mon–Sat, 10:00–19:00 IST)" />
-              </li>
-            )
           )
         }
         <li class="site-footer__place">
@@ -238,8 +249,21 @@ const columns = [
     color: var(--color-verdigris-300);
   }
 
-  .site-footer__hours {
+  /* The hours sit under the phone and WhatsApp links as a quiet second line, aligned with the link text (as on the
+     contact page), outside the link so a long local time ("Sun–Fri, 21:30–05:30 next day PDT") never stretches it.
+     20px is the icon (Icon.astro's default size). */
+  .site-footer__contact :global(.site-footer__hours) {
+    display: block;
+    margin-block: calc(-1 * var(--space-2)) var(--space-1);
+    padding-inline-start: calc(20px + var(--space-3));
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
     color: var(--color-text-muted);
+  }
+
+  /* "+91 98830 23931" never breaks inside (375 px included). */
+  .site-footer__number {
+    white-space: nowrap;
   }
 
   .site-footer__social {

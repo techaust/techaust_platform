@@ -3,8 +3,9 @@
 // /api/forms/contact (M2.4 builder): with JavaScript it is checked against the shared schema (contactForm,
 // @techaust/core) on blur and on submit and sent as JSON, then the visitor goes to /thanks?ref=…; without JavaScript it
 // is a plain form POST, which the Worker answers with the no-JavaScript notice (owner, 2026-10-23), so the page says
-// so up front and above the button. The side panel: email; WhatsApp and the Cal.com link hide while their value is
-// empty (WEB-G-18); the postal address shows as a marked gap until the owner gives it (07 §9).
+// so up front and above the button. The side panel: email; the phone (a `tel:` link, same tab), WhatsApp and the
+// Cal.com link hide while their value is empty (WEB-G-18); the hours under the phone and WhatsApp show in the visitor's
+// own clock (Hours.astro); the postal address shows as a marked gap until the owner gives it (07 §9).
 import "../styles/page.css";
 import "../styles/forms.css";
 import CopyText from "../components/CopyText.astro";
@@ -13,15 +14,17 @@ import ErrorSummary from "../components/form/ErrorSummary.astro";
 import Field from "../components/form/Field.astro";
 import FormEnd from "../components/form/FormEnd.astro";
 import SpamGuard from "../components/form/SpamGuard.astro";
+import Hours from "../components/Hours.astro";
 import Icon from "../components/Icon.astro";
 import PageHero from "../components/PageHero.astro";
 import { site } from "../config/site";
 import { contactPage as c, formUi, noJsNote } from "../content/forms";
 import { draft, shell } from "../content/shell";
 import BaseLayout from "../layouts/BaseLayout.astro";
+import { plainText } from "../lib/copy";
 ---
 
-<BaseLayout title={c.meta.title} description={c.meta.description}>
+<BaseLayout title={c.meta.title} description={plainText(c.meta.description)}>
   <PageHero title={c.h1} lede={c.lede} />
 
   <section class="section">
@@ -77,6 +80,20 @@ import BaseLayout from "../layouts/BaseLayout.astro";
             <dd><a href={`mailto:${site.email}`}>{site.email}</a></dd>
           </div>
           {
+            site.phone.display && (
+              <div class="details__row">
+                <dt>
+                  <Icon name="phone" size={20} />
+                  {c.panel.phone}
+                </dt>
+                <dd>
+                  <a href={`tel:${site.phone.dial}`} class="details__tel">{site.phone.display}</a>
+                  <Hours class="details__note" />
+                </dd>
+              </div>
+            )
+          }
+          {
             site.whatsapp && (
               <div class="details__row">
                 <dt>
@@ -85,7 +102,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
                 </dt>
                 <dd>
                   <ExternalLink href={`https://wa.me/${site.whatsapp}`}>{c.panel.whatsapp}</ExternalLink>
-                  <span class="details__note">{site.hours}</span>
+                  <Hours class="details__note" />
                 </dd>
               </div>
             )
@@ -166,10 +183,17 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     overflow-wrap: anywhere;
   }
 
-  dd a {
+  /* :global(a): the WhatsApp and Cal.com links are rendered by ExternalLink.astro, outside this file's style scope, and
+     need the same 44 px target as the email and phone links. */
+  dd :global(a) {
     display: inline-flex;
     align-items: center;
     min-block-size: var(--target-min);
+  }
+
+  /* The number never breaks inside a group (it fits a 375 px screen on one line). */
+  .details__tel {
+    white-space: nowrap;
   }
 
   .details__note {

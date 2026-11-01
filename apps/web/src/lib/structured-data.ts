@@ -17,7 +17,10 @@ export const WEBSITE_ID = `${ORIGIN}/#website`;
 /** The logo file on the site: copied from @techaust/ui/brand at build time (astro.config.mjs emailLogos). */
 export const LOGO_PATH = "/brand/logo-email-color@2x.png";
 
-type SiteSlice = Pick<typeof site, "name" | "email" | "locality" | "postalAddress" | "linkedinCompany">;
+type SiteSlice = Pick<
+  typeof site,
+  "name" | "email" | "locality" | "postalAddress" | "linkedinCompany" | "phone"
+>;
 
 /**
  * The postal address as a PostalAddress: the street line is the owner's address minus its region and PIN; the
@@ -67,6 +70,8 @@ export function organizationNode(s: SiteSlice = site): LdNode {
     url: ORIGIN,
     logo: { "@type": "ImageObject", url: `${ORIGIN}${LOGO_PATH}` },
     email: s.email,
+    // The company phone in Google's form (E.164, "+919883023931"; owner, 2026-11-01), only while the site shows it.
+    ...(s.phone.display ? { telephone: s.phone.dial } : {}),
     ...(address ? { address } : {}),
     areaServed: ORG_IDENTITY.areaServed.map((a) => ({ ...a })),
     naics: ORG_IDENTITY.naics,

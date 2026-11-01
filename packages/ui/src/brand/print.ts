@@ -61,11 +61,11 @@ export function printSourceHash(packageRoot: string): string {
     .digest("hex");
 }
 
-/** Business card content (3.5 × 2 in, the common Indian size). Phone/WhatsApp is added once the owner confirms it. */
+/** Business card content (3.5 × 2 in, the common Indian size), with the company phone (owner, 2026-11-01). */
 export const CARD = {
   name: "Rupak Sarkar",
   role: "Founder",
-  lines: ["contact@techaust.com", "techaust.com", "Balurghat, West Bengal, India"],
+  lines: ["contact@techaust.com", "+91 98830 23931", "techaust.com", "Balurghat, West Bengal, India"],
 } as const;
 
 /** Letterhead footer (no GSTIN: that appears on tax documents only, owner decision 04 §0). */
@@ -73,6 +73,7 @@ export const LETTERHEAD_FOOTER = [
   "TecHaust Technologies",
   "Balurghat, West Bengal, India",
   "contact@techaust.com",
+  "+91 98830 23931",
   "techaust.com",
 ];
 
@@ -160,11 +161,14 @@ export async function buildPrintFiles(
     const role = await text(CARD.role, 400);
     put(front, name, BLEED + m, BLEED + Hh - m - 32, 7.6, "ink-900");
     put(front, role, BLEED + m, BLEED + Hh - m - 21.5, 5.4, "ink-400");
-    let y = BLEED + Hh - m - 32;
+    // The contact block, right-aligned, stacked upwards from the role's line, so its last two lines share the name's and
+    // the role's lines and the block's foot sits on the role's (four lines since the phone, owner 2026-11-01).
+    const lead = 10.5;
+    let y = BLEED + Hh - m - 21.5 - (CARD.lines.length - 1) * lead;
     for (const l of CARD.lines) {
       const t = await text(l, 400);
       put(front, t, BLEED + W - m - (t.width * 5.4) / 100, y, 5.4, "ink-900");
-      y += 10.5;
+      y += lead;
     }
     const back = sized(d, W, Hh);
     back.drawRectangle({
@@ -207,17 +211,16 @@ export async function buildPrintFiles(
       height: 0.8,
       color: ink("verdigris-700"),
     });
+    // The footer items spread across the 178 mm measure with equal gaps between them (space-between), so five items
+    // (the phone since 2026-11-01) never run into each other however long each one is.
     const cap = 5.2;
-    const col = (178 * MM) / LETTERHEAD_FOOTER.length;
-    for (const [i, l] of LETTERHEAD_FOOTER.entries()) {
-      put(
-        p,
-        await text(l, i === 0 ? 600 : 400),
-        left + i * col,
-        297 * MM - 14 * MM,
-        cap,
-        i === 0 ? "ink-900" : "ink-400",
-      );
+    const items = await Promise.all(LETTERHEAD_FOOTER.map((l, i) => text(l, i === 0 ? 600 : 400)));
+    const widths = items.map((t) => (t.width * cap) / 100);
+    const gap = (178 * MM - widths.reduce((a, b) => a + b, 0)) / (items.length - 1);
+    let x = left;
+    for (const [i, t] of items.entries()) {
+      put(p, t, x, 297 * MM - 14 * MM, cap, i === 0 ? "ink-900" : "ink-400");
+      x += (widths[i] ?? 0) + gap;
     }
     out["letterhead-a4.pdf"] = await d.save({ useObjectStreams: false });
   }

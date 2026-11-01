@@ -16,7 +16,6 @@
 // First, before @techaust/core builds its schemas: no zod eval probe under our CSP (see the file).
 import "./zod-jitless";
 import { contactForm, FORM_FIELDS, LEAD_REF, MIN_FILL_MS, quoteSteps } from "@techaust/core";
-import { localWindow } from "./call-time";
 
 type Values = Record<string, string | string[]>;
 type Issue = { path: PropertyKey[]; message: string };
@@ -67,7 +66,6 @@ function enhance(form: HTMLFormElement) {
     generic: form.dataset.msgGeneric ?? "",
     rate: form.dataset.msgRate ?? "",
     step: form.dataset.msgStep ?? "",
-    yourTime: form.dataset.msgYourtime ?? "",
   };
   form.noValidate = true;
 
@@ -380,20 +378,8 @@ function enhance(form: HTMLFormElement) {
       if (input && /^[a-z0-9-]{1,30}$/.test(v)) input.value = v;
     }
 
-    // "Best time for a call": the visitor's own time beside each IST window, when their clock isn't on IST.
-    const now = new Date();
-    const fmt = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-    for (const input of $$<HTMLInputElement>("[data-from]")) {
-      const local = localWindow(
-        Number(input.dataset.from),
-        Number(input.dataset.to),
-        now,
-        -now.getTimezoneOffset(),
-        (d) => fmt.format(d),
-      );
-      const sub = $<HTMLElement>("[data-sub]", input.closest("label") ?? form);
-      if (sub && local) sub.textContent = `${msg.yourTime} ${local}`;
-    }
+    // "Best time for a call": each window's label is an Hours element, which scripts/local-time.ts shows in the visitor's
+    // own clock (owner, 2026-11-01); the value sent stays the IST window, so staff always read IST.
 
     go(1, false);
     form.setAttribute("data-ready", "");

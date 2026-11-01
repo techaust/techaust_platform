@@ -1,18 +1,23 @@
 ---
 // One radio or checkbox card (docs/06 §5.4 "Radio cards"): a native input inside its label, so the whole card is the
 // target and the arrow keys move through a radio group. The selected card carries the brand's one device, the T bar
-// with its 45° cut, along its top edge. `sub` is a second, quieter line (the call windows' local time).
+// with its 45° cut, along its top edge. `sub` is a second, quieter line. `window` makes the label an IST window (the
+// call windows), shown in the visitor's own clock by scripts/local-time.ts while the value stays IST (owner, 2026-11-01).
+import type { IstWindow } from "../../scripts/call-time";
+import Hours from "../Hours.astro";
+
 interface Props {
   type?: "radio" | "checkbox";
   name: string;
   value: string;
   label: string;
   sub?: string;
+  window?: IstWindow;
   checked?: boolean;
   disabled?: boolean;
   required?: boolean;
   id?: string;
-  /** Extra data attributes for scripts/forms.ts (the call window's minutes). */
+  /** Extra data attributes for scripts/forms.ts. */
   data?: Record<string, string | number>;
   class?: string;
 }
@@ -23,6 +28,7 @@ const {
   value,
   label,
   sub,
+  window: win,
   checked = false,
   disabled = false,
   required = false,
@@ -46,7 +52,7 @@ const attrs = Object.fromEntries(Object.entries(data).map(([k, v]) => [`data-${k
     {...attrs}
   />
   <span class="choice__text">
-    <span class="choice__label">{label}</span>
+    {win ? <Hours window={win} class="choice__label" /> : <span class="choice__label">{label}</span>}
     {sub !== undefined && <span class="choice__sub" data-sub>{sub}</span>}
   </span>
 </label>

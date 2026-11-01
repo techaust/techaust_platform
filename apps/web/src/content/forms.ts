@@ -6,8 +6,11 @@
 import { ANY_TIME, BAND_WORDS, TIMELINE_LABELS, TOOL_LABELS } from "@techaust/core";
 import { site } from "../config/site";
 
-/** 07 §2.4 response promise, as the pages write it. */
-const hours = "(Mon–Sat, 10:00–19:00 IST)";
+/**
+ * 07 §2.4 response promise, as the pages write it: "(Mon–Sat, 10:00–19:00 IST)" from site.ts HOURS through the
+ * {{hours}} token, in the visitor's own clock on the page (owner, 2026-11-01) and IST in meta text.
+ */
+const hours = "({{hours}})";
 
 /** 07 §5.8, beside the submit button on both forms. The link is rendered by CopyText. */
 const consent = {
@@ -38,9 +41,13 @@ export const contactPage = {
   },
   hints: { message: "A few sentences is plenty." },
   submit: "Send message",
-  /** The side panel. Email and Address are 07's labels; WhatsApp and the call link hide while their value is empty. */
+  /**
+   * The side panel. Email and Address are 07's labels, "Phone" the owner's (2026-11-01); Phone, WhatsApp and the call
+   * link hide while their value is empty.
+   */
   panel: {
     email: "Email",
+    phone: "Phone",
     whatsapp: "Chat on WhatsApp",
     call: "Prefer a call?",
     callLink: "Book a time",
@@ -91,9 +98,8 @@ export const quotePage = {
     /** 07 §5.9 lists "country" (no label wording): NEW as a label. */
     country: "Country",
     phone: "Phone or WhatsApp (optional)",
+    /** 07 §5.9: each window shows in the visitor's own clock, one time only (owner, 2026-11-01; "your time:" went). */
     callWindow: "Best time for a call",
-    /** 07 §5.9 "your time: {{local}}": `{local}` is filled in the page with the visitor's own clock. */
-    yourTime: "your time:",
   },
   submit: "Send request",
   consent,

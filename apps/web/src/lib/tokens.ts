@@ -5,6 +5,8 @@
 //   {{terms:small_job_threshold}}  the settings default (catalogue snapshot payment terms), whole units, INR and USD,
 //                       rendered like a plain price (ref "terms:…", no "+ GST")
 //   {{postal_address}}  site.postalAddress, or a labelled placeholder while it is empty (OWNER input; never invented)
+//   {{hours}}           the working hours, "Mon–Sat, 10:00–19:00 IST" (site.hours); CopyText renders them through
+//                       Hours.astro, which the page turns into the visitor's own clock (owner, 2026-11-01)
 // An unknown or malformed token, an unknown code or a hidden service THROWS: the build fails, a wrong or missing price
 // is never shipped.
 import { money } from "@techaust/core";
@@ -22,7 +24,9 @@ export type PricePart = SitePrice & {
   /** Whether to print "from": false when the copy already says "from" just before the token (07 writes both). */
   from: boolean;
 };
-export type Part = TextPart | PricePart;
+/** {{hours}}: the working hours (site.ts HOURS), IST in plain text, the visitor's own clock on a page. */
+export type HoursPart = { kind: "hours"; text: string };
+export type Part = TextPart | PricePart | HoursPart;
 
 const TOKEN = /\{\{([^{}]*)\}\}/g;
 const KNOWN = /^(price|price-plain):(S\d+(?:-[a-z]+)?)$/;
@@ -52,15 +56,18 @@ export function parseTokens(text: string): Part[] {
     const terms = TERMS.exec(body);
     let asText: string | undefined;
     if (body === "postal_address") asText = site.postalAddress || POSTAL_ADDRESS_PLACEHOLDER;
-    if (!known && !terms && asText === undefined)
+    const hours = body === "hours";
+    if (!known && !terms && !hours && asText === undefined)
       throw new Error(
-        `Unknown content token ${m[0]} (known: {{price:Sx}}, {{price-plain:Sx}}, {{terms:small_job_threshold}}, {{postal_address}})`,
+        `Unknown content token ${m[0]} (known: {{price:Sx}}, {{price-plain:Sx}}, {{terms:small_job_threshold}}, {{postal_address}}, {{hours}})`,
       );
     const before = text.slice(last, m.index);
     if (before) parts.push({ kind: "text", text: before });
     last = m.index + m[0].length;
     if (asText !== undefined) {
       parts.push({ kind: "text", text: asText });
+    } else if (hours) {
+      parts.push({ kind: "hours", text: site.hours });
     } else if (terms) {
       parts.push({ kind: "price", ref: body, plain: true, from: false, ...termsOf(terms[1] as string) });
     } else if (known) {
@@ -92,7 +99,7 @@ export const hasTokens = (text: string): boolean => parseTokens(text).some((p) =
 export function renderPlain(text: string): string {
   return parseTokens(text)
     .map((p) => {
-      if (p.kind === "text") return p.text;
+      if (p.kind === "text" || p.kind === "hours") return p.text;
       if (p.ref.startsWith("terms:")) return displayAmount(p.inr);
       const amount = `${displayAmount(p.inr)} ${draft.gst}`;
       return p.plain || !p.from ? amount : `${draft.priceFrom} ${amount}`;
