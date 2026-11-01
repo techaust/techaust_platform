@@ -26,7 +26,7 @@ import { ToastProvider } from "../components/toast.tsx";
 import { allowed, canSee, sectionOf } from "../lib/access.ts";
 import { reportBellHref } from "../lib/bell-links.ts";
 import { ROLE_LABELS } from "../lib/format.ts";
-import { GW_UI } from "../lib/gateway.ts";
+import { GW_UI, REVIEW_CHANGED } from "../lib/gateway.ts";
 import { useSession, useUser } from "../session.tsx";
 
 const hrefOf = (item: NavItem) => item.path;
@@ -194,6 +194,11 @@ function useReviewCount(enabled: boolean, pathname: string) {
   useEffect(() => {
     read();
   }, [read, pathname]);
+  // the Needs review tab says when it changed something (lib/gateway.ts `REVIEW_CHANGED`), so the count follows at once
+  useEffect(() => {
+    window.addEventListener(REVIEW_CHANGED, read);
+    return () => window.removeEventListener(REVIEW_CHANGED, read);
+  }, [read]);
   useEffect(() => {
     if (!enabled) return;
     const t = setInterval(() => {

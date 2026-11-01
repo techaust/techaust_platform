@@ -12,6 +12,7 @@ import {
   type InvoicePaymentsPanel,
   type PaymentLinkRow,
   paymentsApi,
+  RequestError,
   type ReviewItem,
 } from "../../api.ts";
 import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
@@ -155,7 +156,9 @@ export function LinkCard(props: { view: InvoiceView; panel: Panel; role: Role; o
   const live = links.find((l) => l.status === "live" && l.shortUrl) ?? null;
   const making = links.find((l) => l.status === "creating") ?? null;
   const earlier = links.filter((l) => l !== live && l !== making);
-  const canCreate = can && !live && !making && p.balanceMinor > 0;
+  // A proforma whose online payment waits for its tax invoice still shows its balance: no second link until that invoice is issued (the client paid already).
+  const waitingInvoice = p.gateway.payments.some((g) => g.proformaPending);
+  const canCreate = can && !live && !making && !waitingInvoice && p.balanceMinor > 0;
 
   async function copy(url: string) {
     try {
@@ -214,9 +217,9 @@ export function LinkCard(props: { view: InvoiceView; panel: Panel; role: Role; o
         </>
       ) : making ? (
         <p className="pay-lines__meta">{amountText(making.amountMinor, "INR")}</p>
-      ) : (
+      ) : earlier.length > 0 && !canCreate ? null : (
         <div className="pay-link__none">
-          <p className="pay-lines__meta">{GW_UI.noLink}</p>
+          {earlier.length === 0 && <p className="pay-lines__meta">{GW_UI.noLink}</p>}
           {canCreate && (
             <button type="button" className="btn btn--secondary" onClick={() => setDialog("create")}>
               <Plus size={20} />
@@ -328,6 +331,12 @@ function LinkDialog(props: {
       const r = await paymentsApi.createLink(v.id, { amountMinor: m.minor, expectedUpdatedAt: p.updatedAt });
       props.onDone(r.reused);
     } catch (err) {
+      // The amount's own refusals (S24, the server's words with the minimum or the balance) go under the field; anything else above the actions.
+      if (err instanceof RequestError && err.status === 400 && err.code.startsWith("amount_")) {
+        setError(gwErrorText(err));
+        document.getElementById("pay-link-amount")?.focus();
+        return;
+      }
       setFailure(gwErrorText(err));
       refusal.show();
     } finally {

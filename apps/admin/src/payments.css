@@ -959,6 +959,7 @@
   border-inline-start: 3px solid var(--color-warning);
   background: var(--color-surface-alt);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  max-width: 40rem;
 }
 
 .pay-review-note > .icon,
@@ -993,15 +994,37 @@
 /* ---------- Needs review (the /payments tab) ---------- */
 
 .pay-reason {
-  display: block;
-  max-width: 48ch;
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  max-width: 52ch;
 }
 
+.pay-reason__open {
+  min-height: var(--target-min);
+  padding-inline: 0;
+}
+
+/* the Owner's two actions at the row's end, side by side when there is room, stacked when not */
 .pay-review__acts {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--space-2);
+}
+
+.pay-review__acts .btn {
+  white-space: nowrap;
+}
+
+/* the card layout (below md): the reason takes the card's width, the actions follow it on their own row */
+.pay-review .dcard__head {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.pay-review .dcard__actions .pay-review__acts {
+  justify-content: flex-start;
 }
 
 .pay-resolve {
@@ -1041,4 +1064,11 @@
 
 .pay-review__item p {
   margin: 0;
+}
+
+/* a Razorpay payment id (S18) wraps wherever it must, in the advance dialog's reference status and the paid-online lines */
+.field-status .docno.break,
+.pay-lines .docno.break {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }

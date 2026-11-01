@@ -118,6 +118,9 @@ export const GW_UI = {
   keysFromFinance: "Read from the Worker that holds the keys.",
 } as const;
 
+/** A window event the Needs review tab sends after a change, so the nav count reads again. */
+export const REVIEW_CHANGED = "ta:review-changed";
+
 /** The resolutions, in words (designer's drafts). */
 export const RESOLUTION_LABELS: Record<ReviewResolution, string> = {
   confirmed: "The payment is confirmed",

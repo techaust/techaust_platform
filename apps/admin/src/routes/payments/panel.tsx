@@ -415,7 +415,10 @@ function Entries(props: { panel: Panel; canCert: boolean; onCertificate: (paymen
               <PaymentPill status={r.status} />
             </td>
             <td data-label={PAY_COPY.proof}>
-              {r.hasProof ? (
+              {gatewayOf(props.panel, r.paymentId) ? (
+                // M6.2: Razorpay's own record is the proof of an online payment; nothing to attach
+                <span className="pay-lines__meta pay-lines__nowrap">Razorpay</span>
+              ) : r.hasProof ? (
                 <a href={paymentsApi.proofHref(r.paymentId)} className="pay-proof-link">
                   <FileText size={16} />
                   {PAY_UI.openProof}
@@ -528,7 +531,7 @@ function ProformaPayments(props: {
                   )}
                 </span>
                 <span className="tnum pay-waiting__amount">{amountText(w.amountMinor, w.currency)}</span>
-                <PaymentPill status="pending_verification" />
+                {(!online || isBlocked) && <PaymentPill status="pending_verification" />}
                 {owner && (
                   <button
                     type="button"

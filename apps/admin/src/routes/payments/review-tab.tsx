@@ -27,6 +27,15 @@ import {
 import { blockerLine, INV_COPY, typeLabel } from "../../lib/invoices.ts";
 import { amountText } from "../../lib/payments.ts";
 
+/** What tells two rows apart for a screen reader: the amount and the document (or the client). */
+const rowName = (r: ReviewItem) =>
+  [
+    r.amount_minor !== null ? amountText(r.amount_minor, r.currency ?? "INR") : null,
+    r.document_number ?? r.client_name,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
 export function ReviewList(props: {
   role: Role;
   onChanged: () => void;
@@ -81,6 +90,23 @@ export function ReviewList(props: {
     }
   }
 
+  const reasonCell = (r: ReviewItem) => (
+    <span className="pay-reason">
+      <span>{itemReason(r)}</span>
+      {/* S21 "Open payment": the entry dialog, whose Confirm is POST /payments/:id/verify (the money moves only there) */}
+      {r.payment_id && (
+        <button
+          type="button"
+          className="btn btn--text pay-reason__open"
+          onClick={() => setOpen(r.payment_id)}
+        >
+          {GW.openPayment}
+          <span className="visually-hidden">{` ${amountText(r.amount_minor ?? 0, r.currency ?? "INR")}`}</span>
+        </button>
+      )}
+    </span>
+  );
+
   const columns: Column<ReviewItem>[] = [
     {
       key: "arrived",
@@ -92,7 +118,9 @@ export function ReviewList(props: {
       key: "reason",
       header: GW_UI.colReason,
       width: "34%",
-      cell: (r) => <span className="pay-reason">{itemReason(r)}</span>,
+      // in the card layout the reason stands under the date, across the card (cardSub)
+      card: "hidden",
+      cell: (r) => reasonCell(r),
     },
     {
       key: "client",
@@ -113,7 +141,7 @@ export function ReviewList(props: {
             {r.document_number ?? (r.document_type ? typeLabel(r.document_type as never) : "…")}
           </Link>
         ) : (
-          <span className="pay-lines__meta">{GW_UI.noClient}</span>
+          <span className="pay-lines__meta">–</span>
         ),
     },
     {
@@ -134,28 +162,19 @@ export function ReviewList(props: {
       {list.state === "failed" ? (
         <LoadFailed error={list.error} onRetry={() => list.reload()} />
       ) : (
-        <div className="clients-table pay-table">
+        <div className="clients-table pay-table pay-review">
           <DataTable
             caption={GW.needsReview}
             columns={columns}
             rows={rows}
             rowKey={(r) => r.id}
+            cardSub={(r) => reasonCell(r)}
             loading={list.state === "loading"}
             skeletonRows={3}
             actions={
               owner
                 ? (r) => (
                     <span className="pay-review__acts">
-                      {r.payment_id && (
-                        <button
-                          type="button"
-                          className="btn btn--secondary"
-                          onClick={() => setOpen(r.payment_id)}
-                        >
-                          {GW.openPayment}
-                          <span className="visually-hidden">{` ${itemReason(r)}`}</span>
-                        </button>
-                      )}
                       {canRetry(r) && (
                         <button
                           type="button"
@@ -165,12 +184,12 @@ export function ReviewList(props: {
                           onClick={() => void retry(r)}
                         >
                           {retrying === r.id ? "Working…" : GW.tryAgain}
-                          <span className="visually-hidden">{` ${itemReason(r)}`}</span>
+                          <span className="visually-hidden">{` ${rowName(r)}`}</span>
                         </button>
                       )}
                       <button type="button" className="btn btn--secondary" onClick={() => setResolving(r)}>
                         {GW.markResolved}
-                        <span className="visually-hidden">{` ${itemReason(r)}`}</span>
+                        <span className="visually-hidden">{` ${rowName(r)}`}</span>
                       </button>
                     </span>
                   )

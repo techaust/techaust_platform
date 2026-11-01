@@ -27,7 +27,7 @@ import { useToast } from "../components/toast.tsx";
 import { Notice } from "../components/ui.tsx";
 import { allowed } from "../lib/access.ts";
 import { pendingBadge } from "../lib/documents.ts";
-import { GW, GW_UI, razorpayLine } from "../lib/gateway.ts";
+import { GW, GW_UI, REVIEW_CHANGED, razorpayLine } from "../lib/gateway.ts";
 import { INV_COPY, typeLabel } from "../lib/invoices.ts";
 import { invoicesApi } from "../lib/invoices-api.ts";
 import { confirmDocsOf, OPEN_DOCS_CAP } from "../lib/open-docs.ts";
@@ -138,6 +138,7 @@ function Payments({ role }: { role: Role }) {
         )}
         onChanged={() => {
           reviewing.reload(true);
+          window.dispatchEvent(new Event(REVIEW_CHANGED));
           waiting.reload(true);
         }}
       />
