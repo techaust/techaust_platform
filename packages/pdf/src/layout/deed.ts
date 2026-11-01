@@ -121,7 +121,7 @@ const runs = (t: DeedText) =>
 
 /** One Schedule row: the value, with its 07-ZJ label once approved (the value's own line breaks kept: a deliverables list is typed one per line). */
 const schedRow = (label: string | null, value: string) =>
-  `<div class="sched__row">${label === null ? "" : `<p class="sched__label">${esc(label)}</p>`}<p class="sched__value">${esc(value)}</p></div>`;
+  `<div class="sched__row">${label === null ? "" : `<p class="sched__label">${esc(label)}</p>\n`}<p class="sched__value">${esc(value)}</p></div>`;
 
 const schedule = (heading: string, rows: [string | null, string][]) =>
   `<section class="sched" data-testid="deed-schedule"><div class="sched__head"><h2>${esc(heading)}</h2></div>${rows.map(([l, v]) => schedRow(l, v)).join("")}</section>`;

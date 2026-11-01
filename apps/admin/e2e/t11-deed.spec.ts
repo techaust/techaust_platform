@@ -316,7 +316,7 @@ async function sampleProject(page: Page): Promise<string> {
 }
 
 test.describe("T11 deed tab", () => {
-  test.describe.configure({ timeout: 10 * 60_000 });
+  test.describe.configure({ timeout: 4 * 60_000 });
 
   let consoleErrors: string[] = [];
   test.beforeEach(({ page }) => {

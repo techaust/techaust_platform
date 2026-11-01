@@ -668,27 +668,37 @@ function DeedSheet({ text }: { text: DeedTextView }) {
       </p>
       <SheetSchedule
         heading={text.schedule1.heading}
-        values={[text.schedule1.deliverables, text.schedule1.location, text.schedule1.deliveredDates]}
+        rows={[
+          [C.schedules.deliverables, text.schedule1.deliverables],
+          [C.schedules.location, text.schedule1.location],
+          [C.schedules.dates, text.schedule1.deliveredDates],
+        ]}
       />
       <SheetSchedule
         heading={text.schedule2.heading}
-        values={[text.schedule2.tools, text.schedule2.thirdParty]}
+        rows={[
+          [C.schedules.tools, text.schedule2.tools],
+          [C.schedules.thirdParty, text.schedule2.thirdParty],
+        ]}
       />
       <p className="deed-sheet__footer">{text.footer}</p>
     </article>
   );
 }
 
-function SheetSchedule({ heading, values }: { heading: string; values: string[] }) {
+/** A Schedule with 07-ZJ line 2's labels, as the PDF prints it. */
+function SheetSchedule({ heading, rows }: { heading: string; rows: [string, string][] }) {
   return (
     <div className="deed-sheet__sched">
       <p className="deed-sheet__sched-title">{heading}</p>
-      {values.map((v, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: fixed positions
-        <p key={i} className="deed-sheet__value">
-          {v}
-        </p>
-      ))}
+      <dl className="deed-sheet__rows">
+        {rows.map(([label, v]) => (
+          <div key={label} className="deed-sheet__row">
+            <dt>{label}</dt>
+            <dd className="deed-sheet__value">{v}</dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }

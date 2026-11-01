@@ -20,6 +20,9 @@ const VIEWS = [
 ] as const;
 
 async function axe(page: Page, where: string) {
+  // The preview's "sample data" bar (sample-api.ts, dev only, never built) is not part of the product: it is taken out before the check, so the
+  // skip link is the first thing on the page again, as in a build.
+  await page.evaluate(() => document.getElementById("sample-label")?.remove());
   const r = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"])
     .analyze();
@@ -49,7 +52,7 @@ test("the signed deed on 'Accepted by you': card, download, axe, both schemes an
     const button = card.getByRole("button", { name: /Download signed deed$/ });
     expect((await button.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
     await page.evaluate(() => document.fonts.ready);
-    await axe(page, `accepted ${v.width} ${v.scheme}`);
+    // The shots first, with the "sample data" bar on them; then the check, which takes the bar out.
     if (SHOTS) {
       await page.screenshot({
         path: join(SHOTS, `portal-deed-${v.width}-${v.scheme}.png`),
@@ -61,21 +64,36 @@ test("the signed deed on 'Accepted by you': card, download, axe, both schemes an
         animations: "disabled",
       });
     }
+    await axe(page, `accepted ${v.width} ${v.scheme}`);
   }
   // The download names the deed in the request body, never in the address, and saves the file the server names.
-  const req = page.waitForRequest((r) => r.url().endsWith("/api/v1/deeds/pdf"));
+  // The sample API answers inside the page (it wraps window.fetch), so the call is read there, not on the network.
+  await page.evaluate(() => {
+    const w = window as unknown as { __calls: [string, unknown][]; fetch: typeof fetch };
+    w.__calls = [];
+    const real = w.fetch;
+    w.fetch = (input, init) => {
+      w.__calls.push([String(input), init?.body ?? null]);
+      return real(input, init);
+    };
+  });
   const dl = page.waitForEvent("download");
   await page
     .locator(".deedcard")
     .getByRole("button", { name: /Download signed deed$/ })
     .click();
-  expect((await req).postDataJSON()).toEqual({ id: "sample-deed" });
   expect((await dl).suggestedFilename()).toBe("TH-DA-2627-0001-signed.pdf");
+  const calls = (await page.evaluate("window.__calls")) as [string, string | null][];
+  expect(calls).toEqual([["/api/v1/deeds/pdf", JSON.stringify({ id: "sample-deed" })]]);
   // Keyboard: the button is reachable and shows the focus ring.
   await page
     .locator(".deedcard")
     .getByRole("button", { name: /Download signed deed$/ })
     .focus();
+  // back one stop and forward again with the keyboard, so the browser shows the keyboard's focus ring (:focus-visible)
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  await expect(page.locator(":focus")).toHaveText(/Download signed deed$/);
   expect(await page.locator(":focus").evaluate((el) => getComputedStyle(el).outlineStyle)).not.toBe("none");
   expect(errors).toEqual([]);
 });
