@@ -1,13 +1,11 @@
 // What the proposal and estimate screens share (M4.5; POR-04, POR-05, POR-06, ADM-PROP-08, ADM-PROP-10): the words of an API
 // error, the split of the list, dates in IST, saving a downloaded PDF, and the offer link's token. Nothing here adds up money: every
 // amount arrives formatted (`total`, `PdfView`), worked out on the server by @techaust/core.
-import { formatDate, formatIstDateTime, parseIsoDate } from "@techaust/core/dates";
+import { formatDate, parseIsoDate } from "@techaust/core/dates";
 import { type Download, type OfferItem, type OfferKind, RequestError } from "../api.ts";
 import { COPY, waitText } from "../copy.ts";
 import { N, PENDING, WORDS } from "../copy-documents.ts";
 import { OFFER_Y } from "../copy-y.ts";
-
-export { formatIstDateTime };
 
 /** "06 Oct 2026" from `YYYY-MM-DD` (the text itself if it isn't a date). */
 export function dateText(iso: string | null): string {
