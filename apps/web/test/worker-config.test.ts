@@ -397,6 +397,26 @@ describe("M6.2 gateway wiring (run file F)", () => {
     ]);
   });
 
+  it("finance's own LEADS_QUEUE producer points at the jobs Worker's leads queue (top level, staging), none in production; the shared queues still match the front's [early check 2, finding 2]", () => {
+    expect(finance.queues.producers.map((q: { binding: string }) => q.binding)).toContain("LEADS_QUEUE");
+    const f = structuredClone(finance);
+    f.env.staging.queues.producers = f.env.staging.queues.producers.map(
+      (q: { binding: string; queue: string }) =>
+        q.binding === "LEADS_QUEUE" ? { ...q, queue: "techaust-staging-email" } : q,
+    );
+    f.env.production.queues = { producers: [{ binding: "LEADS_QUEUE", queue: "techaust-production-leads" }] };
+    expect(guard.gatewayConfigProblems(jobs, portal, f)).toEqual([
+      "env.staging: finance's LEADS_QUEUE must be the jobs Worker's leads queue (techaust-staging-leads)",
+      "env.production: finance has no LEADS_QUEUE until Phase 7",
+    ]);
+    // the other producers are still compared with the front's
+    const g = structuredClone(finance);
+    g.queues.producers = g.queues.producers.filter((q: { binding: string }) => q.binding !== "PDF_QUEUE");
+    expect(guard.apiConfigProblems(g, front, guard.FINANCE_OPTS)).toEqual([
+      "(top level): queues differ from the front's",
+    ]);
+  });
+
   it("finance's secrets are exactly the key pair, and none in production", () => {
     const f = structuredClone(finance);
     f.env.staging.secrets = { required: ["RAZORPAY_KEY_ID"] };

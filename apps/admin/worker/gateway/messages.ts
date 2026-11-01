@@ -43,8 +43,10 @@ export function reviewReason(kind: string, f: ReasonFacts = {}): string {
     case "refetch_failed":
     case "dead_letter":
       return "Razorpay couldn't be reached to confirm this payment. Try again.";
+    // Settled by the lead on the safest reading, 2026-10-31 (08-C RA-36): credit held is treated as an advance (s.13(2) CGST Act), so GST on it was due in the
+    // month the money arrived; the line says so (staff words, early check 2, finding 17; drafted for the lead).
     case "overpaid":
-      return `The client paid ${money(f.extraMinor)} more than was due. It is held as credit.`;
+      return `The client paid ${money(f.extraMinor)} more than was due. It is held as credit, treated as an advance: GST on it is due for the month it arrived.`;
     case "proforma_overpaid":
       return "The client paid more than the proforma's balance. Issue the tax invoice by hand.";
     case "partial_payment":
@@ -60,7 +62,9 @@ export function reviewReason(kind: string, f: ReasonFacts = {}): string {
     case "payment_not_on_link":
       return "Razorpay doesn't list this payment on the link.";
     case "not_captured":
-      return "Razorpay reports this payment as failed or refunded.";
+      return "Razorpay reports this payment as failed or refunded. Nothing was recorded.";
+    case "unreadable_event":
+      return "A verified Razorpay notification couldn't be read. Check the payment in Razorpay's dashboard.";
     default:
       return "Check this payment.";
   }
@@ -96,3 +100,13 @@ export const GATEWAY_PAYMENT = e(
   "A Razorpay payment can't be withdrawn here. It needs a refund through Razorpay.",
 );
 export const NOT_RETRYABLE = e("not_retryable", "This item can't be tried again. Resolve it instead.");
+/** Early check 2, finding 1: the proforma changed while its tax invoice was being issued (the admin "Try again" makes one try only). */
+export const ADVANCE_CHANGED = e(
+  "advance_changed",
+  "The proforma changed while its tax invoice was being issued. Try again.",
+);
+/** Early check 2, finding 5: Resolve records what the money already is; it never moves it. */
+export const RESOLUTION_NOT_ALLOWED = e(
+  "resolution_not_allowed",
+  "That doesn't match the payment yet. Confirm the payment or issue its tax invoice first, or dismiss the item.",
+);

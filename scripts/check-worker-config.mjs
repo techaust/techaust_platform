@@ -98,7 +98,11 @@ export function apiConfigProblems(api, front, opts = {}) {
       const b = (f?.[key] ?? []).map(fn).sort().join(",");
       if (a !== b) problems.push(`${scope}: ${key} differ from the front's`);
     }
-    if (queueKeys(c).join(",") !== queueKeys(f).join(","))
+    // M6.2 (early check 2, finding 2): the finance Worker's own producers (`ownQueues`, the leads queue) are left out of the comparison; gatewayConfigProblems
+    // checks where they point.
+    const ownQueues = new Set(opts.ownQueues ?? []);
+    const shared = queueKeys(c).filter((k) => !ownQueues.has(k.split(":")[0]));
+    if (shared.join(",") !== queueKeys(f).join(","))
       problems.push(`${scope}: queues differ from the front's`);
     // A6 9: the two admin Workers are read together in the CPU baseline, so they log and trace alike.
     if (canonical(c.observability) !== canonical(f?.observability))
@@ -138,13 +142,15 @@ export function frontServiceProblems(front, api, finance) {
 /** M6.2: the finance Worker's own vars and secrets (L1, L16; apiConfigProblems' options for wrangler.finance.jsonc). */
 export const FINANCE_OPTS = {
   ownVars: ["PORTAL_URL", "GATEWAY_TRANSPORT"],
+  ownQueues: ["LEADS_QUEUE"],
   secrets: ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"],
 };
 
 /**
  * M6.2 (run file F): the gateway wiring in every scope. The top level and `env.staging`: jobs binds `ADMIN_GATEWAY` to the finance Worker's `GatewayEvents` and
  * requires `RAZORPAY_WEBHOOK_SECRET`; the portal binds `ADMIN_PAY` to its `PortalPayments` and holds no Razorpay secret; the finance Worker's
- * `GATEWAY_TRANSPORT` is "stub" at the top level (local) and "razorpay" on staging, with its `PORTAL_URL`. `env.production`: none of it until Phase 7.
+ * `GATEWAY_TRANSPORT` is "stub" at the top level (local) and "razorpay" on staging, with its `PORTAL_URL` and a `LEADS_QUEUE` producer onto the jobs Worker's
+ * leads queue. `env.production`: none of it until Phase 7.
  * `PAYMENTS_LIVE_ALLOWED`, wherever a config sets it, is exactly "false" (CLAUDE.md rule 7). Empty = passes.
  */
 export function gatewayConfigProblems(jobs, portal, finance, others = []) {
@@ -184,6 +190,15 @@ export function gatewayConfigProblems(jobs, portal, finance, others = []) {
       problems.push(`${scope}: finance GATEWAY_TRANSPORT must be ${wantTransport ?? "unset"}`);
     if (!prod && !f?.vars?.PORTAL_URL)
       problems.push(`${scope}: finance needs PORTAL_URL (Razorpay's return page)`);
+    // Early check 2, finding 2: finance queues `gateway.advance` on the jobs Worker's own leads queue (top level and staging; none in production until Phase 7).
+    const producer = (c, b) => (c?.queues?.producers ?? []).find((x) => x.binding === b)?.queue;
+    const financeLeads = producer(f, "LEADS_QUEUE");
+    if (prod) {
+      if (financeLeads) problems.push(`${scope}: finance has no LEADS_QUEUE until Phase 7`);
+    } else if (!financeLeads || financeLeads !== producer(j, "LEADS_QUEUE"))
+      problems.push(
+        `${scope}: finance's LEADS_QUEUE must be the jobs Worker's leads queue (${producer(j, "LEADS_QUEUE")})`,
+      );
   }
   for (const [file, c] of [["jobs", jobs], ["portal", portal], ["finance", finance], ...others]) {
     for (const [scope, x] of SCOPES(c)) {

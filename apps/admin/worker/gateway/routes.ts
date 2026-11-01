@@ -18,9 +18,10 @@ import { body, idParam, param, STALE_VERSION } from "../http.ts";
 import { cachedSetting } from "../settings-cache.ts";
 import { issueGatewayAdvance } from "./advance.ts";
 import { envText, FINANCE_GATEWAY_SECRETS, gatewayModeOf, razorpayOf } from "./config.ts";
-import { staleCanceller } from "./events.ts";
+import { sendNext, staleCanceller } from "./events.ts";
 import { type MakeLinkResult, makeLink, refreshCheckout } from "./links.ts";
 import {
+  ADVANCE_CHANGED,
   AMOUNT_NOT_WHOLE_RUPEE,
   amountAboveBalance,
   amountBelowMinimum,
@@ -31,6 +32,7 @@ import {
   LIVE_NOT_ALLOWED,
   NOT_PAYABLE_ONLINE,
   NOT_RETRYABLE,
+  RESOLUTION_NOT_ALLOWED,
   REVIEW_RESOLVED,
   TOO_MANY_LINKS,
 } from "./messages.ts";
@@ -174,6 +176,8 @@ export const gatewayPayments = new Hono<AppEnv>()
     const u = actor(c);
     const item = await c.env.DB.prepare(REVIEW_ITEM_READ_SQL).bind(id).first<{ status: string }>();
     if (!item) return err(c, NOT_FOUND, 404);
+    if (item.status !== "open") return err(c, REVIEW_RESOLVED, 409);
+    // A record only (lead decision on early check 2, finding 5): the statement refuses a resolution the money isn't in.
     const done = await mutate(c, {
       main: reviewResolveStatement(c.env.DB, {
         id,
@@ -188,7 +192,10 @@ export const gatewayPayments = new Hono<AppEnv>()
       // The note's text is never in the audit log (it may name a person).
       summary: { reviewId: id, resolution: f.resolution, note: f.note ? "set" : null },
     });
-    if (!done) return err(c, REVIEW_RESOLVED, 409);
+    if (!done) {
+      const again = await c.env.DB.prepare(REVIEW_ITEM_READ_SQL).bind(id).first<{ status: string }>();
+      return again?.status === "open" ? err(c, RESOLUTION_NOT_ALLOWED, 409) : err(c, REVIEW_RESOLVED, 409);
+    }
     return c.json({ ok: true, status: "resolved" });
   })
   .post("/review/:id/retry", param(idParam), async (c) => {
@@ -203,24 +210,11 @@ export const gatewayPayments = new Hono<AppEnv>()
     }>();
     if (!item) return err(c, NOT_FOUND, 404);
     if (item.status !== "open") return err(c, REVIEW_RESOLVED, 409);
-    // A pending payment waiting for its tax invoice: the automatic issue again.
+    // A pending payment waiting for its tax invoice: the automatic issue again, one try (early check 2, finding 1). Its own batch resolves the payment's open
+    // items and audits the act (finding 12: no second resolve here). A proforma changed meanwhile: 409, the Owner presses again.
     if (item.payment_id && (item.kind === "advance_blocked" || item.kind === "dead_letter")) {
       const r = await issueGatewayAdvance(c.env, item.payment_id);
-      if (r.result === "issued" || r.result === "already_issued") {
-        await mutate(c, {
-          main: reviewResolveStatement(db, {
-            id,
-            by: u.id,
-            now: Date.now(),
-            resolution: "advance_issued",
-            note: null,
-          }),
-          action: "payment.review_retry",
-          entityType: "review_item",
-          entityId: id,
-          summary: { reviewId: id, result: r.result },
-        });
-      }
+      if (r.result === "retry") return err(c, ADVANCE_CHANGED, 409);
       return c.json({ ok: true, result: r.result, ...(r.blockers ? { blockers: r.blockers } : {}) });
     }
     if (!["refetch_failed", "dead_letter", "unknown_link"].includes(item.kind))
@@ -241,7 +235,10 @@ export const gatewayPayments = new Hono<AppEnv>()
       { api, linkId, paymentId: null, cause: { kind: "refresh" }, now },
       staleCanceller(c.env, api, now),
     );
+    // A proforma's payment recorded (or found) here still needs its tax invoice (early check 2, finding 2).
+    await sendNext(c.env, r.next);
     if (r.result === "processed" || r.result === "duplicate") {
+      // Resolved as `confirmed` only when the payment is (RESOLUTION_ALLOWED_SQL); a proforma's payment still pending leaves the item open until its tax invoice.
       await mutate(c, {
         main: reviewResolveStatement(db, { id, by: u.id, now, resolution: "confirmed", note: null }),
         action: "payment.review_retry",

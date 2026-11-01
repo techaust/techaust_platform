@@ -121,6 +121,7 @@ export const REVIEW_KINDS = [
   "overpaid",
   "proforma_overpaid",
   "client_gone",
+  "unreadable_event",
 ] as const;
 export type ReviewKind = (typeof REVIEW_KINDS)[number];
 export const REVIEW_RESOLUTIONS = ["confirmed", "advance_issued", "left_as_credit", "dismissed"] as const;

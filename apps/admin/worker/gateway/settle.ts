@@ -16,6 +16,7 @@ import { uuidv7 } from "@techaust/core/ids";
 import { payableOnline } from "@techaust/core/online-pay";
 import type { PaymentStatusReport } from "@techaust/core/payments";
 import {
+  isRazorpayShortUrl,
   judgeRazorpayPayment,
   methodToMode,
   type RazorpayLink,
@@ -23,6 +24,7 @@ import {
   razorpayReferenceNorm,
 } from "@techaust/core/razorpay";
 import {
+  advanceWaitingSql,
   CHECKOUT_BY_LINK_SQL,
   checkoutEndStatement,
   checkoutLiveStatement,
@@ -80,8 +82,19 @@ export const DOC_STATE_SQL = `SELECT d.type, d.status, d.frozen_at, d.currency, 
    FROM documents d JOIN clients k ON k.id = d.client_id WHERE d.id = ?1`;
 const CHECKOUT_BY_ID_SQL =
   "SELECT c.id, c.provider, c.document_id, c.client_id, c.contact_id, c.source, c.currency, c.amount_minor, c.status, c.provider_link_id, c.short_url, c.expires_at, c.created_at, c.updated_at, c.last_refresh_at, c.paid_payment_id FROM checkout_sessions c WHERE c.id = ?1";
-const PAYMENT_SEEN_SQL =
-  "SELECT id FROM payments INDEXED BY payments_provider_ref WHERE provider = ?1 AND provider_payment_id = ?2";
+/** The payment row of a Razorpay payment we already hold, and whether it still waits for its automatic tax invoice (early check 2, finding 2). */
+const PAYMENT_SEEN_SQL = `SELECT p.id, CASE WHEN ${advanceWaitingSql("p")} THEN 1 ELSE 0 END AS waiting
+   FROM payments p INDEXED BY payments_provider_ref WHERE p.provider = ?1 AND p.provider_payment_id = ?2`;
+type Seen = { id: string; waiting: number };
+
+/**
+ * A payment we already hold: `duplicate`, with `next` while it is a proforma's payment still waiting for its tax invoice (early check 2, finding 2: a refresh that
+ * recorded it, a lost `next`, a failed send; every caller that gets `next` queues `gateway.advance`).
+ */
+export const duplicateOf = (seen: Seen): ProcessEventResult =>
+  seen.waiting === 1
+    ? { result: "duplicate", next: { kind: "gateway.advance", paymentId: seen.id } }
+    : { result: "duplicate" };
 const OTHER_LIVE_SQL =
   "SELECT id, provider_link_id FROM checkout_sessions INDEXED BY checkout_sessions_document WHERE document_id = ?1 AND id <> ?2 AND status = 'live' LIMIT 5";
 
@@ -119,9 +132,9 @@ const sourceOf = (cause: SettleCause): "webhook" | "refresh" =>
  * A review item with no payment row (an unknown link, an erased client, a re-fetch that failed): the item, its bell and the event's move to `needs_review`, in one
  * batch audited as the webhook (or the system for a refresh).
  */
-async function reviewOnly(
+export async function reviewOnly(
   env: GatewayEnv,
-  a: SettleArgs,
+  a: Pick<SettleArgs, "cause" | "now"> & { linkId: string | null },
   kind: string,
   where: { documentId: string | null; clientId: string | null; amountMinor: number | null },
   facts: GatewayFacts,
@@ -155,6 +168,8 @@ async function reviewOnly(
           currency: where.amountMinor ? "INR" : null,
           facts,
           now: a.now,
+          // A refresh ("Try again", the portal's poll) adds no second item while one of this kind is open for the link (early check 2, finding 12).
+          onceOpenForLink: a.cause.kind === "refresh" ? (a.linkId ?? null) : null,
         },
         g,
       ),
@@ -300,7 +315,13 @@ export async function checkoutForLink(
   if (byLink) return byLink;
   if (!link.referenceId) return null;
   const byRef = await db.prepare(CHECKOUT_BY_ID_SQL).bind(link.referenceId).first<CheckoutRow>();
-  if (byRef?.provider !== "razorpay" || byRef.status !== "creating" || !link.shortUrl) return null;
+  if (
+    byRef?.provider !== "razorpay" ||
+    byRef.status !== "creating" ||
+    !link.shortUrl ||
+    !isRazorpayShortUrl(link.shortUrl)
+  )
+    return null;
   await checkoutLiveStatement(db, {
     id: byRef.id,
     providerLinkId: link.providerRef,
@@ -394,10 +415,10 @@ export async function settlePayment(
     null;
   if (!paymentRef) return { result: "ignored" };
   // "For B2" 2: the same Razorpay payment again (a duplicate delivery, a replay under a new event id, a refresh after the webhook): the event is processed, nothing else.
-  const seen = await db.prepare(PAYMENT_SEEN_SQL).bind("razorpay", paymentRef).first<{ id: string }>();
+  const seen = await db.prepare(PAYMENT_SEEN_SQL).bind("razorpay", paymentRef).first<Seen>();
   if (seen) {
     await moveEvent(env, a, "processed", "duplicate");
-    return { result: "duplicate" };
+    return duplicateOf(seen);
   }
   const payR = await a.api.fetchPayment(paymentRef);
   if (!payR.ok) {
@@ -441,6 +462,15 @@ export async function settlePayment(
       a,
       "currency_mismatch",
       { documentId: checkout.document_id, clientId: checkout.client_id, amountMinor: null },
+      facts,
+    );
+  // Early check 2, finding 4: a payment Razorpay reports failed or refunded holds no money for us: the review item only, never a pending row the Owner could confirm.
+  if (!verdict.ok && verdict.verdict === "not_captured")
+    return reviewOnly(
+      env,
+      a,
+      "not_captured",
+      { documentId: checkout.document_id, clientId: checkout.client_id, amountMinor: p.amountMinor },
       facts,
     );
   if (!verdict.ok) {
@@ -608,10 +638,10 @@ export async function settlePayment(
   }
   if (!done) {
     // "For B2" 3: the link was cancelled or expired, or the invoice voided, between the read and the batch: record the money pending with a review item.
-    const again = await db.prepare(PAYMENT_SEEN_SQL).bind("razorpay", paymentRef).first<{ id: string }>();
+    const again = await db.prepare(PAYMENT_SEEN_SQL).bind("razorpay", paymentRef).first<Seen>();
     if (again) {
       await moveEvent(env, a, "processed", "duplicate");
-      return { result: "duplicate" };
+      return duplicateOf(again);
     }
     await recordPendingWithReview(env, a, checkout, p, "document_not_payable", { reason: "changed" }, facts);
     return { result: "needs_review" };

@@ -3,7 +3,7 @@
 //   - one host only (`api.razorpay.com`), Basic auth with the key id and secret (finance-only Worker secrets, L1), never logged;
 //   - the live guard runs BEFORE any fetch (CLAUDE.md rule 7, ADM-PAY-11 for Razorpay): a `rzp_live_` key while `PAYMENTS_LIVE_ALLOWED` is not exactly "true", or a
 //     key whose mode is not the one Settings › Gateways names, makes no call at all (`live_not_allowed`);
-//   - every call has its own timeout (`AbortSignal.timeout(8000)`), and answers a typed result, never throws: `network` (no answer, the timeout, a 5xx: try again),
+//   - every call has its own timeout (`AbortSignal.timeout(8000)`), and answers a typed result, never throws: `network` (no answer, the timeout, a 5xx or 429: try again),
 //     `not_found` (404), `refused` (another 4xx), `bad_answer` (an answer we cannot read), with only the code and status kept (never the body: it can carry payer data);
 //   - what comes back is read through core's whitelisting readers (`readRazorpayLink`, `readRazorpayPayment`; L8, 08-C RB-40).
 // Tests never reach Razorpay: they pass a stub `fetch` (`GATEWAY_TRANSPORT` "stub" locally, refused everywhere else).
@@ -96,7 +96,8 @@ export function razorpayApi(cfg: RazorpayConfig): RazorpayApi {
     } catch {
       return { ok: false, code: "network" };
     }
-    if (res.status >= 500) {
+    // A 5xx or a 429 (Razorpay's rate limit; early check 2, finding 11) is transient: tried again later, never a review item.
+    if (res.status >= 500 || res.status === 429) {
       await res.body?.cancel();
       return { ok: false, code: "network", status: res.status };
     }

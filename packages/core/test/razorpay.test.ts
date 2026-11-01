@@ -21,6 +21,7 @@ import {
   keyModeOf,
   LINK_LIFETIME_MS,
   type LinkDocumentType,
+  lenientRazorpayFacts,
   linkDescriptionOf,
   linkRequestOf,
   methodToMode,
@@ -317,6 +318,33 @@ describe("parseRazorpayEvent [JOB-HOOK-01, L8]", () => {
       accountId: "acc_Test01",
     });
     expect(JSON.stringify(facts)).not.toMatch(/example\.test|\+91|@upi/);
+  });
+
+  it("lenientRazorpayFacts: a handled event that fails the strict parse keeps its name and a readable link id only [early check 2, finding 3]", () => {
+    const broken = {
+      event: "payment_link.paid",
+      payload: {
+        payment_link: {
+          entity: { id: "plink_Lenient01", amount: "x", customer: { email: "a@example.test" } },
+        },
+        payment: { entity: { email: "a@example.test", contact: "+919999999999" } },
+      },
+    };
+    expect(parseRazorpayEvent(broken, "evt_L1").ok).toBe(false);
+    expect(lenientRazorpayFacts(broken)).toEqual({ event: "payment_link.paid", linkId: "plink_Lenient01" });
+    expect(
+      lenientRazorpayFacts({
+        event: "payment_link.expired",
+        payload: { payment_link: { entity: { id: "bad id" } } },
+      }),
+    ).toEqual({
+      event: "payment_link.expired",
+    });
+    expect(lenientRazorpayFacts({ event: "payment_link.cancelled" })).toEqual({
+      event: "payment_link.cancelled",
+    });
+    for (const other of [null, [], "x", { event: "payment.captured" }, { event: 1 }, { event: "toString" }])
+      expect(lenientRazorpayFacts(other), JSON.stringify(other)).toBeNull();
   });
 });
 

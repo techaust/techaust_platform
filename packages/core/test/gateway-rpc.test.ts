@@ -42,6 +42,13 @@ describe("GatewayEvents answers", () => {
         next: { kind: "gateway.advance", paymentId: "rzp_pay_1" },
       }),
     ).toBe(true);
+    // Early check 2, finding 2: a duplicate of a proforma's payment still waiting for its tax invoice carries `next` too.
+    expect(
+      isProcessEventResult({
+        result: "duplicate",
+        next: { kind: "gateway.advance", paymentId: "rzp_pay_1" },
+      }),
+    ).toBe(true);
     for (const bad of [
       null,
       { result: "done" },
@@ -56,6 +63,8 @@ describe("GatewayEvents answers", () => {
     expect(isIssueAdvanceResult({ result: "issued", number: "TH/INV/2627/0001" })).toBe(true);
     expect(isIssueAdvanceResult({ result: "blocked", blockers: ["company_missing"] })).toBe(true);
     expect(isIssueAdvanceResult({ result: "already_issued" })).toBe(true);
+    // Early check 2, finding 1: the proforma changed meanwhile; the consumer retries the message (never the finance Worker in one invocation).
+    expect(isIssueAdvanceResult({ result: "retry" })).toBe(true);
     for (const bad of [
       { result: "maybe" },
       { result: "blocked", blockers: [1] },

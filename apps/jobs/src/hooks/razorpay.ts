@@ -6,7 +6,8 @@
 //      `signature_invalid` and counts one failure in the clock-hour window (capped at 50; one owners' bell at 5; never per address: RB-12 OPEN);
 //   5. the event id: Razorpay's `x-razorpay-event-id` header (1 to 64 of `A-Z a-z 0-9 _`), else `sha256:` of the body (the header is not signed, so the real
 //      idempotency is the payment row `rzp_<id>` and the unique `provider_payment_id`);
-//   6. one parse; a type we do not handle is stored `ignored` (200); otherwise `INSERT ... ON CONFLICT DO NOTHING` and the row's state read in the same batch;
+//   6. one parse (a handled type that fails it is kept from a lenient read: its name and link id; early check 2, finding 3); a type we do not handle is stored
+//      `ignored` (200); otherwise `INSERT ... ON CONFLICT DO NOTHING` and the row's state read in the same batch;
 //      a new row, or one still `received`, is queued as `gateway.event` on the leads queue (L9: no new hosted queue); 200 `{ok: true}`. A queue failure is a 500
 //      with the row kept (Razorpay retries; the sweep is the safety net).
 // Never logged: the body, the signature, the secret, or anything personal; the row keeps whitelisted facts only (L8; Settled by the lead on the safest reading,
@@ -17,6 +18,7 @@ import { uuidv7 } from "@techaust/core/ids";
 import {
   eventFacts,
   fallbackEventId,
+  lenientRazorpayFacts,
   parseRazorpayEvent,
   RAZORPAY_EVENT_TYPES,
   razorpayEventIdOf,
@@ -85,8 +87,27 @@ async function readCapped(req: Request, max: number): Promise<Uint8Array | null>
 
 const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
-/** `POST /razorpay`. `now` for tests. */
+/** Whether this isolate answered a webhook yet (the `f: 1` first-run marker of the staging CPU gate; CPU diagnosis lead decision 4). */
+let answeredOnce = false;
+
+/**
+ * `POST /razorpay`. `now` for tests. One log line per call (early check 2, finding 15): `{ev: "hook", p: "razorpay", s: <status>, f: 1 on this isolate's first}`,
+ * never an id, the body or a header, so the staging reading can tell a first run from a warm one.
+ */
 export async function razorpayHook(req: Request, env: HookEnv, now = Date.now()): Promise<Response> {
+  const f = answeredOnce ? undefined : 1;
+  answeredOnce = true;
+  let status = 500;
+  try {
+    const res = await handleHook(req, env, now);
+    status = res.status;
+    return res;
+  } finally {
+    console.log(JSON.stringify({ ev: "hook", p: "razorpay", s: status, ...(f ? { f } : {}) }));
+  }
+}
+
+async function handleHook(req: Request, env: HookEnv, now: number): Promise<Response> {
   const type = req.headers.get("content-type") ?? "";
   if (!/^application\/json(\s*;|$)/i.test(type)) return refuse(415, "unsupported_media_type");
   const raw = await readCapped(req, HOOK_MAX_BYTES);
@@ -128,22 +149,31 @@ export async function razorpayHook(req: Request, env: HookEnv, now = Date.now())
   const eventId = header ?? (await fallbackEventId(text));
   if (!header) logEvent("hook.event_id_fallback", { provider: "razorpay" });
   const parsed = parseRazorpayEvent(obj, eventId);
-  if (!parsed.ok) {
-    logEvent("hook.invalid_event", { provider: "razorpay" });
-    return answer(200, { ok: true });
+  let name: string;
+  let facts: Record<string, string | number>;
+  if (parsed.ok) {
+    name = parsed.value.name;
+    facts = eventFacts(parsed.value);
+  } else {
+    // Early check 2, finding 3: a verified event of a handled type that the strict parse refused is KEPT (`received`, its name and a readable link id only);
+    // the finance Worker re-fetches the link, or writes an `unreadable_event` review item. Anything else unreadable is only logged.
+    const lenient = lenientRazorpayFacts(obj);
+    logEvent("hook.invalid_event", { provider: "razorpay", kept: lenient ? 1 : 0 });
+    if (!lenient) return answer(200, { ok: true });
+    name = lenient.event;
+    facts = lenient;
   }
-  const e = parsed.value;
-  const handled = Object.hasOwn(RAZORPAY_EVENT_TYPES, e.name);
+  const handled = Object.hasOwn(RAZORPAY_EVENT_TYPES, name);
   const rowId = uuidv7();
   const [, state] = await env.DB.batch([
     env.DB.prepare(WEBHOOK_EVENT_INSERT_SQL).bind(
       rowId,
       "razorpay",
       eventId,
-      e.name,
+      name,
       now,
       handled ? "received" : "ignored",
-      JSON.stringify(eventFacts(e)),
+      JSON.stringify(facts),
     ),
     env.DB.prepare(WEBHOOK_EVENT_STATE_SQL).bind("razorpay", eventId),
   ]);

@@ -28,7 +28,10 @@
   "queues": {
     "producers": [
       { "binding": "EMAIL_QUEUE", "queue": "techaust-local-email" },
-      { "binding": "PDF_QUEUE", "queue": "techaust-local-pdf" }
+      { "binding": "PDF_QUEUE", "queue": "techaust-local-pdf" },
+      // M6.2 (early check 2, finding 2): the finance Worker's own producer onto the jobs Worker's leads queue (the existing queue, L9), so a proforma payment
+      // met by a refresh or "Try again" queues its `gateway.advance`. Not on the front or the API Worker (scripts/check-worker-config.mjs, FINANCE_OPTS).
+      { "binding": "LEADS_QUEUE", "queue": "techaust-local-leads" }
     ]
   },
   "d1_databases": [
@@ -71,7 +74,8 @@
       "queues": {
         "producers": [
           { "binding": "EMAIL_QUEUE", "queue": "techaust-staging-email" },
-          { "binding": "PDF_QUEUE", "queue": "techaust-staging-pdf" }
+          { "binding": "PDF_QUEUE", "queue": "techaust-staging-pdf" },
+          { "binding": "LEADS_QUEUE", "queue": "techaust-staging-leads" }
         ]
       },
       "r2_buckets": [

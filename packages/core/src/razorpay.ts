@@ -230,6 +230,20 @@ export function parseRazorpayEvent(obj: unknown, eventId: string): ParsedEvent {
   };
 }
 
+/**
+ * A verified body of a HANDLED event name that `parseRazorpayEvent` refused (a field missing or malformed): the event name and, when it can be read, the link's id,
+ * else null (an unhandled name, or not an object). The hook stores it `received` so nothing verified is dropped (early check 2, finding 3); `processEvent`
+ * re-fetches the link, or writes an `unreadable_event` review item when no link id could be read. Whitelisted (L8; 08-C RB-40): the name and the link id only.
+ */
+export function lenientRazorpayFacts(obj: unknown): { event: string; linkId?: string } | null {
+  if (!isObj(obj) || typeof obj.event !== "string" || !Object.hasOwn(RAZORPAY_EVENT_TYPES, obj.event))
+    return null;
+  const payload = isObj(obj.payload) ? obj.payload : null;
+  const link = payload && isObj(payload.payment_link) ? payload.payment_link.entity : undefined;
+  const linkId = isObj(link) ? str(link.id, LINK_ID) : null;
+  return linkId ? { event: obj.event, linkId } : { event: obj.event };
+}
+
 /** The whitelisted facts of an event, as `webhook_events.facts` stores them (L8; 08-C RB-40): ids, amount, currency, method and account. Nothing personal. */
 export function eventFacts(e: RazorpayEvent): Record<string, string | number> {
   const f: Record<string, string | number> = { event: e.name };

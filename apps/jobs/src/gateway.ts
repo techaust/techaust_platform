@@ -1,13 +1,20 @@
 // The M6.2 gateway family on the leads queue (run file D, L9): routed from queue.ts BEFORE the lead fall-through, so a body of this family (valid or not) can never
 // become a lead. One unit of work per message:
 //   - `gateway.event {eventId}`: the finance Worker's `GatewayEvents.processEvent`; `retry` comes back with a growing delay, `next` queues `gateway.advance`;
-//   - `gateway.advance {paymentId}`: `issueGatewayAdvance` (its own message, L6); a blocker is the finance Worker's review item, so it is acknowledged;
-//   - `gateway.sweep {asOf}` (one per hourly tick): up to 20 events still `received` 15 minutes after they arrived, fewer than 10 tries, queued again.
+//   - `gateway.advance {paymentId}`: `issueGatewayAdvance` (its own message, L6); a blocker is the finance Worker's review item, so it is acknowledged; `retry` (the
+//     proforma changed meanwhile) comes back once, then the last try (`lastTry`) turns a second change into `blocked`;
+//   - `gateway.sweep {asOf}` (one per hourly tick): up to 20 events still `received` 15 minutes after they arrived, fewer than 10 tries, and up to 20 proforma
+//     payments still waiting for their tax invoice 15 minutes after they were recorded, queued again.
 // A message that runs out of tries on the dead-letter queue writes `gatewayDeadLetterStatements`: the event `failed` with a `dead_letter` item, or a `dead_letter`
 // item for the pending payment, and the owners' bell.
 import { gatewayAdvanceMessage, gatewayEventMessage, gatewaySweepMessage } from "@techaust/core";
 import { uuidv7 } from "@techaust/core/ids";
-import { gatewayDeadLetterStatements, STUCK_EVENTS_SQL, SWEEP_AFTER_MS } from "@techaust/db/gateway";
+import {
+  gatewayDeadLetterStatements,
+  STUCK_ADVANCES_SQL,
+  STUCK_EVENTS_SQL,
+  SWEEP_AFTER_MS,
+} from "@techaust/db/gateway";
 import { adminGateway } from "./gateway-rpc.ts";
 import { logEvent } from "./log.ts";
 
@@ -15,6 +22,9 @@ import { logEvent } from "./log.ts";
 export const DEAD_LETTER_BELL =
   "A payment needs review: Razorpay couldn't be reached to confirm this payment. Try again.";
 export const REVIEW_LINK = "/payments?tab=review";
+
+/** A `gateway.advance` is tried at most this many times for a proforma that changed meanwhile (early check 2, finding 1). */
+export const ADVANCE_TRIES = 2;
 
 /** How long a `retry` waits: 1 minute, doubling, at most 1 hour (Razorpay's API down, a payment it has not settled yet). */
 export const gatewayRetryDelay = (attempts: number): number =>
@@ -42,21 +52,30 @@ export async function processGateway(
     case "gateway.advance": {
       const m = gatewayAdvanceMessage.safeParse(body);
       if (!m.success) return skip(body.kind);
-      const r = await adminGateway(env).issueGatewayAdvance({ paymentId: m.data.paymentId });
+      // Early check 2, finding 1: one try per invocation; a proforma that changed meanwhile comes back once (`retry`), and the second delivery is the last try
+      // (a second change is `blocked`: the Owner's review item).
+      const lastTry = attempts >= ADVANCE_TRIES;
+      const r = await adminGateway(env).issueGatewayAdvance({ paymentId: m.data.paymentId, lastTry });
       logEvent("gateway.advance", { r: r.result });
+      if (r.result === "retry" && !lastTry) return { retry: gatewayRetryDelay(attempts) };
       return "ack";
     }
     default: {
       const m = gatewaySweepMessage.safeParse(body);
       if (!m.success) return skip(body.kind);
-      const { results } = await env.DB.prepare(STUCK_EVENTS_SQL)
-        .bind(now - SWEEP_AFTER_MS)
-        .all<{ id: string }>();
-      if (results.length > 0)
-        await env.LEADS_QUEUE.sendBatch(
-          results.map((r) => ({ body: { kind: "gateway.event", eventId: r.id } })),
-        );
-      logEvent("gateway.sweep", { count: results.length });
+      // Events still `received`, and (early check 2, finding 2) proforma payments still waiting for their tax invoice: a lost `next` is found within the hour.
+      const [events, advances] = await env.DB.batch([
+        env.DB.prepare(STUCK_EVENTS_SQL).bind(now - SWEEP_AFTER_MS),
+        env.DB.prepare(STUCK_ADVANCES_SQL).bind(now - SWEEP_AFTER_MS),
+      ]);
+      const ev = (events?.results ?? []) as { id: string }[];
+      const adv = (advances?.results ?? []) as { id: string }[];
+      const out = [
+        ...ev.map((r) => ({ body: { kind: "gateway.event", eventId: r.id } })),
+        ...adv.map((r) => ({ body: { kind: "gateway.advance", paymentId: r.id } })),
+      ];
+      if (out.length > 0) await env.LEADS_QUEUE.sendBatch(out);
+      logEvent("gateway.sweep", { count: ev.length, advances: adv.length });
       return "ack";
     }
   }

@@ -430,18 +430,26 @@ export type ReviewItemArgs = {
   /** Whitelisted facts only (L8; 08-C RB-40). */
   facts: GatewayFacts | null;
   now: number;
+  /**
+   * A status refresh (no event row, so the unique `(webhook_event_id, kind)` cannot dedupe): no second item while one of this kind is open for this link (early
+   * check 2, finding 12: each "Try again" press would otherwise add an item and a bell).
+   */
+  onceOpenForLink?: string | null;
 };
 
 /**
- * One review item, `INSERT OR IGNORE` (the unique `(webhook_event_id, kind)` keeps a retried event from adding it twice), guarded when `g` is given (normally on
- * the audit row, and so on the payment row of the same batch). Binds `?1`..`?12`, then the guard.
+ * One review item, `INSERT OR IGNORE` (the unique `(webhook_event_id, kind)` keeps a retried event from adding it twice; `onceOpenForLink` does the same for a
+ * refresh through one range of `review_items_status`), guarded when `g` is given (normally on the audit row, and so on the payment row of the same batch). Binds
+ * `?1`..`?13`, then the guard.
  */
 export function reviewItemStatement(db: D1Database, r: ReviewItemArgs, g?: GuardSql): D1PreparedStatement {
-  const gs = guarded(g, 12);
+  const gs = guarded(g, 13);
   return db
     .prepare(
       `INSERT OR IGNORE INTO review_items (id, source, provider, kind, status, webhook_event_id, payment_id, document_id, client_id, amount_minor, currency, facts, created_at)
-       SELECT ?1, ?2, ?3, ?4, 'open', ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12 WHERE 1 = 1${gs.sql}`,
+       SELECT ?1, ?2, ?3, ?4, 'open', ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12
+       WHERE (?13 IS NULL OR NOT EXISTS (SELECT 1 FROM review_items ox INDEXED BY review_items_status
+         WHERE ox.status = 'open' AND ox.kind = ?4 AND ox.provider = ?3 AND json_extract(ox.facts, '$.linkId') = ?13))${gs.sql}`,
     )
     .bind(
       r.id,
@@ -456,6 +464,7 @@ export function reviewItemStatement(db: D1Database, r: ReviewItemArgs, g?: Guard
       r.currency,
       r.facts ? JSON.stringify(r.facts) : null,
       r.now,
+      r.onceOpenForLink ?? null,
       ...gs.params,
     );
 }
@@ -597,6 +606,34 @@ export const STUCK_EVENTS_SQL = `SELECT e.id FROM webhook_events e INDEXED BY we
    WHERE e.status = 'received' AND e.received_at < ?1 AND e.attempts < ${SWEEP_MAX_ATTEMPTS}
    ORDER BY e.received_at, e.id LIMIT ${SWEEP_LIMIT}`;
 
+// ---- a proforma's payment still waiting for its automatic tax invoice (early check 2, finding 2) ----------------------------------------------------------
+
+/**
+ * Payment `p` is a proforma's Razorpay payment still waiting for its automatic tax invoice (L6): pending with its requested allocation, no advance receipt yet, its
+ * checkout known, and no open `advance_blocked` or `dead_letter` item (the Owner was told and decides; "Try again" or "Confirm by issuing"). Whoever meets such a
+ * payment (a duplicate event, the portal's refresh, the hourly sweep) asks for `gateway.advance` again, so the tax invoice is never lost when one `next` was not sent
+ * (RA-17: GST on an advance is due on receipt). The open-item check is one seek of `review_items_payment`.
+ */
+export const advanceWaitingSql = (p: string): string =>
+  `(${p}.provider = 'razorpay' AND ${p}.kind = 'payment' AND ${p}.status = 'pending_verification' AND ${p}.requested_allocations IS NOT NULL
+     AND ${p}.advance_receipt_id IS NULL AND ${p}.checkout_id IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM review_items wx INDEXED BY review_items_payment WHERE wx.payment_id = ${p}.id AND wx.status = 'open' AND wx.kind IN ('advance_blocked', 'dead_letter')))`;
+
+/**
+ * The payment of an event that is no longer `received` (`?1` the event row) when it still waits for its tax invoice: a redelivered `gateway.event` whose first
+ * `next` was lost answers `duplicate` with `next` again. The payment row's id is `rzp_` and Razorpay's payment id (core `razorpayPaymentRowId`): one primary-key seek.
+ */
+export const EVENT_ADVANCE_WAITING_SQL = `SELECT p.id FROM webhook_events e JOIN payments p ON p.id = 'rzp_' || json_extract(e.facts, '$.paymentId')
+   WHERE e.id = ?1 AND e.status <> 'received' AND ${advanceWaitingSql("p")}`;
+
+/**
+ * The sweep's second read: up to 20 payments still waiting for their tax invoice 15 minutes after they were recorded (`?1` = now − 15 minutes), oldest first,
+ * through the partial index `payments_pending` (only pending rows: Staff-recorded entries and gateway money waiting for a decision).
+ */
+export const STUCK_ADVANCES_SQL = `SELECT p.id FROM payments p INDEXED BY payments_pending
+   WHERE p.status = 'pending_verification' AND p.recorded_at < ?1 AND ${advanceWaitingSql("p")}
+   ORDER BY p.recorded_at, p.id LIMIT ${SWEEP_LIMIT}`;
+
 /** The newest event a gateway processed (Settings › Gateways, "Last verified webhook"): one seek of the unique index's provider prefix. */
 export const LAST_VERIFIED_EVENT_SQL =
   "SELECT max(received_at) AS at FROM webhook_events INDEXED BY webhook_events_provider_event WHERE provider = ?1";
@@ -640,8 +677,32 @@ export function hookFailureStatements(
 // ---- review items: resolve, and the erase ------------------------------------------------------------------------------------------------------------------
 
 /**
+ * The item's payment meets `cond` (on alias `ip`): the item's own payment, or, for an item written before any payment row (a re-fetch that failed, an unknown link,
+ * a dead letter), the payment its facts name or the one that paid its link. Primary key, `payments_provider_ref` and `checkout_sessions_provider_link` seeks.
+ */
+const itemPaymentSql = (cond: string) =>
+  `(EXISTS (SELECT 1 FROM payments ip WHERE ip.id = review_items.payment_id AND ${cond})
+     OR (review_items.payment_id IS NULL AND (
+       EXISTS (SELECT 1 FROM payments ip INDEXED BY payments_provider_ref
+         WHERE ip.provider = review_items.provider AND ip.provider_payment_id = json_extract(review_items.facts, '$.paymentId') AND ${cond})
+       OR EXISTS (SELECT 1 FROM checkout_sessions ic INDEXED BY checkout_sessions_provider_link JOIN payments ip ON ip.id = ic.paid_payment_id
+         WHERE ic.provider = review_items.provider AND ic.provider_link_id = json_extract(review_items.facts, '$.linkId') AND ${cond}))))`;
+
+/**
+ * Resolve is a RECORD of what the money already is, never a move of it (lead decision on early check 2, finding 5): money moves only through `POST
+ * /payments/:id/verify` or "Confirm by issuing the tax invoice". So each resolution is refused unless the state says so: `confirmed` only once the item's payment is
+ * confirmed; `advance_issued` only once it has its advance receipt (its tax invoice); `left_as_credit` only on an `overpaid` item; `dismissed` always.
+ */
+export const RESOLUTION_ALLOWED_SQL = `CASE ?4
+     WHEN 'dismissed' THEN 1
+     WHEN 'left_as_credit' THEN review_items.kind = 'overpaid'
+     WHEN 'confirmed' THEN ${itemPaymentSql("ip.status = 'confirmed'")}
+     WHEN 'advance_issued' THEN ${itemPaymentSql("ip.advance_receipt_id IS NOT NULL")}
+     ELSE 0 END`;
+
+/**
  * The Owner resolves an open item (`?1` id, `?2` member, `?3` now, `?4` resolution, `?5` note or null): only while open (trigger `review_items_status_flow`
- * holds the Owner and the once). Guarded when `g` is given (normally the confirm or retry batch's own audit row).
+ * holds the Owner and the once) and only when the resolution matches the money (`RESOLUTION_ALLOWED_SQL`). Guarded when `g` is given.
  */
 export function reviewResolveStatement(
   db: D1Database,
@@ -651,7 +712,8 @@ export function reviewResolveStatement(
   const gs = guarded(g, 5);
   return db
     .prepare(
-      `UPDATE review_items SET status = 'resolved', resolved_by = ?2, resolved_at = ?3, resolution = ?4, note = ?5 WHERE id = ?1 AND status = 'open'${gs.sql}`,
+      `UPDATE review_items SET status = 'resolved', resolved_by = ?2, resolved_at = ?3, resolution = ?4, note = ?5
+       WHERE id = ?1 AND status = 'open' AND (${RESOLUTION_ALLOWED_SQL})${gs.sql}`,
     )
     .bind(a.id, a.by, a.now, a.resolution, a.note, ...gs.params);
 }

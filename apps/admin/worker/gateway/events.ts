@@ -4,13 +4,21 @@
 import type { ProcessEventResult } from "@techaust/core/gateway-rpc";
 import {
   checkoutEndStatement,
+  EVENT_ADVANCE_WAITING_SQL,
   WEBHOOK_EVENT_READ_SQL,
   webhookEventAttemptStatement,
   webhookEventMoveStatement,
 } from "@techaust/db/gateway";
 import { gatewayModeOf, razorpayOf } from "./config.ts";
 import type { RazorpayApi } from "./razorpay.ts";
-import { type CheckoutRow, checkoutForLink, endCheckout, type GatewayEnv, settlePayment } from "./settle.ts";
+import {
+  type CheckoutRow,
+  checkoutForLink,
+  endCheckout,
+  type GatewayEnv,
+  reviewOnly,
+  settlePayment,
+} from "./settle.ts";
 
 type EventRow = {
   id: string;
@@ -35,7 +43,7 @@ const text = (v: unknown) => (typeof v === "string" && v.length > 0 && v.length 
 
 /**
  * The stale links of a document paid through another link are cancelled at Razorpay after the batch (best effort: a failure is logged by code only, and the
- * link stays `stale`; if it is paid later the money becomes credit, L4).
+ * link stays `stale`; if it is paid later the money is recorded pending with a `document_not_payable` item for the Owner: L4 as amended by the lead, 2026-11-01).
  */
 export function staleCanceller(env: GatewayEnv, api: RazorpayApi, now: number) {
   return async (links: readonly { id: string; linkId: string }[]) => {
@@ -47,6 +55,29 @@ export function staleCanceller(env: GatewayEnv, api: RazorpayApi, now: number) {
   };
 }
 
+/**
+ * A `next` met inside the finance Worker (the portal's refresh, the admin refresh, "Try again"; early check 2, finding 2): `gateway.advance` goes on the leads
+ * queue (the producer binding `LEADS_QUEUE`, finance's own: wrangler.finance.jsonc), one unit of work per message as from the jobs consumer. Running the advance
+ * here would put two RPCs' statements in one invocation. A missing binding or a failed send is logged by code only: the hourly sweep finds the payment
+ * (`STUCK_ADVANCES_SQL`). Answers whether the message was sent.
+ */
+export async function sendNext(env: object, next: ProcessEventResult["next"]): Promise<boolean> {
+  if (!next) return false;
+  const queue: unknown = Reflect.get(env, "LEADS_QUEUE");
+  const send: unknown = typeof queue === "object" && queue !== null ? Reflect.get(queue, "send") : undefined;
+  if (typeof send !== "function") {
+    console.log(JSON.stringify({ ev: "gw", m: "next_not_sent", code: "no_queue" }));
+    return false;
+  }
+  try {
+    await Reflect.apply(send, queue, [{ kind: "gateway.advance", paymentId: next.paymentId }]);
+    return true;
+  } catch {
+    console.log(JSON.stringify({ ev: "gw", m: "next_not_sent", code: "send_failed" }));
+    return false;
+  }
+}
+
 /** One event. Answers `duplicate` for an event no longer waiting, `retry` for a transient failure (the consumer retries with backoff). */
 export async function processEvent(
   env: GatewayEnv,
@@ -54,16 +85,20 @@ export async function processEvent(
   now = Date.now(),
 ): Promise<ProcessEventResult> {
   const db = env.DB;
-  const [row] = (
-    await db.batch([
-      webhookEventAttemptStatement(db, eventId),
-      db.prepare(WEBHOOK_EVENT_READ_SQL).bind(eventId),
-    ])
-  )
-    .slice(1)
-    .map((r) => r.results[0] as EventRow | undefined);
-  // (1) a redelivered or already handled event
-  if (row?.status !== "received") return { result: "duplicate" };
+  const [, read, waiting] = await db.batch([
+    webhookEventAttemptStatement(db, eventId),
+    db.prepare(WEBHOOK_EVENT_READ_SQL).bind(eventId),
+    db.prepare(EVENT_ADVANCE_WAITING_SQL).bind(eventId),
+  ]);
+  const row = read?.results[0] as EventRow | undefined;
+  // (1) a redelivered or already handled event; when its proforma payment still waits for the tax invoice (a lost `next`, a failed send), `next` again
+  // (early check 2, finding 2).
+  if (row?.status !== "received") {
+    const w = waiting?.results[0] as { id: string } | undefined;
+    return w
+      ? { result: "duplicate", next: { kind: "gateway.advance", paymentId: w.id } }
+      : { result: "duplicate" };
+  }
   if (row.provider !== "razorpay") {
     await webhookEventMoveStatement(db, {
       id: row.id,
@@ -77,10 +112,16 @@ export async function processEvent(
   const linkId = text(facts.linkId);
   const paymentId = text(facts.paymentId);
   const type = row.event_type;
-  if (!linkId) {
-    await webhookEventMoveStatement(db, { id: row.id, status: "ignored", outcome: "no_link", now }).run();
-    return { result: "ignored" };
-  }
+  // Early check 2, finding 3: a verified event of a handled type whose link id couldn't be read (the hook kept it from a lenient read) is never dropped: a
+  // review item names it, with the event name only.
+  if (!linkId)
+    return reviewOnly(
+      env,
+      { cause: { kind: "event", eventId: row.id }, now, linkId: null },
+      "unreadable_event",
+      { documentId: null, clientId: null, amountMinor: null },
+      { event: row.event_type },
+    );
   const api = razorpayOf(env, await gatewayModeOf(db));
   if (!api) return { result: "retry" };
   const cause = { kind: "event", eventId: row.id } as const;

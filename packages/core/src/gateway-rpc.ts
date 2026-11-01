@@ -24,7 +24,11 @@ export type ProcessEventResult = {
   readonly next?: { readonly kind: "gateway.advance"; readonly paymentId: string };
 };
 
-export const ISSUE_ADVANCE_RESULTS = ["issued", "already_issued", "blocked", "not_pending"] as const;
+/**
+ * `retry` (early check 2, finding 1): the proforma changed between the read and the freeze. The finance Worker never tries twice in one invocation (the D1 budget);
+ * the jobs consumer retries the message once and then asks with `lastTry`, when a second change is `blocked` (`freeze_refused`); the admin route answers 409.
+ */
+export const ISSUE_ADVANCE_RESULTS = ["issued", "already_issued", "blocked", "not_pending", "retry"] as const;
 export type IssueAdvanceResult = {
   readonly result: (typeof ISSUE_ADVANCE_RESULTS)[number];
   /** The new tax invoice's number when issued. */
@@ -36,7 +40,8 @@ export type IssueAdvanceResult = {
 export interface GatewayEventsApi {
   /** One stored, verified webhook event (`webhook_events.id`), dispatched by the row's own `provider` (Razorpay only in M6.2). */
   processEvent(args: { eventId: string }): Promise<ProcessEventResult>;
-  issueGatewayAdvance(args: { paymentId: string }): Promise<IssueAdvanceResult>;
+  /** `lastTry`: the message's last try (the jobs consumer's second delivery): a proforma changed again is `blocked`, never `retry`. */
+  issueGatewayAdvance(args: { paymentId: string; lastTry?: boolean }): Promise<IssueAdvanceResult>;
 }
 
 const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");

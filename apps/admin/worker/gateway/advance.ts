@@ -130,19 +130,20 @@ const parseRequested = (raw: string | null): { documentId: string; amountMinor: 
   }
 };
 
-/** `issueGatewayAdvance({paymentId})`: one try, and one more when the proforma changed between the read and the freeze ("For B2" 10). */
-export async function issueGatewayAdvance(env: AdvanceEnv, paymentId: string): Promise<IssueAdvanceResult> {
-  const first = await tryAdvance(env, paymentId);
-  if (first !== "changed") return first;
-  const second = await tryAdvance(env, paymentId);
-  if (second !== "changed") return second;
-  const p = await env.DB.prepare(PENDING_SQL).bind(paymentId).first<PendingRow>();
-  return p
-    ? blocked(env, p, parseRequested(p.requested_allocations)?.documentId ?? null, ["freeze_refused"])
-    : { result: "not_pending" };
+/**
+ * `issueGatewayAdvance({paymentId, lastTry})`: ONE try per invocation (early check 2, finding 1: a second try in the same invocation would double the D1
+ * statements). When the proforma changed between the read and the freeze, the answer is `retry` (the jobs consumer retries the message once; the admin route
+ * answers 409 "try again"); on the message's last try a second change is `blocked` (`freeze_refused`), so the Owner hears of it.
+ */
+export async function issueGatewayAdvance(
+  env: AdvanceEnv,
+  paymentId: string,
+  opts: { lastTry?: boolean } = {},
+): Promise<IssueAdvanceResult> {
+  return tryAdvance(env, paymentId, opts.lastTry === true);
 }
 
-async function tryAdvance(env: AdvanceEnv, paymentId: string): Promise<IssueAdvanceResult | "changed"> {
+async function tryAdvance(env: AdvanceEnv, paymentId: string, lastTry: boolean): Promise<IssueAdvanceResult> {
   const db = env.DB;
   const p = await db.prepare(PENDING_SQL).bind(paymentId).first<PendingRow>();
   if (p?.provider !== "razorpay" || p.kind !== "payment") return { result: "not_pending" };
@@ -396,13 +397,17 @@ async function tryAdvance(env: AdvanceEnv, paymentId: string): Promise<IssueAdva
         receiptId,
         receivedOn: p.received_on,
         ...(earlierMonth ? { warnings: ["advance_previous_period"] } : {}),
+        // The payment's open review items are resolved in this batch with `resolved_by` = the Owner this invoice is issued on behalf of (the trigger
+        // `review_items_status_flow` needs an Owner; the act is the system's): said here so the log never reads as that Owner's own decision.
+        reviewItemsResolvedBy: "onBehalfOf",
       },
       // T11 (merge order): `deedDraftStatements(db, { documentIds: [invoiceId] }, guardSql({ auditId }))` goes after `batch.postAudit` (its recompute).
       side: (g) => [
         ...batch.postAudit,
         ...sends,
         issuedBell(db, { documentId: invoiceId, client: ctx.client.display_name, earlierMonth }, g),
-        // The payment's open review items (a dead letter, an earlier block) are settled by this issue.
+        // The payment's open review items (a dead letter, an earlier block) are settled by this issue: a system act recorded under the Owner it is issued on
+        // behalf of (early check 2, finding 5: kept, and named in the audit summary as `reviewItemsResolvedBy: "onBehalfOf"`).
         db
           .prepare(
             `UPDATE review_items SET status = 'resolved', resolved_by = ?2, resolved_at = ?3, resolution = 'advance_issued'
@@ -428,7 +433,7 @@ async function tryAdvance(env: AdvanceEnv, paymentId: string): Promise<IssueAdva
       .prepare("SELECT updated_at FROM documents WHERE id = ?1")
       .bind(proformaId)
       .first<{ updated_at: number }>();
-    if (nowProforma && nowProforma.updated_at !== d.updated_at) return "changed";
+    if (nowProforma && nowProforma.updated_at !== d.updated_at && !lastTry) return { result: "retry" };
     return blocked(env, p, proformaId, ["freeze_refused"]);
   }
   await enqueuePdf(env, invoiceId, "send");

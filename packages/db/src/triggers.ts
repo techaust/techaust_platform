@@ -1406,6 +1406,7 @@ export const REVIEW_KINDS_0064 = [
   "overpaid",
   "proforma_overpaid",
   "client_gone",
+  "unreadable_event",
 ] as const;
 /** The columns `payments_fixed` freezes as 0064 recreates it: 0060's list plus M6.2's gateway columns (pinned). */
 export const PAYMENT_FROZEN_0064 = [

@@ -7,7 +7,13 @@
 import type { CreateLinkArgs, CreateLinkResult, RefreshResult } from "@techaust/core/gateway-rpc";
 import { uuidv7 } from "@techaust/core/ids";
 import { payAmountVerdict, payableOnline } from "@techaust/core/online-pay";
-import { LINK_LIFETIME_MS, linkRequestOf, type RazorpayLink, razorpayAllowed } from "@techaust/core/razorpay";
+import {
+  isRazorpayShortUrl,
+  LINK_LIFETIME_MS,
+  linkRequestOf,
+  type RazorpayLink,
+  razorpayAllowed,
+} from "@techaust/core/razorpay";
 import {
   CLIENT_LINKS_SINCE_SQL,
   checkoutCreateStatement,
@@ -21,7 +27,7 @@ import {
 import { auditStmt, type RequestInfo } from "@techaust/db/log";
 import { cachedSetting } from "../settings-cache.ts";
 import { envText, gatewayModeOf, portalUrlOf, razorpayOf, transportOf } from "./config.ts";
-import { staleCanceller } from "./events.ts";
+import { sendNext, staleCanceller } from "./events.ts";
 import type { RazorpayApi } from "./razorpay.ts";
 import { type CheckoutRow, DOC_STATE_SQL, endCheckout, type GatewayEnv, settlePayment } from "./settle.ts";
 
@@ -93,7 +99,7 @@ async function adopt(
   now: number,
   fallbackExpiry: number,
 ): Promise<boolean> {
-  if (!link.shortUrl) return false;
+  if (!link.shortUrl || !isRazorpayShortUrl(link.shortUrl)) return false;
   const r = await checkoutLiveStatement(env.DB, {
     id: checkoutId,
     providerLinkId: link.providerRef,
@@ -178,6 +184,9 @@ export async function makeLink(env: GatewayEnv, a: MakeLinkArgs, now = Date.now(
   const callbackUrl = callbackOf(env, a.returnTo, a.documentId);
   if (!callbackUrl) return { ok: false, error: "gateway_unavailable" };
   // L4: one open link per document. The same amount, live for at least an hour more: reused. A stuck `creating` row is adopted or failed; a recent one waits.
+  // The hourly limit is checked BEFORE any link is cancelled (early check 2, finding 10): a refused request never leaves the document without its open link.
+  const made = (linksR?.results[0] as { n: number } | undefined)?.n ?? 0;
+  const limited = made >= LINKS_PER_CLIENT_HOUR;
   const open = openR?.results[0] as CheckoutRow | undefined;
   if (open) {
     if (open.status === "creating") {
@@ -199,6 +208,7 @@ export async function makeLink(env: GatewayEnv, a: MakeLinkArgs, now = Date.now(
             reused: true,
             checkoutId: back.id,
           };
+        if (limited) return { ok: false, error: "too_many_links" };
         if (back?.status === "live" && back.provider_link_id) {
           const c = await api.cancelLink(back.provider_link_id);
           if (!c.ok) return { ok: false, error: "gateway_error" };
@@ -217,6 +227,7 @@ export async function makeLink(env: GatewayEnv, a: MakeLinkArgs, now = Date.now(
           checkoutId: open.id,
         };
       // A new amount (or a link about to expire): the old one is cancelled at Razorpay FIRST, so two links never take money for the same document.
+      if (limited) return { ok: false, error: "too_many_links" };
       if (open.provider_link_id) {
         const c = await api.cancelLink(open.provider_link_id);
         if (!c.ok) return { ok: false, error: "gateway_error" };
@@ -224,8 +235,7 @@ export async function makeLink(env: GatewayEnv, a: MakeLinkArgs, now = Date.now(
       await checkoutEndStatement(db, { id: open.id, status: "cancelled", now }).run();
     }
   }
-  const made = (linksR?.results[0] as { n: number } | undefined)?.n ?? 0;
-  if (made >= LINKS_PER_CLIENT_HOUR) return { ok: false, error: "too_many_links" };
+  if (limited) return { ok: false, error: "too_many_links" };
   // ROW FIRST
   const checkoutId = uuidv7();
   const expiresAt = now + LINK_LIFETIME_MS;
@@ -289,7 +299,8 @@ export async function makeLink(env: GatewayEnv, a: MakeLinkArgs, now = Date.now(
     const found = await api.findLinkByReference(checkoutId);
     if (found.ok && found.value) link = found.value;
   }
-  if (!link?.shortUrl) {
+  // Early check 2, finding 13: the short URL is on Razorpay's own hosts before the row goes live, so no answer can send staff or a client elsewhere.
+  if (!link?.shortUrl || !isRazorpayShortUrl(link.shortUrl)) {
     await checkoutFailStatement(db, { id: checkoutId, now }).run();
     return {
       ok: false,
@@ -376,6 +387,8 @@ export async function refreshCheckout(
     { api, linkId: checkout.provider_link_id, paymentId: null, cause, now },
     staleCanceller(env, api, now),
   );
+  // A proforma's payment recorded (or found) here still needs its tax invoice: queued like the webhook's (early check 2, finding 2).
+  await sendNext(env, r.next);
   return {
     result:
       r.result === "processed" || r.result === "duplicate"

@@ -73,9 +73,9 @@ export class GatewayEvents extends WorkerEntrypoint<Env> implements GatewayEvent
     return answer;
   }
 
-  async issueGatewayAdvance(args: { paymentId: string }): Promise<IssueAdvanceResult> {
+  async issueGatewayAdvance(args: { paymentId: string; lastTry?: boolean }): Promise<IssueAdvanceResult> {
     const paymentId = rpcId(args?.paymentId, "GatewayEvents");
-    const answer = await issueGatewayAdvance(this.env, paymentId);
+    const answer = await issueGatewayAdvance(this.env, paymentId, { lastTry: args?.lastTry === true });
     rpcLog("issueGatewayAdvance", answer.result);
     return answer;
   }
