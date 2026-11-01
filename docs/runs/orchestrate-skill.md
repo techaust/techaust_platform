@@ -1,6 +1,6 @@
 # Run: the `/orchestrate` skill and the cloud watcher
 
-Status: PR READY https://github.com/techaust/techaust_platform/pull/147
+Status: merged (PR #147, 2026-11-01)
 Tier: C
 Usage: lead claude-opus-5-5/high (cloud session orchestrate-skill); builder claude-opus-5-5/high (model-audit; skills: none — no docs/14 §9 row fits a plain Node CLI, flagged by the audit for that reason): 5-h 5 → ? %; reviewer claude-opus-5-5/high (skills: code-review; its helper general-purpose claude-opus-5-5/high, read-only) review 1 + re-check; fix builder claude-opus-5-5/high (skills: none, same reason). 5-h readings: only the start reading (5 % at 11:15 IST) was received during the run. Reading at the start: USAGE 5 at 2026-11-01T11:15+05:30.
 

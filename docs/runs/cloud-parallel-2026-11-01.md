@@ -1,6 +1,6 @@
 # Run: parallel cloud sessions, 2026-11-01
 
-Status: open (polish-sweep #144 merging; test-hardening #143, ca-wording #142, m63-m64-briefs #141 merged)
+Status: done (every task merged: #141, #142, #143, #144; then #147 and #149 in a second, two-session run)
 Tier: mixed (C, B, C, A planning)
 Usage: four cloud sessions plus the PC's agents shared one 5-hour window: 14 % at 02:05 IST → 62 % at 03:21 → 88 % at 04:00 → limit at ~04:30; reset 06:10.
 
@@ -107,3 +107,6 @@ YOUR TASK: draft the briefs for M6.3 Stripe (test mode) and M6.4 PayPal (sandbox
 - The 5-hour window is the real limit of a parallel run: four cloud sessions plus two PC agents used ~75 % in two hours. Start right after a reset, run at most two cloud sessions beside the PC's agents, stop new agents at 85 %.
 - When the main session itself hits the limit, nothing reviews or merges until a person types again: PRs #143 and #144 waited ~6 hours.
 - A cloud session's planning work can catch irreversible schema choices early (the 0063 widths): worth running briefs ahead of builds.
+
+## Handover (main session, 2026-11-01, end of day)
+Both runs done: #141–#144 overnight (the usage limit paused everything ~04:30–10:20), #147 and #149 in the daytime two-session run. All six cloud sessions finished; the owner may archive them. The next parallel run uses `/orchestrate` (#147) and its pacing rule.
