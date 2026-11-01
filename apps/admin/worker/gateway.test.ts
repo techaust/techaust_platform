@@ -8,30 +8,25 @@ import { uuidv7 } from "@techaust/core/ids";
 import { checkProviderContract } from "@techaust/core/payments";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { issueGatewayAdvance } from "./gateway/advance.ts";
-import { setStubTransport, stubFetch, stubIdsOf } from "./gateway/config.ts";
+import { setStubTransport, stubFetch } from "./gateway/config.ts";
 import { processEvent } from "./gateway/events.ts";
 import { createLinkFor, refreshForClient } from "./gateway/links.ts";
 import { razorpayApi, razorpayProvider } from "./gateway/razorpay.ts";
 import { GATEWAY_WARM_STEPS, warmGateway } from "./gateway/warm.ts";
+import {
+  calls,
+  countingEnv,
+  eventRow,
+  issued,
+  linkFor,
+  owner,
+  paymentOf,
+  staffLink,
+  stub,
+} from "./test-gateway.ts";
 import { call, one, rows, sessionFor, withEnv } from "./test-helpers.ts";
-import { mkProforma, putSwiftBank, putTax } from "./test-invoice-types.ts";
-import { issueInvoice, json, mkInvoice, mkInvoiceClient, putBank, putCompany } from "./test-invoices.ts";
-
-const owner = () => sessionFor("owner", { stepUp: true });
-type Session = Awaited<ReturnType<typeof owner>>;
-
-/** Every Razorpay call the stub saw, and a switch to answer some of them otherwise. */
-let calls: { method: string; path: string }[] = [];
-function stub(over?: (path: string, method: string, body: unknown) => Response | null) {
-  calls = [];
-  setStubTransport(async (input, init) => {
-    const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
-    const method = init?.method ?? "GET";
-    calls.push({ method, path: url.pathname + url.search });
-    const replaced = over?.(url.pathname, method, init?.body ? JSON.parse(String(init.body)) : null);
-    return replaced ?? stubFetch(input, init);
-  });
-}
+import { putSwiftBank, putTax } from "./test-invoice-types.ts";
+import { json, putBank, putCompany } from "./test-invoices.ts";
 
 beforeEach(async () => {
   await putCompany();
@@ -41,79 +36,6 @@ beforeEach(async () => {
   stub();
 });
 afterEach(() => setStubTransport(null));
-
-/** An issued INR tax invoice (₹1,180) whose primary contact has portal and finance access. */
-async function issued(s: Session, kind: "invoice" | "proforma" = "invoice") {
-  const c = await mkInvoiceClient();
-  await env.DB.prepare(
-    "UPDATE contacts SET portal_access = 1, can_see_finance = 1, is_billing = 1 WHERE id = ?1",
-  )
-    .bind(c.contactId)
-    .run();
-  const made =
-    kind === "invoice"
-      ? await mkInvoice(s, { clientId: c.clientId, contactId: c.contactId })
-      : await mkProforma(s, { clientId: c.clientId });
-  const res = await issueInvoice(s, made.id);
-  if (res.status !== 200) throw new Error(`not issued: ${res.status} ${await res.text()}`);
-  const doc = await one<{ updated_at: number; total_minor: number }>(
-    "SELECT updated_at, total_minor FROM documents WHERE id = ?1",
-    made.id,
-  );
-  return {
-    id: made.id,
-    clientId: c.clientId,
-    contactId: c.contactId,
-    updatedAt: doc?.updated_at ?? 0,
-    total: doc?.total_minor ?? 0,
-  };
-}
-
-const staffLink = (s: Session, id: string, amountMinor: number, expectedUpdatedAt: number, e: Env = env) =>
-  call(`/invoices/${id}/payment-link`, { cookie: s.cookie, body: { amountMinor, expectedUpdatedAt } }, e);
-
-/** The webhook row the jobs hook would have written (whitelisted facts only). */
-async function eventRow(
-  linkId: string,
-  paymentId: string | null,
-  type = "payment_link.paid",
-): Promise<string> {
-  const id = uuidv7();
-  await env.DB.prepare(
-    "INSERT INTO webhook_events (id, provider, event_id, event_type, received_at, status, attempts, facts) VALUES (?1, 'razorpay', ?2, ?3, ?4, 'received', 0, ?5)",
-  )
-    .bind(
-      id,
-      `evt_${id.replaceAll("-", "").slice(-14)}`,
-      type,
-      Date.now(),
-      JSON.stringify({ linkId, ...(paymentId ? { paymentId } : {}) }),
-    )
-    .run();
-  return id;
-}
-
-async function linkFor(s: Session, doc: { id: string; updatedAt: number; total: number }) {
-  const res = await staffLink(s, doc.id, doc.total, doc.updatedAt);
-  expect(res.status, await res.clone().text()).toBe(201);
-  const b = await json(res);
-  return { checkoutId: b.checkoutId as string, ...stubIdsOf(b.checkoutId as string, doc.total) };
-}
-
-const paymentOf = (providerId: string) =>
-  one<{
-    id: string;
-    status: string;
-    provider: string;
-    amount_minor: number;
-    mode: string;
-    received_on: string;
-    verified_by: string | null;
-    reference_norm: string;
-  }>(
-    "SELECT id, status, provider, amount_minor, mode, received_on, verified_by, reference_norm FROM payments WHERE provider_payment_id = ?1",
-    providerId,
-  );
 
 describe("payment links [ADM-PAY-02, L2 to L4, L10]", () => {
   it("makes a fixed-amount link with no customer or Razorpay notifications, our reference, the description by type, the static return page", async () => {
@@ -686,51 +608,21 @@ describe("routes per role, the review list, the provider contract", () => {
 
   it("each RPC stays within 45 D1 statements (processEvent on an invoice; the automatic advance)", async () => {
     const o = await owner();
-    let n = 0;
-    const db = env.DB;
-    // Counts STATEMENTS (a batch counts each of its statements; a single first/run/all counts one), unwrapping to the real statements for D1.
-    const real = new WeakMap<object, D1PreparedStatement>();
-    const wrapS = (st: D1PreparedStatement): D1PreparedStatement => {
-      const p = new Proxy(st, {
-        get(ts, kk) {
-          if (kk === "bind") return (...v: unknown[]) => wrapS(ts.bind(...v));
-          if (kk === "first" || kk === "run" || kk === "all" || kk === "raw")
-            return (...a: unknown[]) => {
-              n += 1;
-              return (Reflect.get(ts, kk) as (...x: unknown[]) => unknown).apply(ts, a);
-            };
-          return Reflect.get(ts, kk);
-        },
-      });
-      real.set(p, st);
-      return p;
-    };
-    const countingDb = new Proxy(db, {
-      get(t, k) {
-        if (k === "batch")
-          return (stmts: D1PreparedStatement[]) => {
-            n += stmts.length;
-            return t.batch(stmts.map((s) => real.get(s) ?? s));
-          };
-        if (k === "prepare") return (q: string) => wrapS(t.prepare(q));
-        return Reflect.get(t, k);
-      },
-    });
-    const e = withEnv(env, { DB: countingDb });
+    const { env: e, counter } = countingEnv();
     const inv = await issued(o);
     const l = await linkFor(o, inv);
     const ev = await eventRow(l.linkId, l.paymentId);
-    n = 0;
+    counter.n = 0;
     expect((await processEvent(e, ev)).result).toBe("processed");
-    console.log(`D1 statements, processEvent (invoice): ${n}`);
-    expect(n).toBeLessThanOrEqual(45);
+    console.log(`D1 statements, processEvent (invoice): ${counter.n}`);
+    expect(counter.n).toBeLessThanOrEqual(45);
     const pf = await issued(o, "proforma");
     const lp = await linkFor(o, pf);
     const r = await processEvent(env, await eventRow(lp.linkId, lp.paymentId));
-    n = 0;
+    counter.n = 0;
     expect((await issueGatewayAdvance(e, r.next?.paymentId as string)).result).toBe("issued");
-    console.log(`D1 statements, issueGatewayAdvance: ${n}`);
-    expect(n).toBeLessThanOrEqual(45);
+    console.log(`D1 statements, issueGatewayAdvance: ${counter.n}`);
+    expect(counter.n).toBeLessThanOrEqual(45);
   });
 });
 

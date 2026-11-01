@@ -6,11 +6,16 @@
 import { exports, env as realEnv } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { hourlyMessages } from "../src/billing.ts";
-import { gatewayRetryDelay, processGateway, processGatewayDeadLetter } from "../src/gateway.ts";
+import {
+  ADVANCE_TRIES,
+  gatewayRetryDelay,
+  processGateway,
+  processGatewayDeadLetter,
+} from "../src/gateway.ts";
 import { HOOK_MAX_BYTES, razorpayHook } from "../src/hooks/razorpay.ts";
 import { handleQueue } from "../src/queue.ts";
 import { warmRazorpayHook } from "../src/warm.ts";
-import { fakes, logs, makeEnv, staff, useFakes } from "./billing-fixtures.ts";
+import { fakes, logs, makeEnv, mkClient, mkDoc, staff, useFakes } from "./billing-fixtures.ts";
 
 useFakes();
 
@@ -253,6 +258,51 @@ describe("POST /razorpay [JOB-HOOK-01..03]", () => {
     expect(res.status).toBe(400);
   });
 
+  it("a verified event of a handled type that fails the strict parse is KEPT (received, name and link id only) and queued [early check 2, finding 3]", async () => {
+    const body = JSON.stringify({
+      entity: "event",
+      event: "payment_link.paid",
+      created_at: 1_790_000_000,
+      payload: {
+        payment_link: {
+          entity: { id: "plink_KEPT0001", amount: "oops", customer: { email: "payer@example.test" } },
+        },
+        payment: { entity: { email: "payer@example.test", contact: "+919999999999" } },
+      },
+    });
+    const res = await signedPost(body, "evt_KEPT0001");
+    expect(res.status).toBe(200);
+    const rows = await rowsOf("evt_KEPT0001");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe("received");
+    expect(JSON.parse(rows[0]?.facts ?? "{}")).toEqual({
+      event: "payment_link.paid",
+      linkId: "plink_KEPT0001",
+    });
+    expect(fakes.leads.map((x) => x.body)).toEqual([{ kind: "gateway.event", eventId: rows[0]?.id }]);
+    // an unreadable body of an event we don't handle is still only logged
+    const other = JSON.stringify({ event: "payment.captured", created_at: "x" });
+    expect((await signedPost(other, "evt_KEPT0002")).status).toBe(200);
+    expect(await rowsOf("evt_KEPT0002")).toHaveLength(0);
+  });
+
+  it("one log line per call with the status and the first-run marker, never an id, the body or the signature [early check 2, findings 15 and 6]", async () => {
+    const body = paidBody();
+    const sig = await sign(body);
+    await post(body, { "x-razorpay-signature": sig, "x-razorpay-event-id": "evt_LOG0001" });
+    await post("{}", { "content-type": "text/plain" });
+    const lines = logs.map((l) => JSON.parse(l) as Record<string, unknown>).filter((l) => l.ev === "hook");
+    expect(lines.map((l) => l.s)).toEqual([200, 415]);
+    expect(lines.every((l) => l.p === "razorpay")).toBe(true);
+    for (const l of lines)
+      expect(Object.keys(l).sort()).toEqual(l.f === 1 ? ["ev", "f", "p", "s"] : ["ev", "p", "s"]);
+    const all = logs.join("\n");
+    expect(all).not.toContain(sig);
+    expect(all).not.toContain("evt_LOG0001");
+    expect(all).not.toContain("plink_T");
+    expect(all).not.toContain(body.slice(0, 40));
+  });
+
   it("the start-up warm-up runs all five steps", async () => {
     expect(await warmRazorpayHook()).toBe(5);
   });
@@ -302,6 +352,95 @@ describe("the gateway consumer [run file D]", () => {
       1,
     );
     expect(fakes.leads.map((s) => s.body)).toEqual([{ kind: "gateway.advance", paymentId: "rzp_pay_X1" }]);
+  });
+
+  it("gateway.advance: one try per delivery; `retry` comes back once, then the last try is asked with lastTry [early check 2, finding 1]", async () => {
+    const env = makeEnv(gateway({ advance: { result: "retry" } }));
+    const body = { kind: "gateway.advance", paymentId: "rzp_pay_ADV1" } as never;
+    expect(await processGateway(env, body, 1)).toEqual({ retry: gatewayRetryDelay(1) });
+    expect(await processGateway(env, body, 2)).toBe("ack");
+    expect(fakes.rpc.map((r) => r.arg)).toEqual([
+      { paymentId: "rzp_pay_ADV1", lastTry: false },
+      { paymentId: "rzp_pay_ADV1", lastTry: true },
+    ]);
+    expect(ADVANCE_TRIES).toBe(2);
+  });
+
+  it("a duplicate that still waits for its tax invoice carries `next`: the advance is queued [early check 2, finding 2]", async () => {
+    await processGateway(
+      makeEnv(
+        gateway({
+          process: { result: "duplicate", next: { kind: "gateway.advance", paymentId: "rzp_pay_D1" } },
+        }),
+      ),
+      { kind: "gateway.event", eventId: "01900000-0000-7000-8000-000000000002" } as never,
+      2,
+    );
+    expect(fakes.leads.map((x) => x.body)).toEqual([{ kind: "gateway.advance", paymentId: "rzp_pay_D1" }]);
+  });
+
+  it("a failed send of `next` throws (the queue retries) and the hourly sweep finds the waiting payment anyway [early check 2, finding 2]", async () => {
+    const now = Date.now();
+    const failing = makeEnv({
+      ...gateway({ process: { result: "processed", next: { kind: "gateway.advance", paymentId: "rzp_x" } } }),
+      LEADS_QUEUE: {
+        send: async () => {
+          throw new Error("down");
+        },
+      },
+    });
+    await expect(
+      processGateway(
+        failing,
+        { kind: "gateway.event", eventId: "01900000-0000-7000-8000-000000000003" } as never,
+        1,
+      ),
+    ).rejects.toThrow(/down/);
+    // The payment the lost `next` was for: a proforma's Razorpay payment, pending with its requested allocation, recorded 20 minutes ago.
+    const owner = await staff("owner");
+    const clientId = await mkClient();
+    const pf = await mkDoc(clientId, null, { type: "proforma" });
+    const checkoutId = `co-${now}`;
+    await realEnv.DB.prepare(
+      `INSERT INTO checkout_sessions (id, provider, document_id, client_id, created_by, source, currency, amount_minor, status, expires_at, created_at, updated_at)
+       VALUES (?1, 'razorpay', ?2, ?3, ?6, 'staff', 'INR', 118000, 'creating', ?4, ?5, ?5)`,
+    )
+      .bind(checkoutId, pf.id, clientId, now + 86_400_000, now - 30 * 60_000, owner.id)
+      .run();
+    await realEnv.DB.prepare(
+      "UPDATE checkout_sessions SET status = 'live', provider_link_id = ?2, short_url = 'https://rzp.io/i/x', updated_at = ?3 WHERE id = ?1",
+    )
+      .bind(checkoutId, `plink_SW${now}`, now - 29 * 60_000)
+      .run();
+    const paymentId = `rzp_pay_SWEEP${now}`;
+    await realEnv.DB.prepare(
+      `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, charges_minor, received_on, mode, reference_norm, requested_allocations,
+         recorded_by, recorded_at, provider_payment_id, checkout_id, fee_tax_minor, refetched_at)
+       VALUES (?1, ?2, 'payment', 'razorpay', 'pending_verification', 'INR', 118000, 0, '2026-10-28', 'upi', ?3, ?4, NULL, ?5, ?6, ?7, 0, ?5)`,
+    )
+      .bind(
+        paymentId,
+        clientId,
+        `PAY-SWEEP${now}`,
+        JSON.stringify([{ documentId: pf.id, amountMinor: 118000 }]),
+        now - 20 * 60_000,
+        `pay_SWEEP${now}`,
+        checkoutId,
+      )
+      .run();
+    expect(await processGateway(makeEnv(), { kind: "gateway.sweep", asOf: now } as never, 1, now)).toBe(
+      "ack",
+    );
+    expect(fakes.leads.map((x) => x.body)).toContainEqual({ kind: "gateway.advance", paymentId });
+    // once the Owner was told (an open advance_blocked item), the sweep leaves it to them
+    fakes.leads.length = 0;
+    await realEnv.DB.prepare(
+      "INSERT INTO review_items (id, source, provider, kind, status, payment_id, document_id, client_id, created_at) VALUES (?1, 'webhook', 'razorpay', 'advance_blocked', 'open', ?2, ?3, ?4, ?5)",
+    )
+      .bind(`ri-${now}`, paymentId, pf.id, clientId, now)
+      .run();
+    await processGateway(makeEnv(), { kind: "gateway.sweep", asOf: now } as never, 1, now);
+    expect(fakes.leads.map((x) => x.body)).not.toContainEqual({ kind: "gateway.advance", paymentId });
   });
 
   it("a bad RPC answer throws (the queue retries); a missing binding too", async () => {

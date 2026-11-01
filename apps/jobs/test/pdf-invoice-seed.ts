@@ -81,6 +81,11 @@ export type InvoiceSeedOptions = {
   advance?: boolean;
   /** T10 (rt2): the Udyam block the issuer froze (only a tax invoice is ever issued with one; a test may freeze one elsewhere to prove the refusal). */
   udyam?: { number: string; category: "micro" | "small" | "medium" } | unknown;
+  /**
+   * M6.2 (early check 2, finding 6): the issuer block of the automatic tax invoice for a proforma paid online (`gateway_auto`): the company itself sends it
+   * (`sender.staffId` "system", the trade name; the care-billing pattern), and the row has no `issued_by`.
+   */
+  systemSender?: boolean;
 };
 
 /** Makes a client and a draft tax invoice, then issues it through the real issue statements. */
@@ -286,7 +291,9 @@ export async function seedIssuedInvoice(o: InvoiceSeedOptions = {}): Promise<See
     signature: signatureRef,
     ...(o.signatoryOff ? { signatory: false as const } : {}),
     reverseChargeText: SETTINGS_DEFAULTS.tax.reverseChargeText,
-    sender: { staffId, name: "Sample Owner", email: "inv-owner@example.test" },
+    sender: o.systemSender
+      ? { staffId: "system", name: "TecHaust Technologies", email: "billing@example.test" }
+      : { staffId, name: "Sample Owner", email: "inv-owner@example.test" },
   };
   const issueDate = toIsoDate(issueInstant);
   const dueDate = "2999-01-01";
@@ -366,7 +373,7 @@ export async function seedIssuedInvoice(o: InvoiceSeedOptions = {}): Promise<See
     issuer,
     computedJson: seal.computedJson,
     snapshotSha256: seal.snapshotSha256,
-    issuedBy: staffId,
+    issuedBy: o.systemSender ? null : staffId,
     termsVersionId: termsId,
     headerExtras: o.dropFrozenExtras ? null : headerExtrasJson(extras),
     expected: {
