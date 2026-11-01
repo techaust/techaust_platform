@@ -127,6 +127,18 @@ export const ROUTES: readonly RouteDef[] = [
   R("POST", "/projects/:id/notes", "projects.write", { audit: "note.create" }),
   R("GET", "/projects/:id/files", "projects.read"),
   R("POST", "/projects/:id/files", "projects.write", { audit: "file.upload", body: "upload" }),
+  // T11 (L8; 08-C RB-38(a)): the deed of assignment. Owner and Staff read it and fill the Schedules (decision (c)); the Owner finalises and uploads the signed
+  // copy with a fresh code, cancels a draft, asks for a project to be checked again and for the unsigned PDF to be rendered again. The signed copy is a raw PDF
+  // upload of at most 10 MB.
+  R("GET", "/projects/:id/deed", "deeds.view"),
+  R("POST", "/projects/:id/deed/recheck", "deeds.recheck", { audit: "deed.recheck" }),
+  R("PUT", "/deeds/:id/schedules", "deeds.editSchedules", { audit: "deed.edit" }),
+  R("POST", "/deeds/:id/finalise", "deeds.finalise", { audit: "deed.finalise" }),
+  R("PUT", "/deeds/:id/signed", "deeds.uploadSigned", { audit: "deed.sign", body: "upload" }),
+  R("POST", "/deeds/:id/cancel", "deeds.cancel", { audit: "deed.cancel" }),
+  R("POST", "/deeds/:id/pdf/render", "deeds.renderPdf", { audit: "deed.pdf_retry" }),
+  R("GET", "/deeds/:id/pdf/unsigned", "deeds.view"),
+  R("GET", "/deeds/:id/pdf/signed", "deeds.view"),
   R("GET", "/clients/:id/projects", "projects.read"),
   R("GET", "/clients/:id/notes", "projects.read"),
   R("POST", "/clients/:id/notes", "projects.write", { audit: "note.create" }),

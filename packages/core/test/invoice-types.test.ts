@@ -41,6 +41,7 @@ import {
   parseFxRate,
   proformaWarnAt,
   proformaWarnDate,
+  SIGNED_ADVANCE_TYPES,
   SIGNED_ALWAYS_TYPES,
   signatureRequired,
   voidBlockers,
@@ -936,6 +937,7 @@ describe("what stops each kind of issue, one blocker per field [ADM-INV-06, -08,
 
   it("T4: signatureRequired is keyed on the document: notes always, an advance tax or export invoice, nothing else", () => {
     expect(SIGNED_ALWAYS_TYPES).toEqual(["credit_note", "debit_note"]);
+    expect(SIGNED_ADVANCE_TYPES).toEqual(["tax_invoice", "export_invoice"]);
     for (const advance of [false, true]) {
       expect(signatureRequired("credit_note", advance)).toBe(true);
       expect(signatureRequired("debit_note", advance)).toBe(true);

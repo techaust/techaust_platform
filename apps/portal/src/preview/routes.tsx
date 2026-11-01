@@ -26,7 +26,7 @@ const SCREENS: [string, string][] = [
   ["/proposals/sample-revised?sample=on", "A new version is being prepared"],
   ["/proposals/sample-refused?sample=on", "Accept refused: a colleague accepted first"],
   ["/proposals/sample-pending?sample=on", "Accept refused: a newer version is being prepared"],
-  ["/proposals/sample-accepted?sample=on", "Accepted by you"],
+  ["/proposals/sample-accepted?sample=on", "Accepted by you (T11: with the signed deed)"],
   ["/proposals/sample-accepted-other?sample=on", "Accepted by a colleague"],
   ["/proposals/sample-declined?sample=on", "Declined"],
   ["/proposals/sample-expired?sample=on", "Expired"],
@@ -178,6 +178,23 @@ function EmailPreview() {
       r: renderEmail(
         "offer.accepted.staff",
         { ...ACCEPTED, url: "https://admin.techaust.com/documents/sample" },
+        { assetBase: BASE },
+      ),
+    },
+    {
+      key: "deed-signed",
+      label: "T11 Signed deed ready (to each portal contact, from hello@)",
+      to: "Asha Iyer <asha.iyer@kestrel.example.test>",
+      r: renderEmail(
+        "deed.signed",
+        {
+          first_name: "Asha",
+          number: "TH/DA/2627/0001",
+          offer_type: "proposal",
+          offer_number: "TH/PRP/2627/0004",
+          offer_version: "1",
+          url: "https://portal.techaust.com/proposals/sample-accepted",
+        },
         { assetBase: BASE },
       ),
     },

@@ -18,6 +18,9 @@ export const SERIES = {
   proforma: { label: "Proforma invoice", gst: false, default: "TH/PI/{FY}/{N}" },
   estimate: { label: "Estimate", gst: false, default: "TH/EST/{FY}/{N}" },
   proposal: { label: "Proposal", gst: false, default: "TH/PRP/{FY}/{N}" },
+  // T11 (L1; Researched 2026-10-31, Copyright Act s.19(1) (08-C RB-38(a))): the deed of assignment of copyright, numbered gap-free per FY when it is finalised
+  // (15 characters at padding 4). Not a GST document.
+  deed: { label: "Deed of assignment", gst: false, default: "TH/DA/{FY}/{N}" },
 } as const;
 
 export type Series = keyof typeof SERIES;

@@ -10,6 +10,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { authRoutes } from "./auth.ts";
 import { type AppEnv, accessEntry, BAD_REQUEST, type Ctx, err, NOT_FOUND, type RouteDef } from "./context.ts";
 import { csrf } from "./csrf.ts";
+import { deeds } from "./deeds.ts";
 import { docToken } from "./doc-token.ts";
 import { guard, ROUTES, tableOf } from "./guard.ts";
 import { invoices } from "./invoices.ts";
@@ -119,6 +120,7 @@ export function createApp(deps: Deps = {}) {
   app.route("/v1/me", me);
   app.route("/v1/offers", offers);
   app.route("/v1/invoices", invoices);
+  app.route("/v1/deeds", deeds);
   app.route("/v1/t", docToken);
   app.route("/v1/t/offer", offerLinks);
   for (const t of deps.testRoutes ?? []) {

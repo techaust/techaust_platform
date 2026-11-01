@@ -16,6 +16,7 @@ import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { UnsavedChangesGuard } from "../../components/unsaved.tsx";
 import { allowed } from "../../lib/access.ts";
+import { DEED_COPY } from "../../lib/deeds.ts";
 import {
   cancelConfirm,
   completeConfirm,
@@ -30,6 +31,7 @@ import {
   projectMoves,
 } from "../../lib/projects.ts";
 import { useUser } from "../../session.tsx";
+import { DeedTab } from "./deed.tsx";
 import { FilesPanel } from "./files.tsx";
 import { Milestones } from "./milestones.tsx";
 import { NotesPanel } from "./notes.tsx";
@@ -45,13 +47,15 @@ export function Component() {
   );
 }
 
-export type TabKey = "overview" | "milestones" | "notes" | "files";
+export type TabKey = "overview" | "milestones" | "notes" | "files" | "deed";
 const TABS: TabItem<TabKey>[] = [
   { key: "overview", label: "Overview" },
   { key: "milestones", label: "Milestones" },
   { key: "notes", label: "Notes" },
   { key: "files", label: "Files" },
 ];
+/** T11: the Deed tab, for the roles that can read a deed (`deeds.view`: Owner and Staff). */
+const DEED_TAB: TabItem<TabKey> = { key: "deed", label: DEED_COPY.tab };
 
 function ProjectScreen({ id }: { id: string }) {
   const page = useLoad(() => api.project(id), id);
@@ -97,7 +101,8 @@ function ProjectView(props: {
   const canWrite = allowed(user.role, "projects.write") && !props.data.clientAnonymised;
   const [params, setParams] = useSearchParams();
   const asked = params.get("tab");
-  const tab: TabKey = TABS.some((t) => t.key === asked) ? (asked as TabKey) : "overview";
+  const tabs = allowed(user.role, "deeds.view") ? [...TABS, DEED_TAB] : TABS;
+  const tab: TabKey = tabs.some((t) => t.key === asked) ? (asked as TabKey) : "overview";
   // Notes and files are changed in their own tabs, which keep their own lists: every return to the Overview from another tab reads the
   // page again (quietly), so its recent notes and files are current whatever way led back (batch review M6; FX-3 review 11: Notes, then
   // Milestones, then Overview once showed "No notes yet" until a reload). One read per return, after the URL has changed.
@@ -163,7 +168,7 @@ function ProjectView(props: {
             onReload={() => props.reload("stale")}
           />
         ))}
-      <Tabs label="Project sections" tabs={TABS} selected={tab} onSelect={select}>
+      <Tabs label="Project sections" tabs={tabs} selected={tab} onSelect={select}>
         {tab === "overview" ? (
           <Overview
             data={props.data}
@@ -178,6 +183,8 @@ function ProjectView(props: {
           <Milestones data={props.data} reload={props.reload} />
         ) : tab === "notes" ? (
           <NotesPanel scope={scope} clientName={project.clientName} readOnly={props.data.clientAnonymised} />
+        ) : tab === "deed" ? (
+          <DeedTab projectId={project.id} />
         ) : (
           <FilesPanel scope={scope} readOnly={props.data.clientAnonymised} />
         )}

@@ -317,9 +317,15 @@ export const REDACTION_WRITE_SQL = {
   linesText: (g: string) =>
     childText("document_lines", ["description", "description"], ["detail", "detail"], g),
   scheduleText: (g: string) => childText("payment_schedules", ["label", "label"], ["detail", "detail"], g),
-  /** Q1 = A (owner, 2026-10-31): the offer is withdrawn for everyone: every send not yet holding a link is cancelled (the jobs Worker mints none then). */
+  /**
+   * Q1 = A (owner, 2026-10-31): the offer is withdrawn for everyone: every send not yet holding a link is cancelled (the jobs Worker mints none then).
+   * "No link" means "never emailed" only while the person's own links still exist, so this runs BEFORE step 2 deletes them (`redactionCancelStatements`);
+   * run after, it stamped their emailed sends cancelled too and the Emails row read "Not sent" (polish sweep 5a). A co-recipient's links may already be
+   * gone (an earlier erase or anonymise of THEM deleted them), so only a send never queued (`queued_at IS NULL`, still waiting for the PDF) is cancelled
+   * here; a queued send without a link is the jobs Worker's: it refuses a redacted offer and marks the send not sent itself (polish sweep review 1).
+   */
   cancelSends: (g: string) =>
-    `UPDATE document_sends SET cancelled_at = ?2 WHERE cancelled_at IS NULL AND document_id IN ${PLAN_IDS} AND NOT EXISTS (SELECT 1 FROM offer_links l WHERE l.send_id = document_sends.id) AND ${g}`,
+    `UPDATE document_sends SET cancelled_at = ?2 WHERE cancelled_at IS NULL AND queued_at IS NULL AND document_id IN ${PLAN_IDS} AND NOT EXISTS (SELECT 1 FROM offer_links l WHERE l.send_id = document_sends.id) AND ${g}`,
   /** ... and when it is the newest frozen version of its group, every live link of the group is revoked (an older version's links stay with the newer one). */
   revokeLinks: (g: string) =>
     `UPDATE offer_links SET revoked_at = ?2 WHERE revoked_at IS NULL AND version_group_id IN (SELECT d.version_group_id FROM documents d WHERE d.id IN ${PLAN_IDS} AND NOT EXISTS (SELECT 1 FROM documents n WHERE n.version_group_id = d.version_group_id AND n.version > d.version AND n.frozen_at IS NOT NULL)) AND ${g}`,
@@ -333,7 +339,32 @@ export const REDACTION_WRITE_SQL = {
     `UPDATE approvals SET reason = NULL, note = NULL WHERE document_id IN ${PLAN_IDS} AND (reason IS NOT NULL OR note IS NOT NULL) AND ${g}`,
 } as const;
 
-/** Step 2e of the anonymise batch: a fixed 10 statements, each guarded on the anonymise audit row (`g`). None when nothing is eligible. */
+/** `redacted_at` (and the cancel stamp) only moves forward: past every value read (two erasures in the same millisecond, or a clock behind an earlier one). */
+const redactionTime = (plan: RedactionPlan, t: number) => Math.max(t, plan.after);
+
+/**
+ * Step 2e's first statement, placed in the anonymise batch BEFORE step 2 (`deleteContactAccess`): the plan's sends that never got a link are cancelled
+ * while the person's own links still prove which of their sends were emailed (polish sweep 5a). Guarded on the anonymise audit row (`g`) like the rest;
+ * none when nothing is eligible.
+ */
+export function redactionCancelStatements(
+  db: D1Database,
+  plan: RedactionPlan,
+  g: GuardSql,
+  t: number,
+): D1PreparedStatement[] {
+  if (plan.ids.length === 0) return [];
+  return [
+    db
+      .prepare(REDACTION_WRITE_SQL.cancelSends(g.sql(3)))
+      .bind(plan.docs, redactionTime(plan, t), ...g.params),
+  ];
+}
+
+/**
+ * The rest of step 2e: a fixed 9 statements (10 with `redactionCancelStatements`), each guarded on the anonymise audit row (`g`). None when nothing is
+ * eligible.
+ */
 export function redactionStatements(
   db: D1Database,
   plan: RedactionPlan,
@@ -350,8 +381,7 @@ export function redactionStatements(
 ): D1PreparedStatement[] {
   if (plan.ids.length === 0) return [];
   const w = REDACTION_WRITE_SQL;
-  // `redacted_at` only moves forward: past every value read (two erasures in the same millisecond, or a clock behind an earlier one).
-  const t = Math.max(ctx.t, plan.after);
+  const t = redactionTime(plan, ctx.t);
   const at2 = (sql: (g: string) => string, json: string) =>
     db.prepare(sql(g.sql(3))).bind(json, t, ...g.params);
   return [
@@ -373,7 +403,6 @@ export function redactionStatements(
     at2(w.sectionsText, plan.sections),
     at2(w.linesText, plan.lines),
     at2(w.scheduleText, plan.schedule),
-    at2(w.cancelSends, plan.docs),
     at2(w.revokeLinks, plan.docs),
     at2(w.documentBells, plan.docs),
     at2(w.approvalBells, plan.docs),

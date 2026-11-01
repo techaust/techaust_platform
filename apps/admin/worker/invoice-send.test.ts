@@ -1,8 +1,10 @@
 // Sending an issued invoice, revoking its links and pausing its reminders [ADM-INV-15, ADM-INV-13, POR-06, LD55, LD56, LD60, Q42, M5.4]. Failure paths first.
 import { env } from "cloudflare:workers";
+import { ANONYMISED_CONTACT } from "@techaust/core/clients";
 import { toIsoDate, toIst } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import { describe, expect, it, vi } from "vitest";
+import { cancelUnlinkedSendsSql, type SendRow, sendsView } from "./invoice-send.ts";
 import { insert, mkClient, mkContact } from "./test-clients.ts";
 import { call, captureQueue, one, rows, sessionFor } from "./test-helpers.ts";
 import {
@@ -329,7 +331,7 @@ describe("the view after a send [ADM-INV-15]", () => {
   it("each send names the staff member who made it; an automatic send names nobody (Q5)", async () => {
     const s = await sessionFor("owner", { stepUp: true, name: "Rupak Sarkar" });
     const { made, ids } = await issued(2);
-    // the invoice above belongs to its own session: send again as the named member
+    // the invoice above belongs to its own session: send again as the named member (so a name taken from the issuer or creator fails here)
     await send(s, made.id, { contactIds: ids });
     const mine = (await sendsOf(made.id)).filter((r) => r.created_by === s.id);
     expect(mine).toHaveLength(2);
@@ -399,6 +401,39 @@ async function mintLink(documentId: string, sendId: string, token: string) {
     .run();
 }
 
+describe("a removed person in the sends list (polish sweep review 4) [ADM-INV-15, ADM-CLI-05]", () => {
+  const row = (over: Partial<SendRow>): SendRow => ({
+    id: "s1",
+    contact_id: "c1",
+    contact_name: "Asha Rao",
+    email: "asha@example.test",
+    kind: "send",
+    created_at: 1,
+    queued_at: 2,
+    cancelled_at: null,
+    email_status: "delivered",
+    sent_by_name: "Rupak Sarkar",
+    ...over,
+  });
+  const view = (r: SendRow) => sendsView([r], 0, [], 3, { fromHour: 9, toHour: 19 }).sends[0];
+  it("a live contact keeps their name and address", () => {
+    expect(view(row({}))).toMatchObject({
+      contactName: "Asha Rao",
+      email: "asha@example.test",
+      emailStatus: "delivered",
+    });
+  });
+  it("a send whose contact was erased or anonymised reads Removed contact, with no address, and keeps its state", () => {
+    const v = view(row({ contact_id: null, contact_name: null, email: null }));
+    expect(v).toMatchObject({
+      contactName: ANONYMISED_CONTACT,
+      email: null,
+      emailStatus: "delivered",
+      queuedAt: 2,
+    });
+  });
+});
+
 describe("revoking the links [POR-06, LD60]", () => {
   it("in one batch: the sends with no link yet are cancelled, every live link is revoked, the waiting reminders are paused", async () => {
     const { s, made, ids } = await issued(2);
@@ -432,6 +467,21 @@ describe("revoking the links [POR-06, LD60]", () => {
     expect((await call(`/invoices/${uuidv7()}/links/revoke`, { cookie: s.cookie, body: {} })).status).toBe(
       404,
     );
+  });
+
+  it("the cancel's link lookup names the document, so it SEARCHes doc_access_tokens by its document index, never a SCAN (test-hardening item 5)", async () => {
+    const plan = (
+      await rows<{ detail: string }>(
+        `EXPLAIN QUERY PLAN ${cancelUnlinkedSendsSql("EXISTS (SELECT 1 FROM audit_log WHERE id = ?3)")}`,
+        "doc-x",
+        1,
+        "audit-x",
+      )
+    )
+      .map((r) => r.detail)
+      .join("\n");
+    expect(plan).not.toMatch(/SCAN (t|doc_access_tokens)\b/);
+    expect(plan).toMatch(/SEARCH t USING (COVERING )?INDEX doc_access_tokens_document/);
   });
 
   it("a draft has nothing to revoke (409 not_issued); Sales may not", async () => {

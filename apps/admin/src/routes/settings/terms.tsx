@@ -49,8 +49,8 @@ export function DocumentTerms() {
   return (
     <>
       <VerifyNote>
-        The wording of these blocks is yours and your lawyer's. Confirm it with your CA and a lawyer before
-        documents carry it.
+        The wording of these blocks is yours. Documents print it word for word, so read a change through
+        before you save it.
       </VerifyNote>
       <p className="hint">
         Each document keeps the version it was made with. Saving a block makes a new version; earlier
@@ -263,11 +263,11 @@ function HistoryDialog({ block, onClose }: { block: TermsBlock; onClose: () => v
               <p>Save the first version from the Document terms page.</p>
             </EmptyState>
           ) : (
-            <ol className="versions">
+            <ol className="terms-versions">
               {loaded.data.versions.map((v) => (
-                <li key={v.version} className="versions__item">
-                  <h3 className="versions__title">Version {v.version}</h3>
-                  <p className="versions__meta">
+                <li key={v.version} className="terms-versions__item">
+                  <h3 className="terms-versions__title">Version {v.version}</h3>
+                  <p className="terms-versions__meta">
                     Saved <When ms={v.createdAt} inline />, {usedText(v)}.
                   </p>
                   {block.block === "refund_link" ? (

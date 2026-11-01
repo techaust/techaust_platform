@@ -23,6 +23,7 @@ import {
   releasable,
 } from "@techaust/core/ledger";
 import { creditApplyBody, creditReleaseBody, realisationExtensionBody } from "@techaust/core/payment-schemas";
+import { deedDraftStatements } from "@techaust/db/deeds";
 import { DOCUMENT_CHECKOUTS_SQL } from "@techaust/db/gateway";
 import {
   type AllocationRow,
@@ -235,6 +236,8 @@ export const clientCredit = new Hono<AppEnv>()
         side: (g) => [
           allocationsInsertStatement(db, rows, u.id, now, g),
           recomputeStatement(db, { documentIds: [d.id] }, now, g),
+          // T11 (L3; 08-C RB-38(a)): credit used on the invoice can complete its project's full payment (after the recompute, guarded).
+          ...deedDraftStatements(db, { target: { documentIds: [d.id] }, now }, g),
           // Early check A8: every source payment is a target too, so each one's net allocations are checked against its amount.
           ledgerResultStatement(db, { paymentIds: rows.map((r) => r.paymentId), documentIds: [d.id] }),
         ],

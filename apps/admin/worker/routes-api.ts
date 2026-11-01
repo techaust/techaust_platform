@@ -8,6 +8,7 @@ import { carePlans } from "./care.ts";
 import { catalogue, templates } from "./catalogue.ts";
 import { clientTabs } from "./client-tabs.ts";
 import { clients, contacts } from "./clients.ts";
+import { deeds, projectDeed } from "./deeds.ts";
 import { documentConvert } from "./document-convert.ts";
 import { documentFill } from "./document-fill.ts";
 import { documentLinks } from "./document-links.ts";
@@ -46,6 +47,9 @@ export function mountApi(app: App) {
   app.route("/v1/documents", documentLinks);
   app.route("/v1/documents", documentStart);
   app.route("/v1/projects", projects);
+  // T11: the deed of assignment of a project, and its own routes (Schedules, finalise, the signed copy, cancel, the PDFs).
+  app.route("/v1/projects", projectDeed);
+  app.route("/v1/deeds", deeds);
   app.route("/v1/milestones", milestones);
   app.route("/v1/care-plans", carePlans);
   app.route("/v1/time", timeLogs);

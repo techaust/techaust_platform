@@ -1,0 +1,11 @@
+{
+  "remote": "origin",
+  "tasks": [
+    {
+      "name": "orchestrate-skill",
+      "branch": "feat/orchestrate-skill",
+      "runFile": "docs/runs/orchestrate-skill.md",
+      "subBranches": ["fix/orchestrate-skill-"]
+    }
+  ]
+}

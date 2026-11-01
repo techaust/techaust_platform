@@ -198,7 +198,7 @@
 }
 
 .choice:has(.choice__input:focus-visible) {
-  outline: 2px solid var(--color-focus);
+  outline: var(--focus-width) solid var(--color-focus);
   outline-offset: 2px;
 }
 
@@ -422,7 +422,7 @@
 
 /* The summary takes focus from the script (after a mouse click too), so :focus rather than :focus-visible. */
 .error-summary:focus {
-  outline: 2px solid var(--color-focus);
+  outline: var(--focus-width) solid var(--color-focus);
   outline-offset: 3px;
 }
 

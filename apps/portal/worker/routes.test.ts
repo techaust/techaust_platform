@@ -72,7 +72,7 @@ describe("every guarded route needs a session [POR-02, POR-03]", () => {
     );
   });
 
-  it("the guarded routes are /me, sign-out-of-all-devices, the offers and (M5.4) the invoices, which are the only finance routes", () => {
+  it("the guarded routes are /me, sign-out-of-all-devices, the offers, (M5.4) the invoices and (T11) the signed deeds, which are the only finance routes", () => {
     expect(pairs(GUARDED)).toEqual(
       [
         "GET /api/v1/me",
@@ -87,6 +87,8 @@ describe("every guarded route needs a session [POR-02, POR-03]", () => {
         "GET /api/v1/invoices/:id",
         "GET /api/v1/invoices/:id/pdf",
         "POST /api/v1/invoices/:id/pay", // M6.2
+        "GET /api/v1/deeds",
+        "POST /api/v1/deeds/pdf",
       ].sort(),
     );
     expect(pairs(ROUTES.filter((r) => r.access === "finance"))).toEqual(
@@ -95,6 +97,8 @@ describe("every guarded route needs a session [POR-02, POR-03]", () => {
         "GET /api/v1/invoices/:id",
         "GET /api/v1/invoices/:id/pdf",
         "POST /api/v1/invoices/:id/pay",
+        "GET /api/v1/deeds",
+        "POST /api/v1/deeds/pdf",
       ].sort(),
     );
   });

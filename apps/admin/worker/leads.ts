@@ -5,6 +5,7 @@
 // so a lead's audit row holds the lead reference, ids, field NAMES and stage codes, never a name, an email address, a phone number,
 // a note or a message. What changed in a lead's contact fields (before and after) goes on the lead's timeline (`lead_activities`),
 // which is deleted with the lead by the retention clean-up.
+
 import { emailAddress } from "@techaust/auth";
 import { clientTaxCheck } from "@techaust/core/clients";
 import { isBudgetBand, isCountryCode, isTimeline } from "@techaust/core/form-labels";
@@ -22,6 +23,7 @@ import {
 } from "@techaust/core/lead-lifecycle";
 import { generateLeadRef } from "@techaust/core/lead-ref";
 import type { Currency } from "@techaust/core/money";
+import { firstNameOf } from "@techaust/core/offers";
 import { decide, ROLES } from "@techaust/core/permissions";
 import {
   fillReplyTemplate,
@@ -718,7 +720,9 @@ export const leads = new Hono<AppEnv>()
         return err(c, BAD_REQUEST, 400);
     }
 
-    const t = Date.now();
+    // Strictly after the version this save was made from (as `document-write.ts`): a save in the same millisecond as the row's last write, or on a clock behind
+    // it, would otherwise keep (or move back) `updated_at`, and a second save from the same stale page would pass the check too.
+    const t = Math.max(Date.now(), f.expectedUpdatedAt + 1);
     const sets = changes.map(([, col], i) => `${col} = ?${i + 4}`);
     const ref = lead.ref as string;
     const done = await mutate(c, {
@@ -833,7 +837,7 @@ export const leads = new Hono<AppEnv>()
       }>();
     if (!lead) return err(c, NOT_FOUND, 404);
     const vars = {
-      first_name: lead.contact_name.trim().split(/\s+/)[0] ?? lead.contact_name,
+      first_name: firstNameOf(lead.contact_name),
       service_or_request:
         serviceTitle(lead.service_code, lead.service_name) ??
         lead.request_type?.replaceAll("-", " ") ??

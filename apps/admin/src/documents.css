@@ -1194,6 +1194,12 @@ a.blockers__link:focus-visible {
 
 /* ---------- Versions ---------- */
 
+/* The panel: its title above the list, as before (this spacing came from Settings' versions list until that list took its own name). */
+.versions {
+  display: grid;
+  gap: var(--space-4);
+}
+
 .versions__list {
   display: grid;
   gap: 0;

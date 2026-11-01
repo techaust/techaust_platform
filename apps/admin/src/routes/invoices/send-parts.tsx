@@ -3,6 +3,7 @@
 // reminders as a schedule around the due date with pause and resume. On a care invoice: the plan and the period it bills, and on a draft why the system
 // didn't issue it by itself (ADM-CARE-02, Q43). Everything shown is the API's (GET /invoices/:id, GET /clients/:id); the words are 07-U's, marked until
 // the owner approves them (lib/invoice-send.ts).
+import { firstNameOf } from "@techaust/core/offers";
 import { type FormEvent, type RefObject, useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router";
 import { api, type ContactView, RequestError } from "../../api.ts";
@@ -109,7 +110,7 @@ export function InvoiceSendDialog(props: {
   // H1: some have portal access but none can see finance: say what to turn on (not "no portal access").
   const noneWithFinance = noneCan && choices.some((c) => c.block === "no_finance");
   const firstPicked = choices.find((c) => picked.has(c.id));
-  const firstName = firstPicked ? (firstPicked.name.trim().split(/\s+/)[0] ?? "") : "";
+  const firstName = firstPicked ? firstNameOf(firstPicked.name) : "";
   const facts = previewFacts({
     type: v.type,
     number: v.number,

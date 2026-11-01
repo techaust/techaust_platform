@@ -126,55 +126,8 @@
   margin: var(--space-2) 0 0;
 }
 
-/* Month or quarter: two radios drawn as one control; the chosen one is ink on the page (inverse), never a colour alone. */
-.segmented {
-  display: inline-flex;
-  border: 1px solid var(--color-border-control);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.segmented__opt {
-  position: relative;
-  display: inline-flex;
-  font-weight: 500;
-}
-
-.segmented__opt + .segmented__opt {
-  border-inline-start: 1px solid var(--color-border-control);
-}
-
-.segmented__opt input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  min-height: 0;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.segmented__opt span {
-  display: inline-flex;
-  align-items: center;
-  min-height: calc(var(--target-min) - 2px);
-  padding: 0 var(--space-3);
-}
-
-.segmented__opt input:checked + span {
-  background: var(--color-text);
-  color: var(--color-bg);
-}
-
-.segmented__opt:has(input:focus-visible) {
-  outline: 2px solid var(--color-focus);
-  outline-offset: 2px;
-  z-index: 1;
-}
-
-.segmented__opt:has(input:disabled) {
-  opacity: 0.7;
-}
+/* Month or quarter is the shared switch (shell.css `.segmented`, as on every other screen); here it only keeps its own width beside the
+   period's list, and takes the row on a phone (below). */
 
 /* From, To, (Currency) and the button, in one row from md; the button sits on the fields' baseline. */
 .range-form__fields {
@@ -440,19 +393,19 @@
 /* The scroll cue (FX-4) is in app.css, shared with the invoice lines (final sweep A7). */
 
 /* A wide ledger scrolls inside its own box on a narrow screen; the page never scrolls sideways. */
-.ledger-scroll {
+.rledger-scroll {
   position: relative; /* the hidden caption is clipped inside the box, never past the page's edge */
   overflow-x: auto;
   max-width: 100%;
   scrollbar-width: thin;
 }
 
-.ledger-scroll:focus-visible {
+.rledger-scroll:focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: 2px;
 }
 
-.ledger {
+.rledger {
   width: 100%;
   border-collapse: collapse;
   font-size: var(--text-sm);
@@ -460,50 +413,50 @@
   background: var(--color-surface);
 }
 
-.ledger th,
-.ledger td {
+.rledger th,
+.rledger td {
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--color-border);
   text-align: start;
   vertical-align: baseline;
 }
 
-.ledger thead th {
+.rledger thead th {
   color: var(--color-text-muted);
   font-weight: 600;
   border-bottom-color: var(--color-text);
   white-space: nowrap;
 }
 
-.ledger tbody th {
+.rledger tbody th {
   font-weight: 500;
 }
 
-.ledger .num {
+.rledger .num {
   text-align: end;
   white-space: nowrap;
 }
 
 /* The closing figure of a list: a thin rule above, the double rule below. */
-.ledger .ledger__total th,
-.ledger .ledger__total td {
+.rledger .rledger__total th,
+.rledger .rledger__total td {
   border-top: 1px solid var(--color-text);
   border-bottom: 3px double var(--color-text);
   font-weight: 600;
 }
 
-.ledger .ledger__group th {
+.rledger .rledger__group th {
   padding-top: var(--space-4);
   font-weight: 600;
   border-bottom-color: var(--color-border);
 }
 
-.ledger .ledger__sub th {
+.rledger .rledger__sub th {
   padding-inline-start: var(--space-6);
   font-weight: 400;
 }
 
-.ledger.ledger--3b tbody th {
+.rledger.rledger--3b tbody th {
   /* on a phone the box scrolls sideways anyway: a row's name keeps a readable measure instead of one word a line (rt1 visual pass) */
   min-width: 11rem;
   max-width: 24rem;
@@ -557,32 +510,32 @@
 }
 
 /* FX-4 (A5 1): a tax-only note's figures (./routes/reports/manual-entries.tsx), the ledger made compact: it sits inside the note's card, flush with its text. */
-.ledger.manual-entry__table {
+.rledger.manual-entry__table {
   width: min(18rem, 100%);
   background: transparent;
 }
 
-.ledger.manual-entry__table :is(thead, tbody, tfoot) :is(th, td) {
+.rledger.manual-entry__table :is(thead, tbody, tfoot) :is(th, td) {
   padding-inline: var(--space-2);
 }
 
-.ledger.manual-entry__table :is(thead, tbody, tfoot) :is(th, td):first-child {
+.rledger.manual-entry__table :is(thead, tbody, tfoot) :is(th, td):first-child {
   padding-inline-start: 0;
 }
 
-.ledger.manual-entry__table :is(thead, tbody, tfoot) :is(th, td):last-child {
+.rledger.manual-entry__table :is(thead, tbody, tfoot) :is(th, td):last-child {
   padding-inline-end: 0;
 }
 
 /* A section with no documents in the period reads quieter (its zeros are still there). */
-.ledger tbody tr[data-empty] td,
-.ledger tbody tr[data-empty] th {
+.rledger tbody tr[data-empty] td,
+.rledger tbody tr[data-empty] th {
   color: var(--color-text-muted);
 }
 
 /* rt1 T3: the credit notes 3.1(a) still carries until the client accepts them in IMS. Indented under 3.1(a) as part of it, in the muted ink, and marked by
    the warning rule the notice under the table carries too, so the row and its sentence read as one thing. The figures stay in the ink: they are the file's. */
-.ledger .ledger__held-label {
+.rledger .rledger__held-label {
   color: var(--color-text-muted);
   box-shadow: inset 3px 0 0 var(--color-warning);
 }
@@ -612,13 +565,16 @@
   vertical-align: bottom;
 }
 
+/* Figures in the reports and the client's statement never break inside a number; the shared `.tnum` (app.css) only aligns them, so
+   other screens keep wrapping. */
 .amount,
-.tnum {
+.report .tnum,
+.statement .tnum {
   font-variant-numeric: tabular-nums lining-nums;
   white-space: nowrap;
 }
 
-.ledger-check {
+.rledger-check {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -626,22 +582,22 @@
   font-weight: 500;
 }
 
-.ledger-check .icon {
+.rledger-check .icon {
   flex: none;
   color: var(--color-success);
 }
 
-.ledger-check--bad {
+.rledger-check--bad {
   color: var(--color-danger);
 }
 
-.ledger-check--bad .icon {
+.rledger-check--bad .icon {
   color: var(--color-danger);
 }
 
 /* ---------- Files ---------- */
 
-.file-list {
+.report-files {
   margin: 0 0 var(--space-5);
   padding: 0;
   list-style: none;
@@ -649,11 +605,11 @@
 }
 
 /* A file is one row and the row is its button: the download icon, 07-V's label, and the file's own name at the end, quiet. */
-.file-list li + li {
+.report-files li + li {
   border-top: 1px solid var(--color-border);
 }
 
-.file-list__btn {
+.report-files__btn {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
@@ -669,36 +625,36 @@
   cursor: pointer;
 }
 
-.file-list__label {
+.report-files__label {
   flex: 1 1 auto;
   min-width: 0;
 }
 
-.file-list__btn .icon {
+.report-files__btn .icon {
   flex: none;
   color: var(--color-text-accent);
 }
 
-.file-list__btn:hover:not(:disabled) {
+.report-files__btn:hover:not(:disabled) {
   background: var(--color-surface-alt);
 }
 
-.file-list__btn:hover:not(:disabled) .file-list__label {
+.report-files__btn:hover:not(:disabled) .report-files__label {
   text-decoration: underline;
   text-underline-offset: 0.2em;
 }
 
-.file-list__btn:focus-visible {
+.report-files__btn:focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: -2px;
 }
 
-.file-list__btn:disabled {
+.report-files__btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.file-list__file {
+.report-files__file {
   flex: none;
   color: var(--color-text-muted);
   font-size: var(--text-sm);
@@ -706,28 +662,18 @@
 
 /* On a phone the file's name goes under its label, in the label's column. */
 @media (max-width: 479px) {
-  .file-list__btn {
+  .report-files__btn {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
-  .file-list__file {
+  .report-files__file {
     grid-column: 2;
   }
 
   .period-picker__select,
-  .segmented {
+  .period-picker .segmented {
     width: 100%;
     min-width: 0;
-  }
-
-  .segmented__opt {
-    flex: 1 1 0;
-  }
-
-  .segmented__opt span {
-    flex: 1;
-    justify-content: center;
-    text-align: center;
   }
 }
 

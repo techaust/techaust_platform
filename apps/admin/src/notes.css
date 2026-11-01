@@ -171,10 +171,12 @@
   line-height: var(--text-sm--line-height);
 }
 
+/* The link keeps a 44 px target without making its line 44 px tall: the padding that makes the target is taken back by an equal negative
+   margin, so the sentence wraps at its own line height on a phone (polish sweep 2b; rt1's "wide line gap"). `1lh` is the line's height. */
 .notes-row__draft a {
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--target-min);
+  display: inline-block;
+  padding-block: calc((var(--target-min) - 1lh) / 2);
+  margin-block: calc((1lh - var(--target-min)) / 2);
   color: var(--color-link);
   text-underline-offset: 0.2em;
 }

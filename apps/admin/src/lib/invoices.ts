@@ -563,7 +563,7 @@ export const INV_ERRORS = {
   invoice_void: "This invoice is void.",
   fx_not_applicable: "An exchange rate is only needed for USD invoices.",
   advance_supply_changed:
-    "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's details with your CA before recording the payment.",
+    "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's GST details. If they are right, issue a new proforma and record the payment on it.",
 } as const;
 
 /** "This invoice was already issued as {number}." (07-R §5 `already_issued`; the number rides on the 409). */

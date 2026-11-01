@@ -80,6 +80,18 @@ describe("07-N word for word", () => {
     expect(reasonText("timing")).toBe("The timing doesn't work for us");
     expect(reasonText("other")).toBe("Other");
     expect(reasonText("made_up")).toBe("made_up");
+    // test-hardening 6: every code's words, word for word as before the list moved to core
+    expect(
+      Object.fromEntries(
+        ["price", "timing", "other_option", "not_needed", "other"].map((c) => [c, reasonText(c)]),
+      ),
+    ).toEqual({
+      price: "The price doesn't fit our budget",
+      timing: "The timing doesn't work for us",
+      other_option: "We've chosen another option",
+      not_needed: "We've decided not to go ahead",
+      other: "Other",
+    });
     expect(reasonText(null)).toBe("");
   });
 });

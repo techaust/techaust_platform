@@ -38,12 +38,22 @@ export function Modal(props: {
   // The sticky actions cover the dialog's last lines while it scrolls, so the dialog keeps what takes focus (or is scrolled to) above them: its
   // `scroll-padding-bottom` is their real height (app.css), which changes with the width (stacked full width on phones), the number of buttons and a
   // step's own actions. WCAG 2.4.11 (rt2 re-check A).
+  // The title sticks to the top in the same way (polish sweep 5b), so what takes the focus stops below it too: `scroll-padding-top` is its real
+  // height (a long name wraps it to several lines), and `data-scrolled` draws its rule once the body has moved under it.
   useEffect(() => {
     const d = ref.current;
     if (!open || !d) return;
     let actions: HTMLElement | null = null;
-    const size = () => d.style.setProperty("--dialog-actions-h", `${actions?.offsetHeight ?? 0}px`);
+    const title = d.querySelector<HTMLElement>(":scope > .dialog__title");
+    const size = () => {
+      d.style.setProperty("--dialog-actions-h", `${actions?.offsetHeight ?? 0}px`);
+      if (title) d.style.setProperty("--dialog-title-h", `${title.offsetHeight}px`);
+    };
+    const scrolled = () => d.toggleAttribute("data-scrolled", d.scrollTop > 0);
+    d.addEventListener("scroll", scrolled, { passive: true });
+    scrolled();
     const sizes = new ResizeObserver(size);
+    if (title) sizes.observe(title, { box: "border-box" });
     const pick = () => {
       const all = d.querySelectorAll<HTMLElement>(".dialog__actions");
       const next = all[all.length - 1] ?? null;
@@ -63,7 +73,10 @@ export function Modal(props: {
     return () => {
       steps.disconnect();
       sizes.disconnect();
+      d.removeEventListener("scroll", scrolled);
+      d.removeAttribute("data-scrolled");
       d.style.removeProperty("--dialog-actions-h");
+      d.style.removeProperty("--dialog-title-h");
     };
   }, [open]);
 

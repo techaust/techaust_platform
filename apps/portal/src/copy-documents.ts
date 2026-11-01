@@ -5,6 +5,7 @@
 // - PENDING: lines 07-N didn't have, approved word for word in 07-Q (POR1 to POR4), shown without a tag (the name keeps the
 //   history of where they came from).
 // English (India/UK spelling), "and" never "&", no banned phrases (07 §1.3). Acceptance and evidence wording: Researched 2026-10-28, 08-C RB-19, RB-20 (the ground for recording the IP address and browser: Settled by the lead on the safest reading, 2026-10-30 (08-C RB-12): DPDP s.7(a) with the Rule 6 log duty; GDPR Art. 6(1)(f) for EU and UK persons; the acceptance record is kept with the offer, RB-37 (b)).
+import { DECLINE_REASON_LABELS } from "@techaust/core/offers";
 import type { OfferKind, OfferStatus } from "./api.ts";
 import { COPY } from "./copy.ts";
 
@@ -134,14 +135,8 @@ export const N = {
   locked: "This version is locked: it can't be changed or accepted again.",
   next: "What happens next: we'll confirm the start date with you and send the first invoice.",
   declineTitle: "Why are you declining?",
-  /** The words of the decline codes (`DECLINE_REASONS` in @techaust/core/offers; "other" is WORDS.other). */
-  reasons: {
-    price: "The price doesn't fit our budget",
-    timing: "The timing doesn't work for us",
-    other_option: "We've chosen another option",
-    not_needed: "We've decided not to go ahead",
-    other: "Other",
-  },
+  /** The words of the decline codes: core's `DECLINE_REASON_LABELS` (07-N §3, in the order of `DECLINE_REASONS`; admin and jobs read the same list). */
+  reasons: DECLINE_REASON_LABELS,
   otherLabel: "Tell us the reason",
   otherMissing: "Tell us the reason.",
   reasonMissing: "Choose a reason.",

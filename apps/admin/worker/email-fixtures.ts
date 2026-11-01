@@ -1,7 +1,9 @@
 // Sample data for Settings > Email "Send a test" (ADM-SET-07): one made-up data set per template, so a test shows the
 // real layout and wording without any real name, number or link (07-H section 1: "it uses sample data"). Addresses are on
 // example.test, links point nowhere real. Pure: no I/O.
+
 import type { EmailTemplate } from "@techaust/core/email-templates";
+import { firstNameOf } from "@techaust/core/offers";
 
 /** The names people see in Settings and in the test email's subject ("Test: Lead alert"). */
 export const TEMPLATE_NAMES: Record<EmailTemplate, string> = {
@@ -32,6 +34,8 @@ export const TEMPLATE_NAMES: Record<EmailTemplate, string> = {
   // M5.5b (names as the Settings list shows them; the words are 07-V's)
   "edf.reminder": "EDF reminder (team)",
   "realisation.alert": "Export realisation alert (team)",
+  // T11: 07-ZJ line 12 (approved by the lead under the owner's delegation, 2026-11-01).
+  "deed.signed": "Signed deed ready (client)",
 };
 
 const SAMPLE = "https://example.test/sample";
@@ -42,7 +46,7 @@ export function sampleData(
   who: { name: string; role: string },
   time: string,
 ): Record<string, string> {
-  const first_name = who.name.split(/\s+/)[0] ?? who.name;
+  const first_name = firstNameOf(who.name);
   const person = { name: who.name, first_name };
   switch (template) {
     case "lead.acknowledgement":
@@ -190,6 +194,15 @@ export function sampleData(
         count: "3",
         due_date: "30 Nov 2026",
         link: SAMPLE,
+      };
+    case "deed.signed":
+      return {
+        first_name,
+        number: "TH/DA/2627/0001",
+        offer_type: "proposal",
+        offer_number: "TH/PRP/2627/0001",
+        offer_version: "1",
+        url: SAMPLE,
       };
     case "realisation.alert":
       return {

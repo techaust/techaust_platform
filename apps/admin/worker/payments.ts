@@ -31,6 +31,7 @@ import {
   withdrawPaymentBody,
 } from "@techaust/core/payment-schemas";
 import { decide } from "@techaust/core/permissions";
+import { deedDraftStatements } from "@techaust/db/deeds";
 import {
   type AllocationRow,
   allocationStatements,
@@ -636,6 +637,8 @@ export const payments = new Hono<AppEnv>()
             ? [
                 ...allocationStatements(db, rows, u.id, now, g),
                 recomputeStatement(db, { paymentIds: [f.id] }, now, g),
+                // T11 (L3; 08-C RB-38(a)): a confirmed payment can bring a completed project to "fully paid": its draft deed, after the recompute, guarded.
+                ...deedDraftStatements(db, { target: { paymentIds: [f.id] }, now }, g),
                 ledgerResultStatement(db, { paymentIds: [f.id] }),
               ]
             : paymentApprovalStatements(
@@ -776,6 +779,8 @@ export const payments = new Hono<AppEnv>()
             ? [
                 ...allocationStatements(db, rows, u.id, now, g),
                 recomputeStatement(db, { paymentIds: [id] }, now, g),
+                // T11 (L3): the confirmed payment can complete a project's full payment.
+                ...deedDraftStatements(db, { target: { paymentIds: [id] }, now }, g),
                 // M6.2: a Razorpay payment the Owner confirms here (a mismatch it accepted) settles its open review items.
                 ...(row.provider !== "manual"
                   ? [

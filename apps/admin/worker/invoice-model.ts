@@ -875,7 +875,7 @@ export const proformaSupplyChanged = (
 };
 export const ADVANCE_SUPPLY_CHANGED = e(
   "advance_supply_changed",
-  "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's details with your CA before recording the payment.",
+  "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's GST details. If they are right, issue a new proforma and record the payment on it.",
 );
 /** Q37 (07-S section 9): the message carries the FY as people read it ("2027-28"); the same FY is in the error's `details`. */
 export const advanceLutMissing = (fyLabel: string): ApiError =>

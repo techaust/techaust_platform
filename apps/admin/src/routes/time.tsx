@@ -18,7 +18,7 @@ import { Notice } from "../components/ui.tsx";
 import { allowed } from "../lib/access.ts";
 import { careErrorText, dayText, hoursText } from "../lib/care.ts";
 import { Y } from "../lib/copy-y.ts";
-import { personLabel, personLabels } from "../lib/people.ts";
+import { personLabel, personLabels, sharedNameEmail } from "../lib/people.ts";
 import {
   dayHead,
   lockState,
@@ -240,7 +240,12 @@ function TimeScreen() {
             <Skeleton width="70%" />
           </div>
         ) : (
-          <Timesheet data={sheet.data} today={today} showPeople={showPeople} />
+          <Timesheet
+            data={sheet.data}
+            today={today}
+            showPeople={showPeople}
+            people={people.data?.people ?? []}
+          />
         )}
       </section>
 
@@ -252,6 +257,7 @@ function TimeScreen() {
           filters={filters}
           viewer={viewer}
           showPeople={readAll && !person}
+          people={people.data?.people ?? []}
           onEdit={(entry) => setEditing({ entry, override: lockState(entry, viewer) === "override" })}
           onDelete={setDeleting}
         />
@@ -346,13 +352,44 @@ function TargetCell({ row }: { row: SheetRow }) {
   );
 }
 
-function Timesheet({ data, today, showPeople }: { data: TimeWeek; today: string; showPeople: boolean }) {
+/**
+ * A work email on a quiet line under a name, shown only for two people with one name (`sharedNameEmail`). Its two parts are kept whole and
+ * the line breaks only before the "@" (polish sweep review 3: a hyphen in the address used to break it into four or five lines).
+ */
+function SharedEmail({ email, className }: { email: string | null; className: string }) {
+  if (!email) return null;
+  const at = email.indexOf("@");
+  if (at <= 0) return <span className={`${className} email-line`}>{email}</span>;
+  return (
+    <span className={`${className} email-line`}>
+      <span>{email.slice(0, at)}</span>
+      <wbr />
+      <span>{email.slice(at)}</span>
+    </span>
+  );
+}
+
+function Timesheet({
+  data,
+  today,
+  showPeople,
+  people,
+}: {
+  data: TimeWeek;
+  today: string;
+  showPeople: boolean;
+  /** Everyone who logs time (GET /time/people): two people with one name are told apart by their work email (designer question 2). */
+  people: readonly { id: string; name: string; email: string }[];
+}) {
   const days = weekDays(data.week.start);
   const rows = sheetRows(data.groups);
   const totals = new Map(data.dayTotals.map((d) => [d.workDate, d]));
   const billable = data.dayTotals.reduce((n, d) => n + d.billableMinutes, 0);
   // Its own name: the panel around it is already "Week of …" (axe landmark-unique).
   const [sheetRef, sheetRegion] = useScrollRegion<HTMLDivElement>(SHEET_REGION);
+  // The person's email when someone else has the same name, as in the Entries table below (a former member, with no name, never gets one).
+  const emailOf = (r: { userId: string; userName: string | null }) =>
+    r.userName ? sharedNameEmail(people, r.userId) : null;
   // An empty week is one quiet line inside the week's panel (never a card in a card); the Entries panel is left out then.
   if (data.totalMinutes === 0)
     return (
@@ -404,7 +441,12 @@ function Timesheet({ data, today, showPeople }: { data: TimeWeek; today: string;
           <tbody>
             {rows.map((r) => (
               <tr key={r.key}>
-                {showPeople && <td className="sheet__person">{r.userName ?? "A former staff member"}</td>}
+                {showPeople && (
+                  <td className="sheet__person">
+                    {r.userName ?? "A former staff member"}
+                    <SharedEmail email={emailOf(r)} className="sheet__email" />
+                  </td>
+                )}
                 <th scope="row">
                   <TargetCell row={r} />
                 </th>
@@ -478,7 +520,10 @@ function Timesheet({ data, today, showPeople }: { data: TimeWeek; today: string;
                       <span>
                         <TargetCell row={r} />
                         {showPeople && (
-                          <span className="sheet-day__who">{r.userName ?? "A former staff member"}</span>
+                          <span className="sheet-day__who">
+                            {r.userName ?? "A former staff member"}
+                            <SharedEmail email={emailOf(r)} className="sheet-day__email" />
+                          </span>
                         )}
                       </span>
                       <span className="tnum">{hoursText(r.days[d] ?? 0)}</span>
@@ -502,6 +547,8 @@ function Entries(props: {
   filters: { userId?: string | undefined; projectId?: string; carePlanId?: string };
   viewer: { canWriteOwn: boolean; canWriteAny: boolean };
   showPeople: boolean;
+  /** Everyone who logs time (GET /time/people): two people with one name are told apart by their work email. */
+  people: readonly { id: string; name: string; email: string }[];
   onEdit: (e: TimeEntry) => void;
   onDelete: (e: TimeEntry) => void;
 }) {
@@ -547,9 +594,17 @@ function Entries(props: {
           {
             key: "who",
             header: "Person",
-            cell: (e: TimeEntry) => (
-              <span className="entry-person">{e.userName ?? "A former staff member"}</span>
-            ),
+            // Two people with one name look alike in this column, so each also shows their work email on a quiet second line (the
+            // `personLabels` rule of the menus, as "Log time for" echoes the chosen person's; polish sweep 1c, final sweep A20).
+            cell: (e: TimeEntry) => {
+              const email = e.userName ? sharedNameEmail(props.people, e.userId) : null;
+              return (
+                <span className="entry-person">
+                  {e.userName ?? "A former staff member"}
+                  <SharedEmail email={email} className="entry-person__email" />
+                </span>
+              );
+            },
           },
         ]
       : []),
