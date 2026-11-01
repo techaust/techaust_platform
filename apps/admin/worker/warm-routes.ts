@@ -131,8 +131,8 @@ const answers = { fetch: async () => new Response(null, { status: 200 }) };
 /**
  * The made-up env of a dry run: the answer book's D1, bindings that drop everything, the local vars and the finance Worker's made-up test key pair; `extra`
  * adds a Worker's own made-up values (the front's sign-in keys, warm-front.ts: the API and finance bundles must never name them). `ENVIRONMENT` is "warm" so
- * nothing of the real environments' rules applies. The gateway transport is "unset" (gateway/config.ts `transportOf` allows "stub" only when ENVIRONMENT is
- * "local"), so any gateway path in a dry run answers 503 `gateway_unavailable` and no Razorpay call can be made from here; no hot route of the dry run
+ * nothing of the real environments' rules applies. GATEWAY_TRANSPORT is not set, so the gateway transport is "unset" (gateway/config.ts `transportOf`; it would
+ * allow "stub" only when ENVIRONMENT is "local" anyway), so any gateway path in a dry run answers 503 `gateway_unavailable` and no Razorpay call can be made from here; no hot route of the dry run
  * reaches one. `observe` (tests): see warmDb.
  */
 export function warmEnv(
@@ -156,7 +156,7 @@ export function warmEnv(
     TURNSTILE_HOSTNAMES: "localhost",
     PORTAL_ORIGIN: "http://localhost:5174",
     PORTAL_URL: "http://localhost:5174/",
-    GATEWAY_TRANSPORT: "stub",
+    // GATEWAY_TRANSPORT is left out on purpose: unset, `transportOf` answers "unset" whatever ENVIRONMENT says (review finding 4).
     // Made-up test values built from words at run time: outside apps/admin/worker/warm-fixtures/ (the one path .gitleaks.toml allows) no secret-looking
     // literal is ever written, since CI's secret scan reads every commit.
     RAZORPAY_KEY_ID: ["rzp", "test", "WARMUP"].join("_"),
