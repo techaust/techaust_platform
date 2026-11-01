@@ -1,8 +1,9 @@
 // Every [data-hours] on the page (components/Hours.astro: the footer, the contact panel, the reply promise, the care-plan
 // response times, the quote form's call windows) in the visitor's own clock, one time only (owner, 2026-11-01; docs/07 §1 "Times"). A clock on IST
-// keeps the server's text. textContent only. The zone's short name is written in the visitor's English locale when they
-// have one ("BST" for en-GB, "PDT" for en-US), else in en-US, so the sentence around it stays English.
-import { type Clock, localWindow, textRuns } from "./call-time";
+// keeps the server's text, and so does a search engine's renderer. textContent only. The zone's short name is written in the
+// visitor's English locale when they have one ("BST" for en-GB, "PDT" for en-US), else in en-US, so the sentence around
+// it stays English.
+import { type Clock, isCrawler, localWindow, textRuns } from "./call-time";
 
 const clock: Clock = {
   locale: navigator.languages?.find((l) => /^en(-|$)/i.test(l)) ?? "en-US",
@@ -21,7 +22,9 @@ function writeRuns(el: HTMLElement, runs: string[]) {
 }
 
 const now = new Date();
-for (const el of document.querySelectorAll<HTMLElement>("[data-hours]")) {
+// A search engine keeps the IST text, which matches the meta description and the structured data (call-time.ts).
+const elements = isCrawler(navigator.userAgent) ? [] : document.querySelectorAll<HTMLElement>("[data-hours]");
+for (const el of elements) {
   const [first, last] = (el.dataset.days ?? "").split("-").map(Number);
   const local = localWindow(
     {

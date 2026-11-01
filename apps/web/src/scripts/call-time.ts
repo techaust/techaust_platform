@@ -68,6 +68,15 @@ export const localText = (l: LocalWindow): string => textRuns(l).join(" ");
 /** "Mon–Sat, 10:00–19:00 IST" or "10:00–13:00 IST": the text the server writes, and what India and no-script visitors read. */
 export const istText = (w: IstWindow): string => localText(istWindow(w));
 
+/**
+ * Search engines run the page's scripts on a clock that is not IST, so without this the indexed text and snippets
+ * would carry the crawler's zone while the meta description and the FAQ structured data say IST. A crawler keeps the
+ * server's IST text (company-phone review 2). Lighthouse is not a crawler: performance runs still exercise the rewrite.
+ * A phone whose name holds "bot" (a Cubot) also reads IST, which is still the true time.
+ */
+export const CRAWLER_UA = /bot|crawl|spider|slurp|inspectiontool/i;
+export const isCrawler = (userAgent: string): boolean => CRAWLER_UA.test(userAgent);
+
 /** "GMT", "GMT+1", "GMT-3:30", "GMT+5:45": the zone's offset when the runtime gives no short name (Intl's own form). */
 export function gmtName(offsetMin: number): string {
   if (offsetMin === 0) return "GMT";

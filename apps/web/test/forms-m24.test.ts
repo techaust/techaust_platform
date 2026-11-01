@@ -27,7 +27,15 @@ import {
 import { isServiceOnSite } from "../src/lib/prices";
 import { parseTokens } from "../src/lib/tokens";
 import { parseJsonc, siteKeyOf } from "../src/lib/turnstile";
-import { gmtName, istText, istWindow, localText, localWindow, textRuns } from "../src/scripts/call-time";
+import {
+  gmtName,
+  isCrawler,
+  istText,
+  istWindow,
+  localText,
+  localWindow,
+  textRuns,
+} from "../src/scripts/call-time";
 
 const webDir = fileURLToPath(new URL("..", import.meta.url)).replace(/[\\/]$/, "");
 
@@ -190,6 +198,30 @@ describe("hours and call windows in the visitor's own clock", () => {
     expect(la && localText(la)).toBe("23:30–02:30 next day PST");
     expect(la && textRuns(la)).toEqual(["23:30–02:30", "next day PST"]);
     expect(callWindows()[0]?.value).toBe("10:00–13:00 IST");
+  });
+
+  // Review finding 2: search engines index the IST text that matches the meta description and the FAQ structured data.
+  it("leaves the IST text to search engines, never to people or to Lighthouse", () => {
+    for (const ua of [
+      "Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+      "Mozilla/5.0 (compatible; Google-InspectionTool/1.0)",
+      "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm) Chrome/116.0.1938.76 Safari/537.36",
+      "Mozilla/5.0 (compatible; Yahoo! Slurp; http://help.yahoo.com/help/us/ysearch/slurp)",
+      "Mozilla/5.0 (compatible; Baiduspider/2.0; +http://www.baidu.com/search/spider.html)",
+      "Mozilla/5.0 (compatible; YandexBot/3.0; +http://yandex.com/bots)",
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.1 Safari/605.1.15 (Applebot/0.1; +http://www.apple.com/go/applebot)",
+      "Mozilla/5.0 (compatible; DuckDuckBot-Https/1.1; https://duckduckgo.com/duckduckbot)",
+      "Mozilla/5.0 (compatible; SomeCrawler/1.0)",
+    ])
+      expect(isCrawler(ua), ua).toBe(true);
+    for (const ua of [
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1",
+      "Mozilla/5.0 (X11; Linux x86_64; rv:143.0) Gecko/20100101 Firefox/143.0",
+      "Mozilla/5.0 (Linux; Android 14; SM-S921B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36",
+      "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36 Chrome-Lighthouse",
+    ])
+      expect(isCrawler(ua), ua).toBe(false);
   });
 });
 
