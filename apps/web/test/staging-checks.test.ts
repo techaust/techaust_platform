@@ -97,7 +97,11 @@ describe("staging-health checkApp [A6-8]", () => {
 
   it("retries until the Worker answers, sending the Access headers and never following a redirect", async () => {
     const seen: { url: string; init: RequestInit }[] = [];
-    const answers = [res(503, { ok: false }), res(200, { ok: true, service: "jobs", env: "staging" })];
+    const answers = [
+      res(503, { ok: false }),
+      res(200, { ok: true, service: "jobs", env: "staging" }),
+      res(400, { error: { code: "signature_missing" } }),
+    ];
     const failures = await checkApp("jobs", {
       ...quiet,
       headers: { "CF-Access-Client-Id": "id", "CF-Access-Client-Secret": "s" },
@@ -107,10 +111,14 @@ describe("staging-health checkApp [A6-8]", () => {
       },
     });
     expect(failures).toEqual([]);
-    expect(seen).toHaveLength(2);
+    expect(seen).toHaveLength(3);
     expect(seen[0]?.url).toBe(`${urlOf("jobs")}/healthz`);
     expect(seen[0]?.init.redirect).toBe("manual");
     expect(seen[0]?.init.headers).toEqual({ "CF-Access-Client-Id": "id", "CF-Access-Client-Secret": "s" });
+    // M6.2: the webhook path is checked WITHOUT the Access token (the H1 bypass) and must answer the Worker's JSON 400.
+    expect(seen[2]?.url).toBe(`${urlOf("jobs")}/razorpay`);
+    expect(seen[2]?.init.method).toBe("POST");
+    expect(seen[2]?.init.headers).toEqual({ "content-type": "application/json" });
   });
 
   it("fails after the last attempt, naming the reason", async () => {

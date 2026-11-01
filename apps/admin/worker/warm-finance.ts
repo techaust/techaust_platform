@@ -7,6 +7,7 @@
 import { warmPayments } from "@techaust/core/payment-schemas";
 import { warmSettings } from "@techaust/core/settings";
 import { decideBody } from "./approvals.ts";
+import { warmGateway } from "./gateway/warm.ts";
 import { warmInvoices } from "./invoice-warm.ts";
 
 /** The approval decision body parsed once on a made-up sample: 1 when it parsed. Never throws. */
@@ -18,5 +19,6 @@ export function warmApprovals(): number {
   }
 }
 
-// M6.1: the payment request bodies (`warmPayments`, nine samples).
-export const financeWarm: number = warmSettings() + warmInvoices() + warmApprovals() + warmPayments();
+// M6.1: the payment request bodies (`warmPayments`, nine samples). M6.2: the gateway code (`warmGateway`, CPU diagnosis lead decision 3).
+export const financeWarm: number =
+  warmSettings() + warmInvoices() + warmApprovals() + warmPayments() + warmGateway();

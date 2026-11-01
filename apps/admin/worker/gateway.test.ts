@@ -12,6 +12,7 @@ import { setStubTransport, stubFetch, stubIdsOf } from "./gateway/config.ts";
 import { processEvent } from "./gateway/events.ts";
 import { createLinkFor, refreshForClient } from "./gateway/links.ts";
 import { razorpayApi, razorpayProvider } from "./gateway/razorpay.ts";
+import { GATEWAY_WARM_STEPS, warmGateway } from "./gateway/warm.ts";
 import { call, one, rows, sessionFor, withEnv } from "./test-helpers.ts";
 import { mkProforma, putSwiftBank, putTax } from "./test-invoice-types.ts";
 import { issueInvoice, json, mkInvoice, mkInvoiceClient, putBank, putCompany } from "./test-invoices.ts";
@@ -332,6 +333,18 @@ describe("processEvent: the webhook after the re-fetch [ADM-PAY-02, -06, -07, JO
       (await rows("SELECT id FROM notifications WHERE kind = 'payment.online' AND entity_id = ?1", p?.id))
         .length,
     ).toBeGreaterThan(0);
+    // The Payments panel shows it as paid online, with the link.
+    const panel = await json(await call(`/invoices/${inv.id}/payments`, { cookie: o.cookie }));
+    expect(panel.gateway.payments[0]).toMatchObject({
+      providerPaymentId: l.paymentId,
+      status: "confirmed",
+      mode: "upi",
+    });
+    expect(panel.gateway.links[0]).toMatchObject({
+      checkoutId: l.checkoutId,
+      status: "paid",
+      shortUrl: null,
+    });
     expect(
       (
         await one<{ actor_type: string }>(
@@ -718,5 +731,11 @@ describe("routes per role, the review list, the provider contract", () => {
     expect((await issueGatewayAdvance(e, r.next?.paymentId as string)).result).toBe("issued");
     console.log(`D1 statements, issueGatewayAdvance: ${n}`);
     expect(n).toBeLessThanOrEqual(45);
+  });
+});
+
+describe("the start-up warm-up [CPU diagnosis, lead decision 3]", () => {
+  it("runs every step of the gateway code once, with made-up values", () => {
+    expect(warmGateway()).toBe(GATEWAY_WARM_STEPS);
   });
 });

@@ -1,14 +1,18 @@
 // The gateway RPC contracts and the gateway queue messages [ADM-PAY-02, -07, JOB-HOOK-02, POR-06; M6.2 run file B]: what crosses a service binding is checked at
 // run time (a malformed answer is refused, so the jobs consumer retries), and the gateway message family is recognised before the lead fall-through.
+
 import { describe, expect, it } from "vitest";
 import {
+  GATEWAY_LINK_HOSTS,
   isCreateLinkArgs,
   isCreateLinkResult,
+  isGatewayLinkUrl,
   isIssueAdvanceResult,
   isProcessEventResult,
   isRefreshResult,
   isRpcId,
 } from "../src/gateway-rpc.ts";
+import { RAZORPAY_LINK_HOSTS } from "../src/razorpay.ts";
 import {
   GATEWAY_KINDS,
   gatewayAdvanceMessage,
@@ -137,5 +141,25 @@ describe("gateway queue messages (L9: the leads queue)", () => {
 
   it("the warm-up parses one sample of each of the three", () => {
     expect(warmGatewayMessages()).toBe(3);
+  });
+});
+
+describe("isGatewayLinkUrl: the portal never sends a browser off the gateway's own hosts", () => {
+  it("https on rzp.io or razorpay.com (or a subdomain), no credentials; the list equals core razorpay's", () => {
+    for (const ok of ["https://rzp.io/i/abc", "https://razorpay.com/x", "https://pages.razorpay.com/x"])
+      expect(isGatewayLinkUrl("razorpay", ok), ok).toBe(true);
+    for (const bad of [
+      "http://rzp.io/i/abc",
+      "https://rzp.io.evil.example/x",
+      "https://evilrzp.io/x",
+      "https://user:pw@rzp.io/x",
+      "not a url",
+      42,
+      null,
+      `https://rzp.io/${"a".repeat(5000)}`,
+    ])
+      expect(isGatewayLinkUrl("razorpay", bad), String(bad).slice(0, 40)).toBe(false);
+    expect(isGatewayLinkUrl("stripe" as never, "https://rzp.io/i/abc")).toBe(false);
+    expect([...GATEWAY_LINK_HOSTS.razorpay]).toEqual([...RAZORPAY_LINK_HOSTS]);
   });
 });

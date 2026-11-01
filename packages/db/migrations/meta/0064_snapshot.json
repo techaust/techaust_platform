@@ -1,6 +1,6 @@
 {
-  "id": "908f2df4-b757-4a9b-b12c-8b134e567f4a",
-  "prevId": "2c609e9a-3cb5-4a4b-9f36-fef24a0e2d1a",
+  "id": "119aa894-5304-4641-92b2-e69cba1b29a5",
+  "prevId": "8fb45d5e-862f-4ed8-a61c-c26618049331",
   "version": "6",
   "dialect": "sqlite",
   "tables": {
@@ -6835,6 +6835,12 @@
           "columns": ["provider", "provider_payment_id"],
           "where": "\"payments\".\"provider_payment_id\" is not null",
           "isUnique": true
+        },
+        "payments_checkout": {
+          "name": "payments_checkout",
+          "columns": ["checkout_id"],
+          "where": "\"payments\".\"checkout_id\" is not null",
+          "isUnique": false
         },
         "payments_client": {
           "name": "payments_client",

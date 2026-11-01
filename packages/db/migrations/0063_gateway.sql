@@ -101,4 +101,5 @@ ALTER TABLE `payments` ADD `checkout_id` text REFERENCES checkout_sessions(id);-
 ALTER TABLE `payments` ADD `fee_tax_minor` integer;--> statement-breakpoint
 ALTER TABLE `payments` ADD `refetched_at` integer;--> statement-breakpoint
 ALTER TABLE `payments` ADD `webhook_event_id` text REFERENCES webhook_events(id);--> statement-breakpoint
-CREATE UNIQUE INDEX `payments_provider_ref` ON `payments` (`provider`,`provider_payment_id`) WHERE "payments"."provider_payment_id" is not null;
+CREATE UNIQUE INDEX `payments_provider_ref` ON `payments` (`provider`,`provider_payment_id`) WHERE "payments"."provider_payment_id" is not null;--> statement-breakpoint
+CREATE INDEX `payments_checkout` ON `payments` (`checkout_id`) WHERE "payments"."checkout_id" is not null;

@@ -1,4 +1,13 @@
-export type HealthCheck = { path: string; status: number; service?: string };
+export type HealthCheck = {
+  path: string;
+  status: number;
+  service?: string;
+  /** M6.2: a POST with this body (the webhook check). */
+  method?: "POST";
+  body?: string;
+  /** false: sent WITHOUT the Access service token (a path Access bypasses). */
+  access?: false;
+};
 export type Answer = { status: number; location: string | null; json: boolean; body: unknown };
 export const HOST_SUFFIX: string;
 export function urlOf(app: string): string;

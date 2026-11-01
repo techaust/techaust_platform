@@ -126,6 +126,7 @@ describe("migrations apply cleanly to a fresh D1", () => {
       // M6.2 (early check 1, finding 10): the gateway tables' foreign keys.
       checkout_sessions: "document_id client_id contact_id",
       review_items: "webhook_event_id payment_id document_id client_id",
+      payments: "checkout_id",
     };
     for (const [table, columns] of Object.entries(wanted)) {
       for (const column of columns.split(" ")) {

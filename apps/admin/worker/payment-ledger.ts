@@ -23,6 +23,7 @@ import {
   releasable,
 } from "@techaust/core/ledger";
 import { creditApplyBody, creditReleaseBody, realisationExtensionBody } from "@techaust/core/payment-schemas";
+import { DOCUMENT_CHECKOUTS_SQL } from "@techaust/db/gateway";
 import {
   type AllocationRow,
   allocationsInsertStatement,
@@ -319,6 +320,35 @@ export const PENDING_FOR_DOCUMENT_SQL = `SELECT p.id, p.kind, p.received_on, p.m
    WHERE p.client_id = ${CLIENT_OF_DOCUMENT} AND p.status = 'pending_verification' AND p.requested_allocations IS NOT NULL AND json_extract(j.value, '$.documentId') = ?1
    ORDER BY p.recorded_at, p.id LIMIT 50`;
 
+/** M6.2: the gateway payments that came through the links of document `?1` (newest first, at most 20). */
+export const GATEWAY_PAYMENTS_OF_DOCUMENT_SQL = `SELECT p.id, p.provider, p.status, p.provider_payment_id, p.mode, p.reference_norm, p.received_on, p.amount_minor, p.charges_minor,
+     p.fee_tax_minor, p.requested_allocations
+   FROM checkout_sessions c INDEXED BY checkout_sessions_document JOIN payments p ON p.checkout_id = c.id
+   WHERE c.document_id = ?1 ORDER BY p.recorded_at DESC, p.id DESC LIMIT 20`;
+type GatewayPaymentRow = {
+  id: string;
+  provider: string;
+  status: string;
+  provider_payment_id: string | null;
+  mode: string | null;
+  reference_norm: string | null;
+  received_on: string;
+  amount_minor: number;
+  charges_minor: number;
+  fee_tax_minor: number | null;
+  requested_allocations: string | null;
+};
+type LinkRow = {
+  id: string;
+  status: string;
+  source: string;
+  amount_minor: number;
+  short_url: string | null;
+  expires_at: number;
+  created_at: number;
+  paid_payment_id: string | null;
+};
+
 /** The bank's extensions of an export invoice (`?1`), oldest first. */
 export const EXTENSIONS_SQL = `SELECT x.id, x.extended_to, x.bank_ref, x.letter_r2_key IS NOT NULL AS has_letter, x.letter_mime, x.recorded_by,
        (SELECT name FROM staff_users WHERE id = x.recorded_by) AS recorded_by_name, x.created_at
@@ -335,13 +365,21 @@ export const invoiceLedger = new Hono<AppEnv>()
     const { id } = c.req.valid("param");
     const db = c.env.DB;
     const today = toIsoDate(istDate(Date.now()));
-    const [docR, holdR, pendR, creditR, extR, realR] = await db.batch([
+    const [docR, holdR, pendR, creditR, extR, realR, gwPayR, linksR, reviewR] = await db.batch([
       db.prepare(DOC_SQL).bind(id),
       db.prepare(DOCUMENT_HOLDINGS_SQL).bind(id),
       db.prepare(PENDING_FOR_DOCUMENT_SQL).bind(id),
       db.prepare(CREDIT_OF_DOCUMENT_CLIENT_SQL).bind(id),
       db.prepare(EXTENSIONS_SQL).bind(id),
       db.prepare(REALISATION_OF_SQL).bind(id, today),
+      // M6.2: the Razorpay payments that came through this document's links (any status), its links, and its open review items.
+      db.prepare(GATEWAY_PAYMENTS_OF_DOCUMENT_SQL).bind(id),
+      db.prepare(DOCUMENT_CHECKOUTS_SQL).bind(id),
+      db
+        .prepare(
+          "SELECT count(*) AS n FROM review_items INDEXED BY review_items_document WHERE document_id = ?1 AND status = 'open'",
+        )
+        .bind(id),
     ]);
     const d = docR?.results[0] as DocRow | undefined;
     if (!d || !PANEL_TYPES.includes(d.type)) return err(c, NOT_FOUND, 404);
@@ -410,6 +448,60 @@ export const invoiceLedger = new Hono<AppEnv>()
         recordedAt: r.recorded_at,
       })),
       credits: creditView((creditR?.results ?? []) as { currency: string; credit: number }[]),
+      // M6.2 (run file G1): "Paid online" rows (method, Razorpay's payment id, the fee absorbed), the payment links, and the open review items.
+      gateway: {
+        payments: ((gwPayR?.results ?? []) as GatewayPaymentRow[]).map((r) => ({
+          paymentId: r.id,
+          provider: r.provider,
+          status: r.status,
+          providerPaymentId: r.provider_payment_id,
+          mode: r.mode,
+          reference: r.reference_norm,
+          receivedOn: r.received_on,
+          amountMinor: r.amount_minor,
+          feeMinor: r.charges_minor,
+          feeTaxMinor: r.fee_tax_minor,
+          proformaPending: r.status === "pending_verification" && r.requested_allocations !== null,
+        })),
+        links: ((linksR?.results ?? []) as LinkRow[]).map((l) => ({
+          checkoutId: l.id,
+          status: l.status,
+          source: l.source,
+          amountMinor: l.amount_minor,
+          shortUrl: l.status === "live" ? l.short_url : null,
+          expiresAt: l.expires_at,
+          createdAt: l.created_at,
+          paidPaymentId: l.paid_payment_id,
+        })),
+        openReviewCount: (reviewR?.results[0] as { n: number } | undefined)?.n ?? 0,
+      },
+      // M6.2 (run file G1): "Paid online" rows (method, Razorpay's payment id, the fee absorbed), the payment links, and the open review items.
+      gateway: {
+        payments: ((gwPayR?.results ?? []) as GatewayPaymentRow[]).map((r) => ({
+          paymentId: r.id,
+          provider: r.provider,
+          status: r.status,
+          providerPaymentId: r.provider_payment_id,
+          mode: r.mode,
+          reference: r.reference_norm,
+          receivedOn: r.received_on,
+          amountMinor: r.amount_minor,
+          feeMinor: r.charges_minor,
+          feeTaxMinor: r.fee_tax_minor,
+          proformaPending: r.status === "pending_verification" && r.requested_allocations !== null,
+        })),
+        links: ((linksR?.results ?? []) as LinkRow[]).map((l) => ({
+          checkoutId: l.id,
+          status: l.status,
+          source: l.source,
+          amountMinor: l.amount_minor,
+          shortUrl: l.status === "live" ? l.short_url : null,
+          expiresAt: l.expires_at,
+          createdAt: l.created_at,
+          paidPaymentId: l.paid_payment_id,
+        })),
+        openReviewCount: (reviewR?.results[0] as { n: number } | undefined)?.n ?? 0,
+      },
       realisation:
         d.type === "export_invoice" && real
           ? {

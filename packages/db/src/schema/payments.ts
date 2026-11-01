@@ -113,6 +113,8 @@ export const payments = sqliteTable(
     uniqueIndex("payments_provider_ref")
       .on(t.provider, t.providerPaymentId)
       .where(sql`${t.providerPaymentId} is not null`),
+    // M6.2: a document's online payments through its links (the Payments panel, the portal's Pay now block).
+    index("payments_checkout").on(t.checkoutId).where(sql`${t.checkoutId} is not null`),
     // A client's payments in a currency by the day the money arrived (the statement, the credit balance, the client's figures).
     index("payments_client").on(t.clientId, t.currency, t.receivedOn, t.id),
     // The Owner's "Payments to check" list and the dashboard tile: only the pending rows are in it.
