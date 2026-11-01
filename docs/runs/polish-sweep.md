@@ -1,6 +1,6 @@
 # Polish sweep (admin and website follow-ups)
 
-Status: final checks green; opening the PR
+Status: PR READY https://github.com/techaust/techaust_platform/pull/144
 Tier: C
 Usage: builder b1 claude-opus-5-5/high (skills attempted `cloudflare:workers-best-practices`, `cloudflare:wrangler`, "Unknown skill" in the cloud), 5-h 17 → 20 %; designer d1 claude-opus-5-5/high (`frontend-design` attempted, "Unknown skill" then), started at 17 %; reviewer claude-opus-5-5/high (`code-review`, `security-review`) + its read-only `general-purpose` helper claude-opus-5-5/high, started at 62 %; designer d2 claude-opus-5-5/high (`frontend-design:frontend-design` loaded), started after the 06:10 reset (last reading 88 at 04:00); re-check reviewer claude-opus-5-5/high (`code-review`, `security-review`) + its helper claude-opus-5-5/high. All from `node tools/model-audit.mjs 2026-10-31`: all runs within the plan.
 
@@ -262,3 +262,6 @@ Designer (Opus 5.5, high), 2026-11-01. Branch `fix/polish-sweep-d2` from `origin
 - **Worker bytes (main → branch):** admin front 100,839 → 100,839; admin API 438,052 → 438,248; admin finance 507,872 → 508,042; portal 104,589 → 104,589; jobs 667,870 → 667,870 (startup fastest of 7: admin front 11.9 ms, API 44.3, finance 43.7, portal 12.2, jobs 66.2).
 - **07-ZL** still DRAFT (`APPROVED_07ZL = false`): the three staff lines show "[Placeholder]" until the main session approves them; flipping is one line in `apps/admin/src/lib/copy-zl.ts` plus the status line of the 07-ZL file.
 - **Not verified:** Firefox, Safari, a screen reader, a real 125 % Windows display (zoom emulation only), staging, the original 1a wrap data, a debit note in the feed (unit-tested), the jobs dead-letter path for a redacted offer's queued send.
+
+## Handover (lead, 2026-11-01)
+PR [#144](https://github.com/techaust/techaust_platform/pull/144) opened from `fix/polish-sweep` (no auto-merge; the main session reviews it, turns on auto-merge and Auto-fix). Waiting on: the main session's approval of 07-ZL 1–3 (then `APPROVED_07ZL = true` and the 07-ZL status line, one commit on this branch). Next: any merge or CI fix the main session sends, on this branch.
