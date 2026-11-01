@@ -6,8 +6,10 @@
 //     sample set: "(sample)" names, @example.test addresses). Nothing is read from or written to a database; a write is answered "1 row changed" and dropped.
 //   - queues, R2 buckets and service bindings accept and drop everything; the secrets are made-up test values (the admin tests' own), never a real one.
 // Global scope refuses a Request with a body, a Response with a body, random values, timers and I/O, so a warm call is a bodiless Request whose JSON is handed
-// to Hono's body cache, `c.json` answers without a body, and a step that needs a random value (a new id) ends that call there (silently). What ran up to that
-// point is compiled and warm. Nothing is stored, sent or logged, no request is counted and no `f: 1` first-run mark is set (app.ts). Never throws: each call
+// to Hono's body cache, `c.json` answers without a body, and a step that needs a random value (a new id) would end that call there (silently). Since the fix
+// round (early check finding 1) no call reaches one: each refusal cost workerd about 12 ms of start-up, so the issue call is sent to refuse (409
+// `content_changed`) after its recompute, and the calls that would only stop at a new id (TOTP, PATCH, the advance invoice) are not dry-run; a test counts
+// the refusals (warm-routes.test.ts). Nothing is stored, sent or logged, no request is counted and no `f: 1` first-run mark is set (app.ts). Never throws: each call
 // is caught, and the result is the number of calls that answered below 400 (a test pins it under global-scope rules, warm-routes.test.ts).
 import { type App, warmBodies } from "./app.ts";
 
