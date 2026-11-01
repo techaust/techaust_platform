@@ -7,10 +7,10 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import type { OfferItem } from "../api.ts";
 import { ArrowRight, FileText, FolderKanban, Receipt, User } from "../components/icons.tsx";
+import { Moment } from "../components/moment.tsx";
 import { PageTitle } from "../components/shell/portal-shell.tsx";
 import { StatusPill } from "../components/status-pill.tsx";
 import { N, PENDING, WORDS } from "../copy-documents.ts";
-import { localDateTime } from "../lib/local-time.ts";
 import { dateText, titleOf } from "../lib/offers.ts";
 
 /**
@@ -225,7 +225,7 @@ export function DocumentsScreen(props: {
                   <span className="drow__status">
                     <StatusPill status={d.status} />
                     <span className="drow__when">
-                      {d.decidedAt ? localDateTime(d.decidedAt) : validityText(d.validUntil)}
+                      {d.decidedAt ? <Moment at={d.decidedAt} /> : validityText(d.validUntil)}
                     </span>
                   </span>
                   <span className="drow__total">{d.total}</span>

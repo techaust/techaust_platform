@@ -121,6 +121,8 @@ describe("the routes [POR-05]", () => {
     expect(body.deeds.map((d) => d.id)).toEqual([f.mine]);
     expect(body.deeds[0]).toMatchObject({
       offer: { type: "proposal", version: 1 },
+      // The instant the screen writes in the client's own clock (src/components/moment.tsx); the IST text stays for older screens.
+      esignAt: Date.parse("2026-11-03T14:05:00.000+05:30"),
       esignMoment: "03 Nov 2026, 14:05 IST",
       esignTxn: "ESIGN-77",
       signatureLine:

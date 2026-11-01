@@ -19,16 +19,18 @@ const ALL_VIEWS = [
   { width: 390, scheme: "dark" },
 ] as const;
 
-/** A moment as the screen writes it, ending in the zone's short name. */
-const moment = (zone: string) =>
-  new RegExp(`^\\d{2} [A-Z][a-z]{2} \\d{4}, \\d{2}:\\d{2} ${zone.replaceAll("+", "\\+")}$`);
+/** A moment as the screen writes it, ending in one of the zone's short names (the sample decisions are days old: either side of a clock change). */
+const moment = (zones: readonly string[]) =>
+  new RegExp(
+    `^\\d{2} [A-Z][a-z]{2} \\d{4}, \\d{2}:\\d{2} (?:${zones.map((z) => z.replaceAll("+", "\\+")).join("|")})$`,
+  );
 
 const ZONES = [
   // The sample deed was signed at 08:35 UTC on 03 Nov 2026.
   {
     id: "Asia/Kolkata",
     locale: "en-IN",
-    zone: "IST",
+    zones: ["IST"],
     deed: "03 Nov 2026, 14:05 IST",
     views: ALL_VIEWS,
     slug: "kolkata",
@@ -36,7 +38,7 @@ const ZONES = [
   {
     id: "Europe/London",
     locale: "en-GB",
-    zone: "GMT",
+    zones: ["GMT", "BST"],
     deed: "03 Nov 2026, 08:35 GMT",
     views: ALL_VIEWS,
     slug: "london",
@@ -44,7 +46,7 @@ const ZONES = [
   {
     id: "America/Los_Angeles",
     locale: "en-US",
-    zone: "PST",
+    zones: ["PST", "PDT"],
     deed: "03 Nov 2026, 00:35 PST",
     views: [ALL_VIEWS[0]],
     slug: "los-angeles",
@@ -52,7 +54,7 @@ const ZONES = [
   {
     id: "Asia/Tokyo",
     locale: "en-US",
-    zone: "GMT+9",
+    zones: ["GMT+9"],
     deed: "03 Nov 2026, 17:35 GMT+9",
     views: [ALL_VIEWS[0]],
     slug: "tokyo",
@@ -81,7 +83,7 @@ for (const z of ZONES) {
   test.describe(`clock ${z.id}`, () => {
     test.use({ timezoneId: z.id, locale: z.locale });
 
-    test(`times of day in ${z.zone}, dates alone in IST`, async ({ page }) => {
+    test(`times of day in ${z.zones.join(" or ")}, dates alone in IST`, async ({ page }) => {
       const errors: string[] = [];
       page.on("console", (m) => {
         if (m.type() === "error") errors.push(m.text());
@@ -94,9 +96,9 @@ for (const z of ZONES) {
         // Accepted by you: the summary's line, the record's "When", the deed card.
         await page.goto("/proposals/sample-accepted?sample=on");
         await expect(page.locator(".deedcard")).toContainText(`Signed with Aadhaar eSign on ${z.deed}`);
-        await expect(page.locator(".docside__when strong")).toHaveText(moment(z.zone));
+        await expect(page.locator(".docside__when strong")).toHaveText(moment(z.zones));
         const when = page.locator(".facts--record div", { hasText: "Date and time" }).locator("dd");
-        await expect(when).toHaveText(moment(z.zone));
+        await expect(when).toHaveText(moment(z.zones));
         await shot(page, `accepted-${tag}`);
         await axe(page, `accepted ${tag}`);
 
@@ -104,7 +106,7 @@ for (const z of ZONES) {
         await page.goto("/proposals/sample-declined?sample=on");
         await expect(
           page.locator(".facts--record div", { hasText: "Date and time" }).locator("dd"),
-        ).toHaveText(moment(z.zone));
+        ).toHaveText(moment(z.zones));
         await shot(page, `declined-${tag}`);
         await axe(page, `declined ${tag}`);
 
@@ -113,7 +115,7 @@ for (const z of ZONES) {
         const whens = page.locator(".drow__when");
         await expect(whens.first()).toBeVisible();
         for (const t of await whens.allTextContents()) {
-          expect(t.trim()).toMatch(/\(IST\)$/.test(t.trim()) ? /\(IST\)$/ : moment(z.zone));
+          expect(t.trim()).toMatch(/\(IST\)$/.test(t.trim()) ? /\(IST\)$/ : moment(z.zones));
         }
         await shot(page, `list-${tag}`);
         await axe(page, `list ${tag}`);

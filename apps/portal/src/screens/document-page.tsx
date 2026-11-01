@@ -9,9 +9,9 @@ import type { PdfView } from "../api.ts";
 import { DecisionPanel, type DecisionProps } from "../components/decision/decision-panel.tsx";
 import { DocumentPaper, sheetSections } from "../components/document/document-paper.tsx";
 import { Alert, ArrowLeft, ArrowRight, Clock, Download, Info } from "../components/icons.tsx";
+import { Moment } from "../components/moment.tsx";
 import { StatusPill } from "../components/status-pill.tsx";
 import { N, WORDS } from "../copy-documents.ts";
-import { localDateTime } from "../lib/local-time.ts";
 import { kindWord } from "../lib/offers.ts";
 
 function Aside(props: { view: PdfView; d: DecisionProps; onDownload: () => void; extra?: ReactNode }) {
@@ -33,7 +33,9 @@ function Aside(props: { view: PdfView; d: DecisionProps; onDownload: () => void;
           {m.acceptance ? (
             <>
               {WORDS.status.accepted}{" "}
-              <strong className="nowrap">{localDateTime(m.acceptance.acceptedAt)}</strong>
+              <strong>
+                <Moment at={m.acceptance.acceptedAt} />
+              </strong>
             </>
           ) : (
             <>
