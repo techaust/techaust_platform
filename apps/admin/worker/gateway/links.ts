@@ -165,8 +165,13 @@ export async function closeByRealState(
   return healed ? "paid" : "open";
 }
 
-/** A checkout's status and the oldest payment we hold through it (a primary-key seek, then `payments` by its checkout). */
-const LINK_STATE_SQL = `SELECT c.status, (SELECT p.id FROM payments p WHERE p.checkout_id = c.id AND p.provider = c.provider ORDER BY p.recorded_at LIMIT 1) AS held
+/**
+ * A checkout's status and the newest live payment we hold through it (a primary-key seek, then `payments` by its checkout). Fix round 4, low 4: only a payment
+ * that still stands (`confirmed` or `pending_verification`) can be the one that paid the link, so the heal never records a withdrawn or rejected row as
+ * `paid_payment_id`; of those, the newest.
+ */
+export const LINK_STATE_SQL = `SELECT c.status, (SELECT p.id FROM payments p INDEXED BY payments_checkout WHERE p.checkout_id = c.id AND p.provider = c.provider
+     AND p.status IN ('confirmed', 'pending_verification') ORDER BY p.recorded_at DESC, p.id DESC LIMIT 1) AS held
    FROM checkout_sessions c WHERE c.id = ?1`;
 
 /** Make (or reuse) a payment link. Never throws for a refusal: the answer names it (the portal and the route map it to their status). */

@@ -5,12 +5,12 @@
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core/ids";
 import { REMINDER_CLAIM_SQL } from "@techaust/db/billing";
-import { STUCK_ADVANCES_SQL } from "@techaust/db/gateway";
+import { recordGatewayPaymentStatements, STUCK_ADVANCES_SQL } from "@techaust/db/gateway";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { issueGatewayAdvance } from "./gateway/advance.ts";
 import { setStubTransport, stubFetch, stubIdsOf } from "./gateway/config.ts";
 import { processEvent } from "./gateway/events.ts";
-import { createLinkFor, refreshForClient } from "./gateway/links.ts";
+import { createLinkFor, LINK_STATE_SQL, refreshForClient } from "./gateway/links.ts";
 import { razorpayApi } from "./gateway/razorpay.ts";
 import { NO_PAYMENT_LISTED_LINE } from "./gateway/reasons.ts";
 import {
@@ -27,7 +27,7 @@ import {
   stub,
 } from "./test-gateway.ts";
 import { call, one, rows, withEnv } from "./test-helpers.ts";
-import { putSwiftBank, putTax } from "./test-invoice-types.ts";
+import { putSwiftBank, putTax, todayIso } from "./test-invoice-types.ts";
 import { issueInvoice, json, mkInvoice, putBank, putCompany } from "./test-invoices.ts";
 import { recordBody, recorded, verify } from "./test-payments.ts";
 
@@ -961,5 +961,89 @@ describe("the stub stays the simulator", () => {
       "https://api.razorpay.com/v1/payments/pay_A100R0123456789abcdef0123456789abcdef",
     );
     expect(r.status).toBe(200);
+  });
+});
+
+describe("fix round 4, low 4: the heal's held payment is the newest that still stands [JOB-HOOK-02]", () => {
+  it("LINK_STATE_SQL skips an older withdrawn payment and a newer rejected one, and takes the newest confirmed or pending", async () => {
+    const o = await owner();
+    const inv = await issued(o);
+    const l = await linkFor(o, inv);
+    const t0 = Date.now();
+    /** A payment through the link, recorded at `at` (pending; the status moves below are the Owner's, as the triggers require). */
+    const record = async (ref: string, at: number) => {
+      const s = recordGatewayPaymentStatements(env.DB, {
+        provider: "razorpay",
+        providerPaymentId: ref,
+        paymentId: `rzp_${ref}`,
+        checkoutId: l.checkoutId,
+        clientId: inv.clientId,
+        documentId: inv.id,
+        webhookEventId: null,
+        source: "refresh",
+        status: "pending_verification",
+        amountMinor: 1_000,
+        feeMinor: 0,
+        feeTaxMinor: 0,
+        receivedOn: todayIso(),
+        mode: "upi",
+        referenceNorm: ref.replace("_", "-").toUpperCase(),
+        refetchedAt: at,
+        now: at,
+        allocate: null,
+        requestedAllocations: null,
+        checkoutPaid: false,
+        staleOthers: false,
+        event: null,
+        bell: null,
+      });
+      await env.DB.batch([s.main, ...s.side, ...s.last]);
+      return `rzp_${ref}`;
+    };
+    const decide = (id: string, status: "confirmed" | "rejected", at: number) =>
+      env.DB.prepare("UPDATE payments SET status = ?2, verified_by = ?3, verified_at = ?4 WHERE id = ?1")
+        .bind(id, status, o.id, at)
+        .run();
+    // 0064's `payments_status_flow` never lets a gateway payment be rejected or withdrawn today (refunds are M6.5), so those rows are written with that one
+    // trigger lifted and put back as it was: the read must hold whatever a later milestone allows.
+    const unguarded = async (move: () => Promise<unknown>) => {
+      const t = await env.DB.prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'payments_status_flow'",
+      ).first<{ sql: string }>();
+      expect(t?.sql).toBeTruthy();
+      await env.DB.prepare("DROP TRIGGER payments_status_flow").run();
+      try {
+        await move();
+      } finally {
+        await env.DB.prepare(t?.sql as string).run();
+      }
+    };
+    const held = async () =>
+      (
+        await env.DB.prepare(LINK_STATE_SQL)
+          .bind(l.checkoutId)
+          .first<{ status: string; held: string | null }>()
+      )?.held;
+    // The oldest: confirmed, then withdrawn (made in error). Under the old read (the oldest in any status) the heal would name it.
+    const old = await record("pay_FR4OLD000000001", t0);
+    await decide(old, "confirmed", t0 + 1);
+    await unguarded(() =>
+      env.DB.prepare(
+        "UPDATE payments SET status = 'withdrawn', withdrawn_by = ?2, withdrawn_at = ?3, withdraw_reason = 'made in error' WHERE id = ?1",
+      )
+        .bind(old, o.id, t0 + 2)
+        .run(),
+    );
+    expect(await held()).toBeNull();
+    // A pending one, then a newer confirmed one: the newest that stands.
+    const pending = await record("pay_FR4PEND00000001", t0 + 10);
+    expect(await held()).toBe(pending);
+    const confirmed = await record("pay_FR4CONF00000001", t0 + 20);
+    await decide(confirmed, "confirmed", t0 + 21);
+    expect(await held()).toBe(confirmed);
+    // The newest of all is rejected: skipped, the confirmed one stays the answer.
+    const rejected = await record("pay_FR4REJ000000001", t0 + 30);
+    await unguarded(() => decide(rejected, "rejected", t0 + 31));
+    expect(await held()).toBe(confirmed);
   });
 });
