@@ -8,7 +8,8 @@ import {
   ADVANCE_OTHER_CHECK,
   advanceBlockersText,
 } from "../../worker/gateway/reasons.ts";
-import { advanceBlockerLine, itemReason } from "./gateway.ts";
+import panelSource from "../routes/payments/panel.tsx?raw";
+import { advanceBlockerLine, GW_UI, itemReason } from "./gateway.ts";
 
 const inr = (m: number) => formatMoney(money(m, "INR"));
 const base = { linkId: "plink_X", paymentId: "pay_X", currency: "INR", method: "card" };
@@ -77,5 +78,12 @@ describe("itemReason [07-ZI S20]", () => {
     expect(itemReason({ kind: "document_not_payable", facts: null, amount_minor: 100 })).toContain(
       "(it changed)",
     );
+  });
+});
+
+describe("the Payments panel's reference column [M6.2 review finding 13]", () => {
+  it("a Razorpay row's reference is its Payment ID (the lead's line), never a UTR", () => {
+    expect(GW_UI.paymentId).toBe("Payment ID");
+    expect(panelSource).toContain("allOnline ? GW_UI.paymentId : PAY_COPY.reference");
   });
 });

@@ -338,6 +338,11 @@ function Entries(props: { panel: Panel; canCert: boolean; onCertificate: (paymen
         <span>{PAY_UI.noneOnInvoice}</span>
       </p>
     );
+  // Review finding 13: a Razorpay row's reference is its payment id, not a UTR. The column says "Payment ID" when every payment row is one; in a mixed table
+  // the UTR heading stays for the bank rows and a Razorpay row names its value.
+  const paid = rows.filter((r) => r.kind !== "tds");
+  const allOnline = paid.length > 0 && paid.every((r) => gatewayOf(props.panel, r.paymentId));
+  const refHead = allOnline ? GW_UI.paymentId : PAY_COPY.reference;
   return (
     <table className="pay-lines">
       <caption className="visually-hidden">{PAY_COPY.heading}</caption>
@@ -345,7 +350,7 @@ function Entries(props: { panel: Panel; canCert: boolean; onCertificate: (paymen
         <tr>
           <th scope="col">{PAY_COPY.dateReceived}</th>
           <th scope="col">{PAY_COPY.mode}</th>
-          <th scope="col">{PAY_COPY.reference}</th>
+          <th scope="col">{refHead}</th>
           <th scope="col" className="num">
             {PAY_UI.colAmount}
           </th>
@@ -380,7 +385,7 @@ function Entries(props: { panel: Panel; canCert: boolean; onCertificate: (paymen
                 ""
               )}
             </td>
-            <td data-label={PAY_COPY.reference}>
+            <td data-label={refHead}>
               {r.kind === "tds" ? (
                 r.tds?.certificateAwaited ? (
                   <span className="pay-await">
@@ -402,7 +407,12 @@ function Entries(props: { panel: Panel; canCert: boolean; onCertificate: (paymen
                   <span className="docno">{r.tds?.certificateNo}</span>
                 )
               ) : (
-                <span className="docno break">{r.reference}</span>
+                <>
+                  {!allOnline && gatewayOf(props.panel, r.paymentId) && (
+                    <span className="pay-lines__meta">{GW_UI.paymentId}</span>
+                  )}
+                  <span className="docno break">{r.reference}</span>
+                </>
               )}
             </td>
             <td className="num tnum" data-label={PAY_UI.colAmount}>

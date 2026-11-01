@@ -70,6 +70,8 @@ export const razorpayLine = (mode: string | null, providerPaymentId: string | nu
 
 export const GW_UI = {
   paidOnline: "Paid online",
+  /** Review finding 13 (the lead's staff line, 2026-11-01): the reference column of a Razorpay row (its `PAY-…` payment id is not a UTR). */
+  paymentId: "Payment ID",
   // the brief's own words (run file G1)
   proformaToFollow: "Paid online, tax invoice to follow",
   issuingNow: "Its tax invoice is being issued automatically.",
