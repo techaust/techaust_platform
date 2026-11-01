@@ -242,8 +242,12 @@ export type GatewayPaymentArgs = {
   allocate: { allocationId: string; overpaidReviewId: string; facts: GatewayFacts } | null;
   /** A proforma's pending payment: what the automatic advance (L6) will take, `[{documentId, amountMinor}]`. */
   requestedAllocations: readonly { documentId: string; amountMinor: number }[] | null;
-  /** The checkout moves to `paid` with this payment (the two happy paths), and the document's other live links become `stale` (L4). */
-  checkoutPaid: boolean;
+  /**
+   * The checkout moves to `paid` with this payment (the two happy paths), and the document's other live links become `stale` (L4). `"if_open"` (M6.2 review
+   * finding 2: money that went to review but was paid through this very link): the move is made only if the checkout is still live or stale, and the payment row
+   * is written either way (a link that ended meanwhile never loses the money's record).
+   */
+  checkoutPaid: boolean | "if_open";
   staleOthers: boolean;
   /** The event's own move, or null for a refresh. */
   event: { status: "processed" | "needs_review"; outcome: string } | null;
@@ -318,7 +322,7 @@ export function recordGatewayPaymentStatements(
       a.checkoutId,
       a.clientId,
       a.documentId,
-      confirmed || a.checkoutPaid ? 1 : 0,
+      confirmed || a.checkoutPaid === true ? 1 : 0,
       a.allocate ? 1 : 0,
     );
   // This batch wrote the payment: its id with this batch's instant.

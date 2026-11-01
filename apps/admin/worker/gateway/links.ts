@@ -111,6 +111,36 @@ async function adopt(
   return r.meta.changes === 1;
 }
 
+/**
+ * M6.2 review finding 2: Razorpay refused to cancel a link we still hold open (it was paid, or it expired or was cancelled there and the news was lost). The link is
+ * re-fetched and our row ended by its real state: expired or cancelled closes it (`endCheckout`); paid or partly paid settles it as a refresh would
+ * (`settlePayment`, the proforma's advance queued); anything else (still open there, or Razorpay not reached) leaves it. Never throws for Razorpay's answer.
+ */
+export async function closeByRealState(
+  env: GatewayEnv,
+  api: RazorpayApi,
+  checkout: CheckoutRow,
+  now: number,
+): Promise<"ended" | "paid" | "open"> {
+  if (!checkout.provider_link_id) return "open";
+  const linkR = await api.fetchLink(checkout.provider_link_id);
+  if (!linkR.ok) return "open";
+  const state = linkR.value.state;
+  const cause = { kind: "refresh" } as const;
+  if (state === "expired" || state === "cancelled") {
+    await endCheckout(env, { cause, checkout, status: state, now });
+    return "ended";
+  }
+  if (state !== "paid" && state !== "partially_paid") return "open";
+  const r = await settlePayment(
+    env,
+    { api, linkId: checkout.provider_link_id, paymentId: null, cause, now },
+    staleCanceller(env, api, now),
+  );
+  await sendNext(env, r.next);
+  return "paid";
+}
+
 /** Make (or reuse) a payment link. Never throws for a refusal: the answer names it (the portal and the route map it to their status). */
 export async function makeLink(env: GatewayEnv, a: MakeLinkArgs, now = Date.now()): Promise<MakeLinkResult> {
   const db = env.DB;
@@ -189,6 +219,46 @@ export async function makeLink(env: GatewayEnv, a: MakeLinkArgs, now = Date.now(
   const made = (linksR?.results[0] as { n: number } | undefined)?.n ?? 0;
   const limited = made >= LINKS_PER_CLIENT_HOUR;
   const open = openR?.results[0] as CheckoutRow | undefined;
+  const linkContactId =
+    a.actor.kind === "staff" ? null : a.actor.kind === "contact" ? a.actor.contactId : actorRow.id;
+  const actorOf = {
+    ...(a.request ?? NO_REQUEST),
+    actorType: a.actor.kind === "staff" ? ("staff" as const) : ("contact" as const),
+    actorId: a.actor.kind === "staff" ? a.actor.memberId : linkContactId,
+    role: a.actor.kind === "staff" ? a.actor.role : null,
+  };
+  // Review finding 11: the replaced link's end is one batch with its own audit row (written only if the row moved), by the same actor as the new link.
+  let replacedCheckoutId: string | null = null;
+  const endReplaced = async (row: CheckoutRow) => {
+    const [end] = await db.batch([
+      checkoutEndStatement(db, { id: row.id, status: "cancelled", now }),
+      auditStmt(
+        db,
+        {
+          ...actorOf,
+          action: "payment.link_cancel",
+          entityType: "checkout_session",
+          entityId: row.id,
+          summary: { checkoutId: row.id, documentId: a.documentId, replaced: true },
+        },
+        "changes",
+      ),
+    ]);
+    if (end?.meta.changes === 1) replacedCheckoutId = row.id;
+  };
+  /**
+   * Review finding 2: Razorpay refused the cancel: our row is ended by the link's real state. Ended there: the new link goes ahead. Paid there: the money is
+   * settled and the request is refused as changed (the screen reloads and shows it). Still open, or not reached: `gateway_error`, as before.
+   */
+  const afterRefusal = async (row: CheckoutRow, code: string): Promise<MakeLinkResult | null> => {
+    if (code !== "refused")
+      return { ok: false, error: code === "live_not_allowed" ? "live_not_allowed" : "gateway_error" };
+    const real = await closeByRealState(env, api, row, now);
+    if (real === "ended") return null;
+    return real === "paid"
+      ? { ok: false, error: "not_payable_online", reason: "changed" }
+      : { ok: false, error: "gateway_error" };
+  };
   if (open) {
     if (open.status === "creating") {
       if (now - open.created_at < CREATING_ABANDONED_MS) return { ok: false, error: "link_in_progress" };
@@ -212,8 +282,10 @@ export async function makeLink(env: GatewayEnv, a: MakeLinkArgs, now = Date.now(
         if (limited) return { ok: false, error: "too_many_links" };
         if (back?.status === "live" && back.provider_link_id) {
           const c = await api.cancelLink(back.provider_link_id);
-          if (!c.ok) return { ok: false, error: "gateway_error" };
-          await checkoutEndStatement(db, { id: back.id, status: "cancelled", now }).run();
+          if (!c.ok) {
+            const refused = await afterRefusal(back, c.code);
+            if (refused) return refused;
+          } else await endReplaced(back);
         }
       } else {
         await checkoutFailStatement(db, { id: open.id, now }).run();
@@ -231,17 +303,17 @@ export async function makeLink(env: GatewayEnv, a: MakeLinkArgs, now = Date.now(
       if (limited) return { ok: false, error: "too_many_links" };
       if (open.provider_link_id) {
         const c = await api.cancelLink(open.provider_link_id);
-        if (!c.ok) return { ok: false, error: "gateway_error" };
-      }
-      await checkoutEndStatement(db, { id: open.id, status: "cancelled", now }).run();
+        if (!c.ok) {
+          const refused = await afterRefusal(open, c.code);
+          if (refused) return refused;
+        } else await endReplaced(open);
+      } else await endReplaced(open);
     }
   }
   if (limited) return { ok: false, error: "too_many_links" };
   // ROW FIRST
   const checkoutId = uuidv7();
   const expiresAt = now + LINK_LIFETIME_MS;
-  const linkContactId =
-    a.actor.kind === "staff" ? null : a.actor.kind === "contact" ? a.actor.contactId : actorRow.id;
   let inserted = 0;
   try {
     inserted = (
@@ -315,14 +387,17 @@ export async function makeLink(env: GatewayEnv, a: MakeLinkArgs, now = Date.now(
   const audit = auditStmt(
     db,
     {
-      ...(a.request ?? NO_REQUEST),
-      actorType: a.actor.kind === "staff" ? "staff" : "contact",
-      actorId: a.actor.kind === "staff" ? a.actor.memberId : linkContactId,
-      role: a.actor.kind === "staff" ? a.actor.role : null,
+      ...actorOf,
       action: "payment.link_create",
       entityType: "checkout_session",
       entityId: checkoutId,
-      summary: { checkoutId, documentId: a.documentId, amountMinor: a.amountMinor, source: a.actor.kind },
+      summary: {
+        checkoutId,
+        documentId: a.documentId,
+        amountMinor: a.amountMinor,
+        source: a.actor.kind,
+        ...(replacedCheckoutId ? { replacedCheckoutId } : {}),
+      },
     },
     "changes",
   );

@@ -219,7 +219,9 @@ function paymentFields(p: PaymentStatusReport) {
 
 /**
  * A pending payment (no ledger move) and a review item of `kind`, in one batch: a mismatch, a document no longer payable, a proforma overpaid, a race that refused
- * the confirmed batch. `checkoutPaid` marks the link paid when the money is the link's own (a proforma's pending payment).
+ * the confirmed batch. M6.2 review finding 2: when the money was paid through this very link (`onLink`: Razorpay lists the payment on our link), the checkout
+ * moves to `paid` in the same batch while it is still live or stale, so a link paid at Razorpay never stays open here (no reuse of a paid page, no cancel
+ * Razorpay refuses, no block on the document's next link); the payment row is written either way.
  */
 async function recordPendingWithReview(
   env: GatewayEnv,
@@ -229,6 +231,7 @@ async function recordPendingWithReview(
   kind: string,
   reasonFacts: ReasonFacts,
   facts: GatewayFacts,
+  onLink: boolean,
 ): Promise<boolean> {
   const auditId = uuidv7();
   const g = guardSql({ auditId });
@@ -249,7 +252,7 @@ async function recordPendingWithReview(
       now: a.now,
       allocate: null,
       requestedAllocations: null,
-      checkoutPaid: false,
+      checkoutPaid: onLink ? "if_open" : false,
       staleOthers: false,
       event: eventId ? { status: "needs_review", outcome: kind } : null,
       bell: null,
@@ -444,6 +447,10 @@ export async function settlePayment(
   }
   const p = payR.value;
   const facts = factsOf(a.linkId, p, paymentRef);
+  // Review finding 2: the money is this link's own (our link, and Razorpay lists the payment on it), so a pending record marks the link paid.
+  const onLink =
+    link.providerRef === checkout.provider_link_id &&
+    link.payments.some((x) => x.paymentRef === p.providerRef);
   // (5) the judge; a payment Razorpay has not settled yet is tried again later ("For B2" 5)
   const verdict = judgeRazorpayPayment(
     {
@@ -493,6 +500,7 @@ export async function settlePayment(
       verdict.verdict,
       { paidMinor: p.amountMinor, expectedMinor: checkout.amount_minor },
       facts,
+      onLink,
     );
     return { result: "needs_review" };
   }
@@ -516,6 +524,7 @@ export async function settlePayment(
       "document_not_payable",
       { reason: payable.reason },
       facts,
+      onLink,
     );
     return { result: "needs_review" };
   }
@@ -525,7 +534,7 @@ export async function settlePayment(
   // (7) a proforma: pending until its tax invoice is issued (L6), within its balance; above it the Owner issues by hand
   if (doc.type === "proforma") {
     if (p.amountMinor > doc.balance_minor) {
-      await recordPendingWithReview(env, a, checkout, p, "proforma_overpaid", {}, facts);
+      await recordPendingWithReview(env, a, checkout, p, "proforma_overpaid", {}, facts, onLink);
       return { result: "needs_review" };
     }
     const auditId = uuidv7();
@@ -581,6 +590,7 @@ export async function settlePayment(
         "document_not_payable",
         { reason: "link_not_live" },
         facts,
+        onLink,
       );
       return { result: "needs_review" };
     }
@@ -659,7 +669,16 @@ export async function settlePayment(
       await moveEvent(env, a, "processed", "duplicate");
       return duplicateOf(again);
     }
-    await recordPendingWithReview(env, a, checkout, p, "document_not_payable", { reason: "changed" }, facts);
+    await recordPendingWithReview(
+      env,
+      a,
+      checkout,
+      p,
+      "document_not_payable",
+      { reason: "changed" },
+      facts,
+      onLink,
+    );
     return { result: "needs_review" };
   }
   const stale = others

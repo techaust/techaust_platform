@@ -363,6 +363,125 @@ describe("processEvent: the webhook after the re-fetch [ADM-PAY-02, -06, -07, JO
     });
     expect(rej.status).toBe(409);
     expect((await json(rej)).error.code).toBe("gateway_refund_needed");
+    // Review finding 2: the money was paid through this link, so the link is paid here too, and the document can have a new link at once (no cancel of the
+    // paid link is tried).
+    expect(
+      await one<{ status: string; paid_payment_id: string }>(
+        "SELECT status, paid_payment_id FROM checkout_sessions WHERE id = ?1",
+        l.checkoutId,
+      ),
+    ).toEqual({ status: "paid", paid_payment_id: p?.id });
+    stub();
+    const doc = await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?1", inv.id);
+    const again = await staffLink(o, inv.id, inv.total, doc?.updated_at ?? 0);
+    expect(again.status, await again.clone().text()).toBe(201);
+    expect(calls.filter((x) => x.path.endsWith("/cancel"))).toEqual([]);
+  });
+
+  it("review finding 2: a link Razorpay won't cancel is ended by its real state (expired there: the new link goes ahead; paid there: settled, 409)", async () => {
+    const o = await owner();
+    // A part-payment floor of ₹1, so a second amount can replace the open link.
+    await env.DB.prepare(
+      "INSERT INTO settings (key, value) VALUES ('payment_terms', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value, version = settings.version + 1",
+    )
+      .bind(JSON.stringify({ razorpayMinPartialInrMinor: 100 }))
+      .run();
+    // Expired at Razorpay, the event lost: the staff "Cancel link" ends it, and a new amount is not stuck.
+    const a = await issued(o);
+    const la = await linkFor(o, a);
+    const refuseCancel = (
+      state: "expired" | "paid",
+      l: { checkoutId: string; linkId: string },
+      total: number,
+    ) =>
+      stub((path, method) => {
+        if (method === "POST" && path.endsWith("/cancel"))
+          return Response.json({ error: { code: "BAD_REQUEST_ERROR" } }, { status: 400 });
+        if (state === "expired" && path === `/v1/payment_links/${l.linkId}` && method === "GET")
+          return Response.json({
+            id: l.linkId,
+            status: "expired",
+            currency: "INR",
+            amount: total,
+            amount_paid: 0,
+            reference_id: l.checkoutId,
+            short_url: "https://rzp.io/i/abc",
+            payments: null,
+          });
+        return null;
+      });
+    refuseCancel("expired", la, a.total);
+    const cancel = await call(`/invoices/${a.id}/payment-link/cancel`, {
+      cookie: o.cookie,
+      body: { checkoutId: la.checkoutId },
+    });
+    expect(cancel.status, await cancel.clone().text()).toBe(200);
+    expect(await json(cancel)).toEqual({ ok: true, status: "ended" });
+    expect(
+      (await one<{ status: string }>("SELECT status FROM checkout_sessions WHERE id = ?1", la.checkoutId))
+        ?.status,
+    ).toBe("expired");
+    // The same, met by a new amount: the expired row ends and the new link is made.
+    const d = await issued(o);
+    const ld = await linkFor(o, d);
+    refuseCancel("expired", ld, d.total);
+    const docD = await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?1", d.id);
+    const fresh = await staffLink(o, d.id, 50_000, docD?.updated_at ?? 0);
+    expect(fresh.status, await fresh.clone().text()).toBe(201);
+    expect(
+      (await one<{ status: string }>("SELECT status FROM checkout_sessions WHERE id = ?1", ld.checkoutId))
+        ?.status,
+    ).toBe("expired");
+    // Review finding 11: a new amount that replaces a live link (the cancel accepted) leaves an audit row for the cancel, by the same member, and the new
+    // link's audit row names the one it replaced.
+    stub();
+    const e = await issued(o);
+    const le = await linkFor(o, e);
+    const docE = await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?1", e.id);
+    const swap = await staffLink(o, e.id, 50_000, docE?.updated_at ?? 0);
+    expect(swap.status, await swap.clone().text()).toBe(201);
+    const swapped = (await json(swap)).checkoutId as string;
+    expect(
+      await one<{ actor_id: string; summary: string }>(
+        "SELECT actor_id, summary FROM audit_log WHERE action = 'payment.link_cancel' AND entity_id = ?1",
+        le.checkoutId,
+      ),
+    ).toEqual({
+      actor_id: o.id,
+      summary: JSON.stringify({ checkoutId: le.checkoutId, documentId: e.id, replaced: true }),
+    });
+    const created = await one<{ summary: string }>(
+      "SELECT summary FROM audit_log WHERE action = 'payment.link_create' AND entity_id = ?1",
+      swapped,
+    );
+    expect(JSON.parse(created?.summary ?? "{}")).toMatchObject({ replacedCheckoutId: le.checkoutId });
+    // Paid at Razorpay (the webhook lost): a new amount from staff settles the money first and is refused as changed; the old row is paid, the invoice too.
+    const b = await issued(o);
+    const lb = await linkFor(o, b);
+    refuseCancel("paid", lb, b.total);
+    const docB = await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?1", b.id);
+    const replaced = await staffLink(o, b.id, 50_000, docB?.updated_at ?? 0);
+    expect(replaced.status, await replaced.clone().text()).toBe(409);
+    expect((await json(replaced)).error.code).toBe("not_payable_online");
+    expect(
+      (await one<{ status: string }>("SELECT status FROM checkout_sessions WHERE id = ?1", lb.checkoutId))
+        ?.status,
+    ).toBe("paid");
+    expect((await paymentOf(lb.paymentId))?.status).toBe("confirmed");
+    // And the staff cancel of a link already paid answers 409, with nothing left open.
+    const c = await issued(o);
+    const lc = await linkFor(o, c);
+    refuseCancel("paid", lc, c.total);
+    const paidCancel = await call(`/invoices/${c.id}/payment-link/cancel`, {
+      cookie: o.cookie,
+      body: { checkoutId: lc.checkoutId },
+    });
+    expect(paidCancel.status).toBe(409);
+    expect(
+      (await one<{ status: string }>("SELECT status FROM checkout_sessions WHERE id = ?1", lc.checkoutId))
+        ?.status,
+    ).toBe("paid");
+    await env.DB.prepare("DELETE FROM settings WHERE key = 'payment_terms'").run();
   });
 
   it("a link we don't know: an unknown_link item, no payment row", async () => {

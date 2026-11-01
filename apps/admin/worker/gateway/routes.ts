@@ -19,7 +19,7 @@ import { cachedSetting } from "../settings-cache.ts";
 import { issueGatewayAdvance } from "./advance.ts";
 import { envText, FINANCE_GATEWAY_SECRETS, gatewayModeOf, razorpayOf } from "./config.ts";
 import { sendNext, staleCanceller } from "./events.ts";
-import { type MakeLinkResult, makeLink, refreshCheckout } from "./links.ts";
+import { closeByRealState, type MakeLinkResult, makeLink, refreshCheckout } from "./links.ts";
 import {
   ADVANCE_CHANGED,
   AMOUNT_NOT_WHOLE_RUPEE,
@@ -118,7 +118,11 @@ export const invoicePaymentLinks = new Hono<AppEnv>()
     const cancelled = await api.cancelLink(co.provider_link_id);
     if (!cancelled.ok) {
       if (cancelled.code === "live_not_allowed") return err(c, LIVE_NOT_ALLOWED, 503);
-      return cancelled.code === "refused" ? err(c, LINK_NOT_LIVE, 409) : err(c, GATEWAY_ERROR, 502);
+      if (cancelled.code !== "refused") return err(c, GATEWAY_ERROR, 502);
+      // Review finding 2: Razorpay refused (paid, expired or cancelled there): our row is ended by the link's real state, so it never stays open here. A link
+      // that ended there answers as ended; a paid one is settled and answers 409 (the panel reloads and shows the payment).
+      const real = await closeByRealState(c.env, api, co, Date.now());
+      return real === "ended" ? c.json({ ok: true, status: "ended" }) : err(c, LINK_NOT_LIVE, 409);
     }
     const now = Date.now();
     const done = await mutate(c, {

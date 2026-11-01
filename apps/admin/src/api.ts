@@ -2161,7 +2161,7 @@ export const paymentsApi = {
     ),
   /** "Cancel link": Razorpay first, then the row. Codes: `link_not_live`, `gateway_unavailable`, `live_not_allowed`, `gateway_error`. */
   cancelLink: (documentId: string, checkoutId: string) =>
-    request<{ ok: true; status: "cancelled" }>(`/invoices/${pid(documentId)}/payment-link/cancel`, {
+    request<{ ok: true; status: "cancelled" | "ended" }>(`/invoices/${pid(documentId)}/payment-link/cancel`, {
       body: { checkoutId },
     }),
   /** "Needs review" (07-ZI S19), oldest first, 50 a page; `openCount` is the nav's count. */
