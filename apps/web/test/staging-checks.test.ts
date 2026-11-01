@@ -79,6 +79,16 @@ describe("staging-health judge [A6-8]", () => {
     expect(judge(health, answer(200))).toMatch(/not a JSON answer/);
   });
 
+  it("the webhook check wants the Worker's own signature_missing, not any 400 (M6.2, early check 2, finding 17)", () => {
+    const hook = CHECKS.jobs.find((c) => c.path === "/razorpay");
+    expect(hook).toMatchObject({ status: 400, code: "signature_missing", access: false });
+    expect(judge(hook as never, answer(400, { error: { code: "signature_missing" } }))).toBeNull();
+    expect(judge(hook as never, answer(400, { error: { code: "bad_request" } }))).toMatch(
+      /error code is bad_request, expected signature_missing/,
+    );
+    expect(judge(hook as never, answer(400, {}))).toMatch(/expected signature_missing/);
+  });
+
   it("knows every staging Worker with a URL, and admin proves its API and finance Workers through their bindings (M6.1)", () => {
     expect(Object.keys(CHECKS).sort()).toEqual(["admin", "jobs", "portal", "web"]);
     expect(CHECKS.admin.map((c) => [c.path, c.status])).toEqual([

@@ -442,13 +442,6 @@ export const flagSettings = z.object({
 export const GATEWAYS = ["razorpay", "stripe", "paypal"] as const;
 export type Gateway = (typeof GATEWAYS)[number];
 export const GATEWAY_MODES = ["test", "live"] as const;
-/** The Worker secret names that make a gateway "configured" (names only, from .env.example; values are never read out). */
-export const GATEWAY_SECRETS: Record<Gateway, readonly string[]> = {
-  razorpay: ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "RAZORPAY_WEBHOOK_SECRET"],
-  stripe: ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"],
-  paypal: ["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET", "PAYPAL_WEBHOOK_ID"],
-};
-
 /** ADM-SET-06: the mode only. Keys are Worker secrets; status (configured / missing) is computed, never stored. */
 export const gatewaySettings = z.strictObject({
   razorpay: z.strictObject({ mode: z.enum(GATEWAY_MODES) }),
