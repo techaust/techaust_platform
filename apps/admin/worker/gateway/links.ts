@@ -28,6 +28,7 @@ import {
 } from "@techaust/db/gateway";
 import { auditStmt, type RequestInfo } from "@techaust/db/log";
 import { cachedSetting } from "../settings-cache.ts";
+import { mutateSystem } from "../system.ts";
 import { envText, gatewayModeOf, portalUrlOf, razorpayOf, transportOf } from "./config.ts";
 import { sendNext, staleCanceller } from "./events.ts";
 import type { RazorpayApi } from "./razorpay.ts";
@@ -139,8 +140,34 @@ export async function closeByRealState(
     staleCanceller(env, api, now),
   );
   await sendNext(env, r.next);
-  return "paid";
+  // Answered by our row, not by what settle said: "paid" only once the row is no longer open here. A payment we already held through this link (recorded before
+  // the pending batch marked links paid) closes it now; a link whose money went to review with no payment row (refunded, an erased client, a currency
+  // mismatch) stays open for the Owner's decision ("open").
+  const row = await env.DB.prepare(LINK_STATE_SQL)
+    .bind(checkout.id)
+    .first<{ status: string; held: string | null }>();
+  if (row && row.status !== "live" && row.status !== "stale") return "paid";
+  if (state !== "paid" || !row?.held) return "open";
+  const healed = await mutateSystem(env, {
+    main: env.DB.prepare(
+      "UPDATE checkout_sessions SET status = 'paid', paid_payment_id = ?2, updated_at = max(?3, updated_at + 1) WHERE id = ?1 AND status IN ('live', 'stale') AND paid_payment_id IS NULL",
+    ).bind(checkout.id, row.held, now),
+    action: "payment.link_end",
+    entityType: "checkout_session",
+    entityId: checkout.id,
+    summary: {
+      checkoutId: checkout.id,
+      documentId: checkout.document_id,
+      status: "paid",
+      paymentId: row.held,
+    },
+  });
+  return healed ? "paid" : "open";
 }
+
+/** A checkout's status and the oldest payment we hold through it (a primary-key seek, then `payments` by its checkout). */
+const LINK_STATE_SQL = `SELECT c.status, (SELECT p.id FROM payments p WHERE p.checkout_id = c.id AND p.provider = c.provider ORDER BY p.recorded_at LIMIT 1) AS held
+   FROM checkout_sessions c WHERE c.id = ?1`;
 
 /** Make (or reuse) a payment link. Never throws for a refusal: the answer names it (the portal and the route map it to their status). */
 export async function makeLink(env: GatewayEnv, a: MakeLinkArgs, now = Date.now()): Promise<MakeLinkResult> {
@@ -255,7 +282,10 @@ export async function makeLink(env: GatewayEnv, a: MakeLinkArgs, now = Date.now(
     if (code !== "refused")
       return { ok: false, error: code === "live_not_allowed" ? "live_not_allowed" : "gateway_error" };
     const real = await closeByRealState(env, api, row, now);
-    if (real === "ended") return null;
+    if (real === "ended") {
+      replacedCheckoutId = row.id;
+      return null;
+    }
     return real === "paid"
       ? { ok: false, error: "not_payable_online", reason: "changed" }
       : { ok: false, error: "gateway_error" };

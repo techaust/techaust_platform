@@ -373,7 +373,9 @@ export type InvoiceSummary = ReturnType<typeof summaryOf>;
  * item 1: the balance and the part-payment floor (Settings › Payment terms, read as stored: the portal carries no settings schema; core `storedFloorOf`).
  */
 export const ONLINE_SQL = `SELECT ${onlinePayableSql("d", "k")} AS pay_online, d.type, d.balance_minor AS balance,
-     (SELECT CASE WHEN json_valid(s.value) THEN json_extract(s.value, '$.razorpayMinPartialInrMinor') ELSE -1 END FROM settings s WHERE s.key = 'payment_terms') AS floor,
+     (SELECT CASE WHEN NOT json_valid(s.value) THEN -1 WHEN json_type(s.value, '$.razorpayMinPartialInrMinor') IS NULL THEN NULL
+        WHEN json_type(s.value, '$.razorpayMinPartialInrMinor') = 'integer' THEN json_extract(s.value, '$.razorpayMinPartialInrMinor') ELSE -1 END
+      FROM settings s WHERE s.key = 'payment_terms') AS floor,
      (SELECT c.amount_minor FROM checkout_sessions c WHERE c.document_id = d.id AND c.status = 'live' AND c.client_id = ?1 AND c.expires_at > ?3) AS open_amount,
      (SELECT c.expires_at FROM checkout_sessions c WHERE c.document_id = d.id AND c.status = 'live' AND c.client_id = ?1 AND c.expires_at > ?3) AS open_expires,
      (SELECT p.amount_minor || ':' || p.recorded_at FROM payments p JOIN checkout_sessions c ON c.id = p.checkout_id

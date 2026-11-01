@@ -246,6 +246,11 @@ describe("the Pay now block's minimum [07-ZI 4-7, ADM-SET-05]", () => {
     await withTerms("not json", async () => {
       expect((await onlineOfDoc(f.a.docs.issued, s.cookie)).online.minimumMinor).toBeNull();
     });
+    // A figure the settings schema would refuse (null, a fraction, text) is unreadable too, never the default: the finance Worker would refuse it.
+    for (const bad of [null, 12.5, "1000"])
+      await withTerms(JSON.stringify({ razorpayMinPartialInrMinor: bad }), async () => {
+        expect((await onlineOfDoc(f.a.docs.issued, s.cookie)).online.minimumMinor, String(bad)).toBeNull();
+      });
   });
 
   it("onlineOf: no minimum when the document can't be paid online, or with no row", () => {

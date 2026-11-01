@@ -12,7 +12,12 @@
 // trigger refusal (0038, 0053/0056, 0060) is explained the same way, never a 500.
 
 import { withdrawBlockers } from "@techaust/core/invoices";
-import { paymentPendingForSql } from "@techaust/db/ledger";
+import {
+  PENDING_GATEWAY,
+  PENDING_MANUAL,
+  paymentPendingForSql,
+  paymentPendingKindsSql,
+} from "@techaust/db/ledger";
 import { proformaDeliveredSql } from "@techaust/db/sql-rules";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
@@ -41,8 +46,8 @@ export const withdrawBody = z.strictObject({
 /**
  * Everything the route decides on, in ONE statement (each part one index lookup): the document (an invoice-flow type, else no row), whether its client is
  * anonymised, whether it was emailed, whether any document (draft or issued) names it as its parent, whether an advance receipt names it, and its milestone.
- * M6.1 (L37): and whether a PENDING payment of its client asks for it (`payment_pending`, a seek of `payments_client`); M6.2 (fix round 3 item 3): a manual
- * one (`payment_pending`) and a Razorpay one (`gateway_pending`, its own blocker: it can't be rejected) apart.
+ * M6.1 (L37): and whether a PENDING payment of its client asks for it (a seek of `payments_client`); M6.2 (fix round 3 item 3): a manual one and a Razorpay
+ * one (its own blocker: it can't be rejected) apart, in one pass (`pending_kinds`, `paymentPendingKindsSql`).
  */
 const FACTS_SQL = `SELECT d.id, d.type, d.status, d.frozen_at, d.updated_at, d.paid_minor, d.credited_minor, d.viewed_at, d.number_display, d.total_minor,
      ${clientGoneSql("d.client_id")} AS gone,
@@ -50,8 +55,7 @@ const FACTS_SQL = `SELECT d.id, d.type, d.status, d.frozen_at, d.updated_at, d.p
      EXISTS (SELECT 1 FROM documents x WHERE x.parent_id = d.id) AS child,
      EXISTS (SELECT 1 FROM advance_receipts r WHERE r.proforma_id = d.id) AS advance,
      (SELECT m.id FROM milestones m WHERE m.document_id = d.id) AS milestone_id,
-     ${paymentPendingForSql("d.id", "d.client_id", "manual")} AS payment_pending,
-     ${paymentPendingForSql("d.id", "d.client_id", "gateway")} AS gateway_pending
+     ${paymentPendingKindsSql("d.id", "d.client_id")} AS pending_kinds
    FROM documents d WHERE d.id = ?1 AND d.type IN (${INVOICE_TYPES_SQL})`;
 
 type Facts = {
@@ -70,8 +74,7 @@ type Facts = {
   child: number;
   advance: number;
   milestone_id: string | null;
-  payment_pending: number;
-  gateway_pending: number;
+  pending_kinds: number;
 };
 
 const blockersOf = (f: Facts) =>
@@ -84,8 +87,8 @@ const blockersOf = (f: Facts) =>
     hasAdvanceReceipt: f.advance === 1,
     emailed: f.emailed === 1,
     viewed: f.viewed_at !== null,
-    paymentPending: f.payment_pending === 1,
-    paymentPendingGateway: f.gateway_pending === 1,
+    paymentPending: (f.pending_kinds & PENDING_MANUAL) !== 0,
+    paymentPendingGateway: (f.pending_kinds & PENDING_GATEWAY) !== 0,
   });
 
 /** A refused withdraw (409): the first code's words (07-ZF), every code in `reasons`. */

@@ -7,6 +7,7 @@ import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core/ids";
 import { formatMoney, money } from "@techaust/core/money";
 import { checkProviderContract } from "@techaust/core/payments";
+import { recordGatewayPaymentStatements } from "@techaust/db/gateway";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { issueGatewayAdvance } from "./gateway/advance.ts";
 import { setStubTransport, stubFetch, stubIdsOf } from "./gateway/config.ts";
@@ -477,10 +478,86 @@ describe("processEvent: the webhook after the re-fetch [ADM-PAY-02, -06, -07, JO
       body: { checkoutId: lc.checkoutId },
     });
     expect(paidCancel.status).toBe(409);
+    // Razorpay refuses the cancel but still shows the link open (or can't be reached): 502, and the row stays live (never "not live").
+    const g = await issued(o);
+    const lg = await linkFor(o, g);
+    stub((path, method) =>
+      method === "POST" && path.endsWith("/cancel")
+        ? Response.json({ error: { code: "BAD_REQUEST_ERROR" } }, { status: 400 })
+        : method === "GET" && path === `/v1/payment_links/${lg.linkId}`
+          ? Response.json({
+              id: lg.linkId,
+              status: "created",
+              currency: "INR",
+              amount: g.total,
+              amount_paid: 0,
+              reference_id: lg.checkoutId,
+              short_url: "https://rzp.io/i/abc",
+              payments: null,
+            })
+          : null,
+    );
+    const stillOpen = await call(`/invoices/${g.id}/payment-link/cancel`, {
+      cookie: o.cookie,
+      body: { checkoutId: lg.checkoutId },
+    });
+    expect(stillOpen.status).toBe(502);
+    expect(
+      (await one<{ status: string }>("SELECT status FROM checkout_sessions WHERE id = ?1", lg.checkoutId))
+        ?.status,
+    ).toBe("live");
     expect(
       (await one<{ status: string }>("SELECT status FROM checkout_sessions WHERE id = ?1", lc.checkoutId))
         ?.status,
     ).toBe("paid");
+    // A payment already held pending through a link that stayed open (written before the pending batch marked links paid): the refused cancel's settle is a
+    // duplicate, and the link is closed as paid with that payment (an audited system act), never left open.
+    const h = await issued(o);
+    const lh = await linkFor(o, h);
+    const held = `rzp_${lh.paymentId}`;
+    const legacy = recordGatewayPaymentStatements(env.DB, {
+      provider: "razorpay",
+      providerPaymentId: lh.paymentId,
+      paymentId: held,
+      checkoutId: lh.checkoutId,
+      clientId: h.clientId,
+      documentId: h.id,
+      webhookEventId: null,
+      source: "refresh",
+      status: "pending_verification",
+      amountMinor: h.total - 100,
+      feeMinor: 0,
+      feeTaxMinor: 0,
+      receivedOn: new Date().toISOString().slice(0, 10),
+      mode: "upi",
+      referenceNorm: lh.paymentId.replace("_", "-").toUpperCase(),
+      refetchedAt: Date.now(),
+      now: Date.now(),
+      allocate: null,
+      requestedAllocations: null,
+      checkoutPaid: false,
+      staleOthers: false,
+      event: null,
+      bell: null,
+    });
+    await env.DB.batch([legacy.main, ...legacy.side, ...legacy.last]);
+    expect((await paymentOf(lh.paymentId))?.status).toBe("pending_verification");
+    refuseCancel("paid", lh, h.total);
+    const docH = await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?1", h.id);
+    const healed = await staffLink(o, h.id, 50_000, docH?.updated_at ?? 0);
+    expect(healed.status, await healed.clone().text()).toBe(409);
+    expect(
+      await one<{ status: string; paid_payment_id: string }>(
+        "SELECT status, paid_payment_id FROM checkout_sessions WHERE id = ?1",
+        lh.checkoutId,
+      ),
+    ).toEqual({ status: "paid", paid_payment_id: held });
+    expect(
+      await one<{ n: number }>(
+        "SELECT count(*) AS n FROM audit_log WHERE action = 'payment.link_end' AND entity_id = ?1",
+        lh.checkoutId,
+      ),
+    ).toEqual({ n: 1 });
     await env.DB.prepare("DELETE FROM settings WHERE key = 'payment_terms'").run();
   });
 

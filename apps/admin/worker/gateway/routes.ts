@@ -79,8 +79,6 @@ export function linkRefusal(c: Ctx, r: Extract<MakeLinkResult, { ok: false }>): 
   }
 }
 
-const CHECKOUT_OF_DOC_SQL = CHECKOUT_BY_ID_SQL;
-
 // ---- under /v1/invoices ----------------------------------------------------------------------------------------------------------------------------------
 
 export const invoicePaymentLinks = new Hono<AppEnv>()
@@ -108,7 +106,7 @@ export const invoicePaymentLinks = new Hono<AppEnv>()
     const { id } = c.req.valid("param");
     const { checkoutId } = c.req.valid("json");
     const db = c.env.DB;
-    const co = await db.prepare(CHECKOUT_OF_DOC_SQL).bind(checkoutId).first<CheckoutRow>();
+    const co = await db.prepare(CHECKOUT_BY_ID_SQL).bind(checkoutId).first<CheckoutRow>();
     if (!co || co.document_id !== id) return err(c, NOT_FOUND, 404);
     if ((co.status !== "live" && co.status !== "stale") || !co.provider_link_id)
       return err(c, LINK_NOT_LIVE, 409);
@@ -122,7 +120,16 @@ export const invoicePaymentLinks = new Hono<AppEnv>()
       // Review finding 2: Razorpay refused (paid, expired or cancelled there): our row is ended by the link's real state, so it never stays open here. A link
       // that ended there answers as ended; a paid one is settled and answers 409 (the panel reloads and shows the payment).
       const real = await closeByRealState(c.env, api, co, Date.now());
-      return real === "ended" ? c.json({ ok: true, status: "ended" }) : err(c, LINK_NOT_LIVE, 409);
+      if (real === "open") return err(c, GATEWAY_ERROR, 502);
+      if (real === "paid") return err(c, LINK_NOT_LIVE, 409);
+      // Ended there: the system closed the row (`payment.link_end`); the member's own act is recorded too.
+      await mutate(c, {
+        action: "payment.link_cancel",
+        entityType: "checkout_session",
+        entityId: co.id,
+        summary: { checkoutId: co.id, documentId: id, endedAtRazorpay: true },
+      });
+      return c.json({ ok: true, status: "ended" });
     }
     const now = Date.now();
     const done = await mutate(c, {
@@ -141,7 +148,7 @@ export const invoicePaymentLinks = new Hono<AppEnv>()
 export const gatewayPayments = new Hono<AppEnv>()
   .post("/links/:id/refresh", param(idParam), async (c) => {
     const { id } = c.req.valid("param");
-    const co = await c.env.DB.prepare(CHECKOUT_OF_DOC_SQL).bind(id).first<CheckoutRow>();
+    const co = await c.env.DB.prepare(CHECKOUT_BY_ID_SQL).bind(id).first<CheckoutRow>();
     if (!co) return err(c, NOT_FOUND, 404);
     const r = await refreshCheckout(c.env, co);
     return c.json({ ok: true, result: r.result });

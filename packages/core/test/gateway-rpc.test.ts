@@ -169,6 +169,7 @@ describe("isGatewayLinkUrl: the portal never sends a browser off the gateway's o
     ])
       expect(isGatewayLinkUrl("razorpay", bad), String(bad).slice(0, 40)).toBe(false);
     expect(isGatewayLinkUrl("stripe" as never, "https://rzp.io/i/abc")).toBe(false);
-    expect([...GATEWAY_LINK_HOSTS.razorpay]).toEqual([...RAZORPAY_LINK_HOSTS]);
+    expect([...GATEWAY_LINK_HOSTS.razorpay]).toEqual(["rzp.io", "razorpay.com"]);
+    expect(RAZORPAY_LINK_HOSTS).toBe(GATEWAY_LINK_HOSTS.razorpay);
   });
 });

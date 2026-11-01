@@ -364,6 +364,19 @@ export const REALISATION_OF_SQL = `SELECT ${femaStandardSql("d", settingsBinds("
        ${gstDueSql("d", settingsBinds("?2"))} AS gst_due, ${stageSql("d", settingsBinds("?2"))} AS stage
    FROM documents d WHERE d.id = ?1 AND d.type = 'export_invoice' AND d.issue_date IS NOT NULL`;
 
+/**
+ * Fix round 3 item 4: the link minimum for the panel, by `onlineMinimumOf` over Settings › Payment terms (`cachedSetting`). A row the settings schema refuses
+ * reads as null (the range unknown, as before), so it never takes the whole Payments panel down with it; `createLink` still refuses with its 500.
+ */
+function linkMinimumOf(termsR: D1Result | undefined, balanceMinor: number): number | null {
+  try {
+    const terms = cachedSetting("payment_terms", termsR?.results[0] as StoredSetting | undefined);
+    return onlineMinimumOf(terms.razorpayMinPartialInrMinor, balanceMinor);
+  } catch {
+    return null;
+  }
+}
+
 export const invoiceLedger = new Hono<AppEnv>()
   // ---- the Payments panel ----
   .get("/:id/payments", param(idParam), async (c) => {
@@ -486,13 +499,7 @@ export const invoiceLedger = new Hono<AppEnv>()
          * Settings › Payment terms' floor: never under ₹1, the whole balance if lower). Null when nothing in rupees is due (no link can be made).
          */
         minimumMinor:
-          d.currency === "INR" && d.balance_minor > 0
-            ? onlineMinimumOf(
-                cachedSetting("payment_terms", termsR?.results[0] as StoredSetting | undefined)
-                  .razorpayMinPartialInrMinor,
-                d.balance_minor,
-              )
-            : null,
+          d.currency === "INR" && d.balance_minor > 0 ? linkMinimumOf(termsR, d.balance_minor) : null,
       },
       realisation:
         d.type === "export_invoice" && real

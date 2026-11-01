@@ -355,6 +355,16 @@ describe("findings 3 and 4: nothing verified is dropped; a failed or refunded pa
     expect(await eventOf(ev)).toEqual({ status: "needs_review", outcome: "refetch_failed" });
     expect((await reviewItemOf(ev))?.kind).toBe("refetch_failed");
     expect(await paymentOf(l.paymentId)).toBeNull();
+    // The portal's poll meets the same link: it only tries again later (Razorpay may list the payment a moment later), with no item and no bell.
+    const other = await issued(o);
+    const lo = await linkFor(o, other);
+    stub((path) =>
+      path === `/v1/payment_links/${lo.linkId}` ? linkJson(lo, other.total, { payments: [] }) : null,
+    );
+    expect(await refreshForClient(env, { clientId: other.clientId, documentId: other.id })).toEqual({
+      result: "retry",
+    });
+    expect(await reviewKindsOf("document_id", other.id)).toEqual([]);
   });
 
   it("not_captured (failed or refunded): the review item only, no payment row the Owner could confirm", async () => {
@@ -637,6 +647,8 @@ describe("finding 6: the section-H paths early check 2 found missing", () => {
     expect(await processEvent(env, ev)).toEqual({ result: "needs_review" });
     expect((await reviewItemOf(ev))?.kind).toBe("partial_payment");
     expect((await paymentOf(l.paymentId))?.status).toBe("pending_verification");
+    // Razorpay still holds the link open (partly paid), so it stays open here too: it is never marked paid while it could take more money (L4).
+    expect(await checkoutStatus(l.checkoutId)).toBe("live");
   });
 
   it("payment_link.cancelled: the checkout is cancelled and the event processed", async () => {
