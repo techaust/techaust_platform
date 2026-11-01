@@ -136,3 +136,16 @@ Reviewer, Opus 5.5 at high; load `code-review`, `frontend-design:frontend-design
 `contact-375-light-IST.png`, `contact-375-light-LA.png`, `contact-panel-375-light-LA.png`, `contact-768-dark-LA.png`, `contact-1280-dark-London.png`, `care-table-375-light-LA.png`, `care-plan-card-375-light-LA.png`, `quote-step4-375-light-LA.png`, `service-band-375-dark-London.png`, `service-band-1280-light-London.png`, `thanks-375-dark-London.png`, `thanks-body-375-dark-London.png`, `keyboard-panel-phone-1280.png`, `keyboard-footer-whatsapp-1280.png`.
 
 Usage: reviewer claude-opus-5-5/high.
+
+## Review triage (lead, 2026-11-01)
+APPROVE accepted; mediums and lows fixed in this task except where noted. Usage: reviewer claude-opus-5-5/high.
+- **1 (medium)**: fix as the reviewer says (keep the last word and the arrow together inside `ExternalLink`, so every wrapped external link benefits; a `nowrap` span); recheck /thanks at 375 and 390 and one long external link elsewhere.
+- **2 (medium)**: skip the rewrite for crawler user agents (`/bot|crawl|spider|slurp|inspectiontool|lighthouse/i` — keep Lighthouse runs on the IST text so performance runs stay stable — no: Lighthouse must exercise the script; leave `lighthouse` out of the pattern) so search engines index the IST text matching the meta and FAQ JSON-LD; a unit test for the pattern. Lead decision 4 amended accordingly.
+- **3 (low)**: kept as a **Phase 7 performance-pass check** (throttled Lighthouse in a non-IST zone for layout shift); listed in 12.
+- **4 (low)**: reserve the space for the two hidden lines only when `?ref=` is present (decided in the page's own inline head logic if one exists, else by the server-rendered default for the common path); no blank gap on a bookmark.
+- **5, 6, 9 (low)**: fix (stale comments; `label` optional when `window` is passed).
+- **7 (low)**: one test tying the five copies of the number together (display and dial forms derived from `site.phone`; JSON-LD's guard reads the field it prints).
+- **8 (low)**: kept as a follow-up (emails and the staff reply stay IST and are correct; moving `HOURS` into `@techaust/core` touches the email and core packages while the M6.2 fix round edits core: after M6.2 merges).
+
+## Fix brief (lead, 2026-11-01)
+Designer, Opus 5.5 at high; `frontend-design:frontend-design` first. Your own branch `feat/company-phone-fix` from `origin/feat/company-phone`; items 1, 2, 4, 5, 6, 7, 9 above; web build and tests and `@techaust/ui` tests through `bash tools/heavy.sh`; screenshots of /thanks (375, 390, both themes, with and without `?ref`) to `.logs/company-phone/fix/`; append "## Fix report" and push only your branch; stop every server you started. Don't touch apps/admin, apps/portal, packages/core or payment code (a builder is working there).
