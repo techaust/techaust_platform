@@ -36,3 +36,57 @@ Usage:
 **Done means:** the number shows correctly in the footer, contact page, CTA bands and JSON-LD; the hours show in the visitor's own time everywhere (IST in India and without scripts); the business card and letterhead carry it; build guards and tests green; screenshots in this file; reviewer approves.
 
 **Rules:** commit at each finished part and at least every 20 minutes; stop every dev server you started; never touch hosted services; append your "Designer report" here and push only your branch.
+
+## Designer report (designer, 2026-11-01)
+Branch `feat/company-phone-design` from `origin/feat/company-phone` (fcf1972a); commits 9bf603b3, 5dac7c1f, 6f7c5d7c and this report, all pushed.
+
+**Skills loaded:** `frontend-design:frontend-design` (loaded first). It set the direction inside docs/06: no new devices or decoration; the phone and hours follow the contact panel's existing pattern (value, then a quiet muted line), so the footer's long local times ("Sun–Fri, 21:30–05:30 next day PDT") sit on their own line instead of stretching the link, and the print contact block was re-anchored to the card's type lines rather than just appended. `cloudflare:web-perf`: used for the Lighthouse and layout-shift checks (it led to measuring CLS for visitors outside India, which Lighthouse on an IST machine never sees, and to the /thanks fix below). Not loaded: `dataviz` (no chart or stat tile).
+
+**What was built**
+1. `site.ts`: `whatsapp: "919883023931"`; `phone: { display: "+91 98830 23931", dial: "+919883023931" }` (empty `display` hides it); `HOURS = { from: 600, to: 1140, days: [1, 6] }` is the one source, `site.hours` is derived from it.
+2. Hours in the visitor's own clock: `scripts/call-time.ts` (pure, Node-tested: `localWindow`, `istText`, `textRuns`, `gmtName`), `components/Hours.astro` (server writes IST in unbreakable runs "Mon–Sat," · "10:00–19:00" · "IST"), `scripts/local-time.ts` (loaded from the head on every page; rewrites every `[data-hours]` once, textContent only; zone name in the visitor's first English locale, else en-US; Chromium's "GMT+0" written "GMT"). Content uses a new `{{hours}}` token (`lib/tokens.ts`; plain text and JSON-LD print IST): contact meta, lede, thanks reply, care-plan response-time row and FAQ. The quote form's call windows are `Choice` labels with `window` (Hours), value still the IST window; "your time:" and `yourTime` removed.
+3. Footer: phone line (`tel:`, same tab, "Phone" visually hidden before the number, number never wraps) and the WhatsApp line, each with the hours on a muted line under the link; WhatsApp placeholder removed.
+4. Contact panel: Email · **Phone** (`tel:` link, hours under it) · WhatsApp (hours under it) · Address. Its external links now get the 44 px target (`dd :global(a)`; the scoped `dd a` rule never reached `ExternalLink`, so the WhatsApp link was only its line's height, visibly tighter than the email and phone rows in the first screenshot).
+5. CTA band: the "Chat on WhatsApp" button is now an `ExternalLink` (new tab, arrow, screen-reader note). As a plain `Button` it would have failed `checkExternalLinks` the moment the number was set.
+6. /thanks: with JavaScript the reference line and the WhatsApp "urgent" line keep their place while hidden and are removed when the URL has no valid reference (CLS at 375 px was 0.104 with the new WhatsApp line, now 0 at 375 and 1280 px in three zones).
+7. JSON-LD: `telephone: "+919883023931"` on the organisation (only while the phone shows), tested.
+8. Print: `CARD.lines` and `LETTERHEAD_FOOTER` carry "+91 98830 23931" after the email; the card's contact block stacks upward from the role's line (its last two lines share the name's and role's lines; nothing crosses the 6 mm margin); the letterhead footer spreads its five items with equal gaps across the 178 mm measure (fixed columns would have overlapped). `build:brand` outputs committed (all four PDFs change because the print source hash is in their metadata).
+9. Docs: 07 §1 "Times" rule, §2.2 footer and the phone's written form, §2.4, §4.14 note, §5.8 panel "Phone", §5.9 call windows, §9 WhatsApp row done; 06 §1.6 owner action done, print file notes.
+
+**Files changed:** `apps/web/src/config/site.ts`, `src/scripts/call-time.ts`, `src/scripts/local-time.ts` (new), `src/scripts/forms.ts`, `src/scripts/thanks.ts`, `src/components/Hours.astro` (new), `src/components/SiteFooter.astro`, `src/components/CTABand.astro`, `src/components/CopyText.astro`, `src/components/form/Choice.astro`, `src/layouts/BaseLayout.astro`, `src/lib/tokens.ts`, `src/lib/structured-data.ts`, `src/content/forms.ts`, `src/content/services/care-plans.ts`, `src/pages/contact.astro`, `src/pages/get-a-quote.astro`, `src/pages/thanks.astro`, `apps/web/test/forms-m24.test.ts`, `apps/web/test/structured-data.test.ts`, `packages/ui/src/brand/print.ts`, `packages/ui/brand/print/*.pdf` (4), `docs/06-design-system.md`, `docs/07-content.md`, this file.
+
+**Commands and results** (heavy ones through `tools/heavy.sh`, logs in `.logs/` of the worktree)
+- `pnpm --filter @techaust/ui build:brand`: 22 SVGs, 15 rasters, 4 print PDFs; `pnpm --filter @techaust/ui test`: 471 passed, 2 skipped (drift tests green); `pnpm --filter @techaust/ui typecheck`: clean.
+- `pnpm --filter @techaust/web build`: `check-web-dist: ok` (CSP hashes, external links, link check, content lint, no price literals; the phone digits are not taken for a price, so no guard needed a new rule; `tel:` is skipped by the link checker and the external-link check by design).
+- `pnpm --filter @techaust/web test`: 40 files, 880 passed (new: IST unchanged, London winter and summer (en-GB "BST", en-US "GMT+1"), New York EST and EDT, Los Angeles PST and PDT, Kathmandu +5:45, St John's −3:30, Adelaide ending at local midnight, Tokyo, Sydney both seasons, Kiritimati +14, the IST day near midnight, no zone name, "GMT+0", call windows; JSON-LD telephone).
+- `pnpm --filter @techaust/web typecheck`: 0 errors, 0 warnings.
+- `pnpm --filter @techaust/web lhci` (10 URLs × 3 runs, mobile): all assertions passed; /contact 100/100/100/100 in all three runs, CLS 0 (the gate's maximum, so not lower than before).
+- Playwright (built site, `astro preview`): 58 shots, 0 console errors (the missing `/api/geo` under `astro preview` excluded: no Worker there), 0 horizontal overflow; axe (WCAG 2.0/2.1/2.2 A and AA) 0 violations on home, contact, care plans and get-a-quote, light and dark, visitor in Los Angeles. CLS measured in Los Angeles, London and IST at 375 and 1280 on contact, thanks and care plans: 0 everywhere.
+- Keyboard pass on /contact: tab order header → form → panel (email, phone, WhatsApp) → footer (logo, email, phone, WhatsApp, columns); focus ring on each, every link 44 px; no trap.
+- `pnpm lint` (whole repo, once): exit 0; 10 warnings and 8 infos, all in files this task didn't touch.
+
+**Screenshots** (`D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\.claude\worktrees\agent-a0736b0f2943594b9\.logs\company-phone\`; names are `<view>-<width>-<theme>-<zone>.png`)
+- `contact-{375,768,1280,1920}-{light,dark}-{Asia_Kolkata,America_Los_Angeles}.png`: the contact page, full height; IST text in India, "Sun–Fri, 21:30–05:30 next day PDT" in Los Angeles (today is the US clock-change day, so the window starts in PDT).
+- `contact-en-GB-1280-light-Europe_London.png` ("Mon–Sat, 04:30–13:30 GMT"), `contact-sydney-375-light-Australia_Sydney.png` ("15:30–00:30 next day GMT+11").
+- `home-footer-{375,390,1280}-{light,dark}-{zone}.png`: the footer, phone and WhatsApp with the hours under each.
+- `home-band-{375,1280}-{light,dark}-Asia_Kolkata.png`: the CTA band with "Chat on WhatsApp" as an external link.
+- `care-plans-{375,1280}-{light,dark}-America_Los_Angeles.png` (full page) and `care-sections-…-{1,2}.png` (the plan table's response-time row; the FAQ answer).
+- `quote-step4-{375,1280}-{light,dark}-{zone}.png`: "Best time for a call" in local time only (IST windows in India).
+- `thanks-{375,1280}-{light,dark}-Europe_London.png` (reference, local reply hours, WhatsApp line) and `thanks-no-ref-…-Asia_Kolkata.png` (no gap left when there is no reference).
+- `keyboard-focus-{19,20,23,24}-1280.png`: focus on the panel's phone and WhatsApp links and the footer's.
+- `axe_*.png`: the pages axe ran on; `results.json`: per shot the hours text, console errors, overflow and axe result.
+- `print-business-card-p1.png` / `-p2.png` (front, back) and `print-letterhead-p1.png`: the rebuilt print PDFs rendered at 6× and 2×.
+
+**Not verified**
+- Real devices: the `tel:` link dialling on a phone, and Safari's and Firefox's zone names (Node and Chromium were tested; the GMT-offset fallback covers a browser that gives none).
+- NVDA or another screen reader (axe and the accessibility tree only).
+- A printed proof of the card and letterhead (on-screen render only).
+- `/api/geo` and the forms' Worker were not running in the screenshot server (`astro preview`); the Worker is unchanged.
+
+**Placeholders:** none added.
+
+**Open questions for the lead**
+1. The care-plan row "(business hours, Mon–Sat 10:00–19:00 IST)" now reads "(business hours, Mon–Sat, 10:00–19:00 IST)" (a comma after "Mon–Sat"), because it comes from the one hours source like every other rendering; docs/07 §4.14's table now matches. Keep, or should the row have its own format?
+2. Footer layout: the hours sit on a muted line under the phone and the WhatsApp links (as on the contact page) instead of in brackets inside the link as before; with a long local time the bracketed form wrapped awkwardly and pushed the WhatsApp arrow to the far edge. "Phone" is read by screen readers before the footer number; on screen the phone icon stands for it, as the mail icon does for the email. Confirm, or ask for the visible word "Phone" in the footer too.
+3. On the day a visitor's clock changes (US and EU twice a year) the window can start in one zone abbreviation and end in another; the label shows the start's (e.g. "21:30–05:30 next day PDT" on 1 November). Acceptable for one day a year?
+4. The contact page's meta description and the JSON-LD keep IST (plain text, no script), as the brief implies for "meta text"; confirm.
