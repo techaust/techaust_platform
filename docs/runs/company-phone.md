@@ -140,7 +140,7 @@ Usage: reviewer claude-opus-5-5/high.
 ## Review triage (lead, 2026-11-01)
 APPROVE accepted; mediums and lows fixed in this task except where noted. Usage: reviewer claude-opus-5-5/high.
 - **1 (medium)**: fix as the reviewer says (keep the last word and the arrow together inside `ExternalLink`, so every wrapped external link benefits; a `nowrap` span); recheck /thanks at 375 and 390 and one long external link elsewhere.
-- **2 (medium)**: skip the rewrite for crawler user agents (`/bot|crawl|spider|slurp|inspectiontool|lighthouse/i` — keep Lighthouse runs on the IST text so performance runs stay stable — no: Lighthouse must exercise the script; leave `lighthouse` out of the pattern) so search engines index the IST text matching the meta and FAQ JSON-LD; a unit test for the pattern. Lead decision 4 amended accordingly.
+- **2 (medium)**: skip the rewrite for crawler user agents (`/bot|crawl|spider|slurp|inspectiontool/i`; leave Lighthouse out, so performance runs still exercise the script), so search engines index the IST text that matches the meta description and the FAQ JSON-LD; a unit test for the pattern. Lead decision 4 amended accordingly.
 - **3 (low)**: kept as a **Phase 7 performance-pass check** (throttled Lighthouse in a non-IST zone for layout shift); listed in 12.
 - **4 (low)**: reserve the space for the two hidden lines only when `?ref=` is present (decided in the page's own inline head logic if one exists, else by the server-rendered default for the common path); no blank gap on a bookmark.
 - **5, 6, 9 (low)**: fix (stale comments; `label` optional when `window` is passed).
