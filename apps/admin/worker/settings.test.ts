@@ -545,7 +545,26 @@ describe("gateways [ADM-SET-06]", () => {
     expect(finText).not.toContain("SECRETVALUE");
     const g = JSON.parse(finText);
     expect(g.gateways.razorpay).toMatchObject({ mode: "test", keys: { configured: true, missing: [] } });
-    expect(g.gateways.stripe.keys).toEqual({ configured: false, missing: ["STRIPE_SECRET_KEY"] });
+    // M6.3: the test pool holds a made-up restricted test key; the key's kind is shown, never its value.
+    expect(g.gateways.stripe).toMatchObject({
+      keys: { configured: true, missing: [] },
+      keyKind: "restricted_test",
+      lastVerifiedWebhookAt: null,
+    });
+    const noStripe = await call(
+      "/payments/gateways",
+      { cookie: o.cookie },
+      withEnv({ STRIPE_SECRET_KEY: "" }),
+    );
+    expect(((await noStripe.json()) as { gateways: { stripe: unknown } }).gateways.stripe).toMatchObject({
+      keys: { configured: false, missing: ["STRIPE_SECRET_KEY"] },
+      keyKind: "missing",
+    });
+    const secretKey = withEnv({ STRIPE_SECRET_KEY: ["sk", "test", "madeup"].join("_") });
+    const refused = await call("/payments/gateways", { cookie: o.cookie }, secretKey);
+    expect(
+      ((await refused.json()) as { gateways: { stripe: { keyKind: string } } }).gateways.stripe.keyKind,
+    ).toBe("refused");
     expect(g.liveAllowed).toBe(false);
     const none = await call(
       "/payments/gateways",
