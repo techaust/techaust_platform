@@ -3,7 +3,7 @@
 import { type Clock, localDateTime } from "../lib/local-time.ts";
 
 /** `clock` is for tests; the screens use the browser's own. */
-export function Moment({ at, clock }: { at: number; clock?: Clock }) {
+export function Moment({ at, clock }: { at: number; clock?: Clock | undefined }) {
   const text = localDateTime(at, clock);
   const cut = text.indexOf(", ");
   if (cut < 0) return <span className="nowrap">{text}</span>;
@@ -23,7 +23,7 @@ export function LineWithMoment({
 }: {
   line: (moment: string) => string;
   at: number;
-  clock?: Clock;
+  clock?: Clock | undefined;
 }) {
   const MARK = "\u0000";
   const [before = "", after = ""] = line(MARK).split(MARK);
