@@ -1,6 +1,7 @@
 // The legal pages and the security policy (WEB-LEGAL, WEB-SEC): docs/07-content-appendix/A-legal-pages.md v0.3 (2026-10-28) §1–§6 and
-// §8, word for word. Every page is drafted without a lawyer and checked against the research register (08-C, owner rule 8); the
-// optional lawyer review of the OPEN points (08-C §5) is the owner's decision before launch. The "(Researched, 08-C …)" and
+// §8, word for word. Every page is drafted without a lawyer and checked against the research register (08-C, owner rule 8); there is
+// no CA or lawyer (owner, 2026-10-30), so each OPEN point is settled by the lead on the safest reading or stays OPEN in 08-C §5,
+// and a one-off lawyer review stays optional. The "(Researched, 08-C …)" and
 // "(OPEN, 08-C …)" notes 07-A writes inline stay out of the pages and are kept here as comments next to the text they qualify.
 //
 // Typesetting only: curly apostrophes and quotes; e-mail addresses written as Markdown links to themselves (mailto) so

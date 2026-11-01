@@ -29,6 +29,7 @@ import {
   lutLine,
   lutMissingBanner,
   lutsByYear,
+  previousPeriodShown,
   proformaDraftTitle,
   proformaLockedLine,
   proformaNoticeOf,
@@ -366,13 +367,22 @@ describe("the payment received against a proforma (Q9)", () => {
       "Issued 27 Oct 2026 by Asha (fake). This proforma is locked. If it's wrong and nothing has been paid or converted, void it if the client hasn't received it yet, or withdraw it if they have, then issue a new one.",
     );
     expect(invErrorText(new RequestError(409, "advance_supply_changed", "x"))).toBe(
-      "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's details with your CA before recording the payment.",
+      "The client's GST details changed after this proforma was issued, so the tax on this payment can't be worked out from it. Check the client's GST details. If they are right, issue a new proforma and record the payment on it.",
     );
   });
 
   it("an earlier month only warns (Q27)", () => {
     expect(arrivedEarlierMonth("2026-09-30", "2026-10-01")).toBe(true);
     expect(arrivedEarlierMonth("2026-10-01", "2026-10-31")).toBe(false);
+  });
+
+  it("the earlier-month line is never shown on the LUT route, which carries no IGST (07-ZK line 8; ca-wording review 1)", () => {
+    expect(previousPeriodShown(true, "export_lut", false)).toBe(false);
+    expect(previousPeriodShown(true, "export_lut", true)).toBe(true);
+    expect(previousPeriodShown(true, "export_igst", false)).toBe(true);
+    expect(previousPeriodShown(true, "intra", false)).toBe(true);
+    expect(previousPeriodShown(true, null, false)).toBe(true);
+    expect(previousPeriodShown(false, "intra", false)).toBe(false);
   });
 });
 

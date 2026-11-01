@@ -3,7 +3,7 @@
 // (0055, a new trigger only: no table is rebuilt). Researched 2026-10-30, Rule 53(1A) CGST Rules (08-C RA-22); s.31(3)(d) CGST Act and Rule 50 CGST Rules (08-C RA-17).
 // The freeze of an advance invoice is tested with its own batch in invoice-types.test.ts.
 import { uuidv7 } from "@techaust/core";
-import { SIGNED_ALWAYS_TYPES } from "@techaust/core/invoices";
+import { SIGNED_ADVANCE_TYPES, SIGNED_ALWAYS_TYPES } from "@techaust/core/invoices";
 import { describe, expect, it } from "vitest";
 import { SIGNED_FREEZE_SQL, signedIssuerSql } from "../src/issue.ts";
 import { SIGNED_ALWAYS_TYPES_0055, signatureTriggerStatements } from "../src/triggers.ts";
@@ -88,6 +88,10 @@ describe("0055 documents_signature_required [T4; ADM-INV-06; 08-C RA-17, RA-22]"
     expect(t?.sql).toBe(signatureTriggerStatements()[0]?.replace(/;$/, ""));
     expect([...SIGNED_ALWAYS_TYPES_0055]).toEqual([...SIGNED_ALWAYS_TYPES]);
     expect(t?.sql).toContain(`NEW.type IN (${SIGNED_ALWAYS_TYPES_0055.map((x) => `'${x}'`).join(", ")})`);
+    // test-hardening 4a: the trigger's advance clause names core's advance list (the trigger is a pinned migration, so it keeps its own text)
+    expect(t?.sql).toContain(
+      `NEW.type IN (${SIGNED_ADVANCE_TYPES.map((x) => `'${x}'`).join(", ")}) AND json_type(NEW.header_extras, '$.advance') = 'object'`,
+    );
   });
 
   it("refuses an unsigned or switched-off credit note and debit note; a signed one issues", async () => {

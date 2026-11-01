@@ -10,6 +10,12 @@ import {
   parseIsoDate,
   toIsoDate,
 } from "./dates.ts";
+import {
+  REALISATION_MAX_DAYS,
+  REALISATION_MAX_MONTHS,
+  REALISATION_MIN_DAYS,
+  REALISATION_MIN_MONTHS,
+} from "./realisation-bounds.ts";
 
 /**
  * The Rule 46 export endorsement, one line per route, in capitals as the rule gives it (07-S §1; word for word from 08-A §8 :344-348). Frozen and
@@ -280,10 +286,10 @@ export function realisationParamsFromStoredTax(json: unknown): StoredRealisation
     if (v === undefined) return fallback;
     return typeof v === "number" && Number.isSafeInteger(v) && v >= min && v <= max ? v : null;
   };
-  const femaMonthsForeign = pick("warnMonths", 9, 1, 1200);
-  const femaMonthsInr = pick("inrMonths", 12, 1, 1200);
-  const gstMonths = pick("escalateMonths", 12, 1, 1200);
-  const gstExtraDays = pick("escalateExtraDays", 15, 0, 36_500);
+  const femaMonthsForeign = pick("warnMonths", 9, REALISATION_MIN_MONTHS, REALISATION_MAX_MONTHS);
+  const femaMonthsInr = pick("inrMonths", 12, REALISATION_MIN_MONTHS, REALISATION_MAX_MONTHS);
+  const gstMonths = pick("escalateMonths", 12, REALISATION_MIN_MONTHS, REALISATION_MAX_MONTHS);
+  const gstExtraDays = pick("escalateExtraDays", 15, REALISATION_MIN_DAYS, REALISATION_MAX_DAYS);
   if (femaMonthsForeign === null || femaMonthsInr === null || gstMonths === null || gstExtraDays === null) {
     return { ok: false };
   }

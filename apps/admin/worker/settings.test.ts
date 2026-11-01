@@ -116,11 +116,11 @@ describe("overview and reading [ADM-SET-01..10]", () => {
     }
   });
 
-  it("tax and retention point to their 08-C §5 list (the CA's; the CA's and the lawyer's); retention says what is not built yet", async () => {
+  it("tax and retention point to 08-C §5 (07-ZK line 12: one pointer, no list named); retention says what is not built yet", async () => {
     const o = await owner();
-    expect((await json(await call(GROUP("tax"), { cookie: o.cookie }))).meta.verify).toBe("08-C §5: CA");
+    expect((await json(await call(GROUP("tax"), { cookie: o.cookie }))).meta.verify).toBe("08-C §5");
     const r = await json(await call(GROUP("retention"), { cookie: o.cookie }));
-    expect(r.meta.verify).toBe("08-C §5: CA and lawyer");
+    expect(r.meta.verify).toBe("08-C §5");
     expect(r.meta.notes).toMatch(/M7\.4/);
   });
 });
@@ -675,6 +675,30 @@ describe("bank details: masked everywhere [ADM-SET-02, ADM-G-06]", () => {
     expect((await putBank("/settings/bank/EUR", o.cookie, body())).status).toBe(404);
   });
 
+  it("a save in the same millisecond as the row's last write moves updated_at past it, so a second save from that form is 409 (test-hardening E) [ADM-SET-02]", async () => {
+    await reset();
+    const o = await owner();
+    expect((await putBank("/settings/bank/INR", o.cookie, body())).status).toBe(200);
+    const loaded = (await json(await call("/settings/bank", { cookie: o.cookie }))).accounts[0]
+      .updatedAt as number;
+    try {
+      vi.useFakeTimers({ toFake: ["Date"], now: loaded });
+      const first = await putBank("/settings/bank/INR", o.cookie, {
+        ...body({ bankName: "First editor" }),
+        expectedUpdatedAt: loaded,
+      });
+      expect(await json(first)).toMatchObject({ ok: true, changed: true, updatedAt: loaded + 1 });
+      const second = await putBank("/settings/bank/INR", o.cookie, {
+        ...body({ bankName: "Second editor" }),
+        expectedUpdatedAt: loaded,
+      });
+      expect(second.status).toBe(409);
+      expect((await json(second)).error.code).toBe("stale_version");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("a stale save is refused: two forms loaded from the same row, the second save is 409 and changes nothing [ADM-SET-02]", async () => {
     await reset();
     const o = await owner();
@@ -898,7 +922,7 @@ describe("document terms: versioned, append-only [ADM-SET-08]", () => {
       "export_declaration",
       "refund_link",
     ]);
-    expect(list.meta.verify).toBe("08-C §5: CA and lawyer");
+    expect(list.meta.verify).toBe("08-C §5");
     const byName = Object.fromEntries(list.blocks.map((b: J) => [b.block, b.current]));
     expect(byName.proposal_terms).toMatchObject({ version: 1, usedBy: 2 });
     expect(byName.standard_terms).toMatchObject({ version: 2, usedBy: null });

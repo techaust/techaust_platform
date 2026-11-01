@@ -88,7 +88,7 @@ export async function invalidRecipients(
 
 const QUOTES = "('proposal', 'estimate')";
 
-/** The latest frozen version of the offer that is still open: sent or viewed, not past its last valid day. ?1 document id, ?2 today (IST). */
+/** The frozen offer (a proposal or an estimate) by id. ?1 document id. Whether it is still open (the newest version, sent or viewed, not past its last valid day) is checked in the send's INSERT. */
 const OPEN_LATEST =
   "SELECT d.id, d.client_id, d.version_group_id, d.pdf_sha256, d.type FROM documents d WHERE d.id = ?1 AND d.type IN ('proposal', 'estimate') AND d.frozen_at IS NOT NULL";
 
@@ -199,7 +199,9 @@ export const documentLinks = new Hono<AppEnv>()
     let cancelled = 0;
     // Order matters: first stop the sends that have no link yet (waiting for the PDF, or queued and not yet processed: the jobs Worker
     // mints a link only while `cancelled_at` is NULL), then revoke every link that exists. One batch, so a link minted a moment before is
-    // revoked here and one minted after finds the send cancelled. The audit row is written for every revoke (nothing may be left to revoke).
+    // revoked here and one minted after finds the send cancelled, or (a send that already had a link: a retry after the email queue failed, or a
+    // redelivery) finds that send's own link revoked, so the jobs Worker mints nothing and marks it not sent. The audit row is written for every
+    // revoke (nothing may be left to revoke).
     await mutate(c, {
       side: (g) => [
         db

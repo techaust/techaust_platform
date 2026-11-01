@@ -4,12 +4,16 @@
 //     sent: L8), the signature hint (line 2); keyboard order and visible focus. Typing inside a filled Udyam number or GSTIN keeps the caret (kept as
 //     typed, shown in capitals, stored in capitals on leaving: second review 2); the category waits for a number and never makes the form dirty alone (4).
 //   - Settings › Tax: the signatory switch's added line (line 3), in the switch's accessible description.
-//   - With no signature saved: a draft debit note lists `signature_missing` (line 1) with "Settings › Company" as a link; its note dialog and the advance
-//     dialog of an issued proforma are refused by the server with the same line and link, in a `role="alert"` box that takes the focus (visual review 1).
+//   - With no signature saved: a draft debit note lists `signature_missing` (line 1) with "Settings › Company" as a link; its note dialog lists it on the
+//     confirm step before any code is asked, with the issue button disabled (polish sweep 2a); when the view the dialog reads knows no blocker, the
+//     note dialog and the advance dialog of an issued proforma are refused by the server with the same line and link, in a `role="alert"` box that
+//     takes the focus (visual review 1).
 //   - The saved full number fits its field at every width, and at 1024 with the side menu open or closed (visual review 2); a field reached by Tab
 //     stops clear of the "Unsaved changes" bar (visual review 3).
-//   - The code field of the note, advance, invoice issue and step-up dialogs, reached by the keyboard and after a wrong code (the field focused, its
-//     line under it), is never under the dialog's sticky actions (WCAG 2.4.11; re-check A), at 390×844, 768 and 1280. A case-only GSTIN change is no
+//   - The code field of the note, advance, invoice issue and step-up dialogs, reached by the keyboard and after a wrong code (the field cleared and
+//     focused, its line under it; the invoice issue dialog's too since polish sweep 3a), is never under the dialog's sticky actions or its sticky title
+//     (WCAG 2.4.11; re-check A, polish sweep 5b), at 390×844, 768 and 1280; since polish sweep review 2 also a step-up ConfirmDialog (Users › Sign
+//     out everyone except you) and the Owner's approve dialog (Approvals › Issue invoice, on one sample request answered in the browser). A case-only GSTIN change is no
 //     unsaved change (B); a save in flight leaves the waiting category's look alone (E).
 // axe (WCAG 2.2 AA) on every state, both in-app themes against the opposite OS theme, at 1280 and 390 px; no console errors. With RT2_SHOTS=<absolute folder>
 // each state is also saved as a screenshot (for the designer's review; never committed). Sample data only; the signature is put back at the end.
@@ -116,6 +120,9 @@ async function refusalHasFocus(page: Page, line: string) {
 /** WRONG_CODE (apps/admin/src/lib/step-up.ts): the line under a code field the server refused. */
 const WRONG_CODE =
   "That code didn't work. It may be the one you signed in with, which can't be used again. Wait for the next code and enter it.";
+
+/** The id of the approve dialog's sample request (answered in the browser only; never in the database). */
+const SAMPLE_REQUEST = "e2e-sample-issue-request";
 
 /** Two frames: the browser's own scroll after a focus, then anything measured after a frame (the dialog's actions). */
 const frames = (page: Page) =>
@@ -452,7 +459,10 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
     await expect(page.locator("fieldset.settings-form__body")).not.toHaveAttribute("disabled");
     expect(await category.evaluate(look)).toBe(waiting);
     await page.unrouteAll();
-    await page.getByRole("button", { name: "Discard" }).click();
+    // "No change" takes the form back to the saved values: the trailing space goes, and with it the "Unsaved changes" bar (polish sweep 3c)
+    await expect(trade).not.toHaveValue(/ $/);
+    await expect(page.locator(".savebar")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Discard" })).toHaveCount(0);
   });
 
   test("Settings › Company: keyboard order and visible focus through the Udyam fields", async ({ page }) => {
@@ -588,12 +598,39 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
         await item.evaluate((el) => el.scrollIntoView({ block: "center" }));
         await shot(page, `note-blocker-${tag}`, false);
 
-        // the note dialog, by keyboard: the server refuses the issue; the refusal box is announced (role alert) and takes the focus, inside the dialog
-        // (rt2 visual review 1: focus fell to <body> once the pressed button was disabled)
+        // the note dialog, by keyboard: the blocker the note's view knows is on the confirm step before any code is asked, and nothing can be pressed
+        // (polish sweep 2a)
         await page.getByRole("button", { name: "Issue debit note" }).press("Enter");
         const noteDialog = page.getByRole("dialog");
         await noteDialog.getByRole("button", { name: "Issue debit note" }).press("Enter");
         await expect(noteDialog.locator(".note-final")).toBeVisible();
+        const known = noteDialog.locator(".inv-issue__blocked .blockers__item", {
+          hasText: "Add the signature in",
+        });
+        await expect(known).toHaveText(LINE1);
+        await expect(known.getByRole("link", { name: "Settings › Company" })).toHaveAttribute(
+          "href",
+          "/settings/company",
+        );
+        await expect(noteDialog.getByLabel("Authenticator code")).toHaveCount(0);
+        await expect(noteDialog.getByRole("button", { name: "Issue debit note" })).toBeDisabled();
+        await axe(page, `note dialog known blocker ${tag}`);
+        await shot(page, `note-dialog-known-${tag}`, false);
+
+        // the server's own refusal still works: back to the request, and this time the note's view knows no blocker (as when the signature goes
+        // between the read and the issue); the refusal box is announced (role alert) and takes the focus, inside the dialog (rt2 visual review 1:
+        // focus fell to <body> once the pressed button was disabled)
+        await noteDialog.getByRole("button", { name: "Change" }).press("Enter");
+        const noteView = (u: URL) => u.pathname === `/api/v1/invoices/${debit?.id}`;
+        await page.route(noteView, async (route) => {
+          if (route.request().method() !== "GET") return route.continue();
+          const res = await route.fetch();
+          await route.fulfill({ response: res, json: { ...((await res.json()) as J), blockers: [] } });
+        });
+        await noteDialog.getByRole("button", { name: "Issue debit note" }).press("Enter");
+        await expect(noteDialog.locator(".note-final")).toBeVisible();
+        await expect(noteDialog.locator(".inv-issue__blocked")).toHaveCount(0);
+        await page.unroute(noteView);
         await noteDialog.getByRole("button", { name: "Issue debit note" }).press("Enter");
         await refusalHasFocus(page, LINE1);
         await axe(page, `note dialog refused ${tag}`);
@@ -689,6 +726,57 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
       expect(issued.status, JSON.stringify(issued.body)).toBe(200);
     }
     const draftInvoice = await draftOf("invoice");
+    // The approve dialog's request, answered in the browser only (sample, never written): one pending request for that draft. A decision reaching
+    // the server would be a fault (the code is refused first).
+    const draftView = (await api(page, "GET", `/invoices/${draftInvoice}`)).body;
+    const sampleRequest = {
+      id: SAMPLE_REQUEST,
+      kind: "issue",
+      state: "pending",
+      createdAt: Date.now() - 3_600_000,
+      decidedAt: null,
+      reason: null,
+      note: null,
+      requestedBy: "sample-staff",
+      requesterName: "Sample Staff (e2e)",
+      decidedBy: null,
+      deciderName: null,
+      document: {
+        id: draftInvoice,
+        type: "tax_invoice",
+        status: "draft",
+        number: null,
+        currency: draftView.currency ?? "INR",
+        clientCode: draftView.client?.code ?? taxInvoice?.clientCode ?? "SAMPLE",
+        clientName: "Sample client (e2e)",
+      },
+      totalMinor: 100_00,
+    };
+    await page.route(
+      (u) => u.pathname === "/api/v1/approvals" && u.searchParams.get("kind") === "issue",
+      (route) => {
+        const u = new URL(route.request().url());
+        const pending = !u.searchParams.get("status") || u.searchParams.get("status") === "pending";
+        return route.fulfill({ json: { approvals: pending ? [sampleRequest] : [], next: null } });
+      },
+    );
+    let decided = 0;
+    await page.route(
+      (u) => u.pathname.startsWith("/api/v1/approvals/") && u.pathname.endsWith("/decide"),
+      (route) => {
+        decided++;
+        return route.abort();
+      },
+    );
+    // "Sign out everyone except you" must never reach the server either (the step-up is refused; polish sweep re-check 5)
+    let revokedAll = 0;
+    await page.route(
+      (u) => u.pathname === "/api/v1/users/sessions/revoke-all",
+      (route) => {
+        revokedAll++;
+        return route.abort();
+      },
+    );
 
     // the phone the review measured, a tablet and a desktop; each in-app theme against the opposite OS theme
     for (const [width, height] of [
@@ -707,6 +795,8 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
         await codeDialogs(at);
       }
     refusingCodes = false;
+    expect(decided, "no decision reached the server").toBe(0);
+    expect(revokedAll, "no sign-out reached the server").toBe(0);
 
     async function codeDialogs(at: string) {
       // the debit note's dialog, at its last step
@@ -743,14 +833,20 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
       await page.keyboard.press("Escape");
       await expect(advance).toHaveCount(0);
 
-      // a draft tax invoice's issue dialog: its code field by Tab (a wrong code there still shows in the dialog's notice: follow-up F)
+      // a draft tax invoice's issue dialog: its code field by Tab, then a wrong code, which is the code field's own error like the others (rt2
+      // follow-up F, polish sweep 3a: it used to show in the dialog's notice)
       await page.goto(`/invoices/${encodeURIComponent(draftInvoice)}`);
       await settled(page);
       await page.getByRole("button", { name: "Issue invoice", exact: true }).click();
       const issue = page.getByRole("dialog");
-      await tabbedTo(issue.getByLabel("Authenticator code"), `issue dialog ${at}`);
+      const issueCode = issue.getByLabel("Authenticator code");
+      await tabbedTo(issueCode, `issue dialog ${at}`);
       await axe(page, `issue dialog ${at}`);
       await shot(page, `tab-code-issue-${at}`, false);
+      await wrongCode(issueCode, issue.getByRole("button", { name: "Issue invoice" }), `issue dialog ${at}`);
+      await expect(issue.locator(".notice--error")).toHaveCount(0);
+      await axe(page, `issue dialog wrong code ${at}`);
+      await shot(page, `wrong-code-issue-${at}`, false);
       await page.keyboard.press("Escape");
       await expect(issue).toHaveCount(0);
 
@@ -767,6 +863,44 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
       await shot(page, `wrong-code-step-up-${at}`, false);
       await page.keyboard.press("Escape");
       await expect(stepUp).toHaveCount(0);
+
+      // a ConfirmDialog with the step-up slot (Users › More › "Sign out everyone except you"): a wrong code is the code field's own error, not
+      // the dialog's notice, and the focus stays in the dialog (polish sweep review 2, WCAG 2.4.3); the refused step-up means nothing is signed out
+      await page.goto("/users");
+      await settled(page);
+      await page.locator(".page-header").getByRole("button", { name: "More", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Sign out everyone except you" }).click();
+      const everyone = page.getByRole("dialog", { name: "Sign out everyone except you?" });
+      const everyoneCode = everyone.getByLabel("Authenticator code");
+      await tabbedTo(everyoneCode, `confirm dialog ${at}`);
+      await wrongCode(
+        everyoneCode,
+        everyone.getByRole("button", { name: "Sign out everyone else" }),
+        `confirm dialog ${at}`,
+      );
+      await expect(everyone.locator(".notice--error")).toHaveCount(0);
+      await axe(page, `confirm dialog wrong code ${at}`);
+      await shot(page, `wrong-code-confirm-${at}`, false);
+      await page.keyboard.press("Escape");
+      await expect(everyone).toHaveCount(0);
+
+      // the Owner's approve dialog in Approvals › Issue invoice: the queue is answered in the browser with one labelled sample request for the
+      // draft invoice above (no request is written), so "Issue invoice" asks for the code; the refused step-up means `decide` is never called
+      await page.goto(`/approvals/${SAMPLE_REQUEST}?kind=issue`);
+      await settled(page);
+      const decision = page.getByRole("dialog", { name: "Issue invoice" });
+      const decisionCode = decision.getByLabel("Authenticator code");
+      await tabbedTo(decisionCode, `approve dialog ${at}`);
+      await wrongCode(
+        decisionCode,
+        decision.getByRole("button", { name: "Issue invoice" }),
+        `approve dialog ${at}`,
+      );
+      await expect(decision.locator(".notice--error")).toHaveCount(0);
+      await axe(page, `approve dialog wrong code ${at}`);
+      await shot(page, `wrong-code-approve-${at}`, false);
+      await page.keyboard.press("Escape");
+      await expect(decision).toHaveCount(0);
     }
   });
 

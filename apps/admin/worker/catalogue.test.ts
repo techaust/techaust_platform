@@ -5,7 +5,7 @@ import { catalogueSnapshot } from "@techaust/core";
 import { canonicalJson, sha256Hex } from "@techaust/core/catalogue";
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
 import { SITE_REFERENCES } from "@techaust/core/site-references";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { CATALOGUE_SEARCH_SQL } from "./catalogue.ts";
 import { CATALOGUE_SQL } from "./search.ts";
 import { entryBody, mkItem, putPaymentTerms, retireAll, siteItems, UPFRONT } from "./test-catalogue.ts";
@@ -282,6 +282,21 @@ describe("edit and price history [ADM-CAT-04]", () => {
     );
     expect(nothing).toMatchObject({ ok: true, changed: false });
     expect(await countOf("audit_log", "entity_id = ?", item.id)).toBe(audits);
+  });
+
+  it("a save in the same millisecond as the item's last write moves updated_at past it, so a second save from that page is 409 (test-hardening E)", async () => {
+    const o = await owner();
+    const item = await mkItem();
+    try {
+      vi.useFakeTimers({ toFake: ["Date"], now: item.updatedAt });
+      const first = await patch(item.id, o.cookie, { expectedUpdatedAt: item.updatedAt, name: "First" });
+      expect(await json(first)).toMatchObject({ ok: true, changed: true, updatedAt: item.updatedAt + 1 });
+      const second = await patch(item.id, o.cookie, { expectedUpdatedAt: item.updatedAt, name: "Second" });
+      expect(second.status).toBe(409);
+      expect(await code(second)).toBe("stale_version");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("a stale version is 409 and writes nothing; an item that is gone is 404", async () => {

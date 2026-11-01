@@ -7,13 +7,13 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { stepUpActive } from "../../api.ts";
 import { type Column, DataTable } from "../../components/data-table.tsx";
-import { Modal } from "../../components/dialog.tsx";
+import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
 import { EmptyState, When } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Ban, CheckCircle, ClipboardCheck, Search } from "../../components/icons.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
-import { CodeField, Notice } from "../../components/ui.tsx";
+import { CodeField, Notice, useFieldError } from "../../components/ui.tsx";
 import { DOC_COPY, DOC_PENDING, DOC_TOASTS } from "../../lib/documents.ts";
 import type { ApprovalState } from "../../lib/documents-api.ts";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
@@ -29,7 +29,7 @@ import {
 import { type IssueApprovalRow, invoicesApi } from "../../lib/invoices-api.ts";
 import { issueLabel, NOTE_COPY, noteIssuedToast, noteRequestRow } from "../../lib/notes.ts";
 import type { NoteKind } from "../../lib/notes-api.ts";
-import { withCode } from "../../lib/step-up.ts";
+import { isWrongCode, WRONG_CODE, withCode } from "../../lib/step-up.ts";
 import { ApprovalPill } from "../documents/parts.tsx";
 import { invoiceHref, NumberMark } from "./parts.tsx";
 
@@ -246,9 +246,11 @@ function IssueDecision(props: {
   const requester = r.requesterName ?? DOC_PENDING.theOwner;
   const [note, setNote] = useState("");
   const [code, setCode] = useState("");
-  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeError, setCodeError, codeErrorKey] = useFieldError();
   const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Any other refusal takes the focus (the buttons were disabled while busy; polish sweep re-check 1, WCAG 2.4.3).
+  const refusal = useRefusalFocus();
   const needsCode = !stepUpActive();
   // Q8 (07-S §4): an export invoice in INR is approved only with the explicit "Issue in INR"; the question is on the dialog before the button.
   const inrExport = r.document.type === "export_invoice" && r.document.currency === "INR";
@@ -275,7 +277,15 @@ function IssueDecision(props: {
         props.onDecided(false, null);
       }
     } catch (e) {
+      // A wrong code is the code field's own error (polish sweep 3a, review 2): cleared, said under it, and focused.
+      if (isWrongCode(e)) {
+        setCode("");
+        setCodeError(WRONG_CODE);
+        document.getElementById("issue-decide-code")?.focus();
+        return;
+      }
       setError(invErrorText(e));
+      refusal.show();
     } finally {
       setBusy(null);
     }
@@ -323,9 +333,14 @@ function IssueDecision(props: {
           value={code}
           onChange={setCode}
           error={codeError}
+          errorKey={codeErrorKey}
         />
       )}
-      {error && <Notice tone="error">{error}</Notice>}
+      {error && (
+        <Notice tone="error" ref={refusal.ref}>
+          {error}
+        </Notice>
+      )}
       <div className="dialog__actions">
         <button type="button" className="btn btn--secondary" onClick={props.onClose} disabled={busy !== null}>
           {INV_COPY.cancel}

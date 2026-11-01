@@ -401,10 +401,11 @@ export async function draftCarePlan(
   let drafted = false;
   await mutateSystem(env, {
     main: [
-      // 1. the period is claimed: `last_billed_period` moves forward (a second call for the period changes nothing, and so nothing below is written)
+      // 1. the period is claimed: `last_billed_period` moves forward (a second call for the period changes nothing, and so nothing below is written). Not for a client
+      //    anonymised since the read (the draft's own guard would refuse, and the period would be marked billed with a `care_invoices` row naming no document).
       db
         .prepare(
-          "UPDATE care_plans SET last_billed_period = ?2 WHERE id = ?1 AND status = 'active' AND (last_billed_period IS NULL OR last_billed_period < ?2)",
+          "UPDATE care_plans SET last_billed_period = ?2 WHERE id = ?1 AND status = 'active' AND (last_billed_period IS NULL OR last_billed_period < ?2) AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = care_plans.client_id AND z.anonymised_at IS NOT NULL)",
         )
         .bind(args.planId, period.start),
       // 2. the record of it, only if 1 changed a row
@@ -512,8 +513,12 @@ export async function draftCarePlan(
 /**
  * Issues a care draft the billing job made, with no session. Refuses (an answer, with the owners' bell) when the draft is not eligible or the freeze refuses it; the draft is then left exactly as it
  * was for a person to look at. When it issues, in the SAME batch: the freeze with the number, `issue_result`, the sends to the client's billing contacts with portal access (kind `auto`, written
- * by the Owner who turned the toggle on) with their reminders, and the owners' bell. The PDF is requested after (awaited: the jobs Worker retries a message that fails).
+ * by the Owner who turned the toggle on) with their reminders, and the owners' bell. The PDF is requested after; `enqueuePdf` never throws, so a queue it could not reach is
+ * thrown here (`PDF_QUEUE_UNREACHABLE`), the `care.issue` message is retried, and the retry, finding the invoice issued and its PDF still missing, asks again. Without that the
+ * `auto` sends would wait for the nightly sweep (about a day late) while the bell already says "issued and emailed".
  */
+export const PDF_QUEUE_UNREACHABLE = "care_issue_pdf_queue_unreachable";
+
 export async function issueCareDraft(env: CareEnv, args: { documentId: string }): Promise<IssueCareResult> {
   const db = env.DB;
   const ctx = await readInvoice({ env }, args.documentId, [
@@ -523,12 +528,16 @@ export async function issueCareDraft(env: CareEnv, args: { documentId: string })
   if (!ctx) return { result: "not_found", reasons: [] };
   const d = ctx.bundle.document;
   const care = ctx.extra[0]?.results[0] as CareOf | undefined;
-  if (d.frozen_at !== null || d.status !== "draft")
+  if (d.frozen_at !== null || d.status !== "draft") {
+    // A retry of a message whose PDF request failed after the issue: ask again while the care invoice has no PDF (a repeat ask is harmless: the PDF is written once).
+    if (care && d.created_by === null && d.frozen_at !== null && d.status !== "void" && d.pdf_sha256 === null)
+      await requestPdf(env, d.id);
     return {
       result: "already_issued",
       reasons: [],
       ...(d.number_display ? { number: d.number_display } : {}),
     };
+  }
   if (!care || d.created_by !== null || (d.type !== "tax_invoice" && d.type !== "export_invoice"))
     return { result: "not_found", reasons: [] };
   const contacts = (ctx.extra[1]?.results ?? []) as ContactRow[];
@@ -756,13 +765,18 @@ export async function issueCareDraft(env: CareEnv, args: { documentId: string })
       };
     return refuse(["freeze_refused"]);
   }
-  await enqueuePdf(env, d.id, "send");
+  await requestPdf(env, d.id);
   return {
     result: "issued",
     ...(issued?.number_display ? { number: issued.number_display } : {}),
     reasons: [],
     notEmailed: sentRows === 0,
   };
+}
+
+/** The care invoice's PDF request: a queue that could not be reached is an error, so the `care.issue` message is retried (see `issueCareDraft`). */
+async function requestPdf(env: CareEnv, documentId: string): Promise<void> {
+  if (!(await enqueuePdf(env, documentId, "send"))) throw new Error(PDF_QUEUE_UNREACHABLE);
 }
 
 // The invoice view and its callers import these from here.

@@ -8,6 +8,7 @@ import { Y } from "./copy-y.ts";
 import { WITHDRAW_COPY } from "./copy-zf.ts";
 import { PAY_AUDIT } from "./copy-zh.ts";
 import { DEED_AUDIT, DEED_AUDIT_GROUP, DEED_RECORD_TYPE } from "./copy-zj.ts";
+import { NOTE_ISSUED } from "./copy-zl.ts";
 
 /** Every action the API writes today, in words. Unknown ones read as their own name ("lead.created"). */
 /** A label by its own key only: a free-form value such as "constructor" never reads an inherited property. */
@@ -235,7 +236,27 @@ export const ENTITY_LABELS: Record<string, string> = {
   audit_log: "Audit log",
 };
 
-export const actionText = (action: string) => own(ACTION_LABELS, action) ?? action;
+/**
+ * An action in words. `docType` is the record's own document type, where the screen has it (the dashboard row's `docType`, the audit entry's
+ * `entryDocType`): an issued credit or debit note reads as a note, not "issued an invoice" (07-ZL 1, 2; polish sweep 1b).
+ */
+export const actionText = (action: string, docType?: string | null): string =>
+  (action === "invoice.issue" && docType ? own(NOTE_ISSUED, docType) : undefined) ??
+  own(ACTION_LABELS, action) ??
+  action;
+
+/**
+ * The document type an audit entry names: its summary's `type`, which every `invoice.issue` row has carried since M5.1 (`invoice-issue.ts`), so the
+ * audit API needs no join. Null when the summary has none.
+ */
+export function entryDocType(e: Pick<AuditEntry, "summary">): string | null {
+  const t = e.summary?.type;
+  return typeof t === "string" ? t : null;
+}
+
+/** An audit entry's action in words, a note's issue named as a note (07-ZL 1, 2). */
+export const entryActionText = (e: Pick<AuditEntry, "action" | "summary">): string =>
+  actionText(e.action, entryDocType(e));
 
 /** Who did it: a staff member's name, or what kind of actor it was (the log keeps no client names). */
 export function actorText(e: Pick<AuditEntry, "actorType" | "actorName">): string {
@@ -403,7 +424,7 @@ export function auditCsv(entries: AuditEntry[], names: ReadonlyMap<string, strin
       formatIstDateTime(e.at),
       actorText(e),
       e.role ? (own(ROLE_WORDS, e.role) ?? e.role) : "",
-      actionText(e.action),
+      entryActionText(e),
       targetText(e, names),
       detail,
       e.ip ?? "",

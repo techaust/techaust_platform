@@ -3,9 +3,10 @@
 // can't be used twice (replay guard), so the hint says to wait for the next one. A wrong code is 400
 // `invalid_code`; ten wrong codes lock the account for 15 minutes (429 `locked`).
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { api, errorText, onStepUpRequired, RequestError } from "../api.ts";
-import { WRONG_CODE } from "../lib/step-up.ts";
+import { api, errorText, onStepUpRequired } from "../api.ts";
+import { isWrongCode, WRONG_CODE } from "../lib/step-up.ts";
 import { StepUpPrompt } from "./step-up-auth.tsx";
+import { useFieldError } from "./ui.tsx";
 
 /** The prompt's one field (`StepUpPrompt`, id `step-up-code`). */
 const codeField = () => document.getElementById("step-up-code");
@@ -14,7 +15,7 @@ export function StepUpDialog({ onConfirmed }: { onConfirmed?: (until: number) =>
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError, errorKey] = useFieldError();
   const settle = useRef<((ok: boolean) => void) | null>(null);
 
   useEffect(
@@ -29,7 +30,8 @@ export function StepUpDialog({ onConfirmed }: { onConfirmed?: (until: number) =>
             setOpen(true);
           }),
       ),
-    [],
+    // `setError` is stable (useFieldError's useCallback): the handler is registered once
+    [setError],
   );
 
   function finish(ok: boolean) {
@@ -53,7 +55,7 @@ export function StepUpDialog({ onConfirmed }: { onConfirmed?: (until: number) =>
       finish(true);
     } catch (err) {
       setCode("");
-      setError(err instanceof RequestError && err.code === "invalid_code" ? WRONG_CODE : errorText(err));
+      setError(isWrongCode(err) ? WRONG_CODE : errorText(err));
       // The error is the code field's own line: the field takes the focus (the pressed button was disabled while busy, so focus would fall to
       // <body>; WCAG 2.4.3), and the field brings its line into view above the actions (rt2 re-check A).
       codeField()?.focus();
@@ -71,6 +73,7 @@ export function StepUpDialog({ onConfirmed }: { onConfirmed?: (until: number) =>
       onCancel={() => finish(false)}
       busy={busy}
       error={error}
+      errorKey={errorKey}
     />
   );
 }

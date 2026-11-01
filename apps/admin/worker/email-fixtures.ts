@@ -1,7 +1,9 @@
 // Sample data for Settings > Email "Send a test" (ADM-SET-07): one made-up data set per template, so a test shows the
 // real layout and wording without any real name, number or link (07-H section 1: "it uses sample data"). Addresses are on
 // example.test, links point nowhere real. Pure: no I/O.
+
 import type { EmailTemplate } from "@techaust/core/email-templates";
+import { firstNameOf } from "@techaust/core/offers";
 
 /** The names people see in Settings and in the test email's subject ("Test: Lead alert"). */
 export const TEMPLATE_NAMES: Record<EmailTemplate, string> = {
@@ -44,7 +46,7 @@ export function sampleData(
   who: { name: string; role: string },
   time: string,
 ): Record<string, string> {
-  const first_name = who.name.split(/\s+/)[0] ?? who.name;
+  const first_name = firstNameOf(who.name);
   const person = { name: who.name, first_name };
   switch (template) {
     case "lead.acknowledgement":

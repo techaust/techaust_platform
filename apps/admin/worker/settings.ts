@@ -125,12 +125,12 @@ const READ_ACTION: Record<Generic, Action> = {
   retention: "settings.manage",
   flags: "settings.manage",
 };
-// Which list in 08-C §5 holds a group's open questions (FX-3: a pointer, never a bare "VERIFY WITH" tag). The SPA shows the researched-settings note
-// when it is present and names the lawyer when it says so (settings/kit.tsx).
+// Where a group's open questions are settled or kept OPEN: 08-C §5 (FX-3: a pointer, never a bare "VERIFY WITH" tag). The SPA shows the researched-settings
+// note, one text for every group, when it is present (settings/kit.tsx; 07-ZK line 12).
 const VERIFY: Partial<Record<Generic | "gateways", string>> = {
-  tax: "08-C §5: CA",
-  payment_terms: "08-C §5: CA and lawyer",
-  retention: "08-C §5: CA and lawyer",
+  tax: "08-C §5",
+  payment_terms: "08-C §5",
+  retention: "08-C §5",
 };
 
 const groupParam = z.object({ group: z.enum(GENERIC) });
@@ -633,7 +633,7 @@ export const settings = new Hono<AppEnv>()
         };
       }),
       meta: {
-        verify: "08-C §5: CA and lawyer",
+        verify: "08-C §5",
         usedByNote:
           "Used-by counts exist for proposal terms and invoice footer notes; the other blocks are not yet recorded on documents.",
       },
@@ -966,7 +966,8 @@ async function saveBank(c: Ctx, kind: "INR" | "USD_SWIFT") {
   // `updatedAt` goes back so the screen sends it with its next save of this block (review re-check L-b).
   if (existing && !Object.keys(diff).length)
     return c.json({ ok: true, changed: false, updatedAt: existing.updated_at });
-  const t = Date.now();
+  // Strictly after the version this save was made from (as `document-write.ts`), so a second save from the same stale page is 409 even in the same millisecond (test-hardening E).
+  const t = Math.max(Date.now(), (existing?.updated_at ?? 0) + 1);
   const id = existing?.id ?? uuidv7();
   const main = existing
     ? db

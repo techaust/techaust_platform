@@ -11,7 +11,7 @@ import { Modal } from "../../components/dialog.tsx";
 import { KeepDates } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Alert } from "../../components/icons.tsx";
-import { CodeField, Notice } from "../../components/ui.tsx";
+import { CodeField, Notice, useFieldError } from "../../components/ui.tsx";
 import { WITHDRAW_COPY } from "../../lib/copy-zf.ts";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
 import {
@@ -32,7 +32,7 @@ import {
   withdrawErrorText,
 } from "../../lib/invoices.ts";
 import type { InvoiceBlocker, InvoiceView } from "../../lib/invoices-api.ts";
-import { withCode } from "../../lib/step-up.ts";
+import { isWrongCode, withCode } from "../../lib/step-up.ts";
 
 const CODE_MISSING = "Enter the 6-digit code from your authenticator app.";
 
@@ -156,7 +156,7 @@ export function IssueDialog(props: {
 }) {
   const v = props.view;
   const [code, setCode] = useState("");
-  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeError, setCodeError, codeErrorKey] = useFieldError();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // Q8 (07-S §4): an export invoice in INR asks once more before it is issued; the second press is "Issue in INR".
@@ -201,6 +201,13 @@ export function IssueDialog(props: {
       await withCode(needsCode ? code : undefined, () => props.issue(ready, inrAsked));
       setCode("");
     } catch (e) {
+      // A wrong code is the code field's own error (as in the note and advance dialogs): cleared, said under it, and focused (polish sweep 3a).
+      if (isWrongCode(e)) {
+        setCode("");
+        setCodeError(e.message);
+        document.getElementById("issue-code")?.focus();
+        return;
+      }
       setError(invErrorText(e));
     } finally {
       setBusy(false);
@@ -263,6 +270,7 @@ export function IssueDialog(props: {
           value={code}
           onChange={setCode}
           error={codeError}
+          errorKey={codeErrorKey}
         />
       )}
       {error && <Notice tone="error">{error}</Notice>}
@@ -363,7 +371,7 @@ function ReasonCodeDialog(props: {
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState<string | null>(null);
   const [code, setCode] = useState("");
-  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeError, setCodeError, codeErrorKey] = useFieldError();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [stale, setStale] = useState(false);
@@ -400,6 +408,13 @@ function ReasonCodeDialog(props: {
       setReason("");
       setCode("");
     } catch (e) {
+      // A wrong code is the code field's own error, as in the issue dialog (polish sweep 3a).
+      if (isWrongCode(e)) {
+        setCode("");
+        setCodeError(e.message);
+        document.getElementById(codeId)?.focus();
+        return;
+      }
       setError(props.errorText(e));
       if (voidRefusalStalesPage(e)) setStale(true);
     } finally {
@@ -434,6 +449,7 @@ function ReasonCodeDialog(props: {
           value={code}
           onChange={setCode}
           error={codeError}
+          errorKey={codeErrorKey}
         />
       )}
       {error && <Notice tone="error">{error}</Notice>}

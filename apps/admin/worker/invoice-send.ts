@@ -7,6 +7,7 @@
 // The recipients are the rule of M4.5 (`checkRecipientIds`, `invalidRecipients`): 1 to 5 distinct contacts of THIS client with portal access, not anonymised. The email follows
 // the PDF: the rows are written "waiting" (`queued_at` NULL); when the PDF already exists they are queued at once as `invoice.send` (never `offer.send`: the M4.5 consumer
 // would cancel an invoice send, LD56), else the jobs Worker's render step queues them and the sweep is the safety net. A reminder row is only ever made by a FIRST send.
+import { ANONYMISED_CONTACT } from "@techaust/core/clients";
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import { isReminderType, reminderPolicy, reminderRows } from "@techaust/core/invoices";
@@ -48,6 +49,13 @@ const DOC_READ = `SELECT d.id, d.type, d.status, d.client_id, d.frozen_at, d.due
     (SELECT count(*) FROM reminders r WHERE r.document_id = d.id AND r.sent_at IS NULL AND r.skipped_reason IS NULL) AS reminders_waiting,
     (SELECT count(*) FROM reminders r WHERE r.document_id = d.id AND r.sent_at IS NULL AND r.skipped_reason = 'paused' AND r.due_at > ?2) AS reminders_paused
   FROM documents d JOIN clients cl ON cl.id = d.client_id WHERE d.id = ?1 AND d.type IN (${INVOICE_TYPES_SQL})`;
+/**
+ * "Revoke links", step 1: cancels the document's sends that have no link yet. `?1` document id, `?2` now, then the guard's own parameters (`guard` is `g.sql(3)`).
+ * The subquery names the document as well as the send, so it reads `doc_access_tokens_document` (there is no index on `send_id`).
+ */
+export const cancelUnlinkedSendsSql = (guard: string) =>
+  `UPDATE document_sends SET cancelled_at = ?2 WHERE cancelled_at IS NULL AND document_id = ?1 AND NOT EXISTS (SELECT 1 FROM doc_access_tokens t WHERE t.document_id = ?1 AND t.send_id = document_sends.id) AND ${guard}`;
+
 const PAYMENT_TERMS_READ = "SELECT value FROM settings WHERE key = 'payment_terms'";
 
 type DocRow = {
@@ -209,13 +217,11 @@ export const invoiceSend = new Hono<AppEnv>()
     let paused = 0;
     // Order matters (as for an offer): first stop the sends that have no link yet (waiting for the PDF, or queued and not yet processed: the jobs Worker mints a link only
     // while `cancelled_at` is NULL), then revoke every link that exists, then pause the reminders (a new link is only ever minted for a reminder that is sent). One batch.
+    // A send that already has a link is not cancelled here: the jobs Worker mints no new link for a send whose own link was revoked (a retry after the email queue failed,
+    // or a redelivery), and marks it not sent; a reminder claimed before this batch is paused when its claim is given back.
     await mutate(c, {
       side: (g) => [
-        db
-          .prepare(
-            `UPDATE document_sends SET cancelled_at = ?2 WHERE cancelled_at IS NULL AND document_id = ?1 AND NOT EXISTS (SELECT 1 FROM doc_access_tokens t WHERE t.send_id = document_sends.id) AND ${g.sql(3)}`,
-          )
-          .bind(id, t, ...g.params),
+        db.prepare(cancelUnlinkedSendsSql(g.sql(3))).bind(id, t, ...g.params),
         db
           .prepare(
             `UPDATE doc_access_tokens SET revoked_at = ?2 WHERE document_id = ?1 AND revoked_at IS NULL AND ${g.sql(3)}`,
@@ -336,8 +342,10 @@ export function sendsView(
   return {
     sends: rows.map((r) => ({
       id: r.id,
-      contactName: r.contact_name,
-      email: r.email,
+      // A removed person (`deleteContactAccess` cleared the send's contact and address on an erase or anonymise; a send is always written with a
+      // contact) reads "Removed contact" (core ANONYMISED_CONTACT), never a dash, as the offer's Emails row does (polish sweep review 4).
+      contactName: r.contact_id === null ? ANONYMISED_CONTACT : r.contact_name,
+      email: r.contact_id === null ? null : r.email,
       kind: r.kind,
       createdAt: r.created_at,
       queuedAt: r.queued_at,

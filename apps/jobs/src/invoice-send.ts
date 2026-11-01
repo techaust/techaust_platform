@@ -8,11 +8,12 @@
 //   an automatic send (`kind` auto, the care-plan issue) outside the settings window (default 09:00 to 19:00 IST) is acknowledged and sent AGAIN with `delaySeconds` until the window
 //     opens (a new message, never `message.retry`, which would spend one of the five tries); a send by a person (`send`, `resend`) is never held back;
 //   else ONE batch mints the personal link (`doc_access_tokens`, bound to the contact, 180 days) and stamps `queued_at`, and the email is queued with the PDF attached when the row says so.
-// A redelivery mints another link and revokes none (the email is deduplicated, so only the first link is ever sent).
+// A redelivery mints another link and revokes none (the email is deduplicated, so only the first link is ever sent). A redelivery after "Revoke links" mints nothing: the revoke does
+// not cancel a send that already has a link, so `LINK_SQL` refuses a send with a revoked link of its own, and the row is marked not sent.
 import { type EmailMessage, invoiceSendMessage } from "@techaust/core";
 import { isInvoiceFlowType, reminderWindowFromStored, windowDelaySeconds } from "@techaust/core/invoices";
 import { ATTACHMENT_KEY, invoiceLinkExpiry, invoiceLinkUrl, mintOfferToken } from "@techaust/core/offers";
-import { portalBase, storedValue, TERMS_READ } from "./billing-shared.ts";
+import { markNotSent, portalBase, storedValue, TERMS_READ } from "./billing-shared.ts";
 import { type DocFacts, documentData, NOTE_FACTS_SQL, pdfFileName, SEND_TEMPLATE } from "./invoice-mail.ts";
 import { logEvent } from "./log.ts";
 
@@ -44,21 +45,16 @@ type SendRow = DocFacts & {
 };
 
 /**
- * The link, inserted only while the send is not cancelled, the contact still has portal access, the document is issued and not void and the client is not anonymised
- * (`doc_access_tokens_bound_insert`, 0044, enforces the binding itself); its `changes` is 1 only then. `?1` token hash, `?2` send id, `?3` expiry.
+ * The link, inserted only while the send is not cancelled, no link of this send was revoked ("Revoke links" cancels only the sends without a link, so a retry after an
+ * email queue failure, or a redelivery, must not mint a live link after the revoke), the contact still has portal access, the document is issued and not void and the
+ * client is not anonymised (`doc_access_tokens_bound_insert`, 0044, enforces the binding itself); its `changes` is 1 only then. `?1` token hash, `?2` send id, `?3` expiry.
  */
 const LINK_SQL = `INSERT INTO doc_access_tokens (token_hash, document_id, purpose, expires_at, contact_id, client_id, email, send_id)
   SELECT ?1, d.id, 'view_pay', ?3, c.id, d.client_id, lower(c.email), s.id
   FROM document_sends s JOIN documents d ON d.id = s.document_id JOIN clients cl ON cl.id = s.client_id
     JOIN contacts c ON c.id = s.contact_id AND c.client_id = s.client_id AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL
-  WHERE s.id = ?2 AND s.cancelled_at IS NULL AND d.frozen_at IS NOT NULL AND d.voided_at IS NULL AND d.status <> 'void' AND cl.anonymised_at IS NULL`;
-
-/** Marks a send as never going out (set once); the screens then show "not sent" instead of "queued" for ever. */
-async function markNotSent(env: Env, sendId: string, now: number): Promise<void> {
-  await env.DB.prepare("UPDATE document_sends SET cancelled_at = ?2 WHERE id = ?1 AND cancelled_at IS NULL")
-    .bind(sendId, now)
-    .run();
-}
+  WHERE s.id = ?2 AND s.cancelled_at IS NULL AND d.frozen_at IS NOT NULL AND d.voided_at IS NULL AND d.status <> 'void' AND cl.anonymised_at IS NULL
+    AND NOT EXISTS (SELECT 1 FROM doc_access_tokens r WHERE r.document_id = d.id AND r.send_id = s.id AND r.revoked_at IS NOT NULL)`;
 
 export async function processInvoiceSend(
   env: Env,
@@ -122,7 +118,7 @@ export async function processInvoiceSend(
       now,
     ),
   ]);
-  // Nothing is emailed unless the link row exists: a contact who lost access, links revoked or a void between the read and the write.
+  // Nothing is emailed unless the link row exists: a contact who lost access, links revoked (before the read or after it) or a void between the read and the write.
   if (linked?.meta.changes !== 1) {
     logEvent("invoice_send.refused", { why: "link_not_written" });
     await markNotSent(env, sendId, now);

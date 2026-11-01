@@ -5,7 +5,7 @@ import { FINANCE_AUDIT_ACTIONS } from "@techaust/core/audit";
 import { CLIENT_BILLING_FIELDS, CLIENT_FINANCE_READ_FIELDS } from "@techaust/core/clients";
 import { gstinCheckChar } from "@techaust/core/gstin";
 import { uuidv7 } from "@techaust/core/ids";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { CLIENT_COLS, CLIENT_SEARCH_SQL, type ClientRow, clientView, patchBilling } from "./clients.ts";
 import { CLIENTS_SQL, CONTACTS_SQL } from "./search.ts";
 import { beforeBatch, insert, keysDeep, mkClient, mkContact, mkDoc } from "./test-clients.ts";
@@ -966,5 +966,80 @@ describe("the client type is locked by an issued document [ADM-CLI-05; analyst e
     expect(await code(raced)).toBe("type_locked");
     expect((await one("SELECT type FROM clients WHERE id = ?", id))?.type).toBe("individual");
     expect(await countOf("audit_log", "entity_id = ? AND action = 'client.update'", id)).toBe(0);
+  });
+});
+
+describe("a save in the same millisecond as the row's last write is never a second pass for a stale page (test-hardening E) [ADM-CLI-02]", () => {
+  /** Saves twice from the same page with the clock pinned at the row's stored `updated_at`: the first moves it to stored + 1, the second is 409. */
+  const twice = async (stored: number, save: (expected: number, n: number) => Promise<Response>) => {
+    try {
+      vi.useFakeTimers({ toFake: ["Date"], now: stored });
+      const first = await save(stored, 1);
+      expect(await json(first)).toMatchObject({ ok: true, changed: true, updatedAt: stored + 1 });
+      const second = await save(stored, 2);
+      expect(second.status).toBe(409);
+      expect(await code(second)).toBe("stale_version");
+    } finally {
+      vi.useRealTimers();
+    }
+  };
+  const updatedAtOf = async (table: "clients" | "contacts", id: string) =>
+    (await one<{ updated_at: number }>(`SELECT updated_at FROM ${table} WHERE id = ?`, id))
+      ?.updated_at as number;
+
+  it("the client's own fields", async () => {
+    const o = await owner();
+    const id = await mkClient();
+    await twice(await updatedAtOf("clients", id), (expected, n) =>
+      call(`/clients/${id}`, {
+        method: "PATCH",
+        cookie: o.cookie,
+        body: { expectedUpdatedAt: expected, notes: `note ${n}` },
+      }),
+    );
+  });
+
+  it("the billing fields", async () => {
+    const o = await owner();
+    const id = await mkClient();
+    await twice(await updatedAtOf("clients", id), (expected, n) =>
+      call(`/clients/${id}/billing`, {
+        method: "PATCH",
+        cookie: o.cookie,
+        body: { expectedUpdatedAt: expected, paymentTermsDays: 10 + n },
+      }),
+    );
+  });
+
+  it("the billing fields when an Owner turns the automatic issue on: the step-up is judged on the real clock, the version moves past the stored one", async () => {
+    const o = await owner();
+    const id = await mkClient();
+    await twice(await updatedAtOf("clients", id), (expected, n) =>
+      call(`/clients/${id}/billing`, {
+        method: "PATCH",
+        cookie: o.cookie,
+        body:
+          n === 1
+            ? { expectedUpdatedAt: expected, careAutoIssue: true }
+            : { expectedUpdatedAt: expected, paymentTermsDays: 12 },
+      }),
+    );
+    expect(await one("SELECT care_auto_issue, care_auto_issue_by FROM clients WHERE id = ?", id)).toEqual({
+      care_auto_issue: 1,
+      care_auto_issue_by: o.id,
+    });
+  });
+
+  it("a contact", async () => {
+    const s = await sessionFor("staff");
+    const id = await mkClient();
+    const a = await mkContact(id, { is_primary: 1 });
+    await twice(await updatedAtOf("contacts", a.id), (expected, n) =>
+      call(`/contacts/${a.id}`, {
+        method: "PATCH",
+        cookie: s.cookie,
+        body: { expectedUpdatedAt: expected, title: `Title ${n}` },
+      }),
+    );
   });
 });
