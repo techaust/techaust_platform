@@ -1,6 +1,9 @@
 # 12: Status
 
-_Replaced (never appended) at the end of every session. Last updated: **2026-11-01, 14:15** (IST); interim update, the day's end replaces it._
+_Replaced (never appended) at the end of every session._
+
+## Date
+**2026-11-01, 14:40 IST** (end of day). The next conversation starts with "continue" (or "start the day" tomorrow).
 
 ## Done
 - **Phases 1–5, M1–M5 (32 milestones)** approved; **M6.1 approved on staging** (owner, 2026-10-31). Details in [runs/](runs/) and [13-decisions.md](13-decisions.md).
@@ -16,7 +19,7 @@ _Replaced (never appended) at the end of every session. Last updated: **2026-11-
 ## In progress
 - **M6.2 Razorpay** (Tier A milestone; [run file](runs/m6.2-razorpay.md), branch `feat/m6.2-razorpay` at `650da092`): B1, early check 1 (CHANGE, fixed), the CPU diagnosis and its warm-ups, B2, early check 2 (CHANGE, fixed), the T11 merge (0063/0064 on T11's 0061/0062; deed hooks in the gateway batches; worst path 44 of 45 statements), the screens. `pnpm check` and `pnpm test` green; bytes: front 102,708, API 478,770, finance 580,664, portal 115,225 (4,775 left), jobs 703,187.
 - **Next on M6.2:** the reviewer (code, security, visual) **after the 16:10 IST usage reset** (84 % at 13:50); then one fix round (the review's findings plus the designer items 1–4 in the run file); the PR is **held** until the owner's H1–H3 `RESULT:` lines; then staging and the owner's approval with one sandbox payment.
-- No other agent and no cloud session is working.
+- **No agent and no cloud session is running** at the end of the day; every worktree is removed. The next conversation starts the M6.2 reviewer from the run file's "Handover" once the 5-hour window is under 85 % (it resets 16:10 IST).
 
 ## Next
 1. M6.2 as above; then **M6.3 Stripe** (brief ready; owner Q3 and the copy page at build time; check the account shows TecHaust's GSTIN), **M6.4 PayPal**, **M6.5**.

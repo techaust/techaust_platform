@@ -1,4 +1,4 @@
-Status: PR READY https://github.com/techaust/techaust_platform/pull/143
+Status: merged (PR #143, 2026-11-01)
 Tier: B
 Usage: analyst (item 5) claude-opus-5-5/high, skills: code-review (+ its read-only general-purpose helper claude-opus-5-5/high); 5-h 17 → 62 % (shared window, four sessions) · builder r1 claude-opus-5-5/high, skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:turnstile-spin (not installed in the cloud); 5-h 17 → 62 % · analyst (early check r1) claude-opus-5-5/high, skills: code-review (+ read-only helper); 5-h 62 % · builder r2 claude-opus-5-5/high, skills tried: cloudflare:workers-best-practices (not installed in the cloud); 5-h 62 → 88 % · reviewer claude-opus-5-5/high, skills: code-review (+ read-only helper), security-review (by hand); 5-h reset 06:10 → reading not yet posted · reviewer re-check claude-opus-5-5/high, skills: code-review (+ read-only helper)
 

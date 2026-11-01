@@ -1,6 +1,6 @@
 # Polish sweep (admin and website follow-ups)
 
-Status: PR READY (07-ZL approved) https://github.com/techaust/techaust_platform/pull/144
+Status: merged (PR #144, 2026-11-01)
 Tier: C
 Usage: builder b1 claude-opus-5-5/high (skills attempted `cloudflare:workers-best-practices`, `cloudflare:wrangler`, "Unknown skill" in the cloud), 5-h 17 → 20 %; designer d1 claude-opus-5-5/high (`frontend-design` attempted, "Unknown skill" then), started at 17 %; reviewer claude-opus-5-5/high (`code-review`, `security-review`) + its read-only `general-purpose` helper claude-opus-5-5/high, started at 62 %; designer d2 claude-opus-5-5/high (`frontend-design:frontend-design` loaded), started after the 06:10 reset (last reading 88 at 04:00); re-check reviewer claude-opus-5-5/high (`code-review`, `security-review`) + its helper claude-opus-5-5/high. All from `node tools/model-audit.mjs 2026-10-31`: all runs within the plan.
 
