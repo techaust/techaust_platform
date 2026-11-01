@@ -149,3 +149,43 @@ APPROVE accepted; mediums and lows fixed in this task except where noted. Usage:
 
 ## Fix brief (lead, 2026-11-01)
 Designer, Opus 5.5 at high; `frontend-design:frontend-design` first. Your own branch `feat/company-phone-fix` from `origin/feat/company-phone`; items 1, 2, 4, 5, 6, 7, 9 above; web build and tests and `@techaust/ui` tests through `bash tools/heavy.sh`; screenshots of /thanks (375, 390, both themes, with and without `?ref`) to `.logs/company-phone/fix/`; append "## Fix report" and push only your branch; stop every server you started. Don't touch apps/admin, apps/portal, packages/core or payment code (a builder is working there).
+
+## Fix report (designer, 2026-11-01)
+Branch `feat/company-phone-fix` from `origin/feat/company-phone` (ec5ddd17); commits 80d426c3, b9eaf42e, b1e12902, 906f7c06, e4131f2d, 652d6acc and this report, all pushed.
+
+**Skills loaded:** `frontend-design:frontend-design` (first). It kept the fixes inside the existing patterns: no new device for the wrapped link (the arrow simply follows the last word, as text does), and the button, panel and footer links keep their look. Not loaded: `cloudflare:web-perf` (the only layout change, item 4, was measured directly: CLS 0), `dataviz` (no chart).
+
+**Items**
+1. **(medium) Wrapped external links:** `ExternalLink.astro` splits a plain-text label at its last ASCII space and wraps the last word, the screen-reader note and the arrow in a `nowrap` tail (`.ext-link__label` / `.ext-link__tail`); the link now flows as text (`display: inline`), so its focus ring follows the lines. A label with markup (the footer's icon and word) keeps the old row layout as `.ext-link--flex`. The gap before the arrow is `--ext-link-gap` (space-1; a button and the footer's LinkedIn set space-2, as before). The tail's icon is `inline-block` (the reset makes every svg a block, which at first put the arrow on its own line; caught in the browser, fixed in e4131f2d). /thanks at 375 and 390: "quote your reference." and the arrow on one line.
+2. **(medium) Crawlers keep IST:** `call-time.ts` `CRAWLER_UA = /bot|crawl|spider|slurp|inspectiontool/i` and `isCrawler`; `local-time.ts` skips the rewrite for them. Lighthouse ("Chrome-Lighthouse") is not matched. Test in `forms-m24.test.ts`: Googlebot, Google-InspectionTool, bingbot, Slurp, Baiduspider, YandexBot, Applebot, DuckDuckBot and a generic crawler match; Chrome, Safari, Firefox, Android Chrome and Lighthouse don't. A phone whose model name holds "bot" (Cubot) also reads IST, which is still a true time.
+4. **(low) /thanks gap on a bookmark:** the shared inline head script adds `html.has-ref` when the URL has a non-empty `ref=`; thanks.astro reserves the two lines only under `.has-ref`. Without a reference, or without JavaScript, they take no room. The head script's new hash is in `public/_headers` (`sha256-IitZjVUYb8SRbxM8hUyE5U+6H4MDIaoohN9YT0fUy00=`); `test/dist-checks.test.ts` gives the head-script sandbox a `location` and checks `has-ref` (`?ref=L-…` and `?x=1&ref=…` yes; none, `?ref=` and `?pref=…` no). CLS on /thanks with a reference at 375: 0.
+5. `lib/forms.ts` `callWindows()` comment: the label is the visitor's clock, the value stays IST.
+6. `Choice.astro` props are a union: a `label`, or a `window` with no label; get-a-quote passes one or the other.
+7. `test/company-phone.test.ts` (new): `dial` is `display` without spaces, `whatsapp` is `dial` without "+", the card and letterhead lines in `packages/ui/src/brand/print.ts` (read as text; the module is Node-only) equal `display`, and JSON-LD prints `telephone` exactly when `dial` is set; `structured-data.ts` now guards on `dial`, the field it prints.
+9. `SiteFooter.astro` header comment: the phone, WhatsApp and LinkedIn lines hide when empty; only LinkedIn has a preview placeholder.
+
+**Files changed:** `apps/web/src/components/ExternalLink.astro`, `src/styles/global.css`, `src/components/SiteFooter.astro`, `src/components/form/Choice.astro`, `src/pages/get-a-quote.astro`, `src/pages/thanks.astro`, `src/layouts/BaseLayout.astro`, `public/_headers`, `src/scripts/call-time.ts`, `src/scripts/local-time.ts`, `src/scripts/thanks.ts`, `src/lib/forms.ts`, `src/lib/structured-data.ts`, `test/forms-m24.test.ts`, `test/dist-checks.test.ts`, `test/company-phone.test.ts` (new), this file.
+
+**Commands and results** (heavy ones through `tools/heavy.sh`, logs in `.logs/` of the worktree)
+- `pnpm --filter @techaust/web build`: the first run failed only on the changed head script's CSP hash (37 pages, the guard working); after updating `_headers`, exit 0 and `check-web-dist: ok` (CSP, external links, link check, content lint, no price literals); rebuilt once more after the inline-block fix, ok.
+- `pnpm --filter @techaust/web test`: the first run had 4 failures (the head-script sandbox had no `location`); fixed; then 41 files, 886 passed.
+- `pnpm --filter @techaust/ui test`: 471 passed, 2 skipped.
+- `pnpm --filter @techaust/web typecheck`: 0 errors, 0 warnings, 0 hints.
+- `pnpm exec biome check` on every changed file: clean. `pnpm lint` (whole repo, once): exit 0, 10 warnings and 8 infos, all in files this task didn't touch (as before).
+- Browser (`astro preview` of the build): /thanks with and without `?ref` at 375 and 390 in both themes; the contact panel and a service page's CTA band ("Chat on WhatsApp" button 52 px, arrow centred, space-2 gap; the panel's WhatsApp link 44 px, arrow centred within 1 px); keyboard focus on the wrapped /thanks link (the ring follows both lines); no horizontal overflow; 0 console errors. Server stopped, browser closed.
+
+**Screenshots** (`D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\.claude\worktrees\agent-a6333cceb576aec81\.logs\company-phone\fix\`)
+- `thanks-{375,390}-{light,dark}-ref.png`: the reference, the reply hours, and the WhatsApp line ending "quote your reference." with the arrow right after it.
+- `thanks-{375,390}-{light,dark}-noref.png`: no reference and no blank gap between the reply line and "While you wait".
+- `thanks-375-light-ref-focus.png`: the wrapped link focused by keyboard.
+- `contact-panel-390-light.png`: Email, Phone, WhatsApp ("Chat on WhatsApp" and arrow), Address, unchanged.
+- `service-band-390-light.png`: the CTA band's "Chat on WhatsApp" button, unchanged.
+
+**Not verified**
+- The crawler guard in a real search engine's renderer (the pattern is unit-tested; the URL Inspection tool on staging would show it).
+- With JavaScript on and an invalid `?ref=`, the reserved lines are still removed once by thanks.ts (a small shift; only a tampered URL reaches it).
+- Safari and Firefox rendering of the inline arrow (Chromium only).
+- Items 3 and 8 are the lead's follow-ups (the Phase 7 performance pass; moving `HOURS` into core after M6.2).
+
+**Placeholders:** none. **No new wording.**
+Usage: designer claude-opus-5-5/high.
