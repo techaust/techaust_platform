@@ -1,6 +1,6 @@
 # Run: the `/orchestrate` skill and the cloud watcher
 
-Status: fixes running (review 1 SEND BACK: 1 high, 1 medium, 6 low)
+Status: re-check running (review 1 fixes merged)
 Tier: C
 Usage: lead claude-opus-5-5/high (cloud session orchestrate-skill); builder claude-opus-5-5/high (model-audit; skills: none — no docs/14 §9 row fits a plain Node CLI, flagged by the audit for that reason): 5-h 5 → ? %; reviewer: below. Reading at the start: USAGE 5 at 2026-11-01T11:15+05:30.
 
