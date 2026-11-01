@@ -1,6 +1,6 @@
 # Run: the `/orchestrate` skill and the cloud watcher
 
-Status: checks running (re-check APPROVE)
+Status: PR READY https://github.com/techaust/techaust_platform/pull/147
 Tier: C
 Usage: lead claude-opus-5-5/high (cloud session orchestrate-skill); builder claude-opus-5-5/high (model-audit; skills: none — no docs/14 §9 row fits a plain Node CLI, flagged by the audit for that reason): 5-h 5 → ? %; reviewer claude-opus-5-5/high (skills: code-review; its helper general-purpose claude-opus-5-5/high, read-only) review 1 + re-check; fix builder claude-opus-5-5/high (skills: none, same reason). 5-h readings: only the start reading (5 % at 11:15 IST) was received during the run. Reading at the start: USAGE 5 at 2026-11-01T11:15+05:30.
 
@@ -159,7 +159,9 @@ New:
 **Triage (lead):** both fixed in SKILL.md as suggested (doc-only, so no further re-check). A watcher start line listing tasks already in an action class stays a follow-up.
 
 ## Integration notes
-(lead)
+- Builder sub-branches `fix/orchestrate-skill-watcher` and `fix/orchestrate-skill-r1` fast-forwarded into `feat/orchestrate-skill`; worktrees removed.
+- origin/main (f5fe02d) already contained; `pnpm check` exit 0 on the tip; watcher tests 104/104; web Node project 811 passed, 17 skipped.
+- PR [#147](https://github.com/techaust/techaust_platform/pull/147) opened with `tools/cloud-pr.sh`; auto-merge and Auto-fix are the main session's.
 
 ## Lead decisions (for 13)
 - (lead, 2026-11-01) The skill and its templates are written by the lead (they restate the record); the builder builds only the watcher and its tests, in parallel on separate files.
@@ -183,4 +185,4 @@ New:
 None so far.
 
 ## Handover
-(lead)
+PR #147 is ready for the main session's review (checklist in SKILL.md step 8: no migrations, no workflow change, no Worker code). After merge, the main session copies "Lead decisions (for 13)", "Proposed CLAUDE.md text" and "Follow-ups (for 12)". The first real use (on the PC, Windows) is the test the cloud couldn't run.
