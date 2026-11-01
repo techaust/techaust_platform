@@ -842,7 +842,8 @@ async function saveNumbering(c: Ctx, raw: unknown) {
       ];
       if (!changed.length) return undefined;
       return {
-        sql: `NOT EXISTS (SELECT 1 FROM documents d WHERE d.fy = ?6 AND d.number IS NOT NULL AND d.series IN (${changed.map((_, i) => `?${i + 7}`).join(", ")}))`,
+        // T11 (review M1): a numbered deed locks the `deed` series too (deeds live in their own table, as `issuedSeries` reads them).
+        sql: `NOT EXISTS (SELECT 1 FROM documents d WHERE d.fy = ?6 AND d.number IS NOT NULL AND d.series IN (${changed.map((_, i) => `?${i + 7}`).join(", ")})) AND NOT EXISTS (SELECT 1 FROM deeds dd WHERE dd.fy = ?6 AND dd.number IS NOT NULL AND 'deed' IN (${changed.map((_, i) => `?${i + 7}`).join(", ")}))`,
         params: [fy, ...changed],
         refused: async () => {
           const now = await issuedSeries(c.env.DB, fy);
@@ -866,7 +867,7 @@ async function saveNumbering(c: Ctx, raw: unknown) {
             side: (g) =>
               effective.map(([s, n]) =>
                 c.env.DB.prepare(
-                  `INSERT INTO doc_counters (series, fy, next_no) SELECT ?1, ?2, ?3 WHERE ${g.sql(4)} AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.series = ?1 AND d.fy = ?2 AND d.number IS NOT NULL) ON CONFLICT(series, fy) DO UPDATE SET next_no = excluded.next_no WHERE excluded.next_no >= doc_counters.next_no`,
+                  `INSERT INTO doc_counters (series, fy, next_no) SELECT ?1, ?2, ?3 WHERE ${g.sql(4)} AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.series = ?1 AND d.fy = ?2 AND d.number IS NOT NULL) AND NOT EXISTS (SELECT 1 FROM deeds dd WHERE ?1 = 'deed' AND dd.fy = ?2 AND dd.number IS NOT NULL) ON CONFLICT(series, fy) DO UPDATE SET next_no = excluded.next_no WHERE excluded.next_no >= doc_counters.next_no`,
                 ).bind(s, fy, n, ...g.params),
               ),
           },
