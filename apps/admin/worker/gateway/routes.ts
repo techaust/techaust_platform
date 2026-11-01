@@ -4,6 +4,7 @@
 import { REVIEW_RESOLUTIONS } from "@techaust/core/online-pay";
 import { GATEWAYS } from "@techaust/core/settings";
 import {
+  CHECKOUT_BY_ID_SQL,
   checkoutEndStatement,
   LAST_VERIFIED_EVENT_SQL,
   OPEN_REVIEW_COUNT_SQL,
@@ -78,8 +79,7 @@ export function linkRefusal(c: Ctx, r: Extract<MakeLinkResult, { ok: false }>): 
   }
 }
 
-const CHECKOUT_OF_DOC_SQL = `SELECT c.id, c.provider, c.document_id, c.client_id, c.contact_id, c.source, c.currency, c.amount_minor, c.status, c.provider_link_id, c.short_url,
-   c.expires_at, c.created_at, c.updated_at, c.last_refresh_at, c.paid_payment_id FROM checkout_sessions c WHERE c.id = ?1`;
+const CHECKOUT_OF_DOC_SQL = CHECKOUT_BY_ID_SQL;
 
 // ---- under /v1/invoices ----------------------------------------------------------------------------------------------------------------------------------
 

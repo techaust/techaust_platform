@@ -13,6 +13,7 @@
 //     billed to the client (Researched 2026-10-28, NPCI FAQ of 15 Sep 2026 (08-C RA-29): merchants may not pass the MDR on). OPEN (08-C RA-29): is GST charged on
 //     the MDR and invoiced to our GSTIN?
 
+import { GATEWAY_LINK_HOSTS, GATEWAY_LINK_URL_MAX, isGatewayLinkUrl } from "./gateway-rpc.ts";
 import type {
   CheckoutState,
   CheckoutStatusReport,
@@ -24,15 +25,18 @@ import { liveModeAllowed, type ProviderMode } from "./payments.ts";
 
 /** The only host the client calls (the live guard runs before any call). */
 export const RAZORPAY_API_ORIGIN = "https://api.razorpay.com";
-/** The hosts a payment link's `short_url` may be on (the portal refuses any other: 502). */
-export const RAZORPAY_LINK_HOSTS = ["rzp.io", "razorpay.com"] as const;
+/**
+ * The hosts a payment link's `short_url` may be on (the portal refuses any other: 502). One list (M6.2 review finding 12): `GATEWAY_LINK_HOSTS` in
+ * `@techaust/core/gateway-rpc`, which the portal's Worker and screens read too.
+ */
+export const RAZORPAY_LINK_HOSTS = GATEWAY_LINK_HOSTS.razorpay;
 
 const enc = new TextEncoder();
 const HEX64 = /^[0-9a-fA-F]{64}$/;
 /** The longest event id or provider reference a row holds (`webhook_events.event_id`, `PROVIDER_REF_MAX` in the db schema: generic, 255). */
 export const PROVIDER_REF_MAX = 255;
 /** The longest link URL a checkout row holds (`CHECKOUT_SHORT_URL_MAX` in the db schema). */
-export const SHORT_URL_MAX = 5000;
+export const SHORT_URL_MAX = GATEWAY_LINK_URL_MAX;
 
 /**
  * The imported HMAC keys, per isolate, by secret (CPU diagnosis, lead decision 5: a key is imported once, not per webhook). At most a handful of entries (the current
@@ -506,21 +510,8 @@ export function linkRequestOf(
   };
 }
 
-/** Whether a link's `short_url` is on Razorpay's own hosts over https (the portal answers 502 otherwise). */
-export function isRazorpayShortUrl(v: unknown): boolean {
-  if (typeof v !== "string" || v.length > SHORT_URL_MAX) return false;
-  try {
-    const u = new URL(v);
-    return (
-      u.protocol === "https:" &&
-      !u.username &&
-      !u.password &&
-      RAZORPAY_LINK_HOSTS.some((h) => u.hostname === h || u.hostname.endsWith(`.${h}`))
-    );
-  } catch {
-    return false;
-  }
-}
+/** Whether a link's `short_url` is on Razorpay's own hosts over https (the portal answers 502 otherwise): the one check, `isGatewayLinkUrl` (review finding 12). */
+export const isRazorpayShortUrl = (v: unknown): boolean => isGatewayLinkUrl("razorpay", v);
 
 // ---- methods, references, keys ------------------------------------------------------------------------------------------------------------------------
 

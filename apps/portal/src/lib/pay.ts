@@ -2,6 +2,7 @@
 // Processing state. The server decides everything again (the finance Worker's `createLink`); these checks only save a round trip and say it in 07-ZI's words.
 // Amounts are minor units read and compared through core (`parseMoney`, `compare`); nothing here adds money up.
 import { istDate, toIsoDate } from "@techaust/core/dates";
+import { isGatewayLinkUrl } from "@techaust/core/gateway-rpc";
 import { compare, formatMoney, money, parseMoney } from "@techaust/core/money";
 import { PAY_ZI } from "../copy-zi.ts";
 
@@ -24,20 +25,11 @@ export function partAmount(
   return { ok: true, minor: m.amount };
 }
 
-/** Razorpay's own hosts over https (the server checks the same before answering; the browser checks again before it leaves). */
-export function isRazorpayUrl(v: string): boolean {
-  try {
-    const u = new URL(v);
-    return (
-      u.protocol === "https:" &&
-      !u.username &&
-      !u.password &&
-      ["rzp.io", "razorpay.com"].some((h) => u.hostname === h || u.hostname.endsWith(`.${h}`))
-    );
-  } catch {
-    return false;
-  }
-}
+/**
+ * Razorpay's own hosts over https (the server checks the same before answering; the browser checks again before it leaves). One check and one host list for the
+ * portal's Worker, its screens and the finance Worker (`isGatewayLinkUrl` in `@techaust/core/gateway-rpc`; M6.2 review finding 12).
+ */
+export const isRazorpayUrl = (v: string): boolean => isGatewayLinkUrl("razorpay", v);
 
 // ---- back from Razorpay ---------------------------------------------------------------------------------------------------------------------------------
 

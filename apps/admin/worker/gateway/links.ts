@@ -15,6 +15,7 @@ import {
   razorpayAllowed,
 } from "@techaust/core/razorpay";
 import {
+  CHECKOUT_COLS,
   CLIENT_LINKS_SINCE_SQL,
   checkoutCreateStatement,
   checkoutEndStatement,
@@ -484,8 +485,7 @@ export async function refreshForClient(
   now = Date.now(),
 ): Promise<RefreshResult> {
   const c = await env.DB.prepare(
-    `SELECT c.id, c.provider, c.document_id, c.client_id, c.contact_id, c.source, c.currency, c.amount_minor, c.status, c.provider_link_id, c.short_url, c.expires_at,
-         c.created_at, c.updated_at, c.last_refresh_at, c.paid_payment_id
+    `SELECT ${CHECKOUT_COLS}
        FROM checkout_sessions c INDEXED BY checkout_sessions_document WHERE c.document_id = ?1 AND c.client_id = ?2 AND c.status IN ('live', 'stale')
        ORDER BY c.created_at DESC, c.id DESC LIMIT 1`,
   )

@@ -26,6 +26,7 @@ import {
 import { deedDraftStatements } from "@techaust/db/deeds";
 import {
   advanceWaitingSql,
+  CHECKOUT_BY_ID_SQL,
   CHECKOUT_BY_LINK_SQL,
   checkoutEndStatement,
   checkoutLiveStatement,
@@ -81,8 +82,6 @@ type DocState = {
 export const DOC_STATE_SQL = `SELECT d.type, d.status, d.frozen_at, d.currency, d.balance_minor, d.number_display, ${withdrawnSql("d")} AS withdrawn,
      k.display_name, k.anonymised_at, k.country, k.gst_status
    FROM documents d JOIN clients k ON k.id = d.client_id WHERE d.id = ?1`;
-const CHECKOUT_BY_ID_SQL =
-  "SELECT c.id, c.provider, c.document_id, c.client_id, c.contact_id, c.source, c.currency, c.amount_minor, c.status, c.provider_link_id, c.short_url, c.expires_at, c.created_at, c.updated_at, c.last_refresh_at, c.paid_payment_id FROM checkout_sessions c WHERE c.id = ?1";
 /** The payment row of a Razorpay payment we already hold, and whether it still waits for its automatic tax invoice (early check 2, finding 2). */
 const PAYMENT_SEEN_SQL = `SELECT p.id, CASE WHEN ${advanceWaitingSql("p")} THEN 1 ELSE 0 END AS waiting
    FROM payments p INDEXED BY payments_provider_ref WHERE p.provider = ?1 AND p.provider_payment_id = ?2`;

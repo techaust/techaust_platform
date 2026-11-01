@@ -1,9 +1,12 @@
 // 07-ZI (POR-06, ADM-PAY-02, ADM-PAY-12): the portal's client lines 1 to 16, word for word with docs/07-content-appendix/ZI-m6.2-razorpay.md (read here, so a
 // change to the page that isn't made in the code fails), and the pure rules of the amount dialog and the return from Razorpay.
+
+import { isGatewayLinkUrl } from "@techaust/core/gateway-rpc";
 import { describe, expect, it } from "vitest";
 import ziPage from "../../../docs/07-content-appendix/ZI-m6.2-razorpay.md?raw";
 import { PAY_ZI } from "./copy-zi.ts";
 import { forgetPay, isRazorpayUrl, partAmount, recalledPay, receivedAfter, rememberPay } from "./lib/pay.ts";
+import paySource from "./lib/pay.ts?raw";
 
 /** The quoted lines of 07-ZI's numbered client line `n` (before the staff section). */
 function quoted(n: number): string[] {
@@ -67,6 +70,16 @@ describe("leaving for Razorpay and coming back [ADM-PAY-02]", () => {
     expect(isRazorpayUrl("https://rzp.io.example.test/i/abc")).toBe(false);
     expect(isRazorpayUrl("https://user:pw@rzp.io/i/abc")).toBe(false);
     expect(isRazorpayUrl("javascript:alert(1)")).toBe(false);
+    // Review finding 12: one check and one host list, shared with the portal's Worker and the finance Worker.
+    for (const v of [
+      "https://rzp.io/i/abc123",
+      "https://pages.razorpay.com/pl_x",
+      "https://razorpay.com.evil.test/x",
+      "http://rzp.io/i/abc",
+      `https://rzp.io/${"a".repeat(5000)}`,
+    ])
+      expect(isRazorpayUrl(v), v.slice(0, 40)).toBe(isGatewayLinkUrl("razorpay", v));
+    expect(paySource).not.toMatch(/rzp\.io|razorpay\.com/);
   });
   it("review finding 5: counts only a payment newer than the newest one the page showed at the press", () => {
     const earlier = { amountMinor: 2_000_000, at: 1_000 };

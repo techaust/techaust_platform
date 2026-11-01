@@ -179,9 +179,12 @@ export const checkoutStatements = {
   refreshClaim: checkoutRefreshClaimStatement,
 } as const;
 
-const CHECKOUT_COLS =
+/** A checkout row's columns as every reader takes them (alias `c`; the admin's `CheckoutRow`). One list (M6.2 review finding 12). */
+export const CHECKOUT_COLS =
   "c.id, c.provider, c.document_id, c.client_id, c.contact_id, c.source, c.currency, c.amount_minor, c.status, c.provider_link_id, c.short_url, c.expires_at, c.created_at, c.updated_at, c.last_refresh_at, c.paid_payment_id";
 
+/** One checkout by its id (`?1`): a primary-key seek. */
+export const CHECKOUT_BY_ID_SQL = `SELECT ${CHECKOUT_COLS} FROM checkout_sessions c WHERE c.id = ?1`;
 /** The checkout of a Razorpay link (`?1` provider, `?2` the link id): one seek of `checkout_sessions_provider_link`. */
 export const CHECKOUT_BY_LINK_SQL = `SELECT ${CHECKOUT_COLS} FROM checkout_sessions c INDEXED BY checkout_sessions_provider_link WHERE c.provider = ?1 AND c.provider_link_id = ?2`;
 
