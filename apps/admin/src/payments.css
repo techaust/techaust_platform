@@ -282,6 +282,11 @@
     color: var(--color-text-muted);
   }
 
+  /* a reference names itself only at table width; in the cards the row's own label (data-label) says it (M6.2 re-check, medium 1) */
+  .pay-lines__ref-label {
+    display: none;
+  }
+
   /* the status chip and the other values keep their own width in the stacked rows (visual review, low) */
   .pay-lines td[data-label]:not(.num) > * {
     justify-self: start;

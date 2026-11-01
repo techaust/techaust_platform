@@ -328,6 +328,25 @@ function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onCha
   );
 }
 
+type Entry = Panel["payments"][number];
+
+/**
+ * What an entry's reference is (review finding 13, re-check medium 1): a bank payment's UTR, a Razorpay payment's own id (as Razorpay writes it, not the
+ * ledger's normalised reference), a TDS entry's Form 16A number. Each row carries its own label, so the cards below md never borrow the column's.
+ */
+export function referenceLabel(panel: Panel, r: Entry): string {
+  if (r.kind === "tds") return PAY_COPY.tdsCertificate;
+  return gatewayOf(panel, r.paymentId) ? GW_UI.paymentId : PAY_COPY.reference;
+}
+
+/** The reference column's heading: "Payment ID" only when every entry came through Razorpay (no bank payment, no TDS); else the UTR heading. */
+export function referenceHeading(panel: Panel): string {
+  const rows = panel.payments;
+  return rows.length > 0 && rows.every((r) => referenceLabel(panel, r) === GW_UI.paymentId)
+    ? GW_UI.paymentId
+    : PAY_COPY.reference;
+}
+
 /** The confirmed entries on this invoice, as ledger lines (a table; cards below md through the same markup). */
 function Entries(props: { panel: Panel; canCert: boolean; onCertificate: (paymentId: string) => void }) {
   const rows = props.panel.payments;
@@ -338,11 +357,7 @@ function Entries(props: { panel: Panel; canCert: boolean; onCertificate: (paymen
         <span>{PAY_UI.noneOnInvoice}</span>
       </p>
     );
-  // Review finding 13: a Razorpay row's reference is its payment id, not a UTR. The column says "Payment ID" when every payment row is one; in a mixed table
-  // the UTR heading stays for the bank rows and a Razorpay row names its value.
-  const paid = rows.filter((r) => r.kind !== "tds");
-  const allOnline = paid.length > 0 && paid.every((r) => gatewayOf(props.panel, r.paymentId));
-  const refHead = allOnline ? GW_UI.paymentId : PAY_COPY.reference;
+  const refHead = referenceHeading(props.panel);
   return (
     <table className="pay-lines">
       <caption className="visually-hidden">{PAY_COPY.heading}</caption>
@@ -359,86 +374,91 @@ function Entries(props: { panel: Panel; canCert: boolean; onCertificate: (paymen
         </tr>
       </thead>
       <tbody>
-        {rows.map((r) => (
-          <tr key={r.paymentId}>
-            <th scope="row" className="tnum">
-              <Link to={paymentHref(r.paymentId)} className="pay-row__link">
-                {day(r.receivedOn)}
-              </Link>
-            </th>
-            <td data-label={PAY_COPY.mode}>
-              {gatewayOf(props.panel, r.paymentId) ? (
-                <OnlineMode row={gatewayOf(props.panel, r.paymentId) as GatewayPaymentRow} />
-              ) : r.kind === "tds" ? (
-                <span className="pay-tds">
-                  <span>{PAY_UI.kindTds}</span>
-                  {r.tds?.section && (
-                    <span className="pay-lines__meta">
-                      {r.tds.section}
-                      {r.tds.rateBp !== null ? ` · ${bpToPercent(r.tds.rateBp)}\u00a0%` : ""}
-                    </span>
-                  )}
-                </span>
-              ) : r.mode ? (
-                MODE_LABELS[r.mode]
-              ) : (
-                ""
-              )}
-            </td>
-            <td data-label={refHead}>
-              {r.kind === "tds" ? (
-                r.tds?.certificateAwaited ? (
-                  <span className="pay-await">
-                    <span className="pay-badge">
-                      <Calendar size={16} />
-                      {PAY_COPY.certificateAwaited}
-                    </span>
-                    {props.canCert && (
-                      <button
-                        type="button"
-                        className="btn btn--text"
-                        onClick={() => props.onCertificate(r.paymentId)}
-                      >
-                        {PAY_UI.addCertificate}
-                      </button>
+        {rows.map((r) => {
+          const online = gatewayOf(props.panel, r.paymentId);
+          const refLabel = referenceLabel(props.panel, r);
+          // At table width a value the column heading doesn't name names itself; the cards below md show the row's own label instead (payments.css).
+          const ownLabel =
+            refLabel === refHead ? null : (
+              <span className="pay-lines__meta pay-lines__ref-label">{refLabel}</span>
+            );
+          return (
+            <tr key={r.paymentId}>
+              <th scope="row" className="tnum">
+                <Link to={paymentHref(r.paymentId)} className="pay-row__link">
+                  {day(r.receivedOn)}
+                </Link>
+              </th>
+              <td data-label={PAY_COPY.mode}>
+                {online ? (
+                  <OnlineMode row={online} />
+                ) : r.kind === "tds" ? (
+                  <span className="pay-tds">
+                    <span>{PAY_UI.kindTds}</span>
+                    {r.tds?.section && (
+                      <span className="pay-lines__meta">
+                        {r.tds.section}
+                        {r.tds.rateBp !== null ? ` · ${bpToPercent(r.tds.rateBp)}\u00a0%` : ""}
+                      </span>
                     )}
                   </span>
+                ) : r.mode ? (
+                  MODE_LABELS[r.mode]
                 ) : (
-                  <span className="docno">{r.tds?.certificateNo}</span>
-                )
-              ) : (
-                <>
-                  {!allOnline && gatewayOf(props.panel, r.paymentId) && (
-                    <span className="pay-lines__meta">{GW_UI.paymentId}</span>
-                  )}
-                  <span className="docno break">{r.reference}</span>
-                </>
-              )}
-            </td>
-            <td className="num tnum" data-label={PAY_UI.colAmount}>
-              {amountText(r.heldMinor, r.currency)}
-              {r.heldMinor !== r.amountMinor && (
-                <span className="pay-lines__meta">{`${PAY_UI.colAmount} ${amountText(r.amountMinor, r.currency)}`}</span>
-              )}
-            </td>
-            <td data-label={PAY_UI.colStatus}>
-              <PaymentPill status={r.status} />
-            </td>
-            <td data-label={PAY_COPY.proof}>
-              {gatewayOf(props.panel, r.paymentId) ? (
-                // M6.2: Razorpay's own record is the proof of an online payment; nothing to attach
-                <span className="pay-lines__meta pay-lines__nowrap">Razorpay</span>
-              ) : r.hasProof ? (
-                <a href={paymentsApi.proofHref(r.paymentId)} className="pay-proof-link">
-                  <FileText size={16} />
-                  {PAY_UI.openProof}
-                </a>
-              ) : (
-                <span className="pay-lines__meta pay-lines__nowrap">{PAY_UI.noProof}</span>
-              )}
-            </td>
-          </tr>
-        ))}
+                  ""
+                )}
+              </td>
+              <td data-label={refLabel}>
+                {ownLabel}
+                {r.kind === "tds" ? (
+                  r.tds?.certificateAwaited ? (
+                    <span className="pay-await">
+                      <span className="pay-badge">
+                        <Calendar size={16} />
+                        {PAY_COPY.certificateAwaited}
+                      </span>
+                      {props.canCert && (
+                        <button
+                          type="button"
+                          className="btn btn--text"
+                          onClick={() => props.onCertificate(r.paymentId)}
+                        >
+                          {PAY_UI.addCertificate}
+                        </button>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="docno">{r.tds?.certificateNo}</span>
+                  )
+                ) : (
+                  <span className="docno break">{online?.providerPaymentId ?? r.reference}</span>
+                )}
+              </td>
+              <td className="num tnum" data-label={PAY_UI.colAmount}>
+                {amountText(r.heldMinor, r.currency)}
+                {r.heldMinor !== r.amountMinor && (
+                  <span className="pay-lines__meta">{`${PAY_UI.colAmount} ${amountText(r.amountMinor, r.currency)}`}</span>
+                )}
+              </td>
+              <td data-label={PAY_UI.colStatus}>
+                <PaymentPill status={r.status} />
+              </td>
+              <td data-label={PAY_COPY.proof}>
+                {online ? (
+                  // M6.2: Razorpay's own record is the proof of an online payment; nothing to attach
+                  <span className="pay-lines__meta pay-lines__nowrap">Razorpay</span>
+                ) : r.hasProof ? (
+                  <a href={paymentsApi.proofHref(r.paymentId)} className="pay-proof-link">
+                    <FileText size={16} />
+                    {PAY_UI.openProof}
+                  </a>
+                ) : (
+                  <span className="pay-lines__meta pay-lines__nowrap">{PAY_UI.noProof}</span>
+                )}
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );
