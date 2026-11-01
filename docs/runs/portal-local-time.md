@@ -17,7 +17,7 @@ Usage:
 **Where to look** (grep `IST`, `Asia/Kolkata`, `strftime` in `apps/portal`): `worker/offer-sql.ts`, `offer-core.ts`, `offers.ts`, `deeds.ts`, `invoice-summary.ts`, `invoices.ts`; SPA `src/lib/{offers,invoices,pay}.ts`, `src/api.ts`, `src/screens/{home,document-page}.tsx`, `src/components/decision/decision-panel.tsx`; previews `src/preview/sample-*.ts`. Every **time of day** shown on screen moves to the client's clock; a **date alone** (due date, validity "(IST)", the deed's dates, the PDF) stays as it is.
 
 **How:**
-- one shared helper in the portal SPA (e.g. `src/lib/local-time.ts`): `Intl.DateTimeFormat(undefined-free: "en-IN" day-month order as today, `timeZone` from `Intl.DateTimeFormat().resolvedOptions()`, `timeZoneName: "short"`); output "25 Oct 2026, 07:12 GMT" (same day-month-year and 24-hour layout as the IST text it replaces);
+- one shared helper in the portal SPA (e.g. `src/lib/local-time.ts`): `Intl.DateTimeFormat("en-IN", { timeZone: <the browser's zone from resolvedOptions()>, timeZoneName: "short", … })` (day-month order as today); output "25 Oct 2026, 07:12 GMT" (same day-month-year and 24-hour layout as the IST text it replaces);
 - a zone name the runtime gives as an offset only ("GMT+5:30" style) is shown as given; an unknown or failing zone → the server's IST text (never a blank);
 - the first render (and without scripts) is the server's IST text, replaced after hydration without a layout shift (same width class; reserve with `min-width` in `ch` if needed);
 - copy lines that embed a time ("… on {date} at {time} IST") keep their wording with the zone name from the helper in place of "IST"; no new copy, so no owner page (if a line can't take it, report it, don't rewrite it).
