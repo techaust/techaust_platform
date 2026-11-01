@@ -165,8 +165,29 @@ function globalScopeSandbox(collect) {
   };
 }
 
-/** Workerd's clock reads 0 during start-up: `Date.now()` and `new Date()` in the sandbox do too (run before the timed part). */
-const FROZEN_CLOCK = `{ const D = Date; globalThis.Date = class Date extends D { constructor(...a) { super(...(a.length ? a : [0])); } static now() { return 0; } }; }`;
+/**
+ * `Date` as workerd's start-up sees it (its clock reads 0 until the first request): `Date.now()` and `new Date()` read 0, `new Date(x)` is unchanged, and
+ * `Date()` called without `new` returns the string of that 0 instant, as workerd's does (review finding 5: a class threw there). The real `Date` stays the
+ * prototype and the source of the statics, so `instanceof Date`, `Date.UTC` and `Date.parse` still work. Self-contained (only its argument, `Reflect` and
+ * `Object`), so the sandbox runs its source as is; scripts/cpu-probe-runtime.mjs `underGlobalScopeRules` uses the same function (review finding 6).
+ */
+export function startupDate(RealDate) {
+  function StartupDate(...a) {
+    if (!new.target) return new RealDate(0).toString();
+    return Reflect.construct(
+      RealDate,
+      a.length ? a : [0],
+      new.target === StartupDate ? RealDate : new.target,
+    );
+  }
+  Object.setPrototypeOf(StartupDate, RealDate);
+  StartupDate.prototype = RealDate.prototype;
+  StartupDate.now = () => 0;
+  return StartupDate;
+}
+
+/** Workerd's clock at start-up in the sandbox (run before the timed part): `startupDate` over the sandbox's own `Date`. */
+const FROZEN_CLOCK = `globalThis.Date = (${startupDate.toString()})(Date);`;
 
 /**
  * The fastest start-up time (ms) of a bundle over fresh `vm` contexts: compile + top-level evaluation, PLUS the start-up work the entry hands to the probe

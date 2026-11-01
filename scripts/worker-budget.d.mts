@@ -22,6 +22,8 @@ export const BUDGETS: {
 export const STARTUP_PROBE: "__techaustStartupProbe";
 /** How long the probe waits for an entry's start-up work to settle before it fails the bundle. */
 export const SETTLE_LIMIT_MS: number;
+/** `Date` as workerd's start-up sees it: `Date.now()` and `new Date()` read 0, `Date()` is the string of 0, `new Date(x)` unchanged (review findings 5, 6). */
+export function startupDate(RealDate: DateConstructor): DateConstructor;
 /** Compile + evaluation + the start-up work handed to the probe, under workerd's global-scope rules; the fastest of `runs`. */
 export function measureStartup(code: string, runs?: number): Promise<number>;
 export function planNote(size: number, budget: Budget): string | null;
