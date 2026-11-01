@@ -35,7 +35,7 @@ import {
 import { readInvoice } from "../invoices.ts";
 import { lineRows } from "../quote-model.ts";
 import { mutateSystem } from "../system.ts";
-import { bellNeedsReview, reviewReason } from "./messages.ts";
+import { advanceBlockersText, bellNeedsReview, reviewReason } from "./messages.ts";
 import { REVIEW_LINK } from "./settle.ts";
 
 export type AdvanceEnv = { DB: D1Database; PDF_QUEUE: Queue };
@@ -92,7 +92,8 @@ async function blocked(
 ): Promise<IssueAdvanceResult> {
   const reviewId = uuidv7();
   const now = Date.now();
-  const reason = reviewReason("advance_blocked", { blocker: blockers.join(", ") });
+  // Review finding 4: the codes in words, never the codes themselves.
+  const reason = reviewReason("advance_blocked", { blocker: advanceBlockersText(blockers) });
   await mutateSystem(env, {
     action: "payment.gateway_advance_blocked",
     entityType: "payment",

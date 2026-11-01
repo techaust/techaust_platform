@@ -16,6 +16,7 @@ import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
 import {
+  advanceBlockerLine,
   allowedResolutions,
   canRetry,
   GW,
@@ -24,7 +25,7 @@ import {
   itemReason,
   RESOLUTION_LABELS,
 } from "../../lib/gateway.ts";
-import { blockerLine, INV_COPY, typeLabel } from "../../lib/invoices.ts";
+import { INV_COPY, typeLabel } from "../../lib/invoices.ts";
 import { amountText } from "../../lib/payments.ts";
 
 /** What tells two rows apart for a screen reader: the amount and the document (or the client). */
@@ -80,7 +81,7 @@ export function ReviewList(props: {
     try {
       const r = await paymentsApi.retryReview(it.id);
       const said = GW_UI.retried[r.result] ?? GW_UI.retried.other;
-      const blockers = (r.blockers ?? []).map((b) => blockerLine({ code: b }, "INR"));
+      const blockers = (r.blockers ?? []).map(advanceBlockerLine);
       toast(r.result === "blocked" ? "error" : "success", [said, ...blockers].join(" "));
       reload();
     } catch (e) {

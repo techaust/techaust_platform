@@ -19,7 +19,14 @@ export const BELL_SIGNATURES =
 
 // ---- S20: review reasons ----------------------------------------------------------------------------------------------------------------------------------
 // In `reasons.ts` (pure), so the admin SPA's "Needs review" list reads the same words; re-exported here for the Worker.
-export { NOT_PAYABLE_WORDS, notPayableWords, type ReasonFacts, reviewReason } from "./reasons.ts";
+export {
+  ADVANCE_BLOCKER_WORDS,
+  advanceBlockersText,
+  NOT_PAYABLE_WORDS,
+  notPayableWords,
+  type ReasonFacts,
+  reviewReason,
+} from "./reasons.ts";
 
 // ---- S24: the API messages of section C's new error codes --------------------------------------------------------------------------------------------------
 

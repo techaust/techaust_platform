@@ -5,7 +5,7 @@
 // review reasons are `apps/admin/worker/gateway/reasons.ts` (one copy for the bells and this list). Lines marked "designer's draft" are what 07-ZI lacked; the run
 // file lists them for the lead. Money is formatted only through core; nothing here adds up an amount.
 import { type NotPayableReason, onlineMinimumOf } from "@techaust/core/online-pay";
-import { notPayableWords, reviewReason } from "../../worker/gateway/reasons.ts";
+import { advanceBlockerWords, notPayableWords, reviewReason } from "../../worker/gateway/reasons.ts";
 import type { PaymentLinkStatus, ReviewItem, ReviewResolution } from "../api.ts";
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
@@ -155,8 +155,18 @@ export const canRetry = (it: Pick<ReviewItem, "kind" | "payment_id" | "facts">):
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isSafeInteger(v) ? v : null);
 const str = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
 
-/** A blocker code in 07-R/07-S words, its last full stop dropped so it sits inside S20's sentence. */
-const blockerWords = (code: string) => blockerLine({ code }, "INR").replace(/\.$/, "");
+/**
+ * A blocker of the automatic tax invoice in words, its last full stop dropped so it sits inside S20's sentence: the gateway advance's own codes from
+ * `ADVANCE_BLOCKER_WORDS` (review finding 4: shared with the Worker's bell), the invoice's issue checks in their 07-R/07-S words.
+ */
+const blockerWords = (code: string) =>
+  advanceBlockerWords(code) ?? blockerLine({ code }, "INR").replace(/\.$/, "");
+
+/** The same as a sentence of its own (the "Try again" toast). */
+export const advanceBlockerLine = (code: string): string => {
+  const w = advanceBlockerWords(code);
+  return w ? `${w.charAt(0).toUpperCase()}${w.slice(1)}.` : blockerLine({ code }, "INR");
+};
 
 /** S20 for one item, from its kind and its whitelisted facts (a fact the row doesn't carry reads as S20's own fallback). */
 export function itemReason(it: Pick<ReviewItem, "kind" | "facts" | "amount_minor">): string {

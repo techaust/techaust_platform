@@ -243,6 +243,13 @@ describe("finding 2: the automatic tax invoice is never lost [ADM-INV-10; 08-C R
       "SELECT id FROM review_items WHERE payment_id = ?1 AND kind = 'advance_blocked'",
       paymentId,
     );
+    // Review finding 4: the owners' bell says why in words, never the code.
+    const bell = await one<{ title: string }>(
+      "SELECT title FROM notifications WHERE kind = 'payment.review' AND entity_id = ?1 LIMIT 1",
+      item?.id,
+    );
+    expect(bell?.title).toContain("the owner who issued the proforma is no longer an active owner");
+    expect(bell?.title).not.toContain("issuer_not_owner");
     const dismissed = await call(`/payments/review/${item?.id}/resolve`, {
       cookie: o.cookie,
       body: { resolution: "dismissed", note: "Will issue by hand" },
