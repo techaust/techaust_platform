@@ -352,3 +352,12 @@ Branch `feat/t11-deed-fix1` (from `origin/feat/t11-deed`), pushed. `origin/main`
 
 ### Open questions
 None. One reading recorded: M6 redacts the snapshot's address and GSTIN as well as the names, and the accepted version's frozen contact name and email (the offers' `redactionNames` for a gone client), because staff typed the Schedules while the client was live.
+
+### Re-check of fix round 1 (lead, 2026-11-01): **APPROVE**
+No critical or high finding in the review, so the lead re-checked instead of a second reviewer run. Read: M1 (both numbering write guards and the counter upsert check `deeds`; race test 409 `series_in_use`), M4 (portal rows `finance`; `FINANCE_CONTACT_SQL` held in both queries; `DEED_CONTACTS_SQL` `can_see_finance = 1`; tests for the 404 and no email), L2 (`?document=` required, ≤ 10 rows, indexed), M2, M3 (`deedPdfWaiting` unit test), M6 (view-only redaction; seal and PDFs unchanged, tested), L1, L3. `pnpm check` and `pnpm test` green on `1ef241be` (core 2,014, db 649, admin 3,966, portal 697, jobs 583, …); Worker bytes within limits (jobs 685,963). Not verified in a browser: the M3 polling and the portal card's finance gate (unit tests and typecheck only).
+
+## Integration notes (lead, 2026-11-01)
+- docs/04 §9 gains the `deeds.*` rows (Owner and Staff view; Staff edit Schedules; Owner finalise and upload with step-up, cancel, check again, render again).
+- Merged to main through its own PR **before M6.2** (T11 owns 0061/0062; M6.2 renumbers onto them and adds `deedDraftStatements` to its gateway batches).
+- Lead decisions for 13: L1–L8; the early-check decisions (a)–(d); the owner's answers 1, 2, 8 and the audience (finance contacts only); the triage items 3–7; 07-ZJ approved under delegation.
+- Follow-ups for 12: an Owner "Email again" for a failed `deed.signed` send; one look at a staging deed PDF from Browser Run; the email in real mail clients; the Delivery 0.2 effective date set to launch day with the others; the 375 px tab strip scroll (existing `Tabs`); the M3 polling and portal finance gate checked in a browser.
