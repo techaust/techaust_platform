@@ -20,6 +20,7 @@ import {
   STRIPE_API_VERSION,
   STRIPE_EVENT_TYPES,
   STRIPE_JUDGE_VERDICTS,
+  STRIPE_MAX_V1,
   type StripeCheckoutRow,
   type StripeSession,
   SUFFIX_MAX,
@@ -77,6 +78,19 @@ describe("verifyStripeSignature [JOB-HOOK-01, V6, L2]", () => {
     expect(await verifyStripeSignature(BODY, old, [SECRET, null, "", undefined], NOW)).toBe(
       "signature_invalid",
     );
+    // Early check 1, F2: at most four v1 values (counted as sent); a repeated value is tried once.
+    const pad = (n: number) => Array.from({ length: n }, (_, i) => `v1=${String(i).repeat(64).slice(0, 64)}`);
+    expect(
+      await verifyStripeSignature(BODY, [`t=${T}`, ...pad(3), `v1=${good}`].join(","), [SECRET], NOW),
+    ).toBe("ok");
+    expect(
+      await verifyStripeSignature(BODY, [`t=${T}`, ...pad(4), `v1=${good}`].join(","), [SECRET], NOW),
+    ).toBe("signature_malformed");
+    expect(
+      await verifyStripeSignature(BODY, [`t=${T}`, ...Array(5).fill(`v1=${good}`)].join(","), [SECRET], NOW),
+    ).toBe("signature_malformed");
+    expect(await verifyStripeSignature(BODY, `t=${T},v1=${good},v1=${good}`, [SECRET], NOW)).toBe("ok");
+    expect(STRIPE_MAX_V1).toBe(4);
     // Upper-case hex decodes to the same bytes.
     expect(await verifyStripeSignature(BODY, `t=${T},v1=${good.toUpperCase()}`, [SECRET], NOW)).toBe("ok");
   });
@@ -210,6 +224,9 @@ describe("parseStripeEvent and stripeEventFacts [JOB-HOOK-01, -02, L5, ADM-PAY-1
   it("an unknown type is `other` with nothing read from its object", () => {
     const r = parseStripeEvent(event("charge.refunded", {}, { object: "charge" }));
     expect(r).toMatchObject({ ok: true, value: { type: "other", sessionId: null, techaust: null } });
+    // Early check 1, F3: a name with a digit is read (and is `other`), never refused.
+    const v2 = parseStripeEvent(event("v2.core.event_destination.ping", {}, { object: "x" }));
+    expect(v2).toMatchObject({ ok: true, value: { type: "other", name: "v2.core.event_destination.ping" } });
   });
 
   it("the other domain's session (no or wrong marks) is not ours", () => {
@@ -444,7 +461,10 @@ function fetched(
         created: T,
         status: "succeeded",
         captured: true,
-        payment_method_details: { type: "card", card: { last4: "4242", brand: "visa" } },
+        refunded: false,
+        amount_refunded: 0,
+        disputed: false,
+        payment_method_details: { type: "card", card: { last4: "4242", brand: "visa", country: "US" } },
         billing_details: { name: "Jane Payer" },
         balance_transaction:
           bt === undefined
@@ -502,7 +522,16 @@ describe("readStripeSession [ADR 0008, L10]", () => {
         currency: "usd",
         metadata: { checkoutId: CHECKOUT_ID, documentId: DOC_ID, env: "staging" },
       },
-      charge: { created: NOW, status: "succeeded", captured: true, methodType: "card" },
+      charge: {
+        created: NOW,
+        status: "succeeded",
+        captured: true,
+        methodType: "card",
+        refunded: false,
+        amountRefunded: 0,
+        disputed: false,
+        cardCountry: "US",
+      },
       bt: { currency: "inr", amount: 41_500_00, fee: 1_800_00, feeTax: 274_58 },
     });
     expect(JSON.stringify(s)).not.toMatch(/Jane|4242|visa|example\.test/);
@@ -527,6 +556,14 @@ describe("readStripeSession [ADR 0008, L10]", () => {
     expect(read(fetched({}, {}, {}, null)).bt).toBeNull();
     expect(read(fetched({}, { latest_charge: null })).charge).toBeNull();
     expect(read(fetched({}, {}, { payment_method_details: null })).charge?.methodType).toBeNull();
+    // The card's country only from a card, and only as two upper-case letters.
+    for (const pmd of [
+      null,
+      { type: "link", card: { country: "US" } },
+      { type: "card", card: { country: "us" } },
+      { type: "card", card: null },
+    ])
+      expect(read(fetched({}, {}, { payment_method_details: pmd })).charge?.cardCountry).toBeNull();
     expect(read(fetched({}, {}, {}, { amount: 100, currency: "inr", fee: 3 })).bt).toEqual({
       currency: "inr",
       amount: 100,
@@ -552,6 +589,10 @@ describe("readStripeSession [ADR 0008, L10]", () => {
       fetched({}, { latest_charge: "ch_3Qabc" }),
       fetched({}, {}, { created: "now" }),
       fetched({}, {}, { captured: "yes" }),
+      fetched({}, {}, { refunded: undefined }),
+      fetched({}, {}, { disputed: "no" }),
+      fetched({}, {}, { amount_refunded: -1 }),
+      fetched({}, {}, { amount_refunded: undefined }),
       fetched({}, {}, {}, "txn_1"),
       fetched({}, {}, {}, { amount: 1.5, currency: "inr", fee: 0 }),
       fetched({}, {}, {}, { amount: 100, currency: "inr", fee: -1 }),
@@ -591,11 +632,37 @@ describe("judgeStripeSession [ADR 0008, L5, L6; every verdict]", () => {
     ["not_captured", fetched({}, { latest_charge: null }), row],
     ["not_captured", fetched({}, {}, { status: "pending" }), row],
     ["not_captured", fetched({}, {}, { captured: false }), row],
+    // Early check 1, F1: money returned or contested after the charge succeeded is never confirmed (status and captured stay as they were).
+    ["not_captured", fetched({}, {}, { refunded: true, amount_refunded: 500_00 }), row],
+    ["not_captured", fetched({}, {}, { amount_refunded: 1_00 }), row],
+    ["not_captured", fetched({}, {}, { disputed: true }), row],
+    // A refund also wins over a later amount check.
+    ["not_captured", fetched({ amount_total: 499_99 }, {}, { amount_refunded: 1 }), row],
     ["currency_mismatch", fetched({ currency: "eur" }), row],
     ["currency_mismatch", fetched({}, { currency: "inr" }), row],
     ["currency_mismatch", fetched(), { ...row, currency: "INR" }],
     ["amount_mismatch", fetched({ amount_total: 499_99 }), row],
     ["amount_mismatch", fetched({}, { amount_received: 499_00 }), row],
+    // Lead decision 1 (08-C RA-38): a card issued in India, a card with no country, or no card, is never an export receipt.
+    [
+      "not_export_receipt",
+      fetched({}, {}, { payment_method_details: { type: "card", card: { country: "IN" } } }),
+      row,
+    ],
+    ["not_export_receipt", fetched({}, {}, { payment_method_details: { type: "card", card: {} } }), row],
+    ["not_export_receipt", fetched({}, {}, { payment_method_details: { type: "card" } }), row],
+    ["not_export_receipt", fetched({}, {}, { payment_method_details: { type: "link" } }), row],
+    ["not_export_receipt", fetched({}, {}, { payment_method_details: null }), row],
+    // An amount mismatch is named first.
+    [
+      "amount_mismatch",
+      fetched(
+        { amount_total: 499_99 },
+        {},
+        { payment_method_details: { type: "card", card: { country: "IN" } } },
+      ),
+      row,
+    ],
   ] as const)("%s", (verdict, session, r) => {
     expect(judgeStripeSession(r, read(session), false)).toEqual({ ok: false, verdict });
   });

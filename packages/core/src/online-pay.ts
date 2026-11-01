@@ -30,8 +30,9 @@ export type OnlineRule = {
 
 /**
  * One rule table for every gateway (M6.3 run file B, L14; the SQL twin is `onlinePayableSql` in `@techaust/db/sql-rules`, held to this table by a db test):
- *   - razorpay (M6.2): INR documents of domestic clients (owner, 2026-11-01, Q3 A; OPEN (08-C RB-01): does a USD invoice paid through a PA-CB that credits us in INR
- *     count as "settled in INR"?): tax invoice, debit note, proforma; ₹1 minimum; a proforma in whole rupees;
+ *   - razorpay (M6.2): INR documents of domestic clients (owner, 2026-11-01, Q3 A; a USD invoice credited to us in INR through a gateway keeps the 9-month
+ *     realisation period: Settled by the lead on the safest reading, 2026-10-30 (08-C RB-01)): tax invoice, debit note, proforma; ₹1 minimum; a proforma in whole
+ *     rupees;
  *   - stripe (M6.3, L1): USD documents of overseas clients: export invoice, its debit note, proforma; USD 0.50 minimum (`STRIPE_MIN_AMOUNT_MINOR` in
  *     `@techaust/core/stripe`, a test compares the two; UNCONFIRMED, V19); cents allowed on a proforma (its tax invoice for the payment received is issued by the
  *     Owner with the day's rate, Q1 A).
@@ -160,8 +161,9 @@ export const DEFAULT_USD_PART_FLOOR_MINOR = 100_00;
 
 /**
  * M6.3 (L9): the default largest online payment on a USD document, USD 25,000 (`overseasOnlineMaxUsdMinor`, shared with PayPal in M6.4). Researched 2026-10-28, RBI
- * PA Directions 2025, para 10(f) (08-C RB-07): ₹25 lakh per PA-CB transaction; USD 25,000 stays under it while the rupee is below ₹100 per USD (today's rate not
- * verified; the Owner keeps the setting below the limit at the day's rate, S18).
+ * PA Directions 2025, para 11(d) (08-C RB-07): ₹25 lakh per PA-CB transaction (PayPal, M6.4); USD 25,000 stays under it while the rupee is below ₹100 per USD
+ * (today's rate not verified; the Owner keeps the setting below the limit at the day's rate, S18). Stripe is not a PA-CB (08-C RA-38), so for Stripe this
+ * maximum is the L9 safest setting, not a legal limit (lead, 2026-11-02; 08-C RB-07).
  */
 export const DEFAULT_ONLINE_MAX_USD_MINOR = 25_000_00;
 
@@ -187,7 +189,7 @@ export type PayAmountVerdict =
 /**
  * Whether `amountMinor` may be paid online against `balanceMinor` (07-ZI lines 4 to 7), in this order: a positive safe integer (else below the minimum); at most the
  * balance (`amount_above_balance`); at most the online maximum when one is given (M6.3 L9: `amount_above_maximum` with `maximumMinor`; Researched 2026-10-28, RBI PA
- * Directions 2025, para 10(f) (08-C RB-07): ₹25 lakh per PA-CB transaction); at least the minimum (`onlineMinimumOf`: the floor, or the balance if lower;
+ * Directions 2025, para 11(d) (08-C RB-07): ₹25 lakh per PA-CB transaction; for Stripe, not a PA-CB, the L9 safest setting, not a legal limit); at least the minimum (`onlineMinimumOf`: the floor, or the balance if lower;
  * `amount_below_minimum` with `minimumMinor`); and in whole rupees when asked (`wholeRupees`: a Razorpay proforma, LD28; `amount_not_whole_rupee`). The part-payment
  * floor is a commercial setting (Researched 2026-10-29, Razorpay `first_min_partial_amount` (08-C RB-39)); links are made for one fixed amount, so the floor is
  * applied here, not by the gateway.
@@ -230,6 +232,11 @@ export const REVIEW_KINDS = [
   "proforma_overpaid",
   "client_gone",
   "unreadable_event",
+  /**
+   * M6.3 (lead, 2026-11-02, early check 1 decision 1): a USD card payment whose card was issued in India, or whose country Stripe did not give, is not an inflow of
+   * foreign exchange, so it is recorded pending and never confirmed by the system (Settled by the lead on the safest reading, 2026-11-02 (08-C RA-38)).
+   */
+  "not_export_receipt",
 ] as const;
 export type ReviewKind = (typeof REVIEW_KINDS)[number];
 export const REVIEW_RESOLUTIONS = ["confirmed", "advance_issued", "left_as_credit", "dismissed"] as const;

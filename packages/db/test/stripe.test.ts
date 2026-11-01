@@ -800,6 +800,60 @@ describe("STALE_LIVE_CHECKOUTS_SQL and the new index [L6, L13, ADM-INV-17]", () 
     expect(STALE_LIVE_CHECKOUTS_SQL).toContain(`LIMIT ${STALE_LIVE_LIMIT}`);
   });
 
+  it("Stripe's rows only (early check 1, F4): a Razorpay link past its expiry is never read", async () => {
+    const base = 1_000_000;
+    const inrClient = await mkClientRow({ currency: "INR" });
+    const inrContact = await mkContact(inrClient);
+    const inrDoc = await mkDoc(inrClient, { type: "tax_invoice", currency: "INR" });
+    const id = uuidv7();
+    const now = tick();
+    const made = await checkoutCreateStatement(db(), {
+      id,
+      provider: "razorpay",
+      documentId: inrDoc,
+      clientId: inrClient,
+      source: "portal",
+      contactId: inrContact,
+      docTokenId: null,
+      createdBy: null,
+      amountMinor: 50_000,
+      floorMinor: 10_000,
+      expiresAt: now + 3_600_000,
+      now,
+    }).run();
+    expect(made.meta.changes).toBe(1);
+    await checkoutLiveStatement(db(), {
+      id,
+      providerLinkId: `plink_${uuidv7().replaceAll("-", "").slice(0, 14)}`,
+      shortUrl: "https://rzp.io/rzp/abc",
+      expiresAt: base + 3_600_000,
+      now: tick(),
+    }).run();
+    expect(
+      await first<{ provider: string }>("SELECT provider FROM checkout_sessions WHERE id = ?1", id),
+    ).toEqual({
+      provider: "razorpay",
+    });
+    const cutoff = base + 3_600_000 + 15 * 60_000 + 1;
+    expect((await all<{ id: string }>(STALE_LIVE_CHECKOUTS_SQL, cutoff)).map((r) => r.id)).not.toContain(id);
+  });
+
+  it("the review kind not_export_receipt is accepted (lead decision 1, 08-C RA-38)", async () => {
+    const tail = (
+      await first<{ sql: string }>(
+        "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'review_items_values_insert'",
+      )
+    )?.sql;
+    expect(tail).toContain("'not_export_receipt'");
+    expect(
+      (
+        await first<{ sql: string }>(
+          "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'review_items_values_update'",
+        )
+      )?.sql,
+    ).toContain("'not_export_receipt'");
+  });
+
   const plan = async (sql: string, ...binds: unknown[]) =>
     (await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, ...binds)).map((r) => r.detail).join("\n");
 

@@ -1405,6 +1405,39 @@ describe("M6.1: the advance batch writes the money onto the ledger [L4, L5; 08-C
     });
   });
 
+  it("M6.3 early check 1, F6: a pending entry that asks for another proforma, or for nothing, freezes nothing for this one", async () => {
+    const w = await world();
+    const staff = uuidv7();
+    await run(
+      "INSERT INTO staff_users (id, email, name, role, status) VALUES (?1, ?2, 'Staff', 'staff', 'active')",
+      staff,
+      `${staff}@example.com`,
+    );
+    const pending = async (requested: string | null) => {
+      const pid = uuidv7();
+      await run(
+        "INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, requested_allocations, recorded_by, recorded_at) VALUES (?1, ?2, 'payment', 'manual', 'pending_verification', 'INR', 59000, '2026-10-27', 'neft', ?3, ?4, 1)",
+        pid,
+        w.clientId,
+        requested,
+        staff,
+      );
+      return pid;
+    };
+    // Same client, amount, day and currency: only the proforma it asks for differs.
+    const other = await pending(JSON.stringify([{ documentId: uuidv7(), amountMinor: 59_000 }]));
+    const bare = await pending(null);
+    for (const pid of [other, bare]) {
+      const a = await advanceArgs(w, { paymentId: pid }, 59_000);
+      await rejects(runAdvance(a), /issue did not freeze/);
+      expect(await first("SELECT status FROM payments WHERE id = ?", pid)).toEqual({
+        status: "pending_verification",
+      });
+      expect(await first("SELECT id FROM documents WHERE id = ?", a.documentId)).toBeNull();
+    }
+    expect(await proformaState(w.proformaId)).toMatchObject({ paid_minor: 0 });
+  });
+
   it("early check 2, finding 2: the pending entry confirmed elsewhere between the read and the batch (allocations: []) freezes nothing and writes no receipt", async () => {
     const w = await world();
     const staff = uuidv7();

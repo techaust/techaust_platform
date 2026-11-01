@@ -393,7 +393,8 @@ export const paymentTermsSettings = z
     onlineMinPartialUsdMinor: minor,
     /**
      * M6.3 (L9): the largest single online payment on a USD document (USD minor; at least one cent), shared with PayPal (M6.4). Owner only. Researched 2026-10-28,
-     * RBI PA Directions 2025, para 10(f) (08-C RB-07): ₹25 lakh per PA-CB transaction; the Owner keeps this below it at the day's rate (S18).
+     * RBI PA Directions 2025, para 11(d) (08-C RB-07): ₹25 lakh per PA-CB transaction (PayPal); the Owner keeps this below it at the day's rate (S18). Stripe is
+     * not a PA-CB (08-C RA-38): for Stripe this is the L9 safest setting, not a legal limit (lead, 2026-11-02).
      */
     overseasOnlineMaxUsdMinor: intBetween(1),
     /**
@@ -609,8 +610,8 @@ export const SETTINGS_DEFAULTS: Settings = {
     // The default part-payment floor (docs/04 ADM-SET-05): INR 10,000. Researched 2026-10-29, Razorpay first_min_partial_amount (08-C RB-39): a
     // commercial default, no regulatory floor. One figure, in core `online-pay` (the portal reads it when the group was never saved).
     razorpayMinPartialInrMinor: DEFAULT_PART_FLOOR_MINOR,
-    // M6.3: USD 100 (owner, 2026-11-01, Q2 A) and USD 25,000 (L9; Researched 2026-10-28, RBI PA Directions 2025, para 10(f) (08-C RB-07)). One figure each, in core
-    // `online-pay`.
+    // M6.3: USD 100 (owner, 2026-11-01, Q2 A) and USD 25,000 (L9; Researched 2026-10-28, RBI PA Directions 2025, para 11(d) (08-C RB-07); for Stripe, not a
+    // PA-CB, the safest setting, not a legal limit). One figure each, in core `online-pay`.
     onlineMinPartialUsdMinor: DEFAULT_USD_PART_FLOOR_MINOR,
     overseasOnlineMaxUsdMinor: DEFAULT_ONLINE_MAX_USD_MINOR,
     // OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only: is a ₹10,000 website-use cap enforceable against a consumer? INR 10,000 is the figure the site printed before this setting existed.

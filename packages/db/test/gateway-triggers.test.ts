@@ -33,6 +33,7 @@ import {
   PAYMENT_PROVIDERS_0064,
   PAYMENT_PROVIDERS_0066,
   REVIEW_KINDS_0064,
+  REVIEW_KINDS_0066,
   REVIEW_RESOLUTIONS_0064,
   REVIEW_SOURCES_0064,
   WEBHOOK_EVENT_STATUSES_0064,
@@ -161,7 +162,8 @@ describe("0063 and 0064: no rebuild, the pinned lists [run file A]", () => {
     expect(CHECKOUT_STATUSES_0064).toEqual(CHECKOUT_STATUSES);
     expect(REVIEW_SOURCES_0064).toEqual(REVIEW_SOURCES);
     expect(REVIEW_RESOLUTIONS_0064).toEqual(REVIEW_RESOLUTIONS);
-    expect(REVIEW_KINDS_0064).toEqual(REVIEW_KINDS);
+    expect(REVIEW_KINDS_0066).toEqual(REVIEW_KINDS);
+    expect(REVIEW_KINDS_0064).toEqual(REVIEW_KINDS.filter((k) => k !== "not_export_receipt"));
   });
 });
 

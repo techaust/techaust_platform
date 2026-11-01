@@ -242,10 +242,12 @@ export const STALE_LIVE_AFTER_MS = 15 * 60_000;
 /**
  * M6.3 (L6, L13): the sweep's third read: live checkouts whose expiry passed 15 minutes ago (`?1` = now − 15 minutes) and that were not refreshed since then, oldest
  * expiry first, at most 10. Only Stripe's word ends such a row (`refreshCheckout`), never our clock. Through the partial index `checkout_sessions_open` (only
- * `creating` and `live` rows are in it: a handful).
+ * `creating` and `live` rows are in it: a handful). Stripe's rows only (early check 1, F4): a provider joins this read when its `refreshCheckout` branch exists
+ * (PayPal in M6.4); Razorpay's links end by their own events. `refreshCheckout` claims the row first (`checkoutRefreshClaimStatement` writes `last_refresh_at`), so
+ * every outcome, an error or a retry included, keeps the row out of the next hour's read until 15 minutes have passed again.
  */
 export const STALE_LIVE_CHECKOUTS_SQL = `SELECT c.id, c.provider FROM checkout_sessions c INDEXED BY checkout_sessions_open
-   WHERE c.status IN ('creating', 'live') AND c.status = 'live' AND c.expires_at < ?1 AND (c.last_refresh_at IS NULL OR c.last_refresh_at < ?1)
+   WHERE c.status IN ('creating', 'live') AND c.status = 'live' AND c.provider = 'stripe' AND c.expires_at < ?1 AND (c.last_refresh_at IS NULL OR c.last_refresh_at < ?1)
    ORDER BY c.expires_at, c.id LIMIT ${STALE_LIVE_LIMIT}`;
 
 // ---- a gateway payment (the webhook or a status refresh, after the re-fetch) ---------------------------------------------------------------------------

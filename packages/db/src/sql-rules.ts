@@ -96,8 +96,8 @@ export const ledgerStatusCaseSql = (total: string, settled: string, credited: st
 
 /**
  * M6.2: document `d` of client `k` (aliases) can be paid online now (the twin of core `payableOnline` in `@techaust/core/online-pay`): a tax invoice, debit note or
- * proforma; in INR; issued and not void (a withdrawn proforma is a void one); of a live client in India that is not overseas (owner, 2026-11-01, Q3 A; OPEN (08-C
- * RB-01): does a USD invoice paid through a PA-CB that credits us in INR count as "settled in INR"?); with at least ₹1 due (Razorpay's minimum); a proforma issued
+ * proforma; in INR; issued and not void (a withdrawn proforma is a void one); of a live client in India that is not overseas (owner, 2026-11-01, Q3 A; a USD
+ * invoice credited to us in INR through a gateway keeps 9 months: Settled by the lead on the safest reading, 2026-10-30 (08-C RB-01)); with at least ₹1 due (Razorpay's minimum); a proforma issued
  * or converted (early check 1, finding 5) with its balance in whole rupees (LD28). A db test holds it to core `payableOnline`.
  * M6.3: by `provider`'s row of the rule table (`ONLINE_RULES_SQL`; Stripe: an export invoice, debit note or proforma in USD of an overseas client, at least 50
  * cents, cents allowed), and for every provider no gateway payment still waiting on it (`gatewayPaymentPendingSql`, core `payment_pending`).

@@ -370,6 +370,10 @@ describe("a payment on a proforma [L5, 07-ZH line 12]", () => {
     expect(await codeOf(await advance(total - 1, made.id))).toBe("payment_mismatch");
     // early check 2, finding 7: the reference typed must be the entry's own
     expect(await codeOf(await advance(total, made.id, ref()))).toBe("payment_mismatch");
+    // M6.3 early check 1, F6: an entry of the same client, amount and day that asks for no proforma is not this proforma's money
+    const bareBody = recordBody(clientId, total, []);
+    const bare = await recorded(staff, bareBody);
+    expect(await codeOf(await advance(total, bare.id, bareBody.reference))).toBe("payment_mismatch");
     const both = await Promise.all([advance(total, made.id), advance(total, made.id)]);
     expect(both.map((r) => r.status).sort()).toEqual([201, 409]);
     const invoices = await rows<{ id: string }>(

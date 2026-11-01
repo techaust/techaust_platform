@@ -1547,8 +1547,8 @@ const MANUAL_ONLY_0064 = ["neft", "rtgs", "imps", "swift"] as const;
  *      id, its checkout and the instant it was re-fetched (ADR 0008), and starts either pending with no decision or confirmed by the gateway (no member, `verified_at` set:
  *      L5, a verified and re-fetched gateway payment confirms without an Owner step, ADM-PAY-03, -07); never withdrawn;
  *   3. `payments_gateway_shape` (new): a manual entry carries no gateway column and keeps 0060's five modes; a gateway payment is money received (`payment`, never TDS)
- *      in INR from a client in India that is not overseas (owner, 2026-11-01, Q3 A: domestic INR clients only; OPEN (08-C RB-01): does a USD invoice paid through a
- *      PA-CB that credits us in INR count as "settled in INR"?), with one of Razorpay's methods as its mode and a reference, and its fee tax is never negative;
+ *      in INR from a client in India that is not overseas (owner, 2026-11-01, Q3 A: domestic INR clients only; a USD invoice credited to us in INR through a gateway
+ *      keeps 9 months: Settled by the lead on the safest reading, 2026-10-30 (08-C RB-01)), with one of Razorpay's methods as its mode and a reference, and its fee tax is never negative;
  *   4. `payments_fixed` recreated: 0060's rule over `PAYMENT_FROZEN_0064` (the gateway columns never change);
  *   5. `payments_status_flow` recreated: 0060's flow, plus: a gateway payment is never rejected or withdrawn (refunds are M6.5, L7); a pending gateway payment is
  *      confirmed by an active Owner, or by the system (`gateway_auto`, L6) with no member, `verified_at` set and its `advance_receipt_id` set in the same update to a
@@ -1617,6 +1617,12 @@ export const GATEWAY_PROVIDERS_0066 = ["razorpay", "stripe"] as const;
 export const STRIPE_MODES_0066 = ["card", "other"] as const;
 /** The gateways whose pending payment the system may confirm with its own advance receipt (`gateway_auto`): Razorpay only (M6.3 Q1 A: a USD proforma waits for the Owner). */
 export const GATEWAY_AUTO_PROVIDERS_0066 = ["razorpay"] as const;
+/**
+ * The review kinds 0066 accepts: 0064's and `not_export_receipt` (lead, 2026-11-02, early check 1 decision 1): a USD card payment with a card issued in India (or
+ * of no stated country) is recorded pending for the Owner, never confirmed by the system, because it is not an inflow of foreign exchange (Settled by the lead on
+ * the safest reading, 2026-11-02 (08-C RA-38)).
+ */
+export const REVIEW_KINDS_0066 = [...REVIEW_KINDS_0064, "not_export_receipt"] as const;
 /** The columns `payments_fixed` freezes as 0066 recreates it: 0064's list plus M6.3's INR fee columns (pinned). */
 export const PAYMENT_FROZEN_0066 = [
   ...PAYMENT_FROZEN_0064,
@@ -1645,7 +1651,7 @@ export const STRIPE_RECREATED_0066 = [
  * rebuilt: the triggers in `STRIPE_RECREATED_0066` are dropped and created again from the same builder as 0064 (`gatewayTriggerParts`) with the provider lists of
  * 0066 (L14: M6.4 regenerates them with PayPal). What changes, trigger by trigger:
  *   - `payments_values_*`, `payments_insert_state`, `checkout_sessions_values_*`, `webhook_events_values_*`, `review_items_values_*`: the provider may be `stripe`
- *     (review kinds unchanged: no new review kind);
+ *     (`review_items_values_*` also accept the review kind `not_export_receipt`, `REVIEW_KINDS_0066`);
  *   - `payments_gateway_shape`, per provider: manual as 0064 and both INR fee columns NULL; Razorpay exactly as 0064 and both INR fee columns NULL; Stripe: money
  *     received (`payment`) in USD, mode `card` or `other`, a reference, a gateway payment id of 1 to 255 characters, `charges_minor` 0 and `fee_tax_minor` NULL
  *     (its fee is INR, never in a USD column: L10), `gateway_fee_inr_minor` NULL or ≥ 0, `gateway_fee_tax_inr_minor` NULL or between 0 and the fee;
@@ -1759,7 +1765,7 @@ function gatewayTriggerParts(v: "0064" | "0066") {
   const eventValuesBad = `NEW.provider NOT IN (${q(gatewayProviders)}) OR NEW.status NOT IN (${q(WEBHOOK_EVENT_STATUSES_0064)})`;
   const eventFlowBad = `(NEW.status IS NOT OLD.status AND NOT ((OLD.status = 'received' AND NEW.status IN ('processed', 'ignored', 'needs_review', 'failed')) OR (OLD.status = 'failed' AND NEW.status = 'received'))) OR NEW.attempts < OLD.attempts`;
   // 8. review_items
-  const reviewValuesBad = `NEW.source NOT IN (${q(REVIEW_SOURCES_0064)}) OR NEW.provider NOT IN (${q(gatewayProviders)}) OR NEW.kind NOT IN (${q(REVIEW_KINDS_0064)}) OR NEW.status NOT IN ('open', 'resolved') OR (NEW.resolution IS NOT NULL AND NEW.resolution NOT IN (${q(REVIEW_RESOLUTIONS_0064)}))`;
+  const reviewValuesBad = `NEW.source NOT IN (${q(REVIEW_SOURCES_0064)}) OR NEW.provider NOT IN (${q(gatewayProviders)}) OR NEW.kind NOT IN (${q(v66 ? REVIEW_KINDS_0066 : REVIEW_KINDS_0064)}) OR NEW.status NOT IN ('open', 'resolved') OR (NEW.resolution IS NOT NULL AND NEW.resolution NOT IN (${q(REVIEW_RESOLUTIONS_0064)}))`;
   const reviewValuesMsg = "a review item has a known source, provider, kind, status and resolution";
   const resolving = "OLD.status = 'open' AND NEW.status = 'resolved'";
   const reviewFlowBad = `(NEW.status IS NOT OLD.status AND NOT (${resolving}))

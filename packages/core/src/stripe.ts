@@ -33,6 +33,12 @@ export const STRIPE_API_VERSION = "2026-09-30.endive";
 /** Stripe's smallest USD charge, 50 cents (V19, UNCONFIRMED: the first staging payment and B2's re-read decide; the portal's floor of USD 100 is far above it). */
 export const STRIPE_MIN_AMOUNT_MINOR = 50;
 
+/**
+ * The most `v1` values a header may carry (early check 1, F2): Stripe sends one per active signing secret (two while a secret is rolled); more than this is
+ * `signature_malformed` before any HMAC is computed, so a padded header never costs secrets × candidates verifications. A repeated value is tried once.
+ */
+export const STRIPE_MAX_V1 = 4;
+
 /** The signature tolerance either way (stripe-node's default for the past; we refuse the future too: L2). */
 export const STRIPE_TOLERANCE_SEC = 300;
 
@@ -48,7 +54,8 @@ const str = (v: unknown, re: RegExp): string | null => (typeof v === "string" &&
 const EVENT_ID = /^evt_[A-Za-z0-9_]{1,251}$/;
 const SESSION_ID = /^cs_[A-Za-z0-9_]{1,252}$/;
 const PI_ID = /^pi_[A-Za-z0-9_]{1,252}$/;
-const EVENT_TYPE = /^[a-z_.]{1,64}$/;
+// Lower case, digits (a future event name may carry one: early check 1, F3), underscores and dots; an unknown name maps to `other` and is ignored with 200.
+const EVENT_TYPE = /^[a-z0-9_.]{1,64}$/;
 const ENV = /^[a-z]{1,16}$/;
 const DOC_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const CURRENCY = /^[a-z]{3}$/;
@@ -74,7 +81,8 @@ export type SignatureVerdict = (typeof SIGNATURE_VERDICTS)[number];
  * Whether `header` (`Stripe-Signature`) signs `rawBody` (the RAW request text or bytes, never re-serialised JSON) under one of `secrets` (the current webhook secret,
  * then the previous one while it is rotated: `STRIPE_WEBHOOK_SECRET`, `STRIPE_WEBHOOK_SECRET_PREVIOUS`), as stripe-node's `constructEventAsync` reads it (V6):
  *   - the header is split on "," and each item at its FIRST "=", with no trimming (a space after a comma makes the key " t", which is not `t`, as in stripe-node);
- *   - `t` must be 1 to 12 digits, else `signature_malformed`; every `v1` is a candidate and other schemes are ignored; none: `signature_malformed`;
+ *   - `t` must be 1 to 12 digits, else `signature_malformed`; every `v1` is a candidate and other schemes are ignored; none, or more than `STRIPE_MAX_V1` (4):
+ *     `signature_malformed`; a repeated candidate is tried once;
  *   - the signed text is `${t}.` and the raw body; HMAC-SHA256 keyed with the UTF-8 bytes of the whole secret (`whsec_` included);
  *   - each candidate is hex-decoded first (anything but 64 hex characters is skipped) and compared with `crypto.subtle.verify`, never as text;
  *   - every secret is tried against every candidate; no match: `signature_invalid`;
@@ -92,15 +100,20 @@ export async function verifyStripeSignature(
   if (typeof header !== "string" || header === "") return "signature_missing";
   let t: string | null = null;
   const candidates: string[] = [];
+  let v1Count = 0;
   for (const item of header.split(",")) {
     const at = item.indexOf("=");
     if (at < 0) continue;
     const key = item.slice(0, at);
     const value = item.slice(at + 1);
     if (key === "t") t = value;
-    else if (key === "v1") candidates.push(value);
+    else if (key === "v1") {
+      v1Count += 1;
+      if (!candidates.includes(value)) candidates.push(value);
+    }
   }
-  if (t === null || !/^\d{1,12}$/.test(t) || candidates.length === 0) return "signature_malformed";
+  if (t === null || !/^\d{1,12}$/.test(t) || candidates.length === 0 || v1Count > STRIPE_MAX_V1)
+    return "signature_malformed";
   let body: Uint8Array;
   if (typeof rawBody === "string") body = enc.encode(rawBody);
   else if (rawBody instanceof Uint8Array) body = rawBody;
@@ -420,6 +433,15 @@ export type StripeSession = {
     readonly captured: boolean;
     /** `payment_method_details.type` (card, …), or null. */
     readonly methodType: string | null;
+    /**
+     * Money returned or contested after the charge succeeded (early check 1, F1): `refunded` (true only when fully refunded), `amount_refunded` (> 0 after any
+     * refund, partial included) and `disputed`. A refund or a dispute leaves `status` succeeded and `captured` true, so these are read on their own.
+     */
+    readonly refunded: boolean;
+    readonly amountRefunded: number;
+    readonly disputed: boolean;
+    /** `payment_method_details.card.country`: the two-letter ISO code of the country that issued the card, or null (not a card, or Stripe did not say). */
+    readonly cardCountry: string | null;
   } | null;
   readonly bt: {
     readonly currency: string;
@@ -506,13 +528,28 @@ export function readStripeSession(obj: unknown): StripeSession | null {
     if (ch) {
       const created = secondsToMs(ch.created);
       const chStatus = str(ch.status, WORD);
-      if (created === null || !chStatus || typeof ch.captured !== "boolean") return null;
+      const amountRefunded = count(ch.amount_refunded);
+      if (
+        created === null ||
+        !chStatus ||
+        typeof ch.captured !== "boolean" ||
+        typeof ch.refunded !== "boolean" ||
+        typeof ch.disputed !== "boolean" ||
+        amountRefunded === null
+      )
+        return null;
       const pmd = ch.payment_method_details;
+      const methodType = isObj(pmd) ? str(pmd.type, WORD) : null;
+      const card = methodType === "card" && isObj(pmd) ? pmd.card : undefined;
       charge = {
         created,
         status: chStatus,
         captured: ch.captured,
-        methodType: isObj(pmd) ? str(pmd.type, WORD) : null,
+        methodType,
+        refunded: ch.refunded,
+        amountRefunded,
+        disputed: ch.disputed,
+        cardCountry: isObj(card) ? str(card.country, /^[A-Z]{2}$/) : null,
       };
       const b = readBalanceTransaction(ch.balance_transaction);
       if (b === undefined) return null;
@@ -545,6 +582,7 @@ export const STRIPE_JUDGE_VERDICTS = [
   "not_captured",
   "currency_mismatch",
   "amount_mismatch",
+  "not_export_receipt",
 ] as const;
 export type StripeJudgeVerdict = (typeof STRIPE_JUDGE_VERDICTS)[number];
 
@@ -570,10 +608,15 @@ const marksMatch = (m: TechaustMarks | null, row: StripeCheckoutRow): boolean =>
  *      from the row: a session that is not exactly ours drives no move at all, not even an expiry;
  *   3. `checkout_expired`, `checkout_open`: Stripe's word on the session's state (L6: only Stripe's word ends a row);
  *   4. `not_paid`: complete but `unpaid` (an asynchronous payment still on its way; nothing is recorded);
- *   5. `not_captured`: no payment intent, the intent not `succeeded`, or its latest charge not succeeded and captured (or `no_payment_required`). The money's
- *      state comes before any amount (M6.2 review finding 7: an unsettled payment is never a confirmable row, whatever else differs);
+ *   5. `not_captured`: no payment intent, the intent not `succeeded`, or its latest charge not succeeded and captured (or `no_payment_required`), or the charge
+ *      refunded in full or in part, or disputed (early check 1, F1: a refund or a dispute keeps `succeeded` and `captured`, and a re-fetch after one, through a
+ *      retried webhook, the dead-letter retry or the sweep, must never record returned money as confirmed). The money's state comes before any amount (M6.2 review
+ *      finding 7: an unsettled payment is never a confirmable row, whatever else differs);
  *   6. `currency_mismatch`: the session or the intent not in `usd`, or the row not USD;
- *   7. `amount_mismatch`: `amount_total` ≠ the row's amount, or the intent's `amount_received` ≠ `amount_total`.
+ *   7. `amount_mismatch`: `amount_total` ≠ the row's amount, or the intent's `amount_received` ≠ `amount_total`;
+ *   8. `not_export_receipt`: a card issued in India, or a card whose country Stripe did not give (the safe side), or no card at all (lead, 2026-11-02, early check 1
+ *      decision 1): such a payment is not an inflow of foreign exchange, so it is never confirmed or allocated by the system and never gets LUT treatment (Settled by
+ *      the lead on the safest reading, 2026-11-02 (08-C RA-38)).
  * Nothing here moves money; the finance Worker records a mismatch pending with a review item (run file C.9).
  */
 export function judgeStripeSession(
@@ -599,13 +642,18 @@ export function judgeStripeSession(
     s.pi.status !== "succeeded" ||
     s.charge === null ||
     s.charge.status !== "succeeded" ||
-    !s.charge.captured
+    !s.charge.captured ||
+    s.charge.refunded ||
+    s.charge.amountRefunded > 0 ||
+    s.charge.disputed
   )
     return no("not_captured");
   if (s.currency !== "usd" || s.pi.currency !== "usd" || row.currency !== "USD")
     return no("currency_mismatch");
   if (s.amountTotal !== row.amountMinor || s.pi.amountReceived !== s.amountTotal)
     return no("amount_mismatch");
+  if (s.charge.methodType !== "card" || s.charge.cardCountry === null || s.charge.cardCountry === "IN")
+    return no("not_export_receipt");
   return { ok: true };
 }
 

@@ -817,11 +817,14 @@ export function advanceIssueStatements(db: D1Database, args: AdvanceIssueArgs): 
          AND EXISTS (SELECT 1 FROM documents p WHERE p.id = ?31 AND p.type = 'proforma' AND p.frozen_at IS NOT NULL AND p.status IN ('issued', 'converted') AND p.updated_at = ?32 AND p.balance_minor >= ?30 AND p.client_id = documents.client_id AND p.currency = documents.currency)
          AND (?33 IS NULL OR ${LUT_FOR_FY_SQL.replaceAll("?FY", "?33")})
          AND (?34 IS NULL OR EXISTS (SELECT 1 FROM payments pp WHERE pp.id = ?34 AND pp.status = 'pending_verification' AND pp.kind = 'payment' AND pp.amount_minor = ?30
-           AND pp.received_on = ?35 AND pp.client_id = documents.client_id AND pp.currency = documents.currency))
+           AND pp.received_on = ?35 AND pp.client_id = documents.client_id AND pp.currency = documents.currency
+           AND EXISTS (SELECT 1 FROM json_each(pp.requested_allocations) pj WHERE json_extract(pj.value, '$.documentId') = ?31)))
          AND (?34 IS NOT NULL OR ?36 IS NULL OR ?37 = 1 OR NOT EXISTS (SELECT 1 FROM payments pr INDEXED BY payments_reference WHERE pr.reference_norm = ?36 AND pr.status IN ('pending_verification', 'confirmed')))
          AND ${SIGNED_FREEZE_SQL}`,
       // Early check 2, finding 2: with `paymentId`, the pending entry is still the money read (pending, a payment, this amount, day, client and currency) at the
-      // freeze itself, so a confirm, reject or withdraw landing between the read and the batch freezes nothing. Finding 1 (L12): without it, a reference
+      // freeze itself, so a confirm, reject or withdraw landing between the read and the batch freezes nothing; and (M6.3 early check 1, F6) its
+      // `requested_allocations` name THIS proforma, so money asked for one proforma (a paid USD proforma waiting, Q1 A) never issues another's tax invoice,
+      // even of the same client, amount and day (json_each of NULL is empty: an entry asking for nothing names no proforma). Finding 1 (L12): without it, a reference
       // already on a pending or confirmed payment freezes nothing unless the Owner confirmed past it (`confirmDuplicate`), as `recordPaymentStatement` holds.
       binds: [
         a.amountMinor,
