@@ -42,7 +42,13 @@ const session = () => `cs_test_a1${uuidv7().replaceAll("-", "")}${"B".repeat(30)
 /** An issued document written straight in, in a currency, with its balance. */
 async function mkDoc(
   clientId: string,
-  o: { type?: string; currency?: "INR" | "USD"; balance?: number; status?: string; parentId?: string } = {},
+  o: {
+    type?: string | undefined;
+    currency?: "INR" | "USD" | undefined;
+    balance?: number | undefined;
+    status?: string | undefined;
+    parentId?: string | undefined;
+  } = {},
 ): Promise<string> {
   const id = uuidv7();
   const n = next();
@@ -501,7 +507,7 @@ describe("onlinePayableSql is the twin of core payableOnline, per provider [L14,
       const clientId = await mkClientRow({ currency: usd ? "USD" : "INR" });
       if ("anonymised" in k) await run("UPDATE clients SET anonymised_at = 5 WHERE id = ?1", clientId);
       const documentId = await mkDoc(clientId, {
-        type: d.type,
+        type: "type" in d ? d.type : undefined,
         currency: "currency" in d ? d.currency : usd ? "USD" : "INR",
         balance: "balance" in d ? d.balance : 50_000,
         status: "status" in d ? d.status : undefined,
