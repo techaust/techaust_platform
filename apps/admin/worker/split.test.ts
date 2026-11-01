@@ -15,7 +15,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import api, * as apiModule from "./api.ts";
 import { createApp } from "./app.ts";
 import finance, * as financeModule from "./finance.ts";
-import { forwardRowOf, forwardTable, workerOf } from "./forward.ts";
+import { forwardRoutes, forwardRowOf, forwardTable, workerOf } from "./forward.ts";
 import { ROUTES } from "./guard.ts";
 import front from "./index.ts";
 import { mountApi } from "./routes-api.ts";
@@ -246,6 +246,23 @@ describe("every ROUTES row has one owner", () => {
       }
     }
     expect(compared).toBeGreaterThan(1000);
+  });
+
+  it("forwardRoutes returns the very table its catch-all looks requests up in, the one the entry warms (early check finding 8)", async () => {
+    let table: ReturnType<typeof forwardTable> | undefined;
+    const app = createApp(mountFront, (a) => {
+      table = forwardRoutes(a, ROUTES);
+    });
+    expect(table).toBeDefined();
+    const match = vi.spyOn(table as ReturnType<typeof forwardTable>, "match");
+    const stub = { fetch: vi.fn(async () => new Response("from the stub", { status: 207 })) };
+    const res = await run(
+      app,
+      new Request(`${ORIGIN}/api/v1/dashboard`, { headers: jsonHeaders() }),
+      withEnv(env, { ADMIN_API: stub, ADMIN_FINANCE: stub }),
+    );
+    expect(res.status).toBe(207);
+    expect(match).toHaveBeenCalledWith("GET", "/api/v1/dashboard");
   });
 
   it("every forwarded row is non-public", () => {
