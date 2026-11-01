@@ -115,7 +115,9 @@ After each batch PR deploys to staging, read `$workers.cpuTimeMs` of the first (
 **The admin Workers' start-up dry run (CPU warm-up, 2026-11-02; [run file](../runs/cpu-warmup.md)).** While each admin Worker's module loads, it sends its hot routes through a second, warm instance of its own app over a made-up D1 (`apps/admin/worker/warm-routes.ts`), so V8 has compiled them before the first metered request. The made-up rows are generated, never hand-written, in `apps/admin/worker/warm-fixtures/{front,api,finance}.ts`. **When a hot route's SQL or columns change, regenerate them:**
 1. Build the admin and jobs Workers: `bash tools/heavy.sh --log admin-build pnpm --filter @techaust/admin build`, then `bash tools/heavy.sh --log jobs-build pnpm --filter @techaust/jobs build`.
 2. Write the fixtures from the local probe's made-up sample set: `bash tools/heavy.sh --log warm-fixtures node scripts/cpu-probe.mjs --write-fixtures`.
-3. Run `pnpm --filter @techaust/admin exec vitest run worker/warm-routes.test.ts`, rebuild the admin Workers and commit the three fixture files.
+3. Run `pnpm --filter @techaust/admin exec vitest run worker/warm-routes.test.ts worker/warm-fixtures.test.ts`, rebuild the admin Workers and commit the three fixture files.
+
+The front fixture holds a made-up Owner's sign-in rows (a password HMAC, a salt, a client hash), credential-shaped by design. `.gitleaks.toml` (it extends gitleaks' default rules) allows that one folder and nothing else, and `warm-fixtures.test.ts` proves every such value verifies only under the admin tests' `TEST_KEY` values. Never write a secret-looking literal anywhere else: build test values at run time.
 
 `warm-routes.test.ts` fails a stale fixture: a read the answer book doesn't hold, a list call whose list answers no rows, a changed status or a refused operation (random values, timers, I/O) at start-up. The budget's start-up figure (`scripts/worker-budget.mjs`) includes the dry run's microtasks.
 

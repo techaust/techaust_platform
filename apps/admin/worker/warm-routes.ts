@@ -38,20 +38,6 @@ export function sqlKey(sql: string): string {
   return h.toString(16).padStart(8, "0");
 }
 
-/**
- * A fixture value as the Worker reads it: `{ $j: [...] }` (a made-up value under a secret-looking key, kept in pieces by the fixture writer so CI's secret scan
- * never sees a credential-shaped literal) is joined back; everything else is copied as it is.
- */
-export function unpack(v: unknown): unknown {
-  if (Array.isArray(v)) return v.map(unpack);
-  if (v !== null && typeof v === "object") {
-    const pieces = (v as { $j?: unknown }).$j;
-    if (Array.isArray(pieces) && Object.keys(v).length === 1) return pieces.join("");
-    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unpack(x)]));
-  }
-  return v;
-}
-
 const sameParams = (a: readonly unknown[], b: readonly unknown[]) =>
   a.length === b.length && a.every((v, i) => v === b[i]);
 
@@ -80,7 +66,8 @@ export function warmDb(book: WarmRows, observe?: (seen: WarmStatementSeen) => vo
     const changes = hit ? hit.c : write ? 1 : 0;
     return {
       success: true as const,
-      results: rows.map((r) => unpack(r) as Record<string, unknown>),
+      // A copy of each row: a handler that changes a row it read never changes the answer book.
+      results: rows.map((r) => ({ ...r })),
       meta: {
         duration: 0,
         changes,
@@ -168,7 +155,8 @@ export function warmEnv(
     PORTAL_ORIGIN: "http://localhost:5174",
     PORTAL_URL: "http://localhost:5174/",
     GATEWAY_TRANSPORT: "stub",
-    // Made-up test values built from words (no secret-looking literal in the source: CI's secret scan reads every commit).
+    // Made-up test values built from words at run time: outside apps/admin/worker/warm-fixtures/ (the one path .gitleaks.toml allows) no secret-looking
+    // literal is ever written, since CI's secret scan reads every commit.
     RAZORPAY_KEY_ID: ["rzp", "test", "WARMUP"].join("_"),
     RAZORPAY_KEY_SECRET: ["warm", "up", "razorpay"].join("-"),
     ...extra,
@@ -203,7 +191,7 @@ export async function warmRoutes(
       const headers: Record<string, string> = { Origin: ORIGIN, Cookie: WARM_COOKIE };
       if (call.body !== undefined) headers["Content-Type"] = "application/json";
       const req = new Request(`${ORIGIN}/api/v1${call.path}`, { method: call.method, headers });
-      if (call.body !== undefined) warmBodies.set(req, JSON.stringify(unpack(call.body)));
+      if (call.body !== undefined) warmBodies.set(req, JSON.stringify(call.body));
       const res = await app.fetch(req, env, ctx);
       status = res.status;
       if (res.status < 400) answered++;
