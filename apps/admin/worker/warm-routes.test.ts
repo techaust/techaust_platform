@@ -2,6 +2,7 @@
 // made-up env. Run here under workerd's global-scope rules (a Response or Request with a body, random values, timers and fetch refused, `Date.now()` reading
 // 0; checked in local workerd 1.20261001.1, 2026-11-02), the count of calls that answered is pinned per Worker, so a fixture or route change that stops a
 // call early shows up. The dry run never throws, writes nothing anywhere, logs nothing, counts no request and sets no first-run mark.
+import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, firstRun, nextRequestNumber } from "./app.ts";
 import { forwardRoutes } from "./forward.ts";
@@ -18,6 +19,7 @@ import {
   type WarmCall,
   type WarmFixture,
   type WarmStatementSeen,
+  warmAtStartup,
   warmDb,
   warmEnv,
   warmRoutes,
@@ -217,6 +219,40 @@ describe("the start-up dry run [CPU warm-up (b)1]", () => {
     ];
     for (const [statements, call, table] of lists)
       expect(listRows(statements, call, table), call).toBeGreaterThanOrEqual(1);
+  });
+
+  it("an entry's start-up never throws or rejects: a warm app that fails to build, a run that rejects (early check finding 4)", async () => {
+    const thrown = () => {
+      throw new Error("the warm app could not be built");
+    };
+    expect(() => warmAtStartup(thrown, FINANCE_WARM)).not.toThrow();
+    await expect(warmAtStartup(thrown, FINANCE_WARM)).resolves.toBe(0);
+    const poisoned = {
+      get calls(): never {
+        throw new Error("a broken fixture");
+      },
+      rows: {},
+    } as unknown as WarmFixture;
+    await expect(warmAtStartup(() => createApp(mountApi, undefined, { warm: true }), poisoned)).resolves.toBe(
+      0,
+    );
+  });
+
+  it("swallows the rejection of work a warm call hands to waitUntil (early check finding 4)", async () => {
+    const rejected = vi.fn();
+    const app = new Hono().basePath("/api");
+    app.get("/v1/x", (c) => {
+      const work = Promise.reject(new Error("a background write failed"));
+      const caught = vi.spyOn(work, "catch");
+      c.executionCtx.waitUntil(work);
+      rejected(caught.mock.calls.length);
+      return c.body(null, 204);
+    });
+    const count = await warmRoutes(app as unknown as ReturnType<typeof createApp>, warmEnv({}), [
+      { method: "GET", path: "/x" },
+    ]);
+    expect(count).toBe(1);
+    expect(rejected).toHaveBeenCalledWith(1);
   });
 
   it("never throws, even when every read fails", async () => {

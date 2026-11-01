@@ -179,7 +179,10 @@ const ORIGIN = "http://localhost:5173";
 /** A made-up session cookie: the answer book holds the session row the guard reads for it. */
 export const WARM_COOKIE = "__Host-ta_admin=warm-up-session-not-a-real-one";
 const ctx: ExecutionContext = {
-  waitUntil: () => {},
+  // Work a warm call hands to `waitUntil` is not awaited, but its rejection is swallowed (early check finding 4): never an unhandled rejection at start-up.
+  waitUntil: (work: Promise<unknown>) => {
+    Promise.resolve(work).catch(() => {});
+  },
   passThroughOnException: () => {},
   props: {},
 } as unknown as ExecutionContext;
@@ -240,4 +243,25 @@ export async function warmStart(
   let answered = 0;
   for (let i = 0; i < rounds; i++) answered = await warmRoutes(app, env, fixture.calls);
   return answered;
+}
+
+/**
+ * An entry's whole start-up dry run, as each entry calls it at top level (early check finding 4): builds the warm app (`build` runs synchronously, so a throw
+ * there is caught too), runs it (`warmStart`), turns any rejection into 0 and hands the work to the budget's start-up probe. Never throws, never rejects:
+ * whatever goes wrong, the Worker starts and its real app is untouched.
+ */
+export function warmAtStartup(
+  build: () => App,
+  fixture: WarmFixture,
+  extra: Readonly<Record<string, string>> = {},
+): Promise<number> {
+  let work: Promise<number>;
+  try {
+    work = warmStart(build(), fixture, extra);
+  } catch {
+    work = Promise.resolve(0);
+  }
+  const settled = work.catch(() => 0);
+  exposeToStartupProbe(settled);
+  return settled;
 }

@@ -8,7 +8,7 @@ import { mountFront } from "./routes-front.ts";
 import { FRONT_WARM } from "./warm-fixtures/front.ts";
 import { FRONT_WARM_SECRETS } from "./warm-front.ts";
 import { warmRouter } from "./warm-router.ts";
-import { exposeToStartupProbe, warmStart } from "./warm-routes.ts";
+import { warmAtStartup } from "./warm-routes.ts";
 
 // CPU warm-up (b)2: the front's own rows and ONE forwarder catch-all that looks forwarded rows up in a TrieRouter table (forward.ts), in place of 155
 // forwarder routes run through the PatternRouter's regular expressions.
@@ -21,11 +21,9 @@ warmRouter(
 );
 warmForwardTable(forwardTable(ROUTES), ROUTES);
 // CPU warm-up (b)1: sign-in, the account and the forwarders dry-run on made-up rows while the module loads (warm-routes.ts); never throws, stores and logs nothing.
-exposeToStartupProbe(
-  warmStart(
-    createApp(mountFront, (a) => forwardRoutes(a, ROUTES, true), { warm: true }),
-    FRONT_WARM,
-    FRONT_WARM_SECRETS,
-  ),
+void warmAtStartup(
+  () => createApp(mountFront, (a) => forwardRoutes(a, ROUTES, true), { warm: true }),
+  FRONT_WARM,
+  FRONT_WARM_SECRETS,
 );
 export default app satisfies ExportedHandler<Env>;
