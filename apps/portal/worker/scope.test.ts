@@ -19,7 +19,21 @@ import {
   type TenantCase,
   tablesWithClientId,
   unscoped,
+  withEnv,
 } from "./test-helpers.ts";
+
+/**
+ * M6.2 review finding 15: the finance Worker as these requests meet it, unreachable (its call throws, as a failed RPC does), so no request makes a real RPC
+ * to the pool's stand-in `ADMIN_PAY`, which isn't an entrypoint and left a call hanging ("code had hung") after the test had passed.
+ */
+const NO_FINANCE = {
+  ADMIN_PAY: {
+    createLink: async () => {
+      throw new Error("no finance Worker in this test");
+    },
+    refreshForClient: async () => ({ result: "retry" }),
+  },
+};
 
 // ---- test-only routes: what M4.5 / M7.1 routes will look like -----------------------------------------------------
 
@@ -147,7 +161,7 @@ const NO_CLIENT_ROWS: Record<
   "POST /api/v1/invoices/:id/pay": {
     why: "no read of its own; the finance Worker's createLink re-checks the session's client in SQL",
     request: (f) => ({ path: `/invoices/${f.b.docs.issued}/pay`, init: { body: { amountMinor: 118000 } } }),
-    // The test pool's ADMIN_PAY is a stand-in that cannot answer RPC: the portal answers 502 (gateway_error) without reading anything.
+    // The finance Worker is unreachable here (`NO_FINANCE`): the portal answers 502 (gateway_error) without reading anything.
     statuses: [502],
   },
   "GET /api/v1/test/echo": { why: "echoes the scope", request: () => ({ path: "/test/echo" }) },
@@ -255,7 +269,7 @@ describe("every statement of a signed-in request is bound to the session's organ
       const who = key.includes("revoke-all") ? await extraContact(f.a.id) : f.a.finance;
       const s = await sessionFor(who, { lastSeen: Date.now() - 20 * 60_000 });
       const c = counted();
-      const res = await send(path, { ...init, cookie: s.cookie }, c.env);
+      const res = await send(path, { ...init, cookie: s.cookie }, withEnv(c.env, NO_FINANCE));
       expect(plain?.statuses ?? [200, 404], key).toContain(res.status);
       expect(unscoped(c.seen, f.a.id, tables, [SESSION_READ]), key).toEqual([]);
       expect(
@@ -267,7 +281,7 @@ describe("every statement of a signed-in request is bound to the session's organ
       if (tenant) {
         const other = counted();
         const o = tenant.request(f.b.docs.issued);
-        const r2 = await send(o.path, { ...o.init, cookie: s.cookie }, other.env);
+        const r2 = await send(o.path, { ...o.init, cookie: s.cookie }, withEnv(other.env, NO_FINANCE));
         expect(r2.status).toBe(404);
         expect(unscoped(other.seen, f.a.id, tables, [SESSION_READ]), `${key} (B's id)`).toEqual([]);
       }
