@@ -3,8 +3,9 @@
 // An action can return something to show afterwards (a reset link shown once): the dialog then shows it with "Done".
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { errorText } from "../api.ts";
+import { isWrongCode, WRONG_CODE } from "../lib/step-up.ts";
 import { Modal } from "./dialog.tsx";
-import { CodeField, Notice } from "./ui.tsx";
+import { CodeField, Notice, useFieldError } from "./ui.tsx";
 
 export function ConfirmDialog(props: {
   open: boolean;
@@ -30,7 +31,7 @@ export function ConfirmDialog(props: {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ReactNode | null>(null);
   const [code, setCode] = useState("");
-  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeError, setCodeError, codeErrorKey] = useFieldError();
   const titleRef = useRef<HTMLHeadingElement>(null);
   // The confirm button is gone once the result shows: focus goes to the title so the result is read next.
   useEffect(() => {
@@ -59,6 +60,14 @@ export function ConfirmDialog(props: {
       if (shown) setResult(shown);
       else close();
     } catch (e) {
+      // A wrong code is the code field's own error, as in the issue, note and advance dialogs: cleared, said under it, and focused
+      // (polish sweep review 2, WCAG 2.4.3); every other refusal keeps the dialog's notice.
+      if (props.stepUp && isWrongCode(e)) {
+        setCode("");
+        setCodeError(WRONG_CODE);
+        document.getElementById("confirm-code")?.focus();
+        return;
+      }
       setError(errorText(e));
     } finally {
       setBusy(false);
@@ -94,6 +103,7 @@ export function ConfirmDialog(props: {
               value={code}
               onChange={setCode}
               error={codeError}
+              errorKey={codeErrorKey}
             />
           )}
           {error && <Notice tone="error">{error}</Notice>}

@@ -12,7 +12,8 @@
 //     stops clear of the "Unsaved changes" bar (visual review 3).
 //   - The code field of the note, advance, invoice issue and step-up dialogs, reached by the keyboard and after a wrong code (the field cleared and
 //     focused, its line under it; the invoice issue dialog's too since polish sweep 3a), is never under the dialog's sticky actions or its sticky title
-//     (WCAG 2.4.11; re-check A, polish sweep 5b), at 390×844, 768 and 1280. A case-only GSTIN change is no
+//     (WCAG 2.4.11; re-check A, polish sweep 5b), at 390×844, 768 and 1280; since polish sweep review 2 also a step-up ConfirmDialog (Users › Sign
+//     out everyone except you) and the Owner's approve dialog (Approvals › Issue invoice, on one sample request answered in the browser). A case-only GSTIN change is no
 //     unsaved change (B); a save in flight leaves the waiting category's look alone (E).
 // axe (WCAG 2.2 AA) on every state, both in-app themes against the opposite OS theme, at 1280 and 390 px; no console errors. With RT2_SHOTS=<absolute folder>
 // each state is also saved as a screenshot (for the designer's review; never committed). Sample data only; the signature is put back at the end.
@@ -119,6 +120,9 @@ async function refusalHasFocus(page: Page, line: string) {
 /** WRONG_CODE (apps/admin/src/lib/step-up.ts): the line under a code field the server refused. */
 const WRONG_CODE =
   "That code didn't work. It may be the one you signed in with, which can't be used again. Wait for the next code and enter it.";
+
+/** The id of the approve dialog's sample request (answered in the browser only; never in the database). */
+const SAMPLE_REQUEST = "e2e-sample-issue-request";
 
 /** Two frames: the browser's own scroll after a focus, then anything measured after a frame (the dialog's actions). */
 const frames = (page: Page) =>
@@ -722,6 +726,48 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
       expect(issued.status, JSON.stringify(issued.body)).toBe(200);
     }
     const draftInvoice = await draftOf("invoice");
+    // The approve dialog's request, answered in the browser only (sample, never written): one pending request for that draft. A decision reaching
+    // the server would be a fault (the code is refused first).
+    const draftView = (await api(page, "GET", `/invoices/${draftInvoice}`)).body;
+    const sampleRequest = {
+      id: SAMPLE_REQUEST,
+      kind: "issue",
+      state: "pending",
+      createdAt: Date.now() - 3_600_000,
+      decidedAt: null,
+      reason: null,
+      note: null,
+      requestedBy: "sample-staff",
+      requesterName: "Sample Staff (e2e)",
+      decidedBy: null,
+      deciderName: null,
+      document: {
+        id: draftInvoice,
+        type: "tax_invoice",
+        status: "draft",
+        number: null,
+        currency: draftView.currency ?? "INR",
+        clientCode: draftView.client?.code ?? taxInvoice?.clientCode ?? "SAMPLE",
+        clientName: "Sample client (e2e)",
+      },
+      totalMinor: 100_00,
+    };
+    await page.route(
+      (u) => u.pathname === "/api/v1/approvals" && u.searchParams.get("kind") === "issue",
+      (route) => {
+        const u = new URL(route.request().url());
+        const pending = !u.searchParams.get("status") || u.searchParams.get("status") === "pending";
+        return route.fulfill({ json: { approvals: pending ? [sampleRequest] : [], next: null } });
+      },
+    );
+    let decided = 0;
+    await page.route(
+      (u) => u.pathname.startsWith("/api/v1/approvals/") && u.pathname.endsWith("/decide"),
+      (route) => {
+        decided++;
+        return route.abort();
+      },
+    );
 
     // the phone the review measured, a tablet and a desktop; each in-app theme against the opposite OS theme
     for (const [width, height] of [
@@ -740,6 +786,7 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
         await codeDialogs(at);
       }
     refusingCodes = false;
+    expect(decided, "no decision reached the server").toBe(0);
 
     async function codeDialogs(at: string) {
       // the debit note's dialog, at its last step
@@ -806,6 +853,44 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
       await shot(page, `wrong-code-step-up-${at}`, false);
       await page.keyboard.press("Escape");
       await expect(stepUp).toHaveCount(0);
+
+      // a ConfirmDialog with the step-up slot (Users › More › "Sign out everyone except you"): a wrong code is the code field's own error, not
+      // the dialog's notice, and the focus stays in the dialog (polish sweep review 2, WCAG 2.4.3); the refused step-up means nothing is signed out
+      await page.goto("/users");
+      await settled(page);
+      await page.locator(".page-header").getByRole("button", { name: "More", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Sign out everyone except you" }).click();
+      const everyone = page.getByRole("dialog", { name: "Sign out everyone except you?" });
+      const everyoneCode = everyone.getByLabel("Authenticator code");
+      await tabbedTo(everyoneCode, `confirm dialog ${at}`);
+      await wrongCode(
+        everyoneCode,
+        everyone.getByRole("button", { name: "Sign out everyone else" }),
+        `confirm dialog ${at}`,
+      );
+      await expect(everyone.locator(".notice--error")).toHaveCount(0);
+      await axe(page, `confirm dialog wrong code ${at}`);
+      await shot(page, `wrong-code-confirm-${at}`, false);
+      await page.keyboard.press("Escape");
+      await expect(everyone).toHaveCount(0);
+
+      // the Owner's approve dialog in Approvals › Issue invoice: the queue is answered in the browser with one labelled sample request for the
+      // draft invoice above (no request is written), so "Issue invoice" asks for the code; the refused step-up means `decide` is never called
+      await page.goto(`/approvals/${SAMPLE_REQUEST}?kind=issue`);
+      await settled(page);
+      const decision = page.getByRole("dialog", { name: "Issue invoice" });
+      const decisionCode = decision.getByLabel("Authenticator code");
+      await tabbedTo(decisionCode, `approve dialog ${at}`);
+      await wrongCode(
+        decisionCode,
+        decision.getByRole("button", { name: "Issue invoice" }),
+        `approve dialog ${at}`,
+      );
+      await expect(decision.locator(".notice--error")).toHaveCount(0);
+      await axe(page, `approve dialog wrong code ${at}`);
+      await shot(page, `wrong-code-approve-${at}`, false);
+      await page.keyboard.press("Escape");
+      await expect(decision).toHaveCount(0);
     }
   });
 
