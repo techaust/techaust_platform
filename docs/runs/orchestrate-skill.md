@@ -92,6 +92,50 @@ Builder (claude-opus-5-5, high), 2026-11-01, sub-branch `fix/orchestrate-skill-w
 
 **Open questions.** None for the owner. For the lead: choices 5 (no QUIET for a done task) and 9 (start errors on stdout) are the two a reviewer might want otherwise.
 
+### Fix report (r1)
+Fix builder (claude-opus-5-5, high), 2026-11-01, `fix/orchestrate-skill-r1` from `origin/feat/orchestrate-skill` (76467fb). Files: `tools/watch-cloud.mjs`, `apps/web/test/watch-cloud.test.ts`, this section. **Skills:** none loaded; no docs/14 §9 row fits a plain Node CLI (the Cloudflare rows are for Worker code, `code-review` for the reviewer).
+
+1. **(high) Saved state.** Per-task state (started, tip, head read, status, class, URL, sub-branch heads, last move, quiet fired, gone) is kept in `<run dir>/watch.state.json` (`statePathFor`, `parseState`, `serializeState`, `readStateFile`, `writeStateFile`). It is loaded when the watcher is created (the token is already written by then). A missing, unreadable or non-JSON file, a different `version` or `remote`, or a task whose saved branch, run file or sub-branch prefixes differ from the run list, or with a field of the wrong shape, means no saved state for that task. The class and URL are worked out again from the saved text. The file is written after a tick only when its text changed: temp file + `renameSync`, after a token check right before the write (a superseded copy throws `Superseded` and writes nothing). A write error prints one stderr line and is retried. With no saved state, a task's first tick fetches each sub-branch once and reads its committer time (a failure counts as now). QUIET starts from the newest of that and the tip's time, and waits for the first read of a listed tip. A branch absent at start whose saved state shows it seen (a tip or a read head) prints GONE once; already gone prints nothing. The header now names everything written. Tests: a second copy over saved state prints nothing and calls only `ls-remote`, and an unchanged tick leaves the file byte-identical. A real change (SUB-PUSH + SENT-BACK) prints once and a third copy prints nothing. A fired QUIET isn't repeated. 60-min tip + 5-min sub → no QUIET at start, QUIET at +40 min (45 after the newest), sub fetched once. A failed sub fetch counts as now. Merged and deleted before a re-arm → GONE, ALL DONE, and a later copy prints only ALL DONE. A never-seen absent branch isn't done. A superseded copy (token changed after its last git call) leaves the file unchanged and no temp file. Corrupt, foreign or malformed files are ignored and replaced. `parseState` per-field checks and a round trip. The old test "starts from the tip's commit time" now passes `subsMs` and covers the busy-sub case. The `--action-only` test's sub-branch is older than the tip.
+3. **(low) Prefix overlap.** `subsByTask(heads, tasks)`: a branch goes to the task with the longest matching prefix, and no task branch is ever a sub-branch. `parseRun` refuses the same prefix in two tasks (exit 2) and drops duplicates within one task. Tests: `pay` / `pay-links` (unit and loop), the wide-prefix case, and the refusal.
+4. **(low) Classification.** `CLASS_RULES`: keywords match only at the start of the Status text (after punctuation and spaces), case-insensitive, as whole words (a letter, digit, `_` or `-` after them means another word). PR READY (with its URL), WAITING ON, BLOCKED, FAIL/FAILED/FAILING, SEND/SENT BACK. `merged`, `abandoned` and `done` (not `done with`) are the done class `merged`. Tests: the reviewer's five cases plus `done.`, `Abandoned (…)`, `open (… merging …)`, `- PR READY …`, `(BLOCKED) …`, `PR READYING`. **Changed behaviour:** a keyword later in the text no longer counts, so "CI FAILING on lint" is now working. Those two old cases became "FAILING: CI lint" and "FAILED e2e". The shared rules already tell sessions to start the line with the keyword.
+5. **(low) No QUIET while WAITING ON** (nor PR READY or done). Tests: waiting stays silent at +60 and +200 min. A later push with a working status re-arms it, and BLOCKED still fires.
+6. **(low)** `git ls-tree --full-tree --name-only <sha> -- <path>`; the fake git now answers only that form. `parseRun` also refuses `.` parts (`./a`, `a/./b`, `a/.`, `.`), backslash-leading and UNC paths, and drive letters of either case. Tests added to the run-file refusals.
+7. **(low)** Header: the token, the state file, and git's FETCH_HEAD and remote-tracking refs from `git fetch`.
+
+**Commands and results.**
+- `pnpm install --frozen-lockfile --offline`: done.
+- `pnpm --filter @techaust/web exec vitest run test/watch-cloud.test.ts`: **104 passed** (was 69).
+- `pnpm exec biome check tools/watch-cloud.mjs apps/web/test/watch-cloud.test.ts`: clean.
+- `bash tools/heavy.sh --log orchestrate-r1-lint pnpm lint`: exit 0, 1451 files, the same 10 warnings and 8 infos in untouched files, none in these two.
+- Real check against `origin`. The temp run file lists `orchestrate-skill` (`feat/orchestrate-skill`, `docs/runs/orchestrate-skill.md`) in a scratch directory.
+  - First `watch --interval 10`, 06:23:29 to the `stop` at 06:23:57 UTC; exit 0:
+    ```
+    11:53 IST watch-cloud: watching 1 task(s) every 10 s, quiet after 45 min
+    11:53 IST orchestrate-skill SUB-PUSH fix/orchestrate-skill-r1 df81bd4
+    11:53 IST orchestrate-skill SUB-PUSH fix/orchestrate-skill-watcher c97cf7b
+    11:53 IST orchestrate-skill STATUS fixes running (review 1 SEND BACK: 1 high, 1 medium, 6 low)
+    watch-cloud: superseded, exiting   (stderr)
+    ```
+    `watch.state.json` was written beside the run file. Its `lastMoveMs` is df81bd4's commit time, the newest sub-branch commit, not the task tip from 8 minutes earlier.
+  - Second `watch`, 06:24:13 to the `stop` at 06:24:39; exit 0. Only the start line, no repeats:
+    ```
+    11:54 IST watch-cloud: watching 1 task(s) every 10 s, quiet after 45 min
+    watch-cloud: superseded, exiting   (stderr)
+    ```
+  - `status`, exit 0:
+    ```
+    task               branch                  head     push age  class    status                                                       sub-branches
+    orchestrate-skill  feat/orchestrate-skill  76467fb  8 min     working  fixes running (review 1 SEND BACK: 1 high, 1 medium, 6 low)  fix/orchestrate-skill-r1@df81bd4 fix/orchestrate-skill-watcher@c97cf7b
+    ```
+  - No watcher process left afterwards.
+
+**Not verified.**
+- Windows: `renameSync` over an existing file another process holds open can fail with EPERM there. The watcher then prints one stderr line and retries on the next changed tick, but this wasn't run on Windows.
+- Race: a re-armed copy loads the state right after writing its token. If the old copy passed its last token check just before that, it can still write once, and the new copy may repeat at most that one tick's lines.
+- QUIET, GONE and ALL DONE against the real remote (unit-tested only, as before).
+
+**Open questions.** None. For the re-check: finding 4 drops mid-text keywords on purpose ("CI FAILING on lint" is working).
+
 ## Review
 ### Review 1 (reviewer, 2026-11-01): SEND BACK
 Skills: `code-review` (10 candidates, each verified); `security-review` not loaded (local CLI, no auth or public surface), the injection check done by hand. Ran: the watcher tests (69 passed), Biome clean, a real `status` and a short real `watch` + `stop` (exited within 7 s, no process left).
