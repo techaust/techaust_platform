@@ -39,6 +39,9 @@ async function atGlobalScope<T>(fn: () => Promise<T>): Promise<T> {
   const RealResponse = globalThis.Response;
   const RealRequest = globalThis.Request;
   const saved = { setTimeout: globalThis.setTimeout, fetch: globalThis.fetch };
+  // Workerd's clock reads 0 at start-up: `Date.now()` AND `new Date()` (early check finding 7), so Date is faked here (timers are refused below).
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(0);
   globalThis.Response = class extends RealResponse {
     constructor(body?: BodyInit | null, init?: ResponseInit) {
       if (body !== null && body !== undefined) refuse();
@@ -58,7 +61,6 @@ async function atGlobalScope<T>(fn: () => Promise<T>): Promise<T> {
   globalThis.fetch = refuse as unknown as typeof fetch;
   const grv = vi.spyOn(crypto, "getRandomValues").mockImplementation(refuse);
   const uuid = vi.spyOn(crypto, "randomUUID").mockImplementation(refuse);
-  const now = vi.spyOn(Date, "now").mockReturnValue(0);
   try {
     return await fn();
   } finally {
@@ -68,7 +70,7 @@ async function atGlobalScope<T>(fn: () => Promise<T>): Promise<T> {
     globalThis.fetch = saved.fetch;
     grv.mockRestore();
     uuid.mockRestore();
-    now.mockRestore();
+    vi.useRealTimers();
   }
 }
 
@@ -254,6 +256,15 @@ describe("the start-up dry run [CPU warm-up (b)1]", () => {
     ]);
     expect(count).toBe(1);
     expect(rejected).toHaveBeenCalledWith(1);
+  });
+
+  it("runs with workerd's start-up clock: Date.now() and new Date() both read 0, and the real clock is back afterwards (early check finding 7)", async () => {
+    expect(await atGlobalScope(async () => [Date.now(), new Date().toISOString()])).toEqual([
+      0,
+      "1970-01-01T00:00:00.000Z",
+    ]);
+    expect(Date.now()).toBeGreaterThan(0);
+    expect(new Date().toISOString()).not.toBe("1970-01-01T00:00:00.000Z");
   });
 
   it("the made-up env's gateway transport is unset, so no gateway call can be made (early check finding 5)", () => {
