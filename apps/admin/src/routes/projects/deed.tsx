@@ -49,6 +49,7 @@ import {
   type DeedStage,
   type DeedTextView,
   deedMoney,
+  deedPdfWaiting,
   ESIGN_TIME,
   esignAtValue,
   formOf,
@@ -64,6 +65,7 @@ import {
   stageOf,
 } from "../../lib/deeds.ts";
 import { typeLabel } from "../../lib/invoices.ts";
+import { PDF_POLL_MS } from "../../lib/pdf.ts";
 import { withCode } from "../../lib/step-up.ts";
 import "../../deeds.css";
 
@@ -137,11 +139,33 @@ function DeedSkeleton() {
   );
 }
 
+/**
+ * Review M3: while a final or signed deed waits for its unsigned PDF, the tab reads the deed again (quietly) every 10 seconds for 5 minutes from `since`,
+ * the documents' rule (`PDF_POLL_MS`, `pdfPhase` through `deedPdfWaiting`); it stops once the PDF is there or the 5 minutes are over. A failed read keeps the
+ * page as it was (the quiet reload of `useLoad`). The latest `reload` is kept in a ref, so a re-render never restarts the wait.
+ */
+function useDeedPdfWait(deed: DeedRecord | null, since: number | null, reload: () => void) {
+  const latest = useRef(reload);
+  latest.current = reload;
+  const waiting = deedPdfWaiting(deed, since, Date.now());
+  useEffect(() => {
+    if (!waiting) return;
+    const timer = window.setInterval(() => {
+      if (deedPdfWaiting(deed, since, Date.now())) latest.current();
+      else window.clearInterval(timer);
+    }, PDF_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [waiting, deed, since]);
+}
+
 function DeedView({ page, reload }: { page: DeedPage; reload: () => void }) {
   const stage = stageOf(page);
   const d = page.deed;
   const [stale, setStale] = useState(false);
   const [dirty, setDirty] = useState(false);
+  // The wait for the unsigned PDF starts at the finalise, and again at each "Make the PDF again".
+  const [askedAt, setAskedAt] = useState<number | null>(null);
+  useDeedPdfWait(d, askedAt ?? d?.finalisedAt ?? null, reload);
   const onStale = () => setStale(true);
   const live = stage === "draft" || stage === "final" || stage === "signed";
   return (
@@ -176,7 +200,13 @@ function DeedView({ page, reload }: { page: DeedPage; reload: () => void }) {
         {/* With a live deed the side column holds what to do next, then the record and "Paid in full": on a phone the actions come straight after the
             form or the deed, before the figures. */}
         <div className="lead-page__side">
-          <ActionsPanel page={page} stage={stage} reload={reload} onStale={onStale} />
+          <ActionsPanel
+            page={page}
+            stage={stage}
+            reload={reload}
+            onStale={onStale}
+            onAskedPdf={() => setAskedAt(Date.now())}
+          />
           {d && (stage === "final" || stage === "signed") && <RecordPanel deed={d} />}
           {live && <PaidPanel page={page} />}
           {page.history.length > 0 && <HistoryPanel page={page} />}
@@ -705,7 +735,14 @@ function SheetSchedule({ heading, rows }: { heading: string; rows: [string, stri
 
 // ---- the actions -------------------------------------------------------------------------------------------------------------------------------------------
 
-function ActionsPanel(props: { page: DeedPage; stage: DeedStage; reload: () => void; onStale: () => void }) {
+function ActionsPanel(props: {
+  page: DeedPage;
+  stage: DeedStage;
+  reload: () => void;
+  onStale: () => void;
+  /** "Make the PDF again" was accepted: the tab waits for the PDF again from now. */
+  onAskedPdf: () => void;
+}) {
   const { page, stage } = props;
   const d = page.deed;
   if (stage === "final" && d) return <FinalActions {...props} deed={d} />;
@@ -881,7 +918,13 @@ function DraftActions(props: { page: DeedPage; deed: DeedRecord; reload: () => v
   );
 }
 
-function FinalActions(props: { page: DeedPage; deed: DeedRecord; reload: () => void; onStale: () => void }) {
+function FinalActions(props: {
+  page: DeedPage;
+  deed: DeedRecord;
+  reload: () => void;
+  onStale: () => void;
+  onAskedPdf: () => void;
+}) {
   const { page, deed } = props;
   const toast = useToast();
   const [busy, setBusy] = useState(false);
@@ -891,6 +934,7 @@ function FinalActions(props: { page: DeedPage; deed: DeedRecord; reload: () => v
     try {
       await deedsApi.renderPdf(deed.id);
       setAsked(true);
+      props.onAskedPdf();
       toast("success", C.pdf.retried);
     } catch (e) {
       if (e instanceof RequestError && e.code === "pdf_done") {

@@ -7,6 +7,7 @@ import type { DeedScheduleField } from "@techaust/core/deeds";
 import { DEED_SCHEDULE_LIMITS } from "@techaust/core/deeds";
 import { type Currency, formatMoney, isCurrency, money } from "@techaust/core/money";
 import { ZJ } from "./copy-zj.ts";
+import { pdfPhase } from "./pdf.ts";
 
 // ---- the API's answer ----------------------------------------------------------------------------------------------------------------------------------------
 
@@ -291,6 +292,19 @@ export function stageOf(page: Pick<DeedPage, "deed" | "eligibility">): DeedStage
   if (d === null) return page.eligibility.eligible ? "qualifies" : "waiting";
   return d.status;
 }
+
+/**
+ * Review M3: whether the tab still asks again for the unsigned PDF, by the documents' own rule (`pdfPhase`, 07-P §3): a final or signed deed without its PDF,
+ * for 5 minutes from `since` (the finalise, or the last "Make the PDF again"); after that it stops and the Owner's button says what to do.
+ */
+export const deedPdfWaiting = (
+  deed: Pick<DeedRecord, "status" | "unsignedPdf"> | null,
+  since: number | null,
+  now: number,
+): boolean =>
+  deed !== null &&
+  (deed.status === "final" || deed.status === "signed") &&
+  pdfPhase(deed.unsignedPdf ? "ready" : "pending", since, now) === "making";
 
 /** The three steps of the rail (a real sequence: draft, final, signed) and how far the deed has come (-1: none yet; a cancelled draft stops at 0). */
 export const RAIL: readonly Exclude<DeedStatus, "cancelled">[] = ["draft", "final", "signed"];

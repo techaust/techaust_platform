@@ -7,6 +7,7 @@ import {
   DEED_COPY,
   type DeedPage,
   deedMoney,
+  deedPdfWaiting,
   deliveredIsos,
   deliveredText,
   esignAtValue,
@@ -19,6 +20,7 @@ import {
   schedulesErrors,
   stageOf,
 } from "./deeds.ts";
+import { PDF_SLOW_AFTER_MS } from "./pdf.ts";
 
 const elig = (eligible: boolean) => ({ eligible }) as DeedPage["eligibility"];
 
@@ -42,6 +44,22 @@ describe("the stage and the rail", () => {
     );
     expect(offerKindOf(text("… under proposal TH/PRP/2627/0004 v2 …"))).toBe("proposal");
     expect(offerKindOf(null)).toBeNull();
+  });
+});
+
+describe("waiting for the unsigned PDF (review M3: the documents' rule)", () => {
+  const T = 1_800_000_000_000;
+  it("asks again for a final or signed deed without its PDF, for 5 minutes from the finalise or the last ask", () => {
+    expect(deedPdfWaiting({ status: "final", unsignedPdf: false }, T, T + 10_000)).toBe(true);
+    expect(deedPdfWaiting({ status: "signed", unsignedPdf: false }, T, T + 299_999)).toBe(true);
+    expect(deedPdfWaiting({ status: "final", unsignedPdf: false }, T, T + PDF_SLOW_AFTER_MS)).toBe(false);
+  });
+  it("stops once the PDF is there; never for a draft, a cancelled deed, no deed or an unknown start", () => {
+    expect(deedPdfWaiting({ status: "final", unsignedPdf: true }, T, T + 1)).toBe(false);
+    expect(deedPdfWaiting({ status: "draft", unsignedPdf: false }, T, T + 1)).toBe(false);
+    expect(deedPdfWaiting({ status: "cancelled", unsignedPdf: false }, T, T + 1)).toBe(false);
+    expect(deedPdfWaiting(null, T, T + 1)).toBe(false);
+    expect(deedPdfWaiting({ status: "final", unsignedPdf: false }, null, T)).toBe(false);
   });
 });
 
