@@ -68,7 +68,7 @@ async function issued(s: Session, kind: "invoice" | "proforma" = "invoice") {
   };
 }
 
-const staffLink = (s: Session, id: string, amountMinor: number, expectedUpdatedAt: number, e = env) =>
+const staffLink = (s: Session, id: string, amountMinor: number, expectedUpdatedAt: number, e: Env = env) =>
   call(`/invoices/${id}/payment-link`, { cookie: s.cookie, body: { amountMinor, expectedUpdatedAt } }, e);
 
 /** The webhook row the jobs hook would have written (whitelisted facts only). */

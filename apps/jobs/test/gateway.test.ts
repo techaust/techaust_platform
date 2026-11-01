@@ -364,7 +364,7 @@ describe("the gateway consumer [run file D]", () => {
     await staff("owner");
     const id = `dlq-${Date.now()}`;
     await realEnv.DB.prepare(
-      "INSERT INTO webhook_events (id, provider, event_id, event_type, received_at, status, attempts, facts) VALUES (?1, 'razorpay', ?2, 'payment_link.paid', ?3, 'received', 5, ?4)",
+      "INSERT INTO webhook_events (id, provider, event_id, event_type, received_at, status, attempts, facts) VALUES (?1, 'razorpay', ?2, 'payment_link.paid', ?3, 'received', 0, ?4)",
     )
       .bind(
         id,
@@ -373,8 +373,8 @@ describe("the gateway consumer [run file D]", () => {
         JSON.stringify({ linkId: "plink_DLQ1", amountMinor: 100, currency: "INR" }),
       )
       .run();
-    await processGatewayDeadLetter(makeEnv(), { kind: "gateway.event", eventId: id });
-    await processGatewayDeadLetter(makeEnv(), { kind: "gateway.event", eventId: id });
+    await processGatewayDeadLetter(makeEnv(), { kind: "gateway.event", eventId: id } as never);
+    await processGatewayDeadLetter(makeEnv(), { kind: "gateway.event", eventId: id } as never);
     expect(
       await realEnv.DB.prepare("SELECT status, outcome FROM webhook_events WHERE id = ?1").bind(id).first(),
     ).toEqual({

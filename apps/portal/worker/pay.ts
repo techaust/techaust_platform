@@ -40,8 +40,13 @@ export async function createLink(
   const b = bindingOf(env);
   const call = b ? methodOf(b, "createLink") : undefined;
   if (!call) return "unavailable";
-  const r = await call(args);
-  return isCreateLinkResult(r) ? r : "bad";
+  try {
+    const r = await call(args);
+    return isCreateLinkResult(r) ? r : "bad";
+  } catch {
+    // The finance Worker threw or could not be reached: a 502 with the client's words, never the error's text.
+    return "bad";
+  }
 }
 
 /** `refreshForClient` over the binding (best effort: any failure is `retry`, and the page simply shows what it has). */

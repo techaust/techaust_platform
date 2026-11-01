@@ -370,8 +370,8 @@ export type InvoiceSummary = ReturnType<typeof summaryOf>;
  * online for it (amount and when), and whether a proforma has an online payment waiting for its tax invoice. Read in the same batch as the summary.
  */
 export const ONLINE_SQL = `SELECT ${onlinePayableSql("d", "k")} AS pay_online, d.type,
-     (SELECT c.amount_minor FROM checkout_sessions c INDEXED BY checkout_sessions_open WHERE c.document_id = d.id AND c.status = 'live' AND c.client_id = ?1 AND c.expires_at > ?3) AS open_amount,
-     (SELECT c.expires_at FROM checkout_sessions c INDEXED BY checkout_sessions_open WHERE c.document_id = d.id AND c.status = 'live' AND c.client_id = ?1 AND c.expires_at > ?3) AS open_expires,
+     (SELECT c.amount_minor FROM checkout_sessions c WHERE c.document_id = d.id AND c.status = 'live' AND c.client_id = ?1 AND c.expires_at > ?3) AS open_amount,
+     (SELECT c.expires_at FROM checkout_sessions c WHERE c.document_id = d.id AND c.status = 'live' AND c.client_id = ?1 AND c.expires_at > ?3) AS open_expires,
      (SELECT p.amount_minor || ':' || p.recorded_at FROM payments p JOIN checkout_sessions c ON c.id = p.checkout_id
         WHERE c.document_id = d.id AND p.client_id = ?1 AND p.provider = 'razorpay' AND p.status IN ('confirmed', 'pending_verification') ORDER BY p.recorded_at DESC LIMIT 1) AS last_paid,
      EXISTS (SELECT 1 FROM payments p JOIN checkout_sessions c ON c.id = p.checkout_id

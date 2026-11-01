@@ -128,7 +128,7 @@ const TENANT_ELSEWHERE: Record<string, { request: (id: string) => { path: string
 /** Guarded routes that touch no row of an organisation by a caller-named id, with the reason and a sample request. */
 const NO_CLIENT_ROWS: Record<
   string,
-  { why: string; request: (f: Fixtures) => { path: string; init?: CallInit } }
+  { why: string; request: (f: Fixtures) => { path: string; init?: CallInit }; statuses?: number[] }
 > = {
   "GET /api/v1/me": { why: "answers from the guard's own read", request: () => ({ path: "/me" }) },
   "GET /api/v1/invoices": {
@@ -138,6 +138,14 @@ const NO_CLIENT_ROWS: Record<
   "POST /api/v1/auth/sessions/revoke-all": {
     why: "revokes the session's own contact's sessions; no id from the caller",
     request: () => ({ path: "/auth/sessions/revoke-all", init: { method: "POST" } }),
+  },
+  // M6.2 (POR-06): Pay now reads no row here: it sends the session's client and contact to the finance Worker, which re-checks every rule in SQL
+  // (another organisation's document is `not_found`: apps/admin/worker/gateway.test.ts, "the portal path").
+  "POST /api/v1/invoices/:id/pay": {
+    why: "no read of its own; the finance Worker's createLink re-checks the session's client in SQL",
+    request: (f) => ({ path: `/invoices/${f.b.docs.issued}/pay`, init: { body: { amountMinor: 118000 } } }),
+    // The test pool's ADMIN_PAY is a stand-in that cannot answer RPC: the portal answers 502 (gateway_error) without reading anything.
+    statuses: [502],
   },
   "GET /api/v1/test/echo": { why: "echoes the scope", request: () => ({ path: "/test/echo" }) },
   "POST /api/v1/test/echo-body": {
@@ -175,6 +183,7 @@ describe("every guarded route is classified for the cross-tenant and SQL-spy tes
         "POST /api/v1/auth/sessions/revoke-all",
         "GET /api/v1/invoices",
         "GET /api/v1/invoices/:id",
+        "POST /api/v1/invoices/:id/pay",
         ...Object.keys(TENANT_ELSEWHERE),
       ].sort(),
     );
@@ -244,7 +253,7 @@ describe("every statement of a signed-in request is bound to the session's organ
       const s = await sessionFor(who, { lastSeen: Date.now() - 20 * 60_000 });
       const c = counted();
       const res = await send(path, { ...init, cookie: s.cookie }, c.env);
-      expect([200, 404], key).toContain(res.status);
+      expect(plain?.statuses ?? [200, 404], key).toContain(res.status);
       expect(unscoped(c.seen, f.a.id, tables, [SESSION_READ]), key).toEqual([]);
       expect(
         c.seen.filter((x) => x.sql === SESSION_READ),

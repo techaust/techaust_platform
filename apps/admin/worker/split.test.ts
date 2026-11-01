@@ -150,7 +150,8 @@ describe("every ROUTES row has one owner", () => {
     expect(FRONT_ROWS.length).toBe(24);
     // M6.1 (added on purpose): 15 payment rows (payments, a client's credit, an invoice's panel, credit release, FEMA extensions, the payments register);
     // main's proforma withdraw (ADM-INV-10) joins them as an invoice route.
-    expect(FINANCE_ROWS.length).toBe(46);
+    // M6.2: seven gateway rows (payment links, Needs review, the gateways' status).
+    expect(FINANCE_ROWS.length).toBe(53);
     expect(API_ROWS.length).toBe(ROUTES.length - 24 - 46);
     expect(new Set([...FRONT_ROWS, ...API_ROWS, ...FINANCE_ROWS].map(key)).size).toBe(ROUTES.length);
   });
@@ -426,13 +427,30 @@ describe("the finance app called directly (M6.1 stage A)", () => {
     expect(res.status).toBe(200);
   });
 
-  it("exports the BillingJobs entrypoint next to its default handler", () => {
-    expect(Object.keys(financeModule).sort()).toEqual(["BillingJobs", "default"]);
+  it("exports the BillingJobs, GatewayEvents and PortalPayments entrypoints next to its default handler, each with exactly its methods (M6.2)", () => {
+    expect(Object.keys(financeModule).sort()).toEqual([
+      "BillingJobs",
+      "GatewayEvents",
+      "PortalPayments",
+      "default",
+    ]);
     expect(Object.getOwnPropertyNames(financeModule.BillingJobs.prototype).sort()).toEqual([
       "constructor",
       "draftCarePlan",
       "issueCareDraft",
     ]);
+    expect(Object.getOwnPropertyNames(financeModule.GatewayEvents.prototype).sort()).toEqual([
+      "constructor",
+      "issueGatewayAdvance",
+      "processEvent",
+    ]);
+    expect(Object.getOwnPropertyNames(financeModule.PortalPayments.prototype).sort()).toEqual([
+      "constructor",
+      "createLink",
+      "refreshForClient",
+    ]);
+    // Only the finance Worker exports them (the API and front entries export the default handler only).
+    expect(Object.keys(apiModule)).toEqual(["default"]);
   });
 });
 

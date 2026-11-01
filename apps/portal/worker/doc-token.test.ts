@@ -143,6 +143,10 @@ describe("a valid link opens exactly one document [POR-06]", () => {
         "type",
         // ADM-INV-10: the day a proforma was withdrawn (null here)
         "withdrawnOn",
+        // M6.2 (POR-06): the Pay now block, bound to the link's client
+        "payOnline",
+        "wholeRupees",
+        "online",
       ].sort(),
     );
     expect(body.document).toMatchObject({
