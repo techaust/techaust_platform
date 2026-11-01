@@ -309,13 +309,6 @@ export function InvoicePage(props: {
             </div>
           )}
         </dl>
-        {/* M6.2 (07-ZI line 16): a proforma's online payment waits for its tax invoice; said with its date, under the figures. */}
-        {d.type === "proforma" && !withdrawn && d.online?.proformaPending && d.online.lastPaid && (
-          <p className="inv-slip__paid">
-            <Clock size={16} />
-            <span>{PAY_ZI.proformaPaid(dateText(istDayOf(d.online.lastPaid.at)))}</span>
-          </p>
-        )}
         {/* Withdrawn while the page was open (review L3): the reloaded page keeps the download's answer, 07-ZF 20, where the button was. */}
         {withdrawn && props.pdfProblem && (
           <p className="inv-slip__note" role="status" tabIndex={-1} ref={focusOnShow}>
@@ -341,6 +334,13 @@ export function InvoicePage(props: {
               </p>
             )}
           </div>
+        )}
+        {/* M6.2 (07-ZI line 16): a proforma's online payment waits for its tax invoice; said with its date, under the figures and the actions, across the slip. */}
+        {d.type === "proforma" && !withdrawn && d.online?.proformaPending && d.online.lastPaid && (
+          <p className="inv-slip__paid">
+            <Clock size={16} />
+            <span>{PAY_ZI.proformaPaid(dateText(istDayOf(d.online.lastPaid.at)))}</span>
+          </p>
         )}
       </section>
 

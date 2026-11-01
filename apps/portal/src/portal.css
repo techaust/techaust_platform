@@ -2434,6 +2434,19 @@ textarea[aria-invalid="true"] {
    Razorpay, one status block above the slip changes in place: a clock while it checks (with a thin line that fills over the minute, standing still when motion
    is reduced), a tick once the payment is received, an info mark if Razorpay hasn't confirmed yet. Tokens only. */
 
+/* Pay now over Download PDF: the two buttons share one width at the slip's end */
+@media (min-width: 48rem) {
+  .inv-slip__actions:has(.pay-now) > .btn {
+    align-self: stretch;
+    justify-content: center;
+  }
+}
+
+/* the amount dialog opens from the slip's end-aligned actions: it reads from the start, as every dialog does */
+.inv-slip__actions .dialog {
+  text-align: start;
+}
+
 .pay-form > :last-child {
   margin-bottom: var(--space-5);
 }

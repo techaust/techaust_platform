@@ -163,7 +163,9 @@ function DocumentScreen(props: {
     !doc.online?.proformaPending &&
     doc.balanceMinor !== null &&
     doc.balanceMinor > 0 &&
-    !checking;
+    // while it checks, and after 07-ZI line 13 ("There's no need to pay again"), the page offers no second payment until it is opened again
+    !checking &&
+    payState?.phase !== "not_yet";
   return (
     <InvoicePage
       pay={
