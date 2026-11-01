@@ -315,6 +315,37 @@ async function moveEvent(
   if (eventId) await webhookEventMoveStatement(env.DB, { id: eventId, status, outcome, now: a.now }).run();
 }
 
+/**
+ * After a settle batch was refused (the link ended, the document changed, or another settle of the same payment won the race; "For B2" 3): a concurrent settle
+ * that already holds this payment answers `duplicate` (with its `next`); otherwise the money is recorded pending with its review item; and if that is refused
+ * too, it is the concurrent case again (re-read), else a retry, so the event is never left `received` with nothing written (M6.2 review finding 8).
+ */
+async function pendingAfterRefusal(
+  env: GatewayEnv,
+  a: SettleArgs,
+  checkout: CheckoutRow,
+  p: PaymentStatusReport,
+  paymentRef: string,
+  reason: string,
+  facts: GatewayFacts,
+  onLink: boolean,
+): Promise<ProcessEventResult> {
+  const seen = () => env.DB.prepare(PAYMENT_SEEN_SQL).bind("razorpay", paymentRef).first<Seen>();
+  const before = await seen();
+  if (before) {
+    await moveEvent(env, a, "processed", "duplicate");
+    return duplicateOf(before);
+  }
+  if (await recordPendingWithReview(env, a, checkout, p, "document_not_payable", { reason }, facts, onLink))
+    return { result: "needs_review" };
+  const after = await seen();
+  if (after) {
+    await moveEvent(env, a, "processed", "duplicate");
+    return duplicateOf(after);
+  }
+  return { result: "retry" };
+}
+
 /** Finds our checkout for a Razorpay link: by its id, else (a `creating` row whose create answer was lost) by our reference, adopted live ("For B2" 4). */
 export async function checkoutForLink(
   env: GatewayEnv,
@@ -580,20 +611,8 @@ export async function settlePayment(
       },
       side: () => [...s.side, ...s.last],
     });
-    if (!done) {
-      // The link ended meanwhile: the money is still recorded, for the Owner ("For B2" 3).
-      await recordPendingWithReview(
-        env,
-        a,
-        checkout,
-        p,
-        "document_not_payable",
-        { reason: "link_not_live" },
-        facts,
-        onLink,
-      );
-      return { result: "needs_review" };
-    }
+    // The link ended meanwhile: the money is still recorded, for the Owner ("For B2" 3), unless a concurrent settle already holds it (review finding 8).
+    if (!done) return pendingAfterRefusal(env, a, checkout, p, paymentRef, "link_not_live", facts, onLink);
     return { result: "processed", next: { kind: "gateway.advance", paymentId: f.paymentId } };
   }
   // (6) a tax invoice or debit note: confirmed and put on the document, in one batch
@@ -662,25 +681,8 @@ export async function settlePayment(
     )
       throw e;
   }
-  if (!done) {
-    // "For B2" 3: the link was cancelled or expired, or the invoice voided, between the read and the batch: record the money pending with a review item.
-    const again = await db.prepare(PAYMENT_SEEN_SQL).bind("razorpay", paymentRef).first<Seen>();
-    if (again) {
-      await moveEvent(env, a, "processed", "duplicate");
-      return duplicateOf(again);
-    }
-    await recordPendingWithReview(
-      env,
-      a,
-      checkout,
-      p,
-      "document_not_payable",
-      { reason: "changed" },
-      facts,
-      onLink,
-    );
-    return { result: "needs_review" };
-  }
+  // "For B2" 3: the link was cancelled or expired, or the invoice voided, between the read and the batch: record the money pending with a review item.
+  if (!done) return pendingAfterRefusal(env, a, checkout, p, paymentRef, "changed", facts, onLink);
   const stale = others
     .filter((o) => o.provider_link_id)
     .map((o) => ({ id: o.id, linkId: o.provider_link_id as string }));

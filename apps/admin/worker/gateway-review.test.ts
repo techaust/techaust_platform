@@ -190,6 +190,31 @@ describe("finding 1: one advance try per invocation [ADM-INV-10, L6]", () => {
     expect((await paymentOf(l.paymentId))?.status).toBe("pending_verification");
     expect((await reviewItemOf(ev))?.kind).toBe("document_not_payable");
   });
+
+  it("review finding 8: a proforma's settle that loses the race to another settle of the same payment answers duplicate with `next`, the event processed, no item", async () => {
+    const o = await owner();
+    const pf = await issued(o, "proforma");
+    const l = await linkFor(o, pf);
+    const ev = await eventRow(l.linkId, l.paymentId);
+    const ev2 = await eventRow(l.linkId, l.paymentId);
+    const c = countingEnv({
+      race: {
+        when: (sqls) => sqls.some((q) => q.includes("INSERT INTO payments")),
+        act: async () => {
+          // The same payment settled meanwhile by another delivery (a refresh or a second event).
+          expect((await processEvent(env, ev2)).result).toBe("processed");
+        },
+      },
+    });
+    const pid = (await one<{ id: string }>("SELECT 'rzp_' || ?1 AS id", l.paymentId))?.id as string;
+    expect(await processEvent(c.env, ev)).toEqual({
+      result: "duplicate",
+      next: { kind: "gateway.advance", paymentId: pid },
+    });
+    expect(await eventOf(ev)).toEqual({ status: "processed", outcome: "duplicate" });
+    expect(await reviewKindsOf("webhook_event_id", ev)).toEqual([]);
+    expect((await paymentOf(l.paymentId))?.status).toBe("pending_verification");
+  });
 });
 
 describe("finding 2: the automatic tax invoice is never lost [ADM-INV-10; 08-C RA-17]", () => {
