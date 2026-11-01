@@ -179,7 +179,9 @@ export type SignedDeed = {
 };
 
 export const deedsApi = {
-  list: () => send<{ deeds: SignedDeed[] }>("/deeds", {}),
+  /** The signed deeds of one accepted version (review L2); finance contacts only (owner, 2026-11-01): anyone else gets the plain 404. */
+  list: (documentId: string) =>
+    send<{ deeds: SignedDeed[] }>(`/deeds?document=${encodeURIComponent(documentId)}`, {}),
   /** The signed PDF; the deed is named in the request body, never in the address. */
   pdf: (id: string) => download("/deeds/pdf", { id }, true),
 };

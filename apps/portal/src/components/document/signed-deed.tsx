@@ -2,6 +2,7 @@
 // in the summary column, under the document's own, once TecHaust has signed the deed: the deed number, "Signed with Aadhaar eSign on …", the transaction ID
 // and the download. The server lists signed deeds only, so a draft, final or cancelled deed never shows; while the list loads, or if it can't be read, the
 // card simply isn't there (the document page works without it). The mark at its top left is the brand's 45° cut. Words: 07-ZJ lines 3 to 7.
+// Owner's decision (2026-11-01, review M4): finance contacts only, like invoices; the page passes no card to anyone else (the API answers them a 404 too).
 import { useEffect, useState } from "react";
 import { deedsApi, type SignedDeed } from "../../api.ts";
 import { DEED_ZJ } from "../../copy-zj.ts";
@@ -16,7 +17,7 @@ export function SignedDeedCard({ documentId }: { documentId: string }) {
   useEffect(() => {
     let alive = true;
     setDeed(null);
-    deedsApi.list().then(
+    deedsApi.list(documentId).then(
       (r) => {
         if (alive) setDeed(r.deeds.find((d) => d.sourceDocumentId === documentId) ?? null);
       },

@@ -226,12 +226,14 @@ describe("pdf.deed [T11 L4]", () => {
 describe("deed.signed [T11 L4, POR-05]", () => {
   const transport: Transport = { send: async () => ({ kind: "sent", messageId: "m-1" }) };
 
-  it("one email per live portal contact, naming the deed and linking the proposal's portal page; sent once per deed and person", async () => {
+  it("one email per live portal contact who can see finance, naming the deed and linking the proposal's portal page; sent once per deed and person", async () => {
     const d = await mkDeed({ status: "signed" });
     const asha = await mkContact(d.clientId, { name: "Asha Rao" });
     const ravi = await mkContact(d.clientId, { name: "Ravi Sen" });
     await mkContact(d.clientId, { portal: false });
     await mkContact(d.clientId, { anonymised: true });
+    // Owner's decision (2026-11-01, review M4): a portal contact without "can see finance" gets no email.
+    const plain = await mkContact(d.clientId, { name: "Plain Contact", finance: false });
     const env = makeEnv();
     expect(await processDeedSigned(env, { kind: "deed.signed", deedId: d.id })).toEqual({
       outcome: "queued",
@@ -239,6 +241,7 @@ describe("deed.signed [T11 L4, POR-05]", () => {
     });
     const mails = emailsQueued();
     expect(mails.map((m) => m.to).sort()).toEqual([asha.email, ravi.email].sort());
+    expect(mails.map((m) => m.to)).not.toContain(plain.email);
     expect(mails[0]).toMatchObject({
       template: "deed.signed",
       entity: { type: "deed", id: d.id },
@@ -263,6 +266,16 @@ describe("deed.signed [T11 L4, POR-05]", () => {
         )
       )?.n,
     ).toBe(2);
+  });
+
+  it("a client whose only portal contacts can't see finance gets no email at all (owner, 2026-11-01)", async () => {
+    const d = await mkDeed({ status: "signed" });
+    await mkContact(d.clientId, { finance: false });
+    await mkContact(d.clientId, { finance: false, name: "Ravi Sen" });
+    expect(await processDeedSigned(makeEnv(), { kind: "deed.signed", deedId: d.id })).toMatchObject({
+      queued: 0,
+    });
+    expect(emailsQueued().filter((m) => m.template === "deed.signed")).toHaveLength(0);
   });
 
   it("nothing for a deed that is not signed, an erased client, or a malformed body; the email queue routes the family", async () => {

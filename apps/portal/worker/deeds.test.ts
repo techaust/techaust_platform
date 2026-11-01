@@ -1,14 +1,16 @@
 // The organisation's signed deeds of assignment in the portal (T11; run file docs/runs/t11-deed.md, L4, L5; POR-05, POR-03; 08-C RB-38(a)): only a SIGNED deed
 // is listed or downloaded; a draft, a final or a cancelled one, another organisation's and a made-up id are one and the same 404; the PDF is named in the body.
+// Owner's decision (2026-11-01, review M4): finance contacts only (portal access and "can see finance"), in the route table and in every query. Review L2: the
+// list is read for one accepted version.
 // All names, numbers and amounts are invented test data.
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
 import { describe, expect, it } from "vitest";
-import { DEED_PDF_SQL, DEEDS_LIST_SQL } from "./deeds.ts";
+import { DEED_PDF_SQL, DEEDS_LIST_SQL, FINANCE_CONTACT_SQL } from "./deeds.ts";
 import { type Fixtures, fixtures } from "./fixtures.ts";
 import { ROUTES } from "./guard.ts";
 import app from "./index.ts";
-import { call, crossTenant, one, sessionFor } from "./test-helpers.ts";
+import { bodyOf, call, crossTenant, one, sessionFor } from "./test-helpers.ts";
 
 const PDF = new TextEncoder().encode("%PDF-1.7\n1 0 obj\n<<>>\nendobj\n%%EOF\n");
 let seq = 0;
@@ -76,37 +78,44 @@ async function mkDeed(clientId: string, status: "draft" | "final" | "signed" | "
   return { deed, proposal, number: `TH/DA/2627/${n}` };
 }
 
-type DeedFx = Fixtures & { mine: string; theirs: string; hidden: string[] };
+type DeedFx = Fixtures & { mine: string; mineProposal: string; theirs: string; hidden: string[] };
 async function deedFixtures(): Promise<DeedFx> {
   const f = await fixtures();
-  const mine = (await mkDeed(f.a.id, "signed")).deed;
+  const signed = await mkDeed(f.a.id, "signed");
+  const mine = signed.deed;
   const theirs = (await mkDeed(f.b.id, "signed")).deed;
   const hidden = [
     (await mkDeed(f.a.id, "draft")).deed,
     (await mkDeed(f.a.id, "final")).deed,
     (await mkDeed(f.a.id, "cancelled")).deed,
   ];
-  return { ...f, mine, theirs, hidden };
+  return { ...f, mine, mineProposal: signed.proposal, theirs, hidden };
 }
 
 describe("the routes [POR-05]", () => {
-  it("are declared for any signed-in contact (no finance needed); the PDF is a POST naming the deed in the body", () => {
+  it("are declared for finance contacts only (owner, 2026-11-01); every query holds the rule too; the PDF is a POST naming the deed in the body", () => {
     expect(ROUTES.find((r) => r.path === "/api/v1/deeds")).toMatchObject({
       method: "GET",
-      access: "session",
+      access: "finance",
     });
     expect(ROUTES.find((r) => r.path === "/api/v1/deeds/pdf")).toMatchObject({
       method: "POST",
-      access: "session",
+      access: "finance",
     });
-    expect(DEEDS_LIST_SQL).toMatch(/d\.client_id = \?1 AND d\.status = 'signed'/);
-    expect(DEED_PDF_SQL).toMatch(/d\.client_id = \?1 AND d\.id = \?2 AND d\.status = 'signed'/);
+    expect(DEEDS_LIST_SQL).toMatch(
+      /d\.client_id = \?1 AND d\.source_document_id = \?3 AND d\.status = 'signed'/,
+    );
+    expect(DEED_PDF_SQL).toMatch(/d\.client_id = \?1 AND d\.id = \?3 AND d\.status = 'signed'/);
+    for (const sql of [DEEDS_LIST_SQL, DEED_PDF_SQL]) expect(sql).toContain(FINANCE_CONTACT_SQL);
+    expect(FINANCE_CONTACT_SQL).toMatch(
+      /fc\.portal_access = 1 AND fc\.can_see_finance = 1 AND fc\.anonymised_at IS NULL/,
+    );
   });
 
-  it("lists only this organisation's signed deeds, with the accepted version and the eSign details", async () => {
+  it("lists only this organisation's signed deeds of the version asked for, with the accepted version and the eSign details", async () => {
     const f = await deedFixtures();
-    const s = await sessionFor(f.a.plain);
-    const res = await call("/deeds", { cookie: s.cookie });
+    const s = await sessionFor(f.a.finance);
+    const res = await call(`/deeds?document=${f.mineProposal}`, { cookie: s.cookie });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { deeds: Record<string, unknown>[] };
     expect(body.deeds.map((d) => d.id)).toEqual([f.mine]);
@@ -122,6 +131,54 @@ describe("the routes [POR-05]", () => {
       f.mine,
     );
     expect(body.deeds[0]?.sourceDocumentId).toBe(proposal?.source_document_id);
+  });
+
+  it("reads one version only (review L2): another version's list is empty; a missing or malformed version is 400", async () => {
+    const f = await deedFixtures();
+    const s = await sessionFor(f.a.finance);
+    const other = await call(`/deeds?document=${f.a.docs.proposal}`, { cookie: s.cookie });
+    expect(other.status).toBe(200);
+    expect(((await other.json()) as { deeds: unknown[] }).deeds).toEqual([]);
+    expect((await call("/deeds", { cookie: s.cookie })).status).toBe(400);
+    expect((await call("/deeds?document=a%20b", { cookie: s.cookie })).status).toBe(400);
+    expect((await call(`/deeds?document=${"x".repeat(65)}`, { cookie: s.cookie })).status).toBe(400);
+  });
+
+  it("a contact without finance gets the plain 404 for the list and the PDF of their own organisation's signed deed (owner, 2026-11-01)", async () => {
+    const f = await deedFixtures();
+    const plain = await sessionFor(f.a.plain);
+    const finance = await sessionFor(f.a.finance);
+    const miss = await call("/deeds/pdf", { cookie: finance.cookie, body: { id: `no-such-${uuidv7()}` } });
+    const list = await call(`/deeds?document=${f.mineProposal}`, { cookie: plain.cookie });
+    expect(list.status).toBe(404);
+    const pdf = await call("/deeds/pdf", { cookie: plain.cookie, body: { id: f.mine } });
+    expect(pdf.status).toBe(404);
+    const missBody = await bodyOf(miss);
+    expect(await bodyOf(list)).toEqual(missBody);
+    expect(await bodyOf(pdf)).toEqual(missBody);
+  });
+
+  it("the queries themselves hold the rule: bound with a contact without finance (or without portal access) they find nothing", async () => {
+    const f = await deedFixtures();
+    const list = (contact: string) =>
+      env.DB.prepare(DEEDS_LIST_SQL).bind(f.a.id, contact, f.mineProposal).all();
+    const pdf = (contact: string) => env.DB.prepare(DEED_PDF_SQL).bind(f.a.id, contact, f.mine).first();
+    expect((await list(f.a.finance.id)).results).toHaveLength(1);
+    expect(await pdf(f.a.finance.id)).not.toBeNull();
+    // Finance on, but no portal access; finance on, but anonymised.
+    const [noPortal, gone] = [uuidv7(), uuidv7()];
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO contacts (id, client_id, name, email, portal_access, can_see_finance) VALUES (?1, ?2, 'No Portal', ?3, 0, 1)",
+      ).bind(noPortal, f.a.id, `${noPortal}@example.test`),
+      env.DB.prepare(
+        "INSERT INTO contacts (id, client_id, name, email, portal_access, can_see_finance, anonymised_at) VALUES (?1, ?2, 'Gone', ?3, 1, 1, 1)",
+      ).bind(gone, f.a.id, `${gone}@example.test`),
+    ]);
+    for (const c of [f.a.plain.id, noPortal, gone, f.b.finance.id]) {
+      expect((await list(c)).results).toHaveLength(0);
+      expect(await pdf(c)).toBeNull();
+    }
   });
 
   it("serves the signed PDF; a bad body is 400", async () => {
@@ -145,6 +202,7 @@ describe("cross-tenant: another organisation's, a missing, a draft, a final and 
       {
         name: "POST /deeds/pdf",
         request: (id) => ({ path: "/deeds/pdf", init: { body: { id } } }),
+        finance: true,
         hidden: (f) => (f as DeedFx).hidden,
       },
     ],

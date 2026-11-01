@@ -256,7 +256,10 @@ async function answer(
     return act(found.doc, t[1], body, null);
   }
   // T11: the signed deed of the sample accepted proposal (sample values; the eSign moment and transaction ID are made up)
-  if (path === "/deeds" && method === "GET") return json(200, { deeds: empty ? [] : SAMPLE_DEEDS });
+  if (path.startsWith("/deeds?") && method === "GET") {
+    const doc = new URLSearchParams(path.slice("/deeds?".length)).get("document");
+    return json(200, { deeds: empty ? [] : SAMPLE_DEEDS.filter((d) => d.sourceDocumentId === doc) });
+  }
   if (path === "/deeds/pdf") {
     const d = empty ? undefined : SAMPLE_DEEDS.find((x) => x.id === body.id);
     if (!d) return error(404, "not_found");

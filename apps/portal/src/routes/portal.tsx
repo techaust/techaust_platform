@@ -198,12 +198,12 @@ export function ProposalRoute() {
       me={me.contact}
       replaced={replaced}
       onSuperseded={onSuperseded}
-      asideExtra={signedDeedOf}
+      asideExtra={me.canSeeFinance ? signedDeedOf : undefined}
     />
   );
 }
 
-/** T11: the signed deed under an accepted version's summary (signed in only: the emailed link never shows it). */
+/** T11: the signed deed under an accepted version's summary (signed in only: the emailed link never shows it; finance contacts only, owner 2026-11-01). */
 const signedDeedOf = (documentId: string, accepted: boolean) =>
   accepted ? <SignedDeedCard key={documentId} documentId={documentId} /> : null;
 

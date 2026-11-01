@@ -124,7 +124,7 @@ const TENANT_ELSEWHERE: Record<string, { request: (id: string) => { path: string
     request: (id) => ({ path: `/offers/${id}/decline`, init: { body: { reason: "price" } } }),
   },
   // T11: the signed deeds and the signed PDF (named in the body), proven with `crossTenant` in deeds.test.ts on their own fixtures (a deed must be signed).
-  "GET /api/v1/deeds": { request: () => ({ path: "/deeds" }) },
+  "GET /api/v1/deeds": { request: (id) => ({ path: `/deeds?document=${id}` }) },
   "POST /api/v1/deeds/pdf": { request: (id) => ({ path: "/deeds/pdf", init: { body: { id } } }) },
 };
 

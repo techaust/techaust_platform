@@ -156,8 +156,9 @@ export const DEED_SIGNED_SQL = `SELECT d.id, d.status, d.number_display, d.sourc
     EXISTS (SELECT 1 FROM clients c WHERE c.id = d.client_id AND c.anonymised_at IS NOT NULL) AS client_gone
   FROM deeds d JOIN documents s ON s.id = d.source_document_id AND s.client_id = d.client_id WHERE d.id = ?1`;
 /** The client's live portal contacts (the people who can see the deed in the portal). */
+/** The client's live contacts with portal access AND "can see finance" (owner, 2026-11-01, review M4: a deed names the invoices and the amount paid; the invoices' rule, M5.4). */
 export const DEED_CONTACTS_SQL = `SELECT c.name, lower(c.email) AS email FROM contacts c
-  WHERE c.client_id = (SELECT client_id FROM deeds WHERE id = ?1) AND c.portal_access = 1 AND c.anonymised_at IS NULL
+  WHERE c.client_id = (SELECT client_id FROM deeds WHERE id = ?1) AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL
   ORDER BY c.is_primary DESC, c.created_at, c.id LIMIT ${DEED_MAIL_MAX}`;
 
 type SignedRow = {
