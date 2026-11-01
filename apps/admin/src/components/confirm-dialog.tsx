@@ -4,7 +4,7 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { errorText } from "../api.ts";
 import { isWrongCode, WRONG_CODE } from "../lib/step-up.ts";
-import { Modal } from "./dialog.tsx";
+import { Modal, useRefusalFocus } from "./dialog.tsx";
 import { CodeField, Notice, useFieldError } from "./ui.tsx";
 
 export function ConfirmDialog(props: {
@@ -33,6 +33,8 @@ export function ConfirmDialog(props: {
   const [code, setCode] = useState("");
   const [codeError, setCodeError, codeErrorKey] = useFieldError();
   const titleRef = useRef<HTMLHeadingElement>(null);
+  // Any other refusal takes the focus (the confirm button was disabled while busy, so focus would fall to <body>; polish sweep re-check 1, WCAG 2.4.3).
+  const refusal = useRefusalFocus();
   // The confirm button is gone once the result shows: focus goes to the title so the result is read next.
   useEffect(() => {
     if (result) titleRef.current?.focus();
@@ -69,6 +71,7 @@ export function ConfirmDialog(props: {
         return;
       }
       setError(errorText(e));
+      refusal.show();
     } finally {
       setBusy(false);
     }
@@ -106,7 +109,11 @@ export function ConfirmDialog(props: {
               errorKey={codeErrorKey}
             />
           )}
-          {error && <Notice tone="error">{error}</Notice>}
+          {error && (
+            <Notice tone="error" ref={refusal.ref}>
+              {error}
+            </Notice>
+          )}
           <div className="dialog__actions">
             <button type="button" className="btn btn--secondary" onClick={close} disabled={busy}>
               {props.cancelLabel ?? "Cancel"}

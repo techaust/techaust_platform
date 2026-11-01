@@ -146,7 +146,8 @@ export async function processOfferSend(
   // Refused (acknowledged): links were revoked, the person lost access or was removed, or the offer is not open any more. The row is marked
   // cancelled, so the offer page shows "not sent" instead of "queued" forever (a send that was already cancelled stays as it is). T7 (Q1 = A, owner
   // 2026-10-31; Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): an offer whose personal details were erased is withdrawn, so it is
-  // never emailed (the anonymise batch already cancels its sends without a link; this also stops a redelivery of one that has a link).
+  // never emailed (the anonymise batch cancels only its sends never queued; a queued send without a link is refused here, and so is a redelivery of one
+  // that has a link).
   if (
     row.cancelled_at !== null ||
     row.redacted_at !== null ||

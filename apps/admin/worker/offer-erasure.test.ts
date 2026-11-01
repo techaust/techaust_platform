@@ -669,7 +669,20 @@ describe("the read and the batch (no race)", () => {
     const o = await owner();
     const client = await mkClient();
     const a = await person(client, "Asha Rao");
-    await offer(client, a);
+    const first = await offer(client, a);
+    // a send still waiting for the PDF (never queued, no link): the batch's step 2a would cancel it, so a refusal must leave it alone (re-check 2)
+    const staff = (await one<{ id: string }>("SELECT id FROM staff_users LIMIT 1"))?.id;
+    await insert("document_sends", {
+      id: uuidv7(),
+      document_id: first.id,
+      version_group_id: first.groupId,
+      client_id: client,
+      contact_id: a.id,
+      email: a.email,
+      attach_pdf: 0,
+      kind: "send",
+      created_by: staff,
+    });
     const res = await anonymise(o.cookie, a.id, racing(client, a, 1));
     expect(res.status, await res.clone().text()).toBe(409);
     expect(await code(res)).toBe("stale_version");

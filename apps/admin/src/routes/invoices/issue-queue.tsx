@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { stepUpActive } from "../../api.ts";
 import { type Column, DataTable } from "../../components/data-table.tsx";
-import { Modal } from "../../components/dialog.tsx";
+import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
 import { EmptyState, When } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Ban, CheckCircle, ClipboardCheck, Search } from "../../components/icons.tsx";
@@ -249,6 +249,8 @@ function IssueDecision(props: {
   const [codeError, setCodeError, codeErrorKey] = useFieldError();
   const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Any other refusal takes the focus (the buttons were disabled while busy; polish sweep re-check 1, WCAG 2.4.3).
+  const refusal = useRefusalFocus();
   const needsCode = !stepUpActive();
   // Q8 (07-S §4): an export invoice in INR is approved only with the explicit "Issue in INR"; the question is on the dialog before the button.
   const inrExport = r.document.type === "export_invoice" && r.document.currency === "INR";
@@ -283,6 +285,7 @@ function IssueDecision(props: {
         return;
       }
       setError(invErrorText(e));
+      refusal.show();
     } finally {
       setBusy(null);
     }
@@ -333,7 +336,11 @@ function IssueDecision(props: {
           errorKey={codeErrorKey}
         />
       )}
-      {error && <Notice tone="error">{error}</Notice>}
+      {error && (
+        <Notice tone="error" ref={refusal.ref}>
+          {error}
+        </Notice>
+      )}
       <div className="dialog__actions">
         <button type="button" className="btn btn--secondary" onClick={props.onClose} disabled={busy !== null}>
           {INV_COPY.cancel}

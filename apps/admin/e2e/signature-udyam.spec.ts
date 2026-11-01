@@ -768,6 +768,15 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
         return route.abort();
       },
     );
+    // "Sign out everyone except you" must never reach the server either (the step-up is refused; polish sweep re-check 5)
+    let revokedAll = 0;
+    await page.route(
+      (u) => u.pathname === "/api/v1/users/sessions/revoke-all",
+      (route) => {
+        revokedAll++;
+        return route.abort();
+      },
+    );
 
     // the phone the review measured, a tablet and a desktop; each in-app theme against the opposite OS theme
     for (const [width, height] of [
@@ -787,6 +796,7 @@ test.describe("rt2: the signature rule and the Udyam number on screen", () => {
       }
     refusingCodes = false;
     expect(decided, "no decision reached the server").toBe(0);
+    expect(revokedAll, "no sign-out reached the server").toBe(0);
 
     async function codeDialogs(at: string) {
       // the debit note's dialog, at its last step
