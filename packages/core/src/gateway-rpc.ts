@@ -11,6 +11,8 @@ export const isRpcId = (v: unknown): v is string => typeof v === "string" && v.l
  * The gateways the entrypoints know (lead, 2026-11-01, M6.3/M6.4 briefs session: generic names, so M6.3 and M6.4 extend instead of copying). M6.2 implements
  * Razorpay only; Stripe and PayPal join this list in their own milestones.
  */
+// M6.3 B1 (builder, 2026-11-01): Stripe joins this list in B2, together with the finance Worker's Stripe branch of `createLink`, so the entrypoint's guard
+// (`isCreateLinkArgs`) never lets a `stripe` call reach code that only makes Razorpay links.
 export const RPC_GATEWAYS = ["razorpay"] as const;
 export type RpcGateway = (typeof RPC_GATEWAYS)[number];
 export const isRpcGateway = (v: unknown): v is RpcGateway => (RPC_GATEWAYS as readonly unknown[]).includes(v);
@@ -94,6 +96,10 @@ export const CREATE_LINK_ERRORS = [
   "live_not_allowed",
   "gateway_error",
   "client_gone",
+  // M6.3: a gateway payment is already waiting on the document (core `payableOnline`'s `payment_pending`, or a Stripe session found complete when the old one was
+  // expired): 409, "no need to pay again" (C4); and an amount above the online maximum (`maximumMinor`, L9).
+  "payment_processing",
+  "amount_above_maximum",
 ] as const;
 export type CreateLinkError = (typeof CREATE_LINK_ERRORS)[number];
 
@@ -104,6 +110,8 @@ export type CreateLinkResult =
       readonly error: CreateLinkError;
       readonly minimumMinor?: number;
       readonly balanceMinor?: number;
+      /** M6.3: `amount_above_maximum`'s limit (minor units). */
+      readonly maximumMinor?: number;
       readonly reason?: string;
     };
 
@@ -139,6 +147,7 @@ export function isCreateLinkResult(v: unknown): v is CreateLinkResult {
     (CREATE_LINK_ERRORS as readonly unknown[]).includes(v.error) &&
     optNumber(v.minimumMinor) &&
     optNumber(v.balanceMinor) &&
+    optNumber(v.maximumMinor) &&
     (v.reason === undefined || typeof v.reason === "string")
   );
 }
@@ -168,10 +177,15 @@ export function isCreateLinkArgs(v: unknown): v is CreateLinkArgs {
 
 // ---- the link URL the portal sends the browser to ------------------------------------------------------------------------------------------------------
 
-/** The hosts each gateway's hosted page may be on (Razorpay: the same list as `RAZORPAY_LINK_HOSTS` in `@techaust/core/razorpay`; a test compares them). */
-export const GATEWAY_LINK_HOSTS: Readonly<Record<RpcGateway, readonly string[]>> = {
+/**
+ * The hosts each gateway's hosted page may be on (Razorpay: the same list as `RAZORPAY_LINK_HOSTS` in `@techaust/core/razorpay`; a test compares them). Stripe
+ * (M6.3 run file E): Checkout's `checkout.stripe.com` only.
+ */
+export const GATEWAY_LINK_HOSTS: Readonly<Record<"razorpay" | "stripe", readonly string[]>> = {
   razorpay: ["rzp.io", "razorpay.com"],
+  stripe: ["checkout.stripe.com"],
 };
+export type LinkHostGateway = keyof typeof GATEWAY_LINK_HOSTS;
 /** The longest link URL a checkout row holds (`CHECKOUT_SHORT_URL_MAX` in the db schema). */
 export const GATEWAY_LINK_URL_MAX = 5000;
 
@@ -179,9 +193,9 @@ export const GATEWAY_LINK_URL_MAX = 5000;
  * Whether `v` is an https URL on one of `provider`'s own hosts (or a subdomain), with no credentials: the portal answers 502 for anything else, so a wrong
  * answer can never send a client's browser to another site. Kept here (not in `@techaust/core/razorpay`) so the portal carries only this small check.
  */
-export function isGatewayLinkUrl(provider: RpcGateway, v: unknown): boolean {
+export function isGatewayLinkUrl(provider: LinkHostGateway, v: unknown): boolean {
   if (typeof v !== "string" || v.length > GATEWAY_LINK_URL_MAX) return false;
-  const hosts = GATEWAY_LINK_HOSTS[provider];
+  const hosts = Object.hasOwn(GATEWAY_LINK_HOSTS, provider) ? GATEWAY_LINK_HOSTS[provider] : undefined;
   if (!hosts) return false;
   try {
     const u = new URL(v);

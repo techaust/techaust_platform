@@ -20,7 +20,11 @@ import {
   validateFormat,
   validateStoredFormat,
 } from "../numbering.ts";
-import { DEFAULT_PART_FLOOR_MINOR } from "../online-pay.ts";
+import {
+  DEFAULT_ONLINE_MAX_USD_MINOR,
+  DEFAULT_PART_FLOOR_MINOR,
+  DEFAULT_USD_PART_FLOOR_MINOR,
+} from "../online-pay.ts";
 import {
   REALISATION_MAX_DAYS,
   REALISATION_MAX_MONTHS,
@@ -385,6 +389,13 @@ export const paymentTermsSettings = z
     reminderWindowIst: z.object({ fromHour: intBetween(0, 23), toHour: intBetween(1, 24) }),
     /** ADM-SET-05: the smallest part-payment a Razorpay link may ask for (INR minor; the full balance if lower). */
     razorpayMinPartialInrMinor: minor,
+    /** M6.3 (ADM-SET-06; owner, 2026-11-01, Q2 A): the smallest card part-payment on a USD document (USD minor; the full balance if lower). Owner only. */
+    onlineMinPartialUsdMinor: minor,
+    /**
+     * M6.3 (L9): the largest single online payment on a USD document (USD minor; at least one cent), shared with PayPal (M6.4). Owner only. Researched 2026-10-28,
+     * RBI PA Directions 2025, para 10(f) (08-C RB-07): ₹25 lakh per PA-CB transaction; the Owner keeps this below it at the day's rate (S18).
+     */
+    overseasOnlineMaxUsdMinor: intBetween(1),
     /**
      * The website's liability cap (INR minor), printed on /terms (M2.3 follow-up, 07-A section 2 item 10). One source: apps/web reads
      * it from SETTINGS_DEFAULTS. OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only: is a ₹10,000 website-use cap enforceable against a consumer? (the cap and the consumer carve-out: wording approved in 07-ZE, built in T6)
@@ -598,6 +609,10 @@ export const SETTINGS_DEFAULTS: Settings = {
     // The default part-payment floor (docs/04 ADM-SET-05): INR 10,000. Researched 2026-10-29, Razorpay first_min_partial_amount (08-C RB-39): a
     // commercial default, no regulatory floor. One figure, in core `online-pay` (the portal reads it when the group was never saved).
     razorpayMinPartialInrMinor: DEFAULT_PART_FLOOR_MINOR,
+    // M6.3: USD 100 (owner, 2026-11-01, Q2 A) and USD 25,000 (L9; Researched 2026-10-28, RBI PA Directions 2025, para 10(f) (08-C RB-07)). One figure each, in core
+    // `online-pay`.
+    onlineMinPartialUsdMinor: DEFAULT_USD_PART_FLOOR_MINOR,
+    overseasOnlineMaxUsdMinor: DEFAULT_ONLINE_MAX_USD_MINOR,
     // OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only: is a ₹10,000 website-use cap enforceable against a consumer? INR 10,000 is the figure the site printed before this setting existed.
     websiteLiabilityCapInrMinor: 1_000_000,
   },

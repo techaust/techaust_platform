@@ -63,6 +63,8 @@ export const PROVIDER_EVENT_TYPES = [
   "checkout.partially_paid",
   "checkout.expired",
   "checkout.cancelled",
+  // M6.3: an asynchronous payment on a checkout failed (Stripe's `checkout.session.async_payment_failed`; generic, PayPal's declined capture can reuse it).
+  "checkout.failed",
   "other",
 ] as const;
 export type ProviderEventType = (typeof PROVIDER_EVENT_TYPES)[number];

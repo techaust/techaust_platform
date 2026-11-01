@@ -19,7 +19,13 @@ const money_ = (m: number | null | undefined) => (m == null ? "the amount" : for
  * `document_not_payable`'s `{reason}` in words (designer's draft, 2026-11-01, for the lead): core `NOT_PAYABLE_REASONS` and the race fallback "changed". An
  * unknown code reads as "it changed", never as the code.
  */
-export const NOT_PAYABLE_WORDS: Record<NotPayableReason | "changed", string> = {
+// M6.3 B1 (builder, 2026-11-01): the four reasons core gained for Stripe (`client_domestic`, `not_usd`, `above_gateway_maximum`, `payment_pending`) are worded in
+// B2 with S19 (the designer's drafts, for the lead); until then they read as "it changed", like any code not listed here.
+type WordedReason = Exclude<
+  NotPayableReason,
+  "client_domestic" | "not_usd" | "above_gateway_maximum" | "payment_pending"
+>;
+export const NOT_PAYABLE_WORDS: Record<WordedReason | "changed", string> = {
   type_not_payable: "this kind of document isn't paid online",
   not_inr: "it isn't in rupees",
   client_overseas: "the client is outside India",

@@ -215,6 +215,7 @@ export async function makeLink(env: GatewayEnv, a: MakeLinkArgs, now = Date.now(
       balanceMinor: doc.balance_minor,
     },
     { country: doc.country, gstStatus: doc.gst_status, anonymised: false },
+    a.provider,
   );
   if (!payable.ok) return { ok: false, error: "not_payable_online", reason: payable.reason };
   const terms = termsR?.results[0] as { value: string; version: number } | undefined;

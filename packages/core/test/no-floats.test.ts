@@ -46,6 +46,9 @@ const MONEY_FILES = [
   "src/razorpay.ts",
   "src/online-pay.ts",
   "src/gateway-rpc.ts",
+  // M6.3: Stripe (amounts, the fee and its tax, the INR facts) and the shared HMAC helpers of the gateway hooks
+  "src/stripe.ts",
+  "src/hmac.ts",
   // T11: the deed of assignment (L2's sums, the amount it prints)
   "src/deeds.ts",
   "src/export-invoice.ts",

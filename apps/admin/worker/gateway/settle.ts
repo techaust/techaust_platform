@@ -565,6 +565,7 @@ export async function settlePayment(
       balanceMinor: doc.balance_minor,
     },
     { country: doc.country, gstStatus: doc.gst_status, anonymised: false },
+    "razorpay",
   );
   if (!payable.ok) return pending("document_not_payable", { reason: payable.reason });
   const f = paymentFields(p);
