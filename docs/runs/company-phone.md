@@ -1,6 +1,6 @@
-Status: open
+Status: open (PR pending)
 Tier: C
-Usage:
+Usage: designer claude-opus-5-5/high (build; 5-h 10 → 27 %); reviewer claude-opus-5-5/high (27 → 35 %); designer claude-opus-5-5/high (fixes; 35 → 41 %). From the agents' reports; model-audit at the record.
 
 # Company phone, WhatsApp and local hours (2026-11-01)
 
@@ -189,3 +189,8 @@ Branch `feat/company-phone-fix` from `origin/feat/company-phone` (ec5ddd17); com
 
 **Placeholders:** none. **No new wording.**
 Usage: designer claude-opus-5-5/high.
+
+## Integration notes (lead, 2026-11-01)
+- The design branch and the fix branch fast-forwarded into `feat/company-phone`; no other task touches the website, so no merge of `main` was needed (main unchanged since #150).
+- Lead diff check of the fix round: `ExternalLink` (last word and arrow kept together; markup labels unchanged), the crawler pattern in `call-time.ts`, the `has-ref` head flag and its new CSP hash, the phone test. The designer's runs: web build, 886 web tests, 471 ui tests, typecheck, whole-repo lint, all green; CI's `checks` job runs the full `pnpm check` and `pnpm test` on the PR.
+- **Follow-ups (for 12):** item 3, a throttled Lighthouse run in a non-IST zone for layout shift at the Phase 7 performance pass; item 8, move `HOURS`/`istText` into `@techaust/core` for the emails and the staff reply after M6.2 merges; not verified: `tel:` on a real phone, Safari and Firefox zone names and inline arrow, NVDA, a printed proof of the card and letterhead, the crawler skip in a real search renderer. The owner types the number in Settings › Company › "Phone on documents" on staging; the portal's local times are [runs/portal-local-time](portal-local-time.md) after M6.2.
