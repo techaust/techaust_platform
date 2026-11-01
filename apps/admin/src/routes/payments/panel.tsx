@@ -9,6 +9,7 @@ import type { Role } from "@techaust/core/permissions";
 import { type ReactNode, useMemo, useState } from "react";
 import { Link } from "react-router";
 import {
+  type GatewayPaymentRow,
   type InvoicePaymentsPanel,
   paymentsApi,
   RequestError,
@@ -18,12 +19,13 @@ import {
 import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
 import { FormField } from "../../components/form.tsx";
-import { Alert, Calendar, FileText, Plus, RefreshCw, Wallet } from "../../components/icons.tsx";
+import { Alert, Calendar, CreditCard, FileText, Plus, RefreshCw, Wallet } from "../../components/icons.tsx";
 import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
 import { dateError } from "../../lib/date-field.ts";
+import { GW_UI, itemReason, razorpayLine } from "../../lib/gateway.ts";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
 import { INV_COPY } from "../../lib/invoices.ts";
 import type { InvoiceView } from "../../lib/invoices-api.ts";
@@ -43,6 +45,15 @@ import {
 } from "../../lib/payments.ts";
 import { bpToPercent, moneyFrom } from "../../lib/settings-form.ts";
 import { withCode } from "../../lib/step-up.ts";
+import {
+  DocReviewNotice,
+  gatewayOf,
+  LinkCard,
+  linkable,
+  OnlineMode,
+  OnlineWaiting,
+  useDocReview,
+} from "./gateway-parts.tsx";
 import { day, EarlierMonthWarning, FilePick, PaymentPill, useCodeSlot, useDialogState } from "./parts.tsx";
 import { RecordPaymentDialog } from "./record-dialog.tsx";
 
@@ -69,8 +80,10 @@ export function PaymentsPanel(props: {
   view: InvoiceView;
   role: Role;
   onChanged: () => void;
-  /** A proforma: the Owner confirms a waiting entry through the advance dialog (L5). */
-  onConfirmByAdvance?: ((payment: Panel["pending"][number]) => void) | undefined;
+  /** A proforma: the Owner confirms a waiting entry through the advance dialog (L5); an online one carries its gateway row (M6.2). */
+  onConfirmByAdvance?:
+    | ((payment: Panel["pending"][number], online: GatewayPaymentRow | undefined) => void)
+    | undefined;
 }) {
   const v = props.view;
   const panel = useLoad(() => paymentsApi.invoicePanel(v.id), `${v.id}:${v.updatedAt}`);
@@ -108,7 +121,16 @@ export function PaymentsPanel(props: {
     );
   const p = panel.data;
   return v.type === "proforma" ? (
-    <ProformaPayments panel={p} role={props.role} onConfirm={props.onConfirmByAdvance} />
+    <ProformaPayments
+      view={v}
+      panel={p}
+      role={props.role}
+      onConfirm={props.onConfirmByAdvance}
+      onChanged={() => {
+        panel.reload(true);
+        props.onChanged();
+      }}
+    />
   ) : (
     <LedgerPanel
       view={v}
@@ -153,6 +175,12 @@ function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onCha
   const client = useMemo(
     () => ({ id: v.client.id, name: v.client.name, currency: v.currency }),
     [v.client.id, v.client.name, v.currency],
+  );
+  // M6.2: what came in online and still waits for the Owner (a mismatch, a document no longer payable), and this document's open review items.
+  const reviewCount = p.gateway?.openReviewCount ?? 0;
+  const review = useDocReview(v.id, reviewCount);
+  const onlineWaiting = (p.gateway?.payments ?? []).filter(
+    (g) => g.status === "pending_verification" && !g.proformaPending,
   );
   return (
     <section className="lead-panel pay-panel" aria-labelledby="pay-h">
@@ -231,8 +259,12 @@ function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onCha
         </div>
       )}
 
+      <DocReviewNotice items={review.items} count={reviewCount} />
+      <LinkCard view={v} panel={p} role={role} onChanged={props.onChanged} />
+
       <Entries panel={p} canCert={canCert} onCertificate={(id) => setDialog({ certificate: id })} />
       {p.pending.length > 0 && <Waiting panel={p} role={role} />}
+      <OnlineWaiting rows={onlineWaiting} />
       {p.realisation && (
         <Realisation
           realisation={p.realisation}
@@ -296,6 +328,25 @@ function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onCha
   );
 }
 
+type Entry = Panel["payments"][number];
+
+/**
+ * What an entry's reference is (review finding 13, re-check medium 1): a bank payment's UTR, a Razorpay payment's own id (as Razorpay writes it, not the
+ * ledger's normalised reference), a TDS entry's Form 16A number. Each row carries its own label, so the cards below md never borrow the column's.
+ */
+export function referenceLabel(panel: Panel, r: Entry): string {
+  if (r.kind === "tds") return PAY_COPY.tdsCertificate;
+  return gatewayOf(panel, r.paymentId) ? GW_UI.paymentId : PAY_COPY.reference;
+}
+
+/** The reference column's heading: "Payment ID" only when every entry came through Razorpay (no bank payment, no TDS); else the UTR heading. */
+export function referenceHeading(panel: Panel): string {
+  const rows = panel.payments;
+  return rows.length > 0 && rows.every((r) => referenceLabel(panel, r) === GW_UI.paymentId)
+    ? GW_UI.paymentId
+    : PAY_COPY.reference;
+}
+
 /** The confirmed entries on this invoice, as ledger lines (a table; cards below md through the same markup). */
 function Entries(props: { panel: Panel; canCert: boolean; onCertificate: (paymentId: string) => void }) {
   const rows = props.panel.payments;
@@ -306,6 +357,7 @@ function Entries(props: { panel: Panel; canCert: boolean; onCertificate: (paymen
         <span>{PAY_UI.noneOnInvoice}</span>
       </p>
     );
+  const refHead = referenceHeading(props.panel);
   return (
     <table className="pay-lines">
       <caption className="visually-hidden">{PAY_COPY.heading}</caption>
@@ -313,7 +365,7 @@ function Entries(props: { panel: Panel; canCert: boolean; onCertificate: (paymen
         <tr>
           <th scope="col">{PAY_COPY.dateReceived}</th>
           <th scope="col">{PAY_COPY.mode}</th>
-          <th scope="col">{PAY_COPY.reference}</th>
+          <th scope="col">{refHead}</th>
           <th scope="col" className="num">
             {PAY_UI.colAmount}
           </th>
@@ -322,76 +374,91 @@ function Entries(props: { panel: Panel; canCert: boolean; onCertificate: (paymen
         </tr>
       </thead>
       <tbody>
-        {rows.map((r) => (
-          <tr key={r.paymentId}>
-            <th scope="row" className="tnum">
-              <Link to={paymentHref(r.paymentId)} className="pay-row__link">
-                {day(r.receivedOn)}
-              </Link>
-            </th>
-            <td data-label={PAY_COPY.mode}>
-              {r.kind === "tds" ? (
-                <span className="pay-tds">
-                  <span>{PAY_UI.kindTds}</span>
-                  {r.tds?.section && (
-                    <span className="pay-lines__meta">
-                      {r.tds.section}
-                      {r.tds.rateBp !== null ? ` · ${bpToPercent(r.tds.rateBp)}\u00a0%` : ""}
-                    </span>
-                  )}
-                </span>
-              ) : r.mode ? (
-                MODE_LABELS[r.mode]
-              ) : (
-                ""
-              )}
-            </td>
-            <td data-label={PAY_COPY.reference}>
-              {r.kind === "tds" ? (
-                r.tds?.certificateAwaited ? (
-                  <span className="pay-await">
-                    <span className="pay-badge">
-                      <Calendar size={16} />
-                      {PAY_COPY.certificateAwaited}
-                    </span>
-                    {props.canCert && (
-                      <button
-                        type="button"
-                        className="btn btn--text"
-                        onClick={() => props.onCertificate(r.paymentId)}
-                      >
-                        {PAY_UI.addCertificate}
-                      </button>
+        {rows.map((r) => {
+          const online = gatewayOf(props.panel, r.paymentId);
+          const refLabel = referenceLabel(props.panel, r);
+          // At table width a value the column heading doesn't name names itself; the cards below md show the row's own label instead (payments.css).
+          const ownLabel =
+            refLabel === refHead ? null : (
+              <span className="pay-lines__meta pay-lines__ref-label">{refLabel}</span>
+            );
+          return (
+            <tr key={r.paymentId}>
+              <th scope="row" className="tnum">
+                <Link to={paymentHref(r.paymentId)} className="pay-row__link">
+                  {day(r.receivedOn)}
+                </Link>
+              </th>
+              <td data-label={PAY_COPY.mode}>
+                {online ? (
+                  <OnlineMode row={online} />
+                ) : r.kind === "tds" ? (
+                  <span className="pay-tds">
+                    <span>{PAY_UI.kindTds}</span>
+                    {r.tds?.section && (
+                      <span className="pay-lines__meta">
+                        {r.tds.section}
+                        {r.tds.rateBp !== null ? ` · ${bpToPercent(r.tds.rateBp)}\u00a0%` : ""}
+                      </span>
                     )}
                   </span>
+                ) : r.mode ? (
+                  MODE_LABELS[r.mode]
                 ) : (
-                  <span className="docno">{r.tds?.certificateNo}</span>
-                )
-              ) : (
-                <span className="docno break">{r.reference}</span>
-              )}
-            </td>
-            <td className="num tnum" data-label={PAY_UI.colAmount}>
-              {amountText(r.heldMinor, r.currency)}
-              {r.heldMinor !== r.amountMinor && (
-                <span className="pay-lines__meta">{`${PAY_UI.colAmount} ${amountText(r.amountMinor, r.currency)}`}</span>
-              )}
-            </td>
-            <td data-label={PAY_UI.colStatus}>
-              <PaymentPill status={r.status} />
-            </td>
-            <td data-label={PAY_COPY.proof}>
-              {r.hasProof ? (
-                <a href={paymentsApi.proofHref(r.paymentId)} className="pay-proof-link">
-                  <FileText size={16} />
-                  {PAY_UI.openProof}
-                </a>
-              ) : (
-                <span className="pay-lines__meta pay-lines__nowrap">{PAY_UI.noProof}</span>
-              )}
-            </td>
-          </tr>
-        ))}
+                  ""
+                )}
+              </td>
+              <td data-label={refLabel}>
+                {ownLabel}
+                {r.kind === "tds" ? (
+                  r.tds?.certificateAwaited ? (
+                    <span className="pay-await">
+                      <span className="pay-badge">
+                        <Calendar size={16} />
+                        {PAY_COPY.certificateAwaited}
+                      </span>
+                      {props.canCert && (
+                        <button
+                          type="button"
+                          className="btn btn--text"
+                          onClick={() => props.onCertificate(r.paymentId)}
+                        >
+                          {PAY_UI.addCertificate}
+                        </button>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="docno">{r.tds?.certificateNo}</span>
+                  )
+                ) : (
+                  <span className="docno break">{online?.providerPaymentId ?? r.reference}</span>
+                )}
+              </td>
+              <td className="num tnum" data-label={PAY_UI.colAmount}>
+                {amountText(r.heldMinor, r.currency)}
+                {r.heldMinor !== r.amountMinor && (
+                  <span className="pay-lines__meta">{`${PAY_UI.colAmount} ${amountText(r.amountMinor, r.currency)}`}</span>
+                )}
+              </td>
+              <td data-label={PAY_UI.colStatus}>
+                <PaymentPill status={r.status} />
+              </td>
+              <td data-label={PAY_COPY.proof}>
+                {online ? (
+                  // M6.2: Razorpay's own record is the proof of an online payment; nothing to attach
+                  <span className="pay-lines__meta pay-lines__nowrap">Razorpay</span>
+                ) : r.hasProof ? (
+                  <a href={paymentsApi.proofHref(r.paymentId)} className="pay-proof-link">
+                    <FileText size={16} />
+                    {PAY_UI.openProof}
+                  </a>
+                ) : (
+                  <span className="pay-lines__meta pay-lines__nowrap">{PAY_UI.noProof}</span>
+                )}
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );
@@ -429,46 +496,87 @@ function Waiting({ panel, role }: { panel: Panel; role: Role }) {
   );
 }
 
-/** A proforma's waiting entries (line 12): the Owner confirms one by issuing the tax invoice for the payment received. */
+/**
+ * A proforma's waiting entries (line 12): the Owner confirms one by issuing the tax invoice for the payment received. M6.2: an online payment shows "Paid online,
+ * tax invoice to follow" with S18's line while the automatic issue runs (L6); if that was blocked, S20's reason stands above as the banner, and "Confirm by
+ * issuing the tax invoice" opens the advance dialog with its Razorpay reference (read-only). The Payment link card follows.
+ */
 function ProformaPayments(props: {
+  view: InvoiceView;
   panel: Panel;
   role: Role;
-  onConfirm?: ((payment: Panel["pending"][number]) => void) | undefined;
+  onConfirm?:
+    | ((payment: Panel["pending"][number], online: GatewayPaymentRow | undefined) => void)
+    | undefined;
+  onChanged: () => void;
 }) {
   const p = props.panel;
-  if (p.pending.length === 0) return null;
+  const reviewCount = p.gateway?.openReviewCount ?? 0;
+  const review = useDocReview(p.documentId, reviewCount);
+  const blocked = review.items.filter((i) => i.kind === "advance_blocked");
+  const others = review.items.filter((i) => i.kind !== "advance_blocked");
+  const hasLink =
+    (p.gateway?.links.length ?? 0) > 0 || (p.gateway !== undefined && linkable(props.view, props.role));
+  if (p.pending.length === 0 && !hasLink && reviewCount === 0) return null;
   const owner = allowed(props.role, "invoices.advance") && props.onConfirm !== undefined;
   return (
     <section className="lead-panel pay-panel" aria-labelledby="pay-h">
       <h2 id="pay-h" className="lead-panel__title">
-        {PAY_COPY.toCheck}
+        {p.pending.length > 0 ? PAY_COPY.toCheck : PAY_COPY.heading}
       </h2>
-      <p className="pay-panel__lede">{PAY_COPY.proformaLine}</p>
-      <ul className="pay-waiting__list">
-        {p.pending.map((w) => (
-          <li key={w.paymentId} className="pay-waiting__row pay-waiting__row--proforma">
-            <span className="pay-waiting__what">
-              <Link to={paymentHref(w.paymentId)} className="tnum pay-row__link">
-                {day(w.receivedOn)}
-              </Link>
-              <span className="pay-lines__meta">
-                {[w.mode ? MODE_LABELS[w.mode] : "", w.reference].filter(Boolean).join(" · ")}
-              </span>
-            </span>
-            <span className="tnum pay-waiting__amount">{amountText(w.amountMinor, w.currency)}</span>
-            <PaymentPill status="pending_verification" />
-            {owner && (
-              <button
-                type="button"
-                className="btn btn--primary pay-waiting__go"
-                onClick={() => props.onConfirm?.(w)}
-              >
-                {PAY_UI.confirmByIssuing}
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
+      {p.pending.length > 0 && <p className="pay-panel__lede">{PAY_COPY.proformaLine}</p>}
+      {blocked.map((b) => (
+        <div key={b.id} className="pay-blocked" role="note">
+          <Alert size={20} />
+          <p>{itemReason(b)}</p>
+        </div>
+      ))}
+      {others.length > 0 && <DocReviewNotice items={others} count={others.length} />}
+      {p.pending.length > 0 && (
+        <ul className="pay-waiting__list">
+          {p.pending.map((w) => {
+            const online = gatewayOf(p, w.paymentId);
+            const isBlocked = online !== undefined && blocked.some((b) => b.payment_id === w.paymentId);
+            return (
+              <li key={w.paymentId} className="pay-waiting__row pay-waiting__row--proforma">
+                <span className="pay-waiting__what">
+                  <Link to={paymentHref(w.paymentId)} className="tnum pay-row__link">
+                    {day(w.receivedOn)}
+                  </Link>
+                  {online ? (
+                    <>
+                      <span className="pay-online__what">
+                        <CreditCard size={16} />
+                        {GW_UI.proformaToFollow}
+                      </span>
+                      <span className="pay-lines__meta break">
+                        {razorpayLine(online.mode, online.providerPaymentId)}
+                      </span>
+                      {!isBlocked && <span className="pay-lines__meta">{GW_UI.issuingNow}</span>}
+                    </>
+                  ) : (
+                    <span className="pay-lines__meta">
+                      {[w.mode ? MODE_LABELS[w.mode] : "", w.reference].filter(Boolean).join(" · ")}
+                    </span>
+                  )}
+                </span>
+                <span className="tnum pay-waiting__amount">{amountText(w.amountMinor, w.currency)}</span>
+                {(!online || isBlocked) && <PaymentPill status="pending_verification" />}
+                {owner && (
+                  <button
+                    type="button"
+                    className={`btn ${online && !isBlocked ? "btn--secondary" : "btn--primary"} pay-waiting__go`}
+                    onClick={() => props.onConfirm?.(w, online)}
+                  >
+                    {PAY_UI.confirmByIssuing}
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <LinkCard view={props.view} panel={p} role={props.role} onChanged={props.onChanged} />
     </section>
   );
 }

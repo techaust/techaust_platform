@@ -90,6 +90,23 @@ describe("worker budget", () => {
     );
     expect(ms).toBeGreaterThanOrEqual(0);
   });
+
+  it.each([
+    [
+      "on its own line",
+      "var t=1,n=2;export{t as GatewayEvents,n as default};\n//# sourceMappingURL=index.js.map\n",
+    ],
+    ["straight after the list", "var t=1;export{t as default};//# sourceMappingURL=index.js.map"],
+  ])(
+    "measures a minified bundle with a source-map comment %s after the export list (L9, the jobs Worker)",
+    (_where, code) => {
+      expect(measureStartup(code, 2)).toBeGreaterThanOrEqual(0);
+    },
+  );
+
+  it("still fails a bundle whose export list is not at the end of a line (nothing is silently dropped)", () => {
+    expect(() => measureStartup("var t=1;export{t as default};var after=1;", 1)).toThrow();
+  });
 });
 
 describe("the GST core is SPA only (M5.5b, LD16)", () => {

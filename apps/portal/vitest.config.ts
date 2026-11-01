@@ -11,6 +11,11 @@ export default defineConfig(async () => ({
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
+        // M6.2: wrangler.jsonc binds ADMIN_PAY to the finance Worker's `PortalPayments`, which is not in this pool (workerd refuses a missing service): a stand-in
+        // answers 501; the pay tests pass a typed fake through `env`.
+        serviceBindings: {
+          ADMIN_PAY: async () => new Response("no admin finance in the test pool", { status: 501 }),
+        },
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations(join(import.meta.dirname, "../../packages/db/migrations")),
           PORTAL_KEY_PEPPER: TEST_KEY(5),

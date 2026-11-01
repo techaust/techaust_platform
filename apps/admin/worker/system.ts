@@ -16,12 +16,16 @@ export type SystemMutation = {
   side?: (g: GuardSql, auditId: string) => D1PreparedStatement[];
   /** Called with every statement's result and the index of the audit statement (the side statements follow it, in order). */
   onResults?: (results: D1Result[], auditAt: number) => void;
+  /** M6.2: who acts with nobody signed in: the system (default), or a verified payment webhook (actor type `webhook`, no actor id). */
+  actorType?: "system" | "webhook";
+  /** M6.2: the audit row's id, picked by the caller when its statements are built before the batch with the guard `guardSql({ auditId })`. */
+  auditId?: string;
 };
 
 /** Runs the batch. True when the audit row was written, meaning the main statement changed a row and the side statements ran. */
 export async function mutateSystem(env: { DB: D1Database }, m: SystemMutation): Promise<boolean> {
   const db = env.DB;
-  const auditId = uuidv7();
+  const auditId = m.auditId ?? uuidv7();
   const g = guardSql({ auditId });
   const mains = m.main === undefined ? [] : Array.isArray(m.main) ? m.main : [m.main];
   const stmts: D1PreparedStatement[] = [...mains];
@@ -31,7 +35,7 @@ export async function mutateSystem(env: { DB: D1Database }, m: SystemMutation): 
       db,
       {
         id: auditId,
-        actorType: "system",
+        actorType: m.actorType ?? "system",
         actorId: null,
         role: null,
         requestId: null,

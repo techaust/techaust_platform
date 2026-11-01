@@ -54,11 +54,22 @@ describe("the manual provider and the provider contract [ADM-PAY-01]", () => {
       verifyWebhook: async () => ok,
       parseEvent: () => ({
         ok: true,
-        value: { id: "e", type: "other", providerRef: "r", currency: "INR", amountMinor: 1, occurredAt: 1 },
+        value: {
+          id: "e",
+          type: "other",
+          providerRef: "r",
+          checkoutRef: null,
+          paymentRef: null,
+          currency: "INR",
+          amountMinor: 1,
+          occurredAt: 1,
+        },
       }),
       fetchStatus: async () => {
         throw new Error("network");
       },
+      fetchCheckout: async () => ({ ok: false, code: "unsupported" }),
+      cancelCheckout: async () => ({ ok: false, code: "unsupported" }),
       refund: async () => ({ ok: false, code: "nope" }) as never,
     };
     const found = await checkProviderContract(broken, { liveAllowed: false });
@@ -98,6 +109,8 @@ describe("the manual provider and the provider contract [ADM-PAY-01]", () => {
                 id: "e1",
                 type: "payment.captured",
                 providerRef: "r",
+                checkoutRef: null,
+                paymentRef: null,
                 currency: "INR",
                 amountMinor: 100,
                 occurredAt: 1,
@@ -116,6 +129,8 @@ describe("the manual provider and the provider contract [ADM-PAY-01]", () => {
                 id: "e1",
                 type: "weird" as never,
                 providerRef: "r",
+                checkoutRef: null,
+                paymentRef: null,
                 currency: "INR",
                 amountMinor: 0.5,
                 occurredAt: 1,

@@ -6,6 +6,7 @@ import { approvals } from "./approvals.ts";
 import { clientInvoices } from "./client-invoices.ts";
 import { dashboard } from "./dashboard.ts";
 import { invoicePdf, invoiceSupplierPdf } from "./document-pdf.ts";
+import { gatewayPayments, invoicePaymentLinks } from "./gateway/routes.ts";
 import { invoiceAdvance } from "./invoice-advance.ts";
 import { invoiceIssue } from "./invoice-issue.ts";
 import { invoiceNotes } from "./invoice-notes.ts";
@@ -36,6 +37,9 @@ export function mountFinance(app: App) {
   app.route("/v1/invoices", invoiceSupplierPdf);
   app.route("/v1/approvals", approvals);
   app.route("/v1/dashboard", dashboard);
+  // M6.2: payment links, "Needs review" and the gateways' status (before `payments`, whose `/:id` would match `/review` and `/gateways`).
+  app.route("/v1/invoices", invoicePaymentLinks);
+  app.route("/v1/payments", gatewayPayments);
   // M6.1: manual payments and TDS, a client's credit, an invoice's Payments panel, credit moves and FEMA extensions.
   app.route("/v1/payments", payments);
   app.route("/v1/clients", clientCredit);

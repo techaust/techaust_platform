@@ -119,6 +119,12 @@ const MATRIX = {
   // M6.1 (L11; ADM-INV-17): a payment's proof file or its TDS certificate number is added once, later, by the Owner or Staff (it moves no money). OPEN (08-C RB-05):
   // see the register row for which proof of a receipt is needed; the proof's type is free text plus the file. A new docs/04 §9 row.
   "payments.attachProof": { owner: "allow", staff: "allow" },
+  // M6.2 (ADM-PAY-02, L2 to L4): creating, cancelling or refreshing a Razorpay payment link for an issued invoice or proforma moves no money (only a verified,
+  // re-fetched payment does, ADR 0008), so the Owner and Staff may, with no fresh code. A new docs/04 §9 row.
+  "payments.link": { owner: "allow", staff: "allow" },
+  // M6.2 (ADM-PAY-07, L7): resolving or retrying a gateway payment in "Needs review" decides what happens to money received: the Owner only. The list itself uses
+  // `payments.read`. A new docs/04 §9 row.
+  "payments.review": { owner: "allow" },
   // M6.1 (L14, Q60): recording the AD bank's extension of an export's realisation date (Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-04): the AD
   // bank extends; Rule 96A(1)(b) CGST Rules (08-C RA-20): the GST date follows): the Owner only. A new docs/04 §9 row.
   "realisation.extend": { owner: "allow" },

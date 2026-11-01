@@ -22,8 +22,10 @@ import {
   refundDueOf,
   releasable,
 } from "@techaust/core/ledger";
+import { onlineMinimumOf } from "@techaust/core/online-pay";
 import { creditApplyBody, creditReleaseBody, realisationExtensionBody } from "@techaust/core/payment-schemas";
 import { deedDraftStatements } from "@techaust/db/deeds";
+import { DOCUMENT_CHECKOUTS_SQL } from "@techaust/db/gateway";
 import {
   type AllocationRow,
   allocationsInsertStatement,
@@ -60,6 +62,7 @@ import {
 import { LEDGER_REFUSED } from "./payments.ts";
 import { CLIENT_GONE } from "./quote-model.ts";
 import { sessionRefusal } from "./session-refusal.ts";
+import { cachedSetting, type StoredSetting } from "./settings-cache.ts";
 
 /**
  * L23.7: an extension is held within core's existing realisation bound, the 36,500-day upper bound of the realisation rules (`rulesAreValid` in
@@ -322,6 +325,35 @@ export const PENDING_FOR_DOCUMENT_SQL = `SELECT p.id, p.kind, p.received_on, p.m
    WHERE p.client_id = ${CLIENT_OF_DOCUMENT} AND p.status = 'pending_verification' AND p.requested_allocations IS NOT NULL AND json_extract(j.value, '$.documentId') = ?1
    ORDER BY p.recorded_at, p.id LIMIT 50`;
 
+/** M6.2: the gateway payments that came through the links of document `?1` (newest first, at most 20). */
+export const GATEWAY_PAYMENTS_OF_DOCUMENT_SQL = `SELECT p.id, p.provider, p.status, p.provider_payment_id, p.mode, p.reference_norm, p.received_on, p.amount_minor, p.charges_minor,
+     p.fee_tax_minor, p.requested_allocations
+   FROM checkout_sessions c INDEXED BY checkout_sessions_document JOIN payments p ON p.checkout_id = c.id
+   WHERE c.document_id = ?1 ORDER BY p.recorded_at DESC, p.id DESC LIMIT 20`;
+type GatewayPaymentRow = {
+  id: string;
+  provider: string;
+  status: string;
+  provider_payment_id: string | null;
+  mode: string | null;
+  reference_norm: string | null;
+  received_on: string;
+  amount_minor: number;
+  charges_minor: number;
+  fee_tax_minor: number | null;
+  requested_allocations: string | null;
+};
+type LinkRow = {
+  id: string;
+  status: string;
+  source: string;
+  amount_minor: number;
+  short_url: string | null;
+  expires_at: number;
+  created_at: number;
+  paid_payment_id: string | null;
+};
+
 /** The bank's extensions of an export invoice (`?1`), oldest first. */
 export const EXTENSIONS_SQL = `SELECT x.id, x.extended_to, x.bank_ref, x.letter_r2_key IS NOT NULL AS has_letter, x.letter_mime, x.recorded_by,
        (SELECT name FROM staff_users WHERE id = x.recorded_by) AS recorded_by_name, x.created_at
@@ -332,19 +364,42 @@ export const REALISATION_OF_SQL = `SELECT ${femaStandardSql("d", settingsBinds("
        ${gstDueSql("d", settingsBinds("?2"))} AS gst_due, ${stageSql("d", settingsBinds("?2"))} AS stage
    FROM documents d WHERE d.id = ?1 AND d.type = 'export_invoice' AND d.issue_date IS NOT NULL`;
 
+/**
+ * Fix round 3 item 4: the link minimum for the panel, by `onlineMinimumOf` over Settings › Payment terms (`cachedSetting`). A row the settings schema refuses
+ * reads as null (the range unknown, as before), so it never takes the whole Payments panel down with it; `createLink` still refuses with its 500.
+ */
+function linkMinimumOf(termsR: D1Result | undefined, balanceMinor: number): number | null {
+  try {
+    const terms = cachedSetting("payment_terms", termsR?.results[0] as StoredSetting | undefined);
+    return onlineMinimumOf(terms.razorpayMinPartialInrMinor, balanceMinor);
+  } catch {
+    return null;
+  }
+}
+
 export const invoiceLedger = new Hono<AppEnv>()
   // ---- the Payments panel ----
   .get("/:id/payments", param(idParam), async (c) => {
     const { id } = c.req.valid("param");
     const db = c.env.DB;
     const today = toIsoDate(istDate(Date.now()));
-    const [docR, holdR, pendR, creditR, extR, realR] = await db.batch([
+    const [docR, holdR, pendR, creditR, extR, realR, gwPayR, linksR, reviewR, termsR] = await db.batch([
       db.prepare(DOC_SQL).bind(id),
       db.prepare(DOCUMENT_HOLDINGS_SQL).bind(id),
       db.prepare(PENDING_FOR_DOCUMENT_SQL).bind(id),
       db.prepare(CREDIT_OF_DOCUMENT_CLIENT_SQL).bind(id),
       db.prepare(EXTENSIONS_SQL).bind(id),
       db.prepare(REALISATION_OF_SQL).bind(id, today),
+      // M6.2: the Razorpay payments that came through this document's links (any status), its links, and its open review items.
+      db.prepare(GATEWAY_PAYMENTS_OF_DOCUMENT_SQL).bind(id),
+      db.prepare(DOCUMENT_CHECKOUTS_SQL).bind(id),
+      db
+        .prepare(
+          "SELECT count(*) AS n FROM review_items INDEXED BY review_items_document WHERE document_id = ?1 AND status = 'open'",
+        )
+        .bind(id),
+      // M6.2 fix round 3 item 4: the part-payment floor, so the Create dialog shows the range to a role that can't read Settings › Payment terms.
+      db.prepare("SELECT value, version FROM settings WHERE key = 'payment_terms'"),
     ]);
     const d = docR?.results[0] as DocRow | undefined;
     if (!d || !PANEL_TYPES.includes(d.type)) return err(c, NOT_FOUND, 404);
@@ -413,6 +468,39 @@ export const invoiceLedger = new Hono<AppEnv>()
         recordedAt: r.recorded_at,
       })),
       credits: creditView((creditR?.results ?? []) as { currency: string; credit: number }[]),
+      // M6.2 (run file G1): "Paid online" rows (method, Razorpay's payment id, the fee absorbed), the payment links, and the open review items.
+      gateway: {
+        payments: ((gwPayR?.results ?? []) as GatewayPaymentRow[]).map((r) => ({
+          paymentId: r.id,
+          provider: r.provider,
+          status: r.status,
+          providerPaymentId: r.provider_payment_id,
+          mode: r.mode,
+          reference: r.reference_norm,
+          receivedOn: r.received_on,
+          amountMinor: r.amount_minor,
+          feeMinor: r.charges_minor,
+          feeTaxMinor: r.fee_tax_minor,
+          proformaPending: r.status === "pending_verification" && r.requested_allocations !== null,
+        })),
+        links: ((linksR?.results ?? []) as LinkRow[]).map((l) => ({
+          checkoutId: l.id,
+          status: l.status,
+          source: l.source,
+          amountMinor: l.amount_minor,
+          shortUrl: l.status === "live" ? l.short_url : null,
+          expiresAt: l.expires_at,
+          createdAt: l.created_at,
+          paidPaymentId: l.paid_payment_id,
+        })),
+        openReviewCount: (reviewR?.results[0] as { n: number } | undefined)?.n ?? 0,
+        /**
+         * Fix round 3 item 4: the smallest amount a link may ask for now, by the rule `createLink`'s `payAmountVerdict` enforces (core `onlineMinimumOf` over
+         * Settings › Payment terms' floor: never under ₹1, the whole balance if lower). Null when nothing in rupees is due (no link can be made).
+         */
+        minimumMinor:
+          d.currency === "INR" && d.balance_minor > 0 ? linkMinimumOf(termsR, d.balance_minor) : null,
+      },
       realisation:
         d.type === "export_invoice" && real
           ? {

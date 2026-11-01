@@ -11,6 +11,7 @@
     "./contact-access": "./src/contact-access.ts",
     "./deeds": "./src/deeds.ts",
     "./documents": "./src/documents.ts",
+    "./gateway": "./src/gateway.ts",
     "./issue": "./src/issue.ts",
     "./lead-stage": "./src/lead-stage.ts",
     "./ledger": "./src/ledger.ts",

@@ -243,6 +243,40 @@ describe("jobs Worker config guard (M5.4, LD57, LD61)", () => {
   });
 });
 
+describe("jobs Worker minify and source maps (L9, owner 2026-10-31)", () => {
+  const read = (p: string) => guard.parseJsonc(readFileSync(new URL(`../../${p}`, import.meta.url), "utf8"));
+  const jobs = read("jobs/wrangler.jsonc");
+
+  it("the real config minifies and uploads source maps at the top level, and no environment switches them off", () => {
+    expect(jobs.minify).toBe(true);
+    expect(jobs.upload_source_maps).toBe(true);
+    expect(guard.jobsBuildProblems(jobs)).toEqual([]);
+  });
+
+  it("fails a missing or false top-level key", () => {
+    const a = structuredClone(jobs);
+    delete a.minify;
+    a.upload_source_maps = false;
+    expect(guard.jobsBuildProblems(a)).toEqual([
+      "(top level): minify must be true (L9)",
+      "(top level): upload_source_maps must be true (L9)",
+    ]);
+  });
+
+  it("fails an environment that sets either key to anything but true", () => {
+    const b = structuredClone(jobs);
+    b.env.staging.minify = false;
+    b.env.production.upload_source_maps = "false";
+    expect(guard.jobsBuildProblems(b)).toEqual([
+      "env.staging: minify must not be switched off (L9)",
+      "env.production: upload_source_maps must not be switched off (L9)",
+    ]);
+    const c = structuredClone(jobs);
+    c.env.staging.minify = true;
+    expect(guard.jobsBuildProblems(c)).toEqual([]);
+  });
+});
+
 describe("admin finance Worker config guard (M6.1 stage A, ADM-PAY-01)", () => {
   const read = (p: string) => guard.parseJsonc(readFileSync(new URL(`../../${p}`, import.meta.url), "utf8"));
   const finance = read("admin/wrangler.finance.jsonc");
@@ -252,7 +286,7 @@ describe("admin finance Worker config guard (M6.1 stage A, ADM-PAY-01)", () => {
 
   it("covers both auxiliary admin configs, and the real configs pass", () => {
     expect(guard.ADMIN_AUX_CONFIGS).toEqual(["wrangler.api.jsonc", "wrangler.finance.jsonc"]);
-    expect(guard.apiConfigProblems(finance, front)).toEqual([]);
+    expect(guard.apiConfigProblems(finance, front, guard.FINANCE_OPTS)).toEqual([]);
     expect(guard.missingPreviewOff(finance)).toEqual([]);
     expect(guard.observabilityProblems(finance)).toEqual([]);
     expect(guard.frontServiceProblems(front, api, finance)).toEqual([]);
@@ -311,7 +345,7 @@ describe("admin finance Worker config guard (M6.1 stage A, ADM-PAY-01)", () => {
     const f = structuredClone(finance);
     f.env.staging.workers_dev = true;
     f.env.staging.r2_buckets[0].bucket_name = "other";
-    expect(guard.apiConfigProblems(f, front)).toEqual([
+    expect(guard.apiConfigProblems(f, front, guard.FINANCE_OPTS)).toEqual([
       "env.staging: workers_dev must be false",
       "env.staging: r2_buckets differ from the front's",
     ]);
@@ -322,6 +356,74 @@ describe("admin finance Worker config guard (M6.1 stage A, ADM-PAY-01)", () => {
     expect(guard.jobsConfigProblems(jobs, api)).toEqual([
       "(top level): ADMIN_JOBS points at techaust-platform-admin-finance, expected techaust-platform-admin-api",
       "env.staging: ADMIN_JOBS points at techaust-platform-admin-finance-staging, expected techaust-platform-admin-api-staging",
+    ]);
+  });
+});
+
+describe("M6.2 gateway wiring (run file F)", () => {
+  const read = (p: string) => guard.parseJsonc(readFileSync(new URL(`../../${p}`, import.meta.url), "utf8"));
+  const jobs = read("jobs/wrangler.jsonc");
+  const portal = read("portal/wrangler.jsonc");
+  const finance = read("admin/wrangler.finance.jsonc");
+  const front = read("admin/wrangler.jsonc");
+
+  it("the real configs pass: ADMIN_GATEWAY and ADMIN_PAY to the finance entrypoints, the webhook secret on jobs, the key pair on finance only", () => {
+    expect(guard.gatewayConfigProblems(jobs, portal, finance, [["admin", front]])).toEqual([]);
+    expect(guard.apiConfigProblems(finance, front, guard.FINANCE_OPTS)).toEqual([]);
+    // without the finance options the secrets and vars are refused as before
+    expect(guard.apiConfigProblems(finance, front).length).toBeGreaterThan(0);
+  });
+
+  it("refuses a mispointed binding, a missing webhook secret, the key pair on jobs, a stub transport on staging, anything in production, a live flag", () => {
+    const j = structuredClone(jobs);
+    j.env.staging.services = j.env.staging.services.filter(
+      (x: { binding: string }) => x.binding !== "ADMIN_GATEWAY",
+    );
+    j.secrets.required = ["SES_ACCESS_KEY_ID", "SES_SECRET_ACCESS_KEY", "RAZORPAY_KEY_ID"];
+    j.env.production.services = [{ binding: "ADMIN_GATEWAY", service: "x", entrypoint: "GatewayEvents" }];
+    const p = structuredClone(portal);
+    p.services[0].entrypoint = "GatewayEvents";
+    const f = structuredClone(finance);
+    f.env.staging.vars.GATEWAY_TRANSPORT = "stub";
+    f.vars.PAYMENTS_LIVE_ALLOWED = "true";
+    expect(guard.gatewayConfigProblems(j, p, f)).toEqual([
+      "(top level): portal's ADMIN_PAY must name the entrypoint PortalPayments",
+      "(top level): jobs must require the secret RAZORPAY_WEBHOOK_SECRET",
+      "(top level): jobs must not hold the Razorpay key pair (finance only, L1)",
+      "env.staging: jobs's ADMIN_GATEWAY service binding is missing",
+      "env.staging: finance GATEWAY_TRANSPORT must be razorpay",
+      "env.production: jobs has no ADMIN_GATEWAY until Phase 7",
+      'finance (top level): PAYMENTS_LIVE_ALLOWED must be "false"',
+    ]);
+  });
+
+  it("finance's own LEADS_QUEUE producer points at the jobs Worker's leads queue (top level, staging), none in production; the shared queues still match the front's [early check 2, finding 2]", () => {
+    expect(finance.queues.producers.map((q: { binding: string }) => q.binding)).toContain("LEADS_QUEUE");
+    const f = structuredClone(finance);
+    f.env.staging.queues.producers = f.env.staging.queues.producers.map(
+      (q: { binding: string; queue: string }) =>
+        q.binding === "LEADS_QUEUE" ? { ...q, queue: "techaust-staging-email" } : q,
+    );
+    f.env.production.queues = { producers: [{ binding: "LEADS_QUEUE", queue: "techaust-production-leads" }] };
+    expect(guard.gatewayConfigProblems(jobs, portal, f)).toEqual([
+      "env.staging: finance's LEADS_QUEUE must be the jobs Worker's leads queue (techaust-staging-leads)",
+      "env.production: finance has no LEADS_QUEUE until Phase 7",
+    ]);
+    // the other producers are still compared with the front's
+    const g = structuredClone(finance);
+    g.queues.producers = g.queues.producers.filter((q: { binding: string }) => q.binding !== "PDF_QUEUE");
+    expect(guard.apiConfigProblems(g, front, guard.FINANCE_OPTS)).toEqual([
+      "(top level): queues differ from the front's",
+    ]);
+  });
+
+  it("finance's secrets are exactly the key pair, and none in production", () => {
+    const f = structuredClone(finance);
+    f.env.staging.secrets = { required: ["RAZORPAY_KEY_ID"] };
+    f.env.production.secrets = { required: ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"] };
+    expect(guard.apiConfigProblems(f, front, guard.FINANCE_OPTS)).toEqual([
+      'env.staging: secrets.required must be exactly ["RAZORPAY_KEY_ID","RAZORPAY_KEY_SECRET"]',
+      "env.production: secrets.required must be exactly []",
     ]);
   });
 });

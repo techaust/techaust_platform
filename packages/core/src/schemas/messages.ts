@@ -285,6 +285,24 @@ export const isReportKind = (body: unknown): body is { kind: ReportMessage["kind
   body !== null &&
   REPORT_KINDS.includes((body as { kind: ReportMessage["kind"] }).kind);
 
+// ---- M6.2 gateway messages on the `leads` queue (L9: the existing queue, no new hosted queue; one unit of work each; the hourly tick only enqueues the sweep) ----
+/** `gateway.event`: process one stored, verified webhook event (the admin finance Worker's `processEvent`). Its id only: the event row holds the rest. */
+export const gatewayEventMessage = z.object({ kind: z.literal("gateway.event"), eventId: id64 });
+/** `gateway.advance`: issue the tax invoice for one proforma payment received online (`issueGatewayAdvance`; L6, its own message). */
+export const gatewayAdvanceMessage = z.object({ kind: z.literal("gateway.advance"), paymentId: id64 });
+/** `gateway.sweep`: re-enqueue up to 20 events stuck in `received` for 15 minutes (fewer than 10 attempts). `asOf` is the cron's scheduled time (UTC ms). */
+export const gatewaySweepMessage = z.object({ kind: z.literal("gateway.sweep"), asOf: z.int().min(0) });
+export type GatewayEventMessage = z.infer<typeof gatewayEventMessage>;
+export type GatewayAdvanceMessage = z.infer<typeof gatewayAdvanceMessage>;
+export type GatewaySweepMessage = z.infer<typeof gatewaySweepMessage>;
+export type GatewayMessage = GatewayEventMessage | GatewayAdvanceMessage | GatewaySweepMessage;
+export const GATEWAY_KINDS = ["gateway.event", "gateway.advance", "gateway.sweep"] as const;
+/** True for a body of the M6.2 gateway family (valid or not), so a malformed one can never become a lead (the consumer routes these before the lead fall-through). */
+export const isGatewayKind = (body: unknown): body is { kind: GatewayMessage["kind"] } =>
+  typeof body === "object" &&
+  body !== null &&
+  GATEWAY_KINDS.includes((body as { kind: GatewayMessage["kind"] }).kind);
+
 /** True for a body of the M5.4 billing family (valid or not), so a malformed one can never become a lead. */
 export const isBillingKind = (body: unknown): body is { kind: BillingMessage["kind"] } =>
   typeof body === "object" &&

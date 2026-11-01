@@ -339,7 +339,28 @@ export type InvoiceSummary = {
   bank: InvoiceBank | null;
   /** The PDF exists (its download answers 409 `pdf_pending` until it does; false on a withdrawn payment request, whose PDF answers 409 `withdrawn`). */
   pdfReady: boolean;
+  /** M6.2 (POR-06): the document can be paid online now (a domestic INR tax invoice, debit note or proforma with something due). Absent from an older API. */
+  payOnline?: boolean;
+  /** M6.2: a proforma is paid in whole rupees (LD28; 07-ZI line 7). */
+  wholeRupees?: boolean;
+  /** M6.2: the open link (amount, when it ends), the last payment received online (confirmed or still being checked, so "received"), a proforma's waiting one. */
+  online?: OnlineBlock;
 };
+
+/** M6.2: the page's Pay now block (no Razorpay ids, nothing about the payer). */
+export type OnlineBlock = {
+  open: { amountMinor: number; expiresAt: number } | null;
+  lastPaid: { amountMinor: number; at: number } | null;
+  proformaPending: boolean;
+  /**
+   * The smallest part payment (Settings › Payment terms' floor, never under ₹1, or the balance if lower; fix round 3 item 1). Null when the document can't be paid
+   * online or the floor can't be read: the dialog then offers the full amount only (as it does when the minimum equals the balance).
+   */
+  minimumMinor: number | null;
+};
+
+/** M6.2: a payment link made (`shortUrl` on rzp.io or razorpay.com, checked by the server and again before the browser leaves). */
+export type PayLink = { ok: true; shortUrl: string; expiresAt: number; reused: boolean };
 
 export const invoicesApi = {
   list: (after?: string) =>
@@ -348,6 +369,15 @@ export const invoicesApi = {
       {},
     ),
   get: (id: string) => send<{ document: InvoiceSummary }>(`/invoices/${encodeURIComponent(id)}`, {}),
+  /** M6.2: the same, asking the server to check the open link with Razorpay first (once, after 20 s of Processing). */
+  getRefreshed: (id: string) =>
+    send<{ document: InvoiceSummary }>(`/invoices/${encodeURIComponent(id)}?refresh=1`, {}),
+  /**
+   * M6.2 Pay now (07-ZI): a Razorpay link for this amount. 400 `amount_below_minimum` / `amount_above_balance` / `amount_not_whole_rupee` (lines 6, 7, with
+   * details); 409, 429, 502, 503 answer line 14.
+   */
+  pay: (id: string, amountMinor: number) =>
+    send<PayLink>(`/invoices/${encodeURIComponent(id)}/pay`, { body: { amountMinor } }),
   pdf: (id: string) => download(`/invoices/${encodeURIComponent(id)}/pdf`, undefined, true),
 };
 
@@ -355,6 +385,9 @@ export const invoicesApi = {
 export const invoiceLinkApi = {
   open: (token: string) => send<{ document: InvoiceSummary }>("/t/document", { ...pub, body: { token } }),
   pdf: (token: string) => download("/t/document/pdf", { token }, false),
+  /** M6.2 Pay now from the emailed link (the token in the body only; Razorpay returns to `/pay/return`). */
+  pay: (token: string, amountMinor: number) =>
+    send<PayLink>("/t/document/pay", { ...pub, body: { token, amountMinor } }),
 };
 
 export const api = {

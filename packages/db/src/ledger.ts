@@ -542,11 +542,22 @@ export const paymentRecordedSql = (doc: string): string =>
 
 /**
  * L17 (the void rules): a PENDING payment of the client `client` asks for the document `doc` (both SQL expressions) in its requested allocations. Core
- * `voidBlockers` `payment_pending`; a seek of `payments_client`.
+ * `voidBlockers` `payment_pending`; a seek of `payments_client`. Any pending payment: the void and withdraw WHEREs, the trigger's twin.
  */
 export const paymentPendingForSql = (doc: string, client: string): string =>
   `EXISTS (SELECT 1 FROM payments vp INDEXED BY payments_client, json_each(vp.requested_allocations) vj WHERE vp.client_id = ${client} AND vp.status = 'pending_verification'
      AND vp.requested_allocations IS NOT NULL AND json_extract(vj.value, '$.documentId') = ${doc})`;
+
+/**
+ * M6.2 (fix round 3 item 3): the same read, in ONE pass, telling the kinds apart as bits: 1 a pending manual entry (core `payment_pending`: the Owner rejects
+ * it), 2 a pending gateway payment (core `payment_pending_gateway`: it can't be rejected; its tax invoice is issued, or it is resolved in Needs review); 0 none.
+ * Decode with `PENDING_MANUAL` / `PENDING_GATEWAY`.
+ */
+export const paymentPendingKindsSql = (doc: string, client: string): string =>
+  `(SELECT coalesce(max(vp.provider = 'manual'), 0) + 2 * coalesce(max(vp.provider <> 'manual'), 0) FROM payments vp INDEXED BY payments_client, json_each(vp.requested_allocations) vj
+     WHERE vp.client_id = ${client} AND vp.status = 'pending_verification' AND vp.requested_allocations IS NOT NULL AND json_extract(vj.value, '$.documentId') = ${doc})`;
+export const PENDING_MANUAL = 1;
+export const PENDING_GATEWAY = 2;
 
 /**
  * L17 (early check 2, finding 10): the payment test of the void statement's WHERE, `NOT ${paymentBlocksVoidSql(...)}`: an allocation row names the document,

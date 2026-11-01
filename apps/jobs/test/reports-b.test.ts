@@ -66,6 +66,7 @@ describe("the 09:00 IST dispatch [LD76]", () => {
           ...(h === ALERTS_HOUR_IST ? ["realisation.scan"] : []),
           ...(h === ALERTS_HOUR_IST && day >= 5 && day <= 7 ? ["edf.reminder"] : []),
           "reminder.scan",
+          "gateway.sweep", // M6.2, changed on purpose
         ];
         expect(kinds, `day ${day} hour ${h}`).toEqual(expected);
       }
@@ -91,13 +92,14 @@ describe("the 09:00 IST dispatch [LD76]", () => {
   it("the tick stays ONE sendBatch and reads no D1, on a day with every message (the database is a trap)", async () => {
     const dead = new Proxy({}, { get: () => () => Promise.reject(new Error("D1 must not be read")) });
     const env = makeEnv({ DB: dead });
-    expect(await enqueueHourly(env, tick("2026-11-05"))).toBe(4);
-    expect(fakes.leads.map((s) => s.via)).toEqual(Array(4).fill("sendBatch"));
+    expect(await enqueueHourly(env, tick("2026-11-05"))).toBe(5);
+    expect(fakes.leads.map((s) => s.via)).toEqual(Array(5).fill("sendBatch"));
     expect(fakes.leads.map((s) => (s.body as { kind: string }).kind)).toEqual([
       "alerts.daily",
       "realisation.scan",
       "edf.reminder",
       "reminder.scan",
+      "gateway.sweep",
     ]);
   });
 
@@ -112,6 +114,7 @@ describe("the 09:00 IST dispatch [LD76]", () => {
       "realisation.scan",
       "edf.reminder",
       "reminder.scan",
+      "gateway.sweep",
     ]);
   });
 });

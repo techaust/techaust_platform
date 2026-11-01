@@ -89,12 +89,25 @@ export const MODE_LABELS: Record<PaymentMode, string> = {
   imps: "IMPS",
   upi: "UPI",
   swift: "SWIFT",
+  // M6.2: how a Razorpay payment was made (core `methodToMode`; staff words drafted by the designer for the lead, 2026-11-01). Never offered when recording.
+  card: "Card",
+  netbanking: "Netbanking",
+  wallet: "Wallet",
+  emi: "EMI",
+  paylater: "Pay later",
+  other: "Other",
 };
 export const MODES: readonly PaymentMode[] = ["neft", "rtgs", "imps", "upi", "swift"];
 
 /** Line 21, the void blocker `payment_pending`. */
 export const VOID_PAYMENT_PENDING =
   "A payment recorded on it is waiting for the owner's check. Reject it first.";
+/**
+ * M6.2 (fix round 3 item 3, reworded in fix round 4 low 2; the lead under the standing delegation, 2026-11-01): the void and withdraw blocker `payment_pending_gateway`, a pending Razorpay
+ * payment (it can't be rejected). The Worker's `VOID_GATEWAY_PENDING_LINE` is the same words (a test pins the two).
+ */
+export const VOID_GATEWAY_PENDING =
+  'A Razorpay payment on it is waiting for its tax invoice. Issue it with "Confirm by issuing the tax invoice".';
 
 /** Line 9, the overpayment line. */
 export const overpaymentLine = (amount: string, client: string) =>

@@ -39,6 +39,9 @@ import {
   isWithdrawnRow,
   LINES_SQL,
   type LineRow,
+  ONLINE_SQL,
+  type OnlineRow,
+  onlineOf,
   openOrWithdrawnSql,
   openSql,
   PDF_WITHDRAWN,
@@ -52,6 +55,7 @@ import {
 } from "./invoice-summary.ts";
 import { streamPdf } from "./offer-core.ts";
 import { pdfFileName } from "./offer-sql.ts";
+import { createLink, payAnswer, payTokenBody } from "./pay.ts";
 import { json } from "./validate.ts";
 
 /** Document types a link may open: the whole invoice family (LD62; a receipt is M6). */
@@ -115,9 +119,11 @@ export const docToken = new Hono<AppEnv>()
     c.set("accessDone", true);
     // One batch: the frozen lines (read first), the audit row of the use, the first view (`VIEW_SQL`: set once, only on a document the client may still
     // open, so never on a void one; FX-5, 08-C RA-10), and the access row.
-    const [lines, credits] = await db.batch([
+    const [lines, credits, online] = await db.batch([
       db.prepare(LINES_SQL).bind(doc.link_client_id, doc.id),
       db.prepare(CREDIT_NOTES_SQL).bind(doc.link_client_id, doc.id),
+      // M6.2: the Pay now block, bound to the link's client.
+      db.prepare(ONLINE_SQL).bind(doc.link_client_id, doc.id, t),
       auditStmt(db, {
         ...requestInfo(c),
         actorType: "contact",
@@ -131,12 +137,29 @@ export const docToken = new Hono<AppEnv>()
       accessStmt(db, accessEntry(c, 200, doc.link_contact_id)),
     ]);
     return c.json({
-      document: summaryOf(
-        doc,
-        (lines?.results ?? []) as LineRow[],
-        (credits?.results ?? []) as CreditNoteRow[],
-      ),
+      document: {
+        ...summaryOf(doc, (lines?.results ?? []) as LineRow[], (credits?.results ?? []) as CreditNoteRow[]),
+        ...onlineOf(online?.results[0] as OnlineRow | undefined),
+      },
     });
+  })
+  // M6.2 (POR-06): Pay now from the emailed link. The same open and the same counter as the summary (a bad token counts toward `p:fail:`); the token's HASH
+  // goes to the finance Worker, which re-checks it (live, unrevoked, for this document, bound to its live contact) and makes the link with Razorpay's return page
+  // `pay/return` (no token in any URL).
+  .post("/document/pay", json(payTokenBody), async (c) => {
+    const { token, amountMinor } = c.req.valid("json");
+    const o = await open(c, token);
+    if (o instanceof Response) return o;
+    const r = await createLink(c.env, {
+      provider: "razorpay",
+      clientId: o.doc.link_client_id,
+      contactId: null,
+      tokenHash: await tokenHash(token),
+      documentId: o.doc.id,
+      amountMinor,
+      returnTo: "pay_return",
+    });
+    return payAnswer(c, r);
   })
   // The PDF behind the link (the same open and the same counter). The headers are those of the offer PDF: an attachment, never rendered, never cached, never sniffed.
   // Opening it is a view too (FX-5, 08-C RA-10; parity with the signed-in PDF): the first view and the access row in one batch, before the answer.

@@ -49,7 +49,7 @@ const reqLines = (lines: string[]) =>
   });
 
 describe("the request log line [NFR-6]", () => {
-  it("has exactly ev, r, s, rid, iso and n; r is the route PATTERN (or 'other')", async () => {
+  it("has exactly ev, r, s, rid, iso and n (and f: 1 on a pattern's first run in the isolate); r is the route PATTERN (or 'other')", async () => {
     const o = await sessionFor("owner", { stepUp: true });
     const t = await sessionFor("staff");
     const spy = spyConsole();
@@ -66,12 +66,20 @@ describe("the request log line [NFR-6]", () => {
       });
       await call("/nope/at/all", { headers: { "cf-ray": "ray-4" } });
       await call("/health", { headers: { "cf-ray": "ray-5" } });
+      await call("/health", { headers: { "cf-ray": "ray-6" } });
     } finally {
       spy.stop();
     }
-    const logged = reqLines(spy.lines);
-    expect(logged).toHaveLength(5);
-    for (const l of logged) expect(Object.keys(l).sort()).toEqual(["ev", "iso", "n", "r", "rid", "s"]);
+    const all6 = reqLines(spy.lines);
+    expect(all6).toHaveLength(6);
+    // M6.2 (CPU diagnosis, lead decision 4): `f` is 1 or absent, and the second /health in a row is never a first run.
+    for (const l of all6) {
+      const keys = Object.keys(l).sort();
+      expect(keys.filter((k) => k !== "f")).toEqual(["ev", "iso", "n", "r", "rid", "s"]);
+      if ("f" in l) expect(l.f).toBe(1);
+    }
+    expect(all6[5]).not.toHaveProperty("f");
+    const logged = all6.slice(0, 5);
     expect(logged.map((l) => [l.r, l.s, l.rid])).toEqual([
       ["/api/v1/auth/login", 401, "ray-1"],
       ["/api/v1/auth/me", 200, "ray-2"],

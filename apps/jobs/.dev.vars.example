@@ -1,3 +1,6 @@
 # Local-only email secrets. Create apps/jobs/.dev.vars with `pnpm dev:secrets` (placeholders: the local `log` transport sends nothing; git-ignored).
 SES_ACCESS_KEY_ID=
 SES_SECRET_ACCESS_KEY=
+# M6.2: the Razorpay webhook secret (a local fake from `pnpm dev:secrets`; staging: tools/set-gateway-keys.ps1 -Gateway razorpay-webhook). RAZORPAY_WEBHOOK_SECRET_PREVIOUS is optional (a rotation).
+RAZORPAY_WEBHOOK_SECRET=
+# RAZORPAY_WEBHOOK_SECRET_PREVIOUS=

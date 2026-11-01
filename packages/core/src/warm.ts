@@ -16,6 +16,9 @@ import {
   edfReminderMessage,
   emailMessage,
   formMeta,
+  gatewayAdvanceMessage,
+  gatewayEventMessage,
+  gatewaySweepMessage,
   invoiceSendMessage,
   type LeadMessage,
   leadMessage,
@@ -153,6 +156,20 @@ export function warmBillingMessages(): number {
         }),
       ) +
       ok(reminderScanMessage.safeParse({ kind: "reminder.scan", after: null }))
+    );
+  } catch {
+    return 0; // never stop a Worker from starting
+  }
+}
+
+/** The M6.2 gateway messages of the leads queue, one made-up parse each (the jobs Worker calls it from its top level in stage B2). Returns 3. */
+export function warmGatewayMessages(): number {
+  const id = "00000000-0000-7000-8000-000000000000";
+  try {
+    return (
+      ok(gatewayEventMessage.safeParse({ kind: "gateway.event", eventId: id })) +
+      ok(gatewayAdvanceMessage.safeParse({ kind: "gateway.advance", paymentId: `rzp_${id.slice(0, 14)}` })) +
+      ok(gatewaySweepMessage.safeParse({ kind: "gateway.sweep", asOf: 1 }))
     );
   } catch {
     return 0; // never stop a Worker from starting

@@ -1,17 +1,25 @@
-// Gateways (ADM-SET-06): Razorpay, Stripe and PayPal, each with its mode (test or live) and whether its keys are set.
-// Keys are never typed here: they are Worker secrets, and the API reports only "configured" or "missing" by name. Live
-// stays locked until the owner's go-live (PAYMENTS_LIVE_ALLOWED, Phase 7); the API refuses it too (409 `live_locked`).
-// A change needs a fresh step-up (gateways.manage), which the API asks for on save.
+// Gateways (ADM-SET-06): Razorpay, Stripe and PayPal, each with its mode (test or live), whether its keys are set and, for Razorpay, the last verified webhook.
+// Keys are never typed here: they are Worker secrets. M6.2 (L15): the key pair lives on the admin finance Worker, so the status comes from its
+// `GET /api/v1/payments/gateways` (names only, never a value); the mode is the settings row, saved here. Live stays locked until the owner's go-live
+// (PAYMENTS_LIVE_ALLOWED, Phase 7); the API refuses it too (409 `live_locked`). A change needs a fresh step-up (gateways.manage), which the API asks for on save.
 import { GATEWAYS, type Gateway, type Settings } from "@techaust/core/settings";
 import { type FormEvent, useState } from "react";
-import { api, errorText, type GatewayMeta, RequestError, type SettingsDoc } from "../../api.ts";
-import { StatusPill } from "../../components/display.tsx";
+import {
+  api,
+  errorText,
+  type GatewaysStatus,
+  paymentsApi,
+  RequestError,
+  type SettingsDoc,
+} from "../../api.ts";
+import { StatusPill, When } from "../../components/display.tsx";
 import { SaveBar } from "../../components/form.tsx";
 import { Lock } from "../../components/icons.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { UnsavedChangesGuard } from "../../components/unsaved.tsx";
+import { GW, GW_UI } from "../../lib/gateway.ts";
 import { FormSkeleton, StaleNotice } from "./kit.tsx";
 
 const ABOUT: Record<Gateway, { name: string; for: string }> = {
@@ -21,19 +29,30 @@ const ABOUT: Record<Gateway, { name: string; for: string }> = {
 };
 
 export function Gateways() {
-  const loaded = useLoad(() => api.gateways(), "");
+  // The mode (settings) and the status (the finance Worker) load together; either failing is the page's failed state.
+  const loaded = useLoad(() => Promise.all([api.gateways(), paymentsApi.gateways()]), "");
   if (loaded.state === "loading") return <FormSkeleton />;
   if (loaded.state === "failed") return <LoadFailed error={loaded.error} onRetry={() => loaded.reload()} />;
-  return <GatewayForm key={loaded.data.version} doc={loaded.data} reload={() => loaded.reload(true)} />;
+  const [doc, status] = loaded.data;
+  return <GatewayForm key={doc.version} doc={doc} status={status} reload={() => loaded.reload(true)} />;
 }
 
-function GatewayForm({ doc, reload }: { doc: SettingsDoc<"gateways">; reload: () => void }) {
+function GatewayForm({
+  doc,
+  status,
+  reload,
+}: {
+  doc: SettingsDoc<"gateways">;
+  status: GatewaysStatus;
+  reload: () => void;
+}) {
   const toast = useToast();
   const [value, setValue] = useState<Settings["gateways"]>(doc.value);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
-  const meta: GatewayMeta = doc.meta;
+  // Live is open only when both Workers say so (the settings route checks its own flag on save).
+  const liveAllowed = doc.meta.liveAllowed && status.liveAllowed;
   const dirty = JSON.stringify(value) !== JSON.stringify(doc.value);
 
   async function save(e: FormEvent) {
@@ -63,7 +82,7 @@ function GatewayForm({ doc, reload }: { doc: SettingsDoc<"gateways">; reload: ()
       <form id="gateways-form" onSubmit={save} noValidate>
         <ul className="gateways">
           {GATEWAYS.map((g) => {
-            const status = meta.status[g];
+            const s = status.gateways[g];
             const liveId = `gw-${g}-live`;
             return (
               <li key={g} className="gateway">
@@ -87,31 +106,54 @@ function GatewayForm({ doc, reload }: { doc: SettingsDoc<"gateways">; reload: ()
                       type="radio"
                       name={`gw-${g}`}
                       checked={value[g].mode === "live"}
-                      disabled={!meta.liveAllowed && value[g].mode !== "live"}
-                      aria-describedby={meta.liveAllowed ? undefined : liveId}
+                      disabled={!liveAllowed && value[g].mode !== "live"}
+                      aria-describedby={liveAllowed ? undefined : liveId}
                       onChange={() => setValue({ ...value, [g]: { mode: "live" } })}
                     />
-                    {!meta.liveAllowed && <Lock size={16} />}
+                    {!liveAllowed && <Lock size={16} />}
                     Live
                   </label>
                 </fieldset>
-                {!meta.liveAllowed && (
+                {!liveAllowed && (
                   <p className="gateway__live hint" id={liveId}>
                     Live is locked until go-live.
                   </p>
                 )}
-                <div className="gateway__keys">
-                  <span className="muted">Keys</span>
-                  {status.configured ? (
-                    <StatusPill tone="success" icon="check">
-                      Configured
-                    </StatusPill>
-                  ) : (
-                    <StatusPill tone="warning" icon="clock">
-                      Missing
-                    </StatusPill>
+                <dl className="gateway__status">
+                  <div className="gateway__keys">
+                    <dt className="muted">{GW.keys}</dt>
+                    <dd>
+                      {s?.keys.configured ? (
+                        <StatusPill tone="success" icon="check">
+                          {GW.keysConfigured}
+                        </StatusPill>
+                      ) : (
+                        <span className="gateway__missing">
+                          <StatusPill tone="warning" icon="clock">
+                            {GW.keysMissing}
+                          </StatusPill>
+                          {s && s.keys.missing.length > 0 && (
+                            <span className="gateway__names">
+                              {GW_UI.missingNames(s.keys.missing.join(", "))}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </dd>
+                  </div>
+                  {g === "razorpay" && (
+                    <div className="gateway__keys">
+                      <dt className="muted">{GW.lastWebhook}</dt>
+                      <dd>
+                        {s?.lastVerifiedWebhookAt ? (
+                          <When ms={s.lastVerifiedWebhookAt} inline />
+                        ) : (
+                          <span className="muted">{GW.noWebhook}</span>
+                        )}
+                      </dd>
+                    </div>
                   )}
-                </div>
+                </dl>
               </li>
             );
           })}

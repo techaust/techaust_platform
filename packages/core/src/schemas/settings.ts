@@ -20,6 +20,7 @@ import {
   validateFormat,
   validateStoredFormat,
 } from "../numbering.ts";
+import { DEFAULT_PART_FLOOR_MINOR } from "../online-pay.ts";
 import {
   REALISATION_MAX_DAYS,
   REALISATION_MAX_MONTHS,
@@ -448,13 +449,6 @@ export const flagSettings = z.object({
 export const GATEWAYS = ["razorpay", "stripe", "paypal"] as const;
 export type Gateway = (typeof GATEWAYS)[number];
 export const GATEWAY_MODES = ["test", "live"] as const;
-/** The Worker secret names that make a gateway "configured" (names only, from .env.example; values are never read out). */
-export const GATEWAY_SECRETS: Record<Gateway, readonly string[]> = {
-  razorpay: ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "RAZORPAY_WEBHOOK_SECRET"],
-  stripe: ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"],
-  paypal: ["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET", "PAYPAL_WEBHOOK_ID"],
-};
-
 /** ADM-SET-06: the mode only. Keys are Worker secrets; status (configured / missing) is computed, never stored. */
 export const gatewaySettings = z.strictObject({
   razorpay: z.strictObject({ mode: z.enum(GATEWAY_MODES) }),
@@ -602,8 +596,8 @@ export const SETTINGS_DEFAULTS: Settings = {
     reminderOffsetsDays: [-3, 0, 3, 7, 14],
     reminderWindowIst: { fromHour: 9, toHour: 19 },
     // The default part-payment floor (docs/04 ADM-SET-05): INR 10,000. Researched 2026-10-29, Razorpay first_min_partial_amount (08-C RB-39): a
-    // commercial default, no regulatory floor.
-    razorpayMinPartialInrMinor: 10_000_00,
+    // commercial default, no regulatory floor. One figure, in core `online-pay` (the portal reads it when the group was never saved).
+    razorpayMinPartialInrMinor: DEFAULT_PART_FLOOR_MINOR,
     // OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only: is a ₹10,000 website-use cap enforceable against a consumer? INR 10,000 is the figure the site printed before this setting existed.
     websiteLiabilityCapInrMinor: 1_000_000,
   },

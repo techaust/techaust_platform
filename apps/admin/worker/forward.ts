@@ -4,7 +4,7 @@
 // answers, once). An undeclared path is not forwarded: it gets the front's 404. A binding failure is 502 with the standard error body (LD5).
 import { hex, randomBytes } from "@techaust/auth";
 import { clipHeader, HEADER_LIMITS } from "@techaust/db/log";
-import { type App, nextRequestNumber } from "./app.ts";
+import { type App, firstRun, nextRequestNumber } from "./app.ts";
 import { err, type RouteDef } from "./context.ts";
 
 const BAD_GATEWAY = { code: "bad_gateway", message: "Something went wrong" };
@@ -41,7 +41,9 @@ export function forwardRoutes(app: App, routes: readonly RouteDef[]) {
         c.header("X-Content-Type-Options", "nosniff");
         return err(c, BAD_GATEWAY, 502);
       }
-      console.log(JSON.stringify({ ev: "fwd", r: row.path, w, s: res.status, rid, iso, n }));
+      // M6.2 (CPU diagnosis, lead decision 4): `f: 1` on this isolate's first forward of the row.
+      const f = firstRun(`fwd ${row.method} ${row.path}`);
+      console.log(JSON.stringify({ ev: "fwd", r: row.path, w, s: res.status, rid, iso, n, f }));
       return res;
     });
   }

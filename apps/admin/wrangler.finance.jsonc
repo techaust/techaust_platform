@@ -3,7 +3,8 @@
   // marked `on: "finance"` (invoices and notes, a client's invoices and statement, reports, approvals, the dashboard) and the `BillingJobs`
   // entrypoint the jobs Worker binds as ADMIN_JOBS. It has NO public URL at any level (no workers.dev, no routes, no preview URLs): it is
   // reachable only through the front's `ADMIN_FINANCE` service binding and the jobs Worker's ADMIN_JOBS, and it re-authenticates every
-  // request from the session cookie the front forwards untouched. It holds no secrets and no sign-in code. Bindings use the front's names
+  // request from the session cookie the front forwards untouched. It holds no sign-in code. M6.2 (L1): it holds the Razorpay key pair (secrets below; no public
+  // URL, so the safest home) and exports `GatewayEvents` (jobs, ADMIN_GATEWAY) and `PortalPayments` (portal, ADMIN_PAY). Bindings use the front's names
   // and ids in each scope; CI guard: scripts/check-worker-config.mjs. Production has vars only until Phase 7 (owner approval).
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "techaust-platform-admin-finance",
@@ -13,15 +14,24 @@
   "workers_dev": false,
   "preview_urls": false,
   "observability": { "enabled": true, "redact_query_string": true },
+  // M6.2: PORTAL_URL is Razorpay's return page (callback_url); GATEWAY_TRANSPORT "stub" answers locally with the simulator (refused anywhere but
+  // ENVIRONMENT "local"), "razorpay" calls Razorpay's API (staging). PAYMENTS_LIVE_ALLOWED stays "false" until the owner's go-live (CLAUDE.md rule 7).
   "vars": {
     "ENVIRONMENT": "local",
     "PAYMENTS_LIVE_ALLOWED": "false",
-    "LEAD_PURGE_MODE": "dry_run"
+    "LEAD_PURGE_MODE": "dry_run",
+    "PORTAL_URL": "http://localhost:5174/",
+    "GATEWAY_TRANSPORT": "stub"
   },
+  // M6.2 (L1): the Razorpay key pair, names only (`pnpm dev:secrets` writes local fakes; staging: tools/set-gateway-keys.ps1 -Gateway razorpay). Not inherited.
+  "secrets": { "required": ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"] },
   "queues": {
     "producers": [
       { "binding": "EMAIL_QUEUE", "queue": "techaust-local-email" },
-      { "binding": "PDF_QUEUE", "queue": "techaust-local-pdf" }
+      { "binding": "PDF_QUEUE", "queue": "techaust-local-pdf" },
+      // M6.2 (early check 2, finding 2): the finance Worker's own producer onto the jobs Worker's leads queue (the existing queue, L9), so a proforma payment
+      // met by a refresh or "Try again" queues its `gateway.advance`. Not on the front or the API Worker (scripts/check-worker-config.mjs, FINANCE_OPTS).
+      { "binding": "LEADS_QUEUE", "queue": "techaust-local-leads" }
     ]
   },
   "d1_databases": [
@@ -56,12 +66,16 @@
       "vars": {
         "ENVIRONMENT": "staging",
         "PAYMENTS_LIVE_ALLOWED": "false",
-        "LEAD_PURGE_MODE": "dry_run"
+        "LEAD_PURGE_MODE": "dry_run",
+        "PORTAL_URL": "https://techaust-platform-portal-staging.techaust-technologies-153.workers.dev/",
+        "GATEWAY_TRANSPORT": "razorpay"
       },
+      "secrets": { "required": ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"] },
       "queues": {
         "producers": [
           { "binding": "EMAIL_QUEUE", "queue": "techaust-staging-email" },
-          { "binding": "PDF_QUEUE", "queue": "techaust-staging-pdf" }
+          { "binding": "PDF_QUEUE", "queue": "techaust-staging-pdf" },
+          { "binding": "LEADS_QUEUE", "queue": "techaust-staging-leads" }
         ]
       },
       "r2_buckets": [

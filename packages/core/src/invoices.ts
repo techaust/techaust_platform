@@ -482,8 +482,10 @@ export const VOID_BLOCKER_CODES = [
   "viewed_by_client",
   "return_period_closed",
   // M6.1 (L17, L32): a payment waits for the Owner's check against it (`payment_pending`); a payment was ever put on it, one released or withdrawn since
-  // included (`payment_recorded`); TDS is recorded on it.
+  // included (`payment_recorded`); TDS is recorded on it. M6.2 (fix round 3 item 3): a pending Razorpay payment asks for it (`payment_pending_gateway`; it
+  // can't be rejected: its tax invoice is issued, or it is resolved in Needs review).
   "payment_pending",
+  "payment_pending_gateway",
   "payment_recorded",
   "tds_recorded",
 ] as const;
@@ -511,8 +513,13 @@ export type VoidFacts = {
    * Required, so no caller can forget it (stage B2 passes it from every void path).
    */
   readonly tdsMinor: number;
-  /** M6.1 (L17, L32): a PENDING payment asks for this document (`payments.requested_allocations`). */
+  /** M6.1 (L17, L32): a PENDING manual payment asks for this document (`payments.requested_allocations`). */
   readonly paymentPending: boolean;
+  /**
+   * M6.2 (fix round 3 item 3): a PENDING gateway (Razorpay) payment asks for it (a proforma paid online waiting for its tax invoice). Required, so no caller
+   * can forget it.
+   */
+  readonly paymentPendingGateway: boolean;
   /**
    * M6.1 (L17, L32): an allocation row names this document, even one released or withdrawn since (`paymentRecordedSql` in `@techaust/db/ledger`). Required,
    * so no caller can forget it.
@@ -538,6 +545,7 @@ export function voidBlockers(f: VoidFacts): VoidBlockerCode[] {
   if (f.paidMinor > 0) out.push("has_payment");
   if (f.creditedMinor > 0) out.push("has_credit");
   if (f.paymentPending === true) out.push("payment_pending");
+  if (f.paymentPendingGateway === true) out.push("payment_pending_gateway");
   if (f.paymentRecorded === true) out.push("payment_recorded");
   if (f.tdsMinor > 0) out.push("tds_recorded");
   if (f.hasIssuedChild) out.push("has_child_document");
@@ -559,6 +567,7 @@ export const WITHDRAW_BLOCKER_CODES = [
   "proforma_converted",
   "proforma_paid",
   "payment_pending",
+  "payment_pending_gateway",
   "not_delivered",
 ] as const;
 export type WithdrawBlockerCode = (typeof WITHDRAW_BLOCKER_CODES)[number];
@@ -584,6 +593,8 @@ export type WithdrawFacts = {
    * the payment, so the entry is confirmed or rejected first (the withdraw statement's WHERE and the trigger `documents_void_no_payment` hold it too).
    */
   readonly paymentPending: boolean;
+  /** M6.2 (fix round 3 item 3): the same for a pending gateway (Razorpay) payment, which can't be rejected (`payment_pending_gateway`). Required. */
+  readonly paymentPendingGateway: boolean;
 };
 
 /**
@@ -613,6 +624,7 @@ export function withdrawBlockers(f: WithdrawFacts): WithdrawBlockerCode[] {
   if (f.status === "converted" || f.hasChildDocument) out.push("proforma_converted");
   if (f.paidMinor > 0 || f.creditedMinor > 0 || f.hasAdvanceReceipt) out.push("proforma_paid");
   if (f.paymentPending) out.push("payment_pending");
+  if (f.paymentPendingGateway) out.push("payment_pending_gateway");
   if (!delivered) out.push("not_delivered");
   return out;
 }

@@ -1445,6 +1445,268 @@ export function deedTriggerStatements(): string[] {
   ];
 }
 
+/** M6.2 (L3): the values the payment triggers of 0064 accept, pinned (a db test compares them with the schema's lists today; M6.3 to M6.5 widen them in their own migrations). */
+export const PAYMENT_PROVIDERS_0064 = ["manual", "razorpay"] as const;
+export const PAYMENT_MODES_0064 = [
+  "neft",
+  "rtgs",
+  "imps",
+  "upi",
+  "swift",
+  "card",
+  "netbanking",
+  "wallet",
+  "emi",
+  "paylater",
+  "other",
+] as const;
+/** M6.2: the gateway tables' lists as 0064 holds them (pinned; the schema's lists are compared by a db test). */
+export const GATEWAY_PROVIDERS_0064 = ["razorpay"] as const;
+export const WEBHOOK_EVENT_STATUSES_0064 = [
+  "received",
+  "processed",
+  "ignored",
+  "needs_review",
+  "failed",
+] as const;
+export const CHECKOUT_SOURCES_0064 = ["portal", "link", "staff"] as const;
+export const CHECKOUT_STATUSES_0064 = [
+  "creating",
+  "live",
+  "paid",
+  "expired",
+  "cancelled",
+  "stale",
+  "failed",
+] as const;
+export const REVIEW_SOURCES_0064 = ["webhook", "dlq", "refresh"] as const;
+export const REVIEW_RESOLUTIONS_0064 = [
+  "confirmed",
+  "advance_issued",
+  "left_as_credit",
+  "dismissed",
+] as const;
+export const REVIEW_KINDS_0064 = [
+  "amount_mismatch",
+  "currency_mismatch",
+  "reference_mismatch",
+  "order_mismatch",
+  "payment_not_on_link",
+  "not_captured",
+  "partial_payment",
+  "unknown_link",
+  "document_not_payable",
+  "advance_blocked",
+  "refetch_failed",
+  "dead_letter",
+  "overpaid",
+  "proforma_overpaid",
+  "client_gone",
+  "unreadable_event",
+] as const;
+/** The columns `payments_fixed` freezes as 0064 recreates it: 0060's list plus M6.2's gateway columns (pinned). */
+export const PAYMENT_FROZEN_0064 = [
+  "id",
+  "client_id",
+  "kind",
+  "provider",
+  "currency",
+  "amount_minor",
+  "charges_minor",
+  "received_on",
+  "mode",
+  "reference_norm",
+  "inr_received_minor",
+  "requested_allocations",
+  "tds_section",
+  "tds_rate_bp",
+  "recorded_by",
+  "recorded_at",
+  "provider_payment_id",
+  "checkout_id",
+  "fee_tax_minor",
+  "refetched_at",
+  "webhook_event_id",
+] as const;
+/** The gateway reference columns' bound (`PROVIDER_REF_MAX` in the schema: 255, generic for M6.3/M6.4). */
+const GATEWAY_REF_MAX_0064 = 255;
+/**
+ * Early check 1, finding 2: a manual entry keeps 0060's five modes (neft, rtgs, imps, upi, swift) and a Razorpay payment one of its methods (upi, card, netbanking,
+ * wallet, emi, paylater, other: core `methodToMode`). Written as "the other side's own modes are refused", so an unknown mode still gets `payments_values_insert`'s
+ * message.
+ */
+const RAZORPAY_ONLY_0064 = ["card", "netbanking", "wallet", "emi", "paylater", "other"] as const;
+const MANUAL_ONLY_0064 = ["neft", "rtgs", "imps", "swift"] as const;
+
+/**
+ * M6.2 Razorpay in test mode (ADM-PAY-01, -02, -06, -07, ADM-INV-10, JOB-HOOK-01..03; run file docs/runs/m6.2-razorpay.md A): the trigger set `gateway_triggers`. No
+ * table is rebuilt: three payment triggers are dropped and created again with the gateway's rules, and the new tables get theirs. Every abort message starts with the
+ * trigger's name. In this order:
+ *   1. `payments_values_insert` / `_update` recreated: the provider may be `razorpay`, the mode one of Razorpay's methods (card, netbanking, wallet, emi, paylater, other);
+ *   2. `payments_insert_state` recreated: a manual entry exactly as 0060 held it; a gateway payment has no member behind it (`recorded_by` NULL), names its gateway payment
+ *      id, its checkout and the instant it was re-fetched (ADR 0008), and starts either pending with no decision or confirmed by the gateway (no member, `verified_at` set:
+ *      L5, a verified and re-fetched gateway payment confirms without an Owner step, ADM-PAY-03, -07); never withdrawn;
+ *   3. `payments_gateway_shape` (new): a manual entry carries no gateway column and keeps 0060's five modes; a gateway payment is money received (`payment`, never TDS)
+ *      in INR from a client in India that is not overseas (owner, 2026-11-01, Q3 A: domestic INR clients only; OPEN (08-C RB-01): does a USD invoice paid through a
+ *      PA-CB that credits us in INR count as "settled in INR"?), with one of Razorpay's methods as its mode and a reference, and its fee tax is never negative;
+ *   4. `payments_fixed` recreated: 0060's rule over `PAYMENT_FROZEN_0064` (the gateway columns never change);
+ *   5. `payments_status_flow` recreated: 0060's flow, plus: a gateway payment is never rejected or withdrawn (refunds are M6.5, L7); a pending gateway payment is
+ *      confirmed by an active Owner, or by the system (`gateway_auto`, L6) with no member, `verified_at` set and its `advance_receipt_id` set in the same update to a
+ *      receipt of the payment's own client, currency, amount, day and reference written at that instant (the
+ *      tax invoice for the payment received is issued in that very batch: Researched 2026-10-28, s.31(3)(d) CGST Act, Rule 50 CGST Rules (08-C RA-17));
+ *   6. `checkout_sessions_*`: the enumerations; a checkout starts `creating` with the actor of its source (a portal contact, a document link's token, or a member);
+ *      creating → live (with its link id and short URL) | failed, live → paid | expired | cancelled | stale, stale → paid | expired | cancelled; paid only with its payment;
+ *      the money and the document never change, the contact and its token are only cleared together (an erased contact, `deleteContactAccess`), the link id and
+ *      URL are set once, the expiry only with the move to live; never deleted; `checkout_sessions_unlink_token` / `_unlink_contact` do that clearing when a
+ *      document link's token row or the contact row is deleted (early check 1, finding 1; no extra statement in the erase batch);
+ *   7. `webhook_events_*`: the enumerations; an event arrives `received` (or `ignored`: a type we do not handle); received → processed | ignored | needs_review | failed,
+ *      failed → received (a retry by the Owner); its identity and facts never change and its attempts never go down; never deleted;
+ *   8. `review_items_*`: the enumerations; an item starts open with no decision; open → resolved once, by an active Owner, with the time and a resolution; its facts never
+ *      change; its note is written with the resolve and may later become NULL only once the client is anonymised (as 0060 for payment notes, L31; Researched 2026-10-28,
+ *      DPDP Act s.8(7) and s.12(3) (08-C RB-11)), which `review_items_erase_notes` does in the statement that anonymises the client; never deleted.
+ */
+export function gatewayTriggerStatements(): string[] {
+  const named = (name: string, message: string) => abort(`${name}: ${message}`);
+  const q = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(", ");
+  const changed = (cols: readonly string[]) =>
+    cols.map((c) => `NEW.\`${c}\` IS NOT OLD.\`${c}\``).join(" OR ");
+  const setOnce = (cols: readonly string[]) =>
+    cols.map((c) => `(OLD.\`${c}\` IS NOT NULL AND NEW.\`${c}\` IS NOT OLD.\`${c}\`)`).join(" OR ");
+  const owner = (who: string) =>
+    `EXISTS (SELECT 1 FROM staff_users ou WHERE ou.id = ${who} AND ou.role = 'owner' AND ou.status = 'active')`;
+  // A gateway payment, by its provider (never "not manual": an unknown provider must fall through to `payments_values_insert`'s message).
+  const gateway = (row: "NEW" | "OLD") => `${row}.provider IN (${q(GATEWAY_PROVIDERS_0064)})`;
+  const anonymised = (client: string) =>
+    `EXISTS (SELECT 1 FROM clients ec WHERE ec.id = ${client} AND ec.anonymised_at IS NOT NULL)`;
+  // 1. payments: the values
+  const valuesBad = `NEW.kind NOT IN (${q(PAYMENT_KINDS_0060)}) OR NEW.provider NOT IN (${q(PAYMENT_PROVIDERS_0064)}) OR NEW.status NOT IN (${q(PAYMENT_STATUSES_0060)}) OR (NEW.mode IS NOT NULL AND NEW.mode NOT IN (${q(PAYMENT_MODES_0064)})) OR (NEW.proof_mime IS NOT NULL AND NEW.proof_mime NOT IN (${q(PROOF_MIME_TYPES_0060)}))`;
+  const valuesMsg = "a payment has a known kind, provider, status, mode and proof type";
+  // 2. payments: the insert state
+  const pendingOk =
+    "(NEW.status = 'pending_verification' AND NEW.verified_by IS NULL AND NEW.verified_at IS NULL AND NEW.decision_note IS NULL)";
+  const manualBad = `NEW.provider = 'manual' AND (NOT (${pendingOk} OR (NEW.status = 'confirmed' AND NEW.verified_at IS NOT NULL AND NEW.verified_by IS NEW.recorded_by AND ${owner("NEW.verified_by")})) OR NEW.recorded_by IS NULL)`;
+  const gatewayBad = `${gateway("NEW")} AND (NEW.recorded_by IS NOT NULL OR NEW.provider_payment_id IS NULL OR NEW.checkout_id IS NULL OR NEW.refetched_at IS NULL OR NOT (${pendingOk} OR (NEW.status = 'confirmed' AND NEW.verified_by IS NULL AND NEW.verified_at IS NOT NULL AND NEW.decision_note IS NULL)))`;
+  const insertBad = `(${manualBad}) OR (${gatewayBad}) OR NEW.withdrawn_by IS NOT NULL OR NEW.withdrawn_at IS NOT NULL OR NEW.withdraw_reason IS NOT NULL`;
+  // 3. payments: the gateway shape
+  // Early check 1: a manual entry keeps 0060's five modes (finding 2); a Razorpay payment one of its methods, from a client in India that is not overseas (finding 13,
+  // owner 2026-11-01 Q3 A at the database layer).
+  const shapeBad = `(NEW.provider = 'manual' AND (NEW.provider_payment_id IS NOT NULL OR NEW.checkout_id IS NOT NULL OR NEW.fee_tax_minor IS NOT NULL OR NEW.refetched_at IS NOT NULL OR NEW.webhook_event_id IS NOT NULL OR NEW.mode IN (${q(RAZORPAY_ONLY_0064)})))
+    OR (${gateway("NEW")} AND (NEW.kind IS NOT 'payment' OR NEW.currency IS NOT 'INR' OR NEW.mode IS NULL OR NEW.mode IN (${q(MANUAL_ONLY_0064)}) OR NEW.reference_norm IS NULL OR length(NEW.provider_payment_id) NOT BETWEEN 1 AND ${GATEWAY_REF_MAX_0064} OR (NEW.fee_tax_minor IS NOT NULL AND NEW.fee_tax_minor < 0) OR NEW.inr_received_minor IS NOT NULL
+      OR NOT EXISTS (SELECT 1 FROM clients gk WHERE gk.id = NEW.client_id AND gk.country = 'IN' AND gk.gst_status <> 'overseas')))`;
+  // 4. payments: fixed (0060's rule over the longer frozen list)
+  const onceCols = [
+    "proof_kind",
+    "proof_ref",
+    "proof_r2_key",
+    "proof_sha256",
+    "proof_mime",
+    "tds_certificate_no",
+    "tds_certificate_on",
+    "advance_receipt_id",
+  ] as const;
+  const confirming = "OLD.status = 'pending_verification' AND NEW.status = 'confirmed'";
+  const erasingText = (col: string) =>
+    `(NEW.\`${col}\` IS NULL AND NEW.status IS OLD.status AND ${anonymised("OLD.client_id")})`;
+  const fixedBad = `${changed(PAYMENT_FROZEN_0064)} OR (NEW.\`note\` IS NOT OLD.\`note\` AND NOT ${erasingText("note")}) OR ${setOnce(onceCols)} OR (NEW.advance_receipt_id IS NOT OLD.advance_receipt_id AND NOT (${confirming})) OR ((NEW.tds_certificate_no IS NOT OLD.tds_certificate_no OR NEW.tds_certificate_on IS NOT OLD.tds_certificate_on) AND OLD.kind IS NOT 'tds')`;
+  // 5. payments: the status flow
+  const deciding = "OLD.status = 'pending_verification' AND NEW.status IN ('confirmed', 'rejected')";
+  const withdrawing = "OLD.status = 'confirmed' AND NEW.status = 'withdrawn'";
+  // Early check 1, finding 3: the receipt is this payment's own (client, currency, amount, day, reference, and written at the confirm's instant).
+  const gatewayAuto = `(${gateway("OLD")} AND NEW.status = 'confirmed' AND NEW.verified_by IS NULL AND OLD.advance_receipt_id IS NULL AND NEW.advance_receipt_id IS NOT NULL
+      AND EXISTS (SELECT 1 FROM advance_receipts gar WHERE gar.id = NEW.advance_receipt_id AND gar.client_id = OLD.client_id AND gar.currency = OLD.currency AND gar.amount_minor = OLD.amount_minor
+        AND gar.received_on = OLD.received_on AND gar.reference_norm IS OLD.reference_norm AND gar.created_at = NEW.verified_at))`;
+  const flowBad = `(NEW.status IS NOT OLD.status AND NOT ((${deciding}) OR (${withdrawing})))
+    OR (${gateway("OLD")} AND NEW.status IS NOT OLD.status AND NEW.status IN ('rejected', 'withdrawn'))
+    OR ((${deciding}) AND (NEW.verified_at IS NULL OR NOT (${owner("NEW.verified_by")} OR ${gatewayAuto})))
+    OR ((${withdrawing}) AND (NEW.withdrawn_at IS NULL OR NEW.withdraw_reason IS NULL OR trim(NEW.withdraw_reason) = '' OR NOT ${owner("NEW.withdrawn_by")}))
+    OR ((${changed(["verified_by", "verified_at"])}) AND NOT (${deciding}))
+    OR (NEW.decision_note IS NOT OLD.decision_note AND NOT (${deciding}) AND NOT ${erasingText("decision_note")})
+    OR ((${changed(["withdrawn_by", "withdrawn_at"])}) AND NOT (${withdrawing}))
+    OR (NEW.withdraw_reason IS NOT OLD.withdraw_reason AND NOT (${withdrawing}) AND NOT ${erasingText("withdraw_reason")})`;
+  // 6. checkout_sessions
+  const checkoutValuesBad = `NEW.provider NOT IN (${q(GATEWAY_PROVIDERS_0064)}) OR NEW.source NOT IN (${q(CHECKOUT_SOURCES_0064)}) OR NEW.status NOT IN (${q(CHECKOUT_STATUSES_0064)})`;
+  const checkoutValuesMsg = "a checkout has a known provider, source and status";
+  const checkoutInsertBad =
+    "NEW.status IS NOT 'creating' OR NEW.paid_payment_id IS NOT NULL OR NEW.provider_link_id IS NOT NULL OR NEW.short_url IS NOT NULL OR NEW.last_refresh_at IS NOT NULL OR NOT ((NEW.source = 'portal' AND NEW.contact_id IS NOT NULL AND NEW.doc_token_id IS NULL AND NEW.created_by IS NULL) OR (NEW.source = 'link' AND NEW.doc_token_id IS NOT NULL AND NEW.contact_id IS NOT NULL AND NEW.created_by IS NULL) OR (NEW.source = 'staff' AND NEW.created_by IS NOT NULL AND NEW.contact_id IS NULL AND NEW.doc_token_id IS NULL))";
+  const checkoutMove = (from: string, to: readonly string[]) =>
+    `(OLD.status = '${from}' AND NEW.status IN (${q(to)}))`;
+  const checkoutFlowBad = `(NEW.status IS NOT OLD.status AND NOT (${checkoutMove("creating", ["live", "failed"])} OR ${checkoutMove("live", ["paid", "expired", "cancelled", "stale"])} OR ${checkoutMove("stale", ["paid", "expired", "cancelled"])}))
+    OR (NEW.status = 'live' AND (NEW.provider_link_id IS NULL OR NEW.short_url IS NULL))
+    OR (NEW.status = 'paid' AND NEW.paid_payment_id IS NULL)
+    OR (NEW.paid_payment_id IS NOT OLD.paid_payment_id AND NOT (NEW.status = 'paid' AND OLD.status IN ('live', 'stale') AND OLD.paid_payment_id IS NULL))`;
+  // Early check 1, finding 1 (the `document_sends` pattern): the erase or anonymise of a contact clears the contact and the token together, never back.
+  const unlinking =
+    "(NEW.contact_id IS NULL AND NEW.doc_token_id IS NULL AND OLD.contact_id IS NOT NULL AND NEW.status IS OLD.status)";
+  const checkoutFixedBad = `${changed(["id", "provider", "document_id", "client_id", "created_by", "source", "currency", "amount_minor", "created_at"])}
+    OR ((NEW.contact_id IS NOT OLD.contact_id OR NEW.doc_token_id IS NOT OLD.doc_token_id) AND NOT ${unlinking}) OR ${setOnce(["provider_link_id", "short_url", "paid_payment_id"])} OR (NEW.expires_at IS NOT OLD.expires_at AND NOT (OLD.status = 'creating' AND NEW.status = 'live')) OR NEW.updated_at < OLD.updated_at`;
+  // 7. webhook_events
+  const eventValuesBad = `NEW.provider NOT IN (${q(GATEWAY_PROVIDERS_0064)}) OR NEW.status NOT IN (${q(WEBHOOK_EVENT_STATUSES_0064)})`;
+  const eventFlowBad = `(NEW.status IS NOT OLD.status AND NOT ((OLD.status = 'received' AND NEW.status IN ('processed', 'ignored', 'needs_review', 'failed')) OR (OLD.status = 'failed' AND NEW.status = 'received'))) OR NEW.attempts < OLD.attempts`;
+  // 8. review_items
+  const reviewValuesBad = `NEW.source NOT IN (${q(REVIEW_SOURCES_0064)}) OR NEW.provider NOT IN (${q(GATEWAY_PROVIDERS_0064)}) OR NEW.kind NOT IN (${q(REVIEW_KINDS_0064)}) OR NEW.status NOT IN ('open', 'resolved') OR (NEW.resolution IS NOT NULL AND NEW.resolution NOT IN (${q(REVIEW_RESOLUTIONS_0064)}))`;
+  const reviewValuesMsg = "a review item has a known source, provider, kind, status and resolution";
+  const resolving = "OLD.status = 'open' AND NEW.status = 'resolved'";
+  const reviewFlowBad = `(NEW.status IS NOT OLD.status AND NOT (${resolving}))
+    OR ((${resolving}) AND (NEW.resolved_at IS NULL OR NEW.resolution IS NULL OR NOT ${owner("NEW.resolved_by")}))
+    OR ((${changed(["resolved_by", "resolved_at", "resolution"])}) AND NOT (${resolving}))
+    OR (NEW.note IS NOT OLD.note AND NOT (${resolving}) AND NOT (NEW.note IS NULL AND NEW.status IS OLD.status AND ${anonymised("OLD.client_id")}))`;
+  const reviewFixedBad = changed([
+    "id",
+    "source",
+    "provider",
+    "kind",
+    "webhook_event_id",
+    "payment_id",
+    "document_id",
+    "client_id",
+    "amount_minor",
+    "currency",
+    "facts",
+    "created_at",
+  ]);
+  return [
+    // 1-5. payments
+    "DROP TRIGGER `payments_values_insert`;",
+    `CREATE TRIGGER \`payments_values_insert\` BEFORE INSERT ON \`payments\` WHEN ${valuesBad} BEGIN ${named("payments_values_insert", valuesMsg)} END;`,
+    "DROP TRIGGER `payments_values_update`;",
+    `CREATE TRIGGER \`payments_values_update\` BEFORE UPDATE OF kind, provider, status, mode, proof_mime ON \`payments\` WHEN ${valuesBad} BEGIN ${named("payments_values_update", valuesMsg)} END;`,
+    "DROP TRIGGER `payments_insert_state`;",
+    `CREATE TRIGGER \`payments_insert_state\` BEFORE INSERT ON \`payments\` WHEN ${insertBad} BEGIN ${named("payments_insert_state", "a manual payment starts pending with no decision, or confirmed by an active Owner who recorded it; a gateway payment has no member, names its gateway payment, checkout and re-fetch, and starts pending or confirmed by the gateway; never withdrawn")} END;`,
+    `CREATE TRIGGER \`payments_gateway_shape\` BEFORE INSERT ON \`payments\` WHEN ${shapeBad} BEGIN ${named("payments_gateway_shape", "a manual payment has no gateway fields and a bank mode; a gateway payment is money received in INR from a client in India, with a gateway mode, a reference and a gateway payment id")} END;`,
+    "DROP TRIGGER `payments_fixed`;",
+    `CREATE TRIGGER \`payments_fixed\` BEFORE UPDATE ON \`payments\` WHEN ${fixedBad} BEGIN ${named("payments_fixed", "a payment never changes; its proof, its TDS certificate and its advance receipt are set once")} END;`,
+    "DROP TRIGGER `payments_status_flow`;",
+    `CREATE TRIGGER \`payments_status_flow\` BEFORE UPDATE ON \`payments\` WHEN ${flowBad} BEGIN ${named("payments_status_flow", "a pending payment is confirmed or rejected once by the Owner, or a gateway payment confirmed by the system with its tax invoice; a confirmed one is withdrawn once by the Owner, with a reason; a gateway payment is never rejected or withdrawn")} END;`,
+    // 6. checkout_sessions
+    `CREATE TRIGGER \`checkout_sessions_values_insert\` BEFORE INSERT ON \`checkout_sessions\` WHEN ${checkoutValuesBad} BEGIN ${named("checkout_sessions_values_insert", checkoutValuesMsg)} END;`,
+    `CREATE TRIGGER \`checkout_sessions_values_update\` BEFORE UPDATE OF provider, source, status ON \`checkout_sessions\` WHEN ${checkoutValuesBad} BEGIN ${named("checkout_sessions_values_update", checkoutValuesMsg)} END;`,
+    `CREATE TRIGGER \`checkout_sessions_insert_state\` BEFORE INSERT ON \`checkout_sessions\` WHEN ${checkoutInsertBad} BEGIN ${named("checkout_sessions_insert_state", "a checkout starts creating, with no link yet, made by the contact, the document link and its contact, or the member of its source")} END;`,
+    `CREATE TRIGGER \`checkout_sessions_status_flow\` BEFORE UPDATE ON \`checkout_sessions\` WHEN ${checkoutFlowBad} BEGIN ${named("checkout_sessions_status_flow", "a checkout goes creating to live or failed, live to paid, expired, cancelled or stale, stale to paid, expired or cancelled; live has its link, paid has its payment, set once")} END;`,
+    `CREATE TRIGGER \`checkout_sessions_fixed\` BEFORE UPDATE ON \`checkout_sessions\` WHEN ${checkoutFixedBad} BEGIN ${named("checkout_sessions_fixed", "a checkout keeps its document, client, amount and source; its contact and token are only cleared together, when the contact is erased; its link and payment are set once and its expiry only when it goes live")} END;`,
+    `CREATE TRIGGER \`checkout_sessions_no_delete\` BEFORE DELETE ON \`checkout_sessions\` BEGIN ${named("checkout_sessions_no_delete", "a checkout is never deleted")} END;`,
+    // Early check 1, finding 1: the erase and anonymise of a contact unlink its checkouts in the statements that delete its rows (no extra statement in the
+    // anonymise batch, which is at T7's cap of 45): a document link's token row going clears the checkouts made through it, the contact row going (the erase)
+    // clears every checkout naming the contact. The checkout keeps its document, amount, status and payment (`checkout_sessions_fixed` allows exactly this move).
+    "CREATE TRIGGER `checkout_sessions_unlink_token` BEFORE DELETE ON `doc_access_tokens` BEGIN UPDATE checkout_sessions SET contact_id = NULL, doc_token_id = NULL WHERE doc_token_id = OLD.token_hash; END;",
+    "CREATE TRIGGER `checkout_sessions_unlink_contact` BEFORE DELETE ON `contacts` BEGIN UPDATE checkout_sessions SET contact_id = NULL, doc_token_id = NULL WHERE contact_id = OLD.id; END;",
+    // Early check 1, "For B2" 9: once a client is anonymised its review items' notes are cleared, in the statement that anonymises it (the erase batch is at T7's
+    // cap of 45; `review_items_status_flow` allows exactly this move; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)).
+    "CREATE TRIGGER `review_items_erase_notes` AFTER UPDATE OF anonymised_at ON `clients` WHEN NEW.anonymised_at IS NOT NULL AND OLD.anonymised_at IS NULL BEGIN UPDATE review_items SET note = NULL WHERE client_id = NEW.id AND note IS NOT NULL; END;",
+    // 7. webhook_events
+    `CREATE TRIGGER \`webhook_events_values_insert\` BEFORE INSERT ON \`webhook_events\` WHEN ${eventValuesBad} OR NEW.status NOT IN ('received', 'ignored') OR NEW.attempts IS NOT 0 BEGIN ${named("webhook_events_values_insert", "an event arrives received or ignored, from a known provider, with no attempts yet")} END;`,
+    `CREATE TRIGGER \`webhook_events_values_update\` BEFORE UPDATE OF provider, status ON \`webhook_events\` WHEN ${eventValuesBad} BEGIN ${named("webhook_events_values_update", "an event has a known provider and status")} END;`,
+    `CREATE TRIGGER \`webhook_events_fixed\` BEFORE UPDATE ON \`webhook_events\` WHEN ${changed(["id", "provider", "event_id", "event_type", "received_at", "facts"])} BEGIN ${named("webhook_events_fixed", "an event keeps its provider, id, type, arrival and facts")} END;`,
+    `CREATE TRIGGER \`webhook_events_status_flow\` BEFORE UPDATE ON \`webhook_events\` WHEN ${eventFlowBad} BEGIN ${named("webhook_events_status_flow", "an event goes received to processed, ignored, needs_review or failed, and failed back to received; its attempts never go down")} END;`,
+    `CREATE TRIGGER \`webhook_events_no_delete\` BEFORE DELETE ON \`webhook_events\` BEGIN ${named("webhook_events_no_delete", "an event is never deleted")} END;`,
+    // 8. review_items
+    `CREATE TRIGGER \`review_items_values_insert\` BEFORE INSERT ON \`review_items\` WHEN ${reviewValuesBad} OR NEW.status IS NOT 'open' OR NEW.resolved_by IS NOT NULL OR NEW.resolved_at IS NOT NULL OR NEW.resolution IS NOT NULL OR NEW.note IS NOT NULL BEGIN ${named("review_items_values_insert", "a review item starts open with no decision, of a known source, provider and kind")} END;`,
+    `CREATE TRIGGER \`review_items_values_update\` BEFORE UPDATE OF source, provider, kind, status, resolution ON \`review_items\` WHEN ${reviewValuesBad} BEGIN ${named("review_items_values_update", reviewValuesMsg)} END;`,
+    `CREATE TRIGGER \`review_items_fixed\` BEFORE UPDATE ON \`review_items\` WHEN ${reviewFixedBad} BEGIN ${named("review_items_fixed", "a review item keeps what it is about and its facts")} END;`,
+    `CREATE TRIGGER \`review_items_status_flow\` BEFORE UPDATE ON \`review_items\` WHEN ${reviewFlowBad} BEGIN ${named("review_items_status_flow", "a review item is resolved once by the Owner, with a resolution; its note is written then, and cleared only once the client is anonymised")} END;`,
+    `CREATE TRIGGER \`review_items_no_delete\` BEFORE DELETE ON \`review_items\` BEGIN ${named("review_items_no_delete", "a review item is never deleted")} END;`,
+  ];
+}
+
 /** The trigger sets, by the name the migration is created with (`drizzle-kit generate --custom --name <set>`). */
 export const TRIGGER_SETS = {
   triggers: { what: "integrity triggers (docs/05 §5.3)", statements: triggerStatements },
@@ -1538,6 +1800,10 @@ export const TRIGGER_SETS = {
   deed_triggers: {
     what: "T11 deed of assignment: born a draft for an accepted proposal or estimate, the status flow, Schedules filled before finalising, frozen once final, set-once PDFs, only an erased client's draft or cancelled deed is deleted",
     statements: deedTriggerStatements,
+  },
+  gateway_triggers: {
+    what: "M6.2 Razorpay: gateway payments in the payment triggers (values, insert state, shape, frozen columns, the gateway_auto confirm), checkout, webhook event and review item rules",
+    statements: gatewayTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;

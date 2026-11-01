@@ -26,7 +26,12 @@ export const CHECKS = {
     { path: "/api/v1/dashboard", status: 401 },
   ],
   portal: [{ path: "/api/v1/health", status: 200, service: "portal" }],
-  jobs: [{ path: "/healthz", status: 200, service: "jobs" }],
+  // M6.2: the Razorpay webhook path is outside Access (owner's H1 bypass): a signed-out POST with no Access token and no signature must reach the Worker and
+  // get its JSON 400 `signature_missing` (counted nowhere, nothing written). An Access page here means the bypass is missing.
+  jobs: [
+    { path: "/healthz", status: 200, service: "jobs" },
+    { path: "/razorpay", status: 400, method: "POST", body: "{}", access: false, code: "signature_missing" },
+  ],
   web: [{ path: "/api/geo", status: 200 }],
 };
 
@@ -46,6 +51,9 @@ export function judge(check, { status, location, json, body }) {
     return `${status} from Cloudflare Access (not the Worker): the service token was refused`;
   if (!json) return `${status}, not a JSON answer from the Worker`;
   if (status !== check.status) return `${status}, expected ${check.status}`;
+  // M6.2 (early check 2, finding 17): the webhook's 400 must be the Worker's own `signature_missing`, not any 400.
+  if (check.code && body?.error?.code !== check.code)
+    return `the error code is ${String(body?.error?.code)}, expected ${check.code}`;
   if (check.service) {
     if (body?.ok !== true) return "the health body does not say ok";
     if (body?.service !== check.service)
@@ -71,7 +79,8 @@ export async function checkApp(
       if (delay > 0) await wait(delay);
       try {
         const res = await fetchImpl(url, {
-          headers,
+          ...(check.method ? { method: check.method, body: check.body } : {}),
+          headers: check.access === false ? { "content-type": "application/json" } : headers,
           redirect: "manual",
           signal: AbortSignal.timeout(TIMEOUT_MS),
         });

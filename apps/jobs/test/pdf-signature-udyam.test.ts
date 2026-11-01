@@ -6,6 +6,7 @@
 // (`htmlOf`). F1 of the early check: the passing case runs the real layout untouched, so a layout that stops printing the line fails here.
 import { env as realEnv } from "cloudflare:workers";
 import { type PdfMessage, pdfKeys } from "@techaust/core/pdf-jobs";
+import { signedIssuerSql } from "@techaust/db/sql-rules";
 import { renderDocumentHtml } from "@techaust/pdf";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { stubPdf } from "../src/browser.ts";
@@ -145,6 +146,24 @@ describe("L4: a document that must be signed and froze no signature is refused [
     await snapshot(signed.id);
     expect(await render(b, signed.id)).toBe("rendered");
     expect(b.calls).toHaveLength(1);
+  });
+
+  it("M6.2: the automatic invoice for a proforma paid online (gateway_auto: the company as sender, no issued_by) signed renders; unsigned is refused (early check 2, finding 6)", async () => {
+    const auto = await seedIssuedInvoice({ advance: true, signature: {}, systemSender: true });
+    const row = await realEnv.DB.prepare(
+      `SELECT issued_by, json_extract(issuer, '$.sender.staffId') AS sender, ${signedIssuerSql("issuer")} AS signed FROM documents WHERE id = ?1`,
+    )
+      .bind(auto.id)
+      .first<{ issued_by: string | null; sender: string; signed: number }>();
+    expect(row).toEqual({ issued_by: null, sender: "system", signed: 1 });
+    await snapshot(auto.id);
+    const b = browser();
+    expect(await render(b, auto.id)).toBe("rendered");
+    expect(b.calls).toHaveLength(1);
+    expect(await refusedBells(auto.id)).toEqual([]);
+    const unsigned = await seedIssuedInvoice({ advance: true, systemSender: true });
+    await snapshot(unsigned.id);
+    expect(await render(browser(), unsigned.id)).toBe("refused");
   });
 
   it("a plain tax invoice without a signature, and one switched off, still render (Rule 46(q) proviso, 08-C RA-06)", async () => {

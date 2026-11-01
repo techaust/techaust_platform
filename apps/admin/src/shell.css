@@ -161,6 +161,34 @@ body:has(.shell) {
   color: var(--color-ink-300);
 }
 
+/* M6.2: a section's count (the Owner's open "Needs review" items on Payments): a small mist tag at the row's end; on the collapsed rail a dot on the icon */
+.rail__count {
+  margin-inline-start: auto;
+  min-width: 1.5rem;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-mist);
+  color: var(--color-ink-900);
+  font-size: var(--text-caption);
+  line-height: 1.25rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.shell[data-collapsed] .shell__rail .rail__count {
+  position: absolute;
+  top: 0.375rem;
+  inset-inline-end: 0.75rem;
+  min-width: 0;
+  width: 0.625rem;
+  height: 0.625rem;
+  padding: 0;
+  overflow: hidden;
+  color: transparent;
+  box-shadow: 0 0 0 2px var(--color-ink-900);
+}
+
 .rail__link:hover {
   color: var(--color-mist);
   background: var(--rail-hover);
@@ -2709,7 +2737,7 @@ input[readonly] {
 
 @media (min-width: 48rem) {
   .gateway {
-    grid-template-columns: minmax(0, 1fr) 11rem 8.5rem;
+    grid-template-columns: minmax(0, 1fr) 11rem;
     align-items: center;
   }
 
@@ -2720,11 +2748,6 @@ input[readonly] {
   .gateway__live {
     grid-column: 2;
     grid-row: 2;
-  }
-
-  .gateway__keys {
-    grid-column: 3;
-    grid-row: 1;
   }
 }
 
@@ -2749,11 +2772,48 @@ input[readonly] {
   margin: 0;
 }
 
+/* M6.2: the keys and the last verified webhook, read from the finance Worker, as one row across the card under a hairline */
+.gateway__status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-8);
+  grid-column: 1 / -1;
+  margin: var(--space-1) 0 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
 .gateway__keys {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
   font-size: var(--text-sm);
+}
+
+.gateway__keys dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  min-width: 0;
+}
+
+.gateway__keys .when--inline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-2);
+}
+
+.gateway__missing {
+  display: contents;
+}
+
+.gateway__names {
+  color: var(--color-text-muted);
+  overflow-wrap: break-word;
 }
 
 .versioned-list {

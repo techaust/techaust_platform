@@ -62,6 +62,7 @@ describe("every guarded route needs a session [POR-02, POR-03]", () => {
         "POST /api/v1/auth/logout",
         "POST /api/v1/t/document",
         "POST /api/v1/t/document/pdf",
+        "POST /api/v1/t/document/pay", // M6.2
         "POST /api/v1/t/offer",
         "POST /api/v1/t/offer/pdf",
         "POST /api/v1/t/offer/certificate",
@@ -85,6 +86,7 @@ describe("every guarded route needs a session [POR-02, POR-03]", () => {
         "GET /api/v1/invoices",
         "GET /api/v1/invoices/:id",
         "GET /api/v1/invoices/:id/pdf",
+        "POST /api/v1/invoices/:id/pay", // M6.2
         "GET /api/v1/deeds",
         "POST /api/v1/deeds/pdf",
       ].sort(),
@@ -94,6 +96,7 @@ describe("every guarded route needs a session [POR-02, POR-03]", () => {
         "GET /api/v1/invoices",
         "GET /api/v1/invoices/:id",
         "GET /api/v1/invoices/:id/pdf",
+        "POST /api/v1/invoices/:id/pay",
         "GET /api/v1/deeds",
         "POST /api/v1/deeds/pdf",
       ].sort(),

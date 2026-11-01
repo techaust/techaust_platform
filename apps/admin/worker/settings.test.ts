@@ -524,7 +524,7 @@ describe("gateways [ADM-SET-06]", () => {
     await clear("gateways");
   });
 
-  it("shows configured / missing by secret NAME, never a value; the mode is the only thing stored", async () => {
+  it("shows configured / missing by secret NAME, never a value, from the finance Worker only (M6.2 L15); the mode is the only thing stored", async () => {
     await clear("gateways");
     const o = await owner();
     const e = withEnv({
@@ -536,9 +536,28 @@ describe("gateways [ADM-SET-06]", () => {
     const text = await res.text();
     expect(text).not.toContain("SECRETVALUE");
     const body = JSON.parse(text);
-    expect(body.meta.status.razorpay).toEqual({ configured: true, missing: [] });
-    expect(body.meta.status.stripe.configured).toBe(false);
-    expect(body.meta.status.stripe.missing).toEqual(["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"]);
+    // The settings route no longer claims a status (its Worker holds no gateway secret).
+    expect(body.meta).toEqual({ liveAllowed: false });
+    // The finance Worker reports its own key pair by name; the webhook secret is the jobs Worker's, so it is never named here.
+    const fin = await call("/payments/gateways", { cookie: o.cookie }, e);
+    const finText = await fin.text();
+    expect(fin.status, finText).toBe(200);
+    expect(finText).not.toContain("SECRETVALUE");
+    const g = JSON.parse(finText);
+    expect(g.gateways.razorpay).toMatchObject({ mode: "test", keys: { configured: true, missing: [] } });
+    expect(g.gateways.stripe.keys).toEqual({ configured: false, missing: ["STRIPE_SECRET_KEY"] });
+    expect(g.liveAllowed).toBe(false);
+    const none = await call(
+      "/payments/gateways",
+      { cookie: o.cookie },
+      withEnv({ RAZORPAY_KEY_ID: "", RAZORPAY_KEY_SECRET: "" }),
+    );
+    expect(
+      ((await none.json()) as { gateways: { razorpay: { keys: unknown } } }).gateways.razorpay.keys,
+    ).toEqual({
+      configured: false,
+      missing: ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"],
+    });
     // a key field is refused: the schema is strict
     const withKey = await put("/settings/gateways", o.cookie, {
       version: 0,

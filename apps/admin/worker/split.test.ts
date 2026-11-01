@@ -150,8 +150,9 @@ describe("every ROUTES row has one owner", () => {
     expect(FRONT_ROWS.length).toBe(24);
     // M6.1 (added on purpose): 15 payment rows (payments, a client's credit, an invoice's panel, credit release, FEMA extensions, the payments register);
     // main's proforma withdraw (ADM-INV-10) joins them as an invoice route.
-    expect(FINANCE_ROWS.length).toBe(46);
-    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 46);
+    // M6.2: seven gateway rows (payment links, Needs review, the gateways' status).
+    expect(FINANCE_ROWS.length).toBe(53);
+    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 53);
     expect(new Set([...FRONT_ROWS, ...API_ROWS, ...FINANCE_ROWS].map(key)).size).toBe(ROUTES.length);
   });
 
@@ -426,13 +427,30 @@ describe("the finance app called directly (M6.1 stage A)", () => {
     expect(res.status).toBe(200);
   });
 
-  it("exports the BillingJobs entrypoint next to its default handler", () => {
-    expect(Object.keys(financeModule).sort()).toEqual(["BillingJobs", "default"]);
+  it("exports the BillingJobs, GatewayEvents and PortalPayments entrypoints next to its default handler, each with exactly its methods (M6.2)", () => {
+    expect(Object.keys(financeModule).sort()).toEqual([
+      "BillingJobs",
+      "GatewayEvents",
+      "PortalPayments",
+      "default",
+    ]);
     expect(Object.getOwnPropertyNames(financeModule.BillingJobs.prototype).sort()).toEqual([
       "constructor",
       "draftCarePlan",
       "issueCareDraft",
     ]);
+    expect(Object.getOwnPropertyNames(financeModule.GatewayEvents.prototype).sort()).toEqual([
+      "constructor",
+      "issueGatewayAdvance",
+      "processEvent",
+    ]);
+    expect(Object.getOwnPropertyNames(financeModule.PortalPayments.prototype).sort()).toEqual([
+      "constructor",
+      "createLink",
+      "refreshForClient",
+    ]);
+    // Only the finance Worker exports them (the API and front entries export the default handler only).
+    expect(Object.keys(apiModule)).toEqual(["default"]);
   });
 });
 
@@ -495,7 +513,16 @@ describe("a binding failure", () => {
     expect(logs).toHaveBeenCalledTimes(1);
     const line = JSON.parse(String(logs.mock.calls[0]?.[0]));
     // M6.1 stage A: `w` names the Worker that answered ("api" or "finance").
-    expect(Object.keys(line).sort()).toEqual(["ev", "iso", "n", "r", "rid", "s", "w"]);
+    // M6.2 (CPU diagnosis, lead decision 4): `f: 1` only on the isolate's first forward of the row.
+    expect(
+      Object.keys(line)
+        .filter((k) => k !== "f")
+        .sort(),
+    ).toEqual(["ev", "iso", "n", "r", "rid", "s", "w"]);
+    if ("f" in line) expect(line.f).toBe(1);
+    logs.mockClear();
+    await run(front, requestFor(leadsRow, { cookie: o.cookie }), withEnv(env, { ADMIN_API: stub }));
+    expect(JSON.parse(String(logs.mock.calls[0]?.[0]))).not.toHaveProperty("f");
     expect(line).toMatchObject({ ev: "fwd", r: "/api/v1/leads", w: "api", s: 200 });
   });
 

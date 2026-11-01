@@ -2,6 +2,7 @@
 // inside and Escape to cancel, which is the WAI-ARIA dialog pattern without a library. Focus goes back to the
 // control that opened it.
 import { type ReactNode, type Ref, useEffect, useId, useRef, useState } from "react";
+import { endDialog } from "./dialog-focus.ts";
 
 export function Modal(props: {
   open: boolean;
@@ -20,6 +21,8 @@ export function Modal(props: {
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const opener = useRef<Element | null>(null);
+  /** This component showed the dialog and hasn't ended it yet. */
+  const shown = useRef(false);
   const titleId = useId();
   const { open, busy, onClose } = props;
 
@@ -29,11 +32,24 @@ export function Modal(props: {
     if (open && !d.open) {
       opener.current = document.activeElement;
       d.showModal();
+      shown.current = true;
     } else if (!open && d.open) {
-      d.close();
-      if (opener.current instanceof HTMLElement && opener.current.isConnected) opener.current.focus();
+      shown.current = false;
+      endDialog(d, opener.current as HTMLElement | null);
     }
   }, [open]);
+
+  // M6.2 review finding 1 (WCAG 2.4.3): a screen that mounts the dialog only while it is open (`{x && <Modal open …>}`) unmounts it on Escape or Cancel
+  // with `open` still true, so the branch above never runs and focus would fall to <body>. Unmounting while shown ends it the same way: the dialog closes
+  // and focus goes back to its opener (components/dialog-focus.ts).
+  useEffect(() => {
+    const d = ref.current;
+    return () => {
+      if (!shown.current) return;
+      shown.current = false;
+      endDialog(d, opener.current as HTMLElement | null);
+    };
+  }, []);
 
   // The sticky actions cover the dialog's last lines while it scrolls, so the dialog keeps what takes focus (or is scrolled to) above them: its
   // `scroll-padding-bottom` is their real height (app.css), which changes with the width (stacked full width on phones), the number of buttons and a

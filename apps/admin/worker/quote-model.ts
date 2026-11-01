@@ -18,7 +18,7 @@ import {
 } from "@techaust/core/documents";
 import { uuidv7 } from "@techaust/core/ids";
 import { SCHEDULE_TRIGGERS, type ScheduleTrigger, scheduleText } from "@techaust/core/schedule-text";
-import { resolveSetting, type Settings } from "@techaust/core/settings";
+import type { Settings } from "@techaust/core/settings";
 import {
   type ComputedDocument,
   computeDocument,
@@ -33,6 +33,7 @@ import {
 } from "@techaust/core/tax";
 import type { DocumentBundle, TermsRef } from "@techaust/db/documents";
 import type { ApiError } from "./context.ts";
+import { cachedSetting } from "./settings-cache.ts";
 
 // ---- errors ------------------------------------------------------------------------------------------------------------------
 
@@ -125,15 +126,12 @@ export function readSettings(
   rows: readonly { key: string; value: string; version: number }[],
 ): QuoteSettings {
   const by = new Map(rows.map((r) => [r.key, r]));
-  const get = (key: string) => {
-    const r = by.get(key);
-    return r ? JSON.parse(r.value) : undefined;
-  };
+  // M6.2 CPU diagnosis (lead decision 2): each row is resolved once per isolate for its exact stored text and version (`settings-cache.ts`; deep-frozen).
   return {
-    company: resolveSetting("company", get("company")),
-    tax: resolveSetting("tax", get("tax")),
-    paymentTerms: resolveSetting("payment_terms", get("payment_terms")),
-    numbering: resolveSetting("numbering", get("numbering")),
+    company: cachedSetting("company", by.get("company")),
+    tax: cachedSetting("tax", by.get("tax")),
+    paymentTerms: cachedSetting("payment_terms", by.get("payment_terms")),
+    numbering: cachedSetting("numbering", by.get("numbering")),
     numberingVersion: by.get("numbering")?.version ?? null,
   };
 }

@@ -17,11 +17,21 @@ const APPS = {
 };
 /** Fixed local values written next to the random ones. */
 const FIXED = {
-  admin: { TURNSTILE_SECRET: TURNSTILE_TEST_SECRET },
+  // M6.2 (L16): the finance Worker's Razorpay pair is FAKE locally: GATEWAY_TRANSPORT "stub" answers with the simulator and never calls Razorpay.
+  admin: {
+    TURNSTILE_SECRET: TURNSTILE_TEST_SECRET,
+    RAZORPAY_KEY_ID: "rzp_test_LOCALSTUB0000001",
+    RAZORPAY_KEY_SECRET: "local-not-a-real-key-secret",
+  },
   portal: { TURNSTILE_SECRET: TURNSTILE_TEST_SECRET },
   web: { TURNSTILE_SECRET: TURNSTILE_TEST_SECRET },
   // The `log` email transport sends nothing, so these are placeholders, not credentials.
-  jobs: { SES_ACCESS_KEY_ID: "local-not-used", SES_SECRET_ACCESS_KEY: "local-not-used" },
+  // M6.2: a local webhook secret that `scripts/pay-simulate.mjs` reads from this file to sign its fake event (never a real one).
+  jobs: {
+    SES_ACCESS_KEY_ID: "local-not-used",
+    SES_SECRET_ACCESS_KEY: "local-not-used",
+    RAZORPAY_WEBHOOK_SECRET: "local-webhook-secret-not-real",
+  },
 };
 
 for (const app of new Set([...Object.keys(APPS), ...Object.keys(FIXED)])) {

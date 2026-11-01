@@ -6,7 +6,7 @@ import "../screens.css";
 import type { Role } from "@techaust/core/permissions";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useLocation, useParams } from "react-router";
-import { type Notification as ApiNotification, api, errorText } from "../api.ts";
+import { type Notification as ApiNotification, api, errorText, paymentsApi } from "../api.ts";
 import {
   Building,
   FileText,
@@ -26,6 +26,7 @@ import { ToastProvider } from "../components/toast.tsx";
 import { allowed, canSee, sectionOf } from "../lib/access.ts";
 import { reportBellHref } from "../lib/bell-links.ts";
 import { ROLE_LABELS } from "../lib/format.ts";
+import { GW_UI, REVIEW_CHANGED } from "../lib/gateway.ts";
 import { useSession, useUser } from "../session.tsx";
 
 const hrefOf = (item: NavItem) => item.path;
@@ -176,6 +177,38 @@ function useBell() {
   return { items, unread, next, error, refresh, more, markRead, markAll };
 }
 
+/**
+ * M6.2 (run file G2): the Owner's open "Needs review" items, the count on the Payments item. Read when a section opens and with the bell's poll while the tab is
+ * visible; a failed read keeps the last count (it is a hint, the tab is the record).
+ */
+function useReviewCount(enabled: boolean, pathname: string) {
+  const [n, setN] = useState(0);
+  const read = useCallback(() => {
+    if (!enabled) return;
+    paymentsApi.review({ status: "open" }).then(
+      (r) => setN(r.openCount),
+      () => {},
+    );
+  }, [enabled]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new section is a fresh read
+  useEffect(() => {
+    read();
+  }, [read, pathname]);
+  // the Needs review tab says when it changed something (lib/gateway.ts `REVIEW_CHANGED`), so the count follows at once
+  useEffect(() => {
+    window.addEventListener(REVIEW_CHANGED, read);
+    return () => window.removeEventListener(REVIEW_CHANGED, read);
+  }, [read]);
+  useEffect(() => {
+    if (!enabled) return;
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") read();
+    }, BELL_POLL_MS);
+    return () => clearInterval(t);
+  }, [enabled, read]);
+  return n;
+}
+
 export function Component() {
   const user = useUser();
   const { signedOut } = useSession();
@@ -190,6 +223,7 @@ export function Component() {
     allowed(user.role, "proposals.read"),
   );
   const current = sectionOf(pathname);
+  const reviewCount = useReviewCount(allowed(user.role, "payments.review"), pathname);
 
   function signOut() {
     api.logout().then(
@@ -205,6 +239,16 @@ export function Component() {
         current={current && items.some((i) => i.key === current) ? current : null}
         hrefOf={hrefOf}
         homeHref="/"
+        badges={
+          reviewCount > 0
+            ? {
+                payments: {
+                  text: reviewCount > 99 ? "99+" : String(reviewCount),
+                  label: GW_UI.reviewCount(reviewCount),
+                },
+              }
+            : undefined
+        }
         search={
           copy ? <GlobalSearch search={runSearch} placeholder={copy.placeholder} intro={copy.intro} /> : null
         }

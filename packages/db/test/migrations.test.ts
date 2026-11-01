@@ -8,7 +8,7 @@ const tables = (Object.values(schema) as unknown[]).filter((v): v is SQLiteTable
 
 describe("migrations apply cleanly to a fresh D1", () => {
   it("creates every table in the Drizzle schema, with every column", async () => {
-    expect(tables.length).toBe(56); // FX-1: pdf_failures (0051); M6.1: payments, payment_allocations, realisation_extensions (0059); T11: deeds (0061)
+    expect(tables.length).toBe(60); // FX-1: pdf_failures (0051); M6.1: payments, payment_allocations, realisation_extensions (0059); T11: deeds (0061); M6.2: webhook_events, checkout_sessions, review_items, hook_failures (0063)
     for (const table of tables) {
       const { name, columns } = getTableConfig(table);
       const live = await all<{ name: string }>(`SELECT name FROM pragma_table_info(?)`, name);
@@ -82,6 +82,8 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0060_payment_triggers.sql",
       "0061_deeds.sql",
       "0062_deed_triggers.sql",
+      "0063_gateway.sql",
+      "0064_gateway_triggers.sql",
     ]);
   });
 
@@ -123,6 +125,10 @@ describe("migrations apply cleanly to a fresh D1", () => {
       milestones: "document_id",
       document_sends: "document_id contact_id",
       offer_links: "contact_id document_id send_id version_group_id",
+      // M6.2 (early check 1, finding 10): the gateway tables' foreign keys.
+      checkout_sessions: "document_id client_id contact_id",
+      review_items: "webhook_event_id payment_id document_id client_id",
+      payments: "checkout_id",
     };
     for (const [table, columns] of Object.entries(wanted)) {
       for (const column of columns.split(" ")) {

@@ -42,6 +42,8 @@ describe("the hourly cron `30 * * * *` [LD61]", () => {
         ...(h >= 9 && h <= 11 ? ["alerts.daily"] : []),
         ...(h === 9 ? ["realisation.scan"] : []),
         "reminder.scan",
+        // M6.2 (changed on purpose): the gateway sweep every hour.
+        "gateway.sweep",
       ];
       expect(kinds, `hour ${h}`).toEqual(expected);
     }
@@ -57,9 +59,13 @@ describe("the hourly cron `30 * * * *` [LD61]", () => {
   it("the tick is ONE sendBatch on the leads queue and reads no D1 (the database is a trap)", async () => {
     const dead = new Proxy({}, { get: () => () => Promise.reject(new Error("D1 must not be read")) });
     const env = makeEnv({ DB: dead });
-    expect(await enqueueHourly(env, istTick("2026-11-10", 6))).toBe(2);
-    expect(fakes.leads.map((s) => s.via)).toEqual(["sendBatch", "sendBatch"]); // two bodies, one call
-    expect(fakes.leads.map((s) => (s.body as { kind: string }).kind)).toEqual(["care.scan", "reminder.scan"]);
+    expect(await enqueueHourly(env, istTick("2026-11-10", 6))).toBe(3);
+    expect(fakes.leads.map((s) => s.via)).toEqual(["sendBatch", "sendBatch", "sendBatch"]); // three bodies, one call
+    expect(fakes.leads.map((s) => (s.body as { kind: string }).kind)).toEqual([
+      "care.scan",
+      "reminder.scan",
+      "gateway.sweep",
+    ]);
     expect(fakes.email).toEqual([]);
     expect(fakes.pdf).toEqual([]);
   });
@@ -74,6 +80,7 @@ describe("the hourly cron `30 * * * *` [LD61]", () => {
       "alerts.daily",
       "realisation.scan", // M5.5b, changed on purpose
       "reminder.scan",
+      "gateway.sweep", // M6.2, changed on purpose
     ]);
     fakes.leads.length = 0;
     await run("5 5 5 5 5", istTick("2026-11-10", 9));

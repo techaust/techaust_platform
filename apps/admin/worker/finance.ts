@@ -9,11 +9,33 @@
 // a time, a period or an amount from the caller (a message can only say WHICH plan or draft).
 import { WorkerEntrypoint } from "cloudflare:workers";
 import type { BillingJobsApi, DraftCareResult, IssueCareResult } from "@techaust/core/care-billing";
-import { createApp } from "./app.ts";
+import {
+  type CreateLinkArgs,
+  type CreateLinkResult,
+  type GatewayEventsApi,
+  type IssueAdvanceResult,
+  isCreateLinkArgs,
+  isRpcId,
+  type PortalPaymentsApi,
+  type ProcessEventResult,
+  type RefreshResult,
+} from "@techaust/core/gateway-rpc";
+import { createApp, firstRun } from "./app.ts";
 import { draftCarePlan, issueCareDraft } from "./care-billing.ts";
+import { issueGatewayAdvance } from "./gateway/advance.ts";
+import { processEvent } from "./gateway/events.ts";
+import { createLinkFor, refreshForClient } from "./gateway/links.ts";
+import { ROUTES } from "./guard.ts";
 import { mountFinance } from "./routes-finance.ts";
+import { warmRouter } from "./warm-router.ts";
 
-export default createApp(mountFinance) satisfies ExportedHandler<Env>;
+const app = createApp(mountFinance);
+// M6.2 CPU diagnosis (lead decision 1): the rows this Worker answers, matched while the module loads (not exported: a named export of an entry is an entrypoint).
+warmRouter(
+  app,
+  ROUTES.filter((r) => r.on === "finance"),
+);
+export default app satisfies ExportedHandler<Env>;
 
 const id = (v: unknown): string => {
   if (typeof v !== "string" || v.length === 0 || v.length > 64)
@@ -39,8 +61,59 @@ export class BillingJobs extends WorkerEntrypoint<Env> implements BillingJobsApi
   }
 }
 
+/**
+ * M6.2 (run file C; CPU diagnosis lead decision 5): the webhook events, called by the jobs Worker ONLY (`ADMIN_GATEWAY`, entrypoint `GatewayEvents`). Plain
+ * `WorkerEntrypoint` methods, never through Hono; exactly these two public methods (split.test.ts); every id 1 to 64 characters; one id-only log line each.
+ */
+export class GatewayEvents extends WorkerEntrypoint<Env> implements GatewayEventsApi {
+  async processEvent(args: { eventId: string }): Promise<ProcessEventResult> {
+    const eventId = rpcId(args?.eventId, "GatewayEvents");
+    const answer = await processEvent(this.env, eventId);
+    rpcLog("processEvent", answer.result);
+    return answer;
+  }
+
+  async issueGatewayAdvance(args: { paymentId: string; lastTry?: boolean }): Promise<IssueAdvanceResult> {
+    const paymentId = rpcId(args?.paymentId, "GatewayEvents");
+    const answer = await issueGatewayAdvance(this.env, paymentId, { lastTry: args?.lastTry === true });
+    rpcLog("issueGatewayAdvance", answer.result);
+    return answer;
+  }
+}
+
+/** M6.2: the portal's Pay now, called by the portal Worker ONLY (`ADMIN_PAY`, entrypoint `PortalPayments`). Exactly these two public methods. */
+export class PortalPayments extends WorkerEntrypoint<Env> implements PortalPaymentsApi {
+  async createLink(args: CreateLinkArgs): Promise<CreateLinkResult> {
+    if (!isCreateLinkArgs(args)) throw new TypeError("PortalPayments: malformed createLink arguments");
+    const r = await createLinkFor(this.env, args);
+    rpcLog("createLink", r.ok ? (r.reused ? "reused" : "created") : r.error);
+    // The answer carries only what the portal shows: never the checkout id or a Razorpay id.
+    if (!r.ok) {
+      const { stale: _stale, ...refusal } = r;
+      return refusal;
+    }
+    return { ok: true, shortUrl: r.shortUrl, expiresAt: r.expiresAt, reused: r.reused };
+  }
+
+  async refreshForClient(args: { clientId: string; documentId: string }): Promise<RefreshResult> {
+    const clientId = rpcId(args?.clientId, "PortalPayments");
+    const documentId = rpcId(args?.documentId, "PortalPayments");
+    const answer = await refreshForClient(this.env, { clientId, documentId });
+    rpcLog("refreshForClient", answer.result);
+    return answer;
+  }
+}
+
+const rpcId = (v: unknown, who: string): string => {
+  if (!isRpcId(v)) throw new TypeError(`${who}: an id is a string of 1 to 64 characters`);
+  return v;
+};
+
 let isolateCalls = 0;
+/** One id-only line per RPC call: the method, the result code, this isolate's call count and (M6.2, CPU diagnosis lead decision 4) `f: 1` on the method's first call here. */
 function rpcLog(method: string, result: string): void {
   isolateCalls++;
-  console.log(JSON.stringify({ ev: "rpc", m: method, r: result, n: isolateCalls }));
+  console.log(
+    JSON.stringify({ ev: "rpc", m: method, r: result, n: isolateCalls, f: firstRun(`rpc ${method}`) }),
+  );
 }

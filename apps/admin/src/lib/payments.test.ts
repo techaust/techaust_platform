@@ -2,6 +2,7 @@
 // until approved, every API code the screens show mapped to its line, the allocation table's reading (core money only), the open documents a payment or a
 // TDS entry can go on, the void blockers, and the payments and TDS register's CSV.
 import { describe, expect, it } from "vitest";
+import messagesSource from "../../worker/payment-messages.ts?raw";
 import { RequestError } from "../api.ts";
 import auditSource from "./audit.ts?raw";
 import { APPROVED_07ZH_NEW, PAY_AUDIT, PLACEHOLDER_MARK, ZH } from "./copy-zh.ts";
@@ -28,6 +29,7 @@ import {
   readAllocations,
   registerCsv,
   STATUS_LABELS,
+  VOID_GATEWAY_PENDING,
   VOID_PAYMENT_PENDING,
   VOID_PAYMENT_RECORDED,
 } from "./payments.ts";
@@ -167,6 +169,33 @@ describe("the void blockers of M6.1", () => {
     expect(withdrawErrorText(err("payment_pending"))).toBe(VOID_PAYMENT_PENDING);
     expect(VOID_PAYMENT_PENDING).toBe(
       "A payment recorded on it is waiting for the owner's check. Reject it first.",
+    );
+  });
+});
+
+describe("the void blocker of a pending Razorpay payment [M6.2 fix round 3 item 3]", () => {
+  it("has its own line (it can't be rejected); a manual payment keeps line 21", () => {
+    expect(voidBlockedText(["payment_pending_gateway"], "proforma")).toBe(VOID_GATEWAY_PENDING);
+    expect(voidBlockedText(["payment_pending_gateway", "already_emailed"], "proforma")).toBe(
+      VOID_GATEWAY_PENDING,
+    );
+    expect(voidBlockedText(["payment_pending", "payment_pending_gateway"], "proforma")).toBe(
+      VOID_PAYMENT_PENDING,
+    );
+    expect(voidErrorText(err("payment_pending_gateway"), "proforma")).toBe(VOID_GATEWAY_PENDING);
+    expect(
+      voidErrorText(
+        new RequestError(409, "void_not_allowed", "x", null, [], [], [], {
+          reasons: ["payment_pending_gateway", "already_emailed"],
+        }),
+        "proforma",
+      ),
+    ).toBe(VOID_GATEWAY_PENDING);
+    expect(withdrawErrorText(err("payment_pending_gateway"))).toBe(VOID_GATEWAY_PENDING);
+    // The Worker's copy (`VOID_GATEWAY_PENDING_LINE`, the withdraw route's words) is the same text (read as source: the SPA can't import Worker modules).
+    expect(messagesSource).toContain(`'${VOID_GATEWAY_PENDING}'`);
+    expect(VOID_GATEWAY_PENDING).toBe(
+      'A Razorpay payment on it is waiting for its tax invoice. Issue it with "Confirm by issuing the tax invoice".',
     );
   });
 });

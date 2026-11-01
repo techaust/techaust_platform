@@ -156,6 +156,17 @@ export const ACTION_LABELS: Record<string, string> = {
   "payment.tds_certificate": PAY_AUDIT["payment.tds_certificate"],
   "payment.credit_apply": PAY_AUDIT["payment.credit_apply"],
   "payment.credit_release": PAY_AUDIT["payment.credit_release"],
+  // M6.2 Razorpay (staff words, 07-ZI S24 style; lead under the owner's delegation, the designer may tighten them).
+  "invoice.advance_issue_auto": Y("issued a tax invoice for a payment received online, automatically"),
+  "payment.gateway_confirm": Y("confirmed a payment received online"),
+  "payment.gateway_pending": Y("recorded a payment received online for checking"),
+  "payment.gateway_review": Y("put an online payment in Needs review"),
+  "payment.gateway_advance_blocked": Y("could not issue the tax invoice for an online payment automatically"),
+  "payment.link_create": Y("made a payment link"),
+  "payment.link_cancel": Y("cancelled a payment link"),
+  "payment.link_end": Y("closed a payment link that expired or was cancelled at Razorpay"),
+  "payment.review_resolve": Y("resolved an item in Needs review"),
+  "payment.review_retry": Y("tried a Needs review item again"),
   "care_invoice.draft": Y("drafted a care plan invoice"),
   "care_invoice.auto_issue_refused": Y("could not issue a care plan invoice automatically"),
   // T11, the deed of assignment: 07-ZJ line 33 (staff-only; marked until the lead approves it).
@@ -230,6 +241,10 @@ export const ENTITY_LABELS: Record<string, string> = {
   document: "Documents",
   approval: "Approvals",
   payment: "Payments",
+  // M6.2 (staff words, lead under the owner's delegation; 07-ZI S19).
+  review_item: "Needs review",
+  checkout_session: "Payment links",
+  webhook_event: "Payment webhooks",
   // T11: 07-ZJ line 33.
   deed: DEED_RECORD_TYPE,
   report: "Reports",

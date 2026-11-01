@@ -2418,6 +2418,181 @@ textarea[aria-invalid="true"] {
   font-size: var(--text-sm);
 }
 
+/* ---------- M6.2 Pay now (run file G5, G6) ----------
+   Pay now is the slip's first action; the dialog asks one question (07-ZI line 2) with two answers, the part amount typed under its own answer. Back from
+   Razorpay, one status block above the slip changes in place: a clock while it checks (with a thin line that fills over the minute, standing still when motion
+   is reduced), a tick once the payment is received, an info mark if Razorpay hasn't confirmed yet. Tokens only. */
+
+/* Pay now over Download PDF: the two buttons share one width at every width (review finding 14): stacked at the slip's end from md, stacked across the
+   slip below it */
+.inv-slip__actions:has(.pay-now) {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.inv-slip__actions:has(.pay-now) > .btn {
+  align-self: stretch;
+  justify-content: center;
+}
+
+/* the amount dialog opens from the slip's end-aligned actions: it reads from the start, as every dialog does */
+.inv-slip__actions .dialog {
+  text-align: start;
+}
+
+.pay-form > :last-child {
+  margin-bottom: var(--space-5);
+}
+
+.pay-choices {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.pay-choices .radio span {
+  font-variant-numeric: tabular-nums;
+}
+
+/* the part amount sits under its own answer, indented to the answer's words */
+.pay-part {
+  margin: var(--space-1) 0 0;
+  padding-inline-start: calc(1.375rem + var(--space-3));
+}
+
+.pay-part .hint {
+  margin: 0 0 var(--space-2);
+}
+
+.pay-part__in {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 16rem;
+}
+
+.pay-part .pay-part__in > span {
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.pay-part__in input {
+  font-variant-numeric: tabular-nums;
+}
+
+.pay-full {
+  margin: 0 0 var(--space-4);
+  font-weight: 560;
+  font-variant-numeric: tabular-nums;
+}
+
+.pay-how {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.pay-form .pay-how .icon {
+  margin-top: 0.125rem;
+}
+
+.pay-failure:focus {
+  outline: none;
+}
+
+.pay-failure:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* the status block: a ruled card on the page's ground, the icon in the state's colour, the words in the text colour */
+.pay-status {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  max-width: var(--container-prose);
+}
+
+.pay-status[data-phase] > .icon {
+  color: var(--color-info);
+}
+
+.pay-status[data-phase="received"] > .icon,
+.pay-status[data-phase="returned"] > .icon {
+  color: var(--color-success);
+}
+
+.pay-status__body {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.pay-status__body p {
+  margin: 0;
+}
+
+.pay-status__title {
+  font-weight: 600;
+}
+
+/* the minute, as a line that fills (aria-hidden: the words carry the meaning) */
+.pay-status__bar {
+  display: block;
+  height: 3px;
+  margin-top: var(--space-2);
+  border-radius: var(--radius-full);
+  background:
+    linear-gradient(var(--color-accent-decor), var(--color-accent-decor)) no-repeat left / 0% 100%,
+    var(--color-fill-subtle);
+  animation: pay-minute 60s linear forwards;
+}
+
+@keyframes pay-minute {
+  to {
+    background-size:
+      100% 100%,
+      auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pay-status__bar {
+    animation: none;
+    background-size:
+      35% 100%,
+      auto;
+  }
+}
+
+/* line 16 on a proforma: under the figures, a quiet line with its clock */
+.inv-slip__paid {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  grid-column: 1 / -1;
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.inv-slip .inv-slip__paid .icon {
+  color: var(--color-text-muted);
+}
+
+.pay-return .pay-status {
+  margin-bottom: var(--space-6);
+}
+
 /* ---- T11: the signed deed of assignment, a second card under the summary (components/document/signed-deed.tsx) ----
    The same flat surface as the summary card; a verdigris rule on its top edge and the brand's 45° cut as a small mark before the heading set it apart as a
    record of something done, without colour carrying meaning (the words say it). */

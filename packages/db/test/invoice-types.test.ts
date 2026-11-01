@@ -313,7 +313,7 @@ async function advanceArgs(
       ],
     },
     ...over,
-  };
+  } as AdvanceIssueArgs;
 }
 
 const runAdvance = (a: AdvanceIssueArgs) => {

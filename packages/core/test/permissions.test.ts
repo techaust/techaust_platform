@@ -55,6 +55,8 @@ const EXPECTED: Record<Exclude<Action, "proposals.send">, string> = {
   "payments.withdraw": "S---", // M6.1 (L7): the Owner only, with a fresh code
   "payments.applyCredit": "S---", // M6.1 (L13): the Owner only, with a fresh code
   "payments.attachProof": "AA--", // M6.1 (L11): Owner and Staff add a proof or a certificate number once
+  "payments.link": "AA--", // M6.2 (L2 to L4): Owner and Staff create, cancel and refresh a Razorpay payment link (no money moves)
+  "payments.review": "A---", // M6.2 (L7): the Owner resolves or retries a gateway payment in "Needs review"
   "deeds.view": "AA--", // T11 (L8; owner, 2026-11-01, decision (c)): Owner and Staff read a deed; the Accountant does not
   "deeds.editSchedules": "AA--", // T11 (L8): Owner and Staff fill the Schedules
   "deeds.finalise": "S---", // T11 (L8): the Owner finalises with a fresh code

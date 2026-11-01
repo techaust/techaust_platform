@@ -3,16 +3,19 @@ import { warmSesSigning } from "@techaust/email";
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 import { enqueueHourly, HOURLY_CRON } from "./billing.ts";
+import { razorpayHook } from "./hooks/razorpay.ts";
 import { noteInvocation } from "./log.ts";
 import { enqueueSweep } from "./pdf.ts";
 import { enqueueStatementPurge, PURGE_CRON, purgeScanMessage } from "./purge.ts";
 import { handleQueue } from "./queue.ts";
 import { enqueueStats } from "./stats.ts";
-import { warmConsumers } from "./warm.ts";
+import { warmConsumers, warmRazorpayHook } from "./warm.ts";
 
 warmConsumers();
 // Web Crypto is allowed at start-up and finishes before the first event; errors are swallowed inside (CPU tuning)
 void warmSesSigning();
+// M6.2 (CPU diagnosis, lead decision 3): the webhook's first run paid at start-up (the HMAC with a made-up secret, the readers, one parse).
+void warmRazorpayHook();
 
 const app = new Hono<{ Bindings: Env }>();
 app.use(secureHeaders());
@@ -20,7 +23,9 @@ app.use(secureHeaders());
 // Health check: deliberately touches no database (saves D1 reads; docs/05 §13).
 app.get("/healthz", (c) => c.json({ ok: true, service: "jobs", env: c.env.ENVIRONMENT }));
 
-// Webhook routes (/razorpay, /stripe, /paypal, /ses) arrive in M6/M7.
+// M6.2: the Razorpay webhook, `POST /razorpay` only (any other method on it, or `/razorpay/*`, is the 404 below and touches no database). /stripe, /paypal and
+// /ses arrive in M6.3, M6.4 and M7.
+app.post("/razorpay", (c) => razorpayHook(c.req.raw, c.env));
 app.notFound((c) => c.json({ error: { code: "not_found", message: "Not found" } }, 404));
 
 export default {

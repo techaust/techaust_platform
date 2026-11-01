@@ -5,3 +5,6 @@ TOTP_ENC_KEY=
 SESSION_HMAC_KEY=
 # Cloudflare's always-pass Turnstile TEST secret (written by `pnpm dev:secrets`); staging and production use the real widget secret.
 TURNSTILE_SECRET=
+# M6.2: the finance Worker's Razorpay key pair (local fakes from `pnpm dev:secrets`; GATEWAY_TRANSPORT "stub" never calls Razorpay). Staging: tools/set-gateway-keys.ps1 -Gateway razorpay.
+RAZORPAY_KEY_ID=
+RAZORPAY_KEY_SECRET=

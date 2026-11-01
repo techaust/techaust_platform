@@ -14,11 +14,15 @@ export default defineConfig(async () => ({
         // so no test calls the entrypoint through this binding; the real call over a service binding is the staging reading (docs/runbooks/cpu-baseline.md).
         serviceBindings: {
           ADMIN_JOBS: async () => new Response("no admin API in the test pool", { status: 501 }),
+          // M6.2: the finance Worker's `GatewayEvents` likewise (the gateway tests pass typed fakes through `env`).
+          ADMIN_GATEWAY: async () => new Response("no admin finance in the test pool", { status: 501 }),
         },
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations(join(import.meta.dirname, "../../packages/db/migrations")),
           SES_ACCESS_KEY_ID: "AKIATEST",
           SES_SECRET_ACCESS_KEY: "test-secret",
+          // M6.2: a fixed test webhook secret (never a real one).
+          RAZORPAY_WEBHOOK_SECRET: "test-razorpay-webhook-secret",
         },
       },
     }),

@@ -27,6 +27,7 @@ import { useToast } from "../components/toast.tsx";
 import { Notice } from "../components/ui.tsx";
 import { allowed } from "../lib/access.ts";
 import { pendingBadge } from "../lib/documents.ts";
+import { GW, GW_UI, REVIEW_CHANGED, razorpayLine } from "../lib/gateway.ts";
 import { INV_COPY, typeLabel } from "../lib/invoices.ts";
 import { invoicesApi } from "../lib/invoices-api.ts";
 import { confirmDocsOf, OPEN_DOCS_CAP } from "../lib/open-docs.ts";
@@ -61,6 +62,7 @@ import {
   useDialogState,
 } from "./payments/parts.tsx";
 import { RecordPaymentDialog } from "./payments/record-dialog.tsx";
+import { ReviewList } from "./payments/review-tab.tsx";
 
 export function Component() {
   const user = useUser();
@@ -68,7 +70,7 @@ export function Component() {
   return <Payments role={user.role} />;
 }
 
-type Tab = "check" | "all";
+type Tab = "check" | "review" | "all";
 const STATUSES: PaymentStatus[] = ["pending_verification", "confirmed", "rejected", "withdrawn"];
 const isStatus = (v: string | null): v is PaymentStatus => STATUSES.includes(v as PaymentStatus);
 
@@ -77,7 +79,14 @@ function Payments({ role }: { role: Role }) {
   const { id: linked } = useParams();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const tab: Tab = owner && params.get("tab") !== "all" && !params.get("status") ? "check" : "all";
+  // M6.2: "Needs review" (07-ZI S19) is the Owner's third tab; the bells link to `?tab=review`.
+  const tab: Tab = !owner
+    ? "all"
+    : params.get("tab") === "review"
+      ? "review"
+      : params.get("tab") !== "all" && !params.get("status")
+        ? "check"
+        : "all";
   const status =
     tab === "check"
       ? "pending_verification"
@@ -98,6 +107,14 @@ function Payments({ role }: { role: Role }) {
     waiting.state === "ready" && waiting.data
       ? pendingBadge({ n: waiting.data.payments.length, more: waiting.data.next !== null })
       : null;
+  // M6.2: the open "Needs review" items (the count only; the tab reads its own list and reports changes back).
+  const reviewing = useLoad(
+    () => (owner ? paymentsApi.review({ status: "open" }) : Promise.resolve(null)),
+    `${owner}`,
+  );
+  const reviewCount = reviewing.state === "ready" && reviewing.data ? reviewing.data.openCount : 0;
+  const reviewBadge =
+    reviewCount > 0 ? { text: String(reviewCount), label: GW_UI.reviewCount(reviewCount) } : null;
 
   const set = (patch: Record<string, string | null>) =>
     setParams(
@@ -112,26 +129,39 @@ function Payments({ role }: { role: Role }) {
       { replace: true },
     );
 
-  const list = (
-    <PaymentList
-      key={`${tab}:${status ?? ""}:${client ?? ""}:${from}:${to}`}
-      tab={tab}
-      role={role}
-      status={status}
-      client={client}
-      from={from}
-      to={to}
-      filters={tab === "all"}
-      onFilter={set}
-      linked={linked}
-      refresh={refresh}
-      linkSearch={params.toString()}
-      onLinkedDone={() =>
-        linked && navigate({ pathname: "/payments", search: params.toString() }, { replace: true })
-      }
-      onChanged={() => waiting.reload(true)}
-    />
-  );
+  const list =
+    tab === "review" ? (
+      <ReviewList
+        role={role}
+        entry={(id, close, changed) => (
+          <EntryDialog id={id} role={role} onClose={close} onChanged={changed} />
+        )}
+        onChanged={() => {
+          reviewing.reload(true);
+          window.dispatchEvent(new Event(REVIEW_CHANGED));
+          waiting.reload(true);
+        }}
+      />
+    ) : (
+      <PaymentList
+        key={`${tab}:${status ?? ""}:${client ?? ""}:${from}:${to}`}
+        tab={tab}
+        role={role}
+        status={status}
+        client={client}
+        from={from}
+        to={to}
+        filters={tab === "all"}
+        onFilter={set}
+        linked={linked}
+        refresh={refresh}
+        linkSearch={params.toString()}
+        onLinkedDone={() =>
+          linked && navigate({ pathname: "/payments", search: params.toString() }, { replace: true })
+        }
+        onChanged={() => waiting.reload(true)}
+      />
+    );
   const canRecord = allowed(role, "payments.record");
   return (
     <>
@@ -152,12 +182,13 @@ function Payments({ role }: { role: Role }) {
           label={PAY_COPY.heading}
           tabs={[
             { key: "check", label: PAY_COPY.toCheck, badge },
+            { key: "review", label: GW.needsReview, badge: reviewBadge },
             { key: "all", label: PAY_UI.allPayments },
           ]}
           selected={tab}
           // Visual review finding 3: the other tab's filters never carry over (the check tab has none; its badge and its list must agree).
           onSelect={(k) =>
-            set({ tab: k === "all" ? "all" : null, status: null, client: null, from: null, to: null })
+            set({ tab: k === "check" ? null : k, status: null, client: null, from: null, to: null })
           }
         >
           {list}
@@ -281,7 +312,11 @@ function PaymentList(props: {
       header: PAY_UI.colKind,
       cell: (r) => (
         <span className="pay-row__entry">
-          {r.kind === "tds" ? PAY_UI.kindTds : `${PAY_UI.kindPayment} · ${r.mode ? MODE_LABELS[r.mode] : ""}`}
+          {r.kind === "tds"
+            ? PAY_UI.kindTds
+            : r.provider !== "manual"
+              ? razorpayLine(r.mode, null)
+              : `${PAY_UI.kindPayment} · ${r.mode ? MODE_LABELS[r.mode] : ""}`}
         </span>
       ),
     },
@@ -383,14 +418,17 @@ function PaymentList(props: {
                 ? (r) =>
                     r.status === "pending_verification" ? (
                       <span className="pay-row__acts">
-                        <button
-                          type="button"
-                          className="btn btn--secondary"
-                          onClick={() => setOpen({ id: r.id, act: "reject" })}
-                        >
-                          {PAY_COPY.reject}
-                          <span className="visually-hidden">{` ${day(r.receivedOn)} ${r.clientName}`}</span>
-                        </button>
+                        {/* M6.2 (L7): a Razorpay payment can't be rejected here (409 `gateway_refund_needed`) */}
+                        {r.provider === "manual" && (
+                          <button
+                            type="button"
+                            className="btn btn--secondary"
+                            onClick={() => setOpen({ id: r.id, act: "reject" })}
+                          >
+                            {PAY_COPY.reject}
+                            <span className="visually-hidden">{` ${day(r.receivedOn)} ${r.clientName}`}</span>
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="btn btn--primary"
@@ -547,7 +585,10 @@ function EntryView(props: {
   const cur = p.currency;
   const owner = allowed(props.role, "payments.verify");
   const pending = p.status === "pending_verification";
+  // M6.2 (L7): a Razorpay payment is never rejected or withdrawn here (the money goes back by a refund, M6.5), and Razorpay is its own proof.
+  const online = p.provider !== "manual";
   const canProof =
+    !online &&
     allowed(props.role, "payments.attachProof") &&
     p.kind === "payment" &&
     !p.proof?.hasFile &&
@@ -560,6 +601,7 @@ function EntryView(props: {
     !p.clientGone &&
     (p.status === "pending_verification" || p.status === "confirmed");
   const canWithdraw =
+    !online &&
     allowed(props.role, "payments.withdraw") &&
     p.status === "confirmed" &&
     !p.advanceReceiptId &&
@@ -603,18 +645,35 @@ function EntryView(props: {
             <>
               <div>
                 <dt>{PAY_COPY.mode}</dt>
-                <dd>{p.mode ? MODE_LABELS[p.mode] : ""}</dd>
+                <dd>
+                  {online ? (
+                    <>
+                      {GW_UI.paidOnline}
+                      <span className="pay-lines__meta">{razorpayLine(p.mode, null)}</span>
+                    </>
+                  ) : p.mode ? (
+                    MODE_LABELS[p.mode]
+                  ) : (
+                    ""
+                  )}
+                </dd>
               </div>
               <div>
                 <dt>{PAY_COPY.reference}</dt>
                 <dd className="docno break">{p.reference}</dd>
               </div>
-              {p.chargesMinor > 0 && (
-                <div>
-                  <dt>{PAY_COPY.charges}</dt>
-                  <dd className="tnum">{amountText(p.chargesMinor, cur)}</dd>
-                </div>
-              )}
+              {p.chargesMinor > 0 &&
+                (online ? (
+                  <div>
+                    <dt>{PAY_COPY.charges}</dt>
+                    <dd className="tnum">{GW.feeAbsorbed(amountText(p.chargesMinor, cur))}</dd>
+                  </div>
+                ) : (
+                  <div>
+                    <dt>{PAY_COPY.charges}</dt>
+                    <dd className="tnum">{amountText(p.chargesMinor, cur)}</dd>
+                  </div>
+                ))}
               {p.inrReceivedMinor !== null && (
                 <div>
                   <dt>{PAY_UI.inrReceived}</dt>
@@ -648,7 +707,7 @@ function EntryView(props: {
               </div>
             </>
           )}
-          {p.kind === "payment" && (
+          {p.kind === "payment" && !online && (
             <div>
               <dt>{PAY_COPY.proof}</dt>
               <dd>
@@ -666,7 +725,7 @@ function EntryView(props: {
           <div>
             <dt>{PAY_UI.recordedBy}</dt>
             <dd>
-              {p.recordedByName ?? ""} <When ms={p.recordedAt} inline />
+              {p.recordedByName ?? (online ? "Razorpay" : "")} <When ms={p.recordedAt} inline />
             </dd>
           </div>
           {p.verifiedAt !== null && p.status !== "pending_verification" && (
@@ -735,9 +794,11 @@ function EntryView(props: {
         )}
         {owner && pending && (
           <>
-            <button type="button" className="btn btn--secondary" onClick={() => props.onStep("reject")}>
-              {PAY_COPY.reject}
-            </button>
+            {!online && (
+              <button type="button" className="btn btn--secondary" onClick={() => props.onStep("reject")}>
+                {PAY_COPY.reject}
+              </button>
+            )}
             <button type="button" className="btn btn--primary" onClick={() => props.onStep("confirm")}>
               {PAY_COPY.confirm}
             </button>

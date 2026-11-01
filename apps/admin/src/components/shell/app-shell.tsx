@@ -45,6 +45,8 @@ export function AppShell(props: {
   bell: ReactNode;
   account: ReactNode;
   children: ReactNode;
+  /** M6.2: a short count after a section's label (the Owner's open "Needs review" items on Payments), with the words read out in place of the digits. */
+  badges?: Partial<Record<NavKey, { text: string; label: string }>> | undefined;
 }) {
   const narrow = useMedia(narrowQuery);
   const [pref, setPref] = useState<boolean | null>(readCollapsedPref);
@@ -83,6 +85,7 @@ export function AppShell(props: {
           current={props.current}
           hrefOf={props.hrefOf}
           homeHref={props.homeHref}
+          badges={props.badges}
           collapsed={collapsed}
           footer={
             <button
@@ -144,6 +147,7 @@ export function AppShell(props: {
           current={props.current}
           hrefOf={props.hrefOf}
           homeHref={props.homeHref}
+          badges={props.badges}
           collapsed={false}
           onNavigate={() => setDrawer(false)}
         />
@@ -158,6 +162,7 @@ function SideNav(props: {
   hrefOf: (item: NavItem) => string;
   homeHref: string;
   collapsed: boolean;
+  badges?: Partial<Record<NavKey, { text: string; label: string }>> | undefined;
   footer?: ReactNode;
   onNavigate?: () => void;
 }) {
@@ -194,6 +199,7 @@ function SideNav(props: {
           <ul key={items[0]?.key} className="rail__group">
             {items.map((item) => {
               const current = item.key === props.current;
+              const badge = props.badges?.[item.key];
               return (
                 <li key={item.key}>
                   <Link
@@ -201,13 +207,25 @@ function SideNav(props: {
                     className="rail__link"
                     aria-current={current ? "page" : undefined}
                     onClick={props.onNavigate}
-                    onMouseEnter={(e) => show(item.label, e.currentTarget)}
+                    onMouseEnter={(e) =>
+                      show(badge ? `${item.label}, ${badge.label}` : item.label, e.currentTarget)
+                    }
                     onMouseLeave={() => setTip(null)}
-                    onFocus={(e) => show(item.label, e.currentTarget)}
+                    onFocus={(e) =>
+                      show(badge ? `${item.label}, ${badge.label}` : item.label, e.currentTarget)
+                    }
                     onBlur={() => setTip(null)}
                   >
                     {item.icon}
                     <span className="rail__label">{item.label}</span>
+                    {badge && (
+                      <>
+                        <span className="rail__count" aria-hidden="true">
+                          {badge.text}
+                        </span>
+                        <span className="visually-hidden">, {badge.label}</span>
+                      </>
+                    )}
                   </Link>
                 </li>
               );

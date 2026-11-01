@@ -30,6 +30,11 @@ export default defineConfig(async () => ({
           TOTP_ENC_KEY: TEST_KEY(3),
           SESSION_HMAC_KEY: TEST_KEY(4),
           TURNSTILE_SECRET: "test-turnstile-secret",
+          // M6.2: the finance Worker's Razorpay test values and the local simulator (tests never call Razorpay; worker/gateway/config.ts).
+          RAZORPAY_KEY_ID: "rzp_test_TESTKEY0000001",
+          RAZORPAY_KEY_SECRET: "test-razorpay-key-secret",
+          GATEWAY_TRANSPORT: "stub",
+          PORTAL_URL: "http://localhost:5174/",
           // Opt-in: run the suite as if it started at this instant (worker/test-setup.ts); empty by default.
           TEST_CLOCK_AT: process.env.TA_TEST_CLOCK ?? "",
         },
