@@ -7,10 +7,8 @@
 // up in its own table of the forwarded rows (Hono's TrieRouter: a walk over the path's segments, no regular expression per row) and forwards for the FIRST
 // row that matches in table order, exactly as the first of the per-row handlers answered before; with no forwarded row it hands the request on (`next`) to
 // the front's own routes and middleware, so an undeclared path still gets the front's 404.
-import { hex, randomBytes } from "@techaust/auth";
-import { clipHeader, HEADER_LIMITS } from "@techaust/db/log";
 import { TrieRouter } from "hono/router/trie-router";
-import { type App, firstRun, nextRequestNumber } from "./app.ts";
+import { type App, firstRun, requestFacts } from "./app.ts";
 import { err, type RouteDef } from "./context.ts";
 
 const BAD_GATEWAY = { code: "bad_gateway", message: "Something went wrong" };
@@ -75,9 +73,7 @@ export function forwardRoutes(app: App, routes: readonly RouteDef[], warm = fals
     const row = forwardRowOf(table, c.req.method, c.req.path);
     if (!row) return next();
     const w = workerOf(row);
-    const { iso, n } = warm ? { iso: "warm", n: 0 } : nextRequestNumber();
-    const rid =
-      clipHeader(c.req.header("cf-ray"), HEADER_LIMITS.requestId) ?? (warm ? "warm" : hex(randomBytes(8)));
+    const { iso, n, rid } = requestFacts(warm, c.req.header("cf-ray"));
     let res: Response;
     try {
       res = await (w === "finance" ? c.env.ADMIN_FINANCE : c.env.ADMIN_API).fetch(c.req.raw);

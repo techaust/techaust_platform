@@ -26,12 +26,24 @@ export function nextRequestNumber() {
  * raw path, an id or anything personal. Bounded (the route table is finite; at most 512 keys are remembered).
  */
 const answered = new Set<string>();
-/** A warm app's fixed request facts (createApp `warm`): no counter moves. */
-const WARM_REQUEST = { iso: "warm", n: 0 } as const;
 export function firstRun(key: string): 1 | undefined {
   if (answered.has(key)) return undefined;
   if (answered.size < 512) answered.add(key);
   return 1;
+}
+
+/** A warm app's fixed request facts (createApp `warm`): no counter moves. */
+const WARM_REQUEST = { iso: "warm", n: 0 } as const;
+
+/**
+ * One request's facts for its log line, shared by the app's outermost middleware and the front's forwarder (review finding 8): this isolate's id and
+ * request number, and the request id (`cf-ray`, clipped, else random). A warm app's (createApp `warm`, CPU warm-up (b)1) are fixed: no counter moves and no
+ * random value is drawn (global scope refuses random values).
+ */
+export function requestFacts(warm: boolean, cfRay: string | undefined) {
+  const { iso, n } = warm ? WARM_REQUEST : nextRequestNumber();
+  const rid = clipHeader(cfRay, HEADER_LIMITS.requestId) ?? (warm ? "warm" : hex(randomBytes(8)));
+  return { iso, n, rid };
 }
 
 export type App = Hono<AppEnv, Record<string, never>, "/api">;
@@ -98,12 +110,9 @@ export function createApp(
   app.use(
     createMiddleware<AppEnv>(async (c, next) => {
       // A warm app counts no request and draws no random id (global scope refuses random values).
-      const { iso, n } = warm ? WARM_REQUEST : nextRequestNumber();
       // Header values are the client's: cut before they reach a log row (audit M2).
-      c.set(
-        "rid",
-        clipHeader(c.req.header("cf-ray"), HEADER_LIMITS.requestId) ?? (warm ? "warm" : hex(randomBytes(8))),
-      );
+      const { iso, n, rid } = requestFacts(warm, c.req.header("cf-ray"));
+      c.set("rid", rid);
       c.set("ip", clipHeader(c.req.header("CF-Connecting-IP"), HEADER_LIMITS.ip));
       c.set("ua", clipHeader(c.req.header("User-Agent"), HEADER_LIMITS.ua));
       // The row of the handler that ANSWERS: the first matched pattern that is a table row. Hono runs a static path registered before
