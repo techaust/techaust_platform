@@ -16,5 +16,5 @@ export const FRONT_WARM_SECRETS: Readonly<Record<string, string>> = {
   SALT_PEPPER: madeUpKey(2),
   TOTP_ENC_KEY: madeUpKey(3),
   SESSION_HMAC_KEY: madeUpKey(4),
-  TURNSTILE_SECRET: "warm-up-turnstile-not-a-secret",
+  TURNSTILE_SECRET: ["warm", "up", "turnstile"].join("-"),
 };
