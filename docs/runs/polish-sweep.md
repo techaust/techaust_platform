@@ -1,6 +1,6 @@
 # Polish sweep (admin and website follow-ups)
 
-Status: designer fix round running (review 2, 3, 5, week grid same-name line)
+Status: narrow re-check running (lead fixes 1, 4, 6 and designer round d2)
 Tier: C
 Usage: builder b1 claude-opus-5-5/high (model-audit; skills attempted `cloudflare:workers-best-practices`, `cloudflare:wrangler`, both "Unknown skill" in the cloud), 5-h 17 → 20 %; designer d1 claude-opus-5-5/high (skills: frontend-design:frontend-design per model-audit), started at 5-h 17 %; frontend-design attempted, "Unknown skill" in the cloud (designer report). Reviewer started at 5-h 62 % (USAGE 62 at 03:21).
 
@@ -65,6 +65,7 @@ Skills: `frontend-design:frontend-design` first (report if it can't load in the 
 - 2026-11-01, Lead: the first usage reading (USAGE 17 at 2026-11-01T02:40+05:30) carries a time ~27 minutes after the session's clock (02:13 IST); `agent-slots.mjs` accepted it; noted, not corrected.
 
 ## Follow-ups (for 12)
+- Time: tell a deactivated member apart from an active one of the same name (add `user_email` to the entries and week rows in `apps/admin/worker/time-logs.ts`, then compare names among the rows' own users; polish-sweep review 5).
 - Admin and portal focus rings: 24 `outline: 2px` rules render 1.6 px at 125 % display scale; move `--focus-width` (2.4 px) into `packages/ui` tokens and use it in all three apps (polish-sweep review 7).
 - The note dialog's blockers come from a second request after each save; return them in the save response (review 8).
 - M2.5's `zod/mini` on `/contact` and `/get-a-quote` (~20 KB gzipped): still needs the shared schemas `packages/core/src/schemas/{fields,forms}.ts` rewritten in the mini API (web and jobs Workers); not done here (no shared-schema change in this task).
@@ -193,6 +194,7 @@ Commands (through heavy.sh): admin typecheck exit 0; admin test 128 files, 3,822
 - `bash tools/heavy.sh --log check pnpm check` on b80caa7: exit 0 (lint infos only, pre-existing; every guard ok). A reminder is set for 06:12 IST to start the designer round.
 - 2026-11-01 06:13 IST: merged origin/main (#141, #142; clean) as d945655. Designer fix round d2 started (agent-slots: yes, reading USAGE 88 at 04:00, over 2 hours old, so one agent at a time; the window reset at 06:10).
 - `pnpm test` on c5ac03f (main merged, before d2), through heavy.sh: exit 0. auth 135; ui 471 (+2 skipped); core 1,952; email 132; db 623; pdf 379; web 750 (+17 skipped); portal 679; jobs 560; admin 3,828 (128 files). The final run on the branch tip follows the re-check.
+- 2026-11-01: merged `fix/polish-sweep-d2` (4f99441) as 533d6e6; worktree removed, shots copied to `.logs/shots/polish-d2/`. Review 2 and 3 and designer question 2 fixed. **Review 5 kept as a follow-up** (lead): it needs `user_email` on the time entries and week rows (`apps/admin/worker/time-logs.ts` ~335, ~708) plus a screen change, for a rare case (a deactivated member sharing a name with an active one); not worth widening the time API in a polish sweep. d2 question 2 (a very long address part scrolls the table box, never the page): keep the part before "@" whole, as the designer recommends (staff addresses are short).
 
 ## Integration notes (lead)
 - 2026-11-01: merged `fix/polish-sweep-b1` (9da1599) into `fix/polish-sweep` as 2826a4b; builder worktree removed, local branches deleted. Lead read the diff: the cancel of never-linked sends now runs before `deleteContactAccess` (step 2a), same SQL and guard; `DELIVERY_SQL` adds `removed` and the row reads "Removed contact" (core `ANONYMISED_CONTACT`, existing words), no address. The reviewer checks the guard order (the anonymise audit row exists before 2a) and the statement count.
