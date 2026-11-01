@@ -6,7 +6,7 @@
 //     Inside it, ONE batch claims the row (`REMINDER_CLAIM_SQL`: every stop rule is in that statement), supersedes the earlier due offsets of the same document and mints one personal link
 //     per live recipient (at most 5). Only then are the emails queued (`sendBatch`, entity = the reminder), and the first one's log id is written to the row.
 //   A claim that is refused is judged by `skipReasonOf` (the claim's twin) and a final reason is written to the row, so the scan never reads it again.
-//   A failure AFTER the claim and BEFORE the emails are queued gives the claim back (`sent_at` NULL again, only while this claim still holds and no email is recorded; paused instead of waiting when the links were revoked after the claim). Once `sendBatch` has
+//   A failure AFTER the claim and BEFORE the emails are queued gives the claim back (`sent_at` NULL again, only while this claim still holds and no email is recorded; paused instead of waiting when the links were revoked after the claim and no live link of the document is left). Once `sendBatch` has
 //   succeeded nothing is given back: the emails are deduplicated by `email_log` (template, reminder, address), so even a redelivery after an ambiguous failure sends once.
 import { type EmailMessage, reminderSendMessage } from "@techaust/core";
 import {
@@ -106,9 +106,6 @@ const GIVE_BACK_SQL = `UPDATE reminders SET sent_at = NULL,
       AND (t.revoked_at >= ?2 OR t.token_hash IN (SELECT value FROM json_each(?3))))
       AND NOT EXISTS (SELECT 1 FROM doc_access_tokens l WHERE l.document_id = reminders.document_id AND l.revoked_at IS NULL) THEN 'paused' ELSE skipped_reason END
   WHERE id = ?1 AND sent_at = ?2 AND email_log_id IS NULL`;
-/** The plain give-back when the claim minted no link (nobody left to write to): the row goes back waiting and the stop rule writes its final reason next time (review L1). */
-const GIVE_BACK_PLAIN_SQL =
-  "UPDATE reminders SET sent_at = NULL WHERE id = ?1 AND sent_at = ?2 AND email_log_id IS NULL";
 
 type ReminderRow = DocFacts & {
   id: string;
@@ -194,11 +191,9 @@ export async function processReminderSend(
 
   const linked = minted.filter((_, i) => results[2 + i]?.meta.changes === 1);
   if (linked.length === 0) {
-    // Everyone lost access between the read and the claim: nobody to write to. Give the claim back (the stop rule then decides next time).
-    await env.DB.prepare(GIVE_BACK_PLAIN_SQL)
-      .bind(reminderId, now)
-      .run()
-      .catch(() => logEvent("reminder_send.give_back_failed"));
+    // No link was written (a recipient lost access, or one appeared outside the read, between the read and the claim): give the claim back. The same give-back as below, so a
+    // "Revoke links" that commits meanwhile still leaves it paused; one contact losing access doesn't (another recipient's live link remains). Review re-check F1.
+    await giveBack(env, reminderId, now, []);
     logEvent("reminder_send.no_recipient");
     return "no_recipient";
   }
