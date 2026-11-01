@@ -1,4 +1,4 @@
-Status: early check CHANGE (small); fix round next
+Status: fix round done (builder); re-check next
 Tier: B (Workers; docs/14 §2)
 Usage: builder claude-opus-5-5/high (workers-profiling, workers-best-practices, wrangler; 5-h 19 % at start); analyst early check claude-opus-5-5/high (workers-profiling, workers-best-practices, wrangler; 5-h 10 % at start)
 
@@ -157,3 +157,103 @@ Usage: builder claude-opus-5-5/high (workers-profiling, workers-best-practices, 
   7. and 8. As the findings.
   9. **Finance headroom for M6.3:** keep **one row per statement** in the finance fixture where more rows warm nothing new, and report the new finance bytes. Merge order: **this task merges before M6.3**; M6.3 takes `main` in afterwards and reports finance bytes against the 650,000 plan line.
 - The lead adds `--write-fixtures` to CLAUDE.md's "Worker budget" paragraph at the end of the day.
+
+## Fix round report (builder claude-opus-5-5/high, 2026-11-02)
+Branch `fix/cpu-warmup-ec` (from `origin/feat/cpu-warmup` `25e6a78d`, pushed). Lead decision items 1–9 done in order, one or more commits each (`6df7154b`…`4d65a124`). No screens, no hosted change, nothing deployed, no dev server started. Nothing in `apps/admin/worker/gateway/`, `packages/db/src/gateway.ts`, migrations or the Stripe/Razorpay code was changed. No response, permission, audit row or log key changed (only the warm app).
+
+**Skills loaded:** `cloudflare:workers-profiling` (start-up CPU profiles from `wrangler check startup`, read for hotspots: the refused `getRandomValues` calls were 35.8 ms self time in a finance start-up profile); `cloudflare:workers-best-practices` (no module-level request state; no `waitUntil` promise left with an unhandled rejection; generated `Env` kept); `cloudflare:wrangler` (local `wrangler deploy --dry-run --outfile` and `wrangler check startup --worker` only, no remote command). Context7: gitleaks v8.30.1 (`[extend] useDefault`, `[[allowlists]] paths`, config lookup order).
+
+### Each item, with its files
+1. **Start-up timing and the refused calls** (`6df7154b`): `scripts/worker-budget.mjs` (+ `.d.mts` in `4d65a124`) times compile + evaluation **plus the start-up work an entry hands to the probe** (`exposeToStartupProbe` in `apps/admin/worker/warm-routes.ts`; the probe puts `__techaustStartupProbe` in its sandbox, workerd has no such global), in a `node:vm` sandbox under workerd's global-scope rules (Response/Request with a body, `Response.json`, random values, timers and fetch refused; `Date` reads 0); a start-up that never settles fails after 5 s. Tests in `packages/core/test/worker-budget.test.ts` (the drain is counted, nothing is waited for without the hook, a rejection counts as settled, a hang fails, each refused operation fails, the clock reads 0). Entries `index.ts`, `api.ts`, `finance.ts`, `warm-front.ts` (the M3.1 step-up warm-up is handed over too). **(c):** I found no cheap money-path-free way past the id draw for PATCH and the advance invoice (their first exit after the model is `mutate`'s id) or for TOTP (a wrong code still draws the access row's id), so those three are **dropped** from the dry run. The issue call stays, with a content hash that is not the draft's: it reads, recomputes through the tax engine and answers 409 `content_changed` **before** any id (a fixture-only change, no code change; `scripts/cpu-probe.mjs` `warm: false` / `warmBody` / `readsOnly`). `warm-routes.test.ts` counts refusals (0 for all three Workers) and pins the issue call's code `content_changed`. I regenerated the fixtures **once here**, with the writer's changes for items 1c, 2, 6 and 9, so `.gitleaks.toml` landed in this commit too (no commit holds an unallowed plain literal).
+2. **Stale fixtures fail loudly** (`e6aff911`): `warmDb(book, observe)` reports every statement (read or write, held or a miss, rows). `warm-routes.test.ts` asserts zero missed reads for every call of the three Workers, checks every finance and API call reads, and checks each list (`/invoices`, `/payments/review`, `/approvals`, `/notifications`, `/clients`, `/leads`) answers ≥ 1 row. The probe seed adds two made-up bells for the made-up Owner and one made-up pending discount request (the approvals and notifications lists were empty). `docs/runbooks/cpu-baseline.md` documents `node scripts/cpu-probe.mjs --write-fixtures` (build, write, test, commit).
+3. **HEAD** (`c2253060`): `forwardRowOf` looks HEAD up as GET (`forward.ts`). `split.test.ts` sends a HEAD through `front.fetch` for every forwarded GET row (forwarded once, as HEAD, to the right Worker, empty body) and checks a HEAD with no GET row gets the front's 404. The test fails without the fix (checked).
+4. **Start-up can't fail** (`c7e3f93d`): `warmAtStartup(build, fixture, extra)` builds the warm app inside a `try`, turns a rejection into 0 and hands the settled promise to the probe; every entry uses it. The warm `waitUntil` is `Promise.resolve(p).catch(() => {})`. Tests: a build that throws, a fixture that throws, a rejected `waitUntil`. The top-level `forwardTable(ROUTES)` is gone in item 8.
+5. **Comment** (`10d6f16f`): `warmEnv`'s transport is "unset" (503 on any gateway path), not the stub; a test pins `transportOf(warmEnv({}))`.
+6. **Secrets** (`86348da4`; `.gitleaks.toml` in `6df7154b`): the 6-character splitting and `unpack` are removed, and the fixtures hold plain made-up values. `.gitleaks.toml` at the repo root has `[extend] useDefault = true` plus one `[[allowlists]]` with `paths = ['''^apps/admin/worker/warm-fixtures/''']` and a comment giving the reason. CI's `./gitleaks git . --no-banner --redact --verbose` passes no `--config` and sets no `GITLEAKS_CONFIG`, so gitleaks 8.30.1 reads `(target path)/.gitleaks.toml`, which is the repo root's file (its README "Load Configuration", order 4). The new `apps/admin/worker/warm-fixtures.test.ts` checks that:
+   - every credential-shaped fixture value (`pw_hmac`, `clientHash`; `totp_secret_enc` and `challenge` are checked when present, and none is present since TOTP left the dry run) verifies under the `TEST_KEY` values and under no other key (the other test keys, all-zero, all-0xff and three random keys);
+   - the front's dry-run keys equal `TEST_KEY(1..4)`;
+   - the API and finance fixtures hold no credential-shaped value;
+   - no unchecked kind of credential appears.
+   Made-up keys elsewhere are still built at run time.
+7. **`new Date()`** (`1d01e4c1`): `atGlobalScope` uses `vi.useFakeTimers({ toFake: ["Date"] })` + `setSystemTime(0)`; a test checks both forms read 0 and the real clock is back afterwards.
+8. **The real table** (`c2fd642a`): `index.ts` warms the table `forwardRoutes` builds and returns (no second TrieRouter); a test proves the returned table is the one the catch-all looks requests up in.
+9. **Finance headroom** (`6cc8559a`): one row per finance answer (`ROWS_KEPT`, regenerated in item 1), pinned by a test. Entries recorded for different parameters stay (the issue call must read its own draft, not the detail's invoice). Finance **622,420 → 609,527 bytes** (40,473 under the 650,000 plan line).
+- Also `8faecdf2`: the `warm-routes.ts` header now says no dry-run call reaches a new id.
+
+### Start-up (`wrangler check startup`, local workerd, "Active" ms, 3 runs each)
+I made the bundles with `wrangler deploy --dry-run -c dist/<worker>/wrangler.json --outfile …`, then ran `wrangler check startup --worker <bundle>` (without `--worker` the command profiles the Vite redirect config, which is the front, for every Worker). During the later runs the PC was shared with another agent's `db` tests and another project's `pytest`. So the interleaved A/B column (before and after bundles alternated in one session) is the fair comparison.
+
+| Worker | Before (alone) | After item 1 (alone) | Final (machine loaded) | Interleaved A/B: before → after |
+|---|---|---|---|---|
+| admin front | 62.6 / 71.5 / 96.8 | 34.6 / 49.9 / 35.7 | 62.3 / 66.2 / 56.0 | 106 / 85.5 / 84.9 → **36.6 / 45.7 / 51.9** |
+| admin API | 84.4 / 81.1 / 82.8 | 87.7 / 106.1 / 81.2 | 111 / 136.6 / 101.1 | 73.8 / 85.0 / 96.3 → 107.7 / 80.5 / 91.4 (no refusals before or after; the same within noise) |
+| admin finance | 210.8 / 155.9 / 142.9 | 121.2 / 83.6 / 81.5 | 137.7 / 120.8 / 127.1 | 200.2 / 141.8 / 198.3 → **105.0 / 74.5 / 91.1** |
+
+No `getRandomValues` frame in the after profiles (before: 35.8 ms self time in finance). Profiles are in `.logs/startup-{before,item1,final,ab}/`.
+
+### Bytes and the budget's start-up (`pnpm --filter @techaust/admin build`)
+| Worker | Bytes before | Bytes after | Budget start-up before (synchronous only) | After (start-up work included) |
+|---|---|---|---|---|
+| admin front | 111,522 | 110,707 | 32.8 ms | 30.2 (item-1 build) / 50.2 (final build, loaded) |
+| admin API | 488,187 | 488,788 | 60.3 ms | 72.3 / 71.1 |
+| admin finance | 622,420 | **609,527** | 53.6 ms | 84.0 / 77.3 |
+| jobs | 703,282 | 703,282 (unchanged) | – | 61.9 (no start-up work handed over) |
+
+All are under the 200 ms limit. A sanity check on the item-1 build, at the same moment, with and without the probe hook: front 30.9 vs 22.9, API 70.1 vs 56.6, finance 85.8 vs 57.2 ms. So the budget now sees the 8–29 ms the old reading missed.
+
+### Probe after (`bash tools/heavy.sh --log ec-probe-final node scripts/cpu-probe.mjs --runs 7 --later 4 --json .logs/cpu-probe-ec.json`)
+| Case | Worker | Baseline first | Early-check build first | **Fix round first** (min-max) | Later | D1 statements |
+|---|---|---|---|---|---|---|
+| GET /health | front | 3.1 | 0.7 | **0.6** (0.6-1.0) | 0.2 | 0 |
+| GET /auth/me | front | 4.6 | 1.6 | **2.5** (1.7-3.1) | 1.1 | 2 |
+| POST /auth/salt | front | – | 1.4 | **1.3** (1.1-1.6) | 0.4 | 1 |
+| POST /auth/login | front | – | 2.6 | **3.8** (2.8-8.5) | 1.7 | 5 |
+| POST /auth/totp | front | 8.1 | 3.9 | **4.7** (3.9-6.2) | 2.3 | 10 |
+| fwd GET /invoices/:id | front | 1.3 | 0.7 | **0.5** (0.5-0.7) | 0.1 | 0 |
+| fwd POST /invoices/:id/issue | front | 1.3 | 0.6 | **0.6** (0.6-1.3) | 0.2 | 0 |
+| fwd GET /notifications | front | 1.5 | 0.6 | **0.6** (0.5-2.4) | 0.1 | 0 |
+| fwd GET /leads | front | 1.4 | 0.6 | **0.7** (0.5-1.0) | 0.2 | 0 |
+| fwd GET /dashboard | front | 1.5 | 0.6 | **0.5** (0.5-0.5) | 0.1 | 0 |
+| POST /invoices/:id/issue | finance | 10.9 | 4.0 | **6.6** (5.1-12.5) | 2.4 | 33 |
+| GET /invoices/:id | finance | 8.9 | 3.2 | **3.5** (3.1-5.7) | 1.7 | 32 |
+| GET /invoices/:id/payments | finance | 4.6 | 2.0 | **2.0** (1.8-2.9) | 1.1 | 12 |
+| PATCH /invoices/:id | finance | 12.7 | 6.9 | **5.9** (5.3-10.8) | 2.2 | 24 |
+| POST /invoices/:id/advance-invoice | finance | 13.7 | 5.0 | **7.5** (7.1-20.9) | 2.4 | 40 |
+| GET /dashboard | finance | 7.1 | 3.2 | **3.8** (3.0-6.1) | 1.8 | 25 |
+| GET /invoices | finance | 4.3 | 2.0 | **2.7** (2.5-4.0) | 1.5 | 7 |
+| GET /payments/review | finance | 3.3 | 1.8 | **2.4** (1.8-3.7) | 1.2 | 4 |
+| GET /approvals | finance | – | 2.0 | **3.6** (1.7-8.2) | 1.3 | 3 |
+| GET /notifications | api | 3.9 | 1.8 | **1.8** (1.6-2.8) | 1.1 | 4 |
+| GET /settings | api | – | 2.2 | **3.0** (2.1-6.9) | 1.7 | 4 |
+| GET /clients | api | – | 1.7 | **1.8** (1.7-4.4) | 1.1 | 3 |
+| GET /clients/:id | api | – | 1.9 | **1.9** (1.8-3.9) | 1.3 | 7 |
+| GET /leads | api | 4.4 | 1.9 | **1.8** (1.7-3.3) | 1.1 | 3 |
+| rpc GatewayEvents.processEvent | finance | 6.5 | 4.6 | **5.8** (4.1-7.0) | 1.4 | 21 |
+| jobs POST /razorpay | jobs | 3.5 | 3.6 | **4.0** (3.7-7.2) | 0.8 | 2 |
+
+**Reading:**
+- **What item 1(c) cost:** the advance invoice went 5.0 → 7.5 (it is no longer dry-run). The issue went 4.0 → 6.6: it now stops at `content_changed`, so its blockers, seal and statement building are no longer warmed. TOTP went 3.9 → 4.7.
+- **PATCH** reads 5.9, against 6.9 before (that row was noisy then too).
+- **Lists:** the approval queue and notifications now shape a real row. Approvals went 2.0 → 3.6, but its minimum is 1.7, so that is mostly noise plus the list's own work.
+- **Against the targets:** every first request is still well under the baseline, but none of the writes meets the 2.5 ms local target.
+- **What it bought:** about 25 ms less start-up on the front and 60–100 ms less on finance, and a budget that sees the dry run.
+- **`POST /auth/login`:** its later calls answered 401 in this run (the first answered 200, as before). I did not dig into it: it is probe-only, and the case's later sign-ins share one lockout counter.
+
+### Tests and checks
+- `bash tools/heavy.sh --log ec-test-core pnpm --filter @techaust/core test`: 2,153 passed (102 files, coverage gate included).
+- `bash tools/heavy.sh --log ec-test-jobs pnpm --filter @techaust/jobs test`: 607 passed.
+- `bash tools/heavy.sh --log ec-test-admin pnpm --filter @techaust/admin test`: 4,137 passed (143 files).
+- `bash tools/heavy.sh --log ec-check pnpm check`: **failed** at the core typecheck (`scripts/worker-budget.d.mts` lacked the new exports). Fixed in `4d65a124`; then `bash tools/heavy.sh --log ec-check2 pnpm check` exited 0 (lint, typecheck of every package, every guard). So the whole-repository lint ran twice: the first run's lint stage passed, and the rerun was needed for the typecheck fix.
+- Builds: `ec-build-before`, `ec-build-item1`, `ec-build-final` (admin) and `ec-jobs-build`. Fixtures: `ec-fixtures`, `ec-fixtures2`. Probe: `ec-probe-final`. All logs are in `.logs/`.
+- While working I ran single files only: `worker/warm-routes.test.ts`, `worker/warm-fixtures.test.ts`, `worker/split.test.ts -t …` and `test/worker-budget.test.ts`, plus `pnpm exec biome check` on each changed file.
+
+### Not verified
+- **gitleaks itself was not run** (not installed here, and installing needs the owner's yes). The `.gitleaks.toml` syntax and lookup order come from the v8.30.1 README via Context7; CI's next run is the proof. As the early-check report said, `3549804a` (`scripts/cpu-probe.mjs` made-up secrets) and other earlier commits outside the allowed folder may still be flagged by the full-history scan. Nothing in this round adds one.
+- Cloudflare's `startup_time_ms` from a staging deploy (decision 1b, the lead's job after deploy). I have local workerd profiles only, and the PC was shared, so single readings swing ±30 %.
+- Whether the issue call's shorter warm path (it stops at `content_changed`) is enough on staging. The analyst's alternative (warm the pure statement builders after the id with fixed made-up ids) was not tried.
+- The probe's `POST /auth/login` 401 on later calls (see above).
+
+### Open questions
+1. The writes now read 5.9–7.5 ms on their first request locally (issue 6.6, advance 7.5). If staging's `f:1` reading puts them over 7 ms, do you want a follow-up that warms their pure statement builders (no `mutate`, fixed made-up ids), or does that go into the Workers Paid plan decision?
+
+Usage: builder claude-opus-5-5/high (workers-profiling, workers-best-practices, wrangler; the builder can't read the 5-hour bar).
