@@ -35,13 +35,14 @@ const refuse = () => {
 };
 
 /** Runs `fn` under workerd's global-scope rules (the probe emulates the same set: scripts/cpu-probe-runtime.mjs `underGlobalScopeRules`). */
-async function atGlobalScope<T>(fn: () => Promise<T>): Promise<T> {
+async function atGlobalScope<T>(fn: () => Promise<T>, clock = 0): Promise<T> {
   const RealResponse = globalThis.Response;
   const RealRequest = globalThis.Request;
   const saved = { setTimeout: globalThis.setTimeout, fetch: globalThis.fetch };
-  // Workerd's clock reads 0 at start-up: `Date.now()` AND `new Date()` (early check finding 7), so Date is faked here (timers are refused below).
+  // Workerd's clock reads 0 at start-up: `Date.now()` AND `new Date()` (early check finding 7), so Date is faked here (timers are refused below). `clock`:
+  // another reading (review finding 2: the dry run must not depend on that 0).
   vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(0);
+  vi.setSystemTime(clock);
   globalThis.Response = class extends RealResponse {
     constructor(body?: BodyInit | null, init?: ResponseInit) {
       if (body !== null && body !== undefined) refuse();
@@ -81,18 +82,20 @@ const callName = (call: WarmCall) =>
  * One Worker's dry run under the global-scope rules: its count, each call's status (0: it stopped on a refused operation), the refused operations asked
  * for, and every statement each call put to the made-up D1 (early check 2).
  */
-async function dryRun(app: ReturnType<typeof createApp>, fixture: WarmFixture, extra = {}) {
+async function dryRun(app: ReturnType<typeof createApp>, fixture: WarmFixture, extra = {}, clock = 0) {
   const statuses: string[] = [];
   const statements: Record<string, WarmStatementSeen[]> = {};
   let current: WarmStatementSeen[] = [];
   const before = refusals;
   const env = warmEnv(fixture.rows, extra, (seen) => current.push(seen));
-  const count = await atGlobalScope(() =>
-    warmRoutes(app, env, fixture.calls, (call: WarmCall, status: number) => {
-      statuses.push(`${callName(call)} ${status}`);
-      statements[callName(call)] = current;
-      current = [];
-    }),
+  const count = await atGlobalScope(
+    () =>
+      warmRoutes(app, env, fixture.calls, (call: WarmCall, status: number) => {
+        statuses.push(`${callName(call)} ${status}`);
+        statements[callName(call)] = current;
+        current = [];
+      }),
+    clock,
   );
   return { count, statuses, refused: refusals - before, statements };
 }
@@ -198,6 +201,35 @@ describe("the start-up dry run [CPU warm-up (b)1]", () => {
     expect(firstRun("GET /api/v1/invoices/:id")).toBe(1);
     expect(firstRun("fwd GET /api/v1/invoices/:id")).toBe(1);
     expect(firstRun("GET /api/v1/clients/:id")).toBe(1);
+  });
+
+  it("the fixtures' expiries are far in the future, so the dry run answers the same whatever the clock reads (review finding 2)", async () => {
+    // The fixture writer's WARM_FAR_FUTURE_MS (scripts/cpu-probe.mjs): 2100-01-01T00:00:00Z.
+    const farFuture = Date.UTC(2100, 0, 1);
+    const expiries: number[] = [];
+    const collect = (v: unknown): void => {
+      if (Array.isArray(v)) for (const x of v) collect(x);
+      else if (v !== null && typeof v === "object")
+        for (const [k, x] of Object.entries(v)) {
+          if (/(?:^|_)expires_at$|^step_up_until$/.test(k) && typeof x === "number") expiries.push(x);
+          else collect(x);
+        }
+    };
+    for (const f of [FRONT_WARM, API_WARM, FINANCE_WARM]) collect(f.rows);
+    expect(expiries.length).toBeGreaterThanOrEqual(9);
+    expect(expiries.filter((x) => x !== farFuture)).toEqual([]);
+    // A clock a day before those expiries (not workerd's start-up 0): every Worker's dry run answers as many calls, refusing nothing.
+    const late = farFuture - 86_400_000;
+    const finance = await dryRun(createApp(mountFinance, undefined, { warm: true }), FINANCE_WARM, {}, late);
+    const api = await dryRun(createApp(mountApi, undefined, { warm: true }), API_WARM, {}, late);
+    const front = await dryRun(
+      createApp(mountFront, (a) => forwardRoutes(a, ROUTES, true), { warm: true }),
+      FRONT_WARM,
+      FRONT_WARM_SECRETS,
+      late,
+    );
+    expect([finance.count, api.count, front.count]).toEqual([6, 5, 9]);
+    expect(finance.refused + api.refused + front.refused).toBe(0);
   });
 
   it("one helper gives the app and the forwarder their request facts; a warm one moves no counter and draws nothing (review finding 8)", () => {
