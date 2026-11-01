@@ -1,6 +1,6 @@
-Status: fix round done (builder); re-check next
+Status: reviewed (APPROVE, ten lows); short fix round, then PR
 Tier: B (Workers; docs/14 §2)
-Usage: builder claude-opus-5-5/high (workers-profiling, workers-best-practices, wrangler; 5-h 19 % at start); analyst early check claude-opus-5-5/high (workers-profiling, workers-best-practices, wrangler; 5-h 10 % at start)
+Usage: builder claude-opus-5-5/high (workers-profiling, workers-best-practices, wrangler; 5-h 19 % at start); analyst early check claude-opus-5-5/high (workers-profiling, workers-best-practices, wrangler; 5-h 10 % at start); builder fix round claude-opus-5-5/high (workers-profiling, workers-best-practices, wrangler); reviewer claude-opus-5-5/high (code-review high, security-review, workers-best-practices, workers-profiling; 5-h 55 % at start)
 
 # CPU warm-up of the hot request paths (2026-11-01)
 
@@ -257,3 +257,22 @@ All are under the 200 ms limit. A sanity check on the item-1 build, at the same 
 1. The writes now read 5.9–7.5 ms on their first request locally (issue 6.6, advance 7.5). If staging's `f:1` reading puts them over 7 ms, do you want a follow-up that warms their pure statement builders (no `mutate`, fixed made-up ids), or does that go into the Workers Paid plan decision?
 
 Usage: builder claude-opus-5-5/high (workers-profiling, workers-best-practices, wrangler; the builder can't read the 5-hour bar).
+
+## Review (reviewer claude-opus-5-5/high, 2026-11-02; copied by the lead, the reviewer changes no files)
+**APPROVE** (`origin/feat/cpu-warmup` @ `38b522df`): no critical, high or medium; ten lows. Skills: code-review (high), security-review (by hand), workers-best-practices, workers-profiling.
+1. `.gitleaks.toml:16`: the path allow-list turns off every rule for `warm-fixtures/`, while `warm-fixtures.test.ts:24` checks only credential-shaped keys: a key of another shape in a fixture (inside a settings JSON value, an `rzp_live_` id, a PEM block) would pass both. Fix: the test also scans every fixture string for known secret shapes (`rzp_live_`, `rk_live_`, `sk_live_`, `AKIA`, `-----BEGIN`, a long base64 run outside the checked keys).
+2. `warm-fixtures/front.ts` (session row, ≈41): expiries are generation time plus offsets, so the dry run relies on workerd's clock reading 0; otherwise every signed-in warm call answers 401 (CPU only). Fix: the writer writes far-future expiries.
+3. `invoices.ts:589–590`: every detail batches all 9 note reads (a draft 21 → 30 statements, issued 32). Follow-up only if query counts start to matter.
+4. `warm-routes.ts:159`: `GATEWAY_TRANSPORT: "stub"` set while the comment says "unset" (unset only because `ENVIRONMENT` is "warm"). Fix: drop the key.
+5. `scripts/worker-budget.mjs:169`: `FROZEN_CLOCK` replaces `Date` with a class, so `Date()` without `new` throws in the sandbox (workerd returns a string). Fix: a function wrapper.
+6. `scripts/cpu-probe-runtime.mjs:328`: `underGlobalScopeRules` fakes only `Date.now`, not `new Date()`.
+7. `warm-routes.test.ts:180–196`: the "leaves no trace" test covers finance and front, not API; a handler's own `console.error` would still print. Fix: add the API dry run.
+8. `forward.ts:78–80`: the warm request facts repeat app.ts's private `WARM_REQUEST`: one exported helper.
+9. Budget headroom under load: finance start-up read 172.8 ms fastest of 7 in a loaded build (84.6 alone). Watch CI's reading on the PR.
+10. `scripts/cpu-probe.mjs` restores the real `fetch` after loading a bundle; nothing reaches a hosted service today. Fix: refuse `fetch` in the child processes for the whole run.
+**Verified:** the warm app is unreachable and traceless; refusals pinned at 0; caches keyed by exact value; the front's TEST_KEY values stay in the front bundle; the catch-all (before every middleware, first match in table order, HEAD as GET, one trailing slash, undeclared → the front's 404); the invoice-detail slices and the byte-for-byte test (which proves the merged read; the handler split read line by line); fixtures made-up only; tests 404 + 41 passed; admin build ok (front 110,707 / API 488,788 / finance 609,527 bytes), portal build ok (115,860). **Not verified:** gitleaks locally (not installed), real workerd start-up and `startup_time_ms`, the probe, `pnpm check`, full suites, D1's batch query counting.
+
+## Review triage (lead, 2026-11-02)
+- **Fix in this task (builder, one short round):** 1, 2 (regenerate the fixtures once), 4, 5, 6, 7, 8, 10.
+- **Kept:** 3 (follow-up only if D1 query counts start to matter: D1 counts a batch as one query against the Free plan's 50 per invocation, per the analyst's reading of the D1 limits page); 9 (watch CI's reading on the PR; if finance passes 150 ms in CI, trim the dry run).
+- **The builder's open question** (writes over 7 ms on staging): decided after the staging `f:1` reading; the owner's Workers Paid decision takes it into account.
