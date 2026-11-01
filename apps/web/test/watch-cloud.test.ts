@@ -2,9 +2,9 @@
 // Status classes, change detection, the quiet timer, seen-only-after-read, transient git failures, the newest-copy token, ALL DONE,
 // --action-only and the command line. Runs in Node; git is always faked except the CLI smoke test, which fails before any git call.
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -20,11 +20,16 @@ import {
   parseArgs,
   parseLsRemote,
   parseRun,
+  parseState,
   parseStatus,
   quietCheck,
   readHead,
   removeToken,
+  serializeState,
+  statePathFor,
   statusTable,
+  subsByTask,
+  tokenPathFor,
   writeToken,
   // @ts-expect-error plain .mjs without types
 } from "../../../tools/watch-cloud.mjs";
@@ -80,9 +85,12 @@ function fakeRemote() {
       return { ok: true, stdout: c.files[path] };
     }
     if (verb === "ls-tree") {
-      const c = commits.get(args[2]);
+      // only the root-relative form is answered (finding 6): ls-tree --full-tree --name-only <sha> -- <path>
+      if (args[1] !== "--full-tree" || args[2] !== "--name-only" || args[4] !== "--")
+        return { ok: false, error: `unexpected git ${args.join(" ")}` };
+      const c = commits.get(args[3]);
       if (!c) return { ok: false, error: "fatal: not a tree object" };
-      return { ok: true, stdout: args[4] in c.files ? `${args[4]}\n` : "" };
+      return { ok: true, stdout: args[5] in c.files ? `${args[5]}\n` : "" };
     }
     if (verb === "commit-time") {
       const c = commits.get(args[3]);
@@ -95,10 +103,17 @@ function fakeRemote() {
 
 function harness(
   run: Run,
-  opts: { quietMin?: number; actionOnly?: boolean; token?: { path: string; value: string } } = {},
+  opts: {
+    quietMin?: number;
+    actionOnly?: boolean;
+    token?: { path: string; value: string };
+    statePath?: string;
+    remote?: ReturnType<typeof fakeRemote>;
+    start?: number;
+  } = {},
 ) {
-  const remote = fakeRemote();
-  let now = T0;
+  const remote = opts.remote ?? fakeRemote();
+  let now = opts.start ?? T0;
   const out: string[] = [];
   const err: string[] = [];
   const w = createWatcher({
@@ -114,6 +129,7 @@ function harness(
     quietMs: (opts.quietMin ?? 45) * MIN,
     actionOnly: opts.actionOnly,
     token: opts.token ?? null,
+    statePath: opts.statePath ?? null,
   });
   const advance = (ms: number) => {
     now += ms;
@@ -200,6 +216,36 @@ describe("the run file", () => {
       /relative path/,
     ],
     [
+      "a lower-case drive path",
+      JSON.stringify({ tasks: [{ name: "a", branch: "feat/a", runFile: "d:x.md" }] }),
+      /relative path/,
+    ],
+    [
+      "a backslash-leading path",
+      JSON.stringify({ tasks: [{ name: "a", branch: "feat/a", runFile: "\\docs\\a.md" }] }),
+      /relative path/,
+    ],
+    [
+      "a UNC path",
+      JSON.stringify({ tasks: [{ name: "a", branch: "feat/a", runFile: "\\\\server\\share\\a.md" }] }),
+      /relative path/,
+    ],
+    ...["./docs/a.md", "docs/./a.md", "docs/.", "."].map((f) => [
+      `a "." part in ${JSON.stringify(f)}`,
+      JSON.stringify({ tasks: [{ name: "a", branch: "feat/a", runFile: f }] }),
+      /must not contain "\.\.", "\." or empty parts/,
+    ]),
+    [
+      "the same sub-branch prefix in two tasks",
+      JSON.stringify({
+        tasks: [
+          { name: "pay", branch: "feat/pay", runFile: "a.md", subBranches: ["fix/pay-"] },
+          { name: "links", branch: "feat/links", runFile: "b.md", subBranches: ["fix/pay-"] },
+        ],
+      }),
+      /sub-branch prefix "fix\/pay-" is in both "pay" and "links"/,
+    ],
+    [
       "a bad sub-branch prefix",
       JSON.stringify({ tasks: [{ name: "a", branch: "feat/a", runFile: "a.md", subBranches: ["-x"] }] }),
       /subBranches/,
@@ -244,16 +290,28 @@ describe("the Status line", () => {
     ["pr ready", "pr-ready"],
     ["WAITING ON OWNER (Q1)", "waiting"],
     ["BLOCKED: no network to Cloudflare", "blocked"],
-    ["CI FAILING on lint", "fail"],
-    ["e2e FAILED", "fail"],
+    ["FAILING: CI lint", "fail"],
+    ["FAILED e2e", "fail"],
     ["fail", "fail"],
-    ["testing failover of the watcher", "working"],
+    ["Fail-safe review", "working"],
+    ["failover of the watcher under test", "working"],
+    ["CI FAILING on lint", "working"],
     ["SEND BACK from the reviewer", "sent-back"],
     ["sent back, designer fixing", "sent-back"],
+    ["SENT BACK by main session (was PR READY https://github.com/o/r/pull/150); fixing", "sent-back"],
+    ["builder running; WAITING ON OWNER before PR READY", "working"],
+    ["done with builder; reviewer running", "working"],
     ["merged as #140", "merged"],
     ["Done", "merged"],
+    ["done.", "merged"],
+    ["abandoned", "merged"],
+    ["Abandoned (owner, 2026-11-01)", "merged"],
     ["designer done, reviewer next", "working"],
     ["builder running (watcher); lead writing the skill", "working"],
+    ["open (CI green, merging after #149)", "working"],
+    ["- PR READY https://github.com/o/r/pull/3", "pr-ready"],
+    ["(BLOCKED) no network", "blocked"],
+    ["PR READYING", "working"],
   ])("%s → %s", (status, cls) => {
     expect(classify(status).cls).toBe(cls);
   });
@@ -291,7 +349,7 @@ describe("change detection", () => {
       ["PR READY https://github.com/o/r/pull/9", "PR-READY"],
       ["WAITING ON OWNER (Q1)", "WAITING"],
       ["BLOCKED: x", "BLOCKED"],
-      ["CI FAILED", "FAIL"],
+      ["FAILED: CI lint", "FAIL"],
       ["SENT BACK", "SENT-BACK"],
     ]) {
       const e = step(a.state, { tip: sha("b"), read: read(status, sha("b")) }, T0 + MIN).events;
@@ -365,14 +423,35 @@ describe("the quiet timer", () => {
     expect(step(moved, { tip: sha("b") }, T0 + 74 * MIN).events).toEqual([]);
     expect(step(moved, { tip: sha("b") }, T0 + 75 * MIN).events[0].kind).toBe("QUIET");
   });
-  it("starts from the tip's commit time, so a session already silent is reported at the first read", () => {
+  it("starts from the newest of the tip's and the sub-branches' commit times, so a silent session is reported at once", () => {
     const first = step(
       initialState(),
-      { subs: { "fix/t-old": sha("e") }, read: { head: sha("a"), status: "x", commitMs: T0 - 50 * MIN } },
+      {
+        subs: { "fix/t-old": sha("e") },
+        read: { head: sha("a"), status: "x", commitMs: T0 - 50 * MIN },
+        subsMs: T0 - 55 * MIN,
+      },
       T0,
     );
     expect(first.events.map((e: Event) => e.kind)).toEqual(["SUB-PUSH", "STATUS", "QUIET"]);
     expect(first.events[2].detail).toBe("50 min");
+    // a builder pushing only its sub-branch 5 minutes ago: the session isn't quiet (review 1, finding 1b)
+    const busy = step(
+      initialState(),
+      {
+        subs: { "fix/t-new": sha("e") },
+        read: { head: sha("a"), status: "x", commitMs: T0 - 60 * MIN },
+        subsMs: T0 - 5 * MIN,
+      },
+      T0,
+    );
+    expect(busy.events.map((e: Event) => e.kind)).toEqual(["SUB-PUSH", "STATUS"]);
+    expect(step(busy.state, {}, T0 + 39 * MIN).events).toEqual([]);
+    expect(step(busy.state, {}, T0 + 40 * MIN).events).toEqual([
+      { kind: "QUIET", detail: "45 min", action: true },
+    ]);
+    // subsMs counts only at a task's first tick
+    expect(step(busy.state, { subsMs: T0 + 30 * MIN }, T0 + 40 * MIN).events[0].kind).toBe("QUIET");
     const fresh = step(
       initialState(),
       { read: { head: sha("a"), status: "x", commitMs: T0 - 10 * MIN } },
@@ -382,9 +461,43 @@ describe("the quiet timer", () => {
     expect(step(fresh.state, {}, T0 + 34 * MIN).events).toEqual([]);
     expect(step(fresh.state, {}, T0 + 35 * MIN).events[0].kind).toBe("QUIET");
   });
-  it("not for a task that is done (PR READY or merged)", () => {
-    const s = step(initialState(), { read: { head: sha("a"), status: "PR READY", commitMs: T0 } }, T0).state;
+  it("not for a task that is done (PR READY, merged or abandoned)", () => {
+    for (const status of ["PR READY", "merged as #1", "abandoned"]) {
+      const s = step(initialState(), { read: { head: sha("a"), status, commitMs: T0 } }, T0).state;
+      expect(step(s, {}, T0 + 60 * MIN).events).toEqual([]);
+    }
+  });
+  it("not while the session is WAITING ON the owner (finding 5); a later status brings it back", () => {
+    const s = step(
+      initialState(),
+      { read: { head: sha("a"), status: "WAITING ON OWNER (Q1)", commitMs: T0 } },
+      T0,
+    ).state;
     expect(step(s, {}, T0 + 60 * MIN).events).toEqual([]);
+    expect(step(s, {}, T0 + 200 * MIN).events).toEqual([]);
+    const back = step(
+      s,
+      { tip: sha("b"), read: { head: sha("b"), status: "builder running", commitMs: T0 + 210 * MIN } },
+      T0 + 210 * MIN,
+    ).state;
+    expect(step(back, { tip: sha("b") }, T0 + 254 * MIN).events).toEqual([]);
+    expect(step(back, { tip: sha("b") }, T0 + 255 * MIN).events[0].kind).toBe("QUIET");
+    // still fires for BLOCKED (it needs the main session, not the owner)
+    const b = step(
+      initialState(),
+      { read: { head: sha("a"), status: "BLOCKED: x", commitMs: T0 } },
+      T0,
+    ).state;
+    expect(step(b, {}, T0 + 45 * MIN).events[0].kind).toBe("QUIET");
+  });
+  it("not before the first read of a listed tip (a failed first read has no time to count from)", () => {
+    const s = step(initialState(), { subs: { "fix/t-x": sha("e") }, subsMs: T0 - 90 * MIN }, T0);
+    expect(s.events.map((e: Event) => e.kind)).toEqual(["SUB-PUSH"]);
+    expect(step(s.state, {}, T0 + MIN).events).toEqual([]);
+    // the read comes: the newer time (the tip's) wins
+    const r = step(s.state, { read: { head: sha("a"), status: "x", commitMs: T0 - 10 * MIN } }, T0 + 2 * MIN);
+    expect(r.events.map((e: Event) => e.kind)).toEqual(["STATUS"]);
+    expect(step(r.state, {}, T0 + 35 * MIN).events[0].kind).toBe("QUIET");
   });
 });
 
@@ -517,7 +630,7 @@ describe("the watcher loop (fake git, fake clock)", () => {
   it("--action-only prints only ACTION lines, plus the start and ALL DONE lines", async () => {
     const h = harness(runOf("t"), { actionOnly: true });
     h.remote.push("feat/t", sha("a"), { "docs/runs/t.md": runText("builder running") }, T0 - 50 * MIN);
-    h.remote.push("fix/t-review", sha("e"));
+    h.remote.push("fix/t-review", sha("e"), {}, T0 - 60 * MIN);
     await h.w.tick();
     expect(h.take()).toEqual(["11:30 IST t QUIET 50 min ACTION"]);
     h.remote.push("feat/t", sha("b"), { "docs/runs/t.md": runText("PR READY") });
@@ -528,6 +641,345 @@ describe("the watcher loop (fake git, fake clock)", () => {
       "11:30 IST t PR-READY builder running -> PR READY ACTION",
       "11:30 IST ALL DONE",
     ]);
+  });
+});
+
+describe("sub-branch prefixes that overlap (finding 3)", () => {
+  const run = parseRun(
+    JSON.stringify({
+      tasks: [
+        { name: "pay", branch: "feat/pay", runFile: "docs/runs/pay.md" },
+        { name: "pay-links", branch: "feat/pay-links", runFile: "docs/runs/pay-links.md" },
+      ],
+    }),
+  ).run as Run;
+
+  it("a branch goes to the task with the longest matching prefix, a task branch to no task", () => {
+    const heads = new Map([
+      ["feat/pay", sha("a")],
+      ["feat/pay-links", sha("b")],
+      ["fix/pay-r1", sha("c")],
+      ["fix/pay-links-r1", sha("d")],
+      ["fix/payroll", sha("e")],
+    ]);
+    const subs = subsByTask(heads, run.tasks);
+    expect(subs.get("pay")).toEqual({ "fix/pay-r1": sha("c") });
+    expect(subs.get("pay-links")).toEqual({ "fix/pay-links-r1": sha("d") });
+    // a prefix wide enough to match the other task's branch still never takes it
+    const wide = parseRun(
+      JSON.stringify({
+        tasks: [
+          { name: "a", branch: "feat/a", runFile: "a.md", subBranches: ["feat/"] },
+          { name: "b", branch: "feat/b", runFile: "b.md" },
+        ],
+      }),
+    ).run as Run;
+    expect(subsByTask(new Map([["feat/b", sha("a")]]), wide.tasks).get("a")).toEqual({});
+  });
+  it("the watcher prints each sub-branch once, on its own task", async () => {
+    const h = harness(run);
+    h.remote.push("feat/pay", sha("a"), { "docs/runs/pay.md": runText("x") });
+    h.remote.push("feat/pay-links", sha("b"), { "docs/runs/pay-links.md": runText("y") });
+    h.remote.push("fix/pay-links-r1", sha("d"));
+    await h.w.tick();
+    expect(h.take()).toEqual([
+      "11:30 IST pay STATUS x",
+      "11:30 IST pay-links SUB-PUSH fix/pay-links-r1 ddddddd",
+      "11:30 IST pay-links STATUS y",
+    ]);
+  });
+});
+
+describe("saved state: a re-armed copy reports only what changed (finding 1)", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
+  });
+  const statePathIn = () => {
+    const d = mkdtempSync(join(tmpdir(), "watch-cloud-state-"));
+    dirs.push(d);
+    return join(d, "watch.state.json");
+  };
+
+  it("a second copy over the first one's state prints nothing for unchanged tasks, then a real change", async () => {
+    const statePath = statePathIn();
+    const remote = fakeRemote();
+    remote.push("feat/t", sha("a"), { "docs/runs/t.md": runText("WAITING ON OWNER (Q1)") });
+    remote.push("feat/u", sha("b"), { "docs/runs/u.md": runText("PR READY https://github.com/o/r/pull/9") });
+    remote.push("feat/v", sha("c"), { "docs/runs/v.md": runText("builder running") });
+    remote.push("fix/v-r1", sha("d"));
+    const first = harness(runOf("t", "u", "v"), { statePath, remote });
+    await first.w.tick();
+    expect(first.take()).toEqual([
+      "11:30 IST t WAITING WAITING ON OWNER (Q1) ACTION",
+      "11:30 IST u PR-READY PR READY https://github.com/o/r/pull/9 ACTION",
+      "11:30 IST v SUB-PUSH fix/v-r1 ddddddd",
+      "11:30 IST v STATUS builder running",
+    ]);
+    const saved = JSON.parse(readFileSync(statePath, "utf8"));
+    expect(saved.version).toBe(1);
+    expect(saved.tasks.v.state).toMatchObject({
+      head: sha("c"),
+      status: "builder running",
+      subs: { "fix/v-r1": sha("d") },
+    });
+    expect(readdirSync(dirname(statePath))).toEqual(["watch.state.json"]); // no temp file left
+
+    // the heartbeat re-arms: a new copy, 30 minutes later
+    remote.calls.length = 0;
+    const second = harness(runOf("t", "u", "v"), { statePath, remote, start: T0 + 30 * MIN });
+    await second.w.tick();
+    expect(second.take()).toEqual([]);
+    expect(remote.calls.map((c) => c[0])).toEqual(["ls-remote"]); // nothing re-read, no sub-branch fetched
+    const before = readFileSync(statePath, "utf8");
+    await second.w.tick();
+    expect(readFileSync(statePath, "utf8")).toBe(before); // an unchanged tick writes nothing new
+    // a real change is still printed, once
+    second.remote.push("feat/v", sha("e"), { "docs/runs/v.md": runText("SENT BACK by the reviewer") });
+    second.remote.push("fix/v-r1", sha("f"));
+    await second.w.tick();
+    expect(second.take()).toEqual([
+      "12:00 IST v SUB-PUSH fix/v-r1 fffffff",
+      "12:00 IST v SENT-BACK builder running -> SENT BACK by the reviewer ACTION",
+    ]);
+    const third = harness(runOf("t", "u", "v"), { statePath, remote, start: T0 + 60 * MIN });
+    await third.w.tick();
+    expect(third.take()).toEqual([]);
+  });
+  it("a fired QUIET is not fired again by a re-armed copy", async () => {
+    const statePath = statePathIn();
+    const remote = fakeRemote();
+    remote.push("feat/t", sha("a"), { "docs/runs/t.md": runText("builder running") }, T0 - 50 * MIN);
+    const first = harness(runOf("t"), { statePath, remote, actionOnly: true });
+    await first.w.tick();
+    expect(first.take()).toEqual(["11:30 IST t QUIET 50 min ACTION"]);
+    const second = harness(runOf("t"), { statePath, remote, start: T0 + 30 * MIN, actionOnly: true });
+    await second.w.tick();
+    expect(second.take()).toEqual([]);
+  });
+  it("first arm: a 60-minute-old tip and a 5-minute-old sub-branch → QUIET only 45 minutes after the newest", async () => {
+    const h = harness(runOf("t"));
+    h.remote.push("feat/t", sha("a"), { "docs/runs/t.md": runText("builder running") }, T0 - 60 * MIN);
+    h.remote.push("fix/t-r1", sha("e"), {}, T0 - 5 * MIN);
+    await h.w.tick();
+    expect(h.take()).toEqual(["11:30 IST t SUB-PUSH fix/t-r1 eeeeeee", "11:30 IST t STATUS builder running"]);
+    // the sub-branch was fetched once, to read its time
+    expect(h.remote.calls.filter((c) => c[0] === "fetch")).toEqual([
+      ["fetch", "--no-tags", "origin", "feat/t"],
+      ["fetch", "--no-tags", "origin", "fix/t-r1"],
+    ]);
+    h.advance(39 * MIN);
+    await h.w.tick();
+    expect(h.take()).toEqual([]);
+    h.advance(MIN);
+    await h.w.tick();
+    expect(h.take()).toEqual(["12:10 IST t QUIET 45 min ACTION"]);
+    expect(h.remote.calls.filter((c) => c[0] === "fetch")).toHaveLength(2);
+  });
+  it("first arm: a sub-branch whose time can't be read counts as now, never as 0", async () => {
+    const h = harness(runOf("t"));
+    h.remote.push("feat/t", sha("a"), { "docs/runs/t.md": runText("builder running") }, T0 - 60 * MIN);
+    h.remote.push("fix/t-r1", sha("e"), {}, T0 - 90 * MIN);
+    const git = h.remote.git;
+    // the sub-branch's fetch fails; the task branch's works
+    const w = createWatcher({
+      run: runOf("t"),
+      git: (args: string[]) =>
+        args[0] === "fetch" && args[3] === "fix/t-r1"
+          ? Promise.resolve({ ok: false, error: "fatal: fetch failed" })
+          : git(args),
+      now: h.at,
+      sleep: async () => {},
+      out: (l: string) => h.out.push(l),
+      intervalMs: MIN,
+    });
+    await w.tick();
+    expect(h.take()).toEqual(["11:30 IST t SUB-PUSH fix/t-r1 eeeeeee", "11:30 IST t STATUS builder running"]);
+    expect(w.states.get("t").lastMoveMs).toBe(T0);
+  });
+  it("a branch merged and deleted before a re-arm still counts as done: GONE once, then ALL DONE", async () => {
+    const statePath = statePathIn();
+    const remote = fakeRemote();
+    remote.push("feat/t", sha("a"), { "docs/runs/t.md": runText("PR READY https://github.com/o/r/pull/9") });
+    remote.push("feat/v", sha("c"), { "docs/runs/v.md": runText("PR READY https://github.com/o/r/pull/8") });
+    const first = harness(runOf("t", "v"), { statePath, remote });
+    await first.w.tick();
+    first.take();
+    // the main session squash-merges v and t's session sends it back; the copy expires; v's branch is deleted
+    remote.push("feat/t", sha("b"), {
+      "docs/runs/t.md": runText("SENT BACK by main session (was PR READY …); fixing"),
+    });
+    first.advance(MIN);
+    await first.w.tick();
+    first.take();
+    remote.branches.delete("feat/v");
+    remote.branches.delete("feat/t");
+    const second = harness(runOf("t", "v"), { statePath, remote, start: T0 + 30 * MIN });
+    expect(await second.w.run()).toBe(0);
+    expect(second.take()).toEqual([
+      "12:00 IST watch-cloud: watching 2 task(s) every 60 s, quiet after 45 min",
+      "12:00 IST t GONE",
+      "12:00 IST v GONE",
+      "12:00 IST ALL DONE",
+    ]);
+    // a later copy over the gone state doesn't print GONE again
+    const third = harness(runOf("t", "v"), { statePath, remote, start: T0 + 60 * MIN });
+    expect(await third.w.run()).toBe(0);
+    expect(third.take()).toEqual([
+      "12:30 IST watch-cloud: watching 2 task(s) every 60 s, quiet after 45 min",
+      "12:30 IST ALL DONE",
+    ]);
+  });
+  it("a task never seen and absent from the remote isn't done, even with a saved state file", async () => {
+    const statePath = statePathIn();
+    const remote = fakeRemote();
+    const first = harness(runOf("t"), { statePath, remote });
+    await first.w.tick();
+    const second = harness(runOf("t"), { statePath, remote });
+    await second.w.tick();
+    expect(second.take()).toEqual([]);
+    expect(second.w.allDone()).toBe(false);
+  });
+  it("a superseded copy writes no state, even when the token changed after its last git call", async () => {
+    const d = mkdtempSync(join(tmpdir(), "watch-cloud-state-"));
+    dirs.push(d);
+    const statePath = join(d, "watch.state.json");
+    const tokenPath = join(d, "watch.token");
+    const value = writeToken(tokenPath);
+    const remote = fakeRemote();
+    remote.push("feat/t", sha("a"), { "docs/runs/t.md": runText("builder running") });
+    const err: string[] = [];
+    let takeOver = false;
+    const w = createWatcher({
+      run: runOf("t"),
+      git: async (args: string[]) => {
+        const r = await remote.git(args);
+        if (takeOver && args[0] === "show" && args[1] === "-s") writeToken(tokenPath); // a newer copy starts
+        return r;
+      },
+      now: () => T0,
+      sleep: async () => {},
+      out: () => {},
+      err: (l: string) => err.push(l),
+      intervalMs: MIN,
+      token: { path: tokenPath, value },
+      statePath,
+    });
+    await w.tick();
+    const before = readFileSync(statePath, "utf8");
+    remote.push("feat/t", sha("b"), { "docs/runs/t.md": runText("reviewer running") });
+    takeOver = true;
+    expect(await w.run()).toBe(0);
+    expect(err).toEqual(["watch-cloud: superseded, exiting"]);
+    expect(readFileSync(statePath, "utf8")).toBe(before);
+    expect(readdirSync(d).sort()).toEqual(["watch.state.json", "watch.token"]);
+  });
+  it("a corrupt, foreign or malformed state file is ignored, never a crash, and replaced by a good one", async () => {
+    const statePath = statePathIn();
+    const remote = fakeRemote();
+    remote.push("feat/t", sha("a"), { "docs/runs/t.md": runText("builder running") });
+    for (const text of [
+      "{not json",
+      "[]",
+      JSON.stringify({ version: 2, remote: "origin", tasks: {} }),
+      // the task now has another branch: its saved state belongs to another run
+      JSON.stringify({
+        version: 1,
+        remote: "origin",
+        tasks: {
+          t: {
+            branch: "feat/other",
+            runFile: "docs/runs/t.md",
+            subBranches: ["fix/t-"],
+            state: {
+              ...initialState(),
+              started: true,
+              head: sha("a"),
+              tip: sha("a"),
+              status: "builder running",
+            },
+          },
+        },
+      }),
+      // a field of the wrong type
+      JSON.stringify({
+        version: 1,
+        remote: "origin",
+        tasks: {
+          t: {
+            branch: "feat/t",
+            runFile: "docs/runs/t.md",
+            subBranches: ["fix/t-"],
+            state: {
+              ...initialState(),
+              started: "yes",
+              head: sha("a"),
+              tip: sha("a"),
+              status: "builder running",
+            },
+          },
+        },
+      }),
+    ]) {
+      writeFileSync(statePath, text);
+      const h = harness(runOf("t"), { statePath, remote });
+      await h.w.tick();
+      expect(h.take()).toEqual(["11:30 IST t STATUS builder running"]);
+      expect(parseState(readFileSync(statePath, "utf8"), runOf("t")).get("t")).toMatchObject({
+        head: sha("a"),
+        status: "builder running",
+      });
+    }
+  });
+  it("parseState: per-task checks, the class worked out again from the text", () => {
+    const run = runOf("t", "u");
+    const good = {
+      ...initialState(),
+      started: true,
+      tip: sha("a"),
+      head: sha("a"),
+      status: "abandoned",
+      cls: "working",
+    };
+    const entry = (state: object) => ({
+      branch: "feat/t",
+      runFile: "docs/runs/t.md",
+      subBranches: ["fix/t-"],
+      state,
+    });
+    const text = (tasks: object, remote = "origin") => JSON.stringify({ version: 1, remote, tasks });
+    expect(parseState(null, run).size).toBe(0);
+    const s = parseState(text({ t: entry(good), u: entry(good) }), run);
+    expect([...s.keys()]).toEqual(["t"]); // u's entry names t's branch
+    expect(s.get("t").cls).toBe("merged");
+    expect(parseState(text({ t: entry(good) }, "upstream"), run).size).toBe(0);
+    for (const bad of [
+      { tip: "nope" },
+      { lastMoveMs: 0 },
+      { lastMoveMs: "1" },
+      { subs: { "fix/t-x": "zz" } },
+      { subs: { "bad ref": sha("a") } },
+      { subs: [] },
+      { gone: null },
+    ])
+      expect(parseState(text({ t: entry({ ...good, ...bad }) }), run).size).toBe(0);
+    expect(parseState(text({ t: { ...entry(good), subBranches: ["fix/"] } }), run).size).toBe(0);
+    expect(parseState(text({ t: entry(null) }), run).size).toBe(0);
+  });
+  it("serializeState round-trips through parseState", () => {
+    const run = runOf("t");
+    const state = {
+      ...initialState(),
+      started: true,
+      tip: sha("a"),
+      head: sha("a"),
+      status: "PR READY https://github.com/o/r/pull/4",
+      subs: { "fix/t-b": sha("b"), "fix/t-a": sha("c") },
+      lastMoveMs: T0,
+      quietFired: true,
+    };
+    const back = parseState(serializeState(run, new Map([["t", state]])), run).get("t");
+    expect(back).toEqual({ ...state, cls: "pr-ready", url: "https://github.com/o/r/pull/4" });
   });
 });
 
@@ -662,6 +1114,10 @@ describe("the command line", () => {
     expect(parseArgs(["--run"]).ok).toBe(false);
     expect(parseArgs(["--bogus"]).ok).toBe(false);
     expect(parseArgs(["restart"]).ok).toBe(false);
+  });
+  it("the token and the state file sit beside the run file", () => {
+    expect(statePathFor(join("a", "b", "run.json"))).toBe(join("a", "b", "watch.state.json"));
+    expect(tokenPathFor(join("a", "b", "run.json"))).toBe(join("a", "b", "watch.token"));
   });
   it("formatIst is HH:MM in IST", () => {
     expect(formatIst(Date.parse("2026-11-01T18:29:00Z"))).toBe("23:59");
