@@ -1,9 +1,10 @@
 // Sending an issued invoice, revoking its links and pausing its reminders [ADM-INV-15, ADM-INV-13, POR-06, LD55, LD56, LD60, Q42, M5.4]. Failure paths first.
 import { env } from "cloudflare:workers";
+import { ANONYMISED_CONTACT } from "@techaust/core/clients";
 import { toIsoDate, toIst } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import { describe, expect, it, vi } from "vitest";
-import { cancelUnlinkedSendsSql } from "./invoice-send.ts";
+import { cancelUnlinkedSendsSql, type SendRow, sendsView } from "./invoice-send.ts";
 import { insert, mkClient, mkContact } from "./test-clients.ts";
 import { call, captureQueue, one, rows, sessionFor } from "./test-helpers.ts";
 import {
@@ -399,6 +400,39 @@ async function mintLink(documentId: string, sendId: string, token: string) {
     )
     .run();
 }
+
+describe("a removed person in the sends list (polish sweep review 4) [ADM-INV-15, ADM-CLI-05]", () => {
+  const row = (over: Partial<SendRow>): SendRow => ({
+    id: "s1",
+    contact_id: "c1",
+    contact_name: "Asha Rao",
+    email: "asha@example.test",
+    kind: "send",
+    created_at: 1,
+    queued_at: 2,
+    cancelled_at: null,
+    email_status: "delivered",
+    sent_by_name: "Rupak Sarkar",
+    ...over,
+  });
+  const view = (r: SendRow) => sendsView([r], 0, [], 3, { fromHour: 9, toHour: 19 }).sends[0];
+  it("a live contact keeps their name and address", () => {
+    expect(view(row({}))).toMatchObject({
+      contactName: "Asha Rao",
+      email: "asha@example.test",
+      emailStatus: "delivered",
+    });
+  });
+  it("a send whose contact was erased or anonymised reads Removed contact, with no address, and keeps its state", () => {
+    const v = view(row({ contact_id: null, contact_name: null, email: null }));
+    expect(v).toMatchObject({
+      contactName: ANONYMISED_CONTACT,
+      email: null,
+      emailStatus: "delivered",
+      queuedAt: 2,
+    });
+  });
+});
 
 describe("revoking the links [POR-06, LD60]", () => {
   it("in one batch: the sends with no link yet are cancelled, every live link is revoked, the waiting reminders are paused", async () => {

@@ -19,7 +19,7 @@ import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
 import { FormField, Switch } from "../../components/form.tsx";
 import { Alert, Check, Pencil, Receipt } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
-import { CodeField, Notice } from "../../components/ui.tsx";
+import { CodeField, Notice, useFieldError } from "../../components/ui.tsx";
 import { dateError } from "../../lib/date-field.ts";
 import {
   type AdvanceErrors,
@@ -50,7 +50,7 @@ import {
 import { blockerLine, INV_COPY, invErrorText, issuedToast, typeLabel, UNKNOWN } from "../../lib/invoices.ts";
 import { type InvoiceBlocker, type InvoiceView, invoicesApi } from "../../lib/invoices-api.ts";
 import { PAY_COPY, PAY_UI, payErrorText, plainAmount } from "../../lib/payments.ts";
-import { withCode } from "../../lib/step-up.ts";
+import { isWrongCode, withCode } from "../../lib/step-up.ts";
 import { PaymentsPanel } from "../payments/panel.tsx";
 import { BlockerList } from "./dialogs.tsx";
 import { invoiceHref } from "./parts.tsx";
@@ -763,7 +763,7 @@ function AdvanceBody(props: {
   // What the server refused with: its blocker lines (409 `issue_blocked`), drawn as the issue dialog draws them.
   const [refused, setRefused] = useState<InvoiceBlocker[]>([]);
   const [code, setCode] = useState("");
-  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeError, setCodeError, codeErrorKey] = useFieldError();
   const [errors, setErrors] = useState<AdvErrors>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -855,7 +855,7 @@ function AdvanceBody(props: {
         return;
       }
       // A wrong code is the code field's own error (as in the step-up dialog and the data tools): cleared, said under it, and focused.
-      if (e instanceof RequestError && e.code === "invalid_code") {
+      if (isWrongCode(e)) {
         setCode("");
         setCodeError(e.message);
         document.getElementById("adv-code")?.focus();
@@ -1077,6 +1077,7 @@ function AdvanceBody(props: {
           value={code}
           onChange={setCode}
           error={codeError}
+          errorKey={codeErrorKey}
         />
       )}
       {failure && (

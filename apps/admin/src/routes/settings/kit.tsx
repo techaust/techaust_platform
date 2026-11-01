@@ -153,6 +153,9 @@ function GroupFormBody<K extends JsonGroup, F>(props: {
     try {
       const r = await api.saveSettingsGroup(spec.group, version, built.value, built.extra);
       toast("success", r.changed ? spec.savedText : "No change: these settings were already saved.");
+      // "No change" (only a trailing space, say, which the server trims): the saved values are the ones this form was read from, and the version
+      // stays, so the form is not read again (it is keyed by the version). Take the form back to them, so "Unsaved changes" goes (rt2, polish 3c).
+      if (!r.changed) setForm(initial);
       props.reload();
     } catch (err) {
       if (err instanceof RequestError && (err.code === "stale_version" || err.code === "version_clash")) {

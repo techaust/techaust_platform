@@ -23,6 +23,7 @@ import {
   actorText,
   auditCsv,
   ENTITY_LABELS,
+  entryActionText,
   readSummary,
   targetText,
 } from "../lib/audit.ts";
@@ -362,7 +363,7 @@ const sentenceCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 function Entry({ e, names, now }: { e: AuditEntry; names: ReadonlyMap<string, string>; now: number }) {
   const t = toIst(e.at);
   const { changes, facts } = readSummary(e.summary);
-  const what = actionText(e.action);
+  const what = entryActionText(e);
   return (
     <li className="entry">
       <div className="entry__time">

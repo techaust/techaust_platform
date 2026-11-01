@@ -16,6 +16,11 @@ html {
   scroll-padding-top: var(--space-20);
   /* The header's height, read by the header and the mobile menu. */
   --header-h: var(--space-16);
+  /* The focus ring's width (docs/06 §5.1: 2 px). Chrome draws a line in whole device pixels, rounded down, after the display's scale: on a
+     125 % Windows display 2 px is 2.5 device pixels, drawn as 2, so the ring measured 1.6 px (polish sweep 1d; reproduced with
+     `html { zoom: 1.25 }`). 2.4 px draws as exactly 2 px at 100 %, 150 % and 200 %, 2.4 px at 125 % and 2.29 px at 175 %; 110 % (1.82 px)
+     would need 2.75 px, which thickens the ring on every 150 % and 200 % screen. */
+  --focus-width: 2.4px;
 }
 
 @media (min-width: 64rem) {
@@ -102,7 +107,7 @@ a:hover {
 
 /* docs/06 §5.1: the same visible focus on every interactive element, in both themes. */
 :focus-visible {
-  outline: 2px solid var(--color-focus);
+  outline: var(--focus-width) solid var(--color-focus);
   outline-offset: 2px;
 }
 
@@ -352,7 +357,7 @@ a:hover {
 }
 
 .btn.is-focus {
-  outline: 2px solid var(--color-focus);
+  outline: var(--focus-width) solid var(--color-focus);
   outline-offset: 2px;
 }
 

@@ -390,7 +390,7 @@ function ActivityTile({ tile }: { tile: NonNullable<DashboardTiles["activity"]> 
                   <span className="activity-item__who">
                     {a.actor === "System" ? DASH_COPY.system : a.actor}
                   </span>{" "}
-                  {activityText(a.action)}
+                  {activityText(a.action, a.docType)}
                   {about && (
                     <>
                       {" "}

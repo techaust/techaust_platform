@@ -7,6 +7,7 @@
 // The recipients are the rule of M4.5 (`checkRecipientIds`, `invalidRecipients`): 1 to 5 distinct contacts of THIS client with portal access, not anonymised. The email follows
 // the PDF: the rows are written "waiting" (`queued_at` NULL); when the PDF already exists they are queued at once as `invoice.send` (never `offer.send`: the M4.5 consumer
 // would cancel an invoice send, LD56), else the jobs Worker's render step queues them and the sweep is the safety net. A reminder row is only ever made by a FIRST send.
+import { ANONYMISED_CONTACT } from "@techaust/core/clients";
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import { isReminderType, reminderPolicy, reminderRows } from "@techaust/core/invoices";
@@ -341,8 +342,10 @@ export function sendsView(
   return {
     sends: rows.map((r) => ({
       id: r.id,
-      contactName: r.contact_name,
-      email: r.email,
+      // A removed person (`deleteContactAccess` cleared the send's contact and address on an erase or anonymise; a send is always written with a
+      // contact) reads "Removed contact" (core ANONYMISED_CONTACT), never a dash, as the offer's Emails row does (polish sweep review 4).
+      contactName: r.contact_id === null ? ANONYMISED_CONTACT : r.contact_name,
+      email: r.contact_id === null ? null : r.email,
       kind: r.kind,
       createdAt: r.created_at,
       queuedAt: r.queued_at,
