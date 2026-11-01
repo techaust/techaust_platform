@@ -97,8 +97,8 @@ export type GroupMeta = {
   fy?: string;
   series?: SeriesState[];
 };
+/** M6.2 (L15): the settings route no longer reports key status (`paymentsApi.gateways()` does, from the finance Worker). */
 export type GatewayMeta = {
-  status: Record<"razorpay" | "stripe" | "paypal", { configured: boolean; missing: string[] }>;
   liveAllowed: boolean;
 };
 export type SettingsDoc<K extends JsonGroup | "gateways"> = {
@@ -1776,7 +1776,19 @@ export function hashPassword(req: HashRequest): Promise<{ hash: string; ms: numb
 
 export type PaymentKind = "payment" | "tds";
 export type PaymentStatus = "pending_verification" | "confirmed" | "rejected" | "withdrawn";
-export type PaymentMode = "neft" | "rtgs" | "imps" | "upi" | "swift";
+export type PaymentMode =
+  | "neft"
+  | "rtgs"
+  | "imps"
+  | "upi"
+  | "swift"
+  // M6.2: the modes a Razorpay payment records (core `methodToMode`; the 0064 list). Never offered when recording by hand.
+  | "card"
+  | "netbanking"
+  | "wallet"
+  | "emi"
+  | "paylater"
+  | "other";
 export type AllocationAsk = { documentId: string; amountMinor: number };
 
 /** One payment entry (worker/payments.ts `paymentView`); never the R2 key of its proof. */
@@ -1918,6 +1930,12 @@ export type InvoicePaymentsPanel = {
     recordedAt: number;
   }[];
   credits: { currency: Currency; creditMinor: number }[];
+  /** M6.2 (run file G1): the Razorpay payments through this document's links, its links, and its open review items. Absent from an older API. */
+  gateway?: {
+    payments: GatewayPaymentRow[];
+    links: PaymentLinkRow[];
+    openReviewCount: number;
+  };
   realisation: {
     femaStandard: string;
     femaDue: string;
@@ -1933,6 +1951,70 @@ export type InvoicePaymentsPanel = {
       createdAt: number;
     }[];
   } | null;
+};
+
+/** M6.2: one Razorpay payment on a document (any status; `reference` is `reference_norm`, `PAY-…`; `providerPaymentId` the raw `pay_…`). */
+export type GatewayPaymentRow = {
+  paymentId: string;
+  provider: string;
+  status: PaymentStatus;
+  providerPaymentId: string | null;
+  mode: PaymentMode | null;
+  reference: string | null;
+  receivedOn: string;
+  amountMinor: number;
+  feeMinor: number;
+  feeTaxMinor: number | null;
+  /** A proforma's payment waiting for its tax invoice (L6). */
+  proformaPending: boolean;
+};
+export type PaymentLinkStatus = "creating" | "live" | "paid" | "expired" | "cancelled" | "stale" | "failed";
+/** M6.2: one payment link of a document (`shortUrl` only while live). */
+export type PaymentLinkRow = {
+  checkoutId: string;
+  status: PaymentLinkStatus;
+  source: string;
+  amountMinor: number;
+  shortUrl: string | null;
+  expiresAt: number;
+  createdAt: number;
+  paidPaymentId: string | null;
+};
+/** M6.2: one "Needs review" item (GET /payments/review; whitelisted facts only, L8). */
+export type ReviewItem = {
+  id: string;
+  source: string;
+  provider: string;
+  kind: string;
+  status: "open" | "resolved";
+  webhook_event_id: string | null;
+  payment_id: string | null;
+  document_id: string | null;
+  client_id: string | null;
+  amount_minor: number | null;
+  currency: Currency | null;
+  facts: Record<string, unknown> | null;
+  created_at: number;
+  resolved_by: string | null;
+  resolved_at: number | null;
+  resolution: string | null;
+  note: string | null;
+  client_name: string | null;
+  document_number: string | null;
+  document_type: string | null;
+};
+export type ReviewResolution = "confirmed" | "advance_issued" | "left_as_credit" | "dismissed";
+/** M6.2 (L15): the gateways as the finance Worker sees them (keys by name only, never a value). */
+export type GatewaysStatus = {
+  gateways: Record<
+    "razorpay" | "stripe" | "paypal",
+    {
+      mode: "test" | "live";
+      keys: { configured: boolean; missing: string[] };
+      lastVerifiedWebhookAt: number | null;
+    }
+  >;
+  liveAllowed: boolean;
 };
 
 export type ClientCredit = {
@@ -2060,6 +2142,35 @@ export const paymentsApi = {
     }>(`/invoices/${pid(documentId)}/credit/release`, { body }),
   invoicePanel: (documentId: string) =>
     request<InvoicePaymentsPanel>(`/invoices/${pid(documentId)}/payments`),
+  // ---- M6.2 Razorpay (run file C) ----
+  /**
+   * "Create payment link" (07-ZI S17; Owner and Staff). An open link for the same amount is reused (200, `reused`). Codes: `amount_below_minimum` (details
+   * `minimumMinor`), `amount_above_balance` (`balanceMinor`), `amount_not_whole_rupee`, `not_payable_online` (`reason`), `link_in_progress`, `too_many_links`,
+   * `gateway_unavailable`, `live_not_allowed`, `gateway_error`, `stale_version`, `client_gone`.
+   */
+  createLink: (documentId: string, body: { amountMinor: number; expectedUpdatedAt: number }) =>
+    request<{ ok: true; checkoutId: string; shortUrl: string; expiresAt: number; reused: boolean }>(
+      `/invoices/${pid(documentId)}/payment-link`,
+      { body },
+    ),
+  /** "Cancel link": Razorpay first, then the row. Codes: `link_not_live`, `gateway_unavailable`, `live_not_allowed`, `gateway_error`. */
+  cancelLink: (documentId: string, checkoutId: string) =>
+    request<{ ok: true; status: "cancelled" }>(`/invoices/${pid(documentId)}/payment-link/cancel`, {
+      body: { checkoutId },
+    }),
+  /** "Needs review" (07-ZI S19), oldest first, 50 a page; `openCount` is the nav's count. */
+  review: (f: { status?: "open" | "resolved"; kind?: string; after?: string } = {}) =>
+    request<{ items: ReviewItem[]; next: string | null; openCount: number }>(`/payments/review${qs(f)}`),
+  /** "Mark as resolved" (Owner): a record only; refused (`resolution_not_allowed`) when the money isn't in that state yet. */
+  resolveReview: (id: string, body: { resolution: ReviewResolution; note: string | null }) =>
+    request<{ ok: true; status: "resolved" }>(`/payments/review/${pid(id)}/resolve`, { body }),
+  /** "Try again" (Owner): the re-fetch, or the automatic tax invoice again. Codes: `not_retryable`, `advance_changed`, `gateway_error`. */
+  retryReview: (id: string) =>
+    request<{ ok: true; result: string; blockers?: string[] }>(`/payments/review/${pid(id)}/retry`, {
+      body: {},
+    }),
+  /** Settings › Gateways' status (L15: from the finance Worker). */
+  gateways: () => request<GatewaysStatus>("/payments/gateways"),
   /** "Bank extended the date" (07-ZH line 14; Owner). Codes: `extension_not_later` (details `femaDue`), `extension_too_far`, `not_an_export_invoice`. */
   extendRealisation: (documentId: string, body: { extendedTo: string; bankRef: string }) =>
     request<{ ok: true; id: string; documentId: string; extendedTo: string }>(

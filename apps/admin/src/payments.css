@@ -789,3 +789,256 @@
 .pay-real__letter .btn--text {
   min-block-size: var(--target-min);
 }
+
+/* ---------- M6.2 Razorpay (run file G1, G2) ----------
+   The Payment link is a counterfoil: a slip on the panel with a perforation between what it asks for (the amount, when it ends) and the link itself. The
+   perforation is a row of short dashes in the border colour, the one decorative mark here; everything else stays the ledger's lines. */
+
+/* "Paid online" in an entry's "How it was paid" cell: the words with the card icon, S18's line and the fee under them */
+.pay-online {
+  display: grid;
+  justify-items: start;
+}
+
+.pay-online__what {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-weight: 500;
+}
+
+.pay-online__what .icon {
+  color: var(--color-text-muted);
+}
+
+/* the counterfoil */
+.pay-link {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 40rem;
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.pay-link__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+}
+
+.pay-link__title {
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  font-weight: 600;
+}
+
+.pay-link__ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-4);
+}
+
+.pay-link__amount {
+  font-family: var(--font-display);
+  font-stretch: var(--font-display--stretch);
+  font-size: var(--text-h4);
+  line-height: var(--text-h4--line-height);
+  font-weight: 560;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* the perforation, edge to edge of the slip */
+.pay-link__perf {
+  height: 0;
+  margin: 0 calc(-1 * var(--space-5));
+  border-top: 1px dashed var(--color-border-control);
+  opacity: 0.6;
+}
+
+.pay-link__url {
+  display: grid;
+  gap: var(--space-2) var(--space-4);
+  align-items: center;
+}
+
+.pay-link__address {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  overflow-wrap: anywhere;
+}
+
+.pay-link__acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pay-link__cancel {
+  min-height: var(--target-min);
+}
+
+@media (min-width: 48rem) {
+  .pay-link__url {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+}
+
+.pay-link__none {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.pay-link__none p {
+  margin: 0;
+}
+
+.pay-link__earlier {
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.pay-link__earlier > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--target-min);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.pay-link__earlier > summary:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.pay-link__list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pay-link__list li {
+  display: grid;
+  grid-template-columns: minmax(6rem, auto) minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.pay-link__list li:first-child {
+  border-top: 0;
+}
+
+.pay-link__list .pay-lines__meta {
+  display: inline;
+}
+
+/* what on this document waits in Needs review: the warning rule of the reference question, its reasons as a short list */
+.pay-review-note,
+.pay-blocked {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-inline-start: 3px solid var(--color-warning);
+  background: var(--color-surface-alt);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.pay-review-note > .icon,
+.pay-blocked > .icon {
+  color: var(--color-warning);
+}
+
+.pay-blocked p {
+  margin: 0;
+  max-width: 68ch;
+}
+
+.pay-review-note__body {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.pay-review-note__title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.pay-review-note__list {
+  margin: 0;
+  padding-inline-start: var(--space-5);
+  max-width: 68ch;
+  font-size: var(--text-sm);
+}
+
+/* ---------- Needs review (the /payments tab) ---------- */
+
+.pay-reason {
+  display: block;
+  max-width: 48ch;
+}
+
+.pay-review__acts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.pay-resolve {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.pay-resolve legend {
+  margin-bottom: var(--space-2);
+  font-weight: 600;
+}
+
+.pay-resolve__opt {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--target-min);
+}
+
+.pay-resolve__opt input {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  margin: 0;
+  accent-color: var(--color-btn-primary-bg);
+}
+
+.pay-review__item {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+}
+
+.pay-review__item p {
+  margin: 0;
+}

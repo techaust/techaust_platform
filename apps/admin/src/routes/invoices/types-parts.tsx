@@ -21,6 +21,7 @@ import { Alert, Check, Pencil, Receipt } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { CodeField, Notice } from "../../components/ui.tsx";
 import { dateError } from "../../lib/date-field.ts";
+import { razorpayLine } from "../../lib/gateway.ts";
 import {
   type AdvanceErrors,
   advanceFocus,
@@ -667,12 +668,14 @@ export function ProformaPayments(props: { view: InvoiceView; role: Role; onIssue
         onChanged={props.onIssued}
         onConfirmByAdvance={
           can
-            ? (w) =>
+            ? (w, online) =>
                 setPrefill({
                   paymentId: w.paymentId,
                   amountMinor: w.amountMinor,
                   receivedOn: w.receivedOn,
+                  // M6.2: an online payment's reference is its `reference_norm` (`PAY-…`), read-only; the raw Razorpay id stands beside it
                   reference: w.reference ?? "",
+                  online: online ? { mode: online.mode, providerPaymentId: online.providerPaymentId } : null,
                 })
             : undefined
         }
@@ -699,6 +702,8 @@ export type AdvancePrefill = {
   amountMinor: number;
   receivedOn: string;
   reference: string;
+  /** M6.2: a Razorpay payment (07-ZI S18's line beside the reference). */
+  online?: { mode: string | null; providerPaymentId: string | null } | null;
 };
 
 /**
@@ -962,7 +967,18 @@ function AdvanceBody(props: {
             }
           </FormField>
         </div>
-        <FormField id="adv-ref" label={INVT_COPY.paymentReference} error={errors.reference}>
+        <FormField
+          id="adv-ref"
+          label={INVT_COPY.paymentReference}
+          error={errors.reference}
+          status={
+            prefill?.online ? (
+              <span className="docno break">
+                {razorpayLine(prefill.online.mode, prefill.online.providerPaymentId)}
+              </span>
+            ) : undefined
+          }
+        >
           {(a) => (
             <input
               {...a}

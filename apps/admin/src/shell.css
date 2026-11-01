@@ -161,6 +161,34 @@ body:has(.shell) {
   color: var(--color-ink-300);
 }
 
+/* M6.2: a section's count (the Owner's open "Needs review" items on Payments): a small mist tag at the row's end; on the collapsed rail a dot on the icon */
+.rail__count {
+  margin-inline-start: auto;
+  min-width: 1.5rem;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-mist);
+  color: var(--color-ink-900);
+  font-size: var(--text-caption);
+  line-height: 1.25rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.shell[data-collapsed] .shell__rail .rail__count {
+  position: absolute;
+  top: 0.375rem;
+  inset-inline-end: 0.75rem;
+  min-width: 0;
+  width: 0.625rem;
+  height: 0.625rem;
+  padding: 0;
+  overflow: hidden;
+  color: transparent;
+  box-shadow: 0 0 0 2px var(--color-ink-900);
+}
+
 .rail__link:hover {
   color: var(--color-mist);
   background: var(--rail-hover);
@@ -2619,7 +2647,7 @@ input[readonly] {
 
 @media (min-width: 48rem) {
   .gateway {
-    grid-template-columns: minmax(0, 1fr) 11rem 8.5rem;
+    grid-template-columns: minmax(0, 1fr) 11rem minmax(13rem, 18rem);
     align-items: center;
   }
 
@@ -2632,9 +2660,10 @@ input[readonly] {
     grid-row: 2;
   }
 
-  .gateway__keys {
+  /* M6.2: the keys and the last verified webhook, read from the finance Worker, stand in the third column across both rows */
+  .gateway__status {
     grid-column: 3;
-    grid-row: 1;
+    grid-row: 1 / span 2;
   }
 }
 
@@ -2659,11 +2688,40 @@ input[readonly] {
   margin: 0;
 }
 
+.gateway__status {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+
 .gateway__keys {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: 9.5rem minmax(0, 1fr);
+  align-items: baseline;
   gap: var(--space-2);
   font-size: var(--text-sm);
+}
+
+.gateway__keys dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.gateway__keys .when--inline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-2);
+}
+
+.gateway__missing {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+}
+
+.gateway__names {
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
 }
 
 .versioned-list {

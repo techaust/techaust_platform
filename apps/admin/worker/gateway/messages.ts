@@ -18,57 +18,8 @@ export const BELL_SIGNATURES =
   "Razorpay webhook signatures failed 5 times in an hour. Check the webhook secret.";
 
 // ---- S20: review reasons ----------------------------------------------------------------------------------------------------------------------------------
-
-export type ReasonFacts = {
-  paidMinor?: number | null;
-  expectedMinor?: number | null;
-  extraMinor?: number | null;
-  reason?: string | null;
-  blocker?: string | null;
-};
-
-const money = (m: number | null | undefined) => (m == null ? "the amount" : amountText(m, "INR"));
-
-/** One line per review kind (07-ZI S20; the five the designer drafts are drafted here in the same style). */
-export function reviewReason(kind: string, f: ReasonFacts = {}): string {
-  switch (kind) {
-    case "amount_mismatch":
-      return `The amount paid (${money(f.paidMinor)}) doesn't match the link (${money(f.expectedMinor)}).`;
-    case "unknown_link":
-      return "A payment arrived for a link we don't know.";
-    case "document_not_payable":
-      return `The invoice could no longer be paid when the money arrived (${f.reason ?? "changed"}). The money waits for your decision.`;
-    case "advance_blocked":
-      return `The tax invoice for this payment couldn't be issued automatically: ${f.blocker ?? "a check failed"}. Issue it from the proforma.`;
-    case "refetch_failed":
-    case "dead_letter":
-      return "Razorpay couldn't be reached to confirm this payment. Try again.";
-    // Settled by the lead on the safest reading, 2026-10-31 (08-C RA-36): credit held is treated as an advance (s.13(2) CGST Act), so GST on it was due in the
-    // month the money arrived; the line says so (staff words, early check 2, finding 17; drafted for the lead).
-    case "overpaid":
-      return `The client paid ${money(f.extraMinor)} more than was due. It is held as credit, treated as an advance: GST on it is due for the month it arrived.`;
-    case "proforma_overpaid":
-      return "The client paid more than the proforma's balance. Issue the tax invoice by hand.";
-    case "partial_payment":
-      return "Razorpay reports only part of the link as paid. Check the payment before confirming it.";
-    case "client_gone":
-      return "A payment arrived for a client whose details were erased.";
-    case "currency_mismatch":
-      return "The payment's currency doesn't match the link.";
-    case "reference_mismatch":
-      return "The payment came through a link that doesn't match our record.";
-    case "order_mismatch":
-      return "The payment belongs to a different Razorpay order than the link.";
-    case "payment_not_on_link":
-      return "Razorpay doesn't list this payment on the link.";
-    case "not_captured":
-      return "Razorpay reports this payment as failed or refunded. Nothing was recorded.";
-    case "unreadable_event":
-      return "A verified Razorpay notification couldn't be read. Check the payment in Razorpay's dashboard.";
-    default:
-      return "Check this payment.";
-  }
-}
+// In `reasons.ts` (pure), so the admin SPA's "Needs review" list reads the same words; re-exported here for the Worker.
+export { NOT_PAYABLE_WORDS, notPayableWords, type ReasonFacts, reviewReason } from "./reasons.ts";
 
 // ---- S24: the API messages of section C's new error codes --------------------------------------------------------------------------------------------------
 

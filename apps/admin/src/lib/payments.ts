@@ -89,6 +89,13 @@ export const MODE_LABELS: Record<PaymentMode, string> = {
   imps: "IMPS",
   upi: "UPI",
   swift: "SWIFT",
+  // M6.2: how a Razorpay payment was made (core `methodToMode`; staff words drafted by the designer for the lead, 2026-11-01). Never offered when recording.
+  card: "Card",
+  netbanking: "Netbanking",
+  wallet: "Wallet",
+  emi: "EMI",
+  paylater: "Pay later",
+  other: "Other",
 };
 export const MODES: readonly PaymentMode[] = ["neft", "rtgs", "imps", "upi", "swift"];
 
