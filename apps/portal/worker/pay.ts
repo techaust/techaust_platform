@@ -108,8 +108,8 @@ const answer = (
 
 /**
  * The portal's answer for a `createLink` result. M6.3: the gateway's hosted page must be on THAT gateway's own hosts (`checkout.stripe.com` for Stripe; Razorpay's
- * for Razorpay), else 502; amounts in the document's currency (en-US for USD). The answer carries `url` and, until the designer's screens move to it, the same
- * value as M6.2's `shortUrl` (the portal SPA reads that name today).
+ * for Razorpay), else 502; amounts in the document's currency (en-US for USD). The answer carries `url` (M6.2's `shortUrl` alias was dropped once the screens
+ * read `url`, M6.3 run file G).
  */
 export function payAnswer(
   c: Ctx,
@@ -124,7 +124,6 @@ export function payAnswer(
       ok: true,
       provider,
       url: r.url,
-      shortUrl: r.url,
       expiresAt: r.expiresAt,
       reused: r.reused,
     });

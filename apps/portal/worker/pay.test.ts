@@ -22,12 +22,11 @@ function payEnv(answer: unknown, seen: Args[] = []) {
   });
 }
 const LINK = { ok: true, url: "https://rzp.io/i/abc123", expiresAt: 1_900_000_000_000, reused: false };
-/** What the portal answers for `LINK` (M6.3: `url`, the gateway, and M6.2's `shortUrl` kept for the screens until the designer moves them). */
+/** What the portal answers for `LINK` (M6.3: `url` and the gateway; M6.2's `shortUrl` alias is gone, the screens read `url`). */
 const LINK_ANSWER = {
   ok: true,
   provider: "razorpay",
   url: LINK.url,
-  shortUrl: LINK.url,
   expiresAt: LINK.expiresAt,
   reused: false,
 };
