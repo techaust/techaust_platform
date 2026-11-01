@@ -772,6 +772,13 @@ describe("finding 6: the section-H paths early check 2 found missing", () => {
     expect(after?.status).toBe("confirmed");
     expect(after?.verified_by).toBe(o.id);
     expect(after?.advance_receipt_id).not.toBeNull();
+    // the blocked item is settled in the same batch, by the Owner who issued
+    expect(
+      await one(
+        "SELECT status, resolution, resolved_by FROM review_items WHERE payment_id = ?1 AND kind = 'advance_blocked'",
+        paymentId,
+      ),
+    ).toEqual({ status: "resolved", resolution: "advance_issued", resolved_by: o.id });
     expect(
       await rows("SELECT id FROM documents WHERE parent_id = ?1 AND type = 'tax_invoice'", pf.id),
     ).toHaveLength(1);

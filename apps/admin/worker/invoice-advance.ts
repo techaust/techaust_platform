@@ -515,7 +515,22 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
           ...(inrExport ? { inrExportConfirmed: true } : {}),
           ...(warnings.length ? { warnings } : {}),
         },
-        side: () => batch.postAudit,
+        side: (g) => [
+          ...batch.postAudit,
+          // M6.2: "Confirm by issuing the tax invoice" for a gateway payment settles its open review items (an `advance_blocked` or `dead_letter` item) in the
+          // same batch, by the Owner who issued, once the payment is confirmed with its advance receipt (RESOLUTION_ALLOWED_SQL's `advance_issued` rule).
+          ...(f.paymentId !== undefined
+            ? [
+                db
+                  .prepare(
+                    `UPDATE review_items SET status = 'resolved', resolved_by = ?2, resolved_at = ?3, resolution = 'advance_issued'
+                     WHERE payment_id = ?1 AND status = 'open'
+                       AND EXISTS (SELECT 1 FROM payments x WHERE x.id = ?1 AND x.status = 'confirmed' AND x.advance_receipt_id IS NOT NULL) AND ${g.sql(4)}`,
+                  )
+                  .bind(f.paymentId, u.id, now, ...g.params),
+              ]
+            : []),
+        ],
       });
     } catch (e) {
       if (!refusedWith(e, ADVANCE_REFUSED)) throw e;

@@ -215,6 +215,21 @@ export const gatewayPayments = new Hono<AppEnv>()
     if (item.payment_id && (item.kind === "advance_blocked" || item.kind === "dead_letter")) {
       const r = await issueGatewayAdvance(c.env, item.payment_id);
       if (r.result === "retry") return err(c, ADVANCE_CHANGED, 409);
+      // Issued earlier (by hand, or by an earlier try) while this item stayed open: the record follows the money (guarded: the payment has its receipt).
+      if (r.result === "already_issued")
+        await mutate(c, {
+          main: reviewResolveStatement(db, {
+            id,
+            by: u.id,
+            now: Date.now(),
+            resolution: "advance_issued",
+            note: null,
+          }),
+          action: "payment.review_retry",
+          entityType: "review_item",
+          entityId: id,
+          summary: { reviewId: id, result: r.result },
+        });
       return c.json({ ok: true, result: r.result, ...(r.blockers ? { blockers: r.blockers } : {}) });
     }
     if (!["refetch_failed", "dead_letter", "unknown_link"].includes(item.kind))
