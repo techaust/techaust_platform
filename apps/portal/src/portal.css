@@ -2462,20 +2462,20 @@ textarea[aria-invalid="true"] {
   border-top: 1px solid var(--color-border);
 }
 
-.deedcard__facts dt {
+.deedcard__label {
   color: var(--color-text-muted);
   font-size: var(--text-sm);
   line-height: var(--text-sm--line-height);
   font-weight: 500;
 }
 
-.deedcard__facts dd {
+.deedcard__value {
   margin: 0;
   font-weight: 500;
   font-variant-numeric: tabular-nums lining-nums;
 }
 
-.deedcard__signed dd {
+.deedcard__value--plain {
   font-weight: 400;
 }
 

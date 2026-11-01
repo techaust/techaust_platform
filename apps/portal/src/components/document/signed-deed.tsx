@@ -51,16 +51,16 @@ export function SignedDeedCard({ documentId }: { documentId: string }) {
       <p className="deedcard__lead">{DEED_ZJ.lead}</p>
       <dl className="deedcard__facts">
         <div>
-          <dt>{DEED_ZJ.number}</dt>
-          <dd className="nowrap">{deed.number}</dd>
-        </div>
-        <div className="deedcard__signed">
-          <dt className="visually-hidden">{DEED_ZJ.heading}</dt>
-          <dd>{DEED_ZJ.signedOn(deed.esignMoment)}</dd>
+          <dt className="deedcard__label">{DEED_ZJ.number}</dt>
+          <dd className="deedcard__value nowrap">{deed.number}</dd>
         </div>
         <div>
-          <dt>{DEED_ZJ.txn}</dt>
-          <dd className="deedcard__txn">{deed.esignTxn}</dd>
+          <dt className="visually-hidden">{DEED_ZJ.heading}</dt>
+          <dd className="deedcard__value deedcard__value--plain">{DEED_ZJ.signedOn(deed.esignMoment)}</dd>
+        </div>
+        <div>
+          <dt className="deedcard__label">{DEED_ZJ.txn}</dt>
+          <dd className="deedcard__value deedcard__txn">{deed.esignTxn}</dd>
         </div>
       </dl>
       <button
