@@ -47,11 +47,11 @@ export const USE_ADVANCE_INVOICE = e(
 export const VOID_PAYMENT_PENDING_LINE =
   "A payment recorded on it is waiting for the owner's check. Reject it first.";
 /**
- * M6.2 (fix round 3 item 3; staff words, the lead under the standing delegation, 2026-11-01): the void and withdraw blocker `payment_pending_gateway`, a
+ * M6.2 (fix round 3 item 3, reworded in fix round 4 low 2; staff words, the lead under the standing delegation, 2026-11-01): the void and withdraw blocker `payment_pending_gateway`, a
  * pending Razorpay payment, which can't be rejected.
  */
 export const VOID_GATEWAY_PENDING_LINE =
-  'A Razorpay payment on it is waiting for its tax invoice. Issue it with "Confirm by issuing the tax invoice", or resolve it in Needs review.';
+  'A Razorpay payment on it is waiting for its tax invoice. Issue it with "Confirm by issuing the tax invoice".';
 
 /** L32: the void blocker `payment_recorded` (a payment was put on it, one released or withdrawn since included). 07-ZH from line 23 (the designer's draft). */
 export const VOID_PAYMENT_RECORDED_LINE =

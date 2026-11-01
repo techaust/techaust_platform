@@ -195,7 +195,7 @@ describe("the void blocker of a pending Razorpay payment [M6.2 fix round 3 item 
     // The Worker's copy (`VOID_GATEWAY_PENDING_LINE`, the withdraw route's words) is the same text (read as source: the SPA can't import Worker modules).
     expect(messagesSource).toContain(`'${VOID_GATEWAY_PENDING}'`);
     expect(VOID_GATEWAY_PENDING).toBe(
-      'A Razorpay payment on it is waiting for its tax invoice. Issue it with "Confirm by issuing the tax invoice", or resolve it in Needs review.',
+      'A Razorpay payment on it is waiting for its tax invoice. Issue it with "Confirm by issuing the tax invoice".',
     );
   });
 });
