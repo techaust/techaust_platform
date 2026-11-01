@@ -31,6 +31,7 @@ import {
   stripeModeOf,
   stripePaymentRowId,
   stripeReferenceNorm,
+  stripeSessionInUsd,
   stripeTestHeader,
   verifyStripeSignature,
 } from "../src/stripe.ts";
@@ -653,13 +654,34 @@ describe("judgeStripeSession [ADR 0008, L5, L6; every verdict]", () => {
     ["not_export_receipt", fetched({}, {}, { payment_method_details: { type: "card" } }), row],
     ["not_export_receipt", fetched({}, {}, { payment_method_details: { type: "link" } }), row],
     ["not_export_receipt", fetched({}, {}, { payment_method_details: null }), row],
-    // An amount mismatch is named first.
+    // Early check 2, finding 4: an India-issued card (or no stated country) is named before an amount or a currency difference: the tax consequence comes first.
     [
-      "amount_mismatch",
+      "not_export_receipt",
       fetched(
         { amount_total: 499_99 },
         {},
         { payment_method_details: { type: "card", card: { country: "IN" } } },
+      ),
+      row,
+    ],
+    [
+      "not_export_receipt",
+      fetched({}, { amount_received: 499_00 }, { payment_method_details: { type: "card", card: {} } }),
+      row,
+    ],
+    [
+      "not_export_receipt",
+      fetched({ currency: "eur" }, {}, { payment_method_details: { type: "card", card: { country: "IN" } } }),
+      row,
+    ],
+    ["not_export_receipt", fetched({}, { currency: "inr" }, { payment_method_details: null }), row],
+    // ...but never before the money's own state: a refunded India-card payment is `not_captured`.
+    [
+      "not_captured",
+      fetched(
+        {},
+        {},
+        { amount_refunded: 1, payment_method_details: { type: "card", card: { country: "IN" } } },
       ),
       row,
     ],
@@ -669,6 +691,14 @@ describe("judgeStripeSession [ADR 0008, L5, L6; every verdict]", () => {
 
   it("the verdicts are listed once each", () => {
     expect(new Set(STRIPE_JUDGE_VERDICTS).size).toBe(STRIPE_JUDGE_VERDICTS.length);
+  });
+
+  it("stripeSessionInUsd: the session, its intent and the row all in US dollars", () => {
+    expect(stripeSessionInUsd(row, read(fetched()))).toBe(true);
+    expect(stripeSessionInUsd(row, read(fetched({ currency: "eur" })))).toBe(false);
+    expect(stripeSessionInUsd(row, read(fetched({}, { currency: "inr" })))).toBe(false);
+    expect(stripeSessionInUsd({ currency: "INR" }, read(fetched()))).toBe(false);
+    expect(stripeSessionInUsd(row, read(fetched({ payment_intent: null })))).toBe(false);
   });
 });
 

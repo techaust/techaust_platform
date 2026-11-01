@@ -580,9 +580,9 @@ export const STRIPE_JUDGE_VERDICTS = [
   "checkout_open",
   "not_paid",
   "not_captured",
+  "not_export_receipt",
   "currency_mismatch",
   "amount_mismatch",
-  "not_export_receipt",
 ] as const;
 export type StripeJudgeVerdict = (typeof STRIPE_JUDGE_VERDICTS)[number];
 
@@ -598,6 +598,13 @@ export type StripeCheckoutRow = {
   readonly env: string;
 };
 
+/**
+ * Whether the session, its payment intent and our row are all in US dollars (the judge's `currency_mismatch` test). The finance Worker also asks it of a
+ * `not_export_receipt` session, since a payment row is only ever written for USD money (the 0066 shape).
+ */
+export const stripeSessionInUsd = (row: Pick<StripeCheckoutRow, "currency">, s: StripeSession): boolean =>
+  s.currency === "usd" && s.pi?.currency === "usd" && row.currency === "USD";
+
 const marksMatch = (m: TechaustMarks | null, row: StripeCheckoutRow): boolean =>
   m !== null && m.checkoutId === row.id && m.documentId === row.documentId && m.env === row.env;
 
@@ -612,11 +619,12 @@ const marksMatch = (m: TechaustMarks | null, row: StripeCheckoutRow): boolean =>
  *      refunded in full or in part, or disputed (early check 1, F1: a refund or a dispute keeps `succeeded` and `captured`, and a re-fetch after one, through a
  *      retried webhook, the dead-letter retry or the sweep, must never record returned money as confirmed). The money's state comes before any amount (M6.2 review
  *      finding 7: an unsettled payment is never a confirmable row, whatever else differs);
- *   6. `currency_mismatch`: the session or the intent not in `usd`, or the row not USD;
- *   7. `amount_mismatch`: `amount_total` ≠ the row's amount, or the intent's `amount_received` ≠ `amount_total`;
- *   8. `not_export_receipt`: a card issued in India, or a card whose country Stripe did not give (the safe side), or no card at all (lead, 2026-11-02, early check 1
+ *   6. `not_export_receipt`: a card issued in India, or a card whose country Stripe did not give (the safe side), or no card at all (lead, 2026-11-02, early check 1
  *      decision 1): such a payment is not an inflow of foreign exchange, so it is never confirmed or allocated by the system and never gets LUT treatment (Settled by
- *      the lead on the safest reading, 2026-11-02 (08-C RA-38)).
+ *      the lead on the safest reading, 2026-11-02 (08-C RA-38)). Named before any currency or amount difference (early check 2, finding 4): the tax consequence is
+ *      what the Owner must see first, whatever else differs (the finance Worker still records no row for money that isn't in USD);
+ *   7. `currency_mismatch`: the session or the intent not in `usd`, or the row not USD;
+ *   8. `amount_mismatch`: `amount_total` ≠ the row's amount, or the intent's `amount_received` ≠ `amount_total`.
  * Nothing here moves money; the finance Worker records a mismatch pending with a review item (run file C.9).
  */
 export function judgeStripeSession(
@@ -648,12 +656,11 @@ export function judgeStripeSession(
     s.charge.disputed
   )
     return no("not_captured");
-  if (s.currency !== "usd" || s.pi.currency !== "usd" || row.currency !== "USD")
-    return no("currency_mismatch");
-  if (s.amountTotal !== row.amountMinor || s.pi.amountReceived !== s.amountTotal)
-    return no("amount_mismatch");
   if (s.charge.methodType !== "card" || s.charge.cardCountry === null || s.charge.cardCountry === "IN")
     return no("not_export_receipt");
+  if (!stripeSessionInUsd(row, s)) return no("currency_mismatch");
+  if (s.amountTotal !== row.amountMinor || s.pi.amountReceived !== s.amountTotal)
+    return no("amount_mismatch");
   return { ok: true };
 }
 

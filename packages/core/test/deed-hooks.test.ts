@@ -30,8 +30,11 @@ const NOT_HOOKED: Record<string, { why: string; hookedBy?: readonly { file: stri
     ],
   },
   "packages/db/src/gateway.ts#recordGatewayPaymentStatements": {
-    why: "M6.2: a builder of the gateway payment batch; the confirmed batch that runs it appends the hook after its side statements (the recompute) and before ledger_result",
-    hookedBy: [{ file: "apps/admin/worker/gateway/settle.ts", builder: "recordGatewayPaymentStatements(" }],
+    why: "M6.2: a builder of the gateway payment batch; the confirmed batch that runs it appends the hook after its side statements (the recompute) and before ledger_result (M6.3: Stripe's confirmed batch too, early check 2 finding 6)",
+    hookedBy: [
+      { file: "apps/admin/worker/gateway/settle.ts", builder: "recordGatewayPaymentStatements(" },
+      { file: "apps/admin/worker/gateway/stripe-settle.ts", builder: "recordGatewayPaymentStatements(" },
+    ],
   },
 };
 

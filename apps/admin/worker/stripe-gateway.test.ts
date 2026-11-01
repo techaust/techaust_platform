@@ -374,6 +374,54 @@ describe("a Stripe event [JOB-HOOK-02, ADR 0008, L5, L6]", () => {
     expect(reviewReason("not_export_receipt")).toMatch(/issued in India/);
   });
 
+  it("early check 2, finding 4: an India-issued card is named before an amount or currency difference; money not in USD still gets no payment row", async () => {
+    const india = (x: J) => {
+      x.payment_intent.latest_charge.payment_method_details.card.country = "IN";
+    };
+    // an amount difference too: pending as not_export_receipt (the amount Stripe received)
+    const a = await liveSession();
+    stripeStub((path, method) =>
+      method === "GET" && path === `/v1/checkout/sessions/${a.sessionId}`
+        ? sessionAnswer(a.sessionId, (x) => {
+            india(x);
+            x.amount_total = 49_000;
+            x.payment_intent.amount_received = 49_000;
+          })
+        : null,
+    );
+    const evA = await stripeEventRow(a.sessionId, a.checkoutId);
+    expect(await processEvent(env, evA)).toEqual({ result: "needs_review" });
+    expect(await reviewKinds("webhook_event_id", evA)).toEqual(["not_export_receipt"]);
+    expect(await stripePaymentOf(piOf(a.sessionId))).toMatchObject({
+      status: "pending_verification",
+      amount_minor: 49_000,
+    });
+    expect(await ledger(a.documentId)).toMatchObject({ balance_minor: 50_000 });
+    // a currency difference too: the item only (a payment row is only ever USD money), its facts naming the currency difference
+    const b = await liveSession();
+    stripeStub((path, method) =>
+      method === "GET" && path === `/v1/checkout/sessions/${b.sessionId}`
+        ? sessionAnswer(b.sessionId, (x) => {
+            india(x);
+            x.currency = "eur";
+            x.payment_intent.currency = "eur";
+          })
+        : null,
+    );
+    const evB = await stripeEventRow(b.sessionId, b.checkoutId);
+    expect(await processEvent(env, evB)).toEqual({ result: "needs_review" });
+    expect(await reviewKinds("webhook_event_id", evB)).toEqual(["not_export_receipt"]);
+    expect(await stripePaymentOf(piOf(b.sessionId))).toBeNull();
+    const item = await one<{ facts: string; amount_minor: number | null }>(
+      "SELECT facts, amount_minor FROM review_items WHERE webhook_event_id = ?1",
+      evB,
+    );
+    expect(JSON.parse(item?.facts ?? "{}")).toMatchObject({ reason: "currency_mismatch" });
+    expect(JSON.parse(item?.facts ?? "{}")).not.toHaveProperty("currency");
+    expect(item?.amount_minor).toBeNull();
+    expect(await ledger(b.documentId)).toMatchObject({ balance_minor: 50_000 });
+  });
+
   it("an asynchronous payment: unpaid records nothing; succeeded later records it; failed ends the session", async () => {
     const s = await liveSession();
     stripeStub((path, method) =>
@@ -437,20 +485,20 @@ describe("a Stripe event [JOB-HOOK-02, ADR 0008, L5, L6]", () => {
   });
 
   it("an erased client: client_gone, never a payment row", async () => {
+    // Early check 2, finding 7: unconditional, as M6.2's (gateway-review.test.ts): the client is erased, and every check runs.
     const s = await liveSession();
-    await env.DB.prepare("UPDATE clients SET anonymised_at = 1 WHERE id = ?1")
-      .bind(s.clientId)
-      .run()
-      .catch(() => undefined);
+    await env.DB.prepare("UPDATE clients SET anonymised_at = ?2 WHERE id = ?1")
+      .bind(s.clientId, Date.now())
+      .run();
+    expect(
+      (await one<{ a: number | null }>("SELECT anonymised_at AS a FROM clients WHERE id = ?1", s.clientId))
+        ?.a,
+    ).not.toBeNull();
     const ev = await stripeEventRow(s.sessionId, s.checkoutId);
-    const r = await processEvent(env, ev);
-    if (
-      (await one<{ a: number | null }>("SELECT anonymised_at AS a FROM clients WHERE id = ?1", s.clientId))?.a
-    ) {
-      expect(r).toEqual({ result: "needs_review" });
-      expect(await reviewKinds("webhook_event_id", ev)).toEqual(["client_gone"]);
-      expect(await stripePaymentOf(piOf(s.sessionId))).toBeNull();
-    }
+    expect(await processEvent(env, ev)).toEqual({ result: "needs_review" });
+    expect(await reviewKinds("webhook_event_id", ev)).toEqual(["client_gone"]);
+    expect(await stripePaymentOf(piOf(s.sessionId))).toBeNull();
+    expect(await ledger(s.documentId)).toMatchObject({ balance_minor: 50_000 });
   });
 
   it("each RPC stays within 45 D1 statements", async () => {

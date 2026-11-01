@@ -28,6 +28,7 @@ import {
   stripeModeOf,
   stripePaymentRowId,
   stripeReferenceNorm,
+  stripeSessionInUsd,
 } from "@techaust/core/stripe";
 import { deedDraftStatements } from "@techaust/db/deeds";
 import {
@@ -108,12 +109,16 @@ export type StripeSettleArgs = {
   attempts?: number;
 };
 
-/** The whitelisted facts of a session (RB-40, RB-41): ids, the amount and currency, our checkout. Never a payer's detail. */
+/**
+ * The whitelisted facts of a session (RB-40, RB-41): ids, the amount and currency, our checkout. Never a payer's detail. The amount is named only when the
+ * payment intent is in USD (early check 2, finding 4: a non-USD intent's amount is never labelled as dollars).
+ */
 function factsOf(checkout: CheckoutRow, s: StripeSession | null): GatewayFacts {
   return {
     linkId: checkout.provider_link_id ?? "",
     checkoutId: checkout.id,
-    ...(s?.pi ? { paymentId: s.pi.id, amountMinor: s.pi.amountReceived, currency: "USD" } : {}),
+    ...(s?.pi ? { paymentId: s.pi.id } : {}),
+    ...(s?.pi?.currency === "usd" ? { amountMinor: s.pi.amountReceived, currency: "USD" } : {}),
     ...(s?.charge?.methodType ? { method: s.charge.methodType } : {}),
   };
 }
@@ -317,6 +322,19 @@ export async function settleStripe(env: GatewayEnv, a: StripeSettleArgs): Promis
       case "currency_mismatch":
         // Not exactly our session, or not our currency: no payment row (L5); the Owner reviews it.
         return reviewOnly(env, link, verdict.verdict, where, facts, STRIPE);
+      case "not_export_receipt":
+        // Early check 2, finding 4: the judge names an India-issued card before a currency difference; money that isn't in USD still gets no payment row (the
+        // 0066 shape), only the item, which keeps the currency difference as its reason.
+        if (!stripeSessionInUsd(c, s))
+          return reviewOnly(
+            env,
+            link,
+            "not_export_receipt",
+            where,
+            { ...facts, reason: "currency_mismatch" },
+            STRIPE,
+          );
+        break;
       case "not_captured":
         // Never captured, or refunded or disputed after it succeeded (F1): no money for us to record.
         return reviewOnly(
