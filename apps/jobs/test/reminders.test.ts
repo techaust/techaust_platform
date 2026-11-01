@@ -487,6 +487,69 @@ describe("reminder.send: a failure after the claim gives it back, before the ema
     },
   );
 
+  it("one contact losing access between the claim and a failed sendBatch does not pause the reminder of the others: it goes back WAITING (review L1)", async () => {
+    const w = await world({ contacts: 2 });
+    const id = w.rows.get(0) as string;
+    const claimAt = dueAtOf(0);
+    const leaver = w.contacts[0]?.id as string;
+    // What `revokeContactAccess` does for one contact: only their links are revoked.
+    const oneLeavesThenFail = makeEnv({
+      EMAIL_QUEUE: {
+        send: async () => {
+          throw new Error("queue down");
+        },
+        sendBatch: async () => {
+          await run(
+            "UPDATE doc_access_tokens SET revoked_at = ?2 WHERE document_id = ?1 AND contact_id = ?3 AND revoked_at IS NULL",
+            w.doc.id,
+            claimAt + 1000,
+            leaver,
+          );
+          throw new Error("queue down");
+        },
+      },
+    });
+    await expect(send(id, claimAt, oneLeavesThenFail)).rejects.toThrow("queue down");
+    expect(await row(id)).toEqual({ sent_at: null, skipped_reason: null, email_log_id: null });
+  });
+
+  it("a give-back with nobody to write to is plain: it never pauses, even right after a revoke (review L1)", async () => {
+    const w = await world();
+    const id = w.rows.get(0) as string;
+    const claimAt = dueAtOf(0);
+    // A revoke of every link at the claim's time, then the claim finds no recipient (the contact lost access inside the claim's batch).
+    await run(
+      "INSERT INTO doc_access_tokens (token_hash, document_id, purpose, expires_at, revoked_at, contact_id, client_id, email, send_id) VALUES (?1, ?2, 'view_pay', ?3, ?4, ?5, ?6, ?7, NULL)",
+      `gone-${id}`,
+      w.doc.id,
+      claimAt + 86_400_000,
+      claimAt,
+      w.contacts[0]?.id,
+      w.clientId,
+      w.contacts[0]?.email.toLowerCase(),
+    );
+    let batches = 0;
+    const wrapped = new Proxy(db, {
+      get(target, prop) {
+        if (prop === "batch")
+          return async (stmts: D1PreparedStatement[]) => {
+            batches++;
+            if (batches !== 2) return target.batch(stmts);
+            // The claim's batch with no link written (the contact lost access between the claim and its link): run the claim and supersede only.
+            const out = await target.batch(stmts.slice(0, 2));
+            return [
+              ...out,
+              ...stmts.slice(2).map(() => ({ success: true, results: [], meta: { changes: 0 } })),
+            ];
+          };
+        const v = Reflect.get(target, prop);
+        return typeof v === "function" ? v.bind(target) : v;
+      },
+    });
+    expect(await send(id, claimAt, makeEnv({ DB: wrapped }))).toBe("no_recipient");
+    expect(await row(id)).toEqual({ sent_at: null, skipped_reason: null, email_log_id: null });
+  });
+
   it("a link of the document revoked BEFORE the claim (an older revoke, then a new send) does not pause the give-back", async () => {
     const w = await world();
     const id = w.rows.get(0) as string;

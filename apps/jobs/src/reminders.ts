@@ -97,12 +97,18 @@ const REMINDER_LINK_SQL = `INSERT INTO doc_access_tokens (token_hash, document_i
  * Gives the claim back: only while this very claim still holds and no email is recorded (the trigger allows exactly that move). When the links were revoked after the claim
  * ("Revoke links" pauses only the WAITING reminders, so it skipped this claimed one), the row goes back paused, not waiting, so no fresh link is emailed after the revoke
  * (`reminders_fixed`, 0044, allows `sent_at` to NULL and `skipped_reason` NULL to 'paused' in one UPDATE). "After the claim": a link of the document revoked at or after the
- * claim's time, or one of the links this claim minted revoked. `?1` reminder id, `?2` the claim's time, `?3` the JSON array of this claim's token hashes.
+ * claim's time, or one of the links this claim minted revoked, AND no live link of the document is left: "Revoke links" revokes every link of the document, while one
+ * contact losing access (`revokeContactAccess`: access off, an email change) revokes only theirs and must not pause the other recipients' reminder (review L1).
+ * `?1` reminder id, `?2` the claim's time, `?3` the JSON array of this claim's token hashes.
  */
 const GIVE_BACK_SQL = `UPDATE reminders SET sent_at = NULL,
     skipped_reason = CASE WHEN EXISTS (SELECT 1 FROM doc_access_tokens t WHERE t.document_id = reminders.document_id AND t.revoked_at IS NOT NULL
-      AND (t.revoked_at >= ?2 OR t.token_hash IN (SELECT value FROM json_each(?3)))) THEN 'paused' ELSE skipped_reason END
+      AND (t.revoked_at >= ?2 OR t.token_hash IN (SELECT value FROM json_each(?3))))
+      AND NOT EXISTS (SELECT 1 FROM doc_access_tokens l WHERE l.document_id = reminders.document_id AND l.revoked_at IS NULL) THEN 'paused' ELSE skipped_reason END
   WHERE id = ?1 AND sent_at = ?2 AND email_log_id IS NULL`;
+/** The plain give-back when the claim minted no link (nobody left to write to): the row goes back waiting and the stop rule writes its final reason next time (review L1). */
+const GIVE_BACK_PLAIN_SQL =
+  "UPDATE reminders SET sent_at = NULL WHERE id = ?1 AND sent_at = ?2 AND email_log_id IS NULL";
 
 type ReminderRow = DocFacts & {
   id: string;
@@ -189,7 +195,10 @@ export async function processReminderSend(
   const linked = minted.filter((_, i) => results[2 + i]?.meta.changes === 1);
   if (linked.length === 0) {
     // Everyone lost access between the read and the claim: nobody to write to. Give the claim back (the stop rule then decides next time).
-    await giveBack(env, reminderId, now, []);
+    await env.DB.prepare(GIVE_BACK_PLAIN_SQL)
+      .bind(reminderId, now)
+      .run()
+      .catch(() => logEvent("reminder_send.give_back_failed"));
     logEvent("reminder_send.no_recipient");
     return "no_recipient";
   }
