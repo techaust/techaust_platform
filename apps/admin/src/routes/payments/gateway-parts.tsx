@@ -7,7 +7,6 @@ import type { Role } from "@techaust/core/permissions";
 import { useId, useState } from "react";
 import { Link } from "react-router";
 import {
-  api,
   type GatewayPaymentRow,
   type InvoicePaymentsPanel,
   type PaymentLinkRow,
@@ -294,8 +293,8 @@ export function LinkChip({ status }: { status: PaymentLinkRow["status"] }) {
 }
 
 /**
- * "Create payment link": one amount, the balance prefilled. The hint gives the range: the Owner's screen reads the part-payment floor from Settings › Payment
- * terms; a Staff member (no settings read) sees the balance, and the server's answer names the minimum if the amount is under it.
+ * "Create payment link": one amount, the balance prefilled. The hint gives the range from the panel's `minimumMinor` (fix round 3 item 4: the server works it
+ * out from Settings › Payment terms for every role, so a Staff member, who can't read the settings, sees it too); without it (an older API) the balance only.
  */
 function LinkDialog(props: {
   view: InvoiceView;
@@ -306,11 +305,8 @@ function LinkDialog(props: {
 }) {
   const { view: v, panel: p } = props;
   const proforma = v.type === "proforma";
-  const terms = useLoad(
-    () => (allowed(props.role, "settings.read") ? api.settingsGroup("payment_terms") : Promise.resolve(null)),
-    "terms",
-  );
-  const floor = terms.state === "ready" && terms.data ? terms.data.value.razorpayMinPartialInrMinor : null;
+  // `linkHint` takes a floor; the minimum is one (`onlineMinimumOf(minimum, balance)` is the minimum itself).
+  const floor = p.gateway?.minimumMinor ?? null;
   const [text, setText] = useState(plainAmount(p.balanceMinor, "INR"));
   const [error, setError] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -358,7 +354,7 @@ function LinkDialog(props: {
           <FormField
             id="pay-link-amount"
             label={GW_UI.linkAmount}
-            hint={terms.state === "loading" ? " " : linkHint(p.balanceMinor, floor, proforma)}
+            hint={linkHint(p.balanceMinor, floor, proforma)}
             error={error}
           >
             {(a) => (

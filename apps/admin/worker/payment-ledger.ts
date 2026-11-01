@@ -22,6 +22,7 @@ import {
   refundDueOf,
   releasable,
 } from "@techaust/core/ledger";
+import { onlineMinimumOf } from "@techaust/core/online-pay";
 import { creditApplyBody, creditReleaseBody, realisationExtensionBody } from "@techaust/core/payment-schemas";
 import { deedDraftStatements } from "@techaust/db/deeds";
 import { DOCUMENT_CHECKOUTS_SQL } from "@techaust/db/gateway";
@@ -61,6 +62,7 @@ import {
 import { LEDGER_REFUSED } from "./payments.ts";
 import { CLIENT_GONE } from "./quote-model.ts";
 import { sessionRefusal } from "./session-refusal.ts";
+import { cachedSetting, type StoredSetting } from "./settings-cache.ts";
 
 /**
  * L23.7: an extension is held within core's existing realisation bound, the 36,500-day upper bound of the realisation rules (`rulesAreValid` in
@@ -368,7 +370,7 @@ export const invoiceLedger = new Hono<AppEnv>()
     const { id } = c.req.valid("param");
     const db = c.env.DB;
     const today = toIsoDate(istDate(Date.now()));
-    const [docR, holdR, pendR, creditR, extR, realR, gwPayR, linksR, reviewR] = await db.batch([
+    const [docR, holdR, pendR, creditR, extR, realR, gwPayR, linksR, reviewR, termsR] = await db.batch([
       db.prepare(DOC_SQL).bind(id),
       db.prepare(DOCUMENT_HOLDINGS_SQL).bind(id),
       db.prepare(PENDING_FOR_DOCUMENT_SQL).bind(id),
@@ -383,6 +385,8 @@ export const invoiceLedger = new Hono<AppEnv>()
           "SELECT count(*) AS n FROM review_items INDEXED BY review_items_document WHERE document_id = ?1 AND status = 'open'",
         )
         .bind(id),
+      // M6.2 fix round 3 item 4: the part-payment floor, so the Create dialog shows the range to a role that can't read Settings › Payment terms.
+      db.prepare("SELECT value, version FROM settings WHERE key = 'payment_terms'"),
     ]);
     const d = docR?.results[0] as DocRow | undefined;
     if (!d || !PANEL_TYPES.includes(d.type)) return err(c, NOT_FOUND, 404);
@@ -477,6 +481,18 @@ export const invoiceLedger = new Hono<AppEnv>()
           paidPaymentId: l.paid_payment_id,
         })),
         openReviewCount: (reviewR?.results[0] as { n: number } | undefined)?.n ?? 0,
+        /**
+         * Fix round 3 item 4: the smallest amount a link may ask for now, by the rule `createLink`'s `payAmountVerdict` enforces (core `onlineMinimumOf` over
+         * Settings › Payment terms' floor: never under ₹1, the whole balance if lower). Null when nothing in rupees is due (no link can be made).
+         */
+        minimumMinor:
+          d.currency === "INR" && d.balance_minor > 0
+            ? onlineMinimumOf(
+                cachedSetting("payment_terms", termsR?.results[0] as StoredSetting | undefined)
+                  .razorpayMinPartialInrMinor,
+                d.balance_minor,
+              )
+            : null,
       },
       realisation:
         d.type === "export_invoice" && real

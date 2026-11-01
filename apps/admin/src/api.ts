@@ -1936,6 +1936,11 @@ export type InvoicePaymentsPanel = {
     payments: GatewayPaymentRow[];
     links: PaymentLinkRow[];
     openReviewCount: number;
+    /**
+     * Fix round 3 item 4: the smallest amount a link may ask for now (Settings › Payment terms' floor, never under ₹1, or the balance if lower), sent to every
+     * role that reads the panel; null when nothing in rupees is due. Absent from an older API.
+     */
+    minimumMinor?: number | null;
   };
   realisation: {
     femaStandard: string;

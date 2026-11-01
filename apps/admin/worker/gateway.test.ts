@@ -617,6 +617,38 @@ describe("a proforma paid online: the automatic tax invoice [ADM-INV-10, L5, L6,
 });
 
 describe("routes per role, the review list, the provider contract", () => {
+  it("fix round 3 item 4: the Payments panel carries the link minimum to every role that reads it (Staff can't read the settings)", async () => {
+    const o = await owner();
+    const inv = await issued(o);
+    const before = await one<{ value: string }>("SELECT value FROM settings WHERE key = 'payment_terms'");
+    const put = (v: string) =>
+      env.DB.prepare(
+        "INSERT INTO settings (key, value) VALUES ('payment_terms', ?1) ON CONFLICT (key) DO UPDATE SET value = excluded.value, version = settings.version + 1",
+      )
+        .bind(v)
+        .run();
+    const minimumAs = async (role: "owner" | "staff" | "accountant") => {
+      const s = role === "owner" ? o : await sessionFor(role);
+      const res = await call(`/invoices/${inv.id}/payments`, { cookie: s.cookie });
+      expect(res.status, role).toBe(200);
+      return ((await json(res)) as { gateway: { minimumMinor: number | null } }).gateway.minimumMinor;
+    };
+    try {
+      // A floor under the balance is the minimum, for each role; above it, the whole balance (only the full amount).
+      await put(JSON.stringify({ razorpayMinPartialInrMinor: 100 }));
+      for (const role of ["owner", "staff", "accountant"] as const)
+        expect(await minimumAs(role), role).toBe(100);
+      await put(JSON.stringify({ razorpayMinPartialInrMinor: inv.total + 1 }));
+      for (const role of ["owner", "staff"] as const) expect(await minimumAs(role), role).toBe(inv.total);
+      // Sales can't read the panel at all.
+      const sales = await sessionFor("sales");
+      expect((await call(`/invoices/${inv.id}/payments`, { cookie: sales.cookie })).status).toBe(403);
+    } finally {
+      if (before) await put(before.value);
+      else await env.DB.prepare("DELETE FROM settings WHERE key = 'payment_terms'").run();
+    }
+  });
+
   it("Owner and Staff make links; Sales and Accountant are refused; only the Owner resolves", async () => {
     const o = await owner();
     const inv = await issued(o);
