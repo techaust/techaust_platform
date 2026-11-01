@@ -9,7 +9,7 @@ import {
   reviewReason,
   STRIPE_PERMISSION_LINE,
 } from "../../worker/gateway/reasons.ts";
-import { APPROVED_07ZM, CARD_ZM, PLACEHOLDER_MARK, ZM } from "./copy-zm.ts";
+import { APPROVED_07ZM, APPROVED_ZM_DRAFTS, CARD_ZM, PLACEHOLDER_MARK, ZM, ZM_DRAFTS } from "./copy-zm.ts";
 
 const mark = APPROVED_07ZM ? "" : `${PLACEHOLDER_MARK} `;
 
@@ -42,6 +42,13 @@ describe("07-ZM staff lines [M6.3]", () => {
       staff(18).map((s) => `${mark}${s}`),
     );
     expect(ZM("x")).toBe(APPROVED_07ZM ? "x" : "[Placeholder] x");
+  });
+
+  it("the designer's drafts (not in 07-ZM) stay marked under their own switch until the lead approves them", () => {
+    for (const line of Object.values(ZM_DRAFTS)) {
+      expect(line.startsWith(`${PLACEHOLDER_MARK} `)).toBe(!APPROVED_ZM_DRAFTS);
+      expect(zmPage).not.toContain(line.replace(`${PLACEHOLDER_MARK} `, ""));
+    }
   });
 
   it("S16 and S19's review lines are the finance Worker's words", () => {

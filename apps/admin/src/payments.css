@@ -214,6 +214,16 @@
   color: var(--color-text-muted);
 }
 
+/* M6.3: "Proof awaited" may wrap in a narrow proof cell (its icon stays put) */
+.pay-badge--wrap {
+  white-space: normal;
+  max-width: 100%;
+}
+
+.pay-badge--wrap > .icon {
+  flex: none;
+}
+
 .pay-proof-link {
   display: inline-flex;
   align-items: center;
@@ -1037,6 +1047,14 @@
 .pay-reason__open {
   min-height: var(--target-min);
   padding-inline: 0;
+}
+
+/* M6.3: the gateway's name over the reason, small and quiet (it says which dashboard to look in) */
+.pay-reason__gw {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: 600;
 }
 
 /* the Owner's two actions at the row's end, side by side when there is room, stacked when not */

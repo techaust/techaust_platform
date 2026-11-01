@@ -5,7 +5,6 @@ import { istDate, toIsoDate } from "@techaust/core/dates";
 import { isGatewayLinkUrl, type LinkHostGateway } from "@techaust/core/gateway-rpc";
 import { compare, formatMoney, money, parseMoney } from "@techaust/core/money";
 import { PAY_ZI } from "../copy-zi.ts";
-import { PAY_ZM } from "../copy-zm.ts";
 
 /** The gateways the portal sends a client to (M6.3: Stripe for USD documents, Razorpay for INR). */
 export type PayGateway = LinkHostGateway;
@@ -19,7 +18,8 @@ export const currencyOf = (gateway: PayGateway): PayCurrency => (gateway === "st
 
 /**
  * The part amount as typed (en-IN "12,500" or "₹12,500.50"; en-US "1,250" or "$1,250.50") against the minimum, the balance and, on a card payment, the most
- * one payment may be (`maximumMinor`, L9). The error is 07-ZI line 5, 6 or 7, or 07-ZM line 6 above the maximum.
+ * one payment may be (`maximumMinor`, L9). The error is 07-ZI line 5, 6 or 7 (line 5 with the maximum as its top above the maximum: the dialog says 07-ZM
+ * line 6 over the field).
  */
 export function partAmount(
   text: string,
@@ -40,7 +40,10 @@ export function partAmount(
   const m = r.value;
   if (compare(m, money(a.balanceMinor, cur)) > 0)
     return { ok: false, error: PAY_ZI.tooMuch(show(a.balanceMinor)) };
-  if (compare(m, money(top, cur)) > 0) return { ok: false, error: PAY_ZM.maximum(show(top)) };
+  // Above the maximum the dialog already says 07-ZM line 6 over the field, so the field's own error is 07-ZI line 5 with the maximum as its top (never the
+  // same sentence twice).
+  if (compare(m, money(top, cur)) > 0)
+    return { ok: false, error: PAY_ZI.between(show(a.minimumMinor), show(top)) };
   if (compare(m, money(a.minimumMinor, cur)) < 0)
     return { ok: false, error: PAY_ZI.atLeast(show(a.minimumMinor)) };
   if (a.wholeRupees && m.amount % 100 !== 0) return { ok: false, error: PAY_ZI.wholeRupees };

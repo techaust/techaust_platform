@@ -141,7 +141,7 @@ export function CardProof(props: {
     );
   return (
     <span className="pay-await">
-      <span className="pay-badge">
+      <span className="pay-badge pay-badge--wrap">
         <Clock size={16} />
         {CARD_ZM.proofAwaited}
       </span>

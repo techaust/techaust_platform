@@ -9,7 +9,14 @@ import {
   advanceBlockersText,
 } from "../../worker/gateway/reasons.ts";
 import stripeSettleSource from "../../worker/gateway/stripe-settle.ts?raw";
-import { advanceBlockerLine, itemReason } from "./gateway.ts";
+import {
+  advanceBlockerLine,
+  gatewayLine,
+  inrPerUsdText,
+  itemReason,
+  portalInvoiceUrl,
+  stripeFacts,
+} from "./gateway.ts";
 
 const inr = (m: number) => formatMoney(money(m, "INR"));
 const base = { linkId: "plink_X", paymentId: "pay_X", currency: "INR", method: "card" };
@@ -81,5 +88,71 @@ describe("itemReason [07-ZI S20]", () => {
     expect(itemReason({ kind: "document_not_payable", facts: null, amount_minor: 100 })).toContain(
       "(it changed)",
     );
+  });
+
+  it("M6.3: a Stripe item names Stripe and its dollars", () => {
+    expect(
+      itemReason({
+        kind: "amount_mismatch",
+        facts: { linkId: "cs_test_x", expectedMinor: 50_000 },
+        amount_minor: 49_000,
+        provider: "stripe",
+        currency: "USD",
+      }),
+    ).toBe("The amount paid ($490.00) doesn't match the link ($500.00).");
+    expect(
+      itemReason({
+        kind: "refetch_failed",
+        facts: null,
+        amount_minor: null,
+        provider: "stripe",
+        currency: null,
+      }),
+    ).toBe("Stripe couldn't be reached to confirm this payment. Try again.");
+  });
+});
+
+// M6.3 (07-ZM S13, S14; L10): Stripe's lines on the Payments panel.
+describe("a Stripe payment's lines [ADM-PAY-01]", () => {
+  it("the rate is the INR credited over the dollars, in bigint to the paisa, never a float", () => {
+    expect(inrPerUsdText(1_00_800_00, 1_200_00)).toBe("84.00");
+    // 8,412.34 rupees for 100 dollars: 84.1234, shown to the paisa, half up
+    expect(inrPerUsdText(8_412_34, 100_00)).toBe("84.12");
+    expect(inrPerUsdText(8_412_50, 100_00)).toBe("84.13");
+    // a rate a float would get wrong (0.1 + 0.2 style): 1 rupee over 3 cents
+    expect(inrPerUsdText(100, 3)).toBe("33.33");
+    expect(inrPerUsdText(100, 0)).toBeNull();
+    expect(inrPerUsdText(1.5, 3)).toBeNull();
+  });
+  it("S14's facts only for Stripe, with the fee's GST when Stripe gave it", () => {
+    const row = {
+      provider: "stripe",
+      amountMinor: 1_200_00,
+      inrReceivedMinor: 1_00_800_00,
+      gatewayFeeInrMinor: 3_024_00,
+      gatewayFeeTaxInrMinor: 461_28,
+    };
+    const facts = stripeFacts(row);
+    expect(facts).toHaveLength(2);
+    expect(facts[0]).toContain(
+      `INR credited by Stripe ${inr(1_00_800_00)} (about ₹84.00 per USD; not the GST rate)`,
+    );
+    expect(facts[1]).toContain(`Stripe fee ${inr(3_024_00)} incl. GST ${inr(461_28)} (absorbed)`);
+    expect(stripeFacts({ ...row, gatewayFeeTaxInrMinor: null })[1]).toBe(`Fee ${inr(3_024_00)} (absorbed)`);
+    expect(stripeFacts({ ...row, inrReceivedMinor: null, gatewayFeeInrMinor: null })).toEqual([]);
+    expect(stripeFacts({ ...row, provider: "razorpay" })).toEqual([]);
+  });
+  it("S14's line keeps the id when there is one, and Razorpay keeps its own", () => {
+    expect(gatewayLine("stripe", "card", "pi_X")).toContain("Stripe · card · pi_X");
+    expect(gatewayLine("stripe", "card", null)).toContain("Stripe · card");
+    expect(gatewayLine("stripe", "card", null)).not.toContain("· pi");
+    expect(gatewayLine("razorpay", "upi", "pay_X")).toBe("Razorpay · UPI · pay_X");
+  });
+  it("S13's portal link is the client's signed-in invoice page, or nothing without a portal", () => {
+    expect(portalInvoiceUrl("doc 1", "https://portal.example.test")).toBe(
+      "https://portal.example.test/invoices/doc%201",
+    );
+    expect(portalInvoiceUrl("doc", "")).toBeNull();
+    expect(portalInvoiceUrl("doc", "not a url")).toBeNull();
   });
 });

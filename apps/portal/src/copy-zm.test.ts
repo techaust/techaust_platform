@@ -59,10 +59,13 @@ describe("Pay by card's amount and return [POR-06, M6.3]", () => {
     expect(partAmount("$100", a)).toEqual({ ok: true, minor: 100_00 });
     expect(partAmount("25000", a)).toEqual({ ok: true, minor: 25_000_00 });
   });
-  it("says 07-ZI's lines 5 and 6 in dollars, and 07-ZM line 6 above the maximum", () => {
+  it("says 07-ZI's lines 5 and 6 in dollars; above the maximum line 5 up to it (07-ZM line 6 stands over the field)", () => {
     expect(partAmount("", a)).toEqual({ ok: false, error: PAY_ZI.between("$100.00", "$25,000.00") });
     expect(partAmount("99.99", a)).toEqual({ ok: false, error: PAY_ZI.atLeast("$100.00") });
-    expect(partAmount("25,000.01", a)).toEqual({ ok: false, error: PAY_ZM.maximum("$25,000.00") });
+    expect(partAmount("25,000.01", a)).toEqual({
+      ok: false,
+      error: PAY_ZI.between("$100.00", "$25,000.00"),
+    });
     expect(partAmount("30,000.01", a)).toEqual({ ok: false, error: PAY_ZI.tooMuch("$30,000.00") });
     // Below the maximum, the balance is the top, and the maximum says nothing.
     expect(partAmount("2,000.01", { ...a, balanceMinor: 2_000_00 })).toEqual({

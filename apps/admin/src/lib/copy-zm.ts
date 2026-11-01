@@ -41,8 +41,6 @@ export const CARD_ZM = {
 export const APPROVED_ZM_DRAFTS = false;
 const DRAFT = (line: string): string => (APPROVED_ZM_DRAFTS ? line : `${PLACEHOLDER_MARK} ${line}`);
 export const ZM_DRAFTS = {
-  /** "Needs review": the column naming the item's gateway (run file G2). */
-  colGateway: DRAFT("Gateway"),
   /** Settings › Gateways, the Stripe key's kind (L3: only a restricted test key is used while payments are not live). */
   keyRestrictedTest: DRAFT("Restricted test key"),
   keyRestrictedLive: DRAFT("Restricted live key. It isn't used until go-live."),
