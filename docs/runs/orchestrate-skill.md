@@ -58,10 +58,14 @@ Owner's request: docs/13 row 2026-10-31 "`/orchestrate`: a project skill …" an
 - (lead, 2026-11-01) The watcher prints a line on every Status change (the task's wording), and lines that need the main session end with ` ACTION`; `--action-only` prints only those, for a quieter Monitor.
 
 ## Proposed CLAUDE.md text
-(lead, at the end)
+1. In "In a cloud session" → "Parallel task sessions", replace the first bullet's tail "from the shared prompt in [runs/cloud-parallel-2026-10-31.md](docs/runs/cloud-parallel-2026-10-31.md)." with: "with the **`/orchestrate` skill** (`.claude/skills/orchestrate/`: choosing tasks, the shared rules and prompt templates, the watcher, the PR review checklist, merge order, the record, resume after a limit)."
+2. Replace the "Cloud sessions can't message back. The main session watches …" bullet's watcher sentence with: "The main session runs `node tools/watch-cloud.mjs --run .logs/orchestrate/run.json` in a Monitor (one line per Status change, PR READY, WAITING ON, BLOCKED/FAIL, sub-branch push `fix/<name>-*`, quiet 45 minutes; only the newest copy runs, so a re-arm by the 30-minute heartbeat never leaves an orphan; `status` prints one table, `stop` ends it)."
+3. Add a bullet: "**Pacing** (owner, 2026-11-01): a run starts right after a 5-hour reset, with at most two cloud sessions beside the PC's agents; no new agent anywhere over 85 %; after a limit stop, `/orchestrate resume` resumes the PC's agents by SendMessage and re-arms the watcher."
+(docs/14 §9 gains the skill row and runbook Part 4 points at the skill in this PR; neither is a main-session-only file.)
 
 ## Follow-ups (for 12)
-(lead)
+- Closed by this task (remove from 12 "Parallel task sessions (2026-10-31)"): "the watcher counts only task-branch pushes" (the watcher counts `fix/<name>-*`).
+- Still open: `tools/agent-slots.mjs` doesn't hold the per-session 2-agent cap or the 85 % pacing line of parallel runs (the shared rules do); Auto-fix for PRs a cloud session opened (the owner turns it on from the PR bar).
 
 ## Questions for the owner
 None so far.
