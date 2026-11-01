@@ -456,6 +456,8 @@ describe("POST /offers/:id/accept: the evidence row and its effects [ADM-PROP-08
     expect(a?.pdf_sha256).toBe(doc?.pdf_sha256);
     expect(a?.snapshot_sha256).toBe(doc?.snapshot_sha256);
     expect(a?.accepted_at).toBe(doc?.decided_at);
+    // the instant the screen writes in the client's own clock (src/components/moment.tsx) is the stored one
+    expect(body.acceptedAt).toBe(a?.accepted_at);
     expect(body.fingerprint).toBe(doc?.pdf_sha256);
     expect(doc?.viewed_at).toBe(doc?.decided_at);
     const audit = await rows<{ summary: string; actor_id: string; actor_type: string }>(
@@ -728,10 +730,12 @@ describe("POST /offers/:id/decline [ADM-PROP-10]", () => {
     // the client sees it as declined, with the reason
     const seen = (await (await view(o.id, cookie)).json()) as {
       document: { status: string };
-      decline: { reason: string; by: string };
+      decline: { reason: string; by: string; at: number };
     };
     expect(seen.document.status).toBe("declined");
     expect(seen.decline).toMatchObject({ reason: "price", by: f.a.finance.name });
+    // the decline's instant is the stored one (the screen writes it in the client's own clock)
+    expect(seen.decline.at).toBe(doc?.decided_at);
   });
   const bad: [string, unknown, string | number][] = [
     ["a missing reason", {}, 400],

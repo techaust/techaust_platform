@@ -17,7 +17,9 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 10_000 },
   reporter: [["list"]],
-  use: { baseURL: ORIGIN, trace: "retain-on-failure" },
+  // Times of day follow the browser's zone (src/lib/local-time.ts): India's clock by default, so the IST texts the specs expect hold on any
+  // machine; e2e/local-time.spec.ts sets other zones per test.
+  use: { baseURL: ORIGIN, trace: "retain-on-failure", timezoneId: "Asia/Kolkata" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     command: "node ../../scripts/dev.mjs portal",
