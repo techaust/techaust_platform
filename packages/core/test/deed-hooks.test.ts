@@ -12,10 +12,10 @@ const CALL = "recomputeStatement(";
 const HOOK = "deedDraftStatements(";
 
 /**
- * Sites that recompute without the deed hook, by `<file>#<route or function>`, each with its reason. `hookedBy`: the file whose batch appends the hook to this
- * builder's statements (it must call both the builder and `deedDraftStatements`).
+ * Sites that recompute without the deed hook, by `<file>#<route or function>`, each with its reason. `hookedBy`: every file whose batch appends the hook to
+ * this builder's statements (each must call both the builder and `deedDraftStatements`).
  */
-const NOT_HOOKED: Record<string, { why: string; hookedBy?: { file: string; builder: string } }> = {
+const NOT_HOOKED: Record<string, { why: string; hookedBy?: readonly { file: string; builder: string }[] }> = {
   "apps/admin/worker/payment-ledger.ts#/:id/credit/release": {
     why: "releasing an invoice's excess to the client's credit only lowers what its money settles; it can never complete a full payment",
   },
@@ -23,8 +23,15 @@ const NOT_HOOKED: Record<string, { why: string; hookedBy?: { file: string; build
     why: "withdrawing a confirmed payment made in error only lowers what the money settles",
   },
   "packages/db/src/issue.ts#advancePaymentStatements": {
-    why: "a builder inside advanceIssueStatements: the advance batch that runs it appends the hook after its statements",
-    hookedBy: { file: "apps/admin/worker/invoice-advance.ts", builder: "advanceIssueStatements(" },
+    why: "a builder inside advanceIssueStatements: each advance batch that runs it (the Owner's, and M6.2's automatic one for a proforma paid online) appends the hook after its statements",
+    hookedBy: [
+      { file: "apps/admin/worker/invoice-advance.ts", builder: "advanceIssueStatements(" },
+      { file: "apps/admin/worker/gateway/advance.ts", builder: "advanceIssueStatements(" },
+    ],
+  },
+  "packages/db/src/gateway.ts#recordGatewayPaymentStatements": {
+    why: "M6.2: a builder of the gateway payment batch; the confirmed batch that runs it appends the hook after its side statements (the recompute) and before ledger_result",
+    hookedBy: [{ file: "apps/admin/worker/gateway/settle.ts", builder: "recordGatewayPaymentStatements(" }],
   },
 };
 
@@ -93,10 +100,10 @@ describe("every ledger recompute appends the deed's draft statements [T11 L3, ea
       const site = all.find((s) => s.key === key);
       expect(site?.recomputes, `${key} no longer recomputes: remove it from NOT_HOOKED`).toBe(true);
       expect(site?.hooks, `${key} hooks the deed now: remove it from NOT_HOOKED`).toBe(false);
-      if (entry.hookedBy) {
-        const text = readFileSync(join(REPO, entry.hookedBy.file), "utf8");
-        expect(text, entry.hookedBy.file).toContain(entry.hookedBy.builder);
-        expect(text, entry.hookedBy.file).toContain(HOOK);
+      for (const by of entry.hookedBy ?? []) {
+        const text = readFileSync(join(REPO, by.file), "utf8");
+        expect(text, by.file).toContain(by.builder);
+        expect(text, by.file).toContain(HOOK);
       }
     }
   });
