@@ -4,6 +4,7 @@
 // (from the front's config), so these names are read at run time by name, each checked to be a string, never cast.
 import { cachedSetting } from "../settings-cache.ts";
 import { type RazorpayApi, razorpayApi } from "./razorpay.ts";
+import { type StripeApi, stripeApi, stripeStubFetch } from "./stripe.ts";
 
 /** A Worker var or secret by name: its text, or undefined when it is not set (or not a string). */
 export const envText = (env: object, name: string): string | undefined => {
@@ -18,12 +19,17 @@ export const FINANCE_GATEWAY_SECRETS = {
   paypal: ["PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET"],
 } as const;
 
-export type GatewayTransport = "razorpay" | "stub" | "unset";
+export type GatewayTransport = "api" | "stub" | "unset";
 
-/** The transport this Worker may use: "stub" only locally; anything else unknown is "unset" (503 `gateway_unavailable`). */
-export function transportOf(env: object): GatewayTransport {
+/**
+ * The transport this Worker may use for `provider` (M6.3: per provider): "stub" only locally (every gateway answers from the simulator); "api" calls each gateway's
+ * own API (staging, M6.3 on); "razorpay" (M6.2's staging value, still read) calls Razorpay's API only, so Stripe stays "unset" under it; anything else is "unset"
+ * (503 `gateway_unavailable`).
+ */
+export function transportOf(env: object, provider: "razorpay" | "stripe" = "razorpay"): GatewayTransport {
   const t = envText(env, "GATEWAY_TRANSPORT");
-  if (t === "razorpay") return "razorpay";
+  if (t === "api") return "api";
+  if (t === "razorpay" && provider === "razorpay") return "api";
   if (t === "stub" && envText(env, "ENVIRONMENT") === "local") return "stub";
   return "unset";
 }
@@ -45,9 +51,13 @@ const STUB_ID = /^(?:plink|pay)_A(\d{1,12})R([0-9a-f]{32})$/;
 const jsonResponse = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
-/** A `fetch` that answers Razorpay's four calls the way Razorpay's documentation shows them (test mode). Locally only. */
+/**
+ * A `fetch` that answers Razorpay's four calls the way Razorpay's documentation shows them (test mode), and (M6.3) Stripe's Checkout calls through
+ * `stripeStubFetch`. Locally only.
+ */
 export const stubFetch: typeof fetch = async (input, init) => {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+  if (url.hostname === "api.stripe.com") return stripeStubFetch(input, init);
   const method = init?.method ?? "GET";
   const now = Math.floor(Date.now() / 1000);
   const link = (id: string, amount: number, ref: string, status = "paid") => ({
@@ -104,9 +114,29 @@ export async function gatewayModeOf(db: D1Database): Promise<"test" | "live"> {
   return cachedSetting("gateways", row ?? undefined).razorpay.mode;
 }
 
+/** Settings › Gateways, Stripe's mode (M6.3), read through the per-isolate cache. */
+export async function stripeModeOfSettings(db: D1Database): Promise<"test" | "live"> {
+  const row = await db
+    .prepare("SELECT value, version FROM settings WHERE key = 'gateways'")
+    .first<{ value: string; version: number }>();
+  return cachedSetting("gateways", row ?? undefined).stripe.mode;
+}
+
+/** The Stripe client for this request (M6.3), or null when this Worker has no transport for Stripe (503 `gateway_unavailable`). */
+export function stripeOf(env: object, settingsMode: "test" | "live"): StripeApi | null {
+  const transport = transportOf(env, "stripe");
+  if (transport === "unset") return null;
+  return stripeApi({
+    key: envText(env, "STRIPE_SECRET_KEY"),
+    settingsMode,
+    liveFlag: envText(env, "PAYMENTS_LIVE_ALLOWED"),
+    fetch: transport === "stub" ? (i, o) => stubTransport(i, o) : (i, o) => fetch(i, o),
+  });
+}
+
 /** The Razorpay client for this request, or null when this Worker has no transport (503 `gateway_unavailable`). */
 export function razorpayOf(env: object, settingsMode: "test" | "live"): RazorpayApi | null {
-  const transport = transportOf(env);
+  const transport = transportOf(env, "razorpay");
   if (transport === "unset") return null;
   return razorpayApi({
     keyId: envText(env, "RAZORPAY_KEY_ID"),

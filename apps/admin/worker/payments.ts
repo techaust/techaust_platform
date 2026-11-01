@@ -50,7 +50,7 @@ import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { type AppEnv, actor, BAD_REQUEST, type Ctx, err, mutate, NOT_FOUND } from "./context.ts";
 import { docDownload, dropDoc, extOfMime, streamToDocs, uploadHead } from "./docs-upload.ts";
-import { GATEWAY_PAYMENT, GATEWAY_REFUND_NEEDED } from "./gateway/messages.ts";
+import { gatewayPaymentOf, refundNeededOf } from "./gateway/messages.ts";
 import { body, idParam, isUnique, param, query, refusedWith, STALE_VERSION } from "./http.ts";
 import { decodeCursor, encodeCursor } from "./keyset.ts";
 import {
@@ -260,6 +260,8 @@ export function paymentListSql(f: {
   from: boolean;
   to: boolean;
   cursor: boolean;
+  /** M6.3 (L11): card and PayPal payments with no proof yet ("Proof awaited"), through `payments_proof_awaited`. */
+  proof?: boolean;
 }): { sql: string; key: "received_on" | "recorded_at" | "rowid" } {
   const where: string[] = [];
   let at = 1;
@@ -268,7 +270,15 @@ export function paymentListSql(f: {
   let from: string;
   let order: string;
   let cursor = "";
-  if (f.client) {
+  // The partial index's own WHERE, stated as literals so it can be used (and kept as a filter on every other variant).
+  if (f.proof)
+    where.push(
+      "p.provider IN ('stripe', 'paypal') AND p.proof_r2_key IS NULL AND p.status IN ('pending_verification', 'confirmed')",
+    );
+  if (f.proof && !f.client) {
+    from = "payments p INDEXED BY payments_proof_awaited";
+    key = "received_on";
+  } else if (f.client) {
     from = "payments p INDEXED BY payments_client";
     where.push(`p.client_id = ${next()}`);
     key = "received_on";
@@ -390,6 +400,7 @@ export const payments = new Hono<AppEnv>()
       from: q.from !== undefined,
       to: q.to !== undefined,
       cursor: q.after !== undefined,
+      proof: q.proof === "awaited",
     });
     let cursorBinds: unknown[] = [];
     if (q.after !== undefined) {
@@ -719,7 +730,8 @@ export const payments = new Hono<AppEnv>()
     if (row.client_gone === 1) return err(c, CLIENT_GONE, 409);
     const decision = f.decision === "confirm" ? ("confirmed" as const) : ("rejected" as const);
     // M6.2 (L7): a gateway payment is never rejected here: the money is at Razorpay and goes back by a refund (M6.5).
-    if (decision === "rejected" && row.provider !== "manual") return err(c, GATEWAY_REFUND_NEEDED, 409);
+    if (decision === "rejected" && row.provider !== "manual")
+      return err(c, refundNeededOf(row.provider), 409);
     if (decision === "rejected" && f.note === undefined) return err(c, REJECT_REASON_REQUIRED, 400);
     const requested = f.allocations ?? parseRequested(row.requested_allocations);
     let rows: AllocationRow[] = [];
@@ -856,7 +868,7 @@ export const payments = new Hono<AppEnv>()
     if (!row) return err(c, NOT_FOUND, 404);
     if (row.status !== "confirmed") return err(c, PAYMENT_NOT_CONFIRMED, 409);
     // M6.2 (L7): a gateway payment is never withdrawn (refunds are M6.5).
-    if (row.provider !== "manual") return err(c, GATEWAY_PAYMENT, 409);
+    if (row.provider !== "manual") return err(c, gatewayPaymentOf(row.provider), 409);
     // L23.2: a payment that stands for an M5.2 advance receipt has a tax invoice issued on it; a credit note is the correction.
     if (row.advance_receipt_id !== null) return err(c, PAYMENT_ADVANCE_BACKED, 409);
     if (row.client_gone === 1) return err(c, CLIENT_GONE, 409);

@@ -18,6 +18,15 @@ export const bellNeedsReview = (reason: string) => `A payment needs review: ${re
 export const BELL_SIGNATURES =
   "Razorpay webhook signatures failed 5 times in an hour. Check the webhook secret.";
 
+// ---- M6.3 (07-ZM S17, staff words, lead under the owner's delegation) -------------------------------------------------------------------------------------------
+
+/** S17: "{client} paid {amount} by card for {number}." (USD, en-US). */
+export const bellPaidByCard = (client: string, amountMinor: number, number: string | null) =>
+  `${client} paid ${amountText(amountMinor, "USD")} by card for ${number ?? "an invoice"}.`;
+/** S17: the Stripe signature bell (the jobs Worker writes it; the words are kept here too, and a test holds the two equal). */
+export const BELL_SIGNATURES_STRIPE =
+  "Stripe webhook signatures failed 5 times in an hour. Check the webhook secret.";
+
 // ---- S20: review reasons ----------------------------------------------------------------------------------------------------------------------------------
 // In `reasons.ts` (pure), so the admin SPA's "Needs review" list reads the same words; re-exported here for the Worker.
 export {
@@ -62,6 +71,46 @@ export const GATEWAY_PAYMENT = e(
   "A Razorpay payment can't be withdrawn here. It needs a refund through Razorpay.",
 );
 export const NOT_RETRYABLE = e("not_retryable", "This item can't be tried again. Resolve it instead.");
+
+// ---- M6.3 S19: the API messages of the new codes (builder's drafts, 2026-11-02, marked for the lead in 07-ZM) -----------------------------------------------------
+
+/** 409 `payment_processing`: a gateway payment on the document still waits (core `payment_pending`), or Stripe's session was found complete. */
+export const PAYMENT_PROCESSING = e(
+  "payment_processing",
+  "A payment on this document is still being confirmed. Wait for it before taking another.",
+);
+/** 400 `amount_above_maximum` (L9): more than one online payment may be. */
+export const amountAboveMaximum = (maximumMinor: number, currency: "INR" | "USD"): ApiError =>
+  e(
+    "amount_above_maximum",
+    `Online payments are limited to ${amountText(maximumMinor, currency)} at a time.`,
+  );
+/** 409 `not_payable_online` with reason `use_portal` (L7): no staff-made link for a card payment. */
+export const USE_PORTAL = e(
+  "not_payable_online",
+  "Card payments are made by the client from the portal. Copy the portal link and send it to them instead.",
+);
+/** 502 `gateway_error` for Stripe (the Razorpay line names Razorpay). */
+export const STRIPE_GATEWAY_ERROR = e("gateway_error", "Stripe couldn't be reached. Try again.");
+/** 409 `stripe_permission`: Stripe refused the re-fetch for the restricted key's permissions (401 or 403). */
+export const STRIPE_PERMISSION = e(
+  "stripe_permission",
+  "Stripe refused the request for our key's permissions. Check the restricted key in Stripe, then try again.",
+);
+/** The verify and withdraw refusals for a Stripe payment (M6.2's lines name Razorpay). */
+export const STRIPE_REFUND_NEEDED = e(
+  "gateway_refund_needed",
+  "A Stripe payment can't be rejected here. It needs a refund through Stripe.",
+);
+export const STRIPE_GATEWAY_PAYMENT = e(
+  "gateway_payment",
+  "A Stripe payment can't be withdrawn here. It needs a refund through Stripe.",
+);
+/** The verify refusal and the withdraw refusal by the payment's gateway. */
+export const refundNeededOf = (provider: string): ApiError =>
+  provider === "stripe" ? STRIPE_REFUND_NEEDED : GATEWAY_REFUND_NEEDED;
+export const gatewayPaymentOf = (provider: string): ApiError =>
+  provider === "stripe" ? STRIPE_GATEWAY_PAYMENT : GATEWAY_PAYMENT;
 /** Early check 2, finding 1: the proforma changed while its tax invoice was being issued (the admin "Try again" makes one try only). */
 export const ADVANCE_CHANGED = e(
   "advance_changed",

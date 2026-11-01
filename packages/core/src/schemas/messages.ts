@@ -292,11 +292,26 @@ export const gatewayEventMessage = z.object({ kind: z.literal("gateway.event"), 
 export const gatewayAdvanceMessage = z.object({ kind: z.literal("gateway.advance"), paymentId: id64 });
 /** `gateway.sweep`: re-enqueue up to 20 events stuck in `received` for 15 minutes (fewer than 10 attempts). `asOf` is the cron's scheduled time (UTC ms). */
 export const gatewaySweepMessage = z.object({ kind: z.literal("gateway.sweep"), asOf: z.int().min(0) });
+/**
+ * M6.3 (L13, L14; generic): `gateway.refresh`: re-fetch one checkout past its expiry from its gateway (the finance Worker's `refreshCheckout`). The hourly sweep
+ * queues at most 10; its id only.
+ */
+export const gatewayRefreshMessage = z.object({ kind: z.literal("gateway.refresh"), checkoutId: id64 });
 export type GatewayEventMessage = z.infer<typeof gatewayEventMessage>;
 export type GatewayAdvanceMessage = z.infer<typeof gatewayAdvanceMessage>;
 export type GatewaySweepMessage = z.infer<typeof gatewaySweepMessage>;
-export type GatewayMessage = GatewayEventMessage | GatewayAdvanceMessage | GatewaySweepMessage;
-export const GATEWAY_KINDS = ["gateway.event", "gateway.advance", "gateway.sweep"] as const;
+export type GatewayRefreshMessage = z.infer<typeof gatewayRefreshMessage>;
+export type GatewayMessage =
+  | GatewayEventMessage
+  | GatewayAdvanceMessage
+  | GatewaySweepMessage
+  | GatewayRefreshMessage;
+export const GATEWAY_KINDS = [
+  "gateway.event",
+  "gateway.advance",
+  "gateway.sweep",
+  "gateway.refresh",
+] as const;
 /** True for a body of the M6.2 gateway family (valid or not), so a malformed one can never become a lead (the consumer routes these before the lead fall-through). */
 export const isGatewayKind = (body: unknown): body is { kind: GatewayMessage["kind"] } =>
   typeof body === "object" &&

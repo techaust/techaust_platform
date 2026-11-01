@@ -3,8 +3,10 @@
 // can say whether they are set; the webhook secret is the jobs Worker's, so "Last verified webhook" stands for it). Every change is one batch through `mutate`.
 import { REVIEW_RESOLUTIONS } from "@techaust/core/online-pay";
 import { GATEWAYS } from "@techaust/core/settings";
+import { stripeKeyModeOf } from "@techaust/core/stripe";
 import {
   CHECKOUT_BY_ID_SQL,
+  CHECKOUT_BY_LINK_SQL,
   checkoutEndStatement,
   LAST_VERIFIED_EVENT_SQL,
   OPEN_REVIEW_COUNT_SQL,
@@ -18,13 +20,21 @@ import { type AppEnv, actor, type Ctx, err, mutate, NOT_FOUND, requestInfo } fro
 import { body, idParam, param, STALE_VERSION } from "../http.ts";
 import { cachedSetting } from "../settings-cache.ts";
 import { issueGatewayAdvance } from "./advance.ts";
-import { envText, FINANCE_GATEWAY_SECRETS, gatewayModeOf, razorpayOf } from "./config.ts";
+import {
+  envText,
+  FINANCE_GATEWAY_SECRETS,
+  gatewayModeOf,
+  razorpayOf,
+  stripeModeOfSettings,
+  stripeOf,
+} from "./config.ts";
 import { sendNext, staleCanceller } from "./events.ts";
 import { closeByRealState, type MakeLinkResult, makeLink, refreshCheckout } from "./links.ts";
 import {
   ADVANCE_CHANGED,
   AMOUNT_NOT_WHOLE_RUPEE,
   amountAboveBalance,
+  amountAboveMaximum,
   amountBelowMinimum,
   GATEWAY_ERROR,
   GATEWAY_UNAVAILABLE,
@@ -34,12 +44,70 @@ import {
   NO_PAYMENT_LISTED,
   NOT_PAYABLE_ONLINE,
   NOT_RETRYABLE,
+  PAYMENT_PROCESSING,
   RESOLUTION_NOT_ALLOWED,
   REVIEW_RESOLVED,
+  STRIPE_GATEWAY_ERROR,
   TOO_MANY_LINKS,
+  USE_PORTAL,
 } from "./messages.ts";
 import type { CheckoutRow } from "./settle.ts";
 import { settlePayment } from "./settle.ts";
+import { settleStripe } from "./stripe-settle.ts";
+
+/** The kind of `STRIPE_SECRET_KEY` (M6.3, L3) for Settings › Gateways: a restricted test or live key, another key the client refuses, or none. */
+const stripeKeyKind = (
+  key: string | undefined,
+): "restricted_test" | "restricted_live" | "refused" | "missing" =>
+  !key
+    ? "missing"
+    : stripeKeyModeOf(key) === "test"
+      ? "restricted_test"
+      : stripeKeyModeOf(key) === "live"
+        ? "restricted_live"
+        : "refused";
+
+/** M6.3: "Cancel" on a Stripe session: expired at Stripe first; Stripe refusing (complete or expired there) is settled by the session's real state. */
+async function cancelStripe(c: Ctx, co: CheckoutRow, documentId: string): Promise<Response> {
+  const db = c.env.DB;
+  const mode = await stripeModeOfSettings(db);
+  const api = stripeOf(c.env, mode);
+  if (!api) return err(c, GATEWAY_UNAVAILABLE, 503);
+  const now = Date.now();
+  const x = await api.expireSession(co.provider_link_id as string);
+  if (!x.ok) {
+    if (x.code === "live_not_allowed") return err(c, LIVE_NOT_ALLOWED, 503);
+    if (x.code === "unconfigured") return err(c, GATEWAY_UNAVAILABLE, 503);
+    if (x.code !== "refused") return err(c, STRIPE_GATEWAY_ERROR, 502);
+    await settleStripe(c.env, {
+      api,
+      checkout: co,
+      cause: { kind: "refresh" },
+      now,
+      env: envText(c.env, "ENVIRONMENT") ?? "",
+      expectedLivemode: mode === "live" && envText(c.env, "PAYMENTS_LIVE_ALLOWED") === "true",
+    });
+    const back = await db.prepare(CHECKOUT_BY_ID_SQL).bind(co.id).first<CheckoutRow>();
+    if (back?.status === "live" || back?.status === "stale") return err(c, STRIPE_GATEWAY_ERROR, 502);
+    if (back?.status === "paid") return err(c, LINK_NOT_LIVE, 409);
+    await mutate(c, {
+      action: "payment.link_cancel",
+      entityType: "checkout_session",
+      entityId: co.id,
+      summary: { checkoutId: co.id, documentId, endedAtStripe: true },
+    });
+    return c.json({ ok: true, status: "ended" });
+  }
+  const done = await mutate(c, {
+    main: checkoutEndStatement(db, { id: co.id, status: "cancelled", now }),
+    action: "payment.link_cancel",
+    entityType: "checkout_session",
+    entityId: co.id,
+    summary: { checkoutId: co.id, documentId },
+  });
+  if (!done) return err(c, LINK_NOT_LIVE, 409);
+  return c.json({ ok: true, status: "cancelled" });
+}
 
 export const linkBody = z.strictObject({
   amountMinor: z.int().check(z.gte(1)),
@@ -64,7 +132,15 @@ export function linkRefusal(c: Ctx, r: Extract<MakeLinkResult, { ok: false }>): 
     case "amount_not_whole_rupee":
       return err(c, AMOUNT_NOT_WHOLE_RUPEE, 400);
     case "not_payable_online":
+      // M6.3 (L7): a USD document's card payment is the client's, from the portal.
+      if (r.reason === "use_portal") return err(c, USE_PORTAL, 409, { reason: "use_portal" });
       return err(c, NOT_PAYABLE_ONLINE, 409, { reason: r.reason ?? "changed" });
+    case "payment_processing":
+      return err(c, PAYMENT_PROCESSING, 409);
+    case "amount_above_maximum":
+      return err(c, amountAboveMaximum(r.maximumMinor ?? 0, "USD"), 400, {
+        maximumMinor: r.maximumMinor ?? 0,
+      });
     case "link_in_progress":
       return err(c, LINK_IN_PROGRESS, 409);
     case "too_many_links":
@@ -99,7 +175,7 @@ export const invoicePaymentLinks = new Hono<AppEnv>()
     });
     if (!r.ok) return linkRefusal(c, r);
     return c.json(
-      { ok: true, checkoutId: r.checkoutId, shortUrl: r.shortUrl, expiresAt: r.expiresAt, reused: r.reused },
+      { ok: true, checkoutId: r.checkoutId, shortUrl: r.url, expiresAt: r.expiresAt, reused: r.reused },
       r.reused ? 200 : 201,
     );
   })
@@ -111,6 +187,8 @@ export const invoicePaymentLinks = new Hono<AppEnv>()
     if (!co || co.document_id !== id) return err(c, NOT_FOUND, 404);
     if ((co.status !== "live" && co.status !== "stale") || !co.provider_link_id)
       return err(c, LINK_NOT_LIVE, 409);
+    // M6.3: a Stripe session is expired at Stripe first; a refusal (complete or expired there) is settled by its real state.
+    if (co.provider === "stripe") return cancelStripe(c, co, id);
     const api = razorpayOf(c.env, await gatewayModeOf(db));
     if (!api) return err(c, GATEWAY_UNAVAILABLE, 503);
     // Razorpay first, so a link we call cancelled can never still take money.
@@ -217,6 +295,7 @@ export const gatewayPayments = new Hono<AppEnv>()
     const item = await db.prepare(REVIEW_ITEM_READ_SQL).bind(id).first<{
       status: string;
       kind: string;
+      provider: string;
       payment_id: string | null;
       facts: string | null;
     }>();
@@ -224,6 +303,8 @@ export const gatewayPayments = new Hono<AppEnv>()
     if (item.status !== "open") return err(c, REVIEW_RESOLVED, 409);
     // A pending payment waiting for its tax invoice: the automatic issue again, one try (early check 2, finding 1). Its own batch resolves the payment's open
     // items and audits the act (finding 12: no second resolve here). A proforma changed meanwhile: 409, the Owner presses again.
+    // M6.3 (Q1 A): a Stripe proforma's payment has no automatic tax invoice; the Owner issues it with the day's rate ("Confirm by issuing").
+    if (item.provider === "stripe" && item.kind === "advance_blocked") return err(c, NOT_RETRYABLE, 409);
     if (item.payment_id && (item.kind === "advance_blocked" || item.kind === "dead_letter")) {
       const r = await issueGatewayAdvance(c.env, item.payment_id);
       if (r.result === "retry") return err(c, ADVANCE_CHANGED, 409);
@@ -254,14 +335,33 @@ export const gatewayPayments = new Hono<AppEnv>()
       linkId = null;
     }
     if (!linkId) return err(c, NOT_RETRYABLE, 409);
-    const api = razorpayOf(c.env, await gatewayModeOf(db));
-    if (!api) return err(c, GATEWAY_UNAVAILABLE, 503);
     const now = Date.now();
-    const r = await settlePayment(
-      c.env,
-      { api, linkId, paymentId: null, cause: { kind: "refresh" }, now },
-      staleCanceller(c.env, api, now),
-    );
+    let r: Awaited<ReturnType<typeof settlePayment>>;
+    if (item.provider === "stripe") {
+      // M6.3: Stripe's item names its session; with no checkout of ours for it, there is nothing to re-fetch against (L5: metadata never moves money).
+      const co = await db.prepare(CHECKOUT_BY_LINK_SQL).bind("stripe", linkId).first<CheckoutRow>();
+      if (!co) return err(c, NOT_RETRYABLE, 409);
+      const mode = await stripeModeOfSettings(db);
+      const api = stripeOf(c.env, mode);
+      if (!api) return err(c, GATEWAY_UNAVAILABLE, 503);
+      r = await settleStripe(c.env, {
+        api,
+        checkout: co,
+        cause: { kind: "refresh" },
+        now,
+        env: envText(c.env, "ENVIRONMENT") ?? "",
+        expectedLivemode: mode === "live" && envText(c.env, "PAYMENTS_LIVE_ALLOWED") === "true",
+      });
+      if (r.result === "retry") return err(c, STRIPE_GATEWAY_ERROR, 502);
+    } else {
+      const api = razorpayOf(c.env, await gatewayModeOf(db));
+      if (!api) return err(c, GATEWAY_UNAVAILABLE, 503);
+      r = await settlePayment(
+        c.env,
+        { api, linkId, paymentId: null, cause: { kind: "refresh" }, now },
+        staleCanceller(c.env, api, now),
+      );
+    }
     // A proforma's payment recorded (or found) here still needs its tax invoice (early check 2, finding 2).
     await sendNext(c.env, r.next);
     if (r.result === "processed" || r.result === "duplicate") {
@@ -281,9 +381,11 @@ export const gatewayPayments = new Hono<AppEnv>()
   })
   .get("/gateways", async (c) => {
     const db = c.env.DB;
-    const [modeRow, last] = await db.batch([
+    // M6.3 ("What B2 must not forget" 8): the last verified webhook per gateway (Razorpay, Stripe).
+    const [modeRow, last, lastStripe] = await db.batch([
       db.prepare("SELECT value, version FROM settings WHERE key = 'gateways'"),
       db.prepare(LAST_VERIFIED_EVENT_SQL).bind("razorpay"),
+      db.prepare(LAST_VERIFIED_EVENT_SQL).bind("stripe"),
     ]);
     const modes = cachedSetting(
       "gateways",
@@ -293,12 +395,19 @@ export const gatewayPayments = new Hono<AppEnv>()
       const missing = FINANCE_GATEWAY_SECRETS[g].filter((n) => !envText(c.env, n));
       return { configured: missing.length === 0, missing };
     };
-    const lastAt = (last?.results[0] as { at: number | null } | undefined)?.at ?? null;
+    const at = (r: D1Result | undefined) => (r?.results[0] as { at: number | null } | undefined)?.at ?? null;
+    const lastAt: Record<string, number | null> = { razorpay: at(last), stripe: at(lastStripe) };
     return c.json({
       gateways: Object.fromEntries(
         GATEWAYS.map((g) => [
           g,
-          { mode: modes[g].mode, keys: keys(g), lastVerifiedWebhookAt: g === "razorpay" ? lastAt : null },
+          {
+            mode: modes[g].mode,
+            keys: keys(g),
+            lastVerifiedWebhookAt: lastAt[g] ?? null,
+            // M6.3 (L3): the Stripe key is a restricted test key (`rk_test_`); an `sk_` key is refused before any call, so the screen says so.
+            ...(g === "stripe" ? { keyKind: stripeKeyKind(envText(c.env, "STRIPE_SECRET_KEY")) } : {}),
+          },
         ]),
       ),
       liveAllowed: envText(c.env, "PAYMENTS_LIVE_ALLOWED") === "true",

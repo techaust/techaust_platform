@@ -18,6 +18,7 @@ import {
   formMeta,
   gatewayAdvanceMessage,
   gatewayEventMessage,
+  gatewayRefreshMessage,
   gatewaySweepMessage,
   invoiceSendMessage,
   type LeadMessage,
@@ -162,14 +163,15 @@ export function warmBillingMessages(): number {
   }
 }
 
-/** The M6.2 gateway messages of the leads queue, one made-up parse each (the jobs Worker calls it from its top level in stage B2). Returns 3. */
+/** The M6.2 gateway messages of the leads queue (and M6.3's `gateway.refresh`), one made-up parse each (the jobs Worker calls it from its top level). Returns 4. */
 export function warmGatewayMessages(): number {
   const id = "00000000-0000-7000-8000-000000000000";
   try {
     return (
       ok(gatewayEventMessage.safeParse({ kind: "gateway.event", eventId: id })) +
       ok(gatewayAdvanceMessage.safeParse({ kind: "gateway.advance", paymentId: `rzp_${id.slice(0, 14)}` })) +
-      ok(gatewaySweepMessage.safeParse({ kind: "gateway.sweep", asOf: 1 }))
+      ok(gatewaySweepMessage.safeParse({ kind: "gateway.sweep", asOf: 1 })) +
+      ok(gatewayRefreshMessage.safeParse({ kind: "gateway.refresh", checkoutId: id }))
     );
   } catch {
     return 0; // never stop a Worker from starting

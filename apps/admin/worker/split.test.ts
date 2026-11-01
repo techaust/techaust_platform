@@ -443,6 +443,8 @@ describe("the finance app called directly (M6.1 stage A)", () => {
       "constructor",
       "issueGatewayAdvance",
       "processEvent",
+      // M6.3 (L13, L14): the sweep's generic refresh.
+      "refreshCheckout",
     ]);
     expect(Object.getOwnPropertyNames(financeModule.PortalPayments.prototype).sort()).toEqual([
       "constructor",

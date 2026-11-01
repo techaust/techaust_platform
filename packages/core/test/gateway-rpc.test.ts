@@ -17,6 +17,7 @@ import {
   GATEWAY_KINDS,
   gatewayAdvanceMessage,
   gatewayEventMessage,
+  gatewayRefreshMessage,
   gatewaySweepMessage,
   isBillingKind,
   isGatewayKind,
@@ -88,6 +89,8 @@ describe("PortalPayments arguments and answers", () => {
 
   it("createLink arguments: ids, a positive safe amount, exactly one of contact or token, a known return page", () => {
     expect(isCreateLinkArgs(args)).toBe(true);
+    // M6.3: Stripe is a known gateway now.
+    expect(isCreateLinkArgs({ ...args, provider: "stripe" })).toBe(true);
     expect(
       isCreateLinkArgs({ ...args, contactId: null, tokenHash: "h".repeat(64), returnTo: "pay_return" }),
     ).toBe(true);
@@ -99,7 +102,7 @@ describe("PortalPayments arguments and answers", () => {
       { ...args, returnTo: "https://evil.test" },
       { ...args, documentId: "" },
       { ...args, contactId: 5 },
-      { ...args, provider: "stripe" },
+      { ...args, provider: "paypal" },
       { ...args, provider: undefined },
     ])
       expect(isCreateLinkArgs(bad), JSON.stringify(bad)).toBe(false);
@@ -107,16 +110,24 @@ describe("PortalPayments arguments and answers", () => {
   });
 
   it("createLink answers: a link, or a known error with its numbers", () => {
+    expect(isCreateLinkResult({ ok: true, url: "https://rzp.io/i/x", expiresAt: 1, reused: false })).toBe(
+      true,
+    );
+    // M6.3: M6.2's `shortUrl` is renamed `url`; the old name alone is refused.
     expect(
       isCreateLinkResult({ ok: true, shortUrl: "https://rzp.io/i/x", expiresAt: 1, reused: false }),
-    ).toBe(true);
+    ).toBe(false);
+    expect(isCreateLinkResult({ ok: false, error: "amount_above_maximum", maximumMinor: 2_500_000 })).toBe(
+      true,
+    );
+    expect(isCreateLinkResult({ ok: false, error: "payment_processing" })).toBe(true);
     expect(isCreateLinkResult({ ok: false, error: "amount_below_minimum", minimumMinor: 1_000_000 })).toBe(
       true,
     );
     expect(isCreateLinkResult({ ok: false, error: "not_payable_online", reason: "void" })).toBe(true);
     for (const bad of [
-      { ok: true, shortUrl: "x", expiresAt: 1.5, reused: false },
-      { ok: true, shortUrl: "x", expiresAt: 1 },
+      { ok: true, url: "x", expiresAt: 1.5, reused: false },
+      { ok: true, url: "x", expiresAt: 1 },
       { ok: false, error: "teapot" },
       { ok: false, error: "amount_above_balance", balanceMinor: -1 },
       { ok: false, error: "not_payable_online", reason: 3 },
@@ -148,8 +159,14 @@ describe("gateway queue messages (L9: the leads queue)", () => {
       expect(isGatewayKind(bad)).toBe(false);
   });
 
-  it("the warm-up parses one sample of each of the three", () => {
-    expect(warmGatewayMessages()).toBe(3);
+  it("the warm-up parses one sample of each of the four", () => {
+    expect(warmGatewayMessages()).toBe(4);
+  });
+
+  it("M6.3: gateway.refresh carries one checkout id", () => {
+    expect(gatewayRefreshMessage.safeParse({ kind: "gateway.refresh", checkoutId: "c1" }).success).toBe(true);
+    expect(gatewayRefreshMessage.safeParse({ kind: "gateway.refresh", checkoutId: "" }).success).toBe(false);
+    expect(GATEWAY_KINDS).toContain("gateway.refresh");
   });
 });
 
@@ -168,7 +185,15 @@ describe("isGatewayLinkUrl: the portal never sends a browser off the gateway's o
       `https://rzp.io/${"a".repeat(5000)}`,
     ])
       expect(isGatewayLinkUrl("razorpay", bad), String(bad).slice(0, 40)).toBe(false);
-    expect(isGatewayLinkUrl("stripe" as never, "https://rzp.io/i/abc")).toBe(false);
+    expect(isGatewayLinkUrl("stripe", "https://rzp.io/i/abc")).toBe(false);
+    // M6.3: Stripe's Checkout host only (run file E).
+    expect(isGatewayLinkUrl("stripe", "https://checkout.stripe.com/c/pay/cs_test_a1#fid")).toBe(true);
+    for (const bad of [
+      "https://stripe.com/x",
+      "https://checkout.stripe.com.evil.example/x",
+      "http://checkout.stripe.com/x",
+    ])
+      expect(isGatewayLinkUrl("stripe", bad), bad).toBe(false);
     expect([...GATEWAY_LINK_HOSTS.razorpay]).toEqual(["rzp.io", "razorpay.com"]);
     expect(RAZORPAY_LINK_HOSTS).toBe(GATEWAY_LINK_HOSTS.razorpay);
   });

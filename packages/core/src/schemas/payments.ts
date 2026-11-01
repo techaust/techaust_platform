@@ -132,6 +132,11 @@ export const paymentsListQuery = z.strictObject({
   client: z.optional(ref),
   from: z.optional(isoDate),
   to: z.optional(isoDate),
+  /**
+   * M6.3 (L11, ADM-INV-17): `awaited`: card and PayPal payments, pending or confirmed, with no proof attached yet (Stripe's payment advice, the bank's e-FIRA or FIRC:
+   * Settled by the lead on the safest reading, 2026-10-30 (08-C RB-05)), through the partial index `payments_proof_awaited`.
+   */
+  proof: z.optional(z.enum(["awaited"])),
 });
 
 /** Parses one made-up sample of each body at start-up (the warm-up rule of `warm.ts`); returns how many parsed, so a test notices a sample that went stale. */

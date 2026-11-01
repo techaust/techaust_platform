@@ -8,12 +8,10 @@
 export const isRpcId = (v: unknown): v is string => typeof v === "string" && v.length >= 1 && v.length <= 64;
 
 /**
- * The gateways the entrypoints know (lead, 2026-11-01, M6.3/M6.4 briefs session: generic names, so M6.3 and M6.4 extend instead of copying). M6.2 implements
- * Razorpay only; Stripe and PayPal join this list in their own milestones.
+ * The gateways the entrypoints know (lead, 2026-11-01, M6.3/M6.4 briefs session: generic names, so M6.3 and M6.4 extend instead of copying). M6.2 Razorpay; M6.3
+ * Stripe (B2, together with the finance Worker's Stripe branch of `createLink`); PayPal joins in M6.4.
  */
-// M6.3 B1 (builder, 2026-11-01): Stripe joins this list in B2, together with the finance Worker's Stripe branch of `createLink`, so the entrypoint's guard
-// (`isCreateLinkArgs`) never lets a `stripe` call reach code that only makes Razorpay links.
-export const RPC_GATEWAYS = ["razorpay"] as const;
+export const RPC_GATEWAYS = ["razorpay", "stripe"] as const;
 export type RpcGateway = (typeof RPC_GATEWAYS)[number];
 export const isRpcGateway = (v: unknown): v is RpcGateway => (RPC_GATEWAYS as readonly unknown[]).includes(v);
 
@@ -44,6 +42,11 @@ export interface GatewayEventsApi {
   processEvent(args: { eventId: string }): Promise<ProcessEventResult>;
   /** `lastTry`: the message's last try (the jobs consumer's second delivery): a proforma changed again is `blocked`, never `retry`. */
   issueGatewayAdvance(args: { paymentId: string; lastTry?: boolean }): Promise<IssueAdvanceResult>;
+  /**
+   * M6.3 (L13, L14): one checkout's status re-fetched from its gateway and processed as its webhook would be (source `refresh`), for the hourly sweep's
+   * `gateway.refresh {checkoutId}`. Only the gateway's word ends a row, never our clock (L6).
+   */
+  refreshCheckout(args: { checkoutId: string }): Promise<RefreshResult>;
 }
 
 const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
@@ -103,8 +106,12 @@ export const CREATE_LINK_ERRORS = [
 ] as const;
 export type CreateLinkError = (typeof CREATE_LINK_ERRORS)[number];
 
+/**
+ * M6.3: `url` (M6.2's `shortUrl`, renamed) is the gateway's hosted page: a Razorpay short link, or a Stripe Checkout URL (up to 5000 characters). The portal
+ * checks it against the provider's own hosts (`isGatewayLinkUrl`) before the browser leaves.
+ */
 export type CreateLinkResult =
-  | { readonly ok: true; readonly shortUrl: string; readonly expiresAt: number; readonly reused: boolean }
+  | { readonly ok: true; readonly url: string; readonly expiresAt: number; readonly reused: boolean }
   | {
       readonly ok: false;
       readonly error: CreateLinkError;
@@ -137,7 +144,7 @@ export function isCreateLinkResult(v: unknown): v is CreateLinkResult {
   if (!isObj(v)) return false;
   if (v.ok === true)
     return (
-      typeof v.shortUrl === "string" &&
+      typeof v.url === "string" &&
       typeof v.expiresAt === "number" &&
       Number.isSafeInteger(v.expiresAt) &&
       typeof v.reused === "boolean"

@@ -11,21 +11,22 @@ export type ReasonFacts = {
   /** `document_not_payable`: core `payableOnline`'s reason code (or "changed"); shown in words. */
   reason?: string | null;
   blocker?: string | null;
+  /** M6.3: the gateway the item is about (its name in the line; Razorpay when missing) and the money's currency (INR when missing). */
+  provider?: string | null;
+  currency?: "INR" | "USD" | null;
 };
 
-const money_ = (m: number | null | undefined) => (m == null ? "the amount" : formatMoney(money(m, "INR")));
+const money_ = (m: number | null | undefined, currency: "INR" | "USD" | null | undefined) =>
+  m == null ? "the amount" : formatMoney(money(m, currency === "USD" ? "USD" : "INR"));
+/** The gateway's name in a line (M6.3): Stripe or Razorpay. */
+const gatewayName = (provider: string | null | undefined) => (provider === "stripe" ? "Stripe" : "Razorpay");
 
 /**
  * `document_not_payable`'s `{reason}` in words (designer's draft, 2026-11-01, for the lead): core `NOT_PAYABLE_REASONS` and the race fallback "changed". An
- * unknown code reads as "it changed", never as the code.
+ * unknown code reads as "it changed", never as the code. M6.3 B2 (builder's drafts, marked for the lead in 07-ZM S19): the four reasons core gained for Stripe,
+ * and `use_portal` (L7: no staff link for a card payment).
  */
-// M6.3 B1 (builder, 2026-11-01): the four reasons core gained for Stripe (`client_domestic`, `not_usd`, `above_gateway_maximum`, `payment_pending`) are worded in
-// B2 with S19 (the designer's drafts, for the lead); until then they read as "it changed", like any code not listed here.
-type WordedReason = Exclude<
-  NotPayableReason,
-  "client_domestic" | "not_usd" | "above_gateway_maximum" | "payment_pending"
->;
-export const NOT_PAYABLE_WORDS: Record<WordedReason | "changed", string> = {
+export const NOT_PAYABLE_WORDS: Record<NotPayableReason | "changed" | "use_portal", string> = {
   type_not_payable: "this kind of document isn't paid online",
   not_inr: "it isn't in rupees",
   client_overseas: "the client is outside India",
@@ -36,6 +37,11 @@ export const NOT_PAYABLE_WORDS: Record<WordedReason | "changed", string> = {
   nothing_due: "nothing was due on it",
   below_gateway_minimum: "less than ₹1 was due on it",
   target_not_whole_unit: "its balance isn't in whole rupees",
+  client_domestic: "the client is in India",
+  not_usd: "it isn't in US dollars",
+  above_gateway_maximum: "even the smallest payment allowed is above the card payment limit",
+  payment_pending: "a payment on it is still waiting to be confirmed",
+  use_portal: "card payments are made by the client from the portal",
   changed: "it changed",
 };
 export const notPayableWords = (code: string | null | undefined): string =>
@@ -61,6 +67,9 @@ export const ADVANCE_BLOCKER_WORDS = {
   advance_date_invalid: "the payment's date is before the proforma or after today",
   tax_errors: "the tax on the payment couldn't be worked out",
   freeze_refused: "the proforma changed while the tax invoice was being issued",
+  // M6.3 S16 (lead under delegation, 07-ZM): a USD proforma paid by card waits for the Owner, who issues its tax invoice with the RBI or FBIL rate of the day the
+  // money arrived (owner, 2026-11-01, Q1 A; Researched 2026-10-28, Rule 34 CGST Rules (08-C RA-21)).
+  fx_rate_needed: "enter the exchange rate of the day the money arrived",
 } as const;
 export type AdvanceBlockerCode = keyof typeof ADVANCE_BLOCKER_WORDS;
 /** An invoice issue check (Settings, the client's details) that failed, where its own line isn't at hand. */
@@ -84,11 +93,25 @@ export const advanceBlockersText = (codes: readonly string[]): string | null => 
 export const NO_PAYMENT_LISTED_LINE =
   "Razorpay shows the link as paid but lists no payment yet. Try again in a few minutes.";
 
-/** One line per review kind (07-ZI S20; the five the designer drafts are drafted here in the same style). */
+/**
+ * M6.3 S19 (builder's draft, 2026-11-02, marked for the lead in 07-ZM): `not_export_receipt`, a USD card payment whose card was issued in India (or whose country
+ * Stripe did not give) is not an export receipt (Settled by the lead on the safest reading, 2026-11-02 (08-C RA-38)).
+ */
+export const NOT_EXPORT_RECEIPT_LINE =
+  "The card was issued in India (or Stripe didn't say where), so this isn't money received from abroad. Check it with the client before deciding.";
+/** M6.3 S19 (builder's draft for the lead): a `refetch_failed` item whose re-fetch Stripe refused for the key's permissions (`facts.reason: "stripe_permission"`). */
+export const STRIPE_PERMISSION_LINE =
+  "Stripe refused to show this payment to our key. Check the restricted key's permissions, then try again.";
+
+/** One line per review kind (07-ZI S20; the five the designer drafts are drafted here in the same style). M6.3: the gateway's name and the currency by the item. */
 export function reviewReason(kind: string, f: ReasonFacts = {}): string {
+  const gw = gatewayName(f.provider);
+  const m = (v: number | null | undefined) => money_(v, f.currency);
   switch (kind) {
+    case "not_export_receipt":
+      return NOT_EXPORT_RECEIPT_LINE;
     case "amount_mismatch":
-      return `The amount paid (${money_(f.paidMinor)}) doesn't match the link (${money_(f.expectedMinor)}).`;
+      return `The amount paid (${m(f.paidMinor)}) doesn't match the link (${m(f.expectedMinor)}).`;
     case "unknown_link":
       return "A payment arrived for a link we don't know.";
     case "document_not_payable":
@@ -98,17 +121,19 @@ export function reviewReason(kind: string, f: ReasonFacts = {}): string {
     case "refetch_failed":
       return f.reason === "no_payment_listed"
         ? NO_PAYMENT_LISTED_LINE
-        : "Razorpay couldn't be reached to confirm this payment. Try again.";
+        : f.reason === "stripe_permission"
+          ? STRIPE_PERMISSION_LINE
+          : `${gw} couldn't be reached to confirm this payment. Try again.`;
     case "dead_letter":
-      return "Razorpay couldn't be reached to confirm this payment. Try again.";
+      return `${gw} couldn't be reached to confirm this payment. Try again.`;
     // Settled by the lead on the safest reading, 2026-10-31 (08-C RA-36): credit held is treated as an advance (s.13(2) CGST Act), so GST on it was due in the
     // month the money arrived; the line says so (staff words, early check 2, finding 17; drafted for the lead).
     case "overpaid":
-      return `The client paid ${money_(f.extraMinor)} more than was due. It is held as credit, treated as an advance: GST on it is due for the month it arrived.`;
+      return `The client paid ${m(f.extraMinor)} more than was due. It is held as credit, treated as an advance: GST on it is due for the month it arrived.`;
     case "proforma_overpaid":
       return "The client paid more than the proforma's balance. Issue the tax invoice by hand.";
     case "partial_payment":
-      return "Razorpay reports only part of the link as paid. Check the payment before confirming it.";
+      return `${gw} reports only part of the link as paid. Check the payment before confirming it.`;
     case "client_gone":
       return "A payment arrived for a client whose details were erased.";
     case "currency_mismatch":
@@ -118,11 +143,14 @@ export function reviewReason(kind: string, f: ReasonFacts = {}): string {
     case "order_mismatch":
       return "The payment belongs to a different Razorpay order than the link.";
     case "payment_not_on_link":
-      return "Razorpay doesn't list this payment on the link.";
+      return `${gw} doesn't list this payment on the link.`;
     case "not_captured":
-      return "Razorpay reports this payment as failed or refunded. Nothing was recorded.";
+      // M6.3 (early check 1, F1): for Stripe also a charge refunded (in full or part) or disputed after it succeeded.
+      return f.provider === "stripe"
+        ? "Stripe reports this payment as not completed, refunded or disputed. Nothing was recorded."
+        : "Razorpay reports this payment as failed or refunded. Nothing was recorded.";
     case "unreadable_event":
-      return "A verified Razorpay notification couldn't be read. Check the payment in Razorpay's dashboard.";
+      return `A verified ${gw} notification couldn't be read. Check the payment in ${gw}'s dashboard.`;
     default:
       return "Check this payment.";
   }

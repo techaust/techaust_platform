@@ -148,6 +148,12 @@ export async function reviewOnly(
   kind: string,
   where: { documentId: string | null; clientId: string | null; amountMinor: number | null },
   facts: GatewayFacts,
+  // M6.3: the item's gateway and the money's currency (Razorpay and INR for M6.2's callers), and the event's outcome when it is not the kind itself (Stripe's
+  // `stripe_permission`, run file C.6).
+  gw: { provider: "razorpay" | "stripe"; currency: "INR" | "USD"; outcome?: string } = {
+    provider: "razorpay",
+    currency: "INR",
+  },
 ): Promise<ProcessEventResult> {
   const reviewId = uuidv7();
   const eventId = eventIdOf(a.cause);
@@ -168,14 +174,14 @@ export async function reviewOnly(
         {
           id: reviewId,
           source: sourceOf(a.cause),
-          provider: "razorpay",
+          provider: gw.provider,
           kind,
           webhookEventId: eventId,
           paymentId: null,
           documentId: where.documentId,
           clientId: where.clientId,
           amountMinor: where.amountMinor,
-          currency: where.amountMinor ? "INR" : null,
+          currency: where.amountMinor ? gw.currency : null,
           facts,
           now: a.now,
           // A refresh ("Try again", the portal's poll) adds no second item while one of this kind is open for the link (early check 2, finding 12).
@@ -189,7 +195,11 @@ export async function reviewOnly(
           reviewId,
           // The fact `reason` picks the line where a kind has more than one (fix round 4, low 3: `refetch_failed`'s `no_payment_listed`).
           title: bellNeedsReview(
-            reviewReason(kind, { reason: typeof facts.reason === "string" ? facts.reason : null }),
+            reviewReason(kind, {
+              reason: typeof facts.reason === "string" ? facts.reason : null,
+              provider: gw.provider,
+              currency: gw.currency,
+            }),
           ),
           link: REVIEW_LINK,
         },
@@ -199,7 +209,7 @@ export async function reviewOnly(
         ? [
             webhookEventMoveStatement(
               env.DB,
-              { id: eventId, status: "needs_review", outcome: kind, now: a.now },
+              { id: eventId, status: "needs_review", outcome: gw.outcome ?? kind, now: a.now },
               g,
             ),
           ]

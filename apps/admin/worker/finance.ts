@@ -24,7 +24,7 @@ import { createApp, firstRun } from "./app.ts";
 import { draftCarePlan, issueCareDraft } from "./care-billing.ts";
 import { issueGatewayAdvance } from "./gateway/advance.ts";
 import { processEvent } from "./gateway/events.ts";
-import { createLinkFor, refreshForClient } from "./gateway/links.ts";
+import { createLinkFor, refreshCheckoutById, refreshForClient } from "./gateway/links.ts";
 import { ROUTES } from "./guard.ts";
 import { mountFinance } from "./routes-finance.ts";
 import { warmRouter } from "./warm-router.ts";
@@ -63,7 +63,8 @@ export class BillingJobs extends WorkerEntrypoint<Env> implements BillingJobsApi
 
 /**
  * M6.2 (run file C; CPU diagnosis lead decision 5): the webhook events, called by the jobs Worker ONLY (`ADMIN_GATEWAY`, entrypoint `GatewayEvents`). Plain
- * `WorkerEntrypoint` methods, never through Hono; exactly these two public methods (split.test.ts); every id 1 to 64 characters; one id-only log line each.
+ * `WorkerEntrypoint` methods, never through Hono; exactly these three public methods (M6.3 adds `refreshCheckout`; split.test.ts); every id 1 to 64 characters;
+ * one id-only log line each.
  */
 export class GatewayEvents extends WorkerEntrypoint<Env> implements GatewayEventsApi {
   async processEvent(args: { eventId: string }): Promise<ProcessEventResult> {
@@ -79,6 +80,14 @@ export class GatewayEvents extends WorkerEntrypoint<Env> implements GatewayEvent
     rpcLog("issueGatewayAdvance", answer.result);
     return answer;
   }
+
+  /** M6.3 (L13): the hourly sweep's `gateway.refresh {checkoutId}`. */
+  async refreshCheckout(args: { checkoutId: string }): Promise<RefreshResult> {
+    const checkoutId = rpcId(args?.checkoutId, "GatewayEvents");
+    const answer = await refreshCheckoutById(this.env, checkoutId);
+    rpcLog("refreshCheckout", answer.result);
+    return answer;
+  }
 }
 
 /** M6.2: the portal's Pay now, called by the portal Worker ONLY (`ADMIN_PAY`, entrypoint `PortalPayments`). Exactly these two public methods. */
@@ -92,7 +101,7 @@ export class PortalPayments extends WorkerEntrypoint<Env> implements PortalPayme
       const { stale: _stale, ...refusal } = r;
       return refusal;
     }
-    return { ok: true, shortUrl: r.shortUrl, expiresAt: r.expiresAt, reused: r.reused };
+    return { ok: true, url: r.url, expiresAt: r.expiresAt, reused: r.reused };
   }
 
   async refreshForClient(args: { clientId: string; documentId: string }): Promise<RefreshResult> {
