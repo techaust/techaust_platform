@@ -2,9 +2,11 @@
 // CTABand (docs/06 §5.2): the closing call to action, an ink panel with a verdigris-300 primary button. It sits inside
 // the page width (not full bleed), so it reads as its own block above the ink footer, and its top-right corner is
 // cut at 45° (docs/06 §4.3, the signature detail on banners). The WhatsApp button needs the number from site
-// config (WEB-G-18): hidden while it's empty; preview pages show a labelled placeholder instead.
+// config (WEB-G-18): hidden while it's empty; preview pages show a labelled placeholder instead. wa.me is another
+// site, so the button is an ExternalLink (new tab, the arrow icon and the screen-reader note; the dist check).
 import { site } from "../config/site";
 import Button from "./Button.astro";
+import ExternalLink from "./ExternalLink.astro";
 import Placeholder from "./Placeholder.astro";
 
 interface Props {
@@ -31,9 +33,9 @@ const wa = site.whatsapp ? `https://wa.me/${site.whatsapp}` : "";
         <Button href={primary.href} size="lg">{primary.label}</Button>
         {
           whatsappLabel && wa && (
-            <Button href={wa} variant="secondary" size="lg">
+            <ExternalLink href={wa} class="btn btn--secondary btn--lg" iconSize={20}>
               {whatsappLabel}
-            </Button>
+            </ExternalLink>
           )
         }
         {

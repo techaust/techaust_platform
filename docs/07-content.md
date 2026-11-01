@@ -28,7 +28,8 @@
 - **Senior, calm, specific.** Short sentences. Concrete nouns (Tally, GSTR-2B, purchase orders) over abstractions ("digital transformation").
 - **"We"** for TecHaust, **"you"** for the reader. No "leverage", "synergy", "cutting-edge", "next-gen", "revolutionary", "seamless", "robust", "world-class" (style guidance, not linted).
 - **Outcomes, then method.** "Your team stops retyping invoices into Tally" comes before "we use document AI".
-- **India + global:** INR in the lakh format (₹3,00,000) for India, USD for international. Times in IST, with the reader's local time where it helps.
+- **India + global:** INR in the lakh format (₹3,00,000) for India, USD for international.
+- **Times** (owner, 2026-11-01; replaces "IST, with the reader's local time where it helps"): the website shows the working hours (Mon–Sat, 10:00–19:00 IST) and the quote form's call windows in the **visitor's own clock, one time only**: their zone's short name and no IST beside it ("Mon–Sat, 04:30–13:30 GMT" in London in winter). Visitors whose clock is on IST, and every visitor without JavaScript, read the IST text. When the window crosses the visitor's midnight its end gets **"next day"** (owner-approved words; never "next working day") and the weekdays move with the start ("Sun–Fri, 20:30–05:30 next day PST" in Los Angeles in winter). Where the browser gives no short name, its "GMT+1" form. In the content files the hours are the `{{hours}}` token (one source, `site.ts` `HOURS`); meta text and structured data print the IST text. Unchanged: "We're in India (IST, UTC+5:30)" (where we are), blog and legal dates; deadline and due dates, PDFs, emails and the admin stay IST.
 - **English (India/UK spelling):** organisation, optimise, colour, programme (but "program" for software).
 - **"and", never "&"** in website text (owner, 2026-10-22: Archivo's ampersand reads like a reversed "3" at menu sizes). URLs and code keep "&". The web build fails on "&" in page text (`scripts/web-dist-checks.mjs`).
 - **Currency switches use codes:** "INR" / "USD", never "$" alone (owner, 2026-10-22: "$" is also AUD, CAD, SGD). Prices keep their symbols ("₹3,00,000", "$12,000").
@@ -87,7 +88,8 @@
   - **Industries** (3)
   - **Company:** About · How we work · How we build AI · Work · Blog · Pricing
   - **Help:** Contact · Get a quote · Security · Cookie settings
-- **Contact block:** contact@techaust.com · WhatsApp {{whatsapp}} (Mon–Sat, 10:00–19:00 IST) · Balurghat, West Bengal, India
+- **Contact block:** contact@techaust.com · the phone **+91 98830 23931** (a `tel:` link; "Phone" for screen readers, owner 2026-11-01) with the hours under it · WhatsApp (the chat link, number 919883023931) with the hours under it · Balurghat, West Bengal, India. The hours show in the visitor's own clock (§1 "Times").
+- **Phone, written form** (owner, 2026-11-01): always **"+91 98830 23931"** wherever it is shown or printed (footer, contact page, business card, letterhead); dialled as `+919883023931` (`tel:` links and the organisation's structured data).
 - **Social:** LinkedIn (company) 🟧 OWNER URL. The footer shows company links only (owner, 2026-10-23); the founder's LinkedIn is on About only
 - **Legal row:** © {{year}} TecHaust Technologies · Privacy · Terms · Refunds and cancellations · Delivery policy · Cookies · Accessibility
 
@@ -107,7 +109,7 @@
 - **GST note (INR):** "Prices exclude GST (18 %)." (VERIFY WITH CA)
 - **USD note:** "International projects are invoiced from India in USD as an export of services."
 - **Fee note:** "No card or gateway surcharges: the price you see is the price you pay (plus GST in India)."
-- **Response promise:** "We reply within one business day (Mon–Sat, 10:00–19:00 IST)."
+- **Response promise:** "We reply within one business day (Mon–Sat, 10:00–19:00 IST)." (the hours in the visitor's own clock on the page, §1 "Times")
 - **Illustrative label:** "Illustrative example. Not a real client system."
 
 ---
@@ -342,9 +344,10 @@ Every page follows the template in [04 §3.2](04-prd.md): hero → problem → w
 | Quarterly roadmap call | — | ✓ | ✓ |
 | DevOps / CI and security review | — | — | ✓ |
 | Fractional-CTO advisory | — | — | ✓ |
-| **Response time** (business hours, Mon–Sat 10:00–19:00 IST) | **2 business days** | **1 business day** | **4 business hours** for critical issues |
+| **Response time** (business hours, Mon–Sat, 10:00–19:00 IST) | **2 business days** | **1 business day** | **4 business hours** for critical issues |
 
 - **Rules (small print):** "Essential: no rollover. Growth and Scale: unused hours roll over for one month. Extra hours are billed at the plan rate. Pay annually and save 10 %. Out-of-hours cover can be quoted separately. Billed monthly in advance; cancel with 30 days' notice." (10 % confirmed by the owner, 2026-10-07.)
+- **Hours in the response-time row and the out-of-hours FAQ** are the one source (`{{hours}}`), shown in the visitor's own clock (§1 "Times"); the row writes them as the FAQ does, with a comma after "Mon–Sat" (designer, company-phone, 2026-11-01: one source; for the lead to confirm).
 - **AI Ops add-on (S17):** "For AI systems in production: monitoring, test-set reruns, prompt and model updates, and cost tracking, from {{price:S17}} a month."
 - **FAQs:** the five in [07-C](07-content-appendix/C-service-faqs.md) (owner-approved 2026-10-22).
  Choose a plan
@@ -476,7 +479,8 @@ _Card labels, each page's problems, tools and FAQs, and the hub's closing line: 
 - **Form labels:** Your name · Work email · Company (optional) · Phone or WhatsApp (optional) · How can we help? (hint: "A few sentences is plenty.") · Submit: "Send message"
 - **Side panel:**
   - Email contact@techaust.com
-  - WhatsApp {{whatsapp}} ("Chat on WhatsApp")
+  - **Phone** (label: owner, 2026-11-01) +91 98830 23931 (a `tel:` link), the hours under it
+  - WhatsApp {{whatsapp}} ("Chat on WhatsApp"), the hours under it
   - "Prefer a call? Book a time" → Cal.com 🟧 OWNER URL
   - Address: **{{postal_address}}** 🟧 OWNER provides the exact postal address for this page and the legal pages
 - **Consent notice** (beside submit): "We use these details only to reply to your enquiry and, if you go ahead, to prepare a proposal. See our [privacy notice](/privacy). You can ask us to delete them at any time." Optional checkbox (unticked): "Also send me occasional updates (about one email a month). You can unsubscribe at any time."
@@ -487,7 +491,7 @@ _Card labels, each page's problems, tools and FAQs, and the hub's closing line: 
 - **Step 1, "What do you need?":** service radio cards (grouped), plus "Not sure: recommend something". Hint: "Pick the closest. We'll refine it together."
 - **Step 2, "What should it achieve?":** "What would you like to achieve?" (textarea; hint: "e.g. 'Stop retyping 400 invoices a month into Tally'") · "Which tools do you use today?" (Tally, Zoho, Excel/Sheets, QuickBooks, Xero, Shopify, WhatsApp Business, Other)
 - **Step 3, "Budget and timing":** budget bands (INR or USD by the currency toggle; [04 FRM-QUOTE](04-prd.md)) with a hint: "This helps us suggest the right approach. It isn't a commitment." · timeline (As soon as possible · 1–3 months · 3–6 months · Just exploring)
-- **Step 4, "Your details":** name · work email · company · country · phone/WhatsApp (optional) · "Best time for a call" (IST + "your time: {{local}}") · consent notice and optional updates checkbox (as §5.8) · Submit: "Send request"
+- **Step 4, "Your details":** name · work email · company · country · phone/WhatsApp (optional) · "Best time for a call" (each window in the visitor's own clock only, e.g. "04:30–07:30 GMT", "23:30–02:30 next day PST"; IST in India and without scripts; the value sent is always the IST window, so staff read IST; owner 2026-11-01, "your time:" removed) · consent notice and optional updates checkbox (as §5.8) · Submit: "Send request"
 - **Errors** (examples): "Enter your name" · "Enter an email address like name@company.com" · "Tell us a little more: at least 20 characters" · "Please choose a service, or ‘Not sure: recommend something’"
 
 ### 5.10 Thanks (`/thanks`)
@@ -574,7 +578,7 @@ _Card labels, each page's problems, tools and FAQs, and the hub's closing line: 
 | Founder headshot (≥ 1200 px, plain background) | About, blog author, OG | 🟧 OWNER: on hold, a new iPhone photo to come (2026-10-23); none used until then |
 | Founder bio (80–120 words) + LinkedIn URL | About, blog | Bio 🟧 OWNER sends facts, the lead drafts, the owner approves · LinkedIn ✅ `https://www.linkedin.com/in/r4rupak1997` (2026-10-23) |
 | TecHaust LinkedIn company page URL | Footer, schema `sameAs` | 🟧 OWNER |
-| WhatsApp business number | Contact, footer, thanks | 🟧 OWNER |
+| WhatsApp business number | Contact, footer, thanks, CTA bands | ✅ 2026-11-01: +91 98830 23931 (registered, on WhatsApp Business; also the company phone, `site.whatsapp` and `site.phone`) |
 | Full postal address (for Contact + legal pages only) | Contact, privacy, terms, refund, delivery | ✅ 2026-10-23 (`site.postalAddress`); confirm it matches the GST certificate word for word (VERIFY WITH CA/LEGAL) |
 | Cal.com booking URL | Contact, thanks, acknowledgement email | 🟧 OWNER (create a free account) |
 | 2–3 case-study briefs (§6) | Work, service-page proof, home | 🟧 OWNER |
