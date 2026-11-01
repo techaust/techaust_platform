@@ -1,6 +1,6 @@
 # 07-ZL: polish sweep (staff-facing lines)
 
-Status: **DRAFT, waiting for approval** (staff-only lines: the main session approves them under the owner's delegation). Change a line here first, then in the code. Until approved, each line shows the "[Placeholder] " mark before the words (`apps/admin/src/lib/copy-zl.ts`, `APPROVED_07ZL`).
+Status: **APPROVED by the lead under the owner's delegation, 2026-11-01** (lines 1–3 as written; staff-only). Change a line here first, then in the code (`apps/admin/src/lib/copy-zl.ts`, `APPROVED_07ZL` is true).
 
 All lines are admin-only. No client-facing wording is added by this task.
 

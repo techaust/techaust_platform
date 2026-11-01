@@ -1,6 +1,6 @@
 # Polish sweep (admin and website follow-ups)
 
-Status: PR READY https://github.com/techaust/techaust_platform/pull/144
+Status: PR READY (07-ZL approved) https://github.com/techaust/techaust_platform/pull/144
 Tier: C
 Usage: builder b1 claude-opus-5-5/high (skills attempted `cloudflare:workers-best-practices`, `cloudflare:wrangler`, "Unknown skill" in the cloud), 5-h 17 → 20 %; designer d1 claude-opus-5-5/high (`frontend-design` attempted, "Unknown skill" then), started at 17 %; reviewer claude-opus-5-5/high (`code-review`, `security-review`) + its read-only `general-purpose` helper claude-opus-5-5/high, started at 62 %; designer d2 claude-opus-5-5/high (`frontend-design:frontend-design` loaded), started after the 06:10 reset (last reading 88 at 04:00); re-check reviewer claude-opus-5-5/high (`code-review`, `security-review`) + its helper claude-opus-5-5/high. All from `node tools/model-audit.mjs 2026-10-31`: all runs within the plan.
 
@@ -54,10 +54,10 @@ Skills: `frontend-design:frontend-design` first (report if it can't load in the 
 **Done:** every item above fixed (or reported as blocked with the reason), tests for each logic change, before/after shots, axe 0, then the reviewer (code + visual), fixes, re-check if any critical or high finding, `pnpm check` and `pnpm test` green.
 
 ## Questions for the owner
-- **For the main session (staff-only copy, owner's delegation):** approve [07-ZL](../07-content-appendix/ZL-polish-sweep.md) lines 1–3 (recommended: as written). Until then the lines show "[Placeholder]". _2026-11-01 02:55, main session: "staff-only copy is approved by the main session under the owner's delegation" (general); the lead still needs an explicit "07-ZL 1–3 approved" (or changes) before switching `APPROVED_07ZL` on._
+- **ANSWERED 2026-11-01 (main session): 07-ZL 1–3 APPROVED as written** (staff-only, the lead under the owner's delegation). Was: approve [07-ZL](../07-content-appendix/ZL-polish-sweep.md) lines 1–3 (recommended: as written). Until then the lines show "[Placeholder]". _2026-11-01 02:55, main session: "staff-only copy is approved by the main session under the owner's delegation" (general); the lead still needs an explicit "07-ZL 1–3 approved" (or changes) before switching `APPROVED_07ZL` on._
 
 ## Usage readings
-- USAGE 17 at 2026-11-01T02:40+05:30 (first); USAGE 20 at 2026-11-01T02:55+05:30; USAGE 62 at 2026-11-01T03:21+05:30 (window resets 06:10 IST); USAGE 88 at 2026-11-01T04:00+05:30 with the main session's hold: no new agent until after 06:10 IST (running agents finish).
+- USAGE 13 at 2026-11-01T10:28+05:30 (new window). Earlier: USAGE 17 at 2026-11-01T02:40+05:30 (first); USAGE 20 at 2026-11-01T02:55+05:30; USAGE 62 at 2026-11-01T03:21+05:30 (window resets 06:10 IST); USAGE 88 at 2026-11-01T04:00+05:30 with the main session's hold: no new agent until after 06:10 IST (running agents finish).
 
 ## Lead decisions (for 13)
 - 2026-11-01, Lead: the website focus ring is 2.4 px (`--focus-width`) so it renders at least 2 px at 100/125/150/200 % display scale (Chromium rounds outlines down to device pixels); 110 % stays 1.82 px (2.75 px would thicken it everywhere else). Applied: `apps/web/src/styles/global.css`, docs/06 §5 "Visible focus" line.
@@ -265,3 +265,4 @@ Designer (Opus 5.5, high), 2026-11-01. Branch `fix/polish-sweep-d2` from `origin
 
 ## Handover (lead, 2026-11-01)
 PR [#144](https://github.com/techaust/techaust_platform/pull/144) opened from `fix/polish-sweep` (no auto-merge; the main session reviews it, turns on auto-merge and Auto-fix). Waiting on: the main session's approval of 07-ZL 1–3 (then `APPROVED_07ZL = true` and the 07-ZL status line, one commit on this branch). Next: any merge or CI fix the main session sends, on this branch.
+- 2026-11-01 (after the PR): main session approved 07-ZL 1–3 as written. `APPROVED_07ZL = true`, 07-ZL status "APPROVED by the lead under the owner's delegation, 2026-11-01" (the tests read the flag and the status line, so none needed new words). Merged origin/main (#143; one import conflict in `worker/invoice-send.test.ts`, both sides kept; #143 only moved the invoice Revoke cancel into `cancelUnlinkedSendsSql`, the re-check 4 follow-up stands). `pnpm check` exit 0; admin test 129 files, 3,840 passed.
