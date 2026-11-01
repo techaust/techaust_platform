@@ -10,7 +10,12 @@ dfbc2088342c719caf343e4a12b138a860d342a3:packages/auth/test/warm-step-up.test.ts
 e00b7054f2c50b63c1e7607fd1c3b88fe6b36aeb:apps/jobs/src/certificate.ts:generic-api-key:93
 # The first wording of the note above quoted that line and was flagged in turn (docs PR #85); the note no longer quotes code.
 2d7f2f8064ed3487f33160c06884ac4901b1feac:.gitleaksignore:generic-api-key:8
-# M6.3 B1: made-up Stripe webhook secrets ("whsec_testSecretAbc123", "whsec_previousSecretXyz789") in the signature tests;
+# M6.3 B1: two made-up Stripe webhook secrets (the current and the previous one) in the signature tests;
 # the finding comes from the M6.3 task branch, which CI scans because gitleaks reads every ref.
 b33ae0adff444e81d59255d9c044ff977e0ea494:packages/core/test/stripe.test.ts:generic-api-key:37
 b33ae0adff444e81d59255d9c044ff977e0ea494:packages/core/test/stripe.test.ts:generic-api-key:38
+# The first version of this list quoted those two dummy values in its comment (this branch's own history).
+ac872e00a263f7a3f03c598a78e7e09fe96c8941:.gitleaksignore:generic-api-key:13
+# CPU warm-up: a made-up encrypted TOTP value in a start-up warm-up fixture row (a sample owner at example.test); the
+# finding comes from the warm-up task branch, which CI scans because gitleaks reads every ref.
+9c13e9f9ebdfeedeb5ac159d6b98c8bb87217146:apps/admin/worker/warm-fixtures/front.ts:generic-api-key:95
