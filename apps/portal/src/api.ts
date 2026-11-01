@@ -353,10 +353,10 @@ export type OnlineBlock = {
   lastPaid: { amountMinor: number; at: number } | null;
   proformaPending: boolean;
   /**
-   * The smallest part payment (Settings › Payment terms' floor, or the balance if lower). NOT SENT YET by the portal Worker (designer report, open question 1):
-   * while absent the dialog offers the full amount only.
+   * The smallest part payment (Settings › Payment terms' floor, never under ₹1, or the balance if lower; fix round 3 item 1). Null when the document can't be paid
+   * online or the floor can't be read: the dialog then offers the full amount only (as it does when the minimum equals the balance).
    */
-  minimumMinor?: number;
+  minimumMinor: number | null;
 };
 
 /** M6.2: a payment link made (`shortUrl` on rzp.io or razorpay.com, checked by the server and again before the browser leaves). */

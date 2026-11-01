@@ -3,6 +3,7 @@
 // emailed link (`/t/document`) and the signed-in routes (`/invoices/:id`), so the two can never disagree. Pure: no I/O.
 import { gstEstimateOfHeaderExtras, issueDateOf, NOTES_MAX, noteOfFromStored } from "@techaust/core/invoices";
 import { formatMoney, money } from "@techaust/core/money";
+import { onlineMinimumOf, storedFloorOf } from "@techaust/core/online-pay";
 import { percentFromBp } from "@techaust/core/schedule-text";
 import { onlinePayableSql, withdrawnSql } from "@techaust/db/sql-rules";
 
@@ -367,9 +368,11 @@ export type InvoiceSummary = ReturnType<typeof summaryOf>;
 /**
  * What the page needs for Pay now, every query bound to the client (`?1` client, `?2` document, `?3` now): whether the document can be paid online now
  * (`onlinePayableSql`, the SQL twin of core `payableOnline`; a domestic INR client only, owner Q3 A), the open link (amount and expiry), the last payment received
- * online for it (amount and when), and whether a proforma has an online payment waiting for its tax invoice. Read in the same batch as the summary.
+ * online for it (amount and when), and whether a proforma has an online payment waiting for its tax invoice. Read in the same batch as the summary. Fix round 3
+ * item 1: the balance and the part-payment floor (Settings › Payment terms, read as stored: the portal carries no settings schema; core `storedFloorOf`).
  */
-export const ONLINE_SQL = `SELECT ${onlinePayableSql("d", "k")} AS pay_online, d.type,
+export const ONLINE_SQL = `SELECT ${onlinePayableSql("d", "k")} AS pay_online, d.type, d.balance_minor AS balance,
+     (SELECT CASE WHEN json_valid(s.value) THEN json_extract(s.value, '$.razorpayMinPartialInrMinor') ELSE -1 END FROM settings s WHERE s.key = 'payment_terms') AS floor,
      (SELECT c.amount_minor FROM checkout_sessions c WHERE c.document_id = d.id AND c.status = 'live' AND c.client_id = ?1 AND c.expires_at > ?3) AS open_amount,
      (SELECT c.expires_at FROM checkout_sessions c WHERE c.document_id = d.id AND c.status = 'live' AND c.client_id = ?1 AND c.expires_at > ?3) AS open_expires,
      (SELECT p.amount_minor || ':' || p.recorded_at FROM payments p JOIN checkout_sessions c ON c.id = p.checkout_id
@@ -381,6 +384,8 @@ export const ONLINE_SQL = `SELECT ${onlinePayableSql("d", "k")} AS pay_online, d
 export type OnlineRow = {
   pay_online: number;
   type: string;
+  balance: number;
+  floor: unknown;
   open_amount: number | null;
   open_expires: number | null;
   last_paid: string | null;
@@ -393,9 +398,10 @@ export function onlineOf(r: OnlineRow | undefined) {
     return {
       payOnline: false,
       wholeRupees: false,
-      online: { open: null, lastPaid: null, proformaPending: false },
+      online: { open: null, lastPaid: null, proformaPending: false, minimumMinor: null },
     };
   const [amount, at] = (r.last_paid ?? "").split(":").map(Number);
+  const floor = storedFloorOf(r.floor);
   return {
     payOnline: r.pay_online === 1,
     /** A proforma is paid in whole rupees (LD28; 07-ZI line 7). */
@@ -410,6 +416,12 @@ export function onlineOf(r: OnlineRow | undefined) {
           ? { amountMinor: amount as number, at: at as number }
           : null,
       proformaPending: r.proforma_pending === 1,
+      /**
+       * Fix round 3 item 1 (07-ZI lines 4 to 7): the smallest amount the client may pay, by the rule the finance Worker's `payAmountVerdict` enforces (core
+       * `onlineMinimumOf`: the floor, never under ₹1, or the whole balance if lower; then only the full amount is offered). Null when the document can't be paid
+       * online or the floor can't be read (the full amount only).
+       */
+      minimumMinor: r.pay_online === 1 && floor !== null ? onlineMinimumOf(floor, r.balance) : null,
     },
   };
 }

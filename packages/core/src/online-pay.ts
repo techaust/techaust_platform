@@ -75,6 +75,24 @@ export function payableOnline(
 export const onlineMinimumOf = (floorMinor: number, balanceMinor: number): number =>
   Math.min(Math.max(floorMinor, GATEWAY_MIN_MINOR), balanceMinor);
 
+/**
+ * The default part-payment floor, INR 10,000 (docs/04 ADM-SET-05; the default of Settings › Payment terms `razorpayMinPartialInrMinor`). Researched 2026-10-29,
+ * Razorpay first_min_partial_amount (08-C RB-39): a commercial default, no regulatory floor.
+ */
+export const DEFAULT_PART_FLOOR_MINOR = 10_000_00;
+
+/**
+ * The part-payment floor as a reader that cannot run the settings schema (the portal Worker) finds it in the stored Payment terms row (`json_extract`, fix round 3
+ * item 1): null or undefined (the group, or the figure, never saved) is the default, as `resolveSetting` merges it; a whole number ≥ 0 is the floor; anything else
+ * (a corrupted row, read as -1) is unreadable: null, and the page offers the full amount only. The finance Worker's `payAmountVerdict` still decides.
+ */
+export const storedFloorOf = (v: unknown): number | null =>
+  v === null || v === undefined
+    ? DEFAULT_PART_FLOOR_MINOR
+    : Number.isSafeInteger(v) && (v as number) >= 0
+      ? (v as number)
+      : null;
+
 export type PayAmountVerdict =
   | { readonly ok: true }
   | { readonly ok: false; readonly code: "amount_below_minimum"; readonly minimumMinor: number }

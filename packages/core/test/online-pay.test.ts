@@ -3,6 +3,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_PART_FLOOR_MINOR,
   GATEWAY_MIN_MINOR,
   NOT_PAYABLE_REASONS,
   onlineMinimumOf,
@@ -11,7 +12,9 @@ import {
   payAmountVerdict,
   payableOnline,
   REVIEW_KINDS,
+  storedFloorOf,
 } from "../src/online-pay.ts";
+import { SETTINGS_DEFAULTS } from "../src/schemas/settings.ts";
 
 const doc: PayableDoc = {
   type: "tax_invoice",
@@ -159,5 +162,16 @@ describe("the review kinds (07-ZI line 20)", () => {
   it("are listed once each", () => {
     expect(new Set(REVIEW_KINDS).size).toBe(REVIEW_KINDS.length);
     expect(REVIEW_KINDS).toContain("advance_blocked");
+  });
+});
+
+describe("storedFloorOf [ADM-SET-05; fix round 3 item 1]", () => {
+  it("is the settings default when never saved, the stored whole number otherwise, null when unreadable", () => {
+    expect(DEFAULT_PART_FLOOR_MINOR).toBe(SETTINGS_DEFAULTS.payment_terms.razorpayMinPartialInrMinor);
+    expect(storedFloorOf(null)).toBe(DEFAULT_PART_FLOOR_MINOR);
+    expect(storedFloorOf(undefined)).toBe(DEFAULT_PART_FLOOR_MINOR);
+    expect(storedFloorOf(0)).toBe(0);
+    expect(storedFloorOf(250_000)).toBe(250_000);
+    for (const bad of [-1, 1.5, "1000", Number.NaN, 2 ** 60, true, {}]) expect(storedFloorOf(bad)).toBeNull();
   });
 });

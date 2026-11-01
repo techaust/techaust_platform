@@ -6,6 +6,7 @@ import { docTokenStmt, tokenHash } from "@techaust/auth";
 import { describe, expect, it } from "vitest";
 import { fixtures } from "./fixtures.ts";
 import { ROUTES } from "./guard.ts";
+import { type OnlineRow, onlineOf } from "./invoice-summary.ts";
 import { call, sessionFor, withEnv } from "./test-helpers.ts";
 
 type Args = Record<string, unknown>;
@@ -175,6 +176,94 @@ describe("the summary's Pay now block", () => {
     expect(res.status).toBe(200);
     const doc = ((await res.json()) as { document: Record<string, unknown> }).document;
     expect(doc).toHaveProperty("payOnline");
-    expect(doc.online).toEqual({ open: null, lastPaid: null, proformaPending: false });
+    // The balance (₹1,180) is under the default floor (₹10,000): the minimum is the whole balance, so only the full amount is offered.
+    expect(doc.online).toEqual({ open: null, lastPaid: null, proformaPending: false, minimumMinor: 118000 });
+  });
+});
+
+// Fix round 3 item 1 (07-ZI lines 4 to 7): the part-payment minimum, from Settings › Payment terms as stored, by core `onlineMinimumOf` (the rule `createLink`'s
+// `payAmountVerdict` enforces).
+describe("the Pay now block's minimum [07-ZI 4-7, ADM-SET-05]", () => {
+  async function withTerms<T>(value: string | null, run: () => Promise<T>): Promise<T> {
+    const before = await env.DB.prepare("SELECT value FROM settings WHERE key = 'payment_terms'").first<{
+      value: string;
+    }>();
+    await env.DB.prepare("DELETE FROM settings WHERE key = 'payment_terms'").run();
+    if (value !== null)
+      await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('payment_terms', ?1)")
+        .bind(value)
+        .run();
+    try {
+      return await run();
+    } finally {
+      await env.DB.prepare("DELETE FROM settings WHERE key = 'payment_terms'").run();
+      if (before)
+        await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('payment_terms', ?1)")
+          .bind(before.value)
+          .run();
+    }
+  }
+  async function onlineOfDoc(id: string, cookie: string) {
+    const res = await call(`/invoices/${id}`, { cookie }, payEnv(LINK));
+    expect(res.status).toBe(200);
+    return (
+      (await res.json()) as { document: { wholeRupees: boolean; online: { minimumMinor: number | null } } }
+    ).document;
+  }
+
+  it("a floor under the balance is the minimum (a part can be paid); a proforma keeps whole rupees", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.a.finance);
+    await withTerms(JSON.stringify({ dueDays: 7, razorpayMinPartialInrMinor: 50_000 }), async () => {
+      expect((await onlineOfDoc(f.a.docs.issued, s.cookie)).online.minimumMinor).toBe(50_000);
+      const proforma = await onlineOfDoc(f.a.docs.proforma, s.cookie);
+      expect(proforma.online.minimumMinor).toBe(50_000);
+      expect(proforma.wholeRupees).toBe(true);
+    });
+  });
+
+  it("a floor of 0 is never under ₹1; a balance under the floor is the whole balance only", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.a.finance);
+    await withTerms(JSON.stringify({ razorpayMinPartialInrMinor: 0 }), async () => {
+      expect((await onlineOfDoc(f.a.docs.issued, s.cookie)).online.minimumMinor).toBe(100);
+    });
+    await withTerms(JSON.stringify({ razorpayMinPartialInrMinor: 500_000 }), async () => {
+      expect((await onlineOfDoc(f.a.docs.issued, s.cookie)).online.minimumMinor).toBe(118000);
+    });
+  });
+
+  it("the group or the figure never saved reads the default floor; a corrupted row offers the full amount only", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.a.finance);
+    // The default (₹10,000) is above this balance, so the minimum is the balance in both cases.
+    await withTerms(null, async () => {
+      expect((await onlineOfDoc(f.a.docs.issued, s.cookie)).online.minimumMinor).toBe(118000);
+    });
+    await withTerms(JSON.stringify({ dueDays: 7 }), async () => {
+      expect((await onlineOfDoc(f.a.docs.issued, s.cookie)).online.minimumMinor).toBe(118000);
+    });
+    await withTerms("not json", async () => {
+      expect((await onlineOfDoc(f.a.docs.issued, s.cookie)).online.minimumMinor).toBeNull();
+    });
+  });
+
+  it("onlineOf: no minimum when the document can't be paid online, or with no row", () => {
+    const row: OnlineRow = {
+      pay_online: 1,
+      type: "tax_invoice",
+      balance: 5_000_000,
+      floor: null,
+      open_amount: null,
+      open_expires: null,
+      last_paid: null,
+      proforma_pending: 0,
+    };
+    expect(onlineOf(row).online.minimumMinor).toBe(1_000_000);
+    expect(onlineOf({ ...row, floor: 250_000 }).online.minimumMinor).toBe(250_000);
+    expect(onlineOf({ ...row, floor: 12.5 }).online.minimumMinor).toBeNull();
+    expect(onlineOf({ ...row, floor: -1 }).online.minimumMinor).toBeNull();
+    expect(onlineOf({ ...row, pay_online: 0 }).online.minimumMinor).toBeNull();
+    expect(onlineOf(undefined).online.minimumMinor).toBeNull();
   });
 });
