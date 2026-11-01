@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 /** Milliseconds spent inside SQLite since the last reset (the probe subtracts them: on Workers the query runs in D1, not in the Worker's CPU). */
-export const dbClock = { ms: 0, statements: 0 };
+export const dbClock = { ms: 0, statements: 0, capture: null };
 
 const d1Error = (e) => {
   const err = new Error(`D1_ERROR: ${e?.message ?? String(e)}`);
@@ -80,6 +80,7 @@ export function d1Over(path) {
         lastRowId = Number(r.lastInsertRowid);
       }
       const columns = hasRows ? s.columns().map((c) => c.name) : [];
+      dbClock.capture?.push({ sql, params, rows: mode === "raw" ? rows : rows.slice(0, 5), changes });
       return {
         rows,
         columns,
@@ -282,5 +283,64 @@ export function installWorkersStandIns() {
         super();
       }
     };
+  }
+}
+
+const REFUSED = "Disallowed operation called within global scope (cpu-probe: workerd's global-scope rule)";
+const refuse = () => {
+  throw new Error(REFUSED);
+};
+/**
+ * Runs `load` (a Worker module's import and its start-up) under workerd's global-scope rules, checked in local workerd 1.20261001.1 on 2026-11-02: a Response or
+ * a Request WITH a body, `Response.json`, random values, timers and `fetch` are refused, and `Date.now()` reads 0. A bodiless Response or Request, Headers,
+ * WebCrypto's `subtle`, Intl and microtasks are allowed. Then lets the start-up's async chain finish (Node's WebCrypto answers on its thread pool; workerd's
+ * within the start-up) before restoring the real globals, so a warm-up that would fail at real start-up fails here too.
+ */
+export async function underGlobalScopeRules(load, settleMs = 150) {
+  const saved = {
+    Response: globalThis.Response,
+    Request: globalThis.Request,
+    setTimeout: globalThis.setTimeout,
+    setInterval: globalThis.setInterval,
+    fetch: globalThis.fetch,
+    now: Date.now,
+  };
+  const RealResponse = saved.Response;
+  const RealRequest = saved.Request;
+  globalThis.Response = class Response extends RealResponse {
+    constructor(body, init) {
+      if (body !== null && body !== undefined) refuse();
+      super(body, init);
+    }
+    static json() {
+      return refuse();
+    }
+  };
+  globalThis.Request = class Request extends RealRequest {
+    constructor(input, init) {
+      if (init?.body !== null && init?.body !== undefined) refuse();
+      super(input, init);
+    }
+  };
+  globalThis.setTimeout = refuse;
+  globalThis.setInterval = refuse;
+  globalThis.fetch = refuse;
+  Date.now = () => 0;
+  crypto.getRandomValues = refuse;
+  crypto.randomUUID = refuse;
+  try {
+    const mod = await load();
+    const until = performance.now() + settleMs;
+    while (performance.now() < until) await new Promise((r) => setImmediate(r));
+    return mod;
+  } finally {
+    globalThis.Response = saved.Response;
+    globalThis.Request = saved.Request;
+    globalThis.setTimeout = saved.setTimeout;
+    globalThis.setInterval = saved.setInterval;
+    globalThis.fetch = saved.fetch;
+    Date.now = saved.now;
+    delete crypto.getRandomValues;
+    delete crypto.randomUUID;
   }
 }

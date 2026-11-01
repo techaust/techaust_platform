@@ -10,7 +10,7 @@
 //      on Workers). Node is not workerd: staging read about x2.3 to x3.4 the local figure (the M6.2 CPU diagnosis), so the target is <= 2.5 ms locally.
 // Forwarded rows are timed in the Worker that answers them and, separately, in the front with a target that answers at once (the gate adds the two).
 //
-//   node scripts/cpu-probe.mjs [--runs 5] [--later 4] [--only <case,...>] [--build] [--json <file>]
+//   node scripts/cpu-probe.mjs [--runs 5] [--later 4] [--only <case,...>] [--build] [--json <file>] [--profile <dir>]
 // Build first (or pass --build): `pnpm --filter @techaust/admin exec vite build` and `pnpm --filter @techaust/jobs build`. Run it through
 // `bash tools/heavy.sh --log cpu-probe node scripts/cpu-probe.mjs` (it spawns about 100 processes). Made-up data only (@example.test, "(sample)").
 import { execFileSync, spawnSync } from "node:child_process";
@@ -40,6 +40,7 @@ import {
   queueStub,
   r2In,
   rateLimitStub,
+  underGlobalScopeRules,
 } from "./cpu-probe-runtime.mjs";
 import { createInviteStatements } from "./create-invite-sql.mjs";
 
@@ -185,10 +186,8 @@ async function loadWorker(worker) {
   await nodeWarm;
   const file = worker === "jobs" ? at("apps/jobs/dist/index.js") : at(`${BUNDLES[worker]}/index.js`);
   if (!existsSync(file)) throw new Error(`cpu-probe: ${file} is missing; build first (or pass --build)`);
-  const mod = await import(pathToFileURL(file).href);
-  // Let the start-up's own async work (key imports, warm-ups) finish, as an isolate does before its first request.
-  await new Promise((r) => setTimeout(r, 100));
-  return mod;
+  // The import and the start-up's own async work (key imports, warm-ups) under workerd's global-scope rules, as an isolate runs them before its first request.
+  return underGlobalScopeRules(() => import(pathToFileURL(file).href));
 }
 
 function sharedOf(dir) {
@@ -312,7 +311,11 @@ async function seed(dir, extra) {
     raw.exec(readFileSync(at(`packages/db/migrations/${f}`), "utf8"));
   raw.exec(readFileSync(join(dir, "seed.sql"), "utf8"));
 
-  const [front, api, finance, jobs] = await Promise.all(["front", "api", "finance", "jobs"].map(loadWorker));
+  // One at a time: each load swaps the globals for workerd's global-scope rules and puts them back.
+  const front = await loadWorker("front");
+  const api = await loadWorker("api");
+  const finance = await loadWorker("finance");
+  const jobs = await loadWorker("jobs");
   const apiEnv = envOf("api", shared);
   const financeEnv = envOf("finance", shared);
   const frontEnv = envOf("front", shared, {
@@ -533,9 +536,12 @@ async function seed(dir, extra) {
     events.push(raw.prepare("SELECT id FROM webhook_events WHERE event_id = ?").get(eventId).id);
     if (i === 0) hookTemplate = { checkoutId: link.checkoutId, amount: doc.total_minor };
   }
+  const salted = must("salt", await via("/auth/salt", { body: { email }, cookie: device }));
   const manifest = {
     email,
     password,
+    loginHash: clientHash(password, salted.salt, salted.params),
+    client: inr,
     secretHex: secret.toString("hex"),
     cookie,
     device,
@@ -566,6 +572,18 @@ export const CASES = {
   // The floor: the lightest route through the whole middleware chain (no session, one row).
   "GET /health": { worker: "front", call: () => ({ path: "/health" }) },
   "GET /auth/me": { worker: "front", call: (m) => ({ path: "/auth/me", cookie: m.cookie }) },
+  "POST /auth/salt": {
+    worker: "front",
+    call: (m) => ({ path: "/auth/salt", body: { email: m.email }, cookie: m.device }),
+  },
+  "POST /auth/login": {
+    worker: "front",
+    call: (m) => ({
+      path: "/auth/login",
+      body: { email: m.email, clientHash: m.loginHash },
+      cookie: m.device,
+    }),
+  },
   "POST /auth/totp": { worker: "front", totp: true },
   "fwd GET /invoices/:id": {
     worker: "front",
@@ -583,6 +601,7 @@ export const CASES = {
   "fwd GET /leads": { worker: "front", call: (m) => ({ path: "/leads", cookie: m.cookie }) },
   "fwd GET /dashboard": { worker: "front", call: (m) => ({ path: "/dashboard", cookie: m.cookie }) },
   "POST /invoices/:id/issue": {
+    stopsAtNewId: true,
     worker: "finance",
     call: (m, i) => ({
       path: `/invoices/${m.issueDrafts[i].id}/issue`,
@@ -599,6 +618,7 @@ export const CASES = {
     call: (m) => ({ path: `/invoices/${m.detail}/payments`, cookie: m.cookie }),
   },
   "PATCH /invoices/:id": {
+    stopsAtNewId: true,
     worker: "finance",
     call: (m, i) => ({
       path: `/invoices/${m.patchDrafts[i].id}`,
@@ -608,6 +628,7 @@ export const CASES = {
     }),
   },
   "POST /invoices/:id/advance-invoice": {
+    stopsAtNewId: true,
     worker: "finance",
     call: (m, i) => ({
       path: `/invoices/${m.proformas[i].id}/advance-invoice`,
@@ -621,7 +642,11 @@ export const CASES = {
     worker: "finance",
     call: (m) => ({ path: "/payments/review", cookie: m.cookie }),
   },
+  "GET /approvals": { worker: "finance", call: (m) => ({ path: "/approvals", cookie: m.cookie }) },
   "GET /notifications": { worker: "api", call: (m) => ({ path: "/notifications", cookie: m.cookie }) },
+  "GET /settings": { worker: "api", call: (m) => ({ path: "/settings", cookie: m.cookie }) },
+  "GET /clients": { worker: "api", call: (m) => ({ path: "/clients", cookie: m.cookie }) },
+  "GET /clients/:id": { worker: "api", call: (m) => ({ path: `/clients/${m.client}`, cookie: m.cookie }) },
   "GET /leads": { worker: "api", call: (m) => ({ path: "/leads", cookie: m.cookie }) },
   "rpc GatewayEvents.processEvent": { worker: "finance", rpc: true },
   "jobs POST /razorpay": { worker: "jobs", hook: true },
@@ -656,16 +681,11 @@ async function runCase(dir, name, later, givenChallenge) {
   const attempts = c.totp ? Math.min(later, 2) + 1 : later + 1;
   for (let i = 0; i < attempts; i++) {
     let run;
+    let a = null;
     if (c.totp) {
       // The first TOTP of the process uses the challenge made by another process (so nothing of the sign-in ran here before it); later ones sign in again.
       const challenge = i === 0 ? givenChallenge : await challengeOf(mod, env, m);
-      const code = totpAt(secret, step() - 1 + i);
-      run = () =>
-        mod.default.fetch(
-          requestOf("/auth/totp", { body: { challenge, code }, cookie: m.device }),
-          env,
-          ctx(),
-        );
+      a = { path: "/auth/totp", body: { challenge, code: totpAt(secret, step() - 1 + i) }, cookie: m.device };
     } else if (c.rpc) {
       const entry = new mod.GatewayEvents(ctx(), env);
       run = () => entry.processEvent({ eventId: m.events[i] });
@@ -683,11 +703,24 @@ async function runCase(dir, name, later, givenChallenge) {
           env,
           ctx(),
         );
-    } else {
-      const a = c.call(m, i);
-      run = () => mod.default.fetch(requestOf(a.path, a), env, ctx());
-    }
+    } else a = c.call(m, i);
+    if (a) run = () => mod.default.fetch(requestOf(a.path, a), env, ctx());
+    const profiling = i === 0 && process.env.CPU_PROBE_PROFILE;
+    if (profiling) await profiler.start();
+    // CPU_PROBE_CAPTURE=<file>: every D1 statement of the first call (SQL, parameters, up to 5 rows), to see what a route reads.
+    if (i === 0 && process.env.CPU_PROBE_CAPTURE) dbClock.capture = [];
     const r = await timed(run);
+    if (dbClock.capture) {
+      const request = a
+        ? { method: a.method ?? (a.body === undefined ? "GET" : "POST"), path: a.path, body: a.body }
+        : null;
+      writeFileSync(
+        process.env.CPU_PROBE_CAPTURE,
+        JSON.stringify({ request, status: r.status, statements: dbClock.capture }, null, 1),
+      );
+      dbClock.capture = null;
+    }
+    if (profiling) await profiler.stop(process.env.CPU_PROBE_PROFILE);
     results.push({
       ms: r.ms,
       wall: r.wall,
@@ -699,6 +732,24 @@ async function runCase(dir, name, later, givenChallenge) {
   }
   keep.log(JSON.stringify({ case: name, results }));
 }
+
+/** CPU_PROBE_PROFILE=<file>: a V8 CPU profile of the FIRST call only (50 µs sampling), written as a .cpuprofile for `--summary` or DevTools. */
+const profiler = {
+  session: null,
+  async start() {
+    const { Session } = await import("node:inspector/promises");
+    this.session = new Session();
+    this.session.connect();
+    await this.session.post("Profiler.enable");
+    await this.session.post("Profiler.setSamplingInterval", { interval: 50 });
+    await this.session.post("Profiler.start");
+  },
+  async stop(file) {
+    const { profile } = await this.session.post("Profiler.stop");
+    writeFileSync(file, JSON.stringify(profile));
+    this.session.disconnect();
+  },
+};
 
 async function makeChallenge(dir) {
   const keep = quietConsole();
@@ -712,10 +763,11 @@ async function makeChallenge(dir) {
 // ---------------------------------------------------------------------------------------------------------------------------------------------------
 // The parent: seed once, then fresh processes per case and run.
 
-function child(args, what) {
+function child(args, what, env = process.env) {
   const r = spawnSync(process.execPath, ["--disable-warning=ExperimentalWarning", here, ...args], {
     encoding: "utf8",
     maxBuffer: 64 << 20,
+    env,
   });
   if (r.status !== 0)
     throw new Error(
@@ -741,6 +793,95 @@ function freshCopy(seedDir, runDir) {
   db.close();
 }
 
+/** FNV-1a (32 bits, hex) of a SQL text: the same key as `sqlKey` in apps/admin/worker/warm-routes.ts (the warm D1 looks rows up by it). */
+export function sqlKey(sql) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < sql.length; i++) {
+    h ^= sql.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+
+const FIXTURE_NAMES = { front: "FRONT_WARM", api: "API_WARM", finance: "FINANCE_WARM" };
+/**
+ * `--write-fixtures` (CPU warm-up (b)1): each admin Worker's start-up dry run replays its hot routes on made-up rows. This captures, for every HTTP case of the
+ * front, API and finance Workers, the request and every D1 statement of its first call on the probe's sample set (made-up: "(sample)" names, @example.test
+ * addresses, the e2e sample values), and writes apps/admin/worker/warm-fixtures/<worker>.ts: the calls in case order and the answer book (SQL key -> parameters,
+ * up to 3 rows, rows changed). Re-run it after a hot route's SQL or columns change (the warm-up tests then pin the new counts).
+ */
+function writeFixtures(work, seedDir) {
+  const out = {
+    front: { calls: [], rows: {} },
+    api: { calls: [], rows: {} },
+    finance: { calls: [], rows: {} },
+  };
+  for (const [name, c] of Object.entries(CASES)) {
+    if (!out[c.worker] || c.rpc || c.hook) continue;
+    const runDir = join(work, "run");
+    freshCopy(seedDir, runDir);
+    const args = ["--case", runDir, name, "0"];
+    if (c.totp) args.push(child(["--challenge", runDir], "the sign-in challenge").challenge);
+    const file = join(work, "capture.json");
+    child(args, name, { ...process.env, CPU_PROBE_CAPTURE: file });
+    const cap = JSON.parse(readFileSync(file, "utf8"));
+    console.log(`  ${name}: ${cap.status}, ${cap.statements.length} statements`);
+    const call = { method: cap.request.method, path: cap.request.path };
+    if (cap.request.body !== undefined) call.body = cap.request.body;
+    out[c.worker].calls.push(call);
+    // A write marked `stopsAtNewId` stops at its first new id in the dry run (global scope refuses random values), before its batch: only the reads before
+    // its first write statement are ever consulted, so the rest are left out (the bundle stays small). Every other call keeps all its statements.
+    const reads = /^\s*(SELECT|WITH)\s/i;
+    const firstWrite = c.stopsAtNewId ? cap.statements.findIndex((st) => !reads.test(st.sql)) : -1;
+    const kept = firstWrite === -1 ? cap.statements : cap.statements.slice(0, firstWrite);
+    for (const st of kept) {
+      // The access-log row is never written by a warm app; the rest are the route's own statements.
+      if (/^\s*INSERT INTO access_log /i.test(st.sql)) continue;
+      // A draft's stored tax result is never read (bundleOf parses `computed` only for a frozen document): left out to keep the bundle small.
+      const rowsOf = st.rows
+        .slice(0, 2)
+        .map((r) =>
+          r && !Array.isArray(r) && r.frozen_at === null && "computed" in r ? { ...r, computed: null } : r,
+        );
+      const key = sqlKey(st.sql);
+      out[c.worker].rows[key] ??= [];
+      const list = out[c.worker].rows[key];
+      const p = st.params;
+      if (list.some((e) => JSON.stringify(e.p) === JSON.stringify(p))) continue;
+      list.push({ p, r: rowsOf, c: st.changes });
+    }
+  }
+  // The parameters an entry was recorded for matter only when one statement has several entries (warm-routes.ts `warmDb`): dropped otherwise.
+  for (const data of Object.values(out))
+    for (const list of Object.values(data.rows)) if (list.length === 1) delete list[0].p;
+  const files = [];
+  for (const [worker, data] of Object.entries(out)) {
+    const name = FIXTURE_NAMES[worker];
+    const file = at(`apps/admin/worker/warm-fixtures/${worker}.ts`);
+    mkdirSync(at("apps/admin/worker/warm-fixtures"), { recursive: true });
+    writeFileSync(
+      file,
+      `// GENERATED by \`node scripts/cpu-probe.mjs --write-fixtures\` (CPU warm-up (b)1, docs/runs/cpu-warmup.md): do not edit by hand. The ${worker} Worker's
+// start-up dry run (warm-routes.ts): its hot routes' requests and the rows they read, captured from the probe's MADE-UP sample set (the e2e sample values:
+// "(sample)" names, @example.test addresses, SAMPLE bank values; secrets and keys are the admin tests' made-up test values). No real or personal data.
+import type { WarmFixture } from "../warm-routes.ts";
+
+export const ${name}: WarmFixture = ${JSON.stringify(data)};
+`,
+    );
+    files.push(file);
+  }
+  execFileSync(
+    process.execPath,
+    [at("node_modules/@biomejs/biome/bin/biome"), "format", "--write", ...files],
+    {
+      cwd: root,
+      stdio: "inherit",
+    },
+  );
+  console.log(`wrote ${files.length} fixture files`);
+}
+
 const median = (xs) => {
   const s = xs.slice().sort((a, b) => a - b);
   return s.length ? s[Math.floor((s.length - 1) / 2)] : Number.NaN;
@@ -757,6 +898,10 @@ async function main() {
       json: { type: "string" },
       keep: { type: "boolean", default: false },
       verbose: { type: "boolean", default: false },
+      profile: { type: "string" },
+      "profile-runs": { type: "string", default: "1" },
+      capture: { type: "string" },
+      "write-fixtures": { type: "boolean", default: false },
     },
   });
   const runs = Number(values.runs);
@@ -785,6 +930,10 @@ async function main() {
     });
     const seeded = child(["--seed", seedDir, String(later)], "the seed");
     console.log(`seeded: ${seeded.documents} documents`);
+    if (values["write-fixtures"]) {
+      writeFixtures(work, seedDir);
+      return;
+    }
     const rows = [];
     for (const name of names) {
       const firsts = [];
@@ -804,6 +953,25 @@ async function main() {
         stmts = first.statements;
         if (r === 0 && (first.status >= 400 || values.verbose))
           console.log(`  ${name}: first answered ${first.status} ${first.text}`);
+      }
+      if (values.capture) {
+        const runDir = join(work, "run");
+        freshCopy(seedDir, runDir);
+        const args = ["--case", runDir, name, "0"];
+        if (CASES[name].totp) args.push(child(["--challenge", runDir], "the sign-in challenge").challenge);
+        mkdirSync(values.capture, { recursive: true });
+        const file = join(values.capture, `${name.replace(/[^A-Za-z0-9]+/g, "-")}.json`);
+        child(args, name, { ...process.env, CPU_PROBE_CAPTURE: file });
+      }
+      // More processes with the V8 profiler around their first call (the profiler's own cost inflates that call; read the shares, not the total).
+      for (let k = 0; values.profile && k < Number(values["profile-runs"]); k++) {
+        const runDir = join(work, "run");
+        freshCopy(seedDir, runDir);
+        const args = ["--case", runDir, name, "0"];
+        if (CASES[name].totp) args.push(child(["--challenge", runDir], "the sign-in challenge").challenge);
+        mkdirSync(values.profile, { recursive: true });
+        const file = join(values.profile, `${name.replace(/[^A-Za-z0-9]+/g, "-")}-${k}.cpuprofile`);
+        child(args, name, { ...process.env, CPU_PROBE_PROFILE: file });
       }
       rows.push({
         name,

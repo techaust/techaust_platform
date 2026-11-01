@@ -12,29 +12,35 @@ const BAD_GATEWAY = { code: "bad_gateway", message: "Something went wrong" };
 /** Which Worker answers a forwarded row: `w` in the log lines ("api" or "finance"). */
 export const workerOf = (row: RouteDef): "api" | "finance" => (row.on === "finance" ? "finance" : "api");
 
-export function forwardRoutes(app: App, routes: readonly RouteDef[]) {
+/**
+ * `warm` (CPU warm-up (b)1): the forwarders of a warm app (createApp `warm`) for the start-up dry run: no request number, no random id, no `f: 1` mark, no log
+ * line. A Worker's real forwarders are always built without it.
+ */
+export function forwardRoutes(app: App, routes: readonly RouteDef[], warm = false) {
   for (const row of routes) {
     if (row.on === "front") continue;
     const w = workerOf(row);
     // The Hono pattern of the row, below the /api base path.
     app.on(row.method, row.path.slice("/api".length), async (c) => {
-      const { iso, n } = nextRequestNumber();
-      const rid = clipHeader(c.req.header("cf-ray"), HEADER_LIMITS.requestId) ?? hex(randomBytes(8));
+      const { iso, n } = warm ? { iso: "warm", n: 0 } : nextRequestNumber();
+      const rid =
+        clipHeader(c.req.header("cf-ray"), HEADER_LIMITS.requestId) ?? (warm ? "warm" : hex(randomBytes(8)));
       let res: Response;
       try {
         res = await (w === "finance" ? c.env.ADMIN_FINANCE : c.env.ADMIN_API).fetch(c.req.raw);
       } catch (e) {
         // The route PATTERN, never the raw path; never `e.message`.
-        console.error(
-          JSON.stringify({
-            level: "error",
-            route: row.path,
-            message: "admin api binding failed",
-            w,
-            rid,
-            cause: e instanceof Error ? e.name : "unknown",
-          }),
-        );
+        if (!warm)
+          console.error(
+            JSON.stringify({
+              level: "error",
+              route: row.path,
+              message: "admin api binding failed",
+              w,
+              rid,
+              cause: e instanceof Error ? e.name : "unknown",
+            }),
+          );
         c.set("rid", rid);
         // Built outside the middleware chain, so the headers every other /api answer carries are set here.
         c.header("Cache-Control", "no-store");
@@ -42,8 +48,9 @@ export function forwardRoutes(app: App, routes: readonly RouteDef[]) {
         return err(c, BAD_GATEWAY, 502);
       }
       // M6.2 (CPU diagnosis, lead decision 4): `f: 1` on this isolate's first forward of the row.
-      const f = firstRun(`fwd ${row.method} ${row.path}`);
-      console.log(JSON.stringify({ ev: "fwd", r: row.path, w, s: res.status, rid, iso, n, f }));
+      const f = warm ? undefined : firstRun(`fwd ${row.method} ${row.path}`);
+      const line = JSON.stringify({ ev: "fwd", r: row.path, w, s: res.status, rid, iso, n, f });
+      if (!warm) console.log(line);
       return res;
     });
   }

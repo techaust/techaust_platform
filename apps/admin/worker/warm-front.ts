@@ -4,3 +4,17 @@
 import { warmStepUp } from "@techaust/auth";
 
 export const frontWarm: Promise<number> = warmStepUp();
+
+/** Made-up 32-byte keys (the admin tests' TEST_KEY values, vitest.config.ts): never a real secret. */
+const madeUpKey = (n: number) => btoa(String.fromCharCode(...new Uint8Array(32).fill(n)));
+/**
+ * CPU warm-up (b)1: the front's made-up sign-in keys for its start-up dry run (warm-routes.ts `warmEnv`), here because only the front bundle may name them
+ * (scripts/worker-budget.mjs SIGN_IN_TABLES). The dry run's made-up rows (warm-fixtures/front.ts) were sealed with these same test values.
+ */
+export const FRONT_WARM_SECRETS: Readonly<Record<string, string>> = {
+  PASSWORD_PEPPER: madeUpKey(1),
+  SALT_PEPPER: madeUpKey(2),
+  TOTP_ENC_KEY: madeUpKey(3),
+  SESSION_HMAC_KEY: madeUpKey(4),
+  TURNSTILE_SECRET: "warm-up-turnstile-not-a-secret",
+};
