@@ -13,7 +13,7 @@ import { StatusPill } from "../components/status-pill.tsx";
 import { N, WORDS } from "../copy-documents.ts";
 import { formatIstDateTime, kindWord } from "../lib/offers.ts";
 
-function Aside(props: { view: PdfView; d: DecisionProps; onDownload: () => void }) {
+function Aside(props: { view: PdfView; d: DecisionProps; onDownload: () => void; extra?: ReactNode }) {
   const { view } = props;
   const m = props.d.model;
   const open = m.status === "sent" || m.status === "viewed";
@@ -62,6 +62,7 @@ function Aside(props: { view: PdfView; d: DecisionProps; onDownload: () => void 
           </button>
         </div>
       </div>
+      {props.extra}
       <nav className="toc" aria-label={N.docNav}>
         <p className="toc__title" aria-hidden="true">
           {N.contents}
@@ -94,6 +95,8 @@ export function DocumentPage(
     notices?: ReactNode | undefined;
     /** A refusal or download error to show at the top of the acceptance block (07-N §7). */
     problem: string | null;
+    /** T11: a card under the summary (the signed deed of an accepted proposal or estimate). */
+    asideExtra?: ReactNode | undefined;
   },
 ) {
   const m = props.model;
@@ -132,7 +135,7 @@ export function DocumentPage(
         </div>
       )}
       <div className="docpage__grid">
-        <Aside view={props.view} d={props} onDownload={props.onDownloadPdf} />
+        <Aside view={props.view} d={props} onDownload={props.onDownloadPdf} extra={props.asideExtra} />
         <DocumentPaper
           view={props.view}
           acceptOpen={m.status === "sent" || m.status === "viewed"}

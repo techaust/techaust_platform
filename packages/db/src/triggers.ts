@@ -1349,6 +1349,102 @@ export function paymentTriggerStatements(): string[] {
   ];
 }
 
+/**
+ * T11 (L4, L7; 08-C RB-38(a)): the columns a deed fixes once it leaves `draft` (pinned for 0062, so a later list cannot move its bytes). The parties, the
+ * accepted version and the creation time never change at all (`DEED_IDENTITY_0062`).
+ */
+export const DEED_IDENTITY_0062 = ["client_id", "project_id", "source_document_id", "created_at"] as const;
+export const DEED_FROZEN_0062 = [
+  "fy",
+  "number",
+  "number_display",
+  "made_on",
+  "sched_deliverables",
+  "sched_location",
+  "sched_delivered_dates",
+  "sched_tools",
+  "sched_third_party",
+  "snapshot",
+  "snapshot_sha256",
+  "finalised_at",
+  "finalised_by",
+  "cancelled_at",
+  "cancelled_by",
+  "cancel_reason",
+] as const;
+/** Set once, in any state: the unsigned PDF (jobs), the signed copy and its eSign details (the Owner's upload). */
+export const DEED_SET_ONCE_0062 = [
+  "unsigned_r2_key",
+  "unsigned_sha256",
+  "signed_r2_key",
+  "signed_sha256",
+  "signed_size",
+  "esign_at",
+  "esign_txn",
+  "signed_at",
+  "signed_by",
+] as const;
+/** The Schedule fields a draft must have filled in (not blank) before it is finalised (L6: Schedule 2 may say "None", typed explicitly). */
+export const DEED_SCHEDULE_COLUMNS_0062 = [
+  "sched_deliverables",
+  "sched_location",
+  "sched_delivered_dates",
+  "sched_tools",
+  "sched_third_party",
+] as const;
+
+/**
+ * The deed of assignment (T11, run file L1 to L8). The CHECK constraints of 0061 hold the shape of each state (a number, date, snapshot and finaliser exactly when
+ * final or signed; the signed copy and eSign details exactly when signed; a reason exactly when cancelled); these hold the moves:
+ *   1. `deeds_insert`: a deed is born a `draft` with nothing frozen, for a project of its client whose source document it names, that document an ACCEPTED proposal
+ *      or estimate of the same client, and the client not anonymised (Researched 2026-10-31, Copyright Act s.19(1) (08-C RB-38(a)): the deed names the work);
+ *   2. `deeds_status_flow`: draft → final or cancelled, final → signed; nothing else (a final or signed deed is a legal record of a transfer of rights);
+ *   3. `deeds_finalise_ready`: a draft becomes final only with every Schedule field filled in (not blank), while the client is live;
+ *   4. `deeds_sign_ready`: a final deed becomes signed only while the client is live;
+ *   5. `deeds_identity_fixed`: the parties, the accepted version and the creation time never change;
+ *   6. `deeds_frozen`: once out of `draft`, the number, date, Schedules, snapshot, finaliser and the cancel facts never change, and a cancelled deed never changes;
+ *   7. `deeds_set_once`: the unsigned PDF and the signed copy's columns are set once; the unsigned PDF only on a final or signed deed, the signed copy only in
+ *      the move final → signed;
+ *   8. `deeds_no_delete`: only a DRAFT or CANCELLED deed of an anonymised client is deleted (L7; early check 5: a cancelled deed holds the Owner's typed
+ *      reason); a final or signed deed is kept like an invoice (Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) as 08-C RB-11 reads them);
+ *   9. `clients_anonymised_draft_deeds`: anonymising a client deletes its draft and cancelled deeds in the same statement (L7; the erase batch stays within its
+ *      budget of 45 statements).
+ */
+export function deedTriggerStatements(): string[] {
+  const named = (name: string, message: string) => abort(`${name}: ${message}`);
+  const changed = (cols: readonly string[]) =>
+    cols.map((c) => `NEW.\`${c}\` IS NOT OLD.\`${c}\``).join(" OR ");
+  const setOnce = (cols: readonly string[]) =>
+    cols.map((c) => `(OLD.\`${c}\` IS NOT NULL AND NEW.\`${c}\` IS NOT OLD.\`${c}\`)`).join(" OR ");
+  const quotes = QUOTE_DOCUMENT_TYPES.map((t) => `'${t}'`).join(", ");
+  const gone = (client: string) =>
+    `EXISTS (SELECT 1 FROM clients dz WHERE dz.id = ${client} AND dz.anonymised_at IS NOT NULL)`;
+  const insertBad = `NEW.status IS NOT 'draft' OR ${[...DEED_FROZEN_0062, ...DEED_SET_ONCE_0062].map((c) => `NEW.\`${c}\` IS NOT NULL`).join(" OR ")}
+    OR NOT EXISTS (SELECT 1 FROM projects dp WHERE dp.id = NEW.project_id AND dp.client_id = NEW.client_id AND dp.source_document_id = NEW.source_document_id)
+    OR NOT EXISTS (SELECT 1 FROM documents ds WHERE ds.id = NEW.source_document_id AND ds.client_id = NEW.client_id AND ds.type IN (${quotes}) AND ds.status = 'accepted' AND ds.frozen_at IS NOT NULL)
+    OR ${gone("NEW.client_id")}`;
+  const flowBad = `NEW.status IS NOT OLD.status AND NOT ((OLD.status = 'draft' AND NEW.status IN ('final', 'cancelled')) OR (OLD.status = 'final' AND NEW.status = 'signed'))`;
+  const blank = DEED_SCHEDULE_COLUMNS_0062.map((c) => `trim(coalesce(NEW.\`${c}\`, '')) = ''`).join(" OR ");
+  const frozenBad = `OLD.status = 'cancelled' OR (OLD.status IN ('final', 'signed') AND (${changed(DEED_FROZEN_0062)}))`;
+  const signedCols = DEED_SET_ONCE_0062.filter((c) => !c.startsWith("unsigned_"));
+  const setOnceBad = `${setOnce(DEED_SET_ONCE_0062)}
+    OR (OLD.unsigned_r2_key IS NULL AND NEW.unsigned_r2_key IS NOT NULL AND NEW.status NOT IN ('final', 'signed'))
+    OR ((${signedCols.map((c) => `(OLD.\`${c}\` IS NULL AND NEW.\`${c}\` IS NOT NULL)`).join(" OR ")}) AND NOT (OLD.status = 'final' AND NEW.status = 'signed'))`;
+  return [
+    `CREATE TRIGGER \`deeds_insert\` BEFORE INSERT ON \`deeds\` WHEN ${insertBad} BEGIN ${named("deeds_insert", "a deed starts as a draft for a project of its client, naming the accepted proposal or estimate behind it, while the client is live")} END;`,
+    `CREATE TRIGGER \`deeds_status_flow\` BEFORE UPDATE OF status ON \`deeds\` WHEN ${flowBad} BEGIN ${named("deeds_status_flow", "a deed moves from draft to final or cancelled, and from final to signed, never back")} END;`,
+    `CREATE TRIGGER \`deeds_finalise_ready\` BEFORE UPDATE OF status ON \`deeds\` WHEN OLD.status = 'draft' AND NEW.status = 'final' AND (${blank} OR ${gone("OLD.client_id")}) BEGIN ${named("deeds_finalise_ready", "a deed is finalised only with both Schedules filled in, while the client is live")} END;`,
+    `CREATE TRIGGER \`deeds_sign_ready\` BEFORE UPDATE OF status ON \`deeds\` WHEN OLD.status = 'final' AND NEW.status = 'signed' AND ${gone("OLD.client_id")} BEGIN ${named("deeds_sign_ready", "a signed copy is added only while the client is live")} END;`,
+    `CREATE TRIGGER \`deeds_identity_fixed\` BEFORE UPDATE ON \`deeds\` WHEN ${changed(DEED_IDENTITY_0062)} BEGIN ${named("deeds_identity_fixed", "the parties and the accepted version of a deed never change")} END;`,
+    `CREATE TRIGGER \`deeds_frozen\` BEFORE UPDATE ON \`deeds\` WHEN ${frozenBad} BEGIN ${named("deeds_frozen", "a final or signed deed keeps its number, Schedules and snapshot, and a cancelled deed never changes")} END;`,
+    `CREATE TRIGGER \`deeds_set_once\` BEFORE UPDATE ON \`deeds\` WHEN ${setOnceBad} BEGIN ${named("deeds_set_once", "the unsigned PDF is set once on a final deed, and the signed copy once, when the deed is signed")} END;`,
+    `CREATE TRIGGER \`deeds_no_delete\` BEFORE DELETE ON \`deeds\` WHEN OLD.status NOT IN ('draft', 'cancelled') OR NOT ${gone("OLD.client_id")} BEGIN ${named("deeds_no_delete", "only a draft or cancelled deed of an anonymised client is deleted; a final or signed deed is kept")} END;`,
+    // 9. L7: the moment a client is anonymised (the erase batch's step 3), its draft and cancelled deeds go with it, in the same statement: no extra statement
+    //    in the erase batch, which is held to 45 D1 statements (T7's budget). Final and signed deeds stay (`deeds_no_delete` lets only those two go, and only now).
+    "CREATE TRIGGER `clients_anonymised_draft_deeds` AFTER UPDATE OF anonymised_at ON `clients` WHEN OLD.anonymised_at IS NULL AND NEW.anonymised_at IS NOT NULL BEGIN DELETE FROM deeds WHERE client_id = NEW.id AND status IN ('draft', 'cancelled'); END;",
+  ];
+}
+
 /** The trigger sets, by the name the migration is created with (`drizzle-kit generate --custom --name <set>`). */
 export const TRIGGER_SETS = {
   triggers: { what: "integrity triggers (docs/05 §5.3)", statements: triggerStatements },
@@ -1438,6 +1534,10 @@ export const TRIGGER_SETS = {
   payment_triggers: {
     what: "M6.1 ledger: the advance receipts back-filled as payments, payment and allocation rules, the ledger post-condition, the ledger identity with TDS, TDS bounds, no void with a payment, payment approvals",
     statements: paymentTriggerStatements,
+  },
+  deed_triggers: {
+    what: "T11 deed of assignment: born a draft for an accepted proposal or estimate, the status flow, Schedules filled before finalising, frozen once final, set-once PDFs, only an erased client's draft or cancelled deed is deleted",
+    statements: deedTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;

@@ -96,5 +96,7 @@ export async function statementViewSha256(view: StatementView): Promise<string> 
   return sha256Hex(canonicalJson({ layout: STATEMENT_LAYOUT_ID, ...view }));
 }
 
+/** T11: the deed of assignment's unsigned PDF (`layout/deed.ts`; a builder's placeholder until the designer's layout replaces it). */
+export { DEED_LAYOUT_PLACEHOLDER, DEED_PDF_LAYOUT_ID, renderDeedHtml } from "./layout/deed.ts";
 /** The whole HTML document of a statement of account: the designer's layout (`layout/statement.ts`). */
 export { renderStatementHtml } from "./layout/statement.ts";

@@ -123,6 +123,9 @@ const TENANT_ELSEWHERE: Record<string, { request: (id: string) => { path: string
   "POST /api/v1/offers/:id/decline": {
     request: (id) => ({ path: `/offers/${id}/decline`, init: { body: { reason: "price" } } }),
   },
+  // T11: the signed deeds and the signed PDF (named in the body), proven with `crossTenant` in deeds.test.ts on their own fixtures (a deed must be signed).
+  "GET /api/v1/deeds": { request: (id) => ({ path: `/deeds?document=${id}` }) },
+  "POST /api/v1/deeds/pdf": { request: (id) => ({ path: "/deeds/pdf", init: { body: { id } } }) },
 };
 
 /** Guarded routes that touch no row of an organisation by a caller-named id, with the reason and a sample request. */

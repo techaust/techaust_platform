@@ -55,6 +55,13 @@ const EXPECTED: Record<Exclude<Action, "proposals.send">, string> = {
   "payments.withdraw": "S---", // M6.1 (L7): the Owner only, with a fresh code
   "payments.applyCredit": "S---", // M6.1 (L13): the Owner only, with a fresh code
   "payments.attachProof": "AA--", // M6.1 (L11): Owner and Staff add a proof or a certificate number once
+  "deeds.view": "AA--", // T11 (L8; owner, 2026-11-01, decision (c)): Owner and Staff read a deed; the Accountant does not
+  "deeds.editSchedules": "AA--", // T11 (L8): Owner and Staff fill the Schedules
+  "deeds.finalise": "S---", // T11 (L8): the Owner finalises with a fresh code
+  "deeds.uploadSigned": "S---", // T11 (L8): the Owner uploads the signed copy with a fresh code
+  "deeds.cancel": "A---", // T11 (L8): the Owner cancels a draft
+  "deeds.recheck": "A---", // T11 (L8): the Owner asks for a project to be checked again
+  "deeds.renderPdf": "A---", // T11 round 2: the Owner asks for the unsigned PDF to be rendered again
   "realisation.extend": "A---", // M6.1 (L14, Q60): the Owner only
   "refunds.read": "A--A",
   "refunds.issue": "S---",

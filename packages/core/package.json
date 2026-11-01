@@ -15,6 +15,7 @@
     "./clients": "./src/clients.ts",
     "./dashboard": "./src/dashboard.ts",
     "./dates": "./src/dates.ts",
+    "./deeds": "./src/deeds.ts",
     "./documents": "./src/documents.ts",
     "./expiry": "./src/expiry.ts",
     "./hash": "./src/hash.ts",

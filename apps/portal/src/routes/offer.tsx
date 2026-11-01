@@ -54,6 +54,8 @@ export function OfferScreen(props: {
   notices?: ReactNode | undefined;
   /** What a 404 shows: "Page not found" in the portal; the emailed link says it has ended, with the way to sign in (finding 7). */
   missing?: ReactNode | undefined;
+  /** T11: a card under the summary for this version (the signed-in route's signed deed, once the version is accepted). */
+  asideExtra?: ((documentId: string, accepted: boolean) => ReactNode) | undefined;
 }) {
   const { source, onSuperseded } = props;
   const [state, setState] = useState<State>({ phase: "loading" });
@@ -212,6 +214,7 @@ export function OfferScreen(props: {
         </>
       }
       problem={problem}
+      asideExtra={props.asideExtra?.(doc.id, model.status === "accepted")}
       sheetAlert={alert?.at === "sheet" ? <AlertLine text={alert.text} /> : null}
       downloading={downloading}
       onAccept={onAccept}

@@ -489,6 +489,10 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | GST/CA exports | ✅ (step-up) | — | — | ✅ (step-up) |
 | Audit log | ✅ | — | — | 👁 finance events |
 | Approvals queue | ✅ | own requests | own requests | — |
+| Deeds of assignment: view and download (`deeds.view`; T11, owner 2026-11-01) | ✅ | 👁 | — | — |
+| Deeds: edit the Schedules of a draft (`deeds.editSchedules`) | ✅ | ✏️ | — | — |
+| Deeds: finalise, upload the signed copy (`deeds.finalise`, `deeds.uploadSigned`) | ✅ (step-up) | — | — | — |
+| Deeds: cancel a draft, check again, make the PDF again (`deeds.cancel`, `deeds.recheck`, `deeds.renderPdf`) | ✅ | — | — | — |
 
 ---
 
