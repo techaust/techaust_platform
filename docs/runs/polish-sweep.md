@@ -192,6 +192,7 @@ Commands (through heavy.sh): admin typecheck exit 0; admin test 128 files, 3,822
 - A narrow re-check follows the designer round.
 - `bash tools/heavy.sh --log check pnpm check` on b80caa7: exit 0 (lint infos only, pre-existing; every guard ok). A reminder is set for 06:12 IST to start the designer round.
 - 2026-11-01 06:13 IST: merged origin/main (#141, #142; clean) as d945655. Designer fix round d2 started (agent-slots: yes, reading USAGE 88 at 04:00, over 2 hours old, so one agent at a time; the window reset at 06:10).
+- `pnpm test` on c5ac03f (main merged, before d2), through heavy.sh: exit 0. auth 135; ui 471 (+2 skipped); core 1,952; email 132; db 623; pdf 379; web 750 (+17 skipped); portal 679; jobs 560; admin 3,828 (128 files). The final run on the branch tip follows the re-check.
 
 ## Integration notes (lead)
 - 2026-11-01: merged `fix/polish-sweep-b1` (9da1599) into `fix/polish-sweep` as 2826a4b; builder worktree removed, local branches deleted. Lead read the diff: the cancel of never-linked sends now runs before `deleteContactAccess` (step 2a), same SQL and guard; `DELIVERY_SQL` adds `removed` and the row reads "Removed contact" (core `ANONYMISED_CONTACT`, existing words), no address. The reviewer checks the guard order (the anonymise audit row exists before 2a) and the statement count.
