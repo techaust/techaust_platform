@@ -1,6 +1,6 @@
-Status: main merged (6d25c9e: #141, #142); reviewer running
+Status: review APPROVE (5 lows: L1, L4, L5 fixed; L2 kept; L3 follow-up); re-check running
 Tier: B
-Usage: analyst (item 5) claude-opus-5-5/high, skills: code-review (+ its read-only general-purpose helper claude-opus-5-5/high); 5-h 17 → 62 % (shared window, four sessions) · builder r1 claude-opus-5-5/high, skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:turnstile-spin (not installed in the cloud); 5-h 17 → 62 % · analyst (early check r1) claude-opus-5-5/high, skills: code-review (+ read-only helper); 5-h 62 % · builder r2 claude-opus-5-5/high, skills tried: cloudflare:workers-best-practices (not installed in the cloud); 5-h 62 → 88 %
+Usage: analyst (item 5) claude-opus-5-5/high, skills: code-review (+ its read-only general-purpose helper claude-opus-5-5/high); 5-h 17 → 62 % (shared window, four sessions) · builder r1 claude-opus-5-5/high, skills tried: cloudflare:workers-best-practices, cloudflare:wrangler, cloudflare:turnstile-spin (not installed in the cloud); 5-h 17 → 62 % · analyst (early check r1) claude-opus-5-5/high, skills: code-review (+ read-only helper); 5-h 62 % · builder r2 claude-opus-5-5/high, skills tried: cloudflare:workers-best-practices (not installed in the cloud); 5-h 62 → 88 % · reviewer claude-opus-5-5/high, skills: code-review (+ read-only helper), security-review (by hand); 5-h reset 06:10 → reading not yet posted
 
 # Test and guard hardening (cloud session "test-hardening")
 
@@ -331,6 +331,22 @@ _Pasted by the lead from the analyst's reply (Opus 5.5 high, read-only, 2026-11-
 **Lead triage (2026-11-01):** M1, L1–L3 and the six stale-check sites go to builder r2 (sent by message; the billing site binds a separate real `now` for the step-up check). The bare-`Date.now()` writers and the Udyam dash/zero-width characters are follow-ups.
 
 ## Review
+_Pasted by the lead from the reviewer's reply (Opus 5.5 high, 2026-11-01). Reviewed `fix/test-hardening` at 6d25c9e (main merged), `git diff origin/main...HEAD`, 60 files._
+
+**APPROVE.** No critical, high or medium findings; five lows.
+- **L1** jobs `reminders.ts:102-105` `GIVE_BACK_SQL` (and the `no_recipient` give-back :192): the pause arm matches any revoked link of the document, including one contact's link revoked by `revokeContactAccess` (access off, email change), so a failed `sendBatch` while one contact loses access pauses the whole claimed reminder (it is already due, so Resume can't bring it back: "missed while paused" for the others); the `no_recipient` path can end "missed while paused" instead of its final reason. Fail-closed, narrow race.
+- **L2** jobs `invoice-send.ts:57`, `offers.ts:185`: "a link of this send was revoked" also matches an email change's revoke, so a retried send after a failed queue and a corrected email is refused and shows Cancelled (staff can send again). Fail-closed, visible.
+- **L3** `MARK_NOT_SENT_SQL`: a redelivery refused while the first email is still on `EMAIL_QUEUE` (no log row yet) still marks the send cancelled and the email goes; already a follow-up. Entity link right for both families (`document_send`, `email.ts:92-95`, index `email_log_entity`); no new "queued for ever" path (the email dead-letter handler sets `failed`; `skipped` reads as cancelled).
+- **L4** admin `care-billing.ts:777-780` with jobs `care-billing.ts:103-109`: a PDF queue down through every `care.issue` retry dead-letters into "A care invoice draft could not be issued by itself" for an invoice that was issued. Retries stay idempotent, no double "issued" bell, no loop.
+- **L5** `MARK_NOT_SENT_SQL`/`markNotSent` written twice (jobs `invoice-send.ts`, `offers.ts`).
+- **Checked and holding:** link inserts (bind arity unchanged, per-send rule), `cancelUnlinkedSendsSql` (same semantics, EXPLAIN pinned), give-back binds and 0044, care #4 guard; the six stale-check writers (right expected value; a forged large `expectedUpdatedAt` only gives 409; billing step-up `now` real at `?${setVals.length+5}`; contact sibling stamps keep `t`; no contract change but `updatedAt`); r1 refactors behaviour-identical; tests prove their claims; no out-of-bounds file, migration or workflow; the only changed user strings are the decline labels moved word for word; **no screen changed visibly (no visual pass needed)**.
+- **Ran (heavy queue, all exit 0):** jobs 570; admin worker care-billing, invoice-send, leads-api, catalogue, clients, settings, e2e-sample-signature, dashboard-stress 240; admin `src/lib` offers and udyam 27; core 1,956 (coverage 99.03 %); portal 680; db `signature-triggers` 9; pdf `sample-signature` 1; testing 4.
+- **Not verified:** `pnpm check`/`pnpm test`/builds (lead's), the web form e2e (blocked here), real two-Worker races, SPA chunk sizes, the builder's fail-without-fix checks.
+- **Skills:** `code-review` (helper on the right range, 9 candidates verified: 5 became L1–L5, 1 already a follow-up, 3 dropped), `security-review` (done by hand, no agent tool: the changes tighten access or fail closed; no vulnerability at confidence ≥ 8); Cloudflare skills unavailable; no `frontend-design` (no screen).
+
+**Lead triage (2026-11-01):** L1 fixed (5879f00: the give-back pauses only when no live link of the document is left; the no-recipient path gives back plainly; two tests, both fail without the fix); L4 fixed (54a5bb0: a `care.issue` dead letter for a frozen invoice only logs; test fails without the fix); L5 fixed (fcbc8e1: one `markNotSent` in `billing-shared.ts`); L2 kept (lead decision below); L3 stays a follow-up. Jobs typecheck and suite green (573). Re-check requested.
+
+## Re-check
 (pending)
 
 ## Integration notes
@@ -339,6 +355,8 @@ _Pasted by the lead from the analyst's reply (Opus 5.5 high, read-only, 2026-11-
 ## Lead decisions (for 13)
 - 2026-11-01: the optimistic stale check on six admin writers (leads, catalogue, client, client billing, contact, bank account) stamps `max(now, expected + 1)`, the house pattern, closing a same-millisecond/clock-skew gap (analyst: theoretical, low); the billing step-up check keeps the real clock.
 - 2026-11-01 (builder r2's question): a send whose email already has its `email_log` row is never marked cancelled by a refused redelivery (it stays Sent/Delivered/Failed); jobs `MARK_NOT_SENT_SQL` in `invoice-send.ts` and `offers.ts`, tests in both (fail without the fix, checked). Lead commit 60bcb5c.
+- 2026-11-01 (review L2, kept): a retried send whose own link was revoked by a contact's email change is refused and shows Cancelled rather than emailing the new address: fail-closed and visible, staff send again; telling the two revokes apart needs a marker column (a migration), not worth it for a queue-failure race.
+- 2026-11-01 (review L1): a given-back reminder is paused only when no live link of the document is left (a document-wide revoke), never for one contact's lost access; the no-recipient give-back is plain. A one-contact document whose only contact lost access still ends paused (fail-closed).
 - 2026-11-01: item-5 defects #1–#4 (a revoked link re-minted on a queue retry, a reminder given back unpaused after a revoke, a care PDF enqueue failure ignored, care billing statements unguarded against a just-anonymised client) fixed in this task.
 - 2026-11-01: the M5.4 code-review candidates were never recorded, so item 5 is a fresh focused pass over the six named files on main (analyst), not a re-check of a list.
 - 2026-11-01: `git remote set-head origin main` run in this session's clone so `security-review` can load (cloud follow-up from T6).
