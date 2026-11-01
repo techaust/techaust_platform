@@ -2,6 +2,20 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-11-01 [#149](https://github.com/techaust/techaust_platform/pull/149) docs(runs): M6.5 and M7.1–M7.5 briefs, with the owner's 21 answers
+- 2026-11-01 [#148](https://github.com/techaust/techaust_platform/pull/148) feat(deeds): the deed of assignment of copyright [RB-38, POR-05, ADM-PRJ-04]
+- 2026-11-01 [#147](https://github.com/techaust/techaust_platform/pull/147) feat(tools): the /orchestrate skill and cloud watcher
+- 2026-11-01 [#146](https://github.com/techaust/techaust_platform/pull/146) chore(tools): set-gateway-keys razorpay-webhook mode (for the owner's H3 step)
+- 2026-11-01 [#145](https://github.com/techaust/techaust_platform/pull/145) docs: overnight decisions and the 2026-11-01 parallel run
+- 2026-11-01 [#144](https://github.com/techaust/techaust_platform/pull/144) fix(admin,web): polish sweep: anonymise send state, note labels, wrong codes, sticky dialog titles, focus ring [ADM-CLI-05, ADM-DASH-01, ADM-AUD-02, ADM-AUTH-08, ADM-INV-05, ADM-SET-01, ADM-TIME-01, WEB-G-16]
+- 2026-11-01 [#143](https://github.com/techaust/techaust_platform/pull/143) test: harden flaky and slow tests, single copies of shared constants, verified review candidates [ADM-INV-13, ADM-INV-15, ADM-PROP-07, ADM-LEAD-03, ADM-SET-01]
+- 2026-11-01 [#142](https://github.com/techaust/techaust_platform/pull/142) fix(admin): replace the "ask your CA" lines with 07-ZK copy [ADM-REP-04, ADM-SET-03, ADM-INV-17]
+- 2026-11-01 [#141](https://github.com/techaust/techaust_platform/pull/141) docs(runs): M6.3 Stripe and M6.4 PayPal briefs [ADM-PAY-03, ADM-PAY-04]
+- 2026-11-01 [#140](https://github.com/techaust/techaust_platform/pull/140) fix(admin,portal): one owner per style class, a clear switch mark, and a guard [ADM-REP-04]
+- 2026-11-01 [#139](https://github.com/techaust/techaust_platform/pull/139) docs: M6.2 owner answers and interim status
+- 2026-11-01 [#138](https://github.com/techaust/techaust_platform/pull/138) perf(jobs): minify the jobs Worker with uploaded source maps (L9)
+- 2026-11-01 [#137](https://github.com/techaust/techaust_platform/pull/137) docs: M6.1 approved, L9 decided, Stripe account plan
+- 2026-10-31 [#136](https://github.com/techaust/techaust_platform/pull/136) docs: end of day 2026-10-31 (parallel run done; CLAUDE.md for three admin Workers)
 - 2026-10-31 [#135](https://github.com/techaust/techaust_platform/pull/135) feat(payments): ledger and manual payments, TDS by certificate, third admin Worker [ADM-PAY-01, ADM-PAY-05, ADM-PAY-06, ADM-INV-16]
 - 2026-10-31 [#134](https://github.com/techaust/techaust_platform/pull/134) docs(runbooks): payment gateway test accounts and a hidden-input key script [ADM-PAY-01]
 - 2026-10-31 [#133](https://github.com/techaust/techaust_platform/pull/133) feat(clients): erase a person's data in never-accepted offers [RB-37, ADM-CLI-05, ADM-PROP-05, ADM-PROP-08, POR-05]

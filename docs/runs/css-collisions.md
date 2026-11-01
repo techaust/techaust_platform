@@ -1,8 +1,8 @@
 # Run: style-name clashes in the admin and portal stylesheets
 
-Status: open
+Status: merged (PR #140, 2026-11-01)
 Tier: C
-Usage:
+Usage: designer claude-opus-5-5/high (frontend-design), reviewer claude-opus-5-5/high (code-review, frontend-design; its code-review helper general-purpose claude-opus-5-5/high), designer fix round claude-opus-5-5/high (frontend-design); 5-h 12 → 29 % (2026-11-01 00:15–01:30 IST)
 
 ## Brief
 **Owner's report (2026-10-31, screenshot):** on Reports › GST exports, the Quarter / Month switch draws the chosen option as a light block that doesn't fill its half (dark strips on both sides of "Quarter"). The owner asked for the cause and every other place with the same problem.
@@ -195,3 +195,6 @@ Tier C with no critical or high finding, so the lead re-checked instead of a sec
 - Squash-merged through its own PR with auto-merge after CI; `main` merged in first.
 - Lead decisions (13): GST Files keeps the 20 px bottom margin `reports.css` declares; the forced-colours fallback stays.
 - Follow-ups (12): the other switch screens (invoice new, notes, types, leads convert, milestones, project notes, gateways, client data tools) weren't photographed after the bar (same single rule); real Windows high contrast not checked; the portal `.back` has no screenshot (needs a client sign-in); while busy, the muted text on the chosen fill is 4.36:1 in dark (disabled controls are exempt from WCAG contrast).
+
+## Handover (lead, 2026-11-01)
+Merged as #140 (owner's report of the GST switch; the shared switch's ink bar; the CSS-collision guard in `pnpm check` and CI). Nothing left in this task; its follow-ups are in 12.

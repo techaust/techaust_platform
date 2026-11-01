@@ -1,4 +1,4 @@
-Status: PR READY https://github.com/techaust/techaust_platform/pull/142
+Status: merged (PR #142, 2026-11-01)
 Tier: C (copy lines and the tests that pin them; no logic, no migrations)
 Usage: lead claude-opus-5-5/high, skills: none (no §9 row fits copy work); builder b1 claude-opus-5-5/high 2026-10-31T20:59Z, skills: none (flagged by model-audit: the cloudflare skills don't load in a cloud session and the change is string values only; lead accepts); 5-h reading 20 % at 02:55 IST; reviewer claude-opus-5-5/high 2026-11-01, skills: code-review (its read-only helper on Opus 5.5); 5-h reading 62 % at 03:21 IST
 

@@ -1,8 +1,8 @@
 # Run: T11, the deed of assignment of copyright
 
-Status: designer done on `feat/t11-deed-design` (07-ZJ approved by the lead, 2026-11-01); reviewer next
+Status: merged (PR #148, 2026-11-01)
 Tier: B
-Usage:
+Usage: builder r1 claude-opus-5-5/high (workers-best-practices, wrangler), analyst early check claude-opus-5-5/high (workers-best-practices, wrangler, workers-profiling), builder r2 claude-opus-5-5/high (workers-best-practices, wrangler), designer claude-opus-5-5/high (frontend-design; resumed after the 04:30 usage limit), reviewer claude-opus-5-5/high (code-review, security-review, frontend-design; helper general-purpose claude-opus-5-5/high), builder fix round claude-opus-5-5/high (workers-best-practices, wrangler)
 
 ## Brief
 **IDs:** 08-C RB-38(a) (Researched 2026-10-31, Copyright Act s.19(1); IT Act s.5 unverified), RB-21 (OPEN), ADM-PRJ-01, ADM-PRJ-04, POR-05; copy [07-ZE](../07-content-appendix/ZE-terms-offers-deed.md) section D and "The deed's text" (approved word for word; the approved lines win over this brief).
@@ -361,3 +361,6 @@ No critical or high finding in the review, so the lead re-checked instead of a s
 - Merged to main through its own PR **before M6.2** (T11 owns 0061/0062; M6.2 renumbers onto them and adds `deedDraftStatements` to its gateway batches).
 - Lead decisions for 13: L1–L8; the early-check decisions (a)–(d); the owner's answers 1, 2, 8 and the audience (finance contacts only); the triage items 3–7; 07-ZJ approved under delegation.
 - Follow-ups for 12: an Owner "Email again" for a failed `deed.signed` send; one look at a staging deed PDF from Browser Run; the email in real mail clients; the Delivery 0.2 effective date set to launch day with the others; the 375 px tab strip scroll (existing `Tabs`); the M3 polling and portal finance gate checked in a browser.
+
+## Handover (lead, 2026-11-01)
+Merged as #148 before M6.2 and deployed to staging with it. Next: one look at a staging deed PDF rendered by Browser Run and the M3 polling and portal finance gate in a browser (12 follow-ups); M6.2 carries the deed hooks in its gateway batches. Nothing else open in this task.
