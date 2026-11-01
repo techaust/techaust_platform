@@ -20,6 +20,7 @@ import { issueInvoice, type J, json, mkInvoiceClient, putBank, putCompany } from
 import {
   checkoutOf,
   jsonResponse,
+  liveSession,
   piOf,
   sessionAnswer,
   stripeCalls,
@@ -39,16 +40,6 @@ beforeEach(async () => {
   stripeStub();
 });
 afterEach(() => setStubTransport(null));
-
-/** A live Stripe session of an issued USD export invoice of an overseas client (USD 500). */
-async function liveSession(o: { type?: string; amount?: number } = {}) {
-  const c = await usdClient();
-  const documentId = await usdDoc(c.clientId, { type: o.type });
-  const r = await stripeLink(c, documentId, o.amount ?? 50_000);
-  if (!r.ok) throw new Error(`no link: ${JSON.stringify(r)}`);
-  const sessionId = new URL(r.url).pathname.split("/").at(-1) as string;
-  return { ...c, documentId, checkoutId: r.checkoutId, sessionId, url: r.url };
-}
 
 const ledger = (id: string) =>
   one<{ status: string; paid_minor: number; balance_minor: number }>(
