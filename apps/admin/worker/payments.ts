@@ -31,7 +31,7 @@ import {
   withdrawPaymentBody,
 } from "@techaust/core/payment-schemas";
 import { decide } from "@techaust/core/permissions";
-import { paymentHasAdviceSql } from "@techaust/db/advices";
+import { PAYMENT_ADVICE_SQL, paymentHasAdviceSql } from "@techaust/db/advices";
 import { deedDraftStatements } from "@techaust/db/deeds";
 import {
   type AllocationRow,
@@ -470,9 +470,11 @@ export const payments = new Hono<AppEnv>()
 
   .get("/:id", param(idParam), async (c) => {
     const { id } = c.req.valid("param");
-    const [p, a] = await c.env.DB.batch([
+    // M6.4 (the designer's admin round): the advice the payment is on now, from the active link only (a link taken off is null).
+    const [p, a, adv] = await c.env.DB.batch([
       c.env.DB.prepare(PAYMENT_READ_SQL).bind(id),
       c.env.DB.prepare(PAYMENT_ALLOCATIONS_SQL).bind(id),
+      c.env.DB.prepare(PAYMENT_ADVICE_SQL).bind(id),
     ]);
     const row = p?.results[0] as PaymentRow | undefined;
     if (!row) return err(c, NOT_FOUND, 404);
@@ -495,7 +497,22 @@ export const payments = new Hono<AppEnv>()
       amountMinor: r.amount_minor,
       createdAt: r.created_at,
     }));
-    return c.json({ payment: paymentView(row), allocations });
+    const on = adv?.results[0] as
+      | { id: string; provider: string; kind: string; advice_ref: string; issued_on: string }
+      | undefined;
+    return c.json({
+      payment: paymentView(row),
+      allocations,
+      advice: on
+        ? {
+            id: on.id,
+            provider: on.provider,
+            kind: on.kind,
+            adviceRef: on.advice_ref,
+            issuedOn: on.issued_on,
+          }
+        : null,
+    });
   })
 
   // ---- record ----

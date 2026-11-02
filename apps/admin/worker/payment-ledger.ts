@@ -11,6 +11,7 @@
 // RA-17 (L13; Settled by the lead on the safest reading, 2026-10-31 (08-C RA-17)): an overpayment held as credit and used later on another supply is treated as
 // an advance under s.13(2) CGST Act, so money that arrived in a month before the invoice's month answers with the warning `received_in_earlier_month`; nothing
 // is blocked.
+
 import { addDays, istDate, parseIsoDate, toIsoDate } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import {
@@ -24,6 +25,7 @@ import {
 } from "@techaust/core/ledger";
 import { onlineMinimumOf } from "@techaust/core/online-pay";
 import { creditApplyBody, creditReleaseBody, realisationExtensionBody } from "@techaust/core/payment-schemas";
+import { paymentHasAdviceSql } from "@techaust/db/advices";
 import { deedDraftStatements } from "@techaust/db/deeds";
 import { DOCUMENT_CHECKOUTS_SQL } from "@techaust/db/gateway";
 import {
@@ -337,7 +339,8 @@ export const PENDING_FOR_DOCUMENT_SQL = `SELECT p.id, p.kind, p.received_on, p.m
  * credited, Stripe's INR fee and the tax in it; never a stored rate) and whether its proof is on file.
  */
 export const GATEWAY_PAYMENTS_OF_DOCUMENT_SQL = `SELECT p.id, p.provider, p.status, p.provider_payment_id, p.mode, p.reference_norm, p.received_on, p.amount_minor, p.charges_minor,
-     p.fee_tax_minor, p.requested_allocations, p.inr_received_minor, p.gateway_fee_inr_minor, p.gateway_fee_tax_inr_minor, p.proof_r2_key IS NOT NULL AS has_proof
+     p.fee_tax_minor, p.requested_allocations, p.inr_received_minor, p.gateway_fee_inr_minor, p.gateway_fee_tax_inr_minor, p.proof_r2_key IS NOT NULL AS has_proof,
+     ${paymentHasAdviceSql("p")} AS on_advice
    FROM checkout_sessions c INDEXED BY checkout_sessions_document JOIN payments p ON p.checkout_id = c.id
    WHERE c.document_id = ?1 ORDER BY p.recorded_at DESC, p.id DESC LIMIT 20`;
 type GatewayPaymentRow = {
@@ -356,6 +359,7 @@ type GatewayPaymentRow = {
   gateway_fee_inr_minor: number | null;
   gateway_fee_tax_inr_minor: number | null;
   has_proof: number;
+  on_advice: number;
 };
 type LinkRow = {
   id: string;
@@ -511,6 +515,14 @@ export const invoiceLedger = new Hono<AppEnv>()
           gatewayFeeTaxInrMinor: r.gateway_fee_tax_inr_minor,
           // S15: "Proof awaited" until Stripe's payment advice or the bank's e-FIRA is attached (L11).
           hasProof: r.has_proof === 1,
+          // M6.4 (Step 0.2 item 6; the designer's admin round): on a remittance advice now (an active link), which is its proof as well, so "Proof awaited" is
+          // no proof file AND no advice: the same rule as the `/payments?proof=awaited` filter (`paymentHasAdviceSql`).
+          onAdvice: r.on_advice === 1,
+          proofAwaited:
+            (r.provider === "stripe" || r.provider === "paypal") &&
+            (r.status === "pending_verification" || r.status === "confirmed") &&
+            r.has_proof !== 1 &&
+            r.on_advice !== 1,
         })),
         links: ((linksR?.results ?? []) as LinkRow[]).map((l) => ({
           checkoutId: l.id,

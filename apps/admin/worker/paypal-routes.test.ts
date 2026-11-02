@@ -230,3 +230,52 @@ describe("remittance advices [ADM-INV-17, L12, L30; 08-C RB-05]", () => {
     );
   });
 });
+
+// The designer's admin round (lead, 2026-11-02): a payment's detail names the advice it is on now, and the Payments panel's gateway rows say whether a payment
+// is on an advice; "Proof awaited" is no proof file AND no active advice link, the `/payments?proof=awaited` rule. A link taken off counts as none.
+describe("a payment's advice in its detail and in the Payments panel [ADM-INV-17, L12; Step 0.2 item 6]", () => {
+  it("GET /payments/:id carries the active advice, null once the link is taken off; the panel's onAdvice and proofAwaited follow it", async () => {
+    const o = await owner();
+    const p = await paidOrder();
+    type Row = { paymentId: string; onAdvice: boolean; proofAwaited: boolean; hasProof: boolean };
+    const panelRow = async () => {
+      const res = await call(`/invoices/${p.documentId}/payments`, { cookie: o.cookie });
+      expect(res.status, await res.clone().text()).toBe(200);
+      const g = (await json(res)).gateway as { payments: Row[] };
+      return g.payments.find((x) => x.paymentId === p.paymentId);
+    };
+    const detail = async () => json(await call(`/payments/${p.paymentId}`, { cookie: o.cookie }));
+    expect((await detail()).advice).toBeNull();
+    expect(await panelRow()).toMatchObject({ onAdvice: false, proofAwaited: true, hasProof: false });
+    const adviceRef = `FIRA-${uuidv7().slice(-8)}`;
+    const id = (await json(await advice(o.cookie, { adviceRef }))).id as string;
+    const linked = await call(`/payments/advices/${id}/payments`, {
+      cookie: o.cookie,
+      body: { paymentIds: [p.paymentId] },
+    });
+    expect(linked.status).toBe(200);
+    expect((await detail()).advice).toEqual({
+      id,
+      provider: "paypal",
+      kind: "efira",
+      adviceRef,
+      issuedOn: "2026-11-09",
+    });
+    expect(await panelRow()).toMatchObject({ onAdvice: true, proofAwaited: false, hasProof: false });
+    // The same rule as the list's "Proof awaited" filter: not listed while on the advice.
+    const awaited = async () =>
+      (
+        (await json(await call("/payments?proof=awaited", { cookie: o.cookie }))).payments as { id: string }[]
+      ).map((x) => x.id);
+    expect(await awaited()).not.toContain(p.paymentId);
+    // Taken off (the Owner, with a reason): no advice, proof awaited again.
+    const removed = await call(`/payments/advices/${id}/payments/${p.paymentId}/remove`, {
+      cookie: o.cookie,
+      body: { reason: "Wrong week" },
+    });
+    expect(removed.status).toBe(200);
+    expect((await detail()).advice).toBeNull();
+    expect(await panelRow()).toMatchObject({ onAdvice: false, proofAwaited: true });
+    expect(await awaited()).toContain(p.paymentId);
+  });
+});
