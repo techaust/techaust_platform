@@ -110,6 +110,8 @@ export type InvoiceViewInput = {
   paymentPending: boolean;
   /** M6.2 (fix round 3 item 3): a pending Razorpay payment asks for it (`payment_pending_gateway`). */
   paymentPendingGateway: boolean;
+  /** M6.4 (L24, early check 1 finding 8): a PayPal capture held or claimed for it (`payment_pending_capture`). */
+  paymentPendingCapture: boolean;
   /** M6.1 (L17, L32): an allocation row names this document (the void blockers). */
   paymentRecorded: boolean;
   /** ADM-INV-10: any document (draft or issued) names this one as its parent, and an advance receipt names it (the withdraw blockers). */
@@ -239,6 +241,7 @@ export function invoiceView(i: InvoiceViewInput) {
     tdsMinor: d.tds_minor,
     paymentPending: i.paymentPending,
     paymentPendingGateway: i.paymentPendingGateway,
+    paymentPendingCapture: i.paymentPendingCapture,
     paymentRecorded: i.paymentRecorded,
   });
   // ADM-INV-10 (owner, 2026-10-30, docs/13): a proforma the client has received is withdrawn instead of voided; the codes say why not.
@@ -253,6 +256,7 @@ export function invoiceView(i: InvoiceViewInput) {
     viewed: d.viewed_at !== null,
     paymentPending: i.paymentPending,
     paymentPendingGateway: i.paymentPendingGateway,
+    paymentPendingCapture: i.paymentPendingCapture,
   });
   const withdrawn = isWithdrawn({
     type: d.type,

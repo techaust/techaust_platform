@@ -484,9 +484,8 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | Use a client's credit on an invoice, or move an invoice's excess to credit (`payments.applyCredit`; M6.1, L13) | ✅ (step-up) | — | — | — |
 | Add a payment's proof file or its TDS certificate number, once (`payments.attachProof`; M6.1, L11, OPEN 08-C RB-05) | ✅ | ✅ | — | — |
 | Record the bank's extension of an export's realisation date (`realisation.extend`; M6.1, L14, Q60, 08-C RB-04, RA-20) | ✅ | — | — | — |
-| Create, cancel or refresh a Razorpay payment link for an issued invoice or proforma (`payments.link`; M6.2, L2 to L4; no money moves until a verified, re-fetched payment) | ✅ | ✅ | — | — |
+| Create (Razorpay), cancel or refresh a gateway checkout: Razorpay link, Stripe session, PayPal order; PayPal orders are made only from the portal (`payments.link`; M6.2 L2 to L4, M6.4 L2, L4; no money moves until a verified, re-fetched payment or a server capture) | ✅ | ✅ | — | — |
 | Resolve or retry a gateway payment in "Needs review" (`payments.review`; M6.2, L7; the list itself is `payments.read`) | ✅ | — | — | — |
-| Check a PayPal or Stripe checkout now, or cancel an open one (`payments.link`; M6.4, L2, L4; PayPal orders are made only from the portal) | ✅ | ✅ | — | — |
 | Remittance advices (e-FIRA, FIRC, settlement report): add one, attach its file once, link confirmed payments to it (`payments.attachProof`; M6.4, L12, 08-C RB-05); the list and the "Without advice" list are `payments.read` | ✅ | ✅ | — | 👁 |
 | Take a payment off a remittance advice, with a reason (`payments.adviceUnlink`; M6.4, L12) | ✅ | — | — | — |
 | Refunds | ✅ (step-up) | — | — | 👁 |

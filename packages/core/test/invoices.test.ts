@@ -301,6 +301,7 @@ describe("void [Q1, LD7]", () => {
     tdsMinor: 0,
     paymentPending: false,
     paymentPendingGateway: false,
+    paymentPendingCapture: false,
     paymentRecorded: false,
   };
   it("an unsent, unpaid, uncredited issued invoice can be voided", () => {
@@ -369,6 +370,7 @@ describe("void [Q1, LD7]", () => {
       tdsMinor: fc.nat(1_000),
       paymentPending: fc.boolean(),
       paymentPendingGateway: fc.boolean(),
+      paymentPendingCapture: fc.boolean(),
       paymentRecorded: fc.boolean(),
     });
     fc.assert(
@@ -571,6 +573,7 @@ describe("withdraw a delivered proforma [ADM-INV-10]", () => {
     viewed: false,
     paymentPending: false,
     paymentPendingGateway: false,
+    paymentPendingCapture: false,
   };
   it("refuses first: anything but a proforma, whatever else holds", () => {
     for (const type of ["tax_invoice", "export_invoice", "credit_note", "debit_note", "proposal"])
@@ -617,6 +620,8 @@ describe("withdraw a delivered proforma [ADM-INV-10]", () => {
     expect(withdrawBlockers({ ...base, status: "void", paymentPendingGateway: true })).toEqual([
       "already_withdrawn",
     ]);
+    // M6.4 (early check 1 finding 8): a PayPal capture held or claimed for it has its own code
+    expect(withdrawBlockers({ ...base, paymentPendingCapture: true })).toEqual(["payment_pending_capture"]);
   });
   it("each other reason has its code, in the list's order", () => {
     expect(withdrawBlockers({ ...base, status: "draft", emailed: false })).toEqual([
@@ -660,6 +665,7 @@ describe("withdraw a delivered proforma [ADM-INV-10]", () => {
       "proforma_paid",
       "payment_pending",
       "payment_pending_gateway",
+      "payment_pending_capture",
       "not_delivered",
     ]);
     expect(WITHDRAW_REASON_MAX).toBe(500);
@@ -684,6 +690,7 @@ describe("withdraw a delivered proforma [ADM-INV-10]", () => {
             tdsMinor: 0,
             paymentPending: false,
             paymentPendingGateway: false,
+            paymentPendingCapture: false,
             paymentRecorded: false,
           });
           const w = withdrawBlockers({ ...base, emailed, viewed });
@@ -715,6 +722,7 @@ describe("withdraw a delivered proforma [ADM-INV-10]", () => {
           viewed: fc.boolean(),
           paymentPending: fc.boolean(),
           paymentPendingGateway: fc.boolean(),
+          paymentPendingCapture: fc.boolean(),
         }),
         (f) => {
           const out = withdrawBlockers(f);
@@ -730,6 +738,7 @@ describe("withdraw a delivered proforma [ADM-INV-10]", () => {
               !f.hasAdvanceReceipt &&
               !f.paymentPending &&
               !f.paymentPendingGateway &&
+              !f.paymentPendingCapture &&
               (f.emailed || f.viewed),
           );
         },

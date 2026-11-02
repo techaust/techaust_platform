@@ -616,13 +616,15 @@ export const paymentPendingForSql = (doc: string, client: string): string =>
 /**
  * M6.2 (fix round 3 item 3): the same read, in ONE pass, telling the kinds apart as bits: 1 a pending manual entry (core `payment_pending`: the Owner rejects
  * it), 2 a pending gateway payment (core `payment_pending_gateway`: it can't be rejected; its tax invoice is issued, or it is resolved in Needs review); 0 none.
- * Decode with `PENDING_MANUAL` / `PENDING_GATEWAY`. M6.4 (L24): a PayPal checkout whose capture is held or claimed sets bit 2 too (gateway money on its way).
+ * Decode with `PENDING_MANUAL` / `PENDING_GATEWAY` / `PENDING_CAPTURE`. M6.4 (L24; early check 1 finding 8): 4, a PayPal checkout of the document whose capture
+ * PayPal holds or a capture call has claimed (core `payment_pending_capture`: no payment row yet, so nothing to confirm; its own staff line).
  */
 export const paymentPendingKindsSql = (doc: string, client: string): string =>
-  `(SELECT coalesce(max(vp.provider = 'manual'), 0) + 2 * (coalesce(max(vp.provider <> 'manual'), 0) OR ${checkoutCapturingSql(doc)}) FROM payments vp INDEXED BY payments_client
+  `(SELECT coalesce(max(vp.provider = 'manual'), 0) + 2 * coalesce(max(vp.provider <> 'manual'), 0) + 4 * (${checkoutCapturingSql(doc)}) FROM payments vp INDEXED BY payments_client
      WHERE vp.client_id = ${client} AND vp.status = 'pending_verification' AND ${paymentForDocumentSql("vp", doc)})`;
 export const PENDING_MANUAL = 1;
 export const PENDING_GATEWAY = 2;
+export const PENDING_CAPTURE = 4;
 
 /**
  * L17 (early check 2, finding 10): the payment test of the void statement's WHERE, `NOT ${paymentBlocksVoidSql(...)}`: an allocation row names the document,

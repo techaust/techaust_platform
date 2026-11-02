@@ -155,20 +155,31 @@ export function checkoutLiveStatement(
  * once. M6.3 `from: "open"`: a live or stale checkout whose asynchronous payment failed (Stripe's `checkout.session.async_payment_failed`; trigger
  * `checkout_sessions_status_flow` of 0066), guarded when `g` is given. Each path matches only its own states, so a create failure never ends a row that went live
  * meanwhile.
+ * M6.4 (early check 1 finding 4): `from: "open"` never fails a live or stale row whose capture is claimed by another call: only with no claim, or with the claim
+ * this call holds (`claim`, `?3`); a held capture (`capture_pending`) has nothing in flight and may fail.
  */
 export function checkoutFailStatement(
   db: D1Database,
-  a: { id: string; now: number; from?: "creating" | "open" },
+  a: { id: string; now: number; from?: "creating" | "open"; claim?: number | null },
   g?: GuardSql,
 ): D1PreparedStatement {
-  const gs = guarded(g, 2);
+  if (a.from !== "open") {
+    const gs = guarded(g, 2);
+    return db
+      .prepare(
+        `UPDATE checkout_sessions SET status = 'failed', updated_at = max(?2, updated_at + 1) WHERE id = ?1 AND status = 'creating'${gs.sql}`,
+      )
+      .bind(a.id, a.now, ...gs.params);
+  }
   // M6.4: "open" includes a PayPal capture PayPal held and then declined or failed (`capture_pending` → failed, 0068); only PayPal rows are ever in it.
-  const from = a.from === "open" ? "status IN ('live', 'stale', 'capture_pending')" : "status = 'creating'";
+  const gs = guarded(g, 3);
   return db
     .prepare(
-      `UPDATE checkout_sessions SET status = 'failed', updated_at = max(?2, updated_at + 1) WHERE id = ?1 AND ${from}${gs.sql}`,
+      `UPDATE checkout_sessions SET status = 'failed', updated_at = max(?2, updated_at + 1)
+       WHERE id = ?1 AND status IN ('live', 'stale', 'capture_pending')
+         AND (status = 'capture_pending' OR capture_started_at IS NULL OR capture_started_at = ?3)${gs.sql}`,
     )
-    .bind(a.id, a.now, ...gs.params);
+    .bind(a.id, a.now, a.claim ?? null, ...gs.params);
 }
 
 /**
@@ -490,7 +501,9 @@ export type GatewayPaymentStatements = {
  * M6.4 PayPal: the same rule table's PayPal row (a USD export invoice or debit note of an overseas client is confirmed and allocated; a proforma's money is
  * pending); a checkout PayPal held (`capture_pending`) may be paid too; the checkout takes the capture id (`providerCaptureId`); the fee in the column of its own
  * currency (`feeMinor` for USD, `gatewayFeeInrMinor` for INR: core `payPalFeeFactsOf`). A capture on an ENDED checkout (C step 9) is recorded with
- * `status: "pending_verification"`, `checkoutPaid: false`, `allocate: null`, so `main` still writes it (never drop captured money).
+ * `status: "pending_verification"`, `checkoutPaid: false`, `allocate: null`, so `main` still writes it (never drop captured money). Early check 1, finding 5b: a
+ * payment that is confirmed or pays the checkout is written only when the checkout holds no capture id or this one (a row PayPal held with capture X is never
+ * paid by capture Y; the caller's "never drop" batch records Y pending instead).
  * Then, guarded on the caller's audit row `g` and on this batch's row: the allocation (`INSERT ... SELECT min(amount, live balance)`, nothing when nothing is due),
  * the recompute, the `overpaid` review item when the payment holds an excess (as client credit, ADM-PAY-06; Settled by the lead on the safest reading, 2026-10-31
  * (08-C RA-36): credit held is an advance), the checkout to `paid`, the document's other live links to `stale`, the event's move, the owners' bells; and
@@ -505,6 +518,9 @@ export function recordGatewayPaymentStatements(
   // Early check 1, finding 7: a confirmed payment is always put on its document (a confirmed row with no allocation would be credit written without a payable check).
   if (confirmed && !a.allocate)
     throw new TypeError("recordGatewayPaymentStatements: a confirmed payment needs `allocate`");
+  // M6.4 early check 1, finding 5a: a PayPal checkout moved to `paid` must take its capture id (trigger `checkout_sessions_capture_update` would abort the batch).
+  if (a.provider === "paypal" && a.checkoutPaid && !a.providerCaptureId)
+    throw new TypeError("recordGatewayPaymentStatements: a PayPal checkout paid needs `providerCaptureId`");
   // M6.3: from the provider's row of the rule table, never a hard-coded INR test: the types a payment is put on directly (a proforma's money waits for its tax
   // invoice: never allocated here), the currency and the client's side (Razorpay: INR, domestic; Stripe: USD, overseas).
   const rule = ONLINE_RULES_SQL[a.provider];
@@ -524,6 +540,7 @@ export function recordGatewayPaymentStatements(
        FROM checkout_sessions c JOIN clients k ON k.id = c.client_id
        WHERE c.id = ?15 AND c.provider = ?2 AND c.client_id = ?16 AND c.document_id = ?17
          AND (?18 = 0 OR c.status IN ('live', 'stale', 'capture_pending'))
+         AND (?18 = 0 OR c.provider_capture_id IS NULL OR c.provider_capture_id = ?11)
          AND k.anonymised_at IS NULL AND k.currency = c.currency
          AND NOT EXISTS (SELECT 1 FROM payments x WHERE x.id = ?1)
          AND NOT EXISTS (SELECT 1 FROM payments y INDEXED BY payments_provider_ref WHERE y.provider = ?2 AND y.provider_payment_id = ?11)

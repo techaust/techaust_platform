@@ -13,7 +13,6 @@ import {
   check,
   index,
   integer,
-  primaryKey,
   sqliteTable,
   text,
   uniqueIndex,
@@ -75,7 +74,11 @@ export const payments = sqliteTable(
     mode: text("mode"),
     /** `normaliseReference` of the bank or gateway reference (never the raw text). */
     referenceNorm: text("reference_norm"),
-    /** L15: a USD payment may store the bank advice's INR amount, for the register only; GST INR values stay the invoice's (Rule 34). */
+    /**
+     * L15: a USD payment may store the bank advice's INR amount, for the register only; GST INR values stay the invoice's (Rule 34). M6.4 L29 (early check 1
+     * finding 6): the column means "INR credited as advised": PayPal's `receivable_amount` is net of PayPal's fee; Stripe's (M6.3 `inrFactsOf`) is the gross, an
+     * exception M6.5's realisation readers must allow for.
+     */
     inrReceivedMinor: integer("inr_received_minor"),
     /** L6: what Staff asked for, as JSON `[{documentId, amountMinor}]` (at most 10); the Owner may change it at the confirm. Frozen once written. */
     requestedAllocations: text("requested_allocations"),
@@ -534,6 +537,8 @@ export const realisationAdvices = sqliteTable(
 export const realisationAdvicePayments = sqliteTable(
   "realisation_advice_payments",
   {
+    // Its own id (early check 1 finding 9): a payment taken off an advice by mistake can be linked to the same advice again (a new row).
+    id: id(),
     adviceId: text("advice_id")
       .notNull()
       .references(() => realisationAdvices.id),
@@ -550,7 +555,8 @@ export const realisationAdvicePayments = sqliteTable(
     removeReason: text("remove_reason"),
   },
   (t) => [
-    primaryKey({ columns: [t.adviceId, t.paymentId] }),
+    // An advice's links (its payments list).
+    index("realisation_advice_payments_advice").on(t.adviceId),
     // A payment's advice (its detail, the "Proof awaited" filter).
     index("realisation_advice_payments_payment").on(t.paymentId),
     // A payment is on at most one advice at a time (409 `already_linked`); the "Without advice" list seeks it.

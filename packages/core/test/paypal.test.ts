@@ -411,6 +411,21 @@ describe("the readers whitelist [ADM-PAY-12, L7]", () => {
     expect(card?.fundingSource).toBe("card");
     expect(card?.countries).toEqual(["GB"]);
     expect(JSON.stringify(card)).not.toContain("1111");
+    // The card's issuing country (RA-38 fact (1), early check 1 finding 2): an India-issued card with a foreign billing address is held.
+    const inCard = readPayPalOrder(
+      orderJson({
+        payer: undefined,
+        payment_source: {
+          card: {
+            billing_address: { country_code: "GB" },
+            bin_details: { bin_country_code: "IN", bin: "411111" },
+          },
+        },
+      }),
+    );
+    expect(inCard?.countries).toEqual(["GB", "IN"]);
+    expect(payPalExportReceipt(inCard?.countries ?? [])).toBe(false);
+    expect(JSON.stringify(inCard)).not.toContain("411111");
     expect(readPayPalOrder(orderJson({ payment_source: { venmo: {} } }))?.fundingSource).toBe("other");
     expect(readPayPalOrder(orderJson({ payment_source: {} }))?.fundingSource).toBeNull();
     const eur = readPayPalCapture(captureJson({ amount: { currency_code: "EUR", value: "10.00" } }));
@@ -480,7 +495,26 @@ describe("judgePayPalCapture [ADM-PAY-04, run file C steps 4 to 8; 08-C RA-38]",
       return j.ok ? "ok" : j.verdict;
     };
     expect(v(order(), capture({ custom_id: uuidv7() }))).toBe("reference_mismatch");
-    expect(v(order(), capture({ custom_id: undefined }))).toBe("reference_mismatch");
+    // A capture with no mark of its own is not refused when the order is the row's, carries our mark and lists it (early check 1 finding 1) …
+    expect(v(orderWith({}, { custom_id: undefined }), capture({ custom_id: undefined }))).toBe("ok");
+    // … but without the order, with an order that has no mark, or with an order that doesn't list it, it is a mismatch; both marks missing is one too.
+    expect(v(null, capture({ custom_id: undefined }))).toBe("reference_mismatch");
+    expect(
+      v(
+        orderWith({
+          purchase_units: [
+            {
+              amount: { currency_code: "USD", value: "1234.56" },
+              payments: { captures: [captureJson({ custom_id: undefined })] },
+            },
+          ],
+        }),
+        capture({ custom_id: undefined }),
+      ),
+    ).toBe("reference_mismatch");
+    expect(
+      v(orderWith({}, { id: "9XX00000000000000", custom_id: undefined }), capture({ custom_id: undefined })),
+    ).toBe("reference_mismatch");
     expect(v(order(), capture({ supplementary_data: { related_ids: { order_id: "OTHER1" } } }))).toBe(
       "reference_mismatch",
     );
@@ -953,7 +987,10 @@ describe("the offline signature [L1, L20; Step 0.4 rows 17 and 21]", () => {
       Date.UTC(1999, 0, 1),
     );
     expect(certParts(certificate(spki, utc("490101000000Z"), utc("500101000000Z")))).toBeNull();
-    expect(await importPayPalCertKey(certPem, NOW)).not.toBeNull();
+    const imported = await importPayPalCertKey(certPem, NOW);
+    // The key comes with its certificate's notAfter, so a cache entry never outlives it (early check 1 finding 3).
+    expect(imported?.notAfter).toBe(Date.UTC(2027, 0, 1));
+    expect(imported?.key.type).toBe("public");
   });
 
   it("the DER reader refuses what isn't an RSA certificate", async () => {
@@ -991,7 +1028,7 @@ describe("the offline signature [L1, L20; Step 0.4 rows 17 and 21]", () => {
   });
 
   it("a valid signature verifies; a changed byte, transmission id or webhook id doesn't", async () => {
-    const key = await importPayPalCertKey(certPem, NOW);
+    const key = (await importPayPalCertKey(certPem, NOW))?.key ?? null;
     const keyFor = async (u: string) => (u === CERT_URL ? key : null);
     const sig = await sign(body);
     const v = (o: Partial<Parameters<typeof verifyPayPalSignature>[0]>) =>
@@ -1023,7 +1060,7 @@ describe("the offline signature [L1, L20; Step 0.4 rows 17 and 21]", () => {
   });
 
   it("missing or malformed headers, a refused cert URL, no key, no webhook id", async () => {
-    const key = await importPayPalCertKey(certPem, NOW);
+    const key = (await importPayPalCertKey(certPem, NOW))?.key ?? null;
     const sig = await sign(body);
     const v = (
       h: Record<string, string | undefined>,

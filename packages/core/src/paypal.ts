@@ -358,7 +358,8 @@ export type PayPalOrder = {
   readonly fundingSource: PayPalFundingSource | null;
   /**
    * The two-letter country codes PayPal reported for the payer or the card (`payer.address.country_code`, `payment_source.paypal.address.country_code`,
-   * `payment_source.card.billing_address.country_code`; which of these PayPal fills is checked in the sandbox, Step 0, 08-C RA-38). Only the codes are read.
+   * `payment_source.card.billing_address.country_code`, and the card's issuing country `payment_source.card.bin_details.bin_country_code`, RA-38 fact (1); which
+   * of these PayPal fills is checked in the sandbox, Step 0, 08-C RA-38). Only the codes are read.
    */
   readonly countries: readonly string[];
   readonly captures: readonly PayPalCapture[];
@@ -505,6 +506,7 @@ export function readPayPalOrder(obj: unknown): PayPalOrder | null {
     countryAt(obj, ["payer", "address", "country_code"]),
     countryAt(obj, ["payment_source", "paypal", "address", "country_code"]),
     countryAt(obj, ["payment_source", "card", "billing_address", "country_code"]),
+    countryAt(obj, ["payment_source", "card", "bin_details", "bin_country_code"]),
   ].filter((c): c is string => c !== null);
   return {
     id,
@@ -556,8 +558,9 @@ export type PayPalCheckoutRow = {
 /**
  * Whether a capture PayPal answered (the capture call's own answer, which counts as the server-to-server proof, ADM-PAY-04; or, on the event path, the
  * re-fetched `GET`) settles `row` exactly, in this order:
- *   1. `reference_mismatch`: the capture's `custom_id` is missing or not our checkout id, or its order is not the row's; the order, when given, is not the row's
- *      order or carries another `custom_id`;
+ *   1. `reference_mismatch`: the capture's `custom_id` is not our checkout id (a missing one is accepted only when the order is given, is the row's, carries our
+ *      checkout id as its `custom_id` and lists this capture), or its order is not the row's; the order, when given, is not the row's order or carries another
+ *      `custom_id`;
  *   2. `order_mismatch`: the order, when given, does not list this capture;
  *   3. the money's state (before any amount, as M6.2 review finding 7): PENDING → `capture_pending`; DECLINED or FAILED → `capture_denied`; REFUNDED or
  *      PARTIALLY_REFUNDED → `capture_refunded`;
@@ -574,8 +577,15 @@ export function judgePayPalCapture(
   capture: PayPalCapture,
 ): { readonly ok: true } | { readonly ok: false; readonly verdict: PayPalJudgeVerdict } {
   const no = (verdict: PayPalJudgeVerdict) => ({ ok: false, verdict }) as const;
+  // A capture inside the capture call's answer may carry no `custom_id` of its own (early check 1 finding 1; UNCONFIRMED, a sandbox check): it is ours only
+  // through an order that is the row's, carries our mark and lists this capture. Both marks missing is a mismatch.
+  const markedByOrder =
+    order !== null &&
+    order.id === row.providerLinkId &&
+    order.customId === row.id &&
+    order.captures.some((c) => c.id === capture.id);
   if (
-    capture.customId !== row.id ||
+    (capture.customId === null ? !markedByOrder : capture.customId !== row.id) ||
     row.providerLinkId === null ||
     (capture.orderId !== null && capture.orderId !== row.providerLinkId) ||
     (order !== null &&
@@ -692,8 +702,9 @@ export const payPalReceivedOn = (captureCreatedMs: number): string => toIsoDate(
 
 /**
  * The fee and INR facts of a PayPal capture (Step 0 item 5; L8): the fee goes in the column of its own currency, `paypal_fee` in USD in `charges_minor`, in INR
- * in `gateway_fee_inr_minor` (the 0068 shape allows exactly one); `inr_received_minor` takes `receivable_amount` only when it is in INR and positive. Both absorbed,
- * never billed (Researched 2026-10-28, NPCI FAQ of 15 Sep 2026 (08-C RA-29); OPEN (08-C RA-29): is GST charged on the MDR and invoiced to our GSTIN?).
+ * in `gateway_fee_inr_minor` (the 0068 shape allows exactly one); `inr_received_minor` takes `receivable_amount` only when it is in INR and positive: the column
+ * means "INR credited as advised" (L29: PayPal's is net of its fee, Stripe's gross). The fee is absorbed, never billed (M6.1 L9: absorbing the fee is a
+ * commercial choice). OPEN (08-C RA-29): is GST charged on the MDR and invoiced to our GSTIN?
  * `exchange_rate` is never stored and never used for GST (Rule 34 values stay the invoice's).
  */
 export function payPalFeeFactsOf(c: Pick<PayPalCapture, "fee" | "receivable">): {
@@ -1007,22 +1018,27 @@ export function certParts(der: Uint8Array): CertParts | null {
 export const certValidAt = (parts: Pick<CertParts, "notBefore" | "notAfter">, now: number): boolean =>
   parts.notBefore <= now && now <= parts.notAfter;
 
+/** A certificate's verifying key and the end of its validity (UTC ms): a cache entry must not outlive `notAfter` (early check 1 finding 3). */
+export type PayPalCertKey = { readonly key: RsaKey; readonly notAfter: number };
+
 /**
- * The verifying key of a PEM certificate valid at `now` (WebCrypto `importKey("spki", …, RSASSA-PKCS1-v1_5, SHA-256)`), else null: not a certificate, not RSA,
- * outside its validity window, or a key WebCrypto refuses. The hook fetches the PEM from an allow-listed URL and caches the key per isolate.
+ * The verifying key of a PEM certificate valid at `now` (WebCrypto `importKey("spki", …, RSASSA-PKCS1-v1_5, SHA-256)`) with its `notAfter`, else null: not a
+ * certificate, not RSA, outside its validity window, or a key WebCrypto refuses. The hook fetches the PEM from an allow-listed URL and caches the entry per
+ * isolate until `min(notAfter, fetched + TTL)`, re-checking `notAfter` on every hit.
  */
-export async function importPayPalCertKey(pem: unknown, now: number): Promise<RsaKey | null> {
+export async function importPayPalCertKey(pem: unknown, now: number): Promise<PayPalCertKey | null> {
   const der = pemToDer(pem);
   const parts = der ? certParts(der) : null;
   if (!parts || !certValidAt(parts, now)) return null;
   try {
-    return await crypto.subtle.importKey(
+    const key = await crypto.subtle.importKey(
       "spki",
       parts.spki,
       { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
       false,
       ["verify"],
     );
+    return { key, notAfter: parts.notAfter };
   } catch {
     return null;
   }

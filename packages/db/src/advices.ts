@@ -8,6 +8,7 @@
 // in `DOCS`, before PayPal drops it. The triggers of `paypal_triggers` (0068) hold every rule again; each statement below also carries its rules in its WHERE, so a
 // refused request writes nothing and aborts no batch (the caller re-reads to explain it).
 import type { GuardSql } from "./log.ts";
+import { clientSideSql } from "./sql-rules.ts";
 
 export type { GuardSql };
 
@@ -86,12 +87,12 @@ export function adviceFileStatement(
 
 /**
  * The payment `p` (an alias of `payments`) may go on advice `a` (an alias of `realisation_advices`): confirmed money received (`payment`), of the advice's provider
- * (a bank advice takes manual entries in USD or INR; a gateway's advice its own USD payments), of a client not anonymised (alias `k`), on no advice now. The
- * twin of the trigger `realisation_advice_payments_insert` (0068).
+ * (a bank advice takes manual entries in USD or INR of OVERSEAS clients only, L30: a FIRC or BRC proves export realisation; a gateway's advice its own USD
+ * payments), of a client not anonymised (alias `k`), on no advice now. The twin of the trigger `realisation_advice_payments_insert` (0068).
  */
 export const linkableSql = (p: string, a: string, k: string): string =>
   `(${p}.status = 'confirmed' AND ${p}.kind = 'payment' AND ${k}.anonymised_at IS NULL
-    AND ((${a}.provider = 'bank' AND ${p}.provider = 'manual' AND ${p}.currency IN ('USD', 'INR')) OR (${a}.provider <> 'bank' AND ${p}.provider = ${a}.provider AND ${p}.currency = 'USD'))
+    AND ((${a}.provider = 'bank' AND ${p}.provider = 'manual' AND ${p}.currency IN ('USD', 'INR') AND ${clientSideSql(k, "overseas")}) OR (${a}.provider <> 'bank' AND ${p}.provider = ${a}.provider AND ${p}.currency = 'USD'))
     AND NOT ${paymentHasAdviceSql(p)})`;
 
 /** Payment `p` (an alias) is on an advice now (a link not taken off): one seek of `realisation_advice_payments_active`. The "Proof awaited" filter reads it too. */
@@ -111,8 +112,8 @@ export function adviceLinkStatement(
   const gs = guarded(g, 4);
   return db
     .prepare(
-      `INSERT INTO realisation_advice_payments (advice_id, payment_id, created_by, created_at)
-       SELECT ?1, j.value, ?3, ?4 FROM json_each(?2) j
+      `INSERT INTO realisation_advice_payments (id, advice_id, payment_id, created_by, created_at)
+       SELECT 'ral_' || lower(hex(randomblob(16))), ?1, j.value, ?3, ?4 FROM json_each(?2) j
        WHERE json_array_length(?2) BETWEEN 1 AND ${ADVICE_LINK_MAX}
          AND (SELECT count(DISTINCT dj.value) FROM json_each(?2) dj) = json_array_length(?2)
          AND (SELECT count(*) FROM json_each(?2) cj JOIN payments p ON p.id = cj.value JOIN realisation_advices a ON a.id = ?1 JOIN clients k ON k.id = p.client_id
@@ -178,15 +179,16 @@ export const PAYMENT_ADVICE_SQL = `SELECT a.id, a.provider, a.kind, a.advice_ref
    WHERE l.payment_id = ?1 AND l.removed_at IS NULL`;
 
 /**
- * The "Without advice" list (`GET /payments/without-advice?provider=…`): one provider's confirmed payments (`?1`: `paypal`, `stripe`, or `manual` for the bank's)
- * in currency `?4` (NULL: any) on no advice now, of clients not anonymised, by the day the money arrived, keyset `(received_on, id)` with `?2`/`?3` (the first page
+ * The "Without advice" list (`GET /payments/without-advice?provider=…`): one provider's confirmed payments (`?1`: `paypal`, `stripe`, or `manual` for the bank's,
+ * of overseas clients only, L30) in currency `?4` (NULL: any) on no advice now, of clients not anonymised, by the day the money arrived, keyset `(received_on, id)` with `?2`/`?3` (the first page
  * binds '' and ''), at most 51. One range of `payments_confirmed_provider`, then a seek of `realisation_advice_payments_active` per row.
  */
 export const PAYMENTS_WITHOUT_ADVICE_SQL = `SELECT p.id, p.provider, p.client_id, p.currency, p.amount_minor, p.received_on, p.reference_norm, p.provider_payment_id,
      CASE WHEN k.anonymised_at IS NULL THEN k.display_name END AS client_name
    FROM payments p INDEXED BY payments_confirmed_provider JOIN clients k ON k.id = p.client_id
    WHERE p.provider = ?1 AND p.status = 'confirmed' AND p.kind = 'payment' AND (p.received_on > ?2 OR (p.received_on = ?2 AND p.id > ?3))
-     AND (?4 IS NULL OR p.currency = ?4) AND k.anonymised_at IS NULL AND NOT ${paymentHasAdviceSql("p")}
+     AND (?4 IS NULL OR p.currency = ?4) AND k.anonymised_at IS NULL AND (p.provider <> 'manual' OR ${clientSideSql("k", "overseas")})
+     AND NOT ${paymentHasAdviceSql("p")}
    ORDER BY p.received_on, p.id LIMIT ${ADVICE_PAGE_SIZE + 1}`;
 
 /**
@@ -195,4 +197,4 @@ export const PAYMENTS_WITHOUT_ADVICE_SQL = `SELECT p.id, p.provider, p.client_id
  */
 export const PAYMENTS_WITHOUT_ADVICE_COUNT_SQL = `SELECT count(*) AS n FROM payments p INDEXED BY payments_confirmed_provider JOIN clients k ON k.id = p.client_id
    WHERE p.provider = ?1 AND p.status = 'confirmed' AND p.kind = 'payment' AND p.received_on >= ?2 AND p.received_on <= ?3
-     AND k.anonymised_at IS NULL AND NOT ${paymentHasAdviceSql("p")}`;
+     AND k.anonymised_at IS NULL AND (p.provider <> 'manual' OR ${clientSideSql("k", "overseas")}) AND NOT ${paymentHasAdviceSql("p")}`;
