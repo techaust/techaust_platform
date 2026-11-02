@@ -1,11 +1,12 @@
 {
-  // The admin finance Worker (M6.1 stage A, ADM-PAY-01; the third admin Worker, docs/runs/m6.1-ledger-payments.md Plan 1): the ROUTES rows
-  // marked `on: "finance"` (invoices and notes, a client's invoices and statement, reports, approvals, the dashboard) and the `BillingJobs`
-  // entrypoint the jobs Worker binds as ADMIN_JOBS. It has NO public URL at any level (no workers.dev, no routes, no preview URLs): it is
-  // reachable only through the front's `ADMIN_FINANCE` service binding and the jobs Worker's ADMIN_JOBS, and it re-authenticates every
-  // request from the session cookie the front forwards untouched. It holds no sign-in code. M6.2 (L1): it holds the Razorpay key pair (secrets below; no public
-  // URL, so the safest home) and exports `GatewayEvents` (jobs, ADMIN_GATEWAY) and `PortalPayments` (portal, ADMIN_PAY). Bindings use the front's names
-  // and ids in each scope; CI guard: scripts/check-worker-config.mjs. Production has vars only until Phase 7 (owner approval).
+  // The admin finance Worker (M6.1 stage A, ADM-PAY-01; the third admin Worker, docs/runs/m6.1-ledger-payments.md Plan 1). Since the fourth admin Worker
+  // (2026-11-03, ADM-G-02; docs/runs/admin-split-plan.md) it is the payments side: the ROUTES rows marked `on: "finance"` (payments and TDS, the ledger
+  // panels, credit, remittance advices, payment links, "Needs review", the gateways' status); the invoice side and the `BillingJobs` entrypoint moved to
+  // the admin invoices Worker (wrangler.invoices.jsonc). It has NO public URL at any level (no workers.dev, no routes, no preview URLs): it is reachable
+  // only through the front's `ADMIN_FINANCE` service binding and the entrypoint bindings below, and it re-authenticates every request from the session
+  // cookie the front forwards untouched. It holds no sign-in code. M6.2 (L1): it holds the gateway keys (secrets below; no public URL, so the safest home)
+  // and exports `GatewayEvents` (jobs, ADMIN_GATEWAY) and `PortalPayments` (portal, ADMIN_PAY). Bindings use the front's names and ids in each scope; CI
+  // guard: scripts/check-worker-config.mjs. Production has vars only until Phase 7 (owner approval).
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "techaust-platform-admin-finance",
   "main": "worker/finance.ts",
@@ -57,6 +58,15 @@
     { "binding": "FILES", "bucket_name": "techaust-local-files" },
     { "binding": "DOCS", "bucket_name": "techaust-local-docs" }
   ],
+  // The fourth admin Worker (2026-11-03): the automatic tax invoice of a proforma paid online runs in the admin invoices Worker; this Worker calls it only
+  // for the Owner's "Try again" on a review item (worker/gateway/advance-rpc.ts). Not inherited by environments, so staging lists it too.
+  "services": [
+    {
+      "binding": "ADMIN_ADVANCE",
+      "service": "techaust-platform-admin-invoices",
+      "entrypoint": "GatewayAdvance"
+    }
+  ],
   "env": {
     "staging": {
       "name": "techaust-platform-admin-finance-staging",
@@ -97,6 +107,13 @@
           { "binding": "LEADS_QUEUE", "queue": "techaust-staging-leads" }
         ]
       },
+      "services": [
+        {
+          "binding": "ADMIN_ADVANCE",
+          "service": "techaust-platform-admin-invoices-staging",
+          "entrypoint": "GatewayAdvance"
+        }
+      ],
       "r2_buckets": [
         { "binding": "FILES", "bucket_name": "techaust-staging-files" },
         { "binding": "DOCS", "bucket_name": "techaust-staging-docs" }

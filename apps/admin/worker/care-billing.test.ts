@@ -6,7 +6,7 @@ import { toIst } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { draftCarePlan, issueCareDraft, PDF_QUEUE_UNREACHABLE } from "./care-billing.ts";
-import { BillingJobs } from "./finance.ts";
+import { BillingJobs } from "./invoicing.ts";
 import { mkPlan } from "./test-care.ts";
 import { mkItem } from "./test-catalogue.ts";
 import { beforeBatch, insert, mkClient, mkContact } from "./test-clients.ts";

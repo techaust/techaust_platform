@@ -52,9 +52,12 @@ describe("the admin's portal origin", () => {
     expect(() => portalOriginOf(admin, "nowhere")).toThrow(/not an environment/);
   });
 
-  it("the API Worker doesn't carry it (only the SPA reads it, at build time)", () => {
-    const api = read("../../admin/wrangler.api.jsonc");
-    expect(api.vars.PORTAL_ORIGIN).toBeUndefined();
-    for (const scope of Object.values(api.env)) expect(scope.vars.PORTAL_ORIGIN).toBeUndefined();
-  });
+  // Early check finding 6 (the fourth admin Worker, 2026-11-03): the API, finance and invoices Workers, every scope.
+  for (const file of ["wrangler.api.jsonc", "wrangler.finance.jsonc", "wrangler.invoices.jsonc"])
+    it(`${file} doesn't carry it (only the SPA reads it, at build time)`, () => {
+      const c = read(`../../admin/${file}`);
+      expect(c.vars.PORTAL_ORIGIN).toBeUndefined();
+      expect(Object.keys(c.env).sort()).toEqual(["production", "staging"]);
+      for (const scope of Object.values(c.env)) expect(scope.vars.PORTAL_ORIGIN).toBeUndefined();
+    });
 });

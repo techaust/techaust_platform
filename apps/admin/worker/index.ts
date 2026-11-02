@@ -1,6 +1,7 @@
 // The admin front Worker entry (M5.0): the SPA assets (served by the platform), the rows marked `on: "front"` (health, sign-in, the
-// member's own account, staff management) and a forwarder for every other row (docs/13, 2026-10-27): to the finance Worker for the rows
-// marked `on: "finance"` (M6.1 stage A), to the API Worker for the rest.
+// member's own account, staff management) and a forwarder for every other row (docs/13, 2026-10-27): to the invoices Worker for the rows
+// marked `on: "invoices"` (the fourth admin Worker, 2026-11-03), to the finance Worker for the rows marked `on: "finance"` (M6.1 stage A),
+// to the API Worker for the rest.
 import type { TrieRouter } from "hono/router/trie-router";
 import { createApp } from "./app.ts";
 import type { RouteDef } from "./context.ts";

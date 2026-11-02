@@ -179,6 +179,8 @@ export const PROD_CONFIGS = [
   { app: "admin", file: "wrangler.api.jsonc", turnstile: false },
   // M6.1 stage A: the admin finance Worker (same queues as the front, no widget).
   { app: "admin", file: "wrangler.finance.jsonc", turnstile: false },
+  // The fourth admin Worker (2026-11-03, ADM-G-02): the admin invoices Worker, the same checks as finance.
+  { app: "admin", file: "wrangler.invoices.jsonc", turnstile: false },
   { app: "portal", file: "wrangler.jsonc", turnstile: true },
   { app: "jobs", file: "wrangler.jsonc", turnstile: false },
 ];
@@ -190,10 +192,15 @@ const queueStem = (name) =>
     .filter((w) => !["staging", "production", "prod"].includes(w))
     .join("-");
 
+/** A Worker name without its environment word, so `techaust-platform-admin-invoices-staging` and `techaust-platform-admin-invoices` are the same Worker. */
+const workerStem = (name) => String(name).replace(/-(staging|production|prod)$/, "");
+
 /**
  * One parsed config's production gaps: an empty `TURNSTILE_SITE_KEY` where the page has a widget (the sign-in or the forms would ship
- * without bot protection), and every queue producer binding or consumer that staging has and production lacks (the sends would fail,
- * or nothing would read them). `where` names the file in the message.
+ * without bot protection), every queue producer binding or consumer that staging has and production lacks (the sends would fail,
+ * or nothing would read them), and (the fourth admin Worker, 2026-11-03, L7; review finding 4) every service binding staging has without a
+ * production twin of the same binding name and entrypoint naming the production Worker (a production finance without ADMIN_ADVANCE, or a
+ * jobs without ADMIN_JOBS, ADMIN_ADVANCE or ADMIN_GATEWAY, would fail its calls). `where` names the file in the message.
  */
 export function checkProductionConfig(where, config, { turnstile }) {
   const problems = [];
@@ -216,6 +223,20 @@ export function checkProductionConfig(where, config, { turnstile }) {
       problems.push(
         `${where}: staging consumes ${c.queue} but env.production consumes no ${queueStem(c.queue)} queue: add the production consumer (Phase 7, owner approval).`,
       );
+  const prodServices = prod.services ?? [];
+  for (const s of staging.services ?? []) {
+    const want = workerStem(s.service);
+    const twin = prodServices.find((p) => p.binding === s.binding);
+    const ep = s.entrypoint === undefined ? "" : ` (entrypoint ${s.entrypoint})`;
+    if (!twin)
+      problems.push(
+        `${where}: staging binds the service ${s.binding}${ep} but env.production has none: bind it to ${want} (Phase 7, owner approval).`,
+      );
+    else if (twin.entrypoint !== s.entrypoint || twin.service !== want)
+      problems.push(
+        `${where}: env.production's ${s.binding} must name ${want}${ep}, as staging's names ${s.service}: it names ${String(twin.service)}${twin.entrypoint === undefined ? "" : ` (entrypoint ${twin.entrypoint})`}.`,
+      );
+  }
   return problems;
 }
 

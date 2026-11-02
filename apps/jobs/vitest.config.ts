@@ -16,6 +16,8 @@ export default defineConfig(async () => ({
           ADMIN_JOBS: async () => new Response("no admin API in the test pool", { status: 501 }),
           // M6.2: the finance Worker's `GatewayEvents` likewise (the gateway tests pass typed fakes through `env`).
           ADMIN_GATEWAY: async () => new Response("no admin finance in the test pool", { status: 501 }),
+          // The fourth admin Worker (2026-11-03): the invoices Worker's `GatewayAdvance` likewise (the gateway tests pass typed fakes through `env`).
+          ADMIN_ADVANCE: async () => new Response("no admin invoices in the test pool", { status: 501 }),
         },
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations(join(import.meta.dirname, "../../packages/db/migrations")),

@@ -35,8 +35,10 @@ import {
 import { readInvoice } from "../invoices.ts";
 import { lineRows } from "../quote-model.ts";
 import { mutateSystem } from "../system.ts";
+// The fourth admin Worker (2026-11-03): this module runs in the invoices Worker (`GatewayAdvance`, invoicing.ts); it takes only wording (messages.ts) and the
+// link (consts.ts) from the gateway folder, never settle.ts or a gateway client (the GATEWAY_CODE budget marker).
+import { REVIEW_LINK } from "./consts.ts";
 import { advanceBlockersText, bellNeedsReview, reviewReason } from "./messages.ts";
-import { REVIEW_LINK } from "./settle.ts";
 
 export type AdvanceEnv = { DB: D1Database; PDF_QUEUE: Queue };
 
@@ -147,20 +149,29 @@ const parseRequested = (raw: string | null): { documentId: string; amountMinor: 
   }
 };
 
+/** Where the issue's new ids come from: `uuidv7`, or made-up ones in the invoices Worker's start-up dry run (warm-advance.ts; the M6.4 L31 pattern). */
+export type AdvanceIds = () => string;
+
 /**
  * `issueGatewayAdvance({paymentId, lastTry})`: ONE try per invocation (early check 2, finding 1: a second try in the same invocation would double the D1
  * statements). When the proforma changed between the read and the freeze, the answer is `retry` (the jobs consumer retries the message once; the admin route
- * answers 409 "try again"); on the message's last try a second change is `blocked` (`freeze_refused`), so the Owner hears of it.
+ * answers 409 "try again"); on the message's last try a second change is `blocked` (`freeze_refused`), so the Owner hears of it. `ids`: the issue's new ids
+ * (the invoice, its lines, the receipt, the sends, the audit row); only the start-up dry run passes its own (the fourth admin Worker, brief D.7).
  */
 export async function issueGatewayAdvance(
   env: AdvanceEnv,
   paymentId: string,
-  opts: { lastTry?: boolean } = {},
+  opts: { lastTry?: boolean; ids?: AdvanceIds } = {},
 ): Promise<IssueAdvanceResult> {
-  return tryAdvance(env, paymentId, opts.lastTry === true);
+  return tryAdvance(env, paymentId, opts.lastTry === true, opts.ids ?? uuidv7);
 }
 
-async function tryAdvance(env: AdvanceEnv, paymentId: string, lastTry: boolean): Promise<IssueAdvanceResult> {
+async function tryAdvance(
+  env: AdvanceEnv,
+  paymentId: string,
+  lastTry: boolean,
+  ids: AdvanceIds,
+): Promise<IssueAdvanceResult> {
   const db = env.DB;
   const p = await db.prepare(PENDING_SQL).bind(paymentId).first<PendingRow>();
   if (p?.provider !== "razorpay" || p.kind !== "payment") return { result: "not_pending" };
@@ -209,9 +220,10 @@ async function tryAdvance(env: AdvanceEnv, paymentId: string, lastTry: boolean):
     exportMode: null,
     fx: null,
     today,
+    ids,
   });
   if (!made.ok) return blocked(env, p, proformaId, ["tax_errors"]);
-  const invoiceId = uuidv7();
+  const invoiceId = ids();
   const type = "tax_invoice" as const;
   const state: InvoiceState = {
     id: invoiceId,
@@ -266,7 +278,7 @@ async function tryAdvance(env: AdvanceEnv, paymentId: string, lastTry: boolean):
     },
   );
   const terms = ctx.newestTerms as TermsRef | null;
-  const receiptId = uuidv7();
+  const receiptId = ids();
   const extras = headerExtrasOf({
     state,
     settings: ctx.settings,
@@ -381,7 +393,7 @@ async function tryAdvance(env: AdvanceEnv, paymentId: string, lastTry: boolean):
     recipients.length > 0
       ? invoiceSendStatements(db, {
           documentId: invoiceId,
-          rows: recipients.map((r) => ({ id: uuidv7(), contactId: r.id })),
+          rows: recipients.map((r) => ({ id: ids(), contactId: r.id })),
           attachPdf: null,
           createdBy: onBehalfOf,
           kind: "auto",
@@ -392,7 +404,7 @@ async function tryAdvance(env: AdvanceEnv, paymentId: string, lastTry: boolean):
       : [];
   let issued: { number_display: string } | undefined;
   let done = false;
-  const auditId = uuidv7();
+  const auditId = ids();
   try {
     done = await mutateSystem(env, {
       auditId,

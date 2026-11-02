@@ -16,7 +16,16 @@ import { createLinkFor, refreshCheckoutById } from "./gateway/links.ts";
 import { payPalStubAnswer } from "./gateway/paypal.ts";
 import { capturePayPalReturn } from "./gateway/paypal-capture.ts";
 import { dropPayPalToken } from "./gateway/paypal-token.ts";
-import { exposeToStartupProbe, type WarmRows, type WarmStatementSeen, warmEnv } from "./warm-routes.ts";
+import {
+  exposeToStartupProbe,
+  type WarmRows,
+  type WarmStatementSeen,
+  warmEnv,
+  warmIds,
+} from "./warm-routes.ts";
+
+// The counter's ids moved to warm-routes.ts (shared with the invoices Worker's advance dry run, warm-advance.ts, which may not import this gateway module).
+export { warmIds };
 
 /** One made-up RPC call (its entrypoint method and arguments, from the probe's sample set); `country`: the payer PayPal reports (default the simulator's US). */
 export type WarmRpcCall =
@@ -31,12 +40,6 @@ export type WarmRpcCall =
 
 /** The RPC dry run: its calls and its answer book (warm-fixtures/finance-rpc.ts). */
 export type WarmRpcFixture = { readonly calls: readonly WarmRpcCall[]; readonly rows: WarmRows };
-
-/** Made-up ids in UUIDv7 form from a counter (`00000000-0000-7000-8000-000000000001`, …). */
-export function warmIds(): () => string {
-  let n = 0;
-  return () => `00000000-0000-7000-8000-${(++n).toString(16).padStart(12, "0")}`;
-}
 
 /** The simulator's body with the payer and the PayPal account in `country` (an order answer carries both; a capture answer neither). */
 function withCountry(body: unknown, country: string): unknown {

@@ -152,8 +152,9 @@ export const INVOICE_APPROVAL_EXPIRED = e(
 
 // ---- constants -----------------------------------------------------------------------------------------------------------------------
 
-// `INVOICE_TYPES_SQL` and `SERIES_FULL` live in invoice-consts.ts (M6.1 stage A), so the admin API Worker can use them without this module.
-export { INVOICE_TYPES_SQL, SERIES_FULL } from "./invoice-consts.ts";
+// `INVOICE_TYPES_SQL` and `SERIES_FULL` live in invoice-consts.ts (M6.1 stage A), so the admin API Worker can use them without this module; `INVOICE_VOID`
+// too (the fourth admin Worker, 2026-11-03): the finance Worker's ledger routes import it from there, never from this module (its top-level lines are INVOICE_CODE).
+export { INVOICE_TYPES_SQL, INVOICE_VOID, SERIES_FULL } from "./invoice-consts.ts";
 
 // ---- settings, bank, terms ----------------------------------------------------------------------------------------------------------------
 
@@ -689,8 +690,11 @@ export function advanceDraft(input: {
   exportMode: string | null;
   fx: FxState | null;
   today: CalendarDate;
+  /** The lines' new ids: `uuidv7` unless the caller passes its own (the invoices Worker's start-up dry run of the automatic advance, warm-advance.ts). */
+  ids?: () => string;
 }): MilestoneDraft {
   const { client, settings, today } = input;
+  const newId = input.ids ?? uuidv7;
   const ctx = taxContext(settings);
   const supply = determineSupply(taxInputOf(client), ctx, {
     documentDate: today,
@@ -717,7 +721,7 @@ export function advanceDraft(input: {
   const lines: LineState[] = split.value.lines.map((l, i) => {
     const cl = split.value.document.lines[i];
     return {
-      id: uuidv7(),
+      id: newId(),
       catalogueItemId: null,
       catalogueRateMinor: null,
       catalogueLine: null,
@@ -843,8 +847,6 @@ export const ALREADY_SET = e(
   "already_set",
   "The service completion date is already set and can't be changed.",
 );
-/** The service date of a void invoice. */
-export const INVOICE_VOID = e("invoice_void", "This invoice is void.");
 /** The extra export note the draft pinned is no longer the newest one: the person must look at the new text and choose again. */
 export const EXPORT_DECLARATION_CHANGED = e(
   "export_declaration_changed",

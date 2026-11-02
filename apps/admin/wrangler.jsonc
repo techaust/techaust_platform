@@ -54,11 +54,14 @@
     }
   ],
   // The admin API Worker (M5.0, docs/13 2026-10-27): every route except sign-in, the member's account and staff management is answered
-  // there (apps/admin/wrangler.api.jsonc; no public URL). The admin finance Worker (M6.1 stage A): invoices, statements, reports, approvals
-  // and the dashboard (apps/admin/wrangler.finance.jsonc; no public URL). Not inherited by environments, so each env lists both too.
+  // there (apps/admin/wrangler.api.jsonc; no public URL). The admin finance Worker (M6.1 stage A; the payments side since the fourth Worker): payments,
+  // the ledger, credit, advices and the gateways (apps/admin/wrangler.finance.jsonc; no public URL). The admin invoices Worker (the fourth admin Worker,
+  // 2026-11-03): invoices and notes, statements, reports, approvals and the dashboard (apps/admin/wrangler.invoices.jsonc; no public URL). Not inherited
+  // by environments, so each env lists all three too.
   "services": [
     { "binding": "ADMIN_API", "service": "techaust-platform-admin-api" },
-    { "binding": "ADMIN_FINANCE", "service": "techaust-platform-admin-finance" }
+    { "binding": "ADMIN_FINANCE", "service": "techaust-platform-admin-finance" },
+    { "binding": "ADMIN_INVOICES", "service": "techaust-platform-admin-invoices" }
   ],
   // Private file vault (M3.4, ADM-PRJ-04): uploads and downloads go through this Worker only (no public bucket, no signed
   // URLs). Local dev and tests use Miniflare's R2. Production has no bucket until Phase 7 (owner approval).
@@ -101,7 +104,8 @@
       },
       "services": [
         { "binding": "ADMIN_API", "service": "techaust-platform-admin-api-staging" },
-        { "binding": "ADMIN_FINANCE", "service": "techaust-platform-admin-finance-staging" }
+        { "binding": "ADMIN_FINANCE", "service": "techaust-platform-admin-finance-staging" },
+        { "binding": "ADMIN_INVOICES", "service": "techaust-platform-admin-invoices-staging" }
       ],
       "queues": {
         "producers": [
@@ -139,7 +143,8 @@
       },
       "services": [
         { "binding": "ADMIN_API", "service": "techaust-platform-admin-api" },
-        { "binding": "ADMIN_FINANCE", "service": "techaust-platform-admin-finance" }
+        { "binding": "ADMIN_FINANCE", "service": "techaust-platform-admin-finance" },
+        { "binding": "ADMIN_INVOICES", "service": "techaust-platform-admin-invoices" }
       ],
       // No R2 bucket (FILES) in production until Phase 7.
       // Production: NO invocation logs from day one (they carry the client IP, user agent and location of every staff
