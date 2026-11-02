@@ -11,11 +11,13 @@ import { ROUTES } from "./guard.ts";
 import { mountApi } from "./routes-api.ts";
 import { mountFinance } from "./routes-finance.ts";
 import { mountFront } from "./routes-front.ts";
+import { mountInvoices } from "./routes-invoices.ts";
 import { API_WARM } from "./warm-fixtures/api.ts";
 import { FINANCE_WARM } from "./warm-fixtures/finance.ts";
 import { FRONT_WARM } from "./warm-fixtures/front.ts";
 import { FRONT_WARM_SECRETS } from "./warm-front.ts";
 import {
+  ownCalls,
   sqlKey,
   type WarmCall,
   type WarmFixture,
@@ -25,6 +27,13 @@ import {
   warmEnv,
   warmRoutes,
 } from "./warm-routes.ts";
+
+// The fourth admin Worker (2026-11-03): until the probe writes one fixture per Worker (brief D.6–D.7), the invoices and finance Workers share FINANCE_WARM,
+// each dry-running only the calls its own app answers (`ownCalls`, as invoicing.ts and finance.ts do).
+const invoicesWarmApp = () => createApp(mountInvoices, undefined, { warm: true });
+const financeWarmApp = () => createApp(mountFinance, undefined, { warm: true });
+const INVOICES_CALLS = ownCalls(createApp(mountInvoices), FINANCE_WARM);
+const FINANCE_CALLS = ownCalls(createApp(mountFinance), FINANCE_WARM);
 
 const REFUSED = "Disallowed operation called within global scope (test)";
 /** How many refused operations were asked for (each one cost workerd about 12 ms of start-up, fix round decision 1c: the dry runs ask for none). */
@@ -113,7 +122,14 @@ const listRows = (statements: Record<string, WarmStatementSeen[]>, call: string,
 afterEach(() => vi.restoreAllMocks());
 
 describe("the start-up dry run [CPU warm-up (b)1]", () => {
-  it("the finance Worker's hot routes answer on the made-up rows", async () => {
+  it("the shared finance fixture splits between the invoices and finance Workers: every call to exactly one of them (the fourth admin Worker)", () => {
+    expect(INVOICES_CALLS.calls.length + FINANCE_CALLS.calls.length).toBe(FINANCE_WARM.calls.length);
+    expect(INVOICES_CALLS.calls.filter((c) => FINANCE_CALLS.calls.includes(c))).toEqual([]);
+    expect(INVOICES_CALLS.rows).toBe(FINANCE_WARM.rows);
+    expect(FINANCE_CALLS.rows).toBe(FINANCE_WARM.rows);
+  });
+
+  it("the invoices and finance Workers' hot routes answer on the made-up rows", async () => {
     // What the warm `c.json` serialises (it answers without a body): the issue call's 409 must be `content_changed`, the refusal AFTER the recompute.
     const stringify = JSON.stringify;
     const codes: string[] = [];
@@ -122,23 +138,28 @@ describe("the start-up dry run [CPU warm-up (b)1]", () => {
       if (typeof code === "string") codes.push(code);
       return stringify(value, ...(rest as [undefined, undefined]));
     });
-    const r = await dryRun(createApp(mountFinance, undefined, { warm: true }), FINANCE_WARM);
+    const invoices = await dryRun(invoicesWarmApp(), INVOICES_CALLS);
+    const finance = await dryRun(financeWarmApp(), FINANCE_CALLS);
     expect(codes).toEqual(["content_changed"]);
-    expect(r.statuses).toMatchInlineSnapshot(`
+    expect(invoices.statuses).toMatchInlineSnapshot(`
       [
         "POST /invoices/:id/issue 409",
         "GET /invoices/:id 200",
-        "GET /invoices/:id/payments 200",
         "GET /dashboard 200",
         "GET /invoices 200",
-        "GET /payments/review 200",
         "GET /approvals 200",
+      ]
+    `);
+    expect(finance.statuses).toMatchInlineSnapshot(`
+      [
+        "GET /invoices/:id/payments 200",
+        "GET /payments/review 200",
       ]
     `);
     // Fix round decision 1c: the issue call carries a content hash that is not the draft's, so it reads, recomputes the invoice and answers 409
     // `content_changed` before its first new id; PATCH and the advance invoice are not dry-run (they would reach a new id). No refused operation at all.
-    expect(r.count).toBe(6);
-    expect(r.refused).toBe(0);
+    expect([invoices.count, finance.count]).toEqual([4, 2]);
+    expect(invoices.refused + finance.refused).toBe(0);
   });
 
   it("the API Worker's hot routes answer on the made-up rows", async () => {
@@ -180,12 +201,13 @@ describe("the start-up dry run [CPU warm-up (b)1]", () => {
     expect(r.refused).toBe(0);
   });
 
-  it("leaves no trace: no log line, no request counted, no first-run mark (all three Workers)", async () => {
+  it("leaves no trace: no log line, no request counted, no first-run mark (all four Workers)", async () => {
     const log = vi.spyOn(console, "log");
     const error = vi.spyOn(console, "error");
     const warn = vi.spyOn(console, "warn");
     const before = nextRequestNumber().n;
-    await dryRun(createApp(mountFinance, undefined, { warm: true }), FINANCE_WARM);
+    await dryRun(invoicesWarmApp(), INVOICES_CALLS);
+    await dryRun(financeWarmApp(), FINANCE_CALLS);
     // Review finding 7: the API Worker's dry run too, so a handler's own console line in any hot route fails here.
     await dryRun(createApp(mountApi, undefined, { warm: true }), API_WARM);
     await dryRun(
@@ -220,7 +242,8 @@ describe("the start-up dry run [CPU warm-up (b)1]", () => {
     expect(expiries.filter((x) => x !== farFuture)).toEqual([]);
     // A clock a day before those expiries (not workerd's start-up 0): every Worker's dry run answers as many calls, refusing nothing.
     const late = farFuture - 86_400_000;
-    const finance = await dryRun(createApp(mountFinance, undefined, { warm: true }), FINANCE_WARM, {}, late);
+    const invoices = await dryRun(invoicesWarmApp(), INVOICES_CALLS, {}, late);
+    const finance = await dryRun(financeWarmApp(), FINANCE_CALLS, {}, late);
     const api = await dryRun(createApp(mountApi, undefined, { warm: true }), API_WARM, {}, late);
     const front = await dryRun(
       createApp(mountFront, (a) => forwardRoutes(a, ROUTES, true), { warm: true }),
@@ -228,8 +251,8 @@ describe("the start-up dry run [CPU warm-up (b)1]", () => {
       FRONT_WARM_SECRETS,
       late,
     );
-    expect([finance.count, api.count, front.count]).toEqual([6, 5, 9]);
-    expect(finance.refused + api.refused + front.refused).toBe(0);
+    expect([invoices.count, finance.count, api.count, front.count]).toEqual([4, 2, 5, 9]);
+    expect(invoices.refused + finance.refused + api.refused + front.refused).toBe(0);
   });
 
   it("one helper gives the app and the forwarder their request facts; a warm one moves no counter and draws nothing (review finding 8)", () => {
@@ -246,24 +269,26 @@ describe("the start-up dry run [CPU warm-up (b)1]", () => {
   // Early check 2: a fixture gone stale (a hot route's SQL changed and `node scripts/cpu-probe.mjs --write-fixtures` was not re-run) must fail here, not
   // leave a dry run answering 200 on nothing. Every read of every call is in the answer book, and every list call's list answers rows.
   it("the answer books hold every read of every call, and every list has rows", async () => {
-    const finance = await dryRun(createApp(mountFinance, undefined, { warm: true }), FINANCE_WARM);
+    const invoices = await dryRun(invoicesWarmApp(), INVOICES_CALLS);
+    const finance = await dryRun(financeWarmApp(), FINANCE_CALLS);
     const api = await dryRun(createApp(mountApi, undefined, { warm: true }), API_WARM);
     const front = await dryRun(
       createApp(mountFront, (a) => forwardRoutes(a, ROUTES, true), { warm: true }),
       FRONT_WARM,
       FRONT_WARM_SECRETS,
     );
+    expect(missesOf(invoices.statements)).toEqual([]);
     expect(missesOf(finance.statements)).toEqual([]);
     expect(missesOf(api.statements)).toEqual([]);
     expect(missesOf(front.statements)).toEqual([]);
     // Every call that reads put at least one statement to the D1 (a call that stopped before its reads would warm nothing of its own).
-    for (const r of [finance, api])
+    for (const r of [invoices, finance, api])
       for (const [call, list] of Object.entries(r.statements))
         expect(list.filter((s) => s.read).length, call).toBeGreaterThan(0);
     const lists: [Record<string, WarmStatementSeen[]>, string, RegExp][] = [
-      [finance.statements, "GET /invoices", /\bFROM documents\b/],
+      [invoices.statements, "GET /invoices", /\bFROM documents\b/],
       [finance.statements, "GET /payments/review", /\bFROM review_items\b/],
-      [finance.statements, "GET /approvals", /\bFROM approvals\b/],
+      [invoices.statements, "GET /approvals", /\bFROM approvals\b/],
       [api.statements, "GET /notifications", /\bFROM notifications WHERE user_id = \?1(?! AND read_at)/],
       [api.statements, "GET /clients", /\bFROM clients\b/],
       [api.statements, "GET /leads", /\bFROM leads\b/],
@@ -331,9 +356,8 @@ describe("the start-up dry run [CPU warm-up (b)1]", () => {
   it("never throws, even when every read fails", async () => {
     const broken = warmEnv({});
     Object.defineProperty(broken, "DB", { value: null });
-    await expect(
-      warmRoutes(createApp(mountFinance, undefined, { warm: true }), broken, FINANCE_WARM.calls),
-    ).resolves.toBeTypeOf("number");
+    await expect(warmRoutes(invoicesWarmApp(), broken, FINANCE_WARM.calls)).resolves.toBeTypeOf("number");
+    await expect(warmRoutes(financeWarmApp(), broken, FINANCE_WARM.calls)).resolves.toBeTypeOf("number");
   });
 });
 

@@ -22,6 +22,8 @@ const FILES = [
   "admin/wrangler.jsonc",
   "admin/wrangler.api.jsonc",
   "admin/wrangler.finance.jsonc",
+  // The fourth admin Worker (2026-11-03).
+  "admin/wrangler.invoices.jsonc",
   "portal/wrangler.jsonc",
   "jobs/wrangler.jsonc",
 ];

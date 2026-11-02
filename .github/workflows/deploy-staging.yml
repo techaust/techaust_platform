@@ -104,52 +104,36 @@ jobs:
       - if: steps.creds.outputs.ready == 'true'
         name: Build the website (staging, no token)
         run: pnpm --filter @techaust/web run build:staging
-      # The deploy order (full audit A6 8, owner's yes 2026-10-30), one Worker per step: the admin API first (the admin front binds it as
-      # ADMIN_API), then the admin finance Worker (M6.1, owner's yes 2026-10-31: the front binds it as ADMIN_FINANCE, and jobs binds its
-      # BillingJobs entrypoint as ADMIN_JOBS), then the admin front, the portal, jobs and the website.
+      # The deploy order (full audit A6 8, owner's yes 2026-10-30), one Worker per step. Since the fourth admin Worker (owner, Q1 A, 2026-11-02;
+      # docs/runs/admin-split-plan.md C.6): the admin API (the front binds it as ADMIN_API), the admin invoices Worker (new: the front binds it
+      # as ADMIN_INVOICES, jobs its BillingJobs and GatewayAdvance entrypoints as ADMIN_JOBS and ADMIN_ADVANCE, finance its GatewayAdvance as
+      # ADMIN_ADVANCE), the admin front, jobs, the admin finance Worker (the front binds it as ADMIN_FINANCE, jobs its GatewayEvents as
+      # ADMIN_GATEWAY, the portal its PortalPayments as ADMIN_PAY), the portal and the website. Every Worker a step binds already exists when
+      # it deploys, and the old finance Worker still answers every row until step 5, so this deploy has no gap. From M6.5 (owner, Q3 A) the
+      # finance step moves back right after admin invoices (a deploy that ADDS a finance method jobs calls must deploy finance first).
       # A failed step stops the job, so no Worker is deployed after a failed one. After each app, a health check through Cloudflare
       # Access with the deploy-check service token (scripts/staging-health.mjs; `staging-deploy-check`, a Service Auth policy on all
-      # four staging apps, owner 2026-10-30; docs/runbooks/access-staging.md Part 4).
+      # four staging apps, owner 2026-10-30; docs/runbooks/access-staging.md Part 4); the admin's once all four admin Workers are new.
       - if: steps.creds.outputs.ready == 'true'
-        name: Deploy 1 of 6, the admin API Worker (staging)
+        name: Deploy 1 of 7, the admin API Worker (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm --filter @techaust/admin run deploy:staging:api
       - if: steps.creds.outputs.ready == 'true'
-        name: Deploy 2 of 6, the admin finance Worker (staging)
+        name: Deploy 2 of 7, the admin invoices Worker (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: pnpm --filter @techaust/admin run deploy:staging:finance
+        run: pnpm --filter @techaust/admin run deploy:staging:invoices
       - if: steps.creds.outputs.ready == 'true'
-        name: Deploy 3 of 6, the admin front Worker (staging)
+        name: Deploy 3 of 7, the admin front Worker (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: pnpm --filter @techaust/admin run deploy:staging:front
-      # The front's /api/v1/health; a signed-out /api/v1/leads answered 401 by the API Worker and a signed-out /api/v1/dashboard answered
-      # 401 by the finance Worker, each through its binding (not 502).
       - if: steps.creds.outputs.ready == 'true'
-        name: Health check, the admin front, API and finance Workers (staging)
-        env:
-          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_ID }}
-          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_SECRET }}
-        run: node scripts/staging-health.mjs admin
-      - if: steps.creds.outputs.ready == 'true'
-        name: Deploy 4 of 6, the portal Worker (staging)
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: pnpm --filter @techaust/portal run deploy:staging
-      - if: steps.creds.outputs.ready == 'true'
-        name: Health check, the portal Worker (staging)
-        env:
-          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_ID }}
-          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_SECRET }}
-        run: node scripts/staging-health.mjs portal
-      - if: steps.creds.outputs.ready == 'true'
-        name: Deploy 5 of 6, the jobs Worker (staging)
+        name: Deploy 4 of 7, the jobs Worker (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -161,7 +145,33 @@ jobs:
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_SECRET }}
         run: node scripts/staging-health.mjs jobs
       - if: steps.creds.outputs.ready == 'true'
-        name: Deploy 6 of 6, the website Worker (staging)
+        name: Deploy 5 of 7, the admin finance Worker (staging)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm --filter @techaust/admin run deploy:staging:finance
+      # The front's /api/v1/health, and signed-out requests answered 401 through each binding (not 502): /api/v1/leads by the API Worker,
+      # /api/v1/dashboard by the invoices Worker and (scripts/staging-health.mjs, brief D.5) /api/v1/payments by the finance Worker.
+      - if: steps.creds.outputs.ready == 'true'
+        name: Health check, the admin front, API, invoices and finance Workers (staging)
+        env:
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_SECRET }}
+        run: node scripts/staging-health.mjs admin
+      - if: steps.creds.outputs.ready == 'true'
+        name: Deploy 6 of 7, the portal Worker (staging)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm --filter @techaust/portal run deploy:staging
+      - if: steps.creds.outputs.ready == 'true'
+        name: Health check, the portal Worker (staging)
+        env:
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_SECRET }}
+        run: node scripts/staging-health.mjs portal
+      - if: steps.creds.outputs.ready == 'true'
+        name: Deploy 7 of 7, the website Worker (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

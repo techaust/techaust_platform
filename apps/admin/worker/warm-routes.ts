@@ -149,6 +149,8 @@ export function warmEnv(
     DOCS: noObject,
     ADMIN_API: answers,
     ADMIN_FINANCE: answers,
+    // The fourth admin Worker (2026-11-03): the front's binding to the invoices Worker (its forwarded hot routes: an invoice, the issue, the dashboard).
+    ADMIN_INVOICES: answers,
     ENVIRONMENT: "warm",
     PAYMENTS_LIVE_ALLOWED: "false",
     LEAD_PURGE_MODE: "dry_run",
@@ -219,6 +221,25 @@ export function exposeToStartupProbe(work: Promise<unknown>): void {
   } catch {
     // never stop a Worker from starting
   }
+}
+
+/**
+ * The fixture's calls that `app` answers (a route of the call's method matches its path), with the same answer book: the fourth admin Worker (2026-11-03) shares
+ * the finance fixture between the invoices and finance Workers until the probe writes one per Worker (`node scripts/cpu-probe.mjs --write-fixtures`, brief
+ * D.6–D.7). Never throws: a call that can't be matched is left out.
+ */
+export function ownCalls(app: App, fixture: WarmFixture): WarmFixture {
+  const calls: WarmCall[] = [];
+  try {
+    for (const call of fixture.calls) {
+      const path = `/api/v1${call.path}`;
+      const [handlers] = app.router.match(call.method, path);
+      if (handlers.some((h) => h[0][1].method === call.method)) calls.push(call);
+    }
+  } catch {
+    // never stop a Worker from starting
+  }
+  return { calls, rows: fixture.rows };
 }
 
 /** How many passes an entry's start-up makes over its calls: V8 compiles on the first, and the next ones warm the inline caches further. */

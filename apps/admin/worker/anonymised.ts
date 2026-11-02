@@ -10,6 +10,15 @@ export const CLIENT_ANONYMISED: ApiError = {
   message: "This client's personal details were removed, so nothing new can be added to it",
 };
 
+/**
+ * The short "personal details were removed" refusal of the document and payment paths. Here since the fourth admin Worker (2026-11-03, ADM-G-02), so the finance
+ * Worker's payment routes take it from a module with no top-level work; quote-model.ts re-exports it for the document paths.
+ */
+export const CLIENT_GONE: ApiError = {
+  code: "client_anonymised",
+  message: "This client's personal details were removed",
+};
+
 /** True when the client in `col` (a column or a sub-select giving a client id) is an anonymised individual. */
 export const clientGoneSql = (col: string) =>
   `EXISTS (SELECT 1 FROM clients z WHERE z.id = ${col} AND z.anonymised_at IS NOT NULL)`;
