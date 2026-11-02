@@ -744,10 +744,8 @@ export async function capturePayPalCheckout(
       // Review part 2, finding 4: the claim's document test still runs (a read, no claim): a document voided, withdrawn, paid or changed meanwhile ends this
       // unclaimed row `cancelled` ("changed"), as a refused claim would, instead of leaving it "Live" until it expires. Nothing was captured on it.
       const fits = await paypalCaptureFitsStatement(db, { id: c.id }).first<{ fits: number }>();
-      if (!fits) {
-        await endLocally(ctx, c, "cancelled", "changed");
-        return { state: "changed" };
-      }
+      if (!fits)
+        return { state: (await endLocally(ctx, c, "cancelled", "changed")) ? "changed" : "processing" };
       return { state: "not_completed" };
     }
   }
@@ -765,8 +763,7 @@ export async function capturePayPalCheckout(
     // The document can no longer take this amount (voided, withdrawn, paid, its balance moved, the client erased, other gateway money waiting): no capture call.
     // A stale claim on it may have captured before: the order is asked first, and released and ended only when PayPal shows none.
     if (back.capture_started_at !== null) return byOrder(ctx, back, back.capture_started_at, "abandon");
-    await endLocally(ctx, back, "cancelled", "changed");
-    return { state: "changed" };
+    return { state: (await endLocally(ctx, back, "cancelled", "changed")) ? "changed" : "processing" };
   }
   const held: CheckoutRow = { ...c, capture_started_at: now };
   const release = () => paypalCaptureReleaseStatement(db, { id: c.id, claim: now, now }).run();

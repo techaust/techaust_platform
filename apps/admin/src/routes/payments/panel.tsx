@@ -464,7 +464,7 @@ function Entries(props: {
                   )
                 ) : (
                   // review 2 finding 2: a gateway's id keeps one line at table width (payments.css); a typed bank reference wraps as before
-                  <span className={online ? "docno pay-lines__gateway-id" : "docno break"}>
+                  <span className={online?.providerPaymentId ? "docno pay-lines__gateway-id" : "docno break"}>
                     {online?.providerPaymentId ?? r.reference}
                   </span>
                 )}
