@@ -18,6 +18,8 @@ import {
   livePaidSql,
   liveTdsSql,
   PAYABLE_TYPES_SQL,
+  paymentDocumentsSql,
+  paymentForDocumentSql,
   paymentNetSql,
   SQL_CURRENCIES,
 } from "./sql-rules.ts";
@@ -30,6 +32,7 @@ export {
   livePaidSql,
   liveTdsSql,
   PAYABLE_TYPES_SQL,
+  paymentForDocumentSql,
   paymentNetSql,
 };
 
@@ -479,22 +482,6 @@ export function extensionLetterStatement(
 }
 
 // ---- reads ---------------------------------------------------------------------------------------------------------------------------------------------
-
-/**
- * M6.3 staging fixes (L5, L6, L17; ADM-PAY-01, ADM-INV-10; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17); lead's decision 1, 2026-11-02):
- * THE one rule "payment `p` is for document `doc`" (`p` an SQL table name or alias of `payments`, `doc` an SQL expression), as the documents it is for: the ones
- * its own `requested_allocations` name (frozen once written), and, for a gateway payment (`provider <> 'manual'`), the document its checkout was made for (a
- * payment that didn't match is pending with no request, but its money still came through that document's page). Every reader of the rule builds on this: the
- * advance's F6 check and freeze, the decision's refusal and `verifyPaymentStatement`, the waiting-payment guard, the proforma panel's waiting entries and the void
- * and withdraw blockers. No core twin exists (core only receives the facts). A `json_each` of at most 10 rows and a primary-key seek.
- */
-const paymentDocumentsSql = (p: string): string =>
-  `SELECT json_extract(fj.value, '$.documentId') FROM json_each(${p}.requested_allocations) fj
-     UNION ALL SELECT fc.document_id FROM checkout_sessions fc WHERE fc.id = ${p}.checkout_id AND ${p}.provider <> 'manual'`;
-
-/** Payment `p` is for document `doc` (`paymentDocumentsSql`): a boolean SQL expression. */
-export const paymentForDocumentSql = (p: string, doc: string): string =>
-  `(${doc} IN (${paymentDocumentsSql(p)}))`;
 
 /**
  * M6.3 staging fix 2 (L5): the proforma payment `p` is for (`paymentDocumentsSql`), or NULL. Such money is confirmed only by issuing the tax invoice for the payment

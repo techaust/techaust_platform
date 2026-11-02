@@ -17,14 +17,32 @@ import { verifyPaymentStatement, WAITING_PAYMENT_SQL } from "@techaust/db/ledger
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setStubTransport } from "./gateway/config.ts";
 import { processEvent } from "./gateway/events.ts";
+import { createLinkFor } from "./gateway/links.ts";
 import { reviewReason } from "./gateway/reasons.ts";
 import { ONLINE_PAYMENT_WAITING, PAYMENT_WAITING, USE_ADVANCE_INVOICE } from "./payment-messages.ts";
-import { countingEnv, eventRow, issued, linkFor, owner, type Session, stub } from "./test-gateway.ts";
+import {
+  countingEnv,
+  eventRow,
+  issued,
+  linkFor,
+  owner,
+  type Session,
+  staffLink,
+  stub,
+} from "./test-gateway.ts";
 import { call, one, rows, sessionFor } from "./test-helpers.ts";
 import { currentFy, lutOf, mkProforma, putSwiftBank, putTax, todayIso } from "./test-invoice-types.ts";
 import { issueInvoice, json, mkInvoice, putBank, putCompany, voidInvoice } from "./test-invoices.ts";
 import { recordBody, recorded, ref, verify } from "./test-payments.ts";
-import { piOf, stripeEventRow, stripeLink, stripeStub, usdClient, usdDoc } from "./test-stripe.ts";
+import {
+  liveSession,
+  piOf,
+  stripeEventRow,
+  stripeLink,
+  stripeStub,
+  usdClient,
+  usdDoc,
+} from "./test-stripe.ts";
 
 beforeEach(async () => {
   await putCompany();
@@ -310,7 +328,11 @@ describe.each(CASES)(
 );
 
 /** An online payment pending on the proforma's checkout with NO request (a mismatch, an overpayment), as the settle writes it. Returns its `payments.id`. */
-async function checkoutOnly(pf: Paying, amountMinor: number, tag: string): Promise<string> {
+async function checkoutOnly(
+  pf: Pick<Paying, "provider" | "checkoutId" | "clientId" | "id">,
+  amountMinor: number,
+  tag: string,
+): Promise<string> {
   const stripe = pf.provider === "stripe";
   const gw = stripe ? `pi_A${amountMinor}R0${tag}` : `pay_NOREQ${tag}`;
   const id = stripe ? stripePaymentRowId(gw) : razorpayPaymentRowId(gw);
@@ -618,6 +640,98 @@ describe.each(CASES)(
       expect(
         (await one<{ status: string }>("SELECT status FROM payments WHERE id = ?1", manual.id))?.status,
       ).toBe("pending_verification");
+    });
+  },
+);
+
+/** A document with an open online checkout: a proforma or an invoice, through Razorpay (INR) or Stripe (USD). */
+type LinkDoc = {
+  provider: "razorpay" | "stripe";
+  id: string;
+  clientId: string;
+  contactId: string;
+  checkoutId: string;
+  /** What a new link asks for: the document's balance. */
+  amount: number;
+  o: Session;
+};
+
+const LINK_DOCS = [
+  {
+    name: "a Razorpay proforma",
+    make: async (): Promise<LinkDoc> => {
+      const pf = await razorpayProforma();
+      return { ...pf, amount: pf.total };
+    },
+  },
+  {
+    name: "a Razorpay tax invoice",
+    make: async (): Promise<LinkDoc> => {
+      stub();
+      const o = await owner();
+      const inv = await issued(o);
+      const l = await linkFor(o, inv);
+      return { provider: "razorpay", ...inv, checkoutId: l.checkoutId, amount: inv.total, o };
+    },
+  },
+  {
+    name: "a Stripe proforma",
+    make: async (): Promise<LinkDoc> => {
+      const pf = await stripeProforma();
+      return { ...pf, amount: pf.total };
+    },
+  },
+  {
+    name: "a Stripe export invoice",
+    make: async (): Promise<LinkDoc> => {
+      stripeStub();
+      const o = await owner();
+      const s = await liveSession();
+      return {
+        provider: "stripe",
+        id: s.documentId,
+        clientId: s.clientId,
+        contactId: s.contactId,
+        checkoutId: s.checkoutId,
+        amount: 50_000,
+        o,
+      };
+    },
+  },
+] as const;
+
+describe.each(LINK_DOCS)(
+  "(4) no new link or card page while an online payment is for the document, a checkout-only one included (lead's final round): $name [POR-06, ADM-PAY-01]",
+  ({ make }) => {
+    it("the portal's Pay path (the PortalPayments RPC's createLinkFor) and the staff link answer payment_processing; nothing is asked of the gateway", async () => {
+      const d = await make();
+      await checkoutOnly(d, 100, `L${d.id.replaceAll("-", "").slice(-12)}`);
+      const portal = await createLinkFor(env, {
+        provider: d.provider,
+        clientId: d.clientId,
+        contactId: d.contactId,
+        tokenHash: null,
+        documentId: d.id,
+        amountMinor: d.amount,
+        returnTo: "invoice",
+      });
+      expect(portal).toEqual({ ok: false, error: "payment_processing" });
+      if (d.provider === "razorpay") {
+        const stamp = await one<{ updated_at: number }>(
+          "SELECT updated_at FROM documents WHERE id = ?1",
+          d.id,
+        );
+        const staff = await staffLink(d.o, d.id, d.amount, stamp?.updated_at ?? 0);
+        expect(staff.status).toBe(409);
+        expect((await json(staff)).error.code).toBe("payment_processing");
+      }
+      // no new open checkout was made for it
+      expect(
+        await rows(
+          "SELECT id FROM checkout_sessions WHERE document_id = ?1 AND status IN ('creating', 'live')",
+          d.id,
+        ),
+      ).toEqual([]);
     });
   },
 );
