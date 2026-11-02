@@ -31,6 +31,7 @@ import {
   withdrawPaymentBody,
 } from "@techaust/core/payment-schemas";
 import { decide } from "@techaust/core/permissions";
+import { paymentHasAdviceSql } from "@techaust/db/advices";
 import { deedDraftStatements } from "@techaust/db/deeds";
 import {
   type AllocationRow,
@@ -293,9 +294,11 @@ export function paymentListSql(f: {
   let order: string;
   let cursor = "";
   // The partial index's own WHERE, stated as literals so it can be used (and kept as a filter on every other variant).
+  // M6.4 (Step 0.2 item 6): "Proof awaited" is no proof AND no remittance advice link (one seek of `realisation_advice_payments_active` per row).
   if (f.proof)
     where.push(
       "p.provider IN ('stripe', 'paypal') AND p.proof_r2_key IS NULL AND p.status IN ('pending_verification', 'confirmed')",
+      `NOT ${paymentHasAdviceSql("p")}`,
     );
   if (f.proof && !f.client) {
     from = "payments p INDEXED BY payments_proof_awaited";
