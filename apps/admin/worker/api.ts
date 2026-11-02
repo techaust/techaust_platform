@@ -1,6 +1,7 @@
-// The admin API Worker entry (M5.0): every route of ROUTES not marked `on: "front"` or `on: "finance"`. Reached only through the front Worker's
-// `ADMIN_API` binding (no public URL). It runs the same middleware chain and guard as before and re-authenticates from the session cookie.
-// The `BillingJobs` entrypoint moved to the finance Worker with the invoice code in M6.1 stage A (finance.ts).
+// The admin API Worker entry (M5.0): every route of ROUTES not marked `on: "front"`, `on: "finance"` or `on: "invoices"`. Reached only through
+// the front Worker's `ADMIN_API` binding (no public URL). It runs the same middleware chain and guard as before and re-authenticates from the
+// session cookie. The `BillingJobs` entrypoint moved to the finance Worker with the invoice code in M6.1 stage A, and on to the invoices Worker
+// (invoicing.ts) with the fourth admin Worker (2026-11-03).
 import { createApp } from "./app.ts";
 import { ROUTES } from "./guard.ts";
 import { mountApi } from "./routes-api.ts";

@@ -8,6 +8,7 @@ import { REMINDER_CLAIM_SQL } from "@techaust/db/billing";
 import { recordGatewayPaymentStatements, STUCK_ADVANCES_SQL } from "@techaust/db/gateway";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { issueGatewayAdvance } from "./gateway/advance.ts";
+import { AdvanceRpcError, advanceViaRpc } from "./gateway/advance-rpc.ts";
 import { setStubTransport, stubFetch, stubIdsOf } from "./gateway/config.ts";
 import { processEvent } from "./gateway/events.ts";
 import { createLinkFor, LINK_STATE_SQL, refreshForClient } from "./gateway/links.ts";
@@ -1198,5 +1199,58 @@ describe("the advance across the hop to the invoices Worker [brief B, F.3]", () 
       ["issueGatewayAdvance", "blocked"],
     ]);
     expect(logs.join("\n")).not.toContain(paymentId);
+  });
+
+  // Early check finding 4: a missing binding or method is a named `rpc_unavailable` (as the jobs Worker's GatewayRpcError), never a generic TypeError; a thrown
+  // call is not caught; a malformed answer is `rpc_bad_result`. The method is called on its binding (an RPC stub needs its receiver).
+  it("advanceViaRpc: rpc_unavailable for a missing binding or method, the thrown call propagates, rpc_bad_result for a malformed answer", async () => {
+    const codeOf = async (p: Promise<unknown>) => {
+      const e = await p.then(
+        () => undefined,
+        (err: unknown) => err,
+      );
+      return e instanceof AdvanceRpcError ? e.code : e;
+    };
+    for (const missing of [
+      {},
+      { ADMIN_ADVANCE: null },
+      { ADMIN_ADVANCE: 0 },
+      { ADMIN_ADVANCE: {} },
+      { ADMIN_ADVANCE: { issueGatewayAdvance: "no" } },
+    ])
+      expect(await codeOf(advanceViaRpc(missing, "p1"))).toBe("rpc_unavailable");
+    const boom = new Error("invoices Worker unreachable");
+    expect(
+      await codeOf(
+        advanceViaRpc(
+          {
+            ADMIN_ADVANCE: {
+              issueGatewayAdvance: async () => {
+                throw boom;
+              },
+            },
+          },
+          "p1",
+        ),
+      ),
+    ).toBe(boom);
+    expect(
+      await codeOf(
+        advanceViaRpc(
+          { ADMIN_ADVANCE: { issueGatewayAdvance: async () => ({ result: "issued_maybe" }) } },
+          "p1",
+        ),
+      ),
+    ).toBe("rpc_bad_result");
+    const seen: unknown[] = [];
+    const binding = {
+      tag: "stub",
+      async issueGatewayAdvance(this: { tag: string }, args: unknown) {
+        seen.push(this.tag, args);
+        return { result: "not_pending" };
+      },
+    };
+    expect(await advanceViaRpc({ ADMIN_ADVANCE: binding }, "p1")).toEqual({ result: "not_pending" });
+    expect(seen).toEqual(["stub", { paymentId: "p1" }]);
   });
 });

@@ -449,6 +449,28 @@ describe("admin invoices Worker config guard (the fourth admin Worker, 2026-11-0
     ]);
   });
 
+  it('finance and invoices must STATE PAYMENTS_LIVE_ALLOWED "false" in every scope; a missing flag fails there only [early check finding 5]', () => {
+    expect(guard.LIVE_FLAG_REQUIRED).toEqual(["finance", "admin invoices"]);
+    const inv = structuredClone(invoices);
+    delete inv.env.staging.vars.PAYMENTS_LIVE_ALLOWED;
+    const f = structuredClone(finance);
+    delete f.vars.PAYMENTS_LIVE_ALLOWED;
+    delete f.env.production.vars.PAYMENTS_LIVE_ALLOWED;
+    // the API config is not on the list: a missing flag there passes (it never touches payments), a wrong one still fails
+    const a = structuredClone(api);
+    delete a.env.staging.vars.PAYMENTS_LIVE_ALLOWED;
+    expect(
+      guard.gatewayConfigProblems(jobs, portal, f, [
+        ["admin invoices", inv],
+        ["admin api", a],
+      ]),
+    ).toEqual([
+      'finance (top level): PAYMENTS_LIVE_ALLOWED must be "false"',
+      'finance env.production: PAYMENTS_LIVE_ALLOWED must be "false"',
+      'admin invoices env.staging: PAYMENTS_LIVE_ALLOWED must be "false"',
+    ]);
+  });
+
   it("the front binds ADMIN_INVOICES in all three scopes, to the invoices Worker of that scope, without an entrypoint", () => {
     for (const [c, service] of [
       [front, "techaust-platform-admin-invoices"],

@@ -102,12 +102,13 @@ describe("staging-health judge [A6-8]", () => {
     expect(judge(hook as never, answer(400, {}))).toMatch(/expected signature_missing/);
   });
 
-  it("knows every staging Worker with a URL, and admin proves its API and finance Workers through their bindings (M6.1)", () => {
+  it("knows every staging Worker with a URL, and admin proves its API, invoices and finance Workers through their bindings (M6.1, the fourth Worker)", () => {
     expect(Object.keys(CHECKS).sort()).toEqual(["admin", "jobs", "portal", "web"]);
     expect(CHECKS.admin.map((c) => [c.path, c.status])).toEqual([
       ["/api/v1/health", 200],
       ["/api/v1/leads", 401],
       ["/api/v1/dashboard", 401],
+      ["/api/v1/payments", 401],
     ]);
     expect(urlOf("jobs")).toBe(
       "https://techaust-platform-jobs-staging.techaust-technologies-153.workers.dev",
@@ -178,7 +179,7 @@ describe("staging-health checkApp [A6-8]", () => {
     expect(failures).toEqual(["web /api/geo: request failed: TypeError"]);
   });
 
-  it("checks the three admin paths (front, API, finance), and refuses an unknown app", async () => {
+  it("checks the four admin paths (front, API, invoices, finance), and refuses an unknown app", async () => {
     const urls: string[] = [];
     const failures = await checkApp("admin", {
       ...quiet,
@@ -194,7 +195,21 @@ describe("staging-health checkApp [A6-8]", () => {
       "/api/v1/health",
       "/api/v1/leads",
       "/api/v1/dashboard",
+      "/api/v1/payments",
     ]);
     expect(await checkApp("nope", quiet)).toEqual(["unknown app nope"]);
+  });
+
+  it("fails admin when the finance Worker's binding answers the front's 502 (early check finding 1)", async () => {
+    const failures = await checkApp("admin", {
+      ...quiet,
+      fetchImpl: async (url) =>
+        url.endsWith("/health")
+          ? res(200, { ok: true, service: "admin", env: "staging" })
+          : url.endsWith("/payments")
+            ? res(502, { ok: false, error: { code: "upstream_unavailable" } })
+            : res(401, { ok: false, error: "unauthorised" }),
+    });
+    expect(failures).toEqual(["admin /api/v1/payments: 502, expected 401"]);
   });
 });
