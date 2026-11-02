@@ -24,6 +24,7 @@ describe("voidBlockers: a payment waiting, an allocation, or TDS refuses a void 
     tdsMinor: 0,
     paymentPending: false,
     paymentPendingGateway: false,
+    paymentPendingCapture: false,
     paymentRecorded: false,
   };
   it("each has its code, and none when neither is there", () => {
@@ -35,6 +36,12 @@ describe("voidBlockers: a payment waiting, an allocation, or TDS refuses a void 
     expect(
       voidBlockers({ ...base, type: "proforma", paymentPending: true, paymentPendingGateway: true }),
     ).toEqual(["payment_pending", "payment_pending_gateway"]);
+    // M6.4 (early check 1 finding 8): a PayPal capture held or claimed has its own code (nothing to confirm yet), after the gateway one's
+    expect(voidBlockers({ ...base, paymentPendingCapture: true })).toEqual(["payment_pending_capture"]);
+    expect(voidBlockers({ ...base, paymentPendingGateway: true, paymentPendingCapture: true })).toEqual([
+      "payment_pending_gateway",
+      "payment_pending_capture",
+    ]);
     expect(voidBlockers({ ...base, tdsMinor: 10 })).toEqual(["tds_recorded"]);
     expect(voidBlockers({ ...base, paymentPending: false, paymentRecorded: false, tdsMinor: 0 })).toEqual([]);
     // L32: a waiting payment and an allocation (one released since included) are told apart

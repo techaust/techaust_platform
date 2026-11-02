@@ -167,6 +167,12 @@ export const ACTION_LABELS: Record<string, string> = {
   "payment.link_end": Y("closed a payment link that expired or was cancelled at Razorpay"),
   "payment.review_resolve": Y("resolved an item in Needs review"),
   "payment.review_retry": Y("tried a Needs review item again"),
+  // M6.4 PayPal and the remittance advices (staff words, builder's drafts in S-style for the lead under the owner's delegation; the designer may tighten them).
+  "payment.capture_pending": Y("noted a PayPal payment on hold"),
+  "payment.advice_create": Y("added a remittance advice"),
+  "payment.advice_file": Y("attached a remittance advice's file"),
+  "payment.advice_link": Y("linked payments to a remittance advice"),
+  "payment.advice_unlink": Y("took a payment off a remittance advice"),
   "care_invoice.draft": Y("drafted a care plan invoice"),
   "care_invoice.auto_issue_refused": Y("could not issue a care plan invoice automatically"),
   // T11, the deed of assignment: 07-ZJ line 33 (staff-only; marked until the lead approves it).
@@ -245,6 +251,8 @@ export const ENTITY_LABELS: Record<string, string> = {
   review_item: "Needs review",
   checkout_session: "Payment links",
   webhook_event: "Payment webhooks",
+  // M6.4 (S8): the remittance advices.
+  realisation_advice: "Remittance advices",
   // T11: 07-ZJ line 33.
   deed: DEED_RECORD_TYPE,
   report: "Reports",

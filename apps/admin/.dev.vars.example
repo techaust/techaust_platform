@@ -10,3 +10,6 @@ RAZORPAY_KEY_ID=
 RAZORPAY_KEY_SECRET=
 # M6.3 (L3): the finance Worker's Stripe RESTRICTED key (rk_test_ only; a local fake from `pnpm dev:secrets`; the stub never calls Stripe). Staging: tools/set-gateway-keys.ps1 -Gateway stripe.
 STRIPE_SECRET_KEY=
+# M6.4 (L1): the finance Worker's PayPal sandbox client id and secret (local fakes from `pnpm dev:secrets`; the stub never calls PayPal). Staging: tools/set-gateway-keys.ps1 -Gateway paypal.
+PAYPAL_CLIENT_ID=
+PAYPAL_CLIENT_SECRET=

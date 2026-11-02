@@ -793,7 +793,8 @@ describe.each(LINK_DOCS)(
         amountMinor: d.amount,
         returnTo: "invoice",
       });
-      expect(portal).toEqual({ ok: false, error: "payment_processing" });
+      // Early check 2 finding 5: the refusal names the gateway holding the money.
+      expect(portal).toEqual({ ok: false, error: "payment_processing", provider: d.provider });
       if (d.provider === "razorpay") {
         const stamp = await one<{ updated_at: number }>(
           "SELECT updated_at FROM documents WHERE id = ?1",

@@ -10,8 +10,8 @@ export type OnlinePayableType = (typeof ONLINE_PAYABLE_TYPES)[number];
 /** Razorpay's smallest amount: ₹1 (the same as `RAZORPAY_MIN_AMOUNT_MINOR` in `@techaust/core/razorpay`; a test compares the two). */
 export const GATEWAY_MIN_MINOR = 100;
 
-/** The gateways a client may pay through (M6.2 Razorpay, M6.3 Stripe; M6.4 adds PayPal as a row of `ONLINE_RULES`). */
-export const ONLINE_PROVIDERS = ["razorpay", "stripe"] as const;
+/** The gateways a client may pay through (M6.2 Razorpay, M6.3 Stripe, M6.4 PayPal: each a row of `ONLINE_RULES`). */
+export const ONLINE_PROVIDERS = ["razorpay", "stripe", "paypal"] as const;
 export type OnlineProvider = (typeof ONLINE_PROVIDERS)[number];
 export const isOnlineProvider = (v: unknown): v is OnlineProvider =>
   (ONLINE_PROVIDERS as readonly unknown[]).includes(v);
@@ -35,7 +35,9 @@ export type OnlineRule = {
  *     rupees;
  *   - stripe (M6.3, L1): USD documents of overseas clients: export invoice, its debit note, proforma; USD 0.50 minimum (`STRIPE_MIN_AMOUNT_MINOR` in
  *     `@techaust/core/stripe`, a test compares the two; UNCONFIRMED, V19); cents allowed on a proforma (its tax invoice for the payment received is issued by the
- *     Owner with the day's rate, Q1 A).
+ *     Owner with the day's rate, Q1 A);
+ *   - paypal (M6.4, L21): exactly Stripe's row (the same USD documents of overseas clients, 50 cents, cents allowed on a proforma), so the portal has one USD pay
+ *     rule; the floor and the maximum are the same settings (`onlineMinPartialUsdMinor`, `overseasOnlineMaxUsdMinor`, L11). A test holds the two rows equal.
  */
 export const ONLINE_RULES: Readonly<Record<OnlineProvider, OnlineRule>> = {
   razorpay: {
@@ -46,6 +48,13 @@ export const ONLINE_RULES: Readonly<Record<OnlineProvider, OnlineRule>> = {
     wholeUnitsOnProforma: true,
   },
   stripe: {
+    currency: "USD",
+    clients: "overseas",
+    types: ["export_invoice", "debit_note", "proforma"],
+    minMinor: 50,
+    wholeUnitsOnProforma: false,
+  },
+  paypal: {
     currency: "USD",
     clients: "overseas",
     types: ["export_invoice", "debit_note", "proforma"],
@@ -84,8 +93,9 @@ export type PayableDoc = {
   readonly balanceMinor: number;
   /**
    * M6.3 (generic, every gateway; reviewer X1): the document has a gateway payment still waiting (`pending_verification` with `requested_allocations` naming it: a
-   * paid USD proforma waiting for the Owner, Q1 A, or a Razorpay proforma waiting for its automatic tax invoice; from M6.4 a PayPal checkout in
-   * `capture_pending`). Paying again would take the same balance twice. Missing reads as none; the SQL twin always reads it.
+   * paid USD proforma waiting for the Owner, Q1 A, or a Razorpay proforma waiting for its automatic tax invoice; M6.4, L24: a PayPal checkout of the document in
+   * `capture_pending`, or one whose capture is claimed, its money possibly on its way). Paying again would take the same balance twice. Missing reads as none;
+   * the SQL twin always reads it (`gatewayPaymentPendingSql`).
    */
   readonly paymentPending?: boolean;
 };
@@ -237,6 +247,25 @@ export const REVIEW_KINDS = [
    * foreign exchange, so it is recorded pending and never confirmed by the system (Settled by the lead on the safest reading, 2026-11-02 (08-C RA-38)).
    */
   "not_export_receipt",
+  // M6.4 PayPal (run file A; L6, C steps 3, 6, 7, 9; staff lines S3 to S7). A PayPal payment of country IN or none is `not_export_receipt` too (Settled by the
+  // lead on the safest reading, 2026-11-02 (08-C RA-38)).
+  /** PayPal holds a capture (eCheck, review, receiving preferences): no payment row until it completes (L6). */
+  "capture_pending",
+  /** PayPal declined or failed the capture after the client approved it: nothing was received. */
+  "capture_denied",
+  /** PayPal refused the capture call with an issue we don't act on (`captureErrorOf` → `refused`): nothing was received. */
+  "capture_refused",
+  /** A confirmed PayPal payment was reversed (a chargeback); the ledger moves in M6.5. */
+  "reversed_after_confirm",
+  /** A PayPal payment was refunded in PayPal, outside the admin; the ledger moves in M6.5. */
+  "refunded_outside",
+  /** A capture went through on a checkout that had ended, or for a document whose balance moved: recorded pending, never dropped (C step 9). */
+  "late_capture",
+  /**
+   * M6.4 review part 1, finding 1: PayPal's capture says `final_capture` false on our CAPTURE-intent order (more money may follow): recorded pending with its
+   * item, never confirmed on a part (core `judgePayPalCapture` step 4).
+   */
+  "not_final",
 ] as const;
 export type ReviewKind = (typeof REVIEW_KINDS)[number];
 export const REVIEW_RESOLUTIONS = ["confirmed", "advance_issued", "left_as_credit", "dismissed"] as const;

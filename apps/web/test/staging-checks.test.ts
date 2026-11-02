@@ -112,6 +112,7 @@ describe("staging-health checkApp [A6-8]", () => {
       res(200, { ok: true, service: "jobs", env: "staging" }),
       res(400, { error: { code: "signature_missing" } }),
       res(400, { error: { code: "signature_missing" } }),
+      res(400, { error: { code: "signature_missing" } }),
     ];
     const failures = await checkApp("jobs", {
       ...quiet,
@@ -122,10 +123,14 @@ describe("staging-health checkApp [A6-8]", () => {
       },
     });
     expect(failures).toEqual([]);
-    expect(seen).toHaveLength(4);
+    expect(seen).toHaveLength(5);
     // M6.3: and the Stripe webhook path, the same way.
     expect(seen[3]?.url).toBe(`${urlOf("jobs")}/stripe`);
     expect(seen[3]?.init.headers).toEqual({ "content-type": "application/json" });
+    // M6.4: and the PayPal webhook path, the same way.
+    expect(seen[4]?.url).toBe(`${urlOf("jobs")}/paypal`);
+    expect(seen[4]?.init.method).toBe("POST");
+    expect(seen[4]?.init.headers).toEqual({ "content-type": "application/json" });
     expect(seen[0]?.url).toBe(`${urlOf("jobs")}/healthz`);
     expect(seen[0]?.init.redirect).toBe("manual");
     expect(seen[0]?.init.headers).toEqual({ "CF-Access-Client-Id": "id", "CF-Access-Client-Secret": "s" });

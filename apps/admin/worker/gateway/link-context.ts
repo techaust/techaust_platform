@@ -4,15 +4,24 @@
 // document, the document is payable online through THIS gateway (core `payableOnline` with its row of the rule table, the online maximum and the waiting payment),
 // the amount is within the bounds (core `payAmountVerdict`: the provider's floor, its maximum, whole rupees only on a Razorpay proforma). Staff never make a card
 // link (L7: `use_portal`). Nothing is written and no gateway is called here.
-import type { CreateLinkResult } from "@techaust/core/gateway-rpc";
-import { payAmountVerdict, payableOnline } from "@techaust/core/online-pay";
+import { type CreateLinkResult, isRpcGateway } from "@techaust/core/gateway-rpc";
+import {
+  ONLINE_RULES,
+  type OnlineProvider,
+  payAmountVerdict,
+  payableOnline,
+} from "@techaust/core/online-pay";
 import {
   DOCUMENT_CLIENT_LINKS_SINCE_SQL,
   LINKS_PER_CLIENT_HOUR,
   OPEN_CHECKOUT_SQL,
 } from "@techaust/db/gateway";
 import type { RequestInfo } from "@techaust/db/log";
-import { gatewayPaymentPendingSql } from "@techaust/db/sql-rules";
+import {
+  checkoutCapturingSql,
+  gatewayPaymentPendingSql,
+  paymentForDocumentSql,
+} from "@techaust/db/sql-rules";
 import { cachedSetting } from "../settings-cache.ts";
 import { type CheckoutRow, DOC_STATE_SQL, type GatewayEnv } from "./settle.ts";
 
@@ -22,7 +31,8 @@ export type LinkActor =
   | { kind: "staff"; memberId: string; role: "owner" | "staff" };
 
 export type MakeLinkArgs = {
-  provider: "razorpay" | "stripe";
+  /** M6.4: every online gateway (a PayPal order is made only from the portal: staff are refused below, L4). */
+  provider: OnlineProvider;
   clientId: string | null;
   documentId: string;
   amountMinor: number;
@@ -83,8 +93,16 @@ const TOKEN_CONTACT_SQL = `SELECT c.id FROM doc_access_tokens t JOIN contacts c 
    WHERE t.token_hash = ?1 AND t.document_id = ?2 AND t.client_id = ?3 AND t.purpose = 'view_pay' AND t.revoked_at IS NULL AND t.expires_at > ?4
      AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL AND lower(c.email) = t.email`;
 const TERMS_SQL = "SELECT value, version FROM settings WHERE key = 'payment_terms'";
-/** M6.3 (early check 1, "What B2 must not forget" 3; core `payment_pending`): a gateway payment still waits on the document (one primary-key read). */
-const PENDING_SQL = `SELECT ${gatewayPaymentPendingSql("d")} AS pending FROM documents d WHERE d.id = ?1`;
+/**
+ * M6.3 (early check 1, "What B2 must not forget" 3; core `payment_pending`): a gateway payment still waits on the document (one primary-key read). M6.4 (early
+ * check 2 finding 5): and whose money it is: the newest waiting gateway payment's provider, else PayPal for a capture in flight or held (no payment row yet).
+ */
+const PENDING_SQL = `SELECT ${gatewayPaymentPendingSql("d")} AS pending,
+     COALESCE((SELECT gpw.provider FROM payments gpw INDEXED BY payments_client
+         WHERE gpw.client_id = d.client_id AND gpw.status = 'pending_verification' AND gpw.provider <> 'manual' AND ${paymentForDocumentSql("gpw", "d.id")}
+         ORDER BY gpw.recorded_at DESC, gpw.id DESC LIMIT 1),
+       CASE WHEN ${checkoutCapturingSql("d.id")} THEN 'paypal' END) AS pending_provider
+   FROM documents d WHERE d.id = ?1`;
 
 export const NO_REQUEST: RequestInfo = { requestId: null, ip: null, ua: null };
 
@@ -124,19 +142,25 @@ export async function linkContext(
   if (doc.anonymised_at !== null) return no({ ok: false, error: "client_gone" });
   if (a.expectedUpdatedAt !== undefined && doc.updated_at !== a.expectedUpdatedAt)
     return no({ ok: false, error: "not_found", stale: true });
-  // L7: staff never make a card link; the client pays a USD document from the portal (or its emailed link), where each Checkout page lasts an hour.
-  if (a.actor.kind === "staff" && (a.provider === "stripe" || doc.currency === "USD"))
+  // L7: staff never make a card link; the client pays a USD document from the portal (or its emailed link), where each Checkout page lasts an hour. M6.4 (L4):
+  // nor a PayPal order (made only from the portal; the staff link is the portal page). Every gateway but Razorpay is the client's.
+  if (a.actor.kind === "staff" && (a.provider !== "razorpay" || doc.currency === "USD"))
     return no({ ok: false, error: "not_payable_online", reason: "use_portal" });
   const terms = cachedSetting(
     "payment_terms",
     termsR?.results[0] as { value: string; version: number } | undefined,
   );
-  const stripe = a.provider === "stripe";
-  const floorMinor = stripe ? terms.onlineMinPartialUsdMinor : terms.razorpayMinPartialInrMinor;
-  // Early check 1, "What B2 must not forget" 2: the Stripe maximum everywhere (L9; Researched 2026-10-28, RBI PA Directions 2025, para 11(d) (08-C RB-07); for
-  // Stripe, not a PA-CB, the safest setting, not a legal limit).
-  const maxMinor = stripe ? terms.overseasOnlineMaxUsdMinor : null;
-  const paymentPending = (pendingR?.results[0] as { pending: number } | undefined)?.pending === 1;
+  // M6.4 (L21, L23): the provider's own row of the rule table, never a `=== "stripe"` test: a USD gateway (Stripe, PayPal) takes the USD floor and the online
+  // maximum, Razorpay the rupee floor and none.
+  const rule = ONLINE_RULES[a.provider];
+  const usdGateway = rule.currency === "USD";
+  const floorMinor = usdGateway ? terms.onlineMinPartialUsdMinor : terms.razorpayMinPartialInrMinor;
+  // Early check 1, "What B2 must not forget" 2: the USD maximum everywhere (L9, M6.4 L11; Researched 2026-10-28, RBI PA Directions 2025, para 11(d) (08-C RB-07);
+  // the shared setting, ₹25 lakh per PA-CB transaction while the rupee is below ₹100 per USD).
+  const maxMinor = usdGateway ? terms.overseasOnlineMaxUsdMinor : null;
+  const pendingRow = pendingR?.results[0] as { pending: number; pending_provider: string | null } | undefined;
+  const paymentPending = pendingRow?.pending === 1;
+  const holder = isRpcGateway(pendingRow?.pending_provider) ? pendingRow.pending_provider : null;
   const payable = payableOnline(
     {
       type: doc.type,
@@ -153,9 +177,10 @@ export async function linkContext(
   );
   if (!payable.ok)
     // "What B2 must not forget" 3 (lead's answer to B1, deviation 11): a payment already waiting on it, Razorpay's included: "no need to pay again".
+    // Early check 2 finding 5: with the gateway that holds the money, so the client reads that gateway's line.
     return no(
       payable.reason === "payment_pending"
-        ? { ok: false, error: "payment_processing" }
+        ? { ok: false, error: "payment_processing", ...(holder ? { provider: holder } : {}) }
         : { ok: false, error: "not_payable_online", reason: payable.reason },
     );
   const verdict = payAmountVerdict({
@@ -163,8 +188,8 @@ export async function linkContext(
     balanceMinor: doc.balance_minor,
     floorMinor,
     maxMinor,
-    // "What B2 must not forget" 1: whole units only where the provider's row says so (a Razorpay proforma; Stripe takes cents).
-    wholeRupees: !stripe && doc.type === "proforma",
+    // "What B2 must not forget" 1: whole units only where the provider's row says so (a Razorpay proforma; Stripe and PayPal take cents).
+    wholeRupees: rule.wholeUnitsOnProforma && doc.type === "proforma",
   });
   if (!verdict.ok)
     return no(

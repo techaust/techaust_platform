@@ -33,6 +33,9 @@ export function uuidv7(
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
+/** Whether `v` is a UUIDv7 (our row ids; PayPal's `custom_id` mark, review part 1 finding 16: one definition for core and the finance Worker). */
+export const isUuidV7 = (v: unknown): v is string => typeof v === "string" && UUID.test(v) && v[14] === "7";
+
 /** The creation time encoded in a UUIDv7. */
 export function uuidv7Time(id: string): number {
   if (!UUID.test(id) || id[14] !== "7") throw new RangeError(`Not a UUIDv7: ${id}`);

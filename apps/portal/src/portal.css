@@ -2435,6 +2435,21 @@ textarea[aria-invalid="true"] {
   justify-content: center;
 }
 
+/* M6.4 (run file G1): two ways to pay on a USD document, in the server's order: one group, the same width as Download PDF, set a step apart from it, so the
+   two ways read as a choice and the download as something else */
+.pay-ways {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.inv-slip__actions .pay-ways > .btn {
+  justify-content: center;
+}
+
 /* the amount dialog opens from the slip's end-aligned actions: it reads from the start, as every dialog does */
 .inv-slip__actions .dialog {
   text-align: start;
@@ -2550,6 +2565,16 @@ textarea[aria-invalid="true"] {
   color: var(--color-success);
 }
 
+/* M6.4: PayPal declined the method, or isn't available, or the address is held back for a while: the mark in the warning colour (the words carry it) */
+.pay-status[data-tone="warn"] > .icon {
+  color: var(--color-warning);
+}
+
+/* M6.4 (07-ZN line 8): the one way on, back to PayPal's page for the same order, under the words */
+.pay-status__act {
+  margin-top: var(--space-2);
+}
+
 .pay-status__body {
   display: grid;
   gap: var(--space-2);
@@ -2607,6 +2632,11 @@ textarea[aria-invalid="true"] {
 
 .inv-slip .inv-slip__paid .icon {
   color: var(--color-text-muted);
+}
+
+/* M6.4 (07-ZN line 14): a payment that came through PayPal, nothing waiting on it: a tick in the success colour */
+.inv-slip .inv-slip__paid:not([data-waits]) .icon {
+  color: var(--color-success);
 }
 
 .pay-return .pay-status {

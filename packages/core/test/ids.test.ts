@@ -1,6 +1,6 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { stableId, UUID, uuidv7, uuidv7Time } from "../src/ids.ts";
+import { isUuidV7, stableId, UUID, uuidv7, uuidv7Time } from "../src/ids.ts";
 
 describe("uuidv7", () => {
   it("has the RFC 9562 layout: version 7, variant 10, the timestamp first", () => {
@@ -35,6 +35,15 @@ describe("uuidv7", () => {
     expect(() => uuidv7(0, new Uint8Array(9))).toThrow(RangeError);
     expect(() => uuidv7Time(stableId("x"))).toThrow(RangeError);
     expect(() => uuidv7Time("nope")).toThrow(RangeError);
+  });
+
+  it("isUuidV7: a UUIDv7 only (never a v4, a v8 stable id, upper case or another type)", () => {
+    expect(isUuidV7(uuidv7())).toBe(true);
+    expect(isUuidV7("01900000-0000-4000-8000-000000000001")).toBe(false);
+    expect(isUuidV7(stableId("x"))).toBe(false);
+    expect(isUuidV7(uuidv7().toUpperCase())).toBe(false);
+    expect(isUuidV7(42)).toBe(false);
+    expect(isUuidV7(null)).toBe(false);
   });
 });
 

@@ -101,14 +101,21 @@ export const ledgerStatusCaseSql = (total: string, settled: string, credited: st
  * or converted (early check 1, finding 5) with its balance in whole rupees (LD28). A db test holds it to core `payableOnline`.
  * M6.3: by `provider`'s row of the rule table (`ONLINE_RULES_SQL`; Stripe: an export invoice, debit note or proforma in USD of an overseas client, at least 50
  * cents, cents allowed), and for every provider no gateway payment still waiting on it (`gatewayPaymentPendingSql`, core `payment_pending`).
+ * M6.4: PayPal's row (Stripe's values, L21). `exceptCheckout` (an SQL expression): the PayPal capture claim asks whether the document is payable apart from its
+ * OWN claimed checkout (a stale claim taken again must not block itself); every other caller leaves it out.
  */
-export const onlinePayableSql = (d: string, k: string, provider: OnlineProviderSql): string => {
+export const onlinePayableSql = (
+  d: string,
+  k: string,
+  provider: OnlineProviderSql,
+  exceptCheckout?: string,
+): string => {
   const r = ONLINE_RULES_SQL[provider];
   const whole = r.wholeUnitsOnProforma ? ` AND ${d}.balance_minor % 100 = 0` : "";
   return `(${d}.type IN (${r.types.map((t) => `'${t}'`).join(", ")}) AND ${d}.currency = '${r.currency}' AND ${d}.frozen_at IS NOT NULL AND ${d}.status <> 'void'
     AND ${k}.anonymised_at IS NULL AND ${clientSideSql(k, r.clients)}
     AND ${d}.balance_minor >= ${r.minMinor} AND (${d}.type <> 'proforma' OR (${d}.status IN ('issued', 'converted')${whole}))
-    AND NOT ${gatewayPaymentPendingSql(d)})`;
+    AND NOT ${gatewayPaymentPendingSql(d, exceptCheckout)})`;
 };
 
 /**
@@ -125,6 +132,13 @@ export const ONLINE_RULES_SQL = {
     wholeUnitsOnProforma: true,
   },
   stripe: {
+    currency: "USD",
+    clients: "overseas",
+    types: ["export_invoice", "debit_note", "proforma"],
+    minMinor: 50,
+    wholeUnitsOnProforma: false,
+  },
+  paypal: {
     currency: "USD",
     clients: "overseas",
     types: ["export_invoice", "debit_note", "proforma"],
@@ -163,10 +177,24 @@ export const paymentForDocumentSql = (p: string, doc: string): string =>
  * 2026-11-02, it came through the document's checkout with no request: a mismatch). No new payment link or card page is made for the document while one waits
  * (the money may already be there: "no need to pay again", 07-ZI line 13, 07-ZM line 4). A manual entry Staff recorded doesn't count here: the client's lines
  * name the gateway. A seek of `payments_client`.
+ * M6.4 (L24; Step 0.2 item 10): or a PayPal checkout of the document whose money may be on its way (`checkoutCapturingSql`): PayPal holds its capture
+ * (`capture_pending`), or a capture call has claimed it. `exceptCheckout`: that one checkout doesn't count (the capture claim's own row).
  */
-export const gatewayPaymentPendingSql = (d: string): string =>
-  `EXISTS (SELECT 1 FROM payments gpp INDEXED BY payments_client
-     WHERE gpp.client_id = ${d}.client_id AND gpp.status = 'pending_verification' AND gpp.provider <> 'manual' AND ${paymentForDocumentSql("gpp", `${d}.id`)})`;
+export const gatewayPaymentPendingSql = (d: string, exceptCheckout?: string): string =>
+  `(EXISTS (SELECT 1 FROM payments gpp INDEXED BY payments_client
+     WHERE gpp.client_id = ${d}.client_id AND gpp.status = 'pending_verification' AND gpp.provider <> 'manual' AND ${paymentForDocumentSql("gpp", `${d}.id`)})
+     OR ${checkoutCapturingSql(`${d}.id`, exceptCheckout)})`;
+
+/**
+ * M6.4 (L24): document `doc` (an SQL expression) has a PayPal checkout whose money may be on its way: PayPal holds its capture (`capture_pending`: no payment row
+ * until it completes, L6), or it is live or stale with a capture claim (a capture call may have gone through and its answer not come back). Neither is a
+ * payment row, so the payment-row rules don't see it; this does, for the online pay rule (`gatewayPaymentPendingSql`) and the void and withdraw blockers
+ * (`paymentPendingForSql`, `paymentPendingKindsSql` in `ledger.ts`). A stale claim still counts (the sweep re-fetches the order before anything ends it).
+ * `except`: one checkout id (an SQL expression) left out. One seek of `checkout_sessions_document`.
+ */
+export const checkoutCapturingSql = (doc: string, except?: string): string =>
+  `EXISTS (SELECT 1 FROM checkout_sessions gcc INDEXED BY checkout_sessions_document
+     WHERE gcc.document_id = ${doc} AND gcc.provider = 'paypal' AND (gcc.status = 'capture_pending' OR (gcc.status IN ('live', 'stale') AND gcc.capture_started_at IS NOT NULL))${except === undefined ? "" : ` AND gcc.id <> ${except}`})`;
 
 /**
  * M6.2 (review finding 10): proforma `d` has an online payment of client `client` (SQL expressions) waiting for its automatic tax invoice: a pending Razorpay payment

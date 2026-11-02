@@ -13,6 +13,7 @@
 import type { GuardSql } from "./log.ts";
 import { femaDueSql, settingsBinds } from "./realisation.ts";
 import {
+  checkoutCapturingSql,
   LEDGER_STATUSES_SQL,
   ledgerStatusCaseSql,
   livePaidSql,
@@ -605,21 +606,25 @@ export const paymentRecordedSql = (doc: string): string =>
  * L17 (the void rules): a PENDING payment of the client `client` is for the document `doc` (both SQL expressions; `paymentForDocumentSql`: its request, or, M6.3
  * staging fix, an online payment's checkout). Core `voidBlockers` `payment_pending`; a seek of `payments_client`. Any pending payment: the void and withdraw
  * WHEREs. The trigger `documents_void_no_payment` (0060) still reads the request only.
+ * M6.4 (L24; Step 0.2 item 10): or a PayPal checkout of the document whose money may be on its way (`checkoutCapturingSql`: PayPal holds its capture, or a
+ * capture call has claimed it): voiding or withdrawing the document then could leave money PayPal takes with nothing to apply it to. The trigger stays M6.5.
  */
 export const paymentPendingForSql = (doc: string, client: string): string =>
-  `EXISTS (SELECT 1 FROM payments vp INDEXED BY payments_client WHERE vp.client_id = ${client} AND vp.status = 'pending_verification'
-     AND ${paymentForDocumentSql("vp", doc)})`;
+  `(EXISTS (SELECT 1 FROM payments vp INDEXED BY payments_client WHERE vp.client_id = ${client} AND vp.status = 'pending_verification'
+     AND ${paymentForDocumentSql("vp", doc)}) OR ${checkoutCapturingSql(doc)})`;
 
 /**
  * M6.2 (fix round 3 item 3): the same read, in ONE pass, telling the kinds apart as bits: 1 a pending manual entry (core `payment_pending`: the Owner rejects
  * it), 2 a pending gateway payment (core `payment_pending_gateway`: it can't be rejected; its tax invoice is issued, or it is resolved in Needs review); 0 none.
- * Decode with `PENDING_MANUAL` / `PENDING_GATEWAY`.
+ * Decode with `PENDING_MANUAL` / `PENDING_GATEWAY` / `PENDING_CAPTURE`. M6.4 (L24; early check 1 finding 8): 4, a PayPal checkout of the document whose capture
+ * PayPal holds or a capture call has claimed (core `payment_pending_capture`: no payment row yet, so nothing to confirm; its own staff line).
  */
 export const paymentPendingKindsSql = (doc: string, client: string): string =>
-  `(SELECT coalesce(max(vp.provider = 'manual'), 0) + 2 * coalesce(max(vp.provider <> 'manual'), 0) FROM payments vp INDEXED BY payments_client
+  `(SELECT coalesce(max(vp.provider = 'manual'), 0) + 2 * coalesce(max(vp.provider <> 'manual'), 0) + 4 * (${checkoutCapturingSql(doc)}) FROM payments vp INDEXED BY payments_client
      WHERE vp.client_id = ${client} AND vp.status = 'pending_verification' AND ${paymentForDocumentSql("vp", doc)})`;
 export const PENDING_MANUAL = 1;
 export const PENDING_GATEWAY = 2;
+export const PENDING_CAPTURE = 4;
 
 /**
  * L17 (early check 2, finding 10): the payment test of the void statement's WHERE, `NOT ${paymentBlocksVoidSql(...)}`: an allocation row names the document,

@@ -27,6 +27,23 @@ export const bellPaidByCard = (client: string, amountMinor: number, number: stri
 export const BELL_SIGNATURES_STRIPE =
   "Stripe webhook signatures failed 5 times in an hour. Check the webhook secret.";
 
+// ---- M6.4 (07-ZN staff lines; the lead approves them under the owner's delegation once placed) -----------------------------------------------------------------
+
+/** "{client} paid {amount} by PayPal for {number}." (USD, en-US; builder's draft in S17's form.) */
+export const bellPaidByPayPal = (client: string, amountMinor: number, number: string | null) =>
+  `${client} paid ${amountText(amountMinor, "USD")} by PayPal for ${number ?? "an invoice"}.`;
+/** S10: the PayPal signature bell (the jobs Worker writes it, `BELL_SIGNATURES_PAYPAL` in apps/jobs/src/hooks/paypal.ts, in the same words). */
+export const BELL_SIGNATURES_PAYPAL =
+  "PayPal webhook signatures failed 5 times in an hour. Check the webhook ID.";
+/**
+ * S9: the monthly advice reminder (the jobs Worker writes it on `edf.reminder`, `adviceBellTitle` in apps/jobs/src/reports.ts, in the same words); one payment in
+ * the singular (early check 2 finding 8, approved by the lead under the owner's delegation).
+ */
+export const bellAdvicesMissing = (count: number, month: string) =>
+  count === 1
+    ? `1 PayPal payment from ${month} has no remittance advice yet.`
+    : `${count} PayPal payments from ${month} have no remittance advice yet.`;
+
 // ---- S20: review reasons ----------------------------------------------------------------------------------------------------------------------------------
 // In `reasons.ts` (pure), so the admin SPA's "Needs review" list reads the same words; re-exported here for the Worker.
 export {
@@ -101,11 +118,56 @@ export const STRIPE_GATEWAY_PAYMENT = e(
   "gateway_payment",
   "A Stripe payment can't be withdrawn here. It needs a refund through Stripe.",
 );
-/** The verify refusal and the withdraw refusal by the payment's gateway. */
+// ---- M6.4 S11: the API messages of the new error codes (builder's drafts for the lead, run file "Builder B2 report") -----------------------------------------------
+
+/** 502 `gateway_error` for PayPal. */
+export const PAYPAL_GATEWAY_ERROR = e("gateway_error", "PayPal couldn't be reached. Try again.");
+export const PAYPAL_REFUND_NEEDED = e(
+  "gateway_refund_needed",
+  "A PayPal payment can't be rejected here. It needs a refund through PayPal.",
+);
+export const PAYPAL_GATEWAY_PAYMENT = e(
+  "gateway_payment",
+  "A PayPal payment can't be withdrawn here. It needs a refund through PayPal.",
+);
+/** 409 `payment_processing` on Cancel or Check now while a PayPal capture is in flight (L25, "B2 must carry" 8). */
+export const PAYPAL_CAPTURE_IN_FLIGHT = e(
+  "payment_processing",
+  "PayPal is taking this payment right now. Wait a minute, then check again.",
+);
+export const ADVICE_REF_EXISTS = e("advice_ref_exists", "An advice with this reference is already recorded.");
+export const ADVICE_FILE_ALREADY_SET = e("file_already_set", "This advice already has its file.");
+export const ADVICE_PAYMENT_NOT_CONFIRMED = e(
+  "payment_not_confirmed",
+  "Only confirmed payments can go on an advice.",
+);
+export const ADVICE_WRONG_PROVIDER = e(
+  "wrong_provider",
+  "A payment can go only on an advice of its own gateway, or a bank advice for a bank transfer from abroad.",
+);
+export const ADVICE_ALREADY_LINKED = e("already_linked", "One of these payments is already on an advice.");
+export const ADVICE_CLIENT_ANONYMISED = e(
+  "client_anonymised",
+  "One of these payments is for a client whose details were erased.",
+);
+export const ADVICE_LINK_NOT_ON = e("link_not_on", "This payment isn't on this advice.");
+
+/** The verify refusal and the withdraw refusal by the payment's gateway (M6.4: every gateway by name, L23). */
 export const refundNeededOf = (provider: string): ApiError =>
-  provider === "stripe" ? STRIPE_REFUND_NEEDED : GATEWAY_REFUND_NEEDED;
+  provider === "stripe"
+    ? STRIPE_REFUND_NEEDED
+    : provider === "paypal"
+      ? PAYPAL_REFUND_NEEDED
+      : GATEWAY_REFUND_NEEDED;
 export const gatewayPaymentOf = (provider: string): ApiError =>
-  provider === "stripe" ? STRIPE_GATEWAY_PAYMENT : GATEWAY_PAYMENT;
+  provider === "stripe"
+    ? STRIPE_GATEWAY_PAYMENT
+    : provider === "paypal"
+      ? PAYPAL_GATEWAY_PAYMENT
+      : GATEWAY_PAYMENT;
+/** The 502 of a gateway by name. */
+export const gatewayErrorOf = (provider: string): ApiError =>
+  provider === "stripe" ? STRIPE_GATEWAY_ERROR : provider === "paypal" ? PAYPAL_GATEWAY_ERROR : GATEWAY_ERROR;
 /** Early check 2, finding 1: the proforma changed while its tax invoice was being issued (the admin "Try again" makes one try only). */
 export const ADVANCE_CHANGED = e(
   "advance_changed",

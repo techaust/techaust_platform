@@ -59,6 +59,7 @@ describe("every guarded route needs a session [POR-02, POR-03]", () => {
         "GET /api/v1/health",
         "POST /api/v1/auth/magic",
         "POST /api/v1/auth/magic/verify",
+        "POST /api/v1/pay/paypal/return", // M6.4: PayPal's return to an emailed link's page (no session or token: a state only)
         "POST /api/v1/auth/logout",
         "POST /api/v1/t/document",
         "POST /api/v1/t/document/pdf",

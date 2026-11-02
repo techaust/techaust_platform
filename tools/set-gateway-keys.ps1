@@ -7,8 +7,11 @@
 # configs (the jobs Worker: "apps\jobs\wrangler.jsonc") and puts it on the clipboard, to paste into Razorpay's webhook Secret box at once. It is never shown.
 # M6.3: `-Gateway stripe` takes a RESTRICTED rk_test_ key only and probes its permissions (and that Customers is refused); `-Gateway stripe-webhook` stores the
 # webhook signing secret Stripe shows (whsec_...) as STRIPE_WEBHOOK_SECRET on the jobs Worker.
+# M6.4: `-Gateway paypal-webhook` stores the sandbox webhook's ID (letters and digits, 10 to 50) as PAYPAL_WEBHOOK_ID on the jobs Worker. It is an identifier,
+# not a credential (the jobs Worker checks PayPal's signature offline against PayPal's certificate). Optionally (answer y) it reads the sandbox Client ID and
+# Secret again (never stored by this run), asks the sandbox for that webhook, and checks its URL is the staging `/paypal` address and its events are subscribed.
 param(
-  [Parameter(Mandatory = $true)][ValidateSet("razorpay", "razorpay-webhook", "stripe", "stripe-webhook", "paypal")][string]$Gateway,
+  [Parameter(Mandatory = $true)][ValidateSet("razorpay", "razorpay-webhook", "stripe", "stripe-webhook", "paypal", "paypal-webhook")][string]$Gateway,
   # Wrangler config files (relative to the repository) of the staging Workers that need these keys.
   [Parameter(Mandatory = $true)][string[]]$Configs
 )
@@ -29,6 +32,16 @@ function Basic([string]$user, [string]$pass) {
   return "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("${user}:${pass}"))
 }
 function Stop-With([string]$why) { Write-Host "RESULT: FAILED ($Gateway): $why. Nothing was stored."; exit 1 }
+
+# M6.4 (early check 2 finding 7): each PayPal mode stores its values on exactly one Worker, so a wrong -Configs can never put PayPal's keys on the
+# internet-facing jobs Worker or the webhook ID on the finance Worker: the API keys only on the admin finance Worker, the webhook ID only on jobs.
+$onlyConfig = @{ "paypal" = "apps\admin\wrangler.finance.jsonc"; "paypal-webhook" = "apps\jobs\wrangler.jsonc" }
+if ($onlyConfig.ContainsKey($Gateway)) {
+  $given = @($Configs | ForEach-Object { ($_ -replace '/', '\') -replace '^\.\\', '' })
+  if ($given.Count -ne 1 -or $given[0] -ine $onlyConfig[$Gateway]) {
+    Stop-With "-Gateway $Gateway takes exactly -Configs `"$($onlyConfig[$Gateway])`""
+  }
+}
 
 # name -> value, in the order they are stored.
 $secrets = [ordered]@{}
@@ -112,6 +125,35 @@ switch ($Gateway) {
     $secrets["PAYPAL_CLIENT_ID"] = $id
     $secrets["PAYPAL_CLIENT_SECRET"] = $secret
   }
+  "paypal-webhook" {
+    # M6.4 (H3): the Webhook ID PayPal shows under the sandbox app's Webhooks. The simulator's literal WEBHOOK_ID is never ours (run file Step 0.4 row 21).
+    $wid = Read-Hidden "PayPal sandbox Webhook ID"
+    if ($wid -notmatch '^[A-Za-z0-9]{10,50}$' -or $wid -eq "WEBHOOK_ID") { Stop-With "the value is not a PayPal Webhook ID (10 to 50 letters and digits)" }
+    $check = Read-Host -Prompt "Check this webhook with PayPal's sandbox now (needs the Client ID and Secret again, not stored)? y/n"
+    if ($check -eq "y") {
+      $id = Read-Hidden "PayPal sandbox Client ID"
+      $secret = Read-Hidden "PayPal sandbox Secret"
+      try {
+        $tok = Invoke-RestMethod -Method Post -Uri "https://api-m.sandbox.paypal.com/v1/oauth2/token" -Headers @{ Authorization = (Basic $id $secret) } `
+          -ContentType "application/x-www-form-urlencoded" -Body "grant_type=client_credentials"
+      } catch { Stop-With "PayPal's sandbox refused the Client ID and Secret" }
+      try { $w = Invoke-RestMethod -Uri "https://api-m.sandbox.paypal.com/v1/notifications/webhooks/$wid" -Headers @{ Authorization = "Bearer $($tok.access_token)" } }
+      catch { Stop-With "PayPal's sandbox has no webhook with this ID for that app" }
+      $want = "https://techaust-platform-jobs-staging.techaust-technologies-153.workers.dev/paypal"
+      if ($w.url -ne $want) { Stop-With "the webhook's URL is not $want" }
+      $names = @($w.event_types | ForEach-Object { $_.name })
+      $need = @("CHECKOUT.ORDER.APPROVED", "PAYMENT.CAPTURE.COMPLETED", "PAYMENT.CAPTURE.PENDING", "PAYMENT.CAPTURE.DECLINED", "PAYMENT.CAPTURE.REFUNDED", "PAYMENT.CAPTURE.REVERSED")
+      $missing = @($need | Where-Object { $names -notcontains $_ -and $names -notcontains "*" })
+      if ($missing.Count -gt 0) { Stop-With "the webhook doesn't listen for: $($missing -join ', ')" }
+      # Review part 1, finding 13: PayPal's sandbox app may not offer this event. A warning only: without it, a reversed approval is seen when the order is next
+      # read (the client's return, a refresh or the sweep).
+      $optional = @("CHECKOUT.PAYMENT-APPROVAL.REVERSED")
+      $notOffered = @($optional | Where-Object { $names -notcontains $_ -and $names -notcontains "*" })
+      if ($notOffered.Count -gt 0) { Write-Host "WARNING: the webhook doesn't listen for $($notOffered -join ', '). Tick it in PayPal if the app offers it; the keys are stored anyway." }
+      $tok = $null; $w = $null
+    }
+    $secrets["PAYPAL_WEBHOOK_ID"] = $wid
+  }
 }
 
 $stored = @()
@@ -144,12 +186,15 @@ try {
   if ($Gateway -eq "razorpay-webhook") { Set-Clipboard -Value $secrets["RAZORPAY_WEBHOOK_SECRET"] }
 } finally {
   foreach ($k in @($secrets.Keys)) { $secrets[$k] = $null }
-  $id = $null; $secret = $null; $key = $null; $whsec = $null
+  $id = $null; $secret = $null; $key = $null; $whsec = $null; $wid = $null
 }
 if ($Gateway -eq "razorpay-webhook") {
   Write-Host "RESULT: razorpay-webhook secret made and stored on staging: $($stored -join ', '); it is on your clipboard, paste it into Razorpay's webhook Secret box now"
 } elseif ($Gateway -eq "stripe-webhook") {
   Write-Host "RESULT: stripe-webhook secret stored on staging: $($stored -join ', '); not checked with Stripe; the first test event proves it"
+} elseif ($Gateway -eq "paypal-webhook") {
+  $how = if ($check -eq "y") { "its URL and events checked with PayPal's sandbox" } else { "not checked with PayPal; the first sandbox payment proves it" }
+  Write-Host "RESULT: paypal-webhook ID stored on staging: $($stored -join ', '); $how"
 } else {
   Write-Host "RESULT: $Gateway test keys checked and stored on staging: $($stored -join ', ')"
 }

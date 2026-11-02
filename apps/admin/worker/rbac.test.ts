@@ -43,6 +43,7 @@ import { mkProforma, putTax, todayIso } from "./test-invoice-types.ts";
 import { issueBodyOf, issueInvoice, mkInvoice, mkInvoiceClient, putCompany } from "./test-invoices.ts";
 import { issueCredit, mkIssuedInvoice, mkRegisteredClient, stampOf } from "./test-notes.ts";
 import { paymentRow, putDoc, recordBody, recorded, tdsBody } from "./test-payments.ts";
+import { adviceBodyOf, paidPayPal } from "./test-paypal.ts";
 import { mkFile, mkMilestone, mkNote, mkProject, PDF_BYTES, upload } from "./test-projects.ts";
 import { discount, mkDraft, mkQuoteClient, mkService, mkTerms, sendBodyOf, sendDoc } from "./test-quotes.ts";
 import { addDoc, mkReportClient } from "./test-reports.ts";
@@ -1162,6 +1163,37 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
         .bind(id, JSON.stringify({ linkId: link?.provider_link_id }), Date.now())
         .run();
       return run(s, `/payments/review/${id}/retry`, { body: {} });
+    },
+    // M6.4 (added on purpose): the remittance advices (a PayPal payment captured through the local simulator; no test calls PayPal).
+    "POST /api/v1/payments/advices": async () => {
+      const s = await owner();
+      return run(s, "/payments/advices", { body: adviceBodyOf() });
+    },
+    "PUT /api/v1/payments/advices/:id/file": async () => {
+      const s = await owner();
+      const made = await call("/payments/advices", { cookie: s.cookie, body: adviceBodyOf() });
+      const { id } = (await made.json()) as { id: string };
+      const rid = `ray-${crypto.randomUUID()}`;
+      const res = await putDoc(`/payments/advices/${id}/file`, PDF_BYTES, {
+        cookie: s.cookie,
+        headers: headers(rid),
+      });
+      return { res, rid, actor: s };
+    },
+    "POST /api/v1/payments/advices/:id/payments": async () => {
+      const s = await owner();
+      const made = await call("/payments/advices", { cookie: s.cookie, body: adviceBodyOf() });
+      const { id } = (await made.json()) as { id: string };
+      const p = await paidPayPal();
+      return run(s, `/payments/advices/${id}/payments`, { body: { paymentIds: [p] } });
+    },
+    "POST /api/v1/payments/advices/:id/payments/:pid/remove": async () => {
+      const s = await owner();
+      const made = await call("/payments/advices", { cookie: s.cookie, body: adviceBodyOf() });
+      const { id } = (await made.json()) as { id: string };
+      const p = await paidPayPal();
+      await call(`/payments/advices/${id}/payments`, { cookie: s.cookie, body: { paymentIds: [p] } });
+      return run(s, `/payments/advices/${id}/payments/${p}/remove`, { body: { reason: "Wrong week" } });
     },
     // M6.1 (added on purpose): the payment routes.
     "POST /api/v1/payments": async () => {

@@ -25,6 +25,7 @@ import {
 import { auditStmt } from "@techaust/db/log";
 import { envText, portalUrlOf, stripeOf, transportOf } from "./config.ts";
 import type { LinkContext, MakeLinkArgs, MakeLinkResult } from "./link-context.ts";
+import { endReplacedLocally } from "./paypal-links.ts";
 import type { CheckoutRow, GatewayEnv } from "./settle.ts";
 import { isStripeCheckoutUrl, type StripeApi } from "./stripe.ts";
 import { settleStripe } from "./stripe-settle.ts";
@@ -90,6 +91,52 @@ function requestOf(
   });
 }
 
+/**
+ * Ends an open Stripe session so another checkout can take its place (M6.3's expire path, extracted for M6.4's switch to PayPal: L25): expired at Stripe FIRST, so
+ * two checkouts never take money for one document, then `end` closes our row; a refusal is judged by the session's real state through the same settle as the
+ * webhook (source `refresh`): ended there → the switch goes ahead; paid, or still being settled → 409 `payment_processing` ("no need to pay again", C4).
+ */
+export async function endStripeSession(
+  env: GatewayEnv,
+  api: StripeApi,
+  row: CheckoutRow,
+  mode: "test" | "live",
+  now: number,
+  end: (row: CheckoutRow) => Promise<boolean>,
+): Promise<{ ok: true; replaced: boolean } | { ok: false; refusal: MakeLinkResult }> {
+  const db = env.DB;
+  if (!row.provider_link_id) return { ok: true, replaced: await end(row) };
+  const x = await api.expireSession(row.provider_link_id);
+  if (x.ok) return { ok: true, replaced: await end(row) };
+  if (x.code === "live_not_allowed") return { ok: false, refusal: { ok: false, error: "live_not_allowed" } };
+  if (x.code !== "refused") return { ok: false, refusal: { ok: false, error: "gateway_error" } };
+  // Stripe refused: the session is complete or already expired. Its real state decides, through the same settle as the webhook (source `refresh`).
+  const r = await settleStripe(env, {
+    api,
+    checkout: row,
+    cause: { kind: "refresh" },
+    now,
+    env: envText(env, "ENVIRONMENT") ?? "",
+    expectedLivemode: mode === "live" && envText(env, "PAYMENTS_LIVE_ALLOWED") === "true",
+  });
+  const back = await db
+    .prepare("SELECT status FROM checkout_sessions WHERE id = ?1")
+    .bind(row.id)
+    .first<{ status: string }>();
+  if (back?.status === "expired" || back?.status === "cancelled" || back?.status === "failed")
+    return { ok: true, replaced: true };
+  // Paid (recorded now or before), or still being settled: the client must not pay again.
+  if (
+    back?.status === "paid" ||
+    r.result === "processed" ||
+    r.result === "duplicate" ||
+    r.result === "needs_review"
+  )
+    // Early check 2 finding 5: the money waiting is Stripe's, whichever gateway the client picked.
+    return { ok: false, refusal: { ok: false, error: "payment_processing", provider: "stripe" } };
+  return { ok: false, refusal: { ok: false, error: "gateway_error" } };
+}
+
 /** Stripe's flow, after the shared rules. Never throws for a refusal. */
 export async function makeStripeLink(
   env: GatewayEnv,
@@ -127,45 +174,27 @@ export async function makeStripeLink(
   };
   /** Expire a live session at Stripe FIRST, so two sessions never take money for one document; a refusal is judged by the session's real state. */
   const expireOld = async (row: CheckoutRow): Promise<MakeLinkResult | null> => {
-    if (!row.provider_link_id) {
-      await endReplaced(row);
-      return null;
-    }
-    const x = await api.expireSession(row.provider_link_id);
-    if (x.ok) {
-      await endReplaced(row);
-      return null;
-    }
-    if (x.code === "live_not_allowed") return { ok: false, error: "live_not_allowed" };
-    if (x.code !== "refused") return { ok: false, error: "gateway_error" };
-    // Stripe refused: the session is complete or already expired. Its real state decides, through the same settle as the webhook (source `refresh`).
-    const r = await settleStripe(env, {
-      api,
-      checkout: row,
-      cause: { kind: "refresh" },
-      now,
-      env: envText(env, "ENVIRONMENT") ?? "",
-      expectedLivemode: mode === "live" && envText(env, "PAYMENTS_LIVE_ALLOWED") === "true",
+    const r = await endStripeSession(env, api, row, mode, now, async (x) => {
+      await endReplaced(x);
+      return replacedCheckoutId === x.id;
     });
-    const back = await db
-      .prepare("SELECT status FROM checkout_sessions WHERE id = ?1")
-      .bind(row.id)
-      .first<{ status: string }>();
-    if (back?.status === "expired" || back?.status === "cancelled" || back?.status === "failed") {
-      replacedCheckoutId = row.id;
-      return null;
-    }
-    // Paid (recorded now or before), or still being settled: the client must not pay again.
-    if (
-      back?.status === "paid" ||
-      r.result === "processed" ||
-      r.result === "duplicate" ||
-      r.result === "needs_review"
-    )
-      return { ok: false, error: "payment_processing" };
-    return { ok: false, error: "gateway_error" };
+    if (!r.ok) return r.refusal;
+    if (r.replaced) replacedCheckoutId = row.id;
+    return null;
   };
-  if (open) {
+  if (open && open.provider === "paypal") {
+    // M6.4 (L25, "B2 must carry" 9): an open PayPal order is ended here (no PayPal call) only while no capture is claimed; a claimed one may be taking the money
+    // right now: 409 `payment_processing`. An abandoned `creating` row is failed; a young one is still being made.
+    if (open.status === "creating") {
+      if (now - open.created_at < STRIPE_CREATING_ADOPT_MS) return { ok: false, error: "link_in_progress" };
+      await checkoutFailStatement(db, { id: open.id, now }).run();
+    } else {
+      if (limited) return { ok: false, error: "too_many_links" };
+      if (!(await endReplacedLocally(env, open, actorOf, a.documentId, now)))
+        return { ok: false, error: "payment_processing", provider: "paypal" };
+      replacedCheckoutId = open.id;
+    }
+  } else if (open) {
     if (open.provider !== "stripe") return { ok: false, error: "link_in_progress" };
     if (open.status === "creating") {
       if (now - open.created_at < STRIPE_CREATING_ADOPT_MS) return { ok: false, error: "link_in_progress" };

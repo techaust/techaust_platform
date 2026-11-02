@@ -11,6 +11,7 @@ import type { PaymentLinkStatus, ReviewItem, ReviewResolution } from "../api.ts"
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
 import { CARD_ZM, ZM } from "./copy-zm.ts";
+import { ZN_UI } from "./copy-zn.ts";
 import { blockerLine } from "./invoices.ts";
 import { amountText, MODE_LABELS, payErrorText } from "./payments.ts";
 import { PORTAL_ORIGIN } from "./portal-origin.ts";
@@ -57,7 +58,18 @@ export const LINK_CHIPS: Record<
   // designer's drafts (a link being made, a link Razorpay refused to make)
   creating: { label: "Being made", tone: "neutral", icon: "progress" },
   failed: { label: "Not made", tone: "danger", icon: "alert" },
+  // M6.4 S2: PayPal holds the capture (ECHECK, PENDING_REVIEW, …): money not received yet, so the warning tone
+  capture_pending: { label: "Awaiting PayPal", tone: "warning", icon: "clock" },
 };
+
+/**
+ * M6.4 S2: a PayPal checkout's chip. `failed` is "Failed" there (PayPal declined or failed the capture after the client approved it), not Razorpay's "Not made";
+ * every other status reads as for a link.
+ */
+export const payPalChip = (status: PaymentLinkStatus) =>
+  status === "failed"
+    ? { label: "Failed", tone: "danger" as PillTone, icon: "alert" as const }
+    : (LINK_CHIPS[status] ?? LINK_CHIPS.failed);
 
 /** S18: "Razorpay · {method} · {payment id}" (the raw `pay_…` id, as Razorpay's dashboard shows it). */
 export const razorpayLine = (mode: string | null, providerPaymentId: string | null): string =>
@@ -75,12 +87,24 @@ export const razorpayLine = (mode: string | null, providerPaymentId: string | nu
 export const stripeLine = (providerPaymentId: string | null): string =>
   providerPaymentId ? CARD_ZM.paymentRow(providerPaymentId) : ZM("Stripe · card");
 
-/** The line of a gateway payment by its gateway: S14 for Stripe, 07-ZI S18 for Razorpay. */
+/** M6.4 S1: "PayPal · {capture id}" (the capture id as PayPal's dashboard shows it); without an id, "PayPal". */
+export const payPalLine = (captureId: string | null): string =>
+  captureId ? `PayPal · ${captureId}` : "PayPal";
+
+/** The line of a gateway payment by its gateway: S14 for Stripe, M6.4 S1 for PayPal, 07-ZI S18 for Razorpay. */
 export const gatewayLine = (
   provider: string,
   mode: string | null,
   providerPaymentId: string | null,
-): string => (provider === "stripe" ? stripeLine(providerPaymentId) : razorpayLine(mode, providerPaymentId));
+): string =>
+  provider === "stripe"
+    ? stripeLine(providerPaymentId)
+    : provider === "paypal"
+      ? payPalLine(providerPaymentId)
+      : razorpayLine(mode, providerPaymentId);
+
+/** The currency a gateway's own fee is in (M6.4: "a fee goes in the column of its own currency"): PayPal's in dollars, Razorpay's in rupees. */
+export const feeCurrencyOf = (provider: string): "INR" | "USD" => (provider === "paypal" ? "USD" : "INR");
 
 /** The gateway's own name (a proper name, not copy): the "Recorded by" of a gateway entry and the gateway column of "Needs review". */
 export const gatewayName = (provider: string | null | undefined): string =>
@@ -125,17 +149,54 @@ export function stripeFacts(r: {
 }
 
 /**
+ * M6.4 S1 (code review finding 14): a PayPal payment's facts, as the Stripe rows show theirs: the INR PayPal credited with the rate it implies, when PayPal
+ * settled it in rupees (`inr_received_minor`), and its fee in the currency PayPal charged it in: dollars (`charges_minor`) or rupees (`gateway_fee_inr_minor`,
+ * then `charges_minor` is 0), "Fee {amount} (absorbed)" each. Empty for any other payment.
+ */
+export function payPalFacts(r: {
+  provider: string;
+  amountMinor: number;
+  feeMinor: number;
+  inrReceivedMinor?: number | null | undefined;
+  gatewayFeeInrMinor?: number | null | undefined;
+}): string[] {
+  if (r.provider !== "paypal") return [];
+  const out: string[] = [];
+  if (typeof r.inrReceivedMinor === "number") {
+    const rate = inrPerUsdText(r.inrReceivedMinor, r.amountMinor);
+    if (rate) out.push(ZN_UI.inrCredited(amountText(r.inrReceivedMinor, "INR"), rate));
+  }
+  if (r.feeMinor > 0) out.push(GW.feeAbsorbed(amountText(r.feeMinor, "USD")));
+  if (typeof r.gatewayFeeInrMinor === "number" && r.gatewayFeeInrMinor > 0)
+    out.push(GW.feeAbsorbed(amountText(r.gatewayFeeInrMinor, "INR")));
+  return out;
+}
+
+/**
  * Whether S13's "Copy portal link" is worth offering on a card-payable document: only while something can still be paid by card. Not on a converted proforma
  * or a settled document, and (M6.3 review finding 5) not while a proforma's card payment waits for the Owner's rate ("Confirm by issuing"): the portal hides
- * Pay then and shows C8, as the Payment link card holds back a second link (`waitingInvoice`).
+ * Pay then and shows C8, as the Payment link card holds back a second link (`waitingInvoice`). M6.4 (lead, Q2 of the admin round): nor while PayPal holds, or a
+ * capture call has claimed, a PayPal checkout of the document (`capturing`, from `payPalCapturing`): the portal hides Pay then and shows 07-ZN line 10.
  */
 export function portalLinkOffered(
   status: string,
   balanceMinor: number,
   payments: readonly { proformaPending: boolean }[],
+  capturing = false,
 ): boolean {
-  return status !== "converted" && balanceMinor > 0 && !payments.some((g) => g.proformaPending);
+  return status !== "converted" && balanceMinor > 0 && !capturing && !payments.some((g) => g.proformaPending);
 }
+
+/**
+ * M6.4: a PayPal capture is held (`capture_pending`, "Awaiting PayPal") or claimed for the document: the void blockers' `payment_pending_capture` (held or
+ * claimed, core `voidBlockers`), or a checkout row PayPal holds (a note's blockers are only `note_not_voidable`, so the row is read too). The portal hides Pay
+ * while either is true (its `payment_pending`).
+ */
+export const payPalCapturing = (
+  voidBlockers: readonly string[],
+  links: readonly { status: PaymentLinkStatus }[],
+): boolean =>
+  voidBlockers.includes("payment_pending_capture") || links.some((l) => l.status === "capture_pending");
 
 /** S13's body: it tells staff to send the portal link only when "Copy portal link" is drawn (re-check finding 1). */
 export const cardBodyText = (portalUrl: string | null): string =>
@@ -239,7 +300,12 @@ export function allowedResolutions(
  * to re-fetch against; metadata never moves money, L5). `worker/gateway/routes.ts`, POST /review/:id/retry.
  */
 export const canRetry = (it: Pick<ReviewItem, "provider" | "kind" | "payment_id" | "facts">): boolean => {
-  if (it.provider === "stripe" && (it.kind === "advance_blocked" || it.kind === "unknown_link")) return false;
+  // M6.4 (L23): PayPal as Stripe: a USD proforma's tax invoice waits for the Owner's rate, and an order with no checkout of ours has nothing to re-fetch.
+  if (
+    (it.provider === "stripe" || it.provider === "paypal") &&
+    (it.kind === "advance_blocked" || it.kind === "unknown_link")
+  )
+    return false;
   return (
     ((it.kind === "advance_blocked" || it.kind === "dead_letter") && it.payment_id !== null) ||
     (["refetch_failed", "dead_letter", "unknown_link"].includes(it.kind) &&
@@ -280,6 +346,8 @@ export function itemReason(
     expectedMinor: num(f.expectedMinor),
     extraMinor: num(f.extraMinor) ?? (it.kind === "overpaid" ? it.amount_minor : null),
     reason: str(f.reason),
+    // M6.4: PayPal's own code for a held or refused capture (S3, S5)
+    code: str(f.code),
     blocker: blockers.length ? blockers.map(blockerWords).join("; ") : null,
   });
 }

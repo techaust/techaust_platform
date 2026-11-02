@@ -3,7 +3,10 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  CAPTURE_RETURN_STATES,
   GATEWAY_LINK_HOSTS,
+  isCapturePayPalReturnArgs,
+  isCapturePayPalReturnResult,
   isCreateLinkArgs,
   isCreateLinkResult,
   isGatewayLinkUrl,
@@ -11,6 +14,7 @@ import {
   isProcessEventResult,
   isRefreshResult,
   isRpcId,
+  RPC_GATEWAYS,
 } from "../src/gateway-rpc.ts";
 import { RAZORPAY_LINK_HOSTS } from "../src/razorpay.ts";
 import {
@@ -102,7 +106,7 @@ describe("PortalPayments arguments and answers", () => {
       { ...args, returnTo: "https://evil.test" },
       { ...args, documentId: "" },
       { ...args, contactId: 5 },
-      { ...args, provider: "paypal" },
+      { ...args, provider: "venmo" },
       { ...args, provider: undefined },
     ])
       expect(isCreateLinkArgs(bad), JSON.stringify(bad)).toBe(false);
@@ -131,14 +135,29 @@ describe("PortalPayments arguments and answers", () => {
       { ok: false, error: "teapot" },
       { ok: false, error: "amount_above_balance", balanceMinor: -1 },
       { ok: false, error: "not_payable_online", reason: 3 },
+      { ok: false, error: "payment_processing", provider: "cash" },
       { ok: "yes" },
     ])
       expect(isCreateLinkResult(bad), JSON.stringify(bad)).toBe(false);
+    // Early check 2 finding 5: the gateway holding the money rides on the refusal.
+    expect(isCreateLinkResult({ ok: false, error: "payment_processing", provider: "paypal" })).toBe(true);
   });
 
-  it("refreshForClient answers", () => {
+  it("refreshForClient answers; the signed-in PayPal return's state passes only as the return route's answer would (early check 2 finding 3)", () => {
     expect(isRefreshResult({ result: "too_soon" })).toBe(true);
     expect(isRefreshResult({ result: "paid" })).toBe(false);
+    const url = "https://www.sandbox.paypal.com/checkoutnow?token=5O190127TN364715T";
+    expect(isRefreshResult({ result: "processed", payPalReturn: { state: "declined", retryUrl: url } })).toBe(
+      true,
+    );
+    expect(isRefreshResult({ result: "unchanged", payPalReturn: { state: "not_completed" } })).toBe(true);
+    for (const bad of [
+      { result: "processed", payPalReturn: { state: "paid", amountMinor: 1 } },
+      { result: "processed", payPalReturn: { state: "declined", retryUrl: "https://evil.example/x" } },
+      { result: "processed", payPalReturn: "paid" },
+      { result: "processed", checkoutId: "x" },
+    ])
+      expect(isRefreshResult(bad), JSON.stringify(bad)).toBe(false);
   });
 });
 
@@ -196,5 +215,71 @@ describe("isGatewayLinkUrl: the portal never sends a browser off the gateway's o
       expect(isGatewayLinkUrl("stripe", bad), bad).toBe(false);
     expect([...GATEWAY_LINK_HOSTS.razorpay]).toEqual(["rzp.io", "razorpay.com"]);
     expect(RAZORPAY_LINK_HOSTS).toBe(GATEWAY_LINK_HOSTS.razorpay);
+  });
+
+  it("M6.4: PayPal's page only on exactly www.paypal.com or www.sandbox.paypal.com (Step 0 item 7)", () => {
+    expect([...GATEWAY_LINK_HOSTS.paypal]).toEqual(["www.paypal.com", "www.sandbox.paypal.com"]);
+    for (const ok of [
+      "https://www.sandbox.paypal.com/checkoutnow?token=5O190127TN364715T",
+      "https://www.paypal.com/checkoutnow?token=5O190127TN364715T",
+    ])
+      expect(isGatewayLinkUrl("paypal", ok), ok).toBe(true);
+    for (const bad of [
+      "https://paypal.com/checkoutnow?token=A",
+      "https://x.www.paypal.com/checkoutnow",
+      "https://www.paypal.com.evil.example/checkoutnow",
+      "http://www.paypal.com/checkoutnow",
+      "https://user@www.paypal.com/checkoutnow",
+      "https://checkout.stripe.com/c/pay/cs_test",
+    ])
+      expect(isGatewayLinkUrl("paypal", bad), bad).toBe(false);
+    expect(isGatewayLinkUrl("stripe", "https://www.paypal.com/checkoutnow")).toBe(false);
+  });
+});
+
+describe("M6.4: PayPal on the RPC contracts (L2, L19)", () => {
+  it("PayPal is an RPC gateway, so createLink takes it", () => {
+    expect(RPC_GATEWAYS).toEqual(["razorpay", "stripe", "paypal"]);
+    expect(
+      isCreateLinkArgs({
+        provider: "paypal",
+        clientId: "k",
+        contactId: "c",
+        tokenHash: null,
+        documentId: "d",
+        amountMinor: 50_00,
+        returnTo: "invoice",
+      }),
+    ).toBe(true);
+  });
+
+  it("capturePayPalReturn's arguments: our checkout id and PayPal's token (an order id) or null", () => {
+    const id = "019a0000-0000-7000-8000-000000000001";
+    expect(isCapturePayPalReturnArgs({ checkoutId: id, token: null })).toBe(true);
+    expect(isCapturePayPalReturnArgs({ checkoutId: id, token: "5O190127TN364715T" })).toBe(true);
+    for (const bad of [
+      { checkoutId: id, token: "lower" },
+      { checkoutId: id, token: "A".repeat(37) },
+      { checkoutId: id },
+      { checkoutId: "", token: null },
+      { checkoutId: "x".repeat(65), token: null },
+      null,
+      "x",
+    ])
+      expect(isCapturePayPalReturnArgs(bad), JSON.stringify(bad)).toBe(false);
+  });
+
+  it("capturePayPalReturn's answer: a state only; retryUrl only with declined and only on PayPal's page", () => {
+    for (const state of CAPTURE_RETURN_STATES) expect(isCapturePayPalReturnResult({ state })).toBe(true);
+    const retry = "https://www.sandbox.paypal.com/checkoutnow?token=5O190127TN364715T";
+    expect(isCapturePayPalReturnResult({ state: "declined", retryUrl: retry })).toBe(true);
+    expect(isCapturePayPalReturnResult({ state: "paid", retryUrl: retry })).toBe(false);
+    expect(isCapturePayPalReturnResult({ state: "declined", retryUrl: "https://evil.example/x" })).toBe(
+      false,
+    );
+    // No amount, name or document id ever crosses back.
+    expect(isCapturePayPalReturnResult({ state: "paid", amountMinor: 100 })).toBe(false);
+    expect(isCapturePayPalReturnResult({ state: "done" })).toBe(false);
+    expect(isCapturePayPalReturnResult(null)).toBe(false);
   });
 });

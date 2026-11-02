@@ -49,6 +49,7 @@ import type {
   InvoiceView,
 } from "./invoices-api.ts";
 import {
+  VOID_CAPTURE_PENDING,
   VOID_GATEWAY_PENDING,
   VOID_PAYMENT_PENDING,
   VOID_PAYMENT_RECORDED,
@@ -615,6 +616,8 @@ export function voidBlockedText(codes: readonly string[], type?: string): string
   // M6.2 (fix round 3 item 3): a pending gateway payment can't be rejected: its line points to the way on, by the document's type (M6.3 staging fixes,
   // review M2): a proforma's tax invoice is issued with it; an invoice's payment is confirmed on Payments.
   if (codes.includes("payment_pending_gateway")) return voidGatewayPendingText(type);
+  // M6.4 (early check 1 finding 8): a PayPal capture held or claimed for it: nothing to confirm yet.
+  if (codes.includes("payment_pending_capture")) return VOID_CAPTURE_PENDING;
   // M6.1 (second early check): a payment put on the invoice, even one withdrawn later (07-ZH line 25, marked until approved).
   if (codes.includes("payment_recorded") && type !== "proforma") return VOID_PAYMENT_RECORDED;
   // A proforma has no credit note and no return period (LD28): what stops its void is a payment recorded against it, or (from M5.4) that it was
@@ -645,7 +648,10 @@ export function voidBlockedText(codes: readonly string[], type?: string): string
 export function voidErrorText(e: unknown, type?: string): string {
   if (
     e instanceof RequestError &&
-    (e.code === "payment_pending" || e.code === "payment_pending_gateway" || e.code === "payment_recorded")
+    (e.code === "payment_pending" ||
+      e.code === "payment_pending_gateway" ||
+      e.code === "payment_pending_capture" ||
+      e.code === "payment_recorded")
   )
     return voidBlockedText([e.code], type) ?? invErrorText(e);
   if (e instanceof RequestError && e.code === "viewed_by_client")
@@ -669,6 +675,7 @@ export function withdrawErrorText(e: unknown): string {
   // M6.1 (L37): a pending payment asks for the proforma: 07-ZH line 46, the words of the void's line 21.
   if (e instanceof RequestError && e.code === "payment_pending") return VOID_PAYMENT_PENDING;
   if (e instanceof RequestError && e.code === "payment_pending_gateway") return VOID_GATEWAY_PENDING;
+  if (e instanceof RequestError && e.code === "payment_pending_capture") return VOID_CAPTURE_PENDING;
   if (e instanceof RequestError && Object.hasOwn(WITHDRAW_ERRORS, e.code))
     return WITHDRAW_ERRORS[e.code as keyof typeof WITHDRAW_ERRORS];
   return invErrorText(e);

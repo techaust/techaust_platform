@@ -188,6 +188,7 @@ describe("the summary's Pay now block", () => {
       lastPaid: null,
       proformaPending: false,
       paymentPending: false,
+      pendingPayPal: false,
       minimumMinor: 118000,
       maximumMinor: null,
     });

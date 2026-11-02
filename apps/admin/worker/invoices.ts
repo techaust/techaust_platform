@@ -27,6 +27,7 @@ import {
 import { deedDraftStatements } from "@techaust/db/deeds";
 import { bundleOf, LOAD_STATEMENTS, loadStatements, type TermsRef } from "@techaust/db/documents";
 import {
+  PENDING_CAPTURE,
   PENDING_GATEWAY,
   PENDING_MANUAL,
   paymentBlocksVoidSql,
@@ -175,6 +176,7 @@ function voidRefused(c: Ctx, reasons: readonly VoidBlockerCode[], type: string) 
       r === "has_child_document" ||
       r === "payment_pending" ||
       r === "payment_pending_gateway" ||
+      r === "payment_pending_capture" ||
       r === "payment_recorded" ||
       r === "tds_recorded",
   );
@@ -453,6 +455,7 @@ export async function readInvoice(
     paymentPending: (facts.pending_kinds & PENDING_MANUAL) !== 0,
     /** M6.2 (fix round 3 item 3): a PENDING Razorpay payment asks for this document. */
     paymentPendingGateway: (facts.pending_kinds & PENDING_GATEWAY) !== 0,
+    paymentPendingCapture: (facts.pending_kinds & PENDING_CAPTURE) !== 0,
     /** M6.1 (L17, L32): an allocation row names this document, one released or withdrawn since included (`paymentRecordedSql`). */
     paymentRecorded: facts.payment_recorded === 1,
     /** ADM-INV-10: any document (draft or issued) names this one as its parent, and an advance receipt names it (the withdraw blockers). */
@@ -684,6 +687,7 @@ export async function invoiceDetailView(
     hasIssuedChild: ctx.hasIssuedChild,
     paymentPending: ctx.paymentPending,
     paymentPendingGateway: ctx.paymentPendingGateway,
+    paymentPendingCapture: ctx.paymentPendingCapture,
     paymentRecorded: ctx.paymentRecorded,
     hasAnyChild: ctx.hasAnyChild,
     hasAdvanceReceipt: ctx.hasAdvanceReceipt,
@@ -1134,6 +1138,7 @@ export const invoices = new Hono<AppEnv>()
         hasIssuedChild: false,
         paymentPending: ctx.paymentPending,
         paymentPendingGateway: ctx.paymentPendingGateway,
+        paymentPendingCapture: ctx.paymentPendingCapture,
         paymentRecorded: ctx.paymentRecorded,
         hasAnyChild: false,
         hasAdvanceReceipt: false,
@@ -1284,6 +1289,7 @@ export const invoices = new Hono<AppEnv>()
       tdsMinor: d.tds_minor,
       paymentPending: ctx.paymentPending,
       paymentPendingGateway: ctx.paymentPendingGateway,
+      paymentPendingCapture: ctx.paymentPendingCapture,
       paymentRecorded: ctx.paymentRecorded,
     });
     if (reasons.length > 0) return voidRefused(c, reasons, d.type);
@@ -1384,6 +1390,7 @@ export const invoices = new Hono<AppEnv>()
       const late: VoidBlockerCode[] = [];
       if ((again.pending_kinds & PENDING_MANUAL) !== 0) late.push("payment_pending");
       if ((again.pending_kinds & PENDING_GATEWAY) !== 0) late.push("payment_pending_gateway");
+      if ((again.pending_kinds & PENDING_CAPTURE) !== 0) late.push("payment_pending_capture");
       if (again.payment_recorded === 1) late.push("payment_recorded");
       if (again.tds_minor > 0) late.push("tds_recorded");
       if (again.emailed === 1) late.push("already_emailed");

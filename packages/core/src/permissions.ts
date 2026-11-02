@@ -125,6 +125,11 @@ const MATRIX = {
   // M6.2 (ADM-PAY-07, L7): resolving or retrying a gateway payment in "Needs review" decides what happens to money received: the Owner only. The list itself uses
   // `payments.read`. A new docs/04 §9 row.
   "payments.review": { owner: "allow" },
+  // M6.4 (L12; ADM-INV-17): the remittance advice archive (PayPal's e-FIRA, a bank's FIRC, a settlement report; Settled by the lead on the safest reading,
+  // 2026-10-30 (08-C RB-05): keep the bank advice or e-FIRA, for a PA-CB the settlement report mapped to the invoice). Adding an advice and linking payments to it
+  // is `payments.attachProof` (Owner, Staff) and the list is `payments.read`; taking a payment off an advice, with a reason, is the Owner's only (it removes the
+  // record of a realisation proof). A new docs/04 §9 row.
+  "payments.adviceUnlink": { owner: "allow" },
   // M6.1 (L14, Q60): recording the AD bank's extension of an export's realisation date (Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-04): the AD
   // bank extends; Rule 96A(1)(b) CGST Rules (08-C RA-20): the GST date follows): the Owner only. A new docs/04 §9 row.
   "realisation.extend": { owner: "allow" },

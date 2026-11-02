@@ -53,6 +53,11 @@ export const VOID_PAYMENT_PENDING_LINE =
 export const VOID_GATEWAY_PENDING_LINE =
   'An online payment on it is waiting for its tax invoice. Issue it with "Confirm by issuing the tax invoice".';
 /**
+ * M6.4 (early check 1 finding 8; staff words approved by the lead under the owner's delegation, 2026-11-02): the void and withdraw blocker
+ * `payment_pending_capture`, a PayPal capture PayPal holds or a capture call has claimed (no payment row yet, so nothing to confirm).
+ */
+export const VOID_CAPTURE_PENDING_LINE = "A PayPal payment on it is still being processed. Try again later.";
+/**
  * M6.3 staging fix 1 (L5; staff words, the lead under the owner's delegation, 07-ZM "Review changes", 2026-11-02): `online_payment_waiting`, the advance issued
  * without `paymentId` while an online payment waits for the proforma (`details.paymentId` names it; the dialog offers "Confirm by issuing the tax invoice").
  */

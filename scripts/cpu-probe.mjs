@@ -71,7 +71,13 @@ const SECRETS = {
   RAZORPAY_WEBHOOK_SECRET: madeUp("probe", "webhook"),
   SES_ACCESS_KEY_ID: madeUp("probe", "ses", "id"),
   SES_SECRET_ACCESS_KEY: madeUp("probe", "ses"),
+  // M6.4: a made-up PayPal webhook id (letters and digits: an identifier, not a credential).
+  PAYPAL_WEBHOOK_ID: "PROBEPAYPALWEBHOOK01",
 };
+/** M6.4: the local simulator's certificate URL (the hook accepts it while ENVIRONMENT is "local"; the case process answers it in-process). */
+const PROBE_CERT_URL = "http://localhost:8799/__paypal-test-cert";
+/** The case process's one PayPal test signer (made on the first call of the PayPal hook case). */
+let probeSigner = null;
 
 // ---------------------------------------------------------------------------------------------------------------------------------------------------
 // Inside a child process: the Workers, their env and the timer.
@@ -99,6 +105,7 @@ function envOf(worker, shared, services = {}) {
   const env = { ...(c.vars ?? {}) };
   for (const name of c.secrets?.required ?? []) env[name] = SECRETS[name] ?? "probe-secret";
   if (worker === "jobs") env.RAZORPAY_WEBHOOK_SECRET = SECRETS.RAZORPAY_WEBHOOK_SECRET;
+  if (worker === "jobs") env.PAYPAL_WEBHOOK_ID = SECRETS.PAYPAL_WEBHOOK_ID;
   for (const d of c.d1_databases ?? []) env[d.binding] = shared.db;
   for (const b of c.r2_buckets ?? []) env[b.binding] = shared.r2(b.binding);
   for (const q of c.queues?.producers ?? []) env[q.binding] = queueStub();
@@ -565,6 +572,108 @@ async function seed(dir, extra) {
     events.push(raw.prepare("SELECT id FROM webhook_events WHERE event_id = ?").get(eventId).id);
     if (i === 0) hookTemplate = { checkoutId: link.checkoutId, amount: doc.total_minor };
   }
+  // M6.4: PayPal orders of issued USD export invoices of an overseas client (made through the finance Worker's own `PortalPayments.createLink`, the stub
+  // transport answering), for the return's capture RPC (EMAILED links: the public return answers only for those, early check 2 finding 6), the PayPal
+  // event, the sweep's refresh and a new order (L31: the RPC entrypoints' start-up dry run, warm-rpc.ts).
+  // One made-up overseas client per order (a client makes at most LINKS_PER_CLIENT_HOUR links an hour).
+  let ppNo = 0;
+  const ppClientOf = () => {
+    ppNo++;
+    const clientId = randomUUID();
+    const contactId = randomUUID();
+    raw
+      .prepare(
+        `INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency, updated_at)
+         VALUES (?, ?, 'Probe Overseas (sample)', 'Probe Overseas (sample)', 'business', 'US', 'overseas', 'USD', 5000)`,
+      )
+      .run(clientId, `C-PROBEPP${ppNo}`);
+    raw
+      .prepare(
+        "INSERT INTO contacts (id, client_id, name, email, portal_access, can_see_finance) VALUES (?, ?, 'Probe Payer', ?, 1, 1)",
+      )
+      .run(contactId, clientId, `payer${ppNo}@example.test`);
+    return { clientId, contactId, email: `payer${ppNo}@example.test` };
+  };
+  const portalPay = new finance.PortalPayments(ctx(), financeEnv);
+  const ppDoc = (clientId) => {
+    const docId = randomUUID().replace(/^(.{14})./, "$17");
+    ppNo++;
+    raw
+      .prepare(
+        `INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, issue_date, due_date, subtotal_minor, taxable_minor, total_minor, balance_minor, content_sha256, updated_at)
+         VALUES (?, 'export_invoice', 'issued', ?, 'USD', 'probe-pp', '9999', ?, ?, 1000, ?, ?, 50000, 50000, 50000, 50000, ?, 7000)`,
+      )
+      .run(docId, clientId, ppNo, `PP/${ppNo}`, istToday(), istToday(), "h".repeat(64));
+    return docId;
+  };
+  /** A PayPal order of a new document of a new client: through an emailed link's token (`emailed`, the public return's) or the signed-in contact. */
+  const ppOrder = async (emailed) => {
+    const k = ppClientOf();
+    const docId = ppDoc(k.clientId);
+    let tokenHash = null;
+    if (emailed) {
+      tokenHash = createHash("sha256").update(randomBytes(32)).digest("hex");
+      raw
+        .prepare(
+          "INSERT INTO doc_access_tokens (token_hash, document_id, purpose, expires_at, contact_id, client_id, email) VALUES (?, ?, 'view_pay', ?, ?, ?, ?)",
+        )
+        .run(tokenHash, docId, Date.now() + 86_400_000, k.contactId, k.clientId, k.email);
+    }
+    const link = await portalPay.createLink({
+      provider: "paypal",
+      clientId: k.clientId,
+      contactId: emailed ? null : k.contactId,
+      tokenHash,
+      documentId: docId,
+      amountMinor: 50_000,
+      returnTo: emailed ? "pay_return" : "invoice",
+    });
+    await drain();
+    if (!link.ok) throw new Error(`cpu-probe seed: PayPal createLink answered ${JSON.stringify(link)}`);
+    const token = new URL(link.url).searchParams.get("token");
+    const row = raw
+      .prepare("SELECT id FROM checkout_sessions WHERE provider = 'paypal' AND provider_link_id = ?")
+      .get(token);
+    return { checkoutId: row.id, token, documentId: docId };
+  };
+  const paypal = [];
+  const paypalEvents = [];
+  const paypalRefresh = [];
+  const paypalLinks = [];
+  for (let i = 0; i < n; i++) {
+    const o = await ppOrder(true);
+    paypal.push({ checkoutId: o.checkoutId, token: o.token });
+    // The stored event the jobs hook would have written for this order's capture (whitelisted facts only, core `payPalEventFacts`).
+    const e = await ppOrder(false);
+    const eventRow = randomUUID().replace(/^(.{14})./, "$17");
+    raw
+      .prepare(
+        "INSERT INTO webhook_events (id, provider, event_id, event_type, received_at, status, attempts, facts) VALUES (?, 'paypal', ?, 'PAYMENT.CAPTURE.COMPLETED', ?, 'received', 0, ?)",
+      )
+      .run(
+        eventRow,
+        `WH-PROBE${String(i).padStart(4, "0")}${Date.now()}`,
+        Date.now(),
+        JSON.stringify({
+          event: "PAYMENT.CAPTURE.COMPLETED",
+          linkId: e.token,
+          paymentId: `C${e.token}`,
+          checkoutId: e.checkoutId,
+        }),
+      );
+    paypalEvents.push(eventRow);
+    paypalRefresh.push((await ppOrder(false)).checkoutId);
+    const k = ppClientOf();
+    paypalLinks.push({
+      provider: "paypal",
+      clientId: k.clientId,
+      contactId: k.contactId,
+      tokenHash: null,
+      documentId: ppDoc(k.clientId),
+      amountMinor: 50_000,
+      returnTo: "invoice",
+    });
+  }
   const salted = must("salt", await via("/auth/salt", { body: { email }, cookie: device }));
   const manifest = {
     email,
@@ -580,6 +689,10 @@ async function seed(dir, extra) {
     proformas,
     events,
     hookTemplate,
+    paypal,
+    paypalEvents,
+    paypalRefresh,
+    paypalLinks,
   };
   writeFileSync(join(dir, "manifest.json"), JSON.stringify(manifest, null, 2));
   keep.log(
@@ -686,6 +799,26 @@ export const CASES = {
   "GET /leads": { worker: "api", call: (m) => ({ path: "/leads", cookie: m.cookie }) },
   "rpc GatewayEvents.processEvent": { worker: "finance", rpc: true },
   "jobs POST /razorpay": { worker: "jobs", hook: true },
+  // M6.4: the PayPal return's capture RPC (the token, the claim, the capture and the confirmed batch) and the PayPal webhook (the certificate's first fetch
+  // and import, CRC32, the RSA verify, two D1 statements, the send). L31 (early check 2 finding 4): the finance Worker's RPC entrypoints are dry-run at start-up
+  // too (warm-rpc.ts); `warmRpc` names the call each case gives the answer book of apps/admin/worker/warm-fixtures/finance-rpc.ts.
+  "rpc PortalPayments.capturePayPalReturn": {
+    worker: "finance",
+    rpc: "paypal",
+    warmRpc: "capturePayPalReturn",
+  },
+  "rpc GatewayEvents.processEvent (PayPal)": {
+    worker: "finance",
+    rpc: "paypal-event",
+    warmRpc: "processEvent",
+  },
+  "rpc GatewayEvents.refreshCheckout (PayPal)": {
+    worker: "finance",
+    rpc: "paypal-refresh",
+    warmRpc: "refreshCheckout",
+  },
+  "rpc PortalPayments.createLink (PayPal)": { worker: "finance", rpc: "paypal-link", warmRpc: "createLink" },
+  "jobs POST /paypal": { worker: "jobs", hook: "paypal" },
 };
 
 /** Signs in up to the TOTP challenge (salt, then login with the made-up password), untimed. */
@@ -722,9 +855,57 @@ async function runCase(dir, name, later, givenChallenge) {
       // The first TOTP of the process uses the challenge made by another process (so nothing of the sign-in ran here before it); later ones sign in again.
       const challenge = i === 0 ? givenChallenge : await challengeOf(mod, env, m);
       a = { path: "/auth/totp", body: { challenge, code: totpAt(secret, step() - 1 + i) }, cookie: m.device };
+    } else if (c.rpc === "paypal") {
+      const entry = new mod.PortalPayments(ctx(), env);
+      const p = m.paypal[i];
+      run = () => entry.capturePayPalReturn({ checkoutId: p.checkoutId, token: p.token });
+    } else if (c.rpc === "paypal-event") {
+      const entry = new mod.GatewayEvents(ctx(), env);
+      run = () => entry.processEvent({ eventId: m.paypalEvents[i] });
+    } else if (c.rpc === "paypal-refresh") {
+      const entry = new mod.GatewayEvents(ctx(), env);
+      run = () => entry.refreshCheckout({ checkoutId: m.paypalRefresh[i] });
+    } else if (c.rpc === "paypal-link") {
+      const entry = new mod.PortalPayments(ctx(), env);
+      run = () => entry.createLink(m.paypalLinks[i]);
     } else if (c.rpc) {
       const entry = new mod.GatewayEvents(ctx(), env);
       run = () => entry.processEvent({ eventId: m.events[i] });
+    } else if (c.hook === "paypal") {
+      // The certificate is answered in-process (a stub of the global fetch: never a network call); one key pair per process, made outside the timing (the
+      // hook caches the first certificate's key, so every later call is signed with the same key, as PayPal's are).
+      if (!probeSigner) {
+        const { testSigner } = await import("../apps/jobs/test/paypal-cert.ts");
+        probeSigner = await testSigner(PROBE_CERT_URL);
+        const realFetch = globalThis.fetch;
+        const pem = probeSigner.pem;
+        globalThis.fetch = async (input, init) =>
+          String(input instanceof Request ? input.url : input) === PROBE_CERT_URL
+            ? new Response(pem, { status: 200 })
+            : realFetch(input, init);
+      }
+      const signer = probeSigner;
+      const checkoutId = randomUUID().replace(/^(.{14})./, "$17");
+      const body = JSON.stringify({
+        id: `WH-PROBE${String(i).padStart(6, "0")}${Date.now()}`,
+        event_type: "CHECKOUT.ORDER.APPROVED",
+        create_time: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+        resource: {
+          id: `PROBE${String(i).padStart(6, "0")}ORDER`,
+          status: "APPROVED",
+          purchase_units: [{ custom_id: checkoutId, amount: { currency_code: "USD", value: "500.00" } }],
+        },
+      });
+      const headers = {
+        "Content-Type": "application/json",
+        ...(await signer.headers(body, SECRETS.PAYPAL_WEBHOOK_ID)),
+      };
+      run = () =>
+        mod.default.fetch(
+          new Request("http://localhost:8787/paypal", { method: "POST", headers, body }),
+          env,
+          ctx(),
+        );
     } else if (c.hook) {
       const t = m.hookTemplate;
       const body = paidEvent(t.checkoutId, t.amount);
@@ -745,6 +926,17 @@ async function runCase(dir, name, later, givenChallenge) {
     if (profiling) await profiler.start();
     // CPU_PROBE_CAPTURE=<file>: every D1 statement of the first call (SQL, parameters, up to 5 rows), to see what a route reads.
     if (i === 0 && process.env.CPU_PROBE_CAPTURE) dbClock.capture = [];
+    // The RPC call's own arguments, for the RPC dry run's fixture (`warmRpc` cases).
+    const rpcArgs =
+      c.rpc === "paypal"
+        ? { checkoutId: m.paypal[i].checkoutId, token: m.paypal[i].token }
+        : c.rpc === "paypal-event"
+          ? { eventId: m.paypalEvents[i] }
+          : c.rpc === "paypal-refresh"
+            ? { checkoutId: m.paypalRefresh[i] }
+            : c.rpc === "paypal-link"
+              ? m.paypalLinks[i]
+              : null;
     const r = await timed(run);
     if (dbClock.capture) {
       const request = a
@@ -752,7 +944,11 @@ async function runCase(dir, name, later, givenChallenge) {
         : null;
       writeFileSync(
         process.env.CPU_PROBE_CAPTURE,
-        JSON.stringify({ request, status: r.status, statements: dbClock.capture }, null, 1),
+        JSON.stringify(
+          { request, rpcArgs, status: r.status, text: r.text, statements: dbClock.capture },
+          null,
+          1,
+        ),
       );
       dbClock.capture = null;
     }
@@ -845,7 +1041,12 @@ export function sqlKey(sql) {
  */
 const ROWS_KEPT = { front: 2, api: 2, finance: 1 };
 
-const FIXTURE_NAMES = { front: "FRONT_WARM", api: "API_WARM", finance: "FINANCE_WARM" };
+const FIXTURE_NAMES = {
+  front: "FRONT_WARM",
+  api: "API_WARM",
+  finance: "FINANCE_WARM",
+  "finance-rpc": "FINANCE_RPC_WARM",
+};
 /**
  * Review finding 2: the expiry columns the fixtures hold (a session's idle and absolute expiry, its step-up window, any `*_expires_at`) are written as this
  * far-future instant (2100-01-01T00:00:00Z), never as the capture time plus an offset, so the dry run's signed-in calls answer whatever the clock reads (0 in
@@ -872,8 +1073,40 @@ function writeFixtures(work, seedDir) {
     front: { calls: [], rows: {} },
     api: { calls: [], rows: {} },
     finance: { calls: [], rows: {} },
+    // L31 (early check 2 finding 4): the finance Worker's RPC dry run (apps/admin/worker/warm-rpc.ts): the calls and the statements of the `warmRpc` cases.
+    "finance-rpc": { calls: [], rows: {} },
   };
   for (const [name, c] of Object.entries(CASES)) {
+    if (c.warmRpc) {
+      const runDir = join(work, "run");
+      freshCopy(seedDir, runDir);
+      const file = join(work, "capture.json");
+      child(["--case", runDir, name, "0"], name, { ...process.env, CPU_PROBE_CAPTURE: file });
+      const cap = JSON.parse(readFileSync(file, "utf8"));
+      console.log(`  ${name}: ${cap.text.slice(0, 60)}, ${cap.statements.length} statements`);
+      const target = out["finance-rpc"];
+      target.calls.push({ m: c.warmRpc, args: cap.rpcArgs });
+      // The capture once more with a payer in India (RA-38's `not_export_receipt`: the pending batch), on the same answer book.
+      if (c.warmRpc === "capturePayPalReturn")
+        target.calls.push({ m: c.warmRpc, args: cap.rpcArgs, country: "IN" });
+      for (const st of cap.statements) {
+        const key = sqlKey(st.sql);
+        target.rows[key] ??= [];
+        const list = target.rows[key];
+        if (list.some((e) => JSON.stringify(e.p) === JSON.stringify(st.params))) continue;
+        // A write is answered by its rows changed only (its parameters never pick an answer): one entry per statement keeps the bundle small.
+        if (!/^\s*(SELECT|WITH)\s/i.test(st.sql)) {
+          if (list.length === 0) list.push({ r: [], c: st.changes });
+          continue;
+        }
+        list.push({
+          p: st.params,
+          r: st.rows.slice(0, ROWS_KEPT.finance).map(farFutureExpiries),
+          c: st.changes,
+        });
+      }
+      continue;
+    }
     if (!out[c.worker] || c.rpc || c.hook || c.warm === false) continue;
     const runDir = join(work, "run");
     freshCopy(seedDir, runDir);
@@ -925,9 +1158,9 @@ function writeFixtures(work, seedDir) {
 // "(sample)" names, @example.test addresses, SAMPLE bank values; secrets and keys are the admin tests' made-up test values). No real or personal data.
 // Credential-shaped values (the front's sign-in rows) were made under the admin tests' TEST_KEY values only (warm-fixtures.test.ts); this folder is the one
 // path .gitleaks.toml allows.
-import type { WarmFixture } from "../warm-routes.ts";
+${worker === "finance-rpc" ? 'import type { WarmRpcFixture } from "../warm-rpc.ts";' : 'import type { WarmFixture } from "../warm-routes.ts";'}
 
-export const ${name}: WarmFixture = ${JSON.stringify(data)};
+export const ${name}: ${worker === "finance-rpc" ? "WarmRpcFixture" : "WarmFixture"} = ${JSON.stringify(data)};
 `,
     );
     files.push(file);

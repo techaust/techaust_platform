@@ -24,9 +24,11 @@ import { GATEWAY_PROVIDERS, PAYMENT_PROVIDERS } from "../src/schema/payments.ts"
 import { ONLINE_RULES_SQL } from "../src/sql-rules.ts";
 import {
   GATEWAY_PROVIDERS_0066,
+  GATEWAY_PROVIDERS_0068,
   PAYMENT_FROZEN_0064,
   PAYMENT_FROZEN_0066,
   PAYMENT_PROVIDERS_0066,
+  PAYMENT_PROVIDERS_0068,
   STRIPE_RECREATED_0066,
 } from "../src/triggers.ts";
 import { mkClientRow, mkContact, mkMember, next } from "./billing-helpers.ts";
@@ -197,8 +199,10 @@ describe("0065 and 0066: no rebuild, the pinned lists [run file A]", () => {
   });
 
   it("the lists of 0066 are the schema's lists today; the frozen list is 0064's and the two INR fee columns", () => {
-    expect(PAYMENT_PROVIDERS_0066).toEqual(PAYMENT_PROVIDERS);
-    expect(GATEWAY_PROVIDERS_0066).toEqual(GATEWAY_PROVIDERS);
+    expect(PAYMENT_PROVIDERS_0066).toEqual(["manual", "razorpay", "stripe"]);
+    expect(PAYMENT_PROVIDERS_0068).toEqual(PAYMENT_PROVIDERS);
+    expect(GATEWAY_PROVIDERS_0066).toEqual(["razorpay", "stripe"]);
+    expect(GATEWAY_PROVIDERS_0068).toEqual(GATEWAY_PROVIDERS);
     expect(PAYMENT_FROZEN_0066).toEqual([
       ...PAYMENT_FROZEN_0064,
       "gateway_fee_inr_minor",
@@ -439,7 +443,7 @@ describe("checkout_sessions of 0066 [L6, run file A]", () => {
     await rejects(
       run(
         `INSERT INTO checkout_sessions (id, provider, document_id, client_id, contact_id, source, currency, amount_minor, status, expires_at, created_at, updated_at)
-         VALUES (?1, 'paypal', ?2, ?3, ?4, 'portal', 'USD', 100, 'creating', ?5, ?5, ?5)`,
+         VALUES (?1, 'venmo', ?2, ?3, ?4, 'portal', 'USD', 100, 'creating', ?5, ?5, ?5)`,
         uuidv7(),
         await mkDoc(clientId),
         clientId,
@@ -466,7 +470,7 @@ describe("checkout_sessions of 0066 [L6, run file A]", () => {
     );
     await rejects(
       run(
-        "INSERT INTO webhook_events (id, provider, event_id, event_type, received_at, status) VALUES (?1, 'paypal', 'x', 'y', ?2, 'received')",
+        "INSERT INTO webhook_events (id, provider, event_id, event_type, received_at, status) VALUES (?1, 'venmo', 'x', 'y', ?2, 'received')",
         uuidv7(),
         T,
       ),

@@ -27,13 +27,17 @@ import {
 import {
   CHECKOUT_SOURCES_0064,
   CHECKOUT_STATUSES_0064,
+  CHECKOUT_STATUSES_0068,
   GATEWAY_PROVIDERS_0064,
   GATEWAY_PROVIDERS_0066,
+  GATEWAY_PROVIDERS_0068,
   PAYMENT_MODES_0064,
   PAYMENT_PROVIDERS_0064,
   PAYMENT_PROVIDERS_0066,
+  PAYMENT_PROVIDERS_0068,
   REVIEW_KINDS_0064,
   REVIEW_KINDS_0066,
+  REVIEW_KINDS_0068,
   REVIEW_RESOLUTIONS_0064,
   REVIEW_SOURCES_0064,
   WEBHOOK_EVENT_STATUSES_0064,
@@ -154,16 +158,20 @@ describe("0063 and 0064: no rebuild, the pinned lists [run file A]", () => {
     // M6.3: 0066 (`stripe_triggers`) adds Stripe; 0064's own lists stay pinned as they were applied.
     expect(PAYMENT_PROVIDERS_0064).toEqual(["manual", "razorpay"]);
     expect(GATEWAY_PROVIDERS_0064).toEqual(["razorpay"]);
-    expect(PAYMENT_PROVIDERS_0066).toEqual(PAYMENT_PROVIDERS);
-    expect(GATEWAY_PROVIDERS_0066).toEqual(GATEWAY_PROVIDERS);
+    expect(PAYMENT_PROVIDERS_0066).toEqual(["manual", "razorpay", "stripe"]);
+    expect(PAYMENT_PROVIDERS_0068).toEqual(PAYMENT_PROVIDERS);
+    expect(GATEWAY_PROVIDERS_0066).toEqual(["razorpay", "stripe"]);
+    expect(GATEWAY_PROVIDERS_0068).toEqual(GATEWAY_PROVIDERS);
     expect(PAYMENT_MODES_0064).toEqual(PAYMENT_MODES);
     expect(WEBHOOK_EVENT_STATUSES_0064).toEqual(WEBHOOK_EVENT_STATUSES);
     expect(CHECKOUT_SOURCES_0064).toEqual(CHECKOUT_SOURCES);
-    expect(CHECKOUT_STATUSES_0064).toEqual(CHECKOUT_STATUSES);
+    expect(CHECKOUT_STATUSES_0068).toEqual(CHECKOUT_STATUSES);
+    expect(CHECKOUT_STATUSES_0064).toEqual(CHECKOUT_STATUSES.filter((s) => s !== "capture_pending"));
     expect(REVIEW_SOURCES_0064).toEqual(REVIEW_SOURCES);
     expect(REVIEW_RESOLUTIONS_0064).toEqual(REVIEW_RESOLUTIONS);
-    expect(REVIEW_KINDS_0066).toEqual(REVIEW_KINDS);
-    expect(REVIEW_KINDS_0064).toEqual(REVIEW_KINDS.filter((k) => k !== "not_export_receipt"));
+    expect(REVIEW_KINDS_0068).toEqual(REVIEW_KINDS);
+    expect(REVIEW_KINDS_0066).toEqual(REVIEW_KINDS.slice(0, REVIEW_KINDS.indexOf("not_export_receipt") + 1));
+    expect(REVIEW_KINDS_0064).toEqual(REVIEW_KINDS.slice(0, REVIEW_KINDS.indexOf("not_export_receipt")));
   });
 });
 

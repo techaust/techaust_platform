@@ -14,12 +14,15 @@ export type ReasonFacts = {
   /** M6.3: the gateway the item is about (its name in the line; Razorpay when missing) and the money's currency (INR when missing). */
   provider?: string | null;
   currency?: "INR" | "USD" | null;
+  /** M6.4: PayPal's own code for a held or refused capture (`PENDING_REVIEW`, `TRANSACTION_REFUSED`, …), shown as PayPal gives it. */
+  code?: string | null;
 };
 
 const money_ = (m: number | null | undefined, currency: "INR" | "USD" | null | undefined) =>
   m == null ? "the amount" : formatMoney(money(m, currency === "USD" ? "USD" : "INR"));
-/** The gateway's name in a line (M6.3): Stripe or Razorpay. */
-const gatewayName = (provider: string | null | undefined) => (provider === "stripe" ? "Stripe" : "Razorpay");
+/** The gateway's name in a line (M6.3; M6.4 every gateway by name, L23): Stripe, PayPal or Razorpay (Razorpay when missing: M6.2's items carry none). */
+const gatewayName = (provider: string | null | undefined) =>
+  provider === "stripe" ? "Stripe" : provider === "paypal" ? "PayPal" : "Razorpay";
 
 /**
  * `document_not_payable`'s `{reason}` in words (designer's draft, 2026-11-01, for the lead): core `NOT_PAYABLE_REASONS` and the race fallback "changed". An
@@ -101,6 +104,12 @@ export const NO_PAYMENT_LISTED_LINE =
  */
 export const NOT_EXPORT_RECEIPT_LINE =
   "The card was issued in India, or Stripe didn't say where, so this payment doesn't count as money received from abroad and can't be treated as an export receipt under the LUT. Check with the client before confirming it or issuing a tax invoice for it.";
+/**
+ * M6.4 (builder's draft for the lead, staff-only; the same tax consequence as Stripe's line): a PayPal payment whose payer or card PayPal reported in India, or with
+ * no country at all (Settled by the lead on the safest reading, 2026-11-02 (08-C RA-38)).
+ */
+export const NOT_EXPORT_RECEIPT_PAYPAL_LINE =
+  "PayPal reported the payer or the card in India, or gave no country, so this payment doesn't count as money received from abroad and can't be treated as an export receipt under the LUT. Check with the client before confirming it or issuing a tax invoice for it.";
 /** M6.3 S19 (approved by the lead, 2026-11-02): a `refetch_failed` item whose re-fetch Stripe refused for the key's permissions (`facts.reason: "stripe_permission"`). */
 export const STRIPE_PERMISSION_LINE =
   "Stripe refused to show this payment to our key. Check the restricted key's permissions, then try again.";
@@ -111,7 +120,25 @@ export function reviewReason(kind: string, f: ReasonFacts = {}): string {
   const m = (v: number | null | undefined) => money_(v, f.currency);
   switch (kind) {
     case "not_export_receipt":
-      return NOT_EXPORT_RECEIPT_LINE;
+      return f.provider === "paypal" ? NOT_EXPORT_RECEIPT_PAYPAL_LINE : NOT_EXPORT_RECEIPT_LINE;
+    // M6.4 staff lines S3 to S7 (run file H; approved by the lead under the owner's delegation, early check 2 finding 8) and the builder's drafts for the kinds H
+    // has none for.
+    case "capture_pending":
+      return f.code
+        ? `PayPal is holding this payment (reason: ${f.code}). It counts once PayPal completes it.`
+        : "PayPal is holding this payment. It counts once PayPal completes it.";
+    case "capture_denied":
+      return "PayPal declined this payment after the client approved it. Nothing was received.";
+    case "capture_refused":
+      return `PayPal refused to take this payment (${f.code ?? "no code given"}). Nothing was received. The client can start again or pay another way.`;
+    case "reversed_after_confirm":
+      return `PayPal reversed ${m(f.paidMinor)} that was already counted. Check the case in PayPal. The invoice's balance hasn't changed.`;
+    case "refunded_outside":
+      return "This payment was refunded in PayPal, outside the admin. The invoice's balance hasn't changed.";
+    case "late_capture":
+      return "PayPal took this payment after its checkout had ended or the amount due had changed. The money waits for your decision.";
+    case "not_final":
+      return "PayPal reports this payment as only part of the order. Check it in PayPal before confirming it.";
     case "amount_mismatch":
       return `The amount paid (${m(f.paidMinor)}) doesn't match the link (${m(f.expectedMinor)}).`;
     case "unknown_link":
@@ -145,14 +172,16 @@ export function reviewReason(kind: string, f: ReasonFacts = {}): string {
     case "reference_mismatch":
       return "The payment came through a link that doesn't match our record.";
     case "order_mismatch":
-      return "The payment belongs to a different Razorpay order than the link.";
+      return `The payment belongs to a different ${gw} order than the link.`;
     case "payment_not_on_link":
       return `${gw} doesn't list this payment on the link.`;
     case "not_captured":
       // M6.3 (early check 1, F1): for Stripe also a charge refunded (in full or part) or disputed after it succeeded.
       return f.provider === "stripe"
         ? "Stripe reports this payment as not completed, refunded or disputed. Nothing was recorded."
-        : "Razorpay reports this payment as failed or refunded. Nothing was recorded.";
+        : f.provider === "paypal"
+          ? "PayPal reports this payment as refunded. Nothing was recorded."
+          : "Razorpay reports this payment as failed or refunded. Nothing was recorded.";
     case "unreadable_event":
       return `A verified ${gw} notification couldn't be read. Check the payment in ${gw}'s dashboard.`;
     default:

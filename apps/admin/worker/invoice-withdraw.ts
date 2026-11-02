@@ -13,6 +13,7 @@
 
 import { withdrawBlockers } from "@techaust/core/invoices";
 import {
+  PENDING_CAPTURE,
   PENDING_GATEWAY,
   PENDING_MANUAL,
   paymentPendingForSql,
@@ -89,6 +90,7 @@ const blockersOf = (f: Facts) =>
     viewed: f.viewed_at !== null,
     paymentPending: (f.pending_kinds & PENDING_MANUAL) !== 0,
     paymentPendingGateway: (f.pending_kinds & PENDING_GATEWAY) !== 0,
+    paymentPendingCapture: (f.pending_kinds & PENDING_CAPTURE) !== 0,
   });
 
 /** A refused withdraw (409): the first code's words (07-ZF), every code in `reasons`. */

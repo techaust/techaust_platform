@@ -21,14 +21,25 @@ import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
 import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
 import { StatusPill } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
-import { Alert, Clock, Copy, CreditCard, FileText, Plus } from "../../components/icons.tsx";
+import {
+  Alert,
+  Clock,
+  Copy,
+  CreditCard,
+  FileText,
+  Plus,
+  RefreshCw,
+  Wallet,
+} from "../../components/icons.tsx";
 import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
 import { CARD_ZM } from "../../lib/copy-zm.ts";
+import { ZN, ZN_UI } from "../../lib/copy-zn.ts";
 import {
   cardBodyText,
+  feeCurrencyOf,
   GW,
   GW_UI,
   gatewayLine,
@@ -36,6 +47,9 @@ import {
   itemReason,
   LINK_CHIPS,
   linkHint,
+  payPalCapturing,
+  payPalChip,
+  payPalFacts,
   portalInvoiceUrl,
   portalLinkOffered,
   stripeFacts,
@@ -89,8 +103,10 @@ export function cardable(v: InvoiceView): boolean {
   );
 }
 
-/** A Razorpay link (the Payment link card), or a Stripe card page (the Card payments slip); an older API sends no provider: Razorpay. */
+/** A Razorpay link (the Payment link card), a Stripe card page (Card payments) or a PayPal checkout (the PayPal slip); an older API sends no provider: Razorpay. */
 const isStripe = (l: PaymentLinkRow) => l.provider === "stripe";
+const isPayPal = (l: PaymentLinkRow) => l.provider === "paypal";
+const isRazorpay = (l: PaymentLinkRow) => !isStripe(l) && !isPayPal(l);
 
 /** The gateway row of a payment on this document, when it came in online. */
 export const gatewayOf = (panel: Panel, paymentId: string): GatewayPaymentRow | undefined =>
@@ -100,20 +116,26 @@ export const gatewayOf = (panel: Panel, paymentId: string): GatewayPaymentRow | 
  * "Paid online" with the gateway's line under it: Razorpay's S18 and its fee; Stripe's S14, then (M6.3, L10) the INR Stripe credited with the rate it implies
  * ("not the GST rate") and Stripe's fee with its GST, as facts.
  */
+const longId = (provider: string) => provider === "stripe" || provider === "paypal";
+
 export function OnlineMode({ row }: { row: GatewayPaymentRow }) {
-  const facts = stripeFacts(row);
+  // M6.3 S14 for Stripe; M6.4 S1 for PayPal (code review finding 14: the fee in the currency PayPal charged it in, and the INR it credited)
+  const facts = row.provider === "paypal" ? payPalFacts(row) : stripeFacts(row);
   return (
     <span className="pay-online">
       <span className="pay-online__what">
         <CreditCard size={16} />
         {GW_UI.paidOnline}
       </span>
-      {/* a Stripe id is long and the row's Payment ID column shows it already: S14's first two parts here */}
+      {/* a Stripe or PayPal id is long and the row's Payment ID column shows it already: S14's first two parts, or S1's "PayPal", here */}
       <span className="pay-lines__meta break">
-        {gatewayLine(row.provider, row.mode, row.provider === "stripe" ? null : row.providerPaymentId)}
+        {gatewayLine(row.provider, row.mode, longId(row.provider) ? null : row.providerPaymentId)}
       </span>
-      {row.provider !== "stripe" && row.feeMinor > 0 && (
-        <span className="pay-lines__meta">{GW.feeAbsorbed(amountText(row.feeMinor, "INR"))}</span>
+      {/* Razorpay's fee, in rupees (Stripe's and PayPal's are among their facts below) */}
+      {row.provider !== "stripe" && row.provider !== "paypal" && row.feeMinor > 0 && (
+        <span className="pay-lines__meta">
+          {GW.feeAbsorbed(amountText(row.feeMinor, feeCurrencyOf(row.provider)))}
+        </span>
       )}
       {facts.map((f) => (
         <span key={f} className="pay-lines__meta pay-online__fact">
@@ -131,9 +153,18 @@ export function OnlineMode({ row }: { row: GatewayPaymentRow }) {
 export function CardProof(props: {
   paymentId: string;
   hasProof: boolean;
+  /** M6.4: the payment is on a remittance advice, which proves it as well (Step 0.2 item 6). */
+  onAdvice?: boolean;
   canAttach: boolean;
   onAttach: (paymentId: string) => void;
 }) {
+  if (props.onAdvice && !props.hasProof)
+    return (
+      <Link to="/payments/advices" className="pay-proof-link">
+        <FileText size={16} />
+        {ZN_UI.adviceLabel}
+      </Link>
+    );
   if (props.hasProof)
     return (
       <a href={paymentsApi.proofHref(props.paymentId)} className="pay-proof-link">
@@ -239,7 +270,7 @@ export function LinkCard(props: { view: InvoiceView; panel: Panel; role: Role; o
   const [dialog, setDialog] = useState<"create" | "cancel" | null>(null);
   const headId = useId();
   // M6.3: Stripe's card pages are the Card payments slip's (no staff link, L7)
-  const links = (p.gateway?.links ?? []).filter((l) => !isStripe(l));
+  const links = (p.gateway?.links ?? []).filter(isRazorpay);
   const can = linkable(v, role);
   if (!p.gateway || (!can && links.length === 0)) return null;
   const live = links.find((l) => l.status === "live" && l.shortUrl) ?? null;
@@ -390,7 +421,15 @@ export function CardPayments(props: { view: InvoiceView; panel: Panel }) {
   // The portal link is worth sending only while something can still be paid by card (a converted proforma, a settled invoice or a proforma whose card payment
   // waits for the Owner's rate has nothing left to pay online).
   const portal =
-    can && portalLinkOffered(v.status, p.balanceMinor, p.gateway.payments) ? portalInvoiceUrl(v.id) : null;
+    can &&
+    portalLinkOffered(
+      v.status,
+      p.balanceMinor,
+      p.gateway.payments,
+      payPalCapturing(v.void.blockers, p.gateway.links),
+    )
+      ? portalInvoiceUrl(v.id)
+      : null;
 
   async function copy(url: string) {
     try {
@@ -430,6 +469,148 @@ export function CardPayments(props: { view: InvoiceView; panel: Panel }) {
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * M6.4 (run file G3; S1, S2): the PayPal slip on a USD document, once the client has started a PayPal payment (staff never make a PayPal checkout: orders are
+ * made on demand from the portal, L4). The same slip as Card payments, no perforation: the newest checkout's chip (S2, "Awaiting PayPal" while PayPal holds the
+ * capture), its amount and when it ends, "Check now" (the capture or its re-fetch, as the member) and "Cancel checkout" (a local end; 409 `payment_processing`
+ * while a capture is in flight), and the earlier checkouts folded away. Shown only once the document has a PayPal checkout: before that, Card payments already
+ * says where the client pays.
+ */
+export function PayPalPayments(props: {
+  view: InvoiceView;
+  panel: Panel;
+  role: Role;
+  onChanged: () => void;
+}) {
+  const { view: v, panel: p } = props;
+  const toast = useToast();
+  const headId = useId();
+  const [checking, setChecking] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const checkouts = (p.gateway?.links ?? []).filter(isPayPal);
+  // The server lists them newest first; an open one (being made, live, held by PayPal) is the one that matters.
+  const last =
+    checkouts.find((l) => l.status === "live" || l.status === "creating" || l.status === "capture_pending") ??
+    checkouts[0];
+  if (!p.gateway || !last) return null;
+  const earlier = checkouts.filter((l) => l !== last);
+  const can = allowed(props.role, "payments.link") && !v.client.anonymised;
+  const canCheck =
+    can && (last.status === "live" || last.status === "stale" || last.status === "capture_pending");
+  const canCancel = can && (last.status === "live" || last.status === "stale");
+  const id = last.checkoutId;
+
+  async function check() {
+    setChecking(true);
+    try {
+      const r = await paymentsApi.refreshLink(id);
+      toast(r.result === "retry" ? "error" : "success", ZN_UI.checked[r.result] ?? ZN_UI.checkedOther);
+      props.onChanged();
+    } catch (e) {
+      // 409 `payment_processing` (a capture in flight) and 502 come with the server's own words (S11)
+      toast("error", gwErrorText(e));
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  return (
+    <section className="pay-link pay-link--card" aria-labelledby={headId}>
+      <div className="pay-link__head">
+        <h3 id={headId} className="pay-link__title">
+          <Wallet size={20} />
+          {ZN_UI.payPalTitle}
+        </h3>
+        <PayPalChip status={last.status} />
+      </div>
+      <p className="pay-link__body">{ZN_UI.payPalBody}</p>
+      <div className="pay-link__ask">
+        <span className="pay-link__amount pay-link__amount--sm tnum">
+          {amountText(last.amountMinor, "USD")}
+        </span>
+        <span className="pay-lines__meta tnum">
+          {last.status === "live" ? expiresText(last.expiresAt) : formatIstMoment(last.createdAt)}
+        </span>
+      </div>
+      {(canCheck || canCancel) && (
+        <div className="pay-link__acts">
+          {canCheck && (
+            <button
+              type="button"
+              className="btn btn--secondary"
+              onClick={() => void check()}
+              disabled={checking}
+              aria-busy={checking || undefined}
+            >
+              <RefreshCw size={20} />
+              {checking ? ZN_UI.checking : ZN.checkNow}
+            </button>
+          )}
+          {canCancel && (
+            <button
+              type="button"
+              className="btn btn--text pay-link__cancel"
+              onClick={() => setCancelling(true)}
+              disabled={checking}
+            >
+              {ZN_UI.cancelCheckout}
+            </button>
+          )}
+        </div>
+      )}
+      {earlier.length > 0 && (
+        <details className="pay-link__earlier">
+          <summary>
+            {ZN_UI.earlier} <span className="tnum">({earlier.length})</span>
+          </summary>
+          <ul className="pay-link__list">
+            {earlier.map((l) => (
+              <li key={l.checkoutId}>
+                <span className="tnum">{amountText(l.amountMinor, "USD")}</span>
+                <span className="pay-lines__meta tnum">{formatIstMoment(l.createdAt)}</span>
+                <PayPalChip status={l.status} />
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {cancelling && (
+        <ConfirmDialog
+          open
+          title={ZN_UI.cancelTitle}
+          confirmLabel={ZN_UI.cancelCheckout}
+          cancelLabel={ZN_UI.keepCheckout}
+          tone="danger"
+          onClose={() => setCancelling(false)}
+          onConfirm={async () => {
+            // a refusal (409 `payment_processing`, `link_not_live`) shows the server's words in the dialog (ConfirmDialog's error line)
+            await paymentsApi.cancelLink(v.id, id);
+            toast("success", ZN_UI.cancelled);
+            props.onChanged();
+            return undefined;
+          }}
+        >
+          <p>{ZN_UI.cancelBody}</p>
+          <p className="tnum">
+            {amountText(last.amountMinor, "USD")}{" "}
+            <span className="pay-lines__meta">{expiresText(last.expiresAt)}</span>
+          </p>
+        </ConfirmDialog>
+      )}
+    </section>
+  );
+}
+
+/** S2's chips for a PayPal checkout ("Failed" for a declined capture; "Awaiting PayPal" while PayPal holds it). */
+function PayPalChip({ status }: { status: PaymentLinkRow["status"] }) {
+  const c = payPalChip(status);
+  return (
+    <StatusPill tone={c.tone} icon={c.icon}>
+      {c.label}
+    </StatusPill>
   );
 }
 

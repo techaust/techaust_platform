@@ -33,6 +33,7 @@ import {
   exportFileName,
 } from "../../lib/clients.ts";
 import { TOO_MANY_OFFERS_LINE } from "../../lib/copy-zg.ts";
+import { ZN_UI } from "../../lib/copy-zn.ts";
 import { sentence } from "../../lib/format.ts";
 import { lastContactLine } from "../../lib/projects.ts";
 import { isWrongCode, withCode } from "../../lib/step-up.ts";
@@ -330,6 +331,8 @@ export function EraseDialog(props: {
             {mode === "erase" ? eraseConfirmation(c.name) : anonymiseConfirmation(c.name)}
           </p>
         )}
+        {/* M6.4 (08-C RB-40 note, lead 2026-11-02): remittance advice files are kept as the proof of export realisation, in either mode */}
+        {c && <p className="data-tool__also">{ZN_UI.eraseKeepsAdvices}</p>}
         {c && props.lastContactOf && (
           <p className="data-tool__also">{lastContactLine(props.lastContactOf)}</p>
         )}

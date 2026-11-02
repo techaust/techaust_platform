@@ -25,7 +25,10 @@ export const secretOf = (env: object, name: string): string | undefined => {
 export const isJsonType = (type: string | null): boolean => /^application\/json(\s*;|$)/i.test(type ?? "");
 
 /** The body as raw bytes, streamed and cut at `max` (null: too large). A declared length above the cap is refused before reading. */
-export async function readCapped(req: Request, max: number): Promise<Uint8Array | null> {
+export async function readCapped(
+  req: Pick<Request, "headers" | "body">,
+  max: number,
+): Promise<Uint8Array | null> {
   const declared = Number(req.headers.get("content-length") ?? Number.NaN);
   if (declared > max) return null;
   if (!req.body) return new Uint8Array(0);

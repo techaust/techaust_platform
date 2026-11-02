@@ -390,18 +390,21 @@ const storedIntSql = (key: string) =>
 
 // M6.3 ("What B2 must not forget" 7; run file E): per currency, the gateway's own row of the rule table (Stripe for USD, Razorpay for INR), its part-payment
 // floor (`onlineMinPartialUsdMinor` / `razorpayMinPartialInrMinor`) and, for USD, the online maximum (`overseasOnlineMaxUsdMinor`, L9); any gateway's last
-// payment; and whether a gateway payment still waits on the document (`payment_pending`: Pay hidden, C4 shown).
+// payment; and whether a gateway payment still waits on the document (`payment_pending`: Pay hidden, C4 shown). The open checkout is ONE join (review part 1,
+// finding 16: it was three identical subqueries): at most one row per document is live (the partial unique index `checkout_sessions_open`).
 export const ONLINE_SQL = `SELECT CASE WHEN d.currency = 'USD' THEN ${onlinePayableSql("d", "k", "stripe")} ELSE ${onlinePayableSql("d", "k", "razorpay")} END AS pay_online,
      d.type, d.currency, d.balance_minor AS balance,
      CASE WHEN d.currency = 'USD' THEN ${storedIntSql("onlineMinPartialUsdMinor")} ELSE ${storedIntSql("razorpayMinPartialInrMinor")} END AS floor,
      CASE WHEN d.currency = 'USD' THEN ${storedIntSql("overseasOnlineMaxUsdMinor")} END AS maximum,
-     (SELECT c.amount_minor FROM checkout_sessions c WHERE c.document_id = d.id AND c.status = 'live' AND c.client_id = ?1 AND c.expires_at > ?3) AS open_amount,
-     (SELECT c.expires_at FROM checkout_sessions c WHERE c.document_id = d.id AND c.status = 'live' AND c.client_id = ?1 AND c.expires_at > ?3) AS open_expires,
-     (SELECT p.amount_minor || ':' || p.recorded_at FROM payments p JOIN checkout_sessions c ON c.id = p.checkout_id
+     o.amount_minor AS open_amount, o.expires_at AS open_expires, o.provider AS open_provider,
+     EXISTS (SELECT 1 FROM checkout_sessions c WHERE c.document_id = d.id AND c.client_id = ?1 AND c.status = 'capture_pending') AS pending_paypal,
+     (SELECT p.amount_minor || ':' || p.recorded_at || ':' || p.provider FROM payments p JOIN checkout_sessions c ON c.id = p.checkout_id
         WHERE c.document_id = d.id AND p.client_id = ?1 AND p.provider <> 'manual' AND p.status IN ('confirmed', 'pending_verification') ORDER BY p.recorded_at DESC LIMIT 1) AS last_paid,
      ${proformaOnlinePendingSql("d", "?1")} AS proforma_pending,
      ${gatewayPaymentPendingSql("d")} AS payment_pending
-   FROM documents d JOIN clients k ON k.id = d.client_id WHERE d.client_id = ?1 AND d.id = ?2`;
+   FROM documents d JOIN clients k ON k.id = d.client_id
+     LEFT JOIN checkout_sessions o ON o.document_id = d.id AND o.status = 'live' AND o.client_id = ?1 AND o.expires_at > ?3
+   WHERE d.client_id = ?1 AND d.id = ?2`;
 
 export type OnlineRow = {
   pay_online: number;
@@ -412,6 +415,8 @@ export type OnlineRow = {
   maximum?: unknown;
   open_amount: number | null;
   open_expires: number | null;
+  open_provider?: string | null;
+  pending_paypal?: number;
   last_paid: string | null;
   proforma_pending: number;
   payment_pending?: number;
@@ -424,16 +429,20 @@ export function onlineOf(r: OnlineRow | undefined) {
       payOnline: false,
       provider: null,
       wholeRupees: false,
+      providers: [],
       online: {
         open: null,
         lastPaid: null,
+        pendingPayPal: false,
         proformaPending: false,
         paymentPending: false,
         minimumMinor: null,
         maximumMinor: null,
       },
     };
-  const [amount, at] = (r.last_paid ?? "").split(":").map(Number);
+  const [amountText, atText, paidBy] = (r.last_paid ?? "").split(":");
+  const amount = Number(amountText);
+  const at = Number(atText);
   const usd = r.currency === "USD";
   // The USD floor's default when the group was never saved is USD 100 (Q2 A); unreadable reads as null (the full amount only).
   const floor = usd
@@ -456,17 +465,21 @@ export function onlineOf(r: OnlineRow | undefined) {
     payOnline: r.pay_online === 1 && r.payment_pending !== 1 && !aboveMaximum,
     /** M6.3: the gateway of the document's currency ("Pay by card" through Stripe for USD; "Pay now" through Razorpay for INR). */
     provider: usd ? ("stripe" as const) : ("razorpay" as const),
+    /** M6.4 (L21, POR-06): every gateway the document may be paid through, in the order the page offers them (one USD rule: Stripe and PayPal). */
+    providers: usd ? (["stripe", "paypal"] as const) : (["razorpay"] as const),
     /** A Razorpay proforma is paid in whole rupees (LD28; 07-ZI line 7); Stripe takes cents. */
     wholeRupees: !usd && r.type === "proforma",
     online: {
       open:
         r.open_amount !== null && r.open_expires !== null
-          ? { amountMinor: r.open_amount, expiresAt: r.open_expires }
+          ? { amountMinor: r.open_amount, expiresAt: r.open_expires, provider: r.open_provider ?? null }
           : null,
       lastPaid:
         r.last_paid && Number.isSafeInteger(amount) && Number.isSafeInteger(at)
-          ? { amountMinor: amount as number, at: at as number }
+          ? { amountMinor: amount, at, provider: paidBy ?? null }
           : null,
+      /** M6.4 (L6): PayPal holds a capture for it (07-ZN line 10; Pay is hidden: `paymentPending` is set too). */
+      pendingPayPal: r.pending_paypal === 1,
       proformaPending: r.proforma_pending === 1,
       /** M6.3 (core `payment_pending`): a gateway payment still waits on the document: Pay is hidden and C4 (or 07-ZI line 13) shows. */
       paymentPending: r.payment_pending === 1,

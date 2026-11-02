@@ -10,10 +10,13 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 import type { BillingJobsApi, DraftCareResult, IssueCareResult } from "@techaust/core/care-billing";
 import {
+  type CapturePayPalReturnArgs,
+  type CapturePayPalReturnResult,
   type CreateLinkArgs,
   type CreateLinkResult,
   type GatewayEventsApi,
   type IssueAdvanceResult,
+  isCapturePayPalReturnArgs,
   isCreateLinkArgs,
   isRpcId,
   type PortalPaymentsApi,
@@ -25,11 +28,14 @@ import { draftCarePlan, issueCareDraft } from "./care-billing.ts";
 import { issueGatewayAdvance } from "./gateway/advance.ts";
 import { processEvent } from "./gateway/events.ts";
 import { createLinkFor, refreshCheckoutById, refreshForClient } from "./gateway/links.ts";
+import { capturePayPalReturn } from "./gateway/paypal-capture.ts";
 import { ROUTES } from "./guard.ts";
 import { mountFinance } from "./routes-finance.ts";
 import { FINANCE_WARM } from "./warm-fixtures/finance.ts";
+import { FINANCE_RPC_WARM } from "./warm-fixtures/finance-rpc.ts";
 import { warmRouter } from "./warm-router.ts";
 import { warmAtStartup } from "./warm-routes.ts";
+import { warmRpcAtStartup } from "./warm-rpc.ts";
 
 const app = createApp(mountFinance);
 // M6.2 CPU diagnosis (lead decision 1): the rows this Worker answers, matched while the module loads (not exported: a named export of an entry is an entrypoint).
@@ -39,6 +45,9 @@ warmRouter(
 );
 // CPU warm-up (b)1: the hot routes dry-run on made-up rows while the module loads (warm-routes.ts); never throws, stores and logs nothing.
 void warmAtStartup(() => createApp(mountFinance, undefined, { warm: true }), FINANCE_WARM);
+// M6.4 (L31, early check 2 finding 4): the gateway RPC entrypoints' code dry-run too (the PayPal capture, a PayPal event, the sweep's refresh, a new order;
+// warm-rpc.ts), on made-up rows and the simulator's made-up answers; never throws, stores, sends or logs anything.
+void warmRpcAtStartup(FINANCE_RPC_WARM);
 export default app satisfies ExportedHandler<Env>;
 
 const id = (v: unknown): string => {
@@ -108,11 +117,33 @@ export class PortalPayments extends WorkerEntrypoint<Env> implements PortalPayme
     return { ok: true, url: r.url, expiresAt: r.expiresAt, reused: r.reused };
   }
 
-  async refreshForClient(args: { clientId: string; documentId: string }): Promise<RefreshResult> {
+  /** M6.4 (early check 2 finding 3): `checkoutId`, the signed-in page's PayPal return (bound to the client and the document there). */
+  async refreshForClient(args: {
+    clientId: string;
+    documentId: string;
+    checkoutId?: string;
+  }): Promise<RefreshResult> {
     const clientId = rpcId(args?.clientId, "PortalPayments");
     const documentId = rpcId(args?.documentId, "PortalPayments");
-    const answer = await refreshForClient(this.env, { clientId, documentId });
+    const checkoutId = args?.checkoutId === undefined ? undefined : rpcId(args.checkoutId, "PortalPayments");
+    const answer = await refreshForClient(this.env, {
+      clientId,
+      documentId,
+      ...(checkoutId === undefined ? {} : { checkoutId }),
+    });
     rpcLog("refreshForClient", answer.result);
+    return answer;
+  }
+
+  /**
+   * M6.4 (L2, L19): the client came back from PayPal's page: the order is captured on the server now (`paypal-capture.ts`). The answer is a state (and, for a
+   * decline, PayPal's own approval page for the same order); never an amount, a name or a document id.
+   */
+  async capturePayPalReturn(args: CapturePayPalReturnArgs): Promise<CapturePayPalReturnResult> {
+    if (!isCapturePayPalReturnArgs(args))
+      throw new TypeError("PortalPayments: malformed capturePayPalReturn arguments");
+    const answer = await capturePayPalReturn(this.env, { checkoutId: args.checkoutId, token: args.token });
+    rpcLog("capturePayPalReturn", answer.state);
     return answer;
   }
 }

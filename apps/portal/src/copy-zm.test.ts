@@ -92,10 +92,10 @@ describe("Pay by card's amount and return [POR-06, M6.3]", () => {
     try {
       capturePayReturn({ pathname: "/invoices/doc-9", search: "?pay=cancel", hash: "" });
       expect(replaced).toEqual(["/invoices/doc-9"]);
-      expect(takePayReturn("doc-9")).toBe("cancel");
+      expect(takePayReturn("doc-9")).toEqual({ kind: "cancel" });
       expect(takePayReturn("doc-9")).toBeNull();
       capturePayReturn({ pathname: "/invoices/doc-9", search: "?pay=return", hash: "" });
-      expect(takePayReturn("doc-9")).toBe("return");
+      expect(takePayReturn("doc-9")).toEqual({ kind: "return" });
       // Another word, or none, on an invoice is not a return and the address is left alone.
       capturePayReturn({ pathname: "/invoices/doc-9", search: "?tab=x", hash: "" });
       expect(takePayReturn("doc-9")).toBeNull();

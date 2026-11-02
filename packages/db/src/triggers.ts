@@ -28,6 +28,7 @@ import {
   termsVersions,
 } from "./schema/index.ts";
 import {
+  clientSideSql,
   DISCOUNT_AFTER_SALE_FROM_SQL,
   fyTokenOfDateSql,
   LEDGER_STATUSES_SQL,
@@ -1665,8 +1666,132 @@ export function stripeTriggerStatements(): string[] {
   return STRIPE_RECREATED_0066.flatMap((name) => [`DROP TRIGGER \`${name}\`;`, p[name]]);
 }
 
-/** The gateway triggers as one migration of the `gateway_triggers` family creates them (0064 Razorpay, 0066 Stripe), by name. */
-function gatewayTriggerParts(v: "0064" | "0066") {
+/** M6.4: the values the payment and gateway triggers of 0068 accept, pinned (a db test compares them with the schema's lists today). */
+export const PAYMENT_PROVIDERS_0068 = ["manual", "razorpay", "stripe", "paypal"] as const;
+export const GATEWAY_PROVIDERS_0068 = ["razorpay", "stripe", "paypal"] as const;
+/** The modes of a PayPal payment (core `payPalModeOf`, L22: no new mode): the payer's PayPal account (`wallet`), a guest card, or anything else. */
+export const PAYPAL_MODES_0068 = ["wallet", "card", "other"] as const;
+/** 0066's statuses and `capture_pending`: a PayPal capture PayPal holds (L6: no payment row until it completes). */
+export const CHECKOUT_STATUSES_0068 = [...CHECKOUT_STATUSES_0064, "capture_pending"] as const;
+/** 0066's review kinds and PayPal's (run file A; staff lines S3 to S7, C step 9). */
+export const REVIEW_KINDS_0068 = [
+  ...REVIEW_KINDS_0066,
+  "capture_pending",
+  "capture_denied",
+  "capture_refused",
+  "reversed_after_confirm",
+  "refunded_outside",
+  "late_capture",
+  // Review part 1, finding 1: `final_capture` false (core `judgePayPalCapture` step 4); 0068 was applied nowhere when it was added.
+  "not_final",
+] as const;
+/** The remittance advices' lists (L12, A3), pinned. */
+export const ADVICE_PROVIDERS_0068 = ["paypal", "stripe", "bank"] as const;
+export const ADVICE_KINDS_0068 = ["efira", "fira", "firc", "brc", "settlement_report", "other"] as const;
+/** The longest PayPal capture id a payment row holds (core `PAYPAL_CAPTURE_ID`). */
+const PAYPAL_REF_MAX_0068 = 64;
+/** The triggers 0068 drops and creates again, in this order (nothing else is dropped; no table is rebuilt). */
+export const PAYPAL_RECREATED_0068 = [
+  "payments_values_insert",
+  "payments_values_update",
+  "payments_insert_state",
+  "payments_gateway_shape",
+  "payments_status_flow",
+  "checkout_sessions_values_insert",
+  "checkout_sessions_values_update",
+  "checkout_sessions_status_flow",
+  "webhook_events_values_insert",
+  "webhook_events_values_update",
+  "review_items_values_insert",
+  "review_items_values_update",
+] as const;
+/** The triggers 0068 creates new (the capture columns, and the advice tables of 0067). */
+export const PAYPAL_NEW_0068 = [
+  "checkout_sessions_capture_insert",
+  "checkout_sessions_capture_update",
+  "checkout_sessions_claimed_no_end",
+  "realisation_advices_insert",
+  "realisation_advices_fixed",
+  "realisation_advices_no_delete",
+  "realisation_advice_payments_insert",
+  "realisation_advice_payments_update",
+  "realisation_advice_payments_no_delete",
+] as const;
+
+/**
+ * M6.4 PayPal in sandbox mode (ADM-PAY-01, -03, -04, -07, ADM-INV-17, JOB-HOOK-01..03; run file docs/runs/m6.4-paypal.md A and "Step 0 results" 0.2): the trigger
+ * set `paypal_triggers`. No table is rebuilt: the triggers in `PAYPAL_RECREATED_0068` are dropped and created again from the same builder as 0064 and 0066
+ * (`gatewayTriggerParts("0068")`, with the `_0068` lists), and the ones in `PAYPAL_NEW_0068` are added. Trigger by trigger:
+ *   - `payments_values_*`, `payments_insert_state`, `checkout_sessions_values_*`, `webhook_events_values_*`, `review_items_values_*`: the provider may be `paypal`
+ *     (so a PayPal payment, like every gateway payment, names its gateway payment, its CHECKOUT and its re-fetch: `paymentDocumentsSql` finds its document by the
+ *     checkout); a checkout may be `capture_pending`; the review kinds of `REVIEW_KINDS_0068`;
+ *   - `payments_gateway_shape`: manual, Razorpay and Stripe exactly as 0066; PayPal: money received (`payment`) in USD, mode `wallet`, `card` or `other`, a
+ *     reference, a capture id of 1 to 64 characters, `fee_tax_minor` and `gateway_fee_tax_inr_minor` NULL, and the fee in the column of its own currency, never
+ *     both (Step 0 item 5: `charges_minor` for a USD fee, `gateway_fee_inr_minor` ≥ 0 for an INR one; absorbed, M6.1 L9: absorbing the fee is a commercial
+ *     choice; OPEN (08-C RA-29): is GST charged on the MDR and invoiced to our GSTIN?). No client-side check here (as Stripe's): a capture that went through must always be recordable, pending, whatever changed (C step 9);
+ *   - `payments_status_flow`: a PayPal payment, like every gateway payment, is never rejected or withdrawn (refunds are M6.5); the system's own confirm stays
+ *     Razorpay's (a PayPal proforma's payment waits for the Owner with the day's rate: Researched 2026-10-28, Rule 34 CGST Rules (08-C RA-21));
+ *   - `checkout_sessions_status_flow`: 0066's moves, plus live or stale → `capture_pending` (PayPal only, with its capture id), and `capture_pending` → paid |
+ *     failed; paid takes its payment from live, stale or `capture_pending`;
+ *   - `checkout_sessions_capture_insert` / `_update` (new): a checkout starts with no capture id and no claim; only a PayPal row has either; the capture id is set
+ *     once, never on an open row (creating, live, stale), and a PayPal row that is `capture_pending` or `paid` has one; the claim moves forward, or back to NULL
+ *     (a release), only while the row stays live or stale;
+ *   - `checkout_sessions_claimed_no_end` (new; re-check N1, reviewer H1): a local end (`expired`, `cancelled`) of a row whose capture is claimed is refused, so
+ *     no path can end a row while its capture may be in flight: the refresh path releases the claim first (guarded on it) and ends the row in a second statement
+ *     of the same batch, only after PayPal showed no capture;
+ *   - `realisation_advices_*` (new, L12): a known provider and kind; recorded by an active Owner or Staff member; born with no file; nothing changes but the file,
+ *     set once with a known type; never deleted;
+ *   - `realisation_advice_payments_*` (new, L12): a link is made by an active Owner or Staff member, only for a CONFIRMED `payment` of the advice's provider (a
+ *     bank advice takes `manual` payments, in USD or INR, of overseas clients only (L30); a gateway's, its own USD payments) of a client not anonymised, and only
+ *     while the payment is on no other advice; it is never deleted; it is taken off once, by an active Owner, with a reason, and nothing else about it changes.
+ */
+export function paypalTriggerStatements(): string[] {
+  const p = gatewayTriggerParts("0068");
+  const named = (name: string, message: string) => abort(`${name}: ${message}`);
+  const q = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(", ");
+  const changed = (cols: readonly string[]) =>
+    cols.map((c) => `NEW.\`${c}\` IS NOT OLD.\`${c}\``).join(" OR ");
+  const member = (who: string, roles: readonly string[]) =>
+    `EXISTS (SELECT 1 FROM staff_users mu WHERE mu.id = ${who} AND mu.role IN (${q(roles)}) AND mu.status = 'active')`;
+  const open = "('creating', 'live', 'stale')";
+  const captureUpdateBad = `(NEW.provider IS NOT 'paypal' AND (NEW.provider_capture_id IS NOT NULL OR NEW.capture_started_at IS NOT NULL))
+    OR (OLD.provider_capture_id IS NOT NULL AND NEW.provider_capture_id IS NOT OLD.provider_capture_id)
+    OR (OLD.provider_capture_id IS NULL AND NEW.provider_capture_id IS NOT NULL AND (NEW.status IN ${open} OR length(NEW.provider_capture_id) NOT BETWEEN 1 AND ${PAYPAL_REF_MAX_0068}))
+    OR (NEW.provider = 'paypal' AND NEW.status IN ('capture_pending', 'paid') AND NEW.provider_capture_id IS NULL)
+    OR (NEW.capture_started_at IS NOT OLD.capture_started_at AND NOT (OLD.status IN ('live', 'stale') AND NEW.status IS OLD.status
+      AND (NEW.capture_started_at IS NULL OR OLD.capture_started_at IS NULL OR NEW.capture_started_at > OLD.capture_started_at)))`;
+  const adviceInsertBad = `NEW.provider NOT IN (${q(ADVICE_PROVIDERS_0068)}) OR NEW.kind NOT IN (${q(ADVICE_KINDS_0068)}) OR NEW.file_r2_key IS NOT NULL OR NEW.file_sha256 IS NOT NULL OR NEW.file_mime IS NOT NULL
+    OR NOT ${member("NEW.recorded_by", ["owner", "staff"])}`;
+  const adviceFixedBad = `${changed(["id", "provider", "kind", "advice_ref", "issued_on", "period_from", "period_to", "inr_total_minor", "note", "recorded_by", "created_at"])}
+    OR ((${changed(["file_r2_key", "file_sha256", "file_mime"])}) AND (OLD.file_r2_key IS NOT NULL OR NEW.file_mime IS NULL OR NEW.file_mime NOT IN (${q(PROOF_MIME_TYPES_0060)})))`;
+  // The payment a link names may be put on this advice: confirmed money received, of the advice's provider (a bank advice: a manual entry, USD or INR, of an
+  // OVERSEAS client only, L30: a FIRC or BRC proves export realisation, never a domestic receipt), not of an anonymised client, and on no other advice now.
+  const linkable = `EXISTS (SELECT 1 FROM payments lp JOIN realisation_advices la ON la.id = NEW.advice_id JOIN clients lk ON lk.id = lp.client_id
+      WHERE lp.id = NEW.payment_id AND lp.status = 'confirmed' AND lp.kind = 'payment' AND lk.anonymised_at IS NULL
+        AND ((la.provider = 'bank' AND lp.provider = 'manual' AND lp.currency IN ('USD', 'INR') AND ${clientSideSql("lk", "overseas")}) OR (la.provider <> 'bank' AND lp.provider = la.provider AND lp.currency = 'USD')))
+    AND NOT EXISTS (SELECT 1 FROM realisation_advice_payments lx WHERE lx.payment_id = NEW.payment_id AND lx.removed_at IS NULL)`;
+  const linkInsertBad = `NEW.removed_by IS NOT NULL OR NEW.removed_at IS NOT NULL OR NEW.remove_reason IS NOT NULL OR NOT ${member("NEW.created_by", ["owner", "staff"])} OR NOT (${linkable})`;
+  const linkUpdateBad = `${changed(["id", "advice_id", "payment_id", "created_by", "created_at"])}
+    OR ((${changed(["removed_by", "removed_at", "remove_reason"])}) AND NOT (OLD.removed_at IS NULL AND NEW.removed_at IS NOT NULL AND ${member("NEW.removed_by", ["owner"])}))`;
+  const created: Record<(typeof PAYPAL_NEW_0068)[number], string> = {
+    checkout_sessions_capture_insert: `CREATE TRIGGER \`checkout_sessions_capture_insert\` BEFORE INSERT ON \`checkout_sessions\` WHEN NEW.provider_capture_id IS NOT NULL OR NEW.capture_started_at IS NOT NULL BEGIN ${named("checkout_sessions_capture_insert", "a checkout starts with no capture and no capture claim")} END;`,
+    checkout_sessions_capture_update: `CREATE TRIGGER \`checkout_sessions_capture_update\` BEFORE UPDATE ON \`checkout_sessions\` WHEN ${captureUpdateBad} BEGIN ${named("checkout_sessions_capture_update", "only a PayPal checkout has a capture or a claim; its capture id is set once, never on an open checkout, and a held or paid PayPal checkout has one; the claim moves forward or is released only while the checkout stays live or stale")} END;`,
+    checkout_sessions_claimed_no_end: `CREATE TRIGGER \`checkout_sessions_claimed_no_end\` BEFORE UPDATE ON \`checkout_sessions\` WHEN NEW.status IN ('expired', 'cancelled') AND NEW.status IS NOT OLD.status AND OLD.capture_started_at IS NOT NULL BEGIN ${named("checkout_sessions_claimed_no_end", "a checkout whose capture is claimed is never ended locally; the claim is released first")} END;`,
+    realisation_advices_insert: `CREATE TRIGGER \`realisation_advices_insert\` BEFORE INSERT ON \`realisation_advices\` WHEN ${adviceInsertBad} BEGIN ${named("realisation_advices_insert", "an advice has a known provider and kind, is recorded by an active Owner or Staff member, and starts with no file")} END;`,
+    realisation_advices_fixed: `CREATE TRIGGER \`realisation_advices_fixed\` BEFORE UPDATE ON \`realisation_advices\` WHEN ${adviceFixedBad} BEGIN ${named("realisation_advices_fixed", "an advice never changes; its file is set once, as a PDF, JPEG or PNG")} END;`,
+    realisation_advices_no_delete: `CREATE TRIGGER \`realisation_advices_no_delete\` BEFORE DELETE ON \`realisation_advices\` BEGIN ${named("realisation_advices_no_delete", "an advice is never deleted")} END;`,
+    realisation_advice_payments_insert: `CREATE TRIGGER \`realisation_advice_payments_insert\` BEFORE INSERT ON \`realisation_advice_payments\` WHEN ${linkInsertBad} BEGIN ${named("realisation_advice_payments_insert", "an active Owner or Staff member links a confirmed payment of the same provider as the advice, of a client not anonymised, that is on no other advice")} END;`,
+    realisation_advice_payments_update: `CREATE TRIGGER \`realisation_advice_payments_update\` BEFORE UPDATE ON \`realisation_advice_payments\` WHEN ${linkUpdateBad} BEGIN ${named("realisation_advice_payments_update", "a link never changes; it is taken off once, by an active Owner, with a reason")} END;`,
+    realisation_advice_payments_no_delete: `CREATE TRIGGER \`realisation_advice_payments_no_delete\` BEFORE DELETE ON \`realisation_advice_payments\` BEGIN ${named("realisation_advice_payments_no_delete", "a link is never deleted; it is taken off with a reason")} END;`,
+  };
+  return [
+    ...PAYPAL_RECREATED_0068.flatMap((name) => [`DROP TRIGGER \`${name}\`;`, p[name]]),
+    ...PAYPAL_NEW_0068.map((name) => created[name]),
+  ];
+}
+
+/** The gateway triggers as one migration of the `gateway_triggers` family creates them (0064 Razorpay, 0066 Stripe, 0068 PayPal), by name. */
+function gatewayTriggerParts(v: "0064" | "0066" | "0068") {
   const named = (name: string, message: string) => abort(`${name}: ${message}`);
   const q = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(", ");
   const changed = (cols: readonly string[]) =>
@@ -1675,9 +1800,19 @@ function gatewayTriggerParts(v: "0064" | "0066") {
     cols.map((c) => `(OLD.\`${c}\` IS NOT NULL AND NEW.\`${c}\` IS NOT OLD.\`${c}\`)`).join(" OR ");
   const owner = (who: string) =>
     `EXISTS (SELECT 1 FROM staff_users ou WHERE ou.id = ${who} AND ou.role = 'owner' AND ou.status = 'active')`;
-  const v66 = v === "0066";
-  const gatewayProviders: readonly string[] = v66 ? GATEWAY_PROVIDERS_0066 : GATEWAY_PROVIDERS_0064;
-  const paymentProviders: readonly string[] = v66 ? PAYMENT_PROVIDERS_0066 : PAYMENT_PROVIDERS_0064;
+  // 0066 and every later variant carry M6.3's rules; 0068 adds PayPal's.
+  const v66 = v !== "0064";
+  const v68 = v === "0068";
+  const gatewayProviders: readonly string[] = {
+    "0064": GATEWAY_PROVIDERS_0064,
+    "0066": GATEWAY_PROVIDERS_0066,
+    "0068": GATEWAY_PROVIDERS_0068,
+  }[v];
+  const paymentProviders: readonly string[] = {
+    "0064": PAYMENT_PROVIDERS_0064,
+    "0066": PAYMENT_PROVIDERS_0066,
+    "0068": PAYMENT_PROVIDERS_0068,
+  }[v];
   // A gateway payment, by its provider (never "not manual": an unknown provider must fall through to `payments_values_insert`'s message).
   const gateway = (row: "NEW" | "OLD") => `${row}.provider IN (${q(gatewayProviders)})`;
   const anonymised = (client: string) =>
@@ -1702,15 +1837,21 @@ function gatewayTriggerParts(v: "0064" | "0066") {
   const stripeShape = `NEW.kind IS NOT 'payment' OR NEW.currency IS NOT 'USD' OR NEW.mode IS NULL OR NEW.mode NOT IN (${q(STRIPE_MODES_0066)}) OR NEW.reference_norm IS NULL OR length(NEW.provider_payment_id) NOT BETWEEN 1 AND ${GATEWAY_REF_MAX_0064}
       OR NEW.charges_minor IS NOT 0 OR NEW.fee_tax_minor IS NOT NULL OR (NEW.gateway_fee_inr_minor IS NOT NULL AND NEW.gateway_fee_inr_minor < 0)
       OR (NEW.gateway_fee_tax_inr_minor IS NOT NULL AND (NEW.gateway_fee_tax_inr_minor < 0 OR NEW.gateway_fee_inr_minor IS NULL OR NEW.gateway_fee_tax_inr_minor > NEW.gateway_fee_inr_minor))`;
+  // M6.4: a PayPal payment is USD money received through PayPal (its account, a guest card or another of its methods), its fee in the column of its own currency
+  // and never both (Step 0 item 5: a USD `paypal_fee` in `charges_minor`, an INR one in `gateway_fee_inr_minor`); PayPal reports no tax on its fee.
+  const paypalShape = `NEW.kind IS NOT 'payment' OR NEW.currency IS NOT 'USD' OR NEW.mode IS NULL OR NEW.mode NOT IN (${q(PAYPAL_MODES_0068)}) OR NEW.reference_norm IS NULL OR length(NEW.provider_payment_id) NOT BETWEEN 1 AND ${PAYPAL_REF_MAX_0068}
+      OR NEW.fee_tax_minor IS NOT NULL OR NEW.gateway_fee_tax_inr_minor IS NOT NULL OR (NEW.gateway_fee_inr_minor IS NOT NULL AND (NEW.gateway_fee_inr_minor < 0 OR NEW.charges_minor IS NOT 0))`;
   const shapeBad = v66
     ? `(NEW.provider = 'manual' AND (${manualShape} OR ${noInrFee}))
     OR (NEW.provider = 'razorpay' AND (${razorpayShape} OR ${noInrFee}))
-    OR (NEW.provider = 'stripe' AND (${stripeShape}))`
+    OR (NEW.provider = 'stripe' AND (${stripeShape}))${v68 ? `\n    OR (NEW.provider = 'paypal' AND (${paypalShape}))` : ""}`
     : `(NEW.provider = 'manual' AND (${manualShape}))
     OR (${gateway("NEW")} AND (${razorpayShape}))`;
-  const shapeMsg = v66
-    ? "a manual payment has no gateway fields and a bank mode; a Razorpay payment is money received in INR from a client in India, with a gateway mode, a reference and a gateway payment id; a Stripe payment is money received in USD by card or another Stripe method, with a reference, a gateway payment id and its fee in the INR columns only"
-    : "a manual payment has no gateway fields and a bank mode; a gateway payment is money received in INR from a client in India, with a gateway mode, a reference and a gateway payment id";
+  const shapeMsg = v68
+    ? "a manual payment has no gateway fields and a bank mode; a Razorpay payment is money received in INR from a client in India, with a gateway mode, a reference and a gateway payment id; a Stripe payment is money received in USD by card or another Stripe method, with a reference, a gateway payment id and its fee in the INR columns only; a PayPal payment is money received in USD by PayPal, card or another PayPal method, with a reference, a capture id and its fee in the column of its own currency"
+    : v66
+      ? "a manual payment has no gateway fields and a bank mode; a Razorpay payment is money received in INR from a client in India, with a gateway mode, a reference and a gateway payment id; a Stripe payment is money received in USD by card or another Stripe method, with a reference, a gateway payment id and its fee in the INR columns only"
+      : "a manual payment has no gateway fields and a bank mode; a gateway payment is money received in INR from a client in India, with a gateway mode, a reference and a gateway payment id";
   // 4. payments: fixed (0060's rule over the longer frozen list)
   const onceCols = [
     "proof_kind",
@@ -1744,7 +1885,7 @@ function gatewayTriggerParts(v: "0064" | "0066") {
     OR ((${changed(["withdrawn_by", "withdrawn_at"])}) AND NOT (${withdrawing}))
     OR (NEW.withdraw_reason IS NOT OLD.withdraw_reason AND NOT (${withdrawing}) AND NOT ${erasingText("withdraw_reason")})`;
   // 6. checkout_sessions
-  const checkoutValuesBad = `NEW.provider NOT IN (${q(gatewayProviders)}) OR NEW.source NOT IN (${q(CHECKOUT_SOURCES_0064)}) OR NEW.status NOT IN (${q(CHECKOUT_STATUSES_0064)})`;
+  const checkoutValuesBad = `NEW.provider NOT IN (${q(gatewayProviders)}) OR NEW.source NOT IN (${q(CHECKOUT_SOURCES_0064)}) OR NEW.status NOT IN (${q(v68 ? CHECKOUT_STATUSES_0068 : CHECKOUT_STATUSES_0064)})`;
   const checkoutValuesMsg = "a checkout has a known provider, source and status";
   const checkoutInsertBad =
     "NEW.status IS NOT 'creating' OR NEW.paid_payment_id IS NOT NULL OR NEW.provider_link_id IS NOT NULL OR NEW.short_url IS NOT NULL OR NEW.last_refresh_at IS NOT NULL OR NOT ((NEW.source = 'portal' AND NEW.contact_id IS NOT NULL AND NEW.doc_token_id IS NULL AND NEW.created_by IS NULL) OR (NEW.source = 'link' AND NEW.doc_token_id IS NOT NULL AND NEW.contact_id IS NOT NULL AND NEW.created_by IS NULL) OR (NEW.source = 'staff' AND NEW.created_by IS NOT NULL AND NEW.contact_id IS NULL AND NEW.doc_token_id IS NULL))";
@@ -1752,10 +1893,12 @@ function gatewayTriggerParts(v: "0064" | "0066") {
     `(OLD.status = '${from}' AND NEW.status IN (${q(to)}))`;
   // M6.3 (0066): a live or stale checkout may also fail (an asynchronous card payment that failed: Stripe's `checkout.session.async_payment_failed`).
   const ends = v66 ? ["failed"] : [];
-  const checkoutFlowBad = `(NEW.status IS NOT OLD.status AND NOT (${checkoutMove("creating", ["live", "failed"])} OR ${checkoutMove("live", ["paid", "expired", "cancelled", "stale", ...ends])} OR ${checkoutMove("stale", ["paid", "expired", "cancelled", ...ends])}))
+  // M6.4 (0068): a live or stale PayPal checkout may move to `capture_pending` (PayPal holds the capture), which ends paid or failed; paid takes its payment from it too.
+  const held = v68 ? ["capture_pending"] : [];
+  const checkoutFlowBad = `(NEW.status IS NOT OLD.status AND NOT (${checkoutMove("creating", ["live", "failed"])} OR ${checkoutMove("live", ["paid", "expired", "cancelled", "stale", ...ends, ...held])} OR ${checkoutMove("stale", ["paid", "expired", "cancelled", ...ends, ...held])}${v68 ? ` OR ${checkoutMove("capture_pending", ["paid", "failed"])}` : ""}))
     OR (NEW.status = 'live' AND (NEW.provider_link_id IS NULL OR NEW.short_url IS NULL))
-    OR (NEW.status = 'paid' AND NEW.paid_payment_id IS NULL)
-    OR (NEW.paid_payment_id IS NOT OLD.paid_payment_id AND NOT (NEW.status = 'paid' AND OLD.status IN ('live', 'stale') AND OLD.paid_payment_id IS NULL))`;
+    OR (NEW.status = 'paid' AND NEW.paid_payment_id IS NULL)${v68 ? "\n    OR (NEW.status = 'capture_pending' AND NEW.status IS NOT OLD.status AND NEW.provider IS NOT 'paypal')" : ""}
+    OR (NEW.paid_payment_id IS NOT OLD.paid_payment_id AND NOT (NEW.status = 'paid' AND OLD.status IN (${q(["live", "stale", ...held])}) AND OLD.paid_payment_id IS NULL))`;
   // Early check 1, finding 1 (the `document_sends` pattern): the erase or anonymise of a contact clears the contact and the token together, never back.
   const unlinking =
     "(NEW.contact_id IS NULL AND NEW.doc_token_id IS NULL AND OLD.contact_id IS NOT NULL AND NEW.status IS OLD.status)";
@@ -1765,7 +1908,7 @@ function gatewayTriggerParts(v: "0064" | "0066") {
   const eventValuesBad = `NEW.provider NOT IN (${q(gatewayProviders)}) OR NEW.status NOT IN (${q(WEBHOOK_EVENT_STATUSES_0064)})`;
   const eventFlowBad = `(NEW.status IS NOT OLD.status AND NOT ((OLD.status = 'received' AND NEW.status IN ('processed', 'ignored', 'needs_review', 'failed')) OR (OLD.status = 'failed' AND NEW.status = 'received'))) OR NEW.attempts < OLD.attempts`;
   // 8. review_items
-  const reviewValuesBad = `NEW.source NOT IN (${q(REVIEW_SOURCES_0064)}) OR NEW.provider NOT IN (${q(gatewayProviders)}) OR NEW.kind NOT IN (${q(v66 ? REVIEW_KINDS_0066 : REVIEW_KINDS_0064)}) OR NEW.status NOT IN ('open', 'resolved') OR (NEW.resolution IS NOT NULL AND NEW.resolution NOT IN (${q(REVIEW_RESOLUTIONS_0064)}))`;
+  const reviewValuesBad = `NEW.source NOT IN (${q(REVIEW_SOURCES_0064)}) OR NEW.provider NOT IN (${q(gatewayProviders)}) OR NEW.kind NOT IN (${q(v68 ? REVIEW_KINDS_0068 : v66 ? REVIEW_KINDS_0066 : REVIEW_KINDS_0064)}) OR NEW.status NOT IN ('open', 'resolved') OR (NEW.resolution IS NOT NULL AND NEW.resolution NOT IN (${q(REVIEW_RESOLUTIONS_0064)}))`;
   const reviewValuesMsg = "a review item has a known source, provider, kind, status and resolution";
   const resolving = "OLD.status = 'open' AND NEW.status = 'resolved'";
   const reviewFlowBad = `(NEW.status IS NOT OLD.status AND NOT (${resolving}))
@@ -1786,9 +1929,11 @@ function gatewayTriggerParts(v: "0064" | "0066") {
     "facts",
     "created_at",
   ]);
-  const checkoutFlowMsg = v66
-    ? "a checkout goes creating to live or failed, live to paid, expired, cancelled, stale or failed, stale to paid, expired, cancelled or failed; live has its link, paid has its payment, set once"
-    : "a checkout goes creating to live or failed, live to paid, expired, cancelled or stale, stale to paid, expired or cancelled; live has its link, paid has its payment, set once";
+  const checkoutFlowMsg = v68
+    ? "a checkout goes creating to live or failed, live to paid, expired, cancelled, stale, failed or capture_pending, stale to paid, expired, cancelled, failed or capture_pending, capture_pending to paid or failed (PayPal only); live has its link, paid has its payment, set once"
+    : v66
+      ? "a checkout goes creating to live or failed, live to paid, expired, cancelled, stale or failed, stale to paid, expired, cancelled or failed; live has its link, paid has its payment, set once"
+      : "a checkout goes creating to live or failed, live to paid, expired, cancelled or stale, stale to paid, expired or cancelled; live has its link, paid has its payment, set once";
   const statusFlowMsg = v66
     ? "a pending payment is confirmed or rejected once by the Owner, or a Razorpay payment confirmed by the system with its tax invoice; a confirmed one is withdrawn once by the Owner, with a reason; a gateway payment is never rejected or withdrawn"
     : "a pending payment is confirmed or rejected once by the Owner, or a gateway payment confirmed by the system with its tax invoice; a confirmed one is withdrawn once by the Owner, with a reason; a gateway payment is never rejected or withdrawn";
@@ -1929,6 +2074,10 @@ export const TRIGGER_SETS = {
   stripe_triggers: {
     what: "M6.3 Stripe: the provider lists of the payment and gateway triggers, the Stripe payment shape with its INR fee columns, those columns frozen, the system's confirm kept to Razorpay, and live or stale checkouts may fail",
     statements: stripeTriggerStatements,
+  },
+  paypal_triggers: {
+    what: "M6.4 PayPal: the provider lists of the payment and gateway triggers, the PayPal payment shape with its fee by currency, capture_pending and its moves, the capture id and claim held, no local end of a claimed checkout, and the remittance advice tables",
+    statements: paypalTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;
