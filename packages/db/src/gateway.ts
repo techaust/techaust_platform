@@ -18,7 +18,7 @@ import {
   ONLINE_RULES_SQL,
   type OnlineProviderSql,
   onlinePayableSql,
-  paymentNetSql,
+  paymentFreeSql,
 } from "./sql-rules.ts";
 
 export type { GuardSql };
@@ -619,8 +619,8 @@ export function recordGatewayPaymentStatements(
       db
         .prepare(
           `INSERT OR IGNORE INTO review_items (id, source, provider, kind, status, webhook_event_id, payment_id, document_id, client_id, amount_minor, currency, facts, created_at)
-           SELECT ?1, ?2, p.provider, 'overpaid', 'open', ?3, p.id, ?4, p.client_id, p.amount_minor - ${paymentNetSql("p.id")}, p.currency, ?5, ?6
-           FROM payments p WHERE p.id = ?7 AND p.status = 'confirmed' AND p.amount_minor > ${paymentNetSql("p.id")}${g2.sql}`,
+           SELECT ?1, ?2, p.provider, 'overpaid', 'open', ?3, p.id, ?4, p.client_id, ${paymentFreeSql("p")}, p.currency, ?5, ?6
+           FROM payments p WHERE p.id = ?7 AND p.status = 'confirmed' AND ${paymentFreeSql("p")} > 0${g2.sql}`,
         )
         .bind(
           a.allocate.overpaidReviewId,

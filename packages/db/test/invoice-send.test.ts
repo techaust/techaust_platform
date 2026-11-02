@@ -3,7 +3,7 @@ import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
 import { describe, expect, it } from "vitest";
 import { type InvoiceSendArgs, invoiceSendStatements } from "../src/issue.ts";
-import { mkClientRow, mkContact, mkIssued, mkMember } from "./billing-helpers.ts";
+import { mkClientRow, mkContact, mkIssued, mkMember, mkReceipt } from "./billing-helpers.ts";
 import { all, first, run } from "./helpers.ts";
 
 type Over = Partial<InvoiceSendArgs> & { contactCount?: number };
@@ -14,11 +14,15 @@ async function world(o: { type?: string; status?: string; contacts?: number } = 
   const contacts: string[] = [];
   for (let i = 0; i < (o.contacts ?? 2); i++) contacts.push(await mkContact(clientId));
   const parentId = o.type === "credit_note" || o.type === "debit_note" ? await mkIssued(clientId) : undefined;
-  const doc = await mkIssued(clientId, {
-    ...(o.type ? { type: o.type } : {}),
-    ...(o.status ? { status: o.status } : {}),
-    ...(parentId ? { parentId } : {}),
-  });
+  // M6.5 (L4): a receipt exists only for a confirmed payment (`documents_receipt_insert`, 0070).
+  const doc =
+    o.type === "receipt"
+      ? (await mkReceipt(clientId)).receiptId
+      : await mkIssued(clientId, {
+          ...(o.type ? { type: o.type } : {}),
+          ...(o.status ? { status: o.status } : {}),
+          ...(parentId ? { parentId } : {}),
+        });
   return { createdBy, clientId, contacts, doc };
 }
 

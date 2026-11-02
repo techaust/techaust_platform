@@ -337,10 +337,12 @@ describe("parent_id: a frozen document of the same client in an allowed pair [do
     await mkDoc(o, "debit_note", { parent_id: exp });
     await mkDoc(i, "tax_invoice", { parent_id: pro });
     await mkDoc(o, "export_invoice", { parent_id: pro2 });
+    // M6.5 (L4): 0038 still lists receipt → its payment's document as a pair, but a receipt now has no parent at all: its payment names it
+    // (`documents_receipt_insert`, 0070, refuses a receipt with a parent before the pair check matters).
     for (const parent of [inv, exp, pro]) {
       const c = (await first<{ client_id: string }>("SELECT client_id FROM documents WHERE id = ?", parent))
         ?.client_id as string;
-      await mkDoc(c, "receipt", { parent_id: parent });
+      await rejects(mkDoc(c, "receipt", { parent_id: parent }), /documents_receipt_insert/);
     }
   });
 

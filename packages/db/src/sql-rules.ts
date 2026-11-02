@@ -88,6 +88,24 @@ export const paymentNetSql = (payment: string, doc?: string): string =>
   `(SELECT coalesce(sum(CASE pna.kind WHEN 'allocate' THEN pna.amount_minor ELSE -pna.amount_minor END), 0) FROM payment_allocations pna WHERE pna.payment_id = ${payment}${doc === undefined ? "" : ` AND pna.document_id = ${doc}`})`;
 
 /**
+ * M6.5 (L1, L8, L35; ADM-PAY-08): what payment `payment` (an SQL expression for its id) has given back or is giving back: Σ its refunds that are not `failed`
+ * (`requested` and `processing` hold the money while the gateway works; a failed refund leaves it as credit). One seek of `payment_refunds_payment`. With
+ * `which = "succeeded"`, only the refunds that went out (what a statement of account lists, `STATEMENT_LEDGER_SQL`).
+ */
+export const paymentRefundedSql = (payment: string, which: "live" | "succeeded" = "live"): string =>
+  `(SELECT coalesce(sum(prf.amount_minor), 0) FROM payment_refunds prf WHERE prf.payment_id = ${payment} AND prf.status ${which === "live" ? "<> 'failed'" : "= 'succeeded'"})`;
+
+/**
+ * M6.5 (L35; Step 0 point 3): THE free money of payment row `p` (an SQL table name or alias of `payments`): its amount less what it holds net on documents
+ * (`paymentNetSql`) and less what it has refunded or is refunding (`paymentRefundedSql`). It is the client's credit from that payment, what a refund from credit
+ * may take, and what an allocation may still use. Every reader and trigger from 0070 on uses this one helper (core `unallocated` in `@techaust/core/ledger` is the
+ * twin); `packages/db/test/free-money-guard.test.ts` fails on a hand-written `amount_minor - ${paymentNetSql(…)}` outside the triggers 0060 pins. `which`: as
+ * `paymentRefundedSql` (the statement of account counts only the refunds that went out).
+ */
+export const paymentFreeSql = (p: string, which: "live" | "succeeded" = "live"): string =>
+  `(${p}.amount_minor - ${paymentNetSql(`${p}.id`)} - ${paymentRefundedSql(`${p}.id`, which)})`;
+
+/**
  * The status of an issued document for these figures (SQL expressions): the twin of core `ledgerStatusOf(total, paid, credited, tds)` with `settled` = paid + TDS
  * (a db test compares them over a table of figures).
  */

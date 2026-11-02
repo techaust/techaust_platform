@@ -11,6 +11,7 @@ import {
 import { guardSql } from "../src/log.ts";
 import { clients, DOCUMENT_TYPES } from "../src/schema/index.ts";
 import { clientTriggerStatements } from "../src/triggers.ts";
+import { mkReceipt } from "./billing-helpers.ts";
 import { all, db, first, insertClient, rejects, run } from "./helpers.ts";
 
 const newClient = (fields: Record<string, unknown> = {}) => {
@@ -136,7 +137,9 @@ describe("clients_currency_locked [ADM-CLI-01]", () => {
             number_display: `T/${9100 + INVOICE_FAMILY.indexOf(type)}`,
           })
         : undefined;
-    await addDoc(c, type, { status: "draft", ...(parent ? { parent_id: parent } : {}) });
+    // M6.5 (L4): a receipt exists only issued, for a confirmed payment (`documents_receipt_insert`, 0070): the payment locks the currency too.
+    if (type === "receipt") await mkReceipt(c);
+    else await addDoc(c, type, { status: "draft", ...(parent ? { parent_id: parent } : {}) });
     await rejects(run("UPDATE clients SET currency = 'USD' WHERE id = ?", c), /currency is locked/);
     // Writing the same currency, or another field, is fine.
     await run("UPDATE clients SET currency = 'INR', notes = 'x' WHERE id = ?", c);

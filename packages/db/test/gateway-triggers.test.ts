@@ -169,7 +169,8 @@ describe("0063 and 0064: no rebuild, the pinned lists [run file A]", () => {
     expect(CHECKOUT_STATUSES_0064).toEqual(CHECKOUT_STATUSES.filter((s) => s !== "capture_pending"));
     expect(REVIEW_SOURCES_0064).toEqual(REVIEW_SOURCES);
     expect(REVIEW_RESOLUTIONS_0064).toEqual(REVIEW_RESOLUTIONS);
-    expect(REVIEW_KINDS_0068).toEqual(REVIEW_KINDS);
+    // M6.5's 0070 adds the refund and dispute kinds after 0068's.
+    expect(REVIEW_KINDS_0068).toEqual(REVIEW_KINDS.slice(0, REVIEW_KINDS.indexOf("refund_failed")));
     expect(REVIEW_KINDS_0066).toEqual(REVIEW_KINDS.slice(0, REVIEW_KINDS.indexOf("not_export_receipt") + 1));
     expect(REVIEW_KINDS_0064).toEqual(REVIEW_KINDS.slice(0, REVIEW_KINDS.indexOf("not_export_receipt")));
   });
