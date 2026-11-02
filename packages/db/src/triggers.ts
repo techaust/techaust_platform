@@ -1682,6 +1682,8 @@ export const REVIEW_KINDS_0068 = [
   "reversed_after_confirm",
   "refunded_outside",
   "late_capture",
+  // Review part 1, finding 1: `final_capture` false (core `judgePayPalCapture` step 4); 0068 was applied nowhere when it was added.
+  "not_final",
 ] as const;
 /** The remittance advices' lists (L12, A3), pinned. */
 export const ADVICE_PROVIDERS_0068 = ["paypal", "stripe", "bank"] as const;

@@ -545,6 +545,16 @@ export const PAYPAL_JUDGE_VERDICTS = [
   "amount_mismatch",
 ] as const;
 export type PayPalJudgeVerdict = (typeof PAYPAL_JUDGE_VERDICTS)[number];
+/**
+ * The verdicts the finance Worker stores as a review kind of the same name (every verdict but `capture_refunded`, written as `refunded_outside`). Each is in
+ * `REVIEW_KINDS` (`@techaust/core/online-pay`) and the 0068 triggers' list; `packages/core/test/paypal.test.ts` pins it (review part 1, finding 1).
+ */
+export type PayPalReviewVerdict = Exclude<PayPalJudgeVerdict, "capture_refunded">;
+/** The judge's answer; `capture_refunded` is its own branch so a caller that has handled it holds a `PayPalReviewVerdict`. */
+export type PayPalJudgement =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly verdict: "capture_refunded" }
+  | { readonly ok: false; readonly verdict: PayPalReviewVerdict };
 
 /** Our checkout row, as the judge needs it. */
 export type PayPalCheckoutRow = {
@@ -575,8 +585,8 @@ export function judgePayPalCapture(
   row: PayPalCheckoutRow,
   order: PayPalOrder | null,
   capture: PayPalCapture,
-): { readonly ok: true } | { readonly ok: false; readonly verdict: PayPalJudgeVerdict } {
-  const no = (verdict: PayPalJudgeVerdict) => ({ ok: false, verdict }) as const;
+): PayPalJudgement {
+  const no = <V extends PayPalJudgeVerdict>(verdict: V) => ({ ok: false, verdict }) as const;
   // A capture inside the capture call's answer may carry no `custom_id` of its own (early check 1 finding 1; UNCONFIRMED, a sandbox check): it is ours only
   // through an order that is the row's, carries our mark and lists this capture. Both marks missing is a mismatch.
   const markedByOrder =

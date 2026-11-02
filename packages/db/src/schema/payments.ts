@@ -283,6 +283,8 @@ export const REVIEW_KINDS = [
   "reversed_after_confirm",
   "refunded_outside",
   "late_capture",
+  // M6.4 review part 1, finding 1: a capture PayPal reports as not final (core `judgePayPalCapture` step 4).
+  "not_final",
 ] as const;
 /**
  * Provider references are generic (lead, 2026-11-01, M6.3/M6.4 briefs session): up to 255 characters, so a Stripe Checkout Session id (66 in Stripe's fixture, 5000

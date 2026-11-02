@@ -230,6 +230,7 @@ describe("ONLINE_RULES and payableOnline for Stripe [L1, L14]", () => {
       "reversed_after_confirm",
       "refunded_outside",
       "late_capture",
+      "not_final",
     ];
     expect(REVIEW_KINDS.slice(-added.length)).toEqual(added);
     expect(REVIEW_KINDS).toContain("not_export_receipt");

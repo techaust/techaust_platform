@@ -25,7 +25,7 @@
 // The fee is absorbed (M6.1 L9: a commercial choice) in the column of its own currency; OPEN (08-C RA-29): is GST charged on the MDR and invoiced to our GSTIN?
 import type { CaptureReturnState, ProcessEventResult, RefreshResult } from "@techaust/core/gateway-rpc";
 import { uuidv7 } from "@techaust/core/ids";
-import { payableOnline } from "@techaust/core/online-pay";
+import { payableOnline, type ReviewKind } from "@techaust/core/online-pay";
 import {
   invoiceIdCheckoutTail,
   judgePayPalCapture,
@@ -175,7 +175,7 @@ async function moveEvent(
 const reviewOnlyOf = (
   ctx: Ctx,
   c: CheckoutRow,
-  kind: string,
+  kind: ReviewKind,
   amountMinor: number | null,
   facts: GatewayFacts,
 ): Promise<ProcessEventResult> =>
@@ -224,7 +224,7 @@ async function recordPending(
   ctx: Ctx,
   c: CheckoutRow,
   f: Fields,
-  kind: string,
+  kind: ReviewKind,
   rf: ReasonFacts,
   facts: GatewayFacts,
   extra?: { requested: true; bellTitle: string },
@@ -340,7 +340,7 @@ async function pendingOrLate(
   ctx: Ctx,
   c: CheckoutRow,
   f: Fields,
-  kind: string,
+  kind: ReviewKind,
   rf: ReasonFacts,
   facts: GatewayFacts,
 ): Promise<CaptureOutcome> {

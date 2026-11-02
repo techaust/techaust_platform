@@ -8,6 +8,7 @@ import { join } from "node:path";
 import fc from "fast-check";
 import { beforeAll, describe, expect, it } from "vitest";
 import { uuidv7 } from "../src/ids.ts";
+import { REVIEW_KINDS, type ReviewKind } from "../src/online-pay.ts";
 import { checkProviderContract, type PaymentProvider, PROVIDER_EVENT_TYPES } from "../src/payments.ts";
 import {
   CAPTURE_ERRORS,
@@ -32,6 +33,7 @@ import {
   type PayPalCapture,
   type PayPalCheckoutRow,
   type PayPalOrder,
+  type PayPalReviewVerdict,
   parsePayPalEvent,
   payPalCaptureRequestId,
   payPalDescriptionOf,
@@ -590,6 +592,15 @@ describe("judgePayPalCapture [ADM-PAY-04, run file C steps 4 to 8; 08-C RA-38]",
     expect(payPalExportReceipt([])).toBe(false);
     expect(payPalExportReceipt(["IN"])).toBe(false);
     expect(payPalExportReceipt(["US", "IN"])).toBe(false);
+  });
+
+  it("review part 1, finding 1: every verdict but `capture_refunded` is a stored review kind (`not_final` included)", () => {
+    // Compile time: a review verdict is a review kind.
+    const asKind = (v: PayPalReviewVerdict): ReviewKind => v;
+    const stored = PAYPAL_JUDGE_VERDICTS.filter((v) => v !== "capture_refunded");
+    for (const v of stored) expect(REVIEW_KINDS).toContain(asKind(v));
+    expect(REVIEW_KINDS).toContain("not_final");
+    expect(REVIEW_KINDS).not.toContain("capture_refunded");
   });
 });
 
