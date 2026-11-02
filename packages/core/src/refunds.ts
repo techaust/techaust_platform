@@ -119,9 +119,9 @@ export type RefundPlanInput = {
   readonly via: "gateway" | "manual";
   readonly amountMinor: number;
   /** With `from: "document"`. */
-  readonly doc?: RefundDocument;
+  readonly doc?: RefundDocument | undefined;
   /** With `from: "document"`: what THIS payment holds net on `doc`. */
-  readonly holdingMinor?: number;
+  readonly holdingMinor?: number | undefined;
   /** Today, the ISO IST day. */
   readonly today: string;
 };
