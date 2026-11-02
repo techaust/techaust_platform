@@ -17,6 +17,9 @@
 //   proforma        a proforma (INR, intra-state): its notice under the title, "Proforma number", "Valid until", no copy mark
 //   advance         a tax invoice issued for a payment received against a proforma: the "Against proforma" line, no balance due, no "How to pay"
 //   advance-export  the same as an export invoice under LUT
+//   advance-export-igst  M6.3 staging fixes, part 3: the owner's staging case (an export invoice for a payment received against a USD proforma, IGST
+//                   route): one line "Payment received against proforma …", qty 1 "fixed", $20.00, IGST 18 %, the INR block with the IGST in INR, a
+//                   signature, the tax summary. It printed a second page holding only the integrity line; it is one page (visual/page-count.spec.ts)
 // rt2 (T4, T10; 07-ZC): `advance` and `advance-export` carry the signature (an invoice for a payment received is always signed, 08-C RA-17);
 //   udyam           a tax invoice with a Udyam registration (a made-up number) printed under the GSTIN line (07-ZC line 6), signed
 import { deflateSync } from "node:zlib";
@@ -44,6 +47,7 @@ export const INVOICE_LAYOUT_FIXTURES = [
   "proforma",
   "advance",
   "advance-export",
+  "advance-export-igst",
   "udyam",
 ] as const;
 export type InvoiceLayoutFixture = (typeof INVOICE_LAYOUT_FIXTURES)[number];
@@ -399,6 +403,24 @@ const SPECS: Record<InvoiceLayoutFixture, Spec> = {
         qtyMilli: 1000,
         unit: "fixed",
         rateMinor: 150_000,
+      },
+    ],
+  },
+  "advance-export-igst": {
+    recipient: us,
+    type: "export_invoice",
+    route: "igst_paid",
+    bank: true,
+    advance: true,
+    signed: true,
+    country: { code: "US", name: "United States" },
+    lines: [
+      {
+        description: "Payment received against proforma TH/PI/2627/0004",
+        sac: "998314",
+        qtyMilli: 1000,
+        unit: "fixed",
+        rateMinor: 2000,
       },
     ],
   },

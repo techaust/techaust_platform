@@ -5,7 +5,8 @@
 // first of the 12 columns and the heading run into the text (as 07-ZE writes them); the signature sentence, then the EMPTY space the eSign provider's own
 // signature appearance goes into, marked only by four corner ticks (the top-right one is the mark's 45° cut), never by words; then Schedules 1 and 2; and,
 // last, the stamp-duty line in the small closing style the other documents give their final line (06 §7.1 "Integrity"). The deed proper fits page 1; the
-// Schedules may run onto page 2 (a Schedule's heading never sits alone at the foot of a page). The page footer is the house one: the symbol and the 07-P line
+// Schedules may run onto page 2 (a Schedule's heading never sits alone at the foot of a page, and the closing line never alone at the top of one: M6.3
+// staging fixes, part 3). The page footer is the house one: the symbol and the 07-P line
 // on the left, the deed number with "Page X of Y" on the right.
 //
 // Words: every sentence is core `deedText`'s (07-ZE, approved word for word). The layout adds no words of its own except the footer (07-P, ./copy.ts) and,
@@ -100,7 +101,7 @@ h1, h2 { margin: 0; }
 .sched__label { grid-column: 2 / span 3; color: var(--color-text-muted); }
 .sched__value { grid-column: 2 / -1; min-width: 0; white-space: pre-line; overflow-wrap: anywhere; }
 .sched__label + .sched__value { grid-column: 5 / -1; }
-.deed__footer { margin: 9mm 0 0; padding-top: 2mm; border-top: 0.2mm solid var(--color-border); font-size: var(--print-small); line-height: 1.4; color: var(--color-text-muted); break-inside: avoid; }
+.deed__footer { margin: 9mm 0 0; padding-top: 2mm; border-top: 0.2mm solid var(--color-border); font-size: var(--print-small); line-height: 1.4; color: var(--color-text-muted); break-inside: avoid; break-before: avoid; }
 `;
 
 /** The title's two parts ("Deed of assignment of copyright", "No. TH/DA/2627/0001"): 07-ZE joins them with " · "; the page sets them on two lines. */

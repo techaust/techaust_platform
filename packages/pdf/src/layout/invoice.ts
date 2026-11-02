@@ -579,7 +579,7 @@ export const TAX_INVOICE_CSS = `
 .doc--tax-invoice .inv-summary thead tr + tr th { padding-top: 1mm; }
 
 /* a USD invoice's INR values, under its total: a thin rule, the heading, the rate line, then the figures */
-.doc--tax-invoice .inv-inr { margin-top: -4mm; padding-top: 2mm; border-top: 0.2mm solid var(--color-border); font-size: var(--print-table); line-height: 1.4; }
+.doc--tax-invoice .inv-inr { margin-top: -1mm; padding-top: 2mm; border-top: 0.2mm solid var(--color-border); font-size: var(--print-table); line-height: 1.4; }
 .doc--tax-invoice .inv-inr h3 { font-size: var(--print-table); line-height: 1.4; font-weight: 600; margin: 0 0 0.6mm; }
 .doc--tax-invoice .inv-inr__rate { margin: 0 0 0.8mm; color: var(--color-text-muted); font-variant-numeric: tabular-nums lining-nums; text-wrap: balance; }
 .doc--tax-invoice .inv-inr__table { width: 100%; }
@@ -598,7 +598,7 @@ export const TAX_INVOICE_CSS = `
 .doc--tax-invoice .inv-pay__portal { margin: 1mm 0 0; }
 
 /* under the total, level with the foot of the box: the signatory */
-.doc--tax-invoice .inv-side { grid-column: 8 / -1; align-self: stretch; display: flex; flex-direction: column; gap: 8mm; }
+.doc--tax-invoice .inv-side { grid-column: 8 / -1; align-self: stretch; display: flex; flex-direction: column; gap: 5mm; }
 .doc--tax-invoice .inv-side .totals__table { grid-column: auto; }
 .doc--tax-invoice .inv-notes { break-inside: auto; }
 .doc--tax-invoice .inv-notes h3 { margin: 0 0 1.6mm; }
@@ -608,6 +608,9 @@ export const TAX_INVOICE_CSS = `
 .doc--tax-invoice .inv-sign__img { display: block; margin: 2mm 0 1.6mm auto; max-height: 16mm; max-width: 52mm; }
 .doc--tax-invoice .inv-sign__space { height: 14mm; }
 .doc--tax-invoice .inv-sign__role { margin: 0 0 0 auto; max-width: 52mm; padding-top: 1.2mm; border-top: 0.2mm solid var(--color-text); color: var(--color-text-muted); }
+
+/* the last line: closer to the content it closes (the hairline carries the break), so a one-page invoice ends on its one page */
+.doc--tax-invoice .integrity { margin-top: 5mm; }
 
 /* the registration line under the GSTIN breaks only at its spaces, never after a hyphen of the number (12em) */
 .doc--tax-invoice .inv-udyam { max-width: 12em; overflow-wrap: normal; }
