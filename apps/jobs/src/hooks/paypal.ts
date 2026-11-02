@@ -120,7 +120,7 @@ export async function certKeyFor(
   return got.key;
 }
 
-type HookEnv = { DB: D1Database; LEADS_QUEUE: Queue };
+type HookEnv = { DB: D1Database; LEADS_QUEUE: Pick<Queue, "send"> };
 
 /** Whether this isolate answered a PayPal webhook yet (the `f: 1` first-run marker of the staging CPU reading). */
 let answeredOnce = false;
@@ -164,30 +164,75 @@ async function handleHook(
   const raw = await readCapped(req, HOOK_MAX_BYTES);
   if (raw === null) return refuse(413, "payload_too_large");
   const local = secretOf(env, "ENVIRONMENT") === "local";
+  const a = await payPalHookBytes(raw, req.headers, env, {
+    now,
+    local,
+    ids: uuidv7,
+    keyFor: async (url) => {
+      // `isPayPalCertUrl` already passed inside the verifier; checked again here so no other URL can ever be fetched.
+      if (!isPayPalCertUrl(url, { local })) return null;
+      return certKeyFor(url, now, f);
+    },
+  });
+  if (a.o) out.o = a.o;
+  return answer(a.status, a.body);
+}
+
+/** What `payPalHookBytes` needs besides the body: the clock, the local flag, where new ids come from, and the certificate's key by its URL. */
+export type PayPalHookDeps = {
+  readonly now: number;
+  readonly local: boolean;
+  /** `uuidv7` for every real call; the start-up dry run passes made-up ids (global scope refuses random values). */
+  readonly ids: () => string;
+  /**
+   * The verifying key of an allow-listed certificate URL: the real hook's fetches and caches it per isolate (`certKeyFor`); the start-up dry run passes a key of
+   * its own made-up certificate, never cached (L31, early check 2 finding 4).
+   */
+  readonly keyFor: (url: string) => Promise<CryptoKey | null>;
+};
+
+/** A hook answer before it becomes a Response (the dry run reads it at global scope, where a Response with a body is refused). `o`: the log line's outcome. */
+export type PayPalHookAnswer = { readonly status: number; readonly body: unknown; readonly o?: string };
+
+const no = (status: number, code: string, o?: string): PayPalHookAnswer => ({
+  status,
+  body: { error: { code } },
+  ...(o ? { o } : {}),
+});
+const okAnswer = (o?: string): PayPalHookAnswer => ({ status: 200, body: { ok: true }, ...(o ? { o } : {}) });
+
+/**
+ * Steps 2 to 8 on the RAW body bytes (the transport checks, 1, are done): the webhook id, the five headers, the certificate's key, the signature, the parse,
+ * ours or not, the insert-once and the queue. Shared by `POST /paypal` and the start-up dry run (`warmPayPalHook`, apps/jobs/src/warm.ts), so V8 compiles
+ * this path before the first metered webhook.
+ */
+export async function payPalHookBytes(
+  raw: Uint8Array,
+  h: Pick<Headers, "get">,
+  env: HookEnv,
+  d: PayPalHookDeps,
+): Promise<PayPalHookAnswer> {
+  const now = d.now;
   const headers: Record<string, string | null> = {
-    "paypal-transmission-id": req.headers.get("paypal-transmission-id"),
-    "paypal-transmission-time": req.headers.get("paypal-transmission-time"),
-    "paypal-transmission-sig": req.headers.get("paypal-transmission-sig"),
-    "paypal-cert-url": req.headers.get("paypal-cert-url"),
-    "paypal-auth-algo": req.headers.get("paypal-auth-algo"),
+    "paypal-transmission-id": h.get("paypal-transmission-id"),
+    "paypal-transmission-time": h.get("paypal-transmission-time"),
+    "paypal-transmission-sig": h.get("paypal-transmission-sig"),
+    "paypal-cert-url": h.get("paypal-cert-url"),
+    "paypal-auth-algo": h.get("paypal-auth-algo"),
   };
 
   const verdict = await verifyPayPalSignature({
     bytes: raw,
     headers,
     webhookId: secretOf(env, "PAYPAL_WEBHOOK_ID"),
-    keyFor: async (url) => {
-      // `isPayPalCertUrl` already passed inside the verifier; checked again here so no other URL can ever be fetched.
-      if (!isPayPalCertUrl(url, { local })) return null;
-      return certKeyFor(url, now, f);
-    },
-    local,
+    keyFor: d.keyFor,
+    local: d.local,
   });
-  if (verdict === "webhook_id_invalid") return refuse(503, "hook_unconfigured");
-  if (verdict === "signature_missing") return refuse(400, "signature_missing");
+  if (verdict === "webhook_id_invalid") return no(503, "hook_unconfigured");
+  if (verdict === "signature_missing") return no(400, "signature_missing");
   if (verdict === "cert_unavailable") {
     logEvent("hook.cert_unavailable", { provider: "paypal" });
-    return refuse(503, "cert_unavailable");
+    return no(503, "cert_unavailable");
   }
   if (verdict !== "ok") {
     try {
@@ -203,7 +248,7 @@ async function handleHook(
       // A failed count never changes the answer.
     }
     logEvent("hook.signature_invalid", { provider: "paypal", code: verdict });
-    return refuse(400, "signature_invalid");
+    return no(400, "signature_invalid");
   }
   let text: string;
   let obj: unknown;
@@ -211,24 +256,17 @@ async function handleHook(
     text = strictUtf8.decode(raw);
     obj = JSON.parse(text);
   } catch {
-    out.o = "invalid_event";
-    return refuse(400, "invalid_event");
+    return no(400, "invalid_event", "invalid_event");
   }
   const parsed = parsePayPalEvent(obj);
-  if (!parsed.ok) {
-    out.o = "invalid_event";
-    return refuse(400, "invalid_event");
-  }
+  if (!parsed.ok) return no(400, "invalid_event", "invalid_event");
   const e = parsed.value;
   // (7) ours or not: no D1 write for anything that isn't ours.
-  if (payPalEventOwnership(e) === "not_ours") {
-    out.o = "not_ours";
-    return answer(200, { ok: true });
-  }
+  if (payPalEventOwnership(e) === "not_ours") return okAnswer("not_ours");
   const eventId = e.id ?? (await fallbackEventId(text));
   const [, state] = await env.DB.batch([
     env.DB.prepare(WEBHOOK_EVENT_INSERT_SQL).bind(
-      uuidv7(),
+      d.ids(),
       "paypal",
       eventId,
       e.name,
@@ -239,15 +277,12 @@ async function handleHook(
     env.DB.prepare(WEBHOOK_EVENT_STATE_SQL).bind("paypal", eventId),
   ]);
   const row = state?.results[0] as { id: string; status: string } | undefined;
-  if (row?.status !== "received") {
-    out.o = row ? "duplicate" : "not_recorded";
-    return answer(200, { ok: true });
-  }
+  if (row?.status !== "received") return okAnswer(row ? "duplicate" : "not_recorded");
   try {
     await env.LEADS_QUEUE.send({ kind: "gateway.event", eventId: row.id });
   } catch {
     logEvent("hook.enqueue_failed", { provider: "paypal" });
-    return refuse(500, "enqueue_failed");
+    return no(500, "enqueue_failed");
   }
-  return answer(200, { ok: true });
+  return okAnswer();
 }

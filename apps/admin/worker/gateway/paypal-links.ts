@@ -28,9 +28,8 @@ import {
 } from "@techaust/db/gateway";
 import { auditStmt } from "@techaust/db/log";
 import { cachedSetting } from "../settings-cache.ts";
-import { envText, payPalOf, portalUrlOf, stripeModeOfSettings, stripeOf, transportOf } from "./config.ts";
+import { envText, payPalOf, portalUrlOf, stripeModeOfSettings, stripeOf } from "./config.ts";
 import type { LinkContext, MakeLinkArgs, MakeLinkResult } from "./link-context.ts";
-import type { PayPalApi } from "./paypal.ts";
 import type { Ids } from "./paypal-capture.ts";
 import type { CheckoutRow, GatewayEnv } from "./settle.ts";
 import { endStripeSession } from "./stripe-links.ts";
@@ -100,14 +99,10 @@ export async function makePayPalLink(
 ): Promise<MakeLinkResult> {
   const db = env.DB;
   const { doc, clientId, open, limited, linkContactId, actorOf, floorMinor, maxMinor, mode } = ctx;
-  // The gateway guard, before any row or fetch.
-  if (
-    transportOf(env, "paypal") === "unset" ||
-    !envText(env, "PAYPAL_CLIENT_ID") ||
-    !envText(env, "PAYPAL_CLIENT_SECRET")
-  )
+  // The gateway guard, before any row or fetch (no transport: `payPalOf` answers null).
+  const api = payPalOf(env, mode);
+  if (!api || !envText(env, "PAYPAL_CLIENT_ID") || !envText(env, "PAYPAL_CLIENT_SECRET"))
     return { ok: false, error: "gateway_unavailable" };
-  const api = payPalOf(env, mode) as PayPalApi;
   if (api.blocked === "live_not_allowed") return { ok: false, error: "live_not_allowed" };
   if (api.blocked) return { ok: false, error: "gateway_unavailable" };
   if (!portalUrlOf(env)) return { ok: false, error: "gateway_unavailable" };

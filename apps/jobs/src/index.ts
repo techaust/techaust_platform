@@ -12,12 +12,15 @@ import { enqueueStatementPurge, PURGE_CRON, purgeScanMessage } from "./purge.ts"
 import { handleQueue } from "./queue.ts";
 import { enqueueStats } from "./stats.ts";
 import { warmConsumers, warmRazorpayHook } from "./warm.ts";
+import { warmPayPalHookAtStartup } from "./warm-paypal.ts";
 
 warmConsumers();
 // Web Crypto is allowed at start-up and finishes before the first event; errors are swallowed inside (CPU tuning)
 void warmSesSigning();
 // M6.2 (CPU diagnosis, lead decision 3): the webhook's first run paid at start-up (the HMAC with a made-up secret, the readers, one parse).
 void warmRazorpayHook();
+// M6.4 (L31, early check 2 finding 4): the PayPal webhook's path dry-run at start-up on a made-up event and certificate (warm-paypal.ts); nothing kept or sent.
+void warmPayPalHookAtStartup();
 
 const app = new Hono<{ Bindings: Env }>();
 app.use(secureHeaders());
