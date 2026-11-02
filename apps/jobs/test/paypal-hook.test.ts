@@ -6,6 +6,7 @@
 // PayPal parts, and the dead letter's bell. The finance Worker is a typed fake; PayPal is never called (the certificate "fetch" is a stub).
 import { exports, env as realEnv } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core/ids";
+import { PAYMENTS_WITHOUT_ADVICE_COUNT_SQL } from "@techaust/db/advices";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { DEAD_LETTER_BELL_PAYPAL, processGateway, processGatewayDeadLetter } from "../src/gateway.ts";
 import {
@@ -16,6 +17,7 @@ import {
   certKeyFor,
   payPalHook,
   resetPayPalCertCache,
+  trustPayPalCertUrl,
 } from "../src/hooks/paypal.ts";
 import { HOOK_MAX_BYTES } from "../src/hooks/shared.ts";
 import { adviceBellTitle, processEdfReminder } from "../src/reports.ts";
@@ -382,8 +384,9 @@ describe("the certificate cache [B2 must carry 4]", () => {
     const now = Date.now();
     const short = await testSigner(CERT_URL, { from: now - 60_000, to: now + 60_000 });
     const good = certFetch(() => short.pem);
-    // PayPal's URL gave a valid certificate once: it is trusted from then on.
+    // PayPal's URL verified a signature once (the hook calls `trustPayPalCertUrl` then): it is trusted from then on.
     expect(await certKeyFor(CERT_URL, now, good.f)).not.toBeNull();
+    trustPayPalCertUrl(CERT_URL);
     // Its certificate ran out; in the next minute, other paths spend the shared fetches...
     const t = now + 120_000;
     const other = (n: number) => `${CERT_URL.slice(0, -1)}x${n}`;
@@ -408,6 +411,42 @@ describe("the certificate cache [B2 must carry 4]", () => {
     expect(bad.seen).toHaveLength(CERT_FAILED_MAX + 1);
     expect(await certKeyFor(other(100), later, bad.f)).toBeNull();
     expect(bad.seen).toHaveLength(CERT_FAILED_MAX + 2);
+  });
+});
+
+describe("a certificate URL is trusted only after a signature verified under it [review part 2, finding 6]", () => {
+  /** After the URL's cached key ran out: other paths spend the minute's shared fetches, then: does `url` still get its kept fetch? */
+  const keptFetch = async (url: string, t: number) => {
+    const spend = certFetch(() => "x");
+    for (const n of [1, 2]) await certKeyFor(`${CERT_URL.slice(0, -1)}y${n}`, t, spend.f);
+    const renewed = await testSigner(url);
+    const back = certFetch(() => renewed.pem);
+    return { key: await certKeyFor(url, t + 1, back.f), seen: back.seen };
+  };
+
+  it("a valid certificate with a bad signature: 400, the URL NOT trusted; a good signature under it: trusted (its kept fetch a minute)", async () => {
+    const now = Date.now();
+    const short = await testSigner(CERT_URL, { from: now - 60_000, to: now + 60_000 });
+    const good = certFetch(() => short.pem);
+    // Signed for ANOTHER webhook id: PayPal's real certificate, fetched and valid, but the signature fails.
+    const body1 = captureEvent().body;
+    const bad = await post(body1, await short.headers(body1, "ANOTHERWEBHOOK01"), { f: good.f, now });
+    expect(bad.status).toBe(400);
+    expect(await code(bad)).toBe("signature_invalid");
+    expect(good.seen).toEqual([CERT_URL]);
+    const t = now + 120_000;
+    const untrusted = await keptFetch(CERT_URL, t);
+    expect(untrusted.key).toBeNull();
+    expect(untrusted.seen).toEqual([]);
+    // The same certificate verifying a real signature: trusted from then on.
+    resetPayPalCertCache();
+    const good2 = certFetch(() => short.pem);
+    const body2 = captureEvent().body;
+    const ok = await post(body2, await short.headers(body2, WEBHOOK), { f: good2.f, now });
+    expect(ok.status).toBe(200);
+    const kept = await keptFetch(CERT_URL, t);
+    expect(kept.key).not.toBeNull();
+    expect(kept.seen).toEqual([CERT_URL]);
   });
 });
 
@@ -624,6 +663,42 @@ describe("the monthly advice reminder rides edf.reminder [L12, S9; ADM-INV-17]",
       (
         await realEnv.DB.prepare(
           "SELECT count(*) AS n FROM notifications WHERE kind = 'edf.due' AND entity_id = 'edf:2031-09' AND user_id = ?1",
+        )
+          .bind(owner.id)
+          .first<{ n: number }>()
+      )?.n,
+    ).toBe(1);
+    // Review part 2, finding 5: the advice COUNT failing (it no longer rides the EDF batch) never stops the EDF reminder either; logged the same way.
+    const doc10 = uuidv7();
+    await realEnv.DB.prepare(
+      `INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, issue_date, due_date, subtotal_minor, taxable_minor, total_minor, balance_minor, content_sha256, updated_at)
+       VALUES (?1, 'export_invoice', 'issued', ?2, 'USD', 'pp-a', '9999', ?3, ?4, 1000, '2031-10-02', '2031-10-09', 50000, 50000, 50000, 50000, ?5, 7000)`,
+    )
+      .bind(doc10, client, ++seq, `PA/${seq}`, "h".repeat(64))
+      .run();
+    const countFails = makeEnv();
+    countFails.DB = new Proxy(db, {
+      get(target, prop) {
+        if (prop === "prepare")
+          return (sql: string) => {
+            if (sql === PAYMENTS_WITHOUT_ADVICE_COUNT_SQL) throw new Error("D1 down for this one");
+            return target.prepare(sql);
+          };
+        const v = Reflect.get(target, prop);
+        return typeof v === "function" ? v.bind(target) : v;
+      },
+    });
+    logs.length = 0;
+    expect(
+      await processEdfReminder(countFails, { v: 1, kind: "edf.reminder", year: 2031, month: 10 }),
+    ).toMatchObject({
+      kind: "done",
+    });
+    expect(logs.join("\n")).toContain('"ev":"advice.bell_failed"');
+    expect(
+      (
+        await realEnv.DB.prepare(
+          "SELECT count(*) AS n FROM notifications WHERE kind = 'edf.due' AND entity_id = 'edf:2031-10' AND user_id = ?1",
         )
           .bind(owner.id)
           .first<{ n: number }>()

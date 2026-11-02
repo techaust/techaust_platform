@@ -8,7 +8,7 @@
 //      only the certificate URL is refused, review part 1 finding 12);
 //   4. the certificate's key from this isolate's cache (at most 4 entries, each kept until the certificate's `notAfter` or 6 hours, whichever is sooner, and
 //      checked again on every hit), a failed URL remembered for 10 minutes (16 at most, the oldest forgotten first), at most 2 certificate fetches a minute
-//      plus 1 kept for a URL that once gave a valid certificate (review part 1, finding 3); a miss fetches the allow-listed URL (5 s,
+//      plus 1 kept for a URL whose certificate once verified a signature (review part 1, finding 3; part 2, finding 6); a miss fetches the allow-listed URL (5 s,
 //      at most 16 KiB, a PEM certificate valid now, its RSA key read by core's pure DER reader: Step 0.3, L20). No key → 503 `cert_unavailable`, no D1 (PayPal
 //      retries for 3 days);
 //   5. RSASSA-PKCS1-v1_5 / SHA-256 over `<transmission id>|<time>|<webhook id>|<CRC32 of the RAW bytes>` (core `verifyPayPalSignature`, `crypto.subtle.verify`):
@@ -55,15 +55,15 @@ export const CERT_TTL_MS = 6 * 3_600_000;
 export const CERT_NEGATIVE_MS = 10 * 60_000;
 export const CERT_FETCHES_PER_MINUTE = 2;
 /**
- * Review part 1, finding 3: one more fetch a minute kept for a URL that once gave a valid certificate (PayPal's own, renewed when its cache entry runs out), so
- * unsigned requests naming other allow-listed paths can't spend the whole budget.
+ * Review part 1, finding 3: one more fetch a minute kept for a URL whose certificate once verified a signature (PayPal's own, renewed when its cache entry runs
+ * out; `trustPayPalCertUrl`, review part 2, finding 6), so unsigned requests naming other allow-listed paths can't spend the whole budget.
  */
 export const CERT_TRUSTED_FETCHES_PER_MINUTE = 1;
 /** The failed URLs remembered (the oldest is forgotten first, never all at once). */
 export const CERT_FAILED_MAX = 16;
 const CERT_TIMEOUT_MS = 5_000;
 
-// Per isolate, never request state: the verifying keys PayPal's certificates hold, by URL; the URLs that once gave a valid certificate; the URLs that failed
+// Per isolate, never request state: the verifying keys PayPal's certificates hold, by URL; the URLs whose certificate once verified a signature; the URLs that failed
 // lately; the fetches of the current minute (`n` any URL's, `trusted` the reserved ones).
 const certs = new Map<string, { key: PayPalCertKey["key"]; until: number }>();
 const trusted = new Set<string>();
@@ -130,18 +130,26 @@ export async function certKeyFor(
     return null;
   }
   failed.delete(url);
-  trusted.delete(url);
-  if (trusted.size >= CERT_CACHE_MAX) {
-    const oldest = trusted.values().next().value;
-    if (oldest !== undefined) trusted.delete(oldest);
-  }
-  trusted.add(url);
   if (certs.size >= CERT_CACHE_MAX) {
     const oldest = certs.keys().next().value;
     if (oldest !== undefined) certs.delete(oldest);
   }
   certs.set(url, { key: got.key, until: Math.min(got.notAfter, now + CERT_TTL_MS) });
   return got.key;
+}
+
+/**
+ * Review part 2, finding 6: a certificate URL is trusted (its kept fetch a minute) only once a request whose signature verified under its key (`verifyPayPalSignature`
+ * answered `ok`), never on a valid certificate alone: otherwise unsigned posts naming other allow-listed certificate paths (old PayPal certificates are valid too)
+ * could push PayPal's current URL out of the 4 trusted ones. The most recently verified URL is kept; the oldest is forgotten first.
+ */
+export function trustPayPalCertUrl(url: string): void {
+  trusted.delete(url);
+  if (trusted.size >= CERT_CACHE_MAX) {
+    const oldest = trusted.values().next().value;
+    if (oldest !== undefined) trusted.delete(oldest);
+  }
+  trusted.add(url);
 }
 
 type HookEnv = { DB: D1Database; LEADS_QUEUE: Pick<Queue, "send"> };
@@ -188,6 +196,7 @@ async function handleHook(
   const raw = await readCapped(req, HOOK_MAX_BYTES);
   if (raw === null) return refuse(413, "payload_too_large");
   const local = secretOf(env, "ENVIRONMENT") === "local";
+  let certUrl: string | null = null;
   const a = await payPalHookBytes(raw, req.headers, env, {
     now,
     local,
@@ -195,7 +204,12 @@ async function handleHook(
     keyFor: async (url) => {
       // `isPayPalCertUrl` already passed inside the verifier; checked again here so no other URL can ever be fetched.
       if (!isPayPalCertUrl(url, { local })) return null;
+      certUrl = url;
       return certKeyFor(url, now, f);
+    },
+    // Review part 2, finding 6: the URL whose key verified this request's signature, and only that, becomes trusted.
+    verified: () => {
+      if (certUrl !== null) trustPayPalCertUrl(certUrl);
     },
   });
   if (a.o) out.o = a.o;
@@ -213,6 +227,8 @@ export type PayPalHookDeps = {
    * its own made-up certificate, never cached (L31, early check 2 finding 4).
    */
   readonly keyFor: (url: string) => Promise<CryptoKey | null>;
+  /** Called once when the signature verified (`ok`), before the parse: the real hook trusts the certificate URL then (review part 2, finding 6); the dry run omits it. */
+  readonly verified?: () => void;
 };
 
 /** A hook answer before it becomes a Response (the dry run reads it at global scope, where a Response with a body is refused). `o`: the log line's outcome. */
@@ -276,6 +292,7 @@ export async function payPalHookBytes(
     logEvent("hook.signature_invalid", { provider: "paypal", code: verdict });
     return no(400, verdict === "cert_url_refused" ? "signature_missing" : "signature_invalid");
   }
+  d.verified?.();
   let text: string;
   let obj: unknown;
   try {

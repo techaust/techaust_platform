@@ -228,17 +228,20 @@ export async function processEdfReminder(env: Env, body: unknown): Promise<EdfRe
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const last = `${year}-${mm}-${String(lastDay).padStart(2, "0")}`;
   const entity = `edf:${year}-${mm}`;
-  const [count, owners, advices] = await env.DB.batch([
+  const [count, owners] = await env.DB.batch([
     env.DB.prepare(EDF_COUNT_SQL).bind(first, last),
     env.DB.prepare(OWNERS_WITHOUT_EDF_BELL).bind(entity),
-    // M6.4 (L12, ADM-INV-17): the month's confirmed PayPal payments with no remittance advice yet (one range of `payments_confirmed_provider`; any currency).
-    env.DB.prepare(PAYMENTS_WITHOUT_ADVICE_COUNT_SQL).bind("paypal", first, last, null),
   ]);
-  const missing = (advices?.results[0] as { n: number } | undefined)?.n ?? 0;
   // The advice reminder rides this message (no new cron): one owners' bell per month while any is missing (S9; `INSERT OR IGNORE`, one per owner and month).
-  // Review part 1, finding 8: its failure is logged and never stops the EDF reminder below (the FEMA duty).
-  if (missing > 0) {
-    try {
+  // Review part 1, finding 8, and part 2, finding 5: its count and its bell run on their own, after the EDF reads, and a failure of either is logged and never
+  // stops the EDF reminder below (the FEMA duty).
+  try {
+    // M6.4 (L12, ADM-INV-17): the month's confirmed PayPal payments with no remittance advice yet (one range of `payments_confirmed_provider`; any currency).
+    const advices = await env.DB.prepare(PAYMENTS_WITHOUT_ADVICE_COUNT_SQL)
+      .bind("paypal", first, last, null)
+      .first<{ n: number }>();
+    const missing = advices?.n ?? 0;
+    if (missing > 0)
       await env.DB.prepare(ADVICE_BELLS_INSERT)
         .bind(
           `advice:${year}-${mm}`,
@@ -246,9 +249,8 @@ export async function processEdfReminder(env: Env, body: unknown): Promise<EdfRe
           "/payments/advices?tab=without",
         )
         .run();
-    } catch {
-      logEvent("advice.bell_failed");
-    }
+  } catch {
+    logEvent("advice.bell_failed");
   }
   const n = (count?.results[0] as { n: number } | undefined)?.n ?? 0;
   if (n === 0) {
