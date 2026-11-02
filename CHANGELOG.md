@@ -2,6 +2,9 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-11-02 [#160](https://github.com/techaust/techaust_platform/pull/160) fix(payments,pdf): a proforma's online payment counted once; every PDF layout checked [ADM-PAY-01][ADM-PAY-03][ADM-INV-10][JOB-PDF-01]
+- 2026-11-02 [#159](https://github.com/techaust/techaust_platform/pull/159) docs: record of 2026-11-02 overnight
+- 2026-11-02 [#158](https://github.com/techaust/techaust_platform/pull/158) feat(payments): M6.3 Stripe card payments [ADM-PAY-01][ADM-PAY-03][POR-06][JOB-HOOK-01]
 - 2026-11-02 [#157](https://github.com/techaust/techaust_platform/pull/157) chore(tools): set-gateway-keys Stripe modes for the owner's H2 and H3
 - 2026-11-02 [#156](https://github.com/techaust/techaust_platform/pull/156) perf(admin): start-up dry run of the hot routes, one forwarder, one-batch invoice detail [NFR-2]
 - 2026-11-01 [#155](https://github.com/techaust/techaust_platform/pull/155) ci: accept the M6.3 test webhook secrets in the secret scan
