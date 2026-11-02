@@ -108,11 +108,13 @@ describe("the header blocks (07-P §1)", () => {
     expect(html.match(/\(IST\)/g)).toHaveLength(2);
   });
 
-  it("keeps the parts of a registration line together: it wraps only at the separator", async () => {
+  // Changed on purpose (M6.3 staging fixes, part 3): the separator is dropped at the break, as on the invoice, so no " ·" dangles at a line end.
+  it("keeps the parts of a registration line together: one part a line, no separator left at a line end", async () => {
     const html = await bodyOf("short-intra-inr");
     expect(html).toContain(
-      '<span class="keep">GSTIN 19ABCDE1234F1ZX</span> · <span class="keep">State West Bengal (19)</span>',
+      '<span class="keep">GSTIN 19ABCDE1234F1ZX</span><br><span class="keep">State West Bengal (19)</span>',
     );
+    expect(html).not.toContain("</span> · <span");
   });
 
   it("leaves out the supplier fields that are empty in Settings", async () => {

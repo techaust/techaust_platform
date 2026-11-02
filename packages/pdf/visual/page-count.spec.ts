@@ -7,7 +7,7 @@
 //   - a sweep pushes the block before the closing line down a few millimetres at a time across the foot of a page, and at no step is the line left
 //     alone on the last page (the page break moves to before that block instead: `break-before: avoid` on the line).
 // Sample data only. Run: bash tools/heavy.sh --log pdf-visual pnpm --filter @techaust/pdf test:visual
-import { decodePDFRawStream, PDFArray, PDFDocument, PDFRawStream } from "@cantoo/pdf-lib";
+import { PDFDocument } from "@cantoo/pdf-lib";
 import { expect, type Page, test } from "@playwright/test";
 import type { InvoiceEnvelope } from "../src/invoice-types.ts";
 import { toInvoiceView } from "../src/invoice-view.ts";
@@ -21,6 +21,7 @@ import {
   SAMPLE_SIGNATURE_PNG,
 } from "../test/fixtures/invoice-layout.ts";
 import { buildNoteFixture, type NoteFixtureName } from "../test/fixtures/notes.ts";
+import { marksPerPage } from "./pdf-pages.ts";
 
 /** Pages per fixture, as printed on 2026-11-02 after the fix (Chromium of @playwright/test 1.64.1). */
 const INVOICE_PAGES: Record<InvoiceLayoutFixture, number> = {
@@ -85,19 +86,6 @@ async function print(page: Page, html: string, css = ""): Promise<PDFDocument> {
   if (css) await page.addStyleTag({ content: css });
   await page.evaluate("document.fonts.ready.then(() => true)");
   return PDFDocument.load(await page.pdf({ preferCSSPageSize: true, tagged: true, printBackground: true }));
-}
-
-/** The marked-content ids on each page (Chromium marks each run of text and each table cell of a tagged PDF; the page footer is an artifact, unmarked). */
-function marksPerPage(pdf: PDFDocument): number[] {
-  return pdf.getPages().map((p) => {
-    const contents = p.node.Contents();
-    const streams =
-      contents instanceof PDFArray ? contents.asArray().map((r) => pdf.context.lookup(r)) : [contents];
-    let ops = "";
-    for (const s of streams)
-      if (s instanceof PDFRawStream) ops += Buffer.from(decodePDFRawStream(s).decode()).toString("latin1");
-    return (ops.match(/\/MCID\s+\d+/g) ?? []).length;
-  });
 }
 
 /** CSS that leaves only the closing line on the page (every other child of `.doc` / `.deed` hidden), to count its own marks. */

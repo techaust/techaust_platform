@@ -81,7 +81,14 @@ type Spec = {
   udyam?: boolean;
   note?: boolean;
   country?: { code: string; name: string };
+  /** M6.3 staging fixes (part 3, the layout audit): a proforma in USD (an overseas client: the export route of `route`, the FBIL rate, SWIFT). */
+  usd?: boolean;
+  /** FX-4: the proforma's "(estimate)" marker, as every proforma issued since carries it. */
+  gstEstimate?: boolean;
+  /** The layout audit: notes pinned at issue that run over several paragraphs and a list (instead of the two-item sample). */
+  longTerms?: boolean;
 };
+export type InvoiceLayoutSpec = Spec;
 
 /** The statutory lines as LITERALS (07-S §1, §2), so a change of core's constants fails a test until a person has looked at it. */
 export const LAYOUT_ENDORSEMENT = {
@@ -527,12 +534,28 @@ export type InvoiceLayoutBuilt = {
 
 /** One sealed invoice envelope (tax, export or proforma) for a layout fixture, made the way the issue route and the snapshot step make it. */
 export async function buildInvoiceLayoutFixture(name: InvoiceLayoutFixture): Promise<InvoiceLayoutBuilt> {
-  const spec = SPECS[name];
+  const built = await buildInvoiceLayoutSpec(name, SPECS[name]);
+  return { ...built, name, signature: sampleSignatureOf(name) };
+}
+
+/** The same builder for any spec (the layout audit's extra cases, `AUDIT_INVOICE_SPECS`); `id` names the document. */
+export async function buildInvoiceLayoutSpec(
+  id: string,
+  spec: Spec,
+): Promise<{
+  name: string;
+  envelope: InvoiceEnvelope;
+  computed: ComputedDocument;
+  signature: VerifiedSignature | null;
+}> {
+  const name = id;
   const type = spec.type ?? "tax_invoice";
-  const route = type === "export_invoice" ? (spec.route ?? "lut") : null;
   const isExport = type === "export_invoice";
-  const currency = isExport ? "USD" : "INR";
-  const fx = isExport ? LAYOUT_FX : null;
+  // an export invoice and a USD proforma are both in USD for an overseas client, on an export route, at the FBIL rate, paid by SWIFT
+  const usd = isExport || (type === "proforma" && spec.usd === true);
+  const route = usd ? (spec.route ?? "lut") : null;
+  const currency = usd ? "USD" : "INR";
+  const fx = usd ? LAYOUT_FX : null;
   const discountOf = (l: LineSpec) =>
     l.discount?.kind === "percent"
       ? { kind: "percent" as const, bp: l.discount.bp }
@@ -601,12 +624,25 @@ export async function buildInvoiceLayoutFixture(name: InvoiceLayoutFixture): Pro
     schedule: [],
   };
   const contentSha = await contentHash(draft, computed);
-  const termsBody =
-    "Sample notes pinned at issue.\n\n1. Sample note one: payment is due on the due date shown above.\n2. Sample note two, long enough to wrap onto a second line of the notes block at the foot of the invoice.";
+  const termsBody = spec.longTerms
+    ? [
+        "Sample notes pinned at issue, long enough to run over more than one page when the lines above have filled the page before it.",
+        ...Array.from(
+          { length: 6 },
+          (_, i) =>
+            `Sample paragraph ${i + 1}: the work is delivered in stages, each stage is checked with the client before the next one starts, and anything outside the agreed scope is quoted separately before it is done.`,
+        ),
+        Array.from(
+          { length: 8 },
+          (_, i) =>
+            `${i + 1}. Sample list item ${i + 1}, which wraps onto a second line of the notes block at the foot of the invoice.`,
+        ).join("\n"),
+      ].join("\n\n")
+    : "Sample notes pinned at issue.\n\n1. Sample note one: payment is due on the due date shown above.\n2. Sample note two, long enough to wrap onto a second line of the notes block at the foot of the invoice.";
   const termsSha = await sha256Hex(termsBody);
   const issuer: InvoiceIssuerSnapshot = {
     company: spec.udyam ? { ...companyOf(spec.supplier), udyam: LAYOUT_UDYAM } : companyOf(spec.supplier),
-    bank: isExport
+    bank: usd
       ? {
           inr: null,
           swift: spec.bank
@@ -686,7 +722,14 @@ export async function buildInvoiceLayoutFixture(name: InvoiceLayoutFixture): Pro
         }
       : {}),
     ...(fx ? { fx: { ...fx } } : {}),
-    ...(type === "proforma" ? { proforma: { notice: LAYOUT_PROFORMA_NOTICE } } : {}),
+    ...(type === "proforma"
+      ? {
+          proforma: {
+            notice: LAYOUT_PROFORMA_NOTICE,
+            ...(spec.gstEstimate ? { gstEstimate: true as const } : {}),
+          },
+        }
+      : {}),
     ...(spec.advance ? { advance: { ...LAYOUT_ADVANCE } } : {}),
   });
   const prefix = isExport ? "EXP" : type === "proforma" ? "PI" : "INV";
@@ -708,5 +751,10 @@ export async function buildInvoiceLayoutFixture(name: InvoiceLayoutFixture): Pro
       terms: termsRef ? { ...termsRef, bodyMd: termsBody } : null,
     },
   });
-  return { name, envelope, computed, signature: sampleSignatureOf(name) };
+  return {
+    name,
+    envelope,
+    computed,
+    signature: spec.signed ? { mime: "image/png", base64: toBase64(SAMPLE_SIGNATURE_PNG) } : null,
+  };
 }

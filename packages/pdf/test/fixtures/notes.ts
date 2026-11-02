@@ -11,6 +11,7 @@ import {
   creditNote,
   type LineInput,
   type TaxContext,
+  taxOnlyDebitNote,
 } from "@techaust/core/tax";
 import { invoiceSealOf } from "@techaust/db/documents";
 import type { InvoiceIssuerSnapshot, RecipientSnapshot } from "@techaust/db/issue";
@@ -55,7 +56,10 @@ type Spec = {
   takes?: { line: number; taxableMinor: number }[];
   gross?: number;
   reason: { code: string; text: string };
+  /** M6.3 staging fixes (part 3, the layout audit): a "Tax charged too low" debit note adding this much tax (minor units), taxable value zero (core `taxOnlyDebitNote`). */
+  taxOnly?: number;
 };
+export type NoteSpec = Spec;
 
 const SPECS: Record<NoteFixtureName, Spec> = {
   credit_lines: {
@@ -144,23 +148,30 @@ export type NoteFixture = {
 };
 
 /** One sealed credit or debit note envelope, made the way the issue route and the snapshot step make it. */
-export async function buildNoteFixture(
-  name: NoteFixtureName,
-  opts: {
-    documentId?: string;
-    clientId?: string;
-    parentId?: string;
-    number?: number;
-    parentNumber?: string;
-    /** T4: seal the note with no signature (as one issued before the rule). */
-    unsigned?: boolean;
-    /** rt1 F1: "settings" freezes no typed route (`exportMode` null), as an export issued on the settings' route does; the supply type still says it. */
-    route?: "typed" | "settings";
-    /** rt1 T2 / F4: the LUT a debit note seals for its own issue day's FY (`noteOf.lut`). */
-    noteLut?: { fy: string; arn: string };
-  } = {},
-): Promise<NoteFixture> {
-  const spec = SPECS[name];
+export async function buildNoteFixture(name: NoteFixtureName, opts: NoteOpts = {}): Promise<NoteFixture> {
+  return { ...(await buildNoteSpec(name, SPECS[name], opts)), name };
+}
+
+type NoteOpts = {
+  documentId?: string;
+  clientId?: string;
+  parentId?: string;
+  number?: number;
+  parentNumber?: string;
+  /** T4: seal the note with no signature (as one issued before the rule). */
+  unsigned?: boolean;
+  /** rt1 F1: "settings" freezes no typed route (`exportMode` null), as an export issued on the settings' route does; the supply type still says it. */
+  route?: "typed" | "settings";
+  /** rt1 T2 / F4: the LUT a debit note seals for its own issue day's FY (`noteOf.lut`). */
+  noteLut?: { fy: string; arn: string };
+};
+
+/** The same builder for any spec (the layout audit's extra cases); `name` names the document. */
+export async function buildNoteSpec(
+  name: string,
+  spec: Spec,
+  opts: NoteOpts = {},
+): Promise<Omit<NoteFixture, "name"> & { name: string }> {
   const usd = spec.usd !== undefined;
   const exportMode = opts.route === "settings" ? null : (spec.usd ?? null);
   // (no contact: the rows a test inserts then need no contact row)
@@ -202,7 +213,10 @@ export async function buildNoteFixture(
   const noteDate = { year: 2026, month: 10, day: 28 } as const;
   let computed: ComputedDocument;
   let takes: { line: number; taxableMinor: number }[];
-  if (spec.kind === "debit") {
+  if (spec.kind === "debit" && spec.taxOnly !== undefined) {
+    computed = good(taxOnlyDebitNote(parentComputed, spec.taxOnly, ctx));
+    takes = computed.lines.map((l) => ({ line: l.index, taxableMinor: 0 }));
+  } else if (spec.kind === "debit") {
     takes = spec.takes ?? [];
     const input = debitNoteInput(
       { computed: parentComputed, recipientStatus: recipient.gstStatus ?? "registered" },
@@ -266,6 +280,7 @@ export async function buildNoteFixture(
     request: {
       mode: spec.mode ?? "lines",
       ...(spec.mode === "amount" ? { grossMinor: spec.gross } : {}),
+      ...(spec.taxOnly !== undefined ? { taxMinor: spec.taxOnly } : {}),
       takes,
     },
   });
