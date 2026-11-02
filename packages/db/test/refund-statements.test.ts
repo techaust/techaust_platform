@@ -867,6 +867,11 @@ describe("twins: free money, the RA-41 line, the stage with M6.5's facts [L35, R
     );
     await alloc(card, full, 10_000);
     expect(await stage(full)).toBe("ok");
+    // the realisation list's "open" view (no stage in its SQL): the unproven LUT export is open, the reduced one and the open IGST one as their stages say
+    const openIds = async () =>
+      (await all<{ id: string }>(REALISATION_PAGE_SQL("open", false))).map((r) => r.id);
+    expect(await openIds()).toEqual(expect.arrayContaining([full, open]));
+    expect(await openIds()).not.toContain(short);
     const counts = await all<{ stage: string; n: number }>(EXPORT_STAGE_COUNTS_SQL, today);
     const grouped = await all<{ stage: string; n: number }>(EXPORT_STAGE_COUNTS_GROUPED_SQL, today);
     expect(counts.map((c) => c.stage)).not.toContain("realised");
@@ -879,6 +884,7 @@ describe("twins: free money, the RA-41 line, the stage with M6.5's facts [L35, R
       "a".repeat(64),
     );
     expect(await stage(full)).toBe("realised");
+    expect(await openIds()).not.toContain(full);
     const page = await all<{
       id: string;
       reductions_minor: number;

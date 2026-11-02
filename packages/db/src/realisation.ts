@@ -64,12 +64,14 @@ export const reductionsSql = (alias: string): string =>
 
 /**
  * RA-38 (L38): a confirmed card or PayPal payment (Stripe, PayPal) that holds money on export invoice row `alias` has no proof yet: no proof file and no advice
- * link now. One seek of `payment_allocations_document`, a primary-key read of each payment and a seek of `realisation_advice_payments_active`.
+ * link now. Read from `payments_proof_awaited` (only the card and PayPal payments still without a proof file: a short list the advice archive keeps near empty), so
+ * an export settled by bank transfer reads nothing here; then a seek of `realisation_advice_payments_active` and of the payment's holding on the invoice.
  */
 export const proofMissingSql = (alias: string): string =>
-  `EXISTS (SELECT 1 FROM payment_allocations ra INDEXED BY payment_allocations_document JOIN payments rp ON rp.id = ra.payment_id
-     WHERE ra.document_id = ${alias}.id AND ra.kind = 'allocate' AND rp.status = 'confirmed' AND rp.kind = 'payment' AND rp.provider IN ('stripe', 'paypal')
-       AND rp.proof_r2_key IS NULL AND NOT ${paymentHasAdviceSql("rp")} AND ${paymentNetSql("rp.id", `${alias}.id`)} > 0)`;
+  `EXISTS (SELECT 1 FROM payments rp INDEXED BY payments_proof_awaited
+     WHERE rp.provider IN ('stripe', 'paypal') AND rp.proof_r2_key IS NULL AND rp.status IN ('pending_verification', 'confirmed')
+       AND rp.status = 'confirmed' AND rp.kind = 'payment' AND rp.client_id = ${alias}.client_id
+       AND NOT ${paymentHasAdviceSql("rp")} AND ${paymentNetSql("rp.id", `${alias}.id`)} > 0)`;
 
 /**
  * The stage of an export invoice row `alias` (columns `id`, `issue_date`, `currency`, `supply_type`, `balance_minor`, `paid_minor`, `total_minor`) on `p.today`,
@@ -98,6 +100,13 @@ export const stageSql = (alias: string, p: RealisationSql): string => {
  */
 export const stageOpenSql = (alias: string): string =>
   `(${alias}.balance_minor > 0 OR ${alias}.supply_type = 'export_lut' OR ${alias}.paid_minor < ${alias}.total_minor)`;
+
+/**
+ * M6.5: export invoice row `alias` is not realised (the stage is anything but `realised`), worked out without the dates: something outstanding, paid plus reductions
+ * short of the total (RB-43), or an LUT export with a card or PayPal payment lacking its proof (RA-38). The realisation list's "open" filter (no stage in its SQL).
+ */
+export const notRealisedSql = (alias: string): string =>
+  `(${alias}.balance_minor > 0 OR ${alias}.paid_minor + ${reductionsSql(alias)} < ${alias}.total_minor OR (${alias}.supply_type = 'export_lut' AND ${proofMissingSql(alias)}))`;
 
 /**
  * Every stage `stageSql` can give, in its order (core `RealisationStage`; a db test pins the list to the `THEN` literals of `stageSql` and to core's type). The

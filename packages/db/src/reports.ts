@@ -9,6 +9,7 @@ import {
   EXPORT_STAGES,
   femaDueSql,
   gstDueSql,
+  notRealisedSql,
   proofMissingSql,
   type RealisationSql,
   reductionsSql,
@@ -123,7 +124,7 @@ export const EDF_MONTH_SQL = (after: boolean): string =>
 export const REALISATION_PAGE_SQL = (show: "open" | "all", after: boolean): string =>
   `SELECT ${REGISTER_COLUMNS}, ${REALISATION_FACT_COLUMNS}
    FROM documents d INDEXED BY documents_export_issued JOIN clients c ON c.id = d.client_id
-   WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL ${show === "open" ? `AND ${stageOpenSql("d")}` : ""} ${after ? "AND (d.issue_date > ?1 OR (d.issue_date = ?1 AND d.id > ?2))" : ""}
+   WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL ${show === "open" ? `AND ${notRealisedSql("d")}` : ""} ${after ? "AND (d.issue_date > ?1 OR (d.issue_date = ?1 AND d.id > ?2))" : ""}
    ORDER BY d.issue_date, d.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
 
 /**
