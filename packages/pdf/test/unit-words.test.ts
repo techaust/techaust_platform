@@ -5,6 +5,8 @@ import { CATALOGUE_UNITS } from "@techaust/core/catalogue";
 import { describe, expect, it } from "vitest";
 import { toInvoiceView } from "../src/invoice-view.ts";
 import { UNIT_WORDS, unitWord } from "../src/layout/copy.ts";
+import { TAX_INVOICE_CSS } from "../src/layout/invoice.ts";
+import { TEMPLATE_CSS } from "../src/layout/styles.ts";
 import { renderDocumentHtml } from "../src/render.ts";
 import { DEFAULT_VIEW_CONFIG, toPdfView } from "../src/view.ts";
 import { buildFixture } from "./fixtures/index.ts";
@@ -44,14 +46,21 @@ describe("unit words [07-ZM review changes]", () => {
     const { envelope, signature } = await buildInvoiceLayoutFixture("advance-export-igst");
     expect(envelope.snapshot.lines[0]?.unit).toBe("fixed");
     const html = renderDocumentHtml(toInvoiceView(envelope, DEFAULT_VIEW_CONFIG, { signature }));
-    expect(html).toContain('<td class="num">1 <span class="unit">lump sum</span></td>');
+    expect(html).toContain('<td class="num c-qty">1 <span class="unit">lump sum</span></td>');
     expect(html).not.toContain(">fixed<");
   });
 
   it("a proposal's Unit column prints the words too", async () => {
     const { envelope } = await buildFixture("short-intra-inr");
     const html = renderDocumentHtml(toPdfView(envelope));
-    expect(html).toContain("<td>lump sum</td>");
-    expect(html).not.toContain("<td>fixed</td>");
+    expect(html).toContain('<td class="c-unit">lump sum</td>');
+    expect(html).not.toContain('<td class="c-unit">fixed</td>');
+  });
+
+  it("the columns hold the words: the proposal's Unit column is 19 mm and never breaks a word; the invoice's Qty cell puts the word under the number", () => {
+    expect(TEMPLATE_CSS).toContain(".items .c-unit { width: 19mm; }");
+    expect(TEMPLATE_CSS).toContain(".items td.c-unit { overflow-wrap: normal; }");
+    expect(TAX_INVOICE_CSS).toContain(".doc--tax-invoice .inv-items td.c-qty { white-space: normal; }");
+    expect(TAX_INVOICE_CSS).toMatch(/\.doc--tax-invoice \.inv-items \.unit \{[^}]*white-space: nowrap;/);
   });
 });

@@ -126,6 +126,30 @@ const oneLine = (description: string, rateMinor: number): InvoiceLayoutSpec["lin
 ];
 
 const INVOICE_SPECS: Record<string, InvoiceLayoutSpec> = {
+  // every catalogue unit at a long quantity and at 1, so the unit words ("12.5 lump sums", "1 connector") are seen in the Qty cell
+  "tax-units": {
+    recipient: wb,
+    bank: true,
+    signed: true,
+    lines: (["fixed", "milestone", "month", "hour", "workflow", "connector", "document"] as const).flatMap(
+      (unit, i) => [
+        {
+          description: `Sample ${unit} line`,
+          sac: "998314",
+          qtyMilli: 12_500,
+          unit,
+          rateMinor: 10_000 + i * 100,
+        },
+        {
+          description: `Sample single ${unit}`,
+          sac: "998314",
+          qtyMilli: 1000,
+          unit,
+          rateMinor: 20_000 + i * 100,
+        },
+      ],
+    ),
+  },
   "tax-intra-long": {
     recipient: wb,
     bank: true,
@@ -362,6 +386,22 @@ const fromDocument = (kind: string, c: string, name: FixtureName): AuditCase => 
 
 export const AUDIT_CASES: AuditCase[] = [
   fromDocument("proposal", "short", "short-intra-inr"),
+  {
+    kind: "proposal",
+    case: "every unit word",
+    closing: INTEGRITY,
+    html: async () => {
+      // the unit column only: each line takes a catalogue unit and a long quantity (the view prints the line's own quantity and unit)
+      const { envelope } = await buildFixture("short-intra-inr");
+      const e = JSON.parse(JSON.stringify(envelope)) as typeof envelope;
+      const units = ["milestone", "connector", "document", "fixed", "workflow"];
+      e.snapshot.lines.forEach((l, i) => {
+        (l as { unit: string }).unit = units[i % units.length] as string;
+        (l as { qtyMilli: number }).qtyMilli = 12_500;
+      });
+      return renderDocumentHtml(toPdfView(e));
+    },
+  },
   fromDocument("proposal", "long", "long-inter-inr"),
   fromDocument("proposal", "usd", "usd-export"),
   fromDocument("proposal", "long names", "long-names"),
@@ -380,6 +420,7 @@ export const AUDIT_CASES: AuditCase[] = [
     html: async () => renderCertificateHtml(certificateLong),
   },
   fromFixture("tax invoice INR intra", "short", "short"),
+  fromSpec("tax invoice INR intra", "every unit word", "tax-units"),
   fromFixture("tax invoice INR intra", "several lines and notes", "intra"),
   fromSpec("tax invoice INR intra", "long, signed", "tax-intra-long"),
   fromSpec("tax invoice INR intra", "long, signatory off", "tax-intra-long", { unsigned: true }),

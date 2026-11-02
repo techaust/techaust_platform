@@ -204,7 +204,8 @@ table.grid { width: 100%; table-layout: fixed; border-collapse: collapse; font-s
 .desc { font-weight: 500; }
 .items .c-n { width: 6mm; color: var(--color-text-muted); }
 .items .c-qty { width: 10mm; }
-.items .c-unit { width: 13mm; }
+.items .c-unit { width: 19mm; }
+.items td.c-unit { overflow-wrap: normal; }
 .items .c-rate { width: 22mm; }
 .items .c-disc { width: 15mm; }
 .items .c-taxable { width: 25mm; }

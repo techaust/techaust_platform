@@ -272,7 +272,7 @@ function itemsTable(view: InvoiceView): string {
       (l) =>
         `<tr><td class="c-n num">${esc(l.n)}</td><td class="c-desc"><span class="desc">${esc(l.description)}</span>${
           l.detail ? `<span class="sub">${esc(l.detail)}</span>` : ""
-        }${l.againstLine !== undefined ? `<span class="sub inv-against">${esc(N.againstLine(l.againstLine))}</span>` : ""}</td><td class="c-sac">${l.sac ? esc(l.sac) : ""}</td><td class="num">${esc(l.qty)} <span class="unit">${esc(unitWord(l.unit, l.qty))}</span></td><td class="num">${esc(l.rate)}</td>${
+        }${l.againstLine !== undefined ? `<span class="sub inv-against">${esc(N.againstLine(l.againstLine))}</span>` : ""}</td><td class="c-sac">${l.sac ? esc(l.sac) : ""}</td><td class="num c-qty">${esc(l.qty)} <span class="unit">${esc(unitWord(l.unit, l.qty))}</span></td><td class="num">${esc(l.rate)}</td>${
           withDiscount ? `<td class="num">${l.discount ? esc(l.discount) : ""}</td>` : ""
         }<td class="num">${esc(l.taxable)}</td></tr>`,
     )
@@ -572,7 +572,9 @@ export const TAX_INVOICE_CSS = `
 .doc--tax-invoice .inv-items .c-rate { width: 22mm; }
 .doc--tax-invoice .inv-items .c-disc { width: 15mm; }
 .doc--tax-invoice .inv-items .c-taxable { width: 25mm; }
-.doc--tax-invoice .inv-items .unit { font-size: var(--print-small); color: var(--color-text-muted); }
+.doc--tax-invoice .inv-items .unit { font-size: var(--print-small); color: var(--color-text-muted); white-space: nowrap; }
+/* the unit is a word ("lump sums", "connectors"): when the quantity and the word don't fit on one line, the word goes under the number */
+.doc--tax-invoice .inv-items td.c-qty { white-space: normal; }
 
 /* the totals stay whole (break-inside: avoid, ./styles.ts) and go over whole when they don't fit under the last line: a "keep with the lines" rule here
    made Chromium split them instead (the total on one page; the balance, the INR values and the signature overleaf) */

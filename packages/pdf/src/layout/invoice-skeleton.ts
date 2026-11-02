@@ -118,7 +118,7 @@ function itemsTable(view: InvoiceView): string {
       (l) =>
         `<tr><td class="c-n num">${esc(l.n)}</td><td class="c-desc"><span class="desc">${esc(l.description)}</span>${
           l.detail ? `<span class="sub">${esc(l.detail)}</span>` : ""
-        }${l.sac ? `<span class="sub">${L.sac} ${esc(l.sac)}</span>` : ""}</td><td class="num">${esc(l.qty)}</td><td>${esc(unitWord(l.unit, l.qty))}</td><td class="num">${esc(
+        }${l.sac ? `<span class="sub">${L.sac} ${esc(l.sac)}</span>` : ""}</td><td class="num">${esc(l.qty)}</td><td class="c-unit">${esc(unitWord(l.unit, l.qty))}</td><td class="num">${esc(
           l.rate,
         )}</td>${withDiscount ? `<td class="num">${l.discount ? esc(l.discount) : ""}</td>` : ""}<td class="num">${esc(l.taxable)}</td>${headCells(
           view,

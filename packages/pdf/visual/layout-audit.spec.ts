@@ -3,7 +3,7 @@
 //   - its page count is the pinned one (`PAGES`), so a layout change that adds or drops a page is seen;
 //   - no page is blank, no page holds only the closing line, no heading ends a page with its content overleaf, and no block that must stay whole
 //     (`WHOLE`: the totals with the signature, the tax summary, the acceptance box, the statement's figures and last lines, the deed's signature block, the
-//     certificate's "Accepted by" box, the header blocks) is split over two pages;
+//     certificate's "Accepted by" box, the header blocks) is split over two pages, and no table cell's text runs out of its cell (the unit words);
 //   - the sweep: the content is pushed down a few millimetres at a time (a spacer under the header blocks) through most of a page, so the end of the
 //     document and every block boundary crosses the foot of a page at every height; at every step the same rules hold (the whole-block rule for the
 //     totals, the acceptance box, the deed's signature and the statement's last lines, the blocks nearest the end).
@@ -20,6 +20,7 @@ import { headingAtFoot, marksPerPage, structure } from "./pdf-pages.ts";
 /** Pages per case (printed 2026-11-02 after the fixes; Chromium of @playwright/test 1.64.1). */
 const PAGES: Record<string, number> = {
   "proposal-short": 3,
+  "proposal-every-unit-word": 3,
   "proposal-long": 9,
   "proposal-usd": 2,
   "proposal-long-names": 3,
@@ -28,6 +29,7 @@ const PAGES: Record<string, number> = {
   "certificate-short": 1,
   "certificate-long": 2,
   "tax-invoice-inr-intra-short": 1,
+  "tax-invoice-inr-intra-every-unit-word": 2,
   "tax-invoice-inr-intra-several-lines-and-notes": 2,
   "tax-invoice-inr-intra-long-signed": 4,
   "tax-invoice-inr-intra-long-signatory-off": 4,
@@ -123,6 +125,24 @@ function faults(pdf: PDFDocument, alone: number): string[] {
 }
 
 /** The blocks of `selectors` the document has, each split over two pages or not (the first match of each; layout unchanged, everything else invisible). */
+/**
+ * The table cells whose text runs out of the cell (print media at the 178 mm text width): a unit word wider than its column, an amount over its
+ * neighbour. Cells whose text may wrap never overflow; this catches the ones held on one line.
+ */
+async function overflowingCells(page: Page, html: string): Promise<string[]> {
+  await page.emulateMedia({ media: "print" });
+  await page.setViewportSize({ width: 673, height: 1000 });
+  await page.setContent(html, { waitUntil: "load" });
+  await page.evaluate("document.fonts.ready.then(() => true)");
+  return (await page.evaluate(`(() => {
+    const out = [];
+    for (const td of document.querySelectorAll("table td, table th")) {
+      if (td.scrollWidth > td.clientWidth + 1) out.push("cell overflows: " + td.textContent.trim().slice(0, 40));
+    }
+    return out;
+  })()`)) as string[];
+}
+
 async function splitBlocks(page: Page, html: string, selectors: string[], css = ""): Promise<string[]> {
   await page.setContent(html, { waitUntil: "load" });
   const present: string[] = [];
@@ -156,7 +176,11 @@ for (const c of AUDIT_CASES) {
       if (out) writeFileSync(join(out, `${slug}.pdf`), bytes);
       const n = pdf.getPageCount();
       console.log(`AUDIT ${slug} pages ${n} marks ${marksPerPage(pdf).join(",")}`);
-      expect([...faults(pdf, alone), ...(await splitBlocks(page, html, WHOLE))]).toEqual([]);
+      expect([
+        ...faults(pdf, alone),
+        ...(await splitBlocks(page, html, WHOLE)),
+        ...(await overflowingCells(page, html)),
+      ]).toEqual([]);
       expect(n).toBe(PAGES[slug]);
     });
 
