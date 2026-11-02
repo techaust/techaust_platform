@@ -6,6 +6,7 @@ import { uuidv7 } from "@techaust/core/ids";
 import { setStubTransport, stubFetch } from "./gateway/config.ts";
 import { createLinkFor } from "./gateway/links.ts";
 import { stubCapture, stubOrder } from "./gateway/paypal.ts";
+import { capturePayPalReturn } from "./gateway/paypal-capture.ts";
 import { dropPayPalToken } from "./gateway/paypal-token.ts";
 import { one } from "./test-helpers.ts";
 import type { J } from "./test-invoices.ts";
@@ -162,3 +163,23 @@ export const ppPaymentOf = (captureId: string) =>
 
 /** The simulator's capture id of an order. */
 export const capOf = (orderId: string) => `C${orderId}`;
+
+/** A confirmed PayPal payment of a USD export invoice (captured on the client's return through the stub): its payment id. */
+export async function paidPayPal(): Promise<string> {
+  const o = await liveOrder();
+  const r = await capturePayPalReturn(env, { checkoutId: o.checkoutId, token: o.orderId });
+  if (r.state !== "paid") throw new Error(`not paid: ${JSON.stringify(r)}`);
+  return `ppl_${capOf(o.orderId)}`;
+}
+
+/** A new PayPal remittance advice's body (a made-up reference). */
+export const adviceBodyOf = () => ({
+  provider: "paypal",
+  kind: "efira",
+  adviceRef: `FIRA-${uuidv7().slice(-10)}`,
+  issuedOn: "2026-11-09",
+  periodFrom: "2026-11-02",
+  periodTo: "2026-11-08",
+  inrTotalMinor: 4_150_000,
+  note: null,
+});
