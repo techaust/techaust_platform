@@ -92,7 +92,7 @@ const PAYMENT_COLS = `p.id, p.client_id, c.code AS client_code, c.display_name A
   p.tds_certificate_no, p.tds_certificate_on, p.proof_kind, p.proof_ref, p.proof_r2_key, p.proof_sha256, p.proof_mime, p.advance_receipt_id, p.note,
   p.recorded_by, (SELECT name FROM staff_users WHERE id = p.recorded_by) AS recorded_by_name, p.recorded_at, p.verified_by,
   (SELECT name FROM staff_users WHERE id = p.verified_by) AS verified_by_name, p.verified_at, p.decision_note, p.withdrawn_by, p.withdrawn_at, p.withdraw_reason,
-  ${paymentProformaSql("p")} AS proforma_id`;
+  p.provider_payment_id, CASE WHEN p.status = 'pending_verification' THEN ${paymentProformaSql("p")} END AS proforma_id`;
 
 export type PaymentRow = {
   id: string;
@@ -132,7 +132,9 @@ export type PaymentRow = {
   withdrawn_by: string | null;
   withdrawn_at: number | null;
   withdraw_reason: string | null;
-  /** M6.3 staging fix 2 (L5): the proforma this entry asks for, by its request or its checkout (`paymentProformaSql`), else null. */
+  /** The gateway's own payment id (Razorpay's `pay_…`, Stripe's `pi_…`), null for a manual entry. */
+  provider_payment_id: string | null;
+  /** M6.3 staging fix 2 (L5): while pending, the proforma this entry asks for, by its request or its checkout (`paymentProformaSql`), else null. */
   proforma_id: string | null;
 };
 
@@ -244,9 +246,11 @@ export const paymentView = (r: PaymentRow) => ({
   withdrawnBy: r.withdrawn_by,
   withdrawnAt: r.withdrawn_at,
   withdrawReason: r.withdraw_reason,
+  /** M6.3 staging fix 1: the gateway's own payment id, for its line beside the reference when the advance dialog takes this entry. */
+  providerPaymentId: r.provider_payment_id,
   /**
-   * M6.3 staging fix 2 (L5): the proforma this entry asks for (its request, or the proforma its online checkout was for), else null. While it is pending, the
-   * screens offer only "Confirm by issuing the tax invoice" on that proforma, never the plain Confirm (the verify route refuses it: `use_advance_invoice`).
+   * M6.3 staging fix 2 (L5): while pending, the proforma this entry asks for (its request, or the proforma its online checkout was for), else null. The screens
+   * then offer only "Confirm by issuing the tax invoice" on that proforma, never the plain Confirm (the verify route refuses it: `use_advance_invoice`).
    */
   proformaId: r.proforma_id,
 });

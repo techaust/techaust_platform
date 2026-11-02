@@ -425,6 +425,86 @@ describe("(3) what stays as it was [ADM-PAY-01, ADM-PAY-05]", () => {
     expect((await json(manual)).error.code).toBe("online_payment_waiting");
   });
 
+  it("the approvals queue and the payment view carry the proforma (pending only) and the gateway's own payment id", async () => {
+    const pf = await stripeProforma();
+    const paymentId = await pf.pay();
+    const view = await json(await call(`/payments/${paymentId}`, { cookie: pf.o.cookie }));
+    expect(view.payment.providerPaymentId).toMatch(/^pi_/);
+    const staff = await sessionFor("staff");
+    const pf2 = await razorpayProforma();
+    const body = recordBody(pf2.clientId, pf2.total, [{ documentId: pf2.id, amountMinor: pf2.total }]);
+    await recorded(staff, body);
+    const list = await json(await call("/approvals?kind=payment", { cookie: pf2.o.cookie }));
+    const item = list.approvals.find((a: { payment: { id: string } }) => a.payment.id === body.id);
+    expect(item.payment.proformaId).toBe(pf2.id);
+    // once decided (here by issuing), no entry names a proforma any more
+    const ok = await advance(pf2, await withPayment(pf2, body.id));
+    expect(ok.status, await ok.clone().text()).toBe(201);
+    const after = await json(await call(`/payments/${body.id}`, { cookie: pf2.o.cookie }));
+    expect(after.payment).toMatchObject({ status: "confirmed", proformaId: null, providerPaymentId: null });
+  });
+});
+
+describe.each(CASES)(
+  "(1b) never on a manual entry while an online payment waits: $name [ADM-INV-10, L5, L12]",
+  ({ make }) => {
+    it("Confirm by issuing with a Staff entry for the proforma is 409 online_payment_waiting (read and freeze paths); the online payment then issues", async () => {
+      const pf = await make();
+      const staff = await sessionFor("staff");
+      const manual = recordBody(pf.clientId, pf.total, [{ documentId: pf.id, amountMinor: pf.total }], {
+        currency: pf.currency,
+        ...(pf.currency === "USD" ? { mode: "swift" } : {}),
+      });
+      await recorded(staff, manual);
+      // the read path: the online payment already waits
+      const paymentId = await pf.pay();
+      const refused = await advance(pf, await withPayment(pf, manual.id));
+      expect(refused.status, await refused.clone().text()).toBe(409);
+      expect((await json(refused)).error).toMatchObject({
+        code: "online_payment_waiting",
+        details: { paymentId },
+      });
+      expect(await childrenOf(pf.id)).toEqual([]);
+      // the online payment itself issues; the Staff entry stays pending for the Owner to reject
+      const ok = await advance(pf, await withPayment(pf, paymentId));
+      expect(ok.status, await ok.clone().text()).toBe(201);
+      expect(
+        (await one<{ status: string }>("SELECT status FROM payments WHERE id = ?1", manual.id))?.status,
+      ).toBe("pending_verification");
+    });
+
+    it("the freeze refuses the Staff entry when the online payment lands between the read and the batch", async () => {
+      const pf = await make();
+      const staff = await sessionFor("staff");
+      const manual = recordBody(pf.clientId, pf.total, [{ documentId: pf.id, amountMinor: pf.total }], {
+        currency: pf.currency,
+        ...(pf.currency === "USD" ? { mode: "swift" } : {}),
+      });
+      await recorded(staff, manual);
+      let landed = "";
+      const raced = countingEnv({
+        race: {
+          when: freezeBatch,
+          act: async () => {
+            landed = await pf.pay();
+          },
+        },
+      });
+      const res = await advance(pf, await withPayment(pf, manual.id), raced.env);
+      expect(res.status, await res.clone().text()).toBe(409);
+      expect((await json(res)).error).toMatchObject({
+        code: "online_payment_waiting",
+        details: { paymentId: landed },
+      });
+      expect(await childrenOf(pf.id)).toEqual([]);
+      expect(
+        (await one<{ status: string }>("SELECT status FROM payments WHERE id = ?1", manual.id))?.status,
+      ).toBe("pending_verification");
+    });
+  },
+);
+
+describe("(3b) the read's cost [Free plan]", () => {
   it("the waiting read is one seek of payments_client", async () => {
     const plan = (
       await env.DB.prepare(`EXPLAIN QUERY PLAN ${ONLINE_PAYMENT_WAITING_SQL}`)

@@ -860,11 +860,11 @@ function AdvanceBody(props: {
       }
       // M6.1 (07-ZH line 13): the reference was recorded before; a waiting entry of it can be confirmed here instead. M6.3 staging fix 1: an online payment
       // waits for this proforma (`online_payment_waiting`, always with its `paymentId`): the same box, whose "Confirm by issuing the tax invoice" reopens the
-      // form with that payment (never `confirmDuplicate`, which the server refuses to take past it).
+      // form with that payment (never `confirmDuplicate`, which the server refuses to take past it). It also answers a manual entry Staff recorded, taken from
+      // the panel while the online payment waits: the box then offers the online payment instead.
       if (
         e instanceof RequestError &&
-        (e.code === "reference_seen" || e.code === "online_payment_waiting") &&
-        !prefill
+        ((e.code === "reference_seen" && !prefill) || e.code === "online_payment_waiting")
       ) {
         const pid = e.extra.details?.paymentId;
         setSeen({ text: payErrorText(e), paymentId: typeof pid === "string" ? pid : null });
@@ -926,7 +926,7 @@ function AdvanceBody(props: {
       // M6.3 staging fix 1: an online payment keeps its gateway's line beside the reference (and a card payment's rate takes the focus), as from the panel
       const online =
         pay.provider !== "manual"
-          ? { provider: pay.provider, mode: pay.mode, providerPaymentId: null }
+          ? { provider: pay.provider, mode: pay.mode, providerPaymentId: pay.providerPaymentId ?? null }
           : null;
       setPrefill({ paymentId, amountMinor: pay.amountMinor, receivedOn: pay.receivedOn, reference, online });
       setForm({ amount: plainAmount(pay.amountMinor, v.currency), date: pay.receivedOn, reference });

@@ -1837,8 +1837,10 @@ export type PaymentView = {
   withdrawnBy: string | null;
   withdrawnAt: number | null;
   withdrawReason: string | null;
+  /** M6.3 staging fix 1: the gateway's own payment id (`pay_…`, `pi_…`), null for a manual entry. Absent from an older API. */
+  providerPaymentId?: string | null;
   /**
-   * M6.3 staging fix 2 (L5): the proforma this entry asks for (its request, or the proforma its online checkout was for), else null. While pending, it is
+   * M6.3 staging fix 2 (L5): while pending, the proforma this entry asks for (its request, or the proforma its online checkout was for), else null. It is then
    * confirmed only by "Confirm by issuing the tax invoice" on that proforma (the verify route answers `use_advance_invoice`). Absent from an older API.
    */
   proformaId?: string | null;
@@ -2094,6 +2096,8 @@ export type PaymentApprovalItem = {
     clientId: string;
     clientCode: string;
     clientName: string;
+    /** M6.3 staging fix 2 (L5): while pending, the proforma it asks for; the queue then offers only "Confirm by issuing the tax invoice". */
+    proformaId?: string | null;
   };
 };
 

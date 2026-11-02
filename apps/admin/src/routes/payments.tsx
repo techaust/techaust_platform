@@ -454,9 +454,9 @@ function PaymentList(props: {
                           </button>
                         )}
                         {/* M6.3 staging fix 2 (L5): an entry asking for a proforma is confirmed only by issuing its tax invoice, never by the plain Confirm */}
-                        {r.proformaId ? (
+                        {pendingDecisionOf(r).kind === "issue" ? (
                           <Link
-                            to={`/invoices/${encodeURIComponent(r.proformaId)}`}
+                            to={`/invoices/${encodeURIComponent(r.proformaId ?? "")}`}
                             className="btn btn--primary"
                           >
                             {PAY_UI.confirmByIssuing}

@@ -156,7 +156,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       // M6.1: the pending payment this confirms, when one is named.
       db
         .prepare(
-          "SELECT p.id, p.kind, p.status, p.client_id, p.currency, p.amount_minor, p.received_on, p.reference_norm, p.recorded_by, c.display_name AS client_name, EXISTS (SELECT 1 FROM json_each(p.requested_allocations) j WHERE json_extract(j.value, '$.documentId') = ?2) AS asks_this FROM payments p JOIN clients c ON c.id = p.client_id WHERE p.id = ?1",
+          "SELECT p.id, p.kind, p.provider, p.status, p.client_id, p.currency, p.amount_minor, p.received_on, p.reference_norm, p.recorded_by, c.display_name AS client_name, EXISTS (SELECT 1 FROM json_each(p.requested_allocations) j WHERE json_extract(j.value, '$.documentId') = ?2) AS asks_this FROM payments p JOIN clients c ON c.id = p.client_id WHERE p.id = ?1",
         )
         .bind(f.paymentId ?? "", id),
       // Early check 2, finding 1 (L12): the newest pending or confirmed payment with this reference, and a pending entry of this client asking for this
@@ -188,6 +188,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       | {
           id: string;
           kind: string;
+          provider: string;
           status: string;
           client_id: string;
           currency: string;
@@ -215,20 +216,21 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
         pending.asks_this !== 1
       )
         return err(c, PAYMENT_MISMATCH, 409);
-    } else {
-      // (5c') M6.3 staging fix 1 (L5; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)): while an online payment waits for this
-      // proforma, its tax invoice is issued only with that payment ("Confirm by issuing the tax invoice"): a new manual receipt would count the same money twice
-      // (staging, 2026-11-02). A hard 409 (`confirmDuplicate` never passes it); the freeze's WHERE holds the same rule, so a payment landing meanwhile refuses too.
-      const waiting = ctx.extra[5]?.results[0] as { id: string } | undefined;
-      if (waiting) return err(c, ONLINE_PAYMENT_WAITING, 409, { paymentId: waiting.id });
-      if (f.confirmDuplicate !== true) {
-        // (5d) Early check 2, finding 1 (L12; 07-ZH line 13): a reference already on a pending or confirmed payment is a soft 409 the Owner can confirm past.
-        // The freeze's WHERE holds the same rule, so a payment recorded meanwhile refuses the batch too.
-        const seen = ctx.extra[3]?.results[0] as SeenRow | undefined;
-        if (seen) {
-          const ask = ctx.extra[4]?.results[0] as { id: string } | undefined;
-          return refusedSeen(c, seen, ask?.id ?? null);
-        }
+    }
+    // (5c') M6.3 staging fix 1 (L5; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)): while an online payment waits for this
+    // proforma, its tax invoice is issued only with an online payment ("Confirm by issuing the tax invoice"), never as a new manual receipt nor on a manual entry
+    // Staff recorded (perhaps for the same card money): either would count the money twice (staging, 2026-11-02). A hard 409 (`confirmDuplicate` never passes
+    // it); the freeze's WHERE holds the same rule, so a payment landing meanwhile refuses too.
+    const manualReceipt = f.paymentId === undefined || pending?.provider === "manual";
+    const waiting = ctx.extra[5]?.results[0] as { id: string } | undefined;
+    if (waiting && manualReceipt) return err(c, ONLINE_PAYMENT_WAITING, 409, { paymentId: waiting.id });
+    if (f.paymentId === undefined && f.confirmDuplicate !== true) {
+      // (5d) Early check 2, finding 1 (L12; 07-ZH line 13): a reference already on a pending or confirmed payment is a soft 409 the Owner can confirm past.
+      // The freeze's WHERE holds the same rule, so a payment recorded meanwhile refuses the batch too.
+      const seen = ctx.extra[3]?.results[0] as SeenRow | undefined;
+      if (seen) {
+        const ask = ctx.extra[4]?.results[0] as { id: string } | undefined;
+        return refusedSeen(c, seen, ask?.id ?? null);
       }
     }
     // (6) the amount against what is left
@@ -583,7 +585,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
         fy,
         norm,
         checkSeen: f.paymentId === undefined && f.confirmDuplicate !== true,
-        checkOnline: f.paymentId === undefined,
+        checkOnline: manualReceipt,
         amountMinor: f.amountMinor,
         expectedProformaUpdatedAt: d.updated_at,
         maxNumber: maxNumber(format),
@@ -660,7 +662,7 @@ type Expectations = {
   norm: string;
   /** No `paymentId` and no `confirmDuplicate`: the freeze also refused a reference already on a pending or confirmed payment (finding 1). */
   checkSeen: boolean;
-  /** No `paymentId`: the freeze also refused while an online payment waits for the proforma (M6.3 staging fix 1). */
+  /** No `paymentId`, or a manual entry's: the freeze also refused while an online payment waits for the proforma (M6.3 staging fix 1). */
   checkOnline: boolean;
   amountMinor: number;
   expectedProformaUpdatedAt: number;

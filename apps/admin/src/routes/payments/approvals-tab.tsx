@@ -8,7 +8,7 @@ import { EmptyState } from "../../components/display.tsx";
 import { ClipboardCheck, Search } from "../../components/icons.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
-import { amountText, PAY_COPY, PAY_UI, payErrorText } from "../../lib/payments.ts";
+import { amountText, PAY_COPY, PAY_UI, payErrorText, pendingDecisionOf } from "../../lib/payments.ts";
 import { paymentHref } from "./panel.tsx";
 import { day, PaymentPill } from "./parts.tsx";
 
@@ -81,10 +81,8 @@ export function PaymentApprovals(props: { owner: boolean; state: string | null }
           props.owner
             ? (r) =>
                 r.payment.status === "pending_verification" ? (
-                  <Link to={paymentHref(r.payment.id)} className="btn btn--secondary">
-                    {PAY_COPY.confirm}
-                    <span className="visually-hidden">{` ${r.payment.clientName} ${day(r.payment.receivedOn)}`}</span>
-                  </Link>
+                  // M6.3 staging fix 2 (L5): an entry asking for a proforma is confirmed only by issuing its tax invoice, from the proforma's page
+                  <PendingAction payment={r.payment} />
                 ) : null
             : undefined
         }
@@ -109,5 +107,23 @@ export function PaymentApprovals(props: { owner: boolean; state: string | null }
         </button>
       )}
     </div>
+  );
+}
+
+/** The queue's action for a pending entry: "Confirm by issuing the tax invoice" on its proforma when it asks for one (L5), else "Confirm" (the entry on Payments). */
+function PendingAction(props: { payment: PaymentApprovalItem["payment"] }) {
+  const p = props.payment;
+  const decision = pendingDecisionOf(p);
+  const hidden = <span className="visually-hidden">{` ${p.clientName} ${day(p.receivedOn)}`}</span>;
+  return decision.kind === "issue" ? (
+    <Link to={`/invoices/${encodeURIComponent(decision.proformaId)}`} className="btn btn--secondary">
+      {PAY_UI.confirmByIssuing}
+      {hidden}
+    </Link>
+  ) : (
+    <Link to={paymentHref(p.id)} className="btn btn--secondary">
+      {PAY_COPY.confirm}
+      {hidden}
+    </Link>
   );
 }
