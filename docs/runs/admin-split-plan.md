@@ -12,6 +12,7 @@ Session: `admin-split-plan` (cloud). Branch: `docs/admin-split-plan` (from `main
 **Owner's answers (2026-11-02, through the main session):**
 - **Q1 A** ("New step, reordered (Recommended)"): the staging deploy order becomes admin API, **admin invoices (new)**, admin front, **jobs**, **admin finance**, portal, website. The health check covers all four admin Workers. (The main session relayed it as "New step, reordered (Recommended)", the round 1 wording of option A.)
 - **Q2 A** ("Yes, roll back, tell me after (Recommended)"): if the split misbehaves on staging, the lead may roll the staging admin front, admin finance and jobs Workers back to their previous versions straight away and tell the owner afterwards (staging only), as the M5.0 rule of 2026-10-27. The Q1 order has no gap on this deploy, so this is a safety net only.
+  - **Rollback order (lead, 2026-11-03, from the early check's finding 2; runbook `environments.md`):** admin finance first, then jobs, then the admin front; the invoices Worker and the API stay in place.
 
 - **Q3 A** ("Yes, move it in M6.5 (Recommended)", 2026-11-02): keep the Q1 order for the split; in the M6.5 PR the finance step moves back right after admin invoices (admin API, admin invoices, admin finance, admin front, portal, jobs, website) and stays there.
 
@@ -538,3 +539,9 @@ Like the M6.4 RPCs, the advance's first call is above the 2.5 ms local target, s
 
 ### Dev servers
 None started.
+
+## Lead on B2 (2026-11-03)
+Usage: builder B2 claude-opus-5-5/high (skills `cloudflare:workers-best-practices`, `cloudflare:wrangler`, `cloudflare:workers-profiling`). Merged with `origin/main` (#165, docs). `pnpm check` and `pnpm test` exit 0 on B2's tip (admin 4,425, web 930, jobs 644, portal 782, core 2,324, db 824, pdf 404).
+- **Q1 (`BillingJobs` dry run):** a follow-up after the staging cold reading of `care.bill` (a daily cron call; threading ids through `care-billing.ts` is a wider change on a money path than this split needs).
+- **Q2 (`finance-rpc.ts` in the fixture scan):** the fixture writer swaps the PayPal sandbox token for a made-up one (as `madeUpGatewayIds`) and the scan covers the file; in the fix round if the review raises nothing else, else a follow-up.
+- The rollback order is copied next to Q2 at the top of this file.
