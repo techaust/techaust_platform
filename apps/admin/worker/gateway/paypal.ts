@@ -69,6 +69,11 @@ export type PayPalConfig = {
   /** `PAYMENTS_LIVE_ALLOWED` as the Worker var arrives. */
   liveFlag: unknown;
   fetch: typeof fetch;
+  /**
+   * M6.4 (L31, early check 2 finding 4): false only for the start-up dry run's made-up transport (`warm-rpc.ts`): global scope refuses timers, so the calls
+   * go without `AbortSignal.timeout`. Every real client keeps its timeouts.
+   */
+  timeouts?: boolean;
 };
 
 export type PayPalApi = {
@@ -104,6 +109,8 @@ export function payPalApi(cfg: PayPalConfig): PayPalApi {
       const token = await payPalToken(
         { origin, clientId: cfg.clientId as string, clientSecret: cfg.clientSecret as string },
         cfg.fetch,
+        undefined,
+        cfg.timeouts !== false,
       );
       if (!token.ok) return token.code === "network" ? { status: 0, body: null } : { gate: token.code };
       let res: Response;
@@ -118,7 +125,7 @@ export function payPalApi(cfg: PayPalConfig): PayPalApi {
             ...(o.prefer ? { Prefer: o.prefer } : {}),
           },
           ...(o.body === undefined ? {} : { body: o.body }),
-          signal: AbortSignal.timeout(PAYPAL_TIMEOUT_MS),
+          ...(cfg.timeouts === false ? {} : { signal: AbortSignal.timeout(PAYPAL_TIMEOUT_MS) }),
         });
       } catch {
         return { status: 0, body: null };
@@ -456,11 +463,11 @@ export function stubOrder(
   };
 }
 
-const stubJson = (status: number, body: unknown) =>
-  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+type StubAnswer = { status: number; body: unknown };
+const stubJson = (status: number, body: unknown): StubAnswer => ({ status, body });
 
-/** A `fetch` that answers PayPal's five calls as the Orders v2 reference shows them (sandbox). Locally only. */
-export const payPalStubFetch: typeof fetch = async (input, init) => {
+/** The simulator's answer to one PayPal call (its status and JSON body), with no Response made (the start-up dry run uses it at global scope too). */
+export function payPalStubAnswer(input: RequestInfo | URL, init?: RequestInit): StubAnswer {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
   if (`${url.protocol}//${url.host}` !== PAYPAL_API_ORIGINS.test)
     return stubJson(404, { name: "RESOURCE_NOT_FOUND" });
@@ -509,6 +516,15 @@ export const payPalStubFetch: typeof fetch = async (input, init) => {
     return c ? stubJson(200, c) : stubJson(404, { name: "RESOURCE_NOT_FOUND" });
   }
   return stubJson(404, { name: "RESOURCE_NOT_FOUND" });
+}
+
+/** A `fetch` that answers PayPal's five calls as the Orders v2 reference shows them (sandbox). Locally only. */
+export const payPalStubFetch: typeof fetch = async (input, init) => {
+  const a = payPalStubAnswer(input, init);
+  return new Response(JSON.stringify(a.body), {
+    status: a.status,
+    headers: { "Content-Type": "application/json" },
+  });
 };
 
 /** Whether a stored approval URL may be handed back to the client (`retryUrl`, 07-ZN line 8): PayPal's page for this very order only. */

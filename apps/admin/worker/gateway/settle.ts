@@ -159,11 +159,14 @@ export async function reviewOnly(
   },
   /** M6.4: who acts (the contact on PayPal's return, a member's "Check now"); else the webhook for an event, the system for a refresh. */
   who?: Actor,
+  /** M6.4 (L31, early check 2 finding 4): where new ids come from (the start-up dry run passes made-up ones: global scope refuses random values). */
+  ids: () => string = uuidv7,
 ): Promise<ProcessEventResult> {
-  const reviewId = uuidv7();
+  const reviewId = ids();
   const eventId = eventIdOf(a.cause);
   await mutateSystem(env, {
     ...(who ?? { actorType: a.cause.kind === "event" ? "webhook" : "system" }),
+    auditId: ids(),
     action: "payment.gateway_review",
     entityType: eventId ? "webhook_event" : "review_item",
     entityId: eventId ?? reviewId,

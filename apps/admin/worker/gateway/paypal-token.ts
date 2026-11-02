@@ -37,6 +37,8 @@ export async function payPalToken(
   k: { origin: string; clientId: string; clientSecret: string },
   f: typeof fetch,
   now = Date.now(),
+  /** M6.4 (L31): false only for the start-up dry run's made-up transport (global scope refuses timers, so no `AbortSignal.timeout`). */
+  timeouts = true,
 ): Promise<TokenResult> {
   const keyHash = await keyHashOf(k.origin, k.clientId, k.clientSecret);
   if (cached && cached.origin === k.origin && cached.keyHash === keyHash && cached.expiresAt > now)
@@ -51,7 +53,7 @@ export async function payPalToken(
         Accept: "application/json",
       },
       body: "grant_type=client_credentials",
-      signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
+      ...(timeouts ? { signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS) } : {}),
     });
   } catch {
     return { ok: false, code: "network" };

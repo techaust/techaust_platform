@@ -63,10 +63,13 @@ export async function createLink(
   }
 }
 
-/** `refreshForClient` over the binding (best effort: any failure is `retry`, and the page simply shows what it has). */
+/**
+ * `refreshForClient` over the binding (best effort: any failure is `retry`, and the page simply shows what it has). M6.4 (early check 2 finding 3): `checkoutId`,
+ * the signed-in page's PayPal return; the answer then carries `payPalReturn` (checked by the core guard: a state only).
+ */
 export async function refreshForClient(
   env: object,
-  args: { clientId: string; documentId: string },
+  args: { clientId: string; documentId: string; checkoutId?: string },
 ): Promise<RefreshResult> {
   try {
     const b = bindingOf(env);
@@ -157,8 +160,9 @@ export function payAnswer(
       return answer(c, 400, e(r.error, maximumLine(moneyOf(r.maximumMinor, provider))), {
         maximumMinor: r.maximumMinor ?? 0,
       });
+    // Early check 2 finding 5: the line of the gateway that holds the money when the finance Worker names it, else the one the client picked.
     case "payment_processing":
-      return answer(c, 409, e(r.error, PROCESSING_LINE[provider]));
+      return answer(c, 409, e(r.error, PROCESSING_LINE[r.provider ?? provider]));
     case "amount_not_whole_rupee":
       return answer(c, 400, e(r.error, "Enter a whole number of rupees."));
     case "link_in_progress":

@@ -198,9 +198,14 @@ export const OWNERS_WITHOUT_EDF_BELL = `SELECT u.id, u.email, u.name FROM staff_
 export const EDF_BELLS_INSERT = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
   SELECT 'n_' || lower(hex(randomblob(16))), json_extract(j.value, '$.u'), 'edf.due', 'report', ?1, ?2, ?3 FROM json_each(?4) j`;
 
-/** M6.4 (S9; staff words, the lead under the owner's delegation once placed; the finance Worker keeps the same words in gateway/messages.ts): the monthly advice reminder. */
+/**
+ * M6.4 (S9; staff words approved by the lead under the owner's delegation, early check 2 finding 8; the finance Worker keeps the same words in
+ * gateway/messages.ts): the monthly advice reminder, one payment in the singular.
+ */
 export const adviceBellTitle = (count: number, month: string) =>
-  `${count} PayPal payments from ${month} have no remittance advice yet.`;
+  count === 1
+    ? `1 PayPal payment from ${month} has no remittance advice yet.`
+    : `${count} PayPal payments from ${month} have no remittance advice yet.`;
 /** One bell per active owner and month (`?1` entity `advice:YYYY-MM`, `?2` title, `?3` link); a redelivery adds none (`notifications_user_event`). */
 export const ADVICE_BELLS_INSERT = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
   SELECT 'n_' || lower(hex(randomblob(16))), o.id, 'payment.advice_missing', 'report', ?1, ?2, ?3 FROM staff_users o WHERE o.role = 'owner' AND o.status = 'active'`;

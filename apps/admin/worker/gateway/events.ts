@@ -2,6 +2,7 @@
 // row's own `provider` (Razorpay only in M6.2; M6.3 and M6.4 add theirs here). The jobs Worker's queue consumer calls it; each call is one unit of work. The
 // event row holds only whitelisted facts (L8; 08-C RB-40): the link and payment ids are read from there, everything else is re-fetched from Razorpay.
 import type { ProcessEventResult } from "@techaust/core/gateway-rpc";
+import { uuidv7 } from "@techaust/core/ids";
 import {
   checkoutEndStatement,
   EVENT_ADVANCE_WAITING_SQL,
@@ -10,7 +11,7 @@ import {
   webhookEventMoveStatement,
 } from "@techaust/db/gateway";
 import { gatewayModeOf, razorpayOf } from "./config.ts";
-import { processPayPalEvent } from "./paypal-capture.ts";
+import { type Ids, processPayPalEvent } from "./paypal-capture.ts";
 import type { RazorpayApi } from "./razorpay.ts";
 import {
   type CheckoutRow,
@@ -85,6 +86,8 @@ export async function processEvent(
   env: GatewayEnv,
   eventId: string,
   now = Date.now(),
+  /** M6.4 (L31): where a PayPal event's new ids come from (`uuidv7`; the start-up dry run passes made-up ones). */
+  ids: Ids = uuidv7,
 ): Promise<ProcessEventResult> {
   const db = env.DB;
   const [, read, waiting] = await db.batch([
@@ -104,7 +107,7 @@ export async function processEvent(
   // M6.3: a Stripe event has its own path (re-fetch, judge, record; `stripe-settle.ts`).
   if (row.provider === "stripe") return processStripeEvent(env, row, now);
   // M6.4: a PayPal event (capture, held, declined, reversed; `paypal-capture.ts`).
-  if (row.provider === "paypal") return processPayPalEvent(env, row, now);
+  if (row.provider === "paypal") return processPayPalEvent(env, row, now, ids);
   if (row.provider !== "razorpay") {
     await webhookEventMoveStatement(db, {
       id: row.id,

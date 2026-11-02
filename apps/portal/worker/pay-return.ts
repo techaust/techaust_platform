@@ -40,7 +40,7 @@ const UNAVAILABLE = {
   message: "PayPal isn't available right now. You can pay another way shown on this page.",
 };
 
-/** `capturePayPalReturn` over the `ADMIN_PAY` binding, the answer checked; "unavailable" with no binding, "bad" for a wrong answer or a failure. */
+/** `capturePayPalReturn` over the `ADMIN_PAY` binding, the answer checked; "unavailable" with no binding, "bad" for a wrong answer or a failure (answered `processing`). */
 async function captureReturn(
   env: object,
   args: { checkoutId: string; token: string | null },
@@ -84,7 +84,10 @@ export const payReturn = new Hono<AppEnv>().post(
     }
     const r = await captureReturn(c.env, { checkoutId, token });
     if (r === "unavailable") return err(c, UNAVAILABLE, 503);
-    if (r === "bad") return err(c, { ...UNAVAILABLE, code: "gateway_error" }, 502);
+    // Early check 2 finding 1: the call failed or answered wrongly AFTER the finance Worker may have reached PayPal (a D1 error in the settle batch, a CPU
+    // limit): PayPal may have captured, and the claim then settles it later. So never "pay another way" here: "Checking your payment…" (07-ZN line 4), the
+    // page polls, and nothing is counted toward `p:fail:`.
+    if (r === "bad") return c.json({ state: "processing" });
     // An unknown checkout (or a token that isn't its order) counts like a failed link.
     if (r.state === "not_found")
       await db

@@ -30,7 +30,13 @@ import { mutateSystem } from "../system.ts";
 import { envText, gatewayModeOf, portalUrlOf, razorpayOf, transportOf } from "./config.ts";
 import { sendNext, staleCanceller } from "./events.ts";
 import { type LinkContext, linkContext, type MakeLinkArgs, type MakeLinkResult } from "./link-context.ts";
-import { type CaptureSource, refreshPayPalCheckout } from "./paypal-capture.ts";
+import {
+  type CaptureSource,
+  type Ids,
+  payPalReturnOf,
+  refreshPayPalCheckout,
+  refreshResultOfReturn,
+} from "./paypal-capture.ts";
 import { makePayPalLink } from "./paypal-links.ts";
 import type { RazorpayApi } from "./razorpay.ts";
 import { type CheckoutRow, endCheckout, type GatewayEnv, settlePayment } from "./settle.ts";
@@ -135,7 +141,13 @@ export const LINK_STATE_SQL = `SELECT c.status, (SELECT p.id FROM payments p IND
  * Make (or reuse) a payment link. Never throws for a refusal: the answer names it (the portal and the route map it to their status). The shared reads and rules
  * (`linkContext`), then the gateway's own flow: Razorpay's below, Stripe's in `stripe-links.ts` (M6.3).
  */
-export async function makeLink(env: GatewayEnv, a: MakeLinkArgs, now = Date.now()): Promise<MakeLinkResult> {
+export async function makeLink(
+  env: GatewayEnv,
+  a: MakeLinkArgs,
+  now = Date.now(),
+  /** M6.4 (L31): where a new checkout's and audit row's ids come from (PayPal's flow; the start-up dry run passes made-up ones). */
+  ids: Ids = uuidv7,
+): Promise<MakeLinkResult> {
   const x = await linkContext(env, a, now);
   if (!x.ok) return x.refusal;
   // M6.4 (L23): every gateway by name; an unknown one is refused, never sent down another's path.
@@ -145,7 +157,7 @@ export async function makeLink(env: GatewayEnv, a: MakeLinkArgs, now = Date.now(
     case "stripe":
       return makeStripeLink(env, a, x.ctx, now);
     case "paypal":
-      return makePayPalLink(env, a, x.ctx, now);
+      return makePayPalLink(env, a, x.ctx, now, ids);
     default:
       return { ok: false, error: "gateway_unavailable" };
   }
@@ -373,18 +385,28 @@ async function makeRazorpayLink(
 }
 
 /** The portal's `createLink`: the session's contact or the emailed link's token, never both (checked by `isCreateLinkArgs` at the entrypoint). */
-export function createLinkFor(env: GatewayEnv, args: CreateLinkArgs): Promise<MakeLinkResult> {
-  return makeLink(env, {
-    provider: args.provider,
-    clientId: args.clientId,
-    documentId: args.documentId,
-    amountMinor: args.amountMinor,
-    actor:
-      args.contactId !== null
-        ? { kind: "contact", contactId: args.contactId }
-        : { kind: "token", tokenHash: args.tokenHash as string },
-    returnTo: args.returnTo,
-  });
+export function createLinkFor(
+  env: GatewayEnv,
+  args: CreateLinkArgs,
+  now = Date.now(),
+  ids: Ids = uuidv7,
+): Promise<MakeLinkResult> {
+  return makeLink(
+    env,
+    {
+      provider: args.provider,
+      clientId: args.clientId,
+      documentId: args.documentId,
+      amountMinor: args.amountMinor,
+      actor:
+        args.contactId !== null
+          ? { kind: "contact", contactId: args.contactId }
+          : { kind: "token", tokenHash: args.tokenHash as string },
+      returnTo: args.returnTo,
+    },
+    now,
+    ids,
+  );
 }
 
 /**
@@ -398,10 +420,13 @@ export async function refreshCheckout(
   now = Date.now(),
   /** M6.4: who asks (the audit actor of a PayPal capture): the sweep (default), the portal's client, a member's "Check now". */
   src: CaptureSource = { kind: "sweep" },
+  /** M6.4 (L31): where a PayPal capture's new ids come from (the start-up dry run passes made-up ones). */
+  ids: Ids = uuidv7,
 ): Promise<RefreshResult> {
   // M6.4 (L23): every gateway by name (`=== "razorpay"`, never a two-way default).
   if (checkout.provider === "stripe") return { result: await refreshStripeCheckout(env, checkout, now) };
-  if (checkout.provider === "paypal") return { result: await refreshPayPalCheckout(env, checkout, src, now) };
+  if (checkout.provider === "paypal")
+    return { result: await refreshPayPalCheckout(env, checkout, src, now, ids) };
   if (checkout.provider !== "razorpay") return { result: "no_open_link" };
   const db = env.DB;
   if (!checkout.provider_link_id || (checkout.status !== "live" && checkout.status !== "stale"))
@@ -446,20 +471,42 @@ export async function refreshCheckoutById(
   env: GatewayEnv,
   checkoutId: string,
   now = Date.now(),
+  ids: Ids = uuidv7,
 ): Promise<RefreshResult> {
   const c = await env.DB.prepare(`SELECT ${CHECKOUT_COLS} FROM checkout_sessions c WHERE c.id = ?1`)
     .bind(checkoutId)
     .first<CheckoutRow>();
   if (!c) return { result: "no_open_link" };
-  return refreshCheckout(env, c, now);
+  return refreshCheckout(env, c, now, undefined, ids);
 }
 
-/** The portal's `refreshForClient`: the document's newest open link, bound to the client of the session. */
+/** One checkout of this client's document (?1 checkout, ?2 document, ?3 client), whatever its state: the signed-in page's PayPal return names it. */
+export const CLIENT_CHECKOUT_SQL = `SELECT ${CHECKOUT_COLS} FROM checkout_sessions c WHERE c.id = ?1 AND c.document_id = ?2 AND c.client_id = ?3`;
+
+/**
+ * The portal's `refreshForClient`: the document's newest open link, bound to the client of the session. M6.4 (early check 2 finding 3): with `checkoutId` (the
+ * signed-in page's return from PayPal, `?pay=paypal&c=<id>`), THAT checkout, bound to the session's client and the document (another client's, or another
+ * document's, is `no_open_link`, as an unknown one): a PayPal one goes through the capture path as the client and answers its state too (`payPalReturn`, the
+ * emailed link's words, 07-ZN lines 4 to 11), with no refresh claim (as the emailed link's return: the capture claim serialises it, and an ended row answers by
+ * its state with no call); any other gateway's is refreshed as before.
+ */
 export async function refreshForClient(
   env: GatewayEnv,
-  a: { clientId: string; documentId: string },
+  a: { clientId: string; documentId: string; checkoutId?: string },
   now = Date.now(),
+  ids: Ids = uuidv7,
 ): Promise<RefreshResult> {
+  if (a.checkoutId !== undefined) {
+    const named = await env.DB.prepare(CLIENT_CHECKOUT_SQL)
+      .bind(a.checkoutId, a.documentId, a.clientId)
+      .first<CheckoutRow>();
+    if (!named) return { result: "no_open_link" };
+    if (named.provider === "paypal") {
+      const payPalReturn = await payPalReturnOf(env, named, now, ids);
+      return { result: refreshResultOfReturn(payPalReturn.state), payPalReturn };
+    }
+    return refreshCheckout(env, named, now, { kind: "return" }, ids);
+  }
   const c = await env.DB.prepare(
     `SELECT ${CHECKOUT_COLS}
        FROM checkout_sessions c INDEXED BY checkout_sessions_document WHERE c.document_id = ?1 AND c.client_id = ?2 AND c.status IN ('live', 'stale', 'capture_pending')
@@ -468,6 +515,6 @@ export async function refreshForClient(
     .bind(a.documentId, a.clientId)
     .first<CheckoutRow>();
   if (!c) return { result: "no_open_link" };
-  // M6.4 (L19): the signed-in return from PayPal is this refresh (`GET /invoices/:id?refresh=1`): a PayPal order is captured here, by the client.
-  return refreshCheckout(env, c, now, { kind: "return" });
+  // M6.4 (L19): the signed-in poll (`GET /invoices/:id?refresh=1`) reaches a PayPal order's capture too, by the client.
+  return refreshCheckout(env, c, now, { kind: "return" }, ids);
 }

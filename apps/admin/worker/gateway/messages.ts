@@ -35,9 +35,14 @@ export const bellPaidByPayPal = (client: string, amountMinor: number, number: st
 /** S10: the PayPal signature bell (the jobs Worker writes it, `BELL_SIGNATURES_PAYPAL` in apps/jobs/src/hooks/paypal.ts, in the same words). */
 export const BELL_SIGNATURES_PAYPAL =
   "PayPal webhook signatures failed 5 times in an hour. Check the webhook ID.";
-/** S9: the monthly advice reminder (the jobs Worker writes it on `edf.reminder`, `adviceBellTitle` in apps/jobs/src/reports.ts, in the same words). */
+/**
+ * S9: the monthly advice reminder (the jobs Worker writes it on `edf.reminder`, `adviceBellTitle` in apps/jobs/src/reports.ts, in the same words); one payment in
+ * the singular (early check 2 finding 8, approved by the lead under the owner's delegation).
+ */
 export const bellAdvicesMissing = (count: number, month: string) =>
-  `${count} PayPal payments from ${month} have no remittance advice yet.`;
+  count === 1
+    ? `1 PayPal payment from ${month} has no remittance advice yet.`
+    : `${count} PayPal payments from ${month} have no remittance advice yet.`;
 
 // ---- S20: review reasons ----------------------------------------------------------------------------------------------------------------------------------
 // In `reasons.ts` (pure), so the admin SPA's "Needs review" list reads the same words; re-exported here for the Worker.

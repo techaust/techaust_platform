@@ -134,8 +134,24 @@ export async function payPalModeOfSettings(db: D1Database): Promise<"test" | "li
   return cachedSetting("gateways", row ?? undefined).paypal.mode;
 }
 
+/**
+ * M6.4 (L31, early check 2 finding 4): the start-up dry run's made-up PayPal transport (`warm-rpc.ts`), carried on its made-up env under this symbol. No real
+ * env can carry it (a Worker's bindings and vars are string-keyed), so a deployed request never reaches it; only the dry run's env has it.
+ */
+export const WARM_PAYPAL_TRANSPORT: unique symbol = Symbol("warm-paypal-transport");
+
 /** The PayPal client for this request (M6.4), or null when this Worker has no transport for PayPal (503 `gateway_unavailable`). */
 export function payPalOf(env: object, settingsMode: "test" | "live"): PayPalApi | null {
+  const warm: unknown = Reflect.get(env, WARM_PAYPAL_TRANSPORT);
+  if (typeof warm === "function")
+    return payPalApi({
+      clientId: envText(env, "PAYPAL_CLIENT_ID"),
+      clientSecret: envText(env, "PAYPAL_CLIENT_SECRET"),
+      settingsMode,
+      liveFlag: envText(env, "PAYMENTS_LIVE_ALLOWED"),
+      fetch: warm as typeof fetch,
+      timeouts: false,
+    });
   const transport = transportOf(env, "paypal");
   if (transport === "unset") return null;
   return payPalApi({

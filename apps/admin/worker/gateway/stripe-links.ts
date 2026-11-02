@@ -132,7 +132,8 @@ export async function endStripeSession(
     r.result === "duplicate" ||
     r.result === "needs_review"
   )
-    return { ok: false, refusal: { ok: false, error: "payment_processing" } };
+    // Early check 2 finding 5: the money waiting is Stripe's, whichever gateway the client picked.
+    return { ok: false, refusal: { ok: false, error: "payment_processing", provider: "stripe" } };
   return { ok: false, refusal: { ok: false, error: "gateway_error" } };
 }
 
@@ -190,7 +191,7 @@ export async function makeStripeLink(
     } else {
       if (limited) return { ok: false, error: "too_many_links" };
       if (!(await endReplacedLocally(env, open, actorOf, a.documentId, now)))
-        return { ok: false, error: "payment_processing" };
+        return { ok: false, error: "payment_processing", provider: "paypal" };
       replacedCheckoutId = open.id;
     }
   } else if (open) {

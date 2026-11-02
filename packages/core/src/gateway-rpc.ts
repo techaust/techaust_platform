@@ -121,6 +121,11 @@ export type CreateLinkResult =
       /** M6.3: `amount_above_maximum`'s limit (minor units). */
       readonly maximumMinor?: number;
       readonly reason?: string;
+      /**
+       * M6.4 (early check 2 finding 5): with `payment_processing`, the gateway holding the money when it is known (a claimed PayPal capture, a Stripe session found
+       * complete, a gateway payment waiting), so the client reads THAT gateway's line, not the one they picked.
+       */
+      readonly provider?: RpcGateway;
     };
 
 export const REFRESH_RESULTS = [
@@ -131,11 +136,26 @@ export const REFRESH_RESULTS = [
   "needs_review",
   "retry",
 ] as const;
-export type RefreshResult = { readonly result: (typeof REFRESH_RESULTS)[number] };
+export type RefreshResult = {
+  readonly result: (typeof REFRESH_RESULTS)[number];
+  /**
+   * M6.4 (early check 2 finding 3): the signed-in page's return from PayPal names its checkout (`refreshForClient` with `checkoutId`); the capture's state then
+   * comes back as the emailed link's return route answers it (07-ZN lines 4 to 11), so the page can show Declined, Not completed, Changed or Expired.
+   */
+  readonly payPalReturn?: CapturePayPalReturnResult;
+};
 
 export interface PortalPaymentsApi {
   createLink(args: CreateLinkArgs): Promise<CreateLinkResult>;
-  refreshForClient(args: { clientId: string; documentId: string }): Promise<RefreshResult>;
+  /**
+   * The document's newest open link refreshed (bound to the session's client). M6.4 (early check 2 finding 3): with `checkoutId` (the signed-in page's PayPal
+   * return, `?pay=paypal&c=<id>`), THAT checkout, bound to the client and the document; a PayPal one answers `payPalReturn` too.
+   */
+  refreshForClient(args: {
+    clientId: string;
+    documentId: string;
+    checkoutId?: string;
+  }): Promise<RefreshResult>;
   /**
    * M6.4 (L2, L19): the client came back from PayPal's page: capture checkout `checkoutId` on the server now (ADR 0008: the return itself proves nothing; only
    * PayPal's capture answer moves money). No session is needed (the capture only ever takes what the client approved, for a document that can still take it);
@@ -207,12 +227,15 @@ export function isCreateLinkResult(v: unknown): v is CreateLinkResult {
     optNumber(v.minimumMinor) &&
     optNumber(v.balanceMinor) &&
     optNumber(v.maximumMinor) &&
-    (v.reason === undefined || typeof v.reason === "string")
+    (v.reason === undefined || typeof v.reason === "string") &&
+    (v.provider === undefined || isRpcGateway(v.provider))
   );
 }
 
 export function isRefreshResult(v: unknown): v is RefreshResult {
-  return isObj(v) && (REFRESH_RESULTS as readonly unknown[]).includes(v.result);
+  if (!isObj(v) || !(REFRESH_RESULTS as readonly unknown[]).includes(v.result)) return false;
+  if (Object.keys(v).some((k) => k !== "result" && k !== "payPalReturn")) return false;
+  return v.payPalReturn === undefined || isCapturePayPalReturnResult(v.payPalReturn);
 }
 
 /** The arguments of `createLink` are well formed (a known gateway, ids, a positive safe amount, exactly one of contact or token, a known return page). */

@@ -107,7 +107,7 @@ describe("Stripe Checkout links [POR-06, L4, L7, L9; run file C PortalPayments]"
         : null,
     );
     const r = await stripeLink(s, s.documentId, 20_000);
-    expect(r).toEqual({ ok: false, error: "payment_processing" });
+    expect(r).toEqual({ ok: false, error: "payment_processing", provider: "stripe" });
     expect((await stripePaymentOf(piOf(s.sessionId)))?.status).toBe("confirmed");
     expect((await checkoutOf(s.sessionId))?.status).toBe("paid");
     // and the document, paid in full, takes no new session
@@ -578,6 +578,7 @@ describe("a USD proforma paid by card waits for the Owner [Q1 A, ADM-INV-10; 08-
       {
         ok: false,
         error: "payment_processing",
+        provider: "stripe",
       },
     );
     // "Confirm by issuing the tax invoice": prefilled amount, day and reference, the rate typed by the Owner

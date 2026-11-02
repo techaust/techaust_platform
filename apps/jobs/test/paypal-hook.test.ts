@@ -16,7 +16,7 @@ import {
   resetPayPalCertCache,
 } from "../src/hooks/paypal.ts";
 import { HOOK_MAX_BYTES } from "../src/hooks/shared.ts";
-import { processEdfReminder } from "../src/reports.ts";
+import { adviceBellTitle, processEdfReminder } from "../src/reports.ts";
 import { fakes, logs, makeEnv, staff, useFakes } from "./billing-fixtures.ts";
 import { type TestSigner, testSigner } from "./paypal-cert.ts";
 
@@ -493,7 +493,16 @@ describe("the monthly advice reminder rides edf.reminder [L12, S9; ADM-INV-17]",
     await processEdfReminder(makeEnv(), { v: 1, kind: "edf.reminder", year: 2031, month: 5 });
     const first = (await bells()).results.filter((b) => b.user_id === owner.id);
     expect(first).toHaveLength(1);
-    expect(first[0]?.title).toMatch(/^\d+ PayPal payments from May 2031 have no remittance advice yet\.$/);
+    expect(first[0]?.title).toMatch(
+      /^(?:1 PayPal payment from May 2031 has|\d+ PayPal payments from May 2031 have) no remittance advice yet\.$/,
+    );
+    // Early check 2 finding 8: one payment in the singular, as approved.
+    expect(adviceBellTitle(1, "May 2031")).toBe(
+      "1 PayPal payment from May 2031 has no remittance advice yet.",
+    );
+    expect(adviceBellTitle(3, "May 2031")).toBe(
+      "3 PayPal payments from May 2031 have no remittance advice yet.",
+    );
     expect(first[0]?.title).not.toMatch(/monthly/i);
     await processEdfReminder(makeEnv(), { v: 1, kind: "edf.reminder", year: 2031, month: 5 });
     expect((await bells()).results.filter((b) => b.user_id === owner.id)).toHaveLength(1);

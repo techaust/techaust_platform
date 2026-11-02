@@ -22,6 +22,7 @@ import { issueInvoice, json, putBank, putCompany } from "./test-invoices.ts";
 import {
   apiCalls,
   capOf,
+  emailedOrder,
   liveOrder,
   orderAnswer,
   payPalEventRow,
@@ -32,6 +33,7 @@ import {
   ppError,
   ppJson,
   ppPaymentOf,
+  signedInReturn,
 } from "./test-paypal.ts";
 import { liveSession, stripeCalls, stripeLink, stripeStub, usdClient, usdDoc } from "./test-stripe.ts";
 
@@ -62,8 +64,8 @@ const eventOf = (id: string) =>
     id,
   );
 const captures = () => apiCalls().filter((c) => c.method === "POST" && c.path.endsWith("/capture"));
-const ret = (o: { checkoutId: string; orderId: string }, now?: number) =>
-  capturePayPalReturn(env, { checkoutId: o.checkoutId, token: o.orderId }, now);
+/** The client's return from PayPal: these orders are made from the portal, so through the signed-in page (early check 2 findings 3 and 6). */
+const ret = (o: { checkoutId: string; orderId: string }, now?: number) => signedInReturn(o, now);
 
 describe("the PayPal order [POR-06, L3, L4, L10, L19; run file C PortalPayments]", () => {
   it("makes an order with our request id, our marks and return URL, no payer field; the row goes live with PayPal's approval page", async () => {
@@ -259,16 +261,30 @@ describe("the capture on the client's return [L2, L19, ADR 0008; C steps 2 to 5]
     expect(captures()).toEqual([]);
   });
 
-  it("a token that isn't the stored order, or an unknown checkout: not_found, nothing captured", async () => {
-    const o = await liveOrder();
+  it("the emailed link's public return: a token that isn't the stored order, an unknown checkout or a signed-in one is not_found, nothing captured [finding 6]", async () => {
+    const e = await emailedOrder();
     paypalStub();
-    expect(await capturePayPalReturn(env, { checkoutId: o.checkoutId, token: "OTHERORDER1" })).toEqual({
+    expect(await capturePayPalReturn(env, { checkoutId: e.checkoutId, token: "OTHERORDER1" })).toEqual({
       state: "not_found",
     });
     expect(await capturePayPalReturn(env, { checkoutId: uuidv7(), token: null })).toEqual({
       state: "not_found",
     });
+    // A signed-in page's order (`source = 'portal'`) never answers on the public route, even with its own order id.
+    const o = await liveOrder();
+    paypalStub();
+    expect(await capturePayPalReturn(env, { checkoutId: o.checkoutId, token: o.orderId })).toEqual({
+      state: "not_found",
+    });
     expect(paypalCalls).toEqual([]);
+    // The emailed link's own: captured, with or without PayPal's token.
+    expect(await capturePayPalReturn(env, { checkoutId: e.checkoutId, token: e.orderId })).toEqual({
+      state: "paid",
+    });
+    expect(await capturePayPalReturn(env, { checkoutId: e.checkoutId, token: null })).toEqual({
+      state: "paid",
+    });
+    expect(captures()).toHaveLength(1);
   });
 
   it("a double return: one capture in flight, the other answers processing; a second capture is ORDER_ALREADY_CAPTURED and finds the same payment", async () => {
@@ -346,28 +362,82 @@ describe("the capture on the client's return [L2, L19, ADR 0008; C steps 2 to 5]
     expect(held?.status).toBe("live");
     expect(held?.capture_started_at).not.toBeNull();
     // A new amount from the portal while the capture may be in flight: 409 payment_processing (L24).
-    expect(await payPalLink(o, o.documentId, 20_000)).toEqual({ ok: false, error: "payment_processing" });
+    expect(await payPalLink(o, o.documentId, 20_000)).toEqual({
+      ok: false,
+      error: "payment_processing",
+      provider: "paypal",
+    });
     // and Stripe can't end it either ("B2 must carry" 9)
     stripeStub();
-    expect(await stripeLink(o, o.documentId, 50_000)).toEqual({ ok: false, error: "payment_processing" });
+    expect(await stripeLink(o, o.documentId, 50_000)).toEqual({
+      ok: false,
+      error: "payment_processing",
+      provider: "paypal",
+    });
     expect(stripeCalls).toEqual([]);
   });
 
-  it("a refused capture (an issue we don't know): released, a capture_refused item with PayPal's code, no payment", async () => {
+  it("a refused capture: the order asked (no capture), then released and failed in one batch, declined with no retry link, a capture_refused item [finding 2]", async () => {
+    for (const issue of [
+      "TRANSACTION_REFUSED",
+      "DUPLICATE_INVOICE_ID",
+      "PAYMENT_DENIED",
+      "MAX_NUMBER_OF_PAYMENT_ATTEMPTS_EXCEEDED",
+    ]) {
+      const o = await liveOrder();
+      paypalStub((path, method) => {
+        if (method === "POST" && path.endsWith("/capture"))
+          return ppError(422, "UNPROCESSABLE_ENTITY", issue);
+        if (method === "GET" && path.startsWith("/v2/checkout/orders/"))
+          return orderAnswer(o.orderId, () => undefined, false);
+        return null;
+      });
+      expect(await ret(o), issue).toEqual({ state: "declined" });
+      expect(apiCalls().map((x) => `${x.method} ${x.path}`)).toEqual([
+        `POST /v2/checkout/orders/${o.orderId}/capture`,
+        `GET /v2/checkout/orders/${o.orderId}`,
+      ]);
+      expect(await ppCheckout(o.checkoutId)).toMatchObject({ status: "failed", capture_started_at: null });
+      expect(await reviewKinds("document_id", o.documentId)).toEqual(["capture_refused"]);
+      const item = await one<{ facts: string }>(
+        "SELECT facts FROM review_items WHERE document_id = ?1",
+        o.documentId,
+      );
+      expect(JSON.parse(item?.facts ?? "{}")).toMatchObject({ code: issue, linkId: o.orderId });
+      expect(await rows("SELECT id FROM payments WHERE checkout_id = ?1", o.checkoutId)).toEqual([]);
+      // A second return (a poll, a reload) makes no capture call: the row has ended.
+      paypalStub();
+      expect((await ret(o)).state).toBe("not_completed");
+      expect(paypalCalls).toEqual([]);
+      // The next "Pay with PayPal" makes a NEW order (the dead one is never handed back).
+      const again = await payPalLink(o, o.documentId, 50_000);
+      expect(again).toMatchObject({ ok: true, reused: false });
+      expect(again.ok && again.checkoutId).not.toBe(o.checkoutId);
+    }
+  });
+
+  it("a refused capture whose order shows a capture after all: settled, never dropped; the order unreadable: the claim kept [finding 2]", async () => {
     const o = await liveOrder();
     paypalStub((path, method) =>
       method === "POST" && path.endsWith("/capture")
         ? ppError(422, "UNPROCESSABLE_ENTITY", "TRANSACTION_REFUSED")
         : null,
     );
-    expect(await ret(o)).toEqual({ state: "processing" });
-    expect(await reviewKinds("document_id", o.documentId)).toEqual(["capture_refused"]);
-    const item = await one<{ facts: string }>(
-      "SELECT facts FROM review_items WHERE document_id = ?1",
-      o.documentId,
-    );
-    expect(JSON.parse(item?.facts ?? "{}")).toMatchObject({ code: "TRANSACTION_REFUSED", linkId: o.orderId });
-    expect((await ppCheckout(o.checkoutId))?.capture_started_at).toBeNull();
+    expect(await ret(o)).toEqual({ state: "paid" });
+    expect((await ppPaymentOf(capOf(o.orderId)))?.status).toBe("confirmed");
+    const u = await liveOrder();
+    paypalStub((path, method) => {
+      if (method === "POST" && path.endsWith("/capture"))
+        return ppError(422, "UNPROCESSABLE_ENTITY", "PAYMENT_DENIED");
+      if (method === "GET" && path.startsWith("/v2/checkout/orders/"))
+        return ppError(503, "SERVICE_UNAVAILABLE");
+      return null;
+    });
+    expect(await ret(u)).toEqual({ state: "processing" });
+    const held = await ppCheckout(u.checkoutId);
+    expect(held?.status).toBe("live");
+    expect(held?.capture_started_at).not.toBeNull();
+    expect(await reviewKinds("document_id", u.documentId)).toEqual([]);
   });
 
   it("PayPal holds the capture: capture_pending with its id and an item, no payment; PAYMENT.CAPTURE.COMPLETED later is re-fetched and confirmed", async () => {
@@ -398,7 +468,11 @@ describe("the capture on the client's return [L2, L19, ADR 0008; C steps 2 to 5]
     expect(await rows("SELECT id FROM payments WHERE checkout_id = ?1", o.checkoutId)).toEqual([]);
     expect(await reviewKinds("document_id", o.documentId)).toEqual(["capture_pending"]);
     // Pay again while PayPal holds it: refused, whichever gateway (reviewer M2).
-    expect(await payPalLink(o, o.documentId, 50_000)).toEqual({ ok: false, error: "payment_processing" });
+    expect(await payPalLink(o, o.documentId, 50_000)).toEqual({
+      ok: false,
+      error: "payment_processing",
+      provider: "paypal",
+    });
     paypalStub();
     const ev = await payPalEventRow("PAYMENT.CAPTURE.COMPLETED", {
       linkId: o.orderId,
@@ -662,6 +736,7 @@ describe("a USD proforma paid by PayPal waits for the Owner [M6.3 Q1 A, L18; 08-
       {
         ok: false,
         error: "payment_processing",
+        provider: "paypal",
       },
     );
   });
@@ -755,12 +830,10 @@ describe("the provider contract and the statement budget [ADM-PAY-01, run file C
     expect(r.ok).toBe(true);
     expect(counted.counter.n).toBeLessThanOrEqual(45);
     const orderId = new URL((r as { url: string }).url).searchParams.get("token") as string;
+    expect(orderId).toMatch(/^[A-Z0-9]+$/);
     const second = countingEnv();
     expect(
-      await capturePayPalReturn(second.env, {
-        checkoutId: (r as { checkoutId: string }).checkoutId,
-        token: orderId,
-      }),
+      await signedInReturn({ checkoutId: (r as { checkoutId: string }).checkoutId }, undefined, second.env),
     ).toEqual({
       state: "paid",
     });
