@@ -8,13 +8,13 @@ import { schema } from "@techaust/db";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ADVICE_KINDS, ADVICE_PROVIDERS } from "./advices.ts";
 import { setStubTransport } from "./gateway/config.ts";
-import { capturePayPalReturn } from "./gateway/paypal-capture.ts";
+
 import { owner } from "./test-gateway.ts";
 import { call, one, rows, sessionFor } from "./test-helpers.ts";
 import { currentFy, lutOf, putSwiftBank, putTax } from "./test-invoice-types.ts";
 import { json, putBank, putCompany } from "./test-invoices.ts";
 import { putDoc } from "./test-payments.ts";
-import { capOf, liveOrder, paypalCalls, paypalStub, ppCheckout } from "./test-paypal.ts";
+import { capOf, liveOrder, paypalCalls, paypalStub, ppCheckout, signedInReturn } from "./test-paypal.ts";
 import { PDF_BYTES } from "./test-projects.ts";
 
 beforeEach(async () => {
@@ -29,7 +29,7 @@ afterEach(() => setStubTransport(null));
 /** A paid PayPal order: its confirmed payment's id. */
 async function paidOrder() {
   const o = await liveOrder();
-  expect(await capturePayPalReturn(env, { checkoutId: o.checkoutId, token: o.orderId })).toEqual({
+  expect(await signedInReturn(o)).toEqual({
     state: "paid",
   });
   return { ...o, paymentId: `ppl_${capOf(o.orderId)}` };

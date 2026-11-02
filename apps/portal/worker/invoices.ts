@@ -32,6 +32,8 @@ import { json } from "./validate.ts";
 /** The list's query string: `limit` (1 to 50) and the cursor from the previous page (`issue date:id`). */
 const LIMIT = /^\d{1,2}$/;
 const AFTER = /^\d{4}-\d{2}-\d{2}:[A-Za-z0-9-]{1,64}$/;
+/** Our checkout id on the signed-in page's PayPal return (`c`, a UUID). */
+const CHECKOUT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** ?1 client, ?2 and ?3 the last row's issue date and id (null on the first page), ?4 the page size plus one. Newest first. */
 export const LIST_SQL = `SELECT d.id, d.type, d.status, d.number_display, d.issue_date, d.due_date, d.currency, d.total_minor, d.balance_minor, d.voided_at
@@ -76,8 +78,20 @@ export const invoices = new Hono<AppEnv>()
     // between a 200 and a background write would pass, and a failed background write would lose the view). The access row and the session touch stay
     // in the background (index.ts).
     // M6.2 (run file E): `?refresh=1` (the Processing state after 20 s) asks the finance Worker for the link's status first, at most once a minute there.
-    if (c.req.query("refresh") === "1")
-      await refreshForClient(c.env, { clientId: s.clientId, documentId: id });
+    // M6.4 (early check 2 finding 3): `&c=<checkout id>` is the signed-in page's return from PayPal (`?pay=paypal&c=…`): THAT checkout is captured (bound to
+    // this client and document in the finance Worker) and its state comes back as `online.payPalReturn` (07-ZN lines 4 to 11); `c` implies the refresh. A
+    // malformed id is a 400.
+    const checkoutId = c.req.query("c");
+    if (checkoutId !== undefined && !CHECKOUT_ID.test(checkoutId)) return err(c, BAD_REQUEST, 400);
+    const refreshed =
+      c.req.query("refresh") === "1" || checkoutId !== undefined
+        ? await refreshForClient(c.env, {
+            clientId: s.clientId,
+            documentId: id,
+            ...(checkoutId === undefined ? {} : { checkoutId }),
+          })
+        : null;
+    const payPalReturn = checkoutId !== undefined ? refreshed?.payPalReturn : undefined;
     const now = Date.now();
     const [, doc, lines, credits, online] = await c.env.DB.batch([
       bound(c.env.DB, VIEW_SQL, [s.clientId, id, now]),
@@ -88,10 +102,13 @@ export const invoices = new Hono<AppEnv>()
     ]);
     const row = doc?.results[0] as SummaryRow | undefined;
     if (!row) return err(c, NOT_FOUND, 404);
+    const o = onlineOf(online?.results[0] as OnlineRow | undefined);
     return c.json({
       document: {
         ...summaryOf(row, (lines?.results ?? []) as LineRow[], (credits?.results ?? []) as CreditNoteRow[]),
-        ...onlineOf(online?.results[0] as OnlineRow | undefined),
+        ...o,
+        // Only on the answer to the return that named the checkout: `{state, retryUrl?}` (a state only; `retryUrl` only with `declined`, PayPal's own page).
+        ...(payPalReturn ? { online: { ...o.online, payPalReturn } } : {}),
       },
     });
   })

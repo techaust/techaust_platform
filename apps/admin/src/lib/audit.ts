@@ -168,7 +168,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "payment.review_resolve": Y("resolved an item in Needs review"),
   "payment.review_retry": Y("tried a Needs review item again"),
   // M6.4 PayPal and the remittance advices (staff words, builder's drafts in S-style for the lead under the owner's delegation; the designer may tighten them).
-  "payment.capture_pending": Y("noted a PayPal payment that PayPal is holding"),
+  "payment.capture_pending": Y("noted a PayPal payment on hold"),
   "payment.advice_create": Y("added a remittance advice"),
   "payment.advice_file": Y("attached a remittance advice's file"),
   "payment.advice_link": Y("linked payments to a remittance advice"),

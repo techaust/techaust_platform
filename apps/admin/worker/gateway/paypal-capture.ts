@@ -114,7 +114,13 @@ type DocState = {
   gst_status: string;
 };
 
-type Ctx = { env: GatewayEnv; api: PayPalApi; src: CaptureSource; now: number };
+/**
+ * Where new ids come from (L31, early check 2 finding 4): `uuidv7` for every real call; the start-up dry run (`warm-rpc.ts`) passes a counter of made-up ids,
+ * since global scope refuses random values and a dry run would otherwise stop at the first new id, before the judge and the batches it is there to compile.
+ */
+export type Ids = () => string;
+
+type Ctx = { env: GatewayEnv; api: PayPalApi; src: CaptureSource; now: number; ids: Ids };
 
 /** The payment row of a PayPal capture we already hold (one seek of `payments_provider_ref`), with what it is. */
 const SEEN_SQL = `SELECT p.id, p.status, p.requested_allocations IS NOT NULL AS requested FROM payments p INDEXED BY payments_provider_ref
@@ -181,6 +187,7 @@ const reviewOnlyOf = (
     facts,
     PAYPAL,
     actorOf(ctx.src, c),
+    ctx.ids,
   );
 
 /** The payment row's fields from PayPal's capture and its order (L8, L9, L22). */
@@ -222,7 +229,7 @@ async function recordPending(
   facts: GatewayFacts,
   extra?: { requested: true; bellTitle: string },
 ): Promise<boolean> {
-  const auditId = uuidv7();
+  const auditId = ctx.ids();
   const eventId = eventIdOf(ctx.src);
   const s = recordGatewayPaymentStatements(
     ctx.env.DB,
@@ -256,7 +263,7 @@ async function recordPending(
     } satisfies GatewayPaymentArgs,
     guardSql({ auditId }),
   );
-  const reviewId = uuidv7();
+  const reviewId = ctx.ids();
   const words: ReasonFacts = { ...rf, provider: "paypal", currency: "USD" };
   return mutateSystem(ctx.env, {
     ...actorOf(ctx.src, c),
@@ -362,9 +369,10 @@ export async function settleCapture(
   const actor = actorOf(ctx.src, c);
   if (!verdict.ok && verdict.verdict === "capture_pending") {
     // (6) PayPal holds it: the row `capture_pending` with its capture id, the item and its bell; no payment row (L6).
-    const reviewId = uuidv7();
+    const reviewId = ctx.ids();
     const done = await mutateSystem(ctx.env, {
       ...actor,
+      auditId: ctx.ids(),
       main: checkoutCapturePendingStatement(db, { id: c.id, captureId: cap.id, now: ctx.now }),
       action: "payment.capture_pending",
       entityType: "checkout_session",
@@ -419,9 +427,10 @@ export async function settleCapture(
   }
   if (!verdict.ok && verdict.verdict === "capture_denied") {
     // (7) declined or failed after approval: the row failed, the item and its bell; nothing was received.
-    const reviewId = uuidv7();
+    const reviewId = ctx.ids();
     const done = await mutateSystem(ctx.env, {
       ...actor,
+      auditId: ctx.ids(),
       main: checkoutFailStatement(db, { id: c.id, now: ctx.now, from: "open", claim: c.capture_started_at }),
       action: "payment.link_end",
       entityType: "checkout_session",
@@ -532,7 +541,7 @@ export async function settleCapture(
     return again ? duplicateOf(ctx, again) : lateCapture(ctx, c, f, facts);
   }
   // (5) an export invoice or debit note: confirmed and put on the document, in one batch.
-  const auditId = uuidv7();
+  const auditId = ctx.ids();
   const eventId = eventIdOf(ctx.src);
   const st = recordGatewayPaymentStatements(
     db,
@@ -547,7 +556,7 @@ export async function settleCapture(
       status: "confirmed",
       refetchedAt: ctx.now,
       now: ctx.now,
-      allocate: { allocationId: uuidv7(), overpaidReviewId: uuidv7(), facts },
+      allocate: { allocationId: ctx.ids(), overpaidReviewId: ctx.ids(), facts },
       requestedAllocations: null,
       checkoutPaid: true,
       providerCaptureId: cap.id,
@@ -600,6 +609,7 @@ const captureOf = (o: PayPalOrder): PayPalCapture | null => o.captures[0] ?? nul
 async function abandon(ctx: Ctx, c: CheckoutRow, claim: number): Promise<CaptureOutcome> {
   const done = await mutateSystem(ctx.env, {
     ...actorOf(ctx.src, c),
+    auditId: ctx.ids(),
     main: paypalAbandonStatements(ctx.env.DB, { id: c.id, claim, now: ctx.now }),
     action: "payment.link_end",
     entityType: "checkout_session",
@@ -619,6 +629,7 @@ async function endLocally(
 ): Promise<boolean> {
   const done = await mutateSystem(ctx.env, {
     ...actorOf(ctx.src, c),
+    auditId: ctx.ids(),
     main: checkoutEndStatement(ctx.env.DB, { id: c.id, status, now: ctx.now }),
     action: "payment.link_end",
     entityType: "checkout_session",
@@ -682,6 +693,7 @@ export async function capturePayPalCheckout(
   checkout: CheckoutRow,
   src: CaptureSource,
   now = Date.now(),
+  ids: Ids = uuidv7,
 ): Promise<CaptureOutcome> {
   const db = env.DB;
   const c = checkout;
@@ -694,7 +706,7 @@ export async function capturePayPalCheckout(
   // The gateway itself, before any claim: no transport or keys, or live while it isn't allowed (CLAUDE.md rule 7: zero calls). Nothing is claimed or ended.
   const api = payPalOf(env, await payPalModeOfSettings(db));
   if (!api || api.blocked) return { state: "retry" };
-  const ctx: Ctx = { env, api, src, now };
+  const ctx: Ctx = { env, api, src, now, ids };
   if (c.status === "capture_pending") return refetchHeld(ctx, c);
   if (c.status !== "live" && c.status !== "stale") {
     // (1) ended: with no claim nothing was captured; with one, the order is asked first (step 9 for a capture that went through).
@@ -774,16 +786,29 @@ export async function capturePayPalCheckout(
       // The claim is kept (a claimed row is never ended locally); it goes stale and the sweep re-fetches the order.
       return { state: "processing" };
     default: {
-      // Refused (DUPLICATE_INVOICE_ID, TRANSACTION_REFUSED, an issue we don't know): released; the Owner is told; the row stays for PayPal's own expiry.
-      await release();
-      await reviewOnlyOf(
-        ctx,
-        held,
-        "capture_refused",
-        null,
-        factsOf(c, null, answer.error.issue ? { code: answer.error.issue } : {}),
-      );
-      return { state: "review" };
+      // Refused (DUPLICATE_INVOICE_ID, TRANSACTION_REFUSED, PAYMENT_DENIED, MAX_NUMBER_OF_PAYMENT_ATTEMPTS_EXCEEDED, an issue we don't know). Early check 2
+      // finding 2: the order is asked first: a capture there is settled (never dropped). Else the claim is released and the row failed in ONE batch, so no poll,
+      // event or sweep claims this order again and the next "Pay with PayPal" makes a new one; the Owner is told (`capture_refused`); the client reads Declined
+      // with no way back to this order. The order unreadable now: the claim is KEPT (it goes stale, and the sweep asks the order again).
+      const o = await api.getOrder(c.provider_link_id);
+      const cap = o.ok ? captureOf(o.value) : null;
+      if (o.ok && cap) return settleCapture(ctx, held, o.value, cap);
+      if (!o.ok && o.code !== "not_found") return { state: "processing" };
+      const code = answer.error.issue;
+      await mutateSystem(env, {
+        ...actorOf(src, c),
+        auditId: ids(),
+        main: [
+          paypalCaptureReleaseStatement(db, { id: c.id, claim: now, now }),
+          checkoutFailStatement(db, { id: c.id, now, from: "open", claim: now }),
+        ],
+        action: "payment.link_end",
+        entityType: "checkout_session",
+        entityId: c.id,
+        summary: { checkoutId: c.id, documentId: c.document_id, status: "failed", refused: code ?? true },
+      });
+      await reviewOnlyOf(ctx, held, "capture_refused", null, factsOf(c, null, code ? { code } : {}));
+      return { state: "declined" };
     }
   }
 }
@@ -795,12 +820,29 @@ export async function capturePayPalReturn(
   env: GatewayEnv,
   a: { checkoutId: string; token: string | null },
   now = Date.now(),
+  ids: Ids = uuidv7,
 ): Promise<{ state: CaptureReturnState; retryUrl?: string }> {
   const c = await env.DB.prepare(CHECKOUT_BY_ID_SQL).bind(a.checkoutId).first<CheckoutRow>();
   if (c?.provider !== "paypal" || !c.provider_link_id) return { state: "not_found" };
+  // Early check 2 finding 6: this public route answers only for an EMAILED link's checkout (`source = 'link'`); a signed-in one returns through its own
+  // invoice page (`refreshForClient` with its checkout id, bound to the session's client). OPEN (run file "Not verified"): `token` becomes required once the
+  // owner's sandbox run shows PayPal always appends it to the return URL.
+  if (c.source !== "link") return { state: "not_found" };
   if (a.token !== null && a.token !== c.provider_link_id) return { state: "not_found" };
-  const out = await capturePayPalCheckout(env, c, { kind: "return" }, now);
-  // Money with the Owner, or nothing asked yet: "Checking your payment…" (07-ZN line 4), and the page polls.
+  return payPalReturnOf(env, c, now, ids);
+}
+
+/**
+ * The client's return from PayPal's page for checkout `c` (the emailed link's route, or the signed-in page's refresh naming it): the capture path (C steps 1 to
+ * 9) as the contact, in the return's words. Money with the Owner, or nothing asked yet: "Checking your payment…" (07-ZN line 4), and the page polls.
+ */
+export async function payPalReturnOf(
+  env: GatewayEnv,
+  c: CheckoutRow,
+  now = Date.now(),
+  ids: Ids = uuidv7,
+): Promise<{ state: CaptureReturnState; retryUrl?: string }> {
+  const out = await capturePayPalCheckout(env, c, { kind: "return" }, now, ids);
   if (out.state === "review" || out.state === "retry") return { state: "processing" };
   return out.retryUrl ? { state: out.state, retryUrl: out.retryUrl } : { state: out.state };
 }
@@ -830,13 +872,18 @@ export async function refreshPayPalCheckout(
   checkout: CheckoutRow,
   src: CaptureSource,
   now = Date.now(),
+  ids: Ids = uuidv7,
 ): Promise<RefreshResult["result"]> {
   if (!checkout.provider_link_id || !["live", "stale", "capture_pending"].includes(checkout.status))
     return "no_open_link";
   const claim = await checkoutRefreshClaimStatement(env.DB, { id: checkout.id, now }).run();
   if (claim.meta.changes !== 1) return "too_soon";
-  return refreshResultOf(await capturePayPalCheckout(env, checkout, src, now));
+  return refreshResultOf(await capturePayPalCheckout(env, checkout, src, now, ids));
 }
+
+/** The refresh's words for the return's state (the signed-in page's return through `refreshForClient`, early check 2 finding 3). */
+export const refreshResultOfReturn = (state: CaptureReturnState): RefreshResult["result"] =>
+  refreshResultOf({ state });
 
 // ---- events (run file C `processPayPalEvent`) ----------------------------------------------------------------------------------------------------------------------
 
@@ -863,6 +910,7 @@ export async function processPayPalEvent(
   env: GatewayEnv,
   row: EventRow,
   now = Date.now(),
+  ids: Ids = uuidv7,
 ): Promise<ProcessEventResult> {
   const db = env.DB;
   let facts: Record<string, unknown> = {};
@@ -903,9 +951,10 @@ export async function processPayPalEvent(
     // A refund's `invoice_id` (when PayPal sends it) must end in the checkout's own tail (L3); a mismatch is still the payment's, by its capture.
     const tail = invoiceIdCheckoutTail(text(facts.invoiceId));
     const kind = type === "payment.reversed" ? "reversed_after_confirm" : "refunded_outside";
-    const reviewId = uuidv7();
+    const reviewId = ids();
     await mutateSystem(env, {
       actorType: "webhook",
+      auditId: ids(),
       main: reviewItemStatement(db, {
         id: reviewId,
         source: "webhook",
@@ -966,13 +1015,15 @@ export async function processPayPalEvent(
       { documentId: mine?.document_id ?? null, clientId: mine?.client_id ?? null, amountMinor: null },
       { linkId: orderId ?? "", checkoutId, ...(captureId ? { paymentId: captureId } : {}) },
       PAYPAL,
+      undefined,
+      ids,
     );
   }
   const api = payPalOf(env, await payPalModeOfSettings(db));
   if (!api || api.blocked) return { result: "retry" };
-  const ctx: Ctx = { env, api, src, now };
+  const ctx: Ctx = { env, api, src, now, ids };
   if (type === "checkout.approved")
-    return eventResultOf(await capturePayPalCheckout(env, checkout, src, now));
+    return eventResultOf(await capturePayPalCheckout(env, checkout, src, now, ids));
   if (type === "checkout.approval_reversed") {
     // Step 0.4 row 19: the order re-fetched; captured after all → settled; else an unclaimed open row ends `failed` (the payer can start again).
     const o = await api.getOrder(checkout.provider_link_id as string);
@@ -983,6 +1034,7 @@ export async function processPayPalEvent(
     if (checkout.capture_started_at !== null) return { result: "retry" };
     await mutateSystem(env, {
       actorType: "webhook",
+      auditId: ids(),
       main: checkoutFailStatement(db, { id: checkout.id, now, from: "open", claim: null }),
       action: "payment.link_end",
       entityType: "checkout_session",
@@ -1035,6 +1087,8 @@ export async function processPayPalEvent(
       { documentId: checkout.document_id, clientId: checkout.client_id, amountMinor: null },
       factsOf(checkout, null, { paymentId: captureId }),
       PAYPAL,
+      undefined,
+      ids,
     );
   }
   return eventResultOf(await settleCapture(ctx, checkout, orderR.value, capR.value));

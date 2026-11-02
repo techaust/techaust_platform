@@ -33,6 +33,16 @@ function Basic([string]$user, [string]$pass) {
 }
 function Stop-With([string]$why) { Write-Host "RESULT: FAILED ($Gateway): $why. Nothing was stored."; exit 1 }
 
+# M6.4 (early check 2 finding 7): each PayPal mode stores its values on exactly one Worker, so a wrong -Configs can never put PayPal's keys on the
+# internet-facing jobs Worker or the webhook ID on the finance Worker: the API keys only on the admin finance Worker, the webhook ID only on jobs.
+$onlyConfig = @{ "paypal" = "apps\admin\wrangler.finance.jsonc"; "paypal-webhook" = "apps\jobs\wrangler.jsonc" }
+if ($onlyConfig.ContainsKey($Gateway)) {
+  $given = @($Configs | ForEach-Object { ($_ -replace '/', '\') -replace '^\.\\', '' })
+  if ($given.Count -ne 1 -or $given[0] -ine $onlyConfig[$Gateway]) {
+    Stop-With "-Gateway $Gateway takes exactly -Configs `"$($onlyConfig[$Gateway])`""
+  }
+}
+
 # name -> value, in the order they are stored.
 $secrets = [ordered]@{}
 switch ($Gateway) {

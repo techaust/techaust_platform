@@ -145,7 +145,7 @@ describe("(a) Razorpay: a proforma waiting for its automatic tax invoice [M6.3 '
         amountMinor: pf.total,
         returnTo: "invoice",
       }),
-    ).toEqual({ ok: false, error: "payment_processing" });
+    ).toEqual({ ok: false, error: "payment_processing", provider: "razorpay" });
     // no new link was asked of Razorpay
     expect(calls.filter((x) => x.method === "POST")).toEqual([]);
     // the automatic tax invoice issues; the proforma then takes no link at all (converted, nothing due), never "processing"
@@ -478,7 +478,11 @@ describe("(d) the worst paths stay within 45 D1 statements [Free plan; run file 
         : null,
     );
     const { env: e, counter } = countingEnv();
-    expect(await stripeLink(s, s.documentId, 20_000, e)).toEqual({ ok: false, error: "payment_processing" });
+    expect(await stripeLink(s, s.documentId, 20_000, e)).toEqual({
+      ok: false,
+      error: "payment_processing",
+      provider: "stripe",
+    });
     console.log(`D1 statements, Stripe createLink (refused expire, settled): ${counter.n}`);
     expect(counter.n).toBeLessThanOrEqual(45);
     expect((await stripePaymentOf(piOf(s.sessionId)))?.status).toBe("confirmed");

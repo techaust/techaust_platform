@@ -3,6 +3,8 @@
 // event reader and its facts, the offline signature (CRC32, the signed text, the certificate URL allow-list, a certificate built here with a generated RSA key and
 // read by the pure DER reader), and the payment-row mapping. No test calls PayPal: the bodies are fixtures shaped like PayPal's Orders v2 spec. All names,
 // ids and amounts are invented test data.
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import fc from "fast-check";
 import { beforeAll, describe, expect, it } from "vitest";
 import { uuidv7 } from "../src/ids.ts";
@@ -1116,5 +1118,23 @@ describe("the offline signature [L1, L20; Step 0.4 rows 17 and 21]", () => {
     const local = "http://localhost:8790/__paypal-test-cert";
     expect(await v({ "paypal-cert-url": local })).toBe("signature_missing");
     expect(await v({ "paypal-cert-url": local }, { local: true })).toBe("ok");
+  });
+});
+
+// Early check 2 finding 7: the owner's key script stores PayPal's API keys only on the admin finance Worker and the webhook ID only on jobs, checked before any
+// value is read (the script is parsed in the fix round, never run here).
+describe("tools/set-gateway-keys.ps1 PayPal targets", () => {
+  it("each PayPal mode takes exactly one config, checked before any prompt", () => {
+    const ps1 = readFileSync(
+      join(import.meta.dirname, "..", "..", "..", "tools", "set-gateway-keys.ps1"),
+      "utf8",
+    );
+    const guard =
+      '$onlyConfig = @{ "paypal" = "apps\\admin\\wrangler.finance.jsonc"; "paypal-webhook" = "apps\\jobs\\wrangler.jsonc" }';
+    expect(ps1).toContain(guard);
+    expect(ps1).toContain("if ($given.Count -ne 1 -or $given[0] -ine $onlyConfig[$Gateway])");
+    const at = ps1.indexOf(guard);
+    expect(at).toBeLessThan(ps1.indexOf('Read-Hidden "PayPal sandbox Client ID"'));
+    expect(at).toBeLessThan(ps1.indexOf('Read-Hidden "PayPal sandbox Webhook ID"'));
   });
 });

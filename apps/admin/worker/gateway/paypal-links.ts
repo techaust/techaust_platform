@@ -31,6 +31,7 @@ import { cachedSetting } from "../settings-cache.ts";
 import { envText, payPalOf, portalUrlOf, stripeModeOfSettings, stripeOf, transportOf } from "./config.ts";
 import type { LinkContext, MakeLinkArgs, MakeLinkResult } from "./link-context.ts";
 import type { PayPalApi } from "./paypal.ts";
+import type { Ids } from "./paypal-capture.ts";
 import type { CheckoutRow, GatewayEnv } from "./settle.ts";
 import { endStripeSession } from "./stripe-links.ts";
 
@@ -47,6 +48,7 @@ export async function endReplacedLocally(
   actorOf: LinkContext["actorOf"],
   documentId: string,
   now: number,
+  ids: Ids = uuidv7,
 ): Promise<boolean> {
   const db = env.DB;
   const [end] = await db.batch([
@@ -54,6 +56,7 @@ export async function endReplacedLocally(
     auditStmt(
       db,
       {
+        id: ids(),
         ...actorOf,
         action: "payment.link_cancel",
         entityType: "checkout_session",
@@ -92,6 +95,8 @@ export async function makePayPalLink(
   a: MakeLinkArgs,
   ctx: LinkContext,
   now: number,
+  /** M6.4 (L31): where the new checkout's and audit row's ids come from (`uuidv7`; the start-up dry run passes made-up ones). */
+  ids: Ids = uuidv7,
 ): Promise<MakeLinkResult> {
   const db = env.DB;
   const { doc, clientId, open, limited, linkContactId, actorOf, floorMinor, maxMinor, mode } = ctx;
@@ -130,9 +135,9 @@ export async function makePayPalLink(
           checkoutId: open.id,
         };
       if (limited) return { ok: false, error: "too_many_links" };
-      // A new amount, or an order about to expire: ended here with no PayPal call; a claimed one may be capturing right now.
-      if (!(await endReplacedLocally(env, open, actorOf, a.documentId, now)))
-        return { ok: false, error: "payment_processing" };
+      // A new amount, or an order about to expire: ended here with no PayPal call; a claimed one may be capturing right now (its money is PayPal's: finding 5).
+      if (!(await endReplacedLocally(env, open, actorOf, a.documentId, now, ids)))
+        return { ok: false, error: "payment_processing", provider: "paypal" };
       replacedCheckoutId = open.id;
     } else if (open.provider === "stripe") {
       if (limited) return { ok: false, error: "too_many_links" };
@@ -140,7 +145,7 @@ export async function makePayPalLink(
       const stripe = stripeOf(env, stripeMode);
       if (!stripe) return { ok: false, error: "gateway_error" };
       const r = await endStripeSession(env, stripe, open, stripeMode, now, (row) =>
-        endReplacedLocally(env, row, actorOf, a.documentId, now),
+        endReplacedLocally(env, row, actorOf, a.documentId, now, ids),
       );
       if (!r.ok) return r.refusal;
       replacedCheckoutId = open.id;
@@ -148,7 +153,7 @@ export async function makePayPalLink(
   }
   if (limited) return { ok: false, error: "too_many_links" };
   // ROW FIRST
-  const checkoutId = uuidv7();
+  const checkoutId = ids();
   const expiresAt = now + PAYPAL_ORDER_LIFETIME_MS;
   let inserted = 0;
   try {
@@ -237,6 +242,7 @@ export async function makePayPalLink(
     auditStmt(
       db,
       {
+        id: ids(),
         ...actorOf,
         action: "payment.link_create",
         entityType: "checkout_session",

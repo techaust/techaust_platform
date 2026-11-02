@@ -193,7 +193,7 @@ export const PAYMENTS_WITHOUT_ADVICE_SQL = `SELECT p.id, p.provider, p.client_id
 
 /**
  * How many of a provider's confirmed payments (`?1`) received from `?2` to `?3` (ISO, inclusive) are on no advice: the nav count and the monthly advice reminder
- * that rides `edf.reminder` (S9: "{count} PayPal payments from {month} have no remittance advice yet."). One range of `payments_confirmed_provider`.
+ * that rides `edf.reminder` (S9: "{count} PayPal payments from {month} have no remittance advice yet.", one in the singular). One range of `payments_confirmed_provider`.
  */
 export const PAYMENTS_WITHOUT_ADVICE_COUNT_SQL = `SELECT count(*) AS n FROM payments p INDEXED BY payments_confirmed_provider JOIN clients k ON k.id = p.client_id
    WHERE p.provider = ?1 AND p.status = 'confirmed' AND p.kind = 'payment' AND p.received_on >= ?2 AND p.received_on <= ?3

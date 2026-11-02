@@ -121,17 +121,20 @@ export function reviewReason(kind: string, f: ReasonFacts = {}): string {
   switch (kind) {
     case "not_export_receipt":
       return f.provider === "paypal" ? NOT_EXPORT_RECEIPT_PAYPAL_LINE : NOT_EXPORT_RECEIPT_LINE;
-    // M6.4 staff lines S3 to S7 (run file H; the lead approves them under the owner's delegation once placed) and the builder's drafts for the kinds H has none for.
+    // M6.4 staff lines S3 to S7 (run file H; approved by the lead under the owner's delegation, early check 2 finding 8) and the builder's drafts for the kinds H
+    // has none for.
     case "capture_pending":
-      return `PayPal is holding this payment (${f.code ?? "no reason given"}). It counts once PayPal completes it.`;
+      return f.code
+        ? `PayPal is holding this payment (reason: ${f.code}). It counts once PayPal completes it.`
+        : "PayPal is holding this payment. It counts once PayPal completes it.";
     case "capture_denied":
       return "PayPal declined this payment after the client approved it. Nothing was received.";
     case "capture_refused":
-      return `PayPal refused to take this payment (${f.code ?? "no code given"}). Nothing was received.`;
+      return `PayPal refused to take this payment (${f.code ?? "no code given"}). Nothing was received. The client can start again or pay another way.`;
     case "reversed_after_confirm":
-      return `PayPal reversed ${m(f.paidMinor)} that was already counted. Check the case in PayPal; refunds and chargebacks are handled in a later update.`;
+      return `PayPal reversed ${m(f.paidMinor)} that was already counted. Check the case in PayPal. The invoice's balance hasn't changed.`;
     case "refunded_outside":
-      return "This payment was refunded in PayPal, outside the admin.";
+      return "This payment was refunded in PayPal, outside the admin. The invoice's balance hasn't changed.";
     case "late_capture":
       return "PayPal took this payment after its checkout had ended or the amount due had changed. The money waits for your decision.";
     case "not_final":

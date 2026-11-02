@@ -4,9 +4,8 @@
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core/ids";
 import { setStubTransport, stubFetch } from "./gateway/config.ts";
-import { createLinkFor } from "./gateway/links.ts";
+import { createLinkFor, refreshForClient } from "./gateway/links.ts";
 import { stubCapture, stubOrder } from "./gateway/paypal.ts";
-import { capturePayPalReturn } from "./gateway/paypal-capture.ts";
 import { dropPayPalToken } from "./gateway/paypal-token.ts";
 import { one } from "./test-helpers.ts";
 import type { J } from "./test-invoices.ts";
@@ -108,6 +107,34 @@ export async function liveOrder(o: { type?: string; amount?: number; total?: num
   return { ...c, documentId, checkoutId: r.checkoutId, orderId, url: r.url };
 }
 
+/** A live PayPal order made through an EMAILED link (`source = 'link'`, the token's contact, returning to `pay/return`), USD 500. */
+export async function emailedOrder() {
+  const c = await usdClient();
+  const documentId = await usdDoc(c.clientId);
+  const tokenHash = `tok_${uuidv7().replaceAll("-", "")}`;
+  const email = await one<{ email: string }>(
+    "SELECT lower(email) AS email FROM contacts WHERE id = ?1",
+    c.contactId,
+  );
+  await env.DB.prepare(
+    "INSERT INTO doc_access_tokens (token_hash, document_id, purpose, expires_at, contact_id, client_id, email) VALUES (?1, ?2, 'view_pay', ?3, ?4, ?5, ?6)",
+  )
+    .bind(tokenHash, documentId, Date.now() + 86_400_000, c.contactId, c.clientId, email?.email ?? null)
+    .run();
+  const r = await createLinkFor(env, {
+    provider: "paypal",
+    clientId: c.clientId,
+    contactId: null,
+    tokenHash,
+    documentId,
+    amountMinor: 50_000,
+    returnTo: "pay_return",
+  });
+  if (!r.ok) throw new Error(`no order: ${JSON.stringify(r)}`);
+  const orderId = new URL(r.url).searchParams.get("token") as string;
+  return { ...c, documentId, checkoutId: r.checkoutId, orderId, url: r.url };
+}
+
 /** The checkout row of a PayPal checkout. */
 export const ppCheckout = (id: string) =>
   one<{
@@ -167,10 +194,33 @@ export const ppPaymentOf = (captureId: string) =>
 /** The simulator's capture id of an order. */
 export const capOf = (orderId: string) => `C${orderId}`;
 
+/**
+ * The signed-in page's return from PayPal for checkout `checkoutId` (early check 2 finding 3: `refreshForClient` naming the checkout, bound to its client and
+ * document): the state the page shows (07-ZN lines 4 to 11). The orders of these tests are made from the portal (`source = 'portal'`), so the emailed link's
+ * public route answers `not_found` for them (finding 6).
+ */
+export async function signedInReturn(
+  o: { checkoutId: string },
+  now?: number,
+  e: Env = env,
+): Promise<{ state: string; retryUrl?: string }> {
+  const row = await one<{ client_id: string; document_id: string }>(
+    "SELECT client_id, document_id FROM checkout_sessions WHERE id = ?1",
+    o.checkoutId,
+  );
+  if (!row) return { state: "not_found" };
+  const r = await refreshForClient(
+    e,
+    { clientId: row.client_id, documentId: row.document_id, checkoutId: o.checkoutId },
+    now,
+  );
+  return r.payPalReturn ?? { state: `no payPalReturn: ${r.result}` };
+}
+
 /** A confirmed PayPal payment of a USD export invoice (captured on the client's return through the stub): its payment id. */
 export async function paidPayPal(): Promise<string> {
   const o = await liveOrder();
-  const r = await capturePayPalReturn(env, { checkoutId: o.checkoutId, token: o.orderId });
+  const r = await signedInReturn(o);
   if (r.state !== "paid") throw new Error(`not paid: ${JSON.stringify(r)}`);
   return `ppl_${capOf(o.orderId)}`;
 }

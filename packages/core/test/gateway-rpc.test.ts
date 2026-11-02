@@ -135,14 +135,29 @@ describe("PortalPayments arguments and answers", () => {
       { ok: false, error: "teapot" },
       { ok: false, error: "amount_above_balance", balanceMinor: -1 },
       { ok: false, error: "not_payable_online", reason: 3 },
+      { ok: false, error: "payment_processing", provider: "cash" },
       { ok: "yes" },
     ])
       expect(isCreateLinkResult(bad), JSON.stringify(bad)).toBe(false);
+    // Early check 2 finding 5: the gateway holding the money rides on the refusal.
+    expect(isCreateLinkResult({ ok: false, error: "payment_processing", provider: "paypal" })).toBe(true);
   });
 
-  it("refreshForClient answers", () => {
+  it("refreshForClient answers; the signed-in PayPal return's state passes only as the return route's answer would (early check 2 finding 3)", () => {
     expect(isRefreshResult({ result: "too_soon" })).toBe(true);
     expect(isRefreshResult({ result: "paid" })).toBe(false);
+    const url = "https://www.sandbox.paypal.com/checkoutnow?token=5O190127TN364715T";
+    expect(isRefreshResult({ result: "processed", payPalReturn: { state: "declined", retryUrl: url } })).toBe(
+      true,
+    );
+    expect(isRefreshResult({ result: "unchanged", payPalReturn: { state: "not_completed" } })).toBe(true);
+    for (const bad of [
+      { result: "processed", payPalReturn: { state: "paid", amountMinor: 1 } },
+      { result: "processed", payPalReturn: { state: "declined", retryUrl: "https://evil.example/x" } },
+      { result: "processed", payPalReturn: "paid" },
+      { result: "processed", checkoutId: "x" },
+    ])
+      expect(isRefreshResult(bad), JSON.stringify(bad)).toBe(false);
   });
 });
 

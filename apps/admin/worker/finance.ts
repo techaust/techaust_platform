@@ -112,10 +112,20 @@ export class PortalPayments extends WorkerEntrypoint<Env> implements PortalPayme
     return { ok: true, url: r.url, expiresAt: r.expiresAt, reused: r.reused };
   }
 
-  async refreshForClient(args: { clientId: string; documentId: string }): Promise<RefreshResult> {
+  /** M6.4 (early check 2 finding 3): `checkoutId`, the signed-in page's PayPal return (bound to the client and the document there). */
+  async refreshForClient(args: {
+    clientId: string;
+    documentId: string;
+    checkoutId?: string;
+  }): Promise<RefreshResult> {
     const clientId = rpcId(args?.clientId, "PortalPayments");
     const documentId = rpcId(args?.documentId, "PortalPayments");
-    const answer = await refreshForClient(this.env, { clientId, documentId });
+    const checkoutId = args?.checkoutId === undefined ? undefined : rpcId(args.checkoutId, "PortalPayments");
+    const answer = await refreshForClient(this.env, {
+      clientId,
+      documentId,
+      ...(checkoutId === undefined ? {} : { checkoutId }),
+    });
     rpcLog("refreshForClient", answer.result);
     return answer;
   }
