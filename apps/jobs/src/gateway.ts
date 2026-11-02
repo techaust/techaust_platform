@@ -1,7 +1,7 @@
 // The M6.2 gateway family on the leads queue (run file D, L9): routed from queue.ts BEFORE the lead fall-through, so a body of this family (valid or not) can never
 // become a lead. One unit of work per message:
 //   - `gateway.event {eventId}`: the finance Worker's `GatewayEvents.processEvent`; `retry` comes back with a growing delay, `next` queues `gateway.advance`;
-//   - `gateway.advance {paymentId}`: `issueGatewayAdvance` (its own message, L6); a blocker is the finance Worker's review item, so it is acknowledged; `retry` (the
+//   - `gateway.advance {paymentId}`: the invoices Worker's `issueGatewayAdvance` (its own message, L6); a blocker is the review item, so it is acknowledged; `retry` (the
 //     proforma changed meanwhile) comes back once, then the last try (`lastTry`) turns a second change into `blocked`;
 //   - `gateway.sweep {asOf}` (one per hourly tick): up to 20 events still `received` 15 minutes after they arrived, fewer than 10 tries, and up to 20 proforma
 //     payments still waiting for their tax invoice 15 minutes after they were recorded, queued again.
@@ -26,7 +26,7 @@ import {
   STUCK_EVENTS_SQL,
   SWEEP_AFTER_MS,
 } from "@techaust/db/gateway";
-import { adminGateway } from "./gateway-rpc.ts";
+import { adminAdvance, adminGateway } from "./gateway-rpc.ts";
 import { logEvent } from "./log.ts";
 
 /** The bell of a dead-lettered gateway message (07-ZI S20 and S22: "A payment needs review: {reason}."; staff words, lead under the owner's delegation). */
@@ -74,7 +74,9 @@ export async function processGateway(
       // Early check 2, finding 1: one try per invocation; a proforma that changed meanwhile comes back once (`retry`), and the second delivery is the last try
       // (a second change is `blocked`: the Owner's review item).
       const lastTry = attempts >= ADVANCE_TRIES;
-      const r = await adminGateway(env).issueGatewayAdvance({ paymentId: m.data.paymentId, lastTry });
+      // The fourth admin Worker (2026-11-03): the invoices Worker's `GatewayAdvance` (`ADMIN_ADVANCE`); a thrown binding error or a malformed answer propagates
+      // (the queue retries, then the dead letter writes the review item and rings the bell); only a real `retry` answer takes the rule below.
+      const r = await adminAdvance(env).issueGatewayAdvance({ paymentId: m.data.paymentId, lastTry });
       logEvent("gateway.advance", { r: r.result });
       if (r.result === "retry" && !lastTry) return { retry: gatewayRetryDelay(attempts) };
       return "ack";

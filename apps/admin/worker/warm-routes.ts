@@ -127,6 +127,17 @@ const noObject = {
 };
 /** A service binding that answers at once without a body (global scope allows that Response). */
 const answers = { fetch: async () => new Response(null, { status: 200 }) };
+/**
+ * The finance Worker's `ADMIN_ADVANCE` in its dry run (the fourth admin Worker, brief D.7): the Owner's "Try again" route runs against this stub, which answers
+ * a made-up `issued` at once and never calls the invoices Worker (that Worker dry-runs the advance itself, warm-advance.ts).
+ */
+const advanceAnswers = { issueGatewayAdvance: async () => ({ result: "issued" as const, number: "WARM/1" }) };
+
+/** Made-up ids in UUIDv7 form from a counter (`00000000-0000-7000-8000-000000000001`, …): global scope refuses random values (warm-rpc.ts, warm-advance.ts). */
+export function warmIds(): () => string {
+  let n = 0;
+  return () => `00000000-0000-7000-8000-${(++n).toString(16).padStart(12, "0")}`;
+}
 
 /**
  * The made-up env of a dry run: the answer book's D1, bindings that drop everything, the local vars and the finance Worker's made-up test key pair; `extra`
@@ -149,6 +160,10 @@ export function warmEnv(
     DOCS: noObject,
     ADMIN_API: answers,
     ADMIN_FINANCE: answers,
+    // The fourth admin Worker (2026-11-03): the front's binding to the invoices Worker (its forwarded hot routes: an invoice, the issue, the dashboard), and
+    // finance's to the invoices Worker's `GatewayAdvance` (the review retry route).
+    ADMIN_INVOICES: answers,
+    ADMIN_ADVANCE: advanceAnswers,
     ENVIRONMENT: "warm",
     PAYMENTS_LIVE_ALLOWED: "false",
     LEAD_PURGE_MODE: "dry_run",

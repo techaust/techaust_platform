@@ -3,10 +3,10 @@
 //   - admin, portal: `CLOUDFLARE_ENV=staging vite build` writes `.wrangler/deploy/config.json`, which points `wrangler deploy` at the
 //     flattened config in dist/. That config must name the staging Worker. A plain `vite build` (local, CI) flattens the TOP level,
 //     whose name is the PRODUCTION Worker's, so a deploy after it would go to production: refused here. Admin also checks the API
-//     Worker's and (M6.1 stage A) the finance Worker's flattened configs (each deployed with `--config`).
+//     Worker's, (M6.1 stage A) the finance Worker's and (the fourth admin Worker) the invoices Worker's flattened configs (each deployed with `--config`).
 //   - web: `wrangler deploy --env staging` picks the Worker, but the pages are static and carry the Turnstile site key chosen at build
 //     time; the built pages must hold env.staging's key and not the top level's test key.
-// Usage: node scripts/check-staging-build.mjs admin|admin-api|admin-finance|portal|web   (run from anywhere; reads apps/<app>/ only).
+// Usage: node scripts/check-staging-build.mjs admin|admin-api|admin-finance|admin-invoices|portal|web   (run from anywhere; reads apps/<app>/ only).
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -69,6 +69,8 @@ function htmlFiles(dir) {
 export const ADMIN_AUX_TARGETS = {
   "admin-api": { config: "wrangler.api.jsonc", dist: "techaust_platform_admin_api" },
   "admin-finance": { config: "wrangler.finance.jsonc", dist: "techaust_platform_admin_finance" },
+  // The fourth admin Worker (2026-11-03, ADM-G-02): deployed with `--config dist/techaust_platform_admin_invoices/wrangler.json`.
+  "admin-invoices": { config: "wrangler.invoices.jsonc", dist: "techaust_platform_admin_invoices" },
 };
 
 export function problemsFor(target) {

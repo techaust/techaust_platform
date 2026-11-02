@@ -5,6 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { madeUpGatewayIds } from "../../../scripts/cpu-probe.mjs";
 import { d1Over, dbClock, r2In } from "../../../scripts/cpu-probe-runtime.mjs";
 
 const dir = mkdtempSync(join(tmpdir(), "cpu-probe-test-"));
@@ -77,5 +78,45 @@ describe("the probe's R2 stand-in", () => {
     expect(await r2.put("k/1", "again", { onlyIf: { etagDoesNotMatch: "*" } })).toBeNull();
     await r2.delete("k/1");
     expect(await r2.head("k/1")).toBeNull();
+  });
+});
+
+describe("the fixture writer's made-up gateway ids (scripts/cpu-probe.mjs; the fourth admin Worker, brief D.6–D.7)", () => {
+  it("replaces each simulator id by one made-up lowercase id everywhere in a fixture, keeping the rzp_ prefix and every other value", () => {
+    const ref = "01a19e6b0a26727891473791eb13523f";
+    const pay = `pay_A10620000R${ref}`;
+    const link = `plink_A10620000R${ref}`;
+    const other = `pay_A500R${"0".repeat(32)}`;
+    const fixture = {
+      calls: [{ m: "issueGatewayAdvance", args: { paymentId: `rzp_${pay}` } }],
+      rows: {
+        aaaaaaaa: [
+          {
+            p: [`rzp_${pay}`],
+            r: [{ id: `rzp_${pay}`, facts: JSON.stringify({ linkId: link, paymentId: pay }) }],
+            c: 0,
+          },
+        ],
+        bbbbbbbb: [
+          { r: [{ payment_id: `rzp_${other}`, id: "01a19e6b-0a26-7278-9147-3791eb13523f", n: 3 }], c: 1 },
+        ],
+      },
+    };
+    const out = madeUpGatewayIds(fixture);
+    expect(out.calls[0]?.args.paymentId).toBe("rzp_pay_warm0001");
+    expect(out.rows.aaaaaaaa[0]?.p).toEqual(["rzp_pay_warm0001"]);
+    expect(out.rows.aaaaaaaa[0]?.r[0]?.id).toBe("rzp_pay_warm0001");
+    expect(JSON.parse(out.rows.aaaaaaaa[0]?.r[0]?.facts ?? "null")).toEqual({
+      linkId: "plink_warm0002",
+      paymentId: "pay_warm0001",
+    });
+    expect(out.rows.bbbbbbbb[0]?.r[0]).toEqual({
+      payment_id: "rzp_pay_warm0003",
+      id: "01a19e6b-0a26-7278-9147-3791eb13523f",
+      n: 3,
+    });
+    expect(JSON.stringify(out)).not.toMatch(/_A\d+R[0-9a-f]{32}/);
+    // the input is not changed
+    expect(fixture.calls[0]?.args.paymentId).toBe(`rzp_${pay}`);
   });
 });

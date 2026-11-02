@@ -1,5 +1,6 @@
 // The RPC contracts of the admin finance Worker's gateway entrypoints (M6.2; ADM-PAY-02, -07, ADM-INV-10, JOB-HOOK-02, POR-06; run file docs/runs/m6.2-razorpay.md B,
-// C): `GatewayEvents` (bound by the jobs Worker as `ADMIN_GATEWAY`) and `PortalPayments` (bound by the portal as `ADMIN_PAY`). The classes `implements` these
+// C): `GatewayEvents` (bound by the jobs Worker as `ADMIN_GATEWAY`) and `PortalPayments` (bound by the portal as `ADMIN_PAY`); since the fourth admin Worker
+// (2026-11-03), `GatewayAdvance` in the admin invoices Worker (bound as `ADMIN_ADVANCE` by jobs and by finance). The classes `implements` these
 // interfaces, so the two sides cannot drift; an answer that crossed a service binding is not trusted by its type alone, so each has a runtime guard (the
 // `care-billing` pattern, `isDraftCareResult`). Every id argument is 1 to 64 characters (`isRpcId`); nothing here carries a clock or an amount the callee
 // would trust without its own SQL checks.
@@ -41,8 +42,6 @@ export type IssueAdvanceResult = {
 export interface GatewayEventsApi {
   /** One stored, verified webhook event (`webhook_events.id`), dispatched by the row's own `provider` (Razorpay only in M6.2). */
   processEvent(args: { eventId: string }): Promise<ProcessEventResult>;
-  /** `lastTry`: the message's last try (the jobs consumer's second delivery): a proforma changed again is `blocked`, never `retry`. */
-  issueGatewayAdvance(args: { paymentId: string; lastTry?: boolean }): Promise<IssueAdvanceResult>;
   /**
    * M6.3 (L13, L14): one checkout's status re-fetched from its gateway and processed as its webhook would be (source `refresh`), for the hourly sweep's
    * `gateway.refresh {checkoutId}`. Only the gateway's word ends a row, never our clock (L6).
@@ -126,6 +125,18 @@ export function isFetchSettlementsResult(v: unknown): v is FetchSettlementsResul
   return (
     isObj(v.next) && typeof v.next.skip === "number" && Number.isSafeInteger(v.next.skip) && v.next.skip > 0
   );
+}
+
+// ---- GatewayAdvance (jobs and finance → invoices; the fourth admin Worker, 2026-11-03, ADM-G-02) --------------------------------------------------------
+
+/**
+ * The automatic tax invoice of a proforma paid online, in the admin invoices Worker (`GatewayAdvance`): bound by the jobs Worker as `ADMIN_ADVANCE` (the
+ * `gateway.advance` message) and by the finance Worker as `ADMIN_ADVANCE` (the Owner's "Try again" on a review item). Moved from `GatewayEventsApi` with the same
+ * arguments and answers. A caller never turns a thrown binding error or a malformed answer (`isIssueAdvanceResult`) into a result: it propagates.
+ */
+export interface GatewayAdvanceApi {
+  /** `lastTry`: the message's last try (the jobs consumer's second delivery): a proforma changed again is `blocked`, never `retry`. */
+  issueGatewayAdvance(args: { paymentId: string; lastTry?: boolean }): Promise<IssueAdvanceResult>;
 }
 
 const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");

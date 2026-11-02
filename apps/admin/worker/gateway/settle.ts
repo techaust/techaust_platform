@@ -40,6 +40,7 @@ import {
 import { type GuardSql, guardSql } from "@techaust/db/log";
 import { withdrawnSql } from "@techaust/db/sql-rules";
 import { type Actor, mutateSystem } from "../system.ts";
+import { REVIEW_LINK } from "./consts.ts";
 import { bellNeedsReview, bellPaidOnline, type ReasonFacts, reviewReason } from "./messages.ts";
 import type { RazorpayApi, RzpFailure } from "./razorpay.ts";
 
@@ -101,7 +102,8 @@ export const duplicateOf = (seen: Seen): ProcessEventResult =>
 const OTHER_LIVE_SQL =
   "SELECT id, provider_link_id FROM checkout_sessions INDEXED BY checkout_sessions_document WHERE document_id = ?1 AND id <> ?2 AND status = 'live' LIMIT 5";
 
-export const REVIEW_LINK = "/payments?tab=review";
+// The fourth admin Worker (2026-11-03): defined in consts.ts (advance.ts, in the invoices Worker, takes it from there); re-exported for the finance side.
+export { REVIEW_LINK };
 
 /** Where the news came from: a stored webhook event, or a status fetch (the portal's refresh, the Owner's "Try again"). */
 export type SettleCause = { kind: "event"; eventId: string } | { kind: "refresh" };

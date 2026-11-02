@@ -15,15 +15,17 @@ export const urlOf = (app) => `https://techaust-platform-${app}-staging.${HOST_S
 
 /**
  * What "healthy" means per app. `service`: the health body names the Worker and `env` is "staging", which proves the request reached
- * the right staging Worker and not an Access page or another Worker. Admin's checks cover its three Workers (M6.1 stage A): the health
- * read is the front's own; a signed-out leads read is the API Worker's JSON 401 through the front's ADMIN_API binding, and a signed-out
- * dashboard read is the finance Worker's JSON 401 through ADMIN_FINANCE, never a 502 (docs/runbooks/environments.md).
+ * the right staging Worker and not an Access page or another Worker. Admin's checks cover its four Workers (M6.1 stage A; the fourth,
+ * admin invoices, 2026-11-03): the health read is the front's own; a signed-out leads read is the API Worker's JSON 401 through the
+ * front's ADMIN_API binding; a signed-out dashboard read is the invoices Worker's JSON 401 through ADMIN_INVOICES; and a signed-out
+ * payments read is the finance Worker's JSON 401 through ADMIN_FINANCE. Each is never a 502 (docs/runbooks/environments.md).
  */
 export const CHECKS = {
   admin: [
     { path: "/api/v1/health", status: 200, service: "admin" },
     { path: "/api/v1/leads", status: 401 },
     { path: "/api/v1/dashboard", status: 401 },
+    { path: "/api/v1/payments", status: 401 },
   ],
   portal: [{ path: "/api/v1/health", status: 200, service: "portal" }],
   // M6.2: the Razorpay webhook path is outside Access (owner's H1 bypass): a signed-out POST with no Access token and no signature must reach the Worker and

@@ -45,16 +45,24 @@
   // `triggers` IS inherited by an environment that does not set its own (wrangler `EnvironmentInheritable`), so every environment states its crons: staging
   // the same two, production an empty list until Phase 7 (scripts/check-worker-config.mjs requires exactly that; A6 3).
   "triggers": { "crons": ["0 22 * * *", "30 * * * *"] },
-  // The admin finance Worker's named entrypoint `BillingJobs` (M5.4, LD57; in the admin API Worker until M6.1 stage A): the care-plan drafting and the automatic issue run THERE
-  // (they need the admin code), and this Worker calls them over RPC. Deploy order: the admin finance Worker first (a jobs deploy whose entrypoint does not exist yet fails), so the
-  // entrypoint exists before the first call; until it does a call is an error and the queue message is retried (every call is idempotent). Not inherited.
-  // M6.2: `ADMIN_GATEWAY`, the finance Worker's `GatewayEvents` entrypoint (the webhook events and the automatic tax invoice of a proforma paid online).
+  // The admin invoices Worker's named entrypoint `BillingJobs` (M5.4, LD57; in the admin API Worker until M6.1 stage A, in the admin finance Worker until the fourth
+  // admin Worker, 2026-11-03): the care-plan drafting and the automatic issue run THERE (they need the admin code), and this Worker calls them over RPC. Not inherited.
+  // M6.2: `ADMIN_GATEWAY`, the finance Worker's `GatewayEvents` entrypoint (the webhook events and the sweep's refresh). The fourth admin Worker: `ADMIN_ADVANCE`,
+  // the invoices Worker's `GatewayAdvance` entrypoint (the automatic tax invoice of a proforma paid online, the `gateway.advance` message).
+  // Deploy order (owner, Q1 A, 2026-11-02): admin API, admin invoices, admin front, jobs, admin finance, portal, website: every Worker this one binds exists when it
+  // deploys (the invoices Worker is new before jobs; the finance Worker it binds still has `processEvent` and `refreshCheckout`). Until an entrypoint answers, a call
+  // is an error and the queue message is retried (every call is idempotent). From M6.5 (owner, Q3 A): admin finance moves back before the front and jobs.
   "services": [
-    { "binding": "ADMIN_JOBS", "service": "techaust-platform-admin-finance", "entrypoint": "BillingJobs" },
+    { "binding": "ADMIN_JOBS", "service": "techaust-platform-admin-invoices", "entrypoint": "BillingJobs" },
     {
       "binding": "ADMIN_GATEWAY",
       "service": "techaust-platform-admin-finance",
       "entrypoint": "GatewayEvents"
+    },
+    {
+      "binding": "ADMIN_ADVANCE",
+      "service": "techaust-platform-admin-invoices",
+      "entrypoint": "GatewayAdvance"
     }
   ],
   // SES keys and (M6.2, L1) the Razorpay webhook secret: names only; values come from `wrangler secret put` (docs/runbooks/ses-and-turnstile.md;
@@ -166,13 +174,18 @@
       "services": [
         {
           "binding": "ADMIN_JOBS",
-          "service": "techaust-platform-admin-finance-staging",
+          "service": "techaust-platform-admin-invoices-staging",
           "entrypoint": "BillingJobs"
         },
         {
           "binding": "ADMIN_GATEWAY",
           "service": "techaust-platform-admin-finance-staging",
           "entrypoint": "GatewayEvents"
+        },
+        {
+          "binding": "ADMIN_ADVANCE",
+          "service": "techaust-platform-admin-invoices-staging",
+          "entrypoint": "GatewayAdvance"
         }
       ],
       "secrets": {

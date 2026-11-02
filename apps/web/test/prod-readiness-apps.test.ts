@@ -141,6 +141,106 @@ describe("production Worker configs", () => {
     expect(text).toContain("apps/jobs/wrangler.jsonc: staging consumes techaust-staging-email");
   });
 
+  // The fourth admin Worker (2026-11-03, L7; review finding 4): every staging service binding needs a production twin (same binding, same entrypoint, the
+  // production Worker's name).
+  describe("service bindings need a production twin (L7)", () => {
+    const withServices = (
+      staging: { binding: string; service: string; entrypoint?: string }[],
+      prod: { binding: string; service: string; entrypoint?: string }[] | undefined,
+    ) => ({
+      env: {
+        staging: { services: staging },
+        production: prod === undefined ? {} : { services: prod },
+      },
+    });
+    const advance = {
+      binding: "ADMIN_ADVANCE",
+      service: "techaust-platform-admin-invoices-staging",
+      entrypoint: "GatewayAdvance",
+    };
+
+    it("a production finance without ADMIN_ADVANCE fails", () => {
+      expect(
+        ready.checkProductionConfig("apps/admin/wrangler.finance.jsonc", withServices([advance], undefined), {
+          turnstile: false,
+        }),
+      ).toEqual([
+        "apps/admin/wrangler.finance.jsonc: staging binds the service ADMIN_ADVANCE (entrypoint GatewayAdvance) but env.production has none: bind it to techaust-platform-admin-invoices (Phase 7, owner approval).",
+      ]);
+    });
+
+    it("a production jobs without ADMIN_JOBS, ADMIN_ADVANCE or ADMIN_GATEWAY fails, one problem each", () => {
+      const staging = [
+        {
+          binding: "ADMIN_JOBS",
+          service: "techaust-platform-admin-invoices-staging",
+          entrypoint: "BillingJobs",
+        },
+        {
+          binding: "ADMIN_GATEWAY",
+          service: "techaust-platform-admin-finance-staging",
+          entrypoint: "GatewayEvents",
+        },
+        advance,
+      ];
+      const problems: string[] = ready.checkProductionConfig("j", withServices(staging, []), {
+        turnstile: false,
+      });
+      expect(problems).toHaveLength(3);
+      for (const b of ["ADMIN_JOBS", "ADMIN_GATEWAY", "ADMIN_ADVANCE"])
+        expect(problems.join("\n")).toContain(`staging binds the service ${b}`);
+    });
+
+    it("a twin naming another entrypoint, the staging Worker or another Worker fails", () => {
+      for (const twin of [
+        { ...advance, service: "techaust-platform-admin-invoices", entrypoint: "BillingJobs" },
+        { ...advance, service: "techaust-platform-admin-invoices", entrypoint: undefined },
+        { ...advance },
+        { ...advance, service: "techaust-platform-admin-finance" },
+      ])
+        expect(
+          ready.checkProductionConfig("f", withServices([advance], [twin]), { turnstile: false })[0],
+          JSON.stringify(twin),
+        ).toMatch(
+          /^f: env.production's ADMIN_ADVANCE must name techaust-platform-admin-invoices \(entrypoint GatewayAdvance\)/,
+        );
+    });
+
+    it("passes the production twins, with or without an entrypoint (the front's bindings name none)", () => {
+      const front = [
+        { binding: "ADMIN_API", service: "techaust-platform-admin-api-staging" },
+        { binding: "ADMIN_INVOICES", service: "techaust-platform-admin-invoices-staging" },
+      ];
+      const prod = [
+        { binding: "ADMIN_API", service: "techaust-platform-admin-api" },
+        { binding: "ADMIN_INVOICES", service: "techaust-platform-admin-invoices" },
+        { ...advance, service: "techaust-platform-admin-invoices" },
+      ];
+      expect(
+        ready.checkProductionConfig("x", withServices([...front, advance], prod), { turnstile: false }),
+      ).toEqual([]);
+    });
+
+    it("today's configs: the invoices config is read, and finance, jobs and the portal are blocked on their service bindings (before Phase 7)", () => {
+      expect(ready.PROD_CONFIGS).toContainEqual({
+        app: "admin",
+        file: "wrangler.invoices.jsonc",
+        turnstile: false,
+      });
+      const text = (ready.checkProductionConfigs(appsDir) as string[]).join("\n");
+      expect(text).toContain(
+        "apps/admin/wrangler.invoices.jsonc: staging sends on the queue binding PDF_QUEUE",
+      );
+      expect(text).toContain("apps/admin/wrangler.finance.jsonc: staging binds the service ADMIN_ADVANCE");
+      for (const b of ["ADMIN_JOBS", "ADMIN_ADVANCE", "ADMIN_GATEWAY"])
+        expect(text).toContain(`apps/jobs/wrangler.jsonc: staging binds the service ${b}`);
+      expect(text).toContain("apps/portal/wrangler.jsonc: staging binds the service ADMIN_PAY");
+      // The front's production bindings already name the production Workers.
+      expect(text).not.toContain("apps/admin/wrangler.jsonc: staging binds the service");
+      expect(text).not.toContain("apps/admin/wrangler.jsonc: env.production's");
+    });
+  });
+
   it("checkProdReadiness includes the apps' problems", () => {
     const problems: string[] = ready.checkProdReadiness(join(appsDir, "web"), "does-not-exist.json", appsDir);
     expect(problems.join("\n")).toContain("TURNSTILE_SITE_KEY is empty");

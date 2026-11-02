@@ -1,6 +1,8 @@
-// Every route group the API Worker answers (M5.0): the rows of ROUTES not marked `on: "front"` or `on: "finance"`. No sign-in code and no
-// secrets. Since M6.1 stage A (ADM-PAY-01) the invoice, statement, report, approval-queue and dashboard routes are in the finance Worker
-// (routes-finance.ts); no module here may import the invoice chain (scripts/worker-budget.mjs `INVOICE_CODE`).
+// Every route group the API Worker answers (M5.0): the rows of ROUTES not marked `on: "front"`, `on: "finance"` or `on: "invoices"`. No
+// sign-in code and no secrets. Since M6.1 stage A (ADM-PAY-01) the invoice, statement, report, approval-queue and dashboard routes left this
+// Worker, and since the fourth admin Worker (2026-11-03) they are in the invoices Worker (routes-invoices.ts); payments, credit, advices and
+// the gateways are in the finance Worker (routes-finance.ts). No module here may import the invoice chain or gateway client code
+// (scripts/worker-budget.mjs `INVOICE_CODE`, `GATEWAY_CODE`).
 import type { App } from "./app.ts";
 import { approvalRequests } from "./approval-requests.ts";
 import { audit } from "./audit.ts";

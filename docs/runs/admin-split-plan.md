@@ -1,4 +1,4 @@
-Status: PR READY https://github.com/techaust/techaust_platform/pull/163
+Status: PR open (review APPROVE; CLAUDE.md updated for four Workers)
 Tier: B (Workers; planning only, no code)
 Usage: lead claude-opus-5-5/high (cloud session admin-split-plan); analyst (measure + options) claude-opus-5-5/high, skills asked for `cloudflare:workers-best-practices`, `cloudflare:wrangler`, `cloudflare:workers-profiling` (each "Unknown skill": Cloudflare skills don't load in cloud sessions; no other skill fits a split plan): 5-h 5 % at start (23:12 IST). reviewer (brief, round 1 and re-check) claude-opus-5-5/high, skill code-review (Cloudflare skills absent in the cloud; security-review not fitting a plan), and its `code-review` helper general-purpose claude-opus-5-5/high (read-only, the docs/14 §9 exception): 5-h 5 % at start (reading). Readings: USAGE 26 at 2026-11-02T23:56+05:30; USAGE 5 at 2026-11-02T23:40+05:30; USAGE 25 at 2026-11-02T23:52+05:30; USAGE 24 at 2026-11-03T00:20+05:30.
 
@@ -12,6 +12,7 @@ Session: `admin-split-plan` (cloud). Branch: `docs/admin-split-plan` (from `main
 **Owner's answers (2026-11-02, through the main session):**
 - **Q1 A** ("New step, reordered (Recommended)"): the staging deploy order becomes admin API, **admin invoices (new)**, admin front, **jobs**, **admin finance**, portal, website. The health check covers all four admin Workers. (The main session relayed it as "New step, reordered (Recommended)", the round 1 wording of option A.)
 - **Q2 A** ("Yes, roll back, tell me after (Recommended)"): if the split misbehaves on staging, the lead may roll the staging admin front, admin finance and jobs Workers back to their previous versions straight away and tell the owner afterwards (staging only), as the M5.0 rule of 2026-10-27. The Q1 order has no gap on this deploy, so this is a safety net only.
+  - **Rollback order (lead, 2026-11-03, from the early check's finding 2; runbook `environments.md`):** admin finance first, then jobs, then the admin front; the invoices Worker and the API stay in place.
 
 - **Q3 A** ("Yes, move it in M6.5 (Recommended)", 2026-11-02): keep the Q1 order for the split; in the M6.5 PR the finance step moves back right after admin invoices (admin API, admin invoices, admin finance, admin front, portal, jobs, website) and stays there.
 
@@ -360,3 +361,199 @@ Also in "Worker budget": "admin invoices 800,000 (plan line 650,000), admin fina
 
 ## Handover
 Brief written from the analyst's draft and checked by the lead against the M6.4 branch (the import cut, the advance's callers, the row count). Review round 1 SEND BACK (eight findings, all fixed); round 2 APPROVE with one medium and two lows (the lows fixed; the medium handled through the owner's Q1 answer and Q3). The owner answered Q1 A (jobs before finance) and Q2 A (staging rollback, tell after) on 2026-11-02, recorded and built into C.6 and E. Q3 A (2026-11-02): finance moves back before jobs in the M6.5 PR. PR #163 is open; the main session merges it.
+
+## Builder B1 report (Early check)
+_Builder B1, 2026-11-03, branch `fix/admin-invoices-b1` from `origin/feat/admin-invoices-worker` (1bf03b41, the M6.4 head). Commits f0e73b2d (the cut, RPC, config, scripts, workflow) and 275ad43c (tests green). Stopped for the analyst's early check (A–C built, their tests pass). Tier B._
+
+### Skills
+- `cloudflare:workers-best-practices`: loaded. Applied: no hand-written `Env` (finance reads `ADMIN_ADVANCE` by name like `LEADS_QUEUE`; the front's `ADMIN_INVOICES` comes from `wrangler types`), no swallowed RPC failure, entrypoints extend `WorkerEntrypoint`, `this.env` in the class, no module-level request state (the `rpc.ts` counter is the existing per-isolate call count).
+- `cloudflare:wrangler`: loaded. Applied: `services` are not inherited, so each scope lists its bindings; the Vite plugin's auxiliary Worker and the `--config dist/<env>/wrangler.json` deploy; Step 0.6 read from the Cloudflare docs.
+- `cloudflare:workers-profiling`: loaded. Not used: there is nothing deployed to profile here. The start-up figures below are the budget's local `node:vm` proxy; the staging cold reading stays the lead's (G).
+
+### Step 0
+1. **Re-measure** (`pnpm --filter @techaust/admin build` on 1bf03b41, `.logs/b1-admin-build-base.log`): front 111,333; API 489,722; **finance 712,415** (M6.4's final figure 712,195: +220 bytes, well under 30 KB, so the row lists stand).
+2. **Row list:** 61 `X(...)` rows in `guard.ts`, at exactly the brief's lines. 32 to invoices (`:104,106,107` statement; `:169` dashboard; `:172,173,174,176` reports, `/reports/payments` included: served by `reports.ts`; `:217–243` the 22 invoice and note rows, `/service-completed` (served by `invoices.ts`) and `/reminders/pause|resume` (served by `invoice-send.ts`) included, and `GET /clients/:id/invoices`; `:289,290` approvals). 29 stay finance (`:248–284`). **Every row is covered by the rule; none needed the lead.**
+3. **Import cuts, both ways:**
+   - payments side into the invoice chain: only the two the brief named (`payment-ledger.ts:54` `INVOICE_VOID` from `invoice-model.ts`; `payments.ts:87` and `payment-ledger.ts:67` `CLIENT_GONE` from `quote-model.ts`) plus `gateway/routes.ts:24` importing `advance.ts` (the B.4 cut). Shared modules (`anonymised`, `docs-upload`, `session-refusal`, `system`, `settings-cache`, `http`, `keyset`, `payment-messages`, `warm-rpc`) import nothing of the chain.
+   - invoice side into gateway code: only `advance.ts` → `./settle.ts` (`REVIEW_LINK`) and `./messages.ts`. No invoice-side module imports `gateway/**`, `payments.ts`, `payment-ledger.ts` or `advices.ts`.
+   - All cut (A.6); nothing else found.
+4. **Local service bindings with a named entrypoint (proved in `pnpm dev`, offset 100, with a temporary uncommitted probe route, reverted):**
+   - finance (auxiliary) → invoices (auxiliary) `ADMIN_ADVANCE`/`GatewayAdvance` under `@cloudflare/vite-plugin` 1.62.5: **connects**; `issueGatewayAdvance({paymentId:"probe-none"})` answered `{"result":"not_pending"}` from the invoices Worker. A signed-out `/api/v1/dashboard` (invoices) and `/api/v1/payments` (finance) both answered 401 through the front.
+   - jobs (`wrangler dev`, own process, dev registry) → invoices `ADMIN_JOBS`/`BillingJobs` and `ADMIN_ADVANCE`/`GatewayAdvance`: wrangler listed both `local [connected]`; the calls answered `{"result":"skipped",…,"why":"plan_missing"}` and `{"result":"not_pending"}`. **jobs → finance `ADMIN_GATEWAY`/`GatewayEvents` also connected** (`refreshCheckout` answered `{"result":"no_open_link"}`), so the M6.2 "never connected locally" follow-up did not reproduce on this PC today.
+   - vitest: the pool has no invoices Worker; `test-helpers.ts` `withAdvance` gives every request of the combined app an in-process `ADMIN_ADVANCE` (the real `issueGatewayAdvance` on the passed env) unless the test brings its own; the pool's `ADMIN_INVOICES` is a 502 stub like the others.
+5. **Env typing:** the front's generated `Env` (`wrangler types --env staging` on `wrangler.jsonc`) does not hold the finance-only bindings; finance reads them by name (`Reflect.get(env, "LEADS_QUEUE")`, `envText(env, …)` for the keys). `ADMIN_ADVANCE` gets the same treatment (`gateway/advance-rpc.ts`, `Reflect.get`); `ADMIN_INVOICES` is a front binding, so it is in the generated `Env` and `forward.ts` uses `env.ADMIN_INVOICES` typed. No hand-written `Env`.
+6. **Deploy with a missing bound Worker:** Cloudflare's service-bindings page ("Deployment"): "the target Worker … must be deployed first … Otherwise, when you attempt to deploy Worker A, deployment will fail, because Worker A declares a binding to Worker B, which does not yet exist." A missing **named entrypoint** on an existing Worker is not stated there (the jobs config's old comment claimed it fails; not verified). The C.6 order never needs either.
+
+### What I built
+- **A (cut and routing):** `context.ts` (`on: "invoices"`), `guard.ts` (`I(...)`, 32 rows `X` → `I`, nothing else on the rows changed), `forward.ts` (`workerOf` three-way, `ADMIN_INVOICES`), new `routes-invoices.ts` (today's order), `routes-finance.ts` (gateway and advice routers still before `payments`), new `invoicing.ts` (default app, `BillingJobs` word for word, `GatewayAdvance`), `finance.ts` (no `BillingJobs`, no `issueGatewayAdvance`), new `rpc.ts` (`id`, `rpcId`, `rpcLog` moved from finance), `warm-finance.ts` / new `warm-invoices.ts`, `test-app.ts` (`mountInvoices` before `mountFinance`). Cuts: `INVOICE_VOID` into `invoice-consts.ts` (re-exported by `invoice-model.ts`), `CLIENT_GONE` into `anonymised.ts` (re-exported by `quote-model.ts`), new `gateway/consts.ts` (`REVIEW_LINK`; `settle.ts` re-exports it).
+- **B (advance RPC):** core `GatewayAdvanceApi` (and `GatewayEventsApi` without the method); `GatewayAdvance` in `invoicing.ts`; new `gateway/advance-rpc.ts` (`advanceViaRpc`: a binding error is not caught, a malformed answer throws `AdvanceRpcError`), `gateway/routes.ts:345` calls it; jobs `gateway-rpc.ts` (`adminGateway` needs only `processEvent`; new `adminAdvance` with `rpc_unavailable`/`rpc_bad_result`, both throw), `gateway.ts` `gateway.advance` → `adminAdvance`; `billing-rpc.ts` comment.
+- **C (config):** new `apps/admin/wrangler.invoices.jsonc` (no secrets, no services, no `LEADS_QUEUE`; `PAYMENTS_LIVE_ALLOWED` "false" in every scope; production vars only); `wrangler.finance.jsonc` `ADMIN_ADVANCE` (top level and staging); front `ADMIN_INVOICES` (three scopes); jobs `ADMIN_JOBS` → invoices, new `ADMIN_ADVANCE` (top level and staging); `vite.config.ts` third auxiliary Worker and its minify; `vitest.config.ts` (admin `ADMIN_INVOICES` stub, jobs `ADMIN_ADVANCE` stub); `package.json` (`adminInvoices` budget, `deploy:staging:invoices`); **`.github/workflows/deploy-staging.yml`** in the owner's Q1 A order: 1 admin API, 2 admin invoices, 3 admin front, 4 jobs (+ its health check), 5 admin finance, then the admin health check (named for four Workers), 6 portal, 7 web; commands, env and health checks unchanged, no new secret. Re-grep of `env.`/`c.env.` in the moved modules: only `DB`, `DOCS`, `EMAIL_QUEUE`, `PDF_QUEUE`.
+- **D.1–D.4 (scripts):** `worker-budget.mjs` (`adminInvoices`; `GATEWAY_CODE` = the gateways' API hosts and the `/v1/payment_links`, `/v2/checkout/orders` paths, in `admin`, `adminApi`, `adminInvoices`; `ADVANCE_CODE` = `invoice.advance_issue_auto`, in `adminFinance` with `INVOICE_CODE`; finance plan line 500,000); `check-worker-config.mjs` (the invoices config in `ADMIN_AUX_CONFIGS`, `AUX_OPTS`/`INVOICES_OPTS`, `services` refused unless listed (finance: exactly `ADMIN_ADVANCE`, none in production), `frontServiceProblems` with `ADMIN_INVOICES` and pairwise distinct names, new `entrypointBindingProblems` for all five entrypoint bindings, jobs `BillingJobs` target = invoices, invoices in the live-flag check); `check-staging-build.mjs` (`admin-invoices`); `check-prod-readiness.mjs` (the invoices config in `PROD_CONFIGS`; every staging `services` binding needs a production twin with the same binding and entrypoint naming the production Worker).
+- **Deviation (interim warm fixtures, for B2):** D.6–D.7 are B2's, so until the probe writes `warm-fixtures/invoices.ts`, both Workers dry-run the existing `FINANCE_WARM`, each only the calls its own app answers (`ownCalls` in `warm-routes.ts`): invoices the issue, an invoice, the dashboard, the list, approvals (4 of 5 answer below 400, as before); finance the invoice's Payments panel and "Needs review" (2). Both bundles carry that answer book (~20 KB) for now; B2 replaces it and can drop `ownCalls`.
+- **Deviation (settings warm-up in both):** A.7 lists the settings schemas under invoices only; `warm-finance.ts` keeps `warmSettings()` too, because the finance paths read settings through `cachedSetting` (payment terms, the gateways' modes) and the warm-up was there before; removing it would move a ~1 ms cold parse into finance's first request. Counts pinned in new `warm-split.test.ts` (invoices 28, finance 8 + 9 + `GATEWAY_WARM_STEPS`).
+- Found by the tests and fixed: `warmEnv` had no `ADMIN_INVOICES`, so the front's start-up dry run answered 502 on its three forwarded invoice calls; it now has the drop-everything stub.
+
+### Routing table
+| Worker | Rows | Entrypoints |
+|---|---|---|
+| admin front (`index.ts`) | 24 (health, sign-in, account, staff) | default |
+| admin API (`api.ts`) | 118 | default |
+| **admin invoices (`invoicing.ts`)** | **32** | default, `BillingJobs` (draftCarePlan, issueCareDraft), **`GatewayAdvance` (issueGatewayAdvance)** |
+| admin finance (`finance.ts`) | **29** | default, `GatewayEvents` (processEvent, refreshCheckout), `PortalPayments` (createLink, refreshForClient, capturePayPalReturn) |
+
+### Bytes and start-up (`pnpm --filter @techaust/admin build`, `.logs/b1-admin-build.log`; start-up = fastest of 7, start-up work included, local proxy)
+| Worker | Bytes | Line / ceiling | Start-up |
+|---|---|---|---|
+| admin front | 111,465 | – / 150,000 | 28.6 ms |
+| admin API | 489,811 | – / 800,000 | 72.2 ms |
+| **admin finance** | **342,405** | 500,000 / 800,000 | 65.2 ms |
+| **admin invoices** | **511,413** | 650,000 / 800,000 | 79.2 ms |
+Every forbidden marker passes (`INVOICE_CODE` and `ADVANCE_CODE` absent from finance; `GATEWAY_CODE` absent from front, API and invoices). Finance is ~12–22 KB over the brief's 320–330 K estimate because it still carries the shared `FINANCE_WARM` answer book (interim, above).
+
+### Tests (all through `tools/heavy.sh`)
+- admin full suite: **4,419 passed, 1 failed** (`reports.test.ts` pinned the report rows to `finance`; changed on purpose to `invoices`), re-run of that file 21/21 (`.logs/b1-admin-test.log`, `.logs/b1-reports-test.log`). Earlier focused run of split, gateway-review, warm-routes, warm-router, warm-split, care-billing: 505 tests, 2 failures fixed (the `warmEnv` stub), re-run green.
+- jobs full suite: 643 passed, 1 failed (my new dead-letter test needed a checkout row; fixed), re-run of `gateway.test.ts` + `stripe-hook.test.ts` 40/40 (`.logs/b1-jobs-test.log`, `.logs/b1-jobs-gw-test.log`).
+- web script tests (worker-config, worker-budget-finance, staging-checks, prod-readiness-apps, observability-config, deploy-workflow): 176/176 (`.logs/b1-web-scripts-test.log`).
+- core `gateway-rpc` + `worker-budget`: 57/57.
+- `node scripts/check-worker-config.mjs`: ok. Typecheck admin, jobs, web (and core): 0 errors (`.logs/b1-typecheck-final.log`). Whole-repository `pnpm lint`: exit 0, 10 warnings and 8 infos, all in files this branch does not touch (`.logs/b1-lint.log`).
+- New tests: `split.test.ts` (32/29 counts, the invoices and finance path rules both ways, four apps mount exactly their rows and together `ROUTES`, the forwarder's binding per row with the two others never called, parity through the front for every forwarded row, the invoices app called directly, each entrypoint and method list on one entry only, the 502 per Worker, the import cuts at the source); `gateway-review.test.ts` (the retry route and the advance on separate counters, each ≤ 45; "Try again" when the binding throws, answers malformed, lacks the method or is absent: the standard 500, nothing written, item still open, never `advance_changed`, and the same item issues once the hop works; `GatewayAdvance` refuses bad ids with nothing read, `lastTry` only when strictly `true`, id-only `rpc` lines); jobs `gateway.test.ts` (a throwing or malformed `ADMIN_ADVANCE` propagates on every try including the last; through `handleQueue` the last try is retried, and its dead letter writes one open `dead_letter` item and the Owner's bell; `gateway.event` no longer needs the advance); `warm-split.test.ts`; script tests for every new rule with failing cases.
+
+### Not verified
+- The full `pnpm check` and `pnpm test` (B2's final step); the full jobs and admin suites were not re-run end to end after their one-line fixes (only the affected files).
+- Staging: nothing deployed (never touched). The deploy order's no-gap claim, the cold readings, and whether a missing named entrypoint fails a deploy.
+- `scripts/cpu-probe.mjs`, `staging-health.mjs` (D.5), the per-Worker fixtures (D.6–D.7) and the runbooks (D.8): B2's, untouched.
+
+### Open questions
+- None blocking. For the lead: keep `warmSettings()` in finance too (deviation above)?
+
+### Dev servers
+Both stopped (admin Vite on :5273, jobs wrangler on :8887); the probe edits reverted (`git checkout`), nothing of them committed.
+
+## Lead on B1 (2026-11-03)
+Usage: builder B1 claude-opus-5-5/high (skills `cloudflare:workers-best-practices`, `cloudflare:wrangler`, `cloudflare:workers-profiling`).
+- **Deviation 2 accepted:** finance keeps `warmSettings()` (it reads payment terms and gateway modes through `cachedSetting`; about 1 ms of cold parsing stays out of its first request).
+- **Deviation 1:** B2 replaces the interim shared `FINANCE_WARM` with per-Worker fixtures and removes `ownCalls`.
+- The task branch took `origin/main` (M6.4 squash #164) keeping its side after `git diff --quiet 1bf03b41 origin/main` proved them equal.
+
+## Early check (analyst, 2026-11-03, e8ae93cb vs `origin/main` 335efc4c): GO
+Usage: analyst claude-opus-5-5/high (skills `cloudflare:workers-best-practices`, `cloudflare:wrangler`); no tests run (relies on B1's runs).
+
+**Verified:** routing counts front 24, API 118, invoices 32, finance 29 (`split.test.ts:196-203`); exactly the 32 brief rows move `X(` → `I(` with path, permission, audit action and body kind unchanged; `forward.ts:17-22` three-way `workerOf`/`bindingOf`, the 502 body unchanged; mount orders kept; `approvals.ts` still refuses `payment_verify`. The advance RPC never swallows a failure (`gateway/advance-rpc.ts`: binding error not caught, malformed answer `AdvanceRpcError`, `retry` → 409 only on a real answer, `routes.ts:349`; jobs `gateway-rpc.ts:59-73` throws `rpc_unavailable`/`rpc_bad_result`, `gateway.ts:79` lets the queue retry and dead-letter; tests in jobs `gateway.test.ts` and `gateway-review.test.ts:1141,1161`). The Q1 deploy order has no gap at any step. Configs: `wrangler.invoices.jsonc` with no public URL in any scope, no secrets, `PAYMENTS_LIVE_ALLOWED` "false" in all scopes, bindings matching the front per scope; finance `ADMIN_ADVANCE` (top level, staging); front `ADMIN_INVOICES` (three scopes); jobs `ADMIN_JOBS`/`ADMIN_ADVANCE` → invoices, `ADMIN_GATEWAY` → finance. Guards and the workflow (Q1 order, health checks, actions pinned by SHA, triggers unchanged) correct; budget markers (`INVOICE_CODE`, `ADVANCE_CODE` forbidden in finance; `GATEWAY_CODE` forbidden in front, API, invoices); import cuts (`invoice-consts.ts`, `anonymised.ts`, `gateway/consts.ts`; `split.test.ts:891-931`). Both B1 deviations acceptable.
+
+**Findings:**
+1. **Medium** `.github/workflows/deploy-staging.yml:153-156` says the admin health check covers four Workers incl. `/api/v1/payments` 401 from finance, but `scripts/staging-health.mjs:19-26` is unchanged. **Fix (B2, D.5):** add `{path: "/api/v1/payments", status: 401}` to `CHECKS.admin`, its comment (dashboard is invoices now) and its test.
+2. **Medium** the Q2 rollback order is written nowhere and only one is safe: **admin finance first, then jobs, then the admin front; leave invoices and the API in place** (old front before old finance → invoice rows 404; old jobs before old finance → `care.bill` and `gateway.advance` dead letters). **Fix (B2, D.8):** into `docs/runbooks/environments.md` with reasons; Phase 7 note: production creates the invoices Worker before the front, finance and jobs that bind it.
+3. **Low** stale comments: `apps/admin/worker/index.ts:1-3`, `api.ts:1-3`, `routes-api.ts:1-3`, `scripts/staging-health.mjs:19-20`.
+4. **Low** `apps/admin/worker/gateway/advance-rpc.ts:24-28`: an absent binding/method fails as a generic TypeError. **Fix:** a shape check throwing `AdvanceRpcError("rpc_unavailable")`; the test.
+5. **Low** `scripts/check-worker-config.mjs:312-318`: `PAYMENTS_LIVE_ALLOWED` checked only where set. **Fix:** required and `"false"` in every scope of the finance and invoices configs; a failing test.
+6. **Low** `apps/web/test/admin-portal-origin.test.ts:55-59`: also loop over `wrangler.finance.jsonc` and `wrangler.invoices.jsonc`.
+7. **Low** start-up: invoices 79.2 ms, finance 65.2 ms (local proxy) with the interim `FINANCE_WARM`; nothing warms `GatewayAdvance.issueGatewayAdvance` yet. **Fix (B2, D.6–D.7):** per-Worker fixtures incl. the `GatewayAdvance` dry run; re-measure.
+
+**B2 must carry:** D.5 (finding 1); the rollback order (finding 2); D.6–D.7 (`cpu-probe.mjs` with the invoices Worker: `frontEnv.ADMIN_INVOICES`, `financeEnv.ADMIN_ADVANCE` → the loaded `GatewayAdvance`, a probe row `rpc GatewayAdvance.issueGatewayAdvance`; `warm-fixtures/invoices.ts` and a slimmer `finance.ts`; `ownCalls` removed from both entries and `warm-routes.test.ts`; a dry run of `GatewayAdvance` and finance's review-retry route against a warm stub `ADMIN_ADVANCE`; re-measure); D.8 (`cpu-baseline.md` with an invoices row); findings 3–6; the full `pnpm check` and `pnpm test` with numbers.
+
+**Not verified:** a deploy with a missing named entrypoint (Step 0.6); that `CF_API_TOKEN_STAGING` can create a new Worker script (account-wide Workers Scripts permission assumed); staging behaviour.
+
+## Lead triage of the early check (2026-11-03)
+All seven findings go to **builder B2** with D.5–D.8 and the full checks. The rollback order (finding 2) completes the owner's Q2 answer: it is copied next to Q2 at the top of this file once B2 writes it into the runbook. The token's Worker-create permission is checked by the first staging deploy itself (the deploy step fails loudly; Q2 rollback allowed).
+
+## Builder B2 report
+_Builder B2, 2026-11-03, branch `fix/admin-invoices-b2` from `origin/feat/admin-invoices-worker` (7dffc118). Commits cfa5e58e, 30acc6a5, 2fb8fb90, 767ab772, 2bba9735 and this report. Tier B; no migrations, no secrets, no screens, nothing hosted touched._
+
+### Skills
+- `cloudflare:workers-best-practices`: loaded. Applied: no swallowed RPC failure (`advanceViaRpc` names a missing binding `rpc_unavailable` and calls the method on its binding, as an RPC stub needs its receiver); no module-level request state (the dry runs build their own made-up env per call); no hand-written `Env`.
+- `cloudflare:wrangler`: loaded. Applied: the rollback steps use `wrangler rollback <version-id> --name … -m …` (checked against the project's wrangler `--help`); the Phase 7 creation order follows the service-bindings "Deployment" rule B1 quoted (a bound Worker must exist first).
+- `cloudflare:workers-profiling`: loaded. Not used for profiling: nothing deployed to profile, and staging is the lead's. The CPU figures below come from the local probe and the budget's `node:vm` proxy.
+
+### What I did (the early check's "B2 must carry")
+1. **D.5, finding 1:** `scripts/staging-health.mjs` `CHECKS.admin` adds `/api/v1/payments` 401 (finance) beside health, leads (API) and dashboard (now invoices); the comment says four Workers. Tests: the path list, the four calls in order, and a new case where finance answers the front's 502 on `/payments` (fails `502, expected 401`).
+2. **Finding 2, the rollback order:** `docs/runbooks/environments.md` has a new section, "Rolling back the fourth admin Worker on staging": **admin finance first, then jobs, then the admin front; the invoices Worker and the API stay**, with the reason for each step (old jobs before old finance → `care.bill` and `gateway.advance` dead letters; old front before old finance → invoice rows 404), how to roll back (dashboard or `wrangler rollback`) and the health checks to run by hand. The runbook also gets:
+   - the invoices Worker's row;
+   - the `ADMIN_JOBS`, `ADMIN_ADVANCE` and `ADMIN_GATEWAY`/`ADMIN_PAY` binding rows;
+   - the finance row rewritten for the payments side (the only admin Worker with secrets);
+   - seven Workers, and the seven-step Q1 order with the M6.5 move (Q3);
+   - the health checks after steps 4 and 5;
+   - a Phase 7 note: production creates `techaust-platform-admin-invoices` before the front, finance and jobs that bind it.
+
+   Per the lead's triage, the lead copies this order next to Q2 at the top of this file.
+3. **Finding 3:** stale comments in `apps/admin/worker/index.ts`, `api.ts`, `routes-api.ts`, `scripts/staging-health.mjs`.
+4. **Finding 4:** in `gateway/advance-rpc.ts`, a missing binding or method throws `AdvanceRpcError("rpc_unavailable")` (the same codes as jobs' `GatewayRpcError`); a thrown call is not caught; a malformed answer is `rpc_bad_result`. New test in `gateway-review.test.ts`: five missing shapes, the thrown error passes through unchanged, the malformed answer, and the call made on its binding with `{paymentId}`. The route's existing tests (the standard 500, nothing written, never `advance_changed`) still pass.
+5. **Finding 5:** in `scripts/check-worker-config.mjs`, `LIVE_FLAG_REQUIRED = ["finance", "admin invoices"]`: those two configs must state `PAYMENTS_LIVE_ALLOWED: "false"` in every scope (a missing flag fails there; other configs still fail only a wrong value). Failing test with the flag missing in finance (top level, production) and invoices (staging), and the API config not on the list.
+6. **Finding 6:** `apps/web/test/admin-portal-origin.test.ts` loops over `wrangler.api.jsonc`, `wrangler.finance.jsonc` and `wrangler.invoices.jsonc`, in every scope, and checks both environments exist.
+7. **D.6, `scripts/cpu-probe.mjs`:**
+   - it loads the invoices bundle (`BUNDLES.invoices`); `frontEnv.ADMIN_INVOICES` points at it, and `financeEnv.ADMIN_ADVANCE` calls the loaded `GatewayAdvance`;
+   - the invoice cases (issue, `GET /invoices/:id`, PATCH, advance-invoice, dashboard, list, approvals) moved to `worker: "invoices"`;
+   - new cases `rpc GatewayAdvance.issueGatewayAdvance` (invoices) and `POST /payments/review/:id/retry` (finance's own share: its `ADMIN_ADVANCE` answers at once through `FINANCE_TARGETS`); the front's targets include `ADMIN_INVOICES`;
+   - the seed makes n proformas, each for its own made-up copy of the INR sample client (`LINKS_PER_CLIENT_HOUR` is 10). Each is issued, paid through a staff link, and its event processed by finance's own `GatewayEvents.processEvent` (pending, `gateway.advance` queued), with an open `dead_letter` item per payment. The online-payment bells this rings are removed, so the API's notifications fixture still holds the two lead bells.
+8. **D.7, start-up dry runs:**
+   - `ownCalls` is removed (`warm-routes.ts`, both entries, `warm-routes.test.ts`);
+   - `--write-fixtures` now writes `warm-fixtures/invoices.ts` (`INVOICES_WARM`), `invoices-rpc.ts` (`INVOICES_RPC_WARM`) and a slimmer `finance.ts` (31,826 → 4,876 bytes; its calls: the Payments panel, Needs review, "Try again");
+   - the invoices entry dry-runs its own routes and **`issueGatewayAdvance`** (new `warm-advance.ts`, the L31 pattern: made-up rows, counter ids);
+   - for the counter ids, `issueGatewayAdvance` takes an optional `opts.ids` (default `uuidv7`) for its invoice, receipt, send and audit ids, and `advanceDraft` an optional `ids` for its lines. The `GatewayAdvance` class never passes it, and an RPC can't carry a function, so behaviour is unchanged;
+   - the finance entry dry-runs "Try again" against a warm stub `ADMIN_ADVANCE` in `warmEnv`, which answers `{result:"issued", number:"WARM/1"}` and never calls out;
+   - `warmIds` moved to `warm-routes.ts` (`warm-rpc.ts` re-exports it), so the invoices bundle imports no gateway code;
+   - the fixture writer replaces the local simulator's Razorpay ids (`pay_A<amount>R<hex>`, `plink_…`) with made-up lowercase ids, the same way across a whole fixture (`madeUpGatewayIds`, exported and tested in `packages/core/test/cpu-probe.test.ts`; `scripts/cpu-probe.d.mts` is new). The secret-shape scan rightly flags the simulator's form.
+9. **D.8:** `docs/runbooks/cpu-baseline.md`:
+   - a "four admin Workers" paragraph: the dashboard and invoice readings are now the invoices Worker's row;
+   - table rows for finance after the split and for **admin invoices**, their staging cells "not read yet" (the lead's);
+   - the fixture list and the regenerate steps (six files, `warm-advance.test.ts`);
+   - a paragraph on the `GatewayAdvance` dry run and finance's "Try again" one;
+   - the local probe table;
+   - the traces wording for four admin Workers.
+10. **E (the workflow):** B1 had already built it in the Q1 order; unchanged here. The full test run found one test B1 missed: `packages/core/test/fetch-catalogue-snapshot.test.ts` still named "Deploy 1 of 6" (now "1 of 7").
+
+### Bytes and start-up (`pnpm --filter @techaust/admin build`, `.logs/b2-admin-build3.log`; start-up = fastest of 7, start-up work included, local proxy, separate readings)
+| Worker | Bytes | Line / ceiling | Start-up |
+|---|---|---|---|
+| admin front | 111,570 | – / 150,000 | 26.6–28.0 ms |
+| admin API | 489,916 | – / 800,000 | 71.7–77.0 ms |
+| admin finance | **324,674** (B1: 342,405) | 500,000 / 800,000 | 56.8–84.2 ms |
+| admin invoices | **518,184** (B1: 511,413) | 650,000 / 800,000 | 83.7–85.3 ms (now with the `GatewayAdvance` dry run) |
+| jobs | 735,102 | – / 1,000,000 | 67.7 ms |
+
+Every forbidden marker passes. I also loaded the built bundles under the probe's global-scope rules with a scratch script on the start-up probe hook: the invoices Worker's dry runs answered 4 HTTP calls and 1 advance (`issued`); finance's answered 3 HTTP calls and 5 RPC calls.
+
+**Local probe** (`.logs/b2-cpu-probe.log`, median of 5, first call):
+- invoices: issue 4.5 ms, `GET /invoices/:id` 3.7, dashboard 2.5, list 2.9, approvals 2.3;
+- **`GatewayAdvance.issueGatewayAdvance` 3.6 ms (3.0–5.1; 40 statements)**, against 6.0 ms for the Owner's advance-invoice route, which runs the same issue without a dry run;
+- finance: the Payments panel 2.2, Needs review 1.6, "Try again" 2.7.
+
+Like the M6.4 RPCs, the advance's first call is above the 2.5 ms local target, so the staging cold reading stays the gate. The full table is in `cpu-baseline.md`.
+
+### Commands and results (every heavy one through `tools/heavy.sh`)
+- Web script tests (worker-config, staging-checks, admin-portal-origin, deploy-workflow): 119/119 (`b2-web-scripts`).
+- Admin, focused: gateway-review 37/37; warm-routes, warm-rpc, warm-advance, warm-fixtures, warm-split and split: 438 passed after fixes (`b2-warm-tests*`). Core cpu-probe: 5/5.
+- Admin and jobs builds; `node scripts/cpu-probe.mjs --write-fixtures` twice (`b2-write-fixtures2`: every case 200, the advance `issued`); the probe run above.
+- Typecheck admin and core: 0 errors (`b2-typecheck-admin`).
+- `pnpm --filter @techaust/web build`, then **`pnpm check`: exit 0** (`b2-check`). Its whole-repository lint: 1,628 files, 10 warnings and 8 infos, the same pre-existing ones B1 reported; all guards ok.
+- **`pnpm test`: exit 0** (`b2-test2`): testing 4, auth 135, ui 471 (+2 skipped), core 2,324, email 135, db 824, pdf 404, web 930, portal 782, jobs 644, **admin 4,425** (156 files). The first full run failed only on the "Deploy 1 of 6" test; after the fix the re-run is green.
+
+### Not verified
+- Staging: nothing deployed. The rollback order comes from reading the bindings, not from a rollback. The staging cold readings of the four admin Workers, including the `GatewayAdvance` first call against its ≤ 7 ms target, are the lead's.
+- **`BillingJobs` has no start-up dry run** (brief D.7's first bullet). It had none in finance either. Adding one means threading counter ids through `care-billing.ts` (`draftCarePlan`, `issueCareDraft`, their sends, reminders and audit rows) and adding probe cases for a due care plan. That is a wider change on a money path, so it is left for the lead (open question 1).
+- `warm-fixtures.test.ts` does not scan `finance-rpc.ts` (M6.4). When added, the scan flagged that fixture's PayPal sandbox URLs (`…checkoutnow?token=AGQZ…`) as "a long base64 run": a false positive I left alone (open question 2).
+- Start-up readings in the local proxy vary by about ±30 % (finance 56.8–84.2 ms across readings).
+
+### Open questions
+1. `BillingJobs` dry run: build it now (ids threaded through care billing, plus probe cases), or keep it as a follow-up until the staging reading of `care.bill`?
+2. `finance-rpc.ts` and the secret-shape scan: allow-list the PayPal checkout URL shape in the test, or have the fixture writer swap the sandbox token for a made-up one?
+
+### Dev servers
+None started.
+
+## Lead on B2 (2026-11-03)
+Usage: builder B2 claude-opus-5-5/high (skills `cloudflare:workers-best-practices`, `cloudflare:wrangler`, `cloudflare:workers-profiling`). Merged with `origin/main` (#165, docs). `pnpm check` and `pnpm test` exit 0 on B2's tip (admin 4,425, web 930, jobs 644, portal 782, core 2,324, db 824, pdf 404).
+- **Q1 (`BillingJobs` dry run):** a follow-up after the staging cold reading of `care.bill` (a daily cron call; threading ids through `care-billing.ts` is a wider change on a money path than this split needs).
+- **Q2 (`finance-rpc.ts` in the fixture scan):** the fixture writer swaps the PayPal sandbox token for a made-up one (as `madeUpGatewayIds`) and the scan covers the file; in the fix round if the review raises nothing else, else a follow-up.
+- The rollback order is copied next to Q2 at the top of this file.
+
+## Code review (reviewer, 2026-11-03, 2a4d9d23 vs `origin/main` 411efb90): APPROVE
+Usage: reviewer claude-opus-5-5/high (skills `cloudflare:workers-best-practices`, `cloudflare:wrangler`; `code-review` and `security-review` loaded but read the main checkout, so their checklists were applied by hand to this diff). Ran on the tip: web build exit 0; `pnpm check` exit 0 (69 migrations); **`pnpm test` exit 0**: testing 4, auth 135, ui 471 (+2 skipped), core 2,324, email 135, db 824, pdf 404, web 929 (+1 skipped), portal 782, jobs 644, admin 4,425 (156 files).
+- **Verified:** the 32 moved rows change only `X(` → `I(`; the advance move keeps its checks and log line; no failure swallowed on the hop (finance `rpc_unavailable`/`rpc_bad_result` → 500, `ADVANCE_CHANGED` only on a real `retry`; jobs retries and dead-letters); no `mutate` batch spans two Workers; the `ids` option only from `warm-advance.ts`; bindings per scope (no public URL, no secrets on invoices, gateway secrets unchanged on finance); the workflow (Q1 order, the four-Worker health check, SHA pins, fork safety) with no gap at any step; the rollback order correct against the old versions' bindings; the guards and budget markers; the dry runs reachable only through warm envs; fixtures made-up only.
+- **Findings (all low):** 1. CLAUDE.md's M5.4 paragraph still put `BillingJobs` in finance and said "deploy finance before jobs" → **fixed by the lead on this branch** (the four-Worker paragraph, the deploy order incl. Q3, the care-billing sentence, the Razorpay sentence, the Worker budget, the workflow line). 2. `warm-fixtures/finance-rpc.ts` outside the secret-shape scan (stub order ids already on `main`) → follow-up: the fixture writer swaps the sandbox token for a made-up one and the scan covers the file. 3. `BillingJobs` has no start-up dry run (none in finance before either) → follow-up gated on the staging cold reading of `care.bill`.
+- **Not verified:** staging (the no-gap claim, the rollback, cold readings); whether `CF_API_TOKEN_STAGING` can create the new Worker script (the first deploy shows it; Q2 rollback allowed); a deploy with a missing named entrypoint; local `pnpm dev` connectivity (B1's probe).
+
+## Follow-ups (for 12)
+- The `finance-rpc.ts` fixture: made-up PayPal token, then covered by `warm-fixtures.test.ts`.
+- A `BillingJobs` start-up dry run if `care.bill` reads hot on staging.
+- Staging: the first seven-step deploy, the four-Worker health check, cold readings of `GatewayAdvance` and the moved invoice routes.
+- Phase 7: production creates the invoices Worker before the front, finance and jobs that bind it (runbook).

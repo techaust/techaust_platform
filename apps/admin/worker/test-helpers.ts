@@ -19,6 +19,7 @@ import type { Role } from "@techaust/core";
 import { uuidv7 } from "@techaust/core";
 import { afterEach, beforeEach, expect, vi } from "vitest";
 import type { RouteDef } from "./context.ts";
+import { issueGatewayAdvance } from "./gateway/advance.ts";
 import app from "./test-app.ts";
 
 export const ORIGIN = "https://admin.example";
@@ -141,8 +142,26 @@ export async function sendTo(
   return res;
 }
 
-/** `sendTo` the real app. */
-export const send = (input: string, init: RequestInit, e: Env = env) => sendTo(app, input, init, e);
+/**
+ * The finance Worker's `ADMIN_ADVANCE` binding in process (the fourth admin Worker, 2026-11-03; brief F.3): the real `issueGatewayAdvance` of the invoices
+ * Worker's `GatewayAdvance`, on `e` (a counting env counts the advance's statements on its own counter when `e` is its env). Arguments as the entrypoint takes
+ * them (`lastTry` only when strictly true).
+ */
+export const inProcessAdvance = (e: Env) => ({
+  issueGatewayAdvance: (args: { paymentId: string; lastTry?: boolean }) =>
+    issueGatewayAdvance(e, args.paymentId, { lastTry: args?.lastTry === true }),
+});
+
+/**
+ * `e` with the in-process `ADMIN_ADVANCE` on the same env, unless `e` brings its own (a throwing or malformed stand-in, or one on another counter). The test pool
+ * has no invoices Worker, and the combined app (test-app.ts) answers the finance rows, whose "Try again" calls it.
+ */
+export const withAdvance = (e: Env): Env =>
+  Reflect.get(e, "ADMIN_ADVANCE") !== undefined ? e : withEnv(e, { ADMIN_ADVANCE: inProcessAdvance(e) });
+
+/** `sendTo` the real app (with the in-process `ADMIN_ADVANCE`, `withAdvance`). */
+export const send = (input: string, init: RequestInit, e: Env = env) =>
+  sendTo(app, input, init, withAdvance(e));
 
 export type CallInit = {
   body?: unknown;
