@@ -660,6 +660,8 @@ function EntryView(props: {
     allowed(props.role, "payments.attachProof") &&
     p.kind === "payment" &&
     !p.proof?.hasFile &&
+    // M6.4: a payment a remittance advice proves needs no proof of its own
+    !props.data.advice &&
     !p.clientGone &&
     (p.status === "pending_verification" || p.status === "confirmed");
   const canCert =
