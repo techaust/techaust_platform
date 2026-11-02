@@ -771,7 +771,7 @@ function AdvanceBody(props: {
   const [fx, setFx] = useState<FxForm>(() => fxFormOf(null, props.prefill?.receivedOn ?? today));
   // M6.3 (Q1 A, S16): a card payment's tax invoice waits only for the rate: the field is empty, the blocker says so above it, and the field takes the focus
   // once the dialog has opened (after its own first focus).
-  const cardRate = usd && props.prefill?.online?.provider === "stripe";
+  const cardRate = usd && prefill?.online?.provider === "stripe";
   useEffect(() => {
     if (!cardRate) return;
     const f = requestAnimationFrame(() => document.getElementById("adv-fx-rate")?.focus());
@@ -858,8 +858,14 @@ function AdvanceBody(props: {
         setConfirmInr(true);
         return;
       }
-      // M6.1 (07-ZH line 13): the reference was recorded before; a waiting entry of it can be confirmed here instead.
-      if (e instanceof RequestError && e.code === "reference_seen" && !prefill) {
+      // M6.1 (07-ZH line 13): the reference was recorded before; a waiting entry of it can be confirmed here instead. M6.3 staging fix 1: an online payment
+      // waits for this proforma (`online_payment_waiting`, always with its `paymentId`): the same box, whose "Confirm by issuing the tax invoice" reopens the
+      // form with that payment (never `confirmDuplicate`, which the server refuses to take past it).
+      if (
+        e instanceof RequestError &&
+        (e.code === "reference_seen" || e.code === "online_payment_waiting") &&
+        !prefill
+      ) {
         const pid = e.extra.details?.paymentId;
         setSeen({ text: payErrorText(e), paymentId: typeof pid === "string" ? pid : null });
         refusal.show();
@@ -917,8 +923,15 @@ function AdvanceBody(props: {
       const r = await paymentsApi.get(paymentId);
       const pay = r.payment;
       const reference = pay.reference ?? form.reference;
-      setPrefill({ paymentId, amountMinor: pay.amountMinor, receivedOn: pay.receivedOn, reference });
+      // M6.3 staging fix 1: an online payment keeps its gateway's line beside the reference (and a card payment's rate takes the focus), as from the panel
+      const online =
+        pay.provider !== "manual"
+          ? { provider: pay.provider, mode: pay.mode, providerPaymentId: null }
+          : null;
+      setPrefill({ paymentId, amountMinor: pay.amountMinor, receivedOn: pay.receivedOn, reference, online });
       setForm({ amount: plainAmount(pay.amountMinor, v.currency), date: pay.receivedOn, reference });
+      // the rate is for the day the money came (Q9): its date follows the payment's day unless the Owner set its own
+      setFx(rateDateFollows(fx, fxDateOwn, pay.receivedOn));
       setSeen(null);
     } catch (e) {
       setFailure(payErrorText(e));

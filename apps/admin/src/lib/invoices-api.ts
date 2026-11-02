@@ -606,7 +606,10 @@ export type AdvanceInput = {
   paymentId?: string;
   /** M6.1: how a new payment was made; ignored with `paymentId`. */
   mode?: "neft" | "rtgs" | "imps" | "upi" | "swift";
-  /** M6.1: after 409 `reference_seen` (07-ZH line 13), when it is a different payment. */
+  /**
+   * M6.1: after 409 `reference_seen` (07-ZH line 13), when it is a different payment. M6.3 staging fix 1: it never passes 409 `online_payment_waiting`
+   * (details `paymentId`: an online payment waits for this proforma; issue with that `paymentId` instead).
+   */
   confirmDuplicate?: true;
 };
 

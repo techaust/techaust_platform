@@ -1837,6 +1837,11 @@ export type PaymentView = {
   withdrawnBy: string | null;
   withdrawnAt: number | null;
   withdrawReason: string | null;
+  /**
+   * M6.3 staging fix 2 (L5): the proforma this entry asks for (its request, or the proforma its online checkout was for), else null. While pending, it is
+   * confirmed only by "Confirm by issuing the tax invoice" on that proforma (the verify route answers `use_advance_invoice`). Absent from an older API.
+   */
+  proformaId?: string | null;
 };
 
 export type PaymentAllocationView = {
@@ -2117,7 +2122,10 @@ export const paymentsApi = {
    * `use_advance_invoice`, `allocation_exceeds_balance` (details `documentId`, `balanceMinor`), `exceeds_payment`, `not_payable`, `client_anonymised`.
    */
   record: (input: RecordPaymentInput) => request<RecordPaymentAnswer>("/payments", { body: input }),
-  /** The Owner's check (07-ZH line 4). A reject needs `note` ("Why it is rejected"). Codes: `payment_not_pending`, `use_advance_invoice`, `stale_version`. */
+  /**
+   * The Owner's check (07-ZH line 4). A reject needs `note` ("Why it is rejected"). Codes: `payment_not_pending`, `use_advance_invoice` (details `documentId`;
+   * M6.3 staging fix 2: also whenever the entry itself asks for a proforma, `proformaId`, whatever allocations are sent), `stale_version`.
+   */
   verify: (
     id: string,
     body: {
