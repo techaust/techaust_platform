@@ -1,6 +1,6 @@
 Status: WAITING ON OWNER (Q1, Q2); reviewer checking the brief
 Tier: B (Workers; planning only, no code)
-Usage: lead claude-opus-5-5/high (cloud session admin-split-plan); analyst (measure + options) claude-opus-5-5/high, skills asked for `cloudflare:workers-best-practices`, `cloudflare:wrangler`, `cloudflare:workers-profiling` (each "Unknown skill": Cloudflare skills don't load in cloud sessions; no other skill fits a split plan): 5-h 5 % at start (23:12 IST). Readings: USAGE 5 at 2026-11-02T23:40+05:30.
+Usage: lead claude-opus-5-5/high (cloud session admin-split-plan); analyst (measure + options) claude-opus-5-5/high, skills asked for `cloudflare:workers-best-practices`, `cloudflare:wrangler`, `cloudflare:workers-profiling` (each "Unknown skill": Cloudflare skills don't load in cloud sessions; no other skill fits a split plan): 5-h 5 % at start (23:12 IST). reviewer (brief) claude-opus-5-5/high started 23:48 IST at 5-h 5 % (reading). Readings: USAGE 5 at 2026-11-02T23:40+05:30.
 
 # Run: the fourth admin Worker (split the admin finance Worker before M6.5), build brief
 
