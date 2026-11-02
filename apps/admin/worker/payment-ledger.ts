@@ -47,11 +47,12 @@ import {
 import { femaDueSql, femaStandardSql, gstDueSql, settingsBinds, stageSql } from "@techaust/db/realisation";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
-import { clientGoneSql } from "./anonymised.ts";
+import { CLIENT_GONE, clientGoneSql } from "./anonymised.ts";
 import { type AppEnv, actor, type Ctx, err, mutate, NOT_FOUND } from "./context.ts";
 import { dropDoc, streamToDocs, uploadHead } from "./docs-upload.ts";
 import { body, idParam, param, refusedWith, STALE_VERSION } from "./http.ts";
-import { INVOICE_VOID } from "./invoice-model.ts";
+// The fourth admin Worker (2026-11-03): never from invoice-model.ts, whose top-level lines would bring the invoice chain into the finance bundle (INVOICE_CODE).
+import { INVOICE_VOID } from "./invoice-consts.ts";
 import {
   allocationExceedsBalance,
   EXCEEDS_CREDIT,
@@ -64,7 +65,6 @@ import {
   NOT_PAYABLE,
 } from "./payment-messages.ts";
 import { LEDGER_REFUSED } from "./payments.ts";
-import { CLIENT_GONE } from "./quote-model.ts";
 import { sessionRefusal } from "./session-refusal.ts";
 import { cachedSetting, type StoredSetting } from "./settings-cache.ts";
 

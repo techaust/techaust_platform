@@ -297,7 +297,6 @@ describe("gateway.refresh and the sweep [L13, F4]", () => {
   const gateway = (refresh: unknown) => ({
     ADMIN_GATEWAY: {
       processEvent: async () => ({ result: "processed" }),
-      issueGatewayAdvance: async () => ({ result: "issued" }),
       refreshCheckout: async (arg: unknown) => {
         fakes.rpc.push({ method: "refreshCheckout", arg });
         return refresh;

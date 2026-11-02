@@ -43,9 +43,26 @@ const SIGN_IN_TABLES = {
 // The invoice chain lives in the admin finance Worker only (M6.1 stage A, ADM-PAY-01; docs/runs/m6.1-ledger-payments.md Plan 1). These are error lines
 // of apps/admin/worker/invoice-model.ts, which every invoice route imports; string contents survive minification, so an API bundle that holds them has
 // imported the invoice code again (an import cut undone: `document-warm.ts` naming approvals.ts, or `settings.ts` naming note-model.ts).
+// Since the fourth admin Worker (2026-11-03, ADM-G-02; docs/runs/admin-split-plan.md) the invoice chain lives in the admin invoices Worker only, so the
+// finance Worker's bundle must not hold it either (an import cut undone: payment-ledger.ts naming invoice-model.ts again).
 export const INVOICE_CODE = {
-  name: "the invoice code (the admin finance Worker only, M6.1)",
+  name: "the invoice code (the admin invoices Worker only, M6.1; the fourth admin Worker)",
   re: /This kind of invoice can't be issued yet|The owner issues an invoice directly/,
+};
+
+// The gateway CLIENT code lives in the admin finance Worker only (the fourth admin Worker, 2026-11-03; L3): the gateways' API hosts (core's origins, read only
+// by the clients in apps/admin/worker/gateway/{razorpay,stripe*,paypal*,config}.ts) and the API paths those clients call. String contents survive
+// minification; the gateway wording (gateway/messages.ts, reasons.ts), which the invoices Worker carries with the automatic advance, holds none of them.
+export const GATEWAY_CODE = {
+  name: "the gateway client code (the admin finance Worker only, the fourth admin Worker)",
+  re: /api\.razorpay\.com|api\.stripe\.com|api-m(?:\.sandbox)?\.paypal\.com|\/v1\/payment_links|\/v2\/checkout\/orders/,
+};
+
+// The automatic tax invoice of a proforma paid online (apps/admin/worker/gateway/advance.ts, the `GatewayAdvance` entrypoint) lives in the admin invoices
+// Worker only (the fourth admin Worker, brief B.4): its audit action is a string only that module holds, so a finance bundle that holds it imports the advance again.
+export const ADVANCE_CODE = {
+  name: "the automatic advance (the admin invoices Worker only, the fourth admin Worker)",
+  re: /invoice\.advance_issue_auto/,
 };
 
 export const BUDGETS = {
@@ -57,25 +74,54 @@ export const BUDGETS = {
     file: "apps/admin/dist/techaust_platform_admin/index.js",
     maxBytes: 150_000,
     maxStartupMs: 200,
-    forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS, GST_CORE],
+    forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS, GST_CORE, GATEWAY_CODE],
   },
-  // M6.1 stage A: the invoice, statement, report, approval-queue and dashboard routes moved to the finance Worker, so the API bundle
-  // must not hold the invoice code (INVOICE_CODE).
+  // M6.1 stage A: the invoice, statement, report, approval-queue and dashboard routes moved to the finance Worker (the invoices Worker since the fourth
+  // admin Worker), so the API bundle must not hold the invoice code (INVOICE_CODE), nor the gateway clients (GATEWAY_CODE).
   adminApi: {
     file: "apps/admin/dist/techaust_platform_admin_api/index.js",
     maxBytes: 800_000,
     maxStartupMs: 200,
-    forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS, SIGN_IN_TABLES, GST_CORE, INVOICE_CODE],
+    forbidden: [
+      CLASSIC_ZOD,
+      PDF_LIB,
+      PUPPETEER,
+      PDF_FONTS,
+      SIGN_IN_TABLES,
+      GST_CORE,
+      INVOICE_CODE,
+      GATEWAY_CODE,
+    ],
   },
-  // M6.1 stage A (ADM-PAY-01): the third admin Worker, the invoice chain and the BillingJobs entrypoint. Ceiling 800,000 as the API's; its plan line
-  // is 650,000 bytes (`planBytes`: a fourth Worker or another cut is planned when it passes that, or when its cold reading passes 7 ms; the build
-  // prints a note then, it does not fail).
+  // M6.1 stage A (ADM-PAY-01): the third admin Worker. Since the fourth admin Worker (2026-11-03, L4) the payments side: payments, the ledger, credit,
+  // advices, the gateways and their keys, `GatewayEvents` and `PortalPayments`; it must hold neither the invoice chain (INVOICE_CODE) nor the automatic
+  // advance (ADVANCE_CODE). Ceiling 800,000 as the API's; plan line 500,000 bytes (lowered from 650,000 by L4; estimated ~380 K at the end of M7):
+  // `planBytes` prints a note when passed (another cut is planned then, or when its cold reading passes 7 ms), it does not fail the build.
   adminFinance: {
     file: "apps/admin/dist/techaust_platform_admin_finance/index.js",
     maxBytes: 800_000,
+    planBytes: 500_000,
+    maxStartupMs: 200,
+    forbidden: [
+      CLASSIC_ZOD,
+      PDF_LIB,
+      PUPPETEER,
+      PDF_FONTS,
+      SIGN_IN_TABLES,
+      GST_CORE,
+      INVOICE_CODE,
+      ADVANCE_CODE,
+    ],
+  },
+  // The fourth admin Worker (2026-11-03, ADM-G-02, L1, L4): the invoice side, split from finance: invoices and notes, a client's invoices and statement,
+  // reports, approvals, the dashboard, and the `BillingJobs` and `GatewayAdvance` entrypoints. No sign-in code and no gateway client code. Ceiling 800,000,
+  // plan line 650,000 (estimated ~530 K at the end of M7).
+  adminInvoices: {
+    file: "apps/admin/dist/techaust_platform_admin_invoices/index.js",
+    maxBytes: 800_000,
     planBytes: 650_000,
     maxStartupMs: 200,
-    forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS, SIGN_IN_TABLES, GST_CORE],
+    forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS, SIGN_IN_TABLES, GST_CORE, GATEWAY_CODE],
   },
   portal: {
     file: "apps/portal/dist/techaust_platform_portal/index.js",

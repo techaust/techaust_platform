@@ -284,8 +284,12 @@ describe("admin finance Worker config guard (M6.1 stage A, ADM-PAY-01)", () => {
   const front = read("admin/wrangler.jsonc");
   const jobs = read("jobs/wrangler.jsonc");
 
-  it("covers both auxiliary admin configs, and the real configs pass", () => {
-    expect(guard.ADMIN_AUX_CONFIGS).toEqual(["wrangler.api.jsonc", "wrangler.finance.jsonc"]);
+  it("covers the three auxiliary admin configs, and the real configs pass", () => {
+    expect(guard.ADMIN_AUX_CONFIGS).toEqual([
+      "wrangler.api.jsonc",
+      "wrangler.finance.jsonc",
+      "wrangler.invoices.jsonc",
+    ]);
     expect(guard.apiConfigProblems(finance, front, guard.FINANCE_OPTS)).toEqual([]);
     expect(guard.missingPreviewOff(finance)).toEqual([]);
     expect(guard.observabilityProblems(finance)).toEqual([]);
@@ -351,11 +355,163 @@ describe("admin finance Worker config guard (M6.1 stage A, ADM-PAY-01)", () => {
     ]);
   });
 
-  it("jobs binds BillingJobs on the finance Worker, no longer on the API Worker", () => {
-    expect(guard.jobsConfigProblems(jobs, finance)).toEqual([]);
+  it("jobs binds BillingJobs on the invoices Worker (the fourth admin Worker), no longer on the finance or API Worker", () => {
+    const invoices = read("admin/wrangler.invoices.jsonc");
+    expect(guard.jobsConfigProblems(jobs, invoices)).toEqual([]);
+    expect(guard.jobsConfigProblems(jobs, finance)).toEqual([
+      "(top level): ADMIN_JOBS points at techaust-platform-admin-invoices, expected techaust-platform-admin-finance",
+      "env.staging: ADMIN_JOBS points at techaust-platform-admin-invoices-staging, expected techaust-platform-admin-finance-staging",
+    ]);
     expect(guard.jobsConfigProblems(jobs, api)).toEqual([
-      "(top level): ADMIN_JOBS points at techaust-platform-admin-finance, expected techaust-platform-admin-api",
-      "env.staging: ADMIN_JOBS points at techaust-platform-admin-finance-staging, expected techaust-platform-admin-api-staging",
+      "(top level): ADMIN_JOBS points at techaust-platform-admin-invoices, expected techaust-platform-admin-api",
+      "env.staging: ADMIN_JOBS points at techaust-platform-admin-invoices-staging, expected techaust-platform-admin-api-staging",
+    ]);
+  });
+
+  it("finance's one service binding is ADMIN_ADVANCE (the fourth admin Worker), none in production; any other is refused", () => {
+    const f = structuredClone(finance);
+    f.env.staging.services.push({ binding: "ADMIN_API", service: "techaust-platform-admin-api-staging" });
+    f.env.production.services = [
+      {
+        binding: "ADMIN_ADVANCE",
+        service: "techaust-platform-admin-invoices",
+        entrypoint: "GatewayAdvance",
+      },
+    ];
+    delete f.services;
+    expect(guard.apiConfigProblems(f, front, guard.FINANCE_OPTS)).toEqual([
+      '(top level): services must be exactly ["ADMIN_ADVANCE"]',
+      'env.staging: services must be exactly ["ADMIN_ADVANCE"]',
+      "env.production: services must be exactly []",
+    ]);
+    // The API Worker may hold none.
+    const a = structuredClone(api);
+    a.env.staging.services = [{ binding: "ADMIN_ADVANCE", service: "x" }];
+    expect(guard.apiConfigProblems(a, front)).toEqual([
+      "env.staging: services is not allowed on the API Worker",
+    ]);
+  });
+});
+
+describe("admin invoices Worker config guard (the fourth admin Worker, 2026-11-03, ADM-G-02)", () => {
+  const read = (p: string) => guard.parseJsonc(readFileSync(new URL(`../../${p}`, import.meta.url), "utf8"));
+  const invoices = read("admin/wrangler.invoices.jsonc");
+  const finance = read("admin/wrangler.finance.jsonc");
+  const api = read("admin/wrangler.api.jsonc");
+  const front = read("admin/wrangler.jsonc");
+  const jobs = read("jobs/wrangler.jsonc");
+  const portal = read("portal/wrangler.jsonc");
+
+  it("the real configs pass: the front's resources, no public URL, no secrets, no service binding, no LEADS_QUEUE, traces on staging only", () => {
+    expect(guard.AUX_OPTS["wrangler.invoices.jsonc"]).toBe(guard.INVOICES_OPTS);
+    expect(guard.apiConfigProblems(invoices, front, guard.INVOICES_OPTS)).toEqual([]);
+    expect(guard.missingPreviewOff(invoices)).toEqual([]);
+    expect(guard.observabilityProblems(invoices)).toEqual([]);
+    expect(guard.frontServiceProblems(front, api, finance, invoices)).toEqual([]);
+    expect(guard.entrypointBindingProblems(jobs, portal, finance, invoices)).toEqual([]);
+    expect(guard.gatewayConfigProblems(jobs, portal, finance, [["admin invoices", invoices]])).toEqual([]);
+  });
+
+  it("names its own Worker in every scope, runs invoicing.ts, and has no public URL", () => {
+    expect(invoices.main).toBe("worker/invoicing.ts");
+    expect([invoices.name, invoices.env.staging.name, invoices.env.production.name]).toEqual([
+      "techaust-platform-admin-invoices",
+      "techaust-platform-admin-invoices-staging",
+      "techaust-platform-admin-invoices",
+    ]);
+    for (const c of [invoices, invoices.env.staging, invoices.env.production]) {
+      expect(c.workers_dev).toBe(false);
+      expect(c.preview_urls).toBe(false);
+      expect(c.vars.PAYMENTS_LIVE_ALLOWED).toBe("false");
+    }
+  });
+
+  it("fails a secret, a service binding, a LEADS_QUEUE producer, a public URL, another database or a live flag on the invoices Worker", () => {
+    const c = structuredClone(invoices);
+    c.secrets = { required: ["RAZORPAY_KEY_ID"] };
+    c.env.staging.services = [
+      { binding: "ADMIN_FINANCE", service: "techaust-platform-admin-finance-staging" },
+    ];
+    c.env.staging.queues.producers.push({ binding: "LEADS_QUEUE", queue: "techaust-staging-leads" });
+    c.env.staging.workers_dev = true;
+    c.env.staging.d1_databases[0].database_id = "other";
+    expect(guard.apiConfigProblems(c, front, guard.INVOICES_OPTS)).toEqual([
+      "(top level): secrets is not allowed on the API Worker",
+      "env.staging: workers_dev must be false",
+      "env.staging: services is not allowed on the API Worker",
+      "env.staging: d1_databases differ from the front's",
+      "env.staging: queues differ from the front's",
+    ]);
+    const live = structuredClone(invoices);
+    live.env.production.vars.PAYMENTS_LIVE_ALLOWED = "true";
+    expect(guard.gatewayConfigProblems(jobs, portal, finance, [["admin invoices", live]])).toEqual([
+      'admin invoices env.production: PAYMENTS_LIVE_ALLOWED must be "false"',
+    ]);
+  });
+
+  it("the front binds ADMIN_INVOICES in all three scopes, to the invoices Worker of that scope, without an entrypoint", () => {
+    for (const [c, service] of [
+      [front, "techaust-platform-admin-invoices"],
+      [front.env.staging, "techaust-platform-admin-invoices-staging"],
+      [front.env.production, "techaust-platform-admin-invoices"],
+    ] as const)
+      expect(c.services).toContainEqual({ binding: "ADMIN_INVOICES", service });
+    const a = structuredClone(front);
+    a.services = a.services.filter((s: { binding: string }) => s.binding !== "ADMIN_INVOICES");
+    const inv = a.env.staging.services.find((s: { binding: string }) => s.binding === "ADMIN_INVOICES");
+    inv.service = "techaust-platform-admin-finance-staging";
+    inv.entrypoint = "GatewayAdvance";
+    expect(guard.frontServiceProblems(a, api, finance, invoices)).toEqual([
+      "(top level): the ADMIN_INVOICES service binding is missing",
+      "env.staging: ADMIN_INVOICES points at techaust-platform-admin-finance-staging, expected techaust-platform-admin-invoices-staging",
+      "env.staging: ADMIN_INVOICES must not name an entrypoint",
+    ]);
+  });
+
+  it("fails an invoices Worker named like the finance or API Worker", () => {
+    const i = structuredClone(invoices);
+    i.env.staging.name = finance.env.staging.name;
+    i.env.production.name = api.env.production.name;
+    expect(guard.frontServiceProblems(front, api, finance, i)).toEqual(
+      expect.arrayContaining([
+        "env.staging: the finance and invoices Workers must have different names",
+        "env.production: the API and invoices Workers must have different names",
+      ]),
+    );
+  });
+
+  it("the entrypoint bindings: each points at its Worker and names its entrypoint in the top level and staging, none in production", () => {
+    const j = structuredClone(jobs);
+    const f = structuredClone(finance);
+    const p = structuredClone(portal);
+    const by = (c: { services: { binding: string; service: string; entrypoint?: string }[] }, b: string) =>
+      c.services.find((s) => s.binding === b) as { service: string; entrypoint?: string };
+    // jobs' advance pointed at finance (the old home), its BillingJobs without an entrypoint, its gateway at invoices
+    by(j, "ADMIN_ADVANCE").service = "techaust-platform-admin-finance";
+    delete by(j.env.staging, "ADMIN_JOBS").entrypoint;
+    by(j.env.staging, "ADMIN_GATEWAY").service = "techaust-platform-admin-invoices-staging";
+    // finance's advance naming the wrong entrypoint; the portal's ADMIN_PAY at invoices
+    by(f.env.staging, "ADMIN_ADVANCE").entrypoint = "BillingJobs";
+    by(p, "ADMIN_PAY").service = "techaust-platform-admin-invoices";
+    // anything in production
+    j.env.production.services = [
+      { binding: "ADMIN_ADVANCE", service: "techaust-platform-admin-invoices", entrypoint: "GatewayAdvance" },
+    ];
+    expect(guard.entrypointBindingProblems(j, p, f, invoices)).toEqual([
+      "(top level): jobs's ADMIN_ADVANCE points at techaust-platform-admin-finance, expected techaust-platform-admin-invoices",
+      "(top level): portal's ADMIN_PAY points at techaust-platform-admin-invoices, expected techaust-platform-admin-finance",
+      "env.staging: finance's ADMIN_ADVANCE must name the entrypoint GatewayAdvance",
+      "env.staging: jobs's ADMIN_JOBS must name the entrypoint BillingJobs",
+      "env.staging: jobs's ADMIN_GATEWAY points at techaust-platform-admin-invoices-staging, expected techaust-platform-admin-finance-staging",
+      "env.production: jobs has no ADMIN_ADVANCE until Phase 7",
+    ]);
+    // A missing binding.
+    const k = structuredClone(jobs);
+    k.env.staging.services = k.env.staging.services.filter(
+      (s: { binding: string }) => s.binding !== "ADMIN_ADVANCE",
+    );
+    expect(guard.entrypointBindingProblems(k, portal, finance, invoices)).toEqual([
+      "env.staging: jobs's ADMIN_ADVANCE service binding is missing",
     ]);
   });
 });

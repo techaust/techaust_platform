@@ -51,6 +51,7 @@ import {
 } from "@techaust/db/ledger";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
+import { CLIENT_GONE } from "./anonymised.ts";
 import { type AppEnv, actor, BAD_REQUEST, type Ctx, err, mutate, NOT_FOUND } from "./context.ts";
 import { docDownload, dropDoc, extOfMime, streamToDocs, uploadHead } from "./docs-upload.ts";
 import { gatewayPaymentOf, refundNeededOf } from "./gateway/messages.ts";
@@ -84,7 +85,6 @@ import {
   TOO_MANY,
   USE_ADVANCE_INVOICE,
 } from "./payment-messages.ts";
-import { CLIENT_GONE } from "./quote-model.ts";
 import { sessionRefusal } from "./session-refusal.ts";
 
 // ---- reads ----------------------------------------------------------------------------------------------------------------------------------------------

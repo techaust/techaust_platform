@@ -10,6 +10,7 @@ import { readSettings } from "./quote-model.ts";
 import { mountApi } from "./routes-api.ts";
 import { mountFinance } from "./routes-finance.ts";
 import { mountFront } from "./routes-front.ts";
+import { mountInvoices } from "./routes-invoices.ts";
 import { cachedSetting, settingsCacheSize } from "./settings-cache.ts";
 import { samplePath, warmRouter } from "./warm-router.ts";
 
@@ -27,14 +28,22 @@ describe("the router warm-up [CPU diagnosis, lead decision 1]", () => {
     const frontRows = ROUTES.filter((r) => r.on === "front");
     const apiRows = ROUTES.filter((r) => r.on === undefined);
     const financeRows = ROUTES.filter((r) => r.on === "finance");
+    // The fourth admin Worker (2026-11-03): the invoices Worker's rows.
+    const invoicesRows = ROUTES.filter((r) => r.on === "invoices");
     expect(warmRouter(front, frontRows)).toBe(frontRows.length);
-    expect(warmForwardTable(forwardTable(ROUTES), ROUTES)).toBe(apiRows.length + financeRows.length);
+    expect(warmForwardTable(forwardTable(ROUTES), ROUTES)).toBe(
+      apiRows.length + financeRows.length + invoicesRows.length,
+    );
     expect(warmRouter(createApp(mountApi), apiRows)).toBe(apiRows.length);
     expect(warmRouter(createApp(mountFinance), financeRows)).toBe(financeRows.length);
-    // The three sets cover the table once.
-    expect(apiRows.length + financeRows.length + ROUTES.filter((r) => r.on === "front").length).toBe(
-      ROUTES.length,
-    );
+    expect(warmRouter(createApp(mountInvoices), invoicesRows)).toBe(invoicesRows.length);
+    // The four sets cover the table once.
+    expect(
+      apiRows.length +
+        financeRows.length +
+        invoicesRows.length +
+        ROUTES.filter((r) => r.on === "front").length,
+    ).toBe(ROUTES.length);
   });
 
   it("a row no router answers is not counted, and nothing throws", () => {

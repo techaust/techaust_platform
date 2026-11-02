@@ -309,12 +309,16 @@ describe("POST /razorpay [JOB-HOOK-01..03]", () => {
 });
 
 describe("the gateway consumer [run file D]", () => {
+  // The fourth admin Worker (2026-11-03): `processEvent` on the finance Worker's `GatewayEvents` (ADMIN_GATEWAY), `issueGatewayAdvance` on the invoices
+  // Worker's `GatewayAdvance` (ADMIN_ADVANCE).
   const gateway = (answers: { process?: unknown; advance?: unknown }) => ({
     ADMIN_GATEWAY: {
       processEvent: async (arg: unknown) => {
         fakes.rpc.push({ method: "processEvent", arg });
         return answers.process;
       },
+    },
+    ADMIN_ADVANCE: {
       issueGatewayAdvance: async (arg: unknown) => {
         fakes.rpc.push({ method: "issueGatewayAdvance", arg });
         return answers.advance;
@@ -454,10 +458,111 @@ describe("the gateway consumer [run file D]", () => {
     await expect(
       processGateway(
         makeEnv({ ADMIN_GATEWAY: undefined }),
+        { kind: "gateway.event", eventId: "e1" } as never,
+        1,
+      ),
+    ).rejects.toThrow(/rpc_unavailable/);
+    // The fourth admin Worker: the advance's own binding (ADMIN_ADVANCE), missing or without the method.
+    await expect(
+      processGateway(
+        makeEnv({ ADMIN_ADVANCE: undefined }),
         { kind: "gateway.advance", paymentId: "p1" } as never,
         1,
       ),
     ).rejects.toThrow(/rpc_unavailable/);
+    await expect(
+      processGateway(
+        makeEnv({ ADMIN_ADVANCE: {} }),
+        { kind: "gateway.advance", paymentId: "p1" } as never,
+        1,
+      ),
+    ).rejects.toThrow(/rpc_unavailable/);
+  });
+
+  it("gateway.event no longer needs the advance on ADMIN_GATEWAY (the fourth admin Worker: GatewayEvents has processEvent and refreshCheckout only)", async () => {
+    const env = makeEnv({
+      ADMIN_GATEWAY: { processEvent: async () => ({ result: "processed" }) },
+      ADMIN_ADVANCE: undefined,
+    });
+    expect(await processGateway(env, { kind: "gateway.event", eventId: "e2" } as never, 1)).toBe("ack");
+  });
+
+  it("gateway.advance: a binding that throws, or a malformed answer, propagates on every try, the last included; nothing is acked [brief B.3, F.3]", async () => {
+    const body = { kind: "gateway.advance", paymentId: "rzp_pay_THROW1" } as never;
+    const throwing = makeEnv({
+      ADMIN_ADVANCE: {
+        issueGatewayAdvance: async () => {
+          throw new Error("binding down");
+        },
+      },
+    });
+    for (const attempts of [1, ADVANCE_TRIES, ADVANCE_TRIES + 3])
+      await expect(processGateway(throwing, body, attempts)).rejects.toThrow("binding down");
+    const malformed = makeEnv(gateway({ advance: { result: "issued_maybe" } }));
+    for (const attempts of [1, ADVANCE_TRIES])
+      await expect(processGateway(malformed, body, attempts)).rejects.toThrow(/rpc_bad_result/);
+    expect(fakes.leads).toEqual([]);
+  });
+
+  it("gateway.advance through the queue: a throwing ADMIN_ADVANCE on the last try is redelivered, and its dead letter writes the dead_letter item and rings the Owner's bell [brief F.3]", async () => {
+    const now = Date.now();
+    const owner = await staff("owner");
+    const clientId = await mkClient();
+    const pf = await mkDoc(clientId, null, { type: "proforma" });
+    const paymentId = `rzp_pay_DLQADV${now}`;
+    await realEnv.DB.prepare(
+      `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, charges_minor, received_on, mode, reference_norm, requested_allocations,
+         recorded_by, recorded_at, provider_payment_id, fee_tax_minor, refetched_at)
+       VALUES (?1, ?2, 'payment', 'razorpay', 'pending_verification', 'INR', 118000, 0, '2026-10-28', 'upi', ?3, ?4, NULL, ?5, ?6, 0, ?5)`,
+    )
+      .bind(
+        paymentId,
+        clientId,
+        `PAY-DLQADV${now}`,
+        JSON.stringify([{ documentId: pf.id, amountMinor: 118000 }]),
+        now - 20 * 60_000,
+        `pay_DLQADV${now}`,
+      )
+      .run();
+    const env = makeEnv({
+      ADMIN_ADVANCE: {
+        issueGatewayAdvance: async () => {
+          throw new Error("binding down");
+        },
+      },
+    });
+    const body = { kind: "gateway.advance", paymentId };
+    const seen: string[] = [];
+    const batchOf = (queue: string) =>
+      ({
+        queue,
+        messages: [
+          {
+            body,
+            attempts: ADVANCE_TRIES,
+            ack: () => seen.push(`${queue}: ack`),
+            retry: () => seen.push(`${queue}: retry`),
+          },
+        ],
+      }) as unknown as MessageBatch<unknown>;
+    // The last try throws: never acked, so the queue redelivers it (and, past max_retries, hands it to the dead-letter queue).
+    await handleQueue(batchOf("techaust-local-leads"), env);
+    expect(seen).toEqual(["techaust-local-leads: retry"]);
+    const items = () =>
+      realEnv.DB.prepare("SELECT kind, status FROM review_items WHERE payment_id = ?1 ORDER BY created_at")
+        .bind(paymentId)
+        .all<{ kind: string; status: string }>();
+    expect((await items()).results).toEqual([]);
+    // The dead letter: one open dead_letter item for the payment and the Owner's bell, acked.
+    await handleQueue(batchOf("techaust-local-leads-dlq"), env);
+    expect(seen).toEqual(["techaust-local-leads: retry", "techaust-local-leads-dlq: ack"]);
+    expect((await items()).results).toEqual([{ kind: "dead_letter", status: "open" }]);
+    const bell = await realEnv.DB.prepare(
+      "SELECT count(*) AS n FROM notifications n JOIN review_items r ON r.id = n.entity_id WHERE r.payment_id = ?1 AND n.user_id = ?2",
+    )
+      .bind(paymentId, owner.id)
+      .first<{ n: number }>();
+    expect(bell?.n).toBe(1);
   });
 
   it("is routed before the lead fall-through: a malformed gateway body never becomes a lead", async () => {

@@ -17,11 +17,13 @@ export default defineConfig(async () => ({
     cloudflareTest({
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
-        // The pool has no API or finance Worker: each binding is a stub that answers 502. The existing tests call the combined app
-        // (worker/test-app.ts) and split.test.ts passes its own stubs through `env`.
+        // The pool has no API, finance or invoices Worker: each binding is a stub that answers 502. The existing tests call the combined app
+        // (worker/test-app.ts) and split.test.ts passes its own stubs through `env`. The finance Worker's ADMIN_ADVANCE (the invoices Worker's
+        // `GatewayAdvance`) is in process: worker/test-helpers.ts `withAdvance`.
         serviceBindings: {
           ADMIN_API: () => new Response("no api worker in the test pool", { status: 502 }),
           ADMIN_FINANCE: () => new Response("no finance worker in the test pool", { status: 502 }),
+          ADMIN_INVOICES: () => new Response("no invoices worker in the test pool", { status: 502 }),
         },
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations(join(import.meta.dirname, "../../packages/db/migrations")),

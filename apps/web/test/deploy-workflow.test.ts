@@ -1,6 +1,7 @@
 // The staging deploy workflows (owner's yes 2026-10-30): full audit A1 5, package code (install, seed SQL, astro and vite builds) runs
 // only in steps WITHOUT the Cloudflare token, and the deploy scripts upload only a staging build; A6 8, the Workers deploy one per step
-// in a fixed order (admin API, admin finance since M6.1, admin front, portal, jobs, website) with a health check after the admin. Runs in Node (reads files).
+// in a fixed order (since the fourth admin Worker, owner's Q1 A 2026-11-02: admin API, admin invoices, admin front, jobs, admin finance, portal, website) with a
+// health check after each app (the admin's once its four Workers are new). Runs in Node (reads files).
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
@@ -77,28 +78,41 @@ describe.each(["deploy-staging.yml", "publish-catalogue.yml"])("%s [A1-5]", (nam
 
 describe("deploy-staging.yml order and health checks [A6-8]", () => {
   const steps = stepsOf(workflow("deploy-staging.yml"));
+  // The fourth admin Worker (owner, Q1 A, 2026-11-02; docs/runs/admin-split-plan.md C.6, E): seven Workers. From M6.5 (owner, Q3 A) the finance step moves
+  // back right after admin invoices; this test changes with it.
   const ORDER = [
     "pnpm --filter @techaust/admin run deploy:staging:api",
-    "pnpm --filter @techaust/admin run deploy:staging:finance",
+    "pnpm --filter @techaust/admin run deploy:staging:invoices",
     "pnpm --filter @techaust/admin run deploy:staging:front",
-    "pnpm --filter @techaust/portal run deploy:staging",
     "pnpm --filter @techaust/jobs run deploy:staging",
+    "pnpm --filter @techaust/admin run deploy:staging:finance",
+    "pnpm --filter @techaust/portal run deploy:staging",
     "pnpm --filter @techaust/web run deploy:staging",
   ];
 
-  it("deploys the six Workers one per step, in order: admin API, admin finance, admin front, portal, jobs, website", () => {
+  it("deploys the seven Workers one per step, in order: admin API, admin invoices, admin front, jobs, admin finance, portal, website", () => {
     const at = ORDER.map((c) => running(steps, c));
     for (const [i, index] of at.entries()) expect(index, ORDER[i]).toBeGreaterThan(-1);
     expect([...at].sort((a, b) => a - b)).toEqual(at);
     for (const c of ORDER) expect(steps.filter((s) => s.includes(c))).toHaveLength(1);
     expect(workflow("deploy-staging.yml")).not.toMatch(/pnpm -r[^\n]*deploy/);
+    // Each deploy step names its place: "Deploy N of 7".
+    for (const [i, index] of at.entries())
+      expect(steps[index], ORDER[i]).toContain(`name: Deploy ${i + 1} of 7,`);
   });
 
-  it("the admin finance Worker (bound by the front as ADMIN_FINANCE and by jobs as ADMIN_JOBS) is deployed after the API and before the front and jobs (M6.1)", () => {
-    const finance = running(steps, ORDER[1] as string);
-    expect(finance).toBe(running(steps, ORDER[0] as string) + 1);
-    expect(finance).toBeLessThan(running(steps, ORDER[2] as string));
-    expect(finance).toBeLessThan(running(steps, ORDER[4] as string));
+  it("the admin invoices Worker (bound by the front, jobs and finance) is deployed right after the API and before everything that binds it (the fourth admin Worker)", () => {
+    const invoices = running(steps, ORDER[1] as string);
+    expect(invoices).toBe(running(steps, ORDER[0] as string) + 1);
+    for (const binder of [ORDER[2], ORDER[3], ORDER[4]])
+      expect(invoices).toBeLessThan(running(steps, binder as string));
+    expect(hasToken(steps[invoices] ?? "")).toBe(true);
+  });
+
+  it("the admin finance Worker is deployed after jobs (Q1 A: the old finance answers until then) and before the portal, which binds it as ADMIN_PAY", () => {
+    const finance = running(steps, ORDER[4] as string);
+    expect(finance).toBeGreaterThan(running(steps, ORDER[3] as string));
+    expect(finance).toBeLessThan(running(steps, ORDER[5] as string));
     expect(hasToken(steps[finance] ?? "")).toBe(true);
   });
 
@@ -117,11 +131,14 @@ describe("deploy-staging.yml order and health checks [A6-8]", () => {
     );
   });
 
-  it("checks the admin's health right after its three Workers, before the portal, with the Access token only", () => {
+  it("checks the admin's health right after the last of its four Workers (finance), before the portal, with the Access token only", () => {
     const health = running(steps, "node scripts/staging-health.mjs admin");
-    expect(health).toBe(running(steps, ORDER[2] as string) + 1);
-    expect(health).toBeLessThan(running(steps, ORDER[3] as string));
+    expect(health).toBe(running(steps, ORDER[4] as string) + 1);
+    expect(health).toBeLessThan(running(steps, ORDER[5] as string));
     const step = steps[health] ?? "";
+    expect(step).toContain(
+      "name: Health check, the admin front, API, invoices and finance Workers (staging)",
+    );
     expect(hasToken(step)).toBe(false);
     expect(step).toContain(`CF_ACCESS_CLIENT_ID: ${secret("CF_ACCESS_DEPLOY_CLIENT_ID")}`);
     expect(step).toContain(`CF_ACCESS_CLIENT_SECRET: ${secret("CF_ACCESS_DEPLOY_CLIENT_SECRET")}`);
@@ -129,15 +146,15 @@ describe("deploy-staging.yml order and health checks [A6-8]", () => {
   });
 
   it.each([
-    ["portal", 3],
-    ["jobs", 4],
-    ["web", 5],
+    ["jobs", 3],
+    ["portal", 5],
+    ["web", 6],
   ] as const)(
     "checks the %s Worker's health right after its deploy, with the deploy-check token only",
     (app, at) => {
       const health = running(steps, `node scripts/staging-health.mjs ${app}`);
       expect(health).toBe(running(steps, ORDER[at] as string) + 1);
-      if (at < 5) expect(health).toBeLessThan(running(steps, ORDER[at + 1] as string));
+      if (at < 6) expect(health).toBeLessThan(running(steps, ORDER[at + 1] as string));
       const step = steps[health] ?? "";
       expect(hasToken(step)).toBe(false);
       expect(step).toContain(`CF_ACCESS_CLIENT_ID: ${secret("CF_ACCESS_DEPLOY_CLIENT_ID")}`);
@@ -183,6 +200,8 @@ describe("the apps' staging scripts [A1-5]", () => {
   const DEPLOYS: [string, string, string][] = [
     ["admin", "deploy:staging:api", "admin-api"],
     ["admin", "deploy:staging:finance", "admin-finance"],
+    // The fourth admin Worker (2026-11-03).
+    ["admin", "deploy:staging:invoices", "admin-invoices"],
     ["admin", "deploy:staging:front", "admin"],
     ["portal", "deploy:staging", "portal"],
     ["web", "deploy:staging", "web"],
@@ -201,7 +220,7 @@ describe("the apps' staging scripts [A1-5]", () => {
     expect(scripts("jobs")["deploy:staging"]).toBe("wrangler deploy --env staging");
   });
 
-  it("admin has no combined deploy:staging (its three Workers deploy in separate steps)", () => {
+  it("admin has no combined deploy:staging (its four Workers deploy in separate steps)", () => {
     expect(scripts("admin")["deploy:staging"]).toBeUndefined();
   });
 

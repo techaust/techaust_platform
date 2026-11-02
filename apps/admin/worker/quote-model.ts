@@ -32,6 +32,7 @@ import {
   type TaxWarning,
 } from "@techaust/core/tax";
 import type { DocumentBundle, TermsRef } from "@techaust/db/documents";
+import { CLIENT_GONE } from "./anonymised.ts";
 import type { ApiError } from "./context.ts";
 import { cachedSetting } from "./settings-cache.ts";
 
@@ -41,7 +42,8 @@ const e = (code: string, message: string): ApiError => ({ code, message });
 export const FROZEN = e("frozen", "This version has been sent and can't be changed");
 export const NOT_DRAFT = e("not_draft", "Only a draft can be changed");
 export const NOT_A_QUOTE = e("not_a_quote", "That is not a proposal or an estimate");
-export const CLIENT_GONE = e("client_anonymised", "This client's personal details were removed");
+// The fourth admin Worker (2026-11-03): defined in anonymised.ts, so the finance Worker's payment routes take it without this module.
+export { CLIENT_GONE };
 export const SERVICE_INACTIVE = e("service_inactive", "That service is not on offer any more");
 export const SERVICE_UNKNOWN = e("service_unknown", "That service does not exist");
 export const SERVICE_NOT_PRICED = e(

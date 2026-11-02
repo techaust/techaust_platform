@@ -1,6 +1,7 @@
 // Guard: Version/Preview URLs skip Cloudflare Access, so every Worker config must switch them off at the top level
 // and in `env.staging` and `env.production` (audit 2026-10-22, M1; docs/runbooks/access-staging.md). Also the admin API Worker's
-// config against the front's (M5.0; the finance Worker's too since M6.1 stage A), the jobs crons and binding (M5.4, FX-1), and Workers
+// config against the front's (M5.0; the finance Worker's too since M6.1 stage A, the invoices Worker's since the fourth admin Worker, with the entrypoint
+// bindings of jobs, finance and the portal), the jobs crons and binding (M5.4, FX-1), and Workers
 // Traces on staging only (full audit A6 9), and the jobs Worker minified with source maps (L9).
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -8,8 +9,11 @@ import { pathToFileURL } from "node:url";
 
 export const APPS = ["admin", "portal", "web", "jobs"];
 
-/** The admin Workers behind the front (no public URL, the front's resources): the API (M5.0) and finance (M6.1 stage A) configs in apps/admin. */
-export const ADMIN_AUX_CONFIGS = ["wrangler.api.jsonc", "wrangler.finance.jsonc"];
+/**
+ * The admin Workers behind the front (no public URL, the front's resources): the API (M5.0), finance (M6.1 stage A) and invoices (the fourth admin Worker,
+ * 2026-11-03) configs in apps/admin.
+ */
+export const ADMIN_AUX_CONFIGS = ["wrangler.api.jsonc", "wrangler.finance.jsonc", "wrangler.invoices.jsonc"];
 
 /** wrangler.jsonc to a value: drops comments and trailing commas, leaving string contents alone. */
 export function parseJsonc(text) {
@@ -76,8 +80,23 @@ export function apiConfigProblems(api, front, opts = {}) {
     }
     if (c.workers_dev !== false) problems.push(`${scope}: workers_dev must be false`);
     if (c.preview_urls !== false) problems.push(`${scope}: preview_urls must be false`);
-    for (const key of ["routes", "route", "assets", "previews", ...(opts.secrets ? [] : ["secrets"])]) {
+    for (const key of [
+      "routes",
+      "route",
+      "assets",
+      "previews",
+      ...(opts.secrets ? [] : ["secrets"]),
+      ...(opts.services ? [] : ["services"]),
+    ]) {
       if (c[key] !== undefined) problems.push(`${scope}: ${key} is not allowed on the API Worker`);
+    }
+    // The fourth admin Worker (2026-11-03): the finance Worker binds the invoices Worker's `GatewayAdvance` (ADMIN_ADVANCE). Exactly these binding names, and
+    // none in production until Phase 7; where each points is entrypointBindingProblems' check.
+    if (opts.services) {
+      const want = scope === "env.production" ? [] : [...opts.services].sort();
+      const got = (c.services ?? []).map((s) => s.binding).sort();
+      if (JSON.stringify(got) !== JSON.stringify(want))
+        problems.push(`${scope}: services must be exactly ${JSON.stringify(want)}`);
     }
     // M6.2 (L1): the finance Worker holds the Razorpay key pair (no public URL: the safest home). Exactly these names, and none in production until Phase 7.
     if (opts.secrets) {
@@ -113,12 +132,17 @@ export function apiConfigProblems(api, front, opts = {}) {
 
 /**
  * The front must bind each auxiliary admin Worker in all three scopes, to that config's Worker name for the scope: ADMIN_API to the API
- * config (M5.0) and, when `finance` is given, ADMIN_FINANCE to the finance config (M6.1 stage A). The API and finance names must differ,
- * and neither binding names an entrypoint (the front calls the default `fetch`; `BillingJobs` is for the jobs Worker only).
+ * config (M5.0), when `finance` is given ADMIN_FINANCE to the finance config (M6.1 stage A), and when `invoices` is given ADMIN_INVOICES to the
+ * invoices config (the fourth admin Worker, 2026-11-03). Their names must differ, and no binding names an entrypoint (the front calls the default
+ * `fetch`; `BillingJobs`, `GatewayAdvance`, `GatewayEvents` and `PortalPayments` are for the jobs, finance and portal Workers only).
  */
-export function frontServiceProblems(front, api, finance) {
+export function frontServiceProblems(front, api, finance, invoices) {
   const problems = [];
-  const targets = [["ADMIN_API", api], ...(finance ? [["ADMIN_FINANCE", finance]] : [])];
+  const targets = [
+    ["ADMIN_API", api, "API"],
+    ...(finance ? [["ADMIN_FINANCE", finance, "finance"]] : []),
+    ...(invoices ? [["ADMIN_INVOICES", invoices, "invoices"]] : []),
+  ];
   for (const [scope, c] of SCOPES(front)) {
     for (const [binding, config] of targets) {
       const want = SCOPES(config).find(([n]) => n === scope)?.[1]?.name;
@@ -130,10 +154,52 @@ export function frontServiceProblems(front, api, finance) {
         if (got.entrypoint !== undefined) problems.push(`${scope}: ${binding} must not name an entrypoint`);
       }
     }
-    if (finance) {
-      const a = SCOPES(api).find(([n]) => n === scope)?.[1]?.name;
-      const f = SCOPES(finance).find(([n]) => n === scope)?.[1]?.name;
-      if (a && a === f) problems.push(`${scope}: the API and finance Workers must have different names`);
+    for (let i = 0; i < targets.length; i++)
+      for (let k = i + 1; k < targets.length; k++) {
+        const a = SCOPES(targets[i][1]).find(([n]) => n === scope)?.[1]?.name;
+        const b = SCOPES(targets[k][1]).find(([n]) => n === scope)?.[1]?.name;
+        if (a && a === b)
+          problems.push(
+            `${scope}: the ${targets[i][2]} and ${targets[k][2]} Workers must have different names`,
+          );
+      }
+  }
+  return problems;
+}
+
+/**
+ * The fourth admin Worker (2026-11-03, brief D.2): the entrypoint bindings in every scope. The top level and `env.staging`: the finance Worker binds
+ * `ADMIN_ADVANCE` to the invoices Worker's `GatewayAdvance` (the Owner's "Try again"); jobs binds `ADMIN_JOBS` to the invoices Worker's `BillingJobs`,
+ * `ADMIN_ADVANCE` to its `GatewayAdvance` and `ADMIN_GATEWAY` to the finance Worker's `GatewayEvents`; the portal binds `ADMIN_PAY` to the finance
+ * Worker's `PortalPayments`. `env.production`: none of them until Phase 7 (check-prod-readiness.mjs then requires the twins). Empty = passes.
+ */
+export function entrypointBindingProblems(jobs, portal, finance, invoices) {
+  const problems = [];
+  const bindingOf = (c, b) => (c?.services ?? []).find((x) => x.binding === b);
+  const nameIn = (config, scope) => SCOPES(config).find(([n]) => n === scope)?.[1]?.name;
+  const wiring = [
+    ["finance", finance, "ADMIN_ADVANCE", invoices, "GatewayAdvance"],
+    ["jobs", jobs, "ADMIN_JOBS", invoices, "BillingJobs"],
+    ["jobs", jobs, "ADMIN_ADVANCE", invoices, "GatewayAdvance"],
+    ["jobs", jobs, "ADMIN_GATEWAY", finance, "GatewayEvents"],
+    ["portal", portal, "ADMIN_PAY", finance, "PortalPayments"],
+  ];
+  for (const [scope] of SCOPES(jobs)) {
+    for (const [who, config, binding, target, entrypoint] of wiring) {
+      const c = SCOPES(config).find(([n]) => n === scope)?.[1];
+      const got = bindingOf(c, binding);
+      if (scope === "env.production") {
+        if (got) problems.push(`${scope}: ${who} has no ${binding} until Phase 7`);
+        continue;
+      }
+      const want = nameIn(target, scope);
+      if (!got) problems.push(`${scope}: ${who}'s ${binding} service binding is missing`);
+      else {
+        if (got.service !== want)
+          problems.push(`${scope}: ${who}'s ${binding} points at ${got.service}, expected ${want}`);
+        if (got.entrypoint !== entrypoint)
+          problems.push(`${scope}: ${who}'s ${binding} must name the entrypoint ${entrypoint}`);
+      }
     }
   }
   return problems;
@@ -143,6 +209,8 @@ export function frontServiceProblems(front, api, finance) {
 export const FINANCE_OPTS = {
   ownVars: ["PORTAL_URL", "GATEWAY_TRANSPORT"],
   ownQueues: ["LEADS_QUEUE"],
+  // The fourth admin Worker (2026-11-03): its one service binding, the invoices Worker's `GatewayAdvance`.
+  services: ["ADMIN_ADVANCE"],
   // M6.3 (L3): the Stripe restricted key, finance only. M6.4 (L1): PayPal's client id and secret, finance only.
   secrets: [
     "RAZORPAY_KEY_ID",
@@ -151,6 +219,19 @@ export const FINANCE_OPTS = {
     "PAYPAL_CLIENT_ID",
     "PAYPAL_CLIENT_SECRET",
   ],
+};
+
+/**
+ * The invoices Worker's options for apiConfigProblems (the fourth admin Worker, 2026-11-03): none. Like the API Worker it holds no secret, no service binding
+ * and no own var or queue (no LEADS_QUEUE): the front's D1, R2, EMAIL_QUEUE and PDF_QUEUE only.
+ */
+export const INVOICES_OPTS = {};
+
+/** Each auxiliary admin config's options for apiConfigProblems. */
+export const AUX_OPTS = {
+  "wrangler.api.jsonc": {},
+  "wrangler.finance.jsonc": FINANCE_OPTS,
+  "wrangler.invoices.jsonc": INVOICES_OPTS,
 };
 
 /**
@@ -362,25 +443,36 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
       console.error(`apps/admin/${file}: "preview_urls": false is missing at ${missing.join(", ")}`);
       failed = true;
     }
-    for (const p of apiConfigProblems(config, front, file === "wrangler.finance.jsonc" ? FINANCE_OPTS : {})) {
+    for (const p of apiConfigProblems(config, front, AUX_OPTS[file])) {
       console.error(`apps/admin/${file}: ${p}`);
       failed = true;
     }
   }
   const api = aux["wrangler.api.jsonc"];
   const finance = aux["wrangler.finance.jsonc"];
-  for (const p of frontServiceProblems(front, api, finance)) {
+  const invoices = aux["wrangler.invoices.jsonc"];
+  for (const p of frontServiceProblems(front, api, finance, invoices)) {
     console.error(`apps/admin: ${p}`);
     failed = true;
   }
-  // M6.1 stage A: `BillingJobs` is exported by the finance Worker.
-  for (const p of jobsConfigProblems(read("jobs/wrangler.jsonc"), finance)) {
+  // M6.1 stage A: `BillingJobs` was exported by the finance Worker; the fourth admin Worker (2026-11-03): by the invoices Worker.
+  for (const p of jobsConfigProblems(read("jobs/wrangler.jsonc"), invoices)) {
     console.error(`apps/jobs: ${p}`);
+    failed = true;
+  }
+  for (const p of entrypointBindingProblems(
+    read("jobs/wrangler.jsonc"),
+    read("portal/wrangler.jsonc"),
+    finance,
+    invoices,
+  )) {
+    console.error(`apps: ${p}`);
     failed = true;
   }
   for (const p of gatewayConfigProblems(read("jobs/wrangler.jsonc"), read("portal/wrangler.jsonc"), finance, [
     ["admin", front],
     ["admin api", api],
+    ["admin invoices", invoices],
   ])) {
     console.error(`apps: ${p}`);
     failed = true;
@@ -400,6 +492,6 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
   }
   if (failed) process.exit(1);
   console.log(
-    "worker config guard: ok (preview_urls is false everywhere; the admin API and finance Workers have no public URL; traces on staging only; jobs minified with source maps)",
+    "worker config guard: ok (preview_urls is false everywhere; the admin API, finance and invoices Workers have no public URL; the entrypoint bindings point at their Workers; traces on staging only; jobs minified with source maps)",
   );
 }

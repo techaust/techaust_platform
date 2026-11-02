@@ -35,8 +35,10 @@ import {
 import { readInvoice } from "../invoices.ts";
 import { lineRows } from "../quote-model.ts";
 import { mutateSystem } from "../system.ts";
+// The fourth admin Worker (2026-11-03): this module runs in the invoices Worker (`GatewayAdvance`, invoicing.ts); it takes only wording (messages.ts) and the
+// link (consts.ts) from the gateway folder, never settle.ts or a gateway client (the GATEWAY_CODE budget marker).
+import { REVIEW_LINK } from "./consts.ts";
 import { advanceBlockersText, bellNeedsReview, reviewReason } from "./messages.ts";
-import { REVIEW_LINK } from "./settle.ts";
 
 export type AdvanceEnv = { DB: D1Database; PDF_QUEUE: Queue };
 

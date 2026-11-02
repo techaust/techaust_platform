@@ -6,13 +6,14 @@ import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core/ids";
 import { REMINDER_CLAIM_SQL } from "@techaust/db/billing";
 import { recordGatewayPaymentStatements, STUCK_ADVANCES_SQL } from "@techaust/db/gateway";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { issueGatewayAdvance } from "./gateway/advance.ts";
 import { setStubTransport, stubFetch, stubIdsOf } from "./gateway/config.ts";
 import { processEvent } from "./gateway/events.ts";
 import { createLinkFor, LINK_STATE_SQL, refreshForClient } from "./gateway/links.ts";
 import { razorpayApi } from "./gateway/razorpay.ts";
 import { NO_PAYMENT_LISTED_LINE } from "./gateway/reasons.ts";
+import { GatewayAdvance } from "./invoicing.ts";
 import {
   calls,
   countingEnv,
@@ -26,7 +27,7 @@ import {
   staffLink,
   stub,
 } from "./test-gateway.ts";
-import { call, one, rows, withEnv } from "./test-helpers.ts";
+import { call, inProcessAdvance, one, rows, withEnv } from "./test-helpers.ts";
 import { putSwiftBank, putTax, todayIso } from "./test-invoice-types.ts";
 import { issueInvoice, json, mkInvoice, putBank, putCompany } from "./test-invoices.ts";
 import { recordBody, recorded, verify } from "./test-payments.ts";
@@ -162,24 +163,38 @@ describe("finding 1: one advance try per invocation [ADM-INV-10, L6]", () => {
       "SELECT id FROM review_items WHERE payment_id = ?1 AND kind = 'advance_blocked'",
       paymentId,
     );
-    const raced = countingEnv({ race: { when: freezeBatch, act: bumpProforma(pf.id) } });
+    // The fourth admin Worker (brief F.3): the route runs in the finance Worker and the advance in the invoices Worker (ADMIN_ADVANCE), each invocation with
+    // its own D1 counter and its own 45-statement bound.
+    const raced = countingEnv();
+    const racedAdvance = countingEnv({ race: { when: freezeBatch, act: bumpProforma(pf.id) } });
     const refused = await call(
       `/payments/review/${item?.id}/retry`,
       { cookie: o.cookie, body: {} },
-      raced.env,
+      withEnv(raced.env, { ADMIN_ADVANCE: inProcessAdvance(racedAdvance.env) }),
     );
     expect(refused.status).toBe(409);
     expect((await json(refused)).error.code).toBe("advance_changed");
     console.log(
-      `D1 statements, the admin retry route on an advance, refused freeze (worst path): ${raced.counter.n}`,
+      `D1 statements, the admin retry route on an advance, refused freeze (worst path): finance ${raced.counter.n}, invoices ${racedAdvance.counter.n}`,
     );
     expect(raced.counter.n).toBeLessThanOrEqual(45);
+    expect(racedAdvance.counter.n).toBeGreaterThan(0);
+    expect(racedAdvance.counter.n).toBeLessThanOrEqual(45);
     const counted = countingEnv();
-    const ok = await call(`/payments/review/${item?.id}/retry`, { cookie: o.cookie, body: {} }, counted.env);
+    const countedAdvance = countingEnv();
+    const ok = await call(
+      `/payments/review/${item?.id}/retry`,
+      { cookie: o.cookie, body: {} },
+      withEnv(counted.env, { ADMIN_ADVANCE: inProcessAdvance(countedAdvance.env) }),
+    );
     expect(ok.status, await ok.clone().text()).toBe(200);
     expect((await json(ok)).result).toBe("issued");
-    console.log(`D1 statements, the admin retry route on an advance, issued: ${counted.counter.n}`);
+    console.log(
+      `D1 statements, the admin retry route on an advance, issued: finance ${counted.counter.n}, invoices ${countedAdvance.counter.n}`,
+    );
     expect(counted.counter.n).toBeLessThanOrEqual(45);
+    expect(countedAdvance.counter.n).toBeGreaterThan(0);
+    expect(countedAdvance.counter.n).toBeLessThanOrEqual(45);
     // the advance batch resolved the item (as the Owner it acted for); the route wrote no second resolve or audit row of its own
     expect(
       await one("SELECT status, resolution, resolved_by FROM review_items WHERE id = ?1", item?.id),
@@ -1077,5 +1092,111 @@ describe("fix round 4, low 4: the heal's held payment is the newest that still s
     const rejected = await record("pay_FR4REJ000000001", t0 + 30);
     await unguarded(() => decide(rejected, "rejected", t0 + 31));
     expect(await held()).toBe(confirmed);
+  });
+});
+
+// The fourth admin Worker (2026-11-03, ADM-G-02, ADM-PAY-01; brief B.2, B.4, F.3, review finding 1): the advance runs in the invoices Worker's `GatewayAdvance`;
+// the finance Worker's "Try again" reaches it over ADMIN_ADVANCE, and a failure of that hop is never swallowed.
+describe("the advance across the hop to the invoices Worker [brief B, F.3]", () => {
+  /** What an advance item's "Try again" may have written: the proforma's children, the payment's state, its open items, the audit rows. */
+  const trace = async (pfId: string, paymentId: string, itemId: string) => ({
+    children: await rows("SELECT id FROM documents WHERE parent_id = ?1", pfId),
+    payment: await one("SELECT status, advance_receipt_id FROM payments WHERE id = ?1", paymentId),
+    item: await one("SELECT status, resolution FROM review_items WHERE id = ?1", itemId),
+    audit: await rows(
+      "SELECT action FROM audit_log WHERE entity_id = ?1 OR json_extract(summary, '$.paymentId') = ?2 ORDER BY id",
+      itemId,
+      paymentId,
+    ),
+  });
+
+  async function blockedItem() {
+    const { o, pf, paymentId } = await paidProforma();
+    await env.DB.prepare("UPDATE staff_users SET status = 'deactivated' WHERE id = ?1").bind(o.id).run();
+    expect((await issueGatewayAdvance(env, paymentId)).result).toBe("blocked");
+    await env.DB.prepare("UPDATE staff_users SET status = 'active' WHERE id = ?1").bind(o.id).run();
+    const item = await one<{ id: string }>(
+      "SELECT id FROM review_items WHERE payment_id = ?1 AND kind = 'advance_blocked'",
+      paymentId,
+    );
+    return { o, pf, paymentId, itemId: item?.id as string };
+  }
+
+  for (const [what, binding] of [
+    [
+      "the binding throws",
+      {
+        issueGatewayAdvance: async () => {
+          throw new Error("invoices Worker unreachable");
+        },
+      },
+    ],
+    [
+      "the binding answers something malformed",
+      { issueGatewayAdvance: async () => ({ result: "issued_maybe" }) },
+    ],
+    ["the binding has no such method", {}],
+    ["there is no binding", null],
+  ] as const) {
+    it(`"Try again" when ${what}: the standard 500, nothing written, the item still open; never 409 advance_changed`, async () => {
+      const { o, pf, paymentId, itemId } = await blockedItem();
+      const before = await trace(pf.id, paymentId, itemId);
+      const res = await call(
+        `/payments/review/${itemId}/retry`,
+        { cookie: o.cookie, body: {} },
+        // `null`: the binding is absent (the env answers undefined; `withAdvance` would add the in-process one, so it is replaced by a non-object here).
+        withEnv(env, { ADMIN_ADVANCE: binding ?? 0 }),
+      );
+      expect(res.status).toBe(500);
+      expect((await json(res)).error.code).toBe("internal");
+      expect(await trace(pf.id, paymentId, itemId)).toEqual(before);
+      expect(before.item).toEqual({ status: "open", resolution: null });
+      // The same item still takes "Try again" once the hop works again.
+      const ok = await call(`/payments/review/${itemId}/retry`, { cookie: o.cookie, body: {} });
+      expect(ok.status, await ok.clone().text()).toBe(200);
+      expect((await json(ok)).result).toBe("issued");
+    });
+  }
+
+  it("GatewayAdvance refuses a bad id with a TypeError and writes nothing; lastTry counts only when strictly true; one id-only rpc line", async () => {
+    const ctx = {
+      waitUntil: () => undefined,
+      passThroughOnException: () => undefined,
+      props: {},
+    } as unknown as ExecutionContext;
+    const { pf, paymentId } = await paidProforma();
+    const bare = countingEnv();
+    const ep = new GatewayAdvance(ctx, bare.env);
+    for (const bad of ["", "x".repeat(65), 42, null, undefined])
+      await expect(ep.issueGatewayAdvance({ paymentId: bad as never })).rejects.toThrow(TypeError);
+    await expect(ep.issueGatewayAdvance(undefined as never)).rejects.toThrow(TypeError);
+    expect(bare.counter.n).toBe(0);
+    // A truthy `lastTry` that is not `true` is ignored: a proforma changed meanwhile answers `retry`, never `blocked`.
+    const a = countingEnv({ race: { when: freezeBatch, act: bumpProforma(pf.id) } });
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, "log").mockImplementation((l: unknown) => {
+      logs.push(String(l));
+    });
+    try {
+      expect(
+        await new GatewayAdvance(ctx, a.env).issueGatewayAdvance({
+          paymentId,
+          lastTry: "yes" as unknown as boolean,
+        }),
+      ).toEqual({ result: "retry" });
+      const b = countingEnv({ race: { when: freezeBatch, act: bumpProforma(pf.id) } });
+      expect(await new GatewayAdvance(ctx, b.env).issueGatewayAdvance({ paymentId, lastTry: true })).toEqual({
+        result: "blocked",
+        blockers: ["freeze_refused"],
+      });
+    } finally {
+      spy.mockRestore();
+    }
+    const lines = logs.map((l) => JSON.parse(l) as Record<string, unknown>).filter((l) => l.ev === "rpc");
+    expect(lines.map((l) => [l.m, l.r])).toEqual([
+      ["issueGatewayAdvance", "retry"],
+      ["issueGatewayAdvance", "blocked"],
+    ]);
+    expect(logs.join("\n")).not.toContain(paymentId);
   });
 });

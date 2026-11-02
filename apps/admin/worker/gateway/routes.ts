@@ -21,7 +21,7 @@ import * as z from "zod/mini";
 import { type AppEnv, actor, type Ctx, err, mutate, NOT_FOUND, requestInfo } from "../context.ts";
 import { body, idParam, param, STALE_VERSION } from "../http.ts";
 import { cachedSetting } from "../settings-cache.ts";
-import { issueGatewayAdvance } from "./advance.ts";
+import { advanceViaRpc } from "./advance-rpc.ts";
 import {
   envText,
   FINANCE_GATEWAY_SECRETS,
@@ -344,7 +344,9 @@ export const gatewayPayments = new Hono<AppEnv>()
     if ((item.provider === "stripe" || item.provider === "paypal") && item.kind === "advance_blocked")
       return err(c, NOT_RETRYABLE, 409);
     if (item.payment_id && (item.kind === "advance_blocked" || item.kind === "dead_letter")) {
-      const r = await issueGatewayAdvance(c.env, item.payment_id);
+      // The fourth admin Worker (2026-11-03): the advance runs in the invoices Worker (`ADMIN_ADVANCE` → `GatewayAdvance`). A binding error or a malformed
+      // answer throws (advance-rpc.ts): the standard 500, nothing written, the item still open; never `retry` below.
+      const r = await advanceViaRpc(c.env, item.payment_id);
       if (r.result === "retry") return err(c, ADVANCE_CHANGED, 409);
       // Issued earlier (by hand, or by an earlier try) while this item stayed open: the record follows the money (guarded: the payment has its receipt).
       if (r.result === "already_issued")

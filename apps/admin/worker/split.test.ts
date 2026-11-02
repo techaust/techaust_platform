@@ -7,6 +7,9 @@
 // M6.1 stage A (ADM-PAY-01): a third Worker, finance, answers the rows marked `on: "finance"` over the ADMIN_FINANCE binding and exports
 // `BillingJobs`. Proves the same for it: one owner per row, the forwarder picks the right binding per row (and never the other), parity
 // through the front, the finance app refuses what is not its own, and `BillingJobs` is exported by finance only.
+// The fourth admin Worker (2026-11-03, ADM-G-02; docs/runs/admin-split-plan.md F.1): the invoices Worker answers the rows marked `on: "invoices"` over the
+// ADMIN_INVOICES binding and exports `BillingJobs` and `GatewayAdvance`; the finance Worker keeps the payments side and `GatewayEvents`/`PortalPayments`.
+// Ownership both ways for the three-way split, the forwarder's binding per row, parity through the front, and the entrypoints per Worker.
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { decide, ROLES, type Role } from "@techaust/core";
@@ -17,13 +20,25 @@ import { createApp } from "./app.ts";
 import finance, * as financeModule from "./finance.ts";
 import { forwardRoutes, forwardRowOf, forwardTable, workerOf } from "./forward.ts";
 import { ROUTES } from "./guard.ts";
-import front from "./index.ts";
+import front, * as frontModule from "./index.ts";
+import invoicing, * as invoicingModule from "./invoicing.ts";
 import { mountApi } from "./routes-api.ts";
 import { mountFinance } from "./routes-finance.ts";
 import { mountFront } from "./routes-front.ts";
+import { mountInvoices } from "./routes-invoices.ts";
 import combined from "./test-app.ts";
 import { mkClient } from "./test-clients.ts";
-import { bodyOf, counted, countOf, ORIGIN, one, sampleRequest, sessionFor, withEnv } from "./test-helpers.ts";
+import {
+  bodyOf,
+  counted,
+  countOf,
+  ORIGIN,
+  one,
+  sampleRequest,
+  sessionFor,
+  withAdvance,
+  withEnv,
+} from "./test-helpers.ts";
 import { pdfOfSize, sha256Hex } from "./test-projects.ts";
 import { samplePath } from "./warm-router.ts";
 
@@ -31,12 +46,16 @@ const SECRETS = ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC
 const FRONT_ROWS = ROUTES.filter((r) => r.on === "front");
 const API_ROWS = ROUTES.filter((r) => r.on === undefined);
 const FINANCE_ROWS = ROUTES.filter((r) => r.on === "finance");
-/** Every row the front forwards (to the API or the finance Worker). */
+const INVOICES_ROWS = ROUTES.filter((r) => r.on === "invoices");
+/** Every row the front forwards (to the API, the invoices or the finance Worker). */
 const FORWARDED_ROWS = ROUTES.filter((r) => r.on !== "front");
 const key = (r: { method: string; path: string }) => `${r.method} ${r.path}`;
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
-/** The bindings the API and finance Workers have (wrangler.api.jsonc, wrangler.finance.jsonc): no secrets, no assets, no service binding. */
+/**
+ * The bindings the API, invoices and finance Workers have (wrangler.{api,invoices,finance}.jsonc): no sign-in secrets, no assets, none of the front's service
+ * bindings. The finance Worker's own ADMIN_ADVANCE is the in-process `GatewayAdvance` (test-helpers.ts `withAdvance`).
+ */
 const apiEnv: Env = withEnv(env, {
   ...Object.fromEntries(SECRETS.map((s) => [s, undefined])),
   TURNSTILE_SITE_KEY: undefined,
@@ -44,12 +63,24 @@ const apiEnv: Env = withEnv(env, {
   ASSETS: undefined,
   ADMIN_API: undefined,
   ADMIN_FINANCE: undefined,
+  ADMIN_INVOICES: undefined,
 });
-const financeEnv: Env = apiEnv;
+const invoicesEnv: Env = apiEnv;
+const financeEnv: Env = withAdvance(apiEnv);
+
+const BINDINGS = ["ADMIN_API", "ADMIN_FINANCE", "ADMIN_INVOICES"] as const;
+type Binding = (typeof BINDINGS)[number];
 
 /** The binding name of the Worker that answers a forwarded row. */
-const bindingOf = (row: (typeof ROUTES)[number]) =>
-  row.on === "finance" ? ("ADMIN_FINANCE" as const) : ("ADMIN_API" as const);
+const bindingOf = (row: (typeof ROUTES)[number]): Binding =>
+  row.on === "finance" ? "ADMIN_FINANCE" : row.on === "invoices" ? "ADMIN_INVOICES" : "ADMIN_API";
+
+/** `stub` on the row's own binding and `other` on the two others. */
+const bindingsFor = (row: (typeof ROUTES)[number], stub: unknown, other: unknown) =>
+  Object.fromEntries(BINDINGS.map((b) => [b, b === bindingOf(row) ? stub : other]));
+
+/** The same stub on every binding. */
+const allBindings = (stub: unknown) => Object.fromEntries(BINDINGS.map((b) => [b, stub]));
 
 type Seen = { req: Request; bytes: Uint8Array };
 
@@ -89,10 +120,23 @@ function realFinance(pending: Promise<unknown>[] = []) {
   };
 }
 
-/** Both bindings as the real Workers would answer them. */
-const realBoth = (pending: Promise<unknown>[] = []) => ({
+/** The ADMIN_INVOICES binding as the invoices Worker would answer it (its own env). */
+function realInvoices(pending: Promise<unknown>[] = []) {
+  return {
+    fetch: async (req: Request) => {
+      const ctx = createExecutionContext();
+      const res = await invoicing.fetch(req, invoicesEnv, ctx);
+      pending.push(waitOnExecutionContext(ctx));
+      return res;
+    },
+  };
+}
+
+/** Every binding as the real Workers would answer them. */
+const realAll = (pending: Promise<unknown>[] = []) => ({
   ADMIN_API: realApi(pending),
   ADMIN_FINANCE: realFinance(pending),
+  ADMIN_INVOICES: realInvoices(pending),
 });
 
 const jsonHeaders = (cookie?: string, extra: Record<string, string> = {}) => ({
@@ -148,15 +192,21 @@ describe("every ROUTES row has one owner", () => {
   const routesOf = (app: { routes: { method: string; path: string }[] }) =>
     [...new Set(app.routes.filter((r) => r.method !== "ALL").map(key))].sort();
 
-  it("the table has front, API and finance rows, and no row is two of them", () => {
+  it("the table has front, API, invoices and finance rows, and no row is two of them", () => {
     expect(FRONT_ROWS.length).toBe(24);
     // M6.1 (added on purpose): 15 payment rows (payments, a client's credit, an invoice's panel, credit release, FEMA extensions, the payments register);
     // main's proforma withdraw (ADM-INV-10) joins them as an invoice route.
     // M6.2: seven gateway rows (payment links, Needs review, the gateways' status).
     // M6.4: eight remittance advice rows (the list, add, one advice, its file both ways, link, the Owner's remove, Without advice).
-    expect(FINANCE_ROWS.length).toBe(61);
-    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 61);
-    expect(new Set([...FRONT_ROWS, ...API_ROWS, ...FINANCE_ROWS].map(key)).size).toBe(ROUTES.length);
+    // The fourth admin Worker (2026-11-03, brief A.2): the 61 finance rows of M6.4 split 32 (invoices) and 29 (finance).
+    expect(INVOICES_ROWS.length).toBe(32);
+    expect(FINANCE_ROWS.length).toBe(29);
+    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 32 - 29);
+    expect(new Set([...FRONT_ROWS, ...API_ROWS, ...INVOICES_ROWS, ...FINANCE_ROWS].map(key)).size).toBe(
+      ROUTES.length,
+    );
+    // Every row has one of the four owners (an unknown `on` would be forwarded to the API Worker).
+    for (const r of ROUTES) expect([undefined, "front", "invoices", "finance"], key(r)).toContain(r.on);
   });
 
   it("the front rows are health, sign-in, the member's account and staff management", () => {
@@ -166,12 +216,22 @@ describe("every ROUTES row has one owner", () => {
     for (const r of FORWARDED_ROWS) expect(r.path).not.toMatch(/^\/api\/v1\/(health|auth|users)(\/|$)/);
   });
 
-  it("the finance rows are invoices, a client's invoices, statement and credit, reports, approvals, the dashboard and (M6.1) payments (Plan 1)", () => {
-    const FINANCE =
-      /^\/api\/v1\/(invoices(\/|$)|clients\/:id\/invoices$|clients\/:id\/statement(\/|$)|clients\/:id\/credit(\/|$)|payments(\/|$)|reports\/|approvals(\/|$)|dashboard$)/;
+  // The fourth admin Worker (brief A.2): invoices, notes, their sends and PDFs, a client's invoices and statement, reports, approvals and the dashboard go to
+  // the invoices Worker; payments, the ledger panels, credit, advices and the gateways stay in the finance Worker.
+  const INVOICES =
+    /^\/api\/v1\/(invoices(\/:id(\/(issue|issue-request|void|withdraw|service-completed|advance-invoice|credit-note|debit-note|ims-status|pdf|pdf\/supplier|pdf\/retry|send|links\/revoke|reminders\/(pause|resume)))?)?$|clients\/:id\/invoices$|clients\/:id\/statement(\/|$)|reports\/|approvals(\/|$)|dashboard$)/;
+  const FINANCE =
+    /^\/api\/v1\/(payments(\/|$)|clients\/:id\/credit(\/|$)|invoices\/:id\/(payment-link(\/cancel)?|payments|credit\/release|realisation-extensions(\/:eid\/letter)?)$)/;
+
+  it("the invoices rows are invoices and notes, a client's invoices and statement, reports, approvals and the dashboard (the fourth admin Worker)", () => {
+    for (const r of INVOICES_ROWS) expect(r.path, key(r)).toMatch(INVOICES);
+    // The other way: no API or finance row matches, so an invoice route can't be left behind.
+    for (const r of [...API_ROWS, ...FINANCE_ROWS]) expect(r.path, key(r)).not.toMatch(INVOICES);
+  });
+
+  it("the finance rows are payments, TDS, credit, an invoice's ledger panel and credit moves, FEMA extensions, payment links, Needs review, advices and the gateways", () => {
     for (const r of FINANCE_ROWS) expect(r.path, key(r)).toMatch(FINANCE);
-    // The other way: no API row matches, so a finance route can't be left behind in the API Worker.
-    for (const r of API_ROWS) expect(r.path, key(r)).not.toMatch(FINANCE);
+    for (const r of [...API_ROWS, ...INVOICES_ROWS]) expect(r.path, key(r)).not.toMatch(FINANCE);
     // The client's money summary and the proposal and estimate routes (their PDFs too) stay in the API Worker.
     for (const p of [
       "/api/v1/clients/:id/finance",
@@ -181,15 +241,23 @@ describe("every ROUTES row has one owner", () => {
       expect(API_ROWS.map((r) => r.path)).toContain(p);
   });
 
-  it("the front, API and finance apps each mount exactly their own rows", () => {
+  it("the front, API, invoices and finance apps each mount exactly their own rows, and together exactly ROUTES (parity)", () => {
     expect(routesOf(createApp(mountFront))).toEqual(FRONT_ROWS.map(key).sort());
     expect(routesOf(createApp(mountApi))).toEqual(API_ROWS.map(key).sort());
+    expect(routesOf(createApp(mountInvoices))).toEqual(INVOICES_ROWS.map(key).sort());
     expect(routesOf(createApp(mountFinance))).toEqual(FINANCE_ROWS.map(key).sort());
+    const union = [mountFront, mountApi, mountInvoices, mountFinance].flatMap((m) => routesOf(createApp(m)));
+    expect(union.sort()).toEqual(ROUTES.map(key).sort());
   });
 
   it("no handler is mounted twice (early check B1: a router mounted twice registers its routes twice)", () => {
     // A route's middleware and handler are separate entries, so the same path appears more than once; the same FUNCTION on the same path never should.
-    for (const app of [createApp(mountFront), createApp(mountApi), createApp(mountFinance)]) {
+    for (const app of [
+      createApp(mountFront),
+      createApp(mountApi),
+      createApp(mountInvoices),
+      createApp(mountFinance),
+    ]) {
       const seen = new Map<string, Set<unknown>>();
       const twice: string[] = [];
       for (const r of app.routes.filter((x) => x.method !== "ALL")) {
@@ -260,7 +328,7 @@ describe("every ROUTES row has one owner", () => {
     const res = await run(
       app,
       new Request(`${ORIGIN}/api/v1/dashboard`, { headers: jsonHeaders() }),
-      withEnv(env, { ADMIN_API: stub, ADMIN_FINANCE: stub }),
+      withEnv(env, allBindings(stub)),
     );
     expect(res.status).toBe(207);
     expect(match).toHaveBeenCalledWith("GET", "/api/v1/dashboard");
@@ -270,7 +338,8 @@ describe("every ROUTES row has one owner", () => {
     for (const r of FORWARDED_ROWS) expect(r.access, key(r)).not.toBe("public");
   });
 
-  it("the forwarder names the finance Worker for finance rows and the API Worker for the rest", () => {
+  it("the forwarder names the invoices Worker for invoices rows, the finance Worker for finance rows and the API Worker for the rest", () => {
+    for (const r of INVOICES_ROWS) expect(workerOf(r), key(r)).toBe("invoices");
     for (const r of FINANCE_ROWS) expect(workerOf(r), key(r)).toBe("finance");
     for (const r of API_ROWS) expect(workerOf(r), key(r)).toBe("api");
   });
@@ -279,7 +348,7 @@ describe("every ROUTES row has one owner", () => {
 // ---------------------------------------------------------------------------------------------------------------
 describe("forwarding fidelity: the front passes the request on untouched", () => {
   for (const row of FORWARDED_ROWS) {
-    it(`${key(row)}: one call to ${bindingOf(row)}, none to the other binding, same request, no D1 call, no access row`, async () => {
+    it(`${key(row)}: one call to ${bindingOf(row)}, none to the other bindings, same request, no D1 call, no access row`, async () => {
       const o = await sess("owner", true);
       const req = requestFor(row, { cookie: o.cookie });
       const sent = new Request(req.clone());
@@ -292,10 +361,7 @@ describe("forwarding fidelity: the front passes the request on untouched", () =>
         },
       };
       const other = { fetch: vi.fn(async () => new Response("wrong worker", { status: 418 })) };
-      const bindings =
-        bindingOf(row) === "ADMIN_FINANCE"
-          ? { ADMIN_FINANCE: stub, ADMIN_API: other }
-          : { ADMIN_API: stub, ADMIN_FINANCE: other };
+      const bindings = bindingsFor(row, stub, other);
       const c = counted();
       const before = await countOf("access_log");
       const res = await run(front, req, withEnv(c.env, bindings));
@@ -326,11 +392,11 @@ describe("forwarding fidelity: the front passes the request on untouched", () =>
     });
   }
 
-  it("front rows never call either binding", async () => {
+  it("front rows never call any binding", async () => {
     // No cookie: the sign-out and revoke-all rows would end the sessions the other tests share.
     const stub = { fetch: vi.fn(async () => new Response("no")) };
     for (const row of FRONT_ROWS) {
-      await run(front, requestFor(row, {}), withEnv(env, { ADMIN_API: stub, ADMIN_FINANCE: stub }));
+      await run(front, requestFor(row, {}), withEnv(env, allBindings(stub)));
     }
     expect(stub.fetch).not.toHaveBeenCalled();
   });
@@ -349,7 +415,7 @@ describe("forwarding fidelity: the front passes the request on untouched", () =>
       const res = await run(
         front,
         new Request(`${ORIGIN}${path}`, { method, headers: jsonHeaders(o.cookie) }),
-        withEnv(env, { ADMIN_API: stub, ADMIN_FINANCE: stub }),
+        withEnv(env, allBindings(stub)),
       );
       expect(res.status, `${method} ${path}`).toBe(404);
       expect(await bodyOf(res)).toEqual({ error: { code: "not_found", message: "Not found" } });
@@ -370,10 +436,7 @@ describe("forwarding fidelity: the front passes the request on untouched", () =>
         },
       };
       const other = { fetch: vi.fn(async () => new Response("wrong worker", { status: 418 })) };
-      const bindings =
-        bindingOf(row) === "ADMIN_FINANCE"
-          ? { ADMIN_FINANCE: stub, ADMIN_API: other }
-          : { ADMIN_API: stub, ADMIN_FINANCE: other };
+      const bindings = bindingsFor(row, stub, other);
       const { path } = sampleRequest(row);
       const res = await run(
         front,
@@ -394,7 +457,7 @@ describe("forwarding fidelity: the front passes the request on untouched", () =>
       const res = await run(
         front,
         new Request(`${ORIGIN}${path}`, { method: "HEAD", headers: jsonHeaders(o.cookie) }),
-        withEnv(env, { ADMIN_API: stub, ADMIN_FINANCE: stub }),
+        withEnv(env, allBindings(stub)),
       );
       expect(res.status, path).toBe(404);
     }
@@ -403,10 +466,10 @@ describe("forwarding fidelity: the front passes the request on untouched", () =>
 });
 
 // ---------------------------------------------------------------------------------------------------------------
-describe("parity: through the front and the API or finance Worker the answers are the combined app's", () => {
+describe("parity: through the front and the API, invoices or finance Worker the answers are the combined app's", () => {
   async function both(row: (typeof ROUTES)[number], o: Opts) {
     const pending: Promise<unknown>[] = [];
-    const viaFront = await run(front, requestFor(row, o), withEnv(env, realBoth(pending)));
+    const viaFront = await run(front, requestFor(row, o), withEnv(env, realAll(pending)));
     await Promise.all(pending);
     const direct = await run(combined, requestFor(row, o), env);
     return { front: await outcome(viaFront), direct: await outcome(direct) };
@@ -464,10 +527,13 @@ describe("the API app called directly", () => {
     }
   });
 
-  it("answers 404 for front rows, finance rows and undeclared paths, even with an owner's session", async () => {
+  it("answers 404 for front rows, invoices and finance rows and undeclared paths, even with an owner's session", async () => {
     const o = await sess("owner", true);
-    // GET rows only for finance: a POST would reach nothing anyway (404 before any handler), but GETs keep the shared database untouched by design.
-    for (const row of [...FRONT_ROWS, ...FINANCE_ROWS.filter((r) => r.method === "GET")]) {
+    // GET rows only for invoices and finance: a POST would reach nothing anyway (404 before any handler), but GETs keep the shared database untouched by design.
+    for (const row of [
+      ...FRONT_ROWS,
+      ...[...INVOICES_ROWS, ...FINANCE_ROWS].filter((r) => r.method === "GET"),
+    ]) {
       const res = await direct(requestFor(row, { cookie: o.cookie }));
       expect(res.status, key(row)).toBe(404);
     }
@@ -491,14 +557,65 @@ describe("the API app called directly", () => {
     expect(res.status).toBe(200);
   });
 
-  it("does not export BillingJobs (M6.1 stage A: the finance Worker does)", () => {
+  it("does not export BillingJobs (M6.1 stage A: the finance Worker did; the invoices Worker does since the fourth admin Worker)", () => {
     expect("BillingJobs" in apiModule).toBe(false);
     expect(Object.keys(apiModule)).toEqual(["default"]);
   });
 });
 
 // ---------------------------------------------------------------------------------------------------------------
-describe("the finance app called directly (M6.1 stage A)", () => {
+describe("the invoices app called directly (the fourth admin Worker)", () => {
+  const direct = (req: Request) => run(invoicing, req, invoicesEnv);
+
+  it("answers 401 on every invoices row without a session", async () => {
+    for (const row of INVOICES_ROWS) {
+      const res = await direct(requestFor(row, {}));
+      expect(res.status, key(row)).toBe(401);
+    }
+  });
+
+  it("answers 404 for front rows, API and finance GET rows and undeclared paths, even with an owner's session", async () => {
+    const o = await sess("owner", true);
+    for (const row of [...FRONT_ROWS, ...[...API_ROWS, ...FINANCE_ROWS].filter((r) => r.method === "GET")]) {
+      const res = await direct(requestFor(row, { cookie: o.cookie }));
+      expect(res.status, key(row)).toBe(404);
+    }
+    for (const path of ["/api/v1/not-a-route", "/api/v1/auth/me", "/api/other", "/api/v1/payments"]) {
+      const res = await direct(new Request(`${ORIGIN}${path}`, { headers: jsonHeaders(o.cookie) }));
+      expect(res.status, path).toBe(404);
+    }
+  });
+
+  it("answers 403 on a cross-site Origin", async () => {
+    const o = await sess("owner", true);
+    const row = INVOICES_ROWS.find((r) => r.method === "POST" && r.body === undefined);
+    if (!row) throw new Error("no POST row");
+    const res = await direct(requestFor(row, { cookie: o.cookie, origin: "https://evil.example" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("works with only the invoices Worker's bindings (no secrets, no assets, no service binding)", async () => {
+    const o = await sess("owner", true);
+    const res = await direct(new Request(`${ORIGIN}/api/v1/dashboard`, { headers: jsonHeaders(o.cookie) }));
+    expect(res.status).toBe(200);
+  });
+
+  it("exports the BillingJobs and GatewayAdvance entrypoints next to its default handler, each with exactly its methods", () => {
+    expect(Object.keys(invoicingModule).sort()).toEqual(["BillingJobs", "GatewayAdvance", "default"]);
+    expect(Object.getOwnPropertyNames(invoicingModule.BillingJobs.prototype).sort()).toEqual([
+      "constructor",
+      "draftCarePlan",
+      "issueCareDraft",
+    ]);
+    expect(Object.getOwnPropertyNames(invoicingModule.GatewayAdvance.prototype).sort()).toEqual([
+      "constructor",
+      "issueGatewayAdvance",
+    ]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+describe("the finance app called directly (M6.1 stage A; the payments side since the fourth admin Worker)", () => {
   const direct = (req: Request) => run(finance, req, financeEnv);
 
   it("answers 401 on every finance row without a session", async () => {
@@ -508,13 +625,19 @@ describe("the finance app called directly (M6.1 stage A)", () => {
     }
   });
 
-  it("answers 404 for front rows, API GET rows and undeclared paths, even with an owner's session", async () => {
+  it("answers 404 for front rows, API and invoices GET rows and undeclared paths, even with an owner's session", async () => {
     const o = await sess("owner", true);
-    for (const row of [...FRONT_ROWS, ...API_ROWS.filter((r) => r.method === "GET")]) {
+    for (const row of [...FRONT_ROWS, ...[...API_ROWS, ...INVOICES_ROWS].filter((r) => r.method === "GET")]) {
       const res = await direct(requestFor(row, { cookie: o.cookie }));
       expect(res.status, key(row)).toBe(404);
     }
-    for (const path of ["/api/v1/not-a-route", "/api/v1/auth/me", "/api/other", "/api/v1/leads"]) {
+    for (const path of [
+      "/api/v1/not-a-route",
+      "/api/v1/auth/me",
+      "/api/other",
+      "/api/v1/leads",
+      "/api/v1/dashboard",
+    ]) {
       const res = await direct(new Request(`${ORIGIN}${path}`, { headers: jsonHeaders(o.cookie) }));
       expect(res.status, path).toBe(404);
     }
@@ -528,29 +651,18 @@ describe("the finance app called directly (M6.1 stage A)", () => {
     expect(res.status).toBe(403);
   });
 
-  it("works with only the finance Worker's bindings (no secrets, no assets)", async () => {
+  it("works with only the finance Worker's bindings (no sign-in secrets, no assets)", async () => {
     const o = await sess("owner", true);
-    const res = await direct(new Request(`${ORIGIN}/api/v1/dashboard`, { headers: jsonHeaders(o.cookie) }));
+    const res = await direct(new Request(`${ORIGIN}/api/v1/payments`, { headers: jsonHeaders(o.cookie) }));
     expect(res.status).toBe(200);
   });
 
-  it("exports the BillingJobs, GatewayEvents and PortalPayments entrypoints next to its default handler, each with exactly its methods (M6.2)", () => {
-    expect(Object.keys(financeModule).sort()).toEqual([
-      "BillingJobs",
-      "GatewayEvents",
-      "PortalPayments",
-      "default",
-    ]);
-    expect(Object.getOwnPropertyNames(financeModule.BillingJobs.prototype).sort()).toEqual([
-      "constructor",
-      "draftCarePlan",
-      "issueCareDraft",
-    ]);
+  it("exports the GatewayEvents and PortalPayments entrypoints next to its default handler, each with exactly its methods (M6.2; the fourth admin Worker)", () => {
+    expect(Object.keys(financeModule).sort()).toEqual(["GatewayEvents", "PortalPayments", "default"]);
     expect(Object.getOwnPropertyNames(financeModule.GatewayEvents.prototype).sort()).toEqual([
       "constructor",
-      "issueGatewayAdvance",
       "processEvent",
-      // M6.3 (L13, L14): the sweep's generic refresh.
+      // M6.3 (L13, L14): the sweep's generic refresh. The fourth admin Worker: `issueGatewayAdvance` moved to the invoices Worker's `GatewayAdvance`.
       "refreshCheckout",
     ]);
     expect(Object.getOwnPropertyNames(financeModule.PortalPayments.prototype).sort()).toEqual([
@@ -560,8 +672,11 @@ describe("the finance app called directly (M6.1 stage A)", () => {
       "createLink",
       "refreshForClient",
     ]);
-    // Only the finance Worker exports them (the API and front entries export the default handler only).
+    // Each entrypoint is exported by one entry only (the API and front entries export the default handler only).
     expect(Object.keys(apiModule)).toEqual(["default"]);
+    expect(Object.keys(frontModule)).toEqual(["default"]);
+    expect("BillingJobs" in financeModule || "GatewayAdvance" in financeModule).toBe(false);
+    expect("GatewayEvents" in invoicingModule || "PortalPayments" in invoicingModule).toBe(false);
   });
 });
 
@@ -637,42 +752,49 @@ describe("a binding failure", () => {
     expect(line).toMatchObject({ ev: "fwd", r: "/api/v1/leads", w: "api", s: 200 });
   });
 
-  it("a finance row's failure is the same 502, and its log lines name the finance Worker", async () => {
-    const o = await sess("owner", true);
-    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
-    const logs = vi.spyOn(console, "log").mockImplementation(() => {});
-    const throwing = {
-      fetch: async () => {
-        throw new TypeError("secret detail: do not log me");
-      },
-    };
-    const api502 = { fetch: vi.fn(async () => new Response("no")) };
-    const req = new Request(`${ORIGIN}/api/v1/invoices/INV-ID-9`, {
-      headers: jsonHeaders(o.cookie, { "cf-ray": "ray-fin" }),
+  // The fourth admin Worker: an invoices row's failure names the invoices Worker, a finance row's the finance Worker; the other bindings are never called.
+  for (const [w, binding, path, pattern, okPath] of [
+    ["invoices", "ADMIN_INVOICES", "/api/v1/invoices/INV-ID-9", "/api/v1/invoices/:id", "/api/v1/dashboard"],
+    ["finance", "ADMIN_FINANCE", "/api/v1/payments/INV-ID-9", "/api/v1/payments/:id", "/api/v1/payments"],
+  ] as const) {
+    it(`a ${w} row's failure is the same 502, and its log lines name the ${w} Worker`, async () => {
+      const o = await sess("owner", true);
+      const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+      const logs = vi.spyOn(console, "log").mockImplementation(() => {});
+      const throwing = {
+        fetch: async () => {
+          throw new TypeError("secret detail: do not log me");
+        },
+      };
+      const other = { fetch: vi.fn(async () => new Response("no")) };
+      const req = new Request(`${ORIGIN}${path}`, {
+        headers: jsonHeaders(o.cookie, { "cf-ray": "ray-fin" }),
+      });
+      const res = await run(front, req, withEnv(env, { ...allBindings(other), [binding]: throwing }));
+      expect(res.status).toBe(502);
+      expect(await res.json()).toEqual({
+        error: { code: "bad_gateway", message: "Something went wrong" },
+        request_id: "ray-fin",
+      });
+      expect(other.fetch).not.toHaveBeenCalled();
+      const line = String(errors.mock.calls[0]?.[0]);
+      expect(JSON.parse(line)).toMatchObject({ level: "error", route: pattern, w });
+      expect(line).not.toContain("INV-ID-9");
+      const stub = { fetch: async () => new Response("ok", { status: 200 }) };
+      await run(
+        front,
+        new Request(`${ORIGIN}${okPath}`, { headers: jsonHeaders(o.cookie) }),
+        withEnv(env, { ...allBindings(other), [binding]: stub }),
+      );
+      expect(other.fetch).not.toHaveBeenCalled();
+      expect(JSON.parse(String(logs.mock.calls.at(-1)?.[0]))).toMatchObject({
+        ev: "fwd",
+        r: okPath,
+        w,
+        s: 200,
+      });
     });
-    const res = await run(front, req, withEnv(env, { ADMIN_FINANCE: throwing, ADMIN_API: api502 }));
-    expect(res.status).toBe(502);
-    expect(await res.json()).toEqual({
-      error: { code: "bad_gateway", message: "Something went wrong" },
-      request_id: "ray-fin",
-    });
-    expect(api502.fetch).not.toHaveBeenCalled();
-    const line = String(errors.mock.calls[0]?.[0]);
-    expect(JSON.parse(line)).toMatchObject({ level: "error", route: "/api/v1/invoices/:id", w: "finance" });
-    expect(line).not.toContain("INV-ID-9");
-    const stub = { fetch: async () => new Response("ok", { status: 200 }) };
-    await run(
-      front,
-      new Request(`${ORIGIN}/api/v1/dashboard`, { headers: jsonHeaders(o.cookie) }),
-      withEnv(env, { ADMIN_FINANCE: stub }),
-    );
-    expect(JSON.parse(String(logs.mock.calls.at(-1)?.[0]))).toMatchObject({
-      ev: "fwd",
-      r: "/api/v1/dashboard",
-      w: "finance",
-      s: 200,
-    });
-  });
+  }
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -742,10 +864,68 @@ describe("no sign-in secret outside the front's sources", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("the API and finance entries' own modules do not import the sign-in routers", () => {
-    for (const f of ["./api.ts", "./routes-api.ts", "./finance.ts", "./routes-finance.ts"]) {
+  it("the API, invoices and finance entries' own modules do not import the sign-in routers", () => {
+    for (const f of [
+      "./api.ts",
+      "./routes-api.ts",
+      "./finance.ts",
+      "./routes-finance.ts",
+      "./invoicing.ts",
+      "./routes-invoices.ts",
+      "./rpc.ts",
+    ]) {
       expect(sources[f], f).not.toMatch(/from "\.\/(auth|account|users|warm-front)\.ts"/);
     }
+  });
+
+  // The fourth admin Worker (brief A.6, Step 0.3): the import cuts, both ways, at the source (the bundle checks are INVOICE_CODE and ADVANCE_CODE in finance,
+  // GATEWAY_CODE in the invoices, API and front bundles).
+  const gatewaySources = import.meta.glob("./gateway/*.ts", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }) as Record<string, string>;
+  const CHAIN =
+    /from "\.\.?\/(invoice-(?!consts)[a-z-]+|invoices|note-(?!consts)[a-z-]+|quote-model|documents|document-[a-z-]+|approvals|client-invoices|statements?|statement-pdf|reports?|report-rows|dashboard|care-billing)\.ts"/;
+
+  it("the finance Worker's own modules and the payments side name no invoice-chain module and never the automatic advance", () => {
+    for (const f of [
+      "./finance.ts",
+      "./routes-finance.ts",
+      "./warm-finance.ts",
+      "./warm-rpc.ts",
+      "./rpc.ts",
+      "./payments.ts",
+      "./payment-ledger.ts",
+      "./payment-messages.ts",
+      "./advices.ts",
+      "./docs-upload.ts",
+      "./anonymised.ts",
+      "./invoice-consts.ts",
+    ]) {
+      expect(sources[f], f).toBeDefined();
+      expect(sources[f], f).not.toMatch(CHAIN);
+      expect(sources[f], f).not.toMatch(/from "\.\/gateway\/advance\.ts"/);
+    }
+    for (const [f, text] of Object.entries(gatewaySources)) {
+      if (f === "./gateway/advance.ts") continue;
+      expect(text, f).not.toMatch(CHAIN);
+      expect(text, f).not.toMatch(/from "\.\/advance\.ts"/);
+    }
+  });
+
+  it("the invoices Worker's own modules name no gateway client and no payments-side module; advance.ts takes only wording and the link from the gateway folder", () => {
+    const PAYMENTS_SIDE = /from "\.\.?\/(payments|payment-ledger|advices)\.ts"/;
+    const GATEWAY_CLIENT = /from "\.\/gateway\/(?!(messages|reasons|consts|advance)\.ts")[a-z-]+\.ts"/;
+    for (const f of ["./invoicing.ts", "./routes-invoices.ts", "./warm-invoices.ts"]) {
+      expect(sources[f], f).toBeDefined();
+      expect(sources[f], f).not.toMatch(PAYMENTS_SIDE);
+      expect(sources[f], f).not.toMatch(GATEWAY_CLIENT);
+    }
+    const advance = gatewaySources["./gateway/advance.ts"] ?? "";
+    const local = [...advance.matchAll(/from "\.\/([a-z-]+)\.ts"/g)].map((m) => m[1]).sort();
+    expect(local).toEqual(["consts", "messages"]);
+    expect(advance).not.toMatch(PAYMENTS_SIDE);
   });
 
   it("the API entry's routes and the import cuts name no invoice module (M6.1 stage A; the bundle check is INVOICE_CODE)", () => {

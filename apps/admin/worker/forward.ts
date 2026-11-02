@@ -1,6 +1,6 @@
 // The front Worker's forwarders (M5.0; the third Worker in M6.1 stage A, ADM-PAY-01): for every ROUTES row another admin Worker answers,
-// `<binding>.fetch(request)` with the request untouched and the response not wrapped: `ADMIN_FINANCE` for a row marked `on: "finance"`,
-// `ADMIN_API` for every other non-front row. Registered before any middleware (CSRF, body limits and the guard run in the Worker that
+// `<binding>.fetch(request)` with the request untouched and the response not wrapped: `ADMIN_INVOICES` for a row marked `on: "invoices"` (the fourth admin
+// Worker, 2026-11-03), `ADMIN_FINANCE` for a row marked `on: "finance"`, `ADMIN_API` for every other non-front row. Registered before any middleware (CSRF, body limits and the guard run in the Worker that
 // answers, once). An undeclared path is not forwarded: it gets the front's 404. A binding failure is 502 with the standard error body (LD5).
 //
 // CPU warm-up (b)2 (2026-11-02): ONE catch-all handler (`/api/v1/*`, every method) in place of one route per forwarded row (155 of them). It looks the request
@@ -13,8 +13,13 @@ import { err, type RouteDef } from "./context.ts";
 
 const BAD_GATEWAY = { code: "bad_gateway", message: "Something went wrong" };
 
-/** Which Worker answers a forwarded row: `w` in the log lines ("api" or "finance"). */
-export const workerOf = (row: RouteDef): "api" | "finance" => (row.on === "finance" ? "finance" : "api");
+/** Which Worker answers a forwarded row: `w` in the log lines ("api", "finance" or, since the fourth admin Worker, "invoices"). */
+export const workerOf = (row: RouteDef): "api" | "finance" | "invoices" =>
+  row.on === "finance" ? "finance" : row.on === "invoices" ? "invoices" : "api";
+
+/** The binding of the Worker that answers a forwarded row. */
+const bindingOf = (env: Env, w: ReturnType<typeof workerOf>): Fetcher =>
+  w === "invoices" ? env.ADMIN_INVOICES : w === "finance" ? env.ADMIN_FINANCE : env.ADMIN_API;
 
 /** The forwarded rows (every row not marked `on: "front"`), by method and pattern, in table order. */
 export function forwardTable(routes: readonly RouteDef[]): TrieRouter<RouteDef> {
@@ -76,7 +81,7 @@ export function forwardRoutes(app: App, routes: readonly RouteDef[], warm = fals
     const { iso, n, rid } = requestFacts(warm, c.req.header("cf-ray"));
     let res: Response;
     try {
-      res = await (w === "finance" ? c.env.ADMIN_FINANCE : c.env.ADMIN_API).fetch(c.req.raw);
+      res = await bindingOf(c.env, w).fetch(c.req.raw);
     } catch (e) {
       // The route PATTERN, never the raw path; never `e.message`.
       if (!warm)
