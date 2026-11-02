@@ -427,3 +427,9 @@ Every forbidden marker passes (`INVOICE_CODE` and `ADVANCE_CODE` absent from fin
 
 ### Dev servers
 Both stopped (admin Vite on :5273, jobs wrangler on :8887); the probe edits reverted (`git checkout`), nothing of them committed.
+
+## Lead on B1 (2026-11-03)
+Usage: builder B1 claude-opus-5-5/high (skills `cloudflare:workers-best-practices`, `cloudflare:wrangler`, `cloudflare:workers-profiling`).
+- **Deviation 2 accepted:** finance keeps `warmSettings()` (it reads payment terms and gateway modes through `cachedSetting`; about 1 ms of cold parsing stays out of its first request).
+- **Deviation 1:** B2 replaces the interim shared `FINANCE_WARM` with per-Worker fixtures and removes `ownCalls`.
+- The task branch took `origin/main` (M6.4 squash #164) keeping its side after `git diff --quiet 1bf03b41 origin/main` proved them equal.
