@@ -509,11 +509,24 @@ describe("the gateway consumer [run file D]", () => {
     const owner = await staff("owner");
     const clientId = await mkClient();
     const pf = await mkDoc(clientId, null, { type: "proforma" });
+    // A proforma's Razorpay payment, pending with its requested allocation, on its paid checkout (the sweep test's set-up).
+    const checkoutId = `co-dlq-${now}`;
+    await realEnv.DB.prepare(
+      `INSERT INTO checkout_sessions (id, provider, document_id, client_id, created_by, source, currency, amount_minor, status, expires_at, created_at, updated_at)
+       VALUES (?1, 'razorpay', ?2, ?3, ?6, 'staff', 'INR', 118000, 'creating', ?4, ?5, ?5)`,
+    )
+      .bind(checkoutId, pf.id, clientId, now + 86_400_000, now - 30 * 60_000, owner.id)
+      .run();
+    await realEnv.DB.prepare(
+      "UPDATE checkout_sessions SET status = 'live', provider_link_id = ?2, short_url = 'https://rzp.io/i/x', updated_at = ?3 WHERE id = ?1",
+    )
+      .bind(checkoutId, `plink_DLQ${now}`, now - 29 * 60_000)
+      .run();
     const paymentId = `rzp_pay_DLQADV${now}`;
     await realEnv.DB.prepare(
       `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, charges_minor, received_on, mode, reference_norm, requested_allocations,
-         recorded_by, recorded_at, provider_payment_id, fee_tax_minor, refetched_at)
-       VALUES (?1, ?2, 'payment', 'razorpay', 'pending_verification', 'INR', 118000, 0, '2026-10-28', 'upi', ?3, ?4, NULL, ?5, ?6, 0, ?5)`,
+         recorded_by, recorded_at, provider_payment_id, checkout_id, fee_tax_minor, refetched_at)
+       VALUES (?1, ?2, 'payment', 'razorpay', 'pending_verification', 'INR', 118000, 0, '2026-10-28', 'upi', ?3, ?4, NULL, ?5, ?6, ?7, 0, ?5)`,
     )
       .bind(
         paymentId,
@@ -522,6 +535,7 @@ describe("the gateway consumer [run file D]", () => {
         JSON.stringify([{ documentId: pf.id, amountMinor: 118000 }]),
         now - 20 * 60_000,
         `pay_DLQADV${now}`,
+        checkoutId,
       )
       .run();
     const env = makeEnv({

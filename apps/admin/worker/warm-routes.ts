@@ -149,6 +149,8 @@ export function warmEnv(
     DOCS: noObject,
     ADMIN_API: answers,
     ADMIN_FINANCE: answers,
+    // The fourth admin Worker (2026-11-03): the front's binding to the invoices Worker (its forwarded hot routes: an invoice, the issue, the dashboard).
+    ADMIN_INVOICES: answers,
     ENVIRONMENT: "warm",
     PAYMENTS_LIVE_ALLOWED: "false",
     LEAD_PURGE_MODE: "dry_run",

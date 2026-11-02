@@ -198,13 +198,13 @@ describe("admin API Worker config guard (M5.0)", () => {
 
 describe("jobs Worker config guard (M5.4, LD57, LD61)", () => {
   const read = (p: string) => guard.parseJsonc(readFileSync(new URL(`../../${p}`, import.meta.url), "utf8"));
-  // M6.1 stage A: the BillingJobs entrypoint is exported by the admin finance Worker.
-  const finance = read("admin/wrangler.finance.jsonc");
+  // M6.1 stage A: the BillingJobs entrypoint was exported by the admin finance Worker; since the fourth admin Worker (2026-11-03) by the invoices Worker.
+  const invoices = read("admin/wrangler.invoices.jsonc");
   const jobs = read("jobs/wrangler.jsonc");
 
   it("the real config passes: both crons and the BillingJobs binding at the top level and in staging, neither in production", () => {
     expect(guard.JOBS_CRONS).toEqual(["0 22 * * *", "30 * * * *"]);
-    expect(guard.jobsConfigProblems(jobs, finance)).toEqual([]);
+    expect(guard.jobsConfigProblems(jobs, invoices)).toEqual([]);
     // FX-1 (A6 3): triggers are inherited, so production states an empty list.
     expect(jobs.env.production.triggers).toEqual({ crons: [] });
     expect(jobs.env.production.services).toBeUndefined();
@@ -213,7 +213,7 @@ describe("jobs Worker config guard (M5.4, LD57, LD61)", () => {
   it("production without its own triggers would inherit the crons: refused (FX-1, A6 3)", () => {
     const d = structuredClone(jobs);
     d.env.production.triggers = undefined;
-    expect(guard.jobsConfigProblems(d, finance)).toEqual([
+    expect(guard.jobsConfigProblems(d, invoices)).toEqual([
       'env.production: needs "triggers": { "crons": [] } (an environment without its own triggers inherits the top level\'s)',
     ]);
   });
@@ -221,22 +221,22 @@ describe("jobs Worker config guard (M5.4, LD57, LD61)", () => {
   it("fails a missing hourly cron, a missing or mispointed binding or entrypoint, and anything in production", () => {
     const a = structuredClone(jobs);
     a.env.staging.triggers.crons = ["0 22 * * *"];
-    expect(guard.jobsConfigProblems(a, finance)).toEqual([
+    expect(guard.jobsConfigProblems(a, invoices)).toEqual([
       'env.staging: crons must be exactly ["0 22 * * *","30 * * * *"]',
     ]);
     const b = structuredClone(jobs);
     b.env.staging.services = undefined;
-    b.services[0].service = "techaust-platform-admin-finance-staging";
+    b.services[0].service = "techaust-platform-admin-invoices-staging";
     b.services[0].entrypoint = "default";
-    expect(guard.jobsConfigProblems(b, finance)).toEqual([
-      "(top level): ADMIN_JOBS points at techaust-platform-admin-finance-staging, expected techaust-platform-admin-finance",
+    expect(guard.jobsConfigProblems(b, invoices)).toEqual([
+      "(top level): ADMIN_JOBS points at techaust-platform-admin-invoices-staging, expected techaust-platform-admin-invoices",
       "(top level): ADMIN_JOBS must name the entrypoint BillingJobs",
       "env.staging: the ADMIN_JOBS service binding is missing",
     ]);
     const c = structuredClone(jobs);
     c.env.production.triggers = { crons: ["30 * * * *"] };
     c.env.production.services = structuredClone(jobs.services);
-    expect(guard.jobsConfigProblems(c, finance)).toEqual([
+    expect(guard.jobsConfigProblems(c, invoices)).toEqual([
       "env.production: no cron triggers until Phase 7",
       "env.production: no ADMIN_JOBS service binding until Phase 7",
     ]);
