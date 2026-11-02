@@ -553,6 +553,8 @@ describe("the finance app called directly (M6.1 stage A)", () => {
       "refreshCheckout",
     ]);
     expect(Object.getOwnPropertyNames(financeModule.PortalPayments.prototype).sort()).toEqual([
+      // M6.4: PayPal's return (core `PortalPaymentsApi`).
+      "capturePayPalReturn",
       "constructor",
       "createLink",
       "refreshForClient",

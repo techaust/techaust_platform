@@ -6,8 +6,11 @@ import { isGatewayLinkUrl, type LinkHostGateway } from "@techaust/core/gateway-r
 import { compare, formatMoney, money, parseMoney } from "@techaust/core/money";
 import { PAY_ZI } from "../copy-zi.ts";
 
-/** The gateways the portal sends a client to (M6.3: Stripe for USD documents, Razorpay for INR). */
-export type PayGateway = LinkHostGateway;
+/**
+ * The gateways the portal sends a client to (M6.3: Stripe for USD documents, Razorpay for INR). M6.4 B1 (a compile fix only): core's `LinkHostGateway` now
+ * includes PayPal; the portal takes it in with its PayPal screens (B2 and the designer), which also make `currencyOf` say USD for PayPal.
+ */
+export type PayGateway = Exclude<LinkHostGateway, "paypal">;
 export type PayCurrency = "INR" | "USD";
 
 export const inr = (minor: number) => formatMoney(money(minor, "INR"));

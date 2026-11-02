@@ -10,10 +10,13 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 import type { BillingJobsApi, DraftCareResult, IssueCareResult } from "@techaust/core/care-billing";
 import {
+  type CapturePayPalReturnArgs,
+  type CapturePayPalReturnResult,
   type CreateLinkArgs,
   type CreateLinkResult,
   type GatewayEventsApi,
   type IssueAdvanceResult,
+  isCapturePayPalReturnArgs,
   isCreateLinkArgs,
   isRpcId,
   type PortalPaymentsApi,
@@ -114,6 +117,17 @@ export class PortalPayments extends WorkerEntrypoint<Env> implements PortalPayme
     const answer = await refreshForClient(this.env, { clientId, documentId });
     rpcLog("refreshForClient", answer.result);
     return answer;
+  }
+
+  /**
+   * M6.4: PayPal's return (core `PortalPaymentsApi`). M6.4 B1 compile fix only: the capture itself is stage B2's (`paypal-capture.ts`); until it exists nothing is
+   * ever captured here and the answer is `not_found` (fail closed).
+   */
+  async capturePayPalReturn(args: CapturePayPalReturnArgs): Promise<CapturePayPalReturnResult> {
+    if (!isCapturePayPalReturnArgs(args))
+      throw new TypeError("PortalPayments: malformed capturePayPalReturn arguments");
+    rpcLog("capturePayPalReturn", "not_found");
+    return { state: "not_found" };
   }
 }
 

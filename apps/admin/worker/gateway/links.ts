@@ -362,6 +362,9 @@ async function makeRazorpayLink(
 
 /** The portal's `createLink`: the session's contact or the emailed link's token, never both (checked by `isCreateLinkArgs` at the entrypoint). */
 export function createLinkFor(env: GatewayEnv, args: CreateLinkArgs): Promise<MakeLinkResult> {
+  // M6.4 B1 compile fix only: core's RPC gateways now include PayPal; its branch is stage B2's (L23: an exhaustive dispatch). Until then a PayPal link is refused
+  // (503 `gateway_unavailable`), never sent down another gateway's path.
+  if (args.provider === "paypal") return Promise.resolve({ ok: false, error: "gateway_unavailable" });
   return makeLink(env, {
     provider: args.provider,
     clientId: args.clientId,
