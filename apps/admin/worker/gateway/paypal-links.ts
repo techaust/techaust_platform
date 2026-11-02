@@ -10,6 +10,7 @@
 //     `live` with the order id, its `payer-action` URL (on PayPal's own `www` hosts, for this order only, else the row fails: 502) and our 2 h 30 min lifetime.
 // The order carries no payer, shipping, customer or vault field (core `orderRequestOf`; ADM-PAY-12, L7); the client types nothing of theirs here.
 import { uuidv7 } from "@techaust/core/ids";
+import { ONLINE_RULES } from "@techaust/core/online-pay";
 import {
   isPayPalApproveUrl,
   orderRequestOf,
@@ -106,8 +107,7 @@ export async function makePayPalLink(
   if (api.blocked === "live_not_allowed") return { ok: false, error: "live_not_allowed" };
   if (api.blocked) return { ok: false, error: "gateway_unavailable" };
   if (!portalUrlOf(env)) return { ok: false, error: "gateway_unavailable" };
-  if (!["export_invoice", "proforma", "debit_note"].includes(doc.type))
-    return { ok: false, error: "not_payable_online" };
+  if (!ONLINE_RULES.paypal.types.includes(doc.type)) return { ok: false, error: "not_payable_online" };
   let replacedCheckoutId: string | null = null;
   if (open) {
     if (open.status === "creating") {

@@ -28,7 +28,6 @@ import {
   type CaptureError,
   captureErrorOf,
   isPayPalApproveUrl,
-  orderRequestOf,
   PAYPAL_API_ORIGINS,
   PAYPAL_CAPTURE_ID,
   PAYPAL_ORDER_ID,
@@ -229,27 +228,11 @@ export function payPalProvider(cfg: PayPalConfig): PaymentProvider {
   return {
     name: "paypal",
     mode,
-    async createCheckout(req: CheckoutRequest): Promise<ProviderResult<Checkout>> {
-      const g = gate<Checkout>();
-      if (g) return g;
-      if (req.currency !== "USD") return { ok: false, code: "unsupported" };
-      const body = orderRequestOf({
-        checkoutId: req.checkoutId,
-        amountMinor: req.amountMinor,
-        documentNumber: req.description.replace(/^.* /, ""),
-        documentType: "export_invoice",
-        returnUrl: req.callbackUrl,
-        cancelUrl: req.callbackUrl,
-        brandName: "TecHaust Technologies",
-      });
-      if (!body.ok) return { ok: false, code: "provider_error" };
-      const r = await api.createOrder(body.body, body.requestId);
-      if (!r.ok) return fail(r.code);
-      if (!r.value.payerActionUrl) return { ok: false, code: "provider_error" };
-      return {
-        ok: true,
-        value: { providerRef: r.value.id, redirectUrl: r.value.payerActionUrl, expiresAt: req.expiresAt },
-      };
+    // Review part 1, finding 9: a PayPal order is made only by `makePayPalLink` (gateway/paypal-links.ts), which has what the generic request lacks: the
+    // document's own type and number, and separate return and cancel pages carrying our checkout id (L19). So the adapter never makes one: `unsupported`
+    // (after the live gate, so a blocked live mode still answers `live_not_allowed` with no call).
+    async createCheckout(_req: CheckoutRequest): Promise<ProviderResult<Checkout>> {
+      return gate<Checkout>() ?? { ok: false, code: "unsupported" };
     },
     async verifyWebhook(_input: WebhookInput): Promise<ProviderResult<true>> {
       return { ok: false, code: "invalid_signature" };

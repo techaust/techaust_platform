@@ -110,28 +110,27 @@ export function setStubTransport(f: typeof fetch | null): void {
   stubTransport = f ?? stubFetch;
 }
 
-/** Settings › Gateways (the mode only), read through the per-isolate cache. */
-export async function gatewayModeOf(db: D1Database): Promise<"test" | "live"> {
+/** Settings › Gateways, read through the per-isolate cache (one statement for every gateway's mode; review part 1, finding 16). */
+async function gatewaySettingsOf(db: D1Database) {
   const row = await db
     .prepare("SELECT value, version FROM settings WHERE key = 'gateways'")
     .first<{ value: string; version: number }>();
-  return cachedSetting("gateways", row ?? undefined).razorpay.mode;
+  return cachedSetting("gateways", row ?? undefined);
+}
+
+/** Settings › Gateways (the mode only), read through the per-isolate cache. */
+export async function gatewayModeOf(db: D1Database): Promise<"test" | "live"> {
+  return (await gatewaySettingsOf(db)).razorpay.mode;
 }
 
 /** Settings › Gateways, Stripe's mode (M6.3), read through the per-isolate cache. */
 export async function stripeModeOfSettings(db: D1Database): Promise<"test" | "live"> {
-  const row = await db
-    .prepare("SELECT value, version FROM settings WHERE key = 'gateways'")
-    .first<{ value: string; version: number }>();
-  return cachedSetting("gateways", row ?? undefined).stripe.mode;
+  return (await gatewaySettingsOf(db)).stripe.mode;
 }
 
 /** Settings › Gateways, PayPal's mode (M6.4: the mode picks PayPal's host), read through the per-isolate cache. */
 export async function payPalModeOfSettings(db: D1Database): Promise<"test" | "live"> {
-  const row = await db
-    .prepare("SELECT value, version FROM settings WHERE key = 'gateways'")
-    .first<{ value: string; version: number }>();
-  return cachedSetting("gateways", row ?? undefined).paypal.mode;
+  return (await gatewaySettingsOf(db)).paypal.mode;
 }
 
 /**
@@ -143,23 +142,21 @@ export const WARM_PAYPAL_TRANSPORT: unique symbol = Symbol("warm-paypal-transpor
 /** The PayPal client for this request (M6.4), or null when this Worker has no transport for PayPal (503 `gateway_unavailable`). */
 export function payPalOf(env: object, settingsMode: "test" | "live"): PayPalApi | null {
   const warm: unknown = Reflect.get(env, WARM_PAYPAL_TRANSPORT);
-  if (typeof warm === "function")
-    return payPalApi({
-      clientId: envText(env, "PAYPAL_CLIENT_ID"),
-      clientSecret: envText(env, "PAYPAL_CLIENT_SECRET"),
-      settingsMode,
-      liveFlag: envText(env, "PAYMENTS_LIVE_ALLOWED"),
-      fetch: warm as typeof fetch,
-      timeouts: false,
-    });
-  const transport = transportOf(env, "paypal");
+  const transport = typeof warm === "function" ? "warm" : transportOf(env, "paypal");
   if (transport === "unset") return null;
   return payPalApi({
     clientId: envText(env, "PAYPAL_CLIENT_ID"),
     clientSecret: envText(env, "PAYPAL_CLIENT_SECRET"),
     settingsMode,
     liveFlag: envText(env, "PAYMENTS_LIVE_ALLOWED"),
-    fetch: transport === "stub" ? (i, o) => stubTransport(i, o) : (i, o) => fetch(i, o),
+    fetch:
+      transport === "warm"
+        ? (warm as typeof fetch)
+        : transport === "stub"
+          ? (i, o) => stubTransport(i, o)
+          : (i, o) => fetch(i, o),
+    // The dry run's made-up transport only: global scope refuses timers.
+    ...(transport === "warm" ? { timeouts: false } : {}),
   });
 }
 

@@ -4,10 +4,15 @@
 // adapter's `createCheckout` (finding 9); the token's Basic auth (finding 10). PayPal is never called: the stub transport answers. All names and amounts are
 // invented test data.
 import { env } from "cloudflare:workers";
+import { checkProviderContract } from "@techaust/core/payments";
+import { parsePayPalEvent, payPalEventFacts } from "@techaust/core/paypal";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setStubTransport } from "./gateway/config.ts";
+import { processEvent } from "./gateway/events.ts";
 import { refreshCheckoutById, refreshForClient } from "./gateway/links.ts";
 import { reviewReason } from "./gateway/messages.ts";
+import { payPalProvider } from "./gateway/paypal.ts";
+import { payPalToken } from "./gateway/paypal-token.ts";
 import { owner } from "./test-gateway.ts";
 import { call, one, rows } from "./test-helpers.ts";
 import { currentFy, lutOf, putSwiftBank, putTax } from "./test-invoice-types.ts";
@@ -17,6 +22,7 @@ import {
   capOf,
   liveOrder,
   orderAnswer,
+  payPalEventRow,
   paypalStub,
   ppCheckout,
   ppPaymentOf,
@@ -159,5 +165,99 @@ describe("a refresh never POSTs a capture on an order PayPal doesn't show approv
     paypalStub();
     expect(await signedInReturn(back)).toEqual({ state: "paid" });
     expect(apiCalls().map((c) => c.method)).toEqual(["POST"]);
+  });
+});
+
+describe("a refund's invoice_id reaches the finance Worker [finding 4; L3, re-check N3]", () => {
+  /** A PAYMENT.CAPTURE.REFUNDED event as PayPal sends it, stored as the jobs hook stores it (core `payPalEventFacts`, the whitelist). */
+  async function refundEvent(captureId: string, invoiceId: string): Promise<string> {
+    const parsed = parsePayPalEvent({
+      id: `WH-${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}`,
+      event_type: "PAYMENT.CAPTURE.REFUNDED",
+      create_time: "2026-11-03T10:00:00Z",
+      resource: {
+        id: `R${captureId.slice(1, 17)}`,
+        status: "COMPLETED",
+        amount: { currency_code: "USD", value: "500.00" },
+        invoice_id: invoiceId,
+        links: [
+          {
+            rel: "up",
+            href: `https://api.sandbox.paypal.com/v2/payments/captures/${captureId}`,
+            method: "GET",
+          },
+        ],
+      },
+    });
+    if (!parsed.ok) throw new Error("not an event");
+    const { event: _name, ...facts } = payPalEventFacts(parsed.value);
+    return payPalEventRow("PAYMENT.CAPTURE.REFUNDED", facts);
+  }
+  const itemFacts = async (eventId: string) =>
+    JSON.parse(
+      (await one<{ facts: string }>("SELECT facts FROM review_items WHERE webhook_event_id = ?1", eventId))
+        ?.facts ?? "{}",
+    ) as J;
+
+  it("an invoice_id ending in another checkout's tail is flagged invoice_mismatch; our own tail is not; the payment is found by its capture either way", async () => {
+    await owner();
+    const a = await liveOrder();
+    expect(await signedInReturn(a)).toEqual({ state: "paid" });
+    const ours = await refundEvent(capOf(a.orderId), `TH/EX/2627/7-${a.checkoutId.slice(-12)}`);
+    expect(await processEvent(env, ours)).toEqual({ result: "needs_review" });
+    expect(await reviewKinds("webhook_event_id", ours)).toEqual(["refunded_outside"]);
+    expect(await itemFacts(ours)).not.toHaveProperty("reason");
+    const b = await liveOrder();
+    expect(await signedInReturn(b)).toEqual({ state: "paid" });
+    const other = await refundEvent(capOf(b.orderId), "TH/EX/2627/9-0123456789ab");
+    expect(await processEvent(env, other)).toEqual({ result: "needs_review" });
+    expect(await reviewKinds("webhook_event_id", other)).toEqual(["refunded_outside"]);
+    expect(await itemFacts(other)).toMatchObject({ reason: "invoice_mismatch" });
+  });
+});
+
+describe("the provider adapter and the token [findings 9, 10; ADM-PAY-01]", () => {
+  it("createCheckout never makes an order (unsupported, no call; live still answers live_not_allowed); the contract still holds", async () => {
+    const calls: string[] = [];
+    const cfg = (settingsMode: "test" | "live") =>
+      payPalProvider({
+        clientId: "id",
+        clientSecret: "secret",
+        settingsMode,
+        liveFlag: "false",
+        fetch: async (i) => {
+          calls.push(String(i));
+          return new Response("{}", { status: 200 });
+        },
+      });
+    const req = {
+      checkoutId: "01900000-0000-7000-8000-000000000001",
+      clientId: "c",
+      documentId: "d",
+      currency: "USD" as const,
+      amountMinor: 50_000,
+      description: "Invoice TH/EX/2627/7",
+      expiresAt: Date.now() + 3_600_000,
+      callbackUrl: "https://example.invalid/return",
+    };
+    expect(await cfg("test").createCheckout(req)).toEqual({ ok: false, code: "unsupported" });
+    expect(await cfg("live").createCheckout(req)).toEqual({ ok: false, code: "live_not_allowed" });
+    expect(await checkProviderContract(cfg("test"), { liveAllowed: "false" })).toEqual([]);
+    expect(calls).toEqual([]);
+  });
+
+  it("keys Basic auth can't encode are unconfigured, with no call (never thrown, never a network fault)", async () => {
+    const calls: string[] = [];
+    const f = (async (i: RequestInfo | URL) => {
+      calls.push(String(i));
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch;
+    expect(
+      await payPalToken(
+        { origin: "https://api-m.sandbox.paypal.com", clientId: "id\u0438", clientSecret: "s" },
+        f,
+      ),
+    ).toEqual({ ok: false, code: "unconfigured" });
+    expect(calls).toEqual([]);
   });
 });

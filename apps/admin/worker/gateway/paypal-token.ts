@@ -2,6 +2,7 @@
 // `grant_type=client_credentials`, renewed at `expires_in`). One cache entry per isolate `{origin, keyHash, token, expiresAt}`: it holds no request state, only the
 // token PayPal gave this Worker's own keys, and it is dropped whenever the origin or the keys change (the SHA-256 of both, never the keys themselves) or a call
 // answers 401. Kept until `expires_in` minus 300 s. The token, the id and the secret are never logged.
+import { sha256Hex } from "@techaust/core/hash";
 
 /** Renew this long before PayPal's `expires_in` runs out. */
 export const TOKEN_MARGIN_MS = 300_000;
@@ -24,13 +25,8 @@ export function dropPayPalToken(): void {
 /** Test-only: the number of tokens minted by this isolate. */
 export const payPalTokensMinted = (): number => minted;
 
-async function keyHashOf(origin: string, clientId: string, clientSecret: string): Promise<string> {
-  const d = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(`${origin}\n${clientId}\n${clientSecret}`),
-  );
-  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
+const keyHashOf = (origin: string, clientId: string, clientSecret: string): Promise<string> =>
+  sha256Hex(`${origin}\n${clientId}\n${clientSecret}`);
 
 /** The access token for `origin` with these keys: the cached one while it lasts, else a new one. Never throws. */
 export async function payPalToken(
@@ -43,12 +39,19 @@ export async function payPalToken(
   const keyHash = await keyHashOf(k.origin, k.clientId, k.clientSecret);
   if (cached && cached.origin === k.origin && cached.keyHash === keyHash && cached.expiresAt > now)
     return { ok: true, token: cached.token };
+  // Review part 1, finding 10: keys `btoa` can't encode (outside Latin-1) are a configuration fault, never a network one, and never thrown.
+  let basic: string;
+  try {
+    basic = btoa(`${k.clientId}:${k.clientSecret}`);
+  } catch {
+    return { ok: false, code: "unconfigured" };
+  }
   let res: Response;
   try {
     res = await f(`${k.origin}/v1/oauth2/token`, {
       method: "POST",
       headers: {
-        Authorization: `Basic ${btoa(`${k.clientId}:${k.clientSecret}`)}`,
+        Authorization: `Basic ${basic}`,
         "Content-Type": "application/x-www-form-urlencoded",
         Accept: "application/json",
       },

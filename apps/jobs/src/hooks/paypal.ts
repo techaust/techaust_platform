@@ -4,9 +4,11 @@
 //   1. a JSON content type (any charset), else 415; a body of at most 64 KiB, read as a stream, else 413;
 //   2. `PAYPAL_WEBHOOK_ID` set (and never the simulator's literal `WEBHOOK_ID`: Step 0.4 row 21), else 503 `hook_unconfigured` (nothing written);
 //   3. the five `PAYPAL-*` headers present and well formed, the certificate URL on PayPal's own API host (`isPayPalCertUrl`; the local simulator's only while
-//      `ENVIRONMENT` is "local"), else 400 `signature_missing` (NOT counted: anyone can send no header);
+//      `ENVIRONMENT` is "local"), else 400 `signature_missing` (NOT counted: anyone can send no header; but counted when all five are present and well formed and
+//      only the certificate URL is refused, review part 1 finding 12);
 //   4. the certificate's key from this isolate's cache (at most 4 entries, each kept until the certificate's `notAfter` or 6 hours, whichever is sooner, and
-//      checked again on every hit), a failed URL remembered for 10 minutes, at most 2 certificate fetches a minute; a miss fetches the allow-listed URL (5 s,
+//      checked again on every hit), a failed URL remembered for 10 minutes (16 at most, the oldest forgotten first), at most 2 certificate fetches a minute
+//      plus 1 kept for a URL that once gave a valid certificate (review part 1, finding 3); a miss fetches the allow-listed URL (5 s,
 //      at most 16 KiB, a PEM certificate valid now, its RSA key read by core's pure DER reader: Step 0.3, L20). No key → 503 `cert_unavailable`, no D1 (PayPal
 //      retries for 3 days);
 //   5. RSASSA-PKCS1-v1_5 / SHA-256 over `<transmission id>|<time>|<webhook id>|<CRC32 of the RAW bytes>` (core `verifyPayPalSignature`, `crypto.subtle.verify`):
@@ -52,18 +54,28 @@ export const CERT_CACHE_MAX = 4;
 export const CERT_TTL_MS = 6 * 3_600_000;
 export const CERT_NEGATIVE_MS = 10 * 60_000;
 export const CERT_FETCHES_PER_MINUTE = 2;
+/**
+ * Review part 1, finding 3: one more fetch a minute kept for a URL that once gave a valid certificate (PayPal's own, renewed when its cache entry runs out), so
+ * unsigned requests naming other allow-listed paths can't spend the whole budget.
+ */
+export const CERT_TRUSTED_FETCHES_PER_MINUTE = 1;
+/** The failed URLs remembered (the oldest is forgotten first, never all at once). */
+export const CERT_FAILED_MAX = 16;
 const CERT_TIMEOUT_MS = 5_000;
 
-// Per isolate, never request state: the verifying keys PayPal's certificates hold, by URL; the URLs that failed lately; the fetches of the current minute.
+// Per isolate, never request state: the verifying keys PayPal's certificates hold, by URL; the URLs that once gave a valid certificate; the URLs that failed
+// lately; the fetches of the current minute (`n` any URL's, `trusted` the reserved ones).
 const certs = new Map<string, { key: PayPalCertKey["key"]; until: number }>();
+const trusted = new Set<string>();
 const failed = new Map<string, number>();
-let window = { start: 0, n: 0 };
+let window = { start: 0, n: 0, trusted: 0 };
 
-/** Test-only: forget every cached certificate and the fetch count. */
+/** Test-only: forget every cached certificate, the trusted URLs and the fetch count. */
 export function resetPayPalCertCache(): void {
   certs.clear();
+  trusted.clear();
   failed.clear();
-  window = { start: 0, n: 0 };
+  window = { start: 0, n: 0, trusted: 0 };
 }
 
 /** The certificate's PEM, read as a capped stream; null on any failure. */
@@ -101,17 +113,29 @@ export async function certKeyFor(
   if (hit) certs.delete(url);
   const bad = failed.get(url);
   if (bad !== undefined && bad > now) return null;
-  if (now - window.start >= 60_000) window = { start: now, n: 0 };
-  if (window.n >= CERT_FETCHES_PER_MINUTE) return null;
-  window.n++;
+  if (now - window.start >= 60_000) window = { start: now, n: 0, trusted: 0 };
+  // A trusted URL takes its reserved fetch first, then the shared ones; any other URL only the shared ones.
+  if (trusted.has(url) && window.trusted < CERT_TRUSTED_FETCHES_PER_MINUTE) window.trusted++;
+  else if (window.n < CERT_FETCHES_PER_MINUTE) window.n++;
+  else return null;
   const pem = await fetchPem(url, f);
   const got = pem ? await importPayPalCertKey(pem, now) : null;
   if (!got) {
-    if (failed.size >= 16) failed.clear();
+    failed.delete(url);
+    if (failed.size >= CERT_FAILED_MAX) {
+      const oldest = failed.keys().next().value;
+      if (oldest !== undefined) failed.delete(oldest);
+    }
     failed.set(url, now + CERT_NEGATIVE_MS);
     return null;
   }
   failed.delete(url);
+  trusted.delete(url);
+  if (trusted.size >= CERT_CACHE_MAX) {
+    const oldest = trusted.values().next().value;
+    if (oldest !== undefined) trusted.delete(oldest);
+  }
+  trusted.add(url);
   if (certs.size >= CERT_CACHE_MAX) {
     const oldest = certs.keys().next().value;
     if (oldest !== undefined) certs.delete(oldest);
@@ -234,6 +258,8 @@ export async function payPalHookBytes(
     logEvent("hook.cert_unavailable", { provider: "paypal" });
     return no(503, "cert_unavailable");
   }
+  // Review part 1, finding 12: a signed post whose certificate URL we refuse is counted like a bad signature (the owners hear of it at 5), still answered
+  // `signature_missing`. A follow-up for Phase 7: tie the certificate hosts to the gateway's mode.
   if (verdict !== "ok") {
     try {
       await env.DB.batch(
@@ -248,7 +274,7 @@ export async function payPalHookBytes(
       // A failed count never changes the answer.
     }
     logEvent("hook.signature_invalid", { provider: "paypal", code: verdict });
-    return no(400, "signature_invalid");
+    return no(400, verdict === "cert_url_refused" ? "signature_missing" : "signature_invalid");
   }
   let text: string;
   let obj: unknown;
@@ -264,7 +290,7 @@ export async function payPalHookBytes(
   // (7) ours or not: no D1 write for anything that isn't ours.
   if (payPalEventOwnership(e) === "not_ours") return okAnswer("not_ours");
   const eventId = e.id ?? (await fallbackEventId(text));
-  const [, state] = await env.DB.batch([
+  const [inserted, state] = await env.DB.batch([
     env.DB.prepare(WEBHOOK_EVENT_INSERT_SQL).bind(
       d.ids(),
       "paypal",
@@ -277,7 +303,9 @@ export async function payPalHookBytes(
     env.DB.prepare(WEBHOOK_EVENT_STATE_SQL).bind("paypal", eventId),
   ]);
   const row = state?.results[0] as { id: string; status: string } | undefined;
-  if (row?.status !== "received") return okAnswer(row ? "duplicate" : "not_recorded");
+  // Review part 1, finding 11: a first-time event we don't act on is stored `ignored` and logged as `other`, never as a duplicate.
+  if (row?.status !== "received")
+    return okAnswer(!row ? "not_recorded" : inserted?.meta.changes === 1 ? "other" : "duplicate");
   try {
     await env.LEADS_QUEUE.send({ kind: "gateway.event", eventId: row.id });
   } catch {

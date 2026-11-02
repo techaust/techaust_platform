@@ -24,7 +24,7 @@
 // The payer's data is never read or stored (core's readers are whitelists: L7, ADM-PAY-12; Settled by the lead on the safest reading, 2026-11-01 (08-C RB-40)).
 // The fee is absorbed (M6.1 L9: a commercial choice) in the column of its own currency; OPEN (08-C RA-29): is GST charged on the MDR and invoiced to our GSTIN?
 import type { CaptureReturnState, ProcessEventResult, RefreshResult } from "@techaust/core/gateway-rpc";
-import { uuidv7 } from "@techaust/core/ids";
+import { isUuidV7, uuidv7 } from "@techaust/core/ids";
 import { payableOnline, type ReviewKind } from "@techaust/core/online-pay";
 import {
   invoiceIdCheckoutTail,
@@ -903,7 +903,6 @@ export const refreshResultOfReturn = (state: CaptureReturnState): RefreshResult[
 
 type EventRow = { id: string; provider: string; event_type: string; attempts: number; facts: string | null };
 const text = (v: unknown) => (typeof v === "string" && v.length > 0 && v.length <= 255 ? v : null);
-const UUID7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 /** An event outcome in the RPC's words; `processing` (a capture in flight, PayPal not reached) comes back later. */
 const eventResultOf = (o: CaptureOutcome): ProcessEventResult =>
@@ -1019,7 +1018,7 @@ export async function processPayPalEvent(
     checkout = await db.prepare(CHECKOUT_BY_CAPTURE_SQL).bind(captureId).first<CheckoutRow>();
   if (!checkout) {
     // L13: not ours (no UUIDv7 mark): ignored with no review; ours with no row: the Owner is told.
-    if (!checkoutId || !UUID7.test(checkoutId)) return quiet("ignored", "not_ours");
+    if (!isUuidV7(checkoutId)) return quiet("ignored", "not_ours");
     const known = await db.prepare(CHECKOUT_BY_ID_SQL).bind(checkoutId).first<CheckoutRow>();
     const mine = known?.provider === "paypal" ? known : null;
     return reviewOnly(
@@ -1033,11 +1032,12 @@ export async function processPayPalEvent(
       ids,
     );
   }
+  // The approval goes straight to the capture path (it reads the mode and makes its own client); every other type needs the client here.
+  if (type === "checkout.approved")
+    return eventResultOf(await capturePayPalCheckout(env, checkout, src, now, ids));
   const api = payPalOf(env, await payPalModeOfSettings(db));
   if (!api || api.blocked) return { result: "retry" };
   const ctx: Ctx = { env, api, src, now, ids };
-  if (type === "checkout.approved")
-    return eventResultOf(await capturePayPalCheckout(env, checkout, src, now, ids));
   if (type === "checkout.approval_reversed") {
     // Step 0.4 row 19: the order re-fetched; captured after all → settled; else an unclaimed open row ends `failed` (the payer can start again).
     const o = await api.getOrder(checkout.provider_link_id as string);

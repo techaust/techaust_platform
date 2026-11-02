@@ -10,6 +10,8 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { DEAD_LETTER_BELL_PAYPAL, processGateway, processGatewayDeadLetter } from "../src/gateway.ts";
 import {
   BELL_SIGNATURES_PAYPAL,
+  CERT_FAILED_MAX,
+  CERT_FETCHES_PER_MINUTE,
   CERT_NEGATIVE_MS,
   certKeyFor,
   payPalHook,
@@ -194,6 +196,20 @@ describe("POST /paypal [JOB-HOOK-01..03, L1, L13]", () => {
     expect(await rowsOf(refund.eventId)).toHaveLength(1);
   });
 
+  it("an event of ours we don't act on: stored ignored, no message, logged `other` the first time and `duplicate` after [review part 1 finding 11]", async () => {
+    const e = captureEvent({ name: "CHECKOUT.ORDER.COMPLETED" });
+    logs.length = 0;
+    expect((await signed(e.body)).status).toBe(200);
+    expect(await rowsOf(e.eventId)).toMatchObject([{ status: "ignored" }]);
+    expect(fakes.leads).toHaveLength(0);
+    expect(logs.join("\n")).toContain('"o":"other"');
+    expect(logs.join("\n")).not.toContain('"o":"duplicate"');
+    logs.length = 0;
+    expect((await signed(e.body)).status).toBe(200);
+    expect(logs.join("\n")).toContain('"o":"duplicate"');
+    expect(await rowsOf(e.eventId)).toHaveLength(1);
+  });
+
   it("415 without JSON, 413 over 64 KiB (streamed), and nothing written", async () => {
     expect((await post("{}", { "content-type": "text/plain" })).status).toBe(415);
     const big = new ReadableStream({
@@ -222,23 +238,38 @@ describe("POST /paypal [JOB-HOOK-01..03, L1, L13]", () => {
     expect(await rowsOf(e.eventId)).toHaveLength(0);
   });
 
-  it("a certificate URL off PayPal's API host, or the local simulator's outside local: 400 signature_missing, nothing fetched, not counted", async () => {
+  it("a certificate URL off PayPal's API host, or the local simulator's outside local: 400 signature_missing, nothing fetched; counted when the other headers are all there [review part 1 finding 12]", async () => {
     const e = captureEvent();
     const cf = certFetch();
     for (const certUrl of [
       "https://api.paypal.com.evil.test/v1/notifications/certs/CERT-1",
       "http://api.sandbox.paypal.com/v1/notifications/certs/CERT-1",
       `${CERT_URL}?x=1`,
+      "https://api-m.sandbox.paypal.com/v1/notifications/certs/CERT-1",
     ]) {
       const r = await signed(e.body, { certUrl, f: cf.f });
       expect(r.status, certUrl).toBe(400);
+      expect(await code(r)).toBe("signature_missing");
     }
     const local = "http://localhost:8787/__paypal-test-cert";
     expect(
       (await signed(e.body, { certUrl: local, f: cf.f, e: envOf({ ENVIRONMENT: "staging" }) })).status,
     ).toBe(400);
     expect(cf.seen).toEqual([]);
-    expect(await failures()).toBe(0);
+    // All five headers sent and well formed, only the certificate URL refused: counted like a bad signature.
+    expect(await failures()).toBe(5);
+    expect(logs.join("\n")).toContain('"code":"cert_url_refused"');
+    // Without PAYPAL-AUTH-ALGO (it is optional), the same post is not counted.
+    const headers = await signer.headers(e.body, WEBHOOK, {
+      certUrl: "https://api-m.sandbox.paypal.com/v1/notifications/certs/CERT-1",
+    });
+    const { "paypal-auth-algo": _algo, ...four } = headers as Record<string, string>;
+    expect(await code(await post(e.body, four, { f: cf.f }))).toBe("signature_missing");
+    expect(await failures()).toBe(5);
+    expect(await rowsOf(e.eventId)).toHaveLength(0);
+    // The tests of this file share one database and one clock hour: the count starts again for the next ones.
+    await realEnv.DB.prepare("DELETE FROM hook_failures WHERE key LIKE 'paypal:sig:%'").run();
+    await realEnv.DB.prepare("DELETE FROM notifications WHERE kind = 'payment.hook_signature'").run();
   });
 
   it("a certificate that can't be had (404, not a certificate, expired): 503 cert_unavailable with no D1; PayPal retries", async () => {
@@ -345,6 +376,38 @@ describe("the certificate cache [B2 must carry 4]", () => {
     const t = now + CERT_NEGATIVE_MS * 2;
     for (const n of [1, 2, 3, 4]) await certKeyFor(`${CERT_URL.slice(0, -1)}${n}`, t, bad.f);
     expect(bad.seen).toHaveLength(2);
+  });
+
+  it("unsigned posts naming other certificate paths can't starve PayPal's own URL, and can't wipe the failed list [review part 1 finding 3]", async () => {
+    const now = Date.now();
+    const short = await testSigner(CERT_URL, { from: now - 60_000, to: now + 60_000 });
+    const good = certFetch(() => short.pem);
+    // PayPal's URL gave a valid certificate once: it is trusted from then on.
+    expect(await certKeyFor(CERT_URL, now, good.f)).not.toBeNull();
+    // Its certificate ran out; in the next minute, other paths spend the shared fetches...
+    const t = now + 120_000;
+    const other = (n: number) => `${CERT_URL.slice(0, -1)}x${n}`;
+    for (const n of [1, 2, 3]) expect(await certKeyFor(other(n), t, good.f)).toBeNull();
+    expect(good.seen.filter((u) => u !== CERT_URL)).toHaveLength(CERT_FETCHES_PER_MINUTE);
+    // ...yet PayPal's own URL still has its kept fetch (one a minute).
+    const renewed = await testSigner(CERT_URL);
+    const back = certFetch(() => renewed.pem);
+    expect(await certKeyFor(CERT_URL, t + 1, back.f)).not.toBeNull();
+    expect(back.seen).toEqual([CERT_URL]);
+    // The failed list forgets its oldest entry, never all of them: after 17 failures (two a minute, inside the 10 minutes), the first is forgotten and the
+    // second is still refused with no fetch.
+    resetPayPalCertCache();
+    const bad = certFetch(() => "x");
+    const t2 = t + CERT_NEGATIVE_MS * 2;
+    const at = (k: number) => t2 + Math.floor(k / 2) * 60_000 + (k % 2);
+    for (let k = 0; k <= CERT_FAILED_MAX; k++)
+      expect(await certKeyFor(other(100 + k), at(k), bad.f)).toBeNull();
+    expect(bad.seen).toHaveLength(CERT_FAILED_MAX + 1);
+    const later = at(CERT_FAILED_MAX) + 1;
+    expect(await certKeyFor(other(101), later, bad.f)).toBeNull();
+    expect(bad.seen).toHaveLength(CERT_FAILED_MAX + 1);
+    expect(await certKeyFor(other(100), later, bad.f)).toBeNull();
+    expect(bad.seen).toHaveLength(CERT_FAILED_MAX + 2);
   });
 });
 

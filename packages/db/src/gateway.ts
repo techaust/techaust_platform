@@ -8,6 +8,7 @@
 //
 // Nothing here stores a raw webhook body, a payer's email, phone, UPI address or card detail (L8; ADM-PAY-12; Settled by the lead on the safest reading, 2026-11-01 (08-C RB-40); Researched 2026-10-28, RBI PA Directions 2025,
 // Annex 1 2.1 (08-C RB-07)): `facts` are whitelists the caller builds (core `eventFacts`).
+import { PAYPAL_CAPTURE_GRACE_MS, PAYPAL_CLAIM_STALE_MS } from "@techaust/core/paypal";
 import { ledgerResultStatement, recomputeStatement } from "./ledger.ts";
 import type { GuardSql } from "./log.ts";
 import {
@@ -220,9 +221,8 @@ export function checkoutRefreshClaimStatement(
 
 // ---- PayPal: the capture (M6.4; run file C steps 2 to 9, L2, L5, L24) ------------------------------------------------------------------------------------
 
-/** The capture grace, the stale claim and the sweep's batch (the twins of core `PAYPAL_CAPTURE_GRACE_MS`, `PAYPAL_CLAIM_STALE_MS`; a db test compares them). */
-export const PAYPAL_CAPTURE_GRACE_MS = 30 * 60_000;
-export const PAYPAL_CLAIM_STALE_MS = 120_000;
+/** The capture grace and the stale claim are core's (review part 1, finding 16: one definition); the sweep's batch is the db's. */
+export { PAYPAL_CAPTURE_GRACE_MS, PAYPAL_CLAIM_STALE_MS };
 export const PAYPAL_SWEEP_LIMIT = 20;
 
 /**
