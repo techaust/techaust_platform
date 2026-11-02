@@ -1,6 +1,6 @@
-Status: planning: lead reading the code before the analyst starts
+Status: analyst running (measurements and cut options)
 Tier: B (Workers; planning only, no code)
-Usage: lead claude-opus-5-5/high (cloud session admin-split-plan). Readings: USAGE 5 at 2026-11-02T23:40+05:30.
+Usage: lead claude-opus-5-5/high (cloud session admin-split-plan); analyst (measure + options) started 23:12 IST at 5-h 5 %. Readings: USAGE 5 at 2026-11-02T23:40+05:30.
 
 # Run: the fourth admin Worker (split the admin finance Worker before M6.5), build brief
 
