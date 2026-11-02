@@ -25,8 +25,9 @@ import { liveModeAllowed, type ProviderEventType, type ProviderMode } from "./pa
 export const STRIPE_API_ORIGIN = "https://api.stripe.com";
 
 /**
- * The API version every request sends as `Stripe-Version`, and the version the webhook endpoint is created with (L15, H3): the newest in Stripe's official
- * OpenAPI spec read for the brief (`info.version` of spec3.json, V8). Pinned, so a change of Stripe's account default never changes what we read.
+ * The API version every request sends as `Stripe-Version` (L15): the newest in Stripe's official OpenAPI spec read for the brief (`info.version` of
+ * spec3.json, V8). Pinned, so a change of Stripe's account default never changes what we read. The staging webhook endpoint is on `2026-10-28.endive`
+ * (H3, 2026-11-02: the Dashboard didn't offer this one); its changelog changes nothing the hook reads (run file V21), and the hook never checks `api_version`.
  */
 export const STRIPE_API_VERSION = "2026-09-30.endive";
 
