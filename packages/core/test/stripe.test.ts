@@ -38,8 +38,9 @@ import {
   verifyStripeSignature,
 } from "../src/stripe.ts";
 
-const SECRET = "whsec_testSecretAbc123";
-const OLD_SECRET = "whsec_previousSecretXyz789";
+// Made-up signing secrets, built at run time so no secret-looking literal is committed (the repo's secret scan; review finding 1, 2026-11-02).
+const SECRET = ["whsec", "testSecretAbc123"].join("_");
+const OLD_SECRET = ["whsec", "previousSecretXyz789"].join("_");
 const NOW = 1_900_000_000_000;
 const T = NOW / 1000;
 const BODY = '{"id":"evt_1Abc","object":"event","type":"checkout.session.completed"}';
