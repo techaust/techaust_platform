@@ -219,6 +219,13 @@ describe("a pending entry that asks for a proforma is confirmed only by issuing 
     // the Worker's words are these, word for word
     expect(messagesSource).toContain(`"${words}"`);
   });
+
+  it("lead's decision 2: payment_waiting (a Staff entry waits for the proforma) is shown in the server's words, as online_payment_waiting is", () => {
+    const words =
+      "A payment recorded for this proforma is waiting for its tax invoice. Issue the tax invoice with that payment, so the money isn't counted twice.";
+    expect(payErrorText(err("payment_waiting", words, { paymentId: "pay-1" }))).toBe(words);
+    expect(messagesSource).toContain(`"${words}"`);
+  });
 });
 
 describe("the allocation table", () => {
