@@ -1,6 +1,6 @@
-Status: WAITING ON OWNER (Q1); reviewer re-checking the brief after round 1 fixes
+Status: WAITING ON OWNER (Q1, Q2); review APPROVE, round 2 findings fixed
 Tier: B (Workers; planning only, no code)
-Usage: lead claude-opus-5-5/high (cloud session admin-split-plan); analyst (measure + options) claude-opus-5-5/high, skills asked for `cloudflare:workers-best-practices`, `cloudflare:wrangler`, `cloudflare:workers-profiling` (each "Unknown skill": Cloudflare skills don't load in cloud sessions; no other skill fits a split plan): 5-h 5 % at start (23:12 IST). reviewer (brief) claude-opus-5-5/high started 23:48 IST at 5-h 5 % (reading). Readings: USAGE 5 at 2026-11-02T23:40+05:30.
+Usage: lead claude-opus-5-5/high (cloud session admin-split-plan); analyst (measure + options) claude-opus-5-5/high, skills asked for `cloudflare:workers-best-practices`, `cloudflare:wrangler`, `cloudflare:workers-profiling` (each "Unknown skill": Cloudflare skills don't load in cloud sessions; no other skill fits a split plan): 5-h 5 % at start (23:12 IST). reviewer (brief, round 1 and re-check) claude-opus-5-5/high, skill code-review (Cloudflare skills absent in the cloud; security-review not fitting a plan): 5-h 5 % at start (reading). Readings: USAGE 5 at 2026-11-02T23:40+05:30.
 
 # Run: the fourth admin Worker (split the admin finance Worker before M6.5), build brief
 
@@ -13,18 +13,13 @@ Status: open (the main session brings them as one batch).
 
 **Q1. Deploying the new admin Worker to staging.** This changes `.github/workflows/deploy-staging.yml`, which needs your yes.
 The finance Worker is too big for what M6.5 and M7 will add, so the invoice, report and dashboard routes move into a fourth admin Worker, "admin invoices". Payments, the gateways and their keys stay where they are. Staging needs one more deploy step for the new Worker.
-- **A (Recommended):** add one step for the new Worker and move the finance step later. The new order is:
-  1. the admin API;
-  2. **the admin invoices Worker (new);**
-  3. the admin front;
-  4. **jobs (moved up);**
-  5. **the admin finance Worker (moved down; it comes after the front instead of before it, as you set on 2026-10-31);**
-  6. the portal;
-  7. the website.
+- **A (Recommended):** add one step, "Deploy 2 of 7, the admin invoices Worker (staging)", right after the admin API and before the admin finance Worker. Everything else keeps your order: admin API, **admin invoices (new)**, admin finance, admin front, portal, jobs, website. Each Worker is deployed before the Workers that call it, which keeps every later deploy (M6.5 onwards) safe. The admin health check also proves the new Worker answers. The steps are renumbered "N of 7". Nothing else in the workflow changes: it stays fork-safe, with actions pinned by SHA.
+  - On **this first deploy only**, invoice pages can show "not found" for a minute or two between two steps, and a few background jobs (care invoices, the automatic tax invoice of a proforma paid online) are retried until the jobs step has run. This happens on staging only, with sandbox money, as with the third Worker in M6.1. The lead watches the deploy and checks afterwards that no retried job was left in "Needs review".
+- B: no new step. The PR waits and M6.5 can't start, because finance would cross its 800,000 ceiling during M6.5 or M7.
 
-  With this order every Worker that another one calls is already live at each step, so staging has **no gap** on the first deploy: no "not found" pages and no failed background jobs, and a deploy that stops halfway still leaves a working set. The admin health check also proves the new Worker answers. Nothing else in the workflow changes: it stays fork-safe, with actions pinned by SHA.
-- B: add the new step only, right after the admin API, and keep finance where it is. On the first deploy, invoice pages can show "not found" for a minute or two between two steps, as with the third Worker in M6.1 (staging only).
-- C: no new step. The PR waits and M6.5 can't start, because finance would cross its 800,000 ceiling during M6.5 or M7.
+**Q2. Rolling back the first staging deploy of the split.**
+- **A (Recommended):** if the new set misbehaves on staging, the lead may roll the staging admin front, admin finance and jobs Workers back to their previous versions straight away and tell you afterwards. This is the rule you gave for M5.0 (2026-10-27), and it applies to staging only.
+- B: the lead asks you before any rollback.
 
 **No secret moves and no key steps for you.** The Razorpay, Stripe and PayPal test keys stay on the admin finance Worker, so `tools/set-gateway-keys.ps1` isn't run again. This is one of the reasons for the recommended cut: the Razorpay and Stripe test secrets are shown only once, so moving them would mean making new ones.
 
@@ -160,7 +155,7 @@ _Final, by the lead, from the analyst's draft (2026-11-02). Reviewed: see "Revie
 10. **`finance.ts`** loses `BillingJobs`, the invoice imports and **`GatewayEvents.issueGatewayAdvance`**: after the split, jobs calls the invoices Worker directly (B.5). `GatewayEvents` keeps `processEvent` and `refreshCheckout`, and `PortalPayments` keeps its two methods. `split.test.ts` pins the new method lists, and `GatewayEventsApi` in core loses the method.
 
 ### B. The advance RPC (B1; review finding 1: a failure is never swallowed)
-1. **`@techaust/core/gateway-rpc`:** a `GatewayAdvanceApi` with one method, `issueGatewayAdvance({paymentId, lastTry?}): Promise<IssueAdvanceResult>`, and a runtime answer guard `isIssueAdvanceResult` (result codes and the `blockers` array shape). `GatewayEventsApi` loses `issueGatewayAdvance`.
+1. **`@techaust/core/gateway-rpc`:** a `GatewayAdvanceApi` with one method, `issueGatewayAdvance({paymentId, lastTry?}): Promise<IssueAdvanceResult>`. Reuse the existing answer guard `isIssueAdvanceResult` (`packages/core/src/gateway-rpc.ts:62` on 3f19098); add none. `GatewayEventsApi` loses `issueGatewayAdvance`.
 2. **`invoicing.ts` `GatewayAdvance extends WorkerEntrypoint<Env>`:**
    - exactly that one public method;
    - `rpcId` check on `paymentId` (1–64 characters), else a TypeError with nothing written; `lastTry` taken only when strictly `true`;
@@ -168,7 +163,8 @@ _Final, by the lead, from the analyst's draft (2026-11-02). Reviewed: see "Revie
    - one id-only `ev:"rpc"` line with `f` (`rpc.ts`).
 3. **Jobs calls it directly (lead decision L2).**
    - New jobs binding **`ADMIN_ADVANCE` → `techaust-platform-admin-invoices(-staging)` / `GatewayAdvance`** (C.4).
-   - `apps/jobs/src/gateway.ts` `gateway.advance` calls `env.ADMIN_ADVANCE.issueGatewayAdvance({ paymentId, lastTry })` in place of `adminGateway(env).issueGatewayAdvance`, and checks the answer with `isIssueAdvanceResult`. **A malformed answer throws.**
+   - `apps/jobs/src/gateway-rpc.ts`: `adminGateway(env)` no longer requires or wraps `issueGatewayAdvance` (today it throws `rpc_unavailable` unless the binding has both methods, `:34-36`; once `GatewayEvents` drops the method, every `gateway.event` would throw against the test fakes in `apps/jobs/test/gateway.test.ts:318` and `stripe-hook.test.ts:300`, while a real RPC stub would hide it on staging). A new `adminAdvance(env)` in the same file wraps `env.ADMIN_ADVANCE` with the existing `GatewayRpcError` codes: `rpc_unavailable` for a missing binding or method, and `rpc_bad_result` when `isIssueAdvanceResult` fails. **Both throw.**
+   - `apps/jobs/src/gateway.ts` `gateway.advance` calls `adminAdvance(env).issueGatewayAdvance({ paymentId, lastTry })` in place of `adminGateway(env).issueGatewayAdvance`. The test fakes are updated to the new shapes.
    - **A thrown binding error or a malformed answer propagates** to the `catch` in `apps/jobs/src/queue.ts:206`, exactly as a thrown error does today. The queue redelivers up to `max_retries`, then the dead-letter path (`processGatewayDeadLetter`) writes the `dead_letter` review item and rings the Owner's bell.
    - Only a real `{result:"retry"}` from `issueGatewayAdvance` (a proforma changed meanwhile) keeps today's one-retry-then-last-try rule (`gateway.ts:76-80`, `ADVANCE_TRIES`).
    - Every other `gateway.*` kind keeps `ADMIN_GATEWAY` (finance).
@@ -192,14 +188,12 @@ _Final, by the lead, from the analyst's draft (2026-11-02). Reviewed: see "Revie
 3. **`apps/admin/wrangler.jsonc` (front):** `ADMIN_INVOICES` → `techaust-platform-admin-invoices` in all three scopes (staging `-staging`), as `ADMIN_FINANCE` is. Bindings aren't inherited between scopes.
 4. **`apps/jobs/wrangler.jsonc`:** `ADMIN_JOBS` → `techaust-platform-admin-invoices` / `BillingJobs`, and a new **`ADMIN_ADVANCE` → `techaust-platform-admin-invoices` / `GatewayAdvance`** (top level; `-staging` under `env.staging`); production still has none. `ADMIN_GATEWAY` unchanged. Update the deploy-order comment.
 5. **`apps/portal/wrangler.jsonc`:** no change (`ADMIN_PAY` → finance `PortalPayments`).
-6. **Deploy order (Q1 A; review finding 2):** admin API → **admin invoices** → admin front → **jobs** → **admin finance** → portal → web.
-   - **Every bound Worker exists at every step,** and the old finance Worker still answers every row and still exports `BillingJobs` and `GatewayEvents.issueGatewayAdvance` until step 5:
-     - the new front sends invoice rows to the live invoices Worker and the rest to the old finance and the API;
-     - the new jobs calls invoices (`ADMIN_JOBS`, `ADMIN_ADVANCE`) and the old finance (`ADMIN_GATEWAY`: `processEvent`, `refreshCheckout`);
-     - the new finance binds invoices (`ADMIN_ADVANCE`), which already exists;
-     - the portal binds finance (unchanged).
-   - So the **first deploy has no gap** (no 404s, no failed `care.bill` or `gateway.advance` calls), and a deploy that stops at any step leaves a working set.
-   - The order differs from the owner's 2026-10-31 row (finance "after the admin API and before the admin front"), so Q1 asks for it. If the owner picks Q1 B, the M6.1-style window of 1–2 minutes of invoice-row 404s applies (staging only).
+6. **Deploy order (Q1 A; review round 2, finding 1), permanent:** admin API → **admin invoices** → admin finance → admin front → portal → jobs → web. This is callee-first: every Worker is deployed before the Workers that call it (finance calls invoices; the front calls all three; the portal calls finance; jobs calls invoices and finance). It is the owner's order of 2026-10-30/31 with one step inserted, and it stays right for later deploys that **add** methods (M6.5 puts `issueReceipt`, `checkRefund` and `fetchSettlements` on finance's `GatewayEvents` for jobs to call).
+   - **First deploy only (this one removes things from finance):**
+     - between the finance and front steps (about 1–2 minutes), the old front forwards invoice rows to the new finance, which answers 404 (deny by default);
+     - until the jobs step, the old jobs calls `BillingJobs` and `GatewayEvents.issueGatewayAdvance` on the new finance, which no longer has them. The calls throw and the queue redelivers them (every call is idempotent). A message whose retries run out first ends in the dead-letter path: a "Needs review" item and the bell, where the Owner's "Try again" issues it;
+     - staging only, sandbox money, as in M6.1. The lead watches the run and afterwards checks `review_items` and the dead-letter alerts on staging (read-only) for anything the window left; Q2 covers a rollback.
+   - **Rejected:** a jobs-before-finance order. It removes this one-off gap, but it breaks every later deploy that adds a finance method jobs calls (round 2, finding 1). Also rejected: two PRs (add the Worker first, remove the code from finance second). That means two staging approvals to avoid a 1–2 minute staging-only window.
 7. **`apps/admin/vite.config.ts`:** `auxiliaryWorkers: [api, finance, invoices]`; `techaust_platform_admin_invoices: { build: { minify: true } }`.
 8. **`apps/admin/vitest.config.ts`:** a stub `ADMIN_INVOICES` service binding (502, like the others). The advance RPC in tests: see F.3.
 9. **`apps/admin/package.json`:**
@@ -240,7 +234,7 @@ _Final, by the lead, from the analyst's draft (2026-11-02). Reviewed: see "Revie
 7. **Start-up dry run:** `INVOICES_WARM` and a slimmer `FINANCE_WARM`, regenerated with `node scripts/cpu-probe.mjs --write-fixtures` after building admin and jobs (runbook `cpu-baseline.md`). The dry runs:
    - invoices' covers `BillingJobs` and **`GatewayAdvance.issueGatewayAdvance`**, with made-up fixtures in the L31 pattern;
    - finance's keeps the gateway RPC dry runs (M6.4 L31; `GatewayEvents.issueGatewayAdvance` is gone, B.3), and runs the review-retry route against a **warm stub `ADMIN_ADVANCE`** that answers a made-up `IssueAdvanceResult` and never calls out;
-   - the jobs dry run (`apps/jobs/src/warm.ts`, if it covers `gateway.advance`) uses a warm stub `ADMIN_ADVANCE` the same way.
+   - jobs: no change. Its start-up warm-up (`apps/jobs/src/warm.ts:312` → `packages/core/src/warm.ts:167` `warmGatewayMessages`) only parses the message schemas and makes no RPC.
 
    `.gitleaks.toml` already allows the folder. `warm-routes.test.ts` and the fixtures test are updated.
 8. **Runbooks:**
@@ -252,7 +246,7 @@ _Final, by the lead, from the analyst's draft (2026-11-02). Reviewed: see "Revie
 ### E. The workflow (B2, **only after the owner's yes to Q1**)
 `.github/workflows/deploy-staging.yml`:
 - one new step "Deploy 2 of 7, the admin invoices Worker (staging)" (`pnpm --filter @techaust/admin run deploy:staging:invoices`), with the same env and token handling as the finance step;
-- the order of C.6: 1 admin API, 2 admin invoices, 3 admin front, 4 jobs (with its health check), 5 admin finance, then the admin health check (all four admin Workers), 6 portal, 7 web, each step named "N of 7". The steps keep their existing commands, env and health checks; only their positions change;
+- the other steps keep their order, commands, env and health checks, renumbered "N of 7": admin finance 3, admin front 4, then the admin health check (all four admin Workers), portal 5, jobs 6, web 7;
 - the admin health step's name says four Workers;
 - the order comment updated.
 
@@ -305,9 +299,15 @@ Nothing else changes: no new secret, no new permission, actions pinned by SHA, f
 4. **Hono mount order in finance:** the gateway and advice routers must stay before `payments` (`/:id`).
 5. **M6.4's fix round** (B3: `finance.ts`, `warm-routes.ts`, `cpu-probe.mjs`, the fixtures) must be merged first. That is why the split starts from `main` after M6.4. No migrations, so there's no migration-order issue.
 6. **A swallowed RPC failure** would leave a proforma paid online without its tax invoice and nobody told (review finding 1). B.3–B.4 never turn a thrown binding error into a result, and F.3 tests the dead-letter path.
-7. **First deploy:** no gap with the C.6 order. With Q1 B, about 1–2 minutes of invoice-row 404s and retried `care.bill` calls on staging only.
+7. **First deploy (C.6):** about 1–2 minutes of invoice-row 404s, and `care.bill`/`gateway.advance` messages redelivered until the jobs step (a dead-lettered one becomes a review item for the Owner's "Try again"). Staging only, sandbox money; the lead checks afterwards; Q2 covers a rollback.
 
 ## Review
+### Round 2, re-check (reviewer, 2026-11-02, at cd598ae3): **APPROVE**, 0 critical, 0 high, 1 medium, 2 low → all fixed by the lead
+All eight round 1 findings were confirmed fixed against the code (`queue.ts:116-119,206`, `gateway.ts:76-80,160`, `app.ts:197` `onError`, `invoice-model.ts:66,82`, `check-prod-readiness.mjs:198-220`). The C.6 claims about the old finance Worker during the window held.
+1. **Medium:** the round 1 order (jobs before finance) would be permanent, and it breaks later deploys that add finance methods jobs calls (M6.5's `issueReceipt`, `checkRefund`, `fetchSettlements` on `GatewayEvents`). Q1 A told the owner something true for this deploy only, and the order sat against docs/13 2026-10-30 ("admin API, then jobs") and 2026-10-31 (finance before the front). The reviewer corrected its own round 1 advice. **Fixed:** C.6, E, Q1, L5 and the proposed CLAUDE.md text are callee-first again; the one-off gap is accepted on staging, with Q2 back (option (a); two PRs rejected).
+2. **Low:** B.3 didn't name `apps/jobs/src/gateway-rpc.ts`: `adminGateway()` throws `rpc_unavailable` unless the binding has `issueGatewayAdvance` (`:34-36`), so the test fakes would break. **Fixed:** B.3 (`adminGateway` drops it, a new `adminAdvance` with `rpc_unavailable`/`rpc_bad_result`), B.1 (reuse `isIssueAdvanceResult`, `packages/core/src/gateway-rpc.ts:62`), L1.
+3. **Low:** the jobs warm-up makes no RPC (`apps/jobs/src/warm.ts:312` → `warmGatewayMessages`). **Fixed:** the D.7 bullet now says so.
+
 ### Round 1 (reviewer, 2026-11-02, against `origin/feat/m6.4-paypal` 3f19098): **SEND BACK**, 1 high, 2 medium (plus 1 medium), 4 low → all fixed by the lead
 Skills: `code-review` (high; each finding re-checked by the reviewer); the Cloudflare skills are absent in cloud sessions; `security-review` not loaded (it reviews code diffs; this branch changes a plan only).
 Confirmed against the code: the 32/29 row split and its rule; the mount order; `advance.ts` reads only `DB` and `PDF_QUEUE`, with its only other caller at `routes.ts:345`; the invoice side imports no gateway client or key; the moved modules read only `DB`, `DOCS`, `EMAIL_QUEUE`, `PDF_QUEUE`; no batch spans two Workers; the follow-ups' claims about the M6.5 brief.
@@ -322,7 +322,7 @@ Confirmed against the code: the 32/29 row split and its rule; the mount order; `
 
 ## Lead decisions (for 13)
 - **L1 (Lead, 2026-11-02):** the fourth admin Worker is **`techaust-platform-admin-invoices`** (cut B1). It holds invoices and notes, issue, approvals, reports, statements, the dashboard and `BillingJobs`. The admin finance Worker keeps payments, the ledger, credit, advices, the gateways, their five keys and the `GatewayEvents`/`PortalPayments` entrypoints.
-  - Reasons: both Workers keep 120 KB or more under their lines through M7.3, no secret moves (the Razorpay and Stripe test secrets are shown once), the portal is untouched, jobs changes one call (B.3), and no D1 batch spans two Workers.
+  - Reasons: both Workers keep 120 KB or more under their lines through M7.3, no secret moves (the Razorpay and Stripe test secrets are shown once), the portal is untouched, jobs changes only `gateway.ts` and `gateway-rpc.ts` (B.3), and no D1 batch spans two Workers.
   - Rejected: a gateway-only Worker (finance only ~50–60 KB under the line after M7.3, and all five secrets move); moving reports or care billing alone (finance stays over 650,000).
 - **L2 (changed after review finding 1):** the gateway advance runs in the invoices Worker behind a new entrypoint `GatewayAdvance`.
   - Jobs binds it directly (`ADMIN_ADVANCE`), and `GatewayEvents` drops `issueGatewayAdvance`. Finance binds it only for the Owner's review retry.
@@ -330,7 +330,7 @@ Confirmed against the code: the 32/29 row split and its rule; the mount order; `
   - This replaces the draft's finance forward, which turned a binding failure into `retry` and would have acked the last try with nothing written.
 - **L3:** the import cuts: `INVOICE_VOID` into `invoice-consts.ts` (payments-side importers import it from there), `CLIENT_GONE` from a side-effect-free module, `REVIEW_LINK` into `gateway/consts.ts`. `INVOICE_CODE`/`ADVANCE_CODE` are forbidden in finance, and a `GATEWAY_CODE` marker (from the gateway client modules only) in the front, API and invoices. The RPC helpers go in a shared `worker/rpc.ts`.
 - **L4:** budgets: `adminInvoices` ceiling 800,000, plan line 650,000; `adminFinance` plan line lowered to 500,000 (estimated ~380 K at the end of M7), ceiling 800,000 kept. Start-up ≤ 200 ms each.
-- **L5 (changed after review finding 2):** deploy order admin API → admin invoices → admin front → jobs → admin finance → portal → web (Q1 A). Every bound Worker exists at every step, so the first deploy has no gap and Q2 (a rollback rule) is dropped. Health: `/payments` 401 added for finance; `/dashboard` 401 now proves invoices.
+- **L5 (after review rounds 1 and 2):** the permanent deploy order is callee-first, admin API → admin invoices → admin finance → admin front → portal → jobs → web (Q1 A: the owner's order with one step inserted). The first deploy's 1–2 minute staging gap is accepted, with Q2 for a rollback. A jobs-before-finance order was rejected because it breaks later deploys that add finance methods jobs calls (M6.5). Health: `/payments` 401 added for finance; `/dashboard` 401 now proves invoices.
 - **L7:** `check-prod-readiness.mjs` requires a production twin for every staging service binding (review finding 4).
 - **L6:** Tier B, with an analyst early check after the routing, config and RPC layer (a money path's hop), as M6.1 stage A.
 
@@ -344,7 +344,7 @@ _For the main session after the split merges (replaces "The admin API is three W
 >
 > The API, finance and invoices Workers are Vite auxiliary Workers with no public URL in any scope. All four build from `createApp` in `app.ts`, re-run CSRF and the guard from the cookie, and hold no secrets except finance's gateway keys. New admin routes go in `routes-api.ts`, `routes-invoices.ts` (documents of the invoice family, reports, statements) or `routes-finance.ts` (money in and out, gateways). The budget markers keep the invoice chain out of finance and the API, and gateway code out of the others.
 
-Also in "Worker budget": "admin invoices 800,000 (plan line 650,000), admin finance 800,000 (plan line 500,000)". In "Staging deploys build first, then deploy": "seven deploys in order: admin API, admin invoices, admin front, jobs, admin finance, portal, web (`deploy:staging:invoices`; every bound Worker exists at every step)". In "Razorpay (M6.2)": the automatic invoice "under the issuing Owner's `gateway_auto` authority" runs in the invoices Worker through `GatewayAdvance`.
+Also in "Worker budget": "admin invoices 800,000 (plan line 650,000), admin finance 800,000 (plan line 500,000)". In "Staging deploys build first, then deploy": "seven deploys in order: admin API, admin invoices, admin finance, admin front, portal, jobs, web (`deploy:staging:invoices`; a Worker before the Workers that call it)". In "Razorpay (M6.2)": the automatic invoice "under the issuing Owner's `gateway_auto` authority" runs in the invoices Worker through `GatewayAdvance`.
 
 ## Follow-ups (for 12)
 - **The M6.5 brief needs amending before M6.5 starts (main session):**
@@ -355,4 +355,4 @@ Also in "Worker budget": "admin invoices 800,000 (plan line 650,000), admin fina
 - **Not verified in planning:** start-up with the real fixtures; the B3, M6.5 and M7 growth (brief estimates); the local auxiliary-to-auxiliary entrypoint binding (Step 0.4); whether wrangler refuses a deploy whose bound Worker is missing (Step 0.6); whether service-binding and RPC calls count against the Free plan's daily request limit (each counts as an invocation; checked at the staging reading).
 
 ## Handover
-Brief written from the analyst's draft and checked by the lead against the M6.4 branch (the import cut, the advance's callers, the row count). Review round 1 SEND BACK, all eight findings fixed; the reviewer re-checks. Then the owner's Q1 goes to the main session; then the PR.
+Brief written from the analyst's draft and checked by the lead against the M6.4 branch (the import cut, the advance's callers, the row count). Review round 1 SEND BACK (eight findings, all fixed); round 2 APPROVE with one medium and two lows, all fixed by the lead (the deploy order is callee-first again, with Q2 back). Waiting on the owner's Q1 and Q2 through the main session. The PR opens now; the brief is final apart from the answers.
