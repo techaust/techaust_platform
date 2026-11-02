@@ -1,6 +1,8 @@
 // The admin routes of M6.2 (run file C, the routes table; finance Worker, `on: "finance"`): payment links on an invoice (make, cancel, refresh), the "Needs
 // review" list with the Owner's resolve and "Try again", and the gateways' status as the finance Worker sees it (L15: the keys live here, so only this Worker
 // can say whether they are set; the webhook secret is the jobs Worker's, so "Last verified webhook" stands for it). Every change is one batch through `mutate`.
+
+import { uuidv7 } from "@techaust/core/ids";
 import { REVIEW_RESOLUTIONS } from "@techaust/core/online-pay";
 import { GATEWAYS } from "@techaust/core/settings";
 import { stripeKeyModeOf } from "@techaust/core/stripe";
@@ -377,11 +379,14 @@ export const gatewayPayments = new Hono<AppEnv>()
       // M6.4: PayPal's item names its order; the order is captured (or its capture re-fetched) as the member.
       const co = await db.prepare(CHECKOUT_BY_LINK_SQL).bind("paypal", linkId).first<CheckoutRow>();
       if (!co) return err(c, NOT_RETRYABLE, 409);
-      const out = await capturePayPalCheckout(c.env, co, {
-        kind: "staff",
-        memberId: u.id,
-        role: u.role === "owner" ? "owner" : "staff",
-      });
+      const out = await capturePayPalCheckout(
+        c.env,
+        co,
+        { kind: "staff", memberId: u.id, role: u.role === "owner" ? "owner" : "staff" },
+        now,
+        uuidv7,
+        true,
+      );
       if (out.state === "retry") return err(c, PAYPAL_GATEWAY_ERROR, 502);
       if (out.state === "processing") return err(c, PAYPAL_CAPTURE_IN_FLIGHT, 409);
       r = {

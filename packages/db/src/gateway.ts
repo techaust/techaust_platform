@@ -226,6 +226,15 @@ export { PAYPAL_CAPTURE_GRACE_MS, PAYPAL_CLAIM_STALE_MS };
 export const PAYPAL_SWEEP_LIMIT = 20;
 
 /**
+ * The document of checkout `checkout_sessions` can still take exactly its amount NOW (`onlinePayableSql` for PayPal, apart from this very checkout's own claim; the
+ * amount at most its balance and its live balance from the allocation rows). One text, shared by the claim and `paypalCaptureFitsStatement`.
+ */
+const PAYPAL_DOCUMENT_FITS_SQL = `EXISTS (SELECT 1 FROM documents d JOIN clients k ON k.id = d.client_id
+           WHERE d.id = checkout_sessions.document_id AND d.client_id = checkout_sessions.client_id AND d.currency = checkout_sessions.currency
+             AND ${onlinePayableSql("d", "k", "paypal", "checkout_sessions.id")}
+             AND checkout_sessions.amount_minor <= d.balance_minor AND checkout_sessions.amount_minor <= ${liveBalanceSql("d")})`;
+
+/**
  * The capture claim (L2): one call takes the right to capture checkout `?1` at `?2` (now, UTC ms). It matches only while: the checkout is PayPal's, live or stale,
  * with its order; `now` is at most 30 minutes past `expires_at` (L5: our 2 h 30 min, then the grace, inside PayPal's 3 hours); no claim is held, or the one held
  * is stale (2 minutes: its answer never came back); and the document can still take exactly this amount NOW (`onlinePayableSql` for PayPal, apart from this very
@@ -243,12 +252,23 @@ export function paypalCaptureClaimStatement(
        WHERE id = ?1 AND provider = 'paypal' AND status IN ('live', 'stale') AND provider_link_id IS NOT NULL
          AND ?2 <= expires_at + ${PAYPAL_CAPTURE_GRACE_MS}
          AND (capture_started_at IS NULL OR capture_started_at <= ?2 - ${PAYPAL_CLAIM_STALE_MS})
-         AND EXISTS (SELECT 1 FROM documents d JOIN clients k ON k.id = d.client_id
-           WHERE d.id = checkout_sessions.document_id AND d.client_id = checkout_sessions.client_id AND d.currency = checkout_sessions.currency
-             AND ${onlinePayableSql("d", "k", "paypal", "checkout_sessions.id")}
-             AND checkout_sessions.amount_minor <= d.balance_minor AND checkout_sessions.amount_minor <= ${liveBalanceSql("d")})`,
+         AND ${PAYPAL_DOCUMENT_FITS_SQL}`,
     )
     .bind(a.id, a.now);
+}
+
+/**
+ * Review part 2, finding 4: the claim's document test alone (the same SQL text as the claim's last condition, `PAYPAL_DOCUMENT_FITS_SQL`), read without claiming.
+ * A refresh that finds PayPal's order not approved (so no claim is taken and nothing is captured) still asks it: a row whose document can no longer take this
+ * amount (voided, withdrawn, paid, its balance moved, the client erased, other gateway money waiting) is ended `cancelled` at once instead of showing "Live" until
+ * it expires. `?1` the checkout id; a row (`{ fits: 1 }`) when the document still fits, none when it doesn't.
+ */
+export function paypalCaptureFitsStatement(db: D1Database, a: { id: string }): D1PreparedStatement {
+  return db
+    .prepare(
+      `SELECT 1 AS fits FROM checkout_sessions WHERE id = ?1 AND provider = 'paypal' AND ${PAYPAL_DOCUMENT_FITS_SQL}`,
+    )
+    .bind(a.id);
 }
 
 /**

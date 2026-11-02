@@ -55,6 +55,7 @@ import {
   type GatewayPaymentArgs,
   paypalAbandonStatements,
   paypalCaptureClaimStatement,
+  paypalCaptureFitsStatement,
   paypalCaptureReleaseStatement,
   recordGatewayPaymentStatements,
   reviewBellStatement,
@@ -691,15 +692,17 @@ const stateOfRow = (c: CheckoutRow): CaptureReturnState =>
  * Capture (or settle) one PayPal checkout (run file C steps 1 to 9). Never throws for PayPal's answer. `approvedOnly` (review part 1, finding 2, the optional low):
  * a caller that is not the client's own return or PayPal's approval event (the sweep, the portal's poll, a member's "Check now" or retry) never POSTs a capture on
  * an UNCLAIMED order PayPal doesn't show approved: the order is read first (a read is not a payment attempt; a capture already in it is settled), so repeated
- * refreshes of an order the client left or PayPal declined don't count toward PayPal's attempt limit (`MAX_NUMBER_OF_PAYMENT_ATTEMPTS_EXCEEDED`).
+ * refreshes of an order the client left or PayPal declined don't count toward PayPal's attempt limit (`MAX_NUMBER_OF_PAYMENT_ATTEMPTS_EXCEEDED`). Review part 2,
+ * finding 11: `approvedOnly`, `now` and `ids` are required, so every caller says which it is (the return and the approval event `false`; the refresh, the sweep
+ * and a member's retry `true`).
  */
 export async function capturePayPalCheckout(
   env: GatewayEnv,
   checkout: CheckoutRow,
   src: CaptureSource,
-  now = Date.now(),
-  ids: Ids = uuidv7,
-  approvedOnly = src.kind === "sweep" || src.kind === "staff",
+  now: number,
+  ids: Ids,
+  approvedOnly: boolean,
 ): Promise<CaptureOutcome> {
   const db = env.DB;
   const c = checkout;
@@ -732,11 +735,21 @@ export async function capturePayPalCheckout(
   }
   if (approvedOnly && c.capture_started_at === null) {
     const o = await api.getOrder(c.provider_link_id);
-    // PayPal unreachable, or no such order (the row expires at its grace): nothing is asked of the capture now.
-    if (!o.ok) return { state: o.code === "not_found" ? "not_completed" : "processing" };
+    // No such order (the row expires at its grace): not completed. PayPal unreachable (review part 2, finding 3): `retry`, since nothing is claimed here, so no
+    // capture is "in flight" (a member's "Check now" answers the gateway error, the sweep comes back later).
+    if (!o.ok) return { state: o.code === "not_found" ? "not_completed" : "retry" };
     const cap = captureOf(o.value);
     if (cap) return settleCapture(ctx, c, o.value, cap);
-    if (o.value.status !== "APPROVED") return { state: "not_completed" };
+    if (o.value.status !== "APPROVED") {
+      // Review part 2, finding 4: the claim's document test still runs (a read, no claim): a document voided, withdrawn, paid or changed meanwhile ends this
+      // unclaimed row `cancelled` ("changed"), as a refused claim would, instead of leaving it "Live" until it expires. Nothing was captured on it.
+      const fits = await paypalCaptureFitsStatement(db, { id: c.id }).first<{ fits: number }>();
+      if (!fits) {
+        await endLocally(ctx, c, "cancelled", "changed");
+        return { state: "changed" };
+      }
+      return { state: "not_completed" };
+    }
   }
   // (2) the claim
   const claimed = await paypalCaptureClaimStatement(db, { id: c.id, now }).run();
@@ -856,7 +869,7 @@ export async function payPalReturnOf(
   now = Date.now(),
   ids: Ids = uuidv7,
 ): Promise<{ state: CaptureReturnState; retryUrl?: string }> {
-  const out = await capturePayPalCheckout(env, c, { kind: "return" }, now, ids);
+  const out = await capturePayPalCheckout(env, c, { kind: "return" }, now, ids, false);
   if (out.state === "review" || out.state === "retry") return { state: "processing" };
   return out.retryUrl ? { state: out.state, retryUrl: out.retryUrl } : { state: out.state };
 }
@@ -1034,7 +1047,7 @@ export async function processPayPalEvent(
   }
   // The approval goes straight to the capture path (it reads the mode and makes its own client); every other type needs the client here.
   if (type === "checkout.approved")
-    return eventResultOf(await capturePayPalCheckout(env, checkout, src, now, ids));
+    return eventResultOf(await capturePayPalCheckout(env, checkout, src, now, ids, false));
   const api = payPalOf(env, await payPalModeOfSettings(db));
   if (!api || api.blocked) return { result: "retry" };
   const ctx: Ctx = { env, api, src, now, ids };
