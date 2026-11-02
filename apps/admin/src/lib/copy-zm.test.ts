@@ -11,6 +11,7 @@ import {
 } from "../../worker/gateway/reasons.ts";
 import paymentTermsSource from "../routes/settings/payment-terms.tsx?raw";
 import { APPROVED_07ZM, APPROVED_ZM_DRAFTS, CARD_ZM, PLACEHOLDER_MARK, ZM, ZM_DRAFTS } from "./copy-zm.ts";
+import { cardBodyText } from "./gateway.ts";
 import { cardFloorAboveMaximum } from "./settings-form.ts";
 
 const mark = APPROVED_07ZM ? "" : `${PLACEHOLDER_MARK} `;
@@ -103,6 +104,20 @@ describe("07-ZM review changes [M6.3 review findings 2 and 4]", () => {
     expect(CARD_ZM.cardBody).toBe(`${mark}${reviewChange("S13 body").at(-1)}`);
     expect(CARD_ZM.cardBody).not.toContain("no link to copy");
     expect(CARD_ZM.cardBody).toContain("send the client their portal link instead");
+  });
+
+  it("re-check finding 1: without Copy portal link the body ends before the portal clause", () => {
+    expect(CARD_ZM.cardBodyNoLink).toBe(`${mark}${reviewChange("S13 body without the button").at(-1)}`);
+    expect(CARD_ZM.cardBodyNoLink).not.toContain("portal link");
+    expect(cardBodyText(null)).toBe(CARD_ZM.cardBodyNoLink);
+    expect(cardBodyText("https://portal.example.test/invoices/x")).toBe(CARD_ZM.cardBody);
+  });
+
+  it("re-check finding 2: the maximum-under-minimum line is on the page and on the maximum field of Payment terms", () => {
+    expect(CARD_ZM.maximumBelowMinimum).toBe(`${mark}${reviewChange("S18 maximum error").at(-1)}`);
+    expect(paymentTermsSource).toMatch(
+      /usdMax\.minor < GATEWAY_MIN_MINOR\) e\["f-overseasOnlineMaxUsdMinor"\] = CARD_ZM\.maximumBelowMinimum;/,
+    );
   });
 
   it("the floor-above-maximum line is on the page and on the floor field of Payment terms", () => {

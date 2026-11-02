@@ -28,6 +28,7 @@ import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
 import { CARD_ZM } from "../../lib/copy-zm.ts";
 import {
+  cardBodyText,
   GW,
   GW_UI,
   gatewayLine,
@@ -409,7 +410,7 @@ export function CardPayments(props: { view: InvoiceView; panel: Panel }) {
         </h3>
         {last && <LinkChip status={last.status} />}
       </div>
-      <p className="pay-link__body">{CARD_ZM.cardBody}</p>
+      <p className="pay-link__body">{cardBodyText(portal)}</p>
       {last && (
         <div className="pay-link__ask">
           <span className="pay-link__amount pay-link__amount--sm tnum">

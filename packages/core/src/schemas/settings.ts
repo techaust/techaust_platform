@@ -24,6 +24,7 @@ import {
   DEFAULT_ONLINE_MAX_USD_MINOR,
   DEFAULT_PART_FLOOR_MINOR,
   DEFAULT_USD_PART_FLOOR_MINOR,
+  GATEWAY_MIN_MINOR,
 } from "../online-pay.ts";
 import {
   REALISATION_MAX_DAYS,
@@ -425,6 +426,12 @@ export const CARD_FLOOR_ABOVE_MAXIMUM =
   "The smallest part-payment by card can't be more than the largest card payment.";
 
 /**
+ * M6.3 re-check finding 2: the refusal of a card maximum under the gateway minimum (`GATEWAY_MIN_MINOR`, $1.00; core `onlineMinimumOf` never asks for less),
+ * which would stop every card payment with no warning (07-ZM "Review changes", lead under the owner's delegation, 2026-11-02).
+ */
+export const CARD_MAXIMUM_BELOW_MINIMUM = "The largest card payment must be at least $1.00.";
+
+/**
  * The payment terms as they are SAVED: the stored rules plus the card limits in step (M6.3 review finding 2; lead's answer to B1, Q2): the smallest card
  * part-payment (`onlineMinPartialUsdMinor`) may not be above the largest card payment (`overseasOnlineMaxUsdMinor`), or every card press on a balance above the
  * maximum would be refused. The refusal sits on the floor's field.
@@ -433,6 +440,10 @@ export const paymentTermsSettings = storedPaymentTermsSettings.check(
   z.refine((t) => t.onlineMinPartialUsdMinor <= t.overseasOnlineMaxUsdMinor, {
     error: CARD_FLOOR_ABOVE_MAXIMUM,
     path: ["onlineMinPartialUsdMinor"],
+  }),
+  z.refine((t) => t.overseasOnlineMaxUsdMinor >= GATEWAY_MIN_MINOR, {
+    error: CARD_MAXIMUM_BELOW_MINIMUM,
+    path: ["overseasOnlineMaxUsdMinor"],
   }),
 );
 

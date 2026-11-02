@@ -4,6 +4,7 @@
 // through @techaust/core; percentages are stored in basis points. How advances are documented lives under Tax. M6.3 (07-ZM S18; Q2 A, L9): the smallest card
 // part-payment and the largest card payment on a USD document, in dollars, with the ₹25 lakh line under the second (Researched 2026-10-28, RBI PA Directions
 // 2025 ¶11(d); lead, 2026-11-02 (08-C RB-07)). The floor can't be above the maximum (review finding 2, 07-ZM "Review changes").
+import { GATEWAY_MIN_MINOR } from "@techaust/core/online-pay";
 import type { Settings } from "@techaust/core/settings";
 import { Link } from "react-router";
 import { NumberUnit, SettingRow } from "../../components/form.tsx";
@@ -126,6 +127,8 @@ const spec: GroupSpec<"payment_terms", Form> = {
     // the schema's own floor: the largest card payment is at least one cent
     else if (usdMax.minor < 1)
       e["f-overseasOnlineMaxUsdMinor"] = `${CARD_ZM.maximumLabel}: ${INVT_COPY.amountZero}`;
+    // re-check finding 2: under the gateway minimum no card payment can be taken at all
+    else if (usdMax.minor < GATEWAY_MIN_MINOR) e["f-overseasOnlineMaxUsdMinor"] = CARD_ZM.maximumBelowMinimum;
     // review finding 2: a floor above the maximum would leave Pay by card on with no amount the server takes; said on the floor field
     else if (usdMin.ok && cardFloorAboveMaximum(usdMin.minor, usdMax.minor))
       e["f-onlineMinPartialUsdMinor"] = CARD_ZM.floorAboveMaximum;

@@ -4,9 +4,11 @@ import { describe, expect, it } from "vitest";
 import { financialYear } from "../src/dates.ts";
 import { gstinCheckChar } from "../src/gstin.ts";
 import { formatDocumentNumber, MAX_NUMBER_LENGTH, maxNumber } from "../src/numbering.ts";
+import { GATEWAY_MIN_MINOR } from "../src/online-pay.ts";
 import {
   BRAND_LOGOS,
   CARD_FLOOR_ABOVE_MAXIMUM,
+  CARD_MAXIMUM_BELOW_MINIMUM,
   floorRetention,
   numberingClashMessage,
   panOf,
@@ -154,6 +156,27 @@ describe("settings defaults (docs/08 §7.1, researched in 08-C)", () => {
     expect(() =>
       resolveSetting("payment_terms", { ...above, buildSchedule: [{ label: "All", pctBp: 9_000 }] }),
     ).toThrow();
+  });
+
+  it("M6.3 re-check finding 2 [ADM-SET-06]: a save refuses a card maximum under the gateway minimum, on the maximum's field; a stored row still reads", () => {
+    const base = SETTINGS_DEFAULTS.payment_terms;
+    expect(GATEWAY_MIN_MINOR).toBe(100); // the line says $1.00
+    expect(CARD_MAXIMUM_BELOW_MINIMUM).toBe("The largest card payment must be at least $1.00.");
+    const at = { ...base, onlineMinPartialUsdMinor: 100, overseasOnlineMaxUsdMinor: 100 };
+    expect(SETTINGS_SCHEMAS.payment_terms.safeParse(at).success).toBe(true);
+    for (const max of [1, 50, 99]) {
+      const parsed = SETTINGS_SCHEMAS.payment_terms.safeParse({
+        ...base,
+        onlineMinPartialUsdMinor: 0,
+        overseasOnlineMaxUsdMinor: max,
+      });
+      expect(parsed.success, String(max)).toBe(false);
+      expect(parsed.error?.issues.map((i) => ({ path: i.path, message: i.message }))).toEqual([
+        { path: ["overseasOnlineMaxUsdMinor"], message: CARD_MAXIMUM_BELOW_MINIMUM },
+      ]);
+    }
+    const stored = { ...base, onlineMinPartialUsdMinor: 0, overseasOnlineMaxUsdMinor: 50 };
+    expect(resolveSetting("payment_terms", stored).overseasOnlineMaxUsdMinor).toBe(50);
   });
 
   it("the email-log retention is at least 12 months (DPDP Rule 8(3), from 13 May 2027; Researched 2026-10-28, 08-C RB-09): the schema refuses less, a stored row below it reads as 12, and nothing else is raised", () => {

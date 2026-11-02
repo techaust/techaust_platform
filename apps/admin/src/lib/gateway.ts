@@ -137,6 +137,10 @@ export function portalLinkOffered(
   return status !== "converted" && balanceMinor > 0 && !payments.some((g) => g.proformaPending);
 }
 
+/** S13's body: it tells staff to send the portal link only when "Copy portal link" is drawn (re-check finding 1). */
+export const cardBodyText = (portalUrl: string | null): string =>
+  portalUrl ? CARD_ZM.cardBody : CARD_ZM.cardBodyNoLink;
+
 /** S13's "Copy portal link": the client's signed-in invoice page in this environment's portal (null when the build has no portal origin). */
 export function portalInvoiceUrl(documentId: string, origin: string = PORTAL_ORIGIN): string | null {
   if (!origin) return null;

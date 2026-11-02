@@ -3,7 +3,7 @@
 // "[Placeholder] " mark (the copy-zl.ts pattern), and `APPROVED_07ZM` turns true when the lead approves the placed page. S16, S17 and S19 are the finance
 // Worker's (apps/admin/worker/gateway/reasons.ts and messages.ts); S19 is the builder's draft for the lead. Pure, so the words are tested without a browser.
 
-import { CARD_FLOOR_ABOVE_MAXIMUM } from "@techaust/core/settings";
+import { CARD_FLOOR_ABOVE_MAXIMUM, CARD_MAXIMUM_BELOW_MINIMUM } from "@techaust/core/settings";
 
 export const APPROVED_07ZM = true;
 export const PLACEHOLDER_MARK = "[Placeholder]";
@@ -16,6 +16,11 @@ export const CARD_ZM = {
   // Review finding 4 (lead under delegation, 2026-11-02): the old ending "so there is no link to copy" sat over "Copy portal link" and read as a contradiction.
   cardBody: ZM(
     "Clients pay by card from their portal page or the emailed invoice link. Each card page lasts an hour, so there is no card page to copy; send the client their portal link instead.",
+  ),
+  // Re-check finding 1 (lead under delegation, 2026-11-02): the same body without its last clause, where "Copy portal link" isn't drawn (nothing left to pay by
+  // card, a converted proforma, a proforma payment waiting for the rate, or a build with no portal origin).
+  cardBodyNoLink: ZM(
+    "Clients pay by card from their portal page or the emailed invoice link. Each card page lasts an hour, so there is no card page to copy.",
   ),
   copyPortalLink: ZM("Copy portal link"),
   /** S14: a Stripe payment's rows. `rate` is worked out in bigint from the two INR and USD figures, never a stored float (L10). */
@@ -39,6 +44,8 @@ export const CARD_ZM = {
    * on a document the finance Worker always refuses; the settings API refuses it too, with the same words (one copy, in core).
    */
   floorAboveMaximum: ZM(CARD_FLOOR_ABOVE_MAXIMUM),
+  /** Re-check finding 2: the maximum under the gateway minimum, on the maximum's field (the settings API refuses it too, with these words). */
+  maximumBelowMinimum: ZM(CARD_MAXIMUM_BELOW_MINIMUM),
 } as const;
 
 /**
