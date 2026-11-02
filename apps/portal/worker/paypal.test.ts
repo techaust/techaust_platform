@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import { fixtures } from "./fixtures.ts";
 import { ROUTES } from "./guard.ts";
 import { type OnlineRow, onlineOf } from "./invoice-summary.ts";
-import { PAY_RETURN_LIMIT } from "./pay-return.ts";
+import { PAY_RETURN_LIMIT, PAY_RETURN_WINDOW_MS, reservePayReturn } from "./pay-return.ts";
 import { call, sessionFor, withEnv } from "./test-helpers.ts";
 
 type Args = Record<string, unknown>;
@@ -383,5 +383,42 @@ describe("the signed-in PayPal return's quota [review part 1 finding 2; L2, POR-
       (await call(`/invoices/${f.a.docs.issued}?c=${CHECKOUT}`, { cookie: other.cookie }, e)).status,
     ).toBe(200);
     expect(refreshes).toHaveLength(PAY_RETURN_LIMIT + 1);
+  });
+});
+
+// Review part 2, finding 11: one limiter for both returns (the emailed link's per address with its `p:fail:` lock, the signed-in page's per contact).
+describe("reservePayReturn, the one PayPal-return limiter [review part 2 finding 11; L2]", () => {
+  it("20 a window then refused until the lock's end; a locked failKey refuses at once and counts nothing; no failKey: only the pay key", async () => {
+    const t = 1_900_000_000_000;
+    const payKey = "p:pay:test-shared-limiter";
+    for (let i = 0; i < PAY_RETURN_LIMIT; i++)
+      expect(await reservePayReturn(env.DB, { payKey, failKey: null, now: t + i })).toBe(true);
+    expect(await reservePayReturn(env.DB, { payKey, failKey: null, now: t + 100 })).toBe(
+      t + PAY_RETURN_LIMIT - 1 + PAY_RETURN_WINDOW_MS,
+    );
+    // The window over: allowed again.
+    expect(
+      await reservePayReturn(env.DB, {
+        payKey,
+        failKey: null,
+        now: t + PAY_RETURN_LIMIT + PAY_RETURN_WINDOW_MS,
+      }),
+    ).toBe(true);
+    // A locked p:fail: key refuses a fresh pay key with no count, answering the fail lock's end.
+    const failKey = "p:fail:test-shared-limiter";
+    await env.DB.prepare(
+      "INSERT INTO auth_attempts (key, window_start, failures, locked_until) VALUES (?1, ?2, 5, ?3)",
+    )
+      .bind(failKey, t, t + 3_600_000)
+      .run();
+    const fresh = "p:pay:test-shared-limiter-2";
+    expect(await reservePayReturn(env.DB, { payKey: fresh, failKey, now: t + 1 })).toBe(t + 3_600_000);
+    expect(
+      await env.DB.prepare("SELECT count(*) AS n FROM auth_attempts WHERE key = ?1")
+        .bind(fresh)
+        .first<{ n: number }>(),
+    ).toEqual({ n: 0 });
+    // The same fresh key without the fail lock (the signed-in page's call): counted and allowed.
+    expect(await reservePayReturn(env.DB, { payKey: fresh, failKey: null, now: t + 2 })).toBe(true);
   });
 });

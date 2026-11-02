@@ -30,6 +30,31 @@ export const PAY_RETURN_LIMIT = 20;
 export const PAY_RETURN_WINDOW_MS = 10 * 60_000;
 const BODY_MAX = 1024;
 
+/**
+ * Review part 2, finding 11: the one PayPal-return limiter (L2), for the emailed link's return (here, per address) and the signed-in page's return (`GET
+ * /invoices/:id?c=`, per contact; review part 1, finding 2): `RESERVE_SQL` on `payKey` (portal `p:pay:`, 20 per 10 minutes, then locked for the window), refused
+ * too while `failKey` (the address's `p:fail:` lock of failed links; null for the signed-in page) is locked. One batch: the reservation and the locks' reads.
+ * True when this request may go on (nothing is asked of PayPal otherwise); else the lock's end (UTC ms) for `Retry-After`.
+ */
+export async function reservePayReturn(
+  db: D1Database,
+  a: { payKey: string; failKey: string | null; now: number },
+): Promise<true | number> {
+  const t = a.now;
+  const [quota, payLock, failLock] = await db.batch([
+    db
+      .prepare(RESERVE_SQL)
+      .bind(a.payKey, t, PAY_RETURN_WINDOW_MS, PAY_RETURN_LIMIT, PAY_RETURN_WINDOW_MS, a.failKey ?? a.payKey),
+    db.prepare(IP_READ).bind(a.payKey),
+    ...(a.failKey === null ? [] : [db.prepare(IP_READ).bind(a.failKey)]),
+  ]);
+  const until = (r: D1Result | undefined) =>
+    (r?.results[0] as { locked_until: number | null } | undefined)?.locked_until ?? 0;
+  if (quota?.results[0] && until(failLock) <= t) return true;
+  const end = Math.max(until(payLock), until(failLock));
+  return end > t ? end : t + PAY_RETURN_WINDOW_MS;
+}
+
 export const payReturnBody = z.strictObject({
   checkoutId: z.string().check(z.regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)),
   token: z.nullable(z.string().check(z.regex(/^[A-Z0-9]{1,36}$/))),
@@ -66,21 +91,16 @@ export const payReturn = new Hono<AppEnv>().post(
     const t = Date.now();
     const pepper = c.env.PORTAL_KEY_PEPPER;
     const address = callerAddress(c);
-    const payKey = await portalPayKey(pepper, address);
     const failKey = await portalFailKey(pepper, address);
-    const [quota, failLock, payLock] = await db.batch([
-      db
-        .prepare(RESERVE_SQL)
-        .bind(payKey, t, PAY_RETURN_WINDOW_MS, PAY_RETURN_LIMIT, PAY_RETURN_WINDOW_MS, failKey),
-      db.prepare(IP_READ).bind(failKey),
-      db.prepare(IP_READ).bind(payKey),
-    ]);
-    const until = (r: D1Result | undefined) =>
-      (r?.results[0] as { locked_until: number | null } | undefined)?.locked_until ?? 0;
+    const allowed = await reservePayReturn(db, {
+      payKey: await portalPayKey(pepper, address),
+      failKey,
+      now: t,
+    });
     // Refused: the address is locked (its returns, or its failed links): nothing is asked of PayPal.
-    if (!quota?.results[0] || until(failLock) > t) {
+    if (allowed !== true) {
       c.set("accessDone", true);
-      return rateLimited(c, (Math.max(until(failLock), until(payLock)) - t) / 1000);
+      return rateLimited(c, (allowed - t) / 1000);
     }
     const r = await captureReturn(c.env, { checkoutId, token });
     if (r === "unavailable") return err(c, UNAVAILABLE, 503);
