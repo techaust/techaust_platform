@@ -48,10 +48,18 @@ export const VOID_PAYMENT_PENDING_LINE =
   "A payment recorded on it is waiting for the owner's check. Reject it first.";
 /**
  * M6.2 (fix round 3 item 3, reworded in fix round 4 low 2; staff words, the lead under the standing delegation, 2026-11-01): the void and withdraw blocker `payment_pending_gateway`, a
- * pending Razorpay payment, which can't be rejected.
+ * pending gateway payment, which can't be rejected. M6.3 staging fix (07-ZM "Review changes", 2026-11-02): gateway-neutral (a Stripe payment said "Razorpay").
  */
 export const VOID_GATEWAY_PENDING_LINE =
-  'A Razorpay payment on it is waiting for its tax invoice. Issue it with "Confirm by issuing the tax invoice".';
+  'An online payment on it is waiting for its tax invoice. Issue it with "Confirm by issuing the tax invoice".';
+/**
+ * M6.3 staging fix 1 (L5; staff words, the lead under the owner's delegation, 07-ZM "Review changes", 2026-11-02): `online_payment_waiting`, the advance issued
+ * without `paymentId` while an online payment waits for the proforma (`details.paymentId` names it; the dialog offers "Confirm by issuing the tax invoice").
+ */
+export const ONLINE_PAYMENT_WAITING = e(
+  "online_payment_waiting",
+  "An online payment for this proforma is waiting for its tax invoice. Issue the tax invoice with that payment, so the money isn't counted twice.",
+);
 
 /** L32: the void blocker `payment_recorded` (a payment was put on it, one released or withdrawn since included). 07-ZH from line 23 (the designer's draft). */
 export const VOID_PAYMENT_RECORDED_LINE =

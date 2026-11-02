@@ -276,6 +276,9 @@ export function paymentApprovalStatements(
  * the Owner's allocation rows (`allocationStatements`, which may differ from what Staff asked, L6), the recompute and `ledger_result`; both decisions add
  * `decideApprovalStatements`. A second decision changes nothing (409 `payment_not_pending`). Binds `?1` payment, `?2` the new status, `?3` now, `?4` session,
  * `?5` note, `?6` the expected `recorded_at`.
+ *
+ * M6.3 staging fix 2 (L5): a confirm never moves a payment that asks for a proforma (`paymentProformaSql`): that money is confirmed only by the advance batch
+ * (issuing the tax invoice for the payment received), whatever allocations the caller sends. A reject is unchanged.
  */
 export function verifyPaymentStatement(
   db: D1Database,
@@ -291,7 +294,8 @@ export function verifyPaymentStatement(
   return db
     .prepare(
       `UPDATE payments SET status = ?2, verified_by = ${sessionUser("?4")}, verified_at = ?3, decision_note = ?5
-       WHERE id = ?1 AND status = 'pending_verification' AND recorded_at = ?6 AND ${clientLive("payments")} AND ${sessionSql("?4", "?3", ["owner"], true)}`,
+       WHERE id = ?1 AND status = 'pending_verification' AND recorded_at = ?6 AND ${clientLive("payments")} AND ${sessionSql("?4", "?3", ["owner"], true)}
+         AND (?2 <> 'confirmed' OR ${paymentProformaSql("payments")} IS NULL)`,
     )
     .bind(a.paymentId, a.decision, a.now, a.sessionId, a.note, a.expectedRecordedAt);
 }
@@ -475,6 +479,35 @@ export function extensionLetterStatement(
 }
 
 // ---- reads ---------------------------------------------------------------------------------------------------------------------------------------------
+
+/**
+ * M6.3 staging fix 2 (L5; ADM-PAY-01, ADM-INV-10; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)): the proforma payment `p` (an SQL
+ * table name or alias of `payments`) asks for, or NULL: a proforma its own `requested_allocations` name (frozen once written), else the proforma its checkout was
+ * made for (a gateway payment that didn't match is pending with no request, but its money still came through the proforma's page). Such money is confirmed only by
+ * issuing the tax invoice for the payment received, never by the ordinary decision, whatever allocations the dialog sends. One `json_each` of at most 10 rows and
+ * primary-key seeks.
+ */
+export const paymentProformaSql = (p: string): string =>
+  `coalesce((SELECT pfd.id FROM json_each(${p}.requested_allocations) pfj JOIN documents pfd ON pfd.id = json_extract(pfj.value, '$.documentId') WHERE pfd.type = 'proforma' LIMIT 1),
+     (SELECT pcd.id FROM checkout_sessions pfc JOIN documents pcd ON pcd.id = pfc.document_id WHERE pfc.id = ${p}.checkout_id AND pcd.type = 'proforma'))`;
+
+/**
+ * M6.3 staging fix 1 (L5, L12; ADM-PAY-01, ADM-INV-10; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)): the online payments still
+ * waiting for the tax invoice of proforma `doc` of client `client` (SQL expressions): PENDING, through a gateway (`provider <> 'manual'`), asking for the
+ * proforma (its `requested_allocations` name it) or paid through a checkout made for it. While one waits, the Owner issues that proforma's tax invoice for a
+ * payment received only WITH it ("Confirm by issuing the tax invoice"), never as a new bank payment: the same money would be counted twice (a manual payment
+ * plus the gateway's). A seek of `payments_client`, as `paymentPendingForSql`. Select the ids (oldest first) with `ONLINE_PAYMENT_WAITING_SQL`, or test with
+ * `EXISTS (…)` in a WHERE.
+ */
+export const onlinePaymentWaitingSql = (doc: string, client: string): string =>
+  `SELECT wp.id FROM payments wp INDEXED BY payments_client
+   WHERE wp.client_id = ${client} AND wp.status = 'pending_verification' AND wp.provider <> 'manual'
+     AND (EXISTS (SELECT 1 FROM json_each(wp.requested_allocations) wj WHERE json_extract(wj.value, '$.documentId') = ${doc})
+       OR EXISTS (SELECT 1 FROM checkout_sessions wc WHERE wc.id = wp.checkout_id AND wc.document_id = ${doc}))`;
+
+/** The oldest online payment waiting for proforma `?1` (its client read from the proforma), for the 409 `online_payment_waiting` and its `details.paymentId`. */
+export const ONLINE_PAYMENT_WAITING_SQL = /* @__PURE__ */ (() =>
+  `${onlinePaymentWaitingSql("?1", "(SELECT wd.client_id FROM documents wd WHERE wd.id = ?1)")} ORDER BY wp.recorded_at, wp.id LIMIT 1`)();
 
 /** L12: the newest pending or confirmed payment with this reference (`?1`, normalised), with its day and client, for the soft 409 `reference_seen`. */
 export const PAYMENT_REFERENCE_SEEN_SQL = `SELECT p.id, p.received_on, p.client_id, c.code AS client_code, c.display_name AS client_name

@@ -29,7 +29,11 @@ import { lutsOf } from "@techaust/core/tax";
 import { deedDraftStatements } from "@techaust/db/deeds";
 import { headerExtrasJson, invoiceSealOf, type TermsRef } from "@techaust/db/documents";
 import { advanceIssueStatements } from "@techaust/db/issue";
-import { PAYMENT_REFERENCE_SEEN_SQL } from "@techaust/db/ledger";
+import {
+  ONLINE_PAYMENT_WAITING_SQL,
+  onlinePaymentWaitingSql,
+  PAYMENT_REFERENCE_SEEN_SQL,
+} from "@techaust/db/ledger";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
@@ -86,6 +90,7 @@ import {
 import { fxIn, readInvoice } from "./invoices.ts";
 import {
   bellDecided,
+  ONLINE_PAYMENT_WAITING,
   PAYMENT_MISMATCH,
   PAYMENT_NOT_PENDING,
   paymentLink,
@@ -158,6 +163,8 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       // proforma with it (the one "Confirm by issuing the tax invoice" would use).
       db.prepare(PAYMENT_REFERENCE_SEEN_SQL).bind(norm ?? ""),
       db.prepare(PENDING_ASK_FOR_PROFORMA_SQL).bind(norm ?? "", id),
+      // M6.3 staging fix 1 (L5): an online payment still waiting for this proforma's tax invoice (the receipt is that payment, never a new one).
+      db.prepare(ONLINE_PAYMENT_WAITING_SQL).bind(id),
     ]);
     // (2) 404 unless a proforma
     if (!ctx) return err(c, NOT_FOUND, 404);
@@ -208,13 +215,20 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
         pending.asks_this !== 1
       )
         return err(c, PAYMENT_MISMATCH, 409);
-    } else if (f.confirmDuplicate !== true) {
-      // (5d) Early check 2, finding 1 (L12; 07-ZH line 13): a reference already on a pending or confirmed payment is a soft 409 the Owner can confirm past.
-      // The freeze's WHERE holds the same rule, so a payment recorded meanwhile refuses the batch too.
-      const seen = ctx.extra[3]?.results[0] as SeenRow | undefined;
-      if (seen) {
-        const ask = ctx.extra[4]?.results[0] as { id: string } | undefined;
-        return refusedSeen(c, seen, ask?.id ?? null);
+    } else {
+      // (5c') M6.3 staging fix 1 (L5; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)): while an online payment waits for this
+      // proforma, its tax invoice is issued only with that payment ("Confirm by issuing the tax invoice"): a new manual receipt would count the same money twice
+      // (staging, 2026-11-02). A hard 409 (`confirmDuplicate` never passes it); the freeze's WHERE holds the same rule, so a payment landing meanwhile refuses too.
+      const waiting = ctx.extra[5]?.results[0] as { id: string } | undefined;
+      if (waiting) return err(c, ONLINE_PAYMENT_WAITING, 409, { paymentId: waiting.id });
+      if (f.confirmDuplicate !== true) {
+        // (5d) Early check 2, finding 1 (L12; 07-ZH line 13): a reference already on a pending or confirmed payment is a soft 409 the Owner can confirm past.
+        // The freeze's WHERE holds the same rule, so a payment recorded meanwhile refuses the batch too.
+        const seen = ctx.extra[3]?.results[0] as SeenRow | undefined;
+        if (seen) {
+          const ask = ctx.extra[4]?.results[0] as { id: string } | undefined;
+          return refusedSeen(c, seen, ask?.id ?? null);
+        }
       }
     }
     // (6) the amount against what is left
@@ -569,6 +583,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
         fy,
         norm,
         checkSeen: f.paymentId === undefined && f.confirmDuplicate !== true,
+        checkOnline: f.paymentId === undefined,
         amountMinor: f.amountMinor,
         expectedProformaUpdatedAt: d.updated_at,
         maxNumber: maxNumber(format),
@@ -645,6 +660,8 @@ type Expectations = {
   norm: string;
   /** No `paymentId` and no `confirmDuplicate`: the freeze also refused a reference already on a pending or confirmed payment (finding 1). */
   checkSeen: boolean;
+  /** No `paymentId`: the freeze also refused while an online payment waits for the proforma (M6.3 staging fix 1). */
+  checkOnline: boolean;
   amountMinor: number;
   expectedProformaUpdatedAt: number;
   maxNumber: number;
@@ -666,6 +683,7 @@ async function explain(c: Ctx, proformaId: string, x: Expectations) {
     `SELECT p.status, p.frozen_at, p.updated_at, p.balance_minor, p.client_id, cl.updated_at AS client_updated_at, ${clientGoneSql("p.client_id")} AS gone,
        (SELECT i.number_display FROM advance_receipts r JOIN documents i ON i.id = r.invoice_id WHERE r.proforma_id = p.id AND r.reference_norm = ?2) AS used_number,
        EXISTS (SELECT 1 FROM payments pr INDEXED BY payments_reference WHERE pr.reference_norm = ?2 AND pr.status IN ('pending_verification', 'confirmed')) AS seen,
+       (${onlinePaymentWaitingSql("p.id", "p.client_id")} ORDER BY wp.recorded_at, wp.id LIMIT 1) AS online_waiting,
        (SELECT version FROM settings WHERE key = 'numbering') AS numbering_v,
        (SELECT version FROM settings WHERE key = 'company') AS company_v,
        (SELECT version FROM settings WHERE key = 'tax') AS tax_v,
@@ -689,6 +707,7 @@ async function explain(c: Ctx, proformaId: string, x: Expectations) {
       gone: number;
       used_number: string | null;
       seen: number;
+      online_waiting: string | null;
       numbering_v: number | null;
       company_v: number | null;
       tax_v: number | null;
@@ -704,6 +723,9 @@ async function explain(c: Ctx, proformaId: string, x: Expectations) {
   // A session that ended between the read and the batch (idle, absolute limit, revoked): the freeze refused it, and the answer is to sign in again (review 13).
   if (row.session_live !== 1) return err(c, UNAUTHENTICATED, 401);
   if (row.used_number !== null) return refusedReference(c, row.used_number);
+  // M6.3 staging fix 1: an online payment for the proforma landed between the read and the batch (a webhook while the dialog was open).
+  if (x.checkOnline && row.online_waiting !== null)
+    return err(c, ONLINE_PAYMENT_WAITING, 409, { paymentId: row.online_waiting });
   if (x.checkSeen && row.seen === 1) {
     const [seenR, askR] = await c.env.DB.batch([
       c.env.DB.prepare(PAYMENT_REFERENCE_SEEN_SQL).bind(x.norm),

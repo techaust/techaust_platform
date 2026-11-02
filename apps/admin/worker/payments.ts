@@ -39,6 +39,7 @@ import {
   ledgerResultStatement,
   PAYMENT_REFERENCE_SEEN_SQL,
   paymentApprovalStatements,
+  paymentProformaSql,
   proofStatement,
   recomputeStatement,
   recordPaymentStatement,
@@ -90,7 +91,8 @@ const PAYMENT_COLS = `p.id, p.client_id, c.code AS client_code, c.display_name A
   p.currency, p.amount_minor, p.charges_minor, p.received_on, p.mode, p.reference_norm, p.inr_received_minor, p.requested_allocations, p.tds_section, p.tds_rate_bp,
   p.tds_certificate_no, p.tds_certificate_on, p.proof_kind, p.proof_ref, p.proof_r2_key, p.proof_sha256, p.proof_mime, p.advance_receipt_id, p.note,
   p.recorded_by, (SELECT name FROM staff_users WHERE id = p.recorded_by) AS recorded_by_name, p.recorded_at, p.verified_by,
-  (SELECT name FROM staff_users WHERE id = p.verified_by) AS verified_by_name, p.verified_at, p.decision_note, p.withdrawn_by, p.withdrawn_at, p.withdraw_reason`;
+  (SELECT name FROM staff_users WHERE id = p.verified_by) AS verified_by_name, p.verified_at, p.decision_note, p.withdrawn_by, p.withdrawn_at, p.withdraw_reason,
+  ${paymentProformaSql("p")} AS proforma_id`;
 
 export type PaymentRow = {
   id: string;
@@ -130,6 +132,8 @@ export type PaymentRow = {
   withdrawn_by: string | null;
   withdrawn_at: number | null;
   withdraw_reason: string | null;
+  /** M6.3 staging fix 2 (L5): the proforma this entry asks for, by its request or its checkout (`paymentProformaSql`), else null. */
+  proforma_id: string | null;
 };
 
 /** One payment by id, with its client. */
@@ -240,6 +244,11 @@ export const paymentView = (r: PaymentRow) => ({
   withdrawnBy: r.withdrawn_by,
   withdrawnAt: r.withdrawn_at,
   withdrawReason: r.withdraw_reason,
+  /**
+   * M6.3 staging fix 2 (L5): the proforma this entry asks for (its request, or the proforma its online checkout was for), else null. While it is pending, the
+   * screens offer only "Confirm by issuing the tax invoice" on that proforma, never the plain Confirm (the verify route refuses it: `use_advance_invoice`).
+   */
+  proformaId: r.proforma_id,
 });
 export type PaymentView = ReturnType<typeof paymentView>;
 
@@ -733,6 +742,12 @@ export const payments = new Hono<AppEnv>()
     if (decision === "rejected" && row.provider !== "manual")
       return err(c, refundNeededOf(row.provider), 409);
     if (decision === "rejected" && f.note === undefined) return err(c, REJECT_REASON_REQUIRED, 400);
+    // M6.3 staging fix 2 (L5; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)): an entry that asks for a proforma, by its own request
+    // or (a gateway payment) by its checkout, is confirmed only by issuing the tax invoice for the payment received, WHATEVER allocations the dialog sends: the
+    // dialog's own list once replaced the request and confirmed a proforma's card payment as credit beside a manual receipt (staging, 2026-11-02). The
+    // statement's WHERE holds the same rule.
+    if (decision === "confirmed" && row.proforma_id !== null)
+      return err(c, USE_ADVANCE_INVOICE, 409, { documentId: row.proforma_id });
     const requested = f.allocations ?? parseRequested(row.requested_allocations);
     let rows: AllocationRow[] = [];
     let docs: DocRow[] = [];
@@ -839,6 +854,8 @@ export const payments = new Hono<AppEnv>()
       if (again.status !== "pending_verification") return err(c, PAYMENT_NOT_PENDING, 409);
       if (again.client_gone === 1) return err(c, CLIENT_GONE, 409);
       if (again.recorded_at !== f.expectedRecordedAt) return err(c, STALE_VERSION, 409);
+      if (decision === "confirmed" && again.proforma_id !== null)
+        return err(c, USE_ADVANCE_INVOICE, 409, { documentId: again.proforma_id });
       return (await sessionRefusal(c, true)) ?? err(c, STALE_VERSION, 409);
     }
     return c.json({
