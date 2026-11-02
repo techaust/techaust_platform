@@ -20,7 +20,12 @@ import {
   validateFormat,
   validateStoredFormat,
 } from "../numbering.ts";
-import { DEFAULT_PART_FLOOR_MINOR } from "../online-pay.ts";
+import {
+  DEFAULT_ONLINE_MAX_USD_MINOR,
+  DEFAULT_PART_FLOOR_MINOR,
+  DEFAULT_USD_PART_FLOOR_MINOR,
+  GATEWAY_MIN_MINOR,
+} from "../online-pay.ts";
 import {
   REALISATION_MAX_DAYS,
   REALISATION_MAX_MONTHS,
@@ -371,7 +376,12 @@ export const storedNumberingSettings = z.record(z.enum(SERIES_KEYS), numberingFo
 
 const scheduleStep = z.object({ label: text(1), pctBp: bp });
 
-export const paymentTermsSettings = z
+/**
+ * The payment terms as they are READ: every rule except the cross-field card limits below, so a row stored before that rule (a floor above the maximum) never
+ * turns a route into a 500; the portal and the finance Worker still offer no card payment the limits can't take (core `payableOnline`), and the Owner fixes
+ * the row on the next save.
+ */
+export const storedPaymentTermsSettings = z
   .object({
     /** Net 7 by default (ADM-INV-09); clients can override. */
     dueDays: intBetween(0, 90),
@@ -385,6 +395,14 @@ export const paymentTermsSettings = z
     reminderWindowIst: z.object({ fromHour: intBetween(0, 23), toHour: intBetween(1, 24) }),
     /** ADM-SET-05: the smallest part-payment a Razorpay link may ask for (INR minor; the full balance if lower). */
     razorpayMinPartialInrMinor: minor,
+    /** M6.3 (ADM-SET-06; owner, 2026-11-01, Q2 A): the smallest card part-payment on a USD document (USD minor; the full balance if lower). Owner only. */
+    onlineMinPartialUsdMinor: minor,
+    /**
+     * M6.3 (L9): the largest single online payment on a USD document (USD minor; at least one cent), shared with PayPal (M6.4). Owner only. Researched 2026-10-28,
+     * RBI PA Directions 2025, para 11(d) (08-C RB-07): ₹25 lakh per PA-CB transaction (PayPal); the Owner keeps this below it at the day's rate (S18). Stripe is
+     * not a PA-CB (08-C RA-38): for Stripe this is the L9 safest setting, not a legal limit (lead, 2026-11-02).
+     */
+    overseasOnlineMaxUsdMinor: intBetween(1),
     /**
      * The website's liability cap (INR minor), printed on /terms (M2.3 follow-up, 07-A section 2 item 10). One source: apps/web reads
      * it from SETTINGS_DEFAULTS. OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only: is a ₹10,000 website-use cap enforceable against a consumer? (the cap and the consumer carve-out: wording approved in 07-ZE, built in T6)
@@ -402,6 +420,32 @@ export const paymentTermsSettings = z
       path: ["buildSchedule"],
     }),
   );
+
+/** M6.3 review finding 2: the refusal of a card floor above the card maximum (07-ZM "Review changes", lead under the owner's delegation, 2026-11-02). */
+export const CARD_FLOOR_ABOVE_MAXIMUM =
+  "The smallest part-payment by card can't be more than the largest card payment.";
+
+/**
+ * M6.3 re-check finding 2: the refusal of a card maximum under the gateway minimum (`GATEWAY_MIN_MINOR`, $1.00; core `onlineMinimumOf` never asks for less),
+ * which would stop every card payment with no warning (07-ZM "Review changes", lead under the owner's delegation, 2026-11-02).
+ */
+export const CARD_MAXIMUM_BELOW_MINIMUM = "The largest card payment must be at least $1.00.";
+
+/**
+ * The payment terms as they are SAVED: the stored rules plus the card limits in step (M6.3 review finding 2; lead's answer to B1, Q2): the smallest card
+ * part-payment (`onlineMinPartialUsdMinor`) may not be above the largest card payment (`overseasOnlineMaxUsdMinor`), or every card press on a balance above the
+ * maximum would be refused. The refusal sits on the floor's field.
+ */
+export const paymentTermsSettings = storedPaymentTermsSettings.check(
+  z.refine((t) => t.onlineMinPartialUsdMinor <= t.overseasOnlineMaxUsdMinor, {
+    error: CARD_FLOOR_ABOVE_MAXIMUM,
+    path: ["onlineMinPartialUsdMinor"],
+  }),
+  z.refine((t) => t.overseasOnlineMaxUsdMinor >= GATEWAY_MIN_MINOR, {
+    error: CARD_MAXIMUM_BELOW_MINIMUM,
+    path: ["overseasOnlineMaxUsdMinor"],
+  }),
+);
 
 /**
  * The least each retention figure may be (months, but years for `financialYears`): the one place the floors live. The schema takes them as its minimums, and `resolveSetting` raises a stored
@@ -475,8 +519,15 @@ export const SETTINGS_SCHEMAS = {
   gateways: gatewaySettings,
   email: emailSettings,
 } as const;
-/** What a stored row is read with: the same schemas, except that numbering takes a format valid before M5.1 (see `storedNumberingSettings`). */
-const READ_SCHEMAS = { ...SETTINGS_SCHEMAS, numbering: storedNumberingSettings } as const;
+/**
+ * What a stored row is read with: the same schemas, except that numbering takes a format valid before M5.1 (see `storedNumberingSettings`) and the payment
+ * terms skip the card-limits rule added in M6.3's review (see `storedPaymentTermsSettings`).
+ */
+const READ_SCHEMAS = {
+  ...SETTINGS_SCHEMAS,
+  numbering: storedNumberingSettings,
+  payment_terms: storedPaymentTermsSettings,
+} as const;
 export type SeededSettingKey = keyof typeof SETTINGS_SCHEMAS;
 export type Settings = { [K in SeededSettingKey]: z.infer<(typeof SETTINGS_SCHEMAS)[K]> };
 
@@ -598,6 +649,10 @@ export const SETTINGS_DEFAULTS: Settings = {
     // The default part-payment floor (docs/04 ADM-SET-05): INR 10,000. Researched 2026-10-29, Razorpay first_min_partial_amount (08-C RB-39): a
     // commercial default, no regulatory floor. One figure, in core `online-pay` (the portal reads it when the group was never saved).
     razorpayMinPartialInrMinor: DEFAULT_PART_FLOOR_MINOR,
+    // M6.3: USD 100 (owner, 2026-11-01, Q2 A) and USD 25,000 (L9; Researched 2026-10-28, RBI PA Directions 2025, para 11(d) (08-C RB-07); for Stripe, not a
+    // PA-CB, the safest setting, not a legal limit). One figure each, in core `online-pay`.
+    onlineMinPartialUsdMinor: DEFAULT_USD_PART_FLOOR_MINOR,
+    overseasOnlineMaxUsdMinor: DEFAULT_ONLINE_MAX_USD_MINOR,
     // OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only: is a ₹10,000 website-use cap enforceable against a consumer? INR 10,000 is the figure the site printed before this setting existed.
     websiteLiabilityCapInrMinor: 1_000_000,
   },

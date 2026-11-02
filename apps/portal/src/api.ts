@@ -343,6 +343,8 @@ export type InvoiceSummary = {
   payOnline?: boolean;
   /** M6.2: a proforma is paid in whole rupees (LD28; 07-ZI line 7). */
   wholeRupees?: boolean;
+  /** M6.3: the gateway of the document's currency ("Pay by card" through Stripe for USD; "Pay now" through Razorpay for INR); null when it can't be paid online. */
+  provider?: "razorpay" | "stripe" | null;
   /** M6.2: the open link (amount, when it ends), the last payment received online (confirmed or still being checked, so "received"), a proforma's waiting one. */
   online?: OnlineBlock;
 };
@@ -357,10 +359,23 @@ export type OnlineBlock = {
    * online or the floor can't be read: the dialog then offers the full amount only (as it does when the minimum equals the balance).
    */
   minimumMinor: number | null;
+  /** M6.3 (core `payment_pending`): a gateway payment still waits on the document: Pay is hidden and 07-ZM line 4 (or 07-ZI line 13) shows. */
+  paymentPending?: boolean;
+  /** M6.3 (L9, 07-ZM line 6): the most one card payment may be (USD), or null (INR: no maximum). */
+  maximumMinor?: number | null;
 };
 
-/** M6.2: a payment link made (`shortUrl` on rzp.io or razorpay.com, checked by the server and again before the browser leaves). */
-export type PayLink = { ok: true; shortUrl: string; expiresAt: number; reused: boolean };
+/**
+ * M6.2, M6.3: the gateway's page to send the browser to (`url` on that gateway's own hosts: rzp.io or razorpay.com, checkout.stripe.com; checked by the server
+ * and again before the browser leaves).
+ */
+export type PayLink = {
+  ok: true;
+  provider: "razorpay" | "stripe";
+  url: string;
+  expiresAt: number;
+  reused: boolean;
+};
 
 export const invoicesApi = {
   list: (after?: string) =>
@@ -373,8 +388,9 @@ export const invoicesApi = {
   getRefreshed: (id: string) =>
     send<{ document: InvoiceSummary }>(`/invoices/${encodeURIComponent(id)}?refresh=1`, {}),
   /**
-   * M6.2 Pay now (07-ZI): a Razorpay link for this amount. 400 `amount_below_minimum` / `amount_above_balance` / `amount_not_whole_rupee` (lines 6, 7, with
-   * details); 409, 429, 502, 503 answer line 14.
+   * M6.2 Pay now (07-ZI): a Razorpay link for this amount; M6.3 Pay by card (07-ZM): a Stripe page on a USD document (the server picks the gateway by the
+   * document's currency). 400 `amount_below_minimum` / `amount_above_balance` / `amount_not_whole_rupee` / `amount_above_maximum` (07-ZI lines 6, 7,
+   * 07-ZM line 6, with details); 409 `payment_processing` (07-ZM line 4 or 07-ZI line 13); other 409s, 429, 502, 503 answer 07-ZI line 14.
    */
   pay: (id: string, amountMinor: number) =>
     send<PayLink>(`/invoices/${encodeURIComponent(id)}/pay`, { body: { amountMinor } }),

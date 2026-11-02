@@ -2479,6 +2479,26 @@ textarea[aria-invalid="true"] {
   font-variant-numeric: tabular-nums;
 }
 
+/* M6.3 (07-ZM line 6): above the card maximum the dialog says the limit first, on a rule in the info colour, and asks for the amount straight away (no radio
+   to answer, so the field is not indented and its label shows) */
+.pay-max {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-2) 0 var(--space-2) var(--space-3);
+  border-inline-start: 3px solid var(--color-info);
+  max-width: 60ch;
+}
+
+.pay-part--alone {
+  margin: 0;
+  padding-inline-start: 0;
+}
+
+.pay-part__label {
+  display: block;
+  margin: 0 0 var(--space-1);
+  font-weight: 500;
+}
+
 .pay-full {
   margin: 0 0 var(--space-4);
   font-weight: 560;

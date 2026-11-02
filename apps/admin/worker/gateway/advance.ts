@@ -101,9 +101,10 @@ async function blocked(
     summary: { paymentId: p.id, proformaId, blockers },
     side: (g) => [
       env.DB.prepare(
+        // M6.3 (early check 1, "What B2 must not forget" 4): the item names the payment's own gateway and currency, never a hard-coded Razorpay and INR.
         `INSERT INTO review_items (id, source, provider, kind, status, payment_id, document_id, client_id, amount_minor, currency, facts, created_at)
-           SELECT ?1, 'webhook', 'razorpay', 'advance_blocked', 'open', ?2, ?3, ?4, ?5, 'INR', ?6, ?7
-           WHERE NOT EXISTS (SELECT 1 FROM review_items x INDEXED BY review_items_payment WHERE x.payment_id = ?2 AND x.kind = 'advance_blocked' AND x.status = 'open') AND ${g.sql(8)}`,
+           SELECT ?1, 'webhook', p.provider, 'advance_blocked', 'open', ?2, ?3, ?4, ?5, p.currency, ?6, ?7 FROM payments p WHERE p.id = ?2
+             AND NOT EXISTS (SELECT 1 FROM review_items x INDEXED BY review_items_payment WHERE x.payment_id = ?2 AND x.kind = 'advance_blocked' AND x.status = 'open') AND ${g.sql(8)}`,
       ).bind(
         reviewId,
         p.id,

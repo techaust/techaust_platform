@@ -21,6 +21,7 @@ import {
   canRetry,
   GW,
   GW_UI,
+  gatewayName,
   gwErrorText,
   itemReason,
   RESOLUTION_LABELS,
@@ -93,6 +94,8 @@ export function ReviewList(props: {
 
   const reasonCell = (r: ReviewItem) => (
     <span className="pay-reason">
+      {/* M6.3 (run file G2): the item's gateway (a proper name) leads its reason, a tag rather than a sixth column, so the reason keeps its width */}
+      <span className="pay-reason__gw">{gatewayName(r.provider)}</span>
       <span>{itemReason(r)}</span>
       {/* S21 "Open payment": the entry dialog, whose Confirm is POST /payments/:id/verify (the money moves only there) */}
       {r.payment_id && (

@@ -3,7 +3,8 @@
 // check, and the actions the role has: Record payment, Record TDS (rupee tax invoices and debit notes of clients in India, L8), Use credit and Move excess to
 // credit (Owner, fresh code). An export invoice adds its realisation dates, the bank's extensions and "Bank extended the date" (line 14, Owner). A proforma
 // shows only the entries waiting for it and "Confirm by issuing the tax invoice" (line 12, L5), which opens the advance dialog with the payment.
-// Figures come from GET /invoices/:id/payments and are formatted by core; nothing is added up here.
+// Figures come from GET /invoices/:id/payments and are formatted by core; nothing is added up here. M6.3: a USD document's card payments (07-ZM S13 to S15):
+// the "Card payments" slip in place of the Payment link, Stripe's rows with their INR facts, and each one's proof slot ("Proof awaited", "Attach proof").
 import { PAYABLE_TYPES } from "@techaust/core/ledger";
 import type { Role } from "@techaust/core/permissions";
 import { type ReactNode, useMemo, useState } from "react";
@@ -25,7 +26,7 @@ import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
 import { dateError } from "../../lib/date-field.ts";
-import { GW_UI, itemReason, razorpayLine } from "../../lib/gateway.ts";
+import { GW_UI, gatewayLine, itemReason } from "../../lib/gateway.ts";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
 import { INV_COPY } from "../../lib/invoices.ts";
 import type { InvoiceView } from "../../lib/invoices-api.ts";
@@ -46,6 +47,9 @@ import {
 import { bpToPercent, moneyFrom } from "../../lib/settings-form.ts";
 import { withCode } from "../../lib/step-up.ts";
 import {
+  CardPayments,
+  CardProof,
+  cardable,
   DocReviewNotice,
   gatewayOf,
   LinkCard,
@@ -55,6 +59,7 @@ import {
   useDocReview,
 } from "./gateway-parts.tsx";
 import { day, EarlierMonthWarning, FilePick, PaymentPill, useCodeSlot, useDialogState } from "./parts.tsx";
+import { ProofDialog } from "./proof-form.tsx";
 import { RecordPaymentDialog } from "./record-dialog.tsx";
 
 type Panel = InvoicePaymentsPanel;
@@ -66,6 +71,7 @@ type Dialog =
   | "extend"
   | { certificate: string }
   | { letter: string }
+  | { proof: string }
   | null;
 
 /** The types a payment goes on (core, re-check cleanup). */
@@ -261,10 +267,16 @@ function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onCha
 
       <DocReviewNotice items={review.items} count={reviewCount} />
       <LinkCard view={v} panel={p} role={role} onChanged={props.onChanged} />
+      <CardPayments view={v} panel={p} />
 
-      <Entries panel={p} canCert={canCert} onCertificate={(id) => setDialog({ certificate: id })} />
+      <Entries
+        panel={p}
+        canCert={canCert}
+        onCertificate={(id) => setDialog({ certificate: id })}
+        onProof={(id) => setDialog({ proof: id })}
+      />
       {p.pending.length > 0 && <Waiting panel={p} role={role} />}
-      <OnlineWaiting rows={onlineWaiting} />
+      <OnlineWaiting rows={onlineWaiting} currency={p.currency} />
       {p.realisation && (
         <Realisation
           realisation={p.realisation}
@@ -317,6 +329,13 @@ function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onCha
           onDone={() => done(PAY_UI.letterSaved)}
         />
       )}
+      {dialog && typeof dialog === "object" && "proof" in dialog && (
+        <ProofDialog
+          payment={{ id: dialog.proof, currency: p.currency, provider: "stripe" }}
+          onClose={() => setDialog(null)}
+          onDone={(t) => done(t)}
+        />
+      )}
       {dialog && typeof dialog === "object" && "certificate" in dialog && (
         <CertificateDialog
           paymentId={dialog.certificate}
@@ -348,7 +367,13 @@ export function referenceHeading(panel: Panel): string {
 }
 
 /** The confirmed entries on this invoice, as ledger lines (a table; cards below md through the same markup). */
-function Entries(props: { panel: Panel; canCert: boolean; onCertificate: (paymentId: string) => void }) {
+function Entries(props: {
+  panel: Panel;
+  canCert: boolean;
+  onCertificate: (paymentId: string) => void;
+  /** M6.3: attach the proof of a Stripe payment (S15). */
+  onProof: (paymentId: string) => void;
+}) {
   const rows = props.panel.payments;
   if (rows.length === 0)
     return (
@@ -444,7 +469,17 @@ function Entries(props: { panel: Panel; canCert: boolean; onCertificate: (paymen
                 <PaymentPill status={r.status} />
               </td>
               <td data-label={PAY_COPY.proof}>
-                {online ? (
+                {online?.provider === "stripe" ? (
+                  // M6.3 (L11, S15): a card payment's proof is Stripe's payment advice or the bank's e-FIRA, attached here
+                  <CardProof
+                    paymentId={r.paymentId}
+                    hasProof={r.hasProof}
+                    canAttach={
+                      props.canCert && (r.status === "confirmed" || r.status === "pending_verification")
+                    }
+                    onAttach={props.onProof}
+                  />
+                ) : online ? (
                   // M6.2: Razorpay's own record is the proof of an online payment; nothing to attach
                   <span className="pay-lines__meta pay-lines__nowrap">Razorpay</span>
                 ) : r.hasProof ? (
@@ -516,7 +551,8 @@ function ProformaPayments(props: {
   const blocked = review.items.filter((i) => i.kind === "advance_blocked");
   const others = review.items.filter((i) => i.kind !== "advance_blocked");
   const hasLink =
-    (p.gateway?.links.length ?? 0) > 0 || (p.gateway !== undefined && linkable(props.view, props.role));
+    (p.gateway?.links.length ?? 0) > 0 ||
+    (p.gateway !== undefined && (linkable(props.view, props.role) || cardable(props.view)));
   if (p.pending.length === 0 && !hasLink && reviewCount === 0) return null;
   const owner = allowed(props.role, "invoices.advance") && props.onConfirm !== undefined;
   return (
@@ -550,9 +586,12 @@ function ProformaPayments(props: {
                         {GW_UI.proformaToFollow}
                       </span>
                       <span className="pay-lines__meta break">
-                        {razorpayLine(online.mode, online.providerPaymentId)}
+                        {gatewayLine(online.provider, online.mode, online.providerPaymentId)}
                       </span>
-                      {!isBlocked && <span className="pay-lines__meta">{GW_UI.issuingNow}</span>}
+                      {/* M6.3 (Q1 A): a card payment's tax invoice is never issued automatically: the Owner issues it with the day's rate */}
+                      {!isBlocked && online.provider !== "stripe" && (
+                        <span className="pay-lines__meta">{GW_UI.issuingNow}</span>
+                      )}
                     </>
                   ) : (
                     <span className="pay-lines__meta">
@@ -577,6 +616,7 @@ function ProformaPayments(props: {
         </ul>
       )}
       <LinkCard view={props.view} panel={p} role={props.role} onChanged={props.onChanged} />
+      <CardPayments view={props.view} panel={p} />
     </section>
   );
 }

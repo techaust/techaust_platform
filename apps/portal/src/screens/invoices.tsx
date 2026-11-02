@@ -20,6 +20,7 @@ import { PageTitle } from "../components/shell/portal-shell.tsx";
 import { INV } from "../copy-invoices.ts";
 import { WITHDRAWN_ZF } from "../copy-zf.ts";
 import { PAY_ZI } from "../copy-zi.ts";
+import { PAY_ZM } from "../copy-zm.ts";
 import {
   type ClientInvoiceStatus,
   clientStatus,
@@ -211,7 +212,7 @@ export function InvoicePage(props: {
   now?: number;
   /** M6.2 (POR-06): Pay now, when the document can be paid online (the slip's first action; Download PDF steps back to secondary). */
   pay?: ReactNode;
-  /** M6.2: back from Razorpay, the Processing state and its end (above the slip). */
+  /** M6.2, M6.3: back from the gateway, the Processing state and its end, or a payment still being confirmed (above the slip). */
   payStatus?: ReactNode;
 }) {
   const d = props.doc;
@@ -335,11 +336,16 @@ export function InvoicePage(props: {
             )}
           </div>
         )}
-        {/* M6.2 (07-ZI line 16): a proforma's online payment waits for its tax invoice; said with its date, under the figures and the actions, across the slip. */}
+        {/* M6.2 (07-ZI line 16), M6.3 (07-ZM line 8, a card payment in dollars): a proforma's online payment waits for its tax invoice; said with its date,
+            under the figures and the actions, across the slip. */}
         {d.type === "proforma" && !withdrawn && d.online?.proformaPending && d.online.lastPaid && (
           <p className="inv-slip__paid">
             <Clock size={16} />
-            <span>{PAY_ZI.proformaPaid(dateText(istDayOf(d.online.lastPaid.at)))}</span>
+            <span>
+              {(d.provider ?? (d.currency === "USD" ? "stripe" : "razorpay")) === "stripe"
+                ? PAY_ZM.proformaPaid(dateText(istDayOf(d.online.lastPaid.at)))
+                : PAY_ZI.proformaPaid(dateText(istDayOf(d.online.lastPaid.at)))}
+            </span>
           </p>
         )}
       </section>

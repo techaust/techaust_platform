@@ -31,6 +31,8 @@ export const CHECKS = {
   jobs: [
     { path: "/healthz", status: 200, service: "jobs" },
     { path: "/razorpay", status: 400, method: "POST", body: "{}", access: false, code: "signature_missing" },
+    // M6.3: the same for the Stripe webhook (owner's H1 bypass for `/stripe`): a JSON POST with no `Stripe-Signature` is 400 `signature_missing`, not counted.
+    { path: "/stripe", status: 400, method: "POST", body: "{}", access: false, code: "signature_missing" },
   ],
   web: [{ path: "/api/geo", status: 200 }],
 };

@@ -14,6 +14,7 @@
 //     the MDR and invoiced to our GSTIN?
 
 import { GATEWAY_LINK_HOSTS, GATEWAY_LINK_URL_MAX, isGatewayLinkUrl } from "./gateway-rpc.ts";
+import { hex32, hmacVerifyKey } from "./hmac.ts";
 import type {
   CheckoutState,
   CheckoutStatusReport,
@@ -32,39 +33,10 @@ export const RAZORPAY_API_ORIGIN = "https://api.razorpay.com";
 export const RAZORPAY_LINK_HOSTS = GATEWAY_LINK_HOSTS.razorpay;
 
 const enc = new TextEncoder();
-const HEX64 = /^[0-9a-fA-F]{64}$/;
 /** The longest event id or provider reference a row holds (`webhook_events.event_id`, `PROVIDER_REF_MAX` in the db schema: generic, 255). */
 export const PROVIDER_REF_MAX = 255;
 /** The longest link URL a checkout row holds (`CHECKOUT_SHORT_URL_MAX` in the db schema). */
 export const SHORT_URL_MAX = GATEWAY_LINK_URL_MAX;
-
-/**
- * The imported HMAC keys, per isolate, by secret (CPU diagnosis, lead decision 5: a key is imported once, not per webhook). At most a handful of entries (the current
- * and the previous webhook secret, plus the warm-up's made-up one); the map is cleared if it ever grows past 8, so a rotated secret never pins memory.
- */
-type HmacKey = Awaited<ReturnType<typeof crypto.subtle.importKey>>;
-const hmacKeys = new Map<string, Promise<HmacKey>>();
-function hmacKey(secret: string): Promise<HmacKey> {
-  let k = hmacKeys.get(secret);
-  if (!k) {
-    if (hmacKeys.size >= 8) hmacKeys.clear();
-    k = crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [
-      "verify",
-    ]);
-    // A failed import is not kept (the next call tries again).
-    k.catch(() => hmacKeys.delete(secret));
-    hmacKeys.set(secret, k);
-  }
-  return k;
-}
-
-/** A hex string of exactly 64 characters to its 32 bytes, else null (decoded first, so a malformed header never reaches the comparison). */
-function hex32(sig: string): Uint8Array<ArrayBuffer> | null {
-  if (!HEX64.test(sig)) return null;
-  const out = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) out[i] = Number.parseInt(sig.slice(i * 2, i * 2 + 2), 16);
-  return out;
-}
 
 /**
  * Whether `sigHex` (the `X-Razorpay-Signature` header) is HMAC-SHA256 of `rawBody` under one of `secrets` (the current secret, then the previous one while it is
@@ -87,7 +59,7 @@ export async function verifyRazorpaySignature(
   else return false;
   for (const secret of secrets) {
     if (typeof secret !== "string" || secret === "") continue;
-    const key = await hmacKey(secret);
+    const key = await hmacVerifyKey(secret);
     if (await crypto.subtle.verify("HMAC", key, sig, body)) return true;
   }
   return false;

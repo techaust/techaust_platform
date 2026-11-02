@@ -22,6 +22,8 @@ const FIXED = {
     TURNSTILE_SECRET: TURNSTILE_TEST_SECRET,
     RAZORPAY_KEY_ID: "rzp_test_LOCALSTUB0000001",
     RAZORPAY_KEY_SECRET: "local-not-a-real-key-secret",
+    // M6.3: a FAKE restricted test key in the shape the client accepts (built here so no key-looking literal is committed); the stub never calls Stripe.
+    STRIPE_SECRET_KEY: ["rk", "test", "LOCALSTUBnotreal"].join("_"),
   },
   portal: { TURNSTILE_SECRET: TURNSTILE_TEST_SECRET },
   web: { TURNSTILE_SECRET: TURNSTILE_TEST_SECRET },
@@ -31,6 +33,8 @@ const FIXED = {
     SES_ACCESS_KEY_ID: "local-not-used",
     SES_SECRET_ACCESS_KEY: "local-not-used",
     RAZORPAY_WEBHOOK_SECRET: "local-webhook-secret-not-real",
+    // M6.3: a FAKE Stripe signing secret that `scripts/pay-simulate.mjs --gateway stripe` reads from this file (never a real one).
+    STRIPE_WEBHOOK_SECRET: ["whsec", "LOCALSTUBnotreal"].join("_"),
   },
 };
 

@@ -4,13 +4,16 @@
 // Copy: 07-ZI S17 to S24 (docs/07-content-appendix/ZI-m6.2-razorpay.md), staff-only, approved by the lead under the owner's delegation, used word for word. The
 // review reasons are `apps/admin/worker/gateway/reasons.ts` (one copy for the bells and this list). Lines marked "designer's draft" are what 07-ZI lacked; the run
 // file lists them for the lead. Money is formatted only through core; nothing here adds up an amount.
+import { divRoundHalfUp, formatMoney, money } from "@techaust/core/money";
 import { type NotPayableReason, onlineMinimumOf } from "@techaust/core/online-pay";
 import { advanceBlockerWords, notPayableWords, reviewReason } from "../../worker/gateway/reasons.ts";
 import type { PaymentLinkStatus, ReviewItem, ReviewResolution } from "../api.ts";
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
+import { CARD_ZM, ZM } from "./copy-zm.ts";
 import { blockerLine } from "./invoices.ts";
 import { amountText, MODE_LABELS, payErrorText } from "./payments.ts";
+import { PORTAL_ORIGIN } from "./portal-origin.ts";
 
 export type { NotPayableReason };
 export { notPayableWords, reviewReason };
@@ -65,6 +68,88 @@ export const razorpayLine = (mode: string | null, providerPaymentId: string | nu
   ]
     .filter(Boolean)
     .join(" · ");
+
+// ---- M6.3: Stripe (07-ZM S13 to S15; marked until the lead approves the placed page) ------------------------------------------------------------------
+
+/** S14: "Stripe · card · {payment id}" (the `pi_…` id as Stripe's dashboard shows it); without an id, its first two parts. */
+export const stripeLine = (providerPaymentId: string | null): string =>
+  providerPaymentId ? CARD_ZM.paymentRow(providerPaymentId) : ZM("Stripe · card");
+
+/** The line of a gateway payment by its gateway: S14 for Stripe, 07-ZI S18 for Razorpay. */
+export const gatewayLine = (
+  provider: string,
+  mode: string | null,
+  providerPaymentId: string | null,
+): string => (provider === "stripe" ? stripeLine(providerPaymentId) : razorpayLine(mode, providerPaymentId));
+
+/** The gateway's own name (a proper name, not copy): the "Recorded by" of a gateway entry and the gateway column of "Needs review". */
+export const gatewayName = (provider: string | null | undefined): string =>
+  provider === "stripe" ? "Stripe" : provider === "paypal" ? "PayPal" : "Razorpay";
+
+/**
+ * S14's "about ₹{rate} per USD": the INR Stripe credited over the dollars paid, worked out in bigint to the paisa (round half up, core `divRoundHalfUp`), never
+ * from a stored float (L10). Both figures are minor units with two decimals, so paise over cents is rupees per dollar. Null when the dollars are not above 0.
+ */
+export function inrPerUsdText(inrReceivedMinor: number, usdMinor: number): string | null {
+  if (!Number.isSafeInteger(inrReceivedMinor) || !Number.isSafeInteger(usdMinor) || usdMinor <= 0)
+    return null;
+  const paise = divRoundHalfUp(BigInt(inrReceivedMinor) * 100n, BigInt(usdMinor));
+  const n = Number(paise);
+  return Number.isSafeInteger(n) ? formatMoney(money(n, "INR"), { symbol: false }) : null;
+}
+
+/**
+ * S14's two fact lines of a Stripe payment, when Stripe settled it in INR: what it credited (with the rate it implies) and its fee with the GST in it (or 07-ZI
+ * S18's "Fee {amount} (absorbed)" when Stripe gave no tax part). Empty for any other payment.
+ */
+export function stripeFacts(r: {
+  provider: string;
+  amountMinor: number;
+  inrReceivedMinor?: number | null | undefined;
+  gatewayFeeInrMinor?: number | null | undefined;
+  gatewayFeeTaxInrMinor?: number | null | undefined;
+}): string[] {
+  if (r.provider !== "stripe") return [];
+  const out: string[] = [];
+  if (typeof r.inrReceivedMinor === "number") {
+    const rate = inrPerUsdText(r.inrReceivedMinor, r.amountMinor);
+    if (rate) out.push(CARD_ZM.inrCredited(amountText(r.inrReceivedMinor, "INR"), rate));
+  }
+  if (typeof r.gatewayFeeInrMinor === "number")
+    out.push(
+      typeof r.gatewayFeeTaxInrMinor === "number"
+        ? CARD_ZM.fee(amountText(r.gatewayFeeInrMinor, "INR"), amountText(r.gatewayFeeTaxInrMinor, "INR"))
+        : GW.feeAbsorbed(amountText(r.gatewayFeeInrMinor, "INR")),
+    );
+  return out;
+}
+
+/**
+ * Whether S13's "Copy portal link" is worth offering on a card-payable document: only while something can still be paid by card. Not on a converted proforma
+ * or a settled document, and (M6.3 review finding 5) not while a proforma's card payment waits for the Owner's rate ("Confirm by issuing"): the portal hides
+ * Pay then and shows C8, as the Payment link card holds back a second link (`waitingInvoice`).
+ */
+export function portalLinkOffered(
+  status: string,
+  balanceMinor: number,
+  payments: readonly { proformaPending: boolean }[],
+): boolean {
+  return status !== "converted" && balanceMinor > 0 && !payments.some((g) => g.proformaPending);
+}
+
+/** S13's body: it tells staff to send the portal link only when "Copy portal link" is drawn (re-check finding 1). */
+export const cardBodyText = (portalUrl: string | null): string =>
+  portalUrl ? CARD_ZM.cardBody : CARD_ZM.cardBodyNoLink;
+
+/** S13's "Copy portal link": the client's signed-in invoice page in this environment's portal (null when the build has no portal origin). */
+export function portalInvoiceUrl(documentId: string, origin: string = PORTAL_ORIGIN): string | null {
+  if (!origin) return null;
+  try {
+    return new URL(`/invoices/${encodeURIComponent(documentId)}`, origin).href;
+  } catch {
+    return null;
+  }
+}
 
 // ---- designer's drafts for the lead (2026-11-01; staff-only) ------------------------------------------------------------------------------------------------
 
@@ -148,11 +233,19 @@ export function allowedResolutions(
   return out;
 }
 
-/** "Try again" applies to these kinds (the route's own list; an advance item needs its payment). */
-export const canRetry = (it: Pick<ReviewItem, "kind" | "payment_id" | "facts">): boolean =>
-  ((it.kind === "advance_blocked" || it.kind === "dead_letter") && it.payment_id !== null) ||
-  (["refetch_failed", "dead_letter", "unknown_link"].includes(it.kind) &&
-    typeof it.facts?.linkId === "string");
+/**
+ * "Try again" applies to these kinds (the route's own list; an advance item needs its payment). M6.3 (review finding 3): never on a Stripe item the route
+ * always refuses: `advance_blocked` (a USD proforma's tax invoice waits for the Owner's rate, "Confirm by issuing") and `unknown_link` (no checkout of ours
+ * to re-fetch against; metadata never moves money, L5). `worker/gateway/routes.ts`, POST /review/:id/retry.
+ */
+export const canRetry = (it: Pick<ReviewItem, "provider" | "kind" | "payment_id" | "facts">): boolean => {
+  if (it.provider === "stripe" && (it.kind === "advance_blocked" || it.kind === "unknown_link")) return false;
+  return (
+    ((it.kind === "advance_blocked" || it.kind === "dead_letter") && it.payment_id !== null) ||
+    (["refetch_failed", "dead_letter", "unknown_link"].includes(it.kind) &&
+      typeof it.facts?.linkId === "string")
+  );
+};
 
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isSafeInteger(v) ? v : null);
 const str = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
@@ -171,12 +264,18 @@ export const advanceBlockerLine = (code: string): string => {
 };
 
 /** S20 for one item, from its kind and its whitelisted facts (a fact the row doesn't carry reads as S20's own fallback). */
-export function itemReason(it: Pick<ReviewItem, "kind" | "facts" | "amount_minor">): string {
+export function itemReason(
+  it: Pick<ReviewItem, "kind" | "facts" | "amount_minor"> &
+    Partial<Pick<ReviewItem, "provider" | "currency">>,
+): string {
   const f = it.facts ?? {};
   const blockers = Array.isArray(f.blockers)
     ? f.blockers.filter((b): b is string => typeof b === "string")
     : [];
   return reviewReason(it.kind, {
+    // M6.3: the item's own gateway and currency (Stripe items name Stripe and dollars)
+    provider: it.provider ?? null,
+    currency: it.currency === "USD" ? "USD" : it.currency === "INR" ? "INR" : null,
     paidMinor: num(f.paidMinor) ?? it.amount_minor,
     expectedMinor: num(f.expectedMinor),
     extraMinor: num(f.extraMinor) ?? (it.kind === "overpaid" ? it.amount_minor : null),
@@ -215,12 +314,16 @@ const GATEWAY_CODES = new Set([
   "advance_changed",
   "resolution_not_allowed",
   "client_gone",
+  // M6.3 (07-ZM S19)
+  "payment_processing",
+  "amount_above_maximum",
 ]);
 export function gwErrorText(e: unknown): string {
   if (e instanceof RequestError && GATEWAY_CODES.has(e.code) && e.message) {
     const reason = e.extra.details?.reason;
     // `not_payable_online` says why, in S20's words for the reason code
-    return e.code === "not_payable_online" && typeof reason === "string"
+    // M6.3: `use_portal`'s own message already says why (S19)
+    return e.code === "not_payable_online" && typeof reason === "string" && reason !== "use_portal"
       ? `${e.message.replace(/\.$/, "")}: ${notPayableWords(reason)}.`
       : e.message;
   }

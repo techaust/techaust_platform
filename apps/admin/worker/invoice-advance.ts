@@ -151,9 +151,9 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       // M6.1: the pending payment this confirms, when one is named.
       db
         .prepare(
-          "SELECT p.id, p.kind, p.status, p.client_id, p.currency, p.amount_minor, p.received_on, p.reference_norm, p.recorded_by, c.display_name AS client_name FROM payments p JOIN clients c ON c.id = p.client_id WHERE p.id = ?1",
+          "SELECT p.id, p.kind, p.status, p.client_id, p.currency, p.amount_minor, p.received_on, p.reference_norm, p.recorded_by, c.display_name AS client_name, EXISTS (SELECT 1 FROM json_each(p.requested_allocations) j WHERE json_extract(j.value, '$.documentId') = ?2) AS asks_this FROM payments p JOIN clients c ON c.id = p.client_id WHERE p.id = ?1",
         )
-        .bind(f.paymentId ?? ""),
+        .bind(f.paymentId ?? "", id),
       // Early check 2, finding 1 (L12): the newest pending or confirmed payment with this reference, and a pending entry of this client asking for this
       // proforma with it (the one "Confirm by issuing the tax invoice" would use).
       db.prepare(PAYMENT_REFERENCE_SEEN_SQL).bind(norm ?? ""),
@@ -189,6 +189,8 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
           reference_norm: string | null;
           recorded_by: string | null;
           client_name: string;
+          /** 1 when the entry's `requested_allocations` name this proforma (M6.3 early check 1, F6). */
+          asks_this: number;
         }
       | undefined;
     if (f.paymentId !== undefined) {
@@ -201,7 +203,9 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
         pending.currency !== d.currency ||
         pending.amount_minor !== f.amountMinor ||
         pending.received_on !== f.receivedOn ||
-        pending.reference_norm !== norm
+        pending.reference_norm !== norm ||
+        // M6.3 early check 1, F6: the entry asks for THIS proforma (the freeze's WHERE holds the same rule).
+        pending.asks_this !== 1
       )
         return err(c, PAYMENT_MISMATCH, 409);
     } else if (f.confirmDuplicate !== true) {

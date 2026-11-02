@@ -33,6 +33,9 @@ export default defineConfig(async () => ({
           // M6.2: the finance Worker's Razorpay test values and the local simulator (tests never call Razorpay; worker/gateway/config.ts).
           RAZORPAY_KEY_ID: "rzp_test_TESTKEY0000001",
           RAZORPAY_KEY_SECRET: "test-razorpay-key-secret",
+          // M6.3: a made-up restricted test key (tests never call Stripe; the stub transport answers).
+          // Built at run time so no secret-looking literal is committed (the repo's secret scan, lead 2026-11-02).
+          STRIPE_SECRET_KEY: ["rk", "test", "made0up0for0tests"].join("_"),
           GATEWAY_TRANSPORT: "stub",
           PORTAL_URL: "http://localhost:5174/",
           // Opt-in: run the suite as if it started at this instant (worker/test-setup.ts); empty by default.

@@ -19,6 +19,7 @@ import {
   reviewOnly,
   settlePayment,
 } from "./settle.ts";
+import { processStripeEvent } from "./stripe-settle.ts";
 
 type EventRow = {
   id: string;
@@ -99,6 +100,8 @@ export async function processEvent(
       ? { result: "duplicate", next: { kind: "gateway.advance", paymentId: w.id } }
       : { result: "duplicate" };
   }
+  // M6.3: a Stripe event has its own path (re-fetch, judge, record; `stripe-settle.ts`).
+  if (row.provider === "stripe") return processStripeEvent(env, row, now);
   if (row.provider !== "razorpay") {
     await webhookEventMoveStatement(db, {
       id: row.id,

@@ -48,6 +48,7 @@
     "./reply-templates": "./src/reply-templates.ts",
     "./settings": "./src/schemas/settings.ts",
     "./statement": "./src/statement.ts",
+    "./stripe": "./src/stripe.ts",
     "./stats": "./src/stats.ts",
     "./site-references": "./src/site-references.ts",
     "./tax": "./src/tax/index.ts",

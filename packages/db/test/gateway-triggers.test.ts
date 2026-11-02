@@ -28,9 +28,12 @@ import {
   CHECKOUT_SOURCES_0064,
   CHECKOUT_STATUSES_0064,
   GATEWAY_PROVIDERS_0064,
+  GATEWAY_PROVIDERS_0066,
   PAYMENT_MODES_0064,
   PAYMENT_PROVIDERS_0064,
+  PAYMENT_PROVIDERS_0066,
   REVIEW_KINDS_0064,
+  REVIEW_KINDS_0066,
   REVIEW_RESOLUTIONS_0064,
   REVIEW_SOURCES_0064,
   WEBHOOK_EVENT_STATUSES_0064,
@@ -147,16 +150,20 @@ describe("0063 and 0064: no rebuild, the pinned lists [run file A]", () => {
     for (const name of dropped) expect(text).toContain(`CREATE TRIGGER \`${name}\``);
   });
 
-  it("the trigger lists of 0064 are the schema's lists today", () => {
-    expect(PAYMENT_PROVIDERS_0064).toEqual(PAYMENT_PROVIDERS);
+  it("the trigger lists of 0064 are the schema's lists today (the providers as M6.3's 0066 widened them)", () => {
+    // M6.3: 0066 (`stripe_triggers`) adds Stripe; 0064's own lists stay pinned as they were applied.
+    expect(PAYMENT_PROVIDERS_0064).toEqual(["manual", "razorpay"]);
+    expect(GATEWAY_PROVIDERS_0064).toEqual(["razorpay"]);
+    expect(PAYMENT_PROVIDERS_0066).toEqual(PAYMENT_PROVIDERS);
+    expect(GATEWAY_PROVIDERS_0066).toEqual(GATEWAY_PROVIDERS);
     expect(PAYMENT_MODES_0064).toEqual(PAYMENT_MODES);
-    expect(GATEWAY_PROVIDERS_0064).toEqual(GATEWAY_PROVIDERS);
     expect(WEBHOOK_EVENT_STATUSES_0064).toEqual(WEBHOOK_EVENT_STATUSES);
     expect(CHECKOUT_SOURCES_0064).toEqual(CHECKOUT_SOURCES);
     expect(CHECKOUT_STATUSES_0064).toEqual(CHECKOUT_STATUSES);
     expect(REVIEW_SOURCES_0064).toEqual(REVIEW_SOURCES);
     expect(REVIEW_RESOLUTIONS_0064).toEqual(REVIEW_RESOLUTIONS);
-    expect(REVIEW_KINDS_0064).toEqual(REVIEW_KINDS);
+    expect(REVIEW_KINDS_0066).toEqual(REVIEW_KINDS);
+    expect(REVIEW_KINDS_0064).toEqual(REVIEW_KINDS.filter((k) => k !== "not_export_receipt"));
   });
 });
 

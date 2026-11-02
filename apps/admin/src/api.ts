@@ -1973,6 +1973,16 @@ export type GatewayPaymentRow = {
   feeTaxMinor: number | null;
   /** A proforma's payment waiting for its tax invoice (L6). */
   proformaPending: boolean;
+  /**
+   * M6.3 (07-ZM S14; L10): a Stripe payment's INR facts in paise: the gross INR Stripe credited, Stripe's fee and the GST in it (null when not settled in INR,
+   * and always for Razorpay). The screen works out "about ₹{rate} per USD" from the first and the amount, in bigint, never from a stored rate. Absent from an
+   * older API.
+   */
+  inrReceivedMinor?: number | null;
+  gatewayFeeInrMinor?: number | null;
+  gatewayFeeTaxInrMinor?: number | null;
+  /** M6.3 (07-ZM S15; L11): Stripe's payment advice or the bank's e-FIRA is on file. Absent from an older API. */
+  hasProof?: boolean;
 };
 export type PaymentLinkStatus = "creating" | "live" | "paid" | "expired" | "cancelled" | "stale" | "failed";
 /** M6.2: one payment link of a document (`shortUrl` only while live). */
@@ -1985,6 +1995,8 @@ export type PaymentLinkRow = {
   expiresAt: number;
   createdAt: number;
   paidPaymentId: string | null;
+  /** M6.3: the session's gateway (a Stripe session is never copied by staff, L7). Absent from an older API (Razorpay). */
+  provider?: string;
 };
 /** M6.2: one "Needs review" item (GET /payments/review; whitelisted facts only, L8). */
 export type ReviewItem = {
@@ -2018,6 +2030,8 @@ export type GatewaysStatus = {
       mode: "test" | "live";
       keys: { configured: boolean; missing: string[] };
       lastVerifiedWebhookAt: number | null;
+      /** M6.3 (L3): Stripe only: the kind of `STRIPE_SECRET_KEY` (a restricted test key is the only one used while payments are not live). */
+      keyKind?: "restricted_test" | "restricted_live" | "refused" | "missing";
     }
   >;
   liveAllowed: boolean;
@@ -2081,9 +2095,20 @@ export type PaymentApprovalItem = {
 const pid = (id: string) => encodeURIComponent(id);
 
 export const paymentsApi = {
-  /** The list: `status` uses the matching index (pending: oldest first, the Owner's "Payments to check"); `client`, `from`, `to` filter; `after` pages. */
-  list: (f: { status?: PaymentStatus; client?: string; from?: string; to?: string; after?: string } = {}) =>
-    request<{ payments: PaymentView[]; next: string | null }>(`/payments${qs(f)}`),
+  /**
+   * The list: `status` uses the matching index (pending: oldest first, the Owner's "Payments to check"); `client`, `from`, `to` filter; `after` pages. M6.3
+   * (07-ZM S15): `proof: "awaited"`, the card payments with no proof yet, through `payments_proof_awaited`.
+   */
+  list: (
+    f: {
+      status?: PaymentStatus;
+      client?: string;
+      from?: string;
+      to?: string;
+      after?: string;
+      proof?: "awaited";
+    } = {},
+  ) => request<{ payments: PaymentView[]; next: string | null }>(`/payments${qs(f)}`),
   get: (id: string) =>
     request<{ payment: PaymentView; allocations: PaymentAllocationView[] }>(`/payments/${pid(id)}`),
   /**

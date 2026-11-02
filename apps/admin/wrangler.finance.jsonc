@@ -15,7 +15,8 @@
   "preview_urls": false,
   "observability": { "enabled": true, "redact_query_string": true },
   // M6.2: PORTAL_URL is Razorpay's return page (callback_url); GATEWAY_TRANSPORT "stub" answers locally with the simulator (refused anywhere but
-  // ENVIRONMENT "local"), "razorpay" calls Razorpay's API (staging). PAYMENTS_LIVE_ALLOWED stays "false" until the owner's go-live (CLAUDE.md rule 7).
+  // ENVIRONMENT "local"), "api" calls each gateway's own API (staging; M6.3, was "razorpay"). PAYMENTS_LIVE_ALLOWED stays "false" until the owner's go-live
+  // (CLAUDE.md rule 7).
   "vars": {
     "ENVIRONMENT": "local",
     "PAYMENTS_LIVE_ALLOWED": "false",
@@ -23,8 +24,9 @@
     "PORTAL_URL": "http://localhost:5174/",
     "GATEWAY_TRANSPORT": "stub"
   },
-  // M6.2 (L1): the Razorpay key pair, names only (`pnpm dev:secrets` writes local fakes; staging: tools/set-gateway-keys.ps1 -Gateway razorpay). Not inherited.
-  "secrets": { "required": ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"] },
+  // M6.2 (L1): the Razorpay key pair, names only (`pnpm dev:secrets` writes local fakes; staging: tools/set-gateway-keys.ps1 -Gateway razorpay). M6.3 (L3):
+  // STRIPE_SECRET_KEY holds the RESTRICTED `rk_test_` key (staging: -Gateway stripe). Not inherited.
+  "secrets": { "required": ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "STRIPE_SECRET_KEY"] },
   "queues": {
     "producers": [
       { "binding": "EMAIL_QUEUE", "queue": "techaust-local-email" },
@@ -68,9 +70,9 @@
         "PAYMENTS_LIVE_ALLOWED": "false",
         "LEAD_PURGE_MODE": "dry_run",
         "PORTAL_URL": "https://techaust-platform-portal-staging.techaust-technologies-153.workers.dev/",
-        "GATEWAY_TRANSPORT": "razorpay"
+        "GATEWAY_TRANSPORT": "api"
       },
-      "secrets": { "required": ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"] },
+      "secrets": { "required": ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "STRIPE_SECRET_KEY"] },
       "queues": {
         "producers": [
           { "binding": "EMAIL_QUEUE", "queue": "techaust-staging-email" },

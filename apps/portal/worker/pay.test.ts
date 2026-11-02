@@ -21,7 +21,15 @@ function payEnv(answer: unknown, seen: Args[] = []) {
     },
   });
 }
-const LINK = { ok: true, shortUrl: "https://rzp.io/i/abc123", expiresAt: 1_900_000_000_000, reused: false };
+const LINK = { ok: true, url: "https://rzp.io/i/abc123", expiresAt: 1_900_000_000_000, reused: false };
+/** What the portal answers for `LINK` (M6.3: `url` and the gateway; M6.2's `shortUrl` alias is gone, the screens read `url`). */
+const LINK_ANSWER = {
+  ok: true,
+  provider: "razorpay",
+  url: LINK.url,
+  expiresAt: LINK.expiresAt,
+  reused: false,
+};
 
 describe("POST /invoices/:id/pay [POR-06]", () => {
   it("is declared finance-only; the emailed link's route is public with the token in the body", () => {
@@ -45,7 +53,7 @@ describe("POST /invoices/:id/pay [POR-06]", () => {
       payEnv(LINK, seen),
     );
     expect(res.status, await res.clone().text()).toBe(200);
-    expect(await res.json()).toEqual(LINK);
+    expect(await res.json()).toEqual(LINK_ANSWER);
     expect(seen).toEqual([
       {
         provider: "razorpay",
@@ -95,10 +103,8 @@ describe("POST /invoices/:id/pay [POR-06]", () => {
     const s = await sessionFor(f.a.finance);
     const path = `/invoices/${f.a.docs.issued}/pay`;
     const init = { cookie: s.cookie, body: { amountMinor: 118000 } };
-    expect((await call(path, init, payEnv({ ...LINK, shortUrl: "https://evil.example/pay" }))).status).toBe(
-      502,
-    );
-    expect((await call(path, init, payEnv({ ...LINK, shortUrl: "http://rzp.io/i/x" }))).status).toBe(502);
+    expect((await call(path, init, payEnv({ ...LINK, url: "https://evil.example/pay" }))).status).toBe(502);
+    expect((await call(path, init, payEnv({ ...LINK, url: "http://rzp.io/i/x" }))).status).toBe(502);
     expect((await call(path, init, payEnv({ ok: "yes" }))).status).toBe(502);
     const none = await call(path, init, withEnv(env, { ADMIN_PAY: undefined }));
     expect(none.status).toBe(503);
@@ -177,7 +183,15 @@ describe("the summary's Pay now block", () => {
     const doc = ((await res.json()) as { document: Record<string, unknown> }).document;
     expect(doc).toHaveProperty("payOnline");
     // The balance (₹1,180) is under the default floor (₹10,000): the minimum is the whole balance, so only the full amount is offered.
-    expect(doc.online).toEqual({ open: null, lastPaid: null, proformaPending: false, minimumMinor: 118000 });
+    expect(doc.online).toEqual({
+      open: null,
+      lastPaid: null,
+      proformaPending: false,
+      paymentPending: false,
+      minimumMinor: 118000,
+      maximumMinor: null,
+    });
+    expect(doc.provider).toBe("razorpay");
   });
 });
 
@@ -270,5 +284,222 @@ describe("the Pay now block's minimum [07-ZI 4-7, ADM-SET-05]", () => {
     expect(onlineOf({ ...row, floor: -1 }).online.minimumMinor).toBeNull();
     expect(onlineOf({ ...row, pay_online: 0 }).online.minimumMinor).toBeNull();
     expect(onlineOf(undefined).online.minimumMinor).toBeNull();
+  });
+});
+
+// M6.3 (run file E; 07-ZM C4, C6): a USD document is paid by card through Stripe. The portal picks the gateway by the document's currency, sends the browser only to
+// `checkout.stripe.com`, and words the refusals in dollars.
+describe("Pay by card on a USD document [POR-06, M6.3]", () => {
+  const STRIPE_LINK = {
+    ok: true,
+    url: "https://checkout.stripe.com/c/pay/cs_test_a1B2c3#fidkd",
+    expiresAt: 1_900_000_000_000,
+    reused: false,
+  };
+  let usdNo = 9000;
+  /** An overseas USD client with a finance contact who may use the portal, and one issued USD export invoice of it (USD 500 due), written straight in. */
+  async function usdOrg() {
+    const clientId = crypto.randomUUID();
+    const n = ++usdNo;
+    await env.DB.prepare(
+      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES (?1, ?2, 'Overseas Buyer Inc', 'Overseas Buyer', 'business', 'US', 'overseas', NULL, 'USD')",
+    )
+      .bind(clientId, `US${n}`)
+      .run();
+    const contact = {
+      id: crypto.randomUUID(),
+      clientId,
+      email: `finance-us${n}@example.test`,
+      name: "Finance of US",
+      finance: true,
+    };
+    await env.DB.prepare(
+      "INSERT INTO contacts (id, client_id, name, email, portal_access, can_see_finance) VALUES (?1, ?2, ?3, ?4, 1, 1)",
+    )
+      .bind(contact.id, clientId, contact.name, contact.email)
+      .run();
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      "INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, subtotal_minor, taxable_minor, total_minor, balance_minor) VALUES (?1, 'export_invoice', 'issued', ?2, 'USD', 'export', '2627', ?3, ?4, ?5, 50000, 50000, 50000, 50000)",
+    )
+      .bind(id, clientId, n, `TH/EXP/2627/${n}`, Date.now() - 1000)
+      .run();
+    return { contact, id };
+  }
+
+  it("picks Stripe by the currency (or the provider asked), checks Stripe's own host, and answers url and provider", async () => {
+    const f = await fixtures();
+    const { contact, id } = await usdOrg();
+    const s = await sessionFor(contact);
+    const sa = await sessionFor(f.a.finance);
+    const seen: Args[] = [];
+    const pay = (answer: unknown, body: Args = { amountMinor: 50000 }, docId = id, cookie = s.cookie) =>
+      call(`/invoices/${docId}/pay`, { cookie, body }, payEnv(answer, seen));
+    const res = await pay(STRIPE_LINK);
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, provider: "stripe", url: STRIPE_LINK.url });
+    expect(seen[0]).toMatchObject({ provider: "stripe", documentId: id, returnTo: "invoice" });
+    // the summary's block, from the real SQL: Stripe's rule, the USD floor and maximum (defaults), cents allowed
+    const sum = await call(`/invoices/${id}`, { cookie: s.cookie }, payEnv(STRIPE_LINK));
+    expect(((await sum.json()) as { document: Record<string, unknown> }).document).toMatchObject({
+      payOnline: true,
+      provider: "stripe",
+      wholeRupees: false,
+      online: { minimumMinor: 10_000, maximumMinor: 2_500_000, paymentPending: false },
+    });
+    // a Razorpay host for a Stripe payment, or Stripe's own site, is never sent to the browser
+    for (const url of [
+      "https://rzp.io/i/x",
+      "https://stripe.com/pay",
+      "https://checkout.stripe.com.evil.example/x",
+    ])
+      expect((await pay({ ...STRIPE_LINK, url })).status, url).toBe(502);
+    // the provider asked wins (the finance Worker re-checks it)
+    seen.length = 0;
+    await pay(STRIPE_LINK, { amountMinor: 118000, provider: "stripe" }, f.a.docs.issued, sa.cookie);
+    expect(seen[0]).toMatchObject({ provider: "stripe" });
+  });
+
+  it("the refusals in the client's words: C4 for a payment waiting, C6 for the maximum, dollars en-US", async () => {
+    const { contact, id } = await usdOrg();
+    const s = await sessionFor(contact);
+    const at = (answer: unknown) =>
+      call(`/invoices/${id}/pay`, { cookie: s.cookie, body: { amountMinor: 50000 } }, payEnv(answer));
+    const waiting = await at({ ok: false, error: "payment_processing" });
+    expect(waiting.status).toBe(409);
+    expect(((await waiting.json()) as { error: { message: string } }).error.message).toBe(
+      "We haven't had confirmation from Stripe yet. If your card was charged, the payment will show here once Stripe confirms it. There's no need to pay again.",
+    );
+    const max = await at({ ok: false, error: "amount_above_maximum", maximumMinor: 2_500_000 });
+    expect(max.status).toBe(400);
+    expect(((await max.json()) as { error: unknown }).error).toEqual({
+      code: "amount_above_maximum",
+      message:
+        "Online payments are limited to $25,000.00 at a time. Pay part now and the rest later, or pay by bank transfer.",
+      details: { maximumMinor: 2_500_000 },
+    });
+    const below = await at({ ok: false, error: "amount_below_minimum", minimumMinor: 10_000 });
+    expect(((await below.json()) as { error: { message: string } }).error.message).toBe(
+      "Enter an amount of at least $100.00.",
+    );
+  });
+
+  it("the emailed link picks Stripe from the open document; the token only in the body", async () => {
+    const { contact, id } = await usdOrg();
+    const { token, stmt } = await docTokenStmt(env.DB, {
+      documentId: id,
+      purpose: "view_pay",
+      expiresAt: Date.now() + 86_400_000,
+      contactId: contact.id,
+      clientId: contact.clientId,
+      email: contact.email,
+      sendId: null,
+    });
+    await stmt.run();
+    const seen: Args[] = [];
+    const res = await call(
+      "/t/document/pay",
+      { body: { token, amountMinor: 50000 } },
+      payEnv(STRIPE_LINK, seen),
+    );
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(seen[0]).toMatchObject({
+      provider: "stripe",
+      contactId: null,
+      tokenHash: await tokenHash(token),
+      returnTo: "pay_return",
+    });
+  });
+
+  it("onlineOf for USD: Stripe, cents allowed, the USD floor and maximum by default, Pay hidden while a payment waits", () => {
+    const row: OnlineRow = {
+      pay_online: 1,
+      type: "proforma",
+      currency: "USD",
+      balance: 5_000_000,
+      floor: null,
+      maximum: null,
+      open_amount: null,
+      open_expires: null,
+      last_paid: null,
+      proforma_pending: 0,
+      payment_pending: 0,
+    };
+    expect(onlineOf(row)).toMatchObject({
+      payOnline: true,
+      provider: "stripe",
+      wholeRupees: false,
+      online: { minimumMinor: 10_000, maximumMinor: 2_500_000, paymentPending: false },
+    });
+    expect(onlineOf({ ...row, maximum: 0 }).online.maximumMinor).toBeNull();
+    expect(onlineOf({ ...row, floor: 25_000, maximum: 100_000 }).online).toMatchObject({
+      minimumMinor: 25_000,
+      maximumMinor: 100_000,
+    });
+    expect(onlineOf({ ...row, payment_pending: 1, proforma_pending: 1 })).toMatchObject({
+      payOnline: false,
+      online: { paymentPending: true, proformaPending: true },
+    });
+  });
+
+  it("onlineOf: a stored card floor above the maximum hides Pay by card whenever even the smallest payment is above it, as the finance Worker refuses (review finding 2)", () => {
+    const row: OnlineRow = {
+      pay_online: 1,
+      type: "export_invoice",
+      currency: "USD",
+      balance: 50_000,
+      floor: 10_000,
+      maximum: 5_000,
+      open_amount: null,
+      open_expires: null,
+      last_paid: null,
+      proforma_pending: 0,
+      payment_pending: 0,
+    };
+    expect(onlineOf(row)).toMatchObject({
+      payOnline: false,
+      online: { minimumMinor: null, maximumMinor: 5_000 },
+    });
+    // a balance between the maximum and the floor: still only the balance, still above the maximum
+    expect(onlineOf({ ...row, balance: 8_000 }).payOnline).toBe(false);
+    // a balance at or under the maximum: only the whole balance is offered, and the finance Worker takes it (core payableOnline)
+    expect(onlineOf({ ...row, balance: 5_000 })).toMatchObject({
+      payOnline: true,
+      online: { minimumMinor: 5_000, maximumMinor: 5_000 },
+    });
+    // in step (the Settings rule): unchanged
+    expect(onlineOf({ ...row, floor: 5_000 })).toMatchObject({
+      payOnline: true,
+      online: { minimumMinor: 5_000, maximumMinor: 5_000 },
+    });
+    // INR has no maximum: never affected
+    expect(onlineOf({ ...row, currency: "INR", maximum: null }).payOnline).toBe(true);
+  });
+
+  it("GET /invoices/:id from the real SQL: a stored USD floor above the stored maximum answers payOnline false (review finding 2)", async () => {
+    const { contact, id } = await usdOrg();
+    const s = await sessionFor(contact);
+    const before = await env.DB.prepare("SELECT value FROM settings WHERE key = 'payment_terms'").first<{
+      value: string;
+    }>();
+    await env.DB.prepare("DELETE FROM settings WHERE key = 'payment_terms'").run();
+    await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('payment_terms', ?1)")
+      .bind(JSON.stringify({ onlineMinPartialUsdMinor: 10_000, overseasOnlineMaxUsdMinor: 5_000 }))
+      .run();
+    try {
+      const sum = await call(`/invoices/${id}`, { cookie: s.cookie }, payEnv(STRIPE_LINK));
+      expect(sum.status).toBe(200);
+      expect(((await sum.json()) as { document: Record<string, unknown> }).document).toMatchObject({
+        payOnline: false,
+        provider: "stripe",
+        online: { minimumMinor: null, maximumMinor: 5_000 },
+      });
+    } finally {
+      await env.DB.prepare("DELETE FROM settings WHERE key = 'payment_terms'").run();
+      if (before)
+        await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('payment_terms', ?1)")
+          .bind(before.value)
+          .run();
+    }
   });
 });

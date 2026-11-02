@@ -23,6 +23,9 @@ export default defineConfig(async () => ({
           SES_SECRET_ACCESS_KEY: "test-secret",
           // M6.2: a fixed test webhook secret (never a real one).
           RAZORPAY_WEBHOOK_SECRET: "test-razorpay-webhook-secret",
+          // M6.3: a fixed test Stripe webhook secret (never a real one).
+          // Built at run time so no secret-looking literal is committed (the repo's secret scan, lead 2026-11-02).
+          STRIPE_WEBHOOK_SECRET: ["whsec", "madeupfortests"].join("_"),
         },
       },
     }),

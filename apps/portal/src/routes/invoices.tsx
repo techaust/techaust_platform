@@ -24,6 +24,8 @@ import { capturedInvoiceToken, invoicePdfName, pdfFailure } from "../lib/invoice
 import { saveDownload } from "../lib/offers.ts";
 import {
   forgetPay,
+  type PayGateway,
+  type PayReturnKind,
   POLL_FOR_MS,
   POLL_MS,
   REFRESH_AT_MS,
@@ -38,7 +40,7 @@ import { useMe } from "../session.tsx";
 type Source = {
   load: () => Promise<{ document: InvoiceSummary }>;
   pdf: () => ReturnType<typeof invoicesApi.pdf>;
-  /** M6.2: makes a Razorpay link for this document (Pay now). */
+  /** M6.2, M6.3: makes the gateway's page for this document (Pay now through Razorpay, Pay by card through Stripe). */
   pay: (amountMinor: number) => Promise<PayLink>;
   /** M6.2: the document again, the server checking the open link with Razorpay first (signed in only). */
   refresh?: () => Promise<{ document: InvoiceSummary }>;
@@ -56,8 +58,11 @@ function DocumentScreen(props: {
   /** The emailed link: a 404 is "this link no longer works" (not "page not found"), with the way to sign in. */
   link: boolean;
   notices?: ReactNode;
-  /** M6.2: this page load came back from Razorpay (signed in: `/invoices/:id?pay=return`, the query already stripped). */
-  returned?: boolean;
+  /**
+   * M6.2: this page load came back from the gateway (signed in: `/invoices/:id?pay=return`, the query already stripped); M6.3: `cancel` when the client left
+   * Stripe's page without paying (`?pay=cancel`, 07-ZM line 5).
+   */
+  returned?: PayReturnKind | null;
 }) {
   const { source } = props;
   const [state, setState] = useState<State>({ phase: "loading" });
@@ -91,9 +96,18 @@ function DocumentScreen(props: {
   // M6.2 (run file G5): back from Razorpay, the page asks every 3 s for up to a minute, once at 20 s with the server checking Razorpay (`?refresh=1`), until
   // it shows a payment newer than the newest one it showed when "Continue to Razorpay" was pressed in this tab (review finding 5). Without a remembered press
   // it ends on 07-ZI line 13, never "received". Never marked paid here.
-  const [payState, setPayState] = useState<PayPhase | null>(props.returned ? { phase: "checking" } : null);
+  const [payState, setPayState] = useState<PayPhase | null>(
+    props.returned === "return"
+      ? { phase: "checking" }
+      : props.returned === "cancel"
+        ? { phase: "left" }
+        : null,
+  );
   const docId = state.phase === "ready" ? state.doc.id : null;
-  const press = useMemo(() => (props.returned && docId ? recalledPay(docId) : null), [props.returned, docId]);
+  const press = useMemo(
+    () => (props.returned === "return" && docId ? recalledPay(docId) : null),
+    [props.returned, docId],
+  );
   const checking = payState?.phase === "checking";
   useEffect(() => {
     if (!checking || state.phase !== "ready") return;
@@ -153,9 +167,15 @@ function DocumentScreen(props: {
   if (state.phase === "failed")
     return <LoadProblemScreen title={INV.title} error={state.error} onRetry={load} />;
   const doc = state.doc;
+  // M6.3: the gateway of the document's currency (an older API sends none: rupees through Razorpay).
+  const provider: PayGateway = doc.provider ?? (doc.currency === "USD" ? "stripe" : "razorpay");
+  // M6.3 (run file E): a gateway payment still waits on the document; Pay is hidden and 07-ZM line 4 (07-ZI line 13 for Razorpay) says why. A proforma's
+  // waiting payment has its own line instead (07-ZM line 8, 07-ZI line 16), under the slip.
+  const waiting = doc.online?.paymentPending === true && !doc.online.proformaPending;
   const canPay =
     doc.payOnline === true &&
     !doc.online?.proformaPending &&
+    !doc.online?.paymentPending &&
     doc.balanceMinor !== null &&
     doc.balanceMinor > 0 &&
     // while it checks, and after 07-ZI line 13 ("There's no need to pay again"), the page offers no second payment until it is opened again
@@ -167,15 +187,23 @@ function DocumentScreen(props: {
         canPay ? (
           <PayNow
             documentId={doc.id}
+            provider={provider}
             balanceMinor={doc.balanceMinor as number}
             minimumMinor={doc.online?.minimumMinor ?? null}
+            maximumMinor={doc.online?.maximumMinor ?? null}
             wholeRupees={doc.wholeRupees === true}
             lastPaidAt={doc.online?.lastPaid?.at ?? null}
             pay={source.pay}
           />
         ) : null
       }
-      payStatus={payState ? <PayStatus state={payState} /> : null}
+      payStatus={
+        payState ? (
+          <PayStatus state={payState} provider={provider} />
+        ) : waiting ? (
+          <PayStatus state={{ phase: "not_yet" }} provider={provider} />
+        ) : null
+      }
       linkParent={!props.link}
       doc={doc}
       notices={props.notices}
@@ -272,7 +300,7 @@ export function InvoiceRoute() {
     }),
     [id],
   );
-  // M6.2: read once per page load (main.tsx took it from the address before the first render).
+  // M6.2, M6.3: read once per page load (main.tsx took it from the address before the first render): `return`, `cancel` or null.
   const [returned] = useState(() => takePayReturn(id));
   if (!me.canSeeFinance) return <NotFoundScreen homeHref="/" />;
   return <DocumentScreen source={source} loadKey={id} link={false} returned={returned} />;

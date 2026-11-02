@@ -84,6 +84,8 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0062_deed_triggers.sql",
       "0063_gateway.sql",
       "0064_gateway_triggers.sql",
+      "0065_stripe.sql",
+      "0066_stripe_triggers.sql",
     ]);
   });
 

@@ -25,7 +25,7 @@ import {
 } from "./invoice-summary.ts";
 import { bound, streamPdf } from "./offer-core.ts";
 import { pdfFileName } from "./offer-sql.ts";
-import { createLink, payAnswer, payBody, refreshForClient } from "./pay.ts";
+import { createLink, payAnswer, payBody, providerOf, refreshForClient } from "./pay.ts";
 import { scope } from "./scope.ts";
 import { json } from "./validate.ts";
 
@@ -100,9 +100,17 @@ export const invoices = new Hono<AppEnv>()
     const s = scope(c);
     const id = idOf(c);
     if (!id) return err(c, NOT_FOUND, 404);
-    const { amountMinor } = c.req.valid("json");
+    const { amountMinor, provider: asked } = c.req.valid("json");
+    // M6.3 ("What B2 must not forget" 7): the gateway the document's currency allows (one bound read), unless the request names one; finance re-checks it.
+    const doc = asked
+      ? null
+      : await bound(c.env.DB, "SELECT d.currency FROM documents d WHERE d.client_id = ?1 AND d.id = ?2", [
+          s.clientId,
+          id,
+        ]).first<{ currency: string }>();
+    const provider = providerOf(doc?.currency, asked);
     const r = await createLink(c.env, {
-      provider: "razorpay",
+      provider,
       clientId: s.clientId,
       contactId: s.contactId,
       tokenHash: null,
@@ -110,7 +118,7 @@ export const invoices = new Hono<AppEnv>()
       amountMinor,
       returnTo: "invoice",
     });
-    return payAnswer(c, r);
+    return payAnswer(c, r, provider);
   })
   .get("/:id/pdf", async (c) => {
     const s = scope(c);

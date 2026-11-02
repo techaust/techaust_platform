@@ -325,9 +325,12 @@ export const PENDING_FOR_DOCUMENT_SQL = `SELECT p.id, p.kind, p.received_on, p.m
    WHERE p.client_id = ${CLIENT_OF_DOCUMENT} AND p.status = 'pending_verification' AND p.requested_allocations IS NOT NULL AND json_extract(j.value, '$.documentId') = ?1
    ORDER BY p.recorded_at, p.id LIMIT 50`;
 
-/** M6.2: the gateway payments that came through the links of document `?1` (newest first, at most 20). */
+/**
+ * M6.2: the gateway payments that came through the links of document `?1` (newest first, at most 20). M6.3 (L10, L11): a Stripe payment's INR facts (the gross INR
+ * credited, Stripe's INR fee and the tax in it; never a stored rate) and whether its proof is on file.
+ */
 export const GATEWAY_PAYMENTS_OF_DOCUMENT_SQL = `SELECT p.id, p.provider, p.status, p.provider_payment_id, p.mode, p.reference_norm, p.received_on, p.amount_minor, p.charges_minor,
-     p.fee_tax_minor, p.requested_allocations
+     p.fee_tax_minor, p.requested_allocations, p.inr_received_minor, p.gateway_fee_inr_minor, p.gateway_fee_tax_inr_minor, p.proof_r2_key IS NOT NULL AS has_proof
    FROM checkout_sessions c INDEXED BY checkout_sessions_document JOIN payments p ON p.checkout_id = c.id
    WHERE c.document_id = ?1 ORDER BY p.recorded_at DESC, p.id DESC LIMIT 20`;
 type GatewayPaymentRow = {
@@ -342,9 +345,14 @@ type GatewayPaymentRow = {
   charges_minor: number;
   fee_tax_minor: number | null;
   requested_allocations: string | null;
+  inr_received_minor: number | null;
+  gateway_fee_inr_minor: number | null;
+  gateway_fee_tax_inr_minor: number | null;
+  has_proof: number;
 };
 type LinkRow = {
   id: string;
+  provider: string;
   status: string;
   source: string;
   amount_minor: number;
@@ -482,6 +490,13 @@ export const invoiceLedger = new Hono<AppEnv>()
           feeMinor: r.charges_minor,
           feeTaxMinor: r.fee_tax_minor,
           proformaPending: r.status === "pending_verification" && r.requested_allocations !== null,
+          // M6.3 (S14): Stripe's INR facts, INR paise (null when not settled in INR, and always for Razorpay); the screen works out "about ₹{rate} per USD" in
+          // bigint from these two figures, never a stored rate (L10).
+          inrReceivedMinor: r.inr_received_minor,
+          gatewayFeeInrMinor: r.gateway_fee_inr_minor,
+          gatewayFeeTaxInrMinor: r.gateway_fee_tax_inr_minor,
+          // S15: "Proof awaited" until Stripe's payment advice or the bank's e-FIRA is attached (L11).
+          hasProof: r.has_proof === 1,
         })),
         links: ((linksR?.results ?? []) as LinkRow[]).map((l) => ({
           checkoutId: l.id,
@@ -489,6 +504,8 @@ export const invoiceLedger = new Hono<AppEnv>()
           source: l.source,
           amountMinor: l.amount_minor,
           shortUrl: l.status === "live" ? l.short_url : null,
+          // M6.3: the session's gateway (a Stripe session is never copied by staff: L7; the screen shows its status and expiry only).
+          provider: l.provider,
           expiresAt: l.expires_at,
           createdAt: l.created_at,
           paidPaymentId: l.paid_payment_id,

@@ -6,7 +6,9 @@ import {
   type IssueAdvanceResult,
   isIssueAdvanceResult,
   isProcessEventResult,
+  isRefreshResult,
   type ProcessEventResult,
+  type RefreshResult,
 } from "@techaust/core/gateway-rpc";
 
 type Call = (arg: unknown) => unknown;
@@ -30,6 +32,7 @@ export function adminGateway(env: object): GatewayEventsApi {
   const isObj = typeof binding === "object" && binding !== null;
   const process = isObj ? methodOf(binding, "processEvent") : undefined;
   const advance = isObj ? methodOf(binding, "issueGatewayAdvance") : undefined;
+  const refresh = isObj ? methodOf(binding, "refreshCheckout") : undefined;
   if (!process || !advance) throw new GatewayRpcError("rpc_unavailable");
   return {
     async processEvent(args): Promise<ProcessEventResult> {
@@ -40,6 +43,13 @@ export function adminGateway(env: object): GatewayEventsApi {
     async issueGatewayAdvance(args): Promise<IssueAdvanceResult> {
       const answer = await advance(args);
       if (!isIssueAdvanceResult(answer)) throw new GatewayRpcError("rpc_bad_result");
+      return answer;
+    },
+    // M6.3 (L13): the sweep's refresh of one checkout.
+    async refreshCheckout(args): Promise<RefreshResult> {
+      if (!refresh) throw new GatewayRpcError("rpc_unavailable");
+      const answer = await refresh(args);
+      if (!isRefreshResult(answer)) throw new GatewayRpcError("rpc_bad_result");
       return answer;
     },
   };

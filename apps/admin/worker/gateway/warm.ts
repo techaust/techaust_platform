@@ -78,7 +78,7 @@ export function warmGateway(): number {
       balanceMinor: 100,
     };
     if (
-      payableOnline(doc, { country: "IN", gstStatus: "registered", anonymised: false }).ok &&
+      payableOnline(doc, { country: "IN", gstStatus: "registered", anonymised: false }, "razorpay").ok &&
       payAmountVerdict({ amountMinor: 100, balanceMinor: 100, floorMinor: 0, wholeRupees: false }).ok
     )
       ok++;
