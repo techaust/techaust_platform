@@ -2,6 +2,7 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-11-02 [#157](https://github.com/techaust/techaust_platform/pull/157) chore(tools): set-gateway-keys Stripe modes for the owner's H2 and H3
 - 2026-11-02 [#156](https://github.com/techaust/techaust_platform/pull/156) perf(admin): start-up dry run of the hot routes, one forwarder, one-batch invoice detail [NFR-2]
 - 2026-11-01 [#155](https://github.com/techaust/techaust_platform/pull/155) ci: accept the M6.3 test webhook secrets in the secret scan
 - 2026-11-01 [#154](https://github.com/techaust/techaust_platform/pull/154) feat(portal): times of day in the client's own clock [POR-04]
