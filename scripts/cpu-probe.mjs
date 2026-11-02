@@ -71,7 +71,13 @@ const SECRETS = {
   RAZORPAY_WEBHOOK_SECRET: madeUp("probe", "webhook"),
   SES_ACCESS_KEY_ID: madeUp("probe", "ses", "id"),
   SES_SECRET_ACCESS_KEY: madeUp("probe", "ses"),
+  // M6.4: a made-up PayPal webhook id (letters and digits: an identifier, not a credential).
+  PAYPAL_WEBHOOK_ID: "PROBEPAYPALWEBHOOK01",
 };
+/** M6.4: the local simulator's certificate URL (the hook accepts it while ENVIRONMENT is "local"; the case process answers it in-process). */
+const PROBE_CERT_URL = "http://localhost:8799/__paypal-test-cert";
+/** The case process's one PayPal test signer (made on the first call of the PayPal hook case). */
+let probeSigner = null;
 
 // ---------------------------------------------------------------------------------------------------------------------------------------------------
 // Inside a child process: the Workers, their env and the timer.
@@ -99,6 +105,7 @@ function envOf(worker, shared, services = {}) {
   const env = { ...(c.vars ?? {}) };
   for (const name of c.secrets?.required ?? []) env[name] = SECRETS[name] ?? "probe-secret";
   if (worker === "jobs") env.RAZORPAY_WEBHOOK_SECRET = SECRETS.RAZORPAY_WEBHOOK_SECRET;
+  if (worker === "jobs") env.PAYPAL_WEBHOOK_ID = SECRETS.PAYPAL_WEBHOOK_ID;
   for (const d of c.d1_databases ?? []) env[d.binding] = shared.db;
   for (const b of c.r2_buckets ?? []) env[b.binding] = shared.r2(b.binding);
   for (const q of c.queues?.producers ?? []) env[q.binding] = queueStub();
@@ -565,6 +572,48 @@ async function seed(dir, extra) {
     events.push(raw.prepare("SELECT id FROM webhook_events WHERE event_id = ?").get(eventId).id);
     if (i === 0) hookTemplate = { checkoutId: link.checkoutId, amount: doc.total_minor };
   }
+  // M6.4: PayPal orders of issued USD export invoices of an overseas client (made through the finance Worker's own `PortalPayments.createLink`, the stub
+  // transport answering), for the return's capture RPC.
+  const ppClient = randomUUID();
+  const ppContact = randomUUID();
+  raw
+    .prepare(
+      `INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, currency, updated_at)
+       VALUES (?, 'C-PROBEPP', 'Probe Overseas (sample)', 'Probe Overseas (sample)', 'business', 'US', 'overseas', 'USD', 5000)`,
+    )
+    .run(ppClient);
+  raw
+    .prepare(
+      "INSERT INTO contacts (id, client_id, name, email, portal_access, can_see_finance) VALUES (?, ?, 'Probe Payer', 'payer@example.test', 1, 1)",
+    )
+    .run(ppContact, ppClient);
+  const paypal = [];
+  const portalPay = new finance.PortalPayments(ctx(), financeEnv);
+  for (let i = 0; i < n; i++) {
+    const docId = randomUUID().replace(/^(.{14})./, "$17");
+    raw
+      .prepare(
+        `INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, issue_date, due_date, subtotal_minor, taxable_minor, total_minor, balance_minor, content_sha256, updated_at)
+         VALUES (?, 'export_invoice', 'issued', ?, 'USD', 'probe-pp', '9999', ?, ?, 1000, ?, ?, 50000, 50000, 50000, 50000, ?, 7000)`,
+      )
+      .run(docId, ppClient, i + 1, `PP/${i + 1}`, istToday(), istToday(), "h".repeat(64));
+    const link = await portalPay.createLink({
+      provider: "paypal",
+      clientId: ppClient,
+      contactId: ppContact,
+      tokenHash: null,
+      documentId: docId,
+      amountMinor: 50_000,
+      returnTo: "invoice",
+    });
+    await drain();
+    if (!link.ok) throw new Error(`cpu-probe seed: PayPal createLink answered ${JSON.stringify(link)}`);
+    const token = new URL(link.url).searchParams.get("token");
+    const row = raw
+      .prepare("SELECT id FROM checkout_sessions WHERE provider = 'paypal' AND provider_link_id = ?")
+      .get(token);
+    paypal.push({ checkoutId: row.id, token });
+  }
   const salted = must("salt", await via("/auth/salt", { body: { email }, cookie: device }));
   const manifest = {
     email,
@@ -580,6 +629,7 @@ async function seed(dir, extra) {
     proformas,
     events,
     hookTemplate,
+    paypal,
   };
   writeFileSync(join(dir, "manifest.json"), JSON.stringify(manifest, null, 2));
   keep.log(
@@ -686,6 +736,10 @@ export const CASES = {
   "GET /leads": { worker: "api", call: (m) => ({ path: "/leads", cookie: m.cookie }) },
   "rpc GatewayEvents.processEvent": { worker: "finance", rpc: true },
   "jobs POST /razorpay": { worker: "jobs", hook: true },
+  // M6.4: the PayPal return's capture RPC (the token, the claim, the capture and the confirmed batch) and the PayPal webhook (the certificate's first fetch
+  // and import, CRC32, the RSA verify, two D1 statements, the send).
+  "rpc PortalPayments.capturePayPalReturn": { worker: "finance", rpc: "paypal" },
+  "jobs POST /paypal": { worker: "jobs", hook: "paypal" },
 };
 
 /** Signs in up to the TOTP challenge (salt, then login with the made-up password), untimed. */
@@ -722,9 +776,48 @@ async function runCase(dir, name, later, givenChallenge) {
       // The first TOTP of the process uses the challenge made by another process (so nothing of the sign-in ran here before it); later ones sign in again.
       const challenge = i === 0 ? givenChallenge : await challengeOf(mod, env, m);
       a = { path: "/auth/totp", body: { challenge, code: totpAt(secret, step() - 1 + i) }, cookie: m.device };
+    } else if (c.rpc === "paypal") {
+      const entry = new mod.PortalPayments(ctx(), env);
+      const p = m.paypal[i];
+      run = () => entry.capturePayPalReturn({ checkoutId: p.checkoutId, token: p.token });
     } else if (c.rpc) {
       const entry = new mod.GatewayEvents(ctx(), env);
       run = () => entry.processEvent({ eventId: m.events[i] });
+    } else if (c.hook === "paypal") {
+      // The certificate is answered in-process (a stub of the global fetch: never a network call); one key pair per process, made outside the timing (the
+      // hook caches the first certificate's key, so every later call is signed with the same key, as PayPal's are).
+      if (!probeSigner) {
+        const { testSigner } = await import("../apps/jobs/test/paypal-cert.ts");
+        probeSigner = await testSigner(PROBE_CERT_URL);
+        const realFetch = globalThis.fetch;
+        const pem = probeSigner.pem;
+        globalThis.fetch = async (input, init) =>
+          String(input instanceof Request ? input.url : input) === PROBE_CERT_URL
+            ? new Response(pem, { status: 200 })
+            : realFetch(input, init);
+      }
+      const signer = probeSigner;
+      const checkoutId = randomUUID().replace(/^(.{14})./, "$17");
+      const body = JSON.stringify({
+        id: `WH-PROBE${String(i).padStart(6, "0")}${Date.now()}`,
+        event_type: "CHECKOUT.ORDER.APPROVED",
+        create_time: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+        resource: {
+          id: `PROBE${String(i).padStart(6, "0")}ORDER`,
+          status: "APPROVED",
+          purchase_units: [{ custom_id: checkoutId, amount: { currency_code: "USD", value: "500.00" } }],
+        },
+      });
+      const headers = {
+        "Content-Type": "application/json",
+        ...(await signer.headers(body, SECRETS.PAYPAL_WEBHOOK_ID)),
+      };
+      run = () =>
+        mod.default.fetch(
+          new Request("http://localhost:8787/paypal", { method: "POST", headers, body }),
+          env,
+          ctx(),
+        );
     } else if (c.hook) {
       const t = m.hookTemplate;
       const body = paidEvent(t.checkoutId, t.amount);
