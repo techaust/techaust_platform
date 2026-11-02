@@ -36,6 +36,7 @@ import {
   LINK_CHIPS,
   linkHint,
   portalInvoiceUrl,
+  portalLinkOffered,
   stripeFacts,
 } from "../../lib/gateway.ts";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
@@ -385,8 +386,10 @@ export function CardPayments(props: { view: InvoiceView; panel: Panel }) {
   if (!p.gateway || (!can && sessions.length === 0)) return null;
   // The server lists them newest first; the open one, if any, is the one that matters.
   const last = sessions.find((l) => l.status === "live" || l.status === "creating") ?? sessions[0] ?? null;
-  // The portal link is worth sending only while something can still be paid (a converted proforma or a settled invoice has nothing left to pay).
-  const portal = can && v.status !== "converted" && p.balanceMinor > 0 ? portalInvoiceUrl(v.id) : null;
+  // The portal link is worth sending only while something can still be paid by card (a converted proforma, a settled invoice or a proforma whose card payment
+  // waits for the Owner's rate has nothing left to pay online).
+  const portal =
+    can && portalLinkOffered(v.status, p.balanceMinor, p.gateway.payments) ? portalInvoiceUrl(v.id) : null;
 
   async function copy(url: string) {
     try {

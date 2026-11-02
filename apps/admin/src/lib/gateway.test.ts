@@ -8,13 +8,16 @@ import {
   ADVANCE_OTHER_CHECK,
   advanceBlockersText,
 } from "../../worker/gateway/reasons.ts";
+import routesSource from "../../worker/gateway/routes.ts?raw";
 import stripeSettleSource from "../../worker/gateway/stripe-settle.ts?raw";
 import {
   advanceBlockerLine,
+  canRetry,
   gatewayLine,
   inrPerUsdText,
   itemReason,
   portalInvoiceUrl,
+  portalLinkOffered,
   stripeFacts,
 } from "./gateway.ts";
 
@@ -154,5 +157,62 @@ describe("a Stripe payment's lines [ADM-PAY-01]", () => {
     );
     expect(portalInvoiceUrl("doc", "")).toBeNull();
     expect(portalInvoiceUrl("doc", "not a url")).toBeNull();
+  });
+});
+
+// M6.3 review finding 3: "Try again" only where POST /review/:id/retry can act (worker/gateway/routes.ts).
+describe("canRetry [ADM-PAY-07]", () => {
+  const item = (provider: string, kind: string, paymentId: string | null, linkId?: string) => ({
+    provider,
+    kind,
+    payment_id: paymentId,
+    facts: linkId ? { linkId } : null,
+  });
+
+  it("never on a Stripe item the route always refuses", () => {
+    expect(canRetry(item("stripe", "advance_blocked", "pmt_1"))).toBe(false);
+    expect(canRetry(item("stripe", "unknown_link", null, "cs_X"))).toBe(false);
+  });
+
+  it("Stripe's re-fetch and dead letters keep it, as Razorpay's items do", () => {
+    expect(canRetry(item("stripe", "refetch_failed", null, "cs_X"))).toBe(true);
+    expect(canRetry(item("stripe", "dead_letter", "pmt_1"))).toBe(true);
+    expect(canRetry(item("razorpay", "advance_blocked", "pmt_1"))).toBe(true);
+    expect(canRetry(item("razorpay", "unknown_link", null, "plink_X"))).toBe(true);
+  });
+
+  it("not without what the route needs (an advance's payment, a link)", () => {
+    expect(canRetry(item("razorpay", "advance_blocked", null))).toBe(false);
+    expect(canRetry(item("razorpay", "refetch_failed", null))).toBe(false);
+    expect(canRetry(item("razorpay", "amount_mismatch", "pmt_1", "plink_X"))).toBe(false);
+  });
+
+  it("the route refuses the same two Stripe kinds", () => {
+    expect(routesSource).toMatch(
+      /item\.provider === "stripe" && item\.kind === "advance_blocked"\) return err\(c, NOT_RETRYABLE, 409\)/,
+    );
+    expect(routesSource).toMatch(
+      /CHECKOUT_BY_LINK_SQL\)\.bind\("stripe", linkId\)[\s\S]{0,80}if \(!co\) return err\(c, NOT_RETRYABLE, 409\)/,
+    );
+  });
+});
+
+// M6.3 review finding 5: S13's "Copy portal link" only while something can still be paid by card.
+describe("portalLinkOffered [ADM-PAY-01]", () => {
+  const waiting = [{ proformaPending: true }];
+  const confirmed = [{ proformaPending: false }];
+
+  it("on an open balance with no proforma payment waiting", () => {
+    expect(portalLinkOffered("issued", 120_000, [])).toBe(true);
+    expect(portalLinkOffered("issued", 80_000, confirmed)).toBe(true);
+  });
+
+  it("not while a proforma's card payment waits for the Owner's rate (the portal shows C8)", () => {
+    expect(portalLinkOffered("issued", 120_000, waiting)).toBe(false);
+  });
+
+  it("not on a converted proforma or a settled document", () => {
+    expect(portalLinkOffered("converted", 120_000, [])).toBe(false);
+    expect(portalLinkOffered("paid", 0, confirmed)).toBe(false);
   });
 });

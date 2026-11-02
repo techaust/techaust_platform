@@ -77,6 +77,13 @@ export function moneyFrom(
   return { ok: true, minor: r.value.amount };
 }
 
+/**
+ * M6.3 review finding 2: the smallest card part-payment above the largest card payment (both in cents) leaves Pay by card on a document the finance Worker
+ * always refuses, so the form stops it on the floor field (the settings schema refuses it too). Only once both amounts are valid and the maximum is a payment.
+ */
+export const cardFloorAboveMaximum = (floorMinor: number, maximumMinor: number): boolean =>
+  maximumMinor >= 1 && floorMinor > maximumMinor;
+
 /** Empty text → null (the schemas store "not set" as null). */
 export const orNull = (s: string) => (s.trim() === "" ? null : s.trim());
 

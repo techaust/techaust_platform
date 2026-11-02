@@ -9,7 +9,9 @@ import {
   reviewReason,
   STRIPE_PERMISSION_LINE,
 } from "../../worker/gateway/reasons.ts";
+import paymentTermsSource from "../routes/settings/payment-terms.tsx?raw";
 import { APPROVED_07ZM, APPROVED_ZM_DRAFTS, CARD_ZM, PLACEHOLDER_MARK, ZM, ZM_DRAFTS } from "./copy-zm.ts";
+import { cardFloorAboveMaximum } from "./settings-form.ts";
 
 const mark = APPROVED_07ZM ? "" : `${PLACEHOLDER_MARK} `;
 
@@ -84,5 +86,38 @@ describe("07-ZM staff lines [M6.3]", () => {
     expect(
       reviewReason("amount_mismatch", { paidMinor: 49_000, expectedMinor: 50_000, currency: "USD" }),
     ).toBe("The amount paid ($490.00) doesn't match the link ($500.00).");
+  });
+});
+
+/** A bullet of 07-ZM's "Review changes" section that starts with `start`: its quoted words. */
+function reviewChange(start: string): string[] {
+  const part = zmPage.split("### Review changes (lead, 2026-11-02)")[1];
+  if (!part) throw new Error("07-ZM has no Review changes section");
+  const l = part.split(/\r?\n/).find((x) => x.startsWith(`- ${start}`));
+  if (!l) throw new Error(`07-ZM Review changes has no line ${start}`);
+  return [...l.matchAll(/"([^"]+)"/g)].map((m) => m[1] as string);
+}
+
+describe("07-ZM review changes [M6.3 review findings 2 and 4]", () => {
+  it("S13's body is the new line, which no longer says there is no link to copy over Copy portal link", () => {
+    expect(CARD_ZM.cardBody).toBe(`${mark}${reviewChange("S13 body").at(-1)}`);
+    expect(CARD_ZM.cardBody).not.toContain("no link to copy");
+    expect(CARD_ZM.cardBody).toContain("send the client their portal link instead");
+  });
+
+  it("the floor-above-maximum line is on the page and on the floor field of Payment terms", () => {
+    expect(CARD_ZM.floorAboveMaximum).toBe(`${mark}${reviewChange("S18 error").at(-1)}`);
+    expect(paymentTermsSource).toMatch(
+      /cardFloorAboveMaximum\(usdMin\.minor, usdMax\.minor\)\)\s*e\["f-onlineMinPartialUsdMinor"\] = CARD_ZM\.floorAboveMaximum;/,
+    );
+  });
+
+  it("the floor is refused only above a valid maximum", () => {
+    expect(cardFloorAboveMaximum(10_000, 5_000)).toBe(true);
+    expect(cardFloorAboveMaximum(5_001, 5_000)).toBe(true);
+    expect(cardFloorAboveMaximum(5_000, 5_000)).toBe(false);
+    expect(cardFloorAboveMaximum(0, 5_000)).toBe(false);
+    // a maximum under one cent has its own error on its own field
+    expect(cardFloorAboveMaximum(100, 0)).toBe(false);
   });
 });
