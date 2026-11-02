@@ -402,7 +402,12 @@ describe.each(CASES)(
       expect((await json(refused)).reasons).toContain("payment_pending_gateway");
       // the proforma's panel lists it among the payments waiting, asking for the whole payment
       const panel = await json(await call(`/invoices/${pf.id}/payments`, { cookie: pf.o.cookie }));
-      expect(panel.pending).toEqual([expect.objectContaining({ paymentId: id, askedMinor: amount })]);
+      // review M3: within the balance, so the action stands (no refund line)
+      expect(panel.pending).toEqual([
+        expect.objectContaining({ paymentId: id, askedMinor: amount, waitsRefund: false }),
+      ]);
+      const entry = await json(await call(`/payments/${id}`, { cookie: pf.o.cookie }));
+      expect(entry.payment).toMatchObject({ proformaId: pf.id, waitsRefund: false });
       // "Confirm by issuing the tax invoice": issued with it, put whole on the new invoice
       const ok = await advance(pf, await withPayment(pf, id));
       expect(ok.status, await ok.clone().text()).toBe(201);
@@ -437,6 +442,50 @@ describe.each(CASES)(
       expect(reviewReason("proforma_overpaid", { provider: pf.provider })).toBe(
         "The client paid more than the proforma's balance. It waits for a refund.",
       );
+    });
+
+    it("review M3: overpaid money blocks no tax invoice: the screens get waitsRefund (the line, not the action), and a tax invoice for another payment still issues", async () => {
+      const pf = await make();
+      const id = await checkoutOnly(pf, pf.total + 100, "OVR2");
+      // it is no proforma's first waiting payment, so nothing names it in a 409
+      expect(await one(WAITING_PAYMENT_SQL, pf.id)).toBeNull();
+      const entry = await json(await call(`/payments/${id}`, { cookie: pf.o.cookie }));
+      expect(entry.payment).toMatchObject({ proformaId: pf.id, waitsRefund: true });
+      const panel = await json(await call(`/invoices/${pf.id}/payments`, { cookie: pf.o.cookie }));
+      expect(panel.pending).toEqual([expect.objectContaining({ paymentId: id, waitsRefund: true })]);
+      // the bank's money for the proforma (a new receipt) issues its tax invoice
+      const manual = await advance(pf, await advanceBody(pf));
+      expect(manual.status, await manual.clone().text()).toBe(201);
+      expect(await proformaOf(pf.id)).toMatchObject({ status: "converted", balance_minor: 0 });
+      // the card money is untouched: still pending, on no document, waiting for the M6.5 refund
+      expect(await one<{ status: string }>("SELECT status FROM payments WHERE id = ?1", id)).toEqual({
+        status: "pending_verification",
+      });
+      expect(await rows("SELECT id FROM payment_allocations WHERE payment_id = ?1", id)).toEqual([]);
+      const verified = await verify(pf.o, id, "confirm", { allocations: [] });
+      expect((await json(verified)).error.code).toBe("use_advance_invoice");
+      expect((await json(await call(`/payments/${id}`, { cookie: pf.o.cookie }))).payment.waitsRefund).toBe(
+        true,
+      );
+    });
+
+    it("review M3: overpaid money landing between the read and the batch doesn't refuse the freeze", async () => {
+      const pf = await make();
+      let landed = "";
+      const raced = countingEnv({
+        race: {
+          when: freezeBatch,
+          act: async () => {
+            landed = await checkoutOnly(pf, pf.total + 100, "OVR3");
+          },
+        },
+      });
+      const res = await advance(pf, await advanceBody(pf), raced.env);
+      expect(res.status, await res.clone().text()).toBe(201);
+      expect(landed).not.toBe("");
+      expect(await one<{ status: string }>("SELECT status FROM payments WHERE id = ?1", landed)).toEqual({
+        status: "pending_verification",
+      });
     });
   },
 );
@@ -480,6 +529,35 @@ describe("(2c) a waiting MANUAL entry (lead's decision 2) [ADM-INV-10, L5, L12]"
     const two = await advance(pf, await withPayment(pf, second.id));
     expect(two.status, await two.clone().text()).toBe(201);
     expect(await proformaOf(pf.id)).toMatchObject({ balance_minor: 0 });
+  });
+
+  it("review M3: a Staff entry the proforma can no longer take (another payment used its balance) waits for a refund: the queue, the view and the panel say so", async () => {
+    const pf = await razorpayProforma();
+    const staff = await sessionFor("staff");
+    const first = recordBody(pf.clientId, pf.total, [{ documentId: pf.id, amountMinor: pf.total }]);
+    await recorded(staff, first);
+    const second = recordBody(pf.clientId, pf.total, [{ documentId: pf.id, amountMinor: pf.total }]);
+    await recorded(staff, second);
+    const queue = async () =>
+      (await json(await call("/approvals?kind=payment", { cookie: pf.o.cookie }))).approvals.find(
+        (a: { payment: { id: string } }) => a.payment.id === second.id,
+      ).payment;
+    // both within the balance at first: the action stands
+    expect(await queue()).toMatchObject({ proformaId: pf.id, waitsRefund: false });
+    const ok = await advance(pf, await withPayment(pf, first.id));
+    expect(ok.status, await ok.clone().text()).toBe(201);
+    // the balance is gone: the second entry is no proforma's waiting payment, and the screens show the line instead of "Confirm by issuing"
+    expect(await one(WAITING_PAYMENT_SQL, pf.id)).toBeNull();
+    expect(await queue()).toMatchObject({ proformaId: pf.id, waitsRefund: true });
+    const view = await json(await call(`/payments/${second.id}`, { cookie: pf.o.cookie }));
+    expect(view.payment).toMatchObject({ proformaId: pf.id, waitsRefund: true });
+    const panel = await json(await call(`/invoices/${pf.id}/payments`, { cookie: pf.o.cookie }));
+    expect(panel.pending).toEqual([expect.objectContaining({ paymentId: second.id, waitsRefund: true })]);
+    const refused = await advance(pf, await withPayment(pf, second.id));
+    expect((await json(refused)).error.code).toBe("advance_exceeds_balance");
+    // a Staff entry can still be rejected (the list keeps its Reject beside the line)
+    const rejected = await verify(pf.o, second.id, "reject", { note: "Recorded twice" });
+    expect(rejected.status, await rejected.clone().text()).toBe(200);
   });
 
   it("the freeze refuses a manual tax invoice when a Staff entry is recorded between the read and the batch", async () => {
@@ -735,6 +813,25 @@ describe.each(LINK_DOCS)(
     });
   },
 );
+
+describe("review M2: an invoice's checkout-only online payment [ADM-PAY-01, ADM-INV-10]", () => {
+  it("blocks the invoice's void (payment_pending_gateway: the screen picks the invoice's line by type); it names no proforma, so the plain Confirm puts it on the invoice", async () => {
+    const d = await LINK_DOCS[1].make();
+    const id = await checkoutOnly(d, 10_000, "INVM2");
+    const view = await json(await call(`/invoices/${d.id}`, { cookie: d.o.cookie }));
+    expect(view.type).toBe("tax_invoice");
+    expect(view.void.blockers).toContain("payment_pending_gateway");
+    const entry = await json(await call(`/payments/${id}`, { cookie: d.o.cookie }));
+    expect(entry.payment).toMatchObject({ proformaId: null, waitsRefund: false });
+    // "Confirm it on Payments first": the ordinary decision, which this payment is allowed
+    const res = await verify(d.o, id, "confirm", {
+      allocations: [{ documentId: d.id, amountMinor: 10_000 }],
+    });
+    expect(res.status, await res.clone().text()).toBe(200);
+    const after = await json(await call(`/invoices/${d.id}`, { cookie: d.o.cookie }));
+    expect(after.void.blockers).not.toContain("payment_pending_gateway");
+  });
+});
 
 describe("(3b) the read's cost [Free plan]", () => {
   it("the waiting read is one seek of payments_client", async () => {

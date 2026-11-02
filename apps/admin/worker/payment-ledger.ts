@@ -38,6 +38,7 @@ import {
   extensionLetterStatement,
   ledgerResultStatement,
   paymentForDocumentSql,
+  proformaTakesPaymentSql,
   realisationExtensionStatement,
   recomputeStatement,
 } from "@techaust/db/ledger";
@@ -325,7 +326,8 @@ export const CREDIT_OF_DOCUMENT_CLIENT_SQL = clientCreditSql(CLIENT_OF_DOCUMENT)
  * document: its request's amount, else (no request) the whole payment.
  */
 export const PENDING_FOR_DOCUMENT_SQL = `SELECT p.id, p.kind, p.received_on, p.mode, p.reference_norm, p.currency, p.amount_minor, p.recorded_by, p.recorded_at,
-       coalesce((SELECT json_extract(j.value, '$.amountMinor') FROM json_each(p.requested_allocations) j WHERE json_extract(j.value, '$.documentId') = ?1 LIMIT 1), p.amount_minor) AS asked_minor
+       coalesce((SELECT json_extract(j.value, '$.amountMinor') FROM json_each(p.requested_allocations) j WHERE json_extract(j.value, '$.documentId') = ?1 LIMIT 1), p.amount_minor) AS asked_minor,
+       ${proformaTakesPaymentSql("p", "?1")} AS takes
    FROM payments p INDEXED BY payments_client
    WHERE p.client_id = ${CLIENT_OF_DOCUMENT} AND p.status = 'pending_verification' AND ${paymentForDocumentSql("p", "?1")}
    ORDER BY p.recorded_at, p.id LIMIT 50`;
@@ -467,6 +469,7 @@ export const invoiceLedger = new Hono<AppEnv>()
           recorded_by: string | null;
           recorded_at: number;
           asked_minor: number;
+          takes: number;
         }[]
       ).map((r) => ({
         paymentId: r.id,
@@ -479,6 +482,11 @@ export const invoiceLedger = new Hono<AppEnv>()
         askedMinor: r.asked_minor,
         recordedBy: r.recorded_by,
         recordedAt: r.recorded_at,
+        /**
+         * M6.3 staging fixes, review M3: on a proforma, true when it can no longer take this money (`proformaTakesPaymentSql`: above its balance, or no longer
+         * issued): it waits for the M6.5 refund, and the panel shows 07-ZM's line 1(c) instead of "Confirm by issuing the tax invoice". Always false elsewhere.
+         */
+        waitsRefund: d.type === "proforma" && r.takes !== 1,
       })),
       credits: creditView((creditR?.results ?? []) as { currency: string; credit: number }[]),
       // M6.2 (run file G1): "Paid online" rows (method, Razorpay's payment id, the fee absorbed), the payment links, and the open review items.

@@ -490,16 +490,40 @@ export function extensionLetterStatement(
 export const paymentProformaSql = (p: string): string =>
   `(SELECT pfd.id FROM documents pfd WHERE pfd.id IN (${paymentDocumentsSql(p)}) AND pfd.type = 'proforma' LIMIT 1)`;
 
+/** The row condition of `proformaTakesPaymentSql`: document row `d` (alias) is a proforma that can take payment `p`'s whole amount. */
+const takesRowSql = (d: string, p: string): string =>
+  `(${d}.type = 'proforma' AND ${d}.frozen_at IS NOT NULL AND ${d}.status IN ('issued', 'converted') AND ${d}.balance_minor >= ${p}.amount_minor)`;
+
+/**
+ * M6.3 staging fixes, review M3 (L5; lead's decision 1(b), 2026-11-02): proforma `doc` (an SQL expression for its id) can still take payment `p`'s money (an SQL
+ * table name or alias of `payments`) as its tax invoice for a payment received: an issued or part-converted proforma whose balance is at least the whole payment
+ * (the advance puts the whole amount on the new invoice). Otherwise the money is held for the M6.5 refund ("The client paid more than the proforma's balance. It
+ * waits for a refund."): no advance can take it, so it never blocks one (`firstWaitingPaymentSql`), and the screens show that line instead of "Confirm by issuing".
+ * A primary-key seek.
+ */
+export const proformaTakesPaymentSql = (p: string, doc: string): string =>
+  `EXISTS (SELECT 1 FROM documents tpd WHERE tpd.id = ${doc} AND ${takesRowSql("tpd", p)})`;
+
+/**
+ * Review M3: payment `p` asks for a proforma (`paymentProformaSql`) that can no longer take it (`proformaTakesPaymentSql`'s rule): it waits for a refund. False
+ * with no proforma, or one that can take it. The payment view, the approvals queue and the proforma's panel read it (only for a pending payment).
+ */
+export const paymentWaitsRefundSql = (p: string): string =>
+  `EXISTS (SELECT 1 FROM documents wrd WHERE wrd.id = ${paymentProformaSql(p)} AND NOT ${takesRowSql("wrd", p)})`;
+
 /**
  * M6.3 staging fixes 1 and 2 (L5, L12; lead's decisions 1 and 2, 2026-11-02): the FIRST payment waiting for the tax invoice of proforma `doc` of client `client`
  * (SQL expressions): PENDING, kind `payment`, for the proforma (`paymentForDocumentSql`); an online payment before a manual entry, then the oldest. While any
  * waits, that proforma's tax invoice for a payment received is issued only WITH this one ("Confirm by issuing the tax invoice"): never as a new receipt (no
- * `paymentId`) and never with another entry, so the same money is never counted twice and the entries are taken one at a time. Selects `cols` (`id, provider`); a seek of
+ * `paymentId`) and never with another entry, so the same money is never counted twice and the entries are taken one at a time. Review M3: only a payment the
+ * proforma can still take (`proformaTakesPaymentSql`: issued or part-converted, a balance of at least the payment); money above the balance waits for the M6.5
+ * refund and blocks no advance (it can't be confirmed by issuing or by the decision either, so it is never counted). Selects `cols` (`id, provider`); a seek of
  * `payments_client`.
  */
 export const firstWaitingPaymentSql = (doc: string, client: string, cols = "wp.id, wp.provider"): string =>
   `SELECT ${cols} FROM payments wp INDEXED BY payments_client
    WHERE wp.client_id = ${client} AND wp.status = 'pending_verification' AND wp.kind = 'payment' AND ${paymentForDocumentSql("wp", doc)}
+     AND ${proformaTakesPaymentSql("wp", doc)}
    ORDER BY wp.provider = 'manual', wp.recorded_at, wp.id LIMIT 1`;
 
 /** The first payment waiting for proforma `?1` (its client read from the proforma), for the 409 `online_payment_waiting` / `payment_waiting` and `details.paymentId`. */

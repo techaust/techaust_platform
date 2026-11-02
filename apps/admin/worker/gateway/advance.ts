@@ -62,7 +62,7 @@ const PENDING_SQL = `SELECT p.id, p.provider, p.kind, p.status, p.client_id, p.c
 /** `PENDING_SQL` with the proforma's current stamp (`?2`), read once after a refused freeze. */
 const AFTER_REFUSAL_SQL = PENDING_SQL.replace(
   "i.number_display AS invoice_number",
-  "i.number_display AS invoice_number, (SELECT pf.updated_at FROM documents pf WHERE pf.id = ?2) AS proforma_updated_at",
+  "i.number_display AS invoice_number, (SELECT pf.updated_at FROM documents pf WHERE pf.id = ?2) AS proforma_updated_at, (SELECT pf.balance_minor FROM documents pf WHERE pf.id = ?2) AS proforma_balance_minor",
 );
 const OWNER_ACTIVE_SQL =
   "SELECT 1 AS ok FROM staff_users WHERE id = ?1 AND role = 'owner' AND status = 'active'";
@@ -83,17 +83,25 @@ function issuedBell(
     .bind(a.documentId, tail, `/invoices/${a.documentId}`, ...g.params);
 }
 
-/** The blocked path: one `advance_blocked` item for the payment while none is open, its bell, audited as the system. The payment stays pending. */
+/**
+ * The blocked path: one `advance_blocked` item for the payment while none is open, its bell, audited as the system. The payment stays pending. M6.3 staging fixes,
+ * review M3: money above the proforma's balance (`overpaid`) is a `proforma_overpaid` item instead, the line the settle path gives (lead's decision 1(c), 07-ZM:
+ * "The client paid more than the proforma's balance. It waits for a refund."): no advance can take it, so nothing is offered but the M6.5 refund.
+ */
 async function blocked(
   env: AdvanceEnv,
   p: PendingRow,
   proformaId: string | null,
   blockers: readonly string[],
+  overpaid = false,
 ): Promise<IssueAdvanceResult> {
   const reviewId = uuidv7();
   const now = Date.now();
+  const kind = overpaid ? "proforma_overpaid" : "advance_blocked";
   // Review finding 4: the codes in words, never the codes themselves.
-  const reason = reviewReason("advance_blocked", { blocker: advanceBlockersText(blockers) });
+  const reason = overpaid
+    ? reviewReason(kind, { provider: p.provider })
+    : reviewReason(kind, { blocker: advanceBlockersText(blockers) });
   await mutateSystem(env, {
     action: "payment.gateway_advance_blocked",
     entityType: "payment",
@@ -103,8 +111,8 @@ async function blocked(
       env.DB.prepare(
         // M6.3 (early check 1, "What B2 must not forget" 4): the item names the payment's own gateway and currency, never a hard-coded Razorpay and INR.
         `INSERT INTO review_items (id, source, provider, kind, status, payment_id, document_id, client_id, amount_minor, currency, facts, created_at)
-           SELECT ?1, 'webhook', p.provider, 'advance_blocked', 'open', ?2, ?3, ?4, ?5, p.currency, ?6, ?7 FROM payments p WHERE p.id = ?2
-             AND NOT EXISTS (SELECT 1 FROM review_items x INDEXED BY review_items_payment WHERE x.payment_id = ?2 AND x.kind = 'advance_blocked' AND x.status = 'open') AND ${g.sql(8)}`,
+           SELECT ?1, 'webhook', p.provider, ?8, 'open', ?2, ?3, ?4, ?5, p.currency, ?6, ?7 FROM payments p WHERE p.id = ?2
+             AND NOT EXISTS (SELECT 1 FROM review_items x INDEXED BY review_items_payment WHERE x.payment_id = ?2 AND x.kind = ?8 AND x.status = 'open') AND ${g.sql(9)}`,
       ).bind(
         reviewId,
         p.id,
@@ -113,6 +121,7 @@ async function blocked(
         p.amount_minor,
         JSON.stringify({ blockers: blockers.slice(0, 10) }),
         now,
+        kind,
         ...g.params,
       ),
       env.DB.prepare(
@@ -174,7 +183,8 @@ async function tryAdvance(env: AdvanceEnv, paymentId: string, lastTry: boolean):
     return blocked(env, p, proformaId, ["not_domestic_inr"]);
   if (proformaSupplyChanged(d.computed, ctx.client.gst_status))
     return blocked(env, p, proformaId, ["advance_supply_changed"]);
-  if (p.amount_minor > d.balance_minor) return blocked(env, p, proformaId, ["advance_exceeds_balance"]);
+  // Review M3: an earlier payment's tax invoice took the balance since this one was matched: the money waits for a refund (`proforma_overpaid`).
+  if (p.amount_minor > d.balance_minor) return blocked(env, p, proformaId, ["advance_exceeds_balance"], true);
   if (!d.issued_by || !(await db.prepare(OWNER_ACTIVE_SQL).bind(d.issued_by).first()))
     return blocked(env, p, proformaId, ["issuer_not_owner"]);
   const onBehalfOf = d.issued_by;
@@ -440,9 +450,17 @@ async function tryAdvance(env: AdvanceEnv, paymentId: string, lastTry: boolean):
     const after = await db
       .prepare(AFTER_REFUSAL_SQL)
       .bind(paymentId, proformaId)
-      .first<PendingRow & { proforma_updated_at: number | null }>();
+      .first<PendingRow & { proforma_updated_at: number | null; proforma_balance_minor: number | null }>();
     if (after?.status === "confirmed" && after.advance_receipt_id)
       return { result: "already_issued", ...(after.invoice_number ? { number: after.invoice_number } : {}) };
+    // Review M3: another payment's tax invoice took the balance between the read and the freeze: this money is now above it and waits for a refund, said as such
+    // at once (a retry would only reach the same answer), never as the generic `freeze_refused`.
+    if (
+      after?.status === "pending_verification" &&
+      after.proforma_balance_minor !== null &&
+      p.amount_minor > after.proforma_balance_minor
+    )
+      return blocked(env, p, proformaId, ["advance_exceeds_balance"], true);
     if (after && after.proforma_updated_at !== d.updated_at && !lastTry) return { result: "retry" };
     return blocked(env, p, proformaId, ["freeze_refused"]);
   }

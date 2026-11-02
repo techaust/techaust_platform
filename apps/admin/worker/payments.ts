@@ -40,6 +40,7 @@ import {
   PAYMENT_REFERENCE_SEEN_SQL,
   paymentApprovalStatements,
   paymentProformaSql,
+  paymentWaitsRefundSql,
   proofStatement,
   recomputeStatement,
   recordPaymentStatement,
@@ -92,7 +93,8 @@ const PAYMENT_COLS = `p.id, p.client_id, c.code AS client_code, c.display_name A
   p.tds_certificate_no, p.tds_certificate_on, p.proof_kind, p.proof_ref, p.proof_r2_key, p.proof_sha256, p.proof_mime, p.advance_receipt_id, p.note,
   p.recorded_by, (SELECT name FROM staff_users WHERE id = p.recorded_by) AS recorded_by_name, p.recorded_at, p.verified_by,
   (SELECT name FROM staff_users WHERE id = p.verified_by) AS verified_by_name, p.verified_at, p.decision_note, p.withdrawn_by, p.withdrawn_at, p.withdraw_reason,
-  p.provider_payment_id, CASE WHEN p.status = 'pending_verification' THEN ${paymentProformaSql("p")} END AS proforma_id`;
+  p.provider_payment_id, CASE WHEN p.status = 'pending_verification' THEN ${paymentProformaSql("p")} END AS proforma_id,
+  (p.status = 'pending_verification' AND ${paymentWaitsRefundSql("p")}) AS waits_refund`;
 
 export type PaymentRow = {
   id: string;
@@ -136,6 +138,8 @@ export type PaymentRow = {
   provider_payment_id: string | null;
   /** M6.3 staging fix 2 (L5): while pending, the proforma this entry asks for, by its request or its checkout (`paymentProformaSql`), else null. */
   proforma_id: string | null;
+  /** M6.3 staging fixes, review M3: 1 while pending for a proforma that can no longer take it (`paymentWaitsRefundSql`): it waits for a refund. */
+  waits_refund: number;
 };
 
 /** One payment by id, with its client. */
@@ -253,6 +257,11 @@ export const paymentView = (r: PaymentRow) => ({
    * then offer only "Confirm by issuing the tax invoice" on that proforma, never the plain Confirm (the verify route refuses it: `use_advance_invoice`).
    */
   proformaId: r.proforma_id,
+  /**
+   * M6.3 staging fixes, review M3: with `proformaId`, true when that proforma can no longer take this money (its balance is below the payment, or it is no longer
+   * issued): it waits for the M6.5 refund, and the screens show the 07-ZM line 1(c) instead of "Confirm by issuing the tax invoice", which would be refused.
+   */
+  waitsRefund: r.waits_refund === 1,
 });
 export type PaymentView = ReturnType<typeof paymentView>;
 

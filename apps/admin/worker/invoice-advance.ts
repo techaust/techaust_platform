@@ -161,10 +161,9 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
           `SELECT p.id, p.kind, p.provider, p.status, p.client_id, p.currency, p.amount_minor, p.received_on, p.reference_norm, p.recorded_by, c.display_name AS client_name, ${paymentForDocumentSql("p", "?2")} AS asks_this FROM payments p JOIN clients c ON c.id = p.client_id WHERE p.id = ?1`,
         )
         .bind(f.paymentId ?? "", id),
-      // Early check 2, finding 1 (L12): the newest pending or confirmed payment with this reference, and a pending entry of this client asking for this
-      // proforma with it (the one "Confirm by issuing the tax invoice" would use).
+      // Early check 2, finding 1 (L12): the newest pending or confirmed payment with this reference. (Review L2: a pending entry asking for this proforma is
+      // answered by the waiting rule below before this is read, so its "Confirm by issuing" is never offered here.)
       db.prepare(PAYMENT_REFERENCE_SEEN_SQL).bind(norm ?? ""),
-      db.prepare(PENDING_ASK_FOR_PROFORMA_SQL).bind(norm ?? "", id),
       // M6.3 staging fixes 1 and 2 (L5): the first payment waiting for this proforma's tax invoice (the receipt is that payment, never a new one).
       db.prepare(WAITING_PAYMENT_SQL).bind(id),
     ]);
@@ -224,16 +223,13 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
     // proforma, its tax invoice is issued only WITH the first one waiting (an online payment before a manual entry, then the oldest): never as a new receipt
     // (staging, 2026-11-02: the card money counted twice) and never with another entry (a manual entry perhaps for the same card money). A hard 409
     // (`confirmDuplicate` never passes it) naming that payment; the freeze's WHERE holds the same rule, so a payment landing meanwhile refuses too.
-    const waiting = ctx.extra[5]?.results[0] as WaitingRow | undefined;
+    const waiting = ctx.extra[4]?.results[0] as WaitingRow | undefined;
     if (waiting && waiting.id !== f.paymentId) return refusedWaiting(c, waiting);
     if (f.paymentId === undefined && f.confirmDuplicate !== true) {
       // (5d) Early check 2, finding 1 (L12; 07-ZH line 13): a reference already on a pending or confirmed payment is a soft 409 the Owner can confirm past.
       // The freeze's WHERE holds the same rule, so a payment recorded meanwhile refuses the batch too.
       const seen = ctx.extra[3]?.results[0] as SeenRow | undefined;
-      if (seen) {
-        const ask = ctx.extra[4]?.results[0] as { id: string } | undefined;
-        return refusedSeen(c, seen, ask?.id ?? null);
-      }
+      if (seen) return refusedSeen(c, seen);
     }
     // (6) the amount against what is left
     if (f.amountMinor > d.balance_minor) return err(c, ADVANCE_EXCEEDS_BALANCE, 409);
@@ -619,12 +615,6 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
   },
 );
 
-/** A pending entry of the proforma's client with this reference (`?1`, normalised) that asks for the proforma `?2`: the one the Owner should confirm instead. */
-const PENDING_ASK_FOR_PROFORMA_SQL = `SELECT p.id FROM payments p INDEXED BY payments_reference, json_each(p.requested_allocations) j
-   WHERE p.reference_norm = ?1 AND p.status = 'pending_verification' AND p.requested_allocations IS NOT NULL
-     AND p.client_id = (SELECT d.client_id FROM documents d WHERE d.id = ?2) AND json_extract(j.value, '$.documentId') = ?2
-   ORDER BY p.recorded_at, p.id LIMIT 1`;
-
 type WaitingRow = { id: string; provider: string };
 
 /**
@@ -644,15 +634,15 @@ type SeenRow = {
 };
 
 /**
- * 409 `reference_seen` (07-ZH line 13, L12) with the day and the client of the payment that has this reference; `details.paymentId` names a pending entry of
- * this client asking for this proforma, so the screen can offer "Confirm by issuing the tax invoice" with it (07-ZH line 12).
+ * 409 `reference_seen` (07-ZH line 13, L12) with the day and the client of the payment that has this reference. Review L2 of the M6.3 staging fixes: it no longer
+ * names a pending entry asking for this proforma (`details.paymentId`): such an entry, when the proforma can take it, is answered first as `payment_waiting` or
+ * `online_payment_waiting` (with its id), and one it can't take waits for a refund, so "Confirm by issuing" would fail.
  */
-function refusedSeen(c: Ctx, seen: SeenRow, pendingAskId: string | null) {
+function refusedSeen(c: Ctx, seen: SeenRow) {
   return err(c, referenceSeen(seen.received_on, seen.client_name), 409, {
     receivedOn: seen.received_on,
     clientCode: seen.client_code,
     clientName: seen.client_name,
-    ...(pendingAskId !== null ? { paymentId: pendingAskId } : {}),
   });
 }
 
@@ -697,8 +687,7 @@ async function explain(c: Ctx, proformaId: string, x: Expectations) {
     `SELECT p.status, p.frozen_at, p.updated_at, p.balance_minor, p.client_id, cl.updated_at AS client_updated_at, ${clientGoneSql("p.client_id")} AS gone,
        (SELECT i.number_display FROM advance_receipts r JOIN documents i ON i.id = r.invoice_id WHERE r.proforma_id = p.id AND r.reference_norm = ?2) AS used_number,
        EXISTS (SELECT 1 FROM payments pr INDEXED BY payments_reference WHERE pr.reference_norm = ?2 AND pr.status IN ('pending_verification', 'confirmed')) AS seen,
-       (${firstWaitingPaymentSql("p.id", "p.client_id", "wp.id")}) AS waiting_id,
-       (${firstWaitingPaymentSql("p.id", "p.client_id", "wp.provider")}) AS waiting_provider,
+       (${firstWaitingPaymentSql("p.id", "p.client_id", "wp.provider || ':' || wp.id")}) AS waiting,
        (SELECT version FROM settings WHERE key = 'numbering') AS numbering_v,
        (SELECT version FROM settings WHERE key = 'company') AS company_v,
        (SELECT version FROM settings WHERE key = 'tax') AS tax_v,
@@ -722,8 +711,8 @@ async function explain(c: Ctx, proformaId: string, x: Expectations) {
       gone: number;
       used_number: string | null;
       seen: number;
-      waiting_id: string | null;
-      waiting_provider: string | null;
+      /** `provider:id` of the first payment waiting (review L2: one subquery); a provider never holds ':'. */
+      waiting: string | null;
       numbering_v: number | null;
       company_v: number | null;
       tax_v: number | null;
@@ -740,15 +729,14 @@ async function explain(c: Ctx, proformaId: string, x: Expectations) {
   if (row.session_live !== 1) return err(c, UNAUTHENTICATED, 401);
   if (row.used_number !== null) return refusedReference(c, row.used_number);
   // M6.3 staging fixes 1 and 2: a payment for the proforma landed between the read and the batch (a webhook while the dialog was open, a Staff entry).
-  if (row.waiting_id !== null && row.waiting_id !== x.paymentId)
-    return refusedWaiting(c, { id: row.waiting_id, provider: row.waiting_provider ?? "manual" });
+  if (row.waiting !== null) {
+    const at = row.waiting.indexOf(":");
+    const waiting = { provider: row.waiting.slice(0, at), id: row.waiting.slice(at + 1) };
+    if (waiting.id !== x.paymentId) return refusedWaiting(c, waiting);
+  }
   if (x.checkSeen && row.seen === 1) {
-    const [seenR, askR] = await c.env.DB.batch([
-      c.env.DB.prepare(PAYMENT_REFERENCE_SEEN_SQL).bind(x.norm),
-      c.env.DB.prepare(PENDING_ASK_FOR_PROFORMA_SQL).bind(x.norm, proformaId),
-    ]);
-    const seen = seenR?.results[0] as SeenRow | undefined;
-    if (seen) return refusedSeen(c, seen, (askR?.results[0] as { id: string } | undefined)?.id ?? null);
+    const seen = await c.env.DB.prepare(PAYMENT_REFERENCE_SEEN_SQL).bind(x.norm).first<SeenRow>();
+    if (seen) return refusedSeen(c, seen);
   }
   if (row.frozen_at === null || (row.status !== "issued" && row.status !== "converted"))
     return err(c, PROFORMA_NOT_ISSUED, 409);
