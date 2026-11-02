@@ -616,7 +616,9 @@ export const TAX_INVOICE_CSS = `
 .doc--tax-invoice .inv-notes .terms > :nth-last-child(2),
 .doc--tax-invoice .inv-notes li:last-child { break-before: avoid; }
 .doc--tax-invoice .inv-notes h3 { margin: 0 0 1.6mm; }
-.doc--tax-invoice .inv-notes .terms > :not(.integrity) { max-width: 132mm; }
+.doc--tax-invoice .inv-notes .terms { max-width: 132mm; }
+/* the integrity line ends the notes' text but runs the full text width (178 mm), as everywhere else */
+.doc--tax-invoice .inv-notes .terms > .integrity { width: 178mm; }
 
 .doc--tax-invoice .inv-sign { margin-top: auto; text-align: right; font-size: var(--print-table); line-height: 1.4; }
 .doc--tax-invoice .inv-sign__for { margin: 0; font-weight: 600; overflow-wrap: anywhere; }

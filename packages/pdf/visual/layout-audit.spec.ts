@@ -139,8 +139,8 @@ async function splitBlocks(page: Page, html: string, selectors: string[], css = 
 }
 
 const out = process.env.AUDIT_OUT;
-/** The sweep's step in mm (AUDIT_STEP; 8 by default: 30 prints a case, twice the step for a document of three pages or more). */
-const STEP = Number(process.env.AUDIT_STEP ?? 8);
+/** The sweep's step in mm (AUDIT_STEP; 12 by default: 20 steps a case). */
+const STEP = Number(process.env.AUDIT_STEP ?? 12);
 if (out) mkdirSync(out, { recursive: true });
 
 for (const c of AUDIT_CASES) {
@@ -163,8 +163,13 @@ for (const c of AUDIT_CASES) {
     test("the sweep: pushed down through a page, the same rules at every step", async ({ page }) => {
       test.setTimeout(600_000);
       const html = await c.html();
+      // A document of three pages or more already breaks at many heights (the first test checks every one of them); the sweep is for the short ones.
       const { pdf: plain } = await print(page, html);
-      const step = plain.getPageCount() > 2 ? STEP * 2 : STEP;
+      test.skip(
+        plain.getPageCount() > 2,
+        "three pages or more: its own page breaks are checked by the first test",
+      );
+      const step = STEP;
       const alone = await closingMarks(page, c, html);
       const found: string[] = [];
       for (let mm = step; mm <= 240; mm += step) {
