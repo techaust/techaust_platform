@@ -24,6 +24,9 @@ const FIXED = {
     RAZORPAY_KEY_SECRET: "local-not-a-real-key-secret",
     // M6.3: a FAKE restricted test key in the shape the client accepts (built here so no key-looking literal is committed); the stub never calls Stripe.
     STRIPE_SECRET_KEY: ["rk", "test", "LOCALSTUBnotreal"].join("_"),
+    // M6.4: FAKE PayPal sandbox client id and secret; the stub never calls PayPal.
+    PAYPAL_CLIENT_ID: "local-paypal-client-id-not-real",
+    PAYPAL_CLIENT_SECRET: "local-paypal-client-secret-not-real",
   },
   portal: { TURNSTILE_SECRET: TURNSTILE_TEST_SECRET },
   web: { TURNSTILE_SECRET: TURNSTILE_TEST_SECRET },
@@ -35,6 +38,8 @@ const FIXED = {
     RAZORPAY_WEBHOOK_SECRET: "local-webhook-secret-not-real",
     // M6.3: a FAKE Stripe signing secret that `scripts/pay-simulate.mjs --gateway stripe` reads from this file (never a real one).
     STRIPE_WEBHOOK_SECRET: ["whsec", "LOCALSTUBnotreal"].join("_"),
+    // M6.4: a FAKE PayPal webhook id (letters and digits) that `scripts/pay-simulate.mjs --paypal` signs for (never a real one).
+    PAYPAL_WEBHOOK_ID: "LOCALPAYPALWEBHOOK01",
   },
 };
 

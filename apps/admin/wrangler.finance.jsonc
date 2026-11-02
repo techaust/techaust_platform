@@ -25,8 +25,17 @@
     "GATEWAY_TRANSPORT": "stub"
   },
   // M6.2 (L1): the Razorpay key pair, names only (`pnpm dev:secrets` writes local fakes; staging: tools/set-gateway-keys.ps1 -Gateway razorpay). M6.3 (L3):
-  // STRIPE_SECRET_KEY holds the RESTRICTED `rk_test_` key (staging: -Gateway stripe). Not inherited.
-  "secrets": { "required": ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "STRIPE_SECRET_KEY"] },
+  // STRIPE_SECRET_KEY holds the RESTRICTED `rk_test_` key (staging: -Gateway stripe). M6.4 (L1): PayPal's sandbox client id and secret (staging: -Gateway
+  // paypal; the mode of Settings › Gateways picks PayPal's host, and a live mode is refused before any call while PAYMENTS_LIVE_ALLOWED is "false"). Not inherited.
+  "secrets": {
+    "required": [
+      "RAZORPAY_KEY_ID",
+      "RAZORPAY_KEY_SECRET",
+      "STRIPE_SECRET_KEY",
+      "PAYPAL_CLIENT_ID",
+      "PAYPAL_CLIENT_SECRET"
+    ]
+  },
   "queues": {
     "producers": [
       { "binding": "EMAIL_QUEUE", "queue": "techaust-local-email" },
@@ -72,7 +81,15 @@
         "PORTAL_URL": "https://techaust-platform-portal-staging.techaust-technologies-153.workers.dev/",
         "GATEWAY_TRANSPORT": "api"
       },
-      "secrets": { "required": ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "STRIPE_SECRET_KEY"] },
+      "secrets": {
+        "required": [
+          "RAZORPAY_KEY_ID",
+          "RAZORPAY_KEY_SECRET",
+          "STRIPE_SECRET_KEY",
+          "PAYPAL_CLIENT_ID",
+          "PAYPAL_CLIENT_SECRET"
+        ]
+      },
       "queues": {
         "producers": [
           { "binding": "EMAIL_QUEUE", "queue": "techaust-staging-email" },

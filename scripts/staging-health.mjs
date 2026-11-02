@@ -33,6 +33,9 @@ export const CHECKS = {
     { path: "/razorpay", status: 400, method: "POST", body: "{}", access: false, code: "signature_missing" },
     // M6.3: the same for the Stripe webhook (owner's H1 bypass for `/stripe`): a JSON POST with no `Stripe-Signature` is 400 `signature_missing`, not counted.
     { path: "/stripe", status: 400, method: "POST", body: "{}", access: false, code: "signature_missing" },
+    // M6.4: the same for the PayPal webhook (owner's H1 bypass for `/paypal`): a JSON POST with no `PAYPAL-*` headers is 400 `signature_missing`, not counted
+    // (no certificate is fetched and nothing is written).
+    { path: "/paypal", status: 400, method: "POST", body: "{}", access: false, code: "signature_missing" },
   ],
   web: [{ path: "/api/geo", status: 200 }],
 };

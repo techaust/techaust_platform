@@ -390,6 +390,7 @@ describe("M6.2 gateway wiring (run file F)", () => {
       "(top level): portal's ADMIN_PAY must name the entrypoint PortalPayments",
       "(top level): jobs must require the secret RAZORPAY_WEBHOOK_SECRET",
       "(top level): jobs must require the secret STRIPE_WEBHOOK_SECRET",
+      "(top level): jobs must require the secret PAYPAL_WEBHOOK_ID",
       "(top level): jobs must not hold a gateway's API key (finance only, L1, L3)",
       "env.staging: jobs's ADMIN_GATEWAY service binding is missing",
       "env.staging: finance GATEWAY_TRANSPORT must be api",
@@ -423,7 +424,7 @@ describe("M6.2 gateway wiring (run file F)", () => {
     f.env.staging.secrets = { required: ["RAZORPAY_KEY_ID"] };
     f.env.production.secrets = { required: ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"] };
     expect(guard.apiConfigProblems(f, front, guard.FINANCE_OPTS)).toEqual([
-      'env.staging: secrets.required must be exactly ["RAZORPAY_KEY_ID","RAZORPAY_KEY_SECRET","STRIPE_SECRET_KEY"]',
+      'env.staging: secrets.required must be exactly ["PAYPAL_CLIENT_ID","PAYPAL_CLIENT_SECRET","RAZORPAY_KEY_ID","RAZORPAY_KEY_SECRET","STRIPE_SECRET_KEY"]',
       "env.production: secrets.required must be exactly []",
     ]);
   });
@@ -436,6 +437,29 @@ describe("M6.2 gateway wiring (run file F)", () => {
     expect(guard.gatewayConfigProblems(jobs, p, f)).toEqual([
       "(top level): the portal holds no gateway secret",
       "env.staging: the Stripe webhook secret is the jobs Worker's, never finance's",
+    ]);
+  });
+
+  it("M6.4: the PayPal webhook id is the jobs Worker's only; the client id and secret finance's only; the portal holds no PayPal secret; no deployed jobs is local", () => {
+    const f = structuredClone(finance);
+    f.env.staging.secrets = { required: [...f.env.staging.secrets.required, "PAYPAL_WEBHOOK_ID"] };
+    const p = structuredClone(portal);
+    p.secrets = { required: ["PAYPAL_CLIENT_SECRET"] };
+    const j = structuredClone(jobs);
+    j.env.staging.secrets.required = [...j.env.staging.secrets.required, "PAYPAL_CLIENT_ID"];
+    j.env.staging.vars.ENVIRONMENT = "local";
+    expect(guard.gatewayConfigProblems(j, p, f)).toEqual([
+      "(top level): the portal holds no gateway secret",
+      "env.staging: jobs must not hold a gateway's API key (finance only, L1, L3)",
+      "env.staging: the PayPal webhook id is the jobs Worker's, never finance's",
+      'env.staging: jobs ENVIRONMENT must not be "local" (the PayPal hook would take the local certificate)',
+    ]);
+    const k = structuredClone(jobs);
+    k.env.staging.secrets.required = k.env.staging.secrets.required.filter(
+      (n: string) => n !== "PAYPAL_WEBHOOK_ID",
+    );
+    expect(guard.gatewayConfigProblems(k, portal, finance)).toEqual([
+      "env.staging: jobs must require the secret PAYPAL_WEBHOOK_ID",
     ]);
   });
 });
