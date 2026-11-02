@@ -36,6 +36,10 @@ const PAYPAL_RETURNS: [string, string][] = [
     `M6.4 Signed in, back from PayPal: ${label}`,
   ]),
   [
+    `/invoices/pp-usd?pay=paypal&c=${SAMPLE_CHECKOUT(10)}${PP}`,
+    "M6.4 Signed in, back from PayPal: the ask refused (429), the page keeps checking",
+  ],
+  [
     `/invoices/pp-pro?pay=paypal&c=${SAMPLE_CHECKOUT(1)}${PP}`,
     "M6.4 Signed in, back from PayPal: Paid (proforma)",
   ],
