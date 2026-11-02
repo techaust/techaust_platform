@@ -453,9 +453,10 @@ function signatory(view: InvoiceView): string {
   return `<div class="inv-sign">${p("inv-sign__for", S.for(name))}${image}${p("inv-sign__role", S.signatory, ' data-testid="signatory"')}</div>`;
 }
 
-function notesBlock(view: InvoiceView): string {
+/** The notes pinned at issue; `last` (the integrity line) is set as the last block of the notes' text (see `taxInvoiceBody`). */
+function notesBlock(view: InvoiceView, last: string): string {
   if (!view.notes) return "";
-  return `<div class="block inv-notes"><h3>${esc(view.notes.title)}</h3><div class="terms">${markdownBlocks(view.notes.bodyMd).join("")}</div></div>`;
+  return `<div class="block inv-notes"><h3>${esc(view.notes.title)}</h3><div class="terms">${markdownBlocks(view.notes.bodyMd).join("")}${last}</div></div>`;
 }
 
 /** The modifier class of the document (the base class `doc--tax-invoice` carries the whole designed invoice system). */
@@ -468,14 +469,21 @@ const modifierOf = (view: InvoiceView) =>
         ? " doc--proforma"
         : "";
 
-/** The body of a tax invoice, an export invoice, a proforma, a credit note or a debit note (inside `<body>`). */
+/**
+ * The body of a tax invoice, an export invoice, a proforma, a credit note or a debit note (inside `<body>`).
+ *
+ * M6.3 staging fixes (part 3): the integrity line is the last block INSIDE the last container (the notes' text, else the money), a sibling of the block it
+ * ends. Its `break-before: avoid` (./styles.ts) then keeps it with that block on every page: Chromium honours the rule between siblings, but when the line
+ * followed the money or the notes from outside and that container had started on an earlier page, it put the line alone on a new page (a credit note of
+ * 24 lines, found by the layout audit's sweep).
+ */
 export function taxInvoiceBody(view: InvoiceView): string {
+  const integrity = `<p class="integrity" data-testid="integrity">${esc(view.integrity)}</p>`;
   return `<div class="doc doc--invoice doc--tax-invoice${modifierOf(view)}">${masthead(view)}
 ${statutoryBand(view)}${advanceHtml(view)}
 ${parties(view)}
-<div class="money">${itemsTable(view)}${totalsBlock(view)}${summaryTable(view)}</div>
-${notesBlock(view)}
-<p class="integrity" data-testid="integrity">${esc(view.integrity)}</p></div>`;
+<div class="money">${itemsTable(view)}${totalsBlock(view)}${summaryTable(view)}${view.notes ? "" : integrity}</div>
+${notesBlock(view, integrity)}</div>`;
 }
 
 /**
@@ -565,7 +573,9 @@ export const TAX_INVOICE_CSS = `
 .doc--tax-invoice .inv-items .c-taxable { width: 25mm; }
 .doc--tax-invoice .inv-items .unit { font-size: var(--print-small); color: var(--color-text-muted); }
 
-.doc--tax-invoice .totals { break-before: avoid; align-items: start; }
+/* the totals stay whole (break-inside: avoid, ./styles.ts) and go over whole when they don't fit under the last line: a "keep with the lines" rule here
+   made Chromium split them instead (the total on one page; the balance, the INR values and the signature overleaf) */
+.doc--tax-invoice .totals { align-items: start; }
 .doc--tax-invoice .totals__notes .inv-rc { margin: 0; font-weight: 500; }
 
 /* the tax summary: each head over its own rate and amount */
@@ -603,10 +613,11 @@ export const TAX_INVOICE_CSS = `
 .doc--tax-invoice .inv-notes { break-inside: auto; }
 /* the notes end together: the last block keeps to the one before it, and a list's last item to the item before it, so a short notes block goes over whole
    and a long one never leaves one item (with the integrity line) on a page of its own */
-.doc--tax-invoice .inv-notes .terms > :last-child,
+.doc--tax-invoice .inv-notes .terms > :nth-last-child(2),
 .doc--tax-invoice .inv-notes li:last-child { break-before: avoid; }
 .doc--tax-invoice .inv-notes h3 { margin: 0 0 1.6mm; }
-.doc--tax-invoice .inv-notes .terms { max-width: 132mm; }
+.doc--tax-invoice .inv-notes .terms > :not(.integrity) { max-width: 132mm; }
+
 .doc--tax-invoice .inv-sign { margin-top: auto; text-align: right; font-size: var(--print-table); line-height: 1.4; }
 .doc--tax-invoice .inv-sign__for { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .doc--tax-invoice .inv-sign__img { display: block; margin: 2mm 0 1.6mm auto; max-height: 16mm; max-width: 52mm; }

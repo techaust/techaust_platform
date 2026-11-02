@@ -51,11 +51,28 @@ describe("the layout audit's fixes (M6.3 staging fixes, part 3)", () => {
       rule(
         INVOICE_SKELETON_CSS,
         [
-          ".doc--tax-invoice .inv-notes .terms > :last-child,",
+          ".doc--tax-invoice .inv-notes .terms > :nth-last-child(2),",
           ".doc--tax-invoice .inv-notes li:last-child",
         ].join("\n"),
       ),
     ).toContain("break-before: avoid");
+  });
+
+  it("an invoice's integrity line is the last block inside the last container (the notes' text, else the money), a sibling of the block it ends", async () => {
+    const withoutNotes = await caseHtml("credit note", "long");
+    expect(withoutNotes).toMatch(
+      /<\/table><\/div><p class="integrity" data-testid="integrity">[^<]*<\/p><\/div>\n<\/div>/,
+    );
+    const withNotes = await caseHtml("tax invoice INR intra", "long, signed");
+    expect(withNotes).toMatch(
+      /<\/ol><p class="integrity" data-testid="integrity">[^<]*<\/p><\/div><\/div><\/div>/,
+    );
+    expect(withNotes.match(/data-testid="integrity"/g)).toHaveLength(1);
+  });
+
+  it("an invoice's totals block is never split: no 'keep with the lines' rule that Chromium resolves by breaking inside it", () => {
+    expect(rule(TEMPLATE_CSS, ".totals")).toContain("break-inside: avoid");
+    expect(rule(INVOICE_SKELETON_CSS, ".doc--tax-invoice .totals")).not.toContain("break-before");
   });
 
   it("the statement's registration line breaks between its parts, never inside 'State West Bengal (19)'", async () => {

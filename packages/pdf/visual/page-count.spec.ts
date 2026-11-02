@@ -88,14 +88,15 @@ async function print(page: Page, html: string, css = ""): Promise<PDFDocument> {
   return PDFDocument.load(await page.pdf({ preferCSSPageSize: true, tagged: true, printBackground: true }));
 }
 
-/** CSS that leaves only the closing line on the page (every other child of `.doc` / `.deed` hidden), to count its own marks. */
+/** CSS that leaves only the closing line visible (the layout unchanged), to count its own marks. */
 const onlyCss = (selector: string) =>
-  `body :is(.doc, .deed) > :not(${selector}) { display: none !important; }`;
+  `body * { visibility: hidden !important; } :is(${selector}), :is(${selector}) * { visibility: visible !important; }`;
 
 async function marksOfLineAlone(page: Page, html: string, selector: string): Promise<number> {
   const pdf = await print(page, html, onlyCss(selector));
-  expect(pdf.getPageCount()).toBe(1);
-  return marksPerPage(pdf)[0] as number;
+  const marks = marksPerPage(pdf).filter((m) => m > 0);
+  expect(marks).toHaveLength(1);
+  return marks[0] as number;
 }
 
 /** The two checks of one document: its pinned page count, and a last page with more on it than the closing line. */
@@ -120,11 +121,7 @@ async function sweep(
   const alone = await marksOfLineAlone(page, html, selector);
   const seen = new Set<number>();
   for (let mm = 0; mm <= upTo; mm += step) {
-    const pdf = await print(
-      page,
-      html,
-      `:is(.doc, .deed) > :has(+ ${selector}) { margin-top: ${mm}mm !important; }`,
-    );
+    const pdf = await print(page, html, `:has(+ ${selector}) { margin-top: ${mm}mm !important; }`);
     seen.add(pdf.getPageCount());
     expect(marksPerPage(pdf).at(-1) as number, `pushed ${mm} mm`).toBeGreaterThan(alone);
   }
