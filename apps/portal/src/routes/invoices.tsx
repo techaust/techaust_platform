@@ -264,7 +264,12 @@ function DocumentScreen(props: {
             provider={returnKind === "paypal" || returnKind === "paypal-cancel" ? "paypal" : provider}
           />
         ) : waiting ? (
-          <PayStatus state={{ phase: "not_yet" }} provider={waitingGatewayOf(doc.online, provider)} />
+          // PayPal's waiting payment is the return's Pending state (07-ZN line 10, the clock); the others say their "not yet" line
+          waitingGatewayOf(doc.online, provider) === "paypal" ? (
+            <PayStatus state={{ phase: "held" }} provider="paypal" />
+          ) : (
+            <PayStatus state={{ phase: "not_yet" }} provider={waitingGatewayOf(doc.online, provider)} />
+          )
         ) : null
       }
       linkParent={!props.link}

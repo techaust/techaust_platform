@@ -76,29 +76,31 @@ function firstView(page: PayPalReturnPage): View {
 
 function PayPalReturn({ page }: { page: PayPalReturnPage }) {
   const [view, setView] = useState<View>(() => firstView(page));
-  const asked = useRef(false);
+  // The first ask is made once per page, even when the effect runs again (React's development double run): a second run reads the same answer.
+  const first = useRef<Promise<View> | null>(null);
   useEffect(() => {
-    if (page.cancelled || !page.checkoutId || page.malformed || asked.current) return;
-    asked.current = true;
+    if (page.cancelled || !page.checkoutId || page.malformed) return;
     const { checkoutId, token } = page;
     const started = Date.now();
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const ask = async () => {
-      let next: View;
+    const ask = async (): Promise<View> => {
       try {
-        next = viewOfAnswer(await payPalReturnApi(checkoutId, token));
+        return viewOfAnswer(await payPalReturnApi(checkoutId, token));
       } catch (e) {
-        next = viewOfError(e);
+        return viewOfError(e);
       }
+    };
+    const apply = (next: View) => {
       if (stopped) return;
       if (next.phase === "received") forgetPay();
       setView(next);
       // Only `processing` asks again, no faster than every 30 s, for 5 minutes at most (each ask may capture; the `p:pay:` quota is shared).
       if (next.phase === "checking" && Date.now() - started + PAYPAL_POLL_MS <= PAYPAL_POLL_FOR_MS)
-        timer = setTimeout(ask, PAYPAL_POLL_MS);
+        timer = setTimeout(() => void ask().then(apply), PAYPAL_POLL_MS);
     };
-    void ask();
+    first.current ??= ask();
+    void first.current.then(apply);
     return () => {
       stopped = true;
       if (timer) clearTimeout(timer);
