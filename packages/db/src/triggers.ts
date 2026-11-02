@@ -28,6 +28,7 @@ import {
   termsVersions,
 } from "./schema/index.ts";
 import {
+  clientSideSql,
   DISCOUNT_AFTER_SALE_FROM_SQL,
   fyTokenOfDateSql,
   LEDGER_STATUSES_SQL,
@@ -1724,8 +1725,8 @@ export const PAYPAL_NEW_0068 = [
  *     checkout); a checkout may be `capture_pending`; the review kinds of `REVIEW_KINDS_0068`;
  *   - `payments_gateway_shape`: manual, Razorpay and Stripe exactly as 0066; PayPal: money received (`payment`) in USD, mode `wallet`, `card` or `other`, a
  *     reference, a capture id of 1 to 64 characters, `fee_tax_minor` and `gateway_fee_tax_inr_minor` NULL, and the fee in the column of its own currency, never
- *     both (Step 0 item 5: `charges_minor` for a USD fee, `gateway_fee_inr_minor` ≥ 0 for an INR one; absorbed, Researched 2026-10-28, NPCI FAQ of 15 Sep 2026
- *     (08-C RA-29)). No client-side check here (as Stripe's): a capture that went through must always be recordable, pending, whatever changed (C step 9);
+ *     both (Step 0 item 5: `charges_minor` for a USD fee, `gateway_fee_inr_minor` ≥ 0 for an INR one; absorbed, M6.1 L9: absorbing the fee is a commercial
+ *     choice; OPEN (08-C RA-29): is GST charged on the MDR and invoiced to our GSTIN?). No client-side check here (as Stripe's): a capture that went through must always be recordable, pending, whatever changed (C step 9);
  *   - `payments_status_flow`: a PayPal payment, like every gateway payment, is never rejected or withdrawn (refunds are M6.5); the system's own confirm stays
  *     Razorpay's (a PayPal proforma's payment waits for the Owner with the day's rate: Researched 2026-10-28, Rule 34 CGST Rules (08-C RA-21));
  *   - `checkout_sessions_status_flow`: 0066's moves, plus live or stale → `capture_pending` (PayPal only, with its capture id), and `capture_pending` → paid |
@@ -1739,8 +1740,8 @@ export const PAYPAL_NEW_0068 = [
  *   - `realisation_advices_*` (new, L12): a known provider and kind; recorded by an active Owner or Staff member; born with no file; nothing changes but the file,
  *     set once with a known type; never deleted;
  *   - `realisation_advice_payments_*` (new, L12): a link is made by an active Owner or Staff member, only for a CONFIRMED `payment` of the advice's provider (a
- *     bank advice takes `manual` payments, in USD or INR; a gateway's, its own USD payments) of a client not anonymised, and only while the payment is on no other
- *     advice; it is never deleted; it is taken off once, by an active Owner, with a reason, and nothing else about it changes.
+ *     bank advice takes `manual` payments, in USD or INR, of overseas clients only (L30); a gateway's, its own USD payments) of a client not anonymised, and only
+ *     while the payment is on no other advice; it is never deleted; it is taken off once, by an active Owner, with a reason, and nothing else about it changes.
  */
 export function paypalTriggerStatements(): string[] {
   const p = gatewayTriggerParts("0068");
@@ -1761,14 +1762,14 @@ export function paypalTriggerStatements(): string[] {
     OR NOT ${member("NEW.recorded_by", ["owner", "staff"])}`;
   const adviceFixedBad = `${changed(["id", "provider", "kind", "advice_ref", "issued_on", "period_from", "period_to", "inr_total_minor", "note", "recorded_by", "created_at"])}
     OR ((${changed(["file_r2_key", "file_sha256", "file_mime"])}) AND (OLD.file_r2_key IS NOT NULL OR NEW.file_mime IS NULL OR NEW.file_mime NOT IN (${q(PROOF_MIME_TYPES_0060)})))`;
-  // The payment a link names may be put on this advice: confirmed money received, of the advice's provider (a bank advice: a manual entry, USD or INR), not of an
-  // anonymised client, and on no other advice now.
+  // The payment a link names may be put on this advice: confirmed money received, of the advice's provider (a bank advice: a manual entry, USD or INR, of an
+  // OVERSEAS client only, L30: a FIRC or BRC proves export realisation, never a domestic receipt), not of an anonymised client, and on no other advice now.
   const linkable = `EXISTS (SELECT 1 FROM payments lp JOIN realisation_advices la ON la.id = NEW.advice_id JOIN clients lk ON lk.id = lp.client_id
       WHERE lp.id = NEW.payment_id AND lp.status = 'confirmed' AND lp.kind = 'payment' AND lk.anonymised_at IS NULL
-        AND ((la.provider = 'bank' AND lp.provider = 'manual' AND lp.currency IN ('USD', 'INR')) OR (la.provider <> 'bank' AND lp.provider = la.provider AND lp.currency = 'USD')))
+        AND ((la.provider = 'bank' AND lp.provider = 'manual' AND lp.currency IN ('USD', 'INR') AND ${clientSideSql("lk", "overseas")}) OR (la.provider <> 'bank' AND lp.provider = la.provider AND lp.currency = 'USD')))
     AND NOT EXISTS (SELECT 1 FROM realisation_advice_payments lx WHERE lx.payment_id = NEW.payment_id AND lx.removed_at IS NULL)`;
   const linkInsertBad = `NEW.removed_by IS NOT NULL OR NEW.removed_at IS NOT NULL OR NEW.remove_reason IS NOT NULL OR NOT ${member("NEW.created_by", ["owner", "staff"])} OR NOT (${linkable})`;
-  const linkUpdateBad = `${changed(["advice_id", "payment_id", "created_by", "created_at"])}
+  const linkUpdateBad = `${changed(["id", "advice_id", "payment_id", "created_by", "created_at"])}
     OR ((${changed(["removed_by", "removed_at", "remove_reason"])}) AND NOT (OLD.removed_at IS NULL AND NEW.removed_at IS NOT NULL AND ${member("NEW.removed_by", ["owner"])}))`;
   const created: Record<(typeof PAYPAL_NEW_0068)[number], string> = {
     checkout_sessions_capture_insert: `CREATE TRIGGER \`checkout_sessions_capture_insert\` BEFORE INSERT ON \`checkout_sessions\` WHEN NEW.provider_capture_id IS NOT NULL OR NEW.capture_started_at IS NOT NULL BEGIN ${named("checkout_sessions_capture_insert", "a checkout starts with no capture and no capture claim")} END;`,

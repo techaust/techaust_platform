@@ -30,6 +30,8 @@ import { mutateSystem } from "../system.ts";
 import { envText, gatewayModeOf, portalUrlOf, razorpayOf, transportOf } from "./config.ts";
 import { sendNext, staleCanceller } from "./events.ts";
 import { type LinkContext, linkContext, type MakeLinkArgs, type MakeLinkResult } from "./link-context.ts";
+import { type CaptureSource, refreshPayPalCheckout } from "./paypal-capture.ts";
+import { makePayPalLink } from "./paypal-links.ts";
 import type { RazorpayApi } from "./razorpay.ts";
 import { type CheckoutRow, endCheckout, type GatewayEnv, settlePayment } from "./settle.ts";
 import { makeStripeLink } from "./stripe-links.ts";
@@ -136,7 +138,17 @@ export const LINK_STATE_SQL = `SELECT c.status, (SELECT p.id FROM payments p IND
 export async function makeLink(env: GatewayEnv, a: MakeLinkArgs, now = Date.now()): Promise<MakeLinkResult> {
   const x = await linkContext(env, a, now);
   if (!x.ok) return x.refusal;
-  return a.provider === "stripe" ? makeStripeLink(env, a, x.ctx, now) : makeRazorpayLink(env, a, x.ctx, now);
+  // M6.4 (L23): every gateway by name; an unknown one is refused, never sent down another's path.
+  switch (a.provider) {
+    case "razorpay":
+      return makeRazorpayLink(env, a, x.ctx, now);
+    case "stripe":
+      return makeStripeLink(env, a, x.ctx, now);
+    case "paypal":
+      return makePayPalLink(env, a, x.ctx, now);
+    default:
+      return { ok: false, error: "gateway_unavailable" };
+  }
 }
 
 /** Razorpay's flow (M6.2), after the shared rules. */
@@ -362,9 +374,6 @@ async function makeRazorpayLink(
 
 /** The portal's `createLink`: the session's contact or the emailed link's token, never both (checked by `isCreateLinkArgs` at the entrypoint). */
 export function createLinkFor(env: GatewayEnv, args: CreateLinkArgs): Promise<MakeLinkResult> {
-  // M6.4 B1 compile fix only: core's RPC gateways now include PayPal; its branch is stage B2's (L23: an exhaustive dispatch). Until then a PayPal link is refused
-  // (503 `gateway_unavailable`), never sent down another gateway's path.
-  if (args.provider === "paypal") return Promise.resolve({ ok: false, error: "gateway_unavailable" });
   return makeLink(env, {
     provider: args.provider,
     clientId: args.clientId,
@@ -387,8 +396,13 @@ export async function refreshCheckout(
   env: GatewayEnv,
   checkout: CheckoutRow,
   now = Date.now(),
+  /** M6.4: who asks (the audit actor of a PayPal capture): the sweep (default), the portal's client, a member's "Check now". */
+  src: CaptureSource = { kind: "sweep" },
 ): Promise<RefreshResult> {
+  // M6.4 (L23): every gateway by name (`=== "razorpay"`, never a two-way default).
   if (checkout.provider === "stripe") return { result: await refreshStripeCheckout(env, checkout, now) };
+  if (checkout.provider === "paypal") return { result: await refreshPayPalCheckout(env, checkout, src, now) };
+  if (checkout.provider !== "razorpay") return { result: "no_open_link" };
   const db = env.DB;
   if (!checkout.provider_link_id || (checkout.status !== "live" && checkout.status !== "stale"))
     return { result: "no_open_link" };
@@ -448,11 +462,12 @@ export async function refreshForClient(
 ): Promise<RefreshResult> {
   const c = await env.DB.prepare(
     `SELECT ${CHECKOUT_COLS}
-       FROM checkout_sessions c INDEXED BY checkout_sessions_document WHERE c.document_id = ?1 AND c.client_id = ?2 AND c.status IN ('live', 'stale')
+       FROM checkout_sessions c INDEXED BY checkout_sessions_document WHERE c.document_id = ?1 AND c.client_id = ?2 AND c.status IN ('live', 'stale', 'capture_pending')
        ORDER BY c.created_at DESC, c.id DESC LIMIT 1`,
   )
     .bind(a.documentId, a.clientId)
     .first<CheckoutRow>();
   if (!c) return { result: "no_open_link" };
-  return refreshCheckout(env, c, now);
+  // M6.4 (L19): the signed-in return from PayPal is this refresh (`GET /invoices/:id?refresh=1`): a PayPal order is captured here, by the client.
+  return refreshCheckout(env, c, now, { kind: "return" });
 }

@@ -5,6 +5,16 @@
 import { uuidv7 } from "@techaust/core/ids";
 import { auditStmt, type GuardSql, guardSql } from "@techaust/db/log";
 
+/**
+ * M6.4: who acts in a batch with nobody signed in to THIS Worker: the system (default), a verified payment webhook, the contact who came back from PayPal's page
+ * (actor type `contact`, the checkout's contact), or the member whose "Check now" reached here (the admin route's own actor).
+ */
+export type Actor = {
+  actorType: "system" | "webhook" | "contact" | "staff";
+  actorId?: string | null;
+  role?: "owner" | "staff" | null;
+};
+
 export type SystemMutation = {
   /** The conditional statement(s); the LAST one decides (the audit row follows it with `changes() > 0`). None: always written. */
   main?: D1PreparedStatement | D1PreparedStatement[];
@@ -16,8 +26,10 @@ export type SystemMutation = {
   side?: (g: GuardSql, auditId: string) => D1PreparedStatement[];
   /** Called with every statement's result and the index of the audit statement (the side statements follow it, in order). */
   onResults?: (results: D1Result[], auditAt: number) => void;
-  /** M6.2: who acts with nobody signed in: the system (default), or a verified payment webhook (actor type `webhook`, no actor id). */
-  actorType?: "system" | "webhook";
+  /** M6.2: who acts with nobody signed in: the system (default), or a verified payment webhook (actor type `webhook`, no actor id). M6.4: `Actor`. */
+  actorType?: Actor["actorType"];
+  actorId?: string | null;
+  role?: "owner" | "staff" | null;
   /** M6.2: the audit row's id, picked by the caller when its statements are built before the batch with the guard `guardSql({ auditId })`. */
   auditId?: string;
 };
@@ -36,8 +48,8 @@ export async function mutateSystem(env: { DB: D1Database }, m: SystemMutation): 
       {
         id: auditId,
         actorType: m.actorType ?? "system",
-        actorId: null,
-        role: null,
+        actorId: m.actorId ?? null,
+        role: m.role ?? null,
         requestId: null,
         ip: null,
         ua: null,

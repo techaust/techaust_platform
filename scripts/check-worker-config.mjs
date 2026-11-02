@@ -143,8 +143,14 @@ export function frontServiceProblems(front, api, finance) {
 export const FINANCE_OPTS = {
   ownVars: ["PORTAL_URL", "GATEWAY_TRANSPORT"],
   ownQueues: ["LEADS_QUEUE"],
-  // M6.3 (L3): the Stripe restricted key, finance only.
-  secrets: ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "STRIPE_SECRET_KEY"],
+  // M6.3 (L3): the Stripe restricted key, finance only. M6.4 (L1): PayPal's client id and secret, finance only.
+  secrets: [
+    "RAZORPAY_KEY_ID",
+    "RAZORPAY_KEY_SECRET",
+    "STRIPE_SECRET_KEY",
+    "PAYPAL_CLIENT_ID",
+    "PAYPAL_CLIENT_SECRET",
+  ],
 };
 
 /**
@@ -179,16 +185,32 @@ export function gatewayConfigProblems(jobs, portal, finance, others = []) {
       }
     }
     const jobsSecrets = j?.secrets?.required ?? [];
-    // M6.3: and the Stripe webhook signing secret; the restricted key stays on the finance Worker.
-    for (const name of ["RAZORPAY_WEBHOOK_SECRET", "STRIPE_WEBHOOK_SECRET"])
+    // M6.3: and the Stripe webhook signing secret; the restricted key stays on the finance Worker. M6.4 (L1): and the PayPal webhook's id (its signature is
+    // checked offline in jobs); PayPal's client id and secret stay on the finance Worker.
+    for (const name of ["RAZORPAY_WEBHOOK_SECRET", "STRIPE_WEBHOOK_SECRET", "PAYPAL_WEBHOOK_ID"])
       if (!prod && !jobsSecrets.includes(name))
         problems.push(`${scope}: jobs must require the secret ${name}`);
-    if (jobsSecrets.some((n) => n.startsWith("RAZORPAY_KEY") || n === "STRIPE_SECRET_KEY"))
+    if (
+      jobsSecrets.some(
+        (n) => n.startsWith("RAZORPAY_KEY") || n === "STRIPE_SECRET_KEY" || n.startsWith("PAYPAL_CLIENT"),
+      )
+    )
       problems.push(`${scope}: jobs must not hold a gateway's API key (finance only, L1, L3)`);
-    if ((p?.secrets?.required ?? []).some((n) => n.startsWith("RAZORPAY") || n.startsWith("STRIPE")))
+    if (
+      (p?.secrets?.required ?? []).some(
+        (n) => n.startsWith("RAZORPAY") || n.startsWith("STRIPE") || n.startsWith("PAYPAL"),
+      )
+    )
       problems.push(`${scope}: the portal holds no gateway secret`);
     if ((f?.secrets?.required ?? []).some((n) => n.startsWith("STRIPE_WEBHOOK")))
       problems.push(`${scope}: the Stripe webhook secret is the jobs Worker's, never finance's`);
+    if ((f?.secrets?.required ?? []).some((n) => n.startsWith("PAYPAL_WEBHOOK")))
+      problems.push(`${scope}: the PayPal webhook id is the jobs Worker's, never finance's`);
+    // M6.4 (run file D "Local only"): the hook accepts the local simulator's certificate URL only while ENVIRONMENT is "local"; no deployed scope may say so.
+    if (scope !== "(top level)" && j?.vars?.ENVIRONMENT === "local")
+      problems.push(
+        `${scope}: jobs ENVIRONMENT must not be "local" (the PayPal hook would take the local certificate)`,
+      );
     const transport = f?.vars?.GATEWAY_TRANSPORT;
     // M6.3: staging's transport is "api" (every gateway's own API; M6.2 named it "razorpay").
     const wantTransport = scope === "(top level)" ? "stub" : scope === "env.staging" ? "api" : undefined;

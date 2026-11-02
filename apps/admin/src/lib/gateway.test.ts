@@ -188,13 +188,19 @@ describe("canRetry [ADM-PAY-07]", () => {
     expect(canRetry(item("razorpay", "amount_mismatch", "pmt_1", "plink_X"))).toBe(false);
   });
 
-  it("the route refuses the same two Stripe kinds", () => {
+  it("the route refuses the same two Stripe kinds (M6.4: and PayPal's)", () => {
     expect(routesSource).toMatch(
-      /item\.provider === "stripe" && item\.kind === "advance_blocked"\) return err\(c, NOT_RETRYABLE, 409\)/,
+      /\(item\.provider === "stripe" \|\| item\.provider === "paypal"\) && item\.kind === "advance_blocked"\)\s*return err\(c, NOT_RETRYABLE, 409\)/,
     );
     expect(routesSource).toMatch(
       /CHECKOUT_BY_LINK_SQL\)\.bind\("stripe", linkId\)[\s\S]{0,80}if \(!co\) return err\(c, NOT_RETRYABLE, 409\)/,
     );
+    expect(routesSource).toMatch(
+      /CHECKOUT_BY_LINK_SQL\)\.bind\("paypal", linkId\)[\s\S]{0,80}if \(!co\) return err\(c, NOT_RETRYABLE, 409\)/,
+    );
+    expect(canRetry(item("paypal", "advance_blocked", "pmt_1"))).toBe(false);
+    expect(canRetry(item("paypal", "unknown_link", null, "ORDER1"))).toBe(false);
+    expect(canRetry(item("paypal", "refetch_failed", null, "ORDER1"))).toBe(true);
   });
 });
 

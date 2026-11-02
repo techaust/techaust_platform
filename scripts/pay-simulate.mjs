@@ -5,6 +5,7 @@
 //
 //   node scripts/pay-simulate.mjs --checkout <checkout id> --amount <paise> [--event paid|expired|cancelled]
 //   node scripts/pay-simulate.mjs --gateway stripe --checkout <checkout id> --document <document id> --amount <cents> [--event paid|expired|failed]
+//   node scripts/pay-simulate.mjs --paypal --checkout <checkout id> --amount <cents> [--event approved|completed]   (M6.4)
 //
 // The ids and amount are in the `checkout_sessions` row (or the admin's "Create payment link" answer); TECHAUST_PORT_OFFSET moves the port as `pnpm dev` does.
 // M6.3: the Stripe event is signed with core `stripeTestHeader` (stripe-node's algorithm) and carries our marks, so the hook takes it as ours (env "local").
@@ -12,6 +13,7 @@ import { createHmac, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { stripeTestHeader } from "../packages/core/src/stripe.ts";
 import { devPort, portOffset } from "./dev-ports.mjs";
+import { simulatePayPal } from "./pay-simulate-paypal.mjs";
 
 const args = {};
 const argv = process.argv.slice(2);
@@ -22,6 +24,11 @@ const documentId = String(args.document ?? "");
 const amount = Number(args.amount);
 const event = String(args.event ?? "paid");
 const UUID = /^[0-9a-f-]{36}$/;
+// M6.4: PayPal has its own simulator (a local signing certificate and the offline signature): scripts/pay-simulate-paypal.mjs.
+if (argv.includes("--paypal") || gateway === "paypal") {
+  await simulatePayPal(args);
+  process.exit(process.exitCode ?? 0);
+}
 const usage = () => {
   console.error(
     "Usage: node scripts/pay-simulate.mjs --checkout <checkout id> --amount <paise, at least 100> [--event paid|expired|cancelled]\n" +

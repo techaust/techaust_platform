@@ -483,9 +483,11 @@ export const VOID_BLOCKER_CODES = [
   "return_period_closed",
   // M6.1 (L17, L32): a payment waits for the Owner's check against it (`payment_pending`); a payment was ever put on it, one released or withdrawn since
   // included (`payment_recorded`); TDS is recorded on it. M6.2 (fix round 3 item 3): a pending Razorpay payment asks for it (`payment_pending_gateway`; it
-  // can't be rejected: its tax invoice is issued, or it is resolved in Needs review).
+  // can't be rejected: its tax invoice is issued, or it is resolved in Needs review). M6.4 (early check 1 finding 8): a PayPal capture PayPal holds, or a capture
+  // call has claimed, for it (`payment_pending_capture`: there is nothing to confirm yet; try again later).
   "payment_pending",
   "payment_pending_gateway",
+  "payment_pending_capture",
   "payment_recorded",
   "tds_recorded",
 ] as const;
@@ -521,6 +523,11 @@ export type VoidFacts = {
    */
   readonly paymentPendingGateway: boolean;
   /**
+   * M6.4 (L24, early check 1 finding 8): a PayPal checkout of this document whose capture PayPal holds or a capture call has claimed (money may be on its way).
+   * Required, so no caller can forget it.
+   */
+  readonly paymentPendingCapture: boolean;
+  /**
    * M6.1 (L17, L32): an allocation row names this document, even one released or withdrawn since (`paymentRecordedSql` in `@techaust/db/ledger`). Required,
    * so no caller can forget it.
    */
@@ -546,6 +553,7 @@ export function voidBlockers(f: VoidFacts): VoidBlockerCode[] {
   if (f.creditedMinor > 0) out.push("has_credit");
   if (f.paymentPending === true) out.push("payment_pending");
   if (f.paymentPendingGateway === true) out.push("payment_pending_gateway");
+  if (f.paymentPendingCapture === true) out.push("payment_pending_capture");
   if (f.paymentRecorded === true) out.push("payment_recorded");
   if (f.tdsMinor > 0) out.push("tds_recorded");
   if (f.hasIssuedChild) out.push("has_child_document");
@@ -568,6 +576,7 @@ export const WITHDRAW_BLOCKER_CODES = [
   "proforma_paid",
   "payment_pending",
   "payment_pending_gateway",
+  "payment_pending_capture",
   "not_delivered",
 ] as const;
 export type WithdrawBlockerCode = (typeof WITHDRAW_BLOCKER_CODES)[number];
@@ -595,6 +604,8 @@ export type WithdrawFacts = {
   readonly paymentPending: boolean;
   /** M6.2 (fix round 3 item 3): the same for a pending gateway (Razorpay) payment, which can't be rejected (`payment_pending_gateway`). Required. */
   readonly paymentPendingGateway: boolean;
+  /** M6.4 (L24, early check 1 finding 8): a PayPal capture held or claimed for it (`payment_pending_capture`). Required. */
+  readonly paymentPendingCapture: boolean;
 };
 
 /**
@@ -625,6 +636,7 @@ export function withdrawBlockers(f: WithdrawFacts): WithdrawBlockerCode[] {
   if (f.paidMinor > 0 || f.creditedMinor > 0 || f.hasAdvanceReceipt) out.push("proforma_paid");
   if (f.paymentPending) out.push("payment_pending");
   if (f.paymentPendingGateway) out.push("payment_pending_gateway");
+  if (f.paymentPendingCapture) out.push("payment_pending_capture");
   if (!delivered) out.push("not_delivered");
   return out;
 }

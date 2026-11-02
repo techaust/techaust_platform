@@ -5,7 +5,12 @@
 // the amount is within the bounds (core `payAmountVerdict`: the provider's floor, its maximum, whole rupees only on a Razorpay proforma). Staff never make a card
 // link (L7: `use_portal`). Nothing is written and no gateway is called here.
 import type { CreateLinkResult } from "@techaust/core/gateway-rpc";
-import { payAmountVerdict, payableOnline } from "@techaust/core/online-pay";
+import {
+  ONLINE_RULES,
+  type OnlineProvider,
+  payAmountVerdict,
+  payableOnline,
+} from "@techaust/core/online-pay";
 import {
   DOCUMENT_CLIENT_LINKS_SINCE_SQL,
   LINKS_PER_CLIENT_HOUR,
@@ -22,7 +27,8 @@ export type LinkActor =
   | { kind: "staff"; memberId: string; role: "owner" | "staff" };
 
 export type MakeLinkArgs = {
-  provider: "razorpay" | "stripe";
+  /** M6.4: every online gateway (a PayPal order is made only from the portal: staff are refused below, L4). */
+  provider: OnlineProvider;
   clientId: string | null;
   documentId: string;
   amountMinor: number;
@@ -124,18 +130,22 @@ export async function linkContext(
   if (doc.anonymised_at !== null) return no({ ok: false, error: "client_gone" });
   if (a.expectedUpdatedAt !== undefined && doc.updated_at !== a.expectedUpdatedAt)
     return no({ ok: false, error: "not_found", stale: true });
-  // L7: staff never make a card link; the client pays a USD document from the portal (or its emailed link), where each Checkout page lasts an hour.
-  if (a.actor.kind === "staff" && (a.provider === "stripe" || doc.currency === "USD"))
+  // L7: staff never make a card link; the client pays a USD document from the portal (or its emailed link), where each Checkout page lasts an hour. M6.4 (L4):
+  // nor a PayPal order (made only from the portal; the staff link is the portal page). Every gateway but Razorpay is the client's.
+  if (a.actor.kind === "staff" && (a.provider !== "razorpay" || doc.currency === "USD"))
     return no({ ok: false, error: "not_payable_online", reason: "use_portal" });
   const terms = cachedSetting(
     "payment_terms",
     termsR?.results[0] as { value: string; version: number } | undefined,
   );
-  const stripe = a.provider === "stripe";
-  const floorMinor = stripe ? terms.onlineMinPartialUsdMinor : terms.razorpayMinPartialInrMinor;
-  // Early check 1, "What B2 must not forget" 2: the Stripe maximum everywhere (L9; Researched 2026-10-28, RBI PA Directions 2025, para 11(d) (08-C RB-07); for
-  // Stripe, not a PA-CB, the safest setting, not a legal limit).
-  const maxMinor = stripe ? terms.overseasOnlineMaxUsdMinor : null;
+  // M6.4 (L21, L23): the provider's own row of the rule table, never a `=== "stripe"` test: a USD gateway (Stripe, PayPal) takes the USD floor and the online
+  // maximum, Razorpay the rupee floor and none.
+  const rule = ONLINE_RULES[a.provider];
+  const usdGateway = rule.currency === "USD";
+  const floorMinor = usdGateway ? terms.onlineMinPartialUsdMinor : terms.razorpayMinPartialInrMinor;
+  // Early check 1, "What B2 must not forget" 2: the USD maximum everywhere (L9, M6.4 L11; Researched 2026-10-28, RBI PA Directions 2025, para 11(d) (08-C RB-07);
+  // the shared setting, ₹25 lakh per PA-CB transaction while the rupee is below ₹100 per USD).
+  const maxMinor = usdGateway ? terms.overseasOnlineMaxUsdMinor : null;
   const paymentPending = (pendingR?.results[0] as { pending: number } | undefined)?.pending === 1;
   const payable = payableOnline(
     {
@@ -163,8 +173,8 @@ export async function linkContext(
     balanceMinor: doc.balance_minor,
     floorMinor,
     maxMinor,
-    // "What B2 must not forget" 1: whole units only where the provider's row says so (a Razorpay proforma; Stripe takes cents).
-    wholeRupees: !stripe && doc.type === "proforma",
+    // "What B2 must not forget" 1: whole units only where the provider's row says so (a Razorpay proforma; Stripe and PayPal take cents).
+    wholeRupees: rule.wholeUnitsOnProforma && doc.type === "proforma",
   });
   if (!verdict.ok)
     return no(

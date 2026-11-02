@@ -252,6 +252,20 @@ export const ROUTES: readonly RouteDef[] = [
   X("POST", "/payments/review/:id/resolve", "payments.review", { audit: "payment.review_resolve" }),
   X("POST", "/payments/review/:id/retry", "payments.review", { audit: "payment.review_retry" }),
   X("GET", "/payments/gateways", "settings.manage"),
+  // M6.4 (ADM-INV-17, L12; run file C): remittance advices and the "Without advice" list, above `/payments/:id` so their static paths are never a payment id.
+  X("GET", "/payments/advices", "payments.read"),
+  X("POST", "/payments/advices", "payments.attachProof", { audit: "payment.advice_create" }),
+  X("GET", "/payments/advices/:id", "payments.read"),
+  X("PUT", "/payments/advices/:id/file", "payments.attachProof", {
+    audit: "payment.advice_file",
+    body: "upload",
+  }),
+  X("GET", "/payments/advices/:id/file", "payments.read"),
+  X("POST", "/payments/advices/:id/payments", "payments.attachProof", { audit: "payment.advice_link" }),
+  X("POST", "/payments/advices/:id/payments/:pid/remove", "payments.adviceUnlink", {
+    audit: "payment.advice_unlink",
+  }),
+  X("GET", "/payments/without-advice", "payments.read"),
   X("GET", "/payments", "payments.read"),
   X("POST", "/payments", "payments.record", { audit: "payment.record" }),
   X("GET", "/payments/:id", "payments.read"),

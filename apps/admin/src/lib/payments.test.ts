@@ -30,6 +30,7 @@ import {
   readAllocations,
   registerCsv,
   STATUS_LABELS,
+  VOID_CAPTURE_PENDING,
   VOID_GATEWAY_PENDING,
   VOID_GATEWAY_PENDING_INVOICE,
   VOID_PAYMENT_PENDING,
@@ -203,6 +204,15 @@ describe("the void blocker of a pending gateway payment [M6.2 fix round 3 item 3
       'An online payment on it is waiting for its tax invoice. Issue it with "Confirm by issuing the tax invoice".',
     );
     expect(VOID_GATEWAY_PENDING).not.toMatch(/Razorpay|Stripe|PayPal/);
+  });
+
+  it("M6.4 (early check 1 finding 8): a PayPal capture held or claimed has its own line, the Worker's words", () => {
+    expect(voidBlockedText(["payment_pending_capture"], "export_invoice")).toBe(VOID_CAPTURE_PENDING);
+    expect(voidBlockedText(["payment_pending_capture"], "proforma")).toBe(VOID_CAPTURE_PENDING);
+    expect(voidErrorText(err("payment_pending_capture"), "export_invoice")).toBe(VOID_CAPTURE_PENDING);
+    expect(withdrawErrorText(err("payment_pending_capture"))).toBe(VOID_CAPTURE_PENDING);
+    expect(VOID_CAPTURE_PENDING).toBe("A PayPal payment on it is still being processed. Try again later.");
+    expect(messagesSource).toContain(`"${VOID_CAPTURE_PENDING}"`);
   });
 
   it("review M2: on an invoice the line points to Payments, never to a proforma's Confirm by issuing (07-ZM Review changes)", () => {

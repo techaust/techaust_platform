@@ -24,6 +24,7 @@ import {
   envText,
   FINANCE_GATEWAY_SECRETS,
   gatewayModeOf,
+  payPalModeOfSettings,
   razorpayOf,
   stripeModeOfSettings,
   stripeOf,
@@ -45,12 +46,15 @@ import {
   NOT_PAYABLE_ONLINE,
   NOT_RETRYABLE,
   PAYMENT_PROCESSING,
+  PAYPAL_CAPTURE_IN_FLIGHT,
+  PAYPAL_GATEWAY_ERROR,
   RESOLUTION_NOT_ALLOWED,
   REVIEW_RESOLVED,
   STRIPE_GATEWAY_ERROR,
   TOO_MANY_LINKS,
   USE_PORTAL,
 } from "./messages.ts";
+import { capturePayPalCheckout } from "./paypal-capture.ts";
 import type { CheckoutRow } from "./settle.ts";
 import { settlePayment } from "./settle.ts";
 import { settleStripe } from "./stripe-settle.ts";
@@ -107,6 +111,28 @@ async function cancelStripe(c: Ctx, co: CheckoutRow, documentId: string): Promis
   });
   if (!done) return err(c, LINK_NOT_LIVE, 409);
   return c.json({ ok: true, status: "cancelled" });
+}
+
+/**
+ * M6.4 (L4, "B2 must carry" 8): "Cancel" on a PayPal order ends our row here, with no PayPal call (an order is ended by never capturing it); never a row whose
+ * capture is claimed (409 `payment_processing`). The live guard still answers first (rule 7).
+ */
+async function cancelPayPal(c: Ctx, co: CheckoutRow, documentId: string): Promise<Response> {
+  const db = c.env.DB;
+  if ((await payPalModeOfSettings(db)) === "live" && envText(c.env, "PAYMENTS_LIVE_ALLOWED") !== "true")
+    return err(c, LIVE_NOT_ALLOWED, 503);
+  const done = await mutate(c, {
+    main: checkoutEndStatement(db, { id: co.id, status: "cancelled", now: Date.now() }),
+    action: "payment.link_cancel",
+    entityType: "checkout_session",
+    entityId: co.id,
+    summary: { checkoutId: co.id, documentId, provider: "paypal" },
+  });
+  if (done) return c.json({ ok: true, status: "cancelled" });
+  const back = await db.prepare(CHECKOUT_BY_ID_SQL).bind(co.id).first<CheckoutRow>();
+  if ((back?.status === "live" || back?.status === "stale") && back.capture_started_at !== null)
+    return err(c, PAYPAL_CAPTURE_IN_FLIGHT, 409);
+  return err(c, LINK_NOT_LIVE, 409);
 }
 
 export const linkBody = z.strictObject({
@@ -187,8 +213,10 @@ export const invoicePaymentLinks = new Hono<AppEnv>()
     if (!co || co.document_id !== id) return err(c, NOT_FOUND, 404);
     if ((co.status !== "live" && co.status !== "stale") || !co.provider_link_id)
       return err(c, LINK_NOT_LIVE, 409);
-    // M6.3: a Stripe session is expired at Stripe first; a refusal (complete or expired there) is settled by its real state.
+    // M6.3: a Stripe session is expired at Stripe first; a refusal (complete or expired there) is settled by its real state. M6.4 (L23): every gateway by name.
     if (co.provider === "stripe") return cancelStripe(c, co, id);
+    if (co.provider === "paypal") return cancelPayPal(c, co, id);
+    if (co.provider !== "razorpay") return err(c, NOT_FOUND, 404);
     const api = razorpayOf(c.env, await gatewayModeOf(db));
     if (!api) return err(c, GATEWAY_UNAVAILABLE, 503);
     // Razorpay first, so a link we call cancelled can never still take money.
@@ -229,7 +257,13 @@ export const gatewayPayments = new Hono<AppEnv>()
     const { id } = c.req.valid("param");
     const co = await c.env.DB.prepare(CHECKOUT_BY_ID_SQL).bind(id).first<CheckoutRow>();
     if (!co) return err(c, NOT_FOUND, 404);
-    const r = await refreshCheckout(c.env, co);
+    // M6.4: "Check now" on a PayPal order captures it as the member (the audit row's actor).
+    const u = actor(c);
+    const r = await refreshCheckout(c.env, co, Date.now(), {
+      kind: "staff",
+      memberId: u.id,
+      role: u.role === "owner" ? "owner" : "staff",
+    });
     return c.json({ ok: true, result: r.result });
   })
   .get("/review", async (c) => {
@@ -304,7 +338,9 @@ export const gatewayPayments = new Hono<AppEnv>()
     // A pending payment waiting for its tax invoice: the automatic issue again, one try (early check 2, finding 1). Its own batch resolves the payment's open
     // items and audits the act (finding 12: no second resolve here). A proforma changed meanwhile: 409, the Owner presses again.
     // M6.3 (Q1 A): a Stripe proforma's payment has no automatic tax invoice; the Owner issues it with the day's rate ("Confirm by issuing").
-    if (item.provider === "stripe" && item.kind === "advance_blocked") return err(c, NOT_RETRYABLE, 409);
+    // M6.4: nor a PayPal one (the same rule: a USD proforma's tax invoice waits for the Owner's rate).
+    if ((item.provider === "stripe" || item.provider === "paypal") && item.kind === "advance_blocked")
+      return err(c, NOT_RETRYABLE, 409);
     if (item.payment_id && (item.kind === "advance_blocked" || item.kind === "dead_letter")) {
       const r = await issueGatewayAdvance(c.env, item.payment_id);
       if (r.result === "retry") return err(c, ADVANCE_CHANGED, 409);
@@ -337,7 +373,21 @@ export const gatewayPayments = new Hono<AppEnv>()
     if (!linkId) return err(c, NOT_RETRYABLE, 409);
     const now = Date.now();
     let r: Awaited<ReturnType<typeof settlePayment>>;
-    if (item.provider === "stripe") {
+    if (item.provider === "paypal") {
+      // M6.4: PayPal's item names its order; the order is captured (or its capture re-fetched) as the member.
+      const co = await db.prepare(CHECKOUT_BY_LINK_SQL).bind("paypal", linkId).first<CheckoutRow>();
+      if (!co) return err(c, NOT_RETRYABLE, 409);
+      const out = await capturePayPalCheckout(c.env, co, {
+        kind: "staff",
+        memberId: u.id,
+        role: u.role === "owner" ? "owner" : "staff",
+      });
+      if (out.state === "retry") return err(c, PAYPAL_GATEWAY_ERROR, 502);
+      if (out.state === "processing") return err(c, PAYPAL_CAPTURE_IN_FLIGHT, 409);
+      r = {
+        result: out.state === "paid" ? "processed" : out.state === "review" ? "needs_review" : "ignored",
+      };
+    } else if (item.provider === "stripe") {
       // M6.3: Stripe's item names its session; with no checkout of ours for it, there is nothing to re-fetch against (L5: metadata never moves money).
       const co = await db.prepare(CHECKOUT_BY_LINK_SQL).bind("stripe", linkId).first<CheckoutRow>();
       if (!co) return err(c, NOT_RETRYABLE, 409);
@@ -353,7 +403,7 @@ export const gatewayPayments = new Hono<AppEnv>()
         expectedLivemode: mode === "live" && envText(c.env, "PAYMENTS_LIVE_ALLOWED") === "true",
       });
       if (r.result === "retry") return err(c, STRIPE_GATEWAY_ERROR, 502);
-    } else {
+    } else if (item.provider === "razorpay") {
       const api = razorpayOf(c.env, await gatewayModeOf(db));
       if (!api) return err(c, GATEWAY_UNAVAILABLE, 503);
       r = await settlePayment(
@@ -361,7 +411,7 @@ export const gatewayPayments = new Hono<AppEnv>()
         { api, linkId, paymentId: null, cause: { kind: "refresh" }, now },
         staleCanceller(c.env, api, now),
       );
-    }
+    } else return err(c, NOT_RETRYABLE, 409);
     // A proforma's payment recorded (or found) here still needs its tax invoice (early check 2, finding 2).
     await sendNext(c.env, r.next);
     if (r.result === "processed" || r.result === "duplicate") {
@@ -381,11 +431,12 @@ export const gatewayPayments = new Hono<AppEnv>()
   })
   .get("/gateways", async (c) => {
     const db = c.env.DB;
-    // M6.3 ("What B2 must not forget" 8): the last verified webhook per gateway (Razorpay, Stripe).
-    const [modeRow, last, lastStripe] = await db.batch([
+    // M6.3 ("What B2 must not forget" 8): the last verified webhook per gateway (Razorpay, Stripe; M6.4 PayPal: the jobs Worker holds its webhook id, L1).
+    const [modeRow, last, lastStripe, lastPayPal] = await db.batch([
       db.prepare("SELECT value, version FROM settings WHERE key = 'gateways'"),
       db.prepare(LAST_VERIFIED_EVENT_SQL).bind("razorpay"),
       db.prepare(LAST_VERIFIED_EVENT_SQL).bind("stripe"),
+      db.prepare(LAST_VERIFIED_EVENT_SQL).bind("paypal"),
     ]);
     const modes = cachedSetting(
       "gateways",
@@ -396,7 +447,11 @@ export const gatewayPayments = new Hono<AppEnv>()
       return { configured: missing.length === 0, missing };
     };
     const at = (r: D1Result | undefined) => (r?.results[0] as { at: number | null } | undefined)?.at ?? null;
-    const lastAt: Record<string, number | null> = { razorpay: at(last), stripe: at(lastStripe) };
+    const lastAt: Record<string, number | null> = {
+      razorpay: at(last),
+      stripe: at(lastStripe),
+      paypal: at(lastPayPal),
+    };
     return c.json({
       gateways: Object.fromEntries(
         GATEWAYS.map((g) => [

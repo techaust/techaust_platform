@@ -1,6 +1,6 @@
 {
-  "id": "c2ae67b1-3de2-4c2f-a3e1-123a4729a970",
-  "prevId": "8cf7d8dd-5b22-4c4a-8d45-7f823c964e93",
+  "id": "d70039e8-f0e3-4d7c-b149-c7a6a8e1497d",
+  "prevId": "8d2ed91a-199e-4596-989d-7849f7e18f1c",
   "version": "6",
   "dialect": "sqlite",
   "tables": {
@@ -7434,6 +7434,13 @@
     "realisation_advice_payments": {
       "name": "realisation_advice_payments",
       "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
         "advice_id": {
           "name": "advice_id",
           "type": "text",
@@ -7486,6 +7493,11 @@
         }
       },
       "indexes": {
+        "realisation_advice_payments_advice": {
+          "name": "realisation_advice_payments_advice",
+          "columns": ["advice_id"],
+          "isUnique": false
+        },
         "realisation_advice_payments_payment": {
           "name": "realisation_advice_payments_payment",
           "columns": ["payment_id"],
@@ -7536,12 +7548,7 @@
           "onDelete": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "realisation_advice_payments_advice_id_payment_id_pk": {
-          "columns": ["advice_id", "payment_id"],
-          "name": "realisation_advice_payments_advice_id_payment_id_pk"
-        }
-      },
+      "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {
         "realisation_advice_payments_removed": {

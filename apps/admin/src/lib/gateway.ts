@@ -239,7 +239,12 @@ export function allowedResolutions(
  * to re-fetch against; metadata never moves money, L5). `worker/gateway/routes.ts`, POST /review/:id/retry.
  */
 export const canRetry = (it: Pick<ReviewItem, "provider" | "kind" | "payment_id" | "facts">): boolean => {
-  if (it.provider === "stripe" && (it.kind === "advance_blocked" || it.kind === "unknown_link")) return false;
+  // M6.4 (L23): PayPal as Stripe: a USD proforma's tax invoice waits for the Owner's rate, and an order with no checkout of ours has nothing to re-fetch.
+  if (
+    (it.provider === "stripe" || it.provider === "paypal") &&
+    (it.kind === "advance_blocked" || it.kind === "unknown_link")
+  )
+    return false;
   return (
     ((it.kind === "advance_blocked" || it.kind === "dead_letter") && it.payment_id !== null) ||
     (["refetch_failed", "dead_letter", "unknown_link"].includes(it.kind) &&

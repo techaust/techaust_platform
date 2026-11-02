@@ -116,6 +116,11 @@ export const VOID_GATEWAY_PENDING =
  */
 export const VOID_GATEWAY_PENDING_INVOICE =
   "An online payment on it is waiting for the owner's check. Confirm it on Payments first.";
+/**
+ * M6.4 (early check 1 finding 8; the lead under the owner's delegation, 2026-11-02): the void and withdraw blocker `payment_pending_capture`, a PayPal capture
+ * held or claimed (nothing to confirm yet). The Worker's `VOID_CAPTURE_PENDING_LINE` is the same words.
+ */
+export const VOID_CAPTURE_PENDING = "A PayPal payment on it is still being processed. Try again later.";
 /** The `payment_pending_gateway` line for a document of `type`: a proforma's (confirm by issuing) or an invoice's (confirm on Payments). */
 export const voidGatewayPendingText = (type: string | undefined): string =>
   type === "proforma" ? VOID_GATEWAY_PENDING : VOID_GATEWAY_PENDING_INVOICE;

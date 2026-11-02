@@ -44,7 +44,12 @@ import {
   paypalExpireUnclaimedStatement,
   recordGatewayPaymentStatements,
 } from "../src/gateway.ts";
-import { PAYMENT_ASKS_FOR_DOCUMENT_SQL, PENDING_GATEWAY, paymentPendingKindsSql } from "../src/ledger.ts";
+import {
+  PAYMENT_ASKS_FOR_DOCUMENT_SQL,
+  PENDING_CAPTURE,
+  PENDING_GATEWAY,
+  paymentPendingKindsSql,
+} from "../src/ledger.ts";
 import { guardSql } from "../src/log.ts";
 import {
   ADVICE_KINDS,
@@ -410,6 +415,24 @@ describe("the checkout flow with capture_pending, the capture id and the claim [
     expect((await row(failing.id))?.status).toBe("failed");
   });
 
+  it("early check 1 finding 4: a fail from 'open' never ends a row whose capture another call claimed; with its own claim, or none, it does", async () => {
+    const w = await world();
+    const co = await payPalCheckout(w);
+    const at = tick();
+    expect(await claim(co.id, at)).toBe(1);
+    const fail = (claimAt?: number) =>
+      checkoutFailStatement(db(), { id: co.id, now: tick(), from: "open", claim: claimAt ?? null }).run();
+    expect((await fail()).meta.changes).toBe(0);
+    expect((await fail(at - 1)).meta.changes).toBe(0);
+    expect((await row(co.id))?.status).toBe("live");
+    expect((await fail(at)).meta.changes).toBe(1);
+    expect((await row(co.id))?.status).toBe("failed");
+    const free = await payPalCheckout({ ...w, documentId: await mkDoc(w.clientId) });
+    expect(
+      (await checkoutFailStatement(db(), { id: free.id, now: tick(), from: "open" }).run()).meta.changes,
+    ).toBe(1);
+  });
+
   it("capture_pending, a capture id and a claim are PayPal's only; a new checkout has none", async () => {
     const w = await world();
     const stripe = uuidv7();
@@ -610,7 +633,8 @@ describe("a held or claimed PayPal capture counts as gateway money on its way [L
     const at = tick();
     await claim(co.id, at);
     expect(await pendingOf(w.documentId)).toBe(1);
-    expect(await kindsOf(w.documentId, w.clientId)).toBe(PENDING_GATEWAY);
+    // Early check 1 finding 8: its own bit (4), never the gateway payment's (2): there is no payment row to confirm.
+    expect(await kindsOf(w.documentId, w.clientId)).toBe(PENDING_CAPTURE);
     expect(await first(PAYMENT_ASKS_FOR_DOCUMENT_SQL, w.documentId, w.clientId)).toEqual({
       pending: 1,
       recorded: 0,
@@ -619,7 +643,12 @@ describe("a held or claimed PayPal capture counts as gateway money on its way [L
     expect(await pendingOf(w.documentId)).toBe(0);
     await checkoutCapturePendingStatement(db(), { id: co.id, captureId: captureId(), now: tick() }).run();
     expect(await pendingOf(w.documentId)).toBe(1);
-    expect(await kindsOf(w.documentId, w.clientId)).toBe(PENDING_GATEWAY);
+    expect(await kindsOf(w.documentId, w.clientId)).toBe(PENDING_CAPTURE);
+    // With a pending gateway payment on the same document too, both bits are set.
+    await pplPay(w.clientId, co.id, {
+      status: "pending_verification",
+    });
+    expect(await kindsOf(w.documentId, w.clientId)).toBe(PENDING_GATEWAY + PENDING_CAPTURE);
     // Pay again while PayPal holds it: no new checkout (409 payment_processing), whichever gateway.
     const again = await payPalCheckout(w);
     expect(again.changes).toBe(0);
@@ -657,6 +686,35 @@ describe("recordGatewayPaymentStatements for PayPal [ADM-PAY-03, -06; C steps 5 
     expect(await first(CHECKOUT_BY_CAPTURE_SQL, a.providerCaptureId)).toMatchObject({ id: co.id });
     // A replay with a new event id writes nothing.
     expect(await writePayment({ ...a, paymentId: `ppl_y${a.providerPaymentId}` })).toBe(false);
+  });
+
+  it("early check 1 finding 5: a PayPal paid move needs its capture id (TypeError); a row held with capture X is never paid by capture Y", async () => {
+    const w = await world();
+    const co = await payPalCheckout(w);
+    const base = pplArgs({ clientId: w.clientId, documentId: w.documentId, checkoutId: co.id });
+    expect(() => recordGatewayPaymentStatements(db(), { ...base, providerCaptureId: null })).toThrow(
+      TypeError,
+    );
+    const x = captureId();
+    await checkoutCapturePendingStatement(db(), { id: co.id, captureId: x, now: tick() }).run();
+    // Capture Y, confirmed and paying the checkout: nothing is written (no payment, no allocation; the row stays held with X).
+    expect(await writePayment(base)).toBe(false);
+    expect(await first("SELECT id FROM payments WHERE id = ?", base.paymentId)).toBeNull();
+    expect(await row(co.id)).toMatchObject({ status: "capture_pending", provider_capture_id: x });
+    // The caller's "never drop" batch records Y pending, with no ledger move.
+    expect(
+      await writePayment({
+        ...base,
+        status: "pending_verification",
+        allocate: null,
+        checkoutPaid: false,
+        staleOthers: false,
+      }),
+    ).toBe(true);
+    expect(await first("SELECT status FROM payments WHERE id = ?", base.paymentId)).toEqual({
+      status: "pending_verification",
+    });
+    expect(await row(co.id)).toMatchObject({ status: "capture_pending", provider_capture_id: x });
   });
 
   it("a capture PayPal held completes: capture_pending → paid, the same capture id kept", async () => {
@@ -875,7 +933,8 @@ describe("remittance advices [L12; ADM-INV-17; 08-C RB-05]", () => {
     expect(await link(other.id, [p2], staff)).toBe(0);
     await rejects(
       run(
-        "INSERT INTO realisation_advice_payments (advice_id, payment_id, created_by) VALUES (?1, ?2, ?3)",
+        "INSERT INTO realisation_advice_payments (id, advice_id, payment_id, created_by) VALUES (?1, ?2, ?3, ?4)",
+        uuidv7(),
         other.id,
         p2,
         staff,
@@ -899,6 +958,46 @@ describe("remittance advices [L12; ADM-INV-17; 08-C RB-05]", () => {
       T,
     );
     expect(await link(bank.id, [manual], staff)).toBe(1);
+    // L30 (early check 1 finding 7): never a domestic client's manual entry, INR or USD (a FIRC or BRC proves export realisation only).
+    const domestic = await mkClientRow();
+    const domesticInr = uuidv7();
+    await run(
+      `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, recorded_by, recorded_at, verified_by, verified_at)
+       VALUES (?1, ?2, 'payment', 'manual', 'confirmed', 'INR', 100000, '2026-11-01', 'neft', ?3, ?4, ?3, ?4)`,
+      domesticInr,
+      domestic,
+      w.owner,
+      T,
+    );
+    expect(await link(bank.id, [domesticInr], staff)).toBe(0);
+    await rejects(
+      run(
+        "INSERT INTO realisation_advice_payments (id, advice_id, payment_id, created_by) VALUES (?1, ?2, ?3, ?4)",
+        uuidv7(),
+        bank.id,
+        domesticInr,
+        staff,
+      ),
+      /realisation_advice_payments_insert/,
+    );
+    const withoutManual = (
+      await all<{ id: string }>(PAYMENTS_WITHOUT_ADVICE_SQL, "manual", "", "", null)
+    ).map((r) => r.id);
+    expect(withoutManual).not.toContain(domesticInr);
+    // An overseas client's INR manual entry is taken.
+    const overseasInr = uuidv7();
+    await run(
+      `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, recorded_by, recorded_at, verified_by, verified_at)
+       VALUES (?1, ?2, 'payment', 'manual', 'confirmed', 'INR', 100000, '2026-11-01', 'swift', ?3, ?4, ?3, ?4)`,
+      overseasInr,
+      w.clientId,
+      w.owner,
+      T,
+    );
+    expect(
+      (await all<{ id: string }>(PAYMENTS_WITHOUT_ADVICE_SQL, "manual", "", "", null)).map((r) => r.id),
+    ).toContain(overseasInr);
+    expect(await link(bank.id, [overseasInr], staff)).toBe(1);
     // An anonymised client's payment is never linked.
     const w2 = await world();
     const co2 = await payPalCheckout(w2);
@@ -951,6 +1050,31 @@ describe("remittance advices [L12; ADM-INV-17; 08-C RB-05]", () => {
     );
     const next2 = await mkAdvice(staff);
     expect(await link(next2.id, [p], staff)).toBe(1);
+    // Early check 1 finding 9: a payment taken off by mistake can go back on the same advice (a new link row with its own id).
+    expect(
+      (
+        await adviceUnlinkStatement(db(), {
+          adviceId: next2.id,
+          paymentId: p,
+          by: w.owner,
+          now: tick(),
+          reason: "Linked by mistake",
+        }).run()
+      ).meta.changes,
+    ).toBe(1);
+    expect(await link(next2.id, [p], staff)).toBe(1);
+    const rows = await all<{ id: string; removed_at: number | null }>(
+      "SELECT id, removed_at FROM realisation_advice_payments WHERE advice_id = ?1 AND payment_id = ?2",
+      next2.id,
+      p,
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows.filter((r) => r.removed_at === null)).toHaveLength(1);
+    expect(new Set(rows.map((r) => r.id)).size).toBe(2);
+    await rejects(
+      run("UPDATE realisation_advice_payments SET id = 'x' WHERE advice_id = ?1", next2.id),
+      /realisation_advice_payments_update/,
+    );
   });
 
   it("the Without advice list and its count", async () => {

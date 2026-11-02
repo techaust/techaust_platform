@@ -3,7 +3,9 @@
 // calls each gateway's own API (staging; M6.2's "razorpay" is still read and means Razorpay's API only), "stub" answers locally with a deterministic simulator and
 // is refused anywhere but `ENVIRONMENT` "local" (like `PDF_RENDERER`). The three admin Workers share one generated `Env`
 // (from the front's config), so these names are read at run time by name, each checked to be a string, never cast.
+import type { RpcGateway } from "@techaust/core/gateway-rpc";
 import { cachedSetting } from "../settings-cache.ts";
+import { type PayPalApi, payPalApi, payPalStubFetch } from "./paypal.ts";
 import { type RazorpayApi, razorpayApi } from "./razorpay.ts";
 import { type StripeApi, stripeApi, stripeStubFetch } from "./stripe.ts";
 
@@ -25,9 +27,9 @@ export type GatewayTransport = "api" | "stub" | "unset";
 /**
  * The transport this Worker may use for `provider` (M6.3: per provider): "stub" only locally (every gateway answers from the simulator); "api" calls each gateway's
  * own API (staging, M6.3 on); "razorpay" (M6.2's staging value, still read) calls Razorpay's API only, so Stripe stays "unset" under it; anything else is "unset"
- * (503 `gateway_unavailable`).
+ * (503 `gateway_unavailable`). M6.4: every gateway by name (L23); "razorpay" keeps meaning Razorpay's API only.
  */
-export function transportOf(env: object, provider: "razorpay" | "stripe" = "razorpay"): GatewayTransport {
+export function transportOf(env: object, provider: RpcGateway = "razorpay"): GatewayTransport {
   const t = envText(env, "GATEWAY_TRANSPORT");
   if (t === "api") return "api";
   if (t === "razorpay" && provider === "razorpay") return "api";
@@ -59,6 +61,7 @@ const jsonResponse = (status: number, body: unknown) =>
 export const stubFetch: typeof fetch = async (input, init) => {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
   if (url.hostname === "api.stripe.com") return stripeStubFetch(input, init);
+  if (url.hostname === "api-m.sandbox.paypal.com") return payPalStubFetch(input, init);
   const method = init?.method ?? "GET";
   const now = Math.floor(Date.now() / 1000);
   const link = (id: string, amount: number, ref: string, status = "paid") => ({
@@ -121,6 +124,27 @@ export async function stripeModeOfSettings(db: D1Database): Promise<"test" | "li
     .prepare("SELECT value, version FROM settings WHERE key = 'gateways'")
     .first<{ value: string; version: number }>();
   return cachedSetting("gateways", row ?? undefined).stripe.mode;
+}
+
+/** Settings › Gateways, PayPal's mode (M6.4: the mode picks PayPal's host), read through the per-isolate cache. */
+export async function payPalModeOfSettings(db: D1Database): Promise<"test" | "live"> {
+  const row = await db
+    .prepare("SELECT value, version FROM settings WHERE key = 'gateways'")
+    .first<{ value: string; version: number }>();
+  return cachedSetting("gateways", row ?? undefined).paypal.mode;
+}
+
+/** The PayPal client for this request (M6.4), or null when this Worker has no transport for PayPal (503 `gateway_unavailable`). */
+export function payPalOf(env: object, settingsMode: "test" | "live"): PayPalApi | null {
+  const transport = transportOf(env, "paypal");
+  if (transport === "unset") return null;
+  return payPalApi({
+    clientId: envText(env, "PAYPAL_CLIENT_ID"),
+    clientSecret: envText(env, "PAYPAL_CLIENT_SECRET"),
+    settingsMode,
+    liveFlag: envText(env, "PAYMENTS_LIVE_ALLOWED"),
+    fetch: transport === "stub" ? (i, o) => stubTransport(i, o) : (i, o) => fetch(i, o),
+  });
 }
 
 /** The Stripe client for this request (M6.3), or null when this Worker has no transport for Stripe (503 `gateway_unavailable`). */

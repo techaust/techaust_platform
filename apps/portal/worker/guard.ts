@@ -33,6 +33,8 @@ export const ROUTES: readonly RouteDef[] = [
   R("POST", "/t/document/pdf", "public"),
   // M6.2 (POR-06): Pay now from an emailed link; the token is in the body, a failed one counts like any other.
   R("POST", "/t/document/pay", "public", { audit: "payment.link_create" }),
+  // M6.4 (POR-06, L2, L19): PayPal's return to an emailed link's page: no session or token needed (the capture takes only what was approved); its own quota.
+  R("POST", "/pay/paypal/return", "public"),
   // Invoices, proformas, credit and debit notes (M5.4, POR-06, Q49): the signed-in contact's, finance-only (anyone else gets the plain 404). Each query is scoped to the session's organisation.
   R("GET", "/invoices", "finance"),
   R("GET", "/invoices/:id", "finance"),

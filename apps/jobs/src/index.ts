@@ -3,6 +3,7 @@ import { warmSesSigning } from "@techaust/email";
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 import { enqueueHourly, HOURLY_CRON } from "./billing.ts";
+import { payPalHook } from "./hooks/paypal.ts";
 import { razorpayHook } from "./hooks/razorpay.ts";
 import { stripeHook } from "./hooks/stripe.ts";
 import { noteInvocation } from "./log.ts";
@@ -24,11 +25,13 @@ app.use(secureHeaders());
 // Health check: deliberately touches no database (saves D1 reads; docs/05 §13).
 app.get("/healthz", (c) => c.json({ ok: true, service: "jobs", env: c.env.ENVIRONMENT }));
 
-// M6.2: the Razorpay webhook, `POST /razorpay` only (any other method on it, or `/razorpay/*`, is the 404 below and touches no database). /paypal and /ses
-// arrive in M6.4 and M7.
+// M6.2: the Razorpay webhook, `POST /razorpay` only (any other method on it, or `/razorpay/*`, is the 404 below and touches no database). /ses
+// arrives in M7.
 app.post("/razorpay", (c) => razorpayHook(c.req.raw, c.env));
 // M6.3: the Stripe webhook, `POST /stripe` only (any other method, or `/stripe/*`, is the 404 below and touches no database).
 app.post("/stripe", (c) => stripeHook(c.req.raw, c.env));
+// M6.4: the PayPal webhook, `POST /paypal` only, verified offline (any other method, or `/paypal/*`, is the 404 below and touches no database).
+app.post("/paypal", (c) => payPalHook(c.req.raw, c.env));
 app.notFound((c) => c.json({ error: { code: "not_found", message: "Not found" } }, 404));
 
 export default {

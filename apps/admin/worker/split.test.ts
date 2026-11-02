@@ -153,8 +153,9 @@ describe("every ROUTES row has one owner", () => {
     // M6.1 (added on purpose): 15 payment rows (payments, a client's credit, an invoice's panel, credit release, FEMA extensions, the payments register);
     // main's proforma withdraw (ADM-INV-10) joins them as an invoice route.
     // M6.2: seven gateway rows (payment links, Needs review, the gateways' status).
-    expect(FINANCE_ROWS.length).toBe(53);
-    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 53);
+    // M6.4: eight remittance advice rows (the list, add, one advice, its file both ways, link, the Owner's remove, Without advice).
+    expect(FINANCE_ROWS.length).toBe(61);
+    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 61);
     expect(new Set([...FRONT_ROWS, ...API_ROWS, ...FINANCE_ROWS].map(key)).size).toBe(ROUTES.length);
   });
 

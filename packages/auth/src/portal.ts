@@ -104,6 +104,8 @@ export const portalReqKey = (pepper: string, ip: string) => counterKey("p:req", 
 export const portalMailKey = (pepper: string, email: string) => counterKey("p:mail", pepper, "mail", email);
 /** Failed link / document-link checks per address (`p:fail:`). */
 export const portalFailKey = (pepper: string, ip: string) => counterKey("p:fail", pepper, "fail", ip);
+/** M6.4: PayPal returns per address (`p:pay:`; the unauthenticated return route, 20 per 10 minutes). */
+export const portalPayKey = (pepper: string, ip: string) => counterKey("p:pay", pepper, "pay", ip);
 
 // ---- single-document tokens [POR-06] -------------------------------------------------------------------------------
 

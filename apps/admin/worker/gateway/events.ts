@@ -10,6 +10,7 @@ import {
   webhookEventMoveStatement,
 } from "@techaust/db/gateway";
 import { gatewayModeOf, razorpayOf } from "./config.ts";
+import { processPayPalEvent } from "./paypal-capture.ts";
 import type { RazorpayApi } from "./razorpay.ts";
 import {
   type CheckoutRow,
@@ -102,6 +103,8 @@ export async function processEvent(
   }
   // M6.3: a Stripe event has its own path (re-fetch, judge, record; `stripe-settle.ts`).
   if (row.provider === "stripe") return processStripeEvent(env, row, now);
+  // M6.4: a PayPal event (capture, held, declined, reversed; `paypal-capture.ts`).
+  if (row.provider === "paypal") return processPayPalEvent(env, row, now);
   if (row.provider !== "razorpay") {
     await webhookEventMoveStatement(db, {
       id: row.id,

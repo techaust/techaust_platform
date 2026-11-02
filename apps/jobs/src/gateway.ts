@@ -16,6 +16,10 @@ import {
 import { uuidv7 } from "@techaust/core/ids";
 import {
   gatewayDeadLetterStatements,
+  PAYPAL_CLAIM_STALE_MS,
+  PAYPAL_HELD_CAPTURES_SQL,
+  PAYPAL_STALE_CLAIMS_SQL,
+  paypalExpireUnclaimedStatement,
   STALE_LIVE_AFTER_MS,
   STALE_LIVE_CHECKOUTS_SQL,
   STUCK_ADVANCES_SQL,
@@ -31,6 +35,11 @@ export const DEAD_LETTER_BELL =
 /** M6.3: the same bell for a Stripe event (07-ZM S19). */
 export const DEAD_LETTER_BELL_STRIPE =
   "A payment needs review: Stripe couldn't be reached to confirm this payment. Try again.";
+/** M6.4: the same bell for a PayPal event. */
+export const DEAD_LETTER_BELL_PAYPAL =
+  "A payment needs review: PayPal couldn't be reached to confirm this payment. Try again.";
+/** M6.4: a PayPal capture PayPal holds is re-fetched once it has been held this long (run file D). */
+export const PAYPAL_HELD_AFTER_MS = 30 * 60_000;
 export const REVIEW_LINK = "/payments?tab=review";
 
 /** A `gateway.advance` is tried at most this many times for a proforma that changed meanwhile (early check 2, finding 1). */
@@ -83,14 +92,24 @@ export async function processGateway(
       if (!m.success) return skip(body.kind);
       // Events still `received`, and (early check 2, finding 2) proforma payments still waiting for their tax invoice: a lost `next` is found within the hour.
       // M6.3 (L13): and up to 10 live Stripe sessions 15 minutes past their expiry, each refreshed by its own `gateway.refresh` (one unit of work per message).
-      const [events, advances, stale] = await env.DB.batch([
+      // M6.4 (run file D, L5): PayPal's three parts: up to 20 unclaimed orders past `expires_at` + 30 minutes expire in SQL (nobody captured them; PayPal's
+      // own 3 hours have passed); up to 20 whose capture claim went stale (its answer never came back: refreshed, so PayPal's order decides, and a row past its
+      // grace ends only after PayPal shows no capture); up to 20 captures PayPal has held for 30 minutes (re-fetched). Each refresh is its own message.
+      const [events, advances, stale, , claimed, held] = await env.DB.batch([
         env.DB.prepare(STUCK_EVENTS_SQL).bind(now - SWEEP_AFTER_MS),
         env.DB.prepare(STUCK_ADVANCES_SQL).bind(now - SWEEP_AFTER_MS),
         env.DB.prepare(STALE_LIVE_CHECKOUTS_SQL).bind(now - STALE_LIVE_AFTER_MS),
+        paypalExpireUnclaimedStatement(env.DB, now),
+        env.DB.prepare(PAYPAL_STALE_CLAIMS_SQL).bind(now - PAYPAL_CLAIM_STALE_MS, now - STALE_LIVE_AFTER_MS),
+        env.DB.prepare(PAYPAL_HELD_CAPTURES_SQL).bind(now - PAYPAL_HELD_AFTER_MS),
       ]);
       const ev = (events?.results ?? []) as { id: string }[];
       const adv = (advances?.results ?? []) as { id: string }[];
-      const old = (stale?.results ?? []) as { id: string }[];
+      const old = [
+        ...((stale?.results ?? []) as { id: string }[]),
+        ...((claimed?.results ?? []) as { id: string }[]),
+        ...((held?.results ?? []) as { id: string }[]),
+      ];
       const out = [
         ...ev.map((r) => ({ body: { kind: "gateway.event", eventId: r.id } })),
         ...adv.map((r) => ({ body: { kind: "gateway.advance", paymentId: r.id } })),
@@ -128,7 +147,13 @@ export async function processGatewayDeadLetter(
           eventId: m.data.eventId,
           reviewId: uuidv7(),
           now,
-          bell: row?.provider === "stripe" ? { title: DEAD_LETTER_BELL_STRIPE, link: REVIEW_LINK } : bell,
+          // M6.4 (L23): every gateway by name.
+          bell:
+            row?.provider === "stripe"
+              ? { title: DEAD_LETTER_BELL_STRIPE, link: REVIEW_LINK }
+              : row?.provider === "paypal"
+                ? { title: DEAD_LETTER_BELL_PAYPAL, link: REVIEW_LINK }
+                : bell,
         }),
       );
     }

@@ -1,6 +1,8 @@
 // Every route group the finance Worker answers (M6.1 stage A, ADM-PAY-01): the ROUTES rows marked `on: "finance"`. Invoices, credit and
 // debit notes, their sends and PDFs, a client's invoices and statement, the reports, the approval queue and decision, and the dashboard.
 // No sign-in code and no secrets.
+
+import { advices } from "./advices.ts";
 import type { App } from "./app.ts";
 import { approvals } from "./approvals.ts";
 import { clientInvoices } from "./client-invoices.ts";
@@ -40,6 +42,8 @@ export function mountFinance(app: App) {
   // M6.2: payment links, "Needs review" and the gateways' status (before `payments`, whose `/:id` would match `/review` and `/gateways`).
   app.route("/v1/invoices", invoicePaymentLinks);
   app.route("/v1/payments", gatewayPayments);
+  // M6.4 (ADM-INV-17, L12): remittance advices and the "Without advice" list, also before `payments` (its `/:id`).
+  app.route("/v1/payments", advices);
   // M6.1: manual payments and TDS, a client's credit, an invoice's Payments panel, credit moves and FEMA extensions.
   app.route("/v1/payments", payments);
   app.route("/v1/clients", clientCredit);

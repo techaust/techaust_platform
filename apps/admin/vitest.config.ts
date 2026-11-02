@@ -36,6 +36,9 @@ export default defineConfig(async () => ({
           // M6.3: a made-up restricted test key (tests never call Stripe; the stub transport answers).
           // Built at run time so no secret-looking literal is committed (the repo's secret scan, lead 2026-11-02).
           STRIPE_SECRET_KEY: ["rk", "test", "made0up0for0tests"].join("_"),
+          // M6.4: made-up PayPal sandbox values (tests never call PayPal; the stub transport answers).
+          PAYPAL_CLIENT_ID: "test-paypal-client-id",
+          PAYPAL_CLIENT_SECRET: "test-paypal-client-secret",
           GATEWAY_TRANSPORT: "stub",
           PORTAL_URL: "http://localhost:5174/",
           // Opt-in: run the suite as if it started at this instant (worker/test-setup.ts); empty by default.

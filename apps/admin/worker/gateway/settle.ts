@@ -39,7 +39,7 @@ import {
 } from "@techaust/db/gateway";
 import { type GuardSql, guardSql } from "@techaust/db/log";
 import { withdrawnSql } from "@techaust/db/sql-rules";
-import { mutateSystem } from "../system.ts";
+import { type Actor, mutateSystem } from "../system.ts";
 import { bellNeedsReview, bellPaidOnline, type ReasonFacts, reviewReason } from "./messages.ts";
 import type { RazorpayApi, RzpFailure } from "./razorpay.ts";
 
@@ -62,6 +62,9 @@ export type CheckoutRow = {
   updated_at: number;
   last_refresh_at: number | null;
   paid_payment_id: string | null;
+  /** M6.4: PayPal's capture id and the capture claim (`CHECKOUT_COLS`); NULL on every other gateway's row. */
+  provider_capture_id: string | null;
+  capture_started_at: number | null;
 };
 
 type DocState = {
@@ -150,15 +153,17 @@ export async function reviewOnly(
   facts: GatewayFacts,
   // M6.3: the item's gateway and the money's currency (Razorpay and INR for M6.2's callers), and the event's outcome when it is not the kind itself (Stripe's
   // `stripe_permission`, run file C.6).
-  gw: { provider: "razorpay" | "stripe"; currency: "INR" | "USD"; outcome?: string } = {
+  gw: { provider: "razorpay" | "stripe" | "paypal"; currency: "INR" | "USD"; outcome?: string } = {
     provider: "razorpay",
     currency: "INR",
   },
+  /** M6.4: who acts (the contact on PayPal's return, a member's "Check now"); else the webhook for an event, the system for a refresh. */
+  who?: Actor,
 ): Promise<ProcessEventResult> {
   const reviewId = uuidv7();
   const eventId = eventIdOf(a.cause);
   await mutateSystem(env, {
-    actorType: a.cause.kind === "event" ? "webhook" : "system",
+    ...(who ?? { actorType: a.cause.kind === "event" ? "webhook" : "system" }),
     action: "payment.gateway_review",
     entityType: eventId ? "webhook_event" : "review_item",
     entityId: eventId ?? reviewId,
@@ -199,6 +204,8 @@ export async function reviewOnly(
               reason: typeof facts.reason === "string" ? facts.reason : null,
               provider: gw.provider,
               currency: gw.currency,
+              code: typeof facts.code === "string" ? facts.code : null,
+              paidMinor: where.amountMinor,
             }),
           ),
           link: REVIEW_LINK,

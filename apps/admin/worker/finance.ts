@@ -28,6 +28,7 @@ import { draftCarePlan, issueCareDraft } from "./care-billing.ts";
 import { issueGatewayAdvance } from "./gateway/advance.ts";
 import { processEvent } from "./gateway/events.ts";
 import { createLinkFor, refreshCheckoutById, refreshForClient } from "./gateway/links.ts";
+import { capturePayPalReturn } from "./gateway/paypal-capture.ts";
 import { ROUTES } from "./guard.ts";
 import { mountFinance } from "./routes-finance.ts";
 import { FINANCE_WARM } from "./warm-fixtures/finance.ts";
@@ -120,14 +121,15 @@ export class PortalPayments extends WorkerEntrypoint<Env> implements PortalPayme
   }
 
   /**
-   * M6.4: PayPal's return (core `PortalPaymentsApi`). M6.4 B1 compile fix only: the capture itself is stage B2's (`paypal-capture.ts`); until it exists nothing is
-   * ever captured here and the answer is `not_found` (fail closed).
+   * M6.4 (L2, L19): the client came back from PayPal's page: the order is captured on the server now (`paypal-capture.ts`). The answer is a state (and, for a
+   * decline, PayPal's own approval page for the same order); never an amount, a name or a document id.
    */
   async capturePayPalReturn(args: CapturePayPalReturnArgs): Promise<CapturePayPalReturnResult> {
     if (!isCapturePayPalReturnArgs(args))
       throw new TypeError("PortalPayments: malformed capturePayPalReturn arguments");
-    rpcLog("capturePayPalReturn", "not_found");
-    return { state: "not_found" };
+    const answer = await capturePayPalReturn(this.env, { checkoutId: args.checkoutId, token: args.token });
+    rpcLog("capturePayPalReturn", answer.state);
+    return answer;
   }
 }
 
