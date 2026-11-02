@@ -345,14 +345,28 @@ export type InvoiceSummary = {
   wholeRupees?: boolean;
   /** M6.3: the gateway of the document's currency ("Pay by card" through Stripe for USD; "Pay now" through Razorpay for INR); null when it can't be paid online. */
   provider?: "razorpay" | "stripe" | null;
+  /**
+   * M6.4 (L21): every gateway the document may be paid through, in the order the page offers them (`["stripe", "paypal"]` for USD, `["razorpay"]` for INR,
+   * empty when it can't be paid online). Absent from an older API (then `provider` alone).
+   */
+  providers?: readonly string[];
   /** M6.2: the open link (amount, when it ends), the last payment received online (confirmed or still being checked, so "received"), a proforma's waiting one. */
   online?: OnlineBlock;
 };
 
 /** M6.2: the page's Pay now block (no Razorpay ids, nothing about the payer). */
 export type OnlineBlock = {
-  open: { amountMinor: number; expiresAt: number } | null;
-  lastPaid: { amountMinor: number; at: number } | null;
+  /** M6.4: `provider` names the open checkout's gateway (null from an older row). */
+  open: { amountMinor: number; expiresAt: number; provider?: string | null } | null;
+  /** M6.4: `provider` names the gateway it came through (07-ZN line 14 when PayPal's). */
+  lastPaid: { amountMinor: number; at: number; provider?: string | null } | null;
+  /** M6.4 (L6): PayPal holds a capture for it (07-ZN line 10; Pay is hidden: `paymentPending` is set too). */
+  pendingPayPal?: boolean;
+  /**
+   * M6.4 (early check 2 finding 3): only on the answer to the signed-in page's return from PayPal (`GET /invoices/:id?c=<checkout id>`): that checkout's state
+   * (07-ZN lines 4 to 11) and, with `declined`, PayPal's own page for the same order. Read through `payPalReturnOf` (lib/pay.ts).
+   */
+  payPalReturn?: unknown;
   proformaPending: boolean;
   /**
    * The smallest part payment (Settings › Payment terms' floor, never under ₹1, or the balance if lower; fix round 3 item 1). Null when the document can't be paid
@@ -371,7 +385,7 @@ export type OnlineBlock = {
  */
 export type PayLink = {
   ok: true;
-  provider: "razorpay" | "stripe";
+  provider: "razorpay" | "stripe" | "paypal";
   url: string;
   expiresAt: number;
   reused: boolean;
@@ -392,18 +406,42 @@ export const invoicesApi = {
    * document's currency). 400 `amount_below_minimum` / `amount_above_balance` / `amount_not_whole_rupee` / `amount_above_maximum` (07-ZI lines 6, 7,
    * 07-ZM line 6, with details); 409 `payment_processing` (07-ZM line 4 or 07-ZI line 13); other 409s, 429, 502, 503 answer 07-ZI line 14.
    */
-  pay: (id: string, amountMinor: number) =>
-    send<PayLink>(`/invoices/${encodeURIComponent(id)}/pay`, { body: { amountMinor } }),
+  pay: (id: string, amountMinor: number, provider?: PayLink["provider"]) =>
+    send<PayLink>(`/invoices/${encodeURIComponent(id)}/pay`, {
+      body: provider ? { amountMinor, provider } : { amountMinor },
+    }),
+  /**
+   * M6.4 (early check 2 finding 3): back from PayPal on the signed-in page (`?pay=paypal&c=…`): the document, the server first capturing THAT checkout (bound to
+   * this client and document), with `online.payPalReturn`. Our checkout id only; PayPal's `token` and `PayerID` are never sent from here.
+   */
+  getPayPalReturn: (id: string, checkoutId: string) =>
+    send<{ document: InvoiceSummary }>(
+      `/invoices/${encodeURIComponent(id)}?c=${encodeURIComponent(checkoutId)}`,
+      {},
+    ),
   pdf: (id: string) => download(`/invoices/${encodeURIComponent(id)}/pdf`, undefined, true),
 };
+
+/**
+ * M6.4: PayPal's return to the emailed link's page (`/pay/return?via=paypal`): our checkout id and PayPal's `token` (its order id) in the body, never `PayerID`.
+ * The answer is a state only (07-ZN lines 4 to 11); 429 (the `p:pay:` quota or a locked address), 503 `gateway_unavailable` (07-ZN line 13).
+ */
+export const payPalReturnApi = (checkoutId: string, token: string | null) =>
+  send<{ state: unknown; retryUrl?: unknown }>("/pay/paypal/return", {
+    ...pub,
+    body: { checkoutId, token },
+  });
 
 /** The same through an invoice link (`/i#t=…`, POR-06): the token in the body only. A bad, revoked or ended link is a plain 404. */
 export const invoiceLinkApi = {
   open: (token: string) => send<{ document: InvoiceSummary }>("/t/document", { ...pub, body: { token } }),
   pdf: (token: string) => download("/t/document/pdf", { token }, false),
   /** M6.2 Pay now from the emailed link (the token in the body only; Razorpay returns to `/pay/return`). */
-  pay: (token: string, amountMinor: number) =>
-    send<PayLink>("/t/document/pay", { ...pub, body: { token, amountMinor } }),
+  pay: (token: string, amountMinor: number, provider?: PayLink["provider"]) =>
+    send<PayLink>("/t/document/pay", {
+      ...pub,
+      body: provider ? { token, amountMinor, provider } : { token, amountMinor },
+    }),
 };
 
 export const api = {

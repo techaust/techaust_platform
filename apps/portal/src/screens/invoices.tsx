@@ -19,8 +19,6 @@ import {
 import { PageTitle } from "../components/shell/portal-shell.tsx";
 import { INV } from "../copy-invoices.ts";
 import { WITHDRAWN_ZF } from "../copy-zf.ts";
-import { PAY_ZI } from "../copy-zi.ts";
-import { PAY_ZM } from "../copy-zm.ts";
 import {
   type ClientInvoiceStatus,
   clientStatus,
@@ -35,7 +33,7 @@ import {
   typeLabel,
 } from "../lib/invoices.ts";
 import { dateText } from "../lib/offers.ts";
-import { istDayOf } from "../lib/pay.ts";
+import { paidRowOf } from "../lib/pay.ts";
 
 const LOOK = {
   due: { tone: "info", Icon: Clock },
@@ -224,6 +222,8 @@ export function InvoicePage(props: {
   const reason = noteReasonLines(d.noteReason);
   // 07-ZA item 11: what credit notes took off, by their numbers (final sweep P2).
   const creditNumbers = (d.creditNotes ?? []).flatMap((n) => (n.numberDisplay ? [n.numberDisplay] : []));
+  // M6.2 (07-ZI line 16), M6.3 (07-ZM line 8), M6.4 (07-ZN line 14): the online payment's row under the figures.
+  const paidRow = withdrawn ? null : paidRowOf(d, dateText);
   return (
     <div className="screen inv-sheet inv-doc">
       <header className="screen__head inv-doc__head">
@@ -336,16 +336,12 @@ export function InvoicePage(props: {
             )}
           </div>
         )}
-        {/* M6.2 (07-ZI line 16), M6.3 (07-ZM line 8, a card payment in dollars): a proforma's online payment waits for its tax invoice; said with its date,
-            under the figures and the actions, across the slip. */}
-        {d.type === "proforma" && !withdrawn && d.online?.proformaPending && d.online.lastPaid && (
-          <p className="inv-slip__paid">
-            <Clock size={16} />
-            <span>
-              {(d.provider ?? (d.currency === "USD" ? "stripe" : "razorpay")) === "stripe"
-                ? PAY_ZM.proformaPaid(dateText(istDayOf(d.online.lastPaid.at)))
-                : PAY_ZI.proformaPaid(dateText(istDayOf(d.online.lastPaid.at)))}
-            </span>
+        {/* M6.2 (07-ZI line 16), M6.3 (07-ZM line 8, a card payment in dollars), M6.4 (07-ZN line 14): a proforma's online payment waits for its invoice
+            (a clock), or a payment came through PayPal (a tick); said with its date, under the figures and the actions, across the slip. */}
+        {paidRow && (
+          <p className="inv-slip__paid" data-waits={paidRow.waits || undefined}>
+            {paidRow.waits ? <Clock size={16} /> : <CheckCircle size={16} />}
+            <span>{paidRow.text}</span>
           </p>
         )}
       </section>

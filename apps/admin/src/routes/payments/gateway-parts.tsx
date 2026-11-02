@@ -49,6 +49,7 @@ import {
   linkHint,
   payPalCapturing,
   payPalChip,
+  payPalFacts,
   portalInvoiceUrl,
   portalLinkOffered,
   stripeFacts,
@@ -118,7 +119,8 @@ export const gatewayOf = (panel: Panel, paymentId: string): GatewayPaymentRow | 
 const longId = (provider: string) => provider === "stripe" || provider === "paypal";
 
 export function OnlineMode({ row }: { row: GatewayPaymentRow }) {
-  const facts = stripeFacts(row);
+  // M6.3 S14 for Stripe; M6.4 S1 for PayPal (code review finding 14: the fee in the currency PayPal charged it in, and the INR it credited)
+  const facts = row.provider === "paypal" ? payPalFacts(row) : stripeFacts(row);
   return (
     <span className="pay-online">
       <span className="pay-online__what">
@@ -129,8 +131,8 @@ export function OnlineMode({ row }: { row: GatewayPaymentRow }) {
       <span className="pay-lines__meta break">
         {gatewayLine(row.provider, row.mode, longId(row.provider) ? null : row.providerPaymentId)}
       </span>
-      {/* M6.4 S1: PayPal's fee is in the capture's currency (dollars), Razorpay's in rupees */}
-      {row.provider !== "stripe" && row.feeMinor > 0 && (
+      {/* Razorpay's fee, in rupees (Stripe's and PayPal's are among their facts below) */}
+      {row.provider !== "stripe" && row.provider !== "paypal" && row.feeMinor > 0 && (
         <span className="pay-lines__meta">
           {GW.feeAbsorbed(amountText(row.feeMinor, feeCurrencyOf(row.provider)))}
         </span>

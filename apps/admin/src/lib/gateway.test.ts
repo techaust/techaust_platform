@@ -17,6 +17,7 @@ import {
   inrPerUsdText,
   itemReason,
   payPalCapturing,
+  payPalFacts,
   portalInvoiceUrl,
   portalLinkOffered,
   stripeFacts,
@@ -146,6 +147,30 @@ describe("a Stripe payment's lines [ADM-PAY-01]", () => {
     expect(stripeFacts({ ...row, gatewayFeeTaxInrMinor: null })[1]).toBe(`Fee ${inr(3_024_00)} (absorbed)`);
     expect(stripeFacts({ ...row, inrReceivedMinor: null, gatewayFeeInrMinor: null })).toEqual([]);
     expect(stripeFacts({ ...row, provider: "razorpay" })).toEqual([]);
+  });
+  // M6.4 code review finding 14: a PayPal fee charged in rupees (`charges_minor` 0) still shows, in rupees, with the INR PayPal credited
+  it("S1's PayPal facts: the fee in the currency PayPal charged it in, and the INR credited when present", () => {
+    const usd = (m: number) => formatMoney(money(m, "USD"));
+    const row = {
+      provider: "paypal",
+      amountMinor: 1_000_00,
+      feeMinor: 0,
+      inrReceivedMinor: 82_150_00,
+      gatewayFeeInrMinor: 1_234_56,
+    };
+    expect(payPalFacts(row)).toEqual([
+      `INR credited by PayPal ${inr(82_150_00)} (about ₹82.15 per USD; not the GST rate)`,
+      `Fee ${inr(1_234_56)} (absorbed)`,
+    ]);
+    // charged in dollars: the dollar fee; no INR settlement: no credited line
+    expect(
+      payPalFacts({ ...row, feeMinor: 39_00, inrReceivedMinor: null, gatewayFeeInrMinor: null }),
+    ).toEqual([`Fee ${usd(39_00)} (absorbed)`]);
+    expect(payPalFacts({ ...row, feeMinor: 0, inrReceivedMinor: null, gatewayFeeInrMinor: null })).toEqual(
+      [],
+    );
+    expect(payPalFacts({ ...row, provider: "stripe" })).toEqual([]);
+    expect(stripeFacts(row)).toEqual([]);
   });
   it("S14's line keeps the id when there is one, and Razorpay keeps its own", () => {
     expect(gatewayLine("stripe", "card", "pi_X")).toContain("Stripe · card · pi_X");

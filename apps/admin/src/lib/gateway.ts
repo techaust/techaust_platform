@@ -11,6 +11,7 @@ import type { PaymentLinkStatus, ReviewItem, ReviewResolution } from "../api.ts"
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
 import { CARD_ZM, ZM } from "./copy-zm.ts";
+import { ZN_UI } from "./copy-zn.ts";
 import { blockerLine } from "./invoices.ts";
 import { amountText, MODE_LABELS, payErrorText } from "./payments.ts";
 import { PORTAL_ORIGIN } from "./portal-origin.ts";
@@ -144,6 +145,30 @@ export function stripeFacts(r: {
         ? CARD_ZM.fee(amountText(r.gatewayFeeInrMinor, "INR"), amountText(r.gatewayFeeTaxInrMinor, "INR"))
         : GW.feeAbsorbed(amountText(r.gatewayFeeInrMinor, "INR")),
     );
+  return out;
+}
+
+/**
+ * M6.4 S1 (code review finding 14): a PayPal payment's facts, as the Stripe rows show theirs: the INR PayPal credited with the rate it implies, when PayPal
+ * settled it in rupees (`inr_received_minor`), and its fee in the currency PayPal charged it in: dollars (`charges_minor`) or rupees (`gateway_fee_inr_minor`,
+ * then `charges_minor` is 0), "Fee {amount} (absorbed)" each. Empty for any other payment.
+ */
+export function payPalFacts(r: {
+  provider: string;
+  amountMinor: number;
+  feeMinor: number;
+  inrReceivedMinor?: number | null | undefined;
+  gatewayFeeInrMinor?: number | null | undefined;
+}): string[] {
+  if (r.provider !== "paypal") return [];
+  const out: string[] = [];
+  if (typeof r.inrReceivedMinor === "number") {
+    const rate = inrPerUsdText(r.inrReceivedMinor, r.amountMinor);
+    if (rate) out.push(ZN_UI.inrCredited(amountText(r.inrReceivedMinor, "INR"), rate));
+  }
+  if (r.feeMinor > 0) out.push(GW.feeAbsorbed(amountText(r.feeMinor, "USD")));
+  if (typeof r.gatewayFeeInrMinor === "number" && r.gatewayFeeInrMinor > 0)
+    out.push(GW.feeAbsorbed(amountText(r.gatewayFeeInrMinor, "INR")));
   return out;
 }
 
