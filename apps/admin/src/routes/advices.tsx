@@ -939,6 +939,8 @@ function LinkStep(props: { advice: RemittanceAdvice; onBack: () => void; onDone:
   ];
   const shown = pages.rows.map((r) => r.id);
   const allShown = shown.length > 0 && shown.every((id) => picked.includes(id));
+  // Review 2 finding 10: with nothing to pick (the empty state, or a list that didn't load) the dialog offers only the way back, never a dead primary button.
+  const nothingToLink = list.state !== "loading" && shown.length === 0;
   return (
     <form
       noValidate
@@ -1015,18 +1017,20 @@ function LinkStep(props: { advice: RemittanceAdvice; onBack: () => void; onDone:
         <button type="button" className="btn btn--secondary" onClick={props.onBack} disabled={busy}>
           {INV_COPY.cancel}
         </button>
-        <button
-          type="submit"
-          className="btn btn--primary"
-          disabled={busy || picked.length === 0}
-          aria-busy={busy || undefined}
-        >
-          {busy
-            ? "Working…"
-            : picked.length > 0
-              ? ZN_UI.pick(ZN_UI.paymentsCount(picked.length))
-              : ZN.linkPayments}
-        </button>
+        {!nothingToLink && (
+          <button
+            type="submit"
+            className="btn btn--primary"
+            disabled={busy || picked.length === 0}
+            aria-busy={busy || undefined}
+          >
+            {busy
+              ? "Working…"
+              : picked.length > 0
+                ? ZN_UI.pick(ZN_UI.paymentsCount(picked.length))
+                : ZN.linkPayments}
+          </button>
+        )}
       </div>
     </form>
   );

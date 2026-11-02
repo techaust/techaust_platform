@@ -94,15 +94,18 @@ export function PayNow(props: Props) {
 
 /**
  * M6.4 (run file G1): the ways a document may be paid, in the server's order, as one group at the slip's end: the first is the primary button, the next steps
- * back beside it (so the slip keeps one primary action); each opens the same amount dialog in its gateway's words.
+ * back beside it (so the slip keeps one primary action); each opens the same amount dialog in its gateway's words. `quiet`: another action on the page is the
+ * primary one ("Try again on PayPal" after a decline, review 2 finding 10), so every way steps back.
  */
-export function PayWays(props: Omit<Props, "provider" | "primary"> & { ways: readonly PayGateway[] }) {
-  const { ways, ...rest } = props;
-  if (ways.length === 1) return <PayNow {...rest} provider={ways[0] as PayGateway} />;
+export function PayWays(
+  props: Omit<Props, "provider" | "primary"> & { ways: readonly PayGateway[]; quiet?: boolean },
+) {
+  const { ways, quiet = false, ...rest } = props;
+  if (ways.length === 1) return <PayNow {...rest} provider={ways[0] as PayGateway} primary={!quiet} />;
   return (
     <div className="pay-ways">
       {ways.map((w, i) => (
-        <PayNow key={w} {...rest} provider={w} primary={i === 0} />
+        <PayNow key={w} {...rest} provider={w} primary={i === 0 && !quiet} />
       ))}
     </div>
   );

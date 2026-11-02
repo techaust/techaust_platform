@@ -20,16 +20,19 @@ import {
   PAYPAL_PRESS_MS,
   paidRowOf,
   payPalPhaseOf,
+  payPalRetryOf,
   payPalReturnOf,
   payPalReturnPage,
   payReturnPageKind,
   payWaysOf,
+  readPayPalReturn,
   recalledRecentPay,
   rememberPay,
   takePayReturn,
   waitingGatewayOf,
 } from "./lib/pay.ts";
 import paySource from "./lib/pay.ts?raw";
+import routeSource from "./routes/invoices.tsx?raw";
 import { viewOfAnswer, viewOfError } from "./routes/pay-return.tsx";
 import returnSource from "./routes/pay-return.tsx?raw";
 
@@ -284,6 +287,79 @@ describe("back from PayPal: the answer and its words [POR-06, M6.4 G2]", () => {
     expect(html({ phase: "declined", retryUrl: "https://paypal.com.evil.example/x" })).not.toContain(
       PAY_ZN.tryAgain,
     );
+  });
+
+  it("'Try again on PayPal' is the page's one primary action only when the block draws it (review 2 finding 10)", () => {
+    // the route passes `quiet` to the chooser exactly when this answers an address, so "Pay by card" steps back beside it
+    expect(payPalRetryOf({ phase: "declined", retryUrl: RETRY })).toBe(RETRY);
+    expect(payPalRetryOf({ phase: "declined" })).toBeNull();
+    expect(payPalRetryOf({ phase: "declined", retryUrl: "https://paypal.com.evil.example/x" })).toBeNull();
+    expect(payPalRetryOf({ phase: "left" })).toBeNull();
+    expect(payPalRetryOf(null)).toBeNull();
+    expect(routeSource).toMatch(/quiet=\{payPalRetryOf\(payState\) !== null\}/);
+  });
+});
+
+describe("back from PayPal: a refused ask keeps the page checking (review 2 finding 7) [POR-06, M6.4 G2]", () => {
+  const doc = { document: { id: "plain" } };
+  const asked = { document: { id: "asked" } };
+
+  it("the ask's own answer when it answers", async () => {
+    let plain = 0;
+    const got = await readPayPalReturn(
+      async () => asked,
+      async () => {
+        plain += 1;
+        return doc;
+      },
+    );
+    expect(got).toEqual({ answer: asked, asked: true });
+    expect(plain).toBe(0);
+  });
+
+  it("a 429 on the `?c=` ask reads the document plainly, never fails the page", async () => {
+    const got = await readPayPalReturn(
+      async () => {
+        throw new RequestError(429, "rate_limited", "Too many requests", null, 60);
+      },
+      async () => doc,
+    );
+    expect(got).toEqual({ answer: doc, asked: false });
+    // the plain answer carries no `payPalReturn`, which the page reads as line 4 (it never sets a phase from it)
+    expect(payPalPhaseOf(payPalReturnOf(undefined), { id: "plain", type: "invoice" })).toEqual({
+      phase: "checking",
+    });
+  });
+
+  it("any other failure is the read's own (a 404 is the page's missing state, a 500 its failed one)", async () => {
+    for (const status of [404, 500, 0]) {
+      await expect(
+        readPayPalReturn(
+          async () => {
+            throw new RequestError(status, "x", "x");
+          },
+          async () => doc,
+        ),
+      ).rejects.toMatchObject({ status });
+    }
+  });
+
+  it("a failed plain read after a 429 is that read's failure", async () => {
+    await expect(
+      readPayPalReturn(
+        async () => {
+          throw new RequestError(429, "rate_limited", "x");
+        },
+        async () => {
+          throw new RequestError(500, "server", "x");
+        },
+      ),
+    ).rejects.toMatchObject({ status: 500 });
+  });
+
+  it("the signed-in page reads through it, and a refused ask leaves its phase alone", () => {
+    expect(routeSource).toMatch(/readPayPalReturn\(\(\) => ask\(payPalCheckout\), source\.load\)/);
+    expect(routeSource).toMatch(/if \(!got\.asked\) return got\.answer;/);
   });
 });
 

@@ -1153,6 +1153,15 @@
   overflow-wrap: anywhere;
 }
 
+/* M6.4 review 2 finding 2: a gateway's payment id (Razorpay, Stripe, PayPal) is one token people read back and search for, so at table width it keeps one
+   line (.docno's nowrap) and the facts beside it wrap instead; in the stacked cards below md it wraps only where the card is narrower than the id. */
+@media (max-width: 47.99rem) {
+  .pay-lines__gateway-id {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
 /* ---------- M6.4 PayPal and remittance advices (run file G3, G5) ----------
    PayPal's slip is Card payments' slip (no perforation: staff never make or copy a PayPal checkout). A remittance advice is a paper that proves many payments:
    its kind is set like the stamp the bank or PayPal prints on it (a framed tag beside the reference in the document face), and its payments are the ledger's

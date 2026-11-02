@@ -463,7 +463,10 @@ function Entries(props: {
                     <span className="docno">{r.tds?.certificateNo}</span>
                   )
                 ) : (
-                  <span className="docno break">{online?.providerPaymentId ?? r.reference}</span>
+                  // review 2 finding 2: a gateway's id keeps one line at table width (payments.css); a typed bank reference wraps as before
+                  <span className={online ? "docno pay-lines__gateway-id" : "docno break"}>
+                    {online?.providerPaymentId ?? r.reference}
+                  </span>
                 )}
               </td>
               <td className="num tnum" data-label={PAY_UI.colAmount}>
