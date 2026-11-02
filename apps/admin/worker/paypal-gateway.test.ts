@@ -674,9 +674,9 @@ describe("the provider switch both ways [L25; B2 must carry 8, 9]", () => {
     paypalCalls.length = 0;
     const r = await payPalLink(s, s.documentId, 50_000);
     expect(r.ok, JSON.stringify(r)).toBe(true);
-    expect(stripeCalls.filter((x) => x.path.startsWith("/v1/checkout")).map((x) => `${x.method} ${x.path}`)).toEqual([
-      `POST /v1/checkout/sessions/${s.sessionId}/expire`,
-    ]);
+    expect(
+      stripeCalls.filter((x) => x.path.startsWith("/v1/checkout")).map((x) => `${x.method} ${x.path}`),
+    ).toEqual([`POST /v1/checkout/sessions/${s.sessionId}/expire`]);
     expect(
       (await one<{ status: string }>("SELECT status FROM checkout_sessions WHERE id = ?1", s.checkoutId))
         ?.status,

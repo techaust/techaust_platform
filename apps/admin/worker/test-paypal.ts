@@ -98,7 +98,10 @@ export async function payPalLink(
 /** A live PayPal order of an issued USD export invoice of an overseas client (USD 500 unless told). */
 export async function liveOrder(o: { type?: string; amount?: number; total?: number } = {}) {
   const c = await usdClient();
-  const documentId = await usdDoc(c.clientId, { type: o.type, total: o.total });
+  const documentId = await usdDoc(c.clientId, {
+    type: o.type,
+    ...(o.total === undefined ? {} : { total: o.total }),
+  });
   const r = await payPalLink(c, documentId, o.amount ?? 50_000);
   if (!r.ok) throw new Error(`no order: ${JSON.stringify(r)}`);
   const orderId = new URL(r.url).searchParams.get("token") as string;
