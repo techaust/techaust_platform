@@ -71,6 +71,13 @@ export const PROVIDER_EVENT_TYPES = [
   "checkout.approval_reversed",
   "payment.pending",
   "payment.reversed",
+  // M6.5 (run file B; L36): a refund the gateway created or that failed (`refund.processed` above is the one that went out), and a dispute opened or closed. A
+  // refund event is matched to OUR refund first (by the gateway's refund id, else our id: Razorpay `receipt`, Stripe `metadata.techaust_refund`, PayPal
+  // `custom_id`); an unknown one is `refunded_outside` in Needs review, never a ledger move (L7).
+  "refund.created",
+  "refund.failed",
+  "dispute.opened",
+  "dispute.closed",
   "other",
 ] as const;
 export type ProviderEventType = (typeof PROVIDER_EVENT_TYPES)[number];
@@ -127,11 +134,39 @@ export type CheckoutStatusReport = {
 };
 
 export type RefundRequest = {
+  /** The payment's reference at the gateway (Razorpay `pay_…`, Stripe PaymentIntent, PayPal capture id). */
   readonly providerRef: string;
   readonly currency: "INR" | "USD";
   readonly amountMinor: number;
   readonly reason: string;
+  /**
+   * M6.5: our `payment_refunds.id` (a UUIDv7), sent as the gateway's idempotency key (Razorpay `receipt`, Stripe `Idempotency-Key` and
+   * `metadata.techaust_refund`, PayPal `PayPal-Request-Id` and `custom_id`), so a retry never refunds twice and a lost answer can be found by it (L37).
+   * Optional in the type until every provider implements M6.5's refund (run file C); a refund call without it is refused by the route.
+   */
+  readonly refundId?: string;
+  /** M6.5: the payment's own id (`payments.id`), for the gateway's notes. */
+  readonly paymentRef?: string;
 };
+
+/** M6.5: where a refund stands at the gateway, mapped from its own status (Stripe `pending`/`requires_action` → pending, `failed`/`canceled` → failed). */
+export const REFUND_STATES = ["pending", "processed", "failed"] as const;
+export type RefundState = (typeof REFUND_STATES)[number];
+/**
+ * What `refund` and `fetchRefund` answer: the gateway's refund id and its state. `state` absent reads `pending` (the safe side: the sweep re-fetches it before
+ * anything is settled); every M6.5 provider sets it.
+ */
+export type RefundAnswer = {
+  readonly refundRef: string;
+  readonly state?: RefundState;
+  /** The gateway's failure reason code, when it gives one (≤ 64 characters). */
+  readonly failureCode?: string;
+};
+/** M6.5 (L37): a refund looked up by the gateway's id, or by our id (`byOurId`) when the answer to the create call was lost. */
+export type RefundLookup =
+  | { readonly refundRef: string }
+  | { readonly byOurId: string; readonly paymentRef: string };
+export const refundStateOf = (a: RefundAnswer): RefundState => a.state ?? "pending";
 
 /** The interface every payment provider implements (ADM-PAY-01). `mode` is null for the manual provider, which has no keys. */
 export interface PaymentProvider {
@@ -147,7 +182,12 @@ export interface PaymentProvider {
   fetchCheckout(providerRef: string): Promise<ProviderResult<CheckoutStatusReport>>;
   /** M6.2: stops a checkout taking money (a replaced or stale link). */
   cancelCheckout(providerRef: string): Promise<ProviderResult<true>>;
-  refund(req: RefundRequest): Promise<ProviderResult<{ readonly refundRef: string }>>;
+  refund(req: RefundRequest): Promise<ProviderResult<RefundAnswer>>;
+  /**
+   * M6.5 (L37): a refund as the gateway holds it now (by its id, or by our id: Razorpay lists the payment's refunds and matches `receipt`, Stripe lists the
+   * PaymentIntent's refunds and matches `metadata.techaust_refund`). Optional until every provider implements it (run file C); absent reads `unsupported`.
+   */
+  fetchRefund?(lookup: RefundLookup): Promise<ProviderResult<RefundAnswer>>;
 }
 
 const UNSUPPORTED = Object.freeze({ ok: false, code: "unsupported" } as const);
@@ -165,6 +205,7 @@ export const manualProvider: PaymentProvider = Object.freeze({
   fetchCheckout: async () => UNSUPPORTED,
   cancelCheckout: async () => UNSUPPORTED,
   refund: async () => UNSUPPORTED,
+  fetchRefund: async () => UNSUPPORTED,
 });
 
 // ---- the contract every provider passes (M6.2 to M6.4 reuse it in their tests) ------------------------------------------------------------------------
@@ -237,8 +278,29 @@ export async function checkProviderContract(p: PaymentProvider, opts: ContractOp
     ["cancelCheckout", () => p.cancelCheckout("contract-ref")],
     [
       "refund",
-      () => p.refund({ providerRef: "contract-ref", currency: "INR", amountMinor: 100, reason: "contract" }),
+      () =>
+        p.refund({
+          providerRef: "contract-ref",
+          currency: "INR",
+          amountMinor: 100,
+          reason: "contract",
+          refundId: "00000000-0000-7000-8000-000000000001",
+          paymentRef: "contract-payment",
+        }),
     ],
+    // M6.5 (ADM-PAY-11): a live key with the go-live flag false fetches no refund either.
+    ...(p.fetchRefund
+      ? ([
+          [
+            "fetchRefund",
+            () =>
+              p.fetchRefund?.({
+                byOurId: "00000000-0000-7000-8000-000000000001",
+                paymentRef: "contract-ref",
+              }),
+          ],
+        ] as [string, () => unknown][])
+      : []),
   ];
   for (const [what, f] of network) {
     const r = (await call(what, f)) as ProviderResult<unknown> | null;

@@ -9,9 +9,12 @@ import {
   EXPORT_STAGES,
   femaDueSql,
   gstDueSql,
+  proofMissingSql,
   type RealisationSql,
+  reductionsSql,
   SCAN_BINDS,
   settingsBinds,
+  stageOpenSql,
   stageSql,
 } from "./realisation.ts";
 import { paymentFreeSql, SQL_CURRENCIES } from "./sql-rules.ts";
@@ -108,7 +111,7 @@ export const REGISTER_PAGE_SQL = (after: boolean): string =>
 
 /** The invoice month's non-voided export invoices (the EDF list): `?1` first day, `?2` last day, then the keyset as above. */
 export const EDF_MONTH_SQL = (after: boolean): string =>
-  `SELECT ${REGISTER_COLUMNS}
+  `SELECT ${REGISTER_COLUMNS}, ${REALISATION_FACT_COLUMNS}
    FROM documents d INDEXED BY documents_export_issued JOIN clients c ON c.id = d.client_id
    WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND d.issue_date >= ?1 AND d.issue_date <= ?2 ${after ? KEYSET : ""}
    ORDER BY d.issue_date, d.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
@@ -118,10 +121,29 @@ export const EDF_MONTH_SQL = (after: boolean): string =>
  * has no cursor, so `?1`/`?2` are only there for a next page.
  */
 export const REALISATION_PAGE_SQL = (show: "open" | "all", after: boolean): string =>
-  `SELECT ${REGISTER_COLUMNS}
+  `SELECT ${REGISTER_COLUMNS}, ${REALISATION_FACT_COLUMNS}
    FROM documents d INDEXED BY documents_export_issued JOIN clients c ON c.id = d.client_id
-   WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL ${show === "open" ? "AND d.balance_minor > 0" : ""} ${after ? "AND (d.issue_date > ?1 OR (d.issue_date = ?1 AND d.id > ?2))" : ""}
+   WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL ${show === "open" ? `AND ${stageOpenSql("d")}` : ""} ${after ? "AND (d.issue_date > ?1 OR (d.issue_date = ?1 AND d.id > ?2))" : ""}
    ORDER BY d.issue_date, d.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
+
+/**
+ * M6.5 (RB-43, RA-38, L13): the facts beyond the balance that decide an export's stage and its EDF "Amount realised" (`edf-v2`), for the realisation list and the
+ * EDF month: what was paid on it (net of a refund's release), Σ the AD bank's Reg. 6 reductions with the latest one's day and reference, and whether a card or
+ * PayPal payment on it still lacks its proof (an LUT export is realised for GST only once each has one). The SPA passes them to core `realisationStatus`.
+ */
+export const REALISATION_FACT_COLUMNS = `d.paid_minor, d.total_minor AS doc_total_minor, ${reductionsSql("d")} AS reductions_minor,
+       (SELECT rr.approved_on FROM realisation_reductions rr WHERE rr.document_id = d.id ORDER BY rr.approved_on DESC, rr.id DESC LIMIT 1) AS reduction_on,
+       (SELECT rr.bank_ref FROM realisation_reductions rr WHERE rr.document_id = d.id ORDER BY rr.approved_on DESC, rr.id DESC LIMIT 1) AS reduction_ref,
+       CASE WHEN d.supply_type = 'export_lut' THEN ${proofMissingSql("d")} ELSE 0 END AS proof_missing`;
+/** The M6.5 columns of `REALISATION_FACT_COLUMNS` as D1 returns them (alongside a `RegisterSqlRow`). */
+export type RealisationFactRow = {
+  paid_minor: number;
+  doc_total_minor: number;
+  reductions_minor: number;
+  reduction_on: string | null;
+  reduction_ref: string | null;
+  proof_missing: number;
+};
 
 /**
  * The alert scan (jobs): open exports old enough to be near a deadline, with their stage not "ok" and not "realised". Parameters: `?1` today (IST ISO), `?2`
@@ -135,7 +157,7 @@ export const REALISATION_SCAN_SQL = (after: boolean): string => {
        json_extract(d.recipient, '$.legalName') AS client_name, c.anonymised_at AS client_anonymised,
        ${femaDueSql("d", p)} AS fema_due, ${gstDueSql("d", p)} AS gst_due, ${stageSql("d", p)} AS stage
    FROM documents d INDEXED BY documents_export_issued JOIN clients c ON c.id = d.client_id
-   WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND d.balance_minor > 0
+   WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND ${stageOpenSql("d")}
      AND d.issue_date < date(?1, '+' || (?6 + 31) || ' days', '-' || ?7 || ' months') ${after ? "AND (d.issue_date > ?8 OR (d.issue_date = ?8 AND d.id > ?9))" : ""}
      AND ${stageSql("d", p)} IN (${ALERT_STAGE_LIST})
    ORDER BY d.issue_date, d.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
@@ -442,7 +464,8 @@ export const PROFORMAS_AWAITING_GROUPED_SQL = `SELECT d.currency, count(*) AS n,
 export const SETTINGS_TAX_SQL = "SELECT s.value FROM settings s WHERE s.key = 'tax'";
 
 /**
- * How many open exports are in each stage today (`?1` today, IST), the rule values being the `tax` row's own: one row per stage that has any, by stage.
+ * How many open exports are in each stage today (`?1` today, IST), the rule values being the `tax` row's own: one row per stage that has any, by stage. M6.5: the
+ * exports read are those with a balance or still open for another reason (`stageOpenSql`: RA-38's proof, RB-43's reduction), and `realised` is never a row.
  * The stage of each export is worked out once, in a subquery (`sg`) that `LIMIT -1` keeps from being flattened into the aggregate (flattened, the stage expression,
  * with its correlated extension seeks, would be copied into every stage's column); the counts are one aggregate row with a column per stage
  * (`EXPORT_STAGES`), no GROUP BY (L33). The twin of `EXPORT_STAGE_COUNTS_GROUPED_SQL`.
@@ -454,16 +477,16 @@ export const EXPORT_STAGE_COUNTS_SQL = /* @__PURE__ */ (() => {
    FROM (SELECT ${EXPORT_STAGES.map((s) => `count(CASE sg.stage WHEN '${s}' THEN 1 END) AS n_${s}`).join(", ")}
          FROM (SELECT ${stageSql("d", settingsBinds("?1"))} AS stage
                FROM documents d INDEXED BY documents_export_issued
-               WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND d.balance_minor > 0 LIMIT -1) sg) t
+               WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND ${stageOpenSql("d")} LIMIT -1) sg) t
    JOIN (${stageRows}) st
-   WHERE ${pick} > 0 ORDER BY st.stage`;
+   WHERE ${pick} > 0 AND st.stage <> 'realised' ORDER BY st.stage`;
 })();
 /** The reference twin of `EXPORT_STAGE_COUNTS_SQL` (tests only): the grouped statement of M5.5b. */
 export const EXPORT_STAGE_COUNTS_GROUPED_SQL =
   /* @__PURE__ */ (() => `SELECT ${stageSql("d", settingsBinds("?1"))} AS stage, count(*) AS n
    FROM documents d INDEXED BY documents_export_issued
-   WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND d.balance_minor > 0
-   GROUP BY stage`)();
+   WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND ${stageOpenSql("d")}
+   GROUP BY stage HAVING stage <> 'realised'`)();
 
 /** The five exports nearest a deadline: in one of the four alert stages, the earliest deadline of the stage first (an overdue one before one that is approaching). */
 export const EXPORT_NEXT_SQL = (() => {
@@ -471,7 +494,7 @@ export const EXPORT_NEXT_SQL = (() => {
   return `SELECT d.id, d.number_display, d.issue_date, d.currency, d.balance_minor, d.client_id, c.code AS client_code, ${stageSql("d", p)} AS stage,
        CASE WHEN ${stageSql("d", p)} IN ('gst_approaching', 'gst_overdue') THEN ${gstDueSql("d", p)} ELSE ${femaDueSql("d", p)} END AS due
    FROM documents d INDEXED BY documents_export_issued JOIN clients c ON c.id = d.client_id
-   WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND d.balance_minor > 0 AND ${stageSql("d", p)} IN (${ALERT_STAGE_LIST})
+   WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND ${stageOpenSql("d")} AND ${stageSql("d", p)} IN (${ALERT_STAGE_LIST})
    ORDER BY due, d.id LIMIT 5`;
 })();
 

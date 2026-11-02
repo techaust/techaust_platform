@@ -19,10 +19,13 @@ import {
   livePaidSql,
   liveTdsSql,
   PAYABLE_TYPES_SQL,
+  paymentBlocksVoidSql,
   paymentDocumentsSql,
   paymentForDocumentSql,
   paymentFreeSql,
   paymentNetSql,
+  paymentPendingForSql,
+  paymentRecordedSql,
   paymentRefundedSql,
   SQL_CURRENCIES,
 } from "./sql-rules.ts";
@@ -35,9 +38,12 @@ export {
   livePaidSql,
   liveTdsSql,
   PAYABLE_TYPES_SQL,
+  paymentBlocksVoidSql,
   paymentForDocumentSql,
   paymentFreeSql,
   paymentNetSql,
+  paymentPendingForSql,
+  paymentRecordedSql,
   paymentRefundedSql,
 };
 
@@ -615,24 +621,6 @@ export const PENDING_PAYMENTS_COUNT_SQL =
   "SELECT count(*) AS n FROM payments p INDEXED BY payments_pending WHERE p.status = 'pending_verification'";
 
 /**
- * L17, L32 (the void rules): an allocation row names the document `doc` (an SQL expression), one released or withdrawn since included. Core `voidBlockers`
- * `payment_recorded`; one seek of `payment_allocations_document`.
- */
-export const paymentRecordedSql = (doc: string): string =>
-  `EXISTS (SELECT 1 FROM payment_allocations va INDEXED BY payment_allocations_document WHERE va.document_id = ${doc})`;
-
-/**
- * L17 (the void rules): a PENDING payment of the client `client` is for the document `doc` (both SQL expressions; `paymentForDocumentSql`: its request, or, M6.3
- * staging fix, an online payment's checkout). Core `voidBlockers` `payment_pending`; a seek of `payments_client`. Any pending payment: the void and withdraw
- * WHEREs. The trigger `documents_void_no_payment` (0060) still reads the request only.
- * M6.4 (L24; Step 0.2 item 10): or a PayPal checkout of the document whose money may be on its way (`checkoutCapturingSql`: PayPal holds its capture, or a
- * capture call has claimed it): voiding or withdrawing the document then could leave money PayPal takes with nothing to apply it to. The trigger stays M6.5.
- */
-export const paymentPendingForSql = (doc: string, client: string): string =>
-  `(EXISTS (SELECT 1 FROM payments vp INDEXED BY payments_client WHERE vp.client_id = ${client} AND vp.status = 'pending_verification'
-     AND ${paymentForDocumentSql("vp", doc)}) OR ${checkoutCapturingSql(doc)})`;
-
-/**
  * M6.2 (fix round 3 item 3): the same read, in ONE pass, telling the kinds apart as bits: 1 a pending manual entry (core `payment_pending`: the Owner rejects
  * it), 2 a pending gateway payment (core `payment_pending_gateway`: it can't be rejected; its tax invoice is issued, or it is resolved in Needs review); 0 none.
  * Decode with `PENDING_MANUAL` / `PENDING_GATEWAY` / `PENDING_CAPTURE`. M6.4 (L24; early check 1 finding 8): 4, a PayPal checkout of the document whose capture
@@ -644,14 +632,6 @@ export const paymentPendingKindsSql = (doc: string, client: string): string =>
 export const PENDING_MANUAL = 1;
 export const PENDING_GATEWAY = 2;
 export const PENDING_CAPTURE = 4;
-
-/**
- * L17 (early check 2, finding 10): the payment test of the void statement's WHERE, `NOT ${paymentBlocksVoidSql(...)}`: an allocation row names the document,
- * or a pending payment of its client asks for it. The twin of the trigger `documents_void_no_payment` (which also refuses TDS, as the WHERE's `tds_minor = 0`
- * does) and of core `voidBlockers` (`payment_recorded`, `payment_pending`). `doc` and `client` are SQL expressions (`documents.id`, `documents.client_id`).
- */
-export const paymentBlocksVoidSql = (doc: string, client: string): string =>
-  `(${paymentRecordedSql(doc)} OR ${paymentPendingForSql(doc, client)})`;
 
 /** L17, L32 (the void facts): for document `?1` of client `?2`, whether a PENDING payment asks for it (`pending`) and whether an allocation row names it (`recorded`). */
 export const PAYMENT_ASKS_FOR_DOCUMENT_SQL = /* @__PURE__ */ (() =>

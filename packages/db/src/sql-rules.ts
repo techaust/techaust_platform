@@ -106,6 +106,14 @@ export const paymentFreeSql = (p: string, which: "live" | "succeeded" = "live"):
   `(${p}.amount_minor - ${paymentNetSql(`${p}.id`)} - ${paymentRefundedSql(`${p}.id`, which)})`;
 
 /**
+ * M6.5 (RA-41; Settled by the lead on the safest reading, 2026-11-03 (08-C RA-41)): payment row `p`'s credit may be an advance whose GST was due when it arrived,
+ * so the screens show the RA-41 line: it has free money, and it is on no invoice, or it is not in INR, or its free money is above the s.13(2) proviso's amount
+ * (`proviso`, an SQL expression: `tax.excessProvisoMinor`). The twin of core `overpaymentAdvanceLine` (`@techaust/core/refunds`; a db test compares them).
+ */
+export const overpaymentAdvanceSql = (p: string, proviso: string): string =>
+  `(${paymentFreeSql(p)} > 0 AND (${paymentNetSql(`${p}.id`)} <= 0 OR ${p}.currency <> 'INR' OR ${paymentFreeSql(p)} > ${proviso}))`;
+
+/**
  * The status of an issued document for these figures (SQL expressions): the twin of core `ledgerStatusOf(total, paid, credited, tds)` with `settled` = paid + TDS
  * (a db test compares them over a table of figures).
  */
@@ -224,3 +232,35 @@ export const checkoutCapturingSql = (doc: string, except?: string): string =>
 export const proformaOnlinePendingSql = (d: string, client: string): string =>
   `EXISTS (SELECT 1 FROM payments p JOIN checkout_sessions c ON c.id = p.checkout_id
         WHERE c.document_id = ${d}.id AND p.client_id = ${client} AND p.provider <> 'manual' AND p.status = 'pending_verification' AND p.requested_allocations IS NOT NULL AND ${d}.type = 'proforma')`;
+
+// ---- the void rules (L17, L32; moved here from `ledger.ts` in M6.5 so the trigger set `refund_triggers` (0070) can read them; `ledger.ts` re-exports them) ----
+
+/**
+ * L17, L32 (the void rules): an allocation row names the document `doc` (an SQL expression), one released or withdrawn since included. Core `voidBlockers`
+ * `payment_recorded`; one seek of `payment_allocations_document`.
+ */
+export const paymentRecordedSql = (doc: string): string =>
+  `EXISTS (SELECT 1 FROM payment_allocations va INDEXED BY payment_allocations_document WHERE va.document_id = ${doc})`;
+
+/**
+ * L17 (the void rules): a PENDING payment of the client `client` is for the document `doc` (both SQL expressions; `paymentForDocumentSql`: its request, or, M6.3
+ * staging fix, an online payment's checkout). Core `voidBlockers` `payment_pending`; a seek of `payments_client`. Any pending payment: the void and withdraw
+ * WHEREs. The trigger `documents_void_no_payment` reads it too since 0070 (M6.5, L39; 0060 read the request only).
+ * M6.4 (L24; Step 0.2 item 10): or a PayPal checkout of the document whose money may be on its way (`checkoutCapturingSql`: PayPal holds its capture, or a
+ * capture call has claimed it): voiding or withdrawing the document then could leave money PayPal takes with nothing to apply it to (the trigger too, 0070).
+ */
+export const paymentPendingForSql = (doc: string, client: string): string =>
+  `(EXISTS (SELECT 1 FROM payments vp INDEXED BY payments_client WHERE vp.client_id = ${client} AND vp.status = 'pending_verification'
+     AND ${paymentForDocumentSql("vp", doc)}) OR ${checkoutCapturingSql(doc)})`;
+
+/**
+ * L17 (early check 2, finding 10): the payment test of the void statement's WHERE, `NOT ${paymentBlocksVoidSql(...)}`: an allocation row names the document,
+ * or a pending payment of its client asks for it. The twin of the trigger `documents_void_no_payment` (which also refuses TDS, as the WHERE's `tds_minor = 0`
+ * does) and of core `voidBlockers` (`payment_recorded`, `payment_pending`). `doc` and `client` are SQL expressions (`documents.id`, `documents.client_id`).
+ */
+export const paymentBlocksVoidSql = (doc: string, client: string): string =>
+  `(${paymentRecordedSql(doc)} OR ${paymentPendingForSql(doc, client)})`;
+
+/** Payment `p` (an alias) is on an advice now (a link not taken off): one seek of `realisation_advice_payments_active`. The "Proof awaited" filter reads it too. */
+export const paymentHasAdviceSql = (p: string): string =>
+  `EXISTS (SELECT 1 FROM realisation_advice_payments al INDEXED BY realisation_advice_payments_active WHERE al.payment_id = ${p}.id AND al.removed_at IS NULL)`;

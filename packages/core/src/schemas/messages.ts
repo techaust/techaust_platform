@@ -318,6 +318,32 @@ export const isGatewayKind = (body: unknown): body is { kind: GatewayMessage["ki
   body !== null &&
   GATEWAY_KINDS.includes((body as { kind: GatewayMessage["kind"] }).kind);
 
+// ---- M6.5 refund and reconciliation messages on the `leads` queue (routed before the lead fall-through, as the gateway family; one unit of work each) ----------
+/** `refund.check`: re-fetch one open refund from its gateway and move it (`GatewayEvents.checkRefund`). Its id only. */
+export const refundCheckMessage = z.object({ kind: z.literal("refund.check"), refundId: id64 });
+/** `refund.sweep`: queue up to 20 `refund.check` for refunds open and idle for 15 minutes or more (`payment_refunds_pending`). `asOf`: the cron's time (UTC ms). */
+export const refundSweepMessage = z.object({ kind: z.literal("refund.sweep"), asOf: z.int().min(0) });
+/** `recon.fetch`: one page of a gateway's settlement recon for an IST day (`GatewayEvents.fetchSettlements`); `next` re-enqueues the following page. */
+export const reconFetchMessage = z.object({
+  kind: z.literal("recon.fetch"),
+  provider: z.literal("razorpay"),
+  day: z.iso.date(),
+  skip: z.int().min(0),
+});
+export type RefundCheckMessage = z.infer<typeof refundCheckMessage>;
+export type RefundSweepMessage = z.infer<typeof refundSweepMessage>;
+export type ReconFetchMessage = z.infer<typeof reconFetchMessage>;
+export type RefundMessage = RefundCheckMessage | RefundSweepMessage | ReconFetchMessage;
+export const REFUND_KINDS = ["refund.check", "refund.sweep", "recon.fetch"] as const;
+/** The most `refund.check` one sweep queues, and how long a refund stays idle before the sweep re-checks it. */
+export const REFUND_SWEEP_MAX = 20;
+export const REFUND_SWEEP_IDLE_MS = 15 * 60_000;
+/** True for a body of the M6.5 refund family (valid or not), so a malformed one can never become a lead. */
+export const isRefundKind = (body: unknown): body is { kind: RefundMessage["kind"] } =>
+  typeof body === "object" &&
+  body !== null &&
+  REFUND_KINDS.includes((body as { kind: RefundMessage["kind"] }).kind);
+
 /** True for a body of the M5.4 billing family (valid or not), so a malformed one can never become a lead. */
 export const isBillingKind = (body: unknown): body is { kind: BillingMessage["kind"] } =>
   typeof body === "object" &&

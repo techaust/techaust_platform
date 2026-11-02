@@ -308,6 +308,31 @@ export type IssueCareResult = {
 export interface BillingJobsApi {
   draftCarePlan(args: { planId: string }): Promise<DraftCareResult>;
   issueCareDraft(args: { documentId: string }): Promise<IssueCareResult>;
+  /**
+   * M6.5 (L3, L34; ADM-PAY-09): the payment receipt of one confirmed money-received payment, issued in its own batch (`TH/RCT/{FY}/{N}` from the gap-free counter)
+   * on the invoices Worker's `BillingJobs`, from `receipt.issue {paymentId}`. Optional until the invoices Worker implements it (part 2): the jobs Worker checks for
+   * it lazily (the split's early check: checking it up front would fail every `care.bill` against a fake without it).
+   */
+  issueReceipt?(args: { paymentId: string }): Promise<IssueReceiptResult>;
+}
+
+/** What `issueReceipt` answers: `issued` (the number, then the PDF is queued), `already_issued` (a race or a replay), `not_eligible` (not confirmed, TDS, an anonymised client, gone). */
+export const ISSUE_RECEIPT_RESULTS = ["issued", "already_issued", "not_eligible"] as const;
+export type IssueReceiptResult = {
+  readonly result: (typeof ISSUE_RECEIPT_RESULTS)[number];
+  readonly number?: string;
+  /** Why not (`not_confirmed`, `tds`, `client_anonymised`, `not_found`, `series_full`), a code. */
+  readonly why?: string;
+};
+export function isIssueReceiptResult(v: unknown): v is IssueReceiptResult {
+  if (typeof v !== "object" || v === null) return false;
+  const r = v as Record<string, unknown>;
+  return (
+    (ISSUE_RECEIPT_RESULTS as readonly unknown[]).includes(r.result) &&
+    (r.number === undefined || typeof r.number === "string") &&
+    (r.why === undefined || typeof r.why === "string") &&
+    Object.keys(r).every((k) => k === "result" || k === "number" || k === "why")
+  );
 }
 
 const DRAFT_RESULTS = ["drafted", "already_billed", "not_due", "skipped"] as const;

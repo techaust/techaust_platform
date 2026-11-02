@@ -5,7 +5,6 @@
 import { INVOICE_FAMILY_SQL, QUOTE_DOCUMENT_TYPES } from "@techaust/core/clients";
 import { getTableColumns } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/sqlite-core";
-import { paymentBlocksVoidSql } from "./ledger.ts";
 import {
   acceptanceCertificates,
   documentLines,
@@ -38,6 +37,7 @@ import {
   livePaidSql,
   liveTdsSql,
   PAYABLE_TYPES_SQL,
+  paymentBlocksVoidSql,
   paymentFreeSql,
   paymentNetSql,
   signedIssuerSql,
@@ -1862,7 +1862,7 @@ export const REFUND_NEW_0070 = [
 ] as const;
 
 /**
- * M6.5's void rule for the trigger: `paymentBlocksVoidSql` (`ledger.ts`, the void and withdraw WHEREs) with its `INDEXED BY` hints taken out: the planner picks
+ * M6.5's void rule for the trigger: `paymentBlocksVoidSql` (`sql-rules.ts`, the void and withdraw WHEREs) with its `INDEXED BY` hints taken out: the planner picks
  * the same indexes, and a hint is not something a trigger body should depend on. `packages/db/test/refund-triggers.test.ts` pins that this is exactly the
  * helper without its hints, so the two can never drift.
  */

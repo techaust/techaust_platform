@@ -36,6 +36,19 @@ export const FINANCE_AUDIT_ACTIONS = [
   "payment.tds_certificate",
   "invoice.realisation_extend",
   "refund.issue",
+  // M6.5 (run file C): a refund recorded (manual, outside or a lost dispute), retried, cancelled before the gateway had one, or moved by the gateway's word; a
+  // receipt issued (the system) or voided with its withdrawn payment; a settlement day fetched; a bank-statement tick and its undo; the AD bank's Reg. 6 reduction
+  // (RB-43). The receipt PDF's re-render is ordinary work, as the invoice's is.
+  "refund.record",
+  "refund.retry",
+  "refund.cancel",
+  "refund.status",
+  "receipt.issue",
+  "receipt.void",
+  "recon.fetch",
+  "recon.match",
+  "recon.unmatch",
+  "realisation.reduce",
   "export.gst",
   // M5.5b (LD86): a page of the GST and CA register (rows and range only, never row contents) and a client's statement PDF (the range, currency and the
   // number of lines). Both are finance events; neither is in the Recent activity feed.

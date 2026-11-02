@@ -447,7 +447,7 @@ describe("L33: the lists the one-pass figures are built from", () => {
     const asCore: readonly RealisationStage[] = EXPORT_STAGES;
     const missing: Exclude<RealisationStage, (typeof EXPORT_STAGES)[number]> extends never ? true : false =
       true;
-    expect(asCore).toHaveLength(6);
+    expect(asCore).toHaveLength(7); // M6.5 (RB-43): reduction_pending
     expect(missing).toBe(true);
   });
 });

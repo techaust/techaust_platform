@@ -141,7 +141,7 @@ describe("statementEntries", () => {
   });
 
   it("names the debit types of the ledger and the PDF limit", () => {
-    expect(STATEMENT_DEBIT_TYPES).toEqual(["tax_invoice", "export_invoice", "debit_note"]);
+    expect(STATEMENT_DEBIT_TYPES).toEqual(["tax_invoice", "export_invoice", "debit_note", "refund"]); // M6.5 (L9): a refund is a debit line
     expect(STATEMENT_PDF_MAX_ENTRIES).toBe(200);
   });
 });

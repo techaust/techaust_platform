@@ -47,6 +47,36 @@ export type PdfMessage =
   | PdfDeedMessage
   | OfferSweepMessage;
 
+/**
+ * M6.5 (L3, L5; ADM-PAY-09): `receipt.issue`, the payment receipt of one confirmed money-received payment, sent on `PDF_QUEUE` by every path that confirms money
+ * (after its batch, from `waitUntil`) and by the hourly sweep; the consumer calls the invoices Worker's `BillingJobs.issueReceipt` (it never opens the browser, so
+ * the pacer never sleeps for it), which queues the receipt's `pdf.snapshot`. `receipt.sweep`: up to `RECEIPT_SWEEP_MAX` `receipt.issue` for payments still without a
+ * receipt 10 minutes after their confirmation (`payments_receipt_due`). Not in `PdfMessage` until the jobs consumer routes them (run file D, part 2): its own guard.
+ */
+export type ReceiptIssueMessage = { v: 1; kind: "receipt.issue"; paymentId: string };
+export type ReceiptSweepMessage = { v: 1; kind: "receipt.sweep"; asOf: number };
+export type ReceiptMessage = ReceiptIssueMessage | ReceiptSweepMessage;
+export const RECEIPT_KINDS = ["receipt.issue", "receipt.sweep"] as const;
+/** The most `receipt.issue` one sweep queues, and how long after its confirmation a payment's receipt is late. */
+export const RECEIPT_SWEEP_MAX = 20;
+export const RECEIPT_SWEEP_AFTER_MS = 10 * 60_000;
+
+/** True for a body of the receipt family (valid or not), so a malformed one is dead-lettered, never read as another kind. */
+export const isReceiptKind = (body: unknown): body is { kind: ReceiptMessage["kind"] } =>
+  typeof body === "object" &&
+  body !== null &&
+  (RECEIPT_KINDS as readonly unknown[]).includes((body as { kind?: unknown }).kind);
+
+/** The shape, the version, a payment id of 1 to 60 characters (`rct_` + it stays within the 64 of an RPC id) or a cron time. */
+export function isReceiptMessage(body: unknown): body is ReceiptMessage {
+  if (!isObject(body) || body.v !== 1) return false;
+  if (body.kind === "receipt.issue")
+    return typeof body.paymentId === "string" && body.paymentId.length >= 1 && body.paymentId.length <= 60;
+  if (body.kind === "receipt.sweep")
+    return typeof body.asOf === "number" && Number.isSafeInteger(body.asOf) && body.asOf >= 0;
+  return false;
+}
+
 /** The invoice-family types that have a supplier copy (Rule 48(2): the services invoice and, by Rule 53, the notes; never a proforma, which is no tax invoice). */
 export const SUPPLIER_COPY_TYPES = ["tax_invoice", "export_invoice", "credit_note", "debit_note"] as const;
 export const hasSupplierCopy = (type: string): boolean =>

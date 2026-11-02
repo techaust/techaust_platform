@@ -51,6 +51,11 @@ const MONEY_FILES = [
   "src/hmac.ts",
   // M6.4: PayPal (amounts as PayPal's value text, the fee by its currency, the INR facts)
   "src/paypal.ts",
+  // M6.5: refunds, receipts, the PA-CB check and the settlement reader carry money.
+  "src/refunds.ts",
+  "src/receipts.ts",
+  "src/pa-cb.ts",
+  "src/recon.ts",
   // T11: the deed of assignment (L2's sums, the amount it prints)
   "src/deeds.ts",
   "src/export-invoice.ts",

@@ -48,6 +48,84 @@ export interface GatewayEventsApi {
    * `gateway.refresh {checkoutId}`. Only the gateway's word ends a row, never our clock (L6).
    */
   refreshCheckout(args: { checkoutId: string }): Promise<RefreshResult>;
+  /**
+   * M6.5 (L34, L37): one open refund re-fetched from its gateway (by its refund id, else by our id) and moved (`refund.check {refundId}`, the sweep's message);
+   * after `REFUND_CHECK_MAX_ATTEMPTS` tries a `refund_stuck` review item and a bell. Optional until the finance Worker implements it (part 2); the jobs Worker
+   * checks for it lazily, as it does for `refreshCheckout`.
+   */
+  checkRefund?(args: { refundId: string }): Promise<CheckRefundResult>;
+  /**
+   * M6.5 (L11, L34): one page of Razorpay's settlement recon for an IST day (`recon.fetch {provider, day, skip}`), stored and matched in one batch; `next` asks
+   * for the following page. Optional until the finance Worker implements it (part 2).
+   */
+  fetchSettlements?(args: FetchSettlementsArgs): Promise<FetchSettlementsResult>;
+}
+
+// ---- M6.5: refunds and settlements (jobs → finance) ---------------------------------------------------------------------------------------------------
+
+/** How many times `checkRefund` tries a refund before it opens a `refund_stuck` review item. */
+export const REFUND_CHECK_MAX_ATTEMPTS = 10;
+
+export const CHECK_REFUND_RESULTS = [
+  "succeeded",
+  "failed",
+  "unchanged",
+  "stuck",
+  "not_open",
+  "not_found",
+  "retry",
+] as const;
+export type CheckRefundResult = { readonly result: (typeof CHECK_REFUND_RESULTS)[number] };
+
+export function isCheckRefundResult(v: unknown): v is CheckRefundResult {
+  return (
+    isObj(v) &&
+    Object.keys(v).every((k) => k === "result") &&
+    (CHECK_REFUND_RESULTS as readonly unknown[]).includes(v.result)
+  );
+}
+
+/** The gateways whose settlements are fetched (L11: Razorpay only; Stripe payouts and PayPal transactions are a follow-up). */
+export const SETTLEMENT_GATEWAYS = ["razorpay"] as const;
+export type FetchSettlementsArgs = {
+  readonly provider: (typeof SETTLEMENT_GATEWAYS)[number];
+  /** The ISO IST day whose settlements are read. */
+  readonly day: string;
+  /** Items already read for the day (the recon API's `skip`). */
+  readonly skip: number;
+};
+export const FETCH_SETTLEMENTS_RESULTS = [
+  "stored",
+  "empty",
+  "too_soon",
+  "retry",
+  "live_not_allowed",
+] as const;
+export type FetchSettlementsResult = {
+  readonly result: (typeof FETCH_SETTLEMENTS_RESULTS)[number];
+  /** Another page follows: the jobs Worker enqueues `recon.fetch` with this `skip`. */
+  readonly next?: { readonly skip: number };
+};
+
+export function isFetchSettlementsArgs(v: unknown): v is FetchSettlementsArgs {
+  return (
+    isObj(v) &&
+    (SETTLEMENT_GATEWAYS as readonly unknown[]).includes(v.provider) &&
+    typeof v.day === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(v.day) &&
+    typeof v.skip === "number" &&
+    Number.isSafeInteger(v.skip) &&
+    v.skip >= 0
+  );
+}
+
+export function isFetchSettlementsResult(v: unknown): v is FetchSettlementsResult {
+  if (!isObj(v) || !(FETCH_SETTLEMENTS_RESULTS as readonly unknown[]).includes(v.result)) return false;
+  if (Object.keys(v).some((k) => k !== "result" && k !== "next")) return false;
+  if (v.next === undefined) return true;
+  return (
+    isObj(v.next) && typeof v.next.skip === "number" && Number.isSafeInteger(v.next.skip) && v.next.skip > 0
+  );
 }
 
 const isStrings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
