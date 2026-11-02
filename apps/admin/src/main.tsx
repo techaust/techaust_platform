@@ -104,6 +104,8 @@ const router = createBrowserRouter([
           { path: "invoices/:id", lazy: () => import("./routes/invoices/invoice.tsx") },
           // M6.1: payments and the Owner's "Payments to check"; `/payments/:id` (the bells, the approvals queue) opens that entry.
           { path: "payments", lazy: () => import("./routes/payments.tsx") },
+          // M6.4: the remittance advices (a static segment, so it is never read as a payment's id); `?advice=<id>` opens one, `?tab=without` the S9 bell's list.
+          { path: "payments/advices", lazy: () => import("./routes/advices.tsx") },
           { path: "payments/:id", lazy: () => import("./routes/payments.tsx") },
           // M5.5b: the reports (one lazy chunk with the gst core; /reports opens the GST exports for the Owner and the Accountant).
           { path: "reports", lazy: () => import("./routes/reports.tsx") },

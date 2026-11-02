@@ -57,7 +57,18 @@ export const LINK_CHIPS: Record<
   // designer's drafts (a link being made, a link Razorpay refused to make)
   creating: { label: "Being made", tone: "neutral", icon: "progress" },
   failed: { label: "Not made", tone: "danger", icon: "alert" },
+  // M6.4 S2: PayPal holds the capture (ECHECK, PENDING_REVIEW, …): money not received yet, so the warning tone
+  capture_pending: { label: "Awaiting PayPal", tone: "warning", icon: "clock" },
 };
+
+/**
+ * M6.4 S2: a PayPal checkout's chip. `failed` is "Failed" there (PayPal declined or failed the capture after the client approved it), not Razorpay's "Not made";
+ * every other status reads as for a link.
+ */
+export const payPalChip = (status: PaymentLinkStatus) =>
+  status === "failed"
+    ? { label: "Failed", tone: "danger" as PillTone, icon: "alert" as const }
+    : (LINK_CHIPS[status] ?? LINK_CHIPS.failed);
 
 /** S18: "Razorpay · {method} · {payment id}" (the raw `pay_…` id, as Razorpay's dashboard shows it). */
 export const razorpayLine = (mode: string | null, providerPaymentId: string | null): string =>
@@ -75,12 +86,24 @@ export const razorpayLine = (mode: string | null, providerPaymentId: string | nu
 export const stripeLine = (providerPaymentId: string | null): string =>
   providerPaymentId ? CARD_ZM.paymentRow(providerPaymentId) : ZM("Stripe · card");
 
-/** The line of a gateway payment by its gateway: S14 for Stripe, 07-ZI S18 for Razorpay. */
+/** M6.4 S1: "PayPal · {capture id}" (the capture id as PayPal's dashboard shows it); without an id, "PayPal". */
+export const payPalLine = (captureId: string | null): string =>
+  captureId ? `PayPal · ${captureId}` : "PayPal";
+
+/** The line of a gateway payment by its gateway: S14 for Stripe, M6.4 S1 for PayPal, 07-ZI S18 for Razorpay. */
 export const gatewayLine = (
   provider: string,
   mode: string | null,
   providerPaymentId: string | null,
-): string => (provider === "stripe" ? stripeLine(providerPaymentId) : razorpayLine(mode, providerPaymentId));
+): string =>
+  provider === "stripe"
+    ? stripeLine(providerPaymentId)
+    : provider === "paypal"
+      ? payPalLine(providerPaymentId)
+      : razorpayLine(mode, providerPaymentId);
+
+/** The currency a gateway's own fee is in (M6.4: "a fee goes in the column of its own currency"): PayPal's in dollars, Razorpay's in rupees. */
+export const feeCurrencyOf = (provider: string): "INR" | "USD" => (provider === "paypal" ? "USD" : "INR");
 
 /** The gateway's own name (a proper name, not copy): the "Recorded by" of a gateway entry and the gateway column of "Needs review". */
 export const gatewayName = (provider: string | null | undefined): string =>
@@ -285,6 +308,8 @@ export function itemReason(
     expectedMinor: num(f.expectedMinor),
     extraMinor: num(f.extraMinor) ?? (it.kind === "overpaid" ? it.amount_minor : null),
     reason: str(f.reason),
+    // M6.4: PayPal's own code for a held or refused capture (S3, S5)
+    code: str(f.code),
     blocker: blockers.length ? blockers.map(blockerWords).join("; ") : null,
   });
 }

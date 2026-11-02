@@ -57,6 +57,7 @@ import {
   linkable,
   OnlineMode,
   OnlineWaiting,
+  PayPalPayments,
   useDocReview,
 } from "./gateway-parts.tsx";
 import { day, EarlierMonthWarning, FilePick, PaymentPill, useCodeSlot, useDialogState } from "./parts.tsx";
@@ -269,6 +270,7 @@ function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onCha
       <DocReviewNotice items={review.items} count={reviewCount} />
       <LinkCard view={v} panel={p} role={role} onChanged={props.onChanged} />
       <CardPayments view={v} panel={p} />
+      <PayPalPayments view={v} panel={p} role={role} onChanged={props.onChanged} />
 
       <Entries
         panel={p}
@@ -332,7 +334,11 @@ function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onCha
       )}
       {dialog && typeof dialog === "object" && "proof" in dialog && (
         <ProofDialog
-          payment={{ id: dialog.proof, currency: p.currency, provider: "stripe" }}
+          payment={{
+            id: dialog.proof,
+            currency: p.currency,
+            provider: gatewayOf(p, dialog.proof)?.provider ?? "stripe",
+          }}
           onClose={() => setDialog(null)}
           onDone={(t) => done(t)}
         />
@@ -470,11 +476,13 @@ function Entries(props: {
                 <PaymentPill status={r.status} />
               </td>
               <td data-label={PAY_COPY.proof}>
-                {online?.provider === "stripe" ? (
-                  // M6.3 (L11, S15): a card payment's proof is Stripe's payment advice or the bank's e-FIRA, attached here
+                {online?.provider === "stripe" || online?.provider === "paypal" ? (
+                  // M6.3 (L11, S15): a card payment's proof is Stripe's payment advice or the bank's e-FIRA, attached here. M6.4: a PayPal payment's too, and
+                  // either may be proved by a remittance advice instead (Step 0.2 item 6)
                   <CardProof
                     paymentId={r.paymentId}
                     hasProof={r.hasProof}
+                    onAdvice={online.onAdvice === true}
                     canAttach={
                       props.canCert && (r.status === "confirmed" || r.status === "pending_verification")
                     }
@@ -596,10 +604,13 @@ function ProformaPayments(props: {
                       <span className="pay-lines__meta break">
                         {gatewayLine(online.provider, online.mode, online.providerPaymentId)}
                       </span>
-                      {/* M6.3 (Q1 A): a card payment's tax invoice is never issued automatically: the Owner issues it with the day's rate */}
-                      {!isBlocked && !refund && online.provider !== "stripe" && (
-                        <span className="pay-lines__meta">{GW_UI.issuingNow}</span>
-                      )}
+                      {/* M6.3 (Q1 A): a card payment's tax invoice is never issued automatically: the Owner issues it with the day's rate (M6.4: PayPal's too) */}
+                      {!isBlocked &&
+                        !refund &&
+                        online.provider !== "stripe" &&
+                        online.provider !== "paypal" && (
+                          <span className="pay-lines__meta">{GW_UI.issuingNow}</span>
+                        )}
                     </>
                   ) : (
                     <span className="pay-lines__meta">
@@ -630,6 +641,7 @@ function ProformaPayments(props: {
       )}
       <LinkCard view={props.view} panel={p} role={props.role} onChanged={props.onChanged} />
       <CardPayments view={props.view} panel={p} />
+      <PayPalPayments view={props.view} panel={p} role={props.role} onChanged={props.onChanged} />
     </section>
   );
 }

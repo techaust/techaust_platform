@@ -1152,3 +1152,216 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+/* ---------- M6.4 PayPal and remittance advices (run file G3, G5) ----------
+   PayPal's slip is Card payments' slip (no perforation: staff never make or copy a PayPal checkout). A remittance advice is a paper that proves many payments:
+   its kind is set like the stamp the bank or PayPal prints on it (a framed tag beside the reference in the document face), and its payments are the ledger's
+   own lines. Nothing new in colour or size: tokens only. */
+
+/* Payments: the way to the advices is the page's lede (a link with its icon, and the count of PayPal payments no advice proves yet) */
+.pay-advices-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--target-min);
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.pay-advices-link > .icon {
+  color: var(--color-text-muted);
+}
+
+.pay-advices-link .tabs__badge {
+  margin-left: 0;
+  text-decoration: none;
+}
+
+/* the advice's name: its kind as a framed stamp, then its reference */
+.adv-name {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+}
+
+.adv-kind {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.adv-name .docno.break {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* the advice list at table width: a day, a period's ends and "Open file" never break inside themselves (the reference may) */
+.adv-table .dtable__table .pay-row__link,
+.adv-table .dtable__table .pay-proof-link,
+.adv-table .dtable__table .adv-period {
+  white-space: nowrap;
+}
+
+/* Without advice: the gateway picker and the count with its lede, then the list */
+.adv-without {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.adv-without__head {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+}
+
+.adv-without__pick {
+  margin: 0;
+  max-width: 100%;
+}
+
+.adv-without__lede {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--color-text-muted);
+}
+
+.adv-without__lede strong {
+  color: var(--color-text);
+  font-weight: 600;
+}
+
+/* Add advice: who issued it, as the segmented choice the gateway modes use */
+.adv-who {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.adv-who legend {
+  margin-bottom: var(--space-2);
+  padding: 0;
+  font-weight: 500;
+}
+
+/* one advice: its name and issuer, its facts, and the payments it proves */
+.dialog--advice {
+  width: min(100% - 2rem, 44rem);
+}
+
+.adv-entry__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  font-size: var(--text-h4);
+  line-height: var(--text-h4--line-height);
+}
+
+.adv-entry__head .adv-kind {
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+}
+
+.adv-payments__list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.adv-pay {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-4);
+  align-items: baseline;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.adv-pay:last-child {
+  border-bottom: 0;
+}
+
+/* the payment's day, client and reference take the left over two rows; its amount and its action (or "Removed") stack on the right */
+.adv-pay__what {
+  display: grid;
+  grid-row: span 2;
+  justify-items: start;
+  min-width: 0;
+}
+
+.adv-pay__amount {
+  text-align: end;
+  white-space: nowrap;
+}
+
+.adv-pay__remove,
+.adv-pay__tag {
+  grid-column: 2;
+  justify-self: end;
+}
+
+.adv-pay__remove {
+  min-height: var(--target-min);
+}
+
+/* a link taken off stays as history: its amount struck through, its reason under it */
+.adv-pay--off .adv-pay__amount {
+  color: var(--color-text-muted);
+  text-decoration: line-through;
+}
+
+.adv-pay__removed {
+  max-width: 56ch;
+  overflow-wrap: anywhere;
+}
+
+/* Link payments: the tick in each row's first cell, the count and "Select all shown" above */
+.adv-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--target-min);
+  cursor: pointer;
+}
+
+.adv-pick input {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  margin: 0;
+  accent-color: var(--color-btn-primary-bg);
+}
+
+.adv-pickbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.adv-pickbar .btn--text {
+  min-height: var(--target-min);
+  padding-inline: 0;
+}
+
+.adv-pickbar__count {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.adv-pick__note {
+  margin: 0;
+}

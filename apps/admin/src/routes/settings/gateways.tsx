@@ -3,7 +3,7 @@
 // `GET /api/v1/payments/gateways` (names only, never a value); the mode is the settings row, saved here. Live stays locked until the owner's go-live
 // (PAYMENTS_LIVE_ALLOWED, Phase 7); the API refuses it too (409 `live_locked`). A change needs a fresh step-up (gateways.manage), which the API asks for on save.
 // M6.3 (run file G3): Stripe's row says the kind of its key (L3: only a restricted test key is used while payments aren't live; any other is refused before a
-// call) and its last verified webhook.
+// call) and its last verified webhook. M6.4 (run file G6): PayPal's row shows whether its client ID and secret are set (finance) and its last verified webhook.
 import { GATEWAYS, type Gateway, type Settings } from "@techaust/core/settings";
 import { type FormEvent, useState } from "react";
 import {
@@ -152,18 +152,17 @@ function GatewayForm({
                       )}
                     </dd>
                   </div>
-                  {(g === "razorpay" || g === "stripe") && (
-                    <div className="gateway__keys">
-                      <dt className="muted">{GW.lastWebhook}</dt>
-                      <dd>
-                        {s?.lastVerifiedWebhookAt ? (
-                          <When ms={s.lastVerifiedWebhookAt} inline />
-                        ) : (
-                          <span className="muted">{GW.noWebhook}</span>
-                        )}
-                      </dd>
-                    </div>
-                  )}
+                  {/* every gateway's last verified webhook (M6.4, run file G6: PayPal's too, read from D1; its webhook ID is the jobs Worker's) */}
+                  <div className="gateway__keys">
+                    <dt className="muted">{GW.lastWebhook}</dt>
+                    <dd>
+                      {s?.lastVerifiedWebhookAt ? (
+                        <When ms={s.lastVerifiedWebhookAt} inline />
+                      ) : (
+                        <span className="muted">{GW.noWebhook}</span>
+                      )}
+                    </dd>
+                  </div>
                 </dl>
               </li>
             );
