@@ -276,3 +276,41 @@ Usage: builder claude-opus-5-5/high (workers-profiling, workers-best-practices, 
 - **Fix in this task (builder, one short round):** 1, 2 (regenerate the fixtures once), 4, 5, 6, 7, 8, 10.
 - **Kept:** 3 (follow-up only if D1 query counts start to matter: D1 counts a batch as one query against the Free plan's 50 per invocation, per the analyst's reading of the D1 limits page); 9 (watch CI's reading on the PR; if finance passes 150 ms in CI, trim the dry run).
 - **The builder's open question** (writes over 7 ms on staging): decided after the staging `f:1` reading; the owner's Workers Paid decision takes it into account.
+
+## Review fix report (builder claude-opus-5-5/high, 2026-11-02; branch `fix/cpu-warmup-review` from `origin/feat/cpu-warmup` @ `53ca93fa`)
+Skills loaded: **cloudflare:workers-best-practices** (no new I/O or module-level request state; the warm env's bindings and the one request-facts helper keep `ctx` and env passed explicitly), **cloudflare:workers-profiling** (no deployed profiling: this round changes no hot path; start-up read from the budget's probe, below).
+
+### Each finding, with its files
+1. **Secret shapes in the fixtures** (`apps/admin/worker/warm-fixtures.test.ts`): every string of every fixture, keys and values, calls and rows, is scanned for Razorpay live/test keys, Stripe `sk`/`rk` live/test keys, Stripe webhook secrets, AWS access key ids, PEM blocks, GitHub tokens, JWTs, and a long base64 run (32+ characters with a capital, a small letter and a digit) anywhere except as the whole value of the four cryptographically checked keys. A test plants a sample of each shape inside a settings JSON value, as a row key and as a call body value, and proves each is caught; another proves a long run passes only under a checked key, that the other shapes are caught there too, and that ids, content hashes, paths and camelCase names are not flagged. Patterns and samples are put together from pieces at run time (`j(...)`, `.repeat`); no secret-looking literal sits in the source.
+2. **Far-future expiries** (`scripts/cpu-probe.mjs` `WARM_FAR_FUTURE_MS`, `farFutureExpiries`; `apps/admin/worker/warm-fixtures/{front,api,finance}.ts` regenerated; `warm-routes.test.ts`): the writer writes 2100-01-01T00:00:00Z for every `*_expires_at` and `step_up_until` number (a null stays null). Fixtures regenerated once with `node scripts/cpu-probe.mjs --write-fixtures` after an admin and jobs build: the same 21 cases and statuses as before, new made-up ids. A test checks that all 9 expiries are that instant and runs every Worker's dry run with the clock a day before it: still 6 / 5 / 9 answered, no refusal.
+4. **No gateway transport in the warm env** (`apps/admin/worker/warm-routes.ts`): `GATEWAY_TRANSPORT` is dropped, and the comment says so; the test also proves the key is absent and that the transport stays "unset" even with `ENVIRONMENT: "local"`.
+5. **The budget sandbox's `Date()`** (`scripts/worker-budget.mjs` `startupDate`, `FROZEN_CLOCK`; `.d.mts`): a function wrapper in place of the class. `Date.now()` and `new Date()` read 0, `Date()` without `new` returns the string of 0 (workerd's behaviour), `new Date(x)`, `instanceof`, the statics and subclassing are unchanged. The sandbox runs the function's own source, so there is one definition. Tests in `packages/core/test/worker-budget.test.ts`, inside the sandbox and directly.
+6. **`new Date()` in the probe** (`scripts/cpu-probe-runtime.mjs` `underGlobalScopeRules`): it swaps in the same `startupDate` (imported from worker-budget.mjs, which has no heavy imports) and restores the real `Date`. Test: `new Date()` reads 0 inside and the real clock is back afterwards.
+7. **No-trace test covers the API** (`warm-routes.test.ts`): the API dry run joins finance and front, `console.warn` is watched too, and the API's `GET /api/v1/clients/:id` is checked to be still a first run.
+8. **One request-facts helper** (`apps/admin/worker/app.ts` `requestFacts(warm, cfRay)`, `forward.ts`): the app's outermost middleware and the forwarder both call it; `WARM_REQUEST` stays private. Same log keys and values; a test pins the warm (`iso: "warm"`, `n: 0`, `rid: "warm"` or the clipped `cf-ray`) and real behaviour.
+10. **`fetch` refused for the whole child run** (`scripts/cpu-probe-runtime.mjs` `refuseNetwork`, `NO_NETWORK`; `scripts/cpu-probe.mjs` entry; `.d.mts`): every `--seed`, `--case` and `--challenge` child calls it first; `underGlobalScopeRules` then saves and restores the refusal, never the real `fetch`. Test: `fetch` rejects with `NO_NETWORK` before and after the rules. The `--write-fixtures` run above (a seed and 21 case children) ran with it on, with nothing refused that the probe needed.
+
+### Tests and checks
+- `pnpm check` (through the queue, `.logs/rf-check.log`): exit 0, biome 1,546 files, all typechecks and guards ok.
+- `pnpm --filter @techaust/admin test`: 143 files, 4,142 tests passed. `pnpm --filter @techaust/core test`: 102 files, 2,159 passed (coverage gate included). `pnpm --filter @techaust/jobs test`: 36 files, 607 passed.
+- `pnpm --filter @techaust/admin build`: ok (below). `pnpm --filter @techaust/jobs build`: ok, 703,282 bytes, start-up 56.4 ms.
+- `pnpm exec biome check` on each changed file while working.
+
+### Bytes and start-up (`pnpm --filter @techaust/admin build`, budget probe, fastest of 7, start-up work included)
+| Worker | Bytes (review) | Bytes now | Start-up now |
+|---|---|---|---|
+| admin front | 110,707 | 110,696 | 29.2 ms |
+| admin API | 488,788 | 488,824 | 73.6 ms |
+| admin finance | 609,527 | 609,567 | 82.7 ms |
+
+One earlier build, while another project's `pytest` ran and free memory was about 220 MB, read finance at **332.4 ms and failed the 200 ms limit** (`.logs/rf-build1.log`). Run alone straight afterwards on the same bundle, the new budget script read 78.7 ms and the old one (`53ca93fa`) 82.6 ms, so the reading was the machine's load, not the new `Date`. This is the review's finding 9 again (kept by the lead): CI's reading on the PR is the one to watch.
+
+### Not verified
+- gitleaks over the new commits (not installed here); the test file builds every pattern and sample from pieces, so no contiguous secret shape is in it.
+- Real workerd start-up (`wrangler check startup`) and staging `startup_time_ms`; the probe's timing run (`--runs 7`) was not repeated, only `--write-fixtures`.
+- That the far-future value is right for any expiry column a later fixture may add: the rule covers `*_expires_at` and `step_up_until` numbers only.
+
+### Open questions
+None.
+
+Usage: builder claude-opus-5-5/high (workers-best-practices, workers-profiling; the builder can't read the 5-hour bar).
