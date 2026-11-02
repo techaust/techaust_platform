@@ -687,13 +687,19 @@ const stateOfRow = (c: CheckoutRow): CaptureReturnState =>
           ? "not_found"
           : "not_completed";
 
-/** Capture (or settle) one PayPal checkout (run file C steps 1 to 9). Never throws for PayPal's answer. */
+/**
+ * Capture (or settle) one PayPal checkout (run file C steps 1 to 9). Never throws for PayPal's answer. `approvedOnly` (review part 1, finding 2, the optional low):
+ * a caller that is not the client's own return or PayPal's approval event (the sweep, the portal's poll, a member's "Check now" or retry) never POSTs a capture on
+ * an UNCLAIMED order PayPal doesn't show approved: the order is read first (a read is not a payment attempt; a capture already in it is settled), so repeated
+ * refreshes of an order the client left or PayPal declined don't count toward PayPal's attempt limit (`MAX_NUMBER_OF_PAYMENT_ATTEMPTS_EXCEEDED`).
+ */
 export async function capturePayPalCheckout(
   env: GatewayEnv,
   checkout: CheckoutRow,
   src: CaptureSource,
   now = Date.now(),
   ids: Ids = uuidv7,
+  approvedOnly = src.kind === "sweep" || src.kind === "staff",
 ): Promise<CaptureOutcome> {
   const db = env.DB;
   const c = checkout;
@@ -723,6 +729,14 @@ export async function capturePayPalCheckout(
       return { state: "expired" };
     }
     return byOrder(ctx, c, c.capture_started_at, "abandon");
+  }
+  if (approvedOnly && c.capture_started_at === null) {
+    const o = await api.getOrder(c.provider_link_id);
+    // PayPal unreachable, or no such order (the row expires at its grace): nothing is asked of the capture now.
+    if (!o.ok) return { state: o.code === "not_found" ? "not_completed" : "processing" };
+    const cap = captureOf(o.value);
+    if (cap) return settleCapture(ctx, c, o.value, cap);
+    if (o.value.status !== "APPROVED") return { state: "not_completed" };
   }
   // (2) the claim
   const claimed = await paypalCaptureClaimStatement(db, { id: c.id, now }).run();
@@ -878,7 +892,7 @@ export async function refreshPayPalCheckout(
     return "no_open_link";
   const claim = await checkoutRefreshClaimStatement(env.DB, { id: checkout.id, now }).run();
   if (claim.meta.changes !== 1) return "too_soon";
-  return refreshResultOf(await capturePayPalCheckout(env, checkout, src, now, ids));
+  return refreshResultOf(await capturePayPalCheckout(env, checkout, src, now, ids, true));
 }
 
 /** The refresh's words for the return's state (the signed-in page's return through `refreshForClient`, early check 2 finding 3). */

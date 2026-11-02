@@ -1,8 +1,9 @@
 // The signed-in contact's invoices (M5.4; POR-06, POR-07, Q49, LD62): the list of invoices, proformas, credit notes and debit notes of the organisation, one document's summary and its PDF. A finance-only area (a
 // contact without "can see finance" gets the plain 404, as for a document that is not theirs). Every query goes through `forClient`/`bound` with the organisation of the session (`client_id = ?1`);
 // another organisation's invoice is the same 404 as one that does not exist. Nothing here pays or marks anything paid (M6, M7.1).
+import { IP_READ, portalPayKey, RESERVE_SQL } from "@techaust/auth";
 import { Hono } from "hono/tiny";
-import { type AppEnv, BAD_REQUEST, type Ctx, err, NOT_FOUND } from "./context.ts";
+import { type AppEnv, BAD_REQUEST, type Ctx, err, NOT_FOUND, rateLimited } from "./context.ts";
 import {
   CREDIT_NOTES_SQL,
   type CreditNoteRow,
@@ -26,6 +27,7 @@ import {
 import { bound, streamPdf } from "./offer-core.ts";
 import { pdfFileName } from "./offer-sql.ts";
 import { createLink, payAnswer, payBody, providerOf, refreshForClient } from "./pay.ts";
+import { PAY_RETURN_LIMIT, PAY_RETURN_WINDOW_MS } from "./pay-return.ts";
 import { scope } from "./scope.ts";
 import { json } from "./validate.ts";
 
@@ -34,6 +36,25 @@ const LIMIT = /^\d{1,2}$/;
 const AFTER = /^\d{4}-\d{2}-\d{2}:[A-Za-z0-9-]{1,64}$/;
 /** Our checkout id on the signed-in page's PayPal return (`c`, a UUID). */
 const CHECKOUT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * Review part 1, finding 2: the signed-in page's PayPal returns (`?c=`) per CONTACT, under the same `p:pay:` window as the emailed link's return (20 per 10
+ * minutes, then locked for the window): each one may POST PayPal's capture, and repeated captures of a declined order count toward PayPal's own attempt limit.
+ * True when this request may go on; else the lock's end (UTC ms) for `Retry-After`.
+ */
+async function payReturnAllowed(c: Ctx, contactId: string, t: number): Promise<true | number> {
+  const db = c.env.DB;
+  const key = await portalPayKey(c.env.PORTAL_KEY_PEPPER, `contact:${contactId}`);
+  const [quota, lock] = await db.batch([
+    db.prepare(RESERVE_SQL).bind(key, t, PAY_RETURN_WINDOW_MS, PAY_RETURN_LIMIT, PAY_RETURN_WINDOW_MS, key),
+    db.prepare(IP_READ).bind(key),
+  ]);
+  if (quota?.results[0]) return true;
+  return (
+    (lock?.results[0] as { locked_until: number | null } | undefined)?.locked_until ??
+    t + PAY_RETURN_WINDOW_MS
+  );
+}
 
 /** ?1 client, ?2 and ?3 the last row's issue date and id (null on the first page), ?4 the page size plus one. Newest first. */
 export const LIST_SQL = `SELECT d.id, d.type, d.status, d.number_display, d.issue_date, d.due_date, d.currency, d.total_minor, d.balance_minor, d.voided_at
@@ -83,6 +104,11 @@ export const invoices = new Hono<AppEnv>()
     // malformed id is a 400.
     const checkoutId = c.req.query("c");
     if (checkoutId !== undefined && !CHECKOUT_ID.test(checkoutId)) return err(c, BAD_REQUEST, 400);
+    if (checkoutId !== undefined) {
+      const t = Date.now();
+      const allowed = await payReturnAllowed(c, s.contactId, t);
+      if (allowed !== true) return rateLimited(c, (allowed - t) / 1000);
+    }
     const refreshed =
       c.req.query("refresh") === "1" || checkoutId !== undefined
         ? await refreshForClient(c.env, {

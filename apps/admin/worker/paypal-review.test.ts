@@ -3,13 +3,15 @@
 // the optional low); a refund's `invoice_id` reaches the finance Worker (finding 4); the advices' period, count and keyset (findings 5 to 7); the provider
 // adapter's `createCheckout` (finding 9); the token's Basic auth (finding 10). PayPal is never called: the stub transport answers. All names and amounts are
 // invented test data.
+import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setStubTransport } from "./gateway/config.ts";
+import { refreshCheckoutById, refreshForClient } from "./gateway/links.ts";
 import { reviewReason } from "./gateway/messages.ts";
 import { owner } from "./test-gateway.ts";
-import { one, rows } from "./test-helpers.ts";
+import { call, one, rows } from "./test-helpers.ts";
 import { currentFy, lutOf, putSwiftBank, putTax } from "./test-invoice-types.ts";
-import { putBank, putCompany } from "./test-invoices.ts";
+import { json, putBank, putCompany } from "./test-invoices.ts";
 import {
   apiCalls,
   capOf,
@@ -88,5 +90,74 @@ describe("a capture PayPal reports as not final [finding 1; ADM-PAY-04, run file
     expect(await signedInReturn(o)).toEqual({ state: "paid" });
     expect(apiCalls()).toEqual([]);
     expect(await reviewKinds("document_id", o.documentId)).toEqual(["not_final"]);
+  });
+});
+
+describe("a refresh never POSTs a capture on an order PayPal doesn't show approved [finding 2, the optional low; L14]", () => {
+  /** PayPal's order of `orderId` as it stands before the client approves it (no capture, status CREATED). */
+  const notApproved = (orderId: string) => (path: string, method: string) =>
+    method === "GET" && path === `/v2/checkout/orders/${orderId}`
+      ? orderAnswer(
+          orderId,
+          (x) => {
+            x.status = "CREATED";
+          },
+          false,
+        )
+      : null;
+
+  it("the sweep, the portal's poll and Check now read the order first: not approved → no capture call, the row stays live", async () => {
+    const o = await owner();
+    const a = await liveOrder();
+    paypalStub(notApproved(a.orderId));
+    const now = Date.now();
+    expect(await refreshCheckoutById(env, a.checkoutId, now)).toEqual({ result: "unchanged" });
+    expect(apiCalls().map((c) => `${c.method} ${c.path}`)).toEqual([`GET /v2/checkout/orders/${a.orderId}`]);
+    expect(await ppCheckout(a.checkoutId)).toMatchObject({ status: "live", capture_started_at: null });
+    // The portal's poll (no checkout named) a minute later: the same read, no capture.
+    paypalStub(notApproved(a.orderId));
+    await env.DB.prepare("UPDATE checkout_sessions SET last_refresh_at = ?2 WHERE id = ?1")
+      .bind(a.checkoutId, now - 120_000)
+      .run();
+    expect(await refreshForClient(env, { clientId: a.clientId, documentId: a.documentId })).toEqual({
+      result: "unchanged",
+    });
+    expect(captures()).toEqual([]);
+    // Check now, the same.
+    await env.DB.prepare("UPDATE checkout_sessions SET last_refresh_at = ?2 WHERE id = ?1")
+      .bind(a.checkoutId, now - 120_000)
+      .run();
+    paypalStub(notApproved(a.orderId));
+    const res = await call(`/payments/links/${a.checkoutId}/refresh`, { cookie: o.cookie, body: {} });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await json(res)).toMatchObject({ ok: true, result: "unchanged" });
+    expect(captures()).toEqual([]);
+    expect(await ppCheckout(a.checkoutId)).toMatchObject({ status: "live", capture_started_at: null });
+  });
+
+  it("an approved order is captured by the refresh; one PayPal already captured is settled with no capture call; the client's own return captures at once", async () => {
+    const approved = await liveOrder();
+    paypalStub((path, method) =>
+      method === "GET" && path === `/v2/checkout/orders/${approved.orderId}`
+        ? orderAnswer(approved.orderId, () => undefined, false)
+        : null,
+    );
+    expect(await refreshCheckoutById(env, approved.checkoutId)).toEqual({ result: "processed" });
+    expect(apiCalls().map((c) => `${c.method} ${c.path}`)).toEqual([
+      `GET /v2/checkout/orders/${approved.orderId}`,
+      `POST /v2/checkout/orders/${approved.orderId}/capture`,
+    ]);
+    expect((await ppPaymentOf(capOf(approved.orderId)))?.status).toBe("confirmed");
+    const done = await liveOrder();
+    paypalStub((path, method) =>
+      method === "GET" && path === `/v2/checkout/orders/${done.orderId}` ? orderAnswer(done.orderId) : null,
+    );
+    expect(await refreshCheckoutById(env, done.checkoutId)).toEqual({ result: "processed" });
+    expect(captures()).toEqual([]);
+    expect((await ppPaymentOf(capOf(done.orderId)))?.status).toBe("confirmed");
+    const back = await liveOrder();
+    paypalStub();
+    expect(await signedInReturn(back)).toEqual({ state: "paid" });
+    expect(apiCalls().map((c) => c.method)).toEqual(["POST"]);
   });
 });
