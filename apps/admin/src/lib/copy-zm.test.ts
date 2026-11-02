@@ -44,10 +44,10 @@ describe("07-ZM staff lines [M6.3]", () => {
     expect(ZM("x")).toBe(APPROVED_07ZM ? "x" : "[Placeholder] x");
   });
 
-  it("the designer's drafts (not in 07-ZM) stay marked under their own switch until the lead approves them", () => {
+  it("the designer's lines stay marked under their own switch until the lead approves them, then are on the 07-ZM page word for word", () => {
     for (const line of Object.values(ZM_DRAFTS)) {
       expect(line.startsWith(`${PLACEHOLDER_MARK} `)).toBe(!APPROVED_ZM_DRAFTS);
-      expect(zmPage).not.toContain(line.replace(`${PLACEHOLDER_MARK} `, ""));
+      if (APPROVED_ZM_DRAFTS) expect(zmPage).toContain(`- "${line}"`);
     }
   });
 

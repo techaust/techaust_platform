@@ -3,7 +3,7 @@
 // "[Placeholder] " mark (the copy-zl.ts pattern), and `APPROVED_07ZM` turns true when the lead approves the placed page. S16, S17 and S19 are the finance
 // Worker's (apps/admin/worker/gateway/reasons.ts and messages.ts); S19 is the builder's draft for the lead. Pure, so the words are tested without a browser.
 
-export const APPROVED_07ZM = false;
+export const APPROVED_07ZM = true;
 export const PLACEHOLDER_MARK = "[Placeholder]";
 /** A 07-ZM staff line as the screen shows it: marked until the lead approves the placed page. */
 export const ZM = (line: string): string => (APPROVED_07ZM ? line : `${PLACEHOLDER_MARK} ${line}`);
@@ -38,7 +38,7 @@ export const CARD_ZM = {
  * until the lead approves them (`APPROVED_ZM_DRAFTS`, its own switch, so approving S13 to S19 never approves these by accident). Listed in the run file's
  * designer report.
  */
-export const APPROVED_ZM_DRAFTS = false;
+export const APPROVED_ZM_DRAFTS = true;
 const DRAFT = (line: string): string => (APPROVED_ZM_DRAFTS ? line : `${PLACEHOLDER_MARK} ${line}`);
 export const ZM_DRAFTS = {
   /** Settings › Gateways, the Stripe key's kind (L3: only a restricted test key is used while payments are not live). */

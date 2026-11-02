@@ -41,3 +41,11 @@ S18. "Smallest part-payment by card (USD)" / "Largest card payment (USD)"; hint:
 - `document_not_payable` reasons in words: `client_domestic` "the client is in India"; `not_usd` "it isn't in US dollars"; `above_gateway_maximum` "even the smallest payment allowed is above the card payment limit"; `payment_pending` "a payment on it is still waiting to be confirmed"; `use_portal` "card payments are made by the client from the portal"
 - The M6.2 review lines that named Razorpay name the item's gateway (Stripe or Razorpay) with the same words: `refetch_failed`, `dead_letter`, `partial_payment`, `payment_not_on_link`, `unreadable_event`; amounts in the item's currency.
 - `document_not_payable` reason `below_gateway_minimum` (changes the M6.2 words of [07-ZI](ZI-m6.2-razorpay.md) S20's `{reason}`, "less than ₹1 was due on it", which named the rupee while Stripe's minimum is USD 0.50; staff-only, early check 2, open question 4): "less than the smallest amount the gateway takes was due on it"
+
+### Designer's lines (placed 2026-11-02; approved by the lead under delegation, 2026-11-02)
+Settings › Gateways, the kind of Stripe key beside "Configured":
+- "Restricted test key"
+- "Restricted live key. It isn't used until go-live."
+- "Not a restricted key, so it is refused. Card payments stay off until it is replaced."
+
+**Approval (lead, 2026-11-02):** S13–S19 approved **as placed** (screenshots `.logs/m6.3/design/`), with the early check 2 changes; the admin switches `APPROVED_07ZM` and `APPROVED_ZM_DRAFTS` are on. The "Before going live" checklist text for Settings › Gateways is left for Phase 7 (L9), with the live keys.
