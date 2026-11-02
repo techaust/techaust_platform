@@ -27,7 +27,7 @@ export const ZN_UI = {
   // G3: the PayPal slip on a USD document's Payments panel
   payPalTitle: "PayPal",
   payPalBody:
-    "Clients pay with PayPal from their portal page or the emailed invoice link. Each PayPal checkout lasts 3 hours, so there is nothing to copy here.",
+    "Clients pay with PayPal from their portal page or the emailed invoice link. Each PayPal checkout lasts up to two and a half hours, so there is nothing to copy here.",
   cancelCheckout: "Cancel checkout",
   cancelTitle: "Cancel this PayPal checkout?",
   cancelBody:

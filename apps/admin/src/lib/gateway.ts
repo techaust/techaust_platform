@@ -150,15 +150,28 @@ export function stripeFacts(r: {
 /**
  * Whether S13's "Copy portal link" is worth offering on a card-payable document: only while something can still be paid by card. Not on a converted proforma
  * or a settled document, and (M6.3 review finding 5) not while a proforma's card payment waits for the Owner's rate ("Confirm by issuing"): the portal hides
- * Pay then and shows C8, as the Payment link card holds back a second link (`waitingInvoice`).
+ * Pay then and shows C8, as the Payment link card holds back a second link (`waitingInvoice`). M6.4 (lead, Q2 of the admin round): nor while PayPal holds, or a
+ * capture call has claimed, a PayPal checkout of the document (`capturing`, from `payPalCapturing`): the portal hides Pay then and shows 07-ZN line 10.
  */
 export function portalLinkOffered(
   status: string,
   balanceMinor: number,
   payments: readonly { proformaPending: boolean }[],
+  capturing = false,
 ): boolean {
-  return status !== "converted" && balanceMinor > 0 && !payments.some((g) => g.proformaPending);
+  return status !== "converted" && balanceMinor > 0 && !capturing && !payments.some((g) => g.proformaPending);
 }
+
+/**
+ * M6.4: a PayPal capture is held (`capture_pending`, "Awaiting PayPal") or claimed for the document: the void blockers' `payment_pending_capture` (held or
+ * claimed, core `voidBlockers`), or a checkout row PayPal holds (a note's blockers are only `note_not_voidable`, so the row is read too). The portal hides Pay
+ * while either is true (its `payment_pending`).
+ */
+export const payPalCapturing = (
+  voidBlockers: readonly string[],
+  links: readonly { status: PaymentLinkStatus }[],
+): boolean =>
+  voidBlockers.includes("payment_pending_capture") || links.some((l) => l.status === "capture_pending");
 
 /** S13's body: it tells staff to send the portal link only when "Copy portal link" is drawn (re-check finding 1). */
 export const cardBodyText = (portalUrl: string | null): string =>

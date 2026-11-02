@@ -16,6 +16,7 @@ import {
   gatewayLine,
   inrPerUsdText,
   itemReason,
+  payPalCapturing,
   portalInvoiceUrl,
   portalLinkOffered,
   stripeFacts,
@@ -221,5 +222,18 @@ describe("portalLinkOffered [ADM-PAY-01]", () => {
   it("not on a converted proforma or a settled document", () => {
     expect(portalLinkOffered("converted", 120_000, [])).toBe(false);
     expect(portalLinkOffered("paid", 0, confirmed)).toBe(false);
+  });
+
+  // M6.4 (lead, Q2 of the admin round): the portal hides Pay while PayPal holds, or a capture call has claimed, a checkout, so the link isn't offered then.
+  it("not while a PayPal capture is held or claimed (the portal hides Pay)", () => {
+    expect(portalLinkOffered("issued", 120_000, [], true)).toBe(false);
+    expect(portalLinkOffered("issued", 120_000, confirmed, false)).toBe(true);
+    const live = { status: "live" as const };
+    // held: PayPal's own hold, on the checkout row (a note's blockers never list it)
+    expect(payPalCapturing(["note_not_voidable"], [live, { status: "capture_pending" }])).toBe(true);
+    // claimed: a capture call in flight (the void blockers' code; the row still reads live)
+    expect(payPalCapturing(["already_emailed", "payment_pending_capture"], [live])).toBe(true);
+    expect(payPalCapturing(["already_emailed"], [live, { status: "paid" }])).toBe(false);
+    expect(payPalCapturing([], [])).toBe(false);
   });
 });

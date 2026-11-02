@@ -47,6 +47,7 @@ import {
   itemReason,
   LINK_CHIPS,
   linkHint,
+  payPalCapturing,
   payPalChip,
   portalInvoiceUrl,
   portalLinkOffered,
@@ -418,7 +419,15 @@ export function CardPayments(props: { view: InvoiceView; panel: Panel }) {
   // The portal link is worth sending only while something can still be paid by card (a converted proforma, a settled invoice or a proforma whose card payment
   // waits for the Owner's rate has nothing left to pay online).
   const portal =
-    can && portalLinkOffered(v.status, p.balanceMinor, p.gateway.payments) ? portalInvoiceUrl(v.id) : null;
+    can &&
+    portalLinkOffered(
+      v.status,
+      p.balanceMinor,
+      p.gateway.payments,
+      payPalCapturing(v.void.blockers, p.gateway.links),
+    )
+      ? portalInvoiceUrl(v.id)
+      : null;
 
   async function copy(url: string) {
     try {
