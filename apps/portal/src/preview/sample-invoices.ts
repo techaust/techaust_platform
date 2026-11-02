@@ -569,6 +569,15 @@ export function answerInvoices(
       });
     }
     if (!pp[3]) return h.json(200, { document: d });
+    // …000a: the pay quota refuses the `?c=` ask (review 2 finding 7); the page reads the document plainly and keeps checking
+    if (Number.parseInt(pp[3].slice(-1), 16) === 10)
+      return new Response(
+        JSON.stringify({
+          error: { code: "rate_limited", message: "Too many requests. Please try again later." },
+          request_id: "sample-request",
+        }),
+        { status: 429, headers: { "Content-Type": "application/json", "Retry-After": "540" } },
+      );
     const ret = payPalReturnSample(pp[3]);
     // paid: the server's answer already shows the payment (the newest online one, through PayPal)
     const doc: InvoiceSummary =

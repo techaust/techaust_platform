@@ -4,6 +4,7 @@
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { isGatewayLinkUrl, type LinkHostGateway } from "@techaust/core/gateway-rpc";
 import { compare, formatMoney, money, parseMoney } from "@techaust/core/money";
+import { RequestError } from "../api.ts";
 import type { PayPhase } from "../components/pay/pay-status.tsx";
 import { PAY_ZI } from "../copy-zi.ts";
 import { PAY_ZM } from "../copy-zm.ts";
@@ -357,6 +358,33 @@ export function payPalPhaseOf(
     case "not_found":
       return null;
   }
+}
+
+/**
+ * M6.4 review 2 finding 7: one read of the document back from PayPal. The read that names the checkout (`?c=`) counts against the client's pay quota, so a
+ * quota refusal (429) is never the page's failure: the document is read plainly instead (`asked: false`), the page stays on 07-ZN line 4 and the next ask
+ * names the checkout again. Any other failure is the read's own.
+ */
+export async function readPayPalReturn<T>(
+  ask: () => Promise<T>,
+  plain: () => Promise<T>,
+): Promise<{ answer: T; asked: boolean }> {
+  try {
+    return { answer: await ask(), asked: true };
+  } catch (e) {
+    if (e instanceof RequestError && e.status === 429) return { answer: await plain(), asked: false };
+    throw e;
+  }
+}
+
+/**
+ * The address of "Try again on PayPal" (07-ZN line 8), or null when the block draws no such button: only on a declined return, and only for PayPal's own page
+ * (the server checked it; the browser checks again). While it shows, it is the page's one primary action (review 2 finding 10).
+ */
+export function payPalRetryOf(state: PayPhase | null): string | null {
+  return state?.phase === "declined" && state.retryUrl && isGatewayUrl("paypal", state.retryUrl)
+    ? state.retryUrl
+    : null;
 }
 
 /** The online block's facts the page reads to name a gateway (M6.4: `open.provider`, `lastPaid.provider`, `pendingPayPal`; absent from an older API). */

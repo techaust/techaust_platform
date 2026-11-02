@@ -31,9 +31,11 @@ import {
   POLL_FOR_MS,
   POLL_MS,
   payPalPhaseOf,
+  payPalRetryOf,
   payPalReturnOf,
   payWaysOf,
   REFRESH_AT_MS,
+  readPayPalReturn,
   recalledPay,
   receivedAfter,
   takePayReturn,
@@ -96,9 +98,13 @@ function DocumentScreen(props: {
   );
 
   /** One read of the document: while PayPal's answer is open, the read that names the checkout, and its state becomes the page's (07-ZN lines 4 to 11). */
+  // Review 2 finding 7: an ask the pay quota refuses (429) reads the document plainly instead and leaves the page on line 4; the next ask names it again.
   const read = useCallback(async (): Promise<{ document: InvoiceSummary }> => {
-    if (!(askPayPal.current && payPalCheckout && source.payPalReturn)) return source.load();
-    const r = await source.payPalReturn(payPalCheckout);
+    const ask = source.payPalReturn;
+    if (!(askPayPal.current && payPalCheckout && ask)) return source.load();
+    const got = await readPayPalReturn(() => ask(payPalCheckout), source.load);
+    if (!got.asked) return got.answer;
+    const r = got.answer;
     const phase = payPalPhaseOf(payPalReturnOf(r.document.online?.payPalReturn), r.document);
     if (alive.current) {
       if (phase?.phase !== "checking") askPayPal.current = false;
@@ -245,6 +251,7 @@ function DocumentScreen(props: {
         canPay ? (
           <PayWays
             ways={ways}
+            quiet={payPalRetryOf(payState) !== null}
             documentId={doc.id}
             proforma={doc.type === "proforma"}
             balanceMinor={doc.balanceMinor as number}

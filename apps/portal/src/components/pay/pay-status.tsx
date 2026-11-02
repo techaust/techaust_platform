@@ -7,7 +7,7 @@
 import { PAY_ZI } from "../../copy-zi.ts";
 import { PAY_ZM } from "../../copy-zm.ts";
 import { PAY_ZN } from "../../copy-zn.ts";
-import { currencyOf, isGatewayUrl, moneyText, type PayGateway } from "../../lib/pay.ts";
+import { currencyOf, moneyText, type PayGateway, payPalRetryOf } from "../../lib/pay.ts";
 import { AlertTriangle, CheckCircle, Clock, Info } from "../icons.tsx";
 
 export type PayPhase =
@@ -100,10 +100,7 @@ function wordsOf(state: PayPhase, provider: PayGateway): { title?: string; body?
 export function PayStatus({ state, provider = "razorpay" }: { state: PayPhase; provider?: PayGateway }) {
   const w = wordsOf(state, provider);
   // The button back to PayPal is drawn only for PayPal's own page (the server checked it; the browser checks again before offering it).
-  const retry =
-    state.phase === "declined" && state.retryUrl && isGatewayUrl("paypal", state.retryUrl)
-      ? state.retryUrl
-      : null;
+  const retry = payPalRetryOf(state);
   return (
     <div
       className="pay-status"

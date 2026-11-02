@@ -8,6 +8,8 @@
 .pay-panel {
   display: grid;
   gap: var(--space-5);
+  /* the entries' gateway ids keep one line once the panel is wide enough for them (review 2 finding 2, below) */
+  container: pay-panel / inline-size;
 }
 
 .pay-panel > .lead-panel__head,
@@ -1151,6 +1153,28 @@
 .pay-lines .docno.break {
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* M6.4 review 2 finding 2: a gateway's payment id (Razorpay, Stripe, PayPal) is one token people read back and search for, so it breaks only when the panel
+   can't hold it. From a 45rem panel the column holds a PayPal or Razorpay id (17 or 18 characters) whole and only a longer one breaks; from 50rem every id,
+   Stripe's 27 characters too, keeps one line and the facts beside it wrap instead. A narrower table (a tablet beside the menu, measured at 768 and 1024 px)
+   has no room for that column, so there and in the stacked cards it breaks where it must, as before. */
+.pay-lines .pay-lines__gateway-id {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@container pay-panel (min-width: 45rem) {
+  .pay-lines .pay-lines__gateway-id {
+    display: inline-block;
+    min-width: 18ch;
+  }
+}
+
+@container pay-panel (min-width: 50rem) {
+  .pay-lines .pay-lines__gateway-id {
+    white-space: nowrap;
+  }
 }
 
 /* ---------- M6.4 PayPal and remittance advices (run file G3, G5) ----------
