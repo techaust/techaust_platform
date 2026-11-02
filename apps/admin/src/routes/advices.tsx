@@ -234,12 +234,14 @@ function AdviceList(props: { canAdd: boolean; onAdd: () => void }) {
         </Link>
       ),
     },
-    { key: "advice", header: ZN_UI.colAdvice, width: "30%", cell: (a) => <AdviceName a={a} /> },
+    { key: "advice", header: ZN_UI.colAdvice, cell: (a) => <AdviceName a={a} /> },
     { key: "from", header: ZN_UI.colGateway, cell: (a) => ADVICE_PROVIDER_LABELS[a.provider] ?? a.provider },
     {
       key: "period",
       header: ZN_UI.colPeriod,
-      cell: (a) => <span className="tnum">{periodText(a.period_from, a.period_to, day) ?? "–"}</span>,
+      cell: (a) => (
+        <span className="tnum adv-period">{periodText(a.period_from, a.period_to, day) ?? "–"}</span>
+      ),
     },
     {
       key: "payments",

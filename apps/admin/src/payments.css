@@ -1158,26 +1158,23 @@
    its kind is set like the stamp the bank or PayPal prints on it (a framed tag beside the reference in the document face), and its payments are the ledger's
    own lines. Nothing new in colour or size: tokens only. */
 
-/* Payments: the way to the advices, under the heading, before the tabs */
+/* Payments: the way to the advices is the page's lede (a link with its icon, and the count of PayPal payments no advice proves yet) */
 .pay-advices-link {
-  display: flex;
-  justify-content: flex-end;
-  margin: calc(-1 * var(--space-2)) 0 var(--space-4);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--target-min);
+  color: var(--color-text);
+  font-weight: 500;
 }
 
-.pay-advices-link .btn {
-  gap: var(--space-2);
+.pay-advices-link > .icon {
+  color: var(--color-text-muted);
 }
 
 .pay-advices-link .tabs__badge {
   margin-left: 0;
-}
-
-@media (max-width: 47.99rem) {
-  .pay-advices-link {
-    justify-content: flex-start;
-    margin-top: 0;
-  }
+  text-decoration: none;
 }
 
 /* the advice's name: its kind as a framed stamp, then its reference */
@@ -1204,6 +1201,13 @@
 .adv-name .docno.break {
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* the advice list at table width: a day, a period's ends and "Open file" never break inside themselves (the reference may) */
+.adv-table .dtable__table .pay-row__link,
+.adv-table .dtable__table .pay-proof-link,
+.adv-table .dtable__table .adv-period {
+  white-space: nowrap;
 }
 
 /* Without advice: the gateway picker and the count with its lede, then the list */
@@ -1290,8 +1294,10 @@
   border-bottom: 0;
 }
 
+/* the payment's day, client and reference take the left over two rows; its amount and its action (or "Removed") stack on the right */
 .adv-pay__what {
   display: grid;
+  grid-row: span 2;
   justify-items: start;
   min-width: 0;
 }

@@ -167,6 +167,7 @@ function Payments({ role }: { role: Role }) {
     <>
       <PageHeader
         title={PAY_COPY.heading}
+        lede={<AdvicesLink />}
         action={
           canRecord ? (
             <button type="button" className="btn btn--primary" onClick={() => setRecording("payment")}>
@@ -177,7 +178,6 @@ function Payments({ role }: { role: Role }) {
         }
         more={canRecord ? [{ label: PAY_UI.recordTds, onSelect: () => setRecording("tds") }] : undefined}
       />
-      <AdvicesLink />
       {owner ? (
         <Tabs
           label={PAY_COPY.heading}
@@ -223,27 +223,25 @@ function Payments({ role }: { role: Role }) {
 }
 
 /**
- * M6.4 (run file G5): the way to Remittance advices, under the page's heading, before its tabs, with the count of confirmed PayPal payments that no
- * advice proves yet (the S9 reminder's subject). A failed read shows the link without a count (the count is a hint; the page is the record).
+ * M6.4 (run file G5): the way to Remittance advices, the page's lede under its heading, with the count of confirmed PayPal payments that no advice
+ * proves yet (the S9 reminder's subject). A failed read shows the link without a count (the count is a hint; the page is the record).
  */
 function AdvicesLink() {
   const without = useLoad(() => paymentsApi.withoutAdvice("paypal"), "paypal");
   const n = without.state === "ready" ? without.data.count : 0;
   return (
-    <nav className="pay-advices-link" aria-label={ZN.advices}>
-      <Link to="/payments/advices" className="btn btn--secondary">
-        <FileText size={20} />
-        {ZN.advices}
-        {n > 0 && (
-          <>
-            <span className="tabs__badge" aria-hidden="true">
-              {n > 99 ? "99+" : n}
-            </span>
-            <span className="visually-hidden">, {ZN_UI.withoutCount(n)}</span>
-          </>
-        )}
-      </Link>
-    </nav>
+    <Link to="/payments/advices" className="pay-advices-link">
+      <FileText size={20} />
+      {ZN.advices}
+      {n > 0 && (
+        <>
+          <span className="tabs__badge" aria-hidden="true">
+            {n > 99 ? "99+" : n}
+          </span>
+          <span className="visually-hidden">, {ZN_UI.withoutCount(n)}</span>
+        </>
+      )}
+    </Link>
   );
 }
 
@@ -729,8 +727,11 @@ function EntryView(props: {
                 </dd>
               </div>
               <div>
-                <dt>{PAY_COPY.reference}</dt>
-                <dd className="docno break">{p.reference}</dd>
+                {/* M6.4: a PayPal payment's reference is its capture id, as PayPal's dashboard shows it (review finding 13's "Payment ID"), not a UTR */}
+                <dt>{p.provider === "paypal" ? GW_UI.paymentId : PAY_COPY.reference}</dt>
+                <dd className="docno break">
+                  {p.provider === "paypal" ? (p.providerPaymentId ?? p.reference) : p.reference}
+                </dd>
               </div>
               {p.chargesMinor > 0 &&
                 (online ? (
@@ -777,7 +778,8 @@ function EntryView(props: {
               </div>
             </>
           )}
-          {p.kind === "payment" && (!online || card) && (
+          {/* M6.4: a payment on a remittance advice is proved by it (its own line below), so "Proof awaited" isn't said of it */}
+          {p.kind === "payment" && (!online || card) && (p.proof?.hasFile || !props.data.advice) && (
             <div>
               <dt>{PAY_COPY.proof}</dt>
               <dd>
