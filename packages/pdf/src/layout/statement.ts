@@ -16,6 +16,7 @@
 import { esc } from "../escape.ts";
 import { PDF_LOGOS, PDF_PRINT_CSS, PDF_SYMBOL, TECHAUST_PDF_FONT_DATA } from "../generated/assets.ts";
 import { STATEMENT_PDF_COPY as C } from "./copy.ts";
+import { partsLine } from "./parts-line.ts";
 import { cssString, TEMPLATE_CSS } from "./styles.ts";
 
 /** The CSP of every document page (render.ts has the same): nothing external, inline styles only. */
@@ -73,18 +74,6 @@ export type StatementLayoutView = {
 };
 
 const p = (cls: string, text: string, attrs = "") => `<p class="${cls}"${attrs}>${esc(text)}</p>`;
-
-/**
- * A block line whose parts are joined by " · " ("GSTIN … · State …") breaks only between the parts, one part a line, the separator dropped there: the column is
- * too narrow for both, and the joined line broke inside "State West Bengal (19)" (M6.3 staging fixes, part 3: the layout audit; as ./invoice.ts and ./document.ts).
- */
-const partsLine = (cls: string, text: string) =>
-  !text.includes(" · ")
-    ? p(cls, text)
-    : `<p class="${cls}">${text
-        .split(" · ")
-        .map((part) => `<span class="keep">${esc(part)}</span>`)
-        .join("<br>")}</p>`;
 
 /** A formatted amount with its currency sign in its own span (the visual suite asks the font of that glyph). */
 function amountHtml(value: string): string {

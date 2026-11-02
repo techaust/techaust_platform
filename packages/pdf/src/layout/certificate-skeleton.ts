@@ -98,7 +98,7 @@ h1, h2 { margin: 0; }
     line-height: 1;
     color: var(--color-text-muted);
     vertical-align: middle;
-    width: 140mm;
+    width: 120mm;
   }
   @bottom-right {
     content: ${cssString(`${number}${number ? "   " : ""}${PDF_COPY.page.word} `)} counter(page) ${cssString(` ${PDF_COPY.page.of} `)} counter(pages);

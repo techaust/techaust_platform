@@ -17,23 +17,11 @@ import { PDF_LOGOS } from "../generated/assets.ts";
 import { markdownBlocks } from "../markdown-html.ts";
 import type { PdfView, ViewSection, ViewStep } from "../types.ts";
 import { PDF_COPY as C, unitWord } from "./copy.ts";
+import { partsLine } from "./parts-line.ts";
 
 const RUPEE = "₹";
 
 const p = (cls: string, text: string) => `<p class="${cls}">${esc(text)}</p>`;
-
-/**
- * A block line whose parts are joined by " · " (e.g. "GSTIN … · State …") breaks only between the parts, and the separator is dropped there, as the invoice
- * layout does (./invoice.ts `partsLine`): the party column is 4 of 12 columns, too narrow for both parts, so the joined line always wrapped and left " ·"
- * dangling at the end of its first line (M6.3 staging fixes, part 3: the layout audit). Each part stays whole on its own line.
- */
-const partsLine = (cls: string, text: string) =>
-  !text.includes(" · ")
-    ? p(cls, text)
-    : `<p class="${cls}">${text
-        .split(" · ")
-        .map((part) => `<span class="keep">${esc(part)}</span>`)
-        .join("<br>")}</p>`;
 
 /** The frozen logo file; an empty or unknown name falls back to the primary logo. The trade name is never typeset in its place (brand rule). */
 function logoHtml(view: PdfView): string {
