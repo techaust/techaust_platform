@@ -21,6 +21,7 @@ import {
 import { ANONYMISED_CLIENT } from "@techaust/core/clients";
 import { realisationParamsFromStoredTax } from "@techaust/core/invoices";
 import { todayIst } from "@techaust/core/offers";
+import { PAYMENTS_WITHOUT_ADVICE_COUNT_SQL } from "@techaust/db/advices";
 import { type AlertStage, STAGE_BELL_KIND } from "@techaust/db/realisation";
 import {
   EDF_COUNT_SQL,
@@ -197,6 +198,13 @@ export const OWNERS_WITHOUT_EDF_BELL = `SELECT u.id, u.email, u.name FROM staff_
 export const EDF_BELLS_INSERT = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
   SELECT 'n_' || lower(hex(randomblob(16))), json_extract(j.value, '$.u'), 'edf.due', 'report', ?1, ?2, ?3 FROM json_each(?4) j`;
 
+/** M6.4 (S9; staff words, the lead under the owner's delegation once placed; the finance Worker keeps the same words in gateway/messages.ts): the monthly advice reminder. */
+export const adviceBellTitle = (count: number, month: string) =>
+  `${count} PayPal payments from ${month} have no remittance advice yet.`;
+/** One bell per active owner and month (`?1` entity `advice:YYYY-MM`, `?2` title, `?3` link); a redelivery adds none (`notifications_user_event`). */
+export const ADVICE_BELLS_INSERT = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
+  SELECT 'n_' || lower(hex(randomblob(16))), o.id, 'payment.advice_missing', 'report', ?1, ?2, ?3 FROM staff_users o WHERE o.role = 'owner' AND o.status = 'active'`;
+
 export type EdfResult =
   | { kind: "invalid_message" | "no_exports" | "nobody_to_tell" }
   | { kind: "done"; exports: number; owners: number };
@@ -215,10 +223,22 @@ export async function processEdfReminder(env: Env, body: unknown): Promise<EdfRe
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const last = `${year}-${mm}-${String(lastDay).padStart(2, "0")}`;
   const entity = `edf:${year}-${mm}`;
-  const [count, owners] = await env.DB.batch([
+  const [count, owners, advices] = await env.DB.batch([
     env.DB.prepare(EDF_COUNT_SQL).bind(first, last),
     env.DB.prepare(OWNERS_WITHOUT_EDF_BELL).bind(entity),
+    // M6.4 (L12, ADM-INV-17): the month's confirmed PayPal payments with no remittance advice yet (one range of `payments_confirmed_provider`).
+    env.DB.prepare(PAYMENTS_WITHOUT_ADVICE_COUNT_SQL).bind("paypal", first, last),
   ]);
+  const missing = (advices?.results[0] as { n: number } | undefined)?.n ?? 0;
+  // The advice reminder rides this message (no new cron): one owners' bell per month while any is missing (S9; `INSERT OR IGNORE`, one per owner and month).
+  if (missing > 0)
+    await env.DB.prepare(ADVICE_BELLS_INSERT)
+      .bind(
+        `advice:${year}-${mm}`,
+        adviceBellTitle(missing, `${MONTH_NAMES[month - 1]} ${year}`),
+        "/payments/advices?tab=without",
+      )
+      .run();
   const n = (count?.results[0] as { n: number } | undefined)?.n ?? 0;
   if (n === 0) {
     logEvent("edf.no_exports");

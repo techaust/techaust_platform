@@ -32,10 +32,10 @@ export const BELL_SIGNATURES_STRIPE =
 /** "{client} paid {amount} by PayPal for {number}." (USD, en-US; builder's draft in S17's form.) */
 export const bellPaidByPayPal = (client: string, amountMinor: number, number: string | null) =>
   `${client} paid ${amountText(amountMinor, "USD")} by PayPal for ${number ?? "an invoice"}.`;
-/** S10: the PayPal signature bell (the jobs Worker writes it; a test holds the two copies equal). */
+/** S10: the PayPal signature bell (the jobs Worker writes it, `BELL_SIGNATURES_PAYPAL` in apps/jobs/src/hooks/paypal.ts, in the same words). */
 export const BELL_SIGNATURES_PAYPAL =
   "PayPal webhook signatures failed 5 times in an hour. Check the webhook ID.";
-/** S9: the monthly advice reminder (the jobs Worker writes it on `edf.reminder`; a test holds the two copies equal). */
+/** S9: the monthly advice reminder (the jobs Worker writes it on `edf.reminder`, `adviceBellTitle` in apps/jobs/src/reports.ts, in the same words). */
 export const bellAdvicesMissing = (count: number, month: string) =>
   `${count} PayPal payments from ${month} have no remittance advice yet.`;
 

@@ -26,6 +26,8 @@ export default defineConfig(async () => ({
           // M6.3: a fixed test Stripe webhook secret (never a real one).
           // Built at run time so no secret-looking literal is committed (the repo's secret scan, lead 2026-11-02).
           STRIPE_WEBHOOK_SECRET: ["whsec", "madeupfortests"].join("_"),
+          // M6.4: a made-up PayPal webhook id (an identifier, not a credential; never a real one).
+          PAYPAL_WEBHOOK_ID: "TESTPAYPALWEBHOOK01",
         },
       },
     }),
