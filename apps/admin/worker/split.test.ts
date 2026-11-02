@@ -10,11 +10,12 @@
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { decide, ROLES, type Role } from "@techaust/core";
+import { PatternRouter } from "hono/router/pattern-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import api, * as apiModule from "./api.ts";
 import { createApp } from "./app.ts";
 import finance, * as financeModule from "./finance.ts";
-import { workerOf } from "./forward.ts";
+import { forwardRoutes, forwardRowOf, forwardTable, workerOf } from "./forward.ts";
 import { ROUTES } from "./guard.ts";
 import front from "./index.ts";
 import { mountApi } from "./routes-api.ts";
@@ -24,6 +25,7 @@ import combined from "./test-app.ts";
 import { mkClient } from "./test-clients.ts";
 import { bodyOf, counted, countOf, ORIGIN, one, sampleRequest, sessionFor, withEnv } from "./test-helpers.ts";
 import { pdfOfSize, sha256Hex } from "./test-projects.ts";
+import { samplePath } from "./warm-router.ts";
 
 const SECRETS = ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"];
 const FRONT_ROWS = ROUTES.filter((r) => r.on === "front");
@@ -199,8 +201,68 @@ describe("every ROUTES row has one owner", () => {
     }
   });
 
-  it("the front entry answers every row (its own or a forwarder) and nothing else", () => {
-    expect(routesOf(front)).toEqual(ROUTES.map(key).sort());
+  it("the front entry answers its own rows and forwards every other row through its table (CPU warm-up (b)2)", () => {
+    expect(routesOf(front)).toEqual(FRONT_ROWS.map(key).sort());
+    // One catch-all, every method, below /api/v1.
+    expect(front.routes.filter((r) => r.method === "ALL" && r.path === "/api/v1/*")).toHaveLength(1);
+    const table = forwardTable(ROUTES);
+    for (const r of FORWARDED_ROWS) expect(forwardRowOf(table, r.method, samplePath(r.path)), key(r)).toBe(r);
+    for (const r of FRONT_ROWS)
+      expect(forwardRowOf(table, r.method, samplePath(r.path)), key(r)).toBeUndefined();
+  });
+
+  it("the table forwards exactly what one route per forwarded row did: the first matching row in table order, or none (CPU warm-up (b)2)", () => {
+    // The pre-(b)2 forwarder: one PatternRouter route per forwarded row, in table order; the first match answered.
+    const perRow = new PatternRouter<(typeof ROUTES)[number]>();
+    for (const r of FORWARDED_ROWS) perRow.add(r.method, r.path, r);
+    const table = forwardTable(ROUTES);
+    const paths = new Set<string>();
+    for (const r of ROUTES) {
+      const p = samplePath(r.path);
+      for (const v of [
+        p,
+        `${p}/`,
+        `${p}/x`,
+        p.replace(/\/x(\/|$)/, "/defaults$1"),
+        p.replace(/\/x(\/|$)/, "/new$1"),
+      ])
+        paths.add(v);
+    }
+    for (const extra of [
+      "/api/v1",
+      "/api/v1/",
+      "/api/v1/not-a-route",
+      "/api/other",
+      "/api/v1/invoices/x/y/z",
+      "/api/v1//invoices",
+    ])
+      paths.add(extra);
+    let compared = 0;
+    for (const method of ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) {
+      for (const path of paths) {
+        const [old] = perRow.match(method, path);
+        expect(forwardRowOf(table, method, path), `${method} ${path}`).toBe(old[0]?.[0]);
+        compared++;
+      }
+    }
+    expect(compared).toBeGreaterThan(1000);
+  });
+
+  it("forwardRoutes returns the very table its catch-all looks requests up in, the one the entry warms (early check finding 8)", async () => {
+    let table: ReturnType<typeof forwardTable> | undefined;
+    const app = createApp(mountFront, (a) => {
+      table = forwardRoutes(a, ROUTES);
+    });
+    expect(table).toBeDefined();
+    const match = vi.spyOn(table as ReturnType<typeof forwardTable>, "match");
+    const stub = { fetch: vi.fn(async () => new Response("from the stub", { status: 207 })) };
+    const res = await run(
+      app,
+      new Request(`${ORIGIN}/api/v1/dashboard`, { headers: jsonHeaders() }),
+      withEnv(env, { ADMIN_API: stub, ADMIN_FINANCE: stub }),
+    );
+    expect(res.status).toBe(207);
+    expect(match).toHaveBeenCalledWith("GET", "/api/v1/dashboard");
   });
 
   it("every forwarded row is non-public", () => {
@@ -290,6 +352,50 @@ describe("forwarding fidelity: the front passes the request on untouched", () =>
       );
       expect(res.status, `${method} ${path}`).toBe(404);
       expect(await bodyOf(res)).toEqual({ error: { code: "not_found", message: "Not found" } });
+    }
+    expect(stub.fetch).not.toHaveBeenCalled();
+  });
+
+  it("a HEAD request for a forwarded GET row is forwarded as a HEAD to the same Worker; a HEAD with no GET row is the front's 404 (early check finding 3)", async () => {
+    const o = await sess("owner", true);
+    const gets = FORWARDED_ROWS.filter((r) => r.method === "GET");
+    expect(gets.length).toBeGreaterThan(0);
+    for (const row of gets) {
+      const seen: string[] = [];
+      const stub = {
+        fetch: async (r: Request) => {
+          seen.push(`${r.method} ${new URL(r.url).pathname}`);
+          return new Response("from the stub", { status: 207, headers: { "X-Stub": "1" } });
+        },
+      };
+      const other = { fetch: vi.fn(async () => new Response("wrong worker", { status: 418 })) };
+      const bindings =
+        bindingOf(row) === "ADMIN_FINANCE"
+          ? { ADMIN_FINANCE: stub, ADMIN_API: other }
+          : { ADMIN_API: stub, ADMIN_FINANCE: other };
+      const { path } = sampleRequest(row);
+      const res = await run(
+        front,
+        new Request(`${ORIGIN}/api/v1${path}`, { method: "HEAD", headers: jsonHeaders(o.cookie) }),
+        withEnv(env, bindings),
+      );
+      expect(other.fetch, key(row)).not.toHaveBeenCalled();
+      expect(seen, key(row)).toEqual([`HEAD ${new URL(`${ORIGIN}/api/v1${path}`).pathname}`]);
+      expect(res.status, key(row)).toBe(207);
+      expect(res.headers.get("X-Stub"), key(row)).toBe("1");
+      expect(await res.text(), key(row)).toBe("");
+    }
+    const stub = { fetch: vi.fn(async () => new Response("no")) };
+    const getPaths = new Set(gets.map((r) => samplePath(r.path)));
+    const postOnly = FORWARDED_ROWS.find((r) => r.method === "POST" && !getPaths.has(samplePath(r.path)));
+    expect(postOnly).toBeDefined();
+    for (const path of ["/api/v1/not-a-route", samplePath(postOnly?.path ?? "/api/v1/none")]) {
+      const res = await run(
+        front,
+        new Request(`${ORIGIN}${path}`, { method: "HEAD", headers: jsonHeaders(o.cookie) }),
+        withEnv(env, { ADMIN_API: stub, ADMIN_FINANCE: stub }),
+      );
+      expect(res.status, path).toBe(404);
     }
     expect(stub.fetch).not.toHaveBeenCalled();
   });
@@ -615,8 +721,10 @@ describe("no sign-in secret outside the front's sources", () => {
     string,
     string
   >;
+  // warm-front.ts (CPU warm-up (b)1): the front's start-up dry run names the sign-in keys with MADE-UP test values only; front-only (the next test, and the
+  // bundle guard SIGN_IN_TABLES keeps every such name out of the API and finance bundles).
   const allowed = (f: string) =>
-    ["./auth.ts", "./account.ts", "./users.ts"].includes(f) ||
+    ["./auth.ts", "./account.ts", "./users.ts", "./warm-front.ts"].includes(f) ||
     f.startsWith("./test-") ||
     f.endsWith(".test.ts") ||
     f.endsWith(".d.ts");
@@ -631,7 +739,7 @@ describe("no sign-in secret outside the front's sources", () => {
 
   it("the API and finance entries' own modules do not import the sign-in routers", () => {
     for (const f of ["./api.ts", "./routes-api.ts", "./finance.ts", "./routes-finance.ts"]) {
-      expect(sources[f], f).not.toMatch(/from "\.\/(auth|account|users)\.ts"/);
+      expect(sources[f], f).not.toMatch(/from "\.\/(auth|account|users|warm-front)\.ts"/);
     }
   });
 

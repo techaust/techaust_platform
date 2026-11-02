@@ -112,6 +112,15 @@ After each batch PR deploys to staging, read `$workers.cpuTimeMs` of the first (
 | admin finance (new) | 431,070 bytes (M6.1 stage A) | 48.0 ms | **16 ms** cold (`/dashboard`); `/invoices/:id` **18** and **17** (two isolates), 7 later; `POST /payments` 13; no `care.bill` RPC yet |
 | jobs | 667,870 bytes (L9, PR #138: minified, source maps uploaded; 994,592 before, ceiling 1,000,000; the staging dry run the same, since `minify` is inherited) | 74.7 ms | no queue-consumer reading yet (see "Queue consumers" below) |
 
+**The admin Workers' start-up dry run (CPU warm-up, 2026-11-02; [run file](../runs/cpu-warmup.md)).** While each admin Worker's module loads, it sends its hot routes through a second, warm instance of its own app over a made-up D1 (`apps/admin/worker/warm-routes.ts`), so V8 has compiled them before the first metered request. The made-up rows are generated, never hand-written, in `apps/admin/worker/warm-fixtures/{front,api,finance}.ts`. **When a hot route's SQL or columns change, regenerate them:**
+1. Build the admin and jobs Workers: `bash tools/heavy.sh --log admin-build pnpm --filter @techaust/admin build`, then `bash tools/heavy.sh --log jobs-build pnpm --filter @techaust/jobs build`.
+2. Write the fixtures from the local probe's made-up sample set: `bash tools/heavy.sh --log warm-fixtures node scripts/cpu-probe.mjs --write-fixtures`.
+3. Run `pnpm --filter @techaust/admin exec vitest run worker/warm-routes.test.ts worker/warm-fixtures.test.ts`, rebuild the admin Workers and commit the three fixture files.
+
+The front fixture holds a made-up Owner's sign-in rows (a password HMAC, a salt, a client hash), credential-shaped by design. `.gitleaks.toml` (it extends gitleaks' default rules) allows that one folder and nothing else, and `warm-fixtures.test.ts` proves every such value verifies only under the admin tests' `TEST_KEY` values. Never write a secret-looking literal anywhere else: build test values at run time.
+
+`warm-routes.test.ts` fails a stale fixture: a read the answer book doesn't hold, a list call whose list answers no rows, a changed status or a refused operation (random values, timers, I/O) at start-up. The budget's start-up figure (`scripts/worker-budget.mjs`) includes the dry run's microtasks.
+
 **Jobs minified (L9, owner 2026-10-31).** The jobs Worker is built with `"minify": true` and `"upload_source_maps": true` at the top level (inherited by `env.staging` and `env.production`); `scripts/check-worker-config.mjs` fails a config that drops either or switches one off in an environment. Source maps don't count toward the bundle size, CPU or cold start (Cloudflare's Source maps page and its 2026-10-20 changelog). Since minify drops the path comments and renames constants, `scripts/worker-budget.mjs` checks the jobs bundle's inputs from the build's metafile (`forbiddenInputs`), and the startup probe strips a `//# sourceMappingURL=` comment after the export list.
 
 ### M6.1 reading (lead, 2026-10-31, Workers Logs read-only, the owner's approval session 17:51–18:06 UTC): **gate not met**

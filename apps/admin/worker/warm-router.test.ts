@@ -4,7 +4,7 @@
 import { resolveSetting } from "@techaust/core/settings";
 import { describe, expect, it } from "vitest";
 import { createApp, firstRun } from "./app.ts";
-import { forwardRoutes } from "./forward.ts";
+import { forwardRoutes, forwardTable, warmForwardTable } from "./forward.ts";
 import { ROUTES } from "./guard.ts";
 import { readSettings } from "./quote-model.ts";
 import { mountApi } from "./routes-api.ts";
@@ -22,10 +22,13 @@ describe("the router warm-up [CPU diagnosis, lead decision 1]", () => {
   });
 
   it("every row each Worker answers matches through its own router", () => {
+    // CPU warm-up (b)2: the front's router holds its own rows and the catch-all; the forwarded ones resolve through the forwarder's table (forward.ts).
     const front = createApp(mountFront, (a) => forwardRoutes(a, ROUTES));
+    const frontRows = ROUTES.filter((r) => r.on === "front");
     const apiRows = ROUTES.filter((r) => r.on === undefined);
     const financeRows = ROUTES.filter((r) => r.on === "finance");
-    expect(warmRouter(front, ROUTES)).toBe(ROUTES.length);
+    expect(warmRouter(front, frontRows)).toBe(frontRows.length);
+    expect(warmForwardTable(forwardTable(ROUTES), ROUTES)).toBe(apiRows.length + financeRows.length);
     expect(warmRouter(createApp(mountApi), apiRows)).toBe(apiRows.length);
     expect(warmRouter(createApp(mountFinance), financeRows)).toBe(financeRows.length);
     // The three sets cover the table once.

@@ -32,15 +32,64 @@ export function firstRun(key: string): 1 | undefined {
   return 1;
 }
 
+/** A warm app's fixed request facts (createApp `warm`): no counter moves. */
+const WARM_REQUEST = { iso: "warm", n: 0 } as const;
+
+/**
+ * One request's facts for its log line, shared by the app's outermost middleware and the front's forwarder (review finding 8): this isolate's id and
+ * request number, and the request id (`cf-ray`, clipped, else random). A warm app's (createApp `warm`, CPU warm-up (b)1) are fixed: no counter moves and no
+ * random value is drawn (global scope refuses random values).
+ */
+export function requestFacts(warm: boolean, cfRay: string | undefined) {
+  const { iso, n } = warm ? WARM_REQUEST : nextRequestNumber();
+  const rid = clipHeader(cfRay, HEADER_LIMITS.requestId) ?? (warm ? "warm" : hex(randomBytes(8)));
+  return { iso, n, rid };
+}
+
 export type App = Hono<AppEnv, Record<string, never>, "/api">;
+
+/**
+ * The start-up dry run's JSON bodies (CPU warm-up (b)1, warm-routes.ts): workerd refuses a Request WITH a body at global scope, so a warm call is a bodiless
+ * Request whose JSON text is held here and handed to Hono's body cache by the warm app's first middleware. Only a warm app (`createApp(..., { warm: true })`)
+ * reads it; a real request is never in it.
+ */
+export const warmBodies = new WeakMap<Request, string>();
+
+/** What a warm app's `c.json` does: the whole serialiser runs, the answer is a bodiless Response (allowed at global scope) with the same status. */
+function warmJson(c: Ctx) {
+  return (object: unknown, arg?: number | ResponseInit) => {
+    JSON.stringify(object);
+    const status = typeof arg === "number" ? arg : (arg?.status ?? 200);
+    return c.body(null, status as ContentfulStatusCode);
+  };
+}
 
 /**
  * One admin Worker's API (M5.0): the middleware chain (logging, CSRF, body limits, guard) plus the route groups `mount` adds.
  * `before` runs ahead of every middleware (the front Worker's forwarders). A factory so a test can build a second app and add a
  * route the table does not declare.
+ *
+ * `warm: true` (CPU warm-up (b)1, 2026-11-02): a second instance of the SAME chain and handlers for the start-up dry run on a made-up env (warm-routes.ts), so V8
+ * compiles them before the first metered request. It differs only where a dry run must leave no trace and must not use what global scope refuses: no request
+ * number, no `f: 1` first-run mark, no log line, no access row, a fixed request id, a body from `warmBodies`, `c.json` without a body, and errors answered silently.
+ * A Worker's real app is always built without it.
  */
-export function createApp(mount: (app: App) => void, before?: (app: App) => void) {
+export function createApp(
+  mount: (app: App) => void,
+  before?: (app: App) => void,
+  opts: { warm?: boolean } = {},
+) {
+  const warm = opts.warm === true;
   const app: App = new Hono<AppEnv>().basePath("/api");
+  if (warm)
+    app.use(async (c, next) => {
+      const text = warmBodies.get(c.req.raw);
+      // Hono keeps the PROMISE of each body reading in `bodyCache` (its type names the value); `c.req.json()` reads `text` from it.
+      if (text !== undefined) Reflect.set(c.req.bodyCache, "text", Promise.resolve(text));
+      // An own property over Hono's (an instance field), on this warm context only.
+      Object.defineProperty(c, "json", { value: warmJson(c), configurable: true, writable: true });
+      await next();
+    });
   before?.(app);
   // docs/08 section 3.1 on every API answer (audit A1 finding 4): Hono's defaults, plus HSTS for one year with subdomains (its
   // default is 180 days) and the same Permissions-Policy as the static files (public/_headers).
@@ -60,9 +109,10 @@ export function createApp(mount: (app: App) => void, before?: (app: App) => void
   // access-log row [NFR-9] unless the handler already wrote it inside its own batch.
   app.use(
     createMiddleware<AppEnv>(async (c, next) => {
-      const { iso, n } = nextRequestNumber();
+      // A warm app counts no request and draws no random id (global scope refuses random values).
       // Header values are the client's: cut before they reach a log row (audit M2).
-      c.set("rid", clipHeader(c.req.header("cf-ray"), HEADER_LIMITS.requestId) ?? hex(randomBytes(8)));
+      const { iso, n, rid } = requestFacts(warm, c.req.header("cf-ray"));
+      c.set("rid", rid);
       c.set("ip", clipHeader(c.req.header("CF-Connecting-IP"), HEADER_LIMITS.ip));
       c.set("ua", clipHeader(c.req.header("User-Agent"), HEADER_LIMITS.ua));
       // The row of the handler that ANSWERS: the first matched pattern that is a table row. Hono runs a static path registered before
@@ -85,7 +135,7 @@ export function createApp(mount: (app: App) => void, before?: (app: App) => void
       // Every API request by a signed-in member, every sign-in attempt and every refusal (Q2). Not for lookups
       // (health, salt, invite start) and not for undeclared routes. A logging failure never changes the answer.
       const wanted = row && row.log !== false && (row.log !== "refusals" || c.res.status >= 400);
-      if (row && wanted && !c.var.accessDone) {
+      if (row && wanted && !c.var.accessDone && !warm) {
         // The write rides in the execution context: the response does not wait for it (audit L5). The statements
         // are built before the first await, so they see this request's final state.
         const write = async () => {
@@ -110,17 +160,17 @@ export function createApp(mount: (app: App) => void, before?: (app: App) => void
         };
         c.executionCtx.waitUntil(write());
       }
-      console.log(
-        JSON.stringify({
-          ev: "req",
-          r: row?.path ?? "other",
-          s: c.res.status,
-          rid: c.var.rid,
-          iso,
-          n,
-          f: firstRun(`${c.req.method} ${row?.path ?? "other"}`),
-        }),
-      );
+      // A warm app builds the line (its code runs) but neither marks a first run nor prints it.
+      const line = JSON.stringify({
+        ev: "req",
+        r: row?.path ?? "other",
+        s: c.res.status,
+        rid: c.var.rid,
+        iso,
+        n,
+        f: warm ? undefined : firstRun(`${c.req.method} ${row?.path ?? "other"}`),
+      });
+      if (!warm) console.log(line);
     }),
   );
   app.use(csrf);
@@ -145,6 +195,8 @@ export function createApp(mount: (app: App) => void, before?: (app: App) => void
 
   app.notFound((c) => err(c, NOT_FOUND, 404));
   app.onError((e, c) => {
+    // A warm app answers an error silently: at global scope a step that needs a random value or an I/O stops the dry run there.
+    if (warm) return c.body(null, 500);
     if (e instanceof HTTPException) {
       const status = e.status as ContentfulStatusCode;
       return err(c, status === 403 ? FORBIDDEN : BAD_REQUEST, status);

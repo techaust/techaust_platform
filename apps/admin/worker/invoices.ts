@@ -40,6 +40,7 @@ import { clientGoneSql } from "./anonymised.ts";
 import { type CareOf, careView } from "./care-authority.ts";
 import { blockerCodesOf, CARE_OF_SQL } from "./care-blockers.ts";
 import {
+  type Actor,
   type AppEnv,
   actor,
   BAD_REQUEST,
@@ -120,6 +121,7 @@ import {
   noteLutOf,
   noteOfOf,
   noteState,
+  PARENT_STATEMENTS,
   parentCtxOf,
   parentStatements,
   recomputeNote,
@@ -562,6 +564,149 @@ type ContactRow = {
   updated_at: number;
 };
 
+// ---- one invoice: the detail (GET /invoices/:id) -------------------------------------------------------------------------------------------------------
+
+/** Where the detail's own statements start in `readInvoice`'s `extra` results: its six, then the notes of an issued invoice, then a note's invoice. */
+const NOTES_AT = 6;
+const NOTE_PARENT_AT = NOTES_AT + NOTES_VIEW_READS.length;
+
+/**
+ * The detail's reads in ONE D1 batch (CPU warm-up (b)3, 2026-11-02; before: a second batch for the note reads). The newest extra export note, the documents made
+ * from it (a proforma's tax invoices) and (M5.4) the sends, the live links, the reminders and the care record (each one index lookup); then M5.3's note reads,
+ * for both cases, since the type is known only after the read: an issued tax or export invoice's notes (`NOTES_VIEW_READS`) and a note's invoice
+ * (`NOTE_PARENT_READS`). For every other document they find no row (the parent of a non-note is NULL; a draft has no notes). Only the ones the type needs are
+ * used, so the answer is the one the two batches gave (invoices-detail-batch.test.ts compares them byte for byte).
+ */
+export async function readInvoiceDetail(c: { env: { DB: D1Database } }, id: string) {
+  const db = c.env.DB;
+  const ctx = await readInvoice(c, id, [
+    db.prepare(NEWEST_EXPORT_DECLARATION),
+    db.prepare(CHILDREN_OF_SQL).bind(id),
+    db.prepare(SENDS_OF_SQL).bind(id),
+    db.prepare(LIVE_LINKS_SQL).bind(id, Date.now()),
+    db.prepare(REMINDERS_OF_SQL).bind(id),
+    db.prepare(CARE_OF_SQL).bind(id),
+    ...NOTES_VIEW_READS.map((sql) => db.prepare(sql).bind(id)),
+    ...parentStatements(db, NOTE_PARENT_READS, id),
+  ]);
+  if (!ctx) return null;
+  const d = ctx.bundle.document;
+  // M5.3: only a note (its invoice's reads) or an issued tax or export invoice (its notes' reads) uses the note results.
+  const isNote = isNoteType(d.type);
+  const isParent = !isNote && isNoteParentType(d.type) && d.frozen_at !== null;
+  const noteExtra: D1Result[] = isNote
+    ? ctx.extra.slice(NOTE_PARENT_AT, NOTE_PARENT_AT + PARENT_STATEMENTS)
+    : isParent
+      ? ctx.extra.slice(NOTES_AT, NOTE_PARENT_AT)
+      : [];
+  return { ctx, isNote, isParent, noteExtra };
+}
+
+/** The detail's answer from its reads (pure apart from the tax engine's hashing): what GET /invoices/:id returns. */
+export async function invoiceDetailView(
+  read: NonNullable<Awaited<ReturnType<typeof readInvoiceDetail>>>,
+  role: Actor["role"],
+  now: number,
+) {
+  const { ctx, isNote, isParent, noteExtra } = read;
+  const id = ctx.bundle.document.id;
+  const d = ctx.bundle.document;
+  let notesPart: InvoiceNotesView | null = null;
+  let notePart: NoteViewPart | null = null;
+  let noteBlockers: ReturnType<typeof blockersOfNote> | undefined;
+  let computation: Awaited<ReturnType<typeof computeInvoice>> | null = null;
+  if (isNote) {
+    const p = parentCtxOf(noteExtra);
+    const stored = storedNoteOf(d);
+    notePart = noteView({ bundle: ctx.bundle, role, stored, parent: p });
+    if (d.frozen_at === null && p && stored) {
+      const kind = noteKindOf(d.type as "credit_note" | "debit_note");
+      const re = recomputeNote(kind, p, stored.request, taxContext(ctx.settings), todayOf(now));
+      const state = noteState({
+        id,
+        kind,
+        p,
+        client: ctx.client,
+        contactId: d.contact_id,
+        note: noteOfOf(kind, p, stored.reason, stored.request),
+        lines: noteLines(p, stored.request.takes),
+      });
+      computation = await noteComputation(state, re.computed, re.errors);
+      noteBlockers = blockersOfNote({
+        kind,
+        currency: d.currency,
+        p,
+        stored,
+        re,
+        settings: ctx.settings,
+        bank: ctx.bank,
+        issueDate: issueDateOf(now),
+        // rt1 T2: a debit note on an export under LUT, judged against the LUT of today's FY (the day it would be issued)
+        lut: noteLutOf(kind, p, ctx.settings, now),
+      });
+    }
+  } else if (isParent) {
+    notesPart = invoiceNotesView({
+      bundle: ctx.bundle,
+      role,
+      settings: ctx.settings,
+      clientGone: ctx.client.anonymised_at !== null,
+      todayIso: issueDateOf(now),
+      results: noteExtra,
+    });
+  } else if (d.frozen_at === null) {
+    computation = await computeInvoice(
+      invoiceStateOf(ctx.bundle),
+      ctx.client,
+      taxContext(ctx.settings),
+      todayOf(now),
+      targetOf(ctx.milestone),
+    );
+  }
+  // M5.4: a care draft shows whether the system will issue it, so it needs the codes that stop it (the checklist's blockers and the care ones).
+  const careBlockerCodes =
+    ctx.extra[5]?.results[0] && computation && d.frozen_at === null && !isNote
+      ? blockerCodesOf(invoiceStateOf(ctx.bundle), ctx.client, ctx.settings, computation, ctx.bank, now)
+      : [];
+  return invoiceView({
+    bundle: ctx.bundle,
+    client: ctx.client,
+    contact: ctx.contact,
+    settings: ctx.settings,
+    role,
+    prepared: computation ? { computation } : null,
+    notesPart,
+    notePart,
+    ...(noteBlockers ? { noteBlockers } : {}),
+    approvals: ctx.approvals,
+    milestone: ctx.milestone,
+    emailed: ctx.emailed,
+    hasIssuedChild: ctx.hasIssuedChild,
+    paymentPending: ctx.paymentPending,
+    paymentPendingGateway: ctx.paymentPendingGateway,
+    paymentRecorded: ctx.paymentRecorded,
+    hasAnyChild: ctx.hasAnyChild,
+    hasAdvanceReceipt: ctx.hasAdvanceReceipt,
+    bank: ctx.bank,
+    declaration: (ctx.extra[0]?.results[0] as TermsRef | undefined) ?? null,
+    children: (ctx.extra[1]?.results ?? []) as ChildRow[],
+    voidedByName: ctx.voidedByName,
+    now,
+    sendsPart: sendsView(
+      (ctx.extra[2]?.results ?? []) as SendRow[],
+      (ctx.extra[3]?.results[0] as { live: number } | undefined)?.live ?? 0,
+      (ctx.extra[4]?.results ?? []) as ReminderRow[],
+      now,
+      ctx.settings.paymentTerms.reminderWindowIst,
+    ),
+    care: careView(ctx.extra[5]?.results[0] as CareOf | undefined, {
+      frozen: d.frozen_at !== null,
+      blockerCodes: careBlockerCodes,
+      currency: d.currency,
+    }),
+  });
+}
+
 export const invoices = new Hono<AppEnv>()
   .get("/", query(listQuery), (c) => listInvoices(c, c.req.valid("query")))
 
@@ -762,127 +907,9 @@ export const invoices = new Hono<AppEnv>()
 
   // ---- one invoice ----
   .get("/:id", param(idParam), async (c) => {
-    const id = c.req.valid("param").id;
-    const db = c.env.DB;
-    // The newest extra export note, the documents made from it (a proforma's tax invoices), and who voided it: only what the screen needs.
-    const ctx = await readInvoice(c, id, [
-      db.prepare(NEWEST_EXPORT_DECLARATION),
-      db.prepare(CHILDREN_OF_SQL).bind(id),
-      // M5.4: the sends, the live links, the reminders and the care record of the document (each one index lookup).
-      db.prepare(SENDS_OF_SQL).bind(id),
-      db.prepare(LIVE_LINKS_SQL).bind(id, Date.now()),
-      db.prepare(REMINDERS_OF_SQL).bind(id),
-      db.prepare(CARE_OF_SQL).bind(id),
-    ]);
-    if (!ctx) return err(c, NOT_FOUND, 404);
-    const d = ctx.bundle.document;
-    const now = Date.now();
-    const role = actor(c).role;
-    // M5.3: only a note (its invoice's reads) or an issued tax or export invoice (its notes' reads) needs the note statements: one more batch for those, none for a draft,
-    // a proforma or any other type.
-    const isNote = isNoteType(d.type);
-    const isParent = !isNote && isNoteParentType(d.type) && d.frozen_at !== null;
-    const noteExtra: D1Result[] = isNote
-      ? await db.batch(parentStatements(db, NOTE_PARENT_READS, id))
-      : isParent
-        ? await db.batch(NOTES_VIEW_READS.map((sql) => db.prepare(sql).bind(id)))
-        : [];
-    let notesPart: InvoiceNotesView | null = null;
-    let notePart: NoteViewPart | null = null;
-    let noteBlockers: ReturnType<typeof blockersOfNote> | undefined;
-    let computation: Awaited<ReturnType<typeof computeInvoice>> | null = null;
-    if (isNote) {
-      const p = parentCtxOf(noteExtra);
-      const stored = storedNoteOf(d);
-      notePart = noteView({ bundle: ctx.bundle, role, stored, parent: p });
-      if (d.frozen_at === null && p && stored) {
-        const kind = noteKindOf(d.type as "credit_note" | "debit_note");
-        const re = recomputeNote(kind, p, stored.request, taxContext(ctx.settings), todayOf(now));
-        const state = noteState({
-          id,
-          kind,
-          p,
-          client: ctx.client,
-          contactId: d.contact_id,
-          note: noteOfOf(kind, p, stored.reason, stored.request),
-          lines: noteLines(p, stored.request.takes),
-        });
-        computation = await noteComputation(state, re.computed, re.errors);
-        noteBlockers = blockersOfNote({
-          kind,
-          currency: d.currency,
-          p,
-          stored,
-          re,
-          settings: ctx.settings,
-          bank: ctx.bank,
-          issueDate: issueDateOf(now),
-          // rt1 T2: a debit note on an export under LUT, judged against the LUT of today's FY (the day it would be issued)
-          lut: noteLutOf(kind, p, ctx.settings, now),
-        });
-      }
-    } else if (isParent) {
-      notesPart = invoiceNotesView({
-        bundle: ctx.bundle,
-        role,
-        settings: ctx.settings,
-        clientGone: ctx.client.anonymised_at !== null,
-        todayIso: issueDateOf(now),
-        results: noteExtra,
-      });
-    } else if (d.frozen_at === null) {
-      computation = await computeInvoice(
-        invoiceStateOf(ctx.bundle),
-        ctx.client,
-        taxContext(ctx.settings),
-        todayOf(now),
-        targetOf(ctx.milestone),
-      );
-    }
-    // M5.4: a care draft shows whether the system will issue it, so it needs the codes that stop it (the checklist's blockers and the care ones).
-    const careBlockerCodes =
-      ctx.extra[5]?.results[0] && computation && d.frozen_at === null && !isNote
-        ? blockerCodesOf(invoiceStateOf(ctx.bundle), ctx.client, ctx.settings, computation, ctx.bank, now)
-        : [];
-    return c.json(
-      invoiceView({
-        bundle: ctx.bundle,
-        client: ctx.client,
-        contact: ctx.contact,
-        settings: ctx.settings,
-        role,
-        prepared: computation ? { computation } : null,
-        notesPart,
-        notePart,
-        ...(noteBlockers ? { noteBlockers } : {}),
-        approvals: ctx.approvals,
-        milestone: ctx.milestone,
-        emailed: ctx.emailed,
-        hasIssuedChild: ctx.hasIssuedChild,
-        paymentPending: ctx.paymentPending,
-        paymentPendingGateway: ctx.paymentPendingGateway,
-        paymentRecorded: ctx.paymentRecorded,
-        hasAnyChild: ctx.hasAnyChild,
-        hasAdvanceReceipt: ctx.hasAdvanceReceipt,
-        bank: ctx.bank,
-        declaration: (ctx.extra[0]?.results[0] as TermsRef | undefined) ?? null,
-        children: (ctx.extra[1]?.results ?? []) as ChildRow[],
-        voidedByName: ctx.voidedByName,
-        now,
-        sendsPart: sendsView(
-          (ctx.extra[2]?.results ?? []) as SendRow[],
-          (ctx.extra[3]?.results[0] as { live: number } | undefined)?.live ?? 0,
-          (ctx.extra[4]?.results ?? []) as ReminderRow[],
-          now,
-          ctx.settings.paymentTerms.reminderWindowIst,
-        ),
-        care: careView(ctx.extra[5]?.results[0] as CareOf | undefined, {
-          frozen: d.frozen_at !== null,
-          blockerCodes: careBlockerCodes,
-          currency: d.currency,
-        }),
-      }),
-    );
+    const read = await readInvoiceDetail(c, c.req.valid("param").id);
+    if (!read) return err(c, NOT_FOUND, 404);
+    return c.json(await invoiceDetailView(read, actor(c).role, Date.now()));
   })
 
   // ---- save a draft: fields (the contact, the document discount) and the lines, in one PATCH ----
