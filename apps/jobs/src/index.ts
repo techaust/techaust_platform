@@ -36,6 +36,14 @@ app.post("/stripe", (c) => stripeHook(c.req.raw, c.env));
 // M6.4: the PayPal webhook, `POST /paypal` only, verified offline (any other method, or `/paypal/*`, is the 404 below and touches no database).
 app.post("/paypal", (c) => payPalHook(c.req.raw, c.env));
 app.notFound((c) => c.json({ error: { code: "not_found", message: "Not found" } }, 404));
+// M6.4 (L31): the router's matcher is built on its first match; matching the webhook paths while the module loads moves that out of the first metered
+// webhook (as the admin Workers' `warmRouter`). Pure: no Request, no env, no I/O; never throws.
+try {
+  for (const path of ["/paypal", "/razorpay", "/stripe"]) app.router.match("POST", path);
+  app.router.match("GET", "/healthz");
+} catch {
+  // never stop a Worker from starting
+}
 
 export default {
   fetch: app.fetch,
