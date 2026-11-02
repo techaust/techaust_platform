@@ -1,4 +1,4 @@
-Status: PR READY https://github.com/techaust/techaust_platform/pull/163
+Status: PR open (review APPROVE; CLAUDE.md updated for four Workers)
 Tier: B (Workers; planning only, no code)
 Usage: lead claude-opus-5-5/high (cloud session admin-split-plan); analyst (measure + options) claude-opus-5-5/high, skills asked for `cloudflare:workers-best-practices`, `cloudflare:wrangler`, `cloudflare:workers-profiling` (each "Unknown skill": Cloudflare skills don't load in cloud sessions; no other skill fits a split plan): 5-h 5 % at start (23:12 IST). reviewer (brief, round 1 and re-check) claude-opus-5-5/high, skill code-review (Cloudflare skills absent in the cloud; security-review not fitting a plan), and its `code-review` helper general-purpose claude-opus-5-5/high (read-only, the docs/14 §9 exception): 5-h 5 % at start (reading). Readings: USAGE 26 at 2026-11-02T23:56+05:30; USAGE 5 at 2026-11-02T23:40+05:30; USAGE 25 at 2026-11-02T23:52+05:30; USAGE 24 at 2026-11-03T00:20+05:30.
 
@@ -545,3 +545,15 @@ Usage: builder B2 claude-opus-5-5/high (skills `cloudflare:workers-best-practice
 - **Q1 (`BillingJobs` dry run):** a follow-up after the staging cold reading of `care.bill` (a daily cron call; threading ids through `care-billing.ts` is a wider change on a money path than this split needs).
 - **Q2 (`finance-rpc.ts` in the fixture scan):** the fixture writer swaps the PayPal sandbox token for a made-up one (as `madeUpGatewayIds`) and the scan covers the file; in the fix round if the review raises nothing else, else a follow-up.
 - The rollback order is copied next to Q2 at the top of this file.
+
+## Code review (reviewer, 2026-11-03, 2a4d9d23 vs `origin/main` 411efb90): APPROVE
+Usage: reviewer claude-opus-5-5/high (skills `cloudflare:workers-best-practices`, `cloudflare:wrangler`; `code-review` and `security-review` loaded but read the main checkout, so their checklists were applied by hand to this diff). Ran on the tip: web build exit 0; `pnpm check` exit 0 (69 migrations); **`pnpm test` exit 0**: testing 4, auth 135, ui 471 (+2 skipped), core 2,324, email 135, db 824, pdf 404, web 929 (+1 skipped), portal 782, jobs 644, admin 4,425 (156 files).
+- **Verified:** the 32 moved rows change only `X(` → `I(`; the advance move keeps its checks and log line; no failure swallowed on the hop (finance `rpc_unavailable`/`rpc_bad_result` → 500, `ADVANCE_CHANGED` only on a real `retry`; jobs retries and dead-letters); no `mutate` batch spans two Workers; the `ids` option only from `warm-advance.ts`; bindings per scope (no public URL, no secrets on invoices, gateway secrets unchanged on finance); the workflow (Q1 order, the four-Worker health check, SHA pins, fork safety) with no gap at any step; the rollback order correct against the old versions' bindings; the guards and budget markers; the dry runs reachable only through warm envs; fixtures made-up only.
+- **Findings (all low):** 1. CLAUDE.md's M5.4 paragraph still put `BillingJobs` in finance and said "deploy finance before jobs" → **fixed by the lead on this branch** (the four-Worker paragraph, the deploy order incl. Q3, the care-billing sentence, the Razorpay sentence, the Worker budget, the workflow line). 2. `warm-fixtures/finance-rpc.ts` outside the secret-shape scan (stub order ids already on `main`) → follow-up: the fixture writer swaps the sandbox token for a made-up one and the scan covers the file. 3. `BillingJobs` has no start-up dry run (none in finance before either) → follow-up gated on the staging cold reading of `care.bill`.
+- **Not verified:** staging (the no-gap claim, the rollback, cold readings); whether `CF_API_TOKEN_STAGING` can create the new Worker script (the first deploy shows it; Q2 rollback allowed); a deploy with a missing named entrypoint; local `pnpm dev` connectivity (B1's probe).
+
+## Follow-ups (for 12)
+- The `finance-rpc.ts` fixture: made-up PayPal token, then covered by `warm-fixtures.test.ts`.
+- A `BillingJobs` start-up dry run if `care.bill` reads hot on staging.
+- Staging: the first seven-step deploy, the four-Worker health check, cold readings of `GatewayAdvance` and the moved invoice routes.
+- Phase 7: production creates the invoices Worker before the front, finance and jobs that bind it (runbook).
