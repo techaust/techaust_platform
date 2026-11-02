@@ -16,7 +16,7 @@ import { esc } from "../escape.ts";
 import { PDF_LOGOS } from "../generated/assets.ts";
 import { markdownBlocks } from "../markdown-html.ts";
 import type { PdfView, ViewSection, ViewStep } from "../types.ts";
-import { PDF_COPY as C } from "./copy.ts";
+import { PDF_COPY as C, unitWord } from "./copy.ts";
 
 const RUPEE = "₹";
 
@@ -101,7 +101,7 @@ function itemsTable(view: PdfView): string {
         `<tr><td class="c-n num">${esc(l.n)}</td><td class="c-desc"><span class="desc">${esc(l.description)}</span>${
           l.detail ? `<span class="sub">${esc(l.detail)}</span>` : ""
         }${l.sac ? `<span class="sub">${C.lines.sac} ${esc(l.sac)}</span>` : ""}</td><td class="num">${esc(l.qty)}</td><td>${esc(
-          l.unit,
+          unitWord(l.unit, l.qty),
         )}</td><td class="num">${esc(l.rate)}</td>${withDiscount ? `<td class="num">${l.discount ? esc(l.discount) : ""}</td>` : ""}<td class="num">${esc(
           l.taxable,
         )}</td><td class="num">${esc(l.gstRate)}</td></tr>`,

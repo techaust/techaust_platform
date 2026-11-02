@@ -44,6 +44,7 @@ import {
   EXPORT_PDF_COPY as E,
   NOTE_PDF_COPY as N,
   PROFORMA_PDF_COPY as P,
+  unitWord,
 } from "./copy.ts";
 
 const RUPEE = "₹";
@@ -271,7 +272,7 @@ function itemsTable(view: InvoiceView): string {
       (l) =>
         `<tr><td class="c-n num">${esc(l.n)}</td><td class="c-desc"><span class="desc">${esc(l.description)}</span>${
           l.detail ? `<span class="sub">${esc(l.detail)}</span>` : ""
-        }${l.againstLine !== undefined ? `<span class="sub inv-against">${esc(N.againstLine(l.againstLine))}</span>` : ""}</td><td class="c-sac">${l.sac ? esc(l.sac) : ""}</td><td class="num">${esc(l.qty)} <span class="unit">${esc(l.unit)}</span></td><td class="num">${esc(l.rate)}</td>${
+        }${l.againstLine !== undefined ? `<span class="sub inv-against">${esc(N.againstLine(l.againstLine))}</span>` : ""}</td><td class="c-sac">${l.sac ? esc(l.sac) : ""}</td><td class="num">${esc(l.qty)} <span class="unit">${esc(unitWord(l.unit, l.qty))}</span></td><td class="num">${esc(l.rate)}</td>${
           withDiscount ? `<td class="num">${l.discount ? esc(l.discount) : ""}</td>` : ""
         }<td class="num">${esc(l.taxable)}</td></tr>`,
     )

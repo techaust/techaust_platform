@@ -56,3 +56,12 @@ Approved by the lead under the owner's delegation after the M6.3 review ([run fi
 - S18 error, on "Smallest part-payment by card (USD)" when it is above "Largest card payment (USD)" (review finding 2; Settings › Payment terms, and the settings API's refusal): "The smallest part-payment by card can't be more than the largest card payment."
 - S13 body without the button (re-check finding 1: where "Copy portal link" isn't drawn, the body doesn't tell staff to send it): "Clients pay by card from their portal page or the emailed invoice link. Each card page lasts an hour, so there is no card page to copy."
 - S18 maximum error, on "Largest card payment (USD)" when it is under the gateway minimum (re-check finding 2; Settings › Payment terms, and the settings API's refusal): "The largest card payment must be at least $1.00."
+
+Unit words on the PDFs (M6.3 staging fixes, part 3, [run file](../runs/m6.3-staging-fixes.md); approved by the lead under the owner's delegation, 2026-11-02). Reason: the PDFs printed a line's catalogue unit code beside its quantity, so a fixed-price line, and the line of an invoice for a payment received, read "1 fixed" (the owner's export invoice on staging). Proposals, estimates and every invoice-family PDF now print these words, singular for a quantity of exactly 1 and plural otherwise; the stored line keeps its code, and a typed unit of an older document prints as typed (`UNIT_WORDS` in `packages/pdf/src/layout/copy.ts`):
+- `fixed`: "lump sum" / "lump sums"
+- `milestone`: "milestone" / "milestones"
+- `month`: "month" / "months"
+- `hour`: "hour" / "hours"
+- `workflow`: "workflow" / "workflows"
+- `connector`: "connector" / "connectors"
+- `document`: "document" / "documents"
