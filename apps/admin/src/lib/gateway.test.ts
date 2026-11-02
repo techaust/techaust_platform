@@ -27,7 +27,8 @@ const base = { linkId: "plink_X", paymentId: "pay_X", currency: "INR", method: "
 // M6.2 review finding 4: the automatic tax invoice's blockers in words, in the bell, the banner, the list and the toast; never a code.
 describe("the gateway advance's blockers in words [ADM-INV-10]", () => {
   it("every code advance.ts can produce has its words", () => {
-    const codes = [...advanceSource.matchAll(/blocked\(env, p, [^,]+, \["([a-z_]+)"\]\)/g)].map(
+    // M6.3 staging fixes, review M3: `, true` marks the overpaid path (a `proforma_overpaid` item), whose code still reads in words in the "Try again" toast
+    const codes = [...advanceSource.matchAll(/blocked\(env, p, [^,]+, \["([a-z_]+)"\](?:, true)?\)/g)].map(
       (m) => m[1] as string,
     );
     // M6.3: a USD proforma paid by card is blocked by the finance Worker's Stripe path with `fx_rate_needed` (S16).
