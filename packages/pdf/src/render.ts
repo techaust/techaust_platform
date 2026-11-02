@@ -78,7 +78,7 @@ export function renderCertificateHtml(view: CertificateView): string {
 <style>
 ${TECHAUST_PDF_FONT_DATA}
 ${PDF_PRINT_CSS}
-${certificateCss(certificateFooter(view))}
+${certificateCss(certificateFooter(view), `${view.number} v${view.version}`)}
 </style>
 </head>
 <body>

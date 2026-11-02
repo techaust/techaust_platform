@@ -78,8 +78,12 @@ export const CERTIFICATE_COPY = {
 const C = CERTIFICATE_COPY;
 const SYMBOL_URI = `data:image/svg+xml,${encodeURIComponent(PDF_SYMBOL)}`;
 
-/** The certificate's stylesheet; `footer` is the page footer line (07-Q Q11: the frozen "Email on documents", through `footerLine`). */
-export const certificateCss = (footer: string): string => `
+/**
+ * The certificate's stylesheet; `footer` is the page footer line (07-Q Q11: the frozen "Email on documents", through `footerLine`); `number` the accepted
+ * document's number and version, printed with "Page X of Y" on the right as on every other document (M6.3 staging fixes, part 3: a certificate with long
+ * values runs to a second page, which then said nothing of what it belonged to).
+ */
+export const certificateCss = (footer: string, number = ""): string => `
 html { font-kerning: normal; text-rendering: optimizeLegibility; }
 body { margin: 0; font-weight: 400; overflow-wrap: break-word; }
 p { margin: 0; }
@@ -95,6 +99,17 @@ h1, h2 { margin: 0; }
     color: var(--color-text-muted);
     vertical-align: middle;
     width: 140mm;
+  }
+  @bottom-right {
+    content: ${cssString(`${number}${number ? "   " : ""}${PDF_COPY.page.word} `)} counter(page) ${cssString(` ${PDF_COPY.page.of} `)} counter(pages);
+    white-space: pre;
+    font-family: var(--font-sans);
+    font-size: var(--print-small);
+    font-variant-numeric: tabular-nums lining-nums;
+    line-height: 1;
+    color: var(--color-text-muted);
+    text-align: right;
+    vertical-align: middle;
   }
 }
 .cert { font-size: var(--print-body); line-height: var(--print-body-leading); }

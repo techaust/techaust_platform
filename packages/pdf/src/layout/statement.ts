@@ -74,6 +74,18 @@ export type StatementLayoutView = {
 
 const p = (cls: string, text: string, attrs = "") => `<p class="${cls}"${attrs}>${esc(text)}</p>`;
 
+/**
+ * A block line whose parts are joined by " · " ("GSTIN … · State …") breaks only between the parts, one part a line, the separator dropped there: the column is
+ * too narrow for both, and the joined line broke inside "State West Bengal (19)" (M6.3 staging fixes, part 3: the layout audit; as ./invoice.ts and ./document.ts).
+ */
+const partsLine = (cls: string, text: string) =>
+  !text.includes(" · ")
+    ? p(cls, text)
+    : `<p class="${cls}">${text
+        .split(" · ")
+        .map((part) => `<span class="keep">${esc(part)}</span>`)
+        .join("<br>")}</p>`;
+
 /** A formatted amount with its currency sign in its own span (the visual suite asks the font of that glyph). */
 function amountHtml(value: string): string {
   const sign = value.includes("₹") ? "₹" : value.includes("$") ? "$" : null;
@@ -100,10 +112,10 @@ function logoHtml(view: StatementLayoutView): string {
 
 function header(view: StatementLayoutView): string {
   const from = `<div class="party"><p class="label">${esc(C.from)}</p>${p("party__name", view.company.name)}${view.company.lines
-    .map((l) => p("party__line", l))
+    .map((l) => partsLine("party__line", l))
     .join("")}</div>`;
   const to = `<div class="party">${p("party__name stm-client", view.client.name)}${view.client.lines
-    .map((l) => p("party__line", l))
+    .map((l) => partsLine("party__line", l))
     .join("")}</div>`;
   const doc = `<div class="party party--doc stm-doc">${p("stm-period", C.period(view.period.from, view.period.to), ' data-testid="period"')}${p(
     "stm-currency",

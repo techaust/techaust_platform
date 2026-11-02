@@ -42,11 +42,15 @@ const signature = {
   base64: Buffer.from(SAMPLE_SIGNATURE_PNG).toString("base64"),
 };
 
-const invoiceHtml = (e: InvoiceEnvelope, opts: { copy?: "supplier"; unsigned?: boolean } = {}) => {
+const invoiceHtml = (
+  e: InvoiceEnvelope,
+  opts: { copy?: "supplier"; unsigned?: boolean } = {},
+  sig: typeof signature | null = signature,
+) => {
   const env = opts.unsigned ? signatoryOff(e) : e;
   return renderDocumentHtml(
     toInvoiceView(env, DEFAULT_VIEW_CONFIG, {
-      signature: opts.unsigned ? null : signature,
+      signature: opts.unsigned ? null : sig,
       portalLink: "portal.techaust.com",
       ...(opts.copy ? { copy: opts.copy } : {}),
     }),
@@ -318,7 +322,10 @@ const fromFixture = (
   kind,
   case: c,
   closing: INTEGRITY,
-  html: async () => invoiceHtml((await buildInvoiceLayoutFixture(name)).envelope, opts),
+  html: async () => {
+    const built = await buildInvoiceLayoutFixture(name);
+    return invoiceHtml(built.envelope, opts, built.signature);
+  },
 });
 const fromSpec = (
   kind: string,
@@ -329,8 +336,10 @@ const fromSpec = (
   kind,
   case: c,
   closing: INTEGRITY,
-  html: async () =>
-    invoiceHtml((await buildInvoiceLayoutSpec(id, INVOICE_SPECS[id] as InvoiceLayoutSpec)).envelope, opts),
+  html: async () => {
+    const built = await buildInvoiceLayoutSpec(id, INVOICE_SPECS[id] as InvoiceLayoutSpec);
+    return invoiceHtml(built.envelope, opts, built.signature);
+  },
 });
 const fromNote = (kind: string, c: string, name: NoteFixtureName): AuditCase => ({
   kind,

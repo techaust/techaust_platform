@@ -2,7 +2,7 @@
 // case, printed by Chromium as Browser Run is asked to print it:
 //   - its page count is the pinned one (`PAGES`), so a layout change that adds or drops a page is seen;
 //   - no page is blank, no page holds only the closing line, and no heading ends a page with its content overleaf;
-//   - the sweep: the content is pushed down a few millimetres at a time (a spacer above the first block) through most of a page, so the end of the
+//   - the sweep: the content is pushed down a few millimetres at a time (a spacer under the header blocks) through most of a page, so the end of the
 //     document and every block boundary crosses the foot of a page at every height; at every step the same three rules hold.
 // AUDIT_OUT=<folder> also writes each case's PDF there (for looking at by eye; never commit them). Sample data only.
 // Run: bash tools/heavy.sh --log pdf-audit pnpm --filter @techaust/pdf exec playwright test -c playwright.config.ts visual/layout-audit.spec.ts
@@ -34,9 +34,12 @@ async function closingMarks(page: Page, c: AuditCase, html: string): Promise<num
   return marksPerPage(pdf)[0] as number;
 }
 
-/** The sweep's spacer: above the first block (after a proposal's cover page, which is a page of its own), so the whole document moves down. */
+/**
+ * The sweep's spacer: right under the header blocks (the parties, the statement's figures, the deed's parties, the certificate's opening lines), so the
+ * content after them moves down while the header stays at the top of its page, as it always is.
+ */
 const spacer = (mm: number) =>
-  `${CONTAINER} > :first-child:not(.cover), ${CONTAINER} > .cover + * { margin-top: ${mm}mm !important; }`;
+  `:is(.parties, .stm-band, .deed__parties, .cert__statement + .cert__statement) + * { margin-top: ${mm}mm !important; }`;
 
 /** The faults of one print: a blank page, a last page with only the closing line, a heading ending a page. */
 function faults(pdf: PDFDocument, alone: number): string[] {

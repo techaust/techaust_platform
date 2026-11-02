@@ -601,6 +601,10 @@ export const TAX_INVOICE_CSS = `
 .doc--tax-invoice .inv-side { grid-column: 8 / -1; align-self: stretch; display: flex; flex-direction: column; gap: 5mm; }
 .doc--tax-invoice .inv-side .totals__table { grid-column: auto; }
 .doc--tax-invoice .inv-notes { break-inside: auto; }
+/* the notes end together: the last block keeps to the one before it, and a list's last item to the item before it, so a short notes block goes over whole
+   and a long one never leaves one item (with the integrity line) on a page of its own */
+.doc--tax-invoice .inv-notes .terms > :last-child,
+.doc--tax-invoice .inv-notes li:last-child { break-before: avoid; }
 .doc--tax-invoice .inv-notes h3 { margin: 0 0 1.6mm; }
 .doc--tax-invoice .inv-notes .terms { max-width: 132mm; }
 .doc--tax-invoice .inv-sign { margin-top: auto; text-align: right; font-size: var(--print-table); line-height: 1.4; }
