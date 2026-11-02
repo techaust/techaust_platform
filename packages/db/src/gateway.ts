@@ -162,7 +162,8 @@ export function checkoutFailStatement(
   g?: GuardSql,
 ): D1PreparedStatement {
   const gs = guarded(g, 2);
-  const from = a.from === "open" ? "status IN ('live', 'stale')" : "status = 'creating'";
+  // M6.4: "open" includes a PayPal capture PayPal held and then declined or failed (`capture_pending` → failed, 0068); only PayPal rows are ever in it.
+  const from = a.from === "open" ? "status IN ('live', 'stale', 'capture_pending')" : "status = 'creating'";
   return db
     .prepare(
       `UPDATE checkout_sessions SET status = 'failed', updated_at = max(?2, updated_at + 1) WHERE id = ?1 AND ${from}${gs.sql}`,
@@ -173,6 +174,9 @@ export function checkoutFailStatement(
 /**
  * A live or stale link ends: `expired` (Razorpay's `payment_link.expired`, or found expired on a refresh) or `cancelled` (Razorpay's `payment_link.cancelled`, a
  * replaced link cancelled through the API, or the "Cancel link" action). `?1` id, `?2` the end, `?3` now, then the guard.
+ * M6.4 (A; re-check N1, reviewer H1): only while no capture is claimed (`capture_started_at IS NULL`; always so for Razorpay and Stripe): a PayPal checkout whose
+ * capture may be in flight is never ended locally (the trigger `checkout_sessions_claimed_no_end` refuses it too); `paypalAbandonStatements` releases the claim
+ * first, after PayPal showed no capture.
  */
 export function checkoutEndStatement(
   db: D1Database,
@@ -182,12 +186,15 @@ export function checkoutEndStatement(
   const gs = guarded(g, 3);
   return db
     .prepare(
-      `UPDATE checkout_sessions SET status = ?2, updated_at = max(?3, updated_at + 1) WHERE id = ?1 AND status IN ('live', 'stale')${gs.sql}`,
+      `UPDATE checkout_sessions SET status = ?2, updated_at = max(?3, updated_at + 1) WHERE id = ?1 AND status IN ('live', 'stale') AND capture_started_at IS NULL${gs.sql}`,
     )
     .bind(a.id, a.status, a.now, ...gs.params);
 }
 
-/** The once-a-minute claim of a status re-fetch (`refreshForClient`): only a live or stale link whose last refresh is a minute old or more; zero rows: `too_soon`. */
+/**
+ * The once-a-minute claim of a status re-fetch (`refreshForClient`): only a live or stale link whose last refresh is a minute old or more; zero rows: `too_soon`.
+ * M6.4: a PayPal capture PayPal holds (`capture_pending`) is re-fetched the same way.
+ */
 export function checkoutRefreshClaimStatement(
   db: D1Database,
   a: { id: string; now: number },
@@ -195,11 +202,146 @@ export function checkoutRefreshClaimStatement(
   return db
     .prepare(
       `UPDATE checkout_sessions SET last_refresh_at = ?2
-       WHERE id = ?1 AND status IN ('live', 'stale') AND (last_refresh_at IS NULL OR last_refresh_at <= ?2 - ${REFRESH_SPACING_MS})`,
+       WHERE id = ?1 AND status IN ('live', 'stale', 'capture_pending') AND (last_refresh_at IS NULL OR last_refresh_at <= ?2 - ${REFRESH_SPACING_MS})`,
     )
     .bind(a.id, a.now);
 }
 
+// ---- PayPal: the capture (M6.4; run file C steps 2 to 9, L2, L5, L24) ------------------------------------------------------------------------------------
+
+/** The capture grace, the stale claim and the sweep's batch (the twins of core `PAYPAL_CAPTURE_GRACE_MS`, `PAYPAL_CLAIM_STALE_MS`; a db test compares them). */
+export const PAYPAL_CAPTURE_GRACE_MS = 30 * 60_000;
+export const PAYPAL_CLAIM_STALE_MS = 120_000;
+export const PAYPAL_SWEEP_LIMIT = 20;
+
+/**
+ * The capture claim (L2): one call takes the right to capture checkout `?1` at `?2` (now, UTC ms). It matches only while: the checkout is PayPal's, live or stale,
+ * with its order; `now` is at most 30 minutes past `expires_at` (L5: our 2 h 30 min, then the grace, inside PayPal's 3 hours); no claim is held, or the one held
+ * is stale (2 minutes: its answer never came back); and the document can still take exactly this amount NOW (`onlinePayableSql` for PayPal, apart from this very
+ * checkout's own claim: a USD export invoice, debit note or proforma of an overseas client, issued, not void or withdrawn, no other gateway money waiting on it;
+ * the amount at most its balance and its live balance from the allocation rows; the client not anonymised). Zero rows: the caller re-reads (a fresh claim held
+ * elsewhere → `processing`; the document changed → the checkout `cancelled` and `changed`, with NO capture call, so no money is taken that couldn't be applied).
+ */
+export function paypalCaptureClaimStatement(
+  db: D1Database,
+  a: { id: string; now: number },
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `UPDATE checkout_sessions SET capture_started_at = ?2, updated_at = max(?2, updated_at + 1)
+       WHERE id = ?1 AND provider = 'paypal' AND status IN ('live', 'stale') AND provider_link_id IS NOT NULL
+         AND ?2 <= expires_at + ${PAYPAL_CAPTURE_GRACE_MS}
+         AND (capture_started_at IS NULL OR capture_started_at <= ?2 - ${PAYPAL_CLAIM_STALE_MS})
+         AND EXISTS (SELECT 1 FROM documents d JOIN clients k ON k.id = d.client_id
+           WHERE d.id = checkout_sessions.document_id AND d.client_id = checkout_sessions.client_id AND d.currency = checkout_sessions.currency
+             AND ${onlinePayableSql("d", "k", "paypal", "checkout_sessions.id")}
+             AND checkout_sessions.amount_minor <= d.balance_minor AND checkout_sessions.amount_minor <= ${liveBalanceSql("d")})`,
+    )
+    .bind(a.id, a.now);
+}
+
+/**
+ * The claim released (`instrument_declined`, `not_approved`: nothing was captured and the payer may try again): only the claim this call took (`?2`), only while
+ * the checkout is still live or stale. `?3` now.
+ */
+export function paypalCaptureReleaseStatement(
+  db: D1Database,
+  a: { id: string; claim: number; now: number },
+): D1PreparedStatement {
+  return db
+    .prepare(
+      `UPDATE checkout_sessions SET capture_started_at = NULL, updated_at = max(?3, updated_at + 1)
+       WHERE id = ?1 AND status IN ('live', 'stale') AND capture_started_at = ?2`,
+    )
+    .bind(a.id, a.claim, a.now);
+}
+
+/**
+ * PayPal holds the capture (L6, C step 6: `PENDING`, with a reason such as ECHECK): the checkout moves to `capture_pending` with PayPal's capture id; no payment row
+ * until the capture completes. The main statement of its batch (the caller's audit row, the `capture_pending` review item and the bell follow, guarded); `g`
+ * when it is a side statement. `?1` id, `?2` capture id, `?3` now.
+ */
+export function checkoutCapturePendingStatement(
+  db: D1Database,
+  a: { id: string; captureId: string; now: number },
+  g?: GuardSql,
+): D1PreparedStatement {
+  const gs = guarded(g, 3);
+  return db
+    .prepare(
+      `UPDATE checkout_sessions SET status = 'capture_pending', provider_capture_id = ?2, updated_at = max(?3, updated_at + 1)
+       WHERE id = ?1 AND provider = 'paypal' AND status IN ('live', 'stale') AND provider_capture_id IS NULL${gs.sql}`,
+    )
+    .bind(a.id, a.captureId, a.now, ...gs.params);
+}
+
+/**
+ * Never drop captured money (C step 9): a capture that went through on a checkout that had ended (`expired`, `cancelled`, `failed`) keeps its capture id on the
+ * row, set once, in the batch that records the payment `pending_verification` with a `late_capture` review item. `?1` id, `?2` capture id, `?3` now, then `g`.
+ */
+export function checkoutCaptureIdStatement(
+  db: D1Database,
+  a: { id: string; captureId: string; now: number },
+  g?: GuardSql,
+): D1PreparedStatement {
+  const gs = guarded(g, 3);
+  return db
+    .prepare(
+      `UPDATE checkout_sessions SET provider_capture_id = ?2, updated_at = max(?3, updated_at + 1)
+       WHERE id = ?1 AND provider = 'paypal' AND status IN ('expired', 'cancelled', 'failed') AND provider_capture_id IS NULL${gs.sql}`,
+    )
+    .bind(a.id, a.captureId, a.now, ...gs.params);
+}
+
+/**
+ * A claimed checkout past its grace whose order PayPal showed with NO capture (re-check N1): ONE batch of two guarded statements, the claim released only if it is
+ * still the one read (`claim`), then the row ended (`expired`) only if no claim is held (`checkoutEndStatement`). No single statement ends a claimed row (the
+ * trigger `checkout_sessions_claimed_no_end`), and a claim taken again in between keeps the row live.
+ */
+export function paypalAbandonStatements(
+  db: D1Database,
+  a: { id: string; claim: number; now: number },
+): D1PreparedStatement[] {
+  return [
+    paypalCaptureReleaseStatement(db, a),
+    checkoutEndStatement(db, { id: a.id, status: "expired", now: a.now }),
+  ];
+}
+
+/**
+ * The sweep's PayPal expiry (run file D; L5): up to 20 live or stale PayPal checkouts more than 30 minutes past `expires_at` (`?1` now) with NO claim end
+ * `expired`, in SQL (an order nobody captured; PayPal's own 3 hours have passed by then). A claimed one is never touched here: the sweep refreshes it
+ * (`PAYPAL_STALE_CLAIMS_SQL`), and only the refresh ends it, after PayPal showed no capture. Through `checkout_sessions_paypal_open` only.
+ */
+export function paypalExpireUnclaimedStatement(db: D1Database, now: number): D1PreparedStatement {
+  return db
+    .prepare(
+      `UPDATE checkout_sessions SET status = 'expired', updated_at = max(?1, updated_at + 1)
+       WHERE id IN (SELECT c.id FROM checkout_sessions c INDEXED BY checkout_sessions_paypal_open
+           WHERE c.provider = 'paypal' AND c.status IN ('live', 'stale') AND c.expires_at < ?1 - ${PAYPAL_CAPTURE_GRACE_MS} AND c.capture_started_at IS NULL
+           ORDER BY c.expires_at, c.id LIMIT ${PAYPAL_SWEEP_LIMIT})
+         AND status IN ('live', 'stale') AND capture_started_at IS NULL`,
+    )
+    .bind(now);
+}
+
+/**
+ * The sweep's read of PayPal claims whose answer never came (run file D): live or stale PayPal checkouts with a claim older than 2 minutes (`?1` = now − 2
+ * minutes), not refreshed since `?2` (now − 15 minutes), oldest expiry first, at most 20; each goes to `gateway.refresh`, which re-fetches the order (and ends a
+ * row past its grace only when PayPal shows no capture).
+ */
+export const PAYPAL_STALE_CLAIMS_SQL = `SELECT c.id FROM checkout_sessions c INDEXED BY checkout_sessions_paypal_open
+   WHERE c.provider = 'paypal' AND c.status IN ('live', 'stale') AND c.capture_started_at IS NOT NULL AND c.capture_started_at < ?1
+     AND (c.last_refresh_at IS NULL OR c.last_refresh_at < ?2)
+   ORDER BY c.expires_at, c.id LIMIT ${PAYPAL_SWEEP_LIMIT}`;
+
+/**
+ * The sweep's read of captures PayPal holds (run file D): `capture_pending` checkouts that moved there before `?1` (now − 30 minutes) and were not refreshed since
+ * then, oldest first, at most 20; each goes to `gateway.refresh` (a re-fetch of the capture). Through `checkout_sessions_capture_pending` only.
+ */
+export const PAYPAL_HELD_CAPTURES_SQL = `SELECT c.id FROM checkout_sessions c INDEXED BY checkout_sessions_capture_pending
+   WHERE c.status = 'capture_pending' AND c.updated_at < ?1 AND (c.last_refresh_at IS NULL OR c.last_refresh_at < ?1)
+   ORDER BY c.updated_at, c.id LIMIT ${PAYPAL_SWEEP_LIMIT}`;
 /** The checkout builders together (run file B's `checkoutStatements`). */
 export const checkoutStatements = {
   create: checkoutCreateStatement,
@@ -209,14 +351,19 @@ export const checkoutStatements = {
   refreshClaim: checkoutRefreshClaimStatement,
 } as const;
 
-/** A checkout row's columns as every reader takes them (alias `c`; the admin's `CheckoutRow`). One list (M6.2 review finding 12). */
+/**
+ * A checkout row's columns as every reader takes them (alias `c`; the admin's `CheckoutRow`). One list (M6.2 review finding 12). M6.4: PayPal's capture id and
+ * capture claim (NULL on every other provider's row).
+ */
 export const CHECKOUT_COLS =
-  "c.id, c.provider, c.document_id, c.client_id, c.contact_id, c.source, c.currency, c.amount_minor, c.status, c.provider_link_id, c.short_url, c.expires_at, c.created_at, c.updated_at, c.last_refresh_at, c.paid_payment_id";
+  "c.id, c.provider, c.document_id, c.client_id, c.contact_id, c.source, c.currency, c.amount_minor, c.status, c.provider_link_id, c.short_url, c.expires_at, c.created_at, c.updated_at, c.last_refresh_at, c.paid_payment_id, c.provider_capture_id, c.capture_started_at";
 
 /** One checkout by its id (`?1`): a primary-key seek. */
 export const CHECKOUT_BY_ID_SQL = `SELECT ${CHECKOUT_COLS} FROM checkout_sessions c WHERE c.id = ?1`;
-/** The checkout of a Razorpay link (`?1` provider, `?2` the link id): one seek of `checkout_sessions_provider_link`. */
+/** The checkout of a Razorpay link, a Stripe session or a PayPal order (`?1` provider, `?2` the link id): one seek of `checkout_sessions_provider_link`. */
 export const CHECKOUT_BY_LINK_SQL = `SELECT ${CHECKOUT_COLS} FROM checkout_sessions c INDEXED BY checkout_sessions_provider_link WHERE c.provider = ?1 AND c.provider_link_id = ?2`;
+/** M6.4: a PayPal checkout by PayPal's capture id (`?1`): one seek of `checkout_sessions_capture` (a capture event, or a refund's capture). */
+export const CHECKOUT_BY_CAPTURE_SQL = `SELECT ${CHECKOUT_COLS} FROM checkout_sessions c INDEXED BY checkout_sessions_capture WHERE c.provider = 'paypal' AND c.provider_capture_id = ?1`;
 
 /** A document's open link (`?1`), if any (at most one: `checkout_sessions_open`). */
 export const OPEN_CHECKOUT_SQL = `SELECT ${CHECKOUT_COLS} FROM checkout_sessions c INDEXED BY checkout_sessions_open WHERE c.document_id = ?1 AND c.status IN ('creating', 'live')`;
@@ -307,6 +454,11 @@ export type GatewayPaymentArgs = {
    * is written either way (a link that ended meanwhile never loses the money's record).
    */
   checkoutPaid: boolean | "if_open";
+  /**
+   * M6.4: PayPal's capture id, written onto the checkout with its move to `paid` (set once: a row already `capture_pending` keeps the same id; trigger
+   * `checkout_sessions_capture_update`). Null or missing for Razorpay and Stripe.
+   */
+  providerCaptureId?: string | null;
   staleOthers: boolean;
   /** The event's own move, or null for a refresh. */
   event: { status: "processed" | "needs_review"; outcome: string } | null;
@@ -335,6 +487,10 @@ export type GatewayPaymentStatements = {
  * frozen, not void document of a type, currency and client side the provider's row of the rule table puts money on directly (M6.3: Razorpay an INR tax invoice or
  * debit note of a domestic client; Stripe a USD export invoice or debit note of an overseas client). The triggers hold the row's shape (`payments_insert_state`,
  * `payments_gateway_shape`; M6.3 the INR fee columns, `?20`..`?22`).
+ * M6.4 PayPal: the same rule table's PayPal row (a USD export invoice or debit note of an overseas client is confirmed and allocated; a proforma's money is
+ * pending); a checkout PayPal held (`capture_pending`) may be paid too; the checkout takes the capture id (`providerCaptureId`); the fee in the column of its own
+ * currency (`feeMinor` for USD, `gatewayFeeInrMinor` for INR: core `payPalFeeFactsOf`). A capture on an ENDED checkout (C step 9) is recorded with
+ * `status: "pending_verification"`, `checkoutPaid: false`, `allocate: null`, so `main` still writes it (never drop captured money).
  * Then, guarded on the caller's audit row `g` and on this batch's row: the allocation (`INSERT ... SELECT min(amount, live balance)`, nothing when nothing is due),
  * the recompute, the `overpaid` review item when the payment holds an excess (as client credit, ADM-PAY-06; Settled by the lead on the safest reading, 2026-10-31
  * (08-C RA-36): credit held is an advance), the checkout to `paid`, the document's other live links to `stale`, the event's move, the owners' bells; and
@@ -367,7 +523,7 @@ export function recordGatewayPaymentStatements(
          ?20, ?21, ?22
        FROM checkout_sessions c JOIN clients k ON k.id = c.client_id
        WHERE c.id = ?15 AND c.provider = ?2 AND c.client_id = ?16 AND c.document_id = ?17
-         AND (?18 = 0 OR c.status IN ('live', 'stale'))
+         AND (?18 = 0 OR c.status IN ('live', 'stale', 'capture_pending'))
          AND k.anonymised_at IS NULL AND k.currency = c.currency
          AND NOT EXISTS (SELECT 1 FROM payments x WHERE x.id = ?1)
          AND NOT EXISTS (SELECT 1 FROM payments y INDEXED BY payments_provider_ref WHERE y.provider = ?2 AND y.provider_payment_id = ?11)
@@ -442,14 +598,15 @@ export function recordGatewayPaymentStatements(
     );
   }
   if (a.checkoutPaid) {
-    const g3 = guarded(gm, 3);
+    // M6.4: a PayPal capture PayPal held completes (`capture_pending` → paid, 0068) and the checkout keeps its capture id (set once, the same one).
+    const g3 = guarded(gm, 4);
     side.push(
       db
         .prepare(
-          `UPDATE checkout_sessions SET status = 'paid', paid_payment_id = ?2, updated_at = max(?3, updated_at + 1)
-           WHERE id = ?1 AND status IN ('live', 'stale') AND paid_payment_id IS NULL${g3.sql}`,
+          `UPDATE checkout_sessions SET status = 'paid', paid_payment_id = ?2, provider_capture_id = coalesce(provider_capture_id, ?4), updated_at = max(?3, updated_at + 1)
+           WHERE id = ?1 AND status IN ('live', 'stale', 'capture_pending') AND paid_payment_id IS NULL AND (?4 IS NULL OR provider_capture_id IS NULL OR provider_capture_id = ?4)${g3.sql}`,
         )
-        .bind(a.checkoutId, a.paymentId, a.now, ...g3.params),
+        .bind(a.checkoutId, a.paymentId, a.now, a.providerCaptureId ?? null, ...g3.params),
     );
   }
   if (a.staleOthers) {

@@ -470,6 +470,20 @@
       "when": 1793555724134,
       "tag": "0066_stripe_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "6",
+      "when": 1793630320385,
+      "tag": "0067_paypal",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "6",
+      "when": 1793630460990,
+      "tag": "0068_paypal_triggers",
+      "breakpoints": true
     }
   ]
 }

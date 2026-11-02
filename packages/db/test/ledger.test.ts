@@ -66,6 +66,7 @@ import {
   PAYMENT_PROVIDERS_0060,
   PAYMENT_PROVIDERS_0064,
   PAYMENT_PROVIDERS_0066,
+  PAYMENT_PROVIDERS_0068,
   PAYMENT_STATUSES_0060,
   PROOF_MIME_TYPES_0060,
   paymentTriggerStatements,
@@ -192,7 +193,8 @@ describe("0059 and 0060: no rebuild, the pinned lists, the freeze coverage [run 
     expect(PAYMENT_KINDS_0060).toEqual(PAYMENT_KINDS);
     expect(PAYMENT_PROVIDERS_0060).toEqual(["manual"]);
     expect(PAYMENT_PROVIDERS_0064).toEqual(["manual", "razorpay"]);
-    expect(PAYMENT_PROVIDERS_0066).toEqual(PAYMENT_PROVIDERS);
+    expect(PAYMENT_PROVIDERS_0066).toEqual(["manual", "razorpay", "stripe"]);
+    expect(PAYMENT_PROVIDERS_0068).toEqual(PAYMENT_PROVIDERS);
     expect(PAYMENT_STATUSES_0060).toEqual(PAYMENT_STATUSES);
     expect(PAYMENT_MODES_0060).toEqual(["neft", "rtgs", "imps", "upi", "swift"]);
     expect(PAYMENT_MODES_0064).toEqual(PAYMENT_MODES);

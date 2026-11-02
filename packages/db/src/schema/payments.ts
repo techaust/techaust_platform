@@ -13,6 +13,7 @@ import {
   check,
   index,
   integer,
+  primaryKey,
   sqliteTable,
   text,
   uniqueIndex,
@@ -27,7 +28,8 @@ import { docAccessTokens, staffUsers } from "./identity.ts";
  * `stripe_triggers` adds Stripe, whose modes are `card` and `other`).
  */
 export const PAYMENT_KINDS = ["payment", "tds"] as const;
-export const PAYMENT_PROVIDERS = ["manual", "razorpay", "stripe"] as const;
+/** M6.4 adds PayPal (`paypal_triggers`, 0068); a PayPal payment's modes are `wallet`, `card` and `other`, already in the list (L22). */
+export const PAYMENT_PROVIDERS = ["manual", "razorpay", "stripe", "paypal"] as const;
 export const PAYMENT_STATUSES = ["pending_verification", "confirmed", "rejected", "withdrawn"] as const;
 export const PAYMENT_MODES = [
   "neft",
@@ -131,6 +133,11 @@ export const payments = sqliteTable(
       .where(
         sql`${t.provider} in ('stripe', 'paypal') and ${t.proofR2Key} is null and ${t.status} in ('pending_verification', 'confirmed')`,
       ),
+    // M6.4 (L12): a gateway's (or the bank's: `manual`) confirmed payments by the day the money arrived: the "Without advice" list and the monthly advice
+    // reminder read one provider's range here, then seek `realisation_advice_payments_active` for each.
+    index("payments_confirmed_provider")
+      .on(t.provider, t.receivedOn, t.id)
+      .where(sql`${t.status} = 'confirmed' and ${t.kind} = 'payment'`),
     // A client's payments in a currency by the day the money arrived (the statement, the credit balance, the client's figures).
     index("payments_client").on(t.clientId, t.currency, t.receivedOn, t.id),
     // The Owner's "Payments to check" list and the dashboard tile: only the pending rows are in it.
@@ -228,10 +235,11 @@ export const realisationExtensions = sqliteTable(
 // with a trigger swap, never a rebuild of a table other tables reference. Nothing here stores a raw webhook body, a payer's email, phone, UPI address or card
 // detail (L8; ADM-PAY-12; Settled by the lead on the safest reading, 2026-11-01 (08-C RB-40); Researched 2026-10-28, RBI PA Directions 2025, Annex 1 2.1 (08-C RB-07)): `facts` is a whitelist the code builds.
 
-/** M6.2 Razorpay; M6.3 Stripe (`stripe_triggers`, 0066). */
-export const GATEWAY_PROVIDERS = ["razorpay", "stripe"] as const;
+/** M6.2 Razorpay; M6.3 Stripe (`stripe_triggers`, 0066); M6.4 PayPal (`paypal_triggers`, 0068). */
+export const GATEWAY_PROVIDERS = ["razorpay", "stripe", "paypal"] as const;
 export const WEBHOOK_EVENT_STATUSES = ["received", "processed", "ignored", "needs_review", "failed"] as const;
 export const CHECKOUT_SOURCES = ["portal", "link", "staff"] as const;
+/** M6.4: `capture_pending`, a PayPal capture PayPal holds (no payment row until it completes, L6). */
 export const CHECKOUT_STATUSES = [
   "creating",
   "live",
@@ -240,6 +248,7 @@ export const CHECKOUT_STATUSES = [
   "cancelled",
   "stale",
   "failed",
+  "capture_pending",
 ] as const;
 export const REVIEW_SOURCES = ["webhook", "dlq", "refresh"] as const;
 export const REVIEW_STATUSES = ["open", "resolved"] as const;
@@ -264,6 +273,13 @@ export const REVIEW_KINDS = [
   "unreadable_event",
   // M6.3 (lead, 2026-11-02): a USD card payment with an India-issued card (or none stated) waits for the Owner (08-C RA-38).
   "not_export_receipt",
+  // M6.4 PayPal (core `REVIEW_KINDS`; the 0068 triggers hold the list).
+  "capture_pending",
+  "capture_denied",
+  "capture_refused",
+  "reversed_after_confirm",
+  "refunded_outside",
+  "late_capture",
 ] as const;
 /**
  * Provider references are generic (lead, 2026-11-01, M6.3/M6.4 briefs session): up to 255 characters, so a Stripe Checkout Session id (66 in Stripe's fixture, 5000
@@ -343,6 +359,12 @@ export const checkoutSessions = sqliteTable(
     /** The last status re-fetch (at most one a minute, in the statement's WHERE). */
     lastRefreshAt: integer("last_refresh_at"),
     paidPaymentId: text("paid_payment_id").references((): AnySQLiteColumn => payments.id),
+    // M6.4 PayPal (ADD COLUMN only, 0067; held by triggers of `paypal_triggers`, 0068, never a CHECK here: a table-level CHECK would make drizzle-kit rebuild
+    // `checkout_sessions`, which `payments.checkout_id` references):
+    /** PayPal's capture id, set once: with `capture_pending` or `paid`, or on an ended row by the never-drop batch (run file C step 9). ≤ 64. */
+    providerCaptureId: text("provider_capture_id"),
+    /** The capture claim (L2): the instant one call took the right to capture; moves forward, or back to NULL (a release), only while live or stale. */
+    captureStartedAt: integer("capture_started_at"),
   },
   (t) => [
     // L4: one open link per document; two clicks at once serialise here (the loser's INSERT fails: 409 `link_in_progress`).
@@ -357,6 +379,19 @@ export const checkoutSessions = sqliteTable(
     index("checkout_sessions_contact").on(t.contactId),
     // ... and the token delete's trigger finds a link's checkouts by the token (0064 `checkout_sessions_unlink_token`).
     index("checkout_sessions_token").on(t.docTokenId).where(sql`${t.docTokenId} is not null`),
+    // M6.4: one checkout per PayPal capture (a replayed capture can't land on a second row).
+    uniqueIndex("checkout_sessions_capture")
+      .on(t.provider, t.providerCaptureId)
+      .where(sql`${t.providerCaptureId} is not null`),
+    // M6.4 (Step 0.1, 0.2 item 10): the sweep's read of captures PayPal holds, oldest first (only those rows are in it).
+    index("checkout_sessions_capture_pending")
+      .on(t.updatedAt, t.id)
+      .where(sql`${t.status} = 'capture_pending'`),
+    // M6.4: the sweep's reads of open PayPal checkouts (a stale claim to refresh, an unclaimed one past its grace to expire); stale rows are not in
+    // `checkout_sessions_open`, so they need their own.
+    index("checkout_sessions_paypal_open")
+      .on(t.expiresAt, t.id)
+      .where(sql`${t.provider} = 'paypal' and ${t.status} in ('live', 'stale')`),
     check("checkout_sessions_currency", oneOf(t.currency, CURRENCY_CODES)),
     check("checkout_sessions_amount", sql`${t.amountMinor} > 0`),
     check(
@@ -426,4 +461,103 @@ export const hookFailures = sqliteTable(
     count: integer("count").notNull().default(0),
   },
   (t) => [check("hook_failures_count", sql`${t.count} between 0 and ${sql.raw(String(HOOK_FAILURES_MAX))}`)],
+);
+
+// ---- M6.4: remittance advices (L12; ADM-INV-17; run file A3) --------------------------------------------------------------------------------------------
+// Proof of realisation: Settled by the lead on the safest reading, 2026-10-30 (08-C RB-05): keep the bank advice or e-FIRA; for a PA-CB, the settlement report
+// mapped to the invoice. PayPal India's FIRA is weekly since February 2026, all withdrawals of a week in one FIRA, kept by PayPal for the last 12 months only
+// (Settled by the lead on the safest reading, 2026-11-02 (08-C RA-38)), so ONE advice proves MANY payments: an advice table and a link table. Generic for PayPal,
+// Stripe and the bank (a FIRC for a SWIFT receipt recorded by hand). CREATE TABLE only (0067). The enumerations (`provider`, `kind`, `file_mime`) have no CHECK:
+// the triggers of `paypal_triggers` (0068) hold them, so a later list widens with a trigger swap, never a rebuild of `realisation_advices`, which the link table
+// references. The file is write-once in the private R2 `DOCS` (never the file vault).
+
+/** Whose advice it is: a gateway's (PayPal's e-FIRA, Stripe's settlement advice) or the bank's (a FIRC; its payments are `manual` ones). */
+export const ADVICE_PROVIDERS = ["paypal", "stripe", "bank"] as const;
+export const ADVICE_KINDS = ["efira", "fira", "firc", "brc", "settlement_report", "other"] as const;
+export const ADVICE_REF_MAX = 64;
+export const ADVICE_NOTE_MAX = 500;
+export const ADVICE_REMOVE_REASON_MAX = 200;
+/** At most this many payments are linked to an advice in one request (run file C). */
+export const ADVICE_LINK_MAX = 50;
+
+export const realisationAdvices = sqliteTable(
+  "realisation_advices",
+  {
+    id: id(),
+    provider: text("provider").notNull(),
+    kind: text("kind").notNull(),
+    /** The advice's own reference as printed (the FIRA or FIRC number). */
+    adviceRef: text("advice_ref").notNull(),
+    /** ISO date the advice was issued. */
+    issuedOn: text("issued_on").notNull(),
+    /** The period it covers (a weekly FIRA), when printed. */
+    periodFrom: text("period_from"),
+    periodTo: text("period_to"),
+    /** The INR total as printed, for the register only: never a GST value (Rule 34 values stay the invoice's). */
+    inrTotalMinor: integer("inr_total_minor"),
+    // The file, set once (write-once in `DOCS`: `advices/<id>/file-<sha256>`).
+    fileR2Key: text("file_r2_key"),
+    fileSha256: text("file_sha256"),
+    fileMime: text("file_mime"),
+    note: text("note"),
+    recordedBy: text("recorded_by")
+      .notNull()
+      .references(() => staffUsers.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    // The list, newest first (keyset `(issued_on, id)`).
+    index("realisation_advices_issued").on(t.issuedOn, t.id),
+    // One advice per provider, kind and reference (409 `advice_ref_exists`).
+    uniqueIndex("realisation_advices_ref").on(t.provider, t.kind, t.adviceRef),
+    check(
+      "realisation_advices_ref_length",
+      sql`length(${t.adviceRef}) between 1 and ${sql.raw(String(ADVICE_REF_MAX))}`,
+    ),
+    check("realisation_advices_issued_on", sql`date(${t.issuedOn}) IS ${t.issuedOn}`),
+    check(
+      "realisation_advices_period",
+      sql`(${t.periodFrom} is null or date(${t.periodFrom}) IS ${t.periodFrom}) and (${t.periodTo} is null or date(${t.periodTo}) IS ${t.periodTo}) and (${t.periodFrom} is null or ${t.periodTo} is null or ${t.periodFrom} <= ${t.periodTo})`,
+    ),
+    check("realisation_advices_inr_total", sql`${t.inrTotalMinor} is null or ${t.inrTotalMinor} > 0`),
+    check(
+      "realisation_advices_file",
+      sql`(${t.fileR2Key} is null and ${t.fileSha256} is null and ${t.fileMime} is null) or (length(${t.fileR2Key}) between 1 and 200 and length(${t.fileSha256}) = 64 and ${t.fileMime} is not null)`,
+    ),
+    check(
+      "realisation_advices_note_length",
+      sql`${t.note} is null or length(${t.note}) <= ${sql.raw(String(ADVICE_NOTE_MAX))}`,
+    ),
+  ],
+);
+
+export const realisationAdvicePayments = sqliteTable(
+  "realisation_advice_payments",
+  {
+    adviceId: text("advice_id")
+      .notNull()
+      .references(() => realisationAdvices.id),
+    paymentId: text("payment_id")
+      .notNull()
+      .references(() => payments.id),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => staffUsers.id),
+    createdAt: createdAt(),
+    // A link taken off by the Owner, with a reason, set once (the row stays: the history of what proved what).
+    removedBy: text("removed_by").references(() => staffUsers.id),
+    removedAt: integer("removed_at"),
+    removeReason: text("remove_reason"),
+  },
+  (t) => [
+    primaryKey({ columns: [t.adviceId, t.paymentId] }),
+    // A payment's advice (its detail, the "Proof awaited" filter).
+    index("realisation_advice_payments_payment").on(t.paymentId),
+    // A payment is on at most one advice at a time (409 `already_linked`); the "Without advice" list seeks it.
+    uniqueIndex("realisation_advice_payments_active").on(t.paymentId).where(sql`${t.removedAt} is null`),
+    check(
+      "realisation_advice_payments_removed",
+      sql`(${t.removedBy} is null and ${t.removedAt} is null and ${t.removeReason} is null) or (${t.removedBy} is not null and ${t.removedAt} is not null and length(trim(${t.removeReason})) between 1 and ${sql.raw(String(ADVICE_REMOVE_REASON_MAX))})`,
+    ),
+  ],
 );
