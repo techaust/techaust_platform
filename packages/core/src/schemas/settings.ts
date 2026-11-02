@@ -375,7 +375,12 @@ export const storedNumberingSettings = z.record(z.enum(SERIES_KEYS), numberingFo
 
 const scheduleStep = z.object({ label: text(1), pctBp: bp });
 
-export const paymentTermsSettings = z
+/**
+ * The payment terms as they are READ: every rule except the cross-field card limits below, so a row stored before that rule (a floor above the maximum) never
+ * turns a route into a 500; the portal and the finance Worker still offer no card payment the limits can't take (core `payableOnline`), and the Owner fixes
+ * the row on the next save.
+ */
+export const storedPaymentTermsSettings = z
   .object({
     /** Net 7 by default (ADM-INV-09); clients can override. */
     dueDays: intBetween(0, 90),
@@ -414,6 +419,22 @@ export const paymentTermsSettings = z
       path: ["buildSchedule"],
     }),
   );
+
+/** M6.3 review finding 2: the refusal of a card floor above the card maximum (07-ZM "Review changes", lead under the owner's delegation, 2026-11-02). */
+export const CARD_FLOOR_ABOVE_MAXIMUM =
+  "The smallest part-payment by card can't be more than the largest card payment.";
+
+/**
+ * The payment terms as they are SAVED: the stored rules plus the card limits in step (M6.3 review finding 2; lead's answer to B1, Q2): the smallest card
+ * part-payment (`onlineMinPartialUsdMinor`) may not be above the largest card payment (`overseasOnlineMaxUsdMinor`), or every card press on a balance above the
+ * maximum would be refused. The refusal sits on the floor's field.
+ */
+export const paymentTermsSettings = storedPaymentTermsSettings.check(
+  z.refine((t) => t.onlineMinPartialUsdMinor <= t.overseasOnlineMaxUsdMinor, {
+    error: CARD_FLOOR_ABOVE_MAXIMUM,
+    path: ["onlineMinPartialUsdMinor"],
+  }),
+);
 
 /**
  * The least each retention figure may be (months, but years for `financialYears`): the one place the floors live. The schema takes them as its minimums, and `resolveSetting` raises a stored
@@ -487,8 +508,15 @@ export const SETTINGS_SCHEMAS = {
   gateways: gatewaySettings,
   email: emailSettings,
 } as const;
-/** What a stored row is read with: the same schemas, except that numbering takes a format valid before M5.1 (see `storedNumberingSettings`). */
-const READ_SCHEMAS = { ...SETTINGS_SCHEMAS, numbering: storedNumberingSettings } as const;
+/**
+ * What a stored row is read with: the same schemas, except that numbering takes a format valid before M5.1 (see `storedNumberingSettings`) and the payment
+ * terms skip the card-limits rule added in M6.3's review (see `storedPaymentTermsSettings`).
+ */
+const READ_SCHEMAS = {
+  ...SETTINGS_SCHEMAS,
+  numbering: storedNumberingSettings,
+  payment_terms: storedPaymentTermsSettings,
+} as const;
 export type SeededSettingKey = keyof typeof SETTINGS_SCHEMAS;
 export type Settings = { [K in SeededSettingKey]: z.infer<(typeof SETTINGS_SCHEMAS)[K]> };
 

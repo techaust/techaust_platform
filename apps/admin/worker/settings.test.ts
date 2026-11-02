@@ -205,6 +205,44 @@ describe("saving: version check and the audit diff [ADM-G-06, ADM-AUD-01]", () =
     expect((await put(GROUP("retention"), o.cookie, "nonsense")).status).toBe(400);
   });
 
+  it("payment terms: a card floor above the card maximum is 400 on the floor's field and writes nothing; a stored one still reads (M6.3 review finding 2) [ADM-SET-06]", async () => {
+    await clear("payment_terms");
+    const o = await owner();
+    const before = await countOf("audit_log", "action = 'settings.payment_terms.update'");
+    const above = {
+      ...SETTINGS_DEFAULTS.payment_terms,
+      onlineMinPartialUsdMinor: 10_000,
+      overseasOnlineMaxUsdMinor: 5_000,
+    };
+    const res = await put(GROUP("payment_terms"), o.cookie, { version: 0, value: above });
+    expect(res.status).toBe(400);
+    const body = await json(res);
+    expect(body.error.code).toBe("invalid");
+    expect(body.fields).toEqual([
+      {
+        path: "onlineMinPartialUsdMinor",
+        message: "The smallest part-payment by card can't be more than the largest card payment.",
+      },
+    ]);
+    expect(await countOf("audit_log", "action = 'settings.payment_terms.update'")).toBe(before);
+    expect(await one("SELECT key FROM settings WHERE key = 'payment_terms'")).toBeNull();
+    // equal limits save
+    const equal = {
+      ...SETTINGS_DEFAULTS.payment_terms,
+      onlineMinPartialUsdMinor: 5_000,
+      overseasOnlineMaxUsdMinor: 5_000,
+    };
+    expect((await put(GROUP("payment_terms"), o.cookie, { version: 0, value: equal })).status).toBe(200);
+    // a row stored before the rule reads (no 500), and the Owner's next save must fix it
+    await store("payment_terms", above, 2);
+    const read = await json(await call(GROUP("payment_terms"), { cookie: o.cookie }));
+    expect(read.value.onlineMinPartialUsdMinor).toBe(10_000);
+    expect(read.value.overseasOnlineMaxUsdMinor).toBe(5_000);
+    const other = { ...above, dueDays: 14 };
+    expect((await put(GROUP("payment_terms"), o.cookie, { version: 2, value: other })).status).toBe(400);
+    await clear("payment_terms");
+  });
+
   it("company: the GSTIN is checked, its state must match, the PAN can't be typed, the logo must be one of ours", async () => {
     await clear("company");
     const o = await owner();

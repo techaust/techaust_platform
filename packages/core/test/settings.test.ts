@@ -6,6 +6,7 @@ import { gstinCheckChar } from "../src/gstin.ts";
 import { formatDocumentNumber, MAX_NUMBER_LENGTH, maxNumber } from "../src/numbering.ts";
 import {
   BRAND_LOGOS,
+  CARD_FLOOR_ABOVE_MAXIMUM,
   floorRetention,
   numberingClashMessage,
   panOf,
@@ -116,6 +117,43 @@ describe("settings defaults (docs/08 §7.1, researched in 08-C)", () => {
     expect(
       SETTINGS_SCHEMAS.retention.safeParse({ ...SETTINGS_DEFAULTS.retention, financialYears: 7 }).success,
     ).toBe(false);
+  });
+
+  it("M6.3 review finding 2 [ADM-SET-06]: the card floor can't be above the card maximum on a save; a stored row older than the rule still reads", () => {
+    const base = SETTINGS_DEFAULTS.payment_terms;
+    expect(base.onlineMinPartialUsdMinor).toBeLessThanOrEqual(base.overseasOnlineMaxUsdMinor);
+    expect(SETTINGS_SCHEMAS.payment_terms.safeParse(base).success).toBe(true);
+    // Equal is allowed (one card payment of exactly that amount).
+    expect(
+      SETTINGS_SCHEMAS.payment_terms.safeParse({
+        ...base,
+        onlineMinPartialUsdMinor: 5_000,
+        overseasOnlineMaxUsdMinor: 5_000,
+      }).success,
+    ).toBe(true);
+    const above = { ...base, onlineMinPartialUsdMinor: 10_000, overseasOnlineMaxUsdMinor: 5_000 };
+    const parsed = SETTINGS_SCHEMAS.payment_terms.safeParse(above);
+    expect(parsed.success).toBe(false);
+    // One issue, on the floor's field, with the approved line (07-ZM "Review changes").
+    expect(parsed.error?.issues.map((i) => ({ path: i.path, message: i.message }))).toEqual([
+      { path: ["onlineMinPartialUsdMinor"], message: CARD_FLOOR_ABOVE_MAXIMUM },
+    ]);
+    expect(CARD_FLOOR_ABOVE_MAXIMUM).toBe(
+      "The smallest part-payment by card can't be more than the largest card payment.",
+    );
+    // The INR floor has no maximum: any floor saves.
+    expect(
+      SETTINGS_SCHEMAS.payment_terms.safeParse({ ...base, razorpayMinPartialInrMinor: 10_000_000_00 })
+        .success,
+    ).toBe(true);
+    // Reading a row stored before the rule is not refused (the portal and finance offer no payment the limits can't take).
+    const read = resolveSetting("payment_terms", above);
+    expect(read.onlineMinPartialUsdMinor).toBe(10_000);
+    expect(read.overseasOnlineMaxUsdMinor).toBe(5_000);
+    // The read keeps every other rule (a broken schedule is still a corrupted row).
+    expect(() =>
+      resolveSetting("payment_terms", { ...above, buildSchedule: [{ label: "All", pctBp: 9_000 }] }),
+    ).toThrow();
   });
 
   it("the email-log retention is at least 12 months (DPDP Rule 8(3), from 13 May 2027; Researched 2026-10-28, 08-C RB-09): the schema refuses less, a stored row below it reads as 12, and nothing else is raised", () => {

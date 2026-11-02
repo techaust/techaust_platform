@@ -448,8 +448,12 @@ export function onlineOf(r: OnlineRow | undefined) {
         ? (r.maximum as number)
         : null
     : null;
+  // M6.3 review finding 2: a stored card floor above the card maximum (a row saved before the Settings rule): when even the smallest payment allowed is
+  // above the maximum, the finance Worker refuses every press (core `payableOnline` with its limits: `above_gateway_maximum`, no fetch), so Pay is not offered.
+  // The same rule as there, so a balance at or under the maximum (only the whole balance offered) still pays.
+  const aboveMaximum = floor !== null && maximum !== null && onlineMinimumOf(floor, r.balance) > maximum;
   return {
-    payOnline: r.pay_online === 1 && r.payment_pending !== 1,
+    payOnline: r.pay_online === 1 && r.payment_pending !== 1 && !aboveMaximum,
     /** M6.3: the gateway of the document's currency ("Pay by card" through Stripe for USD; "Pay now" through Razorpay for INR). */
     provider: usd ? ("stripe" as const) : ("razorpay" as const),
     /** A Razorpay proforma is paid in whole rupees (LD28; 07-ZI line 7); Stripe takes cents. */
@@ -471,7 +475,8 @@ export function onlineOf(r: OnlineRow | undefined) {
        * `onlineMinimumOf`: the floor, never under ₹1, or the whole balance if lower; then only the full amount is offered). Null when the document can't be paid
        * online or the floor can't be read (the full amount only).
        */
-      minimumMinor: r.pay_online === 1 && floor !== null ? onlineMinimumOf(floor, r.balance) : null,
+      minimumMinor:
+        r.pay_online === 1 && !aboveMaximum && floor !== null ? onlineMinimumOf(floor, r.balance) : null,
       /** M6.3 (L9, C6): the most one card payment may be (USD), or null (INR: no maximum). */
       maximumMinor: maximum,
     },

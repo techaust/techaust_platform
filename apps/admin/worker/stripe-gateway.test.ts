@@ -180,6 +180,39 @@ describe("Stripe Checkout links [POR-06, L4, L7, L9; run file C PortalPayments]"
     expect(stripeCalls.filter((x) => x.method === "POST")).toEqual([]);
   });
 
+  it("a stored card floor above the card maximum (a row older than the save rule): not_payable_online above_gateway_maximum, zero calls, no row (review finding 2)", async () => {
+    const c = await usdClient();
+    const documentId = await usdDoc(c.clientId, { total: 5_000_000 });
+    const before = await one<{ value: string; version: number }>(
+      "SELECT value, version FROM settings WHERE key = 'payment_terms'",
+    );
+    // Written straight to the table, as a row saved before the rule: floor USD 100, maximum USD 50.
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, version) VALUES ('payment_terms', ?1, ?2)",
+    )
+      .bind(
+        JSON.stringify({ onlineMinPartialUsdMinor: 10_000, overseasOnlineMaxUsdMinor: 5_000 }),
+        (before?.version ?? 0) + 1,
+      )
+      .run();
+    try {
+      for (const amount of [5_000, 10_000, 5_000_000])
+        expect(await stripeLink(c, documentId, amount)).toEqual({
+          ok: false,
+          error: "not_payable_online",
+          reason: "above_gateway_maximum",
+        });
+      expect(stripeCalls).toEqual([]);
+      expect(await one("SELECT id FROM checkout_sessions WHERE document_id = ?1", documentId)).toBeNull();
+    } finally {
+      if (before)
+        await env.DB.prepare("UPDATE settings SET value = ?1, version = ?2 WHERE key = 'payment_terms'")
+          .bind(before.value, before.version)
+          .run();
+      else await env.DB.prepare("DELETE FROM settings WHERE key = 'payment_terms'").run();
+    }
+  });
+
   it("a live key while live payments are off, or an sk_ key: 503 with ZERO calls to Stripe [ADM-PAY-11, L3, rule 7]", async () => {
     const c = await usdClient();
     const documentId = await usdDoc(c.clientId);

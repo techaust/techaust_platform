@@ -441,4 +441,65 @@ describe("Pay by card on a USD document [POR-06, M6.3]", () => {
       online: { paymentPending: true, proformaPending: true },
     });
   });
+
+  it("onlineOf: a stored card floor above the maximum hides Pay by card whenever even the smallest payment is above it, as the finance Worker refuses (review finding 2)", () => {
+    const row: OnlineRow = {
+      pay_online: 1,
+      type: "export_invoice",
+      currency: "USD",
+      balance: 50_000,
+      floor: 10_000,
+      maximum: 5_000,
+      open_amount: null,
+      open_expires: null,
+      last_paid: null,
+      proforma_pending: 0,
+      payment_pending: 0,
+    };
+    expect(onlineOf(row)).toMatchObject({
+      payOnline: false,
+      online: { minimumMinor: null, maximumMinor: 5_000 },
+    });
+    // a balance between the maximum and the floor: still only the balance, still above the maximum
+    expect(onlineOf({ ...row, balance: 8_000 }).payOnline).toBe(false);
+    // a balance at or under the maximum: only the whole balance is offered, and the finance Worker takes it (core payableOnline)
+    expect(onlineOf({ ...row, balance: 5_000 })).toMatchObject({
+      payOnline: true,
+      online: { minimumMinor: 5_000, maximumMinor: 5_000 },
+    });
+    // in step (the Settings rule): unchanged
+    expect(onlineOf({ ...row, floor: 5_000 })).toMatchObject({
+      payOnline: true,
+      online: { minimumMinor: 5_000, maximumMinor: 5_000 },
+    });
+    // INR has no maximum: never affected
+    expect(onlineOf({ ...row, currency: "INR", maximum: null }).payOnline).toBe(true);
+  });
+
+  it("GET /invoices/:id from the real SQL: a stored USD floor above the stored maximum answers payOnline false (review finding 2)", async () => {
+    const { contact, id } = await usdOrg();
+    const s = await sessionFor(contact);
+    const before = await env.DB.prepare("SELECT value FROM settings WHERE key = 'payment_terms'").first<{
+      value: string;
+    }>();
+    await env.DB.prepare("DELETE FROM settings WHERE key = 'payment_terms'").run();
+    await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('payment_terms', ?1)")
+      .bind(JSON.stringify({ onlineMinPartialUsdMinor: 10_000, overseasOnlineMaxUsdMinor: 5_000 }))
+      .run();
+    try {
+      const sum = await call(`/invoices/${id}`, { cookie: s.cookie }, payEnv(STRIPE_LINK));
+      expect(sum.status).toBe(200);
+      expect(((await sum.json()) as { document: Record<string, unknown> }).document).toMatchObject({
+        payOnline: false,
+        provider: "stripe",
+        online: { minimumMinor: null, maximumMinor: 5_000 },
+      });
+    } finally {
+      await env.DB.prepare("DELETE FROM settings WHERE key = 'payment_terms'").run();
+      if (before)
+        await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('payment_terms', ?1)")
+          .bind(before.value)
+          .run();
+    }
+  });
 });
