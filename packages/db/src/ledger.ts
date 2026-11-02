@@ -490,26 +490,33 @@ export function extensionLetterStatement(
 export const paymentProformaSql = (p: string): string =>
   `(SELECT pfd.id FROM documents pfd WHERE pfd.id IN (${paymentDocumentsSql(p)}) AND pfd.type = 'proforma' LIMIT 1)`;
 
+/** Document row `d` (alias) is an issued or part-converted proforma: one whose tax invoice for a payment received can still be issued. */
+const issuableProformaSql = (d: string): string =>
+  `${d}.type = 'proforma' AND ${d}.frozen_at IS NOT NULL AND ${d}.status IN ('issued', 'converted')`;
 /** The row condition of `proformaTakesPaymentSql`: document row `d` (alias) is a proforma that can take payment `p`'s whole amount. */
 const takesRowSql = (d: string, p: string): string =>
-  `(${d}.type = 'proforma' AND ${d}.frozen_at IS NOT NULL AND ${d}.status IN ('issued', 'converted') AND ${d}.balance_minor >= ${p}.amount_minor)`;
+  `(${issuableProformaSql(d)} AND ${d}.balance_minor >= ${p}.amount_minor)`;
 
 /**
  * M6.3 staging fixes, review M3 (L5; lead's decision 1(b), 2026-11-02): proforma `doc` (an SQL expression for its id) can still take payment `p`'s money (an SQL
  * table name or alias of `payments`) as its tax invoice for a payment received: an issued or part-converted proforma whose balance is at least the whole payment
- * (the advance puts the whole amount on the new invoice). Otherwise the money is held for the M6.5 refund ("The client paid more than the proforma's balance. It
- * waits for a refund."): no advance can take it, so it never blocks one (`firstWaitingPaymentSql`), and the screens show that line instead of "Confirm by issuing".
+ * (the advance puts the whole amount on the new invoice). Otherwise no advance can take it, so it never blocks one (`firstWaitingPaymentSql`); money above an
+ * issued proforma's balance is held for the M6.5 refund (`proformaOverpaidBySql`: "The client paid more than the proforma's balance. It waits for a refund.").
  * A primary-key seek.
  */
 export const proformaTakesPaymentSql = (p: string, doc: string): string =>
   `EXISTS (SELECT 1 FROM documents tpd WHERE tpd.id = ${doc} AND ${takesRowSql("tpd", p)})`;
 
 /**
- * Review M3: payment `p` asks for a proforma (`paymentProformaSql`) that can no longer take it (`proformaTakesPaymentSql`'s rule): it waits for a refund. False
- * with no proforma, or one that can take it. The payment view, the approvals queue and the proforma's panel read it (only for a pending payment).
+ * Review M3: payment `p` is more than the balance of proforma `doc` (an SQL expression for its id), an issued or part-converted one: no tax invoice can take it,
+ * so it waits for a refund (lead's decision 1(b)). A void or withdrawn proforma is not this case (its money is held for another reason), so it reads false. A
+ * primary-key seek.
  */
-export const paymentWaitsRefundSql = (p: string): string =>
-  `EXISTS (SELECT 1 FROM documents wrd WHERE wrd.id = ${paymentProformaSql(p)} AND NOT ${takesRowSql("wrd", p)})`;
+export const proformaOverpaidBySql = (p: string, doc: string): string =>
+  `EXISTS (SELECT 1 FROM documents wrd WHERE wrd.id = ${doc} AND ${issuableProformaSql("wrd")} AND wrd.balance_minor < ${p}.amount_minor)`;
+
+/** Review M3: `proformaOverpaidBySql` for the proforma payment `p` asks for (`paymentProformaSql`); the payment view and the approvals queue read it (pending only). */
+export const paymentWaitsRefundSql = (p: string): string => proformaOverpaidBySql(p, paymentProformaSql(p));
 
 /**
  * M6.3 staging fixes 1 and 2 (L5, L12; lead's decisions 1 and 2, 2026-11-02): the FIRST payment waiting for the tax invoice of proforma `doc` of client `client`

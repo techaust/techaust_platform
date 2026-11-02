@@ -62,8 +62,8 @@ const PENDING_SQL = `SELECT p.id, p.provider, p.kind, p.status, p.client_id, p.c
 /** `PENDING_SQL` with the proforma's current stamp (`?2`), read once after a refused freeze. */
 const AFTER_REFUSAL_SQL = PENDING_SQL.replace(
   "i.number_display AS invoice_number",
-  "i.number_display AS invoice_number, (SELECT pf.updated_at FROM documents pf WHERE pf.id = ?2) AS proforma_updated_at, (SELECT pf.balance_minor FROM documents pf WHERE pf.id = ?2) AS proforma_balance_minor",
-);
+  "i.number_display AS invoice_number, pf.updated_at AS proforma_updated_at, pf.balance_minor AS proforma_balance_minor",
+).replace("WHERE p.id = ?1", "LEFT JOIN documents pf ON pf.id = ?2 WHERE p.id = ?1");
 const OWNER_ACTIVE_SQL =
   "SELECT 1 AS ok FROM staff_users WHERE id = ?1 AND role = 'owner' AND status = 'active'";
 

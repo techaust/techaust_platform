@@ -442,41 +442,7 @@ function PaymentList(props: {
               owner && props.tab === "check"
                 ? (r) =>
                     r.status === "pending_verification" ? (
-                      <span className="pay-row__acts">
-                        {/* M6.2 (L7): a Razorpay payment can't be rejected here (409 `gateway_refund_needed`) */}
-                        {r.provider === "manual" && (
-                          <button
-                            type="button"
-                            className="btn btn--secondary"
-                            onClick={() => setOpen({ id: r.id, act: "reject" })}
-                          >
-                            {PAY_COPY.reject}
-                            <span className="visually-hidden">{` ${day(r.receivedOn)} ${r.clientName}`}</span>
-                          </button>
-                        )}
-                        {/* M6.3 staging fix 2 (L5): an entry asking for a proforma is confirmed only by issuing its tax invoice, never by the plain Confirm;
-                            review M3: money above the proforma's balance waits for a refund, so the line stands where the action would */}
-                        {pendingDecisionOf(r).kind === "refund" ? (
-                          <span className="pay-row__refund">{WAITS_REFUND_LINE}</span>
-                        ) : pendingDecisionOf(r).kind === "issue" ? (
-                          <Link
-                            to={`/invoices/${encodeURIComponent(r.proformaId ?? "")}`}
-                            className="btn btn--primary"
-                          >
-                            {PAY_UI.confirmByIssuing}
-                            <span className="visually-hidden">{` ${day(r.receivedOn)} ${r.clientName}`}</span>
-                          </Link>
-                        ) : (
-                          <button
-                            type="button"
-                            className="btn btn--primary"
-                            onClick={() => setOpen({ id: r.id, act: "confirm" })}
-                          >
-                            {PAY_COPY.confirm}
-                            <span className="visually-hidden">{` ${day(r.receivedOn)} ${r.clientName}`}</span>
-                          </button>
-                        )}
-                      </span>
+                      <CheckActions row={r} onOpen={(act) => setOpen({ id: r.id, act })} />
                     ) : null
                 : undefined
             }
@@ -530,6 +496,40 @@ function PaymentList(props: {
 type Step = "view" | "confirm" | "reject" | "withdraw" | "proof" | "certificate";
 
 /** One entry: its facts and what it went on; the role's actions open their own step in the same dialog. */
+/**
+ * The Owner's actions on a row of "Payments to check", stacked (review M1): Reject for a Staff entry (M6.2, L7: a gateway payment can't be rejected here,
+ * 409 `gateway_refund_needed`), then the decision (M6.3 staging fix 2, L5): an entry asking for a proforma is confirmed only by issuing its tax invoice, never
+ * by the plain Confirm; review M3: money above the proforma's balance has no confirm at all, and an online payment's line says it waits for a refund.
+ */
+function CheckActions(props: { row: PaymentView; onOpen: (act: "confirm" | "reject") => void }) {
+  const r = props.row;
+  const decision = pendingDecisionOf(r);
+  const hidden = <span className="visually-hidden">{` ${day(r.receivedOn)} ${r.clientName}`}</span>;
+  return (
+    <span className="pay-row__acts">
+      {r.provider === "manual" && (
+        <button type="button" className="btn btn--secondary" onClick={() => props.onOpen("reject")}>
+          {PAY_COPY.reject}
+          {hidden}
+        </button>
+      )}
+      {decision.kind === "refund" ? (
+        <span className="pay-row__refund">{WAITS_REFUND_LINE}</span>
+      ) : decision.kind === "issue" ? (
+        <Link to={`/invoices/${encodeURIComponent(decision.proformaId)}`} className="btn btn--primary">
+          {PAY_UI.confirmByIssuing}
+          {hidden}
+        </Link>
+      ) : decision.kind === "confirm" ? (
+        <button type="button" className="btn btn--primary" onClick={() => props.onOpen("confirm")}>
+          {PAY_COPY.confirm}
+          {hidden}
+        </button>
+      ) : null}
+    </span>
+  );
+}
+
 function EntryDialog(props: {
   id: string;
   act?: "confirm" | "reject" | undefined;
@@ -801,7 +801,7 @@ function EntryView(props: {
             </div>
           )}
         </dl>
-        {/* M6.3 staging fixes, review M3: money above the proforma's balance waits for a refund (no Confirm of any kind below) */}
+        {/* M6.3 staging fixes, review M3: online money above the proforma's balance waits for a refund (no Confirm of any kind below) */}
         {pending && decision.kind === "refund" && (
           <p className="approval-line" data-state="pending">
             <Alert size={16} />
@@ -850,16 +850,16 @@ function EntryView(props: {
                 {PAY_COPY.reject}
               </button>
             )}
-            {/* M6.3 staging fix 2 (L5): never the plain Confirm for an entry that asks for a proforma; review M3: nothing for money waiting for a refund */}
-            {decision.kind === "refund" ? null : decision.kind === "issue" ? (
+            {/* M6.3 staging fix 2 (L5): never the plain Confirm for an entry that asks for a proforma; review M3: nothing for money above its balance */}
+            {decision.kind === "issue" ? (
               <Link to={`/invoices/${encodeURIComponent(decision.proformaId)}`} className="btn btn--primary">
                 {PAY_UI.confirmByIssuing}
               </Link>
-            ) : (
+            ) : decision.kind === "confirm" ? (
               <button type="button" className="btn btn--primary" onClick={() => props.onStep("confirm")}>
                 {PAY_COPY.confirm}
               </button>
-            )}
+            ) : null}
           </>
         )}
       </div>
@@ -995,8 +995,8 @@ function ConfirmStep(props: { payment: PaymentView; onBack: () => void; onDone: 
           <button type="button" className="btn btn--secondary" onClick={props.onBack}>
             {INV_COPY.cancel}
           </button>
-          {/* review M3: money waiting for a refund has no way to be confirmed */}
-          {own.kind !== "refund" && (
+          {/* review M3: money above the proforma's balance has no way to be confirmed */}
+          {own.kind !== "refund" && own.kind !== "reject" && (
             <Link to={`/invoices/${encodeURIComponent(proformaAsk)}`} className="btn btn--primary">
               {PAY_UI.confirmByIssuing}
             </Link>

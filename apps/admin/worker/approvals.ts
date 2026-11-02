@@ -151,7 +151,7 @@ type PaymentApprovalListRow = {
   client_gone: number;
   /** M6.3 staging fix 2: while pending, the proforma the entry asks for (`paymentProformaSql`), else null. */
   proforma_id: string | null;
-  /** M6.3 staging fixes, review M3: 1 while pending for a proforma that can no longer take it (it waits for a refund). */
+  /** M6.3 staging fixes, review M3: 1 while pending and above the balance of the issued proforma it asks for (`paymentWaitsRefundSql`). */
   waits_refund: number;
 };
 
@@ -198,7 +198,7 @@ const paymentApprovalView = (r: PaymentApprovalListRow) => ({
     clientName: r.client_gone === 1 ? ANONYMISED_CLIENT : r.client_name,
     /** M6.3 staging fix 2 (L5): while pending, the proforma it asks for: the queue then offers "Confirm by issuing the tax invoice", never Confirm. */
     proformaId: r.proforma_id,
-    /** Review M3: that proforma can no longer take the money: it waits for a refund (the queue shows the line, not the action). */
+    /** Review M3: the money is above that proforma's balance: no tax invoice can take it (the queue offers no "Confirm by issuing"). */
     waitsRefund: r.waits_refund === 1,
   },
 });

@@ -231,11 +231,18 @@ describe("a pending entry that asks for a proforma is confirmed only by issuing 
     expect(pendingDecisionOf({ proformaId: null })).toEqual({ kind: "confirm" });
     expect(pendingDecisionOf({})).toEqual({ kind: "confirm" });
     expect(pendingDecisionOf({ proformaId: "" })).toEqual({ kind: "confirm" });
-    // review M3: money above the proforma's balance waits for a refund: no action, the line instead (an older API sends no flag: the action)
-    expect(pendingDecisionOf({ proformaId: "pf-1", waitsRefund: true })).toEqual({
-      kind: "refund",
-      proformaId: "pf-1",
-    });
+    // review M3: money above the proforma's balance can't be confirmed by issuing (an older API sends no flag: the action). An online payment waits for a
+    // refund (its line); a Staff entry, or the approvals queue's (no provider), is decided by Reject alone
+    for (const provider of ["razorpay", "stripe"])
+      expect(pendingDecisionOf({ proformaId: "pf-1", waitsRefund: true, provider })).toEqual({
+        kind: "refund",
+        proformaId: "pf-1",
+      });
+    for (const provider of ["manual", undefined])
+      expect(pendingDecisionOf({ proformaId: "pf-1", waitsRefund: true, provider })).toEqual({
+        kind: "reject",
+        proformaId: "pf-1",
+      });
     expect(pendingDecisionOf({ proformaId: "pf-1", waitsRefund: false })).toEqual({
       kind: "issue",
       proformaId: "pf-1",

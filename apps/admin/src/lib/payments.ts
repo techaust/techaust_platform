@@ -128,19 +128,30 @@ export const voidGatewayPendingText = (type: string | undefined): string =>
 export type PendingDecision =
   | { kind: "issue"; proformaId: string }
   | { kind: "refund"; proformaId: string }
+  | { kind: "reject"; proformaId: string }
   | { kind: "confirm" };
+/**
+ * M6.3 staging fixes, review M3: money above the proforma's balance (`waitsRefund`) can't be confirmed by issuing (the server refuses it), so no action is
+ * offered for it. An online payment (`refund`) waits for the M6.5 refund and its line says so; a Staff entry (`reject`, also when no `provider` is sent: the
+ * approvals queue holds only Staff entries) is decided by Reject alone, with no line (it may be a second record of money already taken, not money the client
+ * paid twice).
+ */
 export const pendingDecisionOf = (p: {
   proformaId?: string | null | undefined;
   waitsRefund?: boolean | undefined;
+  provider?: string | undefined;
 }): PendingDecision =>
-  p.proformaId
-    ? // M6.3 staging fixes, review M3: money the proforma can no longer take (above its balance) waits for a refund: no action, the line instead
-      { kind: p.waitsRefund === true ? "refund" : "issue", proformaId: p.proformaId }
-    : { kind: "confirm" };
+  !p.proformaId
+    ? { kind: "confirm" }
+    : p.waitsRefund !== true
+      ? { kind: "issue", proformaId: p.proformaId }
+      : p.provider !== undefined && p.provider !== "manual"
+        ? { kind: "refund", proformaId: p.proformaId }
+        : { kind: "reject", proformaId: p.proformaId };
 
 /**
  * M6.3 staging fixes, review M3 (lead's decision 1(c), 07-ZM "Review changes", approved by the lead under the owner's delegation, 2026-11-02): what the screens
- * show in place of "Confirm by issuing the tax invoice" for money above the proforma's balance: the `proforma_overpaid` review line, word for word.
+ * show in place of "Confirm by issuing the tax invoice" for an online payment above the proforma's balance: the `proforma_overpaid` review line, word for word.
  */
 export const WAITS_REFUND_LINE = reviewReason("proforma_overpaid");
 

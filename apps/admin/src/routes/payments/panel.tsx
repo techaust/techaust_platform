@@ -561,7 +561,10 @@ function ProformaPayments(props: {
       <h2 id="pay-h" className="lead-panel__title">
         {p.pending.length > 0 ? PAY_COPY.toCheck : PAY_COPY.heading}
       </h2>
-      {p.pending.length > 0 && <p className="pay-panel__lede">{PAY_COPY.proformaLine}</p>}
+      {/* review M3: the lede says how a waiting payment is confirmed, so only while one can be (money above the balance can't) */}
+      {p.pending.some((w) => w.waitsRefund !== true) && (
+        <p className="pay-panel__lede">{PAY_COPY.proformaLine}</p>
+      )}
       {blocked.map((b) => (
         <div key={b.id} className="pay-blocked" role="note">
           <Alert size={20} />
@@ -574,9 +577,10 @@ function ProformaPayments(props: {
           {p.pending.map((w) => {
             const online = gatewayOf(p, w.paymentId);
             const isBlocked = online !== undefined && blocked.some((b) => b.payment_id === w.paymentId);
-            // M6.3 staging fixes, review M3: money above the proforma's balance waits for a refund: no tax invoice follows it, so its line stands where
-            // "Confirm by issuing the tax invoice" would (the advance would refuse it)
-            const refund = w.waitsRefund === true;
+            // M6.3 staging fixes, review M3: money above the proforma's balance can't be confirmed by issuing (the advance would refuse it), so no action
+            // is offered; an online payment waits for a refund and its line stands where the action would; a Staff entry is rejected on its own page
+            const over = w.waitsRefund === true;
+            const refund = over && online !== undefined;
             return (
               <li key={w.paymentId} className="pay-waiting__row pay-waiting__row--proforma">
                 <span className="pay-waiting__what">
@@ -608,7 +612,8 @@ function ProformaPayments(props: {
                 {refund ? (
                   <span className="pay-lines__meta pay-waiting__refund">{WAITS_REFUND_LINE}</span>
                 ) : (
-                  owner && (
+                  owner &&
+                  !over && (
                     <button
                       type="button"
                       className={`btn ${online && !isBlocked ? "btn--secondary" : "btn--primary"} pay-waiting__go`}

@@ -122,7 +122,8 @@ function PendingAction(props: { payment: PaymentApprovalItem["payment"] }) {
   const p = props.payment;
   const decision = pendingDecisionOf(p);
   const hidden = <span className="visually-hidden">{` ${p.clientName} ${day(p.receivedOn)}`}</span>;
-  // M6.3 staging fixes, review M3: money above the proforma's balance waits for a refund: the line stands where the action would
+  // M6.3 staging fixes, review M3: money above the proforma's balance can't be confirmed by issuing. The queue holds Staff entries, decided by Reject on the
+  // entry (`reject`); an online payment's line would say it waits for a refund (`refund`, never in this queue).
   if (decision.kind === "refund") return <span className="pay-row__refund">{WAITS_REFUND_LINE}</span>;
   return decision.kind === "issue" ? (
     <Link to={`/invoices/${encodeURIComponent(decision.proformaId)}`} className="btn btn--secondary">
@@ -131,7 +132,7 @@ function PendingAction(props: { payment: PaymentApprovalItem["payment"] }) {
     </Link>
   ) : (
     <Link to={paymentHref(p.id)} className="btn btn--secondary">
-      {PAY_COPY.confirm}
+      {decision.kind === "reject" ? PAY_COPY.reject : PAY_COPY.confirm}
       {hidden}
     </Link>
   );

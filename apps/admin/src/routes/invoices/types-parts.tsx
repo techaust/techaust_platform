@@ -800,12 +800,13 @@ function AdvanceBody(props: {
   const dates = useUnreadDates<"date">();
   const fxDates = useUnreadDates<"date">();
   const needsCode = !stepUpActive();
-  // Review M4 (above): runs after every render, and acts once, when the taken payment is in the form and the dialog is no longer busy.
+  // Review M4 (above): runs after every render, and acts once, when the taken payment is in the form and the dialog is no longer busy. The flag is cleared
+  // only in the frame that moves the focus, so a render that cancels a scheduled frame leaves it for the next one.
   useEffect(() => {
     if (!refocus.current || busy || prefill === null) return;
-    refocus.current = false;
     const rateLeft = usd && fx.rate.trim() === "";
     const f = requestAnimationFrame(() => {
+      refocus.current = false;
       const next =
         (rateLeft ? document.getElementById("adv-fx-rate") : null) ??
         (needsCode ? document.getElementById("adv-code") : null) ??

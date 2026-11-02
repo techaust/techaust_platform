@@ -38,7 +38,7 @@ import {
   extensionLetterStatement,
   ledgerResultStatement,
   paymentForDocumentSql,
-  proformaTakesPaymentSql,
+  proformaOverpaidBySql,
   realisationExtensionStatement,
   recomputeStatement,
 } from "@techaust/db/ledger";
@@ -327,7 +327,7 @@ export const CREDIT_OF_DOCUMENT_CLIENT_SQL = clientCreditSql(CLIENT_OF_DOCUMENT)
  */
 export const PENDING_FOR_DOCUMENT_SQL = `SELECT p.id, p.kind, p.received_on, p.mode, p.reference_norm, p.currency, p.amount_minor, p.recorded_by, p.recorded_at,
        coalesce((SELECT json_extract(j.value, '$.amountMinor') FROM json_each(p.requested_allocations) j WHERE json_extract(j.value, '$.documentId') = ?1 LIMIT 1), p.amount_minor) AS asked_minor,
-       ${proformaTakesPaymentSql("p", "?1")} AS takes
+       ${proformaOverpaidBySql("p", "?1")} AS waits_refund
    FROM payments p INDEXED BY payments_client
    WHERE p.client_id = ${CLIENT_OF_DOCUMENT} AND p.status = 'pending_verification' AND ${paymentForDocumentSql("p", "?1")}
    ORDER BY p.recorded_at, p.id LIMIT 50`;
@@ -469,7 +469,7 @@ export const invoiceLedger = new Hono<AppEnv>()
           recorded_by: string | null;
           recorded_at: number;
           asked_minor: number;
-          takes: number;
+          waits_refund: number;
         }[]
       ).map((r) => ({
         paymentId: r.id,
@@ -483,10 +483,11 @@ export const invoiceLedger = new Hono<AppEnv>()
         recordedBy: r.recorded_by,
         recordedAt: r.recorded_at,
         /**
-         * M6.3 staging fixes, review M3: on a proforma, true when it can no longer take this money (`proformaTakesPaymentSql`: above its balance, or no longer
-         * issued): it waits for the M6.5 refund, and the panel shows 07-ZM's line 1(c) instead of "Confirm by issuing the tax invoice". Always false elsewhere.
+         * M6.3 staging fixes, review M3: on an issued proforma, true when this money is above its balance (`proformaOverpaidBySql`): no tax invoice can take it,
+         * so it waits for the M6.5 refund, and the panel shows no "Confirm by issuing the tax invoice" (an online payment shows 07-ZM's line 1(c)). Always false
+         * on an invoice.
          */
-        waitsRefund: d.type === "proforma" && r.takes !== 1,
+        waitsRefund: r.waits_refund === 1,
       })),
       credits: creditView((creditR?.results ?? []) as { currency: string; credit: number }[]),
       // M6.2 (run file G1): "Paid online" rows (method, Razorpay's payment id, the fee absorbed), the payment links, and the open review items.

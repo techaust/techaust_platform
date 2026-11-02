@@ -138,7 +138,7 @@ export type PaymentRow = {
   provider_payment_id: string | null;
   /** M6.3 staging fix 2 (L5): while pending, the proforma this entry asks for, by its request or its checkout (`paymentProformaSql`), else null. */
   proforma_id: string | null;
-  /** M6.3 staging fixes, review M3: 1 while pending for a proforma that can no longer take it (`paymentWaitsRefundSql`): it waits for a refund. */
+  /** M6.3 staging fixes, review M3: 1 while pending and above the balance of the issued proforma it asks for (`paymentWaitsRefundSql`). */
   waits_refund: number;
 };
 
@@ -258,8 +258,8 @@ export const paymentView = (r: PaymentRow) => ({
    */
   proformaId: r.proforma_id,
   /**
-   * M6.3 staging fixes, review M3: with `proformaId`, true when that proforma can no longer take this money (its balance is below the payment, or it is no longer
-   * issued): it waits for the M6.5 refund, and the screens show the 07-ZM line 1(c) instead of "Confirm by issuing the tax invoice", which would be refused.
+   * M6.3 staging fixes, review M3: with `proformaId`, true when this money is above that issued proforma's balance (`paymentWaitsRefundSql`): no tax invoice can
+   * take it, so the screens offer no "Confirm by issuing the tax invoice" (refused as `advance_exceeds_balance`); an online payment shows the 07-ZM line 1(c).
    */
   waitsRefund: r.waits_refund === 1,
 });
