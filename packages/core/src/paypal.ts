@@ -24,14 +24,13 @@
 
 import { istDate, toIsoDate } from "./dates.ts";
 import { sha256Hex } from "./hash.ts";
-import { UUID } from "./ids.ts";
+import { isUuidV7 } from "./ids.ts";
 import { liveModeAllowed, type ProviderEventType, type ProviderMode } from "./payments.ts";
 
 type RsaKey = Awaited<ReturnType<typeof crypto.subtle.importKey>>;
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (v: unknown, re: RegExp): string | null => (typeof v === "string" && re.test(v) ? v : null);
-const isUuidV7 = (v: unknown): v is string => typeof v === "string" && UUID.test(v) && v[14] === "7";
 const enc = new TextEncoder();
 
 // ---- origins and the live guard ----------------------------------------------------------------------------------------------------------------------
@@ -545,6 +544,16 @@ export const PAYPAL_JUDGE_VERDICTS = [
   "amount_mismatch",
 ] as const;
 export type PayPalJudgeVerdict = (typeof PAYPAL_JUDGE_VERDICTS)[number];
+/**
+ * The verdicts the finance Worker stores as a review kind of the same name (every verdict but `capture_refunded`, written as `refunded_outside`). Each is in
+ * `REVIEW_KINDS` (`@techaust/core/online-pay`) and the 0068 triggers' list; `packages/core/test/paypal.test.ts` pins it (review part 1, finding 1).
+ */
+export type PayPalReviewVerdict = Exclude<PayPalJudgeVerdict, "capture_refunded">;
+/** The judge's answer; `capture_refunded` is its own branch so a caller that has handled it holds a `PayPalReviewVerdict`. */
+export type PayPalJudgement =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly verdict: "capture_refunded" }
+  | { readonly ok: false; readonly verdict: PayPalReviewVerdict };
 
 /** Our checkout row, as the judge needs it. */
 export type PayPalCheckoutRow = {
@@ -575,8 +584,8 @@ export function judgePayPalCapture(
   row: PayPalCheckoutRow,
   order: PayPalOrder | null,
   capture: PayPalCapture,
-): { readonly ok: true } | { readonly ok: false; readonly verdict: PayPalJudgeVerdict } {
-  const no = (verdict: PayPalJudgeVerdict) => ({ ok: false, verdict }) as const;
+): PayPalJudgement {
+  const no = <V extends PayPalJudgeVerdict>(verdict: V) => ({ ok: false, verdict }) as const;
   // A capture inside the capture call's answer may carry no `custom_id` of its own (early check 1 finding 1; UNCONFIRMED, a sandbox check): it is ours only
   // through an order that is the row's, carries our mark and lists this capture. Both marks missing is a mismatch.
   const markedByOrder =
@@ -809,6 +818,8 @@ export const PAYPAL_SIGNATURE_VERDICTS = [
   "webhook_id_invalid",
   "cert_unavailable",
   "signature_invalid",
+  /** Review part 1, finding 12: the five headers present and well formed, the certificate URL refused (the hook answers 400 `signature_missing`, counted). */
+  "cert_url_refused",
 ] as const;
 export type PayPalSignatureVerdict = (typeof PAYPAL_SIGNATURE_VERDICTS)[number];
 
@@ -853,7 +864,8 @@ export type PayPalSignatureInput = {
  *   1. our webhook id unset, malformed, or the simulator's literal `WEBHOOK_ID` → `webhook_id_invalid` (the hook answers 503, nothing written);
  *   2. a header missing or malformed → `signature_missing` (not counted): the transmission id 1 to 50 of letters, digits and "-", the time RFC 3339 of at most
  *      100 characters, the signature base64 of at most 500, the certificate URL allow-listed (`isPayPalCertUrl`), and `PAYPAL-AUTH-ALGO`, when sent, exactly
- *      `SHA256withRSA` (we fix the algorithm ourselves and never follow the header);
+ *      `SHA256withRSA` (we fix the algorithm ourselves and never follow the header); but all five present and well formed with only the certificate URL
+ *      refused → `cert_url_refused` (counted, review part 1 finding 12);
  *   3. no key for the certificate → `cert_unavailable` (503: PayPal retries);
  *   4. RSASSA-PKCS1-v1_5 with SHA-256 over `${id}|${time}|${webhookId}|${crc32(raw bytes)}` → `ok`, else `signature_invalid` (counted).
  * The separator "|" can't appear in any field, so the signed text has one reading. No transmission-time tolerance (L16: a replay is idempotent).
@@ -876,12 +888,15 @@ export async function verifyPayPalSignature(i: PayPalSignatureInput): Promise<Pa
     time.length > 100 ||
     !RFC3339.test(time) ||
     sigText === null ||
-    !isPayPalCertUrl(certUrl, { local: i.local === true }) ||
     (algo !== null && algo !== "SHA256withRSA")
   )
     return "signature_missing";
   const sig = base64Bytes(sigText);
   if (!sig) return "signature_missing";
+  // Review part 1, finding 12: every other header present and well formed, only the certificate URL refused: counted (a misrouted or forged signed post, or
+  // PayPal moving its certificates to a host we don't allow), never fetched.
+  if (!isPayPalCertUrl(certUrl, { local: i.local === true }))
+    return certUrl !== null && algo !== null ? "cert_url_refused" : "signature_missing";
   let key: RsaKey | null;
   try {
     key = await i.keyFor(certUrl);
@@ -1162,6 +1177,9 @@ export function payPalEventOwnership(e: PayPalEvent): "ours" | "by_capture" | "n
   return "not_ours";
 }
 
+/** The `invoice_id` a stored event keeps (review part 1, finding 4): at most 127 of letters, digits, "/", "_" and "-" (PayPal's limit is 127). */
+export const PAYPAL_INVOICE_ID_FACT = /^[A-Za-z0-9/_-]{1,127}$/;
+
 /** The last 12 characters of the checkout id at the end of an `invoice_id` we made (L3, `<number>-<12>`), else null (the refund match's fallback). */
 export const invoiceIdCheckoutTail = (invoiceId: string | null): string | null => {
   const m = invoiceId === null ? null : /-([0-9a-f]{12})$/.exec(invoiceId);
@@ -1185,5 +1203,8 @@ export function payPalEventFacts(e: PayPalEvent): Record<string, string | number
   }
   if (e.status) f.status = e.status;
   if (isUuidV7(e.customId)) f.checkoutId = e.customId;
+  // Review part 1, finding 4: a refund's `invoice_id` (ours is `<number>-<last 12 of the checkout id>`, L3), kept only in a safe shape so the finance Worker can
+  // match its tail; not personal data (Settled by the lead on the safest reading, 2026-11-01 (08-C RB-40)).
+  if (e.invoiceId !== null && PAYPAL_INVOICE_ID_FACT.test(e.invoiceId)) f.invoiceId = e.invoiceId;
   return f;
 }

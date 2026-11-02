@@ -163,15 +163,16 @@ export const ADVICE_READ_SQL = `SELECT ${ADVICE_COLS} FROM realisation_advices a
 export const ADVICE_BY_REF_SQL = `SELECT a.id FROM realisation_advices a INDEXED BY realisation_advices_ref WHERE a.provider = ?1 AND a.kind = ?2 AND a.advice_ref = ?3`;
 
 /**
- * The payments of advice `?1` (links on and taken off), by the day the money arrived, keyset `(received_on, id)` with `?2`/`?3` (the first page binds '' and ''),
- * at most 51. The client's name, or null once anonymised (the screen shows "Anonymised client").
+ * The payments of advice `?1` (links on and taken off), by the day the money arrived, keyset `(received_on, link id)` with `?2`/`?3` (the first page binds '' and
+ * ''), at most 51. Keyed on the LINK row (review part 1, finding 7): a payment taken off and linked to the same advice again has two rows, and a payment-id key
+ * would skip the second at a page edge. The client's name, or null once anonymised (the screen shows "Anonymised client").
  */
-export const ADVICE_PAYMENTS_SQL = `SELECT l.payment_id, l.created_by, l.created_at, l.removed_by, l.removed_at, l.remove_reason,
+export const ADVICE_PAYMENTS_SQL = `SELECT l.id AS link_id, l.payment_id, l.created_by, l.created_at, l.removed_by, l.removed_at, l.remove_reason,
      p.provider, p.currency, p.amount_minor, p.received_on, p.reference_norm, p.client_id,
      CASE WHEN k.anonymised_at IS NULL THEN k.display_name END AS client_name
    FROM realisation_advice_payments l JOIN payments p ON p.id = l.payment_id JOIN clients k ON k.id = p.client_id
-   WHERE l.advice_id = ?1 AND (p.received_on > ?2 OR (p.received_on = ?2 AND p.id > ?3))
-   ORDER BY p.received_on, p.id LIMIT ${ADVICE_PAGE_SIZE + 1}`;
+   WHERE l.advice_id = ?1 AND (p.received_on > ?2 OR (p.received_on = ?2 AND l.id > ?3))
+   ORDER BY p.received_on, l.id LIMIT ${ADVICE_PAGE_SIZE + 1}`;
 
 /** The advice a payment (`?1`) is on now, if any (its detail): one seek of `realisation_advice_payments_active`. */
 export const PAYMENT_ADVICE_SQL = `SELECT a.id, a.provider, a.kind, a.advice_ref, a.issued_on, l.created_by, l.created_at
@@ -192,9 +193,11 @@ export const PAYMENTS_WITHOUT_ADVICE_SQL = `SELECT p.id, p.provider, p.client_id
    ORDER BY p.received_on, p.id LIMIT ${ADVICE_PAGE_SIZE + 1}`;
 
 /**
- * How many of a provider's confirmed payments (`?1`) received from `?2` to `?3` (ISO, inclusive) are on no advice: the nav count and the monthly advice reminder
- * that rides `edf.reminder` (S9: "{count} PayPal payments from {month} have no remittance advice yet.", one in the singular). One range of `payments_confirmed_provider`.
+ * How many of a provider's confirmed payments (`?1`) received from `?2` to `?3` (ISO, inclusive) in currency `?4` (NULL: any; review part 1, finding 6: the list's
+ * own filter) are on no advice: the nav count and the monthly advice reminder that rides `edf.reminder` (S9: "{count} PayPal payments from {month} have no
+ * remittance advice yet.", one in the singular). One range of `payments_confirmed_provider`.
  */
 export const PAYMENTS_WITHOUT_ADVICE_COUNT_SQL = `SELECT count(*) AS n FROM payments p INDEXED BY payments_confirmed_provider JOIN clients k ON k.id = p.client_id
    WHERE p.provider = ?1 AND p.status = 'confirmed' AND p.kind = 'payment' AND p.received_on >= ?2 AND p.received_on <= ?3
+     AND (?4 IS NULL OR p.currency = ?4)
      AND k.anonymised_at IS NULL AND (p.provider <> 'manual' OR ${clientSideSql("k", "overseas")}) AND NOT ${paymentHasAdviceSql("p")}`;

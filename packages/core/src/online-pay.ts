@@ -261,6 +261,11 @@ export const REVIEW_KINDS = [
   "refunded_outside",
   /** A capture went through on a checkout that had ended, or for a document whose balance moved: recorded pending, never dropped (C step 9). */
   "late_capture",
+  /**
+   * M6.4 review part 1, finding 1: PayPal's capture says `final_capture` false on our CAPTURE-intent order (more money may follow): recorded pending with its
+   * item, never confirmed on a part (core `judgePayPalCapture` step 4).
+   */
+  "not_final",
 ] as const;
 export type ReviewKind = (typeof REVIEW_KINDS)[number];
 export const REVIEW_RESOLUTIONS = ["confirmed", "advance_issued", "left_as_credit", "dismissed"] as const;

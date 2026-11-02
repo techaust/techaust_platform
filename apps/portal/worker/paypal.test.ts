@@ -356,3 +356,32 @@ describe("a held PayPal capture hides Pay [L6, L24]", () => {
     });
   });
 });
+
+// Review part 1, finding 2: each signed-in return (`?c=`) may POST PayPal's capture, so it counts under the `p:pay:` window per contact (20 per 10 minutes).
+describe("the signed-in PayPal return's quota [review part 1 finding 2; L2, POR-06]", () => {
+  it("the 21st `?c=` return of one contact in 10 minutes is a 429 with the shared line and no RPC; plain reads and another contact are not counted", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.b.finance);
+    const refreshes: Args[] = [];
+    const e = ppEnv({ refresh: { result: "processed", payPalReturn: { state: "processing" } }, refreshes });
+    const path = `/invoices/${f.b.docs.issued}?c=${CHECKOUT}`;
+    for (let i = 0; i < PAY_RETURN_LIMIT; i++)
+      expect((await call(path, { cookie: s.cookie }, e)).status, `return ${i + 1}`).toBe(200);
+    expect(refreshes).toHaveLength(PAY_RETURN_LIMIT);
+    const over = await call(path, { cookie: s.cookie }, e);
+    expect(over.status).toBe(429);
+    expect(Number(over.headers.get("Retry-After"))).toBeGreaterThan(0);
+    expect(await over.json()).toMatchObject({
+      error: { code: "rate_limited", message: "Too many requests. Please try again later." },
+    });
+    expect(refreshes).toHaveLength(PAY_RETURN_LIMIT);
+    // The page itself still loads (no `c`: nothing counted, no capture asked).
+    expect((await call(`/invoices/${f.b.docs.issued}`, { cookie: s.cookie }, e)).status).toBe(200);
+    // Another contact has its own window.
+    const other = await sessionFor(f.a.finance);
+    expect(
+      (await call(`/invoices/${f.a.docs.issued}?c=${CHECKOUT}`, { cookie: other.cookie }, e)).status,
+    ).toBe(200);
+    expect(refreshes).toHaveLength(PAY_RETURN_LIMIT + 1);
+  });
+});

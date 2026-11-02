@@ -8,6 +8,7 @@ import { join } from "node:path";
 import fc from "fast-check";
 import { beforeAll, describe, expect, it } from "vitest";
 import { uuidv7 } from "../src/ids.ts";
+import { REVIEW_KINDS, type ReviewKind } from "../src/online-pay.ts";
 import { checkProviderContract, type PaymentProvider, PROVIDER_EVENT_TYPES } from "../src/payments.ts";
 import {
   CAPTURE_ERRORS,
@@ -27,11 +28,13 @@ import {
   PAYPAL_CAPTURE_GRACE_MS,
   PAYPAL_CLAIM_STALE_MS,
   PAYPAL_EVENT_TYPES,
+  PAYPAL_INVOICE_ID_FACT,
   PAYPAL_JUDGE_VERDICTS,
   PAYPAL_ORDER_LIFETIME_MS,
   type PayPalCapture,
   type PayPalCheckoutRow,
   type PayPalOrder,
+  type PayPalReviewVerdict,
   parsePayPalEvent,
   payPalCaptureRequestId,
   payPalDescriptionOf,
@@ -591,6 +594,15 @@ describe("judgePayPalCapture [ADM-PAY-04, run file C steps 4 to 8; 08-C RA-38]",
     expect(payPalExportReceipt(["IN"])).toBe(false);
     expect(payPalExportReceipt(["US", "IN"])).toBe(false);
   });
+
+  it("review part 1, finding 1: every verdict but `capture_refunded` is a stored review kind (`not_final` included)", () => {
+    // Compile time: a review verdict is a review kind.
+    const asKind = (v: PayPalReviewVerdict): ReviewKind => v;
+    const stored = PAYPAL_JUDGE_VERDICTS.filter((v) => v !== "capture_refunded");
+    for (const v of stored) expect(REVIEW_KINDS).toContain(asKind(v));
+    expect(REVIEW_KINDS).toContain("not_final");
+    expect(REVIEW_KINDS).not.toContain("capture_refunded");
+  });
 });
 
 // ---- capture errors -----------------------------------------------------------------------------------------------------------------------------------
@@ -744,6 +756,7 @@ describe("parsePayPalEvent, its facts and ownership [JOB-HOOK-02, L13, L15]", ()
       currency: "USD",
       status: "APPROVED",
       checkoutId: CHECKOUT,
+      invoiceId: `TH/EX/2627/7-${CHECKOUT.slice(-12)}`,
     });
     expect(JSON.stringify(facts)).not.toContain("buyer@example.test");
     const rev = parsePayPalEvent(event("CHECKOUT.PAYMENT-APPROVAL.REVERSED", { id: ORDER }));
@@ -794,6 +807,13 @@ describe("parsePayPalEvent, its facts and ownership [JOB-HOOK-02, L13, L15]", ()
     expect(payPalEventOwnership(r.value)).toBe("by_capture");
     expect(invoiceIdCheckoutTail(r.value.invoiceId)).toBe(CHECKOUT.slice(-12));
     expect(payPalEventFacts(r.value)).toMatchObject({ paymentId: CAPTURE, refundId: "1JU08902781691411" });
+    // Review part 1, finding 4: the refund's `invoice_id` is kept for the finance Worker's match, only in a safe shape (at most 127 of [A-Za-z0-9/_-]).
+    expect(payPalEventFacts(r.value).invoiceId).toBe(`TH/EX/2627/7-${CHECKOUT.slice(-12)}`);
+    for (const invoice_id of ["a b", "x".repeat(128), "TH/EX<script>"]) {
+      const odd = parsePayPalEvent(event("PAYMENT.CAPTURE.REFUNDED", { ...refund, invoice_id }));
+      expect(odd.ok && payPalEventFacts(odd.value).invoiceId, invoice_id).toBeUndefined();
+    }
+    expect(PAYPAL_INVOICE_ID_FACT.test("x".repeat(127))).toBe(true);
     const reversed = parsePayPalEvent(event("PAYMENT.CAPTURE.REVERSED", captureJson({ status: "REVERSED" })));
     expect(reversed.ok && reversed.value).toMatchObject({
       type: "payment.reversed",
@@ -1086,12 +1106,26 @@ describe("the offline signature [L1, L20; Step 0.4 rows 17 and 21]", () => {
       { "paypal-transmission-sig": "QQ=" },
       { "paypal-transmission-sig": "A".repeat(504) },
       { "paypal-cert-url": undefined },
-      { "paypal-cert-url": "https://api.paypal.com.evil.test/v1/notifications/certs/CERT-1" },
-      { "paypal-cert-url": "http://api.sandbox.paypal.com/v1/notifications/certs/CERT-1" },
-      { "paypal-cert-url": `${CERT_URL}?x=1` },
-      { "paypal-cert-url": "https://api.sandbox.paypal.com:444/v1/notifications/certs/CERT-1" },
     ])
       expect(await v(h), JSON.stringify(h)).toBe("signature_missing");
+    // Review part 1, finding 12: the other four headers sent and well formed, only the certificate URL refused: counted (`cert_url_refused`); without the
+    // optional algorithm header it stays `signature_missing`.
+    for (const url of [
+      "https://api.paypal.com.evil.test/v1/notifications/certs/CERT-1",
+      "http://api.sandbox.paypal.com/v1/notifications/certs/CERT-1",
+      `${CERT_URL}?x=1`,
+      "https://api.sandbox.paypal.com:444/v1/notifications/certs/CERT-1",
+      "https://api-m.paypal.com/v1/notifications/certs/CERT-1",
+    ]) {
+      expect(await v({ "paypal-cert-url": url }), url).toBe("cert_url_refused");
+      expect(await v({ "paypal-cert-url": url, "paypal-auth-algo": undefined }), url).toBe(
+        "signature_missing",
+      );
+    }
+    // A malformed signature with a refused URL is still only `signature_missing`.
+    expect(
+      await v({ "paypal-cert-url": "https://api-m.paypal.com/v1/x", "paypal-transmission-sig": "QQ=" }),
+    ).toBe("signature_missing");
     expect(await v({}, { keyFor: async () => null })).toBe("cert_unavailable");
     expect(
       await v(
@@ -1116,7 +1150,7 @@ describe("the offline signature [L1, L20; Step 0.4 rows 17 and 21]", () => {
     expect(await v({}, { keyFor: async () => hmac })).toBe("signature_invalid");
     // The local simulator's certificate URL only when local.
     const local = "http://localhost:8790/__paypal-test-cert";
-    expect(await v({ "paypal-cert-url": local })).toBe("signature_missing");
+    expect(await v({ "paypal-cert-url": local })).toBe("cert_url_refused");
     expect(await v({ "paypal-cert-url": local }, { local: true })).toBe("ok");
   });
 });
@@ -1136,5 +1170,23 @@ describe("tools/set-gateway-keys.ps1 PayPal targets", () => {
     const at = ps1.indexOf(guard);
     expect(at).toBeLessThan(ps1.indexOf('Read-Hidden "PayPal sandbox Client ID"'));
     expect(at).toBeLessThan(ps1.indexOf('Read-Hidden "PayPal sandbox Webhook ID"'));
+  });
+
+  it("review part 1, finding 13: a webhook without CHECKOUT.PAYMENT-APPROVAL.REVERSED is a warning, never a stop; every other handled event is required", () => {
+    const ps1 = readFileSync(
+      join(import.meta.dirname, "..", "..", "..", "tools", "set-gateway-keys.ps1"),
+      "utf8",
+    );
+    const need = /\$need = @\(([^)]*)\)/.exec(ps1)?.[1] ?? "";
+    const optional = /\$optional = @\(([^)]*)\)/.exec(ps1)?.[1] ?? "";
+    const names = (list: string) => [...list.matchAll(/"([A-Z.-]+)"/g)].map((m) => m[1]);
+    expect(names(optional)).toEqual(["CHECKOUT.PAYMENT-APPROVAL.REVERSED"]);
+    // Every event type the finance Worker handles is required, except the optional one.
+    expect(names(need).sort()).toEqual(
+      Object.keys(PAYPAL_EVENT_TYPES)
+        .filter((n) => n !== "CHECKOUT.PAYMENT-APPROVAL.REVERSED" && n !== "PAYMENT.CAPTURE.DENIED")
+        .sort(),
+    );
+    expect(ps1).toContain('if ($notOffered.Count -gt 0) { Write-Host "WARNING:');
   });
 });

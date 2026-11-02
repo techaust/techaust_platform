@@ -142,9 +142,14 @@ switch ($Gateway) {
       $want = "https://techaust-platform-jobs-staging.techaust-technologies-153.workers.dev/paypal"
       if ($w.url -ne $want) { Stop-With "the webhook's URL is not $want" }
       $names = @($w.event_types | ForEach-Object { $_.name })
-      $need = @("CHECKOUT.ORDER.APPROVED", "CHECKOUT.PAYMENT-APPROVAL.REVERSED", "PAYMENT.CAPTURE.COMPLETED", "PAYMENT.CAPTURE.PENDING", "PAYMENT.CAPTURE.DECLINED", "PAYMENT.CAPTURE.REFUNDED", "PAYMENT.CAPTURE.REVERSED")
+      $need = @("CHECKOUT.ORDER.APPROVED", "PAYMENT.CAPTURE.COMPLETED", "PAYMENT.CAPTURE.PENDING", "PAYMENT.CAPTURE.DECLINED", "PAYMENT.CAPTURE.REFUNDED", "PAYMENT.CAPTURE.REVERSED")
       $missing = @($need | Where-Object { $names -notcontains $_ -and $names -notcontains "*" })
       if ($missing.Count -gt 0) { Stop-With "the webhook doesn't listen for: $($missing -join ', ')" }
+      # Review part 1, finding 13: PayPal's sandbox app may not offer this event. A warning only: without it, a reversed approval is seen when the order is next
+      # read (the client's return, a refresh or the sweep).
+      $optional = @("CHECKOUT.PAYMENT-APPROVAL.REVERSED")
+      $notOffered = @($optional | Where-Object { $names -notcontains $_ -and $names -notcontains "*" })
+      if ($notOffered.Count -gt 0) { Write-Host "WARNING: the webhook doesn't listen for $($notOffered -join ', '). Tick it in PayPal if the app offers it; the keys are stored anyway." }
       $tok = $null; $w = $null
     }
     $secrets["PAYPAL_WEBHOOK_ID"] = $wid

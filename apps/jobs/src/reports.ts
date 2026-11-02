@@ -231,19 +231,25 @@ export async function processEdfReminder(env: Env, body: unknown): Promise<EdfRe
   const [count, owners, advices] = await env.DB.batch([
     env.DB.prepare(EDF_COUNT_SQL).bind(first, last),
     env.DB.prepare(OWNERS_WITHOUT_EDF_BELL).bind(entity),
-    // M6.4 (L12, ADM-INV-17): the month's confirmed PayPal payments with no remittance advice yet (one range of `payments_confirmed_provider`).
-    env.DB.prepare(PAYMENTS_WITHOUT_ADVICE_COUNT_SQL).bind("paypal", first, last),
+    // M6.4 (L12, ADM-INV-17): the month's confirmed PayPal payments with no remittance advice yet (one range of `payments_confirmed_provider`; any currency).
+    env.DB.prepare(PAYMENTS_WITHOUT_ADVICE_COUNT_SQL).bind("paypal", first, last, null),
   ]);
   const missing = (advices?.results[0] as { n: number } | undefined)?.n ?? 0;
   // The advice reminder rides this message (no new cron): one owners' bell per month while any is missing (S9; `INSERT OR IGNORE`, one per owner and month).
-  if (missing > 0)
-    await env.DB.prepare(ADVICE_BELLS_INSERT)
-      .bind(
-        `advice:${year}-${mm}`,
-        adviceBellTitle(missing, `${MONTH_NAMES[month - 1]} ${year}`),
-        "/payments/advices?tab=without",
-      )
-      .run();
+  // Review part 1, finding 8: its failure is logged and never stops the EDF reminder below (the FEMA duty).
+  if (missing > 0) {
+    try {
+      await env.DB.prepare(ADVICE_BELLS_INSERT)
+        .bind(
+          `advice:${year}-${mm}`,
+          adviceBellTitle(missing, `${MONTH_NAMES[month - 1]} ${year}`),
+          "/payments/advices?tab=without",
+        )
+        .run();
+    } catch {
+      logEvent("advice.bell_failed");
+    }
+  }
   const n = (count?.results[0] as { n: number } | undefined)?.n ?? 0;
   if (n === 0) {
     logEvent("edf.no_exports");
