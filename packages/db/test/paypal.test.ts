@@ -1090,10 +1090,48 @@ describe("remittance advices [L12; ADM-INV-17; 08-C RB-05]", () => {
     );
     expect(ids).toContain(p2);
     expect(ids).not.toContain(p1);
-    const n = (from: string, to: string) =>
-      first<{ n: number }>(PAYMENTS_WITHOUT_ADVICE_COUNT_SQL, "paypal", from, to).then((r) => r?.n);
+    const n = (from: string, to: string, currency: string | null = null) =>
+      first<{ n: number }>(PAYMENTS_WITHOUT_ADVICE_COUNT_SQL, "paypal", from, to, currency).then((r) => r?.n);
     expect(await n("2026-11-01", "2026-11-30")).toBeGreaterThanOrEqual(1);
     expect(await n("2026-12-01", "2026-12-31")).toBe(0);
+    // Review part 1, finding 6: the count takes the list's currency (PayPal's payments are USD).
+    expect(await n("2026-11-01", "2026-11-30", "USD")).toBe(await n("2026-11-01", "2026-11-30"));
+    expect(await n("2026-11-01", "2026-11-30", "INR")).toBe(0);
+  });
+
+  it("an advice's payments page by the link row: a payment taken off and linked again is listed twice and never skipped at a page edge [review part 1 finding 7]", async () => {
+    const w = await world();
+    const staff = await mkMember("staff");
+    const co = await payPalCheckout(w);
+    const p = await pplPay(w.clientId, co.id);
+    const adv = await mkAdvice(staff);
+    expect(await link(adv.id, [p], staff)).toBe(1);
+    const off = await adviceUnlinkStatement(db(), {
+      adviceId: adv.id,
+      paymentId: p,
+      by: w.owner,
+      now: tick(),
+      reason: "Wrong week",
+    }).run();
+    expect(off.meta.changes).toBe(1);
+    expect(await link(adv.id, [p], staff)).toBe(1);
+    const both = await all<{ link_id: string; payment_id: string; received_on: string }>(
+      ADVICE_PAYMENTS_SQL,
+      adv.id,
+      "",
+      "",
+    );
+    expect(both).toHaveLength(2);
+    expect(both.map((r) => r.payment_id)).toEqual([p, p]);
+    // A page that ended on the first link row goes on to the second (a payment-id key would skip it).
+    const [firstRow] = both;
+    const next = await all<{ link_id: string }>(
+      ADVICE_PAYMENTS_SQL,
+      adv.id,
+      firstRow?.received_on,
+      firstRow?.link_id,
+    );
+    expect(next.map((r) => r.link_id)).toEqual([both[1]?.link_id]);
   });
 });
 
@@ -1110,9 +1148,9 @@ describe("the new reads use their indexes", () => {
     expect(await plan(PAYMENTS_WITHOUT_ADVICE_SQL, "paypal", "", "", null)).toContain(
       "realisation_advice_payments_active",
     );
-    expect(await plan(PAYMENTS_WITHOUT_ADVICE_COUNT_SQL, "paypal", "2026-11-01", "2026-11-30")).toContain(
-      "payments_confirmed_provider",
-    );
+    expect(
+      await plan(PAYMENTS_WITHOUT_ADVICE_COUNT_SQL, "paypal", "2026-11-01", "2026-11-30", null),
+    ).toContain("payments_confirmed_provider");
     expect(await plan(ADVICES_SQL, null, null)).toContain("realisation_advices_issued");
     expect(await plan(PAYPAL_STALE_CLAIMS_SQL, 1, 1)).toContain("checkout_sessions_paypal_open");
     expect(await plan(PAYPAL_HELD_CAPTURES_SQL, 1)).toContain("checkout_sessions_capture_pending");

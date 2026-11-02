@@ -579,5 +579,55 @@ describe("the monthly advice reminder rides edf.reminder [L12, S9; ADM-INV-17]",
         }>()
       )?.n,
     ).toBe(0);
+    // Review part 1, finding 8: the advice bell failing never stops the EDF reminder (the FEMA duty); the failure is logged. A new month with an export invoice
+    // and a PayPal payment on no advice, its EDF bell not rung yet.
+    const doc9 = uuidv7();
+    await realEnv.DB.prepare(
+      `INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, issue_date, due_date, subtotal_minor, taxable_minor, total_minor, balance_minor, content_sha256, updated_at)
+       VALUES (?1, 'export_invoice', 'issued', ?2, 'USD', 'pp-a', '9999', ?3, ?4, 1000, '2031-09-02', '2031-09-09', 50000, 50000, 50000, 50000, ?5, 7000)`,
+    )
+      .bind(doc9, client, ++seq, `PA/${seq}`, "h".repeat(64))
+      .run();
+    const checkout9 = uuidv7();
+    await realEnv.DB.prepare(
+      `INSERT INTO checkout_sessions (id, provider, document_id, client_id, source, created_by, currency, amount_minor, status, expires_at, created_at, updated_at)
+       VALUES (?1, 'paypal', ?2, ?3, 'staff', ?4, 'USD', 50000, 'creating', 9, 1, 1)`,
+    )
+      .bind(checkout9, doc9, client, owner.id)
+      .run();
+    const cap9 = `ADV${seq}CAPTURE`;
+    await realEnv.DB.prepare(
+      `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, charges_minor, received_on, mode, reference_norm,
+         recorded_by, recorded_at, verified_by, verified_at, provider_payment_id, checkout_id, fee_tax_minor, refetched_at)
+       VALUES (?1, ?2, 'payment', 'paypal', 'confirmed', 'USD', 50000, 1500, '2031-09-10', 'wallet', ?3, NULL, 5, NULL, 5, ?4, ?5, NULL, 5)`,
+    )
+      .bind(`ppl_${cap9}`, client, `PPL-${cap9}`, cap9, checkout9)
+      .run();
+    const failing = makeEnv();
+    const db = realEnv.DB;
+    failing.DB = new Proxy(db, {
+      get(target, prop) {
+        if (prop === "prepare")
+          return (sql: string) => {
+            if (sql.includes("'payment.advice_missing'")) throw new Error("D1 down for this one");
+            return target.prepare(sql);
+          };
+        const v = Reflect.get(target, prop);
+        return typeof v === "function" ? v.bind(target) : v;
+      },
+    });
+    logs.length = 0;
+    const r = await processEdfReminder(failing, { v: 1, kind: "edf.reminder", year: 2031, month: 9 });
+    expect(r).toMatchObject({ kind: "done" });
+    expect(logs.join("\n")).toContain('"ev":"advice.bell_failed"');
+    expect(
+      (
+        await realEnv.DB.prepare(
+          "SELECT count(*) AS n FROM notifications WHERE kind = 'edf.due' AND entity_id = 'edf:2031-09' AND user_id = ?1",
+        )
+          .bind(owner.id)
+          .first<{ n: number }>()
+      )?.n,
+    ).toBe(1);
   });
 });

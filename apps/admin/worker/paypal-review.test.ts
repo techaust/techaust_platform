@@ -18,10 +18,12 @@ import { call, one, rows } from "./test-helpers.ts";
 import { currentFy, lutOf, putSwiftBank, putTax } from "./test-invoice-types.ts";
 import { json, putBank, putCompany } from "./test-invoices.ts";
 import {
+  adviceBodyOf,
   apiCalls,
   capOf,
   liveOrder,
   orderAnswer,
+  paidPayPal,
   payPalEventRow,
   paypalStub,
   ppCheckout,
@@ -259,5 +261,45 @@ describe("the provider adapter and the token [findings 9, 10; ADM-PAY-01]", () =
       ),
     ).toEqual({ ok: false, code: "unconfigured" });
     expect(calls).toEqual([]);
+  });
+});
+
+describe("remittance advices [findings 5 and 6; L12, ADM-INV-17]", () => {
+  it("a period that ends before it starts is a 400 (never the CHECK's 500), and nothing is written", async () => {
+    const o = await owner();
+    const before = await rows("SELECT id FROM realisation_advices");
+    const res = await call("/payments/advices", {
+      cookie: o.cookie,
+      body: { ...adviceBodyOf(), periodFrom: "2026-11-08", periodTo: "2026-11-02" },
+    });
+    expect(res.status, await res.clone().text()).toBe(400);
+    expect(await rows("SELECT id FROM realisation_advices")).toHaveLength(before.length);
+    // One day, or no period at all, is fine.
+    for (const period of [
+      { periodFrom: "2026-11-02", periodTo: "2026-11-02" },
+      { periodFrom: null, periodTo: null },
+      { periodFrom: "2026-11-02", periodTo: null },
+    ]) {
+      const ok = await call("/payments/advices", {
+        cookie: o.cookie,
+        body: { ...adviceBodyOf(), ...period },
+      });
+      expect(ok.status, JSON.stringify(period)).toBe(201);
+    }
+  });
+
+  it("Without advice: the count is of the same currency as the list", async () => {
+    const o = await owner();
+    await paidPayPal();
+    const usd = await json(
+      await call("/payments/without-advice?provider=paypal&currency=USD", { cookie: o.cookie }),
+    );
+    const any = await json(await call("/payments/without-advice?provider=paypal", { cookie: o.cookie }));
+    const inr = await json(
+      await call("/payments/without-advice?provider=paypal&currency=INR", { cookie: o.cookie }),
+    );
+    expect(usd.count).toBeGreaterThanOrEqual(1);
+    expect(usd.count).toBe(any.count);
+    expect(inr).toMatchObject({ items: [], count: 0 });
   });
 });

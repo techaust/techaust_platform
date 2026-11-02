@@ -47,16 +47,24 @@ export const ADVICE_KINDS = ["efira", "fira", "firc", "brc", "settlement_report"
 /** The lists the "Without advice" view takes: a gateway, or `manual` for the bank's (bank transfers from abroad). */
 const WITHOUT_PROVIDERS = ["paypal", "stripe", "manual"] as const;
 
-export const adviceBody = z.strictObject({
-  provider: z.enum(ADVICE_PROVIDERS),
-  kind: z.enum(ADVICE_KINDS),
-  adviceRef: z.string().check(z.trim(), z.minLength(1), z.maxLength(64)),
-  issuedOn: isoDate,
-  periodFrom: z.optional(z.nullable(isoDate)),
-  periodTo: z.optional(z.nullable(isoDate)),
-  inrTotalMinor: z.optional(z.nullable(z.int().check(z.gte(1), z.lte(1_000_000_000_000)))),
-  note: z.optional(z.nullable(z.string().check(z.trim(), z.maxLength(500)))),
-});
+export const adviceBody = z
+  .strictObject({
+    provider: z.enum(ADVICE_PROVIDERS),
+    kind: z.enum(ADVICE_KINDS),
+    adviceRef: z.string().check(z.trim(), z.minLength(1), z.maxLength(64)),
+    issuedOn: isoDate,
+    periodFrom: z.optional(z.nullable(isoDate)),
+    periodTo: z.optional(z.nullable(isoDate)),
+    inrTotalMinor: z.optional(z.nullable(z.int().check(z.gte(1), z.lte(1_000_000_000_000)))),
+    note: z.optional(z.nullable(z.string().check(z.trim(), z.maxLength(500)))),
+  })
+  // Review part 1, finding 5: a period that ends before it starts is a 400 here (the 0067 CHECK `realisation_advices_period` would make it a 500).
+  .check(
+    z.refine((b) => !b.periodFrom || !b.periodTo || b.periodFrom <= b.periodTo, {
+      error: "The period must end on or after its first day",
+      path: ["periodTo"],
+    }),
+  );
 export const adviceLinkBody = z.strictObject({
   paymentIds: z
     .array(z.string().check(z.minLength(1), z.maxLength(64)))
@@ -151,7 +159,8 @@ export const advices = new Hono<AppEnv>()
     return c.json({
       advice: a,
       payments: rows.slice(0, ADVICE_PAGE_SIZE),
-      next: nextOf(rows, "received_on", "payment_id"),
+      // Review part 1, finding 7: keyed on the link row (a payment taken off and linked again has two rows).
+      next: nextOf(rows, "received_on", "link_id"),
     });
   })
   .put("/advices/:id/file", param(idParam), async (c) => {
@@ -266,8 +275,8 @@ export const advices = new Hono<AppEnv>()
     const db = c.env.DB;
     const [list, count] = await db.batch([
       db.prepare(PAYMENTS_WITHOUT_ADVICE_SQL).bind(provider, at?.[0] ?? "", at?.[1] ?? "", currency),
-      // The nav's count: every one, whatever its day (`received_on` within all of time).
-      db.prepare(PAYMENTS_WITHOUT_ADVICE_COUNT_SQL).bind(provider, "0000-01-01", "9999-12-31"),
+      // The count of the same list (review part 1, finding 6: the same currency): every one, whatever its day (`received_on` within all of time).
+      db.prepare(PAYMENTS_WITHOUT_ADVICE_COUNT_SQL).bind(provider, "0000-01-01", "9999-12-31", currency),
     ]);
     const rows = (list?.results ?? []) as Record<string, unknown>[];
     return c.json({

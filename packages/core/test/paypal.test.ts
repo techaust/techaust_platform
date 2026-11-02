@@ -1171,4 +1171,22 @@ describe("tools/set-gateway-keys.ps1 PayPal targets", () => {
     expect(at).toBeLessThan(ps1.indexOf('Read-Hidden "PayPal sandbox Client ID"'));
     expect(at).toBeLessThan(ps1.indexOf('Read-Hidden "PayPal sandbox Webhook ID"'));
   });
+
+  it("review part 1, finding 13: a webhook without CHECKOUT.PAYMENT-APPROVAL.REVERSED is a warning, never a stop; every other handled event is required", () => {
+    const ps1 = readFileSync(
+      join(import.meta.dirname, "..", "..", "..", "tools", "set-gateway-keys.ps1"),
+      "utf8",
+    );
+    const need = /\$need = @\(([^)]*)\)/.exec(ps1)?.[1] ?? "";
+    const optional = /\$optional = @\(([^)]*)\)/.exec(ps1)?.[1] ?? "";
+    const names = (list: string) => [...list.matchAll(/"([A-Z.-]+)"/g)].map((m) => m[1]);
+    expect(names(optional)).toEqual(["CHECKOUT.PAYMENT-APPROVAL.REVERSED"]);
+    // Every event type the finance Worker handles is required, except the optional one.
+    expect(names(need).sort()).toEqual(
+      Object.keys(PAYPAL_EVENT_TYPES)
+        .filter((n) => n !== "CHECKOUT.PAYMENT-APPROVAL.REVERSED" && n !== "PAYMENT.CAPTURE.DENIED")
+        .sort(),
+    );
+    expect(ps1).toContain('if ($notOffered.Count -gt 0) { Write-Host "WARNING:');
+  });
 });
