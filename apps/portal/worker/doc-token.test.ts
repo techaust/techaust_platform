@@ -149,6 +149,7 @@ describe("a valid link opens exactly one document [POR-06]", () => {
         "online",
         // M6.3: the gateway of the document's currency (Stripe for USD, Razorpay for INR)
         "provider",
+        "providers",
       ].sort(),
     );
     expect(body.document).toMatchObject({
