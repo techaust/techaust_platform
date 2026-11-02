@@ -364,8 +364,8 @@ describe("processEvent: the webhook after the re-fetch [ADM-PAY-02, -06, -07, JO
     });
     expect(rej.status).toBe(409);
     expect((await json(rej)).error.code).toBe("gateway_refund_needed");
-    // Review finding 2: the money was paid through this link, so the link is paid here too, and the document can have a new link at once (no cancel of the
-    // paid link is tried).
+    // Review finding 2: the money was paid through this link, so the link is paid here too (no cancel of the paid link is tried). M6.3 staging fixes (lead's
+    // final round, 2026-11-02): while that money waits, the document takes no new link (`payment_processing`, the one rule `paymentForDocumentSql`).
     expect(
       await one<{ status: string; paid_payment_id: string }>(
         "SELECT status, paid_payment_id FROM checkout_sessions WHERE id = ?1",
@@ -375,8 +375,9 @@ describe("processEvent: the webhook after the re-fetch [ADM-PAY-02, -06, -07, JO
     stub();
     const doc = await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?1", inv.id);
     const again = await staffLink(o, inv.id, inv.total, doc?.updated_at ?? 0);
-    expect(again.status, await again.clone().text()).toBe(201);
-    expect(calls.filter((x) => x.path.endsWith("/cancel"))).toEqual([]);
+    expect(again.status, await again.clone().text()).toBe(409);
+    expect((await json(again)).error.code).toBe("payment_processing");
+    expect(calls.filter((x) => x.path.endsWith("/cancel") || x.method === "POST")).toEqual([]);
   });
 
   it("review finding 2: a link Razorpay won't cancel is ended by its real state (expired there: the new link goes ahead; paid there: settled, 409)", async () => {
@@ -543,8 +544,16 @@ describe("processEvent: the webhook after the re-fetch [ADM-PAY-02, -06, -07, JO
     await env.DB.batch([legacy.main, ...legacy.side, ...legacy.last]);
     expect((await paymentOf(lh.paymentId))?.status).toBe("pending_verification");
     refuseCancel("paid", lh, h.total);
+    // M6.3 staging fixes (lead's final round): a new link is refused at once while that payment waits (`payment_processing`), before any cancel; the Owner's
+    // "Cancel" on the open link heals it the same way (Razorpay refuses, the settle is a duplicate, the link is closed as paid with that payment).
     const docH = await one<{ updated_at: number }>("SELECT updated_at FROM documents WHERE id = ?1", h.id);
-    const healed = await staffLink(o, h.id, 50_000, docH?.updated_at ?? 0);
+    const refusedNew = await staffLink(o, h.id, 50_000, docH?.updated_at ?? 0);
+    expect(refusedNew.status).toBe(409);
+    expect((await json(refusedNew)).error.code).toBe("payment_processing");
+    const healed = await call(`/invoices/${h.id}/payment-link/cancel`, {
+      cookie: o.cookie,
+      body: { checkoutId: lh.checkoutId },
+    });
     expect(healed.status, await healed.clone().text()).toBe(409);
     expect(
       await one<{ status: string; paid_payment_id: string }>(
