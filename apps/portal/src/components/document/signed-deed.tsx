@@ -8,6 +8,7 @@ import { deedsApi, type SignedDeed } from "../../api.ts";
 import { DEED_ZJ } from "../../copy-zj.ts";
 import { saveDownload } from "../../lib/offers.ts";
 import { Alert, Download } from "../icons.tsx";
+import { LineWithMoment } from "../moment.tsx";
 
 export function SignedDeedCard({ documentId }: { documentId: string }) {
   const [deed, setDeed] = useState<SignedDeed | null>(null);
@@ -57,7 +58,9 @@ export function SignedDeedCard({ documentId }: { documentId: string }) {
         </div>
         <div>
           <dt className="visually-hidden">{DEED_ZJ.heading}</dt>
-          <dd className="deedcard__value deedcard__value--plain">{DEED_ZJ.signedOn(deed.esignMoment)}</dd>
+          <dd className="deedcard__value deedcard__value--plain">
+            <LineWithMoment line={DEED_ZJ.signedOn} at={deed.esignAt} />
+          </dd>
         </div>
         <div>
           <dt className="deedcard__label">{DEED_ZJ.txn}</dt>
