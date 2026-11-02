@@ -16,6 +16,8 @@ import {
   gatewayLine,
   inrPerUsdText,
   itemReason,
+  payPalCapturing,
+  payPalFacts,
   portalInvoiceUrl,
   portalLinkOffered,
   stripeFacts,
@@ -146,6 +148,30 @@ describe("a Stripe payment's lines [ADM-PAY-01]", () => {
     expect(stripeFacts({ ...row, inrReceivedMinor: null, gatewayFeeInrMinor: null })).toEqual([]);
     expect(stripeFacts({ ...row, provider: "razorpay" })).toEqual([]);
   });
+  // M6.4 code review finding 14: a PayPal fee charged in rupees (`charges_minor` 0) still shows, in rupees, with the INR PayPal credited
+  it("S1's PayPal facts: the fee in the currency PayPal charged it in, and the INR credited when present", () => {
+    const usd = (m: number) => formatMoney(money(m, "USD"));
+    const row = {
+      provider: "paypal",
+      amountMinor: 1_000_00,
+      feeMinor: 0,
+      inrReceivedMinor: 82_150_00,
+      gatewayFeeInrMinor: 1_234_56,
+    };
+    expect(payPalFacts(row)).toEqual([
+      `INR credited by PayPal ${inr(82_150_00)} (about ₹82.15 per USD; not the GST rate)`,
+      `Fee ${inr(1_234_56)} (absorbed)`,
+    ]);
+    // charged in dollars: the dollar fee; no INR settlement: no credited line
+    expect(
+      payPalFacts({ ...row, feeMinor: 39_00, inrReceivedMinor: null, gatewayFeeInrMinor: null }),
+    ).toEqual([`Fee ${usd(39_00)} (absorbed)`]);
+    expect(payPalFacts({ ...row, feeMinor: 0, inrReceivedMinor: null, gatewayFeeInrMinor: null })).toEqual(
+      [],
+    );
+    expect(payPalFacts({ ...row, provider: "stripe" })).toEqual([]);
+    expect(stripeFacts(row)).toEqual([]);
+  });
   it("S14's line keeps the id when there is one, and Razorpay keeps its own", () => {
     expect(gatewayLine("stripe", "card", "pi_X")).toContain("Stripe · card · pi_X");
     expect(gatewayLine("stripe", "card", null)).toContain("Stripe · card");
@@ -221,5 +247,18 @@ describe("portalLinkOffered [ADM-PAY-01]", () => {
   it("not on a converted proforma or a settled document", () => {
     expect(portalLinkOffered("converted", 120_000, [])).toBe(false);
     expect(portalLinkOffered("paid", 0, confirmed)).toBe(false);
+  });
+
+  // M6.4 (lead, Q2 of the admin round): the portal hides Pay while PayPal holds, or a capture call has claimed, a checkout, so the link isn't offered then.
+  it("not while a PayPal capture is held or claimed (the portal hides Pay)", () => {
+    expect(portalLinkOffered("issued", 120_000, [], true)).toBe(false);
+    expect(portalLinkOffered("issued", 120_000, confirmed, false)).toBe(true);
+    const live = { status: "live" as const };
+    // held: PayPal's own hold, on the checkout row (a note's blockers never list it)
+    expect(payPalCapturing(["note_not_voidable"], [live, { status: "capture_pending" }])).toBe(true);
+    // claimed: a capture call in flight (the void blockers' code; the row still reads live)
+    expect(payPalCapturing(["already_emailed", "payment_pending_capture"], [live])).toBe(true);
+    expect(payPalCapturing(["already_emailed"], [live, { status: "paid" }])).toBe(false);
+    expect(payPalCapturing([], [])).toBe(false);
   });
 });

@@ -367,6 +367,118 @@ export const SAMPLE_INVOICES: InvoiceSummary[] = [
   }),
 ];
 
+// ---- M6.4: PayPal beside "Pay by card" on USD documents (run file G1, G2). SAMPLE DATA ONLY: made-up numbers and ids; no PayPal page is ever reached (a
+// press answers 07-ZN line 13, or line 10 on pp-busy, as the server would). The return's states are picked by the sample checkout id's last digit.
+
+const HOUR = 3_600_000;
+const usdLines = (minor: number) => [
+  line(1, "Storefront migration and order sync, build (sample)", 1000, "project", minor, minor, {
+    rateBp: 0,
+  }),
+];
+const usdDoc = (
+  id: string,
+  numberDisplay: string,
+  totalMinor: number,
+  paidMinor: number,
+  online: Partial<NonNullable<InvoiceSummary["online"]>> & { payOnline?: boolean },
+  type: InvoiceSummary["type"] = "export_invoice",
+): InvoiceSummary => {
+  const { payOnline = true, ...rest } = online;
+  return finish({
+    id,
+    type,
+    status: paidMinor > 0 ? "partially_paid" : "issued",
+    numberDisplay,
+    issueDate: day(-3),
+    dueDate: day(11),
+    currency: "USD",
+    parentNumber: null,
+    totals: totals({ taxableMinor: totalMinor, totalMinor, totalInrMinor: totalMinor * 84 }),
+    paidMinor,
+    creditedMinor: 0,
+    balanceMinor: totalMinor - paidMinor,
+    lines: usdLines(totalMinor),
+    bank: SWIFT_BANK,
+    pdfReady: true,
+    payOnline,
+    provider: "stripe",
+    providers: payOnline ? ["stripe", "paypal"] : [],
+    wholeRupees: false,
+    online: {
+      open: null,
+      lastPaid: null,
+      pendingPayPal: false,
+      proformaPending: false,
+      paymentPending: false,
+      minimumMinor: payOnline ? 100_00 : null,
+      maximumMinor: 25_000_00,
+      ...rest,
+    },
+  });
+};
+
+export const SAMPLE_PAYPAL: InvoiceSummary[] = [
+  // Pay by card and Pay with PayPal, the full amount or a part of at least USD 100
+  usdDoc("pp-usd", "TH/EXP/2627/0011", 2_400_00, 0, {}),
+  // above the online maximum (USD 25,000): 07-ZM line 6 (07-ZN line 12) over the field
+  usdDoc("pp-big", "TH/EXP/2627/0012", 32_000_00, 0, {}),
+  // part paid through PayPal: 07-ZN line 14 under the figures; still payable
+  usdDoc("pp-paid", "TH/EXP/2627/0013", 2_400_00, 1_000_00, {
+    lastPaid: { amountMinor: 1_000_00, at: Date.now() - 2 * HOUR, provider: "paypal" },
+  }),
+  // PayPal holds a capture: 07-ZN line 10, no Pay
+  usdDoc("pp-held", "TH/EXP/2627/0014", 2_400_00, 0, {
+    payOnline: false,
+    pendingPayPal: true,
+    paymentPending: true,
+  }),
+  // a USD proforma paid through PayPal, its invoice to follow (07-ZN line 14)
+  usdDoc(
+    "pp-pro",
+    "TH/PRO/2627/0021",
+    1_200_00,
+    0,
+    {
+      payOnline: false,
+      proformaPending: true,
+      paymentPending: true,
+      lastPaid: { amountMinor: 1_200_00, at: Date.now() - 3 * HOUR, provider: "paypal" },
+    },
+    "proforma",
+  ),
+  // a press refused because a PayPal capture is already claimed (early check 2 finding 5): 07-ZN line 10 in the dialog
+  usdDoc("pp-busy", "TH/EXP/2627/0015", 2_400_00, 0, {}),
+];
+
+/** The sample checkout ids of the return: `…000N`, N picks the state the server answers (0 and 9: none, the server's call failed). */
+export const SAMPLE_CHECKOUT = (n: number) => `0195f000-0000-7000-8000-00000000000${n.toString(16)}`;
+const RETURN_STATES = [
+  null,
+  "paid",
+  "processing",
+  "pending",
+  "declined",
+  "not_completed",
+  "expired",
+  "changed",
+  "not_found",
+  null,
+] as const;
+const SAMPLE_RETRY = "https://www.sandbox.paypal.com/checkoutnow?token=SAMPLE0RDER0000";
+
+function payPalReturnSample(checkoutId: string): { state: string; retryUrl?: string } | null {
+  const n = Number.parseInt(checkoutId.slice(-1), 16);
+  if (n === 4) return { state: "declined", retryUrl: SAMPLE_RETRY };
+  if (n === 12) return { state: "declined" };
+  const state = RETURN_STATES[n] ?? null;
+  return state ? { state } : null;
+}
+
+const ZN10 =
+  "PayPal is still checking this payment. It will show on this invoice once PayPal completes it. There's no need to pay again.";
+const ZN13 = "PayPal isn't available right now. You can pay another way shown on this page.";
+
 const itemOf = (d: InvoiceSummary): InvoiceItem => ({
   id: d.id,
   type: d.type,
@@ -389,6 +501,8 @@ export const SAMPLE_INVOICE_TOKENS = {
   credit: `C${"a".repeat(42)}`,
   withdrawn: `W${"a".repeat(42)}`,
   ended: `Z${"a".repeat(42)}`,
+  /** M6.4: a USD export invoice with Pay by card and Pay with PayPal. */
+  paypal: `Y${"a".repeat(42)}`,
 };
 
 const ofToken = (t: string) =>
@@ -400,7 +514,9 @@ const ofToken = (t: string) =>
         ? SAMPLE_INVOICES[4]
         : t.startsWith("W")
           ? SAMPLE_INVOICES.find((x) => x.id === "pro-withdrawn")
-          : undefined;
+          : t.startsWith("Y")
+            ? SAMPLE_PAYPAL[0]
+            : undefined;
 
 /**
  * Review L3: a payment request withdrawn while its page is open. It reads as due until its PDF is asked for; that answer is 409 `withdrawn`, and from
@@ -438,6 +554,71 @@ export function answerInvoices(
   const file = (d: InvoiceSummary) => `${(d.numberDisplay ?? "invoice").replaceAll("/", "-")}.pdf`;
   if (method === "GET" && /^\/invoices(\?|$)/.test(path))
     return h.json(200, { invoices: empty ? [] : SAMPLE_INVOICES.map(itemOf), next: null });
+  // M6.4: the PayPal samples (signed in, and the press, and the emailed link's return route)
+  const pp = /^\/invoices\/(pp-[a-z]+)(\/pay|\/pdf)?(?:\?c=([0-9a-f-]{36}))?$/.exec(path);
+  if (pp && !empty) {
+    const d = SAMPLE_PAYPAL.find((x) => x.id === pp[1]);
+    if (!d) return h.error(404, "not_found");
+    if (pp[2] === "/pdf") return h.pdf(file(d));
+    if (pp[2]) {
+      // a press never leaves for PayPal here: line 10 on pp-busy (the holder's line), else line 13
+      const busy = d.id === "pp-busy";
+      return h.json(busy ? 409 : 503, {
+        error: { code: busy ? "payment_processing" : "gateway_unavailable", message: busy ? ZN10 : ZN13 },
+        request_id: "sample-request",
+      });
+    }
+    if (!pp[3]) return h.json(200, { document: d });
+    const ret = payPalReturnSample(pp[3]);
+    // paid: the server's answer already shows the payment (the newest online one, through PayPal)
+    const doc: InvoiceSummary =
+      ret?.state === "paid"
+        ? finish({
+            ...d,
+            status: "paid",
+            paidMinor: d.totals.totalMinor,
+            balanceMinor: 0,
+            payOnline: false,
+            online: {
+              ...(d.online as NonNullable<InvoiceSummary["online"]>),
+              lastPaid: { amountMinor: d.balanceMinor ?? 0, at: Date.now() - 5_000, provider: "paypal" },
+            },
+          })
+        : ret?.state === "pending"
+          ? {
+              ...d,
+              payOnline: false,
+              online: {
+                ...(d.online as NonNullable<InvoiceSummary["online"]>),
+                pendingPayPal: true,
+                paymentPending: true,
+              },
+            }
+          : d;
+    return h.json(200, {
+      document: ret ? { ...doc, online: { ...doc.online, payPalReturn: ret } } : doc,
+    });
+  }
+  if (path === "/pay/paypal/return" && method === "POST") {
+    const id = String(body.checkoutId ?? "");
+    const n = Number.parseInt(id.slice(-1), 16);
+    if (n === 10)
+      return new Response(
+        JSON.stringify({
+          error: { code: "rate_limited", message: "Too many requests. Please try again later." },
+          request_id: "sample-request",
+        }),
+        { status: 429, headers: { "Content-Type": "application/json", "Retry-After": "540" } },
+      );
+    if (n === 11)
+      return h.json(503, {
+        error: { code: "gateway_unavailable", message: ZN13 },
+        request_id: "sample-request",
+      });
+    const ret = payPalReturnSample(id);
+    // the server answers `processing` when its call failed (early check 2 finding 1)
+    return h.json(200, ret ?? { state: "processing" });
+  }
   const m = /^\/invoices\/([^/?]+)(\/pdf)?$/.exec(path);
   if (m && m[1] === "pro-race" && !empty) {
     if (!m[2]) return h.json(200, { document: raceDoc() });
@@ -455,6 +636,12 @@ export function answerInvoices(
           : h.error(409, "pdf_pending");
     return h.json(200, { document: d });
   }
+  // M6.4: a press from the emailed link never leaves for PayPal here either (07-ZN line 13)
+  if (path === "/t/document/pay" && method === "POST")
+    return h.json(503, {
+      error: { code: "gateway_unavailable", message: ZN13 },
+      request_id: "sample-request",
+    });
   const t = /^\/t\/document(\/pdf)?$/.exec(path);
   if (t) {
     const d = ofToken(String(body.token ?? ""));

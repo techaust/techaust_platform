@@ -27,7 +27,10 @@ export const ZN_UI = {
   // G3: the PayPal slip on a USD document's Payments panel
   payPalTitle: "PayPal",
   payPalBody:
-    "Clients pay with PayPal from their portal page or the emailed invoice link. Each PayPal checkout lasts 3 hours, so there is nothing to copy here.",
+    "Clients pay with PayPal from their portal page or the emailed invoice link. Each PayPal checkout lasts up to two and a half hours, so there is nothing to copy here.",
+  // G3 (code review finding 14; designer's draft, 2026-11-03, as 07-ZM S14's Stripe line): a PayPal payment PayPal settled in rupees, with the rate it implies
+  inrCredited: (inr: string, rate: string) =>
+    `INR credited by PayPal ${inr} (about ₹${rate} per USD; not the GST rate)`,
   cancelCheckout: "Cancel checkout",
   cancelTitle: "Cancel this PayPal checkout?",
   cancelBody:

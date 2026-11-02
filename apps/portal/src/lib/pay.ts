@@ -4,13 +4,32 @@
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { isGatewayLinkUrl, type LinkHostGateway } from "@techaust/core/gateway-rpc";
 import { compare, formatMoney, money, parseMoney } from "@techaust/core/money";
+import type { PayPhase } from "../components/pay/pay-status.tsx";
 import { PAY_ZI } from "../copy-zi.ts";
+import { PAY_ZM } from "../copy-zm.ts";
+import { PAY_ZN } from "../copy-zn.ts";
 
 /**
- * The gateways the portal's screens send a client to (M6.3: Stripe for USD documents, Razorpay for INR). M6.4: PayPal joins with its screens (the chooser and
- * the return: the designer's, after early check 2), which widen this type; the rules below already know PayPal's currency (`currencyOf`).
+ * The gateways the portal's screens send a client to (M6.3: Stripe for USD documents, Razorpay for INR; M6.4: PayPal beside Stripe on a USD document, in the
+ * server's `providers` order).
  */
-export type PayGateway = Exclude<LinkHostGateway, "paypal">;
+export type PayGateway = LinkHostGateway;
+const GATEWAYS: readonly PayGateway[] = ["razorpay", "stripe", "paypal"];
+export const isPayGateway = (v: unknown): v is PayGateway => (GATEWAYS as readonly unknown[]).includes(v);
+
+/**
+ * The ways a document may be paid, in the order the page offers them: the server's `providers` (M6.4: `["stripe", "paypal"]` for USD), only gateways the
+ * portal knows, each once; an older API sends none, and then the one gateway of `provider` (or of the currency).
+ */
+export function payWaysOf(d: {
+  providers?: readonly unknown[] | undefined;
+  provider?: PayGateway | null | undefined;
+  currency: string;
+}): PayGateway[] {
+  const listed = (d.providers ?? []).filter(isPayGateway);
+  if (listed.length > 0) return [...new Set(listed)];
+  return [d.provider ?? (d.currency === "USD" ? "stripe" : "razorpay")];
+}
 export type PayCurrency = "INR" | "USD";
 
 export const inr = (minor: number) => formatMoney(money(minor, "INR"));
@@ -72,50 +91,102 @@ export const isRazorpayUrl = (v: string): boolean => isGatewayUrl("razorpay", v)
 /** The signed-out return page (the emailed link's and a staff link's `callback_url`; for the emailed link, Stripe's `success_url` and `cancel_url` too). */
 export const PAY_RETURN_PATH = "/pay/return";
 
-/** How the client came back: after paying (`?pay=return`), or by leaving Stripe's page without paying (`?pay=cancel`, M6.3). */
-export type PayReturnKind = "return" | "cancel";
+/**
+ * How the client came back: after paying (`?pay=return`), or by leaving Stripe's page without paying (`?pay=cancel`, M6.3); M6.4: from PayPal's page after
+ * approving (`?pay=paypal&c=<checkout id>`: the page asks the server to capture THAT checkout) or by leaving it (`?pay=paypal-cancel`: 07-ZN line 7, no call).
+ */
+export type PayReturnKind = "return" | "cancel" | "paypal" | "paypal-cancel";
+/** What the page keeps of a return: the kind, and for PayPal our own checkout id (never PayPal's `token` or `PayerID` on the signed-in page). */
+export type PayReturn = { kind: PayReturnKind; checkoutId?: string };
 
-let returnedTo: { id: string; kind: PayReturnKind } | null = null;
+/** Our checkout ids are UUIDs (`c` on PayPal's return; the server answers 400 to anything else, so nothing else is sent). */
+const CHECKOUT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+/** PayPal's order id as its return carries it (`token`): the shape the return route accepts. */
+const PAYPAL_TOKEN = /^[A-Z0-9]{1,36}$/;
+
+/**
+ * The signed-out return page after PayPal (`/pay/return?via=paypal&c=…&token=…&PayerID=…`, or `…&cancelled=1`): our checkout id and PayPal's `token` (its
+ * order id), kept in memory for the one POST that asks the server to capture (the token only ever in that body; `PayerID` is never read). `token` is null when
+ * PayPal sent none; `malformed` when it sent something that isn't an order id (then nothing is asked).
+ */
+export type PayPalReturnPage =
+  | { cancelled: true }
+  | { cancelled: false; checkoutId: string | null; token: string | null; malformed: boolean };
+
+let returnedTo: { id: string; ret: PayReturn } | null = null;
 let returnPage: PayReturnKind = "return";
+let payPalPage: PayPalReturnPage | null = null;
 
 /**
  * FIRST, before anything renders (main.tsx): the gateway sends the browser back with a query (Razorpay's `razorpay_payment_id`, `razorpay_signature`, …; our own
- * `pay=return` or `pay=cancel` from Stripe). Strip it from the address bar and history at once, read nothing but our own `pay` word, never forward it (ADR 0008:
- * nothing is marked paid on a redirect), and remember only that this page is a return: `/invoices/:id?pay=return|cancel` (signed in) keeps the invoice's id for
- * the Processing state or 07-ZM line 5; `/pay/return` keeps only which of the two it was.
+ * `pay=return` or `pay=cancel` from Stripe; M6.4: our `pay=paypal&c=…` or `via=paypal&c=…` with PayPal's `token` and `PayerID`). Strip it from the address bar
+ * and history at once, read nothing but our own words (and, on the signed-out page, PayPal's `token` for the capture's body), never forward it (ADR 0008:
+ * nothing is marked paid on a redirect), and remember only that this page is a return: `/invoices/:id?pay=…` (signed in) keeps the invoice's id (and PayPal's
+ * checkout id) for the Processing state, 07-ZM line 5 or 07-ZN's states; `/pay/return` keeps which it was.
  */
 export function capturePayReturn(loc: Pick<Location, "pathname" | "search" | "hash"> = location): void {
   if (!loc.search) return;
   const invoice = /^\/invoices\/([^/]+)$/.exec(loc.pathname);
-  const pay = new URLSearchParams(loc.search).get("pay");
-  const kind: PayReturnKind | null = pay === "return" ? "return" : pay === "cancel" ? "cancel" : null;
-  if (loc.pathname === PAY_RETURN_PATH || (invoice && kind)) {
-    history.replaceState(history.state, "", loc.pathname);
-    if (invoice && kind) returnedTo = { id: decodeURIComponent(invoice[1] as string), kind };
-    if (loc.pathname === PAY_RETURN_PATH) returnPage = kind ?? "return";
+  const q = new URLSearchParams(loc.search);
+  const pay = q.get("pay");
+  const kind: PayReturnKind | null =
+    pay === "return" || pay === "cancel" || pay === "paypal" || pay === "paypal-cancel" ? pay : null;
+  if (loc.pathname !== PAY_RETURN_PATH && !(invoice && kind)) return;
+  history.replaceState(history.state, "", loc.pathname);
+  const c = q.get("c");
+  const checkoutId = c !== null && CHECKOUT_ID.test(c) ? c : null;
+  if (invoice && kind) {
+    // A PayPal return without our checkout id can't name what to capture: the page opens as usual (its waiting state still shows from the server's facts).
+    if (kind === "paypal" && !checkoutId) return;
+    returnedTo = {
+      id: decodeURIComponent(invoice[1] as string),
+      ret: kind === "paypal" && checkoutId ? { kind, checkoutId } : { kind },
+    };
+  }
+  if (loc.pathname === PAY_RETURN_PATH) {
+    if (q.get("via") === "paypal") {
+      returnPage = q.get("cancelled") === "1" ? "paypal-cancel" : "paypal";
+      const token = q.get("token");
+      payPalPage =
+        returnPage === "paypal-cancel"
+          ? { cancelled: true }
+          : {
+              cancelled: false,
+              checkoutId,
+              token: token !== null && PAYPAL_TOKEN.test(token) ? token : null,
+              malformed: token !== null && !PAYPAL_TOKEN.test(token),
+            };
+    } else returnPage = kind === "cancel" ? "cancel" : "return";
   }
 }
 
 /** Whether this page load came back from the gateway for this invoice, and how (read once: a later visit to the same page is not a return). */
-export function takePayReturn(documentId: string): PayReturnKind | null {
+export function takePayReturn(documentId: string): PayReturn | null {
   if (returnedTo?.id !== documentId) return null;
-  const kind = returnedTo.kind;
+  const ret = returnedTo.ret;
   returnedTo = null;
-  return kind;
+  return ret;
 }
 
-/** How the signed-out return page was reached (M6.3: for the emailed link, Stripe's cancel comes back there too). */
+/** How the signed-out return page was reached (M6.3: for the emailed link, Stripe's cancel comes back there too; M6.4: PayPal's return and cancel). */
 export const payReturnPageKind = (): PayReturnKind => returnPage;
+/** M6.4: what PayPal's return to the signed-out page carried (null unless `via=paypal`). */
+export const payPalReturnPage = (): PayPalReturnPage | null => payPalPage;
 
 /** Test-only. */
-export const _setReturned = (id: string | null, kind: PayReturnKind = "return") => {
-  returnedTo = id === null ? null : { id, kind };
+export const _setReturned = (id: string | null, kind: PayReturnKind = "return", checkoutId?: string) => {
+  returnedTo = id === null ? null : { id, ret: checkoutId ? { kind, checkoutId } : { kind } };
+};
+/** Test-only. */
+export const _resetPayReturnPage = () => {
+  returnPage = "return";
+  payPalPage = null;
 };
 
 const KEY = "ta.pay";
 
 /** What this tab remembers of a press of "Continue to Razorpay" (or "Continue to Stripe"): the document, the amount, when, and the newest online payment the page showed then. */
-export type PayPress = { amountMinor: number; at: number; seenAt: number | null };
+export type PayPress = { amountMinor: number; at: number; seenAt: number | null; proforma?: boolean };
 
 /**
  * When "Continue to Razorpay" was pressed, for which document and how much, and the time of the newest online payment the page showed then (`seenAt`, null when
@@ -127,32 +198,65 @@ export function rememberPay(
   amountMinor: number,
   seenAt: number | null,
   at = Date.now(),
+  proforma = false,
 ): void {
   try {
-    sessionStorage.setItem(KEY, JSON.stringify({ documentId, amountMinor, at, seenAt }));
+    sessionStorage.setItem(KEY, JSON.stringify({ documentId, amountMinor, at, seenAt, proforma }));
   } catch {
     // Private mode: no press is remembered, so the Processing state ends on 07-ZI line 13 (never "received").
   }
 }
 
-export function recalledPay(documentId: string): PayPress | null {
+/** A press as the page reads it (`proforma` only when it was one). */
+const pressOf = (v: PayPress): PayPress => ({
+  amountMinor: v.amountMinor,
+  at: v.at,
+  seenAt: v.seenAt,
+  ...(v.proforma === true ? { proforma: true } : {}),
+});
+
+function readPress(): (PayPress & { documentId: unknown }) | null {
   try {
     const v = JSON.parse(sessionStorage.getItem(KEY) ?? "null") as {
       documentId?: unknown;
       amountMinor?: unknown;
       at?: unknown;
       seenAt?: unknown;
+      proforma?: unknown;
     } | null;
     return v &&
-      v.documentId === documentId &&
       typeof v.at === "number" &&
       typeof v.amountMinor === "number" &&
       (v.seenAt === null || typeof v.seenAt === "number")
-      ? { amountMinor: v.amountMinor, at: v.at, seenAt: v.seenAt }
+      ? {
+          documentId: v.documentId,
+          amountMinor: v.amountMinor,
+          at: v.at,
+          seenAt: v.seenAt,
+          proforma: v.proforma === true,
+        }
       : null;
   } catch {
     return null;
   }
+}
+
+export function recalledPay(documentId: string): PayPress | null {
+  const v = readPress();
+  return v && v.documentId === documentId ? pressOf(v) : null;
+}
+
+/** A PayPal checkout lasts at most two and a half hours (L5): an older press in this tab is not the one this return is about. */
+export const PAYPAL_PRESS_MS = 150 * 60_000;
+
+/**
+ * M6.4: the signed-out return page doesn't know the document (its URL carries only our checkout id), so it reads this tab's last press, whatever its document,
+ * if it was made within a PayPal checkout's life: its amount says 07-ZN line 5 (line 6 on a proforma) once the server answers `paid`. None: the page says
+ * 07-ZI line 15 instead (never an amount it doesn't know).
+ */
+export function recalledRecentPay(now = Date.now()): PayPress | null {
+  const v = readPress();
+  return v && now - v.at >= 0 && now - v.at <= PAYPAL_PRESS_MS ? pressOf(v) : null;
 }
 
 export const forgetPay = () => {
@@ -169,6 +273,39 @@ export const POLL_FOR_MS = 60_000;
 export const REFRESH_AT_MS = 20_000;
 
 /**
+ * M6.4 (early check 2, "Designer must know" 2 and 3): back from PayPal, each ask may capture, and the return shares the `p:pay:` quota (20 per 10 minutes), so the
+ * page asks again only while the answer is `processing` (07-ZN line 4), no faster than every 30 s, and stops after 5 minutes (the line stays: the invoice shows
+ * the payment once it's confirmed). Every other state is an end: no more asks.
+ */
+export const PAYPAL_POLL_MS = 30_000;
+export const PAYPAL_POLL_FOR_MS = 5 * 60_000;
+
+/** The states PayPal's return answers (core `CAPTURE_RETURN_STATES`); the page reads only these. */
+export const PAYPAL_RETURN_STATES = [
+  "paid",
+  "processing",
+  "pending",
+  "declined",
+  "not_completed",
+  "expired",
+  "changed",
+  "not_found",
+] as const;
+export type PayPalReturnState = (typeof PAYPAL_RETURN_STATES)[number];
+export type PayPalReturn = { state: PayPalReturnState; retryUrl?: string };
+
+/** An answer's `payPalReturn` as the page may use it: a known state, and `retryUrl` kept only with `declined` and only on PayPal's own hosts. */
+export function payPalReturnOf(v: unknown): PayPalReturn | null {
+  if (typeof v !== "object" || v === null) return null;
+  const state: unknown = Reflect.get(v, "state");
+  if (!(PAYPAL_RETURN_STATES as readonly unknown[]).includes(state)) return null;
+  const retryUrl: unknown = Reflect.get(v, "retryUrl");
+  return state === "declined" && typeof retryUrl === "string" && isGatewayLinkUrl("paypal", retryUrl)
+    ? { state, retryUrl }
+    : { state: state as PayPalReturnState };
+}
+
+/**
  * The payment received online that this return is about, if the page shows one yet (review finding 5): only with a press remembered in this tab, and only a
  * payment newer than the newest one the page showed at the press (any, when it showed none). Without a remembered press nothing counts: the Processing state
  * ends on 07-ZI line 13, never "received" for a payment made earlier.
@@ -181,5 +318,113 @@ export function receivedAfter(
   return press.seenAt === null || lastPaid.at > press.seenAt ? lastPaid : null;
 }
 
+/**
+ * M6.4 (run file G2): the signed-in page's words for PayPal's answer (07-ZN lines 4 to 11), or null for none: `processing` is line 4 (the page asks again),
+ * `paid` line 5 (6 on a proforma) with an amount the page knows (the newest PayPal payment, else this tab's press; neither: no block, the summary shows the
+ * payment), `not_found` nothing (the page as usual). No `payPalReturn` in the answer (the server's call failed or answered wrongly): line 4, never "pay another
+ * way" (early check 2 finding 1).
+ */
+export function payPalPhaseOf(
+  r: PayPalReturn | null,
+  doc: {
+    id: string;
+    type: string;
+    online?: { lastPaid?: { amountMinor: number; provider?: string | null } | null } | undefined;
+  },
+): PayPhase | null {
+  const state = r?.state ?? "processing";
+  switch (state) {
+    case "processing":
+      return { phase: "checking" };
+    case "paid": {
+      const last = doc.online?.lastPaid;
+      const amountMinor =
+        last && last.provider === "paypal" ? last.amountMinor : (recalledPay(doc.id)?.amountMinor ?? null);
+      return amountMinor === null
+        ? null
+        : { phase: "received", amountMinor, proforma: doc.type === "proforma" };
+    }
+    case "pending":
+      return { phase: "held" };
+    case "declined":
+      return r?.retryUrl ? { phase: "declined", retryUrl: r.retryUrl } : { phase: "declined" };
+    case "not_completed":
+      return { phase: "left" };
+    case "expired":
+      return { phase: "expired" };
+    case "changed":
+      return { phase: "changed" };
+    case "not_found":
+      return null;
+  }
+}
+
+/** The online block's facts the page reads to name a gateway (M6.4: `open.provider`, `lastPaid.provider`, `pendingPayPal`; absent from an older API). */
+type OnlineFacts = {
+  open?: { provider?: string | null } | null;
+  lastPaid?: { provider?: string | null } | null;
+  pendingPayPal?: boolean;
+};
+
+/**
+ * M6.4: whose words say a payment still waits on the document (`paymentPending`: 07-ZI line 13, 07-ZM line 4 or 07-ZN line 10): PayPal when it holds a capture;
+ * else the gateway of the open checkout (a claimed PayPal order is still live); else the gateway of the newest online payment (a waiting one is the newest);
+ * else the document's own gateway.
+ */
+export function waitingGatewayOf(online: OnlineFacts | undefined, fallback: PayGateway): PayGateway {
+  if (online?.pendingPayPal === true) return "paypal";
+  const open = online?.open?.provider;
+  if (isPayGateway(open)) return open;
+  const paid = online?.lastPaid?.provider;
+  return isPayGateway(paid) ? paid : fallback;
+}
+
+/** The gateway of the newest online payment the page shows (`lastPaid.provider`), or the document's own gateway when the server names none. */
+export const paidGatewayOf = (online: OnlineFacts | undefined, fallback: PayGateway): PayGateway => {
+  const paid = online?.lastPaid?.provider;
+  return isPayGateway(paid) ? paid : fallback;
+};
+
 /** An instant as the IST day (`YYYY-MM-DD`), for 07-ZI line 16's and 07-ZM line 8's date. */
 export const istDayOf = (ms: number) => toIsoDate(istDate(ms));
+
+/**
+ * The slip's paid row, under the figures (M6.2 07-ZI line 16, M6.3 07-ZM line 8, M6.4 07-ZN line 14), or null: on a proforma whose online payment waits for
+ * its invoice, "…; invoice to follow" in the words of the gateway it came through (`lastPaid.provider`); on any other document whose newest online payment came
+ * through PayPal, "Paid by PayPal on {date}" (not while a payment still waits: the waiting block says that). `date` writes the IST day as the page does.
+ */
+export function paidRowOf(
+  d: {
+    type: string;
+    currency: string;
+    provider?: PayGateway | null;
+    online?:
+      | (OnlineFacts & {
+          lastPaid?: { at: number; provider?: string | null } | null;
+          proformaPending?: boolean;
+          paymentPending?: boolean;
+        })
+      | undefined;
+  },
+  date: (iso: string) => string,
+): { text: string; waits: boolean } | null {
+  const last = d.online?.lastPaid;
+  if (!last || d.type === "credit_note") return null;
+  const day = date(istDayOf(last.at));
+  const own: PayGateway = d.provider ?? (d.currency === "USD" ? "stripe" : "razorpay");
+  if (d.type === "proforma" && d.online?.proformaPending === true) {
+    const by = paidGatewayOf(d.online, own);
+    return {
+      text:
+        by === "paypal"
+          ? PAY_ZN.paidProforma(day)
+          : by === "stripe"
+            ? PAY_ZM.proformaPaid(day)
+            : PAY_ZI.proformaPaid(day),
+      waits: true,
+    };
+  }
+  if (last.provider === "paypal" && d.online?.paymentPending !== true)
+    return { text: PAY_ZN.paid(day), waits: false };
+  return null;
+}

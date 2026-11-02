@@ -9,10 +9,53 @@ import { useEffect, useRef, useState } from "react";
 import { Link, Route, Routes } from "react-router";
 import { renderEmail } from "../../../../packages/email/src/index.ts";
 import { SAMPLE_TOKENS } from "./sample-api.ts";
-import { SAMPLE_INVOICE_TOKENS } from "./sample-invoices.ts";
+import { SAMPLE_CHECKOUT, SAMPLE_INVOICE_TOKENS } from "./sample-invoices.ts";
 
 /** Any base works: EmailFrame swaps the logo URLs for the dev server's own. */
 const BASE = "/preview-assets/";
+
+/**
+ * M6.4: PayPal's returns, as PayPal sends the browser back (our `c`, PayPal's made-up `token` and `PayerID`, all stripped at once). Open any "?sample=on" page
+ * first in this tab: the return's query is stripped before the sample API reads it.
+ */
+const PAYPAL_RETURN_STATES: [number, string][] = [
+  [2, "Checking (processing: asks again every 30 s)"],
+  [1, "Paid"],
+  [3, "Pending (PayPal holds it)"],
+  [4, "Declined, with Try again on PayPal"],
+  [12, "Declined, no PayPal page sent"],
+  [5, "Not completed"],
+  [6, "Expired"],
+  [7, "Changed"],
+  [8, "Not found (the page as usual)"],
+];
+const PP = "&token=SAMPLE0RDER0000&PayerID=SAMPLEPAYER";
+const PAYPAL_RETURNS: [string, string][] = [
+  ...PAYPAL_RETURN_STATES.map(([n, label]): [string, string] => [
+    `/invoices/pp-usd?pay=paypal&c=${SAMPLE_CHECKOUT(n)}${PP}`,
+    `M6.4 Signed in, back from PayPal: ${label}`,
+  ]),
+  [
+    `/invoices/pp-pro?pay=paypal&c=${SAMPLE_CHECKOUT(1)}${PP}`,
+    "M6.4 Signed in, back from PayPal: Paid (proforma)",
+  ],
+  [
+    `/invoices/pp-usd?pay=paypal-cancel&c=${SAMPLE_CHECKOUT(5)}`,
+    "M6.4 Signed in, left PayPal's page (no call)",
+  ],
+  ...[
+    ...PAYPAL_RETURN_STATES,
+    [10, "Too many attempts (429)"] as [number, string],
+    [11, "PayPal unavailable (503)"] as [number, string],
+  ].map(([n, label]): [string, string] => [
+    `/pay/return?via=paypal&c=${SAMPLE_CHECKOUT(n)}${PP}`,
+    `M6.4 Email link, back from PayPal: ${label}`,
+  ]),
+  [
+    `/pay/return?via=paypal&c=${SAMPLE_CHECKOUT(5)}&cancelled=1`,
+    "M6.4 Email link, left PayPal's page (no call)",
+  ],
+];
 
 const SCREENS: [string, string][] = [
   ["/?sample=on", "Home"],
@@ -58,6 +101,14 @@ const SCREENS: [string, string][] = [
   [`/i?sample=on#t=${SAMPLE_INVOICE_TOKENS.credit}`, "M5.4 Email link: a credit note"],
   [`/i?sample=on#t=${SAMPLE_INVOICE_TOKENS.withdrawn}`, "ADM-INV-10 Email link: a withdrawn payment request"],
   [`/i?sample=on#t=${SAMPLE_INVOICE_TOKENS.ended}`, "M5.4 Email link that no longer works"],
+  ["/invoices/pp-usd?sample=on", "M6.4 USD invoice: Pay by card and Pay with PayPal"],
+  ["/invoices/pp-big?sample=on", "M6.4 USD invoice above the online maximum"],
+  ["/invoices/pp-paid?sample=on", "M6.4 USD invoice part paid through PayPal (line 14)"],
+  ["/invoices/pp-held?sample=on", "M6.4 PayPal holds a capture (line 10, no Pay)"],
+  ["/invoices/pp-pro?sample=on", "M6.4 USD proforma paid through PayPal, invoice to follow"],
+  ["/invoices/pp-busy?sample=on", "M6.4 A press refused: PayPal capture already claimed (press Pay)"],
+  [`/i?sample=on#t=${SAMPLE_INVOICE_TOKENS.paypal}`, "M6.4 Email link: a USD invoice with PayPal"],
+  ...PAYPAL_RETURNS,
   ["/preview/email-billing", "M5.4 The billing emails"],
   ["/projects?sample=on", "Projects (coming soon)"],
   ["/profile?sample=on", "Profile (coming soon)"],
