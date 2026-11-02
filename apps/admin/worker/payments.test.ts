@@ -752,7 +752,7 @@ const advanceCall = (
   );
 
 describe("early check 2: the advance and the payment entries [L5, L12; 07-ZH lines 12, 13]", () => {
-  it("finding 1: an advance without paymentId refuses a reference already seen (409 reference_seen), naming the pending entry that asks for this proforma; confirmDuplicate goes past it", async () => {
+  it("finding 1: an advance without paymentId refuses a reference already seen (409 reference_seen); confirmDuplicate goes past it. M6.3 staging fixes (lead's decision 2): a pending entry for this proforma is refused first, as payment_waiting naming it", async () => {
     const o = await owner();
     const staff = await sessionFor("staff");
     const pf = await issuedProforma(o);
@@ -761,12 +761,12 @@ describe("early check 2: the advance and the payment entries [L5, L12; 07-ZH lin
     const res = await advanceCall(o, pf, { amountMinor: pf.total, reference: staffBody.reference });
     expect(res.status).toBe(409);
     const b = await json(res);
-    expect(b.error.code).toBe("reference_seen");
-    expect(b.error.message).toMatch(
-      /^This bank reference was already recorded on \d{2} \w{3} \d{4} for .+\. Record it again only if it is a different payment\.$/,
-    );
-    expect(b.error.details).toMatchObject({ receivedOn: today(), paymentId: made.id });
-    // another client's confirmed payment with the reference: refused too, with no paymentId to offer
+    expect(b.error.code).toBe("payment_waiting");
+    expect(b.error.details).toEqual({ paymentId: made.id });
+    // once the Owner rejects that entry, nothing waits for the proforma: the reference rule (L12) is what remains
+    const rejected = await verify(o, made.id, "reject", { note: "Recorded twice" });
+    expect(rejected.status, await rejected.clone().text()).toBe(200);
+    // another client's confirmed payment with the reference: refused, with no paymentId to offer
     const other = await mkReportClient();
     const r2 = ref();
     await recorded(o, recordBody(other, 1_000, [], { reference: r2 }));

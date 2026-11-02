@@ -10,17 +10,19 @@
 //       unchanged; the review item routes move no money.
 // Neither gateway is ever called: the stub transports answer. All names, references and amounts are invented test data.
 import { env } from "cloudflare:workers";
+import { razorpayPaymentRowId, razorpayReferenceNorm } from "@techaust/core/razorpay";
 import { stripePaymentRowId, stripeReferenceNorm } from "@techaust/core/stripe";
 import { recordGatewayPaymentStatements } from "@techaust/db/gateway";
-import { ONLINE_PAYMENT_WAITING_SQL, verifyPaymentStatement } from "@techaust/db/ledger";
+import { verifyPaymentStatement, WAITING_PAYMENT_SQL } from "@techaust/db/ledger";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setStubTransport } from "./gateway/config.ts";
 import { processEvent } from "./gateway/events.ts";
-import { ONLINE_PAYMENT_WAITING, USE_ADVANCE_INVOICE } from "./payment-messages.ts";
+import { reviewReason } from "./gateway/reasons.ts";
+import { ONLINE_PAYMENT_WAITING, PAYMENT_WAITING, USE_ADVANCE_INVOICE } from "./payment-messages.ts";
 import { countingEnv, eventRow, issued, linkFor, owner, type Session, stub } from "./test-gateway.ts";
 import { call, one, rows, sessionFor } from "./test-helpers.ts";
 import { currentFy, lutOf, mkProforma, putSwiftBank, putTax, todayIso } from "./test-invoice-types.ts";
-import { issueInvoice, json, mkInvoice, putBank, putCompany } from "./test-invoices.ts";
+import { issueInvoice, json, mkInvoice, putBank, putCompany, voidInvoice } from "./test-invoices.ts";
 import { recordBody, recorded, ref, verify } from "./test-payments.ts";
 import { piOf, stripeEventRow, stripeLink, stripeStub, usdClient, usdDoc } from "./test-stripe.ts";
 
@@ -300,65 +302,181 @@ describe.each(CASES)(
         balance_minor: 0,
       });
       // nothing waits any more, and the entry is no longer pending (a second confirm is the ordinary "already checked")
-      expect(await one(ONLINE_PAYMENT_WAITING_SQL, pf.id)).toBeNull();
+      expect(await one(WAITING_PAYMENT_SQL, pf.id)).toBeNull();
       const again = await verify(pf.o, paymentId, "confirm", { allocations: [] });
       expect((await json(again)).error.code).toBe("payment_not_pending");
     });
   },
 );
 
-describe("(2b) the checkout alone names the proforma: an online payment with no request [L5, L7]", () => {
-  it("a Stripe payment pending on a proforma's checkout with no request (a mismatch) is never confirmed by the decision, and blocks a manual receipt", async () => {
-    const pf = await stripeProforma();
-    const pi = "pi_A1R0NOREQUEST";
-    const id = stripePaymentRowId(pi);
-    const now = Date.now();
-    const st = recordGatewayPaymentStatements(env.DB, {
-      provider: "stripe",
-      providerPaymentId: pi,
-      paymentId: id,
-      checkoutId: pf.checkoutId,
-      clientId: pf.clientId,
-      documentId: pf.id,
-      webhookEventId: null,
-      source: "refresh",
-      status: "pending_verification",
-      amountMinor: 1_234,
-      feeMinor: 0,
-      feeTaxMinor: null,
-      receivedOn: todayIso(),
-      mode: "card",
-      referenceNorm: (await stripeReferenceNorm(pi)) as string,
-      inrReceivedMinor: null,
-      gatewayFeeInrMinor: null,
-      gatewayFeeTaxInrMinor: null,
-      refetchedAt: now,
-      now,
-      allocate: null,
-      requestedAllocations: null,
-      checkoutPaid: "if_open",
-      staleOthers: false,
-      event: null,
-      bell: null,
+/** An online payment pending on the proforma's checkout with NO request (a mismatch, an overpayment), as the settle writes it. Returns its `payments.id`. */
+async function checkoutOnly(pf: Paying, amountMinor: number, tag: string): Promise<string> {
+  const stripe = pf.provider === "stripe";
+  const gw = stripe ? `pi_A${amountMinor}R0${tag}` : `pay_NOREQ${tag}`;
+  const id = stripe ? stripePaymentRowId(gw) : razorpayPaymentRowId(gw);
+  const now = Date.now();
+  const st = recordGatewayPaymentStatements(env.DB, {
+    provider: pf.provider,
+    providerPaymentId: gw,
+    paymentId: id,
+    checkoutId: pf.checkoutId,
+    clientId: pf.clientId,
+    documentId: pf.id,
+    webhookEventId: null,
+    source: "refresh",
+    status: "pending_verification",
+    amountMinor,
+    feeMinor: 0,
+    feeTaxMinor: null,
+    receivedOn: todayIso(),
+    mode: stripe ? "card" : "upi",
+    referenceNorm: (stripe ? await stripeReferenceNorm(gw) : razorpayReferenceNorm(gw)) as string,
+    inrReceivedMinor: null,
+    gatewayFeeInrMinor: null,
+    gatewayFeeTaxInrMinor: null,
+    refetchedAt: now,
+    now,
+    allocate: null,
+    requestedAllocations: null,
+    checkoutPaid: "if_open",
+    staleOthers: false,
+    event: null,
+    bell: null,
+  });
+  await env.DB.batch([st.main, ...st.side, ...st.last]);
+  expect(
+    await one<{ status: string; requested_allocations: string | null }>(
+      "SELECT status, requested_allocations FROM payments WHERE id = ?1",
+      id,
+    ),
+  ).toEqual({ status: "pending_verification", requested_allocations: null });
+  return id;
+}
+
+describe.each(CASES)(
+  "(2b) the checkout alone makes it the proforma's (lead's decision 1): $name [ADM-PAY-01, ADM-INV-10, L5, L17]",
+  ({ make }) => {
+    it("never confirmed by the decision, blocks a manual receipt and the void, shows on the proforma's panel, and is confirmed by issuing within the balance", async () => {
+      const pf = await make();
+      const amount = pf.currency === "USD" ? 1_234 : 50_000;
+      const id = await checkoutOnly(pf, amount, "ONE");
+      const res = await verify(pf.o, id, "confirm", { allocations: [] });
+      expect(res.status).toBe(409);
+      expect((await json(res)).error).toMatchObject({
+        code: "use_advance_invoice",
+        details: { documentId: pf.id },
+      });
+      const manual = await advance(pf, await advanceBody(pf));
+      expect(manual.status).toBe(409);
+      expect((await json(manual)).error).toMatchObject({
+        code: "online_payment_waiting",
+        details: { paymentId: id },
+      });
+      // the void blockers read the same rule: a proforma with such a payment waiting is never voided
+      const view = await json(await call(`/invoices/${pf.id}`, { cookie: pf.o.cookie }));
+      expect(view.void.blockers).toContain("payment_pending_gateway");
+      const refused = await voidInvoice(pf.o, pf.id);
+      expect(refused.status).toBe(409);
+      expect((await json(refused)).reasons).toContain("payment_pending_gateway");
+      // the proforma's panel lists it among the payments waiting, asking for the whole payment
+      const panel = await json(await call(`/invoices/${pf.id}/payments`, { cookie: pf.o.cookie }));
+      expect(panel.pending).toEqual([expect.objectContaining({ paymentId: id, askedMinor: amount })]);
+      // "Confirm by issuing the tax invoice": issued with it, put whole on the new invoice
+      const ok = await advance(pf, await withPayment(pf, id));
+      expect(ok.status, await ok.clone().text()).toBe(201);
+      const b = await json(ok);
+      expect(await one<{ status: string }>("SELECT status FROM payments WHERE id = ?1", id)).toEqual({
+        status: "confirmed",
+      });
+      expect(
+        await rows<{ document_id: string; amount_minor: number }>(
+          "SELECT document_id, amount_minor FROM payment_allocations WHERE payment_id = ?1",
+          id,
+        ),
+      ).toEqual([{ document_id: b.id, amount_minor: amount }]);
+      expect(await proformaOf(pf.id)).toMatchObject({ paid_minor: amount, balance_minor: pf.total - amount });
+      expect(await paymentsOf(pf.clientId)).toEqual([
+        { id, provider: pf.provider, status: "confirmed", amount_minor: amount },
+      ]);
     });
-    await env.DB.batch([st.main, ...st.side, ...st.last]);
-    expect(
-      await one<{ status: string; requested_allocations: string | null }>(
-        "SELECT status, requested_allocations FROM payments WHERE id = ?1",
-        id,
-      ),
-    ).toEqual({ status: "pending_verification", requested_allocations: null });
-    const res = await verify(pf.o, id, "confirm", { allocations: [] });
-    expect(res.status).toBe(409);
+
+    it("overpaid money (above the balance) is held: refused by issuing (more than the balance) and by the decision; its review line says it waits for a refund", async () => {
+      const pf = await make();
+      const id = await checkoutOnly(pf, pf.total + 100, "OVER");
+      const issue = await advance(pf, await withPayment(pf, id));
+      expect(issue.status).toBe(409);
+      expect((await json(issue)).error.code).toBe("advance_exceeds_balance");
+      const res = await verify(pf.o, id, "confirm", { allocations: [] });
+      expect((await json(res)).error.code).toBe("use_advance_invoice");
+      expect(await one<{ status: string }>("SELECT status FROM payments WHERE id = ?1", id)).toEqual({
+        status: "pending_verification",
+      });
+      expect(await childrenOf(pf.id)).toEqual([]);
+      expect(reviewReason("proforma_overpaid", { provider: pf.provider })).toBe(
+        "The client paid more than the proforma's balance. It waits for a refund.",
+      );
+    });
+  },
+);
+
+describe("(2c) a waiting MANUAL entry (lead's decision 2) [ADM-INV-10, L5, L12]", () => {
+  it("the manual tax invoice is 409 payment_waiting naming the Staff entry, with or without confirmDuplicate; issuing with it works", async () => {
+    const pf = await razorpayProforma();
+    const staff = await sessionFor("staff");
+    const entry = recordBody(pf.clientId, pf.total, [{ documentId: pf.id, amountMinor: pf.total }]);
+    await recorded(staff, entry);
+    for (const over of [{}, { confirmDuplicate: true }, { reference: entry.reference }]) {
+      const res = await advance(pf, await advanceBody(pf, over));
+      expect(res.status, JSON.stringify(over)).toBe(409);
+      expect((await json(res)).error, JSON.stringify(over)).toMatchObject({
+        code: "payment_waiting",
+        message: PAYMENT_WAITING.message,
+        details: { paymentId: entry.id },
+      });
+    }
+    expect(await childrenOf(pf.id)).toEqual([]);
+    const ok = await advance(pf, await withPayment(pf, entry.id));
+    expect(ok.status, await ok.clone().text()).toBe(201);
+  });
+
+  it("two Staff entries: issuing with the newer one is refused (the older is named); then each issues in turn, never a deadlock", async () => {
+    const pf = await razorpayProforma();
+    const staff = await sessionFor("staff");
+    const half = pf.total / 2;
+    const first = recordBody(pf.clientId, half, [{ documentId: pf.id, amountMinor: half }]);
+    await recorded(staff, first);
+    const second = recordBody(pf.clientId, half, [{ documentId: pf.id, amountMinor: half }]);
+    await recorded(staff, second);
+    const refused = await advance(pf, await withPayment(pf, second.id));
+    expect(refused.status).toBe(409);
+    expect((await json(refused)).error).toMatchObject({
+      code: "payment_waiting",
+      details: { paymentId: first.id },
+    });
+    const one1 = await advance(pf, await withPayment(pf, first.id));
+    expect(one1.status, await one1.clone().text()).toBe(201);
+    const two = await advance(pf, await withPayment(pf, second.id));
+    expect(two.status, await two.clone().text()).toBe(201);
+    expect(await proformaOf(pf.id)).toMatchObject({ balance_minor: 0 });
+  });
+
+  it("the freeze refuses a manual tax invoice when a Staff entry is recorded between the read and the batch", async () => {
+    const pf = await razorpayProforma();
+    const staff = await sessionFor("staff");
+    const entry = recordBody(pf.clientId, pf.total, [{ documentId: pf.id, amountMinor: pf.total }]);
+    const raced = countingEnv({
+      race: {
+        when: freezeBatch,
+        act: async () => {
+          await recorded(staff, entry);
+        },
+      },
+    });
+    const res = await advance(pf, await advanceBody(pf), raced.env);
+    expect(res.status, await res.clone().text()).toBe(409);
     expect((await json(res)).error).toMatchObject({
-      code: "use_advance_invoice",
-      details: { documentId: pf.id },
-    });
-    const manual = await advance(pf, await advanceBody(pf));
-    expect(manual.status).toBe(409);
-    expect((await json(manual)).error).toMatchObject({
-      code: "online_payment_waiting",
-      details: { paymentId: id },
+      code: "payment_waiting",
+      details: { paymentId: entry.id },
     });
     expect(await childrenOf(pf.id)).toEqual([]);
   });
@@ -371,8 +489,8 @@ describe("(3) what stays as it was [ADM-PAY-01, ADM-PAY-05]", () => {
     const body = recordBody(pf.clientId, pf.total, [{ documentId: pf.id, amountMinor: pf.total }]);
     const r = await recorded(staff, body);
     expect(r.status).toBe("pending_verification");
-    // a manual entry waiting is not an ONLINE payment: the manual advance is refused by the reference only (L12, unchanged)
-    expect(await one(ONLINE_PAYMENT_WAITING_SQL, pf.id)).toBeNull();
+    // lead's decision 2: a waiting manual entry is the first payment waiting too
+    expect(await one(WAITING_PAYMENT_SQL, pf.id)).toEqual({ id: body.id, provider: "manual" });
     const refused = await verify(pf.o, body.id, "confirm", { allocations: [] });
     expect((await json(refused)).error).toMatchObject({
       code: "use_advance_invoice",
@@ -394,7 +512,7 @@ describe("(3) what stays as it was [ADM-PAY-01, ADM-PAY-05]", () => {
     expect(res.status, await res.clone().text()).toBe(200);
     expect((await json(res)).allocations).toEqual([{ documentId: invoiceId, amountMinor: 10_000 }]);
     // and the proforma's manual tax invoice is not blocked by a payment on another document
-    expect(await one(ONLINE_PAYMENT_WAITING_SQL, pf.id)).toBeNull();
+    expect(await one(WAITING_PAYMENT_SQL, pf.id)).toBeNull();
     const adv = await advance(pf, await advanceBody(pf));
     expect(adv.status, await adv.clone().text()).toBe(201);
   });
@@ -507,9 +625,7 @@ describe.each(CASES)(
 describe("(3b) the read's cost [Free plan]", () => {
   it("the waiting read is one seek of payments_client", async () => {
     const plan = (
-      await env.DB.prepare(`EXPLAIN QUERY PLAN ${ONLINE_PAYMENT_WAITING_SQL}`)
-        .bind("x")
-        .all<{ detail: string }>()
+      await env.DB.prepare(`EXPLAIN QUERY PLAN ${WAITING_PAYMENT_SQL}`).bind("x").all<{ detail: string }>()
     ).results
       .map((r) => r.detail)
       .join(" | ");

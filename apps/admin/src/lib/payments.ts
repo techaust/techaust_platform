@@ -389,6 +389,8 @@ const APPROVED_CODES = new Set([
   "payments_pending",
   // M6.3 staging fix 1 (07-ZM "Review changes", the lead under the owner's delegation, 2026-11-02): the server's words, with "Confirm by issuing" beside them
   "online_payment_waiting",
+  // lead's decision 2: a manual entry Staff recorded waits for the proforma (the same box and "Confirm by issuing")
+  "payment_waiting",
 ]);
 
 const sentenceOf = (s: string) => (/[.!?]$/.test(s) ? s : `${s}.`);

@@ -60,6 +60,14 @@ export const ONLINE_PAYMENT_WAITING = e(
   "online_payment_waiting",
   "An online payment for this proforma is waiting for its tax invoice. Issue the tax invoice with that payment, so the money isn't counted twice.",
 );
+/**
+ * M6.3 staging fix, lead's decision 2 (L5, L12; the builder's draft for the lead, 07-ZM "Review changes", 2026-11-02): `payment_waiting`, the advance issued
+ * without that entry while a payment Staff recorded waits for the proforma (`details.paymentId` names it; the dialog offers "Confirm by issuing the tax invoice").
+ */
+export const PAYMENT_WAITING = e(
+  "payment_waiting",
+  "A payment recorded for this proforma is waiting for its tax invoice. Issue the tax invoice with that payment, so the money isn't counted twice.",
+);
 
 /** L32: the void blocker `payment_recorded` (a payment was put on it, one released or withdrawn since included). 07-ZH from line 23 (the designer's draft). */
 export const VOID_PAYMENT_RECORDED_LINE =

@@ -30,9 +30,10 @@ import { deedDraftStatements } from "@techaust/db/deeds";
 import { headerExtrasJson, invoiceSealOf, type TermsRef } from "@techaust/db/documents";
 import { advanceIssueStatements } from "@techaust/db/issue";
 import {
-  ONLINE_PAYMENT_WAITING_SQL,
-  onlinePaymentWaitingSql,
+  firstWaitingPaymentSql,
   PAYMENT_REFERENCE_SEEN_SQL,
+  paymentForDocumentSql,
+  WAITING_PAYMENT_SQL,
 } from "@techaust/db/ledger";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
@@ -93,6 +94,7 @@ import {
   ONLINE_PAYMENT_WAITING,
   PAYMENT_MISMATCH,
   PAYMENT_NOT_PENDING,
+  PAYMENT_WAITING,
   paymentLink,
   referenceSeen,
 } from "./payment-messages.ts";
@@ -156,15 +158,15 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       // M6.1: the pending payment this confirms, when one is named.
       db
         .prepare(
-          "SELECT p.id, p.kind, p.provider, p.status, p.client_id, p.currency, p.amount_minor, p.received_on, p.reference_norm, p.recorded_by, c.display_name AS client_name, EXISTS (SELECT 1 FROM json_each(p.requested_allocations) j WHERE json_extract(j.value, '$.documentId') = ?2) AS asks_this FROM payments p JOIN clients c ON c.id = p.client_id WHERE p.id = ?1",
+          `SELECT p.id, p.kind, p.provider, p.status, p.client_id, p.currency, p.amount_minor, p.received_on, p.reference_norm, p.recorded_by, c.display_name AS client_name, ${paymentForDocumentSql("p", "?2")} AS asks_this FROM payments p JOIN clients c ON c.id = p.client_id WHERE p.id = ?1`,
         )
         .bind(f.paymentId ?? "", id),
       // Early check 2, finding 1 (L12): the newest pending or confirmed payment with this reference, and a pending entry of this client asking for this
       // proforma with it (the one "Confirm by issuing the tax invoice" would use).
       db.prepare(PAYMENT_REFERENCE_SEEN_SQL).bind(norm ?? ""),
       db.prepare(PENDING_ASK_FOR_PROFORMA_SQL).bind(norm ?? "", id),
-      // M6.3 staging fix 1 (L5): an online payment still waiting for this proforma's tax invoice (the receipt is that payment, never a new one).
-      db.prepare(ONLINE_PAYMENT_WAITING_SQL).bind(id),
+      // M6.3 staging fixes 1 and 2 (L5): the first payment waiting for this proforma's tax invoice (the receipt is that payment, never a new one).
+      db.prepare(WAITING_PAYMENT_SQL).bind(id),
     ]);
     // (2) 404 unless a proforma
     if (!ctx) return err(c, NOT_FOUND, 404);
@@ -197,7 +199,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
           reference_norm: string | null;
           recorded_by: string | null;
           client_name: string;
-          /** 1 when the entry's `requested_allocations` name this proforma (M6.3 early check 1, F6). */
+          /** 1 when the entry is for this proforma (M6.3 early check 1, F6; `paymentForDocumentSql`: its request, or an online payment's checkout). */
           asks_this: number;
         }
       | undefined;
@@ -212,18 +214,18 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
         pending.amount_minor !== f.amountMinor ||
         pending.received_on !== f.receivedOn ||
         pending.reference_norm !== norm ||
-        // M6.3 early check 1, F6: the entry asks for THIS proforma (the freeze's WHERE holds the same rule).
+        // M6.3 early check 1, F6: the entry is for THIS proforma (the freeze's WHERE holds the same rule). Lead's decision 1 of the staging fixes: an online
+        // payment that came through this proforma's checkout counts with no request (a mismatch), within the balance (step 6); overpaid money waits for M6.5.
         pending.asks_this !== 1
       )
         return err(c, PAYMENT_MISMATCH, 409);
     }
-    // (5c') M6.3 staging fix 1 (L5; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)): while an online payment waits for this
-    // proforma, its tax invoice is issued only with an online payment ("Confirm by issuing the tax invoice"), never as a new manual receipt nor on a manual entry
-    // Staff recorded (perhaps for the same card money): either would count the money twice (staging, 2026-11-02). A hard 409 (`confirmDuplicate` never passes
-    // it); the freeze's WHERE holds the same rule, so a payment landing meanwhile refuses too.
-    const manualReceipt = f.paymentId === undefined || pending?.provider === "manual";
-    const waiting = ctx.extra[5]?.results[0] as { id: string } | undefined;
-    if (waiting && manualReceipt) return err(c, ONLINE_PAYMENT_WAITING, 409, { paymentId: waiting.id });
+    // (5c') M6.3 staging fixes 1 and 2 (L5; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)): while any payment waits for this
+    // proforma, its tax invoice is issued only WITH the first one waiting (an online payment before a manual entry, then the oldest): never as a new receipt
+    // (staging, 2026-11-02: the card money counted twice) and never with another entry (a manual entry perhaps for the same card money). A hard 409
+    // (`confirmDuplicate` never passes it) naming that payment; the freeze's WHERE holds the same rule, so a payment landing meanwhile refuses too.
+    const waiting = ctx.extra[5]?.results[0] as WaitingRow | undefined;
+    if (waiting && waiting.id !== f.paymentId) return refusedWaiting(c, waiting);
     if (f.paymentId === undefined && f.confirmDuplicate !== true) {
       // (5d) Early check 2, finding 1 (L12; 07-ZH line 13): a reference already on a pending or confirmed payment is a soft 409 the Owner can confirm past.
       // The freeze's WHERE holds the same rule, so a payment recorded meanwhile refuses the batch too.
@@ -585,7 +587,7 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
         fy,
         norm,
         checkSeen: f.paymentId === undefined && f.confirmDuplicate !== true,
-        checkOnline: manualReceipt,
+        paymentId: f.paymentId ?? null,
         amountMinor: f.amountMinor,
         expectedProformaUpdatedAt: d.updated_at,
         maxNumber: maxNumber(format),
@@ -622,6 +624,16 @@ const PENDING_ASK_FOR_PROFORMA_SQL = `SELECT p.id FROM payments p INDEXED BY pay
    WHERE p.reference_norm = ?1 AND p.status = 'pending_verification' AND p.requested_allocations IS NOT NULL
      AND p.client_id = (SELECT d.client_id FROM documents d WHERE d.id = ?2) AND json_extract(j.value, '$.documentId') = ?2
    ORDER BY p.recorded_at, p.id LIMIT 1`;
+
+type WaitingRow = { id: string; provider: string };
+
+/**
+ * 409 `online_payment_waiting` (an online payment) or `payment_waiting` (a manual entry Staff recorded) with `details.paymentId`: the payment the proforma's tax
+ * invoice must be issued with ("Confirm by issuing the tax invoice"; M6.3 staging fixes 1 and 2).
+ */
+function refusedWaiting(c: Ctx, w: WaitingRow) {
+  return err(c, w.provider === "manual" ? PAYMENT_WAITING : ONLINE_PAYMENT_WAITING, 409, { paymentId: w.id });
+}
 
 type SeenRow = {
   id: string;
@@ -662,8 +674,8 @@ type Expectations = {
   norm: string;
   /** No `paymentId` and no `confirmDuplicate`: the freeze also refused a reference already on a pending or confirmed payment (finding 1). */
   checkSeen: boolean;
-  /** No `paymentId`, or a manual entry's: the freeze also refused while an online payment waits for the proforma (M6.3 staging fix 1). */
-  checkOnline: boolean;
+  /** The entry issued with, or null: the freeze also refused unless it is the first payment waiting for the proforma (M6.3 staging fixes 1 and 2). */
+  paymentId: string | null;
   amountMinor: number;
   expectedProformaUpdatedAt: number;
   maxNumber: number;
@@ -685,7 +697,8 @@ async function explain(c: Ctx, proformaId: string, x: Expectations) {
     `SELECT p.status, p.frozen_at, p.updated_at, p.balance_minor, p.client_id, cl.updated_at AS client_updated_at, ${clientGoneSql("p.client_id")} AS gone,
        (SELECT i.number_display FROM advance_receipts r JOIN documents i ON i.id = r.invoice_id WHERE r.proforma_id = p.id AND r.reference_norm = ?2) AS used_number,
        EXISTS (SELECT 1 FROM payments pr INDEXED BY payments_reference WHERE pr.reference_norm = ?2 AND pr.status IN ('pending_verification', 'confirmed')) AS seen,
-       (${onlinePaymentWaitingSql("p.id", "p.client_id")} ORDER BY wp.recorded_at, wp.id LIMIT 1) AS online_waiting,
+       (${firstWaitingPaymentSql("p.id", "p.client_id", "wp.id")}) AS waiting_id,
+       (${firstWaitingPaymentSql("p.id", "p.client_id", "wp.provider")}) AS waiting_provider,
        (SELECT version FROM settings WHERE key = 'numbering') AS numbering_v,
        (SELECT version FROM settings WHERE key = 'company') AS company_v,
        (SELECT version FROM settings WHERE key = 'tax') AS tax_v,
@@ -709,7 +722,8 @@ async function explain(c: Ctx, proformaId: string, x: Expectations) {
       gone: number;
       used_number: string | null;
       seen: number;
-      online_waiting: string | null;
+      waiting_id: string | null;
+      waiting_provider: string | null;
       numbering_v: number | null;
       company_v: number | null;
       tax_v: number | null;
@@ -725,9 +739,9 @@ async function explain(c: Ctx, proformaId: string, x: Expectations) {
   // A session that ended between the read and the batch (idle, absolute limit, revoked): the freeze refused it, and the answer is to sign in again (review 13).
   if (row.session_live !== 1) return err(c, UNAUTHENTICATED, 401);
   if (row.used_number !== null) return refusedReference(c, row.used_number);
-  // M6.3 staging fix 1: an online payment for the proforma landed between the read and the batch (a webhook while the dialog was open).
-  if (x.checkOnline && row.online_waiting !== null)
-    return err(c, ONLINE_PAYMENT_WAITING, 409, { paymentId: row.online_waiting });
+  // M6.3 staging fixes 1 and 2: a payment for the proforma landed between the read and the batch (a webhook while the dialog was open, a Staff entry).
+  if (row.waiting_id !== null && row.waiting_id !== x.paymentId)
+    return refusedWaiting(c, { id: row.waiting_id, provider: row.waiting_provider ?? "manual" });
   if (x.checkSeen && row.seen === 1) {
     const [seenR, askR] = await c.env.DB.batch([
       c.env.DB.prepare(PAYMENT_REFERENCE_SEEN_SQL).bind(x.norm),

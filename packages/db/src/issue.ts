@@ -16,8 +16,9 @@ import {
   allocationStatements,
   type Bell,
   decideApprovalStatements,
+  firstWaitingPaymentSql,
   ledgerResultStatement,
-  onlinePaymentWaitingSql,
+  paymentForDocumentSql,
   recomputeStatement,
 } from "./ledger.ts";
 import type {
@@ -819,18 +820,19 @@ export function advanceIssueStatements(db: D1Database, args: AdvanceIssueArgs): 
          AND (?33 IS NULL OR ${LUT_FOR_FY_SQL.replaceAll("?FY", "?33")})
          AND (?34 IS NULL OR EXISTS (SELECT 1 FROM payments pp WHERE pp.id = ?34 AND pp.status = 'pending_verification' AND pp.kind = 'payment' AND pp.amount_minor = ?30
            AND pp.received_on = ?35 AND pp.client_id = documents.client_id AND pp.currency = documents.currency
-           AND EXISTS (SELECT 1 FROM json_each(pp.requested_allocations) pj WHERE json_extract(pj.value, '$.documentId') = ?31)))
+           AND ${paymentForDocumentSql("pp", "?31")}))
          AND (?34 IS NOT NULL OR ?36 IS NULL OR ?37 = 1 OR NOT EXISTS (SELECT 1 FROM payments pr INDEXED BY payments_reference WHERE pr.reference_norm = ?36 AND pr.status IN ('pending_verification', 'confirmed')))
-         AND (EXISTS (SELECT 1 FROM payments op WHERE op.id = ?34 AND op.provider <> 'manual') OR NOT EXISTS (${onlinePaymentWaitingSql("?31", "documents.client_id")}))
+         AND (${firstWaitingPaymentSql("?31", "documents.client_id", "wp.id")}) IS ?34
          AND ${SIGNED_FREEZE_SQL}`,
       // Early check 2, finding 2: with `paymentId`, the pending entry is still the money read (pending, a payment, this amount, day, client and currency) at the
-      // freeze itself, so a confirm, reject or withdraw landing between the read and the batch freezes nothing; and (M6.3 early check 1, F6) its
-      // `requested_allocations` name THIS proforma, so money asked for one proforma (a paid USD proforma waiting, Q1 A) never issues another's tax invoice,
-      // even of the same client, amount and day (json_each of NULL is empty: an entry asking for nothing names no proforma). Finding 1 (L12): without it, a reference
+      // freeze itself, so a confirm, reject or withdraw landing between the read and the batch freezes nothing; and (M6.3 early check 1, F6) it is for THIS
+      // proforma (`paymentForDocumentSql`: its request names it, or, lead's decision 1 of the staging fixes, an online payment's checkout was made for it), so
+      // money for one proforma (a paid USD proforma waiting, Q1 A) never issues another's tax invoice, even of the same client, amount and day; the proforma's
+      // balance of at least the amount (above) keeps overpaid money out (it waits for the M6.5 refund). Finding 1 (L12): without it, a reference
       // already on a pending or confirmed payment freezes nothing unless the Owner confirmed past it (`confirmDuplicate`), as `recordPaymentStatement` holds.
-      // M6.3 staging fix 1 (L5; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)): unless `paymentId` is itself an online payment,
-      // nothing freezes while an online payment waits for this proforma (`onlinePaymentWaitingSql`): that money is the receipt, and a new manual one (or a manual
-      // entry Staff recorded, perhaps for the same card money) would count it twice. `confirmDuplicate` never passes it.
+      // M6.3 staging fixes 1 and 2 (L5; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)): while any payment waits for this proforma,
+      // only the FIRST waiting one (`firstWaitingPaymentSql`: online before manual, then the oldest) freezes: never no `paymentId` (a new receipt) and never
+      // another entry, so the same money is never counted twice. `confirmDuplicate` never passes it.
       binds: [
         a.amountMinor,
         a.proformaId,

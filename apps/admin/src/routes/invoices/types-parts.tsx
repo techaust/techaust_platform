@@ -864,7 +864,9 @@ function AdvanceBody(props: {
       // the panel while the online payment waits: the box then offers the online payment instead.
       if (
         e instanceof RequestError &&
-        ((e.code === "reference_seen" && !prefill) || e.code === "online_payment_waiting")
+        ((e.code === "reference_seen" && !prefill) ||
+          e.code === "online_payment_waiting" ||
+          e.code === "payment_waiting")
       ) {
         const pid = e.extra.details?.paymentId;
         setSeen({ text: payErrorText(e), paymentId: typeof pid === "string" ? pid : null });

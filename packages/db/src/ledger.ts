@@ -481,33 +481,43 @@ export function extensionLetterStatement(
 // ---- reads ---------------------------------------------------------------------------------------------------------------------------------------------
 
 /**
- * M6.3 staging fix 2 (L5; ADM-PAY-01, ADM-INV-10; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)): the proforma payment `p` (an SQL
- * table name or alias of `payments`) asks for, or NULL: a proforma its own `requested_allocations` name (frozen once written), else the proforma its checkout was
- * made for (a gateway payment that didn't match is pending with no request, but its money still came through the proforma's page). Such money is confirmed only by
- * issuing the tax invoice for the payment received, never by the ordinary decision, whatever allocations the dialog sends. One `json_each` of at most 10 rows and
- * primary-key seeks.
+ * M6.3 staging fixes (L5, L6, L17; ADM-PAY-01, ADM-INV-10; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17); lead's decision 1, 2026-11-02):
+ * THE one rule "payment `p` is for document `doc`" (`p` an SQL table name or alias of `payments`, `doc` an SQL expression), as the documents it is for: the ones
+ * its own `requested_allocations` name (frozen once written), and, for a gateway payment (`provider <> 'manual'`), the document its checkout was made for (a
+ * payment that didn't match is pending with no request, but its money still came through that document's page). Every reader of the rule builds on this: the
+ * advance's F6 check and freeze, the decision's refusal and `verifyPaymentStatement`, the waiting-payment guard, the proforma panel's waiting entries and the void
+ * and withdraw blockers. No core twin exists (core only receives the facts). A `json_each` of at most 10 rows and a primary-key seek.
  */
-export const paymentProformaSql = (p: string): string =>
-  `coalesce((SELECT pfd.id FROM json_each(${p}.requested_allocations) pfj JOIN documents pfd ON pfd.id = json_extract(pfj.value, '$.documentId') WHERE pfd.type = 'proforma' LIMIT 1),
-     (SELECT pcd.id FROM checkout_sessions pfc JOIN documents pcd ON pcd.id = pfc.document_id WHERE pfc.id = ${p}.checkout_id AND pcd.type = 'proforma'))`;
+const paymentDocumentsSql = (p: string): string =>
+  `SELECT json_extract(fj.value, '$.documentId') FROM json_each(${p}.requested_allocations) fj
+     UNION ALL SELECT fc.document_id FROM checkout_sessions fc WHERE fc.id = ${p}.checkout_id AND ${p}.provider <> 'manual'`;
+
+/** Payment `p` is for document `doc` (`paymentDocumentsSql`): a boolean SQL expression. */
+export const paymentForDocumentSql = (p: string, doc: string): string =>
+  `(${doc} IN (${paymentDocumentsSql(p)}))`;
 
 /**
- * M6.3 staging fix 1 (L5, L12; ADM-PAY-01, ADM-INV-10; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17)): the online payments still
- * waiting for the tax invoice of proforma `doc` of client `client` (SQL expressions): PENDING, through a gateway (`provider <> 'manual'`), asking for the
- * proforma (its `requested_allocations` name it) or paid through a checkout made for it. While one waits, the Owner issues that proforma's tax invoice for a
- * payment received only WITH it ("Confirm by issuing the tax invoice"), never as a new bank payment: the same money would be counted twice (a manual payment
- * plus the gateway's). A seek of `payments_client`, as `paymentPendingForSql`. Select the ids (oldest first) with `ONLINE_PAYMENT_WAITING_SQL`, or test with
- * `EXISTS (…)` in a WHERE.
+ * M6.3 staging fix 2 (L5): the proforma payment `p` is for (`paymentDocumentsSql`), or NULL. Such money is confirmed only by issuing the tax invoice for the payment
+ * received, never by the ordinary decision, whatever allocations the dialog sends.
  */
-export const onlinePaymentWaitingSql = (doc: string, client: string): string =>
-  `SELECT wp.id FROM payments wp INDEXED BY payments_client
-   WHERE wp.client_id = ${client} AND wp.status = 'pending_verification' AND wp.provider <> 'manual'
-     AND (EXISTS (SELECT 1 FROM json_each(wp.requested_allocations) wj WHERE json_extract(wj.value, '$.documentId') = ${doc})
-       OR EXISTS (SELECT 1 FROM checkout_sessions wc WHERE wc.id = wp.checkout_id AND wc.document_id = ${doc}))`;
+export const paymentProformaSql = (p: string): string =>
+  `(SELECT pfd.id FROM documents pfd WHERE pfd.id IN (${paymentDocumentsSql(p)}) AND pfd.type = 'proforma' LIMIT 1)`;
 
-/** The oldest online payment waiting for proforma `?1` (its client read from the proforma), for the 409 `online_payment_waiting` and its `details.paymentId`. */
-export const ONLINE_PAYMENT_WAITING_SQL = /* @__PURE__ */ (() =>
-  `${onlinePaymentWaitingSql("?1", "(SELECT wd.client_id FROM documents wd WHERE wd.id = ?1)")} ORDER BY wp.recorded_at, wp.id LIMIT 1`)();
+/**
+ * M6.3 staging fixes 1 and 2 (L5, L12; lead's decisions 1 and 2, 2026-11-02): the FIRST payment waiting for the tax invoice of proforma `doc` of client `client`
+ * (SQL expressions): PENDING, kind `payment`, for the proforma (`paymentForDocumentSql`); an online payment before a manual entry, then the oldest. While any
+ * waits, that proforma's tax invoice for a payment received is issued only WITH this one ("Confirm by issuing the tax invoice"): never as a new receipt (no
+ * `paymentId`) and never with another entry, so the same money is never counted twice and the entries are taken one at a time. Selects `cols` (`id, provider`); a seek of
+ * `payments_client`.
+ */
+export const firstWaitingPaymentSql = (doc: string, client: string, cols = "wp.id, wp.provider"): string =>
+  `SELECT ${cols} FROM payments wp INDEXED BY payments_client
+   WHERE wp.client_id = ${client} AND wp.status = 'pending_verification' AND wp.kind = 'payment' AND ${paymentForDocumentSql("wp", doc)}
+   ORDER BY wp.provider = 'manual', wp.recorded_at, wp.id LIMIT 1`;
+
+/** The first payment waiting for proforma `?1` (its client read from the proforma), for the 409 `online_payment_waiting` / `payment_waiting` and `details.paymentId`. */
+export const WAITING_PAYMENT_SQL = /* @__PURE__ */ (() =>
+  firstWaitingPaymentSql("?1", "(SELECT wd.client_id FROM documents wd WHERE wd.id = ?1)"))();
 
 /** L12: the newest pending or confirmed payment with this reference (`?1`, normalised), with its day and client, for the soft 409 `reference_seen`. */
 export const PAYMENT_REFERENCE_SEEN_SQL = `SELECT p.id, p.received_on, p.client_id, c.code AS client_code, c.display_name AS client_name
@@ -574,12 +584,13 @@ export const paymentRecordedSql = (doc: string): string =>
   `EXISTS (SELECT 1 FROM payment_allocations va INDEXED BY payment_allocations_document WHERE va.document_id = ${doc})`;
 
 /**
- * L17 (the void rules): a PENDING payment of the client `client` asks for the document `doc` (both SQL expressions) in its requested allocations. Core
- * `voidBlockers` `payment_pending`; a seek of `payments_client`. Any pending payment: the void and withdraw WHEREs, the trigger's twin.
+ * L17 (the void rules): a PENDING payment of the client `client` is for the document `doc` (both SQL expressions; `paymentForDocumentSql`: its request, or, M6.3
+ * staging fix, an online payment's checkout). Core `voidBlockers` `payment_pending`; a seek of `payments_client`. Any pending payment: the void and withdraw
+ * WHEREs. The trigger `documents_void_no_payment` (0060) still reads the request only.
  */
 export const paymentPendingForSql = (doc: string, client: string): string =>
-  `EXISTS (SELECT 1 FROM payments vp INDEXED BY payments_client, json_each(vp.requested_allocations) vj WHERE vp.client_id = ${client} AND vp.status = 'pending_verification'
-     AND vp.requested_allocations IS NOT NULL AND json_extract(vj.value, '$.documentId') = ${doc})`;
+  `EXISTS (SELECT 1 FROM payments vp INDEXED BY payments_client WHERE vp.client_id = ${client} AND vp.status = 'pending_verification'
+     AND ${paymentForDocumentSql("vp", doc)})`;
 
 /**
  * M6.2 (fix round 3 item 3): the same read, in ONE pass, telling the kinds apart as bits: 1 a pending manual entry (core `payment_pending`: the Owner rejects
@@ -587,8 +598,8 @@ export const paymentPendingForSql = (doc: string, client: string): string =>
  * Decode with `PENDING_MANUAL` / `PENDING_GATEWAY`.
  */
 export const paymentPendingKindsSql = (doc: string, client: string): string =>
-  `(SELECT coalesce(max(vp.provider = 'manual'), 0) + 2 * coalesce(max(vp.provider <> 'manual'), 0) FROM payments vp INDEXED BY payments_client, json_each(vp.requested_allocations) vj
-     WHERE vp.client_id = ${client} AND vp.status = 'pending_verification' AND vp.requested_allocations IS NOT NULL AND json_extract(vj.value, '$.documentId') = ${doc})`;
+  `(SELECT coalesce(max(vp.provider = 'manual'), 0) + 2 * coalesce(max(vp.provider <> 'manual'), 0) FROM payments vp INDEXED BY payments_client
+     WHERE vp.client_id = ${client} AND vp.status = 'pending_verification' AND ${paymentForDocumentSql("vp", doc)})`;
 export const PENDING_MANUAL = 1;
 export const PENDING_GATEWAY = 2;
 
