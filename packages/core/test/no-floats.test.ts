@@ -49,6 +49,8 @@ const MONEY_FILES = [
   // M6.3: Stripe (amounts, the fee and its tax, the INR facts) and the shared HMAC helpers of the gateway hooks
   "src/stripe.ts",
   "src/hmac.ts",
+  // M6.4: PayPal (amounts as PayPal's value text, the fee by its currency, the INR facts)
+  "src/paypal.ts",
   // T11: the deed of assignment (L2's sums, the amount it prints)
   "src/deeds.ts",
   "src/export-invoice.ts",

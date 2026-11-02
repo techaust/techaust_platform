@@ -9,9 +9,10 @@ export const isRpcId = (v: unknown): v is string => typeof v === "string" && v.l
 
 /**
  * The gateways the entrypoints know (lead, 2026-11-01, M6.3/M6.4 briefs session: generic names, so M6.3 and M6.4 extend instead of copying). M6.2 Razorpay; M6.3
- * Stripe (B2, together with the finance Worker's Stripe branch of `createLink`); PayPal joins in M6.4.
+ * Stripe (B2, together with the finance Worker's Stripe branch of `createLink`); M6.4 PayPal (the finance Worker dispatches every method exhaustively by provider,
+ * L23: `=== "razorpay"`, never a two-way default).
  */
-export const RPC_GATEWAYS = ["razorpay", "stripe"] as const;
+export const RPC_GATEWAYS = ["razorpay", "stripe", "paypal"] as const;
 export type RpcGateway = (typeof RPC_GATEWAYS)[number];
 export const isRpcGateway = (v: unknown): v is RpcGateway => (RPC_GATEWAYS as readonly unknown[]).includes(v);
 
@@ -135,6 +136,57 @@ export type RefreshResult = { readonly result: (typeof REFRESH_RESULTS)[number] 
 export interface PortalPaymentsApi {
   createLink(args: CreateLinkArgs): Promise<CreateLinkResult>;
   refreshForClient(args: { clientId: string; documentId: string }): Promise<RefreshResult>;
+  /**
+   * M6.4 (L2, L19): the client came back from PayPal's page: capture checkout `checkoutId` on the server now (ADR 0008: the return itself proves nothing; only
+   * PayPal's capture answer moves money). No session is needed (the capture only ever takes what the client approved, for a document that can still take it);
+   * `token`, PayPal's order id appended to the return URL, must equal the stored order id when present. The answer is a state only.
+   */
+  capturePayPalReturn(args: CapturePayPalReturnArgs): Promise<CapturePayPalReturnResult>;
+}
+
+// ---- PayPal's return (M6.4) -------------------------------------------------------------------------------------------------------------------------------
+
+export type CapturePayPalReturnArgs = {
+  /** Our checkout id, carried in the return URL (`c`, L19). */
+  readonly checkoutId: string;
+  /** PayPal's `token` on the return URL (its order id), or null when absent. */
+  readonly token: string | null;
+};
+
+/**
+ * What the portal shows after PayPal's return (07-ZN lines 4 to 11): `paid` (line 5 or 6), `processing` (a capture already in flight: line 4 and polling),
+ * `pending` (PayPal holds it: line 10), `declined` (line 8, with `retryUrl` back to PayPal's page), `not_completed` (line 7), `expired` (line 9), `changed` (the
+ * amount due changed: line 11, nothing captured), `not_found` (no such checkout, or the token isn't its order).
+ */
+export const CAPTURE_RETURN_STATES = [
+  "paid",
+  "processing",
+  "pending",
+  "declined",
+  "not_completed",
+  "expired",
+  "changed",
+  "not_found",
+] as const;
+export type CaptureReturnState = (typeof CAPTURE_RETURN_STATES)[number];
+/** No amount, name or document id ever crosses back (L2): a state, and for `declined` the stored PayPal approval URL. */
+export type CapturePayPalReturnResult = { readonly state: CaptureReturnState; readonly retryUrl?: string };
+
+/** The arguments of `capturePayPalReturn` are well formed: an RPC id, and a token that is null or a PayPal order id (`^[A-Z0-9]{1,36}$`). */
+export function isCapturePayPalReturnArgs(v: unknown): v is CapturePayPalReturnArgs {
+  return (
+    isObj(v) &&
+    isRpcId(v.checkoutId) &&
+    (v.token === null || (typeof v.token === "string" && /^[A-Z0-9]{1,36}$/.test(v.token)))
+  );
+}
+
+/** The answer's runtime guard: a known state and nothing else; `retryUrl` only with `declined`, and only on PayPal's own hosts (`isGatewayLinkUrl("paypal", …)`). */
+export function isCapturePayPalReturnResult(v: unknown): v is CapturePayPalReturnResult {
+  if (!isObj(v) || !(CAPTURE_RETURN_STATES as readonly unknown[]).includes(v.state)) return false;
+  if (Object.keys(v).some((k) => k !== "state" && k !== "retryUrl")) return false;
+  if (v.retryUrl === undefined) return true;
+  return v.state === "declined" && isGatewayLinkUrl("paypal", v.retryUrl);
 }
 
 const optNumber = (v: unknown) =>
@@ -186,12 +238,16 @@ export function isCreateLinkArgs(v: unknown): v is CreateLinkArgs {
 
 /**
  * The hosts each gateway's hosted page may be on (Razorpay: the same list as `RAZORPAY_LINK_HOSTS` in `@techaust/core/razorpay`; a test compares them). Stripe
- * (M6.3 run file E): Checkout's `checkout.stripe.com` only.
+ * (M6.3 run file E): Checkout's `checkout.stripe.com` only. PayPal (M6.4, Step 0 item 7): exactly `www.paypal.com` and `www.sandbox.paypal.com`, never the bare
+ * `paypal.com` and never a subdomain of these (`EXACT_HOSTS`); `isPayPalApproveUrl` in `@techaust/core/paypal` also holds the path and the order's token.
  */
-export const GATEWAY_LINK_HOSTS: Readonly<Record<"razorpay" | "stripe", readonly string[]>> = {
+export const GATEWAY_LINK_HOSTS: Readonly<Record<"razorpay" | "stripe" | "paypal", readonly string[]>> = {
   razorpay: ["rzp.io", "razorpay.com"],
   stripe: ["checkout.stripe.com"],
+  paypal: ["www.paypal.com", "www.sandbox.paypal.com"],
 };
+/** The gateways whose page must be on exactly one of its hosts (no subdomain). */
+const EXACT_HOSTS: readonly string[] = ["paypal"];
 export type LinkHostGateway = keyof typeof GATEWAY_LINK_HOSTS;
 /** The longest link URL a checkout row holds (`CHECKOUT_SHORT_URL_MAX` in the db schema). */
 export const GATEWAY_LINK_URL_MAX = 5000;
@@ -210,7 +266,7 @@ export function isGatewayLinkUrl(provider: LinkHostGateway, v: unknown): boolean
       u.protocol === "https:" &&
       !u.username &&
       !u.password &&
-      hosts.some((h) => u.hostname === h || u.hostname.endsWith(`.${h}`))
+      hosts.some((h) => u.hostname === h || (!EXACT_HOSTS.includes(provider) && u.hostname.endsWith(`.${h}`)))
     );
   } catch {
     return false;

@@ -65,6 +65,12 @@ export const PROVIDER_EVENT_TYPES = [
   "checkout.cancelled",
   // M6.3: an asynchronous payment on a checkout failed (Stripe's `checkout.session.async_payment_failed`; generic, PayPal's declined capture can reuse it).
   "checkout.failed",
+  // M6.4 (PayPal; Step 0.4 row 19): an order approved by the payer (we capture it), an approval PayPal reversed (we re-fetch the order), a capture PayPal holds,
+  // and a completed capture PayPal reversed (a review item until M6.5).
+  "checkout.approved",
+  "checkout.approval_reversed",
+  "payment.pending",
+  "payment.reversed",
   "other",
 ] as const;
 export type ProviderEventType = (typeof PROVIDER_EVENT_TYPES)[number];

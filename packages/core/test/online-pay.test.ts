@@ -201,7 +201,38 @@ describe("ONLINE_RULES and payableOnline for Stripe [L1, L14]", () => {
     expect(ONLINE_RULES.stripe.minMinor).toBe(STRIPE_MIN_AMOUNT_MINOR);
     expect(new Set(ONLINE_PROVIDERS).size).toBe(ONLINE_PROVIDERS.length);
     expect(isOnlineProvider("stripe")).toBe(true);
-    expect(isOnlineProvider("paypal")).toBe(false);
+    expect(isOnlineProvider("paypal")).toBe(true);
+    expect(isOnlineProvider("venmo")).toBe(false);
+  });
+
+  it("M6.4 (L21): PayPal's row is exactly Stripe's, so the portal has one USD pay rule; the same verdicts follow", () => {
+    expect(ONLINE_RULES.paypal).toEqual(ONLINE_RULES.stripe);
+    expect([...ONLINE_PROVIDERS]).toEqual(["razorpay", "stripe", "paypal"]);
+    expect(payableOnline(usdDoc, overseas, "paypal")).toEqual({ ok: true });
+    expect(payableOnline(usdDoc, { ...overseas, country: "IN", gstStatus: "registered" }, "paypal")).toEqual({
+      ok: false,
+      code: "not_payable_online",
+      reason: "client_domestic",
+    });
+    expect(payableOnline({ ...usdDoc, paymentPending: true }, overseas, "paypal")).toMatchObject({
+      reason: "payment_pending",
+    });
+    expect(payableOnline({ ...usdDoc, type: "tax_invoice" }, overseas, "paypal")).toMatchObject({
+      reason: "type_not_payable",
+    });
+  });
+
+  it("M6.4: the PayPal review kinds are listed once, after M6.3's", () => {
+    const added = [
+      "capture_pending",
+      "capture_denied",
+      "capture_refused",
+      "reversed_after_confirm",
+      "refunded_outside",
+      "late_capture",
+    ];
+    expect(REVIEW_KINDS.slice(-added.length)).toEqual(added);
+    expect(REVIEW_KINDS).toContain("not_export_receipt");
   });
 
   it("an export invoice, a USD debit note and a USD proforma (cents allowed) of an overseas client", () => {
