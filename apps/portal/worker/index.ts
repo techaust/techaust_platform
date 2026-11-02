@@ -18,6 +18,7 @@ import { me } from "./me.ts";
 import type { OfferViewer } from "./offer-core.ts";
 import { offerLinks } from "./offer-token.ts";
 import { offers } from "./offers.ts";
+import { payReturn } from "./pay-return.ts";
 import type { MagicLinkSender } from "./sender.ts";
 import { defaultViewer } from "./viewer.ts";
 import "./warm.ts"; // start-up warm-up of the sign-in path (CPU tuning 3)
@@ -122,6 +123,8 @@ export function createApp(deps: Deps = {}) {
   app.route("/v1/invoices", invoices);
   app.route("/v1/deeds", deeds);
   app.route("/v1/t", docToken);
+  // M6.4 (POR-06, L19): PayPal's return to an emailed link's page (no session, no token: a state only).
+  app.route("/v1/pay", payReturn);
   app.route("/v1/t/offer", offerLinks);
   for (const t of deps.testRoutes ?? []) {
     const path = t.def.path.replace(/^\/api/, "");

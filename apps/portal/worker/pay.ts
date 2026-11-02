@@ -18,8 +18,9 @@ import type { ApiError, Ctx } from "./context.ts";
 /**
  * `{amountMinor}` (the signed-in route) and `{token, amountMinor}` (the emailed link; the token only ever in the body). M6.3 (run file E): an optional `provider`;
  * missing, the gateway the document's currency allows (`providerOf`: Stripe for USD, Razorpay for INR). The finance Worker re-checks it against the document.
+ * M6.4: `paypal` too (a USD document's second way, beside Stripe: L21's one USD rule).
  */
-const PROVIDERS = ["razorpay", "stripe"] as const;
+const PROVIDERS = ["razorpay", "stripe", "paypal"] as const;
 export type PayProvider = (typeof PROVIDERS)[number];
 export const payBody = z.object({
   amountMinor: z.int().check(z.gte(1), z.lte(10_000_000_000)),
@@ -78,8 +79,11 @@ export async function refreshForClient(
   }
 }
 
+/** M6.4 (L23): every gateway by name: Stripe and PayPal take US dollars, Razorpay rupees. */
+const currencyOfProvider = (provider: PayProvider): "USD" | "INR" =>
+  provider === "stripe" || provider === "paypal" ? "USD" : "INR";
 const moneyOf = (m: number | undefined, provider: PayProvider) =>
-  formatMoney(money(m ?? 0, provider === "stripe" ? "USD" : "INR"));
+  formatMoney(money(m ?? 0, currencyOfProvider(provider)));
 const e = (code: string, message: string): ApiError => ({ code, message });
 /** 07-ZI line 14: what the client reads whenever online payment can't go ahead (the bank details are on the invoice). */
 export const UNAVAILABLE_LINE =
@@ -90,7 +94,13 @@ export const PROCESSING_LINE: Record<PayProvider, string> = {
     "We haven't had confirmation from Razorpay yet. If money left your account, it will show here once Razorpay confirms it. There's no need to pay again.",
   stripe:
     "We haven't had confirmation from Stripe yet. If your card was charged, the payment will show here once Stripe confirms it. There's no need to pay again.",
+  /** 07-ZN line 10 (owner-approved 2026-11-02). */
+  paypal:
+    "PayPal is still checking this payment. It will show on this invoice once PayPal completes it. There's no need to pay again.",
 };
+/** 07-ZN line 13 (owner-approved 2026-11-02): PayPal can't be used right now (the other ways stay on the page). */
+export const PAYPAL_UNAVAILABLE_LINE =
+  "PayPal isn't available right now. You can pay another way shown on this page.";
 /** 07-ZM C6 (owner-approved, provider-neutral): an amount above the online maximum. */
 export const maximumLine = (maximum: string) =>
   `Online payments are limited to ${maximum} at a time. Pay part now and the rest later, or pay by bank transfer.`;
@@ -116,10 +126,11 @@ export function payAnswer(
   r: CreateLinkResult | "unavailable" | "bad",
   provider: PayProvider = "razorpay",
 ): Response {
-  if (r === "unavailable") return answer(c, 503, e("gateway_unavailable", UNAVAILABLE_LINE));
-  if (r === "bad") return answer(c, 502, e("gateway_error", UNAVAILABLE_LINE));
+  const down = provider === "paypal" ? PAYPAL_UNAVAILABLE_LINE : UNAVAILABLE_LINE;
+  if (r === "unavailable") return answer(c, 503, e("gateway_unavailable", down));
+  if (r === "bad") return answer(c, 502, e("gateway_error", down));
   if (r.ok) {
-    if (!isGatewayLinkUrl(provider, r.url)) return answer(c, 502, e("gateway_error", UNAVAILABLE_LINE));
+    if (!isGatewayLinkUrl(provider, r.url)) return answer(c, 502, e("gateway_error", down));
     return c.json({
       ok: true,
       provider,
@@ -158,8 +169,8 @@ export function payAnswer(
       return answer(c, 429, e(r.error, UNAVAILABLE_LINE));
     case "gateway_unavailable":
     case "live_not_allowed":
-      return answer(c, 503, e(r.error, UNAVAILABLE_LINE));
+      return answer(c, 503, e(r.error, down));
     default:
-      return answer(c, 502, e("gateway_error", UNAVAILABLE_LINE));
+      return answer(c, 502, e("gateway_error", down));
   }
 }

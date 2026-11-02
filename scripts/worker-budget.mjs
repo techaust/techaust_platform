@@ -79,7 +79,8 @@ export const BUDGETS = {
   },
   portal: {
     file: "apps/portal/dist/techaust_platform_portal/index.js",
-    maxBytes: 120_000, // M4.5 adds ~20–25 KB to today's ~58 KB
+    // M4.5 added ~20–25 KB to ~58 KB; M6.4 (L27, the lead's "before M7.1" decision brought forward): 150,000 (about 120,000 before PayPal).
+    maxBytes: 150_000,
     maxStartupMs: 200,
     forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS, GST_CORE],
   },

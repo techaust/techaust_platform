@@ -7,8 +7,8 @@ import { compare, formatMoney, money, parseMoney } from "@techaust/core/money";
 import { PAY_ZI } from "../copy-zi.ts";
 
 /**
- * The gateways the portal sends a client to (M6.3: Stripe for USD documents, Razorpay for INR). M6.4 B1 (a compile fix only): core's `LinkHostGateway` now
- * includes PayPal; the portal takes it in with its PayPal screens (B2 and the designer), which also make `currencyOf` say USD for PayPal.
+ * The gateways the portal's screens send a client to (M6.3: Stripe for USD documents, Razorpay for INR). M6.4: PayPal joins with its screens (the chooser and
+ * the return: the designer's, after early check 2), which widen this type; the rules below already know PayPal's currency (`currencyOf`).
  */
 export type PayGateway = Exclude<LinkHostGateway, "paypal">;
 export type PayCurrency = "INR" | "USD";
@@ -16,8 +16,9 @@ export type PayCurrency = "INR" | "USD";
 export const inr = (minor: number) => formatMoney(money(minor, "INR"));
 /** An amount in the document's own currency (en-IN rupees, en-US dollars), through core. */
 export const moneyText = (minor: number, currency: PayCurrency) => formatMoney(money(minor, currency));
-/** The gateway's currency (Stripe takes US dollars, Razorpay rupees). */
-export const currencyOf = (gateway: PayGateway): PayCurrency => (gateway === "stripe" ? "USD" : "INR");
+/** The gateway's currency (Stripe and PayPal take US dollars, Razorpay rupees; M6.4 L23: every gateway by name). */
+export const currencyOf = (gateway: LinkHostGateway): PayCurrency =>
+  gateway === "stripe" || gateway === "paypal" ? "USD" : "INR";
 
 /**
  * The part amount as typed (en-IN "12,500" or "₹12,500.50"; en-US "1,250" or "$1,250.50") against the minimum, the balance and, on a card payment, the most
