@@ -1,6 +1,6 @@
-Status: reviewed (APPROVE, ten lows); short fix round, then PR
+Status: PR open (auto-merge); staging reading after deploy
 Tier: B (Workers; docs/14 §2)
-Usage: builder claude-opus-5-5/high (workers-profiling, workers-best-practices, wrangler; 5-h 19 % at start); analyst early check claude-opus-5-5/high (workers-profiling, workers-best-practices, wrangler; 5-h 10 % at start); builder fix round claude-opus-5-5/high (workers-profiling, workers-best-practices, wrangler); reviewer claude-opus-5-5/high (code-review high, security-review, workers-best-practices, workers-profiling; 5-h 55 % at start)
+Usage: builder claude-opus-5-5/high (workers-profiling, workers-best-practices, wrangler; 5-h 19 % at start); analyst early check claude-opus-5-5/high (workers-profiling, workers-best-practices, wrangler; 5-h 10 % at start); builder fix round claude-opus-5-5/high (workers-profiling, workers-best-practices, wrangler); reviewer claude-opus-5-5/high (code-review high, security-review, workers-best-practices, workers-profiling; 5-h 55 % at start); builder review fixes claude-opus-5-5/high (workers-best-practices, workers-profiling; 5-h 71 % at start)
 
 # CPU warm-up of the hot request paths (2026-11-01)
 
@@ -314,3 +314,8 @@ One earlier build, while another project's `pytest` ran and free memory was abou
 None.
 
 Usage: builder claude-opus-5-5/high (workers-best-practices, workers-profiling; the builder can't read the 5-hour bar).
+
+## Integration notes (lead, 2026-11-02)
+- `fix/cpu-warmup-review` fast-forwarded into `feat/cpu-warmup`; `main` (#154, #155) merged in cleanly (only `cpu-baseline.md` auto-merged). No re-check: the review found no critical or high, and every listed low is fixed (`pnpm check`, admin 4,142, core 2,159, jobs 607, builds ok; finance 609,567 bytes, start-up 82.7 ms).
+- **Merge order:** this PR merges before M6.3; M6.3 then takes `main` in.
+- **After deploy (lead):** Cloudflare's `startup_time_ms` from the staging deploy log, and the `f:1` first-request reading at the owner's next staging session, into `cpu-baseline.md`; then the owner's Workers Paid decision.
