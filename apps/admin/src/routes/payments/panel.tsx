@@ -26,7 +26,7 @@ import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
 import { dateError } from "../../lib/date-field.ts";
-import { GW_UI, gatewayLine, itemReason } from "../../lib/gateway.ts";
+import { GW_UI, gatewayLine, gatewayName, itemReason } from "../../lib/gateway.ts";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
 import { INV_COPY } from "../../lib/invoices.ts";
 import type { InvoiceView } from "../../lib/invoices-api.ts";
@@ -480,8 +480,8 @@ function Entries(props: {
                     onAttach={props.onProof}
                   />
                 ) : online ? (
-                  // M6.2: Razorpay's own record is the proof of an online payment; nothing to attach
-                  <span className="pay-lines__meta pay-lines__nowrap">Razorpay</span>
+                  // M6.2: the gateway's own record is the proof of an online payment; nothing to attach (its name, never a hard-coded one: M6.3 staging fix)
+                  <span className="pay-lines__meta pay-lines__nowrap">{gatewayName(online.provider)}</span>
                 ) : r.hasProof ? (
                   <a href={paymentsApi.proofHref(r.paymentId)} className="pay-proof-link">
                     <FileText size={16} />

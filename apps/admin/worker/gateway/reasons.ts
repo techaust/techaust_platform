@@ -133,7 +133,9 @@ export function reviewReason(kind: string, f: ReasonFacts = {}): string {
     case "overpaid":
       return `The client paid ${m(f.extraMinor)} more than was due. It is held as credit, treated as an advance: GST on it is due for the month it arrived.`;
     case "proforma_overpaid":
-      return "The client paid more than the proforma's balance. Issue the tax invoice by hand.";
+      // M6.3 staging fixes, lead's decision 1(c) (the lead under the owner's delegation, 2026-11-02; 07-ZM "Review changes"): the money can't be issued by hand
+      // any more while it waits (the advance refuses it as a receipt and as more than the balance); it is held for the M6.5 refund.
+      return "The client paid more than the proforma's balance. It waits for a refund.";
     case "partial_payment":
       return `${gw} reports only part of the link as paid. Check the payment before confirming it.`;
     case "client_gone":

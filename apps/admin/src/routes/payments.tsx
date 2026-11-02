@@ -37,6 +37,7 @@ import {
   PAY_ERRORS,
   PAY_UI,
   payErrorText,
+  pendingDecisionOf,
   plainAmount,
   readAllocations,
   STATUS_LABELS,
@@ -452,14 +453,25 @@ function PaymentList(props: {
                             <span className="visually-hidden">{` ${day(r.receivedOn)} ${r.clientName}`}</span>
                           </button>
                         )}
-                        <button
-                          type="button"
-                          className="btn btn--primary"
-                          onClick={() => setOpen({ id: r.id, act: "confirm" })}
-                        >
-                          {PAY_COPY.confirm}
-                          <span className="visually-hidden">{` ${day(r.receivedOn)} ${r.clientName}`}</span>
-                        </button>
+                        {/* M6.3 staging fix 2 (L5): an entry asking for a proforma is confirmed only by issuing its tax invoice, never by the plain Confirm */}
+                        {pendingDecisionOf(r).kind === "issue" ? (
+                          <Link
+                            to={`/invoices/${encodeURIComponent(r.proformaId ?? "")}`}
+                            className="btn btn--primary"
+                          >
+                            {PAY_UI.confirmByIssuing}
+                            <span className="visually-hidden">{` ${day(r.receivedOn)} ${r.clientName}`}</span>
+                          </Link>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn btn--primary"
+                            onClick={() => setOpen({ id: r.id, act: "confirm" })}
+                          >
+                            {PAY_COPY.confirm}
+                            <span className="visually-hidden">{` ${day(r.receivedOn)} ${r.clientName}`}</span>
+                          </button>
+                        )}
                       </span>
                     ) : null
                 : undefined
@@ -608,6 +620,7 @@ function EntryView(props: {
   const cur = p.currency;
   const owner = allowed(props.role, "payments.verify");
   const pending = p.status === "pending_verification";
+  const decision = pendingDecisionOf(p);
   // M6.2 (L7): a gateway payment is never rejected or withdrawn here (the money goes back by a refund, M6.5), and Razorpay is its own proof. M6.3 (L11, 07-ZM
   // S15): a Stripe payment takes a proof (Stripe's payment advice or the bank's e-FIRA).
   const online = p.provider !== "manual";
@@ -826,9 +839,16 @@ function EntryView(props: {
                 {PAY_COPY.reject}
               </button>
             )}
-            <button type="button" className="btn btn--primary" onClick={() => props.onStep("confirm")}>
-              {PAY_COPY.confirm}
-            </button>
+            {/* M6.3 staging fix 2 (L5): never the plain Confirm for an entry that asks for a proforma */}
+            {decision.kind === "issue" ? (
+              <Link to={`/invoices/${encodeURIComponent(decision.proformaId)}`} className="btn btn--primary">
+                {PAY_UI.confirmByIssuing}
+              </Link>
+            ) : (
+              <button type="button" className="btn btn--primary" onClick={() => props.onStep("confirm")}>
+                {PAY_COPY.confirm}
+              </button>
+            )}
           </>
         )}
       </div>
@@ -884,7 +904,15 @@ function ConfirmStep(props: { payment: PaymentView; onBack: () => void; onDone: 
   const docs = ready?.docs ?? null;
   const refused = ready?.refused ?? [];
   const refusedText = Object.fromEntries(refused.map((r) => [r.id, r.error]));
-  const proformaAsk = load.state === "ready" && load.data.kind === "proforma" ? load.data.id : null;
+  // M6.3 staging fix 2 (L5): the entry's own proforma (the server's `proformaId`: its request or its online checkout) needs no read; an older API's answer
+  // falls back to what the read of its request found.
+  const own = pendingDecisionOf(p);
+  const proformaAsk =
+    own.kind === "issue"
+      ? own.proformaId
+      : load.state === "ready" && load.data.kind === "proforma"
+        ? load.data.id
+        : null;
   const [rows, setRows] = useState<AllocRow[]>(() =>
     p.requestedAllocations.map((a) => ({ documentId: a.documentId, text: plainAmount(a.amountMinor, cur) })),
   );

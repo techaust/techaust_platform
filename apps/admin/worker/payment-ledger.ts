@@ -37,6 +37,7 @@ import {
   DOCUMENT_HOLDINGS_SQL,
   extensionLetterStatement,
   ledgerResultStatement,
+  paymentForDocumentSql,
   realisationExtensionStatement,
   recomputeStatement,
 } from "@techaust/db/ledger";
@@ -318,11 +319,15 @@ const CLIENT_OF_DOCUMENT = "(SELECT cd.client_id FROM documents cd WHERE cd.id =
 /** The client's credit by currency, for the document `?1` (`clientCreditSql` keyed by the document's client; early check 2, finding 10: no text edits). */
 export const CREDIT_OF_DOCUMENT_CLIENT_SQL = clientCreditSql(CLIENT_OF_DOCUMENT);
 
-/** The payments waiting for the Owner that ask for this document (`?1`, of its own client): what Staff recorded against it (L6). */
+/**
+ * The payments waiting for the Owner that are for this document (`?1`, of its own client): what Staff recorded against it (L6) and, M6.3 staging fixes (lead's
+ * decision 1), an online payment that came through its checkout with no request (a mismatch), by the one rule `paymentForDocumentSql`. What it asks for this
+ * document: its request's amount, else (no request) the whole payment.
+ */
 export const PENDING_FOR_DOCUMENT_SQL = `SELECT p.id, p.kind, p.received_on, p.mode, p.reference_norm, p.currency, p.amount_minor, p.recorded_by, p.recorded_at,
-       json_extract(j.value, '$.amountMinor') AS asked_minor
-   FROM payments p INDEXED BY payments_client, json_each(p.requested_allocations) j
-   WHERE p.client_id = ${CLIENT_OF_DOCUMENT} AND p.status = 'pending_verification' AND p.requested_allocations IS NOT NULL AND json_extract(j.value, '$.documentId') = ?1
+       coalesce((SELECT json_extract(j.value, '$.amountMinor') FROM json_each(p.requested_allocations) j WHERE json_extract(j.value, '$.documentId') = ?1 LIMIT 1), p.amount_minor) AS asked_minor
+   FROM payments p INDEXED BY payments_client
+   WHERE p.client_id = ${CLIENT_OF_DOCUMENT} AND p.status = 'pending_verification' AND ${paymentForDocumentSql("p", "?1")}
    ORDER BY p.recorded_at, p.id LIMIT 50`;
 
 /**

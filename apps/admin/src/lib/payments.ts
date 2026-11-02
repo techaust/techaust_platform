@@ -103,11 +103,21 @@ export const MODES: readonly PaymentMode[] = ["neft", "rtgs", "imps", "upi", "sw
 export const VOID_PAYMENT_PENDING =
   "A payment recorded on it is waiting for the owner's check. Reject it first.";
 /**
- * M6.2 (fix round 3 item 3, reworded in fix round 4 low 2; the lead under the standing delegation, 2026-11-01): the void and withdraw blocker `payment_pending_gateway`, a pending Razorpay
- * payment (it can't be rejected). The Worker's `VOID_GATEWAY_PENDING_LINE` is the same words (a test pins the two).
+ * M6.2 (fix round 3 item 3, reworded in fix round 4 low 2; the lead under the standing delegation, 2026-11-01): the void and withdraw blocker `payment_pending_gateway`, a pending gateway
+ * payment (it can't be rejected). The Worker's `VOID_GATEWAY_PENDING_LINE` is the same words (a test pins the two). M6.3 staging fix (07-ZM "Review changes",
+ * 2026-11-02): gateway-neutral, since a Stripe payment showed "A Razorpay payment".
  */
 export const VOID_GATEWAY_PENDING =
-  'A Razorpay payment on it is waiting for its tax invoice. Issue it with "Confirm by issuing the tax invoice".';
+  'An online payment on it is waiting for its tax invoice. Issue it with "Confirm by issuing the tax invoice".';
+
+/**
+ * M6.3 staging fix 2 (L5, 07-ZH line 12): how the Owner decides a pending entry. One that asks for a proforma (its request, or the proforma its online checkout
+ * was for: the API's `proformaId`) is confirmed only by issuing the tax invoice for the payment received, on that proforma ("Confirm by issuing the tax invoice");
+ * the plain Confirm is never offered for it (the server refuses it: `use_advance_invoice`). Anything else: the plain Confirm. An older API sends no `proformaId`.
+ */
+export type PendingDecision = { kind: "issue"; proformaId: string } | { kind: "confirm" };
+export const pendingDecisionOf = (p: { proformaId?: string | null | undefined }): PendingDecision =>
+  p.proformaId ? { kind: "issue", proformaId: p.proformaId } : { kind: "confirm" };
 
 /** Line 9, the overpayment line. */
 export const overpaymentLine = (amount: string, client: string) =>
@@ -377,6 +387,10 @@ const APPROVED_CODES = new Set([
   "use_advance_invoice",
   "reference_invalid",
   "payments_pending",
+  // M6.3 staging fix 1 (07-ZM "Review changes", the lead under the owner's delegation, 2026-11-02): the server's words, with "Confirm by issuing" beside them
+  "online_payment_waiting",
+  // lead's decision 2: a manual entry Staff recorded waits for the proforma (the same box and "Confirm by issuing")
+  "payment_waiting",
 ]);
 
 const sentenceOf = (s: string) => (/[.!?]$/.test(s) ? s : `${s}.`);

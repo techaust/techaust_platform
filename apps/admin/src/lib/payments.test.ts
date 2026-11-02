@@ -24,6 +24,7 @@ import {
   PAY_ERRORS,
   PAY_UI,
   payErrorText,
+  pendingDecisionOf,
   plainAmount,
   putOnText,
   readAllocations,
@@ -173,7 +174,7 @@ describe("the void blockers of M6.1", () => {
   });
 });
 
-describe("the void blocker of a pending Razorpay payment [M6.2 fix round 3 item 3]", () => {
+describe("the void blocker of a pending gateway payment [M6.2 fix round 3 item 3; M6.3 staging fix]", () => {
   it("has its own line (it can't be rejected); a manual payment keeps line 21", () => {
     expect(voidBlockedText(["payment_pending_gateway"], "proforma")).toBe(VOID_GATEWAY_PENDING);
     expect(voidBlockedText(["payment_pending_gateway", "already_emailed"], "proforma")).toBe(
@@ -194,9 +195,36 @@ describe("the void blocker of a pending Razorpay payment [M6.2 fix round 3 item 
     expect(withdrawErrorText(err("payment_pending_gateway"))).toBe(VOID_GATEWAY_PENDING);
     // The Worker's copy (`VOID_GATEWAY_PENDING_LINE`, the withdraw route's words) is the same text (read as source: the SPA can't import Worker modules).
     expect(messagesSource).toContain(`'${VOID_GATEWAY_PENDING}'`);
+    // M6.3 staging fix (07-ZM "Review changes", 2026-11-02): gateway-neutral, since a Stripe payment showed "A Razorpay payment"
     expect(VOID_GATEWAY_PENDING).toBe(
-      'A Razorpay payment on it is waiting for its tax invoice. Issue it with "Confirm by issuing the tax invoice".',
+      'An online payment on it is waiting for its tax invoice. Issue it with "Confirm by issuing the tax invoice".',
     );
+    expect(VOID_GATEWAY_PENDING).not.toMatch(/Razorpay|Stripe|PayPal/);
+  });
+});
+
+describe("a pending entry that asks for a proforma is confirmed only by issuing [M6.3 staging fix 2; ADM-PAY-01, ADM-INV-10, L5]", () => {
+  it("the decision: 'Confirm by issuing the tax invoice' on its proforma when the API names one, else the plain Confirm (an older API names none)", () => {
+    expect(pendingDecisionOf({ proformaId: "pf-1" })).toEqual({ kind: "issue", proformaId: "pf-1" });
+    expect(pendingDecisionOf({ proformaId: null })).toEqual({ kind: "confirm" });
+    expect(pendingDecisionOf({})).toEqual({ kind: "confirm" });
+    expect(pendingDecisionOf({ proformaId: "" })).toEqual({ kind: "confirm" });
+    expect(PAY_UI.confirmByIssuing).toBe(ZH("Confirm by issuing the tax invoice"));
+  });
+
+  it("the advance's 409 online_payment_waiting is shown in the server's words (07-ZM Review changes), with the payment to confirm by issuing", () => {
+    const words =
+      "An online payment for this proforma is waiting for its tax invoice. Issue the tax invoice with that payment, so the money isn't counted twice.";
+    expect(payErrorText(err("online_payment_waiting", words, { paymentId: "stp_pi_1" }))).toBe(words);
+    // the Worker's words are these, word for word
+    expect(messagesSource).toContain(`"${words}"`);
+  });
+
+  it("lead's decision 2: payment_waiting (a Staff entry waits for the proforma) is shown in the server's words, as online_payment_waiting is", () => {
+    const words =
+      "A payment recorded for this proforma is waiting for its tax invoice. Issue the tax invoice with that payment, so the money isn't counted twice.";
+    expect(payErrorText(err("payment_waiting", words, { paymentId: "pay-1" }))).toBe(words);
+    expect(messagesSource).toContain(`"${words}"`);
   });
 });
 
