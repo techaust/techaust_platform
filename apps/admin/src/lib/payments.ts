@@ -9,6 +9,7 @@
 // Money is formatted and added only through core; nothing here adds up an amount by hand. Pure, so the words and rules are tested without a browser.
 import { LEDGER_STATUSES, PAYABLE_TYPES, receiptMonthWarning, TDS_TYPES } from "@techaust/core/ledger";
 import { type Currency, compare, formatMoney, money, subtract, sum } from "@techaust/core/money";
+import { reviewReason } from "../../worker/gateway/reasons.ts";
 import type { PaymentMode, PaymentStatus } from "../api.ts";
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
@@ -109,15 +110,39 @@ export const VOID_PAYMENT_PENDING =
  */
 export const VOID_GATEWAY_PENDING =
   'An online payment on it is waiting for its tax invoice. Issue it with "Confirm by issuing the tax invoice".';
+/**
+ * M6.3 staging fixes, review M2 (07-ZM "Review changes", the lead under the owner's delegation, 2026-11-02): the same blocker on an invoice (a tax or export
+ * invoice, or a debit note), whose online payment is confirmed on Payments, never by issuing (that action is a proforma's only). The line follows the type.
+ */
+export const VOID_GATEWAY_PENDING_INVOICE =
+  "An online payment on it is waiting for the owner's check. Confirm it on Payments first.";
+/** The `payment_pending_gateway` line for a document of `type`: a proforma's (confirm by issuing) or an invoice's (confirm on Payments). */
+export const voidGatewayPendingText = (type: string | undefined): string =>
+  type === "proforma" ? VOID_GATEWAY_PENDING : VOID_GATEWAY_PENDING_INVOICE;
 
 /**
  * M6.3 staging fix 2 (L5, 07-ZH line 12): how the Owner decides a pending entry. One that asks for a proforma (its request, or the proforma its online checkout
  * was for: the API's `proformaId`) is confirmed only by issuing the tax invoice for the payment received, on that proforma ("Confirm by issuing the tax invoice");
  * the plain Confirm is never offered for it (the server refuses it: `use_advance_invoice`). Anything else: the plain Confirm. An older API sends no `proformaId`.
  */
-export type PendingDecision = { kind: "issue"; proformaId: string } | { kind: "confirm" };
-export const pendingDecisionOf = (p: { proformaId?: string | null | undefined }): PendingDecision =>
-  p.proformaId ? { kind: "issue", proformaId: p.proformaId } : { kind: "confirm" };
+export type PendingDecision =
+  | { kind: "issue"; proformaId: string }
+  | { kind: "refund"; proformaId: string }
+  | { kind: "confirm" };
+export const pendingDecisionOf = (p: {
+  proformaId?: string | null | undefined;
+  waitsRefund?: boolean | undefined;
+}): PendingDecision =>
+  p.proformaId
+    ? // M6.3 staging fixes, review M3: money the proforma can no longer take (above its balance) waits for a refund: no action, the line instead
+      { kind: p.waitsRefund === true ? "refund" : "issue", proformaId: p.proformaId }
+    : { kind: "confirm" };
+
+/**
+ * M6.3 staging fixes, review M3 (lead's decision 1(c), 07-ZM "Review changes", approved by the lead under the owner's delegation, 2026-11-02): what the screens
+ * show in place of "Confirm by issuing the tax invoice" for money above the proforma's balance: the `proforma_overpaid` review line, word for word.
+ */
+export const WAITS_REFUND_LINE = reviewReason("proforma_overpaid");
 
 /** Line 9, the overpayment line. */
 export const overpaymentLine = (amount: string, client: string) =>

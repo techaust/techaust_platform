@@ -8,7 +8,14 @@ import { EmptyState } from "../../components/display.tsx";
 import { ClipboardCheck, Search } from "../../components/icons.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
-import { amountText, PAY_COPY, PAY_UI, payErrorText, pendingDecisionOf } from "../../lib/payments.ts";
+import {
+  amountText,
+  PAY_COPY,
+  PAY_UI,
+  payErrorText,
+  pendingDecisionOf,
+  WAITS_REFUND_LINE,
+} from "../../lib/payments.ts";
 import { paymentHref } from "./panel.tsx";
 import { day, PaymentPill } from "./parts.tsx";
 
@@ -115,6 +122,8 @@ function PendingAction(props: { payment: PaymentApprovalItem["payment"] }) {
   const p = props.payment;
   const decision = pendingDecisionOf(p);
   const hidden = <span className="visually-hidden">{` ${p.clientName} ${day(p.receivedOn)}`}</span>;
+  // M6.3 staging fixes, review M3: money above the proforma's balance waits for a refund: the line stands where the action would
+  if (decision.kind === "refund") return <span className="pay-row__refund">{WAITS_REFUND_LINE}</span>;
   return decision.kind === "issue" ? (
     <Link to={`/invoices/${encodeURIComponent(decision.proformaId)}`} className="btn btn--secondary">
       {PAY_UI.confirmByIssuing}

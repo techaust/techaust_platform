@@ -1844,6 +1844,11 @@ export type PaymentView = {
    * confirmed only by "Confirm by issuing the tax invoice" on that proforma (the verify route answers `use_advance_invoice`). Absent from an older API.
    */
   proformaId?: string | null;
+  /**
+   * M6.3 staging fixes, review M3: with `proformaId`, that proforma can no longer take this money (above its balance, or no longer issued): it waits for the M6.5
+   * refund, and the screens show its line instead of "Confirm by issuing the tax invoice". Absent from an older API.
+   */
+  waitsRefund?: boolean;
 };
 
 export type PaymentAllocationView = {
@@ -1936,6 +1941,8 @@ export type InvoicePaymentsPanel = {
     askedMinor: number;
     recordedBy: string | null;
     recordedAt: number;
+    /** M6.3 staging fixes, review M3: on a proforma, it can no longer take this money (it waits for a refund): the line instead of the action. */
+    waitsRefund?: boolean;
   }[];
   credits: { currency: Currency; creditMinor: number }[];
   /** M6.2 (run file G1): the Razorpay payments through this document's links, its links, and its open review items. Absent from an older API. */
@@ -2098,6 +2105,8 @@ export type PaymentApprovalItem = {
     clientName: string;
     /** M6.3 staging fix 2 (L5): while pending, the proforma it asks for; the queue then offers only "Confirm by issuing the tax invoice". */
     proformaId?: string | null;
+    /** Review M3: that proforma can no longer take the money (it waits for a refund): the queue shows the line, not the action. */
+    waitsRefund?: boolean;
   };
 };
 

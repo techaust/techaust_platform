@@ -31,8 +31,11 @@ import {
   registerCsv,
   STATUS_LABELS,
   VOID_GATEWAY_PENDING,
+  VOID_GATEWAY_PENDING_INVOICE,
   VOID_PAYMENT_PENDING,
   VOID_PAYMENT_RECORDED,
+  voidGatewayPendingText,
+  WAITS_REFUND_LINE,
 } from "./payments.ts";
 
 const mark = (s: string) => (APPROVED_07ZH_NEW ? s : `${PLACEHOLDER_MARK} ${s}`);
@@ -201,6 +204,25 @@ describe("the void blocker of a pending gateway payment [M6.2 fix round 3 item 3
     );
     expect(VOID_GATEWAY_PENDING).not.toMatch(/Razorpay|Stripe|PayPal/);
   });
+
+  it("review M2: on an invoice the line points to Payments, never to a proforma's Confirm by issuing (07-ZM Review changes)", () => {
+    for (const type of ["tax_invoice", "export_invoice", "debit_note"]) {
+      expect(voidBlockedText(["payment_pending_gateway"], type), type).toBe(VOID_GATEWAY_PENDING_INVOICE);
+      expect(voidBlockedText(["payment_pending_gateway", "viewed_by_client"], type), type).toBe(
+        VOID_GATEWAY_PENDING_INVOICE,
+      );
+    }
+    expect(voidGatewayPendingText("proforma")).toBe(VOID_GATEWAY_PENDING);
+    expect(voidGatewayPendingText("tax_invoice")).toBe(VOID_GATEWAY_PENDING_INVOICE);
+    expect(VOID_GATEWAY_PENDING_INVOICE).toBe(
+      "An online payment on it is waiting for the owner's check. Confirm it on Payments first.",
+    );
+    expect(VOID_GATEWAY_PENDING_INVOICE).not.toMatch(/Confirm by issuing|Razorpay|Stripe|PayPal/);
+    // a manual entry waiting keeps line 21 first, on an invoice too
+    expect(voidBlockedText(["payment_pending", "payment_pending_gateway"], "tax_invoice")).toBe(
+      VOID_PAYMENT_PENDING,
+    );
+  });
 });
 
 describe("a pending entry that asks for a proforma is confirmed only by issuing [M6.3 staging fix 2; ADM-PAY-01, ADM-INV-10, L5]", () => {
@@ -209,6 +231,19 @@ describe("a pending entry that asks for a proforma is confirmed only by issuing 
     expect(pendingDecisionOf({ proformaId: null })).toEqual({ kind: "confirm" });
     expect(pendingDecisionOf({})).toEqual({ kind: "confirm" });
     expect(pendingDecisionOf({ proformaId: "" })).toEqual({ kind: "confirm" });
+    // review M3: money above the proforma's balance waits for a refund: no action, the line instead (an older API sends no flag: the action)
+    expect(pendingDecisionOf({ proformaId: "pf-1", waitsRefund: true })).toEqual({
+      kind: "refund",
+      proformaId: "pf-1",
+    });
+    expect(pendingDecisionOf({ proformaId: "pf-1", waitsRefund: false })).toEqual({
+      kind: "issue",
+      proformaId: "pf-1",
+    });
+    expect(pendingDecisionOf({ proformaId: null, waitsRefund: true })).toEqual({ kind: "confirm" });
+    expect(WAITS_REFUND_LINE).toBe(
+      "The client paid more than the proforma's balance. It waits for a refund.",
+    );
     expect(PAY_UI.confirmByIssuing).toBe(ZH("Confirm by issuing the tax invoice"));
   });
 

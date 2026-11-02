@@ -48,7 +48,12 @@ import type {
   InvoiceType,
   InvoiceView,
 } from "./invoices-api.ts";
-import { VOID_GATEWAY_PENDING, VOID_PAYMENT_PENDING, VOID_PAYMENT_RECORDED } from "./payments.ts";
+import {
+  VOID_GATEWAY_PENDING,
+  VOID_PAYMENT_PENDING,
+  VOID_PAYMENT_RECORDED,
+  voidGatewayPendingText,
+} from "./payments.ts";
 import { bpToPercent, moneyInput } from "./settings-form.ts";
 
 export { moneyText };
@@ -607,8 +612,9 @@ export function voidBlockedText(codes: readonly string[], type?: string): string
   if (codes.includes("already_void")) return INV_ERRORS.already_void;
   // M6.1: a payment waiting for the owner's check (07-ZH line 21, approved) says so first: rejecting it is the way on, for an invoice or a proforma.
   if (codes.includes("payment_pending")) return VOID_PAYMENT_PENDING;
-  // M6.2 (fix round 3 item 3): a pending Razorpay payment can't be rejected: its line points to issuing the tax invoice or Needs review.
-  if (codes.includes("payment_pending_gateway")) return VOID_GATEWAY_PENDING;
+  // M6.2 (fix round 3 item 3): a pending gateway payment can't be rejected: its line points to the way on, by the document's type (M6.3 staging fixes,
+  // review M2): a proforma's tax invoice is issued with it; an invoice's payment is confirmed on Payments.
+  if (codes.includes("payment_pending_gateway")) return voidGatewayPendingText(type);
   // M6.1 (second early check): a payment put on the invoice, even one withdrawn later (07-ZH line 25, marked until approved).
   if (codes.includes("payment_recorded") && type !== "proforma") return VOID_PAYMENT_RECORDED;
   // A proforma has no credit note and no return period (LD28): what stops its void is a payment recorded against it, or (from M5.4) that it was

@@ -42,6 +42,7 @@ import {
   readAllocations,
   STATUS_LABELS,
   showingFirstLine,
+  WAITS_REFUND_LINE,
 } from "../lib/payments.ts";
 import { bpToPercent } from "../lib/settings-form.ts";
 import { withCode } from "../lib/step-up.ts";
@@ -453,8 +454,11 @@ function PaymentList(props: {
                             <span className="visually-hidden">{` ${day(r.receivedOn)} ${r.clientName}`}</span>
                           </button>
                         )}
-                        {/* M6.3 staging fix 2 (L5): an entry asking for a proforma is confirmed only by issuing its tax invoice, never by the plain Confirm */}
-                        {pendingDecisionOf(r).kind === "issue" ? (
+                        {/* M6.3 staging fix 2 (L5): an entry asking for a proforma is confirmed only by issuing its tax invoice, never by the plain Confirm;
+                            review M3: money above the proforma's balance waits for a refund, so the line stands where the action would */}
+                        {pendingDecisionOf(r).kind === "refund" ? (
+                          <span className="pay-row__refund">{WAITS_REFUND_LINE}</span>
+                        ) : pendingDecisionOf(r).kind === "issue" ? (
                           <Link
                             to={`/invoices/${encodeURIComponent(r.proformaId ?? "")}`}
                             className="btn btn--primary"
@@ -797,6 +801,13 @@ function EntryView(props: {
             </div>
           )}
         </dl>
+        {/* M6.3 staging fixes, review M3: money above the proforma's balance waits for a refund (no Confirm of any kind below) */}
+        {pending && decision.kind === "refund" && (
+          <p className="approval-line" data-state="pending">
+            <Alert size={16} />
+            <span>{WAITS_REFUND_LINE}</span>
+          </p>
+        )}
         <PutOn
           heading={pending ? PAY_UI.askedFor : PAY_UI.putOn}
           rows={
@@ -839,8 +850,8 @@ function EntryView(props: {
                 {PAY_COPY.reject}
               </button>
             )}
-            {/* M6.3 staging fix 2 (L5): never the plain Confirm for an entry that asks for a proforma */}
-            {decision.kind === "issue" ? (
+            {/* M6.3 staging fix 2 (L5): never the plain Confirm for an entry that asks for a proforma; review M3: nothing for money waiting for a refund */}
+            {decision.kind === "refund" ? null : decision.kind === "issue" ? (
               <Link to={`/invoices/${encodeURIComponent(decision.proformaId)}`} className="btn btn--primary">
                 {PAY_UI.confirmByIssuing}
               </Link>
@@ -908,7 +919,7 @@ function ConfirmStep(props: { payment: PaymentView; onBack: () => void; onDone: 
   // falls back to what the read of its request found.
   const own = pendingDecisionOf(p);
   const proformaAsk =
-    own.kind === "issue"
+    own.kind !== "confirm"
       ? own.proformaId
       : load.state === "ready" && load.data.kind === "proforma"
         ? load.data.id
@@ -977,16 +988,19 @@ function ConfirmStep(props: { payment: PaymentView; onBack: () => void; onDone: 
         <div className="dialog__body pay-form">
           <p className="approval-line" data-state="pending">
             <Alert size={16} />
-            <span>{PAY_COPY.proformaLine}</span>
+            <span>{own.kind === "refund" ? WAITS_REFUND_LINE : PAY_COPY.proformaLine}</span>
           </p>
         </div>
         <div className="dialog__actions">
           <button type="button" className="btn btn--secondary" onClick={props.onBack}>
             {INV_COPY.cancel}
           </button>
-          <Link to={`/invoices/${encodeURIComponent(proformaAsk)}`} className="btn btn--primary">
-            {PAY_UI.confirmByIssuing}
-          </Link>
+          {/* review M3: money waiting for a refund has no way to be confirmed */}
+          {own.kind !== "refund" && (
+            <Link to={`/invoices/${encodeURIComponent(proformaAsk)}`} className="btn btn--primary">
+              {PAY_UI.confirmByIssuing}
+            </Link>
+          )}
         </div>
       </>
     );

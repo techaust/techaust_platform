@@ -43,6 +43,7 @@ import {
   payErrorText,
   plainAmount,
   todayIst,
+  WAITS_REFUND_LINE,
 } from "../../lib/payments.ts";
 import { bpToPercent, moneyFrom } from "../../lib/settings-form.ts";
 import { withCode } from "../../lib/step-up.ts";
@@ -573,6 +574,9 @@ function ProformaPayments(props: {
           {p.pending.map((w) => {
             const online = gatewayOf(p, w.paymentId);
             const isBlocked = online !== undefined && blocked.some((b) => b.payment_id === w.paymentId);
+            // M6.3 staging fixes, review M3: money above the proforma's balance waits for a refund: no tax invoice follows it, so its line stands where
+            // "Confirm by issuing the tax invoice" would (the advance would refuse it)
+            const refund = w.waitsRefund === true;
             return (
               <li key={w.paymentId} className="pay-waiting__row pay-waiting__row--proforma">
                 <span className="pay-waiting__what">
@@ -583,13 +587,13 @@ function ProformaPayments(props: {
                     <>
                       <span className="pay-online__what">
                         <CreditCard size={16} />
-                        {GW_UI.proformaToFollow}
+                        {refund ? GW_UI.paidOnline : GW_UI.proformaToFollow}
                       </span>
                       <span className="pay-lines__meta break">
                         {gatewayLine(online.provider, online.mode, online.providerPaymentId)}
                       </span>
                       {/* M6.3 (Q1 A): a card payment's tax invoice is never issued automatically: the Owner issues it with the day's rate */}
-                      {!isBlocked && online.provider !== "stripe" && (
+                      {!isBlocked && !refund && online.provider !== "stripe" && (
                         <span className="pay-lines__meta">{GW_UI.issuingNow}</span>
                       )}
                     </>
@@ -600,15 +604,19 @@ function ProformaPayments(props: {
                   )}
                 </span>
                 <span className="tnum pay-waiting__amount">{amountText(w.amountMinor, w.currency)}</span>
-                {(!online || isBlocked) && <PaymentPill status="pending_verification" />}
-                {owner && (
-                  <button
-                    type="button"
-                    className={`btn ${online && !isBlocked ? "btn--secondary" : "btn--primary"} pay-waiting__go`}
-                    onClick={() => props.onConfirm?.(w, online)}
-                  >
-                    {PAY_UI.confirmByIssuing}
-                  </button>
+                {(!online || isBlocked || refund) && <PaymentPill status="pending_verification" />}
+                {refund ? (
+                  <span className="pay-lines__meta pay-waiting__refund">{WAITS_REFUND_LINE}</span>
+                ) : (
+                  owner && (
+                    <button
+                      type="button"
+                      className={`btn ${online && !isBlocked ? "btn--secondary" : "btn--primary"} pay-waiting__go`}
+                      onClick={() => props.onConfirm?.(w, online)}
+                    >
+                      {PAY_UI.confirmByIssuing}
+                    </button>
+                  )
                 )}
               </li>
             );
