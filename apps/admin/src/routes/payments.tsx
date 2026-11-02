@@ -20,6 +20,7 @@ import { useToast } from "../components/toast.tsx";
 import { Notice } from "../components/ui.tsx";
 import { allowed } from "../lib/access.ts";
 import { CARD_ZM } from "../lib/copy-zm.ts";
+import { ADVICE_KIND_LABELS, ZN, ZN_UI } from "../lib/copy-zn.ts";
 import { pendingBadge } from "../lib/documents.ts";
 import { GW, GW_UI, gatewayLine, gatewayName, REVIEW_CHANGED } from "../lib/gateway.ts";
 import { INV_COPY, typeLabel } from "../lib/invoices.ts";
@@ -176,6 +177,7 @@ function Payments({ role }: { role: Role }) {
         }
         more={canRecord ? [{ label: PAY_UI.recordTds, onSelect: () => setRecording("tds") }] : undefined}
       />
+      <AdvicesLink />
       {owner ? (
         <Tabs
           label={PAY_COPY.heading}
@@ -217,6 +219,31 @@ function Payments({ role }: { role: Role }) {
         />
       )}
     </>
+  );
+}
+
+/**
+ * M6.4 (run file G5): the way to Remittance advices, under the page's heading, before its tabs, with the count of confirmed PayPal payments that no
+ * advice proves yet (the S9 reminder's subject). A failed read shows the link without a count (the count is a hint; the page is the record).
+ */
+function AdvicesLink() {
+  const without = useLoad(() => paymentsApi.withoutAdvice("paypal"), "paypal");
+  const n = without.state === "ready" ? without.data.count : 0;
+  return (
+    <nav className="pay-advices-link" aria-label={ZN.advices}>
+      <Link to="/payments/advices" className="btn btn--secondary">
+        <FileText size={20} />
+        {ZN.advices}
+        {n > 0 && (
+          <>
+            <span className="tabs__badge" aria-hidden="true">
+              {n > 99 ? "99+" : n}
+            </span>
+            <span className="visually-hidden">, {ZN_UI.withoutCount(n)}</span>
+          </>
+        )}
+      </Link>
+    </nav>
   );
 }
 
@@ -628,7 +655,8 @@ function EntryView(props: {
   // M6.2 (L7): a gateway payment is never rejected or withdrawn here (the money goes back by a refund, M6.5), and Razorpay is its own proof. M6.3 (L11, 07-ZM
   // S15): a Stripe payment takes a proof (Stripe's payment advice or the bank's e-FIRA).
   const online = p.provider !== "manual";
-  const card = p.provider === "stripe";
+  // M6.4: a PayPal payment takes a proof as a Stripe one does (PayPal's FIRA usually proves it through a remittance advice instead)
+  const card = p.provider === "stripe" || p.provider === "paypal";
   const canProof =
     (!online || card) &&
     allowed(props.role, "payments.attachProof") &&
@@ -762,6 +790,28 @@ function EntryView(props: {
                   <span className="pay-badge">{CARD_ZM.proofAwaited}</span>
                 ) : (
                   <span className="pay-lines__meta">{PAY_UI.noProof}</span>
+                )}
+              </dd>
+            </div>
+          )}
+          {/* M6.4 (run file G5): the remittance advice that proves it, when the API says (absent from an older API: no line) */}
+          {props.data.advice !== undefined && p.kind === "payment" && p.status === "confirmed" && (
+            <div>
+              <dt>{ZN_UI.adviceLabel}</dt>
+              <dd>
+                {props.data.advice ? (
+                  <Link
+                    to={`/payments/advices?advice=${encodeURIComponent(props.data.advice.id)}`}
+                    className="pay-proof-link"
+                  >
+                    <FileText size={16} />
+                    <span>
+                      {ADVICE_KIND_LABELS[props.data.advice.kind]}{" "}
+                      <span className="docno break">{props.data.advice.adviceRef}</span>
+                    </span>
+                  </Link>
+                ) : (
+                  <span className="pay-lines__meta">{ZN_UI.adviceNone}</span>
                 )}
               </dd>
             </div>

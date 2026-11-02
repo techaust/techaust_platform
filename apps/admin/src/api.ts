@@ -1997,8 +1997,22 @@ export type GatewayPaymentRow = {
   gatewayFeeTaxInrMinor?: number | null;
   /** M6.3 (07-ZM S15; L11): Stripe's payment advice or the bank's e-FIRA is on file. Absent from an older API. */
   hasProof?: boolean;
+  /**
+   * M6.4 (Step 0.2 item 6): the payment is on a remittance advice now, which is its proof as well ("Proof awaited" is no proof AND no advice). Absent from the
+   * current API (designer's ask for the builder): the panel then names the gateway instead of saying "Proof awaited".
+   */
+  onAdvice?: boolean;
 };
-export type PaymentLinkStatus = "creating" | "live" | "paid" | "expired" | "cancelled" | "stale" | "failed";
+/** M6.4: `capture_pending` is a PayPal checkout whose capture PayPal holds ("Awaiting PayPal", S2). */
+export type PaymentLinkStatus =
+  | "creating"
+  | "live"
+  | "paid"
+  | "expired"
+  | "cancelled"
+  | "stale"
+  | "failed"
+  | "capture_pending";
 /** M6.2: one payment link of a document (`shortUrl` only while live). */
 export type PaymentLinkRow = {
   checkoutId: string;
@@ -2036,6 +2050,80 @@ export type ReviewItem = {
   document_type: string | null;
 };
 export type ReviewResolution = "confirmed" | "advance_issued" | "left_as_credit" | "dismissed";
+
+// ---- M6.4 remittance advices (apps/admin/worker/advices.ts; ADM-INV-17, L12) ------------------------------------------------------------------------------
+
+export type AdviceProvider = "paypal" | "stripe" | "bank";
+export type AdviceKind = "efira" | "fira" | "firc" | "brc" | "settlement_report" | "other";
+/** One advice as the finance Worker reads it (snake_case: the row itself). `linked` comes with the list only. */
+export type RemittanceAdvice = {
+  id: string;
+  provider: AdviceProvider;
+  kind: AdviceKind;
+  advice_ref: string;
+  issued_on: string;
+  period_from: string | null;
+  period_to: string | null;
+  /** As printed on the advice, in paise: the register's figure only, never a GST value. */
+  inr_total_minor: number | null;
+  file_r2_key: string | null;
+  file_mime: string | null;
+  note: string | null;
+  recorded_by: string;
+  created_at: number;
+  linked?: number;
+};
+/** A payment on an advice (taken off ones too: `removed_at` set, with the Owner's reason). `client_name` is null once the client is anonymised. */
+export type AdvicePayment = {
+  payment_id: string;
+  created_by: string;
+  created_at: number;
+  removed_by: string | null;
+  removed_at: number | null;
+  remove_reason: string | null;
+  provider: string;
+  currency: Currency;
+  amount_minor: number;
+  received_on: string;
+  reference_norm: string | null;
+  client_id: string;
+  client_name: string | null;
+};
+/** A confirmed payment on no advice (`GET /payments/without-advice`). */
+export type PaymentWithoutAdvice = {
+  id: string;
+  provider: string;
+  client_id: string;
+  currency: Currency;
+  amount_minor: number;
+  received_on: string;
+  reference_norm: string | null;
+  provider_payment_id: string | null;
+  client_name: string | null;
+};
+/** The "Without advice" lists take a gateway, or `manual` for a bank advice's bank transfers from abroad. */
+export type WithoutAdviceProvider = "paypal" | "stripe" | "manual";
+export type NewAdvice = {
+  provider: AdviceProvider;
+  kind: AdviceKind;
+  adviceRef: string;
+  issuedOn: string;
+  periodFrom?: string | null;
+  periodTo?: string | null;
+  inrTotalMinor?: number | null;
+  note?: string | null;
+};
+/**
+ * The advice a payment is on now, if any (`PAYMENT_ADVICE_SQL` in `@techaust/db/advices`). Absent from the current `GET /payments/:id` (designer's ask for the
+ * builder): the entry dialog then shows no advice line.
+ */
+export type PaymentAdviceRef = {
+  id: string;
+  provider: AdviceProvider;
+  kind: AdviceKind;
+  adviceRef: string;
+  issuedOn: string;
+};
 /** M6.2 (L15): the gateways as the finance Worker sees them (keys by name only, never a value). */
 export type GatewaysStatus = {
   gateways: Record<
@@ -2128,7 +2216,12 @@ export const paymentsApi = {
     } = {},
   ) => request<{ payments: PaymentView[]; next: string | null }>(`/payments${qs(f)}`),
   get: (id: string) =>
-    request<{ payment: PaymentView; allocations: PaymentAllocationView[] }>(`/payments/${pid(id)}`),
+    request<{
+      payment: PaymentView;
+      allocations: PaymentAllocationView[];
+      /** M6.4: the advice the payment is on now (null: none). Absent from the current API (designer's ask for the builder). */
+      advice?: PaymentAdviceRef | null;
+    }>(`/payments/${pid(id)}`),
   /**
    * Record (07-ZH line 2). The Owner's entry is confirmed now (fresh code); a Staff member's waits for the Owner (line 3). Codes: `already_recorded`,
    * `reference_seen` (details `receivedOn`, `clientCode`, `clientName`), `reference_invalid`, `received_on_future`, `currency_mismatch`, `tds_not_allowed`,
@@ -2223,6 +2316,38 @@ export const paymentsApi = {
     }),
   /** Settings › Gateways' status (L15: from the finance Worker). */
   gateways: () => request<GatewaysStatus>("/payments/gateways"),
+  /**
+   * M6.4 "Check now" (Owner, Staff; `payments.link`): the checkout's state from its gateway, at most once a minute; a PayPal order is captured here as the
+   * member. `result` is one of core's `REFRESH_RESULTS`.
+   */
+  refreshLink: (checkoutId: string) =>
+    request<{ ok: true; result: string }>(`/payments/links/${pid(checkoutId)}/refresh`, { body: {} }),
+  // ---- M6.4 remittance advices (ADM-INV-17, L12) ----
+  /** The advices, newest first (keyset `<day>|<id>`, 50 a page). */
+  advices: (after?: string) =>
+    request<{ items: RemittanceAdvice[]; next: string | null }>(`/payments/advices${qs({ after })}`),
+  /** One advice and its payments (links taken off too), oldest money first. */
+  advice: (id: string, after?: string) =>
+    request<{ advice: RemittanceAdvice; payments: AdvicePayment[]; next: string | null }>(
+      `/payments/advices/${pid(id)}${qs({ after })}`,
+    ),
+  /** "Add advice" (Owner, Staff). Codes: `advice_ref_exists`. */
+  createAdvice: (body: NewAdvice) => request<{ ok: true; id: string }>("/payments/advices", { body }),
+  /** "Link payments": 1 to 50, all or none. Codes: `payment_not_confirmed`, `wrong_provider`, `client_anonymised`, `already_linked`. */
+  linkAdvice: (id: string, paymentIds: string[]) =>
+    request<{ ok: true; linked: number }>(`/payments/advices/${pid(id)}/payments`, { body: { paymentIds } }),
+  /** "Remove link" (the Owner only), with a reason of 1 to 200 characters. Codes: `link_not_on`. */
+  unlinkAdvice: (id: string, paymentId: string, reason: string) =>
+    request<{ ok: true }>(`/payments/advices/${pid(id)}/payments/${pid(paymentId)}/remove`, {
+      body: { reason },
+    }),
+  /** One gateway's confirmed payments on no advice (keyset), with how many there are in all. */
+  withoutAdvice: (provider: WithoutAdviceProvider, after?: string) =>
+    request<{ items: PaymentWithoutAdvice[]; next: string | null; count: number }>(
+      `/payments/without-advice${qs({ provider, after })}`,
+    ),
+  /** The advice's file: a plain same-origin GET with the session cookie (an attachment). */
+  adviceFileHref: (id: string) => `/api/v1/payments/advices/${pid(id)}/file`,
   /** "Bank extended the date" (07-ZH line 14; Owner). Codes: `extension_not_later` (details `femaDue`), `extension_too_far`, `not_an_export_invoice`. */
   extendRealisation: (documentId: string, body: { extendedTo: string; bankRef: string }) =>
     request<{ ok: true; id: string; documentId: string; extendedTo: string }>(
@@ -2242,14 +2367,15 @@ export const paymentsApi = {
 };
 
 /**
- * Upload a payment's proof (L10, L11; PDF, JPEG or PNG, at most 5 MB; set once) or a FEMA extension's bank letter, as a raw body with the file vault's
+ * Upload a payment's proof (L10, L11; PDF, JPEG or PNG, at most 5 MB; set once), a FEMA extension's bank letter or (M6.4) a remittance advice's file, as a raw body with the file vault's
  * headers plus the proof's type and reference. Codes: `file_too_large`, `file_type_not_allowed`, `file_type_mismatch`, `proof_already_set`,
  * `letter_already_set`, `checksum_mismatch`.
  */
 export function uploadPaymentDoc(
   target:
     | { proofOf: string; kind: string; ref?: string }
-    | { letterOf: { documentId: string; extensionId: string } },
+    | { letterOf: { documentId: string; extensionId: string } }
+    | { adviceOf: string },
   file: File,
   sha256: string,
   onProgress: (sent: number, total: number) => void,
@@ -2258,7 +2384,9 @@ export function uploadPaymentDoc(
   const path =
     "proofOf" in target
       ? `/api/v1/payments/${pid(target.proofOf)}/proof`
-      : `/api/v1/invoices/${pid(target.letterOf.documentId)}/realisation-extensions/${pid(target.letterOf.extensionId)}/letter`;
+      : "adviceOf" in target
+        ? `/api/v1/payments/advices/${pid(target.adviceOf)}/file`
+        : `/api/v1/invoices/${pid(target.letterOf.documentId)}/realisation-extensions/${pid(target.letterOf.extensionId)}/letter`;
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", path);
