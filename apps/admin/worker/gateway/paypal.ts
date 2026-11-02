@@ -521,7 +521,10 @@ export function payPalStubAnswer(input: RequestInfo | URL, init?: RequestInit): 
 /** A `fetch` that answers PayPal's five calls as the Orders v2 reference shows them (sandbox). Locally only. */
 export const payPalStubFetch: typeof fetch = async (input, init) => {
   const a = payPalStubAnswer(input, init);
-  return new Response(JSON.stringify(a.body), { status: a.status, headers: { "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(a.body), {
+    status: a.status,
+    headers: { "Content-Type": "application/json" },
+  });
 };
 
 /** Whether a stored approval URL may be handed back to the client (`retryUrl`, 07-ZN line 8): PayPal's page for this very order only. */
