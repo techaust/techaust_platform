@@ -2,6 +2,9 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-11-03 [#164](https://github.com/techaust/techaust_platform/pull/164) feat(payments): M6.4 PayPal (sandbox) [ADM-PAY-01][ADM-PAY-04][ADM-INV-17][POR-06][JOB-HOOK-01]
+- 2026-11-03 [#163](https://github.com/techaust/techaust_platform/pull/163) docs(runs): brief for the fourth admin Worker, split admin finance before M6.5 [ADM-G-02][ADM-PAY-01]
+- 2026-11-02 [#162](https://github.com/techaust/techaust_platform/pull/162) docs: record of 2026-11-02 (M6.3 approved, staging fixes, status, decisions, changelog, CLAUDE.md)
 - 2026-11-02 [#160](https://github.com/techaust/techaust_platform/pull/160) fix(payments,pdf): a proforma's online payment counted once; every PDF layout checked [ADM-PAY-01][ADM-PAY-03][ADM-INV-10][JOB-PDF-01]
 - 2026-11-02 [#159](https://github.com/techaust/techaust_platform/pull/159) docs: record of 2026-11-02 overnight
 - 2026-11-02 [#158](https://github.com/techaust/techaust_platform/pull/158) feat(payments): M6.3 Stripe card payments [ADM-PAY-01][ADM-PAY-03][POR-06][JOB-HOOK-01]
