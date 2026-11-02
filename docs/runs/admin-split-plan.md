@@ -355,4 +355,4 @@ Also in "Worker budget": "admin invoices 800,000 (plan line 650,000), admin fina
 - **Not verified in planning:** start-up with the real fixtures; the B3, M6.5 and M7 growth (brief estimates); the local auxiliary-to-auxiliary entrypoint binding (Step 0.4); whether wrangler refuses a deploy whose bound Worker is missing (Step 0.6); whether service-binding and RPC calls count against the Free plan's daily request limit (each counts as an invocation; checked at the staging reading).
 
 ## Handover
-Brief written from the analyst's draft and checked by the lead against the M6.4 branch (the import cut, the advance's callers, the row count). Review round 1 SEND BACK, all eight findings fixed; the reviewer re-checks. Then the owner's Q1 and Q2 go to the main session; then the PR.
+Brief written from the analyst's draft and checked by the lead against the M6.4 branch (the import cut, the advance's callers, the row count). Review round 1 SEND BACK, all eight findings fixed; the reviewer re-checks. Then the owner's Q1 goes to the main session; then the PR.
