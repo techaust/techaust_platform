@@ -690,8 +690,11 @@ export function advanceDraft(input: {
   exportMode: string | null;
   fx: FxState | null;
   today: CalendarDate;
+  /** The lines' new ids: `uuidv7` unless the caller passes its own (the invoices Worker's start-up dry run of the automatic advance, warm-advance.ts). */
+  ids?: () => string;
 }): MilestoneDraft {
   const { client, settings, today } = input;
+  const newId = input.ids ?? uuidv7;
   const ctx = taxContext(settings);
   const supply = determineSupply(taxInputOf(client), ctx, {
     documentDate: today,
@@ -718,7 +721,7 @@ export function advanceDraft(input: {
   const lines: LineState[] = split.value.lines.map((l, i) => {
     const cl = split.value.document.lines[i];
     return {
-      id: uuidv7(),
+      id: newId(),
       catalogueItemId: null,
       catalogueRateMinor: null,
       catalogueLine: null,

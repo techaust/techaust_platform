@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest";
 import { API_WARM } from "./warm-fixtures/api.ts";
 import { FINANCE_WARM } from "./warm-fixtures/finance.ts";
 import { FRONT_WARM } from "./warm-fixtures/front.ts";
+import { INVOICES_WARM } from "./warm-fixtures/invoices.ts";
+import { INVOICES_RPC_WARM } from "./warm-fixtures/invoices-rpc.ts";
 import { FRONT_WARM_SECRETS } from "./warm-front.ts";
 
 /** The admin tests' made-up 32-byte keys (vitest.config.ts TEST_KEY): 1 password pepper, 2 salt pepper, 3 TOTP key, 4 session key. */
@@ -101,9 +103,12 @@ describe("the warm-up fixtures' made-up credentials [CPU warm-up fix round, deci
     expect(FRONT_WARM_SECRETS.SESSION_HMAC_KEY).toBe(TEST_KEY(4));
   });
 
-  it("the API and finance fixtures hold no credential-shaped value", () => {
+  it("the API, finance and invoices fixtures (their RPC answer books too) hold no credential-shaped value", () => {
     expect(credentialValues(API_WARM).map((f) => f.key)).toEqual([]);
     expect(credentialValues(FINANCE_WARM).map((f) => f.key)).toEqual([]);
+    // The fourth admin Worker (brief D.6–D.7): the invoices Worker's own fixtures.
+    expect(credentialValues(INVOICES_WARM).map((f) => f.key)).toEqual([]);
+    expect(credentialValues(INVOICES_RPC_WARM).map((f) => f.key)).toEqual([]);
   });
 
   it("every credential-shaped value of the front fixture is one this test checks", () => {
@@ -115,6 +120,8 @@ describe("the warm-up fixtures' made-up credentials [CPU warm-up fix round, deci
     expect(secretShapesIn(FRONT_WARM, "front")).toEqual([]);
     expect(secretShapesIn(API_WARM, "api")).toEqual([]);
     expect(secretShapesIn(FINANCE_WARM, "finance")).toEqual([]);
+    expect(secretShapesIn(INVOICES_WARM, "invoices")).toEqual([]);
+    expect(secretShapesIn(INVOICES_RPC_WARM, "invoices-rpc")).toEqual([]);
   });
 
   it("the secret-shape scan catches a planted sample of every shape, anywhere in a fixture (review finding 1)", () => {

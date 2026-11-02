@@ -19,9 +19,11 @@ import { issueGatewayAdvance } from "./gateway/advance.ts";
 import { ROUTES } from "./guard.ts";
 import { mountInvoices } from "./routes-invoices.ts";
 import { id, rpcId, rpcLog } from "./rpc.ts";
-import { FINANCE_WARM } from "./warm-fixtures/finance.ts";
+import { warmAdvanceAtStartup } from "./warm-advance.ts";
+import { INVOICES_WARM } from "./warm-fixtures/invoices.ts";
+import { INVOICES_RPC_WARM } from "./warm-fixtures/invoices-rpc.ts";
 import { warmRouter } from "./warm-router.ts";
-import { ownCalls, warmAtStartup } from "./warm-routes.ts";
+import { warmAtStartup } from "./warm-routes.ts";
 
 const app = createApp(mountInvoices);
 // M6.2 CPU diagnosis (lead decision 1): the rows this Worker answers, matched while the module loads (not exported: a named export of an entry is an entrypoint).
@@ -29,10 +31,12 @@ warmRouter(
   app,
   ROUTES.filter((r) => r.on === "invoices"),
 );
-// CPU warm-up (b)1: the hot routes dry-run on made-up rows while the module loads (warm-routes.ts); never throws, stores and logs nothing. Until the probe writes
-// this Worker's own fixture (brief D.6–D.7), the finance fixture's calls that this Worker answers (`ownCalls`: the issue, an invoice, the dashboard, the list and
-// the approvals).
-void warmAtStartup(() => createApp(mountInvoices, undefined, { warm: true }), ownCalls(app, FINANCE_WARM));
+// CPU warm-up (b)1: the hot routes dry-run on made-up rows while the module loads (warm-routes.ts; this Worker's own fixture, warm-fixtures/invoices.ts: the
+// issue, an invoice, the dashboard, the list and the approvals); never throws, stores and logs nothing.
+void warmAtStartup(() => createApp(mountInvoices, undefined, { warm: true }), INVOICES_WARM);
+// Brief D.7 (early check finding 7): the automatic tax invoice of a proforma paid online (`GatewayAdvance.issueGatewayAdvance`) dry-run too, on made-up rows
+// and counter ids (warm-advance.ts); never throws, stores, sends or logs anything.
+void warmAdvanceAtStartup(INVOICES_RPC_WARM);
 export default app satisfies ExportedHandler<Env>;
 
 /** The recurring care invoices (M5.4). Public methods are the RPC surface: keep them to exactly these two. */

@@ -29,7 +29,7 @@ import { rpcId, rpcLog } from "./rpc.ts";
 import { FINANCE_WARM } from "./warm-fixtures/finance.ts";
 import { FINANCE_RPC_WARM } from "./warm-fixtures/finance-rpc.ts";
 import { warmRouter } from "./warm-router.ts";
-import { ownCalls, warmAtStartup } from "./warm-routes.ts";
+import { warmAtStartup } from "./warm-routes.ts";
 import { warmRpcAtStartup } from "./warm-rpc.ts";
 
 const app = createApp(mountFinance);
@@ -38,9 +38,10 @@ warmRouter(
   app,
   ROUTES.filter((r) => r.on === "finance"),
 );
-// CPU warm-up (b)1: the hot routes dry-run on made-up rows while the module loads (warm-routes.ts); never throws, stores and logs nothing. The fourth admin
-// Worker: only the fixture's calls this Worker answers (`ownCalls`, matched on this app's router; the invoice calls run in the invoices Worker).
-void warmAtStartup(() => createApp(mountFinance, undefined, { warm: true }), ownCalls(app, FINANCE_WARM));
+// CPU warm-up (b)1: the hot routes dry-run on made-up rows while the module loads (warm-routes.ts); never throws, stores and logs nothing. Since the fourth
+// admin Worker this Worker's own fixture (warm-fixtures/finance.ts): an invoice's Payments panel, "Needs review" and the Owner's "Try again", whose
+// `ADMIN_ADVANCE` is the made-up env's stub (it answers at once and never calls the invoices Worker).
+void warmAtStartup(() => createApp(mountFinance, undefined, { warm: true }), FINANCE_WARM);
 // M6.4 (L31, early check 2 finding 4): the gateway RPC entrypoints' code dry-run too (the PayPal capture, a PayPal event, the sweep's refresh, a new order;
 // warm-rpc.ts), on made-up rows and the simulator's made-up answers; never throws, stores, sends or logs anything.
 void warmRpcAtStartup(FINANCE_RPC_WARM);

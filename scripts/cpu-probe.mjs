@@ -2,7 +2,7 @@
 //
 // Why: the Free plan stops an invocation at 10 ms CPU, and on staging the first request each route gets in a fresh isolate costs most (V8 compiles the
 // route's code lazily, its inline caches start cold, the router's regexes compile), inside the metered request. This probe reproduces that locally:
-//   1. a seed process loads the REAL minified bundles (the three admin Workers and jobs) into one Node process, with D1 stood in by `node:sqlite` (every
+//   1. a seed process loads the REAL minified bundles (the four admin Workers and jobs) into one Node process, with D1 stood in by `node:sqlite` (every
 //      migration plus the seed), signs a made-up Owner in through the API (invite, enrol, TOTP), and makes the sample data through the API (the e2e
 //      sample set, apps/admin/e2e/sample-data.ts, plus drafts, proformas, payment links and webhook events for the hot routes);
 //   2. for each hot route, N fresh processes each copy that database, load ONE Worker bundle, let its start-up finish, then time the route's FIRST call and
@@ -53,6 +53,8 @@ export const BUNDLES = {
   front: "apps/admin/dist/techaust_platform_admin",
   api: "apps/admin/dist/techaust_platform_admin_api",
   finance: "apps/admin/dist/techaust_platform_admin_finance",
+  // The fourth admin Worker (2026-11-03, brief D.6): invoices and notes, statements, reports, approvals, the dashboard, `BillingJobs` and `GatewayAdvance`.
+  invoices: "apps/admin/dist/techaust_platform_admin_invoices",
   jobs: "apps/jobs/dist",
 };
 const ORIGIN = "http://localhost:5173";
@@ -325,12 +327,21 @@ async function seed(dir, extra) {
   const front = await loadWorker("front");
   const api = await loadWorker("api");
   const finance = await loadWorker("finance");
+  const invoices = await loadWorker("invoices");
   const jobs = await loadWorker("jobs");
   const apiEnv = envOf("api", shared);
-  const financeEnv = envOf("finance", shared);
+  const invoicesEnv = envOf("invoices", shared);
+  // The fourth admin Worker (brief D.6): finance reaches the invoices Worker's `GatewayAdvance` only for the Owner's "Try again" (ADMIN_ADVANCE), as an RPC.
+  const financeEnv = envOf("finance", shared, {
+    ADMIN_ADVANCE: {
+      issueGatewayAdvance: (args) =>
+        new invoices.GatewayAdvance(ctx(), invoicesEnv).issueGatewayAdvance(args),
+    },
+  });
   const frontEnv = envOf("front", shared, {
     ADMIN_API: { fetch: (r) => api.default.fetch(r, apiEnv, ctx()) },
     ADMIN_FINANCE: { fetch: (r) => finance.default.fetch(r, financeEnv, ctx()) },
+    ADMIN_INVOICES: { fetch: (r) => invoices.default.fetch(r, invoicesEnv, ctx()) },
   });
   const jobsEnv = envOf("jobs", shared);
   const via = async (path, init) => {
@@ -572,6 +583,87 @@ async function seed(dir, extra) {
     events.push(raw.prepare("SELECT id FROM webhook_events WHERE event_id = ?").get(eventId).id);
     if (i === 0) hookTemplate = { checkoutId: link.checkoutId, amount: doc.total_minor };
   }
+  // The fourth admin Worker (brief D.6–D.7): proformas paid online through a staff payment link, each left pending for its automatic tax invoice (the
+  // Razorpay event processed by the finance Worker's own `GatewayEvents.processEvent`, which queues `gateway.advance`), for the invoices Worker's
+  // `GatewayAdvance.issueGatewayAdvance`; and an open `dead_letter` review item on each (the jobs dead-letter path's row), for the Owner's "Try again". Each
+  // proforma is for its own made-up copy of the INR sample client (a client makes at most LINKS_PER_CLIENT_HOUR links an hour).
+  const gatewayEvents = new finance.GatewayEvents(ctx(), financeEnv);
+  const clientCols = raw
+    .prepare("SELECT name FROM pragma_table_info('clients') WHERE name NOT IN ('id', 'code')")
+    .all()
+    .map((c) => c.name)
+    .join(", ");
+  const contactCols = raw
+    .prepare("SELECT name FROM pragma_table_info('contacts') WHERE name NOT IN ('id', 'client_id', 'email')")
+    .all()
+    .map((c) => c.name)
+    .join(", ");
+  const advances = [];
+  const reviews = [];
+  for (let i = 0; i < n; i++) {
+    const clientId = randomUUID();
+    raw
+      .prepare(
+        `INSERT INTO clients (id, code, ${clientCols}) SELECT ?, ?, ${clientCols} FROM clients WHERE id = ?`,
+      )
+      .run(clientId, `C-PROBEADV${i + 1}`, inr);
+    raw
+      .prepare(
+        `INSERT INTO contacts (id, client_id, email, ${contactCols}) SELECT ?, ?, ?, ${contactCols} FROM contacts WHERE client_id = ? AND is_billing = 1 LIMIT 1`,
+      )
+      .run(randomUUID(), clientId, `advance${i + 1}@example.test`, inr);
+    const id = must(
+      "POST /invoices (proforma)",
+      await call("/invoices", { body: { clientId, services, kind: "proforma" } }),
+    ).id;
+    await issue(id);
+    const doc = raw.prepare("SELECT updated_at, total_minor FROM documents WHERE id = ?").get(id);
+    const link = must(
+      "payment-link (proforma)",
+      await call(`/invoices/${id}/payment-link`, {
+        body: { amountMinor: doc.total_minor, expectedUpdatedAt: doc.updated_at },
+      }),
+    );
+    const body = paidEvent(link.checkoutId, doc.total_minor);
+    const eventId = `evt_PROBEADV${String(i).padStart(6, "0")}`;
+    const res = await jobs.default.fetch(
+      new Request("http://localhost:8787/razorpay", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Razorpay-Signature": signed(body),
+          "X-Razorpay-Event-Id": eventId,
+        },
+        body,
+      }),
+      jobsEnv,
+      ctx(),
+    );
+    await drain();
+    if (res.status !== 200)
+      throw new Error(`cpu-probe seed: the hook answered ${res.status} ${await res.text()}`);
+    const eventRow = raw.prepare("SELECT id FROM webhook_events WHERE event_id = ?").get(eventId).id;
+    const processed = await gatewayEvents.processEvent({ eventId: eventRow });
+    await drain();
+    if (processed.result !== "processed")
+      throw new Error(`cpu-probe seed: the proforma's event answered ${JSON.stringify(processed)}`);
+    const payment = raw
+      .prepare("SELECT id FROM payments WHERE checkout_id = ? AND status = 'pending_verification'")
+      .get(link.checkoutId);
+    if (!payment) throw new Error("cpu-probe seed: the proforma's payment is not pending its tax invoice");
+    advances.push(payment.id);
+    const reviewId = randomUUID();
+    raw
+      .prepare(
+        `INSERT INTO review_items (id, source, provider, kind, status, payment_id, document_id, client_id, amount_minor, currency, created_at)
+         SELECT ?, 'dlq', p.provider, 'dead_letter', 'open', p.id, ?, p.client_id, p.amount_minor, p.currency, ? FROM payments p WHERE p.id = ?`,
+      )
+      .run(reviewId, id, Date.now(), payment.id);
+    reviews.push(reviewId);
+    // The online-payment bell processEvent rang for this payment is taken out again (a made-up seed row): the notification list's fixture keeps the two lead
+    // bells it is written from, never a row with a Razorpay-shaped payment id, which the fixtures' secret-shape scan (warm-fixtures.test.ts) reads as base64.
+    raw.prepare("DELETE FROM notifications WHERE entity_type = 'payment' AND entity_id = ?").run(payment.id);
+  }
   // M6.4: PayPal orders of issued USD export invoices of an overseas client (made through the finance Worker's own `PortalPayments.createLink`, the stub
   // transport answering), for the return's capture RPC (EMAILED links: the public return answers only for those, early check 2 finding 6), the PayPal
   // event, the sweep's refresh and a new order (L31: the RPC entrypoints' start-up dry run, warm-rpc.ts).
@@ -693,6 +785,8 @@ async function seed(dir, extra) {
     paypalEvents,
     paypalRefresh,
     paypalLinks,
+    advances,
+    reviews,
   };
   writeFileSync(join(dir, "manifest.json"), JSON.stringify(manifest, null, 2));
   keep.log(
@@ -707,7 +801,17 @@ const answer = () => new Response('{"ok":true}', { headers: { "Content-Type": "a
 const FRONT_TARGETS = {
   ADMIN_API: { fetch: async () => answer() },
   ADMIN_FINANCE: { fetch: async () => answer() },
+  ADMIN_INVOICES: { fetch: async () => answer() },
 };
+/**
+ * The finance Worker's `ADMIN_ADVANCE` in its own cases: an answer at once (made up, `issued`), so a case times the finance Worker's share of "Try again"; the
+ * invoices Worker's share is its own case (`rpc GatewayAdvance.issueGatewayAdvance`). The seed binds the real one.
+ */
+const FINANCE_TARGETS = {
+  ADMIN_ADVANCE: { issueGatewayAdvance: async () => ({ result: "issued", number: "PROBE/1" }) },
+};
+/** The service-binding targets of a case's Worker (every other binding answers 502). */
+const TARGETS = { front: FRONT_TARGETS, finance: FINANCE_TARGETS };
 
 /** Each hot route: the Worker that answers it and the call for attempt `i` (0 = the first, then the later ones). */
 export const CASES = {
@@ -749,7 +853,7 @@ export const CASES = {
   "POST /invoices/:id/issue": {
     readsOnly: true,
     warmBody: (body) => ({ ...body, expectedContentSha256: "0".repeat(64) }),
-    worker: "finance",
+    worker: "invoices",
     call: (m, i) => ({
       path: `/invoices/${m.issueDrafts[i].id}/issue`,
       cookie: m.cookie,
@@ -757,7 +861,7 @@ export const CASES = {
     }),
   },
   "GET /invoices/:id": {
-    worker: "finance",
+    worker: "invoices",
     call: (m) => ({ path: `/invoices/${m.detail}`, cookie: m.cookie }),
   },
   "GET /invoices/:id/payments": {
@@ -767,7 +871,7 @@ export const CASES = {
   // Not in the start-up dry run (`warm: false`, fix round decision 1c): it reaches its first new id with no refusal on the way, and global scope refuses it.
   "PATCH /invoices/:id": {
     warm: false,
-    worker: "finance",
+    worker: "invoices",
     call: (m, i) => ({
       path: `/invoices/${m.patchDrafts[i].id}`,
       method: "PATCH",
@@ -778,20 +882,26 @@ export const CASES = {
   // Not in the start-up dry run (`warm: false`, fix round decision 1c): as PATCH.
   "POST /invoices/:id/advance-invoice": {
     warm: false,
-    worker: "finance",
+    worker: "invoices",
     call: (m, i) => ({
       path: `/invoices/${m.proformas[i].id}/advance-invoice`,
       cookie: m.cookie,
       body: m.proformas[i].body,
     }),
   },
-  "GET /dashboard": { worker: "finance", call: (m) => ({ path: "/dashboard", cookie: m.cookie }) },
-  "GET /invoices": { worker: "finance", call: (m) => ({ path: "/invoices", cookie: m.cookie }) },
+  "GET /dashboard": { worker: "invoices", call: (m) => ({ path: "/dashboard", cookie: m.cookie }) },
+  "GET /invoices": { worker: "invoices", call: (m) => ({ path: "/invoices", cookie: m.cookie }) },
   "GET /payments/review": {
     worker: "finance",
     call: (m) => ({ path: "/payments/review", cookie: m.cookie }),
   },
-  "GET /approvals": { worker: "finance", call: (m) => ({ path: "/approvals", cookie: m.cookie }) },
+  // The fourth admin Worker (brief D.7): the Owner's "Try again" on an advance's dead letter. The finance Worker's share only: its ADMIN_ADVANCE answers at once
+  // (FINANCE_TARGETS); the start-up dry run runs it against the made-up env's stub the same way.
+  "POST /payments/review/:id/retry": {
+    worker: "finance",
+    call: (m, i) => ({ path: `/payments/review/${m.reviews[i]}/retry`, cookie: m.cookie, body: {} }),
+  },
+  "GET /approvals": { worker: "invoices", call: (m) => ({ path: "/approvals", cookie: m.cookie }) },
   "GET /notifications": { worker: "api", call: (m) => ({ path: "/notifications", cookie: m.cookie }) },
   "GET /settings": { worker: "api", call: (m) => ({ path: "/settings", cookie: m.cookie }) },
   "GET /clients": { worker: "api", call: (m) => ({ path: "/clients", cookie: m.cookie }) },
@@ -819,6 +929,13 @@ export const CASES = {
   },
   "rpc PortalPayments.createLink (PayPal)": { worker: "finance", rpc: "paypal-link", warmRpc: "createLink" },
   "jobs POST /paypal": { worker: "jobs", hook: "paypal" },
+  // The fourth admin Worker (brief D.6–D.7): the automatic tax invoice of a proforma paid online, now the invoices Worker's `GatewayAdvance` (jobs'
+  // `gateway.advance` and finance's "Try again" call it). Dry-run at start-up too (warm-advance.ts, the answer book apps/admin/worker/warm-fixtures/invoices-rpc.ts).
+  "rpc GatewayAdvance.issueGatewayAdvance": {
+    worker: "invoices",
+    rpc: "advance",
+    warmRpc: "issueGatewayAdvance",
+  },
 };
 
 /** Signs in up to the TOTP challenge (salt, then login with the made-up password), untimed. */
@@ -844,7 +961,7 @@ async function runCase(dir, name, later, givenChallenge) {
   const m = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
   const shared = sharedOf(dir);
   const mod = await loadWorker(c.worker);
-  const env = envOf(c.worker, shared, c.worker === "front" ? FRONT_TARGETS : {});
+  const env = envOf(c.worker, shared, TARGETS[c.worker] ?? {});
   const secret = Buffer.from(m.secretHex, "hex");
   const results = [];
   const attempts = c.totp ? Math.min(later, 2) + 1 : later + 1;
@@ -868,6 +985,9 @@ async function runCase(dir, name, later, givenChallenge) {
     } else if (c.rpc === "paypal-link") {
       const entry = new mod.PortalPayments(ctx(), env);
       run = () => entry.createLink(m.paypalLinks[i]);
+    } else if (c.rpc === "advance") {
+      const entry = new mod.GatewayAdvance(ctx(), env);
+      run = () => entry.issueGatewayAdvance({ paymentId: m.advances[i] });
     } else if (c.rpc) {
       const entry = new mod.GatewayEvents(ctx(), env);
       run = () => entry.processEvent({ eventId: m.events[i] });
@@ -936,7 +1056,9 @@ async function runCase(dir, name, later, givenChallenge) {
             ? { checkoutId: m.paypalRefresh[i] }
             : c.rpc === "paypal-link"
               ? m.paypalLinks[i]
-              : null;
+              : c.rpc === "advance"
+                ? { paymentId: m.advances[i] }
+                : null;
     const r = await timed(run);
     if (dbClock.capture) {
       const request = a
@@ -1037,15 +1159,23 @@ export function sqlKey(sql) {
 
 /**
  * How many recorded rows an answer keeps, per Worker. Finance keeps ONE (lead decision 9, 2026-11-02: its bundle's headroom under the 650,000 plan line is
- * for M6.3; a second row of the same shape runs the same code); the front and the API keep two.
+ * for M6.3; a second row of the same shape runs the same code), and so does the invoices Worker, which took finance's invoice routes with their fixture (the
+ * fourth admin Worker, 2026-11-03); the front and the API keep two.
  */
-const ROWS_KEPT = { front: 2, api: 2, finance: 1 };
+const ROWS_KEPT = { front: 2, api: 2, finance: 1, invoices: 1 };
 
 const FIXTURE_NAMES = {
   front: "FRONT_WARM",
   api: "API_WARM",
   finance: "FINANCE_WARM",
+  invoices: "INVOICES_WARM",
   "finance-rpc": "FINANCE_RPC_WARM",
+  "invoices-rpc": "INVOICES_RPC_WARM",
+};
+/** The type and its module of each RPC fixture (the HTTP ones are `WarmFixture` of warm-routes.ts). */
+const RPC_FIXTURE_TYPES = {
+  "finance-rpc": ["WarmRpcFixture", "../warm-rpc.ts"],
+  "invoices-rpc": ["WarmAdvanceFixture", "../warm-advance.ts"],
 };
 /**
  * Review finding 2: the expiry columns the fixtures hold (a session's idle and absolute expiry, its step-up window, any `*_expires_at`) are written as this
@@ -1063,8 +1193,24 @@ export function farFutureExpiries(row) {
   return out;
 }
 /**
+ * The local simulator's Razorpay ids (`pay_A<amount>R<checkout hex>`, `plink_…`; worker/gateway/config.ts) mix capitals, small letters and digits, which the
+ * fixtures' secret-shape scan (apps/admin/worker/warm-fixtures.test.ts, "a long base64 run") rightly refuses outside the sign-in values it checks. Since the
+ * fourth admin Worker (brief D.6–D.7) the finance and invoices fixtures hold such ids (the advance's payment, its review item), so each one is replaced by a
+ * made-up `pay_warm<n>` / `plink_warm<n>` everywhere in ONE fixture (calls, parameters and rows alike): the dry run's reads still find their rows, and the
+ * `rzp_` row id keeps its prefix. The dry run parses no id's shape (only the simulator does, and it is never called there).
+ */
+export function madeUpGatewayIds(data) {
+  const seen = new Map();
+  const text = JSON.stringify(data).replace(/(pay|plink)_A\d+R[0-9a-f]{32}/g, (id, kind) => {
+    if (!seen.has(id)) seen.set(id, `${kind}_warm${String(seen.size + 1).padStart(4, "0")}`);
+    return seen.get(id);
+  });
+  return JSON.parse(text);
+}
+
+/**
  * `--write-fixtures` (CPU warm-up (b)1): each admin Worker's start-up dry run replays its hot routes on made-up rows. This captures, for every HTTP case of the
- * front, API and finance Workers, the request and every D1 statement of its first call on the probe's sample set (made-up: "(sample)" names, @example.test
+ * front, API, finance and invoices Workers, the request and every D1 statement of its first call on the probe's sample set (made-up: "(sample)" names, @example.test
  * addresses, the e2e sample values), and writes apps/admin/worker/warm-fixtures/<worker>.ts: the calls in case order and the answer book (SQL key -> parameters,
  * up to ROWS_KEPT rows, rows changed). Re-run it after a hot route's SQL or columns change (the warm-up tests then pin the new counts).
  */
@@ -1073,8 +1219,12 @@ function writeFixtures(work, seedDir) {
     front: { calls: [], rows: {} },
     api: { calls: [], rows: {} },
     finance: { calls: [], rows: {} },
+    // The fourth admin Worker (brief D.6): the invoice routes' fixture, written apart from finance's.
+    invoices: { calls: [], rows: {} },
     // L31 (early check 2 finding 4): the finance Worker's RPC dry run (apps/admin/worker/warm-rpc.ts): the calls and the statements of the `warmRpc` cases.
     "finance-rpc": { calls: [], rows: {} },
+    // Brief D.7: the invoices Worker's `GatewayAdvance` dry run (apps/admin/worker/warm-advance.ts).
+    "invoices-rpc": { calls: [], rows: {} },
   };
   for (const [name, c] of Object.entries(CASES)) {
     if (c.warmRpc) {
@@ -1084,7 +1234,7 @@ function writeFixtures(work, seedDir) {
       child(["--case", runDir, name, "0"], name, { ...process.env, CPU_PROBE_CAPTURE: file });
       const cap = JSON.parse(readFileSync(file, "utf8"));
       console.log(`  ${name}: ${cap.text.slice(0, 60)}, ${cap.statements.length} statements`);
-      const target = out["finance-rpc"];
+      const target = out[`${c.worker}-rpc`];
       target.calls.push({ m: c.warmRpc, args: cap.rpcArgs });
       // The capture once more with a payer in India (RA-38's `not_export_receipt`: the pending batch), on the same answer book.
       if (c.warmRpc === "capturePayPalReturn")
@@ -1101,7 +1251,7 @@ function writeFixtures(work, seedDir) {
         }
         list.push({
           p: st.params,
-          r: st.rows.slice(0, ROWS_KEPT.finance).map(farFutureExpiries),
+          r: st.rows.slice(0, ROWS_KEPT[c.worker]).map(farFutureExpiries),
           c: st.changes,
         });
       }
@@ -1147,8 +1297,10 @@ function writeFixtures(work, seedDir) {
   for (const data of Object.values(out))
     for (const list of Object.values(data.rows)) if (list.length === 1) delete list[0].p;
   const files = [];
-  for (const [worker, data] of Object.entries(out)) {
+  for (const [worker, raw] of Object.entries(out)) {
+    const data = madeUpGatewayIds(raw);
     const name = FIXTURE_NAMES[worker];
+    const [type, from] = RPC_FIXTURE_TYPES[worker] ?? ["WarmFixture", "../warm-routes.ts"];
     const file = at(`apps/admin/worker/warm-fixtures/${worker}.ts`);
     mkdirSync(at("apps/admin/worker/warm-fixtures"), { recursive: true });
     writeFileSync(
@@ -1158,9 +1310,9 @@ function writeFixtures(work, seedDir) {
 // "(sample)" names, @example.test addresses, SAMPLE bank values; secrets and keys are the admin tests' made-up test values). No real or personal data.
 // Credential-shaped values (the front's sign-in rows) were made under the admin tests' TEST_KEY values only (warm-fixtures.test.ts); this folder is the one
 // path .gitleaks.toml allows.
-${worker === "finance-rpc" ? 'import type { WarmRpcFixture } from "../warm-rpc.ts";' : 'import type { WarmFixture } from "../warm-routes.ts";'}
+import type { ${type} } from "${from}";
 
-export const ${name}: ${worker === "finance-rpc" ? "WarmRpcFixture" : "WarmFixture"} = ${JSON.stringify(data)};
+export const ${name}: ${type} = ${JSON.stringify(data)};
 `,
     );
     files.push(file);
