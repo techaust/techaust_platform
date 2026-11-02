@@ -67,6 +67,10 @@ jobs:
         run: |
           pnpm --filter @techaust/web exec playwright install --with-deps chromium
           pnpm dev:secrets
+      # M6.3 staging fixes (part 3): the PDF page counts and the closing line never alone on a page, printed by the Chromium installed above (packages/pdf
+      # pins the same @playwright/test version as apps/web). Sample fixtures only; no secret, no network: safe on fork pull requests.
+      - name: PDF page counts (Playwright, packages/pdf/visual/page-count.spec.ts)
+        run: pnpm --filter @techaust/pdf exec playwright test -c playwright.config.ts visual/page-count.spec.ts
       - name: Browser tests (Playwright and axe, apps/web/e2e)
         run: pnpm --filter @techaust/web e2e
         env:

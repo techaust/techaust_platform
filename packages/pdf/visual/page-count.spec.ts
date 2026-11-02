@@ -6,7 +6,7 @@
 //     closing line printed on its own;
 //   - a sweep pushes the block before the closing line down a few millimetres at a time across the foot of a page, and at no step is the line left
 //     alone on the last page (the page break moves to before that block instead: `break-before: avoid` on the line).
-// Sample data only. Run: bash tools/heavy.sh --log pdf-visual pnpm --filter @techaust/pdf test:visual
+// Sample data only. Runs in CI (ci.yml, after the browser setup); locally: bash tools/heavy.sh --log pdf-visual pnpm --filter @techaust/pdf test:visual
 import { PDFDocument } from "@cantoo/pdf-lib";
 import { expect, type Page, test } from "@playwright/test";
 import type { InvoiceEnvelope } from "../src/invoice-types.ts";
@@ -32,6 +32,8 @@ const INVOICE_PAGES: Record<InvoiceLayoutFixture, number> = {
   "long-names": 2,
   bare: 1,
   signed: 1,
+  // Two pages on purpose (lead, 2026-11-02): 2 lines, the full SWIFT block and a delivery address run 18.3 mm past page 1; the tax summary and the
+  // integrity line go over together. Fitting it would take a visible change to the approved page, not a spacing tweak.
   "export-lut": 2,
   "export-igst": 1,
   proforma: 1,
@@ -53,6 +55,8 @@ const NOTE_PAGES: Record<NoteFixtureName, number> = {
 const DOCUMENT_PAGES: Record<FixtureName, number> = {
   "short-intra-inr": 3,
   "long-inter-inr": 9,
+  // Two pages on purpose (lead, 2026-11-02): the Acceptance section (34 mm, kept whole) and the integrity line go over together. Page 1 is short by
+  // 29.7 mm (usd-export), 52.9 mm (inter-estimate) and 70.5 mm (intra-estimate): no spacing tweak closes that without a visible change.
   "usd-export": 2,
   "intra-estimate": 2,
   "inter-estimate": 2,
