@@ -9,6 +9,7 @@
 // Money is formatted and added only through core; nothing here adds up an amount by hand. Pure, so the words and rules are tested without a browser.
 import { LEDGER_STATUSES, PAYABLE_TYPES, receiptMonthWarning, TDS_TYPES } from "@techaust/core/ledger";
 import { type Currency, compare, formatMoney, money, subtract, sum } from "@techaust/core/money";
+import { reviewReason } from "../../worker/gateway/reasons.ts";
 import type { PaymentMode, PaymentStatus } from "../api.ts";
 import { RequestError } from "../api.ts";
 import type { PillTone } from "../components/display.tsx";
@@ -103,11 +104,56 @@ export const MODES: readonly PaymentMode[] = ["neft", "rtgs", "imps", "upi", "sw
 export const VOID_PAYMENT_PENDING =
   "A payment recorded on it is waiting for the owner's check. Reject it first.";
 /**
- * M6.2 (fix round 3 item 3, reworded in fix round 4 low 2; the lead under the standing delegation, 2026-11-01): the void and withdraw blocker `payment_pending_gateway`, a pending Razorpay
- * payment (it can't be rejected). The Worker's `VOID_GATEWAY_PENDING_LINE` is the same words (a test pins the two).
+ * M6.2 (fix round 3 item 3, reworded in fix round 4 low 2; the lead under the standing delegation, 2026-11-01): the void and withdraw blocker `payment_pending_gateway`, a pending gateway
+ * payment (it can't be rejected). The Worker's `VOID_GATEWAY_PENDING_LINE` is the same words (a test pins the two). M6.3 staging fix (07-ZM "Review changes",
+ * 2026-11-02): gateway-neutral, since a Stripe payment showed "A Razorpay payment".
  */
 export const VOID_GATEWAY_PENDING =
-  'A Razorpay payment on it is waiting for its tax invoice. Issue it with "Confirm by issuing the tax invoice".';
+  'An online payment on it is waiting for its tax invoice. Issue it with "Confirm by issuing the tax invoice".';
+/**
+ * M6.3 staging fixes, review M2 (07-ZM "Review changes", the lead under the owner's delegation, 2026-11-02): the same blocker on an invoice (a tax or export
+ * invoice, or a debit note), whose online payment is confirmed on Payments, never by issuing (that action is a proforma's only). The line follows the type.
+ */
+export const VOID_GATEWAY_PENDING_INVOICE =
+  "An online payment on it is waiting for the owner's check. Confirm it on Payments first.";
+/** The `payment_pending_gateway` line for a document of `type`: a proforma's (confirm by issuing) or an invoice's (confirm on Payments). */
+export const voidGatewayPendingText = (type: string | undefined): string =>
+  type === "proforma" ? VOID_GATEWAY_PENDING : VOID_GATEWAY_PENDING_INVOICE;
+
+/**
+ * M6.3 staging fix 2 (L5, 07-ZH line 12): how the Owner decides a pending entry. One that asks for a proforma (its request, or the proforma its online checkout
+ * was for: the API's `proformaId`) is confirmed only by issuing the tax invoice for the payment received, on that proforma ("Confirm by issuing the tax invoice");
+ * the plain Confirm is never offered for it (the server refuses it: `use_advance_invoice`). Anything else: the plain Confirm. An older API sends no `proformaId`.
+ */
+export type PendingDecision =
+  | { kind: "issue"; proformaId: string }
+  | { kind: "refund"; proformaId: string }
+  | { kind: "reject"; proformaId: string }
+  | { kind: "confirm" };
+/**
+ * M6.3 staging fixes, review M3: money above the proforma's balance (`waitsRefund`) can't be confirmed by issuing (the server refuses it), so no action is
+ * offered for it. An online payment (`refund`) waits for the M6.5 refund and its line says so; a Staff entry (`reject`, also when no `provider` is sent: the
+ * approvals queue holds only Staff entries) is decided by Reject alone, with no line (it may be a second record of money already taken, not money the client
+ * paid twice).
+ */
+export const pendingDecisionOf = (p: {
+  proformaId?: string | null | undefined;
+  waitsRefund?: boolean | undefined;
+  provider?: string | undefined;
+}): PendingDecision =>
+  !p.proformaId
+    ? { kind: "confirm" }
+    : p.waitsRefund !== true
+      ? { kind: "issue", proformaId: p.proformaId }
+      : p.provider !== undefined && p.provider !== "manual"
+        ? { kind: "refund", proformaId: p.proformaId }
+        : { kind: "reject", proformaId: p.proformaId };
+
+/**
+ * M6.3 staging fixes, review M3 (lead's decision 1(c), 07-ZM "Review changes", approved by the lead under the owner's delegation, 2026-11-02): what the screens
+ * show in place of "Confirm by issuing the tax invoice" for an online payment above the proforma's balance: the `proforma_overpaid` review line, word for word.
+ */
+export const WAITS_REFUND_LINE = reviewReason("proforma_overpaid");
 
 /** Line 9, the overpayment line. */
 export const overpaymentLine = (amount: string, client: string) =>
@@ -377,6 +423,10 @@ const APPROVED_CODES = new Set([
   "use_advance_invoice",
   "reference_invalid",
   "payments_pending",
+  // M6.3 staging fix 1 (07-ZM "Review changes", the lead under the owner's delegation, 2026-11-02): the server's words, with "Confirm by issuing" beside them
+  "online_payment_waiting",
+  // lead's decision 2: a manual entry Staff recorded waits for the proforma (the same box and "Confirm by issuing")
+  "payment_waiting",
 ]);
 
 const sentenceOf = (s: string) => (/[.!?]$/.test(s) ? s : `${s}.`);

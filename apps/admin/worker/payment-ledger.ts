@@ -37,6 +37,8 @@ import {
   DOCUMENT_HOLDINGS_SQL,
   extensionLetterStatement,
   ledgerResultStatement,
+  paymentForDocumentSql,
+  proformaOverpaidBySql,
   realisationExtensionStatement,
   recomputeStatement,
 } from "@techaust/db/ledger";
@@ -318,11 +320,16 @@ const CLIENT_OF_DOCUMENT = "(SELECT cd.client_id FROM documents cd WHERE cd.id =
 /** The client's credit by currency, for the document `?1` (`clientCreditSql` keyed by the document's client; early check 2, finding 10: no text edits). */
 export const CREDIT_OF_DOCUMENT_CLIENT_SQL = clientCreditSql(CLIENT_OF_DOCUMENT);
 
-/** The payments waiting for the Owner that ask for this document (`?1`, of its own client): what Staff recorded against it (L6). */
+/**
+ * The payments waiting for the Owner that are for this document (`?1`, of its own client): what Staff recorded against it (L6) and, M6.3 staging fixes (lead's
+ * decision 1), an online payment that came through its checkout with no request (a mismatch), by the one rule `paymentForDocumentSql`. What it asks for this
+ * document: its request's amount, else (no request) the whole payment.
+ */
 export const PENDING_FOR_DOCUMENT_SQL = `SELECT p.id, p.kind, p.received_on, p.mode, p.reference_norm, p.currency, p.amount_minor, p.recorded_by, p.recorded_at,
-       json_extract(j.value, '$.amountMinor') AS asked_minor
-   FROM payments p INDEXED BY payments_client, json_each(p.requested_allocations) j
-   WHERE p.client_id = ${CLIENT_OF_DOCUMENT} AND p.status = 'pending_verification' AND p.requested_allocations IS NOT NULL AND json_extract(j.value, '$.documentId') = ?1
+       coalesce((SELECT json_extract(j.value, '$.amountMinor') FROM json_each(p.requested_allocations) j WHERE json_extract(j.value, '$.documentId') = ?1 LIMIT 1), p.amount_minor) AS asked_minor,
+       ${proformaOverpaidBySql("p", "?1")} AS waits_refund
+   FROM payments p INDEXED BY payments_client
+   WHERE p.client_id = ${CLIENT_OF_DOCUMENT} AND p.status = 'pending_verification' AND ${paymentForDocumentSql("p", "?1")}
    ORDER BY p.recorded_at, p.id LIMIT 50`;
 
 /**
@@ -462,6 +469,7 @@ export const invoiceLedger = new Hono<AppEnv>()
           recorded_by: string | null;
           recorded_at: number;
           asked_minor: number;
+          waits_refund: number;
         }[]
       ).map((r) => ({
         paymentId: r.id,
@@ -474,6 +482,12 @@ export const invoiceLedger = new Hono<AppEnv>()
         askedMinor: r.asked_minor,
         recordedBy: r.recorded_by,
         recordedAt: r.recorded_at,
+        /**
+         * M6.3 staging fixes, review M3: on an issued proforma, true when this money is above its balance (`proformaOverpaidBySql`): no tax invoice can take it,
+         * so it waits for the M6.5 refund, and the panel shows no "Confirm by issuing the tax invoice" (an online payment shows 07-ZM's line 1(c)). Always false
+         * on an invoice.
+         */
+        waitsRefund: r.waits_refund === 1,
       })),
       credits: creditView((creditR?.results ?? []) as { currency: string; credit: number }[]),
       // M6.2 (run file G1): "Paid online" rows (method, Razorpay's payment id, the fee absorbed), the payment links, and the open review items.

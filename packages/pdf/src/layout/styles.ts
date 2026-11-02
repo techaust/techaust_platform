@@ -12,6 +12,10 @@
 //   of a page therefore also move, as the rule asks; orphans and widows keep at least 3 lines together.
 // - T6: `.sec__head` also has `break-after: avoid` (terms v4 is about three times v3: an estimate's "Terms" heading fell to the foot of a
 //   page with its list overleaf), and the short acceptance section stays whole rather than leaving its box alone on the last page.
+// - M6.3 staging fixes (part 3): the integrity line (`.integrity`, the last line of every proposal, estimate and invoice) never stands alone on a
+//   page: `break-before: avoid` makes Chromium break at the last allowed place before it instead (between the totals and the tax summary, inside the
+//   notes, before the acceptance section), so the line always ends the last page of content. An export invoice for a payment received printed a
+//   second page holding only this line.
 // The explanations live here, not in the CSS: the string is bundled into the jobs Worker as written (its byte ceiling).
 // T6 (07-ZE line 3): `.replaces-note`, from version 2, sits under the Document facts in the totals note's small muted style, set off by a
 // hairline so it reads as a statement about the whole document rather than a fifth fact, wrapping within the column.
@@ -200,7 +204,8 @@ table.grid { width: 100%; table-layout: fixed; border-collapse: collapse; font-s
 .desc { font-weight: 500; }
 .items .c-n { width: 6mm; color: var(--color-text-muted); }
 .items .c-qty { width: 10mm; }
-.items .c-unit { width: 13mm; }
+.items .c-unit { width: 19mm; }
+.items td.c-unit { overflow-wrap: normal; }
 .items .c-rate { width: 22mm; }
 .items .c-disc { width: 15mm; }
 .items .c-taxable { width: 25mm; }
@@ -275,6 +280,7 @@ table.grid { width: 100%; table-layout: fixed; border-collapse: collapse; font-s
   color: var(--color-text-muted);
   font-variant-numeric: tabular-nums lining-nums;
   break-inside: avoid;
+  break-before: avoid;
 }
 
 /* ---- the proposal cover (06 §7.4: a full page) ---- */

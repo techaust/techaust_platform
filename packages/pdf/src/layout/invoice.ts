@@ -44,7 +44,9 @@ import {
   EXPORT_PDF_COPY as E,
   NOTE_PDF_COPY as N,
   PROFORMA_PDF_COPY as P,
+  unitWord,
 } from "./copy.ts";
+import { partsLine } from "./parts-line.ts";
 
 const RUPEE = "₹";
 
@@ -58,18 +60,6 @@ export const DESIGNED_INVOICE_TYPES: readonly string[] = [
 ];
 
 const p = (cls: string, text: string, attrs = "") => `<p class="${cls}"${attrs}>${esc(text)}</p>`;
-
-/**
- * A block line whose parts are joined by " · " (e.g. "GSTIN … · State …") breaks only between the parts, and the separator is dropped there: the
- * party column is narrow, so a wrapped line would leave " ·" dangling at its end (re-check). Each part stays whole on its own line.
- */
-const partsLine = (cls: string, text: string) =>
-  !text.includes(" · ")
-    ? p(cls, text)
-    : `<p class="${cls}">${text
-        .split(" · ")
-        .map((part) => `<span class="keep">${esc(part)}</span>`)
-        .join("<br>")}</p>`;
 
 function logoHtml(view: InvoiceView): string {
   const logos = PDF_LOGOS as Record<string, string | undefined>;
@@ -271,7 +261,7 @@ function itemsTable(view: InvoiceView): string {
       (l) =>
         `<tr><td class="c-n num">${esc(l.n)}</td><td class="c-desc"><span class="desc">${esc(l.description)}</span>${
           l.detail ? `<span class="sub">${esc(l.detail)}</span>` : ""
-        }${l.againstLine !== undefined ? `<span class="sub inv-against">${esc(N.againstLine(l.againstLine))}</span>` : ""}</td><td class="c-sac">${l.sac ? esc(l.sac) : ""}</td><td class="num">${esc(l.qty)} <span class="unit">${esc(l.unit)}</span></td><td class="num">${esc(l.rate)}</td>${
+        }${l.againstLine !== undefined ? `<span class="sub inv-against">${esc(N.againstLine(l.againstLine))}</span>` : ""}</td><td class="c-sac">${l.sac ? esc(l.sac) : ""}</td><td class="num c-qty">${esc(l.qty)} <span class="unit">${esc(unitWord(l.unit, l.qty))}</span></td><td class="num">${esc(l.rate)}</td>${
           withDiscount ? `<td class="num">${l.discount ? esc(l.discount) : ""}</td>` : ""
         }<td class="num">${esc(l.taxable)}</td></tr>`,
     )
@@ -453,9 +443,10 @@ function signatory(view: InvoiceView): string {
   return `<div class="inv-sign">${p("inv-sign__for", S.for(name))}${image}${p("inv-sign__role", S.signatory, ' data-testid="signatory"')}</div>`;
 }
 
-function notesBlock(view: InvoiceView): string {
+/** The notes pinned at issue; `last` (the integrity line) is set as the last block of the notes' text (see `taxInvoiceBody`). */
+function notesBlock(view: InvoiceView, last: string): string {
   if (!view.notes) return "";
-  return `<div class="block inv-notes"><h3>${esc(view.notes.title)}</h3><div class="terms">${markdownBlocks(view.notes.bodyMd).join("")}</div></div>`;
+  return `<div class="block inv-notes"><h3>${esc(view.notes.title)}</h3><div class="terms">${markdownBlocks(view.notes.bodyMd).join("")}${last}</div></div>`;
 }
 
 /** The modifier class of the document (the base class `doc--tax-invoice` carries the whole designed invoice system). */
@@ -468,14 +459,21 @@ const modifierOf = (view: InvoiceView) =>
         ? " doc--proforma"
         : "";
 
-/** The body of a tax invoice, an export invoice, a proforma, a credit note or a debit note (inside `<body>`). */
+/**
+ * The body of a tax invoice, an export invoice, a proforma, a credit note or a debit note (inside `<body>`).
+ *
+ * M6.3 staging fixes (part 3): the integrity line is the last block INSIDE the last container (the notes' text, else the money), a sibling of the block it
+ * ends. Its `break-before: avoid` (./styles.ts) then keeps it with that block on every page: Chromium honours the rule between siblings, but when the line
+ * followed the money or the notes from outside and that container had started on an earlier page, it put the line alone on a new page (a credit note of
+ * 24 lines, found by the layout audit's sweep).
+ */
 export function taxInvoiceBody(view: InvoiceView): string {
+  const integrity = `<p class="integrity" data-testid="integrity">${esc(view.integrity)}</p>`;
   return `<div class="doc doc--invoice doc--tax-invoice${modifierOf(view)}">${masthead(view)}
 ${statutoryBand(view)}${advanceHtml(view)}
 ${parties(view)}
-<div class="money">${itemsTable(view)}${totalsBlock(view)}${summaryTable(view)}</div>
-${notesBlock(view)}
-<p class="integrity" data-testid="integrity">${esc(view.integrity)}</p></div>`;
+<div class="money">${itemsTable(view)}${totalsBlock(view)}${summaryTable(view)}${view.notes ? "" : integrity}</div>
+${notesBlock(view, integrity)}</div>`;
 }
 
 /**
@@ -563,9 +561,13 @@ export const TAX_INVOICE_CSS = `
 .doc--tax-invoice .inv-items .c-rate { width: 22mm; }
 .doc--tax-invoice .inv-items .c-disc { width: 15mm; }
 .doc--tax-invoice .inv-items .c-taxable { width: 25mm; }
-.doc--tax-invoice .inv-items .unit { font-size: var(--print-small); color: var(--color-text-muted); }
+.doc--tax-invoice .inv-items .unit { font-size: var(--print-small); color: var(--color-text-muted); white-space: nowrap; }
+/* the unit is a word ("lump sums", "connectors"): when the quantity and the word don't fit on one line, the word goes under the number */
+.doc--tax-invoice .inv-items td.c-qty { white-space: normal; }
 
-.doc--tax-invoice .totals { break-before: avoid; align-items: start; }
+/* the totals stay whole (break-inside: avoid, ./styles.ts) and go over whole when they don't fit under the last line: a "keep with the lines" rule here
+   made Chromium split them instead (the total on one page; the balance, the INR values and the signature overleaf) */
+.doc--tax-invoice .totals { align-items: start; }
 .doc--tax-invoice .totals__notes .inv-rc { margin: 0; font-weight: 500; }
 
 /* the tax summary: each head over its own rate and amount */
@@ -579,7 +581,7 @@ export const TAX_INVOICE_CSS = `
 .doc--tax-invoice .inv-summary thead tr + tr th { padding-top: 1mm; }
 
 /* a USD invoice's INR values, under its total: a thin rule, the heading, the rate line, then the figures */
-.doc--tax-invoice .inv-inr { margin-top: -4mm; padding-top: 2mm; border-top: 0.2mm solid var(--color-border); font-size: var(--print-table); line-height: 1.4; }
+.doc--tax-invoice .inv-inr { margin-top: -1mm; padding-top: 2mm; border-top: 0.2mm solid var(--color-border); font-size: var(--print-table); line-height: 1.4; }
 .doc--tax-invoice .inv-inr h3 { font-size: var(--print-table); line-height: 1.4; font-weight: 600; margin: 0 0 0.6mm; }
 .doc--tax-invoice .inv-inr__rate { margin: 0 0 0.8mm; color: var(--color-text-muted); font-variant-numeric: tabular-nums lining-nums; text-wrap: balance; }
 .doc--tax-invoice .inv-inr__table { width: 100%; }
@@ -598,16 +600,26 @@ export const TAX_INVOICE_CSS = `
 .doc--tax-invoice .inv-pay__portal { margin: 1mm 0 0; }
 
 /* under the total, level with the foot of the box: the signatory */
-.doc--tax-invoice .inv-side { grid-column: 8 / -1; align-self: stretch; display: flex; flex-direction: column; gap: 8mm; }
+.doc--tax-invoice .inv-side { grid-column: 8 / -1; align-self: stretch; display: flex; flex-direction: column; gap: 5mm; }
 .doc--tax-invoice .inv-side .totals__table { grid-column: auto; }
 .doc--tax-invoice .inv-notes { break-inside: auto; }
+/* the notes end together: the last block keeps to the one before it, and a list's last item to the item before it, so a short notes block goes over whole
+   and a long one never leaves one item (with the integrity line) on a page of its own */
+.doc--tax-invoice .inv-notes .terms > :nth-last-child(2),
+.doc--tax-invoice .inv-notes li:last-child { break-before: avoid; }
 .doc--tax-invoice .inv-notes h3 { margin: 0 0 1.6mm; }
 .doc--tax-invoice .inv-notes .terms { max-width: 132mm; }
+/* the integrity line ends the notes' text but runs the full text width (178 mm), as everywhere else */
+.doc--tax-invoice .inv-notes .terms > .integrity { width: 178mm; }
+
 .doc--tax-invoice .inv-sign { margin-top: auto; text-align: right; font-size: var(--print-table); line-height: 1.4; }
 .doc--tax-invoice .inv-sign__for { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .doc--tax-invoice .inv-sign__img { display: block; margin: 2mm 0 1.6mm auto; max-height: 16mm; max-width: 52mm; }
 .doc--tax-invoice .inv-sign__space { height: 14mm; }
 .doc--tax-invoice .inv-sign__role { margin: 0 0 0 auto; max-width: 52mm; padding-top: 1.2mm; border-top: 0.2mm solid var(--color-text); color: var(--color-text-muted); }
+
+/* the last line: closer to the content it closes (the hairline carries the break), so a one-page invoice ends on its one page */
+.doc--tax-invoice .integrity { margin-top: 5mm; }
 
 /* the registration line under the GSTIN breaks only at its spaces, never after a hyphen of the number (12em) */
 .doc--tax-invoice .inv-udyam { max-width: 12em; overflow-wrap: normal; }

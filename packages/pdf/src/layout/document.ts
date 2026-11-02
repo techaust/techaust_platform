@@ -16,20 +16,12 @@ import { esc } from "../escape.ts";
 import { PDF_LOGOS } from "../generated/assets.ts";
 import { markdownBlocks } from "../markdown-html.ts";
 import type { PdfView, ViewSection, ViewStep } from "../types.ts";
-import { PDF_COPY as C } from "./copy.ts";
+import { PDF_COPY as C, unitWord } from "./copy.ts";
+import { partsLine } from "./parts-line.ts";
 
 const RUPEE = "₹";
 
 const p = (cls: string, text: string) => `<p class="${cls}">${esc(text)}</p>`;
-
-/** A block line whose parts are joined by " · " (e.g. "GSTIN … · State …") wraps only between the parts; other lines wrap freely. */
-const partsLine = (cls: string, text: string) =>
-  !text.includes(" · ")
-    ? p(cls, text)
-    : `<p class="${cls}">${text
-        .split(" · ")
-        .map((part) => `<span class="keep">${esc(part)}</span>`)
-        .join(" · ")}</p>`;
 
 /** The frozen logo file; an empty or unknown name falls back to the primary logo. The trade name is never typeset in its place (brand rule). */
 function logoHtml(view: PdfView): string {
@@ -96,8 +88,8 @@ function itemsTable(view: PdfView): string {
       (l) =>
         `<tr><td class="c-n num">${esc(l.n)}</td><td class="c-desc"><span class="desc">${esc(l.description)}</span>${
           l.detail ? `<span class="sub">${esc(l.detail)}</span>` : ""
-        }${l.sac ? `<span class="sub">${C.lines.sac} ${esc(l.sac)}</span>` : ""}</td><td class="num">${esc(l.qty)}</td><td>${esc(
-          l.unit,
+        }${l.sac ? `<span class="sub">${C.lines.sac} ${esc(l.sac)}</span>` : ""}</td><td class="num">${esc(l.qty)}</td><td class="c-unit">${esc(
+          unitWord(l.unit, l.qty),
         )}</td><td class="num">${esc(l.rate)}</td>${withDiscount ? `<td class="num">${l.discount ? esc(l.discount) : ""}</td>` : ""}<td class="num">${esc(
           l.taxable,
         )}</td><td class="num">${esc(l.gstRate)}</td></tr>`,

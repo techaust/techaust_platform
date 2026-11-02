@@ -8,6 +8,7 @@
 //     balance as the last (the same rows as the `statement-v1` CSV); the header repeats on every page and a row never splits;
 //   - the footer line names billing@ (statements come from billing@, docs/13 2026-10-07; docs/06 §7.1), with "Page X of Y"; the last lines say where
 //     to write and when the statement was made. No bank block, no signature: a statement asks for nothing new.
+//     Those last lines never stand alone on a page (M6.3 staging fixes, part 3): they break with the end of the ledger.
 // Statements are capped at 200 entries (STATEMENT_PDF_MAX_ENTRIES), so the longest is about six pages.
 //
 // No logic beyond formatting: every value is a pre-formatted string of the view (the jobs Worker formats through core). Every dynamic string goes through
@@ -15,6 +16,7 @@
 import { esc } from "../escape.ts";
 import { PDF_LOGOS, PDF_PRINT_CSS, PDF_SYMBOL, TECHAUST_PDF_FONT_DATA } from "../generated/assets.ts";
 import { STATEMENT_PDF_COPY as C } from "./copy.ts";
+import { partsLine } from "./parts-line.ts";
 import { cssString, TEMPLATE_CSS } from "./styles.ts";
 
 /** The CSP of every document page (render.ts has the same): nothing external, inline styles only. */
@@ -99,10 +101,10 @@ function logoHtml(view: StatementLayoutView): string {
 
 function header(view: StatementLayoutView): string {
   const from = `<div class="party"><p class="label">${esc(C.from)}</p>${p("party__name", view.company.name)}${view.company.lines
-    .map((l) => p("party__line", l))
+    .map((l) => partsLine("party__line", l))
     .join("")}</div>`;
   const to = `<div class="party">${p("party__name stm-client", view.client.name)}${view.client.lines
-    .map((l) => p("party__line", l))
+    .map((l) => partsLine("party__line", l))
     .join("")}</div>`;
   const doc = `<div class="party party--doc stm-doc">${p("stm-period", C.period(view.period.from, view.period.to), ' data-testid="period"')}${p(
     "stm-currency",
@@ -270,7 +272,7 @@ export const STATEMENT_CSS = `
   border-bottom: 0.9mm double var(--color-text);
 }
 
-.doc--statement .stm-foot { margin-top: 6mm; font-size: var(--print-table); line-height: 1.4; break-inside: avoid; }
+.doc--statement .stm-foot { margin-top: 6mm; font-size: var(--print-table); line-height: 1.4; break-inside: avoid; break-before: avoid; }
 .doc--statement .stm-foot p { margin: 0 0 1mm; }
 .doc--statement .stm-generated { color: var(--color-text-muted); }
 `;

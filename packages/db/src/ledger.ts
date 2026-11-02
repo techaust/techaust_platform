@@ -18,6 +18,8 @@ import {
   livePaidSql,
   liveTdsSql,
   PAYABLE_TYPES_SQL,
+  paymentDocumentsSql,
+  paymentForDocumentSql,
   paymentNetSql,
   SQL_CURRENCIES,
 } from "./sql-rules.ts";
@@ -30,6 +32,7 @@ export {
   livePaidSql,
   liveTdsSql,
   PAYABLE_TYPES_SQL,
+  paymentForDocumentSql,
   paymentNetSql,
 };
 
@@ -276,6 +279,9 @@ export function paymentApprovalStatements(
  * the Owner's allocation rows (`allocationStatements`, which may differ from what Staff asked, L6), the recompute and `ledger_result`; both decisions add
  * `decideApprovalStatements`. A second decision changes nothing (409 `payment_not_pending`). Binds `?1` payment, `?2` the new status, `?3` now, `?4` session,
  * `?5` note, `?6` the expected `recorded_at`.
+ *
+ * M6.3 staging fix 2 (L5): a confirm never moves a payment that asks for a proforma (`paymentProformaSql`): that money is confirmed only by the advance batch
+ * (issuing the tax invoice for the payment received), whatever allocations the caller sends. A reject is unchanged.
  */
 export function verifyPaymentStatement(
   db: D1Database,
@@ -291,7 +297,8 @@ export function verifyPaymentStatement(
   return db
     .prepare(
       `UPDATE payments SET status = ?2, verified_by = ${sessionUser("?4")}, verified_at = ?3, decision_note = ?5
-       WHERE id = ?1 AND status = 'pending_verification' AND recorded_at = ?6 AND ${clientLive("payments")} AND ${sessionSql("?4", "?3", ["owner"], true)}`,
+       WHERE id = ?1 AND status = 'pending_verification' AND recorded_at = ?6 AND ${clientLive("payments")} AND ${sessionSql("?4", "?3", ["owner"], true)}
+         AND (?2 <> 'confirmed' OR ${paymentProformaSql("payments")} IS NULL)`,
     )
     .bind(a.paymentId, a.decision, a.now, a.sessionId, a.note, a.expectedRecordedAt);
 }
@@ -476,6 +483,60 @@ export function extensionLetterStatement(
 
 // ---- reads ---------------------------------------------------------------------------------------------------------------------------------------------
 
+/**
+ * M6.3 staging fix 2 (L5): the proforma payment `p` is for (`paymentDocumentsSql`), or NULL. Such money is confirmed only by issuing the tax invoice for the payment
+ * received, never by the ordinary decision, whatever allocations the dialog sends.
+ */
+export const paymentProformaSql = (p: string): string =>
+  `(SELECT pfd.id FROM documents pfd WHERE pfd.id IN (${paymentDocumentsSql(p)}) AND pfd.type = 'proforma' LIMIT 1)`;
+
+/** Document row `d` (alias) is an issued or part-converted proforma: one whose tax invoice for a payment received can still be issued. */
+const issuableProformaSql = (d: string): string =>
+  `${d}.type = 'proforma' AND ${d}.frozen_at IS NOT NULL AND ${d}.status IN ('issued', 'converted')`;
+/** The row condition of `proformaTakesPaymentSql`: document row `d` (alias) is a proforma that can take payment `p`'s whole amount. */
+const takesRowSql = (d: string, p: string): string =>
+  `(${issuableProformaSql(d)} AND ${d}.balance_minor >= ${p}.amount_minor)`;
+
+/**
+ * M6.3 staging fixes, review M3 (L5; lead's decision 1(b), 2026-11-02): proforma `doc` (an SQL expression for its id) can still take payment `p`'s money (an SQL
+ * table name or alias of `payments`) as its tax invoice for a payment received: an issued or part-converted proforma whose balance is at least the whole payment
+ * (the advance puts the whole amount on the new invoice). Otherwise no advance can take it, so it never blocks one (`firstWaitingPaymentSql`); money above an
+ * issued proforma's balance is held for the M6.5 refund (`proformaOverpaidBySql`: "The client paid more than the proforma's balance. It waits for a refund.").
+ * A primary-key seek.
+ */
+export const proformaTakesPaymentSql = (p: string, doc: string): string =>
+  `EXISTS (SELECT 1 FROM documents tpd WHERE tpd.id = ${doc} AND ${takesRowSql("tpd", p)})`;
+
+/**
+ * Review M3: payment `p` is more than the balance of proforma `doc` (an SQL expression for its id), an issued or part-converted one: no tax invoice can take it,
+ * so it waits for a refund (lead's decision 1(b)). A void or withdrawn proforma is not this case (its money is held for another reason), so it reads false. A
+ * primary-key seek.
+ */
+export const proformaOverpaidBySql = (p: string, doc: string): string =>
+  `EXISTS (SELECT 1 FROM documents wrd WHERE wrd.id = ${doc} AND ${issuableProformaSql("wrd")} AND wrd.balance_minor < ${p}.amount_minor)`;
+
+/** Review M3: `proformaOverpaidBySql` for the proforma payment `p` asks for (`paymentProformaSql`); the payment view and the approvals queue read it (pending only). */
+export const paymentWaitsRefundSql = (p: string): string => proformaOverpaidBySql(p, paymentProformaSql(p));
+
+/**
+ * M6.3 staging fixes 1 and 2 (L5, L12; lead's decisions 1 and 2, 2026-11-02): the FIRST payment waiting for the tax invoice of proforma `doc` of client `client`
+ * (SQL expressions): PENDING, kind `payment`, for the proforma (`paymentForDocumentSql`); an online payment before a manual entry, then the oldest. While any
+ * waits, that proforma's tax invoice for a payment received is issued only WITH this one ("Confirm by issuing the tax invoice"): never as a new receipt (no
+ * `paymentId`) and never with another entry, so the same money is never counted twice and the entries are taken one at a time. Review M3: only a payment the
+ * proforma can still take (`proformaTakesPaymentSql`: issued or part-converted, a balance of at least the payment); money above the balance waits for the M6.5
+ * refund and blocks no advance (it can't be confirmed by issuing or by the decision either, so it is never counted). Selects `cols` (`id, provider`); a seek of
+ * `payments_client`.
+ */
+export const firstWaitingPaymentSql = (doc: string, client: string, cols = "wp.id, wp.provider"): string =>
+  `SELECT ${cols} FROM payments wp INDEXED BY payments_client
+   WHERE wp.client_id = ${client} AND wp.status = 'pending_verification' AND wp.kind = 'payment' AND ${paymentForDocumentSql("wp", doc)}
+     AND ${proformaTakesPaymentSql("wp", doc)}
+   ORDER BY wp.provider = 'manual', wp.recorded_at, wp.id LIMIT 1`;
+
+/** The first payment waiting for proforma `?1` (its client read from the proforma), for the 409 `online_payment_waiting` / `payment_waiting` and `details.paymentId`. */
+export const WAITING_PAYMENT_SQL = /* @__PURE__ */ (() =>
+  firstWaitingPaymentSql("?1", "(SELECT wd.client_id FROM documents wd WHERE wd.id = ?1)"))();
+
 /** L12: the newest pending or confirmed payment with this reference (`?1`, normalised), with its day and client, for the soft 409 `reference_seen`. */
 export const PAYMENT_REFERENCE_SEEN_SQL = `SELECT p.id, p.received_on, p.client_id, c.code AS client_code, c.display_name AS client_name
    FROM payments p INDEXED BY payments_reference JOIN clients c ON c.id = p.client_id
@@ -541,12 +602,13 @@ export const paymentRecordedSql = (doc: string): string =>
   `EXISTS (SELECT 1 FROM payment_allocations va INDEXED BY payment_allocations_document WHERE va.document_id = ${doc})`;
 
 /**
- * L17 (the void rules): a PENDING payment of the client `client` asks for the document `doc` (both SQL expressions) in its requested allocations. Core
- * `voidBlockers` `payment_pending`; a seek of `payments_client`. Any pending payment: the void and withdraw WHEREs, the trigger's twin.
+ * L17 (the void rules): a PENDING payment of the client `client` is for the document `doc` (both SQL expressions; `paymentForDocumentSql`: its request, or, M6.3
+ * staging fix, an online payment's checkout). Core `voidBlockers` `payment_pending`; a seek of `payments_client`. Any pending payment: the void and withdraw
+ * WHEREs. The trigger `documents_void_no_payment` (0060) still reads the request only.
  */
 export const paymentPendingForSql = (doc: string, client: string): string =>
-  `EXISTS (SELECT 1 FROM payments vp INDEXED BY payments_client, json_each(vp.requested_allocations) vj WHERE vp.client_id = ${client} AND vp.status = 'pending_verification'
-     AND vp.requested_allocations IS NOT NULL AND json_extract(vj.value, '$.documentId') = ${doc})`;
+  `EXISTS (SELECT 1 FROM payments vp INDEXED BY payments_client WHERE vp.client_id = ${client} AND vp.status = 'pending_verification'
+     AND ${paymentForDocumentSql("vp", doc)})`;
 
 /**
  * M6.2 (fix round 3 item 3): the same read, in ONE pass, telling the kinds apart as bits: 1 a pending manual entry (core `payment_pending`: the Owner rejects
@@ -554,8 +616,8 @@ export const paymentPendingForSql = (doc: string, client: string): string =>
  * Decode with `PENDING_MANUAL` / `PENDING_GATEWAY`.
  */
 export const paymentPendingKindsSql = (doc: string, client: string): string =>
-  `(SELECT coalesce(max(vp.provider = 'manual'), 0) + 2 * coalesce(max(vp.provider <> 'manual'), 0) FROM payments vp INDEXED BY payments_client, json_each(vp.requested_allocations) vj
-     WHERE vp.client_id = ${client} AND vp.status = 'pending_verification' AND vp.requested_allocations IS NOT NULL AND json_extract(vj.value, '$.documentId') = ${doc})`;
+  `(SELECT coalesce(max(vp.provider = 'manual'), 0) + 2 * coalesce(max(vp.provider <> 'manual'), 0) FROM payments vp INDEXED BY payments_client
+     WHERE vp.client_id = ${client} AND vp.status = 'pending_verification' AND ${paymentForDocumentSql("vp", doc)})`;
 export const PENDING_MANUAL = 1;
 export const PENDING_GATEWAY = 2;
 

@@ -141,15 +141,32 @@ export const clientSideSql = (k: string, side: "domestic" | "overseas"): string 
     : `(${k}.country <> 'IN' OR ${k}.gst_status = 'overseas')`;
 
 /**
+ * M6.3 staging fixes (L5, L6, L17; ADM-PAY-01, ADM-INV-10; Researched 2026-10-28, ss.13 and 31 CGST Act, Rules 50 and 51 (08-C RA-17); lead's decision 1, 2026-11-02):
+ * THE one rule "payment `p` is for document `doc`" (`p` an SQL table name or alias of `payments`, `doc` an SQL expression), as the documents it is for: the ones
+ * its own `requested_allocations` name (frozen once written), and, for a gateway payment (`provider <> 'manual'`), the document its checkout was made for (a
+ * payment that didn't match is pending with no request, but its money still came through that document's page). Every reader of the rule builds on this: the
+ * advance's F6 check and freeze, the decision's refusal and `verifyPaymentStatement`, the waiting-payment guard, the proforma panel's waiting entries, the void
+ * and withdraw blockers and the "payment already waiting" check of the payment links (`gatewayPaymentPendingSql`). No core twin exists (core only receives the
+ * facts). A `json_each` of at most 10 rows and a primary-key seek.
+ */
+export const paymentDocumentsSql = (p: string): string =>
+  `SELECT json_extract(fj.value, '$.documentId') FROM json_each(${p}.requested_allocations) fj
+     UNION ALL SELECT fc.document_id FROM checkout_sessions fc WHERE fc.id = ${p}.checkout_id AND ${p}.provider <> 'manual'`;
+
+/** Payment `p` is for document `doc` (`paymentDocumentsSql`): a boolean SQL expression. */
+export const paymentForDocumentSql = (p: string, doc: string): string =>
+  `(${doc} IN (${paymentDocumentsSql(p)}))`;
+
+/**
  * M6.3 (generic, every gateway; reviewer X1; core `payableOnline`'s `payment_pending`): document `d` (alias) has a gateway payment still waiting: a
- * `pending_verification` payment through one of its checkouts whose `requested_allocations` name it (a paid USD proforma waiting for the Owner, Q1 A; a Razorpay
- * proforma waiting for its automatic tax invoice). A mismatch's pending money has no requested allocation and does not count (the M6.2 rule of
- * `proformaOnlinePendingSql`). Seeks of `checkout_sessions_document` and `payments_checkout`.
+ * `pending_verification` payment through a gateway that is for it (`paymentForDocumentSql`: its request names it, or, lead's final round of the staging fixes,
+ * 2026-11-02, it came through the document's checkout with no request: a mismatch). No new payment link or card page is made for the document while one waits
+ * (the money may already be there: "no need to pay again", 07-ZI line 13, 07-ZM line 4). A manual entry Staff recorded doesn't count here: the client's lines
+ * name the gateway. A seek of `payments_client`.
  */
 export const gatewayPaymentPendingSql = (d: string): string =>
-  `EXISTS (SELECT 1 FROM checkout_sessions gpc INDEXED BY checkout_sessions_document JOIN payments gpp ON gpp.checkout_id = gpc.id
-     WHERE gpc.document_id = ${d}.id AND gpp.status = 'pending_verification' AND gpp.requested_allocations IS NOT NULL
-       AND EXISTS (SELECT 1 FROM json_each(gpp.requested_allocations) gpj WHERE json_extract(gpj.value, '$.documentId') = ${d}.id))`;
+  `EXISTS (SELECT 1 FROM payments gpp INDEXED BY payments_client
+     WHERE gpp.client_id = ${d}.client_id AND gpp.status = 'pending_verification' AND gpp.provider <> 'manual' AND ${paymentForDocumentSql("gpp", `${d}.id`)})`;
 
 /**
  * M6.2 (review finding 10): proforma `d` has an online payment of client `client` (SQL expressions) waiting for its automatic tax invoice: a pending Razorpay payment

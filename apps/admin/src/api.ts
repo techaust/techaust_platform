@@ -1837,6 +1837,18 @@ export type PaymentView = {
   withdrawnBy: string | null;
   withdrawnAt: number | null;
   withdrawReason: string | null;
+  /** M6.3 staging fix 1: the gateway's own payment id (`pay_…`, `pi_…`), null for a manual entry. Absent from an older API. */
+  providerPaymentId?: string | null;
+  /**
+   * M6.3 staging fix 2 (L5): while pending, the proforma this entry asks for (its request, or the proforma its online checkout was for), else null. It is then
+   * confirmed only by "Confirm by issuing the tax invoice" on that proforma (the verify route answers `use_advance_invoice`). Absent from an older API.
+   */
+  proformaId?: string | null;
+  /**
+   * M6.3 staging fixes, review M3: with `proformaId`, that proforma can no longer take this money (above its balance, or no longer issued): it waits for the M6.5
+   * refund, and the screens show its line instead of "Confirm by issuing the tax invoice". Absent from an older API.
+   */
+  waitsRefund?: boolean;
 };
 
 export type PaymentAllocationView = {
@@ -1929,6 +1941,8 @@ export type InvoicePaymentsPanel = {
     askedMinor: number;
     recordedBy: string | null;
     recordedAt: number;
+    /** M6.3 staging fixes, review M3: on a proforma, it can no longer take this money (it waits for a refund): the line instead of the action. */
+    waitsRefund?: boolean;
   }[];
   credits: { currency: Currency; creditMinor: number }[];
   /** M6.2 (run file G1): the Razorpay payments through this document's links, its links, and its open review items. Absent from an older API. */
@@ -2089,6 +2103,10 @@ export type PaymentApprovalItem = {
     clientId: string;
     clientCode: string;
     clientName: string;
+    /** M6.3 staging fix 2 (L5): while pending, the proforma it asks for; the queue then offers only "Confirm by issuing the tax invoice". */
+    proformaId?: string | null;
+    /** Review M3: that proforma can no longer take the money (it waits for a refund): the queue shows the line, not the action. */
+    waitsRefund?: boolean;
   };
 };
 
@@ -2117,7 +2135,10 @@ export const paymentsApi = {
    * `use_advance_invoice`, `allocation_exceeds_balance` (details `documentId`, `balanceMinor`), `exceeds_payment`, `not_payable`, `client_anonymised`.
    */
   record: (input: RecordPaymentInput) => request<RecordPaymentAnswer>("/payments", { body: input }),
-  /** The Owner's check (07-ZH line 4). A reject needs `note` ("Why it is rejected"). Codes: `payment_not_pending`, `use_advance_invoice`, `stale_version`. */
+  /**
+   * The Owner's check (07-ZH line 4). A reject needs `note` ("Why it is rejected"). Codes: `payment_not_pending`, `use_advance_invoice` (details `documentId`;
+   * M6.3 staging fix 2: also whenever the entry itself asks for a proforma, `proformaId`, whatever allocations are sent), `stale_version`.
+   */
   verify: (
     id: string,
     body: {

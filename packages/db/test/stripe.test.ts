@@ -869,7 +869,9 @@ describe("STALE_LIVE_CHECKOUTS_SQL and the new index [L6, L13, ADM-INV-17]", () 
       `SELECT ${onlinePayableSql("d", "k", "stripe")} FROM documents d JOIN clients k ON k.id = d.client_id WHERE d.id = ?1`,
       "x",
     );
-    expect(pendingPlan).toContain("checkout_sessions_document");
-    expect(pendingPlan).toContain("payments_checkout");
+    // M6.3 staging fixes (lead's final round): the pending check reads the client's payments through `payments_client` with the one shared rule
+    // (`paymentForDocumentSql`: its request, or a checkout-only payment's checkout, by primary key)
+    expect(pendingPlan).toContain("payments_client");
+    expect(pendingPlan).not.toMatch(/SCAN gpp\b/);
   });
 });

@@ -276,3 +276,26 @@ export const advanceLine = (
   igstNoLutFy === null
     ? `Against proforma ${proformaNumber} of ${proformaDate}, payment received on ${receivedOn}.`
     : `Against proforma ${proformaNumber} of ${proformaDate}, payment received on ${receivedOn}. Issued with IGST: no LUT was in place for FY ${igstNoLutFy}.`;
+
+/**
+ * The line units as words (M6.3 staging fixes, part 3; the lead's decision of 2026-11-02 under the owner's delegation, 07-ZM "Review changes"). A line stores
+ * the catalogue's unit CODE (`CATALOGUE_UNITS`: fixed, milestone, month, hour, workflow, connector, document); the PDFs printed the code itself, so a
+ * fixed-price line, and the line of an invoice for a payment received, read "1 fixed". The layouts print these words instead: singular for a quantity of
+ * exactly 1, plural for any other. The frozen line keeps its code. A unit that is no code (an older document's typed unit) prints as it was typed.
+ */
+export const UNIT_WORDS: Readonly<Record<string, readonly [singular: string, plural: string]>> = {
+  fixed: ["lump sum", "lump sums"],
+  milestone: ["milestone", "milestones"],
+  month: ["month", "months"],
+  hour: ["hour", "hours"],
+  workflow: ["workflow", "workflows"],
+  connector: ["connector", "connectors"],
+  document: ["document", "documents"],
+};
+
+/** A line's unit as printed beside its quantity (`qty` as the view formats it: "1", "1.5", "10"). */
+export function unitWord(unit: string, qty: string): string {
+  const words = Object.hasOwn(UNIT_WORDS, unit) ? UNIT_WORDS[unit] : undefined;
+  if (!words) return unit;
+  return qty === "1" ? words[0] : words[1];
+}

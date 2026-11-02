@@ -11,7 +11,7 @@
 import { issueDateOf } from "@techaust/core/invoices";
 import type { Role } from "@techaust/core/permissions";
 import { TERMS_BLOCKS } from "@techaust/core/terms";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { paymentsApi, RequestError, stepUpActive } from "../../api.ts";
 import { DateField, useUnreadDates } from "../../components/date-field.tsx";
@@ -771,7 +771,7 @@ function AdvanceBody(props: {
   const [fx, setFx] = useState<FxForm>(() => fxFormOf(null, props.prefill?.receivedOn ?? today));
   // M6.3 (Q1 A, S16): a card payment's tax invoice waits only for the rate: the field is empty, the blocker says so above it, and the field takes the focus
   // once the dialog has opened (after its own first focus).
-  const cardRate = usd && props.prefill?.online?.provider === "stripe";
+  const cardRate = usd && prefill?.online?.provider === "stripe";
   useEffect(() => {
     if (!cardRate) return;
     const f = requestAnimationFrame(() => document.getElementById("adv-fx-rate")?.focus());
@@ -779,6 +779,11 @@ function AdvanceBody(props: {
   }, [cardRate]);
   // The rate is for the day the money came (Q9): its date follows "Date received" until the Owner picks one of its own (review 2, 1).
   const [fxDateOwn, setFxDateOwn] = useState(false);
+  // M6.3 staging fixes, review M4: "Confirm by issuing the tax invoice" in the box removes the box, and the focus with it; once the form holds that payment
+  // and is no longer busy, the focus moves on as `cardRate` does (after the render, in the next frame) to what is left to do: the rate of a USD payment
+  // still without one, else the authenticator code, else the issue button.
+  const refocus = useRef(false);
+  const submitRef = useRef<HTMLButtonElement>(null);
   const [confirmInr, setConfirmInr] = useState(false);
   // Q37: the payment's year has no LUT (409 `advance_lut_missing`, its FY); the Owner saves the LUT first or issues this one with IGST.
   const [lutMissingFy, setLutMissingFy] = useState<string | null>(null);
@@ -795,6 +800,21 @@ function AdvanceBody(props: {
   const dates = useUnreadDates<"date">();
   const fxDates = useUnreadDates<"date">();
   const needsCode = !stepUpActive();
+  // Review M4 (above): runs after every render, and acts once, when the taken payment is in the form and the dialog is no longer busy. The flag is cleared
+  // only in the frame that moves the focus, so a render that cancels a scheduled frame leaves it for the next one.
+  useEffect(() => {
+    if (!refocus.current || busy || prefill === null) return;
+    const rateLeft = usd && fx.rate.trim() === "";
+    const f = requestAnimationFrame(() => {
+      refocus.current = false;
+      const next =
+        (rateLeft ? document.getElementById("adv-fx-rate") : null) ??
+        (needsCode ? document.getElementById("adv-code") : null) ??
+        submitRef.current;
+      next?.focus();
+    });
+    return () => cancelAnimationFrame(f);
+  });
   const toast = useToast();
   if (!p) return null;
   // 07-ZK line 8 is not shown on the LUT route (no IGST, so nothing to add with interest).
@@ -858,8 +878,16 @@ function AdvanceBody(props: {
         setConfirmInr(true);
         return;
       }
-      // M6.1 (07-ZH line 13): the reference was recorded before; a waiting entry of it can be confirmed here instead.
-      if (e instanceof RequestError && e.code === "reference_seen" && !prefill) {
+      // M6.1 (07-ZH line 13): the reference was recorded before; a waiting entry of it can be confirmed here instead. M6.3 staging fix 1: an online payment
+      // waits for this proforma (`online_payment_waiting`, always with its `paymentId`): the same box, whose "Confirm by issuing the tax invoice" reopens the
+      // form with that payment (never `confirmDuplicate`, which the server refuses to take past it). It also answers a manual entry Staff recorded, taken from
+      // the panel while the online payment waits: the box then offers the online payment instead.
+      if (
+        e instanceof RequestError &&
+        ((e.code === "reference_seen" && !prefill) ||
+          e.code === "online_payment_waiting" ||
+          e.code === "payment_waiting")
+      ) {
         const pid = e.extra.details?.paymentId;
         setSeen({ text: payErrorText(e), paymentId: typeof pid === "string" ? pid : null });
         refusal.show();
@@ -917,9 +945,17 @@ function AdvanceBody(props: {
       const r = await paymentsApi.get(paymentId);
       const pay = r.payment;
       const reference = pay.reference ?? form.reference;
-      setPrefill({ paymentId, amountMinor: pay.amountMinor, receivedOn: pay.receivedOn, reference });
+      // M6.3 staging fix 1: an online payment keeps its gateway's line beside the reference (and a card payment's rate takes the focus), as from the panel
+      const online =
+        pay.provider !== "manual"
+          ? { provider: pay.provider, mode: pay.mode, providerPaymentId: pay.providerPaymentId ?? null }
+          : null;
+      setPrefill({ paymentId, amountMinor: pay.amountMinor, receivedOn: pay.receivedOn, reference, online });
       setForm({ amount: plainAmount(pay.amountMinor, v.currency), date: pay.receivedOn, reference });
+      // the rate is for the day the money came (Q9): its date follows the payment's day unless the Owner set its own
+      setFx(rateDateFollows(fx, fxDateOwn, pay.receivedOn));
       setSeen(null);
+      refocus.current = true;
     } catch (e) {
       setFailure(payErrorText(e));
       refusal.show();
@@ -1134,7 +1170,13 @@ function AdvanceBody(props: {
         <button type="button" className="btn btn--secondary" onClick={props.onClose} disabled={busy}>
           {INVT_COPY.cancel}
         </button>
-        <button type="submit" className="btn btn--primary" disabled={busy} aria-busy={busy || undefined}>
+        <button
+          ref={submitRef}
+          type="submit"
+          className="btn btn--primary"
+          disabled={busy}
+          aria-busy={busy || undefined}
+        >
           {busy
             ? "Working…"
             : confirmInr

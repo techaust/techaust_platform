@@ -344,6 +344,11 @@
   white-space: normal;
 }
 
+/* review M3: money above a proforma's balance waits for a refund; its line takes the whole row under the date and amount, where the action would be */
+.pay-waiting__refund {
+  grid-column: 1 / -1;
+}
+
 @media (min-width: 48rem) {
   .pay-waiting__row {
     grid-template-columns: minmax(0, 1fr) auto auto auto;
@@ -660,11 +665,34 @@
   font-weight: 600;
 }
 
+/* A row's actions stack, right-aligned, one under the other (M6.3 staging fixes, review M1): at 1280 beside the open menu the long "Confirm by issuing the tax
+   invoice" beside Reject made the table scroll sideways and cut both off. Stacked, the column is as wide as its widest button, and that button may wrap its
+   words onto a second line (never more: its own width, up to 11rem, is what the shrink-wrapped actions column keeps), so the payment's columns keep their room. */
 .pay-row__acts {
   display: inline-flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-end;
   gap: var(--space-2);
-  justify-content: flex-end;
+}
+
+.pay-row__acts .btn {
+  inline-size: max-content;
+  max-inline-size: 11rem;
+  padding-inline: var(--space-3);
+  white-space: normal;
+}
+
+/* review M3: the line that stands where the action would, for money waiting for a refund (the queue's and the list's actions column), as wide as the widest
+   button so it reads in three short lines rather than one word a line */
+.pay-row__refund {
+  display: block;
+  inline-size: 11rem;
+  max-inline-size: 100%;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  text-align: start;
+  white-space: normal;
 }
 
 .pay-range {

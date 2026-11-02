@@ -121,6 +121,38 @@ describe("finding 1: one advance try per invocation [ADM-INV-10, L6]", () => {
     expect(await reviewKindsOf("payment_id", paymentId)).toEqual(["advance_blocked"]);
   });
 
+  it("M6.3 staging fixes, review M3: another payment's tax invoice took the balance between the read and the freeze: blocked at once as a proforma_overpaid item (never freeze_refused), and never tried again", async () => {
+    const { pf, l, paymentId } = await paidProforma();
+    // Every route that puts money on the proforma now takes this payment first, so the race stands in for one that didn't (a payment of a proforma's other
+    // link, older data): a part of the balance paid, the stamp moved, the ledger identity kept.
+    const takeBalance = async () => {
+      await env.DB.prepare(
+        "UPDATE documents SET paid_minor = paid_minor + 100, balance_minor = balance_minor - 100, updated_at = updated_at + 1 WHERE id = ?1",
+      )
+        .bind(pf.id)
+        .run();
+    };
+    const a = countingEnv({ race: { when: freezeBatch, act: takeBalance } });
+    expect(await issueGatewayAdvance(a.env, paymentId)).toEqual({
+      result: "blocked",
+      blockers: ["advance_exceeds_balance"],
+    });
+    expect(await reviewKindsOf("payment_id", paymentId)).toEqual(["proforma_overpaid"]);
+    expect((await paymentOf(l.paymentId))?.status).toBe("pending_verification");
+    // the sweep never asks for it again (the item counts as the Owner told), and a later try says the same once
+    expect(await rows(STUCK_ADVANCES_SQL, Date.now() + 3_600_000)).toEqual([]);
+    expect(await issueGatewayAdvance(env, paymentId)).toEqual({
+      result: "blocked",
+      blockers: ["advance_exceeds_balance"],
+    });
+    expect(await reviewKindsOf("payment_id", paymentId)).toEqual(["proforma_overpaid"]);
+    const item = await one<{ document_id: string; status: string }>(
+      "SELECT document_id, status FROM review_items WHERE payment_id = ?1",
+      paymentId,
+    );
+    expect(item).toEqual({ document_id: pf.id, status: "open" });
+  });
+
   it('the admin "Try again" on an advance item makes one try: a proforma changed meanwhile is 409 advance_changed; then it issues, within 45 statements, without a second resolve', async () => {
     const { o, pf, paymentId } = await paidProforma();
     await env.DB.prepare("UPDATE staff_users SET status = 'deactivated' WHERE id = ?1").bind(o.id).run();

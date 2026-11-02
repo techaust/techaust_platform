@@ -7,6 +7,7 @@
 import { ANONYMISED_CLIENT } from "@techaust/core/clients";
 import { guardFigures } from "@techaust/core/documents";
 import { decide } from "@techaust/core/permissions";
+import { paymentProformaSql, paymentWaitsRefundSql } from "@techaust/db/ledger";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { GUARD_SUMS } from "./approval-requests.ts";
@@ -148,6 +149,10 @@ type PaymentApprovalListRow = {
   client_code: string;
   client_name: string;
   client_gone: number;
+  /** M6.3 staging fix 2: while pending, the proforma the entry asks for (`paymentProformaSql`), else null. */
+  proforma_id: string | null;
+  /** M6.3 staging fixes, review M3: 1 while pending and above the balance of the issued proforma it asks for (`paymentWaitsRefundSql`). */
+  waits_refund: number;
 };
 
 /** M6.1 (ADM-APR-01, L18): the payments Staff recorded, waiting for the Owner; the same keyset and filters. Decided only through POST /payments/:id/verify. */
@@ -162,7 +167,9 @@ export const PAYMENT_APPROVALS_SQL = (f: {
   const idAt = cursorAt + (f.cursor ? 2 : 0);
   return `SELECT a.id, a.status, a.created_at, a.decided_at, a.note, a.requested_by, ru.name AS requester_name, a.decided_by, du.name AS decider_name,
        p.id AS payment_id, p.kind AS payment_kind, p.status AS payment_status, p.currency, p.amount_minor, p.received_on,
-       cl.id AS client_id, cl.code AS client_code, cl.display_name AS client_name, (cl.anonymised_at IS NOT NULL) AS client_gone
+       cl.id AS client_id, cl.code AS client_code, cl.display_name AS client_name, (cl.anonymised_at IS NOT NULL) AS client_gone,
+       CASE WHEN p.status = 'pending_verification' THEN ${paymentProformaSql("p")} END AS proforma_id,
+       (p.status = 'pending_verification' AND ${paymentWaitsRefundSql("p")}) AS waits_refund
      FROM approvals a JOIN payments p ON p.id = a.payment_id JOIN clients cl ON cl.id = p.client_id LEFT JOIN staff_users ru ON ru.id = a.requested_by LEFT JOIN staff_users du ON du.id = a.decided_by
      WHERE a.kind = 'payment_verify'${f.status ? " AND a.status = ?1" : ""}${f.own ? ` AND a.requested_by = ?${ownAt}` : ""}${f.cursor ? ` AND ${keysetSql("a.created_at", "a.id", false, "after", cursorAt).where}` : ""}${f.id ? ` AND a.id = ?${idAt}` : ""}
      ORDER BY a.created_at DESC, a.id DESC LIMIT`;
@@ -189,6 +196,10 @@ const paymentApprovalView = (r: PaymentApprovalListRow) => ({
     clientId: r.client_id,
     clientCode: r.client_code,
     clientName: r.client_gone === 1 ? ANONYMISED_CLIENT : r.client_name,
+    /** M6.3 staging fix 2 (L5): while pending, the proforma it asks for: the queue then offers "Confirm by issuing the tax invoice", never Confirm. */
+    proformaId: r.proforma_id,
+    /** Review M3: the money is above that proforma's balance: no tax invoice can take it (the queue offers no "Confirm by issuing"). */
+    waitsRefund: r.waits_refund === 1,
   },
 });
 

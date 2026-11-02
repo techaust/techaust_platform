@@ -26,7 +26,7 @@ import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
 import { dateError } from "../../lib/date-field.ts";
-import { GW_UI, gatewayLine, itemReason } from "../../lib/gateway.ts";
+import { GW_UI, gatewayLine, gatewayName, itemReason } from "../../lib/gateway.ts";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
 import { INV_COPY } from "../../lib/invoices.ts";
 import type { InvoiceView } from "../../lib/invoices-api.ts";
@@ -43,6 +43,7 @@ import {
   payErrorText,
   plainAmount,
   todayIst,
+  WAITS_REFUND_LINE,
 } from "../../lib/payments.ts";
 import { bpToPercent, moneyFrom } from "../../lib/settings-form.ts";
 import { withCode } from "../../lib/step-up.ts";
@@ -480,8 +481,8 @@ function Entries(props: {
                     onAttach={props.onProof}
                   />
                 ) : online ? (
-                  // M6.2: Razorpay's own record is the proof of an online payment; nothing to attach
-                  <span className="pay-lines__meta pay-lines__nowrap">Razorpay</span>
+                  // M6.2: the gateway's own record is the proof of an online payment; nothing to attach (its name, never a hard-coded one: M6.3 staging fix)
+                  <span className="pay-lines__meta pay-lines__nowrap">{gatewayName(online.provider)}</span>
                 ) : r.hasProof ? (
                   <a href={paymentsApi.proofHref(r.paymentId)} className="pay-proof-link">
                     <FileText size={16} />
@@ -560,7 +561,10 @@ function ProformaPayments(props: {
       <h2 id="pay-h" className="lead-panel__title">
         {p.pending.length > 0 ? PAY_COPY.toCheck : PAY_COPY.heading}
       </h2>
-      {p.pending.length > 0 && <p className="pay-panel__lede">{PAY_COPY.proformaLine}</p>}
+      {/* review M3: the lede says how a waiting payment is confirmed, so only while one can be (money above the balance can't) */}
+      {p.pending.some((w) => w.waitsRefund !== true) && (
+        <p className="pay-panel__lede">{PAY_COPY.proformaLine}</p>
+      )}
       {blocked.map((b) => (
         <div key={b.id} className="pay-blocked" role="note">
           <Alert size={20} />
@@ -573,6 +577,10 @@ function ProformaPayments(props: {
           {p.pending.map((w) => {
             const online = gatewayOf(p, w.paymentId);
             const isBlocked = online !== undefined && blocked.some((b) => b.payment_id === w.paymentId);
+            // M6.3 staging fixes, review M3: money above the proforma's balance can't be confirmed by issuing (the advance would refuse it), so no action
+            // is offered; an online payment waits for a refund and its line stands where the action would; a Staff entry is rejected on its own page
+            const over = w.waitsRefund === true;
+            const refund = over && online !== undefined;
             return (
               <li key={w.paymentId} className="pay-waiting__row pay-waiting__row--proforma">
                 <span className="pay-waiting__what">
@@ -583,13 +591,13 @@ function ProformaPayments(props: {
                     <>
                       <span className="pay-online__what">
                         <CreditCard size={16} />
-                        {GW_UI.proformaToFollow}
+                        {refund ? GW_UI.paidOnline : GW_UI.proformaToFollow}
                       </span>
                       <span className="pay-lines__meta break">
                         {gatewayLine(online.provider, online.mode, online.providerPaymentId)}
                       </span>
                       {/* M6.3 (Q1 A): a card payment's tax invoice is never issued automatically: the Owner issues it with the day's rate */}
-                      {!isBlocked && online.provider !== "stripe" && (
+                      {!isBlocked && !refund && online.provider !== "stripe" && (
                         <span className="pay-lines__meta">{GW_UI.issuingNow}</span>
                       )}
                     </>
@@ -600,15 +608,20 @@ function ProformaPayments(props: {
                   )}
                 </span>
                 <span className="tnum pay-waiting__amount">{amountText(w.amountMinor, w.currency)}</span>
-                {(!online || isBlocked) && <PaymentPill status="pending_verification" />}
-                {owner && (
-                  <button
-                    type="button"
-                    className={`btn ${online && !isBlocked ? "btn--secondary" : "btn--primary"} pay-waiting__go`}
-                    onClick={() => props.onConfirm?.(w, online)}
-                  >
-                    {PAY_UI.confirmByIssuing}
-                  </button>
+                {(!online || isBlocked || refund) && <PaymentPill status="pending_verification" />}
+                {refund ? (
+                  <span className="pay-lines__meta pay-waiting__refund">{WAITS_REFUND_LINE}</span>
+                ) : (
+                  owner &&
+                  !over && (
+                    <button
+                      type="button"
+                      className={`btn ${online && !isBlocked ? "btn--secondary" : "btn--primary"} pay-waiting__go`}
+                      onClick={() => props.onConfirm?.(w, online)}
+                    >
+                      {PAY_UI.confirmByIssuing}
+                    </button>
+                  )
                 )}
               </li>
             );
