@@ -21,7 +21,7 @@ Reused word for word from [07-ZI](ZI-m6.2-razorpay.md) (currency-neutral): lines
 12. "TecHaust Technologies" (the name on Stripe's page)
 
 ## Staff lines (admin; lead under delegation)
-S13. "Card payments" / "Clients pay by card from their portal page or the emailed invoice link. Each card page lasts an hour, so there is no link to copy." / "Copy portal link"
+S13. "Card payments" / "Clients pay by card from their portal page or the emailed invoice link. Each card page lasts an hour, so there is no card page to copy; send the client their portal link instead." / "Copy portal link" (review finding 4, 2026-11-02; see Review changes below)
 S14. "Stripe · card · {payment id}" / "INR credited by Stripe {inr} (about ₹{rate} per USD; not the GST rate)" / "Stripe fee {fee} incl. GST {tax} (absorbed)"
 S15. "Proof awaited" / "Attach Stripe's payment advice or the bank's e-FIRA for this payment."
 S16. blocker `fx_rate_needed`: "enter the exchange rate of the day the money arrived"
@@ -49,3 +49,8 @@ Settings › Gateways, the kind of Stripe key beside "Configured":
 - "Not a restricted key, so it is refused. Card payments stay off until it is replaced."
 
 **Approval (lead, 2026-11-02):** S13–S19 approved **as placed** (screenshots `.logs/m6.3/design/`), with the early check 2 changes; the admin switches `APPROVED_07ZM` and `APPROVED_ZM_DRAFTS` are on. The "Before going live" checklist text for Settings › Gateways is left for Phase 7 (L9), with the live keys.
+
+### Review changes (lead, 2026-11-02)
+Approved by the lead under the owner's delegation after the M6.3 review ([run file](../runs/m6.3-stripe.md), "Review triage").
+- S13 body (review finding 4; it ended "so there is no link to copy." directly above "Copy portal link", which read as a contradiction): "Clients pay by card from their portal page or the emailed invoice link. Each card page lasts an hour, so there is no card page to copy; send the client their portal link instead."
+- S18 error, on "Smallest part-payment by card (USD)" when it is above "Largest card payment (USD)" (review finding 2; Settings › Payment terms, and the settings API's refusal): "The smallest part-payment by card can't be more than the largest card payment."

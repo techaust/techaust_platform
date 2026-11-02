@@ -3,6 +3,8 @@
 // "[Placeholder] " mark (the copy-zl.ts pattern), and `APPROVED_07ZM` turns true when the lead approves the placed page. S16, S17 and S19 are the finance
 // Worker's (apps/admin/worker/gateway/reasons.ts and messages.ts); S19 is the builder's draft for the lead. Pure, so the words are tested without a browser.
 
+import { CARD_FLOOR_ABOVE_MAXIMUM } from "@techaust/core/settings";
+
 export const APPROVED_07ZM = true;
 export const PLACEHOLDER_MARK = "[Placeholder]";
 /** A 07-ZM staff line as the screen shows it: marked until the lead approves the placed page. */
@@ -11,8 +13,9 @@ export const ZM = (line: string): string => (APPROVED_07ZM ? line : `${PLACEHOLD
 export const CARD_ZM = {
   /** S13: the "Card payments" card on a USD document's Payments panel (no staff-made link, L7). */
   cardTitle: ZM("Card payments"),
+  // Review finding 4 (lead under delegation, 2026-11-02): the old ending "so there is no link to copy" sat over "Copy portal link" and read as a contradiction.
   cardBody: ZM(
-    "Clients pay by card from their portal page or the emailed invoice link. Each card page lasts an hour, so there is no link to copy.",
+    "Clients pay by card from their portal page or the emailed invoice link. Each card page lasts an hour, so there is no card page to copy; send the client their portal link instead.",
   ),
   copyPortalLink: ZM("Copy portal link"),
   /** S14: a Stripe payment's rows. `rate` is worked out in bigint from the two INR and USD figures, never a stored float (L10). */
@@ -31,6 +34,11 @@ export const CARD_ZM = {
   maximumHint: ZM(
     "RBI limits a payment aggregator's export payment to ₹25 lakh per transaction. We keep card payments under it too: keep this below ₹25 lakh at today's rate.",
   ),
+  /**
+   * Review finding 2 (lead under delegation, 2026-11-02; 07-ZM "Review changes"): the floor above the maximum, on the floor field. Such a pair left Pay by card
+   * on a document the finance Worker always refuses; the settings API refuses it too, with the same words (one copy, in core).
+   */
+  floorAboveMaximum: ZM(CARD_FLOOR_ABOVE_MAXIMUM),
 } as const;
 
 /**

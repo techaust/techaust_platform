@@ -3,7 +3,7 @@
 // and the build schedule (which must add up to 100 %). Amounts are typed in rupees or dollars and stored in minor units
 // through @techaust/core; percentages are stored in basis points. How advances are documented lives under Tax. M6.3 (07-ZM S18; Q2 A, L9): the smallest card
 // part-payment and the largest card payment on a USD document, in dollars, with the ₹25 lakh line under the second (Researched 2026-10-28, RBI PA Directions
-// 2025 ¶11(d); lead, 2026-11-02 (08-C RB-07)).
+// 2025 ¶11(d); lead, 2026-11-02 (08-C RB-07)). The floor can't be above the maximum (review finding 2, 07-ZM "Review changes").
 import type { Settings } from "@techaust/core/settings";
 import { Link } from "react-router";
 import { NumberUnit, SettingRow } from "../../components/form.tsx";
@@ -13,6 +13,7 @@ import { CARD_ZM } from "../../lib/copy-zm.ts";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
 import {
   bpToPercent,
+  cardFloorAboveMaximum,
   type FieldErrors,
   intIn,
   moneyFrom,
@@ -125,6 +126,9 @@ const spec: GroupSpec<"payment_terms", Form> = {
     // the schema's own floor: the largest card payment is at least one cent
     else if (usdMax.minor < 1)
       e["f-overseasOnlineMaxUsdMinor"] = `${CARD_ZM.maximumLabel}: ${INVT_COPY.amountZero}`;
+    // review finding 2: a floor above the maximum would leave Pay by card on with no amount the server takes; said on the floor field
+    else if (usdMin.ok && cardFloorAboveMaximum(usdMin.minor, usdMax.minor))
+      e["f-onlineMinPartialUsdMinor"] = CARD_ZM.floorAboveMaximum;
     const cap = moneyFrom(f.cap, "INR");
     if (!cap.ok) e["f-websiteLiabilityCapInrMinor"] = `Website liability cap: ${cap.error}`;
     const offsets: number[] = [];

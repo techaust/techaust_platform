@@ -124,6 +124,19 @@ export function stripeFacts(r: {
   return out;
 }
 
+/**
+ * Whether S13's "Copy portal link" is worth offering on a card-payable document: only while something can still be paid by card. Not on a converted proforma
+ * or a settled document, and (M6.3 review finding 5) not while a proforma's card payment waits for the Owner's rate ("Confirm by issuing"): the portal hides
+ * Pay then and shows C8, as the Payment link card holds back a second link (`waitingInvoice`).
+ */
+export function portalLinkOffered(
+  status: string,
+  balanceMinor: number,
+  payments: readonly { proformaPending: boolean }[],
+): boolean {
+  return status !== "converted" && balanceMinor > 0 && !payments.some((g) => g.proformaPending);
+}
+
 /** S13's "Copy portal link": the client's signed-in invoice page in this environment's portal (null when the build has no portal origin). */
 export function portalInvoiceUrl(documentId: string, origin: string = PORTAL_ORIGIN): string | null {
   if (!origin) return null;
@@ -216,11 +229,19 @@ export function allowedResolutions(
   return out;
 }
 
-/** "Try again" applies to these kinds (the route's own list; an advance item needs its payment). */
-export const canRetry = (it: Pick<ReviewItem, "kind" | "payment_id" | "facts">): boolean =>
-  ((it.kind === "advance_blocked" || it.kind === "dead_letter") && it.payment_id !== null) ||
-  (["refetch_failed", "dead_letter", "unknown_link"].includes(it.kind) &&
-    typeof it.facts?.linkId === "string");
+/**
+ * "Try again" applies to these kinds (the route's own list; an advance item needs its payment). M6.3 (review finding 3): never on a Stripe item the route
+ * always refuses: `advance_blocked` (a USD proforma's tax invoice waits for the Owner's rate, "Confirm by issuing") and `unknown_link` (no checkout of ours
+ * to re-fetch against; metadata never moves money, L5). `worker/gateway/routes.ts`, POST /review/:id/retry.
+ */
+export const canRetry = (it: Pick<ReviewItem, "provider" | "kind" | "payment_id" | "facts">): boolean => {
+  if (it.provider === "stripe" && (it.kind === "advance_blocked" || it.kind === "unknown_link")) return false;
+  return (
+    ((it.kind === "advance_blocked" || it.kind === "dead_letter") && it.payment_id !== null) ||
+    (["refetch_failed", "dead_letter", "unknown_link"].includes(it.kind) &&
+      typeof it.facts?.linkId === "string")
+  );
+};
 
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isSafeInteger(v) ? v : null);
 const str = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
