@@ -2,6 +2,14 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-11-02 [#157](https://github.com/techaust/techaust_platform/pull/157) chore(tools): set-gateway-keys Stripe modes for the owner's H2 and H3
+- 2026-11-02 [#156](https://github.com/techaust/techaust_platform/pull/156) perf(admin): start-up dry run of the hot routes, one forwarder, one-batch invoice detail [NFR-2]
+- 2026-11-01 [#155](https://github.com/techaust/techaust_platform/pull/155) ci: accept the M6.3 test webhook secrets in the secret scan
+- 2026-11-01 [#154](https://github.com/techaust/techaust_platform/pull/154) feat(portal): times of day in the client's own clock [POR-04]
+- 2026-11-01 [#153](https://github.com/techaust/techaust_platform/pull/153) docs: M6.2 approved on staging; its CPU reading; M6.3 and portal local-time start notes
+- 2026-11-01 [#152](https://github.com/techaust/techaust_platform/pull/152) feat(web): company phone, WhatsApp and hours in the visitor's own clock [WEB-G-18]
+- 2026-11-01 [#151](https://github.com/techaust/techaust_platform/pull/151) feat(payments): M6.2 Razorpay payment links [ADM-PAY-02][POR-06][JOB-HOOK-01]
+- 2026-11-01 [#150](https://github.com/techaust/techaust_platform/pull/150) docs: record of 2026-11-01 (status, decisions, changelog, CLAUDE.md)
 - 2026-11-01 [#149](https://github.com/techaust/techaust_platform/pull/149) docs(runs): M6.5 and M7.1–M7.5 briefs, with the owner's 21 answers
 - 2026-11-01 [#148](https://github.com/techaust/techaust_platform/pull/148) feat(deeds): the deed of assignment of copyright [RB-38, POR-05, ADM-PRJ-04]
 - 2026-11-01 [#147](https://github.com/techaust/techaust_platform/pull/147) feat(tools): the /orchestrate skill and cloud watcher
