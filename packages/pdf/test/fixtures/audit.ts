@@ -4,7 +4,7 @@
 // a page. Built through the same fixture builders as the other PDF tests (core's real tax engine, the issue route's own seal). SAMPLE DATA ONLY: "Sample …"
 // names, @example.test addresses, made-up numbers.
 import { footerLine } from "../../src/footer.ts";
-import type { InvoiceEnvelope } from "../../src/invoice-types.ts";
+import type { InvoiceEnvelope, VerifiedSignature } from "../../src/invoice-types.ts";
 import { toInvoiceView } from "../../src/invoice-view.ts";
 import type { CertificateView } from "../../src/layout/certificate-skeleton.ts";
 import type { StatementLayoutView } from "../../src/layout/statement.ts";
@@ -45,7 +45,7 @@ const signature = {
 const invoiceHtml = (
   e: InvoiceEnvelope,
   opts: { copy?: "supplier"; unsigned?: boolean } = {},
-  sig: typeof signature | null = signature,
+  sig: VerifiedSignature | null = signature,
 ) => {
   const env = opts.unsigned ? signatoryOff(e) : e;
   return renderDocumentHtml(
