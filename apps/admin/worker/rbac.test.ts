@@ -191,7 +191,8 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       `INSERT INTO payment_refunds (id, payment_id, client_id, provider, origin, status, paid_to, reason_code, currency, amount_minor, requested_by, requested_at, attempts, updated_at)
        VALUES (?1, ?2, ?3, 'razorpay', 'owner', 'requested', 'original', 'overpayment', 'INR', 1000, ?4, ?5, 0, ?5)`,
     )
-      .bind(rid, pid, clientId, ownerId, T)
+      // requested 20 minutes ago: L44 lets a cancel run only once the refund is idle (`REFUND_SWEEP_IDLE_MS`)
+      .bind(rid, pid, clientId, ownerId, T - 20 * 60_000)
       .run();
     return rid;
   };
