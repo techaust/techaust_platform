@@ -212,3 +212,96 @@
 .rf-reductions__head .pay-real__ext-h {
   margin: 0;
 }
+
+/* the payment's own receipt (the entry dialog) */
+.rf-entry-receipt {
+  margin-top: var(--space-4);
+}
+
+/* a refund still on its way, under the client's credit: the label with its icon, the amount a link to its payment */
+.rf-inflight__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.rf-inflight__label .icon {
+  color: var(--color-text-muted);
+}
+
+.rf-inflight__amount {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+}
+
+/* the Refunds tab */
+.rf-tab {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.rf-tab__loading {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+}
+
+.rf-tab__table {
+  overflow-x: auto;
+}
+
+/* ---------- reconciliation (G5) ---------- */
+
+.rcn-open {
+  min-height: var(--target-min);
+  padding-inline: 0;
+}
+
+.rcn-net {
+  font-weight: 600;
+}
+
+/* a settlement with lines that match nothing, a fee that differs: words and weight, never colour alone */
+.rcn-short {
+  font-weight: 600;
+}
+
+.rcn-seen {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+.rcn-seen .icon {
+  color: var(--color-text-accent);
+}
+
+.rcn-entity {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.rcn-unmatched {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.rcn-pick {
+  justify-self: start;
+  max-width: 100%;
+}
+
+.rcn-hint {
+  margin: 0;
+  max-width: 65ch;
+  color: var(--color-text-muted);
+}
+
+.rcn-note {
+  margin: var(--space-6) 0 0;
+  max-width: 65ch;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}

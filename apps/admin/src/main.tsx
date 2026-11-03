@@ -108,6 +108,8 @@ const router = createBrowserRouter([
           { path: "payments/advices", lazy: () => import("./routes/advices.tsx") },
           { path: "payments/:id", lazy: () => import("./routes/payments.tsx") },
           // M5.5b: the reports (one lazy chunk with the gst core; /reports opens the GST exports for the Owner and the Accountant).
+          // M6.5 (G5): reconciliation
+          { path: "reconciliation", lazy: () => import("./routes/reconciliation.tsx") },
           { path: "reports", lazy: () => import("./routes/reports.tsx") },
           { path: "reports/:report", lazy: () => import("./routes/reports.tsx") },
           { path: "approvals", lazy: () => import("./routes/approvals.tsx") },

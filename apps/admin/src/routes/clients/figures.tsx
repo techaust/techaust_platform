@@ -5,6 +5,7 @@
 // warning icon and its count in words, never colour alone. "Collected" arrives with payments (M6) and says so (07-V's line).
 // Amounts are formatted by core (`moneyText`); nothing is added up here.
 
+import { type ReactNode, useState } from "react";
 import type { ClientFigures, ProjectBilled } from "../../api.ts";
 import { api } from "../../api.ts";
 import { AlertTriangle, Receipt, RefreshCw } from "../../components/icons.tsx";
@@ -12,11 +13,13 @@ import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { allowed } from "../../lib/access.ts";
 import { Y } from "../../lib/copy-y.ts";
+import { ZO_UI } from "../../lib/copy-zo.ts";
 import { PAY_COPY, PAY_UI } from "../../lib/payments.ts";
 import { moneyText } from "../../lib/projects.ts";
 import { FINANCE_COPY } from "../../lib/reports.ts";
 import { useUser } from "../../session.tsx";
 import { ClientCreditDialog } from "../payments/client-credit.tsx";
+import { ClientRefundDialog, RefundsInProgress, useOpenRefunds } from "../payments/client-refunds.tsx";
 import { useDialogState } from "../payments/parts.tsx";
 
 /** 07-Y (FX-3): the figure labels 07-V's dashboard tiles didn't have. */
@@ -44,7 +47,7 @@ function Amount({
   );
 }
 
-function CurrencyFigures({ f, many }: { f: ClientFigures; many: boolean }) {
+function CurrencyFigures({ f, many, inFlight }: { f: ClientFigures; many: boolean; inFlight?: ReactNode }) {
   const groupId = `acct-${f.currency}`;
   const rows = (
     <dl className="acct__rows">
@@ -107,6 +110,8 @@ function CurrencyFigures({ f, many }: { f: ClientFigures; many: boolean }) {
           </dd>
         </div>
       )}
+      {/* M6.5: the refunds still on their way, beside the credit they came out of (each is one refund's own amount) */}
+      {inFlight}
     </dl>
   );
   // With two currencies each is its own labelled group under its code; with one the code adds nothing (the amounts carry the symbol).
@@ -133,6 +138,10 @@ export function ClientFiguresPanel(props: {
   const [using, setUsingState] = useDialogState<true>("acct-h");
   const setUsing = (on: boolean) => setUsingState(on ? true : null);
   const toast = useToast();
+  // M6.5 (G3): the client's refunds still on their way (finance readers of refunds), and the Owner's "Refund credit"
+  const [refunding, setRefundingState] = useDialogState<true>("acct-h");
+  const [tick, setTick] = useState(0);
+  const open = useOpenRefunds(props.clientId, allowed(user.role, "refunds.read"), `${tick}`);
   if (finance.state === "ready" && !finance.data.available) return null;
   const rows = finance.state === "ready" && finance.data.available ? finance.data.currencies : [];
   return (
@@ -170,7 +179,12 @@ export function ClientFiguresPanel(props: {
       ) : (
         <>
           {rows.map((f) => (
-            <CurrencyFigures key={f.currency} f={f} many={rows.length > 1} />
+            <CurrencyFigures
+              key={f.currency}
+              f={f}
+              many={rows.length > 1}
+              inFlight={<RefundsInProgress rows={open.filter((r) => r.currency === f.currency)} />}
+            />
           ))}
           {allowed(user.role, "payments.applyCredit") && rows.some((f) => f.creditMinor > 0) && (
             <button
@@ -180,6 +194,28 @@ export function ClientFiguresPanel(props: {
             >
               {PAY_UI.useCreditShort}
             </button>
+          )}
+          {allowed(user.role, "refunds.issue") && rows.some((f) => f.creditMinor > 0) && (
+            <button
+              type="button"
+              className="btn btn--secondary acct__credit-btn"
+              onClick={() => setRefundingState(true)}
+            >
+              {ZO_UI.refundCredit}
+            </button>
+          )}
+          {refunding && (
+            <ClientRefundDialog
+              clientId={props.clientId}
+              currency={rows.find((f) => f.creditMinor > 0)?.currency ?? "INR"}
+              onClose={() => setRefundingState(null)}
+              onDone={(text) => {
+                setRefundingState(null);
+                toast("success", text);
+                setTick((n) => n + 1);
+                finance.reload(true);
+              }}
+            />
           )}
           {using && (
             <ClientCreditDialog

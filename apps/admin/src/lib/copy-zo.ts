@@ -29,6 +29,7 @@ export const ZO_UI = {
   // ---- the refund button and rows (S5–S9) ----
   refund: "Refund",
   refundCredit: "Refund credit",
+  noCredit: "This client has no credit left to refund.",
   refundsHeading: "Refunds",
   noRefunds: "No refunds.",
   refundRow: (amount: string, day: string) => `${amount} on ${day}`,
@@ -37,6 +38,7 @@ export const ZO_UI = {
   /** L44 and L46: the buttons wait 15 minutes after the last try (the gateway may still be answering). */
   waitUntil: (time: string) => `Try again or cancel after ${time}.`,
   refundInProgress: (amount: string) => `Refund in progress ${amount}`,
+  refundInProgressLabel: "Refund in progress",
   refundInProgressHint:
     "Not in the credit any more. It leaves the client's account when the gateway pays it.",
   retried: "Asked the gateway again.",
@@ -183,6 +185,7 @@ export const ZO_UI = {
   settlements: "Settlements",
   unmatched: "Unmatched",
   colSettledOn: "Settled on",
+  colLine: "Line",
   colUtr: "UTR",
   colGross: "Gross",
   colFees: "Fees and GST (absorbed)",

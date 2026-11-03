@@ -105,6 +105,7 @@ export function RefundDialog(props: RefundDialogProps) {
             provider: detail.data.provider,
             status: detail.data.status,
             amountMinor: detail.data.amountMinor,
+            currency: detail.data.currency,
           }
         : null;
   const title =
