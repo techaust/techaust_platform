@@ -41,6 +41,7 @@ import {
   type RefundInsertArgs,
   realisationReductionStatement,
   receiptVoidStatement,
+  refundAnsweredStatement,
   refundAttemptStatement,
   refundBatchResult,
   refundCancelStatement,
@@ -303,6 +304,15 @@ describe("the refund batch: main statement guards, side statements, post-conditi
       ),
     ).toBe(false);
     await refundAttemptStatement(db(), { refundId: a.id, now: Date.now() }).run();
+    // second review, M2: an answer that changes nothing notes the check's instant and counts no attempt
+    const answeredAt = Date.now() + 1;
+    expect(
+      (await refundAnsweredStatement(db(), { refundId: a.id, now: answeredAt }).run()).meta.changes,
+    ).toBe(1);
+    expect(await first("SELECT attempts, last_attempt_at FROM payment_refunds WHERE id = ?", a.id)).toEqual({
+      attempts: 1,
+      last_attempt_at: answeredAt,
+    });
     const move = (to: "processing" | "succeeded" | "failed", ref: string | null = "rfnd_A") =>
       refundMoveStatement(db(), {
         refundId: a.id,
@@ -325,7 +335,8 @@ describe("the refund batch: main statement guards, side statements, post-conditi
     ).toEqual({
       status: "failed",
       failure_code: "BAD_REQUEST_ERROR",
-      attempts: 3,
+      // the one check without an answer; the gateway's two answers (the moves) count none (second review, M2)
+      attempts: 1,
       settled_on: null,
     });
     expect((await first<{ credit: number }>(CLIENT_CREDIT_SQL, clientId))?.credit).toBe(50_000);

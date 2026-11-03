@@ -68,6 +68,12 @@ export const RECEIPT_STOPPED_BELL = (number: string) =>
 /** 07-ZO approved (one switch, `@techaust/core/copy-zo`); behind an object so a test can stand in for the flipped switch. */
 export const receiptCopyGate = { approved: (): boolean => APPROVED_07ZO };
 
+/** Whether a receipt PDF may be rendered here: always locally; elsewhere only once the layout is final and 07-ZO's words are approved (finding 5, L5). */
+const rendersAllowed = (env: Env): boolean => {
+  const environment: string = env.ENVIRONMENT;
+  return environment === "local" || (!RECEIPT_LAYOUT_PLACEHOLDER && receiptCopyGate.approved());
+};
+
 const ROW_SQL = `SELECT d.id, d.client_id, d.currency, d.fy, d.number, d.number_display, d.header_extras, d.snapshot_sha256, d.pdf_sha256, d.frozen_at, d.status,
      k.anonymised_at, k.attach_pdf, p.verified_at
    FROM documents d JOIN clients k ON k.id = d.client_id LEFT JOIN payments p ON p.id = substr(d.id, 5)
@@ -124,12 +130,19 @@ export async function processReceipt(
     return "issued";
   }
   if (body.kind === "receipt.sweep") {
+    // Second review, L5: while the renderer would skip every receipt here (the layout or 07-ZO's words not approved, outside "local"), the sweep asks for no
+    // render and notes no attempt; receipts are still issued.
+    const renders = rendersAllowed(env);
     const [due, pending] = await env.DB.batch([
       env.DB.prepare(RECEIPTS_DUE_SQL).bind(body.asOf - RECEIPT_SWEEP_AFTER_MS),
-      env.DB.prepare(RECEIPT_PDF_PENDING_SQL).bind(
-        body.asOf - RECEIPT_SWEEP_AFTER_MS,
-        SWEEP_MAX_FAILED_NIGHTS,
-      ),
+      ...(renders
+        ? [
+            env.DB.prepare(RECEIPT_PDF_PENDING_SQL).bind(
+              body.asOf - RECEIPT_SWEEP_AFTER_MS,
+              SWEEP_MAX_FAILED_NIGHTS,
+            ),
+          ]
+        : []),
     ]);
     const issue = ((due?.results ?? []) as { id: string }[]).map((r) => ({
       v: 1,
@@ -169,7 +182,7 @@ async function renderReceipt(
   const environment: string = env.ENVIRONMENT;
   if (RECEIPT_LAYOUT_PLACEHOLDER && environment !== "local") return skip("layout_placeholder");
   // Finding 5: the receipt's words come from 07-ZO; until the owner approves it, nothing is stored write-once or emailed outside "local" (no failure counted).
-  if (!receiptCopyGate.approved() && environment !== "local") return skip("copy_unapproved");
+  if (!rendersAllowed(env)) return skip("copy_unapproved");
   const receiptOf = receiptOfRow(row.header_extras);
   const label = row.fy ? fyLabelOfToken(row.fy) : null;
   const sealed =

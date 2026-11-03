@@ -125,12 +125,18 @@ const PAYMENT_SQL = `SELECT p.id, p.client_id, p.kind, p.status, p.provider, p.c
      EXISTS (SELECT 1 FROM payment_refunds o INDEXED BY payment_refunds_payment WHERE o.payment_id = p.id AND o.status IN ('requested', 'processing')) AS open_refund,
      (SELECT cs.status FROM checkout_sessions cs WHERE cs.id = p.checkout_id) AS checkout_status
    FROM payments p JOIN clients k ON k.id = p.client_id WHERE p.id = ?1`;
-/** An invoice's issued credit notes, newest first (`documents_parent`). */
-const ISSUED_NOTES_OF = (col: string) =>
-  `FROM documents cn INDEXED BY documents_parent WHERE cn.parent_id = d.id AND cn.type = 'credit_note' AND cn.frozen_at IS NOT NULL ORDER BY cn.frozen_at DESC, cn.id DESC LIMIT 1) AS ${col}`;
 /**
- * The invoice a refund draws on, with what THIS payment holds there (`?2`), and its newest issued credit note (review part 1, finding 6: the refund of its excess
- * is linked to it, RA-40).
+ * An invoice's newest issued credit note that can have made THIS payment's money (`?2`) an excess (second review, M6; RA-40): issued on or after the day the
+ * payment was received (an older note was already in the balance the payment paid), and of at least `?3` (the refund's amount; 0 for the dialog's facts). One
+ * range of `documents_parent`.
+ */
+const ISSUED_NOTES_OF = (col: string) =>
+  `FROM documents cn INDEXED BY documents_parent WHERE cn.parent_id = d.id AND cn.type = 'credit_note' AND cn.frozen_at IS NOT NULL
+     AND cn.issue_date >= (SELECT rp.received_on FROM payments rp WHERE rp.id = ?2) AND cn.total_minor >= ?3
+   ORDER BY cn.issue_date DESC, cn.frozen_at DESC, cn.id DESC LIMIT 1) AS ${col}`;
+/**
+ * The invoice a refund draws on, with what THIS payment holds there (`?2`), and the credit note a refund of its excess of `?3` is linked to (review part 1,
+ * finding 6; second review, M6: only one that can have made the excess, `ISSUED_NOTES_OF`; RA-40).
  */
 const DOC_SQL = `SELECT d.id, d.client_id, d.currency, d.type, d.status, d.frozen_at, d.total_minor, d.paid_minor, d.credited_minor, d.tds_minor, d.updated_at,
      json_extract(d.header_extras, '$.advance') IS NOT NULL AS is_advance, ${paymentNetSql("?2", "d.id")} AS holding, ${DEADLINE_DOC_COLUMNS},
@@ -200,7 +206,7 @@ function refundFacts(
       today,
     ),
     creditNote: d ? creditNoteFactsOf(d, tax, today) : null,
-    // Review part 1, finding 6: the credit note the refund of this invoice's excess is linked to (the dialog sends its id back).
+    // Review part 1, finding 6; second review, M6: the credit note a refund of this invoice's excess would be linked to (issued after the payment arrived).
     issuedCreditNote: d?.note_id ? { id: d.note_id, number: d.note_number } : null,
   };
 }
@@ -252,7 +258,7 @@ export const refunds = new Hono<AppEnv>()
     const [refundsR, payR, docR, taxR] = await db.batch([
       db.prepare(PAYMENT_REFUNDS_SQL).bind(id),
       db.prepare(PAYMENT_SQL).bind(id),
-      db.prepare(DOC_SQL).bind(q.documentId ?? "", id),
+      db.prepare(DOC_SQL).bind(q.documentId ?? "", id, 0),
       db.prepare(TAX_SQL),
     ]);
     const p = payR?.results[0] as PayRow | undefined;
@@ -276,7 +282,7 @@ export const refunds = new Hono<AppEnv>()
     const today = istDay(now);
     const [payR, docR, exR, taxR, noteR] = await db.batch([
       db.prepare(PAYMENT_SQL).bind(id),
-      db.prepare(DOC_SQL).bind(f.documentId ?? "", id),
+      db.prepare(DOC_SQL).bind(f.documentId ?? "", id, f.amountMinor),
       db.prepare("SELECT id, payment_id FROM payment_refunds WHERE id = ?1").bind(f.id),
       db.prepare(TAX_SQL),
       db.prepare(NOTE_OF_SQL).bind(f.creditNoteId ?? "", f.documentId ?? ""),
@@ -296,7 +302,8 @@ export const refunds = new Hono<AppEnv>()
     if (d && f.expectedUpdatedAt !== undefined && f.expectedUpdatedAt !== d.updated_at)
       return err(c, STALE_VERSION, 409);
     // Review part 1, finding 6 (RA-40): a refund of an invoice's excess names the credit note that made it: the one the dialog sent (an issued credit note of
-    // that invoice, held again in the INSERT's WHERE), else the invoice's newest issued one.
+    // that invoice, held again in the INSERT's WHERE), else (second review, M6) the newest one issued on or after the day this payment arrived that covers the
+    // refund; none such: NULL (an overpayment, or a note that was already in the balance the payment paid, is no credit note's excess).
     if (f.creditNoteId !== undefined && !noteR?.results[0]) return err(c, REFUSALS.credit_note_mismatch, 409);
     const creditNoteId = f.from === "document" ? (f.creditNoteId ?? d?.note_id ?? null) : null;
     // B2 Q3: the RA-40 and RA-41 facts, from the payment and the invoice as read BEFORE this refund (what the dialog showed).

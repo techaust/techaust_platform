@@ -489,7 +489,7 @@ describe("review part 1, finding 1: Cancel and a re-post never both win (the ref
 // ---- finding 2: unchanged answers and stuck once -------------------------------------------------------------------------------------------------------------
 
 describe("finding 2: a refund still pending, and a refund stuck", () => {
-  it("a pending refund across three sweeps: one check counted each, unchanged (acknowledged), the idle clock restarts, no item", async () => {
+  it("a pending refund across three sweeps: unchanged (acknowledged), the idle clock restarts, no attempt counted (second review, M2), no item", async () => {
     const a = await lostRefund(6_000);
     const pending = fakeGw("stripe", { find: () => ({ ok: true, value: gwRefund(a.id, 6_000, "pending") }) });
     expect(await checkRefund(env, a.id, a.requestedAt + 16 * MIN, { repost: true, gw: pending.gw })).toEqual({
@@ -504,12 +504,37 @@ describe("finding 2: a refund still pending, and a refund stuck", () => {
       expect(toCheckRefundResult(r)).toEqual({ result: "unchanged" });
       expect(await refundRow(a.id)).toMatchObject({
         status: "processing",
-        attempts: before + h,
+        attempts: before,
         last_attempt_at: now,
       });
     }
     expect(pending.creates).toEqual([]);
     expect(await rows("SELECT id FROM review_items WHERE payment_id = ?1", a.p.id)).toEqual([]);
+  });
+
+  it("second review, M2: fifteen hourly answers that the refund is still on its way, then one network failure: retry, no refund_stuck", async () => {
+    const a = await lostRefund(4_500);
+    const pending = fakeGw("razorpay", {
+      find: () => ({ ok: true, value: gwRefund(a.id, 4_500, "pending") }),
+    });
+    const down = fakeGw("razorpay", { find: () => ({ ok: false, code: "network" }) });
+    expect(
+      (await checkRefund(env, a.id, a.requestedAt + 16 * MIN, { repost: true, gw: pending.gw })).result,
+    ).toBe("moved");
+    for (let h = 1; h <= 15; h++)
+      expect(
+        (
+          await checkRefund(env, a.id, a.requestedAt + h * 60 * MIN + 20 * MIN, {
+            repost: true,
+            gw: pending.gw,
+          })
+        ).result,
+      ).toBe("unchanged");
+    expect(
+      await checkRefund(env, a.id, a.requestedAt + 17 * 60 * MIN, { repost: true, gw: down.gw }),
+    ).toEqual({ result: "retry" });
+    expect(await itemsOf(a.id, "refund_stuck")).toEqual([]);
+    expect(await refundRow(a.id)).toMatchObject({ status: "processing" });
   });
 
   it("no answer twelve times: from the tenth, refund_stuck, ONE item and one bell per owner", async () => {

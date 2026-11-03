@@ -1,6 +1,6 @@
 // Reconciliation (M6.5; ADM-PAY-10; run file C, L11), in the finance Worker:
 //   GET  /reconciliation/settlements?cursor=                Razorpay's settlements, newest first (keyset pages of 50; `reports.finance`);
-//   GET  /reconciliation/settlements/:id                     one settlement with its items (at most 200);
+//   GET  /reconciliation/settlements/:id?cursor=             one settlement with its items, keyset pages of 50 (second review, L2);
 //   GET  /reconciliation/unmatched?tab=items|gateway|manual  settlement items with no payment of ours; Razorpay payments 5 or more days old in no settlement;
 //                                                            confirmed manual payments not ticked "seen in the bank statement" after 7 days (one index range each);
 //   POST /reconciliation/bank-matches                        the Owner's "seen in the bank statement" tick (`payments.reconcile`);
@@ -64,7 +64,9 @@ export async function fetchSettlements(
   if (!r.ok) return { result: "retry" };
   const page = readRazorpayRecon(r.value, RECON_PAGE_MAX);
   if (!page) return { result: "retry" };
-  if (page.items.length === 0) return { result: "empty" };
+  // Second review, L1: a full page whose lines were all skipped (not in INR, unreadable) still hands on the rest of the day.
+  if (page.items.length === 0)
+    return page.full ? { result: "stored", next: { skip: a.skip + page.skipped } } : { result: "empty" };
   // The settlements the page names that we don't hold yet, fetched by id (at most SETTLEMENT_FETCH_MAX).
   const named = [...new Set(page.items.map((i) => i.settlementId).filter((s): s is string => s !== null))];
   const known = named.length
@@ -133,6 +135,15 @@ const MANUAL_UNTICKED_SQL = `SELECT p.id, p.client_id, p.currency, p.amount_mino
      AND NOT EXISTS (SELECT 1 FROM bank_matches bm INDEXED BY bank_matches_payment WHERE bm.payment_id = p.id AND bm.removed_at IS NULL)
    ORDER BY p.received_on, p.id LIMIT 51`;
 
+/**
+ * Second review, L2: one settlement's lines (`?1`), oldest first, keyset `(created_at, id)` after `?2`/`?3` (the first page binds -1 and ''), at most 51 (a page
+ * of 50 and whether there is more). One range of `settlement_items_settlement`.
+ */
+const SETTLEMENT_ITEMS_SQL = `SELECT i.id, i.entity_type, i.entity_id, i.direction, i.amount_minor, i.fee_minor, i.tax_minor, i."match", i.payment_id, i.refund_id, i.fee_mismatch,
+     i.created_at
+   FROM settlement_items i INDEXED BY settlement_items_settlement WHERE i.settlement_id = ?1 AND (i.created_at > ?2 OR (i.created_at = ?2 AND i.id > ?3))
+   ORDER BY i.created_at, i.id LIMIT 51`;
+
 const pageOf = <T extends { id: string }>(rows: T[], key: (r: T) => string | number) => {
   const items = rows.slice(0, 50);
   const last = items.at(-1);
@@ -151,21 +162,22 @@ export const reconciliation = new Hono<AppEnv>()
     ).results;
     return c.json(pageOf(rows, (r) => r.settled_on));
   })
-  .get("/settlements/:id", param(idParam), async (c) => {
+  .get("/settlements/:id", param(idParam), query(pageQuery), async (c) => {
     const { id } = c.req.valid("param");
+    const { cursor } = c.req.valid("query");
+    const cur = cursor ? decodeCursor(cursor) : null;
+    if (cursor && (!cur || typeof cur.k !== "number")) return err(c, BAD_REQUEST, 400);
     const db = c.env.DB;
     const [sR, iR] = await db.batch([
       db.prepare("SELECT * FROM settlements WHERE id = ?1").bind(id),
-      db
-        .prepare(
-          `SELECT i.id, i.entity_type, i.entity_id, i.direction, i.amount_minor, i.fee_minor, i.tax_minor, i."match", i.payment_id, i.refund_id, i.fee_mismatch
-           FROM settlement_items i INDEXED BY settlement_items_settlement WHERE i.settlement_id = ?1 ORDER BY i.created_at, i.id LIMIT 200`,
-        )
-        .bind(id),
+      db.prepare(SETTLEMENT_ITEMS_SQL).bind(id, cur ? Number(cur.k) : -1, cur?.id ?? ""),
     ]);
     const s = sR?.results[0];
     if (!s) return err(c, NOT_FOUND, 404);
-    return c.json({ settlement: s, items: iR?.results ?? [] });
+    return c.json({
+      settlement: s,
+      ...pageOf((iR?.results ?? []) as { id: string; created_at: number }[], (r) => r.created_at),
+    });
   })
   .get("/unmatched", query(unmatchedQuery), async (c) => {
     const q = c.req.valid("query");

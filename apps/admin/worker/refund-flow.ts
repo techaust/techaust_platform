@@ -27,6 +27,7 @@ import {
   type GuardSql,
   pendingRefundedRejectStatement,
   REFUND_READ_SQL,
+  refundAnsweredStatement,
   refundAttemptStatement,
   refundItemOnceGuard,
   refundMoveStatement,
@@ -265,7 +266,8 @@ export async function applyGatewayRefund(
 
 /**
  * One more check counted with no answer; from the tenth on, a `refund_stuck` item and a bell, once per refund (C `checkRefund`; early check 2, finding 2: the
- * item's own guard, so every later check, the dead-letter queue and L42 never add a second).
+ * item's own guard, so every later check, the dead-letter queue and L42 never add a second). Second review, M2: only checks the gateway did not answer are
+ * counted (an answer, moved or unchanged, adds nothing), so a refund the gateway keeps answering for days never turns stuck through one later failure.
  */
 async function countAttempt(
   env: { DB: D1Database },
@@ -360,8 +362,9 @@ export async function checkRefund(
   }
   if (answer === null || !isOurs(row, answer)) return countAttempt(env, row, now, claimed);
   if (toStatus(answer) === row.status) {
-    // Finding 2: still as it was (a Stripe `pending`, a Razorpay refund in progress): one more check counted (the sweep's idle clock restarts), acknowledged.
-    await refundAttemptStatement(env.DB, { refundId: row.id, now }).run();
+    // Finding 2: still as it was (a Stripe `pending`, a Razorpay refund in progress): the check noted (the sweep's idle clock restarts), acknowledged. Second
+    // review, M2: an answer is not counted towards `refund_stuck` (a normal-speed refund is checked hourly for days).
+    await refundAnsweredStatement(env.DB, { refundId: row.id, now }).run();
     return { result: "unchanged", status: row.status };
   }
   const status = await applyGatewayRefund(env, row, answer, now);
