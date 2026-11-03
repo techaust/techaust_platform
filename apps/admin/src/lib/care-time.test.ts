@@ -352,6 +352,10 @@ describe("07-Q lines carry no placeholder tag", () => {
       expect(activityHref("document", "d 1", docType)).toBe("/invoices/d%201");
     for (const docType of ["proposal", "estimate", null, undefined, "toString"])
       expect(activityHref("document", "d 1", docType)).toBe("/documents/d%201");
+    // M6.5 (early check 2): a receipt opens its payment, never /documents/rct_…; an id not of a receipt leads nowhere
+    expect(activityHref("document", "rct_p 1", "receipt")).toBe("/payments/p%201");
+    expect(activityHref("document", "rct_", "receipt")).toBeNull();
+    expect(activityHref("document", "d1", "receipt")).toBeNull();
     // only a document row's type counts: an approval opens the approval page
     expect(activityHref("approval", "a1", "tax_invoice")).toBe("/approvals/a1");
     const base = { gone: false, title: null, project: null, carePlan: null } as const;

@@ -731,3 +731,87 @@ describe("finding 10: Razorpay unset is not a failure to retry", () => {
     });
   });
 });
+
+// ---- B2 Q3: the RA-40 and RA-41 facts in the refund API ------------------------------------------------------------------------------------------------------
+
+describe("the refund API carries the tax facts the dialog shows (B2 Q3; RA-40, RA-41)", () => {
+  it("RA-40: credit_note_needed names the credit note's last day; GET with ?documentId gives the same facts", async () => {
+    const o = await owner();
+    const clientId = await mkReportClient("INR");
+    const inv = await addDoc({ clientId, issueDate: "2026-10-05" });
+    const total = inv.computed.totalMinor;
+    const p = await recorded(o, recordBody(clientId, total, [{ documentId: inv.id, amountMinor: total }]));
+    const res = await call(`/payments/${p.id}/refunds`, {
+      cookie: o.cookie,
+      body: {
+        id: uuidv7(),
+        amountMinor: 1_000,
+        from: "document",
+        documentId: inv.id,
+        reasonCode: "credit_note",
+        manual: { mode: "neft", reference: `UTRRA40${Date.now()}`, paidOn: todayIso(), paidTo: "original" },
+      },
+    });
+    expect(res.status).toBe(409);
+    const e = ((await json(res)) as J).error;
+    expect(e.code).toBe("credit_note_needed");
+    expect(e.details).toMatchObject({ creditNoteSupplyFy: "2627", creditNoteBasis: "cutoff" });
+    expect(e.details.creditNoteLastDay).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(e.details.creditNoteOpen).toBe(todayIso() <= e.details.creditNoteLastDay);
+    const got = (await json(
+      await call(`/payments/${p.id}/refunds?documentId=${inv.id}`, { cookie: o.cookie }),
+    )) as J;
+    expect(got.facts.creditNote).toMatchObject({
+      lastDay: e.details.creditNoteLastDay,
+      open: e.details.creditNoteOpen,
+      supplyFy: "2627",
+      basis: e.details.creditNoteBasis,
+      period: e.details.creditNotePeriod,
+      returnBy: e.details.creditNoteReturnBy,
+      deadlineWarnFrom: e.details.creditNoteWarnFrom,
+    });
+    // all of this payment is on the invoice: no credit, no RA-41 line
+    expect(got.facts.ra41).toMatchObject({ advanceLine: null, showLine: false });
+    // another client's invoice is no fact of this payment's
+    const other = await addDoc({ clientId: await mkReportClient("INR"), issueDate: "2026-10-05" });
+    const theirs = (await json(
+      await call(`/payments/${p.id}/refunds?documentId=${other.id}`, { cookie: o.cookie }),
+    )) as J;
+    expect(theirs.facts.creditNote).toBeNull();
+  });
+
+  it("RA-41: credit from money received in an earlier GST period shows the line; the same period does not", async () => {
+    const o = await owner();
+    const clientId = await mkReportClient("INR");
+    const early = await recorded(o, recordBody(clientId, 300_000, [], { receivedOn: "2026-04-10" }));
+    const now = await recorded(o, recordBody(clientId, 300_000));
+    const factsOf = async (id: string) =>
+      ((await json(await call(`/payments/${id}/refunds`, { cookie: o.cookie }))) as J).facts.ra41 as J;
+    expect(await factsOf(early.id as string)).toMatchObject({
+      advanceLine: "credit_may_be_advance",
+      creditCrossedPeriod: true,
+      showLine: true,
+      receivedOn: "2026-04-10",
+    });
+    expect(await factsOf(now.id as string)).toMatchObject({
+      advanceLine: "credit_may_be_advance",
+      creditCrossedPeriod: false,
+      showLine: false,
+    });
+    // the refund's own answer carries them too
+    const r = (await json(
+      await call(`/payments/${early.id}/refunds`, {
+        cookie: o.cookie,
+        body: {
+          id: uuidv7(),
+          amountMinor: 1_000,
+          from: "credit",
+          reasonCode: "overpayment",
+          manual: { mode: "neft", reference: `UTRRA41${Date.now()}`, paidOn: todayIso(), paidTo: "original" },
+        },
+      }),
+    )) as J;
+    expect(r.refund.status).toBe("succeeded");
+    expect(r.facts.ra41).toMatchObject({ showLine: true, receivedPeriod: expect.any(String) });
+  });
+});
