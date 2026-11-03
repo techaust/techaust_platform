@@ -49,6 +49,7 @@ import {
 import { bpToPercent } from "../lib/settings-form.ts";
 import { withCode } from "../lib/step-up.ts";
 import { useUser } from "../session.tsx";
+import { CreditHeldTab } from "./payments/credit-held-tab.tsx";
 import { CertificateDialog, paymentHref } from "./payments/panel.tsx";
 import {
   AllocationTable,
@@ -71,7 +72,7 @@ export function Component() {
   return <Payments role={user.role} />;
 }
 
-type Tab = "check" | "review" | "all" | "refunds";
+type Tab = "check" | "review" | "all" | "refunds" | "credit";
 const STATUSES: PaymentStatus[] = ["pending_verification", "confirmed", "rejected", "withdrawn"];
 const isStatus = (v: string | null): v is PaymentStatus => STATUSES.includes(v as PaymentStatus);
 
@@ -83,16 +84,20 @@ function Payments({ role }: { role: Role }) {
   // M6.2: "Needs review" (07-ZI S19) is the Owner's third tab; the bells link to `?tab=review`.
   // M6.5 (G4): the Refunds tab, for the roles that read refunds (the Owner and the Accountant)
   const canRefunds = allowed(role, "refunds.read");
+  // M6.5 review part 1, finding 3 (RA-41): credit held at a GST period's end, for the roles with the finance reports (the Owner and the Accountant)
+  const canCredit = allowed(role, "reports.finance");
   const tab: Tab =
     canRefunds && params.get("tab") === "refunds"
       ? "refunds"
-      : !owner
-        ? "all"
-        : params.get("tab") === "review"
-          ? "review"
-          : params.get("tab") !== "all" && !params.get("status") && !params.get("proof")
-            ? "check"
-            : "all";
+      : canCredit && params.get("tab") === "credit"
+        ? "credit"
+        : !owner
+          ? "all"
+          : params.get("tab") === "review"
+            ? "review"
+            : params.get("tab") !== "all" && !params.get("status") && !params.get("proof")
+              ? "check"
+              : "all";
   const status =
     tab === "check"
       ? "pending_verification"
@@ -140,6 +145,8 @@ function Payments({ role }: { role: Role }) {
   const list =
     tab === "refunds" ? (
       <RefundsTab role={role} />
+    ) : tab === "credit" ? (
+      <CreditHeldTab role={role} />
     ) : tab === "review" ? (
       <ReviewList
         role={role}
@@ -189,7 +196,7 @@ function Payments({ role }: { role: Role }) {
         }
         more={canRecord ? [{ label: PAY_UI.recordTds, onSelect: () => setRecording("tds") }] : undefined}
       />
-      {owner || canRefunds ? (
+      {owner || canRefunds || canCredit ? (
         <Tabs
           label={PAY_COPY.heading}
           tabs={[
@@ -201,6 +208,7 @@ function Payments({ role }: { role: Role }) {
               : []),
             { key: "all" as const, label: PAY_UI.allPayments },
             ...(canRefunds ? [{ key: "refunds" as const, label: ZO_UI.refundsTab }] : []),
+            ...(canCredit ? [{ key: "credit" as const, label: ZO_UI.creditHeldTab }] : []),
           ]}
           selected={tab}
           // Visual review finding 3: the other tab's filters never carry over (the check tab has none; its badge and its list must agree).

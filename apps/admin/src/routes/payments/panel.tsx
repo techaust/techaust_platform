@@ -76,7 +76,7 @@ import { ProofDialog } from "./proof-form.tsx";
 import { RecordPaymentDialog } from "./record-dialog.tsx";
 import { ReductionDialog, Reductions } from "./reductions.tsx";
 import { RefundDialog } from "./refund-dialog.tsx";
-import { PaCbNotice, ReceiptCell, RefundRows } from "./refund-parts.tsx";
+import { PaCbNotice, Ra41Notice, ReceiptCell, RefundRows } from "./refund-parts.tsx";
 
 type Panel = InvoicePaymentsPanel & PanelM65;
 type Dialog =
@@ -290,6 +290,8 @@ function LedgerPanel(props: {
       </dl>
 
       <PaCbNotice paCb={p.paCb} />
+      {/* Review part 1, finding 3 (RA-41): credit here that may be an advance. */}
+      <Ra41Notice receipts={p.receipts} />
 
       {(canCredit || canMove || canRefund || credit > 0) && (
         <div className="pay-credit">

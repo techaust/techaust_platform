@@ -18,7 +18,7 @@ import { amountText, payErrorText } from "../../lib/payments.ts";
 import { type RefundView, refundsApi } from "../../lib/refunds-api.ts";
 import { day } from "./parts.tsx";
 import { RefundDialog } from "./refund-dialog.tsx";
-import { isOpen, RefundActions, RefundState } from "./refund-parts.tsx";
+import { isOpen, needsInr, RefundActions, RefundInrButton, RefundState } from "./refund-parts.tsx";
 
 /** The IST day of a moment (UTC ms). */
 const istDay = (ms: number) => new Date(ms + 19_800_000).toISOString().slice(0, 10);
@@ -127,7 +127,12 @@ export function RefundsTab(props: { role: Role }) {
             skeletonRows={4}
             actions={
               owner
-                ? (r) => (isOpen(r.status) ? <RefundActions row={r} onChanged={changed} /> : null)
+                ? (r) =>
+                    isOpen(r.status) ? (
+                      <RefundActions row={r} onChanged={changed} />
+                    ) : needsInr(r) ? (
+                      <RefundInrButton row={r} onChanged={changed} />
+                    ) : null
                 : undefined
             }
             empty={

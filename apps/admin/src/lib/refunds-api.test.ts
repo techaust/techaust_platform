@@ -4,7 +4,15 @@
 // to the same values).
 import { REFUND_SWEEP_IDLE_MS } from "@techaust/core/gateway-rpc";
 import { describe, expect, it } from "vitest";
-import { refundOpensAt } from "./refunds-api.ts";
+import { periodsFrom, refundOpensAt } from "./refunds-api.ts";
+
+describe("periodsFrom [RA-41; review part 1, finding 3]", () => {
+  it("the period and the ones before it, newest first, by the filing frequency", () => {
+    expect(periodsFrom("2026-Q3", "quarterly", 4)).toEqual(["2026-Q3", "2026-Q2", "2026-Q1", "2025-Q4"]);
+    expect(periodsFrom("2026-02", "monthly", 3)).toEqual(["2026-02", "2026-01", "2025-12"]);
+    expect(periodsFrom("nonsense", "monthly")).toEqual(["nonsense"]);
+  });
+});
 
 describe("refundOpensAt [ADM-PAY-08; L44, L46]", () => {
   it("never tried: the request plus the idle time", () => {

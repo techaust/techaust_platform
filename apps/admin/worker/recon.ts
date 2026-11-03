@@ -254,17 +254,24 @@ export const reconciliation = new Hono<AppEnv>()
     const r = await fetchSettlements(c.env, { provider: "razorpay", day, skip: 0 }, now);
     // Screen review P2-13 (with part 1, finding 8): the rest of the day comes page by page through the jobs Worker (`recon.fetch` with `next.skip`, one unit
     // of work each, as the 09:00 IST fetch does), never in this request.
+    // The finance Worker's own producer binding (wrangler.finance.jsonc; the front's generated `Env` doesn't hold it, as in gateway/events.ts `sendNext`).
     let continued = false;
     if (r.next) {
+      const queue: unknown = Reflect.get(c.env, "LEADS_QUEUE");
+      const send: unknown =
+        typeof queue === "object" && queue !== null ? Reflect.get(queue, "send") : undefined;
       try {
-        await c.env.LEADS_QUEUE.send({ kind: "recon.fetch", provider: "razorpay", day, skip: r.next.skip });
+        if (typeof send !== "function") throw new Error("no_queue");
+        await Reflect.apply(send, queue, [
+          { kind: "recon.fetch", provider: "razorpay", day, skip: r.next.skip },
+        ]);
         continued = true;
       } catch (e) {
-        console.error(
+        console.log(
           JSON.stringify({
-            level: "error",
-            message: "recon next page enqueue failed",
-            cause: e instanceof Error ? e.name : "unknown",
+            ev: "recon",
+            m: "next_not_sent",
+            code: e instanceof Error ? e.message : "send_failed",
           }),
         );
       }

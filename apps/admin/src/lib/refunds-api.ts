@@ -3,7 +3,13 @@
 // doesn't carry it: only the payment screens import it. The shapes mirror the Workers' answers (the reconciliation rows are the rows themselves, snake_case).
 // Money is integer minor units; the screens only format it (through core), never work it out.
 import { REFUND_SWEEP_IDLE_MS } from "@techaust/core/gateway-rpc";
-import type { RefundOrigin, RefundReason, RefundStatus } from "@techaust/core/refunds";
+import {
+  previousReturnPeriod,
+  type RefundOrigin,
+  type RefundReason,
+  type RefundStatus,
+  returnPeriodEnd,
+} from "@techaust/core/refunds";
 import type { Currency } from "../api.ts";
 import { qs, request } from "../api.ts";
 
@@ -24,6 +30,8 @@ export type RefundView = {
   reasonCode: RefundReason;
   currency: Currency;
   amountMinor: number;
+  /** Review part 1, finding 9: the INR the bank debited for a refund in another currency (null until the Owner records it). */
+  inrRefundedMinor?: number | null;
   referenceNorm: string | null;
   paidOn: string | null;
   providerRefundId: string | null;
@@ -55,7 +63,19 @@ export type PanelRefund = Pick<
   | "lastAttemptAt"
   | "settledOn"
   | "failureCode"
+  | "inrRefundedMinor"
 >;
+
+/** Payments › Credit at period end (review part 1, finding 3): the period `p` and the ones before it, newest first, `n` in all, by the filing frequency. */
+export function periodsFrom(p: string, frequency: "monthly" | "quarterly", n = 8): string[] {
+  const out = [p];
+  while (out.length < n) {
+    const end = returnPeriodEnd(out.at(-1) as string);
+    if (!end) break;
+    out.push(previousReturnPeriod(end, frequency));
+  }
+  return out;
+}
 
 /**
  * When "Try again" and Cancel open (L44, L46): `REFUND_SWEEP_IDLE_MS` after the later of the request and the last check, as the server's `refundIdleAt` counts
@@ -72,6 +92,22 @@ export type PanelReceipt = {
   status: string | null;
   hasPdf: boolean;
   freeMinor: number;
+  /** Review part 1, finding 3 (RA-41): the payment's credit facts (null for an entry that isn't confirmed money received). */
+  ra41?: CreditRefundFacts | null;
+};
+
+/** One row of Payments › Credit at period end (`GET /payments/credit-held`; RA-41). */
+export type CreditHeldRow = {
+  paymentId: string;
+  clientId: string;
+  clientCode: string;
+  clientName: string;
+  currency: Currency;
+  receivedOn: string;
+  amountMinor: number;
+  creditMinor: number;
+  onInvoice: boolean;
+  heldSince: string;
 };
 
 /** The ₹25 lakh check per gateway (core `paCbCheck`). */
@@ -226,6 +262,18 @@ export const refundsApi = {
     request<{ refund: RefundView | null; result: string }>(`/refunds/${pid(id)}/retry`, { body: {} }),
   /** Cancel a refund the gateway never received (Owner). Codes: `too_soon`, `not_cancellable`, `refund_found`, `gateway_error`. */
   cancel: (id: string) => request<{ refund: RefundView | null }>(`/refunds/${pid(id)}/cancel`, { body: {} }),
+  /** The INR the bank debited for a refund in another currency, once (Owner, fresh code). Codes: `inr_already_set`, `inr_not_applicable`. */
+  recordInr: (id: string, inrMinor: number) =>
+    request<{ refund: RefundView | null }>(`/refunds/${pid(id)}/inr`, { body: { inrMinor } }),
+  /** Payments › Credit at period end (RA-41): one return period (none: the latest that has ended), 50 a page. */
+  creditHeld: (f: { period?: string; cursor?: string } = {}) =>
+    request<{
+      period: string;
+      periodEnd: string;
+      frequency: "monthly" | "quarterly";
+      items: CreditHeldRow[];
+      next: string | null;
+    }>(`/payments/credit-held${qs(f)}`),
   // ---- receipts ----
   receiptOf: (paymentId: string) =>
     request<{ receipt: ReceiptOfPayment | null }>(`/payments/${pid(paymentId)}/receipt`),

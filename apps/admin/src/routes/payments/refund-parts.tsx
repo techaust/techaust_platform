@@ -12,12 +12,16 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { RequestError } from "../../api.ts";
 import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
+import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
 import { StatusPill } from "../../components/display.tsx";
+import { FormField } from "../../components/form.tsx";
 import { Alert, FileText, RefreshCw } from "../../components/icons.tsx";
 import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
+import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
-import { REFUND_PILLS, ZO_UI } from "../../lib/copy-zo.ts";
+import { periodText, REFUND_PILLS, ZO_UI } from "../../lib/copy-zo.ts";
+import { INV_COPY } from "../../lib/invoices.ts";
 import { amountText, payErrorText } from "../../lib/payments.ts";
 import {
   type PaCbVerdict,
@@ -26,6 +30,7 @@ import {
   refundOpensAt,
   refundsApi,
 } from "../../lib/refunds-api.ts";
+import { moneyFrom } from "../../lib/settings-form.ts";
 import { day } from "./parts.tsx";
 
 /** A refund row as the screens draw it (the panel's rows lack the gateway's id: such a row can't say whether it can be cancelled, so it doesn't offer it). */
@@ -43,7 +48,13 @@ export type RefundRowData = Pick<
   | "settledOn"
   | "failureCode"
 > &
-  Partial<Pick<RefundView, "providerRefundId" | "clientName" | "clientCode" | "paymentId">>;
+  Partial<
+    Pick<RefundView, "providerRefundId" | "clientName" | "clientCode" | "paymentId" | "inrRefundedMinor">
+  >;
+
+/** Review part 1, finding 9 (L9): a refund in another currency that went out, whose INR figure the Owner hasn't recorded yet. */
+export const needsInr = (r: RefundRowData) =>
+  r.status === "succeeded" && r.currency !== "INR" && (r.inrRefundedMinor ?? null) === null;
 
 export function RefundPill({ status }: { status: RefundView["status"] }) {
   const p = REFUND_PILLS[status];
@@ -171,6 +182,9 @@ export function RefundState({ row: r }: { row: RefundRowData }) {
       {r.status === "succeeded" && r.settledOn && (
         <span className="pay-lines__meta">{`${ZO_UI.colRefunded} ${day(r.settledOn)}`}</span>
       )}
+      {typeof r.inrRefundedMinor === "number" && r.currency !== "INR" && (
+        <span className="pay-lines__meta">{ZO_UI.inrDebited(amountText(r.inrRefundedMinor, "INR"))}</span>
+      )}
       {r.status === "failed" && r.failureCode && (
         <span className="pay-lines__meta">{ZO_UI.failureCode(r.failureCode)}</span>
       )}
@@ -190,7 +204,7 @@ export function RefundRows(props: {
   onChanged: (toast: string) => void;
 }) {
   const owner = allowed(props.role, "refunds.issue");
-  const acts = owner && props.rows.some((r) => isOpen(r.status));
+  const acts = owner && props.rows.some((r) => isOpen(r.status) || needsInr(r));
   return (
     <table className="pay-lines rf-lines">
       <caption className="visually-hidden">{props.caption}</caption>
@@ -238,7 +252,11 @@ export function RefundRows(props: {
             </td>
             {acts && (
               <td className="rf-lines__acts">
-                {isOpen(r.status) ? <RefundActions row={r} onChanged={props.onChanged} /> : null}
+                {isOpen(r.status) ? (
+                  <RefundActions row={r} onChanged={props.onChanged} />
+                ) : needsInr(r) ? (
+                  <RefundInrButton row={r} onChanged={props.onChanged} />
+                ) : null}
               </td>
             )}
           </tr>
@@ -395,5 +413,124 @@ export function PaCbNotice({
       <Alert size={20} />
       <p>{v ? ZO_UI.paCbOver(amountText(v.inrMinor, "INR")) : ZO_UI.paCbRateUnknown}</p>
     </div>
+  );
+}
+
+/**
+ * RA-41 on the Payments panel (review part 1, finding 3): one line per GST period in which a payment holding money here arrived whose credit may be an advance
+ * (on no invoice, or more than ₹1,000 over one; the server's `ra41` facts). The approved refund-dialog line without its "is refunded in" clause.
+ */
+export function Ra41Notice({ receipts }: { receipts: Record<string, PanelReceipt> | undefined }) {
+  const periods = [
+    ...new Set(
+      Object.values(receipts ?? {})
+        .map((r) => r.ra41)
+        .filter((f): f is NonNullable<typeof f> => f?.advanceLine === "credit_may_be_advance")
+        .map((f) => f.receivedPeriod),
+    ),
+  ].sort();
+  if (periods.length === 0) return null;
+  return (
+    <>
+      {periods.map((p) => (
+        <div key={p} className="pay-seen pay-warn rf-pacb" role="note">
+          <Alert size={20} />
+          <p>{ZO_UI.ra41HeldLine(periodText(p))}</p>
+        </div>
+      ))}
+    </>
+  );
+}
+
+/** Review part 1, finding 9 (L9): "Record INR amount" on a refund in another currency that went out, and its one-field dialog (the Owner, fresh code). */
+export function RefundInrButton(props: { row: RefundRowData; onChanged: (toast: string) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" className="btn btn--secondary" onClick={() => setOpen(true)}>
+        {ZO_UI.inrRecord}
+        <span className="visually-hidden">{` ${amountText(props.row.amountMinor, props.row.currency)}`}</span>
+      </button>
+      {open && (
+        <RefundInrDialog
+          row={props.row}
+          onClose={() => setOpen(false)}
+          onDone={() => {
+            setOpen(false);
+            props.onChanged(ZO_UI.inrSaved);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+function RefundInrDialog(props: { row: RefundRowData; onClose: () => void; onDone: () => void }) {
+  const [amount, setAmount] = useState("");
+  const [error, setError] = useState<string | undefined>(undefined);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const refusal = useRefusalFocus();
+  async function submit() {
+    const m = moneyFrom(amount, "INR");
+    const e = !m.ok ? m.error : m.minor <= 0 ? "Enter an amount above zero." : undefined;
+    setError(e);
+    if (e || !m.ok) {
+      document.getElementById("rf-inr")?.focus();
+      return;
+    }
+    setBusy(true);
+    setFailure(null);
+    try {
+      await refundsApi.recordInr(props.row.id, m.minor);
+      props.onDone();
+    } catch (err) {
+      setFailure(payErrorText(err));
+      refusal.show();
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Modal open title={ZO_UI.inrRecord} onClose={props.onClose} busy={busy}>
+      <form
+        noValidate
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        <div className="dialog__body pay-form">
+          <p>{amountText(props.row.amountMinor, props.row.currency)}</p>
+          <FormField id="rf-inr" label={ZO_UI.inrLabel} hint={ZO_UI.inrHint} error={error}>
+            {(a) => (
+              <div className="money-in">
+                <span aria-hidden="true">₹</span>
+                <input
+                  {...a}
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                />
+              </div>
+            )}
+          </FormField>
+        </div>
+        {failure && (
+          <Notice tone="error" ref={refusal.ref}>
+            {failure}
+          </Notice>
+        )}
+        <div className="dialog__actions">
+          <button type="button" className="btn btn--secondary" onClick={props.onClose} disabled={busy}>
+            {INV_COPY.cancel}
+          </button>
+          <button type="submit" className="btn btn--primary" disabled={busy} aria-busy={busy || undefined}>
+            {busy ? "Working…" : ZO_UI.inrRecord}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
