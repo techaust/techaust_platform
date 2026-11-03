@@ -352,8 +352,10 @@ export function InvoicePage(props: {
           </p>
         )}
         {/* M6.5 (07-ZO line 14): each refund that went out, under the figures as a payment's row is (clients see a refund only once it has gone through) */}
-        {(d.refunds ?? []).map((r) => (
-          <p key={`${r.on}:${r.amountMinor}`} className="inv-slip__refund">
+        {(d.refunds ?? []).map((r, i) => (
+          // review part 2, P2-13: two equal refunds on one day are two rows (the list has no id; its order is the server's, oldest first)
+          // biome-ignore lint/suspicious/noArrayIndexKey: the rows carry no id and never reorder on this page
+          <p key={`${i}:${r.on}:${r.amountMinor}`} className="inv-slip__refund">
             <span className="inv-slip__refund-icon">
               <RotateCcw size={16} />
             </span>
@@ -373,10 +375,19 @@ export function InvoicePage(props: {
             {(d.receipts ?? []).map((r) => (
               <li key={r.id} className="inv-receipts__row">
                 <span className="inv-receipts__text">
-                  {PORTAL_RECEIPT_COPY.receiptRow(
-                    r.numberDisplay,
-                    moneyText(r.amountMinor, d.currency),
-                    r.receivedOn ? dateText(r.receivedOn) : "",
+                  {/* review part 2, P2-13: without its day the line would end "received on " (the API names no other date): the number and the
+                      amount stand alone then, no words added */}
+                  {r.receivedOn ? (
+                    PORTAL_RECEIPT_COPY.receiptRow(
+                      r.numberDisplay,
+                      moneyText(r.amountMinor, d.currency),
+                      dateText(r.receivedOn),
+                    )
+                  ) : (
+                    <>
+                      <span className="docno">{r.numberDisplay}</span>{" "}
+                      <span className="tnum">{moneyText(r.amountMinor, d.currency)}</span>
+                    </>
                   )}
                 </span>
                 <button

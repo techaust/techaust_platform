@@ -11,7 +11,8 @@
 import "../../refunds.css";
 import { uuidv7 } from "@techaust/core/ids";
 import { REFUND_MODES, REFUND_REASONS, type RefundReason, refundExportWarning } from "@techaust/core/refunds";
-import { type ReactNode, useId, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Link } from "react-router";
 import { type Currency, type PaymentStatus, paymentsApi, RequestError } from "../../api.ts";
 import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
@@ -61,7 +62,7 @@ export type RefundDialogProps = {
         settledOn?: string | undefined;
       }
     | undefined;
-  /** Opens the invoice's credit-note dialog (Q1 A). */
+  /** Opens the invoice's credit-note dialog (Q1 A). Never for a debit note (M5.3 issues no credit note on one; review part 2, P2-5). */
   onCreditNote?: (() => void) | undefined;
   onClose: () => void;
   onDone: (toast: string) => void;
@@ -78,6 +79,17 @@ export type RefundChoice = {
   status?: PaymentStatus | undefined;
   amountMinor?: number | undefined;
 };
+
+/**
+ * Review part 2, P2-7 and P2-13: focus a field once its error is drawn and bring its whole block into view (the label above, the error below), clear of the
+ * dialog's sticky title and actions (the dialog's scroll padding and the blocks' scroll margins in refunds.css).
+ */
+const focusBlock = (id: string) =>
+  requestAnimationFrame(() => {
+    const el = document.getElementById(id);
+    el?.focus({ preventScroll: true });
+    (el?.closest(".field, .rf-check, .rf-export") ?? el)?.scrollIntoView({ block: "nearest" });
+  });
 
 const SOURCE_REASON: Record<Source, RefundReason> = {
   credit: "overpayment",
@@ -153,6 +165,7 @@ function RefundForm(props: RefundDialogProps & { payment: ResolvedPayment; onBus
   const p = props.payment;
   const cur = p.currency;
   const outside = props.mode !== "refund";
+  const chargeback = props.mode === "chargeback";
   const [refundId] = useState(() => uuidv7());
   const pendingOk = p.status === "pending_verification" && p.provider !== "manual";
   // The sources this payment offers: a waiting gateway payment goes back whole (L33); else the invoice's excess and the credit.
@@ -175,7 +188,13 @@ function RefundForm(props: RefundDialogProps & { payment: ResolvedPayment; onBus
   const gatewayPaid = provider !== "manual";
   const [way, setWay] = useState<Way>(gatewayPaid ? "gateway" : "manual");
   const most = mostOf(source);
-  const noteFirst = source === "document" && !outside && most <= 0;
+  // Q1 A (RA-40): the invoice's excess can't cover the refund, so a credit note comes first. A refund made in the gateway's dashboard (outside) follows the
+  // same rule with its own amount (review part 2, P2-3; the server's L7); a lost dispute skips the excess (the gateway took the money back).
+  const prefilled = props.prefill?.amountMinor;
+  const noteFirst =
+    source === "document" &&
+    !chargeback &&
+    (most <= 0 || (props.mode === "outside" && prefilled !== undefined && prefilled > most));
   const [amount, setAmount] = useState(() =>
     props.prefill?.amountMinor !== undefined
       ? plainAmount(props.prefill.amountMinor, cur)
@@ -183,9 +202,7 @@ function RefundForm(props: RefundDialogProps & { payment: ResolvedPayment; onBus
         ? plainAmount(most, cur)
         : "",
   );
-  const [reason, setReason] = useState<RefundReason>(
-    props.mode === "chargeback" ? "chargeback" : SOURCE_REASON[source],
-  );
+  const [reason, setReason] = useState<RefundReason>(chargeback ? "chargeback" : SOURCE_REASON[source]);
   const [note, setNote] = useState("");
   const [mode, setMode] = useState<string>("neft");
   const [reference, setReference] = useState("");
@@ -213,12 +230,14 @@ function RefundForm(props: RefundDialogProps & { payment: ResolvedPayment; onBus
   const docId = props.document?.id;
   const facts = useLoad(() => refundsApi.ofPayment(paymentId, docId), `${paymentId}:${docId ?? ""}`);
   const f = facts.state === "ready" ? facts.data.facts : null;
-  const exportTick =
-    askExport ||
-    refundExportWarning({
-      docType: props.document?.type ?? null,
-      clientOverseas: props.clientOverseas === true,
-    });
+  const exportWarning = refundExportWarning({
+    docType: props.document?.type ?? null,
+    clientOverseas: props.clientOverseas === true,
+  });
+  // L47 (RB-43; settled by the lead on the safest reading, 2026-11-03): recording money that has already gone back (outside, a lost dispute) is never held
+  // by the bank tick; those modes say what to do after the fact. The tick stays before our own refund (and shows if the server still asks for it).
+  const exportTick = askExport || (exportWarning && !outside);
+  const exportAfter = outside && exportWarning && !askExport;
   const reasons = useMemo(
     () =>
       REFUND_REASONS.filter((r) =>
@@ -234,9 +253,22 @@ function RefundForm(props: RefundDialogProps & { payment: ResolvedPayment; onBus
         ? ZO_UI.recordButton
         : ZO_UI.refundButton;
 
+  // Review part 2, P2-13: the dialog opens with focus on the chosen source (never on a source that can give nothing), unless the payment picker has it.
+  const chosenRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      if (document.activeElement?.closest(".rf-choose")) return;
+      chosenRef.current?.focus();
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, []);
+
   function pickSource(s: Source) {
     setSource(s);
-    setReason(props.mode === "chargeback" ? "chargeback" : SOURCE_REASON[s]);
+    // Review part 2, P2-13: a "credit note first" answer belonged to the source it was asked for
+    setNeedNote(null);
+    setFailure(null);
+    setReason(chargeback ? "chargeback" : SOURCE_REASON[s]);
     const m = mostOf(s);
     setAmount(m > 0 ? plainAmount(m, cur) : "");
   }
@@ -246,7 +278,7 @@ function RefundForm(props: RefundDialogProps & { payment: ResolvedPayment; onBus
     const m = moneyFrom(amount, cur);
     if (!m.ok) e.amount = m.error;
     else if (m.minor <= 0) e.amount = "Enter an amount above zero.";
-    else if (props.mode !== "chargeback" && m.minor > most && source !== "pending")
+    else if (!chargeback && m.minor > most && source !== "pending")
       e.amount = ZO_UI.amountMost(amountText(most, cur));
     if (outside) {
       if (!gwRef.trim()) e.gwRef = ZO_UI.requiredText;
@@ -264,7 +296,7 @@ function RefundForm(props: RefundDialogProps & { payment: ResolvedPayment; onBus
       (k) => e[k],
     );
     if (first || !m.ok) {
-      document.getElementById(`rf-${first ?? "amount"}`)?.focus();
+      focusBlock(`rf-${first ?? "amount"}`);
       return;
     }
     if (!code.ready()) return;
@@ -327,7 +359,7 @@ function RefundForm(props: RefundDialogProps & { payment: ResolvedPayment; onBus
         if (err.code === "export_refund_unconfirmed") {
           setAskExport(true);
           setErrors((x) => ({ ...x, export: ZO_UI.exportConfirmMissing }));
-          requestAnimationFrame(() => document.getElementById("rf-export")?.focus());
+          focusBlock("rf-export");
           return;
         }
         if (err.code === "credit_note_needed") {
@@ -359,6 +391,7 @@ function RefundForm(props: RefundDialogProps & { payment: ResolvedPayment; onBus
   }
 
   const showNoteFirst = noteFirst || needNote !== null;
+  const isDebitNote = props.document?.type === "debit_note";
   const creditNote = f?.creditNote ?? null;
 
   return (
@@ -391,6 +424,7 @@ function RefundForm(props: RefundDialogProps & { payment: ResolvedPayment; onBus
             {offered.map((s) => (
               <label key={s} className="rf-pick__opt">
                 <input
+                  ref={source === s ? chosenRef : undefined}
                   type="radio"
                   name={`${name}-src`}
                   checked={source === s}
@@ -424,12 +458,19 @@ function RefundForm(props: RefundDialogProps & { payment: ResolvedPayment; onBus
               <FileText size={20} />
               {ZO_UI.creditNoteFirst}
             </h3>
-            <p>{ZO_UI.creditNoteFirstBody}</p>
+            {isDebitNote ? (
+              <p>{ZO_UI.debitNoteNoCredit}</p>
+            ) : props.mode === "outside" ? (
+              <p>{ZO_UI.outsideNoteFirst(provider)}</p>
+            ) : (
+              <p>{ZO_UI.creditNoteFirstBody}</p>
+            )}
             {props.document && (
               <p className="tnum">{ZO_UI.excessNow(amountText(props.document.excessMinor, cur))}</p>
             )}
             {needNote?.advance && <p>{ZO_UI.creditNoteAdvance}</p>}
-            {creditNote &&
+            {!isDebitNote &&
+              creditNote &&
               (creditNote.open ? (
                 <p
                   className="tnum"
@@ -449,29 +490,32 @@ function RefundForm(props: RefundDialogProps & { payment: ResolvedPayment; onBus
                   {ZO_UI.creditNoteClosed(day(creditNote.lastDay))}
                 </p>
               ))}
-            {props.onCreditNote && (creditNote === null || creditNote.open) && (
-              <button
-                type="button"
-                className="btn btn--primary"
-                onClick={() => {
-                  props.onClose();
-                  props.onCreditNote?.();
-                }}
-              >
-                {ZO_UI.draftCreditNote}
-              </button>
-            )}
+            {!isDebitNote &&
+              (creditNote === null || creditNote.open) &&
+              (props.onCreditNote ? (
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  onClick={() => {
+                    props.onClose();
+                    props.onCreditNote?.();
+                  }}
+                >
+                  {ZO_UI.draftCreditNote}
+                </button>
+              ) : props.document?.number ? (
+                // Opened from "Needs review" (P2-3): the credit note is drafted on the invoice's own page.
+                <Link to={`/invoices/${encodeURIComponent(props.document.id)}`} className="btn btn--primary">
+                  {ZO_UI.openInvoice(props.document.number)}
+                </Link>
+              ) : null)}
           </section>
         ) : (
           <>
             <FormField
               id="rf-amount"
-              label={ZO_UI.amountLabel}
-              hint={
-                source !== "pending" && props.mode !== "chargeback"
-                  ? ZO_UI.amountMost(amountText(most, cur))
-                  : undefined
-              }
+              label={chargeback ? ZO_UI.disputeAmountLabel : ZO_UI.amountLabel}
+              hint={source !== "pending" && !chargeback ? ZO_UI.amountMost(amountText(most, cur)) : undefined}
               error={errors.amount}
             >
               {(a) => (
@@ -668,6 +712,12 @@ function RefundForm(props: RefundDialogProps & { payment: ResolvedPayment; onBus
               </div>
             )}
 
+            {exportAfter && (
+              <div className="pay-seen pay-warn" role="note">
+                <Alert size={20} />
+                <p>{ZO_UI.exportLineAfter}</p>
+              </div>
+            )}
             {exportTick && (
               <div className="rf-export">
                 <div className="pay-seen pay-warn" role="note">

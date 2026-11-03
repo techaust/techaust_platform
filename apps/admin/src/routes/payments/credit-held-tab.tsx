@@ -3,6 +3,7 @@
 // the day it has been held since, so the Owner refunds it, uses it or records it in GSTR-1 Table 11 for that period. A period picker (the latest ended period
 // first, then the seven before it, by Settings › Tax's filing frequency), the existing `DataTable`, keyset "Show more". Figures are the server's; nothing is
 // added up here. Settled by the lead on the safest reading, 2026-11-03 (08-C RA-41).
+import "../../refunds.css";
 import type { Role } from "@techaust/core/permissions";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
@@ -88,27 +89,29 @@ export function CreditHeldTab(_props: { role: Role }) {
 
   return (
     <div className="rf-tab">
-      <p className="hint">{ZO_UI.creditHeldLede}</p>
+      <p className="hint rf-tab__lede">{ZO_UI.creditHeldLede}</p>
       {options.length > 0 && (
-        <FormField id="ch-period" label={ZO_UI.creditHeldPeriod}>
-          {(a) => (
-            <select
-              {...a}
-              value={period ?? shown}
-              onChange={(e) => {
-                setMore([]);
-                setNext(undefined);
-                setPeriod(e.target.value);
-              }}
-            >
-              {options.map((o) => (
-                <option key={o} value={o}>
-                  {periodText(o)}
-                </option>
-              ))}
-            </select>
-          )}
-        </FormField>
+        <div className="rf-tab__period">
+          <FormField id="ch-period" label={ZO_UI.creditHeldPeriod}>
+            {(a) => (
+              <select
+                {...a}
+                value={period ?? shown}
+                onChange={(e) => {
+                  setMore([]);
+                  setNext(undefined);
+                  setPeriod(e.target.value);
+                }}
+              >
+                {options.map((o) => (
+                  <option key={o} value={o}>
+                    {periodText(o)}
+                  </option>
+                ))}
+              </select>
+            )}
+          </FormField>
+        </div>
       )}
       {list.state === "failed" ? (
         <LoadFailed error={list.error} onRetry={() => list.reload()} />
@@ -122,7 +125,7 @@ export function CreditHeldTab(_props: { role: Role }) {
             loading={list.state === "loading"}
             skeletonRows={4}
             empty={
-              <EmptyState icon={<Wallet />} title={ZO_UI.creditHeldEmpty}>
+              <EmptyState icon={<Wallet />} title={ZO_UI.creditHeldEmpty.replace(/\.$/, "")}>
                 {null}
               </EmptyState>
             }

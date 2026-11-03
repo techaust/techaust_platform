@@ -34,6 +34,17 @@
   }
 }
 
+/* the same inside a narrow Payments panel, where the refunds stack as cards too (payments.css, the pay-panel container) */
+@container pay-panel (max-width: 43.99rem) {
+  .rf-lines .rf-lines__acts {
+    grid-column: 1 / -1;
+  }
+
+  .rf-lines .rf-lines__acts:empty {
+    display: none;
+  }
+}
+
 .rf-state,
 .rf-acts {
   display: grid;
@@ -77,10 +88,14 @@
   padding-bottom: 0;
 }
 
+/* a field focused after a refused submit is scrolled into view whole (`focusBlock` in refund-dialog.tsx): its label clear of the sticky title above, its
+   error clear of the sticky action bar below (the dialog's scroll padding is their real heights; this is the breathing room; review part 2, P2-7, P2-13) */
 .rf-form .field,
-.rf-choose .field {
+.rf-choose .field,
+.rf-check,
+.rf-export {
   margin-bottom: 0;
-  scroll-margin-bottom: var(--space-24);
+  scroll-margin-block: var(--space-3);
 }
 
 .pay-form.rf-form {
@@ -135,8 +150,14 @@
   outline-offset: 2px;
 }
 
+/* review part 2, P2-1: the house radio (20 px, the primary button's colour, as `.radio input` and `.pay-resolve__opt input`), centred on the title's first
+   line (a 24 px line: 2 px above) */
 .rf-pick__opt input {
-  margin-top: 0.1875rem;
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  min-height: 0;
+  margin: 0.125rem 0 0;
+  accent-color: var(--color-btn-primary-bg);
 }
 
 .rf-pick__text {
@@ -174,6 +195,12 @@
 .rf-export {
   display: grid;
   gap: var(--space-3);
+}
+
+/* the tick sits on its block's own spacing, its error right under it (the shared `.check` margin would open a gap between them) */
+.rf-export .check,
+.rf-check .check {
+  margin: 0;
 }
 
 /* "This refund needs a credit note first": the step before the refund, its own block with the way to the credit note */
@@ -264,13 +291,45 @@
 /* the Refunds tab */
 .rf-tab {
   display: grid;
+  /* a wide table scrolls inside its own box; the grid track never grows past the page (review part 2, P2-12) */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
+}
+
+/* Payments › Credit at period end (review part 2, item 12): the lede at reading width, the period picker as wide as its longest period */
+.rf-tab__lede {
+  max-width: 65ch;
+  margin: 0;
+}
+
+.rf-tab__period {
+  max-inline-size: 20rem;
+}
+
+.rf-tab__period .field {
+  margin-bottom: 0;
 }
 
 .rf-tab__loading {
   display: grid;
   gap: var(--space-3);
   padding: var(--space-4) 0;
+}
+
+/* review part 2, P2-12: in the table the state chip and the day keep one line each (the payment lists let a long chip wrap; here every chip is short) */
+@media (min-width: 48rem) {
+  .pay-table.rf-tab__table .spill,
+  .pay-table.rf-tab__table .rf-date {
+    white-space: nowrap;
+  }
+
+  /* the wait line wraps at a set width instead of widening the actions column (the buttons wrap under each other when they must) */
+  .rf-tab__table .rf-acts {
+    max-width: 12rem;
+    /* the shared actions cell keeps one line and aligns to the end (shell.css); the wait line may wrap and reads from the start */
+    white-space: normal;
+    text-align: start;
+  }
 }
 
 /* in the Refunds tab's cards the actions sit at the card's top right: kept narrow and right-aligned so the date beside them keeps its line */
@@ -291,6 +350,7 @@
 .rcn-open {
   min-height: var(--target-min);
   padding-inline: 0;
+  white-space: nowrap;
 }
 
 .rcn-net {
@@ -311,6 +371,29 @@
 
 .rcn-seen .icon {
   color: var(--color-text-accent);
+}
+
+/* the bank tick and the Owner's action in one cell (review part 2, P2-2): "Seen in bank statement" with its "Undo" beside it, or "Tick as seen" */
+.rcn-bank {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-3);
+}
+
+.rcn-undo,
+.rcn-tick {
+  min-height: var(--target-min);
+  white-space: nowrap;
+}
+
+.rcn-undo {
+  padding-inline: 0;
+}
+
+/* a settlement's lines sit clear of its facts above (UTR, settlement ID, net to bank) */
+.rcn-items {
+  margin-top: var(--space-5);
 }
 
 .rcn-entity {

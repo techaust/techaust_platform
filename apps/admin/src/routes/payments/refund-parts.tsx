@@ -140,7 +140,12 @@ export function RefundActions(props: { row: RefundRowData; onChanged: (toast: st
           </button>
         )}
       </span>
-      {waiting && <span className="pay-lines__meta">{ZO_UI.waitUntil(istTime(opensAt))}</span>}
+      {/* review part 2, P2-13: a refund with the gateway has no Cancel, so its line names only "Try again" */}
+      {waiting && (
+        <span className="pay-lines__meta">
+          {cancellable ? ZO_UI.waitUntil(istTime(opensAt)) : ZO_UI.waitRetry(istTime(opensAt))}
+        </span>
+      )}
       {failure && (
         <span className="rf-acts__error" role="alert">
           <Alert size={16} />
@@ -201,9 +206,12 @@ export function RefundRows(props: {
   role: Role;
   caption: string;
   client?: boolean;
+  /** False on the payment's own page: its refunds' days would link to the page they are on (review part 2, P2-13). */
+  linkPayments?: boolean;
   onChanged: (toast: string) => void;
 }) {
   const owner = allowed(props.role, "refunds.issue");
+  const linked = props.linkPayments !== false;
   const acts = owner && props.rows.some((r) => isOpen(r.status) || needsInr(r));
   return (
     <table className="pay-lines rf-lines">
@@ -229,7 +237,7 @@ export function RefundRows(props: {
         {props.rows.map((r) => (
           <tr key={r.id}>
             <th scope="row" className="tnum">
-              {r.paymentId ? (
+              {r.paymentId && linked ? (
                 <Link to={`/payments/${encodeURIComponent(r.paymentId)}`} className="pay-row__link">
                   {day(new Date(r.requestedAt + 19_800_000).toISOString().slice(0, 10))}
                 </Link>
@@ -385,6 +393,7 @@ export function PaymentReceiptAndRefunds(props: {
             rows={rows}
             role={props.role}
             caption={ZO_UI.refundsHeading}
+            linkPayments={false}
             onChanged={(t) => {
               setTick((n) => n + 1);
               props.onChanged(t);
@@ -501,7 +510,19 @@ function RefundInrDialog(props: { row: RefundRowData; onClose: () => void; onDon
         }}
       >
         <div className="dialog__body pay-form">
-          <p>{amountText(props.row.amountMinor, props.row.currency)}</p>
+          {/* review part 2, item 12: the refund's facts as the other refund dialogs show them, then the one field */}
+          <dl className="inv-facts rf-facts">
+            <div>
+              <dt>{ZO_UI.colAmount}</dt>
+              <dd className="tnum">{amountText(props.row.amountMinor, props.row.currency)}</dd>
+            </div>
+            {props.row.settledOn && (
+              <div>
+                <dt>{ZO_UI.colRefunded}</dt>
+                <dd className="tnum">{day(props.row.settledOn)}</dd>
+              </div>
+            )}
+          </dl>
           <FormField id="rf-inr" label={ZO_UI.inrLabel} hint={ZO_UI.inrHint} error={error}>
             {(a) => (
               <div className="money-in">
