@@ -17,7 +17,7 @@
 >
 > **Changes made during Phase 5 (setup, 2026-10-06):**
 > 7. **Worker names are `techaust-platform-<app>`** (+ `-staging`), so no deploy can ever overwrite the live Worker `techaust-web` (ADR 0011).
-> 8. **Tests use `@cloudflare/vitest-plugin`** 1.3.6 (the renamed Workers test pool, `cloudflareTest()`), and Worker types come from **`wrangler types`** instead of `@cloudflare/workers-types`.
+> 8. **Tests use `@cloudflare/vitest-plugin`** 1.5.0 (the renamed Workers test pool, `cloudflareTest()`), and Worker types come from **`wrangler types`** instead of `@cloudflare/workers-types`.
 > 9. **pnpm 12** uses `allowBuilds` (not `onlyBuiltDependencies`) and a 1-day `minimumReleaseAge`.
 > 10. **The repo is public** (owner decision). That makes branch protection free, so `main` is now protected (PR + green CI required). Workflows are hardened for public repos (ADR 0012).
 >
@@ -96,7 +96,7 @@ All versions are pinned exactly (no `^`). Renovate will open grouped PRs after a
 
 | Layer | Choice | Pin |
 |---|---|---|
-| Runtime / tooling | Node.js (→ 26 LTS after 2026-10-28) · pnpm · TypeScript · wrangler · `@cloudflare/vite-plugin` | 24.x (`.nvmrc` `24`; engines ≥ 24.19.0) · 12.9.1 · 6.0.3 · 4.147.0 · 1.62.5 |
+| Runtime / tooling | Node.js (→ 26 LTS after 2026-10-28) · pnpm · TypeScript · wrangler · `@cloudflare/vite-plugin` | 24.x (`.nvmrc` `24`; engines ≥ 24.19.0) · 12.9.1 · 6.0.3 · 4.156.2 · 1.67.0 |
 | Public site | Astro (static output, **no adapter**), build-time images (Sharp) | astro 7.3.5 |
 | APIs | Hono (+ `@hono/standard-validator`) on all four Workers | 4.13.13 (+ 0.4.0) |
 | SPAs | React · React Router (data mode, `createBrowserRouter`) · Vite (Rolldown) · TanStack Query · react-hook-form + resolvers · Radix UI primitives | 19.3.0 · 8.4.0 · 8.3.2 · 5.104.1 · 7.89.0 + 5.9.1 · latest-pinned |
@@ -108,8 +108,8 @@ All versions are pinned exactly (no `^`). Renovate will open grouped PRs after a
 | Email | Amazon SES v2 (ap-south-1) via **aws4fetch** | 1.0.20 |
 | Payments | Razorpay (fetch), Stripe (`stripe` SDK or fetch), PayPal Orders v2 (fetch) | stripe 23.0.0 (API `2026-09-30.endive`) |
 | Errors | `@sentry/cloudflare`, `@sentry/react` (errors only, PII scrubbed) | 11.4.0 |
-| Tests | Vitest + **`@cloudflare/vitest-plugin`** (`cloudflareTest()`; tests run inside workerd; **Vitest 5 not supported yet**) · fast-check (property tests) + `@vitest/coverage-v8` (core ≥ 90 % gate) · Playwright + `@axe-core/playwright` · Lighthouse CI | 4.1.11 + 1.3.6 · 4.10.2 + 4.1.11 · 1.63.0 + 4.13.0 |
-| Worker types | Generated per app by **`wrangler types`** → `worker-configuration.d.ts` (git-ignored; runs inside `pnpm typecheck`) | wrangler 4.147.0 |
+| Tests | Vitest + **`@cloudflare/vitest-plugin`** (`cloudflareTest()`; tests run inside workerd; **Vitest 5 not supported yet**) · fast-check (property tests) + `@vitest/coverage-v8` (core ≥ 90 % gate) · Playwright + `@axe-core/playwright` · Lighthouse CI | 4.1.11 + 1.5.0 · 4.10.2 + 4.1.11 · 1.63.0 + 4.13.0 |
+| Worker types | Generated per app by **`wrangler types`** → `worker-configuration.d.ts` (git-ignored; runs inside `pnpm typecheck`) | wrangler 4.156.2 |
 | Lint / format | Biome (+ `astro check` for `.astro`) | 2.5.15 |
 | CI | GitHub Actions; actions pinned by commit SHA (`wrangler-action@v4.1.3`, `configure-aws-credentials@v6.3.0` …) | — |
 | Backups | `age` CLI | 1.3.2 |
