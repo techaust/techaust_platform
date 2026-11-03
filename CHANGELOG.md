@@ -2,6 +2,11 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-11-03 [#171](https://github.com/techaust/techaust_platform/pull/171) docs: record of 2026-11-03 (M6.4 and the fourth admin Worker approved, M6.5 merged; status, decisions, changelog, CLAUDE.md)
+- 2026-11-03 [#170](https://github.com/techaust/techaust_platform/pull/170) feat(payments): M6.5 receipts, refunds and reconciliation [ADM-PAY-08][ADM-PAY-09][ADM-PAY-10][ADM-PAY-11][ADM-PAY-13][POR-07][JOB-PDF-01]
+- 2026-11-03 [#169](https://github.com/techaust/techaust_platform/pull/169) docs: the old site is deleted at launch (L8), no fallback kept
+- 2026-11-03 [#168](https://github.com/techaust/techaust_platform/pull/168) fix(paypal): fetch the webhook certificate with redirect manual [JOB-HOOK-01][ADM-PAY-04]
+- 2026-11-03 [#167](https://github.com/techaust/techaust_platform/pull/167) docs: record of 2026-11-03 morning (the fourth admin Worker on staging, M6.5 progress)
 - 2026-11-03 [#166](https://github.com/techaust/techaust_platform/pull/166) refactor(admin): the fourth admin Worker, admin invoices [ADM-G-02][ADM-PAY-01]
 - 2026-11-03 [#165](https://github.com/techaust/techaust_platform/pull/165) docs: record of 2026-11-03 night (M6.4 merged, the fourth Worker's plan, M6.5 prepared)
 - 2026-11-03 [#164](https://github.com/techaust/techaust_platform/pull/164) feat(payments): M6.4 PayPal (sandbox) [ADM-PAY-01][ADM-PAY-04][ADM-INV-17][POR-06][JOB-HOOK-01]
