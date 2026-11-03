@@ -15,7 +15,7 @@ Tier: A (payments; one line). Requirement: JOB-HOOK-01, ADM-PAY-04.
 - No other Worker code uses redirect "error".
 
 ## Checks
-- jobs typecheck exit 0; jobs tests 39 files, 648 passed; jobs build: 735,103 bytes (limit 1,000,000), start-up 92.9 ms.
+- jobs typecheck exit 0; jobs tests 39 files, 646 passed; jobs build: 735,103 bytes (limit 1,000,000), start-up 92.9 ms.
 
 ## After the merge
 - PayPal retries a failed webhook for up to 3 days, so this payment's `PAYMENT.CAPTURE.COMPLETED` (and the order event) should arrive on their own once staging has the fix: the lead reads `webhook_events` (provider `paypal`) and the hook's log lines to prove the path, with no second payment needed.
