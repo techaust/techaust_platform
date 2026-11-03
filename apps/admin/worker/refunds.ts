@@ -70,6 +70,11 @@ const REFUSALS = {
   not_gateway_payment: E("not_gateway_payment", "This payment didn't come through a gateway"),
   gateway_refund_window: E("gateway_refund_window", "Razorpay refunds a payment only within 6 months"),
   document_mismatch: E("document_mismatch", "That invoice can't be refunded from this payment"),
+  // Review part 1, finding 6 (builder's draft for the lead, staff-only).
+  credit_note_mismatch: E(
+    "credit_note_mismatch",
+    "That credit note isn't an issued credit note of this invoice",
+  ),
   currency_mismatch: E("currency_mismatch", "The invoice is in another currency"),
   not_refundable_kind: E("not_refundable_kind", "A TDS entry is never refunded"),
   invalid_amount: E("amount_invalid", "Enter an amount above zero"),
@@ -113,10 +118,20 @@ const PAYMENT_SQL = `SELECT p.id, p.client_id, p.kind, p.status, p.provider, p.c
      EXISTS (SELECT 1 FROM payment_refunds o INDEXED BY payment_refunds_payment WHERE o.payment_id = p.id AND o.status IN ('requested', 'processing')) AS open_refund,
      (SELECT cs.status FROM checkout_sessions cs WHERE cs.id = p.checkout_id) AS checkout_status
    FROM payments p JOIN clients k ON k.id = p.client_id WHERE p.id = ?1`;
-/** The invoice a refund draws on, with what THIS payment holds there (`?2`). */
+/** An invoice's issued credit notes, newest first (`documents_parent`). */
+const ISSUED_NOTES_OF = (col: string) =>
+  `FROM documents cn INDEXED BY documents_parent WHERE cn.parent_id = d.id AND cn.type = 'credit_note' AND cn.frozen_at IS NOT NULL ORDER BY cn.frozen_at DESC, cn.id DESC LIMIT 1) AS ${col}`;
+/**
+ * The invoice a refund draws on, with what THIS payment holds there (`?2`), and its newest issued credit note (review part 1, finding 6: the refund of its excess
+ * is linked to it, RA-40).
+ */
 const DOC_SQL = `SELECT d.id, d.client_id, d.currency, d.type, d.status, d.frozen_at, d.total_minor, d.paid_minor, d.credited_minor, d.tds_minor, d.updated_at,
-     json_extract(d.header_extras, '$.advance') IS NOT NULL AS is_advance, ${paymentNetSql("?2", "d.id")} AS holding, ${DEADLINE_DOC_COLUMNS}
+     json_extract(d.header_extras, '$.advance') IS NOT NULL AS is_advance, ${paymentNetSql("?2", "d.id")} AS holding, ${DEADLINE_DOC_COLUMNS},
+     (SELECT cn.id ${ISSUED_NOTES_OF("note_id")}, (SELECT cn.number_display ${ISSUED_NOTES_OF("note_number")}
    FROM documents d WHERE d.id = ?1`;
+/** Is `?1` an issued credit note of the invoice `?2` (the INSERT's WHERE holds it again)? */
+const NOTE_OF_SQL =
+  "SELECT 1 AS ok FROM documents cn WHERE cn.id = ?1 AND cn.type = 'credit_note' AND cn.parent_id = ?2 AND cn.frozen_at IS NOT NULL";
 const TAX_SQL = "SELECT value, version FROM settings WHERE key = 'tax'";
 
 type PayRow = {
@@ -151,6 +166,8 @@ type DocRow = {
   updated_at: number;
   is_advance: number;
   holding: number;
+  note_id: string | null;
+  note_number: string | null;
 } & DeadlineDoc;
 
 /**
@@ -176,6 +193,8 @@ function refundFacts(
       today,
     ),
     creditNote: d ? creditNoteFactsOf(d, tax, today) : null,
+    // Review part 1, finding 6: the credit note the refund of this invoice's excess is linked to (the dialog sends its id back).
+    issuedCreditNote: d?.note_id ? { id: d.note_id, number: d.note_number } : null,
   };
 }
 
@@ -246,11 +265,12 @@ export const refunds = new Hono<AppEnv>()
     const db = c.env.DB;
     const now = Date.now();
     const today = istDay(now);
-    const [payR, docR, exR, taxR] = await db.batch([
+    const [payR, docR, exR, taxR, noteR] = await db.batch([
       db.prepare(PAYMENT_SQL).bind(id),
       db.prepare(DOC_SQL).bind(f.documentId ?? "", id),
       db.prepare("SELECT id, payment_id FROM payment_refunds WHERE id = ?1").bind(f.id),
       db.prepare(TAX_SQL),
+      db.prepare(NOTE_OF_SQL).bind(f.creditNoteId ?? "", f.documentId ?? ""),
     ]);
     const p = payR?.results[0] as PayRow | undefined;
     if (!p) return err(c, NOT_FOUND, 404);
@@ -266,6 +286,10 @@ export const refunds = new Hono<AppEnv>()
     if (f.documentId && !d) return err(c, REFUSALS.document_mismatch, 409);
     if (d && f.expectedUpdatedAt !== undefined && f.expectedUpdatedAt !== d.updated_at)
       return err(c, STALE_VERSION, 409);
+    // Review part 1, finding 6 (RA-40): a refund of an invoice's excess names the credit note that made it: the one the dialog sent (an issued credit note of
+    // that invoice, held again in the INSERT's WHERE), else the invoice's newest issued one.
+    if (f.creditNoteId !== undefined && !noteR?.results[0]) return err(c, REFUSALS.credit_note_mismatch, 409);
+    const creditNoteId = f.from === "document" ? (f.creditNoteId ?? d?.note_id ?? null) : null;
     // B2 Q3: the RA-40 and RA-41 facts, from the payment and the invoice as read BEFORE this refund (what the dialog showed).
     const facts = refundFacts(p, d, taxR?.results[0] as StoredSetting | undefined, today);
     const way = f.manual ? "manual" : f.outside ? "outside" : "gateway";
@@ -389,7 +413,7 @@ export const refunds = new Hono<AppEnv>()
         paymentId: id,
         from: f.from,
         documentId,
-        creditNoteId: f.creditNoteId ?? null,
+        creditNoteId,
         amountMinor: f.amountMinor,
         reasonCode: f.reasonCode,
         note: f.note ?? null,
@@ -424,6 +448,9 @@ export const refunds = new Hono<AppEnv>()
         amountMinor: f.amountMinor,
         currency: p.currency,
         ...(documentId ? { documentId } : {}),
+        ...(creditNoteId ? { creditNoteId } : {}),
+        // Review part 1, finding 10 (RB-24): the payer's written request, recorded on the server with a refund to their own other account.
+        ...(f.manual ? { paidTo: f.manual.paidTo, writtenRequest: f.manual.writtenRequest === true } : {}),
       },
       side: (g) => [
         ...refundSideStatements(

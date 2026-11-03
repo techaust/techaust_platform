@@ -602,8 +602,8 @@ export const CREDIT_DRAW_SQL = `SELECT w.id, w.received_on, w.amount_minor, w.ne
      WHERE s.amount_minor - s.net - s.refunded > 0) w
    WHERE w.upto - (w.amount_minor - w.net - w.refunded) < ?3 ORDER BY w.received_on, w.id LIMIT ${CREDIT_DRAW_MAX}`;
 
-/** The ledger panel of a document (`?1`): each payment with a row on it, what it holds there net, oldest money first. */
-export const DOCUMENT_HOLDINGS_SQL = `SELECT a.payment_id, p.kind, p.status, p.received_on, p.mode, p.reference_norm, p.currency, p.amount_minor, p.tds_section, p.tds_rate_bp,
+/** The ledger panel of a document (`?1`): each payment with a row on it (with its own gateway, M6.5 review P2-4), what it holds there net, oldest money first. */
+export const DOCUMENT_HOLDINGS_SQL = `SELECT a.payment_id, p.kind, p.status, p.provider, p.received_on, p.mode, p.reference_norm, p.currency, p.amount_minor, p.tds_section, p.tds_rate_bp,
        p.tds_certificate_no, p.proof_r2_key IS NOT NULL AS has_proof,
        sum(CASE a.kind WHEN 'allocate' THEN a.amount_minor ELSE -a.amount_minor END) AS held
    FROM payment_allocations a INDEXED BY payment_allocations_document JOIN payments p ON p.id = a.payment_id

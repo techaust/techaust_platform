@@ -163,6 +163,8 @@ export const refundBody = z
         reference: text(REFERENCE_TYPED_MAX),
         paidOn: isoDate,
         paidTo: z.enum(REFUND_PAID_TO),
+        /** RB-24 (review part 1, finding 10): the payer asked in writing for the refund to another account in their own name; required with `own_account`. */
+        writtenRequest: z.optional(z.literal(true)),
       }),
     ),
     outside: z.optional(
@@ -185,6 +187,11 @@ export const refundBody = z
       path: ["creditNoteId"],
     }),
     z.refine((v) => !(v.manual && v.outside), { message: "refund_way_invalid", path: ["manual"] }),
+    // RB-24 (review part 1, finding 10): a refund to the payer's own other account only on their written request, recorded on the server (the audit summary).
+    z.refine((v) => v.manual?.paidTo !== "own_account" || v.manual.writtenRequest === true, {
+      message: "written_request_missing",
+      path: ["manual", "writtenRequest"],
+    }),
     // L33: a pending gateway payment goes back through its own gateway, never by our bank transfer; a refund made in the gateway's dashboard is recorded in
     // full (`outside`, early check 1, finding 4: else it could never be recorded and would block the void or withdraw for ever).
     z.refine((v) => v.from !== "pending" || !v.manual, {

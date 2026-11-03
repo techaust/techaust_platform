@@ -225,7 +225,8 @@ function LedgerPanel(props: {
       currency: r.currency,
       freeMinor: p.receipts?.[r.paymentId]?.freeMinor ?? 0,
       holdingMinor: r.heldMinor,
-      provider: gatewayOf(p, r.paymentId)?.provider ?? "manual",
+      // Review P2-4: the payment's own gateway from the server, never this document's checkouts (a gateway payment that reached it another way).
+      provider: r.provider,
       status: r.status,
       amountMinor: r.amountMinor,
     }));

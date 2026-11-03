@@ -81,7 +81,6 @@ export const EXTENSION_MAX_DAYS = 36_500;
 /** The types the Payments panel answers for: what a payment is put on (core `PAYABLE_TYPES`), plus the proforma and the credit note it shows read-only. */
 const PANEL_TYPES: readonly string[] = [...PAYABLE_TYPES, "proforma", "credit_note"];
 
-/** A document as the ledger routes read it, with its client's state and its current FEMA date when it is an export invoice. */
 /** M6.5: each payment holding money on the document (`?1`), its receipt (if issued) and its free money (`paymentFreeSql`: what a refund from credit may take). */
 export const PANEL_RECEIPTS_SQL = `SELECT p.id AS payment_id, r.id AS receipt_id, r.number_display AS receipt_number, r.issue_date AS receipt_date, r.status AS receipt_status,
      r.pdf_sha256 IS NOT NULL AS receipt_pdf, max(0, ${paymentFreeSql("p")}) AS free_minor
@@ -120,13 +119,14 @@ type PanelRefundRow = {
 };
 
 /**
- * M6.5 (L12; ADM-PAY-13): the ₹25 lakh check of a USD document's total at its own Owner-typed rate (`fx_rate_micros`, dated its issue day), per gateway: PayPal
+ * M6.5 (L12; ADM-PAY-13): the ₹25 lakh check of a USD document's balance still payable (review P2-10: never its total, so a paid invoice shows no line; the
+ * caller asks only while a balance is left) at its own Owner-typed rate (`fx_rate_micros`, dated its issue day), per gateway: PayPal
  * is a PA-CB, so its cap is the lower of the Owner's setting and the RBI's (Researched 2026-10-28, RBI PA Directions 2025, para 11(d) (08-C RB-07)); for Stripe
  * the setting is a warning only (never a legal limit; Settled by the lead on the safest reading, 2026-11-02 (08-C RA-38)). A warning, never a block.
  */
 function paCbOf(
   d: {
-    total_minor: number;
+    balance_minor: number;
     fx_rate_micros: number | null;
     fx_date: string | null;
     issue_date: string | null;
@@ -136,7 +136,7 @@ function paCbOf(
   const setting = cachedSetting("tax", taxRow).crossBorderWarnInrMinor;
   const today = toIsoDate(istDate(Date.now()));
   const base = {
-    usdMinor: d.total_minor,
+    usdMinor: Math.max(0, d.balance_minor),
     rateMicros: d.fx_rate_micros,
     rateDate: d.fx_date ?? d.issue_date,
     today,
@@ -147,6 +147,7 @@ function paCbOf(
   };
 }
 
+/** A document as the ledger routes read it, with its client's state and its current FEMA date when it is an export invoice. */
 const DOC_SQL = `SELECT d.id, d.type, d.status, d.client_id, d.currency, d.frozen_at, d.voided_at, d.issue_date, d.number_display, d.total_minor, d.paid_minor,
      d.credited_minor, d.tds_minor, d.balance_minor, d.updated_at, d.supply_type, d.fx_rate_micros, d.fx_date, ${clientGoneSql("d.client_id")} AS gone,
      CASE WHEN d.type = 'export_invoice' AND d.issue_date IS NOT NULL THEN ${femaDueSql("d", settingsBinds("NULL"))} END AS fema_due
@@ -363,6 +364,7 @@ type HoldingRow = {
   payment_id: string;
   kind: "payment" | "tds";
   status: string;
+  provider: string;
   received_on: string;
   mode: string | null;
   reference_norm: string | null;
@@ -521,7 +523,8 @@ export const invoiceLedger = new Hono<AppEnv>()
     const m65 = new Map(((m65R?.results ?? []) as PanelReceiptRow[]).map((r) => [r.payment_id, r]));
     const canReadRefunds = decide(actor(c).role, "refunds.read") !== "deny";
     const taxRow = taxR?.results[0] as { value: string; version: number } | undefined;
-    const paCb = d.currency === "USD" ? paCbOf(d, taxRow) : null;
+    // M6.5 review P2-10: the check is of what is still payable (the balance), so a paid USD invoice shows no line.
+    const paCb = d.currency === "USD" && d.balance_minor > 0 ? paCbOf(d, taxRow) : null;
     return c.json({
       receipts: Object.fromEntries(
         [...m65.values()].map((r) => [
@@ -573,6 +576,8 @@ export const invoiceLedger = new Hono<AppEnv>()
         paymentId: r.payment_id,
         kind: r.kind,
         status: r.status,
+        // M6.5 review P2-4: the payment's own gateway (`manual` for one recorded by hand), whatever document's link it came through.
+        provider: r.provider,
         receivedOn: r.received_on,
         mode: r.mode,
         reference: r.reference_norm,

@@ -107,7 +107,12 @@ export type CreditRefundFacts = {
   receivedPeriod: string;
   refundPeriod: string;
 };
-export type RefundFacts = { ra41: CreditRefundFacts; creditNote: CreditNoteFacts | null };
+/** `issuedCreditNote` (review part 1, finding 6): the invoice's newest issued credit note, the one a refund of its excess is linked to (RA-40). */
+export type RefundFacts = {
+  ra41: CreditRefundFacts;
+  creditNote: CreditNoteFacts | null;
+  issuedCreditNote?: { id: string; number: string | null } | null;
+};
 
 /** The body of POST /payments/:id/refunds (core `refundBody`). */
 export type RefundIn = {
@@ -118,7 +123,14 @@ export type RefundIn = {
   creditNoteId?: string;
   reasonCode: RefundReason;
   note?: string;
-  manual?: { mode: string; reference: string; paidOn: string; paidTo: "original" | "own_account" };
+  manual?: {
+    mode: string;
+    reference: string;
+    paidOn: string;
+    paidTo: "original" | "own_account";
+    /** RB-24: the payer asked in writing (required with `own_account`). */
+    writtenRequest?: true;
+  };
   outside?: { providerRefundId: string; origin: "outside" | "chargeback"; settledOn: string };
   confirmExport?: boolean;
   expectedUpdatedAt?: number;
