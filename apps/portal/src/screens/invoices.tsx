@@ -35,7 +35,7 @@ import {
   typeLabel,
 } from "../lib/invoices.ts";
 import { dateText } from "../lib/offers.ts";
-import { paidRowOf } from "../lib/pay.ts";
+import { paidRowOf, showsBankTransfer } from "../lib/pay.ts";
 
 const LOOK = {
   due: { tone: "info", Icon: Clock },
@@ -412,7 +412,7 @@ export function InvoicePage(props: {
         </section>
       )}
 
-      {owed && d.bank && (
+      {owed && d.bank && showsBankTransfer(d.online) && (
         <section className="block inv-pay" aria-labelledby="inv-pay-h">
           <h2 id="inv-pay-h" className="block__title">
             <Landmark size={20} />

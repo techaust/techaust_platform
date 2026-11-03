@@ -5,8 +5,8 @@
 // (OPEN (08-C RB-21): is an emailed, computer-generated receipt chargeable to stamp duty? so no signature or stamp claim either way). No line names a stamp, a
 // signature or a voucher (a test holds it).
 
-/** The owner's approval of 07-ZO's client lines (owner, pending at build time, 2026-11-03). */
-export const APPROVED_07ZO: boolean = false;
+/** The owner's approval of 07-ZO's client lines (owner, approved as drafted, 2026-11-03). */
+export const APPROVED_07ZO: boolean = true;
 const ZO = (line: string): string => (APPROVED_07ZO ? line : `[Placeholder] ${line}`);
 
 /** The receipt PDF's fixed words (07-ZO lines 1 to 10). */

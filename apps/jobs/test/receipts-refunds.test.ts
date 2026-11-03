@@ -162,6 +162,8 @@ describe("review part 1, findings 5 and 7: no unapproved words stored outside lo
     await mkContact(clientId);
     const id = await sealedReceipt(clientId, owner.id, 30_000);
     const staging = makeEnv({ ENVIRONMENT: "staging", DOCS: storedDocs() } as never);
+    // 07-ZO is approved (2026-11-03); the gate is set to "unapproved" here to keep the guard's own behaviour tested
+    vi.spyOn(receiptCopyGate, "approved").mockReturnValue(false);
     expect(await processReceipt(staging, { v: 1, kind: "receipt.render", receiptId: id, hop: 0 })).toBe(
       "skipped",
     );
@@ -217,6 +219,8 @@ describe("second review, L5: outside local, the sweep asks for no receipt render
     const noted = () =>
       realEnv.DB.prepare("SELECT count(*) AS n FROM pdf_failures WHERE document_id = ?1").bind(id).first();
     fakes.pdf.length = 0;
+    // 07-ZO is approved (2026-11-03); the gate is set to "unapproved" here to keep the guard's own behaviour tested
+    vi.spyOn(receiptCopyGate, "approved").mockReturnValue(false);
     expect(await processReceipt(staging, { v: 1, kind: "receipt.sweep", asOf: Date.now() })).toBe("swept");
     expect(rendered()).toEqual([]);
     expect(await noted()).toEqual({ n: 0 });
@@ -282,10 +286,11 @@ describe("receipts on the PDF queue [L3, L34]", () => {
     expect(seen).toHaveLength(1);
   });
 
-  it("receipt.sweep reads D1 in the consumer and queues issues and renders on the PDF queue (none here: nothing is due)", async () => {
+  it("receipt.sweep reads D1 in the consumer and queues issues and renders on the PDF queue (no issue here: no confirmed payment lacks its receipt)", async () => {
     const env = makeEnv();
     expect(await processReceipt(env, { v: 1, kind: "receipt.sweep", asOf: Date.now() })).toBe("swept");
-    expect(fakes.pdf).toEqual([]);
+    // receipts sealed by the tests above may be due for their PDF (07-ZO approved): only renders, never an issue
+    expect(fakes.pdf.filter((m) => (m.body as { kind: string }).kind !== "receipt.render")).toEqual([]);
   });
 });
 
