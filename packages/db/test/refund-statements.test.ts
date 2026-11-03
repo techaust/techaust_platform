@@ -23,6 +23,7 @@ import { settingsBinds, stageSql } from "../src/realisation.ts";
 import {
   RECEIPT_ALLOCATIONS_SQL,
   RECEIPT_PAYMENT_SQL,
+  RECEIPT_PDF_PENDING_SQL,
   RECEIPTS_DUE_SQL,
   receiptIssueStatements,
 } from "../src/receipts.ts";
@@ -697,6 +698,63 @@ describe("the receipt's issue batch (gap-free TH/RCT numbers; L3 to L5, L39)", (
     expect(totals).toEqual({ debit: 0, credit: 118_000, n: 1 });
     const fig = await all(CLIENT_FIGURES_SQL, clientId, "2026-11-03");
     expect(fig).toEqual([]);
+  });
+
+  it("early check 2, finding 5: 21 due payments of an anonymised client never fill the sweep; the 22nd, a live client's, is listed", async () => {
+    const { owner } = await setup();
+    const gone = await mkClientRow();
+    const live = await mkClientRow();
+    // verified long before every other test's payment (T), so these lead the oldest-first sweep
+    const at = async (clientId: string, verifiedAt: number) => {
+      const id = uuidv7();
+      await run(
+        `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, recorded_by, recorded_at, verified_by, verified_at)
+         VALUES (?1, ?2, 'payment', 'manual', 'confirmed', 'INR', 1000, '2026-11-01', 'neft', ?3, ?4, ?3, ?4)`,
+        id,
+        clientId,
+        owner,
+        verifiedAt,
+      );
+      return id;
+    };
+    const erased: string[] = [];
+    for (let i = 0; i < 21; i++) erased.push(await at(gone, 1_000 + i));
+    const fresh = await at(live, 2_000);
+    await run("UPDATE clients SET anonymised_at = 5 WHERE id = ?1", gone);
+    const due = (await all<{ id: string }>(RECEIPTS_DUE_SQL, 3_000)).map((r) => r.id);
+    // (another test of this file may leave an older due payment; none of the erased client's is listed, and the live one is)
+    expect(due).toContain(fresh);
+    expect(due.filter((id) => erased.includes(id))).toEqual([]);
+    expect(due.length).toBeLessThan(20);
+  });
+
+  it("early check 2, findings 4 and 5: a void receipt and an anonymised client's receipt never wait for a PDF; an issued one does", async () => {
+    const { owner, clientId } = await setup();
+    const fy = "8605";
+    const kept = await pay(clientId, owner);
+    const voided = await pay(clientId, owner);
+    await issue(kept, fy);
+    await issue(voided, fy);
+    await run(
+      "UPDATE payments SET status = 'withdrawn', withdrawn_by = ?2, withdrawn_at = 9, withdraw_reason = 'Error' WHERE id = ?1",
+      voided,
+      owner,
+    );
+    await run(
+      "UPDATE documents SET status = 'void', voided_at = 10, void_reason = 'payment_withdrawn', updated_at = updated_at + 1 WHERE id = ?1",
+      `rct_${voided}`,
+    );
+    const other = await setup();
+    const erased = await pay(other.clientId, other.owner);
+    await issue(erased, fy);
+    await run("UPDATE clients SET anonymised_at = 5 WHERE id = ?1", other.clientId);
+    // every pending row (the file's other receipts too), not just the first 20
+    const pending = (
+      await all<{ id: string }>(RECEIPT_PDF_PENDING_SQL.replace("LIMIT 20", "LIMIT 1000"))
+    ).map((r) => r.id);
+    expect(pending).toContain(`rct_${kept}`);
+    expect(pending).not.toContain(`rct_${voided}`);
+    expect(pending).not.toContain(`rct_${erased}`);
   });
 });
 
