@@ -326,6 +326,9 @@
   /* the wait line wraps at a set width instead of widening the actions column (the buttons wrap under each other when they must) */
   .rf-tab__table .rf-acts {
     max-width: 12rem;
+    /* the shared actions cell keeps one line and aligns to the end (shell.css); the wait line may wrap and reads from the start */
+    white-space: normal;
+    text-align: start;
   }
 }
 
@@ -386,6 +389,11 @@
 
 .rcn-undo {
   padding-inline: 0;
+}
+
+/* a settlement's lines sit clear of its facts above (UTR, settlement ID, net to bank) */
+.rcn-items {
+  margin-top: var(--space-5);
 }
 
 .rcn-entity {
