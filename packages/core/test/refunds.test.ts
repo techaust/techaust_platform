@@ -13,14 +13,17 @@ import {
   isRefundPaidTo,
   isRefundReason,
   isRefundStatus,
+  istDayEndMs,
   overpaymentAdvanceLine,
   planRefund,
+  previousReturnPeriod,
   REFUND_REFUSALS,
   REFUND_STATUSES,
   type RefundDocument,
   type RefundSourcePayment,
   refundableOf,
   refundExportWarning,
+  returnPeriodEnd,
   returnPeriodOf,
 } from "../src/refunds.ts";
 
@@ -382,6 +385,41 @@ describe("the warnings (RB-43, RA-41)", () => {
     expect(creditCrossedPeriod("2026-10-05", "2026-12-31", "quarterly")).toBe(false);
     expect(creditCrossedPeriod("2026-10-05", "2026-11-01", "monthly")).toBe(true);
     expect(creditCrossedPeriod("2026-09-30", "2026-10-01", "quarterly")).toBe(true);
+  });
+
+  it("RA-41 (review part 1, finding 3): a period's last day, the latest ended period, and the last IST instant of a day", () => {
+    expect(returnPeriodEnd("2026-10")).toBe("2026-10-31");
+    expect(returnPeriodEnd("2028-02")).toBe("2028-02-29");
+    expect(returnPeriodEnd("2026-Q4")).toBe("2026-12-31");
+    expect(returnPeriodEnd("2027-Q1")).toBe("2027-03-31");
+    expect(returnPeriodEnd("2026-Q2")).toBe("2026-06-30");
+    for (const bad of ["2026-13", "2026-Q5", "2026-00", "26-10", "2026-10-01", ""])
+      expect(returnPeriodEnd(bad)).toBeNull();
+    expect(previousReturnPeriod("2026-11-03", "monthly")).toBe("2026-10");
+    expect(previousReturnPeriod("2026-01-15", "monthly")).toBe("2025-12");
+    expect(previousReturnPeriod("2026-11-03", "quarterly")).toBe("2026-Q3");
+    expect(previousReturnPeriod("2026-02-28", "quarterly")).toBe("2025-Q4");
+    expect(previousReturnPeriod("2026-04-01", "quarterly")).toBe("2026-Q1");
+    expect(istDayEndMs("2026-10-31")).toBe(Date.parse("2026-10-31T23:59:59.999+05:30"));
+    // every day's period ends on or after it, and the period before today's has ended
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 3650 }),
+        fc.constantFrom("monthly" as const, "quarterly" as const),
+        (n, f) => {
+          const iso = new Date(Date.UTC(2020, 0, 1 + n)).toISOString().slice(0, 10);
+          const end = returnPeriodEnd(returnPeriodOf(iso, f));
+          const prev = returnPeriodEnd(previousReturnPeriod(iso, f));
+          return (
+            end !== null &&
+            end >= iso &&
+            prev !== null &&
+            prev < iso &&
+            returnPeriodOf(end, f) === returnPeriodOf(iso, f)
+          );
+        },
+      ),
+    );
   });
 
   it("addMonthsIso clamps to a shorter month", () => {

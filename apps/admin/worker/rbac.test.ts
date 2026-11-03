@@ -1439,6 +1439,26 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       const refundId = await requestedRazorpayRefund(clientId, s.id);
       return run(s, `/refunds/${refundId}/cancel`, { body: {} });
     },
+    // M6.5 review part 1, finding 9: the bank's INR figure of a USD refund that went out.
+    "POST /api/v1/refunds/:id/inr": async () => {
+      const s = await owner();
+      const clientId = await mkReportClient("USD");
+      const paymentId = uuidv7();
+      const T = Date.now();
+      await env.DB.prepare(
+        `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, reference_norm, recorded_by, recorded_at, verified_by, verified_at)
+         VALUES (?1, ?2, 'payment', 'manual', 'confirmed', 'USD', 5000, ?3, 'swift', ?4, ?5, ?6, ?5, ?6)`,
+      )
+        .bind(paymentId, clientId, todayIso(), `SWIFTRB${T}`, s.id, T)
+        .run();
+      const body = {
+        ...manualRefund(1_000),
+        confirmExport: true,
+        manual: { mode: "swift", reference: `SWIFTRBR${T}`, paidOn: todayIso(), paidTo: "original" },
+      };
+      await call(`/payments/${paymentId}/refunds`, { cookie: s.cookie, body });
+      return run(s, `/refunds/${body.id}/inr`, { body: { inrMinor: 83_000 } });
+    },
     "POST /api/v1/reconciliation/bank-matches": async () => {
       const s = await owner();
       const clientId = await mkReportClient("INR");

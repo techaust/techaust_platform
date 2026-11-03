@@ -77,7 +77,8 @@ export async function fetchSettlements(
       ).results.map((x) => x.settlement_id)
     : [];
   const settlements: SettlementRow[] = [];
-  for (const sid of named.filter((s) => !known.includes(s)).slice(0, SETTLEMENT_FETCH_MAX)) {
+  const unknown = named.filter((s) => !known.includes(s));
+  for (const sid of unknown.slice(0, SETTLEMENT_FETCH_MAX)) {
     const s = await api.fetchSettlement(sid);
     if (!s.ok) return { result: "retry" };
     settlements.push({
@@ -103,6 +104,9 @@ export async function fetchSettlements(
     settlementId: i.settlementId,
   }));
   await env.DB.batch(settlementPageStatements(env.DB, { provider: "razorpay", settlements, items, now }));
+  // Review part 1, finding 8: the page named more settlements than one call fetches: the same page again (its items are kept once; the next call fetches the
+  // next settlements, and the page's re-link statement puts its items on them). Each repeat stores at least one more settlement, so it ends.
+  if (unknown.length > SETTLEMENT_FETCH_MAX) return { result: "stored", next: { skip: a.skip } };
   return page.full
     ? { result: "stored", next: { skip: a.skip + page.items.length + page.skipped } }
     : { result: "stored" };
@@ -248,11 +252,28 @@ export const reconciliation = new Hono<AppEnv>()
     if (!api || api.blocked === "unconfigured") return err(c, GATEWAY_UNAVAILABLE, 503);
     if (api.blocked === "live_not_allowed") return err(c, LIVE_NOT_ALLOWED, 503);
     const r = await fetchSettlements(c.env, { provider: "razorpay", day, skip: 0 }, now);
+    // Screen review P2-13 (with part 1, finding 8): the rest of the day comes page by page through the jobs Worker (`recon.fetch` with `next.skip`, one unit
+    // of work each, as the 09:00 IST fetch does), never in this request.
+    let continued = false;
+    if (r.next) {
+      try {
+        await c.env.LEADS_QUEUE.send({ kind: "recon.fetch", provider: "razorpay", day, skip: r.next.skip });
+        continued = true;
+      } catch (e) {
+        console.error(
+          JSON.stringify({
+            level: "error",
+            message: "recon next page enqueue failed",
+            cause: e instanceof Error ? e.name : "unknown",
+          }),
+        );
+      }
+    }
     await mutate(c, {
       action: "recon.fetch",
       entityType: "settlement",
       entityId: null,
-      summary: { day, result: r.result },
+      summary: { day, result: r.result, continued },
     });
-    return c.json(r);
+    return c.json({ ...r, continued });
   });

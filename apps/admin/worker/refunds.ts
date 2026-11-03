@@ -15,7 +15,7 @@
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import { normaliseReference } from "@techaust/core/invoices";
-import { refundBody } from "@techaust/core/payment-schemas";
+import { refundBody, refundInrBody } from "@techaust/core/payment-schemas";
 import { decide } from "@techaust/core/permissions";
 import { planRefund, refundExportWarning } from "@techaust/core/refunds";
 import {
@@ -26,6 +26,7 @@ import {
   REFUNDS_LIST_SQL,
   refundBatchResult,
   refundCancelStatement,
+  refundInrStatement,
   refundInsertStatement,
   refundSideStatements,
 } from "@techaust/db/refunds";
@@ -70,6 +71,12 @@ const REFUSALS = {
   not_gateway_payment: E("not_gateway_payment", "This payment didn't come through a gateway"),
   gateway_refund_window: E("gateway_refund_window", "Razorpay refunds a payment only within 6 months"),
   document_mismatch: E("document_mismatch", "That invoice can't be refunded from this payment"),
+  // Review part 1, finding 9 (builder's drafts for the lead, staff-only).
+  inr_already_set: E("inr_already_set", "The INR amount of this refund is already recorded"),
+  inr_not_applicable: E(
+    "inr_not_applicable",
+    "An INR amount is recorded only for a refund in another currency once it has gone out",
+  ),
   // Review part 1, finding 6 (builder's draft for the lead, staff-only).
   credit_note_mismatch: E(
     "credit_note_mismatch",
@@ -222,6 +229,8 @@ const view = (r: NonNullable<Awaited<ReturnType<typeof readRefund>>>) => ({
   reasonCode: r.reason_code,
   currency: r.currency,
   amountMinor: r.amount_minor,
+  // Review part 1, finding 9: the INR the bank debited for a refund in another currency (null until the Owner records it).
+  inrRefundedMinor: r.inr_refunded_minor,
   referenceNorm: r.reference_norm,
   paidOn: r.paid_on,
   providerRefundId: r.provider_refund_id,
@@ -614,6 +623,32 @@ export const refundsTab = new Hono<AppEnv>()
       )
         return tooSoon(c, after, Date.now());
       return err(c, REFUSALS.not_cancellable, 409);
+    }
+    const r = await readRefund(db, id);
+    return c.json({ refund: r ? view(r) : null });
+  })
+  // Review part 1, finding 9 (L9): the INR the bank debited for a USD refund that went out, from its advice (the Owner, step-up, once), for the refunds register.
+  .post("/:id/inr", param(idParam), body(refundInrBody), async (c) => {
+    const { id } = c.req.valid("param");
+    const f = c.req.valid("json");
+    const db = c.env.DB;
+    const row = await readRefund(db, id);
+    if (!row) return err(c, NOT_FOUND, 404);
+    const done = await mutate(c, {
+      main: refundInrStatement(db, {
+        refundId: id,
+        inrMinor: f.inrMinor,
+        sessionId: actor(c).sessionId,
+        now: Date.now(),
+      }),
+      action: "refund.inr",
+      entityType: "refund",
+      entityId: id,
+      summary: { refundId: id, paymentId: row.payment_id, currency: row.currency, inrMinor: f.inrMinor },
+    });
+    if (!done) {
+      if (row.inr_refunded_minor !== null) return err(c, REFUSALS.inr_already_set, 409);
+      return err(c, REFUSALS.inr_not_applicable, 409);
     }
     const r = await readRefund(db, id);
     return c.json({ refund: r ? view(r) : null });

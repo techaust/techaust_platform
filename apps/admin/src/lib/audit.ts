@@ -178,6 +178,7 @@ export const ACTION_LABELS: Record<string, string> = {
   "refund.retry": Y("tried a refund again"),
   "refund.cancel": Y("cancelled a refund the gateway never received"),
   "refund.status": Y("noted a refund's progress at the gateway"),
+  "refund.inr": Y("recorded the INR amount of a refund"),
   "receipt.issue": Y("issued a payment receipt"),
   "receipt.pdf_retry": Y("asked for a receipt's PDF again"),
   "recon.fetch": Y("fetched the gateway's settlements"),

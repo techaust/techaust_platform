@@ -101,3 +101,28 @@ export function creditRefundFactsOf(
 
 /** The stored `tax` settings row, parsed once per isolate and version. */
 export const taxOf = (row: StoredSetting | undefined): TaxSettings => cachedSetting("tax", row);
+
+/**
+ * RA-41 (review part 1, finding 3): the facts of a payment just confirmed (the Owner's record, the verify): its credit is what the confirmation left on no
+ * invoice (`unallocatedMinor`; nothing is refunded yet). `advanceLine` says whether that credit may be an advance whose GST was due on receipt; the screens show the
+ * line on the Payments panel and the period-end list carries it until it is refunded, used or declared. One settings read, after the batch.
+ */
+export async function ra41OnConfirm(
+  db: D1Database,
+  p: { currency: "INR" | "USD"; amountMinor: number; unallocatedMinor: number; receivedOn: string },
+  today: string,
+): Promise<CreditRefundFacts> {
+  const row = await db
+    .prepare("SELECT value, version FROM settings WHERE key = 'tax'")
+    .first<StoredSetting>();
+  return creditRefundFactsOf(
+    {
+      currency: p.currency,
+      freeMinor: p.unallocatedMinor,
+      netMinor: p.amountMinor - p.unallocatedMinor,
+      receivedOn: p.receivedOn,
+    },
+    taxOf(row ?? undefined),
+    today,
+  );
+}

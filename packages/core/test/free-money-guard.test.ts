@@ -34,8 +34,9 @@ const ALLOWED: Record<string, string> = {
 /** Raw net sums that are not free money, by file: how many and why. */
 const RAW_NET_ALLOWED: Record<string, { count: number; reason: string }> = {
   "packages/db/src/sql-rules.ts": {
-    count: 2,
-    reason: "the helpers `livePaidSql` and `paymentNetSql` themselves",
+    count: 3,
+    reason:
+      "the helpers `livePaidSql`, `paymentNetSql` and `paymentNetAtSql` (its as-of twin for RA-41's credit held at a period's end) themselves",
   },
   "packages/db/src/ledger.ts": {
     count: 1,

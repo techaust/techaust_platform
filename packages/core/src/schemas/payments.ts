@@ -204,6 +204,12 @@ export const refundBody = z
     }),
   );
 
+/**
+ * `POST /refunds/:id/inr` (review part 1, finding 9; L9): the INR the bank debited for a USD refund that went out, as its advice shows it (set once, by the Owner),
+ * for the refunds register's "INR value".
+ */
+export const refundInrBody = z.strictObject({ inrMinor: positive });
+
 /** `POST /reconciliation/bank-matches`: the Owner's "seen in the bank statement" tick of one payment, settlement or refund. */
 export const bankMatchBody = z.strictObject({
   id: uuidv7,

@@ -13,7 +13,16 @@
 // T11 deed hook is not appended (`packages/core/test/deed-hooks.test.ts` lists this file's builder with that reason).
 import { ledgerResultStatement, recomputeStatement } from "./ledger.ts";
 import type { GuardSql } from "./log.ts";
-import { livePaidSql, liveTdsSql, PAYABLE_TYPES_SQL, paymentFreeSql, paymentNetSql } from "./sql-rules.ts";
+import {
+  livePaidSql,
+  liveTdsSql,
+  overpaymentAdvanceAtSql,
+  PAYABLE_TYPES_SQL,
+  paymentFreeAtSql,
+  paymentFreeSql,
+  paymentNetAtSql,
+  paymentNetSql,
+} from "./sql-rules.ts";
 
 export type { GuardSql };
 
@@ -298,6 +307,44 @@ export const refundCancelStatement = (
        WHERE id = ?1 AND status = 'requested' AND provider_refund_id IS NULL AND last_attempt_at IS ?4 AND ${ownerSessionSql("?3", "?2", true)}`,
     )
     .bind(a.refundId, a.now, a.sessionId, a.seen);
+
+/**
+ * Review part 1, finding 9 (L9): the INR the bank debited for a refund in another currency that went out (`succeeded`), as its advice shows it, recorded once by the
+ * Owner with a fresh step-up (trigger `payment_refunds_fixed` of 0070 lets `inr_refunded_minor` be set once). Zero rows: already set, not a foreign-currency
+ * refund, not gone out yet, or not the Owner. Binds `?1` refund, `?2` the INR in paise, `?3` session, `?4` now.
+ */
+export const refundInrStatement = (
+  db: D1Database,
+  a: { refundId: string; inrMinor: number; sessionId: string; now: number },
+): D1PreparedStatement =>
+  db
+    .prepare(
+      `UPDATE payment_refunds SET inr_refunded_minor = ?2, updated_at = max(?4, updated_at)
+       WHERE id = ?1 AND inr_refunded_minor IS NULL AND status = 'succeeded' AND currency <> 'INR' AND ${ownerSessionSql("?3", "?4", true)}`,
+    )
+    .bind(a.refundId, a.inrMinor, a.sessionId, a.now);
+
+// ---- RA-41: credit held at a period's end (review part 1, finding 3) -------------------------------------------------------------------------------------
+
+/**
+ * RA-41 (Settled by the lead on the safest reading, 2026-11-03 (08-C RA-41)): the confirmed money-received payments that held credit at a return period's end
+ * which may be an advance (`overpaymentAdvanceAtSql`: on no invoice, not in INR, or more than the s.13(2) proviso's ₹1,000 above its invoices), so the Owner
+ * declares it in GSTR-1 Table 11A for that period, refunds it or uses it. Binds `?1` the period's last instant (UTC ms), `?2` its last day, `?3`/`?4` the keyset
+ * `(received_on, id)` after which the page starts (the first page binds '' and ''), `?5` the proviso (`tax.excessProvisoMinor`). Oldest money first, at most 51
+ * (a page of 50 and whether there is more), through `payments_confirmed`. `held_since_at`: the instant of the last allocation or release before the period's end
+ * (null: the money was never put on an invoice, so it is held from the day it arrived).
+ */
+export const CREDIT_HELD_SQL = `SELECT s.id, s.client_id, k.code AS client_code, k.display_name AS client_name, s.currency, s.received_on, s.amount_minor, s.net, s.credit,
+     s.held_since_at
+   FROM (SELECT p.id, p.client_id, p.currency, p.received_on, p.amount_minor, ${paymentNetAtSql("p.id", "?1")} AS net, ${paymentFreeAtSql("p", "?1")} AS credit,
+         (SELECT max(hs.created_at) FROM payment_allocations hs INDEXED BY payment_allocations_payment WHERE hs.payment_id = p.id AND hs.created_at <= ?1) AS held_since_at
+       FROM payments p INDEXED BY payments_confirmed
+       WHERE p.status = 'confirmed' AND p.kind = 'payment' AND p.verified_at <= ?1 AND p.received_on <= ?2
+         AND (p.received_on > ?3 OR (p.received_on = ?3 AND p.id > ?4))
+         AND ${overpaymentAdvanceAtSql("p", "?1", "?5")}
+       ORDER BY p.received_on, p.id LIMIT 51) s
+   JOIN clients k ON k.id = s.client_id
+   ORDER BY s.received_on, s.id`;
 
 // ---- the withdraw's receipt (L10) -------------------------------------------------------------------------------------------------------------------------
 

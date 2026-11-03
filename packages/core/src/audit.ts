@@ -42,6 +42,8 @@ export const FINANCE_AUDIT_ACTIONS = [
   "refund.retry",
   "refund.cancel",
   "refund.status",
+  // Review part 1, finding 9: the INR the bank debited for a USD refund (the refunds register's INR value).
+  "refund.inr",
   "recon.fetch",
   "recon.match",
   "recon.unmatch",

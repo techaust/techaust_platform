@@ -48,7 +48,7 @@ import {
   recomputeStatement,
 } from "@techaust/db/ledger";
 import { femaDueSql, femaStandardSql, gstDueSql, settingsBinds, stageSql } from "@techaust/db/realisation";
-import { paymentFreeSql } from "@techaust/db/sql-rules";
+import { paymentFreeSql, paymentNetSql } from "@techaust/db/sql-rules";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { CLIENT_GONE, clientGoneSql } from "./anonymised.ts";
@@ -69,6 +69,7 @@ import {
   NOT_PAYABLE,
 } from "./payment-messages.ts";
 import { LEDGER_REFUSED } from "./payments.ts";
+import { creditRefundFactsOf, taxOf } from "./refund-facts.ts";
 import { sessionRefusal } from "./session-refusal.ts";
 import { cachedSetting, type StoredSetting } from "./settings-cache.ts";
 
@@ -83,7 +84,8 @@ const PANEL_TYPES: readonly string[] = [...PAYABLE_TYPES, "proforma", "credit_no
 
 /** M6.5: each payment holding money on the document (`?1`), its receipt (if issued) and its free money (`paymentFreeSql`: what a refund from credit may take). */
 export const PANEL_RECEIPTS_SQL = `SELECT p.id AS payment_id, r.id AS receipt_id, r.number_display AS receipt_number, r.issue_date AS receipt_date, r.status AS receipt_status,
-     r.pdf_sha256 IS NOT NULL AS receipt_pdf, max(0, ${paymentFreeSql("p")}) AS free_minor
+     r.pdf_sha256 IS NOT NULL AS receipt_pdf, max(0, ${paymentFreeSql("p")}) AS free_minor, ${paymentNetSql("p.id")} AS net, p.received_on, p.currency, p.status,
+     p.kind
    FROM payments p LEFT JOIN documents r ON r.id = 'rct_' || p.id AND r.type = 'receipt'
    WHERE p.id IN (SELECT a.payment_id FROM payment_allocations a INDEXED BY payment_allocations_document WHERE a.document_id = ?1)`;
 /** M6.5: the refunds of this invoice's excess and of the payments holding money on it, newest first (at most 50). */
@@ -101,6 +103,11 @@ type PanelReceiptRow = {
   receipt_status: string | null;
   receipt_pdf: number;
   free_minor: number;
+  net: number;
+  received_on: string;
+  currency: "INR" | "USD";
+  status: string;
+  kind: string;
 };
 type PanelRefundRow = {
   id: string;
@@ -536,6 +543,20 @@ export const invoiceLedger = new Hono<AppEnv>()
             status: r.receipt_status,
             hasPdf: r.receipt_pdf === 1,
             freeMinor: r.free_minor,
+            // Review part 1, finding 3 (RA-41): whether this confirmed payment's credit may be an advance, and the periods (codes only; the SPA words it).
+            ra41:
+              r.status === "confirmed" && r.kind === "payment"
+                ? creditRefundFactsOf(
+                    {
+                      currency: r.currency,
+                      freeMinor: r.free_minor,
+                      netMinor: r.net,
+                      receivedOn: r.received_on,
+                    },
+                    taxOf(taxRow),
+                    today,
+                  )
+                : null,
           },
         ]),
       ),
