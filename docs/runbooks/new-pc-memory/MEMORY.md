@@ -1,0 +1,14 @@
+- [TecHaust rebuild project](techaust-rebuild-project.md) — folders, approval workflow, ground rules, public repo, status: see docs/12-status.md; M1.5–M2.4b approved; M2.5 built (awaits NVDA + approval); ask owner's new plan before M3.1; social kit #17; tooling lessons (long paths, CRLF, Cloudflare UI)
+- [TecHaust business profile](techaust-business-profile.md) — proprietorship + GSTIN, 2–5 senior team, markets, capacity, Phase 2–5 decisions, since 2019 + 10+ yrs team confirmed, owner's pending inputs
+- [Models and usage](model-effort-rule.md) — owner 2026-10-29, permanent: Opus 5.5 at high for every task (lead + all agents); budget gate 95 %; enforced by settings, model-guard hook, model-audit (PR #109)
+- [Record and daily sessions](record-and-daily-sessions.md) — 'start the day'/'end the day', 'continue' per task step; CLAUDE.md rules only; docs/12-status.md replaced, DECISIONS, CHANGELOG, docs/runs
+- [Working with the owner](working-with-owner.md) — click-by-click, MC decisions, honest reports, no installs, PRs auto-merge on green + Auto-fix on every PR, secrets via hidden-input scripts
+- [Owner's visual taste](owner-visual-taste.md) — brand-geometry flat ink/verdigris wins; generic soft/3D/stock-tech looks rejected; sketch sheet early; bar 10/10
+- [Skills are mandatory](designer-skill-check.md) — lead + every agent load all fitting skills (docs/14 §9); model-audit flags agent runs with none; check before every review
+- [AWS MCP is another account](aws-mcp-wrong-account.md) — wrong AWS account; turned off for this project 2026-10-26 (with supabase, upstash); re-enable after owner signs it in to TecHaust
+- [Batch M5 state](batch-m5-state.md) — M5.0–M5.5 APPROVED by the owner 2026-10-31 (#122); research + wording PR #104; agent-file edits need a new conversation
+- [Batch M3.4–M4.5 state](batch-m34-m45-state.md) — APPROVED 2026-10-26 with fixes PR #93; M5 next, admin Worker split first (582 bytes left); batch-review lessons
+- [Full audit M1–M5](full-audit-m1-m5.md) — COMPLETE 2026-10-31 (#106–#120); worktree/merge lessons
+- [Research tasks state](research-tasks-state.md) — M6.4 + fourth admin Worker approved 2026-11-03; M6.5 merged #170 on staging, awaits owner sandbox refund + approval; next M7.1; CPU $5 decision; D1 reads via Cloudflare MCP
+- [Parallel cloud sessions](cloud-parallel-sessions.md) — run with /orchestrate (#147); ≤ 2 cloud sessions, no new agent over 85 %, start after a reset; sessions start only from a desktop-typed message; review PRs before auto-merge
+- [Launch all at once](launch-all-at-once.md) — owner 2026-10-31: everything goes live together after M6, M7, Phase 7; 2026-11-03: L8 deletes the old techaust-web first, no fallback
