@@ -83,12 +83,12 @@ const PANEL_TYPES: readonly string[] = [...PAYABLE_TYPES, "proforma", "credit_no
 
 /** A document as the ledger routes read it, with its client's state and its current FEMA date when it is an export invoice. */
 /** M6.5: each payment holding money on the document (`?1`), its receipt (if issued) and its free money (`paymentFreeSql`: what a refund from credit may take). */
-const PANEL_RECEIPTS_SQL = `SELECT p.id AS payment_id, r.id AS receipt_id, r.number_display AS receipt_number, r.issue_date AS receipt_date, r.status AS receipt_status,
+export const PANEL_RECEIPTS_SQL = `SELECT p.id AS payment_id, r.id AS receipt_id, r.number_display AS receipt_number, r.issue_date AS receipt_date, r.status AS receipt_status,
      r.pdf_sha256 IS NOT NULL AS receipt_pdf, max(0, ${paymentFreeSql("p")}) AS free_minor
    FROM payments p LEFT JOIN documents r ON r.id = 'rct_' || p.id AND r.type = 'receipt'
    WHERE p.id IN (SELECT a.payment_id FROM payment_allocations a INDEXED BY payment_allocations_document WHERE a.document_id = ?1)`;
 /** M6.5: the refunds of this invoice's excess and of the payments holding money on it, newest first (at most 50). */
-const PANEL_REFUNDS_SQL = `SELECT r.id, r.payment_id, r.document_id, r.provider, r.origin, r.status, r.reason_code, r.currency, r.amount_minor, r.requested_at, r.settled_on,
+export const PANEL_REFUNDS_SQL = `SELECT r.id, r.payment_id, r.document_id, r.provider, r.origin, r.status, r.reason_code, r.currency, r.amount_minor, r.requested_at, r.settled_on,
      r.failure_code
    FROM payment_refunds r
    WHERE r.id IN (SELECT x.id FROM payment_refunds x INDEXED BY payment_refunds_document WHERE x.document_id = ?1)
@@ -409,12 +409,14 @@ export const CREDIT_OF_DOCUMENT_CLIENT_SQL = clientCreditSql(CLIENT_OF_DOCUMENT)
 /**
  * The payments waiting for the Owner that are for this document (`?1`, of its own client): what Staff recorded against it (L6) and, M6.3 staging fixes (lead's
  * decision 1), an online payment that came through its checkout with no request (a mismatch), by the one rule `paymentForDocumentSql`. What it asks for this
- * document: its request's amount, else (no request) the whole payment.
+ * document: its request's amount, else (no request) the whole payment. M6.5 (rows read at 2,000 documents, Builder B3): through the partial index of the
+ * waiting entries (`payments_pending`, in `recorded_at` order as the list is), so a client with thousands of decided payments costs nothing here (2,002 rows
+ * read through `payments_client` on the stress fixture).
  */
 export const PENDING_FOR_DOCUMENT_SQL = `SELECT p.id, p.kind, p.received_on, p.mode, p.reference_norm, p.currency, p.amount_minor, p.recorded_by, p.recorded_at,
        coalesce((SELECT json_extract(j.value, '$.amountMinor') FROM json_each(p.requested_allocations) j WHERE json_extract(j.value, '$.documentId') = ?1 LIMIT 1), p.amount_minor) AS asked_minor,
        ${proformaOverpaidBySql("p", "?1")} AS waits_refund
-   FROM payments p INDEXED BY payments_client
+   FROM payments p INDEXED BY payments_pending
    WHERE p.client_id = ${CLIENT_OF_DOCUMENT} AND p.status = 'pending_verification' AND ${paymentForDocumentSql("p", "?1")}
    ORDER BY p.recorded_at, p.id LIMIT 50`;
 
