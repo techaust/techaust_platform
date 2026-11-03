@@ -39,7 +39,9 @@ let seq = 0;
 /** The certificate "fetch": the test PEM for our URL, counting each call. */
 const certFetch = (pem = () => signer.pem) => {
   const seen: string[] = [];
-  const f = (async (input: RequestInfo | URL) => {
+  const f = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    // workerd's own Request checks the options as its fetch does (a mode it refuses throws here, review of #168)
+    new Request(input, init);
     const u = String(input instanceof Request ? input.url : input);
     seen.push(u);
     return u === CERT_URL ? new Response(pem(), { status: 200 }) : new Response("no", { status: 404 });
@@ -348,6 +350,38 @@ describe("POST /paypal [JOB-HOOK-01..03, L1, L13]", () => {
     });
     expect(res.status).toBe(400);
     expect(await code(res)).toBe("signature_missing");
+  });
+});
+
+describe("the certificate fetch in the Workers runtime (staging, 2026-11-03)", () => {
+  it("asks with options workerd accepts and gets the key; a redirect answer is refused, never followed, and logged without the URL", async () => {
+    resetPayPalCertCache();
+    const inits: RequestInit[] = [];
+    const ok = certFetch();
+    const f = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      inits.push(init ?? {});
+      return ok.f(input, init);
+    }) as typeof fetch;
+    const now = Date.now();
+    expect(await certKeyFor(CERT_URL, now, f)).not.toBeNull();
+    expect(inits[0]?.redirect).toBe("manual");
+    resetPayPalCertCache();
+    const moved = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      new Request(input, init);
+      return new Response(null, { status: 302, headers: { location: "https://example.test/elsewhere" } });
+    }) as typeof fetch;
+    logs.length = 0;
+    expect(await certKeyFor(CERT_URL, now, moved)).toBeNull();
+    const line = logs.find((l) => l.includes("hook.cert_fetch_failed"));
+    expect(line).toContain('"why":"status_3xx"');
+    expect(line).not.toContain("paypal.com");
+  });
+
+  it('no Worker source asks fetch for redirect "error"', async () => {
+    const src = import.meta.glob("../src/**/*.ts", { query: "?raw", import: "default", eager: true });
+    expect(Object.keys(src).length).toBeGreaterThan(10);
+    for (const [file, text] of Object.entries(src))
+      expect(/redirect:\s*["']error["']/.test(text), file).toBe(false);
   });
 });
 

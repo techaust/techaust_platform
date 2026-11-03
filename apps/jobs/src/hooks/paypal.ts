@@ -78,24 +78,32 @@ export function resetPayPalCertCache(): void {
   window = { start: 0, n: 0, trusted: 0 };
 }
 
+/** Why a certificate fetch failed, logged once per failure (never the URL or a header): the only trace a silent 503 `cert_unavailable` leaves (review of #168). */
+const certFetchFailed = (why: string): null => {
+  logEvent("hook.cert_fetch_failed", { provider: "paypal", why });
+  return null;
+};
+
 /** The certificate's PEM, read as a capped stream; null on any failure. */
 async function fetchPem(url: string, f: typeof fetch): Promise<string | null> {
   let res: Response;
   try {
-    res = await f(url, { method: "GET", signal: AbortSignal.timeout(CERT_TIMEOUT_MS), redirect: "error" });
+    // `manual`, never `error`: the Workers runtime refuses the redirect mode "error" with a TypeError (staging, 2026-11-03: every certificate fetch failed, so every
+    // PayPal webhook was answered 503). A redirect comes back as a 3xx, which the status check below refuses.
+    res = await f(url, { method: "GET", signal: AbortSignal.timeout(CERT_TIMEOUT_MS), redirect: "manual" });
   } catch {
-    return null;
+    return certFetchFailed("network");
   }
   if (res.status !== 200) {
     await res.body?.cancel();
-    return null;
+    return certFetchFailed(`status_${Math.floor(res.status / 100)}xx`);
   }
   const bytes = await readCapped(res, PAYPAL_CERT_MAX_BYTES).catch(() => null);
-  if (!bytes) return null;
+  if (!bytes) return certFetchFailed("too_large");
   try {
     return strictUtf8.decode(bytes);
   } catch {
-    return null;
+    return certFetchFailed("not_utf8");
   }
 }
 
@@ -120,6 +128,7 @@ export async function certKeyFor(
   else return null;
   const pem = await fetchPem(url, f);
   const got = pem ? await importPayPalCertKey(pem, now) : null;
+  if (pem && !got) certFetchFailed("cert_invalid");
   if (!got) {
     failed.delete(url);
     if (failed.size >= CERT_FAILED_MAX) {
