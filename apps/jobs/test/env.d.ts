@@ -5,10 +5,7 @@ declare namespace Cloudflare {
   }
 }
 
-// Vite's `import.meta.glob`, used by tests that scan the Worker's own sources as text (`query: "?raw"`).
+// Vite's `import.meta.glob`, used by tests that scan the Worker's own sources as text.
 interface ImportMeta {
-  glob(
-    pattern: string,
-    options?: { query?: string; import?: string; eager?: boolean },
-  ): Record<string, unknown>;
+  glob(pattern: string, options: { query: "?raw"; import: "default"; eager: true }): Record<string, string>;
 }
