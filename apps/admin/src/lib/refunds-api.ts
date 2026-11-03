@@ -108,6 +108,8 @@ export type CreditHeldRow = {
   creditMinor: number;
   onInvoice: boolean;
   heldSince: string;
+  /** Second review, M1 (L48): received by the period's end but confirmed after it (absent from an older API). */
+  confirmedAfter?: boolean;
 };
 
 /** The ₹25 lakh check per gateway (core `paCbCheck`). */

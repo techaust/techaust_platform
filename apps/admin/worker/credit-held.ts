@@ -6,7 +6,9 @@
 // RA-41 (Settled by the lead on the safest reading, 2026-11-03 (08-C RA-41)): such credit was an advance whose GST was due when it arrived (s.13(2) CGST Act); unless
 // it is refunded or used before the period ends, the Owner declares it in GSTR-1 Table 11A for that period (Table 11A/11B and the refund voucher themselves are the
 // follow-up that must be done before the first live payment). `period` is a GSTR-3B return period by Settings › Tax's filing frequency ("2026-10" or "2026-Q3");
-// none: the latest period that has ended. Figures as of the period's last instant in IST: allocations written by then, refunds that went out by then.
+// none: the latest period that has ended. Figures as of the period's last instant in IST: allocations written by then, refunds that went out by then. Second
+// review, M1 (L48; Settled by the lead on the safest reading, 2026-11-03 (08-C RA-41)): a payment is on the list of the period its money ARRIVED in, whatever day
+// it was confirmed; `confirmedAfter` marks one confirmed after the period ended.
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { istDayEndMs, previousReturnPeriod, returnPeriodEnd, returnPeriodOf } from "@techaust/core/refunds";
 import { CREDIT_HELD_SQL } from "@techaust/db/refunds";
@@ -36,6 +38,7 @@ type Row = {
   net: number;
   credit: number;
   held_since_at: number | null;
+  confirmed_after: number;
 };
 
 export const creditHeld = new Hono<AppEnv>().get("/credit-held", query(creditHeldQuery), async (c) => {
@@ -77,6 +80,8 @@ export const creditHeld = new Hono<AppEnv>().get("/credit-held", query(creditHel
       onInvoice: r.net > 0,
       // the day the credit has been held since: the last allocation or release before the period's end, else the day the money arrived
       heldSince: r.held_since_at === null ? r.received_on : toIsoDate(istDate(r.held_since_at)),
+      // Second review, M1 (L48): received by the period's end but confirmed after it (listed by the day the money arrived; its allocations came later)
+      confirmedAfter: r.confirmed_after === 1,
     })),
     next: rows.length > CREDIT_HELD_PAGE && last ? encodeCursor({ k: last.received_on, id: last.id }) : null,
   });

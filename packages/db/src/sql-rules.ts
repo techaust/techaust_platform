@@ -121,19 +121,23 @@ export const paymentNetAtSql = (payment: string, at: string): string =>
   `(SELECT coalesce(sum(CASE pna.kind WHEN 'allocate' THEN pna.amount_minor ELSE -pna.amount_minor END), 0) FROM payment_allocations pna INDEXED BY payment_allocations_payment WHERE pna.payment_id = ${payment} AND pna.created_at <= ${at})`;
 
 /**
- * M6.5 (RA-41; review part 1, finding 3): payment row `p`'s credit held at instant `at`: its amount less what it held net then (`paymentNetAtSql`) and less its
- * refunds that had gone out by then (succeeded, settled at or before `at`; money still on its way back was still held: the safe side for Table 11A).
+ * M6.5 (RA-41; review part 1, finding 3): payment row `p`'s credit held at instant `at`, the last instant of IST day `day` (both SQL expressions): its amount less
+ * what it held net then (`paymentNetAtSql`) and less its refunds that had gone out by then (succeeded; money still on its way back was still held: the safe side
+ * for Table 11A). Second review, L4: a refund from credit (no release row) counts by the day it went out (`settled_on`, as the statement and "Collected" count
+ * it), so a bank refund paid before the period ended but recorded after it is not held at the end; a refund of an invoice's excess counts at its instant
+ * (`settled_at`), the instant its release row was written, so the two always cancel out together.
  */
-export const paymentFreeAtSql = (p: string, at: string): string =>
-  `(${p}.amount_minor - ${paymentNetAtSql(`${p}.id`, at)} - (SELECT coalesce(sum(pra.amount_minor), 0) FROM payment_refunds pra INDEXED BY payment_refunds_payment WHERE pra.payment_id = ${p}.id AND pra.status = 'succeeded' AND pra.settled_at <= ${at}))`;
+export const paymentFreeAtSql = (p: string, at: string, day: string): string =>
+  `(${p}.amount_minor - ${paymentNetAtSql(`${p}.id`, at)} - (SELECT coalesce(sum(pra.amount_minor), 0) FROM payment_refunds pra INDEXED BY payment_refunds_payment WHERE pra.payment_id = ${p}.id AND pra.status = 'succeeded'
+     AND CASE WHEN pra.release_allocation_id IS NULL THEN pra.settled_on <= ${day} ELSE pra.settled_at <= ${at} END))`;
 
 /**
  * M6.5 (RA-41; Settled by the lead on the safest reading, 2026-11-03 (08-C RA-41); review part 1, finding 3): `overpaymentAdvanceSql` at instant `at` (a period's
- * end): payment row `p` held credit then that may be an advance (on no invoice, not in INR, or above the proviso `proviso`). A db test holds it to core
- * `overpaymentAdvanceLine` over the figures at `at`.
+ * end, the last instant of IST day `day`): payment row `p` held credit then that may be an advance (on no invoice, not in INR, or above the proviso `proviso`).
+ * A db test holds it to core `overpaymentAdvanceLine` over the figures at `at`.
  */
-export const overpaymentAdvanceAtSql = (p: string, at: string, proviso: string): string =>
-  `(${paymentFreeAtSql(p, at)} > 0 AND (${paymentNetAtSql(`${p}.id`, at)} <= 0 OR ${p}.currency <> 'INR' OR ${paymentFreeAtSql(p, at)} > ${proviso}))`;
+export const overpaymentAdvanceAtSql = (p: string, at: string, day: string, proviso: string): string =>
+  `(${paymentFreeAtSql(p, at, day)} > 0 AND (${paymentNetAtSql(`${p}.id`, at)} <= 0 OR ${p}.currency <> 'INR' OR ${paymentFreeAtSql(p, at, day)} > ${proviso}))`;
 
 /**
  * The status of an issued document for these figures (SQL expressions): the twin of core `ledgerStatusOf(total, paid, credited, tds)` with `settled` = paid + TDS

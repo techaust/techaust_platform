@@ -1129,10 +1129,11 @@ describe("RA-41: credit held at a period's end (review part 1, finding 3)", () =
     // the twin: overpaymentAdvanceAtSql equals core overpaymentAdvanceLine over the figures at `at`
     for (const p of [loose, proviso, above, later, refunded]) {
       const r = await first<{ line: number; free: number; net: number }>(
-        `SELECT ${overpaymentAdvanceAtSql("p", "?2", "100000")} AS line, ${paymentFreeAtSql("p", "?2")} AS free, ${paymentNetAtSql("p.id", "?2")} AS net
+        `SELECT ${overpaymentAdvanceAtSql("p", "?2", "?3", "100000")} AS line, ${paymentFreeAtSql("p", "?2", "?3")} AS free, ${paymentNetAtSql("p.id", "?2")} AS net
          FROM payments p WHERE p.id = ?1`,
         p,
         at,
+        "2029-12-31",
       );
       if (!r) throw new Error("row");
       const core = overpaymentAdvanceLine({
@@ -1150,12 +1151,100 @@ describe("RA-41: credit held at a period's end (review part 1, finding 3)", () =
     )?.received_on as string;
     const nextPage = await all<{ id: string }>(CREDIT_HELD_SQL, at, "2029-12-31", firstDay, firstId, 100_000);
     expect(nextPage.map((r) => r.id)).not.toContain(firstId);
-    // before the payments were confirmed nothing of theirs is held
+    // a period that ended before the money arrived (received 2026-11-01) holds none of it
     expect(
-      (await all<{ id: string }>(CREDIT_HELD_SQL, T - 1, "2029-12-31", "", "", 100_000)).filter((r) =>
+      (await all<{ id: string }>(CREDIT_HELD_SQL, T - 1, "2026-10-31", "", "", 100_000)).filter((r) =>
         [loose, above, later].includes(r.id),
       ),
     ).toEqual([]);
+  });
+
+  /** Every page of CREDIT_HELD_SQL for these binds, only the rows of `ids`. */
+  async function heldRows(at: number, day: string, ids: string[]) {
+    type Held = { id: string; received_on: string; credit: number; net: number; confirmed_after: number };
+    const rows: Held[] = [];
+    for (let k = "", id = "", pages = 0; pages < 100; pages++) {
+      const page = await all<Held>(CREDIT_HELD_SQL, at, day, k, id, 100_000);
+      rows.push(...page.slice(0, 50));
+      const last = page[49];
+      if (page.length <= 50 || !last) break;
+      k = last.received_on;
+      id = last.id;
+    }
+    return rows.filter((r) => ids.includes(r.id));
+  }
+
+  it("second review, M1 (L48): money received in the period but confirmed after it ended is on that period's list, marked; money received after it is not", async () => {
+    const { owner } = await setup();
+    const clientId = await mkClientRow();
+    // the period ends before T (every `pay` row is confirmed at T)
+    const end = T - 86_400_000;
+    // received 30 Oct with no invoice, confirmed after the end; its allocation, made at the confirm, is after the end too
+    const late = await pay(clientId, owner, { amount: 150_000, receivedOn: "2026-10-30" });
+    const inv = await mkIssued(clientId);
+    await alloc(late, inv, 118_000);
+    await recompute(inv);
+    // received the day after the period's last day: never on it
+    const after = await pay(clientId, owner, { amount: 150_000, receivedOn: "2026-11-01" });
+    // received and confirmed within the period (a row written straight in): listed, not marked
+    const inTime = uuidv7();
+    await run(
+      `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, recorded_by, recorded_at, verified_by, verified_at)
+       VALUES (?1, ?2, 'payment', 'manual', 'confirmed', 'INR', 90000, '2026-10-29', 'neft', ?3, ?4, ?3, ?4)`,
+      inTime,
+      clientId,
+      owner,
+      end - 1_000,
+    );
+    const rows = await heldRows(end, "2026-10-31", [late, after, inTime]);
+    expect(
+      Object.fromEntries(rows.map((r) => [r.id, { credit: r.credit, net: r.net, after: r.confirmed_after }])),
+    ).toEqual({
+      [late]: { credit: 150_000, net: 0, after: 1 },
+      [inTime]: { credit: 90_000, net: 0, after: 0 },
+    });
+  });
+
+  it("second review, L4: a refund from credit counts by the day it went out (settled_on), not the instant it was recorded", async () => {
+    const { owner, sess } = await setup();
+    const clientId = await mkClientRow();
+    const now = Date.now();
+    // confirmed before the period ended (`at`), on no invoice
+    const p = uuidv7();
+    await run(
+      `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, recorded_by, recorded_at, verified_by, verified_at)
+       VALUES (?1, ?2, 'payment', 'manual', 'confirmed', 'INR', 70000, '2026-10-20', 'neft', ?3, ?4, ?3, ?4)`,
+      p,
+      clientId,
+      owner,
+      now - 120_000,
+    );
+    const at = now - 60_000;
+    // a bank refund of all of it, paid on 25 Oct (before the period's last day) but recorded only now (after `at`)
+    const way = {
+      kind: "manual" as const,
+      mode: "neft",
+      referenceNorm: `UTRL4${next()}`,
+      paidOn: "2026-10-25",
+      paidTo: "original" as const,
+    };
+    expect(
+      await refundBatch(args({ paymentId: p, sessionId: sess, amountMinor: 70_000, way, now }), owner),
+    ).toBe(true);
+    expect(await first("SELECT settled_on FROM payment_refunds WHERE payment_id = ?1", p)).toEqual({
+      settled_on: "2026-10-25",
+    });
+    // nothing was held at the end of a period that ended on 31 Oct
+    expect(await heldRows(at, "2026-10-31", [p])).toEqual([]);
+    // a period that ended before the refund went out (24 Oct) still held it all
+    expect(
+      await first<{ free: number }>(
+        `SELECT ${paymentFreeAtSql("p", "?2", "?3")} AS free FROM payments p WHERE p.id = ?1`,
+        p,
+        at,
+        "2026-10-24",
+      ),
+    ).toEqual({ free: 70_000 });
   });
 
   it("CREDIT_HELD_SQL reads payments through payments_confirmed, with no scan of payments", async () => {
