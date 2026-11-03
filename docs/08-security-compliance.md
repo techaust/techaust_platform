@@ -208,7 +208,7 @@ See [05 §6](05-architecture.md). Key controls:
 
 ### 6.3 Code rollback
 - `wrangler rollback --name techaust-platform-<app> --env production` (to the previous version), run by the owner locally or through a manual workflow. Migrations are backward-compatible ([05 §5.5](05-architecture.md)), so code rollback never needs a DB rollback.
-- Cut-over rollback (Phase 7): the old `techaust-web` Worker stays deployed. Rollback = re-attach `techaust.com` to it (a DNS/route change; your approval).
+- Cut-over (Phase 7 L8; owner, 2026-11-03): the old `techaust-web` Worker is **deleted** before `techaust.com` is attached to the new `web` Worker, so there is no fallback to the old site. A problem after the cut-over is fixed forward, or the new `web` Worker is rolled back to its previous version as above.
 
 ---
 

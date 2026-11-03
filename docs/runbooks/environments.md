@@ -1,7 +1,7 @@
 # Runbook: environments and Cloudflare resources
 
 Cloudflare account: **Techaust Technologies** (`153cd8b23edd2bc9dec570ffaf467c2f`), owner `admin@techaust.com`. _Last updated 2026-11-03 (the fourth admin Worker, `techaust-platform-admin-invoices`: its row and bindings, the seven-step deploy order, the four-Worker health check and the staging rollback order; before that 2026-10-30, audit workflow changes: the explicit deploy order, the build apart from the token, the health checks, Workers Traces on staging; FX-1, 2026-10-29: R2, Browser Run, the jobs crons, `ADMIN_JOBS`, five Workers). Taken from the committed `wrangler*.jsonc` files, the workflows and the record, not read from the dashboard._
-The live site is the old Worker **`techaust-web`**. **Never deploy to, rename or delete it** (rollback target until Phase 7 + 2 weeks).
+The live site is the old Worker **`techaust-web`**. **Never deploy to, rename or delete it** until Phase 7 L8, where it is deleted (with the owner's go-ahead at the time) just before techaust.com is attached to the new `web` Worker (owner, 2026-11-03: no fallback kept).
 
 ## Staging (created 2026-10-06, P5.6, approved by the owner)
 
