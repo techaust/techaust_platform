@@ -77,10 +77,14 @@
   padding-bottom: 0;
 }
 
+/* a field focused after a refused submit is scrolled into view whole (`focusBlock` in refund-dialog.tsx): its label clear of the sticky title above, its
+   error clear of the sticky action bar below (the dialog's scroll padding is their real heights; this is the breathing room; review part 2, P2-7, P2-13) */
 .rf-form .field,
-.rf-choose .field {
+.rf-choose .field,
+.rf-check,
+.rf-export {
   margin-bottom: 0;
-  scroll-margin-bottom: var(--space-24);
+  scroll-margin-block: var(--space-3);
 }
 
 .pay-form.rf-form {
@@ -135,8 +139,14 @@
   outline-offset: 2px;
 }
 
+/* review part 2, P2-1: the house radio (20 px, the primary button's colour, as `.radio input` and `.pay-resolve__opt input`), centred on the title's first
+   line (a 24 px line: 2 px above) */
 .rf-pick__opt input {
-  margin-top: 0.1875rem;
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  min-height: 0;
+  margin: 0.125rem 0 0;
+  accent-color: var(--color-btn-primary-bg);
 }
 
 .rf-pick__text {
@@ -273,6 +283,14 @@
   padding: var(--space-4) 0;
 }
 
+/* review part 2, P2-12: in the table the state chip and the day keep one line each (the payment lists let a long chip wrap; here every chip is short) */
+@media (min-width: 48rem) {
+  .pay-table.rf-tab__table .spill,
+  .pay-table.rf-tab__table .rf-date {
+    white-space: nowrap;
+  }
+}
+
 /* in the Refunds tab's cards the actions sit at the card's top right: kept narrow and right-aligned so the date beside them keeps its line */
 @media (max-width: 47.99rem) {
   .rf-tab__table .rf-acts {
@@ -311,6 +329,24 @@
 
 .rcn-seen .icon {
   color: var(--color-text-accent);
+}
+
+/* the bank tick and the Owner's action in one cell (review part 2, P2-2): "Seen in bank statement" with its "Undo" beside it, or "Tick as seen" */
+.rcn-bank {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-3);
+}
+
+.rcn-undo,
+.rcn-tick {
+  min-height: var(--target-min);
+  white-space: nowrap;
+}
+
+.rcn-undo {
+  padding-inline: 0;
 }
 
 .rcn-entity {

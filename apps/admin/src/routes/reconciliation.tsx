@@ -140,6 +140,13 @@ function usePages<T extends { id: string }>(
   const [more, setMore] = useState<T[]>([]);
   const [next, setNext] = useState<string | null | undefined>(undefined);
   const [loading, setLoading] = useState(false);
+  // Review part 2, P2-13: a new key (a tick, an undo) starts again from the first page, so no later page's row stays stale or shows twice.
+  const [seen, setSeen] = useState(key);
+  if (seen !== key) {
+    setSeen(key);
+    setMore([]);
+    setNext(undefined);
+  }
   const rows = [...(first.data?.items ?? []), ...more];
   const cursor = next === undefined ? (first.data?.next ?? null) : next;
   return {
@@ -206,7 +213,9 @@ function Settlements({ owner }: { owner: boolean }) {
     {
       key: "utr",
       header: ZO_UI.colUtr,
-      cell: (r) => <span className="docno break">{r.utr ?? r.settlement_id}</span>,
+      // Review part 2, P2-11: only the bank's UTR stands here (Razorpay's settlement id is in the settlement's dialog, under its own name)
+      cell: (r) =>
+        r.utr ? <span className="docno break">{r.utr}</span> : <span className="pay-lines__meta">{"–"}</span>,
     },
     {
       key: "net",
@@ -238,14 +247,32 @@ function Settlements({ owner }: { owner: boolean }) {
       ),
     },
     {
+      // Review part 2, P2-2: the bank tick and the Owner's action share one cell, so the Owner's "Tick as seen" or "Undo" is in view at 1280 with the menu open
       key: "bank",
       header: ZO_UI.colBank,
       cell: (r) =>
         r.bank_match_id ? (
-          <span className="rcn-seen">
-            <CheckCircle size={16} />
-            {ZO_UI.seenInBank}
+          <span className="rcn-bank">
+            <span className="rcn-seen">
+              <CheckCircle size={16} />
+              {ZO_UI.seenInBank}
+            </span>
+            {owner && (
+              <button type="button" className="btn btn--text rcn-undo" onClick={() => setUndoing(r)}>
+                {ZO_UI.undoSeen}
+                <span className="visually-hidden">{` ${day(r.settled_on)}`}</span>
+              </button>
+            )}
           </span>
+        ) : owner ? (
+          <button
+            type="button"
+            className="btn btn--secondary rcn-tick"
+            onClick={() => setTicking({ kind: "settlement", id: r.id, label: day(r.settled_on) })}
+          >
+            {ZO_UI.tickSeen}
+            <span className="visually-hidden">{` ${day(r.settled_on)}`}</span>
+          </button>
         ) : (
           <span className="pay-lines__meta">{"–"}</span>
         ),
@@ -264,26 +291,6 @@ function Settlements({ owner }: { owner: boolean }) {
             rowKey={(r) => r.id}
             loading={pages.first.state === "loading"}
             skeletonRows={4}
-            actions={
-              owner
-                ? (r) =>
-                    r.bank_match_id ? (
-                      <button type="button" className="btn btn--text" onClick={() => setUndoing(r)}>
-                        {ZO_UI.undoSeen}
-                        <span className="visually-hidden">{` ${day(r.settled_on)}`}</span>
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="btn btn--secondary"
-                        onClick={() => setTicking({ kind: "settlement", id: r.id, label: day(r.settled_on) })}
-                      >
-                        {ZO_UI.tickSeen}
-                        <span className="visually-hidden">{` ${day(r.settled_on)}`}</span>
-                      </button>
-                    )
-                : undefined
-            }
             empty={
               <EmptyState icon={<Landmark />} title={ZO_UI.noSettlements}>
                 <p>{ZO_UI.noSettlementsBody}</p>
@@ -334,7 +341,11 @@ function SettlementDialog(props: { row: SettlementRow; onClose: () => void }) {
         <dl className="inv-facts">
           <div>
             <dt>{ZO_UI.colUtr}</dt>
-            <dd className="docno break">{r.utr ?? r.settlement_id}</dd>
+            <dd className={r.utr ? "docno break" : undefined}>{r.utr ?? "–"}</dd>
+          </div>
+          <div>
+            <dt>{ZO_UI.settlementId}</dt>
+            <dd className="docno break">{r.settlement_id}</dd>
           </div>
           <div>
             <dt>{ZO_UI.colNet}</dt>
@@ -609,7 +620,7 @@ function TickDialog(props: {
           <FormField id="rcn-on" label={ZO_UI.statementOn} error={error}>
             {(a) => <DateField {...a} {...dates.bind("on")} value={on} max={todayIst()} onChange={setOn} />}
           </FormField>
-          <FormField id="rcn-ref" label={ZO_UI.statementRef}>
+          <FormField id="rcn-ref" label={ZO_UI.statementRef} optional>
             {(a) => (
               <input
                 {...a}

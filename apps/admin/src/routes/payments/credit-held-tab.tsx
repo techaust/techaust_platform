@@ -122,7 +122,7 @@ export function CreditHeldTab(_props: { role: Role }) {
             loading={list.state === "loading"}
             skeletonRows={4}
             empty={
-              <EmptyState icon={<Wallet />} title={ZO_UI.creditHeldEmpty}>
+              <EmptyState icon={<Wallet />} title={ZO_UI.creditHeldEmpty.replace(/\.$/, "")}>
                 {null}
               </EmptyState>
             }

@@ -180,6 +180,7 @@ function LedgerPanel(props: {
 }) {
   const { view: v, panel: p, role } = props;
   const [dialog, setDialog] = useDialogState<NonNullable<Dialog>>("pay-h");
+  const [reduced, setReduced] = useState(0);
   const toast = useToast();
   const live = v.status !== "void" && !v.client.anonymised && PAYABLE.includes(v.type);
   const canRecord = live && allowed(role, "payments.record") && p.balanceMinor > 0;
@@ -363,7 +364,8 @@ function LedgerPanel(props: {
               stage={p.realisation.stage}
               canAdd={allowed(role, "realisation.reduce") && !v.client.anonymised}
               onAdd={() => setDialog("reduce")}
-              refreshKey={`${v.updatedAt}`}
+              // Review part 2, P2-6: recording a reduction doesn't move the invoice's `updated_at`, so its own count reloads the list
+              refreshKey={`${v.updatedAt}:${reduced}`}
             />
           }
         />
@@ -390,7 +392,10 @@ function LedgerPanel(props: {
           documentId={v.id}
           currency={v.currency}
           onClose={() => setDialog(null)}
-          onDone={() => done(ZO_UI.reductionSaved)}
+          onDone={() => {
+            setReduced((n) => n + 1);
+            done(ZO_UI.reductionSaved);
+          }}
         />
       )}
 

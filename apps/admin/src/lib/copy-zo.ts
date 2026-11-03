@@ -201,7 +201,8 @@ export const ZO_UI = {
   undoSeen: "Undo",
   undoReason: "Why it is undone",
   statementOn: "Statement date",
-  statementRef: "Statement reference (optional)",
+  /** Review part 2, P2-13: "(optional)" is FormField's own marker, no longer part of the words. */
+  statementRef: "Statement reference",
   ticked: "Ticked as seen in the bank statement.",
   unticked: "Tick undone.",
   fetchNow: "Fetch now",
@@ -248,7 +249,7 @@ export const ZO_UI = {
   reductions: "Bank-approved reductions",
   reductionAdd: "Record bank's reduction",
   reductionRow: (amount: string, day: string, ref: string) => `${amount} approved ${day}, reference ${ref}`,
-  reductionDeclaration: "On our own declaration (up to ₹10 lakh)",
+  reductionDeclaration: "On our own declaration (up to ₹10 lakh an invoice)",
   reductionDeclarationHint:
     "Tick only when the bank allowed it on our declaration rather than its own approval letter.",
   reductionApprovedOn: "Approved on",
@@ -280,6 +281,27 @@ export const ZO_UI = {
   inrHint: "As the bank's advice shows it. It can be recorded once.",
   inrDebited: (amount: string) => `INR debited ${amount}`,
   inrSaved: "INR amount recorded.",
+
+  // ---- review part 2 (designer pass 2's staff drafts for the lead under the delegation; 07-ZO "Staff lines" S39–S45) ----
+  /** S39, P2-5: the "credit note first" step on a debit note (M5.3 never issues a credit note on a debit note). */
+  debitNoteNoCredit:
+    "A credit note can't be issued on a debit note, so only what was paid above what this debit note owes can be refunded from here.",
+  /** S40, P2-3: a refund made in the gateway's dashboard that the invoice's excess can't cover (the server's same rule, L7). */
+  outsideNoteFirst: (provider: string) =>
+    `${gw(provider)} has already sent this money back, but the invoice still counts it as paid. Issue a credit note on this invoice for the part its excess doesn't cover, then record this refund again.`,
+  openInvoice: (number: string) => `Open invoice ${number}`,
+  /** S41, P2-13: the amount field of a lost dispute. */
+  disputeAmountLabel: "Amount the gateway took back",
+  /** S42, L47 (RB-43 after the fact; settled by the lead on the safest reading, 2026-11-03): no tick when the money has already gone back. */
+  exportLineAfter:
+    "This client is outside India and the money has already gone back. Ask your bank to approve the lower amount for this invoice (FEMA Reg. 6), then record it with “Record bank's reduction” on the invoice. Until then FEMA treats the invoice as not fully realised.",
+  /** S43, P2-13: the wait line of a refund that can't be cancelled (with the gateway). */
+  waitRetry: (time: string) => `Try again after ${time} IST.`,
+  /** S44, P2-8: the Refunds tab's count (S31's count words without "read"). */
+  refundCount: (n: number, more: boolean) =>
+    `${n}${more ? "+" : ""} ${n === 1 && !more ? "refund" : "refunds"}`,
+  /** S45, P2-11: a Razorpay settlement's own id (it is not a bank UTR; the UTR column shows "–" without one). */
+  settlementId: "Razorpay settlement ID",
 
   // ---- the refunds register (Reports) ----
   registerTitle: "Refunds register",

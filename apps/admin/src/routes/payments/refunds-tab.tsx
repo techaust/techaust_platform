@@ -8,12 +8,14 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { paymentsApi, type ReviewItem } from "../../api.ts";
 import { type Column, DataTable, FilterBar } from "../../components/data-table.tsx";
+import { Modal } from "../../components/dialog.tsx";
 import { EmptyState } from "../../components/display.tsx";
 import { RotateCcw } from "../../components/icons.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { allowed } from "../../lib/access.ts";
 import { DISPUTE_KINDS, ZO_UI } from "../../lib/copy-zo.ts";
+import { INV_COPY } from "../../lib/invoices.ts";
 import { amountText, payErrorText } from "../../lib/payments.ts";
 import { type RefundView, refundsApi } from "../../lib/refunds-api.ts";
 import { day } from "./parts.tsx";
@@ -64,7 +66,7 @@ export function RefundsTab(props: { role: Role }) {
       header: ZO_UI.colRequested,
       card: "title",
       cell: (r) => (
-        <Link to={`/payments/${encodeURIComponent(r.paymentId)}`} className="tnum">
+        <Link to={`/payments/${encodeURIComponent(r.paymentId)}`} className="tnum rf-date">
           {day(istDay(r.requestedAt))}
         </Link>
       ),
@@ -110,9 +112,8 @@ export function RefundsTab(props: { role: Role }) {
           setNext(undefined);
           setStatus(null);
         }}
-        result={
-          list.state === "ready" ? `${rows.length}${cursor ? "+" : ""} ${ZO_UI.refundsTab.toLowerCase()}` : ""
-        }
+        // review part 2, P2-8: "1 refund", "{n} refunds", "50+ refunds" (S44)
+        result={list.state === "ready" ? ZO_UI.refundCount(rows.length, cursor !== null) : ""}
       />
       {list.state === "failed" ? (
         <LoadFailed error={list.error} onRetry={() => list.reload()} />
@@ -177,10 +178,18 @@ export function ReviewRefund(props: {
     () => (it.document_id ? paymentsApi.invoicePanel(it.document_id) : Promise.resolve(null)),
     it.document_id ?? "",
   );
-  if (pay.state !== "ready" || panel.state !== "ready") {
-    if (pay.state === "failed" || panel.state === "failed")
-      return (
-        <div className="rf-tab__fail">
+  const dispute = DISPUTE_KINDS.includes(it.kind);
+  // Review part 2, P2-13: the dialog opens at once, its body a skeleton (or the failed read with "Try again") while the payment and the invoice load, so
+  // the press is never dead; Escape and Cancel close it as usual.
+  if (pay.state !== "ready" || panel.state !== "ready")
+    return (
+      <Modal
+        open
+        title={dispute ? ZO_UI.disputeTitle : ZO_UI.recordTitle}
+        onClose={props.onClose}
+        className="dialog--refund"
+      >
+        {pay.state === "failed" || panel.state === "failed" ? (
           <LoadFailed
             error={pay.state === "failed" ? pay.error : panel.error}
             onRetry={() => {
@@ -188,16 +197,25 @@ export function ReviewRefund(props: {
               panel.reload();
             }}
           />
+        ) : (
+          <div className="dialog__body" aria-busy="true">
+            <span className="skeleton" style={{ width: "60%" }} />
+            <span className="skeleton" style={{ width: "80%" }} />
+            <span className="skeleton" style={{ width: "45%" }} />
+          </div>
+        )}
+        <div className="dialog__actions">
+          <button type="button" className="btn btn--secondary" onClick={props.onClose}>
+            {INV_COPY.cancel}
+          </button>
         </div>
-      );
-    return null;
-  }
+      </Modal>
+    );
   const p = pay.data.payment;
   const doc = panel.data;
   const held = doc?.payments.find((x) => x.paymentId === p.id);
   const free = (doc as { receipts?: Record<string, { freeMinor: number }> } | null)?.receipts?.[p.id]
     ?.freeMinor;
-  const dispute = DISPUTE_KINDS.includes(it.kind);
   const settledOn = new Date(it.created_at + 19_800_000).toISOString().slice(0, 10);
   return (
     <RefundDialog
