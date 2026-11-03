@@ -110,7 +110,10 @@ describe("refunds and settlements on the leads queue [L37, L11]", () => {
     expect(await processRefundFamily(env, { kind: "refund.sweep", asOf: Date.now() } as never, 1)).toBe(
       "ack",
     );
-    await processRefundDeadLetter({ DB: realEnv.DB } as never, { kind: "refund.check", refundId: uuidv7() });
+    await processRefundDeadLetter(
+      { DB: realEnv.DB } as never,
+      { kind: "refund.check", refundId: uuidv7() } as never,
+    );
     expect(
       await realEnv.DB.prepare("SELECT count(*) AS n FROM review_items WHERE kind = 'refund_stuck'").first<{
         n: number;
