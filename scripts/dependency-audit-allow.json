@@ -48,14 +48,6 @@
     "expires": "2026-11-13"
   },
   {
-    "advisory": "GHSA-wq5f-xc86-pv6w",
-    "package": "sharp",
-    "reason": "Dev tools only (sharp 0.35.4 under miniflare in tests; the website's own sharp is already 0.35.5). Fixed in sharp 0.35.5; waits for a Cloudflare tooling update. Temporary.",
-    "added": "2026-10-30",
-    "addedBy": "builder, audit-workflows (A1 3); for the lead to confirm",
-    "expires": "2026-11-13"
-  },
-  {
     "advisory": "GHSA-ph9p-34f9-6g65",
     "package": "tmp",
     "reason": "Dev tools only (@lhci/cli, Lighthouse CI on the CI runner with no secrets). Fixed in tmp 0.2.6; waits for an @lhci/cli update. Temporary.",
