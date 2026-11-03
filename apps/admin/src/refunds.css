@@ -273,8 +273,17 @@
   padding: var(--space-4) 0;
 }
 
-.rf-tab__table {
-  overflow-x: auto;
+/* in the Refunds tab's cards the actions sit at the card's top right: kept narrow and right-aligned so the date beside them keeps its line */
+@media (max-width: 47.99rem) {
+  .rf-tab__table .rf-acts {
+    justify-items: end;
+    max-width: 11rem;
+    text-align: end;
+  }
+
+  .rf-tab__table .rf-acts__buttons {
+    justify-content: flex-end;
+  }
 }
 
 /* ---------- reconciliation (G5) ---------- */
