@@ -5,17 +5,23 @@ import "../../refunds.css";
 import type { Role } from "@techaust/core/permissions";
 import type { RefundStatus } from "@techaust/core/refunds";
 import { useState } from "react";
+import { Link } from "react-router";
 import { paymentsApi, type ReviewItem } from "../../api.ts";
-import { FilterBar } from "../../components/data-table.tsx";
+import { type Column, DataTable, FilterBar } from "../../components/data-table.tsx";
 import { EmptyState } from "../../components/display.tsx";
 import { RotateCcw } from "../../components/icons.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
+import { allowed } from "../../lib/access.ts";
 import { DISPUTE_KINDS, ZO_UI } from "../../lib/copy-zo.ts";
-import { payErrorText } from "../../lib/payments.ts";
+import { amountText, payErrorText } from "../../lib/payments.ts";
 import { type RefundView, refundsApi } from "../../lib/refunds-api.ts";
+import { day } from "./parts.tsx";
 import { RefundDialog } from "./refund-dialog.tsx";
-import { RefundRows } from "./refund-parts.tsx";
+import { isOpen, RefundActions, RefundState } from "./refund-parts.tsx";
+
+/** The IST day of a moment (UTC ms). */
+const istDay = (ms: number) => new Date(ms + 19_800_000).toISOString().slice(0, 10);
 
 const STATES: RefundStatus[] = ["requested", "processing", "succeeded", "failed"];
 
@@ -51,6 +57,38 @@ export function RefundsTab(props: { role: Role }) {
     }
   }
 
+  const owner = allowed(props.role, "refunds.issue");
+  const columns: Column<RefundView>[] = [
+    {
+      key: "asked",
+      header: ZO_UI.colRequested,
+      card: "title",
+      cell: (r) => (
+        <Link to={`/payments/${encodeURIComponent(r.paymentId)}`} className="tnum">
+          {day(istDay(r.requestedAt))}
+        </Link>
+      ),
+    },
+    {
+      key: "client",
+      header: ZO_UI.colClient,
+      cell: (r) => (
+        <span>
+          {r.clientName ?? ""} {r.clientCode && <span className="docno">{r.clientCode}</span>}
+        </span>
+      ),
+    },
+    { key: "how", header: ZO_UI.colWay, cell: (r) => ZO_UI.origin(r.origin, r.provider) },
+    { key: "reason", header: ZO_UI.colReason, cell: (r) => ZO_UI.reason[r.reasonCode] },
+    {
+      key: "amount",
+      header: ZO_UI.colAmount,
+      align: "end",
+      cell: (r) => <span className="tnum pay-lines__nowrap">{amountText(r.amountMinor, r.currency)}</span>,
+    },
+    { key: "status", header: ZO_UI.colStatus, cell: (r) => <RefundState row={r} /> },
+  ];
+
   return (
     <div className="rf-tab">
       <FilterBar
@@ -78,24 +116,29 @@ export function RefundsTab(props: { role: Role }) {
       />
       {list.state === "failed" ? (
         <LoadFailed error={list.error} onRetry={() => list.reload()} />
-      ) : list.state === "loading" ? (
-        <div className="rf-tab__loading" aria-busy="true">
-          <p className="visually-hidden" role="status">
-            Loading refunds
-          </p>
-          <span className="skeleton" style={{ width: "70%" }} />
-          <span className="skeleton" style={{ width: "90%" }} />
-          <span className="skeleton" style={{ width: "60%" }} />
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="dtable dtable--empty">
-          <EmptyState icon={<RotateCcw />} title={status ? ZO_UI.refundsEmptyFiltered : ZO_UI.refundsEmpty}>
-            {null}
-          </EmptyState>
-        </div>
       ) : (
-        <div className="rf-tab__table">
-          <RefundRows rows={rows} role={props.role} caption={ZO_UI.refundsTab} client onChanged={changed} />
+        <div className="clients-table pay-table rf-tab__table">
+          <DataTable
+            caption={ZO_UI.refundsTab}
+            columns={columns}
+            rows={rows}
+            rowKey={(r) => r.id}
+            loading={list.state === "loading"}
+            skeletonRows={4}
+            actions={
+              owner
+                ? (r) => (isOpen(r.status) ? <RefundActions row={r} onChanged={changed} /> : null)
+                : undefined
+            }
+            empty={
+              <EmptyState
+                icon={<RotateCcw />}
+                title={status ? ZO_UI.refundsEmptyFiltered : ZO_UI.refundsEmpty}
+              >
+                {null}
+              </EmptyState>
+            }
+          />
         </div>
       )}
       {cursor && (

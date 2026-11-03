@@ -36,7 +36,7 @@ export const ZO_UI = {
   tryAgain: "Try again",
   cancelRefund: "Cancel refund",
   /** L44 and L46: the buttons wait 15 minutes after the last try (the gateway may still be answering). */
-  waitUntil: (time: string) => `Try again or cancel after ${time}.`,
+  waitUntil: (time: string) => `Try again or cancel after ${time} IST.`,
   refundInProgress: (amount: string) => `Refund in progress ${amount}`,
   refundInProgressLabel: "Refund in progress",
   refundInProgressHint:
@@ -60,6 +60,9 @@ export const ZO_UI = {
   sourcePending: "The whole payment (not confirmed yet)",
   sourcePendingHint: "A payment waiting for its check goes back in full through its own gateway.",
   pickPayment: "Payment",
+  paymentReceived: "Payment received",
+  paymentFact: (amount: string, day: string) => `${amount} on ${day}`,
+  invoiceLabel: "Invoice",
   pickPaymentOption: (day: string, amount: string) => `Received ${day}: ${amount} available`,
   amountLabel: "Amount to refund",
   amountMost: (amount: string) => `At most ${amount}.`,
@@ -259,6 +262,32 @@ export const ZO_UI = {
   registerTitle: "Refunds register",
   registerHint: "Every refund that went out in the year, with its payment, invoice and credit note.",
 } as const;
+
+/** A GSTR-3B period as people say it: "2026-11" → "November 2026", "2026-Q4" → "October to December 2026" (anything else as it is). */
+export function periodText(period: string): string {
+  const MONTHS = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
+  const m = /^(\d{4})-(\d{2})$/.exec(period);
+  if (m) return `${MONTHS[Number(m[2]) - 1] ?? m[2]} ${m[1]}`;
+  const q = /^(\d{4})-Q([1-4])$/.exec(period);
+  if (q) {
+    const first = (Number(q[2]) - 1) * 3;
+    return `${MONTHS[first]} to ${MONTHS[first + 2]} ${q[1]}`;
+  }
+  return period;
+}
 
 /** The status chip's tone and icon (icon and words, never colour alone; docs/06 §5.5). */
 export const REFUND_PILLS: Record<

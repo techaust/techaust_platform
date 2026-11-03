@@ -19,7 +19,7 @@ import { FormField } from "../../components/form.tsx";
 import { Alert, FileText } from "../../components/icons.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
 import { FieldError, Notice } from "../../components/ui.tsx";
-import { ZO_UI } from "../../lib/copy-zo.ts";
+import { periodText, ZO_UI } from "../../lib/copy-zo.ts";
 import { dateError } from "../../lib/date-field.ts";
 import { INV_COPY } from "../../lib/invoices.ts";
 import { amountText, MODE_LABELS, payErrorText, plainAmount, todayIst } from "../../lib/payments.ts";
@@ -162,17 +162,18 @@ function RefundForm(props: RefundDialogProps & { payment: ResolvedPayment; onBus
         ...(props.document ? (["document"] as const) : []),
         ...(p.freeMinor > 0 || !props.document ? (["credit"] as const) : []),
       ];
-  const [source, setSource] = useState<Source>(offered[0] ?? "credit");
-  const paymentId = p.id;
-  const provider = p.provider;
-  const gatewayPaid = provider !== "manual";
-  const [way, setWay] = useState<Way>(gatewayPaid ? "gateway" : "manual");
   const mostOf = (s: Source) =>
     s === "pending"
       ? p.amountMinor
       : s === "document"
         ? Math.min(props.document?.excessMinor ?? 0, p.holdingMinor ?? 0)
         : p.freeMinor;
+  // the first source that holds money is chosen to start with (an invoice with no excess leaves the credit chosen)
+  const [source, setSource] = useState<Source>(offered.find((s) => mostOf(s) > 0) ?? offered[0] ?? "credit");
+  const paymentId = p.id;
+  const provider = p.provider;
+  const gatewayPaid = provider !== "manual";
+  const [way, setWay] = useState<Way>(gatewayPaid ? "gateway" : "manual");
   const most = mostOf(source);
   const noteFirst = source === "document" && !outside && most <= 0;
   const [amount, setAmount] = useState(() =>
@@ -357,12 +358,12 @@ function RefundForm(props: RefundDialogProps & { payment: ResolvedPayment; onBus
       <div className="dialog__body pay-form rf-form">
         <dl className="inv-facts rf-facts">
           <div>
-            <dt>{ZO_UI.pickPayment}</dt>
-            <dd className="tnum">{`${amountText(p.amountMinor, cur)} · ${day(p.receivedOn)}`}</dd>
+            <dt>{ZO_UI.paymentReceived}</dt>
+            <dd className="tnum">{ZO_UI.paymentFact(amountText(p.amountMinor, cur), day(p.receivedOn))}</dd>
           </div>
           {props.document?.number && (
             <div>
-              <dt>{INV_COPY.colNumber}</dt>
+              <dt>{ZO_UI.invoiceLabel}</dt>
               <dd className="docno">{props.document.number}</dd>
             </div>
           )}
@@ -649,7 +650,7 @@ function RefundForm(props: RefundDialogProps & { payment: ResolvedPayment; onBus
             {source === "credit" && f?.ra41.showLine && (
               <div className="pay-seen pay-warn" role="note">
                 <Alert size={20} />
-                <p>{ZO_UI.ra41Line(f.ra41.receivedPeriod, f.ra41.refundPeriod)}</p>
+                <p>{ZO_UI.ra41Line(periodText(f.ra41.receivedPeriod), periodText(f.ra41.refundPeriod))}</p>
               </div>
             )}
 

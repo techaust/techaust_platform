@@ -27,6 +27,10 @@ const LISTS = [
   "/proposals",
   "/estimates",
   "/invoices",
+  // M6.5: the Refunds tab and reconciliation (their empty states on a fresh database)
+  "/payments?tab=refunds",
+  "/reconciliation",
+  "/reconciliation?tab=unmatched&list=manual",
   "/approvals",
   "/catalogue",
   "/catalogue?tab=templates",

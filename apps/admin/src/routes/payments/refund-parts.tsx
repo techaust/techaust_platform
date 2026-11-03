@@ -61,10 +61,10 @@ function useNow(on: boolean): number {
   return now;
 }
 
-const isOpen = (s: RefundView["status"]) => s === "requested" || s === "processing";
+export const isOpen = (s: RefundView["status"]) => s === "requested" || s === "processing";
 
 /** The Owner's two actions on an open refund, with their 15-minute wait (L44, L46). */
-function RefundActions(props: { row: RefundRowData; onChanged: (toast: string) => void }) {
+export function RefundActions(props: { row: RefundRowData; onChanged: (toast: string) => void }) {
   const r = props.row;
   const [opensAt, setOpensAt] = useState(r.requestedAt + REFUND_SWEEP_IDLE_MS);
   const [busy, setBusy] = useState(false);
@@ -156,6 +156,21 @@ function RefundActions(props: { row: RefundRowData; onChanged: (toast: string) =
   );
 }
 
+/** A refund's state: its chip, the day it went out, or the gateway's failure code. */
+export function RefundState({ row: r }: { row: RefundRowData }) {
+  return (
+    <span className="rf-state">
+      <RefundPill status={r.status} />
+      {r.status === "succeeded" && r.settledOn && (
+        <span className="pay-lines__meta">{`${ZO_UI.colRefunded} ${day(r.settledOn)}`}</span>
+      )}
+      {r.status === "failed" && r.failureCode && (
+        <span className="pay-lines__meta">{ZO_UI.failureCode(r.failureCode)}</span>
+      )}
+    </span>
+  );
+}
+
 /**
  * The refunds as ledger lines: asked on, how, reason, amount, state (with the gateway's failure code), and for the Owner, on an open refund, its two actions.
  * `client` adds the client's name (the Refunds tab).
@@ -212,18 +227,10 @@ export function RefundRows(props: {
               {amountText(r.amountMinor, r.currency)}
             </td>
             <td data-label={ZO_UI.colStatus}>
-              <span className="rf-state">
-                <RefundPill status={r.status} />
-                {r.status === "succeeded" && r.settledOn && (
-                  <span className="pay-lines__meta">{`${ZO_UI.colRefunded} ${day(r.settledOn)}`}</span>
-                )}
-                {r.status === "failed" && r.failureCode && (
-                  <span className="pay-lines__meta">{ZO_UI.failureCode(r.failureCode)}</span>
-                )}
-              </span>
+              <RefundState row={r} />
             </td>
             {acts && (
-              <td data-label={ZO_UI.tryAgain} className="rf-lines__acts">
+              <td className="rf-lines__acts">
                 {isOpen(r.status) ? <RefundActions row={r} onChanged={props.onChanged} /> : null}
               </td>
             )}

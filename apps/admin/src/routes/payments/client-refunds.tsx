@@ -21,7 +21,11 @@ export function useOpenRefunds(clientId: string, on: boolean, refreshKey: string
         ? Promise.all([
             refundsApi.list({ status: "requested" }),
             refundsApi.list({ status: "processing" }),
-          ]).then(([a, b]) => [...a.items, ...b.items].filter((r) => r.clientId === clientId))
+          ]).then(([a, b]) =>
+            [...a.items, ...b.items].filter(
+              (r, i, all) => r.clientId === clientId && all.findIndex((x) => x.id === r.id) === i,
+            ),
+          )
         : Promise.resolve([] as RefundView[]),
     `${clientId}:${on}:${refreshKey}`,
   );

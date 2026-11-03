@@ -198,7 +198,7 @@ export function ClientFiguresPanel(props: {
           {allowed(user.role, "refunds.issue") && rows.some((f) => f.creditMinor > 0) && (
             <button
               type="button"
-              className="btn btn--secondary acct__credit-btn"
+              className="btn btn--secondary acct__credit-btn rf-credit-btn"
               onClick={() => setRefundingState(true)}
             >
               {ZO_UI.refundCredit}

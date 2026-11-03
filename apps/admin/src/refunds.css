@@ -23,11 +23,26 @@
   margin-top: var(--space-5);
 }
 
+/* below md the actions take the card's whole width, under its facts (the cell has no label of its own) */
+@media (max-width: 47.99rem) {
+  .rf-lines .rf-lines__acts {
+    grid-column: 1 / -1;
+  }
+
+  .rf-lines .rf-lines__acts:empty {
+    display: none;
+  }
+}
+
 .rf-state,
 .rf-acts {
   display: grid;
   justify-items: start;
   gap: var(--space-1);
+}
+
+.rf-acts .btn {
+  white-space: nowrap;
 }
 
 .rf-acts__buttons {
@@ -62,8 +77,14 @@
   padding-bottom: 0;
 }
 
-.rf-form .field {
+.rf-form .field,
+.rf-choose .field {
+  margin-bottom: 0;
   scroll-margin-bottom: var(--space-24);
+}
+
+.pay-form.rf-form {
+  gap: var(--space-5);
 }
 
 .rf-facts {
@@ -233,6 +254,11 @@
   display: inline-flex;
   align-items: center;
   min-height: var(--target-min);
+}
+
+/* "Refund credit" beside "Use credit" under the client's figures */
+.acct__credit-btn + .rf-credit-btn {
+  margin-inline-start: var(--space-2);
 }
 
 /* the Refunds tab */
