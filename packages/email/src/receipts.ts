@@ -2,8 +2,8 @@
 // billing@ (Q-P3-5) to the contacts with portal access AND "can see finance" (RB-31), sent as soon as the PDF is made (L41). The house transactional layout
 // (`securityEmail`): the subject as the heading, 07-ZO line 12's sentence, then the receipt's three facts in the facts table under the PDF's own labels (07-ZO
 // lines 2, 4 and 5, so the email and the attached page name things alike), and, when the PDF isn't attached, 07 §8's "Open in the portal" button (the portal's
-// invoices page; the client signs in, no token in the link) with the plain link in the text twin. No greeting and no closing line: 07-ZO has neither (line 12
-// opens with "Thank you."); the dark modes are the layout's. Words: `RECEIPT_EMAIL_COPY` and `RECEIPT_COPY` (`@techaust/core/copy-zo`; "[Placeholder]" until
+// invoices page; the client signs in, no token in the link) with the plain link in the text twin, and last 07-ZO line 12b's closing ("Questions? Just reply
+// to this email.", as the other house emails end; after the button, as the deed email's). No greeting: line 12 opens with "Thank you."; the dark modes are the layout's. Words: `RECEIPT_EMAIL_COPY` and `RECEIPT_COPY` (`@techaust/core/copy-zo`; "[Placeholder]" until
 // the owner approves 07-ZO). The words never call it a tax invoice or a voucher and make no stamp or signature claim (Researched 2026-11-03, s.31(3)(d) CGST Act
 // and Rule 50 CGST Rules (08-C RA-39); OPEN (08-C RB-21): is an emailed, computer-generated receipt chargeable to stamp duty?).
 //
@@ -26,7 +26,7 @@ export const RECEIPT_SENT_KEYS = [
 /** 07 §8's portal button (approved; the deed email's too). */
 export const RECEIPT_PORTAL_BUTTON = "Open in the portal";
 
-/** `receipt.sent`: 07-ZO lines 11 and 12, with the receipt's facts under the PDF's labels (lines 2, 4 and 5). */
+/** `receipt.sent`: 07-ZO lines 11, 12 and 12b, with the receipt's facts under the PDF's labels (lines 2, 4 and 5). */
 export function receiptSent(d: ReceiptSentData, opts: LayoutOptions): Rendered {
   const C = RECEIPT_EMAIL_COPY;
   const attached = d.attached === "1";
@@ -41,6 +41,7 @@ export function receiptSent(d: ReceiptSentData, opts: LayoutOptions): Rendered {
   return securityEmail(headerValue(C.subject(d.number, d.amount)), opts, {
     before: [para(body)],
     facts: { rows, text: rows.map(([k, v]) => `${k}: ${v}`).join("\n") },
-    ...(attached ? {} : { action: { label: RECEIPT_PORTAL_BUTTON, url: d.url } }),
+    after: [para(C.closing)],
+    ...(attached ? {} : { action: { label: RECEIPT_PORTAL_BUTTON, url: d.url }, actionFirst: true }),
   });
 }

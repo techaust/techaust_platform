@@ -26,7 +26,7 @@ export const RECEIPT_COPY = {
   heldAsCredit: ZO("Held as credit on your account"),
   notTaxInvoice: ZO("This is a receipt for a payment we received. It is not a tax invoice."),
   computerGenerated: ZO("Computer-generated receipt."),
-  /** "and {n} more" under a long "Applied to" list (no 07 line yet: drafted here, marked like the rest). */
+  /** Line 18: "and {n} more" under a long "Applied to" list (added to 07-ZO after the designer, 2026-11-03; marked like the rest until the owner approves). */
   appliedMore: (n: number) => ZO(`and ${n} more`),
 } as const;
 
@@ -42,7 +42,7 @@ export function paidByWords(provider: string, mode: string | null): string {
   return ZO("Bank transfer");
 }
 
-/** Lines 11 and 12: the receipt email (`{amount}` and `{date}` already formatted by the caller). */
+/** Lines 11, 12 and 12b: the receipt email (`{amount}` and `{date}` already formatted by the caller). */
 export const RECEIPT_EMAIL_COPY = {
   subject: (number: string, amount: string) => ZO(`Receipt ${number} for your payment of ${amount}`),
   bodyAttached: (amount: string, date: string, number: string) =>
@@ -51,6 +51,8 @@ export const RECEIPT_EMAIL_COPY = {
     ZO(
       `Thank you. We received ${amount} on ${date}. You can download receipt ${number} from your client portal.`,
     ),
+  /** Line 12b: the closing line, as the other house emails end (added to 07-ZO after the designer, 2026-11-03; marked until the owner approves). */
+  closing: ZO("Questions? Just reply to this email."),
 } as const;
 
 /** Lines 13 to 16: the client portal. */
@@ -74,6 +76,7 @@ export const zoAllText = (): readonly string[] => [
   RECEIPT_EMAIL_COPY.subject("TH/RCT/2627/0001", "₹1.00"),
   RECEIPT_EMAIL_COPY.bodyAttached("₹1.00", "3 Nov 2026", "TH/RCT/2627/0001"),
   RECEIPT_EMAIL_COPY.bodyPortal("₹1.00", "3 Nov 2026", "TH/RCT/2627/0001"),
+  RECEIPT_EMAIL_COPY.closing,
   PORTAL_RECEIPT_COPY.receiptLink,
   PORTAL_RECEIPT_COPY.refunded("₹1.00", "3 Nov 2026"),
   PORTAL_RECEIPT_COPY.receiptsHeading,
