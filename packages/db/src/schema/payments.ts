@@ -674,7 +674,13 @@ export const paymentRefunds = sqliteTable(
     index("payment_refunds_client").on(t.clientId, t.requestedAt, t.id),
     index("payment_refunds_document").on(t.documentId),
     index("payment_refunds_credit_note").on(t.creditNoteId),
-    index("payment_refunds_release").on(t.releaseAllocationId),
+    // Early check 1, finding 8: one release belongs to one refund.
+    uniqueIndex("payment_refunds_release")
+      .on(t.releaseAllocationId)
+      .where(sql`${t.releaseAllocationId} is not null`),
+    // The Refunds tab (finding 10): all statuses, and one status, newest first.
+    index("payment_refunds_list").on(t.requestedAt, t.id),
+    index("payment_refunds_status_list").on(t.status, t.requestedAt, t.id),
     index("payment_refunds_requested_by").on(t.requestedBy),
     // `refund.sweep`: the refunds still open, by their last attempt.
     index("payment_refunds_pending")

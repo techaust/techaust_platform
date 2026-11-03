@@ -50,7 +50,10 @@ export type ReceiptPayment = {
   readonly mode: string | null;
   /** The normalised bank or gateway reference, or null. */
   readonly referenceNorm: string | null;
-  /** Σ its refunds that have not failed (M6.5 L35), so "held as credit" never names money already returned. */
+  /**
+   * Σ its refunds that SUCCEEDED (early check 1, finding 12): "held as credit" names money still the client's at issue, so a refund still with the gateway is not
+   * taken off it (it may fail and stay as credit).
+   */
   readonly refundedMinor: number;
 };
 
@@ -92,7 +95,7 @@ export type ReceiptOf = {
   /** The invoices the money is on at issue, by number, at most `RECEIPT_APPLIED_MAX`; `appliedMore` counts the ones left out. */
   readonly appliedTo: readonly ReceiptAllocation[];
   readonly appliedMore: number;
-  /** What the payment leaves as credit at issue: amount − Σ applied − refunds not failed, never below zero. */
+  /** What the payment leaves as credit at issue: amount − Σ applied − refunds that succeeded, never below zero. */
   readonly heldAsCreditMinor: number;
 };
 
@@ -108,7 +111,7 @@ const isIsoDay = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\
 
 /**
  * The frozen header of the receipt of `payment` (`header_extras.receiptOf`): the amount in words (`amountInWords`, both currencies), the "applied to" lines (each
- * document once, positive holdings only, by number then id), and "held as credit" = amount − Σ applied − refunds not failed at issue. Refuses a non-positive or
+ * document once, positive holdings only, by number then id), and "held as credit" = amount − Σ applied − refunds that succeeded at issue. Refuses a non-positive or
  * unsafe amount, a bad day, a bad allocation, or allocations above the amount (`over_applied`: the ledger never allows it, so it means a stale read).
  */
 export function receiptHeaderOf(a: {

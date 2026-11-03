@@ -124,6 +124,15 @@ export type RefundPlanInput = {
   readonly holdingMinor?: number | undefined;
   /** Today, the ISO IST day. */
   readonly today: string;
+  /**
+   * Who started it: the Owner (`owner`, the default), a refund made in the gateway's dashboard recorded after the fact (`outside`), or a lost dispute (`chargeback`;
+   * L40: a chargeback from a document takes back what this payment holds there even with no excess, so the invoice reopens with its balance).
+   */
+  readonly origin?: "owner" | "outside" | "chargeback" | undefined;
+  /** A manual refund: to the original method or another account in the payer's own name (RB-24); a gateway payment refunded by our bank transfer is never `original`. */
+  readonly paidTo?: "original" | "own_account" | undefined;
+  /** A manual refund's paid-on day, or the day an outside refund or dispute settled (ISO IST); never after `today` (finding 9). */
+  readonly settledOn?: string | undefined;
 };
 
 export const REFUND_REFUSALS = [
@@ -141,6 +150,8 @@ export const REFUND_REFUSALS = [
   "exceeds_refundable",
   "exceeds_holding",
   "credit_note_needed",
+  "paid_to_invalid",
+  "day_invalid",
 ] as const;
 export type RefundRefusal = (typeof REFUND_REFUSALS)[number];
 
@@ -202,21 +213,34 @@ const isIsoDay = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\
  *   5. from credit: at most what the payment can give back (`refundableOf`);
  *   6. from a document: the document is the client's issued, live invoice or debit note in the payment's currency; at most what this payment holds there
  *      (`exceeds_holding`, round 3); at most the document's excess (paid + credited + TDS − total), else `credit_note_needed` with the excess and, for an advance
- *      invoice, the reason `service_not_delivered` (RA-40). A plan from a document carries the release of exactly the refund's amount.
+ *      invoice, the reason `service_not_delivered` (RA-40). A plan from a document carries the release of exactly the refund's amount. A lost dispute (origin
+ *      `chargeback`, L40) skips the excess: the gateway took the money back, so the release reopens the invoice's balance (never report money as collected that
+ *      isn't).
+ * After 3: a manual refund of a gateway payment goes to another account in the payer's own name (`paid_to_invalid`, RB-24: the card or wallet is not ours to
+ * pay into). Before 1: a paid-on or settled day is a real day not after today (`day_invalid`).
+ * A pending source (L33) is refused once any refund of the payment has not failed (early check 1, finding 1: a second full refund of money refunded already).
  */
 export function planRefund(input: RefundPlanInput): RefundPlan {
   const { payment: p, from, via, amountMinor } = input;
+  if (
+    input.settledOn !== undefined &&
+    (!isIsoDay(input.settledOn) || !isIsoDay(input.today) || input.settledOn > input.today)
+  )
+    return { ok: false, code: "day_invalid" };
   if (!isSafe(amountMinor) || amountMinor <= 0) return { ok: false, code: "invalid_amount" };
   if (p.kind !== "payment") return { ok: false, code: "not_refundable_kind" };
   if (from === "pending") {
     if (p.status !== "pending_verification") return { ok: false, code: "payment_not_pending" };
     if (p.provider === "manual" || via !== "gateway") return { ok: false, code: "pending_gateway_only" };
     if (amountMinor !== p.amountMinor) return { ok: false, code: "pending_full_only" };
+    if (p.refundedMinor !== 0) return { ok: false, code: "exceeds_refundable", refundableMinor: 0 };
   } else if (p.status !== "confirmed") return { ok: false, code: "payment_not_confirmed" };
   if (p.hasOpenRefund) return { ok: false, code: "refund_in_progress" };
+  if (via === "manual" && p.provider !== "manual" && input.paidTo !== "own_account")
+    return { ok: false, code: "paid_to_invalid" };
   if (via === "gateway") {
     if (p.provider === "manual") return { ok: false, code: "not_gateway_payment" };
-    if (p.provider === "razorpay") {
+    if (p.provider === "razorpay" && (input.origin ?? "owner") === "owner") {
       if (!isIsoDay(p.receivedOn) || !isIsoDay(input.today))
         return { ok: false, code: "gateway_refund_window" };
       if (input.today >= addMonthsIso(p.receivedOn, RAZORPAY_REFUND_MONTHS))
@@ -243,6 +267,7 @@ export function planRefund(input: RefundPlanInput): RefundPlan {
   if (!isSafe(holding)) return { ok: false, code: "invalid_amount" };
   if (amountMinor > holding)
     return { ok: false, code: "exceeds_holding", holdingMinor: Math.max(0, holding) };
+  if (input.origin === "chargeback") return { ok: true, release: { documentId: d.id, amountMinor } };
   const excess = refundDueOf(d.totalMinor, d.paidMinor, d.creditedMinor, d.tdsMinor);
   if (amountMinor > excess)
     return {

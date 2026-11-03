@@ -33,6 +33,7 @@ import {
   pendingRefundedRejectStatement,
   REFUND_BY_PROVIDER_REF_SQL,
   REFUNDS_IDLE_SQL,
+  REFUNDS_LIST_BY_STATUS_SQL,
   REFUNDS_LIST_SQL,
   type RefundInsertArgs,
   realisationReductionStatement,
@@ -42,6 +43,7 @@ import {
   refundCancelStatement,
   refundInsertStatement,
   refundMoveStatement,
+  refundResultStatement,
   refundSideStatements,
   SETTLEMENTS_SQL,
   settlementPageStatements,
@@ -163,7 +165,7 @@ async function refundBatch(a: RefundInsertArgs, owner: string): Promise<boolean>
       },
       g,
     ),
-    refundBatchResult(db(), { paymentId: a.paymentId, documentId: docId }),
+    ...refundBatchResult(db(), { paymentId: a.paymentId, documentId: docId, refundId: a.id }),
   ]);
   return (await first("SELECT id FROM payment_refunds WHERE id = ?", a.id)) !== null;
 }
@@ -343,7 +345,9 @@ describe("the refund batch: main statement guards, side statements, post-conditi
       [a.id, b.id].sort(),
     );
     expect(
-      (await all(REFUNDS_LIST_SQL, "failed", Number.MAX_SAFE_INTEGER, "")).some((x) => x.id === a.id),
+      (await all(REFUNDS_LIST_BY_STATUS_SQL, "failed", Number.MAX_SAFE_INTEGER, "")).some(
+        (x) => x.id === a.id,
+      ),
     ).toBe(true);
     expect(await all(REFUNDS_IDLE_SQL, Date.now() + 1)).not.toContainEqual({ id: a.id });
   });
@@ -485,6 +489,7 @@ async function razorpayPayment(
   owner: string,
   status: "confirmed" | "pending_verification",
   amount = 50_000,
+  fees: readonly [number, number | null] = [236, 36],
 ): Promise<string> {
   const doc = await mkIssued(clientId);
   const staff = await mkMember("staff");
@@ -510,13 +515,15 @@ async function razorpayPayment(
   const ref = `pay_${next()}`;
   await run(
     `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, charges_minor, fee_tax_minor, received_on, mode, reference_norm, recorded_at, provider_payment_id, checkout_id, refetched_at)
-     VALUES (?1, ?2, 'payment', 'razorpay', 'pending_verification', 'INR', ?3, 236, 36, '2026-11-01', 'upi', ?4, ?5, ?4, ?6, ?5)`,
+     VALUES (?1, ?2, 'payment', 'razorpay', 'pending_verification', 'INR', ?3, ?7, ?8, '2026-11-01', 'upi', ?4, ?5, ?4, ?6, ?5)`,
     id,
     clientId,
     amount,
     ref,
     T,
     ck,
+    fees[0],
+    fees[1],
   );
   if (status === "confirmed")
     await run(
@@ -1188,5 +1195,400 @@ describe("a settlement page, matching and bank matches [ADM-PAY-10, L11]", () =>
         }).run()
       ).meta.changes,
     ).toBe(1);
+  });
+});
+
+// ---- early check 1 (findings 1 to 3, 5 to 10) --------------------------------------------------------------------------------------------------------------
+
+describe("early check 1: the statements [findings 1 to 3, 5 to 10; L40]", () => {
+  it("finding 1: the insert refuses a second full refund of a pending payment once one succeeded", async () => {
+    const { owner, sess, clientId } = await setup();
+    const p = await razorpayPayment(clientId, owner, "pending_verification");
+    const a = args({
+      paymentId: p,
+      sessionId: sess,
+      from: "pending",
+      amountMinor: 50_000,
+      way: { kind: "gateway" },
+    });
+    expect(await refundBatch(a, owner)).toBe(true);
+    await refundMoveStatement(db(), {
+      refundId: a.id,
+      to: "succeeded",
+      providerRefundId: `rfnd_${next()}`,
+      providerStatus: "processed",
+      failureCode: null,
+      now: Date.now(),
+      today: "2026-11-03",
+    }).run();
+    // the reject was missed: the payment is still pending, and a second full refund writes nothing
+    expect(
+      await refundBatch(
+        args({
+          paymentId: p,
+          sessionId: sess,
+          from: "pending",
+          amountMinor: 50_000,
+          way: { kind: "gateway" },
+        }),
+        owner,
+      ),
+    ).toBe(false);
+  });
+
+  it("finding 4 + L33: an outside full refund of a pending payment is recorded and the payment rejected in the same batch", async () => {
+    const { owner, sess, clientId } = await setup();
+    const p = await razorpayPayment(clientId, owner, "pending_verification");
+    const a = args({
+      paymentId: p,
+      sessionId: sess,
+      from: "pending",
+      amountMinor: 50_000,
+      reasonCode: "other",
+      way: {
+        kind: "outside",
+        origin: "outside",
+        providerRefundId: `rfnd_${next()}`,
+        settledOn: "2026-11-02",
+      },
+    });
+    const auditId = uuidv7();
+    await db().batch([
+      refundInsertStatement(db(), a),
+      auditStmt(
+        db(),
+        {
+          id: auditId,
+          actorId: owner,
+          role: "owner",
+          action: "refund.record",
+          entityType: "refund",
+          entityId: a.id,
+          requestId: null,
+          ip: null,
+          ua: null,
+        },
+        "changes",
+      ),
+      pendingRefundedRejectStatement(db(), { refundId: a.id, now: Date.now() }, guardSql({ auditId })),
+      ...refundBatchResult(db(), { paymentId: p, documentId: null, refundId: a.id }),
+    ]);
+    expect(await first("SELECT status FROM payments WHERE id = ?", p)).toEqual({ status: "rejected" });
+    expect(await first("SELECT status, settled_on FROM payment_refunds WHERE id = ?", a.id)).toEqual({
+      status: "succeeded",
+      settled_on: "2026-11-02",
+    });
+  });
+
+  it("finding 3: a refund never tried is idle only once it was requested before the cut-off", async () => {
+    const { owner, sess, clientId } = await setup();
+    const p = await razorpayPayment(clientId, owner, "confirmed");
+    const now = Date.now();
+    const a = args({ paymentId: p, sessionId: sess, amountMinor: 1_000, way: { kind: "gateway" }, now });
+    expect(await refundBatch(a, owner)).toBe(true);
+    const ids = async (cut: number) => (await all<{ id: string }>(REFUNDS_IDLE_SQL, cut)).map((r) => r.id);
+    expect(await ids(now - 15 * 60_000)).not.toContain(a.id); // still in its route's call
+    expect(await ids(now + 1)).toContain(a.id); // requested before the cut-off, never tried
+    await refundAttemptStatement(db(), { refundId: a.id, now: now + 10 }).run();
+    expect(await ids(now + 5)).not.toContain(a.id); // tried after the cut-off
+    expect(await ids(now + 11)).toContain(a.id);
+  });
+
+  it("L40 (finding 5): a chargeback recorded on a fully paid invoice reopens its balance and lowers what was collected; an Owner's refund there needs a credit note", async () => {
+    const { owner, sess, clientId } = await setup();
+    const p = await razorpayPayment(clientId, owner, "confirmed", 118_000);
+    const inv = await mkIssued(clientId);
+    await alloc(p, inv, 118_000);
+    await recompute(inv);
+    const base = { paymentId: p, sessionId: sess, from: "document" as const, documentId: inv };
+    // an Owner's gateway refund from a document with no excess writes nothing
+    expect(
+      await refundBatch(
+        args({ ...base, amountMinor: 10_000, reasonCode: "other", way: { kind: "gateway" } }),
+        owner,
+      ),
+    ).toBe(false);
+    const cb = args({
+      ...base,
+      amountMinor: 10_000,
+      reasonCode: "chargeback",
+      way: {
+        kind: "outside",
+        origin: "chargeback",
+        providerRefundId: `disp_${next()}`,
+        settledOn: "2026-11-03",
+      },
+    });
+    expect(await refundBatch(cb, owner)).toBe(true);
+    expect(await first("SELECT paid_minor, balance_minor, status FROM documents WHERE id = ?", inv)).toEqual({
+      paid_minor: 108_000,
+      balance_minor: 10_000,
+      status: "partially_paid",
+    });
+    expect((await first<{ credit: number }>(CLIENT_CREDIT_SQL, clientId))?.credit).toBe(0);
+    // above what the payment holds there: nothing
+    expect(
+      await refundBatch(
+        args({
+          ...base,
+          amountMinor: 108_001,
+          reasonCode: "chargeback",
+          way: {
+            kind: "outside",
+            origin: "chargeback",
+            providerRefundId: `disp_${next()}`,
+            settledOn: "2026-11-03",
+          },
+        }),
+        owner,
+      ),
+    ).toBe(false);
+  });
+
+  it("finding 9: a manual refund settles on its paid-on day", async () => {
+    const { owner, sess, clientId } = await setup();
+    const p = await pay(clientId, owner, { amount: 5_000 });
+    const a = args({
+      paymentId: p,
+      sessionId: sess,
+      amountMinor: 1_000,
+      way: {
+        kind: "manual",
+        mode: "neft",
+        referenceNorm: `UTR${next()}`,
+        paidOn: "2026-10-30",
+        paidTo: "original",
+      },
+    });
+    expect(await refundBatch(a, owner)).toBe(true);
+    expect(await first("SELECT settled_on, paid_on FROM payment_refunds WHERE id = ?", a.id)).toEqual({
+      settled_on: "2026-10-30",
+      paid_on: "2026-10-30",
+    });
+  });
+
+  it("finding 10: the Refunds tab lists all statuses and one status through their own indexes, newest first", async () => {
+    const { owner, sess, clientId } = await setup();
+    const p = await pay(clientId, owner, { amount: 9_000 });
+    const made: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const a = args({ paymentId: p, sessionId: sess, amountMinor: 1_000, now: Date.now() + i });
+      expect(await refundBatch(a, owner)).toBe(true);
+      made.push(a.id);
+    }
+    const allIds = (await all<{ id: string }>(REFUNDS_LIST_SQL, Number.MAX_SAFE_INTEGER, "")).map(
+      (r) => r.id,
+    );
+    expect(allIds.filter((x) => made.includes(x))).toEqual([...made].reverse());
+    const ok = (
+      await all<{ id: string }>(REFUNDS_LIST_BY_STATUS_SQL, "succeeded", Number.MAX_SAFE_INTEGER, "")
+    ).map((r) => r.id);
+    expect(ok).toEqual(expect.arrayContaining(made));
+    const planAll = await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${REFUNDS_LIST_SQL}`, 1, "");
+    const planOne = await all<{ detail: string }>(
+      `EXPLAIN QUERY PLAN ${REFUNDS_LIST_BY_STATUS_SQL}`,
+      "failed",
+      1,
+      "",
+    );
+    expect(planAll.map((r) => r.detail).join("\n")).toMatch(/payment_refunds_list/);
+    expect(planOne.map((r) => r.detail).join("\n")).toMatch(/payment_refunds_status_list/);
+    expect(
+      planAll
+        .concat(planOne)
+        .map((r) => r.detail)
+        .join("\n"),
+    ).not.toMatch(/TEMP B-TREE/);
+  });
+
+  it("findings 6 and 7: a payment with no fee tax on record is never fee-flagged; a re-fetch sets a missing UTR once; a row without its day aborts the page", async () => {
+    const { owner, clientId } = await setup();
+    const p = await razorpayPayment(clientId, owner, "confirmed", 12_000, [0, null]);
+    const ref = (
+      await first<{ provider_payment_id: string }>("SELECT provider_payment_id FROM payments WHERE id = ?", p)
+    )?.provider_payment_id as string;
+    const setl = `setl_${next()}`;
+    const settlement = {
+      id: uuidv7(),
+      settlementId: setl,
+      utr: null as string | null,
+      amountMinor: 11_700,
+      feesMinor: 254,
+      taxMinor: 46,
+      settledAt: T,
+      settledOn: "2026-11-02",
+      status: "processed",
+    };
+    const item = {
+      id: uuidv7(),
+      entityType: "payment",
+      entityId: ref,
+      direction: "credit" as const,
+      amountMinor: 12_000,
+      feeMinor: 254,
+      taxMinor: 46,
+      settlementId: setl,
+    };
+    await db().batch(
+      settlementPageStatements(db(), {
+        provider: "razorpay",
+        settlements: [settlement],
+        items: [item],
+        now: Date.now(),
+      }),
+    );
+    expect(
+      await first('SELECT "match", fee_mismatch FROM settlement_items WHERE entity_id = ?', ref),
+    ).toEqual({ match: "matched", fee_mismatch: 0 });
+    expect(await first("SELECT utr FROM settlements WHERE settlement_id = ?", setl)).toEqual({ utr: null });
+    // a later fetch knows the UTR: set once; a different one never replaces it
+    await db().batch(
+      settlementPageStatements(db(), {
+        provider: "razorpay",
+        settlements: [{ ...settlement, id: uuidv7(), utr: "UTRLATE1" }],
+        items: [],
+        now: Date.now(),
+      }),
+    );
+    await db().batch(
+      settlementPageStatements(db(), {
+        provider: "razorpay",
+        settlements: [{ ...settlement, id: uuidv7(), utr: "UTROTHER" }],
+        items: [],
+        now: Date.now(),
+      }),
+    );
+    expect(await first("SELECT utr FROM settlements WHERE settlement_id = ?", setl)).toEqual({
+      utr: "UTRLATE1",
+    });
+    // a settlement without its day, or an item with a negative amount, aborts the whole page (never silently dropped)
+    const before = (await first<{ n: number }>("SELECT count(*) AS n FROM settlement_items"))?.n;
+    await rejects(
+      db().batch(
+        settlementPageStatements(db(), {
+          provider: "razorpay",
+          settlements: [
+            {
+              ...settlement,
+              id: uuidv7(),
+              settlementId: `setl_${next()}`,
+              settledOn: null as unknown as string,
+            },
+          ],
+          items: [{ ...item, id: uuidv7(), entityId: `pay_${next()}` }],
+          now: Date.now(),
+        }),
+      ),
+      /NOT NULL|constraint/i,
+    );
+    await rejects(
+      db().batch(
+        settlementPageStatements(db(), {
+          provider: "razorpay",
+          settlements: [],
+          items: [{ ...item, id: uuidv7(), entityId: `pay_${next()}`, amountMinor: -1 }],
+          now: Date.now(),
+        }),
+      ),
+      /CHECK|constraint/i,
+    );
+    expect((await first<{ n: number }>("SELECT count(*) AS n FROM settlement_items"))?.n).toBe(before);
+  });
+
+  it("finding 8: the batch's last statements refuse a refund from a document whose release went missing", async () => {
+    const { owner, sess, clientId } = await setup();
+    const inv = await mkIssued(clientId);
+    const p = await pay(clientId, owner, { amount: 118_000 });
+    await alloc(p, inv, 118_000);
+    await recompute(inv);
+    await run(
+      "UPDATE documents SET credited_minor = 18000, balance_minor = 0, updated_at = updated_at + 1 WHERE id = ?",
+      inv,
+    );
+    const a = args({
+      paymentId: p,
+      sessionId: sess,
+      from: "document",
+      documentId: inv,
+      reasonCode: "credit_note",
+      amountMinor: 5_000,
+    });
+    // the refund row without its side statements: the post-conditions abort the batch
+    await rejects(
+      db().batch([refundInsertStatement(db(), a), refundResultStatement(db(), [a.id])]),
+      /refund_result_check/,
+    );
+    expect(await first("SELECT id FROM payment_refunds WHERE id = ?", a.id)).toBeNull();
+    await refundResultStatement(db(), []).run();
+  });
+
+  it("finding 2: an LUT export settled by a credit note with an unproven card payment shows its GST stage, never reduction_pending (core twin)", async () => {
+    const { owner } = await setup();
+    const usd = await mkClientRow({ currency: "USD" });
+    const id = uuidv7();
+    const n = next();
+    await run(
+      `INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, issue_date, supply_type, total_minor, paid_minor, credited_minor, balance_minor, updated_at)
+       VALUES (?1, 'export_invoice', 'issued', ?2, 'USD', 'exp-r', '9999', ?3, ?4, 1000, '2025-06-01', 'export_lut', 10000, 6000, 4000, 0, 7000)`,
+      id,
+      usd,
+      n,
+      `E/${n}`,
+    );
+    const card = uuidv7();
+    await run(
+      `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, charges_minor, received_on, mode, reference_norm, recorded_at, provider_payment_id, checkout_id, refetched_at)
+       VALUES (?1, ?2, 'payment', 'stripe', 'pending_verification', 'USD', 6000, 0, '2025-06-02', 'card', ?3, ?4, ?3, ?5, ?4)`,
+      card,
+      usd,
+      `pi_${next()}`,
+      T,
+      await stripeCheckout(id, usd),
+    );
+    await run(
+      "UPDATE payments SET status = 'confirmed', verified_by = ?2, verified_at = ?3 WHERE id = ?1",
+      card,
+      owner,
+      T + 9,
+    );
+    await alloc(card, id, 6_000);
+    for (const today of ["2025-07-01", "2026-12-01"]) {
+      const sqlStage = (
+        await first<{ stage: string }>(
+          `SELECT ${stageSql("d", settingsBinds("?2"))} AS stage FROM documents d WHERE d.id = ?1`,
+          id,
+          today,
+        )
+      )?.stage;
+      const [y, m, d] = today.split("-").map(Number) as [number, number, number];
+      const s = realisationStatus(
+        {
+          invoiceDate: { year: 2025, month: 6, day: 1 },
+          currency: "USD",
+          supplyType: "export_lut",
+          outstandingMinor: 0,
+          facts: { paidMinor: 6_000, totalMinor: 10_000, reductionsMinor: 0, proofMissing: true },
+        },
+        { year: y, month: m, day: d },
+        DEFAULT_REALISATION_RULES,
+      );
+      expect(sqlStage).toBe(s.ok ? s.value.stage : "error");
+      expect(sqlStage).not.toBe("reduction_pending");
+    }
+    // once the proof is on file, the reduction shows
+    await run(
+      "UPDATE payments SET proof_kind = 'advice', proof_r2_key = 'k', proof_sha256 = ?2, proof_mime = 'application/pdf' WHERE id = ?1",
+      card,
+      "b".repeat(64),
+    );
+    expect(
+      (
+        await first<{ stage: string }>(
+          `SELECT ${stageSql("d", settingsBinds("?2"))} AS stage FROM documents d WHERE d.id = ?1`,
+          id,
+          "2026-12-01",
+        )
+      )?.stage,
+    ).toBe("reduction_pending");
   });
 });

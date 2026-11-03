@@ -40,7 +40,9 @@ import {
   ledgerResultStatement,
   PAYMENT_REFERENCE_SEEN_SQL,
   paymentApprovalStatements,
+  paymentNetSql,
   paymentProformaSql,
+  paymentRefundedSql,
   paymentWaitsRefundSql,
   proofStatement,
   recomputeStatement,
@@ -1098,11 +1100,8 @@ async function explainPlan(
   const db = c.env.DB;
   const [docsR, netR] = await db.batch([
     db.prepare(LEDGER_DOCS_SQL).bind(JSON.stringify(p.requested.map((r) => r.documentId))),
-    db
-      .prepare(
-        "SELECT coalesce(sum(CASE kind WHEN 'allocate' THEN amount_minor ELSE -amount_minor END), 0) AS net FROM payment_allocations WHERE payment_id = ?1",
-      )
-      .bind(p.id),
+    // What the payment already uses: held net on documents plus its refunds not failed (M6.5 L35; the plan's `allocatedMinor`).
+    db.prepare(`SELECT ${paymentNetSql("?1")} + ${paymentRefundedSql("?1")} AS net`).bind(p.id),
   ]);
   const docs = (docsR?.results ?? []) as DocRow[];
   const plan = planAllocations(

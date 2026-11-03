@@ -60,8 +60,8 @@ export type RefundInsertArgs = {
  * The main statement of a refund (C step 2): one `INSERT ... SELECT` whose WHERE holds every guard: the id is new; the session is a live Owner's with a fresh
  * step-up (`refunds.issue`); the client is live; no refund of the payment is open (L8); and the source, as `payment_refunds_bounds` holds it: from `credit`,
  * confirmed money received with at least the amount free (`paymentFreeSql`); from `document`, at most the document's excess and what this payment holds on it (the
- * document issued, live, payable and the client's, the credit note one of its own); from `pending` (L33), a pending gateway payment's whole amount through its own
- * gateway. Zero rows: the route re-reads and answers 409 (`exceeds_refundable`, `exceeds_holding`, `refund_in_progress`, `client_gone`, `payment_not_confirmed`).
+ * document issued, live, payable and the client's, the credit note one of its own; a lost dispute, origin `chargeback`, needs no excess: L40); from `pending`
+ * (L33), a pending gateway payment's whole amount through its own gateway, while none of its refunds stands (early check 1, finding 1). Zero rows: the route re-reads and answers 409 (`exceeds_refundable`, `exceeds_holding`, `refund_in_progress`, `client_gone`, `payment_not_confirmed`).
  * Binds `?1`..`?16` (`?15` for a gateway refund, which is not settled yet).
  */
 export function refundInsertStatement(db: D1Database, a: RefundInsertArgs): D1PreparedStatement {
@@ -76,9 +76,10 @@ export function refundInsertStatement(db: D1Database, a: RefundInsertArgs): D1Pr
       : a.from === "document"
         ? `p.status = 'confirmed' AND p.kind = 'payment' AND EXISTS (SELECT 1 FROM documents d WHERE d.id = ?3 AND d.client_id = p.client_id AND d.currency = p.currency
              AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.type IN ${PAYABLE_TYPES_SQL}
-             AND ?5 <= ${livePaidSql("d.id")} + d.credited_minor + ${liveTdsSql("d.id")} - d.total_minor AND ?5 <= ${paymentNetSql("p.id", "d.id")})
+             AND (?5 <= ${livePaidSql("d.id")} + d.credited_minor + ${liveTdsSql("d.id")} - d.total_minor OR ?6 = 'chargeback') AND ?5 <= ${paymentNetSql("p.id", "d.id")})
            AND (?4 IS NULL OR EXISTS (SELECT 1 FROM documents cn WHERE cn.id = ?4 AND cn.type = 'credit_note' AND cn.parent_id = ?3 AND cn.frozen_at IS NOT NULL))`
-        : `p.status = 'pending_verification' AND p.kind = 'payment' AND p.provider <> 'manual' AND ?3 IS NULL AND ?4 IS NULL AND ?5 = p.amount_minor${w.kind === "manual" ? " AND 1 = 0" : ""}`;
+        : `p.status = 'pending_verification' AND p.kind = 'payment' AND p.provider <> 'manual' AND ?3 IS NULL AND ?4 IS NULL AND ?5 = p.amount_minor
+           AND NOT EXISTS (SELECT 1 FROM payment_refunds pr INDEXED BY payment_refunds_payment WHERE pr.payment_id = p.id AND pr.status <> 'failed')${w.kind === "manual" ? " AND 1 = 0" : ""}`;
   const provider = w.kind === "manual" ? "'manual'" : "p.provider";
   const status = w.kind === "gateway" ? "requested" : "succeeded";
   const settled = status === "succeeded";
@@ -111,7 +112,8 @@ export function refundInsertStatement(db: D1Database, a: RefundInsertArgs): D1Pr
       a.sessionId,
       a.now,
       // ?16 only when the refund is recorded settled (D1 refuses a value no placeholder takes).
-      ...(settled ? [outside ? outside.settledOn : a.today] : []),
+      // A manual refund settles on the day it was paid (early check 1, finding 9), an outside one on the gateway's day.
+      ...(settled ? [outside ? outside.settledOn : manual ? manual.paidOn : a.today] : []),
     );
 }
 
@@ -152,12 +154,21 @@ export function refundSideStatements(
   ];
 }
 
-/** The post-condition of a refund batch (unguarded, last): the payment's net + refunds ≤ its amount, and the document's figures (if any) equal the recompute. */
+/**
+ * The post-conditions of a refund batch (unguarded, last): `ledger_result` (the payment's net + refunds ≤ its amount, and the document's figures, if any, equal
+ * the recompute), then `refund_result` (a refund from a document is linked to its release: early check 1, finding 8).
+ */
 export const refundBatchResult = (
   db: D1Database,
-  a: { paymentId: string; documentId: string | null },
-): D1PreparedStatement =>
-  ledgerResultStatement(db, { paymentIds: [a.paymentId], documentIds: a.documentId ? [a.documentId] : [] });
+  a: { paymentId: string; documentId: string | null; refundId: string },
+): D1PreparedStatement[] => [
+  ledgerResultStatement(db, { paymentIds: [a.paymentId], documentIds: a.documentId ? [a.documentId] : [] }),
+  refundResultStatement(db, [a.refundId]),
+];
+
+/** `refund_result` (0070, trigger `refund_result_check`): every refund listed that came from a document names its release. Unguarded. */
+export const refundResultStatement = (db: D1Database, refundIds: readonly string[]): D1PreparedStatement =>
+  db.prepare("INSERT INTO refund_result (refund_ids) VALUES (?1)").bind(JSON.stringify(refundIds));
 
 // ---- batch 2 and the gateway's word: status moves ---------------------------------------------------------------------------------------------------
 
@@ -283,15 +294,24 @@ export const PAYMENT_REFUNDS_SQL = `SELECT ${REFUND_COLS} FROM payment_refunds r
 /** A refund by the gateway's id (`?1` provider, `?2` its refund id): a refund event names it (L36). */
 export const REFUND_BY_PROVIDER_REF_SQL = `SELECT ${REFUND_COLS} FROM payment_refunds r INDEXED BY payment_refunds_provider_ref WHERE r.provider = ?1 AND r.provider_refund_id = ?2`;
 
-/** `refund.sweep`: the open refunds idle since before `?1` (UTC ms), oldest first, at most 20 (through `payment_refunds_pending`; never tried counts as idle). */
+/**
+ * `refund.sweep`: the open refunds idle since before `?1` (UTC ms), oldest first, at most 20 (through `payment_refunds_pending`). A refund never tried counts as
+ * idle only once it was requested before `?1` too, so one still in its route's call is never swept at once (early check 1, finding 3).
+ */
 export const REFUNDS_IDLE_SQL = `SELECT r.id FROM payment_refunds r INDEXED BY payment_refunds_pending
-   WHERE r.status IN ('requested', 'processing') AND (r.last_attempt_at IS NULL OR r.last_attempt_at < ?1)
+   WHERE r.status IN ('requested', 'processing') AND ((r.last_attempt_at IS NULL AND r.requested_at < ?1) OR r.last_attempt_at < ?1)
    ORDER BY r.last_attempt_at, r.id LIMIT 20`;
 
-/** The Refunds tab: one page by status (`?1`, NULL for all), newest first, keyset `(requested_at, id)` with `?2`/`?3` (the first page binds a far-future instant and ''), at most 51. */
+/** The Refunds tab, all statuses: one page newest first, keyset `(requested_at, id)` with `?1`/`?2` (the first page binds a far-future instant and ''), at most 51; `payment_refunds_list`. */
 export const REFUNDS_LIST_SQL = `SELECT ${REFUND_COLS}, c.code AS client_code, c.display_name AS client_name
-   FROM payment_refunds r JOIN clients c ON c.id = r.client_id
-   WHERE (?1 IS NULL OR r.status = ?1) AND (r.requested_at < ?2 OR (r.requested_at = ?2 AND r.id < ?3))
+   FROM payment_refunds r INDEXED BY payment_refunds_list JOIN clients c ON c.id = r.client_id
+   WHERE r.requested_at < ?1 OR (r.requested_at = ?1 AND r.id < ?2)
+   ORDER BY r.requested_at DESC, r.id DESC LIMIT 51`;
+
+/** The Refunds tab filtered by status `?1`: as `REFUNDS_LIST_SQL` with `?2`/`?3` as the keyset, through `payment_refunds_status_list` (early check 1, finding 10). */
+export const REFUNDS_LIST_BY_STATUS_SQL = `SELECT ${REFUND_COLS}, c.code AS client_code, c.display_name AS client_name
+   FROM payment_refunds r INDEXED BY payment_refunds_status_list JOIN clients c ON c.id = r.client_id
+   WHERE r.status = ?1 AND (r.requested_at < ?2 OR (r.requested_at = ?2 AND r.id < ?3))
    ORDER BY r.requested_at DESC, r.id DESC LIMIT 51`;
 
 // ---- settlements (L11) ---------------------------------------------------------------------------------------------------------------------------------
@@ -321,11 +341,13 @@ export type SettlementItemRow = {
 };
 
 /**
- * One recon page in ONE batch of five statements (C `fetchSettlements`; ≈ 5): the settlements (INSERT OR IGNORE: a known one keeps its facts, its UTR set once),
- * the items (INSERT OR IGNORE: one per gateway entity, `unmatched` with no link), the settlement of an item seen before without one, then the matches: a payment
- * item to OUR payment with the same gateway id and amount (core `matchItem`; `fee_mismatch` when Razorpay's fee or its tax differs from what the payment row recorded,
- * a payment row with no fee on record is not compared), a refund item to our refund with the same gateway id and amount. An item whose amount differs stays
- * unmatched (the "Unmatched" tab). All rows are `provider`'s. Binds per statement.
+ * One recon page in ONE batch of five statements (C `fetchSettlements`; ≈ 5): the settlements (a known one keeps its facts and gets its UTR once, through
+ * `ON CONFLICT … DO UPDATE`), the items (one per gateway entity, `unmatched` with no link; a known one is left as it is through `ON CONFLICT … DO NOTHING`), the
+ * settlement of an item seen before without one, then the matches: a payment item to OUR payment with the same gateway id and amount (core `matchItem`;
+ * `fee_mismatch` when Razorpay's fee or its tax differs from what the payment row recorded; a payment with no fee tax on record has no fee on record and is not
+ * compared: early check 1, finding 6), a refund item to our refund with the same gateway id and amount. An item whose amount differs stays unmatched (the
+ * "Unmatched" tab). All rows are `provider`'s. Never `INSERT OR IGNORE` (finding 7): a row breaking NOT NULL or a CHECK (a missing day, a negative amount) aborts
+ * the batch instead of vanishing; the caller passes only items it read whole (core `readRazorpayRecon`). Binds per statement.
  */
 export function settlementPageStatements(
   db: D1Database,
@@ -343,19 +365,21 @@ export function settlementPageStatements(
   return [
     db
       .prepare(
-        `INSERT OR IGNORE INTO settlements (id, provider, settlement_id, utr, currency, amount_minor, fees_minor, tax_minor, settled_at, settled_on, status, fetched_at)
+        `INSERT INTO settlements (id, provider, settlement_id, utr, currency, amount_minor, fees_minor, tax_minor, settled_at, settled_on, status, fetched_at)
          SELECT json_extract(j.value, '$.id'), ?1, json_extract(j.value, '$.settlementId'), json_extract(j.value, '$.utr'), 'INR', json_extract(j.value, '$.amountMinor'),
            json_extract(j.value, '$.feesMinor'), json_extract(j.value, '$.taxMinor'), json_extract(j.value, '$.settledAt'), json_extract(j.value, '$.settledOn'),
            json_extract(j.value, '$.status'), ?3
-         FROM json_each(?2) j ORDER BY j.key`,
+         FROM json_each(?2) j WHERE true ORDER BY j.key
+         ON CONFLICT (provider, settlement_id) DO UPDATE SET utr = coalesce(settlements.utr, excluded.utr), fetched_at = max(settlements.fetched_at, excluded.fetched_at)`,
       )
       .bind(a.provider, settlements, a.now),
     db
       .prepare(
-        `INSERT OR IGNORE INTO settlement_items (id, settlement_id, provider, entity_type, entity_id, direction, amount_minor, fee_minor, tax_minor, "match", created_at)
+        `INSERT INTO settlement_items (id, settlement_id, provider, entity_type, entity_id, direction, amount_minor, fee_minor, tax_minor, "match", created_at)
          SELECT json_extract(j.value, '$.id'), ${ourSettlement("j")}, ?1, json_extract(j.value, '$.entityType'), json_extract(j.value, '$.entityId'),
            json_extract(j.value, '$.direction'), json_extract(j.value, '$.amountMinor'), json_extract(j.value, '$.feeMinor'), json_extract(j.value, '$.taxMinor'), 'unmatched', ?3
-         FROM json_each(?2) j ORDER BY j.key`,
+         FROM json_each(?2) j WHERE true ORDER BY j.key
+         ON CONFLICT (provider, entity_type, entity_id) DO NOTHING`,
       )
       .bind(a.provider, items, a.now),
     db
@@ -369,8 +393,8 @@ export function settlementPageStatements(
       .bind(a.provider, items),
     db
       .prepare(
-        `UPDATE settlement_items SET "match" = 'matched', payment_id = p.id,
-           fee_mismatch = CASE WHEN p.charges_minor IS NOT NULL AND (p.charges_minor <> settlement_items.fee_minor OR coalesce(p.fee_tax_minor, 0) <> settlement_items.tax_minor) THEN 1 ELSE 0 END
+        `UPDATE settlement_items INDEXED BY settlement_items_entity SET "match" = 'matched', payment_id = p.id,
+           fee_mismatch = CASE WHEN p.fee_tax_minor IS NOT NULL AND (p.charges_minor IS NOT settlement_items.fee_minor OR p.fee_tax_minor <> settlement_items.tax_minor) THEN 1 ELSE 0 END
          FROM payments p INDEXED BY payments_provider_ref
          WHERE settlement_items.provider = ?1 AND settlement_items."match" = 'unmatched' AND settlement_items.entity_type = 'payment'
            AND p.provider = settlement_items.provider AND p.provider_payment_id = settlement_items.entity_id AND p.amount_minor = settlement_items.amount_minor
@@ -379,7 +403,7 @@ export function settlementPageStatements(
       .bind(a.provider, items),
     db
       .prepare(
-        `UPDATE settlement_items SET "match" = 'matched', refund_id = r.id
+        `UPDATE settlement_items INDEXED BY settlement_items_entity SET "match" = 'matched', refund_id = r.id
          FROM payment_refunds r INDEXED BY payment_refunds_provider_ref
          WHERE settlement_items.provider = ?1 AND settlement_items."match" = 'unmatched' AND settlement_items.entity_type = 'refund'
            AND r.provider = settlement_items.provider AND r.provider_refund_id = settlement_items.entity_id AND r.amount_minor = settlement_items.amount_minor

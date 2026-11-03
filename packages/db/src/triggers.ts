@@ -1859,6 +1859,7 @@ export const REFUND_NEW_0070 = [
   "realisation_reductions_insert",
   "realisation_reductions_fixed",
   "realisation_reductions_no_delete",
+  "refund_result_check",
 ] as const;
 
 /**
@@ -1899,7 +1900,15 @@ export const paymentBlocksVoidTriggerSql = (doc: string, client: string): string
  *      confirmed payment, a settlement, a succeeded refund), made by an active Owner, undone once by an active Owner with a reason; none is deleted;
  *   7. `realisation_reductions_*` (RB-43, Settled by the lead on the safest reading, 2026-11-03 (08-C RB-43)): a reduction is for an issued, not void export invoice of
  *      a client not anonymised, in its currency, recorded by an active Owner, with no letter yet, and all reductions together never above the invoice's total; only
- *      the letter is set once (PDF, JPEG or PNG); never deleted.
+ *      the letter is set once (PDF, JPEG or PNG); never deleted;
+ *   8. the view `refund_result` and its check `refund_result_check` (early check 1, finding 8): the last statement of a refund batch proves that a refund from a
+ *      document names its release (the release itself is unique to one refund: the partial unique index `payment_refunds_release`, 0069).
+ * L40 (lead, 2026-11-03; early check 1, finding 5): a lost dispute (origin and reason `chargeback`) recorded against a document takes back what the payment holds
+ * there even when the document has no excess: `payment_refunds_bounds` drops the excess limit for it, and `payment_allocations_bounds` lets the release that
+ * follows it in the batch pass (the exception is shaped like L14's: a chargeback refund of this payment, document and amount, not failed, with no release linked
+ * yet), so the invoice reopens with its balance and "Collected" drops by the money the gateway took back.
+ * A pending source (L33) is refused while any refund of the payment has not failed (finding 1). A manual refund of a gateway payment goes to another account in the
+ * payer's own name (finding 9; Researched 2026-10-28, RBI PA Directions 2025 para 10(f) (08-C RB-24)).
  * `payment_allocations_tds_release` (L14) is NOT built: RA-30's point on the TDS part of a fully credited invoice is still OPEN (08-C RA-30).
  */
 export function refundTriggerStatements(): string[] {
@@ -1915,13 +1924,16 @@ export function refundTriggerStatements(): string[] {
   const anonymised = (client: string) =>
     `EXISTS (SELECT 1 FROM clients ec WHERE ec.id = ${client} AND ec.anonymised_at IS NOT NULL)`;
   // 2. the ledger with refunds
+  // L40: the release a lost dispute's refund row (written just before it in the batch) asks for: same payment, document and amount, not failed, no release yet.
+  const chargebackRelease = `EXISTS (SELECT 1 FROM payment_refunds cbr WHERE cbr.payment_id = NEW.payment_id AND cbr.document_id = NEW.document_id AND cbr.amount_minor = NEW.amount_minor
+          AND cbr.origin = 'chargeback' AND cbr.reason_code = 'chargeback' AND cbr.status <> 'failed' AND cbr.release_allocation_id IS NULL)`;
   const docBalance = `d.total_minor - d.credited_minor - ${livePaidSql("d.id")} - ${liveTdsSql("d.id")}`;
   const docExcess = `${livePaidSql("d.id")} + d.credited_minor + ${liveTdsSql("d.id")} - d.total_minor`;
   const boundOk = `p.status = 'confirmed' AND d.client_id = p.client_id AND d.currency = p.currency AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.type IN ${PAYABLE_TYPES_SQL}
       AND (p.kind = 'payment' OR (p.kind = 'tds' AND NEW.kind = 'allocate' AND d.type IN ('tax_invoice', 'debit_note') AND d.currency = 'INR'))
       AND CASE NEW.kind
         WHEN 'allocate' THEN NEW.amount_minor <= ${docBalance} AND NEW.amount_minor <= ${paymentFreeSql("p")}
-        ELSE NEW.amount_minor <= ${docExcess} AND NEW.amount_minor <= ${paymentNetSql("p.id", "d.id")} END`;
+        ELSE (NEW.amount_minor <= ${docExcess} OR ${chargebackRelease}) AND NEW.amount_minor <= ${paymentNetSql("p.id", "d.id")} END`;
   const boundBad = `NOT EXISTS (SELECT 1 FROM payments p JOIN documents d ON d.id = NEW.document_id WHERE p.id = NEW.payment_id AND ${boundOk})`;
   const resultPaymentBad = `EXISTS (SELECT 1 FROM json_each(NEW.payment_ids) pj JOIN payments p ON p.id = pj.value WHERE p.status = 'confirmed' AND (${paymentFreeSql("p")} < 0 OR (p.kind = 'tds' AND NOT ((SELECT count(*) FROM payment_allocations t WHERE t.payment_id = p.id) = 1 AND (SELECT sum(t.amount_minor) FROM payment_allocations t WHERE t.payment_id = p.id AND t.kind = 'allocate') = p.amount_minor))))`;
   const paid = livePaidSql("d.id");
@@ -1937,7 +1949,8 @@ export function refundTriggerStatements(): string[] {
   const common =
     "NEW.attempts = 0 AND NEW.release_allocation_id IS NULL AND NEW.failure_code IS NULL AND NEW.inr_refunded_minor IS NULL AND (NEW.origin = 'chargeback') = (NEW.reason_code = 'chargeback')";
   const manualOk = `NEW.provider = 'manual' AND NEW.origin = 'owner' AND NEW.status = 'succeeded' AND NEW.mode IS NOT NULL AND NEW.reference_norm IS NOT NULL AND NEW.paid_on IS NOT NULL
-      AND NEW.paid_to IS NOT NULL AND NEW.provider_refund_id IS NULL AND NEW.settled_at IS NOT NULL AND NEW.settled_on IS NOT NULL`;
+      AND NEW.paid_to IS NOT NULL AND NEW.provider_refund_id IS NULL AND NEW.settled_at IS NOT NULL AND NEW.settled_on IS NOT NULL
+      AND (NEW.paid_to = 'own_account' OR ${sourceProvider} = 'manual')`;
   const gatewayOwnerOk = `NEW.provider <> 'manual' AND NEW.provider IS ${sourceProvider} AND NEW.origin = 'owner' AND NEW.status = 'requested' AND NEW.mode IS NULL AND NEW.paid_on IS NULL
       AND NEW.paid_to IS 'original' AND NEW.provider_refund_id IS NULL AND NEW.settled_at IS NULL AND NEW.settled_on IS NULL`;
   const gatewayOutsideOk = `NEW.provider <> 'manual' AND NEW.provider IS ${sourceProvider} AND NEW.origin IN ('outside', 'chargeback') AND NEW.status = 'succeeded' AND NEW.mode IS NULL
@@ -1947,10 +1960,10 @@ export function refundTriggerStatements(): string[] {
   const fromCredit = `bp.status = 'confirmed' AND bp.kind = 'payment' AND NEW.document_id IS NULL AND NEW.credit_note_id IS NULL AND NEW.amount_minor <= ${paymentFreeSql("bp")}`;
   const fromDocument = `bp.status = 'confirmed' AND bp.kind = 'payment' AND NEW.document_id IS NOT NULL
       AND EXISTS (SELECT 1 FROM documents d WHERE d.id = NEW.document_id AND d.client_id = bp.client_id AND d.currency = bp.currency AND d.frozen_at IS NOT NULL AND d.status <> 'void'
-        AND d.type IN ${PAYABLE_TYPES_SQL} AND NEW.amount_minor <= ${docExcess} AND NEW.amount_minor <= ${paymentNetSql("bp.id", "d.id")})
+        AND d.type IN ${PAYABLE_TYPES_SQL} AND (NEW.amount_minor <= ${docExcess} OR NEW.origin = 'chargeback') AND NEW.amount_minor <= ${paymentNetSql("bp.id", "d.id")})
       AND (NEW.credit_note_id IS NULL OR EXISTS (SELECT 1 FROM documents cn WHERE cn.id = NEW.credit_note_id AND cn.type = 'credit_note' AND cn.parent_id = NEW.document_id AND cn.frozen_at IS NOT NULL))`;
   const fromPending = `bp.status = 'pending_verification' AND bp.kind = 'payment' AND bp.provider <> 'manual' AND NEW.provider = bp.provider AND NEW.document_id IS NULL
-      AND NEW.credit_note_id IS NULL AND NEW.amount_minor = bp.amount_minor`;
+      AND NEW.credit_note_id IS NULL AND NEW.amount_minor = bp.amount_minor AND NOT EXISTS (SELECT 1 FROM payment_refunds bx WHERE bx.payment_id = bp.id AND bx.status <> 'failed')`;
   const refundBoundBad = `NOT EXISTS (SELECT 1 FROM payments bp JOIN clients bk ON bk.id = bp.client_id WHERE bp.id = NEW.payment_id AND bp.client_id = NEW.client_id AND bp.currency = NEW.currency
       AND bk.anonymised_at IS NULL AND ((${fromCredit}) OR (${fromDocument}) OR (${fromPending})))`;
   const refundMove = (from: string, to: readonly string[]) =>
@@ -2004,6 +2017,9 @@ export function refundTriggerStatements(): string[] {
     OR NOT EXISTS (SELECT 1 FROM documents xd JOIN clients xk ON xk.id = xd.client_id WHERE xd.id = NEW.document_id AND xd.type = 'export_invoice' AND xd.frozen_at IS NOT NULL
       AND xd.status <> 'void' AND xd.voided_at IS NULL AND xd.currency = NEW.currency AND xk.anonymised_at IS NULL
       AND NEW.amount_minor + coalesce((SELECT sum(xr.amount_minor) FROM realisation_reductions xr WHERE xr.document_id = NEW.document_id), 0) <= xd.total_minor)`;
+  // 8. the refund batch's post-condition
+  const refundResultBad =
+    "EXISTS (SELECT 1 FROM json_each(NEW.refund_ids) j JOIN payment_refunds r ON r.id = j.value WHERE r.document_id IS NOT NULL AND r.release_allocation_id IS NULL)";
   const reductionFixedBad = `${changed(["id", "document_id", "currency", "amount_minor", "approved_on", "bank_ref", "declaration", "note", "recorded_by", "created_at"])}
     OR ((${changed(["letter_r2_key", "letter_sha256", "letter_mime"])}) AND (OLD.letter_r2_key IS NOT NULL OR NEW.letter_mime IS NULL OR NEW.letter_mime NOT IN (${q(PROOF_MIME_TYPES_0060)})))`;
   const created: Record<(typeof REFUND_NEW_0070)[number], string> = {
@@ -2034,6 +2050,7 @@ export function refundTriggerStatements(): string[] {
     realisation_reductions_insert: `CREATE TRIGGER \`realisation_reductions_insert\` BEFORE INSERT ON \`realisation_reductions\` WHEN ${reductionInsertBad} BEGIN ${named("realisation_reductions_insert", "a reduction is for an issued, live export invoice of a client not anonymised, in its currency, by an active Owner, with no letter yet, and all of them never above its total")} END;`,
     realisation_reductions_fixed: `CREATE TRIGGER \`realisation_reductions_fixed\` BEFORE UPDATE ON \`realisation_reductions\` WHEN ${reductionFixedBad} BEGIN ${named("realisation_reductions_fixed", "a reduction never changes; its letter is set once, as a PDF, JPEG or PNG")} END;`,
     realisation_reductions_no_delete: `CREATE TRIGGER \`realisation_reductions_no_delete\` BEFORE DELETE ON \`realisation_reductions\` BEGIN ${named("realisation_reductions_no_delete", "a reduction is never deleted")} END;`,
+    refund_result_check: `CREATE TRIGGER \`refund_result_check\` INSTEAD OF INSERT ON \`refund_result\` WHEN ${refundResultBad} BEGIN ${named("refund_result_check", "a refund from a document names its release")} END;`,
   };
   const ledger: Record<(typeof REFUND_RECREATED_LEDGER_0070)[number], string> = {
     payment_allocations_bounds: `CREATE TRIGGER \`payment_allocations_bounds\` BEFORE INSERT ON \`payment_allocations\` WHEN ${boundBad} BEGIN ${named("payment_allocations_bounds", "a confirmed payment goes onto an issued, live invoice or debit note of its client and currency, never above the balance or the free money of the payment; a release takes back no more than the excess it holds")} END;`,
@@ -2043,7 +2060,11 @@ export function refundTriggerStatements(): string[] {
   return [
     ...REFUND_RECREATED_GATEWAY_0070.flatMap((name) => [`DROP TRIGGER \`${name}\`;`, p[name]]),
     ...REFUND_RECREATED_LEDGER_0070.flatMap((name) => [`DROP TRIGGER \`${name}\`;`, ledger[name]]),
-    ...REFUND_NEW_0070.map((name) => created[name]),
+    ...REFUND_NEW_0070.flatMap((name) =>
+      name === "refund_result_check"
+        ? ["CREATE VIEW `refund_result` AS SELECT NULL AS refund_ids;", created[name]]
+        : [created[name]],
+    ),
   ];
 }
 

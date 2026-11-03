@@ -187,7 +187,14 @@ describe("planRefund: every refusal, in the route's order [ADM-PAY-08, L2, L33]"
     ).toEqual({ ok: true });
     // a gateway payment may still be paid back by a bank transfer (another account of the payer's own, RB-24)
     expect(
-      planRefund({ payment: rzp, from: "credit", via: "manual", amountMinor: 1, today: "2027-06-01" }),
+      planRefund({
+        payment: rzp,
+        from: "credit",
+        via: "manual",
+        paidTo: "own_account",
+        amountMinor: 1,
+        today: "2027-06-01",
+      }),
     ).toEqual({ ok: true });
   });
 

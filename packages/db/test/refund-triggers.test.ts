@@ -906,3 +906,197 @@ describe("realisation_reductions (RB-43)", () => {
     );
   });
 });
+
+// ---- early check 1 (findings 1, 5, 8, 9, 10) ----------------------------------------------------------------------------------------------------------------
+
+describe("early check 1: the trigger alone [findings 1, 5, 8, 9, 10; L40]", () => {
+  it("finding 1: a second full refund of a pending payment whose first succeeded (its rejection missed) is refused by payment_refunds_bounds", async () => {
+    const { owner, clientId } = await setup();
+    const doc = await mkIssued(clientId);
+    const staff = await mkMember("staff");
+    const p = await gatewayPay(
+      clientId,
+      await checkout(doc, clientId, staff, "razorpay"),
+      "razorpay",
+      50_000,
+    );
+    const r = await refund(p, clientId, owner, { provider: "razorpay", amount: 50_000 });
+    await run(
+      "UPDATE payment_refunds SET status = 'succeeded', provider_refund_id = 'rfnd_first', settled_at = 10, settled_on = '2026-11-03', updated_at = ?2 WHERE id = ?1",
+      r,
+      T + 9,
+    );
+    // the payment is still pending (the reject was missed): a second full refund is refused by the trigger alone
+    expect(await first("SELECT status FROM payments WHERE id = ?", p)).toEqual({
+      status: "pending_verification",
+    });
+    await rejects(
+      refund(p, clientId, owner, { provider: "razorpay", amount: 50_000 }),
+      /payment_refunds_bounds/,
+    );
+    // a failed first refund lets a new one through
+    const q = await gatewayPay(
+      clientId,
+      await checkout(await mkIssued(clientId), clientId, staff, "razorpay"),
+      "razorpay",
+      20_000,
+    );
+    const f = await refund(q, clientId, owner, { provider: "razorpay", amount: 20_000 });
+    await run(
+      "UPDATE payment_refunds SET status = 'failed', failure_code = 'x', updated_at = ?2 WHERE id = ?1",
+      f,
+      T + 9,
+    );
+    expect(await refund(q, clientId, owner, { provider: "razorpay", amount: 20_000 })).toBeTruthy();
+  });
+
+  it("finding 9: a manual refund of a gateway payment goes to the payer's own other account, never 'original'", async () => {
+    const { owner, clientId } = await setup();
+    const doc = await mkIssued(clientId);
+    const staff = await mkMember("staff");
+    const p = await gatewayPay(
+      clientId,
+      await checkout(doc, clientId, staff, "razorpay"),
+      "razorpay",
+      50_000,
+    );
+    await run(
+      "UPDATE payments SET status = 'confirmed', verified_by = ?2, verified_at = ?3 WHERE id = ?1",
+      p,
+      owner,
+      T + 5,
+    );
+    await rejects(
+      refund(p, clientId, owner, { amount: 1_000, paidTo: "original" }),
+      /payment_refunds_insert_state/,
+    );
+    expect(await refund(p, clientId, owner, { amount: 1_000, paidTo: "own_account" })).toBeTruthy();
+    // a manual payment refunded by bank transfer may go back to the original account
+    const m = await pay(clientId, owner, { amount: 5_000 });
+    expect(await refund(m, clientId, owner, { amount: 1_000, paidTo: "original" })).toBeTruthy();
+  });
+
+  it("L40 (finding 5): a lost dispute takes back what the payment holds on a fully paid invoice; the release passes only for that chargeback; the balance reopens", async () => {
+    const { owner, clientId } = await setup();
+    const inv = await mkIssued(clientId);
+    const staff = await mkMember("staff");
+    const p = await gatewayPay(
+      clientId,
+      await checkout(inv, clientId, staff, "razorpay"),
+      "razorpay",
+      118_000,
+    );
+    await run(
+      "UPDATE payments SET status = 'confirmed', verified_by = ?2, verified_at = ?3 WHERE id = ?1",
+      p,
+      owner,
+      T + 5,
+    );
+    await alloc(p, inv, 118_000);
+    await recompute({ documentIds: [inv] });
+    expect(await first("SELECT balance_minor, status FROM documents WHERE id = ?", inv)).toEqual({
+      balance_minor: 0,
+      status: "paid",
+    });
+    // an Owner's refund from the invoice with no excess: refused (a credit note comes first)
+    await rejects(
+      refund(p, clientId, owner, { provider: "razorpay", amount: 10_000, documentId: inv, reason: "other" }),
+      /payment_refunds_bounds/,
+    );
+    // a release with no chargeback behind it: refused (M6.1's release clause)
+    await rejects(alloc(p, inv, 10_000, "release"), /payment_allocations_bounds/);
+    // a lost dispute: the refund row, then the release of exactly its amount, the link, the recompute; the invoice owes it again
+    const cb = await refund(p, clientId, owner, {
+      provider: "razorpay",
+      origin: "chargeback",
+      reason: "chargeback",
+      status: "succeeded",
+      providerRefundId: "disp_1",
+      amount: 10_000,
+      documentId: inv,
+    });
+    // the release of another amount is still refused
+    await rejects(alloc(p, inv, 9_999, "release"), /payment_allocations_bounds/);
+    const rel = uuidv7();
+    await alloc(p, inv, 10_000, "release", rel);
+    await run(
+      "UPDATE payment_refunds SET release_allocation_id = ?2, updated_at = ?3 WHERE id = ?1",
+      cb,
+      rel,
+      T + 9,
+    );
+    await recompute({ documentIds: [inv] });
+    await result({ paymentIds: [p], documentIds: [inv] });
+    expect(await first("SELECT paid_minor, balance_minor, status FROM documents WHERE id = ?", inv)).toEqual({
+      paid_minor: 108_000,
+      balance_minor: 10_000,
+      status: "partially_paid",
+    });
+    // once linked, the exception is spent: another release of the same amount is refused
+    await rejects(alloc(p, inv, 10_000, "release"), /payment_allocations_bounds/);
+    // never above what the payment holds there
+    await rejects(
+      refund(p, clientId, owner, {
+        provider: "razorpay",
+        origin: "chargeback",
+        reason: "chargeback",
+        status: "succeeded",
+        providerRefundId: "disp_2",
+        amount: 108_001,
+        documentId: inv,
+      }),
+      /payment_refunds_bounds/,
+    );
+  });
+
+  it("finding 8: refund_result refuses a refund from a document with no release; a release belongs to one refund", async () => {
+    const { owner, clientId } = await setup();
+    const inv = await mkIssued(clientId);
+    const p = await pay(clientId, owner, { amount: 118_000 });
+    await alloc(p, inv, 118_000);
+    await recompute({ documentIds: [inv] });
+    await run(
+      "UPDATE documents SET credited_minor = 18000, balance_minor = 0, updated_at = updated_at + 1 WHERE id = ?",
+      inv,
+    );
+    const r1 = await refund(p, clientId, owner, { amount: 5_000, documentId: inv, reason: "credit_note" });
+    await rejects(
+      run("INSERT INTO refund_result (refund_ids) VALUES (?1)", JSON.stringify([r1])),
+      /refund_result_check/,
+    );
+    const rel = uuidv7();
+    await alloc(p, inv, 5_000, "release", rel);
+    await run(
+      "UPDATE payment_refunds SET release_allocation_id = ?2, updated_at = ?3 WHERE id = ?1",
+      r1,
+      rel,
+      T + 9,
+    );
+    await run("INSERT INTO refund_result (refund_ids) VALUES (?1)", JSON.stringify([r1]));
+    // a second refund of the same amount can't take the same release
+    const r2 = await refund(p, clientId, owner, { amount: 5_000, documentId: inv, reason: "credit_note" });
+    await rejects(
+      run(
+        "UPDATE payment_refunds SET release_allocation_id = ?2, updated_at = ?3 WHERE id = ?1",
+        r2,
+        rel,
+        T + 9,
+      ),
+      /UNIQUE|payment_refunds_release/,
+    );
+    // a refund from credit needs no release
+    const c = await refund(await pay(clientId, owner, { amount: 2_000 }), clientId, owner, { amount: 1_000 });
+    await run("INSERT INTO refund_result (refund_ids) VALUES (?1)", JSON.stringify([c]));
+  });
+
+  it("finding 10: the trigger's void rule reads by index (no scan of payments, allocations or checkouts)", async () => {
+    const plan = await all<{ detail: string }>(
+      `EXPLAIN QUERY PLAN SELECT ${paymentBlocksVoidTriggerSql("?1", "?2")} AS bad`,
+      "doc",
+      "client",
+    );
+    const text = plan.map((r) => r.detail).join("\n");
+    expect(text).toMatch(/payment_allocations|va/);
+    expect(text).not.toMatch(/SCAN (payments|payment_allocations|checkout_sessions|vp|va|gcc)\b(?! USING)/);
+  });
+});

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "6fc602d7-5b21-4be4-b6b4-b6005c7b2d46",
+  "id": "43f99267-4c26-4c96-99e1-6934bbb6a8f7",
   "prevId": "f51af25f-3056-44d4-9214-7a9671560dbb",
   "tables": {
     "catalogue_items": {
@@ -7417,6 +7417,17 @@
         "payment_refunds_release": {
           "name": "payment_refunds_release",
           "columns": ["release_allocation_id"],
+          "isUnique": true,
+          "where": "\"payment_refunds\".\"release_allocation_id\" is not null"
+        },
+        "payment_refunds_list": {
+          "name": "payment_refunds_list",
+          "columns": ["requested_at", "id"],
+          "isUnique": false
+        },
+        "payment_refunds_status_list": {
+          "name": "payment_refunds_status_list",
+          "columns": ["status", "requested_at", "id"],
           "isUnique": false
         },
         "payment_refunds_requested_by": {

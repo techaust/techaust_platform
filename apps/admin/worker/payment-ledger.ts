@@ -17,6 +17,7 @@ import { uuidv7 } from "@techaust/core/ids";
 import {
   balanceOf,
   creditSources,
+  freeOf,
   type LedgerDoc,
   PAYABLE_TYPES,
   receiptMonthWarning,
@@ -121,7 +122,8 @@ const ledgerDocOf = (d: DocRow): LedgerDoc => ({
   tdsMinor: d.tds_minor,
 });
 
-type SourceRow = { id: string; received_on: string; amount_minor: number; net: number };
+/** A credit source as `CREDIT_SOURCES_SQL` / `CREDIT_DRAW_SQL` read it: `refunded` is Σ its refunds not failed (M6.5 L35). */
+type SourceRow = { id: string; received_on: string; amount_minor: number; net: number; refunded: number };
 
 /** After a refused claim: the document as it is now says why (stale, void, anonymised), else the session does. */
 async function claimRefusal(c: Ctx, documentId: string, expectedUpdatedAt: number): Promise<Response> {
@@ -148,7 +150,19 @@ const creditView = (rows: readonly { currency: string; credit: number }[]) =>
   rows.map((r) => ({ currency: r.currency, creditMinor: r.credit }));
 
 const sourcesView = (rows: readonly SourceRow[]) =>
-  rows.map((r) => ({ paymentId: r.id, receivedOn: r.received_on, availableMinor: r.amount_minor - r.net }));
+  rows.map((r) => ({
+    paymentId: r.id,
+    receivedOn: r.received_on,
+    availableMinor: freeOf({
+      id: r.id,
+      kind: "payment",
+      status: "confirmed",
+      receivedOn: r.received_on,
+      amountMinor: r.amount_minor,
+      netAllocatedMinor: r.net,
+      refundedMinor: r.refunded,
+    }),
+  }));
 
 // ---- /clients/:id/credit ---------------------------------------------------------------------------------------------------------------------------------
 
@@ -206,6 +220,7 @@ export const clientCredit = new Hono<AppEnv>()
         receivedOn: s.received_on,
         amountMinor: s.amount_minor,
         netAllocatedMinor: s.net,
+        refundedMinor: s.refunded,
       })),
       f.amountMinor,
     );

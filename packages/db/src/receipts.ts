@@ -107,11 +107,11 @@ export function receiptIssueStatements(db: D1Database, a: ReceiptIssueArgs): Rec
 
 /**
  * What the issue reads first (one batch): the payment (confirmed, kind, amount, currency, client, mode, reference, provider, received day, verified time, its
- * receipt), the client (name, GSTIN, anonymised), what it holds on each document with the number and type, and its refunds not failed. `?1` the payment.
+ * receipt), the client (name, GSTIN, anonymised), what it holds on each document with the number and type, and its refunds that succeeded (finding 12). `?1` the payment.
  */
 export const RECEIPT_PAYMENT_SQL = `SELECT p.id, p.client_id, p.kind, p.status, p.provider, p.currency, p.amount_minor, p.received_on, p.mode, p.reference_norm, p.verified_at,
        p.receipt_document_id, coalesce(k.legal_name, k.display_name) AS client_name, k.gstin AS client_gstin, k.anonymised_at,
-       (SELECT coalesce(sum(r.amount_minor), 0) FROM payment_refunds r INDEXED BY payment_refunds_payment WHERE r.payment_id = p.id AND r.status <> 'failed') AS refunded_minor,
+       (SELECT coalesce(sum(r.amount_minor), 0) FROM payment_refunds r INDEXED BY payment_refunds_payment WHERE r.payment_id = p.id AND r.status = 'succeeded') AS refunded_minor,
        (SELECT 1 FROM documents x WHERE x.id = 'rct_' || p.id) AS receipt_exists
    FROM payments p JOIN clients k ON k.id = p.client_id WHERE p.id = ?1`;
 

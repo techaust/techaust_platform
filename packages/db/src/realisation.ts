@@ -84,8 +84,9 @@ export const stageSql = (alias: string, p: RealisationSql): string => {
   const gst = gstDueSql(alias, p);
   const lut = `${alias}.supply_type = 'export_lut'`;
   const settled = `${alias}.balance_minor <= 0`;
+  // Early check 1, finding 2: `reduction_pending` never hides RA-38's GST stages (an LUT export with a card or PayPal payment still without its proof).
   return `CASE
-    WHEN ${settled} AND ${alias}.paid_minor + ${reductionsSql(alias)} < ${alias}.total_minor THEN 'reduction_pending'
+    WHEN ${settled} AND ${alias}.paid_minor + ${reductionsSql(alias)} < ${alias}.total_minor AND NOT (${lut} AND ${proofMissingSql(alias)}) THEN 'reduction_pending'
     WHEN ${settled} AND NOT (${lut} AND ${proofMissingSql(alias)}) THEN 'realised'
     WHEN ${lut} AND ${p.today} > ${gst} THEN 'gst_overdue'
     WHEN ${lut} AND ${p.today} >= date(${gst}, '-' || ${p.approachingDays} || ' days') THEN 'gst_approaching'

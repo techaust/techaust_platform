@@ -80,7 +80,9 @@ CREATE INDEX `payment_refunds_payment` ON `payment_refunds` (`payment_id`,`statu
 CREATE INDEX `payment_refunds_client` ON `payment_refunds` (`client_id`,`requested_at`,`id`);--> statement-breakpoint
 CREATE INDEX `payment_refunds_document` ON `payment_refunds` (`document_id`);--> statement-breakpoint
 CREATE INDEX `payment_refunds_credit_note` ON `payment_refunds` (`credit_note_id`);--> statement-breakpoint
-CREATE INDEX `payment_refunds_release` ON `payment_refunds` (`release_allocation_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `payment_refunds_release` ON `payment_refunds` (`release_allocation_id`) WHERE "payment_refunds"."release_allocation_id" is not null;--> statement-breakpoint
+CREATE INDEX `payment_refunds_list` ON `payment_refunds` (`requested_at`,`id`);--> statement-breakpoint
+CREATE INDEX `payment_refunds_status_list` ON `payment_refunds` (`status`,`requested_at`,`id`);--> statement-breakpoint
 CREATE INDEX `payment_refunds_requested_by` ON `payment_refunds` (`requested_by`);--> statement-breakpoint
 CREATE INDEX `payment_refunds_pending` ON `payment_refunds` (`last_attempt_at`,`id`) WHERE "payment_refunds"."status" in ('requested', 'processing');--> statement-breakpoint
 CREATE INDEX `payment_refunds_settled` ON `payment_refunds` (`settled_on`,`id`) WHERE "payment_refunds"."status" = 'succeeded';--> statement-breakpoint

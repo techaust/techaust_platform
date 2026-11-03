@@ -9,6 +9,16 @@
 /** How old the Owner-typed USD rate may be before the check says it doesn't know (L12). */
 export const PA_CB_RATE_MAX_AGE_DAYS = 30;
 
+/** Researched 2026-10-28, RBI PA Directions 2025, para 11(d) (08-C RB-07): the PA-CB cap per transaction, ₹25,00,000.00 in paise. */
+export const PA_CB_CAP_INR_MINOR = 250_000_000;
+
+/**
+ * The cap `paCbCheck` takes for a gateway (early check 1, finding 11): for PayPal, a PA-CB, the lower of the Owner's setting and the RBI cap (Researched 2026-10-28,
+ * RBI PA Directions 2025, para 11(d) (08-C RB-07)), so the setting can't hide the legal limit; for Stripe (not a PA-CB) the Owner's setting as it is.
+ */
+export const paCbCapFor = (provider: string, settingInrMinor: number): number =>
+  provider === "paypal" ? Math.min(settingInrMinor, PA_CB_CAP_INR_MINOR) : settingInrMinor;
+
 export type PaCbVerdict =
   | { readonly ok: true; readonly inrMinor: number }
   | { readonly ok: false; readonly code: "above_pa_cb_cap"; readonly inrMinor: number }

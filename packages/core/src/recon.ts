@@ -113,7 +113,9 @@ export type ReconTarget = {
 
 /**
  * One item against our row: `matched`, `amount_mismatch` (the gateway's gross differs: never matched, it stays in "Unmatched"), or `fee_mismatch` (the amount
- * agrees, the fee or its tax doesn't: matched, flagged). A row without a fee on record is not compared on fees.
+ * agrees, the fee or its tax doesn't: matched, flagged). A row without a fee on record is not compared on fees: the fee is on record when its tax is (`charges_minor`
+ * is never null, 0 for a manual payment; `fee_tax_minor` is set only when the gateway reported the fee: early check 1, finding 6; the SQL twin in
+ * `settlementPageStatements`).
  */
 export function matchItem(
   item: Pick<ReconItem, "amountMinor" | "feeMinor" | "taxMinor">,
@@ -121,8 +123,8 @@ export function matchItem(
 ): "matched" | "amount_mismatch" | "fee_mismatch" {
   if (item.amountMinor !== target.amountMinor) return "amount_mismatch";
   if (
-    target.feeMinor !== null &&
-    (item.feeMinor !== target.feeMinor || item.taxMinor !== (target.feeTaxMinor ?? 0))
+    target.feeTaxMinor !== null &&
+    (item.feeMinor !== target.feeMinor || item.taxMinor !== target.feeTaxMinor)
   )
     return "fee_mismatch";
   return "matched";

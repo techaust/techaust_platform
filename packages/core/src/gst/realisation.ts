@@ -197,9 +197,16 @@ export function stageOf(
   facts?: RealisationFacts,
 ): RealisationStage {
   const settled = outstandingMinor <= 0;
-  if (settled && facts && BigInt(facts.paidMinor) + BigInt(facts.reductionsMinor) < BigInt(facts.totalMinor))
+  // Early check 1, finding 2: a GST stage of RA-38 (an LUT export with a card or PayPal payment still without its proof) comes before `reduction_pending`.
+  const proofBlocks = gstApplies && facts?.proofMissing === true;
+  if (
+    settled &&
+    facts &&
+    !proofBlocks &&
+    BigInt(facts.paidMinor) + BigInt(facts.reductionsMinor) < BigInt(facts.totalMinor)
+  )
     return "reduction_pending";
-  if (settled && !(gstApplies && facts?.proofMissing === true)) return "realised";
+  if (settled && !proofBlocks) return "realised";
   if (gstApplies && compareDates(today, dates.gstDue) > 0) return "gst_overdue";
   if (gstApplies && compareDates(today, addDays(dates.gstDue, -approachingDays)) >= 0) {
     return "gst_approaching";

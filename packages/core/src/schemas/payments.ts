@@ -185,7 +185,9 @@ export const refundBody = z
       path: ["creditNoteId"],
     }),
     z.refine((v) => !(v.manual && v.outside), { message: "refund_way_invalid", path: ["manual"] }),
-    z.refine((v) => v.from !== "pending" || (!v.manual && v.outside === undefined), {
+    // L33: a pending gateway payment goes back through its own gateway, never by our bank transfer; a refund made in the gateway's dashboard is recorded in
+    // full (`outside`, early check 1, finding 4: else it could never be recorded and would block the void or withdraw for ever).
+    z.refine((v) => v.from !== "pending" || !v.manual, {
       message: "refund_way_invalid",
       path: ["from"],
     }),
