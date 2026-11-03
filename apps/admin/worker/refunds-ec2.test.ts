@@ -687,6 +687,30 @@ describe("finding 9: route-level paths", () => {
     expect(ok.status, await ok.clone().text()).toBe(200);
   });
 
+  it("L47: a refund made in the gateway or a lost dispute of a client outside India is recorded without the RB-43 tick; our own refund still needs it", async () => {
+    const o = await owner();
+    const clientId = await mkReportClient("INR");
+    const p = await rzpPayment(clientId, o.id);
+    await env.DB.prepare("UPDATE clients SET gst_status = 'overseas', state_code = NULL WHERE id = ?1")
+      .bind(clientId)
+      .run();
+    stub((path) =>
+      path === "/v1/refunds/rfnd_L47OUT001" ? rzpRefund("rfnd_L47OUT001", 2_500, null, p.ref) : null,
+    );
+    const ours = await call(`/payments/${p.id}/refunds`, { cookie: o.cookie, body: gateway(1_000) });
+    expect(ours.status).toBe(409);
+    expect(((await json(ours)) as J).error.code).toBe("export_refund_unconfirmed");
+    const outside = gateway(2_500, {
+      outside: { providerRefundId: "rfnd_L47OUT001", origin: "outside", settledOn: todayIso() },
+    });
+    const res = await call(`/payments/${p.id}/refunds`, { cookie: o.cookie, body: outside });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await refundRow(outside.id)).toMatchObject({
+      status: "succeeded",
+      provider_refund_id: "rfnd_L47OUT001",
+    });
+  });
+
   it("batch 2 lost after the gateway made the refund: the row stays requested, and the gateway's webhook moves it by our id", async () => {
     const o = await owner();
     const clientId = await mkReportClient("INR");

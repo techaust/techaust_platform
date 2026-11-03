@@ -371,7 +371,10 @@ export const refunds = new Hono<AppEnv>()
     }
     // RB-43 (Settled by the lead on the safest reading, 2026-11-03 (08-C RB-43)): money of a client outside India, or an export invoice's excess, goes back only
     // once the Owner ticks that the AD bank was asked for the Reg. 6 reduction; on every source, the pending one included (early check 1, part 2 item 5).
+    // L47 (Settled by the lead on the safest reading, 2026-11-03 (08-C RB-43)): a refund made in the gateway or a lost dispute is already
+    // gone, so recording it never waits for the tick (the record must show what happened); FEMA's `reduction_pending` stage holds the invoice instead.
     if (
+      !f.outside &&
       refundExportWarning({ docType: d?.type ?? null, clientOverseas: p.gst_status === "overseas" }) &&
       f.confirmExport !== true
     )
