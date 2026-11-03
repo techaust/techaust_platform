@@ -258,11 +258,11 @@ export const ZO_UI = {
   reductionPendingLine:
     "FEMA treats this invoice as not fully realised until the bank's reduction is recorded here.",
 
-  // ---- review part 1 (builder B5's staff drafts for the lead under the delegation; 07-ZO "Staff lines" S34–S47) ----
+  // ---- review part 1 (builder B5's staff drafts for the lead under the delegation; 07-ZO "Staff lines" S34–S38) ----
   /** S34, RA-41 on the Payments panel: the approved refund-dialog line without its "is refunded in" clause (nothing is being refunded there). */
   ra41HeldLine: (received: string) =>
     `This credit arrived in ${received}. If it was more than ₹1,000 over an invoice, or never on one, GST on it was due when it arrived: record the advance in GSTR-1 Table 11 by hand.`,
-  /** S35–S44, Payments › Credit at period end (RA-41). */
+  /** S35, Payments › Credit at period end (RA-41). */
   creditHeldTab: "Credit at period end",
   creditHeldLede:
     "Credit a client held when a GST period ended that may be an advance: money on no invoice, or more than ₹1,000 over its invoices. Refund it, use it, or record it in GSTR-1 Table 11 for that period.",
@@ -274,7 +274,7 @@ export const ZO_UI = {
   creditHeldColOnInvoice: "Part on an invoice",
   creditHeldOnInvoice: (yes: boolean) => (yes ? "Yes" : "No"),
   creditHeldEmpty: "No client held such credit when this period ended.",
-  /** S45–S47, the bank's INR figure of a refund in another currency (L9). */
+  /** S36, the bank's INR figure of a refund in another currency (L9). */
   inrRecord: "Record INR amount",
   inrLabel: "INR the bank debited",
   inrHint: "As the bank's advice shows it. It can be recorded once.",
