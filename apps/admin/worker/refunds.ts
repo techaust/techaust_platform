@@ -36,7 +36,13 @@ import { type AppEnv, actor, BAD_REQUEST, err, FORBIDDEN, mutate, NOT_FOUND } fr
 import { refundGwOf } from "./gateway/refund-gw.ts";
 import { body, idParam, param, query, STALE_VERSION } from "./http.ts";
 import { decodeCursor, encodeCursor } from "./keyset.ts";
-import { applyGatewayRefund, checkRefund, readRefund } from "./refund-flow.ts";
+import {
+  applyGatewayRefund,
+  checkRefund,
+  readRefund,
+  refundIdleAt,
+  retryAfterSeconds,
+} from "./refund-flow.ts";
 
 /** The refusals the dialog explains (staff lines in the run file; the codes are the API's). */
 const E = (code: string, message: string) => ({ code, message });
@@ -78,7 +84,19 @@ const REFUSALS = {
   gateway_error: E("gateway_error", "The gateway didn't answer. Try again"),
   refund_found: E("refund_found", "The gateway already has this refund"),
   not_cancellable: E("not_cancellable", "Only a refund the gateway never received can be cancelled"),
+  // L44 (early check 2, finding 1b; builder's draft for the lead, staff-only): the screen disables the buttons for `retryAfterS`.
+  too_soon: E("too_soon", "The gateway may still be answering. Try again in a few minutes"),
+  // Early check 2, finding 6 (builder's draft for the lead, staff-only): a refund recorded as made in the gateway must be there, on this payment, for this amount.
+  outside_not_at_gateway: E(
+    "outside_not_at_gateway",
+    "The gateway shows no completed refund with that id for this payment and amount",
+  ),
 } as const;
+
+const isOpen = (r: { status: string }) => r.status === "requested" || r.status === "processing";
+/** 409 `too_soon` with the seconds until the refund is idle (L44). */
+const tooSoon = (c: Parameters<typeof err>[0], r: Parameters<typeof retryAfterSeconds>[0], now: number) =>
+  err(c, REFUSALS.too_soon, 409, { retryAfterS: retryAfterSeconds(r, now) });
 
 /** The payment as the refund reads it (one row), with its client, what it holds net, its refunds that have not failed and whether one is open. */
 const PAYMENT_SQL = `SELECT p.id, p.client_id, p.kind, p.status, p.provider, p.currency, p.amount_minor, p.received_on, p.provider_payment_id, p.checkout_id,
@@ -264,6 +282,29 @@ export const refunds = new Hono<AppEnv>()
       if (p.provider === "paypal" && p.checkout_status === "capture_pending")
         return err(c, REFUSALS.capture_pending, 409);
     }
+    // Early check 2, finding 6: a refund recorded as made in the gateway's dashboard (origin `outside`) must be there: the same payment, the same amount,
+    // completed. Checked whenever the gateway is set up and not blocked (a live key with the flag false is never called); a lost dispute (`chargeback`) is
+    // recorded as entered (its id is the dispute's, not a refund's).
+    if (f.outside?.origin === "outside" && p.provider !== "manual" && p.provider_payment_id) {
+      const og = await refundGwOf(c.env, p.provider);
+      if (og && !og.blocked) {
+        const seen = await og.find({
+          paymentRef: p.provider_payment_id,
+          refundId: f.id,
+          refundRef: f.outside.providerRefundId,
+        });
+        if (!seen.ok) return err(c, REFUSALS.gateway_error, 502);
+        const v = seen.value === "unknown" ? null : seen.value;
+        if (
+          v === null ||
+          v.state !== "processed" ||
+          v.amountMinor !== f.amountMinor ||
+          v.currency !== p.currency ||
+          (v.paymentRef !== null && v.paymentRef !== p.provider_payment_id)
+        )
+          return err(c, REFUSALS.outside_not_at_gateway, 409);
+      }
+    }
     let referenceNorm: string | null = null;
     if (f.manual) {
       referenceNorm = normaliseReference(f.manual.reference);
@@ -403,9 +444,13 @@ export const refundsTab = new Hono<AppEnv>()
     const { id } = c.req.valid("param");
     const before = await readRefund(c.env.DB, id);
     if (!before) return err(c, NOT_FOUND, 404);
-    const checked = await checkRefund(c.env, id, Date.now(), { repost: true });
+    const now = Date.now();
+    // L44 (early check 2, finding 1b): "Try again" waits until the refund is idle (its request and its last check both REFUND_SWEEP_IDLE_MS old).
+    if (isOpen(before) && now < refundIdleAt(before)) return tooSoon(c, before, now);
+    const checked = await checkRefund(c.env, id, now, { repost: true });
     if (checked.result === "unavailable") return err(c, REFUSALS.gateway_unavailable, 503);
     if (checked.result === "live_not_allowed") return err(c, REFUSALS.live_not_allowed, 503);
+    if (checked.result === "too_soon") return tooSoon(c, before, now);
     // One audit row for the Owner's "Try again" (the move itself, if any, has the system's).
     await mutate(c, {
       action: "refund.retry",
@@ -423,6 +468,9 @@ export const refundsTab = new Hono<AppEnv>()
     if (!row) return err(c, NOT_FOUND, 404);
     if (row.status !== "requested" || row.provider_refund_id !== null)
       return err(c, REFUSALS.not_cancellable, 409);
+    // L44 (finding 1b): a cancel waits as a re-post does, so a request still on its way is never cancelled under it.
+    const now = Date.now();
+    if (now < refundIdleAt(row)) return tooSoon(c, row, now);
     if (row.provider !== "manual" && row.provider_payment_id) {
       const gw = await refundGwOf(c.env, row.provider);
       if (!gw || gw.blocked === "unconfigured") return err(c, REFUSALS.gateway_unavailable, 503);

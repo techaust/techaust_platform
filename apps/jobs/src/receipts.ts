@@ -58,6 +58,7 @@ const ROW_SQL = `SELECT d.id, d.client_id, d.currency, d.fy, d.number, d.number_
    WHERE d.id = ?1 AND d.type = 'receipt'`;
 const CONTACTS_SQL = `SELECT lower(c.email) AS email FROM contacts c
    WHERE c.client_id = ?1 AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL
+     AND EXISTS (SELECT 1 FROM documents r WHERE r.id = ?2 AND r.status = 'issued')
    ORDER BY c.is_primary DESC, c.created_at, c.id LIMIT ${RECEIPT_MAIL_MAX}`;
 const REFUSED_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
   SELECT 'n_' || lower(hex(randomblob(16))), u.id, 'pdf.refused', 'document', ?1, ?2, ?3 FROM staff_users u WHERE u.status = 'active' AND u.role = 'owner'`;
@@ -140,6 +141,8 @@ async function renderReceipt(
   if (!row || row.frozen_at === null) return skip("not_found");
   if (row.pdf_sha256 !== null) return skip("done");
   if (row.anonymised_at !== null) return skip("client_gone");
+  // Early check 2, finding 4: a receipt voided (its payment withdrawn) before its PDF is never rendered or emailed.
+  if (row.status !== "issued") return skip("not_issued");
   const environment: string = env.ENVIRONMENT;
   if (RECEIPT_LAYOUT_PLACEHOLDER && environment !== "local") return skip("layout_placeholder");
   const receiptOf = receiptOfRow(row.header_extras);
@@ -167,7 +170,7 @@ async function renderReceipt(
     const date = dayOf(now);
     await env.DB.batch([
       env.DB.prepare(
-        "UPDATE documents SET pdf_r2_key = ?2, pdf_sha256 = ?3 WHERE id = ?1 AND type = 'receipt' AND pdf_sha256 IS NULL AND snapshot_sha256 = ?4",
+        "UPDATE documents SET pdf_r2_key = ?2, pdf_sha256 = ?3 WHERE id = ?1 AND type = 'receipt' AND pdf_sha256 IS NULL AND snapshot_sha256 = ?4 AND status = 'issued'",
       ).bind(row.id, key, pdfSha, row.snapshot_sha256),
       ...(usage
         ? [
@@ -213,7 +216,7 @@ async function mailReceipt(env: Env, row: Row, r: ReceiptOf, key: string, now: n
     logEvent("receipt.mail_skipped", { why: "old_payment" });
     return 0;
   }
-  const contacts = ((await env.DB.prepare(CONTACTS_SQL).bind(row.client_id).all<{ email: string }>())
+  const contacts = ((await env.DB.prepare(CONTACTS_SQL).bind(row.client_id, row.id).all<{ email: string }>())
     .results ?? []) as { email: string }[];
   const attach = row.attach_pdf === 1;
   const received = parseIsoDate(r.receivedOn);

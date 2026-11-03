@@ -57,10 +57,13 @@ type PendingRow = {
   checkout_id: string | null;
   advance_receipt_id: string | null;
   invoice_number: string | null;
+  /** M6.5 (early check 2, finding 7): 1 while a refund of this payment has not failed. */
+  live_refund: number;
 };
 
 const PENDING_SQL = `SELECT p.id, p.provider, p.kind, p.status, p.client_id, p.currency, p.amount_minor, p.received_on, p.reference_norm, p.requested_allocations,
-     p.checkout_id, p.advance_receipt_id, i.number_display AS invoice_number
+     p.checkout_id, p.advance_receipt_id, i.number_display AS invoice_number,
+     EXISTS (SELECT 1 FROM payment_refunds lr INDEXED BY payment_refunds_payment WHERE lr.payment_id = p.id AND lr.status <> 'failed') AS live_refund
    FROM payments p LEFT JOIN advance_receipts r ON r.id = p.advance_receipt_id LEFT JOIN documents i ON i.id = r.invoice_id WHERE p.id = ?1`;
 /** `PENDING_SQL` with the proforma's current stamp (`?2`), read once after a refused freeze. */
 const AFTER_REFUSAL_SQL = PENDING_SQL.replace(
@@ -179,6 +182,8 @@ async function tryAdvance(
   if (p.status === "confirmed" && p.advance_receipt_id)
     return { result: "already_issued", ...(p.invoice_number ? { number: p.invoice_number } : {}) };
   if (p.status !== "pending_verification" || !p.checkout_id) return { result: "not_pending" };
+  // M6.5 early check 2, finding 7: money being refunded is never invoiced automatically (no item, no bell: the refund decides it; the trigger holds it too).
+  if (p.live_refund === 1) return { result: "not_pending" };
   const ask = parseRequested(p.requested_allocations);
   if (!ask || ask.amountMinor !== p.amount_minor)
     return blocked(env, p, ask?.documentId ?? null, ["request_invalid"]);

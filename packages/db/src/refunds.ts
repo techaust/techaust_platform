@@ -212,6 +212,28 @@ export function refundMoveStatement(
     );
 }
 
+/**
+ * A refund's review item of `kind` opens once per refund (early check 2, findings 1c, 2 and 1d: the tenth check, every later one, the dead-letter queue and L42's
+ * PayPal cut-off all reach `refund_stuck`; an event seen twice reaches `refund_after_failed` twice): no item of that kind for that refund, open or resolved, exists
+ * yet. One seek of `review_items_payment` (the refund's payment). Added to `g` (the batch's own guard), when given.
+ */
+export function refundItemOnceGuard(
+  a: { paymentId: string; refundId: string; kind: string },
+  g?: GuardSql,
+): GuardSql {
+  const once: GuardSql = {
+    sql: (at) =>
+      `NOT EXISTS (SELECT 1 FROM review_items ri INDEXED BY review_items_payment WHERE ri.payment_id = ?${at} AND ri.kind = ?${at + 1} AND json_extract(ri.facts, '$.refundId') = ?${at + 2})`,
+    params: [a.paymentId, a.kind, a.refundId],
+  };
+  return g
+    ? {
+        sql: (at) => `${g.sql(at)} AND ${once.sql(at + g.params.length)}`,
+        params: [...g.params, ...once.params],
+      }
+    : once;
+}
+
 /** A check that changed nothing at the gateway: one more attempt counted (the sweep's idle clock restarts). Open refunds only. */
 export const refundAttemptStatement = (
   db: D1Database,

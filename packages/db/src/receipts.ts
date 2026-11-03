@@ -120,15 +120,24 @@ export const RECEIPT_ALLOCATIONS_SQL = `SELECT a.document_id, d.number_display, 
    FROM payment_allocations a INDEXED BY payment_allocations_payment JOIN documents d ON d.id = a.document_id
    WHERE a.payment_id = ?1 GROUP BY a.document_id, d.number_display, d.type ORDER BY d.number_display, a.document_id`;
 
-/** `receipt.sweep` (L3): confirmed money received still without a receipt, confirmed before `?1` (UTC ms), oldest first, at most 20, through `payments_receipt_due`. */
+/**
+ * `receipt.sweep` (L3): confirmed money received still without a receipt, confirmed before `?1` (UTC ms), oldest first, at most 20, through `payments_receipt_due`.
+ * A client anonymised never gets a receipt, so its payments are left out (early check 2, finding 5: otherwise 20 of them would fill every sweep for ever).
+ */
 export const RECEIPTS_DUE_SQL = `SELECT p.id FROM payments p INDEXED BY payments_receipt_due
    WHERE p.status = 'confirmed' AND p.kind = 'payment' AND p.receipt_document_id IS NULL AND p.verified_at < ?1
+     AND NOT EXISTS (SELECT 1 FROM clients k WHERE k.id = p.client_id AND k.anonymised_at IS NOT NULL)
    ORDER BY p.verified_at, p.id LIMIT 20`;
 
 /** A payment's receipt (`?1` payment): its number, day, status and PDF state (the Payments panel's "Receipt being prepared"). */
 export const RECEIPT_OF_PAYMENT_SQL = `SELECT r.id, r.number_display, r.issue_date, r.status, r.pdf_sha256 IS NOT NULL AS has_pdf, r.voided_at
    FROM documents r WHERE r.id = 'rct_' || ?1 AND r.type = 'receipt'`;
 
-/** The receipt PDFs still to render (L39: their own partial index), oldest first, at most 20. */
+/**
+ * The receipt PDFs still to render (L39: their own partial index), oldest first, at most 20: issued receipts of clients not anonymised only (early check 2,
+ * findings 4 and 5: a void receipt or an erased client's is never rendered, so neither may hold a place in the sweep).
+ */
 export const RECEIPT_PDF_PENDING_SQL = `SELECT r.id FROM documents r INDEXED BY documents_receipt_pdf_pending
-   WHERE r.frozen_at IS NOT NULL AND r.pdf_sha256 IS NULL AND r.type = 'receipt' ORDER BY r.frozen_at, r.id LIMIT 20`;
+   WHERE r.frozen_at IS NOT NULL AND r.pdf_sha256 IS NULL AND r.type = 'receipt' AND r.status = 'issued'
+     AND NOT EXISTS (SELECT 1 FROM clients k WHERE k.id = r.client_id AND k.anonymised_at IS NOT NULL)
+   ORDER BY r.frozen_at, r.id LIMIT 20`;

@@ -140,6 +140,9 @@ export function reviewReason(kind: string, f: ReasonFacts = {}): string {
       return `${gw} couldn't make the refund of ${m(f.paidMinor)}. The money stays as the client's credit. Try again or refund it by bank transfer.`;
     case "refund_stuck":
       return `${gw} hasn't confirmed the refund of ${m(f.paidMinor)} after 10 checks. Check it in ${gw}'s dashboard, then try again.`;
+    case "refund_after_failed":
+      // Early check 2, finding 1c (L43; builder's draft for the lead, staff-only): our row says failed, the gateway says made or on its way.
+      return `${gw} shows the refund of ${m(f.paidMinor)} as made or on its way, but it is marked failed here, so the client's credit still counts it. Check it in ${gw}'s dashboard and record the refund if it was made.`;
     case "dispute_opened":
       return `The client disputed ${m(f.paidMinor)} with their card issuer. Answer the dispute in ${gw}'s dashboard. Nothing changes here until it closes.`;
     case "dispute_closed":
