@@ -10,7 +10,7 @@ import { setStubTransport } from "./gateway/config.ts";
 import { processEvent } from "./gateway/events.ts";
 import { issueReceipt } from "./receipt-issue.ts";
 import { fetchSettlements } from "./recon.ts";
-import { checkRefund } from "./refund-flow.ts";
+import { checkRefund, refundIdleAt } from "./refund-flow.ts";
 import { mkClient, mkContact } from "./test-clients.ts";
 import { calls, stub } from "./test-gateway.ts";
 import { call, one, sessionFor } from "./test-helpers.ts";
@@ -521,6 +521,16 @@ describe("B4: the refund views carry their times; the list by client [L44, L46; 
       (await call(`/refunds?clientId=${a}`, { cookie: (await sessionFor("staff")).cookie })).status,
     ).toBe(403);
     expect((await call("/refunds?clientId=", { cookie: acc.cookie })).status).toBe(400);
+  });
+
+  it("refundIdleAt gives the SPA's table (src/lib/refunds-api.test.ts: refundOpensAt)", () => {
+    for (const [requestedAt, lastAttemptAt, opens] of [
+      [5, null, 5 + 900_000],
+      [5, 4, 5 + 900_000],
+      [5, 6, 6 + 900_000],
+      [1_762_000_000_000, 1_762_000_900_000, 1_762_001_800_000],
+    ] as const)
+      expect(refundIdleAt({ requested_at: requestedAt, last_attempt_at: lastAttemptAt })).toBe(opens);
   });
 
   it("the Payments panel's refunds carry lastAttemptAt too", async () => {
