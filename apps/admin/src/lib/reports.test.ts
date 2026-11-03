@@ -333,6 +333,21 @@ describe("realisation stages", () => {
     expect(STAGE_PILLS.realised.tone).toBe("muted");
   });
 
+  it("M6.5 B4: every core stage is in the order, reduction_pending after the dated stages and before on track", () => {
+    expect([...STAGE_ORDER].sort()).toEqual(
+      [
+        "fema_approaching",
+        "fema_overdue",
+        "gst_approaching",
+        "gst_overdue",
+        "ok",
+        "realised",
+        "reduction_pending",
+      ].sort(),
+    );
+    expect(STAGE_ORDER.indexOf("reduction_pending")).toBe(STAGE_ORDER.indexOf("ok") - 1);
+  });
+
   it("lists the most urgent first, then by the date each is due by", () => {
     const d = (day: number) => ({ year: 2027, month: 1, day });
     const rows = [

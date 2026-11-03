@@ -526,12 +526,17 @@ export const STAGE_PILLS: Readonly<
   reduction_pending: { tone: "warning", icon: "clock", outline: true },
 };
 
-/** Most urgent first (07-V §5): past GST, past FEMA, GST in 30 days, FEMA in 30 days, on track, realised. */
+/**
+ * Most urgent first (07-V §5): past GST, past FEMA, GST in 30 days, FEMA in 30 days, on track, realised. M6.5 (B4): `reduction_pending` (paid as far as the
+ * client will pay, waiting for the bank's Reg. 6 reduction: RB-43) after the dated stages and before "on track"; the list reaches it now that the page's facts
+ * go to core (it sorted first, unknown, before).
+ */
 export const STAGE_ORDER: readonly RealisationStage[] = [
   "gst_overdue",
   "fema_overdue",
   "gst_approaching",
   "fema_approaching",
+  "reduction_pending",
   "ok",
   "realised",
 ];
