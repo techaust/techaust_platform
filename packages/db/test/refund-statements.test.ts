@@ -30,6 +30,7 @@ import {
 import {
   bankMatchRemoveStatement,
   bankMatchStatement,
+  CREDIT_HELD_SQL,
   PAYMENT_REFUNDS_SQL,
   pendingRefundedRejectStatement,
   REFUND_BY_PROVIDER_REF_SQL,
@@ -45,6 +46,7 @@ import {
   refundCancelStatement,
   refundInsertStatement,
   refundMoveStatement,
+  refundRepostClaimStatement,
   refundResultStatement,
   refundSideStatements,
   SETTLEMENTS_SQL,
@@ -64,7 +66,13 @@ import {
   STATEMENT_TOTALS_SQL,
   statementTotalsBinds,
 } from "../src/reports.ts";
-import { overpaymentAdvanceSql, paymentFreeSql } from "../src/sql-rules.ts";
+import {
+  overpaymentAdvanceAtSql,
+  overpaymentAdvanceSql,
+  paymentFreeAtSql,
+  paymentFreeSql,
+  paymentNetAtSql,
+} from "../src/sql-rules.ts";
 import { mkClientRow, mkIssued, mkMember, mkReceipt, next } from "./billing-helpers.ts";
 import { all, first, rejects, run } from "./helpers.ts";
 
@@ -331,13 +339,41 @@ describe("the refund batch: main statement guards, side statements, post-conditi
           refundId: b.id,
           now: Date.now(),
           sessionId: await session(owner, false),
+          seen: null,
+        }).run()
+      ).meta.changes,
+    ).toBe(0);
+    // review part 1, finding 1: a re-post claims the row first (compare-and-set on last_attempt_at); a cancel that read the row before the claim writes nothing
+    expect(
+      (await refundRepostClaimStatement(db(), { refundId: b.id, now: 1_000, seen: null }).run()).meta.changes,
+    ).toBe(1);
+    expect(
+      (await refundRepostClaimStatement(db(), { refundId: b.id, now: 2_000, seen: null }).run()).meta.changes,
+    ).toBe(0); // a second claimer with the same stale read
+    expect(
+      (
+        await refundCancelStatement(db(), {
+          refundId: b.id,
+          now: Date.now(),
+          sessionId: sess,
+          seen: null,
         }).run()
       ).meta.changes,
     ).toBe(0);
     expect(
-      (await refundCancelStatement(db(), { refundId: b.id, now: Date.now(), sessionId: sess }).run()).meta
-        .changes,
+      (
+        await refundCancelStatement(db(), {
+          refundId: b.id,
+          now: Date.now(),
+          sessionId: sess,
+          seen: 1_000,
+        }).run()
+      ).meta.changes,
     ).toBe(1);
+    expect(
+      (await refundRepostClaimStatement(db(), { refundId: b.id, now: 3_000, seen: 1_000 }).run()).meta
+        .changes,
+    ).toBe(0); // a cancelled refund is never claimed
     expect(await first("SELECT status, failure_code FROM payment_refunds WHERE id = ?", b.id)).toEqual({
       status: "failed",
       failure_code: "cancelled",
@@ -751,7 +787,11 @@ describe("the receipt's issue batch (gap-free TH/RCT numbers; L3 to L5, L39)", (
     await run("UPDATE clients SET anonymised_at = 5 WHERE id = ?1", other.clientId);
     // every pending row (the file's other receipts too), not just the first 20
     const pending = (
-      await all<{ id: string }>(RECEIPT_PDF_PENDING_SQL.replace("LIMIT 20", "LIMIT 1000"))
+      await all<{ id: string }>(
+        RECEIPT_PDF_PENDING_SQL.replace("LIMIT 20", "LIMIT 1000"),
+        Number.MAX_SAFE_INTEGER,
+        3,
+      )
     ).map((r) => r.id);
     expect(pending).toContain(`rct_${kept}`);
     expect(pending).not.toContain(`rct_${voided}`);
@@ -891,10 +931,11 @@ describe("twins: free money, the RA-41 line, the stage with M6.5's facts [L35, R
       amountMinor: 4_000,
       approvedOn: "2026-11-20",
       bankRef: "ADB/1",
-      declaration: true,
+      declaration: false,
       note: null,
       sessionId: sess,
       now: Date.now(),
+      declarationMaxInrMinor: 100_000_000,
     }).run();
     expect(await stage(short)).toBe("realised");
     expect(await stage(short)).toBe(await core(short));
@@ -911,6 +952,7 @@ describe("twins: free money, the RA-41 line, the stage with M6.5's facts [L35, R
           note: null,
           sessionId: sess,
           now: Date.now(),
+          declarationMaxInrMinor: 100_000_000,
         }).run()
       ).meta.changes,
     ).toBe(0);
@@ -963,6 +1005,52 @@ describe("twins: free money, the RA-41 line, the stage with M6.5's facts [L35, R
       reduction_ref: "ADB/1",
     });
   });
+
+  it("review part 1, finding 2: the ₹10 lakh declaration cap is per invoice (every declaration on it together, at its own rate), never per reduction", async () => {
+    const { sess } = await setup();
+    const usd = await mkClientRow({ currency: "USD" });
+    const doc = async (fx: number | null) => {
+      const id = uuidv7();
+      const n = next();
+      await run(
+        `INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, issue_date, supply_type, total_minor, paid_minor, credited_minor, balance_minor, fx_rate_micros, updated_at)
+         VALUES (?1, 'export_invoice', 'issued', ?2, 'USD', 'exp-c', '9999', ?3, ?4, 1000, '2026-11-01', 'export_lut', 5000000, 0, 0, 5000000, ?5, 7000)`,
+        id,
+        usd,
+        n,
+        `C/${n}`,
+        fx,
+      );
+      return id;
+    };
+    const reduce = async (documentId: string, amountMinor: number, declaration: boolean) =>
+      (
+        await realisationReductionStatement(db(), {
+          id: uuidv7(),
+          documentId,
+          amountMinor,
+          approvedOn: "2026-11-20",
+          bankRef: `ADB/${next()}`,
+          declaration,
+          note: null,
+          sessionId: sess,
+          now: Date.now(),
+          declarationMaxInrMinor: 100_000_000,
+        }).run()
+      ).meta.changes;
+    // $50,000 at ₹83.1234: $9,000 declared is ₹7,48,110.60; a second $9,000 would make ₹14,96,221.20 on the same invoice
+    const a = await doc(83_123_400);
+    expect(await reduce(a, 900_000, true)).toBe(1);
+    expect(await reduce(a, 900_000, true)).toBe(0);
+    // the bank's own approvals don't count towards it, and a declaration that keeps the sum under ₹10 lakh still goes in
+    expect(await reduce(a, 900_000, false)).toBe(1);
+    expect(await reduce(a, 300_000, true)).toBe(1); // ₹9,97,480.80 together
+    expect(await reduce(a, 4_000, true)).toBe(0); // ₹10,00,805.74 together
+    // no rate known: a declaration is refused (the safe side); the bank's approval is not
+    const b = await doc(null);
+    expect(await reduce(b, 1_000, true)).toBe(0);
+    expect(await reduce(b, 1_000, false)).toBe(1);
+  });
 });
 
 async function stripeCheckout(documentId: string, clientId: string): Promise<string> {
@@ -980,6 +1068,110 @@ async function stripeCheckout(documentId: string, clientId: string): Promise<str
   );
   return id;
 }
+
+describe("RA-41: credit held at a period's end (review part 1, finding 3)", () => {
+  it("CREDIT_HELD_SQL lists credit as it stood at the end (allocations and refunds by then), only what may be an advance; the as-of twin equals core", async () => {
+    const { owner, sess } = await setup();
+    const clientId = await mkClientRow();
+    const at = T + 1_000;
+    const loose = await pay(clientId, owner, { amount: 150_000 }); // on no invoice: listed
+    const proviso = await pay(clientId, owner, { amount: 118_050 }); // ₹0.50 over an invoice: not listed
+    const above = await pay(clientId, owner, { amount: 300_000 }); // ₹1,820 over an invoice: listed
+    const later = await pay(clientId, owner, { amount: 150_000 }); // put on an invoice only after the end: listed as on no invoice
+    const refunded = await pay(clientId, owner, { amount: 50_000 }); // refunded in full before the end: not listed
+    for (const [p, amount] of [
+      [proviso, 118_000],
+      [above, 118_000],
+    ] as const) {
+      const inv = await mkIssued(clientId);
+      await alloc(p, inv, amount);
+      await recompute(inv);
+    }
+    const inv = await mkIssued(clientId);
+    await run(
+      "INSERT INTO payment_allocations (id, payment_id, document_id, amount_minor, kind, created_at) VALUES (?1, ?2, ?3, 118000, 'allocate', ?4)",
+      uuidv7(),
+      later,
+      inv,
+      at + 5_000,
+    );
+    await recompute(inv);
+    expect(
+      await refundBatch(args({ paymentId: refunded, sessionId: sess, amountMinor: 50_000 }), owner),
+    ).toBe(true);
+    // every page (the file's other tests leave confirmed payments of the same day before these)
+    type Held = {
+      id: string;
+      received_on: string;
+      credit: number;
+      net: number;
+      held_since_at: number | null;
+    };
+    const rows: Held[] = [];
+    for (let k = "", id = "", pages = 0; pages < 100; pages++) {
+      const page = await all<Held>(CREDIT_HELD_SQL, at, "2029-12-31", k, id, 100_000);
+      expect(page.length).toBeLessThanOrEqual(51);
+      rows.push(...page.slice(0, 50));
+      const last = page[49];
+      if (page.length <= 50 || !last) break;
+      k = last.received_on;
+      id = last.id;
+    }
+    expect(new Set(rows.map((r) => r.id)).size).toBe(rows.length);
+    const mine = rows.filter((r) => [loose, proviso, above, later, refunded].includes(r.id));
+    expect(Object.fromEntries(mine.map((r) => [r.id, { credit: r.credit, net: r.net }]))).toEqual({
+      [loose]: { credit: 150_000, net: 0 },
+      [above]: { credit: 182_000, net: 118_000 },
+      [later]: { credit: 150_000, net: 0 },
+    });
+    expect(mine.find((r) => r.id === above)?.held_since_at).toBe(T);
+    expect(mine.find((r) => r.id === loose)?.held_since_at).toBeNull();
+    // the twin: overpaymentAdvanceAtSql equals core overpaymentAdvanceLine over the figures at `at`
+    for (const p of [loose, proviso, above, later, refunded]) {
+      const r = await first<{ line: number; free: number; net: number }>(
+        `SELECT ${overpaymentAdvanceAtSql("p", "?2", "100000")} AS line, ${paymentFreeAtSql("p", "?2")} AS free, ${paymentNetAtSql("p.id", "?2")} AS net
+         FROM payments p WHERE p.id = ?1`,
+        p,
+        at,
+      );
+      if (!r) throw new Error("row");
+      const core = overpaymentAdvanceLine({
+        currency: "INR",
+        creditMinor: r.free,
+        allocatedAny: r.net > 0,
+        excessProvisoMinor: 100_000,
+      });
+      expect(r.line === 1, p).toBe(core !== null);
+    }
+    // keyset: a page after the first row starts after it
+    const firstId = rows[0]?.id as string;
+    const firstDay = (
+      await first<{ received_on: string }>("SELECT received_on FROM payments WHERE id = ?1", firstId)
+    )?.received_on as string;
+    const nextPage = await all<{ id: string }>(CREDIT_HELD_SQL, at, "2029-12-31", firstDay, firstId, 100_000);
+    expect(nextPage.map((r) => r.id)).not.toContain(firstId);
+    // before the payments were confirmed nothing of theirs is held
+    expect(
+      (await all<{ id: string }>(CREDIT_HELD_SQL, T - 1, "2029-12-31", "", "", 100_000)).filter((r) =>
+        [loose, above, later].includes(r.id),
+      ),
+    ).toEqual([]);
+  });
+
+  it("CREDIT_HELD_SQL reads payments through payments_confirmed, with no scan of payments", async () => {
+    const plan = await all<{ detail: string }>(
+      `EXPLAIN QUERY PLAN ${CREDIT_HELD_SQL}`,
+      T,
+      "2029-12-31",
+      "",
+      "",
+      100_000,
+    );
+    const text = plan.map((p) => p.detail).join("\n");
+    expect(text).toContain("payments_confirmed");
+    expect(text).not.toMatch(/SCAN p\b|SCAN payments\b/);
+  });
+});
 
 describe("the readers with refunds: credit, client figures, collected, the statement [L9, L35]", () => {
   it("credit sources and the draw skip refunded money; figures, collected and the statement count only refunds that went out", async () => {

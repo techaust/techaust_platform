@@ -7,23 +7,23 @@ import type { WarmFixture } from "../warm-routes.ts";
 
 export const FINANCE_WARM: WarmFixture = {
   calls: [
-    { method: "GET", path: "/invoices/01a19fc4-a6ee-704a-8900-0d5a1e360a14/payments" },
+    { method: "GET", path: "/invoices/01a1a017-f7a9-7dfd-96c7-02efa1558bed/payments" },
     { method: "GET", path: "/payments/review" },
-    { method: "POST", path: "/payments/review/90d0d7fe-3584-42f0-92be-ddd14cf043c3/retry", body: {} },
+    { method: "POST", path: "/payments/review/5e9e882d-5be0-448f-bc2c-1c0de8ba17b5/retry", body: {} },
   ],
   rows: {
     ba056e5e: [
       {
         r: [
           {
-            last_seen_at: 1793681833766,
+            last_seen_at: 1793687294226,
             idle_expires_at: 4102444800000,
             abs_expires_at: 4102444800000,
             revoked_at: null,
             step_up_until: 4102444800000,
-            id: "01a19fc4-a522-757a-8650-e25b7811af2a",
+            id: "01a1a017-f5e3-71e7-bad9-3006af113d71",
             name: "Probe Owner (sample)",
-            email: "probe-mw07ujfv@example.test",
+            email: "probe-mw0b3kj2@example.test",
             role: "owner",
           },
         ],
@@ -34,12 +34,12 @@ export const FINANCE_WARM: WarmFixture = {
       {
         r: [
           {
-            id: "01a19fc4-a6ee-704a-8900-0d5a1e360a14",
+            id: "01a1a017-f7a9-7dfd-96c7-02efa1558bed",
             type: "tax_invoice",
             status: "partially_credited",
-            client_id: "cfa45a87-a99c-40c2-a0c3-6829db516d26",
+            client_id: "e66b40bc-12b5-4a1d-8798-4bddc3116d11",
             currency: "INR",
-            frozen_at: 1793681827591,
+            frozen_at: 1793687287743,
             voided_at: null,
             issue_date: "2026-11-03",
             number_display: "TH/INV/2627/0001",
@@ -48,7 +48,7 @@ export const FINANCE_WARM: WarmFixture = {
             credited_minor: 590000,
             tds_minor: 0,
             balance_minor: 10030000,
-            updated_at: 1793681827640,
+            updated_at: 1793687287791,
             supply_type: "intra",
             fx_rate_micros: null,
             fx_date: null,
@@ -59,7 +59,7 @@ export const FINANCE_WARM: WarmFixture = {
         c: 0,
       },
     ],
-    a9594199: [{ r: [], c: 0 }],
+    "2dbd1474": [{ r: [], c: 0 }],
     "62044a16": [{ r: [], c: 0 }],
     e8326b0b: [{ r: [], c: 0 }],
     a8671226: [{ r: [], c: 0 }],
@@ -79,8 +79,8 @@ export const FINANCE_WARM: WarmFixture = {
         c: 0,
       },
     ],
-    "5b3f5fb2": [{ r: [], c: 0 }],
-    "67c0ebd1": [{ r: [], c: 0 }],
+    ee1f8205: [{ r: [], c: 0 }],
+    fab44c3c: [{ r: [], c: 0 }],
     dc77c6c5: [
       {
         r: [
@@ -97,19 +97,19 @@ export const FINANCE_WARM: WarmFixture = {
       {
         r: [
           {
-            id: "90d0d7fe-3584-42f0-92be-ddd14cf043c3",
+            id: "5e9e882d-5be0-448f-bc2c-1c0de8ba17b5",
             source: "dlq",
             provider: "razorpay",
             kind: "dead_letter",
             status: "open",
             webhook_event_id: null,
             payment_id: "rzp_pay_warm0001",
-            document_id: "01a19fc4-aa1e-73da-ae55-3fc458a4c9d0",
-            client_id: "730464e2-a63b-4b62-b33a-7d16e38fcc4c",
+            document_id: "01a1a017-fb3b-75c9-8e7b-c8b602df6690",
+            client_id: "272e9cff-d33c-4bab-9359-2f1820e24c1c",
             amount_minor: 10620000,
             currency: "INR",
             facts: null,
-            created_at: 1793681828452,
+            created_at: 1793687288713,
             resolved_by: null,
             resolved_at: null,
             resolution: null,
@@ -127,19 +127,19 @@ export const FINANCE_WARM: WarmFixture = {
       {
         r: [
           {
-            id: "90d0d7fe-3584-42f0-92be-ddd14cf043c3",
+            id: "5e9e882d-5be0-448f-bc2c-1c0de8ba17b5",
             source: "dlq",
             provider: "razorpay",
             kind: "dead_letter",
             status: "open",
             webhook_event_id: null,
             payment_id: "rzp_pay_warm0001",
-            document_id: "01a19fc4-aa1e-73da-ae55-3fc458a4c9d0",
-            client_id: "730464e2-a63b-4b62-b33a-7d16e38fcc4c",
+            document_id: "01a1a017-fb3b-75c9-8e7b-c8b602df6690",
+            client_id: "272e9cff-d33c-4bab-9359-2f1820e24c1c",
             amount_minor: 10620000,
             currency: "INR",
             facts: null,
-            created_at: 1793681828452,
+            created_at: 1793687288713,
             resolved_by: null,
             resolved_at: null,
             resolution: null,

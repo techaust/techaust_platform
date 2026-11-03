@@ -202,8 +202,8 @@ describe("every ROUTES row has one owner", () => {
     // M6.5: two receipt PDF rows on the invoices Worker (34); on finance, a payment's receipt, five refund rows, six reconciliation rows and three FEMA
     // reduction rows (44). M6.5 B4: the refunds register on the invoices Worker with the other registers (35).
     expect(INVOICES_ROWS.length).toBe(35);
-    expect(FINANCE_ROWS.length).toBe(44);
-    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 35 - 44);
+    expect(FINANCE_ROWS.length).toBe(46);
+    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 35 - 46);
     expect(new Set([...FRONT_ROWS, ...API_ROWS, ...INVOICES_ROWS, ...FINANCE_ROWS].map(key)).size).toBe(
       ROUTES.length,
     );

@@ -134,10 +134,15 @@ export const RECEIPT_OF_PAYMENT_SQL = `SELECT r.id, r.number_display, r.issue_da
    FROM documents r WHERE r.id = 'rct_' || ?1 AND r.type = 'receipt'`;
 
 /**
- * The receipt PDFs still to render (L39: their own partial index), oldest first, at most 20: issued receipts of clients not anonymised only (early check 2,
- * findings 4 and 5: a void receipt or an erased client's is never rendered, so neither may hold a place in the sweep).
+ * The receipt PDFs still to render (L39: their own partial index), at most 20: issued receipts of clients not anonymised only (early check 2, findings 4 and 5: a
+ * void receipt or an erased client's is never rendered, so neither may hold a place in the sweep). Review part 1, finding 4, as M4.4's `SWEEP_SQL` (jobs `pdf.ts`):
+ * only receipts issued at or before `?1` (UTC ms; the sweep binds its instant less `RECEIPT_SWEEP_AFTER_MS`, so a render already queued is never doubled), never one
+ * whose PDF failed on `?2` IST nights (`pdf_failures`) or that has a refusal bell (`pdf.refused`: a bad seal is never tried again), the least recently tried
+ * first (`pdf_failures.last_attempt_at`, never tried counts as 0), then the oldest.
  */
-export const RECEIPT_PDF_PENDING_SQL = `SELECT r.id FROM documents r INDEXED BY documents_receipt_pdf_pending
-   WHERE r.frozen_at IS NOT NULL AND r.pdf_sha256 IS NULL AND r.type = 'receipt' AND r.status = 'issued'
+export const RECEIPT_PDF_PENDING_SQL = `SELECT r.id FROM documents r INDEXED BY documents_receipt_pdf_pending LEFT JOIN pdf_failures f ON f.document_id = r.id
+   WHERE r.frozen_at IS NOT NULL AND r.pdf_sha256 IS NULL AND r.type = 'receipt' AND r.status = 'issued' AND r.frozen_at <= ?1
+     AND coalesce(f.nights, 0) < ?2
      AND NOT EXISTS (SELECT 1 FROM clients k WHERE k.id = r.client_id AND k.anonymised_at IS NOT NULL)
-   ORDER BY r.frozen_at, r.id LIMIT 20`;
+     AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.entity_type = 'document' AND n.entity_id = r.id AND n.kind = 'pdf.refused')
+   ORDER BY coalesce(f.last_attempt_at, 0), r.frozen_at, r.id LIMIT 20`;

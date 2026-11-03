@@ -91,6 +91,7 @@ import {
   USE_ADVANCE_INVOICE,
 } from "./payment-messages.ts";
 import { enqueueReceipt } from "./receipt-enqueue.ts";
+import { ra41OnConfirm } from "./refund-facts.ts";
 import { sessionRefusal } from "./session-refusal.ts";
 
 /** M6.5: a refund of payment `id` that has not failed (the confirm and withdraw refusals). */
@@ -754,6 +755,20 @@ export const payments = new Hono<AppEnv>()
     }
     // M6.5 (L3): an Owner's entry is confirmed in its batch: its receipt follows (never TDS).
     if (confirmed && f.kind === "payment") c.executionCtx.waitUntil(enqueueReceipt(c.env, f.id));
+    // Review part 1, finding 3 (RA-41): whether the credit this confirmation leaves may be an advance (codes only).
+    const ra41 =
+      confirmed && f.kind === "payment"
+        ? await ra41OnConfirm(
+            db,
+            {
+              currency: f.currency,
+              amountMinor: f.amountMinor,
+              unallocatedMinor: plan.unallocatedMinor,
+              receivedOn: f.receivedOn,
+            },
+            issueDateOf(now),
+          )
+        : null;
     return c.json(
       {
         ok: true,
@@ -763,6 +778,7 @@ export const payments = new Hono<AppEnv>()
         requestedAllocations: confirmed ? [] : requested,
         /** 07-ZH line 9: what the invoices do not take is kept as the client's credit (ADM-PAY-06). */
         unallocatedMinor: confirmed ? plan.unallocatedMinor : null,
+        ra41,
         ...(confirmed ? {} : { approvalId }),
         warnings: confirmed
           ? receiptWarnings(
@@ -915,12 +931,27 @@ export const payments = new Hono<AppEnv>()
     // M6.5 (L3): the confirmed payment's receipt, in its own batch on the invoices Worker (after the answer).
     if (decision === "confirmed" && row.kind === "payment")
       c.executionCtx.waitUntil(enqueueReceipt(c.env, id));
+    // Review part 1, finding 3 (RA-41): whether the credit this confirmation leaves may be an advance (codes only).
+    const ra41 =
+      decision === "confirmed" && row.kind === "payment" && unallocatedMinor !== null
+        ? await ra41OnConfirm(
+            db,
+            {
+              currency: row.currency,
+              amountMinor: row.amount_minor,
+              unallocatedMinor,
+              receivedOn: row.received_on,
+            },
+            issueDateOf(now),
+          )
+        : null;
     return c.json({
       ok: true,
       id,
       status: decision,
       allocations: rows.map((r) => ({ documentId: r.documentId, amountMinor: r.amountMinor })),
       unallocatedMinor,
+      ra41,
       warnings:
         decision === "confirmed"
           ? receiptWarnings(

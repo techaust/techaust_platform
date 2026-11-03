@@ -278,6 +278,8 @@ export const ROUTES: readonly RouteDef[] = [
     audit: "payment.advice_unlink",
   }),
   X("GET", "/payments/without-advice", "payments.read"),
+  // M6.5 review part 1, finding 3 (RA-41): credit held at a return period's end that may be an advance (the Owner and the Accountant), above `/payments/:id`.
+  X("GET", "/payments/credit-held", "reports.finance"),
   X("GET", "/payments", "payments.read"),
   X("POST", "/payments", "payments.record", { audit: "payment.record" }),
   X("GET", "/payments/:id", "payments.read"),
@@ -310,6 +312,8 @@ export const ROUTES: readonly RouteDef[] = [
   X("GET", "/refunds", "refunds.read"),
   X("POST", "/refunds/:id/retry", "refunds.issue", { audit: "refund.retry" }),
   X("POST", "/refunds/:id/cancel", "refunds.issue", { audit: "refund.cancel" }),
+  // Review part 1, finding 9 (L9): the INR the bank debited for a USD refund (the Owner with a fresh code, once), for the refunds register.
+  X("POST", "/refunds/:id/inr", "refunds.issue", { audit: "refund.inr" }),
   // M6.5 (ADM-PAY-10, L11): reconciliation: Razorpay's settlements, the unmatched lists, the Owner's "seen in the bank statement" tick and "Fetch now".
   X("GET", "/reconciliation/settlements", "reports.finance"),
   X("GET", "/reconciliation/settlements/:id", "reports.finance"),

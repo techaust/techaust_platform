@@ -274,7 +274,12 @@ function RefundForm(props: RefundDialogProps & { payment: ResolvedPayment; onBus
       from: source,
       reasonCode: reason,
       ...(source === "document" && props.document
-        ? { documentId: props.document.id, expectedUpdatedAt: props.document.updatedAt }
+        ? {
+            documentId: props.document.id,
+            expectedUpdatedAt: props.document.updatedAt,
+            // Review part 1, finding 6 (RA-40): the invoice's newest issued credit note, as the server read it (the server falls back to the same note).
+            ...(f?.issuedCreditNote ? { creditNoteId: f.issuedCreditNote.id } : {}),
+          }
         : {}),
       ...(note.trim() ? { note: note.trim() } : {}),
       ...(outside
@@ -286,7 +291,16 @@ function RefundForm(props: RefundDialogProps & { payment: ResolvedPayment; onBus
             },
           }
         : way === "manual"
-          ? { manual: { mode, reference: reference.trim(), paidOn, paidTo } }
+          ? {
+              manual: {
+                mode,
+                reference: reference.trim(),
+                paidOn,
+                paidTo,
+                // Review part 1, finding 10 (RB-24): the payer's written request, recorded with the refund.
+                ...(paidTo === "own_account" ? { writtenRequest: true as const } : {}),
+              },
+            }
           : {}),
       ...(exportTick ? { confirmExport: exportOk } : {}),
     };

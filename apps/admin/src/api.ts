@@ -1916,6 +1916,8 @@ export type InvoicePaymentsPanel = {
     paymentId: string;
     kind: PaymentKind;
     status: PaymentStatus;
+    /** M6.5 review P2-4: the payment's own gateway (`manual` for one recorded by hand), whichever document's link it came through. */
+    provider: string;
     receivedOn: string;
     mode: PaymentMode | null;
     reference: string | null;

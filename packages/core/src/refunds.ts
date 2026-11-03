@@ -300,6 +300,44 @@ export function returnPeriodOf(iso: string, frequency: "monthly" | "quarterly"):
   return frequency === "monthly" ? iso.slice(0, 7) : `${y}-Q${Math.trunc(m0 / 3) + 1}`;
 }
 
+const PERIOD_RE = /^(\d{4})-(?:(0[1-9]|1[0-2])|Q([1-4]))$/;
+
+/**
+ * RA-41 (review part 1, finding 3): the last ISO day of a return period as `returnPeriodOf` names it ("2026-10" → "2026-10-31", "2026-Q4" → "2026-12-31");
+ * null for anything else.
+ */
+export function returnPeriodEnd(period: string): string | null {
+  const m = PERIOD_RE.exec(period);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const lastMonth = m[2] ? Number(m[2]) : Number(m[3]) * 3;
+  // day 0 of the next month is the last day of this one (UTC, no clock involved)
+  const last = new Date(Date.UTC(year, lastMonth, 0)).getUTCDate();
+  return `${m[1]}-${String(lastMonth).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
+}
+
+/** The return period before the one `today` (an ISO day) falls in: the latest period that has ended. */
+export function previousReturnPeriod(today: string, frequency: "monthly" | "quarterly"): string {
+  const y = Number(today.slice(0, 4));
+  const m = Number(today.slice(5, 7));
+  const step = frequency === "monthly" ? 1 : 3;
+  // the first month of today's period, less one step
+  const m0 = m - 1;
+  const first = frequency === "monthly" ? m : Math.trunc(m0 / 3) * 3 + 1;
+  const back = first - step;
+  const iso =
+    back >= 1
+      ? `${y}-${String(back).padStart(2, "0")}-01`
+      : `${y - 1}-${String(back + 12).padStart(2, "0")}-01`;
+  return returnPeriodOf(iso, frequency);
+}
+
+/** The last UTC instant (ms) of an ISO day in IST (23:59:59.999 IST), so "held at the period's end" counts everything recorded that day. */
+export const istDayEndMs = (iso: string): number =>
+  Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)) + 1) -
+  19_800_000 -
+  1;
+
 /**
  * RA-41 (Settled by the lead on the safest reading, 2026-11-03 (08-C RA-41)): whether credit left on a payment may be an advance whose GST was due when it arrived
  * (s.13(2) CGST Act; RA-36), so the screens show the RA-41 line. Money not put on any invoice is an advance; an excess over its invoices of up to the s.13(2) proviso's

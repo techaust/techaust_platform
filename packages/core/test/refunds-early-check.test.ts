@@ -154,6 +154,36 @@ describe("the refund body: pending + outside (finding 4)", () => {
   });
 });
 
+describe("the refund body: the payer's written request with own_account (review part 1, finding 10; RB-24)", () => {
+  const body = {
+    id: "01900000-0000-7000-8000-00000000000a",
+    amountMinor: 1_000,
+    from: "credit",
+    reasonCode: "overpayment",
+  };
+  const manual = (paidTo: "original" | "own_account", writtenRequest?: true) => ({
+    ...body,
+    manual: {
+      mode: "neft",
+      reference: "UTR1",
+      paidOn: "2026-11-02",
+      paidTo,
+      ...(writtenRequest ? { writtenRequest } : {}),
+    },
+  });
+  it("own_account needs writtenRequest: true; the original account doesn't", () => {
+    expect(refundBody.safeParse(manual("own_account")).success).toBe(false);
+    expect(refundBody.safeParse(manual("own_account", true)).success).toBe(true);
+    expect(refundBody.safeParse(manual("original")).success).toBe(true);
+    expect(
+      refundBody.safeParse({
+        ...manual("own_account"),
+        manual: { ...manual("own_account").manual, writtenRequest: false },
+      }).success,
+    ).toBe(false);
+  });
+});
+
 describe("stageOf: RA-38's GST stage before RB-43's reduction (finding 2)", () => {
   const dates = {
     femaDue: { year: 2027, month: 8, day: 1 },

@@ -13,7 +13,16 @@
 // T11 deed hook is not appended (`packages/core/test/deed-hooks.test.ts` lists this file's builder with that reason).
 import { ledgerResultStatement, recomputeStatement } from "./ledger.ts";
 import type { GuardSql } from "./log.ts";
-import { livePaidSql, liveTdsSql, PAYABLE_TYPES_SQL, paymentFreeSql, paymentNetSql } from "./sql-rules.ts";
+import {
+  livePaidSql,
+  liveTdsSql,
+  overpaymentAdvanceAtSql,
+  PAYABLE_TYPES_SQL,
+  paymentFreeAtSql,
+  paymentFreeSql,
+  paymentNetAtSql,
+  paymentNetSql,
+} from "./sql-rules.ts";
 
 export type { GuardSql };
 
@@ -265,19 +274,77 @@ export const pendingRefundedRejectStatement = (
 };
 
 /**
+ * Review part 1, finding 1a: the claim a re-post makes BEFORE it sends anything (`checkRefund`, the sweep and the Owner's "Try again"): one more attempt counted
+ * and `last_attempt_at` moved to now, only while the refund is still `requested` with no gateway id AND its `last_attempt_at` is still the value the caller read
+ * (`seen`, NULL included: `IS`). One row changed: this caller alone may post; zero: a cancel, another re-post or the gateway's word got there first, so nothing is
+ * sent. A cancel binds the same `last_attempt_at` (`refundCancelStatement`), so a claim between its read and its write leaves the cancel with zero rows.
+ * Binds `?1` refund, `?2` now, `?3` the `last_attempt_at` read.
+ */
+export const refundRepostClaimStatement = (
+  db: D1Database,
+  a: { refundId: string; now: number; seen: number | null },
+): D1PreparedStatement =>
+  db
+    .prepare(
+      `UPDATE payment_refunds SET attempts = attempts + 1, last_attempt_at = ?2, updated_at = max(?2, updated_at)
+       WHERE id = ?1 AND status = 'requested' AND provider_refund_id IS NULL AND last_attempt_at IS ?3`,
+    )
+    .bind(a.refundId, a.now, a.seen);
+
+/**
  * `cancel` (C step 4): a refund still `requested` is failed by the Owner (step-up) only after the gateway showed no refund for our id (the route fetches first); its
- * code is `cancelled`. Binds `?1` refund, `?2` now, `?3` session.
+ * code is `cancelled`. Review part 1, finding 1b: only while `last_attempt_at` is still the value the route read before asking the gateway (`seen`): a re-post
+ * that claimed the row in between (`refundRepostClaimStatement`) may have a request on its way, so the cancel writes nothing (the route answers 409 `too_soon`).
+ * Binds `?1` refund, `?2` now, `?3` session, `?4` the `last_attempt_at` read.
  */
 export const refundCancelStatement = (
   db: D1Database,
-  a: { refundId: string; now: number; sessionId: string },
+  a: { refundId: string; now: number; sessionId: string; seen: number | null },
 ): D1PreparedStatement =>
   db
     .prepare(
       `UPDATE payment_refunds SET status = 'failed', failure_code = 'cancelled', updated_at = max(?2, updated_at)
-       WHERE id = ?1 AND status = 'requested' AND provider_refund_id IS NULL AND ${ownerSessionSql("?3", "?2", true)}`,
+       WHERE id = ?1 AND status = 'requested' AND provider_refund_id IS NULL AND last_attempt_at IS ?4 AND ${ownerSessionSql("?3", "?2", true)}`,
     )
-    .bind(a.refundId, a.now, a.sessionId);
+    .bind(a.refundId, a.now, a.sessionId, a.seen);
+
+/**
+ * Review part 1, finding 9 (L9): the INR the bank debited for a refund in another currency that went out (`succeeded`), as its advice shows it, recorded once by the
+ * Owner with a fresh step-up (trigger `payment_refunds_fixed` of 0070 lets `inr_refunded_minor` be set once). Zero rows: already set, not a foreign-currency
+ * refund, not gone out yet, or not the Owner. Binds `?1` refund, `?2` the INR in paise, `?3` session, `?4` now.
+ */
+export const refundInrStatement = (
+  db: D1Database,
+  a: { refundId: string; inrMinor: number; sessionId: string; now: number },
+): D1PreparedStatement =>
+  db
+    .prepare(
+      `UPDATE payment_refunds SET inr_refunded_minor = ?2, updated_at = max(?4, updated_at)
+       WHERE id = ?1 AND inr_refunded_minor IS NULL AND status = 'succeeded' AND currency <> 'INR' AND ${ownerSessionSql("?3", "?4", true)}`,
+    )
+    .bind(a.refundId, a.inrMinor, a.sessionId, a.now);
+
+// ---- RA-41: credit held at a period's end (review part 1, finding 3) -------------------------------------------------------------------------------------
+
+/**
+ * RA-41 (Settled by the lead on the safest reading, 2026-11-03 (08-C RA-41)): the confirmed money-received payments that held credit at a return period's end
+ * which may be an advance (`overpaymentAdvanceAtSql`: on no invoice, not in INR, or more than the s.13(2) proviso's ₹1,000 above its invoices), so the Owner
+ * declares it in GSTR-1 Table 11A for that period, refunds it or uses it. Binds `?1` the period's last instant (UTC ms), `?2` its last day, `?3`/`?4` the keyset
+ * `(received_on, id)` after which the page starts (the first page binds '' and ''), `?5` the proviso (`tax.excessProvisoMinor`). Oldest money first, at most 51
+ * (a page of 50 and whether there is more), through `payments_confirmed`. `held_since_at`: the instant of the last allocation or release before the period's end
+ * (null: the money was never put on an invoice, so it is held from the day it arrived).
+ */
+export const CREDIT_HELD_SQL = `SELECT s.id, s.client_id, k.code AS client_code, k.display_name AS client_name, s.currency, s.received_on, s.amount_minor, s.net, s.credit,
+     s.held_since_at
+   FROM (SELECT p.id, p.client_id, p.currency, p.received_on, p.amount_minor, ${paymentNetAtSql("p.id", "?1")} AS net, ${paymentFreeAtSql("p", "?1")} AS credit,
+         (SELECT max(hs.created_at) FROM payment_allocations hs INDEXED BY payment_allocations_payment WHERE hs.payment_id = p.id AND hs.created_at <= ?1) AS held_since_at
+       FROM payments p INDEXED BY payments_confirmed
+       WHERE p.status = 'confirmed' AND p.kind = 'payment' AND p.verified_at <= ?1 AND p.received_on <= ?2
+         AND (p.received_on > ?3 OR (p.received_on = ?3 AND p.id > ?4))
+         AND ${overpaymentAdvanceAtSql("p", "?1", "?5")}
+       ORDER BY p.received_on, p.id LIMIT 51) s
+   JOIN clients k ON k.id = s.client_id
+   ORDER BY s.received_on, s.id`;
 
 // ---- the withdraw's receipt (L10) -------------------------------------------------------------------------------------------------------------------------
 
@@ -509,7 +576,10 @@ export const bankMatchRemoveStatement = (
 
 /**
  * The AD bank's Reg. 6 reduction of an export invoice (`realisation.reduce`, the Owner with a fresh step-up; Settled by the lead on the safest reading, 2026-11-03
- * (08-C RB-43)): for an issued, live export invoice of a live client, in its currency, all reductions together never above its total. Zero rows: 409. Binds `?1`..`?9`.
+ * (08-C RB-43)): for an issued, live export invoice of a live client, in its currency, all reductions together never above its total. A reduction on our own
+ * declaration (`declaration`) counts together with every earlier declaration on the same invoice (review part 1, finding 2: the cap is per invoice, not per
+ * reduction): their sum, in INR (an INR invoice as it is; otherwise at the invoice's own Owner-typed rate, rounded up, the safe side; no rate: refused), at most
+ * `declarationMaxInrMinor`. Zero rows: 409. Binds `?1`..`?10`.
  */
 export function realisationReductionStatement(
   db: D1Database,
@@ -523,14 +593,19 @@ export function realisationReductionStatement(
     note: string | null;
     sessionId: string;
     now: number;
+    /** Settled by the lead on the safest reading, 2026-11-03 (08-C RB-43): the most all declarations of one invoice may come to, in paise. */
+    declarationMaxInrMinor: number;
   },
 ): D1PreparedStatement {
+  const declared = `?3 + (SELECT coalesce(sum(y.amount_minor), 0) FROM realisation_reductions y INDEXED BY realisation_reductions_document WHERE y.document_id = d.id AND y.declaration = 1)`;
   return db
     .prepare(
       `INSERT INTO realisation_reductions (id, document_id, currency, amount_minor, approved_on, bank_ref, declaration, note, recorded_by, created_at)
        SELECT ?1, d.id, d.currency, ?3, ?4, ?5, ?6, ?7, ${sessionUser("?8")}, ?9 FROM documents d JOIN clients k ON k.id = d.client_id
        WHERE d.id = ?2 AND d.type = 'export_invoice' AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.voided_at IS NULL AND k.anonymised_at IS NULL
          AND ?3 + (SELECT coalesce(sum(x.amount_minor), 0) FROM realisation_reductions x WHERE x.document_id = d.id) <= d.total_minor
+         AND (?6 = 0 OR coalesce(CASE WHEN d.currency = 'INR' THEN ${declared}
+               WHEN d.fx_rate_micros > 0 THEN ((${declared}) * d.fx_rate_micros + 999999) / 1000000 END <= ?10, 0))
          AND ${ownerSessionSql("?8", "?9", true)}`,
     )
     .bind(
@@ -543,6 +618,7 @@ export function realisationReductionStatement(
       a.note,
       a.sessionId,
       a.now,
+      a.declarationMaxInrMinor,
     );
 }
 

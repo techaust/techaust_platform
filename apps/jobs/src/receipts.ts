@@ -10,10 +10,17 @@
 // attached when the client's "attach PDF" is on, else the portal link; not for a payment confirmed more than 3 days before the receipt issued (L5: the staging
 // back-catalogue); one `email_log` claim per receipt and recipient. No PDF and no email for an anonymised client. While the page is the builder's placeholder
 // (`RECEIPT_LAYOUT_PLACEHOLDER`) receipts render only where `ENVIRONMENT` is "local" (nothing placeholder is stored write-once on staging).
+// Review part 1: the sweep mirrors M4.4's (`RECEIPT_PDF_PENDING_SQL`: issued at least `RECEIPT_SWEEP_AFTER_MS` ago, never after `SWEEP_MAX_FAILED_NIGHTS` failed IST
+// days or a refusal bell, the least recently tried first; each pick noted in `pdf_failures`), and a receipt render that ran out of tries counts a failed day, the
+// third ringing the owners once (finding 4); outside "local" no receipt is rendered while 07-ZO is unapproved (`APPROVED_07ZO`), so no "[Placeholder]" word is
+// ever stored write-once or emailed (finding 5: skipped, nothing counted; the sweep renders it once the switch flips); the email is queued BEFORE the PDF is
+// marked made, so a failed send is retried with the message (finding 7; the email log keeps one email per receipt and recipient).
 import type { EmailMessage } from "@techaust/core";
+import { APPROVED_07ZO } from "@techaust/core/copy-zo";
 import { formatDate, parseIsoDate } from "@techaust/core/dates";
 import { canonicalJson, sha256Hex } from "@techaust/core/hash";
 import { formatMoney, money } from "@techaust/core/money";
+import { todayIst } from "@techaust/core/offers";
 import {
   fyLabelOfToken,
   isReceiptMessage,
@@ -38,10 +45,14 @@ import { type Clock, realClock } from "./pacer.ts";
 import {
   BROWSER_ALERT_MS,
   dayOf,
+  FAILED_NIGHT_SQL,
   failed,
   HALF_BELL_SQL,
   putPdfOnce,
   STAT_ADD_SQL,
+  STOPPED_BELL_SQL,
+  SWEEP_ATTEMPT_SQL,
+  SWEEP_MAX_FAILED_NIGHTS,
   sha256Bytes,
 } from "./pdf.ts";
 import { sendChunked } from "./send-batch.ts";
@@ -51,6 +62,11 @@ export const RECEIPT_MAIL_MAX = 20;
 /** The owners' bell when a receipt's sealed values fail their check (builder's staff draft for the lead). */
 export const RECEIPT_REFUSED_BELL = (number: string) =>
   `The PDF of receipt ${number} didn't match its saved copy, so it wasn't made. A developer needs to look at it.`;
+/** Review part 1, finding 4: the owners' one bell once a receipt's PDF failed on `SWEEP_MAX_FAILED_NIGHTS` IST days (staff line for the lead, 07-ZO). */
+export const RECEIPT_STOPPED_BELL = (number: string) =>
+  `The PDF of receipt ${number} couldn't be made on 3 days, so the hourly retry has stopped. A developer needs to look at it.`;
+/** 07-ZO approved (one switch, `@techaust/core/copy-zo`); behind an object so a test can stand in for the flipped switch. */
+export const receiptCopyGate = { approved: (): boolean => APPROVED_07ZO };
 
 const ROW_SQL = `SELECT d.id, d.client_id, d.currency, d.fy, d.number, d.number_display, d.header_extras, d.snapshot_sha256, d.pdf_sha256, d.frozen_at, d.status,
      k.anonymised_at, k.attach_pdf, p.verified_at
@@ -110,7 +126,10 @@ export async function processReceipt(
   if (body.kind === "receipt.sweep") {
     const [due, pending] = await env.DB.batch([
       env.DB.prepare(RECEIPTS_DUE_SQL).bind(body.asOf - RECEIPT_SWEEP_AFTER_MS),
-      env.DB.prepare(RECEIPT_PDF_PENDING_SQL),
+      env.DB.prepare(RECEIPT_PDF_PENDING_SQL).bind(
+        body.asOf - RECEIPT_SWEEP_AFTER_MS,
+        SWEEP_MAX_FAILED_NIGHTS,
+      ),
     ]);
     const issue = ((due?.results ?? []) as { id: string }[]).map((r) => ({
       v: 1,
@@ -121,6 +140,10 @@ export async function processReceipt(
       .filter((r) => r.id.length <= 64)
       .map((r) => ({ v: 1, kind: "receipt.render", receiptId: r.id, hop: 0 }));
     if (issue.length + render.length > 0) await sendChunked(env.PDF_QUEUE, [...issue, ...render]);
+    // Finding 4: each render picked is noted (as M4.4's sweep), so the next sweep starts with the ones it tried least recently. The messages go first: a lost
+    // note only changes the order, never loses a PDF.
+    if (render.length > 0)
+      await env.DB.batch(render.map((r) => env.DB.prepare(SWEEP_ATTEMPT_SQL).bind(r.receiptId, body.asOf)));
     logEvent("receipt.sweep", { issue: issue.length, render: render.length });
     return "swept";
   }
@@ -145,6 +168,8 @@ async function renderReceipt(
   if (row.status !== "issued") return skip("not_issued");
   const environment: string = env.ENVIRONMENT;
   if (RECEIPT_LAYOUT_PLACEHOLDER && environment !== "local") return skip("layout_placeholder");
+  // Finding 5: the receipt's words come from 07-ZO; until the owner approves it, nothing is stored write-once or emailed outside "local" (no failure counted).
+  if (!receiptCopyGate.approved() && environment !== "local") return skip("copy_unapproved");
   const receiptOf = receiptOfRow(row.header_extras);
   const label = row.fy ? fyLabelOfToken(row.fy) : null;
   const sealed =
@@ -187,8 +212,10 @@ async function renderReceipt(
   };
   const already = await env.DOCS.get(key);
   if (already !== null) {
-    await settle(await sha256Bytes(new Uint8Array(await already.arrayBuffer())), null);
+    const sha = await sha256Bytes(new Uint8Array(await already.arrayBuffer()));
+    // Finding 7: the email first, then the PDF marked made (a failed send throws, the message is retried and the stored PDF adopted again).
     await mailReceipt(env, row, receiptOf, key, now);
+    await settle(sha, null);
     logEvent("receipt.adopted", { layout: RECEIPT_PDF_LAYOUT_ID });
     return "adopted";
   }
@@ -199,8 +226,8 @@ async function renderReceipt(
     return "delayed";
   }
   const { bytes, sha256 } = await putPdfOnce(env.DOCS, key, result.bytes);
-  await settle(sha256, { browserMs: result.browserMs });
   await mailReceipt(env, row, receiptOf, key, now);
+  await settle(sha256, { browserMs: result.browserMs });
   logEvent("receipt.rendered", {
     bytes: bytes.byteLength,
     browserMs: result.browserMs,
@@ -208,6 +235,35 @@ async function renderReceipt(
     layout: RECEIPT_PDF_LAYOUT_ID,
   });
   return "rendered";
+}
+
+/**
+ * Review part 1, finding 4: a receipt message that ran out of tries. A render counts one failed IST day for its receipt (`pdf_failures`, once per day); at the
+ * third the sweep leaves it out and the owners get one bell. An issue or a sweep is only logged (the next hourly sweep asks again).
+ */
+export async function processReceiptDeadLetter(env: Env, body: unknown, now = Date.now()): Promise<void> {
+  if (!isReceiptMessage(body) || body.kind !== "receipt.render") {
+    logEvent("receipt.dead_letter", { kind: isReceiptMessage(body) ? body.kind : "invalid" });
+    return;
+  }
+  const row = await env.DB.prepare(
+    "SELECT id, number_display FROM documents WHERE id = ?1 AND type = 'receipt'",
+  )
+    .bind(body.receiptId)
+    .first<{ id: string; number_display: string | null }>();
+  if (!row) {
+    logEvent("receipt.dead_letter", { kind: body.kind, skipped: "not_found" });
+    return;
+  }
+  await env.DB.batch([
+    env.DB.prepare(FAILED_NIGHT_SQL).bind(row.id, todayIst(now), now),
+    env.DB.prepare(STOPPED_BELL_SQL).bind(
+      row.id,
+      RECEIPT_STOPPED_BELL(row.number_display ?? "Untitled"),
+      "/payments",
+    ),
+  ]);
+  logEvent("receipt.dead_letter", { kind: body.kind });
 }
 
 /** The receipt's email to the client's finance contacts (once per receipt and recipient: the `email_log` claim is keyed on the entity and recipient). */

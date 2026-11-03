@@ -3,11 +3,12 @@
 // `refund.check` that becomes a `refund_stuck` item. The RPC entrypoints are fakes; no gateway is reached. Invented test data.
 import { env as realEnv } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
-import { describe, expect, it } from "vitest";
+import { canonicalJson, sha256Hex } from "@techaust/core/hash";
+import { describe, expect, it, vi } from "vitest";
 import { handleQueue } from "../src/queue.ts";
-import { processReceipt } from "../src/receipts.ts";
+import { processReceipt, processReceiptDeadLetter, receiptCopyGate } from "../src/receipts.ts";
 import { processRefundDeadLetter, processRefundFamily } from "../src/refunds.ts";
-import { fakes, logs, makeEnv, mkClient, mkDoc, staff, useFakes } from "./billing-fixtures.ts";
+import { fakes, logs, makeEnv, mkClient, mkContact, mkDoc, staff, useFakes } from "./billing-fixtures.ts";
 
 useFakes();
 
@@ -48,6 +49,157 @@ describe("early check 2, finding 4: a void receipt is never rendered or emailed 
     expect(fakes.email).toEqual([]);
     expect(await processReceipt(env, { v: 1, kind: "receipt.sweep", asOf: now })).toBe("swept");
     expect(JSON.stringify(fakes.pdf)).not.toContain(receiptId);
+  });
+});
+
+// ---- review part 1, findings 4, 5 and 7 ----------------------------------------------------------------------------------------------------------------------
+
+let rseq = 0;
+/** A confirmed manual payment and its issued receipt with a sealed `receiptOf` (frozen `ageMs` ago), as the invoices Worker leaves them. */
+async function sealedReceipt(clientId: string, ownerId: string, ageMs: number) {
+  const now = Date.now();
+  const paymentId = uuidv7();
+  await realEnv.DB.prepare(
+    `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, reference_norm, recorded_by, recorded_at, verified_by, verified_at)
+     VALUES (?1, ?2, 'payment', 'manual', 'confirmed', 'INR', 42000, '2026-11-01', 'neft', ?3, ?4, ?5, ?4, ?5)`,
+  )
+    .bind(paymentId, clientId, `UTRR1${now}${++rseq}`, ownerId, now - ageMs - 60_000)
+    .run();
+  const receiptOf = { amountMinor: 42_000, currency: "INR", receivedOn: "2026-11-01" };
+  const id = `rct_${paymentId}`;
+  const n = 8_000 + rseq;
+  await realEnv.DB.prepare(
+    `INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, issue_date, subtotal_minor, taxable_minor, total_minor,
+       balance_minor, content_sha256, snapshot_sha256, header_extras, updated_at)
+     VALUES (?1, 'receipt', 'issued', ?2, 'INR', 'receipt', '9899', ?3, ?4, ?5, '2026-11-01', 42000, 0, 42000, 0, ?6, ?7, ?8, ?5)`,
+  )
+    .bind(
+      id,
+      clientId,
+      n,
+      `TH/RCT/9899/${n}`,
+      now - ageMs,
+      "h".repeat(64),
+      await sha256Hex(canonicalJson(receiptOf)),
+      JSON.stringify({ receiptOf }),
+    )
+    .run();
+  await realEnv.DB.prepare("UPDATE payments SET receipt_document_id = ?2 WHERE id = ?1")
+    .bind(paymentId, id)
+    .run();
+  return id;
+}
+const pdfOf = (id: string) =>
+  realEnv.DB.prepare("SELECT pdf_sha256 FROM documents WHERE id = ?1")
+    .bind(id)
+    .first<{ pdf_sha256: string | null }>();
+const storedDocs = () => ({
+  get: async () => ({ arrayBuffer: async () => new Uint8Array([37, 80, 68, 70]).buffer }),
+});
+
+describe("review part 1, finding 4: the receipt sweep is bounded like M4.4's [L3, JOB-PDF-01]", () => {
+  it("only receipts older than 10 minutes, never one failed on 3 days or refused; each pick noted; a dead render counts a day and the third rings the owners once", async () => {
+    const owner = await staff("owner");
+    const clientId = await mkClient();
+    const old = await sealedReceipt(clientId, owner.id, 30 * 60_000);
+    const fresh = await sealedReceipt(clientId, owner.id, 60_000);
+    const failedThrice = await sealedReceipt(clientId, owner.id, 40 * 60_000);
+    const refused = await sealedReceipt(clientId, owner.id, 50 * 60_000);
+    await realEnv.DB.prepare(
+      "INSERT INTO pdf_failures (document_id, nights, last_failed_day, last_attempt_at) VALUES (?1, 3, '2026-11-01', 5)",
+    )
+      .bind(failedThrice)
+      .run();
+    await realEnv.DB.prepare(
+      "INSERT INTO notifications (id, user_id, kind, entity_type, entity_id, title, link) VALUES (?1, ?2, 'pdf.refused', 'document', ?3, 'x', '/payments')",
+    )
+      .bind(uuidv7(), owner.id, refused)
+      .run();
+    const env = makeEnv();
+    const asOf = Date.now();
+    expect(await processReceipt(env, { v: 1, kind: "receipt.sweep", asOf })).toBe("swept");
+    const rendered = fakes.pdf
+      .map((s) => s.body as { kind: string; receiptId?: string })
+      .filter((b) => b.kind === "receipt.render")
+      .map((b) => b.receiptId);
+    expect(rendered).toContain(old);
+    for (const left of [fresh, failedThrice, refused]) expect(rendered).not.toContain(left);
+    expect(
+      await realEnv.DB.prepare("SELECT nights, last_attempt_at FROM pdf_failures WHERE document_id = ?1")
+        .bind(old)
+        .first(),
+    ).toEqual({ nights: 0, last_attempt_at: asOf });
+    // three dead renders on three IST days: three nights, one bell per owner, and the sweep leaves it out
+    const day = 86_400_000;
+    const dead = { v: 1, kind: "receipt.render", receiptId: old, hop: 0 };
+    // routed from the PDF dead-letter queue (today), then a second on the same day (no extra night), then two later days
+    const { acks, batch } = batchOf("techaust-local-pdf-dlq", dead);
+    await handleQueue(batch, env);
+    expect(acks).toEqual(["ack"]);
+    expect(
+      await realEnv.DB.prepare("SELECT nights FROM pdf_failures WHERE document_id = ?1").bind(old).first(),
+    ).toEqual({ nights: 1 });
+    for (const d of [0, 1, 2]) await processReceiptDeadLetter(env, dead, Date.now() + d * day);
+    expect(
+      await realEnv.DB.prepare("SELECT nights FROM pdf_failures WHERE document_id = ?1").bind(old).first(),
+    ).toEqual({ nights: 3 });
+    const bells = await realEnv.DB.prepare(
+      "SELECT count(*) AS n FROM notifications WHERE kind = 'pdf.refused' AND entity_id = ?1 AND user_id = ?2",
+    )
+      .bind(old, owner.id)
+      .first<{ n: number }>();
+    expect(bells?.n).toBe(1);
+    fakes.pdf.length = 0;
+    await processReceipt(env, { v: 1, kind: "receipt.sweep", asOf: asOf + 3 * day });
+    expect(JSON.stringify(fakes.pdf)).not.toContain(old);
+  });
+});
+
+describe("review part 1, findings 5 and 7: no unapproved words stored outside local; the email before the PDF is marked made", () => {
+  it("staging while 07-ZO is unapproved: skipped, nothing stored, sent or counted; once approved: a failed email send leaves the PDF unmarked, the retry mails and marks it", async () => {
+    const owner = await staff("owner");
+    const clientId = await mkClient();
+    await mkContact(clientId);
+    const id = await sealedReceipt(clientId, owner.id, 30_000);
+    const staging = makeEnv({ ENVIRONMENT: "staging", DOCS: storedDocs() } as never);
+    expect(await processReceipt(staging, { v: 1, kind: "receipt.render", receiptId: id, hop: 0 })).toBe(
+      "skipped",
+    );
+    expect(logs.some((l) => l.includes("copy_unapproved"))).toBe(true);
+    expect(fakes.email).toEqual([]);
+    expect(await pdfOf(id)).toEqual({ pdf_sha256: null });
+    expect(
+      await realEnv.DB.prepare("SELECT count(*) AS n FROM pdf_failures WHERE document_id = ?1")
+        .bind(id)
+        .first(),
+    ).toEqual({ n: 0 });
+    // the switch flipped: the stored PDF is adopted; the email queue fails first
+    const gate = vi.spyOn(receiptCopyGate, "approved").mockReturnValue(true);
+    try {
+      const broken = makeEnv({
+        ENVIRONMENT: "staging",
+        DOCS: storedDocs(),
+        EMAIL_QUEUE: {
+          send: async () => {
+            throw new Error("queue down");
+          },
+          sendBatch: async () => {
+            throw new Error("queue down");
+          },
+        },
+      } as never);
+      await expect(
+        processReceipt(broken, { v: 1, kind: "receipt.render", receiptId: id, hop: 0 }),
+      ).rejects.toThrow("queue down");
+      expect(await pdfOf(id)).toEqual({ pdf_sha256: null });
+      expect(await processReceipt(staging, { v: 1, kind: "receipt.render", receiptId: id, hop: 0 })).toBe(
+        "adopted",
+      );
+      expect(fakes.email.map((s) => (s.body as { template: string }).template)).toEqual(["receipt.sent"]);
+      expect((await pdfOf(id))?.pdf_sha256).toMatch(/^[0-9a-f]{64}$/);
+    } finally {
+      gate.mockRestore();
+    }
   });
 });
 
