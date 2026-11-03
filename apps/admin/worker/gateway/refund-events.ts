@@ -9,7 +9,7 @@
 import type { ProcessEventResult } from "@techaust/core/gateway-rpc";
 import { uuidv7 } from "@techaust/core/ids";
 import { reviewBellStatement, reviewItemStatement, webhookEventMoveStatement } from "@techaust/db/gateway";
-import { REFUND_BY_PROVIDER_REF_SQL } from "@techaust/db/refunds";
+import { REFUND_BY_PROVIDER_REF_SQL, refundItemOnceGuard } from "@techaust/db/refunds";
 import { applyGatewayRefund, openRefundItem, type RefundRow, readRefund } from "../refund-flow.ts";
 import { mutateSystem } from "../system.ts";
 import { REVIEW_LINK } from "./consts.ts";
@@ -127,15 +127,10 @@ export async function processRefundEvent(
   // PayPal's refund of nobody's refund here keeps M6.4's own path (`processPayPalEvent`: the payment by its capture, the invoice tail check, the item).
   if (provider === "paypal") return null;
   if (!payment) return quiet("ignored", "not_ours");
-  // Stripe's `charge.refunded` names no refund: when this payment has a refund of ours, its own `refund.*` events move it (no item for our own refund); a
-  // refund made in Stripe's dashboard arrives as `refund.created` (H3 asks for it) with its id and becomes the item below.
-  if (!isDispute && !refundRef) {
-    const any = await db
-      .prepare("SELECT 1 FROM payment_refunds INDEXED BY payment_refunds_payment WHERE payment_id = ?1")
-      .bind(payment.id)
-      .first();
-    if (any) return quiet("processed", "charge_refunded_ours");
-  }
+  // Stripe's `charge.refunded` names no refund and carries the charge's running total (`amount_refunded`): it never opens an item (second review, M3). A refund
+  // of ours moves by its own `refund.*` events; a refund made in Stripe's dashboard arrives as `refund.created`/`refund.updated` (H3 subscribes them) with its
+  // id and its own amount, and becomes the item below. Only logged.
+  if (!isDispute && !refundRef) return quiet("processed", "charge_refunded_logged");
   // A refund recorded here already (an outside refund the Owner recorded, a lost dispute): nothing more to say.
   if (refundRef) {
     const known = await db
@@ -154,27 +149,34 @@ export async function processRefundEvent(
   const amount =
     typeof f.amountMinor === "number" && f.amountMinor > 0 ? f.amountMinor : payment.amount_minor;
   const reviewId = uuidv7();
-  await mutateSystem(env, {
+  // Second review, M3: one item per (provider, the gateway's refund or dispute id) and kind, open or resolved: a dashboard refund sends `refund.created` then
+  // `refund.processed` (Razorpay) or `refund.created` then `refund.updated` (Stripe), each its own event. The payment is the provider's own row, so the payment
+  // and the id name one refund. A later event of a known one writes nothing (no item, no bell) and is marked processed.
+  const opened = await mutateSystem(env, {
     actorType: "webhook",
-    main: reviewItemStatement(db, {
-      id: reviewId,
-      source: "webhook",
-      provider,
-      kind,
-      webhookEventId: row.id,
-      paymentId: payment.id,
-      documentId: payment.document_id,
-      clientId: payment.client_id,
-      amountMinor: amount,
-      currency: payment.currency,
-      facts: {
-        linkId: "",
-        paymentId: paymentRef ?? "",
-        ...(refundRef ? { refundId: refundRef } : {}),
-        ...(text(f.status) ? { status: text(f.status) as string } : {}),
+    main: reviewItemStatement(
+      db,
+      {
+        id: reviewId,
+        source: "webhook",
+        provider,
+        kind,
+        webhookEventId: row.id,
+        paymentId: payment.id,
+        documentId: payment.document_id,
+        clientId: payment.client_id,
+        amountMinor: amount,
+        currency: payment.currency,
+        facts: {
+          linkId: "",
+          paymentId: paymentRef ?? "",
+          ...(refundRef ? { refundId: refundRef } : {}),
+          ...(text(f.status) ? { status: text(f.status) as string } : {}),
+        },
+        now,
       },
-      now,
-    }),
+      refundRef ? refundItemOnceGuard({ paymentId: payment.id, kind, refundId: refundRef }) : undefined,
+    ),
     action: "payment.gateway_review",
     entityType: "webhook_event",
     entityId: row.id,
@@ -194,5 +196,5 @@ export async function processRefundEvent(
       webhookEventMoveStatement(db, { id: row.id, status: "needs_review", outcome: kind, now }, g),
     ],
   });
-  return { result: "needs_review" };
+  return opened ? { result: "needs_review" } : quiet("processed", `${kind}_known`);
 }

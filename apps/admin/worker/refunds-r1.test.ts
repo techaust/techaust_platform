@@ -98,7 +98,8 @@ describe("finding 6: a refund of an invoice's excess names its credit note [RA-4
       clientId,
       type: "credit_note",
       parentId: inv.id,
-      issueDate: "2026-10-20",
+      // issued on the day the payment arrived (second review, M6: a note older than the payment is not linked)
+      issueDate: todayIso(),
       lines: [line(10_000)],
     });
     await env.DB.prepare(
@@ -140,7 +141,7 @@ describe("finding 6: a refund of an invoice's excess names its credit note [RA-4
     expect(await one("SELECT credit_note_id FROM payment_refunds WHERE id = ?1", sent.id)).toEqual({
       credit_note_id: note.id,
     });
-    // not sent: the server links the invoice's newest issued one
+    // not sent: the server links the newest one issued since the payment arrived that covers the refund
     const derived = manual(3_000, { from: "document", documentId: inv.id, reasonCode: "credit_note" });
     const res = await call(`/payments/${p.id}/refunds`, { cookie: o.cookie, body: derived });
     expect(res.status, await res.clone().text()).toBe(200);

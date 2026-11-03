@@ -3,7 +3,7 @@
 import { findBannedPhrases } from "@techaust/core/public-text";
 import { REFUND_ORIGINS, REFUND_STATUSES } from "@techaust/core/refunds";
 import { describe, expect, it } from "vitest";
-import { periodText, REFUND_PILLS, ZO_UI } from "./copy-zo.ts";
+import { periodText, REFUND_PILLS, ra41ConfirmLine, ZO_UI } from "./copy-zo.ts";
 
 /** Every string the module can show, with sample values for its functions. */
 function allLines(): string[] {
@@ -64,6 +64,19 @@ describe("M6.5 staff lines [ADM-PAY-08][ADM-PAY-10]", () => {
     expect(ZO_UI.reductionDeclaration).toBe("On our own declaration (up to ₹10 lakh an invoice)");
     expect(ZO_UI.waitRetry("12:58")).toBe("Try again after 12:58 IST.");
     expect(ZO_UI.outsideNoteFirst("stripe")).toMatch(/^Stripe has already sent/);
+  });
+
+  it("second review, M1 (RA-41): a confirm's result adds S34 for credit that may be an advance and nothing otherwise; S46 marks money confirmed after its period", () => {
+    expect(ra41ConfirmLine({ advanceLine: "credit_may_be_advance", receivedPeriod: "2026-10" })).toBe(
+      "This credit arrived in October 2026. If it was more than ₹1,000 over an invoice, or never on one, GST on it was due when it arrived: record the advance in GSTR-1 Table 11 by hand.",
+    );
+    expect(ra41ConfirmLine({ advanceLine: "credit_may_be_advance", receivedPeriod: "2026-Q3" })).toMatch(
+      /^This credit arrived in July to September 2026\./,
+    );
+    expect(ra41ConfirmLine({ advanceLine: null, receivedPeriod: "2026-10" })).toBe("");
+    expect(ra41ConfirmLine(null)).toBe("");
+    expect(ra41ConfirmLine(undefined)).toBe("");
+    expect(ZO_UI.creditHeldConfirmedAfter).toBe("Confirmed after the period ended");
   });
 
   it("say a GSTR-3B period as people do", () => {

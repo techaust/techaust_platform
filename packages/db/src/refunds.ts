@@ -184,7 +184,8 @@ export const refundResultStatement = (db: D1Database, refundIds: readonly string
 /**
  * A refund moves by the gateway's word (C step 3, `checkRefund`, a refund event): `processing`, `succeeded` (with the settled instant and IST day) or `failed`
  * (with the gateway's code; the released money stays as credit, never back on the invoice). Only from a status that may move there (core `canMoveRefund`), the
- * gateway's id set once (`coalesce`), one more attempt counted. Zero rows: already moved (a replay). Binds `?1`..`?7`.
+ * gateway's id set once (`coalesce`), the check's instant noted (`last_attempt_at`). Second review, M2: an answer is not an attempt without one, so `attempts`
+ * (the checks the gateway did not answer, which open `refund_stuck` at the tenth) does not move. Zero rows: already moved (a replay). Binds `?1`..`?7`.
  */
 export function refundMoveStatement(
   db: D1Database,
@@ -205,7 +206,7 @@ export function refundMoveStatement(
   return db
     .prepare(
       `UPDATE payment_refunds SET status = ?2, provider_refund_id = coalesce(provider_refund_id, ?3), provider_status = coalesce(?4, provider_status),
-         failure_code = CASE WHEN ?2 = 'failed' THEN ?5 ELSE failure_code END, attempts = attempts + 1, last_attempt_at = ?6, updated_at = max(?6, updated_at),
+         failure_code = CASE WHEN ?2 = 'failed' THEN ?5 ELSE failure_code END, last_attempt_at = ?6, updated_at = max(?6, updated_at),
          settled_at = CASE WHEN ?2 = 'succeeded' THEN ?6 END, settled_on = CASE WHEN ?2 = 'succeeded' THEN ?7 END
        WHERE id = ?1 AND status IN ${from} AND (?3 IS NULL OR provider_refund_id IS NULL OR provider_refund_id = ?3)${gs.sql}`,
     )
@@ -243,7 +244,10 @@ export function refundItemOnceGuard(
     : once;
 }
 
-/** A check that changed nothing at the gateway: one more attempt counted (the sweep's idle clock restarts). Open refunds only. */
+/**
+ * A check the gateway did not answer (no answer, a network failure, a refusal to say): one more attempt counted (the sweep's idle clock restarts). Open refunds
+ * only. Second review, M2: only these count towards `refund_stuck`; an answer that changes nothing is `refundAnsweredStatement`.
+ */
 export const refundAttemptStatement = (
   db: D1Database,
   a: { refundId: string; now: number },
@@ -251,6 +255,21 @@ export const refundAttemptStatement = (
   db
     .prepare(
       "UPDATE payment_refunds SET attempts = attempts + 1, last_attempt_at = ?2, updated_at = max(?2, updated_at) WHERE id = ?1 AND status IN ('requested', 'processing')",
+    )
+    .bind(a.refundId, a.now);
+
+/**
+ * Second review, M2: a check the gateway ANSWERED with the refund as it was (a Stripe `pending`, a Razorpay refund in progress for days): the check's instant is
+ * noted (the sweep's idle clock restarts) and `attempts` stays as it is, so a refund progressing normally never reaches `refund_stuck` through a later blip.
+ * (`attempts` never goes down: trigger `payment_refunds_fixed` of 0070.) Open refunds only.
+ */
+export const refundAnsweredStatement = (
+  db: D1Database,
+  a: { refundId: string; now: number },
+): D1PreparedStatement =>
+  db
+    .prepare(
+      "UPDATE payment_refunds SET last_attempt_at = ?2, updated_at = max(?2, updated_at) WHERE id = ?1 AND status IN ('requested', 'processing')",
     )
     .bind(a.refundId, a.now);
 
@@ -329,19 +348,23 @@ export const refundInrStatement = (
 /**
  * RA-41 (Settled by the lead on the safest reading, 2026-11-03 (08-C RA-41)): the confirmed money-received payments that held credit at a return period's end
  * which may be an advance (`overpaymentAdvanceAtSql`: on no invoice, not in INR, or more than the s.13(2) proviso's ₹1,000 above its invoices), so the Owner
- * declares it in GSTR-1 Table 11A for that period, refunds it or uses it. Binds `?1` the period's last instant (UTC ms), `?2` its last day, `?3`/`?4` the keyset
+ * declares it in GSTR-1 Table 11A for that period, refunds it or uses it. Second review, M1 (L48; Settled by the lead on the safest reading, 2026-11-03 (08-C
+ * RA-41): GST on an advance is due by the time of receipt, so the credit belongs to the period in which the money ARRIVED): every payment received on or before
+ * the period's last day, whatever day it was confirmed (up to now); `confirmed_after` marks the ones confirmed after the period ended (their allocations were
+ * written after it, so at the end their whole amount reads as held). Binds `?1` the period's last instant (UTC ms), `?2` its last day, `?3`/`?4` the keyset
  * `(received_on, id)` after which the page starts (the first page binds '' and ''), `?5` the proviso (`tax.excessProvisoMinor`). Oldest money first, at most 51
  * (a page of 50 and whether there is more), through `payments_confirmed`. `held_since_at`: the instant of the last allocation or release before the period's end
  * (null: the money was never put on an invoice, so it is held from the day it arrived).
  */
 export const CREDIT_HELD_SQL = `SELECT s.id, s.client_id, k.code AS client_code, k.display_name AS client_name, s.currency, s.received_on, s.amount_minor, s.net, s.credit,
-     s.held_since_at
-   FROM (SELECT p.id, p.client_id, p.currency, p.received_on, p.amount_minor, ${paymentNetAtSql("p.id", "?1")} AS net, ${paymentFreeAtSql("p", "?1")} AS credit,
-         (SELECT max(hs.created_at) FROM payment_allocations hs INDEXED BY payment_allocations_payment WHERE hs.payment_id = p.id AND hs.created_at <= ?1) AS held_since_at
+     s.held_since_at, s.confirmed_after
+   FROM (SELECT p.id, p.client_id, p.currency, p.received_on, p.amount_minor, ${paymentNetAtSql("p.id", "?1")} AS net, ${paymentFreeAtSql("p", "?1", "?2")} AS credit,
+         (SELECT max(hs.created_at) FROM payment_allocations hs INDEXED BY payment_allocations_payment WHERE hs.payment_id = p.id AND hs.created_at <= ?1) AS held_since_at,
+         p.verified_at > ?1 AS confirmed_after
        FROM payments p INDEXED BY payments_confirmed
-       WHERE p.status = 'confirmed' AND p.kind = 'payment' AND p.verified_at <= ?1 AND p.received_on <= ?2
+       WHERE p.status = 'confirmed' AND p.kind = 'payment' AND p.received_on <= ?2
          AND (p.received_on > ?3 OR (p.received_on = ?3 AND p.id > ?4))
-         AND ${overpaymentAdvanceAtSql("p", "?1", "?5")}
+         AND ${overpaymentAdvanceAtSql("p", "?1", "?2", "?5")}
        ORDER BY p.received_on, p.id LIMIT 51) s
    JOIN clients k ON k.id = s.client_id
    ORDER BY s.received_on, s.id`;

@@ -21,7 +21,7 @@ import { Notice } from "../components/ui.tsx";
 import { allowed } from "../lib/access.ts";
 import { CARD_ZM } from "../lib/copy-zm.ts";
 import { ADVICE_KIND_LABELS, ZN, ZN_UI } from "../lib/copy-zn.ts";
-import { ZO_UI } from "../lib/copy-zo.ts";
+import { ra41ConfirmLine, ZO_UI } from "../lib/copy-zo.ts";
 import { pendingBadge } from "../lib/documents.ts";
 import { GW, GW_UI, gatewayLine, gatewayName, REVIEW_CHANGED } from "../lib/gateway.ts";
 import { INV_COPY, typeLabel } from "../lib/invoices.ts";
@@ -1106,7 +1106,12 @@ function ConfirmStep(props: { payment: PaymentView; onBack: () => void; onDone: 
         }),
       );
       const w = r.warnings[0];
-      props.onDone(w ? `${PAY_UI.confirmed} ${earlierMonthLine(w.month)}` : PAY_UI.confirmed);
+      // second review, M1: the RA-41 line (S34) when the confirmed credit may be an advance
+      props.onDone(
+        [PAY_UI.confirmed, w ? earlierMonthLine(w.month) : "", ra41ConfirmLine(r.ra41)]
+          .filter(Boolean)
+          .join(" "),
+      );
     } catch (e) {
       if (code.refused(e)) return;
       setFailure(payErrorText(e));

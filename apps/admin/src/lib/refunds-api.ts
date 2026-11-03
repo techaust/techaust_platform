@@ -81,6 +81,10 @@ export function periodsFrom(p: string, frequency: "monthly" | "quarterly", n = 8
  * When "Try again" and Cancel open (L44, L46): `REFUND_SWEEP_IDLE_MS` after the later of the request and the last check, as the server's `refundIdleAt` counts
  * (apps/admin/worker/refund-flow.ts), so the time shows before any press. A `too_soon` answer still moves it to the server's `retryAfterS`.
  */
+/** Second review, L6: the refund dialog's "Paid by" to start with: SWIFT for US dollars to a client outside India (no NEFT abroad), else NEFT. */
+export const defaultRefundMode = (currency: Currency, clientOverseas: boolean): "swift" | "neft" =>
+  currency === "USD" && clientOverseas ? "swift" : "neft";
+
 export const refundOpensAt = (r: Pick<RefundView, "requestedAt" | "lastAttemptAt">): number =>
   Math.max(r.requestedAt, r.lastAttemptAt ?? r.requestedAt) + REFUND_SWEEP_IDLE_MS;
 
@@ -108,6 +112,8 @@ export type CreditHeldRow = {
   creditMinor: number;
   onInvoice: boolean;
   heldSince: string;
+  /** Second review, M1 (L48): received by the period's end but confirmed after it (absent from an older API). */
+  confirmedAfter?: boolean;
 };
 
 /** The ₹25 lakh check per gateway (core `paCbCheck`). */
@@ -285,9 +291,10 @@ export const refundsApi = {
   // ---- reconciliation ----
   settlements: (cursor?: string) =>
     request<{ items: SettlementRow[]; next: string | null }>(`/reconciliation/settlements${qs({ cursor })}`),
-  settlement: (id: string) =>
-    request<{ settlement: SettlementRow; items: SettlementItemRow[] }>(
-      `/reconciliation/settlements/${pid(id)}`,
+  /** One settlement and its lines, 50 a page (second review, L2: "Show more"). */
+  settlement: (id: string, cursor?: string) =>
+    request<{ settlement: SettlementRow; items: SettlementItemRow[]; next: string | null }>(
+      `/reconciliation/settlements/${pid(id)}${qs({ cursor })}`,
     ),
   unmatched: (tab: UnmatchedTab, cursor?: string) =>
     request<{ items: (SettlementItemRow & UnsettledPaymentRow)[]; next: string | null }>(

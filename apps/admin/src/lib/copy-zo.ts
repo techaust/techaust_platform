@@ -303,6 +303,13 @@ export const ZO_UI = {
   /** S45, P2-11: a Razorpay settlement's own id (it is not a bank UTR; the UTR column shows "–" without one). */
   settlementId: "Razorpay settlement ID",
 
+  // ---- second review (builder B6's staff draft for the lead under the delegation; 07-ZO "Staff lines" S46) ----
+  /**
+   * S46, M1 (L48; Settled by the lead on the safest reading, 2026-11-03 (08-C RA-41)): under "Received on" on Payments › Credit at period end, for money that
+   * arrived within the period but was confirmed after it ended.
+   */
+  creditHeldConfirmedAfter: "Confirmed after the period ended",
+
   // ---- the refunds register (Reports) ----
   registerTitle: "Refunds register",
   registerHint: "Every refund that went out in the year, with its payment, invoice and credit note.",
@@ -332,6 +339,18 @@ export function periodText(period: string): string {
     return `${MONTHS[first]} to ${MONTHS[first + 2]} ${q[1]}`;
   }
   return period;
+}
+
+/**
+ * Second review, M1 (RA-41; Settled by the lead on the safest reading, 2026-11-03 (08-C RA-41)): the line a confirm's result adds when the API says the credit
+ * it leaves may be an advance (the record and verify answers' `ra41`): S34 with the period the money arrived in; otherwise nothing ("").
+ */
+export function ra41ConfirmLine(
+  ra41: { advanceLine: "credit_may_be_advance" | null; receivedPeriod: string } | null | undefined,
+): string {
+  return ra41?.advanceLine === "credit_may_be_advance"
+    ? ZO_UI.ra41HeldLine(periodText(ra41.receivedPeriod))
+    : "";
 }
 
 /** The status chip's tone and icon (icon and words, never colour alone; docs/06 §5.5). */

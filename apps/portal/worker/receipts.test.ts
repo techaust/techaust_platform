@@ -112,3 +112,35 @@ describe("receipts and refunds in the portal [M6.5 E, POR-07]", () => {
     expect((await call(`/receipts/${pending.rid}/pdf`, { cookie: s.cookie })).status).toBe(409);
   });
 });
+
+describe("second review, L3: a receipt shows on an invoice only while its payment still holds money there", () => {
+  it("money released off the invoice in full (credited, moved to credit): its receipt leaves that invoice; a payment still holding part stays", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.a.finance);
+    const { inv, rid } = await paidWithReceipt(f.a.id, true);
+    const receiptsOf = async (id: string) =>
+      (
+        (await bodyOf(await call(`/invoices/${id}`, { cookie: s.cookie }))).document as {
+          receipts: { id: string }[];
+        }
+      ).receipts.map((r) => r.id);
+    expect(await receiptsOf(inv)).toEqual([rid]);
+    const release = (amount: number, at: number) =>
+      env.DB.prepare(
+        "INSERT INTO payment_allocations (id, payment_id, document_id, amount_minor, kind, created_at) VALUES (?1, ?2, ?3, ?4, 'release', ?5)",
+      )
+        .bind(uuidv7(), rid.slice(4), inv, amount, at)
+        .run();
+    // part of it released (the excess): the payment still holds money here, so its receipt stays
+    await release(10_000, 4_000);
+    expect(await receiptsOf(inv)).toEqual([rid]);
+    // the invoice credited in full and the rest released to the client's credit: nothing of the payment is on it any more
+    await env.DB.prepare(
+      "UPDATE documents SET credited_minor = 118000, updated_at = updated_at + 1 WHERE id = ?",
+    )
+      .bind(inv)
+      .run();
+    await release(108_000, 5_000);
+    expect(await receiptsOf(inv)).toEqual([]);
+  });
+});

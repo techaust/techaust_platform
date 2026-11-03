@@ -2,6 +2,7 @@
 // contact without "can see finance" gets the plain 404, as for a document that is not theirs). Every query goes through `forClient`/`bound` with the organisation of the session (`client_id = ?1`);
 // another organisation's invoice is the same 404 as one that does not exist. Nothing here pays or marks anything paid (M6, M7.1).
 import { portalPayKey } from "@techaust/auth";
+import { paymentNetSql } from "@techaust/db/sql-rules";
 import { Hono } from "hono/tiny";
 import { type AppEnv, BAD_REQUEST, type Ctx, err, NOT_FOUND, rateLimited } from "./context.ts";
 import {
@@ -50,14 +51,15 @@ export const ONE_SQL = `SELECT ${SUMMARY_COLS} FROM documents d ${SUMMARY_PARENT
 
 /**
  * M6.5 (E; POR-07 receipt download only): the issued receipts of the client's payments that hold money on invoice `?2` (`?1` the client), oldest first. The
- * receipt and the invoice are both the client's (each bound to `?1`).
+ * receipt and the invoice are both the client's (each bound to `?1`). Second review, L3: only payments that still hold money there (their allocations less
+ * their releases on `?2` above 0): money released off this invoice (to credit, then put on another) is that other invoice's receipt, not this one's.
  */
 export const RECEIPTS_OF_DOC_SQL = `SELECT r.id, r.number_display, r.total_minor, json_extract(r.header_extras, '$.receiptOf.receivedOn') AS received_on,
      r.pdf_sha256 IS NOT NULL AS has_pdf
    FROM documents r
    WHERE r.client_id = ?1 AND r.type = 'receipt' AND r.status = 'issued' AND r.frozen_at IS NOT NULL
      AND r.id IN (SELECT 'rct_' || a.payment_id FROM payment_allocations a INDEXED BY payment_allocations_document JOIN documents i ON i.id = a.document_id
-       WHERE a.document_id = ?2 AND i.client_id = ?1)
+       WHERE a.document_id = ?2 AND i.client_id = ?1 AND ${paymentNetSql("a.payment_id", "?2")} > 0)
    ORDER BY r.issue_date, r.id LIMIT 20`;
 /** M6.5 (E): the refunds of invoice `?2`'s excess that went out (`?1` the client), oldest first. */
 export const REFUNDS_OF_DOC_SQL = `SELECT r.amount_minor, r.settled_on FROM payment_refunds r INDEXED BY payment_refunds_document

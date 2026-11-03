@@ -203,6 +203,38 @@ describe("review part 1, findings 5 and 7: no unapproved words stored outside lo
   });
 });
 
+describe("second review, L5: outside local, the sweep asks for no receipt render while 07-ZO is unapproved", () => {
+  it("staging: a receipt due for its PDF is neither queued nor noted; once approved, the sweep queues it and notes the pick", async () => {
+    const owner = await staff("owner");
+    const clientId = await mkClient();
+    const id = await sealedReceipt(clientId, owner.id, 30 * 60_000);
+    const staging = makeEnv({ ENVIRONMENT: "staging" } as never);
+    const rendered = () =>
+      fakes.pdf
+        .map((s) => s.body as { kind: string; receiptId?: string })
+        .filter((b) => b.kind === "receipt.render")
+        .map((b) => b.receiptId);
+    const noted = () =>
+      realEnv.DB.prepare("SELECT count(*) AS n FROM pdf_failures WHERE document_id = ?1").bind(id).first();
+    fakes.pdf.length = 0;
+    expect(await processReceipt(staging, { v: 1, kind: "receipt.sweep", asOf: Date.now() })).toBe("swept");
+    expect(rendered()).toEqual([]);
+    expect(await noted()).toEqual({ n: 0 });
+    const gate = vi.spyOn(receiptCopyGate, "approved").mockReturnValue(true);
+    try {
+      expect(await processReceipt(staging, { v: 1, kind: "receipt.sweep", asOf: Date.now() })).toBe("swept");
+      expect(rendered()).toContain(id);
+      expect(await noted()).toEqual({ n: 1 });
+    } finally {
+      gate.mockRestore();
+      // the file's later tests share the database: this receipt's PDF counts as made
+      await realEnv.DB.prepare("UPDATE documents SET pdf_r2_key = 'k', pdf_sha256 = ?2 WHERE id = ?1")
+        .bind(id, "d".repeat(64))
+        .run();
+    }
+  });
+});
+
 const batchOf = (queue: string, body: unknown) => {
   const acks: string[] = [];
   return {

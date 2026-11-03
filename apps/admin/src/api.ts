@@ -1893,9 +1893,14 @@ export type RecordPaymentAnswer = {
   requestedAllocations: AllocationAsk[];
   /** 07-ZH line 9: kept as the client's credit (the Owner's entry only; null for a pending one). */
   unallocatedMinor: number | null;
+  /** M6.5 RA-41 (review part 1, finding 3): whether the credit the confirm leaves may be an advance (null when nothing was confirmed; absent from an older API). */
+  ra41?: Ra41Answer | null;
   approvalId?: string;
   warnings: ReceiptWarning[];
 };
+
+/** The part of the RA-41 facts a confirm's result reads (`ra41ConfirmLine` in lib/copy-zo.ts; the full shape is `CreditRefundFacts` in lib/refunds-api.ts). */
+export type Ra41Answer = { advanceLine: "credit_may_be_advance" | null; receivedPeriod: string };
 
 /** The invoice's Payments panel (07-ZH line 1, and line 14 on an export invoice). */
 export type InvoicePaymentsPanel = {
@@ -2249,6 +2254,7 @@ export const paymentsApi = {
       status: "confirmed" | "rejected";
       allocations: AllocationAsk[];
       unallocatedMinor: number | null;
+      ra41?: Ra41Answer | null;
       warnings: ReceiptWarning[];
     }>(`/payments/${pid(id)}/verify`, { body }),
   /** Withdraw a confirmed entry made in error (Owner, fresh code). Codes: `payment_not_confirmed`, `payment_advance_backed`. */
