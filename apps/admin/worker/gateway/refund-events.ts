@@ -99,6 +99,15 @@ export async function processRefundEvent(
   // PayPal's refund of nobody's refund here keeps M6.4's own path (`processPayPalEvent`: the payment by its capture, the invoice tail check, the item).
   if (provider === "paypal") return null;
   if (!payment) return quiet("ignored", "not_ours");
+  // Stripe's `charge.refunded` names no refund: when this payment has a refund of ours, its own `refund.*` events move it (no item for our own refund); a
+  // refund made in Stripe's dashboard arrives as `refund.created` (H3 asks for it) with its id and becomes the item below.
+  if (!isDispute && !refundRef) {
+    const any = await db
+      .prepare("SELECT 1 FROM payment_refunds INDEXED BY payment_refunds_payment WHERE payment_id = ?1")
+      .bind(payment.id)
+      .first();
+    if (any) return quiet("processed", "charge_refunded_ours");
+  }
   // A refund recorded here already (an outside refund the Owner recorded, a lost dispute): nothing more to say.
   if (refundRef) {
     const known = await db

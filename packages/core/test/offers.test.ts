@@ -182,7 +182,7 @@ describe("certificateKey and the attachment allow-list", () => {
   });
   // M5.4: the invoice family, exactly as `pdfKeys` writes the keys (a number is padded to AT LEAST four digits: 10,000 and above has five or more).
   it("accepts every invoice-family key `pdfKeys` writes, for every number width, and nothing else about invoices", () => {
-    for (const type of ["tax_invoice", "export_invoice", "proforma", "credit_note", "debit_note"])
+    for (const type of ["tax_invoice", "export_invoice", "proforma", "credit_note", "debit_note", "receipt"])
       for (const number of [1, 9, 10, 999, 1000, 9999, 10_000, 12_345, 999_999, 123_456_789])
         expect(
           ATTACHMENT_KEY.test(pdfKeys({ type, fy: "2026-27", number, version: 1 }).pdf),
@@ -198,7 +198,7 @@ describe("certificateKey and the attachment allow-list", () => {
       "docs/tax_invoice/2026-27/003-v1.pdf",
       "docs/tax_invoice/2026-27/1234567890-v1.pdf",
       "docs/tax_invoice/2026-27/0003-v1.json",
-      "docs/receipt/2026-27/0003-v1.pdf",
+      "docs/receipt_voucher/2026-27/0003-v1.pdf", // M6.5: receipts are allowed; a voucher (never made) is not
       "docs/tax_invoice/../x/0003-v1.pdf",
       "docs/tax_invoice/2026-27/0003-v1.pdf/../../secret",
     ])
