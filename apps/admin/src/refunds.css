@@ -34,6 +34,17 @@
   }
 }
 
+/* the same inside a narrow Payments panel, where the refunds stack as cards too (payments.css, the pay-panel container) */
+@container pay-panel (max-width: 43.99rem) {
+  .rf-lines .rf-lines__acts {
+    grid-column: 1 / -1;
+  }
+
+  .rf-lines .rf-lines__acts:empty {
+    display: none;
+  }
+}
+
 .rf-state,
 .rf-acts {
   display: grid;
@@ -280,6 +291,8 @@
 /* the Refunds tab */
 .rf-tab {
   display: grid;
+  /* a wide table scrolls inside its own box; the grid track never grows past the page (review part 2, P2-12) */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-4);
 }
 
@@ -306,18 +319,13 @@
 /* review part 2, P2-12: in the table the state chip and the day keep one line each (the payment lists let a long chip wrap; here every chip is short) */
 @media (min-width: 48rem) {
   .pay-table.rf-tab__table .spill,
-  .pay-table.rf-tab__table .rf-date,
-  .pay-table.rf-tab__table .rf-nowrap {
+  .pay-table.rf-tab__table .rf-date {
     white-space: nowrap;
   }
 
-  /* the Owner's buttons side by side, the wait line wrapping under them to their width (never widening the column) */
+  /* the wait line wraps at a set width instead of widening the actions column (the buttons wrap under each other when they must) */
   .rf-tab__table .rf-acts {
-    width: min-content;
-  }
-
-  .rf-tab__table .rf-acts__buttons {
-    flex-wrap: nowrap;
+    max-width: 12rem;
   }
 }
 

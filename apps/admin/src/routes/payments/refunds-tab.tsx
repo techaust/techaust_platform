@@ -80,16 +80,8 @@ export function RefundsTab(props: { role: Role }) {
         </span>
       ),
     },
-    {
-      key: "how",
-      header: ZO_UI.colWay,
-      cell: (r) => <span className="rf-nowrap">{ZO_UI.origin(r.origin, r.provider)}</span>,
-    },
-    {
-      key: "reason",
-      header: ZO_UI.colReason,
-      cell: (r) => <span className="rf-nowrap">{ZO_UI.reason[r.reasonCode]}</span>,
-    },
+    { key: "how", header: ZO_UI.colWay, cell: (r) => ZO_UI.origin(r.origin, r.provider) },
+    { key: "reason", header: ZO_UI.colReason, cell: (r) => ZO_UI.reason[r.reasonCode] },
     {
       key: "amount",
       header: ZO_UI.colAmount,

@@ -305,6 +305,73 @@
   }
 }
 
+/* M6.5 review part 2 (designer pass 2): inside the Payments panel the entries (now with their Receipt column) and the refunds (with the Owner's two actions)
+   need about 44rem; a narrower panel (a tablet with the menu rail, measured at 768 px: 606 px) stacks them as the phone's cards above, instead of pushing the
+   page sideways. The same rules as the max-width 47.99rem block, keyed to the panel's own width. */
+@container pay-panel (max-width: 43.99rem) {
+  .pay-lines thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .pay-lines,
+  .pay-lines tbody,
+  .pay-lines tr,
+  .pay-lines th,
+  .pay-lines td {
+    display: block;
+  }
+
+  .pay-lines tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-3) 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .pay-lines tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .pay-lines th,
+  .pay-lines td {
+    padding: 0;
+    border: 0;
+  }
+
+  .pay-lines td.num {
+    grid-column: 2;
+    grid-row: 1;
+    font-weight: 600;
+  }
+
+  .pay-lines td[data-label]:not(.num) {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 8.5rem minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+
+  .pay-lines td[data-label]:not(.num)::before {
+    content: attr(data-label);
+    color: var(--color-text-muted);
+  }
+
+  .pay-lines__ref-label {
+    display: none;
+  }
+
+  .pay-lines td[data-label]:not(.num) > * {
+    justify-self: start;
+  }
+}
+
 /* ---------- waiting for the Owner's check ---------- */
 
 .pay-waiting__list {
