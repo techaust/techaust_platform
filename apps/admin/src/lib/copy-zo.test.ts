@@ -52,6 +52,20 @@ describe("M6.5 staff lines [ADM-PAY-08][ADM-PAY-10]", () => {
     }
   });
 
+  it("count refunds in the singular and the plural (review part 2, P2-8, S44)", () => {
+    expect(ZO_UI.refundCount(1, false)).toBe("1 refund");
+    expect(ZO_UI.refundCount(0, false)).toBe("0 refunds");
+    expect(ZO_UI.refundCount(7, false)).toBe("7 refunds");
+    expect(ZO_UI.refundCount(50, true)).toBe("50+ refunds");
+  });
+
+  it("keep the optional marker out of the words and name the cap per invoice (P2-13, B5)", () => {
+    expect(ZO_UI.statementRef).not.toMatch(/optional/i);
+    expect(ZO_UI.reductionDeclaration).toBe("On our own declaration (up to ₹10 lakh an invoice)");
+    expect(ZO_UI.waitRetry("12:58")).toBe("Try again after 12:58 IST.");
+    expect(ZO_UI.outsideNoteFirst("stripe")).toMatch(/^Stripe has already sent/);
+  });
+
   it("say a GSTR-3B period as people do", () => {
     expect(periodText("2026-11")).toBe("November 2026");
     expect(periodText("2026-Q4")).toBe("October to December 2026");

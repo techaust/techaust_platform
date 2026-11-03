@@ -186,6 +186,12 @@
   gap: var(--space-3);
 }
 
+/* the tick sits on its block's own spacing, its error right under it (the shared `.check` margin would open a gap between them) */
+.rf-export .check,
+.rf-check .check {
+  margin: 0;
+}
+
 /* "This refund needs a credit note first": the step before the refund, its own block with the way to the credit note */
 .rf-note-first {
   display: grid;
@@ -277,6 +283,20 @@
   gap: var(--space-4);
 }
 
+/* Payments › Credit at period end (review part 2, item 12): the lede at reading width, the period picker as wide as its longest period */
+.rf-tab__lede {
+  max-width: 65ch;
+  margin: 0;
+}
+
+.rf-tab__period {
+  max-inline-size: 20rem;
+}
+
+.rf-tab__period .field {
+  margin-bottom: 0;
+}
+
 .rf-tab__loading {
   display: grid;
   gap: var(--space-3);
@@ -286,8 +306,18 @@
 /* review part 2, P2-12: in the table the state chip and the day keep one line each (the payment lists let a long chip wrap; here every chip is short) */
 @media (min-width: 48rem) {
   .pay-table.rf-tab__table .spill,
-  .pay-table.rf-tab__table .rf-date {
+  .pay-table.rf-tab__table .rf-date,
+  .pay-table.rf-tab__table .rf-nowrap {
     white-space: nowrap;
+  }
+
+  /* the Owner's buttons side by side, the wait line wrapping under them to their width (never widening the column) */
+  .rf-tab__table .rf-acts {
+    width: min-content;
+  }
+
+  .rf-tab__table .rf-acts__buttons {
+    flex-wrap: nowrap;
   }
 }
 
@@ -309,6 +339,7 @@
 .rcn-open {
   min-height: var(--target-min);
   padding-inline: 0;
+  white-space: nowrap;
 }
 
 .rcn-net {
