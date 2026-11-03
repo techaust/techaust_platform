@@ -198,6 +198,14 @@ export const Clock = (p: P) => (
   </Icon>
 );
 
+/** M6.5: a refund that went out (07-ZO line 14). */
+export const RotateCcw = (p: P) => (
+  <Icon {...p}>
+    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+    <path d="M3 3v5h5" />
+  </Icon>
+);
+
 export const AlertTriangle = (p: P) => (
   <Icon {...p}>
     <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />

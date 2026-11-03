@@ -1,6 +1,7 @@
 // The client's invoices (M5.4; POR-06, Q49, LD62): the list, one document's page (the same for the emailed link and the signed-in contact), and the
 // home tile. Every figure is the server's, from the document's frozen row (amounts formatted through core); the full document is the PDF. Nothing here
 // pays or marks anything paid (M6, M7.1). Words: copy-invoices.ts (07-U §3, marked until approved; the PDF's own words for the lines and totals).
+import { PORTAL_RECEIPT_COPY } from "@techaust/core/copy-zo";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import type { InvoiceItem, InvoiceSummary } from "../api.ts";
@@ -14,6 +15,7 @@ import {
   Download,
   Landmark,
   Receipt,
+  RotateCcw,
   XCircle,
 } from "../components/icons.tsx";
 import { PageTitle } from "../components/shell/portal-shell.tsx";
@@ -212,6 +214,11 @@ export function InvoicePage(props: {
   pay?: ReactNode;
   /** M6.2, M6.3: back from the gateway, the Processing state and its end, or a payment still being confirmed (above the slip). */
   payStatus?: ReactNode;
+  /** M6.5 (POR-07): a receipt's PDF, on the signed-in page only (the emailed link opens one document). */
+  onReceipt?: ((id: string, numberDisplay: string) => void) | undefined;
+  /** The receipt being downloaded, and a receipt's own message (its PDF isn't ready, or the request failed). */
+  receiptBusy?: string | null;
+  receiptProblem?: { id: string; text: string } | null;
 }) {
   const d = props.doc;
   const status = clientStatus(d, todayIst(props.now));
@@ -344,7 +351,55 @@ export function InvoicePage(props: {
             <span>{paidRow.text}</span>
           </p>
         )}
+        {/* M6.5 (07-ZO line 14): each refund that went out, under the figures as a payment's row is (clients see a refund only once it has gone through) */}
+        {(d.refunds ?? []).map((r) => (
+          <p key={`${r.on}:${r.amountMinor}`} className="inv-slip__refund">
+            <span className="inv-slip__refund-icon">
+              <RotateCcw size={16} />
+            </span>
+            <span>{PORTAL_RECEIPT_COPY.refunded(moneyText(r.amountMinor, d.currency), dateText(r.on))}</span>
+          </p>
+        ))}
       </section>
+
+      {/* M6.5 (07-ZO lines 13, 15 and 16): the receipts of the payments on this document, each with its PDF (signed in only) */}
+      {props.onReceipt && (d.receipts ?? []).length > 0 && (
+        <section className="block inv-receipts" aria-labelledby="inv-receipts-h">
+          <h2 id="inv-receipts-h" className="block__title">
+            <Receipt size={20} />
+            {PORTAL_RECEIPT_COPY.receiptsHeading}
+          </h2>
+          <ul className="inv-receipts__list">
+            {(d.receipts ?? []).map((r) => (
+              <li key={r.id} className="inv-receipts__row">
+                <span className="inv-receipts__text">
+                  {PORTAL_RECEIPT_COPY.receiptRow(
+                    r.numberDisplay,
+                    moneyText(r.amountMinor, d.currency),
+                    r.receivedOn ? dateText(r.receivedOn) : "",
+                  )}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn--secondary"
+                  onClick={() => props.onReceipt?.(r.id, r.numberDisplay)}
+                  disabled={props.receiptBusy === r.id}
+                  aria-busy={props.receiptBusy === r.id || undefined}
+                >
+                  <Download size={20} />
+                  {PORTAL_RECEIPT_COPY.receiptLink}
+                  <span className="visually-hidden">{` ${r.numberDisplay}`}</span>
+                </button>
+                {props.receiptProblem?.id === r.id && (
+                  <p className="inv-receipts__note" role="status">
+                    {props.receiptProblem.text}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {owed && d.bank && (
         <section className="block inv-pay" aria-labelledby="inv-pay-h">

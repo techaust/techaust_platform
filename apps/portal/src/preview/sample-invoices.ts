@@ -241,6 +241,24 @@ export const SAMPLE_INVOICES: InvoiceSummary[] = [
     creditedMinor: 236_000,
     // final sweep P2: the "Credited ({numbers})" row
     creditNotes: [{ id: "cn-1", numberDisplay: "TH/CN/2627/0001" }],
+    // M6.5 (07-ZO lines 13 to 16): two receipts (one PDF still being made) and a refund of the excess the credit note left (sample)
+    receipts: [
+      {
+        id: "rct_sample-1",
+        numberDisplay: "TH/RCT/2627/0004",
+        amountMinor: 708_000,
+        receivedOn: day(-35),
+        hasPdf: true,
+      },
+      {
+        id: "rct_sample-2",
+        numberDisplay: "TH/RCT/2627/0007",
+        amountMinor: 708_000,
+        receivedOn: day(-30),
+        hasPdf: false,
+      },
+    ],
+    refunds: [{ amountMinor: 236_000, on: day(-5) }],
     balanceMinor: 0,
     lines: [
       line(1, "Monthly care plan, Essential (sample)", 1000, "month", 1_200_000, 1_200_000, {
@@ -554,6 +572,10 @@ export function answerInvoices(
   const file = (d: InvoiceSummary) => `${(d.numberDisplay ?? "invoice").replaceAll("/", "-")}.pdf`;
   if (method === "GET" && /^\/invoices(\?|$)/.test(path))
     return h.json(200, { invoices: empty ? [] : SAMPLE_INVOICES.map(itemOf), next: null });
+  // M6.5: a receipt's PDF (the sample's second receipt is still being made: 409 `pdf_pending`)
+  const rc = /^\/receipts\/([^/]+)\/pdf$/.exec(path);
+  if (rc && method === "GET")
+    return rc[1] === "rct_sample-2" ? h.error(409, "pdf_pending") : h.pdf("TH-RCT-2627-0004.pdf");
   // M6.4: the PayPal samples (signed in, and the press, and the emailed link's return route)
   const pp = /^\/invoices\/(pp-[a-z]+)(\/pay|\/pdf)?(?:\?c=([0-9a-f-]{36}))?$/.exec(path);
   if (pp && !empty) {
