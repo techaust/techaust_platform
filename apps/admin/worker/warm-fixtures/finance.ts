@@ -7,23 +7,23 @@ import type { WarmFixture } from "../warm-routes.ts";
 
 export const FINANCE_WARM: WarmFixture = {
   calls: [
-    { method: "GET", path: "/invoices/01a19f4c-6616-7331-bc48-717bb2d7f589/payments" },
+    { method: "GET", path: "/invoices/01a19fc4-a6ee-704a-8900-0d5a1e360a14/payments" },
     { method: "GET", path: "/payments/review" },
-    { method: "POST", path: "/payments/review/e7529479-e97b-4ee9-a0d9-45d7d0174bd6/retry", body: {} },
+    { method: "POST", path: "/payments/review/90d0d7fe-3584-42f0-92be-ddd14cf043c3/retry", body: {} },
   ],
   rows: {
     ba056e5e: [
       {
         r: [
           {
-            last_seen_at: 1793673954911,
+            last_seen_at: 1793681833766,
             idle_expires_at: 4102444800000,
             abs_expires_at: 4102444800000,
             revoked_at: null,
             step_up_until: 4102444800000,
-            id: "01a19f4c-6426-77fc-a977-888c34ec170c",
+            id: "01a19fc4-a522-757a-8650-e25b7811af2a",
             name: "Probe Owner (sample)",
-            email: "probe-mw035mgf@example.test",
+            email: "probe-mw07ujfv@example.test",
             role: "owner",
           },
         ],
@@ -34,12 +34,12 @@ export const FINANCE_WARM: WarmFixture = {
       {
         r: [
           {
-            id: "01a19f4c-6616-7331-bc48-717bb2d7f589",
+            id: "01a19fc4-a6ee-704a-8900-0d5a1e360a14",
             type: "tax_invoice",
             status: "partially_credited",
-            client_id: "5b656471-0714-4874-aaef-f15d397f608f",
+            client_id: "cfa45a87-a99c-40c2-a0c3-6829db516d26",
             currency: "INR",
-            frozen_at: 1793673946671,
+            frozen_at: 1793681827591,
             voided_at: null,
             issue_date: "2026-11-03",
             number_display: "TH/INV/2627/0001",
@@ -48,7 +48,7 @@ export const FINANCE_WARM: WarmFixture = {
             credited_minor: 590000,
             tds_minor: 0,
             balance_minor: 10030000,
-            updated_at: 1793673946722,
+            updated_at: 1793681827640,
             supply_type: "intra",
             fx_rate_micros: null,
             fx_date: null,
@@ -80,7 +80,7 @@ export const FINANCE_WARM: WarmFixture = {
       },
     ],
     "5b3f5fb2": [{ r: [], c: 0 }],
-    "53c78303": [{ r: [], c: 0 }],
+    "67c0ebd1": [{ r: [], c: 0 }],
     dc77c6c5: [
       {
         r: [
@@ -97,19 +97,19 @@ export const FINANCE_WARM: WarmFixture = {
       {
         r: [
           {
-            id: "e7529479-e97b-4ee9-a0d9-45d7d0174bd6",
+            id: "90d0d7fe-3584-42f0-92be-ddd14cf043c3",
             source: "dlq",
             provider: "razorpay",
             kind: "dead_letter",
             status: "open",
             webhook_event_id: null,
             payment_id: "rzp_pay_warm0001",
-            document_id: "01a19f4c-69c3-736d-b3e1-10899653a242",
-            client_id: "17ad222b-88b4-434e-a788-3de6b4773008",
+            document_id: "01a19fc4-aa1e-73da-ae55-3fc458a4c9d0",
+            client_id: "730464e2-a63b-4b62-b33a-7d16e38fcc4c",
             amount_minor: 10620000,
             currency: "INR",
             facts: null,
-            created_at: 1793673947837,
+            created_at: 1793681828452,
             resolved_by: null,
             resolved_at: null,
             resolution: null,
@@ -127,19 +127,19 @@ export const FINANCE_WARM: WarmFixture = {
       {
         r: [
           {
-            id: "e7529479-e97b-4ee9-a0d9-45d7d0174bd6",
+            id: "90d0d7fe-3584-42f0-92be-ddd14cf043c3",
             source: "dlq",
             provider: "razorpay",
             kind: "dead_letter",
             status: "open",
             webhook_event_id: null,
             payment_id: "rzp_pay_warm0001",
-            document_id: "01a19f4c-69c3-736d-b3e1-10899653a242",
-            client_id: "17ad222b-88b4-434e-a788-3de6b4773008",
+            document_id: "01a19fc4-aa1e-73da-ae55-3fc458a4c9d0",
+            client_id: "730464e2-a63b-4b62-b33a-7d16e38fcc4c",
             amount_minor: 10620000,
             currency: "INR",
             facts: null,
-            created_at: 1793673947837,
+            created_at: 1793681828452,
             resolved_by: null,
             resolved_at: null,
             resolution: null,
