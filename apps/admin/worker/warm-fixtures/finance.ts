@@ -7,39 +7,39 @@ import type { WarmFixture } from "../warm-routes.ts";
 
 export const FINANCE_WARM: WarmFixture = {
   calls: [
-    { method: "GET", path: "/invoices/01a19e6f-6c19-7fd6-a20d-b0720384a8da/payments" },
+    { method: "GET", path: "/invoices/01a19efe-06d6-7141-8034-8ef28dad700b/payments" },
     { method: "GET", path: "/payments/review" },
-    { method: "POST", path: "/payments/review/f8518bd8-c3a8-421d-ad11-58eca65f8361/retry", body: {} },
+    { method: "POST", path: "/payments/review/3fba6db5-9401-4241-9757-ae2a97354c5c/retry", body: {} },
   ],
   rows: {
     ba056e5e: [
       {
         r: [
           {
-            last_seen_at: 1793659470993,
+            last_seen_at: 1793668817433,
             idle_expires_at: 4102444800000,
             abs_expires_at: 4102444800000,
             revoked_at: null,
             step_up_until: 4102444800000,
-            id: "01a19e6f-6a51-78c6-b086-b48abacda517",
+            id: "01a19efe-04ff-7d79-9b47-119810ac52c8",
             name: "Probe Owner (sample)",
-            email: "probe-mvzuj862@example.test",
+            email: "probe-mw003jd3@example.test",
             role: "owner",
           },
         ],
         c: 0,
       },
     ],
-    e190abd9: [
+    b33d046d: [
       {
         r: [
           {
-            id: "01a19e6f-6c19-7fd6-a20d-b0720384a8da",
+            id: "01a19efe-06d6-7141-8034-8ef28dad700b",
             type: "tax_invoice",
             status: "partially_credited",
-            client_id: "8b9a9b1b-df01-48a9-8249-17888df56658",
+            client_id: "ceaf50d1-c8d4-4508-a6d3-4d009787d9a2",
             currency: "INR",
-            frozen_at: 1793659464753,
+            frozen_at: 1793668810478,
             voided_at: null,
             issue_date: "2026-11-03",
             number_display: "TH/INV/2627/0001",
@@ -48,8 +48,10 @@ export const FINANCE_WARM: WarmFixture = {
             credited_minor: 590000,
             tds_minor: 0,
             balance_minor: 10030000,
-            updated_at: 1793659464801,
+            updated_at: 1793668810524,
             supply_type: "intra",
+            fx_rate_micros: null,
+            fx_date: null,
             gone: 0,
             fema_due: null,
           },
@@ -59,9 +61,9 @@ export const FINANCE_WARM: WarmFixture = {
     ],
     a9594199: [{ r: [], c: 0 }],
     b208123c: [{ r: [], c: 0 }],
-    "021a1673": [{ r: [], c: 0 }],
+    e8326b0b: [{ r: [], c: 0 }],
     a8671226: [{ r: [], c: 0 }],
-    c7213090: [{ r: [], c: 0 }],
+    "76d70b4c": [{ r: [], c: 0 }],
     "2d053e6b": [{ r: [], c: 0 }],
     a4d5054d: [{ r: [], c: 0 }],
     "555cf640": [{ r: [{ n: 0 }], c: 0 }],
@@ -77,23 +79,37 @@ export const FINANCE_WARM: WarmFixture = {
         c: 0,
       },
     ],
+    "5b3f5fb2": [{ r: [], c: 0 }],
+    "53c78303": [{ r: [], c: 0 }],
+    dc77c6c5: [
+      {
+        r: [
+          {
+            value:
+              '{"defaultRateBp":1800,"allowLineOverride":true,"sacByCategory":{"advise":"998313","build":"998314","automate":"998314","connect":"998314","run":"998313"},"defaultSac":"","rounding":{"lineTax":"half_up","totalInr":"nearest_rupee","totalUsd":"none"},"exportMode":"lut","lut":{"arn":null,"fy":null},"luts":[{"fy":"2627","arn":"AD1900000000001","filedOn":null}],"invoiceChecklist":{"bankDetails":true,"paymentLink":false},"fxMaxAgeDays":4,"advanceMode":"proforma","fxSource":"FBIL/RBI","eInvoicing":false,"reverseChargeText":"Tax payable on reverse charge: No","invoiceAlertDays":25,"creditNoteCutoff":{"month":11,"day":30},"gstr1Frequency":"quarterly","annualReturnsFiled":[],"b2cDetailsThresholdInrMinor":5000000,"realisation":{"warnMonths":9,"inrMonths":12,"escalateMonths":12,"escalateExtraDays":15},"b2clThresholdInrMinor":10000000,"crossBorderWarnInrMinor":250000000,"excessProvisoMinor":100000}',
+            version: 2,
+          },
+        ],
+        c: 0,
+      },
+    ],
     "5c7b687f": [
       {
         r: [
           {
-            id: "f8518bd8-c3a8-421d-ad11-58eca65f8361",
+            id: "3fba6db5-9401-4241-9757-ae2a97354c5c",
             source: "dlq",
             provider: "razorpay",
             kind: "dead_letter",
             status: "open",
             webhook_event_id: null,
             payment_id: "rzp_pay_warm0001",
-            document_id: "01a19e6f-6f68-7adb-b0f7-5995d5140afb",
-            client_id: "083fb44b-155a-402f-b27f-285f4436b339",
+            document_id: "01a19efe-0a64-703f-8ba8-47258ae0b40a",
+            client_id: "f55598cd-1003-4e26-b576-4917d3d964a3",
             amount_minor: 10620000,
             currency: "INR",
             facts: null,
-            created_at: 1793659465642,
+            created_at: 1793668811429,
             resolved_by: null,
             resolved_at: null,
             resolution: null,
@@ -111,19 +127,19 @@ export const FINANCE_WARM: WarmFixture = {
       {
         r: [
           {
-            id: "f8518bd8-c3a8-421d-ad11-58eca65f8361",
+            id: "3fba6db5-9401-4241-9757-ae2a97354c5c",
             source: "dlq",
             provider: "razorpay",
             kind: "dead_letter",
             status: "open",
             webhook_event_id: null,
             payment_id: "rzp_pay_warm0001",
-            document_id: "01a19e6f-6f68-7adb-b0f7-5995d5140afb",
-            client_id: "083fb44b-155a-402f-b27f-285f4436b339",
+            document_id: "01a19efe-0a64-703f-8ba8-47258ae0b40a",
+            client_id: "f55598cd-1003-4e26-b576-4917d3d964a3",
             amount_minor: 10620000,
             currency: "INR",
             facts: null,
-            created_at: 1793659465642,
+            created_at: 1793668811429,
             resolved_by: null,
             resolved_at: null,
             resolution: null,
