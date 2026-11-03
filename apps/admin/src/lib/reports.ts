@@ -26,7 +26,7 @@ const docs = (n: number) => `${n} ${n === 1 ? "document" : "documents"}`;
 
 // ---- 07-V §1 navigation ------------------------------------------------------------------------------------------------------------------------
 
-export type ReportKey = "gst" | "sales-register" | "edf" | "realisation" | "payments";
+export type ReportKey = "gst" | "sales-register" | "edf" | "realisation" | "payments" | "refunds";
 
 /** The four reports, in 07-V §1's order, with their address under /reports. */
 export const REPORTS: readonly { key: ReportKey; path: string; label: string }[] = [
@@ -36,7 +36,21 @@ export const REPORTS: readonly { key: ReportKey; path: string; label: string }[]
   { key: "realisation", path: "/reports/realisation", label: "Export realisation" },
   // M6.1 (07-ZH line 20, approved by the owner 2026-10-31).
   { key: "payments", path: "/reports/payments", label: "Payments and TDS register" },
+  // M6.5 (B4; 07-ZO "Staff lines", lead under the delegation).
+  { key: "refunds", path: "/reports/refunds", label: "Refunds register" },
 ];
+
+/**
+ * M6.5 (B4; ADM-PAY-08): the refunds register's staff lines (07-ZO "Staff lines", for the lead under the owner's delegation; the CSV's column headings are core
+ * `refunds-v1`'s). The FY picker, "Show" and the download button read as the payments register's.
+ */
+export const REFUNDS_REPORT_COPY = {
+  title: "Refunds register",
+  lede: "Every refund that went out in the financial year, by the day it went out, for your books.",
+  done: (n: number) => (n === 1 ? "1 refund read." : `${n} refunds read.`),
+  empty: "No refunds went out in this financial year.",
+  download: "Download the register (CSV)",
+} as const;
 
 export const REPORTS_COPY = {
   /** 07-V §1: the sidebar group, used as the section's crumb and its sub-navigation's name. */

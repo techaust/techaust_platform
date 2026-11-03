@@ -275,5 +275,26 @@
         "Balance"
       ]
     }
+  },
+  "refunds": {
+    "refunds-v1": {
+      "stem": "refunds_register",
+      "headers": [
+        "Refund date",
+        "Client code",
+        "Client",
+        "Refunded from",
+        "Credit note",
+        "Payment reference",
+        "How",
+        "Gateway refund ID",
+        "Bank reference (UTR)",
+        "Currency",
+        "Amount",
+        "INR value",
+        "Reason",
+        "Status"
+      ]
+    }
   }
 }

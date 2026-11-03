@@ -1151,6 +1151,8 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       await putTax();
       return run(s, "/reports/registers?from=2026-10-01&to=2026-10-31", {});
     },
+    // M6.5 B4 (added on purpose): the refunds register, one audit row per page as the registers.
+    "GET /api/v1/reports/refunds": async () => run(await owner(), "/reports/refunds?fy=2627", {}),
     "POST /api/v1/clients/:id/statement/pdf": async () => {
       const s = await owner();
       await putCompany();

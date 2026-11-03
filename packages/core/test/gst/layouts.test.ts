@@ -13,6 +13,7 @@ import {
   gstr1Csv,
   OUTPUT_TAX_LAYOUTS,
   REALISATION_LAYOUTS,
+  REFUNDS_LAYOUTS,
   realisationCsv,
   realisationRows,
   SALES_REGISTER_LAYOUTS,
@@ -71,6 +72,13 @@ const pinned = () => ({
   ),
   statement: Object.fromEntries(
     Object.entries(STATEMENT_LAYOUTS).map(([v, f]) => [
+      v,
+      { stem: f.stem, headers: f.columns.map((c) => c.header) },
+    ]),
+  ),
+  // M6.5 (B4): added last, so the pinned text above does not move
+  refunds: Object.fromEntries(
+    Object.entries(REFUNDS_LAYOUTS).map(([v, f]) => [
       v,
       { stem: f.stem, headers: f.columns.map((c) => c.header) },
     ]),

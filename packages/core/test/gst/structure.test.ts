@@ -44,6 +44,7 @@ describe("src/gst: the files the brief names", () => {
         "period.ts",
         "rates.ts",
         "realisation.ts",
+        "refunds-register.ts",
         "registers.ts",
         "sac.ts",
         "sections.ts",

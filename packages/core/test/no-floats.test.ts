@@ -23,6 +23,7 @@ const MONEY_FILES = [
   "src/gst/registers.ts",
   "src/gst/sac.ts",
   "src/gst/statement-csv.ts",
+  "src/gst/refunds-register.ts",
   "src/gst/summary.ts",
   "src/statement.ts",
   "src/gst/sections.ts",

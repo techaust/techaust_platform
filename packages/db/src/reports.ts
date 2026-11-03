@@ -666,10 +666,12 @@ export type PaymentsRegisterRow = {
  * as they are until the SPA takes refunds in a new layout version): the SUCCEEDED refunds of confirmed payments with `settled_on` from `?1` to `?2` (ISO, inclusive),
  * oldest first by `(settled_on, id)`, with a next page from `?3`/`?4`; read through `payment_refunds_settled`. Each row carries the source payment, the client, the
  * invoice and the credit note it followed (numbers), the bank's INR amount of a USD refund (L15, never a GST figure). At most 51 rows.
+ * B4 (`GET /reports/refunds`, the `refunds-v1` CSV): and the source payment's own reference (its gateway id and its bank reference).
  */
 export const REFUNDS_REGISTER_SQL = (after: boolean): string =>
   `SELECT f.id, f.payment_id, f.provider, f.origin, f.mode, f.paid_to, f.reason_code, f.settled_on, f.currency, f.amount_minor, f.inr_refunded_minor, f.reference_norm,
-       f.provider_refund_id, f.client_id, c.code AS client_code, c.display_name AS client_name, fd.number_display AS document_number, fc.number_display AS credit_note_number
+       f.provider_refund_id, f.client_id, c.code AS client_code, c.display_name AS client_name, fd.number_display AS document_number, fc.number_display AS credit_note_number,
+       fp.provider_payment_id AS payment_provider_ref, fp.reference_norm AS payment_reference
    FROM payment_refunds f INDEXED BY payment_refunds_settled JOIN payments fp ON fp.id = f.payment_id JOIN clients c ON c.id = f.client_id
      LEFT JOIN documents fd ON fd.id = f.document_id LEFT JOIN documents fc ON fc.id = f.credit_note_id
    WHERE f.status = 'succeeded' AND fp.status = 'confirmed' AND f.settled_on >= ?1 AND f.settled_on <= ?2 ${after ? "AND (f.settled_on > ?3 OR (f.settled_on = ?3 AND f.id > ?4))" : ""}
@@ -695,4 +697,7 @@ export type RefundsRegisterRow = {
   client_name: string;
   document_number: string | null;
   credit_note_number: string | null;
+  /** B4: the source payment's gateway id and bank reference. */
+  payment_provider_ref: string | null;
+  payment_reference: string | null;
 };

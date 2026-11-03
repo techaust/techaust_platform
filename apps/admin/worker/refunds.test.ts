@@ -540,3 +540,85 @@ describe("B4: the refund views carry their times; the list by client [L44, L46; 
     ]);
   });
 });
+
+describe("B4: the refunds register [ADM-PAY-08, L9; run file B4 item 3]", () => {
+  const reg = (cookie: string, q: string) => call(`/reports/refunds?${q}`, { cookie });
+  const auditCount = async () =>
+    (
+      await one<{ n: number }>(
+        "SELECT count(*) AS n FROM audit_log WHERE action = 'report.export' AND json_extract(summary, '$.report') = 'refunds'",
+      )
+    )?.n ?? 0;
+  const paidOn = (day: string) => (amountMinor: number) =>
+    manual(amountMinor, {
+      manual: { mode: "neft", reference: `UTRREG${uuidv7().slice(-8)}`, paidOn: day, paidTo: "original" },
+    });
+
+  it("its own row on the invoices Worker: exports.gst, one report.export audit row per page", async () => {
+    const { ROUTES } = await import("./guard.ts");
+    const row = ROUTES.find((r) => r.method === "GET" && r.path === "/api/v1/reports/refunds");
+    expect(row).toMatchObject({ access: "exports.gst", audit: "report.export", on: "invoices" });
+  });
+
+  it("Owner and Accountant with a fresh code; Staff and Sales 403; no code is step_up_required; a bad FY or cursor 400, nothing written", async () => {
+    const got: Record<string, number> = {};
+    for (const role of ["owner", "staff", "sales", "accountant"] as const)
+      got[role] = (await reg((await sessionFor(role, { stepUp: true })).cookie, "fy=2627")).status;
+    expect(got).toEqual({ owner: 200, staff: 403, sales: 403, accountant: 200 });
+    for (const role of ["owner", "accountant"] as const) {
+      const res = await reg((await sessionFor(role)).cookie, "fy=2627");
+      expect(res.status, role).toBe(403);
+      expect(((await json(res)) as J).error.code).toBe("step_up_required");
+    }
+    const o = await owner();
+    const before = await auditCount();
+    for (const q of ["fy=2628", "fy=26", "fy=abcd", "", "fy=2627&after=bad"])
+      expect((await reg(o.cookie, q)).status, q).toBe(400);
+    expect(await auditCount()).toBe(before);
+  });
+
+  it("one FY's succeeded refunds by the day they went out, oldest first, in keyset pages of 50 (one audit row each); the FY's bounds; never another FY's", async () => {
+    const o = await owner();
+    const clientId = await mkReportClient("INR");
+    const p = await recorded(o, recordBody(clientId, 100_000, [], { receivedOn: "2025-05-01" }));
+    const lastDay = paidOn("2026-03-31")(1_000);
+    expect((await call(`/payments/${p.id}/refunds`, { cookie: o.cookie, body: lastDay })).status).toBe(200);
+    const nextFy = paidOn("2026-04-01")(1_000);
+    expect((await call(`/payments/${p.id}/refunds`, { cookie: o.cookie, body: nextFy })).status).toBe(200);
+    const made: string[] = [];
+    for (let i = 0; i < 50; i++) {
+      const b = paidOn("2025-06-01")(100);
+      expect((await call(`/payments/${p.id}/refunds`, { cookie: o.cookie, body: b })).status).toBe(200);
+      made.push(b.id);
+    }
+    const before = await auditCount();
+    const p1 = (await json(await reg(o.cookie, "fy=2526"))) as J;
+    expect(p1).toMatchObject({ fy: "2526", from: "2025-04-01", to: "2026-03-31" });
+    expect(p1.rows).toHaveLength(50);
+    expect(p1.next).not.toBeNull();
+    const p2 = (await json(await reg(o.cookie, `fy=2526&after=${p1.next}`))) as J;
+    expect(p2.next).toBeNull();
+    const ids = [...p1.rows, ...p2.rows].map((r: J) => r.id);
+    expect(ids).toEqual([...[...made].sort(), lastDay.id]);
+    expect(ids).not.toContain(nextFy.id);
+    expect(await auditCount()).toBe(before + 2);
+    const last = p2.rows.at(-1);
+    expect(last).toMatchObject({
+      id: lastDay.id,
+      paymentId: p.id,
+      provider: "manual",
+      origin: "owner",
+      reasonCode: "overpayment",
+      refundedOn: "2026-03-31",
+      currency: "INR",
+      amountMinor: 1_000,
+      bankReference: expect.stringMatching(/^UTRREG/),
+      providerRefundId: null,
+      client: { id: clientId },
+      documentNumber: null,
+      paymentReference: expect.stringMatching(/^UTR/),
+    });
+    const fy2627 = (await json(await reg(o.cookie, "fy=2627"))) as J;
+    expect(fy2627.rows.map((r: J) => r.id)).toContain(nextFy.id);
+  });
+});

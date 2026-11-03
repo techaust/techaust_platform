@@ -183,6 +183,9 @@ export const ROUTES: readonly RouteDef[] = [
   I("GET", "/reports/realisation", "reports.finance"),
   // M6.1: the payments and TDS register of one FY (07-ZH line 20; the SPA builds the CSV, the TDS rows apart for Form 26AS and AIS matching).
   I("GET", "/reports/payments", "reports.finance"),
+  // M6.5 (B4; ADM-PAY-08): the refunds register of one FY, the registers' rule (Owner and Accountant with a fresh code on every page, one audit row per page). Its
+  // own row, not a kind of `/reports/registers`: that page answers GST register rows and a settings meta over a date range; this one answers refunds over an FY.
+  I("GET", "/reports/refunds", "exports.gst", { audit: "report.export" }),
   // Catalogue, templates and publishing (M4.1, ADM-CAT-01..05). Static paths (`snapshots`, `publish`) are declared before `:id`.
   R("GET", "/catalogue", "catalogue.read"),
   R("GET", "/catalogue/snapshots", "catalogue.read"),

@@ -52,7 +52,9 @@ import {
   buildEdf,
   buildGstExport,
   buildRealisation,
+  buildRefundsRegister,
   buildSalesRegister,
+  refundsRegisterInputOf,
   rulesOfMeta,
   statementCsvText,
   wholePeriodOf,
@@ -1013,5 +1015,75 @@ describe("FX-4 review L5: the wide list's scroll cue measures from observers, no
     expect(scrollCueSource).not.toMatch(/useEffect\(measure\)/);
     expect(scrollCueSource).toMatch(/new MutationObserver\(/);
     expect(scrollCueSource).toMatch(/\}, \[measure\]\);/);
+  });
+});
+
+describe("the refunds register's builder (M6.5 B4) [ADM-PAY-08]", () => {
+  const row = {
+    id: "rf-1",
+    paymentId: "p-1",
+    provider: "razorpay",
+    origin: "owner" as const,
+    mode: null,
+    paidTo: null,
+    reasonCode: "credit_note" as const,
+    refundedOn: "2026-11-02",
+    currency: "INR" as const,
+    amountMinor: 118_000,
+    inrRefundedMinor: null,
+    bankReference: null,
+    providerRefundId: "rfnd_SAMPLE0001",
+    client: { id: "c-1", code: "C-0001", name: "Sample client A (fake)" },
+    documentNumber: "TH/INV/2627/0007",
+    creditNoteNumber: "TH/CN/2627/0001",
+    paymentReference: "pay_SAMPLE0001",
+  };
+
+  it("writes the codes in 07-ZO's staff words; no invoice reads as the client's credit; every row says Refunded", () => {
+    expect(refundsRegisterInputOf(row)).toMatchObject({
+      from: "TH/INV/2627/0007",
+      way: "Through Razorpay",
+      reason: "After a credit note",
+      status: "Refunded",
+    });
+    const manual = refundsRegisterInputOf({
+      ...row,
+      provider: "manual",
+      reasonCode: "overpayment",
+      documentNumber: null,
+      creditNoteNumber: null,
+      bankReference: "UTRSAMPLE01",
+      providerRefundId: null,
+    });
+    expect(manual).toMatchObject({
+      from: "The client's credit",
+      way: "By bank transfer",
+      reason: "Paid too much",
+    });
+    expect(refundsRegisterInputOf({ ...row, origin: "chargeback", reasonCode: "chargeback" }).way).toBe(
+      "Lost dispute",
+    );
+    expect(refundsRegisterInputOf({ ...row, origin: "outside", provider: "stripe" }).way).toBe(
+      "Made in Stripe",
+    );
+  });
+
+  it("builds refunds-v1 with one line per refund; a refused row is a problem line, nothing skipped", () => {
+    const built = buildRefundsRegister([
+      row,
+      { ...row, id: "rf-2", currency: "USD", amountMinor: 5_000, inrRefundedMinor: 417_500 },
+    ]);
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.count).toBe(2);
+    const lines = built.csv.split("\r\n");
+    expect(lines[0]?.startsWith("Refund date,Client code,Client,Refunded from")).toBe(true);
+    expect(lines[1]).toContain(
+      "Through Razorpay,rfnd_SAMPLE0001,,INR,1180.00,1180.00,After a credit note,Refunded",
+    );
+    expect(lines[2]).toContain(",USD,50.00,4175.00,");
+    const bad = buildRefundsRegister([{ ...row, refundedOn: "2026-13-01" }]);
+    expect(bad.ok).toBe(false);
+    expect(!bad.ok && bad.problems).toHaveLength(1);
   });
 });

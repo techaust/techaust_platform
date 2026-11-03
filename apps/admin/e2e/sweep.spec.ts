@@ -40,6 +40,8 @@ const LISTS = [
   "/reports/sales-register",
   "/reports/edf",
   "/reports/realisation",
+  "/reports/payments",
+  "/reports/refunds",
   "/audit",
   "/account",
   "/settings",

@@ -2,10 +2,39 @@
 // rows; `readAll` follows `next` to the end, saying how many rows it has so far. A register page needs a live step-up (`exports.gst`): `request`
 // opens the step-up dialog when the server asks and sends the same page again, so a long read that outlives the step-up asks once more, never fails.
 import type { CalendarDate, RegisterApiRow, ReportMeta } from "@techaust/core/gst";
-import { answerError, NETWORK, qs, RequestError, request } from "../api.ts";
+import type { RefundOrigin, RefundReason } from "@techaust/core/refunds";
+import { answerError, type Currency, NETWORK, qs, RequestError, request } from "../api.ts";
 
 export type ReportPage = { rows: RegisterApiRow[]; meta: ReportMeta; next: string | null };
 export type EdfPage = ReportPage & { meta: ReportMeta & { edfDue: CalendarDate } };
+
+/** One row of `GET /reports/refunds` (M6.5, B4; worker/reports.ts): a refund that went out, on its IST day. */
+export type RefundsRegisterApiRow = {
+  id: string;
+  paymentId: string;
+  provider: string;
+  origin: RefundOrigin;
+  mode: string | null;
+  paidTo: string | null;
+  reasonCode: RefundReason;
+  refundedOn: string;
+  currency: Currency;
+  amountMinor: number;
+  inrRefundedMinor: number | null;
+  bankReference: string | null;
+  providerRefundId: string | null;
+  client: { id: string; code: string; name: string };
+  documentNumber: string | null;
+  creditNoteNumber: string | null;
+  paymentReference: string | null;
+};
+export type RefundsRegisterPage = {
+  fy: string;
+  from: string;
+  to: string;
+  rows: RefundsRegisterApiRow[];
+  next: string | null;
+};
 
 export const reportsApi = {
   registers: (from: string, to: string, after?: string) =>
@@ -13,6 +42,9 @@ export const reportsApi = {
   edf: (month: string, after?: string) => request<EdfPage>(`/reports/edf${qs({ month, after })}`),
   realisation: (show: "open" | "all", after?: string) =>
     request<ReportPage>(`/reports/realisation${qs({ show, after })}`),
+  /** M6.5 (B4): the refunds register of one FY (`fy` like "2627"); a fresh code on every page, as the registers. */
+  refunds: (fy: string, after?: string) =>
+    request<RefundsRegisterPage>(`/reports/refunds${qs({ fy, after })}`),
 };
 
 /**
