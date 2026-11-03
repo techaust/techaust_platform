@@ -39,6 +39,7 @@ import {
 } from "@techaust/db/gateway";
 import { type GuardSql, guardSql } from "@techaust/db/log";
 import { withdrawnSql } from "@techaust/db/sql-rules";
+import { enqueueReceipt } from "../receipt-enqueue.ts";
 import { type Actor, mutateSystem } from "../system.ts";
 import { REVIEW_LINK } from "./consts.ts";
 import { bellNeedsReview, bellPaidOnline, type ReasonFacts, reviewReason } from "./messages.ts";
@@ -711,6 +712,8 @@ export async function settlePayment(
   }
   // "For B2" 3: the link was cancelled or expired, or the invoice voided, between the read and the batch: record the money pending with a review item.
   if (!done) return pending("document_not_payable", { reason: "changed" }, true);
+  // M6.5 (L3): the confirmed payment's receipt, in its own batch on the invoices Worker.
+  await enqueueReceipt(env, f.paymentId);
   const stale = others
     .filter((o) => o.provider_link_id)
     .map((o) => ({ id: o.id, linkId: o.provider_link_id as string }));

@@ -9,7 +9,7 @@ import type { Address } from "./types.ts";
 
 /** One line of a statement as the jobs Worker reads it: the amount is positive and the kind says which side it is on (`@techaust/core/statement`). */
 export type StatementInputEntry = {
-  kind: "tax_invoice" | "export_invoice" | "debit_note" | "credit_note" | "receipt" | "tds";
+  kind: "tax_invoice" | "export_invoice" | "debit_note" | "credit_note" | "receipt" | "tds" | "refund";
   /** ISO date (IST): the issue date, or the day the money arrived. */
   date: string;
   /** The document's printed number (a receipt shows the number of the invoice it paid). */
@@ -63,7 +63,7 @@ export type StatementView = StatementLayoutView;
 // ---- the statement of account (M5.5b, LD79; ADM-CLI-04; Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28) for what a statement lists, Q58) --------------------------------------------
 
 /** The layout the page is made by: part of the content hash (`statementViewSha256`), so a new layout makes a new PDF for the same data. The designer bumps it with the layout. */
-export const STATEMENT_LAYOUT_ID = "statement-3"; // M6.1 "statement-2": the lines come from the ledger (payments and TDS lines); M6.3 staging fixes "statement-3": the registration line breaks between its parts and the last lines keep to the ledger. A cached statement made before is never reused
+export const STATEMENT_LAYOUT_ID = "statement-4"; // M6.5 "statement-4": refund lines (debits); // M6.1 "statement-2": the lines come from the ledger (payments and TDS lines); M6.3 staging fixes "statement-3": the registration line breaks between its parts and the last lines keep to the ledger. A cached statement made before is never reused
 
 const addressLinesOf = (a: Partial<Address> | null | undefined): string[] => {
   if (!a) return [];

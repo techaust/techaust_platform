@@ -45,6 +45,7 @@ import {
   webhookEventMoveStatement,
 } from "@techaust/db/gateway";
 import { type GuardSql, guardSql } from "@techaust/db/log";
+import { enqueueReceipt } from "../receipt-enqueue.ts";
 import { mutateSystem } from "../system.ts";
 import { envText, stripeModeOfSettings, stripeOf } from "./config.ts";
 import {
@@ -463,6 +464,8 @@ export async function settleStripe(env: GatewayEnv, a: StripeSettleArgs): Promis
     }
     return pending("document_not_payable", { reason: "changed" });
   }
+  // M6.5 (L3): the confirmed payment's receipt, in its own batch on the invoices Worker.
+  await enqueueReceipt(env, f.paymentId);
   // After the batch, best effort: the document's other open sessions are expired at Stripe; a success moves each to `cancelled` (L4, L6).
   for (const o of others) {
     if (!o.provider_link_id) continue;

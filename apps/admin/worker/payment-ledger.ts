@@ -25,7 +25,9 @@ import {
   releasable,
 } from "@techaust/core/ledger";
 import { onlineMinimumOf } from "@techaust/core/online-pay";
+import { paCbCapFor, paCbCheck } from "@techaust/core/pa-cb";
 import { creditApplyBody, creditReleaseBody, realisationExtensionBody } from "@techaust/core/payment-schemas";
+import { decide } from "@techaust/core/permissions";
 import { paymentHasAdviceSql } from "@techaust/db/advices";
 import { deedDraftStatements } from "@techaust/db/deeds";
 import { DOCUMENT_CHECKOUTS_SQL } from "@techaust/db/gateway";
@@ -46,6 +48,7 @@ import {
   recomputeStatement,
 } from "@techaust/db/ledger";
 import { femaDueSql, femaStandardSql, gstDueSql, settingsBinds, stageSql } from "@techaust/db/realisation";
+import { paymentFreeSql } from "@techaust/db/sql-rules";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { CLIENT_GONE, clientGoneSql } from "./anonymised.ts";
@@ -79,8 +82,62 @@ export const EXTENSION_MAX_DAYS = 36_500;
 const PANEL_TYPES: readonly string[] = [...PAYABLE_TYPES, "proforma", "credit_note"];
 
 /** A document as the ledger routes read it, with its client's state and its current FEMA date when it is an export invoice. */
+/** M6.5: each payment holding money on the document (`?1`), its receipt (if issued) and its free money (`paymentFreeSql`: what a refund from credit may take). */
+const PANEL_RECEIPTS_SQL = `SELECT p.id AS payment_id, r.id AS receipt_id, r.number_display AS receipt_number, r.issue_date AS receipt_date, r.status AS receipt_status,
+     r.pdf_sha256 IS NOT NULL AS receipt_pdf, max(0, ${paymentFreeSql("p")}) AS free_minor
+   FROM payments p LEFT JOIN documents r ON r.id = 'rct_' || p.id AND r.type = 'receipt'
+   WHERE p.id IN (SELECT a.payment_id FROM payment_allocations a INDEXED BY payment_allocations_document WHERE a.document_id = ?1)`;
+/** M6.5: the refunds of this invoice's excess and of the payments holding money on it, newest first (at most 50). */
+const PANEL_REFUNDS_SQL = `SELECT r.id, r.payment_id, r.document_id, r.provider, r.origin, r.status, r.reason_code, r.currency, r.amount_minor, r.requested_at, r.settled_on,
+     r.failure_code
+   FROM payment_refunds r
+   WHERE r.id IN (SELECT x.id FROM payment_refunds x INDEXED BY payment_refunds_document WHERE x.document_id = ?1)
+      OR r.payment_id IN (SELECT a.payment_id FROM payment_allocations a INDEXED BY payment_allocations_document WHERE a.document_id = ?1)
+   ORDER BY r.requested_at DESC, r.id DESC LIMIT 50`;
+type PanelReceiptRow = {
+  payment_id: string;
+  receipt_id: string | null;
+  receipt_number: string | null;
+  receipt_date: string | null;
+  receipt_status: string | null;
+  receipt_pdf: number;
+  free_minor: number;
+};
+type PanelRefundRow = {
+  id: string;
+  payment_id: string;
+  document_id: string | null;
+  provider: string;
+  origin: string;
+  status: string;
+  reason_code: string;
+  currency: string;
+  amount_minor: number;
+  requested_at: number;
+  settled_on: string | null;
+  failure_code: string | null;
+};
+
+/**
+ * M6.5 (L12; ADM-PAY-13): the ₹25 lakh check of a USD document's total at its own Owner-typed rate (`fx_rate_micros`, dated its issue day), per gateway: PayPal
+ * is a PA-CB, so its cap is the lower of the Owner's setting and the RBI's (Researched 2026-10-28, RBI PA Directions 2025, para 11(d) (08-C RB-07)); for Stripe
+ * the setting is a warning only (never a legal limit; Settled by the lead on the safest reading, 2026-11-02 (08-C RA-38)). A warning, never a block.
+ */
+function paCbOf(
+  d: { total_minor: number; fx_rate_micros: number | null; issue_date: string | null },
+  taxRow: { value: string; version: number } | undefined,
+) {
+  const setting = cachedSetting("tax", taxRow).crossBorderWarnInrMinor;
+  const today = toIsoDate(istDate(Date.now()));
+  const base = { usdMinor: d.total_minor, rateMicros: d.fx_rate_micros, rateDate: d.issue_date, today };
+  return {
+    paypal: paCbCheck({ ...base, capInrMinor: paCbCapFor("paypal", setting) }),
+    stripe: paCbCheck({ ...base, capInrMinor: paCbCapFor("stripe", setting) }),
+  };
+}
+
 const DOC_SQL = `SELECT d.id, d.type, d.status, d.client_id, d.currency, d.frozen_at, d.voided_at, d.issue_date, d.number_display, d.total_minor, d.paid_minor,
-     d.credited_minor, d.tds_minor, d.balance_minor, d.updated_at, d.supply_type, ${clientGoneSql("d.client_id")} AS gone,
+     d.credited_minor, d.tds_minor, d.balance_minor, d.updated_at, d.supply_type, d.fx_rate_micros, ${clientGoneSql("d.client_id")} AS gone,
      CASE WHEN d.type = 'export_invoice' AND d.issue_date IS NOT NULL THEN ${femaDueSql("d", settingsBinds("NULL"))} END AS fema_due
    FROM documents d WHERE d.id = ?1`;
 
@@ -101,6 +158,7 @@ type DocRow = {
   balance_minor: number;
   updated_at: number;
   supply_type: string | null;
+  fx_rate_micros: number | null;
   gone: number;
   fema_due: string | null;
 };
@@ -417,30 +475,70 @@ export const invoiceLedger = new Hono<AppEnv>()
     const { id } = c.req.valid("param");
     const db = c.env.DB;
     const today = toIsoDate(istDate(Date.now()));
-    const [docR, holdR, pendR, creditR, extR, realR, gwPayR, linksR, reviewR, termsR] = await db.batch([
-      db.prepare(DOC_SQL).bind(id),
-      db.prepare(DOCUMENT_HOLDINGS_SQL).bind(id),
-      db.prepare(PENDING_FOR_DOCUMENT_SQL).bind(id),
-      db.prepare(CREDIT_OF_DOCUMENT_CLIENT_SQL).bind(id),
-      db.prepare(EXTENSIONS_SQL).bind(id),
-      db.prepare(REALISATION_OF_SQL).bind(id, today),
-      // M6.2: the Razorpay payments that came through this document's links (any status), its links, and its open review items.
-      db.prepare(GATEWAY_PAYMENTS_OF_DOCUMENT_SQL).bind(id),
-      db.prepare(DOCUMENT_CHECKOUTS_SQL).bind(id),
-      db
-        .prepare(
-          "SELECT count(*) AS n FROM review_items INDEXED BY review_items_document WHERE document_id = ?1 AND status = 'open'",
-        )
-        .bind(id),
-      // M6.2 fix round 3 item 4: the part-payment floor, so the Create dialog shows the range to a role that can't read Settings › Payment terms.
-      db.prepare("SELECT value, version FROM settings WHERE key = 'payment_terms'"),
-    ]);
+    const [docR, holdR, pendR, creditR, extR, realR, gwPayR, linksR, reviewR, termsR, m65R, refundsR, taxR] =
+      await db.batch([
+        db.prepare(DOC_SQL).bind(id),
+        db.prepare(DOCUMENT_HOLDINGS_SQL).bind(id),
+        db.prepare(PENDING_FOR_DOCUMENT_SQL).bind(id),
+        db.prepare(CREDIT_OF_DOCUMENT_CLIENT_SQL).bind(id),
+        db.prepare(EXTENSIONS_SQL).bind(id),
+        db.prepare(REALISATION_OF_SQL).bind(id, today),
+        // M6.2: the Razorpay payments that came through this document's links (any status), its links, and its open review items.
+        db.prepare(GATEWAY_PAYMENTS_OF_DOCUMENT_SQL).bind(id),
+        db.prepare(DOCUMENT_CHECKOUTS_SQL).bind(id),
+        db
+          .prepare(
+            "SELECT count(*) AS n FROM review_items INDEXED BY review_items_document WHERE document_id = ?1 AND status = 'open'",
+          )
+          .bind(id),
+        // M6.2 fix round 3 item 4: the part-payment floor, so the Create dialog shows the range to a role that can't read Settings › Payment terms.
+        db.prepare("SELECT value, version FROM settings WHERE key = 'payment_terms'"),
+        // M6.5: each holding payment's receipt and free money (the Refund button), the refunds of those payments or of this invoice, and the PA-CB cap setting.
+        db.prepare(PANEL_RECEIPTS_SQL).bind(id),
+        db.prepare(PANEL_REFUNDS_SQL).bind(id),
+        db.prepare("SELECT value, version FROM settings WHERE key = 'tax'"),
+      ]);
     const d = docR?.results[0] as DocRow | undefined;
     if (!d || !PANEL_TYPES.includes(d.type)) return err(c, NOT_FOUND, 404);
     const real = realR?.results[0] as
       | { fema_standard: string; fema_due: string; gst_due: string; stage: string }
       | undefined;
+    // M6.5 (run file C "GET /invoices/:id/payments gains ..."): receipts and free money per payment; refunds only for a role with `refunds.read`.
+    const m65 = new Map(((m65R?.results ?? []) as PanelReceiptRow[]).map((r) => [r.payment_id, r]));
+    const canReadRefunds = decide(actor(c).role, "refunds.read") !== "deny";
+    const taxRow = taxR?.results[0] as { value: string; version: number } | undefined;
+    const paCb = d.currency === "USD" ? paCbOf(d, taxRow) : null;
     return c.json({
+      receipts: Object.fromEntries(
+        [...m65.values()].map((r) => [
+          r.payment_id,
+          {
+            receiptId: r.receipt_id,
+            number: r.receipt_number,
+            issueDate: r.receipt_date,
+            status: r.receipt_status,
+            hasPdf: r.receipt_pdf === 1,
+            freeMinor: r.free_minor,
+          },
+        ]),
+      ),
+      refunds: canReadRefunds
+        ? ((refundsR?.results ?? []) as PanelRefundRow[]).map((r) => ({
+            id: r.id,
+            paymentId: r.payment_id,
+            documentId: r.document_id,
+            provider: r.provider,
+            origin: r.origin,
+            status: r.status,
+            reasonCode: r.reason_code,
+            currency: r.currency,
+            amountMinor: r.amount_minor,
+            requestedAt: r.requested_at,
+            settledOn: r.settled_on,
+            failureCode: r.failure_code,
+          }))
+        : null,
+      paCb,
       documentId: d.id,
       type: d.type,
       status: d.status,

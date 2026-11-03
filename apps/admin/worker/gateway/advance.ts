@@ -34,6 +34,7 @@ import {
 } from "../invoice-model.ts";
 import { readInvoice } from "../invoices.ts";
 import { lineRows } from "../quote-model.ts";
+import { enqueueReceipt } from "../receipt-enqueue.ts";
 import { mutateSystem } from "../system.ts";
 // The fourth admin Worker (2026-11-03): this module runs in the invoices Worker (`GatewayAdvance`, invoicing.ts); it takes only wording (messages.ts) and the
 // link (consts.ts) from the gateway folder, never settle.ts or a gateway client (the GATEWAY_CODE budget marker).
@@ -477,5 +478,7 @@ async function tryAdvance(
     return blocked(env, p, proformaId, ["freeze_refused"]);
   }
   await enqueuePdf(env, invoiceId, "send");
+  // M6.5 (L3): the payment this confirmed gets its receipt.
+  await enqueueReceipt(env, p.id);
   return { result: "issued", ...(issued?.number_display ? { number: issued.number_display } : {}) };
 }

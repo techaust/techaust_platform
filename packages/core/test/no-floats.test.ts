@@ -53,6 +53,7 @@ const MONEY_FILES = [
   "src/paypal.ts",
   // M6.5: refunds, receipts, the PA-CB check and the settlement reader carry money.
   "src/refunds.ts",
+  "src/refund-gateways.ts",
   "src/receipts.ts",
   "src/pa-cb.ts",
   "src/recon.ts",

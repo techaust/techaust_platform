@@ -17,6 +17,11 @@
 // (08-C RB-41)). CPU (JOB-HOOK-03, ≤ 5 ms p99): one HMAC over at most 64 KiB (the key imported once per isolate), one parse, two D1 statements, one send; a
 // foreign event costs the HMAC and the parse only.
 import { uuidv7 } from "@techaust/core/ids";
+import {
+  refundFactsRecord,
+  STRIPE_REFUND_EVENTS,
+  stripeRefundEventFacts,
+} from "@techaust/core/refund-gateways";
 import { parseStripeEvent, stripeEventFacts, verifyStripeSignature } from "@techaust/core/stripe";
 import {
   HOOK_FAILURE_WINDOW_MS,
@@ -104,8 +109,19 @@ async function handleHook(req: Request, env: HookEnv, now: number, out: { o?: st
     return refuse(400, "invalid_event");
   }
   const e = parsed.value;
-  // (6) ours or not: no D1 write for anything that isn't exactly ours.
   const liveExpected = secretOf(env, "PAYMENTS_LIVE_ALLOWED") === "true";
+  // M6.5 (L36; Step 0 point 4): a refund or dispute event carries no checkout marks (S4: Stripe copies no metadata to a Refund or a Dispute; ours sets its own
+  // `techaust_refund` on the refunds we make). Kept with its whitelisted facts when its livemode is ours; the finance Worker matches the PaymentIntent to OUR
+  // payment and ignores the rest (one D1 row per not-ours event on the shared account, accepted).
+  if (Object.hasOwn(STRIPE_REFUND_EVENTS, e.name)) {
+    const rf = stripeRefundEventFacts(obj);
+    if (!rf || e.livemode !== liveExpected) {
+      out.o = rf ? "livemode_mismatch" : "invalid_event";
+      return answer(200, { ok: true });
+    }
+    return store(env, e.id, e.name, refundFactsRecord(rf), now, out);
+  }
+  // (6) ours or not: no D1 write for anything that isn't exactly ours.
   const foreign =
     e.livemode !== liveExpected
       ? "livemode_mismatch"
@@ -119,17 +135,30 @@ async function handleHook(req: Request, env: HookEnv, now: number, out: { o?: st
     return answer(200, { ok: true });
   }
   // (7) ours. Only the four session events carry our marks, so an event here is one we handle (an unknown type never reaches this line).
+  return store(env, e.id, e.name, stripeEventFacts(e), now, out, e.type === "other");
+}
+
+/** Stores one event (`received`, or `ignored` for a type we don't handle), finds it again, and queues a new or still waiting one once (`gateway.event`). */
+async function store(
+  env: HookEnv,
+  eventId: string,
+  name: string,
+  facts: Record<string, string | number>,
+  now: number,
+  out: { o?: string },
+  ignored = false,
+): Promise<Response> {
   const [, state] = await env.DB.batch([
     env.DB.prepare(WEBHOOK_EVENT_INSERT_SQL).bind(
       uuidv7(),
       "stripe",
-      e.id,
-      e.name,
+      eventId,
+      name,
       now,
-      e.type === "other" ? "ignored" : "received",
-      JSON.stringify(stripeEventFacts(e)),
+      ignored ? "ignored" : "received",
+      JSON.stringify(facts),
     ),
-    env.DB.prepare(WEBHOOK_EVENT_STATE_SQL).bind("stripe", e.id),
+    env.DB.prepare(WEBHOOK_EVENT_STATE_SQL).bind("stripe", eventId),
   ]);
   const row = state?.results[0] as { id: string; status: string } | undefined;
   if (row?.status !== "received") {

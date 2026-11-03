@@ -39,7 +39,9 @@ import {
   paypalOriginFor,
   readPayPalCapture,
   readPayPalOrder,
+  usdMinorToValue,
 } from "@techaust/core/paypal";
+import { type GatewayRefund, readPayPalRefund } from "@techaust/core/refund-gateways";
 import { dropPayPalToken, payPalToken } from "./paypal-token.ts";
 
 export const PAYPAL_TIMEOUT_MS = 8_000;
@@ -84,6 +86,17 @@ export type PayPalApi = {
   getOrder(orderId: string): Promise<PayPalResult<PayPalOrder>>;
   captureOrder(orderId: string, requestId: string): Promise<CaptureAnswer>;
   getCapture(captureId: string): Promise<PayPalResult<PayPalCapture>>;
+  /**
+   * M6.5 (P1): `POST /v2/payments/captures/{id}/refund` with the amount, our refund id as `custom_id` and as `PayPal-Request-Id` (the same request again answers
+   * the same refund; P2's retention UNCONFIRMED), `Prefer: return=representation`.
+   */
+  refundCapture(
+    captureId: string,
+    amountMinor: number,
+    refundId: string,
+  ): Promise<PayPalResult<GatewayRefund>>;
+  /** M6.5: one refund (`GET /v2/payments/refunds/{id}`). */
+  getRefund(refundId: string): Promise<PayPalResult<GatewayRefund>>;
 };
 
 type Raw = { status: number; body: unknown };
@@ -197,6 +210,26 @@ export function payPalApi(cfg: PayPalConfig): PayPalApi {
       if (e) return { ok: false, error: e };
       const o = readPayPalOrder(r.body);
       return o && o.id === orderId ? { ok: true, order: o } : { ok: false, error: null, code: "bad_answer" };
+    },
+    async refundCapture(captureId, amountMinor, refundId) {
+      if (!PAYPAL_CAPTURE_ID.test(captureId)) return { ok: false, code: "not_found" };
+      const value = usdMinorToValue(amountMinor);
+      if (value === null) return { ok: false, code: "refused" };
+      const r = await call("POST", `/v2/payments/captures/${captureId}/refund`, {
+        body: JSON.stringify({ amount: { value, currency_code: "USD" }, custom_id: refundId }),
+        requestId: `rfd-${refundId}`,
+        prefer: "return=representation",
+      });
+      if (!r.ok) return r;
+      const f = readPayPalRefund(r.value);
+      return f ? { ok: true, value: { ...f, paymentRef: captureId } } : { ok: false, code: "bad_answer" };
+    },
+    async getRefund(refundId) {
+      if (!/^[A-Z0-9]{1,64}$/.test(refundId)) return { ok: false, code: "not_found" };
+      const r = await call("GET", `/v2/payments/refunds/${refundId}`);
+      if (!r.ok) return r;
+      const f = readPayPalRefund(r.value);
+      return f ? { ok: true, value: f } : { ok: false, code: "bad_answer" };
     },
     async getCapture(captureId) {
       if (!PAYPAL_CAPTURE_ID.test(captureId)) return { ok: false, code: "not_found" };
@@ -457,6 +490,21 @@ export function payPalStubAnswer(input: RequestInfo | URL, init?: RequestInit): 
   const method = init?.method ?? "GET";
   if (method === "POST" && url.pathname === "/v1/oauth2/token")
     return stubJson(200, { access_token: "A21AA-local-simulator", token_type: "Bearer", expires_in: 32_400 });
+  // M6.5: a capture's refund, completed at once (the request id carries our refund id, so a repeat answers the same refund).
+  const refundOf = /^\/v2\/payments\/captures\/([A-Z0-9]+)\/refund$/.exec(url.pathname);
+  if (method === "POST" && refundOf) {
+    const body = JSON.parse(String(init?.body ?? "{}")) as {
+      amount?: { value?: string };
+      custom_id?: string;
+    };
+    const ours = String(body.custom_id ?? "");
+    return stubJson(201, {
+      id: `R${ours.replaceAll("-", "").slice(0, 20).toUpperCase()}`,
+      status: "COMPLETED",
+      amount: { value: body.amount?.value ?? "0.00", currency_code: "USD" },
+      custom_id: ours,
+    });
+  }
   if (method === "POST" && url.pathname === "/v2/checkout/orders") {
     const body = JSON.parse(String(init?.body ?? "{}")) as {
       purchase_units?: { custom_id?: string; amount?: { value?: string } }[];

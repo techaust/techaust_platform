@@ -1,6 +1,7 @@
 // The fixed wording printed on a proposal or estimate PDF, word for word from 07-P §1 (docs/07-content-appendix/P-m4.4-pdf-documents.md)
 // and, for the terms line, 07-O §1. 07-P is PENDING the owner's word-for-word approval; the tax lines are Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05).
 // Values (names, numbers, dates, amounts) come pre-formatted in the view; nothing here is worked out.
+import { STATEMENT_REFUND_WORD } from "@techaust/core/copy-zo";
 import { DEFAULT_CONTACT_EMAIL, footerLine } from "../footer.ts";
 
 export const PDF_COPY = {
@@ -222,6 +223,8 @@ export const STATEMENT_PDF_COPY = {
     receipt: "Payment received",
     /** M6.1 (07-ZH line 19, approved by the owner 2026-10-31): the tax the client deducted at source. */
     tds: "TDS deducted",
+    /** M6.5: a refund (07-ZO lacks the word: the builder's draft, marked "[Placeholder]" until the owner approves it; `@techaust/core/copy-zo`). */
+    refund: STATEMENT_REFUND_WORD,
   },
   amountDue: (closing: string) => `Amount due: ${closing}`,
   questions: (email: string) => `Questions about this statement? Write to ${email}.`,

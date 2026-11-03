@@ -81,11 +81,11 @@ export const GATEWAY_ERROR = e("gateway_error", "Razorpay couldn't be reached. T
 export const NO_PAYMENT_LISTED = e("no_payment_listed", NO_PAYMENT_LISTED_LINE);
 export const GATEWAY_REFUND_NEEDED = e(
   "gateway_refund_needed",
-  "A Razorpay payment can't be rejected here. It needs a refund through Razorpay.",
+  "A Razorpay payment can't be rejected here. Use Refund on the payment to send it back through Razorpay.",
 );
 export const GATEWAY_PAYMENT = e(
   "gateway_payment",
-  "A Razorpay payment can't be withdrawn here. It needs a refund through Razorpay.",
+  "A Razorpay payment can't be withdrawn here. Use Refund on the payment to send it back through Razorpay.",
 );
 export const NOT_RETRYABLE = e("not_retryable", "This item can't be tried again. Resolve it instead.");
 
@@ -112,11 +112,11 @@ export const STRIPE_GATEWAY_ERROR = e("gateway_error", "Stripe couldn't be reach
 /** The verify and withdraw refusals for a Stripe payment (M6.2's lines name Razorpay). */
 export const STRIPE_REFUND_NEEDED = e(
   "gateway_refund_needed",
-  "A Stripe payment can't be rejected here. It needs a refund through Stripe.",
+  "A Stripe payment can't be rejected here. Use Refund on the payment to send it back through Stripe.",
 );
 export const STRIPE_GATEWAY_PAYMENT = e(
   "gateway_payment",
-  "A Stripe payment can't be withdrawn here. It needs a refund through Stripe.",
+  "A Stripe payment can't be withdrawn here. Use Refund on the payment to send it back through Stripe.",
 );
 // ---- M6.4 S11: the API messages of the new error codes (builder's drafts for the lead, run file "Builder B2 report") -----------------------------------------------
 
@@ -124,11 +124,11 @@ export const STRIPE_GATEWAY_PAYMENT = e(
 export const PAYPAL_GATEWAY_ERROR = e("gateway_error", "PayPal couldn't be reached. Try again.");
 export const PAYPAL_REFUND_NEEDED = e(
   "gateway_refund_needed",
-  "A PayPal payment can't be rejected here. It needs a refund through PayPal.",
+  "A PayPal payment can't be rejected here. Use Refund on the payment to send it back through PayPal.",
 );
 export const PAYPAL_GATEWAY_PAYMENT = e(
   "gateway_payment",
-  "A PayPal payment can't be withdrawn here. It needs a refund through PayPal.",
+  "A PayPal payment can't be withdrawn here. Use Refund on the payment to send it back through PayPal.",
 );
 /** 409 `payment_processing` on Cancel or Check now while a PayPal capture is in flight (L25, "B2 must carry" 8). */
 export const PAYPAL_CAPTURE_IN_FLIGHT = e(

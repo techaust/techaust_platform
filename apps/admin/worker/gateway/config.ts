@@ -83,6 +83,20 @@ export const stubFetch: typeof fetch = async (input, init) => {
   }
   if (url.pathname === "/v1/payment_links" && url.searchParams.has("reference_id"))
     return jsonResponse(200, { payment_links: [] });
+  // M6.5: refunds (processed at once; the id carries the amount and our refund id, so a fetch answers the same) and an empty settlement recon day.
+  const rf = /^\/v1\/payments\/(pay_[A-Za-z0-9]+)\/(refund|refunds)$/.exec(url.pathname);
+  if (rf && method === "POST" && rf[2] === "refund") {
+    const body = JSON.parse(String(init?.body ?? "{}")) as { amount: number; receipt: string };
+    return jsonResponse(
+      200,
+      stubRefund(`rfnd_A${body.amount}R${body.receipt.replaceAll("-", "")}`, rf[1] as string),
+    );
+  }
+  if (rf && rf[2] === "refunds") return jsonResponse(200, { entity: "collection", count: 0, items: [] });
+  const one = /^\/v1\/refunds\/(rfnd_A\d{1,12}R[0-9a-f]{32})$/.exec(url.pathname);
+  if (one) return jsonResponse(200, stubRefund(one[1] as string, null));
+  if (url.pathname === "/v1/settlements/recon/combined")
+    return jsonResponse(200, { entity: "collection", count: 0, items: [] });
   const m = /^\/v1\/(payment_links|payments)\/([^/]+)(\/cancel)?$/.exec(url.pathname);
   const id = m?.[2] ?? "";
   const parts = STUB_ID.exec(id);
@@ -103,6 +117,21 @@ export const stubFetch: typeof fetch = async (input, init) => {
     });
   return jsonResponse(200, link(id, amount, ref, m[3] ? "cancelled" : "paid"));
 };
+
+/** The simulator's refund (M6.5): `rfnd_A<amount>R<our refund id without dashes>`, processed. */
+function stubRefund(id: string, paymentId: string | null) {
+  const m = /^rfnd_A(\d{1,12})R([0-9a-f]{32})$/.exec(id);
+  return {
+    id,
+    entity: "refund",
+    amount: Number(m?.[1] ?? 0),
+    currency: "INR",
+    payment_id: paymentId,
+    receipt: m ? hexToUuid(m[2] as string) : null,
+    status: "processed",
+    created_at: Math.floor(Date.now() / 1000),
+  };
+}
 
 /** Test-only: the `fetch` the "stub" transport uses (tests swap in their own Razorpay answers; never reached on staging or production). */
 let stubTransport: typeof fetch = stubFetch;

@@ -13,6 +13,7 @@ import { invoiceNotes } from "./invoice-notes.ts";
 import { invoiceSend } from "./invoice-send.ts";
 import { invoiceWithdraw } from "./invoice-withdraw.ts";
 import { invoices } from "./invoices.ts";
+import { paymentReceipt, receiptPdf } from "./receipt-issue.ts";
 import { reports } from "./reports.ts";
 import { statementPdf } from "./statement-pdf.ts";
 import { statements } from "./statements.ts";
@@ -33,6 +34,9 @@ export function mountInvoices(app: App) {
   app.route("/v1/invoices", invoiceSend);
   app.route("/v1/invoices", invoicePdf);
   app.route("/v1/invoices", invoiceSupplierPdf);
+  // M6.5 (L34): a payment's receipt and the receipt PDF (an invoice-family document).
+  app.route("/v1/payments", paymentReceipt);
+  app.route("/v1/receipts", receiptPdf);
   app.route("/v1/approvals", approvals);
   app.route("/v1/dashboard", dashboard);
 }

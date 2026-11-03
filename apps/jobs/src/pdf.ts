@@ -35,6 +35,7 @@ import {
   type PdfSupplierMessage,
   type PdfSweepMessage,
   pdfKeys,
+  type ReceiptRenderMessage,
   supplierPdfKey,
   utcDateOf,
 } from "@techaust/core/pdf-jobs";
@@ -665,7 +666,13 @@ export async function processRender(
 /** A render that did not give a PDF: delay (rate, quota) or throw (anything a retry might fix). */
 export async function failed(
   env: Env,
-  msg: PdfRenderMessage | PdfCertificateMessage | PdfStatementMessage | PdfSupplierMessage | PdfDeedMessage,
+  msg:
+    | PdfRenderMessage
+    | PdfCertificateMessage
+    | PdfStatementMessage
+    | PdfSupplierMessage
+    | PdfDeedMessage
+    | ReceiptRenderMessage,
   result: Exclude<Awaited<ReturnType<typeof renderPaced>>, { ok: true }>,
   now: number,
 ): Promise<"delayed"> {

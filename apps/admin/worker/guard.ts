@@ -294,6 +294,30 @@ export const ROUTES: readonly RouteDef[] = [
     audit: "invoice.realisation_extend",
     body: "upload",
   }),
+  // M6.5 (ADM-INV-17, RB-43): the AD bank's FEMA Reg. 6 reductions of an export invoice (the Owner with a fresh code) and the bank's letter.
+  X("GET", "/invoices/:id/realisation-reductions", "payments.read"),
+  X("POST", "/invoices/:id/realisation-reductions", "realisation.reduce", { audit: "realisation.reduce" }),
+  X("PUT", "/invoices/:id/realisation-reductions/:rid/letter", "realisation.reduce", {
+    audit: "realisation.reduce",
+    body: "upload",
+  }),
+  // M6.5 (ADM-PAY-08): refunds (the Owner with a fresh code; the Accountant reads), the Refunds tab, "Try again" and Cancel.
+  X("POST", "/payments/:id/refunds", "refunds.issue", { audit: "refund.issue" }),
+  X("GET", "/payments/:id/refunds", "refunds.read"),
+  X("GET", "/refunds", "refunds.read"),
+  X("POST", "/refunds/:id/retry", "refunds.issue", { audit: "refund.retry" }),
+  X("POST", "/refunds/:id/cancel", "refunds.issue", { audit: "refund.cancel" }),
+  // M6.5 (ADM-PAY-10, L11): reconciliation: Razorpay's settlements, the unmatched lists, the Owner's "seen in the bank statement" tick and "Fetch now".
+  X("GET", "/reconciliation/settlements", "reports.finance"),
+  X("GET", "/reconciliation/settlements/:id", "reports.finance"),
+  X("GET", "/reconciliation/unmatched", "reports.finance"),
+  X("POST", "/reconciliation/bank-matches", "payments.reconcile", { audit: "recon.match" }),
+  X("POST", "/reconciliation/bank-matches/:id/remove", "payments.reconcile", { audit: "recon.unmatch" }),
+  X("POST", "/reconciliation/settlements/fetch", "payments.reconcile", { audit: "recon.fetch" }),
+  // M6.5 (ADM-PAY-09, L34): a payment's receipt and its PDF (an invoice-family document: the invoices Worker); the re-render as the invoice's (`invoices.draft`).
+  I("GET", "/payments/:id/receipt", "payments.read"),
+  I("GET", "/receipts/:id/pdf", "payments.read"),
+  I("POST", "/receipts/:id/pdf/retry", "invoices.draft", { audit: "receipt.pdf_retry" }),
   // The owner's approval queue. Staff and Sales read only their own requests (the handler filters); only the owner decides.
   I("GET", "/approvals", "approvals.readOwn"),
   I("POST", "/approvals/:id/decide", "approvals.decide", { audit: "approval.decide" }),

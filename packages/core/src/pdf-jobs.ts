@@ -55,8 +55,13 @@ export type PdfMessage =
  */
 export type ReceiptIssueMessage = { v: 1; kind: "receipt.issue"; paymentId: string };
 export type ReceiptSweepMessage = { v: 1; kind: "receipt.sweep"; asOf: number };
-export type ReceiptMessage = ReceiptIssueMessage | ReceiptSweepMessage;
-export const RECEIPT_KINDS = ["receipt.issue", "receipt.sweep"] as const;
+/**
+ * B2 (a deviation from the brief's `pdf.snapshot` for receipts, run file "Builder B2 report"): the receipt's PDF from its sealed `header_extras.receiptOf` (no
+ * envelope: the receipt row holds every word it prints, sealed by `snapshot_sha256`), rendered write-once by the jobs Worker; `hop` as `pdf.render`'s pacing.
+ */
+export type ReceiptRenderMessage = { v: 1; kind: "receipt.render"; receiptId: string; hop: number };
+export type ReceiptMessage = ReceiptIssueMessage | ReceiptSweepMessage | ReceiptRenderMessage;
+export const RECEIPT_KINDS = ["receipt.issue", "receipt.sweep", "receipt.render"] as const;
 /** The most `receipt.issue` one sweep queues, and how long after its confirmation a payment's receipt is late. */
 export const RECEIPT_SWEEP_MAX = 20;
 export const RECEIPT_SWEEP_AFTER_MS = 10 * 60_000;
@@ -74,6 +79,16 @@ export function isReceiptMessage(body: unknown): body is ReceiptMessage {
     return typeof body.paymentId === "string" && body.paymentId.length >= 1 && body.paymentId.length <= 60;
   if (body.kind === "receipt.sweep")
     return typeof body.asOf === "number" && Number.isSafeInteger(body.asOf) && body.asOf >= 0;
+  if (body.kind === "receipt.render")
+    return (
+      typeof body.receiptId === "string" &&
+      body.receiptId.startsWith("rct_") &&
+      body.receiptId.length <= 64 &&
+      typeof body.hop === "number" &&
+      Number.isSafeInteger(body.hop) &&
+      body.hop >= 0 &&
+      body.hop <= PDF_MAX_HOPS
+    );
   return false;
 }
 

@@ -15,6 +15,7 @@ export * from "./invoice-view.ts";
 export type { CertificateView } from "./layout/certificate-skeleton.ts";
 export * from "./markdown-html.ts";
 export * from "./options.ts";
+export * from "./receipt-view.ts";
 export * from "./render.ts";
 export * from "./sample.ts";
 export * from "./statement-view.ts";

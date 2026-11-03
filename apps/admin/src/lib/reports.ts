@@ -9,6 +9,7 @@
 // No value import of `@techaust/core/gst` here (the gst core is fetched only by the reports screens: ./reports-build.ts); types only. Money is formatted
 // through core (`moneyText`); nothing here adds up an amount.
 import { compareDocNumbers, formatMoney, money } from "@techaust/core";
+import { STATEMENT_REFUND_WORD } from "@techaust/core/copy-zo";
 import { formatDate, parseIsoDate } from "@techaust/core/dates";
 import type { CalendarDate, GstErrorCode, GstIssue, GstWarning, RealisationStage } from "@techaust/core/gst";
 import { STATE_CODES } from "@techaust/core/gstin";
@@ -495,6 +496,8 @@ export const STAGE_LABELS: Readonly<Record<RealisationStage, string>> = {
   gst_approaching: "GST date in 30 days",
   gst_overdue: "Past the GST date",
   realised: "Realised",
+  // M6.5 (RB-43; builder's staff draft for the lead): settled, but paid plus the bank's reductions fall short of the export value.
+  reduction_pending: "Waiting for the bank's reduction",
 };
 
 /** The reserved status colours (docs/06 §2.1, §5.5; dataviz: status never reused for anything else), always with the icon and the label. */
@@ -507,6 +510,7 @@ export const STAGE_PILLS: Readonly<
   gst_approaching: { tone: "warning", icon: "clock", outline: true },
   gst_overdue: { tone: "danger", icon: "alert", outline: true },
   realised: { tone: "muted", icon: "check" },
+  reduction_pending: { tone: "warning", icon: "clock", outline: true },
 };
 
 /** Most urgent first (07-V §5): past GST, past FEMA, GST in 30 days, FEMA in 30 days, on track, realised. */
@@ -598,6 +602,9 @@ export function statementKindText(kind: StatementKind, againstNumber?: string | 
       return againstNumber ? Y(`Debit note against ${againstNumber}`) : "Debit note";
     case "credit_note":
       return againstNumber ? `Credit note against ${againstNumber}` : "Credit note";
+    // M6.5: a refund that went out (07-ZO lacks the word: drafted for the owner, marked until approved).
+    case "refund":
+      return STATEMENT_REFUND_WORD;
     case "receipt":
       return "Payment received";
     // M6.1 (07-ZH line 19, approved by the owner 2026-10-31): the tax the client deducted at source.
@@ -656,6 +663,7 @@ export const statementCsvLabels = (
     credit_note: statementCsvCreditNoteLabel(entries),
     receipt: statementKindText("receipt"),
     tds: statementKindText("tds"),
+    refund: statementKindText("refund"),
   } satisfies Record<StatementKind, string>,
 });
 

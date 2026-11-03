@@ -11,12 +11,18 @@
 //    online, bound as `ADMIN_ADVANCE` by the jobs Worker (`gateway.advance`) and by the finance Worker (the Owner's "Try again"). It reads only DB and PDF_QUEUE
 //    and makes no gateway call.
 import { WorkerEntrypoint } from "cloudflare:workers";
-import type { BillingJobsApi, DraftCareResult, IssueCareResult } from "@techaust/core/care-billing";
+import type {
+  BillingJobsApi,
+  DraftCareResult,
+  IssueCareResult,
+  IssueReceiptResult,
+} from "@techaust/core/care-billing";
 import type { GatewayAdvanceApi, IssueAdvanceResult } from "@techaust/core/gateway-rpc";
 import { createApp } from "./app.ts";
 import { draftCarePlan, issueCareDraft } from "./care-billing.ts";
 import { issueGatewayAdvance } from "./gateway/advance.ts";
 import { ROUTES } from "./guard.ts";
+import { issueReceipt } from "./receipt-issue.ts";
 import { mountInvoices } from "./routes-invoices.ts";
 import { id, rpcId, rpcLog } from "./rpc.ts";
 import { warmAdvanceAtStartup } from "./warm-advance.ts";
@@ -53,6 +59,15 @@ export class BillingJobs extends WorkerEntrypoint<Env> implements BillingJobsApi
     const documentId = id(args?.documentId);
     const answer = await issueCareDraft(this.env, { documentId });
     rpcLog("issueCareDraft", answer.result);
+    return answer;
+  }
+
+  /** M6.5 (L3, L34): one payment's receipt, its own batch (jobs' `receipt.issue`). The id is 1 to 60 characters (`rct_` + it stays within 64). */
+  async issueReceipt(args: { paymentId: string }): Promise<IssueReceiptResult> {
+    const paymentId = id(args?.paymentId);
+    if (paymentId.length > 60) throw new TypeError("BillingJobs: a payment id is 1 to 60 characters");
+    const answer = await issueReceipt(this.env, paymentId);
+    rpcLog("issueReceipt", answer.result);
     return answer;
   }
 }

@@ -134,7 +134,16 @@ export function reviewReason(kind: string, f: ReasonFacts = {}): string {
     case "reversed_after_confirm":
       return `PayPal reversed ${m(f.paidMinor)} that was already counted. Check the case in PayPal. The invoice's balance hasn't changed.`;
     case "refunded_outside":
-      return "This payment was refunded in PayPal, outside the admin. The invoice's balance hasn't changed.";
+      // M6.5 (builder's draft for the lead, staff-only): every gateway by name; "Record this refund" moves the ledger (L7).
+      return `This payment was refunded in ${gw}, outside the admin. The invoice's balance hasn't changed until you record the refund.`;
+    case "refund_failed":
+      return `${gw} couldn't make the refund of ${m(f.paidMinor)}. The money stays as the client's credit. Try again or refund it by bank transfer.`;
+    case "refund_stuck":
+      return `${gw} hasn't confirmed the refund of ${m(f.paidMinor)} after 10 checks. Check it in ${gw}'s dashboard, then try again.`;
+    case "dispute_opened":
+      return `The client disputed ${m(f.paidMinor)} with their card issuer. Answer the dispute in ${gw}'s dashboard. Nothing changes here until it closes.`;
+    case "dispute_closed":
+      return "A dispute on this payment is closed. If the money was taken back, record it as a lost dispute so the invoice shows what is owed again.";
     case "late_capture":
       return "PayPal took this payment after its checkout had ended or the amount due had changed. The money waits for your decision.";
     case "not_final":

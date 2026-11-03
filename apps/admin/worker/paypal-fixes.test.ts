@@ -493,7 +493,7 @@ describe("the staff lines approved in the triage [finding 8]", () => {
       "PayPal reversed $500.00 that was already counted. Check the case in PayPal. The invoice's balance hasn't changed.",
     );
     expect(reviewReason("refunded_outside", { provider: "paypal" })).toBe(
-      "This payment was refunded in PayPal, outside the admin. The invoice's balance hasn't changed.",
+      "This payment was refunded in PayPal, outside the admin. The invoice's balance hasn't changed until you record the refund.",
     );
     expect(bellAdvicesMissing(1, "October 2026")).toBe(
       "1 PayPal payment from October 2026 has no remittance advice yet.",

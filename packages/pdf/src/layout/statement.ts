@@ -29,7 +29,9 @@ export type StatementLineKind =
   | "debit_note"
   | "credit_note"
   | "receipt"
-  | "tds";
+  | "tds"
+  // M6.5: a refund that went out (a debit: it raises what the client is owed back down).
+  | "refund";
 
 /**
  * What the layout prints, every value already formatted (dates as the PDFs write them, amounts with their currency sign). The jobs Worker's view

@@ -25,6 +25,11 @@ import {
   verifyRazorpaySignature,
 } from "@techaust/core/razorpay";
 import {
+  RAZORPAY_REFUND_EVENTS,
+  razorpayRefundEventFacts,
+  refundFactsRecord,
+} from "@techaust/core/refund-gateways";
+import {
   hookFailureKey,
   hookFailureStatements,
   WEBHOOK_EVENT_INSERT_SQL,
@@ -104,9 +109,14 @@ async function handleHook(req: Request, env: HookEnv, now: number): Promise<Resp
   const eventId = header ?? (await fallbackEventId(text));
   if (!header) logEvent("hook.event_id_fallback", { provider: "razorpay" });
   const parsed = parseRazorpayEvent(obj, eventId);
+  // M6.5 (L36; JOB-HOOK-01): a refund event keeps its whitelisted refund facts (the refund's and payment's ids, amount, currency, status, our receipt id).
+  const refund = razorpayRefundEventFacts(obj);
   let name: string;
   let facts: Record<string, string | number>;
-  if (parsed.ok) {
+  if (refund) {
+    name = refund.event;
+    facts = refundFactsRecord(refund);
+  } else if (parsed.ok) {
     name = parsed.value.name;
     facts = eventFacts(parsed.value);
   } else {
@@ -118,7 +128,9 @@ async function handleHook(req: Request, env: HookEnv, now: number): Promise<Resp
     name = lenient.event;
     facts = lenient;
   }
-  const handled = Object.hasOwn(RAZORPAY_EVENT_TYPES, name);
+  const handled =
+    Object.hasOwn(RAZORPAY_EVENT_TYPES, name) ||
+    (refund !== null && Object.hasOwn(RAZORPAY_REFUND_EVENTS, name));
   const rowId = uuidv7();
   const [, state] = await env.DB.batch([
     env.DB.prepare(WEBHOOK_EVENT_INSERT_SQL).bind(

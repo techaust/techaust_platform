@@ -63,6 +63,7 @@ import {
   webhookEventMoveStatement,
 } from "@techaust/db/gateway";
 import { type GuardSql, guardSql } from "@techaust/db/log";
+import { enqueueReceipt } from "../receipt-enqueue.ts";
 import { type Actor, mutateSystem } from "../system.ts";
 import { payPalModeOfSettings, payPalOf } from "./config.ts";
 import {
@@ -598,7 +599,11 @@ export async function settleCapture(
     )
       throw e;
   }
-  if (done) return { state: "paid" };
+  if (done) {
+    // M6.5 (L3): the confirmed payment's receipt, in its own batch on the invoices Worker.
+    await enqueueReceipt(ctx.env, f.paymentId);
+    return { state: "paid" };
+  }
   const again = await db.prepare(SEEN_SQL).bind(f.providerPaymentId).first<Seen>();
   return again ? duplicateOf(ctx, again) : lateCapture(ctx, c, f, facts);
 }

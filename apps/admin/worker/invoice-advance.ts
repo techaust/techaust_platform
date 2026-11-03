@@ -99,6 +99,7 @@ import {
   referenceSeen,
 } from "./payment-messages.ts";
 import { CLIENT_GONE, lineRows, NUMBERING_CHANGED } from "./quote-model.ts";
+import { enqueueReceipt } from "./receipt-enqueue.ts";
 
 export const advanceBody = z.strictObject({
   expectedProformaUpdatedAt: z.int(),
@@ -591,6 +592,8 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       });
 
     afterIssue(c, { documentId: invoiceId });
+    // M6.5 (L3): the payment this confirmed gets its receipt (its own batch on this Worker's BillingJobs, through the queue).
+    c.executionCtx.waitUntil(enqueueReceipt(c.env, f.paymentId ?? `pay_${receiptId}`));
     const after = {
       status: "converted",
       paidMinor: d.paid_minor + f.amountMinor,

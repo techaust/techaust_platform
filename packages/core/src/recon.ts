@@ -130,6 +130,45 @@ export function matchItem(
   return "matched";
 }
 
+/** One settlement as `GET /v1/settlements/{id}` gives it (field names UNCONFIRMED beyond R6 until a recorded sandbox payload; R7). */
+export type ReconSettlement = {
+  readonly settlementId: string;
+  readonly utr: string | null;
+  /** What reached the bank (paise). */
+  readonly amountMinor: number;
+  readonly feesMinor: number;
+  readonly taxMinor: number;
+  readonly status: string | null;
+  /** UTC ms. */
+  readonly settledAt: number;
+};
+
+const settlementEntity = z.object({
+  id: settlementRef,
+  amount,
+  fees: z.optional(z.nullable(amount)),
+  tax: z.optional(z.nullable(amount)),
+  utr: z.optional(z.nullable(settlementRef)),
+  status: z.optional(z.nullable(z.string().check(z.maxLength(32)))),
+  created_at: z.int().check(z.gte(1)),
+});
+
+/** A settlement entity, whitelisted, else null. */
+export function readRazorpaySettlement(v: unknown): ReconSettlement | null {
+  const r = settlementEntity.safeParse(v);
+  if (!r.success) return null;
+  const d = r.data;
+  return {
+    settlementId: d.id,
+    utr: d.utr ?? null,
+    amountMinor: d.amount,
+    feesMinor: d.fees ?? 0,
+    taxMinor: d.tax ?? 0,
+    status: d.status ?? null,
+    settledAt: d.created_at * 1000,
+  };
+}
+
 /** The `recon.fetch` page's query (year, month, day of the IST day `day`, the count and the skip), or null for a day that isn't ISO or a bad skip. */
 export function reconQueryOf(
   day: string,

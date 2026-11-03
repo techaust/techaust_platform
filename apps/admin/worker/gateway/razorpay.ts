@@ -32,6 +32,8 @@ import {
   readRazorpayPayment,
   verifyRazorpaySignature,
 } from "@techaust/core/razorpay";
+import { type ReconSettlement, readRazorpaySettlement } from "@techaust/core/recon";
+import { type GatewayRefund, readRazorpayRefund } from "@techaust/core/refund-gateways";
 
 export const RAZORPAY_TIMEOUT_MS = 8_000;
 
@@ -57,6 +59,30 @@ export type RazorpayConfig = {
 
 export type RazorpayApi = {
   readonly mode: "test" | "live" | null;
+  /** M6.5 (the live guard before any write, review fix 3): why no call can be made at all (checked with no fetch), or null. */
+  readonly blocked: "live_not_allowed" | "unconfigured" | null;
+  /**
+   * M6.5: `POST /v1/payments/{id}/refund` (R1): `amount` in paise, `speed: "normal"`, our refund id as `receipt` (R2: Razorpay refuses a second refund with the
+   * same receipt, so a retry never refunds twice) and in `notes`.
+   */
+  createRefund(
+    paymentId: string,
+    body: { amount: number; receipt: string; notes: Record<string, string> },
+  ): Promise<RzpResult<GatewayRefund>>;
+  /** M6.5 (L37, R4): the payment's refunds (`GET /v1/payments/{id}/refunds?count=100`), to find ours by `receipt` when an answer was lost. */
+  listRefunds(paymentId: string): Promise<RzpResult<GatewayRefund[]>>;
+  /** M6.5: one refund (`GET /v1/refunds/{id}`). */
+  fetchRefund(refundId: string): Promise<RzpResult<GatewayRefund>>;
+  /** M6.5 (L11, R6): one page of the day's settlement recon (`GET /v1/settlements/recon/combined`). */
+  fetchRecon(q: {
+    year: number;
+    month: number;
+    day: number;
+    count: number;
+    skip: number;
+  }): Promise<RzpResult<unknown>>;
+  /** M6.5 (L11): one settlement (`GET /v1/settlements/{id}`): its net amount, fees, tax and UTR. */
+  fetchSettlement(settlementId: string): Promise<RzpResult<ReconSettlement>>;
   createLink(body: RazorpayLinkRequest): Promise<RzpResult<RazorpayLink>>;
   fetchLink(linkId: string): Promise<RzpResult<RazorpayLink>>;
   /** The links made with our `reference_id` (a checkout id): at most one, as Razorpay keeps the reference unique. */
@@ -67,6 +93,7 @@ export type RazorpayApi = {
 
 const LINK_ID = /^plink_[A-Za-z0-9]{1,58}$/;
 const PAYMENT_ID = /^pay_[A-Za-z0-9]{1,60}$/;
+const REFUND_ID = /^rfnd_[A-Za-z0-9]{1,60}$/;
 const REFERENCE = /^[A-Za-z0-9_.-]{1,40}$/;
 
 /** Basic auth for the key pair (btoa of ASCII: key ids and secrets are ASCII). */
@@ -121,6 +148,46 @@ export function razorpayApi(cfg: RazorpayConfig): RazorpayApi {
   };
   return {
     mode,
+    blocked:
+      gate() === "live_not_allowed" ? "live_not_allowed" : gate() === "unconfigured" ? "unconfigured" : null,
+    async createRefund(paymentId, body) {
+      if (!PAYMENT_ID.test(paymentId)) return { ok: false, code: "not_found" };
+      const r = await call("POST", `/v1/payments/${paymentId}/refund`, { ...body, speed: "normal" });
+      if (!r.ok) return r;
+      const f = readRazorpayRefund(r.value);
+      return f ? { ok: true, value: f } : { ok: false, code: "bad_answer" };
+    },
+    async listRefunds(paymentId) {
+      if (!PAYMENT_ID.test(paymentId)) return { ok: false, code: "not_found" };
+      const r = await call("GET", `/v1/payments/${paymentId}/refunds?count=100`);
+      if (!r.ok) return r;
+      const items = (r.value as { items?: unknown })?.items;
+      if (!Array.isArray(items)) return { ok: false, code: "bad_answer" };
+      return {
+        ok: true,
+        value: items.map(readRazorpayRefund).filter((x): x is GatewayRefund => x !== null),
+      };
+    },
+    async fetchRefund(refundId) {
+      if (!REFUND_ID.test(refundId)) return { ok: false, code: "not_found" };
+      const r = await call("GET", `/v1/refunds/${refundId}`);
+      if (!r.ok) return r;
+      const f = readRazorpayRefund(r.value);
+      return f ? { ok: true, value: f } : { ok: false, code: "bad_answer" };
+    },
+    async fetchSettlement(settlementId) {
+      if (!/^setl_[A-Za-z0-9]{1,58}$/.test(settlementId)) return { ok: false, code: "not_found" };
+      const r = await call("GET", `/v1/settlements/${settlementId}`);
+      if (!r.ok) return r;
+      const s = readRazorpaySettlement(r.value);
+      return s ? { ok: true, value: s } : { ok: false, code: "bad_answer" };
+    },
+    async fetchRecon(q) {
+      return call(
+        "GET",
+        `/v1/settlements/recon/combined?year=${q.year}&month=${q.month}&day=${q.day}&count=${q.count}&skip=${q.skip}`,
+      );
+    },
     async createLink(body) {
       return asLink(await call("POST", "/v1/payment_links", body));
     },

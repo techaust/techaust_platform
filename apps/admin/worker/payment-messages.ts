@@ -92,6 +92,13 @@ export const USE_PAYMENT_VERIFY = e(
   "Check this payment from Payments, not from Approvals.",
 );
 export const PAYMENT_NOT_CONFIRMED = e("payment_not_confirmed", "Only a confirmed payment can be withdrawn.");
+/** M6.5 (L10, review fix 2): staff line drafted by the builder for the lead. */
+export const REFUNDS_EXIST = e("refunds_exist", "This payment has a refund, so it can't be withdrawn.");
+/** M6.5 (part 2 item 2): a pending payment being refunded is never confirmed (staff line drafted by the builder for the lead). */
+export const REFUND_IN_PROGRESS = e(
+  "refund_in_progress",
+  "A refund of this payment is in progress, so it can't be confirmed.",
+);
 export const PAYMENT_ADVANCE_BACKED = e(
   "payment_advance_backed",
   "A tax invoice was issued for this payment, so it can't be withdrawn. Correct it with a credit note.",
