@@ -24,7 +24,7 @@ import { periodText, ZO_UI } from "../../lib/copy-zo.ts";
 import { dateError } from "../../lib/date-field.ts";
 import { INV_COPY } from "../../lib/invoices.ts";
 import { amountText, MODE_LABELS, payErrorText, plainAmount, todayIst } from "../../lib/payments.ts";
-import { type RefundIn, refundsApi } from "../../lib/refunds-api.ts";
+import { defaultRefundMode, type RefundIn, refundsApi } from "../../lib/refunds-api.ts";
 import { moneyFrom } from "../../lib/settings-form.ts";
 import { withCode } from "../../lib/step-up.ts";
 import { day, useCodeSlot } from "./parts.tsx";
@@ -204,7 +204,7 @@ function RefundForm(props: RefundDialogProps & { payment: ResolvedPayment; onBus
   );
   const [reason, setReason] = useState<RefundReason>(chargeback ? "chargeback" : SOURCE_REASON[source]);
   const [note, setNote] = useState("");
-  const [mode, setMode] = useState<string>("neft");
+  const [mode, setMode] = useState<string>(() => defaultRefundMode(cur, props.clientOverseas === true));
   const [reference, setReference] = useState("");
   const [paidOn, setPaidOn] = useState(todayIst());
   const [paidTo, setPaidTo] = useState<"original" | "own_account">(gatewayPaid ? "own_account" : "original");
@@ -309,8 +309,7 @@ function RefundForm(props: RefundDialogProps & { payment: ResolvedPayment; onBus
         ? {
             documentId: props.document.id,
             expectedUpdatedAt: props.document.updatedAt,
-            // Review part 1, finding 6 (RA-40): the invoice's newest issued credit note, as the server read it (the server falls back to the same note).
-            ...(f?.issuedCreditNote ? { creditNoteId: f.issuedCreditNote.id } : {}),
+            // Second review, M6 (RA-40): the server links the credit note that made the excess (issued after the payment arrived, covering the amount), else none
           }
         : {}),
       ...(note.trim() ? { note: note.trim() } : {}),

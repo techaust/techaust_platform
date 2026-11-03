@@ -64,9 +64,13 @@ export function CreditHeldTab(_props: { role: Role }) {
       key: "received",
       header: ZO_UI.creditHeldColReceived,
       cell: (r) => (
-        <Link to={`/payments/${encodeURIComponent(r.paymentId)}`} className="tnum">
-          {day(r.receivedOn)}
-        </Link>
+        <span className="rf-state">
+          <Link to={`/payments/${encodeURIComponent(r.paymentId)}`} className="tnum">
+            {day(r.receivedOn)}
+          </Link>
+          {/* second review, M1 (L48): on this period's list by the day the money arrived, confirmed later */}
+          {r.confirmedAfter && <span className="pay-lines__meta">{ZO_UI.creditHeldConfirmedAfter}</span>}
+        </span>
       ),
     },
     {

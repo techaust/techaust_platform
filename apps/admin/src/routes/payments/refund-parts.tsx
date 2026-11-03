@@ -185,7 +185,11 @@ export function RefundState({ row: r }: { row: RefundRowData }) {
     <span className="rf-state">
       <RefundPill status={r.status} />
       {r.status === "succeeded" && r.settledOn && (
-        <span className="pay-lines__meta">{`${ZO_UI.colRefunded} ${day(r.settledOn)}`}</span>
+        <span className="pay-lines__meta">
+          {`${ZO_UI.colRefunded} `}
+          {/* second review, M4: the day never breaks inside itself ("03 Nov" / "2026") */}
+          <span className="pay-lines__nowrap">{day(r.settledOn)}</span>
+        </span>
       )}
       {typeof r.inrRefundedMinor === "number" && r.currency !== "INR" && (
         <span className="pay-lines__meta">{ZO_UI.inrDebited(amountText(r.inrRefundedMinor, "INR"))}</span>

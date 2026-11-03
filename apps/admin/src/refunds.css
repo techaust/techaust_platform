@@ -401,6 +401,19 @@
   gap: var(--space-1);
 }
 
+/* second review, M5: a settlement line's payment or refund id is one token the Owner copies into Razorpay's dashboard, so from 48rem it keeps one line (the
+   Line column takes its width); only the stacked cards below 48rem break it where they must */
+.rcn-id {
+  white-space: nowrap;
+}
+
+@media (max-width: 47.99rem) {
+  .rcn-items .rcn-id {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
 .rcn-unmatched {
   display: grid;
   gap: var(--space-3);

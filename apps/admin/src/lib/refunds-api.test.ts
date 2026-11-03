@@ -4,7 +4,7 @@
 // to the same values).
 import { REFUND_SWEEP_IDLE_MS } from "@techaust/core/gateway-rpc";
 import { describe, expect, it } from "vitest";
-import { periodsFrom, refundOpensAt } from "./refunds-api.ts";
+import { defaultRefundMode, periodsFrom, refundOpensAt } from "./refunds-api.ts";
 
 describe("periodsFrom [RA-41; review part 1, finding 3]", () => {
   it("the period and the ones before it, newest first, by the filing frequency", () => {
@@ -43,5 +43,14 @@ describe("refundOpensAt [ADM-PAY-08; L44, L46]", () => {
       expect(REFUND_SWEEP_IDLE_MS).toBe(900_000);
       expect(refundOpensAt({ requestedAt, lastAttemptAt })).toBe(opens);
     }
+  });
+});
+
+describe("defaultRefundMode [second review, L6]", () => {
+  it("SWIFT for US dollars to a client outside India; NEFT otherwise", () => {
+    expect(defaultRefundMode("USD", true)).toBe("swift");
+    expect(defaultRefundMode("USD", false)).toBe("neft");
+    expect(defaultRefundMode("INR", true)).toBe("neft");
+    expect(defaultRefundMode("INR", false)).toBe("neft");
   });
 });

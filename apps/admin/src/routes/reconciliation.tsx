@@ -326,10 +326,11 @@ function Settlements({ owner }: { owner: boolean }) {
   );
 }
 
-/** One settlement's lines (at most 200), each with its match. */
+/** One settlement's lines, each with its match, 50 at a time ("Show more"; second review, L2). */
 function SettlementDialog(props: { row: SettlementRow; onClose: () => void }) {
   const r = props.row;
-  const one = useLoad(() => refundsApi.settlement(r.id), r.id);
+  const pages = usePages<SettlementItemRow>((c) => refundsApi.settlement(r.id, c), r.id);
+  const one = pages.first;
   return (
     <Modal
       open
@@ -356,10 +357,13 @@ function SettlementDialog(props: { row: SettlementRow; onClose: () => void }) {
           <span className="skeleton" style={{ width: "80%" }} />
         ) : one.state === "failed" ? (
           <LoadFailed error={one.error} onRetry={() => one.reload()} />
-        ) : one.data.items.length === 0 ? (
+        ) : pages.rows.length === 0 ? (
           <p className="pay-lines__meta">{ZO_UI.itemsEmpty}</p>
         ) : (
-          <ItemLines rows={one.data.items} currency={r.currency} />
+          <>
+            <ItemLines rows={pages.rows} currency={r.currency} />
+            <ShowMore cursor={pages.cursor} loading={pages.loading} onMore={() => void pages.showMore()} />
+          </>
         )}
       </div>
       <div className="dialog__actions">
@@ -393,12 +397,13 @@ function ItemLines(props: { rows: readonly SettlementItemRow[]; currency: "INR" 
             <th scope="row">
               <span className="rcn-entity">
                 <span>{`${ZO_UI.entity[i.entity_type] ?? i.entity_type} · ${ZO_UI.direction[i.direction] ?? i.direction}`}</span>
+                {/* second review, M5: the id keeps one line from 48rem (refunds.css `.rcn-id`); only the cards below it break it */}
                 {i.payment_id ? (
-                  <Link to={`/payments/${encodeURIComponent(i.payment_id)}`} className="docno break">
+                  <Link to={`/payments/${encodeURIComponent(i.payment_id)}`} className="docno rcn-id">
                     {i.entity_id}
                   </Link>
                 ) : (
-                  <span className="docno break">{i.entity_id}</span>
+                  <span className="docno rcn-id">{i.entity_id}</span>
                 )}
               </span>
             </th>
