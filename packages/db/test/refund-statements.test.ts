@@ -780,7 +780,11 @@ describe("the receipt's issue batch (gap-free TH/RCT numbers; L3 to L5, L39)", (
     await run("UPDATE clients SET anonymised_at = 5 WHERE id = ?1", other.clientId);
     // every pending row (the file's other receipts too), not just the first 20
     const pending = (
-      await all<{ id: string }>(RECEIPT_PDF_PENDING_SQL.replace("LIMIT 20", "LIMIT 1000"))
+      await all<{ id: string }>(
+        RECEIPT_PDF_PENDING_SQL.replace("LIMIT 20", "LIMIT 1000"),
+        Number.MAX_SAFE_INTEGER,
+        3,
+      )
     ).map((r) => r.id);
     expect(pending).toContain(`rct_${kept}`);
     expect(pending).not.toContain(`rct_${voided}`);

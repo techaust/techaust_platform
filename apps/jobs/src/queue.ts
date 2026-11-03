@@ -28,7 +28,7 @@ import { logLutCheckDeadLetter, processLutCheck, skipLutCheck } from "./lut-chec
 import { processOfferMessage } from "./offers.ts";
 import { processPdf, processPdfDeadLetter } from "./pdf.ts";
 import { enqueueDue, processStatementPurge, purgeLead } from "./purge.ts";
-import { processReceipt } from "./receipts.ts";
+import { processReceipt, processReceiptDeadLetter } from "./receipts.ts";
 import { processRefundDeadLetter, processRefundFamily } from "./refunds.ts";
 import { processReminderSend } from "./reminders.ts";
 import { processEdfReminder, processRealisationScan } from "./reports.ts";
@@ -68,8 +68,9 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
       if (isPdfDlq) {
         // The PDF family has its own dead-letter queue: a bell for the owners, then done (the daily sweep tries the document again).
         // A statement PDF that ran out of tries marks its row failed and rings the person who asked, once (M5.5b).
-        // M6.5: a receipt message that ran out of tries is only logged: the hourly `receipt.sweep` issues and renders it again.
-        if (isReceiptKind(message.body)) logEvent("receipt.dead_letter", { kind: message.body.kind });
+        // M6.5: a receipt message that ran out of tries: a render counts a failed IST day (the third stops the hourly sweep's retries and rings the owners once,
+        // review part 1, finding 4); an issue or a sweep is only logged (the hourly `receipt.sweep` asks again).
+        if (isReceiptKind(message.body)) await processReceiptDeadLetter(env, message.body);
         else if (isPdfMessage(message.body) && message.body.kind === "pdf.statement")
           await processStatementDeadLetter(env, message.body);
         else await processPdfDeadLetter(env, message.body);
