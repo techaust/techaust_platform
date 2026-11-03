@@ -1,8 +1,8 @@
 # 07-ZO: M6.5 receipts, refunds and reconciliation
 
-Status: **DRAFT, waiting for the owner** (one page at build time, owner 2026-11-01). Client lines are approved by the owner word for word; until then the code shows `[Placeholder]`. Staff lines are approved by the lead under the owner's delegation once placed (listed in [runs/m6.5-receipts-refunds](../runs/m6.5-receipts-refunds.md)). Lines in `{braces}` are filled in by the screen. All lines pass 07 §1.3.
+Status: **Client lines 1–18, 12b included, APPROVED by the owner as drafted (2026-11-03)**; the code switch `APPROVED_07ZO` turns on in M6.5 after builder B6. Staff lines are approved by the lead under the owner's delegation once placed (listed in [runs/m6.5-receipts-refunds](../runs/m6.5-receipts-refunds.md)). Lines in `{braces}` are filled in by the screen. All lines pass 07 §1.3.
 
-## Client lines (for the owner's approval; recommendation: approve as drafted)
+## Client lines (approved by the owner as drafted, 2026-11-03)
 
 ### The receipt PDF
 1. Title: "Payment receipt"
