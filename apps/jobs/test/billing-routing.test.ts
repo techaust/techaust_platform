@@ -44,6 +44,9 @@ describe("the hourly cron `30 * * * *` [LD61]", () => {
         "reminder.scan",
         // M6.2 (changed on purpose): the gateway sweep every hour.
         "gateway.sweep",
+        // M6.5 (changed on purpose): the refund sweep every hour; yesterday's Razorpay settlements at 09:00 IST.
+        "refund.sweep",
+        ...(h === 9 ? ["recon.fetch"] : []),
       ];
       expect(kinds, `hour ${h}`).toEqual(expected);
     }
@@ -59,15 +62,17 @@ describe("the hourly cron `30 * * * *` [LD61]", () => {
   it("the tick is ONE sendBatch on the leads queue and reads no D1 (the database is a trap)", async () => {
     const dead = new Proxy({}, { get: () => () => Promise.reject(new Error("D1 must not be read")) });
     const env = makeEnv({ DB: dead });
-    expect(await enqueueHourly(env, istTick("2026-11-10", 6))).toBe(3);
-    expect(fakes.leads.map((s) => s.via)).toEqual(["sendBatch", "sendBatch", "sendBatch"]); // three bodies, one call
+    // M6.5 (changed on purpose): four bodies in the one sendBatch, and the receipt sweep on the PDF queue (its consumer reads D1, never the cron).
+    expect(await enqueueHourly(env, istTick("2026-11-10", 6))).toBe(5);
+    expect(fakes.leads.map((s) => s.via)).toEqual(["sendBatch", "sendBatch", "sendBatch", "sendBatch"]); // four bodies, one call
     expect(fakes.leads.map((s) => (s.body as { kind: string }).kind)).toEqual([
       "care.scan",
       "reminder.scan",
       "gateway.sweep",
+      "refund.sweep",
     ]);
     expect(fakes.email).toEqual([]);
-    expect(fakes.pdf).toEqual([]);
+    expect(fakes.pdf.map((s) => (s.body as { kind: string }).kind)).toEqual(["receipt.sweep"]);
   });
 
   it("the scheduled handler dispatches by cron: the hourly one sends only the hourly messages; an unknown cron sends nothing; the daily one no longer carries a lut.check", async () => {
@@ -81,6 +86,8 @@ describe("the hourly cron `30 * * * *` [LD61]", () => {
       "realisation.scan", // M5.5b, changed on purpose
       "reminder.scan",
       "gateway.sweep", // M6.2, changed on purpose
+      "refund.sweep", // M6.5, changed on purpose
+      "recon.fetch",
     ]);
     fakes.leads.length = 0;
     await run("5 5 5 5 5", istTick("2026-11-10", 9));

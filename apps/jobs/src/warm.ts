@@ -14,6 +14,7 @@ import {
   warmReportMessages,
 } from "@techaust/core";
 import { canonicalJson } from "@techaust/core/hash";
+import { isReceiptMessage } from "@techaust/core/pdf-jobs";
 import {
   eventFacts,
   fallbackEventId,
@@ -291,6 +292,20 @@ export function warmConsumers(): number {
       opts,
     );
     rendered++;
+    // M6.5: the payment receipt's email (07-ZO lines 11 and 12) and the receipt message kinds' guard
+    renderEmail(
+      "receipt.sent",
+      {
+        number: "TH/RCT/2627/0001",
+        amount: "₹1.00",
+        date: "3 Nov 2026",
+        attached: "0",
+        url: "https://warm-up.invalid/invoices",
+      },
+      opts,
+    );
+    rendered++;
+    if (isReceiptMessage({ v: 1, kind: "receipt.render", receiptId: "rct_warm", hop: 0 })) parsed++;
     // the user-agent reader the staff alerts use (compiles its patterns on first match)
     describeUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",

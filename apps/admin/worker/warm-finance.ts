@@ -5,9 +5,47 @@
 //  - the payment request bodies (`warmPayments`, nine samples, M6.1);
 //  - the gateway code (`warmGateway`, M6.2 CPU diagnosis lead decision 3).
 // Pure of `env`, nothing stored or logged.
-import { warmPayments } from "@techaust/core/payment-schemas";
+import { warmPayments, warmRefundBodies } from "@techaust/core/payment-schemas";
+import { warmRecon } from "@techaust/core/recon";
+import { warmRefundReaders } from "@techaust/core/refund-gateways";
+import { planRefund } from "@techaust/core/refunds";
 import { warmSettings } from "@techaust/core/settings";
 import { warmGateway } from "./gateway/warm.ts";
 
-/** The number of samples that ran (warm-split.test.ts pins it): the settings (8), the payment bodies (9) and the gateway steps (GATEWAY_WARM_STEPS). */
-export const financeWarm: number = warmSettings() + warmPayments() + warmGateway();
+/**
+ * M6.5 (run file J `warmRefunds`): the refund, bank match, recon fetch and reduction bodies (5), `planRefund` on made-up figures (1), the three gateways' refund
+ * readers and two refund events (5), and one made-up recon page (1). Never throws; 12 when everything ran.
+ */
+export function warmRefunds(): number {
+  try {
+    const plan = planRefund({
+      payment: {
+        id: "warm",
+        clientId: "warm",
+        currency: "INR",
+        kind: "payment",
+        status: "confirmed",
+        provider: "manual",
+        amountMinor: 2_000,
+        netAllocatedMinor: 1_000,
+        refundedMinor: 0,
+        receivedOn: "2026-11-01",
+        hasOpenRefund: false,
+      },
+      from: "credit",
+      via: "manual",
+      amountMinor: 1_000,
+      paidTo: "original",
+      today: "2026-11-03",
+    });
+    return warmRefundBodies() + (plan.ok ? 1 : 0) + warmRefundReaders() + warmRecon();
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * The number of samples that ran (warm-split.test.ts pins it): the settings (8), the payment bodies (9), the gateway steps (GATEWAY_WARM_STEPS) and M6.5's
+ * refund samples (12).
+ */
+export const financeWarm: number = warmSettings() + warmPayments() + warmGateway() + warmRefunds();
