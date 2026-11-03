@@ -15,12 +15,7 @@ import { issueDateOf, issueFyOf } from "@techaust/core/invoices";
 import { maxNumber, sqlPrintfPattern } from "@techaust/core/numbering";
 import type { ReceiptRenderMessage } from "@techaust/core/pdf-jobs";
 import { receiptHeaderOf, receiptIdOf, receiptSealOf } from "@techaust/core/receipts";
-import {
-  RECEIPT_ALLOCATIONS_SQL,
-  RECEIPT_OF_PAYMENT_SQL,
-  RECEIPT_PAYMENT_SQL,
-  receiptIssueStatements,
-} from "@techaust/db/receipts";
+import { RECEIPT_ALLOCATIONS_SQL, RECEIPT_PAYMENT_SQL, receiptIssueStatements } from "@techaust/db/receipts";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
@@ -177,14 +172,6 @@ export async function issueReceipt(
 
 // ---- the routes -----------------------------------------------------------------------------------------------------------------------------------------
 
-type ReceiptRow = {
-  id: string;
-  number_display: string | null;
-  issue_date: string | null;
-  status: string;
-  has_pdf: number;
-  voided_at: number | null;
-};
 const PDF_ROW_SQL = `SELECT id, number_display, status, frozen_at, pdf_r2_key, pdf_sha256, ${clientGoneSql("client_id")} AS gone FROM documents WHERE id = ?1 AND type = 'receipt'`;
 const PDF_PENDING = { code: "pdf_pending", message: "The PDF isn't ready yet. Try again in a minute." };
 const PDF_DONE = { code: "pdf_done", message: "This receipt already has its PDF" };
@@ -193,23 +180,6 @@ const CLIENT_GONE = { code: "client_gone", message: "This client's details were 
 /** `TH-RCT-2627-0001.pdf`: the number with its slashes changed. */
 export const receiptFilename = (numberDisplay: string): string =>
   `${numberDisplay.replace(/[^A-Za-z0-9-]+/g, "-")}.pdf`;
-
-/** `/payments/:id/receipt` (mounted on the invoices Worker under /v1/payments). */
-export const paymentReceipt = new Hono<AppEnv>().get("/:id/receipt", param(idParam), async (c) => {
-  const { id } = c.req.valid("param");
-  const r = await c.env.DB.prepare(RECEIPT_OF_PAYMENT_SQL).bind(id).first<ReceiptRow>();
-  if (!r) return c.json({ receipt: null });
-  return c.json({
-    receipt: {
-      id: r.id,
-      number: r.number_display,
-      issueDate: r.issue_date,
-      status: r.status,
-      hasPdf: r.has_pdf === 1,
-      voidedAt: r.voided_at,
-    },
-  });
-});
 
 /** `/receipts/:id/pdf` and its retry. */
 export const receiptPdf = new Hono<AppEnv>()

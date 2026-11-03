@@ -76,6 +76,10 @@ switch ($Gateway) {
       "/v1/payment_intents?limit=1"      = "PaymentIntents: Read"
       "/v1/charges?limit=1"              = "Charges: Read"
       "/v1/balance_transactions?limit=1" = "Balance: Read"
+      # M6.5 (H1): refunds and disputes. A list proves the key may read them; "Refunds: Write" itself is proven by the first sandbox refund on staging (a
+      # create-then-refund probe would need a confirmed sandbox charge, which this key cannot make).
+      "/v1/refunds?limit=1"              = "Refunds: Write"
+      "/v1/disputes?limit=1"             = "Disputes: Read"
     }
     foreach ($p in $probes.Keys) {
       try { Invoke-RestMethod -Uri "https://api.stripe.com$p" -Headers $h | Out-Null }

@@ -13,7 +13,7 @@ import { csrf } from "./csrf.ts";
 import { deeds } from "./deeds.ts";
 import { docToken } from "./doc-token.ts";
 import { guard, ROUTES, tableOf } from "./guard.ts";
-import { invoices } from "./invoices.ts";
+import { invoices, receipts } from "./invoices.ts";
 import { me } from "./me.ts";
 import type { OfferViewer } from "./offer-core.ts";
 import { offerLinks } from "./offer-token.ts";
@@ -121,6 +121,7 @@ export function createApp(deps: Deps = {}) {
   app.route("/v1/me", me);
   app.route("/v1/offers", offers);
   app.route("/v1/invoices", invoices);
+  app.route("/v1/receipts", receipts);
   app.route("/v1/deeds", deeds);
   app.route("/v1/t", docToken);
   // M6.4 (POR-06, L19): PayPal's return to an emailed link's page (no session, no token: a state only).

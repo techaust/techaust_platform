@@ -313,7 +313,13 @@ describe("the EDF month and the realisation list", () => {
     const o = await sessionFor("owner");
     const u = await mkReportClient("USD");
     const open = await addDoc({ clientId: u, currency: "USD", issueDate: "2027-05-10" });
-    const paid = await addDoc({ clientId: u, currency: "USD", issueDate: "2027-05-11", balance: 0 });
+    const paid = await addDoc({
+      clientId: u,
+      currency: "USD",
+      issueDate: "2027-05-11",
+      balance: 0,
+      paid: "total",
+    });
     const voided = await addDoc({ clientId: u, currency: "USD", issueDate: "2027-05-12", voided: true });
     const got = async (q: string) =>
       ((await json(await call(`/reports/realisation${q}`, { cookie: o.cookie }))) as J).rows.map(

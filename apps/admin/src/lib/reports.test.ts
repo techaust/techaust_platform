@@ -1,6 +1,7 @@
 // M5.5b admin words and rules (lib/reports.ts, lib/reports-build.ts, lib/tax-settings.ts, lib/bell-links.ts): the marks on 07-V lines, one message per
 // GST error code, the periods, the urgency order and the stage pills, the statement's words, the tax form's round trip (early check H2), and the files
 // the screens make from register rows through the gst core (the sums are core's; these tests only check that the screens pass them on whole).
+import { STATEMENT_REFUND_WORD } from "@techaust/core/copy-zo";
 import { heldRowOf, type RegisterApiRow, type ReportMeta } from "@techaust/core/gst";
 import { GSTR1_FREQUENCIES, realisationParamsFromStoredTax } from "@techaust/core/invoices";
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
@@ -369,7 +370,9 @@ describe("statement words", () => {
     expect(statementKindText("credit_note")).toBe(`${M}Credit note`);
     // M6.1 (07-ZH line 19, approved): the tax the client deducted at source.
     expect(statementKindText("tds")).toBe(`${M}TDS deducted`);
-    expect(Object.keys(statementCsvLabels().kinds)).toHaveLength(6);
+    // M6.5: a refund that went out (07-ZO lacks the word: the builder's draft, marked "[Placeholder]" until the owner approves it).
+    expect(statementKindText("refund")).toBe(STATEMENT_REFUND_WORD);
+    expect(Object.keys(statementCsvLabels().kinds)).toHaveLength(7);
   });
 
   it("the Details cell of a credit note names the invoice the API sent (review 2)", () => {

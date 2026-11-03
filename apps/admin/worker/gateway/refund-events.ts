@@ -44,12 +44,12 @@ type OurPayment = {
   document_id: string | null;
 };
 
-/** One refund or dispute event (`row.status` is `received`). */
+/** One refund or dispute event (`row.status` is `received`); null: not one of our refunds on PayPal, which M6.4's path handles. */
 export async function processRefundEvent(
   env: { DB: D1Database },
   row: EventRow,
   now = Date.now(),
-): Promise<ProcessEventResult> {
+): Promise<ProcessEventResult | null> {
   const db = env.DB;
   const f = factsOf(row.facts);
   const provider = row.provider === "stripe" || row.provider === "paypal" ? row.provider : "razorpay";
@@ -96,6 +96,8 @@ export async function processRefundEvent(
     await applyGatewayRefund(env, ours, found.value, now, "webhook");
     return quiet("processed", "refund_moved");
   }
+  // PayPal's refund of nobody's refund here keeps M6.4's own path (`processPayPalEvent`: the payment by its capture, the invoice tail check, the item).
+  if (provider === "paypal") return null;
   if (!payment) return quiet("ignored", "not_ours");
   // A refund recorded here already (an outside refund the Owner recorded, a lost dispute): nothing more to say.
   if (refundRef) {

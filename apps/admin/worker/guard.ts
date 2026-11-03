@@ -314,8 +314,9 @@ export const ROUTES: readonly RouteDef[] = [
   X("POST", "/reconciliation/bank-matches", "payments.reconcile", { audit: "recon.match" }),
   X("POST", "/reconciliation/bank-matches/:id/remove", "payments.reconcile", { audit: "recon.unmatch" }),
   X("POST", "/reconciliation/settlements/fetch", "payments.reconcile", { audit: "recon.fetch" }),
-  // M6.5 (ADM-PAY-09, L34): a payment's receipt and its PDF (an invoice-family document: the invoices Worker); the re-render as the invoice's (`invoices.draft`).
-  I("GET", "/payments/:id/receipt", "payments.read"),
+  // M6.5 (ADM-PAY-09, L34): a payment's receipt (a read beside the payment: the finance Worker), its PDF (an invoice-family document: the invoices Worker) and
+  // the re-render as the invoice's (`invoices.draft`).
+  X("GET", "/payments/:id/receipt", "payments.read"),
   I("GET", "/receipts/:id/pdf", "payments.read"),
   I("POST", "/receipts/:id/pdf/retry", "invoices.draft", { audit: "receipt.pdf_retry" }),
   // The owner's approval queue. Staff and Sales read only their own requests (the handler filters); only the owner decides.

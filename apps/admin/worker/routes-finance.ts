@@ -8,6 +8,7 @@ import type { App } from "./app.ts";
 import { gatewayPayments, invoicePaymentLinks } from "./gateway/routes.ts";
 import { clientCredit, invoiceLedger } from "./payment-ledger.ts";
 import { payments } from "./payments.ts";
+import { paymentReceipt } from "./receipt-read.ts";
 import { reconciliation } from "./recon.ts";
 import { reductions } from "./reductions.ts";
 import { refunds, refundsTab } from "./refunds.ts";
@@ -22,6 +23,7 @@ export function mountFinance(app: App) {
   // M6.5: a payment's refunds (before `payments`, whose `/:id` would not match `/:id/refunds` but keeps the order plain), the Refunds tab, reconciliation and
   // FEMA reductions.
   app.route("/v1/payments", refunds);
+  app.route("/v1/payments", paymentReceipt);
   app.route("/v1/refunds", refundsTab);
   app.route("/v1/reconciliation", reconciliation);
   app.route("/v1/invoices", reductions);

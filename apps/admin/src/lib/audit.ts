@@ -173,6 +173,17 @@ export const ACTION_LABELS: Record<string, string> = {
   "payment.advice_file": Y("attached a remittance advice's file"),
   "payment.advice_link": Y("linked payments to a remittance advice"),
   "payment.advice_unlink": Y("took a payment off a remittance advice"),
+  // M6.5 refunds, receipts and reconciliation (staff words, builder's drafts in S-style for the lead under the owner's delegation; the designer may tighten them).
+  "refund.issue": Y("refunded a payment"),
+  "refund.retry": Y("tried a refund again"),
+  "refund.cancel": Y("cancelled a refund the gateway never received"),
+  "refund.status": Y("noted a refund's progress at the gateway"),
+  "receipt.issue": Y("issued a payment receipt"),
+  "receipt.pdf_retry": Y("asked for a receipt's PDF again"),
+  "recon.fetch": Y("fetched the gateway's settlements"),
+  "recon.match": Y("ticked a payment as seen in the bank statement"),
+  "recon.unmatch": Y("undid a bank statement tick"),
+  "realisation.reduce": Y("recorded the bank's reduction of an export invoice"),
   "care_invoice.draft": Y("drafted a care plan invoice"),
   "care_invoice.auto_issue_refused": Y("could not issue a care plan invoice automatically"),
   // T11, the deed of assignment: 07-ZJ line 33 (staff-only; marked until the lead approves it).
@@ -204,7 +215,7 @@ export const ACTION_GROUPS: { label: string; prefixes: readonly string[] }[] = [
   { label: "Templates", prefixes: ["template."] },
   { label: "Proposals and estimates", prefixes: ["document.", "offer_link."] },
   { label: "Invoices", prefixes: ["invoice.", "care_invoice."] },
-  { label: "Payments", prefixes: ["payment."] },
+  { label: "Payments", prefixes: ["payment.", "refund.", "receipt.", "recon.", "realisation."] },
   // T11: 07-ZJ line 33.
   { label: DEED_AUDIT_GROUP, prefixes: ["deed."] },
   { label: "Reports", prefixes: ["report."] },
@@ -253,6 +264,10 @@ export const ENTITY_LABELS: Record<string, string> = {
   webhook_event: "Payment webhooks",
   // M6.4 (S8): the remittance advices.
   realisation_advice: "Remittance advices",
+  // M6.5 (builder's drafts for the lead): refunds, settlements and bank statement ticks.
+  refund: "Refunds",
+  settlement: "Settlements",
+  bank_match: "Bank statement ticks",
   // T11: 07-ZJ line 33.
   deed: DEED_RECORD_TYPE,
   report: "Reports",

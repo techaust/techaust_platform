@@ -107,7 +107,10 @@ export async function processEvent(
       : { result: "duplicate" };
   }
   // M6.5 (L36): a refund or dispute event of any gateway, before the gateway's own path (ours found first; Step 0 point 4).
-  if (isRefundEventName(row.provider, row.event_type)) return processRefundEvent(env, row, now);
+  if (isRefundEventName(row.provider, row.event_type)) {
+    const refund = await processRefundEvent(env, row, now);
+    if (refund) return refund;
+  }
   // M6.3: a Stripe event has its own path (re-fetch, judge, record; `stripe-settle.ts`).
   if (row.provider === "stripe") return processStripeEvent(env, row, now);
   // M6.4: a PayPal event (capture, held, declined, reversed; `paypal-capture.ts`).

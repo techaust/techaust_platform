@@ -5,6 +5,7 @@ import { currentStep, ipKey, tokenHash, totpCode } from "@techaust/auth";
 import { ACTIONS, decide, ROLES, SETTINGS_DEFAULTS, uuidv7 } from "@techaust/core";
 import { describe, expect, it } from "vitest";
 import { ROUTES } from "./guard.ts";
+import { issueReceipt } from "./receipt-issue.ts";
 import app, { createApp } from "./test-app.ts";
 import { mkLog, mkOpenProject, mkPlan, today } from "./test-care.ts";
 import { entryBody, mkItem, putPaymentTerms, siteItems } from "./test-catalogue.ts";
@@ -142,6 +143,58 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
   const IP = "203.0.113.55";
   const headers = (rid: string) => ({ "cf-ray": rid, "CF-Connecting-IP": IP, "User-Agent": "RbacTest/1.0" });
   const owner = () => sessionFor("owner", { stepUp: true });
+  /** M6.5: a manual refund from credit (our bank transfer, back to the account it came from). */
+  const manualRefund = (amountMinor: number) => ({
+    id: uuidv7(),
+    amountMinor,
+    from: "credit",
+    reasonCode: "overpayment",
+    manual: {
+      mode: "neft",
+      reference: `UTRR${Date.now().toString(36).toUpperCase()}`,
+      paidOn: todayIso(),
+      paidTo: "original",
+    },
+  });
+  /** M6.5: a confirmed Razorpay payment (through a checkout of an invoice) with an Owner's gateway refund still `requested`; its refund id. */
+  const requestedRazorpayRefund = async (clientId: string, ownerId: string): Promise<string> => {
+    const doc = await addDoc({ clientId, issueDate: "2026-10-05" });
+    const staff = await sessionFor("staff");
+    const T = Date.now();
+    const ck = uuidv7();
+    await env.DB.prepare(
+      `INSERT INTO checkout_sessions (id, provider, document_id, client_id, created_by, source, currency, amount_minor, status, expires_at, created_at, updated_at)
+       VALUES (?1, 'razorpay', ?2, ?3, ?4, 'staff', 'INR', 50000, 'creating', ?5, ?6, ?6)`,
+    )
+      .bind(ck, doc.id, clientId, staff.id, T + 86_400_000, T)
+      .run();
+    await env.DB.prepare(
+      "UPDATE checkout_sessions SET status = 'live', provider_link_id = ?2, short_url = 'https://rzp.io/i/x', updated_at = ?3 WHERE id = ?1",
+    )
+      .bind(ck, `plink_RBAC${T}`, T + 1)
+      .run();
+    const pid = uuidv7();
+    const ref = `pay_RBAC${T}`;
+    await env.DB.prepare(
+      `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, charges_minor, fee_tax_minor, received_on, mode, reference_norm, recorded_at, provider_payment_id, checkout_id, refetched_at)
+       VALUES (?1, ?2, 'payment', 'razorpay', 'pending_verification', 'INR', 50000, 0, 0, ?3, 'upi', ?4, ?5, ?4, ?6, ?5)`,
+    )
+      .bind(pid, clientId, todayIso(), ref, T, ck)
+      .run();
+    await env.DB.prepare(
+      "UPDATE payments SET status = 'confirmed', verified_by = ?2, verified_at = ?3 WHERE id = ?1",
+    )
+      .bind(pid, ownerId, T + 5)
+      .run();
+    const rid = uuidv7();
+    await env.DB.prepare(
+      `INSERT INTO payment_refunds (id, payment_id, client_id, provider, origin, status, paid_to, reason_code, currency, amount_minor, requested_by, requested_at, attempts, updated_at)
+       VALUES (?1, ?2, ?3, 'razorpay', 'owner', 'requested', 'original', 'overpayment', 'INR', 1000, ?4, ?5, 0, ?5)`,
+    )
+      .bind(rid, pid, clientId, ownerId, T)
+      .run();
+    return rid;
+  };
 
   type Scenario = () => Promise<{
     res: Response;
@@ -1330,6 +1383,89 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       return run(s, `/deeds/${f.deedId}/cancel`, {
         body: { expectedUpdatedAt: await deedStamp(f.deedId), reason: "Not needed" },
       });
+    },
+    // M6.5: FEMA reductions, refunds, reconciliation and the receipt PDF's re-render.
+    "POST /api/v1/invoices/:id/realisation-reductions": async () => {
+      const s = await owner();
+      const clientId = await mkReportClient("USD");
+      const inv = await addDoc({ clientId, currency: "USD", issueDate: "2026-10-05" });
+      return run(s, `/invoices/${inv.id}/realisation-reductions`, {
+        body: {
+          id: uuidv7(),
+          amountMinor: 1_000,
+          approvedOn: todayIso(),
+          bankRef: "ADB-R1",
+          declaration: false,
+        },
+      });
+    },
+    "PUT /api/v1/invoices/:id/realisation-reductions/:rid/letter": async () => {
+      const s = await owner();
+      const clientId = await mkReportClient("USD");
+      const inv = await addDoc({ clientId, currency: "USD", issueDate: "2026-10-05" });
+      const rid0 = uuidv7();
+      await call(`/invoices/${inv.id}/realisation-reductions`, {
+        cookie: s.cookie,
+        body: { id: rid0, amountMinor: 1_000, approvedOn: todayIso(), bankRef: "ADB-R2", declaration: false },
+      });
+      const rid = `ray-${crypto.randomUUID()}`;
+      const res = await putDoc(`/invoices/${inv.id}/realisation-reductions/${rid0}/letter`, PDF_BYTES, {
+        cookie: s.cookie,
+        name: "letter.pdf",
+        headers: headers(rid),
+      });
+      return { res, rid, actor: s };
+    },
+    "POST /api/v1/payments/:id/refunds": async () => {
+      const s = await owner();
+      const clientId = await mkReportClient("INR");
+      const p = await recorded(s, recordBody(clientId, 2_000));
+      return run(s, `/payments/${p.id}/refunds`, { body: manualRefund(1_000) });
+    },
+    "POST /api/v1/refunds/:id/retry": async () => {
+      const s = await owner();
+      const clientId = await mkReportClient("INR");
+      const p = await recorded(s, recordBody(clientId, 2_000));
+      const body = manualRefund(1_000);
+      await call(`/payments/${p.id}/refunds`, { cookie: s.cookie, body });
+      return run(s, `/refunds/${body.id}/retry`, { body: {} });
+    },
+    "POST /api/v1/refunds/:id/cancel": async () => {
+      const s = await owner();
+      const clientId = await mkReportClient("INR");
+      const refundId = await requestedRazorpayRefund(clientId, s.id);
+      return run(s, `/refunds/${refundId}/cancel`, { body: {} });
+    },
+    "POST /api/v1/reconciliation/bank-matches": async () => {
+      const s = await owner();
+      const clientId = await mkReportClient("INR");
+      const p = await recorded(s, recordBody(clientId, 2_000));
+      return run(s, "/reconciliation/bank-matches", {
+        body: { id: uuidv7(), target: { kind: "payment", id: p.id }, statementOn: todayIso() },
+      });
+    },
+    "POST /api/v1/reconciliation/bank-matches/:id/remove": async () => {
+      const s = await owner();
+      const clientId = await mkReportClient("INR");
+      const p = await recorded(s, recordBody(clientId, 2_000));
+      const id = uuidv7();
+      await call("/reconciliation/bank-matches", {
+        cookie: s.cookie,
+        body: { id, target: { kind: "payment", id: p.id }, statementOn: todayIso() },
+      });
+      return run(s, `/reconciliation/bank-matches/${id}/remove`, { body: { reason: "Wrong line" } });
+    },
+    "POST /api/v1/reconciliation/settlements/fetch": async () => {
+      const s = await owner();
+      return run(s, "/reconciliation/settlements/fetch", { body: { day: "2026-10-05" } });
+    },
+    "POST /api/v1/receipts/:id/pdf/retry": async () => {
+      const s = await owner();
+      await putCompany();
+      const clientId = await mkReportClient("INR");
+      const p = await recorded(s, recordBody(clientId, 2_000));
+      await issueReceipt(env, p.id as string);
+      return run(s, `/receipts/rct_${p.id}/pdf/retry`, { body: {} });
     },
     "PUT /api/v1/invoices/:id/realisation-extensions/:eid/letter": async () => {
       const s = await owner();

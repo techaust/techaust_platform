@@ -268,7 +268,9 @@ describe("PayPal events the analyst listed [JOB-HOOK-02, ADR 0008; Fix round mus
         "SELECT title FROM notifications WHERE kind = 'payment.review' AND entity_id = (SELECT id FROM review_items WHERE webhook_event_id = ?1)",
         ev,
       ),
-    ).toMatchObject({ title: expect.stringContaining("The invoice's balance hasn't changed.") });
+    ).toMatchObject({
+      title: expect.stringContaining("The invoice's balance hasn't changed until you record the refund."),
+    });
   });
 
   it("the event path's re-fetch: a capture PayPal answers 404 for is refetch_failed; the item's retry captures the order as the member", async () => {

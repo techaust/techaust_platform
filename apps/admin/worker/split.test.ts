@@ -199,9 +199,11 @@ describe("every ROUTES row has one owner", () => {
     // M6.2: seven gateway rows (payment links, Needs review, the gateways' status).
     // M6.4: eight remittance advice rows (the list, add, one advice, its file both ways, link, the Owner's remove, Without advice).
     // The fourth admin Worker (2026-11-03, brief A.2): the 61 finance rows of M6.4 split 32 (invoices) and 29 (finance).
-    expect(INVOICES_ROWS.length).toBe(32);
-    expect(FINANCE_ROWS.length).toBe(29);
-    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 32 - 29);
+    // M6.5: two receipt PDF rows on the invoices Worker (34); on finance, a payment's receipt, five refund rows, six reconciliation rows and three FEMA
+    // reduction rows (44).
+    expect(INVOICES_ROWS.length).toBe(34);
+    expect(FINANCE_ROWS.length).toBe(44);
+    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 34 - 44);
     expect(new Set([...FRONT_ROWS, ...API_ROWS, ...INVOICES_ROWS, ...FINANCE_ROWS].map(key)).size).toBe(
       ROUTES.length,
     );
@@ -219,9 +221,9 @@ describe("every ROUTES row has one owner", () => {
   // The fourth admin Worker (brief A.2): invoices, notes, their sends and PDFs, a client's invoices and statement, reports, approvals and the dashboard go to
   // the invoices Worker; payments, the ledger panels, credit, advices and the gateways stay in the finance Worker.
   const INVOICES =
-    /^\/api\/v1\/(invoices(\/:id(\/(issue|issue-request|void|withdraw|service-completed|advance-invoice|credit-note|debit-note|ims-status|pdf|pdf\/supplier|pdf\/retry|send|links\/revoke|reminders\/(pause|resume)))?)?$|clients\/:id\/invoices$|clients\/:id\/statement(\/|$)|reports\/|approvals(\/|$)|dashboard$)/;
+    /^\/api\/v1\/(invoices(\/:id(\/(issue|issue-request|void|withdraw|service-completed|advance-invoice|credit-note|debit-note|ims-status|pdf|pdf\/supplier|pdf\/retry|send|links\/revoke|reminders\/(pause|resume)))?)?$|clients\/:id\/invoices$|clients\/:id\/statement(\/|$)|reports\/|approvals(\/|$)|dashboard$|receipts\/:id\/pdf(\/retry)?$)/;
   const FINANCE =
-    /^\/api\/v1\/(payments(\/|$)|clients\/:id\/credit(\/|$)|invoices\/:id\/(payment-link(\/cancel)?|payments|credit\/release|realisation-extensions(\/:eid\/letter)?)$)/;
+    /^\/api\/v1\/(payments(\/|$)|refunds(\/|$)|reconciliation\/|clients\/:id\/credit(\/|$)|invoices\/:id\/(payment-link(\/cancel)?|payments|credit\/release|realisation-extensions(\/:eid\/letter)?|realisation-reductions(\/:rid\/letter)?)$)/;
 
   it("the invoices rows are invoices and notes, a client's invoices and statement, reports, approvals and the dashboard (the fourth admin Worker)", () => {
     for (const r of INVOICES_ROWS) expect(r.path, key(r)).toMatch(INVOICES);
@@ -606,6 +608,8 @@ describe("the invoices app called directly (the fourth admin Worker)", () => {
       "constructor",
       "draftCarePlan",
       "issueCareDraft",
+      // M6.5 (L34): a payment's receipt, its own batch.
+      "issueReceipt",
     ]);
     expect(Object.getOwnPropertyNames(invoicingModule.GatewayAdvance.prototype).sort()).toEqual([
       "constructor",
@@ -660,7 +664,10 @@ describe("the finance app called directly (M6.1 stage A; the payments side since
   it("exports the GatewayEvents and PortalPayments entrypoints next to its default handler, each with exactly its methods (M6.2; the fourth admin Worker)", () => {
     expect(Object.keys(financeModule).sort()).toEqual(["GatewayEvents", "PortalPayments", "default"]);
     expect(Object.getOwnPropertyNames(financeModule.GatewayEvents.prototype).sort()).toEqual([
+      // M6.5 (L34, L37): the sweep's refund check and the settlement fetch.
+      "checkRefund",
       "constructor",
+      "fetchSettlements",
       "processEvent",
       // M6.3 (L13, L14): the sweep's generic refresh. The fourth admin Worker: `issueGatewayAdvance` moved to the invoices Worker's `GatewayAdvance`.
       "refreshCheckout",

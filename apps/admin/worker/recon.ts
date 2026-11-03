@@ -207,9 +207,9 @@ export const reconciliation = new Hono<AppEnv>()
         now: Date.now(),
       }),
       action: "recon.match",
-      entityType: f.target.kind,
-      entityId: f.target.id,
-      summary: { matchId: f.id, kind: f.target.kind, statementOn: f.statementOn },
+      entityType: "bank_match",
+      entityId: f.id,
+      summary: { matchId: f.id, kind: f.target.kind, targetId: f.target.id, statementOn: f.statementOn },
     });
     if (!done) return err(c, MATCH_EXISTS, 409);
     return c.json({ ok: true, id: f.id });

@@ -235,7 +235,9 @@ export const AUX_OPTS = {
 };
 
 /** The configs (by their `gatewayConfigProblems` label) that must state `PAYMENTS_LIVE_ALLOWED: "false"` in every scope, not only where they set it. */
-export const LIVE_FLAG_REQUIRED = ["finance", "admin invoices"];
+// M6.5 (run file F): all six configs (jobs, portal, the four admin Workers) state it, as "false", in every scope (the split's finding 5 made it required for
+// finance and invoices; M6.5 widens it to all six).
+export const LIVE_FLAG_REQUIRED = ["jobs", "portal", "finance", "admin", "admin api", "admin invoices"];
 
 /**
  * M6.2 (run file F): the gateway wiring in every scope. The top level and `env.staging`: jobs binds `ADMIN_GATEWAY` to the finance Worker's `GatewayEvents` and

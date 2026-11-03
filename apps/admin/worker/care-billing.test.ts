@@ -1317,7 +1317,7 @@ describe("the entrypoint [LD57]", () => {
       Object.getOwnPropertyNames(BillingJobs.prototype)
         .filter((n) => n !== "constructor")
         .sort(),
-    ).toEqual(["draftCarePlan", "issueCareDraft"]);
+    ).toEqual(["draftCarePlan", "issueCareDraft", "issueReceipt"]);
   });
 
   it("the front's /api/* cannot reach it: no route row names it and no path answers", async () => {

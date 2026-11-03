@@ -124,12 +124,22 @@ type PanelRefundRow = {
  * the setting is a warning only (never a legal limit; Settled by the lead on the safest reading, 2026-11-02 (08-C RA-38)). A warning, never a block.
  */
 function paCbOf(
-  d: { total_minor: number; fx_rate_micros: number | null; issue_date: string | null },
+  d: {
+    total_minor: number;
+    fx_rate_micros: number | null;
+    fx_date: string | null;
+    issue_date: string | null;
+  },
   taxRow: { value: string; version: number } | undefined,
 ) {
   const setting = cachedSetting("tax", taxRow).crossBorderWarnInrMinor;
   const today = toIsoDate(istDate(Date.now()));
-  const base = { usdMinor: d.total_minor, rateMicros: d.fx_rate_micros, rateDate: d.issue_date, today };
+  const base = {
+    usdMinor: d.total_minor,
+    rateMicros: d.fx_rate_micros,
+    rateDate: d.fx_date ?? d.issue_date,
+    today,
+  };
   return {
     paypal: paCbCheck({ ...base, capInrMinor: paCbCapFor("paypal", setting) }),
     stripe: paCbCheck({ ...base, capInrMinor: paCbCapFor("stripe", setting) }),
@@ -137,7 +147,7 @@ function paCbOf(
 }
 
 const DOC_SQL = `SELECT d.id, d.type, d.status, d.client_id, d.currency, d.frozen_at, d.voided_at, d.issue_date, d.number_display, d.total_minor, d.paid_minor,
-     d.credited_minor, d.tds_minor, d.balance_minor, d.updated_at, d.supply_type, d.fx_rate_micros, ${clientGoneSql("d.client_id")} AS gone,
+     d.credited_minor, d.tds_minor, d.balance_minor, d.updated_at, d.supply_type, d.fx_rate_micros, d.fx_date, ${clientGoneSql("d.client_id")} AS gone,
      CASE WHEN d.type = 'export_invoice' AND d.issue_date IS NOT NULL THEN ${femaDueSql("d", settingsBinds("NULL"))} END AS fema_due
    FROM documents d WHERE d.id = ?1`;
 
@@ -159,6 +169,7 @@ type DocRow = {
   updated_at: number;
   supply_type: string | null;
   fx_rate_micros: number | null;
+  fx_date: string | null;
   gone: number;
   fema_due: string | null;
 };
