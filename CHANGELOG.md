@@ -2,6 +2,8 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-11-03 [#166](https://github.com/techaust/techaust_platform/pull/166) refactor(admin): the fourth admin Worker, admin invoices [ADM-G-02][ADM-PAY-01]
+- 2026-11-03 [#165](https://github.com/techaust/techaust_platform/pull/165) docs: record of 2026-11-03 night (M6.4 merged, the fourth Worker's plan, M6.5 prepared)
 - 2026-11-03 [#164](https://github.com/techaust/techaust_platform/pull/164) feat(payments): M6.4 PayPal (sandbox) [ADM-PAY-01][ADM-PAY-04][ADM-INV-17][POR-06][JOB-HOOK-01]
 - 2026-11-03 [#163](https://github.com/techaust/techaust_platform/pull/163) docs(runs): brief for the fourth admin Worker, split admin finance before M6.5 [ADM-G-02][ADM-PAY-01]
 - 2026-11-02 [#162](https://github.com/techaust/techaust_platform/pull/162) docs: record of 2026-11-02 (M6.3 approved, staging fixes, status, decisions, changelog, CLAUDE.md)
