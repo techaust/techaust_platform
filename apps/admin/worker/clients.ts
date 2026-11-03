@@ -1262,18 +1262,12 @@ export const contacts = new Hono<AppEnv>()
       if (plan.head.held) return err(c, LEGAL_HOLD, 409);
       if (plan.tooMany) return err(c, TOO_MANY_OFFERS, 409);
     }
-    // M6.5 (L15; early check 1, part 2 item 2): an individual client is not anonymised while a refund to it is open (trigger `clients_anonymise_no_open_refund`
-    // holds it too): the erase of its last live contact waits for the refund to settle.
-    if (
-      await c.env.DB.prepare(
-        `SELECT 1 FROM contacts ct JOIN clients k ON k.id = ct.client_id
-         WHERE ct.id = ?1 AND k.type = 'individual' AND k.anonymised_at IS NULL
-           AND NOT EXISTS (SELECT 1 FROM contacts o WHERE o.client_id = k.id AND o.id <> ?1 AND o.anonymised_at IS NULL)
-           AND EXISTS (SELECT 1 FROM payment_refunds r INDEXED BY payment_refunds_client WHERE r.client_id = k.id AND r.status IN ('requested', 'processing'))`,
-      )
-        .bind(id)
-        .first()
-    )
+    // M6.5 (L15; early check 1, part 2 item 2): an individual client is not anonymised while a refund to it is open. The trigger
+    // `clients_anonymise_no_open_refund` refuses the batch (nothing is written, no statement is added: T7's cap of 45), and the answer is 409 `refunds_pending`.
+    try {
+      return await eraseBatch(c, id, mode, reason, plan);
+    } catch (e) {
+      if (!refusedWith(e, /clients_anonymise_no_open_refund/)) throw e;
       return err(
         c,
         {
@@ -1282,7 +1276,7 @@ export const contacts = new Hono<AppEnv>()
         },
         409,
       );
-    return eraseBatch(c, id, mode, reason, plan);
+    }
   });
 
 /**

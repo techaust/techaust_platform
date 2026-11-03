@@ -10,6 +10,7 @@ import { processEvent } from "./gateway/events.ts";
 import { issueReceipt } from "./receipt-issue.ts";
 import { fetchSettlements } from "./recon.ts";
 import { checkRefund } from "./refund-flow.ts";
+import { mkClient, mkContact } from "./test-clients.ts";
 import { calls, stub } from "./test-gateway.ts";
 import { call, one, sessionFor } from "./test-helpers.ts";
 import { todayIso } from "./test-invoice-types.ts";
@@ -443,5 +444,37 @@ describe("one settlement page [ADM-PAY-10, L11]", () => {
     expect(await fetchSettlements(env, { provider: "razorpay", day: "2026-11-03", skip: 0 })).toEqual({
       result: "empty",
     });
+  });
+});
+
+describe("an anonymised client stays locked [L15]", () => {
+  it("anonymising an individual's last contact while a refund to it is open is 409 refunds_pending, nothing written; a refund for an anonymised client is client_gone", async () => {
+    const o = await owner();
+    const clientId = await mkClient({ type: "individual" });
+    const contactId = (await mkContact(clientId)).id;
+    const p = await rzpPayment(clientId, o.id);
+    stub((path, method) =>
+      method === "POST" && path.endsWith("/refund") ? new Response("", { status: 503 }) : null,
+    );
+    expect((await call(`/payments/${p.id}/refunds`, { cookie: o.cookie, body: gateway(1_000) })).status).toBe(
+      202,
+    );
+    const res = await call(`/contacts/${contactId}/erase`, {
+      cookie: o.cookie,
+      body: { mode: "anonymise", reason: "requested" },
+    });
+    expect(res.status).toBe(409);
+    expect(((await json(res)) as J).error.code).toBe("refunds_pending");
+    expect(await one("SELECT anonymised_at FROM clients WHERE id = ?", clientId)).toEqual({
+      anonymised_at: null,
+    });
+    // a client already anonymised takes no refund
+    const other = await mkReportClient("INR");
+    const q = await recorded(o, recordBody(other, 2_000));
+    await env.DB.prepare("UPDATE clients SET anonymised_at = ?2 WHERE id = ?1").bind(other, Date.now()).run();
+    const r = await call(`/payments/${q.id}/refunds`, { cookie: o.cookie, body: manual(100) });
+    expect(r.status).toBe(409);
+    // the app's existing code for an erased client (`CLIENT_GONE` in anonymised.ts), which the brief calls `client_gone`
+    expect(((await json(r)) as J).error.code).toBe("client_anonymised");
   });
 });
