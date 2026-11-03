@@ -4,6 +4,7 @@
 import { paidByWords } from "@techaust/core/copy-zo";
 import { formatMoney, money } from "@techaust/core/money";
 import type { ReceiptOf } from "@techaust/core/receipts";
+import { DEFAULT_CONTACT_EMAIL, footerLine } from "./footer.ts";
 import { shortIsoDate } from "./format.ts";
 import type { ReceiptLayoutView } from "./layout/receipt.ts";
 
@@ -35,5 +36,7 @@ export function receiptView(r: ReceiptOf, number: string): ReceiptLayoutView {
     appliedTo: r.appliedTo.map((a) => ({ number: a.number, amount: fmt(a.amountMinor) })),
     appliedMore: r.appliedMore,
     heldAsCredit: r.heldAsCreditMinor > 0 ? fmt(r.heldAsCreditMinor) : null,
+    logo: "logo-primary-color.svg",
+    footerBrand: footerLine(r.issuer.email || DEFAULT_CONTACT_EMAIL),
   };
 }
