@@ -3,7 +3,7 @@
 //                                       pending gateway payment in full (L33); through the payment's gateway, by our bank transfer (manual), or recorded after
 //                                       the fact (a refund made in the gateway's dashboard, or a lost dispute: L7, L40);
 //   GET  /payments/:id/refunds          a payment's refunds (`refunds.read`);
-//   GET  /refunds?status=&cursor=       the Refunds tab, keyset pages of 50 (`refunds.read`);
+//   GET  /refunds?status=&clientId=&cursor=  the Refunds tab (B4: or one client's), keyset pages of 50 (`refunds.read`);
 //   POST /refunds/:id/retry             "Try again": the gateway is asked first (L37), then posted again only when it shows none;
 //   POST /refunds/:id/cancel            a refund still `requested` is failed by the Owner only after the gateway shows none for our id.
 // A refund, step by step (C): (1) read, then core `planRefund` (the codes the screens explain); the export tick (RB-43); the live guard BEFORE anything is written
@@ -21,6 +21,7 @@ import { planRefund, refundExportWarning } from "@techaust/core/refunds";
 import {
   PAYMENT_REFUNDS_SQL,
   pendingRefundedRejectStatement,
+  REFUNDS_LIST_BY_CLIENT_SQL,
   REFUNDS_LIST_BY_STATUS_SQL,
   REFUNDS_LIST_SQL,
   refundBatchResult,
@@ -182,6 +183,8 @@ const istDay = (now: number) => toIsoDate(istDate(now));
 const factsQuery = z.object({ documentId: z.optional(z.string().check(z.minLength(1), z.maxLength(64))) });
 const listQuery = z.object({
   status: z.optional(z.enum(["requested", "processing", "succeeded", "failed"])),
+  /** B4: one client's refunds (the client Overview's "Refund in progress"), with or without `status`. */
+  clientId: z.optional(z.string().check(z.minLength(1), z.maxLength(64))),
   cursor: z.optional(z.string().check(z.maxLength(200))),
 });
 
@@ -205,6 +208,8 @@ const view = (r: NonNullable<Awaited<ReturnType<typeof readRefund>>>) => ({
   providerRefundId: r.provider_refund_id,
   failureCode: r.failure_code,
   requestedAt: r.requested_at,
+  // B4 (designer Q1, L44, L46): the last check's instant (UTC ms, null before any), so the screens show when "Try again" and Cancel open before any press.
+  lastAttemptAt: r.last_attempt_at,
   attempts: r.attempts,
   settledOn: r.settled_on,
   updatedAt: r.updated_at,
@@ -492,9 +497,16 @@ export const refundsTab = new Hono<AppEnv>()
     const at = cur ? Number(cur.k) : Number.MAX_SAFE_INTEGER;
     const after = cur?.id ?? "";
     const rows = (
-      await (q.status
-        ? c.env.DB.prepare(REFUNDS_LIST_BY_STATUS_SQL).bind(q.status, at, after)
-        : c.env.DB.prepare(REFUNDS_LIST_SQL).bind(at, after)
+      await (q.clientId
+        ? c.env.DB.prepare(REFUNDS_LIST_BY_CLIENT_SQL(q.status !== undefined)).bind(
+            q.clientId,
+            at,
+            after,
+            ...(q.status ? [q.status] : []),
+          )
+        : q.status
+          ? c.env.DB.prepare(REFUNDS_LIST_BY_STATUS_SQL).bind(q.status, at, after)
+          : c.env.DB.prepare(REFUNDS_LIST_SQL).bind(at, after)
       ).all<
         NonNullable<Awaited<ReturnType<typeof readRefund>>> & { client_code: string; client_name: string }
       >()

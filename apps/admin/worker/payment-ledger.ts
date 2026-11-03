@@ -89,7 +89,7 @@ export const PANEL_RECEIPTS_SQL = `SELECT p.id AS payment_id, r.id AS receipt_id
    WHERE p.id IN (SELECT a.payment_id FROM payment_allocations a INDEXED BY payment_allocations_document WHERE a.document_id = ?1)`;
 /** M6.5: the refunds of this invoice's excess and of the payments holding money on it, newest first (at most 50). */
 export const PANEL_REFUNDS_SQL = `SELECT r.id, r.payment_id, r.document_id, r.provider, r.origin, r.status, r.reason_code, r.currency, r.amount_minor, r.requested_at, r.settled_on,
-     r.failure_code
+     r.failure_code, r.last_attempt_at
    FROM payment_refunds r
    WHERE r.id IN (SELECT x.id FROM payment_refunds x INDEXED BY payment_refunds_document WHERE x.document_id = ?1)
       OR r.payment_id IN (SELECT a.payment_id FROM payment_allocations a INDEXED BY payment_allocations_document WHERE a.document_id = ?1)
@@ -116,6 +116,7 @@ type PanelRefundRow = {
   requested_at: number;
   settled_on: string | null;
   failure_code: string | null;
+  last_attempt_at: number | null;
 };
 
 /**
@@ -547,6 +548,8 @@ export const invoiceLedger = new Hono<AppEnv>()
             currency: r.currency,
             amountMinor: r.amount_minor,
             requestedAt: r.requested_at,
+            // B4 (L44, L46): with `requestedAt`, when "Try again" and Cancel open (`refundOpensAt` in the SPA).
+            lastAttemptAt: r.last_attempt_at,
             settledOn: r.settled_on,
             failureCode: r.failure_code,
           }))

@@ -34,6 +34,7 @@ import {
   pendingRefundedRejectStatement,
   REFUND_BY_PROVIDER_REF_SQL,
   REFUNDS_IDLE_SQL,
+  REFUNDS_LIST_BY_CLIENT_SQL,
   REFUNDS_LIST_BY_STATUS_SQL,
   REFUNDS_LIST_SQL,
   type RefundInsertArgs,
@@ -1457,6 +1458,56 @@ describe("early check 1: the statements [findings 1 to 3, 5 to 10; L40]", () => 
         .map((r) => r.detail)
         .join("\n"),
     ).not.toMatch(/TEMP B-TREE/);
+  });
+
+  it("B4: one client's refunds, all states or one, newest first, a seek of payment_refunds_client (no scan, no sort)", async () => {
+    const { owner, sess, clientId } = await setup();
+    const other = await mkClientRow();
+    const p = await pay(clientId, owner, { amount: 9_000 });
+    const q = await pay(other, owner, { amount: 9_000 });
+    const mine: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const a = args({ paymentId: p, sessionId: sess, amountMinor: 1_000, now: Date.now() + i });
+      expect(await refundBatch(a, owner)).toBe(true);
+      mine.push(a.id);
+    }
+    const theirs = args({ paymentId: q, sessionId: sess, amountMinor: 1_000, now: Date.now() + 5 });
+    expect(await refundBatch(theirs, owner)).toBe(true);
+    const ids = async (sql: string, ...b: unknown[]) =>
+      (await all<{ id: string }>(sql, ...b)).map((r) => r.id);
+    expect(await ids(REFUNDS_LIST_BY_CLIENT_SQL(false), clientId, Number.MAX_SAFE_INTEGER, "")).toEqual(
+      [...mine].reverse(),
+    );
+    expect(
+      await ids(REFUNDS_LIST_BY_CLIENT_SQL(true), clientId, Number.MAX_SAFE_INTEGER, "", "succeeded"),
+    ).toEqual([...mine].reverse());
+    expect(
+      await ids(REFUNDS_LIST_BY_CLIENT_SQL(true), clientId, Number.MAX_SAFE_INTEGER, "", "processing"),
+    ).toEqual([]);
+    // the keyset: after the newest, the two older ones
+    const newest = await first<{ requested_at: number; id: string }>(
+      "SELECT requested_at, id FROM payment_refunds WHERE id = ?",
+      mine[2],
+    );
+    expect(await ids(REFUNDS_LIST_BY_CLIENT_SQL(false), clientId, newest?.requested_at, newest?.id)).toEqual([
+      mine[1],
+      mine[0],
+    ]);
+    for (const withStatus of [false, true]) {
+      const plan = (
+        await all<{ detail: string }>(
+          `EXPLAIN QUERY PLAN ${REFUNDS_LIST_BY_CLIENT_SQL(withStatus)}`,
+          clientId,
+          1,
+          "",
+          ...(withStatus ? ["requested"] : []),
+        )
+      )
+        .map((r) => r.detail)
+        .join("\n");
+      expect(plan).toMatch(/SEARCH r USING INDEX payment_refunds_client/);
+      expect(plan).not.toMatch(/SCAN r\b|TEMP B-TREE/);
+    }
   });
 
   it("findings 6 and 7: a payment with no fee tax on record is never fee-flagged; a re-fetch sets a missing UTR once; a row without its day aborts the page", async () => {

@@ -4,6 +4,7 @@
 // events (ours moved, an outside one a review item); one settlement page. No test reaches a gateway: Razorpay answers from the stub. Invented test data.
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core/ids";
+import { refundAttemptStatement } from "@techaust/db/refunds";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setStubTransport } from "./gateway/config.ts";
 import { processEvent } from "./gateway/events.ts";
@@ -476,5 +477,66 @@ describe("an anonymised client stays locked [L15]", () => {
     expect(r.status).toBe(409);
     // the app's existing code for an erased client (`CLIENT_GONE` in anonymised.ts), which the brief calls `client_gone`
     expect(((await json(r)) as J).error.code).toBe("client_anonymised");
+  });
+});
+
+describe("B4: the refund views carry their times; the list by client [L44, L46; run file B4 items 1 and 2]", () => {
+  it("GET /payments/:id/refunds and GET /refunds answer requestedAt and lastAttemptAt; ?clientId= lists one client's only, with or without a status", async () => {
+    const o = await owner();
+    const a = await mkReportClient("INR");
+    const b = await mkReportClient("INR");
+    const pa = await rzpPayment(a, o.id);
+    const pb = await rzpPayment(b, o.id);
+    stub((path, method) =>
+      method === "POST" && path.endsWith("/refund") ? new Response("", { status: 503 }) : null,
+    );
+    const ra = gateway(1_000);
+    const rb = gateway(2_000);
+    expect((await call(`/payments/${pa.id}/refunds`, { cookie: o.cookie, body: ra })).status).toBe(202);
+    expect((await call(`/payments/${pb.id}/refunds`, { cookie: o.cookie, body: rb })).status).toBe(202);
+    const T = Date.now() + 60_000;
+    await refundAttemptStatement(env.DB, { refundId: ra.id, now: T }).run();
+    const ofPayment = (await json(await call(`/payments/${pa.id}/refunds`, { cookie: o.cookie }))) as J;
+    expect(ofPayment.items[0]).toMatchObject({ id: ra.id, lastAttemptAt: T });
+    expect(typeof ofPayment.items[0].requestedAt).toBe("number");
+    const acc = await sessionFor("accountant");
+    const byClient = (await json(await call(`/refunds?clientId=${a}`, { cookie: acc.cookie }))) as J;
+    expect(byClient.items.map((r: J) => r.id)).toEqual([ra.id]);
+    expect(byClient.items[0]).toMatchObject({ lastAttemptAt: T, clientId: a });
+    expect(byClient.next).toBeNull();
+    const open = (await json(
+      await call(`/refunds?clientId=${a}&status=requested`, { cookie: acc.cookie }),
+    )) as J;
+    expect(open.items.map((r: J) => r.id)).toEqual([ra.id]);
+    const none = (await json(
+      await call(`/refunds?clientId=${a}&status=processing`, { cookie: acc.cookie }),
+    )) as J;
+    expect(none.items).toEqual([]);
+    const all = (await json(await call("/refunds", { cookie: acc.cookie }))) as J;
+    const theirs = all.items.find((r: J) => r.id === rb.id);
+    expect(theirs).toMatchObject({ lastAttemptAt: null });
+    expect(typeof theirs.requestedAt).toBe("number");
+    // the same permission as the list: Staff can't read it
+    expect(
+      (await call(`/refunds?clientId=${a}`, { cookie: (await sessionFor("staff")).cookie })).status,
+    ).toBe(403);
+    expect((await call("/refunds?clientId=", { cookie: acc.cookie })).status).toBe(400);
+  });
+
+  it("the Payments panel's refunds carry lastAttemptAt too", async () => {
+    const o = await owner();
+    const clientId = await mkReportClient("INR");
+    const inv = await addDoc({ clientId, issueDate: "2026-10-05" });
+    const total = inv.computed.totalMinor;
+    const p = await recorded(
+      o,
+      recordBody(clientId, total + 3_000, [{ documentId: inv.id, amountMinor: total }]),
+    );
+    const body = manual(1_000);
+    expect((await call(`/payments/${p.id}/refunds`, { cookie: o.cookie, body })).status).toBe(200);
+    const panel = (await json(await call(`/invoices/${inv.id}/payments`, { cookie: o.cookie }))) as J;
+    expect(panel.refunds).toEqual([
+      expect.objectContaining({ id: body.id, lastAttemptAt: null, requestedAt: expect.any(Number) }),
+    ]);
   });
 });

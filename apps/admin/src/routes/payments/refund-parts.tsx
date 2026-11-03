@@ -3,7 +3,7 @@
 // a payment's receipt cell, and the ₹25 lakh line of a USD document.
 // Design: a refund reads as a ledger line in the same table as the payments it came from (`.pay-lines`, cards below md through the same markup), its state one
 // chip (icon and words, never colour alone; docs/06 §5.5). A refund's state stays on its row whatever happened to its "Needs review" item (L45). "Try again"
-// and "Cancel refund" wait 15 minutes after the request or the last answer (L44, L46): they are drawn disabled with the time they open, and a `too_soon`
+// and "Cancel refund" wait 15 minutes after the request or the last check (L44, L46; `refundOpensAt` from the row's `requestedAt` and `lastAttemptAt`): they are drawn disabled with the time they open, and a `too_soon`
 // answer moves that time to the server's `retryAfterS`. Amounts are formatted by core; nothing is added up here.
 import "../../refunds.css";
 import { REFUND_SWEEP_IDLE_MS } from "@techaust/core/gateway-rpc";
@@ -19,7 +19,13 @@ import { useToast } from "../../components/toast.tsx";
 import { allowed } from "../../lib/access.ts";
 import { REFUND_PILLS, ZO_UI } from "../../lib/copy-zo.ts";
 import { amountText, payErrorText } from "../../lib/payments.ts";
-import { type PaCbVerdict, type PanelReceipt, type RefundView, refundsApi } from "../../lib/refunds-api.ts";
+import {
+  type PaCbVerdict,
+  type PanelReceipt,
+  type RefundView,
+  refundOpensAt,
+  refundsApi,
+} from "../../lib/refunds-api.ts";
 import { day } from "./parts.tsx";
 
 /** A refund row as the screens draw it (the panel's rows lack the gateway's id: such a row can't say whether it can be cancelled, so it doesn't offer it). */
@@ -33,6 +39,7 @@ export type RefundRowData = Pick<
   | "currency"
   | "amountMinor"
   | "requestedAt"
+  | "lastAttemptAt"
   | "settledOn"
   | "failureCode"
 > &
@@ -66,7 +73,7 @@ export const isOpen = (s: RefundView["status"]) => s === "requested" || s === "p
 /** The Owner's two actions on an open refund, with their 15-minute wait (L44, L46). */
 export function RefundActions(props: { row: RefundRowData; onChanged: (toast: string) => void }) {
   const r = props.row;
-  const [opensAt, setOpensAt] = useState(r.requestedAt + REFUND_SWEEP_IDLE_MS);
+  const [opensAt, setOpensAt] = useState(() => refundOpensAt(r));
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);

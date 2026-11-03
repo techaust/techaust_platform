@@ -2,6 +2,7 @@
 // receipt-issue.ts): refunds, receipts, reconciliation and FEMA reductions [ADM-PAY-08, ADM-PAY-09, ADM-PAY-10, ADM-INV-17]. Its own module, so the main chunk
 // doesn't carry it: only the payment screens import it. The shapes mirror the Workers' answers (the reconciliation rows are the rows themselves, snake_case).
 // Money is integer minor units; the screens only format it (through core), never work it out.
+import { REFUND_SWEEP_IDLE_MS } from "@techaust/core/gateway-rpc";
 import type { RefundOrigin, RefundReason, RefundStatus } from "@techaust/core/refunds";
 import type { Currency } from "../api.ts";
 import { qs, request } from "../api.ts";
@@ -28,6 +29,8 @@ export type RefundView = {
   providerRefundId: string | null;
   failureCode: string | null;
   requestedAt: number;
+  /** The last check's instant (UTC ms), null before any (L44, L46: with `requestedAt`, when "Try again" and Cancel open). */
+  lastAttemptAt: number | null;
   attempts: number;
   settledOn: string | null;
   updatedAt: number;
@@ -49,9 +52,17 @@ export type PanelRefund = Pick<
   | "currency"
   | "amountMinor"
   | "requestedAt"
+  | "lastAttemptAt"
   | "settledOn"
   | "failureCode"
 >;
+
+/**
+ * When "Try again" and Cancel open (L44, L46): `REFUND_SWEEP_IDLE_MS` after the later of the request and the last check, as the server's `refundIdleAt` counts
+ * (apps/admin/worker/refund-flow.ts), so the time shows before any press. A `too_soon` answer still moves it to the server's `retryAfterS`.
+ */
+export const refundOpensAt = (r: Pick<RefundView, "requestedAt" | "lastAttemptAt">): number =>
+  Math.max(r.requestedAt, r.lastAttemptAt ?? r.requestedAt) + REFUND_SWEEP_IDLE_MS;
 
 /** A payment's receipt on the Payments panel (null fields: none issued yet). `freeMinor`: what a refund from credit may take. */
 export type PanelReceipt = {
@@ -195,8 +206,8 @@ export const refundsApi = {
       `/payments/${pid(paymentId)}/refunds`,
       { body },
     ),
-  /** The Refunds tab, newest first, 50 a page. */
-  list: (f: { status?: RefundStatus; cursor?: string } = {}) =>
+  /** The Refunds tab, newest first, 50 a page; `clientId`: one client's only. */
+  list: (f: { status?: RefundStatus; clientId?: string; cursor?: string } = {}) =>
     request<{ items: RefundView[]; next: string | null }>(`/refunds${qs(f)}`),
   /** "Try again" (Owner). Codes: `too_soon` (details `retryAfterS`), `gateway_unavailable`, `live_not_allowed`. */
   retry: (id: string) =>

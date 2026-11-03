@@ -13,18 +13,25 @@ import { amountText } from "../../lib/payments.ts";
 import { type RefundView, refundsApi } from "../../lib/refunds-api.ts";
 import { RefundDialog } from "./refund-dialog.tsx";
 
-/** The client's open refunds (requested or with the gateway), from the Refunds list's first page of each state (open refunds are few: one per payment at most). */
+/** Every page of one client's refunds in one state (`GET /refunds?clientId=&status=`; open refunds are few: one per payment at most). */
+async function clientRefundsIn(clientId: string, status: "requested" | "processing"): Promise<RefundView[]> {
+  const out: RefundView[] = [];
+  let cursor: string | undefined;
+  do {
+    const p = await refundsApi.list({ clientId, status, ...(cursor ? { cursor } : {}) });
+    out.push(...p.items);
+    cursor = p.next ?? undefined;
+  } while (cursor);
+  return out;
+}
+
+/** The client's open refunds (requested or with the gateway), read by the client (B4: exact, never a first page of everyone's). */
 export function useOpenRefunds(clientId: string, on: boolean, refreshKey: string): RefundView[] {
   const open = useLoad(
     () =>
       on
-        ? Promise.all([
-            refundsApi.list({ status: "requested" }),
-            refundsApi.list({ status: "processing" }),
-          ]).then(([a, b]) =>
-            [...a.items, ...b.items].filter(
-              (r, i, all) => r.clientId === clientId && all.findIndex((x) => x.id === r.id) === i,
-            ),
+        ? Promise.all([clientRefundsIn(clientId, "requested"), clientRefundsIn(clientId, "processing")]).then(
+            ([a, b]) => [...a, ...b].filter((r, i, all) => all.findIndex((x) => x.id === r.id) === i),
           )
         : Promise.resolve([] as RefundView[]),
     `${clientId}:${on}:${refreshKey}`,

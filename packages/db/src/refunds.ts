@@ -336,6 +336,17 @@ export const REFUNDS_LIST_BY_STATUS_SQL = `SELECT ${REFUND_COLS}, c.code AS clie
    WHERE r.status = ?1 AND (r.requested_at < ?2 OR (r.requested_at = ?2 AND r.id < ?3))
    ORDER BY r.requested_at DESC, r.id DESC LIMIT 51`;
 
+/**
+ * B4 (run file, the client Overview's "Refund in progress"): one client's refunds (`?1`), newest first, keyset `(requested_at, id)` with `?2`/`?3` as
+ * `REFUNDS_LIST_SQL`; with `status`, only that status (`?4`). A seek of `payment_refunds_client (client_id, requested_at, id)`: the status is checked on the client's
+ * own rows only (a client has a handful of refunds). At most 51.
+ */
+export const REFUNDS_LIST_BY_CLIENT_SQL = (status: boolean): string =>
+  `SELECT ${REFUND_COLS}, c.code AS client_code, c.display_name AS client_name
+   FROM payment_refunds r INDEXED BY payment_refunds_client JOIN clients c ON c.id = r.client_id
+   WHERE r.client_id = ?1 AND (r.requested_at < ?2 OR (r.requested_at = ?2 AND r.id < ?3))${status ? " AND r.status = ?4" : ""}
+   ORDER BY r.requested_at DESC, r.id DESC LIMIT 51`;
+
 // ---- settlements (L11) ---------------------------------------------------------------------------------------------------------------------------------
 
 /** One settlement as the caller read it from the gateway (`GET /v1/settlements/{id}` or the recon's settlement fields). */
