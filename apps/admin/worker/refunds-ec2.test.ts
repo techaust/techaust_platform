@@ -7,13 +7,14 @@
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core/ids";
 import type { GatewayRefund } from "@techaust/core/refund-gateways";
+import { refundRepostClaimStatement } from "@techaust/db/refunds";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setStubTransport } from "./gateway/config.ts";
 import { processEvent } from "./gateway/events.ts";
 import type { RefundGw } from "./gateway/refund-gw.ts";
 import { issueReceipt } from "./receipt-issue.ts";
 import { fetchSettlements } from "./recon.ts";
-import { checkRefund, toCheckRefundResult } from "./refund-flow.ts";
+import { applyGatewayRefund, checkRefund, readRefund, toCheckRefundResult } from "./refund-flow.ts";
 import { calls, stub } from "./test-gateway.ts";
 import { call, one, rows, sessionFor, withEnv } from "./test-helpers.ts";
 import { todayIso } from "./test-invoice-types.ts";
@@ -346,6 +347,142 @@ describe("finding 1d (L42): PayPal is posted again only while its first request 
     const items = await itemsOf(b.id, "refund_stuck");
     expect(items).toHaveLength(1);
     expect(await bellsOf(items.map((i) => i.id))).toBeGreaterThan(0);
+  });
+});
+
+// ---- review part 1, finding 1 (high): Cancel racing a re-post --------------------------------------------------------------------------------------------------
+
+describe("review part 1, finding 1: Cancel and a re-post never both win (the refund is never paid out twice)", () => {
+  /** A refund client whose `create` waits until the test lets it answer (the gateway's refund made), so a Cancel can run while the re-post is in flight. */
+  function slowGw() {
+    let entered!: () => void;
+    let release!: (g: GatewayRefund) => void;
+    const inFlight = new Promise<void>((r) => {
+      entered = r;
+    });
+    const answer = new Promise<GatewayRefund>((r) => {
+      release = r;
+    });
+    const creates: string[] = [];
+    const gw: RefundGw = {
+      provider: "razorpay",
+      blocked: null,
+      async find() {
+        return { ok: true, value: null };
+      },
+      async create(a) {
+        creates.push(a.refundId);
+        entered();
+        return { ok: true, value: await answer };
+      },
+    };
+    return { gw, creates, inFlight, release };
+  }
+
+  it("(a)(d) the sweep's re-post claims the row before it posts: a Cancel while the gateway call is in flight is 409 too_soon, writes nothing, and the refund succeeds once", async () => {
+    const a = await lostRefund(9_000);
+    const at = a.requestedAt + 16 * MIN;
+    vi.useFakeTimers({ toFake: ["Date"], now: at });
+    const slow = slowGw();
+    const sweep = checkRefund(env, a.id, at, { repost: true, gw: slow.gw });
+    await slow.inFlight;
+    // the claim is in the row before anything was sent
+    expect(await refundRow(a.id)).toMatchObject({ status: "requested", attempts: 1, last_attempt_at: at });
+    // Cancel now: the gateway lists none yet (the re-post is still on its way)
+    stub((path) => (path.endsWith("/refunds") ? rzpList([]) : null));
+    const o = await owner();
+    const res = await call(`/refunds/${a.id}/cancel`, { cookie: o.cookie, body: {} });
+    expect(res.status, await res.clone().text()).toBe(409);
+    expect(((await json(res)) as J).error.code).toBe("too_soon");
+    expect(await refundRow(a.id)).toMatchObject({ status: "requested", failure_code: null });
+    // the gateway's refund lands: ours moves to succeeded; the client's credit is down by it exactly once
+    slow.release(gwRefund(a.id, 9_000, "processed"));
+    expect(await sweep).toEqual({ result: "moved", status: "succeeded" });
+    expect(slow.creates).toEqual([a.id]);
+    expect(await refundRow(a.id)).toMatchObject({ status: "succeeded", failure_code: null });
+    const credit = ((await json(await call(`/clients/${a.clientId}/credit`, { cookie: o.cookie }))) as J)
+      .credits as J[];
+    expect(credit).toEqual(expect.arrayContaining([{ currency: "INR", creditMinor: 41_000 }]));
+    expect(await itemsOf(a.id, "refund_after_failed")).toEqual([]);
+  });
+
+  it("(a) a second re-post that read the row before another claimed it posts nothing", async () => {
+    const b = await lostRefund(2_500);
+    const second = slowGw();
+    const stale = await readRefund(env.DB, b.id);
+    if (!stale) throw new Error("no refund");
+    // the find of this check answers after another caller claimed the row
+    const racing: RefundGw = {
+      ...second.gw,
+      async find() {
+        await refundRepostClaimStatement(env.DB, {
+          refundId: b.id,
+          now: b.requestedAt + 17 * MIN,
+          seen: stale.last_attempt_at,
+        }).run();
+        return { ok: true, value: null };
+      },
+    };
+    expect(await checkRefund(env, b.id, b.requestedAt + 16 * MIN, { repost: true, gw: racing })).toEqual({
+      result: "too_soon",
+    });
+    expect(second.creates).toEqual([]);
+    expect(await refundRow(b.id)).toMatchObject({ status: "requested", attempts: 1 });
+  });
+
+  it("(b) a Cancel that read the row before a re-post claimed it writes nothing: 409 too_soon, and the re-post's refund is never undone", async () => {
+    const a = await lostRefund(6_500);
+    const at = a.requestedAt + 16 * MIN;
+    vi.useFakeTimers({ toFake: ["Date"], now: at });
+    // while the Cancel asks the gateway (it lists none), the sweep claims the row and posts
+    setStubTransport(async (input) => {
+      const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+      if (url.pathname.endsWith("/refunds")) {
+        await refundRepostClaimStatement(env.DB, { refundId: a.id, now: at + 1, seen: null }).run();
+        return rzpList([]);
+      }
+      return new Response("", { status: 503 });
+    });
+    const o = await owner();
+    const res = await call(`/refunds/${a.id}/cancel`, { cookie: o.cookie, body: {} });
+    expect(res.status, await res.clone().text()).toBe(409);
+    const e = ((await json(res)) as J).error;
+    expect(e.code).toBe("too_soon");
+    expect(e.details.retryAfterS).toBeGreaterThan(890);
+    expect(await refundRow(a.id)).toMatchObject({ status: "requested", failure_code: null, attempts: 1 });
+    expect(
+      await rows("SELECT id FROM audit_log WHERE action = 'refund.cancel' AND entity_id = ?1", a.id),
+    ).toEqual([]);
+  });
+
+  it("(c) a gateway answer for a refund failed meanwhile (the move writes nothing) opens refund_after_failed with the owners' bell", async () => {
+    const a = await lostRefund(4_200);
+    const stale = await readRefund(env.DB, a.id);
+    if (!stale) throw new Error("no refund");
+    // a cancel landed after `stale` was read
+    await env.DB.prepare(
+      "UPDATE payment_refunds SET status = 'failed', failure_code = 'cancelled', updated_at = updated_at + 1 WHERE id = ?1",
+    )
+      .bind(a.id)
+      .run();
+    expect(await applyGatewayRefund(env, stale, gwRefund(a.id, 4_200, "processed"), Date.now())).toBe(
+      "failed",
+    );
+    const items = await itemsOf(a.id, "refund_after_failed");
+    expect(items).toHaveLength(1);
+    expect(await bellsOf(items.map((i) => i.id))).toBeGreaterThan(0);
+    expect(await refundRow(a.id)).toMatchObject({ status: "failed", provider_refund_id: null });
+    // the gateway's failure of a refund already failed here opens nothing
+    const b = await lostRefund(1_100);
+    const staleB = await readRefund(env.DB, b.id);
+    if (!staleB) throw new Error("no refund");
+    await env.DB.prepare(
+      "UPDATE payment_refunds SET status = 'failed', failure_code = 'cancelled', updated_at = updated_at + 1 WHERE id = ?1",
+    )
+      .bind(b.id)
+      .run();
+    expect(await applyGatewayRefund(env, staleB, gwRefund(b.id, 1_100, "failed"), Date.now())).toBe("failed");
+    expect(await itemsOf(b.id, "refund_after_failed")).toEqual([]);
   });
 });
 

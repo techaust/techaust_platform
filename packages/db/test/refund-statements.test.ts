@@ -45,6 +45,7 @@ import {
   refundCancelStatement,
   refundInsertStatement,
   refundMoveStatement,
+  refundRepostClaimStatement,
   refundResultStatement,
   refundSideStatements,
   SETTLEMENTS_SQL,
@@ -331,13 +332,41 @@ describe("the refund batch: main statement guards, side statements, post-conditi
           refundId: b.id,
           now: Date.now(),
           sessionId: await session(owner, false),
+          seen: null,
+        }).run()
+      ).meta.changes,
+    ).toBe(0);
+    // review part 1, finding 1: a re-post claims the row first (compare-and-set on last_attempt_at); a cancel that read the row before the claim writes nothing
+    expect(
+      (await refundRepostClaimStatement(db(), { refundId: b.id, now: 1_000, seen: null }).run()).meta.changes,
+    ).toBe(1);
+    expect(
+      (await refundRepostClaimStatement(db(), { refundId: b.id, now: 2_000, seen: null }).run()).meta.changes,
+    ).toBe(0); // a second claimer with the same stale read
+    expect(
+      (
+        await refundCancelStatement(db(), {
+          refundId: b.id,
+          now: Date.now(),
+          sessionId: sess,
+          seen: null,
         }).run()
       ).meta.changes,
     ).toBe(0);
     expect(
-      (await refundCancelStatement(db(), { refundId: b.id, now: Date.now(), sessionId: sess }).run()).meta
-        .changes,
+      (
+        await refundCancelStatement(db(), {
+          refundId: b.id,
+          now: Date.now(),
+          sessionId: sess,
+          seen: 1_000,
+        }).run()
+      ).meta.changes,
     ).toBe(1);
+    expect(
+      (await refundRepostClaimStatement(db(), { refundId: b.id, now: 3_000, seen: 1_000 }).run()).meta
+        .changes,
+    ).toBe(0); // a cancelled refund is never claimed
     expect(await first("SELECT status, failure_code FROM payment_refunds WHERE id = ?", b.id)).toEqual({
       status: "failed",
       failure_code: "cancelled",

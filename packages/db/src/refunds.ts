@@ -265,19 +265,39 @@ export const pendingRefundedRejectStatement = (
 };
 
 /**
+ * Review part 1, finding 1a: the claim a re-post makes BEFORE it sends anything (`checkRefund`, the sweep and the Owner's "Try again"): one more attempt counted
+ * and `last_attempt_at` moved to now, only while the refund is still `requested` with no gateway id AND its `last_attempt_at` is still the value the caller read
+ * (`seen`, NULL included: `IS`). One row changed: this caller alone may post; zero: a cancel, another re-post or the gateway's word got there first, so nothing is
+ * sent. A cancel binds the same `last_attempt_at` (`refundCancelStatement`), so a claim between its read and its write leaves the cancel with zero rows.
+ * Binds `?1` refund, `?2` now, `?3` the `last_attempt_at` read.
+ */
+export const refundRepostClaimStatement = (
+  db: D1Database,
+  a: { refundId: string; now: number; seen: number | null },
+): D1PreparedStatement =>
+  db
+    .prepare(
+      `UPDATE payment_refunds SET attempts = attempts + 1, last_attempt_at = ?2, updated_at = max(?2, updated_at)
+       WHERE id = ?1 AND status = 'requested' AND provider_refund_id IS NULL AND last_attempt_at IS ?3`,
+    )
+    .bind(a.refundId, a.now, a.seen);
+
+/**
  * `cancel` (C step 4): a refund still `requested` is failed by the Owner (step-up) only after the gateway showed no refund for our id (the route fetches first); its
- * code is `cancelled`. Binds `?1` refund, `?2` now, `?3` session.
+ * code is `cancelled`. Review part 1, finding 1b: only while `last_attempt_at` is still the value the route read before asking the gateway (`seen`): a re-post
+ * that claimed the row in between (`refundRepostClaimStatement`) may have a request on its way, so the cancel writes nothing (the route answers 409 `too_soon`).
+ * Binds `?1` refund, `?2` now, `?3` session, `?4` the `last_attempt_at` read.
  */
 export const refundCancelStatement = (
   db: D1Database,
-  a: { refundId: string; now: number; sessionId: string },
+  a: { refundId: string; now: number; sessionId: string; seen: number | null },
 ): D1PreparedStatement =>
   db
     .prepare(
       `UPDATE payment_refunds SET status = 'failed', failure_code = 'cancelled', updated_at = max(?2, updated_at)
-       WHERE id = ?1 AND status = 'requested' AND provider_refund_id IS NULL AND ${ownerSessionSql("?3", "?2", true)}`,
+       WHERE id = ?1 AND status = 'requested' AND provider_refund_id IS NULL AND last_attempt_at IS ?4 AND ${ownerSessionSql("?3", "?2", true)}`,
     )
-    .bind(a.refundId, a.now, a.sessionId);
+    .bind(a.refundId, a.now, a.sessionId, a.seen);
 
 // ---- the withdraw's receipt (L10) -------------------------------------------------------------------------------------------------------------------------
 

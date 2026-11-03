@@ -8,6 +8,11 @@
 // idempotency key is in progress, Razorpay 400 for a used `receipt`); the gateway is asked once more and the refund adopted if found, else one more check is
 // counted. A re-post (and a cancel, refunds.ts) runs only once the refund is idle (`refundIdleAt`, L44); a PayPal refund is posted again only while its first
 // request is under an hour old (L42); a refund we marked failed that the gateway shows as made opens `refund_after_failed` (L43).
+//
+// Review part 1, finding 1 (a refund paid out twice when Cancel races a re-post): a re-post first CLAIMS the row (`refundRepostClaimStatement`: one more attempt
+// and `last_attempt_at` = now, compare-and-set on the `last_attempt_at` it read) and posts only when that one row changed; Cancel binds the `last_attempt_at` it
+// read, so a claim in between leaves it with nothing to write (409 `too_soon`); and a move that writes nothing because the row was failed meanwhile, while the
+// gateway shows the refund made or on its way, opens `refund_after_failed` (L43) instead of passing silently.
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import {
   type CheckRefundResult,
@@ -25,6 +30,7 @@ import {
   refundAttemptStatement,
   refundItemOnceGuard,
   refundMoveStatement,
+  refundRepostClaimStatement,
 } from "@techaust/db/refunds";
 import { REVIEW_LINK } from "./gateway/consts.ts";
 import { bellNeedsReview, reviewReason } from "./gateway/messages.ts";
@@ -215,19 +221,20 @@ export async function applyGatewayRefund(
 ): Promise<string> {
   const to = toStatus(g);
   const db = env.DB;
-  if (row.status === "failed" && to !== "failed") {
-    await openRefundItem(env, row, "refund_after_failed", now, {
+  const afterFailed = async (failed: RefundRow) => {
+    await openRefundItem(env, failed, "refund_after_failed", now, {
       actor,
       webhookEventId,
       summary: { gatewayState: g.state },
     });
-    return row.status;
-  }
+    return failed.status;
+  };
+  if (row.status === "failed" && to !== "failed") return afterFailed(row);
   if (row.status === to || row.status === "succeeded" || row.status === "failed") return row.status;
   if (row.status === "processing" && to === "processing") return row.status;
   const reviewId = uuidv7();
   const pendingSource = row.document_id === null && row.payment_status === "pending_verification";
-  await mutateSystem(env, {
+  const moved = await mutateSystem(env, {
     actorType: actor,
     main: refundMoveStatement(db, {
       refundId: row.id,
@@ -249,21 +256,31 @@ export async function applyGatewayRefund(
       ...(to === "failed" ? refundReview(db, row, "refund_failed", reviewId, now, gs) : []),
     ],
   });
-  return (await readRefund(db, row.id))?.status ?? row.status;
+  const fresh = await readRefund(db, row.id);
+  // Review part 1, finding 1c: `row` was read before the gateway answered; if the refund was failed meanwhile (a cancel, the first post's refusal) and the gateway
+  // shows it made or on its way, the move wrote nothing: the Owner must look (L43), never a silent pass.
+  if (!moved && fresh?.status === "failed" && to !== "failed") return afterFailed(fresh);
+  return fresh?.status ?? row.status;
 }
 
 /**
  * One more check counted with no answer; from the tenth on, a `refund_stuck` item and a bell, once per refund (C `checkRefund`; early check 2, finding 2: the
  * item's own guard, so every later check, the dead-letter queue and L42 never add a second).
  */
-async function countAttempt(env: { DB: D1Database }, row: RefundRow, now: number): Promise<RefundCheck> {
+async function countAttempt(
+  env: { DB: D1Database },
+  row: RefundRow,
+  now: number,
+  /** The re-post's claim already counted this attempt (review part 1, finding 1a): no second count. */
+  claimed = false,
+): Promise<RefundCheck> {
   const db = env.DB;
-  const attempt = refundAttemptStatement(db, { refundId: row.id, now });
+  const attempt = claimed ? [] : [refundAttemptStatement(db, { refundId: row.id, now })];
   if (row.attempts + 1 < REFUND_STUCK_ATTEMPTS) {
-    await attempt.run();
+    for (const s of attempt) await s.run();
     return { result: "retry" };
   }
-  await openRefundItem(env, row, "refund_stuck", now, { before: [attempt] });
+  await openRefundItem(env, row, "refund_stuck", now, { before: attempt });
   return { result: "stuck" };
 }
 
@@ -311,10 +328,20 @@ export async function checkRefund(
   const found = await gw.find(lookup);
   if (!found.ok) return countAttempt(env, row, now);
   let answer: GatewayRefund | null = found.value === "unknown" ? null : found.value;
+  let claimed = false;
   if (answer === null && opts.repost && row.status === "requested" && row.provider_refund_id === null) {
     if (now < refundIdleAt(row)) return { result: "too_soon" };
     if (found.value === "unknown" && now - row.requested_at >= PAYPAL_REPOST_MAX_AGE_MS)
       return stuckNow(env, row, now);
+    // Review part 1, finding 1a: claim the row before sending (compare-and-set on the `last_attempt_at` read above). Zero rows: a cancel, another re-post or
+    // the gateway's word got there first, so nothing is sent (`too_soon`: the RPC acknowledges, the route answers 409).
+    const claim = await refundRepostClaimStatement(env.DB, {
+      refundId: row.id,
+      now,
+      seen: row.last_attempt_at,
+    }).run();
+    if (claim.meta.changes !== 1) return { result: "too_soon" };
+    claimed = true;
     const created = await gw.create({
       paymentRef: row.provider_payment_id,
       amountMinor: row.amount_minor,
@@ -323,13 +350,15 @@ export async function checkRefund(
     });
     if (!created.ok) {
       // Finding 1a: a refusal of a SECOND post is not a failure of the refund (the first may be in progress or done): look once more, adopt it if there.
-      if (created.code !== "refused" && created.code !== "not_found") return countAttempt(env, row, now);
+      if (created.code !== "refused" && created.code !== "not_found")
+        return countAttempt(env, row, now, true);
       const again = await gw.find(lookup);
-      if (!again.ok || again.value === null || again.value === "unknown") return countAttempt(env, row, now);
+      if (!again.ok || again.value === null || again.value === "unknown")
+        return countAttempt(env, row, now, true);
       answer = again.value;
     } else answer = created.value;
   }
-  if (answer === null || !isOurs(row, answer)) return countAttempt(env, row, now);
+  if (answer === null || !isOurs(row, answer)) return countAttempt(env, row, now, claimed);
   if (toStatus(answer) === row.status) {
     // Finding 2: still as it was (a Stripe `pending`, a Razorpay refund in progress): one more check counted (the sweep's idle clock restarts), acknowledged.
     await refundAttemptStatement(env.DB, { refundId: row.id, now }).run();

@@ -528,7 +528,8 @@ export const refundsTab = new Hono<AppEnv>()
     const checked = await checkRefund(c.env, id, now, { repost: true });
     if (checked.result === "unavailable") return err(c, REFUSALS.gateway_unavailable, 503);
     if (checked.result === "live_not_allowed") return err(c, REFUSALS.live_not_allowed, 503);
-    if (checked.result === "too_soon") return tooSoon(c, before, now);
+    // A re-post that lost its claim (review part 1, finding 1a: the sweep claimed the row a moment before) waits from the new attempt.
+    if (checked.result === "too_soon") return tooSoon(c, (await readRefund(c.env.DB, id)) ?? before, now);
     // One audit row for the Owner's "Try again" (the move itself, if any, has the system's).
     await mutate(c, {
       action: "refund.retry",
@@ -564,13 +565,29 @@ export const refundsTab = new Hono<AppEnv>()
     }
     const u = actor(c);
     const done = await mutate(c, {
-      main: refundCancelStatement(db, { refundId: id, now: Date.now(), sessionId: u.sessionId }),
+      // Review part 1, finding 1b: bound to the `last_attempt_at` read above, so a re-post that claimed the row since (its request may be on its way) wins.
+      main: refundCancelStatement(db, {
+        refundId: id,
+        now: Date.now(),
+        sessionId: u.sessionId,
+        seen: row.last_attempt_at,
+      }),
       action: "refund.cancel",
       entityType: "refund",
       entityId: id,
       summary: { refundId: id, paymentId: row.payment_id },
     });
-    if (!done) return err(c, REFUSALS.not_cancellable, 409);
+    if (!done) {
+      const after = await readRefund(db, id);
+      if (
+        after &&
+        after.status === "requested" &&
+        after.provider_refund_id === null &&
+        after.last_attempt_at !== row.last_attempt_at
+      )
+        return tooSoon(c, after, Date.now());
+      return err(c, REFUSALS.not_cancellable, 409);
+    }
     const r = await readRefund(db, id);
     return c.json({ refund: r ? view(r) : null });
   });
