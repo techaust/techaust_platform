@@ -3,45 +3,48 @@
 _Replaced (never appended) at the end of every session._
 
 ## Date
-**2026-11-03, about 03:30 IST** (the night session's record; the owner is asleep and reviews in the morning, owner 2026-11-03). The next conversation starts with "start the day" (or "continue").
+**2026-11-03, about 10:10 IST** (the night session's record; the owner reviews everything in one morning pass, owner 2026-11-03). The next conversation starts with "start the day" (or "continue").
 
 ## Done
 - **Phases 1–5, M1–M5 (32 milestones)** approved; **M6.1, M6.2 and M6.3 approved on staging** (owner: 2026-10-31, 2026-11-01, 2026-11-02). Details in [runs/](runs/) and [13-decisions.md](13-decisions.md).
-- **2026-11-02 (day):** M6.3 Stripe ([#158](https://github.com/techaust/techaust_platform/pull/158)) approved after the owner's two sandbox payments; the staging fixes ([#160](https://github.com/techaust/techaust_platform/pull/160): a proforma's online payment counted once; every PDF layout checked); the record ([#162](https://github.com/techaust/techaust_platform/pull/162)).
-- **2026-11-02 (evening) to 2026-11-03 (night):**
-  - **M6.4 PayPal (sandbox) merged** ([#164](https://github.com/techaust/techaust_platform/pull/164); [run file](runs/m6.4-paypal.md); Tier A): Step 0 (PayPal docs re-read), early checks 1 and 2 (CHANGE, fixed), builders B1–B5, designer ×3, review part 1 (SEND BACK: one high, `not_final` captures, fixed), part 2 (APPROVE), final re-check (APPROVE). The owner's hosted steps H1–H4 done the same evening. **Awaits the owner's sandbox payment and approval.**
-  - **The fourth admin Worker's plan** merged ([#163](https://github.com/techaust/techaust_platform/pull/163); [run file](runs/admin-split-plan.md)), written by a cloud session ([run record](runs/cloud-parallel-2026-11-02.md)); the owner answered its Q1–Q3.
-  - **M6.5 prepared:** Step 0 against M6.4 and the split; 08-C RA-39 to RA-41, RB-21 (b) and RB-43 settled for receipts and refunds; 07-ZO drafted (on `feat/m6.5-receipts-refunds`).
-- **Verified:** M6.4's tip: `pnpm check` and `pnpm test` exit 0 (admin 4,403, portal 782, jobs 641, web 896, core 2,323, db 824, pdf 404); CI green on #163 and #164.
+- **2026-11-02 (day):** M6.3 Stripe ([#158](https://github.com/techaust/techaust_platform/pull/158)) approved; the staging fixes ([#160](https://github.com/techaust/techaust_platform/pull/160)); the record ([#162](https://github.com/techaust/techaust_platform/pull/162)).
+- **2026-11-02 (evening) to 2026-11-03 (night), on staging, awaiting the owner's approval:**
+  - **M6.4 PayPal (sandbox)** ([#164](https://github.com/techaust/techaust_platform/pull/164); [run file](runs/m6.4-paypal.md); Tier A; reviews APPROVE). The owner's hosted steps H1–H4 done. **Awaits the owner's sandbox payment and approval.**
+  - **The fourth admin Worker "admin invoices"** ([#166](https://github.com/techaust/techaust_platform/pull/166); [run file](runs/admin-split-plan.md); Tier B): early check GO (7 findings fixed by B2), review APPROVE; CI green and the seven-step staging deploy with health checks succeeded (run 41551018403); no rollback needed. **Awaits the owner's approval.**
+  - The record of the night before ([#165](https://github.com/techaust/techaust_platform/pull/165)).
 
 ## In progress
-- **The fourth admin Worker** (`feat/admin-invoices-worker`; Tier B): builder B1 running (the cut, the advance RPC, configs incl. `deploy-staging.yml` in the owner's Q1 order); then the analyst's early check, B2, the reviewer, the PR (it merges itself and deploys; rollback allowed, Q2 A).
-- **M6.5 receipts, refunds and reconciliation** (`feat/m6.5-receipts-refunds`; Tier A): builds after the split; its PR is held for the owner's copy (07-ZO) and hosted steps (H1–H3).
-- Side worktrees: `../m64-lead` (now holding `feat/admin-invoices-worker`), `../m65-lead` (M6.5), `../rec-lead` (this record).
+- **M6.5 receipts, refunds and reconciliation** (`feat/m6.5-receipts-refunds`, side worktree `../m65-lead`; [run file](runs/m6.5-receipts-refunds.md) on that branch; Tier A):
+  - done: Step 0, 08-C n1–n5 settled, builder B1 (packages), early check 1 (CHANGE, 13 findings fixed by B2), B2 (apps, routes, jobs, portal), early check 2 (CHANGE, 10 findings incl. one high "money out twice", fixed by B3), B3, the designer (every screen, the receipt PDF and email; axe 0; screenshots in `.logs/m6.5-design/`);
+  - running: builder B4 (refund wait times from `lastAttemptAt`, the client filter for "Refund in progress", the refunds register CSV, EDF `edf-v2`, the receipt email's closing line behind the copy switch);
+  - next: the reviewer (code and live visual), fixes, re-check, then the PR, **held** (no auto-merge) for the owner's 07-ZO copy and the hosted steps H1–H3.
+  - Last full run (the designer's head 1415a983): every package passes (admin 4,611, jobs 650, portal 788, pdf 415 with branch coverage 90.87 %, core 2,384, db 874, web 930); `pnpm check` exit 0; Worker bytes: front 112,849, API 494,285, finance 398,559, invoices 533,774, portal 124,946, jobs 766,636.
 
 ## Next
-1. **Owner, morning:** one sandbox PayPal payment on staging (steps below), then approve M6.4 (and the fourth admin Worker once it is on staging).
-2. The fourth admin Worker to staging; then M6.5 (B1 on data and core can start once the split lands).
-3. **The CPU decision (owner, before launch):** the staging readings after the PayPal payment join M6.3's (webhook 16 ms cold, settle 15–16 ms, sends 10–14 ms, queue jobs up to 21 ms; local PayPal first calls 2.8–3.7 ms after the warm-ups). The $5 Workers Paid plan removes the risk.
+1. **Owner, morning:** the sandbox PayPal payment (steps below), then approve M6.4 and the fourth admin Worker (both on staging); the 07-ZO copy page; H1–H3.
+2. M6.5's review and PR; after the owner's copy and H1–H3, the PR merges and the lead records real sandbox refund payloads on staging before M6.5's approval.
+3. **The CPU decision (owner, before launch):** M6.3's staging readings (webhook 16 ms cold, settle 15–16 ms, sends 10–14 ms, queue jobs up to 21 ms) plus PayPal's after the payment. The $5 Workers Paid plan removes the risk.
 4. M7.1–M7.5, the audit of M6–M7, then **Phase 7 all at once**.
 
-**Usage:** about 75 % of the 5-hour window at 03:20 IST (resets 04:00 IST). Pacing (13): no new agent over 85 %.
+**Usage:** 15 % of the 5-hour window at 10:00 IST (resets about 14:00 IST). Pacing (13): no new agent over 85 %.
 
 ## Waits on the owner
-- **Morning, M6.4:** one sandbox PayPal payment on staging: open a USD export invoice of a test client in the portal → "Pay with PayPal" → pay with the sandbox **Personal** account (its password from developer.paypal.com › Testing Tools › Sandbox Accounts; never in chat) → back on the invoice: "Paid by PayPal on {date}". The lead then checks the facts only PayPal can show (the capture's `custom_id`, the country fields, `receivable_amount`, the return's `token`, PayPal reaching `workers.dev`) and reads the staging CPU. Then **approve M6.4**.
-- **Morning, copy (one page):** 07-ZO client lines 1–16 for M6.5 (receipt PDF, receipt email, portal receipts and refunds; recommended: approve as drafted), and one M6.2 line: hide "How to pay" (bank transfer) while a PayPal or card payment is being processed (recommended; no new wording).
-- **At M6.5's second builder round (hosted, click by click from the lead):** H1 the Stripe restricted key gains Refunds Write (and Disputes Read); H2 Razorpay webhook events `refund.created`, `refund.processed`, `refund.failed`; H3 Stripe events `charge.refunded`, `refund.updated`, `refund.failed`, `charge.dispute.created`, `charge.dispute.closed`.
+- **Morning, M6.4:** one sandbox PayPal payment on staging: open a USD export invoice of a test client in the portal → "Pay with PayPal" → pay with the sandbox **Personal** account (its password from developer.paypal.com › Testing Tools › Sandbox Accounts; never in chat) → back on the invoice: "Paid by PayPal on {date}". The lead then checks the facts only PayPal can show and reads the staging CPU. Then **approve M6.4** and **the fourth admin Worker** (#166: nothing to click; the admin works as before).
+- **Morning, copy (one page):** 07-ZO client lines 1–18 incl. 12b for M6.5 (receipt PDF, receipt email and its closing line, portal receipts and refunds, the statement's "Refund"; recommended: approve as drafted), and one M6.2 line: hide "How to pay" (bank transfer) while a PayPal or card payment is being processed (recommended; no new wording).
+- **Hosted, for M6.5 (click by click from the lead):** H1 the Stripe restricted key gains Refunds Write and Disputes Read; H2 Razorpay webhook events `refund.created`, `refund.processed`, `refund.failed`; H3 Stripe events `refund.created`, `refund.updated`, `refund.failed`, `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`.
+- **Told (lead decisions under the night instruction, 13):** a lost dispute reopens the invoice with what is owed (L40); the receipt email goes at once (L41); a PayPal refund is re-sent only within its first hour, then it waits for the Owner's look (L42).
 - **Optional, worth it:** a one-off CA view on 08-C RA-36/RA-41 (overpayment credit as an advance); the AD bank's written word on its FEMA Reg. 6 reduction procedure before the first export refund (RB-43).
-- **Turn on Auto-fix** for #163 and #164 is no longer needed (both merged); for later PRs the app may again refuse it for this session (the owner can, from the PR bar).
-- **Staging data for invoicing:** labelled sample bank details with SWIFT, the Udyam number and category (Settings › Company). **Look at a fresh PDF on staging** (issue a small test invoice and download it).
+- **Staging data for invoicing:** labelled sample bank details with SWIFT, the Udyam number and category (Settings › Company). **Look at a fresh PDF on staging.**
 - **Start early (the lead gives click-by-click steps when each comes up):** SES production access and a production IAM user; the AWS backup bucket (and for T5 the S3 bucket in Mumbai), after signing the AWS MCP in to the TecHaust account; website inputs (headshot, bio facts, the email aliases incl. `privacy@` and `security@`, the launch date, the company LinkedIn page, Cal.com link, 2–3 case-study briefs, one social handle per platform, the 3 blog drafts).
 - **Zoho:** create or confirm the `billing@`, `hello` and `no-reply` aliases (the owner will do it later; "guide me through Zoho").
-- **Dated duties** (steps in [settle-08c](runs/settle-08c.md)): **by 13 November** the October IFF if an October credit note relies on it; **before the next export invoice** the FY 2026-27 LUT (ARN in Settings › Tax); **by 30 November** the October EDF if any export invoice was raised in October; **monthly** reverse charge on foreign services; **every April** the turnover check; **once** the Offline Tool test import, the CERT-In point of contact, the trademark search (classes 9, 35, 42). New with M6.5: before any export refund, the Reg. 6 request to the bank (RB-43); each quarter end, overpayment credits refunded, used or declared in Table 11A (RA-41).
+- **Dated duties** (steps in [settle-08c](runs/settle-08c.md)): **by 13 November** the October IFF if an October credit note relies on it; **before the next export invoice** the FY 2026-27 LUT (ARN in Settings › Tax); **by 30 November** the October EDF if any export invoice was raised in October; **monthly** reverse charge on foreign services; **every April** the turnover check; **once** the Offline Tool test import, the CERT-In point of contact, the trademark search (classes 9, 35, 42). With M6.5: before any export refund, the Reg. 6 request to the bank (RB-43); each quarter end, overpayment credits refunded, used or declared in Table 11A (RA-41).
 - **Renewals:** the staging SES key `techaust-ses-sender-staging` by **2027-01-21**; Access tokens `staging-cpu-benchmark` by 2027-10-17 and `staging-deploy-check` by 2027-10-30.
 - **Not blocking:** upload the social kit; "since 2019" against the GST registration date; wallpapers; printed brand proof and Pantone; business-card phone number; Argon2id timing on a phone; a one-off lawyer review of the deed of assignment someday; a CA's one-off opinion before the first live card receipt (08-C RA-38).
 - **Model menu:** Opus 5.5, high, for every conversation.
 
 ## Open follow-ups
+- **2026-11-03, new (the fourth admin Worker, [run file](runs/admin-split-plan.md)):** the `finance-rpc.ts` warm fixture gets a made-up PayPal token and joins the secret-shape scan; a `BillingJobs` start-up dry run if `care.bill` reads hot on staging; staging cold readings of `GatewayAdvance` and the moved invoice routes; Phase 7: production creates the invoices Worker before the front, finance and jobs that bind it (runbook).
+- **2026-11-03, new (M6.5, so far; the run file's own list lands with its PR):** record real sandbox refund, dispute and settlement payloads on staging after H1–H3 and pin the readers to them, before M6.5's approval; a chargeback spread over two invoices; a bounded realisation scan; a maintained credit figure in place of the computed one; the credit-note dialog's reason not prefilled from the refund dialog (kept: the dialog names it).
 - **2026-11-03, new (M6.4, [run file](runs/m6.4-paypal.md) "Follow-ups (for 12)"):**
   - **Owner's staging run:** the PayPal facts above; then make the return's `token` required (review 1 finding 6); staging cold CPU of the capture RPC and the hook.
   - **Phase 7:** PayPal cert hosts tied to the mode; the live token and cert hosts; Table 11A/11B and refund-voucher documents for overpayment credit before the first live payment (08-C RA-41).
