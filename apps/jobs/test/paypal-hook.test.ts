@@ -351,6 +351,33 @@ describe("POST /paypal [JOB-HOOK-01..03, L1, L13]", () => {
   });
 });
 
+describe("the certificate fetch in the Workers runtime (staging, 2026-11-03)", () => {
+  it("asks with a redirect mode workerd accepts, and a redirect answer is refused, never followed", async () => {
+    resetPayPalCertCache();
+    const inits: RequestInit[] = [];
+    const f = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      inits.push(init ?? {});
+      // workerd's own Request refuses a redirect mode it doesn't implement ("error"), as its fetch does
+      new Request(String(input), init);
+      return new Response(null, { status: 302, headers: { location: "https://example.test/elsewhere" } });
+    }) as typeof fetch;
+    expect(await certKeyFor(CERT_URL, Date.now(), f)).toBeNull();
+    expect(inits).toHaveLength(1);
+    expect(inits[0]?.redirect).toBe("manual");
+  });
+
+  it('no Worker source asks fetch for redirect "error"', async () => {
+    const src = import.meta.glob("../src/**/*.ts", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    }) as Record<string, string>;
+    expect(Object.keys(src).length).toBeGreaterThan(10);
+    for (const [file, text] of Object.entries(src))
+      expect(/redirect:\s*"error"/.test(text), file).toBe(false);
+  });
+});
+
 describe("the certificate cache [B2 must carry 4]", () => {
   it("a second request makes no fetch; the key is dropped at the certificate's notAfter; a failed URL waits 10 minutes; at most 2 fetches a minute", async () => {
     const cf = certFetch();

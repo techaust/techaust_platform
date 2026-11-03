@@ -82,7 +82,9 @@ export function resetPayPalCertCache(): void {
 async function fetchPem(url: string, f: typeof fetch): Promise<string | null> {
   let res: Response;
   try {
-    res = await f(url, { method: "GET", signal: AbortSignal.timeout(CERT_TIMEOUT_MS), redirect: "error" });
+    // `manual`, never `error`: the Workers runtime refuses the redirect mode "error" with a TypeError (staging, 2026-11-03: every certificate fetch failed, so every
+    // PayPal webhook was answered 503). A redirect comes back as a 3xx, which the status check below refuses.
+    res = await f(url, { method: "GET", signal: AbortSignal.timeout(CERT_TIMEOUT_MS), redirect: "manual" });
   } catch {
     return null;
   }
