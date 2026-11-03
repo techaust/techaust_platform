@@ -26,6 +26,9 @@ Status: **DRAFT, waiting for the owner** (one page at build time, owner 2026-11-
 15. The receipts list heading: "Receipts"
 16. A row of the list: "Receipt {number}: {amount} received on {date}"
 
+### The statement of account
+17. A refund line: "Refund" (the refund's reference beside it, as for payments)
+
 **Recommended, no line needed:** clients see a refund only once it has gone through (line 14), so there is no "refund in progress" line.
 
 ## Staff lines (lead under delegation)
