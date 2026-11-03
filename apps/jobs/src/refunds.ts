@@ -12,7 +12,7 @@ import {
 } from "@techaust/core";
 import { uuidv7 } from "@techaust/core/ids";
 import { reviewBellStatement, reviewItemStatement } from "@techaust/db/gateway";
-import { REFUNDS_IDLE_SQL } from "@techaust/db/refunds";
+import { REFUNDS_IDLE_SQL, refundItemOnceGuard } from "@techaust/db/refunds";
 import { type GatewayVerdict, gatewayRetryDelay, REVIEW_LINK } from "./gateway.ts";
 import { adminGateway } from "./gateway-rpc.ts";
 import { logEvent } from "./log.ts";
@@ -95,22 +95,26 @@ export async function processRefundDeadLetter(
       : null;
     if (row && (row.status === "requested" || row.status === "processing") && row.provider !== "manual") {
       const reviewId = uuidv7();
+      // Early check 2, finding 2: once per refund (the item's own guard, shared with the finance Worker's tenth check and L42); the bell only with a new item.
       await env.DB.batch([
-        reviewItemStatement(env.DB, {
-          id: reviewId,
-          source: "dlq",
-          provider: row.provider as "razorpay" | "stripe" | "paypal",
-          kind: "refund_stuck",
-          webhookEventId: null,
-          paymentId: row.payment_id,
-          documentId: row.document_id,
-          clientId: row.client_id,
-          amountMinor: row.amount_minor,
-          currency: row.currency,
-          facts: { linkId: "", refundId: row.id },
-          now,
-          onceOpenForLink: null,
-        }),
+        reviewItemStatement(
+          env.DB,
+          {
+            id: reviewId,
+            source: "dlq",
+            provider: row.provider as "razorpay" | "stripe" | "paypal",
+            kind: "refund_stuck",
+            webhookEventId: null,
+            paymentId: row.payment_id,
+            documentId: row.document_id,
+            clientId: row.client_id,
+            amountMinor: row.amount_minor,
+            currency: row.currency,
+            facts: { linkId: "", refundId: row.id },
+            now,
+          },
+          refundItemOnceGuard({ paymentId: row.payment_id, refundId: row.id, kind: "refund_stuck" }),
+        ),
         reviewBellStatement(env.DB, { reviewId, title: REFUND_STUCK_BELL, link: REVIEW_LINK }),
       ]);
     }

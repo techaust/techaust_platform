@@ -36,7 +36,21 @@ import { type AppEnv, actor, BAD_REQUEST, err, FORBIDDEN, mutate, NOT_FOUND } fr
 import { refundGwOf } from "./gateway/refund-gw.ts";
 import { body, idParam, param, query, STALE_VERSION } from "./http.ts";
 import { decodeCursor, encodeCursor } from "./keyset.ts";
-import { applyGatewayRefund, checkRefund, readRefund } from "./refund-flow.ts";
+import {
+  creditNoteFactsOf,
+  creditRefundFactsOf,
+  DEADLINE_DOC_COLUMNS,
+  type DeadlineDoc,
+  taxOf,
+} from "./refund-facts.ts";
+import {
+  applyGatewayRefund,
+  checkRefund,
+  readRefund,
+  refundIdleAt,
+  retryAfterSeconds,
+} from "./refund-flow.ts";
+import type { StoredSetting } from "./settings-cache.ts";
 
 /** The refusals the dialog explains (staff lines in the run file; the codes are the API's). */
 const E = (code: string, message: string) => ({ code, message });
@@ -78,7 +92,19 @@ const REFUSALS = {
   gateway_error: E("gateway_error", "The gateway didn't answer. Try again"),
   refund_found: E("refund_found", "The gateway already has this refund"),
   not_cancellable: E("not_cancellable", "Only a refund the gateway never received can be cancelled"),
+  // L44 (early check 2, finding 1b; builder's draft for the lead, staff-only): the screen disables the buttons for `retryAfterS`.
+  too_soon: E("too_soon", "The gateway may still be answering. Try again in a few minutes"),
+  // Early check 2, finding 6 (builder's draft for the lead, staff-only): a refund recorded as made in the gateway must be there, on this payment, for this amount.
+  outside_not_at_gateway: E(
+    "outside_not_at_gateway",
+    "The gateway shows no completed refund with that id for this payment and amount",
+  ),
 } as const;
+
+const isOpen = (r: { status: string }) => r.status === "requested" || r.status === "processing";
+/** 409 `too_soon` with the seconds until the refund is idle (L44). */
+const tooSoon = (c: Parameters<typeof err>[0], r: Parameters<typeof retryAfterSeconds>[0], now: number) =>
+  err(c, REFUSALS.too_soon, 409, { retryAfterS: retryAfterSeconds(r, now) });
 
 /** The payment as the refund reads it (one row), with its client, what it holds net, its refunds that have not failed and whether one is open. */
 const PAYMENT_SQL = `SELECT p.id, p.client_id, p.kind, p.status, p.provider, p.currency, p.amount_minor, p.received_on, p.provider_payment_id, p.checkout_id,
@@ -88,8 +114,9 @@ const PAYMENT_SQL = `SELECT p.id, p.client_id, p.kind, p.status, p.provider, p.c
    FROM payments p JOIN clients k ON k.id = p.client_id WHERE p.id = ?1`;
 /** The invoice a refund draws on, with what THIS payment holds there (`?2`). */
 const DOC_SQL = `SELECT d.id, d.client_id, d.currency, d.type, d.status, d.frozen_at, d.total_minor, d.paid_minor, d.credited_minor, d.tds_minor, d.updated_at,
-     json_extract(d.header_extras, '$.advance') IS NOT NULL AS is_advance, ${paymentNetSql("?2", "d.id")} AS holding
+     json_extract(d.header_extras, '$.advance') IS NOT NULL AS is_advance, ${paymentNetSql("?2", "d.id")} AS holding, ${DEADLINE_DOC_COLUMNS}
    FROM documents d WHERE d.id = ?1`;
+const TAX_SQL = "SELECT value, version FROM settings WHERE key = 'tax'";
 
 type PayRow = {
   id: string;
@@ -123,9 +150,36 @@ type DocRow = {
   updated_at: number;
   is_advance: number;
   holding: number;
-};
+} & DeadlineDoc;
+
+/**
+ * Lead's answer to B2 Q3: the tax facts the refund dialog shows, as codes and days (refund-facts.ts): RA-41 for a refund from credit (the credit may be an
+ * advance, refunded in a later GSTR-3B period), RA-40 for an invoice whose excess a refund draws on (the credit note's last day and whether one is still possible).
+ */
+function refundFacts(
+  p: Pick<PayRow, "currency" | "amount_minor" | "net" | "refunded" | "received_on">,
+  d: DocRow | undefined,
+  taxRow: StoredSetting | undefined,
+  today: string,
+) {
+  const tax = taxOf(taxRow);
+  return {
+    ra41: creditRefundFactsOf(
+      {
+        currency: p.currency,
+        freeMinor: Math.max(0, p.amount_minor - p.net - p.refunded),
+        netMinor: p.net,
+        receivedOn: p.received_on,
+      },
+      tax,
+      today,
+    ),
+    creditNote: d ? creditNoteFactsOf(d, tax, today) : null,
+  };
+}
 
 const istDay = (now: number) => toIsoDate(istDate(now));
+const factsQuery = z.object({ documentId: z.optional(z.string().check(z.minLength(1), z.maxLength(64))) });
 const listQuery = z.object({
   status: z.optional(z.enum(["requested", "processing", "succeeded", "failed"])),
   cursor: z.optional(z.string().check(z.maxLength(200))),
@@ -157,14 +211,28 @@ const view = (r: NonNullable<Awaited<ReturnType<typeof readRefund>>>) => ({
 });
 
 export const refunds = new Hono<AppEnv>()
-  .get("/:id/refunds", param(idParam), async (c) => {
+  // A payment's refunds, and the facts the refund dialog shows (`facts`: RA-41 for its credit; RA-40 for `?documentId`, the invoice the refund would draw on).
+  .get("/:id/refunds", param(idParam), query(factsQuery), async (c) => {
     const { id } = c.req.valid("param");
-    const rows = (
-      await c.env.DB.prepare(PAYMENT_REFUNDS_SQL)
-        .bind(id)
-        .all<NonNullable<Awaited<ReturnType<typeof readRefund>>>>()
-    ).results;
-    return c.json({ items: rows.map(view) });
+    const q = c.req.valid("query");
+    const db = c.env.DB;
+    const [refundsR, payR, docR, taxR] = await db.batch([
+      db.prepare(PAYMENT_REFUNDS_SQL).bind(id),
+      db.prepare(PAYMENT_SQL).bind(id),
+      db.prepare(DOC_SQL).bind(q.documentId ?? "", id),
+      db.prepare(TAX_SQL),
+    ]);
+    const p = payR?.results[0] as PayRow | undefined;
+    const d = q.documentId ? (docR?.results[0] as DocRow | undefined) : undefined;
+    // another client's invoice is no fact of this payment's
+    const doc = d && p && d.client_id === p.client_id ? d : undefined;
+    const rows = (refundsR?.results ?? []) as NonNullable<Awaited<ReturnType<typeof readRefund>>>[];
+    return c.json({
+      items: rows.map(view),
+      facts: p
+        ? refundFacts(p, doc, taxR?.results[0] as StoredSetting | undefined, istDay(Date.now()))
+        : null,
+    });
   })
   .post("/:id/refunds", param(idParam), body(refundBody), async (c) => {
     const { id } = c.req.valid("param");
@@ -173,10 +241,11 @@ export const refunds = new Hono<AppEnv>()
     const db = c.env.DB;
     const now = Date.now();
     const today = istDay(now);
-    const [payR, docR, exR] = await db.batch([
+    const [payR, docR, exR, taxR] = await db.batch([
       db.prepare(PAYMENT_SQL).bind(id),
       db.prepare(DOC_SQL).bind(f.documentId ?? "", id),
       db.prepare("SELECT id, payment_id FROM payment_refunds WHERE id = ?1").bind(f.id),
+      db.prepare(TAX_SQL),
     ]);
     const p = payR?.results[0] as PayRow | undefined;
     if (!p) return err(c, NOT_FOUND, 404);
@@ -192,6 +261,8 @@ export const refunds = new Hono<AppEnv>()
     if (f.documentId && !d) return err(c, REFUSALS.document_mismatch, 409);
     if (d && f.expectedUpdatedAt !== undefined && f.expectedUpdatedAt !== d.updated_at)
       return err(c, STALE_VERSION, 409);
+    // B2 Q3: the RA-40 and RA-41 facts, from the payment and the invoice as read BEFORE this refund (what the dialog showed).
+    const facts = refundFacts(p, d, taxR?.results[0] as StoredSetting | undefined, today);
     const way = f.manual ? "manual" : f.outside ? "outside" : "gateway";
     const plan = planRefund({
       payment: {
@@ -244,6 +315,19 @@ export const refunds = new Hono<AppEnv>()
           ...(plan.holdingMinor === undefined ? {} : { holdingMinor: plan.holdingMinor }),
           ...(plan.excessMinor === undefined ? {} : { excessMinor: plan.excessMinor }),
           ...(plan.noteReason ? { noteReason: plan.noteReason } : {}),
+          // RA-40: the credit note this refund needs first, with its last day (`open: false`: none is possible any more).
+          // (`details` are flat values: the same facts as `facts.creditNote` of `GET /payments/:id/refunds?documentId=`, prefixed.)
+          ...(plan.code === "credit_note_needed" && facts.creditNote
+            ? {
+                creditNoteLastDay: facts.creditNote.lastDay,
+                creditNoteOpen: facts.creditNote.open,
+                creditNoteSupplyFy: facts.creditNote.supplyFy,
+                creditNoteBasis: facts.creditNote.basis,
+                creditNotePeriod: facts.creditNote.period,
+                creditNoteReturnBy: facts.creditNote.returnBy,
+                creditNoteWarnFrom: facts.creditNote.deadlineWarnFrom,
+              }
+            : {}),
         },
       );
     }
@@ -263,6 +347,29 @@ export const refunds = new Hono<AppEnv>()
       // PayPal can't refund a capture it still holds (Step 0, part 2 item 6).
       if (p.provider === "paypal" && p.checkout_status === "capture_pending")
         return err(c, REFUSALS.capture_pending, 409);
+    }
+    // Early check 2, finding 6: a refund recorded as made in the gateway's dashboard (origin `outside`) must be there: the same payment, the same amount,
+    // completed. Checked whenever the gateway is set up and not blocked (a live key with the flag false is never called); a lost dispute (`chargeback`) is
+    // recorded as entered (its id is the dispute's, not a refund's).
+    if (f.outside?.origin === "outside" && p.provider !== "manual" && p.provider_payment_id) {
+      const og = await refundGwOf(c.env, p.provider);
+      if (og && !og.blocked) {
+        const seen = await og.find({
+          paymentRef: p.provider_payment_id,
+          refundId: f.id,
+          refundRef: f.outside.providerRefundId,
+        });
+        if (!seen.ok) return err(c, REFUSALS.gateway_error, 502);
+        const v = seen.value === "unknown" ? null : seen.value;
+        if (
+          v === null ||
+          v.state !== "processed" ||
+          v.amountMinor !== f.amountMinor ||
+          v.currency !== p.currency ||
+          (v.paymentRef !== null && v.paymentRef !== p.provider_payment_id)
+        )
+          return err(c, REFUSALS.outside_not_at_gateway, 409);
+      }
     }
     let referenceNorm: string | null = null;
     if (f.manual) {
@@ -338,7 +445,7 @@ export const refunds = new Hono<AppEnv>()
     }
     if (way !== "gateway" || !gw || !p.provider_payment_id) {
       const r = await readRefund(db, f.id);
-      return c.json({ refund: r ? view(r) : null });
+      return c.json({ refund: r ? view(r) : null, facts });
     }
     // (3) the gateway, with our id as its idempotency key; then batch 2 by its answer.
     const answer = await gw.create({
@@ -352,7 +459,7 @@ export const refunds = new Hono<AppEnv>()
     if (answer.ok) {
       await applyGatewayRefund(c.env, row, answer.value, Date.now());
       const r = await readRefund(db, f.id);
-      return c.json({ refund: r ? view(r) : null });
+      return c.json({ refund: r ? view(r) : null, facts });
     }
     if (answer.code === "refused" || answer.code === "not_found") {
       const code = `refused_${answer.status ?? 400}`;
@@ -373,7 +480,7 @@ export const refunds = new Hono<AppEnv>()
       return err(c, REFUSALS.gateway_refused, 502, { code });
     }
     // A network failure or an unreadable answer: the row stays `requested` and the sweep (or "Try again") finds it by our id (C step 4).
-    return c.json({ refund: view(row), status: "requested" }, 202);
+    return c.json({ refund: view(row), status: "requested", facts }, 202);
   });
 
 /** `/refunds`: the Refunds tab, "Try again" and Cancel. */
@@ -403,9 +510,13 @@ export const refundsTab = new Hono<AppEnv>()
     const { id } = c.req.valid("param");
     const before = await readRefund(c.env.DB, id);
     if (!before) return err(c, NOT_FOUND, 404);
-    const checked = await checkRefund(c.env, id, Date.now(), { repost: true });
+    const now = Date.now();
+    // L44 (early check 2, finding 1b): "Try again" waits until the refund is idle (its request and its last check both REFUND_SWEEP_IDLE_MS old).
+    if (isOpen(before) && now < refundIdleAt(before)) return tooSoon(c, before, now);
+    const checked = await checkRefund(c.env, id, now, { repost: true });
     if (checked.result === "unavailable") return err(c, REFUSALS.gateway_unavailable, 503);
     if (checked.result === "live_not_allowed") return err(c, REFUSALS.live_not_allowed, 503);
+    if (checked.result === "too_soon") return tooSoon(c, before, now);
     // One audit row for the Owner's "Try again" (the move itself, if any, has the system's).
     await mutate(c, {
       action: "refund.retry",
@@ -423,6 +534,9 @@ export const refundsTab = new Hono<AppEnv>()
     if (!row) return err(c, NOT_FOUND, 404);
     if (row.status !== "requested" || row.provider_refund_id !== null)
       return err(c, REFUSALS.not_cancellable, 409);
+    // L44 (finding 1b): a cancel waits as a re-post does, so a request still on its way is never cancelled under it.
+    const now = Date.now();
+    if (now < refundIdleAt(row)) return tooSoon(c, row, now);
     if (row.provider !== "manual" && row.provider_payment_id) {
       const gw = await refundGwOf(c.env, row.provider);
       if (!gw || gw.blocked === "unconfigured") return err(c, REFUSALS.gateway_unavailable, 503);

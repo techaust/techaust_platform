@@ -9,22 +9,22 @@ export const FRONT_WARM: WarmFixture = {
   calls: [
     { method: "GET", path: "/health" },
     { method: "GET", path: "/auth/me" },
-    { method: "POST", path: "/auth/salt", body: { email: "probe-mw003jd3@example.test" } },
+    { method: "POST", path: "/auth/salt", body: { email: "probe-mw035mgf@example.test" } },
     {
       method: "POST",
       path: "/auth/login",
       body: {
-        email: "probe-mw003jd3@example.test",
-        clientHash: "Lm2tv-U57E5z1hUrtfktR393gKvKI70z0HRTAQj24ng",
+        email: "probe-mw035mgf@example.test",
+        clientHash: "DedwhulBjav7ApnQpT_Tokri-gvsJ0A1D4k25FgGtII",
       },
     },
-    { method: "GET", path: "/invoices/01a19efe-06d6-7141-8034-8ef28dad700b" },
+    { method: "GET", path: "/invoices/01a19f4c-6616-7331-bc48-717bb2d7f589" },
     {
       method: "POST",
-      path: "/invoices/01a19efe-07cd-7bd4-9c6e-30aa7b227078/issue",
+      path: "/invoices/01a19f4c-670e-79d2-9a7b-aa38eebb4a74/issue",
       body: {
-        expectedUpdatedAt: 1793668810701,
-        expectedContentSha256: "7d3dba199fa55f252ea3ce1f42eef4ba846ee4238a2942b95fa619028e29bf6c",
+        expectedUpdatedAt: 1793673946894,
+        expectedContentSha256: "9a411b0fb9150b2e9c604796f56bc0c9ee74f0152e83d0f50cb9f850e8514ec0",
       },
     },
     { method: "GET", path: "/notifications" },
@@ -37,14 +37,14 @@ export const FRONT_WARM: WarmFixture = {
       {
         r: [
           {
-            last_seen_at: 1793668812853,
+            last_seen_at: 1793673951043,
             idle_expires_at: 4102444800000,
             abs_expires_at: 4102444800000,
             revoked_at: null,
             step_up_until: 4102444800000,
-            id: "01a19efe-04ff-7d79-9b47-119810ac52c8",
+            id: "01a19f4c-6426-77fc-a977-888c34ec170c",
             name: "Probe Owner (sample)",
-            email: "probe-mw003jd3@example.test",
+            email: "probe-mw035mgf@example.test",
             role: "owner",
           },
         ],
@@ -54,7 +54,7 @@ export const FRONT_WARM: WarmFixture = {
     "2ca61060": [
       {
         r: [
-          { status: "active", pw_salt: "xkgT1R_Zonkma6H4bJPsIQ", pw_params: '{"v":1,"m":19456,"t":2,"p":1}' },
+          { status: "active", pw_salt: "FfVR5OKty4BOVHb1H8muKg", pw_params: '{"v":1,"m":19456,"t":2,"p":1}' },
         ],
         c: 0,
       },
@@ -65,12 +65,12 @@ export const FRONT_WARM: WarmFixture = {
       {
         r: [
           {
-            id: "01a19efe-04ff-7d79-9b47-119810ac52c8",
+            id: "01a19f4c-6426-77fc-a977-888c34ec170c",
             status: "active",
             role: "owner",
-            pw_salt: "xkgT1R_Zonkma6H4bJPsIQ",
-            pw_hmac: "hQpeZ8GcUsQKg9eUWhkw3hFYpdIDMRgYCYw19WtBlHg",
-            totp_enabled_at: 1793668810003,
+            pw_salt: "FfVR5OKty4BOVHb1H8muKg",
+            pw_hmac: "z4psaAOcPROoIs6FRx7QToKPrdd3qxplnOGgmXWZ2GU",
+            totp_enabled_at: 1793673946213,
           },
         ],
         c: 0,

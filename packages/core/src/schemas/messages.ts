@@ -337,7 +337,7 @@ export type RefundMessage = RefundCheckMessage | RefundSweepMessage | ReconFetch
 export const REFUND_KINDS = ["refund.check", "refund.sweep", "recon.fetch"] as const;
 /** The most `refund.check` one sweep queues, and how long a refund stays idle before the sweep re-checks it. */
 export const REFUND_SWEEP_MAX = 20;
-export const REFUND_SWEEP_IDLE_MS = 15 * 60_000;
+export { REFUND_SWEEP_IDLE_MS } from "../gateway-rpc.ts";
 /** True for a body of the M6.5 refund family (valid or not), so a malformed one can never become a lead. */
 export const isRefundKind = (body: unknown): body is { kind: RefundMessage["kind"] } =>
   typeof body === "object" &&

@@ -64,6 +64,17 @@ export interface GatewayEventsApi {
 
 /** How many times `checkRefund` tries a refund before it opens a `refund_stuck` review item. */
 export const REFUND_CHECK_MAX_ATTEMPTS = 10;
+/**
+ * How long a refund stays idle before the sweep re-checks it, and (L44, early check 2 finding 1b) how long after both its request and its last check a refund
+ * may be posted to its gateway again or cancelled: an answer still on its way can't be overtaken. Here (no zod) so the admin finance Worker reads it too; the
+ * queue-message schemas re-export it.
+ */
+export const REFUND_SWEEP_IDLE_MS = 15 * 60_000;
+/**
+ * L42 (early check 2, finding 1d): while PayPal's retention of a `PayPal-Request-Id` is UNCONFIRMED (P2), a PayPal refund is posted again only while its first
+ * request is under this old; after that it becomes a `refund_stuck` review item (the Owner checks PayPal and records it).
+ */
+export const PAYPAL_REPOST_MAX_AGE_MS = 60 * 60_000;
 
 export const CHECK_REFUND_RESULTS = [
   "succeeded",
@@ -99,6 +110,8 @@ export const FETCH_SETTLEMENTS_RESULTS = [
   "too_soon",
   "retry",
   "live_not_allowed",
+  // Early check 2, finding 10: Razorpay has no key here; nothing to fetch, the message is acknowledged (never retried into the dead-letter queue daily).
+  "unconfigured",
 ] as const;
 export type FetchSettlementsResult = {
   readonly result: (typeof FETCH_SETTLEMENTS_RESULTS)[number];

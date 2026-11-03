@@ -57,7 +57,8 @@ export async function fetchSettlements(
   const q = reconQueryOf(a.day, a.skip);
   if (!q) return { result: "retry" };
   const api = razorpayOf(env, await gatewayModeOf(env.DB));
-  if (!api || api.blocked === "unconfigured") return { result: "retry" };
+  // Early check 2, finding 10: no Razorpay key here is not a failure to retry (the jobs Worker acknowledges it).
+  if (!api || api.blocked === "unconfigured") return { result: "unconfigured" };
   if (api.blocked === "live_not_allowed") return { result: "live_not_allowed" };
   const r = await api.fetchRecon(q);
   if (!r.ok) return { result: "retry" };

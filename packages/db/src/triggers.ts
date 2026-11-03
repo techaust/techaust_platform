@@ -1799,6 +1799,8 @@ export const REVIEW_KINDS_0070 = [
   "refund_stuck",
   "dispute_opened",
   "dispute_closed",
+  // Early check 2, finding 1c (L43; 0070 was unapplied anywhere when it was added): a refund marked failed that the gateway shows as made or pending.
+  "refund_after_failed",
 ] as const;
 /** M6.5: the refund table's lists as 0070 holds them (pinned; a db test compares them with the schema's). */
 export const REFUND_PROVIDERS_0070 = ["manual", "razorpay", "stripe", "paypal"] as const;

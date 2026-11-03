@@ -96,6 +96,7 @@ import {
   PAYMENT_NOT_PENDING,
   PAYMENT_WAITING,
   paymentLink,
+  REFUND_IN_PROGRESS,
   referenceSeen,
 } from "./payment-messages.ts";
 import { CLIENT_GONE, lineRows, NUMBERING_CHANGED } from "./quote-model.ts";
@@ -159,7 +160,9 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
       // M6.1: the pending payment this confirms, when one is named.
       db
         .prepare(
-          `SELECT p.id, p.kind, p.provider, p.status, p.client_id, p.currency, p.amount_minor, p.received_on, p.reference_norm, p.recorded_by, c.display_name AS client_name, ${paymentForDocumentSql("p", "?2")} AS asks_this FROM payments p JOIN clients c ON c.id = p.client_id WHERE p.id = ?1`,
+          `SELECT p.id, p.kind, p.provider, p.status, p.client_id, p.currency, p.amount_minor, p.received_on, p.reference_norm, p.recorded_by, c.display_name AS client_name, ${paymentForDocumentSql("p", "?2")} AS asks_this,
+             EXISTS (SELECT 1 FROM payment_refunds lr INDEXED BY payment_refunds_payment WHERE lr.payment_id = p.id AND lr.status <> 'failed') AS live_refund
+           FROM payments p JOIN clients c ON c.id = p.client_id WHERE p.id = ?1`,
         )
         .bind(f.paymentId ?? "", id),
       // Early check 2, finding 1 (L12): the newest pending or confirmed payment with this reference. (Review L2: a pending entry asking for this proforma is
@@ -201,11 +204,15 @@ export const invoiceAdvance = new Hono<AppEnv>().post(
           client_name: string;
           /** 1 when the entry is for this proforma (M6.3 early check 1, F6; `paymentForDocumentSql`: its request, or an online payment's checkout). */
           asks_this: number;
+          /** 1 while a refund of this payment has not failed (M6.5). */
+          live_refund: number;
         }
       | undefined;
     if (f.paymentId !== undefined) {
       if (!pending) return err(c, NOT_FOUND, 404);
       if (pending.status !== "pending_verification") return err(c, PAYMENT_NOT_PENDING, 409);
+      // M6.5 early check 2, finding 7: a pending payment being refunded is never confirmed by an invoice for it (the trigger holds it too; this says why).
+      if (pending.live_refund === 1) return err(c, REFUND_IN_PROGRESS, 409);
       // Early check 2, finding 7: the reference typed is the entry's own too (both in their normal form).
       if (
         pending.kind !== "payment" ||

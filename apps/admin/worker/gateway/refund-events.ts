@@ -10,7 +10,7 @@ import type { ProcessEventResult } from "@techaust/core/gateway-rpc";
 import { uuidv7 } from "@techaust/core/ids";
 import { reviewBellStatement, reviewItemStatement, webhookEventMoveStatement } from "@techaust/db/gateway";
 import { REFUND_BY_PROVIDER_REF_SQL } from "@techaust/db/refunds";
-import { applyGatewayRefund, type RefundRow, readRefund } from "../refund-flow.ts";
+import { applyGatewayRefund, openRefundItem, type RefundRow, readRefund } from "../refund-flow.ts";
 import { mutateSystem } from "../system.ts";
 import { REVIEW_LINK } from "./consts.ts";
 import { bellNeedsReview, reviewReason } from "./messages.ts";
@@ -59,7 +59,8 @@ export async function processRefundEvent(
   };
   const refundRef = text(f.refundId);
   const paymentRef = text(f.paymentId);
-  const ourId = text(f.ourRefundId);
+  // Early check 2, finding 3: PayPal stores our refund id (the refund's `custom_id`) as `checkoutId` (core `payPalEventFacts`).
+  const ourId = text(f.ourRefundId) ?? (provider === "paypal" ? text(f.checkoutId) : null);
   const isDispute = f.object === "dispute";
   // Ours first: by the gateway's id, then by our own id (the payment's provider must agree).
   let ours: RefundRow | null = null;
@@ -77,12 +78,18 @@ export async function processRefundEvent(
   const payment = paymentRef
     ? ((await db.prepare(OUR_PAYMENT_SQL).bind(provider, paymentRef).first<OurPayment>()) ?? null)
     : null;
+  // The payment's one open refund of this amount with no gateway id yet is only a CANDIDATE (finding 3): adopted only when the gateway's refund carries our id;
+  // a refund of the same amount made in the gateway's dashboard is `refunded_outside` below.
+  let candidate = false;
   if (!isDispute && !ours && payment && typeof f.amountMinor === "number") {
     const open = await db.prepare(OPEN_UNLINKED_SQL).bind(payment.id, f.amountMinor).first<{ id: string }>();
-    if (open) ours = await readRefund(db, open.id);
+    if (open) {
+      ours = await readRefund(db, open.id);
+      candidate = ours !== null;
+    }
   }
+  if (ours?.status === "succeeded") return quiet("processed", "refund_settled");
   if (ours) {
-    if (ours.status === "succeeded" || ours.status === "failed") return quiet("processed", "refund_settled");
     const gw = await refundGwOf(env, provider);
     if (!gw || gw.blocked) return { result: "retry" };
     const found = await gw.find({
@@ -91,10 +98,31 @@ export async function processRefundEvent(
       refundRef: ours.provider_refund_id ?? refundRef,
     });
     if (!found.ok) return { result: "retry" };
-    if (found.value === null || found.value === "unknown" || found.value.amountMinor !== ours.amount_minor)
-      return quiet("processed", "refund_not_found");
-    await applyGatewayRefund(env, ours, found.value, now, "webhook");
-    return quiet("processed", "refund_moved");
+    const g = found.value === null || found.value === "unknown" ? null : found.value;
+    if (candidate && g?.ourId !== ours.id) ours = null;
+    else if (g === null || g.amountMinor !== ours.amount_minor || (g.ourId !== null && g.ourId !== ours.id))
+      return quiet("processed", ours.status === "failed" ? "refund_settled" : "refund_not_found");
+    else if (ours.status !== "failed") {
+      await applyGatewayRefund(env, ours, g, now, "webhook");
+      return quiet("processed", "refund_moved");
+    } else if (g.state === "failed") return quiet("processed", "refund_settled");
+    else {
+      // L43 (finding 1c): a refund we marked failed that the gateway shows as made or on its way: a review item and the owners' bell, never a quiet "settled".
+      const failed = ours;
+      const opened = await openRefundItem(env, failed, "refund_after_failed", now, {
+        actor: "webhook",
+        webhookEventId: row.id,
+        summary: { gatewayState: g.state, eventId: row.id },
+        after: (gs) => [
+          webhookEventMoveStatement(
+            db,
+            { id: row.id, status: "needs_review", outcome: "refund_after_failed", now },
+            gs,
+          ),
+        ],
+      });
+      return opened ? { result: "needs_review" } : quiet("processed", "refund_after_failed_known");
+    }
   }
   // PayPal's refund of nobody's refund here keeps M6.4's own path (`processPayPalEvent`: the payment by its capture, the invoice tail check, the item).
   if (provider === "paypal") return null;

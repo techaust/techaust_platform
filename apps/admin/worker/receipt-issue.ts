@@ -20,6 +20,7 @@ import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
 import { type AppEnv, err, mutate, NOT_FOUND } from "./context.ts";
+import { SUPPLIER_ASK_SQL, SUPPLIER_ASK_WINDOW_MS } from "./document-events.ts";
 import { body, idParam, param } from "./http.ts";
 import { cachedSetting } from "./settings-cache.ts";
 import { mutateSystem } from "./system.ts";
@@ -175,6 +176,13 @@ export async function issueReceipt(
 const PDF_ROW_SQL = `SELECT id, number_display, status, frozen_at, pdf_r2_key, pdf_sha256, ${clientGoneSql("client_id")} AS gone FROM documents WHERE id = ?1 AND type = 'receipt'`;
 const PDF_PENDING = { code: "pdf_pending", message: "The PDF isn't ready yet. Try again in a minute." };
 const PDF_DONE = { code: "pdf_done", message: "This receipt already has its PDF" };
+/** Early check 2, finding 8 (builder's draft for the lead, staff-only): at most one re-render ask per receipt in `SUPPLIER_ASK_WINDOW_MS` (the brief's throttle). */
+const PDF_ASKED = {
+  code: "too_soon",
+  message: "A new PDF was asked for less than 5 minutes ago. It is on its way.",
+};
+/** The key of a receipt's re-render claim in `pdf_asks` (an id only). */
+export const receiptAskKey = (receiptId: string): string => `receipt:${receiptId}`;
 const CLIENT_GONE = { code: "client_gone", message: "This client's details were erased" };
 
 /** `TH-RCT-2627-0001.pdf`: the number with its slashes changed. */
@@ -220,13 +228,17 @@ export const receiptPdf = new Hono<AppEnv>()
     if (!row || row.frozen_at === null) return err(c, NOT_FOUND, 404);
     if (row.pdf_sha256 !== null) return err(c, PDF_DONE, 409);
     if (row.gone === 1) return err(c, CLIENT_GONE, 409);
+    // Early check 2, finding 8: the ask is claimed in `pdf_asks` (the supplier copy's claim, 0048) as the main statement, so repeated presses within 5 minutes
+    // write no audit row and enqueue nothing.
+    const now = Date.now();
     const done = await mutate(c, {
+      main: c.env.DB.prepare(SUPPLIER_ASK_SQL).bind(receiptAskKey(id), now, now - SUPPLIER_ASK_WINDOW_MS),
       action: "receipt.pdf_retry",
       entityType: "document",
       entityId: id,
       summary: { documentId: id, number: row.number_display },
     });
-    if (!done) return err(c, NOT_FOUND, 404);
+    if (!done) return err(c, PDF_ASKED, 429);
     c.executionCtx.waitUntil(enqueueReceiptPdf(c.env, id));
     return c.json({ ok: true, pdf: { state: "pending" } });
   });

@@ -10,11 +10,13 @@
 //       unchanged; the review item routes move no money.
 // Neither gateway is ever called: the stub transports answer. All names, references and amounts are invented test data.
 import { env } from "cloudflare:workers";
+import { uuidv7 } from "@techaust/core/ids";
 import { razorpayPaymentRowId, razorpayReferenceNorm } from "@techaust/core/razorpay";
 import { stripePaymentRowId, stripeReferenceNorm } from "@techaust/core/stripe";
-import { recordGatewayPaymentStatements } from "@techaust/db/gateway";
+import { recordGatewayPaymentStatements, STUCK_ADVANCES_SQL } from "@techaust/db/gateway";
 import { verifyPaymentStatement, WAITING_PAYMENT_SQL } from "@techaust/db/ledger";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { issueGatewayAdvance } from "./gateway/advance.ts";
 import { setStubTransport } from "./gateway/config.ts";
 import { processEvent } from "./gateway/events.ts";
 import { createLinkFor } from "./gateway/links.ts";
@@ -843,5 +845,29 @@ describe("(3b) the read's cost [Free plan]", () => {
       .join(" | ");
     expect(plan).toContain("payments_client");
     expect(plan).not.toMatch(/SCAN wp\b/);
+  });
+});
+
+describe("M6.5 early check 2, finding 7: a pending payment being refunded is never invoiced as an advance [L33]", () => {
+  it("while its full refund is open: the Owner's advance with the payment is 409 refund_in_progress, the automatic one answers not_pending, and the sweep leaves it", async () => {
+    const pf = await razorpayProforma();
+    const paymentId = await pf.pay();
+    stub((path, method) =>
+      method === "POST" && path.endsWith("/refund") ? new Response("", { status: 503 }) : null,
+    );
+    const refund = await call(`/payments/${paymentId}/refunds`, {
+      cookie: pf.o.cookie,
+      body: { id: uuidv7(), amountMinor: pf.total, from: "pending", reasonCode: "duplicate" },
+    });
+    expect(refund.status, await refund.clone().text()).toBe(202);
+    const res = await advance(pf, await withPayment(pf, paymentId));
+    expect(res.status, await res.clone().text()).toBe(409);
+    expect(((await json(res)) as { error: { code: string } }).error.code).toBe("refund_in_progress");
+    expect(await issueGatewayAdvance(env, paymentId)).toEqual({ result: "not_pending" });
+    const stuck = await rows<{ id: string }>(STUCK_ADVANCES_SQL, Date.now() + 3_600_000);
+    expect(stuck.map((r) => r.id)).not.toContain(paymentId);
+    expect(await one("SELECT status FROM payments WHERE id = ?1", paymentId)).toEqual({
+      status: "pending_verification",
+    });
   });
 });

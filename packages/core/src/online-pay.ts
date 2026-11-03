@@ -275,6 +275,11 @@ export const REVIEW_KINDS = [
   "dispute_opened",
   /** That dispute was closed (won or lost); a lost one is recorded by the Owner as a `chargeback` refund. */
   "dispute_closed",
+  /**
+   * Early check 2, finding 1c (L43): the gateway shows a refund we marked `failed` (a refusal, a cancel) as processed or still pending: the money may have gone
+   * back while the client's credit still counts it. Review only; the Owner checks the gateway and records the refund (`outside`) if it was made.
+   */
+  "refund_after_failed",
 ] as const;
 export type ReviewKind = (typeof REVIEW_KINDS)[number];
 export const REVIEW_RESOLUTIONS = ["confirmed", "advance_issued", "left_as_credit", "dismissed"] as const;
