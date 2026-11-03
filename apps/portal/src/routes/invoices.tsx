@@ -54,6 +54,8 @@ type Source = {
   refresh?: () => Promise<{ document: InvoiceSummary }>;
   /** M6.4: back from PayPal (signed in only): the document again, the server first capturing THAT checkout; the answer carries `online.payPalReturn`. */
   payPalReturn?: (checkoutId: string) => Promise<{ document: InvoiceSummary }>;
+  /** M6.5 (POR-07): a payment receipt's PDF (signed in only). */
+  receiptPdf?: (receiptId: string) => ReturnType<typeof invoicesApi.receiptPdf>;
 };
 
 type State =
@@ -78,6 +80,9 @@ function DocumentScreen(props: {
   const [state, setState] = useState<State>({ phase: "loading" });
   const [downloading, setDownloading] = useState(false);
   const [pdfProblem, setPdfProblem] = useState<string | null>(null);
+  // M6.5: the receipt being downloaded, and a receipt's own message
+  const [receiptBusy, setReceiptBusy] = useState<string | null>(null);
+  const [receiptProblem, setReceiptProblem] = useState<{ id: string; text: string } | null>(null);
   const alive = useRef(true);
   const returnKind = props.returned?.kind ?? null;
   // M6.4 (run file G2): back from PayPal, the page's reads name our checkout (`GET /invoices/:id?c=…`) while PayPal's answer is still `processing`, so the
@@ -284,6 +289,25 @@ function DocumentScreen(props: {
       notices={props.notices}
       downloading={downloading}
       pdfProblem={pdfProblem}
+      receiptBusy={receiptBusy}
+      receiptProblem={receiptProblem}
+      onReceipt={
+        source.receiptPdf
+          ? async (receiptId: string, numberDisplay: string) => {
+              const get = source.receiptPdf;
+              if (!get) return;
+              setReceiptBusy(receiptId);
+              setReceiptProblem(null);
+              try {
+                saveDownload(await get(receiptId), `${numberDisplay.replace(/[^A-Za-z0-9-]+/g, "-")}.pdf`);
+              } catch (e) {
+                setReceiptProblem({ id: receiptId, text: pdfFailure(e, problemText).text });
+              } finally {
+                setReceiptBusy(null);
+              }
+            }
+          : undefined
+      }
       onPdf={async () => {
         setDownloading(true);
         setPdfProblem(null);
@@ -374,6 +398,7 @@ export function InvoiceRoute() {
       pay: (amountMinor: number, provider: PayGateway) => invoicesApi.pay(id, amountMinor, provider),
       refresh: () => invoicesApi.getRefreshed(id),
       payPalReturn: (checkoutId: string) => invoicesApi.getPayPalReturn(id, checkoutId),
+      receiptPdf: (receiptId: string) => invoicesApi.receiptPdf(receiptId),
     }),
     [id],
   );

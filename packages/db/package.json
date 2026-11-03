@@ -20,6 +20,8 @@
     "./offer-redaction": "./src/offer-redaction.ts",
     "./portal-shared": "./src/portal-shared.ts",
     "./realisation": "./src/realisation.ts",
+    "./receipts": "./src/receipts.ts",
+    "./refunds": "./src/refunds.ts",
     "./reports": "./src/reports.ts",
     "./sql-rules": "./src/sql-rules.ts",
     "./catalogue": "./src/seed/catalogue.ts",

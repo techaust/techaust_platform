@@ -84,6 +84,11 @@ export function activityHref(
   if (!entityId) return null;
   if (entityType === "document" && isInvoiceFlowType(docType))
     return `/invoices/${encodeURIComponent(entityId)}`;
+  // M6.5 (early check 2): a payment receipt (`rct_` + its payment's id) has no page of its own: it opens its payment; any other id leads nowhere.
+  if (entityType === "document" && docType === "receipt")
+    return entityId.startsWith("rct_") && entityId.length > 4
+      ? `/payments/${encodeURIComponent(entityId.slice(4))}`
+      : null;
   const base: Record<string, string> = {
     lead: "/leads/",
     client: "/clients/",

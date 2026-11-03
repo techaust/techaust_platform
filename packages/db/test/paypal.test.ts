@@ -287,7 +287,7 @@ describe("0067 and 0068: no rebuild, the pinned lists [run file A]", () => {
     expect(PAYMENT_PROVIDERS_0068).toEqual(PAYMENT_PROVIDERS);
     expect(GATEWAY_PROVIDERS_0068).toEqual(GATEWAY_PROVIDERS);
     expect(CHECKOUT_STATUSES_0068).toEqual(CHECKOUT_STATUSES);
-    expect(REVIEW_KINDS_0068).toEqual(REVIEW_KINDS);
+    expect(REVIEW_KINDS_0068).toEqual(REVIEW_KINDS.slice(0, REVIEW_KINDS.indexOf("refund_failed")));
     expect(ADVICE_PROVIDERS_0068).toEqual(ADVICE_PROVIDERS);
     expect(ADVICE_KINDS_0068).toEqual(ADVICE_KINDS);
   });

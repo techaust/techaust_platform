@@ -1,6 +1,6 @@
 // The staging deploy workflows (owner's yes 2026-10-30): full audit A1 5, package code (install, seed SQL, astro and vite builds) runs
 // only in steps WITHOUT the Cloudflare token, and the deploy scripts upload only a staging build; A6 8, the Workers deploy one per step
-// in a fixed order (since the fourth admin Worker, owner's Q1 A 2026-11-02: admin API, admin invoices, admin front, jobs, admin finance, portal, website) with a
+// in a fixed order (from M6.5, owner's Q3 A 2026-11-02: admin API, admin invoices, admin finance, admin front, portal, jobs, website) with a
 // health check after each app (the admin's once its four Workers are new). Runs in Node (reads files).
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
@@ -78,19 +78,20 @@ describe.each(["deploy-staging.yml", "publish-catalogue.yml"])("%s [A1-5]", (nam
 
 describe("deploy-staging.yml order and health checks [A6-8]", () => {
   const steps = stepsOf(workflow("deploy-staging.yml"));
-  // The fourth admin Worker (owner, Q1 A, 2026-11-02; docs/runs/admin-split-plan.md C.6, E): seven Workers. From M6.5 (owner, Q3 A) the finance step moves
-  // back right after admin invoices; this test changes with it.
+  // The fourth admin Worker (owner, Q1 A, 2026-11-02; docs/runs/admin-split-plan.md C.6, E): seven Workers. M6.5 (owner, Q3 A, approved 2026-11-02): admin
+  // API, admin invoices, admin finance, admin front, portal, jobs, website: every Worker whose entrypoint jobs calls (BillingJobs.issueReceipt,
+  // GatewayEvents.checkRefund and fetchSettlements) deploys before jobs.
   const ORDER = [
     "pnpm --filter @techaust/admin run deploy:staging:api",
     "pnpm --filter @techaust/admin run deploy:staging:invoices",
-    "pnpm --filter @techaust/admin run deploy:staging:front",
-    "pnpm --filter @techaust/jobs run deploy:staging",
     "pnpm --filter @techaust/admin run deploy:staging:finance",
+    "pnpm --filter @techaust/admin run deploy:staging:front",
     "pnpm --filter @techaust/portal run deploy:staging",
+    "pnpm --filter @techaust/jobs run deploy:staging",
     "pnpm --filter @techaust/web run deploy:staging",
   ];
 
-  it("deploys the seven Workers one per step, in order: admin API, admin invoices, admin front, jobs, admin finance, portal, website", () => {
+  it("deploys the seven Workers one per step, in order: admin API, admin invoices, admin finance, admin front, portal, jobs, website", () => {
     const at = ORDER.map((c) => running(steps, c));
     for (const [i, index] of at.entries()) expect(index, ORDER[i]).toBeGreaterThan(-1);
     expect([...at].sort((a, b) => a - b)).toEqual(at);
@@ -109,10 +110,11 @@ describe("deploy-staging.yml order and health checks [A6-8]", () => {
     expect(hasToken(steps[invoices] ?? "")).toBe(true);
   });
 
-  it("the admin finance Worker is deployed after jobs (Q1 A: the old finance answers until then) and before the portal, which binds it as ADMIN_PAY", () => {
-    const finance = running(steps, ORDER[4] as string);
-    expect(finance).toBeGreaterThan(running(steps, ORDER[3] as string));
-    expect(finance).toBeLessThan(running(steps, ORDER[5] as string));
+  it("the admin finance Worker is deployed right after admin invoices (M6.5, Q3 A) and before the front, the portal and jobs, which bind it", () => {
+    const finance = running(steps, ORDER[2] as string);
+    expect(finance).toBe(running(steps, ORDER[1] as string) + 1);
+    for (const binder of [ORDER[3], ORDER[4], ORDER[5]])
+      expect(finance).toBeLessThan(running(steps, binder as string));
     expect(hasToken(steps[finance] ?? "")).toBe(true);
   });
 
@@ -131,10 +133,10 @@ describe("deploy-staging.yml order and health checks [A6-8]", () => {
     );
   });
 
-  it("checks the admin's health right after the last of its four Workers (finance), before the portal, with the Access token only", () => {
+  it("checks the admin's health right after the last of its four Workers (the front), before the portal, with the Access token only", () => {
     const health = running(steps, "node scripts/staging-health.mjs admin");
-    expect(health).toBe(running(steps, ORDER[4] as string) + 1);
-    expect(health).toBeLessThan(running(steps, ORDER[5] as string));
+    expect(health).toBe(running(steps, ORDER[3] as string) + 1);
+    expect(health).toBeLessThan(running(steps, ORDER[4] as string));
     const step = steps[health] ?? "";
     expect(step).toContain(
       "name: Health check, the admin front, API, invoices and finance Workers (staging)",
@@ -146,8 +148,8 @@ describe("deploy-staging.yml order and health checks [A6-8]", () => {
   });
 
   it.each([
-    ["jobs", 3],
-    ["portal", 5],
+    ["portal", 4],
+    ["jobs", 5],
     ["web", 6],
   ] as const)(
     "checks the %s Worker's health right after its deploy, with the deploy-check token only",

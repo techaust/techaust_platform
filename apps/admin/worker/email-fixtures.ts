@@ -36,6 +36,8 @@ export const TEMPLATE_NAMES: Record<EmailTemplate, string> = {
   "realisation.alert": "Export realisation alert (team)",
   // T11: 07-ZJ line 12 (approved by the lead under the owner's delegation, 2026-11-01).
   "deed.signed": "Signed deed ready (client)",
+  // M6.5: builder's staff label for the Settings test send (the designer's list), drafted for the lead.
+  "receipt.sent": "Payment receipt (client)",
 };
 
 const SAMPLE = "https://example.test/sample";
@@ -194,6 +196,14 @@ export function sampleData(
         count: "3",
         due_date: "30 Nov 2026",
         link: SAMPLE,
+      };
+    case "receipt.sent":
+      return {
+        number: "TH/RCT/2627/0001",
+        amount: "₹1,18,000.00",
+        date: "3 Nov 2026",
+        attached: "0",
+        url: SAMPLE,
       };
     case "deed.signed":
       return {

@@ -230,6 +230,8 @@ describe("properties", () => {
   });
   const RANK: Record<RealisationStage, number> = {
     realised: -1,
+    // M6.5 (RB-43): only with facts; never reached without them
+    reduction_pending: -1,
     ok: 0,
     fema_approaching: 1,
     fema_overdue: 2,

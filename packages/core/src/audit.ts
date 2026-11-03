@@ -36,6 +36,18 @@ export const FINANCE_AUDIT_ACTIONS = [
   "payment.tds_certificate",
   "invoice.realisation_extend",
   "refund.issue",
+  // M6.5 (part 2): the refund moves (the Owner's "Try again" and Cancel, the gateway's word by the system), the reconciliation ticks and fetch, and the FEMA
+  // reductions, each with its route (or a `refund.` system action, which the activity test allows). `receipt.issue` (the system's, no route) moves no money and
+  // is not listed; a receipt's void rides on `payment.withdraw`.
+  "refund.retry",
+  "refund.cancel",
+  "refund.status",
+  // Review part 1, finding 9: the INR the bank debited for a USD refund (the refunds register's INR value).
+  "refund.inr",
+  "recon.fetch",
+  "recon.match",
+  "recon.unmatch",
+  "realisation.reduce",
   "export.gst",
   // M5.5b (LD86): a page of the GST and CA register (rows and range only, never row contents) and a client's statement PDF (the range, currency and the
   // number of lines). Both are finance events; neither is in the Recent activity feed.

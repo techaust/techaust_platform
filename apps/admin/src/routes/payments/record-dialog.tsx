@@ -25,6 +25,7 @@ import { Alert, Info } from "../../components/icons.tsx";
 import { LoadFailed } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
+import { ra41ConfirmLine } from "../../lib/copy-zo.ts";
 import { dateError } from "../../lib/date-field.ts";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
 import { INV_COPY } from "../../lib/invoices.ts";
@@ -380,7 +381,15 @@ function RecordBody(props: {
       const warning = answer.warnings[0];
       toast(
         proofFailed ? "error" : "success",
-        [said, warning ? earlierMonthLine(warning.month) : "", proofFailed ?? ""].filter(Boolean).join(" "),
+        // second review, M1: the RA-41 line (S34) when the confirmed credit may be an advance
+        [
+          said,
+          warning ? earlierMonthLine(warning.month) : "",
+          ra41ConfirmLine(answer.ra41),
+          proofFailed ?? "",
+        ]
+          .filter(Boolean)
+          .join(" "),
       );
       props.onDone(answer);
     } catch (e) {

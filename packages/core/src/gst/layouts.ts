@@ -219,9 +219,24 @@ const edfV1 = file<EdfRow>("edf", [
   col("FEMA realisation due", (r) => cell.date(r.femaDue)),
   col("EDF due", (r) => cell.date(r.edfDue)),
 ]);
-export const EDF_LAYOUTS = Object.freeze({ "edf-v1": edfV1 } as const);
+// ---- EDF working list (edf-v2; M6.5, B4) ---------------------------------------------------------------------------------
+// L13: "Amount realised" is the invoice's `paid_minor` (net of a refund's release), in the invoice's currency; then what its credit notes took off it, the AD
+// bank's Reg. 6 reductions (Settled by the lead on the safest reading, 2026-11-03 (08-C RB-43)) and RA-38's "Proof awaited" (Settled by the lead on the safest
+// reading, 2026-11-02 (08-C RA-38)). A row without facts leaves those columns blank, never zero. Staff headings: 07-ZO "Staff lines" (lead under the delegation).
+const amountOrBlank = (minor: number | null): Cell => (minor === null ? cell.blank() : cell.amount(minor));
+const edfV2 = file<EdfRow>("edf", [
+  ...edfV1.columns.slice(0, 12),
+  col("Amount realised", (r) => amountOrBlank(r.realisedMinor)),
+  col("Credit notes", (r) => amountOrBlank(r.creditedMinor)),
+  col("Amount reduced (FEMA Reg. 6)", (r) => amountOrBlank(r.reductionsMinor)),
+  col("Reduction approved on", (r) => (r.reductionOn === null ? cell.blank() : cell.date(r.reductionOn))),
+  col("Bank's reference", (r) => opt(r.reductionRef)),
+  col("Proof awaited", (r) => (r.proofMissing === true ? cell.text("Yes") : cell.blank())),
+  ...edfV1.columns.slice(13),
+]);
+export const EDF_LAYOUTS = Object.freeze({ "edf-v1": edfV1, "edf-v2": edfV2 } as const);
 export type EdfLayoutId = keyof typeof EDF_LAYOUTS;
-export const CURRENT_EDF_LAYOUT: EdfLayoutId = "edf-v1";
+export const CURRENT_EDF_LAYOUT: EdfLayoutId = "edf-v2";
 
 // ---- Realisation report (realisation-v1) ---------------------------------------------------------------------------------
 const realisationV1 = file<RealisationRow>("realisation", [

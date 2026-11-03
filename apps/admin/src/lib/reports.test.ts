@@ -1,6 +1,7 @@
 // M5.5b admin words and rules (lib/reports.ts, lib/reports-build.ts, lib/tax-settings.ts, lib/bell-links.ts): the marks on 07-V lines, one message per
 // GST error code, the periods, the urgency order and the stage pills, the statement's words, the tax form's round trip (early check H2), and the files
 // the screens make from register rows through the gst core (the sums are core's; these tests only check that the screens pass them on whole).
+import { STATEMENT_REFUND_WORD } from "@techaust/core/copy-zo";
 import { heldRowOf, type RegisterApiRow, type ReportMeta } from "@techaust/core/gst";
 import { GSTR1_FREQUENCIES, realisationParamsFromStoredTax } from "@techaust/core/invoices";
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
@@ -51,7 +52,9 @@ import {
   buildEdf,
   buildGstExport,
   buildRealisation,
+  buildRefundsRegister,
   buildSalesRegister,
+  refundsRegisterInputOf,
   rulesOfMeta,
   statementCsvText,
   wholePeriodOf,
@@ -330,6 +333,21 @@ describe("realisation stages", () => {
     expect(STAGE_PILLS.realised.tone).toBe("muted");
   });
 
+  it("M6.5 B4: every core stage is in the order, reduction_pending after the dated stages and before on track", () => {
+    expect([...STAGE_ORDER].sort()).toEqual(
+      [
+        "fema_approaching",
+        "fema_overdue",
+        "gst_approaching",
+        "gst_overdue",
+        "ok",
+        "realised",
+        "reduction_pending",
+      ].sort(),
+    );
+    expect(STAGE_ORDER.indexOf("reduction_pending")).toBe(STAGE_ORDER.indexOf("ok") - 1);
+  });
+
   it("lists the most urgent first, then by the date each is due by", () => {
     const d = (day: number) => ({ year: 2027, month: 1, day });
     const rows = [
@@ -369,7 +387,9 @@ describe("statement words", () => {
     expect(statementKindText("credit_note")).toBe(`${M}Credit note`);
     // M6.1 (07-ZH line 19, approved): the tax the client deducted at source.
     expect(statementKindText("tds")).toBe(`${M}TDS deducted`);
-    expect(Object.keys(statementCsvLabels().kinds)).toHaveLength(6);
+    // M6.5: a refund that went out (07-ZO lacks the word: the builder's draft, marked "[Placeholder]" until the owner approves it).
+    expect(statementKindText("refund")).toBe(STATEMENT_REFUND_WORD);
+    expect(Object.keys(statementCsvLabels().kinds)).toHaveLength(7);
   });
 
   it("the Details cell of a credit note names the invoice the API sent (review 2)", () => {
@@ -1010,5 +1030,75 @@ describe("FX-4 review L5: the wide list's scroll cue measures from observers, no
     expect(scrollCueSource).not.toMatch(/useEffect\(measure\)/);
     expect(scrollCueSource).toMatch(/new MutationObserver\(/);
     expect(scrollCueSource).toMatch(/\}, \[measure\]\);/);
+  });
+});
+
+describe("the refunds register's builder (M6.5 B4) [ADM-PAY-08]", () => {
+  const row = {
+    id: "rf-1",
+    paymentId: "p-1",
+    provider: "razorpay",
+    origin: "owner" as const,
+    mode: null,
+    paidTo: null,
+    reasonCode: "credit_note" as const,
+    refundedOn: "2026-11-02",
+    currency: "INR" as const,
+    amountMinor: 118_000,
+    inrRefundedMinor: null,
+    bankReference: null,
+    providerRefundId: "rfnd_SAMPLE0001",
+    client: { id: "c-1", code: "C-0001", name: "Sample client A (fake)" },
+    documentNumber: "TH/INV/2627/0007",
+    creditNoteNumber: "TH/CN/2627/0001",
+    paymentReference: "pay_SAMPLE0001",
+  };
+
+  it("writes the codes in 07-ZO's staff words; no invoice reads as the client's credit; every row says Refunded", () => {
+    expect(refundsRegisterInputOf(row)).toMatchObject({
+      from: "TH/INV/2627/0007",
+      way: "Through Razorpay",
+      reason: "After a credit note",
+      status: "Refunded",
+    });
+    const manual = refundsRegisterInputOf({
+      ...row,
+      provider: "manual",
+      reasonCode: "overpayment",
+      documentNumber: null,
+      creditNoteNumber: null,
+      bankReference: "UTRSAMPLE01",
+      providerRefundId: null,
+    });
+    expect(manual).toMatchObject({
+      from: "The client's credit",
+      way: "By bank transfer",
+      reason: "Paid too much",
+    });
+    expect(refundsRegisterInputOf({ ...row, origin: "chargeback", reasonCode: "chargeback" }).way).toBe(
+      "Lost dispute",
+    );
+    expect(refundsRegisterInputOf({ ...row, origin: "outside", provider: "stripe" }).way).toBe(
+      "Made in Stripe",
+    );
+  });
+
+  it("builds refunds-v1 with one line per refund; a refused row is a problem line, nothing skipped", () => {
+    const built = buildRefundsRegister([
+      row,
+      { ...row, id: "rf-2", currency: "USD", amountMinor: 5_000, inrRefundedMinor: 417_500 },
+    ]);
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    expect(built.count).toBe(2);
+    const lines = built.csv.split("\r\n");
+    expect(lines[0]?.startsWith("Refund date,Client code,Client,Refunded from")).toBe(true);
+    expect(lines[1]).toContain(
+      "Through Razorpay,rfnd_SAMPLE0001,,INR,1180.00,1180.00,After a credit note,Refunded",
+    );
+    expect(lines[2]).toContain(",USD,50.00,4175.00,");
+    const bad = buildRefundsRegister([{ ...row, refundedOn: "2026-13-01" }]);
+    expect(bad.ok).toBe(false);
+    expect(!bad.ok && bad.problems).toHaveLength(1);
   });
 });

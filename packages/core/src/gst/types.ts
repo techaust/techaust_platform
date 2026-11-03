@@ -10,7 +10,7 @@ import type { StateCode } from "../gstin.ts";
 import type { Currency } from "../money.ts";
 import type { Series } from "../numbering.ts";
 import type { RecipientStatus, SupplyType } from "../tax/types.ts";
-import type { RealisationSettings } from "./realisation.ts";
+import type { ExportRealisationFacts, RealisationSettings } from "./realisation.ts";
 
 export type { CalendarDate, Currency, RecipientStatus, Series, StateCode, SupplyType };
 
@@ -80,6 +80,12 @@ export type RegisterRow = {
    * The realisation and EDF rows pass it to `realisationDates` (Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-04); Rule 96A(1)(b) (08-C RA-20)).
    */
   readonly extendedTo?: CalendarDate | null;
+  /**
+   * M6.5 (RB-43, RA-38, L13; B4): an export invoice's realisation facts as `REALISATION_FACT_COLUMNS` reads them, on the EDF month and the realisation list only;
+   * null or left out elsewhere (the register page). `realisationRows` passes them to `realisationStatus` (the twin of the SQL `stageSql`); `edfRows` fills
+   * `edf-v2`'s "Amount realised", credit notes, reductions and "Proof awaited" from them.
+   */
+  readonly realisationFacts?: ExportRealisationFacts | null;
 };
 
 /**

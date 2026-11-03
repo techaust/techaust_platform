@@ -1262,7 +1262,21 @@ export const contacts = new Hono<AppEnv>()
       if (plan.head.held) return err(c, LEGAL_HOLD, 409);
       if (plan.tooMany) return err(c, TOO_MANY_OFFERS, 409);
     }
-    return eraseBatch(c, id, mode, reason, plan);
+    // M6.5 (L15; early check 1, part 2 item 2): an individual client is not anonymised while a refund to it is open. The trigger
+    // `clients_anonymise_no_open_refund` refuses the batch (nothing is written, no statement is added: T7's cap of 45), and the answer is 409 `refunds_pending`.
+    try {
+      return await eraseBatch(c, id, mode, reason, plan);
+    } catch (e) {
+      if (!refusedWith(e, /clients_anonymise_no_open_refund/)) throw e;
+      return err(
+        c,
+        {
+          code: "refunds_pending",
+          message: "A refund to this client is still in progress. Try again once it is settled.",
+        },
+        409,
+      );
+    }
   });
 
 /**

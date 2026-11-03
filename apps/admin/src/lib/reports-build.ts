@@ -29,8 +29,10 @@ import {
   outputTaxRows,
   type RealisationRow,
   type RealisationRules,
+  type RefundsRegisterInput,
   realisationRows,
   realisationRulesOf,
+  refundsRegisterCsv,
   SAC_DESCRIPTIONS,
   type SectionTotals,
   salesRegisterCsv,
@@ -40,6 +42,7 @@ import {
 } from "@techaust/core/gst";
 import { documentsIssuedSummary } from "@techaust/core/invoices";
 import type { StatementEntry } from "@techaust/core/statement";
+import { ZO_UI } from "./copy-zo.ts";
 import {
   type DocRef,
   gstWarningText,
@@ -50,6 +53,7 @@ import {
   statementCsvLabels,
   stateText,
 } from "./reports.ts";
+import type { RefundsRegisterApiRow } from "./reports-api.ts";
 
 /** The documents of a read, by id, so a problem can name and link its document. */
 export const docsByIdOf = (rows: readonly RegisterApiRow[]): Map<string, DocRef> =>
@@ -363,6 +367,37 @@ export function statementCsvText(input: {
 }): string | null {
   const r = statementCsv({ ...input, labels: statementCsvLabels(input.entries) });
   return r.ok ? r.value : null;
+}
+
+/** One API row as the `refunds-v1` file takes it: the codes in 07-ZO's staff words (the way, the reason, the state; "The client's credit" when no invoice). */
+export function refundsRegisterInputOf(r: RefundsRegisterApiRow): RefundsRegisterInput {
+  return {
+    id: r.id,
+    refundedOn: r.refundedOn,
+    clientCode: r.client.code,
+    clientName: r.client.name,
+    from: r.documentNumber ?? ZO_UI.sourceCredit,
+    creditNote: r.creditNoteNumber,
+    paymentReference: r.paymentReference,
+    way: ZO_UI.origin(r.origin, r.provider),
+    gatewayRefundId: r.providerRefundId,
+    bankReference: r.bankReference,
+    currency: r.currency,
+    amountMinor: r.amountMinor,
+    inrRefundedMinor: r.inrRefundedMinor,
+    reason: ZO_UI.reason[r.reasonCode] ?? r.reasonCode,
+    // the register lists refunds that went out only (`REFUNDS_REGISTER_SQL`)
+    status: ZO_UI.status.succeeded,
+  };
+}
+
+export type RefundsRegister = { ok: false; problems: IssueLine[] } | { ok: true; count: number; csv: string };
+
+/** The refunds register of an FY as `refunds-v1` (core `refundsRegisterCsv`); a row core refuses is named by its refund id, nothing is skipped. */
+export function buildRefundsRegister(rows: readonly RefundsRegisterApiRow[]): RefundsRegister {
+  const csv = refundsRegisterCsv(rows.map(refundsRegisterInputOf));
+  if (!csv.ok) return { ok: false, problems: issueLines(csv.errors, new Map()) };
+  return { ok: true, count: rows.length, csv: csv.value };
 }
 
 export type { SectionTotals };

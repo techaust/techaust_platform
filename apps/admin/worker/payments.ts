@@ -40,7 +40,9 @@ import {
   ledgerResultStatement,
   PAYMENT_REFERENCE_SEEN_SQL,
   paymentApprovalStatements,
+  paymentNetSql,
   paymentProformaSql,
+  paymentRefundedSql,
   paymentWaitsRefundSql,
   proofStatement,
   recomputeStatement,
@@ -49,6 +51,7 @@ import {
   verifyPaymentStatement,
   withdrawPaymentStatement,
 } from "@techaust/db/ledger";
+import { receiptVoidStatement } from "@techaust/db/refunds";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { CLIENT_GONE } from "./anonymised.ts";
@@ -78,6 +81,8 @@ import {
   paymentLink,
   RECEIVED_ON_FUTURE,
   REFERENCE_INVALID,
+  REFUND_IN_PROGRESS,
+  REFUNDS_EXIST,
   REJECT_REASON_REQUIRED,
   referenceSeen,
   TDS_NOT_ALLOWED,
@@ -85,7 +90,18 @@ import {
   TOO_MANY,
   USE_ADVANCE_INVOICE,
 } from "./payment-messages.ts";
+import { enqueueReceipt } from "./receipt-enqueue.ts";
+import { ra41OnConfirm } from "./refund-facts.ts";
 import { sessionRefusal } from "./session-refusal.ts";
+
+/** M6.5: a refund of payment `id` that has not failed (the confirm and withdraw refusals). */
+const liveRefundOf = (db: D1Database, id: string) =>
+  db
+    .prepare(
+      "SELECT 1 FROM payment_refunds INDEXED BY payment_refunds_payment WHERE payment_id = ?1 AND status <> 'failed'",
+    )
+    .bind(id)
+    .first();
 
 // ---- reads ----------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -737,6 +753,22 @@ export const payments = new Hono<AppEnv>()
         });
       return (await sessionRefusal(c, confirmed)) ?? err(c, STALE_VERSION, 409);
     }
+    // M6.5 (L3): an Owner's entry is confirmed in its batch: its receipt follows (never TDS).
+    if (confirmed && f.kind === "payment") c.executionCtx.waitUntil(enqueueReceipt(c.env, f.id));
+    // Review part 1, finding 3 (RA-41): whether the credit this confirmation leaves may be an advance (codes only).
+    const ra41 =
+      confirmed && f.kind === "payment"
+        ? await ra41OnConfirm(
+            db,
+            {
+              currency: f.currency,
+              amountMinor: f.amountMinor,
+              unallocatedMinor: plan.unallocatedMinor,
+              receivedOn: f.receivedOn,
+            },
+            issueDateOf(now),
+          )
+        : null;
     return c.json(
       {
         ok: true,
@@ -746,6 +778,7 @@ export const payments = new Hono<AppEnv>()
         requestedAllocations: confirmed ? [] : requested,
         /** 07-ZH line 9: what the invoices do not take is kept as the client's credit (ADM-PAY-06). */
         unallocatedMinor: confirmed ? plan.unallocatedMinor : null,
+        ra41,
         ...(confirmed ? {} : { approvalId }),
         warnings: confirmed
           ? receiptWarnings(
@@ -781,6 +814,8 @@ export const payments = new Hono<AppEnv>()
     // statement's WHERE holds the same rule.
     if (decision === "confirmed" && row.proforma_id !== null)
       return err(c, USE_ADVANCE_INVOICE, 409, { documentId: row.proforma_id });
+    // M6.5 (L33; early check 1, part 2 item 2): a pending payment being refunded is never confirmed (trigger `payments_refund_no_confirm` holds it too).
+    if (decision === "confirmed" && (await liveRefundOf(db, id))) return err(c, REFUND_IN_PROGRESS, 409);
     const requested = f.allocations ?? parseRequested(row.requested_allocations);
     let rows: AllocationRow[] = [];
     let docs: DocRow[] = [];
@@ -871,6 +906,8 @@ export const payments = new Hono<AppEnv>()
         ],
       });
     } catch (e) {
+      // A refund started between the read and the batch (trigger `payments_refund_no_confirm`).
+      if (refusedWith(e, /payments_refund_no_confirm/)) return err(c, REFUND_IN_PROGRESS, 409);
       if (!refusedWith(e, LEDGER_REFUSED)) throw e;
       return explainPlan(c, {
         id,
@@ -891,12 +928,30 @@ export const payments = new Hono<AppEnv>()
         return err(c, USE_ADVANCE_INVOICE, 409, { documentId: again.proforma_id });
       return (await sessionRefusal(c, true)) ?? err(c, STALE_VERSION, 409);
     }
+    // M6.5 (L3): the confirmed payment's receipt, in its own batch on the invoices Worker (after the answer).
+    if (decision === "confirmed" && row.kind === "payment")
+      c.executionCtx.waitUntil(enqueueReceipt(c.env, id));
+    // Review part 1, finding 3 (RA-41): whether the credit this confirmation leaves may be an advance (codes only).
+    const ra41 =
+      decision === "confirmed" && row.kind === "payment" && unallocatedMinor !== null
+        ? await ra41OnConfirm(
+            db,
+            {
+              currency: row.currency,
+              amountMinor: row.amount_minor,
+              unallocatedMinor,
+              receivedOn: row.received_on,
+            },
+            issueDateOf(now),
+          )
+        : null;
     return c.json({
       ok: true,
       id,
       status: decision,
       allocations: rows.map((r) => ({ documentId: r.documentId, amountMinor: r.amountMinor })),
       unallocatedMinor,
+      ra41,
       warnings:
         decision === "confirmed"
           ? receiptWarnings(
@@ -941,6 +996,8 @@ export const payments = new Hono<AppEnv>()
         },
         side: (g) => [
           recomputeStatement(db, { paymentIds: [id] }, now, g),
+          // M6.5 (L10): the payment's receipt, if it has one, is voided in the same batch (reason `payment_withdrawn`; no client email).
+          receiptVoidStatement(db, { paymentId: id, now }, g),
           ledgerResultStatement(db, { paymentIds: [id] }),
         ],
       });
@@ -953,6 +1010,8 @@ export const payments = new Hono<AppEnv>()
       if (!again) return err(c, NOT_FOUND, 404);
       if (again.status !== "confirmed") return err(c, PAYMENT_NOT_CONFIRMED, 409);
       if (again.client_gone === 1) return err(c, CLIENT_GONE, 409);
+      // M6.5 (L10, review fix 2): a payment with a refund that has not failed is never withdrawn (the WHERE's `NO_LIVE_REFUND_SQL`).
+      if (await liveRefundOf(db, id)) return err(c, REFUNDS_EXIST, 409);
       return (await sessionRefusal(c, true)) ?? err(c, STALE_VERSION, 409);
     }
     return c.json({ ok: true, id, status: "withdrawn" });
@@ -1098,11 +1157,8 @@ async function explainPlan(
   const db = c.env.DB;
   const [docsR, netR] = await db.batch([
     db.prepare(LEDGER_DOCS_SQL).bind(JSON.stringify(p.requested.map((r) => r.documentId))),
-    db
-      .prepare(
-        "SELECT coalesce(sum(CASE kind WHEN 'allocate' THEN amount_minor ELSE -amount_minor END), 0) AS net FROM payment_allocations WHERE payment_id = ?1",
-      )
-      .bind(p.id),
+    // What the payment already uses: held net on documents plus its refunds not failed (M6.5 L35; the plan's `allocatedMinor`).
+    db.prepare(`SELECT ${paymentNetSql("?1")} + ${paymentRefundedSql("?1")} AS net`).bind(p.id),
   ]);
   const docs = (docsR?.results ?? []) as DocRow[];
   const plan = planAllocations(

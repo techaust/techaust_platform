@@ -41,6 +41,8 @@ export const ROUTES: readonly RouteDef[] = [
   R("GET", "/invoices/:id/pdf", "finance"),
   // M6.2 (POR-06): Pay now (the finance Worker makes the link over RPC and writes the audit row, actor the contact).
   R("POST", "/invoices/:id/pay", "finance", { audit: "payment.link_create" }),
+  // M6.5 (E; POR-07 receipt download only): a payment receipt's PDF, finance-only like the invoices; scoped to the session's organisation.
+  R("GET", "/receipts/:id/pdf", "finance"),
   // Proposals and estimates (M4.5, POR-04, POR-05): the signed-in contact's offers. Each query is scoped to the session's organisation.
   // T11 (POR-05; 08-C RB-38(a)): the organisation's SIGNED deeds of assignment, and a signed PDF named in the body. Finance-only (owner, 2026-11-01: a deed
   // names the invoices and the amount paid), like the invoices; anyone else gets the plain 404.

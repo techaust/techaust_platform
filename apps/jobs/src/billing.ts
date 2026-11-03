@@ -7,12 +7,14 @@ import {
   careIssueMessage,
   careScanMessage,
   type GatewaySweepMessage,
+  type RefundMessage,
   type ReportMessage,
   reminderScanMessage,
 } from "@techaust/core";
 import { CARE_SCAN_HOUR_IST, CARE_SCAN_REPEAT_HOURS } from "@techaust/core/care-billing";
-import { istDate } from "@techaust/core/dates";
+import { istDate, toIsoDate } from "@techaust/core/dates";
 import { istHourOf } from "@techaust/core/invoices";
+import type { ReceiptSweepMessage } from "@techaust/core/pdf-jobs";
 import { processAlertsDaily } from "./alerts.ts";
 import { processCareBill, processCareDeadLetter, processCareIssue, processCareScan } from "./care-billing.ts";
 import { logEvent } from "./log.ts";
@@ -42,7 +44,7 @@ const inWindow = (hour: number, first: number) => hour >= first && hour <= first
  */
 export function hourlyMessages(
   scheduledTime: number,
-): (BillingMessage | ReportMessage | GatewaySweepMessage)[] {
+): (BillingMessage | ReportMessage | GatewaySweepMessage | RefundMessage)[] {
   const hour = istHourOf(scheduledTime);
   const today = istDate(scheduledTime);
   const edf: ReportMessage[] =
@@ -75,14 +77,35 @@ export function hourlyMessages(
     { kind: "reminder.scan", after: null },
     // M6.2 (run file D): one gateway sweep every hour (the consumer re-queues events stuck in `received`).
     { kind: "gateway.sweep", asOf: scheduledTime },
+    // M6.5 (run file D): the refunds idle for 15 minutes are checked again every hour; at 09:00 IST yesterday's Razorpay settlements are fetched (page 1).
+    { kind: "refund.sweep", asOf: scheduledTime },
+    ...(hour === ALERTS_HOUR_IST
+      ? [
+          {
+            kind: "recon.fetch",
+            provider: "razorpay",
+            day: yesterdayIst(scheduledTime),
+            skip: 0,
+          } satisfies RefundMessage,
+        ]
+      : []),
   ];
 }
 
-/** The hourly tick: one `sendBatch` on the leads queue, nothing read. */
+/** The IST day before the IST day of `ms`, as ISO text. */
+const yesterdayIst = (ms: number): string => toIsoDate(istDate(ms - 86_400_000));
+
+/** The hourly tick: one `sendBatch` on the leads queue and (M6.5) the receipt sweep on the PDF queue; nothing read. */
 export async function enqueueHourly(env: Env, scheduledTime: number): Promise<number> {
   const messages = hourlyMessages(scheduledTime);
   await env.LEADS_QUEUE.sendBatch(messages.map((body) => ({ body })));
-  return messages.length;
+  // M6.5 (L3): receipts of confirmed payments still without one, and receipt PDFs still to render (its consumer reads D1, never the cron).
+  await env.PDF_QUEUE.send({
+    v: 1,
+    kind: "receipt.sweep",
+    asOf: scheduledTime,
+  } satisfies ReceiptSweepMessage);
+  return messages.length + 1;
 }
 
 const skip = (kind: string) => logEvent("billing.invalid_message", { kind });

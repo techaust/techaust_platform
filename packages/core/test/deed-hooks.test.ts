@@ -29,6 +29,9 @@ const NOT_HOOKED: Record<string, { why: string; hookedBy?: readonly { file: stri
       { file: "apps/admin/worker/gateway/advance.ts", builder: "advanceIssueStatements(" },
     ],
   },
+  "packages/db/src/refunds.ts#refundSideStatements": {
+    why: "M6.5 (Step 0.5): a refund from an invoice's excess releases money already above what the invoice owes; a refund only lowers settled money, so it can never complete a full payment (a prepared deed is never withdrawn by it either)",
+  },
   "packages/db/src/gateway.ts#recordGatewayPaymentStatements": {
     why: "M6.2: a builder of the gateway payment batch; the confirmed batch that runs it appends the hook after its side statements (the recompute) and before ledger_result (M6.3: Stripe's confirmed batch too, early check 2 finding 6)",
     hookedBy: [

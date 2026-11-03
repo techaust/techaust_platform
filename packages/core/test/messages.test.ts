@@ -133,6 +133,7 @@ describe("M2.4b messages [POR-01, ADM-AUTH-09, ADM-MAIL-01]", () => {
       "edf.reminder",
       "realisation.alert",
       "deed.signed",
+      "receipt.sent", // M6.5
     ]);
     for (const template of EMAIL_TEMPLATES)
       expect(
@@ -213,7 +214,7 @@ describe("M4.5 messages [ADM-PROP-07, ADM-PROP-08]", () => {
     );
     expect(emailMessage.safeParse(base).success).toBe(true);
     for (const bad of [
-      "docs/receipt/2026-27/0001-v1.pdf", // M5.4: the invoice family is allowed, a receipt (M6) is not yet
+      "docs/receipt_voucher/2026-27/0001-v1.pdf", // M6.5: the invoice family and receipts are allowed, a voucher is not
       "docs/proposal/2026-27/0001-v1.json",
       "../docs/proposal/2026-27/0001-v1.pdf",
       "docs/proposal/2026-27/../../x.pdf",

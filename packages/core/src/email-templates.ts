@@ -38,5 +38,7 @@ export const EMAIL_TEMPLATES = [
   // T11: the signed deed of assignment is in the client's portal (to its portal contacts). Words: 07-ZJ lines 8 to 11 (approved by the lead under the
   // owner's delegation, 2026-11-01).
   "deed.signed",
+  // M6.5 (ADM-MAIL-01, ADM-PAY-09): the client's payment receipt (from billing@, to its portal contacts who can see finance). Words: 07-ZO lines 11 and 12.
+  "receipt.sent",
 ] as const;
 export type EmailTemplate = (typeof EMAIL_TEMPLATES)[number];

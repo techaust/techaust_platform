@@ -9,11 +9,12 @@ import {
   isOfferExpansionKind,
   isPurgeMessage,
   isPurgeScanMessage,
+  isRefundKind,
   isReportKind,
 } from "@techaust/core";
 import { isExpireKind, isExpireMessage } from "@techaust/core/expiry";
 import { isLutCheckKind, isLutCheckMessage } from "@techaust/core/invoices";
-import { isPdfKind, isPdfMessage } from "@techaust/core/pdf-jobs";
+import { isPdfKind, isPdfMessage, isReceiptKind } from "@techaust/core/pdf-jobs";
 import { isStatsKind, isStatsMessage } from "@techaust/core/stats";
 import { processBilling, processBillingDeadLetter } from "./billing.ts";
 import { processDeedPdf, processDeedSigned } from "./deed-pdf.ts";
@@ -27,6 +28,8 @@ import { logLutCheckDeadLetter, processLutCheck, skipLutCheck } from "./lut-chec
 import { processOfferMessage } from "./offers.ts";
 import { processPdf, processPdfDeadLetter } from "./pdf.ts";
 import { enqueueDue, processStatementPurge, purgeLead } from "./purge.ts";
+import { processReceipt, processReceiptDeadLetter } from "./receipts.ts";
+import { processRefundDeadLetter, processRefundFamily } from "./refunds.ts";
 import { processReminderSend } from "./reminders.ts";
 import { processEdfReminder, processRealisationScan } from "./reports.ts";
 import { processStaffAlert } from "./staff-alerts.ts";
@@ -65,9 +68,17 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
       if (isPdfDlq) {
         // The PDF family has its own dead-letter queue: a bell for the owners, then done (the daily sweep tries the document again).
         // A statement PDF that ran out of tries marks its row failed and rings the person who asked, once (M5.5b).
-        if (isPdfMessage(message.body) && message.body.kind === "pdf.statement")
+        // M6.5: a receipt message that ran out of tries: a render counts a failed IST day (the third stops the hourly sweep's retries and rings the owners once,
+        // review part 1, finding 4); an issue or a sweep is only logged (the hourly `receipt.sweep` asks again).
+        if (isReceiptKind(message.body)) await processReceiptDeadLetter(env, message.body);
+        else if (isPdfMessage(message.body) && message.body.kind === "pdf.statement")
           await processStatementDeadLetter(env, message.body);
         else await processPdfDeadLetter(env, message.body);
+        message.ack();
+      } else if (queue.endsWith("-pdf") && isReceiptKind(message.body)) {
+        // M6.5 (L3, L34): a receipt's issue (BillingJobs RPC), the sweep, or its PDF. Before the other PDF kinds (receipts.ts imports pdf.ts). During the M6.5
+        // deploy (jobs deploys after the admin Workers), an older jobs Worker logs an unknown PDF kind and acknowledges it; the hourly sweep issues it again.
+        await processReceipt(env, message.body);
         message.ack();
       } else if (queue.endsWith("-pdf") && isPdfMessage(message.body) && message.body.kind === "pdf.deed") {
         // T11: a deed's unsigned PDF (seal check, adopt or render, store once). Before the other PDF kinds (deed-pdf.ts imports pdf.ts).
@@ -113,6 +124,10 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         // M5.5b: a realisation scan, an EDF reminder or a statement purge that ran out of tries is only logged: the next daily run lists the same work again (the bells and the email log make a repeat harmless).
         logEvent("report.dead_letter", { queue, kind: message.body.kind });
         message.ack();
+      } else if (isDlq && isRefundKind(message.body)) {
+        // M6.5: a refund check that ran out of tries becomes a `refund_stuck` review item with the owners' bell; the sweep and the fetch only log.
+        await processRefundDeadLetter(env, message.body);
+        message.ack();
       } else if (isDlq && isGatewayKind(message.body)) {
         // M6.2: an event or an automatic tax invoice that ran out of tries: the event failed, a `dead_letter` review item, the owners' bell (once).
         await processGatewayDeadLetter(env, message.body);
@@ -127,6 +142,11 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
       } else if (queue.endsWith("-leads") && isGatewayKind(message.body)) {
         // M6.2 (L9): the gateway family rides the leads queue and is routed first, so a body of it (valid or not) can never become a lead.
         const verdict = await processGateway(env, message.body, message.attempts);
+        if (verdict === "ack") message.ack();
+        else message.retry({ delaySeconds: verdict.retry });
+      } else if (queue.endsWith("-leads") && isRefundKind(message.body)) {
+        // M6.5 (run file D): refund checks, the refund sweep and the settlement fetch, before the lead fall-through (a body of this family never becomes a lead).
+        const verdict = await processRefundFamily(env, message.body, message.attempts);
         if (verdict === "ack") message.ack();
         else message.retry({ delaySeconds: verdict.retry });
       } else if (queue.endsWith("-leads") && isPurgeScanMessage(message.body)) {

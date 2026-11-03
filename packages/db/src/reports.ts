@@ -9,12 +9,16 @@ import {
   EXPORT_STAGES,
   femaDueSql,
   gstDueSql,
+  notRealisedSql,
+  proofMissingSql,
   type RealisationSql,
+  reductionsSql,
   SCAN_BINDS,
   settingsBinds,
+  stageOpenSql,
   stageSql,
 } from "./realisation.ts";
-import { paymentNetSql, SQL_CURRENCIES } from "./sql-rules.ts";
+import { paymentFreeSql, SQL_CURRENCIES } from "./sql-rules.ts";
 
 /**
  * Rows in one report page (keyset, the admin lists' rule): every page statement reads one more (`LIMIT REPORT_PAGE_SIZE + 1`) to know whether another page exists. One
@@ -108,7 +112,7 @@ export const REGISTER_PAGE_SQL = (after: boolean): string =>
 
 /** The invoice month's non-voided export invoices (the EDF list): `?1` first day, `?2` last day, then the keyset as above. */
 export const EDF_MONTH_SQL = (after: boolean): string =>
-  `SELECT ${REGISTER_COLUMNS}
+  `SELECT ${REGISTER_COLUMNS}, ${REALISATION_FACT_COLUMNS}
    FROM documents d INDEXED BY documents_export_issued JOIN clients c ON c.id = d.client_id
    WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND d.issue_date >= ?1 AND d.issue_date <= ?2 ${after ? KEYSET : ""}
    ORDER BY d.issue_date, d.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
@@ -118,10 +122,32 @@ export const EDF_MONTH_SQL = (after: boolean): string =>
  * has no cursor, so `?1`/`?2` are only there for a next page.
  */
 export const REALISATION_PAGE_SQL = (show: "open" | "all", after: boolean): string =>
-  `SELECT ${REGISTER_COLUMNS}
+  `SELECT ${REGISTER_COLUMNS}, ${REALISATION_FACT_COLUMNS}
    FROM documents d INDEXED BY documents_export_issued JOIN clients c ON c.id = d.client_id
-   WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL ${show === "open" ? "AND d.balance_minor > 0" : ""} ${after ? "AND (d.issue_date > ?1 OR (d.issue_date = ?1 AND d.id > ?2))" : ""}
+   WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL ${show === "open" ? `AND ${notRealisedSql("d")}` : ""} ${after ? "AND (d.issue_date > ?1 OR (d.issue_date = ?1 AND d.id > ?2))" : ""}
    ORDER BY d.issue_date, d.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
+
+/**
+ * M6.5 (RB-43, RA-38, L13): the facts beyond the balance that decide an export's stage and its EDF "Amount realised" (`edf-v2`), for the realisation list and the
+ * EDF month: what was paid on it (net of a refund's release), Σ the AD bank's Reg. 6 reductions with the latest one's day and reference, and whether a card or
+ * PayPal payment on it still lacks its proof (an LUT export is realised for GST only once each has one). The SPA passes them to core `realisationStatus`.
+ * B4 (`edf-v2`): and what its credit notes took off it (`credited_minor`), shown beside "Amount realised".
+ */
+export const REALISATION_FACT_COLUMNS = `d.paid_minor, d.total_minor AS doc_total_minor, d.credited_minor, ${reductionsSql("d")} AS reductions_minor,
+       (SELECT rr.approved_on FROM realisation_reductions rr WHERE rr.document_id = d.id ORDER BY rr.approved_on DESC, rr.id DESC LIMIT 1) AS reduction_on,
+       (SELECT rr.bank_ref FROM realisation_reductions rr WHERE rr.document_id = d.id ORDER BY rr.approved_on DESC, rr.id DESC LIMIT 1) AS reduction_ref,
+       CASE WHEN d.supply_type = 'export_lut' THEN ${proofMissingSql("d")} ELSE 0 END AS proof_missing`;
+/** The M6.5 columns of `REALISATION_FACT_COLUMNS` as D1 returns them (alongside a `RegisterSqlRow`). */
+export type RealisationFactRow = {
+  paid_minor: number;
+  doc_total_minor: number;
+  /** B4 (`edf-v2`). */
+  credited_minor: number;
+  reductions_minor: number;
+  reduction_on: string | null;
+  reduction_ref: string | null;
+  proof_missing: number;
+};
 
 /**
  * The alert scan (jobs): open exports old enough to be near a deadline, with their stage not "ok" and not "realised". Parameters: `?1` today (IST ISO), `?2`
@@ -135,7 +161,7 @@ export const REALISATION_SCAN_SQL = (after: boolean): string => {
        json_extract(d.recipient, '$.legalName') AS client_name, c.anonymised_at AS client_anonymised,
        ${femaDueSql("d", p)} AS fema_due, ${gstDueSql("d", p)} AS gst_due, ${stageSql("d", p)} AS stage
    FROM documents d INDEXED BY documents_export_issued JOIN clients c ON c.id = d.client_id
-   WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND d.balance_minor > 0
+   WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND ${stageOpenSql("d")}
      AND d.issue_date < date(?1, '+' || (?6 + 31) || ' days', '-' || ?7 || ' months') ${after ? "AND (d.issue_date > ?8 OR (d.issue_date = ?8 AND d.id > ?9))" : ""}
      AND ${stageSql("d", p)} IN (${ALERT_STAGE_LIST})
    ORDER BY d.issue_date, d.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
@@ -154,13 +180,17 @@ export const REALISATION_BELLS_SQL = `SELECT n.user_id, n.kind, n.entity_id FROM
 // ---- the statement of account (LD78) ----------------------------------------------------------------------------------------------------------------
 
 const DEBIT_KINDS = "('tax_invoice', 'export_invoice', 'debit_note')";
+/** M6.5: the statement LINE kinds that add to what the client owes: the debit documents and a `refund` (money we paid back lowers the client's credit). */
+const LINE_DEBIT_KINDS = "('tax_invoice', 'export_invoice', 'debit_note', 'refund')";
 
 /**
  * The lines of a client's statement as one source `u(id, kind, date, ord, number, amount, sk)`: the debit documents and credit notes (issued, not voided,
  * the client's, in the currency), and from M6.1 the CONFIRMED payments of the ledger (L4: the advance receipts of Q9 were back-filled as payments, 0060): a
  * `receipt` line for money received (its full amount, dated by the day it arrived; the number is the tax invoice an advance paid, else the bank reference, else '' (never NULL: the PDF escapes it)) and
  * a `tds` line for tax the client deducted (T8; dated by its advice; the number is the invoice it is on). A pending, rejected or withdrawn payment is never a line.
- * `ord` orders one day: 1 a debit document, 2 a credit note, 3 a receipt, 4 a TDS line; `sk` is `date|ord`, the keyset key with `id`. Proformas are not here
+ * M6.5 (L9): a `refund` line (a debit, core `STATEMENT_DEBIT_TYPES`) for each SUCCEEDED refund of a confirmed payment, dated by the IST day it succeeded
+ * (`settled_on`); its number is the bank reference of a manual refund, else the gateway's refund id, else ''. A refund still with the gateway is not a line.
+ * `ord` orders one day: 1 a debit document, 2 a credit note, 3 a receipt, 4 a TDS line, 5 a refund; `sk` is `date|ord`, the keyset key with `id`. Proformas are not here
  * (LD78: not a tax document; their payment shows through the tax invoice). `cond` is a SQL fragment over a date expression, e.g. `x BETWEEN ?3 AND ?4`. With
  * `withParent`, a credit or debit note carries the number of the invoice it is against (`parent`; FX-4, full audit A5 7: debit notes too); every other line NULL.
  */
@@ -175,7 +205,11 @@ const statementSource = (cond: (dateExpr: string) => string, withParent = false)
              ELSE coalesce((SELECT inv.number_display FROM advance_receipts ar JOIN documents inv ON inv.id = ar.invoice_id WHERE ar.id = r.advance_receipt_id), r.reference_norm, '') END,
            r.amount_minor, r.received_on || '|' || CASE r.kind WHEN 'tds' THEN 4 ELSE 3 END${withParent ? ", NULL" : ""}
       FROM payments r INDEXED BY payments_client
-      WHERE r.client_id = ?1 AND r.currency = ?2 AND r.status = 'confirmed' AND ${cond("r.received_on")}) u`;
+      WHERE r.client_id = ?1 AND r.currency = ?2 AND r.status = 'confirmed' AND ${cond("r.received_on")}
+    UNION ALL
+    SELECT f.id, 'refund', f.settled_on, 5, coalesce(f.reference_norm, f.provider_refund_id, ''), f.amount_minor, f.settled_on || '|5'${withParent ? ", NULL" : ""}
+      FROM payment_refunds f INDEXED BY payment_refunds_client JOIN payments fp ON fp.id = f.payment_id
+      WHERE f.client_id = ?1 AND f.currency = ?2 AND f.status = 'succeeded' AND fp.status = 'confirmed' AND ${cond("f.settled_on")}) u`;
 
 /**
  * One page of a statement: `?1` the client, `?2` the currency, `?3` and `?4` the range (inclusive), and for a next page `?5` and `?6` the last row's `(sk, id)`.
@@ -192,9 +226,9 @@ export const STATEMENT_PAGE_SQL = (after: boolean): string =>
  */
 export const STATEMENT_BALANCE_BEFORE_SQL = (after: boolean): string =>
   after
-    ? `SELECT coalesce(sum(CASE WHEN u.kind IN ${DEBIT_KINDS} THEN u.amount ELSE -u.amount END), 0) AS balance
+    ? `SELECT coalesce(sum(CASE WHEN u.kind IN ${LINE_DEBIT_KINDS} THEN u.amount ELSE -u.amount END), 0) AS balance
        FROM ${statementSource(() => "1 = 1")} WHERE (u.sk < ?5 OR (u.sk = ?5 AND u.id <= ?6))`
-    : `SELECT coalesce(sum(CASE WHEN u.kind IN ${DEBIT_KINDS} THEN u.amount ELSE -u.amount END), 0) AS balance
+    : `SELECT coalesce(sum(CASE WHEN u.kind IN ${LINE_DEBIT_KINDS} THEN u.amount ELSE -u.amount END), 0) AS balance
        FROM ${statementSource((x) => `${x} < ?3`)}`;
 
 /**
@@ -206,8 +240,8 @@ export const STATEMENT_ENTRIES_SQL = (limit: number): string =>
    ORDER BY u.sk, u.id LIMIT ${Math.trunc(limit)}`;
 
 /** The range's debits, credits and number of lines (`?1` client, `?2` currency, `?3` and `?4` the range). */
-export const STATEMENT_TOTALS_SQL = `SELECT coalesce(sum(CASE WHEN u.kind IN ${DEBIT_KINDS} THEN u.amount END), 0) AS debit,
-       coalesce(sum(CASE WHEN u.kind NOT IN ${DEBIT_KINDS} THEN u.amount END), 0) AS credit, count(*) AS n
+export const STATEMENT_TOTALS_SQL = `SELECT coalesce(sum(CASE WHEN u.kind IN ${LINE_DEBIT_KINDS} THEN u.amount END), 0) AS debit,
+       coalesce(sum(CASE WHEN u.kind NOT IN ${LINE_DEBIT_KINDS} THEN u.amount END), 0) AS credit, count(*) AS n
    FROM ${statementSource((x) => `${x} >= ?3 AND ${x} <= ?4`)}`;
 
 /** The same count alone, for the PDF request's 200-line limit (it never reads more than needed to know). */
@@ -217,11 +251,13 @@ export const STATEMENT_COUNT_SQL = `SELECT count(*) AS n FROM ${statementSource(
  * What a statement made today must close at (`?1` client, `?2` currency), from the ledger itself (M6.1, run file B): Σ (total − paid − credited − TDS) over the
  * client's issued, not voided debit documents, minus the client's credit (what its confirmed payments hold unallocated). Not Σ `balance_minor`: a document's
  * balance stops at zero, while an excess on it (paid, credited and TDS above its total) is money the client is owed, so it lowers the closing balance. Equal to
- * debits − credit notes − receipts − TDS lines (a test proves the two agree).
+ * debits − credit notes − receipts − TDS lines + refund lines (a test proves the two agree). M6.5 (L35): each payment's free money through `paymentFreeSql` with the
+ * refunds that went out only (`succeeded`, the ones the statement lists): while a refund is still with the gateway its money is neither credit nor a line, so the
+ * statement closes higher than `balance − excess − credit` of `CLIENT_FIGURES_SQL` by exactly the refunds in flight.
  */
 export const STATEMENT_LEDGER_SQL = `SELECT (SELECT coalesce(sum(d.total_minor - d.paid_minor - d.credited_minor - d.tds_minor), 0) FROM documents d INDEXED BY documents_client_issued
        WHERE d.client_id = ?1 AND d.currency = ?2 AND ${ISSUED_GST} AND d.type IN ${DEBIT_KINDS} AND d.voided_at IS NULL AND d.status <> 'void')
-     - (SELECT coalesce(sum(p.amount_minor - ${paymentNetSql("p.id")}), 0) FROM payments p INDEXED BY payments_client
+     - (SELECT coalesce(sum(${paymentFreeSql("p", "succeeded")}), 0) FROM payments p INDEXED BY payments_client
        WHERE p.client_id = ?1 AND p.currency = ?2 AND p.status = 'confirmed' AND p.kind = 'payment') AS balance`;
 
 /**
@@ -432,7 +468,8 @@ export const PROFORMAS_AWAITING_GROUPED_SQL = `SELECT d.currency, count(*) AS n,
 export const SETTINGS_TAX_SQL = "SELECT s.value FROM settings s WHERE s.key = 'tax'";
 
 /**
- * How many open exports are in each stage today (`?1` today, IST), the rule values being the `tax` row's own: one row per stage that has any, by stage.
+ * How many open exports are in each stage today (`?1` today, IST), the rule values being the `tax` row's own: one row per stage that has any, by stage. M6.5: the
+ * exports read are those with a balance or still open for another reason (`stageOpenSql`: RA-38's proof, RB-43's reduction), and `realised` is never a row.
  * The stage of each export is worked out once, in a subquery (`sg`) that `LIMIT -1` keeps from being flattened into the aggregate (flattened, the stage expression,
  * with its correlated extension seeks, would be copied into every stage's column); the counts are one aggregate row with a column per stage
  * (`EXPORT_STAGES`), no GROUP BY (L33). The twin of `EXPORT_STAGE_COUNTS_GROUPED_SQL`.
@@ -444,16 +481,16 @@ export const EXPORT_STAGE_COUNTS_SQL = /* @__PURE__ */ (() => {
    FROM (SELECT ${EXPORT_STAGES.map((s) => `count(CASE sg.stage WHEN '${s}' THEN 1 END) AS n_${s}`).join(", ")}
          FROM (SELECT ${stageSql("d", settingsBinds("?1"))} AS stage
                FROM documents d INDEXED BY documents_export_issued
-               WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND d.balance_minor > 0 LIMIT -1) sg) t
+               WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND ${stageOpenSql("d")} LIMIT -1) sg) t
    JOIN (${stageRows}) st
-   WHERE ${pick} > 0 ORDER BY st.stage`;
+   WHERE ${pick} > 0 AND st.stage <> 'realised' ORDER BY st.stage`;
 })();
 /** The reference twin of `EXPORT_STAGE_COUNTS_SQL` (tests only): the grouped statement of M5.5b. */
 export const EXPORT_STAGE_COUNTS_GROUPED_SQL =
   /* @__PURE__ */ (() => `SELECT ${stageSql("d", settingsBinds("?1"))} AS stage, count(*) AS n
    FROM documents d INDEXED BY documents_export_issued
-   WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND d.balance_minor > 0
-   GROUP BY stage`)();
+   WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND ${stageOpenSql("d")}
+   GROUP BY stage HAVING stage <> 'realised'`)();
 
 /** The five exports nearest a deadline: in one of the four alert stages, the earliest deadline of the stage first (an overdue one before one that is approaching). */
 export const EXPORT_NEXT_SQL = (() => {
@@ -461,7 +498,7 @@ export const EXPORT_NEXT_SQL = (() => {
   return `SELECT d.id, d.number_display, d.issue_date, d.currency, d.balance_minor, d.client_id, c.code AS client_code, ${stageSql("d", p)} AS stage,
        CASE WHEN ${stageSql("d", p)} IN ('gst_approaching', 'gst_overdue') THEN ${gstDueSql("d", p)} ELSE ${femaDueSql("d", p)} END AS due
    FROM documents d INDEXED BY documents_export_issued JOIN clients c ON c.id = d.client_id
-   WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND d.balance_minor > 0 AND ${stageSql("d", p)} IN (${ALERT_STAGE_LIST})
+   WHERE ${ISSUED_EXPORT} AND d.voided_at IS NULL AND ${stageOpenSql("d")} AND ${stageSql("d", p)} IN (${ALERT_STAGE_LIST})
    ORDER BY due, d.id LIMIT 5`;
 })();
 
@@ -484,6 +521,14 @@ const ALLOCATED_BY_CURRENCY = `(SELECT json_group_object(y.cur, y.net) FROM (SEL
        FROM payments ap INDEXED BY payments_client JOIN payment_allocations aa INDEXED BY payment_allocations_payment ON aa.payment_id = ap.id
        WHERE ap.client_id = ?1 AND ap.status = 'confirmed' AND ap.kind = 'payment' GROUP BY ap.currency) y)`;
 /**
+ * M6.5 (L9, L35): the refunds of those payments by currency, as `{"INR": [live, succeeded]}`: `live` (not failed: `paymentRefundedSql`) lowers the credit, `succeeded`
+ * lowers "collected". A seek of `payment_refunds_payment` per payment.
+ */
+const REFUNDED_BY_CURRENCY = `(SELECT json_group_object(rr.cur, json_array(rr.live, rr.done)) FROM (SELECT rp.currency AS cur,
+         sum(CASE WHEN rf.status <> 'failed' THEN rf.amount_minor ELSE 0 END) AS live, sum(CASE WHEN rf.status = 'succeeded' THEN rf.amount_minor ELSE 0 END) AS done
+       FROM payments rp INDEXED BY payments_client JOIN payment_refunds rf INDEXED BY payment_refunds_payment ON rf.payment_id = rp.id
+       WHERE rp.client_id = ?1 AND rp.status = 'confirmed' AND rp.kind = 'payment' GROUP BY rp.currency) rr)`;
+/**
  * A client's figures by currency (`?1` the client, `?2` today, IST): billed, credited, the balance (Σ `balance_minor` of its open debit documents: what the
  * client owes, each document stopping at zero) and the part of it past its due date (strictly before today, as `OWED_SQL`). M6.1 (early check A4): `excess`
  * is Σ max(0, paid + credited + TDS − total) over the debit documents (what was settled above what they owe), so what a statement made today closes at is
@@ -495,9 +540,13 @@ const ALLOCATED_BY_CURRENCY = `(SELECT json_group_object(y.cur, y.net) FROM (SEL
  * Code review finding 8: each payment aggregate is evaluated once. The grouped documents are a derived table `f` whose `pay` column holds both amounts for the
  * currency (`[collected, allocated]`); the outer query reads it twice without evaluating `COLLECTED_BY_CURRENCY` again. The order is the inner `ORDER BY`
  * (an outer one would add a sorter that D1 counts as rows read; a client has one currency, M3.3).
+ *
+ * M6.5 (L9, L35): `collected` is net of the refunds that went out, and `credit` is each payment's free money (`paymentFreeSql`: less every refund not failed), from
+ * `REFUNDED_BY_CURRENCY` (`pay[2]`: `[live, succeeded]`, the aggregate evaluated once, as finding 8 asks).
  */
 export const CLIENT_FIGURES_SQL = `SELECT f.currency, f.billed, f.credited, f.balance, f.overdue, f.overdue_n, f.tds, f.excess,
-       coalesce(json_extract(f.pay, '$[0]'), 0) AS collected, coalesce(json_extract(f.pay, '$[0]'), 0) - coalesce(json_extract(f.pay, '$[1]'), 0) AS credit
+       coalesce(json_extract(f.pay, '$[0]'), 0) - coalesce(json_extract(f.pay, '$[2][1]'), 0) AS collected,
+       coalesce(json_extract(f.pay, '$[0]'), 0) - coalesce(json_extract(f.pay, '$[1]'), 0) - coalesce(json_extract(f.pay, '$[2][0]'), 0) AS credit
    FROM (SELECT d.currency,
        coalesce(sum(CASE WHEN d.type IN ${DEBIT_KINDS} THEN d.total_minor END), 0) AS billed,
        coalesce(sum(CASE WHEN d.type = 'credit_note' THEN d.total_minor END), 0) AS credited,
@@ -506,19 +555,22 @@ export const CLIENT_FIGURES_SQL = `SELECT f.currency, f.billed, f.credited, f.ba
        count(CASE WHEN d.type IN ${DEBIT_KINDS} AND d.balance_minor > 0 AND d.due_date < ?2 THEN 1 END) AS overdue_n,
        coalesce(sum(CASE WHEN d.type IN ${DEBIT_KINDS} THEN d.tds_minor END), 0) AS tds,
        coalesce(sum(CASE WHEN d.type IN ${DEBIT_KINDS} THEN max(0, d.paid_minor + d.credited_minor + d.tds_minor - d.total_minor) END), 0) AS excess,
-       json_array(json_extract(${COLLECTED_BY_CURRENCY}, '$.' || d.currency), json_extract(${ALLOCATED_BY_CURRENCY}, '$.' || d.currency)) AS pay
+       json_array(json_extract(${COLLECTED_BY_CURRENCY}, '$.' || d.currency), json_extract(${ALLOCATED_BY_CURRENCY}, '$.' || d.currency),
+         json(json_extract(${REFUNDED_BY_CURRENCY}, '$.' || d.currency))) AS pay
      FROM documents d INDEXED BY documents_client_issued
      WHERE d.client_id = (SELECT z.id FROM clients z WHERE z.id = ?1 AND z.anonymised_at IS NULL) AND ${ISSUED_GST} AND d.voided_at IS NULL AND d.status <> 'void'
      GROUP BY d.currency ORDER BY d.currency) f`;
 
 /**
- * Code review finding 7: a client's collected money and credit in a currency that has payments and no issued GST document (`?1` the client), so the Overview
+ * Code review finding 7: a client's collected money and credit (M6.5: both net of refunds, as `CLIENT_FIGURES_SQL`) in a currency that has payments and no issued GST document (`?1` the client), so the Overview
  * shows Collected and Credit held before the first invoice; `clientFinance` adds such a currency to the figures with its document figures at zero. Both
  * conditions are constant, so they are checked before any payment is read: a client with an issued document (which every client with invoices has) costs one
  * probe of `documents_client_issued`, and an anonymised client has no rows. A client has one currency (M3.3; it locks once an invoice or a payment exists).
  */
-export const CLIENT_PAYMENTS_ONLY_SQL = `SELECT pc.cur AS currency, pc.amount AS collected, pc.amount - coalesce(json_extract(${ALLOCATED_BY_CURRENCY}, '$.' || pc.cur), 0) AS credit
-   FROM (SELECT cp.currency AS cur, sum(cp.amount_minor) AS amount FROM payments cp INDEXED BY payments_client
+export const CLIENT_PAYMENTS_ONLY_SQL = `SELECT pc.cur AS currency, pc.amount - coalesce(json_extract(pc.refunds, '$[1]'), 0) AS collected,
+       pc.amount - coalesce(json_extract(${ALLOCATED_BY_CURRENCY}, '$.' || pc.cur), 0) - coalesce(json_extract(pc.refunds, '$[0]'), 0) AS credit
+   FROM (SELECT cp.currency AS cur, sum(cp.amount_minor) AS amount, json_extract(${REFUNDED_BY_CURRENCY}, '$.' || cp.currency) AS refunds
+         FROM payments cp INDEXED BY payments_client
          WHERE cp.client_id = ?1 AND cp.status = 'confirmed' AND cp.kind = 'payment' GROUP BY cp.currency ORDER BY cp.currency) pc
    WHERE NOT EXISTS (SELECT 1 FROM documents x INDEXED BY documents_client_issued
            WHERE x.client_id = ?1 AND x.frozen_at IS NOT NULL AND x.type IN ${GST_TYPES} AND x.voided_at IS NULL AND x.status <> 'void')
@@ -607,4 +659,45 @@ export type PaymentsRegisterRow = {
   client_code: string;
   client_name: string;
   allocations: string;
+};
+
+/**
+ * M6.5 (L9; ADM-PAY-08): one page of the refunds register, the companion of `PAYMENTS_REGISTER_SQL` (kept apart so the M6.1 register's rows and CSV layout stay
+ * as they are until the SPA takes refunds in a new layout version): the SUCCEEDED refunds of confirmed payments with `settled_on` from `?1` to `?2` (ISO, inclusive),
+ * oldest first by `(settled_on, id)`, with a next page from `?3`/`?4`; read through `payment_refunds_settled`. Each row carries the source payment, the client, the
+ * invoice and the credit note it followed (numbers), the bank's INR amount of a USD refund (L15, never a GST figure). At most 51 rows.
+ * B4 (`GET /reports/refunds`, the `refunds-v1` CSV): and the source payment's own reference (its gateway id and its bank reference).
+ */
+export const REFUNDS_REGISTER_SQL = (after: boolean): string =>
+  `SELECT f.id, f.payment_id, f.provider, f.origin, f.mode, f.paid_to, f.reason_code, f.settled_on, f.currency, f.amount_minor, f.inr_refunded_minor, f.reference_norm,
+       f.provider_refund_id, f.client_id, c.code AS client_code, c.display_name AS client_name, fd.number_display AS document_number, fc.number_display AS credit_note_number,
+       fp.provider_payment_id AS payment_provider_ref, fp.reference_norm AS payment_reference
+   FROM payment_refunds f INDEXED BY payment_refunds_settled JOIN payments fp ON fp.id = f.payment_id JOIN clients c ON c.id = f.client_id
+     LEFT JOIN documents fd ON fd.id = f.document_id LEFT JOIN documents fc ON fc.id = f.credit_note_id
+   WHERE f.status = 'succeeded' AND fp.status = 'confirmed' AND f.settled_on >= ?1 AND f.settled_on <= ?2 ${after ? "AND (f.settled_on > ?3 OR (f.settled_on = ?3 AND f.id > ?4))" : ""}
+   ORDER BY f.settled_on, f.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
+
+/** One row of `REFUNDS_REGISTER_SQL` as D1 returns it. */
+export type RefundsRegisterRow = {
+  id: string;
+  payment_id: string;
+  provider: "manual" | "razorpay" | "stripe" | "paypal";
+  origin: "owner" | "outside" | "chargeback";
+  mode: string | null;
+  paid_to: string | null;
+  reason_code: string;
+  settled_on: string;
+  currency: "INR" | "USD";
+  amount_minor: number;
+  inr_refunded_minor: number | null;
+  reference_norm: string | null;
+  provider_refund_id: string | null;
+  client_id: string;
+  client_code: string;
+  client_name: string;
+  document_number: string | null;
+  credit_note_number: string | null;
+  /** B4: the source payment's gateway id and bank reference. */
+  payment_provider_ref: string | null;
+  payment_reference: string | null;
 };

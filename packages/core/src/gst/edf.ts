@@ -1,7 +1,11 @@
 // The monthly Export Declaration Form (EDF) working list (M5.5a; ADM-REP-07, docs/08-A §8). Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 3(2) (08-C RB-03): under the
 // FEMA 2026 regulations an exporter of services gives the AD bank an EDF within 30 days from the end of the month of the
 // invoice; one EDF may cover all the exports of the month (08-C RB-03). Settled by the lead on the safest reading, 2026-10-30 (08-C RB-03): "software" (FEMA 23(R)/2026-RB Reg. 2(1)(e)); one monthly EDF with the AD bank; never Reg. 3(2)(b). This is OUR list for the bank
-// conversation, not the bank's form. All payment rails are included (Q16). Export credit notes are not included (no 08-C row covers them).
+// conversation, not the bank's form. All payment rails are included (Q16). Export credit notes are not rows of their own (no 08-C row covers them); from
+// `edf-v2` (M6.5, L13, RB-43) an invoice's row carries what its credit notes took off it, what was realised on it (`paid_minor`, net of a refund's release), the
+// AD bank's Reg. 6 reductions (Settled by the lead on the safest reading, 2026-11-03 (08-C RB-43): the EDF keeps the full value; FEMA treats the invoice as not
+// fully realised until the reduction is recorded) and whether a card or PayPal payment on an LUT export still awaits its proof (Settled by the lead on the safest
+// reading, 2026-11-02 (08-C RA-38)).
 import { addDays, type CalendarDate, isValidDate } from "../dates.ts";
 import { lastDayOfMonth } from "./period.ts";
 import {
@@ -62,6 +66,19 @@ export type EdfRow = {
   readonly purposeCode: string | null;
   readonly femaDue: CalendarDate;
   readonly edfDue: CalendarDate;
+  /**
+   * `edf-v2` (B4; L13): "Amount realised", the invoice's `paid_minor` in its own currency (net of a refund's release); null when the page carried no facts
+   * (`edf-v1` leaves the column blank whatever it holds).
+   */
+  readonly realisedMinor: number | null;
+  /** What its credit notes took off it (`credited_minor`); null without facts. */
+  readonly creditedMinor: number | null;
+  /** RB-43: Σ the AD bank's Reg. 6 reductions, with the latest one's day and the bank's reference; null without facts (and the day and reference without one). */
+  readonly reductionsMinor: number | null;
+  readonly reductionOn: CalendarDate | null;
+  readonly reductionRef: string | null;
+  /** RA-38: an LUT export with a card or PayPal payment still without its proof; null without facts. */
+  readonly proofMissing: boolean | null;
 };
 
 export type EdfOptions = {
@@ -109,6 +126,22 @@ export function edfRows(
         errors.push({ code: "amount_invalid", path: at });
         continue;
       }
+      // `edf-v2` (B4): the facts are checked whole; a damaged one fails the list rather than printing a guess.
+      const f = row.realisationFacts ?? null;
+      if (
+        f !== null &&
+        (!isNonNegInt(f.paidMinor) ||
+          !isNonNegInt(f.creditedMinor) ||
+          !isNonNegInt(f.reductionsMinor) ||
+          typeof f.proofMissing !== "boolean")
+      ) {
+        errors.push({ code: "amount_invalid", path: [...at, "realisationFacts"] });
+        continue;
+      }
+      if (f !== null && f.reductionOn !== null && !isValidDate(f.reductionOn)) {
+        errors.push({ code: "date_invalid", path: [...at, "realisationFacts"] });
+        continue;
+      }
       const extension = Object.hasOwn(extensions, row.id) ? extensions[row.id] : undefined;
       // the shared input check and `before_fema_2026` warning of the realisation report
       const dates = checkedDueDates(
@@ -148,6 +181,12 @@ export function edfRows(
         purposeCode: row.purposeCode,
         femaDue: dates.value.femaDue,
         edfDue: m.value.due,
+        realisedMinor: f === null ? null : f.paidMinor,
+        creditedMinor: f === null ? null : f.creditedMinor,
+        reductionsMinor: f === null ? null : f.reductionsMinor,
+        reductionOn: f === null ? null : f.reductionOn,
+        reductionRef: f === null ? null : f.reductionRef,
+        proofMissing: f === null ? null : f.proofMissing,
       });
     }
     if (errors.length > 0) return fail(errors);

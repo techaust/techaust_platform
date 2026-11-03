@@ -159,7 +159,7 @@ describe("the stage, on the days around every due and approaching date", () => {
           const chunk = cases.slice(at, at + 1_200);
           const got = await all<{ i: number; stage: string }>(
             `SELECT t.i, ${stageSql("t", P)} AS stage
-             FROM (SELECT NULL AS id, j.key AS i, json_extract(j.value, '$.d') AS issue_date, json_extract(j.value, '$.t') AS today, json_extract(j.value, '$.bal') AS balance_minor, ?7 AS currency, ?8 AS supply_type
+             FROM (SELECT NULL AS id, j.key AS i, json_extract(j.value, '$.d') AS issue_date, json_extract(j.value, '$.t') AS today, json_extract(j.value, '$.bal') AS balance_minor, 1000 AS paid_minor, 1000 AS total_minor, NULL AS client_id, ?7 AS currency, ?8 AS supply_type
                    FROM json_each(?1) j) t ORDER BY t.i`,
             JSON.stringify(chunk),
             ...ruleBinds(rules),
@@ -280,7 +280,7 @@ describe("the alert scan's bound on the issue date never hides an export that is
           `SELECT t.i, (${stageSql("t", P)}) IN (${ALERT_STAGE_LIST}) AS stage_in,
                   t.issue_date < date(t.today, '+' || (?6 + 31) || ' days', '-' || ?7 || ' months') AS bound_in
            FROM (SELECT NULL AS id, j.key AS i, json_extract(j.value, '$.d') AS issue_date, json_extract(j.value, '$.t') AS today, json_extract(j.value, '$.cur') AS currency,
-                        json_extract(j.value, '$.sup') AS supply_type, 1000 AS balance_minor FROM json_each(?1) j) t`,
+                        json_extract(j.value, '$.sup') AS supply_type, 1000 AS balance_minor, 0 AS paid_minor, 1000 AS total_minor, NULL AS client_id FROM json_each(?1) j) t`,
           JSON.stringify(chunk),
           ...ruleBinds(rules),
           minMonths,

@@ -22,6 +22,7 @@ import type {
   ProviderResult,
   WebhookInput,
 } from "@techaust/core/payments";
+import { type GatewayRefund, readStripeRefund } from "@techaust/core/refund-gateways";
 import {
   type FormPairs,
   formBody,
@@ -64,6 +65,21 @@ export type CreatedSession = { readonly id: string; readonly url: string; readon
 
 export type StripeApi = {
   readonly mode: "test" | "live" | null;
+  /** M6.5 (review fix 3): why no call can be made at all (checked with no fetch), or null. */
+  readonly blocked: "live_not_allowed" | "unconfigured" | null;
+  /**
+   * M6.5 (S1): `POST /v1/refunds` with the PaymentIntent, the amount, `metadata[techaust_refund]` = our refund id and the same id as `Idempotency-Key` (kept 24
+   * hours, S3; a retry after that lists first: L37).
+   */
+  createRefund(
+    paymentIntentId: string,
+    amountMinor: number,
+    refundId: string,
+  ): Promise<StripeResult<GatewayRefund>>;
+  /** M6.5 (L37): the PaymentIntent's refunds (`GET /v1/refunds?payment_intent=…&limit=100`), to find ours by its metadata. */
+  listRefunds(paymentIntentId: string): Promise<StripeResult<GatewayRefund[]>>;
+  /** M6.5: one refund (`GET /v1/refunds/{id}`). */
+  fetchRefund(refundId: string): Promise<StripeResult<GatewayRefund>>;
   /** `POST /v1/checkout/sessions` with our checkout id as the `Idempotency-Key` (L4: the same request again returns the same session). */
   createSession(pairs: FormPairs, idempotencyKey: string): Promise<StripeResult<CreatedSession>>;
   /** The session with its payment intent, latest charge and balance transaction expanded (C.6). */
@@ -75,6 +91,7 @@ export type StripeApi = {
 };
 
 const SESSION_ID = /^cs_[A-Za-z0-9_]{1,252}$/;
+const REFUND_ID = /^(?:re|pyr)_[A-Za-z0-9_]{1,250}$/;
 const PI_ID = /^pi_[A-Za-z0-9_]{1,252}$/;
 const CHECKOUT_HOST = "checkout.stripe.com";
 const EXPAND = `expand[]=${encodeURIComponent("payment_intent.latest_charge.balance_transaction")}`;
@@ -154,6 +171,40 @@ export function stripeApi(cfg: StripeConfig): StripeApi {
   }
   return {
     mode,
+    blocked:
+      gate() === "live_not_allowed" ? "live_not_allowed" : gate() === "unconfigured" ? "unconfigured" : null,
+    async createRefund(paymentIntentId, amountMinor, refundId) {
+      if (!PI_ID.test(paymentIntentId)) return { ok: false, code: "not_found" };
+      const r = await call(
+        "POST",
+        "/v1/refunds",
+        formBody([
+          ["payment_intent", paymentIntentId],
+          ["amount", String(amountMinor)],
+          ["metadata[app]", "techaust"],
+          ["metadata[techaust_refund]", refundId],
+        ]),
+        refundId,
+      );
+      if (!r.ok) return r;
+      const f = readStripeRefund(r.value);
+      return f ? { ok: true, value: f } : { ok: false, code: "bad_answer" };
+    },
+    async listRefunds(paymentIntentId) {
+      if (!PI_ID.test(paymentIntentId)) return { ok: false, code: "not_found" };
+      const r = await call("GET", `/v1/refunds?payment_intent=${paymentIntentId}&limit=100`);
+      if (!r.ok) return r;
+      const data = isObj(r.value) ? r.value.data : null;
+      if (!Array.isArray(data)) return { ok: false, code: "bad_answer" };
+      return { ok: true, value: data.map(readStripeRefund).filter((x): x is GatewayRefund => x !== null) };
+    },
+    async fetchRefund(refundId) {
+      if (!REFUND_ID.test(refundId)) return { ok: false, code: "not_found" };
+      const r = await call("GET", `/v1/refunds/${refundId}`);
+      if (!r.ok) return r;
+      const f = readStripeRefund(r.value);
+      return f ? { ok: true, value: f } : { ok: false, code: "bad_answer" };
+    },
     async createSession(pairs, idempotencyKey) {
       const r = await call("POST", "/v1/checkout/sessions", formBody(pairs), idempotencyKey);
       if (!r.ok) return r;
@@ -418,6 +469,24 @@ export function stubSession(
 }
 
 /** A `fetch` that answers Stripe's four calls as Stripe's API reference shows them (test mode). Locally only. */
+/** The simulator's Stripe refund (M6.5), succeeded. */
+function stripeStubRefund(id: string, paymentIntent: string | null) {
+  const m = /^re_A(\d{1,12})R([0-9a-f]{32})$/.exec(id);
+  const h = m?.[2] ?? "";
+  const ours = h
+    ? `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`
+    : "";
+  return {
+    id,
+    object: "refund",
+    amount: Number(m?.[1] ?? 0),
+    currency: "usd",
+    payment_intent: paymentIntent,
+    status: "succeeded",
+    metadata: { app: "techaust", techaust_refund: ours },
+  };
+}
+
 export const stripeStubFetch: typeof fetch = async (input, init) => {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
   const method = init?.method ?? "GET";
@@ -432,6 +501,15 @@ export const stripeStubFetch: typeof fetch = async (input, init) => {
     const s = stubSession(id, { status: "open", env: f.get("metadata[techaust_env]") ?? "local" });
     return stubJson(200, { ...s, expires_at: Number(f.get("expires_at")) });
   }
+  // M6.5: refunds (succeeded at once; the id carries the amount and our refund id, so a fetch answers the same; a list is empty).
+  if (method === "POST" && url.pathname === "/v1/refunds") {
+    const f = new URLSearchParams(String(init?.body ?? ""));
+    const ours = (f.get("metadata[techaust_refund]") ?? "").replaceAll("-", "");
+    return stubJson(200, stripeStubRefund(`re_A${Number(f.get("amount"))}R${ours}`, f.get("payment_intent")));
+  }
+  if (url.pathname === "/v1/refunds") return stubJson(200, { object: "list", data: [], has_more: false });
+  const re = /^\/v1\/refunds\/(re_A\d{1,12}R[0-9a-f]{32})$/.exec(url.pathname);
+  if (re) return stubJson(200, stripeStubRefund(re[1] as string, null));
   const pi = /^\/v1\/payment_intents\/([^/]+)$/.exec(url.pathname);
   if (pi) {
     const m = STUB_PI.exec(pi[1] ?? "");

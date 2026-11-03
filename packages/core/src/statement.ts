@@ -8,20 +8,23 @@
 // and NOT proformas (not a tax document; their payment shows through the tax invoice, so nothing counts twice, LD22). The closing
 // balance of a statement made today equals the ledger's: Σ `balance_minor` of the client's debit documents (what it owes), minus what was settled above
 // what they owe (the excess: paid + credited + TDS − total, where positive), minus the client's credit (what its confirmed payments hold unallocated); the
-// database's `STATEMENT_LEDGER_SQL`, twin-tested with `CLIENT_FIGURES_SQL` (M6.1, early check A4).
+// database's `STATEMENT_LEDGER_SQL`, twin-tested with `CLIENT_FIGURES_SQL` (M6.1, early check A4). M6.5 (L9): a succeeded refund is a debit line; a refund still with
+// the gateway is no line and no credit, so while one is in flight the statement closes above `balance − excess − credit` by exactly its amount.
 
 /** The kinds of line on a statement. */
 /** M6.1 (T8, 07-ZH line 19): `tds` is the tax the client deducted at source (a credit, like a receipt). */
+/** M6.5 (L9): `refund` is money we paid back to the client (a debit: it lowers the client's credit), dated by the IST day it succeeded. */
 export type StatementKind =
   | "tax_invoice"
   | "export_invoice"
   | "debit_note"
   | "credit_note"
   | "receipt"
-  | "tds";
+  | "tds"
+  | "refund";
 
-/** The document types that add to what the client owes (a credit note and a receipt reduce it). */
-export const STATEMENT_DEBIT_TYPES = ["tax_invoice", "export_invoice", "debit_note"] as const;
+/** The line kinds that add to what the client owes (a credit note, a receipt and TDS reduce it); M6.5: a refund too. */
+export const STATEMENT_DEBIT_TYPES = ["tax_invoice", "export_invoice", "debit_note", "refund"] as const;
 
 /** A statement PDF lists at most this many lines (a longer period is refused: make the range shorter, or use the CSV). */
 export const STATEMENT_PDF_MAX_ENTRIES = 200;

@@ -50,6 +50,7 @@ const LABELS: StatementLabels = {
     credit_note: "Credit note (test label)",
     tds: "TDS (test label)",
     receipt: "Payment received (test label)",
+    refund: "Refund (test label)",
   },
 };
 

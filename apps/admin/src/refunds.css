@@ -1,0 +1,438 @@
+/* M6.5: receipts, refunds, reductions and reconciliation (run file G1–G5; ADM-PAY-08, ADM-PAY-09, ADM-PAY-10). Tokens only (packages/ui theme). The refund
+   rows reuse the payments' ledger lines (`.pay-lines`, payments.css); what is here is the refund's own: its actions, the dialog's choices, the "credit note
+   first" step, the reductions and the reconciliation page. */
+
+/* a receipt in the entries' last column: its number in the document face, the PDF link a full target */
+.rf-receipt {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+}
+
+.rf-receipt .btn--text {
+  min-height: var(--target-min);
+}
+
+.rf-receipt__link,
+.rf-receipt__wait {
+  white-space: nowrap;
+}
+
+/* the refunds under the entries: the same ledger lines, their own heading */
+.rf-block {
+  margin-top: var(--space-5);
+}
+
+/* below md the actions take the card's whole width, under its facts (the cell has no label of its own) */
+@media (max-width: 47.99rem) {
+  .rf-lines .rf-lines__acts {
+    grid-column: 1 / -1;
+  }
+
+  .rf-lines .rf-lines__acts:empty {
+    display: none;
+  }
+}
+
+/* the same inside a narrow Payments panel, where the refunds stack as cards too (payments.css, the pay-panel container) */
+@container pay-panel (max-width: 43.99rem) {
+  .rf-lines .rf-lines__acts {
+    grid-column: 1 / -1;
+  }
+
+  .rf-lines .rf-lines__acts:empty {
+    display: none;
+  }
+}
+
+.rf-state,
+.rf-acts {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+}
+
+.rf-acts .btn {
+  white-space: nowrap;
+}
+
+.rf-acts__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.rf-acts__error {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+}
+
+.rf-acts__error .icon {
+  flex: none;
+  margin-top: 0.125rem;
+}
+
+.rf-pacb {
+  margin-top: var(--space-4);
+}
+
+/* the refund dialog: a little wider than the default, the form read top to bottom */
+.dialog--refund {
+  width: min(100% - 2rem, 36rem);
+}
+
+.rf-choose {
+  padding-bottom: 0;
+}
+
+/* a field focused after a refused submit is scrolled into view whole (`focusBlock` in refund-dialog.tsx): its label clear of the sticky title above, its
+   error clear of the sticky action bar below (the dialog's scroll padding is their real heights; this is the breathing room; review part 2, P2-7, P2-13) */
+.rf-form .field,
+.rf-choose .field,
+.rf-check,
+.rf-export {
+  margin-bottom: 0;
+  scroll-margin-block: var(--space-3);
+}
+
+.pay-form.rf-form {
+  gap: var(--space-5);
+}
+
+.rf-facts {
+  margin: 0;
+}
+
+.rf-lede {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+/* the choices with a hint under each (where the money comes from, how it goes back, to whom): stacked rows, each a full target; the chosen one carries the
+   shared switch's 2 px ink bar (#140) */
+.rf-pick {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.rf-pick__legend {
+  padding: 0;
+  margin-bottom: var(--space-2);
+  font-weight: 600;
+}
+
+.rf-pick__opt {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-3);
+  min-height: var(--target-min);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.rf-pick__opt:has(input:checked) {
+  border-color: var(--color-text);
+  box-shadow: inset 2px 0 0 var(--color-text);
+}
+
+.rf-pick__opt:has(input:focus-visible) {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* review part 2, P2-1: the house radio (20 px, the primary button's colour, as `.radio input` and `.pay-resolve__opt input`), centred on the title's first
+   line (a 24 px line: 2 px above) */
+.rf-pick__opt input {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  min-height: 0;
+  margin: 0.125rem 0 0;
+  accent-color: var(--color-btn-primary-bg);
+}
+
+.rf-pick__text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.rf-pick__title {
+  font-weight: 500;
+}
+
+.rf-pick__hint {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.rf-manual {
+  display: grid;
+  gap: var(--space-4);
+  padding-inline-start: var(--space-4);
+  border-inline-start: 2px solid var(--color-border);
+}
+
+.rf-check {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.rf-check .hint {
+  margin: 0;
+}
+
+.rf-export {
+  display: grid;
+  gap: var(--space-3);
+}
+
+/* the tick sits on its block's own spacing, its error right under it (the shared `.check` margin would open a gap between them) */
+.rf-export .check,
+.rf-check .check {
+  margin: 0;
+}
+
+/* "This refund needs a credit note first": the step before the refund, its own block with the way to the credit note */
+.rf-note-first {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-inline-start: 3px solid var(--color-text);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.rf-note-first p {
+  margin: 0;
+}
+
+.rf-note-first__h {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+
+.rf-note-first [data-state="warn"] {
+  font-weight: 600;
+}
+
+.rf-note-first__closed {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.rf-note-first__closed .icon {
+  flex: none;
+  margin-top: 0.1875rem;
+  color: var(--color-warning);
+}
+
+/* the bank's reductions under the realisation dates (RB-43) */
+.rf-reductions {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.rf-reductions__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.rf-reductions__head .pay-real__ext-h {
+  margin: 0;
+}
+
+/* the payment's own receipt (the entry dialog) */
+.rf-entry-receipt {
+  margin-top: var(--space-4);
+}
+
+/* a refund still on its way, under the client's credit: the label with its icon, the amount a link to its payment */
+.rf-inflight__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.rf-inflight__label .icon {
+  color: var(--color-text-muted);
+}
+
+.rf-inflight__amount {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+}
+
+/* "Refund credit" beside "Use credit" under the client's figures */
+.acct__credit-btn + .rf-credit-btn {
+  margin-inline-start: var(--space-2);
+}
+
+/* the Refunds tab */
+.rf-tab {
+  display: grid;
+  /* a wide table scrolls inside its own box; the grid track never grows past the page (review part 2, P2-12) */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+/* Payments › Credit at period end (review part 2, item 12): the lede at reading width, the period picker as wide as its longest period */
+.rf-tab__lede {
+  max-width: 65ch;
+  margin: 0;
+}
+
+.rf-tab__period {
+  max-inline-size: 20rem;
+}
+
+.rf-tab__period .field {
+  margin-bottom: 0;
+}
+
+.rf-tab__loading {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+}
+
+/* review part 2, P2-12: in the table the state chip and the day keep one line each (the payment lists let a long chip wrap; here every chip is short) */
+@media (min-width: 48rem) {
+  .pay-table.rf-tab__table .spill,
+  .pay-table.rf-tab__table .rf-date {
+    white-space: nowrap;
+  }
+
+  /* the wait line wraps at a set width instead of widening the actions column (the buttons wrap under each other when they must) */
+  .rf-tab__table .rf-acts {
+    max-width: 12rem;
+    /* the shared actions cell keeps one line and aligns to the end (shell.css); the wait line may wrap and reads from the start */
+    white-space: normal;
+    text-align: start;
+  }
+}
+
+/* in the Refunds tab's cards the actions sit at the card's top right: kept narrow and right-aligned so the date beside them keeps its line */
+@media (max-width: 47.99rem) {
+  .rf-tab__table .rf-acts {
+    justify-items: end;
+    max-width: 11rem;
+    text-align: end;
+  }
+
+  .rf-tab__table .rf-acts__buttons {
+    justify-content: flex-end;
+  }
+}
+
+/* ---------- reconciliation (G5) ---------- */
+
+.rcn-open {
+  min-height: var(--target-min);
+  padding-inline: 0;
+  white-space: nowrap;
+}
+
+.rcn-net {
+  font-weight: 600;
+}
+
+/* a settlement with lines that match nothing, a fee that differs: words and weight, never colour alone */
+.rcn-short {
+  font-weight: 600;
+}
+
+.rcn-seen {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+.rcn-seen .icon {
+  color: var(--color-text-accent);
+}
+
+/* the bank tick and the Owner's action in one cell (review part 2, P2-2): "Seen in bank statement" with its "Undo" beside it, or "Tick as seen" */
+.rcn-bank {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-3);
+}
+
+.rcn-undo,
+.rcn-tick {
+  min-height: var(--target-min);
+  white-space: nowrap;
+}
+
+.rcn-undo {
+  padding-inline: 0;
+}
+
+/* a settlement's lines sit clear of its facts above (UTR, settlement ID, net to bank) */
+.rcn-items {
+  margin-top: var(--space-5);
+}
+
+.rcn-entity {
+  display: grid;
+  gap: var(--space-1);
+}
+
+/* second review, M5: a settlement line's payment or refund id is one token the Owner copies into Razorpay's dashboard, so from 48rem it keeps one line (the
+   Line column takes its width); only the stacked cards below 48rem break it where they must */
+.rcn-id {
+  white-space: nowrap;
+}
+
+@media (max-width: 47.99rem) {
+  .rcn-items .rcn-id {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
+.rcn-unmatched {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.rcn-pick {
+  justify-self: start;
+  max-width: 100%;
+}
+
+.rcn-hint {
+  margin: 0;
+  max-width: 65ch;
+  color: var(--color-text-muted);
+}
+
+.rcn-note {
+  margin: var(--space-6) 0 0;
+  max-width: 65ch;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}

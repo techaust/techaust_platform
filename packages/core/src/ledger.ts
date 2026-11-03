@@ -89,7 +89,7 @@ export const balanceOf = (
     ),
   );
 
-/** The excess: paid, credited and TDS together above the total. Release moves it to the client's credit (M6.1 has no refund, M6.5). */
+/** The excess: paid, credited and TDS together above the total. Release moves it to the client's credit; M6.5 refunds it (a release, then the refund, L1). */
 export const refundDueOf = (
   totalMinor: number,
   paidMinor: number,
@@ -247,14 +247,25 @@ export type CreditPayment = {
   readonly amountMinor: number;
   /** Σ allocate − Σ release of this payment. */
   readonly netAllocatedMinor: number;
+  /**
+   * M6.5 (L1, L35): Σ this payment's refunds that have not failed (`paymentRefundedSql`: a refund still with the gateway holds the money; a failed one gives it
+   * back to credit). Absent reads 0 (a caller from before M6.5; the database's bounds refuse an over-draw whatever it passes).
+   */
+  readonly refundedMinor?: number;
 };
 
+/** A payment's free money: amount − net − refunds not failed, for confirmed money received only (the twin of `paymentFreeSql` in `@techaust/db/sql-rules`). */
 const unallocated = (p: CreditPayment): bigint =>
   p.status === "confirmed" && p.kind === "payment"
-    ? big(p.amountMinor, "amount") - big(p.netAllocatedMinor, "allocated")
+    ? big(p.amountMinor, "amount") -
+      big(p.netAllocatedMinor, "allocated") -
+      big(p.refundedMinor ?? 0, "refunded")
     : 0n;
 
-/** The client's credit in one currency: what its confirmed payments hold unallocated (a TDS row is always allocated whole, so it adds nothing). Never below zero. */
+/** What one payment leaves as the client's credit (its free money), never below zero. */
+export const freeOf = (p: CreditPayment): number => num(max0(unallocated(p)));
+
+/** The client's credit in one currency: what its confirmed payments hold unallocated and have not refunded (a TDS row is always allocated whole, so it adds nothing). Never below zero. */
 export const creditBalance = (payments: readonly CreditPayment[]): number =>
   num(max0(payments.reduce((s, p) => s + unallocated(p), 0n)));
 
@@ -267,7 +278,7 @@ export type CreditSources =
 
 /**
  * Where `amountMinor` of credit is drawn from: first in, first out by the day the money arrived, then by id (stable), each payment giving at most what it holds
- * unallocated. Never over-draws: a request above the credit balance is `exceeds_credit`.
+ * unallocated and has not refunded (M6.5). Never over-draws: a request above the credit balance is `exceeds_credit`.
  */
 export function creditSources(payments: readonly CreditPayment[], amountMinor: number): CreditSources {
   if (!isSafe(amountMinor) || amountMinor <= 0) return { ok: false, code: "invalid_amount" };

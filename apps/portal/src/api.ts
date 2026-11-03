@@ -352,6 +352,16 @@ export type InvoiceSummary = {
   providers?: readonly string[];
   /** M6.2: the open link (amount, when it ends), the last payment received online (confirmed or still being checked, so "received"), a proforma's waiting one. */
   online?: OnlineBlock;
+  /** M6.5 (POR-07 receipt download only; 07-ZO lines 13 to 16): the issued receipts of the client's payments on this document. Absent from an older API. */
+  receipts?: {
+    id: string;
+    numberDisplay: string;
+    amountMinor: number;
+    receivedOn: string | null;
+    hasPdf: boolean;
+  }[];
+  /** M6.5 (07-ZO line 14): the refunds of this document's excess that went out (clients see a refund only once it has gone through). Absent from an older API. */
+  refunds?: { amountMinor: number; on: string }[];
 };
 
 /** M6.2: the page's Pay now block (no Razorpay ids, nothing about the payer). */
@@ -420,6 +430,8 @@ export const invoicesApi = {
       {},
     ),
   pdf: (id: string) => download(`/invoices/${encodeURIComponent(id)}/pdf`, undefined, true),
+  /** M6.5 (POR-07): a payment receipt's PDF (409 `pdf_pending` until it is made; 404 for another client's or without "can see finance"). */
+  receiptPdf: (id: string) => download(`/receipts/${encodeURIComponent(id)}/pdf`, undefined, true),
 };
 
 /**

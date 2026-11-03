@@ -9,6 +9,14 @@
 // M6.1 (Q60, L14): the AD bank may extend the FEMA period (`realisation_extensions`, append-only); the FEMA date is then the later of the standard date and the
 // latest `extended_to` of the invoice, and the GST date follows it (Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 5(1) (08-C RB-04); Rule 96A(1)(b) CGST Rules
 // (08-C RA-20)). The twin is core `realisationDates` with `extendedTo`.
+// M6.5: two more facts decide "realised" (core `stageOf` with its `fema` facts is the twin):
+//   - RB-43 (Settled by the lead on the safest reading, 2026-11-03 (08-C RB-43)): an export is FEMA-realised only once what was paid on it (its `paid_minor`, net of
+//     any refund's release) plus the AD bank's Reg. 6 reductions (`realisation_reductions`) covers its total; nothing outstanding but less received is the stage
+//     `reduction_pending`. The GST stage keeps following the balance (Rule 96A not re-read for this point).
+//   - RA-38 (Settled by the lead on the safest reading, 2026-11-02 (08-C RA-38); L38): an export under LUT is realised for GST only when every confirmed card or
+//     PayPal payment on it (Stripe, PayPal) has its proof: a proof file, or a link to a remittance advice now (`paymentHasAdviceSql`). Until then its GST stages
+//     still run on its dates (an IGST-with-interest risk at the GST date), and it is `ok` before them.
+import { paymentHasAdviceSql, paymentNetSql } from "./sql-rules.ts";
 
 /** The SQL expressions (usually `?n` placeholders) of the rule parameters and of today (IST, ISO date text). */
 export type RealisationSql = {
@@ -50,28 +58,63 @@ export const femaDueSql = (alias: string, p: RealisationSql): string =>
 export const gstDueSql = (alias: string, p: RealisationSql): string =>
   `date(max(${addMonthsClampedSql(`${alias}.issue_date`, p.gstMonths)}, ${femaDueSql(alias, p)}), '+' || ${p.gstExtraDays} || ' days')`;
 
+/** RB-43: Σ the AD bank's Reg. 6 reductions of export invoice row `alias` (one seek of `realisation_reductions_document`). */
+export const reductionsSql = (alias: string): string =>
+  `(SELECT coalesce(sum(rr.amount_minor), 0) FROM realisation_reductions rr WHERE rr.document_id = ${alias}.id)`;
+
 /**
- * The stage of an export invoice row `alias` (columns `issue_date`, `currency`, `supply_type`, `balance_minor`) on `p.today`, first match wins, as core `stageOf`:
- * realised (nothing outstanding), GST overdue, GST approaching, FEMA overdue, FEMA approaching, ok. The GST stages only when `supply_type = 'export_lut'` (Q53).
+ * RA-38 (L38): a confirmed card or PayPal payment (Stripe, PayPal) that holds money on export invoice row `alias` has no proof yet: no proof file and no advice
+ * link now. Read from `payments_proof_awaited` (only the card and PayPal payments still without a proof file: a short list the advice archive keeps near empty), so
+ * an export settled by bank transfer reads nothing here; then a seek of `realisation_advice_payments_active` and of the payment's holding on the invoice.
+ */
+export const proofMissingSql = (alias: string): string =>
+  `EXISTS (SELECT 1 FROM payments rp INDEXED BY payments_proof_awaited
+     WHERE rp.provider IN ('stripe', 'paypal') AND rp.proof_r2_key IS NULL AND rp.status IN ('pending_verification', 'confirmed')
+       AND rp.status = 'confirmed' AND rp.kind = 'payment' AND rp.client_id = ${alias}.client_id
+       AND NOT ${paymentHasAdviceSql("rp")} AND ${paymentNetSql("rp.id", `${alias}.id`)} > 0)`;
+
+/**
+ * The stage of an export invoice row `alias` (columns `id`, `issue_date`, `currency`, `supply_type`, `balance_minor`, `paid_minor`, `total_minor`) on `p.today`,
+ * first match wins, as core `stageOf`: reduction pending (nothing outstanding, but paid plus reductions short of the total: RB-43), realised (nothing outstanding,
+ * and for an LUT export every card or PayPal payment on it proven: RA-38), GST overdue, GST approaching (an LUT export only, Q53), FEMA overdue, FEMA approaching
+ * (something outstanding), ok. Each stage's literal appears once, so a test reads the order from the text.
  */
 export const stageSql = (alias: string, p: RealisationSql): string => {
   const fema = femaDueSql(alias, p);
   const gst = gstDueSql(alias, p);
   const lut = `${alias}.supply_type = 'export_lut'`;
+  const settled = `${alias}.balance_minor <= 0`;
+  // Early check 1, finding 2: `reduction_pending` never hides RA-38's GST stages (an LUT export with a card or PayPal payment still without its proof).
   return `CASE
-    WHEN ${alias}.balance_minor <= 0 THEN 'realised'
+    WHEN ${settled} AND ${alias}.paid_minor + ${reductionsSql(alias)} < ${alias}.total_minor AND NOT (${lut} AND ${proofMissingSql(alias)}) THEN 'reduction_pending'
+    WHEN ${settled} AND NOT (${lut} AND ${proofMissingSql(alias)}) THEN 'realised'
     WHEN ${lut} AND ${p.today} > ${gst} THEN 'gst_overdue'
     WHEN ${lut} AND ${p.today} >= date(${gst}, '-' || ${p.approachingDays} || ' days') THEN 'gst_approaching'
-    WHEN ${p.today} > ${fema} THEN 'fema_overdue'
-    WHEN ${p.today} >= date(${fema}, '-' || ${p.approachingDays} || ' days') THEN 'fema_approaching'
+    WHEN ${alias}.balance_minor > 0 AND ${p.today} > ${fema} THEN 'fema_overdue'
+    WHEN ${alias}.balance_minor > 0 AND ${p.today} >= date(${fema}, '-' || ${p.approachingDays} || ' days') THEN 'fema_approaching'
     ELSE 'ok' END`;
 };
+
+/**
+ * M6.5: the exports a stage reader must look at beyond those with a balance: an LUT export may still be in a GST stage until its card or PayPal proof is on file
+ * (RA-38), and a fully settled export short of its total waits for its reduction (RB-43). The readers (scan, counts, next) take `balance_minor > 0` OR this.
+ */
+export const stageOpenSql = (alias: string): string =>
+  `(${alias}.balance_minor > 0 OR ${alias}.supply_type = 'export_lut' OR ${alias}.paid_minor < ${alias}.total_minor)`;
+
+/**
+ * M6.5: export invoice row `alias` is not realised (the stage is anything but `realised`), worked out without the dates: something outstanding, paid plus reductions
+ * short of the total (RB-43), or an LUT export with a card or PayPal payment lacking its proof (RA-38). The realisation list's "open" filter (no stage in its SQL).
+ */
+export const notRealisedSql = (alias: string): string =>
+  `(${alias}.balance_minor > 0 OR ${alias}.paid_minor + ${reductionsSql(alias)} < ${alias}.total_minor OR (${alias}.supply_type = 'export_lut' AND ${proofMissingSql(alias)}))`;
 
 /**
  * Every stage `stageSql` can give, in its order (core `RealisationStage`; a db test pins the list to the `THEN` literals of `stageSql` and to core's type). The
  * dashboard's stage counts (`EXPORT_STAGE_COUNTS_SQL`) have one column per stage in this list.
  */
 export const EXPORT_STAGES = [
+  "reduction_pending",
   "realised",
   "gst_overdue",
   "gst_approaching",

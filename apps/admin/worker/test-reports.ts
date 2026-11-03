@@ -32,6 +32,8 @@ export type DocSpec = {
   number?: number;
   voided?: boolean;
   balance?: number;
+  /** M6.5 (RB-43): "total" makes the document paid in full (`paid_minor` = its total), as a settled export must be to read as realised. */
+  paid?: "total";
   dueDate?: string | null;
   parentId?: string | null;
   status?: string;
@@ -106,7 +108,7 @@ export async function addDoc(
     fx_rate_micros: usd ? (spec.fx ?? 83_123_400) : null,
     fx_date: usd ? "2026-10-24" : null,
     fx_source: usd ? "FBIL" : null,
-    paid_minor: 0,
+    paid_minor: spec.paid === "total" ? computed.totalMinor : 0,
     balance_minor: spec.balance ?? computed.totalMinor,
     updated_at: 7_000,
     recipient: JSON.stringify({

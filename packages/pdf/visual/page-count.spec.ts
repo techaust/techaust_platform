@@ -11,6 +11,7 @@ import { PDFDocument } from "@cantoo/pdf-lib";
 import { expect, type Page, test } from "@playwright/test";
 import type { InvoiceEnvelope } from "../src/invoice-types.ts";
 import { toInvoiceView } from "../src/invoice-view.ts";
+import { renderReceiptHtml } from "../src/layout/receipt.ts";
 import { renderDeedHtml, renderDocumentHtml } from "../src/render.ts";
 import { DEFAULT_VIEW_CONFIG, toPdfView } from "../src/view.ts";
 import { type DeedFixtureName, deedFixture } from "../test/fixtures/deed.ts";
@@ -21,6 +22,7 @@ import {
   SAMPLE_SIGNATURE_PNG,
 } from "../test/fixtures/invoice-layout.ts";
 import { buildNoteFixture, type NoteFixtureName } from "../test/fixtures/notes.ts";
+import { type ReceiptFixtureName, receiptFixture } from "../test/fixtures/receipt.ts";
 import { marksPerPage } from "./pdf-pages.ts";
 
 /** Pages per fixture, as printed on 2026-11-02 after the fix (Chromium of @playwright/test 1.64.1). */
@@ -63,9 +65,20 @@ const DOCUMENT_PAGES: Record<FixtureName, number> = {
   "long-names": 3,
 };
 const DEED_PAGES: Record<DeedFixtureName, number> = { "short-inr": 2, "long-inr": 2, usd: 2 };
+/**
+ * M6.5: the receipt (designer, 2026-11-03): one page up to ten Applied to lines with a long client name; the longest list (50 lines, "and 10 more" and the
+ * credit) runs to three, the last line, "and 10 more", the credit and the closing line going over together.
+ */
+const RECEIPT_PAGES: Record<ReceiptFixtureName, number> = {
+  "inr-one": 1,
+  "usd-credit": 1,
+  "long-ten": 1,
+  longest: 3,
+};
 
 const INTEGRITY = "[data-testid=integrity]";
 const DEED_FOOTER = "[data-testid=deed-footer]";
+const RECEIPT_NOTICE = "[data-testid=receipt-notice]";
 const signature = {
   mime: "image/png" as const,
   base64: Buffer.from(SAMPLE_SIGNATURE_PNG).toString("base64"),
@@ -153,6 +166,11 @@ test.describe("page counts, and the closing line never alone on a page", () => {
   for (const [name, pages] of Object.entries(DEED_PAGES) as [DeedFixtureName, number][])
     test(`deed ${name}: ${pages} page(s)`, async ({ page }) => {
       await checkDocument(page, renderDeedHtml(deedFixture(name)), pages, DEED_FOOTER);
+    });
+
+  for (const [name, pages] of Object.entries(RECEIPT_PAGES) as [ReceiptFixtureName, number][])
+    test(`receipt ${name}: ${pages} page(s)`, async ({ page }) => {
+      await checkDocument(page, renderReceiptHtml(receiptFixture(name)), pages, RECEIPT_NOTICE);
     });
 });
 

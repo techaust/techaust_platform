@@ -6,6 +6,7 @@ import * as z from "zod/mini";
 import { parseIsoDate } from "../dates.ts";
 import { UUID } from "../ids.ts";
 import { ALLOCATIONS_MAX, PAYMENT_KINDS, PAYMENT_MODES, PAYMENT_STATUSES } from "../ledger.ts";
+import { REFUND_MODES, REFUND_PAID_TO, REFUND_REASONS } from "../refunds.ts";
 
 const isoDate = z.string().check(z.refine((v) => parseIsoDate(v) !== null, { message: "date_invalid" }));
 const uuidv7 = z.string().check(z.refine((v) => UUID.test(v) && v[14] === "7", { message: "id_invalid" }));
@@ -138,6 +139,138 @@ export const paymentsListQuery = z.strictObject({
    */
   proof: z.optional(z.enum(["awaited"])),
 });
+
+// ---- M6.5: refunds, bank matches, settlement fetch, FEMA reductions (run file C; codes only, the words are 07-ZO's and the staff lines') ----------------
+
+/**
+ * `POST /payments/:id/refunds`. `from`: the client's credit, an invoice's excess (`documentId`, with the credit note that made it), or (L33) a pending gateway
+ * payment in full. Exactly one of three ways: through the payment's gateway (neither block), by a bank transfer we make (`manual`: mode, the UTR, the day and the
+ * recipient, RB-24), or a refund already made outside the admin or a lost dispute (`outside`: the gateway's id). `confirmExport`: the Owner ticked that the AD bank
+ * was asked first (RB-43). The route checks what needs the database (`planRefund`, the live guard, the dates against today).
+ */
+export const refundBody = z
+  .strictObject({
+    id: uuidv7,
+    amountMinor: positive,
+    from: z.enum(["credit", "document", "pending"]),
+    documentId: z.optional(ref),
+    creditNoteId: z.optional(ref),
+    reasonCode: z.enum(REFUND_REASONS),
+    note: z.optional(text(PAYMENT_TEXT_MAX)),
+    manual: z.optional(
+      z.strictObject({
+        mode: z.enum(REFUND_MODES),
+        reference: text(REFERENCE_TYPED_MAX),
+        paidOn: isoDate,
+        paidTo: z.enum(REFUND_PAID_TO),
+        /** RB-24 (review part 1, finding 10): the payer asked in writing for the refund to another account in their own name; required with `own_account`. */
+        writtenRequest: z.optional(z.literal(true)),
+      }),
+    ),
+    outside: z.optional(
+      z.strictObject({
+        providerRefundId: text(255),
+        origin: z.enum(["outside", "chargeback"]),
+        settledOn: isoDate,
+      }),
+    ),
+    confirmExport: z.optional(z.boolean()),
+    expectedUpdatedAt: z.optional(z.int()),
+  })
+  .check(
+    z.refine((v) => (v.from === "document") === (v.documentId !== undefined), {
+      message: "document_invalid",
+      path: ["documentId"],
+    }),
+    z.refine((v) => v.creditNoteId === undefined || v.from === "document", {
+      message: "document_invalid",
+      path: ["creditNoteId"],
+    }),
+    z.refine((v) => !(v.manual && v.outside), { message: "refund_way_invalid", path: ["manual"] }),
+    // RB-24 (review part 1, finding 10): a refund to the payer's own other account only on their written request, recorded on the server (the audit summary).
+    z.refine((v) => v.manual?.paidTo !== "own_account" || v.manual.writtenRequest === true, {
+      message: "written_request_missing",
+      path: ["manual", "writtenRequest"],
+    }),
+    // L33: a pending gateway payment goes back through its own gateway, never by our bank transfer; a refund made in the gateway's dashboard is recorded in
+    // full (`outside`, early check 1, finding 4: else it could never be recorded and would block the void or withdraw for ever).
+    z.refine((v) => v.from !== "pending" || !v.manual, {
+      message: "refund_way_invalid",
+      path: ["from"],
+    }),
+    z.refine((v) => (v.outside?.origin === "chargeback") === (v.reasonCode === "chargeback"), {
+      message: "reason_invalid",
+      path: ["reasonCode"],
+    }),
+  );
+
+/**
+ * `POST /refunds/:id/inr` (review part 1, finding 9; L9): the INR the bank debited for a USD refund that went out, as its advice shows it (set once, by the Owner),
+ * for the refunds register's "INR value".
+ */
+export const refundInrBody = z.strictObject({ inrMinor: positive });
+
+/** `POST /reconciliation/bank-matches`: the Owner's "seen in the bank statement" tick of one payment, settlement or refund. */
+export const bankMatchBody = z.strictObject({
+  id: uuidv7,
+  target: z.strictObject({ kind: z.enum(["payment", "settlement", "refund"]), id: ref }),
+  statementOn: isoDate,
+  statementRef: z.optional(text(64)),
+});
+/** `POST /reconciliation/bank-matches/:id/remove`: the undo, with a reason. */
+export const bankMatchRemoveBody = z.strictObject({ reason: text(200) });
+/** `POST /reconciliation/settlements/fetch`: one IST day (one page; at most one fetch per 5 minutes). */
+export const reconFetchBody = z.strictObject({ day: isoDate });
+/** `POST /invoices/:id/realisation-reductions` (RB-43): the AD bank's Reg. 6 reduction, its amount, day and reference, and whether it was on our declaration. */
+export const realisationReductionBody = z.strictObject({
+  id: uuidv7,
+  amountMinor: positive,
+  approvedOn: isoDate,
+  bankRef: text(64),
+  declaration: z.boolean(),
+  note: z.optional(text(PAYMENT_TEXT_MAX)),
+});
+
+/** The M6.5 bodies' warm-up (J: `warm-finance.ts` `warmRefunds()` calls it): one made-up sample each; returns how many parsed (5). */
+export function warmRefundBodies(): number {
+  try {
+    const samples: [{ safeParse: (v: unknown) => { success: boolean } }, unknown][] = [
+      [
+        refundBody,
+        {
+          id: "01900000-0000-7000-8000-000000000002",
+          amountMinor: 100,
+          from: "credit",
+          reasonCode: "overpayment",
+          manual: { mode: "neft", reference: "WARMUTR2", paidOn: "2026-11-03", paidTo: "original" },
+        },
+      ],
+      [
+        bankMatchBody,
+        {
+          id: "01900000-0000-7000-8000-000000000003",
+          target: { kind: "payment", id: "warm-payment" },
+          statementOn: "2026-11-03",
+        },
+      ],
+      [bankMatchRemoveBody, { reason: "Warm up" }],
+      [reconFetchBody, { day: "2026-11-03" }],
+      [
+        realisationReductionBody,
+        {
+          id: "01900000-0000-7000-8000-000000000004",
+          amountMinor: 100,
+          approvedOn: "2026-11-03",
+          bankRef: "WARM",
+          declaration: true,
+        },
+      ],
+    ];
+    return samples.filter(([s, v]) => s.safeParse(v).success).length;
+  } catch {
+    return 0;
+  }
+}
 
 /** Parses one made-up sample of each body at start-up (the warm-up rule of `warm.ts`); returns how many parsed, so a test notices a sample that went stale. */
 export function warmPayments(): number {

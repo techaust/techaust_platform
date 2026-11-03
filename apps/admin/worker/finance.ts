@@ -10,11 +10,15 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 import {
   type CapturePayPalReturnArgs,
   type CapturePayPalReturnResult,
+  type CheckRefundResult,
   type CreateLinkArgs,
   type CreateLinkResult,
+  type FetchSettlementsArgs,
+  type FetchSettlementsResult,
   type GatewayEventsApi,
   isCapturePayPalReturnArgs,
   isCreateLinkArgs,
+  isFetchSettlementsArgs,
   type PortalPaymentsApi,
   type ProcessEventResult,
   type RefreshResult,
@@ -24,6 +28,8 @@ import { processEvent } from "./gateway/events.ts";
 import { createLinkFor, refreshCheckoutById, refreshForClient } from "./gateway/links.ts";
 import { capturePayPalReturn } from "./gateway/paypal-capture.ts";
 import { ROUTES } from "./guard.ts";
+import { fetchSettlements } from "./recon.ts";
+import { checkRefund, toCheckRefundResult } from "./refund-flow.ts";
 import { mountFinance } from "./routes-finance.ts";
 import { rpcId, rpcLog } from "./rpc.ts";
 import { FINANCE_WARM } from "./warm-fixtures/finance.ts";
@@ -65,6 +71,23 @@ export class GatewayEvents extends WorkerEntrypoint<Env> implements GatewayEvent
     const checkoutId = rpcId(args?.checkoutId, "GatewayEvents");
     const answer = await refreshCheckoutById(this.env, checkoutId);
     rpcLog("refreshCheckout", answer.result);
+    return answer;
+  }
+
+  /** M6.5 (L34, L37): the sweep's `refund.check {refundId}`: the refund found at its gateway (by its id, else ours) and moved; the tenth try raises `refund_stuck`. */
+  async checkRefund(args: { refundId: string }): Promise<CheckRefundResult> {
+    const refundId = rpcId(args?.refundId, "GatewayEvents");
+    const answer = toCheckRefundResult(await checkRefund(this.env, refundId, Date.now(), { repost: true }));
+    rpcLog("checkRefund", answer.result);
+    return answer;
+  }
+
+  /** M6.5 (L11): one page of Razorpay's settlement recon for an IST day (`recon.fetch`). */
+  async fetchSettlements(args: FetchSettlementsArgs): Promise<FetchSettlementsResult> {
+    if (!isFetchSettlementsArgs(args))
+      throw new TypeError("GatewayEvents: malformed fetchSettlements arguments");
+    const answer = await fetchSettlements(this.env, args);
+    rpcLog("fetchSettlements", answer.result);
     return answer;
   }
 }

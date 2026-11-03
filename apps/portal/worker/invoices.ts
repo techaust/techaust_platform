@@ -2,6 +2,7 @@
 // contact without "can see finance" gets the plain 404, as for a document that is not theirs). Every query goes through `forClient`/`bound` with the organisation of the session (`client_id = ?1`);
 // another organisation's invoice is the same 404 as one that does not exist. Nothing here pays or marks anything paid (M6, M7.1).
 import { portalPayKey } from "@techaust/auth";
+import { paymentNetSql } from "@techaust/db/sql-rules";
 import { Hono } from "hono/tiny";
 import { type AppEnv, BAD_REQUEST, type Ctx, err, NOT_FOUND, rateLimited } from "./context.ts";
 import {
@@ -47,6 +48,25 @@ export const LIST_SQL = `SELECT d.id, d.type, d.status, d.number_display, d.issu
 /** One document of this client (?1 client, ?2 id): the summary's columns. */
 export const ONE_SQL = `SELECT ${SUMMARY_COLS} FROM documents d ${SUMMARY_PARENT_JOIN}
    WHERE d.client_id = ?1 AND d.id = ?2 AND d.frozen_at IS NOT NULL AND ${openOrWithdrawnSql("d")} AND d.type IN (${TYPES_SQL})`;
+
+/**
+ * M6.5 (E; POR-07 receipt download only): the issued receipts of the client's payments that hold money on invoice `?2` (`?1` the client), oldest first. The
+ * receipt and the invoice are both the client's (each bound to `?1`). Second review, L3: only payments that still hold money there (their allocations less
+ * their releases on `?2` above 0): money released off this invoice (to credit, then put on another) is that other invoice's receipt, not this one's.
+ */
+export const RECEIPTS_OF_DOC_SQL = `SELECT r.id, r.number_display, r.total_minor, json_extract(r.header_extras, '$.receiptOf.receivedOn') AS received_on,
+     r.pdf_sha256 IS NOT NULL AS has_pdf
+   FROM documents r
+   WHERE r.client_id = ?1 AND r.type = 'receipt' AND r.status = 'issued' AND r.frozen_at IS NOT NULL
+     AND r.id IN (SELECT 'rct_' || a.payment_id FROM payment_allocations a INDEXED BY payment_allocations_document JOIN documents i ON i.id = a.document_id
+       WHERE a.document_id = ?2 AND i.client_id = ?1 AND ${paymentNetSql("a.payment_id", "?2")} > 0)
+   ORDER BY r.issue_date, r.id LIMIT 20`;
+/** M6.5 (E): the refunds of invoice `?2`'s excess that went out (`?1` the client), oldest first. */
+export const REFUNDS_OF_DOC_SQL = `SELECT r.amount_minor, r.settled_on FROM payment_refunds r INDEXED BY payment_refunds_document
+   WHERE r.document_id = ?2 AND r.client_id = ?1 AND r.status = 'succeeded' ORDER BY r.settled_on, r.id LIMIT 20`;
+/** M6.5 (E): one issued receipt of the client (`?1`), by its id (`?2`). */
+export const RECEIPT_PDF_SQL = `SELECT r.number_display, r.pdf_r2_key FROM documents r
+   WHERE r.id = ?2 AND r.client_id = ?1 AND r.type = 'receipt' AND r.status = 'issued' AND r.frozen_at IS NOT NULL AND r.number_display IS NOT NULL`;
 
 /** An id the database could not hold is a 404 without a query. */
 const idOf = (c: Ctx): string | null => {
@@ -104,12 +124,15 @@ export const invoices = new Hono<AppEnv>()
         : null;
     const payPalReturn = checkoutId !== undefined ? refreshed?.payPalReturn : undefined;
     const now = Date.now();
-    const [, doc, lines, credits, online] = await c.env.DB.batch([
+    const [, doc, lines, credits, online, receipts, refunds] = await c.env.DB.batch([
       bound(c.env.DB, VIEW_SQL, [s.clientId, id, now]),
       bound(c.env.DB, ONE_SQL, [s.clientId, id]),
       bound(c.env.DB, LINES_SQL, [s.clientId, id]),
       bound(c.env.DB, CREDIT_NOTES_SQL, [s.clientId, id]),
       bound(c.env.DB, ONLINE_SQL, [s.clientId, id, now]),
+      // M6.5 (E): the receipts of the payments on this invoice, and its refunds that went out (clients see a refund only once it has gone through: 07-ZO).
+      bound(c.env.DB, RECEIPTS_OF_DOC_SQL, [s.clientId, id]),
+      bound(c.env.DB, REFUNDS_OF_DOC_SQL, [s.clientId, id]),
     ]);
     const row = doc?.results[0] as SummaryRow | undefined;
     if (!row) return err(c, NOT_FOUND, 404);
@@ -118,6 +141,25 @@ export const invoices = new Hono<AppEnv>()
       document: {
         ...summaryOf(row, (lines?.results ?? []) as LineRow[], (credits?.results ?? []) as CreditNoteRow[]),
         ...o,
+        receipts: (
+          (receipts?.results ?? []) as {
+            id: string;
+            number_display: string;
+            total_minor: number;
+            received_on: string | null;
+            has_pdf: number;
+          }[]
+        ).map((r) => ({
+          id: r.id,
+          numberDisplay: r.number_display,
+          amountMinor: r.total_minor,
+          receivedOn: r.received_on,
+          hasPdf: r.has_pdf === 1,
+        })),
+        refunds: ((refunds?.results ?? []) as { amount_minor: number; settled_on: string }[]).map((r) => ({
+          amountMinor: r.amount_minor,
+          on: r.settled_on,
+        })),
         // Only on the answer to the return that named the checkout: `{state, retryUrl?}` (a state only; `retryUrl` only with `declined`, PayPal's own page).
         ...(payPalReturn ? { online: { ...o.online, payPalReturn } } : {}),
       },
@@ -152,6 +194,7 @@ export const invoices = new Hono<AppEnv>()
     const s = scope(c);
     const id = idOf(c);
     if (!id) return err(c, NOT_FOUND, 404);
+
     // FX-5 (08-C RA-10): opening the PDF is a view too, written in the same batch as the read (as above), once the PDF exists.
     const [, doc] = await c.env.DB.batch([
       bound(c.env.DB, VIEW_PDF_SQL, [s.clientId, id, Date.now()]),
@@ -171,3 +214,27 @@ export const invoices = new Hono<AppEnv>()
       );
     return streamPdf(c, row.pdf_r2_key, pdfFileName(row.number_display, 1));
   });
+
+/**
+ * M6.5 (E; POR-07 receipt download only): `GET /receipts/:id/pdf`, a payment receipt's PDF, bound to the session's client (finance-only at the guard): another
+ * client's receipt, a void one or one that doesn't exist is the plain 404; one whose PDF is still being made is 409 `pdf_pending`.
+ */
+export const receipts = new Hono<AppEnv>().get("/:id/pdf", async (c) => {
+  const s = scope(c);
+  const id = idOf(c);
+  if (!id) return err(c, NOT_FOUND, 404);
+  const r = await bound(c.env.DB, RECEIPT_PDF_SQL, [s.clientId, id]).first<{
+    number_display: string;
+    pdf_r2_key: string | null;
+  }>();
+  if (!r) return err(c, NOT_FOUND, 404);
+  if (!r.pdf_r2_key)
+    return c.json(
+      {
+        error: { code: "pdf_pending", message: "The document is still being prepared" },
+        request_id: c.var.rid,
+      },
+      409,
+    );
+  return streamPdf(c, r.pdf_r2_key, pdfFileName(r.number_display, 1));
+});

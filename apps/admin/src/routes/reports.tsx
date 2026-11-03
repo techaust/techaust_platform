@@ -15,6 +15,7 @@ import { EdfReport } from "./reports/edf.tsx";
 import { GstExports } from "./reports/gst.tsx";
 import { PaymentsRegister } from "./reports/payments.tsx";
 import { RealisationReport } from "./reports/realisation.tsx";
+import { RefundsRegister } from "./reports/refunds.tsx";
 import { SalesRegister } from "./reports/sales-register.tsx";
 
 export function Component() {
@@ -32,6 +33,7 @@ export function Component() {
     edf: <EdfReport />,
     realisation: <RealisationReport />,
     payments: <PaymentsRegister />,
+    refunds: <RefundsRegister />,
   };
   if (!Object.hasOwn(screens, report)) return <NotFound />;
   return screens[report as ReportKey];

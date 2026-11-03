@@ -21,6 +21,7 @@ import { Notice } from "../components/ui.tsx";
 import { allowed } from "../lib/access.ts";
 import { CARD_ZM } from "../lib/copy-zm.ts";
 import { ADVICE_KIND_LABELS, ZN, ZN_UI } from "../lib/copy-zn.ts";
+import { ra41ConfirmLine, ZO_UI } from "../lib/copy-zo.ts";
 import { pendingBadge } from "../lib/documents.ts";
 import { GW, GW_UI, gatewayLine, gatewayName, REVIEW_CHANGED } from "../lib/gateway.ts";
 import { INV_COPY, typeLabel } from "../lib/invoices.ts";
@@ -48,6 +49,7 @@ import {
 import { bpToPercent } from "../lib/settings-form.ts";
 import { withCode } from "../lib/step-up.ts";
 import { useUser } from "../session.tsx";
+import { CreditHeldTab } from "./payments/credit-held-tab.tsx";
 import { CertificateDialog, paymentHref } from "./payments/panel.tsx";
 import {
   AllocationTable,
@@ -59,6 +61,9 @@ import {
 } from "./payments/parts.tsx";
 import { ProofForm } from "./payments/proof-form.tsx";
 import { RecordPaymentDialog } from "./payments/record-dialog.tsx";
+import { RefundDialog } from "./payments/refund-dialog.tsx";
+import { PaymentReceiptAndRefunds } from "./payments/refund-parts.tsx";
+import { RefundsTab } from "./payments/refunds-tab.tsx";
 import { ReviewList } from "./payments/review-tab.tsx";
 
 export function Component() {
@@ -67,7 +72,7 @@ export function Component() {
   return <Payments role={user.role} />;
 }
 
-type Tab = "check" | "review" | "all";
+type Tab = "check" | "review" | "all" | "refunds" | "credit";
 const STATUSES: PaymentStatus[] = ["pending_verification", "confirmed", "rejected", "withdrawn"];
 const isStatus = (v: string | null): v is PaymentStatus => STATUSES.includes(v as PaymentStatus);
 
@@ -77,13 +82,22 @@ function Payments({ role }: { role: Role }) {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   // M6.2: "Needs review" (07-ZI S19) is the Owner's third tab; the bells link to `?tab=review`.
-  const tab: Tab = !owner
-    ? "all"
-    : params.get("tab") === "review"
-      ? "review"
-      : params.get("tab") !== "all" && !params.get("status") && !params.get("proof")
-        ? "check"
-        : "all";
+  // M6.5 (G4): the Refunds tab, for the roles that read refunds (the Owner and the Accountant)
+  const canRefunds = allowed(role, "refunds.read");
+  // M6.5 review part 1, finding 3 (RA-41): credit held at a GST period's end, for the roles with the finance reports (the Owner and the Accountant)
+  const canCredit = allowed(role, "reports.finance");
+  const tab: Tab =
+    canRefunds && params.get("tab") === "refunds"
+      ? "refunds"
+      : canCredit && params.get("tab") === "credit"
+        ? "credit"
+        : !owner
+          ? "all"
+          : params.get("tab") === "review"
+            ? "review"
+            : params.get("tab") !== "all" && !params.get("status") && !params.get("proof")
+              ? "check"
+              : "all";
   const status =
     tab === "check"
       ? "pending_verification"
@@ -129,7 +143,11 @@ function Payments({ role }: { role: Role }) {
     );
 
   const list =
-    tab === "review" ? (
+    tab === "refunds" ? (
+      <RefundsTab role={role} />
+    ) : tab === "credit" ? (
+      <CreditHeldTab role={role} />
+    ) : tab === "review" ? (
       <ReviewList
         role={role}
         entry={(id, close, changed) => (
@@ -178,19 +196,25 @@ function Payments({ role }: { role: Role }) {
         }
         more={canRecord ? [{ label: PAY_UI.recordTds, onSelect: () => setRecording("tds") }] : undefined}
       />
-      {owner ? (
+      {owner || canRefunds || canCredit ? (
         <Tabs
           label={PAY_COPY.heading}
           tabs={[
-            { key: "check", label: PAY_COPY.toCheck, badge },
-            { key: "review", label: GW.needsReview, badge: reviewBadge },
-            { key: "all", label: PAY_UI.allPayments },
+            ...(owner
+              ? [
+                  { key: "check" as const, label: PAY_COPY.toCheck, badge },
+                  { key: "review" as const, label: GW.needsReview, badge: reviewBadge },
+                ]
+              : []),
+            { key: "all" as const, label: PAY_UI.allPayments },
+            ...(canRefunds ? [{ key: "refunds" as const, label: ZO_UI.refundsTab }] : []),
+            ...(canCredit ? [{ key: "credit" as const, label: ZO_UI.creditHeldTab }] : []),
           ]}
           selected={tab}
           // Visual review finding 3: the other tab's filters never carry over (the check tab has none; its badge and its list must agree).
           onSelect={(k) =>
             set({
-              tab: k === "check" ? null : k,
+              tab: k === "check" || (!owner && k === "all") ? null : k,
               status: null,
               client: null,
               from: null,
@@ -518,7 +542,7 @@ function PaymentList(props: {
   );
 }
 
-type Step = "view" | "confirm" | "reject" | "withdraw" | "proof" | "certificate";
+type Step = "view" | "confirm" | "reject" | "withdraw" | "proof" | "certificate" | "refund";
 
 /** One entry: its facts and what it went on; the role's actions open their own step in the same dialog. */
 /**
@@ -564,6 +588,8 @@ function EntryDialog(props: {
 }) {
   const entry = useLoad(() => paymentsApi.get(props.id), props.id);
   const [step, setStep] = useState<Step>(props.act ?? "view");
+  // M6.5: what the payment can give back from credit when "Refund" was pressed (read by the entry view)
+  const [refundFree, setRefundFree] = useState(0);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const title =
     step === "confirm"
@@ -575,6 +601,30 @@ function EntryDialog(props: {
           : step === "proof"
             ? PAY_UI.attachProof
             : PAY_UI.detailTitle;
+  if (step === "refund" && entry.state === "ready") {
+    const p = entry.data.payment;
+    return (
+      <RefundDialog
+        mode="refund"
+        // Code re-check of M6.5, finding 2 (L6): the payment view carries no GST status; money that came in dollars or by SWIFT is a client outside India's
+        // (USD documents are only theirs, M6.3), so "Paid by" starts on SWIFT and the RB-43 tick shows (the safe side)
+        clientOverseas={p.currency !== "INR" || p.mode === "swift"}
+        payments={[
+          {
+            id: p.id,
+            receivedOn: p.receivedOn,
+            currency: p.currency,
+            freeMinor: refundFree,
+            provider: p.provider,
+            status: p.status,
+            amountMinor: p.amountMinor,
+          },
+        ]}
+        onClose={() => setStep("view")}
+        onDone={props.onChanged}
+      />
+    );
+  }
   if (step === "certificate")
     return (
       <CertificateDialog
@@ -610,6 +660,11 @@ function EntryDialog(props: {
         <EntryView
           data={entry.data}
           role={props.role}
+          onRefund={(free) => {
+            setRefundFree(free);
+            setStep("refund");
+          }}
+          onChanged={props.onChanged}
           onStep={(s) => {
             setStep(s);
             requestAnimationFrame(() => titleRef.current?.focus());
@@ -643,6 +698,9 @@ function EntryView(props: {
   data: Awaited<ReturnType<typeof paymentsApi.get>>;
   role: Role;
   onStep: (s: Step) => void;
+  /** M6.5: "Refund" (the Owner), with what the payment can give back from credit. */
+  onRefund: (freeMinor: number) => void;
+  onChanged: (toast: string) => void;
   onClose: () => void;
 }) {
   const p = props.data.payment;
@@ -676,6 +734,19 @@ function EntryView(props: {
     p.status === "confirmed" &&
     !p.advanceReceiptId &&
     !p.clientGone;
+  // M6.5 (G1, L33): "Refund" for the Owner: a confirmed payment that still holds credit (the client's credit sources say how much), or a gateway payment still
+  // waiting for its check (refunded whole through its gateway). Never for a TDS entry, a withdrawn or rejected one, or an erased client.
+  const refundRole = allowed(props.role, "refunds.issue") && p.kind === "payment" && !p.clientGone;
+  const credit = useLoad(
+    () =>
+      refundRole && p.status === "confirmed" ? paymentsApi.clientCredit(p.clientId) : Promise.resolve(null),
+    `${p.id}:${refundRole}:${p.status}`,
+  );
+  const free =
+    credit.state === "ready"
+      ? (credit.data?.sources.find((s) => s.paymentId === p.id)?.availableMinor ?? 0)
+      : 0;
+  const canRefund = refundRole && ((p.status === "confirmed" && free > 0) || (pending && online));
   const allocs = props.data.allocations;
   // What a waiting entry asks for names documents by id only: their numbers are read once (at most 10, L6).
   const askedIds = pending ? p.requestedAllocations.map((a) => a.documentId) : [];
@@ -877,11 +948,23 @@ function EntryView(props: {
           }
           currency={cur}
         />
+        <PaymentReceiptAndRefunds
+          paymentId={p.id}
+          kind={p.kind}
+          status={p.status}
+          role={props.role}
+          onChanged={props.onChanged}
+        />
       </div>
       <div className="dialog__actions">
         <button type="button" className="btn btn--secondary" onClick={props.onClose}>
           {PAY_UI.close}
         </button>
+        {canRefund && (
+          <button type="button" className="btn btn--secondary" onClick={() => props.onRefund(free)}>
+            {ZO_UI.refund}
+          </button>
+        )}
         {canProof && (
           <button type="button" className="btn btn--secondary" onClick={() => props.onStep("proof")}>
             {PAY_UI.attachProof}
@@ -1026,7 +1109,12 @@ function ConfirmStep(props: { payment: PaymentView; onBack: () => void; onDone: 
         }),
       );
       const w = r.warnings[0];
-      props.onDone(w ? `${PAY_UI.confirmed} ${earlierMonthLine(w.month)}` : PAY_UI.confirmed);
+      // second review, M1: the RA-41 line (S34) when the confirmed credit may be an advance
+      props.onDone(
+        [PAY_UI.confirmed, w ? earlierMonthLine(w.month) : "", ra41ConfirmLine(r.ra41)]
+          .filter(Boolean)
+          .join(" "),
+      );
     } catch (e) {
       if (code.refused(e)) return;
       setFailure(payErrorText(e));

@@ -346,7 +346,10 @@ describe("a valid link opens exactly one document [POR-06]", () => {
     for (const r of ROUTES) {
       // the only path parameters are ids of the session's own offers and invoices; a token is never in a path
       expect(
-        r.path.replace("/offers/:id", "/offers").replace("/invoices/:id", "/invoices"),
+        r.path
+          .replace("/offers/:id", "/offers")
+          .replace("/invoices/:id", "/invoices")
+          .replace("/receipts/:id", "/receipts"),
         r.path,
       ).not.toMatch(/:|\?|token/i);
     }

@@ -34,6 +34,7 @@ import {
 } from "../invoice-model.ts";
 import { readInvoice } from "../invoices.ts";
 import { lineRows } from "../quote-model.ts";
+import { enqueueReceipt } from "../receipt-enqueue.ts";
 import { mutateSystem } from "../system.ts";
 // The fourth admin Worker (2026-11-03): this module runs in the invoices Worker (`GatewayAdvance`, invoicing.ts); it takes only wording (messages.ts) and the
 // link (consts.ts) from the gateway folder, never settle.ts or a gateway client (the GATEWAY_CODE budget marker).
@@ -56,10 +57,13 @@ type PendingRow = {
   checkout_id: string | null;
   advance_receipt_id: string | null;
   invoice_number: string | null;
+  /** M6.5 (early check 2, finding 7): 1 while a refund of this payment has not failed. */
+  live_refund: number;
 };
 
 const PENDING_SQL = `SELECT p.id, p.provider, p.kind, p.status, p.client_id, p.currency, p.amount_minor, p.received_on, p.reference_norm, p.requested_allocations,
-     p.checkout_id, p.advance_receipt_id, i.number_display AS invoice_number
+     p.checkout_id, p.advance_receipt_id, i.number_display AS invoice_number,
+     EXISTS (SELECT 1 FROM payment_refunds lr INDEXED BY payment_refunds_payment WHERE lr.payment_id = p.id AND lr.status <> 'failed') AS live_refund
    FROM payments p LEFT JOIN advance_receipts r ON r.id = p.advance_receipt_id LEFT JOIN documents i ON i.id = r.invoice_id WHERE p.id = ?1`;
 /** `PENDING_SQL` with the proforma's current stamp (`?2`), read once after a refused freeze. */
 const AFTER_REFUSAL_SQL = PENDING_SQL.replace(
@@ -178,6 +182,8 @@ async function tryAdvance(
   if (p.status === "confirmed" && p.advance_receipt_id)
     return { result: "already_issued", ...(p.invoice_number ? { number: p.invoice_number } : {}) };
   if (p.status !== "pending_verification" || !p.checkout_id) return { result: "not_pending" };
+  // M6.5 early check 2, finding 7: money being refunded is never invoiced automatically (no item, no bell: the refund decides it; the trigger holds it too).
+  if (p.live_refund === 1) return { result: "not_pending" };
   const ask = parseRequested(p.requested_allocations);
   if (!ask || ask.amountMinor !== p.amount_minor)
     return blocked(env, p, ask?.documentId ?? null, ["request_invalid"]);
@@ -477,5 +483,7 @@ async function tryAdvance(
     return blocked(env, p, proformaId, ["freeze_refused"]);
   }
   await enqueuePdf(env, invoiceId, "send");
+  // M6.5 (L3): the payment this confirmed gets its receipt.
+  await enqueueReceipt(env, p.id);
   return { result: "issued", ...(issued?.number_display ? { number: issued.number_display } : {}) };
 }

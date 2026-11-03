@@ -8,7 +8,7 @@ const tables = (Object.values(schema) as unknown[]).filter((v): v is SQLiteTable
 
 describe("migrations apply cleanly to a fresh D1", () => {
   it("creates every table in the Drizzle schema, with every column", async () => {
-    expect(tables.length).toBe(62); // M6.4: realisation_advices, realisation_advice_payments (0067); FX-1: pdf_failures (0051); M6.1: payments, payment_allocations, realisation_extensions (0059); T11: deeds (0061); M6.2: webhook_events, checkout_sessions, review_items, hook_failures (0063)
+    expect(tables.length).toBe(67); // M6.5: payment_refunds, settlements, settlement_items, bank_matches, realisation_reductions (0069); M6.4: realisation_advices, realisation_advice_payments (0067); FX-1: pdf_failures (0051); M6.1: payments, payment_allocations, realisation_extensions (0059); T11: deeds (0061); M6.2: webhook_events, checkout_sessions, review_items, hook_failures (0063)
     for (const table of tables) {
       const { name, columns } = getTableConfig(table);
       const live = await all<{ name: string }>(`SELECT name FROM pragma_table_info(?)`, name);
@@ -88,6 +88,8 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0066_stripe_triggers.sql",
       "0067_paypal.sql",
       "0068_paypal_triggers.sql",
+      "0069_receipts_refunds.sql",
+      "0070_refund_triggers.sql",
     ]);
   });
 
@@ -132,7 +134,12 @@ describe("migrations apply cleanly to a fresh D1", () => {
       // M6.2 (early check 1, finding 10): the gateway tables' foreign keys.
       checkout_sessions: "document_id client_id contact_id",
       review_items: "webhook_event_id payment_id document_id client_id",
-      payments: "checkout_id",
+      payments: "checkout_id receipt_document_id",
+      // M6.5: the refund, settlement, bank-match and reduction tables' foreign keys.
+      payment_refunds: "payment_id client_id document_id credit_note_id release_allocation_id requested_by",
+      settlement_items: "settlement_id payment_id refund_id",
+      bank_matches: "payment_id settlement_id refund_id matched_by removed_by",
+      realisation_reductions: "document_id recorded_by",
     };
     for (const [table, columns] of Object.entries(wanted)) {
       for (const column of columns.split(" ")) {

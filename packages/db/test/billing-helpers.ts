@@ -197,6 +197,42 @@ export async function mkIssued(
   return id;
 }
 
+/**
+ * M6.5 (L4): a payment receipt as the database takes one: a confirmed manual payment of the client (recorded and confirmed by a new Owner) and its frozen
+ * `receipt` row (`rct_` + the payment's id, the receipt series, no parent, the payment's amount). Returns both ids.
+ */
+export async function mkReceipt(
+  clientId: string,
+  o: { amount?: number; currency?: "INR" | "USD"; number?: number } = {},
+): Promise<{ paymentId: string; receiptId: string; owner: string }> {
+  const owner = await mkMember("owner");
+  const paymentId = uuidv7();
+  const amount = o.amount ?? 118_000;
+  const currency = o.currency ?? "INR";
+  await run(
+    `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, recorded_by, recorded_at, verified_by, verified_at)
+     VALUES (?1, ?2, 'payment', 'manual', 'confirmed', ?3, ?4, '2026-10-28', 'neft', ?5, 1000, ?5, 1000)`,
+    paymentId,
+    clientId,
+    currency,
+    amount,
+    owner,
+  );
+  const receiptId = `rct_${paymentId}`;
+  const n = o.number ?? next();
+  await run(
+    `INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, issue_date, total_minor, updated_at)
+     VALUES (?1, 'receipt', 'issued', ?2, ?3, 'receipt', '9999', ?4, ?5, 1000, '2026-10-28', ?6, 7000)`,
+    receiptId,
+    clientId,
+    currency,
+    n,
+    `RCT/${n}`,
+    amount,
+  );
+  return { paymentId, receiptId, owner };
+}
+
 export async function mkSend(
   documentId: string,
   clientId: string,

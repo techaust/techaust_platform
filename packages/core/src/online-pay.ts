@@ -266,6 +266,20 @@ export const REVIEW_KINDS = [
    * item, never confirmed on a part (core `judgePayPalCapture` step 4).
    */
   "not_final",
+  // M6.5 (run file A; L7, L36, L37): review items only, never a ledger move by themselves (the Owner records a refund through the refund route).
+  /** A gateway refused one of our refunds (`failed`): the money stays as the client's credit. */
+  "refund_failed",
+  /** A refund still open after the sweep's last try (`refund.check`), or a dead `refund.check` message. */
+  "refund_stuck",
+  /** A dispute (chargeback) was opened on one of our payments (Stripe `charge.dispute.created`, matched by its PaymentIntent). */
+  "dispute_opened",
+  /** That dispute was closed (won or lost); a lost one is recorded by the Owner as a `chargeback` refund. */
+  "dispute_closed",
+  /**
+   * Early check 2, finding 1c (L43): the gateway shows a refund we marked `failed` (a refusal, a cancel) as processed or still pending: the money may have gone
+   * back while the client's credit still counts it. Review only; the Owner checks the gateway and records the refund (`outside`) if it was made.
+   */
+  "refund_after_failed",
 ] as const;
 export type ReviewKind = (typeof REVIEW_KINDS)[number];
 export const REVIEW_RESOLUTIONS = ["confirmed", "advance_issued", "left_as_credit", "dismissed"] as const;

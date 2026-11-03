@@ -9,6 +9,7 @@
 // No value import of `@techaust/core/gst` here (the gst core is fetched only by the reports screens: ./reports-build.ts); types only. Money is formatted
 // through core (`moneyText`); nothing here adds up an amount.
 import { compareDocNumbers, formatMoney, money } from "@techaust/core";
+import { STATEMENT_REFUND_WORD } from "@techaust/core/copy-zo";
 import { formatDate, parseIsoDate } from "@techaust/core/dates";
 import type { CalendarDate, GstErrorCode, GstIssue, GstWarning, RealisationStage } from "@techaust/core/gst";
 import { STATE_CODES } from "@techaust/core/gstin";
@@ -25,7 +26,7 @@ const docs = (n: number) => `${n} ${n === 1 ? "document" : "documents"}`;
 
 // ---- 07-V §1 navigation ------------------------------------------------------------------------------------------------------------------------
 
-export type ReportKey = "gst" | "sales-register" | "edf" | "realisation" | "payments";
+export type ReportKey = "gst" | "sales-register" | "edf" | "realisation" | "payments" | "refunds";
 
 /** The four reports, in 07-V §1's order, with their address under /reports. */
 export const REPORTS: readonly { key: ReportKey; path: string; label: string }[] = [
@@ -35,7 +36,21 @@ export const REPORTS: readonly { key: ReportKey; path: string; label: string }[]
   { key: "realisation", path: "/reports/realisation", label: "Export realisation" },
   // M6.1 (07-ZH line 20, approved by the owner 2026-10-31).
   { key: "payments", path: "/reports/payments", label: "Payments and TDS register" },
+  // M6.5 (B4; 07-ZO "Staff lines", lead under the delegation).
+  { key: "refunds", path: "/reports/refunds", label: "Refunds register" },
 ];
+
+/**
+ * M6.5 (B4; ADM-PAY-08): the refunds register's staff lines (07-ZO "Staff lines", for the lead under the owner's delegation; the CSV's column headings are core
+ * `refunds-v1`'s). The FY picker, "Show" and the download button read as the payments register's.
+ */
+export const REFUNDS_REPORT_COPY = {
+  title: "Refunds register",
+  lede: "Every refund that went out in the financial year, by the day it went out, for your books.",
+  done: (n: number) => (n === 1 ? "1 refund read." : `${n} refunds read.`),
+  empty: "No refunds went out in this financial year.",
+  download: "Download the register (CSV)",
+} as const;
 
 export const REPORTS_COPY = {
   /** 07-V §1: the sidebar group, used as the section's crumb and its sub-navigation's name. */
@@ -454,7 +469,6 @@ export const EDF_COPY = {
     purpose: "Purpose code",
     realised: "Amount realised",
   },
-  realisedNote: "Amount realised is left blank: payments are recorded from the payments update.",
   download: "Download EDF list (CSV)",
   empty: (month: string) => `No export invoices were issued in ${month}.`,
 } as const;
@@ -495,6 +509,8 @@ export const STAGE_LABELS: Readonly<Record<RealisationStage, string>> = {
   gst_approaching: "GST date in 30 days",
   gst_overdue: "Past the GST date",
   realised: "Realised",
+  // M6.5 (RB-43; builder's staff draft for the lead): settled, but paid plus the bank's reductions fall short of the export value.
+  reduction_pending: "Waiting for the bank's reduction",
 };
 
 /** The reserved status colours (docs/06 §2.1, §5.5; dataviz: status never reused for anything else), always with the icon and the label. */
@@ -507,14 +523,20 @@ export const STAGE_PILLS: Readonly<
   gst_approaching: { tone: "warning", icon: "clock", outline: true },
   gst_overdue: { tone: "danger", icon: "alert", outline: true },
   realised: { tone: "muted", icon: "check" },
+  reduction_pending: { tone: "warning", icon: "clock", outline: true },
 };
 
-/** Most urgent first (07-V §5): past GST, past FEMA, GST in 30 days, FEMA in 30 days, on track, realised. */
+/**
+ * Most urgent first (07-V §5): past GST, past FEMA, GST in 30 days, FEMA in 30 days, on track, realised. M6.5 (B4): `reduction_pending` (paid as far as the
+ * client will pay, waiting for the bank's Reg. 6 reduction: RB-43) after the dated stages and before "on track"; the list reaches it now that the page's facts
+ * go to core (it sorted first, unknown, before).
+ */
 export const STAGE_ORDER: readonly RealisationStage[] = [
   "gst_overdue",
   "fema_overdue",
   "gst_approaching",
   "fema_approaching",
+  "reduction_pending",
   "ok",
   "realised",
 ];
@@ -598,6 +620,9 @@ export function statementKindText(kind: StatementKind, againstNumber?: string | 
       return againstNumber ? Y(`Debit note against ${againstNumber}`) : "Debit note";
     case "credit_note":
       return againstNumber ? `Credit note against ${againstNumber}` : "Credit note";
+    // M6.5: a refund that went out (07-ZO lacks the word: drafted for the owner, marked until approved).
+    case "refund":
+      return STATEMENT_REFUND_WORD;
     case "receipt":
       return "Payment received";
     // M6.1 (07-ZH line 19, approved by the owner 2026-10-31): the tax the client deducted at source.
@@ -656,6 +681,7 @@ export const statementCsvLabels = (
     credit_note: statementCsvCreditNoteLabel(entries),
     receipt: statementKindText("receipt"),
     tds: statementKindText("tds"),
+    refund: statementKindText("refund"),
   } satisfies Record<StatementKind, string>,
 });
 

@@ -7,8 +7,10 @@ import {
   type BillingJobsApi,
   type DraftCareResult,
   type IssueCareResult,
+  type IssueReceiptResult,
   isDraftCareResult,
   isIssueCareResult,
+  isIssueReceiptResult,
 } from "@techaust/core/care-billing";
 
 type Call = (arg: unknown) => unknown;
@@ -35,7 +37,16 @@ export function billingJobs(env: Pick<Env, "ADMIN_JOBS">): BillingJobsApi {
   const issue =
     typeof binding === "object" && binding !== null ? methodOf(binding, "issueCareDraft") : undefined;
   if (!draft || !issue) throw new BillingRpcError("rpc_unavailable");
+  // M6.5 (L34): `issueReceipt`, checked lazily (the split's early check: checking it up front would fail every `care.bill` against a fake without it).
+  const receipt =
+    typeof binding === "object" && binding !== null ? methodOf(binding, "issueReceipt") : undefined;
   return {
+    async issueReceipt(args): Promise<IssueReceiptResult> {
+      if (!receipt) throw new BillingRpcError("rpc_unavailable");
+      const answer = await receipt(args);
+      if (!isIssueReceiptResult(answer)) throw new BillingRpcError("rpc_bad_result");
+      return answer;
+    },
     async draftCarePlan(args): Promise<DraftCareResult> {
       const answer = await draft(args);
       if (!isDraftCareResult(answer)) throw new BillingRpcError("rpc_bad_result");

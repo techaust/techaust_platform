@@ -61,7 +61,9 @@ export { addMonthsClamped, gstPeriod, inPeriod, lastDayOfMonth, type PeriodRange
 export { registerRatesOf } from "./rates.ts";
 export {
   DEFAULT_REALISATION_RULES,
+  type ExportRealisationFacts,
   type RealisationDates,
+  type RealisationFacts,
   type RealisationInput,
   type RealisationRow,
   type RealisationRules,
@@ -74,6 +76,15 @@ export {
   realisationStatus,
   stageOf,
 } from "./realisation.ts";
+export {
+  CURRENT_REFUNDS_LAYOUT,
+  REFUNDS_LAYOUTS,
+  type RefundsLayoutId,
+  type RefundsRegisterInput,
+  type RefundsRegisterRow,
+  refundsRegisterCsv,
+  refundsRegisterRows,
+} from "./refunds-register.ts";
 export {
   OUTPUT_TAX_BUCKETS,
   type OutputTaxBucket,

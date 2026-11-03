@@ -268,7 +268,9 @@ describe("PayPal events the analyst listed [JOB-HOOK-02, ADR 0008; Fix round mus
         "SELECT title FROM notifications WHERE kind = 'payment.review' AND entity_id = (SELECT id FROM review_items WHERE webhook_event_id = ?1)",
         ev,
       ),
-    ).toMatchObject({ title: expect.stringContaining("The invoice's balance hasn't changed.") });
+    ).toMatchObject({
+      title: expect.stringContaining("The invoice's balance hasn't changed until you record the refund."),
+    });
   });
 
   it("the event path's re-fetch: a capture PayPal answers 404 for is refetch_failed; the item's retry captures the order as the member", async () => {
@@ -493,7 +495,7 @@ describe("the staff lines approved in the triage [finding 8]", () => {
       "PayPal reversed $500.00 that was already counted. Check the case in PayPal. The invoice's balance hasn't changed.",
     );
     expect(reviewReason("refunded_outside", { provider: "paypal" })).toBe(
-      "This payment was refunded in PayPal, outside the admin. The invoice's balance hasn't changed.",
+      "This payment was refunded in PayPal, outside the admin. The invoice's balance hasn't changed until you record the refund.",
     );
     expect(bellAdvicesMissing(1, "October 2026")).toBe(
       "1 PayPal payment from October 2026 has no remittance advice yet.",

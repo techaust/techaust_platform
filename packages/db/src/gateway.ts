@@ -18,7 +18,7 @@ import {
   ONLINE_RULES_SQL,
   type OnlineProviderSql,
   onlinePayableSql,
-  paymentNetSql,
+  paymentFreeSql,
 } from "./sql-rules.ts";
 
 export type { GuardSql };
@@ -619,8 +619,8 @@ export function recordGatewayPaymentStatements(
       db
         .prepare(
           `INSERT OR IGNORE INTO review_items (id, source, provider, kind, status, webhook_event_id, payment_id, document_id, client_id, amount_minor, currency, facts, created_at)
-           SELECT ?1, ?2, p.provider, 'overpaid', 'open', ?3, p.id, ?4, p.client_id, p.amount_minor - ${paymentNetSql("p.id")}, p.currency, ?5, ?6
-           FROM payments p WHERE p.id = ?7 AND p.status = 'confirmed' AND p.amount_minor > ${paymentNetSql("p.id")}${g2.sql}`,
+           SELECT ?1, ?2, p.provider, 'overpaid', 'open', ?3, p.id, ?4, p.client_id, ${paymentFreeSql("p")}, p.currency, ?5, ?6
+           FROM payments p WHERE p.id = ?7 AND p.status = 'confirmed' AND ${paymentFreeSql("p")} > 0${g2.sql}`,
         )
         .bind(
           a.allocate.overpaidReviewId,
@@ -893,11 +893,13 @@ export const STUCK_EVENTS_SQL = `SELECT e.id FROM webhook_events e INDEXED BY we
  * such a payment (a duplicate event, the portal's refresh, the hourly sweep) asks for `gateway.advance` again, so the tax invoice is never lost when one `next` was
  * not sent (RA-17: GST on an advance is due on receipt). M6.2 review finding 3: an item the Owner dismissed or resolved still counts, so a blocked advance is never
  * tried (and its item and bell written) again every hour; only the Owner's own acts issue it from then on. The item check is one seek of `review_items_payment`.
+ * M6.5 (early check 2, finding 7): a payment with a refund that has not failed is not waiting either (the refund decides it; one seek of `payment_refunds_payment`).
  */
 export const advanceWaitingSql = (p: string): string =>
   `(${p}.provider = 'razorpay' AND ${p}.kind = 'payment' AND ${p}.status = 'pending_verification' AND ${p}.requested_allocations IS NOT NULL
      AND ${p}.advance_receipt_id IS NULL AND ${p}.checkout_id IS NOT NULL
-     AND NOT EXISTS (SELECT 1 FROM review_items wx INDEXED BY review_items_payment WHERE wx.payment_id = ${p}.id AND wx.kind IN ('advance_blocked', 'dead_letter', 'proforma_overpaid')))`;
+     AND NOT EXISTS (SELECT 1 FROM review_items wx INDEXED BY review_items_payment WHERE wx.payment_id = ${p}.id AND wx.kind IN ('advance_blocked', 'dead_letter', 'proforma_overpaid'))
+     AND NOT EXISTS (SELECT 1 FROM payment_refunds wr INDEXED BY payment_refunds_payment WHERE wr.payment_id = ${p}.id AND wr.status <> 'failed'))`;
 
 /**
  * The payment of an event that is no longer `received` (`?1` the event row) when it still waits for its tax invoice: a redelivered `gateway.event` whose first

@@ -1,0 +1,4 @@
+Refund date,Client code,Client,Refunded from,Credit note,Payment reference,How,Gateway refund ID,Bank reference (UTR),Currency,Amount,INR value,Reason,Status
+02-Nov-2026,C-0001,Sample client A (fake),TH/INV/2627/0007,TH/CN/2627/0001,pay_SAMPLE0001,Through Razorpay,rfnd_SAMPLE0001,,INR,1180.00,1180.00,After a credit note,Refunded
+03-Nov-2026,C-0002,"'=Overseas, Co",Client's credit,,UTRSAMPLE01,By bank transfer,,UTRSAMPLE02,USD,50.00,4175.00,Paid too much,Refunded
+02-Nov-2026,C-0001,Sample client A (fake),TH/INV/2627/0007,TH/CN/2627/0001,,Through Razorpay,rfnd_SAMPLE0001,,USD,25.00,,After a credit note,Refunded

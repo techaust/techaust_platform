@@ -90,6 +90,7 @@ describe("every guarded route needs a session [POR-02, POR-03]", () => {
         "POST /api/v1/invoices/:id/pay", // M6.2
         "GET /api/v1/deeds",
         "POST /api/v1/deeds/pdf",
+        "GET /api/v1/receipts/:id/pdf", // M6.5
       ].sort(),
     );
     expect(pairs(ROUTES.filter((r) => r.access === "finance"))).toEqual(
@@ -100,6 +101,7 @@ describe("every guarded route needs a session [POR-02, POR-03]", () => {
         "POST /api/v1/invoices/:id/pay",
         "GET /api/v1/deeds",
         "POST /api/v1/deeds/pdf",
+        "GET /api/v1/receipts/:id/pdf",
       ].sort(),
     );
   });

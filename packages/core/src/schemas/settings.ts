@@ -313,8 +313,16 @@ export const taxSettings = z.object({
    * (strictly more) is reported as B2CL in GSTR-1; at or below it, as B2CS. A stored row without it reads Rs 1,00,000.00; zero is refused.
    */
   b2clThresholdInrMinor: z.prefault(intBetween(1), 1_00_000_00),
-  /** G-18: warn above this amount per cross-border gateway transaction. */
+  /**
+   * G-18: warn above this amount per cross-border gateway transaction. M6.5 (L12): the ₹25 lakh PA-CB figure core `paCbCheck` reads (Researched 2026-10-28, RBI
+   * PA Directions 2025, para 11(d) (08-C RB-07)); a warning on Stripe and PayPal USD documents, never a block.
+   */
   crossBorderWarnInrMinor: minor,
+  /**
+   * M6.5 (RA-41; Settled by the lead on the safest reading, 2026-11-03 (08-C RA-41)): the s.13(2) proviso's ₹1,000: an excess over its invoice of at most this is not an
+   * advance (TecHaust takes the proviso's option), so it gets no RA-41 line (core `overpaymentAdvanceLine`). A stored row without it reads ₹1,000.00.
+   */
+  excessProvisoMinor: z.prefault(intBetween(0, 1_000_00), 1_000_00),
 });
 
 /**
@@ -628,6 +636,8 @@ export const SETTINGS_DEFAULTS: Settings = {
     realisation: { warnMonths: 9, inrMonths: 12, escalateMonths: 12, escalateExtraDays: 15 },
     b2clThresholdInrMinor: 1_00_000_00,
     crossBorderWarnInrMinor: 25_00_000_00,
+    // RA-41: the s.13(2) proviso's ₹1,000 (Settled by the lead on the safest reading, 2026-11-03 (08-C RA-41)).
+    excessProvisoMinor: 1_000_00,
   },
   numbering: Object.fromEntries(
     (Object.keys(SERIES) as Series[]).map((s) => [

@@ -1,0 +1,4 @@
+Invoice number,Invoice date,Client name,Client address,Country (ISO code),Currency,Invoice amount,Exchange rate,INR value,SAC,Service description,Purpose code,Amount realised,Credit notes,Amount reduced (FEMA Reg. 6),Reduction approved on,Bank's reference,Proof awaited,FEMA realisation due,EDF due
+EXP-a,03-Nov-2026,Client a,a Example Road,US,USD,1000.00,83.500000,83500.00,998314,IT support services,P0802,600.00,300.00,100.00,04-Dec-2026,'=ADB/RED/1,Yes,03-Aug-2027,30-Dec-2026
+EXP-b,04-Nov-2026,Client b,b Example Road,US,USD,1000.00,83.500000,83500.00,998314,IT support services,P0802,1000.00,0.00,0.00,,,,04-Aug-2027,30-Dec-2026
+EXP-c,05-Nov-2026,Client c,c Example Road,US,USD,1000.00,83.500000,83500.00,998314,IT support services,P0802,,,,,,,05-Aug-2027,30-Dec-2026

@@ -8,9 +8,11 @@
 // in `DOCS`, before PayPal drops it. The triggers of `paypal_triggers` (0068) hold every rule again; each statement below also carries its rules in its WHERE, so a
 // refused request writes nothing and aborts no batch (the caller re-reads to explain it).
 import type { GuardSql } from "./log.ts";
-import { clientSideSql } from "./sql-rules.ts";
+import { clientSideSql, paymentHasAdviceSql } from "./sql-rules.ts";
 
 export type { GuardSql };
+/** M6.5: moved to `sql-rules.ts` (realisation's stage reads it, and that module takes no D1 types); re-exported here. */
+export { paymentHasAdviceSql };
 
 /** A guard's SQL at the first placeholder after `used` values, and its values. */
 const guarded = (g: GuardSql | undefined, used: number): { sql: string; params: readonly unknown[] } =>
@@ -94,10 +96,6 @@ export const linkableSql = (p: string, a: string, k: string): string =>
   `(${p}.status = 'confirmed' AND ${p}.kind = 'payment' AND ${k}.anonymised_at IS NULL
     AND ((${a}.provider = 'bank' AND ${p}.provider = 'manual' AND ${p}.currency IN ('USD', 'INR') AND ${clientSideSql(k, "overseas")}) OR (${a}.provider <> 'bank' AND ${p}.provider = ${a}.provider AND ${p}.currency = 'USD'))
     AND NOT ${paymentHasAdviceSql(p)})`;
-
-/** Payment `p` (an alias) is on an advice now (a link not taken off): one seek of `realisation_advice_payments_active`. The "Proof awaited" filter reads it too. */
-export const paymentHasAdviceSql = (p: string): string =>
-  `EXISTS (SELECT 1 FROM realisation_advice_payments al INDEXED BY realisation_advice_payments_active WHERE al.payment_id = ${p}.id AND al.removed_at IS NULL)`;
 
 /**
  * Links 1 to 50 payments to an advice in ONE statement, all or none (`POST /payments/advices/:id/payments`, `payments.attachProof`): `?2` is the JSON array of

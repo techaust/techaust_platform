@@ -19,9 +19,14 @@ import {
   livePaidSql,
   liveTdsSql,
   PAYABLE_TYPES_SQL,
+  paymentBlocksVoidSql,
   paymentDocumentsSql,
   paymentForDocumentSql,
+  paymentFreeSql,
   paymentNetSql,
+  paymentPendingForSql,
+  paymentRecordedSql,
+  paymentRefundedSql,
   SQL_CURRENCIES,
 } from "./sql-rules.ts";
 
@@ -33,8 +38,13 @@ export {
   livePaidSql,
   liveTdsSql,
   PAYABLE_TYPES_SQL,
+  paymentBlocksVoidSql,
   paymentForDocumentSql,
+  paymentFreeSql,
   paymentNetSql,
+  paymentPendingForSql,
+  paymentRecordedSql,
+  paymentRefundedSql,
 };
 
 /** A guard's SQL at the first placeholder after `used` values, and its values. */
@@ -333,7 +343,14 @@ export function decideApprovalStatements(
 // ---- withdraw (POST /payments/:id/withdraw, L7) -------------------------------------------------------------------------------------------------------
 
 /**
- * The main statement of a withdraw: a CONFIRMED payment of a live client, by an Owner with a fresh step-up, with a reason. A payment that stands for an M5.2
+ * M6.5 (L10, review fix 2): payment `?1` has no refund that is not `failed`: a withdraw would otherwise leave "Collected" subtracting a refund of money never
+ * counted. The trigger `payments_withdraw_no_refunds` (0070) holds the same rule; the route answers 409 `refunds_exist` when the withdraw writes nothing.
+ */
+export const NO_LIVE_REFUND_SQL =
+  "NOT EXISTS (SELECT 1 FROM payment_refunds wr INDEXED BY payment_refunds_payment WHERE wr.payment_id = ?1 AND wr.status <> 'failed')";
+
+/**
+ * The main statement of a withdraw: a CONFIRMED payment of a live client, by an Owner with a fresh step-up, with a reason, and (M6.5) with no refund that is not failed. A payment that stands for an M5.2
  * advance receipt is never withdrawn here (`advance_receipt_id IS NULL`): its tax invoice was issued because the money arrived, so a credit note is the
  * correction (lead's safe side; listed for the early check). Follow it with `recomputeStatement(db, {paymentIds: [paymentId]}, now, g)` (every document the payment
  * touched) and `ledgerResultStatement(db, {paymentIds: [paymentId]})`. Binds `?1` payment, `?2` now, `?3` session, `?4` reason.
@@ -345,7 +362,8 @@ export function withdrawPaymentStatement(
   return db
     .prepare(
       `UPDATE payments SET status = 'withdrawn', withdrawn_by = ${sessionUser("?3")}, withdrawn_at = ?2, withdraw_reason = ?4
-       WHERE id = ?1 AND status = 'confirmed' AND advance_receipt_id IS NULL AND ${clientLive("payments")} AND ${sessionSql("?3", "?2", ["owner"], true)}`,
+       WHERE id = ?1 AND status = 'confirmed' AND advance_receipt_id IS NULL AND ${clientLive("payments")} AND ${sessionSql("?3", "?2", ["owner"], true)}
+         AND ${NO_LIVE_REFUND_SQL}`,
     )
     .bind(a.paymentId, a.now, a.sessionId, a.reason);
 }
@@ -353,8 +371,9 @@ export function withdrawPaymentStatement(
 // ---- credit: apply and release (L2, L13) ------------------------------------------------------------------------------------------------------------
 
 /** The client's credit in the document's currency, for a document row `d`: what its confirmed payments hold unallocated (derived, no table, L2). */
+// M6.5 (L35): the free money of each payment (`paymentFreeSql`: amount − net − refunds not failed).
 const creditOf = (d: string) =>
-  `(SELECT coalesce(sum(cp.amount_minor - ${paymentNetSql("cp.id")}), 0) FROM payments cp WHERE cp.client_id = ${d}.client_id AND cp.currency = ${d}.currency AND cp.status = 'confirmed' AND cp.kind = 'payment')`;
+  `(SELECT coalesce(sum(${paymentFreeSql("cp")}), 0) FROM payments cp WHERE cp.client_id = ${d}.client_id AND cp.currency = ${d}.currency AND cp.status = 'confirmed' AND cp.kind = 'payment')`;
 
 /**
  * The main statement of "Use credit" (`apply`) or "Move excess to credit" (`release`): the document is claimed (its `updated_at` moves) only while it is the
@@ -548,18 +567,23 @@ export const PAYMENT_REFERENCE_SEEN_SQL = `SELECT p.id, p.received_on, p.client_
  * `payments_client`. Early check 2, finding 10: a builder, so a caller keyed by something else (the Payments panel, by the document) never edits this SQL's text.
  */
 export const clientCreditSql = (client: string): string =>
-  `SELECT p.currency, coalesce(sum(p.amount_minor - ${paymentNetSql("p.id")}), 0) AS credit
+  `SELECT p.currency, coalesce(sum(${paymentFreeSql("p")}), 0) AS credit
    FROM payments p INDEXED BY payments_client WHERE p.client_id = ${client} AND p.status = 'confirmed' AND p.kind = 'payment' GROUP BY p.currency ORDER BY p.currency`;
 
 /** A client's credit by currency (`?1` the client). */
 // Built by a call, so marked pure: a Worker that imports this module without the name (the admin API, through `issue.ts`) drops it from its bundle.
 export const CLIENT_CREDIT_SQL = /* @__PURE__ */ clientCreditSql("?1");
 
-/** Where credit comes from (`?1` client, `?2` currency): confirmed payments holding something unallocated, first in first out (core `creditSources`), at most 50. */
-export const CREDIT_SOURCES_SQL = `SELECT p.id, p.received_on, p.amount_minor, ${paymentNetSql("p.id")} AS net
-   FROM payments p INDEXED BY payments_client
-   WHERE p.client_id = ?1 AND p.currency = ?2 AND p.status = 'confirmed' AND p.kind = 'payment' AND p.amount_minor > ${paymentNetSql("p.id")}
-   ORDER BY p.received_on, p.id LIMIT 50`;
+/**
+ * Where credit comes from (`?1` client, `?2` currency): confirmed payments holding something free, first in first out (core `creditSources`), at most 50. M6.5
+ * (L35): `refunded` is what each has refunded or is refunding (`paymentRefundedSql`); the free money is `amount_minor - net - refunded` (`paymentFreeSql`).
+ */
+export const CREDIT_SOURCES_SQL = `SELECT s.id, s.received_on, s.amount_minor, s.net, s.refunded FROM (
+     SELECT p.id, p.received_on, p.amount_minor, ${paymentNetSql("p.id")} AS net, ${paymentRefundedSql("p.id")} AS refunded
+     FROM payments p INDEXED BY payments_client
+     WHERE p.client_id = ?1 AND p.currency = ?2 AND p.status = 'confirmed' AND p.kind = 'payment') s
+   WHERE s.amount_minor - s.net - s.refunded > 0
+   ORDER BY s.received_on, s.id LIMIT 50`;
 
 /** The most sources one "Use credit" draws on (`CREDIT_DRAW_SQL`); more would be refused as `exceeds_credit`. */
 export const CREDIT_DRAW_MAX = 500;
@@ -569,16 +593,17 @@ export const CREDIT_DRAW_MAX = 500;
  * in first out, but only as many as cover the amount: a row is listed while the credit before it is below `?3` (a running sum over `payments_client`'s order). ONE
  * read however many sources there are, at most `CREDIT_DRAW_MAX` rows; each row's net is evaluated once. Core `creditSources` then picks from these rows.
  */
-export const CREDIT_DRAW_SQL = `SELECT w.id, w.received_on, w.amount_minor, w.net FROM (
-     SELECT s.id, s.received_on, s.amount_minor, s.net, sum(s.amount_minor - s.net) OVER (ORDER BY s.received_on, s.id ROWS UNBOUNDED PRECEDING) AS upto FROM (
-       SELECT p.id, p.received_on, p.amount_minor, ${paymentNetSql("p.id")} AS net
+// M6.5 (L35): each row's free money is `amount_minor - net - refunded` (the twin of `paymentFreeSql`, evaluated once per row).
+export const CREDIT_DRAW_SQL = `SELECT w.id, w.received_on, w.amount_minor, w.net, w.refunded FROM (
+     SELECT s.id, s.received_on, s.amount_minor, s.net, s.refunded, sum(s.amount_minor - s.net - s.refunded) OVER (ORDER BY s.received_on, s.id ROWS UNBOUNDED PRECEDING) AS upto FROM (
+       SELECT p.id, p.received_on, p.amount_minor, ${paymentNetSql("p.id")} AS net, ${paymentRefundedSql("p.id")} AS refunded
        FROM payments p INDEXED BY payments_client
        WHERE p.client_id = ?1 AND p.currency = ?2 AND p.status = 'confirmed' AND p.kind = 'payment') s
-     WHERE s.amount_minor > s.net) w
-   WHERE w.upto - (w.amount_minor - w.net) < ?3 ORDER BY w.received_on, w.id LIMIT ${CREDIT_DRAW_MAX}`;
+     WHERE s.amount_minor - s.net - s.refunded > 0) w
+   WHERE w.upto - (w.amount_minor - w.net - w.refunded) < ?3 ORDER BY w.received_on, w.id LIMIT ${CREDIT_DRAW_MAX}`;
 
-/** The ledger panel of a document (`?1`): each payment with a row on it, what it holds there net, oldest money first. */
-export const DOCUMENT_HOLDINGS_SQL = `SELECT a.payment_id, p.kind, p.status, p.received_on, p.mode, p.reference_norm, p.currency, p.amount_minor, p.tds_section, p.tds_rate_bp,
+/** The ledger panel of a document (`?1`): each payment with a row on it (with its own gateway, M6.5 review P2-4), what it holds there net, oldest money first. */
+export const DOCUMENT_HOLDINGS_SQL = `SELECT a.payment_id, p.kind, p.status, p.provider, p.received_on, p.mode, p.reference_norm, p.currency, p.amount_minor, p.tds_section, p.tds_rate_bp,
        p.tds_certificate_no, p.proof_r2_key IS NOT NULL AS has_proof,
        sum(CASE a.kind WHEN 'allocate' THEN a.amount_minor ELSE -a.amount_minor END) AS held
    FROM payment_allocations a INDEXED BY payment_allocations_document JOIN payments p ON p.id = a.payment_id
@@ -596,24 +621,6 @@ export const PENDING_PAYMENTS_COUNT_SQL =
   "SELECT count(*) AS n FROM payments p INDEXED BY payments_pending WHERE p.status = 'pending_verification'";
 
 /**
- * L17, L32 (the void rules): an allocation row names the document `doc` (an SQL expression), one released or withdrawn since included. Core `voidBlockers`
- * `payment_recorded`; one seek of `payment_allocations_document`.
- */
-export const paymentRecordedSql = (doc: string): string =>
-  `EXISTS (SELECT 1 FROM payment_allocations va INDEXED BY payment_allocations_document WHERE va.document_id = ${doc})`;
-
-/**
- * L17 (the void rules): a PENDING payment of the client `client` is for the document `doc` (both SQL expressions; `paymentForDocumentSql`: its request, or, M6.3
- * staging fix, an online payment's checkout). Core `voidBlockers` `payment_pending`; a seek of `payments_client`. Any pending payment: the void and withdraw
- * WHEREs. The trigger `documents_void_no_payment` (0060) still reads the request only.
- * M6.4 (L24; Step 0.2 item 10): or a PayPal checkout of the document whose money may be on its way (`checkoutCapturingSql`: PayPal holds its capture, or a
- * capture call has claimed it): voiding or withdrawing the document then could leave money PayPal takes with nothing to apply it to. The trigger stays M6.5.
- */
-export const paymentPendingForSql = (doc: string, client: string): string =>
-  `(EXISTS (SELECT 1 FROM payments vp INDEXED BY payments_client WHERE vp.client_id = ${client} AND vp.status = 'pending_verification'
-     AND ${paymentForDocumentSql("vp", doc)}) OR ${checkoutCapturingSql(doc)})`;
-
-/**
  * M6.2 (fix round 3 item 3): the same read, in ONE pass, telling the kinds apart as bits: 1 a pending manual entry (core `payment_pending`: the Owner rejects
  * it), 2 a pending gateway payment (core `payment_pending_gateway`: it can't be rejected; its tax invoice is issued, or it is resolved in Needs review); 0 none.
  * Decode with `PENDING_MANUAL` / `PENDING_GATEWAY` / `PENDING_CAPTURE`. M6.4 (L24; early check 1 finding 8): 4, a PayPal checkout of the document whose capture
@@ -626,34 +633,42 @@ export const PENDING_MANUAL = 1;
 export const PENDING_GATEWAY = 2;
 export const PENDING_CAPTURE = 4;
 
-/**
- * L17 (early check 2, finding 10): the payment test of the void statement's WHERE, `NOT ${paymentBlocksVoidSql(...)}`: an allocation row names the document,
- * or a pending payment of its client asks for it. The twin of the trigger `documents_void_no_payment` (which also refuses TDS, as the WHERE's `tds_minor = 0`
- * does) and of core `voidBlockers` (`payment_recorded`, `payment_pending`). `doc` and `client` are SQL expressions (`documents.id`, `documents.client_id`).
- */
-export const paymentBlocksVoidSql = (doc: string, client: string): string =>
-  `(${paymentRecordedSql(doc)} OR ${paymentPendingForSql(doc, client)})`;
-
 /** L17, L32 (the void facts): for document `?1` of client `?2`, whether a PENDING payment asks for it (`pending`) and whether an allocation row names it (`recorded`). */
 export const PAYMENT_ASKS_FOR_DOCUMENT_SQL = /* @__PURE__ */ (() =>
   `SELECT ${paymentPendingForSql("?1", "?2")} AS pending, ${paymentRecordedSql("?1")} AS recorded`)();
 
-/** "Collected": confirmed `payment` rows by currency received from `?1` to `?2` (ISO, inclusive), read through `payments_confirmed` (the reference twin of the tile). */
-export const COLLECTED_SQL = `SELECT p.currency, coalesce(sum(p.amount_minor), 0) AS collected, count(*) AS n
-   FROM payments p INDEXED BY payments_confirmed WHERE p.status = 'confirmed' AND p.kind = 'payment' AND p.received_on >= ?1 AND p.received_on <= ?2
-   GROUP BY p.currency ORDER BY p.currency`;
+/**
+ * M6.5 (L9): the refunds "Collected" subtracts: SUCCEEDED refunds of confirmed money-received rows, by the IST day they succeeded (`settled_on`), read through
+ * `payment_refunds_settled`. A pending payment refunded in full (L33) ends `rejected`: it was never collected, so its refund is not subtracted either.
+ */
+const SETTLED_REFUNDS_FROM = `FROM payment_refunds f INDEXED BY payment_refunds_settled JOIN payments fp ON fp.id = f.payment_id
+         WHERE f.status = 'succeeded' AND f.settled_on >= ?1 AND f.settled_on <= ?2 AND fp.status = 'confirmed' AND fp.kind = 'payment'`;
+
+/**
+ * "Collected": confirmed `payment` rows by currency received from `?1` to `?2` (ISO, inclusive), read through `payments_confirmed` (the reference twin of the tile),
+ * less (M6.5, L9) the refunds that succeeded in the range (`SETTLED_REFUNDS_FROM`). `n` counts the payments; a currency has a row when it has a payment or a refund.
+ */
+export const COLLECTED_SQL = `SELECT x.currency, sum(x.amount) AS collected, sum(x.n) AS n FROM (
+     SELECT p.currency, p.amount_minor AS amount, 1 AS n
+       FROM payments p INDEXED BY payments_confirmed WHERE p.status = 'confirmed' AND p.kind = 'payment' AND p.received_on >= ?1 AND p.received_on <= ?2
+     UNION ALL
+     SELECT f.currency, -f.amount_minor, 0
+       ${SETTLED_REFUNDS_FROM}) x
+   GROUP BY x.currency ORDER BY x.currency`;
 
 /** The currencies a payment can be in (`SQL_CURRENCIES`, the schema's `CURRENCY_CODES`; a db test pins the two together). */
 export const COLLECTED_CURRENCIES = SQL_CURRENCIES;
 
-const collectedPick = (prefix: string) =>
-  `CASE c.currency ${COLLECTED_CURRENCIES.map((c) => `WHEN '${c}' THEN t.${prefix}_${c}`).join(" ")} END`;
+const collectedPick = (prefix: string, row = "t") =>
+  `CASE c.currency ${COLLECTED_CURRENCIES.map((c) => `WHEN '${c}' THEN ${row}.${prefix}_${c}`).join(" ")} END`;
 
 /**
  * The dashboard's "Collected" tile (07-ZH line 16; early check 2, finding 6): this FY (`?1` to `?2`) and this IST month (`?3` to `?4`) in ONE pass over the
  * FY's confirmed `payment` rows, one row per currency that has any (`fy_collected`, `fy_n`, `month_collected`, `month_n`). No GROUP BY: D1 counts every row
  * a temporary GROUP BY b-tree takes in and gives back, which doubled the reads (measured: 2,000 for 1,000 payments grouped, 1,000 flat); the sums per currency
- * are columns of one aggregate row, turned into rows afterwards. Equal to `COLLECTED_SQL` over each range (a test holds the twins together).
+ * are columns of one aggregate row, turned into rows afterwards. Equal to `COLLECTED_SQL` over each range (a test holds the twins together). M6.5 (L9): less the
+ * refunds that succeeded in the FY and in the month: one more aggregate row `r` over `payment_refunds_settled` (no GROUP BY either); a currency with only a refund
+ * in the FY has a row too.
  */
 export const COLLECTED_TILE_SQL = /* @__PURE__ */ (() => {
   const cols = COLLECTED_CURRENCIES.flatMap((c) => [
@@ -662,10 +677,17 @@ export const COLLECTED_TILE_SQL = /* @__PURE__ */ (() => {
     `coalesce(sum(CASE WHEN p.currency = '${c}' AND p.received_on >= ?3 AND p.received_on <= ?4 THEN p.amount_minor END), 0) AS m_${c}`,
     `count(CASE WHEN p.currency = '${c}' AND p.received_on >= ?3 AND p.received_on <= ?4 THEN 1 END) AS mn_${c}`,
   ]).join(", ");
-  return `SELECT c.currency, ${collectedPick("fy")} AS fy_collected, ${collectedPick("fyn")} AS fy_n,
-       ${collectedPick("m")} AS month_collected, ${collectedPick("mn")} AS month_n
+  const refundCols = COLLECTED_CURRENCIES.flatMap((c) => [
+    `coalesce(sum(CASE WHEN f.currency = '${c}' THEN f.amount_minor END), 0) AS fy_${c}`,
+    `count(CASE WHEN f.currency = '${c}' THEN 1 END) AS fyn_${c}`,
+    `coalesce(sum(CASE WHEN f.currency = '${c}' AND f.settled_on >= ?3 AND f.settled_on <= ?4 THEN f.amount_minor END), 0) AS m_${c}`,
+  ]).join(", ");
+  return `SELECT c.currency, ${collectedPick("fy")} - ${collectedPick("fy", "r")} AS fy_collected, ${collectedPick("fyn")} AS fy_n,
+       ${collectedPick("m")} - ${collectedPick("m", "r")} AS month_collected, ${collectedPick("mn")} AS month_n
    FROM (SELECT ${cols}
          FROM payments p INDEXED BY payments_confirmed WHERE p.status = 'confirmed' AND p.kind = 'payment' AND p.received_on >= ?1 AND p.received_on <= ?2) t
+   JOIN (SELECT ${refundCols}
+         ${SETTLED_REFUNDS_FROM}) r
    JOIN (${COLLECTED_CURRENCIES.map((c) => `SELECT '${c}' AS currency`).join(" UNION ALL ")}) c
-   WHERE ${collectedPick("fyn")} > 0 ORDER BY c.currency`;
+   WHERE ${collectedPick("fyn")} > 0 OR ${collectedPick("fyn", "r")} > 0 ORDER BY c.currency`;
 })();

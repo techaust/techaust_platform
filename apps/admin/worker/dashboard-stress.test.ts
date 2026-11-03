@@ -21,7 +21,9 @@ const NOW = String(PINNED_MS);
 const SQL_NOW = "'2025-09-01 06:30:00'";
 // M6.1: +20 for the ledger reads of the finance tile ("Collected" this FY and this month in one pass through `payments_confirmed`, the Owner's pending
 // count through `payments_pending`); on this fixture they read one row per seeded payment (early check 2, finding 6).
-const ROWS_READ_LIMIT = 6_320;
+// M6.5: +20 (6,325 measured for the Owner): the realisation counts read the RB-43 reductions and RA-38's proof list for settled exports short of their
+// total (early check 1, finding 2: `reduction_pending` never hides a GST stage), and "Collected" takes off the refunds that went out (`payment_refunds_settled`).
+const ROWS_READ_LIMIT = 6_340;
 const WORST_CASE_LIMIT = 8_000;
 /** Set to true to print the per-statement numbers (the test then fails on purpose, which is the only way vitest shows them). */
 const SHOW_REPORT = false;

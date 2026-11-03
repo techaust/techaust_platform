@@ -88,6 +88,64 @@ export const paymentNetSql = (payment: string, doc?: string): string =>
   `(SELECT coalesce(sum(CASE pna.kind WHEN 'allocate' THEN pna.amount_minor ELSE -pna.amount_minor END), 0) FROM payment_allocations pna WHERE pna.payment_id = ${payment}${doc === undefined ? "" : ` AND pna.document_id = ${doc}`})`;
 
 /**
+ * M6.5 (L1, L8, L35; ADM-PAY-08): what payment `payment` (an SQL expression for its id) has given back or is giving back: Σ its refunds that are not `failed`
+ * (`requested` and `processing` hold the money while the gateway works; a failed refund leaves it as credit). One seek of `payment_refunds_payment`. With
+ * `which = "succeeded"`, only the refunds that went out (what a statement of account lists, `STATEMENT_LEDGER_SQL`).
+ */
+export const paymentRefundedSql = (payment: string, which: "live" | "succeeded" = "live"): string =>
+  `(SELECT coalesce(sum(prf.amount_minor), 0) FROM payment_refunds prf WHERE prf.payment_id = ${payment} AND prf.status ${which === "live" ? "<> 'failed'" : "= 'succeeded'"})`;
+
+/**
+ * M6.5 (L35; Step 0 point 3): THE free money of payment row `p` (an SQL table name or alias of `payments`): its amount less what it holds net on documents
+ * (`paymentNetSql`) and less what it has refunded or is refunding (`paymentRefundedSql`). It is the client's credit from that payment, what a refund from credit
+ * may take, and what an allocation may still use. Every reader and trigger from 0070 on uses this one helper (core `unallocated` in `@techaust/core/ledger` is the
+ * twin); `packages/db/test/free-money-guard.test.ts` fails on a hand-written `amount_minor - ${paymentNetSql(…)}` outside the triggers 0060 pins. `which`: as
+ * `paymentRefundedSql` (the statement of account counts only the refunds that went out).
+ */
+export const paymentFreeSql = (p: string, which: "live" | "succeeded" = "live"): string =>
+  `(${p}.amount_minor - ${paymentNetSql(`${p}.id`)} - ${paymentRefundedSql(`${p}.id`, which)})`;
+
+/**
+ * M6.5 (RA-41; Settled by the lead on the safest reading, 2026-11-03 (08-C RA-41)): payment row `p`'s credit may be an advance whose GST was due when it arrived,
+ * so the screens show the RA-41 line: it has free money, and it is on no invoice, or it is not in INR, or its free money is above the s.13(2) proviso's amount
+ * (`proviso`, an SQL expression: `tax.excessProvisoMinor`). The twin of core `overpaymentAdvanceLine` (`@techaust/core/refunds`; a db test compares them).
+ */
+export const overpaymentAdvanceSql = (p: string, proviso: string): string =>
+  `(${paymentFreeSql(p)} > 0 AND (${paymentNetSql(`${p}.id`)} <= 0 OR ${p}.currency <> 'INR' OR ${paymentFreeSql(p)} > ${proviso}))`;
+
+/**
+ * M6.5 (RA-41; review part 1, finding 3): what payment `payment` (an SQL expression) held net on documents at instant `at` (UTC ms, an SQL expression): its
+ * allocations less its releases written at or before `at`. The as-of twin of `paymentNetSql` (allocations are append-only, so the past is exact).
+ * With `held` (payment row `p`, IST day `day`; code re-check of M6.5, finding 1): a payment received in the period but confirmed after `at` also counts what its
+ * confirm (`created_at <= p.verified_at`) put on documents issued on or before `day`: the money paid an invoice of the period and was never an advance (L48).
+ */
+export const paymentNetAtSql = (payment: string, at: string, held?: { p: string; day: string }): string =>
+  `(SELECT coalesce(sum(CASE pna.kind WHEN 'allocate' THEN pna.amount_minor ELSE -pna.amount_minor END), 0) FROM payment_allocations pna INDEXED BY payment_allocations_payment WHERE pna.payment_id = ${payment} AND (pna.created_at <= ${at}${
+    held
+      ? ` OR (${held.p}.verified_at > ${at} AND pna.created_at <= ${held.p}.verified_at AND EXISTS (SELECT 1 FROM documents pnd WHERE pnd.id = pna.document_id AND pnd.issue_date <= ${held.day}))`
+      : ""
+  }))`;
+
+/**
+ * M6.5 (RA-41; review part 1, finding 3): payment row `p`'s credit held at instant `at`, the last instant of IST day `day` (both SQL expressions): its amount less
+ * what it held net then (`paymentNetAtSql`) and less its refunds that had gone out by then (succeeded; money still on its way back was still held: the safe side
+ * for Table 11A). Second review, L4: a refund from credit (no release row) counts by the day it went out (`settled_on`, as the statement and "Collected" count
+ * it), so a bank refund paid before the period ended but recorded after it is not held at the end; a refund of an invoice's excess counts at its instant
+ * (`settled_at`), the instant its release row was written, so the two always cancel out together.
+ */
+export const paymentFreeAtSql = (p: string, at: string, day: string): string =>
+  `(${p}.amount_minor - ${paymentNetAtSql(`${p}.id`, at, { p, day })} - (SELECT coalesce(sum(pra.amount_minor), 0) FROM payment_refunds pra INDEXED BY payment_refunds_payment WHERE pra.payment_id = ${p}.id AND pra.status = 'succeeded'
+     AND CASE WHEN pra.release_allocation_id IS NULL THEN pra.settled_on <= ${day} ELSE pra.settled_at <= ${at} END))`;
+
+/**
+ * M6.5 (RA-41; Settled by the lead on the safest reading, 2026-11-03 (08-C RA-41); review part 1, finding 3): `overpaymentAdvanceSql` at instant `at` (a period's
+ * end, the last instant of IST day `day`): payment row `p` held credit then that may be an advance (on no invoice, not in INR, or above the proviso `proviso`).
+ * A db test holds it to core `overpaymentAdvanceLine` over the figures at `at`.
+ */
+export const overpaymentAdvanceAtSql = (p: string, at: string, day: string, proviso: string): string =>
+  `(${paymentFreeAtSql(p, at, day)} > 0 AND (${paymentNetAtSql(`${p}.id`, at, { p, day })} <= 0 OR ${p}.currency <> 'INR' OR ${paymentFreeAtSql(p, at, day)} > ${proviso}))`;
+
+/**
  * The status of an issued document for these figures (SQL expressions): the twin of core `ledgerStatusOf(total, paid, credited, tds)` with `settled` = paid + TDS
  * (a db test compares them over a table of figures).
  */
@@ -206,3 +264,35 @@ export const checkoutCapturingSql = (doc: string, except?: string): string =>
 export const proformaOnlinePendingSql = (d: string, client: string): string =>
   `EXISTS (SELECT 1 FROM payments p JOIN checkout_sessions c ON c.id = p.checkout_id
         WHERE c.document_id = ${d}.id AND p.client_id = ${client} AND p.provider <> 'manual' AND p.status = 'pending_verification' AND p.requested_allocations IS NOT NULL AND ${d}.type = 'proforma')`;
+
+// ---- the void rules (L17, L32; moved here from `ledger.ts` in M6.5 so the trigger set `refund_triggers` (0070) can read them; `ledger.ts` re-exports them) ----
+
+/**
+ * L17, L32 (the void rules): an allocation row names the document `doc` (an SQL expression), one released or withdrawn since included. Core `voidBlockers`
+ * `payment_recorded`; one seek of `payment_allocations_document`.
+ */
+export const paymentRecordedSql = (doc: string): string =>
+  `EXISTS (SELECT 1 FROM payment_allocations va INDEXED BY payment_allocations_document WHERE va.document_id = ${doc})`;
+
+/**
+ * L17 (the void rules): a PENDING payment of the client `client` is for the document `doc` (both SQL expressions; `paymentForDocumentSql`: its request, or, M6.3
+ * staging fix, an online payment's checkout). Core `voidBlockers` `payment_pending`; a seek of `payments_client`. Any pending payment: the void and withdraw
+ * WHEREs. The trigger `documents_void_no_payment` reads it too since 0070 (M6.5, L39; 0060 read the request only).
+ * M6.4 (L24; Step 0.2 item 10): or a PayPal checkout of the document whose money may be on its way (`checkoutCapturingSql`: PayPal holds its capture, or a
+ * capture call has claimed it): voiding or withdrawing the document then could leave money PayPal takes with nothing to apply it to (the trigger too, 0070).
+ */
+export const paymentPendingForSql = (doc: string, client: string): string =>
+  `(EXISTS (SELECT 1 FROM payments vp INDEXED BY payments_client WHERE vp.client_id = ${client} AND vp.status = 'pending_verification'
+     AND ${paymentForDocumentSql("vp", doc)}) OR ${checkoutCapturingSql(doc)})`;
+
+/**
+ * L17 (early check 2, finding 10): the payment test of the void statement's WHERE, `NOT ${paymentBlocksVoidSql(...)}`: an allocation row names the document,
+ * or a pending payment of its client asks for it. The twin of the trigger `documents_void_no_payment` (which also refuses TDS, as the WHERE's `tds_minor = 0`
+ * does) and of core `voidBlockers` (`payment_recorded`, `payment_pending`). `doc` and `client` are SQL expressions (`documents.id`, `documents.client_id`).
+ */
+export const paymentBlocksVoidSql = (doc: string, client: string): string =>
+  `(${paymentRecordedSql(doc)} OR ${paymentPendingForSql(doc, client)})`;
+
+/** Payment `p` (an alias) is on an advice now (a link not taken off): one seek of `realisation_advice_payments_active`. The "Proof awaited" filter reads it too. */
+export const paymentHasAdviceSql = (p: string): string =>
+  `EXISTS (SELECT 1 FROM realisation_advice_payments al INDEXED BY realisation_advice_payments_active WHERE al.payment_id = ${p}.id AND al.removed_at IS NULL)`;

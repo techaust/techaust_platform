@@ -13,6 +13,7 @@ import {
   FolderKanban,
   History,
   Inbox,
+  Landmark,
   LayoutDashboard,
   LifeBuoy,
   Package,
@@ -115,6 +116,13 @@ export const NAV: NavItem[] = [
       milestone: "M6.1–M6.5",
       what: "Payments by Razorpay, Stripe, PayPal and bank transfer, with receipts and refunds.",
     },
+  },
+  {
+    key: "reconciliation",
+    label: "Reconciliation",
+    path: "/reconciliation",
+    icon: <Landmark />,
+    group: 2,
   },
   {
     key: "reports",

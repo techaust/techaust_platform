@@ -3,6 +3,7 @@
 // event row holds only whitelisted facts (L8; 08-C RB-40): the link and payment ids are read from there, everything else is re-fetched from Razorpay.
 import type { ProcessEventResult } from "@techaust/core/gateway-rpc";
 import { uuidv7 } from "@techaust/core/ids";
+import { isRefundEventName } from "@techaust/core/refund-gateways";
 import {
   checkoutEndStatement,
   EVENT_ADVANCE_WAITING_SQL,
@@ -13,6 +14,7 @@ import {
 import { gatewayModeOf, razorpayOf } from "./config.ts";
 import { type Ids, processPayPalEvent } from "./paypal-capture.ts";
 import type { RazorpayApi } from "./razorpay.ts";
+import { processRefundEvent } from "./refund-events.ts";
 import {
   type CheckoutRow,
   checkoutForLink,
@@ -103,6 +105,11 @@ export async function processEvent(
     return w
       ? { result: "duplicate", next: { kind: "gateway.advance", paymentId: w.id } }
       : { result: "duplicate" };
+  }
+  // M6.5 (L36): a refund or dispute event of any gateway, before the gateway's own path (ours found first; Step 0 point 4).
+  if (isRefundEventName(row.provider, row.event_type)) {
+    const refund = await processRefundEvent(env, row, now);
+    if (refund) return refund;
   }
   // M6.3: a Stripe event has its own path (re-fetch, judge, record; `stripe-settle.ts`).
   if (row.provider === "stripe") return processStripeEvent(env, row, now);

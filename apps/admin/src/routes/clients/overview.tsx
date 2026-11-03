@@ -76,7 +76,11 @@ export function Overview(props: {
       {/* Figures first (lead's decision, FX-3 fix round): on one column (phones, tablets) the panel comes straight below the page
           heading, and the reading and Tab order follow it; from 64rem it heads the side column (clients.css). */}
       {canFinance && !props.data.anonymised && (
-        <ClientFiguresPanel clientId={client.id} onStatement={props.onStatement} />
+        <ClientFiguresPanel
+          clientId={client.id}
+          clientOverseas={client.gstStatus === "overseas"}
+          onStatement={props.onStatement}
+        />
       )}
       <div className="lead-page__main">
         <Details {...props} canWrite={canWrite} />

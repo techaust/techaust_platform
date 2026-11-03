@@ -9,8 +9,11 @@ import {
   PAYMENTS_REGISTER_SQL,
   type PaymentsRegisterRow,
   REALISATION_PAGE_SQL,
+  REFUNDS_REGISTER_SQL,
   REGISTER_PAGE_SQL,
   REPORT_PAGE_SIZE,
+  type RealisationFactRow,
+  type RefundsRegisterRow,
   type RegisterSqlRow,
   realisationPageBinds,
   registerPageBinds,
@@ -20,7 +23,7 @@ import * as z from "zod/mini";
 import { type ApiError, type AppEnv, BAD_REQUEST, err, mutate } from "./context.ts";
 import { isoDate, query } from "./http.ts";
 import { decodeCursor, encodeCursor } from "./keyset.ts";
-import { metaOf, registerRowOf } from "./report-rows.ts";
+import { metaOf, realisationFactsOf, registerRowOf } from "./report-rows.ts";
 
 const PERIOD_INVALID: ApiError = {
   code: "period_invalid",
@@ -69,6 +72,12 @@ function settingsOf(rows: readonly { key: string; value: string }[], opts: { rul
 
 const todayIst = () => istDate(Date.now());
 
+/** An EDF or realisation page row with its realisation facts (B4: `edf-v2`, and the list's stage as the SQL's). */
+const withFacts = (r: RegisterSqlRow) => ({
+  ...registerRowOf(r),
+  realisationFacts: realisationFactsOf(r as RegisterSqlRow & RealisationFactRow),
+});
+
 /** One page of rows (at most `REPORT_PAGE_SIZE`) and the cursor of the next, from the one-more read. */
 function pageOf(rows: readonly RegisterSqlRow[]) {
   const page = rows.slice(0, REPORT_PAGE_SIZE);
@@ -84,6 +93,12 @@ const edfQuery = z.object({ month: z.string().check(z.regex(/^\d{4}-(0[1-9]|1[0-
 const realisationQuery = z.object({ show: z.optional(z.enum(["open", "all"])), after: afterQuery });
 /** M6.1: one FY by its token (`2627` for 2026-27, as `issueFyOf` writes it). */
 const paymentsRegisterQuery = z.object({ fy: z.string().check(z.regex(/^\d{4}$/)), after: afterQuery });
+/** The first and last day of an FY token (`2627` → 2026-04-01 to 2027-03-31); null for a token whose halves aren't consecutive years. */
+function fyRange(fy: string): { from: string; to: string } | null {
+  const startYear = 2000 + Number(fy.slice(0, 2));
+  if (Number(fy.slice(2)) !== (startYear + 1) % 100) return null;
+  return { from: `${startYear}-04-01`, to: `${startYear + 1}-03-31` };
+}
 
 export const reports = new Hono<AppEnv>()
   // The register of a range (one financial year, at most 366 days): every issued tax invoice, export invoice, credit note and debit note, voided ones included
@@ -151,7 +166,7 @@ export const reports = new Hono<AppEnv>()
     if (!s) return err(c, SETTINGS_INVALID, 409);
     const { page, next } = pageOf((res?.results ?? []) as RegisterSqlRow[]);
     return c.json({
-      rows: page.map(registerRowOf),
+      rows: page.map(withFacts),
       meta: { ...metaOf(todayIst(), s.state, s.threshold, s.rules), edfDue: addDays(last, 30) },
       next,
     });
@@ -173,7 +188,7 @@ export const reports = new Hono<AppEnv>()
     if (!s) return err(c, SETTINGS_INVALID, 409);
     const { page, next } = pageOf((res?.results ?? []) as RegisterSqlRow[]);
     return c.json({
-      rows: page.map(registerRowOf),
+      rows: page.map(withFacts),
       meta: metaOf(todayIst(), s.state, s.threshold, s.rules),
       next,
     });
@@ -184,12 +199,11 @@ export const reports = new Hono<AppEnv>()
   // AIS matching. Pending, rejected and withdrawn entries are not in it (L23.6: they stay in the /payments list with their status).
   .get("/payments", query(paymentsRegisterQuery), async (c) => {
     const q = c.req.valid("query");
-    const startYear = 2000 + Number(q.fy.slice(0, 2));
-    if (Number(q.fy.slice(2)) !== (startYear + 1) % 100) return err(c, PERIOD_INVALID, 400);
+    const range = fyRange(q.fy);
+    if (!range) return err(c, PERIOD_INVALID, 400);
     const cursor = cursorOf(q.after);
     if (cursor === "bad") return err(c, BAD_REQUEST, 400);
-    const from = `${startYear}-04-01`;
-    const to = `${startYear + 1}-03-31`;
+    const { from, to } = range;
     const { results } = await c.env.DB.prepare(PAYMENTS_REGISTER_SQL(cursor !== null))
       .bind(from, to, ...(cursor ? [cursor.d, cursor.id] : []))
       .all<PaymentsRegisterRow>();
@@ -225,6 +239,54 @@ export const reports = new Hono<AppEnv>()
       })),
       next:
         results.length > REPORT_PAGE_SIZE && last ? encodeCursor({ k: last.received_on, id: last.id }) : null,
+    });
+  })
+
+  // M6.5 (B4; ADM-PAY-08, L9): the refunds register of one FY: the refunds that went out in it (succeeded, of confirmed payments, by the IST day each went out),
+  // keyset pages of at most 50 (`after` = the last row's day and id). The registers' rule: a fresh code on every page (`exports.gst`) and one `report.export` audit
+  // row per page, the rows' contents never; a refused request writes nothing. The SPA builds the `refunds-v1` CSV.
+  .get("/refunds", query(paymentsRegisterQuery), async (c) => {
+    const q = c.req.valid("query");
+    const range = fyRange(q.fy);
+    if (!range) return err(c, PERIOD_INVALID, 400);
+    const cursor = cursorOf(q.after);
+    if (cursor === "bad") return err(c, BAD_REQUEST, 400);
+    const { results } = await c.env.DB.prepare(REFUNDS_REGISTER_SQL(cursor !== null))
+      .bind(range.from, range.to, ...(cursor ? [cursor.d, cursor.id] : []))
+      .all<RefundsRegisterRow>();
+    const page = results.slice(0, REPORT_PAGE_SIZE);
+    const last = page.at(-1);
+    const written = await mutate(c, {
+      action: "report.export",
+      entityType: "report",
+      entityId: null,
+      summary: { report: "refunds", fy: q.fy, rows: page.length, firstPage: cursor === null },
+    });
+    if (!written) return err(c, BAD_REQUEST, 400);
+    return c.json({
+      fy: q.fy,
+      ...range,
+      rows: page.map((r) => ({
+        id: r.id,
+        paymentId: r.payment_id,
+        provider: r.provider,
+        origin: r.origin,
+        mode: r.mode,
+        paidTo: r.paid_to,
+        reasonCode: r.reason_code,
+        refundedOn: r.settled_on,
+        currency: r.currency,
+        amountMinor: r.amount_minor,
+        inrRefundedMinor: r.inr_refunded_minor,
+        bankReference: r.reference_norm,
+        providerRefundId: r.provider_refund_id,
+        client: { id: r.client_id, code: r.client_code, name: r.client_name },
+        documentNumber: r.document_number,
+        creditNoteNumber: r.credit_note_number,
+        paymentReference: r.payment_provider_ref ?? r.payment_reference,
+      })),
+      next:
+        results.length > REPORT_PAGE_SIZE && last ? encodeCursor({ k: last.settled_on, id: last.id }) : null,
     });
   });
 

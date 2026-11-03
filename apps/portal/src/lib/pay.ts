@@ -456,3 +456,13 @@ export function paidRowOf(
     return { text: PAY_ZN.paid(day), waits: false };
   return null;
 }
+
+/**
+ * M6.2 line approved by the owner (2026-11-03, M6.5 run file "Owner's answers"): the "How to pay" bank-transfer box shows only while nothing waits on a gateway
+ * payment, so a client whose card or PayPal payment is still being processed isn't invited to pay the same amount again by bank transfer (no new wording).
+ */
+export function showsBankTransfer(
+  online: { paymentPending?: boolean; pendingPayPal?: boolean } | null | undefined,
+): boolean {
+  return online?.paymentPending !== true && online?.pendingPayPal !== true;
+}

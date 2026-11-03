@@ -19,6 +19,7 @@ import {
   offerDeclinedStaff,
   offerSent,
 } from "./offers.ts";
+import { receiptSent } from "./receipts.ts";
 import { edfReminder, realisationAlert } from "./reports.ts";
 import {
   type LayoutOptions,
@@ -40,6 +41,7 @@ export * from "./deeds.ts";
 export * from "./headers.ts";
 export * from "./invoices.ts";
 export * from "./offers.ts";
+export * from "./receipts.ts";
 export * from "./reports.ts";
 export * from "./templates.ts";
 export * from "./transport.ts";
@@ -310,6 +312,21 @@ function renderTemplate(
       };
     case "lead.reply":
       return { ...hello, ...leadReply({ subject: get("subject"), body: get("body") }, opts) };
+    case "receipt.sent":
+      // M6.5 (Q-P3-5): from billing@, replies to billing@; 07-ZO lines 11 and 12 (the builder's plain template; the designer finishes it).
+      return {
+        ...billing,
+        ...receiptSent(
+          {
+            number: get("number"),
+            amount: get("amount"),
+            date: get("date"),
+            attached: get("attached"),
+            url: get("url"),
+          },
+          opts,
+        ),
+      };
     case "deed.signed":
       // T11: 07-ZJ lines 8 to 11 (approved by the lead under the owner's delegation, 2026-11-01); the sender follows the offer emails (the client's proposal
       // or estimate came from hello@).

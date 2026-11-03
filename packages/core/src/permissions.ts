@@ -147,6 +147,12 @@ const MATRIX = {
   // Refunds
   "refunds.read": { owner: "allow", accountant: "allow" },
   "refunds.issue": { owner: "step-up" },
+  // M6.5 (L11; ADM-PAY-10): the Owner's "seen in the bank statement" tick (and its undo, with a reason) and "Fetch now" of a settlement day. The lists use
+  // `reports.finance`. A new docs/04 §9 row.
+  "payments.reconcile": { owner: "allow" },
+  // M6.5 (RB-43; Settled by the lead on the safest reading, 2026-11-03 (08-C RB-43)): recording the AD bank's Reg. 6 reduction of an export invoice (its reference
+  // and letter) marks the invoice realised for FEMA, like an extension of its date moves it: the Owner only, with a fresh code. A new docs/04 §9 row.
+  "realisation.reduce": { owner: "step-up" },
   // The dashboard (M3.5): every role; the handler keeps only the tiles the role may see (core/dashboard.ts)
   "dashboard.read": { owner: "allow", staff: "allow", sales: "allow", accountant: "allow" },
   // Reports

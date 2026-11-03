@@ -2,7 +2,7 @@
 // (the selected tab), arrow keys and Home / End move focus along the row, Enter or Space opens the focused tab. Manual
 // activation because a tab's panel may load from the API. The selected tab is the caller's (the client page keeps it in
 // the URL, `?tab=`). On narrow screens the row scrolls sideways inside its own box; the focused tab is kept in view.
-import { type KeyboardEvent, type ReactNode, useId, useRef } from "react";
+import { type KeyboardEvent, type ReactNode, useId, useLayoutEffect, useRef } from "react";
 
 /** A tab; `badge` is a short count after the label (e.g. the requests waiting), its `label` read out by screen readers in place of the digits. */
 export type TabItem<K extends string> = {
@@ -20,8 +20,27 @@ export function Tabs<K extends string>(props: {
 }) {
   const base = useId();
   const refs = useRef(new Map<K, HTMLButtonElement>());
+  const scroller = useRef<HTMLDivElement>(null);
   const tabId = (k: K) => `${base}-tab-${k}`;
   const panelId = `${base}-panel`;
+
+  // M6.5 review part 2, P2-9: on a narrow screen the open tab may sit past the row's edge (Payments has five), so the row scrolls to show it whenever the
+  // open tab changes (a link to `?tab=refunds`, Back). Only the row's own box moves (never the page, as `scrollIntoView` could), and only when the tab is
+  // outside it, by the least that shows it with a little of its neighbour. Again when a badge arrives (a wider tab can push it out).
+  const shape = props.tabs.map((t) => `${t.key}:${t.badge?.text ?? ""}`).join("|");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `shape` stands for the tabs' widths (labels and badges)
+  useLayoutEffect(() => {
+    const box = scroller.current;
+    const tab = refs.current.get(props.selected);
+    if (!box || !tab || box.scrollWidth <= box.clientWidth) return;
+    const gap = 24;
+    const b = box.getBoundingClientRect();
+    const t = tab.getBoundingClientRect();
+    const left = t.left - b.left + box.scrollLeft;
+    const right = t.right - b.left + box.scrollLeft;
+    if (left < box.scrollLeft) box.scrollLeft = Math.max(0, left - gap);
+    else if (right > box.scrollLeft + box.clientWidth) box.scrollLeft = right - box.clientWidth + gap;
+  }, [props.selected, shape]);
 
   function onKey(e: KeyboardEvent<HTMLButtonElement>, i: number) {
     const n = props.tabs.length;
@@ -43,7 +62,7 @@ export function Tabs<K extends string>(props: {
 
   return (
     <div className="tabs">
-      <div className="tabs__scroll">
+      <div className="tabs__scroll" ref={scroller}>
         <div className="tabs__list" role="tablist" aria-label={props.label}>
           {props.tabs.map((t, i) => {
             const on = t.key === props.selected;

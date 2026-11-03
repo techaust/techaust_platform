@@ -157,6 +157,31 @@
         "FEMA realisation due",
         "EDF due"
       ]
+    },
+    "edf-v2": {
+      "stem": "edf",
+      "headers": [
+        "Invoice number",
+        "Invoice date",
+        "Client name",
+        "Client address",
+        "Country (ISO code)",
+        "Currency",
+        "Invoice amount",
+        "Exchange rate",
+        "INR value",
+        "SAC",
+        "Service description",
+        "Purpose code",
+        "Amount realised",
+        "Credit notes",
+        "Amount reduced (FEMA Reg. 6)",
+        "Reduction approved on",
+        "Bank's reference",
+        "Proof awaited",
+        "FEMA realisation due",
+        "EDF due"
+      ]
     }
   },
   "realisation": {
@@ -248,6 +273,27 @@
         "Debit",
         "Credit",
         "Balance"
+      ]
+    }
+  },
+  "refunds": {
+    "refunds-v1": {
+      "stem": "refunds_register",
+      "headers": [
+        "Refund date",
+        "Client code",
+        "Client",
+        "Refunded from",
+        "Credit note",
+        "Payment reference",
+        "How",
+        "Gateway refund ID",
+        "Bank reference (UTR)",
+        "Currency",
+        "Amount",
+        "INR value",
+        "Reason",
+        "Status"
       ]
     }
   }

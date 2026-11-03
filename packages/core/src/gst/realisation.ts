@@ -102,11 +102,38 @@ export type RealisationInput = {
    * `femaDueSql` in `@techaust/db/realisation`.
    */
   readonly extendedTo?: CalendarDate | undefined;
+  /** M6.5 (RB-43, RA-38): the facts beyond the balance that decide "realised" (`RealisationFacts`); absent: the balance alone decides, as before M6.5. */
+  readonly facts?: RealisationFacts | undefined;
+};
+
+/**
+ * M6.5: the facts beyond the balance that decide whether an export is realised (the SQL twin is `stageSql` in `@techaust/db/realisation`; a db test compares them):
+ *   - RB-43 (Settled by the lead on the safest reading, 2026-11-03 (08-C RB-43)): FEMA-realised only once what was paid (net of a refund's release) plus the AD bank's
+ *     Reg. 6 reductions covers the total; otherwise, with nothing outstanding, `reduction_pending`;
+ *   - RA-38 (Settled by the lead on the safest reading, 2026-11-02 (08-C RA-38); L38): an LUT export is realised for GST only once every confirmed card or PayPal
+ *     payment on it has its proof (`proofMissing` false); until then its GST stages still run on its dates, and it is `ok` before them.
+ */
+export type RealisationFacts = {
+  readonly paidMinor: number;
+  readonly totalMinor: number;
+  readonly reductionsMinor: number;
+  readonly proofMissing: boolean;
+};
+
+/**
+ * B4 (L13, RB-43): an export invoice's facts as the EDF month and the realisation list read them (`REALISATION_FACT_COLUMNS`): `RealisationFacts` plus what the
+ * `edf-v2` list shows beside them: the credit notes against it (`credited_minor`) and the latest Reg. 6 reduction's day and the bank's reference.
+ */
+export type ExportRealisationFacts = RealisationFacts & {
+  readonly creditedMinor: number;
+  readonly reductionOn: CalendarDate | null;
+  readonly reductionRef: string | null;
 };
 
 export type RealisationDates = { readonly femaDue: CalendarDate; readonly gstDue: CalendarDate };
 
 export type RealisationStage =
+  | "reduction_pending"
   | "realised"
   | "gst_overdue"
   | "gst_approaching"
@@ -166,7 +193,10 @@ export function realisationDates(
   return guard(() => checkedDueDates(input, rules, []));
 }
 
-/** The stage on `today`, first match wins: realised, GST overdue, GST approaching, FEMA overdue, FEMA approaching, ok. */
+/**
+ * The stage on `today`, first match wins: reduction pending (M6.5, RB-43), realised, GST overdue, GST approaching, FEMA overdue, FEMA approaching (only while
+ * something is outstanding), ok. Without `facts` the balance alone decides "realised", as before M6.5.
+ */
 export function stageOf(
   dates: RealisationDates,
   outstandingMinor: number,
@@ -174,14 +204,26 @@ export function stageOf(
   approachingDays: number,
   /** False for an export with IGST paid (Q53): the GST stages are skipped. */
   gstApplies = true,
+  facts?: RealisationFacts,
 ): RealisationStage {
-  if (outstandingMinor <= 0) return "realised";
+  const settled = outstandingMinor <= 0;
+  // Early check 1, finding 2: a GST stage of RA-38 (an LUT export with a card or PayPal payment still without its proof) comes before `reduction_pending`.
+  const proofBlocks = gstApplies && facts?.proofMissing === true;
+  if (
+    settled &&
+    facts &&
+    !proofBlocks &&
+    BigInt(facts.paidMinor) + BigInt(facts.reductionsMinor) < BigInt(facts.totalMinor)
+  )
+    return "reduction_pending";
+  if (settled && !proofBlocks) return "realised";
   if (gstApplies && compareDates(today, dates.gstDue) > 0) return "gst_overdue";
   if (gstApplies && compareDates(today, addDays(dates.gstDue, -approachingDays)) >= 0) {
     return "gst_approaching";
   }
-  if (compareDates(today, dates.femaDue) > 0) return "fema_overdue";
-  if (compareDates(today, addDays(dates.femaDue, -approachingDays)) >= 0) return "fema_approaching";
+  if (!settled && compareDates(today, dates.femaDue) > 0) return "fema_overdue";
+  if (!settled && compareDates(today, addDays(dates.femaDue, -approachingDays)) >= 0)
+    return "fema_approaching";
   return "ok";
 }
 
@@ -198,12 +240,22 @@ export function realisationStatus(
     const found: GstIssue[] = dates.ok ? [] : [...dates.errors];
     if (!isValidDate(today)) found.push(issue("date_invalid", "today"));
     if (!isInt(input.outstandingMinor)) found.push(issue("amount_invalid", "outstandingMinor"));
+    const f = input.facts;
+    if (f && (!isInt(f.paidMinor) || !isInt(f.totalMinor) || !isInt(f.reductionsMinor)))
+      found.push(issue("amount_invalid", "facts"));
     if (!dates.ok || found.length > 0) return fail(found);
     const gstApplies = input.supplyType === "export_lut";
     return ok(
       {
         ...dates.value,
-        stage: stageOf(dates.value, input.outstandingMinor, today, rules.approachingDays, gstApplies),
+        stage: stageOf(
+          dates.value,
+          input.outstandingMinor,
+          today,
+          rules.approachingDays,
+          gstApplies,
+          input.facts,
+        ),
       },
       dates.warnings,
     );
@@ -250,6 +302,8 @@ export function realisationRows(
           extension,
           extendedTo: row.extendedTo ?? undefined,
           outstandingMinor: row.outstandingMinor,
+          // M6.5 (B4; run file part 2 item 7): the facts the page read, so the list's stage is the SQL's (`stageSql`: reduction pending, RA-38's proof).
+          ...(row.realisationFacts ? { facts: row.realisationFacts } : {}),
         },
         today,
         rules,

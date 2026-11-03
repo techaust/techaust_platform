@@ -6,6 +6,7 @@
 //   node scripts/pay-simulate.mjs --checkout <checkout id> --amount <paise> [--event paid|expired|cancelled]
 //   node scripts/pay-simulate.mjs --gateway stripe --checkout <checkout id> --document <document id> --amount <cents> [--event paid|expired|failed]
 //   node scripts/pay-simulate.mjs --paypal --checkout <checkout id> --amount <cents> [--event approved|completed]   (M6.4)
+//   node scripts/pay-simulate.mjs --refund <our refund id> --payment <Razorpay pay_ id> --amount <paise> [--event processed|failed]   (M6.5: Razorpay's refund event)
 //
 // The ids and amount are in the `checkout_sessions` row (or the admin's "Create payment link" answer); TECHAUST_PORT_OFFSET moves the port as `pnpm dev` does.
 // M6.3: the Stripe event is signed with core `stripeTestHeader` (stripe-node's algorithm) and carries our marks, so the hook takes it as ours (env "local").
@@ -36,9 +37,31 @@ const usage = () => {
   );
   process.exit(2);
 };
+// M6.5: a Razorpay refund event for one of our refunds (the simulator's refund id carries the amount and our id, as `stubRefund` in config.ts makes it).
+const refundId = args.refund === undefined ? null : String(args.refund);
+if (refundId !== null) {
+  const payment = String(args.payment ?? "");
+  const kind = event === "paid" ? "processed" : event;
+  if (
+    !UUID.test(refundId) ||
+    !/^pay_[A-Za-z0-9]+$/.test(payment) ||
+    !Number.isSafeInteger(amount) ||
+    !["processed", "failed"].includes(kind)
+  ) {
+    console.error(
+      "Usage: node scripts/pay-simulate.mjs --refund <our refund id> --payment <pay_ id> --amount <paise> [--event processed|failed]",
+    );
+    process.exit(2);
+  }
+}
 if (gateway !== "razorpay" && gateway !== "stripe") usage();
-if (!UUID.test(checkout) || !Number.isSafeInteger(amount)) usage();
-if (gateway === "razorpay" && (amount < 100 || !["paid", "expired", "cancelled"].includes(event))) usage();
+if (refundId === null && (!UUID.test(checkout) || !Number.isSafeInteger(amount))) usage();
+if (
+  refundId === null &&
+  gateway === "razorpay" &&
+  (amount < 100 || !["paid", "expired", "cancelled"].includes(event))
+)
+  usage();
 if (
   gateway === "stripe" &&
   (amount < 50 || !UUID.test(documentId) || !["paid", "expired", "failed"].includes(event))
@@ -58,7 +81,33 @@ const now = Math.floor(Date.now() / 1000);
 
 let body;
 let headers;
-if (gateway === "stripe") {
+if (refundId !== null) {
+  const kind = event === "paid" ? "processed" : event;
+  body = JSON.stringify({
+    entity: "event",
+    account_id: "acc_LOCALSIMULATED01",
+    event: `refund.${kind}`,
+    created_at: now,
+    payload: {
+      refund: {
+        entity: {
+          id: `rfnd_A${amount}R${refundId.replaceAll("-", "")}`,
+          entity: "refund",
+          amount,
+          currency: "INR",
+          payment_id: String(args.payment),
+          receipt: refundId,
+          status: kind,
+        },
+      },
+    },
+  });
+  headers = {
+    "content-type": "application/json",
+    "x-razorpay-signature": createHmac("sha256", secret).update(body).digest("hex"),
+    "x-razorpay-event-id": `evt_LOCAL${randomBytes(6).toString("hex")}`,
+  };
+} else if (gateway === "stripe") {
   // The simulator's ids (apps/admin/worker/gateway/stripe.ts `stubSessionIdOf`): the amount, our checkout and the document are in them.
   const ref = checkout.replaceAll("-", "");
   const sessionId = `cs_test_A${amount}R${ref}D${documentId.replaceAll("-", "")}`;

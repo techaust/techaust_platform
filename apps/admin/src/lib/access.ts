@@ -14,6 +14,7 @@ export type NavKey =
   | "estimates"
   | "invoices"
   | "payments"
+  | "reconciliation"
   | "reports"
   | "approvals"
   | "audit"
@@ -31,6 +32,7 @@ export const NAV_KEYS: readonly NavKey[] = [
   "estimates",
   "invoices",
   "payments",
+  "reconciliation",
   "reports",
   "approvals",
   "audit",
@@ -50,6 +52,8 @@ export const NAV_ACCESS: Record<NavKey, readonly Action[]> = {
   estimates: ["proposals.read"],
   invoices: ["invoices.read"],
   payments: ["payments.read"],
+  // M6.5 (G5): Razorpay's settlements and the unmatched lists (the Owner and the Accountant; the tick is the Owner's)
+  reconciliation: ["reports.finance"],
   reports: ["reports.finance", "reports.delivery", "reports.pipeline"],
   approvals: ["approvals.decide", "approvals.readOwn"],
   audit: ["audit.readFinance"],

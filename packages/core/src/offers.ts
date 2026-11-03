@@ -122,7 +122,7 @@ export function certificateKey(i: { type: string; fy: string; number: number; ve
  * them: the number is padded to AT LEAST four digits (`padStart(4)`), so 10,000 and above has five or more (up to nine); an invoice's version is always 1 and it has no certificate.
  */
 export const ATTACHMENT_KEY =
-  /^docs\/(?:(?:proposal|estimate)\/[0-9]{4}-[0-9]{2}\/[0-9]{4,9}-v[0-9]{1,3}(?:-certificate)?|(?:tax_invoice|export_invoice|proforma|credit_note|debit_note)\/[0-9]{4}-[0-9]{2}\/[0-9]{4,9}-v1)\.pdf$/;
+  /^docs\/(?:(?:proposal|estimate)\/[0-9]{4}-[0-9]{2}\/[0-9]{4,9}-v[0-9]{1,3}(?:-certificate)?|(?:tax_invoice|export_invoice|proforma|credit_note|debit_note|receipt)\/[0-9]{4}-[0-9]{2}\/[0-9]{4,9}-v1)\.pdf$/;
 /**
  * The largest attachment the email consumer will read. The brief said 5 MB; the Free plan's 10 ms CPU says less: the body is base64'd (native
  * in workerd, about 37 ms per MB without it), put in a JSON string and SHA-256'd by the SigV4 signer. Not measured in workerd (its clock does

@@ -35,6 +35,7 @@ import {
   type PdfSupplierMessage,
   type PdfSweepMessage,
   pdfKeys,
+  type ReceiptRenderMessage,
   supplierPdfKey,
   utcDateOf,
 } from "@techaust/core/pdf-jobs";
@@ -665,7 +666,13 @@ export async function processRender(
 /** A render that did not give a PDF: delay (rate, quota) or throw (anything a retry might fix). */
 export async function failed(
   env: Env,
-  msg: PdfRenderMessage | PdfCertificateMessage | PdfStatementMessage | PdfSupplierMessage | PdfDeedMessage,
+  msg:
+    | PdfRenderMessage
+    | PdfCertificateMessage
+    | PdfStatementMessage
+    | PdfSupplierMessage
+    | PdfDeedMessage
+    | ReceiptRenderMessage,
   result: Exclude<Awaited<ReturnType<typeof renderPaced>>, { ok: true }>,
   now: number,
 ): Promise<"delayed"> {
@@ -788,7 +795,7 @@ export const SWEEP_SQL = `SELECT documents.id FROM documents INDEXED BY document
   ORDER BY coalesce(f.last_attempt_at, 0), documents.frozen_at, documents.id LIMIT ${SWEEP_LIMIT}`;
 
 /** The sweep's note that it tried a document (`?1` the document, `?2` the sweep's time). One row per document; the failed nights are left as they are. */
-const SWEEP_ATTEMPT_SQL = `INSERT INTO pdf_failures (document_id, nights, last_attempt_at) VALUES (?1, 0, ?2)
+export const SWEEP_ATTEMPT_SQL = `INSERT INTO pdf_failures (document_id, nights, last_attempt_at) VALUES (?1, 0, ?2)
   ON CONFLICT (document_id) DO UPDATE SET last_attempt_at = excluded.last_attempt_at`;
 
 /**
@@ -815,12 +822,12 @@ export async function processSweep(env: Env, msg: PdfSweepMessage): Promise<numb
  * A night on which the document's PDF message ran out of tries (`?1` the document, `?2` the IST day, `?3` the time): counted once per IST day (a second dead letter
  * of the same day, a snapshot and then a render, adds nothing).
  */
-const FAILED_NIGHT_SQL = `INSERT INTO pdf_failures (document_id, nights, last_failed_day, last_attempt_at) VALUES (?1, 1, ?2, ?3)
+export const FAILED_NIGHT_SQL = `INSERT INTO pdf_failures (document_id, nights, last_failed_day, last_attempt_at) VALUES (?1, 1, ?2, ?3)
   ON CONFLICT (document_id) DO UPDATE SET nights = nights + CASE WHEN last_failed_day IS excluded.last_failed_day THEN 0 ELSE 1 END,
     last_failed_day = excluded.last_failed_day, last_attempt_at = max(coalesce(last_attempt_at, 0), excluded.last_attempt_at)`;
 
 /** The owners' one `pdf.refused` bell once a document reaches `SWEEP_MAX_FAILED_NIGHTS` (`?1` the document, `?2` the title, `?3` the link): unique per owner, kind and document. */
-const STOPPED_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
+export const STOPPED_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
   SELECT 'n_' || lower(hex(randomblob(16))), u.id, 'pdf.refused', 'document', ?1, ?2, ?3 FROM staff_users u
   WHERE u.status = 'active' AND u.role = 'owner' AND (SELECT nights FROM pdf_failures WHERE document_id = ?1) >= ${SWEEP_MAX_FAILED_NIGHTS}`;
 

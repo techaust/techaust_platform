@@ -617,6 +617,9 @@ describe("the route table", () => {
       "POST /api/v1/invoices/:id/credit/release payments.applyCredit payment.credit_release",
       "POST /api/v1/invoices/:id/realisation-extensions realisation.extend invoice.realisation_extend",
       "PUT /api/v1/invoices/:id/realisation-extensions/:eid/letter realisation.extend invoice.realisation_extend",
+      "GET /api/v1/invoices/:id/realisation-reductions payments.read -",
+      "POST /api/v1/invoices/:id/realisation-reductions realisation.reduce realisation.reduce",
+      "PUT /api/v1/invoices/:id/realisation-reductions/:rid/letter realisation.reduce realisation.reduce",
     ]);
     expect(ROUTES.find((r) => r.path === "/api/v1/invoices/:id" && r.method === "PATCH")?.body).toBe(
       "document",

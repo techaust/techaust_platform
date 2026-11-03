@@ -68,6 +68,8 @@ const EXPECTED: Record<Exclude<Action, "proposals.send">, string> = {
   "realisation.extend": "A---", // M6.1 (L14, Q60): the Owner only
   "refunds.read": "A--A",
   "refunds.issue": "S---",
+  "payments.reconcile": "A---", // M6.5 (L11): the Owner ticks "seen in the bank statement" and fetches a settlement day
+  "realisation.reduce": "S---", // M6.5 (RB-43): the Owner records the AD bank's Reg. 6 reduction with a fresh code
   "dashboard.read": "AAAA", // M3.5: every role; the handler keeps only the tiles the role may see
   "reports.finance": "A--A",
   "reports.delivery": "AA--",

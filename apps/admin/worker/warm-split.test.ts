@@ -12,6 +12,6 @@ describe("the invoices and finance schema warm-ups [brief A.7]", () => {
   });
 
   it("the finance Worker: the settings (8), the payment bodies (9) and the gateway steps", () => {
-    expect(financeWarm).toBe(8 + 9 + GATEWAY_WARM_STEPS);
+    expect(financeWarm).toBe(8 + 9 + GATEWAY_WARM_STEPS + 12);
   });
 });

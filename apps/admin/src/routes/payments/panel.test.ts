@@ -14,6 +14,7 @@ const entry = (paymentId: string, over: Partial<Entry> = {}): Entry => ({
   paymentId,
   kind: "payment",
   status: "confirmed",
+  provider: "manual",
   receivedOn: "2026-11-01",
   mode: "neft",
   reference: "UTRSAMPLE000123",

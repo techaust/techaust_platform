@@ -157,7 +157,7 @@ export const documents = sqliteTable(
       .references(() => clients.id),
     projectId: text("project_id").references(() => projects.id),
     carePlanId: text("care_plan_id").references(() => carePlans.id),
-    /** Credit/debit note → invoice; tax invoice → proforma; receipt → its payment's document. */
+    /** Credit/debit note → invoice; tax invoice → proforma. A payment receipt (M6.5, L4) has none: its payment names it (`payments.receipt_document_id`). */
     parentId: text("parent_id"),
     versionGroupId: text("version_group_id"),
     version: integer("version").notNull().default(1),
@@ -336,6 +336,10 @@ export const documents = sqliteTable(
       .where(
         sql`${t.frozenAt} is not null and ${t.pdfSha256} is null and ${t.type} in ('proposal', 'estimate', 'tax_invoice', 'export_invoice', 'proforma', 'credit_note', 'debit_note')`,
       ),
+    // M6.5 (L39): the receipt PDFs still to render (receipts stay out of `documents_pdf_pending`, whose predicate the jobs sweep and the M4.4 reads repeat).
+    index("documents_receipt_pdf_pending")
+      .on(t.frozenAt, t.id)
+      .where(sql`${t.frozenAt} is not null and ${t.pdfSha256} is null and ${t.type} = 'receipt'`),
     check("documents_type", oneOf(t.type, DOCUMENT_TYPES)),
     check("documents_status", oneOf(t.status, DOCUMENT_STATUSES)),
     check("documents_currency", oneOf(t.currency, CURRENCY_CODES)),

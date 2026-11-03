@@ -2711,3 +2711,61 @@ textarea[aria-invalid="true"] {
 .deedcard__alert {
   margin: var(--space-3) 0 0;
 }
+
+/* ---- M6.5 (07-ZO lines 13 to 16): a refund that went out, under the figures as a payment's row is (a muted icon: money going back is neither good nor bad
+   news), and the receipts of the payments on the document, one row each with its PDF ---- */
+.inv-slip__refund {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  grid-column: 1 / -1;
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.inv-slip__refund-icon {
+  display: inline-flex;
+  color: var(--color-text-muted);
+}
+
+.inv-receipts__list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.inv-receipts__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.inv-receipts__row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.inv-receipts__text {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.inv-receipts__note {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 29.99rem) {
+  .inv-receipts__row {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+}

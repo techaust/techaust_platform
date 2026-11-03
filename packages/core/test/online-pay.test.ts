@@ -232,8 +232,20 @@ describe("ONLINE_RULES and payableOnline for Stripe [L1, L14]", () => {
       "late_capture",
       "not_final",
     ];
-    expect(REVIEW_KINDS.slice(-added.length)).toEqual(added);
+    const m65 = ["refund_failed", "refund_stuck", "dispute_opened", "dispute_closed", "refund_after_failed"];
+    expect(REVIEW_KINDS.slice(-(added.length + m65.length), -m65.length)).toEqual(added);
     expect(REVIEW_KINDS).toContain("not_export_receipt");
+  });
+
+  it("M6.5: the refund and dispute review kinds are listed once, last (L43's refund_after_failed after them)", () => {
+    expect(REVIEW_KINDS.slice(-5)).toEqual([
+      "refund_failed",
+      "refund_stuck",
+      "dispute_opened",
+      "dispute_closed",
+      "refund_after_failed",
+    ]);
+    expect(new Set(REVIEW_KINDS).size).toBe(REVIEW_KINDS.length);
   });
 
   it("an export invoice, a USD debit note and a USD proforma (cents allowed) of an overseas client", () => {

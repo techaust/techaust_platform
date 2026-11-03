@@ -259,7 +259,8 @@ describe("offer.send: one recipient, the link and the email [ADM-PROP-07]", () =
     expect(queued[0]?.attachment).toBeUndefined();
     expect(queued[0]?.data.attached).toBe("0");
     queued = [];
-    const b = await world({ attach: true, pdfKey: "docs/receipt/2026-27/0001-v1.pdf" });
+    // M6.5: receipts are allowed now; a voucher's key (never made) stands for a key outside the list.
+    const b = await world({ attach: true, pdfKey: "docs/refund_voucher/2026-27/0001-v1.pdf" });
     await processOfferSend(makeEnv(), sendMsg(b), NOW);
     expect(queued[0]?.attachment).toBeUndefined();
     expect(queued[0]?.data.attached).toBe("0");
@@ -1198,7 +1199,7 @@ describe("the email consumer and a PDF attachment [ADM-PROP-07]", () => {
   it("a key outside the allow-list never reaches the consumer: the message is invalid", async () => {
     const r = recorder();
     for (const key of [
-      "docs/receipt/2026-27/0001-v1.pdf",
+      "docs/refund_voucher/2026-27/0001-v1.pdf",
       "../etc/passwd",
       "docs/proposal/2026-27/0001-v1.json",
     ]) {

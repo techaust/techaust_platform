@@ -313,7 +313,13 @@ describe("the EDF month and the realisation list", () => {
     const o = await sessionFor("owner");
     const u = await mkReportClient("USD");
     const open = await addDoc({ clientId: u, currency: "USD", issueDate: "2027-05-10" });
-    const paid = await addDoc({ clientId: u, currency: "USD", issueDate: "2027-05-11", balance: 0 });
+    const paid = await addDoc({
+      clientId: u,
+      currency: "USD",
+      issueDate: "2027-05-11",
+      balance: 0,
+      paid: "total",
+    });
     const voided = await addDoc({ clientId: u, currency: "USD", issueDate: "2027-05-12", voided: true });
     const got = async (q: string) =>
       ((await json(await call(`/reports/realisation${q}`, { cookie: o.cookie }))) as J).rows.map(
@@ -336,6 +342,60 @@ describe("the EDF month and the realisation list", () => {
     )) as J;
     expect(new Set([...p1.rows, ...p2.rows].map((r: J) => r.id)).size).toBe(p1.rows.length + p2.rows.length);
     expect(p2.rows.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("B4 (edf-v2, L13, RB-43): the EDF and realisation rows carry their facts (paid, credit notes, the latest reduction, proof); the register page none", async () => {
+    const o = await sessionFor("owner", { stepUp: true });
+    const u = await mkReportClient("USD");
+    const a = await addDoc({
+      clientId: u,
+      currency: "USD",
+      issueDate: "2027-08-10",
+      balance: 0,
+      paid: "total",
+    });
+    const total = a.computed.totalMinor;
+    await env.DB.prepare(
+      "UPDATE documents SET credited_minor = 500, updated_at = updated_at + 1 WHERE id = ?",
+    )
+      .bind(a.id)
+      .run();
+    const reduce = (amount: number, day: string, ref: string) =>
+      env.DB.prepare(
+        "INSERT INTO realisation_reductions (id, document_id, currency, amount_minor, approved_on, bank_ref, recorded_by) VALUES (?1, ?2, 'USD', ?3, ?4, ?5, ?6)",
+      )
+        .bind(crypto.randomUUID(), a.id, amount, day, ref, o.id)
+        .run();
+    await reduce(1_000, "2027-09-01", "ADB/R/1");
+    await reduce(2_000, "2027-09-15", "ADB/R/2");
+    const edf = (await json(await call("/reports/edf?month=2027-08", { cookie: o.cookie }))) as J;
+    expect(edf.rows.find((r: J) => r.id === a.id)?.realisationFacts).toEqual({
+      paidMinor: total,
+      totalMinor: total,
+      creditedMinor: 500,
+      reductionsMinor: 3_000,
+      reductionOn: { year: 2027, month: 9, day: 15 },
+      reductionRef: "ADB/R/2",
+      proofMissing: false,
+    });
+    // every page (the file's database holds earlier tests' exports)
+    const realRows: J[] = [];
+    let after = "";
+    do {
+      const p = (await json(
+        await call(`/reports/realisation?show=all${after ? `&after=${after}` : ""}`, { cookie: o.cookie }),
+      )) as J;
+      realRows.push(...p.rows);
+      after = p.next ?? "";
+    } while (after);
+    expect(realRows.find((r: J) => r.id === a.id)?.realisationFacts).toMatchObject({
+      paidMinor: total,
+      reductionsMinor: 3_000,
+    });
+    const reg = (await json(
+      await call("/reports/registers?from=2027-08-01&to=2027-08-31", { cookie: o.cookie }),
+    )) as J;
+    expect(reg.rows.find((r: J) => r.id === a.id)?.realisationFacts).toBeUndefined();
   });
 });
 

@@ -4,9 +4,13 @@
 // alone). Anything else throws, and the queue retries the message, then dead-letters it (a `dead_letter` review item and the Owner's bell): a binding failure is
 // never read as a result. Every call is idempotent: a payment is one row, a tax invoice is issued once.
 import {
+  type CheckRefundResult,
+  type FetchSettlementsResult,
   type GatewayAdvanceApi,
   type GatewayEventsApi,
   type IssueAdvanceResult,
+  isCheckRefundResult,
+  isFetchSettlementsResult,
   isIssueAdvanceResult,
   isProcessEventResult,
   isRefreshResult,
@@ -39,8 +43,24 @@ export class GatewayRpcError extends Error {
 export function adminGateway(env: object): GatewayEventsApi {
   const process = boundMethod(env, "ADMIN_GATEWAY", "processEvent");
   const refresh = boundMethod(env, "ADMIN_GATEWAY", "refreshCheckout");
+  const check = boundMethod(env, "ADMIN_GATEWAY", "checkRefund");
+  const fetchSettlements = boundMethod(env, "ADMIN_GATEWAY", "fetchSettlements");
   if (!process) throw new GatewayRpcError("rpc_unavailable");
   return {
+    // M6.5 (L37): the sweep's re-check of one open refund; checked lazily (a finance Worker older than M6.5 has none).
+    async checkRefund(args): Promise<CheckRefundResult> {
+      if (!check) throw new GatewayRpcError("rpc_unavailable");
+      const answer = await check(args);
+      if (!isCheckRefundResult(answer)) throw new GatewayRpcError("rpc_bad_result");
+      return answer;
+    },
+    // M6.5 (L11): one page of Razorpay's settlement recon.
+    async fetchSettlements(args): Promise<FetchSettlementsResult> {
+      if (!fetchSettlements) throw new GatewayRpcError("rpc_unavailable");
+      const answer = await fetchSettlements(args);
+      if (!isFetchSettlementsResult(answer)) throw new GatewayRpcError("rpc_bad_result");
+      return answer;
+    },
     async processEvent(args): Promise<ProcessEventResult> {
       const answer = await process(args);
       if (!isProcessEventResult(answer)) throw new GatewayRpcError("rpc_bad_result");
