@@ -5,6 +5,7 @@
 // Settled by the lead on the safest reading, 2026-11-03 (08-C RB-43): before any export refund a reduction is asked from the AD bank under FEMA 23(R)/2026-RB Reg. 6;
 // the EDF keeps the full value; FEMA is not realised until the reduction is recorded. A reduction "on our own declaration" (`declaration: true`) is refused above
 // ₹10 lakh or its equivalent (early check 1, part 2 item 5; for a USD invoice at its own Owner-typed rate, and refused when no rate is known: the safe side).
+import { istDate, toIsoDate } from "@techaust/core/dates";
 import { realisationReductionBody } from "@techaust/core/payment-schemas";
 import {
   REDUCTIONS_OF_DOCUMENT_SQL,
@@ -31,7 +32,8 @@ const DECLARATION_TOO_LARGE = E(
 const DAY_INVALID = E("day_invalid", "Pick a day that isn't in the future");
 
 const DOC_SQL = `SELECT d.id, d.type, d.currency, d.total_minor, d.fx_rate_micros, d.frozen_at, d.status, ${clientGoneSql("d.client_id")} AS gone,
-     (SELECT coalesce(sum(r.amount_minor), 0) FROM realisation_reductions r WHERE r.document_id = d.id) AS reduced
+     (SELECT coalesce(sum(r.amount_minor), 0) FROM realisation_reductions r WHERE r.document_id = d.id) AS reduced,
+     (SELECT coalesce(sum(r.amount_minor), 0) FROM realisation_reductions r WHERE r.document_id = d.id AND r.declaration = 1) AS declared
    FROM documents d WHERE d.id = ?1`;
 
 /** The INR value of `amountMinor` at `rateMicros` (bigint, rounded up: the safe side), or null without a rate. */
@@ -62,14 +64,17 @@ export const reductions = new Hono<AppEnv>()
       status: string;
       gone: number;
       reduced: number;
+      declared: number;
     }>();
     if (d?.type !== "export_invoice" || d.frozen_at === null) return err(c, NOT_FOUND, 404);
     if (d.gone === 1) return err(c, CLIENT_GONE, 409);
     const now = Date.now();
-    if (f.approvedOn > new Date(now + 19_800_000).toISOString().slice(0, 10)) return err(c, DAY_INVALID, 400);
+    if (f.approvedOn > toIsoDate(istDate(now))) return err(c, DAY_INVALID, 400);
     if (f.declaration) {
-      const inr = inrOf(f.amountMinor, d.currency, d.fx_rate_micros);
-      if (inr === null || inr > BigInt(DECLARATION_MAX_INR_MINOR)) return err(c, DECLARATION_TOO_LARGE, 409);
+      // Review part 1, finding 2: the cap is per invoice: this declaration together with every earlier one on it (held again in the INSERT's WHERE).
+      const inr = inrOf(f.amountMinor + d.declared, d.currency, d.fx_rate_micros);
+      if (inr === null || inr > BigInt(DECLARATION_MAX_INR_MINOR))
+        return err(c, DECLARATION_TOO_LARGE, 409, { declaredMinor: d.declared });
     }
     const done = await mutate(c, {
       main: realisationReductionStatement(db, {
@@ -82,6 +87,7 @@ export const reductions = new Hono<AppEnv>()
         note: f.note ?? null,
         sessionId: u.sessionId,
         now,
+        declarationMaxInrMinor: DECLARATION_MAX_INR_MINOR,
       }),
       action: "realisation.reduce",
       entityType: "document",

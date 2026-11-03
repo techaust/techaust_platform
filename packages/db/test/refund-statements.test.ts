@@ -920,10 +920,11 @@ describe("twins: free money, the RA-41 line, the stage with M6.5's facts [L35, R
       amountMinor: 4_000,
       approvedOn: "2026-11-20",
       bankRef: "ADB/1",
-      declaration: true,
+      declaration: false,
       note: null,
       sessionId: sess,
       now: Date.now(),
+      declarationMaxInrMinor: 100_000_000,
     }).run();
     expect(await stage(short)).toBe("realised");
     expect(await stage(short)).toBe(await core(short));
@@ -940,6 +941,7 @@ describe("twins: free money, the RA-41 line, the stage with M6.5's facts [L35, R
           note: null,
           sessionId: sess,
           now: Date.now(),
+          declarationMaxInrMinor: 100_000_000,
         }).run()
       ).meta.changes,
     ).toBe(0);
@@ -991,6 +993,52 @@ describe("twins: free money, the RA-41 line, the stage with M6.5's facts [L35, R
       proof_missing: 0,
       reduction_ref: "ADB/1",
     });
+  });
+
+  it("review part 1, finding 2: the ₹10 lakh declaration cap is per invoice (every declaration on it together, at its own rate), never per reduction", async () => {
+    const { sess } = await setup();
+    const usd = await mkClientRow({ currency: "USD" });
+    const doc = async (fx: number | null) => {
+      const id = uuidv7();
+      const n = next();
+      await run(
+        `INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, issue_date, supply_type, total_minor, paid_minor, credited_minor, balance_minor, fx_rate_micros, updated_at)
+         VALUES (?1, 'export_invoice', 'issued', ?2, 'USD', 'exp-c', '9999', ?3, ?4, 1000, '2026-11-01', 'export_lut', 5000000, 0, 0, 5000000, ?5, 7000)`,
+        id,
+        usd,
+        n,
+        `C/${n}`,
+        fx,
+      );
+      return id;
+    };
+    const reduce = async (documentId: string, amountMinor: number, declaration: boolean) =>
+      (
+        await realisationReductionStatement(db(), {
+          id: uuidv7(),
+          documentId,
+          amountMinor,
+          approvedOn: "2026-11-20",
+          bankRef: `ADB/${next()}`,
+          declaration,
+          note: null,
+          sessionId: sess,
+          now: Date.now(),
+          declarationMaxInrMinor: 100_000_000,
+        }).run()
+      ).meta.changes;
+    // $50,000 at ₹83.1234: $9,000 declared is ₹7,48,110.60; a second $9,000 would make ₹14,96,221.20 on the same invoice
+    const a = await doc(83_123_400);
+    expect(await reduce(a, 900_000, true)).toBe(1);
+    expect(await reduce(a, 900_000, true)).toBe(0);
+    // the bank's own approvals don't count towards it, and a declaration that keeps the sum under ₹10 lakh still goes in
+    expect(await reduce(a, 900_000, false)).toBe(1);
+    expect(await reduce(a, 300_000, true)).toBe(1); // ₹9,97,480.80 together
+    expect(await reduce(a, 4_000, true)).toBe(0); // ₹10,00,805.74 together
+    // no rate known: a declaration is refused (the safe side); the bank's approval is not
+    const b = await doc(null);
+    expect(await reduce(b, 1_000, true)).toBe(0);
+    expect(await reduce(b, 1_000, false)).toBe(1);
   });
 });
 

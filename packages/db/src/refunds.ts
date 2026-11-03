@@ -529,7 +529,10 @@ export const bankMatchRemoveStatement = (
 
 /**
  * The AD bank's Reg. 6 reduction of an export invoice (`realisation.reduce`, the Owner with a fresh step-up; Settled by the lead on the safest reading, 2026-11-03
- * (08-C RB-43)): for an issued, live export invoice of a live client, in its currency, all reductions together never above its total. Zero rows: 409. Binds `?1`..`?9`.
+ * (08-C RB-43)): for an issued, live export invoice of a live client, in its currency, all reductions together never above its total. A reduction on our own
+ * declaration (`declaration`) counts together with every earlier declaration on the same invoice (review part 1, finding 2: the cap is per invoice, not per
+ * reduction): their sum, in INR (an INR invoice as it is; otherwise at the invoice's own Owner-typed rate, rounded up, the safe side; no rate: refused), at most
+ * `declarationMaxInrMinor`. Zero rows: 409. Binds `?1`..`?10`.
  */
 export function realisationReductionStatement(
   db: D1Database,
@@ -543,14 +546,19 @@ export function realisationReductionStatement(
     note: string | null;
     sessionId: string;
     now: number;
+    /** Settled by the lead on the safest reading, 2026-11-03 (08-C RB-43): the most all declarations of one invoice may come to, in paise. */
+    declarationMaxInrMinor: number;
   },
 ): D1PreparedStatement {
+  const declared = `?3 + (SELECT coalesce(sum(y.amount_minor), 0) FROM realisation_reductions y INDEXED BY realisation_reductions_document WHERE y.document_id = d.id AND y.declaration = 1)`;
   return db
     .prepare(
       `INSERT INTO realisation_reductions (id, document_id, currency, amount_minor, approved_on, bank_ref, declaration, note, recorded_by, created_at)
        SELECT ?1, d.id, d.currency, ?3, ?4, ?5, ?6, ?7, ${sessionUser("?8")}, ?9 FROM documents d JOIN clients k ON k.id = d.client_id
        WHERE d.id = ?2 AND d.type = 'export_invoice' AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.voided_at IS NULL AND k.anonymised_at IS NULL
          AND ?3 + (SELECT coalesce(sum(x.amount_minor), 0) FROM realisation_reductions x WHERE x.document_id = d.id) <= d.total_minor
+         AND (?6 = 0 OR coalesce(CASE WHEN d.currency = 'INR' THEN ${declared}
+               WHEN d.fx_rate_micros > 0 THEN ((${declared}) * d.fx_rate_micros + 999999) / 1000000 END <= ?10, 0))
          AND ${ownerSessionSql("?8", "?9", true)}`,
     )
     .bind(
@@ -563,6 +571,7 @@ export function realisationReductionStatement(
       a.note,
       a.sessionId,
       a.now,
+      a.declarationMaxInrMinor,
     );
 }
 
