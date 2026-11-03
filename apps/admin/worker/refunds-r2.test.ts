@@ -312,10 +312,10 @@ describe("L2: a settlement's lines in keyset pages of 50", () => {
     )
       .bind(sid, `setl_L2${T}`, T)
       .run();
-    const ids: string[] = [];
+    const rowsIn: { id: string; at: number }[] = [];
     for (let i = 0; i < 120; i++) {
       const id = uuidv7();
-      ids.push(id);
+      rowsIn.push({ id, at: T + Math.floor(i / 3) });
       await env.DB.prepare(
         `INSERT INTO settlement_items (id, settlement_id, provider, entity_type, entity_id, direction, amount_minor, fee_minor, tax_minor, "match", created_at)
          VALUES (?1, ?2, 'razorpay', 'payment', ?3, 'credit', 1000, 0, 0, 'unmatched', ?4)`,
@@ -340,6 +340,10 @@ describe("L2: a settlement's lines in keyset pages of 50", () => {
       if (!cursor) break;
     }
     expect(sizes).toEqual([50, 50, 20]);
+    // the route's own order, (created_at, id): uuidv7 ids made in the same millisecond need not sort in the order they were made
+    const ids = [...rowsIn]
+      .sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+      .map((r) => r.id);
     expect(seen).toEqual(ids);
     expect(
       (await call(`/reconciliation/settlements/${sid}?cursor=nonsense`, { cookie: o.cookie })).status,
