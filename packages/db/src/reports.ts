@@ -131,8 +131,9 @@ export const REALISATION_PAGE_SQL = (show: "open" | "all", after: boolean): stri
  * M6.5 (RB-43, RA-38, L13): the facts beyond the balance that decide an export's stage and its EDF "Amount realised" (`edf-v2`), for the realisation list and the
  * EDF month: what was paid on it (net of a refund's release), Σ the AD bank's Reg. 6 reductions with the latest one's day and reference, and whether a card or
  * PayPal payment on it still lacks its proof (an LUT export is realised for GST only once each has one). The SPA passes them to core `realisationStatus`.
+ * B4 (`edf-v2`): and what its credit notes took off it (`credited_minor`), shown beside "Amount realised".
  */
-export const REALISATION_FACT_COLUMNS = `d.paid_minor, d.total_minor AS doc_total_minor, ${reductionsSql("d")} AS reductions_minor,
+export const REALISATION_FACT_COLUMNS = `d.paid_minor, d.total_minor AS doc_total_minor, d.credited_minor, ${reductionsSql("d")} AS reductions_minor,
        (SELECT rr.approved_on FROM realisation_reductions rr WHERE rr.document_id = d.id ORDER BY rr.approved_on DESC, rr.id DESC LIMIT 1) AS reduction_on,
        (SELECT rr.bank_ref FROM realisation_reductions rr WHERE rr.document_id = d.id ORDER BY rr.approved_on DESC, rr.id DESC LIMIT 1) AS reduction_ref,
        CASE WHEN d.supply_type = 'export_lut' THEN ${proofMissingSql("d")} ELSE 0 END AS proof_missing`;
@@ -140,6 +141,8 @@ export const REALISATION_FACT_COLUMNS = `d.paid_minor, d.total_minor AS doc_tota
 export type RealisationFactRow = {
   paid_minor: number;
   doc_total_minor: number;
+  /** B4 (`edf-v2`). */
+  credited_minor: number;
   reductions_minor: number;
   reduction_on: string | null;
   reduction_ref: string | null;

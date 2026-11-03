@@ -11,6 +11,7 @@ import {
   REALISATION_PAGE_SQL,
   REGISTER_PAGE_SQL,
   REPORT_PAGE_SIZE,
+  type RealisationFactRow,
   type RegisterSqlRow,
   realisationPageBinds,
   registerPageBinds,
@@ -20,7 +21,7 @@ import * as z from "zod/mini";
 import { type ApiError, type AppEnv, BAD_REQUEST, err, mutate } from "./context.ts";
 import { isoDate, query } from "./http.ts";
 import { decodeCursor, encodeCursor } from "./keyset.ts";
-import { metaOf, registerRowOf } from "./report-rows.ts";
+import { metaOf, realisationFactsOf, registerRowOf } from "./report-rows.ts";
 
 const PERIOD_INVALID: ApiError = {
   code: "period_invalid",
@@ -68,6 +69,12 @@ function settingsOf(rows: readonly { key: string; value: string }[], opts: { rul
 }
 
 const todayIst = () => istDate(Date.now());
+
+/** An EDF or realisation page row with its realisation facts (B4: `edf-v2`, and the list's stage as the SQL's). */
+const withFacts = (r: RegisterSqlRow) => ({
+  ...registerRowOf(r),
+  realisationFacts: realisationFactsOf(r as RegisterSqlRow & RealisationFactRow),
+});
 
 /** One page of rows (at most `REPORT_PAGE_SIZE`) and the cursor of the next, from the one-more read. */
 function pageOf(rows: readonly RegisterSqlRow[]) {
@@ -151,7 +158,7 @@ export const reports = new Hono<AppEnv>()
     if (!s) return err(c, SETTINGS_INVALID, 409);
     const { page, next } = pageOf((res?.results ?? []) as RegisterSqlRow[]);
     return c.json({
-      rows: page.map(registerRowOf),
+      rows: page.map(withFacts),
       meta: { ...metaOf(todayIst(), s.state, s.threshold, s.rules), edfDue: addDays(last, 30) },
       next,
     });
@@ -173,7 +180,7 @@ export const reports = new Hono<AppEnv>()
     if (!s) return err(c, SETTINGS_INVALID, 409);
     const { page, next } = pageOf((res?.results ?? []) as RegisterSqlRow[]);
     return c.json({
-      rows: page.map(registerRowOf),
+      rows: page.map(withFacts),
       meta: metaOf(todayIst(), s.state, s.threshold, s.rules),
       next,
     });

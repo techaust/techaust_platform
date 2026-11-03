@@ -1,6 +1,7 @@
 // EDF list (M5.5b; ADM-REP-07, Q16, Q56; Researched 2026-10-28, FEMA export regulations, 08-C RB-03): the export invoices of one month for the declaration the bank files, due 30 days after
 // the month ends. The previous month by default (or the one a bell names, `?month=YYYY-MM`); the list reads as soon as the month changes (no fresh code:
-// `reports.finance`). "Amount realised" stays blank until payments are recorded (M6.1), and the screen says why.
+// `reports.finance`). M6.5 (B4; L13, RB-43): "Amount realised" is the invoice's `paid_minor` from the page's facts, and the CSV is `edf-v2` (with credit notes,
+// the bank's Reg. 6 reductions and "Proof awaited"); the old note that the column stays blank went with `edf-v1`.
 import { istDate } from "@techaust/core/dates";
 import { countryName } from "@techaust/core/form-labels";
 import { type EdfRow, edfMonth } from "@techaust/core/gst";
@@ -155,13 +156,18 @@ export function EdfReport() {
                     header: C.purpose,
                     cell: (r) => (r.purposeCode ? <span className="docno">{r.purposeCode}</span> : null),
                   },
-                  { key: "realised", header: C.realised, align: "end", cell: () => null },
+                  {
+                    key: "realised",
+                    header: C.realised,
+                    align: "end",
+                    cell: (r) =>
+                      r.realisedMinor === null ? null : (
+                        <Amount minor={r.realisedMinor} currency={r.currency} />
+                      ),
+                  },
                 ]}
               />
             </WideList>
-            {list.state === "ready" && list.data.ok && list.data.rows.length > 0 && (
-              <p className="hint report-note">{EDF_COPY.realisedNote}</p>
-            )}
           </>
         )}
       </div>

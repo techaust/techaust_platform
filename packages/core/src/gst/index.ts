@@ -61,6 +61,7 @@ export { addMonthsClamped, gstPeriod, inPeriod, lastDayOfMonth, type PeriodRange
 export { registerRatesOf } from "./rates.ts";
 export {
   DEFAULT_REALISATION_RULES,
+  type ExportRealisationFacts,
   type RealisationDates,
   type RealisationFacts,
   type RealisationInput,

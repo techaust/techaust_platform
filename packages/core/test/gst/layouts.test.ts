@@ -84,9 +84,9 @@ describe("layout versions", () => {
     );
   });
 
-  it("the current versions are the v1 ones and exist", () => {
+  it("the current versions exist (EDF at v2 from M6.5, the others at v1)", () => {
     expect(CURRENT_GSTR1_LAYOUT).toBe("gstr1-csv-v1");
-    expect(CURRENT_EDF_LAYOUT).toBe("edf-v1");
+    expect(CURRENT_EDF_LAYOUT).toBe("edf-v2");
     expect(CURRENT_REALISATION_LAYOUT).toBe("realisation-v1");
     expect(Object.keys(GSTR1_LAYOUTS)).toContain(CURRENT_GSTR1_LAYOUT);
     expect(Object.keys(EDF_LAYOUTS)).toContain(CURRENT_EDF_LAYOUT);
@@ -105,6 +105,7 @@ describe("layout versions", () => {
     }
     expect(Object.isFrozen(EDF_LAYOUTS)).toBe(true);
     expect(Object.isFrozen(EDF_LAYOUTS["edf-v1"].columns)).toBe(true);
+    expect(Object.isFrozen(EDF_LAYOUTS["edf-v2"].columns)).toBe(true);
     expect(Object.isFrozen(REALISATION_LAYOUTS)).toBe(true);
   });
 

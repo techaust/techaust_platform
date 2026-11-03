@@ -1,7 +1,13 @@
 // The monthly EDF working list [ADM-REP-07; Researched 2026-10-28, FEMA 23(R)/2026-RB Reg. 3(2) (08-C RB-03)]: the month and its due date, which documents are listed, and
 // the row contents. Error codes are in failures.test.ts.
 import { describe, expect, it } from "vitest";
-import { DEFAULT_REALISATION_RULES, edfCsv, edfMonth, edfRows } from "../../src/gst/index.ts";
+import {
+  DEFAULT_REALISATION_RULES,
+  edfCsv,
+  edfMonth,
+  edfRows,
+  realisationRows,
+} from "../../src/gst/index.ts";
 import { d, hasBareLineBreak, rate, row } from "./fixtures.ts";
 
 const month = (y: number, m: number) => {
@@ -89,6 +95,13 @@ describe("edfRows", () => {
       purposeCode: "P0802",
       femaDue: d(2027, 8, 3),
       edfDue: d(2026, 12, 30),
+      // no facts on the row (a register page): the edf-v2 columns are blank, never zero
+      realisedMinor: null,
+      creditedMinor: null,
+      reductionsMinor: null,
+      reductionOn: null,
+      reductionRef: null,
+      proofMissing: null,
     });
   });
 
@@ -122,10 +135,10 @@ describe("edfRows", () => {
 });
 
 describe("edfCsv", () => {
-  it("writes the v1 list: blank where nothing is known, the amount realised always blank until M6.1", async () => {
+  it("writes the v1 list (unchanged): blank where nothing is known, the amount realised always blank, whatever the facts", async () => {
     const rows = edfRows(
       [
-        exp("a", d(2026, 11, 3)),
+        { ...exp("a", d(2026, 11, 3)), realisationFacts: FACTS },
         exp("n", d(2026, 11, 9), {
           id: "n",
           usd: undefined,
@@ -142,13 +155,127 @@ describe("edfCsv", () => {
       },
     );
     if (!rows.ok) throw new Error("rows");
-    const csv = edfCsv(rows.value);
+    const csv = edfCsv(rows.value, "edf-v1");
     if (!csv.ok) throw new Error("csv");
     expect(hasBareLineBreak(csv.value)).toBe(false);
     await expect(csv.value).toMatchFileSnapshot("./__snapshots__/edf-v1-2026-11.csv");
     expect(csv.value.split("\r\n")[0]).toBe(
       "Invoice number,Invoice date,Client name,Client address,Country (ISO code),Currency,Invoice amount,Exchange rate,INR value,SAC,Service description,Purpose code,Amount realised,FEMA realisation due,EDF due",
     );
+  });
+});
+
+/** B4: an export's facts as the EDF month reads them (`REALISATION_FACT_COLUMNS`); invented values. */
+const FACTS = {
+  paidMinor: 60_000,
+  totalMinor: 100_000,
+  creditedMinor: 30_000,
+  reductionsMinor: 10_000,
+  reductionOn: d(2026, 12, 4),
+  reductionRef: "=ADB/RED/1",
+  proofMissing: true,
+} as const;
+
+describe("edf-v2 [L13, RB-43, RA-38]", () => {
+  it("is the current layout: the amount realised is paid_minor, then credit notes, the Reg. 6 reductions and the proof flag; blank without facts", async () => {
+    const rows = edfRows(
+      [
+        { ...exp("a", d(2026, 11, 3)), realisationFacts: FACTS },
+        {
+          ...exp("b", d(2026, 11, 4)),
+          realisationFacts: {
+            ...FACTS,
+            paidMinor: 100_000,
+            creditedMinor: 0,
+            reductionsMinor: 0,
+            reductionOn: null,
+            reductionRef: null,
+            proofMissing: false,
+          },
+        },
+        exp("c", d(2026, 11, 5)),
+      ],
+      2026,
+      11,
+      { sacDescriptions: { "998314": "IT support services" } },
+    );
+    if (!rows.ok) throw new Error(JSON.stringify(rows.errors));
+    expect(rows.value[0]).toMatchObject({
+      realisedMinor: 60_000,
+      creditedMinor: 30_000,
+      reductionsMinor: 10_000,
+      reductionOn: d(2026, 12, 4),
+      reductionRef: "=ADB/RED/1",
+      proofMissing: true,
+    });
+    const csv = edfCsv(rows.value);
+    if (!csv.ok) throw new Error("csv");
+    expect(hasBareLineBreak(csv.value)).toBe(false);
+    await expect(csv.value).toMatchFileSnapshot("./__snapshots__/edf-v2-2026-11.csv");
+    const lines = csv.value.split("\r\n");
+    expect(lines[0]).toBe(
+      "Invoice number,Invoice date,Client name,Client address,Country (ISO code),Currency,Invoice amount,Exchange rate,INR value,SAC,Service description,Purpose code,Amount realised,Credit notes,Amount reduced (FEMA Reg. 6),Reduction approved on,Bank's reference,Proof awaited,FEMA realisation due,EDF due",
+    );
+    // a: 600.00 realised, 300.00 credited, 100.00 reduced on 04-Dec-2026 (the reference defused as text), proof awaited
+    expect(lines[1]).toContain(",600.00,300.00,100.00,");
+    expect(lines[1]).toContain(",'=ADB/RED/1,Yes,");
+    // b: paid in full, nothing else: zeros where the facts say zero, blank day and reference, no flag
+    expect(lines[2]).toContain(",1000.00,0.00,0.00,,,,");
+    // c: no facts: every v2 column blank
+    expect(lines[3]).toContain(",P0802,,,,,,,");
+    // v1 still writes its own blank column, whatever the facts
+    const v1 = edfCsv(rows.value, "edf-v1");
+    expect(v1.ok && v1.value.split("\r\n")[1]).toContain(",P0802,,");
+  });
+
+  it("damaged facts fail the list (never a guessed figure)", () => {
+    for (const bad of [
+      { ...FACTS, paidMinor: -1 },
+      { ...FACTS, creditedMinor: 1.5 },
+      { ...FACTS, reductionsMinor: Number.NaN },
+      { ...FACTS, proofMissing: 1 as unknown as boolean },
+    ]) {
+      const r = edfRows([{ ...exp("a", d(2026, 11, 3)), realisationFacts: bad }], 2026, 11);
+      expect(r).toMatchObject({
+        ok: false,
+        errors: [{ code: "amount_invalid", path: ["a", "realisationFacts"] }],
+      });
+    }
+    const day = edfRows(
+      [{ ...exp("a", d(2026, 11, 3)), realisationFacts: { ...FACTS, reductionOn: d(2026, 2, 30) } }],
+      2026,
+      11,
+    );
+    expect(day).toMatchObject({
+      ok: false,
+      errors: [{ code: "date_invalid", path: ["a", "realisationFacts"] }],
+    });
+  });
+});
+
+describe("realisationRows with the page's facts [run file part 2 item 7]", () => {
+  it("settled but short of the total without a reduction: reduction_pending; with the reduction: realised; no facts: the balance alone", () => {
+    const settled = { ...exp("s", d(2026, 6, 3)), outstandingMinor: 0 };
+    const today = d(2026, 11, 3);
+    const short = {
+      ...FACTS,
+      paidMinor: 70_000,
+      creditedMinor: 30_000,
+      reductionsMinor: 0,
+      proofMissing: false,
+    };
+    const stage = (row: typeof settled) => {
+      const r = realisationRows([row], today);
+      if (!r.ok) throw new Error(JSON.stringify(r.errors));
+      return r.value[0]?.stage;
+    };
+    expect(stage({ ...settled, realisationFacts: short })).toBe("reduction_pending");
+    expect(stage({ ...settled, realisationFacts: { ...short, reductionsMinor: 30_000 } })).toBe("realised");
+    expect(stage(settled)).toBe("realised");
+    // RA-38: an LUT export with a card or PayPal payment still without its proof is not realised (its GST dates run; before them, ok)
+    expect(
+      stage({ ...settled, realisationFacts: { ...short, reductionsMinor: 30_000, proofMissing: true } }),
+    ).toBe("ok");
   });
 });
 

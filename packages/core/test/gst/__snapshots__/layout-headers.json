@@ -157,6 +157,31 @@
         "FEMA realisation due",
         "EDF due"
       ]
+    },
+    "edf-v2": {
+      "stem": "edf",
+      "headers": [
+        "Invoice number",
+        "Invoice date",
+        "Client name",
+        "Client address",
+        "Country (ISO code)",
+        "Currency",
+        "Invoice amount",
+        "Exchange rate",
+        "INR value",
+        "SAC",
+        "Service description",
+        "Purpose code",
+        "Amount realised",
+        "Credit notes",
+        "Amount reduced (FEMA Reg. 6)",
+        "Reduction approved on",
+        "Bank's reference",
+        "Proof awaited",
+        "FEMA realisation due",
+        "EDF due"
+      ]
     }
   },
   "realisation": {

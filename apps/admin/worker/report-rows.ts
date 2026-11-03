@@ -7,6 +7,7 @@
 import { parseIsoDate } from "@techaust/core/dates";
 import type {
   CalendarDate,
+  ExportRealisationFacts,
   GstDocKind,
   NoteParent,
   RegisterApiRow,
@@ -14,7 +15,7 @@ import type {
   ReportMeta,
 } from "@techaust/core/gst";
 import { noteOfFromStored } from "@techaust/core/invoices";
-import type { RegisterSqlRow } from "@techaust/db/reports";
+import type { RealisationFactRow, RegisterSqlRow } from "@techaust/db/reports";
 
 type Address = {
   line1?: string;
@@ -125,6 +126,23 @@ export function registerRowOf(r: RegisterSqlRow): RegisterApiRow {
     seq: r.seq,
     clientId: r.client_id,
     clientCode: r.client_code,
+  };
+}
+
+/**
+ * M6.5 (B4; run file part 2 item 7, L13, RB-43, RA-38): the realisation facts of an EDF or realisation page row (`REALISATION_FACT_COLUMNS`), as core reads them:
+ * `realisationRows` passes them to `realisationStatus` (the SQL `stageSql`'s twin), `edfRows` prints them in `edf-v2`. Passed through as read: a value core doesn't
+ * accept (a malformed day) fails the list there, never guessed here.
+ */
+export function realisationFactsOf(r: RealisationFactRow): ExportRealisationFacts {
+  return {
+    paidMinor: r.paid_minor,
+    totalMinor: r.doc_total_minor,
+    creditedMinor: r.credited_minor,
+    reductionsMinor: r.reductions_minor,
+    reductionOn: r.reduction_on === null ? null : (parseIsoDate(r.reduction_on) as CalendarDate),
+    reductionRef: r.reduction_ref,
+    proofMissing: r.proof_missing === 1,
   };
 }
 

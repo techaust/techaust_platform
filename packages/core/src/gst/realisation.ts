@@ -120,6 +120,16 @@ export type RealisationFacts = {
   readonly proofMissing: boolean;
 };
 
+/**
+ * B4 (L13, RB-43): an export invoice's facts as the EDF month and the realisation list read them (`REALISATION_FACT_COLUMNS`): `RealisationFacts` plus what the
+ * `edf-v2` list shows beside them: the credit notes against it (`credited_minor`) and the latest Reg. 6 reduction's day and the bank's reference.
+ */
+export type ExportRealisationFacts = RealisationFacts & {
+  readonly creditedMinor: number;
+  readonly reductionOn: CalendarDate | null;
+  readonly reductionRef: string | null;
+};
+
 export type RealisationDates = { readonly femaDue: CalendarDate; readonly gstDue: CalendarDate };
 
 export type RealisationStage =
@@ -292,6 +302,8 @@ export function realisationRows(
           extension,
           extendedTo: row.extendedTo ?? undefined,
           outstandingMinor: row.outstandingMinor,
+          // M6.5 (B4; run file part 2 item 7): the facts the page read, so the list's stage is the SQL's (`stageSql`: reduction pending, RA-38's proof).
+          ...(row.realisationFacts ? { facts: row.realisationFacts } : {}),
         },
         today,
         rules,

@@ -455,7 +455,6 @@ export const EDF_COPY = {
     purpose: "Purpose code",
     realised: "Amount realised",
   },
-  realisedNote: "Amount realised is left blank: payments are recorded from the payments update.",
   download: "Download EDF list (CSV)",
   empty: (month: string) => `No export invoices were issued in ${month}.`,
 } as const;
