@@ -29,6 +29,10 @@ Status: **DRAFT, waiting for the owner** (one page at build time, owner 2026-11-
 ### The statement of account
 17. A refund line: "Refund" (the refund's reference beside it, as for payments)
 
+### Added after the designer (2026-11-03)
+12b. The receipt email's closing line: "Questions? Just reply to this email." (as the other house emails)
+18. Under a long "Applied to" list on the receipt PDF: "and {n} more"
+
 **Recommended, no line needed:** clients see a refund only once it has gone through (line 14), so there is no "refund in progress" line.
 
 ### Client-line gaps found by the designer (for the owner's page; not placed)
