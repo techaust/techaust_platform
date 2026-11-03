@@ -137,6 +137,7 @@ function usePages<T extends { id: string }>(
   key: string,
 ) {
   const first = useLoad(() => load(), key);
+  const toast = useToast();
   const [more, setMore] = useState<T[]>([]);
   const [next, setNext] = useState<string | null | undefined>(undefined);
   const [loading, setLoading] = useState(false);
@@ -161,6 +162,9 @@ function usePages<T extends { id: string }>(
         const r = await load(cursor);
         setMore((m) => [...m, ...r.items.filter((x) => !m.some((y) => y.id === x.id))]);
         setNext(r.items.length > 0 ? r.next : null);
+      } catch (e) {
+        // Code re-check of M6.5, finding 7: a failed "Show more" says so; the cursor stays, so the button can be pressed again
+        toast("error", payErrorText(e));
       } finally {
         setLoading(false);
       }

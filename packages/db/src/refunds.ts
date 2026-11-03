@@ -358,7 +358,7 @@ export const refundInrStatement = (
  */
 export const CREDIT_HELD_SQL = `SELECT s.id, s.client_id, k.code AS client_code, k.display_name AS client_name, s.currency, s.received_on, s.amount_minor, s.net, s.credit,
      s.held_since_at, s.confirmed_after
-   FROM (SELECT p.id, p.client_id, p.currency, p.received_on, p.amount_minor, ${paymentNetAtSql("p.id", "?1")} AS net, ${paymentFreeAtSql("p", "?1", "?2")} AS credit,
+   FROM (SELECT p.id, p.client_id, p.currency, p.received_on, p.amount_minor, ${paymentNetAtSql("p.id", "?1", { p: "p", day: "?2" })} AS net, ${paymentFreeAtSql("p", "?1", "?2")} AS credit,
          (SELECT max(hs.created_at) FROM payment_allocations hs INDEXED BY payment_allocations_payment WHERE hs.payment_id = p.id AND hs.created_at <= ?1) AS held_since_at,
          p.verified_at > ?1 AS confirmed_after
        FROM payments p INDEXED BY payments_confirmed

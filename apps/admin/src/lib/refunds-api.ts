@@ -149,7 +149,7 @@ export type CreditRefundFacts = {
   receivedPeriod: string;
   refundPeriod: string;
 };
-/** `issuedCreditNote` (review part 1, finding 6): the invoice's newest issued credit note, the one a refund of its excess is linked to (RA-40). */
+/** `issuedCreditNote` (review part 1, finding 6; second review M6): the credit note a refund of the invoice's excess is linked to (RA-40): issued on or after the payment's day and covering the refund, else none. */
 export type RefundFacts = {
   ra41: CreditRefundFacts;
   creditNote: CreditNoteFacts | null;

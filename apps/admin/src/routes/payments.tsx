@@ -606,6 +606,9 @@ function EntryDialog(props: {
     return (
       <RefundDialog
         mode="refund"
+        // Code re-check of M6.5, finding 2 (L6): the payment view carries no GST status; money that came in dollars or by SWIFT is a client outside India's
+        // (USD documents are only theirs, M6.3), so "Paid by" starts on SWIFT and the RB-43 tick shows (the safe side)
+        clientOverseas={p.currency !== "INR" || p.mode === "swift"}
         payments={[
           {
             id: p.id,

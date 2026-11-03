@@ -116,9 +116,15 @@ export const overpaymentAdvanceSql = (p: string, proviso: string): string =>
 /**
  * M6.5 (RA-41; review part 1, finding 3): what payment `payment` (an SQL expression) held net on documents at instant `at` (UTC ms, an SQL expression): its
  * allocations less its releases written at or before `at`. The as-of twin of `paymentNetSql` (allocations are append-only, so the past is exact).
+ * With `held` (payment row `p`, IST day `day`; code re-check of M6.5, finding 1): a payment received in the period but confirmed after `at` also counts what its
+ * confirm (`created_at <= p.verified_at`) put on documents issued on or before `day`: the money paid an invoice of the period and was never an advance (L48).
  */
-export const paymentNetAtSql = (payment: string, at: string): string =>
-  `(SELECT coalesce(sum(CASE pna.kind WHEN 'allocate' THEN pna.amount_minor ELSE -pna.amount_minor END), 0) FROM payment_allocations pna INDEXED BY payment_allocations_payment WHERE pna.payment_id = ${payment} AND pna.created_at <= ${at})`;
+export const paymentNetAtSql = (payment: string, at: string, held?: { p: string; day: string }): string =>
+  `(SELECT coalesce(sum(CASE pna.kind WHEN 'allocate' THEN pna.amount_minor ELSE -pna.amount_minor END), 0) FROM payment_allocations pna INDEXED BY payment_allocations_payment WHERE pna.payment_id = ${payment} AND (pna.created_at <= ${at}${
+    held
+      ? ` OR (${held.p}.verified_at > ${at} AND pna.created_at <= ${held.p}.verified_at AND EXISTS (SELECT 1 FROM documents pnd WHERE pnd.id = pna.document_id AND pnd.issue_date <= ${held.day}))`
+      : ""
+  }))`;
 
 /**
  * M6.5 (RA-41; review part 1, finding 3): payment row `p`'s credit held at instant `at`, the last instant of IST day `day` (both SQL expressions): its amount less
@@ -128,7 +134,7 @@ export const paymentNetAtSql = (payment: string, at: string): string =>
  * (`settled_at`), the instant its release row was written, so the two always cancel out together.
  */
 export const paymentFreeAtSql = (p: string, at: string, day: string): string =>
-  `(${p}.amount_minor - ${paymentNetAtSql(`${p}.id`, at)} - (SELECT coalesce(sum(pra.amount_minor), 0) FROM payment_refunds pra INDEXED BY payment_refunds_payment WHERE pra.payment_id = ${p}.id AND pra.status = 'succeeded'
+  `(${p}.amount_minor - ${paymentNetAtSql(`${p}.id`, at, { p, day })} - (SELECT coalesce(sum(pra.amount_minor), 0) FROM payment_refunds pra INDEXED BY payment_refunds_payment WHERE pra.payment_id = ${p}.id AND pra.status = 'succeeded'
      AND CASE WHEN pra.release_allocation_id IS NULL THEN pra.settled_on <= ${day} ELSE pra.settled_at <= ${at} END))`;
 
 /**
@@ -137,7 +143,7 @@ export const paymentFreeAtSql = (p: string, at: string, day: string): string =>
  * A db test holds it to core `overpaymentAdvanceLine` over the figures at `at`.
  */
 export const overpaymentAdvanceAtSql = (p: string, at: string, day: string, proviso: string): string =>
-  `(${paymentFreeAtSql(p, at, day)} > 0 AND (${paymentNetAtSql(`${p}.id`, at)} <= 0 OR ${p}.currency <> 'INR' OR ${paymentFreeAtSql(p, at, day)} > ${proviso}))`;
+  `(${paymentFreeAtSql(p, at, day)} > 0 AND (${paymentNetAtSql(`${p}.id`, at, { p, day })} <= 0 OR ${p}.currency <> 'INR' OR ${paymentFreeAtSql(p, at, day)} > ${proviso}))`;
 
 /**
  * The status of an issued document for these figures (SQL expressions): the twin of core `ledgerStatusOf(total, paid, credited, tds)` with `settled` = paid + TDS

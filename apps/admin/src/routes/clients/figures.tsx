@@ -130,6 +130,8 @@ function CurrencyFigures({ f, many, inFlight }: { f: ClientFigures; many: boolea
 /** The client Overview's figures panel (finance roles; not shown for an anonymised client). */
 export function ClientFiguresPanel(props: {
   clientId: string;
+  /** Code re-check of M6.5, finding 2 (L6): the refund dialog's "Paid by" starts on SWIFT for a client outside India. */
+  clientOverseas?: boolean;
   clientName?: string;
   onStatement: () => void;
 }) {
@@ -207,6 +209,7 @@ export function ClientFiguresPanel(props: {
           {refunding && (
             <ClientRefundDialog
               clientId={props.clientId}
+              clientOverseas={props.clientOverseas === true}
               currency={rows.find((f) => f.creditMinor > 0)?.currency ?? "INR"}
               onClose={() => setRefundingState(null)}
               onDone={(text) => {

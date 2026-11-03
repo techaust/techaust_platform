@@ -143,8 +143,9 @@ const DOC_SQL = `SELECT d.id, d.client_id, d.currency, d.type, d.status, d.froze
      (SELECT cn.id ${ISSUED_NOTES_OF("note_id")}, (SELECT cn.number_display ${ISSUED_NOTES_OF("note_number")}
    FROM documents d WHERE d.id = ?1`;
 /** Is `?1` an issued credit note of the invoice `?2` (the INSERT's WHERE holds it again)? */
-const NOTE_OF_SQL =
-  "SELECT 1 AS ok FROM documents cn WHERE cn.id = ?1 AND cn.type = 'credit_note' AND cn.parent_id = ?2 AND cn.frozen_at IS NOT NULL";
+// Code re-check of M6.5, finding 4: a note named in the body follows DOC_SQL's rule too (issued on or after the payment's day, covering the refund).
+const NOTE_OF_SQL = `SELECT 1 AS ok FROM documents cn WHERE cn.id = ?1 AND cn.type = 'credit_note' AND cn.parent_id = ?2 AND cn.frozen_at IS NOT NULL
+     AND cn.issue_date >= (SELECT rp.received_on FROM payments rp WHERE rp.id = ?3) AND cn.total_minor >= ?4`;
 const TAX_SQL = "SELECT value, version FROM settings WHERE key = 'tax'";
 
 type PayRow = {
@@ -285,7 +286,7 @@ export const refunds = new Hono<AppEnv>()
       db.prepare(DOC_SQL).bind(f.documentId ?? "", id, f.amountMinor),
       db.prepare("SELECT id, payment_id FROM payment_refunds WHERE id = ?1").bind(f.id),
       db.prepare(TAX_SQL),
-      db.prepare(NOTE_OF_SQL).bind(f.creditNoteId ?? "", f.documentId ?? ""),
+      db.prepare(NOTE_OF_SQL).bind(f.creditNoteId ?? "", f.documentId ?? "", id, f.amountMinor),
     ]);
     const p = payR?.results[0] as PayRow | undefined;
     if (!p) return err(c, NOT_FOUND, 404);

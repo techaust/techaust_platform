@@ -69,6 +69,7 @@ export function RefundsInProgress(props: { rows: readonly RefundView[] }) {
 /** "Refund credit" (the Owner): the client's credit sources, then the refund dialog on the one picked. */
 export function ClientRefundDialog(props: {
   clientId: string;
+  clientOverseas?: boolean;
   currency: Currency;
   onClose: () => void;
   onDone: (toast: string) => void;
@@ -100,6 +101,7 @@ export function ClientRefundDialog(props: {
   return (
     <RefundDialog
       mode="refund"
+      clientOverseas={props.clientOverseas === true}
       payments={sources.map((s) => ({
         id: s.paymentId,
         receivedOn: s.receivedOn,

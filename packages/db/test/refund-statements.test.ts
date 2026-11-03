@@ -1190,10 +1190,13 @@ describe("RA-41: credit held at a period's end (review part 1, finding 3)", () =
     const clientId = await mkClientRow();
     // the period ends before T (every `pay` row is confirmed at T)
     const end = T - 86_400_000;
-    // received 30 Oct with no invoice, confirmed after the end; its allocation, made at the confirm, is after the end too
+    // received 30 Oct, confirmed after the end, on no invoice: an advance at the period's end
     const late = await pay(clientId, owner, { amount: 150_000, receivedOn: "2026-10-30" });
+    // received 30 Oct, confirmed after the end, and the confirm put 118,000 on an invoice issued 28 Oct (code re-check, finding 1): on an invoice of the
+    // period, so only the 32,000 above it is credit, within the proviso: not listed
+    const paidInv = await pay(clientId, owner, { amount: 150_000, receivedOn: "2026-10-30" });
     const inv = await mkIssued(clientId);
-    await alloc(late, inv, 118_000);
+    await alloc(paidInv, inv, 118_000);
     await recompute(inv);
     // received the day after the period's last day: never on it
     const after = await pay(clientId, owner, { amount: 150_000, receivedOn: "2026-11-01" });
@@ -1207,7 +1210,7 @@ describe("RA-41: credit held at a period's end (review part 1, finding 3)", () =
       owner,
       end - 1_000,
     );
-    const rows = await heldRows(end, "2026-10-31", [late, after, inTime]);
+    const rows = await heldRows(end, "2026-10-31", [late, paidInv, after, inTime]);
     expect(
       Object.fromEntries(rows.map((r) => [r.id, { credit: r.credit, net: r.net, after: r.confirmed_after }])),
     ).toEqual({
