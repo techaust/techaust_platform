@@ -1,0 +1,214 @@
+/* M6.5: receipts, refunds, reductions and reconciliation (run file G1–G5; ADM-PAY-08, ADM-PAY-09, ADM-PAY-10). Tokens only (packages/ui theme). The refund
+   rows reuse the payments' ledger lines (`.pay-lines`, payments.css); what is here is the refund's own: its actions, the dialog's choices, the "credit note
+   first" step, the reductions and the reconciliation page. */
+
+/* a receipt in the entries' last column: its number in the document face, the PDF link a full target */
+.rf-receipt {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+}
+
+.rf-receipt .btn--text {
+  min-height: var(--target-min);
+}
+
+.rf-receipt__link,
+.rf-receipt__wait {
+  white-space: nowrap;
+}
+
+/* the refunds under the entries: the same ledger lines, their own heading */
+.rf-block {
+  margin-top: var(--space-5);
+}
+
+.rf-state,
+.rf-acts {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+}
+
+.rf-acts__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.rf-acts__error {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+}
+
+.rf-acts__error .icon {
+  flex: none;
+  margin-top: 0.125rem;
+}
+
+.rf-pacb {
+  margin-top: var(--space-4);
+}
+
+/* the refund dialog: a little wider than the default, the form read top to bottom */
+.dialog--refund {
+  width: min(100% - 2rem, 36rem);
+}
+
+.rf-choose {
+  padding-bottom: 0;
+}
+
+.rf-form .field {
+  scroll-margin-bottom: var(--space-24);
+}
+
+.rf-facts {
+  margin: 0;
+}
+
+.rf-lede {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+/* the choices with a hint under each (where the money comes from, how it goes back, to whom): stacked rows, each a full target; the chosen one carries the
+   shared switch's 2 px ink bar (#140) */
+.rf-pick {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.rf-pick__legend {
+  padding: 0;
+  margin-bottom: var(--space-2);
+  font-weight: 600;
+}
+
+.rf-pick__opt {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-3);
+  min-height: var(--target-min);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.rf-pick__opt:has(input:checked) {
+  border-color: var(--color-text);
+  box-shadow: inset 2px 0 0 var(--color-text);
+}
+
+.rf-pick__opt:has(input:focus-visible) {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.rf-pick__opt input {
+  margin-top: 0.1875rem;
+}
+
+.rf-pick__text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.rf-pick__title {
+  font-weight: 500;
+}
+
+.rf-pick__hint {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.rf-manual {
+  display: grid;
+  gap: var(--space-4);
+  padding-inline-start: var(--space-4);
+  border-inline-start: 2px solid var(--color-border);
+}
+
+.rf-check {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.rf-check .hint {
+  margin: 0;
+}
+
+.rf-export {
+  display: grid;
+  gap: var(--space-3);
+}
+
+/* "This refund needs a credit note first": the step before the refund, its own block with the way to the credit note */
+.rf-note-first {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-inline-start: 3px solid var(--color-text);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.rf-note-first p {
+  margin: 0;
+}
+
+.rf-note-first__h {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+
+.rf-note-first [data-state="warn"] {
+  font-weight: 600;
+}
+
+.rf-note-first__closed {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.rf-note-first__closed .icon {
+  flex: none;
+  margin-top: 0.1875rem;
+  color: var(--color-warning);
+}
+
+/* the bank's reductions under the realisation dates (RB-43) */
+.rf-reductions {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.rf-reductions__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.rf-reductions__head .pay-real__ext-h {
+  margin: 0;
+}

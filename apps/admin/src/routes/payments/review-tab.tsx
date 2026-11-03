@@ -15,6 +15,7 @@ import { LoadFailed, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
+import { DISPUTE_KINDS, RECORD_KINDS, ZO_UI } from "../../lib/copy-zo.ts";
 import {
   advanceBlockerLine,
   allowedResolutions,
@@ -28,6 +29,7 @@ import {
 } from "../../lib/gateway.ts";
 import { INV_COPY, typeLabel } from "../../lib/invoices.ts";
 import { amountText } from "../../lib/payments.ts";
+import { ReviewRefund } from "./refunds-tab.tsx";
 
 /** What tells two rows apart for a screen reader: the amount and the document (or the client). */
 const rowName = (r: ReviewItem) =>
@@ -53,6 +55,9 @@ export function ReviewList(props: {
   const [open, setOpen] = useState<string | null>(null);
   const [resolving, setResolving] = useState<ReviewItem | null>(null);
   const [retrying, setRetrying] = useState<string | null>(null);
+  // M6.5 (L7, L40): "Record this refund" / "Record lost dispute" (the Owner; the refund route holds every ledger rule)
+  const [recording, setRecording] = useState<ReviewItem | null>(null);
+  const canRecord = allowed(props.role, "refunds.issue");
   const rows = [...(list.data?.items ?? []), ...more];
   const next = after === undefined ? (list.data?.next ?? null) : after;
 
@@ -191,6 +196,12 @@ export function ReviewList(props: {
                           <span className="visually-hidden">{` ${rowName(r)}`}</span>
                         </button>
                       )}
+                      {canRecord && r.payment_id && RECORD_KINDS.includes(r.kind) && (
+                        <button type="button" className="btn btn--primary" onClick={() => setRecording(r)}>
+                          {DISPUTE_KINDS.includes(r.kind) ? ZO_UI.recordLostDispute : ZO_UI.recordThisRefund}
+                          <span className="visually-hidden">{` ${rowName(r)}`}</span>
+                        </button>
+                      )}
                       <button type="button" className="btn btn--secondary" onClick={() => setResolving(r)}>
                         {GW.markResolved}
                         <span className="visually-hidden">{` ${rowName(r)}`}</span>
@@ -228,6 +239,17 @@ export function ReviewList(props: {
             reload();
           },
         )}
+      {recording && (
+        <ReviewRefund
+          item={recording}
+          onClose={() => setRecording(null)}
+          onDone={(t) => {
+            setRecording(null);
+            toast("success", t);
+            reload();
+          }}
+        />
+      )}
       {resolving && (
         <ResolveDialog
           item={resolving}

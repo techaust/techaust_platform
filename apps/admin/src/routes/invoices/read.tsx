@@ -405,7 +405,7 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
           {v.frozen && <ExportFacts view={v} />}
           {/* M6.1 (07-ZH line 1): the ledger of an issued tax invoice, export invoice or debit note */}
           {v.frozen && PAYABLE.includes(v.type) && allowed(role, "payments.read") && (
-            <PaymentsPanel view={v} role={role} onChanged={reload} />
+            <PaymentsPanel view={v} role={role} onChanged={reload} onCreditNote={() => setNoting("credit")} />
           )}
           {isNote && <NoteFacts view={v} />}
           {isNote && <ImsPanel view={v} onSaved={reload} />}

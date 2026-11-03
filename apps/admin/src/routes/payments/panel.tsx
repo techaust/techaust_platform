@@ -20,11 +20,21 @@ import {
 import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
 import { FormField } from "../../components/form.tsx";
-import { Alert, Calendar, CreditCard, FileText, Plus, RefreshCw, Wallet } from "../../components/icons.tsx";
+import {
+  Alert,
+  Calendar,
+  CreditCard,
+  FileText,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Wallet,
+} from "../../components/icons.tsx";
 import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
+import { ZO_UI } from "../../lib/copy-zo.ts";
 import { dateError } from "../../lib/date-field.ts";
 import { GW_UI, gatewayLine, gatewayName, itemReason } from "../../lib/gateway.ts";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
@@ -45,6 +55,7 @@ import {
   todayIst,
   WAITS_REFUND_LINE,
 } from "../../lib/payments.ts";
+import type { PanelM65 } from "../../lib/refunds-api.ts";
 import { bpToPercent, moneyFrom } from "../../lib/settings-form.ts";
 import { withCode } from "../../lib/step-up.ts";
 import {
@@ -63,14 +74,19 @@ import {
 import { day, EarlierMonthWarning, FilePick, PaymentPill, useCodeSlot, useDialogState } from "./parts.tsx";
 import { ProofDialog } from "./proof-form.tsx";
 import { RecordPaymentDialog } from "./record-dialog.tsx";
+import { ReductionDialog, Reductions } from "./reductions.tsx";
+import { RefundDialog } from "./refund-dialog.tsx";
+import { PaCbNotice, ReceiptCell, RefundRows } from "./refund-parts.tsx";
 
-type Panel = InvoicePaymentsPanel;
+type Panel = InvoicePaymentsPanel & PanelM65;
 type Dialog =
   | "record"
   | "tds"
   | "credit"
   | "excess"
   | "extend"
+  | "refund"
+  | "reduce"
   | { certificate: string }
   | { letter: string }
   | { proof: string }
@@ -92,6 +108,8 @@ export function PaymentsPanel(props: {
   onConfirmByAdvance?:
     | ((payment: Panel["pending"][number], online: GatewayPaymentRow | undefined) => void)
     | undefined;
+  /** M6.5 (Q1 A): opens the invoice's credit-note dialog, from the refund dialog's "This refund needs a credit note first". */
+  onCreditNote?: (() => void) | undefined;
 }) {
   const v = props.view;
   const panel = useLoad(() => paymentsApi.invoicePanel(v.id), `${v.id}:${v.updatedAt}`);
@@ -144,6 +162,7 @@ export function PaymentsPanel(props: {
       view={v}
       panel={p}
       role={props.role}
+      onCreditNote={props.onCreditNote}
       onChanged={() => {
         panel.reload(true);
         props.onChanged();
@@ -152,7 +171,13 @@ export function PaymentsPanel(props: {
   );
 }
 
-function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onChanged: () => void }) {
+function LedgerPanel(props: {
+  view: InvoiceView;
+  panel: Panel;
+  role: Role;
+  onChanged: () => void;
+  onCreditNote?: (() => void) | undefined;
+}) {
   const { view: v, panel: p, role } = props;
   const [dialog, setDialog] = useDialogState<NonNullable<Dialog>>("pay-h");
   const toast = useToast();
@@ -190,6 +215,25 @@ function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onCha
   const onlineWaiting = (p.gateway?.payments ?? []).filter(
     (g) => g.status === "pending_verification" && !g.proformaPending,
   );
+  // M6.5 (G1, Q1 A): the payments a refund may come from: the confirmed money-received entries on this invoice, each with what it can give back from credit
+  // and what it holds here (the dialog asks for the credit note first when the invoice's excess can't cover it).
+  const refundable = p.payments
+    .filter((r) => r.kind === "payment" && r.status === "confirmed")
+    .map((r) => ({
+      id: r.paymentId,
+      receivedOn: r.receivedOn,
+      currency: r.currency,
+      freeMinor: p.receipts?.[r.paymentId]?.freeMinor ?? 0,
+      holdingMinor: r.heldMinor,
+      provider: gatewayOf(p, r.paymentId)?.provider ?? "manual",
+      status: r.status,
+      amountMinor: r.amountMinor,
+    }));
+  const canRefund =
+    !v.client.anonymised &&
+    allowed(role, "refunds.issue") &&
+    p.receipts !== undefined &&
+    refundable.length > 0;
   return (
     <section className="lead-panel pay-panel" aria-labelledby="pay-h">
       <div className="lead-panel__head">
@@ -244,7 +288,9 @@ function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onCha
         )}
       </dl>
 
-      {(canCredit || canMove || credit > 0) && (
+      <PaCbNotice paCb={p.paCb} />
+
+      {(canCredit || canMove || canRefund || credit > 0) && (
         <div className="pay-credit">
           {credit > 0 && (
             <p className="pay-credit__held">
@@ -263,6 +309,12 @@ function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onCha
                 {PAY_UI.moveExcess}
               </button>
             )}
+            {canRefund && (
+              <button type="button" className="btn btn--secondary" onClick={() => setDialog("refund")}>
+                <RotateCcw size={20} />
+                {ZO_UI.refund}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -274,10 +326,26 @@ function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onCha
 
       <Entries
         panel={p}
+        role={role}
         canCert={canCert}
         onCertificate={(id) => setDialog({ certificate: id })}
         onProof={(id) => setDialog({ proof: id })}
       />
+      {/* M6.5 (G1, L45): the refunds of this invoice's payments, each with its state (whatever became of its review item) */}
+      {p.refunds && p.refunds.length > 0 && (
+        <div className="rf-block">
+          <h3 className="pay-sub">{ZO_UI.refundsHeading}</h3>
+          <RefundRows
+            rows={p.refunds}
+            role={role}
+            caption={ZO_UI.refundsHeading}
+            onChanged={(t) => {
+              toast("success", t);
+              props.onChanged();
+            }}
+          />
+        </div>
+      )}
       {p.pending.length > 0 && <Waiting panel={p} role={role} />}
       <OnlineWaiting rows={onlineWaiting} currency={p.currency} />
       {p.realisation && (
@@ -286,6 +354,40 @@ function LedgerPanel(props: { view: InvoiceView; panel: Panel; role: Role; onCha
           canExtend={allowed(role, "realisation.extend") && live}
           onExtend={() => setDialog("extend")}
           onLetter={(extensionId) => setDialog({ letter: extensionId })}
+          reductions={
+            <Reductions
+              documentId={v.id}
+              stage={p.realisation.stage}
+              canAdd={allowed(role, "realisation.reduce") && !v.client.anonymised}
+              onAdd={() => setDialog("reduce")}
+              refreshKey={`${v.updatedAt}`}
+            />
+          }
+        />
+      )}
+      {dialog === "refund" && (
+        <RefundDialog
+          mode="refund"
+          payments={refundable}
+          document={{
+            id: v.id,
+            number: v.number,
+            type: v.type,
+            updatedAt: p.updatedAt,
+            excessMinor: p.excessMinor,
+          }}
+          clientOverseas={v.client.gstStatus === "overseas"}
+          onCreditNote={props.onCreditNote}
+          onClose={() => setDialog(null)}
+          onDone={(t) => done(t)}
+        />
+      )}
+      {dialog === "reduce" && (
+        <ReductionDialog
+          documentId={v.id}
+          currency={v.currency}
+          onClose={() => setDialog(null)}
+          onDone={() => done(ZO_UI.reductionSaved)}
         />
       )}
 
@@ -376,6 +478,7 @@ export function referenceHeading(panel: Panel): string {
 /** The confirmed entries on this invoice, as ledger lines (a table; cards below md through the same markup). */
 function Entries(props: {
   panel: Panel;
+  role: Role;
   canCert: boolean;
   onCertificate: (paymentId: string) => void;
   /** M6.3: attach the proof of a Stripe payment (S15). */
@@ -403,6 +506,7 @@ function Entries(props: {
           </th>
           <th scope="col">{PAY_UI.colStatus}</th>
           <th scope="col">{PAY_COPY.proof}</th>
+          {props.panel.receipts !== undefined && <th scope="col">{ZO_UI.receipt}</th>}
         </tr>
       </thead>
       <tbody>
@@ -503,6 +607,20 @@ function Entries(props: {
                   <span className="pay-lines__meta pay-lines__nowrap">{PAY_UI.noProof}</span>
                 )}
               </td>
+              {/* M6.5 (G1, S1–S4): the entry's receipt; a TDS entry gets none */}
+              {props.panel.receipts !== undefined && (
+                <td data-label={ZO_UI.receipt}>
+                  {r.kind === "tds" ? (
+                    <span className="pay-lines__meta pay-lines__nowrap">{"–"}</span>
+                  ) : (
+                    <ReceiptCell
+                      receipt={props.panel.receipts[r.paymentId]}
+                      role={props.role}
+                      status={r.status}
+                    />
+                  )}
+                </td>
+              )}
             </tr>
           );
         })}
@@ -655,6 +773,8 @@ function Realisation(props: {
   canExtend: boolean;
   onExtend: () => void;
   onLetter: (extensionId: string) => void;
+  /** M6.5 (RB-43): the bank's FEMA reductions under the dates. */
+  reductions?: ReactNode;
 }) {
   const r = props.realisation;
   return (
@@ -705,6 +825,7 @@ function Realisation(props: {
           </ul>
         </div>
       )}
+      {props.reductions}
     </div>
   );
 }
