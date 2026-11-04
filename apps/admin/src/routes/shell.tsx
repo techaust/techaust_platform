@@ -25,8 +25,10 @@ import { ComingSoon, NoAccess, NotFound } from "../components/states.tsx";
 import { ToastProvider } from "../components/toast.tsx";
 import { allowed, canSee, sectionOf } from "../lib/access.ts";
 import { reportBellHref } from "../lib/bell-links.ts";
+import { REQUESTS_CHANGED, ZP_UI } from "../lib/copy-zp.ts";
 import { ROLE_LABELS } from "../lib/format.ts";
 import { GW_UI, REVIEW_CHANGED } from "../lib/gateway.ts";
+import { requestsApi } from "../lib/m71-api.ts";
 import { useSession, useUser } from "../session.tsx";
 
 const hrefOf = (item: NavItem) => item.path;
@@ -209,6 +211,37 @@ function useReviewCount(enabled: boolean, pathname: string) {
   return n;
 }
 
+/**
+ * M7.1 (S2): the open client requests, the count on the Clients item, for the roles that read them (the Owner and Staff; never the Accountant, whose read is a
+ * 403). Read like the review count: when a section opens, with the bell's poll while visible, and at once when the Requests panel changes one.
+ */
+function useRequestCount(enabled: boolean, pathname: string) {
+  const [n, setN] = useState(0);
+  const read = useCallback(() => {
+    if (!enabled) return;
+    requestsApi.list({ status: "open" }).then(
+      (r) => setN(r.openCount),
+      () => {},
+    );
+  }, [enabled]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new section is a fresh read
+  useEffect(() => {
+    read();
+  }, [read, pathname]);
+  useEffect(() => {
+    window.addEventListener(REQUESTS_CHANGED, read);
+    return () => window.removeEventListener(REQUESTS_CHANGED, read);
+  }, [read]);
+  useEffect(() => {
+    if (!enabled) return;
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") read();
+    }, BELL_POLL_MS);
+    return () => clearInterval(t);
+  }, [enabled, read]);
+  return n;
+}
+
 export function Component() {
   const user = useUser();
   const { signedOut } = useSession();
@@ -224,6 +257,16 @@ export function Component() {
   );
   const current = sectionOf(pathname);
   const reviewCount = useReviewCount(allowed(user.role, "payments.review"), pathname);
+  const requestCount = useRequestCount(allowed(user.role, "requests.read"), pathname);
+  const count = (n: number) => (n > 99 ? "99+" : String(n));
+  const badges = {
+    ...(reviewCount > 0
+      ? { payments: { text: count(reviewCount), label: GW_UI.reviewCount(reviewCount) } }
+      : {}),
+    ...(requestCount > 0
+      ? { clients: { text: count(requestCount), label: ZP_UI.requestsCount(requestCount) } }
+      : {}),
+  };
 
   function signOut() {
     api.logout().then(
@@ -239,16 +282,7 @@ export function Component() {
         current={current && items.some((i) => i.key === current) ? current : null}
         hrefOf={hrefOf}
         homeHref="/"
-        badges={
-          reviewCount > 0
-            ? {
-                payments: {
-                  text: reviewCount > 99 ? "99+" : String(reviewCount),
-                  label: GW_UI.reviewCount(reviewCount),
-                },
-              }
-            : undefined
-        }
+        badges={Object.keys(badges).length > 0 ? badges : undefined}
         search={
           copy ? <GlobalSearch search={runSearch} placeholder={copy.placeholder} intro={copy.intro} /> : null
         }

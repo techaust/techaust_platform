@@ -88,6 +88,8 @@ export function noticeRefusal(e: unknown, currency: string): NoticeErrors {
       return { form: ZP.noticeErrors.not_payable };
     case "bad_request":
       return { reference: GAP.referenceRefused };
+    case "not_found":
+      return { form: ZP.noticeErrors.not_payable };
     case "rate_limited":
       return { form: PENDING.linkRateLimited(waitText(e.retryAfterS)) };
   }

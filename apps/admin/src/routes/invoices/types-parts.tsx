@@ -12,7 +12,7 @@ import { issueDateOf } from "@techaust/core/invoices";
 import type { Role } from "@techaust/core/permissions";
 import { TERMS_BLOCKS } from "@techaust/core/terms";
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { paymentsApi, RequestError, stepUpActive } from "../../api.ts";
 import { DateField, useUnreadDates } from "../../components/date-field.tsx";
 import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
@@ -20,6 +20,7 @@ import { FormField, Switch } from "../../components/form.tsx";
 import { Alert, Check, Pencil, Receipt } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { CodeField, Notice, useFieldError } from "../../components/ui.tsx";
+import { ZP_UI } from "../../lib/copy-zp.ts";
 import { dateError } from "../../lib/date-field.ts";
 import { advanceBlockerLine, gatewayLine } from "../../lib/gateway.ts";
 import {
@@ -50,6 +51,7 @@ import {
 } from "../../lib/invoice-types.ts";
 import { blockerLine, INV_COPY, invErrorText, issuedToast, typeLabel, UNKNOWN } from "../../lib/invoices.ts";
 import { type InvoiceBlocker, type InvoiceView, invoicesApi } from "../../lib/invoices-api.ts";
+import { noticesApi } from "../../lib/m71-api.ts";
 import { PAY_COPY, PAY_UI, payErrorText, plainAmount } from "../../lib/payments.ts";
 import { isWrongCode, withCode } from "../../lib/step-up.ts";
 import { PaymentsPanel } from "../payments/panel.tsx";
@@ -570,6 +572,47 @@ export function ProformaPanel(props: { view: InvoiceView; onIssued: () => void; 
   const [open, setOpen] = useState(false);
   // M6.1 (L5, 07-ZH line 12): the waiting entry the Owner confirms by issuing the tax invoice for it.
   const [prefill, setPrefill] = useState<AdvancePrefill | null>(null);
+  // M7.1 (L25): opened from a client's "I've paid" notice (`?fromNotice=<id>`, the Notices tab's Owner action): the dialog starts with the notice's amount,
+  // day and reference (all editable: a notice is the client's word, the bank is the record), and once the invoice is issued the notice is dismissed with S7.
+  const [params, setParams] = useSearchParams();
+  const fromNotice = params.get("fromNotice");
+  const [noticeStart, setNoticeStart] = useState<AdvanceStart | null>(null);
+  const toast = useToast();
+  const canAdvance = p?.canAdvance === true && p.advanceSupplyChanged !== true;
+  useEffect(() => {
+    if (!fromNotice || !canAdvance) return;
+    let live = true;
+    paymentsApi.invoicePanel(v.id).then(
+      (panel) => {
+        const n = (panel.notices ?? []).find((x) => x.id === fromNotice);
+        if (!live || !n) return;
+        setNoticeStart({
+          noticeId: n.id,
+          amountMinor: n.amountMinor,
+          receivedOn: n.paidOn,
+          reference: n.reference,
+        });
+        setPrefill(null);
+        setOpen(true);
+      },
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [fromNotice, canAdvance, v.id]);
+  const forgetNotice = () => {
+    setNoticeStart(null);
+    if (fromNotice)
+      setParams(
+        (q) => {
+          const n = new URLSearchParams(q);
+          n.delete("fromNotice");
+          return n;
+        },
+        { replace: true },
+      );
+  };
   if (!p) return null;
   const late = p.warnAt !== null && Date.now() >= p.warnAt && v.number;
   // The client's GST details changed after the proforma (review 2, 6): the server would refuse, so the action is shown disabled with the reason.
@@ -589,6 +632,7 @@ export function ProformaPanel(props: { view: InvoiceView; onIssued: () => void; 
             className="btn btn--primary"
             onClick={() => {
               setPrefill(null);
+              setNoticeStart(null);
               setOpen(true);
             }}
             disabled={supplyChanged}
@@ -643,10 +687,21 @@ export function ProformaPanel(props: { view: InvoiceView; onIssued: () => void; 
           open={open}
           view={v}
           prefill={prefill}
-          onClose={() => setOpen(false)}
+          start={noticeStart}
+          onClose={() => {
+            setOpen(false);
+            forgetNotice();
+          }}
           onIssued={() => {
             setOpen(false);
+            const n = noticeStart;
+            forgetNotice();
             props.onIssued();
+            // L25: the notice is done with: dismissed with the fixed note (S7); a refused dismiss leaves it open and says so
+            if (n)
+              noticesApi
+                .dismiss(n.noticeId, ZP_UI.advanceDismissNote)
+                .catch(() => toast("error", ZP_UI.advanceDoneDismissFailed));
           }}
         />
       )}
@@ -703,6 +758,9 @@ export function ProformaPayments(props: { view: InvoiceView; role: Role; onIssue
   );
 }
 
+/** M7.1 (L25): a client's notice the advance dialog starts from: its amount, day and reference, all editable (never a payment). */
+export type AdvanceStart = { noticeId: string; amountMinor: number; receivedOn: string; reference: string };
+
 /** M6.1: a waiting entry the advance dialog confirms (its amount, day and reference are the entry's, read-only). */
 export type AdvancePrefill = {
   paymentId: string;
@@ -724,6 +782,8 @@ export function AdvanceDialog(props: {
   open: boolean;
   view: InvoiceView;
   prefill?: AdvancePrefill | null | undefined;
+  /** M7.1 (L25): opened from a client's notice: the fields start with its words, editable. */
+  start?: AdvanceStart | null | undefined;
   onClose: () => void;
   onIssued: () => void;
 }) {
@@ -744,6 +804,7 @@ type AdvErrors = AdvanceErrors;
 function AdvanceBody(props: {
   view: InvoiceView;
   prefill?: AdvancePrefill | null | undefined;
+  start?: AdvanceStart | null | undefined;
   onClose: () => void;
   onIssued: () => void;
 }) {
@@ -763,12 +824,20 @@ function AdvanceBody(props: {
           date: props.prefill.receivedOn,
           reference: props.prefill.reference,
         }
-      : { amount: "", date: today, reference: "" },
+      : props.start
+        ? {
+            amount: plainAmount(props.start.amountMinor, v.currency),
+            date: props.start.receivedOn,
+            reference: props.start.reference,
+          }
+        : { amount: "", date: today, reference: "" },
   );
   // M6.1 (07-ZH line 13): a bank reference already recorded; with a waiting entry of it, the way on is to confirm that entry.
   const [seen, setSeen] = useState<{ text: string; paymentId: string | null } | null>(null);
   // The rate's date starts at the day the money came (a waiting entry's own day; Q9), never today's, so the rate typed is that day's.
-  const [fx, setFx] = useState<FxForm>(() => fxFormOf(null, props.prefill?.receivedOn ?? today));
+  const [fx, setFx] = useState<FxForm>(() =>
+    fxFormOf(null, props.prefill?.receivedOn ?? props.start?.receivedOn ?? today),
+  );
   // M6.3 (Q1 A, S16): a card payment's tax invoice waits only for the rate: the field is empty, the blocker says so above it, and the field takes the focus
   // once the dialog has opened (after its own first focus).
   const cardRate = usd && prefill?.online?.provider === "stripe";

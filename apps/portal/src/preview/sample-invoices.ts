@@ -60,6 +60,15 @@ const finish = (b: Base): InvoiceSummary => ({
   ...b,
   total: moneyText(b.totals.totalMinor, b.currency),
   balance: b.balanceMinor === null ? null : moneyText(b.balanceMinor, b.currency),
+  // M7.1: "I've paid" on what is still owed (the server's `noticeAllowed`, roughly; none on a withdrawn payment request)
+  paidNotice:
+    b.paidNotice !== undefined
+      ? b.paidNotice
+      : b.status === "withdrawn"
+        ? null
+        : b.type !== "credit_note" && b.status !== "void" && (b.balanceMinor ?? 0) > 0
+          ? { allowed: true, reason: null }
+          : { allowed: false, reason: b.type === "credit_note" ? "credit_note" : "no_balance" },
 });
 const totals = (t: Partial<InvoiceSummary["totals"]> & { taxableMinor: number; totalMinor: number }) => ({
   subtotalMinor: t.taxableMinor,

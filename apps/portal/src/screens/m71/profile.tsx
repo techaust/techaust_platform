@@ -204,9 +204,9 @@ function Colleagues(props: { organisation: string; people: Profile["colleagues"]
   const id = useId();
   return (
     <section className="m71-panel" aria-labelledby={`${id}-h`}>
-      <h2 id={`${id}-h`} className="block__title">
+      <h2 id={`${id}-h`} className="block__title m71-ititle">
         <Users size={20} />
-        {ZP.colleaguesTitle(props.organisation)}
+        <span>{ZP.colleaguesTitle(props.organisation)}</span>
       </h2>
       <ul className="m71-people">
         {props.people.map((p, i) => (
@@ -314,7 +314,8 @@ function RequestRow({ r }: { r: RequestItem }) {
       <div className="m71-req__state">
         <span className={`spill ${s.open ? "spill--info" : "spill--muted"}`}>{s.text}</span>
         {s.outcome && <span className="m71-req__outcome">{s.outcome}</span>}
-        <span className="m71-req__when">{istDayText(r.createdAt)}</span>
+        {/* the day it was sent, while it is open (a closed one says its closing day instead) */}
+        {s.open && <span className="m71-req__when">{istDayText(r.createdAt)}</span>}
       </div>
     </li>
   );

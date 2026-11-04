@@ -22,10 +22,12 @@ import { allowed } from "../lib/access.ts";
 import { CARD_ZM } from "../lib/copy-zm.ts";
 import { ADVICE_KIND_LABELS, ZN, ZN_UI } from "../lib/copy-zn.ts";
 import { ra41ConfirmLine, ZO_UI } from "../lib/copy-zo.ts";
+import { NOTICES_CHANGED, ZP_UI } from "../lib/copy-zp.ts";
 import { pendingBadge } from "../lib/documents.ts";
 import { GW, GW_UI, gatewayLine, gatewayName, REVIEW_CHANGED } from "../lib/gateway.ts";
 import { INV_COPY, typeLabel } from "../lib/invoices.ts";
 import { invoicesApi } from "../lib/invoices-api.ts";
+import { noticesApi } from "../lib/m71-api.ts";
 import { confirmDocsOf, OPEN_DOCS_CAP } from "../lib/open-docs.ts";
 import {
   type AllocRow,
@@ -50,6 +52,7 @@ import { bpToPercent } from "../lib/settings-form.ts";
 import { withCode } from "../lib/step-up.ts";
 import { useUser } from "../session.tsx";
 import { CreditHeldTab } from "./payments/credit-held-tab.tsx";
+import { NoticesTab } from "./payments/notices-tab.tsx";
 import { CertificateDialog, paymentHref } from "./payments/panel.tsx";
 import {
   AllocationTable,
@@ -72,7 +75,7 @@ export function Component() {
   return <Payments role={user.role} />;
 }
 
-type Tab = "check" | "review" | "all" | "refunds" | "credit";
+type Tab = "check" | "review" | "all" | "refunds" | "credit" | "notices";
 const STATUSES: PaymentStatus[] = ["pending_verification", "confirmed", "rejected", "withdrawn"];
 const isStatus = (v: string | null): v is PaymentStatus => STATUSES.includes(v as PaymentStatus);
 
@@ -86,18 +89,21 @@ function Payments({ role }: { role: Role }) {
   const canRefunds = allowed(role, "refunds.read");
   // M6.5 review part 1, finding 3 (RA-41): credit held at a GST period's end, for the roles with the finance reports (the Owner and the Accountant)
   const canCredit = allowed(role, "reports.finance");
+  // M7.1 (S1, ADM-PAY-05): the clients' "I've paid" notices, for every role that reads payments (the bells link to `?tab=notices`)
   const tab: Tab =
-    canRefunds && params.get("tab") === "refunds"
-      ? "refunds"
-      : canCredit && params.get("tab") === "credit"
-        ? "credit"
-        : !owner
-          ? "all"
-          : params.get("tab") === "review"
-            ? "review"
-            : params.get("tab") !== "all" && !params.get("status") && !params.get("proof")
-              ? "check"
-              : "all";
+    params.get("tab") === "notices"
+      ? "notices"
+      : canRefunds && params.get("tab") === "refunds"
+        ? "refunds"
+        : canCredit && params.get("tab") === "credit"
+          ? "credit"
+          : !owner
+            ? "all"
+            : params.get("tab") === "review"
+              ? "review"
+              : params.get("tab") !== "all" && !params.get("status") && !params.get("proof")
+                ? "check"
+                : "all";
   const status =
     tab === "check"
       ? "pending_verification"
@@ -129,6 +135,14 @@ function Payments({ role }: { role: Role }) {
   const reviewBadge =
     reviewCount > 0 ? { text: String(reviewCount), label: GW_UI.reviewCount(reviewCount) } : null;
 
+  // M7.1: the open notices' count on the tab (a hint; the tab reads its own list and reports changes back)
+  const noticing = useLoad(() => noticesApi.list({ status: "open" }), "notices");
+  const noticeCount = noticing.state === "ready" ? noticing.data.openCount : 0;
+  const noticeBadge =
+    noticeCount > 0
+      ? { text: noticeCount > 99 ? "99+" : String(noticeCount), label: ZP_UI.noticesCount(noticeCount) }
+      : null;
+
   const set = (patch: Record<string, string | null>) =>
     setParams(
       (p) => {
@@ -143,7 +157,16 @@ function Payments({ role }: { role: Role }) {
     );
 
   const list =
-    tab === "refunds" ? (
+    tab === "notices" ? (
+      <NoticesTab
+        role={role}
+        onChanged={() => {
+          noticing.reload(true);
+          waiting.reload(true);
+          window.dispatchEvent(new Event(NOTICES_CHANGED));
+        }}
+      />
+    ) : tab === "refunds" ? (
       <RefundsTab role={role} />
     ) : tab === "credit" ? (
       <CreditHeldTab role={role} />
@@ -196,38 +219,36 @@ function Payments({ role }: { role: Role }) {
         }
         more={canRecord ? [{ label: PAY_UI.recordTds, onSelect: () => setRecording("tds") }] : undefined}
       />
-      {owner || canRefunds || canCredit ? (
-        <Tabs
-          label={PAY_COPY.heading}
-          tabs={[
-            ...(owner
-              ? [
-                  { key: "check" as const, label: PAY_COPY.toCheck, badge },
-                  { key: "review" as const, label: GW.needsReview, badge: reviewBadge },
-                ]
-              : []),
-            { key: "all" as const, label: PAY_UI.allPayments },
-            ...(canRefunds ? [{ key: "refunds" as const, label: ZO_UI.refundsTab }] : []),
-            ...(canCredit ? [{ key: "credit" as const, label: ZO_UI.creditHeldTab }] : []),
-          ]}
-          selected={tab}
-          // Visual review finding 3: the other tab's filters never carry over (the check tab has none; its badge and its list must agree).
-          onSelect={(k) =>
-            set({
-              tab: k === "check" || (!owner && k === "all") ? null : k,
-              status: null,
-              client: null,
-              from: null,
-              to: null,
-              proof: null,
-            })
-          }
-        >
-          {list}
-        </Tabs>
-      ) : (
-        list
-      )}
+      {/* M7.1: every role that reads payments has at least two tabs now (All payments and Notices) */}
+      <Tabs
+        label={PAY_COPY.heading}
+        tabs={[
+          ...(owner
+            ? [
+                { key: "check" as const, label: PAY_COPY.toCheck, badge },
+                { key: "review" as const, label: GW.needsReview, badge: reviewBadge },
+              ]
+            : []),
+          { key: "all" as const, label: PAY_UI.allPayments },
+          { key: "notices" as const, label: ZP_UI.noticesTab, badge: noticeBadge },
+          ...(canRefunds ? [{ key: "refunds" as const, label: ZO_UI.refundsTab }] : []),
+          ...(canCredit ? [{ key: "credit" as const, label: ZO_UI.creditHeldTab }] : []),
+        ]}
+        selected={tab}
+        // Visual review finding 3: the other tab's filters never carry over (the check tab has none; its badge and its list must agree).
+        onSelect={(k) =>
+          set({
+            tab: k === "check" || (!owner && k === "all") ? null : k,
+            status: null,
+            client: null,
+            from: null,
+            to: null,
+            proof: null,
+          })
+        }
+      >
+        {list}
+      </Tabs>
       {recording && (
         <RecordPaymentDialog
           open

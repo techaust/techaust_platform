@@ -690,3 +690,37 @@
   justify-self: start;
   margin-top: var(--space-3);
 }
+
+/* ---------- M7.1: the client page's Requests panel (routes/clients/requests.tsx) ---------- */
+
+.req-panel__lede {
+  margin: 0 0 var(--space-5);
+  max-width: var(--container-lede);
+  color: var(--color-text-muted);
+}
+
+.req-panel__hint {
+  margin: 0 0 var(--space-4);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.req-cell {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.req-cell__details {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.req-cell__meta {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  overflow-wrap: anywhere;
+}

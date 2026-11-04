@@ -227,6 +227,13 @@ body:has(.pshell)::before {
   }
 }
 
+/* M7.1: six sections (Receipts added) fit a tablet's width with a slightly tighter link padding until there is room. */
+@media (min-width: 48rem) and (max-width: 63.99rem) {
+  .pnav__link {
+    padding-inline: var(--space-3);
+  }
+}
+
 /* ---------- The account (md and wider) ---------- */
 
 .account {
@@ -2819,8 +2826,6 @@ textarea[aria-invalid="true"] {
   flex-wrap: wrap;
   gap: var(--space-3);
   margin-top: var(--space-6);
-  padding-top: var(--space-5);
-  border-top: 1px solid var(--color-border);
 }
 
 .inv-pay .block__title:focus {

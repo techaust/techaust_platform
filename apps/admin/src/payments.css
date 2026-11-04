@@ -1456,3 +1456,19 @@
 .adv-pick__note {
   margin: 0;
 }
+
+/* ---------- M7.1: the Notices tab (routes/payments/notices-tab.tsx) ---------- */
+
+.pay-notices__lede {
+  margin: 0 0 var(--space-5);
+  max-width: var(--container-lede);
+  color: var(--color-text-muted);
+}
+
+.pay-notice__ref {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

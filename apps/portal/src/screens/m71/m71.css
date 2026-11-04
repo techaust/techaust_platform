@@ -344,6 +344,11 @@
 
 /* ---------- Files ---------- */
 
+/* The table switches to cards by its own width (the RTable rule), wherever it sits: Home's half column or a project page. */
+.m71-files {
+  container: sheet / inline-size;
+}
+
 .m71-files__name {
   display: inline-flex;
   align-items: flex-start;
@@ -593,6 +598,18 @@
 
 .m71-requests {
   max-width: 56rem;
+  margin-top: var(--space-12);
+}
+
+/* A heading whose words wrap stays beside its icon. */
+.m71-ititle {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+
+.m71-ititle .icon {
+  flex: none;
+  margin-top: 0.2em;
 }
 
 .m71-requests__head {
