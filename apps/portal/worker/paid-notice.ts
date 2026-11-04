@@ -19,7 +19,7 @@ import { accessStmt, auditStmt } from "@techaust/db/log";
 import { noticeRefusalSql, paidNoticeVerdictSql } from "@techaust/db/sql-rules";
 import { Hono } from "hono/tiny";
 import { type AppEnv, accessEntry, type Ctx, err, NOT_FOUND, requestInfo } from "./context.ts";
-import { open } from "./doc-token.ts";
+import { linkLiveSql, open } from "./doc-token.ts";
 import { openOrWithdrawnSql, TYPES_SQL } from "./invoice-summary.ts";
 import { bound } from "./offer-core.ts";
 import { alertStaff } from "./requests.ts";
@@ -31,18 +31,30 @@ const DUPLICATE = `EXISTS (SELECT 1 FROM payment_notices n WHERE n.document_id =
 const VERDICT = paidNoticeVerdictSql("?5", "d.balance_minor", "?6", "d.issue_date", "?12");
 
 /**
+ * Early check 2, finding 4: a link's notice is written only while its link is still live in this batch (`open()` read it in an earlier one): the token not
+ * revoked or expired, its live contact with finance at the same address, the client not anonymised, inside paid + 30 days (L12, L13). `?13` the token hash.
+ */
+const LINK_LIVE = `(?4 = 'portal' OR ${linkLiveSql("?13", "?10")})`;
+
+/**
  * ?1 client, ?2 document, ?3 new id, ?4 via, ?5 amount, ?6 day paid, ?7 reference as typed, ?8 its stored form, ?9 note, ?10 now, ?11 contact, ?12 today
- * (IST). The contact is joined live, with portal access and finance, of the same client.
+ * (IST), ?13 the link's token hash (`via = 'link'` only). The contact is joined live, with portal access and finance, of the same client; the client is
+ * joined not anonymised (early check 2, finding 4: the insert holds the anonymised-client lock itself, not only through the guard's session read).
  */
 export const NOTICE_INSERT_SQL = `INSERT INTO payment_notices (id, client_id, document_id, contact_id, via, amount_minor, currency, paid_on, reference, reference_norm, note, status, created_at)
    SELECT ?3, d.client_id, d.id, c.id, ?4, ?5, d.currency, ?6, ?7, ?8, ?9, 'open', ?10
    FROM documents d JOIN contacts c ON c.id = ?11 AND c.client_id = d.client_id AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL
+     JOIN clients k ON k.id = d.client_id AND k.anonymised_at IS NULL
    WHERE d.client_id = ?1 AND d.id = ?2 AND d.frozen_at IS NOT NULL AND d.type IN (${TYPES_SQL})
-     AND ${noticeRefusalSql("d")} IS NULL AND ${VERDICT} = 'ok' AND ${OPEN_COUNT} < ${NOTICES_OPEN_MAX} AND NOT ${DUPLICATE}`;
+     AND ${noticeRefusalSql("d")} IS NULL AND ${VERDICT} = 'ok' AND ${OPEN_COUNT} < ${NOTICES_OPEN_MAX} AND NOT ${DUPLICATE}
+     AND ${LINK_LIVE}`;
 
-/** Read after the insert, in the same batch (the same placeholders): whether it was written, else why not. No row: not a document the client can open. */
+/**
+ * Read after the insert, in the same batch (the same placeholders): whether it was written, else why not. No row: not a document the client can open.
+ * `link_live` 0: the link stopped opening between `open()` and this batch (a 404, as a link that never opened).
+ */
 export const NOTICE_AFTER_SQL = `SELECT (SELECT 1 FROM payment_notices w WHERE w.id = ?3 AND w.client_id = ?1) AS written, ${noticeRefusalSql("d")} AS refusal,
-     ${VERDICT} AS verdict, d.balance_minor, ${OPEN_COUNT} AS open_count, ${DUPLICATE} AS duplicate
+     ${VERDICT} AS verdict, d.balance_minor, ${OPEN_COUNT} AS open_count, ${DUPLICATE} AS duplicate, ${LINK_LIVE} AS link_live
    FROM documents d WHERE d.client_id = ?1 AND d.id = ?2 AND d.frozen_at IS NOT NULL AND d.type IN (${TYPES_SQL}) AND ${openOrWithdrawnSql("d")}`;
 
 type After = {
@@ -52,6 +64,7 @@ type After = {
   balance_minor: number;
   open_count: number;
   duplicate: number;
+  link_live: number;
 };
 
 /** The refusals (the SPA words them: C15). `not_payable` carries `reason` (core `NOTICE_REFUSALS`), `amount_above_balance` the balance. */
@@ -66,6 +79,8 @@ type NoticeFacts = {
   paidOn: string;
   reference: string;
   note: string | null | undefined;
+  /** The link's token hash (`via = 'link'`), re-checked live in the batch; null for a signed-in notice. */
+  tokenHash: string | null;
 };
 
 /** The insert, its audit and access rows and the explaining read, in ONE batch; the answer. */
@@ -89,6 +104,7 @@ async function writeNotice(c: Ctx, f: NoticeFacts): Promise<Response> {
     now,
     f.contactId,
     issueDateOf(now),
+    f.tokenHash ?? "",
   ];
   const touch = f.via === "portal" && c.var.touch ? [c.var.touch] : [];
   let results: D1Result[];
@@ -143,14 +159,16 @@ async function writeNotice(c: Ctx, f: NoticeFacts): Promise<Response> {
   if (f.via === "link") {
     // A valid link: no `p:fail:` count; the access row of the refusal is written here (a public route has no exit row).
     c.set("accessDone", true);
-    const status = !after
-      ? 404
-      : after.refusal || after.open_count >= NOTICES_OPEN_MAX || after.duplicate
-        ? 409
-        : 400;
+    const status =
+      after?.link_live !== 1
+        ? 404
+        : after.refusal || after.open_count >= NOTICES_OPEN_MAX || after.duplicate
+          ? 409
+          : 400;
     await db.batch([accessStmt(db, accessEntry(c, status, f.contactId))]);
   }
-  if (!after) return err(c, NOT_FOUND, 404);
+  // A link that stopped opening since `open()` tells nothing more about the document (finding 4).
+  if (after?.link_live !== 1) return err(c, NOT_FOUND, 404);
   if (after.refusal)
     return c.json({ error: refusal("not_payable"), reason: after.refusal, request_id: c.var.rid }, 409);
   if (after.verdict === "amount_above_balance")
@@ -183,6 +201,7 @@ export const paidNoticeRoutes = new Hono<AppEnv>().post("/:id/paid-notice", json
     paidOn: b.paidOn,
     reference: b.reference,
     note: b.note,
+    tokenHash: null,
   });
 });
 
@@ -203,6 +222,7 @@ export const tokenPaidNoticeRoutes = new Hono<AppEnv>().post(
       paidOn: b.paidOn,
       reference: b.reference,
       note: b.note,
+      tokenHash: o.hash,
     });
   },
 );

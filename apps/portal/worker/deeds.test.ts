@@ -146,6 +146,24 @@ describe("the routes [POR-05]", () => {
     expect((await call(`/deeds?document=${"x".repeat(65)}`, { cookie: s.cookie })).status).toBe(400);
   });
 
+  it("cross-tenant (M7.1 early check 2, finding 3): another organisation's finance contact asking for A's accepted proposal, which has a signed deed, gets 200 and no deeds, the same answer as a made-up id", async () => {
+    const f = await deedFixtures();
+    const theirs = await sessionFor(f.b.finance);
+    const ask = async (document: string) => {
+      const res = await call(`/deeds?document=${document}`, { cookie: theirs.cookie });
+      return { status: res.status, body: (await res.json()) as { deeds: unknown[] } };
+    };
+    const missing = await ask(`no-such-${crypto.randomUUID()}`);
+    expect(missing).toEqual({ status: 200, body: { deeds: [] } });
+    expect(await ask(f.mineProposal)).toEqual(missing);
+    // ... while A's own finance contact sees it (the control).
+    const mine = await sessionFor(f.a.finance);
+    const own = (await (await call(`/deeds?document=${f.mineProposal}`, { cookie: mine.cookie })).json()) as {
+      deeds: { id: string }[];
+    };
+    expect(own.deeds.map((d) => d.id)).toEqual([f.mine]);
+  });
+
   it("a contact without finance gets the plain 404 for the list and the PDF of their own organisation's signed deed (owner, 2026-11-01)", async () => {
     const f = await deedFixtures();
     const plain = await sessionFor(f.a.plain);

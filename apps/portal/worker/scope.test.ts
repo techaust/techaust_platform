@@ -170,10 +170,12 @@ const TENANT_ELSEWHERE: Record<string, Elsewhere> = {
     proof: "decline on another organisation's offer is the plain 404 in offer-routes.test.ts",
   },
   // T11: the signed deeds and the signed PDF (named in the body), proven with `crossTenant` in deeds.test.ts on their own fixtures (a deed must be signed).
+  // The list is not an id route (it answers 200 with a list, never a 404), so its proof is a test of its own (early check 2, finding 3).
   "GET /api/v1/deeds": {
     request: (id) => ({ path: `/deeds?document=${id}` }),
     file: "deeds.test.ts",
-    proof: "the organisation's own signed deeds: no id from the caller is read",
+    proof:
+      "reads the caller's ?document= (an accepted version's id) only under client_id = ?1: another organisation's proposal with a signed deed answers 200 and no deeds, as a made-up id does (deeds.test.ts, finding 3)",
   },
   // M6.5 (E): a receipt's PDF; M7.1 proves it with `crossTenant` on the fixtures' receipts.
   "GET /api/v1/receipts/:id/pdf": {
