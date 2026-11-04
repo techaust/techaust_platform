@@ -20,7 +20,7 @@ const CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: matching control characters is the point
 const CONTROL_EXCEPT_TAB_LF = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/;
 
-const noControl = z.refine((v: string) => !CONTROL.test(v), { message: "control_characters" });
+const noControl = z.refine<string>((v) => !CONTROL.test(v), { message: "control_characters" });
 /** A trimmed single-line text of 1 to `max` characters. */
 const line = (max: number) => z.string().check(noControl, z.trim(), z.minLength(1), z.maxLength(max));
 /** A trimmed multi-line text of 1 to `max` characters, line endings folded to "\n". */

@@ -116,8 +116,9 @@ describe("permission matrix [ADM-G-02]", () => {
   });
 
   it("closing a client request [M7.1 L8, review fix 11]: the Owner any kind; Staff only a contact change or a grievance; Sales and the Accountant never", () => {
-    for (const kind of [...REQUEST_KINDS, "consent_withdrawal", "nomination", "unknown", undefined])
+    for (const kind of [...REQUEST_KINDS, "consent_withdrawal", "nomination", "unknown"])
       expect(decide("owner", "requests.close", { requestKind: kind })).toBe("allow");
+    expect(decide("owner", "requests.close")).toBe("allow");
     expect(decide("staff", "requests.close", { requestKind: "contact_change" })).toBe("allow");
     expect(decide("staff", "requests.close", { requestKind: "grievance" })).toBe("allow");
     // Every data-rights kind, M7.4's two kinds and an unknown kind are the Owner's (an allow-list: a new kind is never Staff's by accident).
