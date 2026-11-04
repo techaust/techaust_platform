@@ -45,6 +45,7 @@ import { issueBodyOf, issueInvoice, mkInvoice, mkInvoiceClient, putCompany } fro
 import { issueCredit, mkIssuedInvoice, mkRegisteredClient, stampOf } from "./test-notes.ts";
 import { paymentRow, putDoc, recordBody, recorded, tdsBody } from "./test-payments.ts";
 import { adviceBodyOf, paidPayPal } from "./test-paypal.ts";
+import { mkNotice, mkPortalClient, mkRequest } from "./test-portal.ts";
 import { mkFile, mkMilestone, mkNote, mkProject, PDF_BYTES, upload } from "./test-projects.ts";
 import { discount, mkDraft, mkQuoteClient, mkService, mkTerms, sendBodyOf, sendDoc } from "./test-quotes.ts";
 import { addDoc, mkReportClient } from "./test-reports.ts";
@@ -1195,6 +1196,17 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
         .bind(id, Date.now())
         .run();
       return run(s, `/payments/review/${id}/resolve`, { body: { resolution: "dismissed", note: null } });
+    },
+    // M7.1 (ADM-PAY-05, POR-09): a client's "I've paid" notice dismissed, and a portal request closed.
+    "POST /api/v1/payments/notices/:id/close": async () => {
+      const s = await owner();
+      const id = await mkNotice(await mkPortalClient());
+      return run(s, `/payments/notices/${id}/close`, { body: { outcome: "dismissed", note: "Duplicate" } });
+    },
+    "POST /api/v1/client-requests/:id/close": async () => {
+      const s = await owner();
+      const id = await mkRequest(await mkPortalClient(), "data_access");
+      return run(s, `/client-requests/${id}/close`, { body: { outcome: "done", note: "Sent by email" } });
     },
     "POST /api/v1/payments/review/:id/retry": async () => {
       const s = await owner();
