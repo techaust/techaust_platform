@@ -17,7 +17,7 @@ _Replaced (never appended) at the end of every session._
 - **Wrangler 4.147.0 → 4.156.2** ([#173](https://github.com/techaust/techaust_platform/pull/173); owner's request): with `@cloudflare/vitest-plugin` 1.5.0 and `@cloudflare/vite-plugin` 1.67.0 (4.157.0 was under the one-day release age); the stale `sharp` audit exception removed. CI green, deployed to staging (all seven Workers, health checks green).
 
 ## In progress
-- **The second tool-scope PR** (the corrected `@inline` names, the account skills off, Sentry and the AWS plugin's connection blocked; checked on this PC after two app restarts) merges itself on green; after it, one more restart and a last look. No agent is running.
+- **[#176](https://github.com/techaust/techaust_platform/pull/176), the second tool-scope PR** (the corrected `@inline` names, the account skills off, Sentry and the AWS plugin's connection blocked; checked on this PC after two app restarts) merges itself on green; after it, one more restart and a last look. No agent is running.
 
 ## Next
 0. **After the second tool-scope PR merges:** pull, restart the app, confirm nothing unused shows (the app's Claude Docs and scheduled-tasks stay by design).
