@@ -59,6 +59,7 @@ import {
   termsDueDaysMismatch,
   termsTarget,
 } from "@techaust/core/terms";
+import { sampleData, TEMPLATE_NAMES } from "@techaust/email/fixtures";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import {
@@ -71,7 +72,6 @@ import {
   NOT_FOUND,
   type SideGuard,
 } from "./context.ts";
-import { sampleData, TEMPLATE_NAMES } from "@techaust/email/fixtures";
 import { param } from "./http.ts";
 import { queueEmail } from "./mail.ts";
 import { ANNUAL_RETURN_FUTURE } from "./note-consts.ts";

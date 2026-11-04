@@ -2,8 +2,8 @@
 // template, and the footer line. "Send a test to me" queues one email of that template, with sample data, to the
 // signed-in member only (the API takes the address from the session; five an hour).
 import { EMAIL_TEMPLATES, type EmailTemplate } from "@techaust/core/email-templates";
-import { useState } from "react";
 import { TEMPLATE_NAMES } from "@techaust/email/fixtures";
+import { useState } from "react";
 import { api, errorText } from "../../api.ts";
 import { SettingRow, Switch } from "../../components/form.tsx";
 import { Send } from "../../components/icons.tsx";
