@@ -2541,6 +2541,11 @@ textarea[aria-invalid="true"] {
   margin-top: 0.125rem;
 }
 
+/* M7.1 D2: a dialog's form-level refusal scrolls clear of the sticky actions below it (stacked on a phone, about 8rem), never under them */
+.pay-failure {
+  scroll-margin-block-end: 9rem;
+}
+
 .pay-failure:focus {
   outline: none;
 }

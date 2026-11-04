@@ -67,7 +67,11 @@ function NoticeForm(props: Props & { onCancel: () => void }) {
     const first = ORDER.find((k) => e[k]);
     requestAnimationFrame(() => {
       if (first && first !== "form") document.getElementById(ids[first])?.focus();
-      else if (e.form) failureRef.current?.focus();
+      else if (e.form) {
+        // the whole refusal in view, clear of the sticky actions (its scroll margin)
+        failureRef.current?.focus({ preventScroll: true });
+        failureRef.current?.scrollIntoView({ block: "nearest" });
+      }
     });
   }
 
