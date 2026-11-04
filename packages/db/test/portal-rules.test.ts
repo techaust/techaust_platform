@@ -151,7 +151,8 @@ describe("paidNoticeVerdictSql is core paidNoticeVerdict [C15]", () => {
       )?.v,
     ).toBe("date_before_issue");
     // Early check 1 finding 7: a NULL amount or day paid fails closed, as core does with a broken number or day.
-    const nullCases = [
+    type Args = [string, string, string, string, string];
+    const nullCases: [Args, { amountMinor: number; paidOn: string }][] = [
       [
         ["NULL", "5", "'2026-11-01'", "'2026-10-01'", "'2026-11-02'"],
         { amountMinor: Number.NaN, paidOn: "2026-11-01" },
@@ -160,19 +161,16 @@ describe("paidNoticeVerdictSql is core paidNoticeVerdict [C15]", () => {
         ["1", "5", "NULL", "'2026-10-01'", "'2026-11-02'"],
         { amountMinor: 1, paidOn: null as unknown as string },
       ],
-    ] as const;
+    ];
     for (const [args, c] of nullCases) {
       const row = await first<{ v: string }>(`SELECT ${paidNoticeVerdictSql(...args)} AS v`);
       expect(row?.v).toBe(
         paidNoticeVerdict({ ...c, balanceMinor: 5, issueDate: "2026-10-01", todayIst: "2026-11-02" }),
       );
     }
-    expect((await first<{ v: string }>(`SELECT ${paidNoticeVerdictSql(...nullCases[0][0])} AS v`))?.v).toBe(
-      "amount_above_balance",
-    );
-    expect((await first<{ v: string }>(`SELECT ${paidNoticeVerdictSql(...nullCases[1][0])} AS v`))?.v).toBe(
-      "date_in_future",
-    );
+    const want = ["amount_above_balance", "date_in_future"];
+    for (const [i, [args]] of nullCases.entries())
+      expect((await first<{ v: string }>(`SELECT ${paidNoticeVerdictSql(...args)} AS v`))?.v).toBe(want[i]);
   });
 });
 
