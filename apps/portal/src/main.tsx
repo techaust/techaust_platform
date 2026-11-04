@@ -1,6 +1,6 @@
 // The client portal SPA. M1.6: sign in with a link, the callback and sign out. M4.5: the portal shell with five sections, home, the
-// proposals and estimates (view, accept, decline, downloads) and the single-document email link (`/o`). Every page is `noindex`
-// (index.html).
+// proposals and estimates (view, accept, decline, downloads) and the single-document email link (`/o`). M7.1: Home, Receipts, Projects and Profile,
+// each a lazy route (L18, NFR-3: their code loads when the section first opens, so the entry stays small). Every page is `noindex` (index.html).
 import "@techaust/ui/fonts.css";
 import "@techaust/ui/tokens.css";
 import "./app.css";
@@ -19,14 +19,7 @@ import { InvoiceLinkRoute, InvoiceRoute, InvoicesRoute } from "./routes/invoices
 import { Failed, NotFound } from "./routes/not-found.tsx";
 import { OfferLinkRoute } from "./routes/offer-link.tsx";
 import { PayReturnRoute } from "./routes/pay-return.tsx";
-import {
-  HomeRoute,
-  MissingRoute,
-  PortalLayout,
-  ProposalRoute,
-  ProposalsRoute,
-  SoonRoute,
-} from "./routes/portal.tsx";
+import { MissingRoute, PortalLayout, ProposalRoute, ProposalsRoute } from "./routes/portal.tsx";
 import { SessionProvider } from "./session.tsx";
 
 // FIRST, before anything renders or sends a request: take a sign-in link's token from `#t=` and strip the fragment
@@ -89,13 +82,27 @@ const router = createBrowserRouter([
       </SessionProvider>
     ),
     children: [
-      { index: true, element: <HomeRoute /> },
+      { index: true, lazy: async () => ({ Component: (await import("./screens/m71/home.tsx")).Component }) },
       { path: "proposals", element: <ProposalsRoute /> },
       { path: "proposals/:id", element: <ProposalRoute /> },
       { path: "invoices", element: <InvoicesRoute /> },
       { path: "invoices/:id", element: <InvoiceRoute /> },
-      { path: "projects", element: <SoonRoute section="projects" /> },
-      { path: "profile", element: <SoonRoute section="profile" /> },
+      {
+        path: "receipts",
+        lazy: async () => ({ Component: (await import("./screens/m71/receipts.tsx")).ReceiptsRoute }),
+      },
+      {
+        path: "projects",
+        lazy: async () => ({ Component: (await import("./screens/m71/projects.tsx")).ProjectsRoute }),
+      },
+      {
+        path: "projects/:id",
+        lazy: async () => ({ Component: (await import("./screens/m71/projects.tsx")).ProjectRoute }),
+      },
+      {
+        path: "profile",
+        lazy: async () => ({ Component: (await import("./screens/m71/profile.tsx")).ProfileRoute }),
+      },
       { path: "*", element: <MissingRoute /> },
     ],
   },

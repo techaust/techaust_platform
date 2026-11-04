@@ -19,8 +19,10 @@ import {
   XCircle,
 } from "../components/icons.tsx";
 import { PageTitle } from "../components/shell/portal-shell.tsx";
+import { Notice } from "../components/ui.tsx";
 import { INV } from "../copy-invoices.ts";
 import { WITHDRAWN_ZF } from "../copy-zf.ts";
+import { ZP } from "../copy-zp.ts";
 import {
   type ClientInvoiceStatus,
   clientStatus,
@@ -219,6 +221,15 @@ export function InvoicePage(props: {
   /** The receipt being downloaded, and a receipt's own message (its PDF isn't ready, or the request failed). */
   receiptBusy?: string | null;
   receiptProblem?: { id: string; text: string } | null;
+  /**
+   * M7.1 (C13, L10): "I've paid", at the end of the bank-transfer section, when the document can take a notice (`paidNotice.allowed`); null otherwise. A
+   * withdrawn payment request has neither (no payment field at all).
+   */
+  paidNotice?: ReactNode;
+  /** M7.1 (C14): a notice was just sent from this page. */
+  noticeSent?: boolean;
+  /** M7.1 (C25): the emailed "View & pay" link's footer (the way to sign in). */
+  footer?: ReactNode;
 }) {
   const d = props.doc;
   const status = clientStatus(d, todayIst(props.now));
@@ -231,6 +242,8 @@ export function InvoicePage(props: {
   const creditNumbers = (d.creditNotes ?? []).flatMap((n) => (n.numberDisplay ? [n.numberDisplay] : []));
   // M6.2 (07-ZI line 16), M6.3 (07-ZM line 8), M6.4 (07-ZN line 14): the online payment's row under the figures.
   const paidRow = withdrawn ? null : paidRowOf(d, dateText);
+  // M7.1 (C12): the bank-transfer way, while something is owed and no gateway payment waits (the section under the slip; the chooser's button leads there).
+  const bankShown = owed && d.bank !== null && showsBankTransfer(d.online);
   return (
     <div className="screen inv-sheet inv-doc">
       <header className="screen__head inv-doc__head">
@@ -326,9 +339,19 @@ export function InvoicePage(props: {
         {!withdrawn && (
           <div className="inv-slip__actions">
             {props.pay}
+            {bankShown && (
+              <button
+                type="button"
+                className={props.pay ? "btn btn--secondary" : "btn btn--primary"}
+                onClick={toBankSection}
+              >
+                <Landmark size={20} />
+                {ZP.bankTransfer}
+              </button>
+            )}
             <button
               type="button"
-              className={props.pay ? "btn btn--secondary" : "btn btn--primary"}
+              className={props.pay || bankShown ? "btn btn--secondary" : "btn btn--primary"}
               onClick={props.onPdf}
               disabled={props.downloading}
               aria-busy={props.downloading || undefined}
@@ -412,14 +435,20 @@ export function InvoicePage(props: {
         </section>
       )}
 
-      {owed && d.bank && showsBankTransfer(d.online) && (
+      {bankShown && d.bank && (
         <section className="block inv-pay" aria-labelledby="inv-pay-h">
-          <h2 id="inv-pay-h" className="block__title">
+          <h2 id="inv-pay-h" className="block__title" tabIndex={-1}>
             <Landmark size={20} />
             {INV.pdf.howToPay}
           </h2>
           <p className="inv-pay__ref">{INV.howToPay(d.type, number)}</p>
           <BankBlock bank={d.bank} />
+          {props.noticeSent && (
+            <div className="pnotice-sent" tabIndex={-1} ref={focusOnShow}>
+              <Notice tone="success">{ZP.paidThanks}</Notice>
+            </div>
+          )}
+          {props.paidNotice && <div className="pnotice-row">{props.paidNotice}</div>}
         </section>
       )}
 
@@ -480,63 +509,18 @@ export function InvoicePage(props: {
           foot={totalsRows(d)}
         />
       </section>
+      {props.footer}
     </div>
   );
 }
 
-/** Home: the open documents (what is owed, newest first, at most three), and the way to the list. */
-export function InvoicesTile(props: { items: InvoiceItem[] | null; problem: string | null; now?: number }) {
-  const today = todayIst(props.now);
-  const open = (props.items ?? []).filter((d) => {
-    const s = clientStatus(d, today);
-    return s === "due" || s === "overdue";
+/** M7.1 (C12): the chooser's "Bank transfer" leads to the bank details under the slip (never a hash in the address: the emailed link's page reloads on one). */
+function toBankSection() {
+  const h = document.getElementById("inv-pay-h");
+  if (!h) return;
+  h.scrollIntoView({
+    block: "start",
+    behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
   });
-  return (
-    <section className="inv-tile" aria-labelledby="inv-tile-h">
-      <div className="inv-tile__head">
-        <span className="soon__icon">
-          <Receipt size={24} />
-        </span>
-        <h3 id="inv-tile-h" className="soon__title">
-          <Link to="/invoices" className="inv-tile__link">
-            {INV.title}
-            <ArrowRight size={20} />
-          </Link>
-        </h3>
-      </div>
-      {props.problem ? (
-        <p className="muted">{props.problem}</p>
-      ) : props.items === null ? (
-        <p className="visually-hidden" role="status">
-          {INV.title}
-        </p>
-      ) : open.length === 0 ? (
-        <p className="muted">{INV.empty}</p>
-      ) : (
-        <ul className="inv-tile__list">
-          {open.slice(0, 3).map((d) => (
-            <li key={d.id}>
-              <Link to={invoiceHref(d.id)} className="inv-tile__row">
-                <span className="inv-tile__num">{d.numberDisplay}</span>
-                {/* The amount says what it is, and a "Due" pill is followed by the date alone, never "Due Due 06 Nov" (final sweep P13). */}
-                <span className="inv-tile__bal">
-                  <span className="inv-tile__bal-label">{INV.balanceDue}</span> {d.balance}
-                </span>
-                <span className="inv-tile__due">
-                  <InvoiceStatusPill status={clientStatus(d, today)} />
-                  {d.dueDate && (
-                    <span>
-                      {clientStatus(d, today) === "due"
-                        ? dateText(d.dueDate)
-                        : INV.dueOn(dateText(d.dueDate))}
-                    </span>
-                  )}
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
+  h.focus({ preventScroll: true });
 }
