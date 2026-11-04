@@ -14,6 +14,9 @@ describe("How to pay while a gateway payment is processed", () => {
   });
 
   it("the invoice page puts the box behind that rule", () => {
-    expect(screen).toMatch(/owed && d\.bank && showsBankTransfer\(d\.online\) && \(/);
+    // M7.1 (C12): one flag for the box and the chooser's "Bank transfer" button that leads to it
+    expect(screen).toMatch(/const bankShown = owed && d\.bank !== null && showsBankTransfer\(d\.online\);/);
+    expect(screen).toMatch(/\{bankShown && d\.bank && \(/);
+    expect(screen).toMatch(/\{bankShown && \(\s*<button/);
   });
 });

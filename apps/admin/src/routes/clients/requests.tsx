@@ -53,7 +53,6 @@ export function ClientRequests(props: { clientId: string }) {
     {
       key: "request",
       header: ZP_UI.colRequest,
-      width: "40%",
       cell: (r) => (
         <span className="req-cell">
           <strong>{kindText(r.kind)}</strong>

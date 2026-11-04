@@ -98,10 +98,16 @@ function NoticeList(props: { status: NoticeStatus; role: Role; onChanged: () => 
     {
       key: "client",
       header: ZP_UI.colClient,
+      // who told us sits under the client (the contact and the way: the portal or an invoice link), so the row keeps its width for the actions
       cell: (n) => (
-        <span>
-          <Link to={`/clients/${encodeURIComponent(n.client.id)}`}>{n.client.name}</Link>{" "}
-          <span className="docno pay-lines__code">{n.client.code}</span>
+        <span className="pay-notice__ref">
+          <span>
+            <Link to={`/clients/${encodeURIComponent(n.client.id)}`}>{n.client.name}</Link>{" "}
+            <span className="docno pay-lines__code">{n.client.code}</span>
+          </span>
+          <span className="pay-lines__meta">
+            {[n.contact?.name, ZP_UI.via[n.via] ?? n.via].filter(Boolean).join(", ")}
+          </span>
         </span>
       ),
     },
@@ -118,12 +124,13 @@ function NoticeList(props: { status: NoticeStatus; role: Role; onChanged: () => 
       key: "amount",
       header: ZP_UI.colAmount,
       align: "end",
-      cell: (n) => <span className="tnum pay-lines__nowrap">{amountText(n.amountMinor, n.currency)}</span>,
-    },
-    {
-      key: "paid",
-      header: ZP_UI.colPaidOn,
-      cell: (n) => <span className="tnum pay-lines__nowrap">{day(n.paidOn)}</span>,
+      // the day they say they paid sits under the amount (one column, so the row keeps its width for the actions)
+      cell: (n) => (
+        <span className="pay-notice__money">
+          <span className="tnum pay-lines__nowrap">{amountText(n.amountMinor, n.currency)}</span>
+          <span className="pay-lines__meta pay-lines__nowrap">{`${ZP_UI.colPaidOn} ${day(n.paidOn)}`}</span>
+        </span>
+      ),
     },
     {
       key: "reference",
@@ -139,36 +146,31 @@ function NoticeList(props: { status: NoticeStatus; role: Role; onChanged: () => 
         </span>
       ),
     },
-    {
-      key: "from",
-      header: ZP_UI.colFrom,
-      cell: (n) => (
-        <span className="pay-notice__ref">
-          <span>{n.contact?.name ?? "–"}</span>
-          <span className="pay-lines__meta">{ZP_UI.via[n.via] ?? n.via}</span>
-        </span>
-      ),
-    },
-    {
-      key: "status",
-      header: ZP_UI.colStatus,
-      cell: (n) => {
-        const look = LOOK[n.status] ?? LOOK.dismissed;
-        return (
-          <span className="pay-notice__ref">
-            <StatusPill tone={look.tone} icon={look.icon}>
-              {ZP_UI.noticeStatus[n.status] ?? n.status}
-            </StatusPill>
-            {n.closedBy?.name && n.closedAt !== null && (
-              <span className="pay-lines__meta">
-                {ZP_UI.closedBy(n.closedBy.name, day(isoDayOf(n.closedAt)))}
-              </span>
-            )}
-            {n.closeNote && <span className="pay-lines__meta">{n.closeNote}</span>}
-          </span>
-        );
-      },
-    },
+    // an open notice's status is its tab's; a closed one says who closed it, when, and the note
+    ...(props.status === "open"
+      ? []
+      : ([
+          {
+            key: "status",
+            header: ZP_UI.colStatus,
+            cell: (n) => {
+              const look = LOOK[n.status] ?? LOOK.dismissed;
+              return (
+                <span className="pay-notice__ref">
+                  <StatusPill tone={look.tone} icon={look.icon}>
+                    {ZP_UI.noticeStatus[n.status] ?? n.status}
+                  </StatusPill>
+                  {n.closedBy?.name && n.closedAt !== null && (
+                    <span className="pay-lines__meta">
+                      {ZP_UI.closedBy(n.closedBy.name, day(isoDayOf(n.closedAt)))}
+                    </span>
+                  )}
+                  {n.closeNote && <span className="pay-lines__meta">{n.closeNote}</span>}
+                </span>
+              );
+            },
+          },
+        ] as Column<NoticeView>[])),
   ];
 
   const actionsFor = (n: NoticeView) => {

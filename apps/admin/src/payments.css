@@ -1470,5 +1470,16 @@
   justify-items: start;
   gap: var(--space-1);
   min-width: 0;
-  overflow-wrap: anywhere;
+  /* break-word, never anywhere: a name keeps its words, so the column takes their width */
+  overflow-wrap: break-word;
+}
+
+.pay-notice__money {
+  display: grid;
+  justify-items: end;
+  gap: var(--space-1);
+}
+
+.pay-notice__ref .docno {
+  white-space: nowrap;
 }
