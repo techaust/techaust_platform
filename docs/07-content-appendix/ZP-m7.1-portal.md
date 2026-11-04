@@ -1,8 +1,8 @@
 # 07-ZP: M7.1 the full client portal
 
-Status: **DRAFT for the owner (2026-11-05).** Client lines C1–C25 (run file [m7.1-portal](../runs/m7.1-portal.md) section H) and the lead's proposed words for G1–G10 (lines a screen needs that section H lacked). Until the owner approves, every line shows "[Placeholder]" on screen (`APPROVED_07ZP` in `apps/portal/src/copy-zp.ts`; G lines stay marked until their words are approved). Staff lines (S1–S7) are the lead's under the owner's delegation and are listed in the run file. English (India/UK spelling), "and" never "&", no banned phrases (07 §1.3), no card or bank-account field anywhere (ADM-PAY-12).
+Status: **Client lines C1–C24 and G1–G10 APPROVED by the owner as drafted (2026-11-05); C25 withdrawn (L27).** The code switch `APPROVED_07ZP` turns on with designer D2, and the G lines take these words unmarked. Client lines C1–C25 (run file [m7.1-portal](../runs/m7.1-portal.md) section H) and the lead's proposed words for G1–G10 (lines a screen needs that section H lacked). Until the owner approves, every line shows "[Placeholder]" on screen (`APPROVED_07ZP` in `apps/portal/src/copy-zp.ts`; G lines stay marked until their words are approved). Staff lines (S1–S7) are the lead's under the owner's delegation and are listed in the run file. English (India/UK spelling), "and" never "&", no banned phrases (07 §1.3), no card or bank-account field anywhere (ADM-PAY-12).
 
-## Client lines (draft, section H word for word)
+## Client lines (approved by the owner as drafted, 2026-11-05)
 
 ### Navigation and Home
 - C1. Navigation: "Receipts" (shown only to contacts who can see finance)
@@ -42,7 +42,7 @@ Status: **DRAFT for the owner (2026-11-05).** Client lines C1–C25 (run file [m
 ### The emailed "View & pay" page
 - C25. ~~Footer: "Sign in to see all your invoices, receipts and projects."~~ **Withdrawn (lead, 2026-11-05, L27):** the "View & pay" page already shows an approved sign-in notice at the top that says the same; the page keeps that one.
 
-## Lines the screens need that section H lacked (lead's proposed words)
+## Lines the screens need that section H lacked (the lead's words, approved by the owner, 2026-11-05)
 - G1. A receipt that covers more invoices than the list names: "and {n} more"
 - G2. The name left empty on Profile: "Enter your name."
 - G3. A name or phone the server refuses: "We couldn't save these details. Check your name and phone number."
