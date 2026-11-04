@@ -9,6 +9,7 @@
 // contact the request was made about): they stay when that row is deleted (`lead_id` and `contact_id` are unlinked by the triggers), so M7.4 can match a request
 // to the erase of that exact lead or contact.
 import {
+  NOTICE_CLOSE_NOTE_MAX,
   NOTICE_NOTE_MAX,
   NOTICE_REFERENCE_MAX,
   NOTICE_REFERENCE_NORM_MAX,
@@ -65,8 +66,9 @@ export const clientRequests = sqliteTable(
     index("client_requests_status").on(t.status, t.createdAt, t.id),
     // One open request per kind per contact (409 `request_open`).
     uniqueIndex("client_requests_open_kind").on(t.contactId, t.kind).where(sql`${t.status} = 'open'`),
-    // The daily cap (`REQUESTS_TODAY_SQL`), the contact's own list, and the unlink and erase triggers' `WHERE contact_id = …`.
-    index("client_requests_contact").on(t.contactId, t.createdAt),
+    // The daily cap (`REQUESTS_TODAY_SQL`), the contact's own list (keyset with the id tie-break, early check 1 finding 6), and the unlink and erase triggers'
+    // `WHERE contact_id = …`.
+    index("client_requests_contact").on(t.contactId, t.createdAt, t.id),
     // The unlink trigger on every lead delete (the nightly purge): only requests that name a lead are in it.
     index("client_requests_lead").on(t.leadId).where(sql`${t.leadId} is not null`),
     // At least one subject: the organisation, the lead (by its ref, so the unlink can't break this) or the requester's address.
@@ -125,6 +127,8 @@ export const paymentNotices = sqliteTable(
     paymentId: text("payment_id").references(() => payments.id),
     closedBy: text("closed_by").references(() => staffUsers.id),
     closedAt: integer("closed_at"),
+    /** The staff member's note on a dismiss (set only then, frozen after: trigger; early check 1 finding 5). */
+    closeNote: text("close_note"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -136,8 +140,8 @@ export const paymentNotices = sqliteTable(
     uniqueIndex("payment_notices_open_reference")
       .on(t.documentId, t.referenceNorm)
       .where(sql`${t.status} = 'open'`),
-    // A client's notices (the admin filter, the contact's export).
-    index("payment_notices_client").on(t.clientId, t.createdAt),
+    // A client's notices (the admin filter, keyset with the id tie-break, early check 1 finding 6; the contact's export).
+    index("payment_notices_client").on(t.clientId, t.createdAt, t.id),
     // The unlink and erase triggers' `WHERE contact_id = …`.
     index("payment_notices_contact").on(t.contactId).where(sql`${t.contactId} is not null`),
     // The notice a recorded payment came from.
@@ -152,6 +156,10 @@ export const paymentNotices = sqliteTable(
     check(
       "payment_notices_note_length",
       sql`${t.note} is null or length(${t.note}) between 1 and ${n(NOTICE_NOTE_MAX)}`,
+    ),
+    check(
+      "payment_notices_close_note_length",
+      sql`${t.closeNote} is null or length(${t.closeNote}) between 1 and ${n(NOTICE_CLOSE_NOTE_MAX)}`,
     ),
   ],
 );

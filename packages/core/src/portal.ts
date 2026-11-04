@@ -4,9 +4,9 @@
 //   - the requests a contact sends from the Profile page (`client_requests`, L8): five kinds, one open request per kind per contact, five a day. Each of the
 //     DPDP Act's rights of the data principal (ss.11 to 13) gets a portal channel: access, Researched 2026-10-29, DPDP Act s.11(1) and Rule 14 (08-C RB-36);
 //     erasure, Researched 2026-10-29, DPDP Act s.8(7) and s.12(3) (08-C RB-37); grievances redressed within one month: Researched 2026-10-28, SPDI Rules 2011
-//     Rule 5(9) (08-C RB-13). Correction through the portal: OPEN (08-C RB-NEW-1): does a portal self-edit of name and phone, plus a `data_correction`
+//     Rule 5(9) (08-C RB-13). Correction through the portal: OPEN (08-C RB-44): does a portal self-edit of name and phone, plus a `data_correction`
 //     request for anything else, meet s.12's duty to correct, or must every correction be logged as a request? Until the lead researches it, both channels
-//     exist and both are audited (RB-NEW-1 is a placeholder ID for the lead to renumber);
+//     exist and both are audited;
 //   - "I've paid" (`payment_notices`, L10): a notice is never a payment and never money (a proforma is not a tax document, and its tax invoice follows only a
 //     recorded and confirmed payment: Researched 2026-10-28, s.13(2) and s.31(2) CGST Act (08-C RA-17)); which documents may take one (`noticeAllowed`) and whether a
 //     notice's facts can be right (`paidNoticeVerdict`). The SQL twins are `@techaust/db/sql-rules` `noticeAllowedSql` / `paidNoticeVerdictSql` (a db test
@@ -81,6 +81,8 @@ export type NoticeStatus = (typeof NOTICE_STATUSES)[number];
 export const NOTICE_REFERENCE_MAX = 64;
 export const NOTICE_REFERENCE_NORM_MAX = 60;
 export const NOTICE_NOTE_MAX = 300;
+/** The staff note on a dismissed notice (early check 1 finding 5; set only on dismiss, frozen after). */
+export const NOTICE_CLOSE_NOTE_MAX = 300;
 /** At most this many open notices on one document (409 `notice_open_limit`). */
 export const NOTICES_OPEN_MAX = 3;
 
@@ -88,6 +90,12 @@ export const NOTICES_OPEN_MAX = 3;
 export const NOTICE_TYPES = ["tax_invoice", "export_invoice", "debit_note", "proforma"] as const;
 /** The statuses of an invoice or debit note that still has something to pay (an ALLOW-LIST: a draft, a request, `paid`, `credited` and `void` are not). */
 export const NOTICE_OPEN_STATUSES = ["issued", "partially_paid", "partially_credited"] as const;
+/**
+ * The statuses of a proforma that may take a notice (early check 1 finding 1): `issued`, and `converted` while a balance is left (a proforma stays `converted`
+ * after its first tax invoice for a payment received, and further payments are allowed: `@techaust/db` issue.ts, `payableOnline`). The balance rule below
+ * refuses a settled one.
+ */
+export const NOTICE_PROFORMA_STATUSES = ["issued", "converted"] as const;
 
 /** What `noticeAllowed` reads of a document: its frozen type, status and balance, and whether it is a withdrawn proforma (`withdrawnSql`). */
 export type NoticeDoc = {
@@ -112,8 +120,9 @@ export type NoticeRefusal = (typeof NOTICE_REFUSALS)[number];
 
 /**
  * Whether a document can take an "I've paid" notice: refuses a withdrawn proforma (Q3 of runs/proforma-withdraw: nothing invites a payment), a void one, a credit
- * note (nothing is owed on it), any type that is not paid (a proposal, an estimate, a receipt), a proforma in any status but `issued` (a converted one is
- * settled through its tax invoice), a paid one, any other status not in `NOTICE_OPEN_STATUSES`, and a zero (or negative) balance. Never throws.
+ * note (nothing is owed on it), any type that is not paid (a proposal, an estimate, a receipt), a proforma in any status but `issued` or `converted`
+ * (`NOTICE_PROFORMA_STATUSES`), a paid one, an invoice or debit note in any other status not in `NOTICE_OPEN_STATUSES`, and a zero (or negative) balance (so a
+ * converted proforma with nothing left is `no_balance`). Never throws.
  */
 export function noticeAllowed(
   doc: NoticeDoc,
@@ -123,9 +132,11 @@ export function noticeAllowed(
   if (doc.status === "void") return no("void");
   if (doc.type === "credit_note") return no("credit_note");
   if (!(NOTICE_TYPES as readonly string[]).includes(doc.type)) return no("not_payable_type");
-  if (doc.type === "proforma" && doc.status !== "issued") return no("proforma_not_issued");
+  const proforma = doc.type === "proforma";
+  if (proforma && !(NOTICE_PROFORMA_STATUSES as readonly string[]).includes(doc.status))
+    return no("proforma_not_issued");
   if (doc.status === "paid") return no("paid");
-  if (!(NOTICE_OPEN_STATUSES as readonly string[]).includes(doc.status)) return no("not_open");
+  if (!proforma && !(NOTICE_OPEN_STATUSES as readonly string[]).includes(doc.status)) return no("not_open");
   if (!Number.isSafeInteger(doc.balanceMinor) || doc.balanceMinor <= 0) return no("no_balance");
   return { ok: true };
 }
@@ -144,13 +155,14 @@ export function paidNoticeVerdict(v: {
   readonly issueDate: string;
   readonly todayIst: string;
 }): PaidNoticeVerdict {
+  // A missing number or day fails closed (the SQL twin's `IS NULL` arms, early check 1 finding 7).
   if (
     !Number.isSafeInteger(v.amountMinor) ||
     !Number.isSafeInteger(v.balanceMinor) ||
     v.amountMinor > v.balanceMinor
   )
     return "amount_above_balance";
-  if (v.paidOn > v.todayIst) return "date_in_future";
+  if (typeof v.paidOn !== "string" || v.paidOn > v.todayIst) return "date_in_future";
   if (v.paidOn < v.issueDate) return "date_before_issue";
   return "ok";
 }

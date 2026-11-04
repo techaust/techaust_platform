@@ -10,6 +10,7 @@ import {
   REQUEST_KINDS,
   REQUEST_OUTCOMES,
   REQUEST_STATUSES,
+  STAFF_CLOSE_KINDS,
 } from "@techaust/core/portal";
 import { describe, expect, it } from "vitest";
 import {
@@ -19,9 +20,10 @@ import {
   REQUEST_KINDS_0072,
   REQUEST_OUTCOMES_0072,
   REQUEST_STATUSES_0072,
+  STAFF_CLOSE_KINDS_0072,
 } from "../src/triggers.ts";
 import { mkClientRow, mkContact, mkIssued, mkMember } from "./billing-helpers.ts";
-import { all, first, rejects, run } from "./helpers.ts";
+import { all, first, insertDraftInvoice, rejects, run } from "./helpers.ts";
 
 const migration = (name: string) => env.TEST_MIGRATIONS.find((m) => m.name === name);
 /** A migration's statements without their comment lines and breakpoints. */
@@ -149,6 +151,7 @@ describe("0071 and 0072 [run file A]", () => {
     expect(REQUEST_OUTCOMES_0072).toEqual(REQUEST_OUTCOMES);
     expect(NOTICE_VIAS_0072).toEqual(NOTICE_VIAS);
     expect(NOTICE_STATUSES_0072).toEqual(NOTICE_STATUSES);
+    expect(STAFF_CLOSE_KINDS_0072).toEqual(STAFF_CLOSE_KINDS);
     const row = await first<{ sql: string }>(
       "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'client_requests_kind'",
     );
@@ -256,7 +259,7 @@ describe("client_requests [L8]", () => {
     const client = await mkClientRow();
     const staff = await mkMember("staff");
     const id = uuidv7();
-    await insertRequest({ id, clientId: client });
+    await insertRequest({ id, clientId: client, kind: "grievance" });
     const close = (sql: string, ...p: unknown[]) =>
       run(`UPDATE client_requests SET ${sql} WHERE id = ?1`, id, ...p);
     await rejects(
@@ -281,6 +284,44 @@ describe("client_requests [L8]", () => {
     );
     await rejects(close("outcome = 'done'"), /client_requests_fixed/);
     await rejects(close("close_note = 'changed'"), /client_requests_fixed/);
+    // Early check 1 finding 5: after the close the note only becomes empty (as `details`); without the rule it could be rewritten.
+    await withoutTrigger("client_requests_fixed", async () => {
+      await close("close_note = 'rewritten'");
+      await close("close_note = 'Not ours'");
+    });
+    await close("close_note = NULL");
+    expect((await first("SELECT close_note FROM client_requests WHERE id = ?1", id))?.close_note).toBeNull();
+    await rejects(close("close_note = 'back again'"), /client_requests_fixed/);
+  });
+
+  it("only an active Owner closes a data-rights request (or any kind outside Staff's list); Staff close a contact change or a grievance (finding 3)", async () => {
+    const client = await mkClientRow();
+    const staff = await mkMember("staff");
+    const owner = await mkMember("owner");
+    const pastOwner = await mkMember("owner", "deactivated");
+    const closeBy = (id: string, by: string) =>
+      run(
+        "UPDATE client_requests SET status = 'closed', outcome = 'done', closed_by = ?2, closed_at = 2000, updated_at = 2000 WHERE id = ?1",
+        id,
+        by,
+      );
+    const mk = async (kind: string) => {
+      const id = uuidv7();
+      await insertRequest({ id, clientId: client, kind });
+      return id;
+    };
+    for (const kind of ["data_access", "data_correction", "data_erasure"]) {
+      await rejects(closeBy(await mk(kind), staff), /client_requests_owner_close/);
+      await rejects(closeBy(await mk(kind), pastOwner), /client_requests_owner_close/);
+      await closeBy(await mk(kind), owner);
+    }
+    for (const kind of STAFF_CLOSE_KINDS) {
+      await closeBy(await mk(kind), staff);
+      await closeBy(await mk(kind), owner);
+    }
+    // The trigger is the rule: without it Staff's close of a data request goes through.
+    const data = await mk("data_erasure");
+    await withoutTrigger("client_requests_owner_close", () => closeBy(data, staff));
   });
 
   it("fixed: client, kind, refs, address and time never change; lead, contact and details only become empty", async () => {
@@ -438,6 +479,87 @@ describe("payment_notices [L10, ADM-PAY-05]", () => {
     );
   });
 
+  it("the document is issued: a draft (never frozen) takes no notice (finding 8)", async () => {
+    const { client, contact } = await setup();
+    const draft = await insertDraftInvoice(client);
+    await rejects(
+      insertNotice({ clientId: client, documentId: draft, contactId: contact, reference: "DRAFT1" }),
+      /payment_notices_document/,
+    );
+    await withoutTrigger("payment_notices_document", () =>
+      insertNotice({ clientId: client, documentId: draft, contactId: contact, reference: "DRAFT1" }),
+    );
+  });
+
+  it("a close note only on a dismiss, never at insert, frozen after (finding 5)", async () => {
+    const { client, contact, doc } = await setup();
+    const staff = await mkMember("staff");
+    const pay = await manualPayment(client);
+    await rejects(
+      run(
+        `INSERT INTO payment_notices (id, client_id, document_id, contact_id, via, amount_minor, currency, paid_on, reference, reference_norm, close_note)
+         VALUES (?1, ?2, ?3, ?4, 'portal', 1, 'INR', '2026-11-04', 'CN0', 'CN0', 'early')`,
+        uuidv7(),
+        client,
+        doc,
+        contact,
+      ),
+      /payment_notices_insert_state/,
+    );
+    // The length CHECK runs after the triggers, so it is shown with the insert-state rule dropped.
+    await withoutTrigger("payment_notices_insert_state", () =>
+      rejects(
+        run(
+          `INSERT INTO payment_notices (id, client_id, document_id, contact_id, via, amount_minor, currency, paid_on, reference, reference_norm, close_note)
+           VALUES (?1, ?2, ?3, ?4, 'portal', 1, 'INR', '2026-11-04', 'CN0', 'CN0', '')`,
+          uuidv7(),
+          client,
+          doc,
+          contact,
+        ),
+        /payment_notices_close_note_length/,
+      ),
+    );
+    const rec = uuidv7();
+    await insertNotice({ id: rec, clientId: client, documentId: doc, contactId: contact, reference: "CN1" });
+    const recordWithNote = () =>
+      run(
+        "UPDATE payment_notices SET status = 'recorded', payment_id = ?2, closed_by = ?3, closed_at = 2000, close_note = 'x' WHERE id = ?1",
+        rec,
+        pay,
+        staff,
+      );
+    await rejects(recordWithNote(), /payment_notices_status_flow/);
+    await withoutTrigger("payment_notices_status_flow", async () => {
+      const demo = uuidv7();
+      await insertNotice({
+        id: demo,
+        clientId: client,
+        documentId: doc,
+        contactId: contact,
+        reference: "CN9",
+      });
+      await run(
+        "UPDATE payment_notices SET status = 'recorded', payment_id = ?2, closed_by = ?3, closed_at = 2000, close_note = 'x' WHERE id = ?1",
+        demo,
+        pay,
+        staff,
+      );
+    });
+    const dis = uuidv7();
+    await insertNotice({ id: dis, clientId: client, documentId: doc, contactId: contact, reference: "CN2" });
+    await run(
+      "UPDATE payment_notices SET status = 'dismissed', closed_by = ?2, closed_at = 2000, close_note = 'Duplicate of an earlier notice' WHERE id = ?1",
+      dis,
+      staff,
+    );
+    for (const sql of ["close_note = 'other'", "close_note = NULL"])
+      await rejects(run(`UPDATE payment_notices SET ${sql} WHERE id = ?1`, dis), /payment_notices_fixed/);
+    await withoutTrigger("payment_notices_fixed", () =>
+      run("UPDATE payment_notices SET close_note = 'other' WHERE id = ?1", dis),
+    );
+  });
+
   it("status flow: recorded once with a payment of the client and currency, or dismissed once, with who and when", async () => {
     const { client, contact, doc } = await setup();
     const staff = await mkMember("staff");
@@ -530,11 +652,15 @@ describe("the writing triggers [run file A; the M6.2 pattern]", () => {
   it("a purged lead's request keeps its lead_ref, loses its lead_id, and the delete goes through (the brief's db test)", async () => {
     const lead = await mkLead();
     const id = uuidv7();
-    await insertRequest({ id, leadId: lead, kind: "data_erasure" });
+    await insertRequest({ id, leadId: lead, kind: "data_erasure", details: "Words of the enquirer" });
     await run("DELETE FROM leads WHERE id = ?1", lead);
-    expect(await first("SELECT lead_id, lead_ref, status FROM client_requests WHERE id = ?1", id)).toEqual({
+    // Early check 1 finding 4: the person's words go with the lead, as with a contact.
+    expect(
+      await first("SELECT lead_id, lead_ref, details, status FROM client_requests WHERE id = ?1", id),
+    ).toEqual({
       lead_id: null,
       lead_ref: lead,
+      details: null,
       status: "open",
     });
     // Without the unlink the purge would fail on the foreign key.
@@ -549,7 +675,7 @@ describe("the writing triggers [run file A; the M6.2 pattern]", () => {
     const client = await mkClientRow();
     const contact = await mkContact(client);
     const doc = await mkIssued(client);
-    const staff = await mkMember("staff");
+    const staff = await mkMember("owner");
     const open = uuidv7();
     const closed = uuidv7();
     const notice = uuidv7();

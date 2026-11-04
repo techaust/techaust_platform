@@ -304,20 +304,27 @@ export const paymentHasAdviceSql = (p: string): string =>
 export const VIEW_PAY_GRACE_MS_SQL = 2_592_000_000;
 
 /**
- * When document `d` (a documents alias) was last settled: the latest of its allocation rows' `created_at` and the freeze of any credit note against it (0 when
- * there is none). One seek of `payment_allocations_document` and one of `documents_parent`.
+ * When document `d` (a documents alias) was last settled: the latest of its allocation rows' `created_at`, the freeze of any credit note against it, and the
+ * freeze of any tax or export invoice issued from it (a proforma's money is on its tax invoice for the payment received, `parent_id` = the proforma: early check 1
+ * finding 2); 0 when there is none. One seek of `payment_allocations_document` and one of `documents_parent`.
  */
 export const settledAtSql = (d: string): string =>
   `max(coalesce((SELECT max(vpa.created_at) FROM payment_allocations vpa INDEXED BY payment_allocations_document WHERE vpa.document_id = ${d}.id), 0),
-       coalesce((SELECT max(vcn.frozen_at) FROM documents vcn INDEXED BY documents_parent WHERE vcn.parent_id = ${d}.id AND vcn.type = 'credit_note' AND vcn.frozen_at IS NOT NULL), 0))`;
+       coalesce((SELECT max(vcn.frozen_at) FROM documents vcn INDEXED BY documents_parent WHERE vcn.parent_id = ${d}.id AND vcn.type IN ('credit_note', 'tax_invoice', 'export_invoice') AND vcn.frozen_at IS NOT NULL), 0))`;
 
 /**
- * L12: the emailed "View & pay" link of document `d` still opens at `now` (an SQL expression, UTC ms): the document is not `paid` or `credited` (a refund moves it
- * back, M6.5 L1), or it was settled less than 30 days ago. The twin of core `viewPayLive(settledAt, now)` with `settledAt` from `settledAtSql` while the status is
- * `paid` or `credited`, else null.
+ * Document `d` is settled for L12: `paid` or `credited`, or a proforma `converted` with nothing left to pay (its last tax invoice for a payment received settled
+ * it; a part-paid converted proforma is still owed: early check 1 finding 2). A refund moves a document back out of these (M6.5 L1).
+ */
+export const viewPaySettledSql = (d: string): string =>
+  `(${d}.status IN ('paid', 'credited') OR (${d}.type = 'proforma' AND ${d}.status = 'converted' AND ${d}.balance_minor <= 0))`;
+
+/**
+ * L12: the emailed "View & pay" link of document `d` still opens at `now` (an SQL expression, UTC ms): the document is not settled (`viewPaySettledSql`), or it
+ * was settled less than 30 days ago. The twin of core `viewPayLive(settledAt, now)` with `settledAt` from `settledAtSql` while settled, else null.
  */
 export const viewPayLiveSql = (d: string, now: string): string =>
-  `(${d}.status NOT IN ('paid', 'credited') OR ${now} < ${settledAtSql(d)} + ${VIEW_PAY_GRACE_MS_SQL})`;
+  `(NOT ${viewPaySettledSql(d)} OR ${now} < ${settledAtSql(d)} + ${VIEW_PAY_GRACE_MS_SQL})`;
 
 /**
  * The start of the IST day of `now` (an SQL expression, UTC ms): the twin of core `fromIst(istDate(now))`. D1 binds a JavaScript number as REAL, so `now` is cast
@@ -333,9 +340,10 @@ export const istDayStartSql = (now: string): string =>
 export const REQUESTS_TODAY_SQL = (contact: string, now: string): string =>
   `(SELECT count(*) FROM client_requests rq INDEXED BY client_requests_contact WHERE rq.contact_id = ${contact} AND rq.created_at >= ${istDayStartSql(now)})`;
 
-/** Core `NOTICE_TYPES` and `NOTICE_OPEN_STATUSES` (a test pins them). */
+/** Core `NOTICE_TYPES`, `NOTICE_OPEN_STATUSES` and `NOTICE_PROFORMA_STATUSES` (a test pins them). */
 export const NOTICE_TYPES_SQL = "('tax_invoice', 'export_invoice', 'debit_note', 'proforma')";
 export const NOTICE_OPEN_STATUSES_SQL = "('issued', 'partially_paid', 'partially_credited')";
+export const NOTICE_PROFORMA_STATUSES_SQL = "('issued', 'converted')";
 
 /**
  * L10: why document `d` (a documents alias) can't take an "I've paid" notice, as core `noticeAllowed`'s reason code in the same order, or NULL when it can. The
@@ -343,12 +351,14 @@ export const NOTICE_OPEN_STATUSES_SQL = "('issued', 'partially_paid', 'partially
  */
 export const noticeRefusalSql = (d: string): string =>
   `(CASE WHEN ${withdrawnSql(d)} THEN 'withdrawn' WHEN ${d}.status = 'void' THEN 'void' WHEN ${d}.type = 'credit_note' THEN 'credit_note'
-     WHEN ${d}.type NOT IN ${NOTICE_TYPES_SQL} THEN 'not_payable_type' WHEN ${d}.type = 'proforma' AND ${d}.status <> 'issued' THEN 'proforma_not_issued'
-     WHEN ${d}.status = 'paid' THEN 'paid' WHEN ${d}.status NOT IN ${NOTICE_OPEN_STATUSES_SQL} THEN 'not_open' WHEN ${d}.balance_minor <= 0 THEN 'no_balance' END)`;
+     WHEN ${d}.type NOT IN ${NOTICE_TYPES_SQL} THEN 'not_payable_type' WHEN ${d}.type = 'proforma' AND ${d}.status NOT IN ${NOTICE_PROFORMA_STATUSES_SQL} THEN 'proforma_not_issued'
+     WHEN ${d}.status = 'paid' THEN 'paid' WHEN ${d}.type <> 'proforma' AND ${d}.status NOT IN ${NOTICE_OPEN_STATUSES_SQL} THEN 'not_open'
+     WHEN ${d}.balance_minor IS NULL OR ${d}.balance_minor <= 0 THEN 'no_balance' END)`;
 
 /**
  * L10 (C15): core `paidNoticeVerdict` over SQL expressions (the amount and the balance in minor units, the ISO days paid, of issue and of today in IST): `ok`, or
- * the first refusal in core's order. An issue day that is NULL refuses (`date_before_issue`), so a document without one never takes a notice.
+ * the first refusal in core's order. A NULL amount, balance or day paid refuses (early check 1 finding 7), and an issue day that is NULL refuses
+ * (`date_before_issue`), so a document without one never takes a notice.
  */
 export const paidNoticeVerdictSql = (
   amount: string,
@@ -357,5 +367,5 @@ export const paidNoticeVerdictSql = (
   issueDate: string,
   today: string,
 ): string =>
-  `(CASE WHEN ${amount} > ${balance} THEN 'amount_above_balance' WHEN ${paidOn} > ${today} THEN 'date_in_future'
+  `(CASE WHEN ${amount} IS NULL OR ${balance} IS NULL OR ${amount} > ${balance} THEN 'amount_above_balance' WHEN ${paidOn} IS NULL OR ${paidOn} > ${today} THEN 'date_in_future'
      WHEN ${issueDate} IS NULL OR ${paidOn} < ${issueDate} THEN 'date_before_issue' ELSE 'ok' END)`;

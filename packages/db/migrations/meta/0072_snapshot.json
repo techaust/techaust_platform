@@ -1,6 +1,6 @@
 {
-  "id": "86456e3a-6a65-48ce-874a-1fbc4e364857",
-  "prevId": "efa56f86-716c-4758-b5d6-8ff11b7bd8a5",
+  "id": "0aa34937-df0f-4534-a25b-7ce1a5effe3c",
+  "prevId": "dd32c0d9-e954-40bd-a067-d34b4b96413c",
   "version": "6",
   "dialect": "sqlite",
   "tables": {
@@ -9375,7 +9375,7 @@
         },
         "client_requests_contact": {
           "name": "client_requests_contact",
-          "columns": ["contact_id", "created_at"],
+          "columns": ["contact_id", "created_at", "id"],
           "isUnique": false
         },
         "client_requests_lead": {
@@ -9557,6 +9557,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "close_note": {
+          "name": "close_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -9585,7 +9592,7 @@
         },
         "payment_notices_client": {
           "name": "payment_notices_client",
-          "columns": ["client_id", "created_at"],
+          "columns": ["client_id", "created_at", "id"],
           "isUnique": false
         },
         "payment_notices_contact": {
@@ -9670,6 +9677,10 @@
         "payment_notices_note_length": {
           "name": "payment_notices_note_length",
           "value": "\"payment_notices\".\"note\" is null or length(\"payment_notices\".\"note\") between 1 and 300"
+        },
+        "payment_notices_close_note_length": {
+          "name": "payment_notices_close_note_length",
+          "value": "\"payment_notices\".\"close_note\" is null or length(\"payment_notices\".\"close_note\") between 1 and 300"
         }
       }
     },

@@ -68,6 +68,14 @@ describe("noticeAllowed [L10]", () => {
     for (const status of NOTICE_OPEN_STATUSES) expect(noticeAllowed(doc({ status }))).toEqual({ ok: true });
   });
 
+  it("accepts a converted proforma with a balance left (early check 1 finding 1: part-paid through its first advance invoice)", () => {
+    expect(noticeAllowed(doc({ type: "proforma", status: "converted", balanceMinor: 1 }))).toEqual({
+      ok: true,
+    });
+    // An invoice is never `converted`.
+    expect(noticeAllowed(doc({ status: "converted" }))).toEqual({ ok: false, reason: "not_open" });
+  });
+
   it.each([
     [{ type: "proforma", status: "void", withdrawn: true }, "withdrawn"],
     [{ status: "void" }, "void"],
@@ -75,7 +83,8 @@ describe("noticeAllowed [L10]", () => {
     [{ type: "credit_note" }, "credit_note"],
     [{ type: "proposal" }, "not_payable_type"],
     [{ type: "receipt" }, "not_payable_type"],
-    [{ type: "proforma", status: "converted" }, "proforma_not_issued"],
+    [{ type: "proforma", status: "converted", balanceMinor: 0 }, "no_balance"],
+    [{ type: "proforma", status: "paid" }, "proforma_not_issued"],
     [{ type: "proforma", status: "draft" }, "proforma_not_issued"],
     [{ status: "paid", balanceMinor: 0 }, "paid"],
     [{ status: "credited", balanceMinor: 0 }, "not_open"],
@@ -132,6 +141,8 @@ describe("paidNoticeVerdict [L10, C15]", () => {
     // A broken number fails closed.
     expect(paidNoticeVerdict({ ...v, amountMinor: 0.5 })).toBe("amount_above_balance");
     expect(paidNoticeVerdict({ ...v, balanceMinor: Number.NaN })).toBe("amount_above_balance");
+    // A missing day fails closed too (the SQL twin's NULL arm).
+    expect(paidNoticeVerdict({ ...v, paidOn: null as unknown as string })).toBe("date_in_future");
   });
 });
 

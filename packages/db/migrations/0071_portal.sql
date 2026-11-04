@@ -29,7 +29,7 @@ CREATE TABLE `client_requests` (
 CREATE INDEX `client_requests_client` ON `client_requests` (`client_id`,`created_at`,`id`);--> statement-breakpoint
 CREATE INDEX `client_requests_status` ON `client_requests` (`status`,`created_at`,`id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `client_requests_open_kind` ON `client_requests` (`contact_id`,`kind`) WHERE "client_requests"."status" = 'open';--> statement-breakpoint
-CREATE INDEX `client_requests_contact` ON `client_requests` (`contact_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `client_requests_contact` ON `client_requests` (`contact_id`,`created_at`,`id`);--> statement-breakpoint
 CREATE INDEX `client_requests_lead` ON `client_requests` (`lead_id`) WHERE "client_requests"."lead_id" is not null;--> statement-breakpoint
 CREATE TABLE `payment_notices` (
 	`id` text PRIMARY KEY NOT NULL,
@@ -47,6 +47,7 @@ CREATE TABLE `payment_notices` (
 	`payment_id` text,
 	`closed_by` text,
 	`closed_at` integer,
+	`close_note` text,
 	`created_at` integer DEFAULT (cast(unixepoch('subsec') * 1000 as integer)) NOT NULL,
 	FOREIGN KEY (`client_id`) REFERENCES `clients`(`id`) ON UPDATE no action ON DELETE no action,
 	FOREIGN KEY (`document_id`) REFERENCES `documents`(`id`) ON UPDATE no action ON DELETE no action,
@@ -57,13 +58,14 @@ CREATE TABLE `payment_notices` (
 	CONSTRAINT "payment_notices_currency" CHECK("payment_notices"."currency" in ('INR', 'USD')),
 	CONSTRAINT "payment_notices_paid_on" CHECK(date("payment_notices"."paid_on") IS "payment_notices"."paid_on"),
 	CONSTRAINT "payment_notices_reference_length" CHECK(length("payment_notices"."reference") between 1 and 64 and length("payment_notices"."reference_norm") between 1 and 60),
-	CONSTRAINT "payment_notices_note_length" CHECK("payment_notices"."note" is null or length("payment_notices"."note") between 1 and 300)
+	CONSTRAINT "payment_notices_note_length" CHECK("payment_notices"."note" is null or length("payment_notices"."note") between 1 and 300),
+	CONSTRAINT "payment_notices_close_note_length" CHECK("payment_notices"."close_note" is null or length("payment_notices"."close_note") between 1 and 300)
 );
 --> statement-breakpoint
 CREATE INDEX `payment_notices_document` ON `payment_notices` (`document_id`,`status`);--> statement-breakpoint
 CREATE INDEX `payment_notices_status` ON `payment_notices` (`status`,`created_at`,`id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `payment_notices_open_reference` ON `payment_notices` (`document_id`,`reference_norm`) WHERE "payment_notices"."status" = 'open';--> statement-breakpoint
-CREATE INDEX `payment_notices_client` ON `payment_notices` (`client_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `payment_notices_client` ON `payment_notices` (`client_id`,`created_at`,`id`);--> statement-breakpoint
 CREATE INDEX `payment_notices_contact` ON `payment_notices` (`contact_id`) WHERE "payment_notices"."contact_id" is not null;--> statement-breakpoint
 CREATE INDEX `payment_notices_payment` ON `payment_notices` (`payment_id`) WHERE "payment_notices"."payment_id" is not null;--> statement-breakpoint
 CREATE INDEX `files_shared_project` ON `files` (`project_id`,`created_at`,`id`) WHERE "files"."shared" = 1;--> statement-breakpoint

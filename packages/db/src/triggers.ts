@@ -2275,6 +2275,8 @@ export const REQUEST_STATUSES_0072 = ["open", "closed"] as const;
 export const REQUEST_OUTCOMES_0072 = ["done", "declined"] as const;
 export const NOTICE_VIAS_0072 = ["portal", "link"] as const;
 export const NOTICE_STATUSES_0072 = ["open", "recorded", "dismissed"] as const;
+/** Core `STAFF_CLOSE_KINDS`: the only kinds a request closed by anyone but an active Owner may be of (`client_requests_owner_close`, early check 1 finding 3). */
+export const STAFF_CLOSE_KINDS_0072 = ["contact_change", "grievance"] as const;
 
 /**
  * M7.1 full client portal (POR-09, POR-11, ADM-PAY-05; run file docs/runs/m7.1-portal.md A, L8, L10): the trigger set `client_portal_triggers` (the name
@@ -2283,12 +2285,15 @@ export const NOTICE_STATUSES_0072 = ["open", "recorded", "dismissed"] as const;
  *      and outcome values; the insert state (open, nothing closed; `lead_ref IS lead_id` and `contact_ref IS contact_id`, NULL-safe, round 4; the contact one of
  *      the request's client); the status flow (open → closed once, with its outcome, who and when; an open request has none of them); the fixed columns (`id`,
  *      `client_id`, `kind`, `lead_ref`, `contact_ref`, `created_at`, and the close once made; `lead_id`, `contact_id` and `details` change only to NULL, so a
- *      request about lead or contact A can never be closed against B's audit row); never deleted (M7.4 re-creates the delete rule with its retention floor);
+ *      request about lead or contact A can never be closed against B's audit row; the close note only becomes empty after the close); only an active Owner closes a
+ *      request of a kind outside Staff's allow-list (`client_requests_owner_close`, early check 1 finding 3); never deleted (M7.4 re-creates the delete rule
+ *      with its retention floor);
  *   2. `payment_notices`: the values; the insert state (open, from a contact, nothing closed); the document is the notice's client's, in its currency, and the
- *      contact is that client's; the status flow (open → recorded, with a payment of the same client and currency, or → dismissed, once, with who and when);
- *      the fixed columns (the facts the client gave, and the close once made; `contact_id` and `note` change only to NULL); never deleted;
+ *      contact is that client's, and the document is issued (frozen, finding 8); the status flow (open → recorded, with a payment of the same client and currency,
+ *      or → dismissed, once, with who and when; a close note only on a dismiss, finding 5); the fixed columns (the facts the client gave, and the close once
+ *      made; `contact_id` and `note` change only to NULL); never deleted;
  *   3. the writing triggers (the M6.2 pattern, accepted at its early check 2: they fire only on a deleted or anonymised parent row, can't loop, and add no
- *      statement to the anonymise batch, T7's limit of 45): `client_requests_unlink_lead` (BEFORE DELETE ON `leads`: `lead_id` → NULL, `lead_ref` kept, so
+ *      statement to the anonymise batch, T7's limit of 45): `client_requests_unlink_lead` (BEFORE DELETE ON `leads`: `lead_id` → NULL and the words, `details`, cleared (finding 4); `lead_ref` kept, so
  *      the nightly purge and M7.4's lead erase never meet a foreign-key or CHECK failure); `client_requests_unlink_contact` and
  *      `payment_notices_unlink_contact` (BEFORE DELETE ON `contacts`: `contact_id` → NULL and the person's own words, `details` / `note`, cleared;
  *      `contact_ref` kept); `client_requests_erase_details` and `payment_notices_erase_note` (AFTER the anonymising UPDATE of `contacts`: the same words
@@ -2315,14 +2320,18 @@ export function clientPortalTriggerStatements(): string[] {
     OR (NEW.status = 'open' AND (NEW.outcome IS NOT NULL OR NEW.closed_by IS NOT NULL OR NEW.closed_at IS NOT NULL OR NEW.close_note IS NOT NULL))`;
   const requestFixedBad = `${changed(["id", "client_id", "kind", "lead_ref", "contact_ref", "requester_email", "created_at"])}
     OR ${onlyToNull(["lead_id", "contact_id", "details"])}
-    OR (OLD.status = 'closed' AND (${changed(["outcome", "closed_by", "closed_at", "close_note"])}))
+    OR (OLD.status = 'closed' AND (${changed(["outcome", "closed_by", "closed_at"])} OR ${onlyToNull(["close_note"])}))
     OR NEW.updated_at < OLD.updated_at`;
+  // Early check 1 finding 3: only an active Owner closes a request of a kind outside Staff's allow-list (the data-rights kinds and anything M7.4 adds), whatever
+  // the route sent (the `care_auto_issue_by` precedent).
+  const ownerCloseBad = `OLD.status = 'open' AND NEW.status = 'closed' AND NEW.kind NOT IN (${q(STAFF_CLOSE_KINDS_0072)})
+    AND NOT EXISTS (SELECT 1 FROM staff_users o WHERE o.id = NEW.closed_by AND o.role = 'owner' AND o.status = 'active')`;
   // 2. payment_notices
   const noticeValuesBad = `NEW.via NOT IN (${q(NOTICE_VIAS_0072)}) OR NEW.status NOT IN (${q(NOTICE_STATUSES_0072)})`;
   const noticeValuesMsg = "a payment notice has a known channel and status";
   const noticeInsertBad =
-    "NOT (NEW.status = 'open' AND NEW.contact_id IS NOT NULL AND NEW.payment_id IS NULL AND NEW.closed_by IS NULL AND NEW.closed_at IS NULL)";
-  const noticeDocumentBad = `NOT EXISTS (SELECT 1 FROM documents nd WHERE nd.id = NEW.document_id AND nd.client_id = NEW.client_id AND nd.currency = NEW.currency)
+    "NOT (NEW.status = 'open' AND NEW.contact_id IS NOT NULL AND NEW.payment_id IS NULL AND NEW.closed_by IS NULL AND NEW.closed_at IS NULL AND NEW.close_note IS NULL)";
+  const noticeDocumentBad = `NOT EXISTS (SELECT 1 FROM documents nd WHERE nd.id = NEW.document_id AND nd.client_id = NEW.client_id AND nd.currency = NEW.currency AND nd.frozen_at IS NOT NULL)
     OR NOT ${contactOfClient("NEW.client_id")}`;
   const noticePaymentOk =
     "EXISTS (SELECT 1 FROM payments np WHERE np.id = NEW.payment_id AND np.client_id = OLD.client_id AND np.currency = OLD.currency)";
@@ -2330,10 +2339,11 @@ export function clientPortalTriggerStatements(): string[] {
     OR (NEW.status = 'recorded' AND NOT ${noticePaymentOk})
     OR (NEW.status <> 'recorded' AND NEW.payment_id IS NOT NULL)
     OR (NEW.status <> 'open' AND (NEW.closed_by IS NULL OR NEW.closed_at IS NULL))
-    OR (NEW.status = 'open' AND (NEW.closed_by IS NOT NULL OR NEW.closed_at IS NOT NULL))`;
+    OR (NEW.status = 'open' AND (NEW.closed_by IS NOT NULL OR NEW.closed_at IS NOT NULL))
+    OR (NEW.status <> 'dismissed' AND NEW.close_note IS NOT NULL)`;
   const noticeFixedBad = `${changed(["id", "client_id", "document_id", "via", "amount_minor", "currency", "paid_on", "reference", "reference_norm", "created_at"])}
     OR ${onlyToNull(["contact_id", "note"])}
-    OR (OLD.status <> 'open' AND (${changed(["status", "payment_id", "closed_by", "closed_at"])}))`;
+    OR (OLD.status <> 'open' AND (${changed(["status", "payment_id", "closed_by", "closed_at", "close_note"])}))`;
   return [
     `CREATE TRIGGER \`client_requests_kind\` BEFORE INSERT ON \`client_requests\` WHEN ${kindBad} BEGIN ${named("client_requests_kind", "a request is of a known kind")} END;`,
     `CREATE TRIGGER \`client_requests_values_insert\` BEFORE INSERT ON \`client_requests\` WHEN ${requestValuesBad} BEGIN ${named("client_requests_values_insert", requestValuesMsg)} END;`,
@@ -2341,6 +2351,7 @@ export function clientPortalTriggerStatements(): string[] {
     `CREATE TRIGGER \`client_requests_insert_state\` BEFORE INSERT ON \`client_requests\` WHEN ${requestInsertBad} BEGIN ${named("client_requests_insert_state", "a request starts open with nothing closed, its lead and contact refs equal to its lead and contact, and its contact one of its client")} END;`,
     `CREATE TRIGGER \`client_requests_status_flow\` BEFORE UPDATE ON \`client_requests\` WHEN ${requestFlowBad} BEGIN ${named("client_requests_status_flow", "a request is closed once, with its outcome, who closed it and when; an open request has none of them")} END;`,
     `CREATE TRIGGER \`client_requests_fixed\` BEFORE UPDATE ON \`client_requests\` WHEN ${requestFixedBad} BEGIN ${named("client_requests_fixed", "a request keeps its client, kind, refs, address and time; its lead, contact and details only become empty; a close never changes")} END;`,
+    `CREATE TRIGGER \`client_requests_owner_close\` BEFORE UPDATE OF status ON \`client_requests\` WHEN ${ownerCloseBad} BEGIN ${named("client_requests_owner_close", "only an active Owner closes a request of a data-rights kind or of any kind outside the Staff list")} END;`,
     `CREATE TRIGGER \`client_requests_no_delete\` BEFORE DELETE ON \`client_requests\` BEGIN ${named("client_requests_no_delete", "a request is never deleted")} END;`,
     `CREATE TRIGGER \`payment_notices_values_insert\` BEFORE INSERT ON \`payment_notices\` WHEN ${noticeValuesBad} BEGIN ${named("payment_notices_values_insert", noticeValuesMsg)} END;`,
     `CREATE TRIGGER \`payment_notices_values_update\` BEFORE UPDATE OF via, status ON \`payment_notices\` WHEN ${noticeValuesBad} BEGIN ${named("payment_notices_values_update", noticeValuesMsg)} END;`,
@@ -2350,7 +2361,7 @@ export function clientPortalTriggerStatements(): string[] {
     `CREATE TRIGGER \`payment_notices_fixed\` BEFORE UPDATE ON \`payment_notices\` WHEN ${noticeFixedBad} BEGIN ${named("payment_notices_fixed", "a payment notice keeps the facts the client gave; its contact and note only become empty; a close never changes")} END;`,
     `CREATE TRIGGER \`payment_notices_no_delete\` BEFORE DELETE ON \`payment_notices\` BEGIN ${named("payment_notices_no_delete", "a payment notice is never deleted")} END;`,
     // 3. the writing triggers
-    "CREATE TRIGGER `client_requests_unlink_lead` BEFORE DELETE ON `leads` BEGIN UPDATE client_requests SET lead_id = NULL WHERE lead_id = OLD.id; END;",
+    "CREATE TRIGGER `client_requests_unlink_lead` BEFORE DELETE ON `leads` BEGIN UPDATE client_requests SET lead_id = NULL, details = NULL WHERE lead_id = OLD.id; END;",
     "CREATE TRIGGER `client_requests_unlink_contact` BEFORE DELETE ON `contacts` BEGIN UPDATE client_requests SET contact_id = NULL, details = NULL WHERE contact_id = OLD.id; END;",
     "CREATE TRIGGER `payment_notices_unlink_contact` BEFORE DELETE ON `contacts` BEGIN UPDATE payment_notices SET contact_id = NULL, note = NULL WHERE contact_id = OLD.id; END;",
     "CREATE TRIGGER `client_requests_erase_details` AFTER UPDATE OF anonymised_at ON `contacts` WHEN NEW.anonymised_at IS NOT NULL AND OLD.anonymised_at IS NULL BEGIN UPDATE client_requests SET details = NULL WHERE contact_id = NEW.id AND details IS NOT NULL; END;",

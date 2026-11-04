@@ -6,6 +6,7 @@ import { env } from "cloudflare:workers";
 import { fromIst, istDate, uuidv7 } from "@techaust/core";
 import {
   NOTICE_OPEN_STATUSES,
+  NOTICE_PROFORMA_STATUSES,
   NOTICE_TYPES,
   noticeAllowed,
   paidNoticeVerdict,
@@ -24,6 +25,7 @@ import {
 import {
   istDayStartSql,
   NOTICE_OPEN_STATUSES_SQL,
+  NOTICE_PROFORMA_STATUSES_SQL,
   NOTICE_TYPES_SQL,
   noticeRefusalSql,
   paidNoticeVerdictSql,
@@ -45,6 +47,7 @@ describe("the pinned lists", () => {
     const q = (xs: readonly string[]) => `(${xs.map((x) => `'${x}'`).join(", ")})`;
     expect(NOTICE_TYPES_SQL).toBe(q(NOTICE_TYPES));
     expect(NOTICE_OPEN_STATUSES_SQL).toBe(q(NOTICE_OPEN_STATUSES));
+    expect(NOTICE_PROFORMA_STATUSES_SQL).toBe(q(NOTICE_PROFORMA_STATUSES));
     expect(VIEW_PAY_GRACE_MS_SQL).toBe(VIEW_PAY_GRACE_MS);
   });
 });
@@ -107,6 +110,14 @@ describe("noticeRefusalSql is core noticeAllowed [L10]", () => {
     await mkSend(proforma, client, contact, { createdBy: owner });
     expect(await reason(proforma)).toBeNull();
     expect(await reason(await mkIssued(client, { status: "paid", balance: 0 }))).toBe("paid");
+    // Early check 1 finding 1: a proforma stays `converted` with a balance after its first advance invoice, and still takes a notice; with nothing left it
+    // doesn't.
+    expect(
+      await reason(await mkIssued(client, { type: "proforma", status: "converted", balance: 50_000 })),
+    ).toBeNull();
+    expect(await reason(await mkIssued(client, { type: "proforma", status: "converted", balance: 0 }))).toBe(
+      "no_balance",
+    );
   });
 });
 
@@ -139,6 +150,29 @@ describe("paidNoticeVerdictSql is core paidNoticeVerdict [C15]", () => {
         )
       )?.v,
     ).toBe("date_before_issue");
+    // Early check 1 finding 7: a NULL amount or day paid fails closed, as core does with a broken number or day.
+    const nullCases = [
+      [
+        ["NULL", "5", "'2026-11-01'", "'2026-10-01'", "'2026-11-02'"],
+        { amountMinor: Number.NaN, paidOn: "2026-11-01" },
+      ],
+      [
+        ["1", "5", "NULL", "'2026-10-01'", "'2026-11-02'"],
+        { amountMinor: 1, paidOn: null as unknown as string },
+      ],
+    ] as const;
+    for (const [args, c] of nullCases) {
+      const row = await first<{ v: string }>(`SELECT ${paidNoticeVerdictSql(...args)} AS v`);
+      expect(row?.v).toBe(
+        paidNoticeVerdict({ ...c, balanceMinor: 5, issueDate: "2026-10-01", todayIst: "2026-11-02" }),
+      );
+    }
+    expect((await first<{ v: string }>(`SELECT ${paidNoticeVerdictSql(...nullCases[0][0])} AS v`))?.v).toBe(
+      "amount_above_balance",
+    );
+    expect((await first<{ v: string }>(`SELECT ${paidNoticeVerdictSql(...nullCases[1][0])} AS v`))?.v).toBe(
+      "date_in_future",
+    );
   });
 });
 
@@ -227,6 +261,30 @@ describe("viewPayLiveSql is core viewPayLive [L12]", () => {
     );
     const r = await live(doc, t + 365 * DAY);
     expect(r).toEqual({ live: 1, settled: t, status: "partially_paid" });
+    expect(viewPayLive(null, t + 365 * DAY)).toBe(true);
+  });
+
+  it("a proforma settled through its tax invoices (finding 2): converted with nothing left ends 30 days after the last child invoice; part-paid stays live", async () => {
+    const client = await mkClientRow();
+    const t = 1_870_000_000_000;
+    const settled = await mkIssued(client, { type: "proforma", status: "converted", balance: 0 });
+    await mkIssued(client, { type: "tax_invoice", parentId: settled, frozenAt: t - 5 * DAY });
+    await mkIssued(client, { type: "tax_invoice", parentId: settled, frozenAt: t });
+    for (const [now, want] of [
+      [t + 29 * DAY, 1],
+      [t + 30 * DAY - 1, 1],
+      [t + 30 * DAY, 0],
+      [t + 31 * DAY, 0],
+    ] as const) {
+      const r = await live(settled, now);
+      expect(r.settled).toBe(t);
+      expect(r.live).toBe(want);
+      expect(viewPayLive(r.settled, now)).toBe(want === 1);
+    }
+    const partPaid = await mkIssued(client, { type: "proforma", status: "converted", balance: 10_000 });
+    await mkIssued(client, { type: "tax_invoice", parentId: partPaid, frozenAt: t });
+    const r = await live(partPaid, t + 365 * DAY);
+    expect(r.live).toBe(1);
     expect(viewPayLive(null, t + 365 * DAY)).toBe(true);
   });
 
@@ -409,12 +467,21 @@ describe("portal-shared [POR-04, POR-08]: inside the client, on the M7.1 indexes
     expect(
       await plan("SELECT id FROM payment_notices WHERE status = 'open' ORDER BY created_at, id LIMIT 50"),
     ).toMatch(/payment_notices_status/);
-    expect(
-      await plan(
-        "SELECT id FROM payment_notices WHERE client_id = ?1 ORDER BY created_at DESC LIMIT 50",
-        "c",
-      ),
-    ).toMatch(/payment_notices_client/);
+    // Early check 1 finding 6: the client and contact keysets end in the id, so the order by (created_at, id) needs no temporary sort.
+    for (const [sql, index] of [
+      [
+        "SELECT id FROM payment_notices WHERE client_id = ?1 AND (created_at, id) < (?2, ?3) ORDER BY created_at DESC, id DESC LIMIT 50",
+        /payment_notices_client/,
+      ],
+      [
+        "SELECT id FROM client_requests WHERE contact_id = ?1 AND (created_at, id) < (?2, ?3) ORDER BY created_at DESC, id DESC LIMIT 50",
+        /client_requests_contact/,
+      ],
+    ] as const) {
+      const p = await plan(sql, "c", 1, "x");
+      expect(p, p).toMatch(index);
+      expect(p, p).not.toMatch(/TEMP B-TREE/);
+    }
     expect(await plan("UPDATE client_requests SET lead_id = NULL WHERE lead_id = ?1", "l")).toMatch(
       /client_requests_lead/,
     );
