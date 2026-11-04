@@ -81,7 +81,8 @@ if (site.founderPhoto && !headshot)
             site.linkedinFounder ? (
               <p>
                 <ExternalLink class="founder__link" href={site.linkedinFounder}>
-                  {shell.footer.linkedinFounder}
+                  <Icon name="linkedin-box" />
+                  <span>{shell.footer.linkedinFounder}</span>
                 </ExternalLink>
               </p>
             ) : (
@@ -188,7 +189,8 @@ if (site.founderPhoto && !headshot)
   .founder :global(.founder__link) {
     display: inline-flex;
     align-items: center;
-    gap: var(--space-1);
+    /* The LinkedIn line icon, the words and the new-tab arrow (as the footer's contact rows). */
+    gap: var(--space-2);
     min-block-size: var(--target-min);
     font-weight: 600;
   }

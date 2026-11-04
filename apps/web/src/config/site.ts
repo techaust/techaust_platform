@@ -26,7 +26,7 @@ export const site = {
    */
   phone: { display: "+91 98830 23931", dial: "+919883023931" } as { display: string; dial: string },
   /** OWNER: LinkedIn company page URL. Empty = hidden. */
-  linkedinCompany: "",
+  linkedinCompany: "https://www.linkedin.com/company/techaust-technologies" as string,
   /** OWNER: founder's LinkedIn URL. Empty = hidden. */
   linkedinFounder: "https://www.linkedin.com/in/r4rupak1997",
   /** OWNER: Cal.com booking URL. When set, "Book a Discovery Sprint" goes there (owner, 2026-10-22). */
@@ -45,7 +45,7 @@ export const site = {
    * 1200 px tall, 4:5). The build makes AVIF and WebP copies through astro:assets (WEB-G-13); a name with no file fails the
    * build. Empty = the About page shows a placeholder.
    */
-  founderPhoto: "" as string,
+  founderPhoto: "founder.jpg" as string,
   /** OWNER: founder's short bio (About, 07 §5.7). Empty = placeholder. */
   founderBio: "" as string,
   /**

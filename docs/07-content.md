@@ -90,7 +90,7 @@
   - **Help:** Contact · Get a quote · Security · Cookie settings
 - **Contact block:** contact@techaust.com · the phone **+91 98830 23931** (a `tel:` link; "Phone" for screen readers, owner 2026-11-01) with the hours under it · WhatsApp (the chat link, number 919883023931) with the hours under it · Balurghat, West Bengal, India. The hours show in the visitor's own clock (§1 "Times").
 - **Phone, written form** (owner, 2026-11-01): always **"+91 98830 23931"** wherever it is shown or printed (footer, contact page, business card, letterhead); dialled as `+919883023931` (`tel:` links and the organisation's structured data).
-- **Social:** LinkedIn (company) 🟧 OWNER URL. The footer shows company links only (owner, 2026-10-23); the founder's LinkedIn is on About only
+- **Social:** LinkedIn (company) ✅ `https://www.linkedin.com/company/techaust-technologies` (2026-11-04). The footer shows company links only (owner, 2026-10-23); the founder's LinkedIn is on About only
 - **Legal row:** © {{year}} TecHaust Technologies · Privacy · Terms · Refunds and cancellations · Delivery policy · Cookies · Accessibility
 
 ### 2.3 Standard CTA labels (use exactly these; audit M-9)
@@ -465,7 +465,7 @@ _Card labels, each page's problems, tools and FAQs, and the hub's closing line: 
 - **Meta:** "About TecHaust Technologies | Senior software studio, India" · "A small senior software and AI automation studio in Balurghat, West Bengal, working with clients across India and abroad."
 - **H1:** "A small senior team, by design"
 - **Story (draft, 🟧 OWNER reviews):** "TecHaust Technologies is a software and AI automation studio in Balurghat, West Bengal. We've delivered 20+ projects (business web apps, SaaS products, automations and mobile apps) for clients in India and abroad. We stay deliberately small: a few senior people who build carefully, explain clearly, and look after what they ship."
-- **Founder:** headshot 🟧 OWNER · "**Rupak Sarkar**, Founder" · bio 🟧 OWNER (≈ 80–120 words) · LinkedIn link ✅ (2026-10-23)
+- **Founder:** headshot ✅ (2026-11-04) · "**Rupak Sarkar**, Founder" · bio 🟧 OWNER (≈ 80–120 words) · LinkedIn link ✅ (2026-10-23)
 - **The team:** "Alongside the founder, a small team of senior engineers and designers, each with 10+ years' experience across web, mobile, AI and automation. We bring in trusted specialists, such as security testers and legal partners, when a project needs them." (No names or photos until each person agrees.)
 - **What we value:** "Say what we'll do, then do it" · "Fixed prices, written scope" · "Senior people on every project" · "Honest numbers" · "Look after what we build"
 - **Where we are:** "Balurghat, West Bengal, India. We work remotely with clients everywhere, and visit in India when it helps."
@@ -575,9 +575,9 @@ _Card labels, each page's problems, tools and FAQs, and the hub's closing line: 
 | Asset / input | Used on | Status |
 |---|---|---|
 | Logo | Everywhere; PDFs; email; favicon | ✅ New identity "Patina" approved 2026-10-06; files in `packages/ui/brand/` ([06 §1](06-design-system.md)). The supplied `TecHaust.ai` logo is retired. |
-| Founder headshot (≥ 1200 px, plain background) | About, blog author, OG | 🟧 OWNER: on hold, a new iPhone photo to come (2026-10-23); none used until then |
+| Founder headshot (≥ 1200 px, plain background) | About, blog author, OG | ✅ 2026-11-04: the owner's photo, background and light edited, chosen by the owner; `apps/web/src/assets/founder/founder.jpg` (1122 × 1402, 4:5; the About frame uses up to 1056 px) |
 | Founder bio (80–120 words) + LinkedIn URL | About, blog | Bio 🟧 OWNER sends facts, the lead drafts, the owner approves · LinkedIn ✅ `https://www.linkedin.com/in/r4rupak1997` (2026-10-23) |
-| TecHaust LinkedIn company page URL | Footer, schema `sameAs` | 🟧 OWNER |
+| TecHaust LinkedIn company page URL | Footer, schema `sameAs` | ✅ `https://www.linkedin.com/company/techaust-technologies` (2026-11-04) |
 | WhatsApp business number | Contact, footer, thanks, CTA bands | ✅ 2026-11-01: +91 98830 23931 (registered, on WhatsApp Business; also the company phone, `site.whatsapp` and `site.phone`) |
 | Full postal address (for Contact + legal pages only) | Contact, privacy, terms, refund, delivery | ✅ 2026-10-23 (`site.postalAddress`); confirm it matches the GST certificate word for word (VERIFY WITH CA/LEGAL) |
 | Cal.com booking URL | Contact, thanks, acknowledgement email | 🟧 OWNER (create a free account) |

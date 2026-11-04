@@ -25,8 +25,6 @@ const year = new Date().getFullYear();
 const wa = site.whatsapp ? `https://wa.me/${site.whatsapp}` : "";
 /** "Phone" (owner, 2026-11-01): the icon says it on screen, this says it to assistive technology. */
 const phoneLabel = contactPage.panel.phone;
-// No empty list when neither LinkedIn URL is set (the build today).
-const showSocial = placeholders || Boolean(site.linkedinCompany);
 const columns = [
   { title: c.services.title, links: c.services.links },
   { title: c.industries.title, links: shell.industriesMenu },
@@ -72,16 +70,14 @@ const columns = [
             </li>
           )
         }
-        <li class="site-footer__place">
-          <Icon name="map-pin" />
-          <span>{site.locality}</span>
-        </li>
-      </ul>
-      {showSocial && <ul role="list" class="site-footer__social">
         {
+          /* The company's LinkedIn: one more way to reach us, after WhatsApp and before the address (owner, 2026-11-05). */
           site.linkedinCompany ? (
             <li>
-              <ExternalLink href={site.linkedinCompany}>{f.linkedinCompany}</ExternalLink>
+              <ExternalLink href={site.linkedinCompany}>
+                <Icon name="linkedin-box" />
+                <span>{f.linkedinCompany}</span>
+              </ExternalLink>
             </li>
           ) : (
             placeholders && (
@@ -91,7 +87,11 @@ const columns = [
             )
           )
         }
-</ul>}
+        <li class="site-footer__place">
+          <Icon name="map-pin" />
+          <span>{site.locality}</span>
+        </li>
+      </ul>
     </div>
 
     <nav class="site-footer__nav" aria-label={draft.footerNav}>
@@ -229,16 +229,14 @@ const columns = [
     text-wrap: pretty;
   }
 
-  .site-footer__contact,
-  .site-footer__social {
+  .site-footer__contact {
     display: grid;
     gap: var(--space-1);
   }
 
   /* :global(a): external links are rendered by ExternalLink.astro, outside this file’s style scope. */
   .site-footer__contact :global(a),
-  .site-footer__place,
-  .site-footer__social :global(a) {
+  .site-footer__place {
     display: inline-flex;
     align-items: center;
     gap: var(--space-3);
@@ -266,15 +264,6 @@ const columns = [
   /* "+91 98830 23931" never breaks inside (375 px included). */
   .site-footer__number {
     white-space: nowrap;
-  }
-
-  .site-footer__social {
-    margin-block-start: calc(-1 * var(--space-4));
-  }
-
-  .site-footer__social :global(a) {
-    gap: var(--space-2);
-    --ext-link-gap: var(--space-2);
   }
 
   .site-footer__nav {
