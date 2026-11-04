@@ -1,9 +1,11 @@
 // The M6.2 CPU items in the admin Workers (CPU diagnosis, lead decisions 1, 2 and 4): the router warm-up matches every row each Worker answers (the counts are
 // pinned to the route table), the per-isolate settings cache resolves a row once per exact stored text and version and hands out frozen values, and the
 // first-run marker is set once per key.
+
+import { firstRun, samplePath, warmRouter } from "@techaust/auth";
 import { resolveSetting } from "@techaust/core/settings";
 import { describe, expect, it } from "vitest";
-import { createApp, firstRun } from "./app.ts";
+import { createApp } from "./app.ts";
 import { forwardRoutes, forwardTable, warmForwardTable } from "./forward.ts";
 import { ROUTES } from "./guard.ts";
 import { readSettings } from "./quote-model.ts";
@@ -12,7 +14,6 @@ import { mountFinance } from "./routes-finance.ts";
 import { mountFront } from "./routes-front.ts";
 import { mountInvoices } from "./routes-invoices.ts";
 import { cachedSetting, settingsCacheSize } from "./settings-cache.ts";
-import { samplePath, warmRouter } from "./warm-router.ts";
 
 describe("the router warm-up [CPU diagnosis, lead decision 1]", () => {
   it("turns each :param into x", () => {
@@ -48,7 +49,7 @@ describe("the router warm-up [CPU diagnosis, lead decision 1]", () => {
 
   it("a row no router answers is not counted, and nothing throws", () => {
     const api = createApp(mountApi);
-    expect(warmRouter(api, [{ method: "GET", path: "/api/v1/no/such/route", access: "public" }])).toBe(0);
+    expect(warmRouter(api, [{ method: "GET", path: "/api/v1/no/such/route" }])).toBe(0);
   });
 });
 

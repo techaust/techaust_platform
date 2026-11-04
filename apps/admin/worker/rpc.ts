@@ -1,8 +1,9 @@
 // The RPC entrypoints' shared helpers (the fourth admin Worker, 2026-11-03, ADM-G-02; moved word for word from finance.ts): the id checks and the one id-only log
 // line per call. The finance entry (`GatewayEvents`, `PortalPayments`) and the invoices entry (`BillingJobs`, `GatewayAdvance`) import them; each isolate keeps
 // its own call counter. No top-level work beyond the counter.
+
+import { firstRun } from "@techaust/auth";
 import { isRpcId } from "@techaust/core/gateway-rpc";
-import { firstRun } from "./app.ts";
 
 /** `BillingJobs`' id check (M5.4): a string of 1 to 64 characters, else a TypeError before anything is read or written. */
 export const id = (v: unknown): string => {

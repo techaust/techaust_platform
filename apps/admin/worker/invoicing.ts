@@ -11,6 +11,7 @@
 //    online, bound as `ADMIN_ADVANCE` by the jobs Worker (`gateway.advance`) and by the finance Worker (the Owner's "Try again"). It reads only DB and PDF_QUEUE
 //    and makes no gateway call.
 import { WorkerEntrypoint } from "cloudflare:workers";
+import { warmRouter } from "@techaust/auth";
 import type {
   BillingJobsApi,
   DraftCareResult,
@@ -28,7 +29,6 @@ import { id, rpcId, rpcLog } from "./rpc.ts";
 import { warmAdvanceAtStartup } from "./warm-advance.ts";
 import { INVOICES_WARM } from "./warm-fixtures/invoices.ts";
 import { INVOICES_RPC_WARM } from "./warm-fixtures/invoices-rpc.ts";
-import { warmRouter } from "./warm-router.ts";
 import { warmAtStartup } from "./warm-routes.ts";
 
 const app = createApp(mountInvoices);

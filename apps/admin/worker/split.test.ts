@@ -12,6 +12,7 @@
 // Ownership both ways for the three-way split, the forwarder's binding per row, parity through the front, and the entrypoints per Worker.
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
+import { samplePath } from "@techaust/auth";
 import { decide, ROLES, type Role } from "@techaust/core";
 import { PatternRouter } from "hono/router/pattern-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -40,7 +41,6 @@ import {
   withEnv,
 } from "./test-helpers.ts";
 import { pdfOfSize, sha256Hex } from "./test-projects.ts";
-import { samplePath } from "./warm-router.ts";
 
 const SECRETS = ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"];
 const FRONT_ROWS = ROUTES.filter((r) => r.on === "front");

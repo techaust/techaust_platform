@@ -2,11 +2,12 @@
 // the front Worker's `ADMIN_API` binding (no public URL). It runs the same middleware chain and guard as before and re-authenticates from the
 // session cookie. The `BillingJobs` entrypoint moved to the finance Worker with the invoice code in M6.1 stage A, and on to the invoices Worker
 // (invoicing.ts) with the fourth admin Worker (2026-11-03).
+
+import { warmRouter } from "@techaust/auth";
 import { createApp } from "./app.ts";
 import { ROUTES } from "./guard.ts";
 import { mountApi } from "./routes-api.ts";
 import { API_WARM } from "./warm-fixtures/api.ts";
-import { warmRouter } from "./warm-router.ts";
 import { warmAtStartup } from "./warm-routes.ts";
 
 const app = createApp(mountApi);
