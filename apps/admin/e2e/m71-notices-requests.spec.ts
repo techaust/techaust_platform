@@ -4,6 +4,7 @@
 // with a contact: the notices and requests are written straight to the LOCAL table here, as a client's portal would make them (sample words only).
 //   E2E_SAMPLE=1 pnpm --filter @techaust/admin exec playwright test e2e/m71-notices-requests.spec.ts   (through tools/heavy.sh)
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -34,6 +35,14 @@ function d1(sql: string) {
 
 const today = new Date(Date.now() + 19_800_000).toISOString().slice(0, 10);
 const run = Date.now().toString(36).toUpperCase();
+/** A notice id as the portal makes them (uuidv7: `POST /payments` takes `noticeId` only in that form; review 1's tests record from one). */
+function uuid7(): string {
+  const t = Date.now().toString(16).padStart(12, "0");
+  const r = randomUUID().replaceAll("-", "");
+  return `${t.slice(0, 8)}-${t.slice(8, 12)}-7${r.slice(13, 16)}-${(8 | (Number.parseInt(r[16] ?? "0", 16) & 3)).toString(16)}${r.slice(17, 20)}-${r.slice(20, 32)}`;
+}
+const NOTICE_1 = uuid7();
+const NOTICE_2 = uuid7();
 
 test.beforeAll(() => {
   const now = Date.now();
@@ -54,14 +63,8 @@ test.beforeAll(() => {
      ORDER BY d.issue_date, d.id LIMIT 1;`;
   d1(
     [
-      notice(
-        `ntc-${run}-1`,
-        "portal",
-        `UTR${run}1`,
-        "Paid from our current account (sample).",
-        now - 3_600_000,
-      ),
-      notice(`ntc-${run}-2`, "link", `UTR${run}2`, null, now - 60_000),
+      notice(NOTICE_1, "portal", `UTR${run}1`, "Paid from our current account (sample).", now - 3_600_000),
+      notice(NOTICE_2, "link", `UTR${run}2`, null, now - 60_000),
       request(
         `req-${run}-1`,
         "contact_change",
@@ -314,7 +317,7 @@ test("review 1, M3 and L2: a proforma's notice keeps both actions in view, and i
   expect(issued.status, JSON.stringify(issued.body)).toBe(200);
   d1(`
     INSERT INTO payment_notices (id, client_id, document_id, contact_id, via, amount_minor, currency, paid_on, reference, reference_norm, note, status, created_at)
-    SELECT 'ntc-${run}-pf', d.client_id, d.id, c.id, 'portal', min(d.balance_minor, 500000), d.currency, '${today}', 'PF${run}', 'PF${run}', NULL, 'open', ${Date.now()}
+    SELECT '${uuid7()}', d.client_id, d.id, c.id, 'portal', min(d.balance_minor, 500000), d.currency, '${today}', 'PF${run}', 'PF${run}', NULL, 'open', ${Date.now()}
       FROM documents d JOIN contacts c ON c.client_id = d.client_id AND c.anonymised_at IS NULL
      WHERE d.id = '${draft.body.id}' LIMIT 1;`);
   const issueName = /^Issue tax invoice for the payment received, /;
