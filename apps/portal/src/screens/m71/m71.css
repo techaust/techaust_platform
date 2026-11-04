@@ -35,6 +35,10 @@
   gap: var(--space-1);
 }
 
+.m71-dl > .btn {
+  white-space: nowrap;
+}
+
 .m71-dl__note {
   max-width: 18rem;
   color: var(--color-text-muted);
