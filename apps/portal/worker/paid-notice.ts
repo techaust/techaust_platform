@@ -24,7 +24,7 @@ import { openOrWithdrawnSql, TYPES_SQL } from "./invoice-summary.ts";
 import { bound } from "./offer-core.ts";
 import { alertStaff } from "./requests.ts";
 import { scope } from "./scope.ts";
-import { json } from "./validate.ts";
+import { jsonFields } from "./validate.ts";
 
 const OPEN_COUNT = `(SELECT count(*) FROM payment_notices n INDEXED BY payment_notices_document WHERE n.document_id = d.id AND n.status = 'open')`;
 const DUPLICATE = `EXISTS (SELECT 1 FROM payment_notices n WHERE n.document_id = d.id AND n.reference_norm = ?8 AND n.status = 'open')`;
@@ -187,28 +187,32 @@ async function writeNotice(c: Ctx, f: NoticeFacts): Promise<Response> {
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** `POST /invoices/:id/paid-notice` (mounted under `/v1/invoices`). */
-export const paidNoticeRoutes = new Hono<AppEnv>().post("/:id/paid-notice", json(paidNotice), async (c) => {
-  const s = scope(c);
-  const id = c.req.param("id");
-  if (!ID.test(id)) return err(c, NOT_FOUND, 404);
-  const b = c.req.valid("json");
-  return writeNotice(c, {
-    clientId: s.clientId,
-    contactId: s.contactId,
-    documentId: id,
-    via: "portal",
-    amountMinor: b.amountMinor,
-    paidOn: b.paidOn,
-    reference: b.reference,
-    note: b.note,
-    tokenHash: null,
-  });
-});
+export const paidNoticeRoutes = new Hono<AppEnv>().post(
+  "/:id/paid-notice",
+  jsonFields(paidNotice),
+  async (c) => {
+    const s = scope(c);
+    const id = c.req.param("id");
+    if (!ID.test(id)) return err(c, NOT_FOUND, 404);
+    const b = c.req.valid("json");
+    return writeNotice(c, {
+      clientId: s.clientId,
+      contactId: s.contactId,
+      documentId: id,
+      via: "portal",
+      amountMinor: b.amountMinor,
+      paidOn: b.paidOn,
+      reference: b.reference,
+      note: b.note,
+      tokenHash: null,
+    });
+  },
+);
 
 /** `POST /t/document/paid-notice` (mounted under `/v1/t`): the link's client and contact, never the body's. */
 export const tokenPaidNoticeRoutes = new Hono<AppEnv>().post(
   "/document/paid-notice",
-  json(tokenPaidNotice),
+  jsonFields(tokenPaidNotice),
   async (c) => {
     const b = c.req.valid("json");
     const o = await open(c, b.token);

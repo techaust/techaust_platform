@@ -95,7 +95,9 @@ describe("paidNotice and tokenPaidNotice [L10, ADM-PAY-05]", () => {
     [{ reference: "UTR: 1234" }], // a colon: no stored form
     [{ reference: "a".repeat(65) }],
     [{ note: "a".repeat(301) }],
-    [{ note: "line\nbreak" }],
+    [{ note: "bell\u0007" }], // a control character other than tab and line feed (review 1, M1)
+    [{ note: "a\u0000b" }],
+    [{ note: "a\u0085b" }], // C1 next line
     [{ currency: "INR" }], // strict: the currency is the document's
   ])("refuses %j", (o) => {
     expect(paidNotice.safeParse({ ...ok, ...o }).success).toBe(false);
@@ -120,6 +122,34 @@ describe("notes: blank or null is none (lead triage of early check 1, item 9)", 
     }
     expect(noticeNoteOf("  Paid from HDFC ")).toBe("Paid from HDFC");
     expect(codes(paidNotice.safeParse({ ...ok, note: "a".repeat(301) }))).toEqual(["note_invalid"]);
+  });
+
+  it("a notice note may hold several lines (review 1, M1): CRLF and CR folded, tab kept, 300 characters at most once folded", () => {
+    const two = "Paid from HDFC\r\nin two parts\tsee UTR";
+    expect(paidNotice.safeParse({ ...ok, note: two }).success).toBe(true);
+    expect(tokenPaidNotice.safeParse({ ...ok, note: two, token: "t" }).success).toBe(true);
+    expect(noticeNoteOf(two)).toBe("Paid from HDFC\nin two parts\tsee UTR");
+    expect(noticeNoteOf(" one\rtwo\n\nthree ")).toBe("one\ntwo\n\nthree");
+    // 299 characters and one CRLF: 300 once folded, accepted; one more is refused.
+    expect(noticeNoteOf(`${"a".repeat(150)}\r\n${"b".repeat(149)}`)).toHaveLength(300);
+    expect(codes(paidNotice.safeParse({ ...ok, note: `${"a".repeat(150)}\n${"b".repeat(150)}` }))).toEqual([
+      "note_invalid",
+    ]);
+  });
+
+  it("a bad notice note is refused on the `note` path, a bad reference on `reference` (the screen words them apart)", () => {
+    const pathsOf = (r: { success: boolean; error?: { issues: { path: PropertyKey[] }[] } }) =>
+      (r.error?.issues ?? []).map((i) => i.path.join("."));
+    expect(pathsOf(paidNotice.safeParse({ ...ok, note: "x\u0007" }))).toEqual(["note"]);
+    expect(pathsOf(tokenPaidNotice.safeParse({ ...ok, token: "t", note: "a".repeat(301) }))).toEqual([
+      "note",
+    ]);
+    expect(pathsOf(paidNotice.safeParse({ ...ok, reference: "UTR: 1" }))).toEqual(["reference"]);
+  });
+
+  it("the close notes stay single lines", () => {
+    expect(requestCloseBody.safeParse({ outcome: "done", note: "one\ntwo" }).success).toBe(false);
+    expect(noticeCloseBody.safeParse({ outcome: "dismissed", note: "one\ntwo" }).success).toBe(false);
   });
 
   it("the staff close bodies: a request's outcome and note, a notice's dismiss only", () => {

@@ -858,15 +858,36 @@ describe("M7.1 L12: a link ends 30 days after the document is settled", () => {
     return doc;
   }
 
-  it("29 days after full payment it opens; 31 days after it is the 404 (counted like any dead link); a refund that reopens the balance opens it again", async () => {
+  it("29 days after full payment it opens; 31 days after it is the 404, NOT counted on p:fail: (review 1, L3), while a wrong token still counts; a refund that reopens the balance opens it again", async () => {
     const f = await fixtures();
     const DAY_MS = 86_400_000;
     expect((await use(await link(f.a.finance, await paidAgo(f.a.id, 29 * DAY_MS)))).status).toBe(200);
     const ip = "192.0.2.171";
-    const old = await use(await link(f.a.finance, await paidAgo(f.a.id, 31 * DAY_MS)), { ip });
+    const failKey = await portalFailKey(env.PORTAL_KEY_PEPPER, ip);
+    const oldToken = await link(f.a.finance, await paidAgo(f.a.id, 31 * DAY_MS));
+    const old = await use(oldToken, { ip, headers: { "cf-ray": "ray-l3-ended" } });
     expect(old.status).toBe(404);
     expect(await bodyOf(old)).toEqual(NOT_FOUND);
-    expect((await attemptsRow(await portalFailKey(env.PORTAL_KEY_PEPPER, ip)))?.failures).toBe(1);
+    expect(await attemptsRow(failKey)).toBeNull();
+    // One access row (404, the link's contact), and nothing else.
+    expect(await rows("SELECT status, actor_id FROM access_log WHERE request_id = 'ray-l3-ended'")).toEqual([
+      { status: 404, actor_id: f.a.finance.id },
+    ]);
+    // The same ended link through Pay now, the PDF and "I've paid": the 404, still not counted.
+    for (const path of ["/t/document/pay", "/t/document/pdf", "/t/document/paid-notice"]) {
+      const body =
+        path === "/t/document/pdf"
+          ? { token: oldToken }
+          : path === "/t/document/pay"
+            ? { token: oldToken, amountMinor: 1000 }
+            : { token: oldToken, amountMinor: 1000, paidOn: "2026-11-04", reference: "UTRL3" };
+      const res = await call(path, { body, ip });
+      expect(res.status, path).toBe(404);
+    }
+    expect(await attemptsRow(failKey)).toBeNull();
+    // A wrong token from the same address still counts.
+    expect((await use("w".repeat(43), { ip })).status).toBe(404);
+    expect((await attemptsRow(failKey))?.failures).toBe(1);
     // M6.5 L1: a refund releases the allocation and the status leaves `paid`: the link opens again whatever the old allocation's age.
     expect(
       (await use(await link(f.a.finance, await paidAgo(f.a.id, 365 * DAY_MS, "partially_paid")))).status,
