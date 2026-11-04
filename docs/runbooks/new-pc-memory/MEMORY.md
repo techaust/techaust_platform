@@ -9,6 +9,6 @@
 - [Batch M5 state](batch-m5-state.md) — M5.0–M5.5 APPROVED by the owner 2026-10-31 (#122); research + wording PR #104; agent-file edits need a new conversation
 - [Batch M3.4–M4.5 state](batch-m34-m45-state.md) — APPROVED 2026-10-26 with fixes PR #93; M5 next, admin Worker split first (582 bytes left); batch-review lessons
 - [Full audit M1–M5](full-audit-m1-m5.md) — COMPLETE 2026-10-31 (#106–#120); worktree/merge lessons
-- [Research tasks state](research-tasks-state.md) — M6.4 + fourth admin Worker approved 2026-11-03; M6.5 merged #170 on staging, awaits owner sandbox refund + approval; next M7.1; CPU $5 decision; D1 reads via Cloudflare MCP
+- [Research tasks state](research-tasks-state.md) — M6.4 + fourth admin Worker approved 2026-11-03; M6.5 on staging awaits owner sandbox refund + approval; PC restored 2026-11-04 (new folder ...\Application\techaust_platform), wrangler 4.156.2 #173; next M7.1; CPU $5 decision
 - [Parallel cloud sessions](cloud-parallel-sessions.md) — run with /orchestrate (#147); ≤ 2 cloud sessions, no new agent over 85 %, start after a reset; sessions start only from a desktop-typed message; review PRs before auto-merge
 - [Launch all at once](launch-all-at-once.md) — owner 2026-10-31: everything goes live together after M6, M7, Phase 7; 2026-11-03: L8 deletes the old techaust-web first, no fallback

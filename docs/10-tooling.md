@@ -6,15 +6,18 @@
 | **Date** | 2026-10-06 (last updated 2026-10-07) |
 | **Rule** | CLAUDE.md hard rule 11: each tool is explained here and **used only after your approval**. Using a tool never bypasses the other rules. Anything that **changes** Cloudflare, AWS, GitHub, DNS or production still needs your approval **for that specific action**. |
 
-## 1. Your machine (checked 2026-10-06)
+## 1. Your machine (checked 2026-11-04, after the PC was formatted; steps in [runbooks/new-pc.md](runbooks/new-pc.md))
 
 | Tool | Found | Needed | Action |
 |---|---|---|---|
-| Node.js | 24.19.0 | 24.x (→ 26 LTS after 28 Oct) | OK. The engines field allows ≥ 24.19 |
-| pnpm | 12.6.0 | 12.9.1 (pinned via `packageManager`) | pnpm switches to the pinned version itself (`packageManager`) |
-| git | 2.55.0 | — | OK. **No global name or email set yet** (asked at scaffold time) |
-| GitHub CLI | 2.101.0, signed in as `techaust` | — | OK |
-| wrangler | (not global) | 4.147.0 | Installed per project as a dev dependency |
+| Node.js | 24.22.1 (winget `OpenJS.NodeJS.LTS --version 24.22.1`) | 24.x (`.nvmrc`; engines ≥ 24.19.0 < 27) | OK. Node 26 is the LTS since October 2026; the project hasn't moved |
+| pnpm | 12.9.1 (npm global) | 12.9.1 (pinned via `packageManager`) | OK |
+| git | 2.56.0 (Git for Windows) | — | OK. Repo-local name and email; global `core.longpaths true`, `init.defaultBranch main`; no SSH or GPG key (HTTPS through the GitHub CLI's sign-in) |
+| GitHub CLI | 2.103.3, signed in as `techaust` | — | OK |
+| Claude Code command-line copy | 2.1.317 (npm global) | Installs the plugins (`claude plugin install`) and signs in their connections (`/mcp`) | OK |
+| wrangler | (not global) | 4.156.2 (#173) | Installed per project as a dev dependency; signed in as `admin@techaust.com` (run `wrangler login` inside an app folder) |
+| Playwright Chromium | build 1248 (`@playwright/test` 1.64.1) | The e2e, visual and PDF checks | OK |
+| Python | 3.15.2 (installed by the owner; not on PATH, `py` works) | Not needed: only `packages/ui/scripts/measure-cmyk.py` (with Pillow, not installed) after a palette change | Install Pillow the day the colours are re-measured |
 | age | not installed | Only for restoring backups (Phase 7) | Install later, on your machine only |
 
 ## 2. Recommended: use now (Phases 5–6)
@@ -141,3 +144,5 @@ Three npm packages, exact pins, dev-only in `apps/web`: they run on the develope
 - Turned off **for this project only** (`disabledMcpServers` in the user's `~/.claude.json` project entry; other projects unaffected): the Supabase and Upstash MCP servers (not used here) and the AWS MCP server, which is signed in to another business's AWS account. The AWS skills (T11) still work. Before Phase 7 needs TecHaust's AWS, the lead gives the owner steps to sign the AWS MCP in to the TecHaust account, then turns it back on.
 - Checked working on 2026-10-26: GitHub MCP (`techaust`), Cloudflare MCP (`admin@techaust.com`), Context7, Playwright.
 - Not used (catalogue search 2026-10-26): Security Guidance (hooks on every edit; overlaps `security-review`), the Design plugin (brings unrelated servers; axe runs in CI), community review plugins, the TypeScript language server (`pnpm typecheck` covers it; global install and memory).
+
+**2026-11-04, the formatted PC ([runbooks/new-pc.md](runbooks/new-pc.md)):** every tool reinstalled on the owner's word; no new tool. The Claude Code command-line copy (2.1.317) installed T1 (`cloudflare@cloudflare`), T2, T3, T4 and T5 again with `claude plugin install`; T11 (`aws-core`, from the account's plugin directory) was installed by the owner from its card; T12 (Sentry) is signed in but stays unused until Phase 7. Turned off for this project only, as before: `supabase`, `upstash`, `aws-mcp` and their `plugin:…` names. Checked working on 2026-11-04: GitHub MCP (`techaust`, through the `GITHUB_PERSONAL_ACCESS_TOKEN` user setting copied from the GitHub CLI's sign-in), Cloudflare MCP (`admin@techaust.com`), Context7, Playwright (opened and closed a browser), the model-guard hook, the project skills and agents.

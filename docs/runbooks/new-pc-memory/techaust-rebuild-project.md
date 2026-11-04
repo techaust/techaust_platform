@@ -5,14 +5,14 @@ metadata:
   node_type: memory
   type: project
   originSessionId: 8623b5fa-bc1b-4e6c-93b9-287cca6c6b74
-  modified: 2026-10-22T16:50:38.166Z
+  modified: 2026-11-04T10:02:24.490Z
 ---
 
 Rebuilding techaust.com from scratch: public site + admin backend + client portal. Started 2026-10-06.
 
-- **Root:** `D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform`.
+- **Root (since the PC was formatted, 2026-11-04):** `D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform`; setup steps in docs/runbooks/new-pc.md.
 - **Repo:** `techaust/techaust_platform`. It's **PUBLIC** (owner decision; may go private later), so commit nothing sensitive and keep workflows fork-safe. `main` is protected: branch → PR → `gh pr merge --auto --squash` (merges itself on green, owner rule 2026-10-07) → staging auto-deploys.
-- **Old site** (READ-ONLY, never modify or build there): `...\TECHAUST TECHNOLOGIES\ASSETS\WEBSITE`. The live Worker is **`techaust-web`**: never deploy to, rename or delete it. Never read the sibling `CREDENTIALS` folder.
+- **Old site** (READ-ONLY, never modify or build there): the GitHub repo `techaust/techaust-web` (no longer on the PC). The live Worker is **`techaust-web`**: never deploy to, rename or delete it (except its deletion at Phase 7 L8 with the owner's go-ahead). Never read the `Credentials` folder (`D:\Business\1. Parent Project\TecHaust Technologies\Credentials`).
 - **Workflow:** milestones are approved on staging (they merge on green), and the next milestone waits for "approved". See [[working-with-owner]]. Ask with AskUserQuestion (≤ 4 questions, recommended option first). Tag GST/DPDP/legal items "VERIFY WITH CA/LEGAL". Payments sandbox-only. Free plan only. No fabricated content.
 
 **Why:** strict owner brief (7 phases, never guess, approvals per milestone).
