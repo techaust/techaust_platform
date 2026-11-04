@@ -33,10 +33,12 @@ import {
   inviteStartRequest,
   ipKey,
   isAttemptKey,
+  isChallengeId,
   isRecoveryCode,
   LOCK_AFTER,
   LOCK_MS,
   loginRequest,
+  newChallengeId,
   newRecoveryCodes,
   newSession,
   newTotpSecret,
@@ -65,6 +67,7 @@ import {
 import { uuidv7 } from "@techaust/core/ids";
 import type { Role } from "@techaust/core/permissions";
 import { accessStmt, auditStmt, type GuardSql } from "@techaust/db/log";
+import { SIGNIN_PENDING_INSERT_SQL, signinPendingDoneSql } from "@techaust/db/signin-pending";
 import { Hono } from "hono/tiny";
 import { type Alert, alertStmt, lockoutAlert, queueAlerts } from "./alerts.ts";
 import {
@@ -202,6 +205,8 @@ export type SessionStart = {
   via: "totp" | "recovery" | "invite";
   /** Lockout counters a full sign-in deletes. */
   clear?: string[];
+  /** M7.2 (Q3 A): the finished challenge's id; its `staff_signin_pending` row is deleted in the same batch, once the session row exists. */
+  pendingId?: string | undefined;
 };
 
 /**
@@ -291,6 +296,7 @@ export async function startSession(c: Ctx, o: SessionStart) {
         .bind(...o.clear, s.id),
     );
   }
+  if (o.pendingId) stmts.push(db.prepare(signinPendingDoneSql(3)).bind(o.pendingId, uid, s.id));
   stmts.push(accessStmt(db, accessEntry(c, 200, uid), s.id));
   const results = await db.batch(stmts);
   if (results[1]?.meta.changes !== 1) return null;
@@ -384,11 +390,25 @@ export const auth = new Hono<AppEnv>()
       const alerts = row && a.reserved.failures >= LOCK_AFTER ? [lockoutAlert(c, row.id, row.role)] : [];
       return refuse(c, a, alerts);
     }
+    // M7.2 (Q3 A): the unfinished sign-in marker, keyed by this challenge's own id, written ONLY here (the password was right). One awaited statement, never
+    // `waitUntil`, riding in the same D1 call as this request's access row (so the route keeps its 2 calls, NFR-2). A failed write is logged (no value in
+    // the line), the access row is left to the middleware, and the sign-in still goes on: the marker drives a courtesy email, never a gate.
+    const jti = newChallengeId();
+    const issuedAt = now();
+    try {
+      await logBatch(c, 200, [db.prepare(SIGNIN_PENDING_INSERT_SQL).bind(jti, row.id, issuedAt)]);
+    } catch (e) {
+      c.set("accessDone", false);
+      console.log(
+        JSON.stringify({ ev: "signin.pending_write_failed", error: e instanceof Error ? e.name : "unknown" }),
+      );
+    }
     const challenge = await signChallenge(c.env.SESSION_HMAC_KEY, {
       purpose: "login_totp",
       sub: row.id,
-      exp: now() + CHALLENGE_TTL_MS,
+      exp: issuedAt + CHALLENGE_TTL_MS,
       ak: key,
+      jti,
     });
     return c.json({ next: "totp", challenge });
   })
@@ -419,6 +439,7 @@ export const auth = new Hono<AppEnv>()
         .bind(user.id, result.step, now()),
       via: "totp",
       clear: [claim.ak, key],
+      pendingId: isChallengeId(claim.jti) ? claim.jti : undefined,
     });
     if (!session) return refuse(c, a, alerts);
     return c.json({ ok: true, user: { name: user.name, email: user.email, role: user.role } });
@@ -452,6 +473,7 @@ export const auth = new Hono<AppEnv>()
         .bind(user.id, hash, now()),
       via: "recovery",
       clear: [claim.ak, key],
+      pendingId: isChallengeId(claim.jti) ? claim.jti : undefined,
     });
     if (!session) return refuse(c, a, alerts);
     return c.json({ ok: true, user: { name: user.name, email: user.email, role: user.role } });

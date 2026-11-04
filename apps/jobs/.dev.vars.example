@@ -12,3 +12,5 @@ PAYPAL_WEBHOOK_ID=
 # M7.2: the SES events hook's token, the EventBridge connection's API-key header (a local fake from `pnpm dev:secrets`; staging: run file F, H2). SES_EVENTS_TOKEN_PREVIOUS is optional (a rotation).
 SES_EVENTS_TOKEN=
 # SES_EVENTS_TOKEN_PREVIOUS=
+# M7.2 (C.5): the HMAC key of the weekly digest's one-click unsubscribe links (a local fake from `pnpm dev:secrets`; staging: run file F, H2).
+UNSUBSCRIBE_KEY=

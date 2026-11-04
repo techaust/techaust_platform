@@ -32,6 +32,8 @@ export default defineConfig(async () => ({
           PAYPAL_WEBHOOK_ID: "TESTPAYPALWEBHOOK01",
           // M7.2: a made-up SES events hook token (built at run time: no secret-looking literal is committed; never a real one).
           SES_EVENTS_TOKEN: ["ses", "events", "token", "made", "up", "for", "tests"].join("-"),
+          // M7.2 (C.5): a made-up HMAC key for the digest's one-click unsubscribe links (built at run time; never a real one).
+          UNSUBSCRIBE_KEY: ["unsubscribe", "key", "made", "up", "for", "tests"].join("-"),
         },
       },
     }),

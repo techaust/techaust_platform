@@ -526,6 +526,13 @@
       "when": 1793831215449,
       "tag": "0074_email_event_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "6",
+      "when": 1793834699828,
+      "tag": "0075_signin_pending",
+      "breakpoints": true
     }
   ]
 }

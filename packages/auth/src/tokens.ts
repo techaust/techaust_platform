@@ -5,8 +5,23 @@ export const newToken = () => b64url(randomBytes(32));
 export const tokenHash = async (token: string) => hex(await sha256(enc.encode(token)));
 export const isToken = (s: string) => /^[A-Za-z0-9_-]{43}$/.test(s);
 
-/** `ak` is the lockout key (`acct:<32 hex>`) of a `login_totp` challenge; it is covered by the signature. */
-export type Challenge = { purpose: "login_totp" | "enrol_totp"; sub: string; exp: number; ak?: string };
+/**
+ * `ak` is the lockout key (`acct:<32 hex>`) of a `login_totp` challenge; it is covered by the signature. `jti` (M7.2, Q3 A) is the challenge's own id, 16 random
+ * bytes as base64url, also signed: the key of its `staff_signin_pending` row, which the finished sign-in deletes (an older challenge without one deletes nothing).
+ */
+export type Challenge = {
+  purpose: "login_totp" | "enrol_totp";
+  sub: string;
+  exp: number;
+  ak?: string;
+  jti?: string;
+};
+
+/** A new challenge id (M7.2): 16 random bytes, base64url (22 characters). */
+export const newChallengeId = () => b64url(randomBytes(16));
+/** The shape of a challenge id. */
+export const isChallengeId = (s: unknown): s is string =>
+  typeof s === "string" && /^[A-Za-z0-9_-]{22}$/.test(s);
 
 /** The shape of a lockout key: a hash of the email, never the email itself. */
 export const isAttemptKey = (s: unknown): s is string =>

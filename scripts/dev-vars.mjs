@@ -42,6 +42,8 @@ const FIXED = {
     PAYPAL_WEBHOOK_ID: "LOCALPAYPALWEBHOOK01",
     // M7.2: a FAKE SES events hook token (the header a local simulated event carries; never a real one).
     SES_EVENTS_TOKEN: "local-ses-events-token-not-real",
+    // M7.2 (C.5): a FAKE HMAC key for the digest's one-click unsubscribe links (never a real one).
+    UNSUBSCRIBE_KEY: "local-unsubscribe-key-not-real",
   },
 };
 

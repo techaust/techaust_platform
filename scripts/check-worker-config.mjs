@@ -384,6 +384,57 @@ export function jobsBuildProblems(jobs) {
   return problems;
 }
 
+/** M7.2 (run file F): the jobs Worker's SES-events and one-click names. */
+export const NOTIFY_SECRETS = ["SES_EVENTS_TOKEN", "UNSUBSCRIBE_KEY"];
+export const MARKETING_CONFIGURATION_SET = "techaust-marketing";
+
+/**
+ * M7.2 (run file F, C.3, C.5): per scope of the jobs config. The top level and `env.staging` require `SES_EVENTS_TOKEN` and `UNSUBSCRIBE_KEY` (a missing one
+ * aborts the deploy, so the PR is held until H2), set `PUBLIC_HOOKS_URL` (ending in "/"; local `http://localhost:8787/`; staging the jobs Worker's own
+ * https workers.dev origin, which the one-click URL must start with) and `SES_MARKETING_CONFIGURATION_SET` (`techaust-marketing`). `env.staging` also redacts
+ * the query string in Workers Logs (the one-click token rides in `/u?t=`; the observability guard holds the same key for every config). `env.production`:
+ * neither secret and neither var until Phase 7 (hooks.techaust.com). No other app requires either secret. Empty = passes.
+ */
+export function notificationConfigProblems(jobs, others = []) {
+  const problems = [];
+  for (const [scope, c] of SCOPES(jobs)) {
+    if (!c) {
+      problems.push(`${scope}: missing`);
+      continue;
+    }
+    const required = c.secrets?.required ?? [];
+    const vars = c.vars ?? {};
+    if (scope === "env.production") {
+      for (const name of NOTIFY_SECRETS)
+        if (required.includes(name)) problems.push(`${scope}: no ${name} until Phase 7`);
+      for (const name of ["PUBLIC_HOOKS_URL", "SES_MARKETING_CONFIGURATION_SET"])
+        if (name in vars) problems.push(`${scope}: no ${name} until Phase 7`);
+      continue;
+    }
+    for (const name of NOTIFY_SECRETS)
+      if (!required.includes(name)) problems.push(`${scope}: jobs must require the secret ${name}`);
+    const url = vars.PUBLIC_HOOKS_URL;
+    if (typeof url !== "string" || !url.endsWith("/"))
+      problems.push(`${scope}: PUBLIC_HOOKS_URL must be set and end with "/"`);
+    else if (scope === "(top level)" && url !== "http://localhost:8787/")
+      problems.push(`${scope}: PUBLIC_HOOKS_URL must be http://localhost:8787/`);
+    else if (scope === "env.staging" && !/^https:\/\/[a-z0-9-]+\.[a-z0-9-]+\.workers\.dev\/$/.test(url))
+      problems.push(`${scope}: PUBLIC_HOOKS_URL must be the jobs Worker's https workers.dev origin`);
+    else if (scope === "env.staging" && !url.startsWith(`https://${c.name}.`))
+      problems.push(`${scope}: PUBLIC_HOOKS_URL must be this Worker's own origin (${c.name})`);
+    if (vars.SES_MARKETING_CONFIGURATION_SET !== MARKETING_CONFIGURATION_SET)
+      problems.push(`${scope}: SES_MARKETING_CONFIGURATION_SET must be "${MARKETING_CONFIGURATION_SET}"`);
+    if (scope === "env.staging" && c.observability?.redact_query_string !== true)
+      problems.push(`${scope}: redact_query_string must be true (the one-click token is in /u?t=)`);
+  }
+  for (const [file, cfg] of others)
+    for (const [scope, c] of SCOPES(cfg))
+      for (const name of NOTIFY_SECRETS)
+        if ((c?.secrets?.required ?? []).includes(name))
+          problems.push(`${file} ${scope}: ${name} is the jobs Worker's only`);
+  return problems;
+}
+
 /** The head sampling rate of Workers Traces on staging (full audit A6 9, owner's yes 2026-10-30; headroom in docs/runbooks/cpu-baseline.md). */
 export const STAGING_TRACE_RATE = 0.1;
 
@@ -513,6 +564,17 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
     failed = true;
   }
   for (const p of jobsBuildProblems(read("jobs/wrangler.jsonc"))) {
+    console.error(`apps/jobs: ${p}`);
+    failed = true;
+  }
+  for (const p of notificationConfigProblems(read("jobs/wrangler.jsonc"), [
+    ["admin", front],
+    ["admin api", api],
+    ["admin finance", finance],
+    ["admin invoices", invoices],
+    ["portal", read("portal/wrangler.jsonc")],
+    ["web", read("web/wrangler.jsonc")],
+  ])) {
     console.error(`apps/jobs: ${p}`);
     failed = true;
   }

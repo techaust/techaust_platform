@@ -678,3 +678,62 @@ describe("M7.1 (run file F, Q2 A): the portal reads the file vault on local and 
     ]);
   });
 });
+
+describe("M7.2 (run file F): the SES-events token, the one-click key and the hooks origin, per scope", () => {
+  const jobs = guard.parseJsonc(readFileSync(new URL("../../jobs/wrangler.jsonc", import.meta.url), "utf8"));
+  const portal = guard.parseJsonc(
+    readFileSync(new URL("../../portal/wrangler.jsonc", import.meta.url), "utf8"),
+  );
+  const copy = () => JSON.parse(JSON.stringify(jobs));
+  it("the real config passes", () => {
+    expect(guard.notificationConfigProblems(jobs, [["portal", portal]])).toEqual([]);
+  });
+  it("fails a missing secret or var on local or staging, a foreign origin, and an unredacted query string", () => {
+    const noKey = copy();
+    noKey.env.staging.secrets.required = noKey.env.staging.secrets.required.filter(
+      (n: string) => n !== "UNSUBSCRIBE_KEY",
+    );
+    expect(guard.notificationConfigProblems(noKey)).toEqual([
+      "env.staging: jobs must require the secret UNSUBSCRIBE_KEY",
+    ]);
+    const noToken = copy();
+    noToken.secrets.required = noToken.secrets.required.filter((n: string) => n !== "SES_EVENTS_TOKEN");
+    expect(guard.notificationConfigProblems(noToken)).toEqual([
+      "(top level): jobs must require the secret SES_EVENTS_TOKEN",
+    ]);
+    const foreign = copy();
+    foreign.env.staging.vars.PUBLIC_HOOKS_URL = "https://techaust-platform-admin-staging.x.workers.dev/";
+    expect(guard.notificationConfigProblems(foreign)).toEqual([
+      `env.staging: PUBLIC_HOOKS_URL must be this Worker's own origin (${jobs.env.staging.name})`,
+    ]);
+    const slash = copy();
+    slash.vars.PUBLIC_HOOKS_URL = "http://localhost:8787";
+    expect(guard.notificationConfigProblems(slash)).toEqual([
+      '(top level): PUBLIC_HOOKS_URL must be set and end with "/"',
+    ]);
+    const set = copy();
+    set.env.staging.vars.SES_MARKETING_CONFIGURATION_SET = "techaust-transactional";
+    expect(guard.notificationConfigProblems(set)).toEqual([
+      'env.staging: SES_MARKETING_CONFIGURATION_SET must be "techaust-marketing"',
+    ]);
+    const logs = copy();
+    logs.env.staging.observability.redact_query_string = false;
+    expect(guard.notificationConfigProblems(logs)).toEqual([
+      "env.staging: redact_query_string must be true (the one-click token is in /u?t=)",
+    ]);
+  });
+  it("fails either name in production and either secret in another app", () => {
+    const prod = copy();
+    prod.env.production.secrets = { required: ["UNSUBSCRIBE_KEY"] };
+    prod.env.production.vars.PUBLIC_HOOKS_URL = "https://hooks.techaust.com/";
+    expect(guard.notificationConfigProblems(prod)).toEqual([
+      "env.production: no UNSUBSCRIBE_KEY until Phase 7",
+      "env.production: no PUBLIC_HOOKS_URL until Phase 7",
+    ]);
+    const leak = JSON.parse(JSON.stringify(portal));
+    leak.env.staging.secrets = { required: ["SES_EVENTS_TOKEN"] };
+    expect(guard.notificationConfigProblems(jobs, [["portal", leak]])).toEqual([
+      "portal env.staging: SES_EVENTS_TOKEN is the jobs Worker's only",
+    ]);
+  });
+});

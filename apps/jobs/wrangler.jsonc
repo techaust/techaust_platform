@@ -73,7 +73,8 @@
   // tools/set-gateway-keys.ps1 -Gateway razorpay-webhook). RAZORPAY_WEBHOOK_SECRET_PREVIOUS is optional (a rotation) and so not required. M6.3: the Stripe
   // webhook signing secret (`-Gateway stripe-webhook`); STRIPE_WEBHOOK_SECRET_PREVIOUS is optional too. M6.4 (L1): the PayPal webhook's id (`-Gateway
   // paypal-webhook`; an identifier, not a credential: the signature is checked offline against PayPal's certificate). M7.2: the SES events hook's token, the
-  // EventBridge connection's API-key header value (run file F, H2; SES_EVENTS_TOKEN_PREVIOUS is optional, a rotation). Not inherited.
+  // EventBridge connection's API-key header value (run file F, H2; SES_EVENTS_TOKEN_PREVIOUS is optional, a rotation),
+  // and UNSUBSCRIBE_KEY, the HMAC key of the digest's one-click unsubscribe links (C.5; `-Gateway unsubscribe-key`). Not inherited.
   "secrets": {
     "required": [
       "SES_ACCESS_KEY_ID",
@@ -81,7 +82,8 @@
       "RAZORPAY_WEBHOOK_SECRET",
       "STRIPE_WEBHOOK_SECRET",
       "PAYPAL_WEBHOOK_ID",
-      "SES_EVENTS_TOKEN"
+      "SES_EVENTS_TOKEN",
+      "UNSUBSCRIBE_KEY"
     ]
   },
   // D1 (docs/05 §5). Migrations live in packages/db; local dev and tests use a local database.
@@ -203,7 +205,8 @@
           "RAZORPAY_WEBHOOK_SECRET",
           "STRIPE_WEBHOOK_SECRET",
           "PAYPAL_WEBHOOK_ID",
-          "SES_EVENTS_TOKEN"
+          "SES_EVENTS_TOKEN",
+          "UNSUBSCRIBE_KEY"
         ]
       },
       "d1_databases": [
