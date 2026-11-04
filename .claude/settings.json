@@ -41,9 +41,11 @@
     "github@claude-plugins-official": true,
     "aws-core@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": false,
-    "sentry@synced": false,
-    "supabase@synced": false,
-    "upstash@synced": false
+    "security-guidance@inline": false,
+    "sentry@inline": false,
+    "supabase@inline": false,
+    "upstash@inline": false,
+    "anthropic-skills@inline": false
   },
   "extraKnownMarketplaces": {
     "cloudflare": {
@@ -68,19 +70,22 @@
     },
     {
       "serverUrl": "https://mcp.upstash.com/*"
+    },
+    {
+      "serverUrl": "https://mcp.sentry.dev/*"
+    },
+    {
+      "serverCommand": [
+        "uvx",
+        "mcp-proxy-for-aws-cli==1.7.0",
+        "https://aws-mcp.us-east-1.api.aws/mcp",
+        "--skip-auth",
+        "--metadata",
+        "INSTALL_SOURCE=agent-toolkit-core"
+      ]
     }
   ],
   "skillOverrides": {
-    "docs": "off",
-    "docx": "off",
-    "pptx": "off",
-    "google-workspace": "off",
-    "import-memory": "off",
-    "morning": "off",
-    "skill-creator": "off",
-    "consolidate-memory": "off",
-    "explain-usage": "off",
-    "setup-claude": "off",
     "keybindings-help": "off",
     "claude-api": "off",
     "plugin-authoring": "off",
@@ -89,5 +94,6 @@
     "loop": "off",
     "schedule": "off",
     "workflow-authoring": "off"
-  }
+  },
+  "disableClaudeAiConnectors": true
 }
