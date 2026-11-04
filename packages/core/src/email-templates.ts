@@ -42,3 +42,12 @@ export const EMAIL_TEMPLATES = [
   "receipt.sent",
 ] as const;
 export type EmailTemplate = (typeof EMAIL_TEMPLATES)[number];
+
+/**
+ * M7.2 (C.4, L8, L16): the non-transactional emails, which alone carry the RFC 8058 one-click headers, the "Why you're receiving this" footer and the marketing
+ * configuration set. Pinned to the staff weekly digest: no marketing email goes to a client in M7.2 (Researched 2026-10-28, DPDP Act s.6 consent and the
+ * CAN-SPAM opt-out for commercial email (08-C RB-28); the digest goes to staff only). `digest.weekly` joins `EMAIL_TEMPLATES` with its template (B2, designer).
+ */
+export const NON_TRANSACTIONAL_TEMPLATES: readonly string[] = ["digest.weekly"];
+export const isNonTransactional = (template: string): boolean =>
+  NON_TRANSACTIONAL_TEMPLATES.includes(template);

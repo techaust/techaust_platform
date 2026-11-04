@@ -4,7 +4,7 @@
 //   permanent a 4xx other than throttling: log `failed` and acknowledge, retrying cannot help
 //   retry     throttling, 5xx or a network error: let the queue redeliver
 import { AwsClient, AwsV4Signer } from "aws4fetch";
-import { formatAddress, headerValue } from "./headers.ts";
+import { allowedHeaders, emailTags, formatAddress, headerValue } from "./headers.ts";
 
 /** One file on an email (SES v2 `Simple.Attachments`, confirmed in the SES developer guide): the bytes, a safe file name, a type. */
 export type Attachment = { fileName: string; contentType: string; bytes: Uint8Array };
@@ -38,6 +38,18 @@ export type SendInput = {
   text: string;
   /** Optional files (M4.5: the proposal PDF). Absent for every other email. */
   attachments?: Attachment[];
+  /**
+   * M7.2 (C.4, ADM-MAIL-03): extra headers, from an allow-list only (`List-Unsubscribe`, `List-Unsubscribe-Post`; any other name is dropped), each value through
+   * `headerValue`. SES v2 `Content.Simple.Headers` (CONFIRMED, SES API v2 `SendEmail` request syntax and the "Send email with custom headers" example).
+   */
+  headers?: Record<string, string>;
+  /** M7.2: this email's configuration set (the digest's `techaust-marketing`, docs/05 §11.1), else the transport's own. */
+  configurationSet?: string;
+  /**
+   * M7.2 (L6): message tags, `env` on every send (SES v2 `EmailTags`, CONFIRMED; values only ASCII letters, digits, `_` and `-`, at most 256: CONFIRMED, SES API v2
+   * `MessageTag`). The SES hook applies an event only when its `env` tag is this Worker's `ENVIRONMENT` (one AWS account sends for staging and production).
+   */
+  tags?: { env: string };
 };
 
 export type SendResult =
@@ -97,6 +109,9 @@ export function sesTransport(config: SesConfig): Transport {
     async send(input) {
       let body: string;
       try {
+        const headers = allowedHeaders(input.headers);
+        const tags = emailTags(input.tags);
+        const configurationSet = input.configurationSet || config.configurationSet;
         body = JSON.stringify({
           FromEmailAddress: formatAddress(input.from.name, input.from.address),
           Destination: { ToAddresses: [formatAddress(undefined, input.to)] },
@@ -119,9 +134,11 @@ export function sesTransport(config: SesConfig): Transport {
                     })),
                   }
                 : {}),
+              ...(headers.length ? { Headers: headers } : {}),
             },
           },
-          ...(config.configurationSet ? { ConfigurationSetName: config.configurationSet } : {}),
+          ...(configurationSet ? { ConfigurationSetName: configurationSet } : {}),
+          ...(tags.length ? { EmailTags: tags } : {}),
         });
       } catch (e) {
         // An address that cannot be formatted can never be sent: permanent.

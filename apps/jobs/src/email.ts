@@ -24,6 +24,7 @@ import {
   SENDERS,
   sesTransport,
   type Transport,
+  unsubscribeHeaders,
 } from "@techaust/email";
 import { alertData, leadId } from "./leads.ts";
 import { logEvent } from "./log.ts";
@@ -211,6 +212,11 @@ async function sendClaimed(
     return "failed";
   }
 
+  // M7.2 (C.4, L6, L8): every send carries the `env` tag (the SES hook applies only events of its own environment); only a non-transactional email (the weekly
+  // digest) carries the one-click headers, and only when its `unsubscribe_url` is exactly this Worker's `/u?t=` link, and goes on the marketing configuration set.
+  const headers = rendered.nonTransactional
+    ? unsubscribeHeaders(data.unsubscribe_url, env.PUBLIC_HOOKS_URL)
+    : undefined;
   const result = await transport.send({
     from: rendered.from,
     to,
@@ -219,6 +225,11 @@ async function sendClaimed(
     html: rendered.html,
     text: rendered.text,
     ...(attachments ? { attachments } : {}),
+    ...(headers ? { headers } : {}),
+    ...(rendered.nonTransactional && env.SES_MARKETING_CONFIGURATION_SET
+      ? { configurationSet: env.SES_MARKETING_CONFIGURATION_SET }
+      : {}),
+    tags: { env: env.ENVIRONMENT },
   });
   if (result.kind === "sent") {
     // The email has left. If the status write fails, the message must NOT be retried (that would send it again): the

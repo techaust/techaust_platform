@@ -37,7 +37,11 @@
     // client links point.
     "PDF_RENDERER": "stub",
     "PDF_MIN_SPACING_MS": "10000",
-    "PORTAL_URL": "http://localhost:5174/"
+    "PORTAL_URL": "http://localhost:5174/",
+    // M7.2 (run file C.4, F): this Worker's own public origin (the one-click unsubscribe URL `<PUBLIC_HOOKS_URL>u?t=…` must start with it), and the configuration
+    // set of non-transactional email (the weekly digest; docs/05 §11.1). Production has neither until Phase 7 (hooks.techaust.com).
+    "PUBLIC_HOOKS_URL": "http://localhost:8787/",
+    "SES_MARKETING_CONFIGURATION_SET": "techaust-marketing"
   },
   // Daily 22:00 UTC (03:30 IST): enqueues the leads due for deletion (JOB-CRON-01) and one message per nightly statistic for the IST day that
   // just ended (M3.5, stats_daily); it enqueues and reads nothing else. Hourly at :30 UTC (= every IST hour, M5.4, LD61): ONE `sendBatch`, no D1 read;
@@ -166,7 +170,9 @@
         "LEAD_PURGE_MODE": "dry_run",
         "PDF_RENDERER": "browser",
         "PDF_MIN_SPACING_MS": "10000",
-        "PORTAL_URL": "https://techaust-platform-portal-staging.techaust-technologies-153.workers.dev/"
+        "PORTAL_URL": "https://techaust-platform-portal-staging.techaust-technologies-153.workers.dev/",
+        "PUBLIC_HOOKS_URL": "https://techaust-platform-jobs-staging.techaust-technologies-153.workers.dev/",
+        "SES_MARKETING_CONFIGURATION_SET": "techaust-marketing"
       },
       // Browser Run (PDF rendering, M4.4): `env.BROWSER.quickAction("pdf", ...)`. It needs no API token, but it is not inherited and
       // does not work locally, so only staging has it. The owner switches Browser Run on before the M4.4 merge (run file, H2).

@@ -1,5 +1,6 @@
 // @techaust/email: templates (HTML + text), header sanitising and the SES v2 client (docs/05 §11.1).
 
+import { isNonTransactional } from "@techaust/core/email-templates";
 import {
   alertProformaDue,
   alertUnbilled,
@@ -109,10 +110,12 @@ export function renderEmail(
   template: string,
   data: Data,
   opts: LayoutOptions,
-): Rendered & { from: { name: string; address: string }; replyTo: string } {
+): Rendered & { from: { name: string; address: string }; replyTo: string; nonTransactional: boolean } {
   const r = renderTemplate(template, data, opts);
   const testName = data.test_name;
-  return testName ? { ...r, ...withTestNotice(r, testName) } : r;
+  // M7.2 (C.4, L16): whether the email is non-transactional (the weekly digest only): the consumer then adds the one-click headers and its configuration set.
+  const nonTransactional = isNonTransactional(template);
+  return testName ? { ...r, ...withTestNotice(r, testName), nonTransactional } : { ...r, nonTransactional };
 }
 
 /**
