@@ -9,3 +9,6 @@ STRIPE_WEBHOOK_SECRET=
 # STRIPE_WEBHOOK_SECRET_PREVIOUS=
 # M6.4 (L1): the PayPal webhook's id (not a credential: the hook checks PayPal's signature offline; a local fake from `pnpm dev:secrets`, which `scripts/pay-simulate.mjs --paypal` signs for; staging: tools/set-gateway-keys.ps1 -Gateway paypal-webhook).
 PAYPAL_WEBHOOK_ID=
+# M7.2: the SES events hook's token, the EventBridge connection's API-key header (a local fake from `pnpm dev:secrets`; staging: run file F, H2). SES_EVENTS_TOKEN_PREVIOUS is optional (a rotation).
+SES_EVENTS_TOKEN=
+# SES_EVENTS_TOKEN_PREVIOUS=

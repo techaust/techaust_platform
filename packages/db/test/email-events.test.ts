@@ -12,6 +12,7 @@ import {
   parseSesEvent,
   type SesEvent,
 } from "@techaust/core/email-events";
+import { PREF_DEFAULTS } from "@techaust/core/notifications";
 import { describe, expect, it } from "vitest";
 import {
   EMAIL_EVENT_READ_SQL,
@@ -313,7 +314,8 @@ describe("email_events, email_suppressions and staff_notification_prefs triggers
       "INSERT INTO staff_notification_prefs (user_id) VALUES (?1) RETURNING digest_weekly, email_offer_viewed, email_payment_received, email_approvals, email_hook_failed",
       userId,
     );
-    // The defaults follow Q1 A and Q2 A.
+    // The defaults follow Q1 A and Q2 A, and equal core's defaults for a missing row.
+    expect(row).toEqual(PREF_DEFAULTS);
     expect(row).toEqual({
       digest_weekly: 1,
       email_offer_viewed: 0,
@@ -434,7 +436,8 @@ describe("the hook's batch (sesEventStatements)", () => {
     const email = `asha-${uuidv7()}@example.test`;
     const [c1, c2] = [await mkClientRow(), await mkClientRow()];
     const [k1, k2] = [await mkContact(c1, { email }), await mkContact(c2, { email })];
-    const gone = await mkContact(await mkClientRow(), { anonymised: true, email: `gone-${email}` });
+    // An anonymised contact with the same address at a third client: never touched (`contacts_anonymised_frozen` would abort the whole batch).
+    const gone = await mkContact(await mkClientRow(), { anonymised: true, email });
     await run("UPDATE contacts SET updated_at = 777 WHERE id IN (?1, ?2)", k1, k2);
     const id = await mkLog({ to: email });
     const t = tick();

@@ -30,6 +30,8 @@ export default defineConfig(async () => ({
           STRIPE_WEBHOOK_SECRET: ["whsec", "madeupfortests"].join("_"),
           // M6.4: a made-up PayPal webhook id (an identifier, not a credential; never a real one).
           PAYPAL_WEBHOOK_ID: "TESTPAYPALWEBHOOK01",
+          // M7.2: a made-up SES events hook token (built at run time: no secret-looking literal is committed; never a real one).
+          SES_EVENTS_TOKEN: ["ses", "events", "token", "made", "up", "for", "tests"].join("-"),
         },
       },
     }),

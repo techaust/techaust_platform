@@ -5,6 +5,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { enqueueHourly, HOURLY_CRON } from "./billing.ts";
 import { payPalHook } from "./hooks/paypal.ts";
 import { razorpayHook } from "./hooks/razorpay.ts";
+import { sesHook, warmSesHook } from "./hooks/ses.ts";
 import { stripeHook } from "./hooks/stripe.ts";
 import { noteInvocation } from "./log.ts";
 import { enqueueSweep } from "./pdf.ts";
@@ -21,6 +22,9 @@ void warmSesSigning();
 void warmRazorpayHook();
 // M6.4 (L31, early check 2 finding 4): the PayPal webhook's path dry-run at start-up on a made-up event and certificate (warm-paypal.ts); nothing kept or sent.
 void warmPayPalHookAtStartup();
+// M7.2 (run file J): the SES hook's first run paid at start-up (digests and the constant-time compare with a made-up token, one parse, the statements built
+// over a stand-in; nothing reaches D1).
+void warmSesHook();
 
 const app = new Hono<{ Bindings: Env }>();
 app.use(secureHeaders());
@@ -28,9 +32,11 @@ app.use(secureHeaders());
 // Health check: deliberately touches no database (saves D1 reads; docs/05 §13).
 app.get("/healthz", (c) => c.json({ ok: true, service: "jobs", env: c.env.ENVIRONMENT }));
 
-// M6.2: the Razorpay webhook, `POST /razorpay` only (any other method on it, or `/razorpay/*`, is the 404 below and touches no database). /ses
-// arrives in M7.
+// M6.2: the Razorpay webhook, `POST /razorpay` only (any other method on it, or `/razorpay/*`, is the 404 below and touches no database).
 app.post("/razorpay", (c) => razorpayHook(c.req.raw, c.env));
+// M7.2: the SES events hook, `POST /ses` only, checked by the EventBridge connection's header token (any other method, or `/ses/*`, is the 404 below and
+// touches no database).
+app.post("/ses", (c) => sesHook(c.req.raw, c.env));
 // M6.3: the Stripe webhook, `POST /stripe` only (any other method, or `/stripe/*`, is the 404 below and touches no database).
 app.post("/stripe", (c) => stripeHook(c.req.raw, c.env));
 // M6.4: the PayPal webhook, `POST /paypal` only, verified offline (any other method, or `/paypal/*`, is the 404 below and touches no database).
@@ -39,7 +45,7 @@ app.notFound((c) => c.json({ error: { code: "not_found", message: "Not found" } 
 // M6.4 (L31): the router's matcher is built on its first match; matching the webhook paths while the module loads moves that out of the first metered
 // webhook (as the admin Workers' `warmRouter`). Pure: no Request, no env, no I/O; never throws.
 try {
-  for (const path of ["/paypal", "/razorpay", "/stripe"]) app.router.match("POST", path);
+  for (const path of ["/paypal", "/razorpay", "/ses", "/stripe"]) app.router.match("POST", path);
   app.router.match("GET", "/healthz");
 } catch {
   // never stop a Worker from starting
