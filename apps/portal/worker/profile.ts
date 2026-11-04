@@ -2,12 +2,12 @@
 // and their own requests) and `POST /profile` (their own name and phone; owner, 2026-11-01: a change of email, and adding or removing people, stays a request).
 // Every statement says `client_id = ?1` and names the session's contact (`?2`); nothing about who comes from the request.
 //
-// Colleagues are shown by NAME AND TITLE ONLY (L15), never an email, a phone or an id: OPEN (08-C RB-45): is a list of the organisation's portal users, by name
-// and title, the minimum a contact needs to see (DPDP Act s.8(3) and s.4(2), purpose limitation), or should even that wait for a request? Until the lead
-// researches it, the list carries only those two fields of people who have portal access and are not anonymised.
-// The self-edit is a correction by the person themselves: OPEN (08-C RB-44): does a portal self-edit of name and phone, plus a `data_correction` request for
-// anything else, meet s.12's duty to correct, or must every correction be logged as a request? Until the lead researches it, both channels exist; the
-// self-edit is audited as `contact.self_update` with the field names only (never the values).
+// Colleagues are shown by NAME AND TITLE ONLY (L15), never an email, a phone or an id: Settled by the lead on the safest reading, 2026-11-05 (08-C RB-45):
+// showing a contact who else in her own organisation has portal access serves the purpose the client gave the data for, limited to what it needs: name and
+// title only, the same client only, people who have portal access and are not anonymised.
+// The self-edit is a correction by the person themselves: Settled by the lead on the safest reading, 2026-11-05 (08-C RB-44): the contact corrects her own
+// name and phone here, and everything else (the sign-in email, another person's data, data in documents) is a `data_correction` request; the self-edit is
+// audited as `contact.self_update` with the field names only (never the values; NFR-6).
 import { uuidv7 } from "@techaust/core/ids";
 import { profileUpdate, storedPhone } from "@techaust/core/portal-schemas";
 import { accessStmt, auditStmt } from "@techaust/db/log";

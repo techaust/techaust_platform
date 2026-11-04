@@ -1,8 +1,8 @@
 // A contact's requests from the Profile page (M7.1; POR-09, POR-11; run file C, L8, L9, L16): `POST /requests {kind, details}`. Five kinds: adding, removing or
 // changing a person's access, and a channel for each of the DPDP Act's rights of the data principal (access, Researched 2026-10-29, DPDP Act s.11(1) and
-// Rule 14 (08-C RB-36); correction and erasure, Researched 2026-10-29, DPDP Act s.8(7) and s.12(3) (08-C RB-37); OPEN (08-C RB-44): does a portal self-edit
-// of name and phone, plus a `data_correction` request for anything else, meet s.12's duty to correct, or must every correction be logged as a request? Until
-// the lead researches it, both channels exist and both are audited; a grievance, Researched 2026-10-28, SPDI Rules 2011 Rule 5(9) (08-C RB-13)). Identity is the signed-in
+// Rule 14 (08-C RB-36); correction and erasure, Researched 2026-10-29, DPDP Act s.8(7) and s.12(3) (08-C RB-37); correction channels Settled by the lead on the safest
+// reading, 2026-11-05 (08-C RB-44): a contact corrects her own name and phone on the Profile page, anything else is a `data_correction` request, and both are
+// audited; a grievance, Researched 2026-10-28, SPDI Rules 2011 Rule 5(9) (08-C RB-13)). Identity is the signed-in
 // session (L8): the insert takes the client, the contact and `contact_ref` from the session (the trigger holds `contact_ref IS contact_id`).
 //
 // ONE batch, every rule in the INSERT's WHERE: the contact is live, it has no open request of this kind (409 `request_open`; the partial unique index

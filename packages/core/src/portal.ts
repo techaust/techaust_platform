@@ -4,9 +4,9 @@
 //   - the requests a contact sends from the Profile page (`client_requests`, L8): five kinds, one open request per kind per contact, five a day. Each of the
 //     DPDP Act's rights of the data principal (ss.11 to 13) gets a portal channel: access, Researched 2026-10-29, DPDP Act s.11(1) and Rule 14 (08-C RB-36);
 //     erasure, Researched 2026-10-29, DPDP Act s.8(7) and s.12(3) (08-C RB-37); grievances redressed within one month: Researched 2026-10-28, SPDI Rules 2011
-//     Rule 5(9) (08-C RB-13). Correction through the portal: OPEN (08-C RB-44): does a portal self-edit of name and phone, plus a `data_correction`
-//     request for anything else, meet s.12's duty to correct, or must every correction be logged as a request? Until the lead researches it, both channels
-//     exist and both are audited;
+//     Rule 5(9) (08-C RB-13). Correction through the portal: Settled by the lead on the safest reading, 2026-11-05 (08-C RB-44): a contact
+//     corrects her own name and phone in the signed-in portal (audited), and everything else (the sign-in email, another person's data, data in documents)
+//     is a `data_correction` request; frozen documents are never edited;
 //   - "I've paid" (`payment_notices`, L10): a notice is never a payment and never money (a proforma is not a tax document, and its tax invoice follows only a
 //     recorded and confirmed payment: Researched 2026-10-28, s.13(2) and s.31(2) CGST Act (08-C RA-17)); which documents may take one (`noticeAllowed`) and whether a
 //     notice's facts can be right (`paidNoticeVerdict`). The SQL twins are `@techaust/db/sql-rules` `noticeAllowedSql` / `paidNoticeVerdictSql` (a db test

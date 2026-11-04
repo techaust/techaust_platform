@@ -5,6 +5,7 @@
 // the client the link was made for, and the client must not be anonymised. Turning access off, changing the address, anonymising the person or the client, revoking the link, voiding the invoice or the link
 // expiring ends it at once. What opens: an invoice, proforma, credit note or debit note in a status of `CLIENT_INVOICE_STATUSES` (invoice-summary.ts) (never a draft, a pending approval or a void one). Every other outcome is the
 // same 404, and counts toward the address's `p:fail:` counter like a failed sign-in link; a blocked address gets a 429 and writes nothing.
+// M7.1 L12 and review 1 L3: a genuine link that ended 30 days after its document was settled is the same 404 but is NOT counted (old links must not lock an address).
 // ADM-INV-10 (owner, 2026-10-30, docs/13): a withdrawn proforma (`openOrWithdrawnSql`) still opens, as withdrawn (a valid link, no failure counted); its PDF is a 409.
 //
 // Under the owner's Q1 = A a document-link use is a sign-in event: a valid use writes one `doc_token.use` audit row (actor type `contact`, the contact the link is bound to; the entity is the document), an
@@ -63,16 +64,16 @@ import { json } from "./validate.ts";
 export const VIEW_PAY_TYPES = CLIENT_INVOICE_TYPES;
 /**
  * ?1 token hash, ?2 now. The token, the document of the SAME client, the live contact it is bound to and the client, in one read (primary-key lookups; tests EXPLAIN it). The columns after the summary's
- * are the principal (who the link is for).
+ * are the principal (who the link is for). `view_pay_live` is L12's end (paid + 30 days), read as a column rather than in the WHERE (review 1, L3): a row with
+ * `view_pay_live = 0` is a genuine link that ended because the document was settled, the 404 WITHOUT a `p:fail:` count (only a wrong or unknown token counts).
  */
-export const DOC_READ = `SELECT ${SUMMARY_COLS}, t.contact_id AS link_contact_id, t.client_id AS link_client_id
+export const DOC_READ = `SELECT ${SUMMARY_COLS}, t.contact_id AS link_contact_id, t.client_id AS link_client_id, ${viewPayLiveSql("d", "?2")} AS view_pay_live
   FROM doc_access_tokens t
   JOIN documents d ON d.id = t.document_id AND d.client_id = t.client_id
   JOIN contacts c ON c.id = t.contact_id AND c.client_id = t.client_id AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL AND lower(c.email) = t.email
   JOIN clients cl ON cl.id = t.client_id AND cl.anonymised_at IS NULL
   ${SUMMARY_PARENT_JOIN}
-  WHERE t.token_hash = ?1 AND t.revoked_at IS NULL AND t.expires_at > ?2 AND t.purpose = 'view_pay' AND d.frozen_at IS NOT NULL AND ${openOrWithdrawnSql("d")} AND d.type IN (${TYPES_SQL})
-    AND ${viewPayLiveSql("d", "?2")}`;
+  WHERE t.token_hash = ?1 AND t.revoked_at IS NULL AND t.expires_at > ?2 AND t.purpose = 'view_pay' AND d.frozen_at IS NOT NULL AND ${openOrWithdrawnSql("d")} AND d.type IN (${TYPES_SQL})`;
 
 /**
  * M7.1 L13 (the proforma-withdraw re-check): the link is still live NOW, for this document (`d`): not revoked, not expired, bound to its live contact with
@@ -117,10 +118,13 @@ type PdfState = {
 /** The PDF's first view through a link (?1 client, ?2 document, ?3 now, ?4 token hash): only while the link is still live (L13), and only a delivered PDF. */
 export const LINK_VIEW_PDF_SQL = `${VIEW_PDF_SQL} AND EXISTS (SELECT 1 FROM documents d WHERE d.id = ?2 AND d.client_id = ?1 AND ${linkLiveSql("?4", "?3")})`;
 
-export type Found = SummaryRow & { link_contact_id: string; link_client_id: string };
+export type Found = SummaryRow & { link_contact_id: string; link_client_id: string; view_pay_live: number };
 export type Opened = { doc: Found; failKey: string; hash: string };
 
-/** The address lock and the link in ONE batch: a Response (429 or 404) or the live document the link opens. */
+/**
+ * The address lock and the link in ONE batch: a Response (429 or 404) or the live document the link opens. A wrong or unknown token is the 404 and counts on
+ * `p:fail:`; a genuine link past its 30 days after settlement (L12) is the same 404, not counted (review 1, L3: old links must not lock an office address).
+ */
 export async function open(c: Ctx, token: string): Promise<Opened | Response> {
   const db = c.env.DB;
   const t = Date.now();
@@ -141,6 +145,12 @@ export async function open(c: Ctx, token: string): Promise<Opened | Response> {
     await logBatch(c, 404, [
       db.prepare(FAIL_SQL).bind(failKey, t, PORTAL_FAIL_WINDOW_MS, PORTAL_FAIL_LIMIT, PORTAL_FAIL_LOCK_MS),
     ]);
+    return err(c, NOT_FOUND, 404);
+  }
+  if (doc.view_pay_live !== 1) {
+    // Review 1, L3: a genuine link that ended with the document's settlement. The access row only (the link's contact), no `p:fail:` count.
+    c.set("accessDone", true);
+    await db.batch([accessStmt(db, accessEntry(c, 404, doc.link_contact_id))]);
     return err(c, NOT_FOUND, 404);
   }
   return { doc, failKey, hash };

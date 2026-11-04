@@ -85,16 +85,18 @@ export function requestDetailsOf(v: ClientRequestInput): string | null {
 }
 
 /**
- * An optional single-line note (lead triage of early check 1, item 9): absent, null or blank is no note; anything else must be a valid line of 1 to `max`
- * characters. Read the stored value with `noteOf`.
+ * An optional note (lead triage of early check 1, item 9): absent, null or blank is no note; anything else must be valid for `valid` (a `line` or `lines`
+ * text). Read the stored value with the field's `…NoteOf`. A refusal is `note_invalid` on the `note` path.
  */
-const optionalNote = (max: number) => {
-  const valid = line(max);
-  return z
+const optionalNote = (valid: z.ZodMiniString<string>) =>
+  z
     .optional(z.nullable(z.string()))
     .check(z.refine((v) => blank(v) || valid.safeParse(v).success, { message: "note_invalid" }));
-};
-const noticeNote = line(NOTICE_NOTE_MAX);
+/**
+ * The "I've paid" note (review 1, M1): several lines, like a request's details (the screen is a textarea): CRLF and CR folded to a line feed, trimmed, 1 to 300
+ * characters, no control character other than tab and line feed. The DB CHECK `payment_notices_note_length` (0071) limits only the length.
+ */
+const noticeNote = lines(NOTICE_NOTE_MAX);
 const requestCloseNote = line(REQUEST_CLOSE_NOTE_MAX);
 const noticeCloseNote = line(NOTICE_CLOSE_NOTE_MAX);
 
@@ -106,8 +108,8 @@ const noticeFields = {
   paidOn: isoDate,
   /** The transaction reference (UTR or similar), stored as typed and as `normaliseReference` of it. Never a card or account number (C13's hint; RB-07). */
   reference,
-  /** Optional; blank or null is none (item 9). */
-  note: optionalNote(NOTICE_NOTE_MAX),
+  /** Optional, several lines; blank or null is none (item 9, review 1 M1). */
+  note: optionalNote(noticeNote),
 };
 
 /** `POST /invoices/:id/paid-notice` (signed in, finance): what the client says it paid (L10). The amount, the days and the document are checked by the route. */
@@ -118,7 +120,7 @@ export type PaidNoticeInput = z.infer<typeof paidNotice>;
 export const tokenPaidNotice = z.strictObject({ ...noticeFields, token: z.string().check(z.maxLength(256)) });
 export type TokenPaidNoticeInput = z.infer<typeof tokenPaidNotice>;
 
-/** A notice's note as stored: trimmed, or null for none or a blank one. Call only on a body the schema accepted. */
+/** A notice's note as stored: line endings folded to line feeds, trimmed, or null for none or a blank one. Call only on a body the schema accepted. */
 export const noticeNoteOf = (note: string | null | undefined): string | null =>
   blank(note) ? null : noticeNote.parse(note);
 
@@ -128,7 +130,7 @@ export const noticeNoteOf = (note: string | null | undefined): string | null =>
  */
 export const requestCloseBody = z.strictObject({
   outcome: z.enum(REQUEST_OUTCOMES),
-  note: optionalNote(REQUEST_CLOSE_NOTE_MAX),
+  note: optionalNote(requestCloseNote),
 });
 export type RequestCloseInput = z.infer<typeof requestCloseBody>;
 export const requestCloseNoteOf = (note: string | null | undefined): string | null =>
@@ -137,7 +139,7 @@ export const requestCloseNoteOf = (note: string | null | undefined): string | nu
 /** Admin `POST /payments/notices/:id/close` (`payments.notices`): a dismiss only (a notice is recorded through `POST /payments` with `noticeId`, L23). */
 export const noticeCloseBody = z.strictObject({
   outcome: z.literal("dismissed"),
-  note: optionalNote(NOTICE_CLOSE_NOTE_MAX),
+  note: optionalNote(noticeCloseNote),
 });
 export type NoticeCloseInput = z.infer<typeof noticeCloseBody>;
 export const noticeCloseNoteOf = (note: string | null | undefined): string | null =>
@@ -154,10 +156,8 @@ export function warmPortalSchemas(): number {
       details: "My title is wrong.\r\nIt should be Director.",
     });
     if (req.success && requestDetailsOf(req.data) !== null) ok++;
-    if (
-      paidNotice.safeParse({ amountMinor: 100, paidOn: "2026-11-04", reference: "UTR 1234", note: "Sent" })
-        .success
-    )
+    const note = "Sent by NEFT.\r\nPart of two.";
+    if (paidNotice.safeParse({ amountMinor: 100, paidOn: "2026-11-04", reference: "UTR 1234", note }).success)
       ok++;
     if (
       tokenPaidNotice.safeParse({ amountMinor: 100, paidOn: "2026-11-04", reference: "UTR1234", token: "t" })
@@ -167,7 +167,7 @@ export function warmPortalSchemas(): number {
     if (requestCloseBody.safeParse({ outcome: "done", note: "Sent by email" }).success) ok++;
     if (
       noticeCloseBody.safeParse({ outcome: "dismissed", note: "" }).success &&
-      noticeNoteOf(" Paid ") === "Paid"
+      noticeNoteOf(` ${note} `) === "Sent by NEFT.\nPart of two."
     )
       ok++;
   } catch {
