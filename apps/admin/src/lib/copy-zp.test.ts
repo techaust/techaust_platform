@@ -5,7 +5,7 @@ import { findBannedPhrases } from "@techaust/core/public-text";
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
 import { ZP_UI } from "./copy-zp.ts";
-import { m71ErrorText } from "./m71-errors.ts";
+import { m71ErrorText, NOTICE_MISMATCH_TEXT } from "./m71-errors.ts";
 
 function allLines(): string[] {
   const out: string[] = [];
@@ -58,8 +58,10 @@ describe("M7.1 staff lines [ADM-PAY-05, POR-09, POR-11]", () => {
     expect(ZP_UI.noticePaymentUndone.withdrawn).toBe("Payment withdrawn later");
     expect(ZP_UI.noticePaymentUndone.confirmed).toBeUndefined();
     expect(ZP_UI.entryFromNotice("reject", "03 Nov 2026", "Portal")).toMatch(
-      /^This entry was recorded from the client's notice of 03 Nov 2026 \(Portal\)\. If you reject it, .* shown with this entry as rejected\./,
+      /^This entry was recorded from the client's notice sent on 03 Nov 2026 \(Portal\)\. If you reject it, .* shown with this entry as rejected\./,
     );
+    // re-check 4: S11 dates the notice by the day it was sent, never in S1's "notice of {day paid}" form
+    expect(ZP_UI.entryFromNotice("withdraw", "03 Nov 2026", "Invoice link")).not.toContain("notice of");
   });
   it("word a notice's refusals from their code, never the server's English (review M2)", () => {
     const server = "That notice is about a document this payment is not put on";
@@ -67,11 +69,20 @@ describe("M7.1 staff lines [ADM-PAY-05, POR-09, POR-11]", () => {
       reason: "document",
       details: { documentId: "doc-1" },
     });
-    expect(m71ErrorText(doc)).toBe(ZP_UI.noticeOnDocument);
+    expect(m71ErrorText(doc, { onRow: true })).toBe(ZP_UI.noticeOnDocument);
     const other = new RequestError(409, "notice_mismatch", "That notice is not for this client and currency");
     expect(m71ErrorText(other)).toBe(
       "This notice is for another client, currency or invoice. Record the payment on the notice's own invoice.",
     );
-    expect(m71ErrorText(doc)).not.toContain(server);
+    expect(m71ErrorText(doc, { onRow: true })).not.toContain(server);
+  });
+  it("S8 shows only under the invoice's row; with no row it is S1's line (re-check 5)", () => {
+    const doc = new RequestError(409, "notice_mismatch", "server words", null, [], [], [], {
+      reason: "document",
+      details: { documentId: "doc-1" },
+    });
+    expect(m71ErrorText(doc)).toBe(NOTICE_MISMATCH_TEXT);
+    expect(m71ErrorText(doc, { onRow: false })).toBe(NOTICE_MISMATCH_TEXT);
+    expect(m71ErrorText(doc)).not.toBe(ZP_UI.noticeOnDocument);
   });
 });

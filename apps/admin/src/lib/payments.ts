@@ -630,7 +630,8 @@ export function byDueDate<T extends Pick<OpenDoc, "dueDate">>(docs: readonly T[]
 
 /**
  * A document Staff asked for, read by id because the open lists didn't return it (re-check finding 1): a row when it can still take this payment (issued,
- * a type a payment goes on, this client and currency, a balance left), else the reason it can't, in line 23's and line 31's words.
+ * a type a payment goes on, this client and currency, a balance left), else the reason it can't, in line 23's and line 31's words. `proformas`: a proforma is
+ * a type a payment goes on too, as in `openDocsOf` (a Staff entry's whole-amount proforma ask, L5, L25; M7.1 re-check 7).
  */
 export function askedDocOf(
   v: {
@@ -645,10 +646,12 @@ export function askedDocOf(
     client: { id: string };
   },
   payment: { clientId: string; currency: Currency },
+  opts: { proformas?: boolean } = {},
 ): { ok: true; doc: OpenDoc } | { ok: false; error: string } {
+  const types: readonly string[] = [...PAYABLE_TYPES, ...(opts.proformas ? ["proforma"] : [])];
   if (
     v.number === null ||
-    !(PAYABLE_TYPES as readonly string[]).includes(v.type) ||
+    !types.includes(v.type) ||
     !(LEDGER_STATUSES as readonly string[]).includes(v.status)
   )
     return { ok: false, error: PAY_ERRORS.not_payable };

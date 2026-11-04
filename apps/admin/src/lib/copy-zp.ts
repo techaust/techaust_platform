@@ -67,9 +67,12 @@ export const ZP_UI = {
     rejected: "Payment rejected later",
     withdrawn: "Payment withdrawn later",
   } as Record<string, string>,
-  /** S11 (review M5): the reject and withdraw dialogs of an entry recorded from a client's notice. `via` is S1's "Portal" or "Invoice link". */
+  /**
+   * S11 (review M5; re-check 4): the reject and withdraw dialogs of an entry recorded from a client's notice. `date` is the day the notice was sent
+   * (`createdAt`), said as "sent on" so it is never read as S1's day paid; `via` is S1's "Portal" or "Invoice link".
+   */
   entryFromNotice: (action: "reject" | "withdraw", date: string, via: string) =>
-    `This entry was recorded from the client's notice of ${date} (${via}). If you ${action} it, the notice stays on the Notices tab's Recorded list, shown with this entry as ${action === "reject" ? "rejected" : "withdrawn"}. Tell the client if they still owe the money.`,
+    `This entry was recorded from the client's notice sent on ${date} (${via}). If you ${action} it, the notice stays on the Notices tab's Recorded list, shown with this entry as ${action === "reject" ? "rejected" : "withdrawn"}. Tell the client if they still owe the money.`,
 
   // ---- S2: the client page's Requests panel ----
   requestsTab: "Requests",

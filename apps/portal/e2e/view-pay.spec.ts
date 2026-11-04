@@ -53,7 +53,9 @@ test("the link's page: Bank transfer, I've paid with the token in the body, and 
   await expect(note).toHaveAttribute("aria-invalid", "true");
   await expect(note).toBeFocused();
   await expect(reference).not.toHaveAttribute("aria-invalid", "true");
-  await expect(dialog.getByText("We couldn't save this note. Keep it under 300 characters.")).toBeVisible();
+  await expect(
+    dialog.getByText("We couldn't save this note. Remove any unusual characters and try again."),
+  ).toBeVisible();
   // question 2: the link ended since the page loaded (a 404): 07-U's "This link no longer works", not C15
   await reference.fill("GONE-1");
   await note.fill("Paid from our second account.\nThe sample's second line.");

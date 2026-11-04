@@ -268,7 +268,7 @@ test("review 1, M5: a recorded notice whose payment was withdrawn says so, and t
   await page.getByRole("dialog").getByRole("button", { name: "Withdraw" }).click();
   const dialog = page.getByRole("dialog", { name: "Withdraw this payment" });
   await expect(
-    dialog.getByText(/^This entry was recorded from the client's notice of .* \(Portal\)\./),
+    dialog.getByText(/^This entry was recorded from the client's notice sent on .* \(Portal\)\./),
   ).toBeVisible();
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/admin-withdraw-from-notice-1280.png` });
   await dialog.getByRole("textbox", { name: "Why it is withdrawn" }).fill("Entered in error (sample).");

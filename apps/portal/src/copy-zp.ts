@@ -164,8 +164,11 @@ export const GAP = {
   milestonesEmpty: "No milestones yet.",
   /** G11 (review L4; owner-approved 2026-11-05): a shared file's size, "512 bytes", "248 KB", "1.8 MB" (`sizeText` in lib/m71.ts). */
   fileSize: (size: string) => size,
-  /** G12 (review M1; owner-approved 2026-11-05): "I've paid" with a note the server refuses (400 naming the note); never the reference's G8. */
-  noteRefused: "We couldn't save this note. Keep it under 300 characters.",
+  /**
+   * G12 (review M1; reworded by the owner 2026-11-05, re-check 6): "I've paid" with a note the server refuses (400 naming the note). The box already stops
+   * more than 300 characters, so a refusal means a pasted control character. Never the reference's G8.
+   */
+  noteRefused: "We couldn't save this note. Remove any unusual characters and try again.",
 } as const;
 
 /** Every line as text, for the tests (banned words, no "&"). */

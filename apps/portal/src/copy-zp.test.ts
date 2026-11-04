@@ -27,7 +27,8 @@ describe("07-ZP, owner-approved [POR-04, POR-06 to POR-11]", () => {
     expect(lines.length).toBeGreaterThan(90);
     for (const line of lines) expect(line.includes(MARK), line).toBe(false);
     expect(GAP.fileSize("1.8 MB")).toBe("1.8 MB");
-    expect(GAP.noteRefused).toBe("We couldn't save this note. Keep it under 300 characters.");
+    // re-check 6: the owner's new G12 words (a refusal is a pasted control character; the box stops more than 300)
+    expect(GAP.noteRefused).toBe("We couldn't save this note. Remove any unusual characters and try again.");
   });
   it("pass the banned-phrase list (07 §1.3), say 'and', never '&', and name no card or bank field to fill in", () => {
     for (const line of zpAllText()) {
