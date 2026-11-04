@@ -11,6 +11,7 @@ import {
   refundSweepMessage,
 } from "@techaust/core";
 import { uuidv7 } from "@techaust/core/ids";
+import { refundNotify } from "@techaust/core/notifications";
 import { reviewBellStatement, reviewItemStatement } from "@techaust/db/gateway";
 import { REFUNDS_IDLE_SQL, refundItemOnceGuard } from "@techaust/db/refunds";
 import { type GatewayVerdict, gatewayRetryDelay, REVIEW_LINK } from "./gateway.ts";
@@ -24,7 +25,7 @@ const skip = (kind: string): GatewayVerdict => {
 
 /** One body of the refund family (`isRefundKind` already said so). */
 export async function processRefundFamily(
-  env: Pick<Env, "DB" | "LEADS_QUEUE">,
+  env: Pick<Env, "DB" | "LEADS_QUEUE" | "EMAIL_QUEUE">,
   body: { kind: string },
   attempts: number,
 ): Promise<GatewayVerdict> {
@@ -32,6 +33,8 @@ export async function processRefundFamily(
     const m = refundCheckMessage.safeParse(body);
     if (!m.success) return skip(body.kind);
     const r = await adminGateway(env).checkRefund?.({ refundId: m.data.refundId });
+    // M7.2 (Q4 A, producer 4): the sweep's check moved the refund to succeeded: the client's email (its consumer re-checks every rule in SQL).
+    if (r?.result === "succeeded") await env.EMAIL_QUEUE.send(refundNotify(m.data.refundId));
     logEvent("refund.check", { r: r?.result ?? "none" });
     return r?.result === "retry" ? { retry: gatewayRetryDelay(attempts) } : "ack";
   }

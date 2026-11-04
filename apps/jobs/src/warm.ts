@@ -13,7 +13,14 @@ import {
   warmOfferMessages,
   warmReportMessages,
 } from "@techaust/core";
+import { parseDigestMessage } from "@techaust/core/digest";
 import { canonicalJson } from "@techaust/core/hash";
+import {
+  parseBellsSweep,
+  parseRefundNotify,
+  parseSigninUnfinished,
+  parseStaffNotify,
+} from "@techaust/core/notifications";
 import { isReceiptMessage } from "@techaust/core/pdf-jobs";
 import {
   eventFacts,
@@ -307,6 +314,13 @@ export function warmConsumers(): number {
     );
     rendered++;
     if (isReceiptMessage({ v: 1, kind: "receipt.render", receiptId: "rct_warm", hop: 0 })) parsed++;
+    // M7.2 (run file J): the four new templates (the digest with a made-up one-click link, a staff notification, the refund email, the unfinished sign-in)
+    // and the new message readers, so their first real invocation finds the code compiled. Made-up data; nothing sent.
+    parsed += warmM72Messages();
+    for (const [template, data] of M72_WARM_SAMPLES) {
+      renderEmail(template, data, opts);
+      rendered++;
+    }
     // the user-agent reader the staff alerts use (compiles its patterns on first match)
     describeUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
@@ -398,4 +412,61 @@ export async function warmRazorpayHook(): Promise<number> {
     // never stop a Worker from starting
   }
   return ok;
+}
+
+/** M7.2: made-up data for the four new templates (the digest's one-click link has the real shape but no real token or host). */
+export const M72_WARM_SAMPLES: readonly [string, Record<string, string>][] = [
+  [
+    "digest.weekly",
+    {
+      week_label: "02 Nov 2026",
+      pipeline: "₹1.00 (1)",
+      invoiced: "₹1.00 (1)",
+      collected: "₹1.00 (1)",
+      overdue: "₹0.00 (0)",
+      new_leads: "1",
+      reminders_due: "1",
+      dashboard_url: "https://warm-up.invalid/",
+      settings_url: "https://warm-up.invalid/account/notifications",
+      unsubscribe_url:
+        "https://warm-up.invalid/u?t=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.00000000-0000-7000-8000-000000000000",
+    },
+  ],
+  [
+    "staff.notification",
+    {
+      first_name: "Warm",
+      title: "TH/PRP/2627/0001 was opened by the client",
+      url: "https://warm-up.invalid/proposals/x",
+      group: "warm",
+      settings_url: "https://warm-up.invalid/account/notifications",
+    },
+  ],
+  [
+    "refund.sent",
+    {
+      first_name: "Warm",
+      amount: "₹1.00",
+      document_number: "TH/INV/2627/0001",
+      date: "4 Nov 2026",
+      credit_note_number: "TH/CN/2627/0001",
+      url: "https://warm-up.invalid/invoices",
+    },
+  ],
+  ["staff.signin_unfinished", { first_name: "Warm", time: "5 Nov 2026, 10:00 IST", role: "staff" }],
+];
+
+/** M7.2: the five new message readers on made-up bodies (each a plain reader; counted in `warm.test.ts`). Returns how many read. */
+export function warmM72Messages(): number {
+  let n = 0;
+  try {
+    if (parseStaffNotify({ kind: "staff.notify", bell: "payment.online", entityId: "warm" })) n++;
+    if (parseDigestMessage({ v: 1, kind: "digest.weekly", weekStart: "2026-11-02" })) n++;
+    if (parseSigninUnfinished({ v: 1, kind: "signin.unfinished", asOf: 0 })) n++;
+    if (parseBellsSweep({ v: 1, kind: "bells.sweep", since: 0 })) n++;
+    if (parseRefundNotify({ kind: "refund.notify", refundId: "warm" })) n++;
+  } catch {
+    // never stop a Worker from starting
+  }
+  return n;
 }

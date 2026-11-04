@@ -54,6 +54,17 @@ describe("GatewayEvents answers", () => {
         next: { kind: "gateway.advance", paymentId: "rzp_pay_1" },
       }),
     ).toBe(true);
+    // M7.2 (Q4 A, producer 3): a refund event that moved our refund to succeeded carries `refund.notify` with the refund's id, and nothing else.
+    expect(
+      isProcessEventResult({ result: "processed", next: { kind: "refund.notify", refundId: "rf_1" } }),
+    ).toBe(true);
+    for (const bad of [
+      { result: "processed", next: { kind: "refund.notify" } },
+      { result: "processed", next: { kind: "refund.notify", refundId: "" } },
+      { result: "processed", next: { kind: "refund.notify", refundId: "x".repeat(65) } },
+      { result: "processed", next: { kind: "refund.notify", refundId: "rf_1", to: "a@b.co" } },
+    ])
+      expect(isProcessEventResult(bad)).toBe(false);
     for (const bad of [
       null,
       { result: "done" },

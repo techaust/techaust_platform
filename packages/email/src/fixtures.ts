@@ -4,6 +4,7 @@
 // and the templates' snapshot suite (packages/email) read one set; imported as `@techaust/email/fixtures` (never the package index, which holds the templates
 // and the SES client).
 
+import { M72_TEMPLATE_NAMES, PREF_GROUP_LABELS } from "@techaust/core/copy-zq";
 import type { EmailTemplate } from "@techaust/core/email-templates";
 import { firstNameOf } from "@techaust/core/offers";
 
@@ -40,6 +41,8 @@ export const TEMPLATE_NAMES: Record<EmailTemplate, string> = {
   "deed.signed": "Signed deed ready (client)",
   // M6.5: builder's staff label for the Settings test send (the designer's list), drafted for the lead.
   "receipt.sent": "Payment receipt (client)",
+  // M7.2: the builder's drafts (07-ZQ, marked until the lead approves them)
+  ...M72_TEMPLATE_NAMES,
 };
 
 const SAMPLE = "https://example.test/sample";
@@ -234,5 +237,38 @@ export function sampleData(
 
 Regards, ${who.name}, TecHaust Technologies`,
       };
+    // M7.2 (made-up figures and links; the one-click link never points at a real Worker)
+    case "digest.weekly":
+      return {
+        week_label: "2 Nov 2026",
+        pipeline: "₹4,50,000.00 (3); $2,000.00 (1)",
+        invoiced: "₹1,18,000.00 (2)",
+        collected: "₹59,000.00 (1)",
+        overdue: "₹0.00 (0)",
+        new_leads: "4",
+        reminders_due: "2",
+        dashboard_url: SAMPLE,
+        settings_url: SAMPLE,
+        unsubscribe_url: "",
+      };
+    case "staff.notification":
+      return {
+        first_name,
+        title: "TH/PRP/2627/0001 was opened by the client",
+        url: SAMPLE,
+        group: PREF_GROUP_LABELS.offerViewed,
+        settings_url: SAMPLE,
+      };
+    case "refund.sent":
+      return {
+        first_name,
+        amount: "₹11,800.00",
+        document_number: "TH/INV/2627/0001",
+        date: "4 Nov 2026",
+        credit_note_number: "TH/CN/2627/0001",
+        url: SAMPLE,
+      };
+    case "staff.signin_unfinished":
+      return { first_name, time, role: who.role };
   }
 }

@@ -13,12 +13,15 @@ import {
 } from "@techaust/core";
 import { CARE_SCAN_HOUR_IST, CARE_SCAN_REPEAT_HOURS } from "@techaust/core/care-billing";
 import { istDate, toIsoDate } from "@techaust/core/dates";
+import { type DigestMessage, digestMessageOf, digestWeekOf } from "@techaust/core/digest";
 import { istHourOf } from "@techaust/core/invoices";
+import type { BellsSweepMessage, SigninUnfinishedMessage } from "@techaust/core/notifications";
 import type { ReceiptSweepMessage } from "@techaust/core/pdf-jobs";
 import { processAlertsDaily } from "./alerts.ts";
 import { processCareBill, processCareDeadLetter, processCareIssue, processCareScan } from "./care-billing.ts";
 import { logEvent } from "./log.ts";
 import { processReminderScan } from "./reminders.ts";
+import { SWEEP_LOOKBACK_MS } from "./staff-notify.ts";
 
 /** The hourly cron (`30 * * * *` UTC is the top of every IST hour). */
 export const HOURLY_CRON = "30 * * * *";
@@ -44,7 +47,15 @@ const inWindow = (hour: number, first: number) => hour >= first && hour <= first
  */
 export function hourlyMessages(
   scheduledTime: number,
-): (BillingMessage | ReportMessage | GatewaySweepMessage | RefundMessage)[] {
+): (
+  | BillingMessage
+  | ReportMessage
+  | GatewaySweepMessage
+  | RefundMessage
+  | DigestMessage
+  | SigninUnfinishedMessage
+  | BellsSweepMessage
+)[] {
   const hour = istHourOf(scheduledTime);
   const today = istDate(scheduledTime);
   const edf: ReportMessage[] =
@@ -89,6 +100,13 @@ export function hourlyMessages(
           } satisfies RefundMessage,
         ]
       : []),
+    // M7.2 (JOB-CRON-03, L7): the owners' weekly digest on IST Mondays at 09:00, again at 10:00 and 11:00 (its email entity makes a repeat send nothing).
+    ...(inWindow(hour, ALERTS_HOUR_IST) && digestWeekOf(scheduledTime).weekStart === toIsoDate(today)
+      ? [digestMessageOf(scheduledTime)]
+      : []),
+    // M7.2 (Q3 A): the unfinished staff sign-ins, every hour; (L9) the staff notification emails' safety net over the last 75 minutes.
+    { v: 1, kind: "signin.unfinished", asOf: scheduledTime } satisfies SigninUnfinishedMessage,
+    { v: 1, kind: "bells.sweep", since: scheduledTime - SWEEP_LOOKBACK_MS } satisfies BellsSweepMessage,
   ];
 }
 

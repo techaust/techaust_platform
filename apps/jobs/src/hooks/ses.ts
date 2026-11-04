@@ -14,12 +14,13 @@
 //   6. the body streamed and cut at 64 KiB, else 413;
 //   7. `parseSesEvent`, else 400 `invalid_event` (the reason code logged, never the body; a 4xx is not retried);
 //   8. not `aws.ses`, or the `env` tag is not `ENVIRONMENT` → stored `wrong_env`, 200; a type we don't handle → stored `ignored_type`, 200;
-//   9. `sesEventStatements` in ONE batch, inline (L2; ≤ 6 indexed statements);
+//   9. `sesEventStatements` in ONE batch, inline (L2; ≤ 6 indexed statements); an event under 15 minutes old for a message id with no `email_log` row
+//      writes nothing and is answered 409 `message_not_ready` (EventBridge retries 409; early check finding 3);
 //  10. 200 `{ok: true}`; a duplicate event id is 200 with no side effects. A D1 failure is a 500 (EventBridge retries).
 // Never logged: the body, the token, an address or a message id. One line per call: `{ev: "hook", p: "ses", s: <status>, o: <outcome>, f: 1 on the isolate's
 // first}` (the staging CPU reading tells a first run from a warm one). CPU (JOB-HOOK-03, ≤ 5 ms p99): three digests, one parse of at most 64 KiB, one batch; the
 // configured tokens' digests are kept per isolate and the path is warmed at start-up (`warmSesHook`).
-import { parseSesEvent, type SesEvent, sesEventDisposition } from "@techaust/core/email-events";
+import { holdsUnknown, parseSesEvent, type SesEvent, sesEventDisposition } from "@techaust/core/email-events";
 import { staffNotify } from "@techaust/core/notifications";
 import {
   SES_TOKEN_ALERT_AT,
@@ -132,9 +133,16 @@ async function handleHook(
       seen(disposition);
       return answer(200, { ok: true });
     }
-    const res = await env.DB.batch(sesEventStatements(env.DB, ev, now));
+    const res = await env.DB.batch(
+      sesEventStatements(env.DB, ev, now, { holdUnknown: holdsUnknown(ev, now) }),
+    );
     const row = res.at(-1)?.results[0] as { outcome: string; fresh: number } | undefined;
-    seen(row?.fresh === 1 ? row.outcome : "duplicate");
+    if (!row) {
+      // Early check finding 3: a young event for a message id we can't match yet wrote nothing; 409 makes EventBridge retry it (for up to 24 hours).
+      seen("held");
+      return refuse(409, "message_not_ready");
+    }
+    seen(row.fresh === 1 ? row.outcome : "duplicate");
   } catch {
     logEvent("hook.store_failed", { provider: "ses" });
     return refuse(500, "store_failed");

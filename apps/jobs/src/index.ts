@@ -12,6 +12,7 @@ import { enqueueSweep } from "./pdf.ts";
 import { enqueueStatementPurge, PURGE_CRON, purgeScanMessage } from "./purge.ts";
 import { handleQueue } from "./queue.ts";
 import { enqueueStats } from "./stats.ts";
+import { unsubscribeGet, unsubscribePost } from "./unsubscribe.ts";
 import { warmConsumers, warmRazorpayHook } from "./warm.ts";
 import { warmPayPalHookAtStartup } from "./warm-paypal.ts";
 
@@ -41,11 +42,15 @@ app.post("/ses", (c) => sesHook(c.req.raw, c.env));
 app.post("/stripe", (c) => stripeHook(c.req.raw, c.env));
 // M6.4: the PayPal webhook, `POST /paypal` only, verified offline (any other method, or `/paypal/*`, is the 404 below and touches no database).
 app.post("/paypal", (c) => payPalHook(c.req.raw, c.env));
+// M7.2 (C.5, L8): the weekly digest's RFC 8058 one-click unsubscribe, `POST /u?t=` switches one member's digest off; `GET /u` only answers one line and
+// never changes anything (a link scanner can't unsubscribe). Access bypass on path `u` (H1); the token rides in the query string, which Workers Logs redact.
+app.post("/u", (c) => unsubscribePost(c.req.raw, c.env));
+app.get("/u", () => unsubscribeGet());
 app.notFound((c) => c.json({ error: { code: "not_found", message: "Not found" } }, 404));
 // M6.4 (L31): the router's matcher is built on its first match; matching the webhook paths while the module loads moves that out of the first metered
 // webhook (as the admin Workers' `warmRouter`). Pure: no Request, no env, no I/O; never throws.
 try {
-  for (const path of ["/paypal", "/razorpay", "/ses", "/stripe"]) app.router.match("POST", path);
+  for (const path of ["/paypal", "/razorpay", "/ses", "/stripe", "/u"]) app.router.match("POST", path);
   app.router.match("GET", "/healthz");
 } catch {
   // never stop a Worker from starting

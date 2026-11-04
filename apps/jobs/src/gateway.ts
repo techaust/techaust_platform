@@ -14,6 +14,7 @@ import {
   gatewaySweepMessage,
 } from "@techaust/core";
 import { uuidv7 } from "@techaust/core/ids";
+import { refundNotify } from "@techaust/core/notifications";
 import {
   gatewayDeadLetterStatements,
   PAYPAL_CLAIM_STALE_MS,
@@ -28,6 +29,7 @@ import {
 } from "@techaust/db/gateway";
 import { adminAdvance, adminGateway } from "./gateway-rpc.ts";
 import { logEvent } from "./log.ts";
+import { notifyRecentBells, RECENT_MARGIN_MS } from "./staff-notify.ts";
 
 /** The bell of a dead-lettered gateway message (07-ZI S20 and S22: "A payment needs review: {reason}."; staff words, lead under the owner's delegation). */
 export const DEAD_LETTER_BELL =
@@ -53,7 +55,7 @@ export type GatewayVerdict = "ack" | { retry: number };
 
 /** One body of the gateway family (`isGatewayKind` already said so). */
 export async function processGateway(
-  env: Pick<Env, "DB" | "LEADS_QUEUE">,
+  env: Pick<Env, "DB" | "LEADS_QUEUE" | "EMAIL_QUEUE">,
   body: { kind: string },
   attempts: number,
   now = Date.now(),
@@ -62,9 +64,18 @@ export async function processGateway(
     case "gateway.event": {
       const m = gatewayEventMessage.safeParse(body);
       if (!m.success) return skip(body.kind);
+      const started = now;
       const r = await adminGateway(env).processEvent({ eventId: m.data.eventId });
       if (r.result === "retry") return { retry: gatewayRetryDelay(attempts) };
-      if (r.next) await env.LEADS_QUEUE.send({ kind: "gateway.advance", paymentId: r.next.paymentId });
+      if (r.next?.kind === "gateway.advance")
+        await env.LEADS_QUEUE.send({ kind: "gateway.advance", paymentId: r.next.paymentId });
+      // M7.2 (Q4 A, producer 3): a refund event that moved our refund to succeeded: the client's email (its own message on the email queue).
+      if (r.next?.kind === "refund.notify") await env.EMAIL_QUEUE.send(refundNotify(r.next.refundId));
+      // M7.2 (L9): the payment and review bells this event rang are emailed at once (the hourly `bells.sweep` is the safety net).
+      if (r.result === "processed" || r.result === "needs_review")
+        await notifyRecentBells(env, started - RECENT_MARGIN_MS).catch(() =>
+          logEvent("gateway.notify_failed"),
+        );
       logEvent("gateway.event", { r: r.result });
       return "ack";
     }
@@ -85,7 +96,12 @@ export async function processGateway(
       // M6.3 (L13, L14): one checkout past its expiry re-fetched from its gateway; only the gateway's word ends it (L6). A `retry` comes back later.
       const m = gatewayRefreshMessage.safeParse(body);
       if (!m.success) return skip(body.kind);
+      const started = now;
       const r = await adminGateway(env).refreshCheckout({ checkoutId: m.data.checkoutId });
+      if (r.result !== "retry")
+        await notifyRecentBells(env, started - RECENT_MARGIN_MS).catch(() =>
+          logEvent("gateway.notify_failed"),
+        );
       logEvent("gateway.refresh", { r: r.result });
       return r.result === "retry" ? { retry: gatewayRetryDelay(attempts) } : "ack";
     }

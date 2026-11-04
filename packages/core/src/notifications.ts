@@ -90,3 +90,69 @@ export const staffNotify = (bell: EmailedBell, entityId: string): StaffNotifyMes
 
 export const isStaffNotifyKind = (body: unknown): boolean =>
   typeof body === "object" && body !== null && (body as { kind?: unknown }).kind === "staff.notify";
+
+/**
+ * The `notifications.entity_type` each emailed bell is written with (so the expansion reads its rows on the index `notifications_entity (entity_type,
+ * entity_id)`): the producers' own values (db `gateway.ts`, `ledger.ts`, `email-events.ts`; portal `offer-sql.ts`).
+ */
+export const BELL_ENTITY_TYPES = {
+  "offer.viewed": "document",
+  "payment.online": "payment",
+  "payment.verify": "payment",
+  "payment.review": "review_item",
+  "payment.hook_signature": "hook_window",
+  "email.hook_token": "hook_window",
+} as const satisfies Record<EmailedBell, string>;
+
+/** The admin page of a member's switches (Your account › Notifications; the designer's route; the emails' "Change notification settings" link). */
+export const NOTIFICATIONS_PATH = "/account/notifications";
+
+const exactKeys = (o: Record<string, unknown>, keys: readonly string[]): boolean => {
+  const k = Object.keys(o);
+  return k.length === keys.length && k.every((x) => keys.includes(x));
+};
+const objOf = (body: unknown): Record<string, unknown> | null =>
+  typeof body === "object" && body !== null && !Array.isArray(body)
+    ? (body as Record<string, unknown>)
+    : null;
+const isMs = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
+
+/** Q3 A: the hourly tick's scan of unfinished staff sign-ins (`asOf` the tick's time). Plain reader (no zod in the jobs bundle's hot path). */
+export type SigninUnfinishedMessage = { v: 1; kind: "signin.unfinished"; asOf: number };
+export function parseSigninUnfinished(body: unknown): SigninUnfinishedMessage | null {
+  const o = objOf(body);
+  if (
+    !o ||
+    !exactKeys(o, ["v", "kind", "asOf"]) ||
+    o.v !== 1 ||
+    o.kind !== "signin.unfinished" ||
+    !isMs(o.asOf)
+  )
+    return null;
+  return { v: 1, kind: "signin.unfinished", asOf: o.asOf };
+}
+export const isSigninUnfinishedKind = (body: unknown): boolean => objOf(body)?.kind === "signin.unfinished";
+
+/**
+ * The hourly safety net of the staff notification emails: the emailed bells written since `since` (any producer: a lost `waitUntil`, a portal capture, a hook
+ * failure) are expanded again; the email log's entity (the bell row and the recipient) makes a repeat send nothing twice.
+ */
+export type BellsSweepMessage = { v: 1; kind: "bells.sweep"; since: number };
+export function parseBellsSweep(body: unknown): BellsSweepMessage | null {
+  const o = objOf(body);
+  if (!o || !exactKeys(o, ["v", "kind", "since"]) || o.v !== 1 || o.kind !== "bells.sweep" || !isMs(o.since))
+    return null;
+  return { v: 1, kind: "bells.sweep", since: o.since };
+}
+export const isBellsSweepKind = (body: unknown): boolean => objOf(body)?.kind === "bells.sweep";
+
+/** Q4 A (run file D, "Refund email"): a refund that reached `succeeded`; ids only. */
+export type RefundNotifyMessage = { kind: "refund.notify"; refundId: string };
+export function parseRefundNotify(body: unknown): RefundNotifyMessage | null {
+  const o = objOf(body);
+  if (!o || !exactKeys(o, ["kind", "refundId"]) || o.kind !== "refund.notify") return null;
+  if (typeof o.refundId !== "string" || o.refundId.length < 1 || o.refundId.length > 64) return null;
+  return { kind: "refund.notify", refundId: o.refundId };
+}
+export const refundNotify = (refundId: string): RefundNotifyMessage => ({ kind: "refund.notify", refundId });
+export const isRefundNotifyKind = (body: unknown): boolean => objOf(body)?.kind === "refund.notify";

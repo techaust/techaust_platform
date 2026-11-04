@@ -15,6 +15,7 @@
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import { normaliseReference } from "@techaust/core/invoices";
+import { refundNotify } from "@techaust/core/notifications";
 import { refundBody, refundInrBody } from "@techaust/core/payment-schemas";
 import { decide } from "@techaust/core/permissions";
 import { planRefund, refundExportWarning } from "@techaust/core/refunds";
@@ -38,6 +39,7 @@ import { type AppEnv, actor, BAD_REQUEST, err, FORBIDDEN, mutate, NOT_FOUND } fr
 import { refundGwOf } from "./gateway/refund-gw.ts";
 import { body, idParam, param, query, STALE_VERSION } from "./http.ts";
 import { decodeCursor, encodeCursor } from "./keyset.ts";
+import { queueNotify } from "./mail.ts";
 import {
   creditNoteFactsOf,
   creditRefundFactsOf,
@@ -497,6 +499,7 @@ export const refunds = new Hono<AppEnv>()
     }
     if (way !== "gateway" || !gw || !p.provider_payment_id) {
       const r = await readRefund(db, f.id);
+      notifySucceeded(c, r);
       return c.json({ refund: r ? view(r) : null, facts });
     }
     // (3) the gateway, with our id as its idempotency key; then batch 2 by its answer.
@@ -511,6 +514,7 @@ export const refunds = new Hono<AppEnv>()
     if (answer.ok) {
       await applyGatewayRefund(c.env, row, answer.value, Date.now());
       const r = await readRefund(db, f.id);
+      notifySucceeded(c, r);
       return c.json({ refund: r ? view(r) : null, facts });
     }
     if (answer.code === "refused" || answer.code === "not_found") {
@@ -534,6 +538,18 @@ export const refunds = new Hono<AppEnv>()
     // A network failure or an unreadable answer: the row stays `requested` and the sweep (or "Try again") finds it by our id (C step 4).
     return c.json({ refund: view(row), status: "requested", facts }, 202);
   });
+
+/**
+ * M7.2 (Q4 A; run file D "Refund email" producers 1 and 2): a refund this request saw reach `succeeded` (a manual or outside refund recorded in batch 1, a gateway
+ * that answered "succeeded", a "Try again" or a cancel that found it made): `refund.notify` from `waitUntil`. The jobs consumer re-checks every rule in SQL
+ * (origin not `chargeback`, the client not anonymised, the finance contacts), so a chargeback or an erased client gets nothing.
+ */
+function notifySucceeded(
+  c: Parameters<typeof queueNotify>[0],
+  r: { id: string; status: string } | null,
+): void {
+  if (r?.status === "succeeded") queueNotify(c, refundNotify(r.id));
+}
 
 /** `/refunds`: the Refunds tab, "Try again" and Cancel. */
 export const refundsTab = new Hono<AppEnv>()
@@ -585,6 +601,7 @@ export const refundsTab = new Hono<AppEnv>()
       summary: { refundId: id, result: checked.result },
     });
     const r = await readRefund(c.env.DB, id);
+    if (before.status !== "succeeded") notifySucceeded(c, r);
     return c.json({ refund: r ? view(r) : null, result: checked.result });
   })
   .post("/:id/cancel", param(idParam), async (c) => {
@@ -607,6 +624,7 @@ export const refundsTab = new Hono<AppEnv>()
       if (found.value === "unknown") return err(c, REFUSALS.not_cancellable, 409);
       if (found.value !== null) {
         await applyGatewayRefund(c.env, row, found.value, Date.now());
+        notifySucceeded(c, await readRefund(db, id));
         return err(c, REFUSALS.refund_found, 409);
       }
     }

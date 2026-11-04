@@ -48,6 +48,8 @@ export type SesEvent = {
   readonly messageId: string;
   /** Our `env` message tag (`detail.mail.tags.env`, one value), or null when absent or not one plain value. */
   readonly env: string | null;
+  /** The envelope `time` in ms, or null when absent or unreadable (early check finding 3: a fresh event for a message we can't match yet is held). */
+  readonly timeMs?: number | null;
   readonly bounce?: {
     readonly kind: BounceKind;
     readonly subType: string | null;
@@ -143,7 +145,8 @@ export function parseSesEvent(obj: unknown): ParsedSesEvent {
   const byEventType = Object.values(SES_HANDLED).find((h) => h.eventType === eventType);
   // A handled detail-type with another eventType, or a handled eventType under another detail-type: a shape we have not confirmed (refused, never guessed).
   if ((handled && handled.eventType !== eventType) || (!handled && byEventType)) return bad("type_mismatch");
-  const base = { eventId, source, messageId, env };
+  const time = typeof obj.time === "string" && obj.time.length <= 40 ? Date.parse(obj.time) : Number.NaN;
+  const base = { eventId, source, messageId, env, timeMs: Number.isFinite(time) ? time : null };
   if (!handled) return { ok: true, value: { ...base, type: "other" } };
   if (handled.type === "delivery") return { ok: true, value: { ...base, type: "delivery" } };
   if (handled.type === "bounce") {
@@ -253,3 +256,41 @@ export const SES_BELLS = {
   "email.hook_token": "Email delivery updates were refused 5 times this hour (wrong token).",
 } as const;
 export type SesBellKind = keyof typeof SES_BELLS;
+
+/**
+ * The same bells for an address that isn't a live client contact (a lead's, a staff member's): early check answer 2, lines drafted by the lead under the
+ * owner's delegation (run file, "Lead triage of the early check"). Chosen in SQL by `CASE WHEN code IS NULL`.
+ */
+export const SES_BELLS_NOT_CONTACT = {
+  "email.bounced":
+    "An email to an address that isn't a client contact bounced. Emails to that address are stopped.",
+  "email.complaint":
+    "Someone marked an email to an address that isn't a client contact as spam. Emails to that address are stopped.",
+} as const;
+
+/**
+ * Early check finding 3: an event for a message id we can't match yet (SES can answer before our `email_log` row has its message id, e.g. an
+ * `OnAccountSuppressionList` bounce, or after a failed status write) is HELD while its envelope `time` is within this of now: nothing is written and the hook
+ * answers 409, which EventBridge retries (CONFIRMED at the early check, EventBridge User Guide "API destination error codes": 401, 407, 409, 429 and 5xx are
+ * retried). Older, or with no readable time, it is stored `unknown_message`.
+ */
+export const SES_UNKNOWN_HOLD_MS = 15 * 60_000;
+
+/** Whether an event of this time is still young enough to be held (either side of now, for a skewed clock). */
+export const holdsUnknown = (ev: Pick<SesEvent, "timeMs">, now: number): boolean =>
+  typeof ev.timeMs === "number" && Math.abs(now - ev.timeMs) < SES_UNKNOWN_HOLD_MS;
+
+/**
+ * The words of a suppression's reason (S13; early check finding 7): the three reasons trigger 0074 allows, and one generic label for anything older or unknown (a
+ * row written before 0074 may say `bounce`). Staff words drafted by the builder for the lead ("[Placeholder]" until approved; the designer places them).
+ */
+export const SUPPRESSION_REASON_LABELS = {
+  hard_bounce: "[Placeholder] The address bounced",
+  complaint: "[Placeholder] Marked as spam",
+  manual: "[Placeholder] Stopped by hand",
+} as const;
+export const SUPPRESSION_REASON_OTHER = "[Placeholder] Emails stopped";
+export const suppressionReasonLabel = (reason: string | null | undefined): string =>
+  typeof reason === "string" && Object.hasOwn(SUPPRESSION_REASON_LABELS, reason)
+    ? SUPPRESSION_REASON_LABELS[reason as keyof typeof SUPPRESSION_REASON_LABELS]
+    : SUPPRESSION_REASON_OTHER;

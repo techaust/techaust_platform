@@ -47,6 +47,9 @@ describe("the hourly cron `30 * * * *` [LD61]", () => {
         // M6.5 (changed on purpose): the refund sweep every hour; yesterday's Razorpay settlements at 09:00 IST.
         "refund.sweep",
         ...(h === 9 ? ["recon.fetch"] : []),
+        // M7.2 (changed on purpose): the unfinished sign-in scan and the bells sweep every hour (the digest only on Mondays: m72-jobs.test.ts).
+        "signin.unfinished",
+        "bells.sweep",
       ];
       expect(kinds, `hour ${h}`).toEqual(expected);
     }
@@ -63,13 +66,16 @@ describe("the hourly cron `30 * * * *` [LD61]", () => {
     const dead = new Proxy({}, { get: () => () => Promise.reject(new Error("D1 must not be read")) });
     const env = makeEnv({ DB: dead });
     // M6.5 (changed on purpose): four bodies in the one sendBatch, and the receipt sweep on the PDF queue (its consumer reads D1, never the cron).
-    expect(await enqueueHourly(env, istTick("2026-11-10", 6))).toBe(5);
-    expect(fakes.leads.map((s) => s.via)).toEqual(["sendBatch", "sendBatch", "sendBatch", "sendBatch"]); // four bodies, one call
+    expect(await enqueueHourly(env, istTick("2026-11-10", 6))).toBe(7);
+    // M7.2 (changed on purpose): six bodies, still one call.
+    expect(fakes.leads.map((s) => s.via)).toEqual(Array(6).fill("sendBatch"));
     expect(fakes.leads.map((s) => (s.body as { kind: string }).kind)).toEqual([
       "care.scan",
       "reminder.scan",
       "gateway.sweep",
       "refund.sweep",
+      "signin.unfinished",
+      "bells.sweep",
     ]);
     expect(fakes.email).toEqual([]);
     expect(fakes.pdf.map((s) => (s.body as { kind: string }).kind)).toEqual(["receipt.sweep"]);
@@ -88,6 +94,8 @@ describe("the hourly cron `30 * * * *` [LD61]", () => {
       "gateway.sweep", // M6.2, changed on purpose
       "refund.sweep", // M6.5, changed on purpose
       "recon.fetch",
+      "signin.unfinished", // M7.2, changed on purpose
+      "bells.sweep",
     ]);
     fakes.leads.length = 0;
     await run("5 5 5 5 5", istTick("2026-11-10", 9));

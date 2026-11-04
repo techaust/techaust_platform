@@ -69,6 +69,8 @@ describe("the 09:00 IST dispatch [LD76]", () => {
           "gateway.sweep", // M6.2, changed on purpose
           "refund.sweep", // M6.5, changed on purpose
           ...(h === ALERTS_HOUR_IST ? ["recon.fetch"] : []),
+          "signin.unfinished", // M7.2, changed on purpose
+          "bells.sweep",
         ];
         expect(kinds, `day ${day} hour ${h}`).toEqual(expected);
       }
@@ -95,8 +97,9 @@ describe("the 09:00 IST dispatch [LD76]", () => {
     const dead = new Proxy({}, { get: () => () => Promise.reject(new Error("D1 must not be read")) });
     const env = makeEnv({ DB: dead });
     // M6.5 (changed on purpose): seven bodies in the one sendBatch, and the receipt sweep on the PDF queue.
-    expect(await enqueueHourly(env, tick("2026-11-05"))).toBe(8);
-    expect(fakes.leads.map((s) => s.via)).toEqual(Array(7).fill("sendBatch"));
+    // M7.2 (changed on purpose): nine bodies.
+    expect(await enqueueHourly(env, tick("2026-11-05"))).toBe(10);
+    expect(fakes.leads.map((s) => s.via)).toEqual(Array(9).fill("sendBatch"));
     expect(fakes.leads.map((s) => (s.body as { kind: string }).kind)).toEqual([
       "alerts.daily",
       "realisation.scan",
@@ -105,6 +108,8 @@ describe("the 09:00 IST dispatch [LD76]", () => {
       "gateway.sweep",
       "refund.sweep",
       "recon.fetch",
+      "signin.unfinished",
+      "bells.sweep",
     ]);
   });
 
@@ -122,6 +127,8 @@ describe("the 09:00 IST dispatch [LD76]", () => {
       "gateway.sweep",
       "refund.sweep",
       "recon.fetch",
+      "signin.unfinished",
+      "bells.sweep",
     ]);
   });
 });

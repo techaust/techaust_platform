@@ -8,14 +8,14 @@
 //      message to is ever suppressed (a forged event for an address we never emailed suppresses nothing; L4);
 //   4. for a Permanent bounce only: `bounced_at` set once on every live contact with that address (at any client), `updated_at` untouched so an open screen never
 //      reads a false `stale_version` (L5);
-//   5. the owners' bell (`email.bounced`, `email.complaint`), keyed by the `email_log` id, named by the client's code (never an address); none when no live
-//      contact has the address (a lead or a staff member);
+//   5. the owners' bell (`email.bounced`, `email.complaint`), keyed by the `email_log` id, named by the client's code (never an address); for an address that
+//      isn't a live contact (a lead's, a staff member's) the "isn't a client contact" line (early check answer 2, `SES_BELLS_NOT_CONTACT`);
 //   6. the event's outcome read back (new or a duplicate), for the hook's log line.
 // Statements 3 to 5 run when THIS request's event row exists with a known message (`applied` or `stale`): a bounce that no longer moves the row (after a
 // complaint, say) still stops the address. "This request's" row: the id and the `received_at` the hook bound (`?6`); a duplicate keeps the first row's time.
 // Every side statement is idempotent anyway (rank, `INSERT OR IGNORE`, `coalesce`, the bell's unique key).
 import type { SesEvent } from "@techaust/core/email-events";
-import { EVENT_STATUS, SES_BELLS, suppressionOf } from "@techaust/core/email-events";
+import { EVENT_STATUS, SES_BELLS, SES_BELLS_NOT_CONTACT, suppressionOf } from "@techaust/core/email-events";
 import { emailRankSql } from "./email-rank.ts";
 
 type Db = Pick<D1Database, "prepare">;
@@ -38,9 +38,13 @@ const OUTCOME_SQL = `CASE
       OR (?3 = 'bounce' AND ?4 = 'permanent' AND status = 'bounced' AND bounce_type IS NOT 'permanent'))) THEN 'applied'
   ELSE 'stale' END`;
 
-/** The upsert of the event row (`?1` event id, `?2` message id, `?3` type, `?4` bounce type, `?5` bounce sub-type, `?6` now, `?7` target rank). */
+/**
+ * The upsert of the event row (`?1` event id, `?2` message id, `?3` type, `?4` bounce type, `?5` bounce sub-type, `?6` now, `?7` target rank, `?8` 1 to HOLD an
+ * event whose message we can't match yet: then nothing is written, the read-back finds no row and the hook answers 409 for EventBridge to retry; early check
+ * finding 3, core `holdsUnknown`).
+ */
 const EVENT_INSERT_SQL = `INSERT INTO email_events (id, ses_message_id, type, bounce_type, bounce_sub_type, email_log_id, outcome, received_at)
-  SELECT ?1, ?2, ?3, ?4, ?5, (${LOG_ROW}), ${OUTCOME_SQL}, ?6 WHERE true
+  SELECT ?1, ?2, ?3, ?4, ?5, (${LOG_ROW}), ${OUTCOME_SQL}, ?6 WHERE ?8 = 0 OR EXISTS (${LOG_ROW})
   ON CONFLICT (id) DO NOTHING`;
 
 /** The read-back: this request's row (`new`), or the earlier one of a duplicate. */
@@ -53,7 +57,12 @@ const RANK = { delivered: 2, bounced: 3, complained: 4 } as const;
  * The hook's batch for an event it applies (`sesEventDisposition` is `apply`). `now` is the receipt time (ms); it also marks this request's event row. The last
  * statement reads the row back: `{outcome, fresh}` (`fresh` 0 for a duplicate).
  */
-export function sesEventStatements(db: Db, ev: SesEvent, now: number): D1PreparedStatement[] {
+export function sesEventStatements(
+  db: Db,
+  ev: SesEvent,
+  now: number,
+  opts: { holdUnknown?: boolean } = {},
+): D1PreparedStatement[] {
   if (ev.type === "other")
     throw new Error(
       "sesEventStatements: an event of a type we don't handle is stored with sesEventRecordStatement",
@@ -63,7 +72,7 @@ export function sesEventStatements(db: Db, ev: SesEvent, now: number): D1Prepare
   const bounceSubType = ev.bounce?.subType ?? null;
   const base = [ev.eventId, ev.messageId, ev.type, bounceType, bounceSubType, now, RANK[target]] as const;
   const out: D1PreparedStatement[] = [
-    db.prepare(EVENT_INSERT_SQL).bind(...base),
+    db.prepare(EVENT_INSERT_SQL).bind(...base, opts.holdUnknown === true ? 1 : 0),
     db
       .prepare(
         `UPDATE email_log SET status = ?8, last_event_at = ?6, bounce_type = CASE WHEN ?3 = 'bounce' THEN ?4 ELSE bounce_type END
@@ -102,14 +111,15 @@ export function sesEventStatements(db: Db, ev: SesEvent, now: number): D1Prepare
       db
         .prepare(
           `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
-           SELECT 'n_' || lower(hex(randomblob(16))), u.id, ?9, 'email_log', x.id, replace(?10, '{client_code}', x.code), '/emails/' || x.id
+           SELECT 'n_' || lower(hex(randomblob(16))), u.id, ?9, 'email_log', x.id,
+             CASE WHEN x.code IS NULL THEN ?11 ELSE replace(?10, '{client_code}', x.code) END, '/emails/' || x.id
            FROM (SELECT o.id, (SELECT min(cl.code) FROM contacts ct JOIN clients cl ON cl.id = ct.client_id
                                WHERE ct.email = o.to_email AND ct.anonymised_at IS NULL) AS code
                  FROM (${ours}) o) x
            JOIN staff_users u ON u.role = 'owner' AND u.status = 'active'
-           WHERE x.code IS NOT NULL AND ${known}`,
+           WHERE ${known}`,
         )
-        .bind(...base, recipients, kind, SES_BELLS[kind]),
+        .bind(...base, recipients, kind, SES_BELLS[kind], SES_BELLS_NOT_CONTACT[kind]),
     );
   }
   out.push(db.prepare(EMAIL_EVENT_READ_SQL).bind(ev.eventId, now));

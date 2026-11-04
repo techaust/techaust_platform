@@ -40,13 +40,19 @@ export const EMAIL_TEMPLATES = [
   "deed.signed",
   // M6.5 (ADM-MAIL-01, ADM-PAY-09): the client's payment receipt (from billing@, to its portal contacts who can see finance). Words: 07-ZO lines 11 and 12.
   "receipt.sent",
+  // M7.2 (ADM-MAIL-01, ADM-G-09, ADM-PAY-08, JOB-CRON-03): the owners' weekly digest (the only non-transactional email), a staff notification email (one per
+  // bell row, by the member's switches), the client's refund email (Q4 A) and the unfinished sign-in alert (Q3 A). Words: 07-ZQ (`@techaust/core/copy-zq`).
+  "digest.weekly",
+  "staff.notification",
+  "refund.sent",
+  "staff.signin_unfinished",
 ] as const;
 export type EmailTemplate = (typeof EMAIL_TEMPLATES)[number];
 
 /**
  * M7.2 (C.4, L8, L16): the non-transactional emails, which alone carry the RFC 8058 one-click headers, the "Why you're receiving this" footer and the marketing
  * configuration set. Pinned to the staff weekly digest: no marketing email goes to a client in M7.2 (Researched 2026-10-28, DPDP Act s.6 consent and the
- * CAN-SPAM opt-out for commercial email (08-C RB-28); the digest goes to staff only). `digest.weekly` joins `EMAIL_TEMPLATES` with its template (B2, designer).
+ * CAN-SPAM opt-out for commercial email (08-C RB-28); the digest goes to staff only).
  */
 export const NON_TRANSACTIONAL_TEMPLATES: readonly string[] = ["digest.weekly"];
 export const isNonTransactional = (template: string): boolean =>

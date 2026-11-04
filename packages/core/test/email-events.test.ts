@@ -5,15 +5,20 @@ import { describe, expect, it } from "vitest";
 import {
   EMAIL_EVENT_RANK,
   emailEventMove,
+  holdsUnknown,
   nextEmailStatus,
   parseSesEvent,
   recipientsOfEvent,
   SES_BELLS,
   SES_HANDLED,
   SES_RECIPIENTS_MAX,
+  SES_UNKNOWN_HOLD_MS,
   type SesEvent,
+  SUPPRESSION_REASON_LABELS,
+  SUPPRESSION_REASON_OTHER,
   sesEventDisposition,
   suppressionOf,
+  suppressionReasonLabel,
 } from "../src/email-events.ts";
 
 const MESSAGE_ID = "0109019a2b3c4d5e-11112222-3333-4444-5555-666677778888-000000";
@@ -98,7 +103,36 @@ describe("parseSesEvent on the recorded shapes", () => {
       type: "delivery",
       messageId: MESSAGE_ID,
       env: "staging",
+      timeMs: Date.parse("2026-11-05T04:41:05Z"),
     });
+  });
+
+  it("finding 3: the envelope time is read as ms (null when absent, unreadable or over-long); holdsUnknown holds within 15 minutes either side", () => {
+    const at = Date.parse("2026-11-05T04:41:05Z");
+    const withTime = (time: unknown) => {
+      const e = envelope("delivery") as Record<string, unknown>;
+      if (time === undefined) delete e.time;
+      else e.time = time;
+      return ok(e);
+    };
+    expect(withTime(undefined).timeMs).toBeNull();
+    expect(withTime("not a date").timeMs).toBeNull();
+    expect(withTime(12345).timeMs).toBeNull();
+    expect(withTime(`2026-11-05T04:41:05Z${" ".repeat(40)}`).timeMs).toBeNull();
+    const ev = withTime("2026-11-05T04:41:05Z");
+    expect(holdsUnknown(ev, at + SES_UNKNOWN_HOLD_MS - 1)).toBe(true);
+    expect(holdsUnknown(ev, at - SES_UNKNOWN_HOLD_MS + 1)).toBe(true);
+    expect(holdsUnknown(ev, at + SES_UNKNOWN_HOLD_MS)).toBe(false);
+    expect(holdsUnknown({ timeMs: null }, at)).toBe(false);
+    expect(holdsUnknown({}, at)).toBe(false);
+  });
+
+  it("finding 7: the suppression reasons have labels and anything else (an old 'bounce') a generic one", () => {
+    expect(suppressionReasonLabel("hard_bounce")).toBe(SUPPRESSION_REASON_LABELS.hard_bounce);
+    expect(suppressionReasonLabel("complaint")).toBe(SUPPRESSION_REASON_LABELS.complaint);
+    expect(suppressionReasonLabel("manual")).toBe(SUPPRESSION_REASON_LABELS.manual);
+    for (const r of ["bounce", "", null, undefined, "toString", "__proto__"])
+      expect(suppressionReasonLabel(r)).toBe(SUPPRESSION_REASON_OTHER);
   });
 
   it("a bounce: kind, sub-type and the recipients lower-cased; no diagnostic code, status or feedback id", () => {

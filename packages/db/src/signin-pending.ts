@@ -21,6 +21,11 @@ export const signinPendingDoneSql = (at: number): string =>
 
 /** At most this many rows a scan (Free plan: one bounded unit of work). */
 export const SIGNIN_SCAN_LIMIT = 50;
+/**
+ * The `login_totp` challenge's lifetime (`CHALLENGE_TTL_MS` in `@techaust/auth`, pinned equal by the admin test `signin-pending.test.ts`): a row younger than this
+ * may still be finished, so the scan never reports it. Here so the jobs Worker needs no auth package.
+ */
+export const SIGNIN_CHALLENGE_TTL_MS = 5 * 60_000;
 /** Notified rows are kept a day (so the owners' bell and the email log can be matched), then deleted by the next scan. */
 export const SIGNIN_KEEP_MS = 86_400_000;
 

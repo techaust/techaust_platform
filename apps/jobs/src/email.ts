@@ -13,6 +13,8 @@ import {
   stableId,
   staffAlertMessage,
 } from "@techaust/core";
+import { jobFailedTitle } from "@techaust/core/copy-zq";
+import { istDate, toIsoDate } from "@techaust/core/dates";
 import { ATTACHMENT_MAX_BYTES } from "@techaust/core/offers";
 import {
   type Attachment,
@@ -179,10 +181,21 @@ async function sendClaimed(
       return "skipped";
     }
   }
-  const suppressed = await env.DB.prepare("SELECT 1 AS x FROM email_suppressions WHERE email = ?1")
-    .bind(to)
-    .first();
-  if (suppressed) {
+  // One read: the suppression list, and (M7.2, the M3.3 follow-up) whether a sign-in link's token row still exists. A link whose row is gone (the contact was
+  // erased, or the token cleaned up) is never sent.
+  const magic = m.template === "portal.magic_link" && m.entity.type === "magic_link" ? m.entity.id : null;
+  const check = await env.DB.prepare(
+    `SELECT EXISTS (SELECT 1 FROM email_suppressions WHERE email = ?1) AS suppressed,
+       CASE WHEN ?2 IS NULL THEN 1 ELSE EXISTS (SELECT 1 FROM magic_link_tokens WHERE token_hash = ?2) END AS live`,
+  )
+    .bind(to, magic)
+    .first<{ suppressed: number; live: number }>();
+  if (check?.live === 0) {
+    await setStatus(env.DB, id, "skipped", { error: "token_gone" }, now);
+    logEvent("email.skipped", { template: m.template, why: "token_gone" });
+    return "skipped";
+  }
+  if (check?.suppressed === 1) {
     await setStatus(env.DB, id, "skipped", { error: "suppressed" }, now);
     logEvent("email.skipped", { template: m.template, why: "suppressed" });
     return "skipped";
@@ -258,6 +271,14 @@ async function sendClaimed(
   return "retry";
 }
 
+/** Early check finding 4: a dead letter marks only an email that never left as failed, keeping the message id (`?1` the row, `?2` now). */
+export const DEAD_LETTER_SQL =
+  "UPDATE email_log SET status = 'failed', error = 'dead-lettered', updated_at = ?2 WHERE id = ?1 AND status IN ('queued', 'sending')";
+
+/** The owners' `job.failed` bell (`?1` `<queue>:<IST day>`, `?2` the title): one per owner, queue and IST day (the unique `(user_id, kind, entity_id)`). */
+export const JOB_FAILED_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
+  SELECT 'n_' || lower(hex(randomblob(16))), o.id, 'job.failed', 'queue', ?1, ?2, '/' FROM staff_users o WHERE o.role = 'owner' AND o.status = 'active'`;
+
 /**
  * A dead-lettered message: one log line without personal data and an alert to LEAD_ALERT_TO, sent directly through the
  * transport (not the email queue), so a broken email queue cannot swallow it. False when the alert could not be sent.
@@ -303,15 +324,22 @@ export async function processDeadLetter(
       rendered = dlqAlert({ queue, admin_url: env.ADMIN_URL, template }, opts);
     } else if (email.success) {
       ref = email.data.entity.type === "lead" ? email.data.entity.id : undefined;
-      // The email's log row ends as failed, so it never reads as still pending (best effort).
-      await setStatus(env.DB, emailLogId(email.data), "failed", { error: "dead-lettered" }, Date.now()).catch(
-        () => undefined,
-      );
+      // The email's log row ends as failed, so it never reads as still pending (best effort). M7.2 (early check finding 4): only a row that never left (queued
+      // or sending); a row SES took (sent, or moved on by its events) keeps its status and its message id, which the SES hook matches on.
+      await env.DB.prepare(DEAD_LETTER_SQL)
+        .bind(emailLogId(email.data), Date.now())
+        .run()
+        .catch(() => undefined);
       rendered = dlqAlert({ queue, admin_url: env.ADMIN_URL, template: email.data.template, ref }, opts);
     }
   }
   logEvent("queue.dead_letter", { queue, ref, readable: rendered !== undefined });
   rendered ??= dlqAlert({ queue, admin_url: env.ADMIN_URL }, opts);
+  // M7.2 (run file D, L13): the owners' bell `job.failed`, once per queue per IST day (best effort; the alert email below is the record).
+  await env.DB.prepare(JOB_FAILED_BELL_SQL)
+    .bind(`${queue}:${toIsoDate(istDate(Date.now()))}`, jobFailedTitle(queue))
+    .run()
+    .catch(() => logEvent("queue.dead_letter_bell_failed", { queue }));
 
   const r = await transport.send({
     from: SENDERS.hello,

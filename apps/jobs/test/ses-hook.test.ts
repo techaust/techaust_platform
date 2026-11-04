@@ -38,7 +38,14 @@ async function sentLog(to: string, status = "sent") {
 function envelope(
   kind: "delivery" | "bounce" | "complaint",
   messageId: string,
-  o: { to?: string; env?: string | null; source?: string; bounceType?: string; id?: string } = {},
+  o: {
+    to?: string;
+    env?: string | null;
+    source?: string;
+    bounceType?: string;
+    id?: string;
+    time?: string;
+  } = {},
 ) {
   const detailType = {
     delivery: "Email Delivered",
@@ -79,7 +86,8 @@ function envelope(
       "detail-type": detailType,
       source: o.source ?? "aws.ses",
       account: "123456789012",
-      time: "2026-11-05T04:41:05Z",
+      // Far from any test's now, so an unknown message is stored, not held (early check finding 3); the hold tests pass their own time.
+      time: o.time ?? "2026-01-05T04:41:05Z",
       region: "ap-south-1",
       resources: [],
       detail,
@@ -134,7 +142,7 @@ describe("routing (the real Worker)", () => {
       ["PUT", "/ses"],
       ["POST", "/ses/x"],
       ["POST", "/ses/"],
-      ["GET", "/u"],
+      ["GET", "/u/x"],
     ] as const) {
       const res = await exports.default.fetch(
         new Request(`https://jobs.example.test${path}`, {
@@ -347,6 +355,74 @@ describe("POST /ses: the events [JOB-HOOK-02, L4, L15]", () => {
     expect((await post(e.body)).status).toBe(200);
     expect(await eventOf(e.id)).toEqual({ outcome: "unknown_message", email_log_id: null });
     expect(await suppressed("stranger@example.test")).toBeNull();
+  });
+
+  it("finding 3: a young event for a message id we can't match yet writes nothing and is 409; the retry after the row has its id applies", async () => {
+    const now = Date.parse("2026-11-05T10:00:00Z");
+    const email = `early${Date.now()}@example.test`;
+    const messageId = `0109019a-early-${Date.now()}-000000`;
+    const e = envelope("bounce", messageId, { to: email, time: "2026-11-05T09:59:00Z" });
+    const before = await eventCount();
+    const res = await post(e.body, {}, hookEnv(), now);
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: { code: "message_not_ready" } });
+    expect(await eventCount()).toBe(before);
+    expect(await suppressed(email)).toBeNull();
+    expect(logs.join("\n")).toContain('"o":"held"');
+    // The consumer's status write lands; EventBridge's retry of the same event now applies.
+    await realEnv.DB.prepare(
+      "INSERT INTO email_log (id, to_email, template, entity_type, entity_id, ses_message_id, status, created_at, updated_at) VALUES (?1, ?2, 'invoice.sent', 'document_send', ?1, ?3, 'sent', 1, 1)",
+    )
+      .bind(`log-early-${Date.now()}`, email, messageId)
+      .run();
+    const retry = await post(e.body, {}, hookEnv(), now + 60_000);
+    expect(retry.status).toBe(200);
+    expect((await eventOf(e.id))?.outcome).toBe("applied");
+    expect((await suppressed(email))?.reason).toBe("hard_bounce");
+  });
+
+  it("finding 3: an unknown message's event older than 15 minutes (or a skewed clock beyond it) is stored unknown_message", async () => {
+    const now = Date.parse("2026-11-05T10:00:00Z");
+    for (const time of ["2026-11-05T09:44:59Z", "2026-11-05T10:15:01Z"]) {
+      const e = envelope("delivery", `m-old-${time}`, { time });
+      expect((await post(e.body, {}, hookEnv(), now)).status).toBe(200);
+      expect((await eventOf(e.id))?.outcome).toBe("unknown_message");
+    }
+    // a time in the window either side of now is held
+    const ahead = envelope("delivery", "m-ahead", { time: "2026-11-05T10:14:00Z" });
+    expect((await post(ahead.body, {}, hookEnv(), now)).status).toBe(409);
+  });
+
+  it("Q2: a bounce of an address that isn't a live client contact rings the owners with the other line; a contact's names the client code", async () => {
+    const owner = await staff("owner");
+    const lead = `lead${Date.now()}@example.test`;
+    const l = await sentLog(lead);
+    await post(envelope("bounce", l.messageId, { to: lead }).body);
+    const client = await mkClient();
+    const email = `contact${Date.now()}@example.test`;
+    await mkContact(client, { email });
+    const c = await sentLog(email);
+    await post(envelope("complaint", c.messageId, { to: email }).body);
+    const title = (entity: string) =>
+      realEnv.DB.prepare("SELECT kind, title, link FROM notifications WHERE user_id = ?1 AND entity_id = ?2")
+        .bind(owner.id, entity)
+        .first<{ kind: string; title: string; link: string }>();
+    expect(await title(l.id)).toEqual({
+      kind: "email.bounced",
+      title:
+        "An email to an address that isn't a client contact bounced. Emails to that address are stopped.",
+      link: `/emails/${l.id}`,
+    });
+    const code = (
+      await realEnv.DB.prepare("SELECT code FROM clients WHERE id = ?1")
+        .bind(client)
+        .first<{ code: string }>()
+    )?.code as string;
+    expect(await title(c.id)).toEqual({
+      kind: "email.complaint",
+      title: `A contact at ${code} marked an email as spam. Emails to that address are stopped.`,
+      link: `/emails/${c.id}`,
+    });
   });
 
   it("a D1 failure is a 500 (EventBridge retries)", async () => {
