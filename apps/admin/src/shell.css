@@ -1392,6 +1392,11 @@ body:has(.shell) {
   white-space: nowrap;
 }
 
+/* `<When wrap>`: the time may go under the date in a narrow column; each part stays whole (`.when--keep`) */
+.when--wrap time {
+  white-space: normal;
+}
+
 .when__rel {
   color: var(--color-text-muted);
   font-size: var(--text-caption);

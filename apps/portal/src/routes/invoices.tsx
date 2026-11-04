@@ -9,11 +9,15 @@ import {
   type InvoiceSummary,
   invoiceLinkApi,
   invoicesApi,
+  type PaidNotice,
+  type PaidNoticeInput,
   type PayLink,
+  portalApi,
   RequestError,
 } from "../api.ts";
 import { LogIn } from "../components/icons.tsx";
 import { LoadProblemScreen, problemText } from "../components/load-problem.tsx";
+import { PaidNoticeButton } from "../components/pay/paid-notice.tsx";
 import { PayWays } from "../components/pay/pay-now.tsx";
 import { type PayPhase, PayStatus } from "../components/pay/pay-status.tsx";
 import { PageTitle, TokenShell } from "../components/shell/portal-shell.tsx";
@@ -56,6 +60,8 @@ type Source = {
   payPalReturn?: (checkoutId: string) => Promise<{ document: InvoiceSummary }>;
   /** M6.5 (POR-07): a payment receipt's PDF (signed in only). */
   receiptPdf?: (receiptId: string) => ReturnType<typeof invoicesApi.receiptPdf>;
+  /** M7.1 (C13): "I've paid" (the session's route, or the emailed link's with its token in the body). */
+  paidNotice?: (body: PaidNoticeInput) => Promise<{ notice: PaidNotice }>;
 };
 
 type State =
@@ -78,6 +84,8 @@ function DocumentScreen(props: {
 }) {
   const { source } = props;
   const [state, setState] = useState<State>({ phase: "loading" });
+  // M7.1 (C14): a notice sent from this page (the balance stays as it is until TecHaust records the payment).
+  const [noticeSent, setNoticeSent] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [pdfProblem, setPdfProblem] = useState<string | null>(null);
   // M6.5: the receipt being downloaded, and a receipt's own message
@@ -285,6 +293,23 @@ function DocumentScreen(props: {
         ) : null
       }
       linkParent={!props.link}
+      noticeSent={noticeSent}
+      paidNotice={
+        // L10: only where the document can take a notice (the server checks again in SQL); never on a withdrawn payment request (`paidNotice` is null there)
+        source.paidNotice &&
+        doc.paidNotice?.allowed === true &&
+        doc.balanceMinor !== null &&
+        doc.balanceMinor > 0 ? (
+          <PaidNoticeButton
+            currency={doc.currency}
+            balanceMinor={doc.balanceMinor}
+            issueDate={doc.issueDate}
+            link={props.link}
+            send={source.paidNotice}
+            onSent={() => setNoticeSent(true)}
+          />
+        ) : null
+      }
       doc={doc}
       notices={props.notices}
       downloading={downloading}
@@ -357,6 +382,7 @@ export function InvoiceLinkRoute() {
             pdf: () => invoiceLinkApi.pdf(token),
             pay: (amountMinor: number, provider: PayGateway) =>
               invoiceLinkApi.pay(token, amountMinor, provider),
+            paidNotice: (body: PaidNoticeInput) => portalApi.linkPaidNotice(token, body),
           }
         : null,
     [token],
@@ -399,6 +425,7 @@ export function InvoiceRoute() {
       refresh: () => invoicesApi.getRefreshed(id),
       payPalReturn: (checkoutId: string) => invoicesApi.getPayPalReturn(id, checkoutId),
       receiptPdf: (receiptId: string) => invoicesApi.receiptPdf(receiptId),
+      paidNotice: (body: PaidNoticeInput) => portalApi.paidNotice(id, body),
     }),
     [id],
   );

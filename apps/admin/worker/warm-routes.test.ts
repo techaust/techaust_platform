@@ -2,9 +2,11 @@
 // made-up env. Run here under workerd's global-scope rules (a Response or Request with a body, random values, timers and fetch refused, `Date.now()` reading
 // 0; checked in local workerd 1.20261001.1, 2026-11-02), the count of calls that answered is pinned per Worker, so a fixture or route change that stops a
 // call early shows up. The dry run never throws, writes nothing anywhere, logs nothing, counts no request and sets no first-run mark.
+
+import { firstRun } from "@techaust/auth";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createApp, firstRun, nextRequestNumber, requestFacts } from "./app.ts";
+import { createApp, nextRequestNumber, requestFacts } from "./app.ts";
 import { forwardRoutes } from "./forward.ts";
 import { transportOf } from "./gateway/config.ts";
 import { ROUTES } from "./guard.ts";

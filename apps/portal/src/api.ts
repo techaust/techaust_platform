@@ -362,6 +362,11 @@ export type InvoiceSummary = {
   }[];
   /** M6.5 (07-ZO line 14): the refunds of this document's excess that went out (clients see a refund only once it has gone through). Absent from an older API. */
   refunds?: { amountMinor: number; on: string }[];
+  /**
+   * M7.1 (L10, C13): whether "I've paid" is offered (core `noticeAllowed` on the frozen row; the route checks again in SQL). Null on a withdrawn payment
+   * request, as every payment field. Absent from an older API.
+   */
+  paidNotice?: { allowed: boolean; reason: string | null } | null;
 };
 
 /** M6.2: the page's Pay now block (no Razorpay ids, nothing about the payer). */
@@ -454,6 +459,166 @@ export const invoiceLinkApi = {
       ...pub,
       body: provider ? { token, amountMinor, provider } : { token, amountMinor },
     }),
+};
+
+// ---- M7.1: Home, projects, shared notes and files, receipts, profile, requests and "I've paid" (apps/portal/worker) -------------------------------------
+
+/** GET /home's invoice row (the invoice list's item). */
+export type HomeReceipt = {
+  id: string;
+  numberDisplay: string | null;
+  issueDate: string | null;
+  currency: string;
+  amountMinor: number;
+  pdfReady: boolean;
+};
+/** A project as the client sees it: its status code (`planned`, `active`, `on_hold`, `completed`, `cancelled`) and its dates (`YYYY-MM-DD`). */
+export type ProjectItem = {
+  id: string;
+  code: string | null;
+  name: string;
+  status: string;
+  startDate: string | null;
+  targetDate: string | null;
+};
+export type SharedNote = {
+  id: string;
+  projectId: string | null;
+  bodyMd: string;
+  createdAt: number;
+  updatedAt: number;
+};
+export type SharedFile = {
+  id: string;
+  projectId: string | null;
+  filename: string;
+  mime: string;
+  size: number;
+  createdAt: number;
+};
+/**
+ * GET /home: one batch. `toPay` and `receipts` are null for a contact without "can see finance" (Researched 2026-10-28, 08-C RB-31): the block is hidden then,
+ * not shown empty.
+ */
+export type HomeData = {
+  awaiting: OfferItem[];
+  toPay: InvoiceItem[] | null;
+  receipts: HomeReceipt[] | null;
+  projects: ProjectItem[];
+  notes: SharedNote[];
+  files: SharedFile[];
+};
+/**
+ * A milestone (codes `pending`, `ready_to_bill`, `invoiced`, `paid`). `amountMinor` (null for a percentage milestone), `currency` and `invoice` exist only on a
+ * finance contact's answer: the keys are absent otherwise.
+ */
+export type Milestone = {
+  id: string;
+  position: number;
+  title: string;
+  status: string;
+  dueDate: string | null;
+  amountMinor?: number | null;
+  currency?: string | null;
+  invoice?: { id: string; numberDisplay: string } | null;
+};
+export type ProjectPage = {
+  project: ProjectItem;
+  milestones: Milestone[];
+  /** B3 (early check 2 finding 6): the next page of milestones, keyset pages of 50; absent from an older API (then every milestone is in the first answer). */
+  milestonesNext?: string | null;
+  notes: SharedNote[];
+  notesNext: string | null;
+  files: SharedFile[];
+  filesNext: string | null;
+};
+/** GET /receipts' row: a receipt (PDF at `/receipts/:id/pdf`) or an issued credit note (PDF at `/invoices/:id/pdf`). */
+export type ReceiptItem = {
+  id: string;
+  kind: "receipt" | "credit_note";
+  numberDisplay: string | null;
+  issueDate: string | null;
+  currency: string;
+  amountMinor: number;
+  pdfReady: boolean;
+  for: { numbers: string[]; more: number; invoiceId?: string | null };
+};
+export type RequestItem = {
+  id: string;
+  kind: string;
+  details: string | null;
+  status: string;
+  outcome: string | null;
+  createdAt: number;
+  closedAt: number | null;
+};
+export type ProfileMe = {
+  name: string;
+  email: string;
+  phone: string | null;
+  title: string | null;
+  updatedAt: number;
+};
+export type Profile = {
+  me: ProfileMe | null;
+  organisation: string | null;
+  colleagues: { name: string; title: string | null; you: boolean }[];
+  requests: RequestItem[];
+  requestsNext: string | null;
+};
+export type PaidNoticeInput = { amountMinor: number; paidOn: string; reference: string; note?: string };
+export type PaidNotice = {
+  id: string;
+  status: string;
+  amountMinor: number;
+  paidOn: string;
+  reference: string;
+};
+
+const q = (k: string, v: string | undefined) => (v ? `${k}=${encodeURIComponent(v)}` : "");
+const query = (...parts: string[]) => {
+  const p = parts.filter(Boolean).join("&");
+  return p ? `?${p}` : "";
+};
+
+export const portalApi = {
+  home: () => send<HomeData>("/home", {}),
+  projects: (after?: string) =>
+    send<{ projects: ProjectItem[]; next: string | null }>(`/projects${query(q("after", after))}`, {}),
+  project: (id: string) => send<ProjectPage>(`/projects/${encodeURIComponent(id)}`, {}),
+  /** The next page of a project's milestones (B3, early check 2 finding 6): `GET /projects/:id?after=<the last position shown>`, keyset pages of 50. */
+  milestones: (id: string, after: string) =>
+    send<{ milestones: Milestone[]; milestonesNext: string | null }>(
+      `/projects/${encodeURIComponent(id)}${query(q("after", after))}`,
+      {},
+    ),
+  notes: (projectId: string, after: string) =>
+    send<{ notes: SharedNote[]; next: string | null }>(
+      `/notes${query(q("project", projectId), q("after", after))}`,
+      {},
+    ),
+  files: (projectId: string, after: string) =>
+    send<{ files: SharedFile[]; next: string | null }>(
+      `/files${query(q("project", projectId), q("after", after))}`,
+      {},
+    ),
+  /** A shared file, as an attachment (a cookie GET); 404 when it is no longer shared (C10's last line). */
+  file: (id: string) => download(`/files/${encodeURIComponent(id)}/download`, undefined, true),
+  receipts: (after?: string) =>
+    send<{ items: ReceiptItem[]; next: string | null }>(`/receipts${query(q("after", after))}`, {}),
+  profile: (after?: string) => send<Profile>(`/profile${query(q("after", after))}`, {}),
+  /** 409 `stale_version` (C17); an email in the body is 400 (the schema is strict). */
+  saveProfile: (body: { name: string; phone: string | null; expectedUpdatedAt: number }) =>
+    send<{ me: ProfileMe }>("/profile", { body }),
+  /** 201; 409 `request_open`, 429 `too_many_requests` (C24). */
+  request: (kind: string, details: string | null) =>
+    send<{ request: RequestItem }>("/requests", { body: details ? { kind, details } : { kind } }),
+  /** 201; 400 `amount_above_balance` (with `balanceMinor`), `date_in_future`, `date_before_issue`; 409 `not_payable` (with `reason`), `notice_open_limit`, `notice_duplicate`. */
+  paidNotice: (documentId: string, body: PaidNoticeInput) =>
+    send<{ notice: PaidNotice }>(`/invoices/${encodeURIComponent(documentId)}/paid-notice`, { body }),
+  /** The same from the emailed link (the token in the body only); 404 for a bad link, 429 `rate_limited`. */
+  linkPaidNotice: (token: string, body: PaidNoticeInput) =>
+    send<{ notice: PaidNotice }>("/t/document/paid-notice", { ...pub, body: { token, ...body } }),
 };
 
 export const api = {

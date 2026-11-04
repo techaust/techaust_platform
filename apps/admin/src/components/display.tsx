@@ -145,15 +145,38 @@ export function EmptyState(props: {
   );
 }
 
-/** A time as people read it: IST date and time, with how long ago underneath (both visible, docs/06 §5.3). */
-export function When({ ms, now, inline }: { ms: number | null; now?: number; inline?: boolean }) {
+/**
+ * A time as people read it: IST date and time, with how long ago underneath (both visible, docs/06 §5.3). `wrap`: in a narrow column the time may go under
+ * the date, never inside either ("05 Nov 2026," then "00:39 IST"; M7.1 re-check 2). The text read out is the same.
+ */
+export function When({
+  ms,
+  now,
+  inline,
+  wrap,
+}: {
+  ms: number | null;
+  now?: number;
+  inline?: boolean;
+  wrap?: boolean;
+}) {
   if (ms === null) return <span className="when when--never">Never</span>;
   // FX-3 (A3 10): a date-only moment (a lead's next action) is the day alone, never "23:59 IST"; its machine form is the ISO day.
   const day = isIstDayEnd(ms);
   const abs = formatIstMoment(ms);
+  const cut = wrap && !day ? abs.lastIndexOf(", ") : -1;
   return (
-    <span className={inline ? "when when--inline" : "when"}>
-      <time dateTime={day ? toIsoDate(istDate(ms)) : new Date(ms).toISOString()}>{abs}</time>
+    <span className={`when${inline ? " when--inline" : ""}${cut > 0 ? " when--wrap" : ""}`}>
+      <time dateTime={day ? toIsoDate(istDate(ms)) : new Date(ms).toISOString()}>
+        {cut > 0 ? (
+          <>
+            <span className="when--keep">{abs.slice(0, cut + 1)}</span>{" "}
+            <span className="when--keep">{abs.slice(cut + 2)}</span>
+          </>
+        ) : (
+          abs
+        )}
+      </time>
       <span className="when__rel">{relative(ms, now)}</span>
     </span>
   );

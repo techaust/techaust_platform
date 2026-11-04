@@ -1883,11 +1883,18 @@ export type RecordPaymentInput = {
   note?: string;
   /** After 409 `reference_seen` (07-ZH line 13), when it is a different payment. */
   confirmDuplicate?: boolean;
+  /**
+   * M7.1 (L23): recorded from this "I've paid" notice (one per record); the batch marks it recorded. 409 `notice_mismatch` (another client, currency or, from B3,
+   * `details.reason: "document"`: the allocation isn't on the notice's document), `notice_closed`.
+   */
+  noticeId?: string;
 };
 
 export type RecordPaymentAnswer = {
   ok: true;
   id: string;
+  /** M7.1: the notice it was recorded from, and whether the notice moved (false: it changed meanwhile and is still open; S1's warning). */
+  notice?: { id: string; recorded: boolean } | null;
   status: "confirmed" | "pending_verification";
   allocations: AllocationAsk[];
   requestedAllocations: AllocationAsk[];
@@ -1904,6 +1911,18 @@ export type Ra41Answer = { advanceLine: "credit_may_be_advance" | null; received
 
 /** The invoice's Payments panel (07-ZH line 1, and line 14 on an export invoice). */
 export type InvoicePaymentsPanel = {
+  /** M7.1 (L10): the client's open "I've paid" notices on this document (at most 3): "Record payment" prefills from one; void and withdraw warn (S4). */
+  notices?: {
+    id: string;
+    via: string;
+    amountMinor: number;
+    currency: Currency;
+    paidOn: string;
+    reference: string;
+    note: string | null;
+    contactName: string | null;
+    createdAt: number;
+  }[];
   documentId: string;
   type: string;
   status: string;
@@ -2228,6 +2247,8 @@ export const paymentsApi = {
       allocations: PaymentAllocationView[];
       /** M6.4: the advice the payment is on now (null: none). Absent from the current API (designer's ask for the builder). */
       advice?: PaymentAdviceRef | null;
+      /** M7.1 review M5: the client's "I've paid" notice this entry was recorded from (null: none); absent from an older API. */
+      fromNotice?: { id: string; via: string; createdAt: number } | null;
     }>(`/payments/${pid(id)}`),
   /**
    * Record (07-ZH line 2). The Owner's entry is confirmed now (fresh code); a Staff member's waits for the Owner (line 3). Codes: `already_recorded`,

@@ -45,6 +45,8 @@
     "./numbering": "./src/numbering.ts",
     "./pdf-jobs": "./src/pdf-jobs.ts",
     "./permissions": "./src/permissions.ts",
+    "./portal": "./src/portal.ts",
+    "./portal-schemas": "./src/schemas/portal.ts",
     "./pa-cb": "./src/pa-cb.ts",
     "./receipts": "./src/receipts.ts",
     "./recon": "./src/recon.ts",

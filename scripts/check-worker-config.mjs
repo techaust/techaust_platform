@@ -429,6 +429,30 @@ export function observabilityProblems(config) {
   return problems;
 }
 
+/** M7.1 (Q2 A, owner 2026-11-01): the file vault the portal reads (shared files), per scope; production has no R2 bucket until Phase 7. */
+export const PORTAL_FILES_BUCKETS = {
+  "(top level)": "techaust-local-files",
+  "env.staging": "techaust-staging-files",
+};
+
+/**
+ * M7.1 (run file F): the portal binds `FILES` to the local file vault at the top level and to the staging one in `env.staging`, and NOT in `env.production`
+ * (no R2 there until Phase 7, and a binding there would be inherited by nothing: each scope lists its own). Empty = passes.
+ */
+export function portalFilesProblems(portal) {
+  const problems = [];
+  const filesOf = (c) => (c?.r2_buckets ?? []).filter((b) => b.binding === "FILES");
+  for (const [scope, c] of SCOPES(portal)) {
+    const files = filesOf(c);
+    const want = PORTAL_FILES_BUCKETS[scope];
+    if (want === undefined) {
+      if (files.length > 0) problems.push(`${scope}: the portal binds no FILES bucket until Phase 7`);
+    } else if (files.length !== 1 || files[0].bucket_name !== want)
+      problems.push(`${scope}: the portal binds FILES to ${want}`);
+  }
+  return problems;
+}
+
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
   let failed = false;
   for (const app of APPS) {
@@ -484,6 +508,10 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
     console.error(`apps: ${p}`);
     failed = true;
   }
+  for (const p of portalFilesProblems(read("portal/wrangler.jsonc"))) {
+    console.error(`apps/portal/wrangler.jsonc: ${p}`);
+    failed = true;
+  }
   for (const p of jobsBuildProblems(read("jobs/wrangler.jsonc"))) {
     console.error(`apps/jobs: ${p}`);
     failed = true;
@@ -499,6 +527,6 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
   }
   if (failed) process.exit(1);
   console.log(
-    "worker config guard: ok (preview_urls is false everywhere; the admin API, finance and invoices Workers have no public URL; the entrypoint bindings point at their Workers; traces on staging only; jobs minified with source maps)",
+    "worker config guard: ok (preview_urls is false everywhere; the admin API, finance and invoices Workers have no public URL; the entrypoint bindings point at their Workers; the portal's FILES on local and staging only; traces on staging only; jobs minified with source maps)",
   );
 }

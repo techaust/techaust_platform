@@ -11,6 +11,7 @@ import { PAYABLE_TYPES } from "@techaust/core/ledger";
 import type { Role } from "@techaust/core/permissions";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
+import { paymentsApi } from "../../api.ts";
 import { PageHeader } from "../../components/display.tsx";
 import { Archive, Ban, Download, FolderKanban, Lock } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
@@ -223,6 +224,19 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
   // FX-5 re-check, finding 1: closing the void (or withdraw) dialog hands focus back to More, but the reload after it (or after a refusal because the
   // client opened it) removes More, whose only item it was. Focus would fall to the page; it goes to the title instead.
   const takingBack = voiding || withdrawing;
+  // M7.1 (S4, L10): the client's open "I've paid" notices, read when a void or withdraw opens; a warning in the dialog, never a block (a failed read: none shown)
+  const [openNotices, setOpenNotices] = useState(0);
+  useEffect(() => {
+    if (!takingBack) return;
+    let live = true;
+    paymentsApi.invoicePanel(v.id).then(
+      (p) => live && setOpenNotices(p.notices?.length ?? 0),
+      () => live && setOpenNotices(0),
+    );
+    return () => {
+      live = false;
+    };
+  }, [takingBack, v.id]);
   const wasVoiding = useRef(false);
   useEffect(() => {
     if (takingBack) {
@@ -513,6 +527,7 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
           open={voiding}
           number={v.number}
           type={v.type}
+          openNotices={openNotices}
           onClose={() => setVoiding(false)}
           onStale={reload}
           onVoid={async (reason) => {
@@ -529,6 +544,7 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
         <WithdrawDialog
           open={withdrawing}
           number={v.number}
+          openNotices={openNotices}
           onClose={() => setWithdrawing(false)}
           onStale={reload}
           onWithdraw={async (reason) => {

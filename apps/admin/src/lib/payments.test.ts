@@ -4,11 +4,12 @@
 import { describe, expect, it } from "vitest";
 import messagesSource from "../../worker/payment-messages.ts?raw";
 import { RequestError } from "../api.ts";
+import recordDialog from "../routes/payments/record-dialog.tsx?raw";
 import auditSource from "./audit.ts?raw";
 import { APPROVED_07ZH_NEW, PAY_AUDIT, PLACEHOLDER_MARK, ZH } from "./copy-zh.ts";
 import { voidBlockedText, voidErrorText, withdrawErrorText } from "./invoices.ts";
 import type { InvoiceListRow } from "./invoices-api.ts";
-import { confirmDocsOf, loadOpenDocs, loadOpenRows, OPEN_DOCS_CAP } from "./open-docs.ts";
+import { confirmDocsOf, loadOpenDocs, loadOpenRows, noticeDocsOf, OPEN_DOCS_CAP } from "./open-docs.ts";
 import {
   autoFill,
   blockingRefusals,
@@ -631,6 +632,70 @@ describe("the Confirm step's documents (re-check finding 1)", () => {
       get: async (id) => view(id, { type: "proforma", status: "issued" }),
     });
     expect(byId).toEqual({ kind: "proforma", id: "pf2" });
+  });
+});
+
+describe("Record payment from a notice reads the notice's one document by id (M7.1 re-check 7)", () => {
+  const pay = { clientId: "c1", currency: "INR" as const };
+  const reader = (over: Record<string, unknown> = {}, fail?: unknown) => {
+    const got: string[] = [];
+    const get = async (id: string) => {
+      got.push(id);
+      if (fail) throw fail;
+      return view(id, over);
+    };
+    return { get: get as never, got };
+  };
+  it("one read by id, no list read: the document is the only row, through the shared askedDocOf", async () => {
+    const r = reader();
+    const docs = await noticeDocsOf("doc1", pay, { proformas: false }, r.get);
+    expect(r.got).toEqual(["doc1"]);
+    expect(docs).toEqual([
+      {
+        id: "doc1",
+        number: "TH/INV/doc1",
+        type: "tax_invoice",
+        currency: "INR",
+        balanceMinor: 400_00,
+        dueDate: "2026-04-30",
+        issueDate: "2026-04-01",
+      },
+    ]);
+  });
+  it("no row once it can't take the payment: paid, voided, another client's or currency, or the read refused", async () => {
+    for (const over of [
+      { status: "paid", balanceMinor: 0 },
+      { status: "credited", balanceMinor: 0 },
+      { status: "void" },
+      { client: { id: "c2" } },
+      { currency: "USD" },
+      { type: "credit_note" },
+    ])
+      expect(
+        await noticeDocsOf("d", pay, { proformas: false }, reader(over).get),
+        JSON.stringify(over),
+      ).toEqual([]);
+    const gone = reader({}, new RequestError(404, "not_found", "Not found."));
+    expect(await noticeDocsOf("d", pay, { proformas: false }, gone.get)).toEqual([]);
+  });
+  it("a proforma is a row for a Staff entry only (L25), as in the open lists", async () => {
+    const pf = { type: "proforma", status: "issued" };
+    expect((await noticeDocsOf("pf", pay, { proformas: true }, reader(pf).get)).map((d) => d.id)).toEqual([
+      "pf",
+    ]);
+    expect(await noticeDocsOf("pf", pay, { proformas: false }, reader(pf).get)).toEqual([]);
+    expect(
+      await noticeDocsOf("pf", pay, { proformas: true }, reader({ ...pf, status: "converted" }).get),
+    ).toEqual([]);
+  });
+  it("the record dialog uses this reader, with no rule of its own", () => {
+    expect(recordDialog).toContain("noticeDocsOf(from.id,");
+    expect(recordDialog).not.toContain("invoicesApi.get(");
+    expect(recordDialog).not.toContain("OPEN_STATUSES");
+  });
+  it("a failed read throws (the dialog's failed-load state with its retry), never an empty row list", async () => {
+    for (const fail of [new RequestError(500, "internal", "x"), new RequestError(0, "network", "Offline.")])
+      await expect(noticeDocsOf("d", pay, { proformas: false }, reader({}, fail).get)).rejects.toBe(fail);
   });
 });
 

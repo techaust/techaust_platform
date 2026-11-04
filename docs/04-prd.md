@@ -488,6 +488,9 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | Resolve or retry a gateway payment in "Needs review" (`payments.review`; M6.2, L7; the list itself is `payments.read`) | ✅ | — | — | — |
 | Remittance advices (e-FIRA, FIRC, settlement report): add one, attach its file once, link confirmed payments to it (`payments.attachProof`; M6.4, L12, 08-C RB-05); the list and the "Without advice" list are `payments.read` | ✅ | ✅ | — | 👁 |
 | Take a payment off a remittance advice, with a reason (`payments.adviceUnlink`; M6.4, L12) | ✅ | — | — | — |
+| Dismiss a client's "I've paid" notice (`payments.notices`; M7.1, L10; recording the payment from a notice is `payments.record`, the list is `payments.read`) | ✅ | ✅ | — | — |
+| Clients' requests sent from the portal: view (`requests.read`; M7.1, L8) | ✅ | ✅ | — | — |
+| Close a client's request (`requests.close`; M7.1, L8): Staff only a contact change or a grievance; the data-rights kinds (access, correction, erasure, and from M7.4 consent withdrawal and nomination) are the Owner's | ✅ | ✅ contact change, grievance | — | — |
 | Refunds | ✅ (step-up) | — | — | 👁 |
 | Reports | ✅ | Projects, time, care plans | Pipeline only | ✅ finance + exports |
 | GST/CA exports | ✅ (step-up) | — | — | ✅ (step-up) |

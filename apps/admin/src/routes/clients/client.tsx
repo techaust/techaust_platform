@@ -26,6 +26,7 @@ import {
   stateText,
   TYPE_LABELS,
 } from "../../lib/clients.ts";
+import { ZP_UI } from "../../lib/copy-zp.ts";
 import { COPY, PENDING } from "../../lib/projects.ts";
 import { useUser } from "../../session.tsx";
 import { ClientCarePlans } from "../care/client-tab.tsx";
@@ -37,6 +38,7 @@ import { Activity } from "./activity.tsx";
 import { Contacts } from "./contacts.tsx";
 import { Overview } from "./overview.tsx";
 import { ClientsGate, CRUMBS } from "./parts.tsx";
+import { ClientRequests } from "./requests.tsx";
 import { StatementTab } from "./statement.tsx";
 
 export function Component() {
@@ -57,10 +59,14 @@ type TabKey =
   | "statement"
   | "files"
   | "care-plans"
+  | "requests"
   | "activity";
 
-/** The tabs in the PRD's order; the finance ones only for a finance role, Projects and Files only for a projects role. */
-function tabsFor(finance: boolean, projects: boolean): TabItem<TabKey>[] {
+/**
+ * The tabs in the PRD's order; the finance ones only for a finance role, Projects and Files only for a projects role; M7.1: Requests (what the client's contacts
+ * asked for from the portal) for the roles that read them (the Owner and Staff; the bells link to `?tab=requests`).
+ */
+function tabsFor(finance: boolean, projects: boolean, requests: boolean): TabItem<TabKey>[] {
   return [
     { key: "overview", label: "Overview" },
     { key: "contacts", label: "Contacts" },
@@ -74,6 +80,7 @@ function tabsFor(finance: boolean, projects: boolean): TabItem<TabKey>[] {
       : []),
     ...(projects ? ([{ key: "files", label: "Files" }] as TabItem<TabKey>[]) : []),
     { key: "care-plans", label: "Care plans" },
+    ...(requests ? ([{ key: "requests", label: ZP_UI.requestsTab }] as TabItem<TabKey>[]) : []),
     { key: "activity", label: "Activity" },
   ];
 }
@@ -120,7 +127,7 @@ function ClientView(props: {
   const { client } = props.data;
   const finance = allowed(user.role, "clients.finance.read");
   const projects = allowed(user.role, "projects.read");
-  const tabs = tabsFor(finance, projects);
+  const tabs = tabsFor(finance, projects, allowed(user.role, "requests.read"));
   const [params, setParams] = useSearchParams();
   const asked = params.get("tab");
   const tab: TabKey = tabs.some((t) => t.key === asked) ? (asked as TabKey) : "overview";
@@ -203,6 +210,8 @@ function ClientView(props: {
             currency={client.currency}
             anonymised={props.data.anonymised}
           />
+        ) : tab === "requests" ? (
+          <ClientRequests clientId={client.id} />
         ) : tab === "care-plans" ? (
           <ClientCarePlans clientId={client.id} readOnly={props.data.anonymised} />
         ) : (

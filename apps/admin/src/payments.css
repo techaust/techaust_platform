@@ -658,9 +658,12 @@
   width: 8rem;
 }
 
+/* review M2: the row's error wraps inside its cell (the cell is `.num`, which never wraps), so a long refusal never scrolls the dialog sideways */
 .alloc__cell .field-error {
   justify-content: flex-end;
   text-align: start;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 .alloc__none {
@@ -1455,4 +1458,66 @@
 
 .adv-pick__note {
   margin: 0;
+}
+
+/* ---------- M7.1: the Notices tab (routes/payments/notices-tab.tsx) ---------- */
+
+.pay-notices__lede {
+  margin: 0 0 var(--space-5);
+  max-width: var(--container-lede);
+  color: var(--color-text-muted);
+}
+
+.pay-notice__ref {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  min-width: 0;
+  /* break-word, never anywhere: a name keeps its words, so the column takes their width */
+  overflow-wrap: break-word;
+}
+
+.pay-notice__money {
+  display: grid;
+  justify-items: end;
+  gap: var(--space-1);
+}
+
+.pay-notice__ref .docno {
+  white-space: nowrap;
+}
+
+/* Review M5 (S10): the payment recorded from the notice, as a link to the entry. A 44 px target each; a rejected or withdrawn one carries the warning
+   icon and the text's own weight, so it reads at a glance beside the "Recorded" pill (never colour alone). */
+.pay-notice__payment,
+.pay-notice__undone a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--target-min);
+  font-size: var(--text-sm);
+}
+
+/* Re-check 1: the words wrap under the pill rather than set the column's width (on one line they pushed the table past its box at 1280 with the menu
+   expanded and clipped the focus ring); the icon stays with the first line. */
+.pay-notice__undone {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+}
+
+.pay-notice__undone > .icon {
+  flex: none;
+  color: var(--color-warning);
+}
+
+/* Re-check 2: in the table, the client's name, code and who told us never crush to a word a line beside the wider columns (a phone's card keeps its
+   two even columns) */
+.dtable__table .pay-notice__client {
+  min-inline-size: 11rem;
+}
+
+/* Re-check 3: a note shows the client's own line breaks */
+.pay-notice__note {
+  white-space: pre-line;
 }

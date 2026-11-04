@@ -13,6 +13,7 @@ import { FormField } from "../../components/form.tsx";
 import { Alert } from "../../components/icons.tsx";
 import { CodeField, Notice, useFieldError } from "../../components/ui.tsx";
 import { WITHDRAW_COPY } from "../../lib/copy-zf.ts";
+import { ZP_UI } from "../../lib/copy-zp.ts";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
 import {
   blockerLine,
@@ -367,6 +368,8 @@ function ReasonCodeDialog(props: {
   onConfirm: (reason: string) => Promise<void>;
   errorText: (e: unknown) => string;
   onStale?: (() => void) | undefined;
+  /** M7.1 (S4, L10): a line above the reason (the client's open "I've paid" notices), a warning only: it never blocks. */
+  warning?: string | null | undefined;
 }) {
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState<string | null>(null);
@@ -426,6 +429,12 @@ function ReasonCodeDialog(props: {
     <Modal open={props.open} title={words.title} onClose={close} busy={busy} tone="danger">
       <div className="dialog__body">
         <p>{words.body}</p>
+        {props.warning && (
+          <p className="approval-line" data-state="pending">
+            <Alert size={16} />
+            <span>{props.warning}</span>
+          </p>
+        )}
         <FormField id={reasonId} label={words.reasonLabel} error={reasonError}>
           {(a) => (
             <textarea
@@ -481,6 +490,8 @@ export function VoidDialog(props: {
   onVoid: (reason: string) => Promise<void>;
   /** Called after `onClose` when a refusal made the page's data stale (a portal view landed meanwhile: FX-5 review L2), so the page reloads. */
   onStale?: () => void;
+  /** M7.1 (S4): the client's open "I've paid" notices on this document (0: none). */
+  openNotices?: number;
 }) {
   const proforma = props.type === "proforma";
   return (
@@ -498,6 +509,7 @@ export function VoidDialog(props: {
       onConfirm={props.onVoid}
       errorText={(e) => voidErrorText(e, props.type)}
       onStale={props.onStale}
+      warning={props.openNotices ? ZP_UI.noticeWarning(props.openNotices, "void") : null}
     />
   );
 }
@@ -513,6 +525,8 @@ export function WithdrawDialog(props: {
   onClose: () => void;
   onWithdraw: (reason: string) => Promise<void>;
   onStale?: () => void;
+  /** M7.1 (S4): the client's open "I've paid" notices on this document (0: none). */
+  openNotices?: number;
 }) {
   return (
     <ReasonCodeDialog
@@ -529,6 +543,7 @@ export function WithdrawDialog(props: {
       onConfirm={props.onWithdraw}
       errorText={withdrawErrorText}
       onStale={props.onStale}
+      warning={props.openNotices ? ZP_UI.noticeWarning(props.openNotices, "withdraw") : null}
     />
   );
 }

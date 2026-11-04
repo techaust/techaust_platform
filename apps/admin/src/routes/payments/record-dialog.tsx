@@ -26,10 +26,12 @@ import { LoadFailed } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { ra41ConfirmLine } from "../../lib/copy-zo.ts";
+import { ZP_UI } from "../../lib/copy-zp.ts";
 import { dateError } from "../../lib/date-field.ts";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
 import { INV_COPY } from "../../lib/invoices.ts";
-import { loadOpenDocs, OPEN_DOCS_CAP } from "../../lib/open-docs.ts";
+import { m71ErrorText } from "../../lib/m71-errors.ts";
+import { loadOpenDocs, noticeDocsOf, OPEN_DOCS_CAP } from "../../lib/open-docs.ts";
 import {
   type AllocRow,
   amountText,
@@ -44,13 +46,26 @@ import {
   PAY_ERRORS,
   PAY_UI,
   payErrorText,
+  plainAmount,
   readAllocations,
   showingFirstLine,
   todayIst,
 } from "../../lib/payments.ts";
 import { moneyFrom, percentToBp } from "../../lib/settings-form.ts";
 import { withCode } from "../../lib/step-up.ts";
-import { AllocationTable, EarlierMonthWarning, FilePick, useCodeSlot } from "./parts.tsx";
+import { AllocationTable, day, EarlierMonthWarning, FilePick, useCodeSlot } from "./parts.tsx";
+
+/**
+ * M7.1 (L23, ADM-PAY-05): the client's "I've paid" notice the entry is recorded from: its amount, day and reference fill the form (editable: the bank is the
+ * record, the notice the client's word), the allocation is the notice's document alone, and the record carries `noticeId` so its batch marks it recorded.
+ */
+export type FromNotice = {
+  id: string;
+  clientName: string;
+  amountMinor: number;
+  paidOn: string;
+  reference: string;
+};
 
 /** The client the entry is for (fixed when the dialog opens from an invoice or a client; picked on /payments). */
 export type PayClient = { id: string; name: string; currency: Currency };
@@ -72,6 +87,7 @@ export function RecordPaymentDialog(props: {
   role: Role;
   client: PayClient | null;
   from?: FromDoc | undefined;
+  notice?: FromNotice | undefined;
   onClose: () => void;
   onDone: (answer: RecordPaymentAnswer) => void;
 }) {
@@ -129,20 +145,22 @@ function RecordBody(props: {
   role: Role;
   client: PayClient | null;
   from?: FromDoc | undefined;
+  notice?: FromNotice | undefined;
   onClose: () => void;
   onDone: (answer: RecordPaymentAnswer) => void;
 }) {
   const tds = props.kind === "tds";
+  const notice = tds ? undefined : props.notice;
   const owner = decide(props.role, "payments.record") === "step-up";
   const today = todayIst();
   const [id] = useState(() => uuidv7());
   const [client, setClient] = useState<PayClient | null>(props.client);
   const currency: Currency = client?.currency ?? "INR";
   const [form, setForm] = useState({
-    amount: "",
-    date: today,
+    amount: notice ? plainAmount(notice.amountMinor, currency) : "",
+    date: notice?.paidOn ?? today,
     mode: "" as PaymentMode | "",
-    reference: "",
+    reference: notice?.reference ?? "",
     charges: "",
     inr: "",
     note: "",
@@ -184,23 +202,34 @@ function RecordBody(props: {
     let live = true;
     setDocs(null);
     void docsTry;
-    loadOpenDocs(client.id, { kind: props.kind, proformas: !owner })
-      .then((page) => {
+    const from = props.from;
+    const read: Promise<{ docs: OpenDoc[]; capped: boolean }> =
+      notice && from
+        ? // M7.1 (L23; re-check 7): from a notice, the notice's document is the only row, read alone by id through the shared rule (B3's 409
+          // `notice_mismatch` `document` otherwise); no row when it can no longer take the payment
+          noticeDocsOf(from.id, { clientId: client.id, currency }, { proformas: !owner }).then((docs) => ({
+            docs,
+            capped: false,
+          }))
+        : loadOpenDocs(client.id, { kind: props.kind, proformas: !owner }).then((page) => {
+            // The invoice the dialog came from is always a row, the first (even past the cap); the rest in due-date order.
+            const listed: OpenDoc | undefined = from ? page.docs.find((d) => d.id === from.id) : undefined;
+            const open: OpenDoc[] = page.docs.filter((d) => d.id !== from?.id);
+            if (listed) open.unshift(listed);
+            else if (from && from.balanceMinor > 0) open.unshift({ ...from, dueDate: null });
+            return { docs: open, capped: page.capped };
+          });
+    read
+      .then((r) => {
         if (!live) return;
-        const from = props.from;
-        // The invoice the dialog came from is always a row, the first (even past the cap); the rest in due-date order.
-        const listed = from ? page.docs.find((d) => d.id === from.id) : undefined;
-        const open: OpenDoc[] = page.docs.filter((d) => d.id !== from?.id);
-        if (listed) open.unshift(listed);
-        else if (from && from.balanceMinor > 0) open.unshift({ ...from, dueDate: null });
-        setDocs(open);
-        setCapped(page.capped);
+        setDocs(r.docs);
+        setCapped(r.capped);
       })
       .catch((e: unknown) => live && setDocsFailed(e ?? new Error("failed")));
     return () => {
       live = false;
     };
-  }, [client, props.kind, props.from, owner, docsTry]);
+  }, [client, props.kind, props.from, owner, docsTry, notice, currency]);
   const docsWaiting = client !== null && (docs === null || docsFailed !== null);
 
   const parsed = useMemo(() => {
@@ -208,12 +237,15 @@ function RecordBody(props: {
     return m.ok && m.minor > 0 ? m.minor : null;
   }, [form.amount, currency]);
 
-  // the opened-from row, filled from the amount
+  // the opened-from row, filled from the amount up to the row's balance (review M2: from a notice the balance is the listed document's, read when the
+  // dialog opens, so the row starts at min(notice amount, balance) and follows the amount until a person types in it)
+  const fromBalance =
+    docs?.find((d) => d.id === props.from?.id)?.balanceMinor ?? props.from?.balanceMinor ?? 0;
   const shownRows: AllocRow[] =
     autoRow && props.from
       ? [
           ...rows.filter((r) => r.documentId !== props.from?.id),
-          { documentId: props.from.id, text: autoFill(parsed, props.from.balanceMinor, currency) },
+          { documentId: props.from.id, text: autoFill(parsed, fromBalance, currency) },
         ]
       : rows;
   const plan = docs ? readAllocations(shownRows, docs, parsed, currency) : null;
@@ -340,6 +372,7 @@ function RecordBody(props: {
             }),
         ...(allocations.length > 0 ? { allocations } : {}),
         ...(form.note.trim() ? { note: form.note.trim() } : {}),
+        ...(notice ? { noticeId: notice.id } : {}),
       },
     };
   }
@@ -387,6 +420,8 @@ function RecordBody(props: {
           warning ? earlierMonthLine(warning.month) : "",
           ra41ConfirmLine(answer.ra41),
           proofFailed ?? "",
+          // M7.1 (S1): the notice moves with the payment, or says it didn't
+          answer.notice ? (answer.notice.recorded ? ZP_UI.noticeRecorded : ZP_UI.noticeNotMoved) : "",
         ]
           .filter(Boolean)
           .join(" "),
@@ -402,11 +437,13 @@ function RecordBody(props: {
       // A refusal that names one invoice (`details.documentId`: over its balance, a proforma that must take the whole payment) is that row's error.
       const rowId = e instanceof RequestError ? e.extra.details?.documentId : undefined;
       if (typeof rowId === "string" && docs?.some((d) => d.id === rowId)) {
-        setAllocErrors({ [rowId]: payErrorText(e) });
+        // review M2: worded by its code (S8 for the notice's invoice), never the server's English
+        setAllocErrors({ [rowId]: m71ErrorText(e, { onRow: true }) });
         requestAnimationFrame(() => document.getElementById(`pay-alloc-${rowId}`)?.focus());
         return;
       }
-      setFailure(payErrorText(e));
+      // re-check 5: no row to point at (the notice's invoice can no longer take money), so S8 ("this invoice") never shows; S1's generic line does
+      setFailure(m71ErrorText(e));
       refusal.show();
     } finally {
       setBusy(false);
@@ -425,6 +462,7 @@ function RecordBody(props: {
     >
       <div className="dialog__body pay-form">
         {tds && <p className="pay-form__lede">{PAY_COPY.tdsHint}</p>}
+        {notice && <Notice tone="info">{ZP_UI.fromNotice(notice.clientName, day(notice.paidOn))}</Notice>}
         <p className="hint form-intro">All fields are needed unless marked optional.</p>
         {!props.client && <ClientPick value={client} onPick={pickClient} error={errors.client} />}
         {tds && (
@@ -593,6 +631,7 @@ function RecordBody(props: {
                       idPrefix="pay-alloc"
                       symbol={sym}
                       loading={docs === null}
+                      {...(notice ? { none: ZP_UI.noticeDocClosed } : {})}
                     />
                     {capped && <p className="hint">{showingFirstLine(OPEN_DOCS_CAP)}</p>}
                   </>

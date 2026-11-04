@@ -12,6 +12,7 @@
 // Ownership both ways for the three-way split, the forwarder's binding per row, parity through the front, and the entrypoints per Worker.
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
+import { samplePath } from "@techaust/auth";
 import { decide, ROLES, type Role } from "@techaust/core";
 import { PatternRouter } from "hono/router/pattern-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -40,7 +41,6 @@ import {
   withEnv,
 } from "./test-helpers.ts";
 import { pdfOfSize, sha256Hex } from "./test-projects.ts";
-import { samplePath } from "./warm-router.ts";
 
 const SECRETS = ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"];
 const FRONT_ROWS = ROUTES.filter((r) => r.on === "front");
@@ -201,9 +201,10 @@ describe("every ROUTES row has one owner", () => {
     // The fourth admin Worker (2026-11-03, brief A.2): the 61 finance rows of M6.4 split 32 (invoices) and 29 (finance).
     // M6.5: two receipt PDF rows on the invoices Worker (34); on finance, a payment's receipt, five refund rows, six reconciliation rows and three FEMA
     // reduction rows (44). M6.5 B4: the refunds register on the invoices Worker with the other registers (35).
+    // M7.1: the "I've paid" notices list and dismiss on finance (48); the client requests on the API.
     expect(INVOICES_ROWS.length).toBe(35);
-    expect(FINANCE_ROWS.length).toBe(46);
-    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 35 - 46);
+    expect(FINANCE_ROWS.length).toBe(48);
+    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 35 - 48);
     expect(new Set([...FRONT_ROWS, ...API_ROWS, ...INVOICES_ROWS, ...FINANCE_ROWS].map(key)).size).toBe(
       ROUTES.length,
     );

@@ -649,3 +649,32 @@ describe("M6.2 gateway wiring (run file F)", () => {
     ]);
   });
 });
+
+describe("M7.1 (run file F, Q2 A): the portal reads the file vault on local and staging only", () => {
+  const portal = guard.parseJsonc(
+    readFileSync(new URL("../../portal/wrangler.jsonc", import.meta.url), "utf8"),
+  );
+  it("the real config passes", () => {
+    expect(guard.portalFilesProblems(portal)).toEqual([]);
+  });
+  it("fails a missing or wrong staging bucket, and any FILES in production", () => {
+    const copy = () => JSON.parse(JSON.stringify(portal));
+    const noStaging = copy();
+    noStaging.env.staging.r2_buckets = noStaging.env.staging.r2_buckets.filter(
+      (b: { binding: string }) => b.binding !== "FILES",
+    );
+    expect(guard.portalFilesProblems(noStaging)).toEqual([
+      "env.staging: the portal binds FILES to techaust-staging-files",
+    ]);
+    const wrong = copy();
+    wrong.r2_buckets = [{ binding: "FILES", bucket_name: "techaust-staging-files" }];
+    expect(guard.portalFilesProblems(wrong)).toEqual([
+      "(top level): the portal binds FILES to techaust-local-files",
+    ]);
+    const prod = copy();
+    prod.env.production.r2_buckets = [{ binding: "FILES", bucket_name: "techaust-files" }];
+    expect(guard.portalFilesProblems(prod)).toEqual([
+      "env.production: the portal binds no FILES bucket until Phase 7",
+    ]);
+  });
+});

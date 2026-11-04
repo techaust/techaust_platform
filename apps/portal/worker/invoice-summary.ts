@@ -9,6 +9,7 @@ import {
   onlineMinimumOf,
   storedFloorOf,
 } from "@techaust/core/online-pay";
+import { noticeAllowed } from "@techaust/core/portal";
 import { percentFromBp } from "@techaust/core/schedule-text";
 import {
   gatewayPaymentPendingSql,
@@ -368,7 +369,23 @@ export function summaryOf(r: SummaryRow, lines: readonly LineRow[], creditNotes:
     bank: r.type === "credit_note" || withdrawn ? null : bankOf(r.issuer, r.currency),
     /** ADM-INV-10: never on a withdrawn proforma (the PDF routes answer 409 `withdrawn`). */
     pdfReady: !withdrawn && r.pdf_r2_key !== null,
+    /**
+     * M7.1 (L10, C13): whether "I've paid" is offered on this document (core `noticeAllowed` on the frozen row; the route checks again in SQL): `{allowed}` and,
+     * when refused, the reason code. Null on a withdrawn proforma, as every payment field is (nothing invites a payment).
+     */
+    paidNotice: withdrawn ? null : paidNoticeOf(r),
   };
+}
+
+/** "I've paid" on a document the client can open (never a withdrawn proforma: the caller passes those as null). */
+function paidNoticeOf(r: SummaryRow): { allowed: boolean; reason: string | null } {
+  const v = noticeAllowed({
+    type: r.type,
+    status: r.status,
+    balanceMinor: r.balance_minor,
+    withdrawn: false,
+  });
+  return v.ok ? { allowed: true, reason: null } : { allowed: false, reason: v.reason };
 }
 
 export type InvoiceSummary = ReturnType<typeof summaryOf>;

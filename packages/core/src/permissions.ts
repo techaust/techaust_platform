@@ -5,6 +5,7 @@
 //              user/role changes, data exports)
 //   approval — the action becomes a request in the Owner's approvals queue
 //   deny     — not allowed
+import { staffMayClose } from "./portal.ts";
 
 export const ROLES = ["owner", "staff", "sales", "accountant"] as const;
 export type Role = (typeof ROLES)[number];
@@ -22,7 +23,15 @@ export type Decision = "allow" | "step-up" | "approval" | "deny";
 export const SELF_SEND_DISCOUNT_BPS = 1_000;
 
 type Rule = Decision | ((ctx: Context) => Decision);
-export type Context = { readonly discountBps?: number };
+export type Context = { readonly discountBps?: number; readonly requestKind?: string };
+
+/**
+ * M7.1 (L8; review fix 11): Staff close a client's request only of a kind on the `STAFF_CLOSE_KINDS` allow-list (a contact change, a grievance); every data-rights
+ * kind, M7.4's `consent_withdrawal` and `nomination`, and any unknown kind are the Owner's ("deny"). Without the record's kind the answer is "approval" (as
+ * `proposals.send` with an unknown discount): the guard lets the request reach the handler, which must decide again with `requestKind` and accept only "allow".
+ */
+const staffClose: Rule = ({ requestKind }) =>
+  requestKind === undefined ? "approval" : staffMayClose(requestKind) ? "allow" : "deny";
 
 const selfSend: Rule = ({ discountBps }) =>
   discountBps !== undefined &&
@@ -150,6 +159,12 @@ const MATRIX = {
   // M6.5 (L11; ADM-PAY-10): the Owner's "seen in the bank statement" tick (and its undo, with a reason) and "Fetch now" of a settlement day. The lists use
   // `reports.finance`. A new docs/04 §9 row.
   "payments.reconcile": { owner: "allow" },
+  // M7.1 (L10; ADM-PAY-05): closing a client's "I've paid" notice as dismissed (recording one is `payments.record`, the list is `payments.read`). A new docs/04 §9 row.
+  "payments.notices": { owner: "allow", staff: "allow" },
+  // M7.1 (L8; POR-09, POR-11): the requests clients send from the portal: the list (`requests.read`) and the close (`requests.close`: Staff only for a contact
+  // change or a grievance, `staffClose`; every data-rights kind is the Owner's, review fix 11). New docs/04 §9 rows.
+  "requests.read": { owner: "allow", staff: "allow" },
+  "requests.close": { owner: "allow", staff: staffClose },
   // M6.5 (RB-43; Settled by the lead on the safest reading, 2026-11-03 (08-C RB-43)): recording the AD bank's Reg. 6 reduction of an export invoice (its reference
   // and letter) marks the invoice realised for FEMA, like an extension of its date moves it: the Owner only, with a fresh code. A new docs/04 §9 row.
   "realisation.reduce": { owner: "step-up" },

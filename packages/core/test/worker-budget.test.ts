@@ -6,6 +6,7 @@ import {
   BUDGETS,
   checkBundle,
   measureStartup,
+  planNote,
   SETTLE_LIMIT_MS,
   STARTUP_PROBE,
   startupDate,
@@ -30,6 +31,19 @@ describe("admin front and API budgets (M5.0)", () => {
       expect(checkBundle({ ...ok, text }, admin)).toEqual([]);
     },
   );
+});
+
+describe("the portal budget (M7.1 L3)", () => {
+  const portal = BUDGETS.portal;
+  it("one Worker: ceiling 200,000, plan line 160,000 (a note, never a failure), 200 ms startup", () => {
+    expect(portal.maxBytes).toBe(200_000);
+    expect(portal.planBytes).toBe(160_000);
+    expect(portal.maxStartupMs).toBe(200);
+    expect(checkBundle({ ...ok, size: 199_999 }, portal)).toEqual([]);
+    expect(checkBundle({ ...ok, size: 200_001 }, portal)).toHaveLength(1);
+    expect(planNote(160_000, portal)).toBeNull();
+    expect(planNote(160_001, portal)).toMatch(/past its plan line of 160000/);
+  });
 });
 
 describe("worker budget", () => {

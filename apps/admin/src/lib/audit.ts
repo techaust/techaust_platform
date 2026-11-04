@@ -187,6 +187,12 @@ export const ACTION_LABELS: Record<string, string> = {
   "realisation.reduce": Y("recorded the bank's reduction of an export invoice"),
   "care_invoice.draft": Y("drafted a care plan invoice"),
   "care_invoice.auto_issue_refused": Y("could not issue a care plan invoice automatically"),
+  // M7.1 the full portal: staff line S5 (builder's drafts in S-style for the lead under the owner's delegation; the designer may tighten them).
+  "contact.self_update": Y("changed their own name or phone in the portal"),
+  "portal.request": Y("sent a request from the portal"),
+  "payment.notice": Y("told us about a payment they made"),
+  "payment.notice_close": Y("dismissed a client's payment notice"),
+  "client_request.close": Y("closed a client's request"),
   // T11, the deed of assignment: 07-ZJ line 33 (staff-only; marked until the lead approves it).
   ...DEED_AUDIT,
 };
@@ -221,7 +227,7 @@ export const ACTION_GROUPS: { label: string; prefixes: readonly string[] }[] = [
   { label: DEED_AUDIT_GROUP, prefixes: ["deed."] },
   { label: "Reports", prefixes: ["report."] },
   { label: "Approvals", prefixes: ["approval."] },
-  { label: "Client portal", prefixes: ["portal.", "doc_token."] },
+  { label: "Client portal", prefixes: ["portal.", "doc_token.", "client_request."] },
   { label: "Audit log", prefixes: ["audit."] },
 ];
 
@@ -269,6 +275,9 @@ export const ENTITY_LABELS: Record<string, string> = {
   refund: "Refunds",
   settlement: "Settlements",
   bank_match: "Bank statement ticks",
+  // M7.1 (S5, builder's drafts for the lead): the portal's requests and "I've paid" notices.
+  client_request: "Client requests",
+  payment_notice: "Payment notices",
   // T11: 07-ZJ line 33.
   deed: DEED_RECORD_TYPE,
   report: "Reports",

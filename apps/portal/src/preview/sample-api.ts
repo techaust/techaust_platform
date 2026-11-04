@@ -10,6 +10,7 @@ import { type Envelope, toPdfView } from "@techaust/pdf/view";
 import { buildFixture, type FixtureName } from "../../../../packages/pdf/test/fixtures/index.ts";
 import type { OfferItem, OfferPage, OfferStatus, SignedDeed } from "../api.ts";
 import { answerInvoices } from "./sample-invoices.ts";
+import { answerM71, type M71Mode } from "./sample-m71.ts";
 
 const KEY = "ta.sample-api";
 const ME = {
@@ -223,10 +224,26 @@ async function answer(
   path: string,
   method: string,
   body: Record<string, unknown>,
-  empty: boolean,
+  mode: M71Mode,
 ): Promise<Response> {
+  const empty = mode === "empty";
   await wait(250);
-  if (path === "/me") return json(200, ME);
+  // M7.1: `?sample=nofinance` is a contact who can't see finance (no Invoices or Receipts, no money on Home or a project)
+  if (path === "/me") return json(200, { ...ME, canSeeFinance: mode !== "nofinance" });
+  // M7.1: Home, projects, shared notes and files, receipts, profile, requests and "I've paid"
+  const m71 = answerM71(path, method, body, mode, { json, error, pdf });
+  if (m71) {
+    if (path !== "/home" || m71.status !== 200) return m71;
+    const home = (await m71.json()) as Record<string, unknown>;
+    const awaiting = empty
+      ? []
+      : await Promise.all(
+          DOCS.filter((d) => !d.supersededBy && (d.status === "sent" || d.status === "viewed"))
+            .slice(0, 5)
+            .map(itemOf),
+        );
+    return json(200, { ...home, awaiting });
+  }
   if (path === "/auth/logout") return new Response(null, { status: 204 });
   if (path === "/auth/sessions/revoke-all") return json(200, { ok: true, revoked: 2 });
   if (path.startsWith("/offers") && method === "GET" && /^\/offers(\?|$)/.test(path)) {
@@ -369,7 +386,7 @@ function label() {
 export function installSampleApi() {
   const q = new URLSearchParams(location.search).get("sample");
   if (q === "off") sessionStorage.removeItem(KEY);
-  else if (q === "on" || q === "empty") sessionStorage.setItem(KEY, q);
+  else if (q === "on" || q === "empty" || q === "nofinance" || q === "fail") sessionStorage.setItem(KEY, q);
   const mode = sessionStorage.getItem(KEY);
   if (!mode) return;
   label();
@@ -385,7 +402,7 @@ export function installSampleApi() {
       url.pathname.slice("/api/v1".length) + url.search,
       init?.method ?? "GET",
       body,
-      mode === "empty",
+      mode as M71Mode,
     );
   };
 }

@@ -15,6 +15,7 @@ import {
 import { isExpireKind, isExpireMessage } from "@techaust/core/expiry";
 import { isLutCheckKind, isLutCheckMessage } from "@techaust/core/invoices";
 import { isPdfKind, isPdfMessage, isReceiptKind } from "@techaust/core/pdf-jobs";
+import { isPortalAlertKind } from "@techaust/core/portal";
 import { isStatsKind, isStatsMessage } from "@techaust/core/stats";
 import { processBilling, processBillingDeadLetter } from "./billing.ts";
 import { processDeedPdf, processDeedSigned } from "./deed-pdf.ts";
@@ -27,6 +28,7 @@ import { logEvent, noteInvocation } from "./log.ts";
 import { logLutCheckDeadLetter, processLutCheck, skipLutCheck } from "./lut-check.ts";
 import { processOfferMessage } from "./offers.ts";
 import { processPdf, processPdfDeadLetter } from "./pdf.ts";
+import { processPortalAlert } from "./portal-alerts.ts";
 import { enqueueDue, processStatementPurge, purgeLead } from "./purge.ts";
 import { processReceipt, processReceiptDeadLetter } from "./receipts.ts";
 import { processRefundDeadLetter, processRefundFamily } from "./refunds.ts";
@@ -128,6 +130,10 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         // M6.5: a refund check that ran out of tries becomes a `refund_stuck` review item with the owners' bell; the sweep and the fetch only log.
         await processRefundDeadLetter(env, message.body);
         message.ack();
+      } else if (isDlq && isPortalAlertKind(message.body)) {
+        // M7.1 (L9): a portal bell that ran out of tries: the request or notice itself is stored and shows in the admin's lists, so no alert and no retry.
+        logEvent("portal_alert.dead_letter", { queue });
+        message.ack();
       } else if (isDlq && isGatewayKind(message.body)) {
         // M6.2: an event or an automatic tax invoice that ran out of tries: the event failed, a `dead_letter` review item, the owners' bell (once).
         await processGatewayDeadLetter(env, message.body);
@@ -190,6 +196,11 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
       } else if (queue.endsWith("-email") && isStaffAlert(message.body)) {
         // Expanded into ordinary emails; an alert that cannot be read or has no row is acknowledged (a retry cannot help).
         await processStaffAlert(env, message.body);
+        message.ack();
+      } else if (queue.endsWith("-email") && isPortalAlertKind(message.body)) {
+        // M7.1 (L9): a portal request or notice, expanded into staff bells (no email in M7.1, L16). A body of this family (valid or not) is never sent as an
+        // email; one that cannot be read or names no portal row is acknowledged (a retry cannot help).
+        await processPortalAlert(env, message.body);
         message.ack();
       } else if (queue.endsWith("-email") && isDeedExpansionKind(message.body)) {
         // T11: the signed deed is in the portal: one email per portal contact. A body of this family (valid or not) is never sent as an email.

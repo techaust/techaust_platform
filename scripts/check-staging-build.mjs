@@ -46,6 +46,31 @@ export function webPagesProblems(htmlTexts, stagingKey, topKey) {
 
 const readJson = (path) => (existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null);
 
+/**
+ * M7.1 L17 (12 follow-up from M4.5 and the batch): a local `.dev.vars` (the local secrets) copied into a build output would be uploaded with the static assets.
+ * Every file named `.dev.vars` or `.dev.vars.<anything>` below `dir` (`apps/<app>/dist`), as paths relative to it; empty when there is none or no `dir`.
+ */
+export function devVarsFiles(dir) {
+  if (!existsSync(dir)) return [];
+  const out = [];
+  const walk = (d, rel) => {
+    for (const name of readdirSync(d)) {
+      const path = join(d, name);
+      const r = rel ? `${rel}/${name}` : name;
+      if (statSync(path).isDirectory()) walk(path, r);
+      else if (name === ".dev.vars" || name.startsWith(".dev.vars.")) out.push(r);
+    }
+  };
+  walk(dir, "");
+  return out.sort();
+}
+
+/** The problems a build output with a `.dev.vars` file has (one line per file). */
+export const devVarsProblems = (app, dir) =>
+  devVarsFiles(dir).map(
+    (f) => `${app}: dist/${f} is a local secrets file in the build output; delete it and build again`,
+  );
+
 /** The flattened config `wrangler deploy` will use in an SPA app (through the redirect file the Vite plugin writes). */
 function redirected(appDir) {
   const redirect = readJson(join(appDir, ".wrangler", "deploy", "config.json"));
@@ -77,13 +102,19 @@ export function problemsFor(target) {
   if (target === "admin" || target === "portal") {
     const appDir = join(APPS_DIR, target);
     const name = stagingNameOf(readFileSync(join(appDir, "wrangler.jsonc"), "utf8"));
-    return builtConfigProblems(redirected(appDir), name);
+    return [
+      ...devVarsProblems(target, join(appDir, "dist")),
+      ...builtConfigProblems(redirected(appDir), name),
+    ];
   }
   const aux = ADMIN_AUX_TARGETS[target];
   if (aux) {
     const appDir = join(APPS_DIR, "admin");
     const name = stagingNameOf(readFileSync(join(appDir, aux.config), "utf8"));
-    return builtConfigProblems(readJson(join(appDir, "dist", aux.dist, "wrangler.json")), name);
+    return [
+      ...devVarsProblems("admin", join(appDir, "dist")),
+      ...builtConfigProblems(readJson(join(appDir, "dist", aux.dist, "wrangler.json")), name),
+    ];
   }
   if (target === "web") {
     const appDir = join(APPS_DIR, "web");

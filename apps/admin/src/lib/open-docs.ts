@@ -88,6 +88,30 @@ const refusedAnswer = (e: unknown) =>
   e instanceof RequestError && e.status >= 400 && e.status < 500 && e.status !== 401 && e.code !== "network";
 
 /**
+ * M7.1 re-check 7 (L23, ADM-PAY-05): "Record payment" started from a client's notice. The notice's document is the dialog's only row, so it is read alone,
+ * by id, never through the open lists. The shared `askedDocOf` decides: a row while the document can still take the payment (issued, a type a payment goes
+ * on, a proforma only for a Staff entry, this client and currency, a balance left), else no row. That happens when it was paid, credited or voided since the
+ * notice, or the read is refused (gone, not this member's to see); the server's refusal is then worded with S1's line, never S8 (re-check 5). Any other
+ * failure (offline, a server error) throws, so the dialog shows its failed-load state with its retry.
+ */
+export async function noticeDocsOf(
+  documentId: string,
+  payment: { clientId: string; currency: Currency },
+  opts: { proformas: boolean },
+  get: GetFn = invoicesApi.get,
+): Promise<OpenDoc[]> {
+  let v: InvoiceView;
+  try {
+    v = await get(documentId);
+  } catch (e) {
+    if (refusedAnswer(e)) return [];
+    throw e;
+  }
+  const r = askedDocOf(v, payment, opts);
+  return r.ok ? [r.doc] : [];
+}
+
+/**
  * What the Confirm step offers: every open document of the client, plus every document Staff asked for that the lists didn't return (past the first pages, or
  * past the cap), read by id. Nothing asked for is dropped: each is a row, prefilled by the caller with the amount asked, or a refused row with its reason.
  */

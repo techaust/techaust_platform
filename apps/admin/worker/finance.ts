@@ -7,6 +7,7 @@
 // (invoicing.ts) word for word; so did the automatic tax invoice of a proforma paid online (`GatewayAdvance`), which this Worker reaches only for the Owner's
 // "Try again" through its own `ADMIN_ADVANCE` binding (gateway/advance-rpc.ts).
 import { WorkerEntrypoint } from "cloudflare:workers";
+import { warmRouter } from "@techaust/auth";
 import {
   type CapturePayPalReturnArgs,
   type CapturePayPalReturnResult,
@@ -34,7 +35,6 @@ import { mountFinance } from "./routes-finance.ts";
 import { rpcId, rpcLog } from "./rpc.ts";
 import { FINANCE_WARM } from "./warm-fixtures/finance.ts";
 import { FINANCE_RPC_WARM } from "./warm-fixtures/finance-rpc.ts";
-import { warmRouter } from "./warm-router.ts";
 import { warmAtStartup } from "./warm-routes.ts";
 import { warmRpcAtStartup } from "./warm-rpc.ts";
 

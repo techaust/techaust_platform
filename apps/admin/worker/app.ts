@@ -1,4 +1,4 @@
-import { answeringRow, hex, randomBytes } from "@techaust/auth";
+import { answeringRow, firstRun, hex, randomBytes } from "@techaust/auth";
 import { accessStmt, clipHeader, HEADER_LIMITS } from "@techaust/db/log";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
@@ -18,18 +18,6 @@ let isolateRequests = 0;
 export function nextRequestNumber() {
   isolateId ??= hex(randomBytes(3));
   return { iso: isolateId, n: ++isolateRequests }; // taken before the request runs, so concurrent requests get distinct numbers
-}
-
-/**
- * M6.2 CPU diagnosis (lead decision 4, 2026-11-01): the patterns this isolate has answered, so a log line can say "first run here" (`f: 1`) and the staging CPU
- * gate reads first runs directly. Keys are route PATTERNS (`GET /api/v1/invoices/:id`), forwards (`fwd GET ...`) and RPC methods (`rpc processEvent`): never a
- * raw path, an id or anything personal. Bounded (the route table is finite; at most 512 keys are remembered).
- */
-const answered = new Set<string>();
-export function firstRun(key: string): 1 | undefined {
-  if (answered.has(key)) return undefined;
-  if (answered.size < 512) answered.add(key);
-  return 1;
 }
 
 /** A warm app's fixed request facts (createApp `warm`): no counter moves. */

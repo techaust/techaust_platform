@@ -7,8 +7,10 @@
 // up in its own table of the forwarded rows (Hono's TrieRouter: a walk over the path's segments, no regular expression per row) and forwards for the FIRST
 // row that matches in table order, exactly as the first of the per-row handlers answered before; with no forwarded row it hands the request on (`next`) to
 // the front's own routes and middleware, so an undeclared path still gets the front's 404.
+
+import { firstRun } from "@techaust/auth";
 import { TrieRouter } from "hono/router/trie-router";
-import { type App, firstRun, requestFacts } from "./app.ts";
+import { type App, requestFacts } from "./app.ts";
 import { err, type RouteDef } from "./context.ts";
 
 const BAD_GATEWAY = { code: "bad_gateway", message: "Something went wrong" };
@@ -45,7 +47,7 @@ export function forwardRowOf(
 }
 
 /**
- * Matches each forwarded row's sample path (`:param` → `x`) through the table `rounds` times while the module loads (like warm-router.ts for the routers); the
+ * Matches each forwarded row's sample path (`:param` → `x`) through the table `rounds` times while the module loads (like `warmRouter` in @techaust/auth for the routers); the
  * number of rows that resolve to themselves (a test pins it). Pure, never throws.
  */
 export function warmForwardTable(

@@ -5,6 +5,7 @@
 // the client the link was made for, and the client must not be anonymised. Turning access off, changing the address, anonymising the person or the client, revoking the link, voiding the invoice or the link
 // expiring ends it at once. What opens: an invoice, proforma, credit note or debit note in a status of `CLIENT_INVOICE_STATUSES` (invoice-summary.ts) (never a draft, a pending approval or a void one). Every other outcome is the
 // same 404, and counts toward the address's `p:fail:` counter like a failed sign-in link; a blocked address gets a 429 and writes nothing.
+// M7.1 L12 and review 1 L3: a genuine link that ended 30 days after its document was settled is the same 404 but is NOT counted (old links must not lock an address).
 // ADM-INV-10 (owner, 2026-10-30, docs/13): a withdrawn proforma (`openOrWithdrawnSql`) still opens, as withdrawn (a valid link, no failure counted); its PDF is a 409.
 //
 // Under the owner's Q1 = A a document-link use is a sign-in event: a valid use writes one `doc_token.use` audit row (actor type `contact`, the contact the link is bound to; the entity is the document), an
@@ -20,6 +21,7 @@ import {
   tokenHash,
 } from "@techaust/auth";
 import { accessStmt, auditStmt } from "@techaust/db/log";
+import { viewPayLiveSql } from "@techaust/db/sql-rules";
 import { Hono } from "hono/tiny";
 import {
   type AppEnv,
@@ -62,9 +64,10 @@ import { json } from "./validate.ts";
 export const VIEW_PAY_TYPES = CLIENT_INVOICE_TYPES;
 /**
  * ?1 token hash, ?2 now. The token, the document of the SAME client, the live contact it is bound to and the client, in one read (primary-key lookups; tests EXPLAIN it). The columns after the summary's
- * are the principal (who the link is for).
+ * are the principal (who the link is for). `view_pay_live` is L12's end (paid + 30 days), read as a column rather than in the WHERE (review 1, L3): a row with
+ * `view_pay_live = 0` is a genuine link that ended because the document was settled, the 404 WITHOUT a `p:fail:` count (only a wrong or unknown token counts).
  */
-export const DOC_READ = `SELECT ${SUMMARY_COLS}, t.contact_id AS link_contact_id, t.client_id AS link_client_id
+export const DOC_READ = `SELECT ${SUMMARY_COLS}, t.contact_id AS link_contact_id, t.client_id AS link_client_id, ${viewPayLiveSql("d", "?2")} AS view_pay_live
   FROM doc_access_tokens t
   JOIN documents d ON d.id = t.document_id AND d.client_id = t.client_id
   JOIN contacts c ON c.id = t.contact_id AND c.client_id = t.client_id AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL AND lower(c.email) = t.email
@@ -73,25 +76,64 @@ export const DOC_READ = `SELECT ${SUMMARY_COLS}, t.contact_id AS link_contact_id
   WHERE t.token_hash = ?1 AND t.revoked_at IS NULL AND t.expires_at > ?2 AND t.purpose = 'view_pay' AND d.frozen_at IS NOT NULL AND ${openOrWithdrawnSql("d")} AND d.type IN (${TYPES_SQL})`;
 
 /**
- * ?1 client, ?2 document: the document's state NOW, read in the batch that writes the PDF view (review L1). `open()` read the row in an earlier batch, so a
- * withdrawal or a void landing between the two would otherwise still serve the PDF. `open` = the PDF may be served; `readable` without `open` = withdrawn.
+ * M7.1 L13 (the proforma-withdraw re-check): the link is still live NOW, for this document (`d`): not revoked, not expired, bound to its live contact with
+ * portal access and finance at the same address, of a client not anonymised, and not past paid + 30 days (L12). `h` the token hash, `n` now.
  */
-export const PDF_STATE_SQL = `SELECT d.type, d.status, ${openSql("d")} AS open, ${openOrWithdrawnSql("d")} AS readable
+export const linkLiveSql = (h: string, n: string) =>
+  `EXISTS (SELECT 1 FROM doc_access_tokens lt
+     JOIN contacts lc ON lc.id = lt.contact_id AND lc.client_id = lt.client_id AND lc.portal_access = 1 AND lc.can_see_finance = 1 AND lc.anonymised_at IS NULL AND lower(lc.email) = lt.email
+     JOIN clients lcl ON lcl.id = lt.client_id AND lcl.anonymised_at IS NULL
+     WHERE lt.token_hash = ${h} AND lt.document_id = d.id AND lt.client_id = d.client_id AND lt.revoked_at IS NULL AND lt.expires_at > ${n} AND lt.purpose = 'view_pay'
+       AND ${viewPayLiveSql("d", n)})`;
+
+/**
+ * L11 (12 "M1.6"): a link's use writes its `doc_token.use` audit row at most once per contact and document per 15 minutes (on `audit_log_entity`); the access
+ * row stays one per request (13 2026-10-21). The guard of the audit insert: the document, the contact and the cut (now less 15 minutes).
+ */
+export const DOC_TOKEN_AUDIT_WINDOW_MS = 15 * 60_000;
+const auditThrottle = (documentId: string, contactId: string, now: number) => ({
+  sql: (at: number) =>
+    `NOT EXISTS (SELECT 1 FROM audit_log a WHERE a.entity_type = 'document' AND a.entity_id = ?${at} AND a.action = 'doc_token.use' AND a.actor_id = ?${at + 1} AND a.at > ?${at + 2})`,
+  params: [documentId, contactId, now - DOC_TOKEN_AUDIT_WINDOW_MS],
+});
+
+/**
+ * ?1 client, ?2 document, ?3 token hash, ?4 now: the document's state NOW, read in the batch that writes the PDF view (review L1). `open()` read the row in an
+ * earlier batch, so a withdrawal, a void, a revoked link, a contact who lost finance or access, or a PDF that finished in between would otherwise be read from
+ * the old row. M7.1 L13: the PDF key and every link and contact condition are read HERE, and the PDF is served only from what this returns. `open` = the PDF
+ * may be served; `readable` without `open` = withdrawn; `link_live` = the link still opens.
+ */
+export const PDF_STATE_SQL = `SELECT d.type, d.status, d.pdf_r2_key, d.number_display, ${openSql("d")} AS open, ${openOrWithdrawnSql("d")} AS readable,
+    ${linkLiveSql("?3", "?4")} AS link_live
   FROM documents d WHERE d.client_id = ?1 AND d.id = ?2`;
-type PdfState = { type: string; status: string; open: number; readable: number };
+type PdfState = {
+  type: string;
+  status: string;
+  pdf_r2_key: string | null;
+  number_display: string | null;
+  open: number;
+  readable: number;
+  link_live: number;
+};
+/** The PDF's first view through a link (?1 client, ?2 document, ?3 now, ?4 token hash): only while the link is still live (L13), and only a delivered PDF. */
+export const LINK_VIEW_PDF_SQL = `${VIEW_PDF_SQL} AND EXISTS (SELECT 1 FROM documents d WHERE d.id = ?2 AND d.client_id = ?1 AND ${linkLiveSql("?4", "?3")})`;
 
-type Found = SummaryRow & { link_contact_id: string; link_client_id: string };
-type Opened = { doc: Found; failKey: string };
+export type Found = SummaryRow & { link_contact_id: string; link_client_id: string; view_pay_live: number };
+export type Opened = { doc: Found; failKey: string; hash: string };
 
-/** The address lock and the link in ONE batch: a Response (429 or 404) or the live document the link opens. */
-async function open(c: Ctx, token: string): Promise<Opened | Response> {
+/**
+ * The address lock and the link in ONE batch: a Response (429 or 404) or the live document the link opens. A wrong or unknown token is the 404 and counts on
+ * `p:fail:`; a genuine link past its 30 days after settlement (L12) is the same 404, not counted (review 1, L3: old links must not lock an office address).
+ */
+export async function open(c: Ctx, token: string): Promise<Opened | Response> {
   const db = c.env.DB;
   const t = Date.now();
   const failKey = await portalFailKey(c.env.PORTAL_KEY_PEPPER, callerAddress(c));
   // A token of the wrong shape is just a failed check: its hash matches nothing, and it counts like any other.
+  const hash = await tokenHash(token);
   const [lock, found] = await db.batch([
     db.prepare(IP_READ).bind(failKey),
-    db.prepare(DOC_READ).bind(await tokenHash(token), t),
+    db.prepare(DOC_READ).bind(hash, t),
   ]);
   const until = (lock?.results[0] as { locked_until: number | null } | undefined)?.locked_until;
   if (until && until > t) {
@@ -105,7 +147,13 @@ async function open(c: Ctx, token: string): Promise<Opened | Response> {
     ]);
     return err(c, NOT_FOUND, 404);
   }
-  return { doc, failKey };
+  if (doc.view_pay_live !== 1) {
+    // Review 1, L3: a genuine link that ended with the document's settlement. The access row only (the link's contact), no `p:fail:` count.
+    c.set("accessDone", true);
+    await db.batch([accessStmt(db, accessEntry(c, 404, doc.link_contact_id))]);
+    return err(c, NOT_FOUND, 404);
+  }
+  return { doc, failKey, hash };
 }
 
 export const docToken = new Hono<AppEnv>()
@@ -124,15 +172,19 @@ export const docToken = new Hono<AppEnv>()
       db.prepare(CREDIT_NOTES_SQL).bind(doc.link_client_id, doc.id),
       // M6.2: the Pay now block, bound to the link's client.
       db.prepare(ONLINE_SQL).bind(doc.link_client_id, doc.id, t),
-      auditStmt(db, {
-        ...requestInfo(c),
-        actorType: "contact",
-        actorId: doc.link_contact_id,
-        role: null,
-        action: "doc_token.use",
-        entityType: "document",
-        entityId: doc.id,
-      }),
+      auditStmt(
+        db,
+        {
+          ...requestInfo(c),
+          actorType: "contact",
+          actorId: doc.link_contact_id,
+          role: null,
+          action: "doc_token.use",
+          entityType: "document",
+          entityId: doc.id,
+        },
+        auditThrottle(doc.id, doc.link_contact_id, t),
+      ),
       db.prepare(VIEW_SQL).bind(doc.link_client_id, doc.id, t),
       accessStmt(db, accessEntry(c, 200, doc.link_contact_id)),
     ]);
@@ -181,21 +233,27 @@ export const docToken = new Hono<AppEnv>()
     // Review L1: the state is read again in the batch that writes the view, and the access row of a served (or pending) PDF is written only while the
     // document is still open (the same `openSql` as the check below). A withdrawal or a void that landed after `open()` answers as the document now is,
     // without reading R2: 409 `withdrawn` for a withdrawn proforma, else the 404. The link was valid when checked, so neither counts toward `p:fail:`.
+    const hash = await tokenHash(token);
+    const at = Date.now();
     const [state] = await db.batch([
-      db.prepare(PDF_STATE_SQL).bind(doc.link_client_id, doc.id),
-      db.prepare(VIEW_PDF_SQL).bind(doc.link_client_id, doc.id, Date.now()),
-      accessStmt(db, accessEntry(c, doc.pdf_r2_key ? 200 : 409, doc.link_contact_id), {
-        sql: (at) => `EXISTS (SELECT 1 FROM documents d WHERE d.id = ?${at} AND ${openSql("d")})`,
-        params: [doc.id],
+      db.prepare(PDF_STATE_SQL).bind(doc.link_client_id, doc.id, hash, at),
+      db.prepare(LINK_VIEW_PDF_SQL).bind(doc.link_client_id, doc.id, at, hash),
+      // The access row of a served PDF, written only while the document is open, its PDF stored and the link live; any other outcome writes its own below.
+      accessStmt(db, accessEntry(c, 200, doc.link_contact_id), {
+        sql: (n) =>
+          `EXISTS (SELECT 1 FROM documents d WHERE d.id = ?${n} AND d.client_id = ?${n + 1} AND ${openSql("d")} AND d.pdf_r2_key IS NOT NULL AND ${linkLiveSql(`?${n + 2}`, `?${n + 3}`)})`,
+        params: [doc.id, doc.link_client_id, hash, at],
       }),
     ]);
     const now = state?.results[0] as PdfState | undefined;
-    if (!now?.open) {
-      const withdrawn = !!now?.readable && isWithdrawnRow(now);
+    if (!now?.open || now.link_live !== 1) {
+      const withdrawn = now?.link_live === 1 && !!now.readable && isWithdrawnRow(now);
       await db.batch([accessStmt(db, accessEntry(c, withdrawn ? 409 : 404, doc.link_contact_id))]);
       return withdrawn ? err(c, PDF_WITHDRAWN, 409) : err(c, NOT_FOUND, 404);
     }
-    if (!doc.pdf_r2_key)
+    // Served only from what the state read returned (L13): a PDF that finished after `open()` is served; one that has none yet is 409 `pdf_pending`.
+    if (!now.pdf_r2_key) {
+      await db.batch([accessStmt(db, accessEntry(c, 409, doc.link_contact_id))]);
       return c.json(
         {
           error: { code: "pdf_pending", message: "The document is still being prepared" },
@@ -203,5 +261,6 @@ export const docToken = new Hono<AppEnv>()
         },
         409,
       );
-    return streamPdf(c, doc.pdf_r2_key, pdfFileName(doc.number_display, 1));
+    }
+    return streamPdf(c, now.pdf_r2_key, pdfFileName(now.number_display, 1));
   });

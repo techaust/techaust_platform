@@ -1,4 +1,4 @@
-import { answeringRow, hex, randomBytes } from "@techaust/auth";
+import { answeringRow, firstRun, hex, randomBytes, warmRouter } from "@techaust/auth";
 import { accessStmt, clipHeader, HEADER_LIMITS } from "@techaust/db/log";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
@@ -12,14 +12,22 @@ import { type AppEnv, accessEntry, BAD_REQUEST, type Ctx, err, NOT_FOUND, type R
 import { csrf } from "./csrf.ts";
 import { deeds } from "./deeds.ts";
 import { docToken } from "./doc-token.ts";
+import { files } from "./files.ts";
 import { guard, ROUTES, tableOf } from "./guard.ts";
+import { home } from "./home.ts";
 import { invoices, receipts } from "./invoices.ts";
 import { me } from "./me.ts";
 import type { OfferViewer } from "./offer-core.ts";
 import { offerLinks } from "./offer-token.ts";
 import { offers } from "./offers.ts";
+import { paidNoticeRoutes, tokenPaidNoticeRoutes } from "./paid-notice.ts";
 import { payReturn } from "./pay-return.ts";
+import { profile } from "./profile.ts";
+import { projects } from "./projects.ts";
+import { receiptList } from "./receipts.ts";
+import { requests } from "./requests.ts";
 import type { MagicLinkSender } from "./sender.ts";
+import { notes } from "./shared.ts";
 import { defaultViewer } from "./viewer.ts";
 import "./warm.ts"; // start-up warm-up of the sign-in path (CPU tuning 3)
 
@@ -108,6 +116,9 @@ export function createApp(deps: Deps = {}) {
           rid: c.var.rid,
           iso: isolateId,
           n,
+          // M7.1 J (M6.2 CPU diagnosis, lead decision 4): `f: 1` on the first run of this route pattern in this isolate, so the staging CPU gate reads first
+          // runs directly; absent (dropped by JSON) on every later run. The key is the method and the PATTERN, never a raw path.
+          f: firstRun(`${c.req.method} ${row?.path ?? "other"}`),
         }),
       );
     }),
@@ -121,9 +132,21 @@ export function createApp(deps: Deps = {}) {
   app.route("/v1/me", me);
   app.route("/v1/offers", offers);
   app.route("/v1/invoices", invoices);
+  // M7.1 (run file C): "I've paid" on a signed-in invoice page, the receipts and credit-notes list, Home, projects, shared notes and files, the Profile
+  // page and requests.
+  app.route("/v1/invoices", paidNoticeRoutes);
+  app.route("/v1/receipts", receiptList);
   app.route("/v1/receipts", receipts);
+  app.route("/v1/home", home);
+  app.route("/v1/projects", projects);
+  app.route("/v1/notes", notes);
+  app.route("/v1/files", files);
+  app.route("/v1/profile", profile);
+  app.route("/v1/requests", requests);
   app.route("/v1/deeds", deeds);
   app.route("/v1/t", docToken);
+  // M7.1: "I've paid" from the emailed link (the token in the body).
+  app.route("/v1/t", tokenPaidNoticeRoutes);
   // M6.4 (POR-06, L19): PayPal's return to an emailed link's page (no session, no token: a state only).
   app.route("/v1/pay", payReturn);
   app.route("/v1/t/offer", offerLinks);
@@ -156,4 +179,7 @@ export function createApp(deps: Deps = {}) {
 }
 
 const app = createApp();
+// M7.1 J (L19; M6.2 CPU diagnosis, lead decision 1): every row's route regex compiled and tiered up while the module loads, not in the metered first request
+// (`warmRouter` from @techaust/auth; pure, no env, no I/O, never throws). Not exported: a named export of a Worker entry module is read as an entrypoint.
+warmRouter(app, ROUTES);
 export default app satisfies ExportedHandler<Env>;

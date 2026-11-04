@@ -60,6 +60,22 @@ export const ROUTES: readonly RouteDef[] = [
   R("POST", "/t/offer/certificate", "public"),
   R("POST", "/t/offer/accept", "public", { audit: "document.accept" }),
   R("POST", "/t/offer/decline", "public", { audit: "document.decline" }),
+  // M7.1 (POR-04, POR-07 to POR-11, ADM-PAY-05; run file C): the full portal. Every query is bound to the session's organisation (`client_id = ?1`); another
+  // organisation's thing, an unshared file or an internal note is the plain 404. Money (invoices to pay, receipts, milestone amounts, "I've paid") is
+  // finance-only, in the row AND in the SQL (no finance column is selected for a contact without finance).
+  R("GET", "/home", "session"),
+  R("GET", "/projects", "session"),
+  R("GET", "/projects/:id", "session"),
+  R("GET", "/notes", "session"),
+  R("GET", "/files", "session"),
+  R("GET", "/files/:id/download", "session"),
+  R("GET", "/receipts", "finance"),
+  R("GET", "/profile", "session"),
+  R("POST", "/profile", "session", { audit: "contact.self_update" }),
+  R("POST", "/requests", "session", { audit: "portal.request" }),
+  R("POST", "/invoices/:id/paid-notice", "finance", { audit: "payment.notice" }),
+  // "I've paid" from the emailed "View & pay" link: the token only in the body; the same open, counter and lock as `/t/document`.
+  R("POST", "/t/document/paid-notice", "public", { audit: "payment.notice" }),
 ];
 
 /** The table row for a request, by method and the matched Hono pattern (`routePath`); undefined = not declared. */

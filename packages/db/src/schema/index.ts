@@ -9,4 +9,5 @@ export * from "./documents.ts";
 export * from "./email.ts";
 export * from "./identity.ts";
 export * from "./payments.ts";
+export * from "./portal.ts";
 export * from "./settings.ts";

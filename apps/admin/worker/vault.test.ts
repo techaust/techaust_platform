@@ -744,7 +744,7 @@ describe("portal-ready queries: a client sees only its own shared notes and file
     expect(await sharedFileFor(env.DB, a, "no-such").first()).toBeNull();
   });
 
-  it("pages by cursor, at most 50 a page, and runs on the (client, shared/visibility, created) indexes", async () => {
+  it("pages by cursor, at most 50 a page, and runs on the shared-item indexes (M7.1: notes_shared_client, files_shared_client)", async () => {
     const a = await mkClient();
     for (let i = 0; i < 4; i++) await mkNote(a, { visibility: "shared", created_at: 5_000_000 + i });
     const page1 = (await sharedNotesFor(env.DB, a, 3).all<J>()).results;
@@ -761,13 +761,13 @@ describe("portal-ready queries: a client sees only its own shared notes and file
         "SELECT id FROM notes WHERE client_id = ?1 AND visibility = 'shared' ORDER BY created_at DESC, id DESC LIMIT 25",
         "c",
       ),
-    ).toMatch(/notes_client_visibility/);
+    ).toMatch(/notes_shared_client/);
     expect(
       await plan(
         "SELECT id FROM files WHERE client_id = ?1 AND shared = 1 ORDER BY created_at DESC, id DESC LIMIT 25",
         "c",
       ),
-    ).toMatch(/files_client_shared/);
+    ).toMatch(/files_shared_client/);
     expect(await plan(fileListSql("client", true, 25), "c", 1, "x")).toMatch(/files_client/);
     expect(await plan(fileListSql("project", false, 25), "c")).toMatch(/files_project/);
   });

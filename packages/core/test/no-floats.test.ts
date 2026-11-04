@@ -58,6 +58,9 @@ const MONEY_FILES = [
   "src/receipts.ts",
   "src/pa-cb.ts",
   "src/recon.ts",
+  // M7.1: the portal's notice rules (the amount against the balance) and the notice bodies (amounts in minor units)
+  "src/portal.ts",
+  "src/schemas/portal.ts",
   // T11: the deed of assignment (L2's sums, the amount it prints)
   "src/deeds.ts",
   "src/export-invoice.ts",

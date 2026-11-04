@@ -1,5 +1,5 @@
-// The signed-in portal (M4.5; POR-02 to POR-05): the shell around five sections, home, the proposals-and-estimates list and one
-// document. Everything a screen shows comes from the API with the session's organisation (POR-03); another organisation's document
+// The signed-in portal (M4.5; POR-02 to POR-05; M7.1: POR-04 to POR-11): the shell around six sections, the proposals-and-estimates list and one
+// document (Home, Receipts, Projects and Profile are lazy routes, screens/m71/). Everything a screen shows comes from the API with the session's organisation (POR-03); another organisation's document
 // is the same "Page not found" as one that doesn't exist. Signed out, every address shows the sign-in form.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router";
@@ -11,17 +11,8 @@ import { LoadingCard } from "../components/ui.tsx";
 import { COPY } from "../copy.ts";
 import { WORDS } from "../copy-documents.ts";
 import { splitOffers } from "../lib/offers.ts";
-import {
-  DocumentsScreen,
-  HomeScreen,
-  MoreButton,
-  NotFoundScreen,
-  ScreenSkeleton,
-  SoonScreen,
-} from "../screens/home.tsx";
-import { InvoicesTile } from "../screens/invoices.tsx";
+import { DocumentsScreen, MoreButton, NotFoundScreen, ScreenSkeleton } from "../screens/home.tsx";
 import { useMe, useSession } from "../session.tsx";
-import { useInvoices } from "./invoices.tsx";
 import { Unreachable } from "./not-found.tsx";
 import { OfferScreen, type OfferSource } from "./offer.tsx";
 import { SignIn } from "./sign-in.tsx";
@@ -30,6 +21,7 @@ export const HREF: Record<NavKey, string> = {
   home: "/",
   documents: "/proposals",
   invoices: "/invoices",
+  receipts: "/receipts",
   projects: "/projects",
   profile: "/profile",
 };
@@ -40,13 +32,14 @@ function currentOf(pathname: string): NavKey | null {
   if (pathname === "/") return "home";
   if (pathname.startsWith("/proposals")) return "documents";
   if (pathname.startsWith("/invoices")) return "invoices";
+  if (pathname.startsWith("/receipts")) return "receipts";
   if (pathname.startsWith("/projects")) return "projects";
   if (pathname.startsWith("/profile")) return "profile";
   return null;
 }
 
-/** 07-ZA item 12 (owner 2026-10-30): a contact who can't see finance gets no Invoices link (it only led to "Page not found"). */
-const NO_FINANCE: readonly NavKey[] = ["invoices"];
+/** 07-ZA item 12 (owner 2026-10-30): a contact who can't see finance gets no Invoices link (it only led to "Page not found"); M7.1: no Receipts either. */
+const NO_FINANCE: readonly NavKey[] = ["invoices", "receipts"];
 
 /** The frame: signed out, the sign-in form at any address; signed in, the shell and the section. */
 export function PortalLayout() {
@@ -123,32 +116,6 @@ function useOffers() {
   return { items, next, error, busy, more: () => next && page(next), retry: () => page() };
 }
 
-export function HomeRoute() {
-  const me = useMe();
-  const o = useOffers();
-  // M5.4: the invoices tile, for a contact who can see finance (the API answers 404 otherwise)
-  const inv = useInvoices(me.canSeeFinance);
-  if (o.error && !o.items)
-    return <LoadProblemScreen title={me.organisation.displayName} error={o.error} onRetry={o.retry} />;
-  if (!o.items) return <ScreenSkeleton label={COPY.loading} />;
-  const { awaiting, decided } = splitOffers(o.items);
-  return (
-    <HomeScreen
-      org={me.organisation.displayName}
-      contactName={me.contact.name}
-      awaiting={awaiting}
-      hasDecided={decided.length > 0 || o.next !== null}
-      hrefOf={(d) => offerHref(d.id)}
-      listHref={HREF.documents}
-      invoicesTile={
-        me.canSeeFinance ? (
-          <InvoicesTile items={inv.items} problem={inv.items ? null : inv.problem} />
-        ) : undefined
-      }
-    />
-  );
-}
-
 export function ProposalsRoute() {
   const o = useOffers();
   if (o.error && !o.items)
@@ -206,10 +173,6 @@ export function ProposalRoute() {
 /** T11: the signed deed under an accepted version's summary (signed in only: the emailed link never shows it; finance contacts only, owner 2026-11-01). */
 const signedDeedOf = (documentId: string, accepted: boolean) =>
   accepted ? <SignedDeedCard key={documentId} documentId={documentId} /> : null;
-
-export function SoonRoute({ section }: { section: "projects" | "profile" }) {
-  return <SoonScreen section={section} />;
-}
 
 export function MissingRoute() {
   return <NotFoundScreen homeHref={HREF.home} />;

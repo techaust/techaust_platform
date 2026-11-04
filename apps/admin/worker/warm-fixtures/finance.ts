@@ -7,23 +7,23 @@ import type { WarmFixture } from "../warm-routes.ts";
 
 export const FINANCE_WARM: WarmFixture = {
   calls: [
-    { method: "GET", path: "/invoices/01a1a017-f7a9-7dfd-96c7-02efa1558bed/payments" },
+    { method: "GET", path: "/invoices/01a1a75a-9be0-72be-bf70-a291b563d91a/payments" },
     { method: "GET", path: "/payments/review" },
-    { method: "POST", path: "/payments/review/5e9e882d-5be0-448f-bc2c-1c0de8ba17b5/retry", body: {} },
+    { method: "POST", path: "/payments/review/5a0df347-37da-4052-8108-1bafdd6f13c7/retry", body: {} },
   ],
   rows: {
     ba056e5e: [
       {
         r: [
           {
-            last_seen_at: 1793687294226,
+            last_seen_at: 1793809104036,
             idle_expires_at: 4102444800000,
             abs_expires_at: 4102444800000,
             revoked_at: null,
             step_up_until: 4102444800000,
-            id: "01a1a017-f5e3-71e7-bad9-3006af113d71",
+            id: "01a1a75a-9a5c-7b03-aaaa-27803bc2c299",
             name: "Probe Owner (sample)",
-            email: "probe-mw0b3kj2@example.test",
+            email: "probe-mw2bmc69@example.test",
             role: "owner",
           },
         ],
@@ -34,21 +34,21 @@ export const FINANCE_WARM: WarmFixture = {
       {
         r: [
           {
-            id: "01a1a017-f7a9-7dfd-96c7-02efa1558bed",
+            id: "01a1a75a-9be0-72be-bf70-a291b563d91a",
             type: "tax_invoice",
             status: "partially_credited",
-            client_id: "e66b40bc-12b5-4a1d-8798-4bddc3116d11",
+            client_id: "eb74292e-8ce9-4fc0-b77d-214b9bb956d3",
             currency: "INR",
-            frozen_at: 1793687287743,
+            frozen_at: 1793809095668,
             voided_at: null,
-            issue_date: "2026-11-03",
+            issue_date: "2026-11-04",
             number_display: "TH/INV/2627/0001",
             total_minor: 10620000,
             paid_minor: 0,
             credited_minor: 590000,
             tds_minor: 0,
             balance_minor: 10030000,
-            updated_at: 1793687287791,
+            updated_at: 1793809095708,
             supply_type: "intra",
             fx_rate_micros: null,
             fx_date: null,
@@ -93,23 +93,24 @@ export const FINANCE_WARM: WarmFixture = {
         c: 0,
       },
     ],
+    d2af5e9e: [{ r: [], c: 0 }],
     "5c7b687f": [
       {
         r: [
           {
-            id: "5e9e882d-5be0-448f-bc2c-1c0de8ba17b5",
+            id: "5a0df347-37da-4052-8108-1bafdd6f13c7",
             source: "dlq",
             provider: "razorpay",
             kind: "dead_letter",
             status: "open",
             webhook_event_id: null,
             payment_id: "rzp_pay_warm0001",
-            document_id: "01a1a017-fb3b-75c9-8e7b-c8b602df6690",
-            client_id: "272e9cff-d33c-4bab-9359-2f1820e24c1c",
+            document_id: "01a1a75a-9f2d-7b51-9765-6ad21f5d7783",
+            client_id: "75c65695-a0b3-43b4-a4e2-515ef6e840fa",
             amount_minor: 10620000,
             currency: "INR",
             facts: null,
-            created_at: 1793687288713,
+            created_at: 1793809096579,
             resolved_by: null,
             resolved_at: null,
             resolution: null,
@@ -127,19 +128,19 @@ export const FINANCE_WARM: WarmFixture = {
       {
         r: [
           {
-            id: "5e9e882d-5be0-448f-bc2c-1c0de8ba17b5",
+            id: "5a0df347-37da-4052-8108-1bafdd6f13c7",
             source: "dlq",
             provider: "razorpay",
             kind: "dead_letter",
             status: "open",
             webhook_event_id: null,
             payment_id: "rzp_pay_warm0001",
-            document_id: "01a1a017-fb3b-75c9-8e7b-c8b602df6690",
-            client_id: "272e9cff-d33c-4bab-9359-2f1820e24c1c",
+            document_id: "01a1a75a-9f2d-7b51-9765-6ad21f5d7783",
+            client_id: "75c65695-a0b3-43b4-a4e2-515ef6e840fa",
             amount_minor: 10620000,
             currency: "INR",
             facts: null,
-            created_at: 1793687288713,
+            created_at: 1793809096579,
             resolved_by: null,
             resolved_at: null,
             resolution: null,
