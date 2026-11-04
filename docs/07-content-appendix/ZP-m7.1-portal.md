@@ -40,7 +40,7 @@ Status: **DRAFT for the owner (2026-11-05).** Client lines C1–C25 (run file [m
 - C24. "You already have an open request of this kind. We'll answer it first." · "You've sent several requests today. Try again tomorrow, or email contact@techaust.com."
 
 ### The emailed "View & pay" page
-- C25. Footer: "Sign in to see all your invoices, receipts and projects."
+- C25. ~~Footer: "Sign in to see all your invoices, receipts and projects."~~ **Withdrawn (lead, 2026-11-05, L27):** the "View & pay" page already shows an approved sign-in notice at the top that says the same; the page keeps that one.
 
 ## Lines the screens need that section H lacked (lead's proposed words)
 - G1. A receipt that covers more invoices than the list names: "and {n} more"
