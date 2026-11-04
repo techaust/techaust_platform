@@ -315,12 +315,15 @@ test("review 1, M3 and L2: a proforma's notice keeps both actions in view, and i
     expectedContentSha256: d.contentSha256,
   });
   expect(issued.status, JSON.stringify(issued.body)).toBe(200);
+  const pfNotice = uuid7();
   d1(`
     INSERT INTO payment_notices (id, client_id, document_id, contact_id, via, amount_minor, currency, paid_on, reference, reference_norm, note, status, created_at)
-    SELECT '${uuid7()}', d.client_id, d.id, c.id, 'portal', min(d.balance_minor, 500000), d.currency, '${today}', 'PF${run}', 'PF${run}', NULL, 'open', ${Date.now()}
+    SELECT '${pfNotice}', d.client_id, d.id, c.id, 'portal', min(d.balance_minor, 500000), d.currency, '${today}', 'PF${run}', 'PF${run}', NULL, 'open', ${Date.now()}
       FROM documents d JOIN contacts c ON c.client_id = d.client_id AND c.anonymised_at IS NULL
      WHERE d.id = '${draft.body.id}' LIMIT 1;`);
   const issueName = /^Issue tax invoice for the payment received, /;
+  // this run's proforma notice (an earlier run may have left its own open)
+  const issueLink = () => page.locator(`a[href*="fromNotice=${pfNotice}"]`).filter({ visible: true });
   for (const theme of ["light", "dark"] as const)
     for (const width of [1280, 768, 390] as const) {
       await page.emulateMedia({ colorScheme: theme === "light" ? "dark" : "light" });
@@ -328,9 +331,10 @@ test("review 1, M3 and L2: a proforma's notice keeps both actions in view, and i
       await page.goto("/payments?tab=notices");
       await page.evaluate((t) => localStorage.setItem("ta-admin-theme", t), theme);
       await page.reload();
-      const issue = page.getByRole("link", { name: issueName }).filter({ visible: true });
+      const issue = issueLink();
       await expect(issue).toBeVisible();
       await expect(issue).toHaveText(/^Issue tax invoice/);
+      await expect(issue).toHaveAccessibleName(issueName);
       // every action drawn lies inside the viewport (M3: Dismiss was at x = 1364 at 1280 with the menu expanded)
       const actions = [
         issue,
@@ -356,7 +360,7 @@ test("review 1, M3 and L2: a proforma's notice keeps both actions in view, and i
   // L2: the advance dialog started from the notice says the amount is the client's word (S1's line)
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/payments?tab=notices");
-  await page.getByRole("link", { name: issueName }).click();
+  await issueLink().click();
   await expect(
     page
       .getByRole("dialog")
