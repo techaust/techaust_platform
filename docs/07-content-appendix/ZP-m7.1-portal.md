@@ -54,6 +54,6 @@ Status: **Client lines C1–C24 and G1–G10 APPROVED by the owner as drafted (2
 - G9. The date field's own lines, as approved for staff: "Enter the date as DD/MM/YYYY, for example 26/10/2026." · "Choose a date"
 - G10. A project with no milestones: "No milestones yet."
 
-## Two more lines from the review fixes (the lead's proposed words, for the owner)
+## Two more lines from the review fixes (the lead's words, approved by the owner, 2026-11-05)
 - G11. A shared file's size on the Files lists: "{n} bytes" · "{n} KB" · "{n} MB" (for example "512 bytes", "248 KB", "1.8 MB")
 - G12. An "I've paid" note the server refuses: "We couldn't save this note. Keep it under 300 characters."

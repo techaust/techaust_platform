@@ -1,13 +1,11 @@
 // M7.1 (the full client portal; POR-04, POR-06 to POR-11): the client lines C1 to C24 of docs/07-content-appendix/ZP-m7.1-portal.md, word for word, approved
 // by the owner on 2026-11-05 (`APPROVED_07ZP`; the copy-y.ts pattern: while it was false every line showed the "[Placeholder] " mark). C25 is withdrawn (L27).
-// `GAP` holds G1 to G10, the lines the screens needed that the run file's section H lacked, in the owner-approved 07-ZP words (unmarked); a newer gap line
-// (`G`, G11 onwards) keeps the mark until the owner gives its words. English (India/UK spelling), "and" never "&", no banned phrases (07 §1.3). No line names
+// `GAP` holds G1 to G12, the lines the screens needed that the run file's section H lacked, in the owner-approved 07-ZP words (unmarked); a newer gap line
+// is written as `[Placeholder] …` until the owner gives its words. English (India/UK spelling), "and" never "&", no banned phrases (07 §1.3). No line names
 // a card or bank field: there are none (ADM-PAY-12; Researched 2026-10-28, 08-C RB-07).
 
 export const APPROVED_07ZP = true;
 const P = (line: string): string => (APPROVED_07ZP ? line : `[Placeholder] ${line}`);
-/** A gap line the owner has not worded yet: always marked, so it can never pass for approved words. The words after the mark say what it is for. */
-const G = (line: string): string => `[Placeholder] ${line}`;
 
 export const ZP = {
   /** C1: the navigation. */
@@ -136,8 +134,8 @@ export const ZP = {
 } as const;
 
 /**
- * Lines a screen needs that section H lacked: G1 to G10 in the owner-approved 07-ZP words (2026-11-05), unmarked. G11 and G12 came later (review 1, L4 and
- * M1) and keep the mark until the owner gives their words; the words after their mark say what the line is for (G11 shows the size as the screen writes it).
+ * Lines a screen needs that section H lacked: G1 to G12 in the owner-approved 07-ZP words (2026-11-05), unmarked (G11 and G12 came from review 1, L4 and M1).
+ * A later gap line keeps the "[Placeholder] " mark until the owner gives its words.
  */
 export const GAP = {
   /** G1: a receipt applied to more invoices than the list names (`for.more`). */
@@ -164,10 +162,10 @@ export const GAP = {
   choosePicker: "Choose a date",
   /** G10: a project page with no milestones. */
   milestonesEmpty: "No milestones yet.",
-  /** G11 (review L4): a shared file's size, "512 bytes", "820 KB", "2.4 MB" (`sizeText` in lib/m71.ts); no approved client words cover them yet. */
-  fileSize: (size: string) => G(size),
-  /** G12 (review M1): "I've paid" with a note the server refuses (400 `bad_request` naming the note); never worded as the reference's G8. */
-  noteRefused: G("note refused"),
+  /** G11 (review L4; owner-approved 2026-11-05): a shared file's size, "512 bytes", "248 KB", "1.8 MB" (`sizeText` in lib/m71.ts). */
+  fileSize: (size: string) => size,
+  /** G12 (review M1; owner-approved 2026-11-05): "I've paid" with a note the server refuses (400 naming the note); never the reference's G8. */
+  noteRefused: "We couldn't save this note. Keep it under 300 characters.",
 } as const;
 
 /** Every line as text, for the tests (banned words, no "&"). */

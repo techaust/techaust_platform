@@ -1,5 +1,5 @@
-// M7.1: the client lines C1 to C24 and the gap lines G1 to G10 of 07-ZP, approved by the owner on 2026-11-05 (C25 withdrawn, L27), shown unmarked; the
-// later gap lines (G11, G12) keep the mark until the owner words them. The checks the M7.1 screens make before sending, and the words of each refusal by its
+// M7.1: the client lines C1 to C24 and the gap lines G1 to G12 of 07-ZP, approved by the owner on 2026-11-05 (C25 withdrawn, L27), all shown unmarked.
+// The checks the M7.1 screens make before sending, and the words of each refusal by its
 // CODE (never the server's message, which is "[Placeholder] C15" and the like).
 import { findBannedPhrases, hasAmpersand } from "@techaust/core/public-text";
 import { describe, expect, it } from "vitest";
@@ -18,17 +18,16 @@ import {
   sizeText,
 } from "./lib/m71.ts";
 
-const MARK = "[Placeholder] ";
-/** The gap lines the owner hasn't worded yet: the only ones that may (and must) carry the mark. */
-const UNWORDED = new Set([GAP.fileSize("1"), GAP.noteRefused]);
+const MARK = "[Placeholder]";
 
 describe("07-ZP, owner-approved [POR-04, POR-06 to POR-11]", () => {
-  it("shows the approved lines unmarked, and only G11 and G12 marked", () => {
+  it("shows every approved line unmarked (G11 and G12 approved 2026-11-05)", () => {
     expect(APPROVED_07ZP).toBe(true);
     const lines = zpAllText();
     expect(lines.length).toBeGreaterThan(90);
-    for (const line of lines) expect(line.startsWith(MARK), line).toBe(UNWORDED.has(line));
-    expect(GAP.fileSize("2.4 MB")).toBe(`${MARK}2.4 MB`);
+    for (const line of lines) expect(line.includes(MARK), line).toBe(false);
+    expect(GAP.fileSize("1.8 MB")).toBe("1.8 MB");
+    expect(GAP.noteRefused).toBe("We couldn't save this note. Keep it under 300 characters.");
   });
   it("pass the banned-phrase list (07 §1.3), say 'and', never '&', and name no card or bank field to fill in", () => {
     for (const line of zpAllText()) {
