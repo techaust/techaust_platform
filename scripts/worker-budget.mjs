@@ -126,7 +126,10 @@ export const BUDGETS = {
   portal: {
     file: "apps/portal/dist/techaust_platform_portal/index.js",
     // M4.5 added ~20–25 KB to ~58 KB; M6.4 (L27, the lead's "before M7.1" decision brought forward): 150,000 (about 120,000 before PayPal).
-    maxBytes: 150_000,
+    // M7.1 L3 (lead, precedent 13 2026-10-25): one Worker, ceiling 200,000 with a 160,000 plan line (measured 125,236 after M6.5, start-up 12.1 ms
+    // fastest of 7). Past the plan line, or start-up past 100 ms locally, the split into a front and a portal API Worker goes to the owner.
+    maxBytes: 200_000,
+    planBytes: 160_000,
     maxStartupMs: 200,
     forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS, GST_CORE],
   },
