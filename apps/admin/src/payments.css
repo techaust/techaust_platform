@@ -1511,8 +1511,9 @@
   color: var(--color-warning);
 }
 
-/* Re-check 2: the client's name, code and who told us never crush to a word a line beside the wider columns */
-.pay-notice__client {
+/* Re-check 2: in the table, the client's name, code and who told us never crush to a word a line beside the wider columns (a phone's card keeps its
+   two even columns) */
+.dtable__table .pay-notice__client {
   min-inline-size: 11rem;
 }
 
