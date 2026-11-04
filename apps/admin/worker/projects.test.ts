@@ -781,10 +781,14 @@ describe("the lists run on indexes, never a scan of a growing table [docs/05 §5
         ...(cursor ? [1, "x"] : []),
       );
       noScan(lines);
-      expect(lines.join("\n")).toMatch(/notes_(client|project|client_visibility)/);
+      // M7.1 (0071): a shared-only list may take the new partial `notes_shared_client` / `notes_shared_project` (keyset with no temporary sort).
+      expect(lines.join("\n")).toMatch(
+        /notes_(client|project|client_visibility|shared_client|shared_project)/,
+      );
     }
+    // M7.1: the client's shared notes now seek the partial `notes_shared_client` (0071), which also orders the keyset.
     expect((await plan(noteListSql("client", true, false, 25), "id", "shared")).join("\n")).toMatch(
-      /notes_client_visibility/,
+      /notes_shared_client|notes_client_visibility/,
     );
   });
 
