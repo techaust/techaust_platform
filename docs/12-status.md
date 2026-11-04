@@ -17,10 +17,10 @@ _Replaced (never appended) at the end of every session._
 - **Wrangler 4.147.0 → 4.156.2** ([#173](https://github.com/techaust/techaust_platform/pull/173); owner's request): with `@cloudflare/vitest-plugin` 1.5.0 and `@cloudflare/vite-plugin` 1.67.0 (4.157.0 was under the one-day release age); the stale `sharp` audit exception removed. CI green, deployed to staging (all seven Workers, health checks green).
 
 ## In progress
-- **[#175](https://github.com/techaust/techaust_platform/pull/175)** merges itself on green (auto-merge on; Auto-fix could not be turned on from this session). After it merges: `git pull` on the PC, the owner restarts the Claude app, and the lead checks that each switched-off item is gone (the account's Supabase, Upstash and Sentry plugins are named `<name>@synced` as the Claude Code docs say; the desktop app may name them differently, then the names are corrected). No agent is running.
+- **[#176](https://github.com/techaust/techaust_platform/pull/176), the second tool-scope PR** (the corrected `@inline` names, the account skills off, Sentry and the AWS plugin's connection blocked; checked on this PC after two app restarts) merges itself on green; after it, one more restart and a last look. No agent is running.
 
 ## Next
-0. **After #175 merges:** pull, restart the app, verify the switched-off tools (above).
+0. **After the second tool-scope PR merges:** pull, restart the app, confirm nothing unused shows (the app's Claude Docs and scheduled-tasks stay by design).
 1. **M6.5 on staging (owner, with the lead's click-by-click steps):** one sandbox refund as the Owner in the staging admin (signing in and the 2FA code are the owner's): the Stripe test payment of TH/PI/2627/0002 ($23.60, held as credit) refunded from the client's credit through Stripe (the client is outside India, so the dialog asks for the RB-43 bank tick: on staging it is ticked as a test), which also proves H1's Refunds: Write; then the lead reads the refund, its webhook events and the receipts the hourly sweep issued, records the real payloads and pins the readers to them; then the owner's approval of M6.5.
 2. **M7.1 Full client portal**, then M7.2–M7.5 (reviewed briefs in `docs/runs/`), the audit of M6–M7, then **Phase 7 all at once** (L8 deletes the old site first).
 3. **The CPU decision (owner, before launch):** Stripe's staging readings went over 10 ms (settle 15–16 ms, webhook 16 ms cold); PayPal's stayed under (7.3 ms). The $5 Workers Paid plan removes the risk.
