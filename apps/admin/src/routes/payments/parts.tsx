@@ -195,6 +195,8 @@ export function AllocationTable(props: {
    * shown at once; clearing the amount removes it (line 31's hint).
    */
   refused?: readonly { id: string; number: string | null; type: string | null; error: string }[];
+  /** The line shown when there is no row; defaults to 07-ZH's "no open invoices" (M7.1 S12 replaces it when the dialog starts from a notice). */
+  none?: string;
 }) {
   const refused = props.refused ?? [];
   if (props.loading)
@@ -205,7 +207,7 @@ export function AllocationTable(props: {
       </div>
     );
   if (props.docs.length === 0 && refused.length === 0)
-    return <p className="alloc__none">{PAY_UI.allocNone}</p>;
+    return <p className="alloc__none">{props.none ?? PAY_UI.allocNone}</p>;
   return (
     <table className="alloc">
       <caption className="visually-hidden">{PAY_UI.allocHeading}</caption>

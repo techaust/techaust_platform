@@ -655,6 +655,9 @@ test("re-check 5 and 7: from a notice whose invoice can no longer take money, th
   await expect(dialog.getByText(/Filled in from .*'s notice of/)).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Record a payment" })).toBeEnabled();
   await expect(dialog.getByRole("textbox", { name: /^Amount on this invoice/ })).toHaveCount(0);
+  // S12 (D3's question): no row says why, never 07-ZH's "no open invoices"
+  await expect(dialog.getByText(/^The notice's invoice can no longer take a payment/)).toBeVisible();
+  await expect(dialog.getByText(/This client has no open invoices/)).toHaveCount(0);
   // (the dev server's StrictMode runs the effect twice, so the one read may be made twice; never a list page)
   expect(reads.length).toBeGreaterThan(0);
   expect([...new Set(reads)]).toEqual([`/api/v1/invoices/${docId}`]);

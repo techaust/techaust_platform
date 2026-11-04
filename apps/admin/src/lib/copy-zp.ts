@@ -55,6 +55,9 @@ export const ZP_UI = {
   noticeNotMoved:
     "The payment was recorded, but the notice is still open: it changed while you were recording. Check it on the Notices tab.",
   noticeRecorded: "The notice is marked as recorded.",
+  /** S12 (D3's question): "Record payment" from a notice whose invoice can no longer take money (no row): never 07-ZH's "no open invoices". */
+  noticeDocClosed:
+    "The notice's invoice can no longer take a payment: it was paid, credited or voided since the client sent the notice. Dismiss the notice, or record the payment from Payments.",
   /** S8 (review M2): 409 `notice_mismatch` with `reason: "document"`, under the notice's invoice row: the payment must go on it, at least in part. */
   noticeOnDocument: "The notice is about this invoice: put the payment, or part of it, on this invoice.",
 

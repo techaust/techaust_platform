@@ -631,6 +631,7 @@ function RecordBody(props: {
                       idPrefix="pay-alloc"
                       symbol={sym}
                       loading={docs === null}
+                      {...(notice ? { none: ZP_UI.noticeDocClosed } : {})}
                     />
                     {capped && <p className="hint">{showingFirstLine(OPEN_DOCS_CAP)}</p>}
                   </>
