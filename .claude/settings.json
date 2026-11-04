@@ -5,9 +5,7 @@
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-opus-5-5",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-opus-5-5"
   },
-  "availableModels": [
-    "claude-opus-5-5"
-  ],
+  "availableModels": ["claude-opus-5-5"],
   "effortLevel": "high",
   "hooks": {
     "SessionStart": [
