@@ -2,6 +2,8 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-11-04 [#175](https://github.com/techaust/techaust_platform/pull/175) chore(claude): turn off the tools this project doesn't use (and the record of the day)
+- 2026-11-04 [#174](https://github.com/techaust/techaust_platform/pull/174) docs: record of 2026-11-04 (PC restored, wrangler 4.156.2)
 - 2026-11-04 [#173](https://github.com/techaust/techaust_platform/pull/173) chore(deps): Cloudflare tooling to wrangler 4.156.2
 - 2026-11-03 [#172](https://github.com/techaust/techaust_platform/pull/172) docs: new-PC runbook and a copy of Claude's memory notes
 - 2026-11-03 [#171](https://github.com/techaust/techaust_platform/pull/171) docs: record of 2026-11-03 (M6.4 and the fourth admin Worker approved, M6.5 merged; status, decisions, changelog, CLAUDE.md)

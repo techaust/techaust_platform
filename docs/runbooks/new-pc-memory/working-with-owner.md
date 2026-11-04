@@ -48,3 +48,5 @@ Related: [[model-effort-rule]], [[record-and-daily-sessions]]
 - Auto-fix wakes the session that turned it on, so tell the owner to archive (never delete) a session only after its PRs have merged. `set_monitor` `auto_archive_on_close` does the archiving automatically.
 
 **Staging tests (2026-10-23):** when the owner says "do everything yourself", say plainly what the lead can't do (sign in with their password/authenticator or Cloudflare Access, complete Turnstile) and do the rest (read D1, logs, CPU). Guides must be complete: name the exact email/account for every step, the exact button labels, the order, and what each step should produce. Read the records before claiming a bug (an "alert missing" was a known browser / an invite sign-in, both correct).
+
+**Tool scope (owner, 2026-11-04):** the owner wants only the tools this project uses to show in it. Unused plugins, connections and skills are off in the committed `.claude/settings.json` (docs/10); never turn one back on without the owner. An app-wide switch (like the Claude Docs connector) is the owner's call because it affects other projects (other projects on the PC use Supabase, Upstash and Sentry).
