@@ -1,11 +1,15 @@
 // The two deploy-time scripts (owner's yes 2026-10-30): scripts/check-staging-build.mjs refuses to upload a build that is not a staging
 // one (a plain build names the production Worker; full audit A1 5), and scripts/staging-health.mjs judges a Worker's health answer
 // behind Cloudflare Access (A6 8). Runs in Node; nothing here talks to Cloudflare.
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   ADMIN_AUX_TARGETS,
   builtConfigProblems,
+  devVarsFiles,
+  devVarsProblems,
   problemsFor,
   stagingNameOf,
   webPagesProblems,
@@ -211,5 +215,38 @@ describe("staging-health checkApp [A6-8]", () => {
             : res(401, { ok: false, error: "unauthorised" }),
     });
     expect(failures).toEqual(["admin /api/v1/payments: 502, expected 401"]);
+  });
+});
+
+describe("M7.1 L17: no local secrets file in a build output (check-staging-build and check-spa-headers)", () => {
+  it("finds .dev.vars and .dev.vars.<env> anywhere below dist, and nothing in a clean or missing one", () => {
+    const dir = mkdtempSync(join(tmpdir(), "devvars-"));
+    try {
+      expect(devVarsFiles(join(dir, "nope"))).toEqual([]);
+      mkdirSync(join(dir, "client", "assets"), { recursive: true });
+      writeFileSync(join(dir, "client", "index.html"), "<html></html>");
+      writeFileSync(join(dir, "client", ".dev.vars.example"), "NAME=");
+      expect(devVarsFiles(dir)).toEqual(["client/.dev.vars.example"]);
+      writeFileSync(join(dir, "client", "assets", ".dev.vars"), "SECRET=x");
+      mkdirSync(join(dir, "techaust_platform_portal"));
+      writeFileSync(join(dir, "techaust_platform_portal", ".dev.vars.staging"), "SECRET=y");
+      expect(devVarsFiles(dir)).toEqual([
+        "client/.dev.vars.example",
+        "client/assets/.dev.vars",
+        "techaust_platform_portal/.dev.vars.staging",
+      ]);
+      expect(devVarsProblems("portal", dir)[0]).toMatch(
+        /^portal: dist\/client\/\.dev\.vars\.example is a local secrets file/,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("both deploy-time guards call it for the SPAs", () => {
+    const build = readFileSync(new URL("../../../scripts/check-staging-build.mjs", import.meta.url), "utf8");
+    const headers = readFileSync(new URL("../../../scripts/check-spa-headers.mjs", import.meta.url), "utf8");
+    expect(build.match(/devVarsProblems\(/g)?.length).toBe(2); // the SPA targets and the admin aux targets
+    expect(headers).toMatch(/devVarsProblems\(app, join\(root, "apps", app, "dist"\)\)/);
   });
 });

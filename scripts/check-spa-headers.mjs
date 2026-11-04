@@ -8,6 +8,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { devVarsProblems } from "./check-staging-build.mjs";
 import { parseCsp, parseHeaders } from "./headers-shared.mjs";
 
 export const SPA_APPS = ["admin", "portal"];
@@ -178,6 +179,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const problems = targets.flatMap(([app, file]) => [
     ...checkSpaHeadersFile(app, file),
     ...(arg === "--source" ? [] : checkBuiltAssets(app)),
+    // M7.1 L17: no local secrets file in a built app's output.
+    ...(arg === "--source" ? [] : devVarsProblems(app, join(root, "apps", app, "dist"))),
   ]);
   if (problems.length > 0) {
     console.error(`check-spa-headers: ${problems.length} problem(s)`);
