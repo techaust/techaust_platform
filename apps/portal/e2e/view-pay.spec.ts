@@ -56,6 +56,15 @@ test("the link's page: Bank transfer, I've paid with the token in the body, and 
   await expect(
     dialog.getByText("We couldn't save this note. Remove any unusual characters and try again."),
   ).toBeVisible();
+  // M71_SHOTS: G12 on screen, for the designer's visual check (re-check 6)
+  const shots = process.env.M71_SHOTS;
+  if (shots) {
+    const size = page.viewportSize();
+    await page.screenshot({ path: `${shots}/portal-g12-${size?.width ?? 0}.png` });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: `${shots}/portal-g12-390.png` });
+    if (size) await page.setViewportSize(size);
+  }
   // question 2: the link ended since the page loaded (a 404): 07-U's "This link no longer works", not C15
   await reference.fill("GONE-1");
   await note.fill("Paid from our second account.\nThe sample's second line.");
