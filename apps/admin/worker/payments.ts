@@ -94,28 +94,45 @@ import { enqueueReceipt } from "./receipt-enqueue.ts";
 import { ra41OnConfirm } from "./refund-facts.ts";
 import { sessionRefusal } from "./session-refusal.ts";
 
-/** M7.1 (L10, L23): a notice named by `noticeId` that is not this client's, in this currency, or that is gone. */
+/**
+ * M7.1 (L10, L23): a notice named by `noticeId` that is not this client's, in this currency, or that is gone; or (early check 2, finding 1) whose document is
+ * not among the payment's requested allocations (`details.reason: "document"`), so a notice is never closed by money put elsewhere or kept as credit.
+ */
 const NOTICE_MISMATCH = {
   code: "notice_mismatch",
   message: "That notice is not for this client and currency",
+} as const;
+const NOTICE_OTHER_DOCUMENT = {
+  code: "notice_mismatch",
+  message: "That notice is about a document this payment is not put on",
 } as const;
 const NOTICE_CLOSED = { code: "notice_closed", message: "This notice is already closed" } as const;
 /**
  * M7.1 (L10, L23): the recording batch moves the client's "I've paid" notice to `recorded` with this payment, guarded on the payment's audit row (so a refused
  * record moves nothing) and on the notice still open and of this client (the trigger `payment_notices_status_flow` also needs the payment of its client and
- * currency). One notice per payment record. `?1` notice, `?2` payment, `?3` who, `?4` now, `?5` client, then the guard.
+ * currency). One notice per payment record. Early check 2, finding 1: the notice's document must be among the documents the payment is put on (`?6`, a JSON
+ * array of the requested allocations' document ids), the batch twin of the handler's `notice_mismatch` with `reason: "document"`. `?1` notice, `?2` payment,
+ * `?3` who, `?4` now, `?5` client, `?6` the documents, then the guard.
  */
 export const noticeRecordStatement = (
   db: D1Database,
-  a: { noticeId: string; paymentId: string; by: string; now: number; clientId: string },
+  a: {
+    noticeId: string;
+    paymentId: string;
+    by: string;
+    now: number;
+    clientId: string;
+    documentIds: readonly string[];
+  },
   g: { sql: (at: number) => string; params: readonly unknown[] },
 ) =>
   db
     .prepare(
       `UPDATE payment_notices SET status = 'recorded', payment_id = ?2, closed_by = ?3, closed_at = ?4
-       WHERE id = ?1 AND status = 'open' AND client_id = ?5 AND ${g.sql(6)}`,
+       WHERE id = ?1 AND status = 'open' AND client_id = ?5
+         AND document_id IN (SELECT value FROM json_each(?6)) AND ${g.sql(7)}`,
     )
-    .bind(a.noticeId, a.paymentId, a.by, a.now, a.clientId, ...g.params);
+    .bind(a.noticeId, a.paymentId, a.by, a.now, a.clientId, JSON.stringify(a.documentIds), ...g.params);
 
 /** M6.5: a refund of payment `id` that has not failed (the confirm and withdraw refusals). */
 const liveRefundOf = (db: D1Database, id: string) =>
@@ -580,7 +597,7 @@ export const payments = new Hono<AppEnv>()
       db.prepare(LEDGER_DOCS_SQL).bind(JSON.stringify(requested.map((r) => r.documentId))),
       // M7.1 (L23): the notice this payment is recorded from, if any.
       db
-        .prepare("SELECT client_id, currency, status FROM payment_notices WHERE id = ?1")
+        .prepare("SELECT client_id, document_id, currency, status FROM payment_notices WHERE id = ?1")
         .bind(f.noticeId ?? ""),
     ]);
     if (existsR?.results[0]) return err(c, ALREADY_RECORDED, 409);
@@ -599,9 +616,14 @@ export const payments = new Hono<AppEnv>()
     // L23.4: a payment is in the client's currency.
     if (client.currency !== f.currency) return err(c, CURRENCY_MISMATCH, 409);
     if (f.noticeId !== undefined) {
-      const n = noticeR?.results[0] as { client_id: string; currency: string; status: string } | undefined;
+      const n = noticeR?.results[0] as
+        | { client_id: string; document_id: string; currency: string; status: string }
+        | undefined;
       if (!n || n.client_id !== f.clientId || n.currency !== f.currency) return err(c, NOTICE_MISMATCH, 409);
       if (n.status !== "open") return err(c, NOTICE_CLOSED, 409);
+      // Early check 2, finding 1: the payment must be put on the notice's document (a proforma notice: Staff's whole-amount proforma ask; L25).
+      if (!requested.some((r) => r.documentId === n.document_id))
+        return err(c, NOTICE_OTHER_DOCUMENT, 409, { reason: "document", documentId: n.document_id });
     }
     // L8, L23.5: TDS only for a client in India.
     if (f.kind === "tds" && (client.country !== "IN" || client.gst_status === "overseas"))
@@ -744,7 +766,14 @@ export const payments = new Hono<AppEnv>()
             ? [
                 noticeRecordStatement(
                   db,
-                  { noticeId: f.noticeId, paymentId: f.id, by: u.id, now, clientId: f.clientId },
+                  {
+                    noticeId: f.noticeId,
+                    paymentId: f.id,
+                    by: u.id,
+                    now,
+                    clientId: f.clientId,
+                    documentIds: requested.map((r) => r.documentId),
+                  },
                   g,
                 ),
               ]

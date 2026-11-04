@@ -42,10 +42,27 @@ export async function mkPortalClient(): Promise<PortalClient> {
   return { clientId, contactId, invoiceId };
 }
 
-/** An open notice on the client's invoice from its contact (as the portal writes one). */
+/** A second issued document of the client (another tax invoice, or an issued proforma of 59,000), for the notice-to-document rule (early check 2, finding 1). */
+export async function mkPortalDocument(p: PortalClient, type: "tax_invoice" | "proforma"): Promise<string> {
+  const n = ++seq;
+  const id = uuidv7();
+  await run(
+    "INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, issue_date, due_date, subtotal_minor, taxable_minor, total_minor, balance_minor) VALUES (?1, ?2, 'issued', ?3, 'INR', ?4, '2627', ?5, ?6, ?7, '2026-11-01', '2026-11-30', 50000, 50000, 59000, 59000)",
+    id,
+    type,
+    p.clientId,
+    type === "proforma" ? "m71p" : "m71",
+    90_000 + n,
+    `TH/M71/${type === "proforma" ? "PF" : "D"}${n}`,
+    Date.now() - 86_400_000,
+  );
+  return id;
+}
+
+/** An open notice on the client's invoice (or `documentId`) from its contact (as the portal writes one). */
 export async function mkNotice(
   p: PortalClient,
-  o: { amountMinor?: number; reference?: string } = {},
+  o: { amountMinor?: number; reference?: string; documentId?: string } = {},
 ): Promise<string> {
   const id = uuidv7();
   const reference = o.reference ?? `UTRM71${++seq}`;
@@ -53,7 +70,7 @@ export async function mkNotice(
     "INSERT INTO payment_notices (id, client_id, document_id, contact_id, via, amount_minor, currency, paid_on, reference, reference_norm, note) VALUES (?1, ?2, ?3, ?4, 'portal', ?5, 'INR', '2026-11-03', ?6, ?6, 'Paid from HDFC')",
     id,
     p.clientId,
-    p.invoiceId,
+    o.documentId ?? p.invoiceId,
     p.contactId,
     o.amountMinor ?? 118_000,
     reference,

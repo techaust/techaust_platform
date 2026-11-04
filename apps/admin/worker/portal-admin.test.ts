@@ -6,9 +6,10 @@ import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
 import { describe, expect, it } from "vitest";
 import { REQUEST_CLOSE_SQL } from "./client-requests.ts";
+import { noticeRecordStatement } from "./payments.ts";
 import { bodyOf, call, countOf, one, sessionFor } from "./test-helpers.ts";
 import { recordBody } from "./test-payments.ts";
-import { mkNotice, mkPortalClient, mkRequest } from "./test-portal.ts";
+import { mkNotice, mkPortalClient, mkPortalDocument, mkRequest } from "./test-portal.ts";
 
 const owner = () => sessionFor("owner", { stepUp: true });
 
@@ -115,6 +116,88 @@ describe(`"I've paid" notices [ADM-PAY-05, L10]`, () => {
         })
       ).status,
     ).toBe(400);
+  });
+
+  it("early check 2, finding 1: a notice on invoice A recorded by a payment put only on B (or kept as credit) is 409 notice_mismatch (reason document) and writes nothing; the batch statement needs A among the documents too", async () => {
+    const s = await sessionFor("staff");
+    const p = await mkPortalClient();
+    const b = await mkPortalDocument(p, "tax_invoice");
+    const id = await mkNotice(p);
+    const before = { payments: await countOf("payments"), approvals: await countOf("approvals") };
+    for (const allocations of [[{ documentId: b, amountMinor: 59_000 }], []]) {
+      const res = await call("/payments", {
+        cookie: s.cookie,
+        body: recordBody(p.clientId, 59_000, allocations, { noticeId: id }),
+      });
+      expect(res.status).toBe(409);
+      expect((await bodyOf(res)).error).toMatchObject({
+        code: "notice_mismatch",
+        details: { reason: "document", documentId: p.invoiceId },
+      });
+    }
+    expect({ payments: await countOf("payments"), approvals: await countOf("approvals") }).toEqual(before);
+    expect(await one("SELECT status, payment_id FROM payment_notices WHERE id = ?1", id)).toEqual({
+      status: "open",
+      payment_id: null,
+    });
+    // The batch twin: with a payment of this client on B, the statement moves the notice only when A is among the documents.
+    const onB = recordBody(p.clientId, 59_000, [{ documentId: b, amountMinor: 59_000 }]);
+    expect((await call("/payments", { cookie: s.cookie, body: onB })).status).toBe(201);
+    const pass = { sql: () => "1 = 1", params: [] as const };
+    const stmt = (documentIds: string[]) =>
+      noticeRecordStatement(
+        env.DB,
+        { noticeId: id, paymentId: onB.id, by: s.id, now: Date.now(), clientId: p.clientId, documentIds },
+        pass,
+      ).run();
+    expect((await stmt([b])).meta.changes).toBe(0);
+    expect(
+      (await one<{ status: string }>("SELECT status FROM payment_notices WHERE id = ?1", id))?.status,
+    ).toBe("open");
+    expect((await stmt([b, p.invoiceId])).meta.changes).toBe(1);
+  });
+
+  it("early check 2, finding 1 (L25): a proforma notice is recorded only by Staff's whole-amount proforma ask; the Owner's entry is 409 use_advance_invoice and the notice stays open; no ask is 409", async () => {
+    const s = await sessionFor("staff");
+    const o = await owner();
+    const p = await mkPortalClient();
+    const pf = await mkPortalDocument(p, "proforma");
+    const id = await mkNotice(p, { documentId: pf, amountMinor: 59_000 });
+    const ask = [{ documentId: pf, amountMinor: 59_000 }];
+    // The Owner's confirmed entry may not ask for a proforma (L5): refused, and the notice stays open.
+    const own = await call("/payments", {
+      cookie: o.cookie,
+      body: recordBody(p.clientId, 59_000, ask, { noticeId: id }),
+    });
+    expect(own.status).toBe(409);
+    expect(((await bodyOf(own)).error as { code: string }).code).toBe("use_advance_invoice");
+    // No proforma ask (kept as credit, or put on the invoice): refused as another document.
+    for (const allocations of [[], [{ documentId: p.invoiceId, amountMinor: 59_000 }]]) {
+      const res = await call("/payments", {
+        cookie: s.cookie,
+        body: recordBody(p.clientId, 59_000, allocations, { noticeId: id }),
+      });
+      expect(res.status).toBe(409);
+      expect((await bodyOf(res)).error).toMatchObject({
+        code: "notice_mismatch",
+        details: { reason: "document" },
+      });
+    }
+    expect(
+      (await one<{ status: string }>("SELECT status FROM payment_notices WHERE id = ?1", id))?.status,
+    ).toBe("open");
+    // Staff's pending entry with the whole-amount proforma ask records it.
+    const body = recordBody(p.clientId, 59_000, ask, { noticeId: id });
+    const res = await call("/payments", { cookie: s.cookie, body });
+    expect(res.status).toBe(201);
+    expect((await res.json()) as { status: string; notice: unknown }).toMatchObject({
+      status: "pending_verification",
+      notice: { id, recorded: true },
+    });
+    expect(await one("SELECT status, payment_id FROM payment_notices WHERE id = ?1", id)).toEqual({
+      status: "recorded",
+      payment_id: body.id,
+    });
   });
 
   it("the invoice's Payments panel lists its open notices (a warning on void and withdraw, never a block)", async () => {
