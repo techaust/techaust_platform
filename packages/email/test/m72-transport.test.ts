@@ -115,7 +115,8 @@ describe("tags and configuration set [L6]", () => {
 
   it("the one-click headers go into Content.Simple.Headers", async () => {
     const h = unsubscribeHeaders(`${HOOKS}u?t=${TOKEN}`, HOOKS);
-    const { body } = await bodyOf({ ...input, headers: h });
+    expect(h).toBeDefined();
+    const { body } = await bodyOf({ ...input, ...(h ? { headers: h } : {}) });
     expect(body.Content.Simple.Headers).toEqual([
       { Name: "List-Unsubscribe", Value: `<${HOOKS}u?t=${TOKEN}>` },
       { Name: "List-Unsubscribe-Post", Value: "List-Unsubscribe=One-Click" },
