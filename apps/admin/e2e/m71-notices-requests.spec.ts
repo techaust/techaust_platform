@@ -283,7 +283,7 @@ test("review 1, M5: a recorded notice whose payment was withdrawn says so, and t
       await page.reload();
       await page.getByRole("tab", { name: "Recorded" }).click();
       await expect(
-        page.getByRole("link", { name: "Its payment was withdrawn later" }).filter({ visible: true }).first(),
+        page.getByRole("link", { name: "Payment withdrawn later" }).filter({ visible: true }).first(),
       ).toBeVisible();
       await page.waitForLoadState("networkidle");
       expect(await axe(page), `recorded ${width} ${theme}`).toEqual([]);

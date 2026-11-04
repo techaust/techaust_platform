@@ -54,8 +54,8 @@ describe("M7.1 staff lines [ADM-PAY-05, POR-09, POR-11]", () => {
   });
   it("S10 and S11 say what became of a notice's payment (review M5)", () => {
     expect(ZP_UI.noticePayment("Confirmed")).toBe("Payment: Confirmed");
-    expect(ZP_UI.noticePaymentUndone.rejected).toBe("Its payment was rejected later");
-    expect(ZP_UI.noticePaymentUndone.withdrawn).toBe("Its payment was withdrawn later");
+    expect(ZP_UI.noticePaymentUndone.rejected).toBe("Payment rejected later");
+    expect(ZP_UI.noticePaymentUndone.withdrawn).toBe("Payment withdrawn later");
     expect(ZP_UI.noticePaymentUndone.confirmed).toBeUndefined();
     expect(ZP_UI.entryFromNotice("reject", "03 Nov 2026", "Portal")).toMatch(
       /^This entry was recorded from the client's notice of 03 Nov 2026 \(Portal\)\. If you reject it, .* shown with this entry as rejected\./,

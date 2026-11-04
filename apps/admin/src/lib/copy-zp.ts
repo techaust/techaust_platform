@@ -64,8 +64,8 @@ export const ZP_UI = {
    */
   noticePayment: (statusLabel: string) => `Payment: ${statusLabel}`,
   noticePaymentUndone: {
-    rejected: "Its payment was rejected later",
-    withdrawn: "Its payment was withdrawn later",
+    rejected: "Payment rejected later",
+    withdrawn: "Payment withdrawn later",
   } as Record<string, string>,
   /** S11 (review M5): the reject and withdraw dialogs of an entry recorded from a client's notice. `via` is S1's "Portal" or "Invoice link". */
   entryFromNotice: (action: "reject" | "withdraw", date: string, via: string) =>
