@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { ACTIONS, type Action, can, type Decision, decide, isRole, ROLES } from "../src/permissions.ts";
+import { DATA_REQUEST_KINDS, REQUEST_KINDS } from "../src/portal.ts";
 
 // docs/04 §9, transcribed cell by cell: [Owner, Staff, Sales, Accountant].
 // A = allow, S = step-up, P = needs Owner approval, - = deny. Proposal sending is tested separately.
-const EXPECTED: Record<Exclude<Action, "proposals.send">, string> = {
+const EXPECTED: Record<Exclude<Action, "proposals.send" | "requests.close">, string> = {
   "users.manage": "S---",
   "users.read": "A---",
   "account.own": "AAAA",
@@ -69,6 +70,8 @@ const EXPECTED: Record<Exclude<Action, "proposals.send">, string> = {
   "refunds.read": "A--A",
   "refunds.issue": "S---",
   "payments.reconcile": "A---", // M6.5 (L11): the Owner ticks "seen in the bank statement" and fetches a settlement day
+  "payments.notices": "AA--", // M7.1 (L10): Owner and Staff dismiss an "I've paid" notice
+  "requests.read": "AA--", // M7.1 (L8): Owner and Staff read the clients' requests
   "realisation.reduce": "S---", // M6.5 (RB-43): the Owner records the AD bank's Reg. 6 reduction with a fresh code
   "dashboard.read": "AAAA", // M3.5: every role; the handler keeps only the tiles the role may see
   "reports.finance": "A--A",
@@ -85,7 +88,9 @@ const CODE: Record<string, Decision> = { A: "allow", S: "step-up", P: "approval"
 
 describe("permission matrix [ADM-G-02]", () => {
   it("every action in the code is in the expected table (nothing added without a test)", () => {
-    expect(ACTIONS.filter((a) => a !== "proposals.send").sort()).toEqual(Object.keys(EXPECTED).sort());
+    expect(ACTIONS.filter((a) => a !== "proposals.send" && a !== "requests.close").sort()).toEqual(
+      Object.keys(EXPECTED).sort(),
+    );
   });
 
   for (const [action, cells] of Object.entries(EXPECTED)) {
@@ -108,6 +113,23 @@ describe("permission matrix [ADM-G-02]", () => {
       expect(decide(role, "proposals.send", { discountBps: 10.5 })).toBe("approval");
     }
     expect(decide("accountant", "proposals.send", { discountBps: 0 })).toBe("deny");
+  });
+
+  it("closing a client request [M7.1 L8, review fix 11]: the Owner any kind; Staff only a contact change or a grievance; Sales and the Accountant never", () => {
+    for (const kind of [...REQUEST_KINDS, "consent_withdrawal", "nomination", "unknown", undefined])
+      expect(decide("owner", "requests.close", { requestKind: kind })).toBe("allow");
+    expect(decide("staff", "requests.close", { requestKind: "contact_change" })).toBe("allow");
+    expect(decide("staff", "requests.close", { requestKind: "grievance" })).toBe("allow");
+    // Every data-rights kind, M7.4's two kinds and an unknown kind are the Owner's (an allow-list: a new kind is never Staff's by accident).
+    for (const kind of [...DATA_REQUEST_KINDS, "consent_withdrawal", "nomination", "unknown", ""])
+      expect(decide("staff", "requests.close", { requestKind: kind })).toBe("deny");
+    // Without the record's kind (the route guard), Staff reach the handler, which decides on the record; "approval" is never "allow".
+    expect(decide("staff", "requests.close")).toBe("approval");
+    expect(can("staff", "requests.close")).toBe(false);
+    for (const role of ["sales", "accountant"] as const) {
+      expect(decide(role, "requests.close")).toBe("deny");
+      expect(decide(role, "requests.close", { requestKind: "grievance" })).toBe("deny");
+    }
   });
 
   it("denies unknown roles and actions", () => {
