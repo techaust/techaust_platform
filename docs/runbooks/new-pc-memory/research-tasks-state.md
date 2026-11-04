@@ -1,12 +1,14 @@
 ---
 name: research-tasks-state
-description: "M6.4 PayPal + fourth admin Worker APPROVED 2026-11-03 (webhook fix #168); M6.5 merged #170 and on staging, awaits owner's sandbox refund + approval; next M7.1"
+description: "M6.4 + fourth admin Worker APPROVED 2026-11-03; M6.5 on staging awaits owner sandbox refund + approval (owner: not now, 2026-11-04); PC formatted and restored 2026-11-04; wrangler 4.156.2 #173; next M7.1"
 metadata:
   node_type: memory
   type: project
   originSessionId: 5a058cb8-cadb-41a9-bff2-57ddcf481cf4
   modified: 2026-11-03T12:34:37.400Z
 ---
+
+**2026-11-04:** the formatted PC was restored and proven (runbook docs/runbooks/new-pc.md corrected from the run); wrangler 4.156.2 merged (#173, owner chose the newest set past the one-day release age). Next is unchanged: the owner's M6.5 sandbox refund on staging, then M7.1.
 
 State at end of day 2026-10-31 (EOD PR #136):
 - M5 approved by the owner (#122); GSTR-1 quarterly (QRMP).

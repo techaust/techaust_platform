@@ -27,13 +27,14 @@ Rebuild of techaust.com: a public website, admin and client portal for **TecHaus
   - security and compliance: `docs/08-security-compliance.md`
   - ADRs: `docs/adr/`
 - Environments and Cloudflare resources: `docs/runbooks/environments.md`
+- A new or formatted PC (tools, plugins, sign-ins, proof run): `docs/runbooks/new-pc.md`
 - Tax and legal research: `docs/08-research-appendix/C-research-register.md` (08-C: every researched default with its source, the OPEN questions for the CA and lawyer, dated duties). Check it before writing any tax, invoicing or legal rule or line.
 - Background (approved): `docs/01-audit.md`, `docs/02-services-strategy.md`, `docs/03-plan.md` (where 03 differs from 05, **05 wins**)
 
 ## Hard rules (owner's ground rules)
 1. **Never guess.** If information is missing or a decision is the owner's, stop and ask with AskUserQuestion: up to 4 questions per batch, the recommended option first and marked "(Recommended)". Explain anything technical in plain English when asked.
 2. **Milestones are approved on staging.** Each milestone: explain → build + tests → verify locally → review → PR → CI green → it merges itself and deploys to staging → show the owner → **wait for "approved" before starting the next milestone.** A PR that the record marks as held (for example "not before Access is on") gets no auto-merge.
-3. **Old site is READ-ONLY:** `D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\ASSETS\WEBSITE`. Never modify it, build in it, or run git-writing commands there. **Never read the sibling `CREDENTIALS` folder.**
+3. **Old site is READ-ONLY:** the GitHub repo `techaust/techaust-web` (since the PC was formatted, 2026-11-03, it is not on this PC; download it outside this repo only if a page must be compared). Never modify it, build in it, or run git-writing commands there. **Never read the `CREDENTIALS` folder** (`D:\Business\1. Parent Project\TecHaust Technologies\Credentials`, a sibling of `Application`).
 4. **Never deploy to, rename or delete the Worker `techaust-web`**, except its deletion at Phase 7 L8 with the owner's explicit go-ahead at the time (owner, 2026-11-03: delete it, then attach techaust.com to the new website; no fallback). Don't touch production, DNS, or Cloudflare/AWS/GitHub settings without the owner's approval for that specific action. Phase 6 deploys go to **staging only** (automatically, on merge to `main`). **Everything launches at once** (owner, 2026-10-31): techaust.com moves from `techaust-web` to the new website only at Phase 7 L8, together with the admin, portal and payments; no early website cut-over.
 5. **Secrets:** never hardcode, commit, or ask for them in chat. Names only in `.env.example` / `.dev.vars.example`. Give the owner the exact `wrangler secret put …` / `gh secret set …` command to run.
 6. **The repo `techaust/techaust_platform` is PUBLIC** (owner decision, 2026-10-06; may go private later). Treat everything committed as published: no secrets, no personal data, no client data. Ask before committing new business-sensitive material. Workflows must stay fork-safe (no secrets reachable from fork PRs).
@@ -135,7 +136,8 @@ pnpm 12.9.1 workspace · Node 24 (→ 26 LTS) · TypeScript 6.0.3 · Biome 2.5 �
 ## Commands
 ```bash
 pnpm install            # plain `pnpm` auto-switches to the pinned 12.9.1
-pnpm dev                # all apps locally (web :4321, admin :5173, portal :5174, jobs :8787); TECHAUST_PORT_OFFSET=100 moves every port by 100
+pnpm dev                # all apps locally (web :4321, admin :5173, portal :5174, jobs :8787); TECHAUST_PORT_OFFSET=100 moves every port by 100; on Windows, stopping it leaves node/workerd running (end them by PID)
+pnpm --filter @techaust/jobs exec wrangler login   # Cloudflare sign-in: wrangler lives in the apps, not at the repo root
 pnpm lint               # biome check
 pnpm typecheck          # wrangler types + tsc / astro check in every package
 pnpm check              # lint + typecheck + public-Worker binding guard + Worker config guard (preview URLs off) + migration rebuild guard
