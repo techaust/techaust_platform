@@ -101,7 +101,7 @@ function NoticeList(props: { status: NoticeStatus; role: Role; onChanged: () => 
       header: ZP_UI.colClient,
       // who told us sits under the client (the contact and the way: the portal or an invoice link), so the row keeps its width for the actions
       cell: (n) => (
-        <span className="pay-notice__ref">
+        <span className="pay-notice__ref pay-notice__client">
           <span>
             <Link to={`/clients/${encodeURIComponent(n.client.id)}`}>{n.client.name}</Link>{" "}
             <span className="docno pay-lines__code">{n.client.code}</span>
@@ -140,7 +140,8 @@ function NoticeList(props: { status: NoticeStatus; role: Role; onChanged: () => 
         <span className="pay-notice__ref">
           <span className="docno">{n.reference}</span>
           {n.note && (
-            <span className="pay-lines__meta">
+            // re-check 3: the client's line breaks show (the portal sends the note as typed, several lines allowed)
+            <span className="pay-lines__meta pay-notice__note">
               {ZP_UI.noticeNote}: {n.note}
             </span>
           )}

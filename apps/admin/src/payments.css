@@ -1497,16 +1497,26 @@
   font-size: var(--text-sm);
 }
 
+/* Re-check 1: the words wrap under the pill rather than set the column's width (on one line they pushed the table past its box at 1280 with the menu
+   expanded and clipped the focus ring); the icon stays with the first line. */
 .pay-notice__undone {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: var(--space-2);
   font-weight: 600;
-  /* three words on one line: the Status column takes their width rather than stacking them */
-  white-space: nowrap;
 }
 
 .pay-notice__undone > .icon {
   flex: none;
   color: var(--color-warning);
+}
+
+/* Re-check 2: the client's name, code and who told us never crush to a word a line beside the wider columns */
+.pay-notice__client {
+  min-inline-size: 11rem;
+}
+
+/* Re-check 3: a note shows the client's own line breaks */
+.pay-notice__note {
+  white-space: pre-line;
 }

@@ -4,13 +4,14 @@
 // with a contact: the notices and requests are written straight to the LOCAL table here, as a client's portal would make them (sample words only).
 //   E2E_SAMPLE=1 pnpm --filter @techaust/admin exec playwright test e2e/m71-notices-requests.spec.ts   (through tools/heavy.sh)
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { argon2Sync, createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import { createInviteStatements } from "../../../scripts/create-invite-sql.mjs";
 import { ORIGIN } from "../playwright.config.ts";
 import { totpAt } from "./sample-data.ts";
 
@@ -43,6 +44,9 @@ function uuid7(): string {
 }
 const NOTICE_1 = uuid7();
 const NOTICE_2 = uuid7();
+/** Re-check of review 1: a portal notice with a two-line note (Staff record it, the Owner rejects it), and one on an invoice paid or voided since. */
+const NOTICE_3 = uuid7();
+const NOTICE_PAID = uuid7();
 
 test.beforeAll(() => {
   const now = Date.now();
@@ -65,6 +69,19 @@ test.beforeAll(() => {
     [
       notice(NOTICE_1, "portal", `UTR${run}1`, "Paid from our current account (sample).", now - 3_600_000),
       notice(NOTICE_2, "link", `UTR${run}2`, null, now - 60_000),
+      notice(
+        NOTICE_3,
+        "portal",
+        `UTR${run}3`,
+        "Paid from our second account (sample).\nThe bank shows it under our old name (sample).",
+        now - 7_200_000,
+      ),
+      // re-check 5 and 7: a notice whose invoice can no longer take money (paid in full, else voided, since the client sent it)
+      `INSERT INTO payment_notices (id, client_id, document_id, contact_id, via, amount_minor, currency, paid_on, reference, reference_norm, note, status, created_at)
+       SELECT '${NOTICE_PAID}', d.client_id, d.id, c.id, 'portal', 100000, d.currency, '${today}', 'UTR${run}P', 'UTR${run}P', NULL, 'open', ${now - 120_000}
+         FROM documents d JOIN contacts c ON c.client_id = d.client_id AND c.anonymised_at IS NULL
+        WHERE d.type = 'tax_invoice' AND d.frozen_at IS NOT NULL AND d.currency = 'INR' AND (d.balance_minor = 0 OR d.voided_at IS NOT NULL)
+        ORDER BY d.voided_at IS NOT NULL, d.issue_date, d.id LIMIT 1;`,
       request(
         `req-${run}-1`,
         "contact_change",
@@ -369,4 +386,258 @@ test("review 1, M3 and L2: a proforma's notice keeps both actions in view, and i
       ),
   ).toBeVisible();
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/admin-advance-from-notice-1280.png` });
+});
+
+// ---- Re-check of review 1 (findings 1, 2, 3, 4, 5, 7) ----
+
+/** A throwaway Staff member, enrolled over the API as global-setup.ts enrols the Owner (local database only; sample address and a random password). */
+async function staffCookie(): Promise<string> {
+  const email = `e2e-staff-${run.toLowerCase()}@example.test`;
+  const password = randomBytes(18).toString("base64url");
+  const token = randomBytes(32).toString("base64url");
+  const now = Date.now();
+  d1(
+    createInviteStatements({
+      email,
+      role: "staff",
+      tokenHash: createHash("sha256").update(token).digest("hex"),
+      now,
+      expiresAt: now + 3_600_000,
+      auditId: randomUUID(),
+    }).join("\n"),
+  );
+  const call = async (route: string, body: unknown) => {
+    const res = await fetch(`${ORIGIN}/api/v1/auth${route}`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return {
+      status: res.status,
+      data: (await res.json().catch(() => ({}))) as J,
+      cookies: res.headers.getSetCookie(),
+    };
+  };
+  const start = await call("/invite/start", { token });
+  expect(start.status, "staff invite/start").toBe(200);
+  const p = start.data.params as { m: number; t: number; p: number };
+  const clientHash = argon2Sync("argon2id", {
+    message: password.normalize("NFKC"),
+    nonce: Buffer.from(start.data.salt as string, "base64url"),
+    parallelism: p.p,
+    passes: p.t,
+    memory: p.m,
+    tagLength: 32,
+  }).toString("base64url");
+  const finish = await call("/invite/finish", { token, clientHash, name: "E2E Staff (sample)" });
+  expect(finish.status, "staff invite/finish").toBe(200);
+  const done = await call("/invite/totp", {
+    challenge: finish.data.challenge,
+    code: totpAt(base32(finish.data.secret as string), Math.floor(Date.now() / 30_000)),
+  });
+  expect(done.status, "staff invite/totp").toBe(200);
+  return done.cookies.map((c) => c.split(";")[0] ?? "").join("; ");
+}
+
+const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+function base32(s: string): Buffer {
+  let bits = "";
+  for (const c of s.replace(/=+$/, "")) bits += B32.indexOf(c).toString(2).padStart(5, "0");
+  return Buffer.from((bits.match(/.{8}/g) ?? []).map((b) => Number.parseInt(b, 2)));
+}
+
+/** Finding 1: every S10 link, and its focus ring, lies inside the table's box, and the box never scrolls sideways (the table fits its region). */
+async function s10Inside(page: Page, label: string) {
+  const table = page.locator(".pay-notices .dtable").filter({ visible: true }).first();
+  const region = await table.evaluate((d) => ({
+    right: d.getBoundingClientRect().right,
+    scroll: d.scrollWidth,
+    client: d.clientWidth,
+  }));
+  expect(region.scroll, `${label}: no sideways scroll inside the table's region`).toBeLessThanOrEqual(
+    region.client + 1,
+  );
+  const links = await page
+    .locator(".pay-notices .dtable__table :is(.pay-notice__payment, .pay-notice__undone a)")
+    .all();
+  expect(links.length, `${label}: S10 links drawn`).toBeGreaterThan(0);
+  for (const link of links) {
+    await link.focus();
+    const r = await link.evaluate((a) => {
+      const s = getComputedStyle(a);
+      return (
+        a.getBoundingClientRect().right +
+        Number.parseFloat(s.outlineWidth) +
+        Number.parseFloat(s.outlineOffset)
+      );
+    });
+    expect(r, `${label}: an S10 link's focus ring ends inside .dtable`).toBeLessThanOrEqual(region.right);
+  }
+}
+
+/** Finding 2: the Client column (the second) of the first row of the visible table. */
+const clientColumnWidth = async (page: Page) =>
+  (
+    await page
+      .locator(".pay-notices .dtable__table tbody tr")
+      .first()
+      .locator(":is(td, th)")
+      .nth(1)
+      .boundingBox()
+  )?.width ?? 0;
+
+test("re-check: S10 wraps inside the Recorded table, the Client column keeps its width, a note keeps its lines, S11 says 'sent on'", async ({
+  page,
+}) => {
+  // Staff record the payment from the two-line notice (a pending entry, the notice recorded), then the Owner rejects it
+  const listed = await api(page, "GET", "/payments/notices?status=open");
+  const n3 = (listed.body.items as J[]).find((n) => n.id === NOTICE_3);
+  expect(n3, "the two-line notice is open").toBeTruthy();
+  const cookie = await staffCookie();
+  const rec = await fetch(`${ORIGIN}/api/v1/payments`, {
+    method: "POST",
+    headers: { ...headers, Cookie: cookie, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: uuid7(),
+      clientId: n3?.client.id,
+      kind: "payment",
+      currency: n3?.currency,
+      amountMinor: n3?.amountMinor,
+      receivedOn: today,
+      mode: "neft",
+      reference: `UTR${run}3`,
+      allocations: [{ documentId: n3?.document.id, amountMinor: n3?.amountMinor }],
+      noticeId: NOTICE_3,
+    }),
+  });
+  const recBody = (await rec.json().catch(() => ({}))) as J;
+  expect(rec.status, JSON.stringify(recBody)).toBeLessThan(300);
+  await stepUp(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/payments?tab=notices");
+  await page.getByRole("tab", { name: "Recorded" }).click();
+  const waiting = page.locator("tr", { hasText: `UTR${run}3` }).getByRole("link", { name: /^Payment: / });
+  await expect(waiting).toBeVisible();
+  await page.goto((await waiting.getAttribute("href")) ?? "");
+  await page.getByRole("dialog").getByRole("button", { name: "Reject" }).click();
+  const dialog = page.getByRole("dialog", { name: "Reject this payment" });
+  // finding 4: S11 dates the notice by the day it was sent, never like S1's day paid
+  await expect(
+    dialog.getByText(
+      /^This entry was recorded from the client's notice sent on \d{2} [A-Z][a-z]{2} \d{4} \(Portal\)\. If you reject it, /,
+    ),
+  ).toBeVisible();
+  for (const width of [768, 390] as const) {
+    await page.setViewportSize({ width, height: 900 });
+    await noSideways(page);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/recheck-reject-from-notice-${width}.png` });
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/recheck-reject-from-notice-1280.png` });
+  await dialog
+    .getByRole("textbox", { name: "Why it is rejected" })
+    .fill("Not on the bank statement (sample).");
+  await dialog.getByRole("button", { name: "Reject" }).click();
+  await expect(page.getByText("Payment rejected.")).toBeVisible();
+
+  for (const theme of ["light", "dark"] as const)
+    for (const width of [1280, 768, 390] as const) {
+      await page.emulateMedia({ colorScheme: theme === "light" ? "dark" : "light" });
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/payments?tab=notices");
+      await page.evaluate((t) => {
+        localStorage.setItem("ta-admin-theme", t);
+        // findings 1 and 2 were seen with the menu expanded
+        localStorage.setItem("ta-admin-nav", "expanded");
+      }, theme);
+      await page.reload();
+      await page.getByRole("tab", { name: "Recorded" }).click();
+      // finding 3: the note keeps the client's line break (both lines on screen, one under the other)
+      const note = page
+        .locator(".pay-notice__note", { hasText: "Paid from our second account (sample)." })
+        .filter({ visible: true })
+        .first();
+      await expect(note).toBeVisible();
+      const lines = await note.evaluate((el) => ({
+        ws: getComputedStyle(el).whiteSpace,
+        tall: el.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(el).lineHeight),
+      }));
+      expect(lines.ws, `the note's white-space at ${width}`).toBe("pre-line");
+      expect(lines.tall, `the note shows its two lines at ${width}`).toBeGreaterThanOrEqual(2);
+      await expect(
+        page.getByRole("link", { name: "Payment rejected later" }).filter({ visible: true }).first(),
+      ).toBeVisible();
+      if (width === 1280) {
+        await s10Inside(page, `recorded ${width} ${theme}`);
+        expect(
+          await clientColumnWidth(page),
+          `the Recorded tab's Client column at ${width}`,
+        ).toBeGreaterThanOrEqual(176);
+      }
+      await page.waitForLoadState("networkidle");
+      expect(await axe(page), `recorded ${width} ${theme}`).toEqual([]);
+      await noSideways(page);
+      if (SHOTS)
+        await page.screenshot({ path: `${SHOTS}/recheck-recorded-${width}-${theme}.png`, fullPage: true });
+      // the Open tab at the same width: the Client column and the table's region there too
+      await page.getByRole("tab", { name: "Open" }).click();
+      await expect(page.getByText(`UTR${run}P`).filter({ visible: true }).first()).toBeVisible();
+      if (width === 1280) {
+        const fits = await page
+          .locator(".pay-notices .dtable")
+          .filter({ visible: true })
+          .first()
+          .evaluate((d) => d.scrollWidth <= d.clientWidth + 1);
+        expect(fits, `open ${width} ${theme}: no sideways scroll inside the table's region`).toBe(true);
+        expect(await clientColumnWidth(page), "the Open tab's Client column").toBeGreaterThanOrEqual(176);
+      }
+      await page.waitForLoadState("networkidle");
+      expect(await axe(page), `open ${width} ${theme}`).toEqual([]);
+      await noSideways(page);
+      if (SHOTS)
+        await page.screenshot({ path: `${SHOTS}/recheck-open-${width}-${theme}.png`, fullPage: true });
+    }
+});
+
+test("re-check 5 and 7: from a notice whose invoice can no longer take money, the dialog reads that one invoice, shows no row, and words the refusal with S1's line", async ({
+  page,
+}) => {
+  await stepUp(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/payments?tab=notices");
+  const row = page.locator("tr", { hasText: `UTR${run}P` });
+  await expect(row).toBeVisible();
+  const listed = await api(page, "GET", "/payments/notices?status=open");
+  const docId = ((listed.body.items as J[]).find((n) => n.id === NOTICE_PAID)?.document?.id ?? "") as string;
+  expect(docId).not.toBe("");
+  // finding 7: the dialog reads the notice's invoice alone, by id, and never pages through the open lists
+  const reads: string[] = [];
+  page.on("request", (r) => {
+    const u = new URL(r.url());
+    if (u.pathname.startsWith("/api/v1/invoices")) reads.push(`${u.pathname}${u.search}`);
+  });
+  await row.getByRole("button", { name: /Record payment/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Record a payment" });
+  await expect(dialog.getByText(/Filled in from .*'s notice of/)).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Record a payment" })).toBeEnabled();
+  await expect(dialog.getByRole("textbox", { name: /^Amount on this invoice/ })).toHaveCount(0);
+  expect(reads).toEqual([`/api/v1/invoices/${docId}`]);
+  // finding 5: the server's 409 names the invoice, but there is no row: S1's line, never S8 ("this invoice")
+  await dialog.getByRole("combobox", { name: "How it was paid" }).selectOption({ label: "NEFT" });
+  await dialog.getByRole("button", { name: "Record a payment" }).click();
+  await expect(
+    dialog.getByText(
+      "This notice is for another client, currency or invoice. Record the payment on the notice's own invoice.",
+    ),
+  ).toBeVisible();
+  await expect(
+    dialog.getByText("The notice is about this invoice: put the payment, or part of it, on this invoice."),
+  ).toHaveCount(0);
+  for (const width of [1280, 768, 390] as const) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await dialog.evaluate((d) => d.scrollWidth <= d.clientWidth + 1), `dialog at ${width}`).toBe(true);
+    await noSideways(page);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/recheck-no-row-${width}.png` });
+  }
+  await dialog.getByRole("button", { name: "Cancel" }).click();
 });
