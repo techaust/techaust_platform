@@ -33,7 +33,6 @@ import {
   checkFx,
   childLine,
   day,
-  day,
   FX_SOURCE_LABELS,
   type FxForm,
   type FxValue,

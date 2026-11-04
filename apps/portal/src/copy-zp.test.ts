@@ -43,7 +43,9 @@ describe("07-ZP, owner-approved [POR-04, POR-06 to POR-11]", () => {
     );
     expect(ZP.requestSent).toBe("Request sent. We'll reply by email within 30 days.");
     expect(ZP.kinds.data_erasure).toBe("Erase my personal data");
-    expect(ZP.noticeErrors.amount_above_balance("₹1,000.00")).toBe("That's more than the balance due (₹1,000.00).");
+    expect(ZP.noticeErrors.amount_above_balance("₹1,000.00")).toBe(
+      "That's more than the balance due (₹1,000.00).",
+    );
     expect(ZP.colleaguesTitle("Kestrel (sample)")).toBe("People from Kestrel (sample) with portal access");
     expect("linkFooter" in ZP).toBe(false);
   });

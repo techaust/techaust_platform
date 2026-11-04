@@ -22,7 +22,7 @@ type Props = {
   issueDate: string | null;
   /** The emailed "View & pay" page: a 404 there means the link ended (07-U's "This link no longer works"), never C15. */
   link?: boolean | undefined;
-  send:(body: PaidNoticeInput) => Promise<{ notice: PaidNotice }>;
+  send: (body: PaidNoticeInput) => Promise<{ notice: PaidNotice }>;
   onSent: () => void;
 };
 

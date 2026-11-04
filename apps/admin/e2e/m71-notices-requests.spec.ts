@@ -4,12 +4,14 @@
 // with a contact: the notices and requests are written straight to the LOCAL table here, as a client's portal would make them (sample words only).
 //   E2E_SAMPLE=1 pnpm --filter @techaust/admin exec playwright test e2e/m71-notices-requests.spec.ts   (through tools/heavy.sh)
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import { ORIGIN } from "../playwright.config.ts";
+import { totpAt } from "./sample-data.ts";
 
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -172,3 +174,192 @@ for (const theme of ["light", "dark"] as const)
       if (SHOTS)
         await page.screenshot({ path: `${SHOTS}/admin-requests-${width}-${theme}.png`, fullPage: true });
     });
+
+// ---- Review 1 (M2, M3, M5, L2): Record payment from a notice, a recorded notice whose payment was withdrawn, a proforma's notice ----
+// These run after the tests above (they record the first notice, which the Requests test reads from the Open tab).
+
+/** The API's CSRF check compares the Origin of every write with the admin's own (as the browser sends it). */
+const headers = { Origin: ORIGIN };
+// biome-ignore lint/suspicious/noExplicitAny: API answers are read loosely here, as in the sample data
+type J = Record<string, any>;
+const secret = () => Buffer.from(readFileSync(here("../.e2e/owner-totp.hex"), "utf8"), "hex");
+
+/** A step-up for this session, unless one is still good for two minutes; a refused code waits for the next 30-second step (signature-udyam.spec.ts). */
+async function stepUp(page: Page) {
+  const me = await page.request.get("/api/v1/auth/me");
+  const until = ((await me.json()) as J).stepUpUntil as number | null;
+  if (until !== null && until - Date.now() > 120_000) return;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await page.request.post("/api/v1/auth/step-up", {
+      headers,
+      data: { code: totpAt(secret(), Math.floor(Date.now() / 30_000)) },
+    });
+    if (res.ok()) return;
+    await page.waitForTimeout(30_000 - (Date.now() % 30_000) + 500);
+  }
+  throw new Error("e2e: no step-up after three steps");
+}
+
+async function api(page: Page, method: "GET" | "POST", path: string, data?: unknown) {
+  const res = await page.request.fetch(`/api/v1${path}`, {
+    method,
+    headers,
+    ...(data === undefined ? {} : { data }),
+  });
+  return { status: res.status(), body: (await res.json().catch(() => ({}))) as J };
+}
+
+/** The page never scrolls sideways. */
+async function noSideways(page: Page) {
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+}
+
+test("review 1, M2: Record payment from a notice starts its invoice row from the notice, and words a refusal from its code", async ({
+  page,
+}) => {
+  await stepUp(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/payments?tab=notices");
+  const row = page.locator("tr", { hasText: `UTR${run}1` });
+  await row.getByRole("button", { name: /Record payment/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Record a payment" });
+  const amount = dialog.getByRole("textbox", { name: "Amount the client paid" });
+  const onInvoice = dialog.getByRole("textbox", { name: /^Amount on this invoice/ });
+  // the notice's amount is at most the balance (beforeAll), so the row starts at the whole amount, never 0.00
+  await expect(onInvoice).toHaveValue(await amount.inputValue());
+  expect(Number((await onInvoice.inputValue()).replaceAll(",", ""))).toBeGreaterThan(0);
+  // kept in step with the amount until a person types in the row
+  await amount.fill("1500");
+  await expect(onInvoice).toHaveValue("1500.00");
+  // the row emptied: the server's 409 `notice_mismatch` is worded by its code under the row (S8) and wraps inside the dialog
+  await onInvoice.fill("");
+  await dialog.getByRole("combobox", { name: "How it was paid" }).selectOption({ label: "NEFT" });
+  await dialog.getByRole("button", { name: "Record a payment" }).click();
+  await expect(
+    dialog.getByText("The notice is about this invoice: put the payment, or part of it, on this invoice."),
+  ).toBeVisible();
+  await expect(dialog.getByText("That notice is about a document this payment is not put on")).toHaveCount(0);
+  for (const width of [1280, 768, 390] as const) {
+    await page.setViewportSize({ width, height: 900 });
+    expect(await dialog.evaluate((d) => d.scrollWidth <= d.clientWidth + 1), `dialog at ${width}`).toBe(true);
+    await noSideways(page);
+    if (SHOTS) await page.screenshot({ path: `${SHOTS}/admin-record-mismatch-${width}.png` });
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  // put back on the invoice: recorded and confirmed (the Owner), and the notice moves to Recorded
+  await onInvoice.fill("1500");
+  await dialog.getByRole("button", { name: "Record a payment" }).click();
+  await expect(page.getByText(/The notice is marked as recorded\./)).toBeVisible();
+});
+
+test("review 1, M5: a recorded notice whose payment was withdrawn says so, and the withdraw dialog names the notice", async ({
+  page,
+}) => {
+  await stepUp(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/payments?tab=notices");
+  await page.getByRole("tab", { name: "Recorded" }).click();
+  const link = page.locator("tr", { hasText: `UTR${run}1` }).getByRole("link", { name: /^Payment: / });
+  await expect(link).toHaveText("Payment: Confirmed");
+  await page.goto((await link.getAttribute("href")) ?? "");
+  await page.getByRole("dialog").getByRole("button", { name: "Withdraw" }).click();
+  const dialog = page.getByRole("dialog", { name: "Withdraw this payment" });
+  await expect(
+    dialog.getByText(/^This entry was recorded from the client's notice of .* \(Portal\)\./),
+  ).toBeVisible();
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/admin-withdraw-from-notice-1280.png` });
+  await dialog.getByRole("textbox", { name: "Why it is withdrawn" }).fill("Entered in error (sample).");
+  await dialog.getByRole("button", { name: "Withdraw" }).click();
+  await expect(page.getByText("Payment withdrawn.")).toBeVisible();
+  for (const theme of ["light", "dark"] as const)
+    for (const width of [1280, 768, 390] as const) {
+      await page.emulateMedia({ colorScheme: theme === "light" ? "dark" : "light" });
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/payments?tab=notices");
+      await page.evaluate((t) => localStorage.setItem("ta-admin-theme", t), theme);
+      await page.reload();
+      await page.getByRole("tab", { name: "Recorded" }).click();
+      await expect(
+        page.getByRole("link", { name: "Its payment was withdrawn later" }).filter({ visible: true }).first(),
+      ).toBeVisible();
+      await page.waitForLoadState("networkidle");
+      expect(await axe(page), `recorded ${width} ${theme}`).toEqual([]);
+      await noSideways(page);
+      if (SHOTS)
+        await page.screenshot({ path: `${SHOTS}/admin-recorded-${width}-${theme}.png`, fullPage: true });
+    }
+});
+
+test("review 1, M3 and L2: a proforma's notice keeps both actions in view, and its advance dialog says the amount is the client's", async ({
+  page,
+}) => {
+  await stepUp(page);
+  // a proforma for the notices' client, made and issued through the API as the screens do
+  const listed = await api(page, "GET", "/payments/notices?status=recorded");
+  const clientId = ((listed.body.items as J[]).find((n) => n.reference === `UTR${run}1`)?.client?.id ??
+    "") as string;
+  expect(clientId).not.toBe("");
+  const cat = await api(page, "GET", "/catalogue");
+  const services = (cat.body.items as J[])
+    .filter((i) => i.active !== false && i.priceInrMinor)
+    .slice(0, 1)
+    .map((i) => ({ catalogueItemId: i.id }));
+  const draft = await api(page, "POST", "/invoices", { clientId, services, kind: "proforma" });
+  expect(draft.status, JSON.stringify(draft.body)).toBe(201);
+  const d = (await api(page, "GET", `/invoices/${draft.body.id}`)).body;
+  const issued = await api(page, "POST", `/invoices/${draft.body.id}/issue`, {
+    expectedUpdatedAt: d.updatedAt,
+    expectedContentSha256: d.contentSha256,
+  });
+  expect(issued.status, JSON.stringify(issued.body)).toBe(200);
+  d1(`
+    INSERT INTO payment_notices (id, client_id, document_id, contact_id, via, amount_minor, currency, paid_on, reference, reference_norm, note, status, created_at)
+    SELECT 'ntc-${run}-pf', d.client_id, d.id, c.id, 'portal', min(d.balance_minor, 500000), d.currency, '${today}', 'PF${run}', 'PF${run}', NULL, 'open', ${Date.now()}
+      FROM documents d JOIN contacts c ON c.client_id = d.client_id AND c.anonymised_at IS NULL
+     WHERE d.id = '${draft.body.id}' LIMIT 1;`);
+  const issueName = /^Issue tax invoice for the payment received, /;
+  for (const theme of ["light", "dark"] as const)
+    for (const width of [1280, 768, 390] as const) {
+      await page.emulateMedia({ colorScheme: theme === "light" ? "dark" : "light" });
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/payments?tab=notices");
+      await page.evaluate((t) => localStorage.setItem("ta-admin-theme", t), theme);
+      await page.reload();
+      const issue = page.getByRole("link", { name: issueName }).filter({ visible: true });
+      await expect(issue).toBeVisible();
+      await expect(issue).toHaveText(/^Issue tax invoice/);
+      // every action drawn lies inside the viewport (M3: Dismiss was at x = 1364 at 1280 with the menu expanded)
+      const actions = [
+        issue,
+        ...(await page
+          .getByRole("button", { name: /^Dismiss / })
+          .filter({ visible: true })
+          .all()),
+      ];
+      for (const b of actions) {
+        const box = await b.boundingBox();
+        expect(box, "an action is drawn").not.toBeNull();
+        if (box) expect(box.x + box.width, `an action's right edge at ${width}`).toBeLessThanOrEqual(width);
+      }
+      await page.waitForLoadState("networkidle");
+      expect(await axe(page), `proforma notice ${width} ${theme}`).toEqual([]);
+      await noSideways(page);
+      if (SHOTS)
+        await page.screenshot({
+          path: `${SHOTS}/admin-notices-proforma-${width}-${theme}.png`,
+          fullPage: true,
+        });
+    }
+  // L2: the advance dialog started from the notice says the amount is the client's word (S1's line)
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/payments?tab=notices");
+  await page.getByRole("link", { name: issueName }).click();
+  await expect(
+    page
+      .getByRole("dialog")
+      .getByText(
+        /^Filled in from .*'s notice of .*\. Check the money reached the bank before you record it\.$/,
+      ),
+  ).toBeVisible();
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/admin-advance-from-notice-1280.png` });
+});

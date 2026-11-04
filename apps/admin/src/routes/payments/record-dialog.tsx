@@ -30,8 +30,8 @@ import { ZP_UI } from "../../lib/copy-zp.ts";
 import { dateError } from "../../lib/date-field.ts";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
 import { INV_COPY } from "../../lib/invoices.ts";
-import { m71ErrorText } from "../../lib/m71-errors.ts";
 import { invoicesApi } from "../../lib/invoices-api.ts";
+import { m71ErrorText } from "../../lib/m71-errors.ts";
 import { loadOpenDocs, OPEN_DOCS_CAP, OPEN_STATUSES } from "../../lib/open-docs.ts";
 import {
   type AllocRow,
@@ -232,7 +232,8 @@ function RecordBody(props: {
 
   // the opened-from row, filled from the amount up to the row's balance (review M2: from a notice the balance is the listed document's, read when the
   // dialog opens, so the row starts at min(notice amount, balance) and follows the amount until a person types in it)
-  const fromBalance = docs?.find((d) => d.id === props.from?.id)?.balanceMinor ?? props.from?.balanceMinor ?? 0;
+  const fromBalance =
+    docs?.find((d) => d.id === props.from?.id)?.balanceMinor ?? props.from?.balanceMinor ?? 0;
   const shownRows: AllocRow[] =
     autoRow && props.from
       ? [

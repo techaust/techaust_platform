@@ -5,8 +5,8 @@ import { formatDate, istDate } from "@techaust/core/dates";
 import { compare, formatMoney, money, parseMoney } from "@techaust/core/money";
 import { RequestError } from "../api.ts";
 import { COPY, waitText } from "../copy.ts";
-import { INV } from "../copy-invoices.ts";
 import { PENDING } from "../copy-documents.ts";
+import { INV } from "../copy-invoices.ts";
 import { GAP, ZP } from "../copy-zp.ts";
 
 export type Cur = "INR" | "USD";
