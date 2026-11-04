@@ -163,6 +163,15 @@ describe("payment bodies (zod/mini) [ADM-PAY-05, ADM-INV-16, Q60]", () => {
   const issues = (r: { success: boolean; error?: { issues: { message: string }[] } }) =>
     r.error?.issues.map((i) => i.message) ?? [];
 
+  it("M7.1 (L23): one noticeId, a UUIDv7, and only on a payment (never TDS)", () => {
+    const noticeId = "01900000-0000-7000-8000-0000000000aa";
+    expect(recordPaymentBody.safeParse({ ...base, noticeId }).success).toBe(true);
+    expect(issues(recordPaymentBody.safeParse({ ...base, noticeId: "not-a-uuid" }))).toContain("id_invalid");
+    expect(issues(recordPaymentBody.safeParse({ ...base, kind: "tds", mode: null, noticeId }))).toContain(
+      "notice_payment_only",
+    );
+  });
+
   it("a payment needs a mode and no TDS; ids are UUIDv7; dates are real", () => {
     expect(recordPaymentBody.safeParse(base).success).toBe(true);
     expect(issues(recordPaymentBody.safeParse({ ...base, mode: null }))).toContain("payment_needs_mode");

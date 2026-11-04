@@ -3,6 +3,7 @@
 // in packages/db/test/portal-rules.test.ts.
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import * as portal from "../src/portal.ts";
 import {
   DATA_REQUEST_KINDS,
   DETAILS_REQUIRED_KINDS,
@@ -157,5 +158,30 @@ describe("viewPayLive [L12]", () => {
     expect(viewPayLive(settled, settled + 30 * day - 1)).toBe(true);
     expect(viewPayLive(settled, settled + 30 * day)).toBe(false);
     expect(viewPayLive(settled, settled + 31 * day)).toBe(false);
+  });
+});
+
+describe("portal.alert [L9]", () => {
+  it("builds the message and recognises the family, valid or not", () => {
+    expect(portal.portalAlertMessage("a1")).toEqual({ kind: "portal.alert", auditId: "a1" });
+    expect(portal.isPortalAlertKind({ kind: "portal.alert" })).toBe(true);
+    for (const b of [null, "portal.alert", 5, {}, { kind: "staff.alert" }])
+      expect(portal.isPortalAlertKind(b)).toBe(false);
+    expect(portal.isPortalAlertMessage({ kind: "portal.alert", auditId: "a1" })).toBe(true);
+    for (const auditId of ["", "x".repeat(65), 5, undefined])
+      expect(portal.isPortalAlertMessage({ kind: "portal.alert", auditId })).toBe(false);
+    expect(portal.isPortalAlertMessage({ kind: "staff.alert", auditId: "a1" })).toBe(false);
+  });
+
+  it("Staff are belled only for a contact change; the actions are the portal's two", () => {
+    expect(portal.PORTAL_ALERT_ACTIONS).toEqual(["portal.request", "payment.notice"]);
+    for (const k of portal.REQUEST_KINDS) expect(portal.staffBelled(k)).toBe(k === "contact_change");
+    expect(portal.staffBelled(undefined)).toBe(false);
+    expect(portal.staffBelled("nomination")).toBe(false);
+  });
+
+  it("NOTICE_PROFORMA_STATUSES is issued and converted (early check 1 finding 1)", () => {
+    expect(portal.NOTICE_PROFORMA_STATUSES).toEqual(["issued", "converted"]);
+    expect(portal.NOTICE_CLOSE_NOTE_MAX).toBe(300);
   });
 });
