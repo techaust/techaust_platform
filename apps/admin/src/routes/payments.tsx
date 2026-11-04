@@ -46,6 +46,7 @@ import {
   readAllocations,
   STATUS_LABELS,
   showingFirstLine,
+  todayIst,
   WAITS_REFUND_LINE,
 } from "../lib/payments.ts";
 import { bpToPercent } from "../lib/settings-form.ts";
@@ -697,6 +698,7 @@ function EntryDialog(props: {
       ) : step === "reject" ? (
         <ReasonStep
           payment={entry.data.payment}
+          fromNotice={entry.data.fromNotice ?? null}
           kind="reject"
           onBack={() => setStep("view")}
           onDone={props.onChanged}
@@ -704,6 +706,7 @@ function EntryDialog(props: {
       ) : step === "withdraw" ? (
         <ReasonStep
           payment={entry.data.payment}
+          fromNotice={entry.data.fromNotice ?? null}
           kind="withdraw"
           onBack={() => setStep("view")}
           onDone={props.onChanged}
@@ -1242,6 +1245,8 @@ function ConfirmStep(props: { payment: PaymentView; onBack: () => void; onDone: 
 /** Reject (line 4; a reason, Owner, fresh code) or Withdraw (a reason, Owner, fresh code; L7). */
 function ReasonStep(props: {
   payment: PaymentView;
+  /** M7.1 review M5: the client's notice the entry was recorded from: the dialog says so (S11). */
+  fromNotice: { id: string; via: string; createdAt: number } | null;
   kind: "reject" | "withdraw";
   onBack: () => void;
   onDone: (t: string) => void;
@@ -1299,6 +1304,15 @@ function ReasonStep(props: {
           </span>
         </div>
         <p>{reject ? PAY_UI.rejectBody : PAY_UI.withdrawBody}</p>
+        {props.fromNotice && (
+          <Notice tone="info">
+            {ZP_UI.entryFromNotice(
+              props.kind,
+              day(todayIst(props.fromNotice.createdAt)),
+              ZP_UI.via[props.fromNotice.via] ?? props.fromNotice.via,
+            )}
+          </Notice>
+        )}
         <FormField
           id="pay-reason"
           label={reject ? PAY_COPY.rejectReason : PAY_UI.withdrawReason}

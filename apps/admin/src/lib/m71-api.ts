@@ -1,7 +1,7 @@
 // The typed client for the M7.1 admin routes (run file C): the clients' "I've paid" notices (finance Worker, `worker/payment-notices.ts`) and the requests
 // clients send from the portal (admin API Worker, `worker/client-requests.ts`) [ADM-PAY-05, POR-09, POR-11]. Its own module, so the main chunk doesn't carry
 // it: only the Payments, Clients and shell screens import it. The shapes mirror the Workers' answers; money is integer minor units, only formatted here.
-import type { Currency } from "../api.ts";
+import type { Currency, PaymentStatus } from "../api.ts";
 import { qs, request } from "../api.ts";
 
 const pid = (id: string) => encodeURIComponent(id);
@@ -23,6 +23,8 @@ export type NoticeView = {
   note: string | null;
   status: NoticeStatus;
   paymentId: string | null;
+  /** Review M5 (B4): the payment recorded from this notice and its status now (it may have been rejected or withdrawn since); null while open or dismissed. */
+  payment?: { id: string; status: PaymentStatus } | null;
   closedBy: { id: string; name: string | null } | null;
   closedAt: number | null;
   closeNote: string | null;

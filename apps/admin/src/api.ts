@@ -2247,6 +2247,8 @@ export const paymentsApi = {
       allocations: PaymentAllocationView[];
       /** M6.4: the advice the payment is on now (null: none). Absent from the current API (designer's ask for the builder). */
       advice?: PaymentAdviceRef | null;
+      /** M7.1 review M5: the client's "I've paid" notice this entry was recorded from (null: none); absent from an older API. */
+      fromNotice?: { id: string; via: string; createdAt: number } | null;
     }>(`/payments/${pid(id)}`),
   /**
    * Record (07-ZH line 2). The Owner's entry is confirmed now (fresh code); a Staff member's waits for the Owner (line 3). Codes: `already_recorded`,

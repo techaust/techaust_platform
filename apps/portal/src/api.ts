@@ -15,11 +15,7 @@ export type Me = {
   canSeeFinance: boolean;
 };
 
-type ApiErrorBody = {
-  error?: { code: string; message: string; details?: unknown };
-  request_id?: string;
-  details?: unknown;
-};
+type ApiErrorBody = { error?: { code: string; message: string }; request_id?: string };
 
 export class RequestError extends Error {
   constructor(
@@ -73,11 +69,8 @@ async function send<T>(path: string, { body, signedIn = true, noContent = false 
 }
 
 function errorOf(res: Response, data: ApiErrorBody, signedIn: boolean): RequestError {
-  const { error: body, request_id, ...rest } = data;
+  const { error: body, request_id, ...extra } = data;
   const e = body ?? { code: res.status >= 500 ? "server" : "unknown", message: "" };
-  // M7.1 review M1: `details` rides inside `error` (05 §7.1, as the admin's); it joins the rest as `extra.details` (a top-level one, if any, wins)
-  const extra: Record<string, unknown> =
-    body?.details !== undefined && rest.details === undefined ? { ...rest, details: body.details } : rest;
   const error = new RequestError(res.status, e.code, e.message, request_id ?? null, retryAfter(res), extra);
   if (signedIn && res.status === 401 && e.code === "unauthenticated") unauthenticatedHandler?.();
   return error;

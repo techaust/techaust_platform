@@ -6,12 +6,12 @@
 import type { Role } from "@techaust/core/permissions";
 import { useId, useState } from "react";
 import { Link } from "react-router";
-import type { Currency } from "../../api.ts";
+import type { Currency, PaymentStatus } from "../../api.ts";
 import { type Column, DataTable } from "../../components/data-table.tsx";
 import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
 import { EmptyState, StatusPill, When } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
-import { CheckCircle, Inbox } from "../../components/icons.tsx";
+import { Alert, CheckCircle, Inbox } from "../../components/icons.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
 import { Tabs } from "../../components/tabs.tsx";
 import { useToast } from "../../components/toast.tsx";
@@ -21,7 +21,8 @@ import { ZP_UI } from "../../lib/copy-zp.ts";
 import { typeLabel } from "../../lib/invoices.ts";
 import { type NoticeStatus, type NoticeView, noticesApi } from "../../lib/m71-api.ts";
 import { m71ErrorText } from "../../lib/m71-errors.ts";
-import { amountText } from "../../lib/payments.ts";
+import { amountText, STATUS_LABELS } from "../../lib/payments.ts";
+import { paymentHref } from "./panel.tsx";
 import { day } from "./parts.tsx";
 import { RecordPaymentDialog } from "./record-dialog.tsx";
 
@@ -160,6 +161,7 @@ function NoticeList(props: { status: NoticeStatus; role: Role; onChanged: () => 
                   <StatusPill tone={look.tone} icon={look.icon}>
                     {ZP_UI.noticeStatus[n.status] ?? n.status}
                   </StatusPill>
+                  {n.payment && <NoticePayment payment={n.payment} />}
                   {n.closedBy?.name && n.closedAt !== null && (
                     <span className="pay-lines__meta">
                       {ZP_UI.closedBy(n.closedBy.name, day(isoDayOf(n.closedAt)))}
@@ -289,6 +291,25 @@ function NoticeList(props: { status: NoticeStatus; role: Role; onChanged: () => 
         />
       )}
     </>
+  );
+}
+
+/**
+ * Review M5 (S10): the payment recorded from a notice, by its status now, as a link to the entry. A rejected or withdrawn payment is a warning line with its
+ * icon (never colour alone); a waiting or confirmed one is a quiet line in 07-ZH line 27's words.
+ */
+function NoticePayment(props: { payment: { id: string; status: PaymentStatus } }) {
+  const p = props.payment;
+  const undone = ZP_UI.noticePaymentUndone[p.status];
+  return undone ? (
+    <span className="pay-notice__undone">
+      <Alert size={16} />
+      <Link to={paymentHref(p.id)}>{undone}</Link>
+    </span>
+  ) : (
+    <Link to={paymentHref(p.id)} className="pay-notice__payment">
+      {ZP_UI.noticePayment(STATUS_LABELS[p.status] ?? p.status)}
+    </Link>
   );
 }
 

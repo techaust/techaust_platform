@@ -402,7 +402,7 @@ export function answerM71(
     if (ref.toUpperCase().startsWith("MAX")) return h.error(409, "notice_open_limit");
     // review M1 and question 2: a note the server refuses (the 400 names the note), and a link or document gone since the page loaded
     if (String(body.note ?? "").includes("REFUSE"))
-      return h.error(400, "bad_request", { error: { code: "bad_request", message: "bad_request", details: { path: "note" } } });
+      return h.error(400, "bad_request", { fields: ["note"] });
     if (ref.toUpperCase().startsWith("GONE")) return h.error(404, "not_found");
     return h.json(201, {
       notice: {

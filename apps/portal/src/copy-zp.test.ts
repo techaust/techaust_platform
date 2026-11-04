@@ -4,13 +4,15 @@
 import { findBannedPhrases, hasAmpersand } from "@techaust/core/public-text";
 import { describe, expect, it } from "vitest";
 import { RequestError } from "./api.ts";
+import { COPY } from "./copy.ts";
+import { INV } from "./copy-invoices.ts";
 import { APPROVED_07ZP, GAP, ZP, zpAllText } from "./copy-zp.ts";
 import {
   checkNotice,
   forText,
   noticeRefusal,
   profileRefusal,
-  refusedField,
+  refusedFields,
   requestRefusal,
   requestState,
   sizeText,
@@ -121,22 +123,24 @@ describe("the M7.1 screens' checks and refusals", () => {
     expect(noticeRefusal(err(404, "not_found"), "INR", { link: true })).toEqual({
       form: "This link no longer works. Sign in to your client portal to see your invoices, or ask us for a new link at contact@techaust.com.",
     });
-    // review M1: a 400 is worded by the field it names; the note's is its own (G12), never the reference's (G8)
-    expect(noticeRefusal(err(400, "bad_request", { details: { path: "note" } }), "INR")).toEqual({
-      note: GAP.noteRefused,
-    });
-    expect(noticeRefusal(err(400, "bad_request", { details: { path: ["note"] } }), "INR")).toEqual({
-      note: GAP.noteRefused,
-    });
-    expect(noticeRefusal(err(400, "bad_request", { details: { path: "reference" } }), "INR")).toEqual({
+    // review M1: a 400 is worded by the fields it names (B4's `fields`); the note's is its own (G12), never the reference's (G8)
+    const bad = (fields: unknown) => err(400, "bad_request", { fields });
+    expect(noticeRefusal(bad(["note"]), "INR")).toEqual({ note: GAP.noteRefused });
+    expect(noticeRefusal(bad(["reference"]), "INR")).toEqual({ reference: GAP.referenceRefused });
+    expect(noticeRefusal(bad(["reference", "note"]), "INR")).toEqual({
       reference: GAP.referenceRefused,
+      note: GAP.noteRefused,
     });
-    expect(noticeRefusal(err(400, "bad_request"), "INR")).toEqual({ reference: GAP.referenceRefused });
-    expect(noticeRefusal(err(400, "bad_request", { details: { path: "paidOn" } }), "INR")).toEqual({
+    expect(noticeRefusal(bad(["amountMinor", "paidOn"]), "INR")).toEqual({
+      amount: GAP.amountUnread,
       paidOn: GAP.dateInvalid,
     });
-    expect(refusedField(err(400, "bad_request", { details: { field: "note" } }))).toBe("note");
-    expect(refusedField(err(400, "bad_request", { details: "note" }))).toBe(null);
+    expect(noticeRefusal(bad(["token"]), "INR", { link: true })).toEqual({ form: INV.linkEnded });
+    // no field named (or one we don't know): our side's words, never a field's
+    expect(noticeRefusal(err(400, "bad_request"), "INR")).toEqual({ form: COPY.server });
+    expect(noticeRefusal(bad(["somethingElse"]), "INR")).toEqual({ form: COPY.server });
+    expect(refusedFields(bad(["note", 3, "reference"]))).toEqual(["note", "reference"]);
+    expect(refusedFields(bad("note"))).toEqual([]);
     // the server's message is never shown
     for (const code of ["date_in_future", "notice_duplicate", "not_payable", "something_new"])
       expect(JSON.stringify(noticeRefusal(err(409, code), "INR"))).not.toContain("C15");

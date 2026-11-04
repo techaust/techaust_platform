@@ -58,6 +58,19 @@ export const ZP_UI = {
   /** S8 (review M2): 409 `notice_mismatch` with `reason: "document"`, under the notice's invoice row: the payment must go on it, at least in part. */
   noticeOnDocument: "The notice is about this invoice: put the payment, or part of it, on this invoice.",
 
+  /**
+   * S10 (review M5): the Recorded tab's line for the payment recorded from a notice, by that payment's status now. A rejected or withdrawn payment says so
+   * plainly (the notice stays "Recorded": it was recorded, and no money moved on it); the others name the status in 07-ZH line 27's words.
+   */
+  noticePayment: (statusLabel: string) => `Payment: ${statusLabel}`,
+  noticePaymentUndone: {
+    rejected: "Its payment was rejected later",
+    withdrawn: "Its payment was withdrawn later",
+  } as Record<string, string>,
+  /** S11 (review M5): the reject and withdraw dialogs of an entry recorded from a client's notice. `via` is S1's "Portal" or "Invoice link". */
+  entryFromNotice: (action: "reject" | "withdraw", date: string, via: string) =>
+    `This entry was recorded from the client's notice of ${date} (${via}). If you ${action} it, the notice stays on the Notices tab's Recorded list, shown with this entry as ${action === "reject" ? "rejected" : "withdrawn"}. Tell the client if they still owe the money.`,
+
   // ---- S2: the client page's Requests panel ----
   requestsTab: "Requests",
   requestsCount: (n: number) => plural(n, "1 open client request", `${n} open client requests`),

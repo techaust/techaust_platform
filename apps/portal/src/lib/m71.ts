@@ -42,16 +42,12 @@ export type NoticeForm = { amount: string; paidOn: string; reference: string; no
 export type NoticeErrors = Partial<Record<"amount" | "paidOn" | "reference" | "note" | "form", string>>;
 
 /**
- * The field a 400 `bad_request` names (review M1: `details.path`, a field name or a zod path such as `["note"]`; `details.field` read too), or null. A refusal
- * of the note is never worded as the reference's.
+ * The body fields a 400 `bad_request` names (review M1, builder B4: `{ error, fields: ["note"], request_id }`, field names only, never a value); none when
+ * the answer names none. A refusal of the note is never worded as the reference's.
  */
-export function refusedField(e: RequestError): string | null {
-  const d = e.extra.details;
-  if (!d || typeof d !== "object") return null;
-  const r = d as { path?: unknown; field?: unknown };
-  const p = Array.isArray(r.path) ? r.path[0] : r.path;
-  if (typeof p === "string" && p !== "") return p;
-  return typeof r.field === "string" && r.field !== "" ? r.field : null;
+export function refusedFields(e: RequestError): string[] {
+  const f = e.extra.fields;
+  return Array.isArray(f) ? f.filter((x): x is string => typeof x === "string") : [];
 }
 
 /**
@@ -81,7 +77,7 @@ export function checkNotice(
 export const formatMoneyOf = (minor: number, currency: string) => formatMoney(moneyOf(minor, currency));
 
 /**
- * A notice the server refused, by its code (C15; G8 and G12 for a 400 `bad_request`, by the field it names), with the field it belongs to. `link`: the emailed
+ * A notice the server refused, by its code (C15; G6, G8, G9 and G12 for a 400 `bad_request`, by the fields it names), with the field each belongs to. `link`: the emailed
  * "View & pay" page, where a 404 means the link ended (07-U's approved "This link no longer works"; lead, 2026-11-05, question 2), never C15.
  */
 export function noticeRefusal(e: unknown, currency: string, o: { link?: boolean } = {}): NoticeErrors {
@@ -104,12 +100,16 @@ export function noticeRefusal(e: unknown, currency: string, o: { link?: boolean 
     case "not_payable":
       return { form: ZP.noticeErrors.not_payable };
     case "bad_request": {
-      const field = refusedField(e);
-      if (field === "note") return { note: GAP.noteRefused };
-      if (field === "amountMinor") return { amount: GAP.amountUnread };
-      if (field === "paidOn") return { paidOn: GAP.dateInvalid };
-      if (field === "reference" || field === null) return { reference: GAP.referenceRefused };
-      return { form: COPY.server };
+      // each named field gets its own words; a link's token refused is the link that ended; an answer that names no field we know is our side's problem
+      const out: NoticeErrors = {};
+      for (const f of refusedFields(e)) {
+        if (f === "note") out.note = GAP.noteRefused;
+        else if (f === "reference") out.reference = GAP.referenceRefused;
+        else if (f === "amountMinor") out.amount = GAP.amountUnread;
+        else if (f === "paidOn") out.paidOn = GAP.dateInvalid;
+        else if (f === "token") out.form = INV.linkEnded;
+      }
+      return Object.keys(out).length > 0 ? out : { form: COPY.server };
     }
     case "not_found":
       return { form: o.link ? INV.linkEnded : ZP.noticeErrors.not_payable };
