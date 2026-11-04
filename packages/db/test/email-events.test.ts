@@ -85,7 +85,7 @@ const tick = () => (nowSeq += 1_000);
 function mkEvent(
   messageId: string,
   type: Exclude<EmailEventType, "other">,
-  over: { kind?: BounceKind; recipients?: string[]; eventId?: string; subType?: string | null } = {},
+  over: { kind?: BounceKind | undefined; recipients?: string[]; eventId?: string; subType?: string | null } = {},
 ): SesEvent {
   const base = { eventId: over.eventId ?? uuidv7(), source: "aws.ses", messageId, env: "local" };
   if (type === "delivery") return { ...base, type };
