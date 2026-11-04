@@ -28,6 +28,7 @@ import {
   type TermsRaw,
   type UsageRaw,
 } from "@techaust/db/care";
+import { NEW_LEADS_SQL, PIPELINE_SQL } from "@techaust/db/digest";
 import { COLLECTED_TILE_SQL, PENDING_PAYMENTS_COUNT_SQL } from "@techaust/db/ledger";
 import {
   EXPORT_NEXT_SQL,
@@ -100,14 +101,8 @@ export const ACTIVITY_SQL = (ownOnly: boolean, byAction: boolean) =>
    WHERE a.at >= ?1 AND a.action IN (SELECT value FROM json_each(?2))${ownOnly ? " AND (a.action NOT IN (SELECT value FROM json_each(?3)) OR a.actor_id = ?4)" : ""}
    ORDER BY a.at DESC, a.rowid DESC LIMIT ${ACTIVITY_LIMIT}`;
 
-/**
- * The pipeline value (M4.3, ADM-DASH-01, a lead call: before tax): the offers out and still acceptable, by currency. A document is out while it is
- * `sent` or `viewed` and its `valid_until` (IST date) is today or later. No "latest version" probe is needed: sending version n moves the sent
- * versions before it to `revised` in the same batch, so at most one version of a group is ever sent or viewed. Both offer types count. The
- * index is `documents_status_valid_until`; the unary plus keeps the type test from tempting the planner away from it.
- */
-export const PIPELINE_SQL =
-  "SELECT currency, count(*) AS n, coalesce(sum(taxable_minor), 0) AS taxable FROM documents INDEXED BY documents_status_valid_until WHERE status IN ('sent', 'viewed') AND valid_until >= ?1 AND +type IN ('proposal', 'estimate') GROUP BY currency ORDER BY currency";
+// The pipeline value (`PIPELINE_SQL`) and the new-leads count moved to `@techaust/db/digest` in M7.2: the weekly digest reads the same statements (one source).
+export { PIPELINE_SQL };
 
 /** Active plans that have started and that have not (past 100 active plans, where the loaded ones are not all of them), by `care_plans_status_created`. */
 export const CARE_TOTALS_SQL =
@@ -131,7 +126,7 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
     add(
       "leads",
       db.prepare(`SELECT stage, count(*) AS n FROM leads WHERE stage IN (${STAGE_LIST}) GROUP BY stage`),
-      db.prepare("SELECT count(*) AS n FROM leads WHERE created_at >= ?1").bind(now - 7 * DAY_MS),
+      db.prepare(NEW_LEADS_SQL).bind(now - 7 * DAY_MS),
       db
         .prepare(
           `SELECT count(*) AS n FROM leads INDEXED BY leads_next_action WHERE next_action_at IS NOT NULL AND next_action_at < ?1 AND stage IN (${STAGE_LIST})`,

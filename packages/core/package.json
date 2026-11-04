@@ -16,6 +16,7 @@
     "./dashboard": "./src/dashboard.ts",
     "./dates": "./src/dates.ts",
     "./deeds": "./src/deeds.ts",
+    "./digest": "./src/digest.ts",
     "./documents": "./src/documents.ts",
     "./expiry": "./src/expiry.ts",
     "./hash": "./src/hash.ts",

@@ -72,6 +72,8 @@ const EXPECTED: Record<Exclude<Action, "proposals.send" | "requests.close">, str
   "payments.reconcile": "A---", // M6.5 (L11): the Owner ticks "seen in the bank statement" and fetches a settlement day
   "payments.notices": "AA--", // M7.1 (L10): Owner and Staff dismiss an "I've paid" notice
   "requests.read": "AA--", // M7.1 (L8): Owner and Staff read the clients' requests
+  "emails.read": "AA--", // M7.2 (L12): Owner and Staff read the email log
+  "emails.unsuppress": "A---", // M7.2 (L12): only the Owner allows a stopped address again
   "realisation.reduce": "S---", // M6.5 (RB-43): the Owner records the AD bank's Reg. 6 reduction with a fresh code
   "dashboard.read": "AAAA", // M3.5: every role; the handler keeps only the tiles the role may see
   "reports.finance": "A--A",

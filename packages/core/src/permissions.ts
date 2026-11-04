@@ -165,6 +165,11 @@ const MATRIX = {
   // change or a grievance, `staffClose`; every data-rights kind is the Owner's, review fix 11). New docs/04 §9 rows.
   "requests.read": { owner: "allow", staff: "allow" },
   "requests.close": { owner: "allow", staff: staffClose },
+  // M7.2 (L12; ADM-MAIL-02): the email log (`GET /emails`, `GET /emails/:id`) for Owner and Staff; allowing a stopped address again (deleting its suppression
+  // and the contacts' `bounced_at`) is the Owner's, audited, no step-up. A member's own notification switches are `notifications.own` (L11); sending a receipt
+  // again is `invoices.send`. New docs/04 §9 rows.
+  "emails.read": { owner: "allow", staff: "allow" },
+  "emails.unsuppress": { owner: "allow" },
   // M6.5 (RB-43; Settled by the lead on the safest reading, 2026-11-03 (08-C RB-43)): recording the AD bank's Reg. 6 reduction of an export invoice (its reference
   // and letter) marks the invoice realised for FEMA, like an extension of its date moves it: the Owner only, with a fresh code. A new docs/04 §9 row.
   "realisation.reduce": { owner: "step-up" },
