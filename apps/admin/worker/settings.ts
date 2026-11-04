@@ -71,7 +71,7 @@ import {
   NOT_FOUND,
   type SideGuard,
 } from "./context.ts";
-import { sampleData, TEMPLATE_NAMES } from "./email-fixtures.ts";
+import { sampleData, TEMPLATE_NAMES } from "@techaust/email/fixtures";
 import { param } from "./http.ts";
 import { queueEmail } from "./mail.ts";
 import { ANNUAL_RETURN_FUTURE } from "./note-consts.ts";

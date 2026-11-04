@@ -1,6 +1,8 @@
 // Sample data for Settings > Email "Send a test" (ADM-SET-07): one made-up data set per template, so a test shows the
 // real layout and wording without any real name, number or link (07-H section 1: "it uses sample data"). Addresses are on
-// example.test, links point nowhere real. Pure: no I/O.
+// example.test, links point nowhere real. Pure: no I/O. M7.2 (run file B, L17): moved here from `apps/admin/worker/email-fixtures.ts`, so the admin's test send
+// and the templates' snapshot suite (packages/email) read one set; imported as `@techaust/email/fixtures` (never the package index, which holds the templates
+// and the SES client).
 
 import type { EmailTemplate } from "@techaust/core/email-templates";
 import { firstNameOf } from "@techaust/core/offers";

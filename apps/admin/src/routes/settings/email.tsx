@@ -3,7 +3,7 @@
 // signed-in member only (the API takes the address from the session; five an hour).
 import { EMAIL_TEMPLATES, type EmailTemplate } from "@techaust/core/email-templates";
 import { useState } from "react";
-import { TEMPLATE_NAMES } from "../../../worker/email-fixtures.ts";
+import { TEMPLATE_NAMES } from "@techaust/email/fixtures";
 import { api, errorText } from "../../api.ts";
 import { SettingRow, Switch } from "../../components/form.tsx";
 import { Send } from "../../components/icons.tsx";
