@@ -280,6 +280,10 @@ export const ROUTES: readonly RouteDef[] = [
   X("GET", "/payments/without-advice", "payments.read"),
   // M6.5 review part 1, finding 3 (RA-41): credit held at a return period's end that may be an advance (the Owner and the Accountant), above `/payments/:id`.
   X("GET", "/payments/credit-held", "reports.finance"),
+  // M7.1 (ADM-PAY-05, L10; run file C): the clients' "I've paid" notices and the dismiss, above `/payments/:id` so `notices` is never a payment id. A notice
+  // is recorded only through `POST /payments` with `noticeId` (L23).
+  X("GET", "/payments/notices", "payments.read"),
+  X("POST", "/payments/notices/:id/close", "payments.notices", { audit: "payment.notice_close" }),
   X("GET", "/payments", "payments.read"),
   X("POST", "/payments", "payments.record", { audit: "payment.record" }),
   X("GET", "/payments/:id", "payments.read"),
@@ -330,6 +334,10 @@ export const ROUTES: readonly RouteDef[] = [
   I("GET", "/approvals", "approvals.readOwn"),
   I("POST", "/approvals/:id/decide", "approvals.decide", { audit: "approval.decide" }),
   // The bell, the global search and the audit viewer (M3.1, ADM-G-09, ADM-G-05, ADM-AUD-02).
+  // M7.1 (POR-09, POR-11, L8; run file C): the requests clients send from the portal, and the close (Staff only for a contact change or a grievance: the
+  // handler decides on the record's kind, the UPDATE and the trigger hold it too).
+  R("GET", "/client-requests", "requests.read"),
+  R("POST", "/client-requests/:id/close", "requests.close", { audit: "client_request.close" }),
   R("GET", "/notifications", "notifications.own"),
   R("POST", "/notifications/read-all", "notifications.own", { audit: "notification.read_all" }),
   R("POST", "/notifications/:id/read", "notifications.own", { audit: "notification.read" }),

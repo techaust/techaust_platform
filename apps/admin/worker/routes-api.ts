@@ -8,6 +8,7 @@ import { approvalRequests } from "./approval-requests.ts";
 import { audit } from "./audit.ts";
 import { carePlans } from "./care.ts";
 import { catalogue, templates } from "./catalogue.ts";
+import { clientRequests } from "./client-requests.ts";
 import { clientTabs } from "./client-tabs.ts";
 import { clients, contacts } from "./clients.ts";
 import { deeds, projectDeed } from "./deeds.ts";
@@ -59,6 +60,8 @@ export function mountApi(app: App) {
   app.route("/v1/files", files);
   app.route("/v1/contacts", contacts);
   app.route("/v1/notifications", notifications);
+  // M7.1 (POR-09, POR-11, L8): the requests clients send from the portal.
+  app.route("/v1/client-requests", clientRequests);
   app.route("/v1/search", search);
   app.route("/v1/audit", audit);
 }

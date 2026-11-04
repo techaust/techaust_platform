@@ -59,6 +59,8 @@ export const recordPaymentBody = z
     tds: z.optional(tdsIn),
     note: z.optional(text(PAYMENT_TEXT_MAX)),
     confirmDuplicate: z.optional(z.boolean()),
+    /** M7.1 (L10, L23): the client's "I've paid" notice this payment is recorded from; one notice per payment record. */
+    noticeId: z.optional(uuidv7),
   })
   .check(
     z.refine((v) => v.kind !== "payment" || (v.mode != null && v.tds === undefined), {
@@ -81,6 +83,11 @@ export const recordPaymentBody = z
           v.allocations[0]?.amountMinor === v.amountMinor),
       { message: "tds_shape", path: ["tds"] },
     ),
+    // M7.1: a notice is money the client says it sent, so only a payment (never TDS) is recorded from one.
+    z.refine((v) => v.noticeId === undefined || v.kind === "payment", {
+      message: "notice_payment_only",
+      path: ["noticeId"],
+    }),
     z.refine((v) => v.inrReceivedMinor === undefined || v.currency === "USD", {
       message: "inr_received_usd_only",
       path: ["inrReceivedMinor"],

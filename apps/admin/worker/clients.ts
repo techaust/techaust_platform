@@ -446,6 +446,8 @@ const exportRequest = z.strictObject({
       "access_log",
       "notes",
       "files",
+      "client_requests",
+      "payment_notices",
     ]),
   ),
   after: z.optional(z.string().check(z.maxLength(400))),
@@ -1015,6 +1017,16 @@ export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?
     sql: (cur) =>
       `SELECT id, at, realm, actor_id, method, route, status, ip, user_agent FROM access_log WHERE actor_id = ?1${cur ? " AND (at, id) > (?4, ?5)" : ""} ORDER BY at, id LIMIT 51`,
     time: true,
+  },
+  // M7.1 (ADM-CLI-05; Researched 2026-10-29, DPDP s.11(1) (08-C RB-36)): the requests this person sent from the portal (their own words, the outcome; never
+  // the staff's close note) and the "I've paid" notices they sent (amounts, days and references as they gave them).
+  client_requests: {
+    sql: (cur) =>
+      `SELECT id, kind, details, status, outcome, closed_at, created_at FROM client_requests WHERE contact_id = ?1${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
+  },
+  payment_notices: {
+    sql: (cur) =>
+      `SELECT id, document_id, via, amount_minor, currency, paid_on, reference, note, status, created_at FROM payment_notices WHERE contact_id = ?1${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
   },
   // The client's notes and file records, only where the erase would delete them: the contact is an individual client's last live
   // contact (`LAST_LIVE_INDIVIDUAL`; the manifest lists these two parts only then, and the SQL repeats the condition). Metadata only:

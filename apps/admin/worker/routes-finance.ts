@@ -8,6 +8,7 @@ import type { App } from "./app.ts";
 import { creditHeld } from "./credit-held.ts";
 import { gatewayPayments, invoicePaymentLinks } from "./gateway/routes.ts";
 import { clientCredit, invoiceLedger } from "./payment-ledger.ts";
+import { paymentNotices } from "./payment-notices.ts";
 import { payments } from "./payments.ts";
 import { paymentReceipt } from "./receipt-read.ts";
 import { reconciliation } from "./recon.ts";
@@ -27,6 +28,8 @@ export function mountFinance(app: App) {
   app.route("/v1/payments", paymentReceipt);
   // Review part 1, finding 3 (RA-41): credit held at a return period's end (before `payments`, whose `/:id` would match `/credit-held`).
   app.route("/v1/payments", creditHeld);
+  // M7.1 (ADM-PAY-05, L10): the clients' "I've paid" notices, before `payments` (its `/:id` would match `/notices`).
+  app.route("/v1/payments", paymentNotices);
   app.route("/v1/refunds", refundsTab);
   app.route("/v1/reconciliation", reconciliation);
   app.route("/v1/invoices", reductions);

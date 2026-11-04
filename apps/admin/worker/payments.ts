@@ -94,6 +94,29 @@ import { enqueueReceipt } from "./receipt-enqueue.ts";
 import { ra41OnConfirm } from "./refund-facts.ts";
 import { sessionRefusal } from "./session-refusal.ts";
 
+/** M7.1 (L10, L23): a notice named by `noticeId` that is not this client's, in this currency, or that is gone. */
+const NOTICE_MISMATCH = {
+  code: "notice_mismatch",
+  message: "That notice is not for this client and currency",
+} as const;
+const NOTICE_CLOSED = { code: "notice_closed", message: "This notice is already closed" } as const;
+/**
+ * M7.1 (L10, L23): the recording batch moves the client's "I've paid" notice to `recorded` with this payment, guarded on the payment's audit row (so a refused
+ * record moves nothing) and on the notice still open and of this client (the trigger `payment_notices_status_flow` also needs the payment of its client and
+ * currency). One notice per payment record. `?1` notice, `?2` payment, `?3` who, `?4` now, `?5` client, then the guard.
+ */
+export const noticeRecordStatement = (
+  db: D1Database,
+  a: { noticeId: string; paymentId: string; by: string; now: number; clientId: string },
+  g: { sql: (at: number) => string; params: readonly unknown[] },
+) =>
+  db
+    .prepare(
+      `UPDATE payment_notices SET status = 'recorded', payment_id = ?2, closed_by = ?3, closed_at = ?4
+       WHERE id = ?1 AND status = 'open' AND client_id = ?5 AND ${g.sql(6)}`,
+    )
+    .bind(a.noticeId, a.paymentId, a.by, a.now, a.clientId, ...g.params);
+
 /** M6.5: a refund of payment `id` that has not failed (the confirm and withdraw refusals). */
 const liveRefundOf = (db: D1Database, id: string) =>
   db
@@ -546,7 +569,7 @@ export const payments = new Hono<AppEnv>()
       if (referenceNorm === null) return err(c, REFERENCE_INVALID, 400);
     }
     const requested = f.allocations ?? [];
-    const [clientR, existsR, seenR, docsR] = await db.batch([
+    const [clientR, existsR, seenR, docsR, noticeR] = await db.batch([
       db
         .prepare(
           "SELECT id, display_name, currency, country, gst_status, anonymised_at FROM clients WHERE id = ?1",
@@ -555,6 +578,10 @@ export const payments = new Hono<AppEnv>()
       db.prepare("SELECT 1 AS x FROM payments WHERE id = ?1").bind(f.id),
       db.prepare(PAYMENT_REFERENCE_SEEN_SQL).bind(referenceNorm ?? ""),
       db.prepare(LEDGER_DOCS_SQL).bind(JSON.stringify(requested.map((r) => r.documentId))),
+      // M7.1 (L23): the notice this payment is recorded from, if any.
+      db
+        .prepare("SELECT client_id, currency, status FROM payment_notices WHERE id = ?1")
+        .bind(f.noticeId ?? ""),
     ]);
     if (existsR?.results[0]) return err(c, ALREADY_RECORDED, 409);
     const client = clientR?.results[0] as
@@ -571,6 +598,11 @@ export const payments = new Hono<AppEnv>()
     if (client.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
     // L23.4: a payment is in the client's currency.
     if (client.currency !== f.currency) return err(c, CURRENCY_MISMATCH, 409);
+    if (f.noticeId !== undefined) {
+      const n = noticeR?.results[0] as { client_id: string; currency: string; status: string } | undefined;
+      if (!n || n.client_id !== f.clientId || n.currency !== f.currency) return err(c, NOTICE_MISMATCH, 409);
+      if (n.status !== "open") return err(c, NOTICE_CLOSED, 409);
+    }
     // L8, L23.5: TDS only for a client in India.
     if (f.kind === "tds" && (client.country !== "IN" || client.gst_status === "overseas"))
       return err(c, TDS_NOT_ALLOWED, 409);
@@ -679,6 +711,7 @@ export const payments = new Hono<AppEnv>()
           requested,
         });
     let done = false;
+    let noticeRecorded = false;
     try {
       done = await mutate(c, {
         main,
@@ -699,10 +732,24 @@ export const payments = new Hono<AppEnv>()
             amountMinor: a.amountMinor,
           })),
           ...(f.confirmDuplicate === true ? { confirmDuplicate: true } : {}),
+          ...(f.noticeId !== undefined ? { noticeId: f.noticeId } : {}),
         },
         status: 201,
-        side: (g) =>
-          confirmed
+        // M7.1 (L23): the notice statement is the first side statement, so its result follows the audit row's.
+        onResults: (results, auditAt) => {
+          noticeRecorded = f.noticeId !== undefined && results[auditAt + 1]?.meta.changes === 1;
+        },
+        side: (g) => [
+          ...(f.noticeId !== undefined
+            ? [
+                noticeRecordStatement(
+                  db,
+                  { noticeId: f.noticeId, paymentId: f.id, by: u.id, now, clientId: f.clientId },
+                  g,
+                ),
+              ]
+            : []),
+          ...(confirmed
             ? [
                 ...allocationStatements(db, rows, u.id, now, g),
                 recomputeStatement(db, { paymentIds: [f.id] }, now, g),
@@ -724,7 +771,8 @@ export const payments = new Hono<AppEnv>()
                   },
                 },
                 g,
-              ),
+              )),
+        ],
       });
     } catch (e) {
       // One pending check per payment (`approvals_payment_pending`): a repeat of this id that slipped past the read is the same entry.
@@ -780,6 +828,8 @@ export const payments = new Hono<AppEnv>()
         unallocatedMinor: confirmed ? plan.unallocatedMinor : null,
         ra41,
         ...(confirmed ? {} : { approvalId }),
+        /** M7.1 (L23): the notice this payment was recorded from, and whether it moved to `recorded` in the batch. */
+        notice: f.noticeId !== undefined ? { id: f.noticeId, recorded: noticeRecorded } : null,
         warnings: confirmed
           ? receiptWarnings(
               f.receivedOn,

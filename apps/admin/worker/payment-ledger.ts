@@ -493,35 +493,70 @@ function linkMinimumOf(termsR: D1Result | undefined, balanceMinor: number): numb
   }
 }
 
+/**
+ * M7.1 (L10, ADM-PAY-05): the open notices of document `?1`, oldest first, on `payment_notices_document`. A notice never blocks a void or a withdraw (L10): the
+ * dialogs show it as a warning only (staff line S4).
+ */
+export const OPEN_NOTICES_OF_DOCUMENT_SQL = `SELECT n.id, n.via, n.amount_minor, n.currency, n.paid_on, n.reference, n.note, n.created_at, c.name AS contact_name
+   FROM payment_notices n INDEXED BY payment_notices_document LEFT JOIN contacts c ON c.id = n.contact_id
+   WHERE n.document_id = ?1 AND n.status = 'open' ORDER BY n.created_at, n.id LIMIT 3`;
+type OpenNoticeRow = {
+  id: string;
+  via: string;
+  amount_minor: number;
+  currency: string;
+  paid_on: string;
+  reference: string;
+  note: string | null;
+  created_at: number;
+  contact_name: string | null;
+};
+
 export const invoiceLedger = new Hono<AppEnv>()
   // ---- the Payments panel ----
   .get("/:id/payments", param(idParam), async (c) => {
     const { id } = c.req.valid("param");
     const db = c.env.DB;
     const today = toIsoDate(istDate(Date.now()));
-    const [docR, holdR, pendR, creditR, extR, realR, gwPayR, linksR, reviewR, termsR, m65R, refundsR, taxR] =
-      await db.batch([
-        db.prepare(DOC_SQL).bind(id),
-        db.prepare(DOCUMENT_HOLDINGS_SQL).bind(id),
-        db.prepare(PENDING_FOR_DOCUMENT_SQL).bind(id),
-        db.prepare(CREDIT_OF_DOCUMENT_CLIENT_SQL).bind(id),
-        db.prepare(EXTENSIONS_SQL).bind(id),
-        db.prepare(REALISATION_OF_SQL).bind(id, today),
-        // M6.2: the Razorpay payments that came through this document's links (any status), its links, and its open review items.
-        db.prepare(GATEWAY_PAYMENTS_OF_DOCUMENT_SQL).bind(id),
-        db.prepare(DOCUMENT_CHECKOUTS_SQL).bind(id),
-        db
-          .prepare(
-            "SELECT count(*) AS n FROM review_items INDEXED BY review_items_document WHERE document_id = ?1 AND status = 'open'",
-          )
-          .bind(id),
-        // M6.2 fix round 3 item 4: the part-payment floor, so the Create dialog shows the range to a role that can't read Settings › Payment terms.
-        db.prepare("SELECT value, version FROM settings WHERE key = 'payment_terms'"),
-        // M6.5: each holding payment's receipt and free money (the Refund button), the refunds of those payments or of this invoice, and the PA-CB cap setting.
-        db.prepare(PANEL_RECEIPTS_SQL).bind(id),
-        db.prepare(PANEL_REFUNDS_SQL).bind(id),
-        db.prepare("SELECT value, version FROM settings WHERE key = 'tax'"),
-      ]);
+    const [
+      docR,
+      holdR,
+      pendR,
+      creditR,
+      extR,
+      realR,
+      gwPayR,
+      linksR,
+      reviewR,
+      termsR,
+      m65R,
+      refundsR,
+      taxR,
+      noticesR,
+    ] = await db.batch([
+      db.prepare(DOC_SQL).bind(id),
+      db.prepare(DOCUMENT_HOLDINGS_SQL).bind(id),
+      db.prepare(PENDING_FOR_DOCUMENT_SQL).bind(id),
+      db.prepare(CREDIT_OF_DOCUMENT_CLIENT_SQL).bind(id),
+      db.prepare(EXTENSIONS_SQL).bind(id),
+      db.prepare(REALISATION_OF_SQL).bind(id, today),
+      // M6.2: the Razorpay payments that came through this document's links (any status), its links, and its open review items.
+      db.prepare(GATEWAY_PAYMENTS_OF_DOCUMENT_SQL).bind(id),
+      db.prepare(DOCUMENT_CHECKOUTS_SQL).bind(id),
+      db
+        .prepare(
+          "SELECT count(*) AS n FROM review_items INDEXED BY review_items_document WHERE document_id = ?1 AND status = 'open'",
+        )
+        .bind(id),
+      // M6.2 fix round 3 item 4: the part-payment floor, so the Create dialog shows the range to a role that can't read Settings › Payment terms.
+      db.prepare("SELECT value, version FROM settings WHERE key = 'payment_terms'"),
+      // M6.5: each holding payment's receipt and free money (the Refund button), the refunds of those payments or of this invoice, and the PA-CB cap setting.
+      db.prepare(PANEL_RECEIPTS_SQL).bind(id),
+      db.prepare(PANEL_REFUNDS_SQL).bind(id),
+      db.prepare("SELECT value, version FROM settings WHERE key = 'tax'"),
+      // M7.1 (L10): the client's open "I've paid" notices on this document (at most 3), for "Record payment" and the void and withdraw warnings.
+      db.prepare(OPEN_NOTICES_OF_DOCUMENT_SQL).bind(id),
+    ]);
     const d = docR?.results[0] as DocRow | undefined;
     if (!d || !PANEL_TYPES.includes(d.type)) return err(c, NOT_FOUND, 404);
     const real = realR?.results[0] as
@@ -582,6 +617,18 @@ export const invoiceLedger = new Hono<AppEnv>()
           }))
         : null,
       paCb,
+      /** M7.1 (L10): the client's open "I've paid" notices (a warning on void and withdraw, never a block; "Record payment" prefills from one). */
+      notices: ((noticesR?.results ?? []) as OpenNoticeRow[]).map((n) => ({
+        id: n.id,
+        via: n.via,
+        amountMinor: n.amount_minor,
+        currency: n.currency,
+        paidOn: n.paid_on,
+        reference: n.reference,
+        note: n.note,
+        contactName: n.contact_name,
+        createdAt: n.created_at,
+      })),
       documentId: d.id,
       type: d.type,
       status: d.status,
