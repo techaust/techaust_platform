@@ -308,6 +308,10 @@ export const notes = sqliteTable(
     index("notes_client").on(t.clientId, t.createdAt),
     index("notes_project").on(t.projectId, t.createdAt),
     index("notes_client_visibility").on(t.clientId, t.visibility, t.createdAt),
+    // M7.1 (POR-04, POR-08; CREATE INDEX only, 0071): the portal's keyset pages of shared notes, newest first, by project and by client. The older
+    // `notes_client_visibility` has no `id`, so it can neither seek the `(created_at, id) <` cursor nor give the tie-break order (EXPLAIN test).
+    index("notes_shared_project").on(t.projectId, t.createdAt, t.id).where(sql`${t.visibility} = 'shared'`),
+    index("notes_shared_client").on(t.clientId, t.createdAt, t.id).where(sql`${t.visibility} = 'shared'`),
     check("notes_visibility", oneOf(t.visibility, NOTE_VISIBILITY)),
   ],
 );
@@ -332,6 +336,9 @@ export const files = sqliteTable(
     index("files_client").on(t.clientId, t.createdAt),
     index("files_project").on(t.projectId, t.createdAt),
     index("files_client_shared").on(t.clientId, t.shared, t.createdAt),
+    // M7.1 (POR-04, POR-08; CREATE INDEX only, 0071): the portal's keyset pages of shared files, as for notes.
+    index("files_shared_project").on(t.projectId, t.createdAt, t.id).where(sql`${t.shared} = 1`),
+    index("files_shared_client").on(t.clientId, t.createdAt, t.id).where(sql`${t.shared} = 1`),
     check("files_size", sql`${t.size} between 1 and 26214400`),
   ],
 );

@@ -498,6 +498,20 @@
       "when": 1793665074492,
       "tag": "0070_refund_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "6",
+      "when": 1793802299496,
+      "tag": "0071_portal",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "6",
+      "when": 1793802364378,
+      "tag": "0072_client_portal_triggers",
+      "breakpoints": true
     }
   ]
 }

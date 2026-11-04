@@ -296,3 +296,66 @@ export const paymentBlocksVoidSql = (doc: string, client: string): string =>
 /** Payment `p` (an alias) is on an advice now (a link not taken off): one seek of `realisation_advice_payments_active`. The "Proof awaited" filter reads it too. */
 export const paymentHasAdviceSql = (p: string): string =>
   `EXISTS (SELECT 1 FROM realisation_advice_payments al INDEXED BY realisation_advice_payments_active WHERE al.payment_id = ${p}.id AND al.removed_at IS NULL)`;
+
+// ---- the full client portal (M7.1; POR-06, POR-09, ADM-PAY-05; run file docs/runs/m7.1-portal.md B, L8, L10, L12) --------------------------------------------
+// The SQL twins of `@techaust/core/portal` (a db test compares each with its core rule). Plain text, no imports, like everything above.
+
+/** Core `VIEW_PAY_GRACE_MS` (30 days in ms; a test pins the two). */
+export const VIEW_PAY_GRACE_MS_SQL = 2_592_000_000;
+
+/**
+ * When document `d` (a documents alias) was last settled: the latest of its allocation rows' `created_at` and the freeze of any credit note against it (0 when
+ * there is none). One seek of `payment_allocations_document` and one of `documents_parent`.
+ */
+export const settledAtSql = (d: string): string =>
+  `max(coalesce((SELECT max(vpa.created_at) FROM payment_allocations vpa INDEXED BY payment_allocations_document WHERE vpa.document_id = ${d}.id), 0),
+       coalesce((SELECT max(vcn.frozen_at) FROM documents vcn INDEXED BY documents_parent WHERE vcn.parent_id = ${d}.id AND vcn.type = 'credit_note' AND vcn.frozen_at IS NOT NULL), 0))`;
+
+/**
+ * L12: the emailed "View & pay" link of document `d` still opens at `now` (an SQL expression, UTC ms): the document is not `paid` or `credited` (a refund moves it
+ * back, M6.5 L1), or it was settled less than 30 days ago. The twin of core `viewPayLive(settledAt, now)` with `settledAt` from `settledAtSql` while the status is
+ * `paid` or `credited`, else null.
+ */
+export const viewPayLiveSql = (d: string, now: string): string =>
+  `(${d}.status NOT IN ('paid', 'credited') OR ${now} < ${settledAtSql(d)} + ${VIEW_PAY_GRACE_MS_SQL})`;
+
+/**
+ * The start of the IST day of `now` (an SQL expression, UTC ms): the twin of core `fromIst(istDate(now))`. D1 binds a JavaScript number as REAL, so `now` is cast
+ * to INTEGER first and the division is an integer one.
+ */
+export const istDayStartSql = (now: string): string =>
+  `((CAST(${now} AS INTEGER) + 19800000) / 86400000 * 86400000 - 19800000)`;
+
+/**
+ * L8: how many requests contact `contact` has sent since the start of the IST day of `now` (both SQL expressions); the route refuses the sixth (core
+ * `REQUESTS_PER_DAY`, 429 `too_many_requests`). One range seek of `client_requests_contact`.
+ */
+export const REQUESTS_TODAY_SQL = (contact: string, now: string): string =>
+  `(SELECT count(*) FROM client_requests rq INDEXED BY client_requests_contact WHERE rq.contact_id = ${contact} AND rq.created_at >= ${istDayStartSql(now)})`;
+
+/** Core `NOTICE_TYPES` and `NOTICE_OPEN_STATUSES` (a test pins them). */
+export const NOTICE_TYPES_SQL = "('tax_invoice', 'export_invoice', 'debit_note', 'proforma')";
+export const NOTICE_OPEN_STATUSES_SQL = "('issued', 'partially_paid', 'partially_credited')";
+
+/**
+ * L10: why document `d` (a documents alias) can't take an "I've paid" notice, as core `noticeAllowed`'s reason code in the same order, or NULL when it can. The
+ * route's INSERT…SELECT keeps `${noticeRefusalSql("d")} IS NULL` in its WHERE, and a refused insert reads the code for its 409 `not_payable`.
+ */
+export const noticeRefusalSql = (d: string): string =>
+  `(CASE WHEN ${withdrawnSql(d)} THEN 'withdrawn' WHEN ${d}.status = 'void' THEN 'void' WHEN ${d}.type = 'credit_note' THEN 'credit_note'
+     WHEN ${d}.type NOT IN ${NOTICE_TYPES_SQL} THEN 'not_payable_type' WHEN ${d}.type = 'proforma' AND ${d}.status <> 'issued' THEN 'proforma_not_issued'
+     WHEN ${d}.status = 'paid' THEN 'paid' WHEN ${d}.status NOT IN ${NOTICE_OPEN_STATUSES_SQL} THEN 'not_open' WHEN ${d}.balance_minor <= 0 THEN 'no_balance' END)`;
+
+/**
+ * L10 (C15): core `paidNoticeVerdict` over SQL expressions (the amount and the balance in minor units, the ISO days paid, of issue and of today in IST): `ok`, or
+ * the first refusal in core's order. An issue day that is NULL refuses (`date_before_issue`), so a document without one never takes a notice.
+ */
+export const paidNoticeVerdictSql = (
+  amount: string,
+  balance: string,
+  paidOn: string,
+  issueDate: string,
+  today: string,
+): string =>
+  `(CASE WHEN ${amount} > ${balance} THEN 'amount_above_balance' WHEN ${paidOn} > ${today} THEN 'date_in_future'
+     WHEN ${issueDate} IS NULL OR ${paidOn} < ${issueDate} THEN 'date_before_issue' ELSE 'ok' END)`;
