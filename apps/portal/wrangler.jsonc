@@ -47,7 +47,12 @@
       { "binding": "PDF_QUEUE", "queue": "techaust-local-pdf" }
     ]
   },
-  "r2_buckets": [{ "binding": "DOCS", "bucket_name": "techaust-local-docs" }],
+  // M7.1 (Q2 A, owner 2026-11-01): FILES, the file vault, read-only here: the shared files a client downloads (streamed through the session check, L5).
+  // Local and staging only; production has no R2 bucket until Phase 7 (scripts/check-worker-config.mjs).
+  "r2_buckets": [
+    { "binding": "DOCS", "bucket_name": "techaust-local-docs" },
+    { "binding": "FILES", "bucket_name": "techaust-local-files" }
+  ],
   // D1 (docs/05 §5). Migrations live in packages/db; local dev and tests use a local database.
   "d1_databases": [
     {
@@ -98,7 +103,10 @@
           { "binding": "PDF_QUEUE", "queue": "techaust-staging-pdf" }
         ]
       },
-      "r2_buckets": [{ "binding": "DOCS", "bucket_name": "techaust-staging-docs" }],
+      "r2_buckets": [
+        { "binding": "DOCS", "bucket_name": "techaust-staging-docs" },
+        { "binding": "FILES", "bucket_name": "techaust-staging-files" }
+      ],
       "d1_databases": [
         {
           "binding": "DB",

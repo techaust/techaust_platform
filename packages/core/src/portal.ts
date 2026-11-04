@@ -179,3 +179,30 @@ export const VIEW_PAY_GRACE_MS = VIEW_PAY_GRACE_DAYS * DAY_MS;
  */
 export const viewPayLive = (settledAt: number | null, now: number): boolean =>
   settledAt === null || now < settledAt + VIEW_PAY_GRACE_MS;
+
+// ---- staff bells (L9) ---------------------------------------------------------------------------------------------------------------------------------------
+// Portal SQL never names a `staff_` table (the portal's source scan), so a request or a notice reaches staff through the jobs Worker: the portal puts
+// `{ kind: "portal.alert", auditId }` on the email queue after its batch, and jobs reads the audit row and writes the bells (one unit of work, no email in M7.1,
+// L16).
+
+export const PORTAL_ALERT_KIND = "portal.alert";
+export type PortalAlertMessage = { readonly kind: typeof PORTAL_ALERT_KIND; readonly auditId: string };
+export const portalAlertMessage = (auditId: string): PortalAlertMessage => ({
+  kind: PORTAL_ALERT_KIND,
+  auditId,
+});
+/** A body of the family (valid or not): routed before the email fall-through, so it is never sent as an email. */
+export const isPortalAlertKind = (body: unknown): boolean =>
+  typeof body === "object" && body !== null && (body as { kind?: unknown }).kind === PORTAL_ALERT_KIND;
+export const isPortalAlertMessage = (body: unknown): body is PortalAlertMessage => {
+  if (!isPortalAlertKind(body)) return false;
+  const id = (body as { auditId?: unknown }).auditId;
+  return typeof id === "string" && id.length > 0 && id.length <= 64;
+};
+/** The audit actions a portal alert expands; any other row is refused (logged, acknowledged). */
+export const PORTAL_ALERT_ACTIONS = ["portal.request", "payment.notice"] as const;
+export type PortalAlertAction = (typeof PORTAL_ALERT_ACTIONS)[number];
+/** The request kinds whose bell also goes to Staff (run file D); every other kind rings the active Owners only. */
+export const STAFF_BELL_KINDS = ["contact_change"] as const satisfies readonly RequestKind[];
+export const staffBelled = (kind: unknown): boolean =>
+  typeof kind === "string" && (STAFF_BELL_KINDS as readonly string[]).includes(kind);

@@ -36,6 +36,12 @@ const NEWEST_RENDERED =
 /** ?1 client, ?2 now (cursor: sent_at), ?3 cursor id, ?4 limit. A page of the latest rendered version of each offer, newest first. */
 export const LIST_SQL = `SELECT d.id, d.type, d.title, d.number_display, d.version, d.status, d.valid_until, d.total_minor, d.currency, d.decided_at, d.sent_at FROM documents d WHERE d.client_id = ?1 AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.redacted_at IS NULL AND d.pdf_sha256 IS NOT NULL AND d.status IN (${STATUSES_SQL}) AND ${NEWEST_RENDERED} AND (?2 IS NULL OR d.sent_at < ?2 OR (d.sent_at = ?2 AND d.id < ?3)) ORDER BY d.sent_at DESC, d.id DESC LIMIT ?4`;
 
+/**
+ * M7.1 (POR-04, run file C `GET /home`): the offers awaiting the client's decision, the list's own rules plus `sent` or `viewed` and still valid today (?2,
+ * the IST day; `effectiveOfferStatus` reads one with an earlier `valid_until` as expired). ?1 client. At most 5, newest first.
+ */
+export const AWAITING_SQL = `SELECT d.id, d.type, d.title, d.number_display, d.version, d.status, d.valid_until, d.total_minor, d.currency, d.decided_at, d.sent_at FROM documents d WHERE d.client_id = ?1 AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.redacted_at IS NULL AND d.pdf_sha256 IS NOT NULL AND d.status IN ('sent', 'viewed') AND (d.valid_until IS NULL OR d.valid_until >= ?2) AND ${NEWEST_RENDERED} ORDER BY d.sent_at DESC, d.id DESC LIMIT 5`;
+
 /** ?2 document id. The document of this organisation, as the portal may show it (a sent, rendered or decided offer). */
 export const DOC_SQL = `SELECT d.id, d.type, d.status, d.version, d.title, d.number_display, d.valid_until, d.version_group_id, d.snapshot_r2_key, d.pdf_r2_key, d.pdf_sha256, d.decided_at, d.decision_reason, d.decision_note, dc.name AS decided_by FROM documents d LEFT JOIN contacts dc ON dc.id = d.decided_contact_id AND dc.client_id = d.client_id WHERE d.id = ?2 AND d.client_id = ?1 AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.redacted_at IS NULL AND d.status IN (${STATUSES_SQL})`;
 

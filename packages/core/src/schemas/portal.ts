@@ -8,10 +8,13 @@ import { parseIsoDate } from "../dates.ts";
 import { normaliseReference } from "../export-invoice.ts";
 import {
   detailsRequired,
+  NOTICE_CLOSE_NOTE_MAX,
   NOTICE_NOTE_MAX,
   NOTICE_REFERENCE_MAX,
+  REQUEST_CLOSE_NOTE_MAX,
   REQUEST_DETAILS_MAX,
   REQUEST_KINDS,
+  REQUEST_OUTCOMES,
 } from "../portal.ts";
 
 // C0 and C1 control characters: a single-line field allows none; a multi-line one only tab and line feed (a carriage return is folded into a line feed first).
@@ -81,6 +84,20 @@ export function requestDetailsOf(v: ClientRequestInput): string | null {
   return blank(v.details) ? null : detailsText.parse(v.details);
 }
 
+/**
+ * An optional single-line note (lead triage of early check 1, item 9): absent, null or blank is no note; anything else must be a valid line of 1 to `max`
+ * characters. Read the stored value with `noteOf`.
+ */
+const optionalNote = (max: number) => {
+  const valid = line(max);
+  return z
+    .optional(z.nullable(z.string()))
+    .check(z.refine((v) => blank(v) || valid.safeParse(v).success, { message: "note_invalid" }));
+};
+const noticeNote = line(NOTICE_NOTE_MAX);
+const requestCloseNote = line(REQUEST_CLOSE_NOTE_MAX);
+const noticeCloseNote = line(NOTICE_CLOSE_NOTE_MAX);
+
 const reference = line(NOTICE_REFERENCE_MAX).check(
   z.refine((v) => normaliseReference(v) !== null, { message: "reference_invalid" }),
 );
@@ -89,7 +106,8 @@ const noticeFields = {
   paidOn: isoDate,
   /** The transaction reference (UTR or similar), stored as typed and as `normaliseReference` of it. Never a card or account number (C13's hint; RB-07). */
   reference,
-  note: z.optional(line(NOTICE_NOTE_MAX)),
+  /** Optional; blank or null is none (item 9). */
+  note: optionalNote(NOTICE_NOTE_MAX),
 };
 
 /** `POST /invoices/:id/paid-notice` (signed in, finance): what the client says it paid (L10). The amount, the days and the document are checked by the route. */
@@ -99,6 +117,31 @@ export type PaidNoticeInput = z.infer<typeof paidNotice>;
 /** `POST /t/document/paid-notice` (the emailed link): the same, plus the link's token, only ever in the body (as `POST /t/document/pay`). */
 export const tokenPaidNotice = z.strictObject({ ...noticeFields, token: z.string().check(z.maxLength(256)) });
 export type TokenPaidNoticeInput = z.infer<typeof tokenPaidNotice>;
+
+/** A notice's note as stored: trimmed, or null for none or a blank one. Call only on a body the schema accepted. */
+export const noticeNoteOf = (note: string | null | undefined): string | null =>
+  blank(note) ? null : noticeNote.parse(note);
+
+/**
+ * Admin `POST /client-requests/:id/close` (`requests.close`): the outcome and an optional note (at most 500 characters; blank or null is none). The close
+ * dialog's hint asks for no personal data (staff line S6); the note is kept as the record of how the request was handled (lead triage, item 5).
+ */
+export const requestCloseBody = z.strictObject({
+  outcome: z.enum(REQUEST_OUTCOMES),
+  note: optionalNote(REQUEST_CLOSE_NOTE_MAX),
+});
+export type RequestCloseInput = z.infer<typeof requestCloseBody>;
+export const requestCloseNoteOf = (note: string | null | undefined): string | null =>
+  blank(note) ? null : requestCloseNote.parse(note);
+
+/** Admin `POST /payments/notices/:id/close` (`payments.notices`): a dismiss only (a notice is recorded through `POST /payments` with `noticeId`, L23). */
+export const noticeCloseBody = z.strictObject({
+  outcome: z.literal("dismissed"),
+  note: optionalNote(NOTICE_CLOSE_NOTE_MAX),
+});
+export type NoticeCloseInput = z.infer<typeof noticeCloseBody>;
+export const noticeCloseNoteOf = (note: string | null | undefined): string | null =>
+  blank(note) ? null : noticeCloseNote.parse(note);
 
 /** The start-up warm-up (M6.2 CPU diagnosis): one sample parse of each schema, so their first real use in a request is not their first run. Never throws. */
 export function warmPortalSchemas(): number {
@@ -119,6 +162,12 @@ export function warmPortalSchemas(): number {
     if (
       tokenPaidNotice.safeParse({ amountMinor: 100, paidOn: "2026-11-04", reference: "UTR1234", token: "t" })
         .success
+    )
+      ok++;
+    if (requestCloseBody.safeParse({ outcome: "done", note: "Sent by email" }).success) ok++;
+    if (
+      noticeCloseBody.safeParse({ outcome: "dismissed", note: "" }).success &&
+      noticeNoteOf(" Paid ") === "Paid"
     )
       ok++;
   } catch {

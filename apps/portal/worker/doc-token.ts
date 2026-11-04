@@ -20,6 +20,7 @@ import {
   tokenHash,
 } from "@techaust/auth";
 import { accessStmt, auditStmt } from "@techaust/db/log";
+import { viewPayLiveSql } from "@techaust/db/sql-rules";
 import { Hono } from "hono/tiny";
 import {
   type AppEnv,
@@ -70,21 +71,57 @@ export const DOC_READ = `SELECT ${SUMMARY_COLS}, t.contact_id AS link_contact_id
   JOIN contacts c ON c.id = t.contact_id AND c.client_id = t.client_id AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL AND lower(c.email) = t.email
   JOIN clients cl ON cl.id = t.client_id AND cl.anonymised_at IS NULL
   ${SUMMARY_PARENT_JOIN}
-  WHERE t.token_hash = ?1 AND t.revoked_at IS NULL AND t.expires_at > ?2 AND t.purpose = 'view_pay' AND d.frozen_at IS NOT NULL AND ${openOrWithdrawnSql("d")} AND d.type IN (${TYPES_SQL})`;
+  WHERE t.token_hash = ?1 AND t.revoked_at IS NULL AND t.expires_at > ?2 AND t.purpose = 'view_pay' AND d.frozen_at IS NOT NULL AND ${openOrWithdrawnSql("d")} AND d.type IN (${TYPES_SQL})
+    AND ${viewPayLiveSql("d", "?2")}`;
 
 /**
- * ?1 client, ?2 document: the document's state NOW, read in the batch that writes the PDF view (review L1). `open()` read the row in an earlier batch, so a
- * withdrawal or a void landing between the two would otherwise still serve the PDF. `open` = the PDF may be served; `readable` without `open` = withdrawn.
+ * M7.1 L13 (the proforma-withdraw re-check): the link is still live NOW, for this document (`d`): not revoked, not expired, bound to its live contact with
+ * portal access and finance at the same address, of a client not anonymised, and not past paid + 30 days (L12). `h` the token hash, `n` now.
  */
-export const PDF_STATE_SQL = `SELECT d.type, d.status, ${openSql("d")} AS open, ${openOrWithdrawnSql("d")} AS readable
-  FROM documents d WHERE d.client_id = ?1 AND d.id = ?2`;
-type PdfState = { type: string; status: string; open: number; readable: number };
+const linkLiveSql = (h: string, n: string) =>
+  `EXISTS (SELECT 1 FROM doc_access_tokens lt
+     JOIN contacts lc ON lc.id = lt.contact_id AND lc.client_id = lt.client_id AND lc.portal_access = 1 AND lc.can_see_finance = 1 AND lc.anonymised_at IS NULL AND lower(lc.email) = lt.email
+     JOIN clients lcl ON lcl.id = lt.client_id AND lcl.anonymised_at IS NULL
+     WHERE lt.token_hash = ${h} AND lt.document_id = d.id AND lt.client_id = d.client_id AND lt.revoked_at IS NULL AND lt.expires_at > ${n} AND lt.purpose = 'view_pay'
+       AND ${viewPayLiveSql("d", n)})`;
 
-type Found = SummaryRow & { link_contact_id: string; link_client_id: string };
-type Opened = { doc: Found; failKey: string };
+/**
+ * L11 (12 "M1.6"): a link's use writes its `doc_token.use` audit row at most once per contact and document per 15 minutes (on `audit_log_entity`); the access
+ * row stays one per request (13 2026-10-21). The guard of the audit insert: the document, the contact and the cut (now less 15 minutes).
+ */
+export const DOC_TOKEN_AUDIT_WINDOW_MS = 15 * 60_000;
+const auditThrottle = (documentId: string, contactId: string, now: number) => ({
+  sql: (at: number) =>
+    `NOT EXISTS (SELECT 1 FROM audit_log a WHERE a.entity_type = 'document' AND a.entity_id = ?${at} AND a.action = 'doc_token.use' AND a.actor_id = ?${at + 1} AND a.at > ?${at + 2})`,
+  params: [documentId, contactId, now - DOC_TOKEN_AUDIT_WINDOW_MS],
+});
+
+/**
+ * ?1 client, ?2 document, ?3 token hash, ?4 now: the document's state NOW, read in the batch that writes the PDF view (review L1). `open()` read the row in an
+ * earlier batch, so a withdrawal, a void, a revoked link, a contact who lost finance or access, or a PDF that finished in between would otherwise be read from
+ * the old row. M7.1 L13: the PDF key and every link and contact condition are read HERE, and the PDF is served only from what this returns. `open` = the PDF
+ * may be served; `readable` without `open` = withdrawn; `link_live` = the link still opens.
+ */
+export const PDF_STATE_SQL = `SELECT d.type, d.status, d.pdf_r2_key, d.number_display, ${openSql("d")} AS open, ${openOrWithdrawnSql("d")} AS readable,
+    ${linkLiveSql("?3", "?4")} AS link_live
+  FROM documents d WHERE d.client_id = ?1 AND d.id = ?2`;
+type PdfState = {
+  type: string;
+  status: string;
+  pdf_r2_key: string | null;
+  number_display: string | null;
+  open: number;
+  readable: number;
+  link_live: number;
+};
+/** The PDF's first view through a link (?1 client, ?2 document, ?3 now, ?4 token hash): only while the link is still live (L13), and only a delivered PDF. */
+export const LINK_VIEW_PDF_SQL = `${VIEW_PDF_SQL} AND EXISTS (SELECT 1 FROM documents d WHERE d.id = ?2 AND d.client_id = ?1 AND ${linkLiveSql("?4", "?3")})`;
+
+export type Found = SummaryRow & { link_contact_id: string; link_client_id: string };
+export type Opened = { doc: Found; failKey: string };
 
 /** The address lock and the link in ONE batch: a Response (429 or 404) or the live document the link opens. */
-async function open(c: Ctx, token: string): Promise<Opened | Response> {
+export async function open(c: Ctx, token: string): Promise<Opened | Response> {
   const db = c.env.DB;
   const t = Date.now();
   const failKey = await portalFailKey(c.env.PORTAL_KEY_PEPPER, callerAddress(c));
@@ -124,15 +161,19 @@ export const docToken = new Hono<AppEnv>()
       db.prepare(CREDIT_NOTES_SQL).bind(doc.link_client_id, doc.id),
       // M6.2: the Pay now block, bound to the link's client.
       db.prepare(ONLINE_SQL).bind(doc.link_client_id, doc.id, t),
-      auditStmt(db, {
-        ...requestInfo(c),
-        actorType: "contact",
-        actorId: doc.link_contact_id,
-        role: null,
-        action: "doc_token.use",
-        entityType: "document",
-        entityId: doc.id,
-      }),
+      auditStmt(
+        db,
+        {
+          ...requestInfo(c),
+          actorType: "contact",
+          actorId: doc.link_contact_id,
+          role: null,
+          action: "doc_token.use",
+          entityType: "document",
+          entityId: doc.id,
+        },
+        auditThrottle(doc.id, doc.link_contact_id, t),
+      ),
       db.prepare(VIEW_SQL).bind(doc.link_client_id, doc.id, t),
       accessStmt(db, accessEntry(c, 200, doc.link_contact_id)),
     ]);
@@ -181,21 +222,27 @@ export const docToken = new Hono<AppEnv>()
     // Review L1: the state is read again in the batch that writes the view, and the access row of a served (or pending) PDF is written only while the
     // document is still open (the same `openSql` as the check below). A withdrawal or a void that landed after `open()` answers as the document now is,
     // without reading R2: 409 `withdrawn` for a withdrawn proforma, else the 404. The link was valid when checked, so neither counts toward `p:fail:`.
+    const hash = await tokenHash(token);
+    const at = Date.now();
     const [state] = await db.batch([
-      db.prepare(PDF_STATE_SQL).bind(doc.link_client_id, doc.id),
-      db.prepare(VIEW_PDF_SQL).bind(doc.link_client_id, doc.id, Date.now()),
-      accessStmt(db, accessEntry(c, doc.pdf_r2_key ? 200 : 409, doc.link_contact_id), {
-        sql: (at) => `EXISTS (SELECT 1 FROM documents d WHERE d.id = ?${at} AND ${openSql("d")})`,
-        params: [doc.id],
+      db.prepare(PDF_STATE_SQL).bind(doc.link_client_id, doc.id, hash, at),
+      db.prepare(LINK_VIEW_PDF_SQL).bind(doc.link_client_id, doc.id, at, hash),
+      // The access row of a served PDF, written only while the document is open, its PDF stored and the link live; any other outcome writes its own below.
+      accessStmt(db, accessEntry(c, 200, doc.link_contact_id), {
+        sql: (n) =>
+          `EXISTS (SELECT 1 FROM documents d WHERE d.id = ?${n} AND d.client_id = ?${n + 1} AND ${openSql("d")} AND d.pdf_r2_key IS NOT NULL AND ${linkLiveSql(`?${n + 2}`, `?${n + 3}`)})`,
+        params: [doc.id, doc.link_client_id, hash, at],
       }),
     ]);
     const now = state?.results[0] as PdfState | undefined;
-    if (!now?.open) {
-      const withdrawn = !!now?.readable && isWithdrawnRow(now);
+    if (!now?.open || now.link_live !== 1) {
+      const withdrawn = now?.link_live === 1 && !!now.readable && isWithdrawnRow(now);
       await db.batch([accessStmt(db, accessEntry(c, withdrawn ? 409 : 404, doc.link_contact_id))]);
       return withdrawn ? err(c, PDF_WITHDRAWN, 409) : err(c, NOT_FOUND, 404);
     }
-    if (!doc.pdf_r2_key)
+    // Served only from what the state read returned (L13): a PDF that finished after `open()` is served; one that has none yet is 409 `pdf_pending`.
+    if (!now.pdf_r2_key) {
+      await db.batch([accessStmt(db, accessEntry(c, 409, doc.link_contact_id))]);
       return c.json(
         {
           error: { code: "pdf_pending", message: "The document is still being prepared" },
@@ -203,5 +250,6 @@ export const docToken = new Hono<AppEnv>()
         },
         409,
       );
-    return streamPdf(c, doc.pdf_r2_key, pdfFileName(doc.number_display, 1));
+    }
+    return streamPdf(c, now.pdf_r2_key, pdfFileName(now.number_display, 1));
   });

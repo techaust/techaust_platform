@@ -4,8 +4,13 @@ import { describe, expect, it } from "vitest";
 import { REQUEST_KINDS } from "../src/portal.ts";
 import {
   clientRequest,
+  noticeCloseBody,
+  noticeCloseNoteOf,
+  noticeNoteOf,
   paidNotice,
   profileUpdate,
+  requestCloseBody,
+  requestCloseNoteOf,
   requestDetailsOf,
   storedPhone,
   tokenPaidNotice,
@@ -103,5 +108,31 @@ describe("paidNotice and tokenPaidNotice [L10, ADM-PAY-05]", () => {
 });
 
 it("warmPortalSchemas parses one sample of each schema", () => {
-  expect(warmPortalSchemas()).toBe(4);
+  expect(warmPortalSchemas()).toBe(6);
+});
+
+describe("notes: blank or null is none (lead triage of early check 1, item 9)", () => {
+  const ok = { amountMinor: 100, paidOn: "2026-11-04", reference: "UTR1234" };
+  it("a notice note that is absent, null, empty or spaces is accepted and stored as none; a real one is trimmed", () => {
+    for (const note of [undefined, null, "", "   "]) {
+      expect(paidNotice.safeParse({ ...ok, note }).success, String(note)).toBe(true);
+      expect(noticeNoteOf(note)).toBeNull();
+    }
+    expect(noticeNoteOf("  Paid from HDFC ")).toBe("Paid from HDFC");
+    expect(codes(paidNotice.safeParse({ ...ok, note: "a".repeat(301) }))).toEqual(["note_invalid"]);
+  });
+
+  it("the staff close bodies: a request's outcome and note, a notice's dismiss only", () => {
+    expect(requestCloseBody.safeParse({ outcome: "done" }).success).toBe(true);
+    expect(requestCloseBody.safeParse({ outcome: "declined", note: " " }).success).toBe(true);
+    expect(requestCloseBody.safeParse({ outcome: "open" }).success).toBe(false);
+    expect(requestCloseBody.safeParse({ outcome: "done", note: "x".repeat(501) }).success).toBe(false);
+    expect(requestCloseBody.safeParse({ outcome: "done", extra: 1 }).success).toBe(false);
+    expect(requestCloseNoteOf(" Sent the copy ")).toBe("Sent the copy");
+    expect(requestCloseNoteOf("")).toBeNull();
+    expect(noticeCloseBody.safeParse({ outcome: "dismissed", note: null }).success).toBe(true);
+    expect(noticeCloseBody.safeParse({ outcome: "recorded" }).success).toBe(false);
+    expect(noticeCloseBody.safeParse({ outcome: "dismissed", note: "x".repeat(301) }).success).toBe(false);
+    expect(noticeCloseNoteOf(undefined)).toBeNull();
+  });
 });
