@@ -204,6 +204,9 @@ export const PAYMENT_READ_SQL = `SELECT ${PAYMENT_COLS} FROM payments p JOIN cli
 /** The allocation rows of one payment, with each document's number (the entry's detail). */
 export const PAYMENT_ALLOCATIONS_SQL = `SELECT a.id, a.document_id, d.number_display, d.type, a.kind, a.amount_minor, a.created_at
    FROM payment_allocations a INDEXED BY payment_allocations_payment JOIN documents d ON d.id = a.document_id WHERE a.payment_id = ?1 ORDER BY a.created_at, a.id`;
+/** M7.1 review 1, M5: the notice a payment was recorded from (at most one: `POST /payments` takes one `noticeId`), by `payment_notices_payment`. */
+export const PAYMENT_NOTICE_SQL = `SELECT n.id, n.via, n.created_at FROM payment_notices n INDEXED BY payment_notices_payment
+   WHERE n.payment_id = ?1 ORDER BY n.id LIMIT 1`;
 /** The documents a payment asks for or is put on (`?1` a JSON list of ids): what `planAllocations` needs, and the issue date for the RA-17 warning. */
 export const LEDGER_DOCS_SQL = `SELECT id, client_id, currency, type, status, frozen_at, total_minor, paid_minor, credited_minor, tds_minor, balance_minor, issue_date, number_display
    FROM documents WHERE id IN (SELECT value FROM json_each(?1))`;
@@ -527,10 +530,11 @@ export const payments = new Hono<AppEnv>()
   .get("/:id", param(idParam), async (c) => {
     const { id } = c.req.valid("param");
     // M6.4 (the designer's admin round): the advice the payment is on now, from the active link only (a link taken off is null).
-    const [p, a, adv] = await c.env.DB.batch([
+    const [p, a, adv, nt] = await c.env.DB.batch([
       c.env.DB.prepare(PAYMENT_READ_SQL).bind(id),
       c.env.DB.prepare(PAYMENT_ALLOCATIONS_SQL).bind(id),
       c.env.DB.prepare(PAYMENT_ADVICE_SQL).bind(id),
+      c.env.DB.prepare(PAYMENT_NOTICE_SQL).bind(id),
     ]);
     const row = p?.results[0] as PaymentRow | undefined;
     if (!row) return err(c, NOT_FOUND, 404);
@@ -556,9 +560,15 @@ export const payments = new Hono<AppEnv>()
     const on = adv?.results[0] as
       | { id: string; provider: string; kind: string; advice_ref: string; issued_on: string }
       | undefined;
+    const notice = nt?.results[0] as { id: string; via: string; created_at: number } | undefined;
     return c.json({
       payment: paymentView(row),
       allocations,
+      /**
+       * Review 1, M5: the client's "I've paid" notice this entry was recorded from (L23), else null. The reject and withdraw dialogs say so; the notice stays
+       * `recorded` whatever the entry's later status (the Notices tab's Recorded list shows the entry's status).
+       */
+      fromNotice: notice ? { id: notice.id, via: notice.via, createdAt: notice.created_at } : null,
       advice: on
         ? {
             id: on.id,

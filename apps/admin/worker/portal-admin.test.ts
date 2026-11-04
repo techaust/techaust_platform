@@ -6,7 +6,8 @@ import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
 import { describe, expect, it } from "vitest";
 import { REQUEST_CLOSE_SQL } from "./client-requests.ts";
-import { noticeRecordStatement } from "./payments.ts";
+import { NOTICES_BY_CLIENT_SQL, NOTICES_BY_STATUS_SQL } from "./payment-notices.ts";
+import { noticeRecordStatement, PAYMENT_NOTICE_SQL } from "./payments.ts";
 import { bodyOf, call, countOf, one, sessionFor } from "./test-helpers.ts";
 import { recordBody } from "./test-payments.ts";
 import { mkNotice, mkPortalBell, mkPortalClient, mkPortalDocument, mkRequest } from "./test-portal.ts";
@@ -198,6 +199,93 @@ describe(`"I've paid" notices [ADM-PAY-05, L10]`, () => {
       status: "recorded",
       payment_id: body.id,
     });
+  });
+
+  it("review 1, M5: the Recorded list carries each notice's payment and its status now (rejected, withdrawn); the payment's detail names the notice it came from", async () => {
+    const s = await sessionFor("staff");
+    const o = await owner();
+    const p = await mkPortalClient();
+    type Listed = { id: string; status: string; paymentId: string | null; payment: unknown };
+    const recorded = async () =>
+      (
+        (await (
+          await call(`/payments/notices?client=${p.clientId}&status=recorded`, { cookie: s.cookie })
+        ).json()) as { items: Listed[] }
+      ).items;
+    // Staff records from a notice (pending), the Owner rejects the entry.
+    const n1 = await mkNotice(p, { amountMinor: 10_000 });
+    const b1 = recordBody(p.clientId, 10_000, [{ documentId: p.invoiceId, amountMinor: 10_000 }], {
+      noticeId: n1,
+    });
+    expect((await call("/payments", { cookie: s.cookie, body: b1 })).status).toBe(201);
+    expect(await recorded()).toEqual([
+      expect.objectContaining({
+        id: n1,
+        status: "recorded",
+        paymentId: b1.id,
+        payment: { id: b1.id, status: "pending_verification" },
+      }),
+    ]);
+    const detail = async (id: string) =>
+      (await (await call(`/payments/${id}`, { cookie: o.cookie })).json()) as {
+        payment: { recordedAt: number };
+        fromNotice: unknown;
+      };
+    const d1 = await detail(b1.id);
+    expect(d1.fromNotice).toEqual({ id: n1, via: "portal", createdAt: expect.any(Number) });
+    const rej = await call(`/payments/${b1.id}/verify`, {
+      cookie: o.cookie,
+      body: { decision: "reject", note: "Not received", expectedRecordedAt: d1.payment.recordedAt },
+    });
+    expect(rej.status).toBe(200);
+    // The Owner records a confirmed entry from a second notice, then withdraws it.
+    const n2 = await mkNotice(p, { amountMinor: 20_000 });
+    const b2 = recordBody(p.clientId, 20_000, [{ documentId: p.invoiceId, amountMinor: 20_000 }], {
+      noticeId: n2,
+    });
+    expect((await call("/payments", { cookie: o.cookie, body: b2 })).status).toBe(201);
+    expect((await detail(b2.id)).fromNotice).toMatchObject({ id: n2 });
+    expect(
+      (await call(`/payments/${b2.id}/withdraw`, { cookie: o.cookie, body: { reason: "Entered in error" } }))
+        .status,
+    ).toBe(200);
+    const after = await recorded();
+    expect(after.map((i) => [i.id, i.status, i.payment])).toEqual([
+      [n1, "recorded", { id: b1.id, status: "rejected" }],
+      [n2, "recorded", { id: b2.id, status: "withdrawn" }],
+    ]);
+    // An open or dismissed notice has no payment; an entry not recorded from a notice has no fromNotice.
+    const open = await mkNotice(p);
+    const listOpen = (await (
+      await call(`/payments/notices?client=${p.clientId}`, { cookie: s.cookie })
+    ).json()) as { items: Listed[] };
+    expect(listOpen.items.find((i) => i.id === open)?.payment).toBeNull();
+    const plain = recordBody(p.clientId, 1000, []);
+    expect((await call("/payments", { cookie: o.cookie, body: plain })).status).toBe(201);
+    expect((await detail(plain.id)).fromNotice).toBeNull();
+  });
+
+  it("review 1, M5: the notice of a payment is read by payment_notices_payment (no scan)", async () => {
+    const plan = (await env.DB.prepare(`EXPLAIN QUERY PLAN ${PAYMENT_NOTICE_SQL}`).bind("x").all())
+      .results as {
+      detail: string;
+    }[];
+    expect(plan.map((r) => r.detail).join(" | ")).toContain("USING INDEX payment_notices_payment");
+    for (const [sql, params] of [
+      [NOTICES_BY_STATUS_SQL, ["recorded", -1, ""]],
+      [NOTICES_BY_CLIENT_SQL, ["c", "recorded", -1, ""]],
+    ] as const) {
+      const rows = (
+        await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
+          .bind(...params)
+          .all()
+      ).results as { detail: string }[];
+      const text = rows.map((r) => r.detail).join(" | ");
+      expect(text).toMatch(
+        /SEARCH p USING INTEGER PRIMARY KEY|SEARCH p USING INDEX sqlite_autoindex_payments_1/,
+      );
+      expect(text).not.toMatch(/SCAN p\b/);
+    }
   });
 
   it("the invoice's Payments panel lists its open notices (a warning on void and withdraw, never a block)", async () => {

@@ -20,9 +20,14 @@ const STATUSES = ["open", "recorded", "dismissed"] as const;
 
 const COLS = `n.id, n.client_id, k.code AS client_code, k.display_name AS client_name, (k.anonymised_at IS NOT NULL) AS client_gone, n.document_id,
   d.type AS document_type, d.number_display, n.contact_id, c.name AS contact_name, n.via, n.amount_minor, n.currency, n.paid_on, n.reference, n.reference_norm,
-  n.note, n.status, n.payment_id, n.closed_by, (SELECT name FROM staff_users WHERE id = n.closed_by) AS closed_by_name, n.closed_at, n.close_note, n.created_at`;
+  n.note, n.status, n.payment_id, p.status AS payment_status, n.closed_by, (SELECT name FROM staff_users WHERE id = n.closed_by) AS closed_by_name, n.closed_at,
+  n.close_note, n.created_at`;
+/**
+ * Review 1, M5: a recorded notice's payment is joined by its primary key, so the Recorded tab shows when that payment was later rejected or withdrawn (the notice
+ * itself stays `recorded`: it was recorded; no money moved on the notice, L10).
+ */
 const FROM =
-  "JOIN clients k ON k.id = n.client_id JOIN documents d ON d.id = n.document_id LEFT JOIN contacts c ON c.id = n.contact_id";
+  "JOIN clients k ON k.id = n.client_id JOIN documents d ON d.id = n.document_id LEFT JOIN contacts c ON c.id = n.contact_id LEFT JOIN payments p ON p.id = n.payment_id";
 
 /** ?1 status, ?2 and ?3 the cursor (created_at, id; -1 and "" on the first page). Oldest first. */
 export const NOTICES_BY_STATUS_SQL = `SELECT ${COLS} FROM payment_notices n INDEXED BY payment_notices_status ${FROM}
@@ -58,6 +63,8 @@ export type NoticeRow = {
   note: string | null;
   status: string;
   payment_id: string | null;
+  /** The linked payment's status now (`pending_verification`, `confirmed`, `rejected`, `withdrawn`); null without a payment. */
+  payment_status: string | null;
   closed_by: string | null;
   closed_by_name: string | null;
   closed_at: number | null;
@@ -84,6 +91,11 @@ export const noticeView = (r: NoticeRow) => ({
   note: r.note,
   status: r.status,
   paymentId: r.payment_id,
+  /** Review 1, M5: the payment recorded from this notice and its status now (it may have been rejected or withdrawn since); null while open or dismissed. */
+  payment:
+    r.payment_id !== null && r.payment_status !== null
+      ? { id: r.payment_id, status: r.payment_status }
+      : null,
   closedBy: r.closed_by ? { id: r.closed_by, name: r.closed_by_name } : null,
   closedAt: r.closed_at,
   closeNote: r.close_note,

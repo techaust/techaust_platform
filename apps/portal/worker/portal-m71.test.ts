@@ -564,6 +564,36 @@ describe(`"I've paid" [L10, ADM-PAY-05, C15]`, () => {
     ).toBe(404);
   });
 
+  it("review 1, M1: a two-line note is stored with its line break (CRLF folded); a refused note or reference is a 400 naming that field", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.a.finance);
+    const doc = await payableDoc(f.a.id);
+    const post = (b: Record<string, unknown>) =>
+      call(`/invoices/${doc}/paid-notice`, { cookie: s.cookie, body: notice(b) });
+    const res = await post({ note: " Paid from HDFC\r\nin two parts " });
+    expect(res.status).toBe(201);
+    const id = ((await res.json()) as { notice: { id: string } }).notice.id;
+    expect(await one("SELECT note FROM payment_notices WHERE id = ?1", id)).toEqual({
+      note: "Paid from HDFC\nin two parts",
+    });
+    const before = await countOf("payment_notices", `document_id = '${doc}'`);
+    for (const [b, fields] of [
+      [{ note: "bell\u0007" }, ["note"]],
+      [{ note: "a".repeat(301) }, ["note"]],
+      [{ reference: "UTR: 1" }, ["reference"]],
+      [{ note: "a".repeat(301), reference: "" }, ["reference", "note"]],
+      [{ amountMinor: 0 }, ["amountMinor"]],
+      [{ currency: "INR" }, []],
+    ] as const) {
+      const r = await post(b);
+      expect(r.status, JSON.stringify(b)).toBe(400);
+      const body = await bodyOf(r);
+      expect(body, JSON.stringify(b)).toMatchObject({ error: { code: "bad_request" } });
+      expect([...(body.fields as string[])].sort(), JSON.stringify(b)).toEqual([...fields].sort());
+    }
+    expect(await countOf("payment_notices", `document_id = '${doc}'`)).toBe(before);
+  });
+
   it("a part-paid converted proforma takes a notice (early check 1 finding 1)", async () => {
     const f = await fixtures();
     const s = await sessionFor(f.a.finance);
@@ -620,6 +650,30 @@ describe(`"I've paid" from the emailed link [POR-06, L10]`, () => {
     expect(await rows("SELECT status FROM access_log WHERE request_id = 'ray-link-notice'")).toEqual([
       { status: 201 },
     ]);
+  });
+
+  it("review 1, M1: a two-line note through the link is stored with its line break; a refused note is a 400 naming `note`, with no p:fail: count", async () => {
+    const f = await fixtures();
+    const doc = await payableDoc(f.a.id);
+    const token = await linkFor(f.a.finance, doc);
+    const ip = "192.0.2.193";
+    const res = await call("/t/document/paid-notice", {
+      body: { ...notice({ note: "Paid by NEFT\r\nfrom the Kolkata office" }), token },
+      ip,
+    });
+    expect(res.status).toBe(201);
+    const id = ((await res.json()) as { notice: { id: string } }).notice.id;
+    expect(await one("SELECT note, via FROM payment_notices WHERE id = ?1", id)).toEqual({
+      note: "Paid by NEFT\nfrom the Kolkata office",
+      via: "link",
+    });
+    const bad = await call("/t/document/paid-notice", {
+      body: { ...notice({ note: "x\u0000y" }), token },
+      ip,
+    });
+    expect(bad.status).toBe(400);
+    expect(await bodyOf(bad)).toMatchObject({ error: { code: "bad_request" }, fields: ["note"] });
+    expect(await attemptsRow(await portalFailKey(env.PORTAL_KEY_PEPPER, ip))).toBeNull();
   });
 
   it("a wrong token is the 404 and counts on p:fail:; a blocked address is 429 with nothing written; a contact who lost finance is the 404", async () => {
